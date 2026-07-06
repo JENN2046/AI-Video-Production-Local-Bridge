@@ -1,0 +1,11 @@
+{
+  "result": "PASS",
+  "provider_name": "mock",
+  "real_provider_enabled": false,
+  "execution_allowed": false,
+  "cost_acknowledged": false,
+  "credential_env_name": null,
+  "credential_present": false,
+  "missing": [],
+  "no_network_call": true
+}

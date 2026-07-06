@@ -1,0 +1,18 @@
+t01_g0_app_side_pregen_readiness_closeout:
+  result: PASS
+  generated_at: 2026-07-06T09:19:43.492Z
+  creative_brief_persistence: PASS
+  script_persistence: PASS
+  shot_list_persistence: PASS
+  storyboard_prompt_persistence: PASS
+  storyboard_review_persistence: PASS
+  draft_package_validation: PASS
+  app_ready_package_validation: PASS
+  active_artifact_gate: PASS
+  no_fake_artifact_id: PASS
+  no_provider_call: PASS
+  regression:
+    m0: PASS
+    m1_0: PASS
+    m1_offline: PASS
+  known_gaps: []

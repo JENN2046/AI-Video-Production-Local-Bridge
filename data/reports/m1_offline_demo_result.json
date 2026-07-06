@@ -1,7 +1,7 @@
 {
   "phase": "M1-offline",
   "result": "PASS",
-  "project_id": "project_d73f8c17-20d6-4a07-aea6-30aefc509200",
+  "project_id": "project_b08e2d12-0de3-488e-84ab-2987d3867593",
   "provider_ports": {
     "mock": {
       "type": "offline",
@@ -27,9 +27,9 @@
   },
   "mock_default_generation": {
     "status": "PASS",
-    "batch_id": "batch_cf6df5b8-fa85-4370-966b-b6828fc6501c",
-    "run_id": "run_b341cd41-9337-4e2f-9e8d-0a0ca798eb0a",
-    "artifact_id": "artifact_ffa567e4-f44d-44e6-bd7b-ea9bf546849d",
+    "batch_id": "batch_65710010-3cee-4e24-bc7c-9889f8c10314",
+    "run_id": "run_051079d3-908c-44ee-9a0e-e6ae7bfeeda8",
+    "artifact_id": "artifact_05119c85-29bc-4c86-a616-2b154ea59d03",
     "artifact_source_provider": "mock"
   },
   "provider_boundary": {

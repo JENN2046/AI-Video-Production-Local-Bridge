@@ -1,0 +1,12 @@
+{
+  "result": "PASS",
+  "provider_name": "mock",
+  "status": "MOCK_OR_DISABLED",
+  "selected_provider": "mock",
+  "missing": [],
+  "error_code": null,
+  "credential_env_name": null,
+  "credential_present": false,
+  "masked_credential_preview": null,
+  "network_call_attempted": false
+}

@@ -1,0 +1,19 @@
+t00_repository_baseline_closeout:
+  result: PASS
+  generated_at: 2026-07-06T09:19:51.244Z
+  git_repo_exists: PASS
+  gitignore_present: PASS
+  secret_files_protected: PASS
+  runtime_media_not_tracked: PASS
+  fixtures_tracked: PASS
+  source_tests_scripts_package_tracked: PASS
+  validation:
+    typecheck: PASS
+    build: PASS
+    m0: PASS
+    m1_0: PASS
+    m1_offline: PASS
+  baseline_commit:
+    created: true
+    commit_hash: "0b4dc9a85c48ffe24d66a1a5c79bd8431af29987"
+  known_gaps: []

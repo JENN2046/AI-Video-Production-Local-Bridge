@@ -1,0 +1,13 @@
+t03_g0_import_app_ready_package_demo_closeout:
+  result: PASS
+  generated_at: 2026-07-06T09:19:43.492Z
+  local_storyboard_import: PASS
+  active_storyboard_artifact: PASS
+  package_validator: PASS
+  app_ready_package_created: PASS
+  video_prompt_present: PASS
+  approved_by_user_true: PASS
+  no_provider_call: PASS
+  artifact_ids:
+    storyboard_images: ["artifact_de7f176d-d596-4f92-861c-0c5120d6888d"]
+  known_gaps: []

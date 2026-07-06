@@ -14,6 +14,7 @@ data/media/**
 # Secrets and private account state.
 .env
 .env.*
+!.env.example
 config.env
 credentials/
 credentials.*
@@ -21,6 +22,8 @@ secret/
 secrets/
 *.pem
 *.key
+*.p12
+*.pfx
 state-private/
 
 # Logs and generated review packages.

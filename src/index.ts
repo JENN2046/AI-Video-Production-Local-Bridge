@@ -75,6 +75,15 @@ export type {
   SelectedProviderPort
 } from "./tools/provider.js";
 export {
+  checkProviderEnv,
+  maskSecret,
+  providerCredentialEnv,
+  providerPreflight,
+  PROVIDER_ENV_KEYS,
+  runSecretScan
+} from "./tools/providerEnv.js";
+export type { ProviderEnvCheck, ProviderPreflight, SecretScanResult } from "./tools/providerEnv.js";
+export {
   downloadProviderOutputToArtifact,
   validateProviderOutputUrl
 } from "./tools/providerOutputDownloader.js";
@@ -115,5 +124,23 @@ export {
   validateImageFile
 } from "./tools/imageValidity.js";
 export type { ImageValidationResult, SupportedImageMime } from "./tools/imageValidity.js";
+export {
+  G0_ARTIFACT_FILENAMES,
+  g0ProjectRoot,
+  importG0AppReadyStoryboardPackage,
+  readG0Artifact,
+  saveG0Artifact,
+  validateG0StoryboardPackage
+} from "./tools/g0Pregen.js";
+export type {
+  G0ArtifactKind,
+  G0ImportResult,
+  G0SavedArtifact,
+  G0SavedArtifactEnvelope,
+  G0SaveResult,
+  G0StoryboardPackageInput,
+  G0StoryboardPackageShotSnapshot,
+  G0ValidationResult
+} from "./tools/g0Pregen.js";
 export { callM0ToolPlaceholder, listM0Tools, M0_TOOL_NAMES } from "./tools/m0Tools.js";
 export type { M0ToolDefinition, M0ToolName, M0ToolResult } from "./tools/m0Tools.js";

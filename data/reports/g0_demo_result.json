@@ -1,0 +1,35 @@
+{
+  "phase": "G0",
+  "result": "PASS",
+  "project_id": "project_d7490b83-ccd6-41b2-bb4c-9feb0414e908",
+  "saved_g0_artifacts": {
+    "creative_brief": "A:\\AI Video Production Workspace\\data\\projects\\project_d7490b83-ccd6-41b2-bb4c-9feb0414e908\\g0\\creative_brief.json",
+    "script": "A:\\AI Video Production Workspace\\data\\projects\\project_d7490b83-ccd6-41b2-bb4c-9feb0414e908\\g0\\script.json",
+    "shot_list": "A:\\AI Video Production Workspace\\data\\projects\\project_d7490b83-ccd6-41b2-bb4c-9feb0414e908\\g0\\shot_list.json",
+    "storyboard_image_prompts": "A:\\AI Video Production Workspace\\data\\projects\\project_d7490b83-ccd6-41b2-bb4c-9feb0414e908\\g0\\storyboard_image_prompts.json",
+    "storyboard_review_record": "A:\\AI Video Production Workspace\\data\\projects\\project_d7490b83-ccd6-41b2-bb4c-9feb0414e908\\g0\\storyboard_review_record.json",
+    "storyboard_package_draft": "A:\\AI Video Production Workspace\\data\\projects\\project_d7490b83-ccd6-41b2-bb4c-9feb0414e908\\g0\\storyboard_package_draft.json"
+  },
+  "local_storyboard_import": "PASS",
+  "storyboard_artifact": {
+    "artifact_id": "artifact_de7f176d-d596-4f92-861c-0c5120d6888d",
+    "status": "active",
+    "artifact_type": "image",
+    "role": "storyboard_image",
+    "source_path": "A:\\AI Video Production Workspace\\data\\imports\\g0_app_ready_storyboard_001.png",
+    "stored_path": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_de7f176d-d596-4f92-861c-0c5120d6888d.png"
+  },
+  "app_ready_package": {
+    "status": "approved_for_video_generation",
+    "validator": "PASS",
+    "storyboard_package_id": "storyboard_package_96639fd3-5c96-4c5c-8711-a38767fda49f",
+    "saved_path": "A:\\AI Video Production Workspace\\data\\projects\\project_d7490b83-ccd6-41b2-bb4c-9feb0414e908\\g0\\storyboard_package.json",
+    "video_prompt_present": true,
+    "approved_by_user_true": true
+  },
+  "provider_boundary": {
+    "no_provider_call": "PASS",
+    "real_provider_disabled": "PASS",
+    "network_call_attempted": false
+  }
+}

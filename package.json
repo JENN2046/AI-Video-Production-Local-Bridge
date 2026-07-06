@@ -21,6 +21,17 @@
     "closeout:m1": "npm run build && node dist/scripts/closeout-m1.js",
     "test:m1:real": "npm run build && node dist/scripts/test-m1-real.js",
     "demo:m1:real": "npm run build && node dist/scripts/demo-m1-real.js",
+    "test:g0": "npm run build && node --test dist/tests/g0-pregen.test.js dist/tests/provider-env-secret-safety.test.js",
+    "demo:g0": "npm run build && node dist/scripts/demo-g0.js",
+    "closeout:g0": "npm run build && node dist/scripts/closeout-g0.js",
+    "demo:g0:app-ready": "npm run demo:g0",
+    "closeout:g0:app-ready": "npm run closeout:g0",
+    "env:check": "npm run build && node dist/scripts/env-check.js",
+    "provider:preflight": "npm run build && node dist/scripts/provider-preflight.js",
+    "secret:scan": "npm run build && node dist/scripts/secret-scan.js",
+    "closeout:provider-env": "npm run build && node dist/scripts/closeout-provider-env.js",
+    "closeout:t00": "npm run build && node dist/scripts/closeout-t00.js",
+    "closeout:pregen": "npm run build && node dist/scripts/closeout-pregen-final.js",
     "m0:reset": "npm run build && node dist/scripts/m0-reset.js"
   },
   "devDependencies": {
