@@ -1,0 +1,45 @@
+{
+  "task_id": "R3-5_REVIEW_REGENERATION_FINAL_ASSEMBLY_CORE",
+  "result": "PASS",
+  "run_id": "c01fde85-2b54-4f2c-bd91-264215b8c4df",
+  "generated_at": "2026-07-06T14:04:09.410Z",
+  "project_id": "project_6f1ba323-5361-4df6-91b9-23d38ae156f9",
+  "storyboard_package_id": "storyboard_package_23ad4c37-3071-4ffc-a5bc-68aed9d02837",
+  "shot_id": "shot_3c16a3ed-d8cd-45bd-9009-88f67028fe1b",
+  "review_core": {
+    "mark_clip_rejected": true,
+    "mark_clip_approved": true,
+    "rejected_clip_traceable": true,
+    "accepted_clip_artifact_id": "artifact_686cc650-89a1-4812-98c0-47b423bdab23"
+  },
+  "regeneration_core": {
+    "missing_confirmation_result": "HARD_GATE_CONFIRMATION_REQUIRED",
+    "regenerated_run_id": "run_32e7da72-26b9-40e6-87dc-3527d1361b41",
+    "parent_run_id": "run_216e6da1-159f-4d44-9cdf-694bea413a5c",
+    "attempt_number": 2,
+    "old_artifact_id": "artifact_873a9838-1afe-40e3-841c-b568596ecf2b",
+    "new_artifact_id": "artifact_686cc650-89a1-4812-98c0-47b423bdab23",
+    "old_artifact_preserved": true,
+    "new_artifact_active": true,
+    "no_overwrite": true
+  },
+  "assembly_core": {
+    "blocked_before_accepted": true,
+    "final_assembly_run_id": "run_28ab1075-7237-4ec0-b378-b8f6c7c66bf3",
+    "final_video_artifact_id": "artifact_0f845b83-5efd-4a12-b21f-19a0d051b804",
+    "final_video_artifact_active": true,
+    "final_assembly_report_written": true
+  },
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runway_called": false,
+    "runninghub_called": false,
+    "provider_credits_consumed": false,
+    "live_provider_regeneration_performed": false,
+    "live_provider_requires_exact_authorization": true,
+    "source_asset_overwritten": false,
+    "secret_values_exposed": false
+  },
+  "report_path": "data/reports/r3_5_review_regeneration_final_assembly_core_result_c01fde85-2b54-4f2c-bd91-264215b8c4df.json",
+  "latest_report_path": "data/reports/r3_5_review_regeneration_final_assembly_core_result.json"
+}

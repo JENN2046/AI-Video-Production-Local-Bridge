@@ -41,6 +41,24 @@ export type ProviderOutputResult =
   | { ok: true; provider_job_id: string; output_url: string; provider_status: string }
   | { ok: false; error: ProviderToolError };
 
+export type RunwayImageToVideoRequestBuildResult =
+  | {
+      ok: true;
+      endpoint: typeof RUNWAY_IMAGE_TO_VIDEO_ENDPOINT;
+      headers: {
+        "Content-Type": "application/json";
+        "X-Runway-Version": typeof RUNWAY_API_VERSION;
+      };
+      body: {
+        model: string;
+        promptImage: string;
+        promptText: string;
+        ratio: string;
+        duration: number;
+      };
+    }
+  | { ok: false; error: ProviderToolError };
+
 export interface VideoProviderAdapter {
   provider_name: RealProviderName | "mock";
   model_name: string;
@@ -117,6 +135,35 @@ function dataUriFromImageArtifact(artifact: MediaArtifact): { ok: true; data_uri
   return { ok: true, data_uri: `data:${mime};base64,${encoded}` };
 }
 
+export function buildRunwayImageToVideoRequest(input: ProviderGenerationInput, modelName = "gen4.5"): RunwayImageToVideoRequestBuildResult {
+  const ratio = mapRunwayAspectRatio(input.aspect_ratio);
+  if (!ratio) return { ok: false, error: providerError("PROVIDER_UNSUPPORTED_INPUT", `Unsupported Runway aspect ratio: ${input.aspect_ratio}.`) };
+
+  const duration = normalizeRunwayDuration(input.duration_seconds);
+  if (duration === null) {
+    return { ok: false, error: providerError("PROVIDER_UNSUPPORTED_INPUT", `Unsupported Runway duration: ${input.duration_seconds}.`) };
+  }
+
+  const promptImage = dataUriFromImageArtifact(input.storyboard_artifact);
+  if (!promptImage.ok) return { ok: false, error: promptImage.error };
+
+  return {
+    ok: true,
+    endpoint: RUNWAY_IMAGE_TO_VIDEO_ENDPOINT,
+    headers: {
+      "Content-Type": "application/json",
+      "X-Runway-Version": RUNWAY_API_VERSION
+    },
+    body: {
+      model: modelName,
+      promptImage: promptImage.data_uri,
+      promptText: input.video_prompt,
+      ratio,
+      duration
+    }
+  };
+}
+
 async function safeJson(response: Response): Promise<Record<string, unknown>> {
   try {
     const parsed = (await response.json()) as unknown;
@@ -161,35 +208,18 @@ export class RunwayVideoProviderAdapter implements VideoProviderAdapter {
   }
 
   async submitGeneration(input: ProviderGenerationInput): Promise<ProviderSubmitResult> {
-    const ratio = mapRunwayAspectRatio(input.aspect_ratio);
-    if (!ratio) return { ok: false, error: providerError("PROVIDER_UNSUPPORTED_INPUT", `Unsupported Runway aspect ratio: ${input.aspect_ratio}.`) };
-
-    const duration = normalizeRunwayDuration(input.duration_seconds);
-    if (duration === null) {
-      return { ok: false, error: providerError("PROVIDER_UNSUPPORTED_INPUT", `Unsupported Runway duration: ${input.duration_seconds}.`) };
-    }
-
-    const promptImage = dataUriFromImageArtifact(input.storyboard_artifact);
-    if (!promptImage.ok) return { ok: false, error: promptImage.error };
-
-    const body = {
-      model: this.model_name,
-      promptImage: promptImage.data_uri,
-      promptText: input.video_prompt,
-      ratio,
-      duration
-    };
+    const request = buildRunwayImageToVideoRequest(input, this.model_name);
+    if (!request.ok) return { ok: false, error: request.error };
 
     let response: Response;
     try {
-      response = await this.fetchImpl(`${this.apiBase}${RUNWAY_IMAGE_TO_VIDEO_ENDPOINT}`, {
+      response = await this.fetchImpl(`${this.apiBase}${request.endpoint}`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${this.credential}`,
-          "Content-Type": "application/json",
-          "X-Runway-Version": RUNWAY_API_VERSION
+          ...request.headers
         },
-        body: JSON.stringify(body)
+        body: JSON.stringify(request.body)
       });
     } catch {
       return { ok: false, error: providerError("PROVIDER_REQUEST_FAILED", "Runway submit request failed.", true) };

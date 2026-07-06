@@ -219,7 +219,7 @@ try {
 } catch (error) {
   const result = {
     task: "G0-R1-PACKAGE-FREEZE",
-    result: "BLOCK",
+    result: "BLOCK_WITH_REASON",
     run_id: runId,
     generated_at: new Date().toISOString(),
     error: {

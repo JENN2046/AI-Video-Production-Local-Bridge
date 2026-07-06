@@ -1,0 +1,131 @@
+{
+  "task_id": "R1-3_MCP_V1_HUMAN_CONFIRMED_HANDOFF_TOOLS",
+  "result": "PASS",
+  "generated_at": "2026-07-06T14:30:27.150Z",
+  "action": {
+    "action_id": "webgpt_action_28a843fe-323e-447f-9215-c7162b42926f",
+    "tool": "request_register_media_artifact_from_import",
+    "status": "executed",
+    "created_at": "2026-07-06T14:30:27.144Z",
+    "updated_at": "2026-07-06T14:30:27.146Z",
+    "source": "webgpt_bridge_v1",
+    "payload": {
+      "import_filename": "webgpt_action_register_04f28aa0.png"
+    },
+    "validation": {
+      "ok": true,
+      "blockers": []
+    },
+    "human_confirmation": {
+      "required": true,
+      "confirmed": true,
+      "rejected": false,
+      "confirmed_at": "2026-07-06T14:30:27.146Z",
+      "rejected_at": "",
+      "rejected_reason": ""
+    },
+    "execution": {
+      "attempted": true,
+      "ok": true,
+      "executed_at": "2026-07-06T14:30:27.146Z",
+      "report_path": "",
+      "result": {
+        "artifact": {
+          "artifact_id": "artifact_ac5e8384-ef96-493e-b80e-4c4afa1c0d9e",
+          "artifact_type": "image",
+          "role": "storyboard_image",
+          "status": "active",
+          "storage": {
+            "uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_ac5e8384-ef96-493e-b80e-4c4afa1c0d9e.png",
+            "mime_type": "image/png",
+            "filename": "artifact_ac5e8384-ef96-493e-b80e-4c4afa1c0d9e.png"
+          },
+          "metadata": {
+            "width": 720,
+            "height": 1280,
+            "duration_seconds": null,
+            "aspect_ratio": "9:16",
+            "sha256": "47ec001e41d0d6bee01125df3cdcf4967e47c6461d46e76274d56734c49568eb"
+          },
+          "linked_objects": {
+            "project_id": "",
+            "shot_id": ""
+          },
+          "source": {
+            "kind": "local_file_import",
+            "provider": "",
+            "provider_job_id": "",
+            "sha256": "47ec001e41d0d6bee01125df3cdcf4967e47c6461d46e76274d56734c49568eb",
+            "external_url_host": ""
+          }
+        },
+        "report": {
+          "task": "H1-HANDOFF-WORKBENCH-MVP",
+          "action": "register_approved_keyframe",
+          "result": "PASS",
+          "run_id": "df7d3075-674b-4b68-a82a-c4f138ca750a",
+          "generated_at": "2026-07-06T14:30:27.150Z",
+          "import_filename": "webgpt_action_register_04f28aa0.png",
+          "review_status": "approved_for_media_artifact_handoff",
+          "artifact": {
+            "artifact_id": "artifact_ac5e8384-ef96-493e-b80e-4c4afa1c0d9e",
+            "artifact_type": "image",
+            "role": "storyboard_image",
+            "status": "active",
+            "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_ac5e8384-ef96-493e-b80e-4c4afa1c0d9e.png",
+            "mime_type": "image/png",
+            "width": 720,
+            "height": 1280,
+            "detected_aspect_ratio": "9:16",
+            "normalized_aspect_ratio": "9:16",
+            "checksum": "47ec001e41d0d6bee01125df3cdcf4967e47c6461d46e76274d56734c49568eb"
+          },
+          "provider_boundary": {
+            "network_call_attempted": false,
+            "runway_called": false,
+            "runninghub_called": false,
+            "provider_credits_consumed": false,
+            "real_video_generated": false,
+            "regeneration_performed": false,
+            "batch_generation_performed": false,
+            "final_assembly_performed": false,
+            "memory_saveback_performed": false,
+            "source_asset_overwritten": false,
+            "secret_values_exposed": false
+          },
+          "report_path": "data/reports/h1_workbench_import_register_result_df7d3075-674b-4b68-a82a-c4f138ca750a.json",
+          "latest_report_path": "data/reports/h1_workbench_import_register_result.json"
+        }
+      },
+      "error": null
+    },
+    "production_effects": {
+      "app_ready_truth_changed": true,
+      "media_artifact_registered": true,
+      "artifact_linked_to_shot": false,
+      "package_validated": false,
+      "package_frozen": false,
+      "provider_call_attempted": false,
+      "source_asset_overwritten": false
+    }
+  },
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runway_called": false,
+    "runninghub_called": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "final_assembly_performed": false,
+    "memory_saveback_performed": false,
+    "source_asset_overwritten": false,
+    "secret_values_exposed": false
+  },
+  "delivery": {
+    "push": false,
+    "tag": false,
+    "release": false,
+    "deploy": false
+  }
+}

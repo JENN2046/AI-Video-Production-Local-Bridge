@@ -1,0 +1,94 @@
+{
+  "task": "R2-2_H2_CANARY_WORKBENCH",
+  "result": "PASS",
+  "run_id": "codex-20260706-203847-three-route-sustained",
+  "completed_at": "2026-07-06T21:35:00+08:00",
+  "scope": "Provider Guard and Canary UI for dry-run readiness, authorization explanation, and redacted provider state",
+  "implementation": {
+    "local_ui_page": "H1 Human Workbench navigation page: 金丝雀",
+    "read_endpoint": "GET /api/canary",
+    "state_model": "h2CanaryWorkbenchSummary",
+    "dry_run_report_source": "data/reports/m1_r0_runway_canary_dry_run_report.json",
+    "real_submit_enabled": false,
+    "dry_run_generation_from_workbench_enabled": false
+  },
+  "acceptance": {
+    "active_provider_visible": true,
+    "env_check_visible": true,
+    "provider_preflight_visible": true,
+    "selected_canary_input_visible": true,
+    "dimensions_visible": true,
+    "project_ratio_visible": true,
+    "runway_ratio_visible": true,
+    "duration_visible": true,
+    "max_submit_calls_one_visible": true,
+    "no_regeneration_status_visible_as_allowed": true,
+    "no_batch_status_visible_as_allowed": true,
+    "dry_run_plan_can_be_opened": true,
+    "secret_values_never_shown": true,
+    "real_submit_requires_separate_authorization": true
+  },
+  "smoke_check": {
+    "result": "PASS",
+    "url": "http://127.0.0.1:4192",
+    "html_has_canary_page": true,
+    "api": "GET /api/canary",
+    "api_ok": true,
+    "runway_ratio": "768:1280",
+    "max_submit_calls": 1,
+    "network_call_attempted": false,
+    "real_submit_available": false
+  },
+  "validation": [
+    {
+      "command": "npm run typecheck",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run test:m1",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run test:h1",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run secret:scan",
+      "result": "PASS"
+    },
+    {
+      "command": "H1 H2 local server smoke check",
+      "result": "PASS"
+    },
+    {
+      "command": "git diff --check",
+      "result": "PASS"
+    }
+  ],
+  "changed_files": [
+    "src/tools/h1Workbench.ts",
+    "src/index.ts",
+    "scripts/h1-workbench.ts",
+    "tests/h1-workbench.test.ts",
+    "data/reports/r2_2_h2_canary_workbench_result.json"
+  ],
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runway_called": false,
+    "runninghub_called": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "source_assets_overwritten": false,
+    "secret_values_exposed": false
+  },
+  "delivery": {
+    "commit": null,
+    "push": false,
+    "tag": false,
+    "release": false,
+    "deploy": false
+  },
+  "next_task": "R1-1_MCP_V0_READ_ONLY_SERVICE"
+}

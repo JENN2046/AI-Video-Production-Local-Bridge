@@ -1,0 +1,86 @@
+{
+  "task_id": "R2-3_H3_VIDEO_REVIEW_WORKBENCH",
+  "result": "PASS",
+  "generated_at": "2026-07-06T22:08:00+08:00",
+  "scope": "Human review workbench for generated_clip artifacts, ffprobe metadata, generation run visibility, approve/reject decisions, and regeneration request drafts.",
+  "implementation": {
+    "review_summary": "h3VideoReviewSummary lists recent generated_clip artifacts with generation run metadata, ffprobe status, review state, accepted clip, rejection reasons, and latest revision instruction.",
+    "local_ui": "H1 workbench now has a Chinese 审片 page and read-only GET /api/review summary.",
+    "approve_action": "POST /api/review/approve marks a generated clip approved and writes accepted_clip_artifact_id through the existing review tool.",
+    "reject_action": "POST /api/review/reject marks a generated clip rejected and creates a draft regeneration request only.",
+    "history_guard": "Review summary is capped to the latest 50 generated clips while reporting total available history to keep the UI responsive.",
+    "compatibility_guard": "Legacy generation runs with missing provider fields no longer crash the review summary."
+  },
+  "acceptance": {
+    "generated_clip_metadata_available": true,
+    "ffprobe_metadata_visible": true,
+    "generation_run_visible": true,
+    "approve_decision_saved": true,
+    "reject_decision_saved": true,
+    "approved_clip_writes_accepted_clip_artifact_id": true,
+    "rejected_clip_traceable": true,
+    "regeneration_request_is_draft_only": true,
+    "explicit_confirmation_required_before_regeneration": true
+  },
+  "validation": [
+    {
+      "command": "npm run typecheck",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run test:h1",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run test:m1",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run secret:scan",
+      "result": "PASS"
+    },
+    {
+      "command": "git diff --check",
+      "result": "PASS_WITH_EOL_WARNINGS_ONLY"
+    },
+    {
+      "command": "H1 workbench smoke GET / and GET /api/review on 127.0.0.1:4194",
+      "result": "PASS",
+      "observed": {
+        "review_nav_present": true,
+        "review_api_ok": true,
+        "generated_clips_returned": 50,
+        "generated_clip_total_available": 2206,
+        "generated_clip_limit": 50
+      }
+    }
+  ],
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runway_called": false,
+    "runninghub_called": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "final_assembly_performed": false,
+    "source_asset_overwritten": false,
+    "secret_values_exposed": false
+  },
+  "changed_files": [
+    "src/tools/h1Workbench.ts",
+    "src/tools/webGptReadOnlyBridge.ts",
+    "src/index.ts",
+    "scripts/h1-workbench.ts",
+    "tests/h1-workbench.test.ts"
+  ],
+  "reports": {
+    "latest": "data/reports/r2_3_h3_video_review_workbench_result.json"
+  },
+  "delivery": {
+    "push": false,
+    "tag": false,
+    "release": false,
+    "deploy": false
+  }
+}

@@ -1,0 +1,107 @@
+{
+  "task_id": "R1-4_MCP_V2_REVIEW_ASSISTANT_TOOLS",
+  "result": "PASS",
+  "generated_at": "2026-07-06T22:50:00+08:00",
+  "scope": "GPT review assistant read and draft tools for generated clips and regeneration prompts.",
+  "implementation": {
+    "review_assistant_tools": [
+      "get_generation_run",
+      "get_generated_clip_metadata",
+      "submit_review_note_draft",
+      "propose_rejection_reason",
+      "propose_regeneration_prompt"
+    ],
+    "review_draft_store": "data/webgpt/review_assistant_drafts.json",
+    "review_draft_store_git_policy": "ignored by data/*; not production truth",
+    "bridge_command": "npm run webgpt:bridge:v2",
+    "bridge_routes": {
+      "GET /api/tools": "read plus review assistant tool inventory",
+      "GET /api/tool/<read_tool>": "existing v0 read-only tool passthrough",
+      "GET /api/review-tool/<tool>": "review assistant read tools",
+      "POST /api/review-tool/<tool>": "review note/rejection/regeneration prompt draft tools only"
+    },
+    "metadata_read": "Reads Generation Run, generated_clip artifact metadata, linked shot when available, and ffprobe status.",
+    "draft_boundary": "Review notes, rejection reasons, and regeneration prompts are stored as drafts only."
+  },
+  "acceptance": {
+    "get_generation_run_tool_defined": true,
+    "get_generated_clip_metadata_tool_defined": true,
+    "submit_review_note_draft_tool_defined": true,
+    "propose_rejection_reason_tool_defined": true,
+    "propose_regeneration_prompt_tool_defined": true,
+    "human_final_approval_required": true,
+    "regeneration_not_triggered": true,
+    "no_provider_call": true,
+    "no_shell_execution": true,
+    "no_secret_exposure": true
+  },
+  "validation": [
+    {
+      "command": "npm run typecheck",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run test:webgpt:review",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run secret:scan",
+      "result": "PASS"
+    },
+    {
+      "command": "git diff --check",
+      "result": "PASS_WITH_EOL_WARNINGS_ONLY"
+    },
+    {
+      "command": "WebGPT v2 review assistant bridge smoke on 127.0.0.1:4199",
+      "result": "PASS",
+      "observed": {
+        "tool_inventory_ok": true,
+        "review_assistant_tools": 5,
+        "clip_metadata_ok": true,
+        "ffprobe_status": "PASS",
+        "review_note_draft_ok": true,
+        "final_human_approval_allowed": false,
+        "regeneration_allowed": false,
+        "regeneration_triggered": false,
+        "provider_call_attempted": false
+      }
+    }
+  ],
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runway_called": false,
+    "runninghub_called": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "final_assembly_performed": false,
+    "source_asset_overwritten": false,
+    "secret_values_exposed": false
+  },
+  "review_assistant_boundary": {
+    "final_human_approval_allowed": false,
+    "clip_review_changed": false,
+    "regeneration_allowed": false,
+    "regeneration_triggered": false,
+    "provider_call_attempted": false,
+    "shell_allowed": false
+  },
+  "changed_files": [
+    "src/tools/webGptReviewAssistant.ts",
+    "scripts/webgpt-review-assistant-bridge.ts",
+    "src/index.ts",
+    "tests/webgpt-review-assistant.test.ts",
+    "package.json"
+  ],
+  "reports": {
+    "latest": "data/reports/r1_4_mcp_v2_review_assistant_tools_result.json"
+  },
+  "delivery": {
+    "push": false,
+    "tag": false,
+    "release": false,
+    "deploy": false
+  }
+}

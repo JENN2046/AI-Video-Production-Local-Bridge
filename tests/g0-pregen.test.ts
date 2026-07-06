@@ -148,6 +148,32 @@ test("G0 app-ready package blocks fake, pending, unapproved, and incomplete shot
     if (missingPromptValidation.ok) return;
     assert.equal(missingPromptValidation.error.code, "MISSING_REQUIRED_FIELD");
 
+    const missingDescription = baseAppReadyPackage(project.project_id, active.artifact_id);
+    missingDescription.shots[0].shot_description = "";
+    const missingDescriptionValidation = validateG0StoryboardPackage(missingDescription, db);
+    assert.equal(missingDescriptionValidation.ok, false);
+    if (missingDescriptionValidation.ok) return;
+    assert.equal(missingDescriptionValidation.error.code, "MISSING_REQUIRED_FIELD");
+
+    const missingDuration = baseAppReadyPackage(project.project_id, active.artifact_id);
+    missingDuration.shots[0].duration_seconds = 0;
+    const missingDurationValidation = validateG0StoryboardPackage(missingDuration, db);
+    assert.equal(missingDurationValidation.ok, false);
+    if (missingDurationValidation.ok) return;
+    assert.equal(missingDurationValidation.error.code, "MISSING_REQUIRED_FIELD");
+
+    const invalidNegativePrompt = baseAppReadyPackage(project.project_id, active.artifact_id);
+    invalidNegativePrompt.shots[0].negative_prompt = undefined as unknown as string;
+    const invalidNegativePromptValidation = validateG0StoryboardPackage(invalidNegativePrompt, db);
+    assert.equal(invalidNegativePromptValidation.ok, false);
+    if (invalidNegativePromptValidation.ok) return;
+    assert.equal(invalidNegativePromptValidation.error.code, "MISSING_REQUIRED_FIELD");
+
+    const rawImportPath = validateG0StoryboardPackage(baseAppReadyPackage(project.project_id, "data/imports/g0_r1_SHOT_001.png"), db);
+    assert.equal(rawImportPath.ok, false);
+    if (rawImportPath.ok) return;
+    assert.equal(rawImportPath.error.code, "ARTIFACT_NOT_FOUND");
+
     const unapproved = baseAppReadyPackage(project.project_id, active.artifact_id);
     unapproved.shots[0].approved_by_user = false;
     const unapprovedValidation = validateG0StoryboardPackage(unapproved, db);

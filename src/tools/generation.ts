@@ -6,7 +6,9 @@ import { getProject, getProjectStatus, getShot, listProjectShots, saveProject, s
 import { getStoryboardPackage } from "./storyboardPackages.js";
 import { providerError, selectM0Provider, selectM1ProviderPort, type ProviderExecutionRequest, type ProviderPortName, type ProviderToolError } from "./provider.js";
 import { downloadProviderOutputToArtifact } from "./providerOutputDownloader.js";
+import { validateMp4File, type Mp4ValidationResult } from "./mediaValidity.js";
 import {
+  buildRunwayImageToVideoRequest,
   MockVideoProviderAdapter,
   RunwayVideoProviderAdapter,
   RunningHubVideoProviderAdapter,
@@ -75,6 +77,36 @@ export interface GenerationRun {
 }
 
 type ToolResult<T> = { ok: true } & T | { ok: false; error: ToolError };
+
+export interface PackageShotGenerationInput {
+  project_id: string;
+  storyboard_package_id: string;
+  shot_id: string;
+  provider_execution?: ProviderExecutionRequest;
+  confirmation?: Confirmation;
+  allow_live_provider?: boolean;
+}
+
+export interface PackageShotProviderRequestSummary {
+  provider: "runway";
+  endpoint: string;
+  x_runway_version: string;
+  project_aspect_ratio: string;
+  runway_ratio: string;
+  duration_seconds: number;
+  prompt_text_present: boolean;
+  prompt_image_source_artifact_id: string;
+  prompt_image_storage_is_app_media: boolean;
+  raw_data_imports_provider_input: false;
+}
+
+export type PackageShotGenerationResult = ToolResult<{
+  batch: GenerationBatch;
+  run: GenerationRun;
+  generated_artifact_id: string | null;
+  ffprobe: Mp4ValidationResult | null;
+  provider_request_summary: PackageShotProviderRequestSummary | null;
+}>;
 
 function isHardGateConfirmed(confirmation?: Confirmation): boolean {
   return confirmation?.confirmation_level === "hard_gate" && confirmation.user_confirmed === true;
@@ -230,6 +262,112 @@ function providerInputFromShotWithDb(db: M0Database, project: Project, shot: Sho
     duration_seconds: shot.duration_seconds,
     aspect_ratio: project.video_spec.aspect_ratio,
     resolution: project.video_spec.resolution
+  };
+}
+
+function isAppMediaProviderInput(uri: string): boolean {
+  const normalized = uri.replace(/\\/g, "/").toLowerCase();
+  return normalized.includes("/data/media/artifacts/") && !normalized.includes("/data/imports/");
+}
+
+function runwayRequestSummaryForShot(db: M0Database, project: Project, shot: Shot): PackageShotProviderRequestSummary | { error: ToolError } {
+  const providerInput = providerInputFromShotWithDb(db, project, shot);
+  if ("error" in providerInput) {
+    return { error: { code: providerInput.error.code, message: providerInput.error.message } };
+  }
+
+  if (!isAppMediaProviderInput(providerInput.storyboard_artifact.storage.uri)) {
+    return {
+      error: {
+        code: "RAW_IMPORTS_PROVIDER_INPUT_BLOCKED",
+        message: "Provider input must use app-controlled media artifact storage, not raw data/imports paths."
+      }
+    };
+  }
+
+  const request = buildRunwayImageToVideoRequest(providerInput);
+  if (!request.ok) return { error: { code: request.error.code, message: request.error.message } };
+
+  return {
+    provider: "runway",
+    endpoint: request.endpoint,
+    x_runway_version: request.headers["X-Runway-Version"],
+    project_aspect_ratio: providerInput.aspect_ratio,
+    runway_ratio: request.body.ratio,
+    duration_seconds: request.body.duration,
+    prompt_text_present: request.body.promptText.trim().length > 0,
+    prompt_image_source_artifact_id: providerInput.storyboard_artifact.artifact_id,
+    prompt_image_storage_is_app_media: true,
+    raw_data_imports_provider_input: false
+  };
+}
+
+export async function createGenerationRunFromPackageShot(
+  input: PackageShotGenerationInput,
+  db = openM0Database()
+): Promise<PackageShotGenerationResult> {
+  if (input.provider_execution?.provider === "real" && input.allow_live_provider !== true) {
+    return {
+      ok: false,
+      error: {
+        code: "LIVE_PROVIDER_AUTHORIZATION_REQUIRED",
+        message: "Live provider submit requires a separate exact authorization path."
+      }
+    };
+  }
+
+  const project = getProject(db, input.project_id);
+  if (!project) return { ok: false, error: { code: "PROJECT_NOT_FOUND", message: `Project not found: ${input.project_id}` } };
+
+  const storyboardPackage = getStoryboardPackage(db, input.storyboard_package_id);
+  if (!storyboardPackage) {
+    return { ok: false, error: { code: "STORYBOARD_PACKAGE_NOT_FOUND", message: `Storyboard Package not found: ${input.storyboard_package_id}` } };
+  }
+  if (storyboardPackage.project_id !== project.project_id) {
+    return { ok: false, error: { code: "STORYBOARD_PACKAGE_PROJECT_MISMATCH", message: "Storyboard Package does not belong to the requested project." } };
+  }
+
+  const shot = getShot(db, input.shot_id);
+  if (!shot || shot.project_id !== project.project_id) {
+    return { ok: false, error: { code: "SHOT_NOT_FOUND", message: `Shot not found in project: ${input.shot_id}` } };
+  }
+
+  const shotInPackage = storyboardPackage.approved_shot_snapshots.some((snapshot) =>
+    snapshot.shot_id
+      ? snapshot.shot_id === shot.shot_id
+      : snapshot.order === shot.order && snapshot.storyboard_image_artifact_id === shot.storyboard_image_artifact_id
+  );
+  if (!shotInPackage) {
+    return { ok: false, error: { code: "SHOT_NOT_IN_STORYBOARD_PACKAGE", message: `Shot is not in frozen Storyboard Package: ${shot.shot_id}` } };
+  }
+
+  const providerRequestSummary = runwayRequestSummaryForShot(db, project, shot);
+  if (providerRequestSummary && "error" in providerRequestSummary) return { ok: false, error: providerRequestSummary.error };
+
+  const generation = await startStoryboardVideoGeneration(
+    {
+      project_id: project.project_id,
+      storyboard_package_id: storyboardPackage.storyboard_package_id,
+      selected_shot_ids: [shot.shot_id],
+      provider_execution: input.provider_execution,
+      confirmation: input.confirmation
+    },
+    db
+  );
+  if (!generation.ok) return generation;
+
+  const run = generation.runs[0];
+  const generatedArtifactId = run.output.artifact_ids[0] ?? null;
+  const generatedArtifact = generatedArtifactId ? getMediaArtifact(db, generatedArtifactId) : null;
+  const ffprobe = generatedArtifact ? validateMp4File(generatedArtifact.storage.uri) : null;
+
+  return {
+    ok: true,
+    batch: generation.batch,
+    run,
+    generated_artifact_id: generatedArtifactId,
+    ffprobe,
+    provider_request_summary: providerRequestSummary
   };
 }
 

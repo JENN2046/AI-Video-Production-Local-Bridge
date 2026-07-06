@@ -478,7 +478,7 @@ Run final M0 validation and produce honest closeout evidence.
 
 ## R3-0_LOCAL_APP_CONTRACT_FREEZE_AND_H1_API_SUPPORT - Local App Contract Freeze And H1 API Support
 
-status: READY
+status: DONE
 priority: P0
 lane: Safe Local Production Lane
 project: AI Video Production Workspace Three Route Plan
@@ -490,7 +490,13 @@ report_path: docs/three_routes/r3_0_local_app_contract_freeze_result.md
 allowed_delivery: read_non_sensitive_source,read_non_sensitive_reports,write_contract_report,write_docs_only
 blocked_delivery: source_code_change,data_model_migration,provider_call,video_generation,secret_read,env_file_edit,push,tag,release,deploy
 created_at: 2026-07-06T20:25:39+08:00
-updated_at: 2026-07-06T20:25:39+08:00
+updated_at: 2026-07-06T20:38:47+08:00
+claimed_at: 2026-07-06T20:38:47+08:00
+claim_run_id: codex-20260706-203847-three-route-sustained
+claimed_by: Codex sustained executor
+completed_at: 2026-07-06T20:44:30+08:00
+completed_by: Codex sustained executor
+result: PASS_CONTRACT_READY
 
 ### Goal
 
@@ -521,19 +527,25 @@ Inspect the current local app implementation without changing code, then freeze 
 
 ## R2-1_H1_HANDOFF_WORKBENCH_MVP - H1 Handoff Workbench MVP
 
-status: FOLLOW_UP
+status: DONE
 priority: P0
 lane: Safe Local Production Lane
 project: AI Video Production Workspace Three Route Plan
 scope: local H1 Human Workbench implementation for Dashboard, Imports, Shots, Storyboard Package, Reports
 branch: local-only
-depends_on: R3-0_LOCAL_APP_CONTRACT_FREEZE_AND_H1_API_SUPPORT
+depends_on: R3-2_STORYBOARD_PACKAGE_FREEZE_CORE
 source_plan: docs/three_routes/THREE_ROUTE_ADAPTED_DISPATCH_v1_1.md
 report_path: data/reports/h1_handoff_workbench_mvp_result.json
 allowed_delivery: source_code_change,tests,local_ui,immutable_report,latest_pointer_report,docs_update_if_needed
 blocked_delivery: runway_real_call,runninghub_real_call,video_generation,regeneration,batch_generation,final_assembly,memory_saveback,env_file_edit,secret_printing,public_tunnel,source_overwrite,fake_id_acceptance,push,tag,release,deploy
 created_at: 2026-07-06T20:25:39+08:00
-updated_at: 2026-07-06T20:25:39+08:00
+updated_at: 2026-07-06T20:39:06+08:00
+claimed_at: 2026-07-06T20:44:30+08:00
+claim_run_id: codex-20260706-203847-three-route-sustained
+claimed_by: Codex sustained executor
+completed_at: 2026-07-06T20:51:20+08:00
+completed_by: Codex sustained executor
+result: PASS
 
 ### Goal
 
@@ -559,24 +571,30 @@ Implement or finish the local H1 Human Workbench MVP with Chinese human-facing U
 
 ### Notes
 
-- This task is imported as `FOLLOW_UP` to avoid automatic execution until the commander promotes it to `READY`.
+- This task is promoted to `READY` for sustained automation, but remains dependency-gated behind R2-0, R3-1, and R3-2.
 - UI-visible text for the human workbench should be Simplified Chinese.
 
 ## R3-3_STRICT_SINGLE_RUNWAY_CANARY_SCRIPT - Strict Single Runway Canary Script
 
-status: FOLLOW_UP
-priority: P0
+status: DONE
+priority: P1
 lane: Safe Local Production Lane
 project: AI Video Production Workspace Three Route Plan
 scope: dry-run-only strict single Runway canary script and authorization boundary
 branch: local-only
-depends_on: R3-0_LOCAL_APP_CONTRACT_FREEZE_AND_H1_API_SUPPORT
+depends_on: R2-1_H1_HANDOFF_WORKBENCH_MVP
 source_plan: docs/three_routes/THREE_ROUTE_ADAPTED_DISPATCH_v1_1.md
 report_path: data/reports/r3_3_strict_single_runway_canary_result.json
 allowed_delivery: source_code_change,tests,dry_run_report,secret_redaction,provider_preflight_reuse
 blocked_delivery: runway_called,runninghub_called,network_call_attempted,provider_credits_consumed,real_video_generated,regeneration,batch_generation,secret_value_output,push,tag,release,deploy
 created_at: 2026-07-06T20:25:39+08:00
-updated_at: 2026-07-06T20:25:39+08:00
+updated_at: 2026-07-06T20:59:00+08:00
+claimed_at: 2026-07-06T20:51:20+08:00
+claim_run_id: codex-20260706-203847-three-route-sustained
+claimed_by: Codex sustained executor
+completed_at: 2026-07-06T20:59:00+08:00
+completed_by: Codex sustained executor
+result: PASS_READY_FOR_USER_AUTHORIZATION
 
 ### Goal
 
@@ -602,23 +620,30 @@ Implement a strict dry-run-first `npm run runway:canary` entry that prepares a o
 
 ### Notes
 
-- This task is imported as `FOLLOW_UP`; dry-run implementation may be promoted later, but live provider execution must remain separate.
+- This task is promoted to `READY` for sustained automation, but only for dry-run implementation.
+- Live provider execution must remain a separate future task requiring exact current Jenn authorization.
 
 ## R1-0_WEBGPT_MCP_BOUNDARY_AND_READONLY_BRIDGE_PLAN - WebGPT MCP Boundary And Read-Only Bridge Plan
 
-status: FOLLOW_UP
-priority: P1
+status: DONE
+priority: P2
 lane: Safe Local Production Lane
 project: AI Video Production Workspace Three Route Plan
 scope: docs-only WebGPT MCP boundary and read-only bridge plan
 branch: local-only
-depends_on: R3-0_LOCAL_APP_CONTRACT_FREEZE_AND_H1_API_SUPPORT
+depends_on: R3-3_STRICT_SINGLE_RUNWAY_CANARY_SCRIPT
 source_plan: docs/three_routes/THREE_ROUTE_ADAPTED_DISPATCH_v1_1.md
 report_path: docs/three_routes/r1_0_webgpt_mcp_boundary_readonly_bridge_plan.md
 allowed_delivery: docs_only,boundary_plan,schemas,no_runtime_server_required
 blocked_delivery: full_mcp_app_implementation,mutation_tool_implementation,provider_tool_implementation,secret_read,public_tunnel,push,tag,release,deploy
 created_at: 2026-07-06T20:25:39+08:00
-updated_at: 2026-07-06T20:25:39+08:00
+updated_at: 2026-07-06T21:28:00+08:00
+claimed_at: 2026-07-06T21:23:00+08:00
+claim_run_id: codex-20260706-203847-three-route-sustained
+claimed_by: Codex sustained executor
+completed_at: 2026-07-06T21:28:00+08:00
+completed_by: Codex sustained executor
+result: PASS_MCP_BOUNDARY_READY
 
 ### Goal
 
@@ -640,4 +665,680 @@ Plan the WebGPT MCP or bridge boundary so Web GPT can read real app status and s
 
 ### Notes
 
-- This task is imported as `FOLLOW_UP` to keep MCP planning behind the local app contract freeze.
+- This task is promoted to `READY` for sustained automation, but remains behind local contract, H1, and dry-run canary planning.
+
+## R2-0_HUMAN_WORKBENCH_UX_STATE_PLAN - Human Workbench UX And State Plan
+
+status: DONE
+priority: P0
+lane: Safe Local Production Lane
+project: AI Video Production Workspace Three Route Plan
+scope: H1/H2/H3/H4/H5 workbench page, state, action, hard-gate, local-server-security planning
+branch: local-only
+depends_on: R3-0_LOCAL_APP_CONTRACT_FREEZE_AND_H1_API_SUPPORT
+source_plan: docs/three_routes/source_v1_1/04_R2_HUMAN_WORKBENCH_ROUTE_TASKBOOK.md
+report_path: docs/three_routes/r2_0_human_workbench_ux_state_plan.md
+allowed_delivery: docs_only,boundary_plan,screen_contract,action_contract,hard_gate_matrix
+blocked_delivery: source_code_change,provider_call,video_generation,secret_read,env_file_edit,public_tunnel,push,tag,release,deploy
+created_at: 2026-07-06T20:39:06+08:00
+updated_at: 2026-07-06T21:03:00+08:00
+claimed_at: 2026-07-06T21:03:00+08:00
+claim_run_id: codex-20260706-203847-three-route-sustained
+claimed_by: Codex sustained executor
+completed_at: 2026-07-06T21:08:00+08:00
+completed_by: Codex sustained executor
+result: PASS_UX_STATE_READY
+
+### Goal
+
+Freeze Human Workbench pages, state sources, actions, approval gates, mutation report schema, local server security rules, and no-provider boundaries before extending UI implementation.
+
+### Acceptance
+
+- H1 through H5 page roles are documented.
+- Each page lists read state, allowed actions, hard gates, and blocked actions.
+- Mutation report schema is defined.
+- Local server security rules are defined: `127.0.0.1`, reject LAN, nonce/CSRF for mutations, no arbitrary paths, no shell commands, no public tunnel.
+- Provider calls are excluded from H1 and require separate later authorization.
+- Fake IDs, pending IDs, source overwrite, and secret exposure are blocked.
+
+### Validation
+
+- `git diff --check`
+
+### Notes
+
+- This is a docs-only planning task inserted before H1 implementation.
+
+## R3-1_MEDIA_ARTIFACT_IMPORT_CORE - Media Artifact Import Core
+
+status: DONE
+priority: P0
+lane: Safe Local Production Lane
+project: AI Video Production Workspace Three Route Plan
+scope: data/imports image import hardening, image validation, app-controlled media artifact registration, unsafe import rejection, immutable import report
+branch: local-only
+depends_on: R2-0_HUMAN_WORKBENCH_UX_STATE_PLAN
+source_plan: docs/three_routes/source_v1_1/03_R3_LOCAL_APP_ROUTE_TASKBOOK.md
+report_path: data/reports/r3_1_media_artifact_import_core_result.json
+allowed_delivery: source_code_change,tests,fixtures,immutable_report,latest_pointer_report
+blocked_delivery: provider_call,video_generation,secret_read,env_file_edit,source_overwrite,arbitrary_path_read,push,tag,release,deploy
+created_at: 2026-07-06T20:39:06+08:00
+updated_at: 2026-07-06T21:08:00+08:00
+claimed_at: 2026-07-06T21:08:00+08:00
+claim_run_id: codex-20260706-203847-three-route-sustained
+claimed_by: Codex sustained executor
+completed_at: 2026-07-06T21:17:00+08:00
+completed_by: Codex sustained executor
+result: PASS
+
+### Goal
+
+Stabilize `data/imports -> register_media_artifact -> data/media/artifacts/images -> real artifact_id` for approved WebGPT keyframes.
+
+### Acceptance
+
+- Approved SHOT image becomes an active `image/storyboard_image` Media Artifact.
+- PNG/JPEG readability, width, height, aspect ratio, size bytes, and checksum are recorded.
+- Path traversal and symlink escape are rejected.
+- Audit images, references, docs, zip, non-images, unreadable images, `PENDING_*`, and fake IDs are rejected.
+- Source files are not overwritten.
+- Immutable import report and latest pointer are written.
+- Provider boundary remains false.
+
+### Validation
+
+- `npm run typecheck`
+- `npm run test:g0`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Notes
+
+- If existing implementation already satisfies this, produce a closeout report and targeted tests rather than rewriting.
+
+## R3-2_STORYBOARD_PACKAGE_FREEZE_CORE - Storyboard Package Freeze Core
+
+status: DONE
+priority: P0
+lane: Safe Local Production Lane
+project: AI Video Production Workspace Three Route Plan
+scope: validate/import/freeze app-ready Storyboard Package with active artifact IDs and immutable reports
+branch: local-only
+depends_on: R3-1_MEDIA_ARTIFACT_IMPORT_CORE
+source_plan: docs/three_routes/source_v1_1/03_R3_LOCAL_APP_ROUTE_TASKBOOK.md
+report_path: data/reports/r3_2_storyboard_package_freeze_core_result.json
+allowed_delivery: source_code_change,tests,immutable_report,latest_pointer_report
+blocked_delivery: provider_call,video_generation,secret_read,env_file_edit,fake_id_acceptance,source_overwrite,push,tag,release,deploy
+created_at: 2026-07-06T20:39:06+08:00
+updated_at: 2026-07-06T21:23:00+08:00
+claimed_at: 2026-07-06T21:17:00+08:00
+claim_run_id: codex-20260706-203847-three-route-sustained
+claimed_by: Codex sustained executor
+completed_at: 2026-07-06T21:23:00+08:00
+completed_by: Codex sustained executor
+result: PASS
+
+### Goal
+
+Ensure WebGPT shot scripts and real app-returned artifact IDs can be validated and frozen into an app-ready Storyboard Package.
+
+### Acceptance
+
+- Complete 4-shot package validates PASS.
+- Incomplete package returns `BLOCK_WITH_REASON`.
+- `PENDING_*`, fake IDs, missing active storyboard images, missing description, missing video prompt, missing duration, and invalid negative prompt are rejected.
+- Raw `data/imports` paths are not allowed in the provider chain.
+- Package is frozen immutably and previous package versions are not overwritten.
+- Real `storyboard_package_id` is returned only by the app.
+
+### Validation
+
+- `npm run typecheck`
+- `npm run test:g0`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Notes
+
+- This task gates H1 package freeze behavior.
+
+## R2-2_H2_CANARY_WORKBENCH - H2 Canary Workbench
+
+status: DONE
+priority: P1
+lane: Safe Local Production Lane
+project: AI Video Production Workspace Three Route Plan
+scope: Provider Guard and Canary UI for dry-run readiness, authorization explanation, and redacted provider state
+branch: local-only
+depends_on: R1-0_WEBGPT_MCP_BOUNDARY_AND_READONLY_BRIDGE_PLAN
+source_plan: docs/three_routes/source_v1_1/04_R2_HUMAN_WORKBENCH_ROUTE_TASKBOOK.md
+report_path: data/reports/r2_2_h2_canary_workbench_result.json
+allowed_delivery: source_code_change,tests,local_ui,dry_run_report,redacted_status_display
+blocked_delivery: provider_call,network_call_attempted,video_generation,secret_printing,env_file_edit,public_tunnel,push,tag,release,deploy
+created_at: 2026-07-06T20:39:06+08:00
+updated_at: 2026-07-06T21:35:00+08:00
+claimed_at: 2026-07-06T21:28:00+08:00
+claim_run_id: codex-20260706-203847-three-route-sustained
+claimed_by: Codex sustained executor
+completed_at: 2026-07-06T21:35:00+08:00
+completed_by: Codex sustained executor
+result: PASS
+
+### Goal
+
+Add or specify the H2 Provider Guard / Canary workbench page so Jenn can inspect readiness and authorization requirements before any real provider call.
+
+### Acceptance
+
+- Active provider, env check, preflight, selected canary input, dimensions, ratio, Runway ratio, duration, and `max_submit_calls=1` are visible.
+- No regeneration and no batch status are visible.
+- Dry-run canary plan can be generated or opened.
+- Secret values are never shown.
+- Real submit requires separate exact Jenn authorization and is not performed by this task.
+
+### Validation
+
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Notes
+
+- This task may implement UI or produce a detailed implementation spec depending on current code reality.
+
+## R1-1_MCP_V0_READ_ONLY_SERVICE - MCP v0 Read-Only Service
+
+status: DONE
+priority: P1
+lane: Safe Local Production Lane
+project: AI Video Production Workspace Three Route Plan
+scope: WebGPT MCP or bridge v0 read-only tools for app-side status, reports, and redacted provider readiness
+branch: local-only
+depends_on: R2-2_H2_CANARY_WORKBENCH
+source_plan: docs/three_routes/source_v1_1/05_R1_WEBGPT_MCP_ROUTE_TASKBOOK.md
+report_path: data/reports/r1_1_mcp_v0_read_only_service_result.json
+allowed_delivery: source_code_change,tests,local_bridge,read_only_tools,docs_update
+blocked_delivery: mutation_tools,provider_tools,provider_call,secret_read,raw_filesystem_access,shell_execution,public_tunnel,push,tag,release,deploy
+created_at: 2026-07-06T20:39:06+08:00
+updated_at: 2026-07-06T21:43:00+08:00
+claimed_at: 2026-07-06T21:35:00+08:00
+claim_run_id: codex-20260706-203847-three-route-sustained
+claimed_by: Codex sustained executor
+completed_at: 2026-07-06T21:43:00+08:00
+completed_by: Codex sustained executor
+result: PASS
+
+### Goal
+
+Allow WebGPT to read real app-side status without guessing artifact, shot, package, report, or provider readiness state.
+
+### Acceptance
+
+- Read-only tool schema is implemented or frozen.
+- Tools include workspace status, project status, import candidates, media artifacts, shot status, package status, latest reports, and redacted provider readiness summary.
+- No mutation, provider call, shell execution, secret read, raw filesystem exposure, or public tunnel is implemented.
+- GPT cannot invent IDs because all IDs returned are app-side facts.
+
+### Validation
+
+- `npm run typecheck`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Notes
+
+- If implementation would require external hosting or public tunnel, stop and report `BLOCK_WITH_REASON`.
+
+## R3-4_PACKAGE_BASED_SHOT_GENERATION - Package-Based Shot Generation
+
+status: DONE
+priority: P1
+lane: Safe Local Production Lane
+project: AI Video Production Workspace Three Route Plan
+scope: frozen package to Generation Run to generated_clip artifact path, with provider hard gate and local validation
+branch: local-only
+depends_on: R1-1_MCP_V0_READ_ONLY_SERVICE
+source_plan: docs/three_routes/source_v1_1/03_R3_LOCAL_APP_ROUTE_TASKBOOK.md
+report_path: data/reports/r3_4_package_based_shot_generation_result.json
+allowed_delivery: source_code_change,tests,dry_run_provider_request_builder,provider_gate,download_adapter_mock,ffprobe_validation_logic,immutable_report
+blocked_delivery: live_provider_call_without_exact_authorization,secret_printing,source_overwrite,raw_data_imports_provider_input,automatic_regeneration,push,tag,release,deploy
+created_at: 2026-07-06T20:39:06+08:00
+updated_at: 2026-07-06T21:52:00+08:00
+claimed_at: 2026-07-06T21:43:00+08:00
+claim_run_id: codex-20260706-203847-three-route-sustained
+claimed_by: Codex sustained executor
+completed_at: 2026-07-06T21:52:00+08:00
+completed_by: Codex sustained executor
+result: PASS
+
+### Goal
+
+Implement the package-based generation path from frozen Storyboard Package shot to Generation Run and generated clip artifact, while stopping before any unapproved live provider submit.
+
+### Acceptance
+
+- `create_generation_run_from_package_shot` or equivalent is implemented.
+- Provider request body builder maps project `9:16` to Runway `768:1280`.
+- Provider hard gate blocks live submit without exact current Jenn authorization.
+- Output downloader and generated clip artifact registration are implemented using mock or fixture validation when no live call is authorized.
+- ffprobe validation logic is present.
+- Old versions are not overwritten.
+- Raw WebGPT image paths and `data/imports` are never used as provider input.
+
+### Validation
+
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run test:g0`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Notes
+
+- If exact current authorization for a live provider call is absent, complete safe implementation and report live generation as not performed.
+
+## R2-3_H3_VIDEO_REVIEW_WORKBENCH - H3 Video Review Workbench
+
+status: DONE
+priority: P1
+lane: Safe Local Production Lane
+project: AI Video Production Workspace Three Route Plan
+scope: human video review UI for generated_clip artifacts, ffprobe metadata, Generation Run, approval, rejection, and regeneration request drafts
+branch: local-only
+depends_on: R3-4_PACKAGE_BASED_SHOT_GENERATION
+source_plan: docs/three_routes/source_v1_1/04_R2_HUMAN_WORKBENCH_ROUTE_TASKBOOK.md
+report_path: data/reports/r2_3_h3_video_review_workbench_result.json
+allowed_delivery: source_code_change,tests,local_ui,review_report,regeneration_request_draft
+blocked_delivery: automatic_regeneration,provider_call,secret_read,source_overwrite,push,tag,release,deploy
+created_at: 2026-07-06T20:39:06+08:00
+updated_at: 2026-07-06T22:08:00+08:00
+claimed_at: 2026-07-06T21:52:00+08:00
+claim_run_id: codex-20260706-203847-three-route-sustained
+claimed_by: Codex sustained executor
+completed_at: 2026-07-06T22:08:00+08:00
+completed_by: Codex sustained executor
+result: PASS
+
+### Goal
+
+Let Jenn review generated clips, approve or reject them, record rejection reasons, and create regeneration request drafts without automatically regenerating.
+
+### Acceptance
+
+- generated_clip artifact playback or metadata view is available.
+- ffprobe metadata and Generation Run are visible.
+- Approve and reject decisions are saved.
+- Approved clip writes `accepted_clip_artifact_id`.
+- Rejected clip remains traceable.
+- Regeneration request is a draft and requires explicit confirmation before execution.
+
+### Validation
+
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Notes
+
+- This task must not trigger regeneration.
+
+## R1-2_MCP_V0_5_DRAFT_SUBMISSION - MCP v0.5 Draft Submission
+
+status: DONE
+priority: P2
+lane: Safe Local Production Lane
+project: AI Video Production Workspace Three Route Plan
+scope: WebGPT draft submission tools stored separately from production truth
+branch: local-only
+depends_on: R2-3_H3_VIDEO_REVIEW_WORKBENCH
+source_plan: docs/three_routes/source_v1_1/05_R1_WEBGPT_MCP_ROUTE_TASKBOOK.md
+report_path: data/reports/r1_2_mcp_v0_5_draft_submission_result.json
+allowed_delivery: source_code_change,tests,draft_storage,tool_schema,docs_update
+blocked_delivery: direct_freeze,direct_artifact_registration,provider_call,secret_read,shell_execution,source_overwrite,push,tag,release,deploy
+created_at: 2026-07-06T20:39:06+08:00
+updated_at: 2026-07-06T22:22:00+08:00
+claimed_at: 2026-07-06T22:09:00+08:00
+claim_run_id: codex-20260706-203847-three-route-sustained
+claimed_by: Codex sustained executor
+completed_at: 2026-07-06T22:22:00+08:00
+completed_by: Codex sustained executor
+result: PASS
+
+### Goal
+
+Allow GPT to submit creative drafts and proposed links without changing production truth or bypassing human workbench approval.
+
+### Acceptance
+
+- Draft tools are defined for shot script draft, storyboard package draft, artifact link proposal, validation proposal, and freeze request proposal.
+- Drafts are stored separately from app-ready truth.
+- Human Workbench can review drafts.
+- Fake IDs are rejected.
+- No frozen package is created directly by GPT.
+
+### Validation
+
+- `npm run typecheck`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Notes
+
+- Draft submission is not a production mutation.
+
+## R1-3_MCP_V1_HUMAN_CONFIRMED_HANDOFF_TOOLS - MCP v1 Human-Confirmed Handoff Tools
+
+status: DONE
+priority: P2
+lane: Safe Local Production Lane
+project: AI Video Production Workspace Three Route Plan
+scope: pending action request tools that require Human Workbench confirmation before Local App mutation
+branch: local-only
+depends_on: R1-2_MCP_V0_5_DRAFT_SUBMISSION
+source_plan: docs/three_routes/source_v1_1/05_R1_WEBGPT_MCP_ROUTE_TASKBOOK.md
+report_path: data/reports/r1_3_mcp_v1_human_confirmed_handoff_tools_result.json
+allowed_delivery: source_code_change,tests,pending_action_queue,tool_schema,docs_update
+blocked_delivery: direct_mutation_without_human_confirmation,provider_call,secret_read,shell_execution,source_overwrite,push,tag,release,deploy
+created_at: 2026-07-06T20:39:06+08:00
+updated_at: 2026-07-06T22:36:00+08:00
+claimed_at: 2026-07-06T22:23:00+08:00
+claim_run_id: codex-20260706-203847-three-route-sustained
+claimed_by: Codex sustained executor
+completed_at: 2026-07-06T22:36:00+08:00
+completed_by: Codex sustained executor
+result: PASS
+
+### Goal
+
+Allow GPT to request low-risk mutations by creating pending actions that Jenn must confirm or reject in the Human Workbench before Local App execution.
+
+### Acceptance
+
+- Tools are defined for request register media artifact from import, request link artifact to shot, request validate package, and request import package.
+- GPT request creates a pending action only.
+- Human Workbench displays pending action.
+- Jenn confirmation or rejection is required.
+- Local App executes mutation after confirmation and writes immutable report.
+
+### Validation
+
+- `npm run typecheck`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Notes
+
+- This task must not allow GPT to execute mutations alone.
+
+## R1-4_MCP_V2_REVIEW_ASSISTANT_TOOLS - MCP v2 Review Assistant Tools
+
+status: DONE
+priority: P2
+lane: Safe Local Production Lane
+project: AI Video Production Workspace Three Route Plan
+scope: GPT review assistant read and draft tools for generated clips and regeneration prompts
+branch: local-only
+depends_on: R1-3_MCP_V1_HUMAN_CONFIRMED_HANDOFF_TOOLS
+source_plan: docs/three_routes/source_v1_1/05_R1_WEBGPT_MCP_ROUTE_TASKBOOK.md
+report_path: data/reports/r1_4_mcp_v2_review_assistant_tools_result.json
+allowed_delivery: source_code_change,tests,review_note_drafts,tool_schema,docs_update
+blocked_delivery: final_human_approval,automatic_regeneration,provider_call,secret_read,shell_execution,source_overwrite,push,tag,release,deploy
+created_at: 2026-07-06T20:39:06+08:00
+updated_at: 2026-07-06T22:50:00+08:00
+claimed_at: 2026-07-06T22:37:00+08:00
+claim_run_id: codex-20260706-203847-three-route-sustained
+claimed_by: Codex sustained executor
+completed_at: 2026-07-06T22:50:00+08:00
+completed_by: Codex sustained executor
+result: PASS
+
+### Goal
+
+Let GPT read generated clip metadata and draft review notes, rejection reasons, and regeneration prompts without making final approval or triggering regeneration.
+
+### Acceptance
+
+- Tools are defined for get generation run, get generated clip metadata, submit review note draft, propose rejection reason, and propose regeneration prompt.
+- Human final approval remains required.
+- Regeneration is not triggered automatically.
+- No provider call, shell execution, or secret exposure occurs.
+
+### Validation
+
+- `npm run typecheck`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Notes
+
+- GPT suggestions remain drafts until human action.
+
+## R3-5_REVIEW_REGENERATION_FINAL_ASSEMBLY_CORE - Review Regeneration Final Assembly Core
+
+status: DONE
+priority: P1
+lane: Safe Local Production Lane
+project: AI Video Production Workspace Three Route Plan
+scope: local core for clip review, regeneration run creation, no-overwrite versioning, accepted clip selection, final assembly report
+branch: local-only
+depends_on: R1-4_MCP_V2_REVIEW_ASSISTANT_TOOLS
+source_plan: docs/three_routes/source_v1_1/03_R3_LOCAL_APP_ROUTE_TASKBOOK.md
+report_path: data/reports/r3_5_review_regeneration_final_assembly_core_result.json
+allowed_delivery: source_code_change,tests,local_review_core,regeneration_request_core,no_overwrite_versioning,assembly_readiness_gate,immutable_report
+blocked_delivery: live_provider_call_without_exact_authorization,source_overwrite,final_assembly_without_accepted_clips,secret_read,push,tag,release,deploy
+created_at: 2026-07-06T20:39:06+08:00
+updated_at: 2026-07-06T23:00:00+08:00
+claimed_at: 2026-07-06T22:51:00+08:00
+claim_run_id: codex-20260706-203847-three-route-sustained
+claimed_by: Codex sustained executor
+completed_at: 2026-07-06T23:00:00+08:00
+completed_by: Codex sustained executor
+result: PASS
+
+### Goal
+
+Implement or harden the local core for clip approval, rejection, regeneration run creation, no-overwrite clip versioning, accepted clip selection, and final assembly readiness.
+
+### Acceptance
+
+- `mark_clip_approved`, `mark_clip_rejected`, and `create_regeneration_run` or equivalents exist.
+- Rejected clip remains traceable.
+- Regeneration creates a new Generation Run and never overwrites old artifacts.
+- Approved clip becomes `accepted_clip_artifact_id`.
+- Final assembly is blocked until all required shots have accepted clips.
+- Final assembly report is written when assembly is executed.
+- Live provider regeneration requires exact authorization and is not automatic.
+
+### Validation
+
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run test:m0`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Notes
+
+- This task may complete local core and block live regeneration if provider authorization is absent.
+
+## R2-4_H4_FINAL_ASSEMBLY_WORKBENCH - H4 Final Assembly Workbench
+
+status: DONE
+priority: P1
+lane: Safe Local Production Lane
+project: AI Video Production Workspace Three Route Plan
+scope: final assembly readiness UI, clip order preview, final assembly confirmation, export artifact display
+branch: local-only
+depends_on: R3-5_REVIEW_REGENERATION_FINAL_ASSEMBLY_CORE
+source_plan: docs/three_routes/source_v1_1/04_R2_HUMAN_WORKBENCH_ROUTE_TASKBOOK.md
+report_path: data/reports/r2_4_h4_final_assembly_workbench_result.json
+allowed_delivery: source_code_change,tests,local_ui,assembly_readiness_display,final_report_display
+blocked_delivery: final_assembly_without_confirmation,source_overwrite,secret_read,provider_call,push,tag,release,deploy
+created_at: 2026-07-06T20:39:06+08:00
+updated_at: 2026-07-06T23:15:00+08:00
+claimed_at: 2026-07-06T23:00:00+08:00
+claim_run_id: codex-20260706-203847-three-route-sustained
+claimed_by: Codex sustained executor
+completed_at: 2026-07-06T23:15:00+08:00
+completed_by: Codex sustained executor
+result: PASS
+
+### Goal
+
+Let Jenn inspect final assembly readiness, preview clip order, confirm final assembly, and view final video artifact evidence.
+
+### Acceptance
+
+- All required shots must have accepted clips before assembly.
+- Assembly readiness and blockers are visible.
+- Final assembly approval requires explicit human confirmation.
+- Final assembly report is visible.
+- Final video artifact display includes ffprobe validation status when available.
+- Source clips are not overwritten.
+
+### Validation
+
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Notes
+
+- UI may expose final assembly action only if local core gates pass.
+
+## R3-6_MEMORY_ASSET_SAVEBACK_CORE - Memory Asset Saveback Core
+
+status: DONE
+priority: P2
+lane: Safe Local Production Lane
+project: AI Video Production Workspace Three Route Plan
+scope: Memory Saveback Proposal, Asset, Reference, Memory Item, Memory Recall Pack local core with human confirmation boundary
+branch: local-only
+depends_on: R2-4_H4_FINAL_ASSEMBLY_WORKBENCH
+source_plan: docs/three_routes/source_v1_1/03_R3_LOCAL_APP_ROUTE_TASKBOOK.md
+report_path: data/reports/r3_6_memory_asset_saveback_core_result.json
+allowed_delivery: source_code_change,tests,proposal_report,asset_reference_schema,memory_recall_pack_schema
+blocked_delivery: long_term_memory_write_without_human_confirmation,secret_read,private_state_read,source_overwrite,push,tag,release,deploy
+created_at: 2026-07-06T20:39:06+08:00
+updated_at: 2026-07-06T23:25:00+08:00
+claimed_at: 2026-07-06T23:15:00+08:00
+claim_run_id: codex-20260706-203847-three-route-sustained
+claimed_by: Codex sustained executor
+completed_at: 2026-07-06T23:25:00+08:00
+completed_by: Codex sustained executor
+result: PASS
+
+### Goal
+
+Create the local core for project closeout memory and asset saveback proposals without writing long-term memory unless Jenn confirms.
+
+### Acceptance
+
+- Closeout creates a Memory Saveback Proposal.
+- Proposal items preserve provenance to project, shot, artifact, and run.
+- Approved items can become Memory Items only after human confirmation.
+- Rejected items are not saved.
+- Asset and Reference updates preserve provenance.
+- Memory Recall Pack can be generated for future GPT use.
+
+### Validation
+
+- `npm run typecheck`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Notes
+
+- If no secure memory channel is available or approved, stop at proposal/report generation.
+
+## R2-5_H5_MEMORY_ASSET_WORKBENCH - H5 Memory Asset Workbench
+
+status: DONE
+priority: P2
+lane: Safe Local Production Lane
+project: AI Video Production Workspace Three Route Plan
+scope: Memory Saveback Proposal review, asset/reference curation UI, approve/reject/edit with provenance
+branch: local-only
+depends_on: R3-6_MEMORY_ASSET_SAVEBACK_CORE
+source_plan: docs/three_routes/source_v1_1/04_R2_HUMAN_WORKBENCH_ROUTE_TASKBOOK.md
+report_path: data/reports/r2_5_h5_memory_asset_workbench_result.json
+allowed_delivery: source_code_change,tests,local_ui,proposal_review,asset_reference_review
+blocked_delivery: automatic_memory_save,secret_read,private_state_read,source_overwrite,push,tag,release,deploy
+created_at: 2026-07-06T20:39:06+08:00
+updated_at: 2026-07-06T23:35:00+08:00
+claimed_at: 2026-07-06T23:25:00+08:00
+claim_run_id: codex-20260706-203847-three-route-sustained
+claimed_by: Codex sustained executor
+completed_at: 2026-07-06T23:35:00+08:00
+completed_by: Codex sustained executor
+result: PASS
+
+### Goal
+
+Let Jenn review, edit, approve, or reject Memory Saveback Proposal items and asset/reference updates with clear provenance.
+
+### Acceptance
+
+- Memory Saveback Proposal is visible.
+- Human can approve, reject, or edit memory items.
+- Asset/reference updates preserve provenance.
+- No automatic memory save occurs without confirmation.
+- Rejected memory items remain rejected and are not written to long-term memory.
+
+### Validation
+
+- `npm run typecheck`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Notes
+
+- UI-visible text should be Simplified Chinese.
+
+## R1-5_MCP_V3_PRODUCTION_ASSISTANT - MCP v3 Production Assistant
+
+status: DONE
+priority: P2
+lane: Safe Local Production Lane
+project: AI Video Production Workspace Three Route Plan
+scope: GPT production assistant planning tools for generation, regeneration, assembly, and memory saveback proposals
+branch: local-only
+depends_on: R2-5_H5_MEMORY_ASSET_WORKBENCH
+source_plan: docs/three_routes/source_v1_1/05_R1_WEBGPT_MCP_ROUTE_TASKBOOK.md
+report_path: data/reports/r1_5_mcp_v3_production_assistant_result.json
+allowed_delivery: source_code_change,tests,planning_tools,tool_schema,docs_update
+blocked_delivery: real_provider_call,final_delivery_approval,long_term_memory_write,secret_read,shell_execution,source_overwrite,push,tag,release,deploy
+created_at: 2026-07-06T20:39:06+08:00
+updated_at: 2026-07-06T23:45:00+08:00
+claimed_at: 2026-07-06T23:35:00+08:00
+claim_run_id: codex-20260706-203847-three-route-sustained
+claimed_by: Codex sustained executor
+completed_at: 2026-07-06T23:45:00+08:00
+completed_by: Codex sustained executor
+result: PASS
+
+### Goal
+
+Let GPT assist with generation, regeneration, final assembly, and memory saveback planning while Human Workbench remains the hard gate and Local App remains the only executor.
+
+### Acceptance
+
+- Tools are defined for propose generation plan, propose regeneration plan, propose final assembly plan, and propose memory saveback.
+- GPT proposes but does not execute real provider calls.
+- GPT cannot approve final delivery.
+- GPT cannot write long-term memory.
+- Human Workbench remains hard gate and Local App remains executor.
+
+### Validation
+
+- `npm run typecheck`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Notes
+
+- This is the final full-route assistant layer and should not weaken earlier boundaries.

@@ -1,0 +1,79 @@
+{
+  "task": "R3-1_MEDIA_ARTIFACT_IMPORT_CORE",
+  "result": "PASS",
+  "created_at": "2026-07-06T21:14:00+08:00",
+  "workspace": "A:\\AI Video Production Workspace",
+  "source_report": "data/reports/g0_r1_import_prep_result_20462019-fa05-44eb-a912-2b9806ae4486.json",
+  "latest_source_report": "data/reports/g0_r1_import_prep_result.json",
+  "imported_artifacts": [
+    {
+      "shot_id": "SHOT_001",
+      "artifact_id": "artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7",
+      "artifact_type": "image",
+      "role": "storyboard_image",
+      "status": "active",
+      "registration_mode": "reused_existing_active_artifact"
+    },
+    {
+      "shot_id": "SHOT_002",
+      "artifact_id": "artifact_9ad1bfe1-c830-458c-a413-39fd15c9d0c0",
+      "artifact_type": "image",
+      "role": "storyboard_image",
+      "status": "active",
+      "registration_mode": "reused_existing_active_artifact"
+    },
+    {
+      "shot_id": "SHOT_003",
+      "artifact_id": "artifact_a7c5d752-cdd6-478e-b396-5790df3af05f",
+      "artifact_type": "image",
+      "role": "storyboard_image",
+      "status": "active",
+      "registration_mode": "reused_existing_active_artifact"
+    },
+    {
+      "shot_id": "SHOT_004",
+      "artifact_id": "artifact_e35ff0c0-d0fc-4079-bc4b-38b4dbd88cf7",
+      "artifact_type": "image",
+      "role": "storyboard_image",
+      "status": "active",
+      "registration_mode": "reused_existing_active_artifact"
+    }
+  ],
+  "rejected_assets": [
+    {
+      "asset": "audit/FAILED_LAYOUT_OUTPUT_01_DO_NOT_USE_AS_KEYFRAME.png",
+      "status": "REJECTED_AUDIT_IMAGE"
+    },
+    {
+      "asset": "audit/FAILED_LAYOUT_OUTPUT_02_DO_NOT_USE_AS_KEYFRAME.png",
+      "status": "REJECTED_AUDIT_IMAGE"
+    },
+    {
+      "asset": "references/product_reference_gray_skullcap.png",
+      "status": "REJECTED_PRODUCT_REFERENCE"
+    }
+  ],
+  "hard_gates": {
+    "accepted_pending_ids": false,
+    "audit_images_imported": false,
+    "product_reference_imported_as_storyboard_image": false,
+    "source_assets_overwritten": false,
+    "arbitrary_path_read": false
+  },
+  "validation": {
+    "npm run g0:r1:import-prep": "PASS",
+    "npm run typecheck": "PASS",
+    "npm run test:g0": "PASS",
+    "npm run secret:scan": "PASS",
+    "git diff --check": "PASS"
+  },
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runway_called": false,
+    "runninghub_called": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "source_assets_overwritten": false,
+    "secret_values_exposed": false
+  }
+}

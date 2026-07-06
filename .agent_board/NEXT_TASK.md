@@ -1,61 +1,46 @@
-# NEXT TASK
+# NEXT_TASK.md
 
-Task ID: M0-H
 Status: DONE
-Priority: P0
+
+Task: R1-5_MCP_V3_PRODUCTION_ASSISTANT
+
+Title: MCP v3 Production Assistant
+
+Priority: P2
+
 Lane: Safe Local Production Lane
-Project: M0 Video Loop Validation
 
-Title:
-Validation And Closeout
+Project: AI Video Production Workspace Three Route Plan
 
-Claimed by:
-Codex M0 executor
+Claimed by: Codex sustained executor
 
-Goal:
-Run final M0 validation and produce honest closeout evidence.
+Claim run ID: codex-20260706-203847-three-route-sustained
 
-Acceptance:
-- npm run test:m0 passes.
-- npm run demo:m0 passes and exercises the tool interface.
-- npm run closeout:m0 writes data/reports/m0_closeout.yaml.
-- Closeout report includes all required validation, evidence, artifact summary, scenarios, hard gates, known gaps, and next recommendation.
-- Implementation summary is produced.
-- Self-review report is produced.
+Claimed at: 2026-07-06T23:35:00+08:00
 
-Validation:
-- npm run test:m0
-- npm run demo:m0
-- npm run closeout:m0
-- closeout YAML structure check
-- self-review structure check
+Completed by: Codex sustained executor
 
-Allowed delivery:
-- local_file_update
-- tests
-- demo
-- closeout_report
-- self_review
-- validation_log
-- handoff
+Completed at: 2026-07-06T23:45:00+08:00
 
-Blocked delivery:
-- push
-- tag
-- release
-- deploy
-- publish
-- real_provider_call
-- provider_credential_read
-- secret_read
-- state_private_read
-- production_config_change
+Result: PASS
 
-Evidence:
-- data/reports/m0_closeout.yaml
-- data/reports/m0_implementation_summary.yaml
-- data/reports/m0_self_review.yaml
-- data/reports/m0_demo_result.json
+## Goal
 
-Last updated:
-2026-07-06T12:13:42+08:00
+Let GPT assist with generation, regeneration, final assembly, and memory saveback planning while Human Workbench remains the hard gate and Local App remains the only executor.
+
+## Evidence
+
+- `data/reports/r1_5_mcp_v3_production_assistant_result.json`
+- `data/reports/r1_5_mcp_v3_production_assistant_result_28dcfff8-329d-4e3a-a6fb-2017ecb2aed7.json`
+
+## Validation
+
+- `npm run typecheck`
+- `npm run test:webgpt:production`
+- `npm run r1:5:production-assistant`
+- `npm run secret:scan`
+- `git diff --check`
+
+## Stop Reason
+
+No eligible READY tasks remain in `.agent_board/TASK_BACKLOG.md`.

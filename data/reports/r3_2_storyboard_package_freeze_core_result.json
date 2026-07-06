@@ -1,0 +1,87 @@
+{
+  "task": "R3-2_STORYBOARD_PACKAGE_FREEZE_CORE",
+  "result": "PASS",
+  "run_id": "codex-20260706-203847-three-route-sustained",
+  "completed_at": "2026-07-06T21:23:00+08:00",
+  "scope": "validate/import/freeze app-ready Storyboard Package with active artifact IDs and immutable reports",
+  "package_freeze": {
+    "command": "npm run g0:r1:freeze",
+    "result": "PASS",
+    "storyboard_package_id": "storyboard_package_1e5c1eca-624e-4687-9775-31e4b59f428a",
+    "shot_count": 4,
+    "shot_ids": [
+      "g0_r1_shot_001",
+      "g0_r1_shot_002",
+      "g0_r1_shot_003",
+      "g0_r1_shot_004"
+    ],
+    "immutable_report": "data/reports/g0_r1_package_freeze_result_047b0378-3f50-41fa-bd60-24214fd0fc63.json",
+    "latest_report": "data/reports/g0_r1_package_freeze_result.json"
+  },
+  "acceptance": {
+    "complete_four_shot_package_validates_pass": true,
+    "incomplete_package_returns_block_with_reason": true,
+    "pending_fake_missing_inactive_or_incomplete_inputs_are_rejected": true,
+    "raw_data_imports_paths_are_not_provider_chain_inputs": true,
+    "package_is_frozen_immutably_without_overwriting_previous_versions": true,
+    "storyboard_package_id_is_returned_by_app": true
+  },
+  "negative_gates": {
+    "fake_artifact_id": "ARTIFACT_NOT_FOUND",
+    "pending_artifact": "ARTIFACT_PENDING_UPLOAD",
+    "missing_shot_description": "MISSING_REQUIRED_FIELD",
+    "missing_video_prompt": "MISSING_REQUIRED_FIELD",
+    "missing_duration_seconds": "MISSING_REQUIRED_FIELD",
+    "invalid_negative_prompt": "MISSING_REQUIRED_FIELD",
+    "raw_data_imports_path": "ARTIFACT_NOT_FOUND",
+    "unapproved_shot": "USER_APPROVAL_REQUIRED",
+    "package_freeze_failure_result_label": "BLOCK_WITH_REASON"
+  },
+  "validation": [
+    {
+      "command": "npm run g0:r1:freeze",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run typecheck",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run test:g0",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run secret:scan",
+      "result": "PASS"
+    },
+    {
+      "command": "git diff --check",
+      "result": "PASS"
+    }
+  ],
+  "changed_files": [
+    "scripts/g0-r1-package-freeze.ts",
+    "tests/g0-pregen.test.ts",
+    "data/reports/g0_r1_package_freeze_result.json",
+    "data/reports/g0_r1_package_freeze_result_047b0378-3f50-41fa-bd60-24214fd0fc63.json",
+    "data/reports/r3_2_storyboard_package_freeze_core_result.json"
+  ],
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runway_called": false,
+    "runninghub_called": false,
+    "video_generated": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "source_assets_overwritten": false,
+    "secret_values_exposed": false
+  },
+  "delivery": {
+    "commit": null,
+    "push": false,
+    "tag": false,
+    "release": false,
+    "deploy": false
+  },
+  "next_task": "R1-0_WEBGPT_MCP_BOUNDARY_AND_READONLY_BRIDGE_PLAN"
+}

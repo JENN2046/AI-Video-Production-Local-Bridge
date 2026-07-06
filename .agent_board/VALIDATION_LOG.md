@@ -371,3 +371,567 @@ Not run reason:
 
 Notes:
 - Overall M0 result is `PASS_WITH_GAPS` because real provider integration is intentionally disabled and external image transfer is `NOT_TESTED`.
+
+### R3-0 - 2026-07-06T20:44:30+08:00
+
+Command:
+
+```bash
+git diff --check
+```
+
+Result:
+
+```text
+PASS
+```
+
+Evidence:
+- `docs/three_routes/r3_0_local_app_contract_freeze_result.md`
+
+Notes:
+- Contract-only task. No provider call, video generation, secret read, env edit, source code change, push, tag, release, or deploy occurred.
+
+### R2-1 - 2026-07-06T20:51:20+08:00
+
+Commands:
+
+```bash
+npm run typecheck
+npm run test:m1
+npm run test:g0
+npm run test:h1
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS
+```
+
+Evidence:
+- `data/reports/h1_handoff_workbench_mvp_result.json`
+- H1 local server smoke check passed on `127.0.0.1:4181`.
+
+Notes:
+- H1 UI is Simplified Chinese.
+- H1 smoke check confirmed localhost binding, bootstrap nonce, malicious Host rejection, and provider boundary false flags.
+
+### R3-3 - 2026-07-06T20:59:00+08:00
+
+Commands:
+
+```bash
+npm run env:check
+npm run provider:preflight
+npm run runway:canary
+npm run typecheck
+npm run test:m1
+npm run test:g0
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_READY_FOR_USER_AUTHORIZATION
+```
+
+Evidence:
+- `data/reports/r3_3_strict_single_runway_canary_result.json`
+- `data/reports/m1_r0_runway_canary_dry_run_report.json`
+
+Notes:
+- `runway:canary` ran in dry-run mode only.
+- `network_call_attempted=false`, `runway_called=false`, `runninghub_called=false`, `provider_credits_consumed=false`, and `real_video_generated=false`.
+- Project aspect ratio `9:16` maps to Runway API ratio `768:1280`; direct `9:16` is not sent to Runway.
+
+### R2-0 - 2026-07-06T21:08:00+08:00
+
+Command:
+
+```bash
+git diff --check
+```
+
+Result:
+
+```text
+PASS
+```
+
+Evidence:
+- `docs/three_routes/r2_0_human_workbench_ux_state_plan.md`
+
+Notes:
+- Docs-only planning task. No provider call, video generation, secret read, source code change, public tunnel, push, tag, release, or deploy occurred.
+
+### R3-1 - 2026-07-06T21:17:00+08:00
+
+Commands:
+
+```bash
+npm run g0:r1:import-prep
+npm run typecheck
+npm run test:g0
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS
+```
+
+Evidence:
+- `data/reports/r3_1_media_artifact_import_core_result.json`
+- `data/reports/g0_r1_import_prep_result_20462019-fa05-44eb-a912-2b9806ae4486.json`
+
+Notes:
+- Four approved G0-R1 keyframes resolve to active app `image/storyboard_image` artifacts.
+- Audit and product-reference assets were rejected from storyboard image flow.
+
+### R3-2 - 2026-07-06T21:23:00+08:00
+
+Commands:
+
+```bash
+npm run g0:r1:freeze
+npm run typecheck
+npm run test:g0
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS
+```
+
+Evidence:
+- `data/reports/r3_2_storyboard_package_freeze_core_result.json`
+- `data/reports/g0_r1_package_freeze_result_047b0378-3f50-41fa-bd60-24214fd0fc63.json`
+
+Notes:
+- Four-shot app-ready Storyboard Package froze with app-returned artifact IDs and app-returned `storyboard_package_id`.
+- Negative gates cover fake IDs, pending artifacts, missing description, missing video prompt, missing duration, invalid negative prompt, raw `data/imports` paths, and unapproved shots.
+- Package-freeze failure reports now use `BLOCK_WITH_REASON`.
+- No provider call, video generation, regeneration, batch generation, secret read, source overwrite, push, tag, release, or deploy occurred.
+
+### R1-0 - 2026-07-06T21:28:00+08:00
+
+Command:
+
+```bash
+git diff --check
+```
+
+Result:
+
+```text
+PASS
+```
+
+Evidence:
+- `docs/three_routes/r1_0_webgpt_mcp_boundary_readonly_bridge_plan.md`
+
+Notes:
+- Docs-only MCP/Bridge boundary plan. No runtime MCP service, mutation tools, provider tools, secret read, public tunnel, push, tag, release, or deploy occurred.
+
+### R2-2 - 2026-07-06T21:35:00+08:00
+
+Commands:
+
+```bash
+npm run typecheck
+npm run test:m1
+npm run test:h1
+npm run secret:scan
+H1 H2 local server smoke check
+git diff --check
+```
+
+Result:
+
+```text
+PASS
+```
+
+Evidence:
+- `data/reports/r2_2_h2_canary_workbench_result.json`
+- `GET /api/canary` local smoke check on `127.0.0.1:4192`
+
+Notes:
+- H1 Workbench now includes a Chinese `金丝雀` page and read-only `/api/canary` endpoint.
+- The canary page opens the latest dry-run report and shows provider/preflight/input/ratio/duration/max-submit/authorization state without showing secret values.
+- Real submit remains unavailable from H1 and requires separate exact Jenn authorization outside this task.
+
+### R1-1 - 2026-07-06T21:43:00+08:00
+
+Commands:
+
+```bash
+npm run typecheck
+npm run test:webgpt:bridge
+npm run secret:scan
+WebGPT v0 read-only bridge smoke check
+git diff --check
+```
+
+Result:
+
+```text
+PASS
+```
+
+Evidence:
+- `data/reports/r1_1_mcp_v0_read_only_service_result.json`
+- `GET /api/tools` and `GET /api/tool/get_provider_readiness_summary_redacted` local smoke check on `127.0.0.1:4193`
+
+Notes:
+- The bridge is localhost-only and GET-only.
+- It exposes nine read-only tools and blocks POST with 405.
+- It returns app-side facts and rejects invented or pending artifact IDs.
+- No mutation, provider call, shell execution, secret read, raw filesystem exposure, public tunnel, push, tag, release, or deploy occurred.
+
+### R3-4 - 2026-07-06T21:52:00+08:00
+
+Commands:
+
+```bash
+npm run typecheck
+npm run r3:4:generate-shot
+npm run test:m1
+npm run test:g0
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS
+```
+
+Evidence:
+- `data/reports/r3_4_package_based_shot_generation_result.json`
+- `data/reports/r3_4_package_based_shot_generation_result_e7c8e120-c469-47eb-9c36-cd9b08a7d865.json`
+
+Notes:
+- Generated one mock `generated_clip` artifact from frozen package shot `g0_r1_shot_001`.
+- ffprobe validation returned `PASS`.
+- Runway request summary maps project `9:16` to `768:1280`.
+- Live provider submit remains blocked by default and no provider/network call occurred.
+
+### R2-3 - 2026-07-06T22:08:00+08:00
+
+Commands:
+
+```bash
+npm run typecheck
+npm run test:h1
+npm run test:m1
+npm run secret:scan
+H1 H3 local server smoke check
+git diff --check
+```
+
+Result:
+
+```text
+PASS
+```
+
+Evidence:
+- `data/reports/r2_3_h3_video_review_workbench_result.json`
+- `GET /` and `GET /api/review` local smoke check on `127.0.0.1:4194`
+
+Notes:
+- H1 Workbench now includes a Chinese `审片` page and read-only `/api/review` endpoint.
+- Generated clip review summary shows Generation Run metadata, ffprobe status, accepted clip state, and draft regeneration requests.
+- Review summary is capped to the latest 50 generated clips while reporting total available history to keep the UI responsive.
+- Approval writes `accepted_clip_artifact_id`; rejection creates a draft regeneration request only.
+- No automatic regeneration, provider call, network call, secret read, source overwrite, push, tag, release, or deploy occurred.
+
+### R1-2 - 2026-07-06T22:22:00+08:00
+
+Commands:
+
+```bash
+npm run typecheck
+npm run test:webgpt:drafts
+npm run test:h1
+npm run secret:scan
+WebGPT v0.5 draft bridge smoke check
+H1 GPT draft page smoke check
+git diff --check
+```
+
+Result:
+
+```text
+PASS
+```
+
+Evidence:
+- `data/reports/r1_2_mcp_v0_5_draft_submission_result.json`
+- `POST /api/draft/submit_shot_script_draft` local smoke check on `127.0.0.1:4195`
+- `GET /api/webgpt-drafts` local smoke check on `127.0.0.1:4196`
+
+Notes:
+- WebGPT v0.5 draft tools store drafts under `data/webgpt/draft_submissions.json`, which is separated from app-ready truth and ignored by git.
+- H1 Workbench now includes a Chinese `GPT 草稿` page.
+- Fake, pending, path-like, missing, and non-linkable IDs are rejected.
+- No direct artifact registration, package validation, package freeze, provider call, shell execution, secret read, source overwrite, push, tag, release, or deploy occurred.
+
+### R1-3 - 2026-07-06T22:36:00+08:00
+
+Commands:
+
+```bash
+npm run typecheck
+npm run test:webgpt:pending
+npm run test:h1
+npm run secret:scan
+WebGPT v1 handoff bridge smoke check
+H1 pending action page smoke check
+git diff --check
+```
+
+Result:
+
+```text
+PASS
+```
+
+Evidence:
+- `data/reports/r1_3_mcp_v1_human_confirmed_handoff_tools_result.json`
+- `POST /api/pending-action/request_validate_storyboard_package` local smoke check on `127.0.0.1:4197`
+- `GET /api/pending-actions` local smoke check on `127.0.0.1:4198`
+
+Notes:
+- WebGPT v1 pending action tools create pending actions only.
+- H1 Workbench now includes a Chinese `待确认` page with nonce-protected confirmation and rejection.
+- Confirmed actions execute local app mutations only after `human_confirmation=true` and write pending action reports.
+- No direct mutation without human confirmation, provider call, shell execution, secret read, source overwrite, push, tag, release, or deploy occurred.
+
+### R1-4 - 2026-07-06T22:50:00+08:00
+
+Commands:
+
+```bash
+npm run typecheck
+npm run test:webgpt:review
+npm run secret:scan
+WebGPT v2 review assistant bridge smoke check
+git diff --check
+```
+
+Result:
+
+```text
+PASS
+```
+
+Evidence:
+- `data/reports/r1_4_mcp_v2_review_assistant_tools_result.json`
+- `GET /api/review-tool/get_generated_clip_metadata` local smoke check on `127.0.0.1:4199`
+- `POST /api/review-tool/submit_review_note_draft` local smoke check on `127.0.0.1:4199`
+
+Notes:
+- WebGPT v2 review assistant tools can read Generation Run and generated clip metadata and submit review note/rejection/regeneration prompt drafts.
+- Human final approval remains unavailable to the assistant.
+- Regeneration is not triggered automatically.
+- No provider call, shell execution, secret read, source overwrite, push, tag, release, or deploy occurred.
+
+### R3-5 - 2026-07-06T23:00:00+08:00
+
+Commands:
+
+```bash
+npm run typecheck
+npm run r3:5:review-assembly
+npm run test:m1
+npm run test:m0
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS
+```
+
+Evidence:
+- `data/reports/r3_5_review_regeneration_final_assembly_core_result.json`
+- `data/reports/r3_5_review_regeneration_final_assembly_core_result_c01fde85-2b54-4f2c-bd91-264215b8c4df.json`
+
+Notes:
+- Local review, rejection, regeneration versioning, accepted clip selection, assembly readiness block, and explicit assembly confirmation passed through mock/local execution.
+- Regeneration created a new run and artifact without overwriting the rejected clip artifact.
+- Live provider regeneration remained gated and was not called.
+- No secret read, source overwrite, push, tag, release, or deploy occurred.
+
+### R2-4 - 2026-07-06T23:15:00+08:00
+
+Commands:
+
+```bash
+npm run typecheck
+npm run test:h1
+npm run r2:4:h4-workbench
+npm run test:m1
+npm run secret:scan
+H4 /api/assembly local smoke check
+git diff --check
+```
+
+Result:
+
+```text
+PASS
+```
+
+Evidence:
+- `data/reports/r2_4_h4_final_assembly_workbench_result.json`
+- `data/reports/r2_4_h4_final_assembly_workbench_result_de04bb90-e876-40b3-813e-9c87c27b7464.json`
+- `data/reports/h4_final_assembly_result.json`
+- `data/reports/h4_final_assembly_result_710cb0f5-4165-4eb0-8176-0e19976ef9df.json`
+- `GET /api/assembly` local smoke check on `127.0.0.1:4207`
+
+Notes:
+- H1 Workbench now includes a Chinese `合成` page and `/api/assembly` readiness endpoint.
+- Final assembly requires H1 nonce plus explicit human confirmation.
+- Clip order preview, blockers, final assembly report, final video artifact, and ffprobe status are visible.
+- No provider call, secret read, source overwrite, push, tag, release, or deploy occurred.
+
+### R3-6 - 2026-07-06T23:25:00+08:00
+
+Commands:
+
+```bash
+npm run typecheck
+npm run test:memory
+npm run r3:6:memory-saveback
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS
+```
+
+Evidence:
+- `data/reports/r3_6_memory_asset_saveback_core_result.json`
+- `data/reports/r3_6_memory_asset_saveback_core_result_f0a8cedf-38e8-4bf9-91b9-807e1966c79a.json`
+- `data/reports/memory_saveback_result.json`
+
+Notes:
+- Memory Saveback Proposal is created from local project closeout state.
+- Proposal items preserve project, shot, artifact, run, storyboard package, and report provenance.
+- Materialization to local Memory Item / Asset / Reference requires explicit human confirmation.
+- Rejected items are not materialized.
+- Recall Pack generation works from local confirmed records.
+- No long-term memory write, secret read, private-state read, source overwrite, provider call, push, tag, release, or deploy occurred.
+
+### R2-5 - 2026-07-06T23:35:00+08:00
+
+Commands:
+
+```bash
+npm run typecheck
+npm run test:memory
+npm run r2:5:h5-workbench
+H5 /api/memory local smoke check
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS
+```
+
+Evidence:
+- `data/reports/r2_5_h5_memory_asset_workbench_result.json`
+- `data/reports/r2_5_h5_memory_asset_workbench_result_6aac192b-dd2f-4dc8-9594-f048054fa1fa.json`
+- `GET /api/memory` local smoke check on `127.0.0.1:4208`
+
+Notes:
+- H1 Workbench now includes a Chinese `记忆资产` page and `/api/memory` endpoints.
+- Proposal items are visible with provenance.
+- Human can approve, reject, and edit item title/content before local materialization.
+- Asset/reference updates preserve provenance.
+- No automatic memory save, long-term memory write, secret read, private-state read, source overwrite, provider call, push, tag, release, or deploy occurred.
+
+### R1-5 - 2026-07-06T23:45:00+08:00
+
+Commands:
+
+```bash
+npm run typecheck
+npm run test:webgpt:production
+npm run r1:5:production-assistant
+WebGPT v3 production bridge smoke check
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS
+```
+
+Evidence:
+- `data/reports/r1_5_mcp_v3_production_assistant_result.json`
+- `data/reports/r1_5_mcp_v3_production_assistant_result_28dcfff8-329d-4e3a-a6fb-2017ecb2aed7.json`
+- `POST /api/production-tool/propose_final_assembly_plan` local smoke check on `127.0.0.1:4209`
+
+Notes:
+- WebGPT v3 production assistant tools are plan-only: generation, regeneration, final assembly, and memory saveback proposals.
+- GPT cannot execute provider calls, approve final delivery, write long-term memory, run shell, read secrets, or overwrite source assets.
+- Human Workbench remains the hard gate and Local App remains executor.
+- No provider call, final delivery approval, long-term memory write, secret read, shell execution, source overwrite, push, tag, release, or deploy occurred.
+
+### Final sustained-loop validation - 2026-07-06T23:55:00+08:00
+
+Commands:
+
+```bash
+npm run typecheck
+npm run test:m0
+npm run test:m1
+npm run test:g0
+npm run test:h1
+npm run test:memory
+npm run test:webgpt:bridge
+npm run test:webgpt:drafts
+npm run test:webgpt:pending
+npm run test:webgpt:review
+npm run test:webgpt:production
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS
+```
+
+Notes:
+- No eligible `READY` or `IN_PROGRESS` backlog tasks remain.
+- `.agent_board/NEXT_TASK.json` parsed successfully.
+- `.agent_board/RUN_LOCK.md` is inactive.
+- No H1 or WebGPT bridge helper server remains running.
+- `git diff --check` emitted CRLF normalization warnings only.

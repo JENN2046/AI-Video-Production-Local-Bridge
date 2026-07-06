@@ -1,20 +1,65 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260706-202539-three-route-queue-import
-Last result: Three-route adapted dispatch imported to backlog; no task claimed
+Last run: codex-20260706-203847-three-route-sustained
+Last result: R1-4 completed; R3-5 claimed for Review Regeneration Final Assembly Core
 
 ## Current state
 
-Current task: M0-H
-Current status: DONE
-Current owner: None
+Current task: R3-5_REVIEW_REGENERATION_FINAL_ASSEMBLY_CORE
+Current status: IN_PROGRESS
+Current owner: Codex sustained executor
 
 ## Completed in last run
 
 - Imported the adapted three-route dispatch package into `.agent_board/TASK_BACKLOG.md`.
 - Added `R3-0_LOCAL_APP_CONTRACT_FREEZE_AND_H1_API_SUPPORT` as the only new `READY` task.
 - Added `R2-1_H1_HANDOFF_WORKBENCH_MVP`, `R3-3_STRICT_SINGLE_RUNWAY_CANARY_SCRIPT`, and `R1-0_WEBGPT_MCP_BOUNDARY_AND_READONLY_BRIDGE_PLAN` as `FOLLOW_UP` tasks.
+- Promoted the three follow-up tasks to `READY` for sustained automation.
+- Rewired dependencies to force the sequence:
+  `R3-0_LOCAL_APP_CONTRACT_FREEZE_AND_H1_API_SUPPORT`
+  -> `R2-1_H1_HANDOFF_WORKBENCH_MVP`
+  -> `R3-3_STRICT_SINGLE_RUNWAY_CANARY_SCRIPT`
+  -> `R1-0_WEBGPT_MCP_BOUNDARY_AND_READONLY_BRIDGE_PLAN`.
+- Kept `R3-3` as dry-run only; live Runway execution remains forbidden without a separate exact Jenn authorization task.
+- Added the remaining route tasks from the v1.1 source taskbooks and rewired the queue into a longer dependency-gated chain:
+  `R3-0`
+  -> `R2-0`
+  -> `R3-1`
+  -> `R3-2`
+  -> `R2-1`
+  -> `R3-3`
+  -> `R1-0`
+  -> `R2-2`
+  -> `R1-1`
+  -> `R3-4`
+  -> `R2-3`
+  -> `R1-2`
+  -> `R1-3`
+  -> `R1-4`
+  -> `R3-5`
+  -> `R2-4`
+  -> `R3-6`
+  -> `R2-5`
+  -> `R1-5`.
+- Provider/live/memory tasks remain boundary-protected inside their task cards; exact Jenn authorization is still required for live provider calls and long-term memory write.
+- R3-0, R2-0, R3-1, R3-2, R2-1, and R3-3 have completed in the sustained run.
+- R3-2 froze a four-shot app-ready Storyboard Package with app-returned artifact IDs and wrote `data/reports/r3_2_storyboard_package_freeze_core_result.json`.
+- R1-0 completed the docs-only WebGPT MCP boundary/read-only bridge plan at `docs/three_routes/r1_0_webgpt_mcp_boundary_readonly_bridge_plan.md`.
+- R2-2 completed H2 Provider Guard / Canary Workbench with a Chinese `金丝雀` page and read-only `/api/canary` endpoint.
+- R1-1 completed WebGPT MCP/Bridge v0 read-only service with nine GET-only localhost tools.
+- R3-4 completed package-based mock shot generation from frozen package to `generated_clip` artifact with ffprobe PASS.
+- R2-3 completed H3 Video Review Workbench with a Chinese `审片` page, `/api/review`, approve/reject review actions, and draft-only regeneration requests.
+- R1-2 completed MCP v0.5 Draft Submission with draft-only tools, separate draft store, v0.5 bridge, and a Chinese H1 `GPT 草稿` page.
+- R1-3 completed MCP v1 Human-Confirmed Handoff Tools with pending action tools, a v1 bridge, H1 `待确认` page, and nonce-protected confirmation/rejection.
+- R1-4 completed MCP v2 Review Assistant Tools with run/clip metadata reads and review note/rejection/regeneration prompt drafts.
+- R3-5 completed Review Regeneration Final Assembly Core with local mock/provider-gated validation and wrote `data/reports/r3_5_review_regeneration_final_assembly_core_result.json`.
+- R2-4 completed H4 Final Assembly Workbench with Chinese `合成` page, `/api/assembly`, explicit local assembly confirmation, and final artifact ffprobe evidence.
+- R3-6 completed Memory Asset Saveback Core with local proposal, confirmed materialization, and recall pack generation.
+- R2-5 completed H5 Memory Asset Workbench with Chinese `记忆资产` page and guarded `/api/memory` endpoints.
+- R1-5 completed MCP v3 Production Assistant with plan-only tools and localhost bridge.
+- No eligible READY tasks remain in the three-route backlog.
+- Final sustained-loop validation passed across M0, M1, G0, H1, memory saveback, WebGPT v0/v0.5/v1/v2/v3, secret scan, and diff check.
 - Did not modify `.agent_board/NEXT_TASK.json`.
 - Did not claim or execute any imported task.
 - M0 handoff prompt captured at `docs/m0/M0_Codex_Handoff_Prompt_v1.1.md`.
@@ -39,7 +84,7 @@ Current owner: None
 
 ## Remaining READY tasks
 
-- `R3-0_LOCAL_APP_CONTRACT_FREEZE_AND_H1_API_SUPPORT`
+- None
 
 ## Closeout evidence
 
@@ -47,6 +92,24 @@ Current owner: None
 - `data/reports/m0_implementation_summary.yaml`
 - `data/reports/m0_self_review.yaml`
 - `data/reports/m0_demo_result.json`
+- `data/reports/r3_2_storyboard_package_freeze_core_result.json`
+- `data/reports/g0_r1_package_freeze_result_047b0378-3f50-41fa-bd60-24214fd0fc63.json`
+- `docs/three_routes/r1_0_webgpt_mcp_boundary_readonly_bridge_plan.md`
+- `data/reports/r2_2_h2_canary_workbench_result.json`
+- `data/reports/r1_1_mcp_v0_read_only_service_result.json`
+- `data/reports/r3_4_package_based_shot_generation_result.json`
+- `data/reports/r3_4_package_based_shot_generation_result_e7c8e120-c469-47eb-9c36-cd9b08a7d865.json`
+- `data/reports/r2_3_h3_video_review_workbench_result.json`
+- `data/reports/r1_2_mcp_v0_5_draft_submission_result.json`
+- `data/reports/r1_3_mcp_v1_human_confirmed_handoff_tools_result.json`
+- `data/reports/r1_4_mcp_v2_review_assistant_tools_result.json`
+- `data/reports/r3_5_review_regeneration_final_assembly_core_result.json`
+- `data/reports/r2_4_h4_final_assembly_workbench_result.json`
+- `data/reports/h4_final_assembly_result.json`
+- `data/reports/r3_6_memory_asset_saveback_core_result.json`
+- `data/reports/memory_saveback_result.json`
+- `data/reports/r2_5_h5_memory_asset_workbench_result.json`
+- `data/reports/r1_5_mcp_v3_production_assistant_result.json`
 
 ## Risks
 
@@ -56,5 +119,6 @@ Current owner: None
 
 ## Next recommended action
 
-- If the commander wants execution, claim `R3-0_LOCAL_APP_CONTRACT_FREEZE_AND_H1_API_SUPPORT` first.
-- Promote follow-up three-route tasks only after R3-0 contract freeze is reviewed.
+- No eligible READY tasks remain. Local commit can be created after final diff review.
+- After each DONE, the worker may continue through the dependency-gated READY chain until no eligible READY tasks remain or a safety boundary blocks progress.
+- Boundary-protected tasks must complete safe local preparation and stop before live provider calls, long-term memory writes, source overwrites, or secret reads unless exact current Jenn authorization exists.

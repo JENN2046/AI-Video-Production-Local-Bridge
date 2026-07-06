@@ -1,0 +1,117 @@
+{
+  "task_id": "R1-3_MCP_V1_HUMAN_CONFIRMED_HANDOFF_TOOLS",
+  "result": "PASS",
+  "generated_at": "2026-07-06T22:36:00+08:00",
+  "scope": "Pending action request tools that require Human Workbench confirmation before Local App mutation.",
+  "implementation": {
+    "pending_action_tools": [
+      "request_register_media_artifact_from_import",
+      "request_link_artifact_to_shot",
+      "request_validate_storyboard_package",
+      "request_import_storyboard_package"
+    ],
+    "pending_action_store": "data/webgpt/pending_actions.json",
+    "pending_action_store_git_policy": "ignored by data/*; not production truth",
+    "bridge_command": "npm run webgpt:bridge:v1",
+    "bridge_routes": {
+      "GET /api/tools": "read plus pending-action tool inventory",
+      "GET /api/tool/<read_tool>": "existing v0 read-only tool passthrough",
+      "POST /api/pending-action/<tool>": "pending action request only"
+    },
+    "human_workbench": "H1 workbench has a Chinese 待确认 page, read-only /api/pending-actions endpoint, and nonce-protected confirm/reject endpoints.",
+    "confirmation_execution": "Local App executes requested action only after human_confirmation=true from H1 Workbench and writes immutable/latest pending action reports."
+  },
+  "acceptance": {
+    "request_register_media_artifact_tool_defined": true,
+    "request_link_artifact_to_shot_tool_defined": true,
+    "request_validate_storyboard_package_tool_defined": true,
+    "request_import_storyboard_package_tool_defined": true,
+    "gpt_request_creates_pending_action_only": true,
+    "human_workbench_displays_pending_action": true,
+    "human_confirmation_or_rejection_required": true,
+    "local_app_executes_after_confirmation": true,
+    "immutable_report_written_after_confirmation_or_rejection": true
+  },
+  "validation": [
+    {
+      "command": "npm run typecheck",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run test:webgpt:pending",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run test:h1",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run secret:scan",
+      "result": "PASS"
+    },
+    {
+      "command": "git diff --check",
+      "result": "PASS_WITH_EOL_WARNINGS_ONLY"
+    },
+    {
+      "command": "WebGPT v1 handoff bridge smoke on 127.0.0.1:4197",
+      "result": "PASS",
+      "observed": {
+        "tool_inventory_ok": true,
+        "pending_action_tools": 4,
+        "pending_action_post_ok": true,
+        "direct_mutation_allowed": false,
+        "execution_attempted": false,
+        "package_validated": false,
+        "provider_call_attempted": false
+      }
+    },
+    {
+      "command": "H1 pending action page smoke on 127.0.0.1:4198",
+      "result": "PASS",
+      "observed": {
+        "pending_nav_present": true,
+        "pending_api_ok": true,
+        "mode": "PENDING_ACTION_REVIEW",
+        "network_call_attempted": false
+      }
+    }
+  ],
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runway_called": false,
+    "runninghub_called": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "final_assembly_performed": false,
+    "source_asset_overwritten": false,
+    "secret_values_exposed": false
+  },
+  "pending_action_boundary": {
+    "gpt_direct_mutation_allowed": false,
+    "human_confirmation_required": true,
+    "h1_nonce_required_for_confirmation": true,
+    "execution_after_confirmation_available": true,
+    "rejection_without_execution_available": true
+  },
+  "changed_files": [
+    "src/tools/webGptPendingActions.ts",
+    "scripts/webgpt-human-handoff-bridge.ts",
+    "scripts/h1-workbench.ts",
+    "src/index.ts",
+    "tests/webgpt-pending-actions.test.ts",
+    "package.json"
+  ],
+  "reports": {
+    "latest": "data/reports/r1_3_mcp_v1_human_confirmed_handoff_tools_result.json",
+    "pending_action_latest": "data/reports/r1_3_pending_action_result.json"
+  },
+  "delivery": {
+    "push": false,
+    "tag": false,
+    "release": false,
+    "deploy": false
+  }
+}

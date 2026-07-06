@@ -4,17 +4,27 @@ import { basename, extname, isAbsolute, join, relative, resolve } from "node:pat
 
 import { ensureM0Directories, paths } from "../paths.js";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
-import { createProject, getProject, type Project } from "./projects.js";
+import { createProject, getProject, getShot, listProjectShots, type Project, type Shot } from "./projects.js";
+import { type GenerationRun } from "./generation.js";
+import { assembleFinalVideo } from "./assembly.js";
 import { importG0AppReadyStoryboardPackage, validateG0StoryboardPackage, type G0StoryboardPackageInput } from "./g0Pregen.js";
 import { getMediaArtifact, registerMediaArtifact, type MediaArtifact } from "./mediaArtifacts.js";
 import { validateImageFile, type ImageValidationResult } from "./imageValidity.js";
+import { validateMp4File, type Mp4ValidationResult } from "./mediaValidity.js";
+import { markShotClipReview, type RevisionInstruction } from "./review.js";
 
 export const H1_STATE_FILE = "data/h1/workbench_state.json";
 export const H1_FREEZE_REPORT_LATEST = "data/reports/h1_workbench_package_freeze_result.json";
 export const H1_IMPORT_REPORT_LATEST = "data/reports/h1_workbench_import_register_result.json";
+export const H2_RUNWAY_CANARY_DRY_RUN_REPORT = "data/reports/m1_r0_runway_canary_dry_run_report.json";
+export const H3_REVIEW_REPORT_LATEST = "data/reports/h3_video_review_result.json";
+export const H4_FINAL_ASSEMBLY_REPORT_LATEST = "data/reports/h4_final_assembly_result.json";
 
 const H1_FREEZE_REPORT_STEM = "h1_workbench_package_freeze_result";
 const H1_IMPORT_REPORT_STEM = "h1_workbench_import_register_result";
+const H3_REVIEW_REPORT_STEM = "h3_video_review_result";
+const H4_FINAL_ASSEMBLY_REPORT_STEM = "h4_final_assembly_result";
+const H3_REVIEW_CLIP_LIMIT = 50;
 const APPROVED_REVIEW_STATUS = "approved_for_media_artifact_handoff";
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg"]);
 
@@ -61,6 +71,7 @@ export interface H1WorkbenchState {
   shots: H1ShotDraft[];
   rejected_imports: Array<{ import_filename: string; reason: string; rejected_at: string }>;
   frozen_package_history: Array<{ storyboard_package_id: string; report_path: string; frozen_at: string }>;
+  regeneration_request_drafts: H3RegenerationRequestDraft[];
 }
 
 export interface H1ScannedImport {
@@ -86,6 +97,129 @@ export interface H1PackageValidation {
   app_ready: boolean;
   project_id: string;
   shot_count: number;
+}
+
+export interface H2CanaryWorkbenchSummary {
+  report_path: string;
+  report_exists: boolean;
+  report_result: string;
+  active_provider: string;
+  env_check_result: string;
+  provider_preflight_result: string;
+  credential_env_name: string | null;
+  credential_present: boolean;
+  selected_input: {
+    path: string;
+    source_type: string;
+    width: number;
+    height: number;
+    aspect_ratio: string;
+    runway_ratio: string | null;
+    duration_seconds: number;
+    readable: boolean;
+    usable_for_real_provider_canary: boolean;
+  };
+  provider_boundary: typeof H1_PROVIDER_BOUNDARY & {
+    provider: string;
+    endpoint: string;
+    x_runway_version: string;
+    max_submit_calls: number;
+    runway_ratio: string;
+    direct_9_16_sent_to_runway: boolean;
+    real_submit_available: false;
+    real_submit_requires_separate_authorization: true;
+  };
+  dry_run_plan: {
+    command: string;
+    can_open_latest_report: boolean;
+    can_generate_from_workbench: false;
+    regeneration_allowed: false;
+    batch_generation_allowed: false;
+    runninghub_allowed: false;
+  };
+  authorization: {
+    required_for_real_call: true;
+    provided: boolean;
+    accepted: boolean;
+  };
+}
+
+export interface H3RegenerationRequestDraft {
+  draft_id: string;
+  shot_id: string;
+  artifact_id: string;
+  previous_run_id: string;
+  rejection_reasons: string[];
+  revision_instruction: RevisionInstruction;
+  status: "draft";
+  created_at: string;
+}
+
+export interface H3VideoReviewItem {
+  shot_id: string;
+  run_id: string;
+  run_status: string;
+  run_type: string;
+  provider_name: string;
+  provider_job_id: string;
+  artifact_id: string;
+  artifact_type: string;
+  artifact_role: string;
+  artifact_status: string;
+  storage_filename: string;
+  accepted_clip_artifact_id: string;
+  clip_review_status: "pending" | "approved" | "rejected";
+  ffprobe: Mp4ValidationResult | null;
+  rejection_reasons: string[];
+  latest_revision_instruction: RevisionInstruction | null;
+}
+
+export interface H3VideoReviewSummary {
+  generated_clips: H3VideoReviewItem[];
+  generated_clip_limit: number;
+  generated_clip_total_available: number;
+  regeneration_request_drafts: H3RegenerationRequestDraft[];
+  provider_boundary: typeof H1_PROVIDER_BOUNDARY;
+}
+
+export interface H4AssemblyClipPreview {
+  shot_id: string;
+  order: number;
+  duration_seconds: number;
+  accepted_clip_artifact_id: string;
+  accepted_clip_status: string;
+  storage_filename: string;
+  ffprobe: Mp4ValidationResult | null;
+  blockers: string[];
+}
+
+export interface H4FinalVideoArtifactSummary {
+  artifact_id: string;
+  exists: boolean;
+  artifact_type: string;
+  role: string;
+  status: string;
+  storage_filename: string;
+  ffprobe: Mp4ValidationResult | null;
+}
+
+export interface H4FinalAssemblyWorkbenchSummary {
+  project_id: string;
+  project_title: string;
+  project_status: string;
+  ready_for_assembly: boolean;
+  blockers: string[];
+  required_shots: number;
+  accepted_clips: number;
+  clip_order_preview: H4AssemblyClipPreview[];
+  final_video_artifact: H4FinalVideoArtifactSummary | null;
+  latest_report_path: string;
+  latest_report_exists: boolean;
+  provider_boundary: typeof H1_PROVIDER_BOUNDARY;
+  confirmation: {
+    required: true;
+    accepted_by_summary: false;
+  };
 }
 
 function now(): string {
@@ -300,7 +434,16 @@ export function defaultH1WorkbenchState(): H1WorkbenchState {
       }
     ],
     rejected_imports: [],
-    frozen_package_history: []
+    frozen_package_history: [],
+    regeneration_request_drafts: []
+  };
+}
+
+function normalizeH1WorkbenchState(parsed: H1WorkbenchState): H1WorkbenchState {
+  return {
+    ...defaultH1WorkbenchState(),
+    ...parsed,
+    regeneration_request_drafts: parsed.regeneration_request_drafts ?? []
   };
 }
 
@@ -308,7 +451,7 @@ export function loadH1WorkbenchState(): H1WorkbenchState {
   ensureH1Directories();
   const target = h1StatePath();
   if (!existsSync(target)) return defaultH1WorkbenchState();
-  return JSON.parse(readFileSync(target, "utf8")) as H1WorkbenchState;
+  return normalizeH1WorkbenchState(JSON.parse(readFileSync(target, "utf8")) as H1WorkbenchState);
 }
 
 export function saveH1WorkbenchState(state: H1WorkbenchState): H1WorkbenchState {
@@ -683,6 +826,319 @@ export function freezeH1StoryboardPackage(
   };
 }
 
+function listGenerationRuns(db: M0Database): GenerationRun[] {
+  const rows = db.prepare("SELECT data_json FROM generation_runs ORDER BY updated_at DESC").all() as Array<{ data_json: string }>;
+  return rows.map((row) => JSON.parse(row.data_json) as GenerationRun);
+}
+
+function reviewStatusForArtifact(shotId: string, artifactId: string, db: M0Database): H3VideoReviewItem["clip_review_status"] {
+  const shot = getShot(db, shotId);
+  const version = shot?.clip_versions.find((candidate) => candidate.artifact_id === artifactId);
+  return version?.review_status ?? "pending";
+}
+
+export function h3VideoReviewSummary(state = loadH1WorkbenchState(), db = openM0Database()): H3VideoReviewSummary {
+  let generated_clip_total_available = 0;
+  const generated_clips: H3VideoReviewItem[] = [];
+
+  for (const run of listGenerationRuns(db)) {
+    const artifactIds = Array.isArray(run.output?.artifact_ids) ? run.output.artifact_ids : [];
+    for (const artifactId of artifactIds) {
+      const artifact = getMediaArtifact(db, artifactId);
+      if (!artifact || artifact.role !== "generated_clip" || artifact.artifact_type !== "video") continue;
+
+      generated_clip_total_available += 1;
+      if (generated_clips.length >= H3_REVIEW_CLIP_LIMIT) continue;
+
+      const shot = getShot(db, run.shot_id);
+      generated_clips.push({
+        shot_id: run.shot_id,
+        run_id: run.run_id,
+        run_status: run.status,
+        run_type: run.run_type,
+        provider_name: run.provider?.provider_name ?? "unknown",
+        provider_job_id: run.provider?.provider_job_id ?? "",
+        artifact_id: artifact.artifact_id,
+        artifact_type: artifact.artifact_type,
+        artifact_role: artifact.role,
+        artifact_status: artifact.status,
+        storage_filename: artifact.storage.filename,
+        accepted_clip_artifact_id: shot?.accepted_clip_artifact_id ?? "",
+        clip_review_status: reviewStatusForArtifact(run.shot_id, artifact.artifact_id, db),
+        ffprobe: validateMp4File(artifact.storage.uri),
+        rejection_reasons: shot?.review.rejection_reasons ?? [],
+        latest_revision_instruction: shot?.review.latest_revision_instruction ?? null
+      });
+    }
+  }
+
+  return {
+    generated_clips,
+    generated_clip_limit: H3_REVIEW_CLIP_LIMIT,
+    generated_clip_total_available,
+    regeneration_request_drafts: state.regeneration_request_drafts,
+    provider_boundary: H1_PROVIDER_BOUNDARY
+  };
+}
+
+export function approveH3GeneratedClip(
+  input: { shot_id: string; artifact_id: string; write_report?: boolean },
+  db = openM0Database()
+): H1MutationResult<{ shot_id: string; artifact_id: string; accepted_clip_artifact_id: string; report: unknown }> {
+  const review = markShotClipReview({ shot_id: input.shot_id, artifact_id: input.artifact_id, decision: "approved" }, db);
+  if (!review.ok) return review;
+
+  const runId = randomUUID();
+  const report = {
+    task: "R2-3_H3_VIDEO_REVIEW_WORKBENCH",
+    action: "approve_generated_clip",
+    result: "PASS",
+    run_id: runId,
+    generated_at: now(),
+    shot_id: input.shot_id,
+    artifact_id: input.artifact_id,
+    accepted_clip_artifact_id: review.shot.accepted_clip_artifact_id,
+    provider_boundary: H1_PROVIDER_BOUNDARY,
+    regeneration_request_draft_created: false,
+    regeneration_performed: false,
+    report_path: `data/reports/${H3_REVIEW_REPORT_STEM}_${runId}.json`,
+    latest_report_path: H3_REVIEW_REPORT_LATEST
+  };
+  if (input.write_report !== false) writeJsonReport(H3_REVIEW_REPORT_STEM, runId, report, H3_REVIEW_REPORT_LATEST);
+
+  return {
+    ok: true,
+    value: {
+      shot_id: input.shot_id,
+      artifact_id: input.artifact_id,
+      accepted_clip_artifact_id: review.shot.accepted_clip_artifact_id,
+      report
+    }
+  };
+}
+
+export function rejectH3GeneratedClip(
+  state: H1WorkbenchState,
+  input: {
+    shot_id: string;
+    artifact_id: string;
+    rejection_reasons: string[];
+    revision_instruction: RevisionInstruction;
+    write_report?: boolean;
+  },
+  db = openM0Database()
+): H1MutationResult<{ state: H1WorkbenchState; draft: H3RegenerationRequestDraft; report: unknown }> {
+  const review = markShotClipReview(
+    {
+      shot_id: input.shot_id,
+      artifact_id: input.artifact_id,
+      decision: "revision_needed",
+      rejection_reasons: input.rejection_reasons,
+      revision_instruction: input.revision_instruction
+    },
+    db
+  );
+  if (!review.ok) return review;
+
+  const clipVersion = review.shot.clip_versions.find((candidate) => candidate.artifact_id === input.artifact_id);
+  const draft: H3RegenerationRequestDraft = {
+    draft_id: `regen_draft_${randomUUID()}`,
+    shot_id: input.shot_id,
+    artifact_id: input.artifact_id,
+    previous_run_id: clipVersion?.run_id ?? "",
+    rejection_reasons: input.rejection_reasons,
+    revision_instruction: input.revision_instruction,
+    status: "draft",
+    created_at: now()
+  };
+  const nextState = saveH1WorkbenchState({
+    ...state,
+    regeneration_request_drafts: [...state.regeneration_request_drafts, draft]
+  });
+
+  const runId = randomUUID();
+  const report = {
+    task: "R2-3_H3_VIDEO_REVIEW_WORKBENCH",
+    action: "reject_generated_clip_create_regeneration_draft",
+    result: "PASS",
+    run_id: runId,
+    generated_at: now(),
+    shot_id: input.shot_id,
+    artifact_id: input.artifact_id,
+    rejection_reasons: input.rejection_reasons,
+    draft,
+    provider_boundary: H1_PROVIDER_BOUNDARY,
+    regeneration_request_draft_created: true,
+    regeneration_performed: false,
+    report_path: `data/reports/${H3_REVIEW_REPORT_STEM}_${runId}.json`,
+    latest_report_path: H3_REVIEW_REPORT_LATEST
+  };
+  if (input.write_report !== false) writeJsonReport(H3_REVIEW_REPORT_STEM, runId, report, H3_REVIEW_REPORT_LATEST);
+
+  return { ok: true, value: { state: nextState, draft, report } };
+}
+
+function listProjects(db: M0Database): Project[] {
+  const rows = db.prepare("SELECT data_json FROM projects ORDER BY updated_at DESC").all() as Array<{ data_json: string }>;
+  return rows.map((row) => JSON.parse(row.data_json) as Project);
+}
+
+function inferH4Project(state: H1WorkbenchState, db: M0Database, explicitProjectId?: string): Project | null {
+  const preferredProjectId = explicitProjectId || state.project.project_id;
+  if (preferredProjectId) return getProject(db, preferredProjectId);
+  return listProjects(db).find((project) => listProjectShots(db, project.project_id).length > 0) ?? null;
+}
+
+function finalVideoArtifactSummary(project: Project, db: M0Database): H4FinalVideoArtifactSummary | null {
+  const artifactId = project.exports.final_video_artifact_id;
+  if (!artifactId) return null;
+  const artifact = getMediaArtifact(db, artifactId);
+  return {
+    artifact_id: artifactId,
+    exists: Boolean(artifact),
+    artifact_type: artifact?.artifact_type ?? "",
+    role: artifact?.role ?? "",
+    status: artifact?.status ?? "",
+    storage_filename: artifact?.storage.filename ?? "",
+    ffprobe: artifact ? validateMp4File(artifact.storage.uri) : null
+  };
+}
+
+function assemblyClipPreviewForShot(shot: Shot, db: M0Database): H4AssemblyClipPreview {
+  const blockers: string[] = [];
+  if (!shot.accepted_clip_artifact_id) blockers.push("MISSING_ACCEPTED_CLIP");
+  const artifact = shot.accepted_clip_artifact_id ? getMediaArtifact(db, shot.accepted_clip_artifact_id) : null;
+  if (shot.accepted_clip_artifact_id && !artifact) blockers.push("ACCEPTED_CLIP_ARTIFACT_MISSING");
+  if (artifact) {
+    if (artifact.status !== "active") blockers.push(`ACCEPTED_CLIP_${artifact.status.toUpperCase()}`);
+    if (artifact.artifact_type !== "video" || artifact.role !== "generated_clip") blockers.push("ACCEPTED_CLIP_NOT_GENERATED_VIDEO");
+  }
+
+  return {
+    shot_id: shot.shot_id,
+    order: shot.order,
+    duration_seconds: shot.duration_seconds,
+    accepted_clip_artifact_id: shot.accepted_clip_artifact_id,
+    accepted_clip_status: artifact?.status ?? "",
+    storage_filename: artifact?.storage.filename ?? "",
+    ffprobe: artifact ? validateMp4File(artifact.storage.uri) : null,
+    blockers
+  };
+}
+
+export function h4FinalAssemblyWorkbenchSummary(
+  state = loadH1WorkbenchState(),
+  db = openM0Database(),
+  input: { project_id?: string } = {}
+): H4FinalAssemblyWorkbenchSummary {
+  const project = inferH4Project(state, db, input.project_id);
+  if (!project) {
+    return {
+      project_id: input.project_id ?? "",
+      project_title: "",
+      project_status: "",
+      ready_for_assembly: false,
+      blockers: ["PROJECT_NOT_FOUND"],
+      required_shots: 0,
+      accepted_clips: 0,
+      clip_order_preview: [],
+      final_video_artifact: null,
+      latest_report_path: H4_FINAL_ASSEMBLY_REPORT_LATEST,
+      latest_report_exists: existsSync(join(paths.workspaceRoot, H4_FINAL_ASSEMBLY_REPORT_LATEST)),
+      provider_boundary: H1_PROVIDER_BOUNDARY,
+      confirmation: {
+        required: true,
+        accepted_by_summary: false
+      }
+    };
+  }
+
+  const shots = listProjectShots(db, project.project_id);
+  const clipOrderPreview = shots.map((shot) => assemblyClipPreviewForShot(shot, db));
+  const blockers = clipOrderPreview.flatMap((item) => item.blockers.map((blocker) => `${item.shot_id}:${blocker}`));
+  if (!shots.length) blockers.push("PROJECT_HAS_NO_SHOTS");
+
+  return {
+    project_id: project.project_id,
+    project_title: project.title,
+    project_status: project.status,
+    ready_for_assembly: shots.length > 0 && blockers.length === 0,
+    blockers,
+    required_shots: shots.length,
+    accepted_clips: clipOrderPreview.filter((item) => item.accepted_clip_artifact_id && item.blockers.length === 0).length,
+    clip_order_preview: clipOrderPreview,
+    final_video_artifact: finalVideoArtifactSummary(project, db),
+    latest_report_path: H4_FINAL_ASSEMBLY_REPORT_LATEST,
+    latest_report_exists: existsSync(join(paths.workspaceRoot, H4_FINAL_ASSEMBLY_REPORT_LATEST)),
+    provider_boundary: H1_PROVIDER_BOUNDARY,
+    confirmation: {
+      required: true,
+      accepted_by_summary: false
+    }
+  };
+}
+
+export function executeH4FinalAssembly(
+  input: { project_id?: string; human_confirmation: boolean; write_report?: boolean },
+  state = loadH1WorkbenchState(),
+  db = openM0Database()
+): H1MutationResult<{ summary: H4FinalAssemblyWorkbenchSummary; report: unknown; final_video_artifact_id: string }> {
+  if (input.human_confirmation !== true) {
+    return { ok: false, error: toolError("HUMAN_CONFIRMATION_REQUIRED", "Final assembly requires explicit human confirmation.") };
+  }
+
+  const project = inferH4Project(state, db, input.project_id);
+  if (!project) return { ok: false, error: toolError("PROJECT_NOT_FOUND", "No project is available for final assembly.") };
+
+  const before = h4FinalAssemblyWorkbenchSummary(state, db, { project_id: project.project_id });
+  if (!before.ready_for_assembly) {
+    return { ok: false, error: toolError("FINAL_ASSEMBLY_NOT_READY", before.blockers.join(", ")) };
+  }
+
+  const assembled = assembleFinalVideo(
+    {
+      project_id: project.project_id,
+      confirmation: { confirmation_level: "explicit", user_confirmed: true }
+    },
+    db
+  );
+  if (!assembled.ok) {
+    return {
+      ok: false,
+      error: toolError(assembled.error.code, [assembled.error.message, ...(assembled.blocking_reasons ?? [])].filter(Boolean).join(" "))
+    };
+  }
+
+  const summaryAfterAssembly = h4FinalAssemblyWorkbenchSummary(state, db, { project_id: project.project_id });
+  const runId = randomUUID();
+  const report = {
+    task: "R2-4_H4_FINAL_ASSEMBLY_WORKBENCH",
+    action: "execute_final_assembly",
+    result: "PASS",
+    run_id: runId,
+    generated_at: now(),
+    project_id: project.project_id,
+    readiness_before: before,
+    final_assembly: {
+      run_id: assembled.run.run_id,
+      final_video_artifact_id: assembled.final_video_artifact_id,
+      source_clip_artifact_ids: before.clip_order_preview.map((item) => item.accepted_clip_artifact_id),
+      source_asset_overwritten: false
+    },
+    final_video_artifact: summaryAfterAssembly.final_video_artifact,
+    provider_boundary: {
+      ...H1_PROVIDER_BOUNDARY,
+      final_assembly_performed: true
+    },
+    report_path: `data/reports/${H4_FINAL_ASSEMBLY_REPORT_STEM}_${runId}.json`,
+    latest_report_path: H4_FINAL_ASSEMBLY_REPORT_LATEST
+  };
+  if (input.write_report !== false) writeJsonReport(H4_FINAL_ASSEMBLY_REPORT_STEM, runId, report, H4_FINAL_ASSEMBLY_REPORT_LATEST);
+  const summary = input.write_report === false ? summaryAfterAssembly : h4FinalAssemblyWorkbenchSummary(state, db, { project_id: project.project_id });
+
+  return { ok: true, value: { summary, report, final_video_artifact_id: assembled.final_video_artifact_id } };
+}
+
 function writeJsonReport(stem: string, runId: string, payload: unknown, latestRelativePath: string): string {
   ensureM0Directories();
   const immutablePath = join(paths.reportsRoot, `${stem}_${runId}.json`);
@@ -709,6 +1165,129 @@ export function listH1Reports(): Array<{ name: string; relative_path: string; si
         is_latest_pointer: !/_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.json$/i.test(entry.name)
       };
     });
+}
+
+function safeString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function safeNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function safeBoolean(value: unknown): boolean {
+  return value === true;
+}
+
+export function h2CanaryWorkbenchSummary(reportRelativePath = H2_RUNWAY_CANARY_DRY_RUN_REPORT): H2CanaryWorkbenchSummary {
+  const reportPath = join(paths.workspaceRoot, reportRelativePath);
+  const fallback: H2CanaryWorkbenchSummary = {
+    report_path: reportRelativePath,
+    report_exists: false,
+    report_result: "MISSING_REPORT",
+    active_provider: "",
+    env_check_result: "UNKNOWN",
+    provider_preflight_result: "UNKNOWN",
+    credential_env_name: null,
+    credential_present: false,
+    selected_input: {
+      path: "",
+      source_type: "",
+      width: 0,
+      height: 0,
+      aspect_ratio: "",
+      runway_ratio: null,
+      duration_seconds: 0,
+      readable: false,
+      usable_for_real_provider_canary: false
+    },
+    provider_boundary: {
+      ...H1_PROVIDER_BOUNDARY,
+      provider: "",
+      endpoint: "",
+      x_runway_version: "",
+      max_submit_calls: 0,
+      runway_ratio: "",
+      direct_9_16_sent_to_runway: false,
+      real_submit_available: false,
+      real_submit_requires_separate_authorization: true
+    },
+    dry_run_plan: {
+      command: "npm run runway:canary",
+      can_open_latest_report: false,
+      can_generate_from_workbench: false,
+      regeneration_allowed: false,
+      batch_generation_allowed: false,
+      runninghub_allowed: false
+    },
+    authorization: {
+      required_for_real_call: true,
+      provided: false,
+      accepted: false
+    }
+  };
+
+  if (!existsSync(reportPath)) return fallback;
+
+  try {
+    const report = JSON.parse(readFileSync(reportPath, "utf8")) as Record<string, unknown>;
+    const preflight = (report.preflight ?? {}) as Record<string, unknown>;
+    const input = (report.selected_canary_input ?? {}) as Record<string, unknown>;
+    const boundary = (report.provider_boundary ?? {}) as Record<string, unknown>;
+    const authorization = (report.authorization ?? {}) as Record<string, unknown>;
+
+    return {
+      ...fallback,
+      report_exists: true,
+      report_result: safeString(report.result) || "UNKNOWN",
+      active_provider: safeString(preflight.active_provider),
+      env_check_result: safeString(preflight.env_check_result) || "UNKNOWN",
+      provider_preflight_result: safeString(preflight.provider_preflight_result) || "UNKNOWN",
+      credential_env_name: safeString(preflight.credential_env_name) || null,
+      credential_present: safeBoolean(preflight.credential_present),
+      selected_input: {
+        path: safeString(input.path),
+        source_type: safeString(input.source_type),
+        width: safeNumber(input.width),
+        height: safeNumber(input.height),
+        aspect_ratio: safeString(input.aspect_ratio),
+        runway_ratio: safeString(input.runway_ratio) || null,
+        duration_seconds: safeNumber(input.duration_seconds),
+        readable: safeBoolean(input.readable_by_image_validator),
+        usable_for_real_provider_canary: safeBoolean(input.usable_for_real_provider_canary)
+      },
+      provider_boundary: {
+        ...H1_PROVIDER_BOUNDARY,
+        provider: safeString(boundary.provider),
+        endpoint: safeString(boundary.endpoint),
+        x_runway_version: safeString(boundary.x_runway_version),
+        max_submit_calls: safeNumber(boundary.max_submit_calls),
+        runway_ratio: safeString(boundary.runway_ratio),
+        direct_9_16_sent_to_runway: safeBoolean(boundary.direct_9_16_sent_to_runway),
+        real_submit_available: false,
+        real_submit_requires_separate_authorization: true
+      },
+      dry_run_plan: {
+        ...fallback.dry_run_plan,
+        command: safeString(report.command) || fallback.dry_run_plan.command,
+        can_open_latest_report: true,
+        regeneration_allowed: false,
+        batch_generation_allowed: false,
+        runninghub_allowed: false
+      },
+      authorization: {
+        required_for_real_call: true,
+        provided: safeBoolean(authorization.provided),
+        accepted: safeBoolean(authorization.accepted)
+      }
+    };
+  } catch {
+    return {
+      ...fallback,
+      report_exists: true,
+      report_result: "UNREADABLE_REPORT"
+    };
+  }
 }
 
 export function h1DashboardSummary(state = loadH1WorkbenchState(), db = openM0Database()) {

@@ -1,0 +1,18 @@
+{
+  "task": "R3-6_MEMORY_ASSET_SAVEBACK_CORE",
+  "action": "create_memory_saveback_proposal",
+  "result": "PASS",
+  "run_id": "e211f6d2-b4b6-4761-9acd-f87c11f3eb5d",
+  "generated_at": "2026-07-06T14:18:03.061Z",
+  "project_id": "project_feac9e6b-414a-491c-8076-b71fa96dccdc",
+  "proposal_id": "memory_proposal_80654dc9-d02d-487a-b08e-767c18b89885",
+  "item_count": 4,
+  "provider_boundary": {
+    "long_term_memory_write_attempted": false,
+    "secret_read": false,
+    "private_state_read": false,
+    "source_asset_overwritten": false
+  },
+  "report_path": "data/reports/memory_saveback_result_e211f6d2-b4b6-4761-9acd-f87c11f3eb5d.json",
+  "latest_report_path": "data/reports/memory_saveback_result.json"
+}

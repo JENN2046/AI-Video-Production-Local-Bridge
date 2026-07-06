@@ -1,0 +1,44 @@
+{
+  "task_id": "R3-6_MEMORY_ASSET_SAVEBACK_CORE",
+  "result": "PASS",
+  "run_id": "f0a8cedf-38e8-4bf9-91b9-807e1966c79a",
+  "generated_at": "2026-07-06T14:18:03.063Z",
+  "project_id": "project_feac9e6b-414a-491c-8076-b71fa96dccdc",
+  "storyboard_package_id": "storyboard_package_e02ac360-f0d9-492e-9419-1a18f5c38da2",
+  "final_video_artifact_id": "artifact_2f17a1bd-136c-4ae2-81e0-351e8445c1ac",
+  "memory_saveback": {
+    "proposal_id": "memory_proposal_80654dc9-d02d-487a-b08e-767c18b89885",
+    "proposal_item_count": 4,
+    "proposal_created": true,
+    "missing_confirmation_result": "HUMAN_CONFIRMATION_REQUIRED",
+    "approved_items_materialized": 2,
+    "rejected_items_materialized": 0,
+    "memory_items_created": 1,
+    "assets_created": 1,
+    "references_created": 0,
+    "recall_pack_id": "recall_pack_c2230601-6a65-41fc-a33d-3433844b2960",
+    "recall_pack_memory_items": 1,
+    "recall_pack_assets": 1,
+    "recall_pack_references": 0
+  },
+  "provenance": {
+    "project_id": true,
+    "shot_id_present": true,
+    "artifact_id_present": true,
+    "run_id_present": true,
+    "report_refs_present": true
+  },
+  "boundary": {
+    "long_term_memory_write_attempted": false,
+    "secret_read": false,
+    "private_state_read": false,
+    "source_asset_overwritten": false,
+    "provider_call_attempted": false,
+    "push": false,
+    "tag": false,
+    "release": false,
+    "deploy": false
+  },
+  "report_path": "data/reports/r3_6_memory_asset_saveback_core_result_f0a8cedf-38e8-4bf9-91b9-807e1966c79a.json",
+  "latest_report_path": "data/reports/r3_6_memory_asset_saveback_core_result.json"
+}

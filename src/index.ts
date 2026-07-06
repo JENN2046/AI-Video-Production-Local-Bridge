@@ -33,6 +33,7 @@ export {
   getGenerationBatch,
   getGenerationRun,
   getGenerationStatus,
+  createGenerationRunFromPackageShot,
   listBatchRuns,
   pollMockStatus,
   saveGenerationBatch,
@@ -46,6 +47,8 @@ export type {
   GenerationBatchStatus,
   GenerationRun,
   GenerationRunStatus,
+  PackageShotGenerationInput,
+  PackageShotGenerationResult,
   MockProviderJob
 } from "./tools/generation.js";
 export { markShotClipReview, regenerateShotVideo } from "./tools/review.js";
@@ -96,6 +99,7 @@ export type {
 } from "./tools/providerOutputDownloader.js";
 export {
   mapRunwayAspectRatio,
+  buildRunwayImageToVideoRequest,
   MockVideoProviderAdapter,
   normalizeRunwayDuration,
   RUNWAY_API_VERSION,
@@ -109,6 +113,7 @@ export type {
   ProviderOutputResult,
   ProviderStatusResult,
   ProviderSubmitResult,
+  RunwayImageToVideoRequestBuildResult,
   VideoProviderAdapter
 } from "./tools/videoProviderAdapters.js";
 export type {
@@ -171,6 +176,15 @@ export {
   defaultH1WorkbenchState,
   freezeH1StoryboardPackage,
   h1DashboardSummary,
+  h2CanaryWorkbenchSummary,
+  h3VideoReviewSummary,
+  h4FinalAssemblyWorkbenchSummary,
+  approveH3GeneratedClip,
+  executeH4FinalAssembly,
+  rejectH3GeneratedClip,
+  H2_RUNWAY_CANARY_DRY_RUN_REPORT,
+  H3_REVIEW_REPORT_LATEST,
+  H4_FINAL_ASSEMBLY_REPORT_LATEST,
   H1_FREEZE_REPORT_LATEST,
   H1_IMPORT_REPORT_LATEST,
   H1_PROVIDER_BOUNDARY,
@@ -195,7 +209,116 @@ export type {
   H1ScannedImport,
   H1ShotApprovalStatus,
   H1ShotDraft,
+  H2CanaryWorkbenchSummary,
+  H3RegenerationRequestDraft,
+  H3VideoReviewItem,
+  H3VideoReviewSummary,
+  H4AssemblyClipPreview,
+  H4FinalAssemblyWorkbenchSummary,
+  H4FinalVideoArtifactSummary,
   H1WorkbenchState
 } from "./tools/h1Workbench.js";
+export {
+  executeWebGptReadOnlyTool,
+  WEBGPT_READ_ONLY_BRIDGE_VERSION,
+  WEBGPT_READ_ONLY_TOOLS
+} from "./tools/webGptReadOnlyBridge.js";
+export type {
+  WebGptReadOnlyToolDefinition,
+  WebGptReadOnlyToolName,
+  WebGptReadOnlyToolResult
+} from "./tools/webGptReadOnlyBridge.js";
+export {
+  executeWebGptDraftTool,
+  loadWebGptDraftStore,
+  WEBGPT_DRAFT_BRIDGE_VERSION,
+  WEBGPT_DRAFT_STORE_FILE,
+  WEBGPT_DRAFT_TOOLS,
+  webGptDraftWorkbenchSummary
+} from "./tools/webGptDraftBridge.js";
+export type {
+  WebGptDraftRecord,
+  WebGptDraftStore,
+  WebGptDraftToolDefinition,
+  WebGptDraftToolName,
+  WebGptDraftToolResult,
+  WebGptDraftWorkbenchSummary
+} from "./tools/webGptDraftBridge.js";
+export {
+  confirmWebGptPendingAction,
+  executeWebGptPendingActionTool,
+  loadWebGptPendingActionStore,
+  rejectWebGptPendingAction,
+  WEBGPT_PENDING_ACTION_REPORT_LATEST,
+  WEBGPT_PENDING_ACTION_STORE_FILE,
+  WEBGPT_PENDING_ACTION_TOOLS,
+  WEBGPT_PENDING_ACTION_VERSION,
+  webGptPendingActionWorkbenchSummary
+} from "./tools/webGptPendingActions.js";
+export type {
+  WebGptPendingActionRecord,
+  WebGptPendingActionStore,
+  WebGptPendingActionToolDefinition,
+  WebGptPendingActionToolName,
+  WebGptPendingActionToolResult,
+  WebGptPendingActionWorkbenchSummary
+} from "./tools/webGptPendingActions.js";
+export {
+  executeWebGptReviewAssistantTool,
+  loadWebGptReviewAssistantStore,
+  WEBGPT_REVIEW_ASSISTANT_STORE_FILE,
+  WEBGPT_REVIEW_ASSISTANT_TOOLS,
+  WEBGPT_REVIEW_ASSISTANT_VERSION,
+  webGptReviewAssistantWorkbenchSummary
+} from "./tools/webGptReviewAssistant.js";
+export type {
+  WebGptReviewAssistantStore,
+  WebGptReviewAssistantToolDefinition,
+  WebGptReviewAssistantToolName,
+  WebGptReviewAssistantToolResult,
+  WebGptReviewAssistantWorkbenchSummary,
+  WebGptReviewDraftRecord
+} from "./tools/webGptReviewAssistant.js";
+export {
+  executeWebGptProductionAssistantTool,
+  loadWebGptProductionAssistantStore,
+  WEBGPT_PRODUCTION_ASSISTANT_STORE_FILE,
+  WEBGPT_PRODUCTION_ASSISTANT_TOOLS,
+  WEBGPT_PRODUCTION_ASSISTANT_VERSION,
+  webGptProductionAssistantWorkbenchSummary
+} from "./tools/webGptProductionAssistant.js";
+export type {
+  WebGptProductionAssistantStore,
+  WebGptProductionAssistantToolDefinition,
+  WebGptProductionAssistantToolName,
+  WebGptProductionAssistantToolResult,
+  WebGptProductionAssistantWorkbenchSummary,
+  WebGptProductionPlanRecord
+} from "./tools/webGptProductionAssistant.js";
+export {
+  confirmMemorySavebackProposal,
+  createMemorySavebackProposal,
+  generateMemoryRecallPack,
+  loadMemorySavebackStore,
+  memorySavebackWorkbenchSummary,
+  MEMORY_SAVEBACK_REPORT_LATEST,
+  MEMORY_SAVEBACK_STORE_FILE,
+  saveMemorySavebackStore
+} from "./tools/memorySaveback.js";
+export type {
+  AssetRecord,
+  MemoryItem,
+  MemoryProvenance,
+  MemoryRecallPack,
+  MemorySavebackItemStatus,
+  MemorySavebackItemType,
+  MemorySavebackProposal,
+  MemorySavebackProposalItem,
+  MemorySavebackProposalStatus,
+  MemorySavebackResult,
+  MemorySavebackStore,
+  MemorySavebackWorkbenchSummary,
+  ReferenceRecord
+} from "./tools/memorySaveback.js";
 export { callM0ToolPlaceholder, listM0Tools, M0_TOOL_NAMES } from "./tools/m0Tools.js";
 export type { M0ToolDefinition, M0ToolName, M0ToolResult } from "./tools/m0Tools.js";

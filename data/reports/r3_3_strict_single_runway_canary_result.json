@@ -1,0 +1,87 @@
+{
+  "task": "R3-3_STRICT_SINGLE_RUNWAY_CANARY_SCRIPT",
+  "result": "PASS_READY_FOR_USER_AUTHORIZATION",
+  "created_at": "2026-07-06T20:57:20+08:00",
+  "workspace": "A:\\AI Video Production Workspace",
+  "new_command": "npm run runway:canary",
+  "changed_files": [
+    "src/tools/runwayCanary.ts",
+    "scripts/runway-canary.ts",
+    "tests/m1-provider-boundary.test.ts",
+    "package.json",
+    "data/reports/r3_3_strict_single_runway_canary_result.json"
+  ],
+  "dry_run_report": "data/reports/m1_r0_runway_canary_dry_run_report.json",
+  "input_readiness_report": "data/reports/m1_r0_runway_canary_input_readiness.json",
+  "canary_plan": {
+    "provider": "runway",
+    "endpoint": "POST /v1/image_to_video",
+    "x_runway_version": "2024-11-06",
+    "max_submit_calls": 1,
+    "duration_seconds": 2,
+    "input_image": "fixtures/provider-canary/m1-r0/shot_001_canary_720x1280.png",
+    "project_aspect_ratio": "9:16",
+    "runway_ratio": "768:1280",
+    "direct_9_16_sent_to_runway": false
+  },
+  "preflight": {
+    "env_check_result": "PASS",
+    "provider_preflight_result": "PASS",
+    "active_provider": "runway",
+    "credential_env_name": "RUNWAYML_API_SECRET",
+    "credential_present": true,
+    "network_call_attempted": false,
+    "secret_values_exposed": false
+  },
+  "validation": {
+    "npm run env:check": "PASS",
+    "npm run provider:preflight": "PASS",
+    "npm run runway:canary": "PASS_READY_FOR_USER_AUTHORIZATION",
+    "npm run typecheck": "PASS",
+    "npm run test:m1": "PASS",
+    "npm run test:g0": "PASS",
+    "npm run secret:scan": "PASS"
+  },
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runway_called": false,
+    "runninghub_called": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "allow_runninghub": false,
+    "allow_publish": false,
+    "allow_deploy": false,
+    "allow_source_asset_overwrite": false,
+    "secret_values_exposed": false
+  },
+  "authorization": {
+    "required_for_real_call": true,
+    "provided": false,
+    "accepted": false,
+    "required_scope": [
+      "provider",
+      "max_submit_calls",
+      "input_image",
+      "duration_seconds",
+      "budget_or_cost_bound",
+      "stop_condition"
+    ]
+  },
+  "blocked_actions_not_performed": [
+    "runway_called",
+    "runninghub_called",
+    "network_call_attempted",
+    "provider_credits_consumed",
+    "real_video_generated",
+    "regeneration",
+    "batch_generation",
+    "secret_value_output",
+    "push",
+    "tag",
+    "release",
+    "deploy"
+  ],
+  "next_step": "Continue to R1-0_WEBGPT_MCP_BOUNDARY_AND_READONLY_BRIDGE_PLAN."
+}

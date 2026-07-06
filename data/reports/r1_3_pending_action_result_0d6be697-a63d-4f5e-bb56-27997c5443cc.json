@@ -1,0 +1,64 @@
+{
+  "task_id": "R1-3_MCP_V1_HUMAN_CONFIRMED_HANDOFF_TOOLS",
+  "result": "PASS",
+  "generated_at": "2026-07-06T13:54:07.415Z",
+  "action": {
+    "action_id": "webgpt_action_fdb21a1c-3d22-4945-9786-e646746573bf",
+    "tool": "request_validate_storyboard_package",
+    "status": "rejected",
+    "created_at": "2026-07-06T13:54:07.413Z",
+    "updated_at": "2026-07-06T13:54:07.415Z",
+    "source": "webgpt_bridge_v1",
+    "payload": {
+      "notes": "Human should decide."
+    },
+    "validation": {
+      "ok": true,
+      "blockers": []
+    },
+    "human_confirmation": {
+      "required": true,
+      "confirmed": false,
+      "rejected": true,
+      "confirmed_at": "",
+      "rejected_at": "2026-07-06T13:54:07.415Z",
+      "rejected_reason": "Not needed now."
+    },
+    "execution": {
+      "attempted": false,
+      "ok": null,
+      "executed_at": "",
+      "report_path": "",
+      "result": null,
+      "error": null
+    },
+    "production_effects": {
+      "app_ready_truth_changed": false,
+      "media_artifact_registered": false,
+      "artifact_linked_to_shot": false,
+      "package_validated": false,
+      "package_frozen": false,
+      "provider_call_attempted": false,
+      "source_asset_overwritten": false
+    }
+  },
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runway_called": false,
+    "runninghub_called": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "final_assembly_performed": false,
+    "memory_saveback_performed": false,
+    "source_asset_overwritten": false,
+    "secret_values_exposed": false
+  },
+  "delivery": {
+    "push": false,
+    "tag": false,
+    "release": false,
+    "deploy": false
+  }
+}

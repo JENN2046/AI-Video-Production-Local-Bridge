@@ -1,0 +1,120 @@
+{
+  "task_id": "R1-2_MCP_V0_5_DRAFT_SUBMISSION",
+  "result": "PASS",
+  "generated_at": "2026-07-06T22:22:00+08:00",
+  "scope": "WebGPT draft submission tools stored separately from production truth.",
+  "implementation": {
+    "draft_tools": [
+      "submit_shot_script_draft",
+      "submit_storyboard_package_draft",
+      "propose_artifact_link",
+      "propose_package_validation",
+      "propose_freeze_request"
+    ],
+    "draft_store": "data/webgpt/draft_submissions.json",
+    "draft_store_git_policy": "ignored by data/*; not production truth",
+    "bridge_command": "npm run webgpt:bridge:v0.5",
+    "bridge_routes": {
+      "GET /api/tools": "read plus draft tool inventory",
+      "GET /api/tool/<read_tool>": "existing v0 read-only tool passthrough",
+      "POST /api/draft/<draft_tool>": "draft submission only"
+    },
+    "human_workbench": "H1 workbench has a Chinese GPT 草稿 page and read-only /api/webgpt-drafts endpoint.",
+    "id_gates": "Pending, fake, placeholder, path-like, missing shot, missing artifact, non-linkable artifact, and invalid package draft ids are rejected."
+  },
+  "acceptance": {
+    "shot_script_draft_tool_defined": true,
+    "storyboard_package_draft_tool_defined": true,
+    "artifact_link_proposal_tool_defined": true,
+    "package_validation_proposal_tool_defined": true,
+    "freeze_request_proposal_tool_defined": true,
+    "drafts_stored_separately_from_app_ready_truth": true,
+    "human_workbench_can_review_drafts": true,
+    "fake_ids_rejected": true,
+    "no_frozen_package_created_directly_by_gpt": true
+  },
+  "validation": [
+    {
+      "command": "npm run typecheck",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run test:webgpt:drafts",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run test:h1",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run secret:scan",
+      "result": "PASS"
+    },
+    {
+      "command": "git diff --check",
+      "result": "PASS_WITH_EOL_WARNINGS_ONLY"
+    },
+    {
+      "command": "WebGPT v0.5 draft bridge smoke on 127.0.0.1:4195",
+      "result": "PASS",
+      "observed": {
+        "tool_inventory_ok": true,
+        "draft_tools": 5,
+        "draft_post_ok": true,
+        "production_mutation_allowed": false,
+        "package_frozen": false,
+        "provider_call_attempted": false
+      }
+    },
+    {
+      "command": "H1 GPT draft page smoke on 127.0.0.1:4196",
+      "result": "PASS",
+      "observed": {
+        "gpt_drafts_nav_present": true,
+        "drafts_api_ok": true,
+        "mode": "DRAFT_REVIEW",
+        "app_ready_truth_changed": false,
+        "package_frozen": false,
+        "network_call_attempted": false
+      }
+    }
+  ],
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runway_called": false,
+    "runninghub_called": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "final_assembly_performed": false,
+    "source_asset_overwritten": false,
+    "secret_values_exposed": false
+  },
+  "production_effects": {
+    "app_ready_truth_changed": false,
+    "media_artifact_registered_by_draft_tool": false,
+    "artifact_linked_to_shot_by_draft_tool": false,
+    "package_validated_by_draft_tool": false,
+    "package_frozen_by_draft_tool": false,
+    "provider_call_attempted": false,
+    "source_asset_overwritten": false
+  },
+  "changed_files": [
+    "src/tools/webGptDraftBridge.ts",
+    "scripts/webgpt-draft-bridge.ts",
+    "scripts/h1-workbench.ts",
+    "src/index.ts",
+    "tests/webgpt-draft-bridge.test.ts",
+    "package.json"
+  ],
+  "reports": {
+    "latest": "data/reports/r1_2_mcp_v0_5_draft_submission_result.json"
+  },
+  "delivery": {
+    "push": false,
+    "tag": false,
+    "release": false,
+    "deploy": false
+  }
+}

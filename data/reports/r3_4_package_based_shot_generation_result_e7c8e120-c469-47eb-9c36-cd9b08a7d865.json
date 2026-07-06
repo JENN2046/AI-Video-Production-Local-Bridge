@@ -1,0 +1,104 @@
+{
+  "task": "R3-4_PACKAGE_BASED_SHOT_GENERATION",
+  "result": "PASS",
+  "run_id": "e7c8e120-c469-47eb-9c36-cd9b08a7d865",
+  "generated_at": "2026-07-06T13:17:20.326Z",
+  "source_package_report": "data/reports/g0_r1_package_freeze_result.json",
+  "project_id": "project_b742cb15-e44e-41b2-8d2d-4b90a30720df",
+  "storyboard_package_id": "storyboard_package_1e5c1eca-624e-4687-9775-31e4b59f428a",
+  "shot_id": "g0_r1_shot_001",
+  "generation": {
+    "batch_id": "batch_6ab1fb4f-3341-4217-afdb-d91d06ec482a",
+    "batch_status": "succeeded",
+    "run_id": "run_d6f4659b-3dce-42cb-b605-8e3a33242c04",
+    "run_status": "succeeded",
+    "provider_name": "mock",
+    "provider_job_id": "mock_job_475778fe-d129-4f68-9946-add820d147f3",
+    "generated_artifact_id": "artifact_35e16760-bf56-49f9-8991-26f9eab63dde"
+  },
+  "provider_request_summary": {
+    "provider": "runway",
+    "endpoint": "/v1/image_to_video",
+    "x_runway_version": "2024-11-06",
+    "project_aspect_ratio": "9:16",
+    "runway_ratio": "768:1280",
+    "duration_seconds": 3,
+    "prompt_text_present": true,
+    "prompt_image_source_artifact_id": "artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7",
+    "prompt_image_storage_is_app_media": true,
+    "raw_data_imports_provider_input": false
+  },
+  "generated_clip_artifact": {
+    "artifact_id": "artifact_35e16760-bf56-49f9-8991-26f9eab63dde",
+    "artifact_type": "video",
+    "role": "generated_clip",
+    "status": "active",
+    "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\videos\\artifact_35e16760-bf56-49f9-8991-26f9eab63dde.mp4",
+    "source_provider": "mock",
+    "provider_job_id": "mock_job_475778fe-d129-4f68-9946-add820d147f3"
+  },
+  "ffprobe": {
+    "status": "PASS",
+    "path": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\videos\\artifact_35e16760-bf56-49f9-8991-26f9eab63dde.mp4",
+    "ffprobe_exit_code": 0,
+    "has_video_stream": true,
+    "duration_seconds": 2,
+    "stream_count": 1,
+    "error": ""
+  },
+  "hard_gates": {
+    "live_provider_submit_without_exact_authorization": "BLOCKED_BY_DEFAULT",
+    "old_versions_overwritten": false,
+    "raw_data_imports_provider_input": false,
+    "source_assets_overwritten": false,
+    "automatic_regeneration": false
+  },
+  "validation": [
+    {
+      "command": "npm run typecheck",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run r3:4:generate-shot",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run test:m1",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run test:g0",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run secret:scan",
+      "result": "PASS"
+    },
+    {
+      "command": "git diff --check",
+      "result": "PASS"
+    }
+  ],
+  "changed_files": [
+    "src/tools/generation.ts",
+    "src/tools/videoProviderAdapters.ts",
+    "src/index.ts",
+    "scripts/r3-4-package-shot-generation.ts",
+    "tests/m1-provider-boundary.test.ts",
+    "package.json",
+    "data/reports/r3_4_package_based_shot_generation_result.json",
+    "data/reports/r3_4_package_based_shot_generation_result_e7c8e120-c469-47eb-9c36-cd9b08a7d865.json"
+  ],
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runway_called": false,
+    "runninghub_called": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "secret_values_exposed": false
+  },
+  "report_path": "data/reports/r3_4_package_based_shot_generation_result_e7c8e120-c469-47eb-9c36-cd9b08a7d865.json",
+  "latest_report_path": "data/reports/r3_4_package_based_shot_generation_result.json"
+}

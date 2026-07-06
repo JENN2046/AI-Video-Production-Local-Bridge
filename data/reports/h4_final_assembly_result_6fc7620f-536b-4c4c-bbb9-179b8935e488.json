@@ -1,0 +1,97 @@
+{
+  "task": "R2-4_H4_FINAL_ASSEMBLY_WORKBENCH",
+  "action": "execute_final_assembly",
+  "result": "PASS",
+  "run_id": "6fc7620f-536b-4c4c-bbb9-179b8935e488",
+  "generated_at": "2026-07-06T14:12:00.534Z",
+  "project_id": "project_a6095720-fba8-4b6e-b15b-d71b5b9f86d6",
+  "readiness_before": {
+    "project_id": "project_a6095720-fba8-4b6e-b15b-d71b5b9f86d6",
+    "project_title": "R2-4 H4 Workbench 3a701eb0",
+    "project_status": "video_review",
+    "ready_for_assembly": true,
+    "blockers": [],
+    "required_shots": 1,
+    "accepted_clips": 1,
+    "clip_order_preview": [
+      {
+        "shot_id": "shot_7d825acc-319b-400d-b1be-218651d63a26",
+        "order": 1,
+        "duration_seconds": 2,
+        "accepted_clip_artifact_id": "artifact_a3eb19c9-0fc7-40b4-8103-68e42976cef7",
+        "accepted_clip_status": "active",
+        "storage_filename": "artifact_a3eb19c9-0fc7-40b4-8103-68e42976cef7.mp4",
+        "ffprobe": {
+          "status": "PASS",
+          "path": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\videos\\artifact_a3eb19c9-0fc7-40b4-8103-68e42976cef7.mp4",
+          "ffprobe_exit_code": 0,
+          "has_video_stream": true,
+          "duration_seconds": 2,
+          "stream_count": 1,
+          "error": ""
+        },
+        "blockers": []
+      }
+    ],
+    "final_video_artifact": null,
+    "latest_report_path": "data/reports/h4_final_assembly_result.json",
+    "latest_report_exists": false,
+    "provider_boundary": {
+      "network_call_attempted": false,
+      "runway_called": false,
+      "runninghub_called": false,
+      "provider_credits_consumed": false,
+      "real_video_generated": false,
+      "regeneration_performed": false,
+      "batch_generation_performed": false,
+      "final_assembly_performed": false,
+      "memory_saveback_performed": false,
+      "source_asset_overwritten": false,
+      "secret_values_exposed": false
+    },
+    "confirmation": {
+      "required": true,
+      "accepted_by_summary": false
+    }
+  },
+  "final_assembly": {
+    "run_id": "run_6beba2b8-4050-4517-968a-5f89578f8725",
+    "final_video_artifact_id": "artifact_b58255fb-bca2-4ae3-81f2-4da86ece2978",
+    "source_clip_artifact_ids": [
+      "artifact_a3eb19c9-0fc7-40b4-8103-68e42976cef7"
+    ],
+    "source_asset_overwritten": false
+  },
+  "final_video_artifact": {
+    "artifact_id": "artifact_b58255fb-bca2-4ae3-81f2-4da86ece2978",
+    "exists": true,
+    "artifact_type": "video",
+    "role": "final_video",
+    "status": "active",
+    "storage_filename": "artifact_b58255fb-bca2-4ae3-81f2-4da86ece2978.mp4",
+    "ffprobe": {
+      "status": "PASS",
+      "path": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\final\\artifact_b58255fb-bca2-4ae3-81f2-4da86ece2978.mp4",
+      "ffprobe_exit_code": 0,
+      "has_video_stream": true,
+      "duration_seconds": 2,
+      "stream_count": 1,
+      "error": ""
+    }
+  },
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runway_called": false,
+    "runninghub_called": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "final_assembly_performed": true,
+    "memory_saveback_performed": false,
+    "source_asset_overwritten": false,
+    "secret_values_exposed": false
+  },
+  "report_path": "data/reports/h4_final_assembly_result_6fc7620f-536b-4c4c-bbb9-179b8935e488.json",
+  "latest_report_path": "data/reports/h4_final_assembly_result.json"
+}

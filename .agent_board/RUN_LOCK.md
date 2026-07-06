@@ -1,11 +1,11 @@
 # RUN_LOCK.md
 
 status: inactive
-run_id: null
-owner: null
-started_at: null
-current_task: null
-project: null
+run_id: codex-20260706-203847-three-route-sustained
+owner: Codex sustained executor
+started_at: 2026-07-06T20:38:47+08:00
+current_task: none
+project: AI Video Production Workspace Three Route Plan
 stale_after_minutes: 120
 
 ## Rules

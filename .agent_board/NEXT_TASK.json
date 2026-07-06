@@ -2,101 +2,92 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "M0-H",
+  "task_id": "R1-5_MCP_V3_PRODUCTION_ASSISTANT",
   "status": "DONE",
-  "priority": "P0",
+  "priority": "P2",
   "lane": "Safe Local Production Lane",
-  "project": "M0 Video Loop Validation",
-  "title": "Validation And Closeout",
+  "project": "AI Video Production Workspace Three Route Plan",
+  "title": "MCP v3 Production Assistant",
   "scope": [
-    "npm run test:m0",
-    "npm run demo:m0",
-    "npm run closeout:m0",
-    "m0_closeout.yaml",
-    "implementation summary",
-    "self-review"
+    "GPT production assistant planning tools for generation, regeneration, assembly, and memory saveback proposals"
   ],
-  "goal": "Run final M0 validation and produce honest closeout evidence.",
+  "goal": "Let GPT assist with generation, regeneration, final assembly, and memory saveback planning while Human Workbench remains the hard gate and Local App remains the only executor.",
   "acceptance": [
-    "npm run test:m0 passes.",
-    "npm run demo:m0 passes and exercises the tool interface.",
-    "npm run closeout:m0 writes data/reports/m0_closeout.yaml.",
-    "Closeout report includes all required validation, evidence, artifact summary, scenarios, hard gates, known gaps, and next recommendation.",
-    "Implementation summary is produced.",
-    "Self-review report is produced."
+    "Tools are defined for propose generation plan, propose regeneration plan, propose final assembly plan, and propose memory saveback.",
+    "GPT proposes but does not execute real provider calls.",
+    "GPT cannot approve final delivery.",
+    "GPT cannot write long-term memory.",
+    "Human Workbench remains hard gate and Local App remains executor."
   ],
   "validation": [
-    "npm run test:m0",
-    "npm run demo:m0",
-    "npm run closeout:m0",
-    "closeout YAML structure check",
-    "self-review structure check"
+    "npm run typecheck",
+    "npm run test:webgpt:production",
+    "npm run r1:5:production-assistant",
+    "npm run secret:scan",
+    "git diff --check"
   ],
   "allowed_delivery": [
-    "local_file_update",
+    "source_code_change",
     "tests",
-    "demo",
-    "closeout_report",
-    "self_review",
-    "validation_log",
-    "handoff"
+    "planning_tools",
+    "tool_schema",
+    "docs_update"
   ],
   "blocked_delivery": [
+    "real_provider_call",
+    "final_delivery_approval",
+    "long_term_memory_write",
+    "secret_read",
+    "shell_execution",
+    "source_overwrite",
     "push",
     "tag",
     "release",
-    "deploy",
-    "publish",
-    "real_provider_call",
-    "provider_credential_read",
-    "secret_read",
-    "state_private_read",
-    "production_config_change"
+    "deploy"
   ],
   "depends_on": [
-    "M0-G"
+    "R2-5_H5_MEMORY_ASSET_WORKBENCH"
   ],
-  "claimed_by": "Codex M0 executor",
-  "claim_run_id": "codex-20260706-121141-m0-h",
-  "claimed_at": "2026-07-06T12:11:41+08:00",
-  "completed_by": "Codex M0 executor",
-  "completed_at": "2026-07-06T12:13:42+08:00",
+  "claimed_by": "Codex sustained executor",
+  "claim_run_id": "codex-20260706-203847-three-route-sustained",
+  "claimed_at": "2026-07-06T23:35:00+08:00",
+  "completed_by": "Codex sustained executor",
+  "completed_at": "2026-07-06T23:45:00+08:00",
   "blocked_by": null,
   "blocked_at": null,
   "failed_by": null,
   "failed_at": null,
   "skipped_by": null,
   "skipped_at": null,
-  "result": "PASS_WITH_GAPS",
+  "result": "PASS",
   "validation_result": "PASS",
   "evidence": [
-    "data/reports/m0_closeout.yaml",
-    "data/reports/m0_implementation_summary.yaml",
-    "data/reports/m0_self_review.yaml",
-    "data/reports/m0_demo_result.json"
+    "data/reports/r1_5_mcp_v3_production_assistant_result.json",
+    "data/reports/r1_5_mcp_v3_production_assistant_result_28dcfff8-329d-4e3a-a6fb-2017ecb2aed7.json"
   ],
   "commit": null,
-  "delivery": "M0 implemented through closeout with mock provider and known gaps recorded",
+  "delivery": "local_only",
   "boundary_or_safety_stop": null,
   "blocked_reason": null,
   "failure_reason": null,
   "safe_actions_completed": [
-    "Ran npm run typecheck.",
-    "Ran npm run build.",
-    "Ran npm run test:m0.",
-    "Ran npm run demo:m0.",
-    "Ran npm run closeout:m0.",
-    "Wrote M0 closeout, implementation summary, and self-review reports."
+    "implemented WebGPT v3 production assistant plan-only tools",
+    "implemented localhost-only v3 bridge",
+    "added production assistant tests and report script"
   ],
   "unsafe_action_not_performed": [
-    "secret/private-state read",
-    "source media delete/overwrite",
-    "real provider call",
-    "push/release/deploy"
+    "real_provider_call",
+    "final_delivery_approval",
+    "long_term_memory_write",
+    "secret_read",
+    "shell_execution",
+    "source_overwrite",
+    "push",
+    "tag",
+    "release",
+    "deploy"
   ],
   "options_for_jenn": [],
-  "next_safe_option": [
-    "Review M0 closeout and decide whether to start M1 real provider integration."
-  ],
-  "updated_at": "2026-07-06T12:13:42+08:00"
+  "next_safe_option": [],
+  "updated_at": "2026-07-06T23:45:00+08:00"
 }

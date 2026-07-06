@@ -1,0 +1,37 @@
+{
+  "task_id": "R2-5_H5_MEMORY_ASSET_WORKBENCH",
+  "result": "PASS",
+  "run_id": "6aac192b-dd2f-4dc8-9594-f048054fa1fa",
+  "generated_at": "2026-07-06T14:22:02.436Z",
+  "project_id": "project_bd9735ed-c53a-4d75-841f-a36d91d3bfed",
+  "proposal_id": "memory_proposal_56dfd459-dcad-469a-be10-69e2d09150e0",
+  "workbench": {
+    "proposal_visible": true,
+    "human_can_approve_reject_edit": true,
+    "asset_reference_provenance_visible": true,
+    "no_automatic_memory_save_without_confirmation": true,
+    "rejected_items_not_saved": true,
+    "recall_pack_visible": true
+  },
+  "counts": {
+    "proposals_total": 4,
+    "memory_items_total": 3,
+    "assets_total": 3,
+    "references_total": 1,
+    "recall_packs_total": 3
+  },
+  "boundary": {
+    "automatic_memory_save": false,
+    "long_term_memory_write_attempted": false,
+    "secret_read": false,
+    "private_state_read": false,
+    "source_asset_overwritten": false,
+    "provider_call_attempted": false,
+    "push": false,
+    "tag": false,
+    "release": false,
+    "deploy": false
+  },
+  "report_path": "data/reports/r2_5_h5_memory_asset_workbench_result_6aac192b-dd2f-4dc8-9594-f048054fa1fa.json",
+  "latest_report_path": "data/reports/r2_5_h5_memory_asset_workbench_result.json"
+}

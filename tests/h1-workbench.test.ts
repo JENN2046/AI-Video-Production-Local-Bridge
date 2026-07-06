@@ -6,15 +6,26 @@ import test from "node:test";
 
 import {
   defaultH1WorkbenchState,
+  approveH3GeneratedClip,
+  createGenerationRunFromPackageShot,
+  createProject,
+  executeH4FinalAssembly,
   ensureM0Directories,
   freezeH1StoryboardPackage,
+  getMediaArtifact,
+  getShot,
+  h4FinalAssemblyWorkbenchSummary,
   H1_PROVIDER_BOUNDARY,
+  h2CanaryWorkbenchSummary,
+  h3VideoReviewSummary,
+  importStoryboardPackage,
   linkH1ArtifactToShot,
   markH1ShotApproved,
   openM0Database,
   paths,
   registerH1ApprovedKeyframe,
   registerMediaArtifact,
+  rejectH3GeneratedClip,
   updateH1ShotMetadata,
   validateH1StoryboardPackage,
   type H1WorkbenchState
@@ -213,6 +224,228 @@ test("H1 rejects missing video_prompt and freeze before all shots are approved",
     assert.equal(frozen.ok, false);
     if (frozen.ok) return;
     assert.equal(frozen.error.code, "FREEZE_PRECONDITIONS_BLOCKED");
+  } finally {
+    db.close();
+  }
+});
+
+test("H2 canary workbench summary is read-only and redacted", () => {
+  const summary = h2CanaryWorkbenchSummary();
+  assert.equal(summary.provider_boundary.network_call_attempted, false);
+  assert.equal(summary.provider_boundary.runway_called, false);
+  assert.equal(summary.provider_boundary.runninghub_called, false);
+  assert.equal(summary.provider_boundary.real_video_generated, false);
+  assert.equal(summary.provider_boundary.secret_values_exposed, false);
+  assert.equal(summary.provider_boundary.real_submit_available, false);
+  assert.equal(summary.provider_boundary.real_submit_requires_separate_authorization, true);
+  assert.equal(summary.dry_run_plan.can_generate_from_workbench, false);
+  assert.equal(summary.dry_run_plan.regeneration_allowed, false);
+  assert.equal(summary.dry_run_plan.batch_generation_allowed, false);
+  assert.equal(summary.dry_run_plan.runninghub_allowed, false);
+  assert.equal(typeof summary.credential_present, "boolean");
+
+  if (summary.report_exists) {
+    assert.equal(summary.provider_boundary.provider, "runway");
+    assert.equal(summary.provider_boundary.max_submit_calls, 1);
+    assert.equal(summary.provider_boundary.runway_ratio, "768:1280");
+    assert.equal(summary.provider_boundary.direct_9_16_sent_to_runway, false);
+    assert.equal(summary.selected_input.duration_seconds, 2);
+    assert.equal(summary.selected_input.runway_ratio, "768:1280");
+  }
+
+  const serialized = JSON.stringify(summary);
+  assert.equal(serialized.includes("sk-"), false);
+  assert.equal(serialized.includes("key****"), false);
+});
+
+test("H3 reviews generated clips and creates regeneration drafts without regenerating", async () => {
+  const db = openM0Database();
+
+  try {
+    const project = createProject({ title: `H3 Review ${randomUUID().slice(0, 8)}` }, db);
+    assert.equal(project.ok, true);
+    if (!project.ok) return;
+    const storyboardArtifact = registerMediaArtifact(
+      {
+        artifact_type: "image",
+        role: "storyboard_image",
+        source: { kind: "fixture_path", path: "storyboard/shot_001.png" }
+      },
+      db
+    );
+    assert.equal(storyboardArtifact.ok, true);
+    if (!storyboardArtifact.ok) return;
+
+    const storyboard = importStoryboardPackage(
+      {
+        project_id: project.project_id,
+        status: "approved_for_video_generation",
+        approved_shot_snapshots: [
+          {
+            order: 1,
+            duration_seconds: 2,
+            storyboard_image_artifact_id: storyboardArtifact.artifact.artifact_id,
+            video_prompt: "Animate this shot for H3 review."
+          }
+        ],
+        user_approval: { storyboard_approved: true }
+      },
+      db
+    );
+    assert.equal(storyboard.ok, true);
+    if (!storyboard.ok) return;
+    const shotId = storyboard.shots[0].shot_id;
+
+    const firstGeneration = await createGenerationRunFromPackageShot(
+      {
+        project_id: project.project_id,
+        storyboard_package_id: storyboard.storyboard_package_id,
+        shot_id: shotId,
+        confirmation: { confirmation_level: "hard_gate", user_confirmed: true }
+      },
+      db
+    );
+    assert.equal(firstGeneration.ok, true);
+    if (!firstGeneration.ok) return;
+    const firstArtifactId = firstGeneration.generated_artifact_id ?? "";
+    const summary = h3VideoReviewSummary(defaultH1WorkbenchState(), db);
+    assert.equal(summary.generated_clips.some((clip) => clip.artifact_id === firstArtifactId && clip.ffprobe?.status === "PASS"), true);
+
+    const approved = approveH3GeneratedClip({ shot_id: shotId, artifact_id: firstArtifactId, write_report: false }, db);
+    assert.equal(approved.ok, true);
+    if (!approved.ok) return;
+    assert.equal(approved.value.accepted_clip_artifact_id, firstArtifactId);
+
+    const secondGeneration = await createGenerationRunFromPackageShot(
+      {
+        project_id: project.project_id,
+        storyboard_package_id: storyboard.storyboard_package_id,
+        shot_id: shotId,
+        confirmation: { confirmation_level: "hard_gate", user_confirmed: true }
+      },
+      db
+    );
+    assert.equal(secondGeneration.ok, true);
+    if (!secondGeneration.ok) return;
+    const secondArtifactId = secondGeneration.generated_artifact_id ?? "";
+    const runCountBeforeReject = getShot(db, shotId)?.generation_run_ids.length ?? 0;
+
+    const rejected = rejectH3GeneratedClip(
+      defaultH1WorkbenchState(),
+      {
+        shot_id: shotId,
+        artifact_id: secondArtifactId,
+        rejection_reasons: ["motion is too subtle"],
+        revision_instruction: {
+          summary: "Increase motion",
+          prompt_delta: "add a more visible camera move",
+          negative_delta: "static",
+          priority: "medium"
+        },
+        write_report: false
+      },
+      db
+    );
+    assert.equal(rejected.ok, true);
+    if (!rejected.ok) return;
+    assert.equal(rejected.value.draft.status, "draft");
+    assert.equal(rejected.value.draft.previous_run_id, secondGeneration.run.run_id);
+    assert.equal(getShot(db, shotId)?.clip_versions.find((version) => version.artifact_id === secondArtifactId)?.review_status, "rejected");
+    assert.equal(getShot(db, shotId)?.generation_run_ids.length, runCountBeforeReject);
+  } finally {
+    db.close();
+  }
+});
+
+test("H4 shows assembly readiness and executes final assembly only after explicit confirmation", async () => {
+  const db = openM0Database();
+
+  try {
+    const project = createProject({ title: `H4 Assembly ${randomUUID().slice(0, 8)}` }, db);
+    assert.equal(project.ok, true);
+    if (!project.ok) return;
+
+    const storyboardArtifact = registerMediaArtifact(
+      {
+        artifact_type: "image",
+        role: "storyboard_image",
+        source: { kind: "fixture_path", path: "storyboard/shot_001.png" }
+      },
+      db
+    );
+    assert.equal(storyboardArtifact.ok, true);
+    if (!storyboardArtifact.ok) return;
+
+    const storyboard = importStoryboardPackage(
+      {
+        project_id: project.project_id,
+        status: "approved_for_video_generation",
+        approved_shot_snapshots: [
+          {
+            order: 1,
+            duration_seconds: 2,
+            storyboard_image_artifact_id: storyboardArtifact.artifact.artifact_id,
+            video_prompt: "Animate this shot for H4 assembly."
+          }
+        ],
+        user_approval: { storyboard_approved: true }
+      },
+      db
+    );
+    assert.equal(storyboard.ok, true);
+    if (!storyboard.ok) return;
+
+    const shotId = storyboard.shots[0].shot_id;
+    const blockedSummary = h4FinalAssemblyWorkbenchSummary(defaultH1WorkbenchState(), db, { project_id: project.project_id });
+    assert.equal(blockedSummary.ready_for_assembly, false);
+    assert.equal(blockedSummary.blockers.some((blocker) => blocker.includes("MISSING_ACCEPTED_CLIP")), true);
+
+    const generation = await createGenerationRunFromPackageShot(
+      {
+        project_id: project.project_id,
+        storyboard_package_id: storyboard.storyboard_package_id,
+        shot_id: shotId,
+        confirmation: { confirmation_level: "hard_gate", user_confirmed: true }
+      },
+      db
+    );
+    assert.equal(generation.ok, true);
+    if (!generation.ok) return;
+    const generatedArtifactId = generation.generated_artifact_id ?? "";
+
+    const missingConfirmation = executeH4FinalAssembly({ project_id: project.project_id, human_confirmation: false, write_report: false }, defaultH1WorkbenchState(), db);
+    assert.equal(missingConfirmation.ok, false);
+    if (missingConfirmation.ok) return;
+    assert.equal(missingConfirmation.error.code, "HUMAN_CONFIRMATION_REQUIRED");
+
+    const notReady = executeH4FinalAssembly({ project_id: project.project_id, human_confirmation: true, write_report: false }, defaultH1WorkbenchState(), db);
+    assert.equal(notReady.ok, false);
+    if (notReady.ok) return;
+    assert.equal(notReady.error.code, "FINAL_ASSEMBLY_NOT_READY");
+
+    const approved = approveH3GeneratedClip({ shot_id: shotId, artifact_id: generatedArtifactId, write_report: false }, db);
+    assert.equal(approved.ok, true);
+    if (!approved.ok) return;
+
+    const ready = h4FinalAssemblyWorkbenchSummary(defaultH1WorkbenchState(), db, { project_id: project.project_id });
+    assert.equal(ready.ready_for_assembly, true);
+    assert.equal(ready.accepted_clips, 1);
+    assert.equal(ready.clip_order_preview[0].ffprobe?.status, "PASS");
+
+    const assembled = executeH4FinalAssembly({ project_id: project.project_id, human_confirmation: true, write_report: false }, defaultH1WorkbenchState(), db);
+    assert.equal(assembled.ok, true);
+    if (!assembled.ok) return;
+
+    const report = assembled.value.report as {
+      provider_boundary: { runway_called: boolean; runninghub_called: boolean; source_asset_overwritten: boolean; final_assembly_performed: boolean };
+      final_video_artifact: { ffprobe: { status: string } | null };
+    };
+    assert.equal(report.provider_boundary.runway_called, false);
+    assert.equal(report.provider_boundary.runninghub_called, false);
+    assert.equal(report.provider_boundary.source_asset_overwritten, false);
+    assert.equal(report.provider_boundary.final_assembly_performed, true);
+    assert.equal(report.final_video_artifact.ffprobe?.status, "PASS");
+    assert.equal(getMediaArtifact(db, generatedArtifactId)?.status, "active");
   } finally {
     db.close();
   }

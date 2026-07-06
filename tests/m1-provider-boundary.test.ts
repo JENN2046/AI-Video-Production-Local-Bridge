@@ -5,6 +5,7 @@ import test from "node:test";
 
 import {
   buildRunwayCanaryDryRunReport,
+  createGenerationRunFromPackageShot,
   createProject,
   downloadProviderOutputToArtifact,
   getMediaArtifact,
@@ -267,6 +268,67 @@ test("M1 Runway request maps project aspect ratio to API resolution ratio before
   assert.equal(body.duration, 2);
   assert.equal(body.promptText, "Animate portrait shot.");
   assert.equal(rawBody.includes("9:16"), false);
+});
+
+test("M1 package shot generation creates mock generated clip with ffprobe validation and no raw import input", async () => {
+  const db = openM0Database();
+  try {
+    const { project, storyboard } = setupOneShotProject(db);
+    const shotId = storyboard.shots[0].shot_id;
+
+    const result = await createGenerationRunFromPackageShot(
+      {
+        project_id: project.project_id,
+        storyboard_package_id: storyboard.storyboard_package_id,
+        shot_id: shotId,
+        confirmation: { confirmation_level: "hard_gate", user_confirmed: true }
+      },
+      db
+    );
+
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.batch.summary.total, 1);
+    assert.equal(result.run.shot_id, shotId);
+    assert.equal(result.run.status, "succeeded");
+    assert.equal(result.run.provider.provider_name, "mock");
+    assert.equal(result.generated_artifact_id?.startsWith("artifact_"), true);
+    assert.equal(result.provider_request_summary?.project_aspect_ratio, "9:16");
+    assert.equal(result.provider_request_summary?.runway_ratio, "768:1280");
+    assert.equal(result.provider_request_summary?.raw_data_imports_provider_input, false);
+    assert.equal(result.provider_request_summary?.prompt_image_storage_is_app_media, true);
+    assert.equal(result.ffprobe?.status, "PASS");
+
+    const artifact = getMediaArtifact(db, result.generated_artifact_id ?? "");
+    assert.equal(artifact?.role, "generated_clip");
+    assert.equal(artifact?.artifact_type, "video");
+    assert.equal(artifact?.source.provider, "mock");
+  } finally {
+    db.close();
+  }
+});
+
+test("M1 package shot generation hard-gates live provider submit by default", async () => {
+  const db = openM0Database();
+  try {
+    const { project, storyboard } = setupOneShotProject(db);
+    const result = await createGenerationRunFromPackageShot(
+      {
+        project_id: project.project_id,
+        storyboard_package_id: storyboard.storyboard_package_id,
+        shot_id: storyboard.shots[0].shot_id,
+        provider_execution: { provider: "real", provider_name: "runway", cost_acknowledged: true },
+        confirmation: { confirmation_level: "hard_gate", user_confirmed: true }
+      },
+      db
+    );
+
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.error.code, "LIVE_PROVIDER_AUTHORIZATION_REQUIRED");
+  } finally {
+    db.close();
+  }
 });
 
 test("M1 provider output URL safety blocks unsafe destinations", () => {

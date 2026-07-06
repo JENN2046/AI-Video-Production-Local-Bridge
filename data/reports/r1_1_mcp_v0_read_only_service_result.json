@@ -1,0 +1,97 @@
+{
+  "task": "R1-1_MCP_V0_READ_ONLY_SERVICE",
+  "result": "PASS",
+  "run_id": "codex-20260706-203847-three-route-sustained",
+  "completed_at": "2026-07-06T21:43:00+08:00",
+  "scope": "WebGPT MCP or bridge v0 read-only tools for app-side status, reports, and redacted provider readiness",
+  "implementation": {
+    "tool_executor": "executeWebGptReadOnlyTool",
+    "tool_count": 9,
+    "local_bridge_command": "npm run webgpt:bridge:v0",
+    "local_bridge_bind_host": "127.0.0.1",
+    "http_methods_allowed": [
+      "GET"
+    ],
+    "mutation_allowed": false,
+    "provider_call_allowed": false,
+    "secret_read_allowed": false,
+    "shell_allowed": false
+  },
+  "tools": [
+    "get_workspace_status",
+    "get_project_status",
+    "list_import_candidates",
+    "list_media_artifacts",
+    "get_media_artifact",
+    "get_shot_status",
+    "get_storyboard_package_status",
+    "get_latest_reports",
+    "get_provider_readiness_summary_redacted"
+  ],
+  "acceptance": {
+    "read_only_tool_schema_implemented": true,
+    "all_required_tools_available": true,
+    "no_mutation_tools_implemented": true,
+    "no_provider_tools_implemented": true,
+    "no_provider_call": true,
+    "no_shell_execution": true,
+    "no_secret_read": true,
+    "no_raw_filesystem_exposure": true,
+    "no_public_tunnel": true,
+    "gpt_cannot_invent_ids": true
+  },
+  "smoke_check": {
+    "result": "PASS",
+    "url": "http://127.0.0.1:4193",
+    "tools_count": 9,
+    "mutation_allowed": false,
+    "provider_network_call_attempted": false,
+    "post_blocked_with_405": true
+  },
+  "validation": [
+    {
+      "command": "npm run typecheck",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run test:webgpt:bridge",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run secret:scan",
+      "result": "PASS"
+    },
+    {
+      "command": "WebGPT v0 read-only bridge smoke check",
+      "result": "PASS"
+    },
+    {
+      "command": "git diff --check",
+      "result": "PASS"
+    }
+  ],
+  "changed_files": [
+    "src/tools/webGptReadOnlyBridge.ts",
+    "scripts/webgpt-readonly-bridge.ts",
+    "tests/webgpt-readonly-bridge.test.ts",
+    "src/index.ts",
+    "package.json",
+    "data/reports/r1_1_mcp_v0_read_only_service_result.json"
+  ],
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runway_called": false,
+    "runninghub_called": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "secret_values_exposed": false
+  },
+  "delivery": {
+    "commit": null,
+    "push": false,
+    "tag": false,
+    "release": false,
+    "deploy": false
+  },
+  "next_task": "R3-4_PACKAGE_BASED_SHOT_GENERATION"
+}

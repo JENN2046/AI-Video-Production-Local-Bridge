@@ -1,0 +1,113 @@
+{
+  "task_id": "R1-5_MCP_V3_PRODUCTION_ASSISTANT",
+  "result": "PASS",
+  "run_id": "28dcfff8-329d-4e3a-a6fb-2017ecb2aed7",
+  "generated_at": "2026-07-06T14:27:05.978Z",
+  "project_id": "project_8631eb7b-42b2-4f90-819c-25bc66a68bda",
+  "tool_inventory": [
+    {
+      "name": "propose_generation_plan",
+      "execution_allowed": false,
+      "provider_call_allowed": false,
+      "final_delivery_approval_allowed": false,
+      "long_term_memory_write_allowed": false,
+      "secret_read_allowed": false,
+      "shell_allowed": false
+    },
+    {
+      "name": "propose_regeneration_plan",
+      "execution_allowed": false,
+      "provider_call_allowed": false,
+      "final_delivery_approval_allowed": false,
+      "long_term_memory_write_allowed": false,
+      "secret_read_allowed": false,
+      "shell_allowed": false
+    },
+    {
+      "name": "propose_final_assembly_plan",
+      "execution_allowed": false,
+      "provider_call_allowed": false,
+      "final_delivery_approval_allowed": false,
+      "long_term_memory_write_allowed": false,
+      "secret_read_allowed": false,
+      "shell_allowed": false
+    },
+    {
+      "name": "propose_memory_saveback",
+      "execution_allowed": false,
+      "provider_call_allowed": false,
+      "final_delivery_approval_allowed": false,
+      "long_term_memory_write_allowed": false,
+      "secret_read_allowed": false,
+      "shell_allowed": false
+    }
+  ],
+  "plan_results": [
+    {
+      "tool": "propose_generation_plan",
+      "plan_id": "webgpt_production_plan_80b64ed8-4c5b-4857-b2b7-858dbfd4dd50",
+      "execution_allowed": false,
+      "provider_call_attempted": false,
+      "generation_started": false,
+      "regeneration_started": false,
+      "final_assembly_started": false,
+      "final_delivery_approved": false,
+      "long_term_memory_written": false
+    },
+    {
+      "tool": "propose_regeneration_plan",
+      "plan_id": "webgpt_production_plan_1db9e902-5d05-4805-90dc-2b2748c75dc4",
+      "execution_allowed": false,
+      "provider_call_attempted": false,
+      "generation_started": false,
+      "regeneration_started": false,
+      "final_assembly_started": false,
+      "final_delivery_approved": false,
+      "long_term_memory_written": false
+    },
+    {
+      "tool": "propose_final_assembly_plan",
+      "plan_id": "webgpt_production_plan_59b5a480-5e56-436f-84e5-bff956b66b05",
+      "execution_allowed": false,
+      "provider_call_attempted": false,
+      "generation_started": false,
+      "regeneration_started": false,
+      "final_assembly_started": false,
+      "final_delivery_approved": false,
+      "long_term_memory_written": false
+    },
+    {
+      "tool": "propose_memory_saveback",
+      "plan_id": "webgpt_production_plan_ed596dbf-7363-4444-b8db-03be439d425d",
+      "execution_allowed": false,
+      "provider_call_attempted": false,
+      "generation_started": false,
+      "regeneration_started": false,
+      "final_assembly_started": false,
+      "final_delivery_approved": false,
+      "long_term_memory_written": false
+    }
+  ],
+  "summary": {
+    "mode": "PRODUCTION_PLAN_REVIEW",
+    "plans_added": 4,
+    "provider_call_attempted": false,
+    "final_delivery_approved": false,
+    "long_term_memory_written": false
+  },
+  "boundary": {
+    "provider_call_attempted": false,
+    "real_provider_call": false,
+    "final_delivery_approval_changed": false,
+    "long_term_memory_write_attempted": false,
+    "secret_read": false,
+    "shell_execution": false,
+    "source_asset_overwritten": false,
+    "push": false,
+    "tag": false,
+    "release": false,
+    "deploy": false
+  },
+  "report_path": "data/reports/r1_5_mcp_v3_production_assistant_result_28dcfff8-329d-4e3a-a6fb-2017ecb2aed7.json",
+  "latest_report_path": "data/reports/r1_5_mcp_v3_production_assistant_result.json"
+}
