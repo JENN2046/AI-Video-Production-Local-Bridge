@@ -1,0 +1,47 @@
+{
+  "package_name": "AI_Video_Workspace_Three_Route_Plan_v1_1",
+  "created_at": "2026-07-06",
+  "description": "Review and packaged planning docs for WebGPT MCP service, Human Workbench, and Local App routes.",
+  "files": [
+    {
+      "path": "00_README.md",
+      "bytes": 1984,
+      "sha256": "483e489cd1d87d2b53b1343b909e2e8f64a2a47e5a2a8e783f9c0ae707b11c91"
+    },
+    {
+      "path": "01_PLAN_REVIEW.md",
+      "bytes": 5742,
+      "sha256": "73a806c554e941ba22f45affd3a389257fe0666a542a0c55bc50a921d5572300"
+    },
+    {
+      "path": "02_MASTER_PLAN_v1_1.md",
+      "bytes": 6448,
+      "sha256": "e2b1f8cb4af28b229213de724b61799cbf186d26336a38f0e7c707549f9825ea"
+    },
+    {
+      "path": "03_R3_LOCAL_APP_ROUTE_TASKBOOK.md",
+      "bytes": 7567,
+      "sha256": "c8cbb211c8e899bd4c320edf4ae140ec0acd0d34c1960555d51c3bed96050832"
+    },
+    {
+      "path": "04_R2_HUMAN_WORKBENCH_ROUTE_TASKBOOK.md",
+      "bytes": 5376,
+      "sha256": "c10aa73ec1dd8b0236d9fdcc17f0fc625366ca039cf6921595898ae334c3aca0"
+    },
+    {
+      "path": "05_R1_WEBGPT_MCP_ROUTE_TASKBOOK.md",
+      "bytes": 5178,
+      "sha256": "7a3a2b9c280eadcb93b669e68073040a6b27b24f678f92c448e535c97dc96660"
+    },
+    {
+      "path": "06_INTEGRATION_ROADMAP_AND_ACCEPTANCE.md",
+      "bytes": 4893,
+      "sha256": "98763fed1507dd45517103c4fbc1317c6ab0c6e00cbdef52fb968e8e21ec1563"
+    },
+    {
+      "path": "07_CODEX_DISPATCH_TASKS.md",
+      "bytes": 5067,
+      "sha256": "b35327a3485578bf8cde743baea9f889f89ca0fe7270ed54b0193097fab1b285"
+    }
+  ]
+}
