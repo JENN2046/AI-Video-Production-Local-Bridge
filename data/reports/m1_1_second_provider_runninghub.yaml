@@ -1,0 +1,216 @@
+m1_1_second_provider_runninghub:
+  result: SELECTED_AS_SECOND_PROVIDER
+  generated_at: "2026-07-06T15:11:07.6149634+08:00"
+  stage: M1.1
+  stage_name: Second Provider Candidate And Contract Prefreeze
+  scope: "Record RunningHub as the M1.1 second provider target without changing the M1-P0 Runway first-provider freeze."
+
+  execution_policy:
+    real_provider_called: false
+    provider_credits_consumed: false
+    credentials_read: false
+    adapter_implemented: false
+    selection_basis: official_public_documentation_review
+
+  relationship_to_m1_p0:
+    first_provider_remains:
+      provider_name: runway
+      model_name: gen4.5
+      frozen_stage: M1-P0
+    second_provider_selected:
+      provider_name: runninghub
+      provider_display_name: RunningHub
+      selected_as_m1_1_second_provider: true
+    routing_policy: "M1 implementation should keep Runway as the first real provider. RunningHub should enter through an M1.1 task after a focused mini contract freeze and mock/dry-run validation."
+
+  provider:
+    provider_name: runninghub
+    provider_display_name: RunningHub
+    target_model_family: seedance2.0
+    target_model_name: seedance2.0_image_to_video
+    provider_docs_reference:
+      - "https://www.runninghub.cn/runninghub-api-doc-cn/api-448183116"
+      - "https://www.runninghub.cn/runninghub-api-doc-cn/api-425767306"
+      - "https://www.runninghub.cn/runninghub-api-doc-cn/api-425749007"
+      - "https://www.runninghub.cn/runninghub-api-doc-cn/doc-8435517"
+      - "https://www.runninghub.cn/runninghub-api-doc-cn/api-454850620"
+    selected_reason:
+      - "RunningHub exposes model APIs and includes multiple image-to-video model families, making it useful as a provider diversification path after the first Runway adapter."
+      - "The selected seedance2.0 image-to-video page documents an async task submit endpoint and supports first-frame and first/last-frame image-to-video parameters."
+      - "RunningHub provides a binary upload endpoint whose download_url is intended for standard model APIs, which fits local artifact transfer after M1-0."
+      - "RunningHub provides a V2 query endpoint for async task polling and a price-preview endpoint for cost preflight."
+
+  implementation_readiness:
+    status: PREFREEZE_WITH_BLOCKERS
+    selected_as_second_provider: true
+    ready_for_live_adapter: false
+    ready_for_mock_or_dry_run_contract_tests: true
+    blocker_summary: "The public seedance2.0 image-to-video example does not clearly show the text prompt field expected by the current video workspace provider interface. M1.1 must confirm the exact prompt-capable request shape or select a RunningHub image-to-video route with an explicit prompt field before live execution."
+
+  m1_1_contract_outline:
+    generation_mode: image_to_video
+    input_image_required: true
+    prompt_required_by_workspace_interface: true
+    prompt_field_name: UNKNOWN_NOT_SHOWN_IN_SELECTED_DOC_EXAMPLE
+    upload_required_for_local_artifacts: true
+    api_style: rest
+    auth_method: bearer_token
+    job_model: async_polling
+    upload_endpoint: "POST https://www.runninghub.cn/openapi/v2/media/upload/binary"
+    submit_endpoint: "POST https://www.runninghub.cn/openapi/v2/rhart-video/sparkvideo-2.0/image-to-video"
+    query_endpoint: "POST https://www.runninghub.cn/openapi/v2/query"
+    price_preview_endpoint_pattern: "POST https://www.runninghub.cn/openapi/v2/price-preview/**"
+    task_id_field: taskId
+    status_field: status
+    success_status_values:
+      - SUCCESS
+    running_status_values:
+      - RUNNING
+    result_url_field: "results[0].url"
+    result_output_type_field: "results[0].outputType"
+
+  request_shape_prefreeze:
+    upload_request:
+      method: POST
+      content_type: multipart_form_data
+      required_fields:
+        - file
+      response_fields_to_allowlist:
+        - data.type
+        - data.download_url
+        - data.fileName
+        - data.size
+      durable_storage_policy: "Do not persist the one-day upload URL as a durable Media Artifact. Use it only as transient provider input."
+    submit_request:
+      documented_fields:
+        - resolution
+        - duration
+        - firstFrameUrl
+        - lastFrameUrl
+        - generateAudio
+        - ratio
+        - realPersonMode
+        - conversionSlots
+        - returnLastFrame
+        - seed
+      workspace_mapping_prefreeze:
+        storyboard_image_artifact: "Upload active local image artifact, use returned data.download_url as firstFrameUrl."
+        video_prompt: "BLOCKED until prompt field is confirmed for the selected RunningHub model route."
+        duration_seconds: duration
+        aspect_ratio_or_resolution: "ratio and resolution"
+        generate_audio_default: false
+        real_person_mode_default: false
+        return_last_frame_default: false
+    query_request:
+      required_fields:
+        - taskId
+      output_download_policy: "On SUCCESS, download result URL immediately into local media storage, then validate with ffprobe before registering a generated_clip artifact."
+
+  credentials:
+    credential_env_names:
+      - RUNNINGHUB_API_KEY
+    required_header:
+      Authorization: "Bearer ${RUNNINGHUB_API_KEY}"
+    forbidden_storage:
+      - sqlite
+      - reports
+      - logs
+      - stdout
+      - data/media
+      - data/imports
+    missing_credential_error: PROVIDER_CREDENTIAL_MISSING
+    redaction_policy: "Never print, persist, hash, or summarize the API key. The real adapter may read it from process.env only after all M1.1 hard gates pass."
+
+  cost_and_confirmation:
+    real_generation_requires_hard_gate: true
+    real_generation_requires_cost_ack: true
+    price_preview_required_before_live_generation: true
+    required_env_gates:
+      - REAL_PROVIDER_ENABLED=true
+      - M1_1_SECOND_PROVIDER=runninghub
+      - M1_1_RUNNINGHUB_EXECUTION_ALLOWED=true
+      - M1_1_RUNNINGHUB_COST_ACK=true
+    user_confirmation_required: true
+    confirmation_object_required:
+      confirmation_level: hard_gate
+      user_confirmed: true
+      cost_acknowledged: true
+      provider_name: runninghub
+      model_name: seedance2.0_image_to_video
+    cost_note: "RunningHub price preview can estimate model cost, but no live account balance, API tier, or billable call was checked in this stage."
+
+  safety:
+    provider_network_call_default: disabled
+    real_call_allowed_in_this_stage: false
+    output_download_private_network_block: true
+    output_download_timeout_seconds: 120
+    output_download_max_size_mb: 250
+    output_download_redirect_limit: 3
+    upload_url_expiration_risk: high
+    raw_provider_payload_storage: forbidden
+    secret_redaction_required: true
+    durable_artifact_requirement: "Only the downloaded, ffprobe-valid local video artifact is durable."
+    live_call_stop_conditions:
+      - missing_RUNNINGHUB_API_KEY
+      - missing_required_env_gate
+      - missing_user_cost_ack
+      - prompt_field_not_confirmed
+      - price_preview_failed_or_unaccepted
+      - account_tier_access_not_confirmed
+      - storyboard_image_artifact_not_active
+      - input_image_validation_failed
+      - upload_failed
+      - output_url_private_network_or_non_https
+      - output_download_failed
+      - ffprobe_validation_failed
+
+  error_mapping_prefreeze:
+    "1002": PROVIDER_AUTH_FAILED
+    "1003": PROVIDER_RATE_LIMITED
+    "1004": PROVIDER_JOB_NOT_FOUND
+    "1005": PROVIDER_TRANSIENT_FAILURE
+    "1006": PROVIDER_TIMEOUT
+    "1007": PROVIDER_UNSUPPORTED_INPUT
+    "1008": PROVIDER_FILE_TOO_LARGE
+    "1010": PROVIDER_TRANSIENT_FAILURE
+    "1011": PROVIDER_TRANSIENT_FAILURE
+    "1012": PROVIDER_TRANSIENT_FAILURE
+    "1013": PROVIDER_INPUT_FILE_INVALID
+    "1014": PROVIDER_ACCESS_DENIED
+    "1015": PROVIDER_GENERATION_FAILED
+    "1501": PROVIDER_CONTENT_REJECTED
+    "1504": PROVIDER_TIMEOUT
+    "1505": PROVIDER_CONTENT_REJECTED
+    "1516": PROVIDER_EXTERNAL_DOWNLOAD_FAILED
+    "1517": PROVIDER_UPLOAD_FAILED
+    "1518": PROVIDER_BASE64_INVALID
+    "1519": PROVIDER_CONTENT_PROCESSING_FAILED
+    "1520": PROVIDER_RATE_LIMITED
+
+  m1_1_acceptance_plan:
+    pre_implementation:
+      - "Confirm exact prompt-capable request field for the selected RunningHub image-to-video route, or select another RunningHub route with explicit prompt support."
+      - "Confirm account tier can access the standard model API to avoid Access Denied at live execution."
+      - "Confirm stable versus low-price channel choice; default to an official stable route where available."
+      - "Confirm upload data.download_url can be used as firstFrameUrl for the selected route."
+      - "Confirm expected video outputType and codec behavior through fixture/live single-shot validation."
+    implementation:
+      - "Add RunningHub adapter behind explicit M1.1 gates without replacing the Runway adapter."
+      - "Add upload preflight, submit, poll, result download, ffprobe validation, and Media Artifact registration."
+      - "Persist only allowlisted sanitized response fields and local durable artifact metadata."
+    validation:
+      - "Run mock/dry-run schema tests without credentials."
+      - "Run M0 and M1-0 regressions."
+      - "After hard gates and cost acknowledgement, run one live single-shot validation and record evidence."
+
+  known_blockers_before_live_adapter:
+    - "Exact text prompt field is unknown for the selected seedance2.0 image-to-video page."
+    - "API key tier/access must be confirmed because RunningHub documents Access Denied for some standard model API access patterns."
+    - "Output result example in the generic V2 query doc shows jpg, so M1.1 must confirm video result outputType for this specific model route."
+    - "Uploaded download_url is one-day transient input and cannot be treated as durable workspace media."
+    - "Live cost/balance/rate limit were not checked."
+
+  final_recommendation:
+    - "Keep Runway gen4.5 as the M1 first provider frozen by M1-P0."
+    - "Adopt RunningHub as the M1.1 second provider target."
+    - "Before adapter implementation, create a small M1.1 contract-freeze task to resolve the prompt field, account-tier access, price-preview, upload compatibility, and video output shape."

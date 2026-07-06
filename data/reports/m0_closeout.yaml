@@ -1,0 +1,96 @@
+m0_closeout:
+  result: PASS_WITH_GAPS
+  generated_at: 2026-07-06T08:26:32.700Z
+  project_id: "project_c5efee40-85c6-466f-818a-6ffeefd52197"
+  storyboard_package_id: "storyboard_package_9ebceb0c-6945-45e2-b334-c653ac3f3ebb"
+
+  validation:
+    commands_run:
+      - npm run typecheck
+      - npm run test:m0
+      - npm run demo:m0
+      - npm run closeout:m0
+    exit_codes:
+      typecheck: 0
+      test_m0: 0
+      demo_m0: 0
+      closeout_m0: 0
+
+  evidence:
+    sqlite_path: "A:\\AI Video Production Workspace\\data\\app.sqlite"
+    media_root: "A:\\AI Video Production Workspace\\data\\media"
+    final_video_path: "A:\\AI Video Production Workspace\\data\\media\\artifacts\\final\\artifact_7b38a3b3-bde9-4561-8f84-ccc865264760.mp4"
+    closeout_report_path: "A:\\AI Video Production Workspace\\data\\reports\\m0_closeout.yaml"
+    demo_project_id: "project_c5efee40-85c6-466f-818a-6ffeefd52197"
+    demo_batch_id: "batch_c03dca39-114e-4717-aebf-16475968a085"
+    demo_evidence_current: true
+    summary_scope: current_demo_project
+
+  artifact_summary:
+    storyboard_images:
+      total: 3
+      active: 3
+      failed: 0
+    generated_clips:
+      total: 4
+      succeeded: 4
+      failed: 0
+    final_video_artifact_id: "artifact_7b38a3b3-bde9-4561-8f84-ccc865264760"
+
+  generation_summary:
+    batches: 1
+    runs: 5
+    failed_runs: 0
+
+  review_summary:
+    approved_shots: 3
+    revision_needed_shots: 0
+    regenerated_shots: 1
+
+  scenarios:
+    scenario_1_three_shot_loop: PASS
+    scenario_2_regeneration: PASS
+    scenario_3_artifact_block: PASS
+    scenario_4_assembly_block: PASS
+    scenario_5_confirmation_gate: PASS
+    scenario_6_path_safety: PASS
+    scenario_7_provider_disabled: PASS
+
+  hard_gates:
+    storyboard_image_transfer_gate:
+      fixture_path: PASS
+      external_transfer_path: NOT_TESTED
+    media_artifact_active_gate: PASS
+    storyboard_package_freeze_gate: PASS
+    generation_confirmation_gate: PASS
+    no_overwrite_gate: PASS
+    final_assembly_gate: PASS
+
+  media_validity:
+    fixture_mock_clip:
+      status: PASS
+      path: "A:\\AI Video Production Workspace\\fixtures\\video\\mock_clip.mp4"
+      ffprobe_exit_code: 0
+      has_video_stream: true
+      duration_seconds: 2
+    generated_clips:
+      status: PASS
+      checked: 4
+      failed: 0
+    final_video:
+      status: PASS
+      path: "A:\\AI Video Production Workspace\\data\\media\\artifacts\\final\\artifact_7b38a3b3-bde9-4561-8f84-ccc865264760.mp4"
+      ffprobe_exit_code: 0
+      has_video_stream: true
+      duration_seconds: 2
+
+  known_gaps:
+    - real provider not enabled
+    - asset library not implemented
+    - memory loop not implemented
+    - advanced UI not implemented
+    - external image transfer path is NOT_TESTED
+    - accessible_uri registration is metadata-only and remains inaccessible until external transfer is implemented
+
+  next_stage_recommendation:
+    - M1 real provider integration

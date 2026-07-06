@@ -1,0 +1,33 @@
+{
+  "phase": "M0-F",
+  "result": "PASS",
+  "project_id": "project_c5efee40-85c6-466f-818a-6ffeefd52197",
+  "storyboard_package_id": "storyboard_package_9ebceb0c-6945-45e2-b334-c653ac3f3ebb",
+  "demo_batch_id": "batch_c03dca39-114e-4717-aebf-16475968a085",
+  "generated_runs": 3,
+  "regenerated_shot_id": "shot_a9f9da65-6f44-4679-8b9b-289c37fa7105",
+  "regenerated_artifact_id": "artifact_e69e2c64-22ed-4a39-b2fd-108eba3831db",
+  "final_video_artifact_id": "artifact_7b38a3b3-bde9-4561-8f84-ccc865264760",
+  "final_video_path": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\final\\artifact_7b38a3b3-bde9-4561-8f84-ccc865264760.mp4",
+  "generation_status": "PASS",
+  "sqlite_path": "A:\\AI Video Production Workspace\\data\\app.sqlite",
+  "media_root": "A:\\AI Video Production Workspace\\data\\media",
+  "tools_registered": [
+    "create_project",
+    "get_project_status",
+    "register_media_artifact",
+    "import_storyboard_package",
+    "start_storyboard_video_generation",
+    "get_generation_status",
+    "mark_shot_clip_review",
+    "regenerate_shot_video",
+    "assemble_final_video"
+  ],
+  "fixture_transfer": "PASS",
+  "storyboard_import": "PASS",
+  "storyboard_image_transfer_gate": {
+    "fixture_path": "PASS",
+    "external_transfer_path": "NOT_TESTED"
+  },
+  "note": "M0-F validates review, regeneration, and final assembly."
+}

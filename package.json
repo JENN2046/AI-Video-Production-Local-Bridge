@@ -1,0 +1,30 @@
+{
+  "name": "ai-video-production-workspace",
+  "version": "0.0.0-m0",
+  "private": true,
+  "type": "module",
+  "description": "M0 mock-provider-first video production loop skeleton.",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:m0": "npm run build && node --test dist/tests/m0-*.test.js",
+    "demo:m0": "npm run build && node dist/scripts/demo-m0.js",
+    "closeout:m0": "npm run build && node dist/scripts/closeout-m0.js",
+    "test:m1-0": "npm run build && node --test dist/tests/m1-0-external-image-transfer.test.js",
+    "demo:m1-0": "npm run build && node dist/scripts/demo-m1-0.js",
+    "closeout:m1-0": "npm run build && node dist/scripts/closeout-m1-0.js",
+    "test:m1": "npm run build && node --test dist/tests/m1-provider-boundary.test.js",
+    "demo:m1": "npm run build && node dist/scripts/demo-m1.js",
+    "closeout:m1": "npm run build && node dist/scripts/closeout-m1.js",
+    "test:m1:real": "npm run build && node dist/scripts/test-m1-real.js",
+    "demo:m1:real": "npm run build && node dist/scripts/demo-m1-real.js",
+    "m0:reset": "npm run build && node dist/scripts/m0-reset.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  }
+}

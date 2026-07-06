@@ -1,0 +1,151 @@
+m1_p0_provider_selection:
+  result: SELECTED
+  generated_at: "2026-07-06T14:52:46.8703292+08:00"
+  stage: M1-P0
+  stage_name: Provider Selection And Contract Freeze
+  execution_policy:
+    real_provider_called: false
+    provider_credits_consumed: false
+    credentials_read: false
+    adapter_implemented: false
+    selection_basis: official_public_documentation_review
+
+  prior_stage_status:
+    m0: ACCEPTED_PASS_WITH_GAPS
+    m0_r1_media_validity: ACCEPTED
+    m1_0_external_image_transfer: ACCEPTED_PASS_WITH_GAPS
+
+  candidates_evaluated:
+    - provider_name: Runway API
+      provider_display_name: Runway
+      model_name: gen4.5
+      selected: true
+      api_available: true
+      image_to_video_supported: true
+      text_to_video_supported: true
+      async_job_model: true
+      output_download_supported: true
+      expected_output_format: mp4_url
+      auth_method: bearer_token
+      credential_env_names:
+        - RUNWAYML_API_SECRET
+      request_complexity: low
+      cost_risk: medium
+      rate_limit_risk: medium
+      implementation_risk: low
+      reason: "Selected because the official API supports image-to-video through POST /v1/image_to_video, accepts local images as data URIs in promptImage, returns an async task id, exposes task polling, and returns ephemeral output URLs that must be downloaded into local storage."
+      risks:
+        - "Requires Runway organization credits before live execution."
+        - "Output URLs are ephemeral and must be downloaded promptly."
+        - "Negative prompt support is not confirmed for gen4.5 image-to-video."
+        - "Exact model pricing and account rate limits must be confirmed before live M1 execution."
+
+    - provider_name: Luma Dream Machine API
+      provider_display_name: Luma
+      model_name: ray-2
+      selected: false
+      api_available: true
+      image_to_video_supported: true
+      text_to_video_supported: true
+      async_job_model: true
+      output_download_supported: true
+      expected_output_format: mp4_url
+      auth_method: bearer_token
+      credential_env_names:
+        - LUMAAI_API_KEY
+      request_complexity: medium
+      cost_risk: medium
+      rate_limit_risk: unknown
+      implementation_risk: medium
+      reason: "Rejected for M1 first integration because image keyframes are documented primarily as URLs, while the current workspace has a verified local image artifact path but no public hosting or provider upload boundary."
+      risks:
+        - "Would likely require a URL hosting/upload step before image-to-video."
+        - "Still viable for a later provider after upload/storage boundary work."
+
+    - provider_name: fal.ai
+      provider_display_name: fal
+      model_name: fal-ai/kling-video/v1/standard/image-to-video
+      selected: false
+      api_available: true
+      image_to_video_supported: true
+      text_to_video_supported: false
+      async_job_model: true
+      output_download_supported: true
+      expected_output_format: mp4_url
+      auth_method: api_key
+      credential_env_names:
+        - FAL_KEY
+      request_complexity: medium
+      cost_risk: unknown
+      rate_limit_risk: unknown
+      implementation_risk: medium
+      reason: "Rejected for M1 first integration because the contract is model-marketplace-specific and image input is URL/storage oriented; it is clear but introduces an extra fal storage/upload dependency compared with Runway data URI input."
+      risks:
+        - "Provider/model marketplace layer may change selected model schema independently."
+        - "Would need a storage upload path or public URL policy for local image artifacts."
+
+    - provider_name: OpenAI Videos API
+      provider_display_name: OpenAI Sora
+      model_name: sora-2
+      selected: false
+      api_available: true
+      image_to_video_supported: true
+      text_to_video_supported: true
+      async_job_model: true
+      output_download_supported: true
+      expected_output_format: mp4_content_endpoint
+      auth_method: bearer_token
+      credential_env_names:
+        - OPENAI_API_KEY
+      request_complexity: low
+      cost_risk: medium
+      rate_limit_risk: unknown
+      implementation_risk: high
+      reason: "Rejected because the official Sora 2 Videos API documentation states the API/models are deprecated and scheduled to shut down on 2026-09-24, making it a poor first provider to freeze for M1."
+      risks:
+        - "Scheduled deprecation creates near-term migration risk."
+
+  selected_provider:
+    provider_name: Runway API
+    provider_display_name: Runway
+    model_name: gen4.5
+    selected_reason: "Best M1 engineering fit: direct API, image-to-video, local data URI image input, async task polling, output URL download, TypeScript SDK, and credential through a single environment variable."
+
+  rejected_candidates:
+    - provider_name: Luma Dream Machine API
+      model_name: ray-2
+      reason: "Viable but less direct for current local image artifacts because image input is documented as URL keyframes."
+    - provider_name: fal.ai
+      model_name: fal-ai/kling-video/v1/standard/image-to-video
+      reason: "Viable but introduces fal storage/upload or public URL dependency before local M1 artifact flow."
+    - provider_name: OpenAI Videos API
+      model_name: sora-2
+      reason: "Not selected due scheduled official deprecation on 2026-09-24."
+
+  selection_summary: "Freeze Runway API gen4.5 as the first real provider for M1. M1 should implement only this contract first, behind credential, enablement, and cost gates. No other real provider routing is frozen in M1-P0."
+
+  source_references:
+    - provider: Runway
+      url: "https://docs.dev.runwayml.com/guides/using-the-api/"
+      relevance: "Image-to-video request shape, promptImage data URI, promptText, model, ratio, duration."
+    - provider: Runway
+      url: "https://docs.dev.runwayml.com/api-details/sdks/"
+      relevance: "Task id, async polling, task status, SDK methods, timeout behavior."
+    - provider: Runway
+      url: "https://docs.dev.runwayml.com/assets/inputs/"
+      relevance: "URL and data URI input constraints."
+    - provider: Runway
+      url: "https://docs.dev.runwayml.com/assets/outputs/"
+      relevance: "Output URL array and ephemeral download requirement."
+    - provider: Runway
+      url: "https://docs.dev.runwayml.com/guides/setup/"
+      relevance: "RUNWAYML_API_SECRET and credit requirement."
+    - provider: Luma
+      url: "https://docs.lumalabs.ai/docs/javascript-video-generation"
+      relevance: "Ray 2 image-to-video, polling, assets.video download, LUMAAI_API_KEY."
+    - provider: fal.ai
+      url: "https://fal.ai/models/fal-ai/kling-video/v1/standard/image-to-video/api"
+      relevance: "Kling image-to-video prompt, image_url, queue result, video.url."
+    - provider: OpenAI
+      url: "https://developers.openai.com/api/docs/guides/video-generation"
+      relevance: "Videos API capabilities and deprecation notice."

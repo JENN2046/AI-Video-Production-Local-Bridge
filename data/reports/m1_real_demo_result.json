@@ -1,0 +1,13 @@
+{
+  "phase": "M1-real-demo",
+  "result": "SKIPPED_MISSING_ENV_GATE",
+  "provider_name": "unset",
+  "missing": [
+    "M1_REAL_PROVIDER",
+    "REAL_PROVIDER_ENABLED",
+    "M1_REAL_PROVIDER_EXECUTION_ALLOWED",
+    "M1_REAL_PROVIDER_COST_ACK"
+  ],
+  "real_provider_called": false,
+  "provider_credits_consumed": false
+}

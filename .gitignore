@@ -1,0 +1,31 @@
+node_modules/
+dist/
+
+# Local runtime databases and generated media/import staging.
+data/*
+!data/reports/
+!data/reports/**
+data/app.sqlite
+data/app.sqlite-shm
+data/app.sqlite-wal
+data/imports/**
+data/media/**
+
+# Secrets and private account state.
+.env
+.env.*
+config.env
+credentials/
+credentials.*
+secret/
+secrets/
+*.pem
+*.key
+state-private/
+
+# Logs and generated review packages.
+*.log
+data/reports/*.log
+ops/reports/*.zip
+ops/reports/*.zip.sha256.txt
+ops/reports/m0_acceptance_review_package_*/

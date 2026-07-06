@@ -1,0 +1,109 @@
+m1_real_provider_closeout:
+  result: OFFLINE_ONLY
+  generated_at: 2026-07-06T08:26:36.017Z
+
+  provider_ports:
+    mock:
+      boundary: PASS
+      regression: PASS
+    runway:
+      boundary: PASS
+      real_generation: NOT_TESTED
+      model_name: gen4.5
+    runninghub:
+      boundary: PASS
+      real_generation: NOT_TESTED
+      model_name: TBD
+
+  selected_real_provider:
+    provider_name: "unset"
+    real_generation_status: NOT_TESTED
+    generated_clip_artifact_id: null
+    ffprobe_valid: false
+    provider_job_id: null
+
+  result_layers:
+    offline_boundary: PASS
+    real_execution: SKIPPED_MISSING_ENV_GATE
+    final_result: OFFLINE_ONLY
+
+  provider_boundary:
+    mock_default: PASS
+    provider_selector: PASS
+    provider_disabled_boundary: PASS
+    missing_credential_boundary: PASS
+    confirmation_gate: PASS
+    cost_acknowledgement_gate: PASS
+    provider_disabled_error: PASS
+
+  credential_safety:
+    sqlite_secret_scan: PASS
+    reports_secret_scan: PASS
+    logs_secret_scan: NOT_CAPTURED
+
+  real_generation:
+    single_shot:
+      status: NOT_TESTED
+      run_id: null
+      provider_job_id: null
+      artifact_id: null
+      artifact_source_provider: null
+      ffprobe_valid: false
+      error_code: null
+
+    regeneration:
+      status: NOT_TESTED
+      first_run_id: null
+      second_run_id: null
+      parent_run_id_valid: false
+      second_artifact_id: null
+      ffprobe_valid: false
+      error_code: null
+
+    batch_generation:
+      status: NOT_TESTED
+      batch_id: null
+      total_runs: 0
+      succeeded: 0
+      failed: 0
+      valid_artifacts: 0
+
+  output_download_safety:
+    https_only: PASS
+    private_network_block: PASS
+    timeout_set: PASS
+    max_size_set: PASS
+    redirect_limit_set: PASS
+
+  media_validity:
+    real_generated_clips:
+      status: NOT_TESTED
+      checked: 0
+      failed: 0
+    final_video:
+      status: NOT_TESTED
+      artifact_id: null
+
+  regression:
+    typecheck: PASS
+    build: PASS
+    test_m0: PASS
+    demo_m0: PASS
+    closeout_m0: PASS
+    test_m1_0: PASS
+    demo_m1_0: PASS
+    closeout_m1_0: PASS
+    test_m1: PASS
+    demo_m1: PASS
+
+  known_gaps:
+    - asset_library_not_implemented
+    - memory_loop_not_implemented
+    - advanced_ui_not_implemented
+    - direct_chatgpt_file_handle_not_integrated
+    - real_provider_generation_not_executed_in_this_run
+    - runway_ratio_values_must_be_reconfirmed_against_current_provider_docs_before_live_call
+
+  next_stage_recommendation:
+    - M1 live Runway execution with explicit gates and budget acknowledgement
+    - M2 Asset and Reference Library

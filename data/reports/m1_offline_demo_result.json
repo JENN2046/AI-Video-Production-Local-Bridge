@@ -1,0 +1,54 @@
+{
+  "phase": "M1-offline",
+  "result": "PASS",
+  "project_id": "project_d73f8c17-20d6-4a07-aea6-30aefc509200",
+  "provider_ports": {
+    "mock": {
+      "type": "offline",
+      "selectable": true,
+      "default": true,
+      "model_name": "mock_fixture",
+      "status": "m0_mock_provider"
+    },
+    "runway": {
+      "type": "real",
+      "selectable": true,
+      "default": false,
+      "model_name": "gen4.5",
+      "status": "primary_real_provider"
+    },
+    "runninghub": {
+      "type": "real",
+      "selectable": true,
+      "default": false,
+      "model_name": "TBD",
+      "status": "secondary_selectable_provider_port"
+    }
+  },
+  "mock_default_generation": {
+    "status": "PASS",
+    "batch_id": "batch_cf6df5b8-fa85-4370-966b-b6828fc6501c",
+    "run_id": "run_b341cd41-9337-4e2f-9e8d-0a0ca798eb0a",
+    "artifact_id": "artifact_ffa567e4-f44d-44e6-bd7b-ea9bf546849d",
+    "artifact_source_provider": "mock"
+  },
+  "provider_boundary": {
+    "mock_default": "PASS",
+    "provider_selector": "PASS",
+    "provider_disabled_boundary": "PASS",
+    "missing_credential_boundary": "PASS",
+    "confirmation_gate": "PASS",
+    "cost_acknowledgement_gate": "PASS"
+  },
+  "output_download_safety": {
+    "https_only": "PASS",
+    "private_network_block": "PASS",
+    "timeout_set": "PASS",
+    "max_size_set": "PASS",
+    "redirect_limit_set": "PASS"
+  },
+  "real_execution": {
+    "status": "NOT_ATTEMPTED",
+    "reason": "demo:m1 is offline-only by taskbook boundary"
+  }
+}

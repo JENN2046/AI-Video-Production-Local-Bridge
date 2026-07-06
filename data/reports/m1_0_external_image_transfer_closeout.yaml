@@ -1,0 +1,73 @@
+m1_0_external_image_transfer_closeout:
+  result: PASS_WITH_GAPS
+  generated_at: 2026-07-06T08:26:32.719Z
+
+  transfer_paths:
+    fixture_path:
+      status: PASS
+      note: "M0 already validated fixture path"
+
+    manual_upload_or_local_import:
+      status: PASS
+      artifact_id: "artifact_b883f824-c333-4ef9-b17c-ce56b39aee39"
+      source_path: "A:\\AI Video Production Workspace\\data\\imports\\gpt_storyboard_external_001.png"
+      stored_path: "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_b883f824-c333-4ef9-b17c-ce56b39aee39.png"
+      width: 1
+      height: 1
+      detected_mime: "image/png"
+      sha256: "4b5c5c92cec3b23e6a294fc0eea43234ef5126c5a64f4c6c531ac8430ab0b844"
+
+    pending_upload_activation:
+      status: PASS
+      pending_artifact_id: "artifact_4b80d3c1-1b5c-4072-94ed-42e9e05ff9a9"
+      activated_artifact_id: "artifact_4b80d3c1-1b5c-4072-94ed-42e9e05ff9a9"
+      stored_path: "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_4b80d3c1-1b5c-4072-94ed-42e9e05ff9a9.png"
+      width: 1
+      height: 1
+      detected_mime: "image/png"
+      sha256: "4b5c5c92cec3b23e6a294fc0eea43234ef5126c5a64f4c6c531ac8430ab0b844"
+
+    accessible_uri:
+      status: NOT_TESTED
+      uri: "https://example.test/storyboard/external.png"
+      error_code: "EXTERNAL_URI_DOWNLOAD_NOT_ATTEMPTED"
+
+    chatgpt_file_handle:
+      status: NOT_TESTED
+
+  external_image_transfer_claim:
+    non_fixture_local_import: VERIFIED
+    pending_upload_activation: VERIFIED
+    direct_chatgpt_generated_image_transfer: NOT_VERIFIED
+
+  storyboard_package_validation:
+    external_image_artifact_imported: PASS
+    project_status_after_import: "storyboard_approved"
+    shot_count: 1
+
+  negative_tests:
+    invalid_image_blocked: PASS
+    path_traversal_blocked: PASS
+    symlink_escape_blocked: NOT_TESTED
+    pending_upload_blocked_before_activation: PASS
+    accessible_uri_private_network_blocked: PASS
+
+  regression:
+    typecheck: PASS
+    build: PASS
+    test_m1_0: PASS
+    demo_m1_0: PASS
+    test_m0: PASS
+    demo_m0: PASS
+    closeout_m0: PASS
+
+  known_gaps:
+    - direct_chatgpt_file_handle_not_integrated
+    - accessible_uri_not_tested_or_limited
+    - real_provider_not_enabled
+    - asset_library_not_implemented
+    - memory_loop_not_implemented
+    - symlink_escape_test_not_available_in_current_os_context
+
+  next_stage_recommendation:
+    - M1 Real Provider Integration

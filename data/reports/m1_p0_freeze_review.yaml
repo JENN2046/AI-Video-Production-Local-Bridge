@@ -1,0 +1,102 @@
+m1_p0_freeze_review:
+  result: PASS_WITH_GAPS
+  generated_at: "2026-07-06T14:52:46.8703292+08:00"
+  stage: M1-P0
+  review_scope:
+    - provider_selection
+    - target_provider_contract
+    - request_response_contract
+    - credential_boundary
+    - cost_and_confirmation_gates
+    - output_download_contract
+    - ffprobe_validation_requirement
+    - provider_error_mapping
+
+  execution_review:
+    real_provider_called: PASS
+    provider_credits_consumed: PASS
+    credentials_read: PASS
+    adapter_implemented: PASS
+    note: "PASS here means these forbidden M1-P0 actions were not performed."
+
+  contract_complete: PASS
+  required_fields_present: PASS
+  unknown_blocking_fields: []
+  non_blocking_unknown_fields:
+    - negative_prompt_supported
+    - exact_live_cost
+    - account_rate_limit
+    - exact_output_codec_before_ffprobe
+
+  provider_execution_allowed_in_m1: true
+  provider_execution_allowed_only_when:
+    - RUNWAYML_API_SECRET is present in process environment
+    - REAL_PROVIDER_ENABLED=true
+    - M1_REAL_PROVIDER=runway
+    - M1_REAL_PROVIDER_EXECUTION_ALLOWED=true
+    - M1_REAL_PROVIDER_COST_ACK=true
+    - user confirmation object includes hard_gate and cost acknowledgement
+    - input storyboard image artifact is active and image-valid
+    - output download and ffprobe gates are enabled
+
+  credential_boundary_review:
+    credential_env_defined: PASS
+    credential_env_names:
+      - RUNWAYML_API_SECRET
+    no_persistence_policy: PASS
+    no_logging_policy: PASS
+    no_stdout_policy: PASS
+    no_sqlite_storage_policy: PASS
+    missing_credential_error: PROVIDER_CREDENTIAL_MISSING
+
+  output_download_review:
+    output_type_known: PASS
+    output_type: downloadable_url
+    output_download_method_known: PASS
+    local_persistence_required: PASS
+    ffprobe_required: PASS
+    private_network_block_required: PASS
+    max_size_gate_required: PASS
+    ephemeral_url_policy: PASS
+
+  cost_gate_review:
+    hard_gate_required: PASS
+    cost_ack_required: PASS
+    required_env_gates_present: PASS
+    user_confirmation_required: PASS
+
+  error_mapping_review:
+    auth_failed: PASS
+    rate_limited: PASS
+    timeout: PASS
+    request_failed: PASS
+    output_pending: PASS
+    output_missing: PASS
+    output_download_failed: PASS
+    output_invalid: PASS
+    unsupported_input: PASS
+    content_moderation_rejected: PASS
+    transient_failure: PASS
+
+  source_review:
+    public_official_docs_used: PASS
+    no_private_docs_or_account_state_read: PASS
+    references:
+      - "https://docs.dev.runwayml.com/guides/using-the-api/"
+      - "https://docs.dev.runwayml.com/api-details/sdks/"
+      - "https://docs.dev.runwayml.com/assets/inputs/"
+      - "https://docs.dev.runwayml.com/assets/outputs/"
+      - "https://docs.dev.runwayml.com/errors/task-failures/"
+      - "https://docs.dev.runwayml.com/guides/setup/"
+      - "https://docs.lumalabs.ai/docs/javascript-video-generation"
+      - "https://fal.ai/models/fal-ai/kling-video/v1/standard/image-to-video/api"
+      - "https://developers.openai.com/api/docs/guides/video-generation"
+
+  pass_with_gaps_reason: "The selected Runway provider contract is complete for single image-to-video generation, output download, credential handling, and Media Artifact persistence. Remaining UNKNOWN values are non-blocking: negative prompt support, exact account cost/rate limits, and exact codec before ffprobe."
+
+  final_recommendation:
+    - proceed_to_m1_taskbook_v1_1
+    - implement_runway_real_provider_adapter_only
+    - keep_mock_provider_regression_required
+    - require_hard_gate_and_cost_ack_before_first_live_call
+    - download_output_immediately_and_validate_with_ffprobe

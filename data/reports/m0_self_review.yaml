@@ -1,0 +1,36 @@
+self_review:
+  result: PASS_WITH_GAPS
+  hard_gates_reviewed:
+    storyboard_image_transfer_gate: PASS_WITH_EXTERNAL_NOT_TESTED
+    media_artifact_active_gate: PASS
+    storyboard_package_freeze_gate: PASS
+    generation_confirmation_gate: PASS
+    no_overwrite_gate: PASS
+    final_assembly_gate: PASS
+    media_validity_gate: PASS
+  non_goals_respected:
+    asset_library_not_implemented: true
+    memory_loop_not_implemented: true
+    real_provider_not_required: true
+    ui_workspace_not_implemented: true
+  known_shortcuts:
+    - mock provider uses local fixture video bytes
+    - final assembly creates a local mock final artifact instead of a production render
+    - external image transfer path is NOT_TESTED
+    - accessible_uri registration is metadata-only and remains inaccessible until external transfer is implemented
+  risks_before_m1:
+    - replace mock provider with real provider boundary tests before live use
+    - replace placeholder mp4 fixture with provider-produced media in M1
+    - keep secret and provider credential handling outside repo state
+
+m0_r1_self_review:
+  result: PASS_WITH_GAPS
+  verified:
+    fixture_mock_clip_valid: true
+    generated_clips_valid: true
+    final_video_valid: true
+    no_raw_byte_concatenation: true
+    closeout_blocks_on_invalid_media: true
+  remaining_risks:
+    - final assembly uses a valid local placeholder MP4 fixture, not a production edit
+    - real provider remains disabled until M1

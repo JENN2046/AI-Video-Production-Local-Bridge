@@ -1,0 +1,104 @@
+s0_repository_baseline_closeout:
+  result: PASS
+  generated_at: "2026-07-06T16:27:37.4451145+08:00"
+  scope:
+    git_repo_initialization: true
+    gitignore_update: true
+    baseline_commit: true
+    validation_commands: true
+    status_report: true
+  boundaries:
+    real_provider_connected: false
+    m0_m1_business_logic_modified_in_s0: false
+    credentials_read_or_written: false
+    push: false
+    tag: false
+    release: false
+    deploy: false
+  git:
+    repo_exists: true
+    initialized_in_s0: true
+    remote_delivery: none
+    baseline_commit_created: true
+    baseline_commit_hash: reported_in_final_response
+    status_clean_after_baseline_commit: true
+  gitignore_protection:
+    data_media: PASS
+    data_imports: PASS
+    dotenv: PASS
+    credentials: PASS
+    secrets: PASS
+    state_private: PASS
+    sqlite_runtime: PASS
+    node_modules: PASS
+    dist: PASS
+    data_reports_retained: PASS
+    fixtures_retained: PASS
+  tracked_scope_expectation:
+    source: tracked
+    tests: tracked
+    scripts: tracked
+    fixtures: tracked
+    package_json: tracked
+    package_lock: tracked
+    tsconfig: tracked
+    data_reports: tracked
+    generated_media: ignored
+    runtime_sqlite: ignored
+    credentials: ignored
+  validation:
+    overall: PASS
+    commands:
+      - command: "npm run typecheck"
+        exit_code: 0
+        duration_seconds: 1.336
+      - command: "npm run build"
+        exit_code: 0
+        duration_seconds: 1.343
+      - command: "npm run test:m0"
+        exit_code: 0
+        duration_seconds: 2.421
+      - command: "npm run demo:m0"
+        exit_code: 0
+        duration_seconds: 1.736
+      - command: "npm run closeout:m0"
+        exit_code: 0
+        duration_seconds: 7.881
+      - command: "npm run test:m1-0"
+        exit_code: 0
+        duration_seconds: 1.821
+      - command: "npm run demo:m1-0"
+        exit_code: 0
+        duration_seconds: 1.745
+      - command: "npm run closeout:m1-0"
+        exit_code: 0
+        duration_seconds: 19.843
+      - command: "npm run test:m1"
+        exit_code: 0
+        duration_seconds: 1.935
+      - command: "npm run demo:m1"
+        exit_code: 0
+        duration_seconds: 1.748
+      - command: "npm run closeout:m1"
+        exit_code: 0
+        duration_seconds: 41.059
+  real_provider_safety:
+    env_gates_cleared_for_validation_subprocess: true
+    real_provider_called: false
+    provider_credits_consumed: false
+    credential_values_read: false
+    m1_closeout_result: OFFLINE_ONLY
+  acceptance:
+    git_repo_exists: PASS
+    gitignore_protects_data_media: PASS
+    gitignore_protects_data_imports: PASS
+    gitignore_protects_dotenv: PASS
+    gitignore_protects_credentials: PASS
+    fixtures_retained: PASS
+    source_tests_scripts_package_json_tracked: PASS
+    validation_pass: PASS
+    git_status_clean_after_baseline_commit: PASS
+  notes:
+    - "data/* is treated as runtime state except data/reports/**, which is retained for closeout evidence."
+    - "Generated media, imports, SQLite files, dist, node_modules, secrets, and credentials are not part of the baseline commit."
+    - "No remote, push, tag, release, deploy, credential read, or real provider call was performed."

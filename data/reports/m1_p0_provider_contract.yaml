@@ -1,0 +1,212 @@
+m1_target_provider_contract:
+  contract_version: "1.0"
+  frozen_at: "2026-07-06T14:52:46.8703292+08:00"
+  frozen_by: Codex
+  stage: M1-P0
+  execution_policy:
+    real_provider_called: false
+    provider_credits_consumed: false
+    credentials_read: false
+    adapter_implemented: false
+
+  provider:
+    provider_name: runway
+    model_name: gen4.5
+    provider_display_name: Runway API
+    provider_docs_reference:
+      - "https://docs.dev.runwayml.com/guides/using-the-api/"
+      - "https://docs.dev.runwayml.com/api-details/sdks/"
+      - "https://docs.dev.runwayml.com/assets/inputs/"
+      - "https://docs.dev.runwayml.com/assets/outputs/"
+      - "https://docs.dev.runwayml.com/errors/task-failures/"
+      - "https://docs.dev.runwayml.com/guides/setup/"
+      - "https://docs.dev.runwayml.com/api-details/api_changelog/"
+    selected_reason: "Runway gen4.5 is the lowest-risk M1 provider because it supports image-to-video through a documented API, accepts local images as data URIs in promptImage, uses a simple async task model, and returns downloadable output URLs that can be persisted as Media Artifacts."
+
+  generation_capability:
+    generation_mode: both
+    m1_required_mode: image_to_video
+    input_image_required: true
+    prompt_required: true
+    negative_prompt_supported: unknown
+    duration_control_supported: true
+    duration_seconds_supported: "2-10 according to Runway changelog for Gen-4.5; M1 default should use 5 seconds unless the shot requests a supported value."
+    aspect_ratio_control_supported: true
+    resolution_control_supported: true
+    seed_control_supported: true
+
+  api_contract:
+    api_style: rest
+    sdk_available: true
+    sdk_package_name: "@runwayml/sdk"
+    endpoint_submit: "POST https://api.dev.runwayml.com/v1/image_to_video"
+    endpoint_status: "GET https://api.dev.runwayml.com/v1/tasks/{id}"
+    endpoint_result: "GET https://api.dev.runwayml.com/v1/tasks/{id}"
+    required_headers:
+      Authorization: "Bearer ${RUNWAYML_API_SECRET}"
+      Content-Type: "application/json"
+      X-Runway-Version: "2024-11-06"
+    job_model: async
+    polling_required: true
+    polling_interval_seconds: 5
+    timeout_seconds: 600
+    max_attempts: 120
+
+  request_shape:
+    required_fields:
+      - model
+      - promptImage
+      - promptText
+      - ratio
+      - duration
+    optional_fields:
+      - seed
+      - promptImage.position
+    unsupported_or_unconfirmed_fields:
+      - negative_prompt
+    file_input_format: "HTTPS URL or data URI. M1 must prefer data URI from local active storyboard image artifact; public HTTPS URL is allowed only after output-download and private-network guards are reused."
+    input_image_method: data_uri_preferred
+    prompt_field_name: promptText
+    image_field_name: promptImage
+    duration_field_name: duration
+    aspect_ratio_field_name: ratio
+    model_field_value: gen4.5
+    m1_default_mapping:
+      storyboard_image_artifact: "Read active local image artifact bytes, validate with imageValidity, encode as data:image/<mime>;base64,..., and pass to promptImage."
+      video_prompt: promptText
+      duration_seconds: duration
+      aspect_ratio_or_resolution: ratio
+      default_ratio: "720:1280 for vertical 9:16 projects; confirm current Runway API reference before live call if docs conflict with examples."
+      default_duration_seconds: 5
+
+  response_shape:
+    job_id_field: id
+    status_field: status
+    success_status_values:
+      - SUCCEEDED
+    failure_status_values:
+      - FAILED
+      - CANCELED
+    retryable_status_values:
+      - PENDING
+      - RUNNING
+    output_url_field: "output[0]"
+    output_file_field: null
+    error_field: "failureCode | failure | failureReason | error"
+    raw_response_storage_policy: do_not_store_full_raw_response
+    allowed_persisted_response_fields:
+      - id
+      - status
+      - output_url_hostname
+      - output_content_type
+      - output_size_bytes
+      - failureCode
+      - sanitized_failure_message
+
+  output_contract:
+    output_type: downloadable_url
+    output_download_method: "Download the first URL in task.output after status SUCCEEDED."
+    expected_container: mp4
+    expected_codec: unknown_until_ffprobe
+    must_download_to_local_media: true
+    must_validate_with_ffprobe: true
+    allow_transcode_to_mp4: true
+    max_output_size_mb: 250
+    output_expiration_risk: high
+    output_expiration_policy: "Runway output URLs are ephemeral; M1 must download immediately and never persist the ephemeral URL as the durable artifact."
+    media_artifact_role: generated_clip
+    media_artifact_status_after_download_and_ffprobe: active
+
+  credentials:
+    auth_method: bearer_token
+    credential_env_names:
+      - RUNWAYML_API_SECRET
+    optional_env_names:
+      - RUNWAYML_API_VERSION
+    forbidden_storage:
+      - sqlite
+      - reports
+      - logs
+      - stdout
+      - data/media
+      - data/imports
+    missing_credential_error: PROVIDER_CREDENTIAL_MISSING
+    redaction_policy: "Never print, persist, hash, or summarize the credential value. It may only be read from process.env by the real provider adapter at call time after all gates pass."
+
+  cost_and_confirmation:
+    real_generation_requires_hard_gate: true
+    real_generation_requires_cost_ack: true
+    required_env_gates:
+      - REAL_PROVIDER_ENABLED=true
+      - M1_REAL_PROVIDER=runway
+      - M1_REAL_PROVIDER_EXECUTION_ALLOWED=true
+      - M1_REAL_PROVIDER_COST_ACK=true
+    user_confirmation_required: true
+    confirmation_object_required:
+      confirmation_level: hard_gate
+      user_confirmed: true
+      cost_acknowledged: true
+      provider_name: runway
+      model_name: gen4.5
+    cost_note: "Runway requires organization credits before API use. Exact live cost and available account credits are not read or verified in M1-P0."
+
+  safety:
+    provider_network_call_default: disabled
+    output_download_private_network_block: true
+    output_download_timeout_seconds: 120
+    output_download_max_size_mb: 250
+    output_download_redirect_limit: 3
+    secret_redaction_required: true
+    raw_provider_payload_storage: forbidden
+    durable_artifact_requirement: "Only the downloaded, ffprobe-valid local video artifact is durable."
+    live_call_stop_conditions:
+      - missing_RUNWAYML_API_SECRET
+      - missing_required_env_gate
+      - missing_user_cost_ack
+      - storyboard_image_artifact_not_active
+      - input_image_validation_failed
+      - unsupported_duration_or_ratio
+      - output_url_private_network_or_non_https
+      - output_download_failed
+      - ffprobe_validation_failed
+
+  error_mapping:
+    provider_disabled: PROVIDER_DISABLED
+    missing_credential: PROVIDER_CREDENTIAL_MISSING
+    auth_failed: PROVIDER_AUTH_FAILED
+    insufficient_credits: PROVIDER_INSUFFICIENT_CREDITS
+    rate_limited: PROVIDER_RATE_LIMITED
+    timeout: PROVIDER_TIMEOUT
+    request_failed: PROVIDER_REQUEST_FAILED
+    output_pending: PROVIDER_OUTPUT_PENDING
+    output_missing: PROVIDER_OUTPUT_MISSING
+    output_download_failed: PROVIDER_OUTPUT_DOWNLOAD_FAILED
+    output_invalid: PROVIDER_OUTPUT_INVALID
+    unsupported_input: PROVIDER_UNSUPPORTED_INPUT
+    content_moderation_rejected: PROVIDER_CONTENT_REJECTED
+    non_retryable_input_asset_invalid: PROVIDER_UNSUPPORTED_INPUT
+    retryable_internal_failure: PROVIDER_TRANSIENT_FAILURE
+    retryable_third_party_unavailable: PROVIDER_TRANSIENT_FAILURE
+
+  m1_acceptance:
+    single_real_shot_required: true
+    real_regeneration_required: true
+    real_batch_generation_required: true
+    batch_partial_failure_allowed: true
+    mock_regression_required: true
+    m0_regression_required: true
+    m1_0_regression_required: true
+    real_provider_artifact_requirements:
+      - downloaded_to_data_media_artifacts_video
+      - active_media_artifact_created
+      - sha256_recorded
+      - ffprobe_has_video_stream
+      - output_url_not_persisted_as_durable_artifact
+      - no_credentials_persisted
+
+  known_risks:
+    - "negative_prompt_supported remains UNKNOWN and must not be sent in M1 unless re-confirmed."
+    - "Runway output URLs are ephemeral and must be downloaded immediately."
+    - "M1 implementation must confirm the currently accepted ratio values before live generation because Runway examples and version notes may differ."
+    - "Exact live cost and rate limit depend on the Runway account tier and credits; M1 must require cost acknowledgement."
+    - "Content moderation and asset validation failures must be surfaced as structured provider errors without storing raw provider payloads."

@@ -1,0 +1,102 @@
+{
+  "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
+  "version": "0.1.0",
+  "slot": "current",
+  "task_id": "M0-H",
+  "status": "DONE",
+  "priority": "P0",
+  "lane": "Safe Local Production Lane",
+  "project": "M0 Video Loop Validation",
+  "title": "Validation And Closeout",
+  "scope": [
+    "npm run test:m0",
+    "npm run demo:m0",
+    "npm run closeout:m0",
+    "m0_closeout.yaml",
+    "implementation summary",
+    "self-review"
+  ],
+  "goal": "Run final M0 validation and produce honest closeout evidence.",
+  "acceptance": [
+    "npm run test:m0 passes.",
+    "npm run demo:m0 passes and exercises the tool interface.",
+    "npm run closeout:m0 writes data/reports/m0_closeout.yaml.",
+    "Closeout report includes all required validation, evidence, artifact summary, scenarios, hard gates, known gaps, and next recommendation.",
+    "Implementation summary is produced.",
+    "Self-review report is produced."
+  ],
+  "validation": [
+    "npm run test:m0",
+    "npm run demo:m0",
+    "npm run closeout:m0",
+    "closeout YAML structure check",
+    "self-review structure check"
+  ],
+  "allowed_delivery": [
+    "local_file_update",
+    "tests",
+    "demo",
+    "closeout_report",
+    "self_review",
+    "validation_log",
+    "handoff"
+  ],
+  "blocked_delivery": [
+    "push",
+    "tag",
+    "release",
+    "deploy",
+    "publish",
+    "real_provider_call",
+    "provider_credential_read",
+    "secret_read",
+    "state_private_read",
+    "production_config_change"
+  ],
+  "depends_on": [
+    "M0-G"
+  ],
+  "claimed_by": "Codex M0 executor",
+  "claim_run_id": "codex-20260706-121141-m0-h",
+  "claimed_at": "2026-07-06T12:11:41+08:00",
+  "completed_by": "Codex M0 executor",
+  "completed_at": "2026-07-06T12:13:42+08:00",
+  "blocked_by": null,
+  "blocked_at": null,
+  "failed_by": null,
+  "failed_at": null,
+  "skipped_by": null,
+  "skipped_at": null,
+  "result": "PASS_WITH_GAPS",
+  "validation_result": "PASS",
+  "evidence": [
+    "data/reports/m0_closeout.yaml",
+    "data/reports/m0_implementation_summary.yaml",
+    "data/reports/m0_self_review.yaml",
+    "data/reports/m0_demo_result.json"
+  ],
+  "commit": null,
+  "delivery": "M0 implemented through closeout with mock provider and known gaps recorded",
+  "boundary_or_safety_stop": null,
+  "blocked_reason": null,
+  "failure_reason": null,
+  "safe_actions_completed": [
+    "Ran npm run typecheck.",
+    "Ran npm run build.",
+    "Ran npm run test:m0.",
+    "Ran npm run demo:m0.",
+    "Ran npm run closeout:m0.",
+    "Wrote M0 closeout, implementation summary, and self-review reports."
+  ],
+  "unsafe_action_not_performed": [
+    "secret/private-state read",
+    "source media delete/overwrite",
+    "real provider call",
+    "push/release/deploy"
+  ],
+  "options_for_jenn": [],
+  "next_safe_option": [
+    "Review M0 closeout and decide whether to start M1 real provider integration."
+  ],
+  "updated_at": "2026-07-06T12:13:42+08:00"
+}
