@@ -1,0 +1,72 @@
+{
+  "task": "G0-R1-IMPORT-PREP",
+  "result": "PASS",
+  "run_id": "fac97e26-f7f5-44c5-8bdc-7355054cb9ef",
+  "generated_at": "2026-07-06T11:49:20.127Z",
+  "input_policy": {
+    "selected_source": "data/imports",
+    "accepted_pending_ids": false,
+    "audit_images_imported": false,
+    "product_reference_imported_as_storyboard_image": false
+  },
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runway_called": false,
+    "runninghub_called": false,
+    "video_generated": false,
+    "source_assets_overwritten": false
+  },
+  "imported_artifacts": [
+    {
+      "shot_id": "SHOT_001",
+      "order": 1,
+      "package_source_file": "images/SHOT_001_IMAGE_ACCEPTED_WEBGPT.png",
+      "data_import_filename": "g0_r1_SHOT_001_IMAGE_ACCEPTED_WEBGPT.png",
+      "approval_basis": "Jenn approval true in G0_R1 package ledger",
+      "artifact_id": "artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7",
+      "artifact_type": "image",
+      "role": "storyboard_image",
+      "status": "active",
+      "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png",
+      "mime_type": "image/png",
+      "width": 941,
+      "height": 1672,
+      "aspect_ratio": "941:1672",
+      "source_sha256": "efbea3aa2507cd7d431501eafba3206cf6cfd000174b2d6109371b5e37e6a474",
+      "stored_sha256": ""
+    }
+  ],
+  "skipped_keyframes": [
+    {
+      "shot_id": "SHOT_002",
+      "package_source_file": "images/SHOT_002_IMAGE_WEBGPT_V1.png",
+      "status": "SKIPPED_PENDING_EXPLICIT_APPROVAL"
+    },
+    {
+      "shot_id": "SHOT_003",
+      "package_source_file": "images/SHOT_003_IMAGE_WEBGPT_V2.png",
+      "status": "SKIPPED_PENDING_EXPLICIT_APPROVAL"
+    },
+    {
+      "shot_id": "SHOT_004",
+      "package_source_file": "images/SHOT_004_IMAGE_WEBGPT_V2.png",
+      "status": "SKIPPED_PENDING_EXPLICIT_APPROVAL"
+    }
+  ],
+  "rejected_assets": [
+    {
+      "package_source_file": "audit/FAILED_LAYOUT_OUTPUT_01_DO_NOT_USE_AS_KEYFRAME.png",
+      "status": "REJECTED_AUDIT_IMAGE"
+    },
+    {
+      "package_source_file": "audit/FAILED_LAYOUT_OUTPUT_02_DO_NOT_USE_AS_KEYFRAME.png",
+      "status": "REJECTED_AUDIT_IMAGE"
+    },
+    {
+      "package_source_file": "references/product_reference_gray_skullcap.png",
+      "status": "REJECTED_PRODUCT_REFERENCE"
+    }
+  ],
+  "report_path": "data/reports/g0_r1_import_prep_result_fac97e26-f7f5-44c5-8bdc-7355054cb9ef.json",
+  "latest_report_path": "data/reports/g0_r1_import_prep_result.json"
+}

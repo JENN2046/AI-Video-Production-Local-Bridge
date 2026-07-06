@@ -1,0 +1,114 @@
+{
+  "task": "G0-R1-IMPORT-PREP",
+  "result": "PASS",
+  "run_id": "5661b3f3-c402-4a04-8b3d-f2c2bd14cce3",
+  "generated_at": "2026-07-06T11:55:43.955Z",
+  "input_policy": {
+    "selected_source": "data/imports",
+    "accepted_pending_ids": false,
+    "audit_images_imported": false,
+    "product_reference_imported_as_storyboard_image": false
+  },
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runway_called": false,
+    "runninghub_called": false,
+    "video_generated": false,
+    "source_assets_overwritten": false
+  },
+  "imported_artifacts": [
+    {
+      "shot_id": "SHOT_001",
+      "order": 1,
+      "package_source_file": "images/SHOT_001_IMAGE_ACCEPTED_WEBGPT.png",
+      "data_import_filename": "g0_r1_SHOT_001_IMAGE_ACCEPTED_WEBGPT.png",
+      "approval_basis": "Jenn approval true in G0_R1 package ledger",
+      "registration_mode": "reused_existing_active_artifact",
+      "artifact_id": "artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7",
+      "artifact_type": "image",
+      "role": "storyboard_image",
+      "status": "active",
+      "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png",
+      "mime_type": "image/png",
+      "width": 941,
+      "height": 1672,
+      "aspect_ratio": "941:1672",
+      "source_sha256": "efbea3aa2507cd7d431501eafba3206cf6cfd000174b2d6109371b5e37e6a474",
+      "stored_sha256": "efbea3aa2507cd7d431501eafba3206cf6cfd000174b2d6109371b5e37e6a474"
+    },
+    {
+      "shot_id": "SHOT_002",
+      "order": 2,
+      "package_source_file": "images/SHOT_002_IMAGE_WEBGPT_V1.png",
+      "data_import_filename": "g0_r1_SHOT_002_IMAGE_WEBGPT_V1.png",
+      "approval_basis": "Jenn explicit approval in current Codex thread on 2026-07-06",
+      "registration_mode": "created_new_active_artifact",
+      "artifact_id": "artifact_9ad1bfe1-c830-458c-a413-39fd15c9d0c0",
+      "artifact_type": "image",
+      "role": "storyboard_image",
+      "status": "active",
+      "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_9ad1bfe1-c830-458c-a413-39fd15c9d0c0.png",
+      "mime_type": "image/png",
+      "width": 941,
+      "height": 1672,
+      "aspect_ratio": "941:1672",
+      "source_sha256": "adf507688a4441805366cfa867a7348ed710e76844eb00050141b48e0e365b88",
+      "stored_sha256": "adf507688a4441805366cfa867a7348ed710e76844eb00050141b48e0e365b88"
+    },
+    {
+      "shot_id": "SHOT_003",
+      "order": 3,
+      "package_source_file": "images/SHOT_003_IMAGE_WEBGPT_V2.png",
+      "data_import_filename": "g0_r1_SHOT_003_IMAGE_WEBGPT_V2.png",
+      "approval_basis": "Jenn explicit approval in current Codex thread on 2026-07-06",
+      "registration_mode": "created_new_active_artifact",
+      "artifact_id": "artifact_a7c5d752-cdd6-478e-b396-5790df3af05f",
+      "artifact_type": "image",
+      "role": "storyboard_image",
+      "status": "active",
+      "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_a7c5d752-cdd6-478e-b396-5790df3af05f.png",
+      "mime_type": "image/png",
+      "width": 941,
+      "height": 1672,
+      "aspect_ratio": "941:1672",
+      "source_sha256": "0519663556647657be59b46de19fda254e32ee8f1156f06d599311993e99d2f0",
+      "stored_sha256": "0519663556647657be59b46de19fda254e32ee8f1156f06d599311993e99d2f0"
+    },
+    {
+      "shot_id": "SHOT_004",
+      "order": 4,
+      "package_source_file": "images/SHOT_004_IMAGE_WEBGPT_V2.png",
+      "data_import_filename": "g0_r1_SHOT_004_IMAGE_WEBGPT_V2.png",
+      "approval_basis": "Jenn explicit approval in current Codex thread on 2026-07-06",
+      "registration_mode": "created_new_active_artifact",
+      "artifact_id": "artifact_e35ff0c0-d0fc-4079-bc4b-38b4dbd88cf7",
+      "artifact_type": "image",
+      "role": "storyboard_image",
+      "status": "active",
+      "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_e35ff0c0-d0fc-4079-bc4b-38b4dbd88cf7.png",
+      "mime_type": "image/png",
+      "width": 941,
+      "height": 1672,
+      "aspect_ratio": "941:1672",
+      "source_sha256": "893b5ff2a411098bf80bf6b63cff36764e7eba6e9c963bac2c5f6d5f2283df6b",
+      "stored_sha256": "893b5ff2a411098bf80bf6b63cff36764e7eba6e9c963bac2c5f6d5f2283df6b"
+    }
+  ],
+  "skipped_keyframes": [],
+  "rejected_assets": [
+    {
+      "package_source_file": "audit/FAILED_LAYOUT_OUTPUT_01_DO_NOT_USE_AS_KEYFRAME.png",
+      "status": "REJECTED_AUDIT_IMAGE"
+    },
+    {
+      "package_source_file": "audit/FAILED_LAYOUT_OUTPUT_02_DO_NOT_USE_AS_KEYFRAME.png",
+      "status": "REJECTED_AUDIT_IMAGE"
+    },
+    {
+      "package_source_file": "references/product_reference_gray_skullcap.png",
+      "status": "REJECTED_PRODUCT_REFERENCE"
+    }
+  ],
+  "report_path": "data/reports/g0_r1_import_prep_result_5661b3f3-c402-4a04-8b3d-f2c2bd14cce3.json",
+  "latest_report_path": "data/reports/g0_r1_import_prep_result.json"
+}

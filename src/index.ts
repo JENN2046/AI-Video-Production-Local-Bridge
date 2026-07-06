@@ -98,6 +98,8 @@ export {
   mapRunwayAspectRatio,
   MockVideoProviderAdapter,
   normalizeRunwayDuration,
+  RUNWAY_API_VERSION,
+  RUNWAY_IMAGE_TO_VIDEO_ENDPOINT,
   RunningHubVideoProviderAdapter,
   RunwayVideoProviderAdapter
 } from "./tools/videoProviderAdapters.js";
@@ -144,5 +146,56 @@ export type {
   G0StoryboardPackageShotSnapshot,
   G0ValidationResult
 } from "./tools/g0Pregen.js";
+export {
+  buildRunwayCanaryDryRunReport,
+  RUNWAY_CANARY_COMMAND,
+  RUNWAY_CANARY_DRY_RUN_REPORT,
+  RUNWAY_CANARY_INPUT_READINESS_REPORT,
+  RUNWAY_CANARY_LIVE_AUTHORIZATION_PHRASE,
+  runStrictRunwayCanary
+} from "./tools/runwayCanary.js";
+export type { RunwayCanaryOptions, RunwayCanaryReport } from "./tools/runwayCanary.js";
+export {
+  freezeGptHandoffStoryboardPackage,
+  GPT_HANDOFF_FREEZE_REPORT,
+  scanGptHandoffImports,
+  writeFreezeReport
+} from "./tools/gptHandoff.js";
+export type {
+  FreezeGptHandoffInput,
+  FreezeGptHandoffReport,
+  GptHandoffImportImage,
+  GptHandoffShotInput
+} from "./tools/gptHandoff.js";
+export {
+  defaultH1WorkbenchState,
+  freezeH1StoryboardPackage,
+  h1DashboardSummary,
+  H1_FREEZE_REPORT_LATEST,
+  H1_IMPORT_REPORT_LATEST,
+  H1_PROVIDER_BOUNDARY,
+  H1_STATE_FILE,
+  h1ShotBlockers,
+  linkH1ArtifactToShot,
+  listH1MediaArtifacts,
+  listH1Reports,
+  loadH1WorkbenchState,
+  markH1ShotApproved,
+  markH1ShotRevisionNeeded,
+  registerH1ApprovedKeyframe,
+  rejectH1Import,
+  saveH1WorkbenchState,
+  scanH1Imports,
+  updateH1ShotMetadata,
+  validateH1StoryboardPackage
+} from "./tools/h1Workbench.js";
+export type {
+  H1MutationResult,
+  H1PackageValidation,
+  H1ScannedImport,
+  H1ShotApprovalStatus,
+  H1ShotDraft,
+  H1WorkbenchState
+} from "./tools/h1Workbench.js";
 export { callM0ToolPlaceholder, listM0Tools, M0_TOOL_NAMES } from "./tools/m0Tools.js";
 export type { M0ToolDefinition, M0ToolName, M0ToolResult } from "./tools/m0Tools.js";

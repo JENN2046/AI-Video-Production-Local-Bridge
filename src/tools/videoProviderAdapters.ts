@@ -10,6 +10,8 @@ import {
 } from "./provider.js";
 
 export type ProviderJobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+export const RUNWAY_API_VERSION = "2024-11-06";
+export const RUNWAY_IMAGE_TO_VIDEO_ENDPOINT = "/v1/image_to_video";
 
 export interface ProviderGenerationInput {
   storyboard_artifact: MediaArtifact;
@@ -180,12 +182,12 @@ export class RunwayVideoProviderAdapter implements VideoProviderAdapter {
 
     let response: Response;
     try {
-      response = await this.fetchImpl(`${this.apiBase}/v1/image_to_video`, {
+      response = await this.fetchImpl(`${this.apiBase}${RUNWAY_IMAGE_TO_VIDEO_ENDPOINT}`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${this.credential}`,
           "Content-Type": "application/json",
-          "X-Runway-Version": "2024-11-06"
+          "X-Runway-Version": RUNWAY_API_VERSION
         },
         body: JSON.stringify(body)
       });
@@ -213,7 +215,7 @@ export class RunwayVideoProviderAdapter implements VideoProviderAdapter {
         method: "GET",
         headers: {
           Authorization: `Bearer ${this.credential}`,
-          "X-Runway-Version": "2024-11-06"
+          "X-Runway-Version": RUNWAY_API_VERSION
         }
       });
     } catch {

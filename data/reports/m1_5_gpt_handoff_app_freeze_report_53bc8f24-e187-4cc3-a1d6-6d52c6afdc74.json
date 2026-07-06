@@ -1,0 +1,94 @@
+{
+  "task": "M1.5-GPT-HANDOFF-APP",
+  "result": "PASS",
+  "run_id": "53bc8f24-e187-4cc3-a1d6-6d52c6afdc74",
+  "generated_at": "2026-07-06T11:42:27.179Z",
+  "network_call_attempted": false,
+  "runway_called": false,
+  "runninghub_called": false,
+  "provider_credits_consumed": false,
+  "real_video_generated": false,
+  "regeneration_performed": false,
+  "batch_generation_performed": false,
+  "secret_values_exposed": false,
+  "source_asset_overwrite": false,
+  "project": {
+    "project_id": "project_e0d59503-5378-4dc5-bdec-66158965188a",
+    "title": "M1.5 GPT Handoff Demo fc06f3e3",
+    "status": "storyboard_approved"
+  },
+  "input_summary": {
+    "requested_shots": 4,
+    "source": "web_gpt_local_imports",
+    "artifact_ids_from_gpt": false
+  },
+  "imported_artifacts": [
+    {
+      "order": 1,
+      "import_filename": "gpt_handoff_demo_fc06f3e3_001.png",
+      "artifact_id": "artifact_50e90583-3ca1-426b-b1bc-e0f9506c20d5",
+      "artifact_type": "image",
+      "role": "storyboard_image",
+      "status": "active",
+      "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_50e90583-3ca1-426b-b1bc-e0f9506c20d5.png",
+      "width": 720,
+      "height": 1280,
+      "aspect_ratio": "9:16"
+    },
+    {
+      "order": 2,
+      "import_filename": "gpt_handoff_demo_fc06f3e3_002.png",
+      "artifact_id": "artifact_f0707d60-1682-4bda-aa60-7942b2cae42a",
+      "artifact_type": "image",
+      "role": "storyboard_image",
+      "status": "active",
+      "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_f0707d60-1682-4bda-aa60-7942b2cae42a.png",
+      "width": 720,
+      "height": 1280,
+      "aspect_ratio": "9:16"
+    },
+    {
+      "order": 3,
+      "import_filename": "gpt_handoff_demo_fc06f3e3_003.png",
+      "artifact_id": "artifact_135dffa0-f4f0-4854-9fce-95c562c922b0",
+      "artifact_type": "image",
+      "role": "storyboard_image",
+      "status": "active",
+      "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_135dffa0-f4f0-4854-9fce-95c562c922b0.png",
+      "width": 720,
+      "height": 1280,
+      "aspect_ratio": "9:16"
+    },
+    {
+      "order": 4,
+      "import_filename": "gpt_handoff_demo_fc06f3e3_004.png",
+      "artifact_id": "artifact_8b072380-c620-44e3-9e06-2a6b8f837f47",
+      "artifact_type": "image",
+      "role": "storyboard_image",
+      "status": "active",
+      "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_8b072380-c620-44e3-9e06-2a6b8f837f47.png",
+      "width": 720,
+      "height": 1280,
+      "aspect_ratio": "9:16"
+    }
+  ],
+  "package_validation": {
+    "validateG0StoryboardPackage": "PASS",
+    "importG0AppReadyStoryboardPackage": "PASS",
+    "error_code": null,
+    "error_message": null
+  },
+  "storyboard_package": {
+    "storyboard_package_id": "storyboard_package_057dff36-fa60-4e18-9610-d02fe377fe00",
+    "frozen": true,
+    "shot_count": 4,
+    "shot_ids": [
+      "shot_001_a387d397-96e9-49d0-b1c0-1ba15b640411",
+      "shot_002_892b7cc6-0530-4c1a-ae37-526073ee5915",
+      "shot_003_a48237ac-892d-40d9-b639-2dc0d7bcf244",
+      "shot_004_5b642b12-d206-4ae7-965c-e72be75dfdaa"
+    ]
+  },
+  "report_path": "data/reports/m1_5_gpt_handoff_app_freeze_report_53bc8f24-e187-4cc3-a1d6-6d52c6afdc74.json",
+  "latest_report_path": "data/reports/m1_5_gpt_handoff_app_freeze_report.json"
+}

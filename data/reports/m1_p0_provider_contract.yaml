@@ -76,7 +76,7 @@ m1_target_provider_contract:
       video_prompt: promptText
       duration_seconds: duration
       aspect_ratio_or_resolution: ratio
-      default_ratio: "720:1280 for vertical 9:16 projects; confirm current Runway API reference before live call if docs conflict with examples."
+      default_ratio: "768:1280 for vertical 9:16 projects; Runway API version 2024-11-06 accepts output resolution ratios, not 9:16/16:9 aspect-ratio strings."
       default_duration_seconds: 5
 
   response_shape:
@@ -207,6 +207,6 @@ m1_target_provider_contract:
   known_risks:
     - "negative_prompt_supported remains UNKNOWN and must not be sent in M1 unless re-confirmed."
     - "Runway output URLs are ephemeral and must be downloaded immediately."
-    - "M1 implementation must confirm the currently accepted ratio values before live generation because Runway examples and version notes may differ."
+    - "M1 implementation maps project aspect_ratio 9:16 to Runway ratio 768:1280 and 16:9 to 1280:768 before live generation."
     - "Exact live cost and rate limit depend on the Runway account tier and credits; M1 must require cost acknowledgement."
     - "Content moderation and asset validation failures must be surfaced as structured provider errors without storing raw provider payloads."

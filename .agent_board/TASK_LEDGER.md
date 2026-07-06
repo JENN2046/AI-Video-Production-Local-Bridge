@@ -336,3 +336,46 @@ Risks:
 
 Next:
 - Review M0 closeout and decide whether to start M1 real provider integration.
+
+### 2026-07-06T20:25:39+08:00 - Three-route adapted dispatch queue import
+
+Result: DONE / PASS_QUEUE_IMPORTED
+Project: AI Video Production Workspace Three Route Plan
+Lane: Safe Local Production Lane
+Run ID: codex-20260706-202539-three-route-queue-import
+
+Scope:
+- Imported queue-ready cards from `docs/three_routes/THREE_ROUTE_ADAPTED_DISPATCH_v1_1.md`.
+- Added one executable `READY` task:
+  - `R3-0_LOCAL_APP_CONTRACT_FREEZE_AND_H1_API_SUPPORT`
+- Added three non-executable `FOLLOW_UP` tasks:
+  - `R2-1_H1_HANDOFF_WORKBENCH_MVP`
+  - `R3-3_STRICT_SINGLE_RUNWAY_CANARY_SCRIPT`
+  - `R1-0_WEBGPT_MCP_BOUNDARY_AND_READONLY_BRIDGE_PLAN`
+
+Changed files:
+- `.agent_board/TASK_BACKLOG.md`
+- `.agent_board/HANDOFF.md`
+- `.agent_board/TASK_LEDGER.md`
+
+Validation:
+- command: `git diff --check -- .agent_board/TASK_BACKLOG.md .agent_board/HANDOFF.md .agent_board/TASK_LEDGER.md`
+  result: PASS
+
+Evidence:
+- `docs/three_routes/THREE_ROUTE_ADAPTED_DISPATCH_v1_1.md`
+- `.agent_board/TASK_BACKLOG.md`
+
+Git delivery:
+- commit: none
+- push: no
+- tag/release/deploy: no
+
+Boundary:
+- No task was claimed.
+- `.agent_board/NEXT_TASK.json` was not modified.
+- `.agent_board/RUN_LOCK.md` was not modified.
+- No provider call, network call, secret read, source overwrite, push, tag, release, or deploy occurred.
+
+Next:
+- Claim `R3-0_LOCAL_APP_CONTRACT_FREEZE_AND_H1_API_SUPPORT` only when execution is explicitly requested.

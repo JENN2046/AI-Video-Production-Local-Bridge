@@ -1,0 +1,206 @@
+import assert from "node:assert/strict";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { randomUUID } from "node:crypto";
+import test from "node:test";
+
+import {
+  ensureM0Directories,
+  freezeGptHandoffStoryboardPackage,
+  getMediaArtifact,
+  getProjectStatus,
+  openM0Database,
+  paths,
+  scanGptHandoffImports
+} from "../src/index.js";
+
+const CANARY_SOURCE = resolve(paths.workspaceRoot, "fixtures", "provider-canary", "m1-r0", "shot_001_canary_720x1280.png");
+
+function copyTestImport(runId: string, order: number): string {
+  ensureM0Directories();
+  mkdirSync(paths.importsRoot, { recursive: true });
+  assert.equal(existsSync(CANARY_SOURCE), true, `Missing test source image: ${CANARY_SOURCE}`);
+  const filename = `gpt_handoff_test_${runId}_${String(order).padStart(3, "0")}.png`;
+  copyFileSync(CANARY_SOURCE, join(paths.importsRoot, filename));
+  return filename;
+}
+
+test("M1.5 scans local GPT imports and freezes a four-shot app-ready storyboard package", () => {
+  const db = openM0Database();
+
+  try {
+    const runId = randomUUID().slice(0, 8);
+    const importFilenames = [1, 2, 3, 4].map((order) => copyTestImport(runId, order));
+    const scanned = scanGptHandoffImports().filter((image) => importFilenames.includes(image.filename));
+    assert.equal(scanned.length, 4);
+    assert.equal(scanned.every((image) => image.readable_by_image_validator), true);
+    assert.equal(scanned.every((image) => image.width > 0 && image.height > 0), true);
+
+    const result = freezeGptHandoffStoryboardPackage(
+      {
+        project_title: `M1.5 GPT Handoff Test ${runId}`,
+        approved_by_user: true,
+        write_report: false,
+        shots: importFilenames.map((importFilename, index) => {
+          const order = index + 1;
+          return {
+            import_filename: importFilename,
+            order,
+            duration_seconds: 2,
+            shot_description: `SHOT_${String(order).padStart(3, "0")} local GPT handoff test.`,
+            video_prompt: `Animate SHOT_${String(order).padStart(3, "0")} as a locked web GPT storyboard keyframe.`,
+            negative_prompt: "no extra text, no source overwrite",
+            continuity_constraints: ["Use the imported keyframe as source of truth"]
+          };
+        })
+      },
+      db
+    );
+
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.report.result, "PASS");
+    assert.equal(result.report.report_path.includes(result.report.run_id), true);
+    assert.equal(result.report.latest_report_path, "data/reports/m1_5_gpt_handoff_app_freeze_report.json");
+    assert.equal(result.report.input_summary.artifact_ids_from_gpt, false);
+    assert.equal(result.report.imported_artifacts.length, 4);
+    assert.equal(result.report.storyboard_package.frozen, true);
+    assert.equal(result.report.storyboard_package.shot_count, 4);
+    assert.equal(result.report.package_validation.validateG0StoryboardPackage, "PASS");
+    assert.equal(result.report.package_validation.importG0AppReadyStoryboardPackage, "PASS");
+
+    for (const artifactSummary of result.report.imported_artifacts) {
+      const artifact = getMediaArtifact(db, artifactSummary.artifact_id);
+      assert.equal(artifact?.artifact_type, "image");
+      assert.equal(artifact?.role, "storyboard_image");
+      assert.equal(artifact?.status, "active");
+      assert.equal(artifact?.artifact_id.startsWith("artifact_"), true);
+    }
+
+    const projectStatus = getProjectStatus({ project_id: result.report.project.project_id }, db);
+    assert.equal(projectStatus.ok, true);
+    if (!projectStatus.ok) return;
+    assert.equal(projectStatus.status, "storyboard_approved");
+    assert.equal(projectStatus.shots.length, 4);
+
+    assert.equal(result.report.network_call_attempted, false);
+    assert.equal(result.report.runway_called, false);
+    assert.equal(result.report.runninghub_called, false);
+    assert.equal(result.report.real_video_generated, false);
+    assert.equal(result.report.regeneration_performed, false);
+    assert.equal(result.report.batch_generation_performed, false);
+    assert.equal(result.report.source_asset_overwrite, false);
+  } finally {
+    db.close();
+  }
+});
+
+test("M1.5 requires explicit user approval before freezing", () => {
+  const db = openM0Database();
+
+  try {
+    const runId = randomUUID().slice(0, 8);
+    const importFilename = copyTestImport(runId, 1);
+    const result = freezeGptHandoffStoryboardPackage(
+      {
+        project_title: "M1.5 Approval Required Test",
+        write_report: false,
+        shots: [
+          {
+            import_filename: importFilename,
+            order: 1,
+            duration_seconds: 2,
+            shot_description: "Approval must be explicit.",
+            video_prompt: "This should not freeze without approval."
+          }
+        ]
+      },
+      db
+    );
+
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.error.code, "USER_APPROVAL_REQUIRED");
+    assert.equal(result.report.imported_artifacts.length, 0);
+    assert.equal(result.report.network_call_attempted, false);
+  } finally {
+    db.close();
+  }
+});
+
+test("M1.5 prevalidates all shots before registering any media artifact", () => {
+  const db = openM0Database();
+
+  try {
+    const runId = randomUUID().slice(0, 8);
+    const validImport = copyTestImport(runId, 1);
+    const invalidImport = `gpt_handoff_test_${runId}_bad.png`;
+    writeFileSync(join(paths.importsRoot, invalidImport), "not an image", "utf8");
+    const mediaFileCountBefore = readdirSync(paths.imageArtifactsRoot).length;
+
+    const result = freezeGptHandoffStoryboardPackage(
+      {
+        project_title: "M1.5 Prevalidation Test",
+        approved_by_user: true,
+        write_report: false,
+        shots: [
+          {
+            import_filename: validImport,
+            order: 1,
+            duration_seconds: 2,
+            shot_description: "This valid image should not be registered yet.",
+            video_prompt: "This should be held until all shots pass validation."
+          },
+          {
+            import_filename: invalidImport,
+            order: 2,
+            duration_seconds: 2,
+            shot_description: "Invalid image should block the whole freeze.",
+            video_prompt: "This should not import."
+          }
+        ]
+      },
+      db
+    );
+
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.error.code, "IMAGE_FILE_INVALID");
+    assert.equal(result.report.imported_artifacts.length, 0);
+    assert.equal(readdirSync(paths.imageArtifactsRoot).length, mediaFileCountBefore);
+  } finally {
+    db.close();
+  }
+});
+
+test("M1.5 blocks GPT-supplied unsafe image paths before artifact registration", () => {
+  const db = openM0Database();
+
+  try {
+    const result = freezeGptHandoffStoryboardPackage(
+      {
+        project_title: "M1.5 Unsafe Handoff Test",
+        approved_by_user: true,
+        write_report: false,
+        shots: [
+          {
+            import_filename: "../outside.png",
+            order: 1,
+            duration_seconds: 2,
+            shot_description: "Unsafe path should fail.",
+            video_prompt: "This should not be imported."
+          }
+        ]
+      },
+      db
+    );
+
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.error.code, "STORAGE_PATH_NOT_ALLOWED");
+    assert.equal(result.report.imported_artifacts.length, 0);
+    assert.equal(result.report.network_call_attempted, false);
+  } finally {
+    db.close();
+  }
+});

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  buildRunwayCanaryDryRunReport,
   createProject,
   downloadProviderOutputToArtifact,
   getMediaArtifact,
@@ -15,6 +16,8 @@ import {
   paths,
   redactSecrets,
   registerMediaArtifact,
+  RUNWAY_API_VERSION,
+  RUNWAY_IMAGE_TO_VIDEO_ENDPOINT,
   RunwayVideoProviderAdapter,
   selectM1ProviderPort,
   startStoryboardVideoGeneration,
@@ -87,6 +90,15 @@ function setupOneShotProject(db: ReturnType<typeof openM0Database>, aspectRatio 
   assert.equal(storyboard.ok, true);
   if (!storyboard.ok) throw new Error("storyboard failed");
   return { project, storyboard, artifact: artifact.artifact };
+}
+
+function fakeStoryboardArtifact(): MediaArtifact {
+  return {
+    status: "active",
+    artifact_type: "image",
+    role: "storyboard_image",
+    storage: { uri: join(paths.workspaceRoot, "fixtures", "storyboard", "shot_001.png"), mime_type: "image/png", filename: "shot_001.png" }
+  } as MediaArtifact;
 }
 
 test("M1 provider registry keeps mock default and exposes two real ports", () => {
@@ -193,12 +205,7 @@ test("M1 Runway request boundary rejects unsupported ratio and duration before n
       throw new Error("network should not be called for invalid input");
     }) as typeof fetch
   });
-  const fakeArtifact = {
-    status: "active",
-    artifact_type: "image",
-    role: "storyboard_image",
-    storage: { uri: join(paths.workspaceRoot, "fixtures", "storyboard", "shot_001.png"), mime_type: "image/png", filename: "shot_001.png" }
-  } as MediaArtifact;
+  const fakeArtifact = fakeStoryboardArtifact();
 
   const badRatio = await adapter.submitGeneration({
     storyboard_artifact: fakeArtifact,
@@ -221,6 +228,45 @@ test("M1 Runway request boundary rejects unsupported ratio and duration before n
   });
   assert.equal(badDuration.ok, false);
   if (!badDuration.ok) assert.equal(badDuration.error.code, "PROVIDER_UNSUPPORTED_INPUT");
+});
+
+test("M1 Runway request maps project aspect ratio to API resolution ratio before submit", async () => {
+  let capturedUrl = "";
+  let capturedInit: RequestInit | undefined;
+  const adapter = new RunwayVideoProviderAdapter({
+    credential: FAKE_SECRET,
+    api_base: "https://api.test.runway",
+    fetch_impl: (async (url, init) => {
+      capturedUrl = String(url);
+      capturedInit = init;
+      return new Response(JSON.stringify({ id: "runway_job_request_contract", status: "PENDING" }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }) as typeof fetch
+  });
+
+  const result = await adapter.submitGeneration({
+    storyboard_artifact: fakeStoryboardArtifact(),
+    video_prompt: "Animate portrait shot.",
+    negative_prompt: "",
+    duration_seconds: 2,
+    aspect_ratio: "9:16",
+    resolution: "1080x1920"
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(capturedUrl, `https://api.test.runway${RUNWAY_IMAGE_TO_VIDEO_ENDPOINT}`);
+  assert.equal(capturedInit?.method, "POST");
+  const headers = capturedInit?.headers as Record<string, string>;
+  assert.equal(headers["X-Runway-Version"], RUNWAY_API_VERSION);
+
+  const rawBody = String(capturedInit?.body);
+  const body = JSON.parse(rawBody) as { ratio?: string; duration?: number; promptText?: string };
+  assert.equal(body.ratio, "768:1280");
+  assert.equal(body.duration, 2);
+  assert.equal(body.promptText, "Animate portrait shot.");
+  assert.equal(rawBody.includes("9:16"), false);
 });
 
 test("M1 provider output URL safety blocks unsafe destinations", () => {
@@ -282,4 +328,58 @@ test("M1 secret redactor removes fake credential from text", () => {
   const redacted = redactSecrets(`Authorization: Bearer ${FAKE_SECRET}\nRUNWAYML_API_SECRET=${FAKE_SECRET}`, [FAKE_SECRET]);
   assert.equal(redacted.includes(FAKE_SECRET), false);
   assert.equal(redacted.includes("<REDACTED>") || redacted.includes("<REDACTED_TEST_SECRET>"), true);
+});
+
+test("M1 strict Runway canary dry-run guard is single-submit and offline", () => {
+  const report = buildRunwayCanaryDryRunReport({
+    mode: "dry_run",
+    env: {
+      REAL_PROVIDER_ENABLED: "true",
+      M1_REAL_PROVIDER: "runway",
+      M1_REAL_PROVIDER_EXECUTION_ALLOWED: "true",
+      M1_REAL_PROVIDER_COST_ACK: "true",
+      RUNWAYML_API_SECRET: FAKE_SECRET
+    } as NodeJS.ProcessEnv
+  });
+
+  assert.equal(report.result, "PASS_READY_FOR_USER_AUTHORIZATION");
+  assert.equal(report.network_call_attempted, false);
+  assert.equal(report.runway_called, false);
+  assert.equal(report.runninghub_called, false);
+  assert.equal(report.provider_credits_consumed, false);
+  assert.equal(report.real_video_generated, false);
+  assert.equal(report.provider_boundary.provider, "runway");
+  assert.equal(report.provider_boundary.max_submit_calls, 1);
+  assert.equal(report.provider_boundary.duration_seconds, 2);
+  assert.equal(report.provider_boundary.runway_ratio, "768:1280");
+  assert.equal(report.provider_boundary.allow_regeneration, false);
+  assert.equal(report.provider_boundary.allow_batch_generation, false);
+  assert.equal(report.selected_canary_input.path, "fixtures/provider-canary/m1-r0/shot_001_canary_720x1280.png");
+  assert.equal(report.selected_canary_input.aspect_ratio, "9:16");
+  assert.equal(report.selected_canary_input.usable_for_real_provider_canary, true);
+  assert.equal(report.dry_run.start_storyboard_video_generation_called, false);
+  assert.equal(report.dry_run.submit_generation_called, false);
+  assert.equal(report.dry_run.fallback_to_demo_m1_real, false);
+});
+
+test("M1 strict Runway canary live mode blocks without exact authorization", () => {
+  const report = buildRunwayCanaryDryRunReport({
+    mode: "live",
+    env: {
+      REAL_PROVIDER_ENABLED: "true",
+      M1_REAL_PROVIDER: "runway",
+      M1_REAL_PROVIDER_EXECUTION_ALLOWED: "true",
+      M1_REAL_PROVIDER_COST_ACK: "true",
+      RUNWAYML_API_SECRET: FAKE_SECRET
+    } as NodeJS.ProcessEnv
+  });
+
+  assert.equal(report.result, "BLOCK_WITH_REASON");
+  assert.equal(report.authorization.provided, false);
+  assert.equal(report.authorization.accepted, false);
+  assert.match(report.block_reason ?? "", /authorization/i);
+  assert.equal(report.network_call_attempted, false);
+  assert.equal(report.runway_called, false);
+  assert.equal(report.dry_run.start_storyboard_video_generation_called, false);
+  assert.equal(report.dry_run.submit_generation_called, false);
 });

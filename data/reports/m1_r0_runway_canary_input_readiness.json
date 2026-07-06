@@ -1,0 +1,140 @@
+{
+  "task": "M1-R0-INPUT_Canary_Input_Image_Readiness_Fix",
+  "result": "PASS_READY_FOR_USER_AUTHORIZATION",
+  "generated_at": "2026-07-06T19:00:00+08:00",
+  "network_call_attempted": false,
+  "runway_called": false,
+  "runninghub_called": false,
+  "provider_credits_consumed": false,
+  "real_video_generated": false,
+  "secret_values_exposed": false,
+  "source_asset_overwrite": false,
+  "previous_input": {
+    "path": "fixtures/storyboard/shot_001.png",
+    "exists": true,
+    "mime_type": "image/png",
+    "width": 1,
+    "height": 1,
+    "aspect_ratio": "1:1",
+    "size_bytes": 68,
+    "readable_by_image_validator": true,
+    "usable_for_real_provider_canary": false,
+    "classification": "NOT_USABLE_FOR_REAL_CANARY",
+    "not_usable_reason": "fixture is too small / placeholder / not a qualified real 9:16 keyframe input",
+    "sha256": "4b5c5c92cec3b23e6a294fc0eea43234ef5126c5a64f4c6c531ac8430ab0b844"
+  },
+  "selected_canary_input": {
+    "path": "fixtures/provider-canary/m1-r0/shot_001_canary_720x1280.png",
+    "absolute_path": "A:/AI Video Production Workspace/fixtures/provider-canary/m1-r0/shot_001_canary_720x1280.png",
+    "exists": true,
+    "mime_type": "image/png",
+    "width": 720,
+    "height": 1280,
+    "aspect_ratio": "9:16",
+    "runway_ratio": "768:1280",
+    "size_bytes": 253183,
+    "sha256": "47ec001e41d0d6bee01125df3cdcf4967e47c6461d46e76274d56734c49568eb",
+    "readable_by_image_validator": true,
+    "source_type": "fixture_canary_image_provider_path_only",
+    "source_is_fixture": true,
+    "fixture_is_placeholder": false,
+    "native_full_frame": true,
+    "single_image": true,
+    "file_size_reasonable": true,
+    "not_storyboard_sheet": true,
+    "not_contact_sheet": true,
+    "not_collage": true,
+    "not_grid": true,
+    "not_panel_layout": true,
+    "no_text": true,
+    "no_captions": true,
+    "no_labels": true,
+    "no_typography": true,
+    "no_prompt_boxes": true,
+    "no_tables": true,
+    "no_borders": true,
+    "no_blurred_vertical_padding": true,
+    "not_transparent_only": true,
+    "not_empty": true,
+    "not_1x1": true,
+    "not_68_bytes": true,
+    "visually_valid": true,
+    "usable_for_real_provider_canary": true,
+    "note": "Synthetic provider-path canary image only. It verifies real-provider input readiness and does not represent a formal creative approved keyframe."
+  },
+  "dimension_note": {
+    "reason": "The task asked for a native 9:16 input image and also mentioned 768x1280 as a recommended dimension. 768x1280 reduces to 3:5, not 9:16, so this readiness fix selects 720x1280 for the input image while preserving Runway API output ratio 768:1280.",
+    "input_pixel_aspect_ratio": "9:16",
+    "runway_output_ratio": "768:1280"
+  },
+  "provider_guard": {
+    "active_provider": "runway",
+    "credential_env_name": "RUNWAYML_API_SECRET",
+    "credential_present": true,
+    "credential_value_recorded": false,
+    "endpoint": "POST /v1/image_to_video",
+    "x_runway_version": "2024-11-06",
+    "duration_seconds": 2,
+    "project_aspect_ratio": "9:16",
+    "runway_ratio": "768:1280",
+    "direct_9_16_sent_to_runway": false,
+    "regeneration_allowed": false,
+    "batch_generation_allowed": false
+  },
+  "canary_plan": {
+    "plan_only": true,
+    "requires_separate_user_authorization_before_execution": true,
+    "provider": "runway",
+    "model_name": "gen4.5",
+    "input": {
+      "path": "fixtures/provider-canary/m1-r0/shot_001_canary_720x1280.png",
+      "role_if_registered": "storyboard_image",
+      "source_type": "fixture_canary_image_provider_path_only"
+    },
+    "request_body_contract": {
+      "model": "gen4.5",
+      "promptImage": "data:image/png;base64,<derived_from_selected_canary_input_at_execution_time>",
+      "promptText": "Animate the provider-path canary keyframe with a gentle camera push.",
+      "ratio": "768:1280",
+      "duration": 2
+    },
+    "forbidden_request_values": {
+      "ratio": [
+        "9:16",
+        "16:9"
+      ]
+    },
+    "output_policy": {
+      "planned_output_directory": "data/media/provider-canary/m1-r0-runway-canary/",
+      "source_assets_overwritten": false,
+      "download_to_local_media_artifact_storage": true,
+      "ffprobe_required_before_active_generated_clip": true,
+      "persist_ephemeral_provider_url_as_durable_artifact": false
+    }
+  },
+  "validation": {
+    "env_check": "PASS",
+    "provider_preflight": "PASS",
+    "typecheck": "PASS",
+    "test_m1": "PASS",
+    "test_m1_tests_passed": 8,
+    "test_m1_tests_failed": 0,
+    "test_g0": "PASS",
+    "test_g0_tests_passed": 9,
+    "test_g0_tests_failed": 0,
+    "secret_scan": "PASS",
+    "secret_scan_findings": [],
+    "image_validator_previous_input": "PASS_BUT_NOT_USABLE",
+    "image_validator_selected_canary_input": "PASS",
+    "overall": "PASS"
+  },
+  "acceptance": {
+    "selected_canary_input_exists": true,
+    "selected_canary_input_readable_by_image_validator": true,
+    "selected_canary_input_aspect_ratio_9_16": true,
+    "selected_canary_input_runway_ratio_768_1280": true,
+    "selected_canary_input_usable_for_real_provider_canary": true,
+    "old_68_byte_fixture_marked_not_usable": true,
+    "validation_commands_passed": true
+  }
+}

@@ -1,0 +1,227 @@
+{
+  "phase": "M1-R0-CHECK",
+  "title": "Runway Canary Final Guard",
+  "generated_at": "2026-07-06T18:49:04+08:00",
+  "result": "PASS_READY_FOR_USER_AUTHORIZATION",
+  "scope": {
+    "real_provider_network_call_allowed": false,
+    "runway_called": false,
+    "runninghub_called": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "secrets_printed": false,
+    "push_tag_release_deploy_performed": false
+  },
+  "active_provider_gate": {
+    "env_check_result": "PASS",
+    "provider_preflight_result": "PASS",
+    "active_provider": "runway",
+    "selected_provider": "runway",
+    "status": "READY_FOR_AUTHORIZED_REAL_CALL",
+    "credential_env_name": "RUNWAYML_API_SECRET",
+    "credential_present": true,
+    "credential_value_recorded": false,
+    "missing": [],
+    "network_call_attempted": false
+  },
+  "runway_contract_guard": {
+    "api_version_header": {
+      "header_name": "X-Runway-Version",
+      "expected_value": "2024-11-06",
+      "actual_value": "2024-11-06",
+      "status": "PASS"
+    },
+    "submit_endpoint": {
+      "method": "POST",
+      "path": "/v1/image_to_video",
+      "status": "PASS"
+    },
+    "ratio_mapping": {
+      "project_aspect_ratio_vertical": "9:16",
+      "runway_ratio_vertical": "768:1280",
+      "project_aspect_ratio_horizontal": "16:9",
+      "runway_ratio_horizontal": "1280:768",
+      "direct_9_16_sent_to_runway": false,
+      "status": "PASS"
+    },
+    "duration": {
+      "planned_canary_duration_seconds": 2,
+      "supported_range_seconds": "2-10",
+      "status": "PASS"
+    }
+  },
+  "canary_execution_plan": {
+    "plan_only": true,
+    "requires_separate_user_authorization_before_execution": true,
+    "provider": "runway",
+    "model_name": "gen4.5",
+    "request": {
+      "endpoint": "POST /v1/image_to_video",
+      "headers": {
+        "Authorization": "Bearer <present_not_recorded>",
+        "Content-Type": "application/json",
+        "X-Runway-Version": "2024-11-06"
+      },
+      "body_contract": {
+        "model": "gen4.5",
+        "promptImage": "data:image/png;base64,<derived_from_selected_canary_input_at_execution_time>",
+        "promptText": "Animate the provider-path-only canary storyboard image with a gentle camera push.",
+        "ratio": "768:1280",
+        "duration": 2
+      },
+      "forbidden_body_values": {
+        "ratio": [
+          "9:16",
+          "16:9"
+        ]
+      }
+    },
+    "input_image_source": {
+      "selection_status": "EXPLICITLY_SELECTED",
+      "source_type": "fixture_canary_image_provider_path_only",
+      "path": "fixtures/provider-canary/m1-r0/shot_001_canary_720x1280.png",
+      "absolute_path": "A:/AI Video Production Workspace/fixtures/provider-canary/m1-r0/shot_001_canary_720x1280.png",
+      "role_if_registered": "storyboard_image",
+      "exists": true,
+      "mime_type": "image/png",
+      "width": 720,
+      "height": 1280,
+      "aspect_ratio": "9:16",
+      "runway_ratio": "768:1280",
+      "size_bytes": 253183,
+      "source_asset_overwrite_allowed": false,
+      "usable_for_real_provider_canary": true,
+      "supersedes_invalid_placeholder": "fixtures/storyboard/shot_001.png",
+      "note": "Synthetic provider-path canary image selected only to verify the real provider execution path boundary. It is not a final creative asset."
+    },
+    "output_boundary": {
+      "planned_output_directory": "data/media/provider-canary/m1-r0-runway-canary/",
+      "isolated_from_source_assets": true,
+      "source_assets_overwritten": false,
+      "durable_storage_policy": "download provider output into local media artifact storage; never persist ephemeral provider URL as the durable artifact",
+      "post_download_validation": "ffprobe required before generated_clip artifact is accepted as active"
+    },
+    "stop_condition": {
+      "max_submit_calls_after_future_authorization": 1,
+      "max_successful_generated_videos_after_future_authorization": 1,
+      "no_regeneration_in_canary": true,
+      "no_batch_generation_in_canary": true
+    }
+  },
+  "hard_gate_checks": [
+    {
+      "id": 1,
+      "check": "active provider = runway",
+      "status": "PASS",
+      "evidence": "data/reports/provider_env_check_result.json and data/reports/provider_preflight_result.json"
+    },
+    {
+      "id": 2,
+      "check": "RUNWAYML_API_SECRET present without outputting value",
+      "status": "PASS",
+      "credential_present": true,
+      "credential_value_recorded": false
+    },
+    {
+      "id": 3,
+      "check": "X-Runway-Version = 2024-11-06",
+      "status": "PASS",
+      "evidence": "src/tools/videoProviderAdapters.ts"
+    },
+    {
+      "id": 4,
+      "check": "image_to_video vertical ratio uses 768:1280, not 9:16",
+      "status": "PASS",
+      "evidence": "tests/m1-provider-boundary.test.ts request-body assertion"
+    },
+    {
+      "id": 5,
+      "check": "canary duration is within supported Gen-4.5 range",
+      "status": "PASS",
+      "duration_seconds": 2,
+      "supported_range_seconds": "2-10"
+    },
+    {
+      "id": 6,
+      "check": "input image source is explicitly selected",
+      "status": "PASS",
+      "selected_source": "fixtures/provider-canary/m1-r0/shot_001_canary_720x1280.png",
+      "source_type": "fixture_canary_image_provider_path_only"
+    },
+    {
+      "id": 7,
+      "check": "output directory is isolated",
+      "status": "PASS",
+      "planned_output_directory": "data/media/provider-canary/m1-r0-runway-canary/"
+    },
+    {
+      "id": 8,
+      "check": "source assets are never overwritten",
+      "status": "PASS",
+      "source_asset_overwrite_allowed": false
+    },
+    {
+      "id": 9,
+      "check": "generated output will be downloaded to local media artifact storage and ffprobe validated",
+      "status": "PASS",
+      "evidence": "npm run test:m1 includes provider output downloader and ffprobe-valid artifact test"
+    },
+    {
+      "id": 10,
+      "check": "report marks network_call_attempted=false",
+      "status": "PASS",
+      "network_call_attempted": false
+    }
+  ],
+  "validation": {
+    "commands": [
+      {
+        "command": "npm run env:check",
+        "status": "PASS",
+        "network_call_attempted": false,
+        "secret_values_printed": false
+      },
+      {
+        "command": "npm run provider:preflight",
+        "status": "PASS",
+        "network_call_attempted": false,
+        "secret_values_printed": false
+      },
+      {
+        "command": "npm run typecheck",
+        "status": "PASS"
+      },
+      {
+        "command": "npm run test:m1",
+        "status": "PASS",
+        "tests_passed": 8,
+        "tests_failed": 0
+      },
+      {
+        "command": "npm run test:g0",
+        "status": "PASS",
+        "tests_passed": 9,
+        "tests_failed": 0
+      },
+      {
+        "command": "npm run secret:scan",
+        "status": "PASS",
+        "findings": []
+      }
+    ],
+    "overall": "PASS"
+  },
+  "evidence": {
+    "env_check_report": "data/reports/provider_env_check_result.json",
+    "provider_preflight_report": "data/reports/provider_preflight_result.json",
+    "secret_scan_report": "data/reports/secret_scan_result.json",
+    "ratio_mapping_source": "src/tools/videoProviderAdapters.ts",
+    "ratio_request_body_test": "tests/m1-provider-boundary.test.ts",
+    "provider_contract_report": "data/reports/m1_p0_provider_contract.yaml"
+  },
+  "authorization_required_for_next_step": {
+    "required": true,
+    "reason": "The next step would make a real Runway provider call that may consume credits and produce a generated video.",
+    "minimal_authorization_text": "授权执行 1 次 Runway single-shot canary 真实调用，provider=runway，max_submit_calls=1，duration_seconds=2，ratio=768:1280，input=fixtures/provider-canary/m1-r0/shot_001_canary_720x1280.png provider-path-only，output_dir=data/media/provider-canary/m1-r0-runway-canary/，下载为本地 media artifact 并 ffprobe 校验；不得调用 RunningHub，不得 regeneration/batch，不得发布/部署/覆盖源资产。"
+  }
+}

@@ -1,0 +1,728 @@
+import { randomUUID } from "node:crypto";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
+
+import { ensureM0Directories, paths } from "../paths.js";
+import { openM0Database, type M0Database } from "../storage/sqlite.js";
+import { createProject, getProject, type Project } from "./projects.js";
+import { importG0AppReadyStoryboardPackage, validateG0StoryboardPackage, type G0StoryboardPackageInput } from "./g0Pregen.js";
+import { getMediaArtifact, registerMediaArtifact, type MediaArtifact } from "./mediaArtifacts.js";
+import { validateImageFile, type ImageValidationResult } from "./imageValidity.js";
+
+export const H1_STATE_FILE = "data/h1/workbench_state.json";
+export const H1_FREEZE_REPORT_LATEST = "data/reports/h1_workbench_package_freeze_result.json";
+export const H1_IMPORT_REPORT_LATEST = "data/reports/h1_workbench_import_register_result.json";
+
+const H1_FREEZE_REPORT_STEM = "h1_workbench_package_freeze_result";
+const H1_IMPORT_REPORT_STEM = "h1_workbench_import_register_result";
+const APPROVED_REVIEW_STATUS = "approved_for_media_artifact_handoff";
+const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg"]);
+
+export const H1_PROVIDER_BOUNDARY = {
+  network_call_attempted: false,
+  runway_called: false,
+  runninghub_called: false,
+  provider_credits_consumed: false,
+  real_video_generated: false,
+  regeneration_performed: false,
+  batch_generation_performed: false,
+  final_assembly_performed: false,
+  memory_saveback_performed: false,
+  source_asset_overwritten: false,
+  secret_values_exposed: false
+} as const;
+
+export type H1ShotApprovalStatus = "pending" | "approved" | "revision_needed";
+export type H1MutationResult<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string } };
+
+export interface H1ShotDraft {
+  shot_id: string;
+  order: number;
+  duration_seconds: number;
+  description: string;
+  video_prompt: string;
+  negative_prompt: string;
+  continuity_constraints: string[];
+  storyboard_image_artifact_id: string;
+  approval_status: H1ShotApprovalStatus;
+}
+
+export interface H1WorkbenchState {
+  version: "h1-v0.1";
+  updated_at: string;
+  project: {
+    project_id: string;
+    title: string;
+    project_type: string;
+    duration_seconds: number;
+    aspect_ratio: "9:16";
+    resolution: string;
+  };
+  shots: H1ShotDraft[];
+  rejected_imports: Array<{ import_filename: string; reason: string; rejected_at: string }>;
+  frozen_package_history: Array<{ storyboard_package_id: string; report_path: string; frozen_at: string }>;
+}
+
+export interface H1ScannedImport {
+  filename: string;
+  relative_path: string;
+  size_bytes: number;
+  readable_image: boolean;
+  mime_type: string;
+  width: number;
+  height: number;
+  detected_aspect_ratio: string;
+  normalized_aspect_ratio: "9:16" | "";
+  checksum: string;
+  review_status: "approved_for_media_artifact_handoff" | "blocked";
+  blockers: string[];
+  existing_artifact_ids: string[];
+}
+
+export interface H1PackageValidation {
+  ok: boolean;
+  blockers: string[];
+  validateG0StoryboardPackage: "PASS" | "FAIL";
+  app_ready: boolean;
+  project_id: string;
+  shot_count: number;
+}
+
+function now(): string {
+  return new Date().toISOString();
+}
+
+function h1Root(): string {
+  return join(paths.dataRoot, "h1");
+}
+
+function h1StatePath(): string {
+  return join(paths.workspaceRoot, H1_STATE_FILE);
+}
+
+function ensureH1Directories(): void {
+  ensureM0Directories();
+  if (!existsSync(h1Root())) mkdirSync(h1Root(), { recursive: true });
+}
+
+function isPathInside(child: string, parent: string): boolean {
+  const rel = relative(resolve(parent), resolve(child));
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function toolError(code: string, message: string): { code: string; message: string } {
+  return { code, message };
+}
+
+function pendingId(value: string): boolean {
+  const upper = value.toUpperCase();
+  return upper.startsWith("PENDING") || upper.includes("PENDING_");
+}
+
+function forbiddenImportNameReason(filename: string): string | null {
+  if (!filename || filename !== basename(filename) || filename.includes("..") || filename.includes("/") || filename.includes("\\") || isAbsolute(filename)) {
+    return "STORAGE_PATH_NOT_ALLOWED";
+  }
+  const lower = filename.toLowerCase();
+  const extension = extname(filename).toLowerCase();
+  if (pendingId(filename)) return "PENDING_ID_REJECTED";
+  if (lower.includes("audit") || lower.includes("failed_layout") || lower.includes("do_not_use")) return "AUDIT_IMAGE_REJECTED";
+  if (lower.includes("product_reference") || lower.includes("reference")) return "PRODUCT_REFERENCE_REJECTED";
+  if (lower.includes("four_panel") || lower.includes("4panel") || lower.includes("4_panel") || lower.includes("contact_sheet") || lower.includes("collage") || lower.includes("storyboard_sheet")) {
+    return "FOUR_PANEL_REFERENCE_REJECTED";
+  }
+  if (extension === ".zip") return "ZIP_FILE_REJECTED";
+  if ([".md", ".txt", ".json", ".yaml", ".yml", ".pdf", ".docx"].includes(extension)) return "DOC_FILE_REJECTED";
+  if (!IMAGE_EXTENSIONS.has(extension)) return "IMAGE_EXTENSION_UNSUPPORTED";
+  return null;
+}
+
+function isNineSixteenLike(width: number, height: number): boolean {
+  if (width <= 0 || height <= 0) return false;
+  return Math.abs(width / height - 9 / 16) <= 0.01;
+}
+
+function safeImportImagePath(filename: string): H1MutationResult<string> {
+  const reason = forbiddenImportNameReason(filename);
+  if (reason) return { ok: false, error: toolError(reason, `Import filename is not allowed: ${filename}`) };
+
+  const importsRoot = resolve(paths.importsRoot);
+  const sourcePath = resolve(importsRoot, filename);
+  if (!isPathInside(sourcePath, importsRoot)) return { ok: false, error: toolError("STORAGE_PATH_NOT_ALLOWED", "Import path resolved outside data/imports.") };
+  if (!existsSync(sourcePath)) return { ok: false, error: toolError("IMAGE_FILE_NOT_READABLE", `Import image not found: ${filename}`) };
+  if (lstatSync(sourcePath).isSymbolicLink()) return { ok: false, error: toolError("SYMLINK_ESCAPE_BLOCKED", "Import image symbolic links are blocked.") };
+
+  const realSourcePath = realpathSync(sourcePath);
+  if (!isPathInside(realSourcePath, importsRoot)) return { ok: false, error: toolError("SYMLINK_ESCAPE_BLOCKED", "Import image resolves outside data/imports.") };
+  if (!statSync(realSourcePath).isFile()) return { ok: false, error: toolError("IMAGE_FILE_NOT_READABLE", "Import path is not a file.") };
+  return { ok: true, value: realSourcePath };
+}
+
+function inspectImportImage(filename: string): H1ScannedImport {
+  const relativePath = `data/imports/${filename}`;
+  const base = {
+    filename,
+    relative_path: relativePath,
+    size_bytes: 0,
+    readable_image: false,
+    mime_type: "",
+    width: 0,
+    height: 0,
+    detected_aspect_ratio: "",
+    normalized_aspect_ratio: "" as const,
+    checksum: "",
+    review_status: "blocked" as const,
+    blockers: [] as string[],
+    existing_artifact_ids: [] as string[]
+  };
+
+  const safePath = safeImportImagePath(filename);
+  if (!safePath.ok) return { ...base, blockers: [safePath.error.code] };
+  const size = statSync(safePath.value).size;
+  const validation = validateImageFile(safePath.value);
+  if (!validation.ok) {
+    return {
+      ...base,
+      size_bytes: size,
+      blockers: [validation.error_code || "IMAGE_FILE_INVALID"]
+    };
+  }
+
+  const blockers: string[] = [];
+  if (validation.detected_mime !== "image/png" && validation.detected_mime !== "image/jpeg") blockers.push("IMAGE_MIME_UNSUPPORTED");
+  if (!isNineSixteenLike(validation.width, validation.height)) blockers.push("ASPECT_RATIO_NOT_9_16");
+
+  return {
+    ...base,
+    size_bytes: size,
+    readable_image: validation.ok,
+    mime_type: validation.detected_mime,
+    width: validation.width,
+    height: validation.height,
+    detected_aspect_ratio: validation.aspect_ratio,
+    normalized_aspect_ratio: isNineSixteenLike(validation.width, validation.height) ? "9:16" : "",
+    checksum: validation.sha256,
+    review_status: blockers.length === 0 ? APPROVED_REVIEW_STATUS : "blocked",
+    blockers
+  };
+}
+
+function listMediaArtifacts(db: M0Database): MediaArtifact[] {
+  const rows = db.prepare("SELECT data_json FROM media_artifacts ORDER BY created_at").all() as Array<{ data_json: string }>;
+  return rows.map((row) => JSON.parse(row.data_json) as MediaArtifact);
+}
+
+function imageChecksumByArtifact(artifact: MediaArtifact): string {
+  const metadata = artifact.metadata as Partial<MediaArtifact["metadata"]> | undefined;
+  const source = artifact.source as Partial<MediaArtifact["source"]> | undefined;
+  return metadata?.sha256 || source?.sha256 || "";
+}
+
+export function listH1MediaArtifacts(db = openM0Database()): MediaArtifact[] {
+  return listMediaArtifacts(db).filter((artifact) => artifact.artifact_type === "image" && artifact.role === "storyboard_image");
+}
+
+export function scanH1Imports(db = openM0Database()): H1ScannedImport[] {
+  ensureM0Directories();
+  if (!existsSync(paths.importsRoot)) return [];
+  const artifacts = listH1MediaArtifacts(db);
+
+  return readdirSync(paths.importsRoot, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .map((entry) => {
+      const scanned = inspectImportImage(entry.name);
+      if (scanned.checksum) {
+        scanned.existing_artifact_ids = artifacts
+          .filter((artifact) => imageChecksumByArtifact(artifact) === scanned.checksum)
+          .map((artifact) => artifact.artifact_id);
+      }
+      return scanned;
+    });
+}
+
+export function defaultH1WorkbenchState(): H1WorkbenchState {
+  return {
+    version: "h1-v0.1",
+    updated_at: now(),
+    project: {
+      project_id: "",
+      title: "Ryan's Lunch Break Skullcap",
+      project_type: "h1_human_operator_workbench",
+      duration_seconds: 15,
+      aspect_ratio: "9:16",
+      resolution: "1080x1920"
+    },
+    shots: [
+      {
+        shot_id: "SHOT_001",
+        order: 1,
+        duration_seconds: 3,
+        description: "Ryan sits at the construction-site lunch bench with the gray skullcap visible.",
+        video_prompt: "",
+        negative_prompt: "",
+        continuity_constraints: [],
+        storyboard_image_artifact_id: "",
+        approval_status: "pending"
+      },
+      {
+        shot_id: "SHOT_002",
+        order: 2,
+        duration_seconds: 3,
+        description: "Ryan reaches toward the work gloves and nearby gear on the lunch table.",
+        video_prompt: "",
+        negative_prompt: "",
+        continuity_constraints: [],
+        storyboard_image_artifact_id: "",
+        approval_status: "pending"
+      },
+      {
+        shot_id: "SHOT_003",
+        order: 3,
+        duration_seconds: 4,
+        description: "Ryan adjusts the gray skullcap with both hands.",
+        video_prompt: "",
+        negative_prompt: "",
+        continuity_constraints: [],
+        storyboard_image_artifact_id: "",
+        approval_status: "pending"
+      },
+      {
+        shot_id: "SHOT_004",
+        order: 4,
+        duration_seconds: 5,
+        description: "Ryan stands with hard hat and work bag, ready to return to the worksite.",
+        video_prompt: "",
+        negative_prompt: "",
+        continuity_constraints: [],
+        storyboard_image_artifact_id: "",
+        approval_status: "pending"
+      }
+    ],
+    rejected_imports: [],
+    frozen_package_history: []
+  };
+}
+
+export function loadH1WorkbenchState(): H1WorkbenchState {
+  ensureH1Directories();
+  const target = h1StatePath();
+  if (!existsSync(target)) return defaultH1WorkbenchState();
+  return JSON.parse(readFileSync(target, "utf8")) as H1WorkbenchState;
+}
+
+export function saveH1WorkbenchState(state: H1WorkbenchState): H1WorkbenchState {
+  ensureH1Directories();
+  const next = { ...state, updated_at: now() };
+  writeFileSync(h1StatePath(), `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  return next;
+}
+
+export function registerH1ApprovedKeyframe(
+  input: { import_filename: string; review_status: string; write_report?: boolean },
+  db = openM0Database()
+): H1MutationResult<{ artifact: MediaArtifact; report: unknown }> {
+  if (input.review_status !== APPROVED_REVIEW_STATUS) {
+    return { ok: false, error: toolError("REVIEW_STATUS_NOT_APPROVED", "Import requires approved_for_media_artifact_handoff review status.") };
+  }
+
+  const scanned = inspectImportImage(input.import_filename);
+  if (scanned.blockers.length > 0) {
+    return { ok: false, error: toolError(scanned.blockers[0], `Import is blocked: ${scanned.blockers.join(", ")}`) };
+  }
+
+  const registered = registerMediaArtifact(
+    {
+      artifact_type: "image",
+      role: "storyboard_image",
+      source: { kind: "local_file_import", import_filename: input.import_filename },
+      metadata: { sha256: scanned.checksum },
+      provenance: { sha256: scanned.checksum }
+    },
+    db
+  );
+  if (!registered.ok) return { ok: false, error: registered.error };
+
+  const storedValidation = validateImageFile(registered.artifact.storage.uri);
+  const runId = randomUUID();
+  const report = {
+    task: "H1-HANDOFF-WORKBENCH-MVP",
+    action: "register_approved_keyframe",
+    result: "PASS",
+    run_id: runId,
+    generated_at: now(),
+    import_filename: input.import_filename,
+    review_status: input.review_status,
+    artifact: {
+      artifact_id: registered.artifact.artifact_id,
+      artifact_type: registered.artifact.artifact_type,
+      role: registered.artifact.role,
+      status: registered.artifact.status,
+      storage_uri: registered.artifact.storage.uri,
+      mime_type: registered.artifact.storage.mime_type,
+      width: registered.artifact.metadata.width,
+      height: registered.artifact.metadata.height,
+      detected_aspect_ratio: registered.artifact.metadata.aspect_ratio,
+      normalized_aspect_ratio: "9:16",
+      checksum: storedValidation.ok ? storedValidation.sha256 : scanned.checksum
+    },
+    provider_boundary: H1_PROVIDER_BOUNDARY,
+    report_path: `data/reports/${H1_IMPORT_REPORT_STEM}_${runId}.json`,
+    latest_report_path: H1_IMPORT_REPORT_LATEST
+  };
+  if (input.write_report !== false) writeJsonReport(H1_IMPORT_REPORT_STEM, runId, report, H1_IMPORT_REPORT_LATEST);
+  return { ok: true, value: { artifact: registered.artifact, report } };
+}
+
+function findShot(state: H1WorkbenchState, shotId: string): H1ShotDraft | null {
+  return state.shots.find((shot) => shot.shot_id === shotId) ?? null;
+}
+
+export function updateH1ShotMetadata(
+  state: H1WorkbenchState,
+  input: { shot_id: string; duration_seconds?: number; description?: string; video_prompt?: string; negative_prompt?: string; continuity_constraints?: string[] }
+): H1MutationResult<H1WorkbenchState> {
+  const shot = findShot(state, input.shot_id);
+  if (!shot) return { ok: false, error: toolError("SHOT_NOT_FOUND", `Shot not found: ${input.shot_id}`) };
+  const nextShot: H1ShotDraft = {
+    ...shot,
+    duration_seconds: input.duration_seconds ?? shot.duration_seconds,
+    description: input.description ?? shot.description,
+    video_prompt: input.video_prompt ?? shot.video_prompt,
+    negative_prompt: input.negative_prompt ?? shot.negative_prompt,
+    continuity_constraints: input.continuity_constraints ?? shot.continuity_constraints
+  };
+  if (nextShot.duration_seconds <= 0) return { ok: false, error: toolError("MISSING_REQUIRED_FIELD", "duration_seconds must be positive.") };
+  return {
+    ok: true,
+    value: {
+      ...state,
+      updated_at: now(),
+      shots: state.shots.map((candidate) => (candidate.shot_id === input.shot_id ? nextShot : candidate))
+    }
+  };
+}
+
+export function linkH1ArtifactToShot(
+  state: H1WorkbenchState,
+  input: { shot_id: string; artifact_id: string },
+  db = openM0Database()
+): H1MutationResult<H1WorkbenchState> {
+  if (pendingId(input.artifact_id)) return { ok: false, error: toolError("PENDING_ID_REJECTED", "PENDING_* artifact IDs are not accepted.") };
+  const shot = findShot(state, input.shot_id);
+  if (!shot) return { ok: false, error: toolError("SHOT_NOT_FOUND", `Shot not found: ${input.shot_id}`) };
+  const artifact = getMediaArtifact(db, input.artifact_id);
+  if (!artifact) return { ok: false, error: toolError("ARTIFACT_NOT_FOUND", `Artifact not found: ${input.artifact_id}`) };
+  if (artifact.status !== "active") return { ok: false, error: toolError(`ARTIFACT_${artifact.status.toUpperCase()}`, `Artifact is not active: ${artifact.status}`) };
+  if (artifact.artifact_type !== "image" || artifact.role !== "storyboard_image") {
+    return { ok: false, error: toolError("INVALID_ARTIFACT_ROLE", "Shot can only link active storyboard_image image artifacts.") };
+  }
+
+  return {
+    ok: true,
+    value: {
+      ...state,
+      updated_at: now(),
+      shots: state.shots.map((candidate) => (candidate.shot_id === input.shot_id ? { ...candidate, storyboard_image_artifact_id: input.artifact_id } : candidate))
+    }
+  };
+}
+
+export function markH1ShotApproved(state: H1WorkbenchState, input: { shot_id: string; human_confirmation: boolean }): H1MutationResult<H1WorkbenchState> {
+  if (input.human_confirmation !== true) return { ok: false, error: toolError("HUMAN_CONFIRMATION_REQUIRED", "Approving a shot requires explicit human confirmation.") };
+  const shot = findShot(state, input.shot_id);
+  if (!shot) return { ok: false, error: toolError("SHOT_NOT_FOUND", `Shot not found: ${input.shot_id}`) };
+  return {
+    ok: true,
+    value: {
+      ...state,
+      updated_at: now(),
+      shots: state.shots.map((candidate) => (candidate.shot_id === input.shot_id ? { ...candidate, approval_status: "approved" } : candidate))
+    }
+  };
+}
+
+export function markH1ShotRevisionNeeded(state: H1WorkbenchState, input: { shot_id: string }): H1MutationResult<H1WorkbenchState> {
+  const shot = findShot(state, input.shot_id);
+  if (!shot) return { ok: false, error: toolError("SHOT_NOT_FOUND", `Shot not found: ${input.shot_id}`) };
+  return {
+    ok: true,
+    value: {
+      ...state,
+      updated_at: now(),
+      shots: state.shots.map((candidate) => (candidate.shot_id === input.shot_id ? { ...candidate, approval_status: "revision_needed" } : candidate))
+    }
+  };
+}
+
+export function rejectH1Import(state: H1WorkbenchState, input: { import_filename: string; reason: string }): H1WorkbenchState {
+  return {
+    ...state,
+    updated_at: now(),
+    rejected_imports: [
+      ...state.rejected_imports,
+      {
+        import_filename: basename(input.import_filename),
+        reason: input.reason || "rejected_from_storyboard_flow",
+        rejected_at: now()
+      }
+    ]
+  };
+}
+
+export function h1ShotBlockers(shot: H1ShotDraft, db = openM0Database()): string[] {
+  const blockers: string[] = [];
+  if (pendingId(shot.storyboard_image_artifact_id)) blockers.push("PENDING_ID_REJECTED");
+  if (!shot.storyboard_image_artifact_id) blockers.push("MISSING_STORYBOARD_IMAGE_ARTIFACT_ID");
+  if (!shot.description.trim()) blockers.push("MISSING_DESCRIPTION");
+  if (!shot.video_prompt.trim()) blockers.push("MISSING_VIDEO_PROMPT");
+  if (typeof shot.negative_prompt !== "string") blockers.push("MISSING_NEGATIVE_PROMPT");
+  if (typeof shot.duration_seconds !== "number" || shot.duration_seconds <= 0) blockers.push("MISSING_DURATION_SECONDS");
+  if (shot.approval_status !== "approved") blockers.push("SHOT_NOT_APPROVED");
+
+  if (shot.storyboard_image_artifact_id && !pendingId(shot.storyboard_image_artifact_id)) {
+    const artifact = getMediaArtifact(db, shot.storyboard_image_artifact_id);
+    if (!artifact) blockers.push("ARTIFACT_NOT_FOUND");
+    else {
+      if (artifact.status !== "active") blockers.push(`ARTIFACT_${artifact.status.toUpperCase()}`);
+      if (artifact.artifact_type !== "image" || artifact.role !== "storyboard_image") blockers.push("INVALID_ARTIFACT_ROLE");
+    }
+  }
+  return blockers;
+}
+
+function ensureProjectForState(state: H1WorkbenchState, db: M0Database): H1MutationResult<{ project: Project; state: H1WorkbenchState }> {
+  if (pendingId(state.project.project_id)) return { ok: false, error: toolError("FAKE_PROJECT_ID_REJECTED", "PENDING or fake project IDs are not accepted.") };
+  if (state.project.project_id) {
+    const existing = getProject(db, state.project.project_id);
+    if (!existing) return { ok: false, error: toolError("PROJECT_NOT_FOUND", `Project not found: ${state.project.project_id}`) };
+    return { ok: true, value: { project: existing, state } };
+  }
+
+  const created = createProject(
+    {
+      title: state.project.title,
+      project_type: state.project.project_type,
+      video_spec: {
+        duration_seconds: state.project.duration_seconds,
+        aspect_ratio: state.project.aspect_ratio,
+        resolution: state.project.resolution
+      }
+    },
+    db
+  );
+  if (!created.ok) return { ok: false, error: created.error };
+  return {
+    ok: true,
+    value: {
+      project: created.project,
+      state: {
+        ...state,
+        updated_at: now(),
+        project: {
+          ...state.project,
+          project_id: created.project.project_id
+        }
+      }
+    }
+  };
+}
+
+function buildG0Input(state: H1WorkbenchState, projectId: string): G0StoryboardPackageInput {
+  return {
+    project_id: projectId,
+    status: "approved_for_video_generation",
+    approved_by_user: true,
+    confirmation: {
+      user_confirmed: true,
+      source: "app"
+    },
+    shots: state.shots
+      .slice()
+      .sort((left, right) => left.order - right.order)
+      .map((shot) => ({
+        shot_id: shot.shot_id,
+        order: shot.order,
+        duration_seconds: shot.duration_seconds,
+        storyboard_image_artifact_id: shot.storyboard_image_artifact_id,
+        shot_description: shot.description,
+        video_prompt: shot.video_prompt,
+        negative_prompt: shot.negative_prompt,
+        continuity_constraints: shot.continuity_constraints,
+        approved_by_user: shot.approval_status === "approved"
+      }))
+  };
+}
+
+export function validateH1StoryboardPackage(state: H1WorkbenchState, db = openM0Database()): H1MutationResult<{ state: H1WorkbenchState; validation: H1PackageValidation }> {
+  const shotBlockers = state.shots.flatMap((shot) => h1ShotBlockers(shot, db).map((blocker) => `${shot.shot_id}:${blocker}`));
+  if (shotBlockers.length > 0) {
+    return {
+      ok: true,
+      value: {
+        state,
+        validation: {
+          ok: false,
+          blockers: shotBlockers,
+          validateG0StoryboardPackage: "FAIL",
+          app_ready: false,
+          project_id: state.project.project_id,
+          shot_count: state.shots.length
+        }
+      }
+    };
+  }
+
+  const projectResult = ensureProjectForState(state, db);
+  if (!projectResult.ok) return projectResult;
+  const packageInput = buildG0Input(projectResult.value.state, projectResult.value.project.project_id);
+  const validation = validateG0StoryboardPackage(packageInput, db);
+  if (!validation.ok) {
+    return {
+      ok: true,
+      value: {
+        state: projectResult.value.state,
+        validation: {
+          ok: false,
+          blockers: [validation.error.code],
+          validateG0StoryboardPackage: "FAIL",
+          app_ready: false,
+          project_id: projectResult.value.project.project_id,
+          shot_count: state.shots.length
+        }
+      }
+    };
+  }
+  return {
+    ok: true,
+    value: {
+      state: projectResult.value.state,
+      validation: {
+        ok: true,
+        blockers: [],
+        validateG0StoryboardPackage: "PASS",
+        app_ready: validation.app_ready,
+        project_id: projectResult.value.project.project_id,
+        shot_count: state.shots.length
+      }
+    }
+  };
+}
+
+export function freezeH1StoryboardPackage(
+  state: H1WorkbenchState,
+  input: { human_confirmation: boolean; write_report?: boolean },
+  db = openM0Database()
+): H1MutationResult<{ state: H1WorkbenchState; report: unknown }> {
+  if (input.human_confirmation !== true) return { ok: false, error: toolError("HUMAN_CONFIRMATION_REQUIRED", "Freezing a Storyboard Package requires explicit human confirmation.") };
+  const validationResult = validateH1StoryboardPackage(state, db);
+  if (!validationResult.ok) return validationResult;
+  if (!validationResult.value.validation.ok) {
+    return { ok: false, error: toolError("FREEZE_PRECONDITIONS_BLOCKED", validationResult.value.validation.blockers.join(", ")) };
+  }
+
+  const nextState = validationResult.value.state;
+  const packageInput = buildG0Input(nextState, validationResult.value.validation.project_id);
+  const imported = importG0AppReadyStoryboardPackage(packageInput, db);
+  if (!imported.ok) return { ok: false, error: imported.error };
+
+  const runId = randomUUID();
+  const frozenAt = now();
+  const reportPath = `data/reports/${H1_FREEZE_REPORT_STEM}_${runId}.json`;
+  const report = {
+    task: "H1-HANDOFF-WORKBENCH-MVP",
+    action: "freeze_app_ready_storyboard_package",
+    result: "PASS",
+    run_id: runId,
+    generated_at: frozenAt,
+    project: {
+      project_id: imported.project.project_id,
+      title: imported.project.title,
+      status: imported.project.status
+    },
+    package_validation: {
+      validateG0StoryboardPackage: "PASS",
+      importG0AppReadyStoryboardPackage: "PASS"
+    },
+    storyboard_package: {
+      storyboard_package_id: imported.storyboard_package_id,
+      status: "approved_for_video_generation",
+      frozen: true,
+      shot_count: imported.shots.length,
+      shot_ids: imported.shots.map((shot) => shot.shot_id)
+    },
+    shots: packageInput.shots.map((shot) => ({
+      shot_id: shot.shot_id,
+      order: shot.order,
+      storyboard_image_artifact_id: shot.storyboard_image_artifact_id,
+      approved_by_user: shot.approved_by_user
+    })),
+    provider_boundary: H1_PROVIDER_BOUNDARY,
+    report_path: reportPath,
+    latest_report_path: H1_FREEZE_REPORT_LATEST
+  };
+  if (input.write_report !== false) writeJsonReport(H1_FREEZE_REPORT_STEM, runId, report, H1_FREEZE_REPORT_LATEST);
+
+  return {
+    ok: true,
+    value: {
+      state: {
+        ...nextState,
+        updated_at: frozenAt,
+        frozen_package_history: [
+          ...nextState.frozen_package_history,
+          {
+            storyboard_package_id: imported.storyboard_package_id,
+            report_path: reportPath,
+            frozen_at: frozenAt
+          }
+        ]
+      },
+      report
+    }
+  };
+}
+
+function writeJsonReport(stem: string, runId: string, payload: unknown, latestRelativePath: string): string {
+  ensureM0Directories();
+  const immutablePath = join(paths.reportsRoot, `${stem}_${runId}.json`);
+  const text = `${JSON.stringify(payload, null, 2)}\n`;
+  writeFileSync(immutablePath, text, "utf8");
+  writeFileSync(join(paths.workspaceRoot, latestRelativePath), text, "utf8");
+  return immutablePath;
+}
+
+export function listH1Reports(): Array<{ name: string; relative_path: string; size_bytes: number; updated_at: string; is_latest_pointer: boolean }> {
+  ensureM0Directories();
+  if (!existsSync(paths.reportsRoot)) return [];
+  return readdirSync(paths.reportsRoot, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .map((entry) => {
+      const target = join(paths.reportsRoot, entry.name);
+      const stat = statSync(target);
+      return {
+        name: entry.name,
+        relative_path: `data/reports/${entry.name}`,
+        size_bytes: stat.size,
+        updated_at: stat.mtime.toISOString(),
+        is_latest_pointer: !/_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.json$/i.test(entry.name)
+      };
+    });
+}
+
+export function h1DashboardSummary(state = loadH1WorkbenchState(), db = openM0Database()) {
+  const imports = scanH1Imports(db);
+  const shotBlockers = state.shots.flatMap((shot) => h1ShotBlockers(shot, db));
+  return {
+    project_title: state.project.title,
+    project_id: state.project.project_id || "",
+    shots_total: state.shots.length,
+    shots_approved: state.shots.filter((shot) => shot.approval_status === "approved").length,
+    imports_total: imports.length,
+    imports_ready: imports.filter((item) => item.blockers.length === 0).length,
+    blockers_total: shotBlockers.length,
+    reports_total: listH1Reports().length,
+    provider_boundary: H1_PROVIDER_BOUNDARY
+  };
+}
