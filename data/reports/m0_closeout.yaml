@@ -1,8 +1,8 @@
 m0_closeout:
   result: PASS_WITH_GAPS
-  generated_at: 2026-07-06T10:06:26.313Z
-  project_id: "project_58528ad6-ffb0-4ab6-b23c-b57fb5a19722"
-  storyboard_package_id: "storyboard_package_a1483978-5380-4043-a7b9-1ac7958529c0"
+  generated_at: 2026-07-06T10:22:44.656Z
+  project_id: "project_013aaa0e-6c97-4faa-9321-a9f7b5609a05"
+  storyboard_package_id: "storyboard_package_3153b793-f0b1-4444-9b85-695aba9ad1bf"
 
   validation:
     commands_run:
@@ -19,10 +19,10 @@ m0_closeout:
   evidence:
     sqlite_path: "A:\\AI Video Production Workspace\\data\\app.sqlite"
     media_root: "A:\\AI Video Production Workspace\\data\\media"
-    final_video_path: "A:\\AI Video Production Workspace\\data\\media\\artifacts\\final\\artifact_7adb47e2-bc90-487b-8ddd-6b28249e262a.mp4"
+    final_video_path: "A:\\AI Video Production Workspace\\data\\media\\artifacts\\final\\artifact_a7250997-e3f0-4c3c-89b8-7532640838cc.mp4"
     closeout_report_path: "A:\\AI Video Production Workspace\\data\\reports\\m0_closeout.yaml"
-    demo_project_id: "project_58528ad6-ffb0-4ab6-b23c-b57fb5a19722"
-    demo_batch_id: "batch_40d71e96-e547-43fd-b115-669c350c53c3"
+    demo_project_id: "project_013aaa0e-6c97-4faa-9321-a9f7b5609a05"
+    demo_batch_id: "batch_e40f0afa-fb69-4880-8ab3-44fb2e50c97f"
     demo_evidence_current: true
     summary_scope: current_demo_project
 
@@ -35,7 +35,7 @@ m0_closeout:
       total: 4
       succeeded: 4
       failed: 0
-    final_video_artifact_id: "artifact_7adb47e2-bc90-487b-8ddd-6b28249e262a"
+    final_video_artifact_id: "artifact_a7250997-e3f0-4c3c-89b8-7532640838cc"
 
   generation_summary:
     batches: 1
@@ -79,7 +79,7 @@ m0_closeout:
       failed: 0
     final_video:
       status: PASS
-      path: "A:\\AI Video Production Workspace\\data\\media\\artifacts\\final\\artifact_7adb47e2-bc90-487b-8ddd-6b28249e262a.mp4"
+      path: "A:\\AI Video Production Workspace\\data\\media\\artifacts\\final\\artifact_a7250997-e3f0-4c3c-89b8-7532640838cc.mp4"
       ffprobe_exit_code: 0
       has_video_stream: true
       duration_seconds: 2

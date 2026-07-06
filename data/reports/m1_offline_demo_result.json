@@ -1,7 +1,7 @@
 {
   "phase": "M1-offline",
   "result": "PASS",
-  "project_id": "project_a5d5f20e-534f-4601-a0b8-fabac027fd9a",
+  "project_id": "project_ffd2a0ac-655d-4389-8ef7-f3c78fbef593",
   "provider_ports": {
     "mock": {
       "type": "offline",
@@ -21,15 +21,15 @@
       "type": "real",
       "selectable": true,
       "default": false,
-      "model_name": "TBD",
+      "model_name": "rhart-video-g/image-to-video",
       "status": "secondary_selectable_provider_port"
     }
   },
   "mock_default_generation": {
     "status": "PASS",
-    "batch_id": "batch_fe31b5f0-22e6-4b0f-8aa3-ffe599890321",
-    "run_id": "run_1a43edfd-6564-4ff6-950f-89d945ff193c",
-    "artifact_id": "artifact_7af1f757-1384-4f95-9b57-b27671bc2687",
+    "batch_id": "batch_ff623087-92e5-4224-8f0a-2f0529577d22",
+    "run_id": "run_fa6ae044-8fc1-4216-9271-30e12768daba",
+    "artifact_id": "artifact_02a64ba7-d70f-4a13-ba98-a56102bc166f",
     "artifact_source_provider": "mock"
   },
   "provider_boundary": {

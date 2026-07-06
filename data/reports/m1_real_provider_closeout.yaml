@@ -1,6 +1,6 @@
 m1_real_provider_closeout:
   result: OFFLINE_ONLY
-  generated_at: 2026-07-06T10:06:30.071Z
+  generated_at: 2026-07-06T10:22:48.512Z
 
   provider_ports:
     mock:
@@ -13,7 +13,7 @@ m1_real_provider_closeout:
     runninghub:
       boundary: PASS
       real_generation: NOT_TESTED
-      model_name: TBD
+      model_name: rhart-video-g/image-to-video
 
   selected_real_provider:
     provider_name: "unset"

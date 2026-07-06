@@ -1,29 +1,29 @@
 {
   "phase": "G0",
   "result": "PASS",
-  "project_id": "project_d6fda2cd-eb48-4f11-b893-210ba20e681b",
+  "project_id": "project_d39f5223-83a2-4dcc-9a32-83e6f741532d",
   "saved_g0_artifacts": {
-    "creative_brief": "A:\\AI Video Production Workspace\\data\\projects\\project_d6fda2cd-eb48-4f11-b893-210ba20e681b\\g0\\creative_brief.json",
-    "script": "A:\\AI Video Production Workspace\\data\\projects\\project_d6fda2cd-eb48-4f11-b893-210ba20e681b\\g0\\script.json",
-    "shot_list": "A:\\AI Video Production Workspace\\data\\projects\\project_d6fda2cd-eb48-4f11-b893-210ba20e681b\\g0\\shot_list.json",
-    "storyboard_image_prompts": "A:\\AI Video Production Workspace\\data\\projects\\project_d6fda2cd-eb48-4f11-b893-210ba20e681b\\g0\\storyboard_image_prompts.json",
-    "storyboard_review_record": "A:\\AI Video Production Workspace\\data\\projects\\project_d6fda2cd-eb48-4f11-b893-210ba20e681b\\g0\\storyboard_review_record.json",
-    "storyboard_package_draft": "A:\\AI Video Production Workspace\\data\\projects\\project_d6fda2cd-eb48-4f11-b893-210ba20e681b\\g0\\storyboard_package_draft.json"
+    "creative_brief": "A:\\AI Video Production Workspace\\data\\projects\\project_d39f5223-83a2-4dcc-9a32-83e6f741532d\\g0\\creative_brief.json",
+    "script": "A:\\AI Video Production Workspace\\data\\projects\\project_d39f5223-83a2-4dcc-9a32-83e6f741532d\\g0\\script.json",
+    "shot_list": "A:\\AI Video Production Workspace\\data\\projects\\project_d39f5223-83a2-4dcc-9a32-83e6f741532d\\g0\\shot_list.json",
+    "storyboard_image_prompts": "A:\\AI Video Production Workspace\\data\\projects\\project_d39f5223-83a2-4dcc-9a32-83e6f741532d\\g0\\storyboard_image_prompts.json",
+    "storyboard_review_record": "A:\\AI Video Production Workspace\\data\\projects\\project_d39f5223-83a2-4dcc-9a32-83e6f741532d\\g0\\storyboard_review_record.json",
+    "storyboard_package_draft": "A:\\AI Video Production Workspace\\data\\projects\\project_d39f5223-83a2-4dcc-9a32-83e6f741532d\\g0\\storyboard_package_draft.json"
   },
   "local_storyboard_import": "PASS",
   "storyboard_artifact": {
-    "artifact_id": "artifact_0c0f9e89-2dde-4a30-8d5f-26719a3299bc",
+    "artifact_id": "artifact_495934ec-191e-48ff-b06d-0b1027abc950",
     "status": "active",
     "artifact_type": "image",
     "role": "storyboard_image",
     "source_path": "A:\\AI Video Production Workspace\\data\\imports\\g0_app_ready_storyboard_001.png",
-    "stored_path": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_0c0f9e89-2dde-4a30-8d5f-26719a3299bc.png"
+    "stored_path": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_495934ec-191e-48ff-b06d-0b1027abc950.png"
   },
   "app_ready_package": {
     "status": "approved_for_video_generation",
     "validator": "PASS",
-    "storyboard_package_id": "storyboard_package_2c54387c-fd17-4b58-8f8a-9c0f26e17456",
-    "saved_path": "A:\\AI Video Production Workspace\\data\\projects\\project_d6fda2cd-eb48-4f11-b893-210ba20e681b\\g0\\storyboard_package.json",
+    "storyboard_package_id": "storyboard_package_c60d4f10-d35c-4457-b652-725310df7f82",
+    "saved_path": "A:\\AI Video Production Workspace\\data\\projects\\project_d39f5223-83a2-4dcc-9a32-83e6f741532d\\g0\\storyboard_package.json",
     "video_prompt_present": true,
     "approved_by_user_true": true
   },

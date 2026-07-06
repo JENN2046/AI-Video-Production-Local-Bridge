@@ -90,7 +90,8 @@ const envExample = existsSync(envExamplePath) ? readFileSync(envExamplePath, "ut
 const envExamplePresent =
   envExample.includes("REAL_PROVIDER_ENABLED=false") &&
   envExample.includes("RUNWAYML_API_SECRET=") &&
-  envExample.includes("RUNNINGHUB_API_KEY=");
+  envExample.includes("RUNNINGHUB_API_KEY=") &&
+  envExample.includes("RUNNINGHUB_MODEL_API_ENDPOINT=/rhart-video-g/image-to-video");
 const envGitignored = gitCheckIgnore(".env") && gitCheckIgnore(".env.local") && gitCheckIgnore("credentials/api.key") && !gitCheckIgnore(".env.example");
 const maskedLogging = maskSecret("dummy_secret_value_1234") === "dum****1234";
 const noProviderCall = envCheck?.no_network_call === true && preflight?.network_call_attempted === false;
@@ -119,7 +120,7 @@ const closeout = [
   `  provider_env_loader: ${envExit === 0 ? "PASS" : "FAIL"}`,
   `  provider_gate_validation: ${preflightExit === 0 ? "PASS" : "FAIL"}`,
   `  runway_env_declared: ${pass(envExample.includes("RUNWAYML_API_SECRET="))}`,
-  `  runninghub_env_declared: ${pass(envExample.includes("RUNNINGHUB_API_KEY="))}`,
+  `  runninghub_env_declared: ${pass(envExample.includes("RUNNINGHUB_API_KEY=") && envExample.includes("RUNNINGHUB_MODEL_API_ENDPOINT="))}`,
   `  masked_logging: ${pass(maskedLogging)}`,
   "  secret_scan:",
   `    git_tracked_files: ${secretScan?.git_tracked_files ?? "FAIL"}`,
@@ -129,6 +130,7 @@ const closeout = [
   "  env_mapping:",
   "    runway_credential: RUNWAYML_API_SECRET",
   "    runninghub_credential: RUNNINGHUB_API_KEY",
+  "    runninghub_model_api_endpoint: RUNNINGHUB_MODEL_API_ENDPOINT",
   "    provider_selector: M1_REAL_PROVIDER",
   "    master_gate: REAL_PROVIDER_ENABLED",
   "    execution_gate: M1_REAL_PROVIDER_EXECUTION_ALLOWED",

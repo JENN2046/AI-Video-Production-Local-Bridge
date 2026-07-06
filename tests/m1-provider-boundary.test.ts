@@ -95,6 +95,7 @@ test("M1 provider registry keeps mock default and exposes two real ports", () =>
   assert.equal(configs.find((config) => config.provider_name === "runway")?.selectable, true);
   assert.equal(configs.find((config) => config.provider_name === "runninghub")?.selectable, true);
   assert.equal(configs.find((config) => config.provider_name === "runway")?.primary, true);
+  assert.equal(configs.find((config) => config.provider_name === "runninghub")?.model_name, "rhart-video-g/image-to-video");
 });
 
 test("M1 real provider gates block disabled, missing cost ack, mismatch, and missing credential", () => {
@@ -282,4 +283,3 @@ test("M1 secret redactor removes fake credential from text", () => {
   assert.equal(redacted.includes(FAKE_SECRET), false);
   assert.equal(redacted.includes("<REDACTED>") || redacted.includes("<REDACTED_TEST_SECRET>"), true);
 });
-

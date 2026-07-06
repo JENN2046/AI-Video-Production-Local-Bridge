@@ -1,0 +1,34 @@
+m1_1_runninghub_model_api_update:
+  result: PASS
+  generated_at: 2026-07-06T10:19:55.0960030Z
+  source:
+    api_detail_url: "https://www.runninghub.cn/call-api/api-detail/2019380112598044674"
+    page_title: "全能视频X-图生视频-低价渠道版-v1.5"
+    api_family: "model_api"
+    interface_path: "/rhart-video-g/image-to-video"
+    observed_inputs:
+      - prompt
+      - aspectRatio
+      - imageUrls
+      - resolution
+      - duration
+  project_mapping:
+    provider_name: runninghub
+    credential_env: RUNNINGHUB_API_KEY
+    base_url_env: RUNNINGHUB_API_BASE_URL
+    model_api_endpoint_env: RUNNINGHUB_MODEL_API_ENDPOINT
+    deprecated_as_primary_path: RUNNINGHUB_WORKFLOW_ID
+  safety:
+    real_provider_called: false
+    provider_credits_consumed: false
+    credentials_read: false
+    credentials_written: false
+    secret_values_recorded: false
+  status:
+    current_adapter: "selectable boundary only"
+    live_contract: "not frozen"
+    live_execution: "HOLD_UNTIL_EXPLICIT_AUTHORIZATION_AND_M1_1_CONTRACT_FREEZE"
+  next_requirements:
+    - "Freeze exact request JSON and auth header for /rhart-video-g/image-to-video."
+    - "Confirm whether imageUrls requires pre-uploaded RunningHub URLs or accepts public HTTPS image URLs."
+    - "Confirm task submission response shape, status query endpoint, and output URL shape."

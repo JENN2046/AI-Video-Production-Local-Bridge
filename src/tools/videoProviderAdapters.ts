@@ -271,7 +271,7 @@ export class RunwayVideoProviderAdapter implements VideoProviderAdapter {
 
 export class RunningHubVideoProviderAdapter implements VideoProviderAdapter {
   provider_name = "runninghub" as const;
-  model_name = "TBD";
+  model_name = "rhart-video-g/image-to-video";
 
   async submitGeneration(): Promise<ProviderSubmitResult> {
     return {
@@ -297,4 +297,3 @@ export class RunningHubVideoProviderAdapter implements VideoProviderAdapter {
     };
   }
 }
-

@@ -95,7 +95,7 @@ export const M1_PROVIDER_CONFIGS: Record<ProviderPortName, ProviderConfig> = {
     provider_name: "runninghub",
     provider_display_name: "RunningHub",
     type: "real",
-    model_name: "TBD",
+    model_name: "rhart-video-g/image-to-video",
     generation_mode: "image_to_video",
     default: false,
     selectable: true,
@@ -241,4 +241,3 @@ export function redactSecrets(value: string, secrets: string[] = []): string {
     .replace(/RUNNINGHUB_API_KEY=[^\s"']+/g, "RUNNINGHUB_API_KEY=<REDACTED>")
     .replace(/M1_TEST_SECRET_DO_NOT_LOG_123/g, "<REDACTED_TEST_SECRET>");
 }
-

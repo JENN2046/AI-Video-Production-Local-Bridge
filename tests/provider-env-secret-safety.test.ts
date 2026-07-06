@@ -79,6 +79,7 @@ test("Provider env loader reads allowed keys from a local env file without retur
       "M1_REAL_PROVIDER=runway",
       "M1_REAL_PROVIDER_EXECUTION_ALLOWED=true",
       "M1_REAL_PROVIDER_COST_ACK=true",
+      "RUNNINGHUB_MODEL_API_ENDPOINT=/rhart-video-g/image-to-video",
       `RUNWAYML_API_SECRET=${DUMMY_SECRET}`,
       "IGNORED_SECRET=should_not_load"
     ].join("\n"),
@@ -90,6 +91,7 @@ test("Provider env loader reads allowed keys from a local env file without retur
   assert.equal(loaded.env_file_found, true);
   assert.equal(loaded.secret_values_exposed, false);
   assert.equal(loaded.loaded_keys.includes("RUNWAYML_API_SECRET"), true);
+  assert.equal(loaded.loaded_keys.includes("RUNNINGHUB_MODEL_API_ENDPOINT"), true);
   assert.equal(loaded.ignored_keys.includes("IGNORED_SECRET"), true);
   assert.equal(JSON.stringify(loaded).includes(DUMMY_SECRET), false);
 

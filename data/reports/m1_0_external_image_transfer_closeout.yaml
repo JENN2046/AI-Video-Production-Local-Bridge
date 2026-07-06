@@ -1,6 +1,6 @@
 m1_0_external_image_transfer_closeout:
   result: PASS_WITH_GAPS
-  generated_at: 2026-07-06T10:06:26.334Z
+  generated_at: 2026-07-06T10:22:44.677Z
 
   transfer_paths:
     fixture_path:
@@ -9,9 +9,9 @@ m1_0_external_image_transfer_closeout:
 
     manual_upload_or_local_import:
       status: PASS
-      artifact_id: "artifact_95ab0272-20e5-4e94-8b48-1eddd6f59787"
+      artifact_id: "artifact_1ff1f488-a5a6-4fa1-925b-b0813bb1cb90"
       source_path: "A:\\AI Video Production Workspace\\data\\imports\\gpt_storyboard_external_001.png"
-      stored_path: "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_95ab0272-20e5-4e94-8b48-1eddd6f59787.png"
+      stored_path: "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_1ff1f488-a5a6-4fa1-925b-b0813bb1cb90.png"
       width: 1
       height: 1
       detected_mime: "image/png"
@@ -19,9 +19,9 @@ m1_0_external_image_transfer_closeout:
 
     pending_upload_activation:
       status: PASS
-      pending_artifact_id: "artifact_50d70e57-c462-4fe6-b7a3-169e47bc335d"
-      activated_artifact_id: "artifact_50d70e57-c462-4fe6-b7a3-169e47bc335d"
-      stored_path: "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_50d70e57-c462-4fe6-b7a3-169e47bc335d.png"
+      pending_artifact_id: "artifact_aebd6480-5ec9-4f71-86a5-93f783ad4551"
+      activated_artifact_id: "artifact_aebd6480-5ec9-4f71-86a5-93f783ad4551"
+      stored_path: "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_aebd6480-5ec9-4f71-86a5-93f783ad4551.png"
       width: 1
       height: 1
       detected_mime: "image/png"
