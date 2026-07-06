@@ -2,7 +2,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
-import { ensureM0Directories, paths, realCommandReadiness } from "../src/index.js";
+import { ensureM0Directories, loadProviderEnvLocal, paths, realCommandReadiness } from "../src/index.js";
 
 function writeResult(payload: unknown): void {
   writeFileSync(join(paths.reportsRoot, "m1_real_test_result.json"), `${JSON.stringify(payload, null, 2)}\n`, "utf8");
@@ -10,6 +10,7 @@ function writeResult(payload: unknown): void {
 }
 
 ensureM0Directories();
+loadProviderEnvLocal();
 const readiness = realCommandReadiness();
 if (!readiness.ok) {
   writeResult({
@@ -40,4 +41,3 @@ writeResult({
 });
 
 process.exit(exitCode);
-

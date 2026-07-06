@@ -2,8 +2,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { spawnSync } from "node:child_process";
 
-import { paths } from "../paths.js";
-import { isRealProviderName, M1_PROVIDER_CONFIGS, redactSecrets, selectM1ProviderPort } from "./provider.js";
+import { assertInsideWorkspace, paths } from "../paths.js";
+import { isRealProviderName, M1_PROVIDER_CONFIGS, selectM1ProviderPort } from "./provider.js";
 
 export const PROVIDER_ENV_KEYS = [
   "REAL_PROVIDER_ENABLED",
@@ -20,6 +20,8 @@ export const PROVIDER_ENV_KEYS = [
   "PROVIDER_TASK_POLL_INTERVAL_MS",
   "PROVIDER_TASK_POLL_TIMEOUT_MS"
 ] as const;
+
+export type ProviderEnvKey = (typeof PROVIDER_ENV_KEYS)[number];
 
 export interface ProviderEnvCheck {
   result: "PASS" | "FAIL";
@@ -54,7 +56,19 @@ export interface SecretScanResult {
   findings: Array<{ path: string; reason: string }>;
 }
 
+export interface ProviderEnvLoadResult {
+  env_file_path: string;
+  env_file_found: boolean;
+  disabled: boolean;
+  loaded_keys: ProviderEnvKey[];
+  skipped_existing_keys: ProviderEnvKey[];
+  ignored_keys: string[];
+  parse_errors: string[];
+  secret_values_exposed: false;
+}
+
 const SAFE_PLACEHOLDERS = new Set(["", "dummy", "DUMMY", "example", "EXAMPLE", "<REDACTED>", "<your key>", "<your_api_key>"]);
+const PROVIDER_ENV_KEY_SET = new Set<string>(PROVIDER_ENV_KEYS);
 const TEXT_EXTENSIONS = new Set([
   ".ts",
   ".tsx",
@@ -80,6 +94,104 @@ export function maskSecret(value: string | undefined): string | null {
 
 export function providerCredentialEnv(providerName: string): string | null {
   return isRealProviderName(providerName) ? M1_PROVIDER_CONFIGS[providerName].credential_env_name : null;
+}
+
+function stripInlineComment(value: string): string {
+  let output = "";
+  let quoted: '"' | "'" | null = null;
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    if (!quoted && (char === '"' || char === "'")) {
+      quoted = char;
+      output += char;
+      continue;
+    }
+    if (quoted && char === quoted) {
+      quoted = null;
+      output += char;
+      continue;
+    }
+    if (!quoted && char === "#") break;
+    output += char;
+  }
+  return output.trim();
+}
+
+function unquote(value: string): string {
+  const trimmed = stripInlineComment(value);
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+function parseEnvLine(line: string, lineNumber: number): { key?: string; value?: string; error?: string } | null {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.startsWith("#")) return null;
+
+  const match = trimmed.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+  if (!match) return { error: `line_${lineNumber}_invalid_assignment` };
+
+  return {
+    key: match[1],
+    value: unquote(match[2] ?? "")
+  };
+}
+
+export function loadProviderEnvFile(input: {
+  filePath: string;
+  env?: NodeJS.ProcessEnv;
+  override?: boolean;
+  disabled?: boolean;
+}): ProviderEnvLoadResult {
+  const env = input.env ?? process.env;
+  const envFilePath = assertInsideWorkspace(input.filePath);
+  const result: ProviderEnvLoadResult = {
+    env_file_path: envFilePath,
+    env_file_found: existsSync(envFilePath),
+    disabled: input.disabled === true,
+    loaded_keys: [],
+    skipped_existing_keys: [],
+    ignored_keys: [],
+    parse_errors: [],
+    secret_values_exposed: false
+  };
+
+  if (result.disabled || !result.env_file_found) return result;
+
+  const text = readFileSync(envFilePath, "utf8");
+  for (const [index, line] of text.split(/\r?\n/).entries()) {
+    const parsed = parseEnvLine(line, index + 1);
+    if (!parsed) continue;
+    if (parsed.error) {
+      result.parse_errors.push(parsed.error);
+      continue;
+    }
+    if (!parsed.key || !PROVIDER_ENV_KEY_SET.has(parsed.key)) {
+      if (parsed.key) result.ignored_keys.push(parsed.key);
+      continue;
+    }
+
+    const key = parsed.key as ProviderEnvKey;
+    if (!input.override && env[key]) {
+      result.skipped_existing_keys.push(key);
+      continue;
+    }
+
+    env[key] = parsed.value ?? "";
+    result.loaded_keys.push(key);
+  }
+
+  return result;
+}
+
+export function loadProviderEnvLocal(env: NodeJS.ProcessEnv = process.env): ProviderEnvLoadResult {
+  return loadProviderEnvFile({
+    filePath: join(paths.workspaceRoot, ".env.local"),
+    env,
+    override: false,
+    disabled: env.PROVIDER_ENV_LOCAL_DISABLE === "true"
+  });
 }
 
 export function checkProviderEnv(env: NodeJS.ProcessEnv = process.env): ProviderEnvCheck {
@@ -196,9 +308,6 @@ function valueAfterAssignment(line: string, key: string): string | null {
 }
 
 function hasUnsafeSecretText(text: string): string | null {
-  const redacted = redactSecrets(text, ["M1_TEST_SECRET_DO_NOT_LOG_123"]);
-  if (redacted !== text && !text.includes("M1_TEST_SECRET_DO_NOT_LOG_123")) return "unredacted bearer or provider credential";
-
   const keys = ["RUNWAYML_API_SECRET", "RUNNINGHUB_API_KEY"];
   for (const line of text.split(/\r?\n/)) {
     for (const key of keys) {
@@ -214,6 +323,30 @@ function hasUnsafeSecretText(text: string): string | null {
       ) {
         return `${key} has a non-placeholder value`;
       }
+    }
+  }
+
+  const jsonSecretMatch = text.match(/"(RUNWAYML_API_SECRET|RUNNINGHUB_API_KEY)"\s*:\s*"([^"]+)"/);
+  if (jsonSecretMatch) {
+    const value = jsonSecretMatch[2];
+    if (
+      value &&
+      !SAFE_PLACEHOLDERS.has(value) &&
+      !value.includes("<") &&
+      !value.startsWith("$") &&
+      !value.includes("{") &&
+      !value.toLowerCase().includes("dummy") &&
+      !value.toLowerCase().includes("fake")
+    ) {
+      return `${jsonSecretMatch[1]} has a non-placeholder JSON value`;
+    }
+  }
+
+  const bearerMatch = text.match(/Bearer\s+([A-Za-z0-9._~+/=-]{8,})/);
+  if (bearerMatch) {
+    const value = bearerMatch[1];
+    if (!value.includes("<") && !value.toLowerCase().includes("dummy") && !value.toLowerCase().includes("fake")) {
+      return "unredacted bearer token";
     }
   }
 

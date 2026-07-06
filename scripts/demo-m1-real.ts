@@ -7,6 +7,7 @@ import {
   ensureM0Directories,
   getMediaArtifact,
   importStoryboardPackage,
+  loadProviderEnvLocal,
   markShotClipReview,
   openM0Database,
   paths,
@@ -35,6 +36,7 @@ function writeResult(payload: unknown): void {
 }
 
 ensureM0Directories();
+loadProviderEnvLocal();
 const readiness = realCommandReadiness();
 if (!readiness.ok) {
   writeResult({
@@ -179,4 +181,3 @@ try {
 } finally {
   db.close();
 }
-

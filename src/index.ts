@@ -76,13 +76,15 @@ export type {
 } from "./tools/provider.js";
 export {
   checkProviderEnv,
+  loadProviderEnvFile,
+  loadProviderEnvLocal,
   maskSecret,
   providerCredentialEnv,
   providerPreflight,
   PROVIDER_ENV_KEYS,
   runSecretScan
 } from "./tools/providerEnv.js";
-export type { ProviderEnvCheck, ProviderPreflight, SecretScanResult } from "./tools/providerEnv.js";
+export type { ProviderEnvCheck, ProviderEnvKey, ProviderEnvLoadResult, ProviderPreflight, SecretScanResult } from "./tools/providerEnv.js";
 export {
   downloadProviderOutputToArtifact,
   validateProviderOutputUrl

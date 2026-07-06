@@ -7,11 +7,27 @@ import { ensureM0Directories, maskSecret, paths } from "../src/index.js";
 interface EnvCheckResult {
   result?: string;
   no_network_call?: boolean;
+  env_file?: {
+    env_file_found?: boolean;
+    disabled?: boolean;
+    loaded_keys?: string[];
+    skipped_existing_keys?: string[];
+    ignored_keys?: string[];
+    parse_errors?: string[];
+  };
 }
 
 interface PreflightResult {
   result?: string;
   network_call_attempted?: boolean;
+  env_file?: {
+    env_file_found?: boolean;
+    disabled?: boolean;
+    loaded_keys?: string[];
+    skipped_existing_keys?: string[];
+    ignored_keys?: string[];
+    parse_errors?: string[];
+  };
 }
 
 interface SecretScanResult {
@@ -117,6 +133,14 @@ const closeout = [
   "    master_gate: REAL_PROVIDER_ENABLED",
   "    execution_gate: M1_REAL_PROVIDER_EXECUTION_ALLOWED",
   "    cost_gate: M1_REAL_PROVIDER_COST_ACK",
+  "  env_local_loader:",
+  `    env_file_found: ${envCheck?.env_file?.env_file_found === true}`,
+  `    disabled: ${envCheck?.env_file?.disabled === true}`,
+  `    loaded_keys: [${(envCheck?.env_file?.loaded_keys ?? []).map((key) => JSON.stringify(key)).join(", ")}]`,
+  `    skipped_existing_keys: [${(envCheck?.env_file?.skipped_existing_keys ?? []).map((key) => JSON.stringify(key)).join(", ")}]`,
+  `    ignored_keys: [${(envCheck?.env_file?.ignored_keys ?? []).map((key) => JSON.stringify(key)).join(", ")}]`,
+  `    parse_errors: [${(envCheck?.env_file?.parse_errors ?? []).map((key) => JSON.stringify(key)).join(", ")}]`,
+  `    secret_values_recorded: false`,
   "  known_gaps: []"
 ].join("\n");
 

@@ -7,5 +7,15 @@
   "credential_env_name": null,
   "credential_present": false,
   "missing": [],
-  "no_network_call": true
+  "no_network_call": true,
+  "env_file": {
+    "env_file_path": "A:\\AI Video Production Workspace\\.env.local",
+    "env_file_found": true,
+    "disabled": true,
+    "loaded_keys": [],
+    "skipped_existing_keys": [],
+    "ignored_keys": [],
+    "parse_errors": [],
+    "secret_values_exposed": false
+  }
 }
