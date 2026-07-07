@@ -1342,3 +1342,49 @@ Let GPT assist with generation, regeneration, final assembly, and memory savebac
 ### Notes
 
 - This is the final full-route assistant layer and should not weaken earlier boundaries.
+
+## R3-7_RUNWAY_LIVE_CANARY_AUTHORIZATION - Runway Live Canary Authorization
+
+status: READY
+priority: P0
+lane: Approval Boundary Preparation
+project: AI Video Production Workspace Three Route Plan
+scope: prepare exact Jenn authorization checklist for one live Runway canary; do not submit provider request
+branch: local-only
+depends_on: R1-5_MCP_V3_PRODUCTION_ASSISTANT
+source_plan: docs/three_routes/THREE_ROUTE_ADAPTED_DISPATCH_v1_1.md
+report_path: data/reports/r3_7_runway_live_canary_authorization_result.json
+allowed_delivery: authorization_checklist,readiness_review,dry_run_report_reference,handoff,validation_log
+blocked_delivery: runway_submit,runninghub_call,network_call_attempted,provider_credits_consumed,real_video_generated,secret_value_output,source_overwrite,push,tag,release,deploy
+created_at: 2026-07-07T10:55:00+08:00
+updated_at: 2026-07-07T10:55:00+08:00
+
+### Goal
+
+Prepare the exact authorization surface for a single live Runway canary after the local three-route workflow has passed. This task must stop before any live provider submit.
+
+### Acceptance
+
+- Confirm latest strict canary dry-run report is present.
+- Confirm selected input image is explicit and readable.
+- Confirm provider is `runway`.
+- Confirm endpoint is `/v1/image_to_video`.
+- Confirm `X-Runway-Version=2024-11-06`.
+- Confirm duration is `2`.
+- Confirm max submit calls is `1`.
+- Confirm project aspect ratio `9:16` maps to Runway `768:1280`.
+- Confirm `RUNWAYML_API_SECRET` presence is checked only as a boolean and no secret value is printed.
+- Produce exact Jenn authorization phrase/checklist naming provider, max submit calls, input image, duration, budget/cost bound, and stop condition.
+- Report `network_call_attempted=false`, `runway_called=false`, `runninghub_called=false`, `provider_credits_consumed=false`, and `real_video_generated=false`.
+
+### Validation
+
+- `npm run env:check`
+- `npm run provider:preflight`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Notes
+
+- This is an authorization preparation task, not the live canary execution.
+- A live Runway submit requires a separate exact current Jenn authorization after this task.

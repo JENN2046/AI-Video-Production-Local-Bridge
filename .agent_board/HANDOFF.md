@@ -2,13 +2,13 @@
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
 Last run: codex-20260706-203847-three-route-sustained
-Last result: R1-4 completed; R3-5 claimed for Review Regeneration Final Assembly Core
+Last result: R1-5 completed; acceptance review package generated; Runway live canary authorization task opened
 
 ## Current state
 
-Current task: R3-5_REVIEW_REGENERATION_FINAL_ASSEMBLY_CORE
-Current status: IN_PROGRESS
-Current owner: Codex sustained executor
+Current task: R1-5_MCP_V3_PRODUCTION_ASSISTANT
+Current status: DONE
+Current owner: None
 
 ## Completed in last run
 
@@ -58,8 +58,10 @@ Current owner: Codex sustained executor
 - R3-6 completed Memory Asset Saveback Core with local proposal, confirmed materialization, and recall pack generation.
 - R2-5 completed H5 Memory Asset Workbench with Chinese `记忆资产` page and guarded `/api/memory` endpoints.
 - R1-5 completed MCP v3 Production Assistant with plan-only tools and localhost bridge.
-- No eligible READY tasks remain in the three-route backlog.
+- Full three-route sustained chain completed; one new authorization-preparation READY task has been opened for Runway live canary.
 - Final sustained-loop validation passed across M0, M1, G0, H1, memory saveback, WebGPT v0/v0.5/v1/v2/v3, secret scan, and diff check.
+- Commander acceptance review package generated at `ops/reports/three_route_acceptance_review_package_20260707_103611/THREE_ROUTE_ACCEPTANCE_REVIEW.md`.
+- Handoff header was cleaned up on 2026-07-07 to reflect final `R1-5 / DONE` state.
 - Did not modify `.agent_board/NEXT_TASK.json`.
 - Did not claim or execute any imported task.
 - M0 handoff prompt captured at `docs/m0/M0_Codex_Handoff_Prompt_v1.1.md`.
@@ -84,7 +86,7 @@ Current owner: Codex sustained executor
 
 ## Remaining READY tasks
 
-- None
+- `R3-7_RUNWAY_LIVE_CANARY_AUTHORIZATION`
 
 ## Closeout evidence
 
@@ -110,6 +112,8 @@ Current owner: Codex sustained executor
 - `data/reports/memory_saveback_result.json`
 - `data/reports/r2_5_h5_memory_asset_workbench_result.json`
 - `data/reports/r1_5_mcp_v3_production_assistant_result.json`
+- `ops/reports/three_route_acceptance_review_package_20260707_103611/THREE_ROUTE_ACCEPTANCE_REVIEW.md`
+- `ops/reports/three_route_acceptance_review_package_20260707_103611/README.md`
 
 ## Risks
 
@@ -119,6 +123,6 @@ Current owner: Codex sustained executor
 
 ## Next recommended action
 
-- No eligible READY tasks remain. Local commit can be created after final diff review.
-- After each DONE, the worker may continue through the dependency-gated READY chain until no eligible READY tasks remain or a safety boundary blocks progress.
-- Boundary-protected tasks must complete safe local preparation and stop before live provider calls, long-term memory writes, source overwrites, or secret reads unless exact current Jenn authorization exists.
+- Commit the acceptance review package, handoff cleanup, and Runway live canary authorization task.
+- Then run `R3-7_RUNWAY_LIVE_CANARY_AUTHORIZATION` to prepare the exact authorization checklist.
+- Do not perform a live Runway submit until Jenn provides exact current authorization after the checklist.
