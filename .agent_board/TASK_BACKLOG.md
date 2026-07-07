@@ -1701,3 +1701,158 @@ Runway returned sanitized provider evidence indicating insufficient credits. No 
 
 - `max_submit_calls=1` has been used as an attempt.
 - Another live Runway submit requires a new exact current Jenn authorization phrase and should be opened as a new task.
+
+## R3-8F_PROVIDER_PRIORITY_SWITCH_TO_RUNNINGHUB - Provider Priority Switch To RunningHub
+
+status: DONE
+priority: P0
+lane: Provider Strategy Update
+project: AI Video Production Workspace Three Route Plan
+scope: make RunningHub.cn the primary real provider choice and move Runway to secondary fallback
+branch: local-only
+depends_on: R3-8E_RUNWAY_REAL_STORYBOARD_KEYFRAME_SINGLE_SUBMIT_AUTHORIZATION
+source_plan: Jenn instruction on 2026-07-07 to stop using Runway as first choice and make runninghub.cn first choice
+report_path: data/reports/r3_8f_provider_priority_switch_to_runninghub_result.json
+allowed_delivery: provider_registry_change,tests,env_example_update,local_commit
+blocked_delivery: runninghub_call,runway_call,provider_credits_consumed,real_video_generated,secret_value_output,source_overwrite,push,tag,release,deploy
+created_at: 2026-07-07T15:28:31+08:00
+updated_at: 2026-07-07T15:28:31+08:00
+claimed_at: 2026-07-07T15:28:31+08:00
+claim_run_id: codex-20260707-152831-r3-8f
+claimed_by: Codex commander
+completed_at: 2026-07-07T15:28:31+08:00
+completed_by: Codex commander
+commit: 9a4f081
+result: PASS_LOCAL_PRIORITY_SWITCH
+
+### Goal
+
+Make RunningHub.cn the primary real provider choice while keeping mock as the safe local default and Runway as a secondary selectable fallback.
+
+### Acceptance
+
+- `runninghub` is the primary real provider in the provider registry.
+- `runway` is no longer the primary real provider.
+- `.env.example` presents RunningHub.cn as the primary real provider.
+- Tests assert the new provider priority.
+- No RunningHub or Runway call occurs.
+
+### Validation
+
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Notes
+
+- This task changed provider priority only.
+- RunningHub live adapter still returns `PROVIDER_UNSUPPORTED` until its contract is frozen and implemented.
+
+## R3-8G_RUNNINGHUB_CONTRACT_FREEZE_AND_DRY_RUN - RunningHub Contract Freeze And Dry Run
+
+status: READY
+priority: P0
+lane: Provider Contract Freeze
+project: AI Video Production Workspace Three Route Plan
+scope: freeze RunningHub.cn model API contract and build a no-network dry-run request plan for the selected real storyboard keyframe
+branch: local-only
+depends_on: R3-8F_PROVIDER_PRIORITY_SWITCH_TO_RUNNINGHUB
+source_plan: Jenn instruction to use runninghub.cn as first provider after Runway insufficient credits
+report_path: data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json
+allowed_delivery: docs_contract_review,source_code_change,tests,dry_run_report,task_board_update,local_commit
+blocked_delivery: runninghub_call,runway_call,provider_credits_consumed,real_video_generated,secret_value_output,raw_provider_payload_recording,source_overwrite,push,tag,release,deploy
+created_at: 2026-07-07T15:37:23+08:00
+updated_at: 2026-07-07T15:37:23+08:00
+claimed_at: null
+claim_run_id: null
+claimed_by: null
+completed_at: null
+completed_by: null
+result: null
+
+### Goal
+
+Freeze the RunningHub.cn image-to-video API contract for the current real storyboard keyframe workflow and produce a dry-run request plan. This task must not call RunningHub, Runway, or any paid/quota-consuming provider endpoint.
+
+### Required Source Review
+
+- Review the official RunningHub site: `https://www.runninghub.cn/`.
+- Review the RunningHub model API detail page if available: `https://www.runninghub.cn/call-api/api-detail/2019380112598044674`.
+- If the official API page is unavailable, requires login, or lacks enough details, mark the missing fields explicitly and return `BLOCK_WITH_REASON`.
+- Do not rely on stale memory or guessed request fields.
+
+### Contract Fields To Freeze
+
+- API base URL.
+- Submit endpoint path and HTTP method.
+- Auth mechanism and required header names, without reading or printing credential values.
+- Workflow/model identifier field names.
+- Input image field shape.
+- Prompt field names, including positive and negative prompt support.
+- Duration field name and supported range.
+- Ratio/resolution field name and supported values for vertical output.
+- Task id/job id field in the submit response.
+- Status polling endpoint, method, and status values.
+- Output URL/file field shape.
+- Error response shape and retryability classes.
+
+### Dry-Run Plan
+
+Use the R3-8D selected keyframe unless Jenn changes it:
+
+- artifact_id: `artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7`
+- storage_uri: `A:\AI Video Production Workspace\data\media\artifacts\images\artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png`
+- source_path: `A:\AI Video Production Workspace\data\imports\g0_r1_SHOT_001_IMAGE_ACCEPTED_WEBGPT.png`
+
+The dry-run report must include a sanitized request summary only:
+
+- provider: `runninghub`
+- model/workflow id or unresolved field.
+- endpoint and method.
+- selected artifact facts: mime type, dimensions, sha256, byte size.
+- prompt text length, not raw secret/private payloads.
+- no API key, no Authorization header value, no base64 image payload.
+
+### Acceptance
+
+- RunningHub is confirmed as primary provider in local registry.
+- Runway remains secondary and is not called.
+- RunningHub live adapter remains no-call unless this task implements only local request building.
+- Dry-run request summary is generated without credentials, base64, or raw payloads.
+- Missing official contract fields are named explicitly.
+- Next safe task is recommended: implementation, further docs research, or user authorization preparation.
+
+### Validation
+
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Notes
+
+- Do not run `npm run env:check` or `npm run provider:preflight` against `.env.local` unless Jenn gives a fresh exact authorization to read local env presence.
+- Synthetic env values may be used in tests if they are clearly fake and secret scan passes.
+- This task must stop before any live RunningHub submit.
+
+## R3-8H_RUNNINGHUB_ADAPTER_OR_AUTHORIZATION_NEXT_STEP - RunningHub Adapter Or Authorization Next Step
+
+status: FOLLOW_UP
+priority: P0
+lane: Provider Implementation Or Approval Preparation
+project: AI Video Production Workspace Three Route Plan
+scope: follow-up placeholder after R3-8G decides whether RunningHub is ready for adapter implementation, further contract research, or live authorization preparation
+branch: local-only
+depends_on: R3-8G_RUNNINGHUB_CONTRACT_FREEZE_AND_DRY_RUN
+source_plan: R3-8G result
+report_path: TBD
+allowed_delivery: TBD_after_R3-8G
+blocked_delivery: runninghub_call_without_exact_authorization,runway_call,provider_credits_consumed,secret_value_output,source_overwrite,push,tag,release,deploy
+created_at: 2026-07-07T15:37:23+08:00
+updated_at: 2026-07-07T15:37:23+08:00
+
+### Notes
+
+- This is intentionally `FOLLOW_UP`, not executable.
+- Promote to `READY` only after R3-8G produces a concrete next-step decision.

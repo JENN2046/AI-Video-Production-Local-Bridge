@@ -1,69 +1,56 @@
 # NEXT_TASK.md
 
-Status: FAILED
+Status: READY
 
-Task: R3-8E_RUNWAY_REAL_STORYBOARD_KEYFRAME_SINGLE_SUBMIT_AUTHORIZATION
+Task: R3-8G_RUNNINGHUB_CONTRACT_FREEZE_AND_DRY_RUN
 
-Title: Runway Real Storyboard Keyframe Single-Submit Authorization
+Title: RunningHub Contract Freeze And Dry Run
 
 Priority: P0
 
-Lane: Approval Boundary Live Provider Execution
+Lane: Provider Contract Freeze
 
 Project: AI Video Production Workspace Three Route Plan
 
-Claimed by: Codex R3-8E executor
+Claimed by: none
 
-Claim run ID: codex-20260707-151433-r3-8e
+Claim run ID: none
 
-Claimed at: 2026-07-07T15:14:33+08:00
-
-Failed by: Codex R3-8E executor
-
-Failed at: 2026-07-07T15:14:33+08:00
-
-Result: PROVIDER_FAILED_INSUFFICIENT_CREDITS
+Claimed at: none
 
 ## Goal
 
-Perform the one exact Jenn-authorized real storyboard keyframe Runway canary and stop after that one submit attempt.
+Freeze the RunningHub.cn image-to-video API contract for the current real storyboard keyframe workflow and produce a dry-run request plan. This task must not call RunningHub, Runway, or any paid/quota-consuming provider endpoint.
 
-## Execution
+## Required Source Review
 
-- Provider: `runway`
-- Endpoint: `POST /v1/image_to_video`
-- X-Runway-Version: `2024-11-06`
-- Model: `gen4.5`
-- Selected artifact: `artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7`
-- Duration: `2`
-- Ratio: `720:1280`
-- Submit calls: `1`
-- Provider job id present: `false`
-- Generated video artifact: `none`
+- Review `https://www.runninghub.cn/`.
+- Review `https://www.runninghub.cn/call-api/api-detail/2019380112598044674` if available.
+- If the official API page is unavailable, requires login, or lacks enough details, mark the missing fields explicitly and return `BLOCK_WITH_REASON`.
+- Do not rely on stale memory or guessed request fields.
 
-## Failure
+## Selected Keyframe
 
-Runway returned sanitized provider evidence indicating insufficient credits. No retry was attempted.
+- artifact_id: `artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7`
+- storage_uri: `A:\AI Video Production Workspace\data\media\artifacts\images\artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png`
+- source_path: `A:\AI Video Production Workspace\data\imports\g0_r1_SHOT_001_IMAGE_ACCEPTED_WEBGPT.png`
 
-## Evidence
+## Acceptance
 
-- `data/reports/r3_8e_runway_real_storyboard_keyframe_canary_result.json`
-- `data/reports/r3_8d_real_storyboard_keyframe_canary_prepare_result.json`
-- `data/reports/secret_scan_result.json`
+- RunningHub is confirmed as primary provider in local registry.
+- Runway remains secondary and is not called.
+- Official RunningHub docs/API detail page are reviewed or missing fields are explicitly blocked.
+- API base URL, submit endpoint, auth header names, model/workflow id fields, image field shape, prompt fields, duration, ratio, task id, status polling, output shape, and error shape are frozen or marked unresolved.
+- Dry-run request summary is generated without credentials, base64, Authorization values, or raw provider payloads.
+- No RunningHub call, Runway call, provider credit consumption, real video generation, secret value output, source overwrite, push, tag, release, or deploy occurs.
 
 ## Validation
 
-- `npm run env:check` PASS
-- `npm run provider:preflight` PASS
-- `npm run typecheck` PASS
-- `npm run test:m1` PASS
-- `npm run secret:scan` PASS
-- `git diff --check` PASS with CRLF normalization warning only
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
 
-## Boundary
+## Stop Reason
 
-Exactly one Runway submit was attempted. No second submit, retry, RunningHub call, regeneration, batch generation, source overwrite, secret output, promptImage/base64 output, raw provider payload recording, push, tag, release, or deploy occurred.
-
-## Next Safe Option
-
-Do not perform another live Runway submit without a new exact current Jenn authorization phrase. A future retry should be a new task because the R3-8E single-submit attempt has already been used.
+Stop before any live RunningHub submit. Do not run `npm run env:check` or `npm run provider:preflight` against `.env.local` unless Jenn gives a fresh exact authorization to read local env presence.

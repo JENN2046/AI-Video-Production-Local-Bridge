@@ -2,114 +2,95 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "R3-8E_RUNWAY_REAL_STORYBOARD_KEYFRAME_SINGLE_SUBMIT_AUTHORIZATION",
-  "status": "FAILED",
+  "task_id": "R3-8G_RUNNINGHUB_CONTRACT_FREEZE_AND_DRY_RUN",
+  "status": "READY",
   "priority": "P0",
-  "lane": "Approval Boundary Live Provider Execution",
+  "lane": "Provider Contract Freeze",
   "project": "AI Video Production Workspace Three Route Plan",
-  "title": "Runway Real Storyboard Keyframe Single-Submit Authorization",
+  "title": "RunningHub Contract Freeze And Dry Run",
   "scope": [
-    "execute exactly one authorized Runway Gen-4.5 image-to-video canary using the R3-8D real storyboard keyframe",
-    "use provider=runway, endpoint=POST /v1/image_to_video, X-Runway-Version=2024-11-06, model=gen4.5, duration_seconds=2, ratio=720:1280, max_submit_calls=1",
-    "write a sanitized live result report",
-    "download and ffprobe validate provider output only if the provider succeeds"
+    "freeze RunningHub.cn model API contract",
+    "build a no-network dry-run request plan for the selected real storyboard keyframe",
+    "do not call RunningHub or Runway"
   ],
-  "goal": "Perform the one exact Jenn-authorized real storyboard keyframe Runway canary and stop after that one submit attempt.",
+  "goal": "Freeze the RunningHub.cn image-to-video API contract for the current real storyboard keyframe workflow and produce a dry-run request plan without making any provider call.",
+  "official_sources_to_review": [
+    "https://www.runninghub.cn/",
+    "https://www.runninghub.cn/call-api/api-detail/2019380112598044674"
+  ],
+  "selected_keyframe": {
+    "artifact_id": "artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7",
+    "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png",
+    "source_path": "A:\\AI Video Production Workspace\\data\\imports\\g0_r1_SHOT_001_IMAGE_ACCEPTED_WEBGPT.png"
+  },
   "acceptance": [
-    "R3-8D report and selected app media artifact are verified before live submit.",
-    "RUNWAYML_API_SECRET presence is checked only as a boolean and secret value is not printed.",
-    "Exactly one Runway submit is attempted.",
-    "No RunningHub call, retry, regeneration, batch generation, publish, deploy, source overwrite, tag, release, or push occurs.",
-    "If provider succeeds, output is downloaded to data/media/provider-canary/r3-8d-real-keyframe/ and ffprobe validated.",
-    "If provider fails, sanitized provider failure evidence is recorded without raw payload or secret values."
+    "RunningHub is confirmed as primary provider in local registry.",
+    "Runway remains secondary and is not called.",
+    "Official RunningHub docs/API detail page are reviewed or missing fields are explicitly blocked.",
+    "API base URL, submit endpoint, auth header names, model/workflow id fields, image field shape, prompt fields, duration, ratio, task id, status polling, output shape, and error shape are frozen or marked unresolved.",
+    "Dry-run request summary is generated without credentials, base64, Authorization values, or raw provider payloads.",
+    "No RunningHub call, Runway call, provider credit consumption, real video generation, secret value output, source overwrite, push, tag, release, or deploy occurs."
   ],
   "validation": [
-    "npm run env:check",
-    "npm run provider:preflight",
     "npm run typecheck",
     "npm run test:m1",
     "npm run secret:scan",
     "git diff --check"
   ],
   "allowed_delivery": [
-    "one_authorized_runway_submit",
-    "sanitized_live_result_report",
-    "provider_failure_classification_fix",
+    "docs_contract_review",
+    "source_code_change",
     "tests",
+    "dry_run_report",
     "task_board_update",
     "local_commit"
   ],
   "blocked_delivery": [
-    "second_submit",
-    "retry_live_submit",
     "runninghub_call",
-    "regeneration",
-    "batch_generation",
-    "source_overwrite",
+    "runway_call",
+    "provider_credits_consumed",
+    "real_video_generated",
     "secret_value_output",
-    "promptImage_base64_output",
     "raw_provider_payload_recording",
+    "source_overwrite",
     "push",
     "tag",
     "release",
     "deploy"
   ],
   "depends_on": [
-    "R3-8D_PREPARE_REAL_STORYBOARD_KEYFRAME_CANARY"
+    "R3-8F_PROVIDER_PRIORITY_SWITCH_TO_RUNNINGHUB"
   ],
-  "created_at": "2026-07-07T15:14:33+08:00",
-  "updated_at": "2026-07-07T15:14:33+08:00",
-  "claimed_by": "Codex R3-8E executor",
-  "claim_run_id": "codex-20260707-151433-r3-8e",
-  "claimed_at": "2026-07-07T15:14:33+08:00",
+  "created_at": "2026-07-07T15:37:23+08:00",
+  "updated_at": "2026-07-07T15:37:23+08:00",
+  "claimed_by": null,
+  "claim_run_id": null,
+  "claimed_at": null,
   "completed_by": null,
   "completed_at": null,
   "blocked_by": null,
   "blocked_at": null,
-  "failed_by": "Codex R3-8E executor",
-  "failed_at": "2026-07-07T15:14:33+08:00",
+  "failed_by": null,
+  "failed_at": null,
   "skipped_by": null,
   "skipped_at": null,
-  "result": "PROVIDER_FAILED_INSUFFICIENT_CREDITS",
-  "validation_result": "PASS",
+  "result": null,
+  "validation_result": null,
   "evidence": [
-    "data/reports/r3_8e_runway_real_storyboard_keyframe_canary_result.json",
+    "data/reports/r3_8f_provider_priority_switch_to_runninghub_result.json",
     "data/reports/r3_8d_real_storyboard_keyframe_canary_prepare_result.json",
-    "data/reports/secret_scan_result.json"
+    "data/reports/r3_8e_runway_real_storyboard_keyframe_canary_result.json"
   ],
   "commit": null,
   "delivery": "local_only",
-  "boundary_or_safety_stop": null,
+  "boundary_or_safety_stop": "provider live call forbidden in this task",
   "blocked_reason": null,
-  "failure_reason": "Runway rejected the single authorized submit with sanitized provider evidence indicating insufficient credits.",
-  "safe_actions_completed": [
-    "verified R3-8D selected app artifact artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7",
-    "verified provider runway, model gen4.5, endpoint POST /v1/image_to_video, X-Runway-Version 2024-11-06, duration_seconds 2, and ratio 720:1280",
-    "performed exactly one authorized Runway submit",
-    "recorded sanitized PROVIDER_INSUFFICIENT_CREDITS evidence",
-    "added local classification coverage for HTTP 400 credit messages"
-  ],
-  "unsafe_action_not_performed": [
-    "second_submit",
-    "retry_live_submit",
-    "runninghub_call",
-    "regeneration",
-    "batch_generation",
-    "source_overwrite",
-    "secret_value_output",
-    "promptImage_base64_output",
-    "raw_provider_payload_recording",
-    "push",
-    "tag",
-    "release",
-    "deploy"
-  ],
-  "options_for_jenn": [
-    "Top up or switch Runway account/credits, then provide a new exact authorization for another single-submit attempt.",
-    "Pause provider testing and keep the current sanitized failure evidence as R3-8E closeout."
-  ],
+  "failure_reason": null,
+  "safe_actions_completed": [],
+  "unsafe_action_not_performed": [],
+  "options_for_jenn": [],
   "next_safe_option": [
-    "Do not perform another live Runway submit without a new exact current Jenn authorization phrase.",
-    "A future retry should be a new task because the R3-8E max_submit_calls=1 budget has been consumed as an attempt."
+    "Worker may claim R3-8G for contract freeze and dry-run only.",
+    "Do not perform a live RunningHub submit without a future exact current Jenn authorization phrase."
   ]
 }
