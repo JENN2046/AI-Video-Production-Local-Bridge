@@ -1751,7 +1751,7 @@ Make RunningHub.cn the primary real provider choice while keeping mock as the sa
 
 ## R3-8G_RUNNINGHUB_CONTRACT_FREEZE_AND_DRY_RUN - RunningHub Contract Freeze And Dry Run
 
-status: READY
+status: DONE
 priority: P0
 lane: Provider Contract Freeze
 project: AI Video Production Workspace Three Route Plan
@@ -1763,13 +1763,13 @@ report_path: data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json
 allowed_delivery: docs_contract_review,source_code_change,tests,dry_run_report,task_board_update,local_commit
 blocked_delivery: runninghub_call,runway_call,provider_credits_consumed,real_video_generated,secret_value_output,raw_provider_payload_recording,source_overwrite,push,tag,release,deploy
 created_at: 2026-07-07T15:37:23+08:00
-updated_at: 2026-07-07T15:37:23+08:00
-claimed_at: null
-claim_run_id: null
-claimed_by: null
-completed_at: null
-completed_by: null
-result: null
+updated_at: 2026-07-07T15:55:16+08:00
+claimed_at: 2026-07-07T15:42:16+08:00
+claim_run_id: codex-20260707-154200-r3-8g
+claimed_by: Codex R3-8G executor
+completed_at: 2026-07-07T15:55:16+08:00
+completed_by: Codex R3-8G executor
+result: PASS_CONTRACT_FREEZE_DRY_RUN
 
 ### Goal
 

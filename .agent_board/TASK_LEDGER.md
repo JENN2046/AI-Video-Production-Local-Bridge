@@ -1663,3 +1663,77 @@ Risks:
 
 Next:
 - Top up or switch Runway credits/account, then open a new exact authorization task for any future single-submit retry.
+
+### 2026-07-07T15:55:50+08:00 - R3-8G RunningHub Contract Freeze And Dry Run
+
+Result: PASS_CONTRACT_FREEZE_DRY_RUN
+Project: AI Video Production Workspace Three Route Plan
+Lane: Provider Contract Freeze
+Claimed by: Codex R3-8G executor
+Completed by: Codex R3-8G executor
+Run ID: codex-20260707-154200-r3-8g
+Started at: 2026-07-07T15:42:16+08:00
+Completed at: 2026-07-07T15:55:50+08:00
+
+Scope:
+- Reviewed official RunningHub sources for image-to-video model API contract.
+- Froze a sanitized no-network dry-run request plan for selected storyboard artifact artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.
+- Kept RunningHub and Runway live calls forbidden.
+
+Changed files:
+- src/tools/videoProviderAdapters.ts
+- src/index.ts
+- scripts/r3-8g-runninghub-contract-freeze-dry-run.ts
+- tests/m1-provider-boundary.test.ts
+- package.json
+- .env.example
+- data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json
+- .agent_board/NEXT_TASK.json
+- .agent_board/NEXT_TASK.md
+- .agent_board/RUN_LOCK.md
+- .agent_board/TASK_BACKLOG.md
+- .agent_board/VALIDATION_LOG.md
+- .agent_board/HANDOFF.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: npm run r3:8g:dry-run
+  result: PASS
+- command: npm run typecheck
+  result: PASS
+- command: npm run test:m1
+  result: PASS
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json
+- data/reports/secret_scan_result.json
+- official source: https://www.runninghub.cn/
+- official source: https://www.runninghub.cn/call-api/api-detail/2019380112598044674
+- official source: https://www.runninghub.cn/runninghub-api-doc-cn/api-448183102
+- official source: https://www.runninghub.cn/runninghub-api-doc-cn/api-425767306
+- official source: https://www.runninghub.cn/runninghub-api-doc-cn/api-425749007
+- official source: https://www.runninghub.cn/runninghub-api-doc-cn/doc-8435517
+- official source: https://www.runninghub.cn/runninghub-api-doc-cn/doc-8287338
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: pending_at_ledger_write
+- push: no
+- PR: none
+
+Boundary:
+- No RunningHub submit, Runway submit, status polling, upload, output download, provider credit consumption, real video generation, secret output, source overwrite, push, tag, release, or deploy occurred.
+
+Risks:
+- RunningHub docs do not enumerate the complete aspect-ratio list or duration range on the reviewed official pages.
+- RunningHub standard model API documents prompt, aspectRatio, imageUrls, resolution, and duration; negative_prompt is not documented as a native field.
+- Local app media must be uploaded first to obtain a temporary RunningHub download_url before any future live submit.
+
+Next:
+- Promote R3-8H only when Jenn wants adapter implementation or authorization preparation.
+- Any live RunningHub submit requires a future exact current Jenn authorization phrase.

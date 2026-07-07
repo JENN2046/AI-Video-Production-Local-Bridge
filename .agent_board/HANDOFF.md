@@ -1,14 +1,29 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260707-151433-r3-8e
-Last result: R3-8E attempted exactly one authorized Runway submit; provider failed with sanitized insufficient-credits evidence
+Last run: codex-20260707-154200-r3-8g
+Last result: R3-8G completed RunningHub contract freeze and no-network dry-run with PASS_CONTRACT_FREEZE_DRY_RUN
 
 ## Current state
 
-Current task: R3-8E_RUNWAY_REAL_STORYBOARD_KEYFRAME_SINGLE_SUBMIT_AUTHORIZATION
-Current status: FAILED
+Current task: R3-8G_RUNNINGHUB_CONTRACT_FREEZE_AND_DRY_RUN
+Current status: DONE
 Current owner: None
+
+## R3-8G closeout
+
+Completed at: 2026-07-07T15:56:55+08:00
+Result: PASS_CONTRACT_FREEZE_DRY_RUN
+Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
+
+- RunningHub is primary in the local provider registry; Runway remains secondary and was not called.
+- Frozen submit endpoint: `POST /openapi/v2/rhart-video-g/image-to-video`.
+- Frozen upload endpoint: `POST /openapi/v2/media/upload/binary`; future live use must upload local app media first and use the returned `download_url`.
+- Frozen query endpoint: `POST /openapi/v2/query`.
+- Sanitized request fields: `prompt`, `aspectRatio`, `imageUrls`, `resolution`, `duration`.
+- No RunningHub submit, Runway submit, provider status polling, provider upload, output download, credit consumption, real video generation, secret output, source overwrite, push, tag, release, or deploy occurred.
+- Unresolved by official docs: full aspect-ratio enum, full duration range, native `negative_prompt` support.
+- R3-8H remains `FOLLOW_UP` until Jenn promotes it to `READY`.
 
 ## Completed in last run
 
@@ -86,6 +101,9 @@ Current owner: None
 - R3-8E did not retry and did not produce a provider job id or video artifact.
 - R3-8E added provider classification coverage so HTTP 400 credit messages map to `PROVIDER_INSUFFICIENT_CREDITS`.
 - Another live Runway submit requires a new exact current Jenn authorization phrase.
+- R3-8G completed RunningHub contract freeze and no-network dry-run.
+- R3-8G report is `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`.
+- R3-8G did not call RunningHub or Runway and did not read or print secrets.
 
 ## Blocked in last run
 
@@ -93,7 +111,7 @@ Current owner: None
 
 ## Failed in last run
 
-- `R3-8E_RUNWAY_REAL_STORYBOARD_KEYFRAME_SINGLE_SUBMIT_AUTHORIZATION`: provider failed with sanitized insufficient-credits evidence after exactly one authorized submit attempt.
+- None
 
 ## Skipped in last run
 
@@ -133,6 +151,7 @@ Current owner: None
 - `data/reports/r3_8c_runway_submit_failure_triage_result.json`
 - `data/reports/r3_8d_real_storyboard_keyframe_canary_prepare_result.json`
 - `data/reports/r3_8e_runway_real_storyboard_keyframe_canary_result.json`
+- `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - `ops/reports/three_route_acceptance_review_package_20260707_103611/THREE_ROUTE_ACCEPTANCE_REVIEW.md`
 - `ops/reports/three_route_acceptance_review_package_20260707_103611/README.md`
 
@@ -144,5 +163,6 @@ Current owner: None
 
 ## Next recommended action
 
-- Top up or switch Runway credits/account before any future live submit attempt.
+- Promote R3-8H to `READY` only when Jenn wants RunningHub adapter implementation or authorization preparation.
+- Do not submit to RunningHub without a future exact current Jenn authorization phrase.
 - Do not retry Runway canary without a new exact current Jenn authorization phrase.

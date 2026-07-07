@@ -1091,3 +1091,31 @@ Notes:
 - No second submit, retry, RunningHub call, regeneration, batch generation, source overwrite, secret output, promptImage/base64 output, raw provider payload recording, push, tag, release, or deploy occurred.
 - `npm run test:m1` passed 16 tests after adding coverage for HTTP 400 credit-message classification.
 - `git diff --check` passed with CRLF normalization warning only.
+
+### R3-8G - 2026-07-07T15:55:50+08:00
+
+Commands:
+
+```bash
+npm run r3:8g:dry-run
+npm run typecheck
+npm run test:m1
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_CONTRACT_FREEZE_DRY_RUN
+```
+
+Evidence:
+- data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json
+- data/reports/secret_scan_result.json
+
+Notes:
+- Dry-run report freezes RunningHub submit endpoint POST /openapi/v2/rhart-video-g/image-to-video, upload endpoint POST /openapi/v2/media/upload/binary, and query endpoint POST /openapi/v2/query.
+- Sanitized body shape uses prompt, aspectRatio, imageUrls, resolution, and duration.
+- No API key, Authorization header value, base64 image payload, raw provider payload, RunningHub call, Runway call, provider credit consumption, real video generation, source overwrite, push, tag, release, or deploy occurred.
+- git diff --check passed with CRLF normalization warnings only.

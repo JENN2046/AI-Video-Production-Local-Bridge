@@ -1,0 +1,238 @@
+{
+  "task": "R3-8G_RUNNINGHUB_CONTRACT_FREEZE_AND_DRY_RUN",
+  "result": "PASS_CONTRACT_FREEZE_DRY_RUN",
+  "generated_at": "2026-07-07T07:49:55.26Z",
+  "official_sources_reviewed": [
+    {
+      "url": "https://www.runninghub.cn/",
+      "facts": [
+        "RunningHub exposes API, Model API, AI Application API, and Workflow API entry points."
+      ]
+    },
+    {
+      "url": "https://www.runninghub.cn/call-api/api-detail/2019380112598044674",
+      "facts": [
+        "The public API detail page identifies interface /rhart-video-g/image-to-video and input fields API Key, prompt, aspectRatio, imageUrls, resolution, duration."
+      ]
+    },
+    {
+      "url": "https://www.runninghub.cn/runninghub-api-doc-cn/api-448183102",
+      "facts": [
+        "The official API docs freeze POST /openapi/v2/rhart-video-g/image-to-video.",
+        "The request example uses prompt, aspectRatio, imageUrls, resolution, and duration.",
+        "The response example includes taskId, status, errorCode, errorMessage, results, clientId, and promptTips."
+      ]
+    },
+    {
+      "url": "https://www.runninghub.cn/runninghub-api-doc-cn/api-425767306",
+      "facts": [
+        "The V2 query endpoint is POST /openapi/v2/query and returns taskId, status, errorCode, errorMessage, and results[].url."
+      ]
+    },
+    {
+      "url": "https://www.runninghub.cn/runninghub-api-doc-cn/api-425749007",
+      "facts": [
+        "The upload endpoint is POST /openapi/v2/media/upload/binary; upload response data.download_url is used by standard model API."
+      ]
+    },
+    {
+      "url": "https://www.runninghub.cn/runninghub-api-doc-cn/doc-8435517",
+      "facts": [
+        "Model API errors use errorCode and errorMessage; documented classes include invalid API key, rate limit, insufficient permissions, content safety, timeout, and generation failure."
+      ]
+    }
+  ],
+  "local_registry": {
+    "runninghub_primary": true,
+    "runninghub_status": "primary_real_provider",
+    "runninghub_model_name": "rhart-video-g/image-to-video",
+    "runway_secondary": true
+  },
+  "contract_freeze": {
+    "api_base_url": "https://www.runninghub.cn",
+    "submit_endpoint": "POST /openapi/v2/rhart-video-g/image-to-video",
+    "upload_endpoint": "POST /openapi/v2/media/upload/binary",
+    "query_endpoint": "POST /openapi/v2/query",
+    "model_route": "rhart-video-g/image-to-video",
+    "auth_header_name": "Authorization",
+    "auth_scheme": "Bearer",
+    "credential_env_name": "RUNNINGHUB_API_KEY",
+    "request_fields": [
+      "prompt",
+      "aspectRatio",
+      "imageUrls",
+      "resolution",
+      "duration"
+    ],
+    "native_negative_prompt_field": null,
+    "submit_task_id_field": "taskId",
+    "submit_status_field": "status",
+    "query_output_url_field": "results[].url",
+    "query_terminal_success_status": "SUCCESS",
+    "error_fields": [
+      "code",
+      "msg",
+      "message",
+      "errorCode",
+      "errorMessage"
+    ]
+  },
+  "selected_keyframe": {
+    "artifact_id": "artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7",
+    "source_path": "A:\\AI Video Production Workspace\\data\\imports\\g0_r1_SHOT_001_IMAGE_ACCEPTED_WEBGPT.png",
+    "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png",
+    "mime_type": "image/png",
+    "width": 941,
+    "height": 1672,
+    "aspect_ratio": "941:1672",
+    "near_vertical_9_16": true,
+    "sha256": "efbea3aa2507cd7d431501eafba3206cf6cfd000174b2d6109371b5e37e6a474",
+    "byte_size": 2243051,
+    "source_readable": true,
+    "storage_readable": true,
+    "artifact_role": "storyboard_image",
+    "artifact_status": "active",
+    "source_asset_overwritten": false
+  },
+  "project_linkage": {
+    "project_id": "project_b742cb15-e44e-41b2-8d2d-4b90a30720df",
+    "storyboard_package_id": "storyboard_package_1e5c1eca-624e-4687-9775-31e4b59f428a",
+    "shot_id": "g0_r1_shot_001",
+    "project_shot_duration_seconds": 3,
+    "dry_run_duration_seconds": 6,
+    "duration_policy": "RunningHub official examples confirm duration field with value 6; the full supported duration range is not enumerated, so live adapter must keep duration validation conservative."
+  },
+  "dry_run_request_plan": {
+    "provider": "runninghub",
+    "api_base_url": "https://www.runninghub.cn",
+    "model_route": "rhart-video-g/image-to-video",
+    "submit_endpoint": "POST /openapi/v2/rhart-video-g/image-to-video",
+    "auth": {
+      "header_name": "Authorization",
+      "scheme": "Bearer",
+      "credential_env_name": "RUNNINGHUB_API_KEY",
+      "credential_value_included": false
+    },
+    "request_body_shape": {
+      "prompt": "string",
+      "aspectRatio": "string",
+      "imageUrls": "string[]",
+      "resolution": "string",
+      "duration": "number"
+    },
+    "request_body_sanitized": {
+      "prompt_text_length": 262,
+      "negative_prompt_supported": false,
+      "negative_prompt_text_length": 73,
+      "aspectRatio": "9:16",
+      "imageUrls": [
+        "<RUNNINGHUB_UPLOAD_DOWNLOAD_URL>"
+      ],
+      "resolution": "480p",
+      "duration": 6
+    },
+    "image_reference": {
+      "source": "uploaded_download_url_required",
+      "upload_endpoint": "POST /openapi/v2/media/upload/binary",
+      "upload_file_mime_type": "image/png",
+      "upload_file_size_bytes": 2243051,
+      "upload_file_sha256": "efbea3aa2507cd7d431501eafba3206cf6cfd000174b2d6109371b5e37e6a474",
+      "download_url_placeholder": "<RUNNINGHUB_UPLOAD_DOWNLOAD_URL>",
+      "local_file_path_included": false,
+      "binary_payload_included": false,
+      "base64_included": false
+    },
+    "submit_response_contract": {
+      "task_id_field": "taskId",
+      "status_field": "status",
+      "error_code_field": "errorCode",
+      "error_message_field": "errorMessage",
+      "results_field": "results"
+    },
+    "query_contract": {
+      "endpoint": "POST /openapi/v2/query",
+      "body_shape": {
+        "taskId": "string"
+      },
+      "terminal_success_status": "SUCCESS",
+      "output_url_field": "results[].url",
+      "output_type_field": "results[].outputType"
+    },
+    "error_shape": {
+      "code_field": "code",
+      "message_fields": [
+        "msg",
+        "message",
+        "errorMessage"
+      ],
+      "model_error_code_field": "errorCode"
+    },
+    "unresolved_fields": [
+      "Official page does not enumerate all supported aspectRatio values; 9:16 remains planned for vertical output.",
+      "Official page shows duration examples but does not enumerate the full supported duration range.",
+      "Official page does not document a native negative_prompt field for this model API.",
+      "Local app media requires a future RunningHub upload step before imageUrls can be populated."
+    ],
+    "provider_boundary": {
+      "network_call_attempted": false,
+      "runninghub_called": false,
+      "runway_called": false,
+      "provider_credits_consumed": false,
+      "real_video_generated": false,
+      "secret_values_exposed": false
+    }
+  },
+  "unresolved_contract_fields": [
+    "Official page does not enumerate all supported aspectRatio values; 9:16 remains planned for vertical output.",
+    "Official page shows duration examples but does not enumerate the full supported duration range.",
+    "Official page does not document a native negative_prompt field for this model API.",
+    "Local app media requires a future RunningHub upload step before imageUrls can be populated."
+  ],
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "upload_attempted": false,
+    "status_poll_attempted": false,
+    "output_download_attempted": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "source_assets_overwritten": false,
+    "secret_values_exposed": false,
+    "raw_provider_payload_recorded": false
+  },
+  "acceptance": {
+    "runninghub_confirmed_primary": true,
+    "runway_confirmed_secondary": true,
+    "official_docs_reviewed": true,
+    "contract_fields_frozen_or_marked_unresolved": true,
+    "dry_run_request_summary_generated": true,
+    "dry_run_contains_no_credentials_base64_authorization_or_raw_payload": true,
+    "no_provider_call": true
+  },
+  "blocked_reason": null,
+  "validation": {
+    "npm run r3:8g:dry-run": "PASS",
+    "npm run typecheck": "PASS",
+    "npm run test:m1": "PASS",
+    "npm run secret:scan": "PASS",
+    "git diff --check": "PASS_WITH_CRLF_WARNINGS_ONLY"
+  },
+  "changed_files": [
+    ".env.example",
+    "package.json",
+    "scripts/r3-8g-runninghub-contract-freeze-dry-run.ts",
+    "src/index.ts",
+    "src/tools/videoProviderAdapters.ts",
+    "tests/m1-provider-boundary.test.ts",
+    "data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json",
+    ".agent_board/*"
+  ],
+  "next_step": {
+    "recommended_task": "R3-8H_RUNNINGHUB_ADAPTER_OR_AUTHORIZATION_NEXT_STEP",
+    "recommended_action": "Implement upload-first RunningHub adapter dry-run tests, then prepare a separate exact authorization phrase for one live RunningHub canary.",
+    "live_call_requires_new_exact_user_authorization": true
+  }
+}

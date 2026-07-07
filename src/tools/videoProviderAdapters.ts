@@ -14,6 +14,13 @@ import {
 export type ProviderJobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 export const RUNWAY_API_VERSION = "2024-11-06";
 export const RUNWAY_IMAGE_TO_VIDEO_ENDPOINT = "/v1/image_to_video";
+export const RUNNINGHUB_API_BASE_URL = "https://www.runninghub.cn";
+export const RUNNINGHUB_MODEL_ROUTE = "rhart-video-g/image-to-video";
+export const RUNNINGHUB_IMAGE_TO_VIDEO_ENDPOINT = `/openapi/v2/${RUNNINGHUB_MODEL_ROUTE}`;
+export const RUNNINGHUB_QUERY_ENDPOINT = "/openapi/v2/query";
+export const RUNNINGHUB_MEDIA_UPLOAD_ENDPOINT = "/openapi/v2/media/upload/binary";
+export const RUNNINGHUB_DEFAULT_RESOLUTION = "480p";
+export const RUNNINGHUB_DOC_EXAMPLE_DURATION_SECONDS = 6;
 
 export interface ProviderGenerationInput {
   storyboard_artifact: MediaArtifact;
@@ -83,6 +90,76 @@ export interface RunwayImageToVideoRequestSummary {
   prompt_image: RunwayPromptImageSummary;
 }
 
+export interface RunningHubImageReferenceSummary {
+  source: "uploaded_download_url_required";
+  upload_endpoint: `POST ${typeof RUNNINGHUB_MEDIA_UPLOAD_ENDPOINT}`;
+  upload_file_mime_type: string;
+  upload_file_size_bytes: number;
+  upload_file_sha256: string;
+  download_url_placeholder: "<RUNNINGHUB_UPLOAD_DOWNLOAD_URL>";
+  local_file_path_included: false;
+  binary_payload_included: false;
+  base64_included: false;
+}
+
+export interface RunningHubImageToVideoDryRunPlan {
+  provider: "runninghub";
+  api_base_url: typeof RUNNINGHUB_API_BASE_URL;
+  model_route: typeof RUNNINGHUB_MODEL_ROUTE;
+  submit_endpoint: `POST ${typeof RUNNINGHUB_IMAGE_TO_VIDEO_ENDPOINT}`;
+  auth: {
+    header_name: "Authorization";
+    scheme: "Bearer";
+    credential_env_name: "RUNNINGHUB_API_KEY";
+    credential_value_included: false;
+  };
+  request_body_shape: {
+    prompt: "string";
+    aspectRatio: "string";
+    imageUrls: "string[]";
+    resolution: "string";
+    duration: "number";
+  };
+  request_body_sanitized: {
+    prompt_text_length: number;
+    negative_prompt_supported: false;
+    negative_prompt_text_length: number;
+    aspectRatio: string;
+    imageUrls: ["<RUNNINGHUB_UPLOAD_DOWNLOAD_URL>"];
+    resolution: string;
+    duration: number;
+  };
+  image_reference: RunningHubImageReferenceSummary;
+  submit_response_contract: {
+    task_id_field: "taskId";
+    status_field: "status";
+    error_code_field: "errorCode";
+    error_message_field: "errorMessage";
+    results_field: "results";
+  };
+  query_contract: {
+    endpoint: `POST ${typeof RUNNINGHUB_QUERY_ENDPOINT}`;
+    body_shape: { taskId: "string" };
+    terminal_success_status: "SUCCESS";
+    output_url_field: "results[].url";
+    output_type_field: "results[].outputType";
+  };
+  error_shape: {
+    code_field: "code";
+    message_fields: ["msg", "message", "errorMessage"];
+    model_error_code_field: "errorCode";
+  };
+  unresolved_fields: string[];
+  provider_boundary: {
+    network_call_attempted: false;
+    runninghub_called: false;
+    runway_called: false;
+    provider_credits_consumed: false;
+    real_video_generated: false;
+    secret_values_exposed: false;
+  };
+}
+
 export interface VideoProviderAdapter {
   provider_name: RealProviderName | "mock";
   model_name: string;
@@ -138,6 +215,109 @@ export function normalizeRunwayDuration(durationSeconds: number): number | null 
   if (!Number.isInteger(durationSeconds)) return null;
   if (durationSeconds < 2 || durationSeconds > 10) return null;
   return durationSeconds;
+}
+
+export function mapRunningHubAspectRatio(aspectRatio: string): string | null {
+  if (["9:16", "16:9", "2:3", "3:2", "1:1"].includes(aspectRatio)) return aspectRatio;
+  return null;
+}
+
+export function normalizeRunningHubDurationForDryRun(durationSeconds: number): number | null {
+  if (!Number.isInteger(durationSeconds)) return null;
+  if (durationSeconds <= 0) return null;
+  return durationSeconds;
+}
+
+export function buildRunningHubImageToVideoDryRunPlan(input: ProviderGenerationInput): { ok: true; plan: RunningHubImageToVideoDryRunPlan } | { ok: false; error: ProviderToolError } {
+  if (input.storyboard_artifact.status !== "active" || input.storyboard_artifact.artifact_type !== "image" || input.storyboard_artifact.role !== "storyboard_image") {
+    return { ok: false, error: providerError("PROVIDER_UNSUPPORTED_INPUT", "RunningHub requires an active storyboard_image image artifact.") };
+  }
+
+  const aspectRatio = mapRunningHubAspectRatio(input.aspect_ratio);
+  if (!aspectRatio) {
+    return { ok: false, error: providerError("PROVIDER_UNSUPPORTED_INPUT", `Unsupported RunningHub aspectRatio: ${input.aspect_ratio}.`) };
+  }
+
+  const duration = normalizeRunningHubDurationForDryRun(input.duration_seconds);
+  if (duration === null) {
+    return { ok: false, error: providerError("PROVIDER_UNSUPPORTED_INPUT", `Unsupported RunningHub duration: ${input.duration_seconds}.`) };
+  }
+
+  return {
+    ok: true,
+    plan: {
+      provider: "runninghub",
+      api_base_url: RUNNINGHUB_API_BASE_URL,
+      model_route: RUNNINGHUB_MODEL_ROUTE,
+      submit_endpoint: `POST ${RUNNINGHUB_IMAGE_TO_VIDEO_ENDPOINT}`,
+      auth: {
+        header_name: "Authorization",
+        scheme: "Bearer",
+        credential_env_name: "RUNNINGHUB_API_KEY",
+        credential_value_included: false
+      },
+      request_body_shape: {
+        prompt: "string",
+        aspectRatio: "string",
+        imageUrls: "string[]",
+        resolution: "string",
+        duration: "number"
+      },
+      request_body_sanitized: {
+        prompt_text_length: input.video_prompt.length,
+        negative_prompt_supported: false,
+        negative_prompt_text_length: input.negative_prompt.length,
+        aspectRatio,
+        imageUrls: ["<RUNNINGHUB_UPLOAD_DOWNLOAD_URL>"],
+        resolution: input.resolution || RUNNINGHUB_DEFAULT_RESOLUTION,
+        duration
+      },
+      image_reference: {
+        source: "uploaded_download_url_required",
+        upload_endpoint: `POST ${RUNNINGHUB_MEDIA_UPLOAD_ENDPOINT}`,
+        upload_file_mime_type: input.storyboard_artifact.storage.mime_type,
+        upload_file_size_bytes: 0,
+        upload_file_sha256: input.storyboard_artifact.metadata?.sha256 ?? "",
+        download_url_placeholder: "<RUNNINGHUB_UPLOAD_DOWNLOAD_URL>",
+        local_file_path_included: false,
+        binary_payload_included: false,
+        base64_included: false
+      },
+      submit_response_contract: {
+        task_id_field: "taskId",
+        status_field: "status",
+        error_code_field: "errorCode",
+        error_message_field: "errorMessage",
+        results_field: "results"
+      },
+      query_contract: {
+        endpoint: `POST ${RUNNINGHUB_QUERY_ENDPOINT}`,
+        body_shape: { taskId: "string" },
+        terminal_success_status: "SUCCESS",
+        output_url_field: "results[].url",
+        output_type_field: "results[].outputType"
+      },
+      error_shape: {
+        code_field: "code",
+        message_fields: ["msg", "message", "errorMessage"],
+        model_error_code_field: "errorCode"
+      },
+      unresolved_fields: [
+        "Official page does not enumerate all supported aspectRatio values; 9:16 remains planned for vertical output.",
+        "Official page shows duration examples but does not enumerate the full supported duration range.",
+        "Official page does not document a native negative_prompt field for this model API.",
+        "Local app media requires a future RunningHub upload step before imageUrls can be populated."
+      ],
+      provider_boundary: {
+        network_call_attempted: false,
+        runninghub_called: false,
+        runway_called: false,
+        provider_credits_consumed: false,
+        real_video_generated: false,
+        secret_values_exposed: false
+      }
+    }
+  };
 }
 
 function dataUriFromImageArtifact(artifact: MediaArtifact): { ok: true; data_uri: string; prompt_image: RunwayPromptImageSummary } | { ok: false; error: ProviderToolError } {
@@ -417,14 +597,14 @@ export class RunwayVideoProviderAdapter implements VideoProviderAdapter {
 
 export class RunningHubVideoProviderAdapter implements VideoProviderAdapter {
   provider_name = "runninghub" as const;
-  model_name = "rhart-video-g/image-to-video";
+  model_name = RUNNINGHUB_MODEL_ROUTE;
 
   async submitGeneration(): Promise<ProviderSubmitResult> {
     return {
       ok: false,
       error: providerError(
         "PROVIDER_UNSUPPORTED",
-        "RunningHub live generation is not implemented until its image-to-video prompt field and model route are frozen."
+        "RunningHub live generation is not implemented. R3-8G freezes a dry-run contract only; upload, submit, polling, and output download still require a separate implementation and live authorization."
       )
     };
   }

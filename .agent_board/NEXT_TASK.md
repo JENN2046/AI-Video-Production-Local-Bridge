@@ -1,56 +1,60 @@
 # NEXT_TASK.md
 
-Status: READY
+machine: AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE
+version: 0.1.0
+slot: current
+task_id: R3-8G_RUNNINGHUB_CONTRACT_FREEZE_AND_DRY_RUN
+status: DONE
+priority: P0
+lane: Provider Contract Freeze
+project: AI Video Production Workspace Three Route Plan
+title: RunningHub Contract Freeze And Dry Run
+updated_at: 2026-07-07T15:55:00+08:00
+claimed_by: Codex R3-8G executor
+claim_run_id: codex-20260707-154200-r3-8g
+completed_by: Codex R3-8G executor
+completed_at: 2026-07-07T15:55:00+08:00
+result: PASS_CONTRACT_FREEZE_DRY_RUN
+validation_result: PASS
+delivery: local_only_commit_pending
+commit: pending_at_task_closeout
 
-Task: R3-8G_RUNNINGHUB_CONTRACT_FREEZE_AND_DRY_RUN
+## Scope
 
-Title: RunningHub Contract Freeze And Dry Run
+- Freeze the official RunningHub image-to-video model API contract.
+- Build a no-network dry-run request plan for selected storyboard artifact artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.
+- Do not call RunningHub or Runway.
 
-Priority: P0
+## Evidence
 
-Lane: Provider Contract Freeze
-
-Project: AI Video Production Workspace Three Route Plan
-
-Claimed by: none
-
-Claim run ID: none
-
-Claimed at: none
-
-## Goal
-
-Freeze the RunningHub.cn image-to-video API contract for the current real storyboard keyframe workflow and produce a dry-run request plan. This task must not call RunningHub, Runway, or any paid/quota-consuming provider endpoint.
-
-## Required Source Review
-
-- Review `https://www.runninghub.cn/`.
-- Review `https://www.runninghub.cn/call-api/api-detail/2019380112598044674` if available.
-- If the official API page is unavailable, requires login, or lacks enough details, mark the missing fields explicitly and return `BLOCK_WITH_REASON`.
-- Do not rely on stale memory or guessed request fields.
-
-## Selected Keyframe
-
-- artifact_id: `artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7`
-- storage_uri: `A:\AI Video Production Workspace\data\media\artifacts\images\artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png`
-- source_path: `A:\AI Video Production Workspace\data\imports\g0_r1_SHOT_001_IMAGE_ACCEPTED_WEBGPT.png`
-
-## Acceptance
-
-- RunningHub is confirmed as primary provider in local registry.
-- Runway remains secondary and is not called.
-- Official RunningHub docs/API detail page are reviewed or missing fields are explicitly blocked.
-- API base URL, submit endpoint, auth header names, model/workflow id fields, image field shape, prompt fields, duration, ratio, task id, status polling, output shape, and error shape are frozen or marked unresolved.
-- Dry-run request summary is generated without credentials, base64, Authorization values, or raw provider payloads.
-- No RunningHub call, Runway call, provider credit consumption, real video generation, secret value output, source overwrite, push, tag, release, or deploy occurs.
+- data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json
+- data/reports/secret_scan_result.json
+- https://www.runninghub.cn/
+- https://www.runninghub.cn/call-api/api-detail/2019380112598044674
+- https://www.runninghub.cn/runninghub-api-doc-cn/api-448183102
+- https://www.runninghub.cn/runninghub-api-doc-cn/api-425767306
+- https://www.runninghub.cn/runninghub-api-doc-cn/api-425749007
+- https://www.runninghub.cn/runninghub-api-doc-cn/doc-8435517
+- https://www.runninghub.cn/runninghub-api-doc-cn/doc-8287338
 
 ## Validation
 
-- `npm run typecheck`
-- `npm run test:m1`
-- `npm run secret:scan`
-- `git diff --check`
+- npm run r3:8g:dry-run: PASS
+- npm run typecheck: PASS
+- npm run test:m1: PASS
+- npm run secret:scan: PASS
+- git diff --check: PASS_WITH_CRLF_WARNINGS_ONLY
 
-## Stop Reason
+## Provider Boundary
 
-Stop before any live RunningHub submit. Do not run `npm run env:check` or `npm run provider:preflight` against `.env.local` unless Jenn gives a fresh exact authorization to read local env presence.
+- network_call_attempted: false
+- runninghub_called: false
+- runway_called: false
+- provider_credits_consumed: false
+- real_video_generated: false
+- secret_values_exposed: false
+
+## Next Safe Option
+
+- Promote R3-8H to READY for RunningHub adapter implementation or authorization preparation.
+- Any live RunningHub submit still requires a future exact current authorization phrase.

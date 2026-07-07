@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   buildRunwayCanaryDryRunReport,
   buildRunwayImageToVideoRequest,
+  buildRunningHubImageToVideoDryRunPlan,
   createGenerationRunFromPackageShot,
   createProject,
   downloadProviderOutputToArtifact,
@@ -14,11 +15,16 @@ import {
   importStoryboardPackage,
   listProviderConfigs,
   mapRunwayAspectRatio,
+  mapRunningHubAspectRatio,
+  normalizeRunningHubDurationForDryRun,
   normalizeRunwayDuration,
   openM0Database,
   paths,
   redactSecrets,
   registerMediaArtifact,
+  RUNNINGHUB_IMAGE_TO_VIDEO_ENDPOINT,
+  RUNNINGHUB_MEDIA_UPLOAD_ENDPOINT,
+  RUNNINGHUB_QUERY_ENDPOINT,
   RUNWAY_API_VERSION,
   RUNWAY_IMAGE_TO_VIDEO_ENDPOINT,
   RunwayVideoProviderAdapter,
@@ -100,7 +106,10 @@ function fakeStoryboardArtifact(): MediaArtifact {
     status: "active",
     artifact_type: "image",
     role: "storyboard_image",
-    storage: { uri: join(paths.workspaceRoot, "fixtures", "storyboard", "shot_001.png"), mime_type: "image/png", filename: "shot_001.png" }
+    storage: { uri: join(paths.workspaceRoot, "fixtures", "storyboard", "shot_001.png"), mime_type: "image/png", filename: "shot_001.png" },
+    metadata: { width: 720, height: 1280, duration_seconds: null, aspect_ratio: "9:16", sha256: "0".repeat(64) },
+    linked_objects: { project_id: "", shot_id: "" },
+    source: { kind: "fixture_path", provider: "", provider_job_id: "", sha256: "0".repeat(64), external_url_host: "" }
   } as MediaArtifact;
 }
 
@@ -115,6 +124,50 @@ test("M1 provider registry keeps mock default and exposes two real ports", () =>
   assert.equal(configs.find((config) => config.provider_name === "runninghub")?.required_for_m1_pass, true);
   assert.equal(configs.find((config) => config.provider_name === "runninghub")?.status, "primary_real_provider");
   assert.equal(configs.find((config) => config.provider_name === "runninghub")?.model_name, "rhart-video-g/image-to-video");
+});
+
+test("M1 RunningHub dry-run freezes official endpoint shape without provider calls", () => {
+  assert.equal(RUNNINGHUB_IMAGE_TO_VIDEO_ENDPOINT, "/openapi/v2/rhart-video-g/image-to-video");
+  assert.equal(RUNNINGHUB_QUERY_ENDPOINT, "/openapi/v2/query");
+  assert.equal(RUNNINGHUB_MEDIA_UPLOAD_ENDPOINT, "/openapi/v2/media/upload/binary");
+  assert.equal(mapRunningHubAspectRatio("9:16"), "9:16");
+  assert.equal(mapRunningHubAspectRatio("1:1"), "1:1");
+  assert.equal(mapRunningHubAspectRatio("4:5"), null);
+  assert.equal(normalizeRunningHubDurationForDryRun(6), 6);
+  assert.equal(normalizeRunningHubDurationForDryRun(0), null);
+
+  const request = buildRunningHubImageToVideoDryRunPlan({
+    storyboard_artifact: fakeStoryboardArtifact(),
+    video_prompt: "Animate portrait shot.",
+    negative_prompt: "blur",
+    duration_seconds: 6,
+    aspect_ratio: "9:16",
+    resolution: "480p"
+  });
+
+  assert.equal(request.ok, true);
+  if (!request.ok) return;
+  assert.equal(request.plan.provider, "runninghub");
+  assert.equal(request.plan.submit_endpoint, "POST /openapi/v2/rhart-video-g/image-to-video");
+  assert.equal(request.plan.query_contract.endpoint, "POST /openapi/v2/query");
+  assert.equal(request.plan.image_reference.upload_endpoint, "POST /openapi/v2/media/upload/binary");
+  assert.equal(request.plan.request_body_sanitized.prompt_text_length, "Animate portrait shot.".length);
+  assert.equal(request.plan.request_body_sanitized.negative_prompt_supported, false);
+  assert.equal(request.plan.request_body_sanitized.aspectRatio, "9:16");
+  assert.deepEqual(request.plan.request_body_sanitized.imageUrls, ["<RUNNINGHUB_UPLOAD_DOWNLOAD_URL>"]);
+  assert.equal(request.plan.request_body_sanitized.duration, 6);
+  assert.equal(request.plan.image_reference.binary_payload_included, false);
+  assert.equal(request.plan.image_reference.base64_included, false);
+  assert.equal(request.plan.auth.credential_value_included, false);
+  assert.equal(request.plan.provider_boundary.network_call_attempted, false);
+  assert.equal(request.plan.provider_boundary.runninghub_called, false);
+  assert.equal(request.plan.provider_boundary.runway_called, false);
+
+  const serialized = JSON.stringify(request.plan);
+  assert.equal(serialized.includes("Authorization: Bearer"), false);
+  assert.equal(serialized.includes("data:image/"), false);
+  assert.equal(serialized.includes("base64,"), false);
+  assert.equal(serialized.includes(FAKE_SECRET), false);
 });
 
 test("M1 real provider gates block disabled, missing cost ack, mismatch, and missing credential", () => {
