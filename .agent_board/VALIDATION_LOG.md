@@ -1180,3 +1180,32 @@ Notes:
 - Plan uses `max_upload_calls=1`, `max_submit_calls=1`, `duration_seconds=6`, `aspectRatio=9:16`, `resolution=480p`, upload endpoint `POST /openapi/v2/media/upload/binary`, submit endpoint `POST /openapi/v2/rhart-video-g/image-to-video`, and query endpoint `POST /openapi/v2/query`.
 - No RunningHub call, Runway call, provider upload, status poll, provider output download, provider credit consumption, real video generation, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
 - git diff --check passed with CRLF normalization warnings only.
+
+### R3-8I-DURATION-OVERRIDE - 2026-07-07T17:31:18+08:00
+
+Commands:
+
+```bash
+npm run r3:8i:prep
+npm run typecheck
+npm run test:m1
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_READY_FOR_USER_AUTHORIZATION
+```
+
+Evidence:
+- `data/reports/r3_8i_runninghub_real_keyframe_authorization_prep_result.json`
+- `data/reports/secret_scan_result.json`
+
+Notes:
+- Updated the current RunningHub authorization prep to Jenn-requested `duration_seconds=3`.
+- The regenerated report shows submit `duration=3`, `runninghub_canary_duration_seconds=3`, and an exact authorization phrase containing `duration_seconds=3`.
+- No RunningHub upload, submit, status query, output download, provider credit consumption, real video generation, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
+- No generated channel/provider link exists yet because no live RunningHub call has been made.
+- `git diff --check` passed with CRLF normalization warnings only.

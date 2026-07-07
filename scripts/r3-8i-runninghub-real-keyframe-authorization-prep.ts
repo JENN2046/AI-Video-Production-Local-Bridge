@@ -14,7 +14,6 @@ import {
   openM0Database,
   paths,
   RUNNINGHUB_DEFAULT_RESOLUTION,
-  RUNNINGHUB_DOC_EXAMPLE_DURATION_SECONDS,
   RUNNINGHUB_IMAGE_TO_VIDEO_ENDPOINT,
   RUNNINGHUB_MEDIA_UPLOAD_ENDPOINT,
   RUNNINGHUB_MODEL_ROUTE,
@@ -34,6 +33,7 @@ const SELECTED_SOURCE_PATH = "A:\\AI Video Production Workspace\\data\\imports\\
 const SELECTED_STORAGE_URI = "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png";
 const OUTPUT_DIR = "data/media/provider-canary/r3-8j-runninghub-real-keyframe/";
 const SYNTHETIC_QUERY_TASK_ID = "runninghub_task_authorization_prep_only";
+const USER_REQUESTED_RUNNINGHUB_CANARY_DURATION_SECONDS = 3;
 
 interface G0FreezeReport {
   project?: { project_id?: string; title?: string };
@@ -131,7 +131,7 @@ try {
   const storageValidation = artifact?.storage.uri ? validateImageFile(artifact.storage.uri) : null;
   const sourceValidation = validateImageFile(SELECTED_SOURCE_PATH);
   const storageSize = artifact?.storage.uri && existsSync(artifact.storage.uri) ? statSync(artifact.storage.uri).size : 0;
-  const durationSeconds = RUNNINGHUB_DOC_EXAMPLE_DURATION_SECONDS;
+  const durationSeconds = USER_REQUESTED_RUNNINGHUB_CANARY_DURATION_SECONDS;
   const aspectRatio = "9:16";
   const resolution = RUNNINGHUB_DEFAULT_RESOLUTION;
 
@@ -226,7 +226,8 @@ try {
       shot_id: shot?.shot_id ?? selectedShot?.shot_id ?? null,
       package_shot_duration_seconds: selectedShot?.duration_seconds ?? shot?.duration_seconds ?? null,
       runninghub_canary_duration_seconds: durationSeconds,
-      duration_policy: "Use 6 seconds because the reviewed RunningHub official model API example documents duration=6; full supported range remains unresolved."
+      duration_policy:
+        "Use 3 seconds per Jenn's explicit 2026-07-07 canary duration request. Reviewed RunningHub official examples document duration=6 but do not enumerate the full supported duration range; if live provider rejects 3 seconds, record sanitized failure evidence and do not retry or submit again automatically."
     },
     live_canary_plan: {
       provider: "runninghub",

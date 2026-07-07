@@ -112,6 +112,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - R3-8H did not call RunningHub or Runway, upload media to provider, poll status, download provider output, consume provider credits, generate video, read/print secrets, overwrite source assets, push, tag, release, or deploy.
 - R3-8I completed RunningHub real-keyframe authorization prep and wrote `data/reports/r3_8i_runninghub_real_keyframe_authorization_prep_result.json`.
 - R3-8I generated the exact authorization phrase for a future R3-8J live canary, but did not call RunningHub or Runway and did not read `.env.local`.
+- R3-8I duration override completed on 2026-07-07: the current RunningHub authorization prep now uses `duration_seconds=3` per Jenn's request. No channel/provider link exists yet because no live RunningHub upload or submit has occurred.
 
 ## Blocked in last run
 
@@ -174,5 +175,6 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 ## Next recommended action
 
 - R3-8J remains `FOLLOW_UP`; promote/run it only after Jenn provides the exact RunningHub live-canary authorization phrase.
+- The current R3-8J authorization phrase must use `duration_seconds=3`; if RunningHub rejects 3 seconds, record sanitized failure evidence and do not retry automatically.
 - Do not submit to RunningHub without a future exact current Jenn authorization phrase.
 - Do not retry Runway canary without a new exact current Jenn authorization phrase.

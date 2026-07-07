@@ -1915,3 +1915,55 @@ Risks:
 Next:
 - R3-8J remains FOLLOW_UP until Jenn provides the exact authorization phrase.
 - Any live RunningHub upload/submit/query/download requires a future exact current Jenn authorization phrase.
+
+### 2026-07-07T17:31:18+08:00 - R3-8I Duration Override To 3 Seconds
+
+Result: PASS_READY_FOR_USER_AUTHORIZATION
+Project: AI Video Production Workspace Three Route Plan
+Lane: Approval Boundary Preparation
+Run ID: codex-20260707-173118-r3-8i-duration-override
+
+Scope:
+- Updated the current R3-8I RunningHub authorization preparation from 6 seconds to Jenn-requested 3 seconds.
+- Regenerated the no-network authorization prep report.
+- Confirmed no generated channel/provider link exists because no live RunningHub upload or submit occurred.
+
+Changed files:
+- scripts/r3-8i-runninghub-real-keyframe-authorization-prep.ts
+- data/reports/r3_8i_runninghub_real_keyframe_authorization_prep_result.json
+- .agent_board/HANDOFF.md
+- .agent_board/TASK_BACKLOG.md
+- .agent_board/VALIDATION_LOG.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: npm run r3:8i:prep
+  result: PASS
+- command: npm run typecheck
+  result: PASS
+- command: npm run test:m1
+  result: PASS
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_8i_runninghub_real_keyframe_authorization_prep_result.json
+- data/reports/secret_scan_result.json
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: pending_at_ledger_write
+- push: no
+- PR: none
+
+Boundary:
+- No RunningHub call, Runway call, media upload to provider, status query, output download, provider credit consumption, real video generation, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
+
+Risks:
+- RunningHub official docs reviewed earlier did not enumerate the full duration range; if a future live submit rejects 3 seconds, record sanitized failure evidence and do not retry automatically.
+
+Next:
+- R3-8J remains FOLLOW_UP until Jenn provides the exact current RunningHub authorization phrase with `duration_seconds=3`.

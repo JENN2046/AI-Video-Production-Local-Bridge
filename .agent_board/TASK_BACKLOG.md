@@ -1955,6 +1955,7 @@ Prepare the exact authorization phrase and final guard for a single RunningHub r
 
 - This task is `READY` because R3-8H passed with commit `b1efae2`.
 - It must confirm selected artifact, upload-first plan, budget limit, max submit calls, and stop conditions.
+- Duration override on 2026-07-07: current R3-8I report and exact authorization phrase use `duration_seconds=3` per Jenn's request. No live RunningHub upload or submit has occurred, so no channel/provider link exists yet.
 
 ## R3-8J_RUNNINGHUB_REAL_KEYFRAME_SINGLE_SUBMIT_CANARY - RunningHub Real Keyframe Single-Submit Canary
 
@@ -1979,6 +1980,7 @@ Run exactly one live RunningHub canary only after Jenn provides a fresh exact au
 ### Notes
 
 - `max_submit_calls=1` must be enforced.
+- Use `duration_seconds=3` from the current R3-8I authorization prep.
 - Upload, submit, status query, and download must be truthfully counted and reported.
 
 ## R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT - Provider Path Decision Closeout

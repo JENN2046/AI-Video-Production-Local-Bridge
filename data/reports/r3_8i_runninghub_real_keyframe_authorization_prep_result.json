@@ -1,7 +1,7 @@
 {
   "task": "R3-8I_RUNNINGHUB_REAL_KEYFRAME_AUTHORIZATION_PREP",
   "result": "PASS_READY_FOR_USER_AUTHORIZATION",
-  "generated_at": "2026-07-07T09:17:40.361Z",
+  "generated_at": "2026-07-07T09:29:16.542Z",
   "source_reports": {
     "r3_8g_contract_freeze": "data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json",
     "r3_8h_adapter_skeleton": "data/reports/r3_8h_runninghub_adapter_skeleton_offline_result.json",
@@ -39,8 +39,8 @@
     "storyboard_package_id": "storyboard_package_1e5c1eca-624e-4687-9775-31e4b59f428a",
     "shot_id": "g0_r1_shot_001",
     "package_shot_duration_seconds": 3,
-    "runninghub_canary_duration_seconds": 6,
-    "duration_policy": "Use 6 seconds because the reviewed RunningHub official model API example documents duration=6; full supported range remains unresolved."
+    "runninghub_canary_duration_seconds": 3,
+    "duration_policy": "Use 3 seconds per Jenn's explicit 2026-07-07 canary duration request. Reviewed RunningHub official examples document duration=6 but do not enumerate the full supported duration range; if live provider rejects 3 seconds, record sanitized failure evidence and do not retry or submit again automatically."
   },
   "live_canary_plan": {
     "provider": "runninghub",
@@ -76,7 +76,7 @@
       "image_url_values_included": false,
       "image_url_placeholder_used": true,
       "resolution": "480p",
-      "duration": 6,
+      "duration": 3,
       "max_submit_calls": 1,
       "retry_allowed": false,
       "raw_provider_payload_included": false
@@ -122,7 +122,7 @@
     "raw_provider_payload_recording_allowed": false,
     "budget_boundary": "Only one future upload-first RunningHub canary submit may be authorized; no automatic retry or second billable submit."
   },
-  "exact_authorization_phrase": "授权执行 1 次 RunningHub upload-first real-storyboard-keyframe single-submit canary 真实调用：provider=runninghub，upload_endpoint=POST /openapi/v2/media/upload/binary，submit_endpoint=POST /openapi/v2/rhart-video-g/image-to-video，query_endpoint=POST /openapi/v2/query，model_route=rhart-video-g/image-to-video，selected_artifact_id=artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7，source_path=A:\\AI Video Production Workspace\\data\\imports\\g0_r1_SHOT_001_IMAGE_ACCEPTED_WEBGPT.png，storage_uri=A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png，duration_seconds=6，aspectRatio=9:16，resolution=480p，max_upload_calls=1，max_submit_calls=1，预算/费用上限=仅允许这 1 次 upload-first canary submit 且不允许自动重试或第二次计费 submit，output_dir=data/media/provider-canary/r3-8j-runninghub-real-keyframe/，允许同一 taskId 的状态查询直到终态或超时；成功后下载为本地 media artifact 并 ffprobe 校验，授权只读使用本地 .env.local 中 RUNNINGHUB_API_KEY 用于本次 RunningHub 调用，但不得打印 secret 值，不得调用 Runway，不得 regeneration，不得 batch，不得发布/部署，不得覆盖源资产，不得打印 secret，不得记录 raw provider payload。",
+  "exact_authorization_phrase": "授权执行 1 次 RunningHub upload-first real-storyboard-keyframe single-submit canary 真实调用：provider=runninghub，upload_endpoint=POST /openapi/v2/media/upload/binary，submit_endpoint=POST /openapi/v2/rhart-video-g/image-to-video，query_endpoint=POST /openapi/v2/query，model_route=rhart-video-g/image-to-video，selected_artifact_id=artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7，source_path=A:\\AI Video Production Workspace\\data\\imports\\g0_r1_SHOT_001_IMAGE_ACCEPTED_WEBGPT.png，storage_uri=A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png，duration_seconds=3，aspectRatio=9:16，resolution=480p，max_upload_calls=1，max_submit_calls=1，预算/费用上限=仅允许这 1 次 upload-first canary submit 且不允许自动重试或第二次计费 submit，output_dir=data/media/provider-canary/r3-8j-runninghub-real-keyframe/，允许同一 taskId 的状态查询直到终态或超时；成功后下载为本地 media artifact 并 ffprobe 校验，授权只读使用本地 .env.local 中 RUNNINGHUB_API_KEY 用于本次 RunningHub 调用，但不得打印 secret 值，不得调用 Runway，不得 regeneration，不得 batch，不得发布/部署，不得覆盖源资产，不得打印 secret，不得记录 raw provider payload。",
   "provider_boundary": {
     "network_call_attempted": false,
     "runninghub_called": false,
