@@ -190,3 +190,32 @@ test("WebGPT v3 rejects fake ids and exposes offline workbench summary", () => {
     db.close();
   }
 });
+
+test("WebGPT v3 rejects cross-project generated clips and memory proposals", async () => {
+  const db = openM0Database();
+
+  try {
+    const first = await createProductionContext(db);
+    const second = await createProductionContext(db);
+
+    const crossProjectClip = executeWebGptProductionAssistantTool(
+      "propose_regeneration_plan",
+      { project_id: first.project_id, artifact_id: second.artifact_id, prompt_delta: "Use the wrong project's clip." },
+      db
+    );
+    assert.equal(crossProjectClip.ok, false);
+    if (crossProjectClip.ok) return;
+    assert.equal(crossProjectClip.error.code, "ARTIFACT_PROJECT_MISMATCH");
+
+    const crossProjectProposal = executeWebGptProductionAssistantTool(
+      "propose_memory_saveback",
+      { project_id: first.project_id, proposal_id: second.proposal_id, notes: "Use the wrong project's proposal." },
+      db
+    );
+    assert.equal(crossProjectProposal.ok, false);
+    if (crossProjectProposal.ok) return;
+    assert.equal(crossProjectProposal.error.code, "PROPOSAL_PROJECT_MISMATCH");
+  } finally {
+    db.close();
+  }
+});

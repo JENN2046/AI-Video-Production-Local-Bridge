@@ -850,19 +850,20 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   }
   if (request.method === "POST" && url.pathname === "/api/memory/confirm") {
     return mutate(request, response, (body) => {
-      const decisions = Array.isArray(body.decisions)
-        ? body.decisions.map((item) => {
-            const record = item as Record<string, unknown>;
-            const decision: "approve" | "reject" = record.decision === "approve" || record.decision === "reject" ? record.decision : "reject";
-            return {
-              item_id: String(record.item_id ?? ""),
-              decision,
-              title: record.title === undefined ? undefined : String(record.title),
-              content: record.content === undefined ? undefined : String(record.content),
-              rejection_reason: record.rejection_reason === undefined ? undefined : String(record.rejection_reason)
-            };
-          })
-        : [];
+      const decisions: Array<{ item_id: string; decision: "approve" | "reject"; title?: string; content?: string; rejection_reason?: string }> = [];
+      for (const item of Array.isArray(body.decisions) ? body.decisions : []) {
+        const record = item as Record<string, unknown>;
+        if (record.decision !== "approve" && record.decision !== "reject") {
+          return { ok: false, error: { code: "INVALID_DECISION", message: "回存决定必须是 approve 或 reject。" } };
+        }
+        decisions.push({
+          item_id: String(record.item_id ?? ""),
+          decision: record.decision,
+          title: record.title === undefined ? undefined : String(record.title),
+          content: record.content === undefined ? undefined : String(record.content),
+          rejection_reason: record.rejection_reason === undefined ? undefined : String(record.rejection_reason)
+        });
+      }
       const result = confirmMemorySavebackProposal({
         proposal_id: String(body.proposal_id ?? ""),
         human_confirmation: body.human_confirmation === true,

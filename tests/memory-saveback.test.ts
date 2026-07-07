@@ -149,6 +149,7 @@ test("R3-6 materializes only approved items after human confirmation and builds 
     );
     assert.equal(confirmed.ok, true);
     if (!confirmed.ok) return;
+    assert.equal(confirmed.value.proposal.status, "reviewed");
     assert.equal(confirmed.value.created.memory_items.length, 1);
     assert.equal(confirmed.value.created.assets.length, 1);
     assert.equal(confirmed.value.created.references.length, 0);
@@ -167,6 +168,63 @@ test("R3-6 materializes only approved items after human confirmation and builds 
     assert.equal(recall.value.recall_pack.memory_items.length, 1);
     assert.equal(recall.value.recall_pack.assets.length, 1);
     assert.equal(recall.value.recall_pack.boundary.long_term_memory_write_attempted, false);
+
+    const remainingDecisions = confirmed.value.proposal.items
+      .filter((item) => item.status === "proposed")
+      .map((item) => ({ item_id: item.item_id, decision: "reject" as const, rejection_reason: "not needed" }));
+    assert.equal(remainingDecisions.length > 0, true);
+    const fullyReviewed = confirmMemorySavebackProposal(
+      {
+        proposal_id: proposal.proposal_id,
+        human_confirmation: true,
+        decisions: remainingDecisions
+      },
+      confirmed.value.store
+    );
+    assert.equal(fullyReviewed.ok, true);
+    if (!fullyReviewed.ok) return;
+    assert.equal(fullyReviewed.value.proposal.status, "confirmed");
+    assert.equal(fullyReviewed.value.created.memory_items.length, 0);
+    assert.equal(fullyReviewed.value.created.assets.length, 0);
+    assert.equal(fullyReviewed.value.created.references.length, 0);
+  } finally {
+    db.close();
+  }
+});
+
+test("R3-6 rejects invalid or unknown saveback decisions instead of materializing them", async () => {
+  const db = openM0Database();
+
+  try {
+    const { project } = await setupClosedProject(db);
+    const created = createMemorySavebackProposal({ project_id: project.project_id, write_report: false }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+
+    const proposal = created.value.proposal;
+    const invalidDecision = confirmMemorySavebackProposal(
+      {
+        proposal_id: proposal.proposal_id,
+        human_confirmation: true,
+        decisions: [{ item_id: proposal.items[0].item_id, decision: "ignore" as "approve" }]
+      },
+      created.value.store
+    );
+    assert.equal(invalidDecision.ok, false);
+    if (invalidDecision.ok) return;
+    assert.equal(invalidDecision.error.code, "INVALID_DECISION");
+
+    const unknownItem = confirmMemorySavebackProposal(
+      {
+        proposal_id: proposal.proposal_id,
+        human_confirmation: true,
+        decisions: [{ item_id: "saveback_item_missing", decision: "reject" }]
+      },
+      created.value.store
+    );
+    assert.equal(unknownItem.ok, false);
+    if (unknownItem.ok) return;
+    assert.equal(unknownItem.error.code, "PROPOSAL_ITEM_NOT_FOUND");
   } finally {
     db.close();
   }

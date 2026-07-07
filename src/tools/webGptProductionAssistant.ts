@@ -231,7 +231,12 @@ function requiredProject(tool: WebGptProductionAssistantToolName, input: Record<
   return { ok: true, project_id: project.project_id };
 }
 
-function requiredGeneratedClip(tool: WebGptProductionAssistantToolName, input: Record<string, unknown>, db: M0Database): { ok: true; artifact_id: string; shot_id: string } | { ok: false; result: WebGptProductionAssistantToolResult } {
+function requiredGeneratedClip(
+  tool: WebGptProductionAssistantToolName,
+  input: Record<string, unknown>,
+  projectId: string,
+  db: M0Database
+): { ok: true; artifact_id: string; shot_id: string } | { ok: false; result: WebGptProductionAssistantToolResult } {
   const artifactId = typeof input.artifact_id === "string" ? input.artifact_id.trim() : "";
   if (!artifactId) return { ok: false, result: fail(tool, "MISSING_REQUIRED_FIELD", "artifact_id is required.") };
   if (!plainId(artifactId)) return { ok: false, result: fail(tool, "INVALID_APP_ID", "Only real app generated_clip artifact ids are accepted.") };
@@ -240,16 +245,31 @@ function requiredGeneratedClip(tool: WebGptProductionAssistantToolName, input: R
   if (artifact.artifact_type !== "video" || artifact.role !== "generated_clip") {
     return { ok: false, result: fail(tool, "ARTIFACT_NOT_GENERATED_CLIP", "Artifact must be a generated_clip video.") };
   }
+  if (artifact.linked_objects.project_id !== projectId) {
+    return { ok: false, result: fail(tool, "ARTIFACT_PROJECT_MISMATCH", "Generated clip artifact does not belong to the requested project.") };
+  }
+  if (!artifact.linked_objects.shot_id) {
+    return { ok: false, result: fail(tool, "ARTIFACT_SHOT_LINK_MISSING", "Generated clip artifact is missing its shot link.") };
+  }
   return { ok: true, artifact_id: artifact.artifact_id, shot_id: artifact.linked_objects.shot_id };
 }
 
-function validateProposalId(tool: WebGptProductionAssistantToolName, input: Record<string, unknown>): WebGptProductionAssistantToolResult | null {
+function requiredOptionalProposal(
+  tool: WebGptProductionAssistantToolName,
+  input: Record<string, unknown>,
+  projectId: string
+): { ok: true; proposal_id: string } | { ok: false; result: WebGptProductionAssistantToolResult } {
   const proposalId = typeof input.proposal_id === "string" ? input.proposal_id.trim() : "";
-  if (!proposalId) return null;
-  if (!plainId(proposalId) || !proposalId.startsWith("memory_proposal_")) return fail(tool, "INVALID_APP_ID", "Only real app memory proposal ids are accepted.");
+  if (!proposalId) return { ok: true, proposal_id: "" };
+  if (!plainId(proposalId) || !proposalId.startsWith("memory_proposal_")) {
+    return { ok: false, result: fail(tool, "INVALID_APP_ID", "Only real app memory proposal ids are accepted.") };
+  }
   const proposal = loadMemorySavebackStore().proposals.find((candidate) => candidate.proposal_id === proposalId);
-  if (!proposal) return fail(tool, "PROPOSAL_NOT_FOUND", `Memory proposal not found: ${proposalId}`);
-  return null;
+  if (!proposal) return { ok: false, result: fail(tool, "PROPOSAL_NOT_FOUND", `Memory proposal not found: ${proposalId}`) };
+  if (proposal.project_id !== projectId) {
+    return { ok: false, result: fail(tool, "PROPOSAL_PROJECT_MISMATCH", "Memory proposal does not belong to the requested project.") };
+  }
+  return { ok: true, proposal_id: proposal.proposal_id };
 }
 
 function requiredText(tool: WebGptProductionAssistantToolName, input: Record<string, unknown>, field: string): WebGptProductionAssistantToolResult | null {
@@ -297,7 +317,7 @@ export function executeWebGptProductionAssistantTool(
   }
 
   if (tool === "propose_regeneration_plan") {
-    const clip = requiredGeneratedClip(tool, input, db);
+    const clip = requiredGeneratedClip(tool, input, project.project_id, db);
     if (!clip.ok) return clip.result;
     const textError = requiredText(tool, input, "prompt_delta");
     if (textError) return textError;
@@ -309,10 +329,9 @@ export function executeWebGptProductionAssistantTool(
   }
 
   if (tool === "propose_memory_saveback") {
-    const proposalError = validateProposalId(tool, input);
-    if (proposalError) return proposalError;
-    const proposalId = typeof input.proposal_id === "string" ? input.proposal_id.trim() : "";
-    return ok(tool, appendPlan(tool, input, { project_id: project.project_id, shot_id: "", artifact_id: "", proposal_id: proposalId }));
+    const proposal = requiredOptionalProposal(tool, input, project.project_id);
+    if (!proposal.ok) return proposal.result;
+    return ok(tool, appendPlan(tool, input, { project_id: project.project_id, shot_id: "", artifact_id: "", proposal_id: proposal.proposal_id }));
   }
 
   return fail("unknown", "TOOL_NOT_FOUND", `Production assistant tool not found: ${tool}`);

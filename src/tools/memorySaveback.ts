@@ -369,6 +369,21 @@ export function confirmMemorySavebackProposal(
   const proposal = store.proposals.find((candidate) => candidate.proposal_id === input.proposal_id);
   if (!proposal) return { ok: false, error: toolError("PROPOSAL_NOT_FOUND", `Proposal not found: ${input.proposal_id}`) };
 
+  const proposalItemIds = new Set(proposal.items.map((item) => item.item_id));
+  const seenDecisionItemIds = new Set<string>();
+  for (const decision of input.decisions) {
+    if (decision.decision !== "approve" && decision.decision !== "reject") {
+      return { ok: false, error: toolError("INVALID_DECISION", "Memory saveback decisions must be approve or reject.") };
+    }
+    if (!proposalItemIds.has(decision.item_id)) {
+      return { ok: false, error: toolError("PROPOSAL_ITEM_NOT_FOUND", `Proposal item not found: ${decision.item_id}`) };
+    }
+    if (seenDecisionItemIds.has(decision.item_id)) {
+      return { ok: false, error: toolError("DUPLICATE_DECISION_ITEM", `Duplicate decision for proposal item: ${decision.item_id}`) };
+    }
+    seenDecisionItemIds.add(decision.item_id);
+  }
+
   const decisionsByItemId = new Map(input.decisions.map((decision) => [decision.item_id, decision]));
   const created = {
     memory_items: [] as MemoryItem[],
@@ -428,9 +443,10 @@ export function confirmMemorySavebackProposal(
     }
   }
 
+  const nextStatus: MemorySavebackProposalStatus = nextProposal.items.every((item) => item.status === "approved" || item.status === "rejected") ? "confirmed" : "reviewed";
   const confirmedProposal: MemorySavebackProposal = {
     ...nextProposal,
-    status: "confirmed",
+    status: nextStatus,
     updated_at: now()
   };
   const nextStore = saveMemorySavebackStore({
