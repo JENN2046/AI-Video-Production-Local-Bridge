@@ -1209,3 +1209,35 @@ Notes:
 - No RunningHub upload, submit, status query, output download, provider credit consumption, real video generation, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
 - No generated channel/provider link exists yet because no live RunningHub call has been made.
 - `git diff --check` passed with CRLF normalization warnings only.
+
+### R3-8J - 2026-07-07T17:46:23+08:00
+
+Commands:
+
+```bash
+npm run r3:8j:live
+npm run typecheck
+npm run test:m1
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PROVIDER_FAILED_DURATION_MIN_6
+```
+
+Evidence:
+- `data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json`
+- `data/reports/r3_8i_runninghub_real_keyframe_authorization_prep_result.json`
+- `data/reports/secret_scan_result.json`
+
+Notes:
+- Exactly one authorized RunningHub media upload was attempted.
+- Exactly one authorized RunningHub submit was attempted.
+- RunningHub rejected `duration=3` with sanitized provider evidence: minimum value is `6`.
+- `submit_call_count=1`, `provider_job_id_present=false`, `query_call_count=0`, `real_video_generated=false`, and `provider_credits_consumed=false`.
+- No second submit, retry, Runway call, regeneration, batch generation, source overwrite, secret output, signed URL recording, raw provider payload recording, push, tag, release, or deploy occurred.
+- `npm run typecheck`, `npm run test:m1`, and `npm run secret:scan` passed.
+- `git diff --check` passed with CRLF normalization warnings only.

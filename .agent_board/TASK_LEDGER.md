@@ -1967,3 +1967,67 @@ Risks:
 
 Next:
 - R3-8J remains FOLLOW_UP until Jenn provides the exact current RunningHub authorization phrase with `duration_seconds=3`.
+
+### 2026-07-07T17:46:23+08:00 - R3-8J RunningHub Real Keyframe Single-Submit Canary
+
+Result: FAILED / PROVIDER_FAILED_DURATION_MIN_6
+Project: AI Video Production Workspace Three Route Plan
+Lane: Approval Boundary Live Provider Execution
+Claimed by: Codex R3-8J executor
+Failed by: Codex R3-8J executor
+Run ID: codex-20260707-174355-r3-8j
+Started at: 2026-07-07T17:43:55+08:00
+Stopped at: 2026-07-07T17:46:23+08:00
+
+Scope:
+- Executed exactly one Jenn-authorized RunningHub upload-first real-keyframe canary.
+- Used selected app registry artifact `artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7`.
+- Used `duration_seconds=3`, `aspectRatio=9:16`, `resolution=480p`, and `max_submit_calls=1`.
+
+Changed files:
+- package.json
+- scripts/r3-8j-runninghub-real-keyframe-single-submit-canary.ts
+- tests/m1-provider-boundary.test.ts
+- data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json
+- .agent_board/NEXT_TASK.json
+- .agent_board/NEXT_TASK.md
+- .agent_board/RUN_LOCK.md
+- .agent_board/TASK_BACKLOG.md
+- .agent_board/VALIDATION_LOG.md
+- .agent_board/HANDOFF.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: npm run r3:8j:live
+  result: PROVIDER_FAILED_DURATION_MIN_6
+- command: npm run typecheck
+  result: PASS
+- command: npm run test:m1
+  result: PASS
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json
+- data/reports/r3_8i_runninghub_real_keyframe_authorization_prep_result.json
+- data/reports/secret_scan_result.json
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: pending_at_ledger_write
+- push: no
+- PR: none
+
+Boundary:
+- One authorized media upload occurred.
+- One authorized submit occurred.
+- No provider job id, status query, output URL, output download, local video artifact, ffprobe result, second submit, retry, Runway call, regeneration, batch generation, source overwrite, secret output, signed URL recording, raw provider payload recording, push, tag, release, or deploy occurred.
+
+Risks:
+- RunningHub live canary did not generate a video because `duration=3` is below the provider minimum value `6`.
+
+Next:
+- Any next RunningHub retry requires a fresh exact current Jenn authorization phrase and should use `duration_seconds=6`.

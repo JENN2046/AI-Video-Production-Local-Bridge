@@ -113,6 +113,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - R3-8I completed RunningHub real-keyframe authorization prep and wrote `data/reports/r3_8i_runninghub_real_keyframe_authorization_prep_result.json`.
 - R3-8I generated the exact authorization phrase for a future R3-8J live canary, but did not call RunningHub or Runway and did not read `.env.local`.
 - R3-8I duration override completed on 2026-07-07: the current RunningHub authorization prep now uses `duration_seconds=3` per Jenn's request. No channel/provider link exists yet because no live RunningHub upload or submit has occurred.
+- R3-8J executed one authorized RunningHub upload and one authorized submit on 2026-07-07. Result: `PROVIDER_FAILED_DURATION_MIN_6`; RunningHub rejected `duration=3` because the minimum value is `6`. No provider job id, output URL, local video artifact, ffprobe result, or channel link exists.
 
 ## Blocked in last run
 
@@ -120,7 +121,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 
 ## Failed in last run
 
-- None
+- R3-8J RunningHub real-keyframe canary failed provider-side with `PROVIDER_FAILED_DURATION_MIN_6`.
 
 ## Skipped in last run
 
@@ -174,7 +175,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 
 ## Next recommended action
 
-- R3-8J remains `FOLLOW_UP`; promote/run it only after Jenn provides the exact RunningHub live-canary authorization phrase.
-- The current R3-8J authorization phrase must use `duration_seconds=3`; if RunningHub rejects 3 seconds, record sanitized failure evidence and do not retry automatically.
+- R3-8J is `FAILED` with `PROVIDER_FAILED_DURATION_MIN_6`; do not rerun it automatically.
+- Any next RunningHub retry must be a new exact current Jenn authorization phrase and should use `duration_seconds=6`.
 - Do not submit to RunningHub without a future exact current Jenn authorization phrase.
 - Do not retry Runway canary without a new exact current Jenn authorization phrase.

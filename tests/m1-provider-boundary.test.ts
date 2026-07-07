@@ -141,6 +141,7 @@ test("M1 RunningHub dry-run freezes official endpoint shape without provider cal
   assert.equal(mapRunningHubAspectRatio("9:16"), "9:16");
   assert.equal(mapRunningHubAspectRatio("1:1"), "1:1");
   assert.equal(mapRunningHubAspectRatio("4:5"), null);
+  assert.equal(normalizeRunningHubDurationForDryRun(3), 3);
   assert.equal(normalizeRunningHubDurationForDryRun(6), 6);
   assert.equal(normalizeRunningHubDurationForDryRun(0), null);
 
@@ -215,6 +216,7 @@ test("M1 RunningHub upload-first request builders stay offline and sanitized", (
   assert.equal(submit.endpoint, RUNNINGHUB_IMAGE_TO_VIDEO_ENDPOINT);
   assert.equal(submit.body.aspectRatio, "9:16");
   assert.deepEqual(submit.body.imageUrls, [RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER]);
+  assert.equal(submit.summary.duration, 6);
   assert.equal(submit.summary.prompt_text_length, "Animate portrait shot.".length);
   assert.equal(submit.summary.negative_prompt_supported, false);
   assert.equal(submit.summary.image_url_values_included, false);

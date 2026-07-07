@@ -1959,7 +1959,7 @@ Prepare the exact authorization phrase and final guard for a single RunningHub r
 
 ## R3-8J_RUNNINGHUB_REAL_KEYFRAME_SINGLE_SUBMIT_CANARY - RunningHub Real Keyframe Single-Submit Canary
 
-status: FOLLOW_UP
+status: FAILED
 priority: P0
 lane: Approval Boundary Live Provider Execution
 project: AI Video Production Workspace Three Route Plan
@@ -1971,17 +1971,24 @@ report_path: data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_re
 allowed_delivery: one_authorized_runninghub_upload,one_authorized_runninghub_submit,status_query,output_download_if_succeeded,ffprobe_if_succeeded,sanitized_live_result_report,local_commit
 blocked_delivery: runninghub_call_without_exact_authorization,runway_call,second_submit,retry_live_submit,regeneration,batch_generation,secret_value_output,raw_provider_payload_recording,source_overwrite,push,tag,release,deploy
 created_at: 2026-07-07T16:06:04+08:00
-updated_at: 2026-07-07T16:06:04+08:00
+updated_at: 2026-07-07T17:46:23+08:00
+claimed_at: 2026-07-07T17:43:55+08:00
+claim_run_id: codex-20260707-174355-r3-8j
+claimed_by: Codex R3-8J executor
+failed_at: 2026-07-07T17:46:23+08:00
+failed_by: Codex R3-8J executor
+result: PROVIDER_FAILED_DURATION_MIN_6
 
 ### Goal
 
-Run exactly one live RunningHub canary only after Jenn provides a fresh exact authorization phrase. This task is not auto-executable while in `FOLLOW_UP`.
+Run exactly one live RunningHub canary under Jenn's fresh exact authorization phrase. This task must not perform a second submit or automatic retry.
 
 ### Notes
 
 - `max_submit_calls=1` must be enforced.
 - Use `duration_seconds=3` from the current R3-8I authorization prep.
 - Upload, submit, status query, and download must be truthfully counted and reported.
+- Result: one authorized upload and one authorized submit were attempted. RunningHub rejected `duration=3` with sanitized evidence that the minimum duration is `6`; no provider job id, output URL, local video artifact, or ffprobe result exists.
 
 ## R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT - Provider Path Decision Closeout
 
