@@ -1,0 +1,176 @@
+{
+  "task": "R3-7_RUNWAY_LIVE_CANARY_AUTHORIZATION",
+  "title": "Runway Live Canary Authorization",
+  "result": "PASS_READY_FOR_USER_AUTHORIZATION",
+  "generated_at": "2026-07-07T11:33:08+08:00",
+  "mode": "authorization_preparation_only",
+  "scope": {
+    "live_runway_submit_allowed": false,
+    "runninghub_call_allowed": false,
+    "provider_network_call_allowed": false,
+    "provider_credits_allowed": false,
+    "real_video_generation_allowed": false,
+    "secret_value_output_allowed": false,
+    "source_asset_overwrite_allowed": false,
+    "push_tag_release_deploy_allowed": false
+  },
+  "readiness": {
+    "strict_canary_dry_run_report_present": true,
+    "strict_canary_dry_run_report_path": "data/reports/m1_r0_runway_canary_dry_run_report.json",
+    "final_guard_report_present": true,
+    "final_guard_report_path": "data/reports/m1_r0_runway_canary_final_guard.json",
+    "selected_input": {
+      "selection_status": "EXPLICIT",
+      "source_type": "fixture_canary_image_provider_path_only",
+      "path": "fixtures/provider-canary/m1-r0/shot_001_canary_720x1280.png",
+      "exists": true,
+      "readable_by_prior_guard": true,
+      "width": 720,
+      "height": 1280,
+      "aspect_ratio": "9:16",
+      "runway_ratio": "768:1280",
+      "duration_seconds": 2,
+      "source_asset_overwrite_allowed": false
+    },
+    "provider": {
+      "active_provider": "runway",
+      "selected_provider": "runway",
+      "endpoint": "POST /v1/image_to_video",
+      "x_runway_version": "2024-11-06",
+      "model_name": "gen4.5",
+      "max_submit_calls": 1,
+      "duration_seconds": 2,
+      "project_aspect_ratio": "9:16",
+      "runway_ratio": "768:1280",
+      "direct_9_16_sent_to_runway": false
+    },
+    "credential": {
+      "credential_env_name": "RUNWAYML_API_SECRET",
+      "credential_present": true,
+      "credential_value_recorded": false,
+      "masked_credential_preview_recorded": false,
+      "secret_values_exposed": false
+    },
+    "output_boundary": {
+      "planned_output_directory": "data/media/provider-canary/m1-r0-runway-canary/",
+      "isolated_from_source_assets": true,
+      "durable_storage_policy": "download provider output into local media artifact storage",
+      "post_download_validation": "ffprobe required before any generated_clip artifact is accepted as active",
+      "source_assets_overwritten": false
+    }
+  },
+  "hard_gate_checks": [
+    {
+      "id": "dry_run_report_present",
+      "status": "PASS",
+      "evidence": "data/reports/m1_r0_runway_canary_dry_run_report.json"
+    },
+    {
+      "id": "input_image_explicit_and_readable",
+      "status": "PASS",
+      "evidence": "data/reports/m1_r0_runway_canary_final_guard.json"
+    },
+    {
+      "id": "provider_is_runway",
+      "status": "PASS",
+      "evidence": "data/reports/provider_env_check_result.json"
+    },
+    {
+      "id": "endpoint_and_version",
+      "status": "PASS",
+      "evidence": "src/tools/videoProviderAdapters.ts"
+    },
+    {
+      "id": "single_submit_duration_and_ratio",
+      "status": "PASS",
+      "evidence": "src/tools/runwayCanary.ts and tests/m1-provider-boundary.test.ts"
+    },
+    {
+      "id": "credential_presence_boolean_only",
+      "status": "PASS",
+      "evidence": "data/reports/provider_preflight_result.json"
+    },
+    {
+      "id": "no_provider_side_effects",
+      "status": "PASS",
+      "network_call_attempted": false,
+      "runway_called": false,
+      "runninghub_called": false,
+      "provider_credits_consumed": false,
+      "real_video_generated": false
+    }
+  ],
+  "authorization_required_for_next_step": {
+    "required": true,
+    "reason": "The next step would make a real Runway image-to-video provider call that may consume credits and produce one generated video.",
+    "exact_authorization_phrase": "授权执行 1 次 Runway single-submit canary 真实调用：provider=runway，endpoint=POST /v1/image_to_video，X-Runway-Version=2024-11-06，model=gen4.5，input=fixtures/provider-canary/m1-r0/shot_001_canary_720x1280.png，duration_seconds=2，ratio=768:1280，max_submit_calls=1，预算/费用上限=仅允许这 1 次 canary submit 且不允许自动重试或第二次计费调用，output_dir=data/media/provider-canary/m1-r0-runway-canary/，成功后下载为本地 media artifact 并 ffprobe 校验；不得调用 RunningHub，不得 regeneration，不得 batch，不得发布/部署，不得覆盖源资产，不得打印 secret。",
+    "must_stop_if": [
+      "authorization phrase is absent or changed",
+      "active provider is not runway",
+      "RUNWAYML_API_SECRET is not present",
+      "ratio would be 9:16 instead of 768:1280",
+      "duration_seconds is not 2",
+      "more than one submit would be attempted",
+      "provider asks for retry or a second billable submit",
+      "output cannot be downloaded into local media artifact storage",
+      "ffprobe validation fails",
+      "any secret value would be printed"
+    ]
+  },
+  "validation": {
+    "commands": [
+      {
+        "command": "npm run env:check",
+        "status": "PASS",
+        "network_call_attempted": false,
+        "secret_values_printed": false
+      },
+      {
+        "command": "npm run provider:preflight",
+        "status": "PASS",
+        "network_call_attempted": false,
+        "secret_values_printed": false,
+        "masked_credential_preview": null
+      },
+      {
+        "command": "npm run typecheck",
+        "status": "PASS"
+      },
+      {
+        "command": "npm run test:g0",
+        "status": "PASS",
+        "reason": "covers provider env secret-safety regression after removing credential previews"
+      },
+      {
+        "command": "npm run secret:scan",
+        "status": "PASS",
+        "findings": []
+      },
+      {
+        "command": "git diff --check",
+        "status": "PASS",
+        "notes": "Windows line-ending warnings only; no diff-check errors."
+      }
+    ],
+    "overall": "PASS"
+  },
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runway_called": false,
+    "runninghub_called": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "secret_values_exposed": false,
+    "source_assets_overwritten": false,
+    "publish_deploy_attempted": false
+  },
+  "safe_patch_applied": {
+    "provider_preflight_no_longer_emits_masked_credential_preview": true,
+    "reason": "R3-7 requires credential presence to be represented only as a boolean before live-call authorization."
+  },
+  "next_step": {
+    "status": "AWAITING_EXACT_JENN_AUTHORIZATION",
+    "live_call_ready_after_authorization": true,
+    "live_call_performed_by_this_task": false
+  }
+}

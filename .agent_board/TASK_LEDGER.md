@@ -426,6 +426,61 @@ Boundary:
 Next:
 - Start sustained execution by claiming `R3-0_LOCAL_APP_CONTRACT_FREEZE_AND_H1_API_SUPPORT`.
 
+### 2026-07-07T11:34:21+08:00 - R3-7 Runway live canary authorization preparation
+
+Result: DONE / PASS_READY_FOR_USER_AUTHORIZATION
+Project: AI Video Production Workspace Three Route Plan
+Lane: Approval Boundary Preparation
+Run ID: codex-20260707-113015-r3-7
+
+Scope:
+- Prepared the exact authorization checklist for a single future Runway canary.
+- Confirmed strict dry-run and final guard evidence.
+- Confirmed provider, endpoint, version, duration, ratio mapping, max submit count, and output boundary.
+- Tightened provider preflight so credential presence is boolean-only and no masked credential preview is emitted.
+
+Changed files:
+- `.agent_board/NEXT_TASK.json`
+- `.agent_board/NEXT_TASK.md`
+- `.agent_board/RUN_LOCK.md`
+- `.agent_board/TASK_BACKLOG.md`
+- `.agent_board/VALIDATION_LOG.md`
+- `.agent_board/HANDOFF.md`
+- `data/reports/r3_7_runway_live_canary_authorization_result.json`
+- `data/reports/r3_7_runway_live_canary_authorization_result_20260707T113308+0800.json`
+- `src/tools/providerEnv.ts`
+- `tests/provider-env-secret-safety.test.ts`
+
+Validation:
+- command: `npm run env:check`
+  result: PASS
+- command: `npm run provider:preflight`
+  result: PASS
+- command: `npm run typecheck`
+  result: PASS
+- command: `npm run test:g0`
+  result: PASS
+- command: `npm run secret:scan`
+  result: PASS
+- command: `git diff --check`
+  result: PASS
+
+Evidence:
+- `data/reports/r3_7_runway_live_canary_authorization_result.json`
+- `data/reports/r3_7_runway_live_canary_authorization_result_20260707T113308+0800.json`
+- `data/reports/m1_r0_runway_canary_dry_run_report.json`
+- `data/reports/m1_r0_runway_canary_final_guard.json`
+- `data/reports/provider_env_check_result.json`
+- `data/reports/provider_preflight_result.json`
+- `data/reports/secret_scan_result.json`
+
+Boundary:
+- No Runway submit, RunningHub call, provider network call, credit consumption, real video generation, source overwrite, push, tag, release, or deploy occurred.
+- A live Runway canary remains blocked until Jenn provides the exact authorization phrase in the R3-7 report.
+
+Next:
+- Await exact Jenn authorization before live Runway canary execution.
+
 ### 2026-07-07T10:47:46+08:00 - Three-route acceptance review and handoff cleanup
 
 Result: DONE / PASS_WITH_MINOR_RISKS_RECORDED

@@ -7,7 +7,7 @@
   "error_code": null,
   "credential_env_name": "RUNWAYML_API_SECRET",
   "credential_present": true,
-  "masked_credential_preview": "key****8333",
+  "masked_credential_preview": null,
   "network_call_attempted": false,
   "env_file": {
     "env_file_path": "A:\\AI Video Production Workspace\\.env.local",

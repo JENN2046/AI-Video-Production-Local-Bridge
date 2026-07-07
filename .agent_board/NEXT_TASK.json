@@ -2,43 +2,50 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "R1-5_MCP_V3_PRODUCTION_ASSISTANT",
+  "task_id": "R3-7_RUNWAY_LIVE_CANARY_AUTHORIZATION",
   "status": "DONE",
-  "priority": "P2",
-  "lane": "Safe Local Production Lane",
+  "priority": "P0",
+  "lane": "Approval Boundary Preparation",
   "project": "AI Video Production Workspace Three Route Plan",
-  "title": "MCP v3 Production Assistant",
+  "title": "Runway Live Canary Authorization",
   "scope": [
-    "GPT production assistant planning tools for generation, regeneration, assembly, and memory saveback proposals"
+    "prepare exact Jenn authorization checklist for one live Runway canary",
+    "do not submit provider request"
   ],
-  "goal": "Let GPT assist with generation, regeneration, final assembly, and memory saveback planning while Human Workbench remains the hard gate and Local App remains the only executor.",
+  "goal": "Prepare the exact authorization surface for a single live Runway canary after the local three-route workflow has passed. This task must stop before any live provider submit.",
   "acceptance": [
-    "Tools are defined for propose generation plan, propose regeneration plan, propose final assembly plan, and propose memory saveback.",
-    "GPT proposes but does not execute real provider calls.",
-    "GPT cannot approve final delivery.",
-    "GPT cannot write long-term memory.",
-    "Human Workbench remains hard gate and Local App remains executor."
+    "Confirm latest strict canary dry-run report is present.",
+    "Confirm selected input image is explicit and readable.",
+    "Confirm provider is runway.",
+    "Confirm endpoint is /v1/image_to_video.",
+    "Confirm X-Runway-Version=2024-11-06.",
+    "Confirm duration is 2.",
+    "Confirm max submit calls is 1.",
+    "Confirm project aspect ratio 9:16 maps to Runway 768:1280.",
+    "Confirm RUNWAYML_API_SECRET presence is checked only as a boolean and no secret value is printed.",
+    "Produce exact Jenn authorization phrase/checklist naming provider, max submit calls, input image, duration, budget/cost bound, and stop condition.",
+    "Report network_call_attempted=false, runway_called=false, runninghub_called=false, provider_credits_consumed=false, and real_video_generated=false."
   ],
   "validation": [
-    "npm run typecheck",
-    "npm run test:webgpt:production",
-    "npm run r1:5:production-assistant",
+    "npm run env:check",
+    "npm run provider:preflight",
     "npm run secret:scan",
     "git diff --check"
   ],
   "allowed_delivery": [
-    "source_code_change",
-    "tests",
-    "planning_tools",
-    "tool_schema",
-    "docs_update"
+    "authorization_checklist",
+    "readiness_review",
+    "dry_run_report_reference",
+    "handoff",
+    "validation_log"
   ],
   "blocked_delivery": [
-    "real_provider_call",
-    "final_delivery_approval",
-    "long_term_memory_write",
-    "secret_read",
-    "shell_execution",
+    "runway_submit",
+    "runninghub_call",
+    "network_call_attempted",
+    "provider_credits_consumed",
+    "real_video_generated",
+    "secret_value_output",
     "source_overwrite",
     "push",
     "tag",
@@ -46,24 +53,29 @@
     "deploy"
   ],
   "depends_on": [
-    "R2-5_H5_MEMORY_ASSET_WORKBENCH"
+    "R1-5_MCP_V3_PRODUCTION_ASSISTANT"
   ],
   "claimed_by": "Codex sustained executor",
-  "claim_run_id": "codex-20260706-203847-three-route-sustained",
-  "claimed_at": "2026-07-06T23:35:00+08:00",
+  "claim_run_id": "codex-20260707-113015-r3-7",
+  "claimed_at": "2026-07-07T11:30:15+08:00",
   "completed_by": "Codex sustained executor",
-  "completed_at": "2026-07-06T23:45:00+08:00",
+  "completed_at": "2026-07-07T11:34:21+08:00",
   "blocked_by": null,
   "blocked_at": null,
   "failed_by": null,
   "failed_at": null,
   "skipped_by": null,
   "skipped_at": null,
-  "result": "PASS",
+  "result": "PASS_READY_FOR_USER_AUTHORIZATION",
   "validation_result": "PASS",
   "evidence": [
-    "data/reports/r1_5_mcp_v3_production_assistant_result.json",
-    "data/reports/r1_5_mcp_v3_production_assistant_result_28dcfff8-329d-4e3a-a6fb-2017ecb2aed7.json"
+    "data/reports/r3_7_runway_live_canary_authorization_result.json",
+    "data/reports/r3_7_runway_live_canary_authorization_result_20260707T113308+0800.json",
+    "data/reports/m1_r0_runway_canary_dry_run_report.json",
+    "data/reports/m1_r0_runway_canary_final_guard.json",
+    "data/reports/provider_env_check_result.json",
+    "data/reports/provider_preflight_result.json",
+    "data/reports/secret_scan_result.json"
   ],
   "commit": null,
   "delivery": "local_only",
@@ -71,16 +83,20 @@
   "blocked_reason": null,
   "failure_reason": null,
   "safe_actions_completed": [
-    "implemented WebGPT v3 production assistant plan-only tools",
-    "implemented localhost-only v3 bridge",
-    "added production assistant tests and report script"
+    "confirmed strict canary dry-run report and final guard evidence",
+    "confirmed provider=runway, endpoint=/v1/image_to_video, X-Runway-Version=2024-11-06",
+    "confirmed duration_seconds=2, max_submit_calls=1, and runway_ratio=768:1280",
+    "confirmed RUNWAYML_API_SECRET presence as a boolean only",
+    "removed masked credential preview output from provider preflight",
+    "generated exact Jenn authorization phrase and stop conditions"
   ],
   "unsafe_action_not_performed": [
-    "real_provider_call",
-    "final_delivery_approval",
-    "long_term_memory_write",
-    "secret_read",
-    "shell_execution",
+    "runway_submit",
+    "runninghub_call",
+    "network_call_attempted",
+    "provider_credits_consumed",
+    "real_video_generated",
+    "secret_value_output",
     "source_overwrite",
     "push",
     "tag",
@@ -88,6 +104,8 @@
     "deploy"
   ],
   "options_for_jenn": [],
-  "next_safe_option": [],
-  "updated_at": "2026-07-06T23:45:00+08:00"
+  "next_safe_option": [
+    "Wait for exact Jenn authorization before any live Runway submit."
+  ],
+  "updated_at": "2026-07-07T11:34:21+08:00"
 }

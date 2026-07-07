@@ -1,12 +1,12 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260706-203847-three-route-sustained
-Last result: R1-5 completed; acceptance review package generated; Runway live canary authorization task opened
+Last run: codex-20260707-113015-r3-7
+Last result: R3-7 completed; Runway live canary authorization checklist prepared; live submit still requires exact Jenn authorization
 
 ## Current state
 
-Current task: R1-5_MCP_V3_PRODUCTION_ASSISTANT
+Current task: R3-7_RUNWAY_LIVE_CANARY_AUTHORIZATION
 Current status: DONE
 Current owner: None
 
@@ -62,8 +62,10 @@ Current owner: None
 - Final sustained-loop validation passed across M0, M1, G0, H1, memory saveback, WebGPT v0/v0.5/v1/v2/v3, secret scan, and diff check.
 - Commander acceptance review package generated at `ops/reports/three_route_acceptance_review_package_20260707_103611/THREE_ROUTE_ACCEPTANCE_REVIEW.md`.
 - Handoff header was cleaned up on 2026-07-07 to reflect final `R1-5 / DONE` state.
-- Did not modify `.agent_board/NEXT_TASK.json`.
-- Did not claim or execute any imported task.
+- R3-7 completed on 2026-07-07 with `PASS_READY_FOR_USER_AUTHORIZATION` and wrote `data/reports/r3_7_runway_live_canary_authorization_result.json`.
+- Provider preflight was tightened so credential presence is boolean-only and no masked credential preview is emitted.
+- Earlier acceptance-review cleanup did not modify `.agent_board/NEXT_TASK.json`; R3-7 later updated it as the active queue state.
+- Earlier acceptance-review cleanup did not claim or execute imported tasks; R3-7 was later claimed and completed as authorization preparation.
 - M0 handoff prompt captured at `docs/m0/M0_Codex_Handoff_Prompt_v1.1.md`.
 - M0 phase decomposition captured at `docs/m0/M0_TASK_DECOMPOSITION.md`.
 - M0-000 through M0-H executed in order.
@@ -86,7 +88,7 @@ Current owner: None
 
 ## Remaining READY tasks
 
-- `R3-7_RUNWAY_LIVE_CANARY_AUTHORIZATION`
+- None
 
 ## Closeout evidence
 
@@ -112,6 +114,8 @@ Current owner: None
 - `data/reports/memory_saveback_result.json`
 - `data/reports/r2_5_h5_memory_asset_workbench_result.json`
 - `data/reports/r1_5_mcp_v3_production_assistant_result.json`
+- `data/reports/r3_7_runway_live_canary_authorization_result.json`
+- `data/reports/r3_7_runway_live_canary_authorization_result_20260707T113308+0800.json`
 - `ops/reports/three_route_acceptance_review_package_20260707_103611/THREE_ROUTE_ACCEPTANCE_REVIEW.md`
 - `ops/reports/three_route_acceptance_review_package_20260707_103611/README.md`
 
@@ -123,6 +127,5 @@ Current owner: None
 
 ## Next recommended action
 
-- Commit the acceptance review package, handoff cleanup, and Runway live canary authorization task.
-- Then run `R3-7_RUNWAY_LIVE_CANARY_AUTHORIZATION` to prepare the exact authorization checklist.
-- Do not perform a live Runway submit until Jenn provides exact current authorization after the checklist.
+- Review `data/reports/r3_7_runway_live_canary_authorization_result.json`.
+- Do not perform a live Runway submit until Jenn provides the exact current authorization phrase from that report.

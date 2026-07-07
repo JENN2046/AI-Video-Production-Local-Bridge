@@ -52,7 +52,7 @@ test("Provider gates block missing execution, cost ack, unsupported provider, an
   assert.equal(missingCredential.error_code, "PROVIDER_CREDENTIAL_MISSING");
 });
 
-test("Provider preflight can become ready without exposing the raw dummy secret", () => {
+test("Provider preflight can become ready without exposing any credential preview", () => {
   const ready = providerPreflight({
     REAL_PROVIDER_ENABLED: "true",
     M1_REAL_PROVIDER: "runway",
@@ -64,7 +64,9 @@ test("Provider preflight can become ready without exposing the raw dummy secret"
   assert.equal(ready.result, "PASS");
   assert.equal(ready.status, "READY_FOR_AUTHORIZED_REAL_CALL");
   assert.equal(ready.network_call_attempted, false);
-  assert.notEqual(ready.masked_credential_preview, DUMMY_SECRET);
+  assert.equal(ready.masked_credential_preview, null);
+  assert.equal(JSON.stringify(ready).includes(DUMMY_SECRET), false);
+  assert.equal(JSON.stringify(ready).includes("dum****1234"), false);
   assert.equal(maskSecret(DUMMY_SECRET), "dum****1234");
 });
 
@@ -97,7 +99,9 @@ test("Provider env loader reads allowed keys from a local env file without retur
 
   const ready = providerPreflight(env);
   assert.equal(ready.result, "PASS");
-  assert.equal(ready.masked_credential_preview, "dum****1234");
+  assert.equal(ready.masked_credential_preview, null);
+  assert.equal(JSON.stringify(ready).includes(DUMMY_SECRET), false);
+  assert.equal(JSON.stringify(ready).includes("dum****1234"), false);
 });
 
 test("Secret scan covers tracked text files and reports without reading credentials", () => {

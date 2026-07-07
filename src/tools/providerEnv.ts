@@ -44,6 +44,7 @@ export interface ProviderPreflight {
   error_code: string | null;
   credential_env_name: string | null;
   credential_present: boolean;
+  /** Deprecated: kept for report shape compatibility; do not derive previews from secret values. */
   masked_credential_preview: string | null;
   network_call_attempted: false;
 }
@@ -260,7 +261,7 @@ export function providerPreflight(env: NodeJS.ProcessEnv = process.env): Provide
       error_code: selected.error.code,
       credential_env_name: credentialEnvName,
       credential_present: credentialEnvName ? Boolean(env[credentialEnvName]) : false,
-      masked_credential_preview: maskSecret(credentialEnvName ? env[credentialEnvName] : undefined),
+      masked_credential_preview: null,
       network_call_attempted: false
     };
   }
@@ -274,7 +275,7 @@ export function providerPreflight(env: NodeJS.ProcessEnv = process.env): Provide
     error_code: null,
     credential_env_name: credentialEnvName,
     credential_present: credentialEnvName ? Boolean(env[credentialEnvName]) : false,
-    masked_credential_preview: maskSecret(credentialEnvName ? env[credentialEnvName] : undefined),
+    masked_credential_preview: null,
     network_call_attempted: false
   };
 }

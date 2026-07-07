@@ -935,3 +935,33 @@ Notes:
 - `.agent_board/RUN_LOCK.md` is inactive.
 - No H1 or WebGPT bridge helper server remains running.
 - `git diff --check` emitted CRLF normalization warnings only.
+
+### R3-7 - 2026-07-07T11:34:21+08:00
+
+Commands:
+
+```bash
+npm run env:check
+npm run provider:preflight
+npm run typecheck
+npm run test:g0
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_READY_FOR_USER_AUTHORIZATION
+```
+
+Evidence:
+- `data/reports/r3_7_runway_live_canary_authorization_result.json`
+- `data/reports/r3_7_runway_live_canary_authorization_result_20260707T113308+0800.json`
+- `data/reports/provider_env_check_result.json`
+- `data/reports/provider_preflight_result.json`
+- `data/reports/secret_scan_result.json`
+
+Notes:
+- `provider:preflight` now reports credential presence as a boolean only; masked credential preview remains `null`.
+- No provider network call, Runway submit, RunningHub call, credit consumption, real video generation, source overwrite, push, tag, release, or deploy occurred.

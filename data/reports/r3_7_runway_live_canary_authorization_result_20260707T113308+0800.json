@@ -1,0 +1,39 @@
+{
+  "task": "R3-7_RUNWAY_LIVE_CANARY_AUTHORIZATION",
+  "title": "Runway Live Canary Authorization",
+  "result": "PASS_READY_FOR_USER_AUTHORIZATION",
+  "generated_at": "2026-07-07T11:33:08+08:00",
+  "latest_pointer": "data/reports/r3_7_runway_live_canary_authorization_result.json",
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runway_called": false,
+    "runninghub_called": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "secret_values_exposed": false,
+    "source_assets_overwritten": false
+  },
+  "authorization_required_for_next_step": {
+    "required": true,
+    "exact_authorization_phrase": "授权执行 1 次 Runway single-submit canary 真实调用：provider=runway，endpoint=POST /v1/image_to_video，X-Runway-Version=2024-11-06，model=gen4.5，input=fixtures/provider-canary/m1-r0/shot_001_canary_720x1280.png，duration_seconds=2，ratio=768:1280，max_submit_calls=1，预算/费用上限=仅允许这 1 次 canary submit 且不允许自动重试或第二次计费调用，output_dir=data/media/provider-canary/m1-r0-runway-canary/，成功后下载为本地 media artifact 并 ffprobe 校验；不得调用 RunningHub，不得 regeneration，不得 batch，不得发布/部署，不得覆盖源资产，不得打印 secret。"
+  },
+  "evidence": [
+    "data/reports/r3_7_runway_live_canary_authorization_result.json",
+    "data/reports/m1_r0_runway_canary_dry_run_report.json",
+    "data/reports/m1_r0_runway_canary_final_guard.json",
+    "data/reports/provider_env_check_result.json",
+    "data/reports/provider_preflight_result.json",
+    "data/reports/secret_scan_result.json"
+  ],
+  "validation": {
+    "overall": "PASS",
+    "commands": [
+      "npm run env:check",
+      "npm run provider:preflight",
+      "npm run typecheck",
+      "npm run test:g0",
+      "npm run secret:scan",
+      "git diff --check"
+    ]
+  }
+}
