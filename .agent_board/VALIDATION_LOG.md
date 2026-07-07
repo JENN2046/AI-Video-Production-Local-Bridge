@@ -1210,6 +1210,32 @@ Notes:
 - No generated channel/provider link exists yet because no live RunningHub call has been made.
 - `git diff --check` passed with CRLF normalization warnings only.
 
+### R3-8J-RECEIPT-FIX - 2026-07-07T18:23:37+08:00
+
+Commands:
+
+```bash
+node -e JSON.parse(...)
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_RECEIPT_FIXED
+```
+
+Evidence:
+- `data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json`
+- git commit `1f68c36`
+
+Notes:
+- Backfilled R3-8J implementation commit `1f68c36`.
+- Receipt records `upload_call_count=1`, `submit_call_count=1`, `query_call_count=0`, `provider_job_id_present=false`, `real_video_generated=false`, and no output/channel link.
+- Receipt records provider-side duration evidence: `duration=3` is below minimum value `6`.
+- No RunningHub call, Runway call, upload, submit, query, output download, provider credit consumption, real video generation, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
+
 ### R3-8J - 2026-07-07T17:46:23+08:00
 
 Commands:

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "slot": "current",
   "task_id": "R3-8J_RECEIPT_FIX",
-  "status": "READY",
+  "status": "DONE",
   "priority": "P0",
   "lane": "Provider Evidence Receipt",
   "project": "AI Video Production Workspace Three Route Plan",
@@ -51,29 +51,36 @@
     "R3-8J_RUNNINGHUB_REAL_KEYFRAME_SINGLE_SUBMIT_CANARY"
   ],
   "created_at": "2026-07-07T17:55:56+08:00",
-  "updated_at": "2026-07-07T17:55:56+08:00",
-  "claimed_by": null,
-  "claim_run_id": null,
-  "claimed_at": null,
-  "completed_by": null,
-  "completed_at": null,
+  "updated_at": "2026-07-07T18:23:37+08:00",
+  "claimed_by": "Codex R3-8J receipt fixer",
+  "claim_run_id": "codex-20260707-182337-r3-8j-receipt-fix",
+  "claimed_at": "2026-07-07T18:23:37+08:00",
+  "completed_by": "Codex R3-8J receipt fixer",
+  "completed_at": "2026-07-07T18:23:37+08:00",
   "blocked_by": null,
   "blocked_at": null,
   "failed_by": null,
   "failed_at": null,
   "skipped_by": null,
   "skipped_at": null,
-  "result": null,
-  "validation_result": null,
+  "result": "PASS_RECEIPT_FIXED",
+  "validation_result": "PASS",
   "evidence": [
-    "data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json"
+    "data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json",
+    "data/reports/secret_scan_result.json"
   ],
   "commit": null,
   "delivery": "local_only",
   "boundary_or_safety_stop": "stop before any live RunningHub upload, submit, query, output download, provider credit consumption, or real video generation",
   "blocked_reason": null,
   "failure_reason": null,
-  "safe_actions_completed": [],
+  "safe_actions_completed": [
+    "backfilled R3-8J implementation commit 1f68c36",
+    "recorded upload_call_count=1 and submit_call_count=1",
+    "recorded query_call_count=0 and provider_job_id_present=false",
+    "recorded RunningHub duration minimum value 6 evidence",
+    "left R3-8L as the next eligible offline duration-contract repair task"
+  ],
   "unsafe_action_not_performed": [
     "runninghub_call",
     "runway_call",
@@ -92,7 +99,7 @@
   ],
   "options_for_jenn": [],
   "next_safe_option": [
-    "After the receipt fix, the worker may continue to R3-8L for offline duration-contract repair.",
+    "Worker may continue to R3-8L for offline duration-contract repair.",
     "Do not run R3-8M without a fresh exact current Jenn authorization phrase."
   ]
 }

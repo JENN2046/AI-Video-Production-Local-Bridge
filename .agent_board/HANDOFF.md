@@ -115,6 +115,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - R3-8I duration override completed on 2026-07-07: the current RunningHub authorization prep now uses `duration_seconds=3` per Jenn's request. No channel/provider link exists yet because no live RunningHub upload or submit has occurred.
 - R3-8J executed one authorized RunningHub upload and one authorized submit on 2026-07-07. Result: `PROVIDER_FAILED_DURATION_MIN_6`; RunningHub rejected `duration=3` because the minimum value is `6`. No provider job id, output URL, local video artifact, ffprobe result, or channel link exists.
 - Follow-up queue arranged on 2026-07-07: `R3-8J_RECEIPT_FIX` is READY, `R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN` is READY behind the receipt fix dependency, and `R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY` remains FOLLOW_UP pending Jenn's fresh exact authorization.
+- R3-8J receipt fix completed locally: R3-8J evidence now references commit `1f68c36`, upload count `1`, submit count `1`, query count `0`, no job id, no output/channel link, and minimum duration `6`.
 
 ## Blocked in last run
 
@@ -130,8 +131,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 
 ## Remaining READY tasks
 
-- `R3-8J_RECEIPT_FIX`
-- `R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN` after `R3-8J_RECEIPT_FIX` completes
+- `R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN`
 
 ## Closeout evidence
 
@@ -179,8 +179,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 ## Next recommended action
 
 - R3-8J is `FAILED` with `PROVIDER_FAILED_DURATION_MIN_6`; do not rerun it automatically.
-- Next task is `R3-8J_RECEIPT_FIX`, a no-network receipt repair for commit `1f68c36`.
-- After that, run `R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN` to enforce RunningHub minimum duration `6` before upload/submit.
+- Next task is `R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN` to enforce RunningHub minimum duration `6` before upload/submit.
 - Any next RunningHub retry must be a new exact current Jenn authorization phrase and should use `duration_seconds=6`.
 - Do not submit to RunningHub without a future exact current Jenn authorization phrase.
 - Do not retry Runway canary without a new exact current Jenn authorization phrase.

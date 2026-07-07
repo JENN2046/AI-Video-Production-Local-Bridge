@@ -2031,3 +2031,53 @@ Risks:
 
 Next:
 - Any next RunningHub retry requires a fresh exact current Jenn authorization phrase and should use `duration_seconds=6`.
+
+### 2026-07-07T18:23:37+08:00 - R3-8J Receipt Fix
+
+Result: DONE / PASS_RECEIPT_FIXED
+Project: AI Video Production Workspace Three Route Plan
+Lane: Provider Evidence Receipt
+Claimed by: Codex R3-8J receipt fixer
+Completed by: Codex R3-8J receipt fixer
+Run ID: codex-20260707-182337-r3-8j-receipt-fix
+Started at: 2026-07-07T18:23:37+08:00
+Completed at: 2026-07-07T18:23:37+08:00
+
+Scope:
+- Backfilled R3-8J commit and failure evidence receipt.
+- Recorded RunningHub duration minimum evidence before retry planning.
+- Kept all provider actions forbidden.
+
+Changed files:
+- data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json
+- .agent_board/NEXT_TASK.json
+- .agent_board/RUN_LOCK.md
+- .agent_board/TASK_BACKLOG.md
+- .agent_board/HANDOFF.md
+- .agent_board/VALIDATION_LOG.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: node -e JSON.parse(...)
+  result: PASS
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json
+- git commit: 1f68c36
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: pending_at_ledger_write
+- push: no
+- PR: none
+
+Boundary:
+- No RunningHub call, Runway call, media upload to provider, status query, output download, provider credit consumption, real video generation, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
+
+Next:
+- Continue to `R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN`.

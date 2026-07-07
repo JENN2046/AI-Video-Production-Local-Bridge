@@ -1992,7 +1992,7 @@ Run exactly one live RunningHub canary under Jenn's fresh exact authorization ph
 
 ## R3-8J_RECEIPT_FIX - R3-8J RunningHub Duration Failure Receipt Fix
 
-status: READY
+status: IN_PROGRESS
 priority: P0
 lane: Provider Evidence Receipt
 project: AI Video Production Workspace Three Route Plan
@@ -2004,7 +2004,13 @@ report_path: data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_re
 allowed_delivery: receipt_metadata_update,task_board_update,local_commit
 blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,secret_value_output,raw_provider_payload_recording,source_overwrite,push,tag,release,deploy
 created_at: 2026-07-07T17:55:56+08:00
-updated_at: 2026-07-07T17:55:56+08:00
+updated_at: 2026-07-07T18:23:37+08:00
+claimed_at: 2026-07-07T18:23:37+08:00
+claim_run_id: codex-20260707-182337-r3-8j-receipt-fix
+claimed_by: Codex R3-8J receipt fixer
+completed_at: 2026-07-07T18:23:37+08:00
+completed_by: Codex R3-8J receipt fixer
+result: PASS_RECEIPT_FIXED
 
 ### Goal
 
@@ -2018,6 +2024,7 @@ Repair the R3-8J audit chain before any further RunningHub retry planning.
 - Record the provider-side duration contract evidence: `duration=3` is below minimum value `6`.
 - Leave R3-8L as the next eligible offline duration-contract repair task.
 - Do not call RunningHub or Runway.
+- Receipt fixed: R3-8J implementation commit is `1f68c36`; upload count `1`, submit count `1`, query count `0`, job id absent, output/channel link absent, and RunningHub minimum duration is `6`.
 
 ### Validation
 

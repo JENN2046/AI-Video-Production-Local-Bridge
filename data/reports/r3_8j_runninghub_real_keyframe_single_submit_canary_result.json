@@ -136,6 +136,32 @@
     "tag_created": false,
     "release_or_deploy_performed": false
   },
+  "failure_receipt": {
+    "receipt_status": "COMPLETE",
+    "implementation_commit": "1f68c36",
+    "upload_call_count": 1,
+    "submit_call_count": 1,
+    "query_call_count": 0,
+    "provider_job_id_present": false,
+    "channel_link_available": false,
+    "output_url_available": false,
+    "local_video_artifact_created": false,
+    "real_video_generated": false,
+    "duration_seconds_attempted": 3,
+    "provider_minimum_duration_seconds": 6,
+    "sanitized_provider_error_code": "1007",
+    "sanitized_provider_error_message": "field 'duration' value 3 is less than the minimum value 6",
+    "no_retry_or_second_submit": true
+  },
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "1f68c36",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  },
   "validation": {
     "npm run r3:8j:live": "PROVIDER_FAILED_DURATION_MIN_6",
     "npm run typecheck": "PASS",

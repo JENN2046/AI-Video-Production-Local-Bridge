@@ -13,6 +13,9 @@ last_completed_at: 2026-07-07T17:18:38+08:00
 last_failed_run_id: codex-20260707-174355-r3-8j
 last_failed_task: R3-8J_RUNNINGHUB_REAL_KEYFRAME_SINGLE_SUBMIT_CANARY
 last_failed_at: 2026-07-07T17:46:23+08:00
+last_completed_receipt_run_id: codex-20260707-182337-r3-8j-receipt-fix
+last_completed_receipt_task: R3-8J_RECEIPT_FIX
+last_completed_receipt_at: 2026-07-07T18:23:37+08:00
 
 ## Rules
 
