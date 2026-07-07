@@ -2081,3 +2081,65 @@ Boundary:
 
 Next:
 - Continue to `R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN`.
+
+### 2026-07-07T18:31:23+08:00 - R3-8L RunningHub Duration Contract Repair Dry Run
+
+Result: DONE / PASS_DURATION_CONTRACT_REPAIRED
+Project: AI Video Production Workspace Three Route Plan
+Lane: Provider Contract Repair
+Claimed by: Codex R3-8L executor
+Completed by: Codex R3-8L executor
+Run ID: codex-20260707-182633-r3-8l
+Started at: 2026-07-07T18:26:33+08:00
+Completed at: 2026-07-07T18:31:23+08:00
+
+Scope:
+- Repaired RunningHub duration minimum contract offline.
+- Added fail-fast guard before any future live retry.
+- Produced a dry-run plan for the same real storyboard keyframe using `duration_seconds=6`.
+
+Changed files:
+- package.json
+- src/tools/videoProviderAdapters.ts
+- src/index.ts
+- scripts/r3-8i-runninghub-real-keyframe-authorization-prep.ts
+- scripts/r3-8l-runninghub-duration-contract-repair-dry-run.ts
+- tests/m1-provider-boundary.test.ts
+- data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json
+- .agent_board/NEXT_TASK.json
+- .agent_board/NEXT_TASK.md
+- .agent_board/RUN_LOCK.md
+- .agent_board/TASK_BACKLOG.md
+- .agent_board/HANDOFF.md
+- .agent_board/VALIDATION_LOG.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: npm run r3:8l:dry-run
+  result: PASS
+- command: npm run typecheck
+  result: PASS
+- command: npm run test:m1
+  result: PASS
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json
+- data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json
+- data/reports/secret_scan_result.json
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: pending_at_ledger_write
+- push: no
+- PR: none
+
+Boundary:
+- No RunningHub call, Runway call, media upload to provider, status query, output download, provider credit consumption, real video generation, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
+
+Next:
+- Stop at `R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY` until Jenn provides a fresh exact current authorization phrase with `duration_seconds=6`.

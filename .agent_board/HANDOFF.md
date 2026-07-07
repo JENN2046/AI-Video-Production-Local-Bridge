@@ -116,6 +116,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - R3-8J executed one authorized RunningHub upload and one authorized submit on 2026-07-07. Result: `PROVIDER_FAILED_DURATION_MIN_6`; RunningHub rejected `duration=3` because the minimum value is `6`. No provider job id, output URL, local video artifact, ffprobe result, or channel link exists.
 - Follow-up queue arranged on 2026-07-07: `R3-8J_RECEIPT_FIX` is READY, `R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN` is READY behind the receipt fix dependency, and `R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY` remains FOLLOW_UP pending Jenn's fresh exact authorization.
 - R3-8J receipt fix completed locally: R3-8J evidence now references commit `1f68c36`, upload count `1`, submit count `1`, query count `0`, no job id, no output/channel link, and minimum duration `6`.
+- R3-8L completed locally: RunningHub duration guard now blocks `duration_seconds=3` before upload/submit and dry-runs the next real-keyframe plan with `duration_seconds=6`, `max_upload_calls=1`, `max_submit_calls=1`, and `query_until_terminal=true`.
 
 ## Blocked in last run
 
@@ -131,7 +132,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 
 ## Remaining READY tasks
 
-- `R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN`
+- None
 
 ## Closeout evidence
 
@@ -167,6 +168,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - `data/reports/r3_8h_runninghub_adapter_skeleton_offline_result.json`
 - `data/reports/r3_8i_runninghub_real_keyframe_authorization_prep_result.json`
 - `data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json`
+- `data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json`
 - `ops/reports/three_route_acceptance_review_package_20260707_103611/THREE_ROUTE_ACCEPTANCE_REVIEW.md`
 - `ops/reports/three_route_acceptance_review_package_20260707_103611/README.md`
 
@@ -179,7 +181,8 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 ## Next recommended action
 
 - R3-8J is `FAILED` with `PROVIDER_FAILED_DURATION_MIN_6`; do not rerun it automatically.
-- Next task is `R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN` to enforce RunningHub minimum duration `6` before upload/submit.
-- Any next RunningHub retry must be a new exact current Jenn authorization phrase and should use `duration_seconds=6`.
+- R3-8L enforced RunningHub minimum duration `6` before upload/submit.
+- Next possible task is `R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY`, but it remains `FOLLOW_UP` and must not run automatically.
+- Any next RunningHub retry must be a new exact current Jenn authorization phrase and must use `duration_seconds=6`.
 - Do not submit to RunningHub without a future exact current Jenn authorization phrase.
 - Do not retry Runway canary without a new exact current Jenn authorization phrase.

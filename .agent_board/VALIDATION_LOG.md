@@ -1236,6 +1236,36 @@ Notes:
 - Receipt records provider-side duration evidence: `duration=3` is below minimum value `6`.
 - No RunningHub call, Runway call, upload, submit, query, output download, provider credit consumption, real video generation, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
 
+### R3-8L - 2026-07-07T18:31:23+08:00
+
+Commands:
+
+```bash
+npm run r3:8l:dry-run
+npm run typecheck
+npm run test:m1
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_DURATION_CONTRACT_REPAIRED
+```
+
+Evidence:
+- `data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json`
+- `data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json`
+- `data/reports/secret_scan_result.json`
+
+Notes:
+- Encoded RunningHub `rhart-video-g/image-to-video` minimum duration as `6`.
+- `duration_seconds=3` now fails locally before upload or submit request construction.
+- Dry-run plan uses `duration_seconds=6`, `max_upload_calls=1`, `max_submit_calls=1`, and `query_until_terminal=true`.
+- No RunningHub call, Runway call, upload, submit, query, output download, provider credit consumption, real video generation, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
+- `git diff --check` passed with CRLF normalization warnings only.
+
 ### R3-8J - 2026-07-07T17:46:23+08:00
 
 Commands:

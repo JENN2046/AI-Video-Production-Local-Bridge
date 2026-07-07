@@ -20,7 +20,8 @@ export const RUNNINGHUB_IMAGE_TO_VIDEO_ENDPOINT = `/openapi/v2/${RUNNINGHUB_MODE
 export const RUNNINGHUB_QUERY_ENDPOINT = "/openapi/v2/query";
 export const RUNNINGHUB_MEDIA_UPLOAD_ENDPOINT = "/openapi/v2/media/upload/binary";
 export const RUNNINGHUB_DEFAULT_RESOLUTION = "480p";
-export const RUNNINGHUB_DOC_EXAMPLE_DURATION_SECONDS = 6;
+export const RUNNINGHUB_MIN_DURATION_SECONDS = 6;
+export const RUNNINGHUB_DOC_EXAMPLE_DURATION_SECONDS = RUNNINGHUB_MIN_DURATION_SECONDS;
 export const RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER = "<RUNNINGHUB_UPLOAD_DOWNLOAD_URL>";
 export const RUNNINGHUB_AUTHORIZATION_HEADER_PLACEHOLDER = "Bearer <RUNNINGHUB_API_KEY>";
 export const RUNNINGHUB_MEDIA_UPLOAD_FILE_FIELD = "file";
@@ -361,7 +362,7 @@ export function mapRunningHubAspectRatio(aspectRatio: string): string | null {
 
 export function normalizeRunningHubDurationForDryRun(durationSeconds: number): number | null {
   if (!Number.isInteger(durationSeconds)) return null;
-  if (durationSeconds <= 0) return null;
+  if (durationSeconds < RUNNINGHUB_MIN_DURATION_SECONDS) return null;
   return durationSeconds;
 }
 
@@ -473,7 +474,13 @@ export function buildRunningHubImageToVideoSubmitRequest(input: {
 
   const duration = normalizeRunningHubDurationForDryRun(input.generation_input.duration_seconds);
   if (duration === null) {
-    return { ok: false, error: providerError("PROVIDER_UNSUPPORTED_INPUT", `Unsupported RunningHub duration: ${input.generation_input.duration_seconds}.`) };
+    return {
+      ok: false,
+      error: providerError(
+        "PROVIDER_UNSUPPORTED_INPUT",
+        `Unsupported RunningHub duration: ${input.generation_input.duration_seconds}. Minimum supported duration is ${RUNNINGHUB_MIN_DURATION_SECONDS}.`
+      )
+    };
   }
 
   const uploadedDownloadUrl = input.uploaded_download_url ?? RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER;
@@ -742,7 +749,10 @@ export function buildRunningHubImageToVideoDryRunPlan(input: ProviderGenerationI
 
   const duration = normalizeRunningHubDurationForDryRun(input.duration_seconds);
   if (duration === null) {
-    return { ok: false, error: providerError("PROVIDER_UNSUPPORTED_INPUT", `Unsupported RunningHub duration: ${input.duration_seconds}.`) };
+    return {
+      ok: false,
+      error: providerError("PROVIDER_UNSUPPORTED_INPUT", `Unsupported RunningHub duration: ${input.duration_seconds}. Minimum supported duration is ${RUNNINGHUB_MIN_DURATION_SECONDS}.`)
+    };
   }
 
   return {
@@ -806,7 +816,7 @@ export function buildRunningHubImageToVideoDryRunPlan(input: ProviderGenerationI
       },
       unresolved_fields: [
         "Official page does not enumerate all supported aspectRatio values; 9:16 remains planned for vertical output.",
-        "Official page shows duration examples but does not enumerate the full supported duration range.",
+        "R3-8J sanitized provider evidence established minimum duration 6; maximum supported duration remains unresolved.",
         "Official page does not document a native negative_prompt field for this model API.",
         "Local app media requires a future RunningHub upload step before imageUrls can be populated."
       ],

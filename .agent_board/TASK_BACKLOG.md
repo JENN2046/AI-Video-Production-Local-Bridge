@@ -2034,7 +2034,7 @@ Repair the R3-8J audit chain before any further RunningHub retry planning.
 
 ## R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN - RunningHub Duration Contract Repair Dry Run
 
-status: READY
+status: DONE
 priority: P0
 lane: Provider Contract Repair
 project: AI Video Production Workspace Three Route Plan
@@ -2046,7 +2046,16 @@ report_path: data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_resu
 allowed_delivery: source_code_change,tests,dry_run_report,task_board_update,local_commit
 blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,secret_value_output,raw_provider_payload_recording,source_overwrite,push,tag,release,deploy
 created_at: 2026-07-07T17:55:56+08:00
-updated_at: 2026-07-07T17:55:56+08:00
+updated_at: 2026-07-07T18:26:33+08:00
+claimed_by: Codex R3-8L executor
+claim_run_id: codex-20260707-182633-r3-8l
+claimed_at: 2026-07-07T18:26:33+08:00
+completed_by: Codex R3-8L executor
+completed_at: 2026-07-07T18:31:23+08:00
+result: PASS_DURATION_CONTRACT_REPAIRED
+validation_result: PASS
+evidence: data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json
+delivery: local_only
 
 ### Goal
 

@@ -29,6 +29,7 @@ import {
   paths,
   redactSecrets,
   registerMediaArtifact,
+  RUNNINGHUB_MIN_DURATION_SECONDS,
   RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER,
   RUNNINGHUB_IMAGE_TO_VIDEO_ENDPOINT,
   RUNNINGHUB_MEDIA_UPLOAD_ENDPOINT,
@@ -141,8 +142,9 @@ test("M1 RunningHub dry-run freezes official endpoint shape without provider cal
   assert.equal(mapRunningHubAspectRatio("9:16"), "9:16");
   assert.equal(mapRunningHubAspectRatio("1:1"), "1:1");
   assert.equal(mapRunningHubAspectRatio("4:5"), null);
-  assert.equal(normalizeRunningHubDurationForDryRun(3), 3);
-  assert.equal(normalizeRunningHubDurationForDryRun(6), 6);
+  assert.equal(RUNNINGHUB_MIN_DURATION_SECONDS, 6);
+  assert.equal(normalizeRunningHubDurationForDryRun(3), null);
+  assert.equal(normalizeRunningHubDurationForDryRun(6), RUNNINGHUB_MIN_DURATION_SECONDS);
   assert.equal(normalizeRunningHubDurationForDryRun(0), null);
 
   const request = buildRunningHubImageToVideoDryRunPlan({
@@ -221,6 +223,22 @@ test("M1 RunningHub upload-first request builders stay offline and sanitized", (
   assert.equal(submit.summary.negative_prompt_supported, false);
   assert.equal(submit.summary.image_url_values_included, false);
   assert.equal(submit.summary.raw_provider_payload_included, false);
+
+  const durationTooShort = buildRunningHubImageToVideoSubmitRequest({
+    generation_input: {
+      storyboard_artifact: artifact,
+      video_prompt: "Animate portrait shot.",
+      negative_prompt: "blur",
+      duration_seconds: 3,
+      aspect_ratio: "9:16",
+      resolution: "480p"
+    },
+    uploaded_download_url: RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER
+  });
+  assert.equal(durationTooShort.ok, false);
+  if (durationTooShort.ok) throw new Error("duration_seconds=3 should fail before RunningHub submit request construction.");
+  assert.equal(durationTooShort.error.code, "PROVIDER_UNSUPPORTED_INPUT");
+  assert.equal(durationTooShort.error.message.includes("Minimum supported duration is 6"), true);
 
   const query = buildRunningHubQueryRequest("runninghub_task_synthetic");
   assert.equal(query.ok, true);

@@ -1,46 +1,39 @@
 # NEXT_TASK.md
 
-Status: READY
+Status: DONE
 
-Task: R3-8J_RECEIPT_FIX
+Task: R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN
 
-Title: R3-8J RunningHub Duration Failure Receipt Fix
+Title: RunningHub Duration Contract Repair Dry Run
 
 Priority: P0
 
-Lane: Provider Evidence Receipt
+Lane: Provider Contract Repair
 
 Project: AI Video Production Workspace Three Route Plan
 
-Depends on: R3-8J_RUNNINGHUB_REAL_KEYFRAME_SINGLE_SUBMIT_CANARY
+Depends on: R3-8J_RECEIPT_FIX
 
-## Goal
+## Result
 
-Repair the R3-8J audit chain before any further RunningHub retry planning.
+`PASS_DURATION_CONTRACT_REPAIRED`
 
-## Required Work
+## Completed Work
 
-- Backfill R3-8J commit `1f68c36` into the R3-8J report, backlog, and ledger where applicable.
-- Record that RunningHub received exactly one upload and exactly one submit.
-- Record that `query_call_count=0`, `provider_job_id_present=false`, and no channel/output URL exists.
-- Record the provider-side duration contract evidence: `duration=3` is below minimum value `6`.
-- Leave R3-8L as the next eligible offline duration-contract repair task.
-
-## Acceptance
-
-- No network call is attempted.
-- No RunningHub upload, submit, query, poll, or output download is attempted.
-- No Runway call is attempted.
-- No provider credits are consumed.
-- No real video is generated.
-- No secret values, signed URLs, raw provider payloads, or source assets are exposed or overwritten.
+- Encoded RunningHub minimum duration as `6` for `rhart-video-g/image-to-video`.
+- Added the local fail-fast guard so `duration_seconds=3` is blocked before upload or submit request construction.
+- Updated request-plan builders and authorization-prep logic to use `duration_seconds=6` for this RunningHub model.
+- Added tests proving `duration_seconds=3` is blocked locally.
+- Produced `data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json`.
 
 ## Validation
 
-- JSON parse for updated report files
-- `npm run secret:scan`
-- `git diff --check`
+- `npm run r3:8l:dry-run` PASS
+- `npm run typecheck` PASS
+- `npm run test:m1` PASS
+- `npm run secret:scan` PASS
+- `git diff --check` PASS_WITH_CRLF_WARNINGS_ONLY
 
 ## Stop Reason
 
-Stop before any live RunningHub upload, submit, status query, provider output download, provider credit consumption, or real video generation. Any new live provider action requires a future exact current Jenn authorization phrase.
+Stop before `R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY`. Any live RunningHub upload, submit, status query, output download, provider credit consumption, or real video generation requires a fresh exact current Jenn authorization phrase with `duration_seconds=6`.

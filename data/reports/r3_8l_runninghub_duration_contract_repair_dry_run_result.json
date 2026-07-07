@@ -1,0 +1,174 @@
+{
+  "task": "R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN",
+  "result": "PASS_DURATION_CONTRACT_REPAIRED",
+  "mode": "dry_run",
+  "generated_at": "2026-07-07T10:30:32.990Z",
+  "source_reports": {
+    "r3_8j_failure_receipt": "data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json",
+    "g0_freeze": "data/reports/g0_r1_package_freeze_result.json"
+  },
+  "duration_contract": {
+    "provider": "runninghub",
+    "model_route": "rhart-video-g/image-to-video",
+    "source_evidence": "R3-8J sanitized provider failure receipt",
+    "min_duration_seconds": 6,
+    "rejected_duration_seconds": 3,
+    "accepted_duration_seconds": 6,
+    "r3_8j_attempted_duration_seconds": 3,
+    "r3_8j_provider_minimum_duration_seconds": 6,
+    "sanitized_provider_error_code": "1007",
+    "sanitized_provider_error_message": "field 'duration' value 3 is less than the minimum value 6",
+    "local_guard_blocks_before_upload_or_submit": true,
+    "local_guard_error": {
+      "code": "PROVIDER_UNSUPPORTED_INPUT",
+      "retryable": false,
+      "message": "Unsupported RunningHub duration: 3. Minimum supported duration is 6.",
+      "sanitized_provider_error_summary": null
+    },
+    "upload_request_not_required_for_rejected_duration": true,
+    "no_retry_or_second_submit_from_r3_8j": true
+  },
+  "selected_keyframe": {
+    "artifact_id": "artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7",
+    "source_path": "A:\\AI Video Production Workspace\\data\\imports\\g0_r1_SHOT_001_IMAGE_ACCEPTED_WEBGPT.png",
+    "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png",
+    "mime_type": "image/png",
+    "width": 941,
+    "height": 1672,
+    "aspect_ratio": "941:1672",
+    "near_vertical_9_16": true,
+    "sha256": "efbea3aa2507cd7d431501eafba3206cf6cfd000174b2d6109371b5e37e6a474",
+    "byte_size": 2243051,
+    "source_readable": true,
+    "storage_readable": true,
+    "artifact_role": "storyboard_image",
+    "artifact_status": "active",
+    "artifact_id_from_app_registry": true,
+    "source_asset_overwritten": false
+  },
+  "project_linkage": {
+    "project_id": "project_b742cb15-e44e-41b2-8d2d-4b90a30720df",
+    "project_title": "Ryan's Lunch Break Skullcap",
+    "storyboard_package_id": "storyboard_package_1e5c1eca-624e-4687-9775-31e4b59f428a",
+    "shot_id": "g0_r1_shot_001",
+    "package_shot_duration_seconds": 3,
+    "runninghub_next_canary_duration_seconds": 6
+  },
+  "dry_run_plan": {
+    "provider": "runninghub",
+    "model_route": "rhart-video-g/image-to-video",
+    "upload_endpoint": "POST /openapi/v2/media/upload/binary",
+    "submit_endpoint": "POST /openapi/v2/rhart-video-g/image-to-video",
+    "query_endpoint": "POST /openapi/v2/query",
+    "duration_seconds": 6,
+    "aspectRatio": "9:16",
+    "resolution": "480p",
+    "max_upload_calls": 1,
+    "max_submit_calls": 1,
+    "query_until_terminal": true,
+    "retry_allowed": false,
+    "second_submit_allowed": false,
+    "upload": {
+      "endpoint": "POST /openapi/v2/media/upload/binary",
+      "method": "POST",
+      "file_field": "file",
+      "file_name": "artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png",
+      "mime_type": "image/png",
+      "file_size_bytes": 2243051,
+      "sha256": "efbea3aa2507cd7d431501eafba3206cf6cfd000174b2d6109371b5e37e6a474",
+      "binary_payload_included": false,
+      "base64_included": false,
+      "authorization_value_included": false
+    },
+    "submit": {
+      "endpoint": "POST /openapi/v2/rhart-video-g/image-to-video",
+      "method": "POST",
+      "request_fields": [
+        "prompt",
+        "aspectRatio",
+        "imageUrls",
+        "resolution",
+        "duration"
+      ],
+      "prompt_text_length": 262,
+      "negative_prompt_supported": false,
+      "negative_prompt_text_length": 73,
+      "image_url_values_included": false,
+      "image_url_placeholder_used": true,
+      "raw_provider_payload_included": false
+    },
+    "query": {
+      "endpoint": "POST /openapi/v2/query",
+      "method": "POST",
+      "body_shape": {
+        "taskId": "string"
+      },
+      "task_id_value_included": false,
+      "status_query_not_a_second_submit": true
+    },
+    "output_handling_if_succeeded": {
+      "output_dir": "data/media/provider-canary/r3-8m-runninghub-6s-real-keyframe/",
+      "download_to_local_media_artifact_storage": true,
+      "ffprobe_validation_required": true,
+      "source_asset_overwrite_allowed": false
+    }
+  },
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "upload_attempted": false,
+    "submit_attempted": false,
+    "status_poll_attempted": false,
+    "output_download_attempted": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "source_assets_overwritten": false,
+    "secret_values_exposed": false,
+    "raw_provider_payload_recorded": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  },
+  "acceptance": {
+    "r3_8j_failure_receipt_complete": true,
+    "duration_3_blocked_before_upload_or_submit": true,
+    "duration_6_submit_plan_ready": true,
+    "upload_plan_ready_for_duration_6": true,
+    "query_plan_ready": true,
+    "max_upload_calls_one": true,
+    "max_submit_calls_one": true,
+    "query_until_terminal_true": true,
+    "no_network_call": true,
+    "no_provider_credit_consumption": true,
+    "no_real_video_generated": true,
+    "no_secret_base64_authorization_or_raw_payload_leak": true
+  },
+  "validation": {
+    "npm run r3:8l:dry-run": "PASS",
+    "npm run typecheck": "PASS",
+    "npm run test:m1": "PASS",
+    "npm run secret:scan": "PASS",
+    "git diff --check": "PASS_WITH_CRLF_WARNINGS_ONLY"
+  },
+  "changed_files": [
+    "package.json",
+    "src/tools/videoProviderAdapters.ts",
+    "src/index.ts",
+    "scripts/r3-8i-runninghub-real-keyframe-authorization-prep.ts",
+    "scripts/r3-8l-runninghub-duration-contract-repair-dry-run.ts",
+    "tests/m1-provider-boundary.test.ts",
+    "data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json",
+    ".agent_board/*"
+  ],
+  "blocked_reason": null,
+  "next_step": {
+    "recommended_task": "R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY",
+    "requires_user_authorization_for_real_call": true,
+    "required_duration_seconds": 6,
+    "live_upload_submit_poll_download_requires_new_exact_user_authorization": true,
+    "do_not_run_automatically": true
+  }
+}

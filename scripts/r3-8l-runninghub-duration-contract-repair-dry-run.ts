@@ -24,17 +24,17 @@ import {
   type ProviderToolError
 } from "../src/index.js";
 
-const TASK = "R3-8I_RUNNINGHUB_REAL_KEYFRAME_AUTHORIZATION_PREP";
-const OUTPUT_REPORT_PATH = "data/reports/r3_8i_runninghub_real_keyframe_authorization_prep_result.json";
+const TASK = "R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN";
+const OUTPUT_REPORT_PATH = "data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json";
+const R3_8J_REPORT_PATH = "data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json";
 const G0_FREEZE_REPORT_PATH = "data/reports/g0_r1_package_freeze_result.json";
-const R3_8G_REPORT_PATH = "data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json";
-const R3_8H_REPORT_PATH = "data/reports/r3_8h_runninghub_adapter_skeleton_offline_result.json";
 const SELECTED_ARTIFACT_ID = "artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7";
 const SELECTED_SOURCE_PATH = "A:\\AI Video Production Workspace\\data\\imports\\g0_r1_SHOT_001_IMAGE_ACCEPTED_WEBGPT.png";
 const SELECTED_STORAGE_URI = "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png";
-const OUTPUT_DIR = "data/media/provider-canary/r3-8j-runninghub-real-keyframe/";
-const SYNTHETIC_QUERY_TASK_ID = "runninghub_task_authorization_prep_only";
-const RUNNINGHUB_CANARY_DURATION_SECONDS = RUNNINGHUB_MIN_DURATION_SECONDS;
+const OUTPUT_DIR = "data/media/provider-canary/r3-8m-runninghub-6s-real-keyframe/";
+const REJECTED_DURATION_SECONDS = 3;
+const ACCEPTED_DURATION_SECONDS = RUNNINGHUB_MIN_DURATION_SECONDS;
+const SYNTHETIC_QUERY_TASK_ID = "runninghub_task_duration_contract_repair_only";
 
 interface G0FreezeReport {
   project?: { project_id?: string; title?: string };
@@ -48,7 +48,31 @@ interface G0FreezeReport {
   }>;
 }
 
-type R3_8IResult = "PASS_READY_FOR_USER_AUTHORIZATION" | "BLOCK_WITH_REASON";
+interface R3_8JReport {
+  result?: string;
+  live_execution?: {
+    upload_call_count?: number;
+    submit_call_count?: number;
+    query_call_count?: number;
+    provider_job_id_present?: boolean;
+    error?: {
+      sanitized_provider_error_summary?: {
+        provider_error_code?: string;
+        provider_error_message?: string;
+      };
+    };
+  };
+  failure_receipt?: {
+    receipt_status?: string;
+    duration_seconds_attempted?: number;
+    provider_minimum_duration_seconds?: number;
+    sanitized_provider_error_code?: string;
+    sanitized_provider_error_message?: string;
+    no_retry_or_second_submit?: boolean;
+  };
+}
+
+type R3_8LResult = "PASS_DURATION_CONTRACT_REPAIRED" | "BLOCK_WITH_REASON";
 
 function readJson<T>(path: string): T | null {
   const absolute = resolve(paths.workspaceRoot, path);
@@ -61,54 +85,24 @@ function safeError(error: ProviderToolError | null): Record<string, unknown> | n
   return {
     code: error.code,
     retryable: error.retryable === true,
+    message: error.message,
     sanitized_provider_error_summary: error.sanitized_provider_error_summary ?? null
   };
 }
 
-function reportResult(blockReason: string | null): R3_8IResult {
-  return blockReason ? "BLOCK_WITH_REASON" : "PASS_READY_FOR_USER_AUTHORIZATION";
+function resultFor(blockReason: string | null): R3_8LResult {
+  return blockReason ? "BLOCK_WITH_REASON" : "PASS_DURATION_CONTRACT_REPAIRED";
 }
 
-function containsForbiddenSecretText(value: unknown): boolean {
+function noForbiddenLeak(value: unknown): boolean {
   const serialized = JSON.stringify(value);
   return (
-    /Bearer\s+[A-Za-z0-9._~+/=-]{8,}/.test(serialized) ||
-    /base64,[A-Za-z0-9+/=]{32,}/.test(serialized) ||
-    serialized.includes("data:image/") ||
-    serialized.includes("RUNNINGHUB_API_KEY=") ||
-    serialized.includes("RUNWAYML_API_SECRET=")
+    !/Bearer\s+[A-Za-z0-9._~+/=-]{8,}/.test(serialized) &&
+    !serialized.includes("RUNNINGHUB_API_KEY=") &&
+    !serialized.includes("RUNWAYML_API_SECRET=") &&
+    !serialized.includes("data:image/") &&
+    !/base64,[A-Za-z0-9+/=]{32,}/.test(serialized)
   );
-}
-
-function exactAuthorizationPhrase(input: {
-  selectedArtifactId: string;
-  sourcePath: string;
-  storageUri: string;
-  durationSeconds: number;
-  aspectRatio: string;
-  resolution: string;
-}): string {
-  const details = [
-    "provider=runninghub",
-    `upload_endpoint=POST ${RUNNINGHUB_MEDIA_UPLOAD_ENDPOINT}`,
-    `submit_endpoint=POST ${RUNNINGHUB_IMAGE_TO_VIDEO_ENDPOINT}`,
-    `query_endpoint=POST ${RUNNINGHUB_QUERY_ENDPOINT}`,
-    `model_route=${RUNNINGHUB_MODEL_ROUTE}`,
-    `selected_artifact_id=${input.selectedArtifactId}`,
-    `source_path=${input.sourcePath}`,
-    `storage_uri=${input.storageUri}`,
-    `duration_seconds=${input.durationSeconds}`,
-    `aspectRatio=${input.aspectRatio}`,
-    `resolution=${input.resolution}`,
-    "max_upload_calls=1",
-    "max_submit_calls=1",
-    "预算/费用上限=仅允许这 1 次 upload-first canary submit 且不允许自动重试或第二次计费 submit",
-    `output_dir=${OUTPUT_DIR}`,
-    "允许同一 taskId 的状态查询直到终态或超时；成功后下载为本地 media artifact 并 ffprobe 校验",
-    "授权只读使用本地 .env.local 中 RUNNINGHUB_API_KEY 用于本次 RunningHub 调用，但不得打印 secret 值",
-    "不得调用 Runway，不得 regeneration，不得 batch，不得发布/部署，不得覆盖源资产，不得打印 secret，不得记录 raw provider payload。"
-  ].join("，");
-  return `授权执行 1 次 RunningHub upload-first real-storyboard-keyframe single-submit canary 真实调用：${details}`;
 }
 
 ensureM0Directories();
@@ -120,8 +114,7 @@ try {
   const runwayConfig = providerConfigs.find((config) => config.provider_name === "runway");
   const artifact = getMediaArtifact(db, SELECTED_ARTIFACT_ID);
   const freezeReport = readJson<G0FreezeReport>(G0_FREEZE_REPORT_PATH);
-  const r3_8gReport = readJson<Record<string, unknown>>(R3_8G_REPORT_PATH);
-  const r3_8hReport = readJson<Record<string, unknown>>(R3_8H_REPORT_PATH);
+  const r3_8jReport = readJson<R3_8JReport>(R3_8J_REPORT_PATH);
   const selectedShot = freezeReport?.shots?.find((shot) => shot.storyboard_image_artifact_id === SELECTED_ARTIFACT_ID);
   const projectId = freezeReport?.project?.project_id ?? "";
   const packageId = freezeReport?.storyboard_package?.storyboard_package_id ?? "";
@@ -132,19 +125,20 @@ try {
   const storageValidation = artifact?.storage.uri ? validateImageFile(artifact.storage.uri) : null;
   const sourceValidation = validateImageFile(SELECTED_SOURCE_PATH);
   const storageSize = artifact?.storage.uri && existsSync(artifact.storage.uri) ? statSync(artifact.storage.uri).size : 0;
-  const durationSeconds = RUNNINGHUB_CANARY_DURATION_SECONDS;
-  const aspectRatio = "9:16";
-  const resolution = RUNNINGHUB_DEFAULT_RESOLUTION;
+
+  const r3_8jMinimum = r3_8jReport?.failure_receipt?.provider_minimum_duration_seconds ?? null;
+  const r3_8jAttemptedDuration = r3_8jReport?.failure_receipt?.duration_seconds_attempted ?? null;
+  const r3_8jMessage = r3_8jReport?.failure_receipt?.sanitized_provider_error_message ?? "";
 
   let blockReason: string | null = null;
   if (!runningHubConfig?.primary || runningHubConfig.status !== "primary_real_provider") {
     blockReason = "RunningHub is not primary_real_provider in local registry.";
   } else if (runwayConfig?.primary !== false || runwayConfig?.status !== "secondary_selectable_provider_port") {
     blockReason = "Runway is not secondary_selectable_provider_port in local registry.";
-  } else if (!r3_8gReport || r3_8gReport.result !== "PASS_CONTRACT_FREEZE_DRY_RUN") {
-    blockReason = "R3-8G contract freeze report is missing or not PASS.";
-  } else if (!r3_8hReport || r3_8hReport.result !== "PASS_ADAPTER_SKELETON_OFFLINE") {
-    blockReason = "R3-8H offline adapter skeleton report is missing or not PASS.";
+  } else if (!r3_8jReport || r3_8jReport.failure_receipt?.receipt_status !== "COMPLETE") {
+    blockReason = "R3-8J failure receipt is missing or incomplete.";
+  } else if (r3_8jAttemptedDuration !== REJECTED_DURATION_SECONDS || r3_8jMinimum !== RUNNINGHUB_MIN_DURATION_SECONDS) {
+    blockReason = "R3-8J duration evidence does not match rejected duration 3 and minimum duration 6.";
   } else if (!artifact || artifact.artifact_id !== SELECTED_ARTIFACT_ID) {
     blockReason = "Selected keyframe artifact is missing from app registry.";
   } else if (resolve(artifact.storage.uri) !== resolve(SELECTED_STORAGE_URI)) {
@@ -156,16 +150,30 @@ try {
   }
 
   const uploadRequest = artifact ? buildRunningHubMediaUploadRequest({ storyboard_artifact: artifact }) : null;
-  const submitRequest =
+  const rejectedSubmitRequest =
     artifact && shot
       ? buildRunningHubImageToVideoSubmitRequest({
           generation_input: {
             storyboard_artifact: artifact,
             video_prompt: shot.video_prompt,
             negative_prompt: shot.negative_prompt,
-            duration_seconds: durationSeconds,
-            aspect_ratio: aspectRatio,
-            resolution
+            duration_seconds: REJECTED_DURATION_SECONDS,
+            aspect_ratio: "9:16",
+            resolution: RUNNINGHUB_DEFAULT_RESOLUTION
+          },
+          uploaded_download_url: RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER
+        })
+      : null;
+  const acceptedSubmitRequest =
+    artifact && shot
+      ? buildRunningHubImageToVideoSubmitRequest({
+          generation_input: {
+            storyboard_artifact: artifact,
+            video_prompt: shot.video_prompt,
+            negative_prompt: shot.negative_prompt,
+            duration_seconds: ACCEPTED_DURATION_SECONDS,
+            aspect_ratio: "9:16",
+            resolution: RUNNINGHUB_DEFAULT_RESOLUTION
           },
           uploaded_download_url: RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER
         })
@@ -173,33 +181,37 @@ try {
   const queryRequest = buildRunningHubQueryRequest(SYNTHETIC_QUERY_TASK_ID);
 
   if (uploadRequest && !uploadRequest.ok && !blockReason) blockReason = uploadRequest.error.message;
-  if (submitRequest && !submitRequest.ok && !blockReason) blockReason = submitRequest.error.message;
+  if (rejectedSubmitRequest?.ok === true && !blockReason) blockReason = "duration_seconds=3 unexpectedly built a RunningHub submit request.";
+  if (rejectedSubmitRequest && !rejectedSubmitRequest.ok && rejectedSubmitRequest.error.code !== "PROVIDER_UNSUPPORTED_INPUT" && !blockReason) {
+    blockReason = "duration_seconds=3 failed with an unexpected error class.";
+  }
+  if (acceptedSubmitRequest && !acceptedSubmitRequest.ok && !blockReason) blockReason = acceptedSubmitRequest.error.message;
   if (!queryRequest.ok && !blockReason) blockReason = queryRequest.error.message;
-
-  const authorizationPhrase = exactAuthorizationPhrase({
-    selectedArtifactId: SELECTED_ARTIFACT_ID,
-    sourcePath: SELECTED_SOURCE_PATH,
-    storageUri: SELECTED_STORAGE_URI,
-    durationSeconds,
-    aspectRatio,
-    resolution
-  });
 
   const payload = {
     task: TASK,
-    result: reportResult(blockReason),
+    result: resultFor(blockReason),
+    mode: "dry_run",
     generated_at: new Date().toISOString(),
     source_reports: {
-      r3_8g_contract_freeze: R3_8G_REPORT_PATH,
-      r3_8h_adapter_skeleton: R3_8H_REPORT_PATH,
+      r3_8j_failure_receipt: R3_8J_REPORT_PATH,
       g0_freeze: G0_FREEZE_REPORT_PATH
     },
-    local_registry: {
-      runninghub_primary: runningHubConfig?.primary === true,
-      runninghub_status: runningHubConfig?.status ?? null,
-      runninghub_model_name: runningHubConfig?.model_name ?? null,
-      runway_secondary: runwayConfig?.primary === false && runwayConfig.status === "secondary_selectable_provider_port",
-      runway_fallback_allowed: false
+    duration_contract: {
+      provider: "runninghub",
+      model_route: RUNNINGHUB_MODEL_ROUTE,
+      source_evidence: "R3-8J sanitized provider failure receipt",
+      min_duration_seconds: RUNNINGHUB_MIN_DURATION_SECONDS,
+      rejected_duration_seconds: REJECTED_DURATION_SECONDS,
+      accepted_duration_seconds: ACCEPTED_DURATION_SECONDS,
+      r3_8j_attempted_duration_seconds: r3_8jAttemptedDuration,
+      r3_8j_provider_minimum_duration_seconds: r3_8jMinimum,
+      sanitized_provider_error_code: r3_8jReport?.failure_receipt?.sanitized_provider_error_code ?? null,
+      sanitized_provider_error_message: r3_8jMessage || null,
+      local_guard_blocks_before_upload_or_submit: rejectedSubmitRequest?.ok === false,
+      local_guard_error: rejectedSubmitRequest?.ok === false ? safeError(rejectedSubmitRequest.error) : null,
+      upload_request_not_required_for_rejected_duration: true,
+      no_retry_or_second_submit_from_r3_8j: r3_8jReport?.failure_receipt?.no_retry_or_second_submit === true
     },
     selected_keyframe: {
       artifact_id: artifact?.artifact_id ?? SELECTED_ARTIFACT_ID,
@@ -217,7 +229,6 @@ try {
       artifact_role: artifact?.role ?? null,
       artifact_status: artifact?.status ?? null,
       artifact_id_from_app_registry: artifact?.artifact_id === SELECTED_ARTIFACT_ID,
-      gpt_invented_artifact_id: false,
       source_asset_overwritten: false
     },
     project_linkage: {
@@ -226,14 +237,22 @@ try {
       storyboard_package_id: storyboardPackage?.storyboard_package_id ?? null,
       shot_id: shot?.shot_id ?? selectedShot?.shot_id ?? null,
       package_shot_duration_seconds: selectedShot?.duration_seconds ?? shot?.duration_seconds ?? null,
-      runninghub_canary_duration_seconds: durationSeconds,
-      duration_policy:
-        "Use 6 seconds for future RunningHub live retries. R3-8J sanitized provider evidence showed duration=3 is below the minimum value 6; do not retry live without a fresh exact current Jenn authorization phrase."
+      runninghub_next_canary_duration_seconds: ACCEPTED_DURATION_SECONDS
     },
-    live_canary_plan: {
+    dry_run_plan: {
       provider: "runninghub",
       model_route: RUNNINGHUB_MODEL_ROUTE,
-      upload_first_required: true,
+      upload_endpoint: `POST ${RUNNINGHUB_MEDIA_UPLOAD_ENDPOINT}`,
+      submit_endpoint: `POST ${RUNNINGHUB_IMAGE_TO_VIDEO_ENDPOINT}`,
+      query_endpoint: `POST ${RUNNINGHUB_QUERY_ENDPOINT}`,
+      duration_seconds: acceptedSubmitRequest?.ok ? acceptedSubmitRequest.summary.duration : ACCEPTED_DURATION_SECONDS,
+      aspectRatio: acceptedSubmitRequest?.ok ? acceptedSubmitRequest.summary.aspectRatio : "9:16",
+      resolution: acceptedSubmitRequest?.ok ? acceptedSubmitRequest.summary.resolution : RUNNINGHUB_DEFAULT_RESOLUTION,
+      max_upload_calls: 1,
+      max_submit_calls: 1,
+      query_until_terminal: true,
+      retry_allowed: false,
+      second_submit_allowed: false,
       upload: uploadRequest?.ok
         ? {
             endpoint: uploadRequest.summary.endpoint,
@@ -243,37 +262,30 @@ try {
             mime_type: uploadRequest.summary.mime_type,
             file_size_bytes: uploadRequest.summary.file_size_bytes,
             sha256: uploadRequest.summary.sha256,
-            max_upload_calls: 1,
-            authorization_value_included: uploadRequest.summary.auth.authorization_value_included,
             binary_payload_included: uploadRequest.summary.binary_payload_included,
-            base64_included: uploadRequest.summary.base64_included
+            base64_included: uploadRequest.summary.base64_included,
+            authorization_value_included: uploadRequest.summary.auth.authorization_value_included
           }
         : safeError(uploadRequest?.error ?? null),
-      submit: submitRequest?.ok
+      submit: acceptedSubmitRequest?.ok
         ? {
-            endpoint: submitRequest.summary.endpoint,
-            method: submitRequest.method,
+            endpoint: acceptedSubmitRequest.summary.endpoint,
+            method: acceptedSubmitRequest.method,
             request_fields: ["prompt", "aspectRatio", "imageUrls", "resolution", "duration"],
-            prompt_text_length: submitRequest.summary.prompt_text_length,
-            negative_prompt_supported: submitRequest.summary.negative_prompt_supported,
-            negative_prompt_text_length: submitRequest.summary.negative_prompt_text_length,
-            aspectRatio: submitRequest.summary.aspectRatio,
-            image_url_values_included: submitRequest.summary.image_url_values_included,
-            image_url_placeholder_used: submitRequest.summary.imageUrls[0] === RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER,
-            resolution: submitRequest.summary.resolution,
-            duration: submitRequest.summary.duration,
-            max_submit_calls: 1,
-            retry_allowed: false,
-            raw_provider_payload_included: submitRequest.summary.raw_provider_payload_included
+            prompt_text_length: acceptedSubmitRequest.summary.prompt_text_length,
+            negative_prompt_supported: acceptedSubmitRequest.summary.negative_prompt_supported,
+            negative_prompt_text_length: acceptedSubmitRequest.summary.negative_prompt_text_length,
+            image_url_values_included: acceptedSubmitRequest.summary.image_url_values_included,
+            image_url_placeholder_used: acceptedSubmitRequest.summary.imageUrls[0] === RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER,
+            raw_provider_payload_included: acceptedSubmitRequest.summary.raw_provider_payload_included
           }
-        : safeError(submitRequest?.error ?? null),
+        : safeError(acceptedSubmitRequest?.error ?? null),
       query: queryRequest.ok
         ? {
             endpoint: queryRequest.summary.endpoint,
             method: queryRequest.method,
             body_shape: { taskId: "string" },
             task_id_value_included: queryRequest.summary.task_id_value_included,
-            allowed_after_submit_task_id: true,
             status_query_not_a_second_submit: true
           }
         : safeError(queryRequest.error),
@@ -284,31 +296,6 @@ try {
         source_asset_overwrite_allowed: false
       }
     },
-    final_guard: {
-      result: reportResult(blockReason),
-      requires_user_authorization_for_real_call: true,
-      authorization_phrase_must_match: true,
-      env_local_read_allowed_in_this_task: false,
-      live_task_may_require_env_local_read_authorization: true,
-      max_upload_calls: 1,
-      max_submit_calls: 1,
-      retry_allowed: false,
-      second_submit_allowed: false,
-      runninghub_upload_allowed_now: false,
-      runninghub_submit_allowed_now: false,
-      runninghub_query_allowed_now: false,
-      runninghub_output_download_allowed_now: false,
-      runway_fallback_allowed: false,
-      regeneration_allowed: false,
-      batch_generation_allowed: false,
-      publish_allowed: false,
-      deploy_allowed: false,
-      source_overwrite_allowed: false,
-      secret_printing_allowed: false,
-      raw_provider_payload_recording_allowed: false,
-      budget_boundary: "Only one future upload-first RunningHub canary submit may be authorized; no automatic retry or second billable submit."
-    },
-    exact_authorization_phrase: authorizationPhrase,
     provider_boundary: {
       network_call_attempted: false,
       runninghub_called: false,
@@ -329,20 +316,21 @@ try {
       release_or_deploy_performed: false
     },
     acceptance: {
-      selected_artifact_from_app_registry: artifact?.artifact_id === SELECTED_ARTIFACT_ID,
-      upload_first_plan_ready: uploadRequest?.ok === true && uploadRequest.summary.endpoint === `POST ${RUNNINGHUB_MEDIA_UPLOAD_ENDPOINT}`,
-      submit_plan_ready: submitRequest?.ok === true && submitRequest.summary.endpoint === `POST ${RUNNINGHUB_IMAGE_TO_VIDEO_ENDPOINT}`,
-      query_plan_ready: queryRequest.ok === true && queryRequest.summary.endpoint === `POST ${RUNNINGHUB_QUERY_ENDPOINT}`,
+      r3_8j_failure_receipt_complete: r3_8jReport?.failure_receipt?.receipt_status === "COMPLETE",
+      duration_3_blocked_before_upload_or_submit: rejectedSubmitRequest?.ok === false,
+      duration_6_submit_plan_ready: acceptedSubmitRequest?.ok === true,
+      upload_plan_ready_for_duration_6: uploadRequest?.ok === true,
+      query_plan_ready: queryRequest.ok === true,
+      max_upload_calls_one: true,
       max_submit_calls_one: true,
-      retries_disabled: true,
-      batch_regeneration_publish_deploy_source_overwrite_disabled: true,
-      exact_authorization_phrase_generated: authorizationPhrase.length > 0,
+      query_until_terminal_true: true,
       no_network_call: true,
+      no_provider_credit_consumption: true,
+      no_real_video_generated: true,
       no_secret_base64_authorization_or_raw_payload_leak: false
     },
-    blocked_reason: blockReason,
     validation: {
-      "npm run r3:8i:prep": "PASS",
+      "npm run r3:8l:dry-run": "PASS",
       "npm run typecheck": "PENDING",
       "npm run test:m1": "PENDING",
       "npm run secret:scan": "PENDING",
@@ -350,22 +338,28 @@ try {
     },
     changed_files: [
       "package.json",
+      "src/tools/videoProviderAdapters.ts",
+      "src/index.ts",
       "scripts/r3-8i-runninghub-real-keyframe-authorization-prep.ts",
+      "scripts/r3-8l-runninghub-duration-contract-repair-dry-run.ts",
+      "tests/m1-provider-boundary.test.ts",
       OUTPUT_REPORT_PATH,
       ".agent_board/*"
     ],
+    blocked_reason: blockReason,
     next_step: {
-      recommended_task: "R3-8J_RUNNINGHUB_REAL_KEYFRAME_SINGLE_SUBMIT_CANARY",
-      recommended_action: "Run exactly one live RunningHub upload-first canary only after Jenn provides the exact authorization phrase.",
-      live_upload_submit_poll_download_requires_new_exact_user_authorization: true
+      recommended_task: "R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY",
+      requires_user_authorization_for_real_call: true,
+      required_duration_seconds: RUNNINGHUB_MIN_DURATION_SECONDS,
+      live_upload_submit_poll_download_requires_new_exact_user_authorization: true,
+      do_not_run_automatically: true
     }
   };
 
-  payload.acceptance.no_secret_base64_authorization_or_raw_payload_leak = !containsForbiddenSecretText(payload);
+  payload.acceptance.no_secret_base64_authorization_or_raw_payload_leak = noForbiddenLeak(payload);
   if (!payload.acceptance.no_secret_base64_authorization_or_raw_payload_leak && !blockReason) {
-    payload.blocked_reason = "Authorization prep report contains forbidden secret-shaped, base64, Authorization value, or raw provider payload text.";
+    payload.blocked_reason = "Dry-run report contains forbidden secret-shaped, base64, Authorization value, or raw provider payload text.";
     payload.result = "BLOCK_WITH_REASON";
-    payload.final_guard.result = "BLOCK_WITH_REASON";
   }
 
   writeFileSync(join(paths.workspaceRoot, OUTPUT_REPORT_PATH), `${JSON.stringify(payload, null, 2)}\n`, "utf8");
@@ -374,10 +368,10 @@ try {
       {
         result: payload.result,
         report_path: OUTPUT_REPORT_PATH,
-        selected_artifact_id: SELECTED_ARTIFACT_ID,
-        upload_endpoint: `POST ${RUNNINGHUB_MEDIA_UPLOAD_ENDPOINT}`,
-        submit_endpoint: `POST ${RUNNINGHUB_IMAGE_TO_VIDEO_ENDPOINT}`,
-        query_endpoint: `POST ${RUNNINGHUB_QUERY_ENDPOINT}`,
+        min_duration_seconds: RUNNINGHUB_MIN_DURATION_SECONDS,
+        rejected_duration_seconds: REJECTED_DURATION_SECONDS,
+        accepted_duration_seconds: ACCEPTED_DURATION_SECONDS,
+        max_upload_calls: 1,
         max_submit_calls: 1,
         network_call_attempted: false,
         runninghub_called: false,
