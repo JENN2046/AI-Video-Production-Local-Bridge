@@ -1645,7 +1645,7 @@ Evidence:
 Git delivery:
 - repo: yes
 - branch: master
-- commit: pending_at_ledger_write
+- commit: f6a8ba6
 - push: no
 - PR: none
 
@@ -1722,7 +1722,7 @@ Evidence:
 Git delivery:
 - repo: yes
 - branch: master
-- commit: pending_at_ledger_write
+- commit: c8bc6c7
 - push: no
 - PR: none
 
@@ -1790,7 +1790,7 @@ Evidence:
 Git delivery:
 - repo: yes
 - branch: master
-- commit: pending_at_ledger_write
+- commit: b1efae2
 - push: no
 - PR: none
 
@@ -1802,5 +1802,5 @@ Risks:
 - RunningHub docs still do not enumerate the complete aspect-ratio list or duration range on the reviewed official pages.
 
 Next:
-- R3-8I remains FOLLOW_UP until Jenn promotes authorization preparation.
+- R3-8I is promoted to READY for offline authorization preparation.
 - Any live RunningHub upload/submit/query/download requires a future exact current Jenn authorization phrase.

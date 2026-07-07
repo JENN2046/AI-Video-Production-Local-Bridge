@@ -2,28 +2,26 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "R3-8H_RUNNINGHUB_ADAPTER_OR_AUTHORIZATION_NEXT_STEP",
-  "status": "DONE",
+  "task_id": "R3-8I_RUNNINGHUB_REAL_KEYFRAME_AUTHORIZATION_PREP",
+  "status": "READY",
   "priority": "P0",
-  "lane": "Provider Adapter Implementation",
+  "lane": "Approval Boundary Preparation",
   "project": "AI Video Production Workspace Three Route Plan",
-  "title": "RunningHub Adapter Skeleton And Offline Tests",
+  "title": "RunningHub Real Keyframe Authorization Prep",
   "scope": [
-    "implement RunningHub upload-first adapter skeleton",
-    "add request builders, response parsers, error mappers, and offline tests",
+    "prepare exact authorization checklist for one RunningHub real-keyframe live canary",
+    "reuse R3-8G frozen contract and R3-8H offline adapter skeleton evidence",
     "do not call RunningHub or Runway"
   ],
-  "goal": "Implement the local RunningHub adapter skeleton required by the R3-8G frozen contract while keeping the whole task offline.",
+  "goal": "Prepare the exact authorization phrase, final guard, and dry-run plan for a single RunningHub real-keyframe canary. This task must stop before any live provider upload or submit.",
   "acceptance": [
-    "RunningHub remains the primary provider in the registry.",
-    "Upload request builder supports POST /openapi/v2/media/upload/binary.",
-    "Submit request builder supports POST /openapi/v2/rhart-video-g/image-to-video.",
-    "Query request builder supports POST /openapi/v2/query.",
-    "Request summaries exclude API keys, Authorization values, raw binary data, base64, and raw provider payloads.",
-    "Synthetic response parsers cover upload data.download_url, submit taskId/status/errorCode/errorMessage, and query results[].url.",
-    "Error mapping covers invalid API key, rate limit, insufficient permission/credits, content safety, timeout, generation failure, and unknown provider failure where possible.",
-    "RunningHubVideoProviderAdapter remains fail-closed for real network execution unless a later exact live-call task authorizes it.",
-    "No RunningHub call, Runway call, provider upload, status poll, output download, provider credit consumption, real video generation, secret value output, source overwrite, push, tag, release, or deploy occurs."
+    "Selected storyboard keyframe artifact is identified from app registry, not invented by GPT.",
+    "Upload-first RunningHub plan references POST /openapi/v2/media/upload/binary.",
+    "Submit plan references POST /openapi/v2/rhart-video-g/image-to-video.",
+    "Query plan references POST /openapi/v2/query.",
+    "Plan names max_submit_calls=1 and disables retries, batch, regeneration, publish, deploy, and source overwrite.",
+    "Budget boundary is explicit and waits for Jenn's exact authorization before live provider execution.",
+    "Report states network_call_attempted=false, runninghub_called=false, runway_called=false, provider_credits_consumed=false, real_video_generated=false, and secret_values_exposed=false."
   ],
   "validation": [
     "npm run typecheck",
@@ -32,9 +30,9 @@
     "git diff --check"
   ],
   "allowed_delivery": [
-    "source_code_change",
-    "tests",
-    "offline_adapter_dry_run_report",
+    "authorization_checklist",
+    "final_guard_report",
+    "dry_run_report_reference",
     "task_board_update",
     "local_commit"
   ],
@@ -55,41 +53,33 @@
     "deploy"
   ],
   "depends_on": [
-    "R3-8G_RUNNINGHUB_CONTRACT_FREEZE_AND_DRY_RUN"
+    "R3-8H_RUNNINGHUB_ADAPTER_OR_AUTHORIZATION_NEXT_STEP"
   ],
   "created_at": "2026-07-07T16:06:04+08:00",
-  "updated_at": "2026-07-07T16:25:39+08:00",
-  "claimed_by": "Codex R3-8H executor",
-  "claim_run_id": "codex-20260707-161345-r3-8h",
-  "claimed_at": "2026-07-07T16:13:45+08:00",
-  "completed_by": "Codex R3-8H executor",
-  "completed_at": "2026-07-07T16:25:39+08:00",
+  "updated_at": "2026-07-07T16:37:12+08:00",
+  "claimed_by": null,
+  "claim_run_id": null,
+  "claimed_at": null,
+  "completed_by": null,
+  "completed_at": null,
   "blocked_by": null,
   "blocked_at": null,
   "failed_by": null,
   "failed_at": null,
   "skipped_by": null,
   "skipped_at": null,
-  "result": "PASS_ADAPTER_SKELETON_OFFLINE",
-  "validation_result": "PASS",
+  "result": null,
+  "validation_result": null,
   "evidence": [
-    "data/reports/r3_8h_runninghub_adapter_skeleton_offline_result.json",
     "data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json",
-    "data/reports/r3_8f_provider_priority_switch_to_runninghub_result.json",
-    "data/reports/r3_8d_real_storyboard_keyframe_canary_prepare_result.json",
-    "data/reports/secret_scan_result.json"
+    "data/reports/r3_8h_runninghub_adapter_skeleton_offline_result.json"
   ],
-  "commit": "pending_at_completion_write",
+  "commit": null,
   "delivery": "local_only",
-  "boundary_or_safety_stop": "provider live call forbidden in this task",
+  "boundary_or_safety_stop": "stop before any live RunningHub upload, submit, query, output download, provider credit consumption, or real video generation",
   "blocked_reason": null,
   "failure_reason": null,
-  "safe_actions_completed": [
-    "implemented offline RunningHub upload, submit, and query request builders",
-    "implemented synthetic RunningHub upload, submit, and query response parsers",
-    "implemented sanitized RunningHub error mapping for official failure classes",
-    "generated offline adapter skeleton report"
-  ],
+  "safe_actions_completed": [],
   "unsafe_action_not_performed": [
     "runninghub_call",
     "runway_call",
@@ -108,7 +98,7 @@
   ],
   "options_for_jenn": [],
   "next_safe_option": [
-    "Worker may claim R3-8H for offline adapter implementation only.",
+    "Worker may claim R3-8I for offline authorization preparation only.",
     "Do not perform a live RunningHub upload, submit, query, or output download without a future exact current Jenn authorization phrase."
   ]
 }

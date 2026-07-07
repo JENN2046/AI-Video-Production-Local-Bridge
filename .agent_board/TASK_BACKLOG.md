@@ -1857,6 +1857,7 @@ claimed_by: Codex R3-8H executor
 completed_at: 2026-07-07T16:25:39+08:00
 completed_by: Codex R3-8H executor
 result: PASS_ADAPTER_SKELETON_OFFLINE
+commit: b1efae2
 
 ### Goal
 
@@ -1898,7 +1899,7 @@ Implement the local RunningHub adapter skeleton required by the R3-8G frozen con
 
 ## R3-8I_RUNNINGHUB_REAL_KEYFRAME_AUTHORIZATION_PREP - RunningHub Real Keyframe Authorization Prep
 
-status: FOLLOW_UP
+status: READY
 priority: P0
 lane: Approval Boundary Preparation
 project: AI Video Production Workspace Three Route Plan
@@ -1908,17 +1909,45 @@ depends_on: R3-8H_RUNNINGHUB_ADAPTER_OR_AUTHORIZATION_NEXT_STEP
 source_plan: R3-8H result
 report_path: data/reports/r3_8i_runninghub_real_keyframe_authorization_prep_result.json
 allowed_delivery: authorization_checklist,final_guard_report,dry_run_report_reference,task_board_update,local_commit
-blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,provider_credits_consumed,real_video_generated,secret_value_output,source_overwrite,push,tag,release,deploy
+blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,secret_value_output,raw_provider_payload_recording,source_overwrite,push,tag,release,deploy
 created_at: 2026-07-07T16:06:04+08:00
-updated_at: 2026-07-07T16:06:04+08:00
+updated_at: 2026-07-07T16:37:12+08:00
 
 ### Goal
 
 Prepare the exact authorization phrase and final guard for a single RunningHub real-keyframe canary. This task must stop before any live provider upload or submit.
 
+### Required Preparation
+
+- Confirm the selected storyboard keyframe artifact from the app registry, not a GPT-invented ID.
+- Reuse the R3-8G frozen RunningHub contract and R3-8H offline adapter skeleton.
+- Prepare the upload-first plan for `POST /openapi/v2/media/upload/binary`.
+- Prepare the single-submit plan for `POST /openapi/v2/rhart-video-g/image-to-video`.
+- Prepare the query plan for `POST /openapi/v2/query`.
+- Set `max_submit_calls=1`.
+- Disable retries, batch, regeneration, publish, deploy, source overwrite, and any fallback to Runway.
+- Produce a final guard report and exact user authorization phrase for the later live canary task.
+
+### Acceptance
+
+- No network call is attempted.
+- No RunningHub upload, submit, query, poll, or output download is attempted.
+- No Runway call is attempted.
+- No provider credits are consumed.
+- No real video is generated.
+- No secret values, Authorization values, raw binary payloads, base64 image payloads, or raw provider payloads are recorded.
+- The next live task remains blocked until Jenn gives a new exact authorization phrase.
+
+### Validation
+
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
+
 ### Notes
 
-- This task remains `FOLLOW_UP` until R3-8H passes.
+- This task is `READY` because R3-8H passed with commit `b1efae2`.
 - It must confirm selected artifact, upload-first plan, budget limit, max submit calls, and stop conditions.
 
 ## R3-8J_RUNNINGHUB_REAL_KEYFRAME_SINGLE_SUBMIT_CANARY - RunningHub Real Keyframe Single-Submit Canary
