@@ -104,6 +104,10 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - R3-8G completed RunningHub contract freeze and no-network dry-run.
 - R3-8G report is `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`.
 - R3-8G did not call RunningHub or Runway and did not read or print secrets.
+- R3-8H completed RunningHub adapter skeleton and offline tests.
+- R3-8H report is `data/reports/r3_8h_runninghub_adapter_skeleton_offline_result.json`.
+- R3-8H added offline upload, submit, and query request builders for RunningHub, plus synthetic response parsers and sanitized error mapping.
+- R3-8H did not call RunningHub or Runway, upload media to provider, poll status, download provider output, consume provider credits, generate video, read/print secrets, overwrite source assets, push, tag, release, or deploy.
 
 ## Blocked in last run
 
@@ -152,6 +156,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - `data/reports/r3_8d_real_storyboard_keyframe_canary_prepare_result.json`
 - `data/reports/r3_8e_runway_real_storyboard_keyframe_canary_result.json`
 - `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
+- `data/reports/r3_8h_runninghub_adapter_skeleton_offline_result.json`
 - `ops/reports/three_route_acceptance_review_package_20260707_103611/THREE_ROUTE_ACCEPTANCE_REVIEW.md`
 - `ops/reports/three_route_acceptance_review_package_20260707_103611/README.md`
 
@@ -163,6 +168,6 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 
 ## Next recommended action
 
-- Promote R3-8H to `READY` only when Jenn wants RunningHub adapter implementation or authorization preparation.
+- R3-8I remains `FOLLOW_UP`; promote it only when Jenn wants RunningHub live-canary authorization preparation.
 - Do not submit to RunningHub without a future exact current Jenn authorization phrase.
 - Do not retry Runway canary without a new exact current Jenn authorization phrase.

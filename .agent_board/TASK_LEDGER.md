@@ -1737,3 +1737,70 @@ Risks:
 Next:
 - Promote R3-8H only when Jenn wants adapter implementation or authorization preparation.
 - Any live RunningHub submit requires a future exact current Jenn authorization phrase.
+
+### 2026-07-07T16:25:39+08:00 - R3-8H RunningHub Adapter Skeleton And Offline Tests
+
+Result: PASS_ADAPTER_SKELETON_OFFLINE
+Project: AI Video Production Workspace Three Route Plan
+Lane: Provider Adapter Implementation
+Claimed by: Codex R3-8H executor
+Completed by: Codex R3-8H executor
+Run ID: codex-20260707-161345-r3-8h
+Started at: 2026-07-07T16:13:45+08:00
+Completed at: 2026-07-07T16:25:39+08:00
+
+Scope:
+- Implemented RunningHub upload-first request builders, response parsers, and error mappers.
+- Added offline tests for upload, submit, query, output URL extraction, error classification, and secret/base64 redaction.
+- Generated a sanitized offline adapter skeleton report.
+- Kept all live provider actions forbidden.
+
+Changed files:
+- src/tools/videoProviderAdapters.ts
+- src/index.ts
+- scripts/r3-8h-runninghub-adapter-skeleton-offline.ts
+- tests/m1-provider-boundary.test.ts
+- package.json
+- data/reports/r3_8h_runninghub_adapter_skeleton_offline_result.json
+- .agent_board/NEXT_TASK.json
+- .agent_board/NEXT_TASK.md
+- .agent_board/RUN_LOCK.md
+- .agent_board/TASK_BACKLOG.md
+- .agent_board/VALIDATION_LOG.md
+- .agent_board/HANDOFF.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: npm run r3:8h:offline
+  result: PASS
+- command: npm run typecheck
+  result: PASS
+- command: npm run test:m1
+  result: PASS
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_8h_runninghub_adapter_skeleton_offline_result.json
+- data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json
+- data/reports/secret_scan_result.json
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: pending_at_ledger_write
+- push: no
+- PR: none
+
+Boundary:
+- No RunningHub call, Runway call, media upload to provider, status poll, output download, provider credit consumption, real video generation, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
+
+Risks:
+- RunningHub live upload, submit, poll, and download remain unimplemented by design and require a future exact current Jenn authorization phrase.
+- RunningHub docs still do not enumerate the complete aspect-ratio list or duration range on the reviewed official pages.
+
+Next:
+- R3-8I remains FOLLOW_UP until Jenn promotes authorization preparation.
+- Any live RunningHub upload/submit/query/download requires a future exact current Jenn authorization phrase.

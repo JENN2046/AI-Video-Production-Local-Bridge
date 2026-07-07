@@ -1,6 +1,6 @@
 # NEXT_TASK.md
 
-Status: READY
+Status: DONE
 
 Task: R3-8H_RUNNINGHUB_ADAPTER_OR_AUTHORIZATION_NEXT_STEP
 
@@ -12,11 +12,19 @@ Lane: Provider Adapter Implementation
 
 Project: AI Video Production Workspace Three Route Plan
 
-Claimed by: none
+Claimed by: Codex R3-8H executor
 
-Claim run ID: none
+Claim run ID: codex-20260707-161345-r3-8h
 
-Claimed at: none
+Claimed at: 2026-07-07T16:13:45+08:00
+
+Completed by: Codex R3-8H executor
+
+Completed at: 2026-07-07T16:25:39+08:00
+
+Result: PASS_ADAPTER_SKELETON_OFFLINE
+
+Validation result: PASS
 
 ## Goal
 

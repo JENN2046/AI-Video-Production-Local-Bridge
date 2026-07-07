@@ -8,6 +8,9 @@ import {
   buildRunwayCanaryDryRunReport,
   buildRunwayImageToVideoRequest,
   buildRunningHubImageToVideoDryRunPlan,
+  buildRunningHubImageToVideoSubmitRequest,
+  buildRunningHubMediaUploadRequest,
+  buildRunningHubQueryRequest,
   createGenerationRunFromPackageShot,
   createProject,
   downloadProviderOutputToArtifact,
@@ -16,12 +19,17 @@ import {
   listProviderConfigs,
   mapRunwayAspectRatio,
   mapRunningHubAspectRatio,
+  mapRunningHubProviderError,
   normalizeRunningHubDurationForDryRun,
   normalizeRunwayDuration,
   openM0Database,
+  parseRunningHubMediaUploadResponse,
+  parseRunningHubQueryResponse,
+  parseRunningHubSubmitResponse,
   paths,
   redactSecrets,
   registerMediaArtifact,
+  RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER,
   RUNNINGHUB_IMAGE_TO_VIDEO_ENDPOINT,
   RUNNINGHUB_MEDIA_UPLOAD_ENDPOINT,
   RUNNINGHUB_QUERY_ENDPOINT,
@@ -168,6 +176,142 @@ test("M1 RunningHub dry-run freezes official endpoint shape without provider cal
   assert.equal(serialized.includes("data:image/"), false);
   assert.equal(serialized.includes("base64,"), false);
   assert.equal(serialized.includes(FAKE_SECRET), false);
+});
+
+test("M1 RunningHub upload-first request builders stay offline and sanitized", () => {
+  const artifact = fakeStoryboardArtifact();
+  const upload = buildRunningHubMediaUploadRequest({ storyboard_artifact: artifact });
+  assert.equal(upload.ok, true);
+  if (!upload.ok) return;
+  assert.equal(upload.method, "POST");
+  assert.equal(upload.endpoint, RUNNINGHUB_MEDIA_UPLOAD_ENDPOINT);
+  assert.equal(upload.multipart.file_field, "file");
+  assert.equal(upload.multipart.binary_payload_included, false);
+  assert.equal(upload.multipart.base64_included, false);
+  assert.equal(upload.summary.endpoint, "POST /openapi/v2/media/upload/binary");
+  assert.equal(upload.summary.file_field, "file");
+  assert.equal(upload.summary.local_file_path_included, false);
+  assert.equal(upload.summary.binary_payload_included, false);
+  assert.equal(upload.summary.base64_included, false);
+  assert.equal(upload.summary.auth.authorization_value_included, false);
+  assert.equal(upload.summary.auth.credential_value_included, false);
+  assert.equal(upload.summary.file_size_bytes > 0, true);
+  assert.equal(upload.summary.sha256.length, 64);
+
+  const submit = buildRunningHubImageToVideoSubmitRequest({
+    generation_input: {
+      storyboard_artifact: artifact,
+      video_prompt: "Animate portrait shot.",
+      negative_prompt: "blur",
+      duration_seconds: 6,
+      aspect_ratio: "9:16",
+      resolution: "480p"
+    },
+    uploaded_download_url: RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER
+  });
+  assert.equal(submit.ok, true);
+  if (!submit.ok) return;
+  assert.equal(submit.method, "POST");
+  assert.equal(submit.endpoint, RUNNINGHUB_IMAGE_TO_VIDEO_ENDPOINT);
+  assert.equal(submit.body.aspectRatio, "9:16");
+  assert.deepEqual(submit.body.imageUrls, [RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER]);
+  assert.equal(submit.summary.prompt_text_length, "Animate portrait shot.".length);
+  assert.equal(submit.summary.negative_prompt_supported, false);
+  assert.equal(submit.summary.image_url_values_included, false);
+  assert.equal(submit.summary.raw_provider_payload_included, false);
+
+  const query = buildRunningHubQueryRequest("runninghub_task_synthetic");
+  assert.equal(query.ok, true);
+  if (!query.ok) return;
+  assert.equal(query.method, "POST");
+  assert.equal(query.endpoint, RUNNINGHUB_QUERY_ENDPOINT);
+  assert.deepEqual(query.body, { taskId: "runninghub_task_synthetic" });
+  assert.equal(query.summary.task_id_present, true);
+  assert.equal(query.summary.task_id_value_included, false);
+
+  const serializedSummaries = JSON.stringify([upload.summary, submit.summary, query.summary]);
+  assert.equal(serializedSummaries.includes(FAKE_SECRET), false);
+  assert.equal(serializedSummaries.includes(artifact.storage.uri), false);
+  assert.equal(serializedSummaries.includes("data:image/"), false);
+  assert.equal(serializedSummaries.includes("base64,"), false);
+  assert.equal(serializedSummaries.includes("Authorization: Bearer"), false);
+  assert.equal(/Bearer\s+[A-Za-z0-9._~+/=-]{8,}/.test(serializedSummaries), false);
+});
+
+test("M1 RunningHub synthetic response parsers cover upload, submit, and query outputs", () => {
+  const upload = parseRunningHubMediaUploadResponse({
+    data: {
+      download_url: "https://runninghub-cdn.example/uploaded/keyframe.png"
+    }
+  });
+  assert.equal(upload.ok, true);
+  if (!upload.ok) return;
+  assert.equal(upload.download_url_present, true);
+  assert.equal(upload.raw_provider_payload_recorded, false);
+
+  const submit = parseRunningHubSubmitResponse({
+    taskId: "runninghub_task_synthetic",
+    status: "PENDING",
+    errorCode: "",
+    errorMessage: "",
+    results: []
+  });
+  assert.equal(submit.ok, true);
+  if (!submit.ok) return;
+  assert.equal(submit.provider_job_id, "runninghub_task_synthetic");
+  assert.equal(submit.provider_status, "PENDING");
+  assert.equal(submit.raw_provider_payload_recorded, false);
+
+  const query = parseRunningHubQueryResponse({
+    taskId: "runninghub_task_synthetic",
+    status: "SUCCESS",
+    errorCode: "",
+    errorMessage: "",
+    results: [{ url: "https://cdn.example.test/video.mp4", outputType: "video" }]
+  });
+  assert.equal(query.ok, true);
+  if (!query.ok) return;
+  assert.equal(query.status, "succeeded");
+  assert.equal(query.retryable, false);
+  assert.equal(query.output_url, "https://cdn.example.test/video.mp4");
+  assert.deepEqual(query.output_urls, ["https://cdn.example.test/video.mp4"]);
+  assert.equal(query.raw_provider_payload_recorded, false);
+
+  const failed = parseRunningHubQueryResponse({
+    taskId: "runninghub_task_failed",
+    status: "FAILED",
+    errorCode: "GENERATION_FAILED",
+    errorMessage: `generation failure ${FAKE_SECRET}`,
+    results: []
+  }, "runninghub_task_failed", [FAKE_SECRET]);
+  assert.equal(failed.ok, true);
+  if (!failed.ok) return;
+  assert.equal(failed.status, "failed");
+  assert.equal(failed.mapped_error?.code, "PROVIDER_REQUEST_FAILED");
+  assert.equal(failed.mapped_error?.sanitized_provider_error_summary?.provider_error_message?.includes(FAKE_SECRET), false);
+});
+
+test("M1 RunningHub error mapper classifies official failure classes without leaking secrets", () => {
+  const cases: Array<{ name: string; payload: Record<string, unknown>; expected: string; retryable: boolean; http_status?: number }> = [
+    { name: "invalid API key", payload: { errorCode: "INVALID_API_KEY", errorMessage: `invalid api key ${FAKE_SECRET}` }, expected: "PROVIDER_AUTH_FAILED", retryable: false },
+    { name: "rate limit", payload: { errorCode: "RATE_LIMIT", errorMessage: "rate limit exceeded" }, expected: "PROVIDER_RATE_LIMITED", retryable: true },
+    { name: "insufficient credits", payload: { errorCode: "INSUFFICIENT_CREDITS", errorMessage: "insufficient credits" }, expected: "PROVIDER_INSUFFICIENT_CREDITS", retryable: false },
+    { name: "insufficient permission", payload: { errorCode: "NO_PERMISSION", errorMessage: "insufficient permission" }, expected: "PROVIDER_AUTH_FAILED", retryable: false, http_status: 403 },
+    { name: "content safety", payload: { errorCode: "CONTENT_SAFETY", errorMessage: "content safety rejected" }, expected: "PROVIDER_CONTENT_REJECTED", retryable: false },
+    { name: "timeout", payload: { errorCode: "TIMEOUT", errorMessage: "task timeout" }, expected: "PROVIDER_TIMEOUT", retryable: true },
+    { name: "generation failure", payload: { errorCode: "GENERATION_FAILED", errorMessage: "generation failed" }, expected: "PROVIDER_REQUEST_FAILED", retryable: false },
+    { name: "unknown provider failure", payload: { errorCode: "SOMETHING_ELSE", errorMessage: "unknown provider failure" }, expected: "PROVIDER_REQUEST_FAILED", retryable: false }
+  ];
+
+  for (const item of cases) {
+    const mapped = mapRunningHubProviderError({ http_status: item.http_status ?? null, payload: item.payload, secrets: [FAKE_SECRET] });
+    assert.equal(mapped.code, item.expected, item.name);
+    assert.equal(mapped.retryable, item.retryable, item.name);
+    const serialized = JSON.stringify(mapped);
+    assert.equal(serialized.includes(FAKE_SECRET), false, item.name);
+    assert.equal(serialized.includes("Authorization"), false, item.name);
+    assert.equal(serialized.includes("base64,"), false, item.name);
+  }
 });
 
 test("M1 real provider gates block disabled, missing cost ack, mismatch, and missing credential", () => {

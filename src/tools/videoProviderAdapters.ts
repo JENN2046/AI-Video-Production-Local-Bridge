@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 
 import type { MediaArtifact } from "./mediaArtifacts.js";
@@ -21,6 +21,9 @@ export const RUNNINGHUB_QUERY_ENDPOINT = "/openapi/v2/query";
 export const RUNNINGHUB_MEDIA_UPLOAD_ENDPOINT = "/openapi/v2/media/upload/binary";
 export const RUNNINGHUB_DEFAULT_RESOLUTION = "480p";
 export const RUNNINGHUB_DOC_EXAMPLE_DURATION_SECONDS = 6;
+export const RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER = "<RUNNINGHUB_UPLOAD_DOWNLOAD_URL>";
+export const RUNNINGHUB_AUTHORIZATION_HEADER_PLACEHOLDER = "Bearer <RUNNINGHUB_API_KEY>";
+export const RUNNINGHUB_MEDIA_UPLOAD_FILE_FIELD = "file";
 
 export interface ProviderGenerationInput {
   storyboard_artifact: MediaArtifact;
@@ -96,11 +99,145 @@ export interface RunningHubImageReferenceSummary {
   upload_file_mime_type: string;
   upload_file_size_bytes: number;
   upload_file_sha256: string;
-  download_url_placeholder: "<RUNNINGHUB_UPLOAD_DOWNLOAD_URL>";
+  download_url_placeholder: typeof RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER;
   local_file_path_included: false;
   binary_payload_included: false;
   base64_included: false;
 }
+
+export interface RunningHubRequestAuthSummary {
+  header_name: "Authorization";
+  scheme: "Bearer";
+  credential_env_name: "RUNNINGHUB_API_KEY";
+  credential_value_included: false;
+  authorization_value_included: false;
+}
+
+export interface RunningHubMediaUploadRequestSummary {
+  endpoint: `POST ${typeof RUNNINGHUB_MEDIA_UPLOAD_ENDPOINT}`;
+  content_type: "multipart/form-data";
+  auth: RunningHubRequestAuthSummary;
+  file_field: typeof RUNNINGHUB_MEDIA_UPLOAD_FILE_FIELD;
+  file_name: string;
+  mime_type: string;
+  file_size_bytes: number;
+  sha256: string;
+  local_file_path_included: false;
+  binary_payload_included: false;
+  base64_included: false;
+}
+
+export type RunningHubMediaUploadRequestBuildResult =
+  | {
+      ok: true;
+      method: "POST";
+      endpoint: typeof RUNNINGHUB_MEDIA_UPLOAD_ENDPOINT;
+      headers: {
+        Authorization: typeof RUNNINGHUB_AUTHORIZATION_HEADER_PLACEHOLDER;
+      };
+      multipart: {
+        file_field: typeof RUNNINGHUB_MEDIA_UPLOAD_FILE_FIELD;
+        file_name: string;
+        content_type: string;
+        binary_payload_placeholder: "<LOCAL_MEDIA_ARTIFACT_BYTES>";
+        binary_payload_included: false;
+        base64_included: false;
+      };
+      summary: RunningHubMediaUploadRequestSummary;
+    }
+  | { ok: false; error: ProviderToolError };
+
+export interface RunningHubImageToVideoSubmitRequestSummary {
+  endpoint: `POST ${typeof RUNNINGHUB_IMAGE_TO_VIDEO_ENDPOINT}`;
+  content_type: "application/json";
+  auth: RunningHubRequestAuthSummary;
+  prompt_text_length: number;
+  negative_prompt_supported: false;
+  negative_prompt_text_length: number;
+  aspectRatio: string;
+  image_urls_count: number;
+  image_url_values_included: false;
+  imageUrls: [typeof RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER];
+  resolution: string;
+  duration: number;
+  raw_provider_payload_included: false;
+}
+
+export type RunningHubImageToVideoSubmitRequestBuildResult =
+  | {
+      ok: true;
+      method: "POST";
+      endpoint: typeof RUNNINGHUB_IMAGE_TO_VIDEO_ENDPOINT;
+      headers: {
+        Authorization: typeof RUNNINGHUB_AUTHORIZATION_HEADER_PLACEHOLDER;
+        "Content-Type": "application/json";
+      };
+      body: {
+        prompt: string;
+        aspectRatio: string;
+        imageUrls: string[];
+        resolution: string;
+        duration: number;
+      };
+      summary: RunningHubImageToVideoSubmitRequestSummary;
+    }
+  | { ok: false; error: ProviderToolError };
+
+export interface RunningHubQueryRequestSummary {
+  endpoint: `POST ${typeof RUNNINGHUB_QUERY_ENDPOINT}`;
+  content_type: "application/json";
+  auth: RunningHubRequestAuthSummary;
+  task_id_present: boolean;
+  task_id_length: number;
+  task_id_value_included: false;
+}
+
+export type RunningHubQueryRequestBuildResult =
+  | {
+      ok: true;
+      method: "POST";
+      endpoint: typeof RUNNINGHUB_QUERY_ENDPOINT;
+      headers: {
+        Authorization: typeof RUNNINGHUB_AUTHORIZATION_HEADER_PLACEHOLDER;
+        "Content-Type": "application/json";
+      };
+      body: {
+        taskId: string;
+      };
+      summary: RunningHubQueryRequestSummary;
+    }
+  | { ok: false; error: ProviderToolError };
+
+export type RunningHubMediaUploadParseResult =
+  | { ok: true; download_url: string; download_url_present: true; raw_provider_payload_recorded: false }
+  | { ok: false; error: ProviderToolError };
+
+export type RunningHubSubmitParseResult =
+  | {
+      ok: true;
+      provider_job_id: string;
+      provider_status: string;
+      error_code: string;
+      error_message: string;
+      raw_provider_payload_recorded: false;
+    }
+  | { ok: false; error: ProviderToolError };
+
+export type RunningHubQueryParseResult =
+  | {
+      ok: true;
+      provider_job_id: string;
+      status: ProviderJobStatus;
+      provider_status: string;
+      retryable: boolean;
+      output_urls: string[];
+      output_url?: string;
+      error_code: string;
+      error_message: string;
+      mapped_error?: ProviderToolError;
+      raw_provider_payload_recorded: false;
+    }
+  | { ok: false; error: ProviderToolError };
 
 export interface RunningHubImageToVideoDryRunPlan {
   provider: "runninghub";
@@ -125,7 +262,7 @@ export interface RunningHubImageToVideoDryRunPlan {
     negative_prompt_supported: false;
     negative_prompt_text_length: number;
     aspectRatio: string;
-    imageUrls: ["<RUNNINGHUB_UPLOAD_DOWNLOAD_URL>"];
+    imageUrls: [typeof RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER];
     resolution: string;
     duration: number;
   };
@@ -228,10 +365,375 @@ export function normalizeRunningHubDurationForDryRun(durationSeconds: number): n
   return durationSeconds;
 }
 
-export function buildRunningHubImageToVideoDryRunPlan(input: ProviderGenerationInput): { ok: true; plan: RunningHubImageToVideoDryRunPlan } | { ok: false; error: ProviderToolError } {
-  if (input.storyboard_artifact.status !== "active" || input.storyboard_artifact.artifact_type !== "image" || input.storyboard_artifact.role !== "storyboard_image") {
+function runningHubAuthSummary(): RunningHubRequestAuthSummary {
+  return {
+    header_name: "Authorization",
+    scheme: "Bearer",
+    credential_env_name: "RUNNINGHUB_API_KEY",
+    credential_value_included: false,
+    authorization_value_included: false
+  };
+}
+
+function ensureRunningHubStoryboardImageArtifact(artifact: MediaArtifact): { ok: true } | { ok: false; error: ProviderToolError } {
+  if (artifact.status !== "active" || artifact.artifact_type !== "image" || artifact.role !== "storyboard_image") {
     return { ok: false, error: providerError("PROVIDER_UNSUPPORTED_INPUT", "RunningHub requires an active storyboard_image image artifact.") };
   }
+  return { ok: true };
+}
+
+function runningHubUploadFacts(artifact: MediaArtifact):
+  | {
+      ok: true;
+      file_name: string;
+      mime_type: string;
+      file_size_bytes: number;
+      sha256: string;
+    }
+  | { ok: false; error: ProviderToolError } {
+  const artifactGate = ensureRunningHubStoryboardImageArtifact(artifact);
+  if (!artifactGate.ok) return artifactGate;
+
+  const validation = validateImageFile(artifact.storage.uri);
+  if (!validation.ok) {
+    return { ok: false, error: providerError("PROVIDER_UNSUPPORTED_INPUT", validation.error || "RunningHub upload image is not readable.") };
+  }
+
+  if (!validation.detected_mime.startsWith("image/")) {
+    return { ok: false, error: providerError("PROVIDER_UNSUPPORTED_INPUT", "RunningHub upload requires an image file.") };
+  }
+
+  let fileSize = 0;
+  try {
+    fileSize = statSync(artifact.storage.uri).size;
+  } catch (error) {
+    return {
+      ok: false,
+      error: providerError("PROVIDER_UNSUPPORTED_INPUT", error instanceof Error ? error.message : "RunningHub upload image size is not readable.")
+    };
+  }
+
+  return {
+    ok: true,
+    file_name: artifact.storage.filename || "storyboard_image.png",
+    mime_type: validation.detected_mime || artifact.storage.mime_type,
+    file_size_bytes: fileSize,
+    sha256: validation.sha256
+  };
+}
+
+export function buildRunningHubMediaUploadRequest(input: { storyboard_artifact: MediaArtifact }): RunningHubMediaUploadRequestBuildResult {
+  const facts = runningHubUploadFacts(input.storyboard_artifact);
+  if (!facts.ok) return { ok: false, error: facts.error };
+
+  const summary: RunningHubMediaUploadRequestSummary = {
+    endpoint: `POST ${RUNNINGHUB_MEDIA_UPLOAD_ENDPOINT}`,
+    content_type: "multipart/form-data",
+    auth: runningHubAuthSummary(),
+    file_field: RUNNINGHUB_MEDIA_UPLOAD_FILE_FIELD,
+    file_name: facts.file_name,
+    mime_type: facts.mime_type,
+    file_size_bytes: facts.file_size_bytes,
+    sha256: facts.sha256,
+    local_file_path_included: false,
+    binary_payload_included: false,
+    base64_included: false
+  };
+
+  return {
+    ok: true,
+    method: "POST",
+    endpoint: RUNNINGHUB_MEDIA_UPLOAD_ENDPOINT,
+    headers: {
+      Authorization: RUNNINGHUB_AUTHORIZATION_HEADER_PLACEHOLDER
+    },
+    multipart: {
+      file_field: RUNNINGHUB_MEDIA_UPLOAD_FILE_FIELD,
+      file_name: facts.file_name,
+      content_type: facts.mime_type,
+      binary_payload_placeholder: "<LOCAL_MEDIA_ARTIFACT_BYTES>",
+      binary_payload_included: false,
+      base64_included: false
+    },
+    summary
+  };
+}
+
+export function buildRunningHubImageToVideoSubmitRequest(input: {
+  generation_input: ProviderGenerationInput;
+  uploaded_download_url?: string;
+}): RunningHubImageToVideoSubmitRequestBuildResult {
+  const artifactGate = ensureRunningHubStoryboardImageArtifact(input.generation_input.storyboard_artifact);
+  if (!artifactGate.ok) return { ok: false, error: artifactGate.error };
+
+  const aspectRatio = mapRunningHubAspectRatio(input.generation_input.aspect_ratio);
+  if (!aspectRatio) {
+    return { ok: false, error: providerError("PROVIDER_UNSUPPORTED_INPUT", `Unsupported RunningHub aspectRatio: ${input.generation_input.aspect_ratio}.`) };
+  }
+
+  const duration = normalizeRunningHubDurationForDryRun(input.generation_input.duration_seconds);
+  if (duration === null) {
+    return { ok: false, error: providerError("PROVIDER_UNSUPPORTED_INPUT", `Unsupported RunningHub duration: ${input.generation_input.duration_seconds}.`) };
+  }
+
+  const uploadedDownloadUrl = input.uploaded_download_url ?? RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER;
+  if (!uploadedDownloadUrl.trim()) {
+    return { ok: false, error: providerError("PROVIDER_UNSUPPORTED_INPUT", "RunningHub submit requires an uploaded image download URL.") };
+  }
+
+  const summary: RunningHubImageToVideoSubmitRequestSummary = {
+    endpoint: `POST ${RUNNINGHUB_IMAGE_TO_VIDEO_ENDPOINT}`,
+    content_type: "application/json",
+    auth: runningHubAuthSummary(),
+    prompt_text_length: input.generation_input.video_prompt.length,
+    negative_prompt_supported: false,
+    negative_prompt_text_length: input.generation_input.negative_prompt.length,
+    aspectRatio,
+    image_urls_count: 1,
+    image_url_values_included: false,
+    imageUrls: [RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER],
+    resolution: input.generation_input.resolution || RUNNINGHUB_DEFAULT_RESOLUTION,
+    duration,
+    raw_provider_payload_included: false
+  };
+
+  return {
+    ok: true,
+    method: "POST",
+    endpoint: RUNNINGHUB_IMAGE_TO_VIDEO_ENDPOINT,
+    headers: {
+      Authorization: RUNNINGHUB_AUTHORIZATION_HEADER_PLACEHOLDER,
+      "Content-Type": "application/json"
+    },
+    body: {
+      prompt: input.generation_input.video_prompt,
+      aspectRatio,
+      imageUrls: [uploadedDownloadUrl],
+      resolution: input.generation_input.resolution || RUNNINGHUB_DEFAULT_RESOLUTION,
+      duration
+    },
+    summary
+  };
+}
+
+export function buildRunningHubQueryRequest(providerJobId: string): RunningHubQueryRequestBuildResult {
+  if (!providerJobId.trim()) {
+    return { ok: false, error: providerError("PROVIDER_UNSUPPORTED_INPUT", "RunningHub query requires a non-empty taskId.") };
+  }
+
+  return {
+    ok: true,
+    method: "POST",
+    endpoint: RUNNINGHUB_QUERY_ENDPOINT,
+    headers: {
+      Authorization: RUNNINGHUB_AUTHORIZATION_HEADER_PLACEHOLDER,
+      "Content-Type": "application/json"
+    },
+    body: {
+      taskId: providerJobId
+    },
+    summary: {
+      endpoint: `POST ${RUNNINGHUB_QUERY_ENDPOINT}`,
+      content_type: "application/json",
+      auth: runningHubAuthSummary(),
+      task_id_present: true,
+      task_id_length: providerJobId.length,
+      task_id_value_included: false
+    }
+  };
+}
+
+function runningHubSuccessLikeErrorCode(errorCode: string): boolean {
+  const normalized = errorCode.trim().toLowerCase();
+  return normalized === "" || normalized === "0" || normalized === "success" || normalized === "ok" || normalized === "null";
+}
+
+function runningHubProviderErrorSummary(input: {
+  http_status?: number | null;
+  payload?: Record<string, unknown>;
+  error_code?: unknown;
+  error_message?: unknown;
+  secrets?: string[];
+  retryable?: boolean;
+}): SanitizedProviderErrorSummary {
+  const payload = input.payload ?? {};
+  const errorPayload = payloadObject(payload.error);
+  const secrets = input.secrets ?? [];
+  return {
+    http_status: input.http_status ?? null,
+    provider_error_code: firstShortString(secrets, input.error_code, payload.errorCode, payload.code, errorPayload.code, errorPayload.errorCode),
+    provider_error_message: firstShortString(input.secrets ?? [], input.error_message, payload.errorMessage, payload.msg, payload.message, errorPayload.message, errorPayload.errorMessage),
+    provider_error_field: firstShortString(secrets, payload.field, payload.param, payload.path, errorPayload.field, errorPayload.param, errorPayload.path),
+    retryable: input.retryable ?? false
+  };
+}
+
+export function mapRunningHubProviderError(input: {
+  http_status?: number | null;
+  payload?: Record<string, unknown>;
+  error_code?: unknown;
+  error_message?: unknown;
+  secrets?: string[];
+}): ProviderToolError {
+  const status = input.http_status ?? null;
+  const summary = runningHubProviderErrorSummary({
+    http_status: status,
+    payload: input.payload,
+    error_code: input.error_code,
+    error_message: input.error_message,
+    secrets: input.secrets
+  });
+  const text = [summary.provider_error_code, summary.provider_error_message].filter(Boolean).join(" ").toLowerCase();
+
+  if (status === 401 || text.includes("invalid api key") || text.includes("api key") || text.includes("unauthorized") || text.includes("auth")) {
+    summary.retryable = false;
+    return providerError("PROVIDER_AUTH_FAILED", "RunningHub authentication failed.", false, summary);
+  }
+
+  if (text.includes("rate") || text.includes("too many") || text.includes("frequency")) {
+    summary.retryable = true;
+    return providerError("PROVIDER_RATE_LIMITED", "RunningHub rate limit was reached.", true, summary);
+  }
+
+  if (status === 403 || text.includes("permission") || text.includes("forbidden")) {
+    summary.retryable = false;
+    return providerError("PROVIDER_AUTH_FAILED", "RunningHub permission check failed.", false, summary);
+  }
+
+  if (status === 402 || text.includes("credit") || text.includes("balance") || text.includes("quota") || text.includes("insufficient")) {
+    summary.retryable = false;
+    return providerError("PROVIDER_INSUFFICIENT_CREDITS", "RunningHub reports insufficient credits or quota.", false, summary);
+  }
+
+  if (text.includes("safety") || text.includes("sensitive") || text.includes("moderation") || text.includes("content")) {
+    summary.retryable = false;
+    return providerError("PROVIDER_CONTENT_REJECTED", "RunningHub rejected the request for content safety.", false, summary);
+  }
+
+  if (status === 408 || status === 504 || text.includes("timeout") || text.includes("timed out")) {
+    summary.retryable = true;
+    return providerError("PROVIDER_TIMEOUT", "RunningHub request timed out.", true, summary);
+  }
+
+  if (status !== null && (status === 429 || status >= 500)) {
+    summary.retryable = status === 429 || status >= 500;
+    if (status === 429) return providerError("PROVIDER_RATE_LIMITED", "RunningHub rate limit was reached.", true, summary);
+    return providerError("PROVIDER_TRANSIENT_FAILURE", "RunningHub returned a transient server error.", true, summary);
+  }
+
+  if (text.includes("generation") || text.includes("failed") || text.includes("failure")) {
+    summary.retryable = false;
+    return providerError("PROVIDER_REQUEST_FAILED", "RunningHub generation failed.", false, summary);
+  }
+
+  summary.retryable = false;
+  return providerError("PROVIDER_REQUEST_FAILED", "RunningHub provider request failed.", false, summary);
+}
+
+export function parseRunningHubMediaUploadResponse(payload: unknown, secrets: string[] = []): RunningHubMediaUploadParseResult {
+  const record = payloadObject(payload);
+  const data = payloadObject(record.data);
+  const downloadUrl = stringField(data, "download_url") || stringField(record, "download_url");
+  if (downloadUrl) {
+    return {
+      ok: true,
+      download_url: downloadUrl,
+      download_url_present: true,
+      raw_provider_payload_recorded: false
+    };
+  }
+
+  if (stringField(record, "errorCode") || stringField(record, "code") || stringField(record, "msg") || stringField(record, "message")) {
+    return { ok: false, error: mapRunningHubProviderError({ payload: record, secrets }) };
+  }
+
+  return { ok: false, error: providerError("PROVIDER_REQUEST_FAILED", "RunningHub upload response did not include data.download_url.") };
+}
+
+export function parseRunningHubSubmitResponse(payload: unknown, secrets: string[] = []): RunningHubSubmitParseResult {
+  const record = payloadObject(payload);
+  const taskId = stringField(record, "taskId");
+  const providerStatus = stringField(record, "status") || "UNKNOWN";
+  const errorCode = stringField(record, "errorCode");
+  const errorMessage = stringField(record, "errorMessage");
+
+  if (!taskId && (!runningHubSuccessLikeErrorCode(errorCode) || errorMessage)) {
+    return { ok: false, error: mapRunningHubProviderError({ payload: record, error_code: errorCode, error_message: errorMessage, secrets }) };
+  }
+
+  if (!taskId) {
+    return { ok: false, error: providerError("PROVIDER_REQUEST_FAILED", "RunningHub submit response did not include taskId.") };
+  }
+
+  return {
+    ok: true,
+    provider_job_id: taskId,
+    provider_status: providerStatus,
+    error_code: errorCode,
+    error_message: errorMessage,
+    raw_provider_payload_recorded: false
+  };
+}
+
+function runningHubStatusFromProvider(providerStatus: string): { status: ProviderJobStatus; retryable: boolean } {
+  const normalized = providerStatus.trim().toUpperCase();
+  if (normalized === "SUCCESS" || normalized === "SUCCEEDED" || normalized === "COMPLETED") return { status: "succeeded", retryable: false };
+  if (normalized === "FAILED" || normalized === "FAIL" || normalized === "ERROR") return { status: "failed", retryable: false };
+  if (normalized === "CANCELLED" || normalized === "CANCELED") return { status: "cancelled", retryable: false };
+  if (normalized === "PENDING" || normalized === "QUEUED" || normalized === "WAITING" || normalized === "CREATED") return { status: "queued", retryable: true };
+  return { status: "running", retryable: true };
+}
+
+function runningHubResultUrls(payload: Record<string, unknown>): string[] {
+  const results = payload.results;
+  if (!Array.isArray(results)) return [];
+  return results
+    .map((item) => {
+      if (typeof item === "string") return item;
+      const record = payloadObject(item);
+      return stringField(record, "url");
+    })
+    .filter(Boolean);
+}
+
+export function parseRunningHubQueryResponse(payload: unknown, fallbackProviderJobId = "", secrets: string[] = []): RunningHubQueryParseResult {
+  const record = payloadObject(payload);
+  const taskId = stringField(record, "taskId") || fallbackProviderJobId;
+  const providerStatus = stringField(record, "status") || "UNKNOWN";
+  const errorCode = stringField(record, "errorCode");
+  const errorMessage = stringField(record, "errorMessage");
+  const mapped = runningHubStatusFromProvider(providerStatus);
+
+  if (!taskId) {
+    return { ok: false, error: providerError("PROVIDER_REQUEST_FAILED", "RunningHub query response did not include taskId.") };
+  }
+
+  const mappedError = !runningHubSuccessLikeErrorCode(errorCode) || (mapped.status === "failed" && errorMessage)
+    ? mapRunningHubProviderError({ payload: record, error_code: errorCode, error_message: errorMessage, secrets })
+    : undefined;
+  const outputUrls = runningHubResultUrls(record);
+  if (mapped.status === "succeeded" && outputUrls.length === 0) {
+    return { ok: false, error: providerError("PROVIDER_OUTPUT_MISSING", "RunningHub query response succeeded without results[].url.") };
+  }
+
+  return {
+    ok: true,
+    provider_job_id: taskId,
+    status: mapped.status,
+    provider_status: providerStatus,
+    retryable: mapped.retryable,
+    output_urls: outputUrls,
+    ...(outputUrls[0] ? { output_url: outputUrls[0] } : {}),
+    error_code: errorCode,
+    error_message: errorMessage,
+    ...(mappedError ? { mapped_error: mappedError } : {}),
+    raw_provider_payload_recorded: false
+  };
+}
+
+export function buildRunningHubImageToVideoDryRunPlan(input: ProviderGenerationInput): { ok: true; plan: RunningHubImageToVideoDryRunPlan } | { ok: false; error: ProviderToolError } {
+  const artifactGate = ensureRunningHubStoryboardImageArtifact(input.storyboard_artifact);
+  if (!artifactGate.ok) return { ok: false, error: artifactGate.error };
 
   const aspectRatio = mapRunningHubAspectRatio(input.aspect_ratio);
   if (!aspectRatio) {
@@ -268,7 +770,7 @@ export function buildRunningHubImageToVideoDryRunPlan(input: ProviderGenerationI
         negative_prompt_supported: false,
         negative_prompt_text_length: input.negative_prompt.length,
         aspectRatio,
-        imageUrls: ["<RUNNINGHUB_UPLOAD_DOWNLOAD_URL>"],
+        imageUrls: [RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER],
         resolution: input.resolution || RUNNINGHUB_DEFAULT_RESOLUTION,
         duration
       },
@@ -278,7 +780,7 @@ export function buildRunningHubImageToVideoDryRunPlan(input: ProviderGenerationI
         upload_file_mime_type: input.storyboard_artifact.storage.mime_type,
         upload_file_size_bytes: 0,
         upload_file_sha256: input.storyboard_artifact.metadata?.sha256 ?? "",
-        download_url_placeholder: "<RUNNINGHUB_UPLOAD_DOWNLOAD_URL>",
+        download_url_placeholder: RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER,
         local_file_path_included: false,
         binary_payload_included: false,
         base64_included: false
@@ -604,7 +1106,7 @@ export class RunningHubVideoProviderAdapter implements VideoProviderAdapter {
       ok: false,
       error: providerError(
         "PROVIDER_UNSUPPORTED",
-        "RunningHub live generation is not implemented. R3-8G freezes a dry-run contract only; upload, submit, polling, and output download still require a separate implementation and live authorization."
+        "RunningHub live generation is not implemented. R3-8H provides offline request builders and parsers only; upload, submit, polling, and output download require a separate live-call task and exact authorization."
       )
     };
   }
@@ -612,14 +1114,14 @@ export class RunningHubVideoProviderAdapter implements VideoProviderAdapter {
   async pollStatus(): Promise<ProviderStatusResult> {
     return {
       ok: false,
-      error: providerError("PROVIDER_UNSUPPORTED", "RunningHub status polling is unavailable until its live contract is frozen.")
+      error: providerError("PROVIDER_UNSUPPORTED", "RunningHub status polling is unavailable until a live-call task is authorized.")
     };
   }
 
   async fetchOutput(): Promise<ProviderOutputResult> {
     return {
       ok: false,
-      error: providerError("PROVIDER_UNSUPPORTED", "RunningHub output fetching is unavailable until its live contract is frozen.")
+      error: providerError("PROVIDER_UNSUPPORTED", "RunningHub output fetching is unavailable until a live-call task is authorized.")
     };
   }
 }

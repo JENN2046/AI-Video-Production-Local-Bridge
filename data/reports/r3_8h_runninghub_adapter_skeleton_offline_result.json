@@ -1,0 +1,196 @@
+{
+  "task": "R3-8H_RUNNINGHUB_ADAPTER_OR_AUTHORIZATION_NEXT_STEP",
+  "result": "PASS_ADAPTER_SKELETON_OFFLINE",
+  "generated_at": "2026-07-07T08:23:57.350Z",
+  "source_contract_report": "data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json",
+  "local_registry": {
+    "runninghub_primary": true,
+    "runninghub_status": "primary_real_provider",
+    "runninghub_model_name": "rhart-video-g/image-to-video",
+    "runway_secondary": true
+  },
+  "selected_keyframe": {
+    "artifact_id": "artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7",
+    "mime_type": "image/png",
+    "width": 941,
+    "height": 1672,
+    "aspect_ratio": "941:1672",
+    "near_vertical_9_16": true,
+    "sha256": "efbea3aa2507cd7d431501eafba3206cf6cfd000174b2d6109371b5e37e6a474",
+    "byte_size": 2243051,
+    "source_readable": true,
+    "storage_readable": true,
+    "artifact_role": "storyboard_image",
+    "artifact_status": "active",
+    "source_path_included": false,
+    "storage_uri_included": false,
+    "source_asset_overwritten": false
+  },
+  "project_linkage": {
+    "project_id": "project_b742cb15-e44e-41b2-8d2d-4b90a30720df",
+    "storyboard_package_id": "storyboard_package_1e5c1eca-624e-4687-9775-31e4b59f428a",
+    "shot_id": "g0_r1_shot_001",
+    "dry_run_duration_seconds": 6
+  },
+  "request_builders": {
+    "upload": {
+      "endpoint": "POST /openapi/v2/media/upload/binary",
+      "file_field": "file",
+      "mime_type": "image/png",
+      "file_size_bytes": 2243051,
+      "sha256_present": true,
+      "authorization_value_included": false,
+      "binary_payload_included": false,
+      "base64_included": false,
+      "local_file_path_included": false
+    },
+    "submit": {
+      "endpoint": "POST /openapi/v2/rhart-video-g/image-to-video",
+      "prompt_text_length": 262,
+      "negative_prompt_supported": false,
+      "aspectRatio": "9:16",
+      "image_url_values_included": false,
+      "image_url_placeholder_used": true,
+      "resolution": "480p",
+      "duration": 6,
+      "raw_provider_payload_included": false
+    },
+    "query": {
+      "endpoint": "POST /openapi/v2/query",
+      "task_id_present": true,
+      "task_id_length": 31,
+      "task_id_value_included": false
+    }
+  },
+  "response_parsers": {
+    "upload_download_url_present": true,
+    "submit_task_id_present": true,
+    "submit_status": "PENDING",
+    "query_status": "succeeded",
+    "query_output_url_extracted": true,
+    "query_output_url_host": "cdn.example.test",
+    "failed_query_mapped_error": {
+      "code": "PROVIDER_REQUEST_FAILED",
+      "retryable": false,
+      "sanitized_provider_error_summary": {
+        "http_status": null,
+        "provider_error_code": "GENERATION_FAILED",
+        "provider_error_message": "generation failed <REDACTED>",
+        "provider_error_field": null,
+        "retryable": false
+      }
+    },
+    "raw_provider_payload_recorded": false
+  },
+  "error_mapping": [
+    {
+      "label": "invalid_api_key",
+      "code": "PROVIDER_AUTH_FAILED",
+      "retryable": false,
+      "provider_error_code_present": true,
+      "provider_error_message_redacted": true
+    },
+    {
+      "label": "rate_limit",
+      "code": "PROVIDER_RATE_LIMITED",
+      "retryable": true,
+      "provider_error_code_present": true,
+      "provider_error_message_redacted": true
+    },
+    {
+      "label": "insufficient_credits",
+      "code": "PROVIDER_INSUFFICIENT_CREDITS",
+      "retryable": false,
+      "provider_error_code_present": true,
+      "provider_error_message_redacted": true
+    },
+    {
+      "label": "insufficient_permission",
+      "code": "PROVIDER_AUTH_FAILED",
+      "retryable": false,
+      "provider_error_code_present": true,
+      "provider_error_message_redacted": true
+    },
+    {
+      "label": "content_safety",
+      "code": "PROVIDER_CONTENT_REJECTED",
+      "retryable": false,
+      "provider_error_code_present": true,
+      "provider_error_message_redacted": true
+    },
+    {
+      "label": "timeout",
+      "code": "PROVIDER_TIMEOUT",
+      "retryable": true,
+      "provider_error_code_present": true,
+      "provider_error_message_redacted": true
+    },
+    {
+      "label": "generation_failure",
+      "code": "PROVIDER_REQUEST_FAILED",
+      "retryable": false,
+      "provider_error_code_present": true,
+      "provider_error_message_redacted": true
+    },
+    {
+      "label": "unknown_provider_failure",
+      "code": "PROVIDER_REQUEST_FAILED",
+      "retryable": false,
+      "provider_error_code_present": true,
+      "provider_error_message_redacted": true
+    }
+  ],
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "upload_attempted": false,
+    "submit_attempted": false,
+    "status_poll_attempted": false,
+    "output_download_attempted": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "source_assets_overwritten": false,
+    "secret_values_exposed": false,
+    "raw_provider_payload_recorded": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  },
+  "acceptance": {
+    "runninghub_confirmed_primary": true,
+    "upload_request_builder": true,
+    "submit_request_builder": true,
+    "query_request_builder": true,
+    "upload_parser": true,
+    "submit_parser": true,
+    "query_parser": true,
+    "error_mapping": true,
+    "no_network_call": true,
+    "no_secret_base64_or_raw_payload_leak": true
+  },
+  "blocked_reason": null,
+    "validation": {
+      "npm run r3:8h:offline": "PASS",
+      "npm run typecheck": "PASS",
+      "npm run test:m1": "PASS",
+      "npm run secret:scan": "PASS",
+      "git diff --check": "PASS_WITH_CRLF_WARNINGS_ONLY"
+    },
+  "changed_files": [
+    "package.json",
+    "scripts/r3-8h-runninghub-adapter-skeleton-offline.ts",
+    "src/index.ts",
+    "src/tools/videoProviderAdapters.ts",
+    "tests/m1-provider-boundary.test.ts",
+    "data/reports/r3_8h_runninghub_adapter_skeleton_offline_result.json",
+    ".agent_board/*"
+  ],
+  "next_step": {
+    "recommended_task": "R3-8I_RUNNINGHUB_REAL_KEYFRAME_AUTHORIZATION_PREP",
+    "recommended_action": "Prepare a separate exact authorization checklist for one live RunningHub upload-first real-keyframe canary.",
+    "live_upload_submit_poll_download_requires_new_exact_user_authorization": true
+  }
+}

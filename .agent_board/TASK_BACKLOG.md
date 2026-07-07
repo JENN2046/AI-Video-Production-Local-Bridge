@@ -1838,7 +1838,7 @@ The dry-run report must include a sanitized request summary only:
 
 ## R3-8H_RUNNINGHUB_ADAPTER_OR_AUTHORIZATION_NEXT_STEP - RunningHub Adapter Or Authorization Next Step
 
-status: READY
+status: DONE
 priority: P0
 lane: Provider Adapter Implementation
 project: AI Video Production Workspace Three Route Plan
@@ -1850,7 +1850,13 @@ report_path: data/reports/r3_8h_runninghub_adapter_skeleton_offline_result.json
 allowed_delivery: source_code_change,tests,offline_adapter_dry_run_report,task_board_update,local_commit
 blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,secret_value_output,raw_provider_payload_recording,source_overwrite,push,tag,release,deploy
 created_at: 2026-07-07T15:37:23+08:00
-updated_at: 2026-07-07T16:06:04+08:00
+updated_at: 2026-07-07T16:25:39+08:00
+claimed_at: 2026-07-07T16:13:45+08:00
+claim_run_id: codex-20260707-161345-r3-8h
+claimed_by: Codex R3-8H executor
+completed_at: 2026-07-07T16:25:39+08:00
+completed_by: Codex R3-8H executor
+result: PASS_ADAPTER_SKELETON_OFFLINE
 
 ### Goal
 

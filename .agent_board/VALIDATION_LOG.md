@@ -1119,3 +1119,33 @@ Notes:
 - Sanitized body shape uses prompt, aspectRatio, imageUrls, resolution, and duration.
 - No API key, Authorization header value, base64 image payload, raw provider payload, RunningHub call, Runway call, provider credit consumption, real video generation, source overwrite, push, tag, release, or deploy occurred.
 - git diff --check passed with CRLF normalization warnings only.
+
+### R3-8H - 2026-07-07T16:25:39+08:00
+
+Commands:
+
+```bash
+npm run r3:8h:offline
+npm run typecheck
+npm run test:m1
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_ADAPTER_SKELETON_OFFLINE
+```
+
+Evidence:
+- `data/reports/r3_8h_runninghub_adapter_skeleton_offline_result.json`
+- `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
+- `data/reports/secret_scan_result.json`
+
+Notes:
+- Implemented offline RunningHub upload, submit, and query request builders for `POST /openapi/v2/media/upload/binary`, `POST /openapi/v2/rhart-video-g/image-to-video`, and `POST /openapi/v2/query`.
+- Added synthetic response parsers for upload `data.download_url`, submit `taskId/status/errorCode/errorMessage`, and query `results[].url`.
+- Added sanitized error mapping for invalid API key, rate limit, insufficient credits, insufficient permission, content safety, timeout, generation failure, and unknown provider failure.
+- No RunningHub call, Runway call, provider upload, status poll, provider output download, provider credit consumption, real video generation, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
+- git diff --check passed with CRLF normalization warnings only.
