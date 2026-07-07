@@ -2,34 +2,28 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "R3-8G_RUNNINGHUB_CONTRACT_FREEZE_AND_DRY_RUN",
-  "status": "DONE",
+  "task_id": "R3-8H_RUNNINGHUB_ADAPTER_OR_AUTHORIZATION_NEXT_STEP",
+  "status": "READY",
   "priority": "P0",
-  "lane": "Provider Contract Freeze",
+  "lane": "Provider Adapter Implementation",
   "project": "AI Video Production Workspace Three Route Plan",
-  "title": "RunningHub Contract Freeze And Dry Run",
+  "title": "RunningHub Adapter Skeleton And Offline Tests",
   "scope": [
-    "freeze RunningHub.cn model API contract",
-    "build a no-network dry-run request plan for the selected real storyboard keyframe",
+    "implement RunningHub upload-first adapter skeleton",
+    "add request builders, response parsers, error mappers, and offline tests",
     "do not call RunningHub or Runway"
   ],
-  "goal": "Freeze the RunningHub.cn image-to-video API contract for the current real storyboard keyframe workflow and produce a dry-run request plan without making any provider call.",
-  "official_sources_to_review": [
-    "https://www.runninghub.cn/",
-    "https://www.runninghub.cn/call-api/api-detail/2019380112598044674"
-  ],
-  "selected_keyframe": {
-    "artifact_id": "artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7",
-    "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png",
-    "source_path": "A:\\AI Video Production Workspace\\data\\imports\\g0_r1_SHOT_001_IMAGE_ACCEPTED_WEBGPT.png"
-  },
+  "goal": "Implement the local RunningHub adapter skeleton required by the R3-8G frozen contract while keeping the whole task offline.",
   "acceptance": [
-    "RunningHub is confirmed as primary provider in local registry.",
-    "Runway remains secondary and is not called.",
-    "Official RunningHub docs/API detail page are reviewed or missing fields are explicitly blocked.",
-    "API base URL, submit endpoint, auth header names, model/workflow id fields, image field shape, prompt fields, duration, ratio, task id, status polling, output shape, and error shape are frozen or marked unresolved.",
-    "Dry-run request summary is generated without credentials, base64, Authorization values, or raw provider payloads.",
-    "No RunningHub call, Runway call, provider credit consumption, real video generation, secret value output, source overwrite, push, tag, release, or deploy occurs."
+    "RunningHub remains the primary provider in the registry.",
+    "Upload request builder supports POST /openapi/v2/media/upload/binary.",
+    "Submit request builder supports POST /openapi/v2/rhart-video-g/image-to-video.",
+    "Query request builder supports POST /openapi/v2/query.",
+    "Request summaries exclude API keys, Authorization values, raw binary data, base64, and raw provider payloads.",
+    "Synthetic response parsers cover upload data.download_url, submit taskId/status/errorCode/errorMessage, and query results[].url.",
+    "Error mapping covers invalid API key, rate limit, insufficient permission/credits, content safety, timeout, generation failure, and unknown provider failure where possible.",
+    "RunningHubVideoProviderAdapter remains fail-closed for real network execution unless a later exact live-call task authorizes it.",
+    "No RunningHub call, Runway call, provider upload, status poll, output download, provider credit consumption, real video generation, secret value output, source overwrite, push, tag, release, or deploy occurs."
   ],
   "validation": [
     "npm run typecheck",
@@ -38,16 +32,18 @@
     "git diff --check"
   ],
   "allowed_delivery": [
-    "docs_contract_review",
     "source_code_change",
     "tests",
-    "dry_run_report",
+    "offline_adapter_dry_run_report",
     "task_board_update",
     "local_commit"
   ],
   "blocked_delivery": [
     "runninghub_call",
     "runway_call",
+    "media_upload_to_provider",
+    "status_poll",
+    "output_download_from_provider",
     "provider_credits_consumed",
     "real_video_generated",
     "secret_value_output",
@@ -59,68 +55,38 @@
     "deploy"
   ],
   "depends_on": [
-    "R3-8F_PROVIDER_PRIORITY_SWITCH_TO_RUNNINGHUB"
+    "R3-8G_RUNNINGHUB_CONTRACT_FREEZE_AND_DRY_RUN"
   ],
-  "created_at": "2026-07-07T15:37:23+08:00",
-  "updated_at": "2026-07-07T15:54:31+08:00",
-  "claimed_by": "Codex R3-8G executor",
-  "claim_run_id": "codex-20260707-154200-r3-8g",
-  "claimed_at": "2026-07-07T15:42:16+08:00",
-  "completed_by": "Codex R3-8G executor",
-  "completed_at": "2026-07-07T15:54:31+08:00",
+  "created_at": "2026-07-07T16:06:04+08:00",
+  "updated_at": "2026-07-07T16:06:04+08:00",
+  "claimed_by": null,
+  "claim_run_id": null,
+  "claimed_at": null,
+  "completed_by": null,
+  "completed_at": null,
   "blocked_by": null,
   "blocked_at": null,
   "failed_by": null,
   "failed_at": null,
   "skipped_by": null,
   "skipped_at": null,
-  "result": "PASS_CONTRACT_FREEZE_DRY_RUN",
-  "validation_result": "PASS",
+  "result": null,
+  "validation_result": null,
   "evidence": [
-    "data/reports/r3_8f_provider_priority_switch_to_runninghub_result.json",
-    "data/reports/r3_8d_real_storyboard_keyframe_canary_prepare_result.json",
-    "data/reports/r3_8e_runway_real_storyboard_keyframe_canary_result.json",
     "data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json",
-    "data/reports/secret_scan_result.json",
-    "https://www.runninghub.cn/",
-    "https://www.runninghub.cn/call-api/api-detail/2019380112598044674",
-    "https://www.runninghub.cn/runninghub-api-doc-cn/api-448183102",
-    "https://www.runninghub.cn/runninghub-api-doc-cn/api-425767306",
-    "https://www.runninghub.cn/runninghub-api-doc-cn/api-425749007",
-    "https://www.runninghub.cn/runninghub-api-doc-cn/doc-8435517",
-    "https://www.runninghub.cn/runninghub-api-doc-cn/doc-8287338"
+    "data/reports/r3_8f_provider_priority_switch_to_runninghub_result.json",
+    "data/reports/r3_8d_real_storyboard_keyframe_canary_prepare_result.json"
   ],
-  "commit": "pending_at_task_closeout",
-  "delivery": "local_only_commit_pending",
-  "boundary_or_safety_stop": "provider live call forbidden in this task; no live call attempted",
+  "commit": null,
+  "delivery": "local_only",
+  "boundary_or_safety_stop": "provider live call forbidden in this task",
   "blocked_reason": null,
   "failure_reason": null,
-  "safe_actions_completed": [
-    "Reviewed official RunningHub API sources.",
-    "Froze sanitized RunningHub image-to-video dry-run contract.",
-    "Added local dry-run plan builder and coverage.",
-    "Generated dry-run report without credentials, base64 payloads, Authorization values, or provider calls.",
-    "Ran required local validation."
-  ],
-  "unsafe_action_not_performed": [
-    "RunningHub live submit",
-    "Runway live submit",
-    "provider credit consumption",
-    "real video generation",
-    "secret value output",
-    "raw provider payload recording",
-    "source overwrite",
-    "push",
-    "tag",
-    "release",
-    "deploy"
-  ],
-  "options_for_jenn": [
-    "Promote R3-8H to READY for RunningHub adapter implementation using upload-first local dry-run boundaries.",
-    "Keep any live RunningHub submit behind a future exact current authorization phrase."
-  ],
+  "safe_actions_completed": [],
+  "unsafe_action_not_performed": [],
+  "options_for_jenn": [],
   "next_safe_option": [
-    "Implement a RunningHub upload-first adapter path or authorization-preparation task as R3-8H.",
-    "Do not perform a live RunningHub submit without a future exact current Jenn authorization phrase."
+    "Worker may claim R3-8H for offline adapter implementation only.",
+    "Do not perform a live RunningHub upload, submit, query, or output download without a future exact current Jenn authorization phrase."
   ]
 }

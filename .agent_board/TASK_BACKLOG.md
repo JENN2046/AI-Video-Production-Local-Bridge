@@ -1838,21 +1838,124 @@ The dry-run report must include a sanitized request summary only:
 
 ## R3-8H_RUNNINGHUB_ADAPTER_OR_AUTHORIZATION_NEXT_STEP - RunningHub Adapter Or Authorization Next Step
 
-status: FOLLOW_UP
+status: READY
 priority: P0
-lane: Provider Implementation Or Approval Preparation
+lane: Provider Adapter Implementation
 project: AI Video Production Workspace Three Route Plan
-scope: follow-up placeholder after R3-8G decides whether RunningHub is ready for adapter implementation, further contract research, or live authorization preparation
+scope: implement RunningHub upload-first adapter skeleton, request builders, parsers, and offline tests without any provider network call
 branch: local-only
 depends_on: R3-8G_RUNNINGHUB_CONTRACT_FREEZE_AND_DRY_RUN
-source_plan: R3-8G result
-report_path: TBD
-allowed_delivery: TBD_after_R3-8G
-blocked_delivery: runninghub_call_without_exact_authorization,runway_call,provider_credits_consumed,secret_value_output,source_overwrite,push,tag,release,deploy
+source_plan: data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json
+report_path: data/reports/r3_8h_runninghub_adapter_skeleton_offline_result.json
+allowed_delivery: source_code_change,tests,offline_adapter_dry_run_report,task_board_update,local_commit
+blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,secret_value_output,raw_provider_payload_recording,source_overwrite,push,tag,release,deploy
 created_at: 2026-07-07T15:37:23+08:00
-updated_at: 2026-07-07T15:37:23+08:00
+updated_at: 2026-07-07T16:06:04+08:00
+
+### Goal
+
+Implement the local RunningHub adapter skeleton required by the R3-8G frozen contract while keeping the whole task offline. The adapter should build upload-first request plans and parse synthetic submit/query/error responses, but must not call RunningHub or Runway.
+
+### Required Implementation
+
+- Add a RunningHub upload request builder for `POST /openapi/v2/media/upload/binary`.
+- Add a RunningHub submit request builder for `POST /openapi/v2/rhart-video-g/image-to-video`.
+- Add a RunningHub query request builder for `POST /openapi/v2/query`.
+- Add sanitized request summaries that exclude API keys, Authorization values, raw binary data, base64, local private payloads, and raw provider payloads.
+- Add response parsers for upload `data.download_url`, submit `taskId/status/errorCode/errorMessage`, and query `results[].url`.
+- Add error mapping for invalid API key, rate limit, insufficient permission/credits, content safety, timeout, generation failure, and unknown provider failure where official docs allow.
+- Keep `RunningHubVideoProviderAdapter.submitGeneration` fail-closed unless a later exact live-call task authorizes and implements network execution.
+
+### Acceptance
+
+- RunningHub remains the primary provider in the registry.
+- Adapter request builders produce the R3-8G contract shape.
+- Unit tests cover upload, submit, query, output URL extraction, error mapping, and secret/base64 redaction.
+- No network call is attempted.
+- No RunningHub upload, submit, query, poll, or output download is attempted.
+- No Runway call is attempted.
+- No provider credits are consumed.
+- No real video is generated.
+- No secret values, Authorization values, raw binary payloads, base64 image payloads, or raw provider payloads are recorded.
+
+### Validation
+
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
 
 ### Notes
 
-- This is intentionally `FOLLOW_UP`, not executable.
-- Promote to `READY` only after R3-8G produces a concrete next-step decision.
+- This is not a live RunningHub integration task.
+- Any real RunningHub upload/submit/query requires a future exact current Jenn authorization phrase.
+
+## R3-8I_RUNNINGHUB_REAL_KEYFRAME_AUTHORIZATION_PREP - RunningHub Real Keyframe Authorization Prep
+
+status: FOLLOW_UP
+priority: P0
+lane: Approval Boundary Preparation
+project: AI Video Production Workspace Three Route Plan
+scope: prepare exact authorization checklist for one RunningHub real-keyframe live canary after R3-8H offline adapter tests pass
+branch: local-only
+depends_on: R3-8H_RUNNINGHUB_ADAPTER_OR_AUTHORIZATION_NEXT_STEP
+source_plan: R3-8H result
+report_path: data/reports/r3_8i_runninghub_real_keyframe_authorization_prep_result.json
+allowed_delivery: authorization_checklist,final_guard_report,dry_run_report_reference,task_board_update,local_commit
+blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,provider_credits_consumed,real_video_generated,secret_value_output,source_overwrite,push,tag,release,deploy
+created_at: 2026-07-07T16:06:04+08:00
+updated_at: 2026-07-07T16:06:04+08:00
+
+### Goal
+
+Prepare the exact authorization phrase and final guard for a single RunningHub real-keyframe canary. This task must stop before any live provider upload or submit.
+
+### Notes
+
+- This task remains `FOLLOW_UP` until R3-8H passes.
+- It must confirm selected artifact, upload-first plan, budget limit, max submit calls, and stop conditions.
+
+## R3-8J_RUNNINGHUB_REAL_KEYFRAME_SINGLE_SUBMIT_CANARY - RunningHub Real Keyframe Single-Submit Canary
+
+status: FOLLOW_UP
+priority: P0
+lane: Approval Boundary Live Provider Execution
+project: AI Video Production Workspace Three Route Plan
+scope: execute exactly one Jenn-authorized RunningHub upload-first real-keyframe canary
+branch: local-only
+depends_on: R3-8I_RUNNINGHUB_REAL_KEYFRAME_AUTHORIZATION_PREP
+source_plan: R3-8I exact authorization
+report_path: data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json
+allowed_delivery: one_authorized_runninghub_upload,one_authorized_runninghub_submit,status_query,output_download_if_succeeded,ffprobe_if_succeeded,sanitized_live_result_report,local_commit
+blocked_delivery: runninghub_call_without_exact_authorization,runway_call,second_submit,retry_live_submit,regeneration,batch_generation,secret_value_output,raw_provider_payload_recording,source_overwrite,push,tag,release,deploy
+created_at: 2026-07-07T16:06:04+08:00
+updated_at: 2026-07-07T16:06:04+08:00
+
+### Goal
+
+Run exactly one live RunningHub canary only after Jenn provides a fresh exact authorization phrase. This task is not auto-executable while in `FOLLOW_UP`.
+
+### Notes
+
+- `max_submit_calls=1` must be enforced.
+- Upload, submit, status query, and download must be truthfully counted and reported.
+
+## R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT - Provider Path Decision Closeout
+
+status: FOLLOW_UP
+priority: P1
+lane: Provider Decision Closeout
+project: AI Video Production Workspace Three Route Plan
+scope: summarize Runway and RunningHub evidence and decide M1 provider path readiness after RunningHub canary result
+branch: local-only
+depends_on: R3-8J_RUNNINGHUB_REAL_KEYFRAME_SINGLE_SUBMIT_CANARY
+source_plan: R3-8J result
+report_path: data/reports/r3_8k_provider_path_decision_closeout.json
+allowed_delivery: decision_report,readiness_summary,task_board_update,local_commit
+blocked_delivery: provider_call,provider_credits_consumed,real_video_generated,secret_value_output,source_overwrite,push,tag,release,deploy
+created_at: 2026-07-07T16:06:04+08:00
+updated_at: 2026-07-07T16:06:04+08:00
+
+### Goal
+
+Close the provider-selection loop after RunningHub live canary evidence is available. This task does not call any provider.
