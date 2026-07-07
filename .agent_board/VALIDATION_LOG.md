@@ -1028,3 +1028,33 @@ Evidence:
 Notes:
 - No provider network call, Runway retry, RunningHub call, provider credit consumption, real video generation, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
 - Current gradient fixture is not suitable for another live canary; use a real storyboard keyframe or prepare an upload/HTTPS input path first.
+
+### R3-8D - 2026-07-07T14:51:58+08:00
+
+Commands:
+
+```bash
+npm run r3:8d:prepare
+npm run typecheck
+npm run test:m1
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_READY_FOR_USER_AUTHORIZATION
+```
+
+Evidence:
+- `data/reports/r3_8d_real_storyboard_keyframe_canary_prepare_result.json`
+- `data/reports/r3_8c_runway_submit_failure_triage_result.json`
+- `data/reports/g0_r1_import_prep_result.json`
+- `data/reports/secret_scan_result.json`
+
+Notes:
+- Selected `SHOT_001` app registry artifact `artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7` as the real storyboard keyframe canary candidate.
+- Canary dry-run plan uses `provider=runway`, `model=gen4.5`, `endpoint=POST /v1/image_to_video`, `X-Runway-Version=2024-11-06`, `duration_seconds=2`, `ratio=720:1280`, and `max_submit_calls=1`.
+- No provider network call, Runway upload, RunningHub call, provider credit consumption, real video generation, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
+- `git diff --check` passed with CRLF normalization warning only.

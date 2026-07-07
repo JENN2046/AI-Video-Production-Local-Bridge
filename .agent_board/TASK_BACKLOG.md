@@ -1587,3 +1587,59 @@ Improve the evidence chain after R3-8B failed with `PROVIDER_UNSUPPORTED_INPUT`,
 
 - Current gradient fixture is technically valid but unsuitable for the next live Gen-4.5 I2V canary because it lacks a clear subject.
 - Next live Runway submit requires a new exact current Jenn authorization phrase.
+
+## R3-8D_PREPARE_REAL_STORYBOARD_KEYFRAME_CANARY - Prepare Real Storyboard Keyframe Canary
+
+status: DONE
+priority: P0
+lane: Provider Input Preparation And Offline Canary Planning
+project: AI Video Production Workspace Three Route Plan
+scope: inspect app-registered approved WebGPT keyframes, validate image facts, select a real storyboard keyframe, and prepare a dry-run Runway canary plan
+branch: local-only
+depends_on: R3-8C_RUNWAY_SUBMIT_FAILURE_EVIDENCE_AND_INPUT_CONTRACT_TRIAGE
+source_plan: pasted R3-8D taskbook
+report_path: data/reports/r3_8d_real_storyboard_keyframe_canary_prepare_result.json
+allowed_delivery: source_code_change,offline_prepare_report,task_board_update,local_commit
+blocked_delivery: runway_call,runninghub_call,upload_to_runway,retry_live_submit,provider_credits_consumed,real_video_generated,secret_value_output,promptImage_base64_output,raw_provider_payload_recording,source_overwrite,push,tag,release,deploy
+created_at: 2026-07-07T14:51:58+08:00
+updated_at: 2026-07-07T14:51:58+08:00
+claimed_at: 2026-07-07T14:51:58+08:00
+claim_run_id: codex-20260707-145158-r3-8d
+claimed_by: Codex R3-8D executor
+completed_at: 2026-07-07T14:51:58+08:00
+completed_by: Codex R3-8D executor
+result: PASS_READY_FOR_USER_AUTHORIZATION
+
+### Goal
+
+Prepare a real storyboard keyframe canary input package for a future Runway Gen-4.5 single-submit authorization, without making any provider call.
+
+### Selected Input
+
+- Shot: `SHOT_001`
+- Artifact ID: `artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7`
+- Source path: `A:\AI Video Production Workspace\data\imports\g0_r1_SHOT_001_IMAGE_ACCEPTED_WEBGPT.png`
+- Storage URI: `A:\AI Video Production Workspace\data\media\artifacts\images\artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png`
+- Canary contract: `provider=runway`, `model=gen4.5`, `duration_seconds=2`, `ratio=720:1280`, `max_submit_calls=1`
+
+### Acceptance
+
+- SHOT_001 through SHOT_004 WebGPT keyframes were reviewed.
+- Selected input is a real storyboard keyframe with a clear subject.
+- Selected artifact ID comes from the app media artifact registry.
+- Selected input is not the gradient fixture, audit image, or product reference.
+- A dry-run real-keyframe canary plan and authorization phrase draft were generated.
+- No Runway or RunningHub call, upload, retry, credit consumption, real video generation, source overwrite, push, tag, release, or deploy occurred.
+
+### Validation
+
+- `npm run r3:8d:prepare`
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Notes
+
+- R3-8D stops before live provider execution.
+- The only allowed next live step is R3-8E with a new exact current Jenn authorization phrase.

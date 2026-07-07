@@ -1,12 +1,12 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260707-113015-r3-7
-Last result: R3-7 completed; Runway live canary authorization checklist prepared; live submit still requires exact Jenn authorization
+Last run: codex-20260707-145158-r3-8d
+Last result: R3-8D completed; real storyboard keyframe canary package prepared; live submit still requires exact Jenn authorization
 
 ## Current state
 
-Current task: R3-7_RUNWAY_LIVE_CANARY_AUTHORIZATION
+Current task: R3-8D_PREPARE_REAL_STORYBOARD_KEYFRAME_CANARY
 Current status: DONE
 Current owner: None
 
@@ -77,6 +77,10 @@ Current owner: None
 - Runway submit failures now support sanitized provider error summaries for future non-2xx failures.
 - Runway request summaries now report endpoint/version/model/ratio/duration/text length/image metadata without `promptImage` or base64.
 - Current canary gradient fixture is unsuitable for the next live Gen-4.5 I2V canary.
+- R3-8D completed on 2026-07-07 with `PASS_READY_FOR_USER_AUTHORIZATION` and wrote `data/reports/r3_8d_real_storyboard_keyframe_canary_prepare_result.json`.
+- R3-8D reviewed SHOT_001 through SHOT_004 approved WebGPT keyframes and selected app artifact `artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7` from `SHOT_001`.
+- The R3-8D dry-run canary plan uses `provider=runway`, `model=gen4.5`, `endpoint=POST /v1/image_to_video`, `X-Runway-Version=2024-11-06`, `duration_seconds=2`, `ratio=720:1280`, and `max_submit_calls=1`.
+- R3-8D did not call Runway or RunningHub, upload media, consume provider credits, generate video, read/print secrets, overwrite source assets, push, tag, release, or deploy.
 
 ## Blocked in last run
 
@@ -122,6 +126,7 @@ Current owner: None
 - `data/reports/r3_7_runway_live_canary_authorization_result_20260707T113308+0800.json`
 - `data/reports/r3_8b_runway_gen45_single_submit_canary_result.json`
 - `data/reports/r3_8c_runway_submit_failure_triage_result.json`
+- `data/reports/r3_8d_real_storyboard_keyframe_canary_prepare_result.json`
 - `ops/reports/three_route_acceptance_review_package_20260707_103611/THREE_ROUTE_ACCEPTANCE_REVIEW.md`
 - `ops/reports/three_route_acceptance_review_package_20260707_103611/README.md`
 
@@ -133,5 +138,5 @@ Current owner: None
 
 ## Next recommended action
 
-- Choose R3-8D input strategy: real storyboard keyframe, Runway ephemeral upload dry-run path, or HTTPS URL path.
+- Await Jenn's exact current authorization for `R3-8E_Runway_Real_Storyboard_Keyframe_Single-Submit_Authorization` if a live Runway submit should be attempted.
 - Do not retry Runway canary without a new exact current Jenn authorization phrase.

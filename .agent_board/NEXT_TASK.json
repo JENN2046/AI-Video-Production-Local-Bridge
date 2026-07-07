@@ -2,28 +2,31 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "R3-8C_RUNWAY_SUBMIT_FAILURE_EVIDENCE_AND_INPUT_CONTRACT_TRIAGE",
+  "task_id": "R3-8D_PREPARE_REAL_STORYBOARD_KEYFRAME_CANARY",
   "status": "DONE",
   "priority": "P0",
-  "lane": "Provider Failure Evidence And Offline Triage",
+  "lane": "Provider Input Preparation And Offline Canary Planning",
   "project": "AI Video Production Workspace Three Route Plan",
-  "title": "Runway Submit Failure Evidence And Input Contract Triage",
+  "title": "Prepare Real Storyboard Keyframe Canary",
   "scope": [
-    "add sanitized Runway submit failure evidence capture",
-    "add safe Runway request summary support",
-    "review canary image suitability offline",
-    "recommend next canary input strategy without provider calls"
+    "inspect existing app-registered storyboard image artifacts",
+    "inspect approved WebGPT storyboard keyframe files under data/imports and data/media",
+    "validate image readability, dimensions, mime, and sha256",
+    "select one best real storyboard keyframe candidate",
+    "generate dry-run canary plan and authorization phrase draft without provider calls"
   ],
-  "goal": "Improve the evidence chain after R3-8B failed with PROVIDER_UNSUPPORTED_INPUT, while making no Runway or RunningHub calls.",
+  "goal": "Prepare a real storyboard keyframe canary input package for a future Runway Gen-4.5 single-submit authorization, without making any provider call.",
   "acceptance": [
-    "Runway non-2xx submit failures can carry sanitized http status, provider code, message, field, and retryable flag.",
-    "Runway request summary records endpoint, version, model, ratio, duration, prompt text length, and image facts without promptImage/base64.",
-    "Canary image suitability is reported for fixtures/provider-canary/m1-r0/shot_001_canary_720x1280.png.",
-    "Next canary input strategy is reported.",
-    "No provider call, real video generation, credit consumption, secret printing, source overwrite, publish, deploy, push, tag, or release occurs."
+    "SHOT_001 through SHOT_004 WebGPT keyframes are reviewed.",
+    "Selected input is a real storyboard keyframe with a clear subject.",
+    "Selected artifact ID comes from the app media artifact registry.",
+    "Selected input is not the gradient fixture, audit image, or product reference.",
+    "Canary plan uses provider=runway, model=gen4.5, endpoint=POST /v1/image_to_video, X-Runway-Version=2024-11-06, duration_seconds=2, ratio=720:1280, and max_submit_calls=1.",
+    "Authorization phrase draft is generated for the next task.",
+    "No Runway or RunningHub call, upload, retry, credit consumption, real video generation, secret printing, raw provider payload recording, source overwrite, push, tag, release, or deploy occurs."
   ],
   "validation": [
-    "npm run r3:8c:triage",
+    "npm run r3:8d:prepare",
     "npm run typecheck",
     "npm run test:m1",
     "npm run secret:scan",
@@ -31,13 +34,14 @@
   ],
   "allowed_delivery": [
     "source_code_change",
-    "tests",
-    "offline_triage_report",
+    "offline_prepare_report",
+    "task_board_update",
     "local_commit"
   ],
   "blocked_delivery": [
     "runway_call",
     "runninghub_call",
+    "upload_to_runway",
     "retry_live_submit",
     "provider_credits_consumed",
     "real_video_generated",
@@ -51,27 +55,27 @@
     "deploy"
   ],
   "depends_on": [
-    "R3-8B_RUNWAY_GEN45_SINGLE_SUBMIT_CANARY_REAUTHORIZATION"
+    "R3-8C_RUNWAY_SUBMIT_FAILURE_EVIDENCE_AND_INPUT_CONTRACT_TRIAGE"
   ],
-  "created_at": "2026-07-07T14:21:12+08:00",
-  "updated_at": "2026-07-07T14:21:12+08:00",
-  "claimed_by": "Codex R3-8C executor",
-  "claim_run_id": "codex-20260707-142112-r3-8c",
-  "claimed_at": "2026-07-07T14:21:12+08:00",
-  "completed_by": "Codex R3-8C executor",
-  "completed_at": "2026-07-07T14:21:12+08:00",
+  "created_at": "2026-07-07T14:51:58+08:00",
+  "updated_at": "2026-07-07T14:51:58+08:00",
+  "claimed_by": "Codex R3-8D executor",
+  "claim_run_id": "codex-20260707-145158-r3-8d",
+  "claimed_at": "2026-07-07T14:51:58+08:00",
+  "completed_by": "Codex R3-8D executor",
+  "completed_at": "2026-07-07T14:51:58+08:00",
   "blocked_by": null,
   "blocked_at": null,
   "failed_by": null,
   "failed_at": null,
   "skipped_by": null,
   "skipped_at": null,
-  "result": "PASS_READY_FOR_INPUT_STRATEGY_DECISION",
+  "result": "PASS_READY_FOR_USER_AUTHORIZATION",
   "validation_result": "PASS",
   "evidence": [
+    "data/reports/r3_8d_real_storyboard_keyframe_canary_prepare_result.json",
     "data/reports/r3_8c_runway_submit_failure_triage_result.json",
-    "data/reports/r3_8b_runway_gen45_single_submit_canary_result.json",
-    "data/reports/m1_r0_runway_canary_live_result.json",
+    "data/reports/g0_r1_import_prep_result.json",
     "data/reports/secret_scan_result.json"
   ],
   "commit": null,
@@ -80,15 +84,16 @@
   "blocked_reason": null,
   "failure_reason": null,
   "safe_actions_completed": [
-    "added sanitized provider error summary capability",
-    "added Runway request summary without promptImage or base64",
-    "generated offline R3-8C triage report",
-    "confirmed current gradient fixture is unsuitable for next live canary",
-    "recommended real storyboard keyframe or upload/HTTPS input strategy"
+    "reviewed SHOT_001 through SHOT_004 approved WebGPT keyframes",
+    "verified app registry artifact IDs for active storyboard_image artifacts",
+    "selected SHOT_001 artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7 as the real storyboard keyframe canary candidate",
+    "generated offline real-keyframe Runway canary plan",
+    "generated exact authorization phrase draft for R3-8E"
   ],
   "unsafe_action_not_performed": [
     "runway_call",
     "runninghub_call",
+    "upload_to_runway",
     "retry_live_submit",
     "provider_credits_consumed",
     "real_video_generated",
@@ -102,12 +107,11 @@
     "deploy"
   ],
   "options_for_jenn": [
-    "R3-8D Prepare Real Storyboard Keyframe Canary",
-    "R3-8D Prepare Runway Ephemeral Upload Canary Path",
-    "R3-8D Ask Jenn For Next Live Canary Authorization"
+    "Authorize R3-8E with the exact phrase from data/reports/r3_8d_real_storyboard_keyframe_canary_prepare_result.json.",
+    "Choose a different app-registered storyboard keyframe and rerun R3-8D preparation before any live submit."
   ],
   "next_safe_option": [
-    "Choose the next canary input strategy.",
-    "Do not perform another live Runway submit without a new exact current Jenn authorization phrase."
+    "R3-8E Runway Real Storyboard Keyframe Single-Submit Authorization",
+    "Do not perform the live Runway submit without a new exact current Jenn authorization phrase."
   ]
 }

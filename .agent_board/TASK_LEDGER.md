@@ -1520,3 +1520,72 @@ Boundary:
 
 Next:
 - Start sustained execution by claiming `R3-0_LOCAL_APP_CONTRACT_FREEZE_AND_H1_API_SUPPORT`.
+
+### 2026-07-07T14:51:58+08:00 - R3-8D Prepare Real Storyboard Keyframe Canary
+
+Result: DONE / PASS_READY_FOR_USER_AUTHORIZATION
+Project: AI Video Production Workspace Three Route Plan
+Lane: Provider Input Preparation And Offline Canary Planning
+Claimed by: Codex R3-8D executor
+Completed by: Codex R3-8D executor
+Run ID: codex-20260707-145158-r3-8d
+Started at: 2026-07-07T14:51:58+08:00
+Completed at: 2026-07-07T14:51:58+08:00
+Stopped at:
+
+Scope:
+- Reviewed SHOT_001 through SHOT_004 approved WebGPT keyframes.
+- Verified app registry artifact IDs, image readability, dimensions, mime, and sha256.
+- Selected one real storyboard keyframe for the next Runway Gen-4.5 canary authorization.
+- Generated dry-run canary plan and authorization phrase draft without provider calls.
+
+Changed files:
+- `scripts/r3-8d-real-storyboard-keyframe-canary-prepare.ts`
+- `package.json`
+- `data/reports/r3_8d_real_storyboard_keyframe_canary_prepare_result.json`
+- `.agent_board/NEXT_TASK.json`
+- `.agent_board/NEXT_TASK.md`
+- `.agent_board/RUN_LOCK.md`
+- `.agent_board/TASK_BACKLOG.md`
+- `.agent_board/VALIDATION_LOG.md`
+- `.agent_board/HANDOFF.md`
+- `.agent_board/TASK_LEDGER.md`
+
+Validation:
+- command: `npm run r3:8d:prepare`
+  result: PASS
+- command: `npm run typecheck`
+  result: PASS
+- command: `npm run test:m1`
+  result: PASS
+- command: `npm run secret:scan`
+  result: PASS
+- command: `git diff --check`
+  result: PASS_WITH_EOL_WARNING_ONLY
+
+Evidence:
+- `data/reports/r3_8d_real_storyboard_keyframe_canary_prepare_result.json`
+- `data/reports/r3_8c_runway_submit_failure_triage_result.json`
+- `data/reports/g0_r1_import_prep_result.json`
+- `data/reports/secret_scan_result.json`
+
+Git delivery:
+- repo: yes
+- branch: main
+- commit: pending_at_ledger_write
+- push: no
+- PR: none
+
+Memory:
+- written: no
+- location/type: none
+
+Boundary:
+- approval required: yes, for any later live Runway submit.
+- unsafe action not performed: Runway call; RunningHub call; upload to Runway; live retry; provider credit consumption; real video generation; secret output; promptImage/base64 output; raw provider payload recording; source overwrite; push; tag; release; deploy.
+
+Risks:
+- The selected image has a real storyboard subject and app registry artifact ID, but the next live submit may still fail provider-side until R3-8E runs under exact authorization.
+
+Next:
+- Await Jenn's exact current authorization for `R3-8E_Runway_Real_Storyboard_Keyframe_Single-Submit_Authorization`.

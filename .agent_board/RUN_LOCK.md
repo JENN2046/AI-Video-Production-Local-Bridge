@@ -1,9 +1,9 @@
 # RUN_LOCK.md
 
 status: inactive
-run_id: codex-20260707-142112-r3-8c
-owner: Codex R3-8C executor
-started_at: 2026-07-07T14:21:12+08:00
+run_id: codex-20260707-145158-r3-8d
+owner: Codex R3-8D executor
+started_at: 2026-07-07T14:51:58+08:00
 current_task: none
 project: AI Video Production Workspace Three Route Plan
 stale_after_minutes: 120
