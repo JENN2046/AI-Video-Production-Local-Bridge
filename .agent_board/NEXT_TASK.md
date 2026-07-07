@@ -1,50 +1,46 @@
 # NEXT_TASK.md
 
-Status: FAILED
+Status: READY
 
-Task: R3-8J_RUNNINGHUB_REAL_KEYFRAME_SINGLE_SUBMIT_CANARY
+Task: R3-8J_RECEIPT_FIX
 
-Title: RunningHub Real Keyframe Single-Submit Canary
+Title: R3-8J RunningHub Duration Failure Receipt Fix
 
 Priority: P0
 
-Lane: Approval Boundary Live Provider Execution
+Lane: Provider Evidence Receipt
 
 Project: AI Video Production Workspace Three Route Plan
 
-Depends on: R3-8I_RUNNINGHUB_REAL_KEYFRAME_AUTHORIZATION_PREP
-
-Claimed by: Codex R3-8J executor
-
-Claim run ID: codex-20260707-174355-r3-8j
-
-Claimed at: 2026-07-07T17:43:55+08:00
+Depends on: R3-8J_RUNNINGHUB_REAL_KEYFRAME_SINGLE_SUBMIT_CANARY
 
 ## Goal
 
-Run exactly one live RunningHub canary under Jenn's current exact authorization phrase and record sanitized evidence.
+Repair the R3-8J audit chain before any further RunningHub retry planning.
 
-## Execution Boundary
+## Required Work
 
-- `duration_seconds=3`
-- `max_upload_calls=1`
-- `max_submit_calls=1`
-- No automatic retry or second billable submit
-- No Runway fallback
-- No regeneration or batch generation
-- No secret values, signed URLs, raw provider payloads, source overwrite, push, tag, release, or deploy
+- Backfill R3-8J commit `1f68c36` into the R3-8J report, backlog, and ledger where applicable.
+- Record that RunningHub received exactly one upload and exactly one submit.
+- Record that `query_call_count=0`, `provider_job_id_present=false`, and no channel/output URL exists.
+- Record the provider-side duration contract evidence: `duration=3` is below minimum value `6`.
+- Leave R3-8L as the next eligible offline duration-contract repair task.
+
+## Acceptance
+
+- No network call is attempted.
+- No RunningHub upload, submit, query, poll, or output download is attempted.
+- No Runway call is attempted.
+- No provider credits are consumed.
+- No real video is generated.
+- No secret values, signed URLs, raw provider payloads, or source assets are exposed or overwritten.
 
 ## Validation
 
-- `npm run typecheck`
-- `npm run test:m1`
+- JSON parse for updated report files
 - `npm run secret:scan`
 - `git diff --check`
 
-## Result
+## Stop Reason
 
-`PROVIDER_FAILED_DURATION_MIN_6`
-
-RunningHub rejected the single authorized submit because `duration=3` is less than the provider minimum value `6`.
-
-No provider job id, output URL, local video artifact, or ffprobe result exists.
+Stop before any live RunningHub upload, submit, status query, provider output download, provider credit consumption, or real video generation. Any new live provider action requires a future exact current Jenn authorization phrase.

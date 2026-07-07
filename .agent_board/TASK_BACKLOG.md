@@ -1990,22 +1990,124 @@ Run exactly one live RunningHub canary under Jenn's fresh exact authorization ph
 - Upload, submit, status query, and download must be truthfully counted and reported.
 - Result: one authorized upload and one authorized submit were attempted. RunningHub rejected `duration=3` with sanitized evidence that the minimum duration is `6`; no provider job id, output URL, local video artifact, or ffprobe result exists.
 
+## R3-8J_RECEIPT_FIX - R3-8J RunningHub Duration Failure Receipt Fix
+
+status: READY
+priority: P0
+lane: Provider Evidence Receipt
+project: AI Video Production Workspace Three Route Plan
+scope: backfill R3-8J live canary commit and duration-minimum failure receipt before further retry planning
+branch: local-only
+depends_on: R3-8J_RUNNINGHUB_REAL_KEYFRAME_SINGLE_SUBMIT_CANARY
+source_plan: R3-8J result
+report_path: data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json
+allowed_delivery: receipt_metadata_update,task_board_update,local_commit
+blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,secret_value_output,raw_provider_payload_recording,source_overwrite,push,tag,release,deploy
+created_at: 2026-07-07T17:55:56+08:00
+updated_at: 2026-07-07T17:55:56+08:00
+
+### Goal
+
+Repair the R3-8J audit chain before any further RunningHub retry planning.
+
+### Acceptance
+
+- Backfill R3-8J commit `1f68c36` into the R3-8J report, backlog, and ledger where applicable.
+- Record that RunningHub received exactly one upload and exactly one submit.
+- Record that `query_call_count=0`, `provider_job_id_present=false`, and no channel/output URL exists.
+- Record the provider-side duration contract evidence: `duration=3` is below minimum value `6`.
+- Leave R3-8L as the next eligible offline duration-contract repair task.
+- Do not call RunningHub or Runway.
+
+### Validation
+
+- JSON parse for updated report files
+- `npm run secret:scan`
+- `git diff --check`
+
+## R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN - RunningHub Duration Contract Repair Dry Run
+
+status: READY
+priority: P0
+lane: Provider Contract Repair
+project: AI Video Production Workspace Three Route Plan
+scope: repair RunningHub duration minimum contract offline and add fail-fast guard before any future live retry
+branch: local-only
+depends_on: R3-8J_RECEIPT_FIX
+source_plan: R3-8J sanitized duration-minimum failure evidence
+report_path: data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json
+allowed_delivery: source_code_change,tests,dry_run_report,task_board_update,local_commit
+blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,secret_value_output,raw_provider_payload_recording,source_overwrite,push,tag,release,deploy
+created_at: 2026-07-07T17:55:56+08:00
+updated_at: 2026-07-07T17:55:56+08:00
+
+### Goal
+
+Update the local RunningHub contract so `duration_seconds < 6` fails before upload or submit. Regenerate a dry-run plan for the same real storyboard keyframe using `duration_seconds=6`.
+
+### Required Implementation
+
+- Encode RunningHub minimum duration as `6` for `rhart-video-g/image-to-video`.
+- Add or update a fail-fast guard so future `duration_seconds < 6` attempts stop before upload.
+- Update request-plan builders and authorization-prep logic to use `duration_seconds=6` for this RunningHub model.
+- Add tests proving `duration_seconds=3` is blocked before upload/submit.
+- Produce a dry-run report with `duration_seconds=6`, `max_upload_calls=1`, `max_submit_calls=1`, `query_until_terminal=true`, `network_call_attempted=false`, `runninghub_called=false`, and `provider_credits_consumed=false`.
+
+### Validation
+
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
+
+## R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY - RunningHub 6s Single-Submit Canary
+
+status: FOLLOW_UP
+priority: P0
+lane: Approval Boundary Live Provider Execution
+project: AI Video Production Workspace Three Route Plan
+scope: execute one RunningHub upload-first live canary using duration_seconds=6 after R3-8L passes and Jenn gives a fresh exact authorization phrase
+branch: local-only
+depends_on: R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN
+source_plan: R3-8L dry-run report
+report_path: data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json
+allowed_delivery: one_authorized_runninghub_upload,one_authorized_runninghub_submit,status_query,output_download_if_succeeded,ffprobe_if_succeeded,sanitized_live_result_report,local_commit
+blocked_delivery: runninghub_call_without_exact_authorization,runway_call,second_submit,retry_live_submit,regeneration,batch_generation,secret_value_output,raw_provider_payload_recording,source_overwrite,push,tag,release,deploy
+created_at: 2026-07-07T17:55:56+08:00
+updated_at: 2026-07-07T17:55:56+08:00
+
+### Goal
+
+Run exactly one RunningHub 6-second canary only after Jenn provides a fresh exact current authorization phrase.
+
+### Hard Boundary
+
+- `duration_seconds=6`
+- `max_upload_calls=1`
+- `max_submit_calls=1`
+- no retry or second submit
+- no batch
+- no regeneration
+- no Runway fallback
+- no source overwrite
+- no secret output
+
 ## R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT - Provider Path Decision Closeout
 
 status: FOLLOW_UP
 priority: P1
 lane: Provider Decision Closeout
 project: AI Video Production Workspace Three Route Plan
-scope: summarize Runway and RunningHub evidence and decide M1 provider path readiness after RunningHub canary result
+scope: summarize Runway and RunningHub evidence and decide M1 provider path readiness after a duration-valid RunningHub canary result
 branch: local-only
-depends_on: R3-8J_RUNNINGHUB_REAL_KEYFRAME_SINGLE_SUBMIT_CANARY
-source_plan: R3-8J result
+depends_on: R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY
+source_plan: R3-8M result
 report_path: data/reports/r3_8k_provider_path_decision_closeout.json
 allowed_delivery: decision_report,readiness_summary,task_board_update,local_commit
 blocked_delivery: provider_call,provider_credits_consumed,real_video_generated,secret_value_output,source_overwrite,push,tag,release,deploy
 created_at: 2026-07-07T16:06:04+08:00
-updated_at: 2026-07-07T16:06:04+08:00
+updated_at: 2026-07-07T17:55:56+08:00
 
 ### Goal
 
-Close the provider-selection loop after RunningHub live canary evidence is available. This task does not call any provider.
+Close the provider-selection loop after duration-valid RunningHub live canary evidence is available. This task does not call any provider.
