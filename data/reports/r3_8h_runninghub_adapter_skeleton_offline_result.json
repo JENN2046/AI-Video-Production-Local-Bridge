@@ -5,6 +5,8 @@
   "receipt": {
     "receipt_fix_task": "R3-8H-RECEIPT-FIX",
     "receipt_fixed_at": "2026-07-07T16:44:00+08:00",
+    "receipt_fix_commit": "c31b077",
+    "receipt_fix_commit_subject": "Fix R3-8H receipt metadata",
     "branch": "master",
     "implementation_commit": "b1efae2",
     "implementation_commit_subject": "Add RunningHub offline adapter skeleton",
@@ -18,6 +20,7 @@
     "branch": "master",
     "implementation_commit": "b1efae2",
     "queue_promotion_commit": "cfbd96b",
+    "receipt_fix_commit": "c31b077",
     "push": false,
     "pr": null,
     "tag": false,

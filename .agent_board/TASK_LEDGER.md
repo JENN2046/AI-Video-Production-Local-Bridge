@@ -1835,11 +1835,12 @@ Evidence:
 - data/reports/r3_8h_runninghub_adapter_skeleton_offline_result.json
 - git log: `b1efae2 Add RunningHub offline adapter skeleton`
 - git log: `cfbd96b Queue RunningHub authorization prep`
+- git log: `c31b077 Fix R3-8H receipt metadata`
 
 Git delivery:
 - repo: yes
 - branch: master
-- commit: pending_receipt_fix_commit
+- commit: c31b077
 - push: no
 - PR: none
 
