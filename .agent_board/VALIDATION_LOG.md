@@ -1149,3 +1149,34 @@ Notes:
 - Added sanitized error mapping for invalid API key, rate limit, insufficient credits, insufficient permission, content safety, timeout, generation failure, and unknown provider failure.
 - No RunningHub call, Runway call, provider upload, status poll, provider output download, provider credit consumption, real video generation, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
 - git diff --check passed with CRLF normalization warnings only.
+
+### R3-8I - 2026-07-07T17:18:38+08:00
+
+Commands:
+
+```bash
+npm run r3:8i:prep
+npm run typecheck
+npm run test:m1
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_READY_FOR_USER_AUTHORIZATION
+```
+
+Evidence:
+- `data/reports/r3_8i_runninghub_real_keyframe_authorization_prep_result.json`
+- `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
+- `data/reports/r3_8h_runninghub_adapter_skeleton_offline_result.json`
+- `data/reports/secret_scan_result.json`
+
+Notes:
+- Prepared exact authorization phrase for one future RunningHub upload-first real-keyframe canary.
+- Confirmed selected app registry artifact `artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7`.
+- Plan uses `max_upload_calls=1`, `max_submit_calls=1`, `duration_seconds=6`, `aspectRatio=9:16`, `resolution=480p`, upload endpoint `POST /openapi/v2/media/upload/binary`, submit endpoint `POST /openapi/v2/rhart-video-g/image-to-video`, and query endpoint `POST /openapi/v2/query`.
+- No RunningHub call, Runway call, provider upload, status poll, provider output download, provider credit consumption, real video generation, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
+- git diff --check passed with CRLF normalization warnings only.

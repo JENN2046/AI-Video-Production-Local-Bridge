@@ -110,6 +110,8 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - R3-8H receipt was fixed on 2026-07-07 to record implementation commit `b1efae2` and queue promotion commit `cfbd96b` in the JSON report.
 - R3-8H added offline upload, submit, and query request builders for RunningHub, plus synthetic response parsers and sanitized error mapping.
 - R3-8H did not call RunningHub or Runway, upload media to provider, poll status, download provider output, consume provider credits, generate video, read/print secrets, overwrite source assets, push, tag, release, or deploy.
+- R3-8I completed RunningHub real-keyframe authorization prep and wrote `data/reports/r3_8i_runninghub_real_keyframe_authorization_prep_result.json`.
+- R3-8I generated the exact authorization phrase for a future R3-8J live canary, but did not call RunningHub or Runway and did not read `.env.local`.
 
 ## Blocked in last run
 
@@ -159,6 +161,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - `data/reports/r3_8e_runway_real_storyboard_keyframe_canary_result.json`
 - `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - `data/reports/r3_8h_runninghub_adapter_skeleton_offline_result.json`
+- `data/reports/r3_8i_runninghub_real_keyframe_authorization_prep_result.json`
 - `ops/reports/three_route_acceptance_review_package_20260707_103611/THREE_ROUTE_ACCEPTANCE_REVIEW.md`
 - `ops/reports/three_route_acceptance_review_package_20260707_103611/README.md`
 
@@ -170,7 +173,6 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 
 ## Next recommended action
 
-- R3-8I is `READY` for offline RunningHub live-canary authorization preparation.
-- R3-8I must stop before any live RunningHub upload, submit, query, output download, provider credit consumption, or real video generation.
+- R3-8J remains `FOLLOW_UP`; promote/run it only after Jenn provides the exact RunningHub live-canary authorization phrase.
 - Do not submit to RunningHub without a future exact current Jenn authorization phrase.
 - Do not retry Runway canary without a new exact current Jenn authorization phrase.

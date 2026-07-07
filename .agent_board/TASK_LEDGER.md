@@ -1850,3 +1850,68 @@ Boundary:
 Next:
 - R3-8I remains READY for offline authorization preparation only.
 - Any live RunningHub upload/submit/query/download requires a future exact current Jenn authorization phrase.
+
+### 2026-07-07T17:18:38+08:00 - R3-8I RunningHub Real Keyframe Authorization Prep
+
+Result: PASS_READY_FOR_USER_AUTHORIZATION
+Project: AI Video Production Workspace Three Route Plan
+Lane: Approval Boundary Preparation
+Claimed by: Codex R3-8I executor
+Completed by: Codex R3-8I executor
+Run ID: codex-20260707-171333-r3-8i
+Started at: 2026-07-07T17:13:33+08:00
+Completed at: 2026-07-07T17:18:38+08:00
+
+Scope:
+- Prepared exact authorization checklist and final guard for one future RunningHub upload-first real-keyframe canary.
+- Reused R3-8G contract freeze and R3-8H offline adapter skeleton evidence.
+- Confirmed selected storyboard keyframe artifact from app registry.
+- Stopped before any live provider action.
+
+Changed files:
+- package.json
+- scripts/r3-8i-runninghub-real-keyframe-authorization-prep.ts
+- data/reports/r3_8i_runninghub_real_keyframe_authorization_prep_result.json
+- .agent_board/NEXT_TASK.json
+- .agent_board/NEXT_TASK.md
+- .agent_board/RUN_LOCK.md
+- .agent_board/TASK_BACKLOG.md
+- .agent_board/VALIDATION_LOG.md
+- .agent_board/HANDOFF.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: npm run r3:8i:prep
+  result: PASS
+- command: npm run typecheck
+  result: PASS
+- command: npm run test:m1
+  result: PASS
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_8i_runninghub_real_keyframe_authorization_prep_result.json
+- data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json
+- data/reports/r3_8h_runninghub_adapter_skeleton_offline_result.json
+- data/reports/secret_scan_result.json
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: created_after_task_state_write; see final response and git log
+- push: no
+- PR: none
+
+Boundary:
+- No RunningHub call, Runway call, media upload to provider, status poll, output download, provider credit consumption, real video generation, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
+
+Risks:
+- R3-8J remains a live provider execution boundary and must not run without a fresh exact Jenn authorization phrase.
+- RunningHub docs still do not enumerate the complete aspect-ratio list or duration range on the reviewed official pages.
+
+Next:
+- R3-8J remains FOLLOW_UP until Jenn provides the exact authorization phrase.
+- Any live RunningHub upload/submit/query/download requires a future exact current Jenn authorization phrase.

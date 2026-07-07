@@ -1,6 +1,6 @@
 # NEXT_TASK.md
 
-Status: READY
+Status: DONE
 
 Task: R3-8I_RUNNINGHUB_REAL_KEYFRAME_AUTHORIZATION_PREP
 
@@ -13,6 +13,20 @@ Lane: Approval Boundary Preparation
 Project: AI Video Production Workspace Three Route Plan
 
 Depends on: R3-8H_RUNNINGHUB_ADAPTER_OR_AUTHORIZATION_NEXT_STEP
+
+Claimed by: Codex R3-8I executor
+
+Claim run ID: codex-20260707-171333-r3-8i
+
+Claimed at: 2026-07-07T17:13:33+08:00
+
+Completed by: Codex R3-8I executor
+
+Completed at: 2026-07-07T17:18:38+08:00
+
+Result: PASS_READY_FOR_USER_AUTHORIZATION
+
+Validation result: PASS
 
 ## Goal
 

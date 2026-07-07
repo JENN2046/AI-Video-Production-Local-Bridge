@@ -1899,7 +1899,7 @@ Implement the local RunningHub adapter skeleton required by the R3-8G frozen con
 
 ## R3-8I_RUNNINGHUB_REAL_KEYFRAME_AUTHORIZATION_PREP - RunningHub Real Keyframe Authorization Prep
 
-status: READY
+status: DONE
 priority: P0
 lane: Approval Boundary Preparation
 project: AI Video Production Workspace Three Route Plan
@@ -1911,7 +1911,13 @@ report_path: data/reports/r3_8i_runninghub_real_keyframe_authorization_prep_resu
 allowed_delivery: authorization_checklist,final_guard_report,dry_run_report_reference,task_board_update,local_commit
 blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,secret_value_output,raw_provider_payload_recording,source_overwrite,push,tag,release,deploy
 created_at: 2026-07-07T16:06:04+08:00
-updated_at: 2026-07-07T16:37:12+08:00
+updated_at: 2026-07-07T17:18:38+08:00
+claimed_at: 2026-07-07T17:13:33+08:00
+claim_run_id: codex-20260707-171333-r3-8i
+claimed_by: Codex R3-8I executor
+completed_at: 2026-07-07T17:18:38+08:00
+completed_by: Codex R3-8I executor
+result: PASS_READY_FOR_USER_AUTHORIZATION
 
 ### Goal
 

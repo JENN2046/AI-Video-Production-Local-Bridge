@@ -1,0 +1,176 @@
+{
+  "task": "R3-8I_RUNNINGHUB_REAL_KEYFRAME_AUTHORIZATION_PREP",
+  "result": "PASS_READY_FOR_USER_AUTHORIZATION",
+  "generated_at": "2026-07-07T09:17:40.361Z",
+  "source_reports": {
+    "r3_8g_contract_freeze": "data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json",
+    "r3_8h_adapter_skeleton": "data/reports/r3_8h_runninghub_adapter_skeleton_offline_result.json",
+    "g0_freeze": "data/reports/g0_r1_package_freeze_result.json"
+  },
+  "local_registry": {
+    "runninghub_primary": true,
+    "runninghub_status": "primary_real_provider",
+    "runninghub_model_name": "rhart-video-g/image-to-video",
+    "runway_secondary": true,
+    "runway_fallback_allowed": false
+  },
+  "selected_keyframe": {
+    "artifact_id": "artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7",
+    "source_path": "A:\\AI Video Production Workspace\\data\\imports\\g0_r1_SHOT_001_IMAGE_ACCEPTED_WEBGPT.png",
+    "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png",
+    "mime_type": "image/png",
+    "width": 941,
+    "height": 1672,
+    "aspect_ratio": "941:1672",
+    "near_vertical_9_16": true,
+    "sha256": "efbea3aa2507cd7d431501eafba3206cf6cfd000174b2d6109371b5e37e6a474",
+    "byte_size": 2243051,
+    "source_readable": true,
+    "storage_readable": true,
+    "artifact_role": "storyboard_image",
+    "artifact_status": "active",
+    "artifact_id_from_app_registry": true,
+    "gpt_invented_artifact_id": false,
+    "source_asset_overwritten": false
+  },
+  "project_linkage": {
+    "project_id": "project_b742cb15-e44e-41b2-8d2d-4b90a30720df",
+    "project_title": "Ryan's Lunch Break Skullcap",
+    "storyboard_package_id": "storyboard_package_1e5c1eca-624e-4687-9775-31e4b59f428a",
+    "shot_id": "g0_r1_shot_001",
+    "package_shot_duration_seconds": 3,
+    "runninghub_canary_duration_seconds": 6,
+    "duration_policy": "Use 6 seconds because the reviewed RunningHub official model API example documents duration=6; full supported range remains unresolved."
+  },
+  "live_canary_plan": {
+    "provider": "runninghub",
+    "model_route": "rhart-video-g/image-to-video",
+    "upload_first_required": true,
+    "upload": {
+      "endpoint": "POST /openapi/v2/media/upload/binary",
+      "method": "POST",
+      "file_field": "file",
+      "file_name": "artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png",
+      "mime_type": "image/png",
+      "file_size_bytes": 2243051,
+      "sha256": "efbea3aa2507cd7d431501eafba3206cf6cfd000174b2d6109371b5e37e6a474",
+      "max_upload_calls": 1,
+      "authorization_value_included": false,
+      "binary_payload_included": false,
+      "base64_included": false
+    },
+    "submit": {
+      "endpoint": "POST /openapi/v2/rhart-video-g/image-to-video",
+      "method": "POST",
+      "request_fields": [
+        "prompt",
+        "aspectRatio",
+        "imageUrls",
+        "resolution",
+        "duration"
+      ],
+      "prompt_text_length": 262,
+      "negative_prompt_supported": false,
+      "negative_prompt_text_length": 73,
+      "aspectRatio": "9:16",
+      "image_url_values_included": false,
+      "image_url_placeholder_used": true,
+      "resolution": "480p",
+      "duration": 6,
+      "max_submit_calls": 1,
+      "retry_allowed": false,
+      "raw_provider_payload_included": false
+    },
+    "query": {
+      "endpoint": "POST /openapi/v2/query",
+      "method": "POST",
+      "body_shape": {
+        "taskId": "string"
+      },
+      "task_id_value_included": false,
+      "allowed_after_submit_task_id": true,
+      "status_query_not_a_second_submit": true
+    },
+    "output_handling_if_succeeded": {
+      "output_dir": "data/media/provider-canary/r3-8j-runninghub-real-keyframe/",
+      "download_to_local_media_artifact_storage": true,
+      "ffprobe_validation_required": true,
+      "source_asset_overwrite_allowed": false
+    }
+  },
+  "final_guard": {
+    "result": "PASS_READY_FOR_USER_AUTHORIZATION",
+    "requires_user_authorization_for_real_call": true,
+    "authorization_phrase_must_match": true,
+    "env_local_read_allowed_in_this_task": false,
+    "live_task_may_require_env_local_read_authorization": true,
+    "max_upload_calls": 1,
+    "max_submit_calls": 1,
+    "retry_allowed": false,
+    "second_submit_allowed": false,
+    "runninghub_upload_allowed_now": false,
+    "runninghub_submit_allowed_now": false,
+    "runninghub_query_allowed_now": false,
+    "runninghub_output_download_allowed_now": false,
+    "runway_fallback_allowed": false,
+    "regeneration_allowed": false,
+    "batch_generation_allowed": false,
+    "publish_allowed": false,
+    "deploy_allowed": false,
+    "source_overwrite_allowed": false,
+    "secret_printing_allowed": false,
+    "raw_provider_payload_recording_allowed": false,
+    "budget_boundary": "Only one future upload-first RunningHub canary submit may be authorized; no automatic retry or second billable submit."
+  },
+  "exact_authorization_phrase": "授权执行 1 次 RunningHub upload-first real-storyboard-keyframe single-submit canary 真实调用：provider=runninghub，upload_endpoint=POST /openapi/v2/media/upload/binary，submit_endpoint=POST /openapi/v2/rhart-video-g/image-to-video，query_endpoint=POST /openapi/v2/query，model_route=rhart-video-g/image-to-video，selected_artifact_id=artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7，source_path=A:\\AI Video Production Workspace\\data\\imports\\g0_r1_SHOT_001_IMAGE_ACCEPTED_WEBGPT.png，storage_uri=A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png，duration_seconds=6，aspectRatio=9:16，resolution=480p，max_upload_calls=1，max_submit_calls=1，预算/费用上限=仅允许这 1 次 upload-first canary submit 且不允许自动重试或第二次计费 submit，output_dir=data/media/provider-canary/r3-8j-runninghub-real-keyframe/，允许同一 taskId 的状态查询直到终态或超时；成功后下载为本地 media artifact 并 ffprobe 校验，授权只读使用本地 .env.local 中 RUNNINGHUB_API_KEY 用于本次 RunningHub 调用，但不得打印 secret 值，不得调用 Runway，不得 regeneration，不得 batch，不得发布/部署，不得覆盖源资产，不得打印 secret，不得记录 raw provider payload。",
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "upload_attempted": false,
+    "submit_attempted": false,
+    "status_poll_attempted": false,
+    "output_download_attempted": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "source_assets_overwritten": false,
+    "secret_values_exposed": false,
+    "raw_provider_payload_recorded": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  },
+  "acceptance": {
+    "selected_artifact_from_app_registry": true,
+    "upload_first_plan_ready": true,
+    "submit_plan_ready": true,
+    "query_plan_ready": true,
+    "max_submit_calls_one": true,
+    "retries_disabled": true,
+    "batch_regeneration_publish_deploy_source_overwrite_disabled": true,
+    "exact_authorization_phrase_generated": true,
+    "no_network_call": true,
+    "no_secret_base64_authorization_or_raw_payload_leak": true
+  },
+  "blocked_reason": null,
+  "validation": {
+    "npm run r3:8i:prep": "PASS",
+    "npm run typecheck": "PASS",
+    "npm run test:m1": "PASS",
+    "npm run secret:scan": "PASS",
+    "git diff --check": "PASS_WITH_CRLF_WARNINGS_ONLY"
+  },
+  "changed_files": [
+    "package.json",
+    "scripts/r3-8i-runninghub-real-keyframe-authorization-prep.ts",
+    "data/reports/r3_8i_runninghub_real_keyframe_authorization_prep_result.json",
+    ".agent_board/*"
+  ],
+  "next_step": {
+    "recommended_task": "R3-8J_RUNNINGHUB_REAL_KEYFRAME_SINGLE_SUBMIT_CANARY",
+    "recommended_action": "Run exactly one live RunningHub upload-first canary only after Jenn provides the exact authorization phrase.",
+    "live_upload_submit_poll_download_requires_new_exact_user_authorization": true
+  }
+}
