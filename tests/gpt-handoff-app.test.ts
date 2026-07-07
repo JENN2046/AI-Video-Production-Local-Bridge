@@ -15,6 +15,7 @@ import {
 } from "../src/index.js";
 
 const CANARY_SOURCE = resolve(paths.workspaceRoot, "fixtures", "provider-canary", "m1-r0", "shot_001_canary_720x1280.png");
+const ONE_BY_ONE_SOURCE = resolve(paths.workspaceRoot, "fixtures", "storyboard", "shot_001.png");
 
 function copyTestImport(runId: string, order: number): string {
   ensureM0Directories();
@@ -200,6 +201,81 @@ test("M1.5 blocks GPT-supplied unsafe image paths before artifact registration",
     assert.equal(result.error.code, "STORAGE_PATH_NOT_ALLOWED");
     assert.equal(result.report.imported_artifacts.length, 0);
     assert.equal(result.report.network_call_attempted, false);
+  } finally {
+    db.close();
+  }
+});
+
+test("M1.5 blocks audit and product-reference images before artifact registration", () => {
+  const db = openM0Database();
+
+  try {
+    const runId = randomUUID().slice(0, 8);
+    const audit = `gpt_handoff_audit_DO_NOT_USE_${runId}.png`;
+    const reference = `gpt_handoff_product_reference_${runId}.png`;
+    ensureM0Directories();
+    mkdirSync(paths.importsRoot, { recursive: true });
+    copyFileSync(CANARY_SOURCE, join(paths.importsRoot, audit));
+    copyFileSync(CANARY_SOURCE, join(paths.importsRoot, reference));
+
+    const scanned = scanGptHandoffImports().filter((image) => image.filename === audit || image.filename === reference);
+    assert.equal(scanned.length, 2);
+    assert.equal(scanned.every((image) => image.eligible_for_storyboard_image === false), true);
+
+    const auditResult = freezeGptHandoffStoryboardPackage(
+      {
+        project_title: "M1.5 Audit Reject Test",
+        approved_by_user: true,
+        write_report: false,
+        shots: [{ import_filename: audit, order: 1, duration_seconds: 2, shot_description: "Audit image.", video_prompt: "Should not import." }]
+      },
+      db
+    );
+    assert.equal(auditResult.ok, false);
+    if (auditResult.ok) return;
+    assert.equal(auditResult.error.code, "AUDIT_IMAGE_REJECTED");
+
+    const referenceResult = freezeGptHandoffStoryboardPackage(
+      {
+        project_title: "M1.5 Product Reference Reject Test",
+        approved_by_user: true,
+        write_report: false,
+        shots: [{ import_filename: reference, order: 1, duration_seconds: 2, shot_description: "Reference image.", video_prompt: "Should not import." }]
+      },
+      db
+    );
+    assert.equal(referenceResult.ok, false);
+    if (referenceResult.ok) return;
+    assert.equal(referenceResult.error.code, "PRODUCT_REFERENCE_REJECTED");
+  } finally {
+    db.close();
+  }
+});
+
+test("M1.5 blocks non-vertical storyboard image imports", () => {
+  const db = openM0Database();
+
+  try {
+    const runId = randomUUID().slice(0, 8);
+    const filename = `gpt_handoff_square_${runId}.png`;
+    ensureM0Directories();
+    mkdirSync(paths.importsRoot, { recursive: true });
+    copyFileSync(ONE_BY_ONE_SOURCE, join(paths.importsRoot, filename));
+
+    const result = freezeGptHandoffStoryboardPackage(
+      {
+        project_title: "M1.5 Aspect Ratio Reject Test",
+        approved_by_user: true,
+        write_report: false,
+        shots: [{ import_filename: filename, order: 1, duration_seconds: 2, shot_description: "Square image.", video_prompt: "Should not import." }]
+      },
+      db
+    );
+
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.error.code, "ASPECT_RATIO_NOT_9_16");
+    assert.equal(result.report.imported_artifacts.length, 0);
   } finally {
     db.close();
   }

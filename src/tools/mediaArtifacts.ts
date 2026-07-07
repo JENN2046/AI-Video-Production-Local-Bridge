@@ -93,6 +93,20 @@ function isPathInside(child: string, parent: string): boolean {
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
+function hasExistingSymlinkAncestor(child: string, parent: string): boolean {
+  const resolvedParent = resolve(parent);
+  const resolvedChild = resolve(child);
+  if (!isPathInside(resolvedChild, resolvedParent)) return true;
+  const parts = relative(resolvedParent, resolvedChild).split(/[\\/]+/).filter(Boolean);
+  let current = resolvedParent;
+  for (const part of parts) {
+    current = resolve(current, part);
+    if (!existsSync(current)) return false;
+    if (lstatSync(current).isSymbolicLink()) return true;
+  }
+  return false;
+}
+
 function validateRole(artifactType: ArtifactType, role: ArtifactRole): ToolError | null {
   if (role === "storyboard_image" && artifactType !== "image") {
     return { code: "INVALID_ARTIFACT_ROLE", message: "storyboard_image artifacts must be images." };
@@ -267,6 +281,15 @@ function copyFixture(input: RegisterMediaArtifactInput): RegisterMediaArtifactRe
   copyFileSync(sourcePath, destinationPath);
   readFileSync(destinationPath);
 
+  if (input.artifact_type === "image") {
+    const validation = validateImageFile(destinationPath);
+    if (!validation.ok) {
+      rmSync(destinationPath, { force: true });
+      return { ok: false, error: imageValidationError(validation) };
+    }
+    return { ok: true, artifact: buildValidatedImageArtifact(input, artifactId, filename, destinationPath, validation) };
+  }
+
   const artifact: MediaArtifact = {
     ...buildArtifact(input, "active", filename, destinationPath, mimeTypeFor(sourcePath, input.artifact_type)),
     artifact_id: artifactId
@@ -341,8 +364,13 @@ function copyProviderOutputFile(input: RegisterMediaArtifactInput): RegisterMedi
     return { ok: false, error: { code: "INVALID_ARTIFACT_ROLE", message: "provider_output_file supports generated_clip video artifacts only." } };
   }
 
+  ensureM0Directories();
   const sourcePath = resolve(input.source.path);
   const mediaRoot = resolve(paths.mediaRoot);
+  if (lstatSync(mediaRoot).isSymbolicLink()) {
+    return { ok: false, error: { code: "SYMLINK_ESCAPE_BLOCKED", message: "App media root symbolic links are blocked for provider outputs." } };
+  }
+  const realMediaRoot = realpathSync(mediaRoot);
   if (!isPathInside(sourcePath, mediaRoot)) {
     return { ok: false, error: { code: "STORAGE_PATH_NOT_ALLOWED", message: "Provider output must already be inside app-controlled media storage." } };
   }
@@ -351,26 +379,42 @@ function copyProviderOutputFile(input: RegisterMediaArtifactInput): RegisterMedi
     return { ok: false, error: { code: "MEDIA_FILE_NOT_READABLE", message: "Provider output file is not readable." } };
   }
 
+  if (lstatSync(sourcePath).isSymbolicLink()) {
+    return { ok: false, error: { code: "SYMLINK_ESCAPE_BLOCKED", message: "Provider output file symbolic links are blocked." } };
+  }
+  const realSourcePath = realpathSync(sourcePath);
+  if (!isPathInside(realSourcePath, realMediaRoot)) {
+    return { ok: false, error: { code: "SYMLINK_ESCAPE_BLOCKED", message: "Provider output file resolves outside app media storage." } };
+  }
+
   const sourceStat = statSync(sourcePath);
   if (!sourceStat.isFile()) {
     return { ok: false, error: { code: "MEDIA_FILE_NOT_READABLE", message: "Provider output path is not a file." } };
   }
 
-  readFileSync(sourcePath);
-  ensureM0Directories();
+  readFileSync(realSourcePath);
   const artifactId = `artifact_${randomUUID()}`;
-  const filename = `${artifactId}${extname(sourcePath).toLowerCase() || ".mp4"}`;
+  const filename = `${artifactId}${extname(realSourcePath).toLowerCase() || ".mp4"}`;
   const destinationRoot = resolve(input.storage_directory ?? mediaRootFor(input.artifact_type, input.role));
   if (!isPathInside(destinationRoot, mediaRoot)) {
     return { ok: false, error: { code: "STORAGE_PATH_NOT_ALLOWED", message: "Provider artifact destination must be inside app-controlled media storage." } };
   }
+  if (hasExistingSymlinkAncestor(destinationRoot, mediaRoot)) {
+    return { ok: false, error: { code: "SYMLINK_ESCAPE_BLOCKED", message: "Provider artifact destination must not pass through symbolic links." } };
+  }
   if (!existsSync(destinationRoot)) mkdirSync(destinationRoot, { recursive: true });
+  if (lstatSync(destinationRoot).isSymbolicLink()) {
+    return { ok: false, error: { code: "SYMLINK_ESCAPE_BLOCKED", message: "Provider artifact destination symbolic links are blocked." } };
+  }
+  if (!isPathInside(realpathSync(destinationRoot), realMediaRoot)) {
+    return { ok: false, error: { code: "SYMLINK_ESCAPE_BLOCKED", message: "Provider artifact destination resolves outside app media storage." } };
+  }
   const destinationPath = resolve(destinationRoot, filename);
   if (!isPathInside(destinationPath, destinationRoot)) {
     return { ok: false, error: { code: "STORAGE_PATH_NOT_ALLOWED", message: "Provider artifact destination resolved outside app media storage." } };
   }
 
-  copyFileSync(sourcePath, destinationPath);
+  copyFileSync(realSourcePath, destinationPath);
   const sha256 = sha256ForFile(destinationPath);
 
   const artifact: MediaArtifact = {

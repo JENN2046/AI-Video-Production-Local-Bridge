@@ -29,6 +29,8 @@ state-private/
 # Logs and generated review packages.
 *.log
 data/reports/*.log
+data/reports/source_package_audit_report*.json
+data/reports/source_clean_export_report*.json
 ops/reports/*.zip
 ops/reports/*.zip.sha256.txt
 ops/reports/m0_acceptance_review_package_*/

@@ -12,6 +12,7 @@ import { getMediaArtifact, registerMediaArtifact, type MediaArtifact } from "./m
 import { validateImageFile, type ImageValidationResult } from "./imageValidity.js";
 import { validateMp4File, type Mp4ValidationResult } from "./mediaValidity.js";
 import { markShotClipReview, type RevisionInstruction } from "./review.js";
+import { classifyStoryboardImageImport, isNineSixteenAspectRatio, isNineSixteenDimensions } from "./importClassifier.js";
 
 export const H1_STATE_FILE = "data/h1/workbench_state.json";
 export const H1_FREEZE_REPORT_LATEST = "data/reports/h1_workbench_package_freeze_result.json";
@@ -26,7 +27,6 @@ const H3_REVIEW_REPORT_STEM = "h3_video_review_result";
 const H4_FINAL_ASSEMBLY_REPORT_STEM = "h4_final_assembly_result";
 const H3_REVIEW_CLIP_LIMIT = 50;
 const APPROVED_REVIEW_STATUS = "approved_for_media_artifact_handoff";
-const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg"]);
 
 export const H1_PROVIDER_BOUNDARY = {
   network_call_attempted: false,
@@ -254,26 +254,12 @@ function pendingId(value: string): boolean {
 }
 
 function forbiddenImportNameReason(filename: string): string | null {
-  if (!filename || filename !== basename(filename) || filename.includes("..") || filename.includes("/") || filename.includes("\\") || isAbsolute(filename)) {
-    return "STORAGE_PATH_NOT_ALLOWED";
-  }
-  const lower = filename.toLowerCase();
-  const extension = extname(filename).toLowerCase();
-  if (pendingId(filename)) return "PENDING_ID_REJECTED";
-  if (lower.includes("audit") || lower.includes("failed_layout") || lower.includes("do_not_use")) return "AUDIT_IMAGE_REJECTED";
-  if (lower.includes("product_reference") || lower.includes("reference")) return "PRODUCT_REFERENCE_REJECTED";
-  if (lower.includes("four_panel") || lower.includes("4panel") || lower.includes("4_panel") || lower.includes("contact_sheet") || lower.includes("collage") || lower.includes("storyboard_sheet")) {
-    return "FOUR_PANEL_REFERENCE_REJECTED";
-  }
-  if (extension === ".zip") return "ZIP_FILE_REJECTED";
-  if ([".md", ".txt", ".json", ".yaml", ".yml", ".pdf", ".docx"].includes(extension)) return "DOC_FILE_REJECTED";
-  if (!IMAGE_EXTENSIONS.has(extension)) return "IMAGE_EXTENSION_UNSUPPORTED";
-  return null;
+  const classification = classifyStoryboardImageImport(filename);
+  return classification.ok ? null : classification.reason_code;
 }
 
 function isNineSixteenLike(width: number, height: number): boolean {
-  if (width <= 0 || height <= 0) return false;
-  return Math.abs(width / height - 9 / 16) <= 0.01;
+  return isNineSixteenDimensions(width, height);
 }
 
 function safeImportImagePath(filename: string): H1MutationResult<string> {
@@ -629,12 +615,13 @@ export function h1ShotBlockers(shot: H1ShotDraft, db = openM0Database()): string
     else {
       if (artifact.status !== "active") blockers.push(`ARTIFACT_${artifact.status.toUpperCase()}`);
       if (artifact.artifact_type !== "image" || artifact.role !== "storyboard_image") blockers.push("INVALID_ARTIFACT_ROLE");
+      if (!isNineSixteenAspectRatio(artifact.metadata.aspect_ratio)) blockers.push("STORYBOARD_IMAGE_ASPECT_RATIO_NOT_9_16");
     }
   }
   return blockers;
 }
 
-function ensureProjectForState(state: H1WorkbenchState, db: M0Database): H1MutationResult<{ project: Project; state: H1WorkbenchState }> {
+export function prepareH1StoryboardPackageProject(state: H1WorkbenchState, db = openM0Database()): H1MutationResult<{ project: Project; state: H1WorkbenchState }> {
   if (pendingId(state.project.project_id)) return { ok: false, error: toolError("FAKE_PROJECT_ID_REJECTED", "PENDING or fake project IDs are not accepted.") };
   if (state.project.project_id) {
     const existing = getProject(db, state.project.project_id);
@@ -699,14 +686,20 @@ function buildG0Input(state: H1WorkbenchState, projectId: string): G0StoryboardP
 
 export function validateH1StoryboardPackage(state: H1WorkbenchState, db = openM0Database()): H1MutationResult<{ state: H1WorkbenchState; validation: H1PackageValidation }> {
   const shotBlockers = state.shots.flatMap((shot) => h1ShotBlockers(shot, db).map((blocker) => `${shot.shot_id}:${blocker}`));
-  if (shotBlockers.length > 0) {
+  const projectBlockers: string[] = [];
+  if (pendingId(state.project.project_id)) projectBlockers.push("FAKE_PROJECT_ID_REJECTED");
+  else if (!state.project.project_id) projectBlockers.push("PROJECT_NOT_PREPARED");
+  else if (!getProject(db, state.project.project_id)) projectBlockers.push("PROJECT_NOT_FOUND");
+  const blockers = [...projectBlockers, ...shotBlockers];
+
+  if (blockers.length > 0) {
     return {
       ok: true,
       value: {
         state,
         validation: {
           ok: false,
-          blockers: shotBlockers,
+          blockers,
           validateG0StoryboardPackage: "FAIL",
           app_ready: false,
           project_id: state.project.project_id,
@@ -716,21 +709,19 @@ export function validateH1StoryboardPackage(state: H1WorkbenchState, db = openM0
     };
   }
 
-  const projectResult = ensureProjectForState(state, db);
-  if (!projectResult.ok) return projectResult;
-  const packageInput = buildG0Input(projectResult.value.state, projectResult.value.project.project_id);
+  const packageInput = buildG0Input(state, state.project.project_id);
   const validation = validateG0StoryboardPackage(packageInput, db);
   if (!validation.ok) {
     return {
       ok: true,
       value: {
-        state: projectResult.value.state,
+        state,
         validation: {
           ok: false,
           blockers: [validation.error.code],
           validateG0StoryboardPackage: "FAIL",
           app_ready: false,
-          project_id: projectResult.value.project.project_id,
+          project_id: state.project.project_id,
           shot_count: state.shots.length
         }
       }
@@ -739,13 +730,13 @@ export function validateH1StoryboardPackage(state: H1WorkbenchState, db = openM0
   return {
     ok: true,
     value: {
-      state: projectResult.value.state,
+      state,
       validation: {
         ok: true,
         blockers: [],
         validateG0StoryboardPackage: "PASS",
         app_ready: validation.app_ready,
-        project_id: projectResult.value.project.project_id,
+        project_id: state.project.project_id,
         shot_count: state.shots.length
       }
     }

@@ -42,7 +42,7 @@ async function main(): Promise<void> {
       {
         artifact_type: "image",
         role: "storyboard_image",
-        source: { kind: "fixture_path", path: "storyboard/shot_001.png" }
+        source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" }
       },
       db
     );

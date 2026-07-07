@@ -6,6 +6,7 @@ import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { getMediaArtifact } from "./mediaArtifacts.js";
 import { getProject, saveProject, type Project, type Shot, type ToolError } from "./projects.js";
 import { importStoryboardPackage, type ImportStoryboardPackageInput } from "./storyboardPackages.js";
+import { isNineSixteenAspectRatio } from "./importClassifier.js";
 
 export type G0ArtifactKind =
   | "creative_brief"
@@ -191,6 +192,9 @@ function validateAppReadyShot(snapshot: G0StoryboardPackageShotSnapshot, index: 
   if (artifact.status !== "active") return { code: `ARTIFACT_${artifact.status.toUpperCase()}`, message: `Storyboard artifact is not active: ${artifact.status}` };
   if (artifact.artifact_type !== "image" || artifact.role !== "storyboard_image") {
     return { code: "INVALID_ARTIFACT_ROLE", message: "G0 app-ready package requires active storyboard_image image artifacts." };
+  }
+  if (!isNineSixteenAspectRatio(artifact.metadata.aspect_ratio)) {
+    return { code: "STORYBOARD_IMAGE_ASPECT_RATIO_NOT_9_16", message: "G0 app-ready package requires vertical 9:16 storyboard_image artifacts." };
   }
 
   return null;

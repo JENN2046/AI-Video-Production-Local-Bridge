@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -65,7 +66,7 @@ function setupOneShotProject(db: ReturnType<typeof openM0Database>, aspectRatio 
     {
       artifact_type: "image",
       role: "storyboard_image",
-      source: { kind: "fixture_path", path: "storyboard/shot_001.png" }
+      source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" }
     },
     db
   );
@@ -337,7 +338,11 @@ test("M1 provider output URL safety blocks unsafe destinations", () => {
     "file:///tmp/video.mp4",
     "data:video/mp4;base64,AAAA",
     "https://localhost/video.mp4",
+    "https://sub.localhost/video.mp4",
     "https://127.0.0.1/video.mp4",
+    "https://[::1]/video.mp4",
+    "https://[fc00::1]/video.mp4",
+    "https://user:password@cdn.example.test/video.mp4",
     "https://10.0.0.2/video.mp4",
     "https://169.254.169.254/latest/meta-data"
   ]) {
@@ -346,6 +351,42 @@ test("M1 provider output URL safety blocks unsafe destinations", () => {
     if (!result.ok) assert.equal(result.error.code, "PROVIDER_OUTPUT_URI_BLOCKED");
   }
   assert.equal(validateProviderOutputUrl("https://cdn.example.test/video.mp4").ok, true);
+});
+
+test("M1 provider output registration blocks symlink storage directories", () => {
+  const db = openM0Database();
+  const sourceDirectory = join(paths.mediaRoot, "provider-output-symlink-source");
+  const symlinkDirectory = join(paths.mediaRoot, `provider-output-symlink-${Date.now()}`);
+  const externalDirectory = mkdtempSync(join(tmpdir(), "provider-output-outside-"));
+
+  try {
+    mkdirSync(sourceDirectory, { recursive: true });
+    const sourceFile = join(sourceDirectory, "source.mp4");
+    writeFileSync(sourceFile, "not a real video", "utf8");
+    try {
+      symlinkSync(externalDirectory, symlinkDirectory, "junction");
+    } catch {
+      return;
+    }
+
+    const result = registerMediaArtifact(
+      {
+        artifact_type: "video",
+        role: "generated_clip",
+        source: { kind: "provider_output_file", path: sourceFile, mime_type: "video/mp4" },
+        storage_directory: symlinkDirectory
+      },
+      db
+    );
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.error.code, "SYMLINK_ESCAPE_BLOCKED");
+  } finally {
+    rmSync(symlinkDirectory, { recursive: true, force: true });
+    rmSync(sourceDirectory, { recursive: true, force: true });
+    rmSync(externalDirectory, { recursive: true, force: true });
+    db.close();
+  }
 });
 
 test("M1 provider output downloader saves ffprobe-valid local artifact without persisting URL", async () => {

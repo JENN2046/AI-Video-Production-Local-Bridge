@@ -24,12 +24,12 @@ async function setupGeneratedProject(db: ReturnType<typeof openM0Database>) {
   assert.equal(project.ok, true);
   if (!project.ok) throw new Error("project setup failed");
 
-  const snapshots = ["shot_001.png", "shot_002.png", "shot_003.png"].map((filename, index) => {
+  const snapshots = [1, 2, 3].map((_, index) => {
     const artifact = registerMediaArtifact(
       {
         artifact_type: "image",
         role: "storyboard_image",
-        source: { kind: "fixture_path", path: `storyboard/${filename}` }
+        source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" }
       },
       db
     );

@@ -196,6 +196,7 @@ export {
   loadH1WorkbenchState,
   markH1ShotApproved,
   markH1ShotRevisionNeeded,
+  prepareH1StoryboardPackageProject,
   registerH1ApprovedKeyframe,
   rejectH1Import,
   saveH1WorkbenchState,

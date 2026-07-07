@@ -11,14 +11,14 @@ import {
   registerMediaArtifact
 } from "../src/index.js";
 
-function createActiveStoryboardArtifact(db: ReturnType<typeof openM0Database>, filename = "shot_001.png") {
+function createActiveStoryboardArtifact(db: ReturnType<typeof openM0Database>) {
   const result = registerMediaArtifact(
     {
       artifact_type: "image",
       role: "storyboard_image",
       source: {
         kind: "fixture_path",
-        path: `storyboard/${filename}`
+        path: "provider-canary/m1-r0/shot_001_canary_720x1280.png"
       }
     },
     db
@@ -134,6 +134,48 @@ test("M0-C missing video_prompt is rejected", () => {
     assert.equal(imported.ok, false);
     if (imported.ok) return;
     assert.equal(imported.error.code, "MISSING_REQUIRED_FIELD");
+  } finally {
+    db.close();
+  }
+});
+
+test("M0-C Storyboard Package rejects active storyboard images that are not 9:16", () => {
+  const db = openM0Database();
+
+  try {
+    const created = createProject({ title: "Invalid Storyboard Aspect" }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    const squareArtifact = registerMediaArtifact(
+      {
+        artifact_type: "image",
+        role: "storyboard_image",
+        source: { kind: "fixture_path", path: "storyboard/shot_001.png" }
+      },
+      db
+    );
+    assert.equal(squareArtifact.ok, true);
+    if (!squareArtifact.ok) return;
+
+    const imported = importStoryboardPackage(
+      {
+        project_id: created.project_id,
+        status: "approved_for_video_generation",
+        approved_shot_snapshots: [
+          {
+            order: 1,
+            duration_seconds: 2,
+            storyboard_image_artifact_id: squareArtifact.artifact.artifact_id,
+            video_prompt: "This square fixture should not pass."
+          }
+        ],
+        user_approval: { storyboard_approved: true }
+      },
+      db
+    );
+    assert.equal(imported.ok, false);
+    if (imported.ok) return;
+    assert.equal(imported.error.code, "STORYBOARD_IMAGE_ASPECT_RATIO_NOT_9_16");
   } finally {
     db.close();
   }

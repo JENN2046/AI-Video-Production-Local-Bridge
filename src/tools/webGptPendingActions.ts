@@ -10,6 +10,7 @@ import {
   H1_PROVIDER_BOUNDARY,
   linkH1ArtifactToShot,
   loadH1WorkbenchState,
+  prepareH1StoryboardPackageProject,
   registerH1ApprovedKeyframe,
   saveH1WorkbenchState,
   scanH1Imports,
@@ -416,10 +417,13 @@ function executeConfirmedAction(action: WebGptPendingActionRecord, db: M0Databas
   }
 
   if (action.tool === "request_import_storyboard_package") {
-    const validation = validateH1StoryboardPackage(loadH1WorkbenchState(), db);
+    const prepared = prepareH1StoryboardPackageProject(loadH1WorkbenchState(), db);
+    if (!prepared.ok) return { ok: false, result: null, error: prepared.error, effects: {} };
+    const validation = validateH1StoryboardPackage(prepared.value.state, db);
     if (!validation.ok) return { ok: false, result: null, error: validation.error, effects: {} };
     const result = freezeH1StoryboardPackage(validation.value.state, { human_confirmation: true, write_report: false }, db);
     if (!result.ok) return { ok: false, result: null, error: result.error, effects: {} };
+    saveH1WorkbenchState(result.value.state);
     return { ok: true, result: { report: result.value.report, state: result.value.state }, error: null, effects: { app_ready_truth_changed: true, package_validated: true, package_frozen: true } };
   }
 

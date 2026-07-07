@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { extname, isAbsolute, join, relative, resolve } from "node:path";
 
 import { ensureM0Directories, paths } from "../paths.js";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
@@ -8,6 +8,7 @@ import { validateImageFile, type ImageValidationResult } from "./imageValidity.j
 import { importG0AppReadyStoryboardPackage, validateG0StoryboardPackage, type G0StoryboardPackageInput } from "./g0Pregen.js";
 import { registerMediaArtifact, type MediaArtifact } from "./mediaArtifacts.js";
 import { createProject, getProject, type Project } from "./projects.js";
+import { classifyStoryboardImageImport, isNineSixteenDimensions, STORYBOARD_IMAGE_EXTENSIONS } from "./importClassifier.js";
 
 export const GPT_HANDOFF_FREEZE_REPORT = "data/reports/m1_5_gpt_handoff_app_freeze_report.json";
 const GPT_HANDOFF_FREEZE_REPORT_STEM = "m1_5_gpt_handoff_app_freeze_report";
@@ -23,6 +24,9 @@ export interface GptHandoffImportImage {
   readable_by_image_validator: boolean;
   error_code: string;
   error: string;
+  classification: string;
+  eligible_for_storyboard_image: boolean;
+  blockers: string[];
 }
 
 export interface GptHandoffShotInput {
@@ -102,8 +106,6 @@ type PreparedShot = {
   order: number;
   validation: ImageValidationResult;
 };
-
-const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg"]);
 
 function latestReportPath(): string {
   return join(paths.workspaceRoot, GPT_HANDOFF_FREEZE_REPORT);
@@ -187,7 +189,7 @@ function block(report: FreezeGptHandoffReport, code: string, message: string, wr
 }
 
 function validImportFilename(filename: string): boolean {
-  return filename === basename(filename) && IMAGE_EXTENSIONS.has(extname(filename).toLowerCase());
+  return classifyStoryboardImageImport(filename).ok;
 }
 
 function cleanupImportedArtifactFiles(report: FreezeGptHandoffReport): void {
@@ -201,7 +203,8 @@ function cleanupImportedArtifactFiles(report: FreezeGptHandoffReport): void {
 
 function validateImportImageReady(filename: string): { ok: true; validation: ImageValidationResult } | { ok: false; error: HandoffError } {
   if (!validImportFilename(filename)) {
-    return { ok: false, error: { code: "STORAGE_PATH_NOT_ALLOWED", message: `Invalid import filename: ${filename}` } };
+    const classification = classifyStoryboardImageImport(filename);
+    return { ok: false, error: { code: classification.reason_code, message: classification.message } };
   }
 
   const importsRoot = resolve(paths.importsRoot);
@@ -226,6 +229,9 @@ function validateImportImageReady(filename: string): { ok: true; validation: Ima
 
   const validation = validateImageFile(realSourcePath);
   if (!validation.ok) return { ok: false, error: imageValidationError(validation) };
+  if (!isNineSixteenDimensions(validation.width, validation.height)) {
+    return { ok: false, error: { code: "ASPECT_RATIO_NOT_9_16", message: "Storyboard image imports must be single-shot vertical 9:16 images." } };
+  }
   return { ok: true, validation };
 }
 
@@ -293,11 +299,16 @@ export function scanGptHandoffImports(): GptHandoffImportImage[] {
   if (!existsSync(paths.importsRoot)) return [];
 
   return readdirSync(paths.importsRoot, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && IMAGE_EXTENSIONS.has(extname(entry.name).toLowerCase()))
+    .filter((entry) => entry.isFile() && STORYBOARD_IMAGE_EXTENSIONS.has(extname(entry.name).toLowerCase()))
     .sort((left, right) => left.name.localeCompare(right.name))
     .map((entry) => {
       const filePath = join(paths.importsRoot, entry.name);
       const validation = validateImageFile(filePath);
+      const classification = classifyStoryboardImageImport(entry.name);
+      const blockers = [
+        ...(classification.ok ? [] : [classification.reason_code]),
+        ...(validation.ok && isNineSixteenDimensions(validation.width, validation.height) ? [] : ["ASPECT_RATIO_NOT_9_16"])
+      ];
       return {
         filename: entry.name,
         relative_path: `data/imports/${entry.name}`,
@@ -308,7 +319,10 @@ export function scanGptHandoffImports(): GptHandoffImportImage[] {
         aspect_ratio: validation.aspect_ratio,
         readable_by_image_validator: validation.ok,
         error_code: validation.error_code,
-        error: validation.error
+        error: validation.error,
+        classification: classification.class,
+        eligible_for_storyboard_image: validation.ok && blockers.length === 0,
+        blockers
       };
     });
 }

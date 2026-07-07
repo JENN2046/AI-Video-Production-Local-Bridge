@@ -11,6 +11,7 @@ import {
   type Shot,
   type ToolError
 } from "./projects.js";
+import { isNineSixteenAspectRatio } from "./importClassifier.js";
 
 export interface ApprovedShotSnapshot {
   shot_id?: string;
@@ -75,6 +76,9 @@ function validateSnapshot(snapshot: ApprovedShotSnapshot, index: number, db: M0D
 
   if (artifact.role !== "storyboard_image" || artifact.artifact_type !== "image") {
     return { code: "INVALID_ARTIFACT_ROLE", message: "Storyboard Package requires active storyboard_image image artifacts." };
+  }
+  if (!isNineSixteenAspectRatio(artifact.metadata.aspect_ratio)) {
+    return { code: "STORYBOARD_IMAGE_ASPECT_RATIO_NOT_9_16", message: "Storyboard Package requires vertical 9:16 storyboard_image artifacts." };
   }
 
   return null;

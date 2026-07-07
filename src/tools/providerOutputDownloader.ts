@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { extname, isAbsolute, relative, resolve } from "node:path";
 
 import { paths } from "../paths.js";
@@ -52,9 +52,9 @@ function ipv4ToNumber(host: string): number | null {
 
 function isPrivateHost(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
-  if (host === "localhost" || host === "0.0.0.0" || host === "::1") return true;
+  if (host === "localhost" || host.endsWith(".localhost") || host === "0.0.0.0" || host === "::" || host === "::1") return true;
   if (host === "169.254.169.254") return true;
-  if (host.startsWith("fe80:") || host.startsWith("fd")) return true;
+  if (host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd")) return true;
 
   const ipv4 = ipv4ToNumber(host);
   if (ipv4 === null) return false;
@@ -72,10 +72,39 @@ function isPathInside(child: string, parent: string): boolean {
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
+function hasExistingSymlinkAncestor(child: string, parent: string): boolean {
+  const resolvedParent = resolve(parent);
+  const resolvedChild = resolve(child);
+  if (!isPathInside(resolvedChild, resolvedParent)) return true;
+  const parts = relative(resolvedParent, resolvedChild).split(/[\\/]+/).filter(Boolean);
+  let current = resolvedParent;
+  for (const part of parts) {
+    current = resolve(current, part);
+    if (!existsSync(current)) return false;
+    if (lstatSync(current).isSymbolicLink()) return true;
+  }
+  return false;
+}
+
 function outputStorageDirectory(input: ProviderOutputDownloadInput): { ok: true; path: string } | { ok: false; error: ProviderToolError } {
   const directory = resolve(input.storage_directory ?? paths.videoArtifactsRoot);
   if (!isPathInside(directory, paths.mediaRoot)) {
     return { ok: false, error: providerError("PROVIDER_OUTPUT_STORAGE_BLOCKED", "Provider output storage directory must be inside app-controlled media storage.") };
+  }
+  if (hasExistingSymlinkAncestor(directory, paths.mediaRoot)) {
+    return { ok: false, error: providerError("PROVIDER_OUTPUT_STORAGE_BLOCKED", "Provider output storage directory must not pass through symbolic links.") };
+  }
+  mkdirSync(directory, { recursive: true });
+  if (lstatSync(paths.mediaRoot).isSymbolicLink()) {
+    return { ok: false, error: providerError("PROVIDER_OUTPUT_STORAGE_BLOCKED", "App media root symbolic links are blocked for provider outputs.") };
+  }
+  if (lstatSync(directory).isSymbolicLink()) {
+    return { ok: false, error: providerError("PROVIDER_OUTPUT_STORAGE_BLOCKED", "Provider output storage directory symbolic links are blocked.") };
+  }
+  const realMediaRoot = realpathSync(paths.mediaRoot);
+  const realDirectory = realpathSync(directory);
+  if (!isPathInside(realDirectory, realMediaRoot)) {
+    return { ok: false, error: providerError("PROVIDER_OUTPUT_STORAGE_BLOCKED", "Provider output storage directory resolves outside app-controlled media storage.") };
   }
   return { ok: true, path: directory };
 }
@@ -90,6 +119,10 @@ export function validateProviderOutputUrl(urlInput: string): { ok: true; url: UR
 
   if (url.protocol !== "https:") {
     return { ok: false, error: providerError("PROVIDER_OUTPUT_URI_BLOCKED", "Provider output URL must use https.") };
+  }
+
+  if (url.username || url.password) {
+    return { ok: false, error: providerError("PROVIDER_OUTPUT_URI_BLOCKED", "Provider output URL must not contain embedded credentials.") };
   }
 
   if (isPrivateHost(url.hostname)) {

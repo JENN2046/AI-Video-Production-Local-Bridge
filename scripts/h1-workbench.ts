@@ -25,6 +25,7 @@ import {
   markH1ShotRevisionNeeded,
   openM0Database,
   paths,
+  prepareH1StoryboardPackageProject,
   registerH1ApprovedKeyframe,
   rejectH1Import,
   rejectH3GeneratedClip,
@@ -441,7 +442,7 @@ function appHtml(): string {
     function renderPackage() {
       const pkg = model.package;
       const rows = pkg.shots.map(shot => '<tr><td>' + escapeHtml(shot.shot_id) + '</td><td>' + escapeHtml(labelStatus(shot.approval_status)) + '</td><td>' + escapeHtml(shot.storyboard_image_artifact_id) + '</td><td>' + escapeHtml(shot.artifact ? labelStatus(shot.artifact.status) : '无') + '</td><td>' + escapeHtml(blockerText(shot.blockers)) + '</td></tr>').join('');
-      document.getElementById('package').innerHTML = '<div class="toolbar"><button onclick="validatePackage()">校验</button><button class="primary" onclick="freezePackage()">冻结</button></div>' + validationPanel(pkg.validation) + '<table><thead><tr><th>镜头</th><th>批准状态</th><th>分镜图 Artifact</th><th>Artifact 状态</th><th>阻断项</th></tr></thead><tbody>' + rows + '</tbody></table><pre>' + escapeHtml(historyText(pkg.history)) + '</pre>';
+      document.getElementById('package').innerHTML = '<div class="toolbar"><button onclick="preparePackageProject()">准备项目</button><button onclick="validatePackage()">校验</button><button class="primary" onclick="freezePackage()">冻结</button></div>' + validationPanel(pkg.validation) + '<table><thead><tr><th>镜头</th><th>批准状态</th><th>分镜图 Artifact</th><th>Artifact 状态</th><th>阻断项</th></tr></thead><tbody>' + rows + '</tbody></table><pre>' + escapeHtml(historyText(pkg.history)) + '</pre>';
     }
     function renderReview() {
       const review = model.review || { generated_clips: [], regeneration_request_drafts: [], provider_boundary: {} };
@@ -578,6 +579,7 @@ function appHtml(): string {
     async function linkArtifact(shotId, artifactId) { await api('/api/shots/link-artifact', { shot_id: shotId, artifact_id: artifactId }); }
     async function approveShot(shotId) { await api('/api/shots/approve', { shot_id: shotId, human_confirmation: true }); }
     async function revisionShot(shotId) { await api('/api/shots/revision-needed', { shot_id: shotId }); }
+    async function preparePackageProject() { await api('/api/package/prepare-project', {}); }
     async function validatePackage() { await api('/api/package/validate', {}); }
     async function freezePackage() { await api('/api/package/freeze', { human_confirmation: true }); }
     async function approveClip(shotId, artifactId) { await api('/api/review/approve', { shot_id: shotId, artifact_id: artifactId }); }
@@ -791,8 +793,16 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
       withDb((db) => {
         const result = validateH1StoryboardPackage(loadH1WorkbenchState(), db);
         if (!result.ok) return result;
-        saveH1WorkbenchState(result.value.state);
         return { ok: true, validation: result.value.validation, state: result.value.state };
+      })
+    );
+  }
+  if (request.method === "POST" && url.pathname === "/api/package/prepare-project") {
+    return mutate(request, response, () =>
+      withDb((db) => {
+        const result = prepareH1StoryboardPackageProject(loadH1WorkbenchState(), db);
+        if (!result.ok) return result;
+        return { ok: true, project: result.value.project, state: saveH1WorkbenchState(result.value.state) };
       })
     );
   }

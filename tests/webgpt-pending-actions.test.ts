@@ -6,13 +6,16 @@ import test from "node:test";
 
 import {
   confirmWebGptPendingAction,
+  defaultH1WorkbenchState,
   ensureM0Directories,
   executeWebGptPendingActionTool,
   getMediaArtifact,
   loadWebGptPendingActionStore,
+  loadH1WorkbenchState,
   openM0Database,
   paths,
   rejectWebGptPendingAction,
+  saveH1WorkbenchState,
   WEBGPT_PENDING_ACTION_TOOLS,
   webGptPendingActionWorkbenchSummary
 } from "../src/index.js";
@@ -108,6 +111,35 @@ test("WebGPT v1 rejects fake IDs and can reject pending actions without executio
     assert.equal(rejected.action.production_effects.package_validated, false);
     assert.equal(existsSync(join(paths.workspaceRoot, rejected.action.execution.report_path)), true);
   } finally {
+    db.close();
+  }
+});
+
+test("WebGPT v1 package validation remains read-only and does not create a project", () => {
+  const db = openM0Database();
+  const previousState = loadH1WorkbenchState();
+
+  try {
+    const state = defaultH1WorkbenchState();
+    state.project.project_id = "";
+    saveH1WorkbenchState(state);
+    const before = db.prepare("SELECT COUNT(*) AS count FROM projects").get() as { count: number };
+
+    const requested = executeWebGptPendingActionTool("request_validate_storyboard_package", { notes: "read-only validation" }, db);
+    assert.equal(requested.ok, true);
+    if (!requested.ok) return;
+
+    const confirmed = confirmWebGptPendingAction({ action_id: requested.action.action_id, human_confirmation: true }, db);
+    assert.equal(confirmed.ok, true);
+    if (!confirmed.ok) return;
+    const after = db.prepare("SELECT COUNT(*) AS count FROM projects").get() as { count: number };
+    assert.equal(after.count, before.count);
+    const result = confirmed.action.execution.result as { validation?: { ok?: boolean; blockers?: string[]; project_id?: string } };
+    assert.equal(result.validation?.ok, false);
+    assert.equal(result.validation?.blockers?.includes("PROJECT_NOT_PREPARED"), true);
+    assert.equal(result.validation?.project_id, "");
+  } finally {
+    saveH1WorkbenchState(previousState);
     db.close();
   }
 });

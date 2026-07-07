@@ -23,6 +23,7 @@ import {
   markH1ShotApproved,
   openM0Database,
   paths,
+  prepareH1StoryboardPackageProject,
   registerH1ApprovedKeyframe,
   registerMediaArtifact,
   rejectH3GeneratedClip,
@@ -32,6 +33,7 @@ import {
 } from "../src/index.js";
 
 const CANARY_SOURCE = resolve(paths.workspaceRoot, "fixtures", "provider-canary", "m1-r0", "shot_001_canary_720x1280.png");
+const ONE_BY_ONE_SOURCE = resolve(paths.workspaceRoot, "fixtures", "storyboard", "shot_001.png");
 
 function copyH1Import(filename: string): string {
   ensureM0Directories();
@@ -108,6 +110,18 @@ test("H1 registers approved SHOT image, links it, validates, and freezes app-rea
     if (!approved.ok) return;
     state = approved.value;
 
+    const validationBeforePrepare = validateH1StoryboardPackage(state, db);
+    assert.equal(validationBeforePrepare.ok, true);
+    if (!validationBeforePrepare.ok) return;
+    assert.equal(validationBeforePrepare.value.validation.ok, false);
+    assert.equal(validationBeforePrepare.value.validation.blockers.includes("PROJECT_NOT_PREPARED"), true);
+    assert.equal(validationBeforePrepare.value.state.project.project_id, "");
+
+    const prepared = prepareH1StoryboardPackageProject(state, db);
+    assert.equal(prepared.ok, true);
+    if (!prepared.ok) return;
+    state = prepared.value.state;
+
     const validation = validateH1StoryboardPackage(state, db);
     assert.equal(validation.ok, true);
     if (!validation.ok) return;
@@ -147,6 +161,23 @@ test("H1 rejects audit images and product references as storyboard images", () =
     assert.equal(referenceResult.ok, false);
     if (referenceResult.ok) return;
     assert.equal(referenceResult.error.code, "PRODUCT_REFERENCE_REJECTED");
+  } finally {
+    db.close();
+  }
+});
+
+test("H1 rejects readable images that are not vertical 9:16 storyboard frames", () => {
+  const db = openM0Database();
+
+  try {
+    ensureM0Directories();
+    mkdirSync(paths.importsRoot, { recursive: true });
+    const filename = `h1_square_storyboard_${randomUUID().slice(0, 8)}.png`;
+    copyFileSync(ONE_BY_ONE_SOURCE, join(paths.importsRoot, filename));
+    const result = registerH1ApprovedKeyframe({ import_filename: filename, review_status: "approved_for_media_artifact_handoff", write_report: false }, db);
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.error.code, "ASPECT_RATIO_NOT_9_16");
   } finally {
     db.close();
   }
@@ -207,7 +238,10 @@ test("H1 rejects missing video_prompt and freeze before all shots are approved",
     assert.equal(approved.ok, true);
     if (!approved.ok) return;
 
-    const validation = validateH1StoryboardPackage(approved.value, db);
+    const prepared = prepareH1StoryboardPackageProject(approved.value, db);
+    assert.equal(prepared.ok, true);
+    if (!prepared.ok) return;
+    const validation = validateH1StoryboardPackage(prepared.value.state, db);
     assert.equal(validation.ok, true);
     if (!validation.ok) return;
     assert.equal(validation.value.validation.ok, false);
@@ -220,7 +254,10 @@ test("H1 rejects missing video_prompt and freeze before all shots are approved",
     });
     assert.equal(withPrompt.ok, true);
     if (!withPrompt.ok) return;
-    const frozen = freezeH1StoryboardPackage(withPrompt.value, { human_confirmation: true, write_report: false }, db);
+    const preparedForFreeze = prepareH1StoryboardPackageProject(withPrompt.value, db);
+    assert.equal(preparedForFreeze.ok, true);
+    if (!preparedForFreeze.ok) return;
+    const frozen = freezeH1StoryboardPackage(preparedForFreeze.value.state, { human_confirmation: true, write_report: false }, db);
     assert.equal(frozen.ok, false);
     if (frozen.ok) return;
     assert.equal(frozen.error.code, "FREEZE_PRECONDITIONS_BLOCKED");
@@ -269,7 +306,7 @@ test("H3 reviews generated clips and creates regeneration drafts without regener
       {
         artifact_type: "image",
         role: "storyboard_image",
-        source: { kind: "fixture_path", path: "storyboard/shot_001.png" }
+        source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" }
       },
       db
     );
@@ -369,7 +406,7 @@ test("H4 shows assembly readiness and executes final assembly only after explici
       {
         artifact_type: "image",
         role: "storyboard_image",
-        source: { kind: "fixture_path", path: "storyboard/shot_001.png" }
+        source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" }
       },
       db
     );
