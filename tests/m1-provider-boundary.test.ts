@@ -193,7 +193,7 @@ test("M1 RunningHub selectable boundary fails honestly without fake success", as
 });
 
 test("M1 Runway request boundary rejects unsupported ratio and duration before network", async () => {
-  assert.equal(mapRunwayAspectRatio("9:16"), "768:1280");
+  assert.equal(mapRunwayAspectRatio("9:16"), "720:1280");
   assert.equal(mapRunwayAspectRatio("16:9"), "1280:768");
   assert.equal(mapRunwayAspectRatio("1:1"), null);
   assert.equal(normalizeRunwayDuration(2), 2);
@@ -265,7 +265,7 @@ test("M1 Runway request maps project aspect ratio to API resolution ratio before
 
   const rawBody = String(capturedInit?.body);
   const body = JSON.parse(rawBody) as { ratio?: string; duration?: number; promptText?: string };
-  assert.equal(body.ratio, "768:1280");
+  assert.equal(body.ratio, "720:1280");
   assert.equal(body.duration, 2);
   assert.equal(body.promptText, "Animate portrait shot.");
   assert.equal(rawBody.includes("9:16"), false);
@@ -295,7 +295,7 @@ test("M1 package shot generation creates mock generated clip with ffprobe valida
     assert.equal(result.run.provider.provider_name, "mock");
     assert.equal(result.generated_artifact_id?.startsWith("artifact_"), true);
     assert.equal(result.provider_request_summary?.project_aspect_ratio, "9:16");
-    assert.equal(result.provider_request_summary?.runway_ratio, "768:1280");
+    assert.equal(result.provider_request_summary?.runway_ratio, "720:1280");
     assert.equal(result.provider_request_summary?.raw_data_imports_provider_input, false);
     assert.equal(result.provider_request_summary?.prompt_image_storage_is_app_media, true);
     assert.equal(result.ffprobe?.status, "PASS");
@@ -456,9 +456,10 @@ test("M1 strict Runway canary dry-run guard is single-submit and offline", () =>
   assert.equal(report.provider_credits_consumed, false);
   assert.equal(report.real_video_generated, false);
   assert.equal(report.provider_boundary.provider, "runway");
+  assert.equal(report.provider_boundary.model, "gen4.5");
   assert.equal(report.provider_boundary.max_submit_calls, 1);
   assert.equal(report.provider_boundary.duration_seconds, 2);
-  assert.equal(report.provider_boundary.runway_ratio, "768:1280");
+  assert.equal(report.provider_boundary.runway_ratio, "720:1280");
   assert.equal(report.provider_boundary.allow_regeneration, false);
   assert.equal(report.provider_boundary.allow_batch_generation, false);
   assert.equal(report.selected_canary_input.path, "fixtures/provider-canary/m1-r0/shot_001_canary_720x1280.png");

@@ -43,11 +43,12 @@ export interface RunwayCanaryReport {
   secret_values_exposed: false;
   provider_boundary: {
     provider: "runway";
+    model: "gen4.5";
     max_submit_calls: 1;
     duration_seconds: 2;
     input_image: string;
     project_aspect_ratio: "9:16";
-    runway_ratio: "768:1280";
+    runway_ratio: "720:1280";
     endpoint: "POST /v1/image_to_video";
     x_runway_version: "2024-11-06";
     allow_regeneration: false;
@@ -170,11 +171,12 @@ function baseReport(input: {
     secret_values_exposed: false,
     provider_boundary: {
       provider: "runway",
+      model: "gen4.5",
       max_submit_calls: 1,
       duration_seconds: 2,
       input_image: selectedPath,
       project_aspect_ratio: "9:16",
-      runway_ratio: "768:1280",
+      runway_ratio: "720:1280",
       endpoint: `POST ${RUNWAY_IMAGE_TO_VIDEO_ENDPOINT}`,
       x_runway_version: RUNWAY_API_VERSION,
       allow_regeneration: false,
@@ -303,7 +305,7 @@ function applyInputGuard(report: RunwayCanaryReport, readiness: ReadinessReport)
   if (selected.source_type !== "fixture_canary_image_provider_path_only") return blocked(next, "selected canary input source_type is not fixture_canary_image_provider_path_only");
   if (readiness.acceptance?.old_68_byte_fixture_marked_not_usable !== true) return blocked(next, "old 68-byte fixture is not marked not usable");
   if (normalizeRunwayDuration(2) !== 2) return blocked(next, "canary duration_seconds=2 is not accepted by Runway duration normalizer");
-  if (runwayRatio !== "768:1280") return blocked(next, `Runway ratio mapping for project 9:16 must be 768:1280, got ${runwayRatio ?? "null"}`);
+  if (runwayRatio !== "720:1280") return blocked(next, `Runway Gen-4.5 ratio mapping for project 9:16 must be 720:1280, got ${runwayRatio ?? "null"}`);
   if (RUNWAY_API_VERSION !== "2024-11-06") return blocked(next, `Runway API version must be 2024-11-06, got ${RUNWAY_API_VERSION}`);
   if (RUNWAY_IMAGE_TO_VIDEO_ENDPOINT !== "/v1/image_to_video") return blocked(next, `Runway endpoint must be /v1/image_to_video, got ${RUNWAY_IMAGE_TO_VIDEO_ENDPOINT}`);
 

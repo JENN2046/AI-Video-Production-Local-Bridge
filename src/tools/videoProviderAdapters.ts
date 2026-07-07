@@ -105,7 +105,7 @@ export class MockVideoProviderAdapter implements VideoProviderAdapter {
 }
 
 export function mapRunwayAspectRatio(aspectRatio: string): string | null {
-  if (aspectRatio === "9:16") return "768:1280";
+  if (aspectRatio === "9:16") return "720:1280";
   if (aspectRatio === "16:9") return "1280:768";
   return null;
 }

@@ -121,6 +121,7 @@ export interface H2CanaryWorkbenchSummary {
   };
   provider_boundary: typeof H1_PROVIDER_BOUNDARY & {
     provider: string;
+    model: string;
     endpoint: string;
     x_runway_version: string;
     max_submit_calls: number;
@@ -1195,6 +1196,7 @@ export function h2CanaryWorkbenchSummary(reportRelativePath = H2_RUNWAY_CANARY_D
     provider_boundary: {
       ...H1_PROVIDER_BOUNDARY,
       provider: "",
+      model: "",
       endpoint: "",
       x_runway_version: "",
       max_submit_calls: 0,
@@ -1250,6 +1252,7 @@ export function h2CanaryWorkbenchSummary(reportRelativePath = H2_RUNWAY_CANARY_D
       provider_boundary: {
         ...H1_PROVIDER_BOUNDARY,
         provider: safeString(boundary.provider),
+        model: safeString(boundary.model),
         endpoint: safeString(boundary.endpoint),
         x_runway_version: safeString(boundary.x_runway_version),
         max_submit_calls: safeNumber(boundary.max_submit_calls),

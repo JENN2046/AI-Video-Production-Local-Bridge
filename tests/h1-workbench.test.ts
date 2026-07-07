@@ -284,10 +284,10 @@ test("H2 canary workbench summary is read-only and redacted", () => {
   if (summary.report_exists) {
     assert.equal(summary.provider_boundary.provider, "runway");
     assert.equal(summary.provider_boundary.max_submit_calls, 1);
-    assert.equal(summary.provider_boundary.runway_ratio, "768:1280");
+    assert.equal(summary.provider_boundary.runway_ratio, "720:1280");
     assert.equal(summary.provider_boundary.direct_9_16_sent_to_runway, false);
     assert.equal(summary.selected_input.duration_seconds, 2);
-    assert.equal(summary.selected_input.runway_ratio, "768:1280");
+    assert.equal(summary.selected_input.runway_ratio, "720:1280");
   }
 
   const serialized = JSON.stringify(summary);
