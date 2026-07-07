@@ -1,0 +1,89 @@
+{
+  "task": "M1-R0-CANARY-SCRIPT_Add_Strict_Single_Submit_Runway_Canary_Script",
+  "result": "PROVIDER_FAILED",
+  "mode": "live",
+  "generated_at": "2026-07-07T03:47:29.646Z",
+  "command": "npm run runway:canary",
+  "network_call_attempted": true,
+  "runway_called": true,
+  "runninghub_called": false,
+  "provider_credits_consumed": false,
+  "real_video_generated": false,
+  "secret_values_exposed": false,
+  "provider_boundary": {
+    "provider": "runway",
+    "max_submit_calls": 1,
+    "duration_seconds": 2,
+    "input_image": "fixtures/provider-canary/m1-r0/shot_001_canary_720x1280.png",
+    "project_aspect_ratio": "9:16",
+    "runway_ratio": "768:1280",
+    "endpoint": "POST /v1/image_to_video",
+    "x_runway_version": "2024-11-06",
+    "allow_regeneration": false,
+    "allow_batch_generation": false,
+    "allow_runninghub": false,
+    "allow_publish": false,
+    "allow_deploy": false,
+    "allow_source_asset_overwrite": false,
+    "allow_secret_printing": false,
+    "direct_9_16_sent_to_runway": false
+  },
+  "preflight": {
+    "env_check_result": "PASS",
+    "provider_preflight_result": "PASS",
+    "active_provider": "runway",
+    "selected_provider": "runway",
+    "status": "READY_FOR_AUTHORIZED_REAL_CALL",
+    "credential_env_name": "RUNWAYML_API_SECRET",
+    "credential_present": true,
+    "missing": [],
+    "network_call_attempted": false
+  },
+  "input_readiness": {
+    "report_path": "data/reports/m1_r0_runway_canary_input_readiness.json",
+    "report_result": "PASS_READY_FOR_USER_AUTHORIZATION",
+    "selected_canary_input_exists": true,
+    "selected_canary_input_readable": true,
+    "selected_canary_input_usable": true,
+    "old_68_byte_fixture_marked_not_usable": true
+  },
+  "selected_canary_input": {
+    "path": "fixtures/provider-canary/m1-r0/shot_001_canary_720x1280.png",
+    "absolute_path": "A:\\AI Video Production Workspace\\fixtures\\provider-canary\\m1-r0\\shot_001_canary_720x1280.png",
+    "mime_type": "image/png",
+    "width": 720,
+    "height": 1280,
+    "aspect_ratio": "9:16",
+    "runway_ratio": "768:1280",
+    "duration_seconds": 2,
+    "size_bytes": 253183,
+    "readable_by_image_validator": true,
+    "usable_for_real_provider_canary": true,
+    "source_type": "fixture_canary_image_provider_path_only"
+  },
+  "authorization": {
+    "required_for_real_call": true,
+    "provided": true,
+    "accepted": true,
+    "phrase_env": "RUNWAY_CANARY_AUTHORIZATION",
+    "required_phrase": "I_AUTHORIZE_SINGLE_SUBMIT_RUNWAY_CANARY"
+  },
+  "dry_run": {
+    "report_only": false,
+    "start_storyboard_video_generation_called": true,
+    "submit_generation_called": true,
+    "fallback_to_demo_m1_real": false
+  },
+  "block_reason": null,
+  "live_result": {
+    "project_id": "project_2a1821d2-b4e7-4244-9060-f68d9c0a6423",
+    "storyboard_package_id": "storyboard_package_b34d226e-3087-48be-b04d-215c1cfece39",
+    "run_count": 1,
+    "batch_id": "batch_7156ec0a-3b18-4f40-8f19-f16924943bae",
+    "run_id": "run_624c1ff7-9863-4bed-8654-0de734a5fd58",
+    "run_status": "failed",
+    "generated_artifact_id": null,
+    "provider_job_id_present": false,
+    "error_code": "PROVIDER_UNSUPPORTED_INPUT"
+  }
+}

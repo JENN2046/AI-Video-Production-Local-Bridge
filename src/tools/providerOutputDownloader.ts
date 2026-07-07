@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { extname, resolve } from "node:path";
+import { extname, isAbsolute, relative, resolve } from "node:path";
 
 import { paths } from "../paths.js";
 import { registerMediaArtifact, type MediaArtifact } from "./mediaArtifacts.js";
@@ -22,6 +22,7 @@ export interface ProviderOutputDownloadInput {
   shot_id: string;
   duration_seconds: number;
   aspect_ratio: string;
+  storage_directory?: string;
   fetch_impl?: typeof fetch;
   safety?: Partial<ProviderOutputDownloadSafety>;
 }
@@ -64,6 +65,19 @@ function isPrivateHost(hostname: string): boolean {
   if (first === 192 && second === 168) return true;
   if (first === 169 && second === 254) return true;
   return false;
+}
+
+function isPathInside(child: string, parent: string): boolean {
+  const rel = relative(resolve(parent), resolve(child));
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function outputStorageDirectory(input: ProviderOutputDownloadInput): { ok: true; path: string } | { ok: false; error: ProviderToolError } {
+  const directory = resolve(input.storage_directory ?? paths.videoArtifactsRoot);
+  if (!isPathInside(directory, paths.mediaRoot)) {
+    return { ok: false, error: providerError("PROVIDER_OUTPUT_STORAGE_BLOCKED", "Provider output storage directory must be inside app-controlled media storage.") };
+  }
+  return { ok: true, path: directory };
 }
 
 export function validateProviderOutputUrl(urlInput: string): { ok: true; url: URL } | { ok: false; error: ProviderToolError } {
@@ -151,6 +165,9 @@ export async function downloadProviderOutputToArtifact(
   db: M0Database
 ): Promise<ProviderOutputDownloadResult> {
   const safety: ProviderOutputDownloadSafety = { ...DEFAULT_SAFETY, ...input.safety };
+  const storageDirectory = outputStorageDirectory(input);
+  if (!storageDirectory.ok) return { ok: false, error: storageDirectory.error };
+
   const urlValidation = validateProviderOutputUrl(input.url);
   if (!urlValidation.ok) return { ok: false, error: urlValidation.error };
 
@@ -174,8 +191,8 @@ export async function downloadProviderOutputToArtifact(
     return { ok: false, error: providerError("PROVIDER_OUTPUT_TOO_LARGE", "Provider output is larger than the configured maximum.") };
   }
 
-  mkdirSync(paths.videoArtifactsRoot, { recursive: true });
-  const tempPath = resolve(paths.videoArtifactsRoot, `provider_download_${randomUUID()}${extensionForUrl(fetched.finalUrl)}`);
+  mkdirSync(storageDirectory.path, { recursive: true });
+  const tempPath = resolve(storageDirectory.path, `provider_download_${randomUUID()}${extensionForUrl(fetched.finalUrl)}`);
   writeFileSync(tempPath, body);
 
   try {
@@ -193,6 +210,7 @@ export async function downloadProviderOutputToArtifact(
           path: tempPath,
           mime_type: contentType ?? "video/mp4"
         },
+        storage_directory: storageDirectory.path,
         linked_objects: {
           project_id: input.project_id,
           shot_id: input.shot_id
@@ -219,4 +237,3 @@ export async function downloadProviderOutputToArtifact(
     if (existsSync(tempPath)) rmSync(tempPath, { force: true });
   }
 }
-

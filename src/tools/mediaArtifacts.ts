@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, lstatSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 
@@ -23,6 +23,7 @@ export interface RegisterMediaArtifactInput {
   artifact_type: ArtifactType;
   role: ArtifactRole;
   source: MediaArtifactSource;
+  storage_directory?: string;
   linked_objects?: {
     project_id?: string;
     shot_id?: string;
@@ -341,9 +342,9 @@ function copyProviderOutputFile(input: RegisterMediaArtifactInput): RegisterMedi
   }
 
   const sourcePath = resolve(input.source.path);
-  const videoRoot = resolve(paths.videoArtifactsRoot);
-  if (!isPathInside(sourcePath, videoRoot)) {
-    return { ok: false, error: { code: "STORAGE_PATH_NOT_ALLOWED", message: "Provider output must already be inside app-controlled video artifact storage." } };
+  const mediaRoot = resolve(paths.mediaRoot);
+  if (!isPathInside(sourcePath, mediaRoot)) {
+    return { ok: false, error: { code: "STORAGE_PATH_NOT_ALLOWED", message: "Provider output must already be inside app-controlled media storage." } };
   }
 
   if (!existsSync(sourcePath)) {
@@ -359,7 +360,11 @@ function copyProviderOutputFile(input: RegisterMediaArtifactInput): RegisterMedi
   ensureM0Directories();
   const artifactId = `artifact_${randomUUID()}`;
   const filename = `${artifactId}${extname(sourcePath).toLowerCase() || ".mp4"}`;
-  const destinationRoot = mediaRootFor(input.artifact_type, input.role);
+  const destinationRoot = resolve(input.storage_directory ?? mediaRootFor(input.artifact_type, input.role));
+  if (!isPathInside(destinationRoot, mediaRoot)) {
+    return { ok: false, error: { code: "STORAGE_PATH_NOT_ALLOWED", message: "Provider artifact destination must be inside app-controlled media storage." } };
+  }
+  if (!existsSync(destinationRoot)) mkdirSync(destinationRoot, { recursive: true });
   const destinationPath = resolve(destinationRoot, filename);
   if (!isPathInside(destinationPath, destinationRoot)) {
     return { ok: false, error: { code: "STORAGE_PATH_NOT_ALLOWED", message: "Provider artifact destination resolved outside app media storage." } };

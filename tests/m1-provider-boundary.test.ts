@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -352,6 +352,8 @@ test("M1 provider output downloader saves ffprobe-valid local artifact without p
   const db = openM0Database();
   try {
     const fixtureBytes = readFileSync(join(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4"));
+    const storageDirectory = join(paths.mediaRoot, "provider-canary", "m1-r0-runway-canary-test");
+    mkdirSync(storageDirectory, { recursive: true });
     const result = await downloadProviderOutputToArtifact(
       {
         url: "https://cdn.example.test/generated/output.mp4?signature=secret",
@@ -361,6 +363,7 @@ test("M1 provider output downloader saves ffprobe-valid local artifact without p
         shot_id: "shot_test",
         duration_seconds: 2,
         aspect_ratio: "9:16",
+        storage_directory: storageDirectory,
         fetch_impl: (async () =>
           new Response(fixtureBytes, {
             status: 200,
@@ -380,6 +383,7 @@ test("M1 provider output downloader saves ffprobe-valid local artifact without p
     assert.equal(artifact?.source.provider_job_id, "runway_job_test");
     assert.equal(artifact?.source.external_url_host, "cdn.example.test");
     assert.equal(artifact?.storage.uri.includes("signature"), false);
+    assert.equal(artifact?.storage.uri.startsWith(storageDirectory), true);
     assert.equal(result.ffprobe.status, "PASS");
   } finally {
     db.close();

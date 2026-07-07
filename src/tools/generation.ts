@@ -379,6 +379,7 @@ export async function startStoryboardVideoGeneration(
     provider_execution?: ProviderExecutionRequest;
     selected_shot_ids?: string[];
     confirmation?: Confirmation;
+    provider_output_storage_directory?: string;
   },
   db = openM0Database()
 ): Promise<ToolResult<{ batch: GenerationBatch; runs: GenerationRun[] }>> {
@@ -520,7 +521,8 @@ export async function startStoryboardVideoGeneration(
                     project_id: project.project_id,
                     shot_id: shot.shot_id,
                     duration_seconds: shot.duration_seconds,
-                    aspect_ratio: project.video_spec.aspect_ratio
+                    aspect_ratio: project.video_spec.aspect_ratio,
+                    storage_directory: input.provider_output_storage_directory
                   },
                   db
                 );

@@ -431,6 +431,7 @@ export async function runStrictRunwayCanary(input: RunwayCanaryOptions = {}, db:
         project_id: project.project_id,
         storyboard_package_id: storyboard.storyboard_package_id,
         selected_shot_ids: [storyboard.shots[0].shot_id],
+        provider_output_storage_directory: join(paths.mediaRoot, "provider-canary", "m1-r0-runway-canary"),
         provider_execution: {
           provider: "real",
           provider_name: "runway",
@@ -449,13 +450,14 @@ export async function runStrictRunwayCanary(input: RunwayCanaryOptions = {}, db:
     if (generation.runs.length !== 1) return blocked(dryRun, `strict canary expected 1 run, got ${generation.runs.length}`);
     if (generation.batch.summary.total !== 1) return blocked(dryRun, `strict canary expected batch total 1, got ${generation.batch.summary.total}`);
 
+    const providerJobIdPresent = run.provider.provider_job_id.length > 0;
     return {
       ...dryRun,
       result: run.status === "succeeded" ? "PASS_LIVE_SINGLE_SUBMIT_COMPLETED" : "PROVIDER_FAILED",
       mode: "live",
       network_call_attempted: true,
       runway_called: true,
-      provider_credits_consumed: true,
+      provider_credits_consumed: providerJobIdPresent,
       real_video_generated: run.status === "succeeded" && run.output.artifact_ids.length > 0,
       dry_run: {
         report_only: false,
@@ -471,7 +473,7 @@ export async function runStrictRunwayCanary(input: RunwayCanaryOptions = {}, db:
         run_id: run.run_id,
         run_status: run.status,
         generated_artifact_id: run.output.artifact_ids[0] ?? null,
-        provider_job_id_present: run.provider.provider_job_id.length > 0,
+        provider_job_id_present: providerJobIdPresent,
         error_code: run.error.code || null
       }
     };
