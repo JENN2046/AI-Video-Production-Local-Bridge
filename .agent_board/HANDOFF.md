@@ -73,6 +73,10 @@ Current owner: None
 - SQLite metadata persistence is available at `data/app.sqlite`.
 - App-controlled media storage is under `data/media`.
 - M0 closeout reports were written under `data/reports`.
+- R3-8C completed on 2026-07-07 with `PASS_READY_FOR_INPUT_STRATEGY_DECISION` and wrote `data/reports/r3_8c_runway_submit_failure_triage_result.json`.
+- Runway submit failures now support sanitized provider error summaries for future non-2xx failures.
+- Runway request summaries now report endpoint/version/model/ratio/duration/text length/image metadata without `promptImage` or base64.
+- Current canary gradient fixture is unsuitable for the next live Gen-4.5 I2V canary.
 
 ## Blocked in last run
 
@@ -80,7 +84,7 @@ Current owner: None
 
 ## Failed in last run
 
-- R3-8B performed exactly one authorized Runway Gen-4.5 canary submit and failed with sanitized error code `PROVIDER_UNSUPPORTED_INPUT`. Evidence: `data/reports/m1_r0_runway_canary_live_result.json` and `data/reports/r3_8b_runway_gen45_single_submit_canary_result.json`.
+- None
 
 ## Skipped in last run
 
@@ -116,6 +120,8 @@ Current owner: None
 - `data/reports/r1_5_mcp_v3_production_assistant_result.json`
 - `data/reports/r3_7_runway_live_canary_authorization_result.json`
 - `data/reports/r3_7_runway_live_canary_authorization_result_20260707T113308+0800.json`
+- `data/reports/r3_8b_runway_gen45_single_submit_canary_result.json`
+- `data/reports/r3_8c_runway_submit_failure_triage_result.json`
 - `ops/reports/three_route_acceptance_review_package_20260707_103611/THREE_ROUTE_ACCEPTANCE_REVIEW.md`
 - `ops/reports/three_route_acceptance_review_package_20260707_103611/README.md`
 
@@ -127,5 +133,5 @@ Current owner: None
 
 ## Next recommended action
 
-- Investigate the Runway Gen-4.5 input contract offline before any new live submit authorization.
+- Choose R3-8D input strategy: real storyboard keyframe, Runway ephemeral upload dry-run path, or HTTPS URL path.
 - Do not retry Runway canary without a new exact current Jenn authorization phrase.

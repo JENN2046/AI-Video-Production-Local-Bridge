@@ -1000,3 +1000,31 @@ Notes:
 - The live result was `PROVIDER_FAILED` with sanitized error code `PROVIDER_UNSUPPORTED_INPUT`.
 - No retry, second submit, RunningHub call, regeneration, batch, source overwrite, push, tag, release, or deploy occurred.
 - `provider_job_id_present=false`, `provider_credits_consumed=false`, and `real_video_generated=false`.
+
+### R3-8C - 2026-07-07T14:21:12+08:00
+
+Commands:
+
+```bash
+npm run r3:8c:triage
+npm run typecheck
+npm run test:m1
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_READY_FOR_INPUT_STRATEGY_DECISION
+```
+
+Evidence:
+- `data/reports/r3_8c_runway_submit_failure_triage_result.json`
+- `data/reports/r3_8b_runway_gen45_single_submit_canary_result.json`
+- `data/reports/m1_r0_runway_canary_live_result.json`
+- `data/reports/secret_scan_result.json`
+
+Notes:
+- No provider network call, Runway retry, RunningHub call, provider credit consumption, real video generation, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
+- Current gradient fixture is not suitable for another live canary; use a real storyboard keyframe or prepare an upload/HTTPS input path first.

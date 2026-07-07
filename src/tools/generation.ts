@@ -73,6 +73,7 @@ export interface GenerationRun {
     code: string;
     message: string;
     retryable: boolean;
+    sanitized_provider_error_summary?: ProviderToolError["sanitized_provider_error_summary"];
   };
 }
 
@@ -221,7 +222,8 @@ function providerErrorToRunError(error: ProviderToolError): GenerationRun["error
   return {
     code: error.code,
     message: error.message,
-    retryable: error.retryable === true
+    retryable: error.retryable === true,
+    ...(error.sanitized_provider_error_summary ? { sanitized_provider_error_summary: error.sanitized_provider_error_summary } : {})
   };
 }
 

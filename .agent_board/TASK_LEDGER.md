@@ -426,6 +426,50 @@ Boundary:
 Next:
 - Start sustained execution by claiming `R3-0_LOCAL_APP_CONTRACT_FREEZE_AND_H1_API_SUPPORT`.
 
+### 2026-07-07T14:21:12+08:00 - R3-8C Runway submit failure triage
+
+Result: DONE / PASS_READY_FOR_INPUT_STRATEGY_DECISION
+Project: AI Video Production Workspace Three Route Plan
+Lane: Provider Failure Evidence And Offline Triage
+Run ID: codex-20260707-142112-r3-8c
+
+Scope:
+- Added sanitized provider error summary support for Runway non-2xx submit failures.
+- Added safe Runway request summary support without `promptImage` or base64 content.
+- Generated offline canary image suitability and input strategy report.
+
+Changed files:
+- `src/tools/provider.ts`
+- `src/tools/videoProviderAdapters.ts`
+- `src/tools/generation.ts`
+- `src/tools/runwayCanary.ts`
+- `src/index.ts`
+- `tests/m1-provider-boundary.test.ts`
+- `scripts/r3-8c-runway-submit-failure-triage.ts`
+- `package.json`
+- `data/reports/r3_8c_runway_submit_failure_triage_result.json`
+
+Validation:
+- command: `npm run r3:8c:triage`
+  result: PASS
+- command: `npm run typecheck`
+  result: PASS
+- command: `npm run test:m1`
+  result: PASS
+- command: `npm run secret:scan`
+  result: PASS
+- command: `git diff --check`
+  result: PASS
+
+Evidence:
+- `data/reports/r3_8c_runway_submit_failure_triage_result.json`
+
+Boundary:
+- No Runway or RunningHub call, live retry, provider credit consumption, real video generation, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
+
+Next:
+- Choose R3-8D input strategy. Any live Runway submit requires a new exact current Jenn authorization phrase.
+
 ### 2026-07-07T11:34:21+08:00 - R3-7 Runway live canary authorization preparation
 
 Result: DONE / PASS_READY_FOR_USER_AUTHORIZATION

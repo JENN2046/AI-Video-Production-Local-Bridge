@@ -2,9 +2,11 @@ import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 
 import type { MediaArtifact } from "./mediaArtifacts.js";
-import { validateImageFile } from "./imageValidity.js";
+import { validateImageBuffer, validateImageFile } from "./imageValidity.js";
 import {
   providerError,
+  redactSecrets,
+  type SanitizedProviderErrorSummary,
   type ProviderToolError,
   type RealProviderName
 } from "./provider.js";
@@ -56,8 +58,30 @@ export type RunwayImageToVideoRequestBuildResult =
         ratio: string;
         duration: number;
       };
+      summary: RunwayImageToVideoRequestSummary;
     }
   | { ok: false; error: ProviderToolError };
+
+export interface RunwayPromptImageSummary {
+  kind: "data_uri";
+  mime_type: string;
+  binary_size_bytes: number;
+  data_uri_length: number;
+  sha256: string;
+  width: number;
+  height: number;
+  aspect_ratio: string;
+}
+
+export interface RunwayImageToVideoRequestSummary {
+  endpoint: "POST /v1/image_to_video";
+  x_runway_version: typeof RUNWAY_API_VERSION;
+  model: string;
+  ratio: string;
+  duration: number;
+  prompt_text_length: number;
+  prompt_image: RunwayPromptImageSummary;
+}
 
 export interface VideoProviderAdapter {
   provider_name: RealProviderName | "mock";
@@ -116,12 +140,22 @@ export function normalizeRunwayDuration(durationSeconds: number): number | null 
   return durationSeconds;
 }
 
-function dataUriFromImageArtifact(artifact: MediaArtifact): { ok: true; data_uri: string } | { ok: false; error: ProviderToolError } {
+function dataUriFromImageArtifact(artifact: MediaArtifact): { ok: true; data_uri: string; prompt_image: RunwayPromptImageSummary } | { ok: false; error: ProviderToolError } {
   if (artifact.status !== "active" || artifact.artifact_type !== "image" || artifact.role !== "storyboard_image") {
     return { ok: false, error: providerError("PROVIDER_UNSUPPORTED_INPUT", "Runway requires an active storyboard_image image artifact.") };
   }
 
-  const validation = validateImageFile(artifact.storage.uri);
+  let buffer: Buffer;
+  try {
+    buffer = readFileSync(artifact.storage.uri);
+  } catch (error) {
+    return {
+      ok: false,
+      error: providerError("PROVIDER_UNSUPPORTED_INPUT", error instanceof Error ? error.message : "Storyboard image is not readable.")
+    };
+  }
+
+  const validation = validateImageBuffer(buffer, artifact.storage.uri);
   if (!validation.ok) {
     return { ok: false, error: providerError("PROVIDER_UNSUPPORTED_INPUT", validation.error || "Storyboard image validation failed.") };
   }
@@ -131,8 +165,22 @@ function dataUriFromImageArtifact(artifact: MediaArtifact): { ok: true; data_uri
     return { ok: false, error: providerError("PROVIDER_UNSUPPORTED_INPUT", "Storyboard image MIME type is not supported.") };
   }
 
-  const encoded = readFileSync(artifact.storage.uri).toString("base64");
-  return { ok: true, data_uri: `data:${mime};base64,${encoded}` };
+  const encoded = buffer.toString("base64");
+  const dataUri = `data:${mime};base64,${encoded}`;
+  return {
+    ok: true,
+    data_uri: dataUri,
+    prompt_image: {
+      kind: "data_uri",
+      mime_type: mime,
+      binary_size_bytes: buffer.length,
+      data_uri_length: dataUri.length,
+      sha256: validation.sha256,
+      width: validation.width,
+      height: validation.height,
+      aspect_ratio: validation.aspect_ratio
+    }
+  };
 }
 
 export function buildRunwayImageToVideoRequest(input: ProviderGenerationInput, modelName = "gen4.5"): RunwayImageToVideoRequestBuildResult {
@@ -160,6 +208,15 @@ export function buildRunwayImageToVideoRequest(input: ProviderGenerationInput, m
       promptText: input.video_prompt,
       ratio,
       duration
+    },
+    summary: {
+      endpoint: "POST /v1/image_to_video",
+      x_runway_version: RUNWAY_API_VERSION,
+      model: modelName,
+      ratio,
+      duration,
+      prompt_text_length: input.video_prompt.length,
+      prompt_image: promptImage.prompt_image
     }
   };
 }
@@ -173,14 +230,69 @@ async function safeJson(response: Response): Promise<Record<string, unknown>> {
   }
 }
 
-function errorFromHttp(status: number, providerName: string): ProviderToolError {
-  if (status === 401 || status === 403) return providerError("PROVIDER_AUTH_FAILED", `${providerName} authentication failed.`);
-  if (status === 402) return providerError("PROVIDER_INSUFFICIENT_CREDITS", `${providerName} reports insufficient credits.`);
-  if (status === 408 || status === 504) return providerError("PROVIDER_TIMEOUT", `${providerName} request timed out.`, true);
-  if (status === 429) return providerError("PROVIDER_RATE_LIMITED", `${providerName} rate limit was reached.`, true);
-  if (status >= 500) return providerError("PROVIDER_TRANSIENT_FAILURE", `${providerName} returned a transient server error.`, true);
-  if (status === 400 || status === 422) return providerError("PROVIDER_UNSUPPORTED_INPUT", `${providerName} rejected the request input.`);
-  return providerError("PROVIDER_REQUEST_FAILED", `${providerName} request failed with HTTP ${status}.`);
+function shortSafe(value: unknown, secrets: string[]): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const redacted = redactSecrets(value, secrets)
+    .replace(/data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+/g, "<REDACTED_DATA_URI>")
+    .replace(/[A-Za-z0-9+/=]{200,}/g, "<REDACTED_LONG_TOKEN>")
+    .trim();
+  return redacted.length > 500 ? `${redacted.slice(0, 500)}...` : redacted;
+}
+
+function payloadObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function firstShortString(secrets: string[], ...values: unknown[]): string | null {
+  for (const value of values) {
+    const safe = shortSafe(value, secrets);
+    if (safe) return safe;
+  }
+  return null;
+}
+
+function providerSummaryFromHttp(status: number, retryable: boolean, payload: Record<string, unknown>, secrets: string[]): SanitizedProviderErrorSummary {
+  const errorPayload = payloadObject(payload.error);
+  const errorString = typeof payload.error === "string" ? payload.error : null;
+  return {
+    http_status: status,
+    provider_error_code: firstShortString(
+      secrets,
+      payload.code,
+      payload.error_code,
+      payload.errorCode,
+      payload.type,
+      errorPayload.code,
+      errorPayload.error_code,
+      errorPayload.type,
+      errorPayload.name
+    ),
+    provider_error_message: firstShortString(
+      secrets,
+      payload.message,
+      payload.error_message,
+      payload.errorMessage,
+      payload.error_description,
+      errorPayload.message,
+      errorPayload.error_message,
+      errorPayload.detail,
+      errorString
+    ),
+    provider_error_field: firstShortString(secrets, payload.field, payload.param, payload.path, errorPayload.field, errorPayload.param, errorPayload.path),
+    retryable
+  };
+}
+
+function errorFromHttp(status: number, providerName: string, payload: Record<string, unknown> = {}, secrets: string[] = []): ProviderToolError {
+  const retryable = status === 408 || status === 504 || status === 429 || status >= 500;
+  const summary = providerSummaryFromHttp(status, retryable, payload, secrets);
+  if (status === 401 || status === 403) return providerError("PROVIDER_AUTH_FAILED", `${providerName} authentication failed.`, false, summary);
+  if (status === 402) return providerError("PROVIDER_INSUFFICIENT_CREDITS", `${providerName} reports insufficient credits.`, false, summary);
+  if (status === 408 || status === 504) return providerError("PROVIDER_TIMEOUT", `${providerName} request timed out.`, true, summary);
+  if (status === 429) return providerError("PROVIDER_RATE_LIMITED", `${providerName} rate limit was reached.`, true, summary);
+  if (status >= 500) return providerError("PROVIDER_TRANSIENT_FAILURE", `${providerName} returned a transient server error.`, true, summary);
+  if (status === 400 || status === 422) return providerError("PROVIDER_UNSUPPORTED_INPUT", `${providerName} rejected the request input.`, false, summary);
+  return providerError("PROVIDER_REQUEST_FAILED", `${providerName} request failed with HTTP ${status}.`, retryable, summary);
 }
 
 function stringField(payload: Record<string, unknown>, field: string): string {
@@ -227,7 +339,7 @@ export class RunwayVideoProviderAdapter implements VideoProviderAdapter {
 
     const payload = await safeJson(response);
     if (!response.ok) {
-      return { ok: false, error: errorFromHttp(response.status, "Runway") };
+      return { ok: false, error: errorFromHttp(response.status, "Runway", payload, [this.credential]) };
     }
 
     const providerJobId = stringField(payload, "id");
@@ -254,7 +366,7 @@ export class RunwayVideoProviderAdapter implements VideoProviderAdapter {
 
     const payload = await safeJson(response);
     if (!response.ok) {
-      return { ok: false, error: errorFromHttp(response.status, "Runway") };
+      return { ok: false, error: errorFromHttp(response.status, "Runway", payload, [this.credential]) };
     }
 
     const providerStatus = stringField(payload, "status") || "UNKNOWN";

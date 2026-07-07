@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   buildRunwayCanaryDryRunReport,
+  buildRunwayImageToVideoRequest,
   createGenerationRunFromPackageShot,
   createProject,
   downloadProviderOutputToArtifact,
@@ -269,6 +270,83 @@ test("M1 Runway request maps project aspect ratio to API resolution ratio before
   assert.equal(body.duration, 2);
   assert.equal(body.promptText, "Animate portrait shot.");
   assert.equal(rawBody.includes("9:16"), false);
+});
+
+test("M1 Runway request summary excludes prompt image bytes and records safe image facts", () => {
+  const request = buildRunwayImageToVideoRequest({
+    storyboard_artifact: fakeStoryboardArtifact(),
+    video_prompt: "Animate portrait shot.",
+    negative_prompt: "",
+    duration_seconds: 2,
+    aspect_ratio: "9:16",
+    resolution: "1080x1920"
+  });
+
+  assert.equal(request.ok, true);
+  if (!request.ok) return;
+  assert.equal(request.summary.endpoint, `POST ${RUNWAY_IMAGE_TO_VIDEO_ENDPOINT}`);
+  assert.equal(request.summary.x_runway_version, RUNWAY_API_VERSION);
+  assert.equal(request.summary.model, "gen4.5");
+  assert.equal(request.summary.ratio, "720:1280");
+  assert.equal(request.summary.duration, 2);
+  assert.equal(request.summary.prompt_text_length, "Animate portrait shot.".length);
+  assert.equal(request.summary.prompt_image.kind, "data_uri");
+  assert.equal(request.summary.prompt_image.mime_type, "image/png");
+  assert.equal(request.summary.prompt_image.width > 0, true);
+  assert.equal(request.summary.prompt_image.height > 0, true);
+  assert.equal(request.summary.prompt_image.sha256.length, 64);
+
+  const serializedSummary = JSON.stringify(request.summary);
+  assert.equal(serializedSummary.includes("promptImage"), false);
+  assert.equal(serializedSummary.includes("base64"), false);
+  assert.equal(serializedSummary.includes("Authorization"), false);
+  assert.equal(serializedSummary.includes("RUNWAYML_API_SECRET"), false);
+});
+
+test("M1 Runway submit failure keeps sanitized provider summary without raw payload", async () => {
+  const adapter = new RunwayVideoProviderAdapter({
+    credential: FAKE_SECRET,
+    api_base: "https://api.test.runway",
+    fetch_impl: (async () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            code: "invalid_prompt_image",
+            message: `Rejected image ${FAKE_SECRET} data:image/png;base64,${"A".repeat(220)}`,
+            field: "promptImage"
+          },
+          raw_provider_payload: "do not keep"
+        }),
+        {
+          status: 422,
+          headers: { "content-type": "application/json" }
+        }
+      )) as typeof fetch
+  });
+
+  const result = await adapter.submitGeneration({
+    storyboard_artifact: fakeStoryboardArtifact(),
+    video_prompt: "Animate portrait shot.",
+    negative_prompt: "",
+    duration_seconds: 2,
+    aspect_ratio: "9:16",
+    resolution: "1080x1920"
+  });
+
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.error.code, "PROVIDER_UNSUPPORTED_INPUT");
+  const summary = result.error.sanitized_provider_error_summary;
+  assert.equal(summary?.http_status, 422);
+  assert.equal(summary?.provider_error_code, "invalid_prompt_image");
+  assert.equal(summary?.provider_error_field, "promptImage");
+  assert.equal(summary?.retryable, false);
+
+  const serializedSummary = JSON.stringify(summary);
+  assert.equal(serializedSummary.includes(FAKE_SECRET), false);
+  assert.equal(serializedSummary.includes("data:image/png;base64"), false);
+  assert.equal(serializedSummary.includes("raw_provider_payload"), false);
+  assert.equal(serializedSummary.includes("Authorization"), false);
 });
 
 test("M1 package shot generation creates mock generated clip with ffprobe validation and no raw import input", async () => {

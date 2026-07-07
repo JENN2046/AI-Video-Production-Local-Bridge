@@ -1,0 +1,156 @@
+{
+  "task": "R3-8C_Runway_Submit_Failure_Evidence_And_Input_Contract_Triage",
+  "result": "PASS_READY_FOR_INPUT_STRATEGY_DECISION",
+  "generated_at": "2026-07-07T06:20:27.460Z",
+  "source_evidence": {
+    "r3_8b_live_report": {
+      "path": "data/reports/m1_r0_runway_canary_live_result.json",
+      "exists": true,
+      "result": "PROVIDER_FAILED",
+      "error_code": "PROVIDER_UNSUPPORTED_INPUT",
+      "provider_job_id_present": false,
+      "sanitized_provider_error_summary_available": false
+    },
+    "r3_8b_closeout_report": {
+      "path": "data/reports/r3_8b_runway_gen45_single_submit_canary_result.json",
+      "exists": true,
+      "result": "PROVIDER_FAILED",
+      "provider_boundary": {
+        "network_call_attempted": true,
+        "runway_called": true,
+        "runninghub_called": false,
+        "provider_credits_consumed": false,
+        "real_video_generated": false,
+        "secret_values_exposed": false
+      }
+    }
+  },
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runway_called": false,
+    "runninghub_called": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "secret_values_exposed": false,
+    "raw_provider_payload_recorded": false,
+    "prompt_image_base64_recorded": false
+  },
+  "request_summary": {
+    "endpoint": "POST /v1/image_to_video",
+    "x_runway_version": "2024-11-06",
+    "model": "gen4.5",
+    "ratio": "720:1280",
+    "duration": 2,
+    "prompt_text_length": 68,
+    "prompt_image": {
+      "kind": "data_uri",
+      "mime_type": "image/png",
+      "binary_size_bytes": 253183,
+      "data_uri_length": 337602,
+      "sha256": "47ec001e41d0d6bee01125df3cdcf4967e47c6461d46e76274d56734c49568eb",
+      "width": 720,
+      "height": 1280,
+      "aspect_ratio": "9:16"
+    }
+  },
+  "request_summary_supported": true,
+  "request_summary_forbidden_field_check": {
+    "promptImage_recorded": false,
+    "promptImage_base64_recorded": false,
+    "authorization_recorded": false,
+    "raw_provider_payload_recorded": false,
+    "runway_secret_name_recorded": false
+  },
+  "sanitized_provider_error_summary_capability": {
+    "supported": true,
+    "fields": [
+      "http_status",
+      "provider_error_code",
+      "provider_error_message",
+      "provider_error_field",
+      "retryable"
+    ],
+    "target_surface": [
+      "ProviderToolError",
+      "GenerationRun.error",
+      "Runway canary live report"
+    ],
+    "r3_8b_historical_summary_available": false,
+    "r3_8b_historical_limitation": "R3-8B was executed before HTTP/provider error summary capture existed, so only the generic error code can be recovered from that run."
+  },
+  "canary_image_suitability": {
+    "readable_png": true,
+    "width": 720,
+    "height": 1280,
+    "aspect_ratio": "9:16",
+    "size_bytes": 253183,
+    "sha256": "47ec001e41d0d6bee01125df3cdcf4967e47c6461d46e76274d56734c49568eb",
+    "visual_stats": {
+      "decoded_pixels": true,
+      "bit_depth": 8,
+      "color_type": 6,
+      "interlace_method": 0,
+      "sampled_pixels": 14400,
+      "edge_density": 0,
+      "color_bucket_count": 28,
+      "notes": [
+        "low edge-density and local visual inspection indicate an abstract gradient without a clear subject"
+      ]
+    },
+    "visually_has_clear_subject": false,
+    "likely_placeholder_or_abstract": true,
+    "suitable_for_next_live_canary": false,
+    "recommendation": "Deprecate this abstract gradient fixture for live Gen-4.5 I2V canary use; keep it only for offline provider-path and guard tests."
+  },
+  "next_canary_input_strategy": {
+    "recommended": [
+      "use_real_storyboard_keyframe",
+      "or use_runway_ephemeral_upload",
+      "or use_https_url"
+    ],
+    "not_recommended": [
+      "repeat_same_gradient_fixture_without_error_summary"
+    ],
+    "deprecate_current_gradient_fixture_for_live_canary": true,
+    "use_approved_webgpt_storyboard_image": true,
+    "implement_runway_ephemeral_upload_dry_run_path_first": true,
+    "requires_new_exact_user_authorization_for_real_call": true
+  },
+  "validation": {
+    "npm run r3:8c:triage": "PASS",
+    "npm run typecheck": "PASS",
+    "npm run test:m1": "PASS",
+    "npm run secret:scan": "PASS",
+    "git diff --check": "PASS"
+  },
+  "changed_files": [
+    "src/tools/provider.ts",
+    "src/tools/videoProviderAdapters.ts",
+    "src/tools/generation.ts",
+    "src/tools/runwayCanary.ts",
+    "src/index.ts",
+    "tests/m1-provider-boundary.test.ts",
+    "scripts/r3-8c-runway-submit-failure-triage.ts",
+    "package.json",
+    "data/reports/r3_8c_runway_submit_failure_triage_result.json"
+  ],
+  "out_of_scope_file_changes": [
+    {
+      "path": "src/tools/generation.ts",
+      "reason": "Needed to propagate sanitized provider error summaries from ProviderToolError into persisted generation run errors."
+    },
+    {
+      "path": "src/index.ts",
+      "reason": "Needed to export the new request and provider error summary types/functions for tests and scripts."
+    }
+  ],
+  "commit": null,
+  "next_step": {
+    "allowed_next_tasks": [
+      "R3-8D Prepare Real Storyboard Keyframe Canary",
+      "R3-8D Prepare Runway Ephemeral Upload Canary Path",
+      "R3-8D Ask Jenn For Next Live Canary Authorization"
+    ],
+    "live_submit_requires_new_exact_user_authorization": true
+  }
+}

@@ -9,8 +9,10 @@ import { registerMediaArtifact } from "./mediaArtifacts.js";
 import { startStoryboardVideoGeneration } from "./generation.js";
 import { checkProviderEnv, providerPreflight } from "./providerEnv.js";
 import {
+  buildRunwayImageToVideoRequest,
   mapRunwayAspectRatio,
   normalizeRunwayDuration,
+  type RunwayImageToVideoRequestSummary,
   RUNWAY_API_VERSION,
   RUNWAY_IMAGE_TO_VIDEO_ENDPOINT
 } from "./videoProviderAdapters.js";
@@ -116,6 +118,8 @@ export interface RunwayCanaryReport {
     generated_artifact_id: string | null;
     provider_job_id_present: boolean;
     error_code: string | null;
+    sanitized_provider_error_summary?: unknown;
+    runway_request_summary?: RunwayImageToVideoRequestSummary | null;
   };
   block_reason: string | null;
 }
@@ -428,6 +432,16 @@ export async function runStrictRunwayCanary(input: RunwayCanaryOptions = {}, db:
     );
     if (!storyboard.ok) return blocked(dryRun, storyboard.error.message);
 
+    const request = buildRunwayImageToVideoRequest({
+      storyboard_artifact: artifact.artifact,
+      video_prompt: "Animate the provider-path canary keyframe with a gentle camera push.",
+      negative_prompt: "",
+      duration_seconds: 2,
+      aspect_ratio: "9:16",
+      resolution: "720x1280"
+    });
+    if (!request.ok) return blocked(dryRun, request.error.message);
+
     const generation = await startStoryboardVideoGeneration(
       {
         project_id: project.project_id,
@@ -476,7 +490,9 @@ export async function runStrictRunwayCanary(input: RunwayCanaryOptions = {}, db:
         run_status: run.status,
         generated_artifact_id: run.output.artifact_ids[0] ?? null,
         provider_job_id_present: providerJobIdPresent,
-        error_code: run.error.code || null
+        error_code: run.error.code || null,
+        sanitized_provider_error_summary: run.error.sanitized_provider_error_summary ?? null,
+        runway_request_summary: request.summary
       }
     };
   } catch (error) {

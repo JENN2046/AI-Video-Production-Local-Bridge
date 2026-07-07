@@ -47,6 +47,14 @@ export interface ProviderExecutionRequest {
   cost_acknowledged?: boolean;
 }
 
+export interface SanitizedProviderErrorSummary {
+  http_status: number | null;
+  provider_error_code: string | null;
+  provider_error_message: string | null;
+  provider_error_field: string | null;
+  retryable: boolean;
+}
+
 export interface SelectedProviderPort {
   config: ProviderConfig;
   provider: ProviderName;
@@ -58,6 +66,7 @@ export interface ProviderToolError {
   code: ProviderErrorCode | string;
   message: string;
   retryable?: boolean;
+  sanitized_provider_error_summary?: SanitizedProviderErrorSummary;
 }
 
 export type ProviderSelectionResult =
@@ -135,8 +144,18 @@ function envTrue(env: NodeJS.ProcessEnv, name: string): boolean {
   return env[name] === "true";
 }
 
-export function providerError(code: ProviderErrorCode | string, message: string, retryable = false): ProviderToolError {
-  return { code, message, retryable };
+export function providerError(
+  code: ProviderErrorCode | string,
+  message: string,
+  retryable = false,
+  sanitizedProviderErrorSummary?: SanitizedProviderErrorSummary
+): ProviderToolError {
+  return {
+    code,
+    message,
+    retryable,
+    ...(sanitizedProviderErrorSummary ? { sanitized_provider_error_summary: sanitizedProviderErrorSummary } : {})
+  };
 }
 
 export function selectM1ProviderPort(

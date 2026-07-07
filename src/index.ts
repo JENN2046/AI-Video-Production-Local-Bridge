@@ -75,6 +75,7 @@ export type {
   ProviderPortName,
   ProviderToolError,
   RealProviderName,
+  SanitizedProviderErrorSummary,
   SelectedProviderPort
 } from "./tools/provider.js";
 export {
@@ -114,6 +115,8 @@ export type {
   ProviderStatusResult,
   ProviderSubmitResult,
   RunwayImageToVideoRequestBuildResult,
+  RunwayImageToVideoRequestSummary,
+  RunwayPromptImageSummary,
   VideoProviderAdapter
 } from "./tools/videoProviderAdapters.js";
 export type {

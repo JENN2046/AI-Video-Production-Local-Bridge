@@ -1540,3 +1540,50 @@ Jenn must provide an exact current authorization phrase equivalent to:
 - R3-8B performed exactly one authorized Runway submit attempt and did not retry.
 - Result was `PROVIDER_FAILED` with sanitized error code `PROVIDER_UNSUPPORTED_INPUT`.
 - No provider job id was recorded, no local video artifact was generated, and no RunningHub call occurred.
+
+## R3-8C_RUNWAY_SUBMIT_FAILURE_EVIDENCE_AND_INPUT_CONTRACT_TRIAGE - Runway Submit Failure Evidence And Input Contract Triage
+
+status: DONE
+priority: P0
+lane: Provider Failure Evidence And Offline Triage
+project: AI Video Production Workspace Three Route Plan
+scope: add sanitized Runway failure evidence capture, safe request summary, canary image suitability review, and next input strategy recommendation
+branch: local-only
+depends_on: R3-8B_RUNWAY_GEN45_SINGLE_SUBMIT_CANARY_REAUTHORIZATION
+source_plan: pasted R3-8C taskbook
+report_path: data/reports/r3_8c_runway_submit_failure_triage_result.json
+allowed_delivery: source_code_change,tests,offline_triage_report,local_commit
+blocked_delivery: runway_call,runninghub_call,retry_live_submit,provider_credits_consumed,real_video_generated,secret_value_output,promptImage_base64_output,raw_provider_payload_recording,source_overwrite,push,tag,release,deploy
+created_at: 2026-07-07T14:21:12+08:00
+updated_at: 2026-07-07T14:21:12+08:00
+claimed_at: 2026-07-07T14:21:12+08:00
+claim_run_id: codex-20260707-142112-r3-8c
+claimed_by: Codex R3-8C executor
+completed_at: 2026-07-07T14:21:12+08:00
+completed_by: Codex R3-8C executor
+result: PASS_READY_FOR_INPUT_STRATEGY_DECISION
+
+### Goal
+
+Improve the evidence chain after R3-8B failed with `PROVIDER_UNSUPPORTED_INPUT`, while making no provider calls.
+
+### Acceptance
+
+- Sanitized provider error summary support exists for Runway non-2xx submit failures.
+- Runway request summary support exists and excludes `promptImage`, base64, Authorization, secret names, and raw provider payload.
+- Canary image suitability is reported.
+- Next canary input strategy is reported.
+- No Runway or RunningHub call, retry, credit consumption, real video generation, source overwrite, push, tag, release, or deploy occurred.
+
+### Validation
+
+- `npm run r3:8c:triage`
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Notes
+
+- Current gradient fixture is technically valid but unsuitable for the next live Gen-4.5 I2V canary because it lacks a clear subject.
+- Next live Runway submit requires a new exact current Jenn authorization phrase.
