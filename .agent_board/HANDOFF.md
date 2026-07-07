@@ -80,7 +80,7 @@ Current owner: None
 
 ## Failed in last run
 
-- None
+- R3-8B performed exactly one authorized Runway Gen-4.5 canary submit and failed with sanitized error code `PROVIDER_UNSUPPORTED_INPUT`. Evidence: `data/reports/m1_r0_runway_canary_live_result.json` and `data/reports/r3_8b_runway_gen45_single_submit_canary_result.json`.
 
 ## Skipped in last run
 
@@ -127,5 +127,5 @@ Current owner: None
 
 ## Next recommended action
 
-- Review `data/reports/r3_7_runway_live_canary_authorization_result.json`.
-- Do not perform a live Runway submit until Jenn provides the exact current authorization phrase from that report.
+- Investigate the Runway Gen-4.5 input contract offline before any new live submit authorization.
+- Do not retry Runway canary without a new exact current Jenn authorization phrase.

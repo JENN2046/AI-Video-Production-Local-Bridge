@@ -965,3 +965,38 @@ Evidence:
 Notes:
 - `provider:preflight` now reports credential presence as a boolean only; masked credential preview remains `null`.
 - No provider network call, Runway submit, RunningHub call, credit consumption, real video generation, source overwrite, push, tag, release, or deploy occurred.
+
+### R3-8B - 2026-07-07T13:38:48+08:00
+
+Commands:
+
+```bash
+npm run env:check
+npm run provider:preflight
+npm run typecheck
+npm run test:m1
+npm run runway:canary
+npm run runway:canary -- --live
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PROVIDER_FAILED
+```
+
+Evidence:
+- `data/reports/m1_r0_runway_canary_dry_run_report.json`
+- `data/reports/m1_r0_runway_canary_live_result.json`
+- `data/reports/r3_8b_runway_gen45_single_submit_canary_result.json`
+- `data/reports/provider_env_check_result.json`
+- `data/reports/provider_preflight_result.json`
+- `data/reports/secret_scan_result.json`
+
+Notes:
+- One authorized Runway submit attempt was performed with `model=gen4.5`, `duration_seconds=2`, and `ratio=720:1280`.
+- The live result was `PROVIDER_FAILED` with sanitized error code `PROVIDER_UNSUPPORTED_INPUT`.
+- No retry, second submit, RunningHub call, regeneration, batch, source overwrite, push, tag, release, or deploy occurred.
+- `provider_job_id_present=false`, `provider_credits_consumed=false`, and `real_video_generated=false`.

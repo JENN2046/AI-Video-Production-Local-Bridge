@@ -1394,3 +1394,149 @@ Prepare the exact authorization surface for a single live Runway canary after th
 
 - This is an authorization preparation task, not the live canary execution.
 - A live Runway submit requires a separate exact current Jenn authorization after this task.
+
+## R3-8A_RUNWAY_GEN45_CONTRACT_FIX_AND_DRY_RUN - Runway Gen-4.5 Contract Fix And Dry Run
+
+status: DONE
+priority: P0
+lane: Provider Contract Correction
+project: AI Video Production Workspace Three Route Plan
+scope: fix Runway Gen-4.5 image-to-video ratio mapping and regenerate dry-run evidence without provider calls
+branch: local-only
+depends_on: R3-7_RUNWAY_LIVE_CANARY_AUTHORIZATION
+source_plan: Commander side review after Runway Gen-4.5 contract investigation
+report_path: data/reports/r3_8a_runway_gen45_contract_dry_run_report.json
+allowed_delivery: source_code_change,tests,dry_run_report,contract_mapping_update,local_commit
+blocked_delivery: runway_submit,runninghub_call,network_call_attempted,provider_credits_consumed,real_video_generated,secret_value_output,source_overwrite,push,tag,release,deploy
+created_at: 2026-07-07T12:26:42+08:00
+updated_at: 2026-07-07T12:26:42+08:00
+claimed_at: 2026-07-07T12:20:00+08:00
+claim_run_id: r3-8a-worker-run
+claimed_by: worker
+completed_at: 2026-07-07T12:26:42+08:00
+completed_by: worker
+commit: 143da65
+result: PASS_READY_FOR_REAUTHORIZATION
+
+### Goal
+
+Correct the Runway Gen-4.5 canary contract so project aspect ratio `9:16` maps to Runway ratio `720:1280`, not `768:1280`, while preserving `duration_seconds=2` for budget control.
+
+### Acceptance
+
+- Confirm `provider=runway`.
+- Confirm `model=gen4.5`.
+- Confirm endpoint is `POST /v1/image_to_video`.
+- Confirm `X-Runway-Version=2024-11-06`.
+- Confirm `duration_seconds=2`.
+- Confirm max submit calls is `1`.
+- Confirm project aspect ratio `9:16` maps to Runway `720:1280`.
+- Confirm `network_call_attempted=false`.
+- Confirm `runway_called=false` and `runninghub_called=false`.
+- Confirm `provider_credits_consumed=false`.
+- Confirm `secret_values_exposed=false`.
+
+### Validation
+
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run test:g0`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Notes
+
+- R3-8A was completed and committed as `143da65`.
+- R3-8A is the dependency gate for R3-8B.
+
+## R3-8B_RUNWAY_GEN45_SINGLE_SUBMIT_CANARY_REAUTHORIZATION - Runway Gen-4.5 Single-Submit Canary Reauthorization
+
+status: FAILED
+priority: P0
+lane: Approval Boundary Live Provider Execution
+project: AI Video Production Workspace Three Route Plan
+scope: execute exactly one authorized Runway Gen-4.5 image-to-video canary after exact current Jenn authorization
+branch: local-only
+depends_on: R3-8A_RUNWAY_GEN45_CONTRACT_FIX_AND_DRY_RUN
+source_plan: data/reports/r3_8a_runway_gen45_contract_dry_run_report.json
+report_path: data/reports/m1_r0_runway_canary_live_result.json
+allowed_delivery: preflight,one_authorized_runway_submit,live_result_report,provider_job_id_if_present,local_media_artifact_if_succeeded,ffprobe_if_succeeded,local_commit
+blocked_delivery: runway_submit_without_exact_authorization,runninghub_call,second_submit,retry,regeneration,batch,provider_credits_beyond_one_submit,secret_value_output,source_overwrite,push,tag,release,deploy
+created_at: 2026-07-07T12:32:22+08:00
+updated_at: 2026-07-07T13:38:48+08:00
+claimed_at: 2026-07-07T13:36:51+08:00
+claim_run_id: codex-20260707-133651-r3-8b
+claimed_by: Codex R3-8B executor
+completed_at: null
+completed_by: null
+failed_at: 2026-07-07T13:38:48+08:00
+failed_by: Codex R3-8B executor
+result: PROVIDER_FAILED
+
+### Goal
+
+Execute a single Runway Gen-4.5 canary only after Jenn provides the exact current authorization phrase for this task. If exact authorization is absent, the worker may perform safe preflight only and must stop before any live provider submit.
+
+### Live Contract
+
+- provider: `runway`
+- model: `gen4.5`
+- endpoint: `POST /v1/image_to_video`
+- `X-Runway-Version`: `2024-11-06`
+- input: `fixtures/provider-canary/m1-r0/shot_001_canary_720x1280.png`
+- project aspect ratio: `9:16`
+- Runway ratio: `720:1280`
+- duration_seconds: `2`
+- max_submit_calls: `1`
+- output_dir: `data/media/provider-canary/m1-r0-runway-canary/`
+
+### Required Authorization Phrase
+
+Jenn must provide an exact current authorization phrase equivalent to:
+
+```text
+授权执行 1 次 Runway single-submit canary 真实调用：provider=runway，endpoint=POST /v1/image_to_video，X-Runway-Version=2024-11-06，model=gen4.5，input=fixtures/provider-canary/m1-r0/shot_001_canary_720x1280.png，duration_seconds=2，ratio=720:1280，max_submit_calls=1，预算/费用上限=仅允许这 1 次 canary submit 且不允许自动重试或第二次计费调用，output_dir=data/media/provider-canary/m1-r0-runway-canary/，成功后下载为本地 media artifact 并 ffprobe 校验；不得调用 RunningHub，不得 regeneration，不得 batch，不得发布/部署，不得覆盖源资产，不得打印 secret。
+```
+
+### Acceptance
+
+- Claim R3-8B only after confirming R3-8A commit `143da65` and dry-run report are present.
+- Confirm `.agent_board/RUN_LOCK.md` is inactive before claim.
+- Confirm active provider is `runway`.
+- Confirm `RUNWAYML_API_SECRET` presence only as a boolean; never print the value.
+- Confirm `network_call_attempted=false` before the live command starts.
+- Execute at most one Runway submit only after exact current Jenn authorization is present.
+- Do not retry on failure.
+- Do not call RunningHub.
+- Do not run regeneration or batch generation.
+- Do not publish, deploy, push, tag, or release.
+- Do not overwrite source assets.
+- If provider job id is present, record it in the live result report.
+- If succeeded, download output to `data/media/provider-canary/m1-r0-runway-canary/`, register a local media artifact, and ffprobe validate it.
+- If failed, record a sanitized provider failure summary without secret values or raw private payloads.
+- Report truthful boundary flags for `network_call_attempted`, `runway_called`, `provider_credits_consumed`, `real_video_generated`, and `secret_values_exposed`.
+
+### Validation
+
+- `npm run env:check`
+- `npm run provider:preflight`
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Stop Conditions
+
+- Stop before live submit if exact current Jenn authorization is absent.
+- Stop after one submit attempt, regardless of success or failure.
+- Stop if the provider returns an input, auth, credit, rate-limit, or transient error.
+- Stop if any secret value appears in output or report.
+
+### Notes
+
+- This is a paid/quota-consuming approval-boundary task.
+- The worker must not use the old `768:1280` ratio.
+- The worker must preserve the `duration_seconds=2` budget decision.
+- R3-8B performed exactly one authorized Runway submit attempt and did not retry.
+- Result was `PROVIDER_FAILED` with sanitized error code `PROVIDER_UNSUPPORTED_INPUT`.
+- No provider job id was recorded, no local video artifact was generated, and no RunningHub call occurred.

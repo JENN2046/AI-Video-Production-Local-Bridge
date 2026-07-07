@@ -1,0 +1,64 @@
+{
+  "task": "R3-8B_Runway_Gen-4.5_Single-Submit_Canary_Reauthorization",
+  "result": "PROVIDER_FAILED",
+  "completed_at": "2026-07-07T13:38:48+08:00",
+  "authorization": {
+    "exact_current_user_authorization_present": true,
+    "internal_live_gate_accepted": true
+  },
+  "contract": {
+    "provider": "runway",
+    "model": "gen4.5",
+    "endpoint": "POST /v1/image_to_video",
+    "x_runway_version": "2024-11-06",
+    "input": "fixtures/provider-canary/m1-r0/shot_001_canary_720x1280.png",
+    "project_aspect_ratio": "9:16",
+    "runway_ratio": "720:1280",
+    "duration_seconds": 2,
+    "max_submit_calls": 1,
+    "output_dir": "data/media/provider-canary/m1-r0-runway-canary/"
+  },
+  "live_report": "data/reports/m1_r0_runway_canary_live_result.json",
+  "dry_run_guard_report": "data/reports/m1_r0_runway_canary_dry_run_report.json",
+  "attempt": {
+    "submit_calls_attempted": 1,
+    "retry_attempted": false,
+    "regeneration_attempted": false,
+    "batch_attempted": false,
+    "runninghub_called": false
+  },
+  "provider_boundary": {
+    "network_call_attempted": true,
+    "runway_called": true,
+    "runninghub_called": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "secret_values_exposed": false
+  },
+  "live_result": {
+    "project_id": "project_1f7e8df8-53ad-41cc-932e-9fe73d1ce53d",
+    "storyboard_package_id": "storyboard_package_a877cf43-a8e9-4aad-ab70-3cc4b2ac224c",
+    "batch_id": "batch_9283ce67-9fe7-418a-91f9-c9719d6bc3a0",
+    "run_id": "run_a31bb511-f1a9-4e0e-a3fc-ccefe619fa2e",
+    "run_count": 1,
+    "run_status": "failed",
+    "generated_artifact_id": null,
+    "provider_job_id_present": false,
+    "error_code": "PROVIDER_UNSUPPORTED_INPUT"
+  },
+  "failure_summary": {
+    "sanitized_error_code": "PROVIDER_UNSUPPORTED_INPUT",
+    "provider_job_id_present": false,
+    "provider_raw_payload_recorded": false,
+    "secret_values_recorded": false,
+    "next_safe_option": "Investigate the Runway Gen-4.5 input contract offline before any new live submit authorization."
+  },
+  "validation": {
+    "npm_run_env_check": "PASS",
+    "npm_run_provider_preflight": "PASS",
+    "npm_run_typecheck": "PASS",
+    "npm_run_test_m1": "PASS",
+    "npm_run_secret_scan": "PASS",
+    "git_diff_check": "PASS"
+  }
+}
