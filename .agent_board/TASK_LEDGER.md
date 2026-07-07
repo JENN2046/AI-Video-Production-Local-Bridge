@@ -1804,3 +1804,48 @@ Risks:
 Next:
 - R3-8I is promoted to READY for offline authorization preparation.
 - Any live RunningHub upload/submit/query/download requires a future exact current Jenn authorization phrase.
+
+### 2026-07-07T16:44:00+08:00 - R3-8H Receipt Fix
+
+Result: PASS_RECEIPT_FIXED
+Project: AI Video Production Workspace Three Route Plan
+Lane: Provider Adapter Implementation
+Run ID: codex-20260707-r3-8h-receipt-fix
+
+Scope:
+- Updated the R3-8H JSON report with explicit git receipt metadata.
+- Recorded R3-8H implementation commit `b1efae2` and queue promotion commit `cfbd96b`.
+- Normalized the report validation block indentation.
+- Did not execute R3-8I or any live provider step.
+
+Changed files:
+- data/reports/r3_8h_runninghub_adapter_skeleton_offline_result.json
+- .agent_board/HANDOFF.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: node -e JSON.parse(...)
+  result: PASS
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_8h_runninghub_adapter_skeleton_offline_result.json
+- git log: `b1efae2 Add RunningHub offline adapter skeleton`
+- git log: `cfbd96b Queue RunningHub authorization prep`
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: pending_receipt_fix_commit
+- push: no
+- PR: none
+
+Boundary:
+- No RunningHub call, Runway call, media upload to provider, status poll, output download, provider credit consumption, real video generation, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
+
+Next:
+- R3-8I remains READY for offline authorization preparation only.
+- Any live RunningHub upload/submit/query/download requires a future exact current Jenn authorization phrase.

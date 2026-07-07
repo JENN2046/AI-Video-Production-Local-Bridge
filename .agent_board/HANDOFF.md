@@ -107,6 +107,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - R3-8H completed RunningHub adapter skeleton and offline tests.
 - R3-8H report is `data/reports/r3_8h_runninghub_adapter_skeleton_offline_result.json`.
 - R3-8H local commit is `b1efae2`.
+- R3-8H receipt was fixed on 2026-07-07 to record implementation commit `b1efae2` and queue promotion commit `cfbd96b` in the JSON report.
 - R3-8H added offline upload, submit, and query request builders for RunningHub, plus synthetic response parsers and sanitized error mapping.
 - R3-8H did not call RunningHub or Runway, upload media to provider, poll status, download provider output, consume provider credits, generate video, read/print secrets, overwrite source assets, push, tag, release, or deploy.
 

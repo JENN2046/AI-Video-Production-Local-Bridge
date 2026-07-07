@@ -2,6 +2,28 @@
   "task": "R3-8H_RUNNINGHUB_ADAPTER_OR_AUTHORIZATION_NEXT_STEP",
   "result": "PASS_ADAPTER_SKELETON_OFFLINE",
   "generated_at": "2026-07-07T08:23:57.350Z",
+  "receipt": {
+    "receipt_fix_task": "R3-8H-RECEIPT-FIX",
+    "receipt_fixed_at": "2026-07-07T16:44:00+08:00",
+    "branch": "master",
+    "implementation_commit": "b1efae2",
+    "implementation_commit_subject": "Add RunningHub offline adapter skeleton",
+    "queue_promotion_commit": "cfbd96b",
+    "queue_promotion_commit_subject": "Queue RunningHub authorization prep",
+    "worktree_clean_before_receipt_fix": true,
+    "live_provider_actions_performed": false
+  },
+  "git_delivery": {
+    "repo": true,
+    "branch": "master",
+    "implementation_commit": "b1efae2",
+    "queue_promotion_commit": "cfbd96b",
+    "push": false,
+    "pr": null,
+    "tag": false,
+    "release": false,
+    "deploy": false
+  },
   "source_contract_report": "data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json",
   "local_registry": {
     "runninghub_primary": true,
@@ -172,13 +194,13 @@
     "no_secret_base64_or_raw_payload_leak": true
   },
   "blocked_reason": null,
-    "validation": {
-      "npm run r3:8h:offline": "PASS",
-      "npm run typecheck": "PASS",
-      "npm run test:m1": "PASS",
-      "npm run secret:scan": "PASS",
-      "git diff --check": "PASS_WITH_CRLF_WARNINGS_ONLY"
-    },
+  "validation": {
+    "npm run r3:8h:offline": "PASS",
+    "npm run typecheck": "PASS",
+    "npm run test:m1": "PASS",
+    "npm run secret:scan": "PASS",
+    "git diff --check": "PASS_WITH_CRLF_WARNINGS_ONLY"
+  },
   "changed_files": [
     "package.json",
     "scripts/r3-8h-runninghub-adapter-skeleton-offline.ts",
