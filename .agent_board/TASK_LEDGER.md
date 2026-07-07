@@ -1589,3 +1589,77 @@ Risks:
 
 Next:
 - Await Jenn's exact current authorization for `R3-8E_Runway_Real_Storyboard_Keyframe_Single-Submit_Authorization`.
+
+### 2026-07-07T15:14:33+08:00 - R3-8E Runway Real Storyboard Keyframe Single-Submit Authorization
+
+Result: FAILED / PROVIDER_FAILED_INSUFFICIENT_CREDITS
+Project: AI Video Production Workspace Three Route Plan
+Lane: Approval Boundary Live Provider Execution
+Claimed by: Codex R3-8E executor
+Completed by:
+Failed by: Codex R3-8E executor
+Run ID: codex-20260707-151433-r3-8e
+Started at: 2026-07-07T15:14:33+08:00
+Completed at:
+Stopped at: 2026-07-07T15:14:33+08:00
+
+Scope:
+- Verified R3-8D selected real storyboard keyframe and app artifact registry state.
+- Executed exactly one authorized Runway Gen-4.5 image-to-video submit.
+- Recorded sanitized provider failure evidence.
+- Updated provider error classification for HTTP 400 credit messages.
+
+Changed files:
+- `scripts/r3-8e-runway-real-storyboard-keyframe-canary.ts`
+- `src/tools/videoProviderAdapters.ts`
+- `tests/m1-provider-boundary.test.ts`
+- `package.json`
+- `data/reports/r3_8e_runway_real_storyboard_keyframe_canary_result.json`
+- `.agent_board/NEXT_TASK.json`
+- `.agent_board/NEXT_TASK.md`
+- `.agent_board/RUN_LOCK.md`
+- `.agent_board/TASK_BACKLOG.md`
+- `.agent_board/VALIDATION_LOG.md`
+- `.agent_board/HANDOFF.md`
+- `.agent_board/TASK_LEDGER.md`
+
+Validation:
+- command: `npm run env:check`
+  result: PASS
+- command: `npm run provider:preflight`
+  result: PASS
+- command: `npm run typecheck`
+  result: PASS
+- command: `npm run test:m1`
+  result: PASS
+- command: `npm run secret:scan`
+  result: PASS
+- command: `git diff --check`
+  result: PASS_WITH_EOL_WARNING_ONLY
+
+Evidence:
+- `data/reports/r3_8e_runway_real_storyboard_keyframe_canary_result.json`
+- `data/reports/r3_8d_real_storyboard_keyframe_canary_prepare_result.json`
+- `data/reports/secret_scan_result.json`
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: pending_at_ledger_write
+- push: no
+- PR: none
+
+Memory:
+- written: no
+- location/type: none
+
+Boundary:
+- approval required: yes, for any future live Runway submit.
+- unsafe action not performed: second submit; retry live submit; RunningHub call; regeneration; batch generation; source overwrite; secret output; promptImage/base64 output; raw provider payload recording; push; tag; release; deploy.
+
+Risks:
+- Runway live canary remains incomplete because the provider account reported insufficient credits.
+- No provider job id was returned and no video artifact was generated.
+
+Next:
+- Top up or switch Runway credits/account, then open a new exact authorization task for any future single-submit retry.

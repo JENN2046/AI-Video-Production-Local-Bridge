@@ -1643,3 +1643,61 @@ Prepare a real storyboard keyframe canary input package for a future Runway Gen-
 
 - R3-8D stops before live provider execution.
 - The only allowed next live step is R3-8E with a new exact current Jenn authorization phrase.
+
+## R3-8E_RUNWAY_REAL_STORYBOARD_KEYFRAME_SINGLE_SUBMIT_AUTHORIZATION - Runway Real Storyboard Keyframe Single-Submit Authorization
+
+status: FAILED
+priority: P0
+lane: Approval Boundary Live Provider Execution
+project: AI Video Production Workspace Three Route Plan
+scope: execute exactly one authorized Runway Gen-4.5 image-to-video canary using the R3-8D real storyboard keyframe
+branch: local-only
+depends_on: R3-8D_PREPARE_REAL_STORYBOARD_KEYFRAME_CANARY
+source_plan: Jenn exact authorization phrase on 2026-07-07
+report_path: data/reports/r3_8e_runway_real_storyboard_keyframe_canary_result.json
+allowed_delivery: one_authorized_runway_submit,sanitized_live_result_report,provider_failure_classification_fix,tests,task_board_update,local_commit
+blocked_delivery: second_submit,retry_live_submit,runninghub_call,regeneration,batch_generation,source_overwrite,secret_value_output,promptImage_base64_output,raw_provider_payload_recording,push,tag,release,deploy
+created_at: 2026-07-07T15:14:33+08:00
+updated_at: 2026-07-07T15:14:33+08:00
+claimed_at: 2026-07-07T15:14:33+08:00
+claim_run_id: codex-20260707-151433-r3-8e
+claimed_by: Codex R3-8E executor
+failed_at: 2026-07-07T15:14:33+08:00
+failed_by: Codex R3-8E executor
+result: PROVIDER_FAILED_INSUFFICIENT_CREDITS
+
+### Goal
+
+Perform the one exact Jenn-authorized real storyboard keyframe Runway canary and stop after that one submit attempt.
+
+### Execution
+
+- Provider: `runway`
+- Endpoint: `POST /v1/image_to_video`
+- X-Runway-Version: `2024-11-06`
+- Model: `gen4.5`
+- Selected artifact: `artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7`
+- Source storage: `A:\AI Video Production Workspace\data\media\artifacts\images\artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png`
+- Duration: `2`
+- Ratio: `720:1280`
+- Submit calls: `1`
+- Provider job id present: `false`
+- Generated video artifact: `none`
+
+### Failure
+
+Runway returned sanitized provider evidence indicating insufficient credits. No retry was attempted.
+
+### Validation
+
+- `npm run env:check`
+- `npm run provider:preflight`
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Notes
+
+- `max_submit_calls=1` has been used as an attempt.
+- Another live Runway submit requires a new exact current Jenn authorization phrase and should be opened as a new task.

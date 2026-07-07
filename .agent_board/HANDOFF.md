@@ -1,13 +1,13 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260707-145158-r3-8d
-Last result: R3-8D completed; real storyboard keyframe canary package prepared; live submit still requires exact Jenn authorization
+Last run: codex-20260707-151433-r3-8e
+Last result: R3-8E attempted exactly one authorized Runway submit; provider failed with sanitized insufficient-credits evidence
 
 ## Current state
 
-Current task: R3-8D_PREPARE_REAL_STORYBOARD_KEYFRAME_CANARY
-Current status: DONE
+Current task: R3-8E_RUNWAY_REAL_STORYBOARD_KEYFRAME_SINGLE_SUBMIT_AUTHORIZATION
+Current status: FAILED
 Current owner: None
 
 ## Completed in last run
@@ -81,6 +81,11 @@ Current owner: None
 - R3-8D reviewed SHOT_001 through SHOT_004 approved WebGPT keyframes and selected app artifact `artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7` from `SHOT_001`.
 - The R3-8D dry-run canary plan uses `provider=runway`, `model=gen4.5`, `endpoint=POST /v1/image_to_video`, `X-Runway-Version=2024-11-06`, `duration_seconds=2`, `ratio=720:1280`, and `max_submit_calls=1`.
 - R3-8D did not call Runway or RunningHub, upload media, consume provider credits, generate video, read/print secrets, overwrite source assets, push, tag, release, or deploy.
+- R3-8E executed exactly one Jenn-authorized Runway submit using artifact `artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7`.
+- R3-8E result is `PROVIDER_FAILED_INSUFFICIENT_CREDITS`: Runway returned sanitized provider evidence indicating insufficient credits.
+- R3-8E did not retry and did not produce a provider job id or video artifact.
+- R3-8E added provider classification coverage so HTTP 400 credit messages map to `PROVIDER_INSUFFICIENT_CREDITS`.
+- Another live Runway submit requires a new exact current Jenn authorization phrase.
 
 ## Blocked in last run
 
@@ -88,7 +93,7 @@ Current owner: None
 
 ## Failed in last run
 
-- None
+- `R3-8E_RUNWAY_REAL_STORYBOARD_KEYFRAME_SINGLE_SUBMIT_AUTHORIZATION`: provider failed with sanitized insufficient-credits evidence after exactly one authorized submit attempt.
 
 ## Skipped in last run
 
@@ -127,6 +132,7 @@ Current owner: None
 - `data/reports/r3_8b_runway_gen45_single_submit_canary_result.json`
 - `data/reports/r3_8c_runway_submit_failure_triage_result.json`
 - `data/reports/r3_8d_real_storyboard_keyframe_canary_prepare_result.json`
+- `data/reports/r3_8e_runway_real_storyboard_keyframe_canary_result.json`
 - `ops/reports/three_route_acceptance_review_package_20260707_103611/THREE_ROUTE_ACCEPTANCE_REVIEW.md`
 - `ops/reports/three_route_acceptance_review_package_20260707_103611/README.md`
 
@@ -138,5 +144,5 @@ Current owner: None
 
 ## Next recommended action
 
-- Await Jenn's exact current authorization for `R3-8E_Runway_Real_Storyboard_Keyframe_Single-Submit_Authorization` if a live Runway submit should be attempted.
+- Top up or switch Runway credits/account before any future live submit attempt.
 - Do not retry Runway canary without a new exact current Jenn authorization phrase.

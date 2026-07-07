@@ -349,6 +349,40 @@ test("M1 Runway submit failure keeps sanitized provider summary without raw payl
   assert.equal(serializedSummary.includes("Authorization"), false);
 });
 
+test("M1 Runway submit failure classifies credit messages even on HTTP 400", async () => {
+  const adapter = new RunwayVideoProviderAdapter({
+    credential: FAKE_SECRET,
+    api_base: "https://api.test.runway",
+    fetch_impl: (async () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            message: "You do not have enough credits to run this task."
+          }
+        }),
+        {
+          status: 400,
+          headers: { "content-type": "application/json" }
+        }
+      )) as typeof fetch
+  });
+
+  const result = await adapter.submitGeneration({
+    storyboard_artifact: fakeStoryboardArtifact(),
+    video_prompt: "Animate portrait shot.",
+    negative_prompt: "",
+    duration_seconds: 2,
+    aspect_ratio: "9:16",
+    resolution: "1080x1920"
+  });
+
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.error.code, "PROVIDER_INSUFFICIENT_CREDITS");
+  assert.equal(result.error.sanitized_provider_error_summary?.http_status, 400);
+  assert.equal(result.error.sanitized_provider_error_summary?.provider_error_message, "You do not have enough credits to run this task.");
+});
+
 test("M1 package shot generation creates mock generated clip with ffprobe validation and no raw import input", async () => {
   const db = openM0Database();
   try {

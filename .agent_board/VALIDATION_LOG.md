@@ -1058,3 +1058,36 @@ Notes:
 - Canary dry-run plan uses `provider=runway`, `model=gen4.5`, `endpoint=POST /v1/image_to_video`, `X-Runway-Version=2024-11-06`, `duration_seconds=2`, `ratio=720:1280`, and `max_submit_calls=1`.
 - No provider network call, Runway upload, RunningHub call, provider credit consumption, real video generation, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
 - `git diff --check` passed with CRLF normalization warning only.
+
+### R3-8E - 2026-07-07T15:14:33+08:00
+
+Commands:
+
+```bash
+npm run env:check
+npm run provider:preflight
+npm run typecheck
+npm run test:m1
+npm run r3:8e:live
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PROVIDER_FAILED_INSUFFICIENT_CREDITS
+```
+
+Evidence:
+- `data/reports/r3_8e_runway_real_storyboard_keyframe_canary_result.json`
+- `data/reports/r3_8d_real_storyboard_keyframe_canary_prepare_result.json`
+- `data/reports/secret_scan_result.json`
+
+Notes:
+- Exactly one authorized Runway submit was attempted with `model=gen4.5`, `duration_seconds=2`, and `ratio=720:1280`.
+- Runway returned sanitized evidence indicating insufficient credits.
+- `submit_call_count=1`, `provider_job_id_present=false`, `provider_credits_consumed=false`, and `real_video_generated=false`.
+- No second submit, retry, RunningHub call, regeneration, batch generation, source overwrite, secret output, promptImage/base64 output, raw provider payload recording, push, tag, release, or deploy occurred.
+- `npm run test:m1` passed 16 tests after adding coverage for HTTP 400 credit-message classification.
+- `git diff --check` passed with CRLF normalization warning only.

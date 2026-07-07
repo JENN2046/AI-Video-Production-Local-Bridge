@@ -1,0 +1,155 @@
+{
+  "task": "R3-8E_Runway_Real_Storyboard_Keyframe_Single_Submit_Authorization",
+  "result": "PROVIDER_FAILED",
+  "mode": "live",
+  "generated_at": "2026-07-07T07:13:24.430Z",
+  "source_evidence": {
+    "r3_8d_report": {
+      "path": "data/reports/r3_8d_real_storyboard_keyframe_canary_prepare_result.json",
+      "exists": true,
+      "result": "PASS_READY_FOR_USER_AUTHORIZATION",
+      "selected_artifact_id": "artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7"
+    },
+    "g0_package_freeze_report": {
+      "path": "data/reports/g0_r1_package_freeze_result.json",
+      "exists": true,
+      "project_id": "project_b742cb15-e44e-41b2-8d2d-4b90a30720df",
+      "storyboard_package_id": "storyboard_package_1e5c1eca-624e-4687-9775-31e4b59f428a",
+      "shot_id": "g0_r1_shot_001"
+    },
+    "r3_8d_commit": "4fbbb36"
+  },
+  "authorization": {
+    "required_for_real_call": true,
+    "provided": true,
+    "accepted": true,
+    "mechanism": "R3_8E_AUTHORIZATION_SHA256",
+    "expected_sha256": "2e57e2161135faf7efdfe62b2f6017ab4defa673e8c09936b1b6d8bebc40a438",
+    "full_phrase_recorded": false
+  },
+  "preflight": {
+    "env_check_result": "PASS",
+    "provider_preflight_result": "PASS",
+    "active_provider": "runway",
+    "selected_provider": "runway",
+    "credential_env_name": "RUNWAYML_API_SECRET",
+    "credential_present": true,
+    "missing": [],
+    "network_call_attempted": false,
+    "secret_values_exposed": false
+  },
+  "selected_input": {
+    "artifact_id": "artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7",
+    "source_path": "A:\\AI Video Production Workspace\\data\\imports\\g0_r1_SHOT_001_IMAGE_ACCEPTED_WEBGPT.png",
+    "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png",
+    "mime_type": "image/png",
+    "width": 941,
+    "height": 1672,
+    "aspect_ratio": "941:1672",
+    "sha256": "efbea3aa2507cd7d431501eafba3206cf6cfd000174b2d6109371b5e37e6a474",
+    "role": "storyboard_image",
+    "status": "active",
+    "artifact_id_from_app_registry": true,
+    "source_asset_overwritten": false
+  },
+  "provider_contract": {
+    "provider": "runway",
+    "endpoint": "POST /v1/image_to_video",
+    "x_runway_version": "2024-11-06",
+    "model": "gen4.5",
+    "duration_seconds": 2,
+    "project_aspect_ratio": "9:16",
+    "ratio": "720:1280",
+    "max_submit_calls": 1,
+    "output_dir": "data/media/provider-canary/r3-8d-real-keyframe/",
+    "no_retry": true,
+    "no_regeneration": true,
+    "no_batch": true,
+    "no_runninghub": true,
+    "no_publish_deploy": true,
+    "no_source_overwrite": true,
+    "no_secret_printing": true
+  },
+  "runway_request_summary": {
+    "endpoint": "POST /v1/image_to_video",
+    "x_runway_version": "2024-11-06",
+    "model": "gen4.5",
+    "ratio": "720:1280",
+    "duration": 2,
+    "prompt_text_length": 262,
+    "prompt_image": {
+      "kind": "data_uri",
+      "mime_type": "image/png",
+      "binary_size_bytes": 2243051,
+      "data_uri_length": 2990758,
+      "sha256": "efbea3aa2507cd7d431501eafba3206cf6cfd000174b2d6109371b5e37e6a474",
+      "width": 941,
+      "height": 1672,
+      "aspect_ratio": "941:1672"
+    }
+  },
+  "live_execution": {
+    "submit_call_count": 1,
+    "network_call_attempted": true,
+    "runway_called": true,
+    "runninghub_called": false,
+    "provider_job_id": null,
+    "provider_job_id_present": false,
+    "provider_status": null,
+    "poll_attempts": 0,
+    "output_url_recorded": false,
+    "output_url_hostname": null,
+    "error_code": "PROVIDER_INSUFFICIENT_CREDITS",
+    "error_message": "Runway reports insufficient credits.",
+    "sanitized_provider_error_summary": {
+      "http_status": 400,
+      "provider_error_code": null,
+      "provider_error_message": "You do not have enough credits to run this task.",
+      "provider_error_field": null,
+      "retryable": false
+    }
+  },
+  "output_artifact": {
+    "generated_artifact_id": null,
+    "storage_uri": null,
+    "ffprobe_status": null,
+    "duration_seconds": null,
+    "has_video_stream": null,
+    "stream_count": null
+  },
+  "provider_boundary": {
+    "network_call_attempted": true,
+    "runway_called": true,
+    "runninghub_called": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "source_assets_overwritten": false,
+    "secret_values_exposed": false,
+    "submit_call_count": 1,
+    "max_submit_calls": 1
+  },
+  "validation": {
+    "npm run env:check": "PASS",
+    "npm run provider:preflight": "PASS",
+    "npm run typecheck": "PASS",
+    "npm run test:m1": "PASS",
+    "npm run secret:scan": "PASS",
+    "git diff --check": "PASS_WITH_EOL_WARNING_ONLY"
+  },
+  "changed_files": [
+    "data/reports/r3_8e_runway_real_storyboard_keyframe_canary_result.json",
+    "scripts/r3-8e-runway-real-storyboard-keyframe-canary.ts",
+    "src/tools/videoProviderAdapters.ts",
+    "tests/m1-provider-boundary.test.ts",
+    "package.json",
+    ".agent_board/*"
+  ],
+  "commit": null,
+  "next_step": {
+    "no_automatic_second_submit": true,
+    "requires_new_user_authorization_for_any_retry_or_next_live_call": true
+  },
+  "block_reason": null
+}

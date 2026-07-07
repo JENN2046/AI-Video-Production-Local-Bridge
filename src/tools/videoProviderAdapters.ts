@@ -286,8 +286,10 @@ function providerSummaryFromHttp(status: number, retryable: boolean, payload: Re
 function errorFromHttp(status: number, providerName: string, payload: Record<string, unknown> = {}, secrets: string[] = []): ProviderToolError {
   const retryable = status === 408 || status === 504 || status === 429 || status >= 500;
   const summary = providerSummaryFromHttp(status, retryable, payload, secrets);
+  const providerFailureText = [summary.provider_error_code, summary.provider_error_message].filter(Boolean).join(" ").toLowerCase();
+  const looksLikeCreditFailure = providerFailureText.includes("credit") || providerFailureText.includes("not enough");
   if (status === 401 || status === 403) return providerError("PROVIDER_AUTH_FAILED", `${providerName} authentication failed.`, false, summary);
-  if (status === 402) return providerError("PROVIDER_INSUFFICIENT_CREDITS", `${providerName} reports insufficient credits.`, false, summary);
+  if (status === 402 || looksLikeCreditFailure) return providerError("PROVIDER_INSUFFICIENT_CREDITS", `${providerName} reports insufficient credits.`, false, summary);
   if (status === 408 || status === 504) return providerError("PROVIDER_TIMEOUT", `${providerName} request timed out.`, true, summary);
   if (status === 429) return providerError("PROVIDER_RATE_LIMITED", `${providerName} rate limit was reached.`, true, summary);
   if (status >= 500) return providerError("PROVIDER_TRANSIENT_FAILURE", `${providerName} returned a transient server error.`, true, summary);

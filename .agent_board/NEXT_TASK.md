@@ -1,55 +1,60 @@
 # NEXT_TASK.md
 
-Status: DONE
+Status: FAILED
 
-Task: R3-8D_PREPARE_REAL_STORYBOARD_KEYFRAME_CANARY
+Task: R3-8E_RUNWAY_REAL_STORYBOARD_KEYFRAME_SINGLE_SUBMIT_AUTHORIZATION
 
-Title: Prepare Real Storyboard Keyframe Canary
+Title: Runway Real Storyboard Keyframe Single-Submit Authorization
 
 Priority: P0
 
-Lane: Provider Input Preparation And Offline Canary Planning
+Lane: Approval Boundary Live Provider Execution
 
 Project: AI Video Production Workspace Three Route Plan
 
-Claimed by: Codex R3-8D executor
+Claimed by: Codex R3-8E executor
 
-Claim run ID: codex-20260707-145158-r3-8d
+Claim run ID: codex-20260707-151433-r3-8e
 
-Claimed at: 2026-07-07T14:51:58+08:00
+Claimed at: 2026-07-07T15:14:33+08:00
 
-Completed by: Codex R3-8D executor
+Failed by: Codex R3-8E executor
 
-Completed at: 2026-07-07T14:51:58+08:00
+Failed at: 2026-07-07T15:14:33+08:00
 
-Result: PASS_READY_FOR_USER_AUTHORIZATION
+Result: PROVIDER_FAILED_INSUFFICIENT_CREDITS
 
 ## Goal
 
-Prepare a real storyboard keyframe canary input package for a future Runway Gen-4.5 single-submit authorization, without making any provider call.
+Perform the one exact Jenn-authorized real storyboard keyframe Runway canary and stop after that one submit attempt.
 
-## Selected Keyframe
+## Execution
 
-- Shot: `SHOT_001`
-- Artifact ID: `artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7`
-- Source path: `A:\AI Video Production Workspace\data\imports\g0_r1_SHOT_001_IMAGE_ACCEPTED_WEBGPT.png`
-- Storage URI: `A:\AI Video Production Workspace\data\media\artifacts\images\artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png`
-- Mime: `image/png`
-- Dimensions: `941x1672`
-- Runway canary ratio: `720:1280`
+- Provider: `runway`
+- Endpoint: `POST /v1/image_to_video`
+- X-Runway-Version: `2024-11-06`
+- Model: `gen4.5`
+- Selected artifact: `artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7`
 - Duration: `2`
-- Max submit calls: `1`
+- Ratio: `720:1280`
+- Submit calls: `1`
+- Provider job id present: `false`
+- Generated video artifact: `none`
+
+## Failure
+
+Runway returned sanitized provider evidence indicating insufficient credits. No retry was attempted.
 
 ## Evidence
 
+- `data/reports/r3_8e_runway_real_storyboard_keyframe_canary_result.json`
 - `data/reports/r3_8d_real_storyboard_keyframe_canary_prepare_result.json`
-- `data/reports/r3_8c_runway_submit_failure_triage_result.json`
-- `data/reports/g0_r1_import_prep_result.json`
 - `data/reports/secret_scan_result.json`
 
 ## Validation
 
-- `npm run r3:8d:prepare` PASS
+- `npm run env:check` PASS
+- `npm run provider:preflight` PASS
 - `npm run typecheck` PASS
 - `npm run test:m1` PASS
 - `npm run secret:scan` PASS
@@ -57,8 +62,8 @@ Prepare a real storyboard keyframe canary input package for a future Runway Gen-
 
 ## Boundary
 
-No Runway or RunningHub call was made during R3-8D. No upload, live retry, provider credit consumption, real video generation, secret output, promptImage/base64 output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
+Exactly one Runway submit was attempted. No second submit, retry, RunningHub call, regeneration, batch generation, source overwrite, secret output, promptImage/base64 output, raw provider payload recording, push, tag, release, or deploy occurred.
 
 ## Next Safe Option
 
-`R3-8E_Runway_Real_Storyboard_Keyframe_Single-Submit_Authorization` may be prepared only after Jenn provides a new exact current authorization phrase. R3-8D does not authorize a live submit.
+Do not perform another live Runway submit without a new exact current Jenn authorization phrase. A future retry should be a new task because the R3-8E single-submit attempt has already been used.
