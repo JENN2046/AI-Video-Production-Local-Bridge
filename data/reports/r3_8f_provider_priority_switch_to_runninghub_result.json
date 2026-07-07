@@ -1,0 +1,62 @@
+{
+  "task": "R3-8F_Provider_Priority_Switch_To_RunningHub",
+  "result": "PASS_LOCAL_PRIORITY_SWITCH",
+  "generated_at": "2026-07-07T15:28:31+08:00",
+  "decision": {
+    "primary_real_provider": "runninghub",
+    "secondary_real_provider": "runway",
+    "reason": "Runway live canary reached provider billing gate with insufficient credits; Jenn directed the project to stop treating Runway as first choice and make runninghub.cn the first provider choice."
+  },
+  "provider_registry": {
+    "mock": {
+      "default": true,
+      "primary": false,
+      "status": "m0_mock_provider"
+    },
+    "runninghub": {
+      "provider_display_name": "RunningHub.cn",
+      "primary": true,
+      "required_for_m1_pass": true,
+      "status": "primary_real_provider",
+      "credential_env_name": "RUNNINGHUB_API_KEY",
+      "live_adapter_status": "placeholder_returns_PROVIDER_UNSUPPORTED_until_contract_freeze"
+    },
+    "runway": {
+      "provider_display_name": "Runway API",
+      "primary": false,
+      "required_for_m1_pass": false,
+      "status": "secondary_selectable_provider_port",
+      "credential_env_name": "RUNWAYML_API_SECRET"
+    }
+  },
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runway_called": false,
+    "runninghub_called": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "secret_values_exposed": false
+  },
+  "notes": [
+    "This task changes local provider priority and configuration examples only.",
+    "It does not implement the RunningHub live API contract.",
+    "RunningHub live execution remains blocked by the placeholder adapter until a separate contract-freeze and implementation task is completed.",
+    "The safe local default remains mock; real provider execution still requires explicit gates, credentials, cost acknowledgement, and task-specific authorization."
+  ],
+  "validation": {
+    "npm run typecheck": "PASS",
+    "npm run test:m1": "PASS",
+    "npm run secret:scan": "PASS",
+    "git diff --check": "PASS_WITH_EOL_WARNING_ONLY"
+  },
+  "changed_files": [
+    "src/tools/provider.ts",
+    ".env.example",
+    "tests/m1-provider-boundary.test.ts",
+    "data/reports/r3_8f_provider_priority_switch_to_runninghub_result.json"
+  ],
+  "next_step": {
+    "recommended_task": "R3-8G_RunningHub_Contract_Freeze_And_Dry_Run",
+    "live_call_requires_new_exact_user_authorization": true
+  }
+}

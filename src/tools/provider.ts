@@ -95,23 +95,23 @@ export const M1_PROVIDER_CONFIGS: Record<ProviderPortName, ProviderConfig> = {
     generation_mode: "image_to_video",
     default: false,
     selectable: true,
-    primary: true,
-    required_for_m1_pass: true,
+    primary: false,
+    required_for_m1_pass: false,
     credential_env_name: "RUNWAYML_API_SECRET",
-    status: "primary_real_provider"
+    status: "secondary_selectable_provider_port"
   },
   runninghub: {
     provider_name: "runninghub",
-    provider_display_name: "RunningHub",
+    provider_display_name: "RunningHub.cn",
     type: "real",
     model_name: "rhart-video-g/image-to-video",
     generation_mode: "image_to_video",
     default: false,
     selectable: true,
-    primary: false,
-    required_for_m1_pass: false,
+    primary: true,
+    required_for_m1_pass: true,
     credential_env_name: "RUNNINGHUB_API_KEY",
-    status: "secondary_selectable_provider_port"
+    status: "primary_real_provider"
   }
 };
 

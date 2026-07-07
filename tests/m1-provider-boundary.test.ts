@@ -109,7 +109,11 @@ test("M1 provider registry keeps mock default and exposes two real ports", () =>
   assert.equal(configs.find((config) => config.provider_name === "mock")?.default, true);
   assert.equal(configs.find((config) => config.provider_name === "runway")?.selectable, true);
   assert.equal(configs.find((config) => config.provider_name === "runninghub")?.selectable, true);
-  assert.equal(configs.find((config) => config.provider_name === "runway")?.primary, true);
+  assert.equal(configs.find((config) => config.provider_name === "runway")?.primary, false);
+  assert.equal(configs.find((config) => config.provider_name === "runway")?.status, "secondary_selectable_provider_port");
+  assert.equal(configs.find((config) => config.provider_name === "runninghub")?.primary, true);
+  assert.equal(configs.find((config) => config.provider_name === "runninghub")?.required_for_m1_pass, true);
+  assert.equal(configs.find((config) => config.provider_name === "runninghub")?.status, "primary_real_provider");
   assert.equal(configs.find((config) => config.provider_name === "runninghub")?.model_name, "rhart-video-g/image-to-video");
 });
 
