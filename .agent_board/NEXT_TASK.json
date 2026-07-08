@@ -86,7 +86,7 @@
     "https://developers.openai.com/apps-sdk/build/auth",
     "https://developers.openai.com/apps-sdk/deploy/submission"
   ],
-  "commit": "PENDING_LOCAL_COMMIT",
+  "commit": "6a4e358",
   "delivery": "local_audit_report_only",
   "boundary_or_safety_stop": "audit only; no server implementation, public tunnel, ChatGPT connector creation, provider call, env or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change",
   "blocked_reason": null,

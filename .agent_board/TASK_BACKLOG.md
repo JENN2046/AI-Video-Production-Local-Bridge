@@ -3868,7 +3868,7 @@ completed_by: Codex R2G-0 packaging reality audit
 completed_at: 2026-07-08T20:52:19+08:00
 result: PASS_MCP_PACKAGING_REALITY_AUDITED
 validation_result: PASS
-commit: PENDING_LOCAL_COMMIT
+commit: 6a4e358
 
 ### Goal
 

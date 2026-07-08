@@ -17,7 +17,7 @@ Current owner: none
 - Audited current official OpenAI Apps SDK / MCP requirements against local R1 bridge v0 through v3.
 - Classified requirements into: can stay local, requires MCP server, and requires later public HTTPS / ChatGPT connector authorization.
 - Validation passed: JSON parse, `npm run typecheck`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
-- R2G-0 local implementation commit: `PENDING_LOCAL_COMMIT`.
+- R2G-0 local implementation commit: `6a4e358`.
 - No server implementation, public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
 - Next eligible task: `R2G-A_MCP_SECURITY_AND_PERMISSION_MODEL`, but this run stops at the user-scoped R2G-0 request.
 
