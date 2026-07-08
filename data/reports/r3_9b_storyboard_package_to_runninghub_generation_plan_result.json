@@ -509,6 +509,16 @@
     "data/reports/r3_9b_storyboard_package_to_runninghub_generation_plan_result.json",
     ".agent_board/*"
   ],
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "6a66db8",
+    "task": "R3-9B_STORYBOARD_PACKAGE_TO_RUNNINGHUB_GENERATION_PLAN",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  },
   "blocked_reason": null,
   "next_step": {
     "live_provider_call_requires_new_exact_current_authorization": true,

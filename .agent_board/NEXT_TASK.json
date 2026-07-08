@@ -82,7 +82,7 @@
     "data/reports/g0_r1_import_prep_result.json",
     "data/reports/secret_scan_result.json"
   ],
-  "commit": "PENDING_IN_CURRENT_TASK_COMMIT",
+  "commit": "6a66db8",
   "delivery": "local_only",
   "boundary_or_safety_stop": "planning only; no provider call, credential read, or deployment",
   "blocked_reason": null,
