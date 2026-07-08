@@ -1,0 +1,334 @@
+{
+  "task": "R3-9K_RUNNINGHUB_REGENERATED_CLIP_REVIEW_PREP",
+  "result": "PASS_REVIEW_PACKAGE_READY",
+  "mode": "local_review_prep_only",
+  "generated_at": "2026-07-08T10:06:23.113Z",
+  "source_of_truth": {
+    "r3_9j_live_report": "data/reports/r3_9j_runninghub_regeneration_single_pass_live_execution_result.json",
+    "r3_9j_result": "PASS_LIVE_4_SHOT_REGENERATION_COMPLETED",
+    "r3_9j_commit": "dfc8d42",
+    "r3_9i_regeneration_authorization_prep_report": "data/reports/r3_9i_runninghub_regeneration_authorization_prep_result.json",
+    "r3_9i_result": "PASS_READY_FOR_USER_AUTHORIZATION",
+    "r3_9i_commit": "44bb89f"
+  },
+  "package": {
+    "project_id": "project_b742cb15-e44e-41b2-8d2d-4b90a30720df",
+    "storyboard_package_id": "storyboard_package_1e5c1eca-624e-4687-9775-31e4b59f428a"
+  },
+  "review_package": {
+    "status": "READY_FOR_HUMAN_REVIEW",
+    "language": "zh-CN",
+    "generated_clip_count": 4,
+    "local_blocker_count": 0,
+    "source_plan_blockers": [],
+    "review_table_path": "data/reports/r3_9k_runninghub_regenerated_clip_review_table.md",
+    "required_decision_fields": [
+      "accept",
+      "reject",
+      "regenerate_requested"
+    ],
+    "no_review_decisions_selected": true,
+    "app_review_state_mutated": false
+  },
+  "review_entries": [
+    {
+      "order": 1,
+      "shot_id": "g0_r1_shot_001",
+      "generated_clip": {
+        "artifact_id": "artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203",
+        "artifact_type": "video",
+        "role": "generated_clip",
+        "status": "active",
+        "local_mp4_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\01-g0_r1_shot_001\\artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203.mp4",
+        "file_exists": true,
+        "byte_size": 1690295,
+        "ffprobe_status": "PASS",
+        "duration_seconds": 6.041667,
+        "has_video_stream": true,
+        "stream_count": 3
+      },
+      "previous_review": {
+        "rejected_clip_artifact_id": "artifact_ac71dfd9-371c-4eb4-a6b6-686993291ceb",
+        "issue_zh": "不应该是拿起饭盒吃饭，应该是手从饭盒里面拿起食物放到嘴巴进行吃的动作",
+        "decision": "regenerate_requested",
+        "reviewer": "Jenn"
+      },
+      "this_round_review_focus_zh": [
+        "确认饭盒始终留在桌上，没有被端起来吃。",
+        "确认手是从饭盒里面拿起食物，并把食物送到嘴边或嘴里。",
+        "确认人物身份、灰色帽子、工装、构图、工地环境和自然光保持稳定。",
+        "确认本片段只能进入人工审查，未获得 accept 前不得进入最终合成。"
+      ],
+      "source_keyframe": {
+        "storyboard_image_artifact_id": "artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7",
+        "source_path": "A:\\AI Video Production Workspace\\data\\imports\\g0_r1_SHOT_001_IMAGE_ACCEPTED_WEBGPT.png",
+        "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png"
+      },
+      "prompt_context": {
+        "shot_description": "Ryan sits at the construction-site lunch bench with the gray skullcap visible.",
+        "video_prompt": "Use approved image as visual anchor. Add subtle realistic handheld drift. Keep Ryan seated and calm at the lunch area. Maintain gray skullcap, black hoodie, yellow high-vis vest, white hard hat, gloves, lunch items, construction background, and natural daylight.",
+        "negative_prompt": "No face drift, no product deformation, no text, no CGI, no unsafe action.",
+        "revised_prompt_guidance": "Use the approved keyframe as the visual anchor. Animate a realistic eating action: Ryan's hand reaches into the open lunchbox, picks up a small bite of food, and brings the food to his mouth. Keep the lunchbox on the table throughout the shot. Maintain the gray skullcap, high-vis vest, hard hat, gloves, table items, worksite background, and natural daylight. Use subtle handheld drift only; keep face, cap, and lunch props stable."
+      },
+      "review_decision": {
+        "accept": null,
+        "reject": null,
+        "regenerate_requested": null,
+        "reviewer": "",
+        "notes": "",
+        "reviewed_at": null
+      },
+      "local_blockers": []
+    },
+    {
+      "order": 2,
+      "shot_id": "g0_r1_shot_002",
+      "generated_clip": {
+        "artifact_id": "artifact_eeef12a7-9533-4172-beaa-6c25b91415f7",
+        "artifact_type": "video",
+        "role": "generated_clip",
+        "status": "active",
+        "local_mp4_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\02-g0_r1_shot_002\\artifact_eeef12a7-9533-4172-beaa-6c25b91415f7.mp4",
+        "file_exists": true,
+        "byte_size": 1799488,
+        "ffprobe_status": "PASS",
+        "duration_seconds": 6.041667,
+        "has_video_stream": true,
+        "stream_count": 3
+      },
+      "previous_review": {
+        "rejected_clip_artifact_id": "artifact_2adc2e6d-3183-47c4-8d1b-01bf80bed73f",
+        "issue_zh": "我不要叹气不高兴的表情，这样会让人不想购买产品",
+        "decision": "reject",
+        "reviewer": "Jenn"
+      },
+      "this_round_review_focus_zh": [
+        "确认没有叹气、不高兴、疲惫、失望、塌肩或让产品显得负面的情绪。",
+        "确认 Ryan 保持专注、自然、亲和，并且对产品观感是正向的。",
+        "确认灰色帽子、午餐桌、黄色安全帽、保温杯、饭盒、工地背景和自然光保持稳定。"
+      ],
+      "source_keyframe": {
+        "storyboard_image_artifact_id": "artifact_9ad1bfe1-c830-458c-a413-39fd15c9d0c0",
+        "source_path": "A:\\AI Video Production Workspace\\data\\imports\\g0_r1_SHOT_002_IMAGE_WEBGPT_V1.png",
+        "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_9ad1bfe1-c830-458c-a413-39fd15c9d0c0.png"
+      },
+      "prompt_context": {
+        "shot_description": "Ryan reaches toward the work gloves and nearby gear on the lunch table.",
+        "video_prompt": "Use image as visual anchor. Add small natural hand movement toward the gloves. Keep the gray skullcap visible and stable. Maintain the same lunch table, hard hat, thermos, lunch container, worksite background, and natural daylight.",
+        "negative_prompt": "No broken hands, no extra fingers, no product drift, no text, no poster look.",
+        "revised_prompt_guidance": "Use the same storyboard image as the visual anchor. Keep Ryan neutral, focused, approachable, and product-positive. Add only small natural hand movement toward the gloves or table gear. Do not create a sigh, unhappy expression, slumped posture, disappointment, fatigue, or any emotion that makes the product feel undesirable. Keep the gray skullcap visible and stable, with the same lunch table, hard hat, thermos, lunch container, worksite background, and natural daylight. Explicitly avoid any product-negative mood."
+      },
+      "review_decision": {
+        "accept": null,
+        "reject": null,
+        "regenerate_requested": null,
+        "reviewer": "",
+        "notes": "",
+        "reviewed_at": null
+      },
+      "local_blockers": []
+    },
+    {
+      "order": 3,
+      "shot_id": "g0_r1_shot_003",
+      "generated_clip": {
+        "artifact_id": "artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a",
+        "artifact_type": "video",
+        "role": "generated_clip",
+        "status": "active",
+        "local_mp4_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\03-g0_r1_shot_003\\artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a.mp4",
+        "file_exists": true,
+        "byte_size": 2027465,
+        "ffprobe_status": "PASS",
+        "duration_seconds": 6.041667,
+        "has_video_stream": true,
+        "stream_count": 3
+      },
+      "previous_review": {
+        "rejected_clip_artifact_id": "artifact_10271f09-278e-4326-b417-6b4ea64ad8ca",
+        "issue_zh": "拉扯帽子的时候，帽子的折叠位置变化不符合现实效果，真实的效果是折痕会变浅，面料会随着拉起而变化",
+        "decision": "regenerate_requested",
+        "reviewer": "Jenn"
+      },
+      "this_round_review_focus_zh": [
+        "确认拉扯帽子时折痕会变浅，面料会随着拉起方向产生真实变化。",
+        "确认帽子仍贴合头部，标签、织物纹理、手部动作和脸部稳定。",
+        "确认人物身份、灰色帽子、工装、构图、工地环境和自然光保持稳定。",
+        "确认本片段只能进入人工审查，未获得 accept 前不得进入最终合成。"
+      ],
+      "source_keyframe": {
+        "storyboard_image_artifact_id": "artifact_a7c5d752-cdd6-478e-b396-5790df3af05f",
+        "source_path": "A:\\AI Video Production Workspace\\data\\imports\\g0_r1_SHOT_003_IMAGE_WEBGPT_V2.png",
+        "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_a7c5d752-cdd6-478e-b396-5790df3af05f.png"
+      },
+      "prompt_context": {
+        "shot_description": "Ryan adjusts the gray skullcap with both hands, showing comfort, fit, texture, seam structure, and label.",
+        "video_prompt": "Use image as visual anchor. Add subtle hand adjustment motion around the cap edge. Keep cap texture, seams, label, fit, face, wardrobe, and daylight stable. Motion should feel ordinary and practical.",
+        "negative_prompt": "No distorted hands, no warped cap, no text, no CGI, no face drift, no exaggerated motion.",
+        "revised_prompt_guidance": "Use the approved keyframe as the visual anchor. Animate a close, realistic cap adjustment: Ryan lightly pulls the gray knit cap edge while the fabric stretches and the fold depth becomes shallower near the pull direction. Let seams and knit texture move subtly with fabric tension while the cap remains fitted to the head. Keep hands natural, label position stable, face stable, wardrobe consistent, and daylight unchanged."
+      },
+      "review_decision": {
+        "accept": null,
+        "reject": null,
+        "regenerate_requested": null,
+        "reviewer": "",
+        "notes": "",
+        "reviewed_at": null
+      },
+      "local_blockers": []
+    },
+    {
+      "order": 4,
+      "shot_id": "g0_r1_shot_004",
+      "generated_clip": {
+        "artifact_id": "artifact_263a2344-5154-4981-bfe4-120571effb3e",
+        "artifact_type": "video",
+        "role": "generated_clip",
+        "status": "active",
+        "local_mp4_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\04-g0_r1_shot_004\\artifact_263a2344-5154-4981-bfe4-120571effb3e.mp4",
+        "file_exists": true,
+        "byte_size": 3467023,
+        "ffprobe_status": "PASS",
+        "duration_seconds": 6.041667,
+        "has_video_stream": true,
+        "stream_count": 3
+      },
+      "previous_review": {
+        "rejected_clip_artifact_id": "artifact_1f757b43-a308-4d80-a674-7b7a21ceec21",
+        "issue_zh": "主要是帽子的光影没有严谨的符合现实的光影效果",
+        "decision": "regenerate_requested",
+        "reviewer": "Jenn"
+      },
+      "this_round_review_focus_zh": [
+        "确认帽子的光照方向、阴影、接触阴影和织物质感符合真实场景光影。",
+        "确认轻微身体动作或镜头跟随不会破坏帽子、脸部、工装和工地背景稳定性。",
+        "确认人物身份、灰色帽子、工装、构图、工地环境和自然光保持稳定。",
+        "确认本片段只能进入人工审查，未获得 accept 前不得进入最终合成。"
+      ],
+      "source_keyframe": {
+        "storyboard_image_artifact_id": "artifact_e35ff0c0-d0fc-4079-bc4b-38b4dbd88cf7",
+        "source_path": "A:\\AI Video Production Workspace\\data\\imports\\g0_r1_SHOT_004_IMAGE_WEBGPT_V2.png",
+        "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_e35ff0c0-d0fc-4079-bc4b-38b4dbd88cf7.png"
+      },
+      "prompt_context": {
+        "shot_description": "Ryan stands with hard hat and work bag, ready to return to the worksite while still wearing the gray skullcap.",
+        "video_prompt": "Use image as visual anchor. Add slight forward body movement or gentle handheld follow as Ryan prepares to return to work. Keep the gray skullcap visible and preserve grounded workday realism.",
+        "negative_prompt": "No heroic exaggeration, no unsafe staging, no text, no product drift, no CGI.",
+        "revised_prompt_guidance": "Use the approved keyframe as the visual anchor. Animate slight forward body movement or a gentle handheld follow as Ryan prepares to return to work. Keep the gray skullcap physically integrated with the scene: consistent daylight direction, soft fabric shadowing, stable texture, and natural contact shadow around the head. Preserve work bag, hard hat, vest, face, construction background, and grounded workday realism."
+      },
+      "review_decision": {
+        "accept": null,
+        "reject": null,
+        "regenerate_requested": null,
+        "reviewer": "",
+        "notes": "",
+        "reviewed_at": null
+      },
+      "local_blockers": []
+    }
+  ],
+  "ffprobe_summary": [
+    {
+      "shot_id": "g0_r1_shot_001",
+      "artifact_id": "artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203",
+      "local_mp4_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\01-g0_r1_shot_001\\artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203.mp4",
+      "ffprobe_status": "PASS",
+      "duration_seconds": 6.041667,
+      "has_video_stream": true,
+      "stream_count": 3,
+      "byte_size": 1690295
+    },
+    {
+      "shot_id": "g0_r1_shot_002",
+      "artifact_id": "artifact_eeef12a7-9533-4172-beaa-6c25b91415f7",
+      "local_mp4_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\02-g0_r1_shot_002\\artifact_eeef12a7-9533-4172-beaa-6c25b91415f7.mp4",
+      "ffprobe_status": "PASS",
+      "duration_seconds": 6.041667,
+      "has_video_stream": true,
+      "stream_count": 3,
+      "byte_size": 1799488
+    },
+    {
+      "shot_id": "g0_r1_shot_003",
+      "artifact_id": "artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a",
+      "local_mp4_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\03-g0_r1_shot_003\\artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a.mp4",
+      "ffprobe_status": "PASS",
+      "duration_seconds": 6.041667,
+      "has_video_stream": true,
+      "stream_count": 3,
+      "byte_size": 2027465
+    },
+    {
+      "shot_id": "g0_r1_shot_004",
+      "artifact_id": "artifact_263a2344-5154-4981-bfe4-120571effb3e",
+      "local_mp4_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\04-g0_r1_shot_004\\artifact_263a2344-5154-4981-bfe4-120571effb3e.mp4",
+      "ffprobe_status": "PASS",
+      "duration_seconds": 6.041667,
+      "has_video_stream": true,
+      "stream_count": 3,
+      "byte_size": 3467023
+    }
+  ],
+  "assembly_readiness": {
+    "final_assembly_status": "BLOCKED_PENDING_HUMAN_ACCEPT",
+    "final_assembly_performed": false,
+    "required_before_assembly": [
+      "Human reviewer must watch each regenerated MP4.",
+      "Each shot must receive exactly one review decision.",
+      "Only accepted regenerated clips may be used by a future final assembly task."
+    ]
+  },
+  "human_review_next_step": {
+    "instruction_zh": "请人工打开表格中的本地 MP4 路径逐条观看，并为每个镜头填写 accept、reject 或 regenerate_requested 其中一个决策。",
+    "accept": "片段修复了上一轮问题且可进入后续最终合成准备。",
+    "reject": "片段仍不可用，且不应进入最终合成。",
+    "regenerate_requested": "片段需要再次准备重生成任务；本报告不会自动触发重生成。",
+    "notes_required_for_reject_or_regenerate": true,
+    "mutation_performed_by_this_task": false
+  },
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "final_assembly_performed": false,
+    "review_decision_mutation_performed": false,
+    "credentials_read": false,
+    "env_files_read": false,
+    "source_assets_overwritten": false,
+    "secret_values_exposed": false,
+    "raw_provider_payload_recorded": false,
+    "signed_url_recorded": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  },
+  "validation": {
+    "npm run r3:9k:review-prep": "PASS",
+    "JSON parse for generated R3-9K review prep report": "PASS",
+    "table parse / required rows check": "PASS",
+    "npm run typecheck": "PASS",
+    "npm run test:m1": "PASS",
+    "npm run secret:scan": "PASS",
+    "git diff --check": "PASS_WITH_CRLF_WARNINGS_ONLY"
+  },
+  "changed_files": [
+    "package.json",
+    "scripts/r3-9k-runninghub-regenerated-clip-review-prep.ts",
+    "data/reports/r3_9k_runninghub_regenerated_clip_review_prep_result.json",
+    "data/reports/r3_9k_runninghub_regenerated_clip_review_table.md",
+    ".agent_board/*"
+  ],
+  "blocked_reason": null,
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "PENDING_LOCAL_COMMIT",
+    "task": "R3-9K_RUNNINGHUB_REGENERATED_CLIP_REVIEW_PREP",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  }
+}

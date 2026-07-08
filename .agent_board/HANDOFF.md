@@ -475,3 +475,19 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - No retry submit, second submit, Runway call, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
 - R3-9J local implementation commit: `dfc8d42`.
 - Next recommended action: prepare a regenerated clip review package before final assembly.
+
+## R3-9K Closeout
+
+- R3-9K completed on 2026-07-08T18:07:27+08:00 with `PASS_REVIEW_PACKAGE_READY`.
+- Report: `data/reports/r3_9k_runninghub_regenerated_clip_review_prep_result.json`.
+- Review table: `data/reports/r3_9k_runninghub_regenerated_clip_review_table.md`.
+- Regenerated clip artifacts prepared for Chinese human review:
+  - `g0_r1_shot_001`: `artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203`
+  - `g0_r1_shot_002`: `artifact_eeef12a7-9533-4172-beaa-6c25b91415f7`
+  - `g0_r1_shot_003`: `artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a`
+  - `g0_r1_shot_004`: `artifact_263a2344-5154-4981-bfe4-120571effb3e`
+- All 4 local MP4 files exist and ffprobe returned `PASS`.
+- The table includes accept / reject / regenerate_requested placeholders, local video paths, artifact ids, previous issues, and this-round review focus.
+- Final assembly remains blocked until human accept decisions are applied.
+- R3-9K local implementation commit: `PENDING_LOCAL_COMMIT`.
+- No provider call, regeneration, batch expansion, final assembly, review decision mutation, `.env` or credential read, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.

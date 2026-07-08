@@ -1823,3 +1823,37 @@ Notes:
 - The first returned taskId was resumed after a transient query failure without a second submit.
 - R3-9J local implementation commit: `dfc8d42`.
 - No retry submit, second submit, Runway call, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+
+### R3-9K - 2026-07-08T18:07:27+08:00
+
+Commands:
+
+```bash
+npm run r3:9k:review-prep
+node -e JSON.parse(...) and table required rows check
+npm run typecheck
+npm run test:m1
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_REVIEW_PACKAGE_READY
+```
+
+Evidence:
+- `data/reports/r3_9k_runninghub_regenerated_clip_review_prep_result.json`
+- `data/reports/r3_9k_runninghub_regenerated_clip_review_table.md`
+- `data/reports/r3_9j_runninghub_regeneration_single_pass_live_execution_result.json`
+- `data/reports/r3_9i_runninghub_regeneration_authorization_prep_result.json`
+- `data/reports/secret_scan_result.json`
+
+Notes:
+- Prepared 4 regenerated clips for Chinese human review: `artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203`, `artifact_eeef12a7-9533-4172-beaa-6c25b91415f7`, `artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a`, and `artifact_263a2344-5154-4981-bfe4-120571effb3e`.
+- All 4 regenerated local MP4 files exist and ffprobe returned `PASS`.
+- The review table includes accept / reject / regenerate_requested placeholders, local video paths, artifact ids, previous issues, and this-round review focus.
+- Final assembly remains blocked pending human accept.
+- R3-9K local implementation commit: `PENDING_LOCAL_COMMIT`.
+- No provider call, regeneration, batch expansion, final assembly, review decision mutation, `.env` or credential read, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.

@@ -3102,3 +3102,39 @@ Execute the authorized 4-shot RunningHub regeneration run exactly once, with san
 - All 4 regenerated clips downloaded to local media artifact storage and ffprobe validated with `PASS`.
 - The first taskId was resumed after a transient query failure without a second submit.
 - No retry submit, second submit, Runway call, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+
+## R3-9K_RUNNINGHUB_REGENERATED_CLIP_REVIEW_PREP - RunningHub Regenerated Clip Review Prep
+
+status: DONE
+priority: P0
+lane: RunningHub Regenerated Clip Review Prep
+project: AI Video Production Workspace Three Route Plan
+scope: generate a Chinese human review package for the 4 regenerated R3-9J clips
+branch: local-only
+depends_on: R3-9J_RUNNINGHUB_REGENERATION_SINGLE_PASS_LIVE_EXECUTION
+source_plan: data/reports/r3_9j_runninghub_regeneration_single_pass_live_execution_result.json
+report_path: data/reports/r3_9k_runninghub_regenerated_clip_review_prep_result.json
+review_table_path: data/reports/r3_9k_runninghub_regenerated_clip_review_table.md
+allowed_delivery: review_prep_report,chinese_review_table,ffprobe_summary,task_board_update,local_commit
+blocked_delivery: runninghub_call,runway_call,regeneration,batch,final_assembly,review_decision_mutation,env_file_read,credential_read,source_overwrite,secret_value_output,push,tag,release,deploy
+created_at: 2026-07-08T18:02:38+08:00
+updated_at: 2026-07-08T18:07:27+08:00
+claimed_by: Codex R3-9K regenerated clip review prep
+claim_run_id: codex-20260708-180238-r3-9k
+claimed_at: 2026-07-08T18:02:38+08:00
+completed_by: Codex R3-9K regenerated clip review prep
+completed_at: 2026-07-08T18:07:27+08:00
+result: PASS_REVIEW_PACKAGE_READY
+validation_result: PASS
+commit: PENDING_LOCAL_COMMIT
+
+### Result
+
+- Generated `data/reports/r3_9k_runninghub_regenerated_clip_review_prep_result.json`.
+- Generated `data/reports/r3_9k_runninghub_regenerated_clip_review_table.md`.
+- Included all 4 regenerated clip artifacts from R3-9J.
+- Included accept / reject / regenerate_requested placeholders.
+- Included local video path, artifact_id, shot_id, previous issue, and this-round review focus for each shot.
+- Confirmed final assembly remains blocked pending human accept.
+- Validation passed: JSON parse, table parse / required rows check, `npm run r3:9k:review-prep`, `npm run typecheck`, `npm run test:m1`, `npm run secret:scan`, `git diff --check` with CRLF warnings only.
+- No provider call, regeneration, batch expansion, final assembly, review decision mutation, `.env` or credential read, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.

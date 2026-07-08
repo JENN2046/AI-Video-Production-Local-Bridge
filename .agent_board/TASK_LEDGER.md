@@ -3229,3 +3229,73 @@ Boundary:
 
 Next:
 - Prepare a regenerated clip review package for human acceptance before final assembly.
+
+### 2026-07-08T18:07:27+08:00 - R3-9K RunningHub Regenerated Clip Review Prep
+
+Result: DONE / PASS_REVIEW_PACKAGE_READY
+Project: AI Video Production Workspace Three Route Plan
+Lane: RunningHub Regenerated Clip Review Prep
+Claimed by: Codex R3-9K regenerated clip review prep
+Completed by: Codex R3-9K regenerated clip review prep
+Run ID: codex-20260708-180238-r3-9k
+Started at: 2026-07-08T18:02:38+08:00
+Completed at: 2026-07-08T18:07:27+08:00
+
+Scope:
+- Generated a Chinese human review package for the four regenerated R3-9J clips.
+- Verified local MP4 existence and ffprobe results.
+- Combined R3-9J generated clip evidence with R3-9I previous issues and review focus.
+- Did not call providers, regenerate, batch, assemble final video, mutate review decisions, read `.env` or credentials, or overwrite source assets.
+
+Changed files:
+- package.json
+- scripts/r3-9k-runninghub-regenerated-clip-review-prep.ts
+- data/reports/r3_9k_runninghub_regenerated_clip_review_prep_result.json
+- data/reports/r3_9k_runninghub_regenerated_clip_review_table.md
+- .agent_board/NEXT_TASK.json
+- .agent_board/NEXT_TASK.md
+- .agent_board/RUN_LOCK.md
+- .agent_board/TASK_BACKLOG.md
+- .agent_board/HANDOFF.md
+- .agent_board/VALIDATION_LOG.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: npm run r3:9k:review-prep
+  result: PASS
+- command: node -e JSON.parse(...) and table required rows check
+  result: PASS
+- command: npm run typecheck
+  result: PASS
+- command: npm run test:m1
+  result: PASS
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_9k_runninghub_regenerated_clip_review_prep_result.json
+- data/reports/r3_9k_runninghub_regenerated_clip_review_table.md
+- data/reports/r3_9j_runninghub_regeneration_single_pass_live_execution_result.json
+- data/reports/r3_9i_runninghub_regeneration_authorization_prep_result.json
+- data/reports/secret_scan_result.json
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: PENDING_LOCAL_COMMIT
+- push: no
+- PR: none
+
+Review package summary:
+- `g0_r1_shot_001`: `artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203`
+- `g0_r1_shot_002`: `artifact_eeef12a7-9533-4172-beaa-6c25b91415f7`
+- `g0_r1_shot_003`: `artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a`
+- `g0_r1_shot_004`: `artifact_263a2344-5154-4981-bfe4-120571effb3e`
+
+Boundary:
+- No provider call, regeneration, batch expansion, final assembly, review decision mutation, `.env` or credential read, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+
+Next:
+- Jenn should review the Chinese table and decide accept / reject / regenerate_requested for each regenerated clip before any final assembly.
