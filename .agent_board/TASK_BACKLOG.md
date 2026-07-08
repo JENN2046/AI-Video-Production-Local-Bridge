@@ -3459,7 +3459,7 @@ completed_by: Codex R3-9Q final video review decision apply
 completed_at: 2026-07-08T19:34:48+08:00
 result: PASS_FINAL_CREATIVE_APPROVAL_RECORDED
 validation_result: PASS
-commit: PENDING_LOCAL_COMMIT
+commit: 57cc63b
 
 ### Goal
 

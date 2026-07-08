@@ -87,7 +87,7 @@
     "data/reports/r3_9p_final_video_review_package_result.json",
     "data/reports/r3_9o_final_video_assembly_execution_result.json"
   ],
-  "commit": null,
+  "commit": "57cc63b",
   "delivery": "local_final_review_decision_apply_only",
   "boundary_or_safety_stop": "decision apply only; no publish, deploy, provider call, regeneration, reassembly, env or credential read, source overwrite, or push",
   "blocked_reason": null,
