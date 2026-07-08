@@ -97,6 +97,9 @@ last_completed_r3_9r_at: 2026-07-08T19:45:15+08:00
 last_completed_r1_6_run_id: codex-20260708-200859-r1-6
 last_completed_r1_6_task: R1-6_WEBGPT_POST_CLOSEOUT_BRIDGE_REALITY_AUDIT
 last_completed_r1_6_at: 2026-07-08T20:15:42+08:00
+last_completed_r1_7_run_id: codex-20260708-201837-r1-7
+last_completed_r1_7_task: R1-7_WEBGPT_LOCAL_BRIDGE_SMOKE_VALIDATION
+last_completed_r1_7_at: 2026-07-08T20:25:02+08:00
 
 ## Rules
 

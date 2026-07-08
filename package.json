@@ -41,6 +41,7 @@
     "test:webgpt:production": "npm run build && node --test dist/tests/webgpt-production-assistant.test.js",
     "r1:5:production-assistant": "npm run build && node dist/scripts/r1-5-mcp-v3-production-assistant.js",
     "r1:6:audit": "npm run build && node dist/scripts/r1-6-webgpt-post-closeout-bridge-reality-audit.js",
+    "r1:7:smoke": "npm run build && node dist/scripts/r1-7-webgpt-local-bridge-smoke-validation.js",
     "test:memory": "npm run build && node --test dist/tests/memory-saveback.test.js",
     "r3:4:generate-shot": "npm run build && node dist/scripts/r3-4-package-shot-generation.js",
     "r3:5:review-assembly": "npm run build && node dist/scripts/r3-5-review-regeneration-final-assembly-core.js",

@@ -1,14 +1,25 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260708-200859-r1-6
-Last result: R1-6 WebGPT bridge reality audit complete
+Last run: codex-20260708-201837-r1-7
+Last result: R1-7 WebGPT local bridge smoke validation completed
 
 ## Current state
 
-Current task: R1-6_WEBGPT_POST_CLOSEOUT_BRIDGE_REALITY_AUDIT
+Current task: none
 Current status: DONE
 Current owner: none
+
+## R1-7 Closeout
+
+- R1-7 completed on 2026-07-08T20:25:02+08:00 with `PASS_WEBGPT_LOCAL_BRIDGE_SMOKE_VALIDATED`.
+- Report: `data/reports/r1_7_webgpt_local_bridge_smoke_validation_result.json`.
+- Ran local smoke validation for WebGPT bridge v0 through v3 against current final-approved R3-9R evidence.
+- Confirmed the local bridge can reach the final video artifact `artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe` and a source generated clip metadata record through app-owned IDs.
+- Validation passed: `npm run r1:7:smoke`, JSON/direct smoke check, `npm run typecheck`, `npm run test:webgpt:bridge`, `npm run test:webgpt:drafts`, `npm run test:webgpt:pending`, `npm run test:webgpt:review`, `npm run test:webgpt:production`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
+- R1-7 local implementation commit: `PENDING_LOCAL_COMMIT`.
+- No public tunnel, provider call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+- Next eligible task: `R1-8_WEBGPT_OPERATOR_RUNBOOK_AND_PROMPT_PACK`.
 
 ## R1-6 In Progress
 

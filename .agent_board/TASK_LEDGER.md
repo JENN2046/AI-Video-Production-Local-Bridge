@@ -3653,3 +3653,44 @@ Boundary:
 
 Next:
 - Proceed to R1-7 local bridge smoke validation if still eligible.
+
+### 2026-07-08T20:25:02+08:00 - R1-7 WebGPT Local Bridge Smoke Validation
+
+Result: DONE / PASS_WEBGPT_LOCAL_BRIDGE_SMOKE_VALIDATED
+Project: AI Video Production Workspace GPT Bridge Line
+Lane: WebGPT Bridge
+Run ID: codex-20260708-201837-r1-7
+Completed at: 2026-07-08T20:25:02+08:00
+
+Scope:
+- Added a local-only R1-7 smoke validation command for WebGPT bridge v0 through v3.
+- Generated a smoke report referencing R1-6 audit evidence and R3-9R final-approved closeout evidence.
+- Confirmed final video artifact and generated clip metadata are reachable through app-owned IDs/report references.
+- Did not start a public tunnel, call providers, read env files or credentials, overwrite source assets, output secrets, push, tag, release, deploy, or publish.
+
+Validation:
+- `npm run r1:7:smoke`: PASS
+- JSON/direct smoke check: PASS
+- `npm run typecheck`: PASS
+- `npm run test:webgpt:bridge`: PASS
+- `npm run test:webgpt:drafts`: PASS
+- `npm run test:webgpt:pending`: PASS
+- `npm run test:webgpt:review`: PASS
+- `npm run test:webgpt:production`: PASS
+- `npm run secret:scan`: PASS
+- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r1_7_webgpt_local_bridge_smoke_validation_result.json
+- data/reports/r1_6_webgpt_post_closeout_bridge_reality_audit_result.json
+- data/reports/r3_9r_final_delivery_closeout_result.json
+
+Git delivery:
+- commit: PENDING_LOCAL_COMMIT
+- push: no
+
+Boundary:
+- No public tunnel, provider call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+
+Next:
+- Proceed to R1-8 operator runbook and prompt pack if still eligible.
