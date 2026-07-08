@@ -356,7 +356,6 @@
   },
   "git_receipt": {
     "implementation_commit": "17caf18",
-    "receipt_commit": "PENDING_RECEIPT_COMMIT",
     "push": false,
     "tag": false,
     "release": false,
