@@ -1,66 +1,46 @@
 # NEXT_TASK.md
 
-Status: DONE
+Status: READY
 
-Task: R3-8O_RECEIPT_FIX_R1
+Task: R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT
 
-Title: R3-8O Receipt Fix R1
+Title: Provider Path Decision Closeout
 
-Priority: P0
+Priority: P1
 
-Lane: Provider Evidence Receipt
+Lane: Provider Decision Closeout
 
 Project: AI Video Production Workspace Three Route Plan
 
-Depends on: R3-8O_RUNNINGHUB_ENTERPRISE_KEY_6S_SINGLE_SUBMIT_CANARY
+Depends on: R3-8O_RECEIPT_FIX_R1
 
 ## Goal
 
-Repair the R3-8O audit chain before provider path closeout.
+Close the provider-selection loop after Enterprise Key RunningHub canary evidence is available.
 
 ## Required Work
 
-- Backfill R3-8O live canary commit `99dd716`.
-- Backfill R3-8O receipt commit `c746b08`.
-- Update only receipt metadata, task board state, and local audit ledger where applicable.
-- Keep R3-8K as `FOLLOW_UP` and make it depend on `R3-8O_RECEIPT_FIX_R1`.
+- First backfill `R3-8O_RECEIPT_FIX_R1` commit `507c705` where applicable.
+- Summarize Runway insufficient-credits evidence.
+- Summarize RunningHub duration minimum fix, account-type failure, Enterprise Key success, generated artifact, and ffprobe PASS.
+- Record RunningHub Enterprise-Shared API Key path as the primary validated M1 provider path.
+- Keep future live provider calls authorization-gated.
 
 ## Acceptance
 
-- No network call is attempted.
-- No RunningHub upload, submit, query, poll, or output download is attempted.
-- No Runway call is attempted.
+- No provider call is attempted.
 - No provider credits are consumed.
 - No real video is generated.
-- No secret values, signed URLs, raw provider payloads, or source assets are exposed or overwritten.
+- No secret values are exposed.
+- No source assets are overwritten.
+- No push, tag, release, or deploy occurs.
 
 ## Validation
 
-- JSON parse for updated report/state files
+- JSON/YAML parse for closeout report if applicable
 - `npm run secret:scan`
 - `git diff --check`
 
 ## Stop Reason
 
-Stop before R3-8K closeout or any new live provider call. This task is receipt repair only.
-
-## Claim
-
-- claimed_by: Codex R3-8O receipt fixer R1
-- claim_run_id: codex-20260708-113927-r3-8o-receipt-fix-r1
-- claimed_at: 2026-07-08T11:39:27+08:00
-
-## Result
-
-`PASS_RECEIPT_FIXED`
-
-## Completed Work
-
-- Backfilled R3-8O live canary commit `99dd716`.
-- Backfilled R3-8O receipt fix commit `c746b08`.
-- Added receipt metadata to the R3-8O report.
-- Confirmed R3-8K remains `FOLLOW_UP` and depends on `R3-8O_RECEIPT_FIX_R1`.
-
-## Completed At
-
-2026-07-08T11:40:34+08:00
+Closeout only. Do not run any provider or deployment action.

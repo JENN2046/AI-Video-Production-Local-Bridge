@@ -2372,7 +2372,7 @@ Repair the R3-8O audit chain before provider path closeout.
 - R3-8O TASK_LEDGER entry records live commit `99dd716`.
 - R3-8O report and ledger receipt metadata records receipt commit `c746b08` where applicable.
 - R3-8O NEXT_TASK/TASK_BACKLOG state remains DONE with result `PASS_LIVE_SINGLE_SUBMIT_COMPLETED`.
-- R3-8K remains `FOLLOW_UP` and depends on `R3-8O_RECEIPT_FIX_R1`.
+- R3-8K depends on `R3-8O_RECEIPT_FIX_R1`; its own first required work is to backfill commit `507c705` before provider path closeout.
 - Do not call RunningHub or Runway.
 
 ### Validation
@@ -2383,7 +2383,7 @@ Repair the R3-8O audit chain before provider path closeout.
 
 ## R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT - Provider Path Decision Closeout
 
-status: FOLLOW_UP
+status: READY
 priority: P1
 lane: Provider Decision Closeout
 project: AI Video Production Workspace Three Route Plan
@@ -2395,8 +2395,22 @@ report_path: data/reports/r3_8k_provider_path_decision_closeout.json
 allowed_delivery: decision_report,readiness_summary,task_board_update,local_commit
 blocked_delivery: provider_call,provider_credits_consumed,real_video_generated,secret_value_output,source_overwrite,push,tag,release,deploy
 created_at: 2026-07-07T16:06:04+08:00
-updated_at: 2026-07-08T11:36:49+08:00
+updated_at: 2026-07-08T11:43:46+08:00
 
 ### Goal
 
 Close the provider-selection loop after Enterprise Key RunningHub canary evidence is available. This task does not call any provider.
+
+### Required Work
+
+- First backfill `R3-8O_RECEIPT_FIX_R1` commit `507c705` where applicable.
+- Summarize Runway insufficient-credits evidence.
+- Summarize RunningHub duration minimum fix, account-type failure, Enterprise Key success, generated artifact, and ffprobe PASS.
+- Record RunningHub Enterprise-Shared API Key path as the primary validated M1 provider path.
+- Keep future live provider calls authorization-gated.
+
+### Validation
+
+- JSON/YAML parse for closeout report if applicable
+- `npm run secret:scan`
+- `git diff --check`

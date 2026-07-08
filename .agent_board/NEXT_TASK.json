@@ -2,106 +2,94 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "R3-8O_RECEIPT_FIX_R1",
-  "status": "DONE",
-  "priority": "P0",
-  "lane": "Provider Evidence Receipt",
+  "task_id": "R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT",
+  "status": "READY",
+  "priority": "P1",
+  "lane": "Provider Decision Closeout",
   "project": "AI Video Production Workspace Three Route Plan",
-  "title": "R3-8O Receipt Fix R1",
+  "title": "Provider Path Decision Closeout",
   "scope": [
-    "backfill R3-8O live canary commit 99dd716",
-    "backfill R3-8O receipt commit c746b08",
-    "do not change provider business logic",
-    "do not call RunningHub or Runway"
+    "first backfill R3-8O_RECEIPT_FIX_R1 commit 507c705 in local audit state",
+    "summarize Runway and RunningHub evidence after Enterprise Key canary success",
+    "decide M1 provider path readiness",
+    "do not call any provider"
   ],
-  "goal": "Repair the R3-8O audit chain before provider path closeout.",
+  "goal": "Close the provider-selection loop after Enterprise Key RunningHub canary evidence is available.",
   "acceptance": [
-    "R3-8O TASK_LEDGER entry records live commit 99dd716.",
-    "R3-8O report and ledger receipt metadata records receipt commit c746b08 where applicable.",
-    "R3-8O NEXT_TASK/TASK_BACKLOG state remains DONE with result PASS_LIVE_SINGLE_SUBMIT_COMPLETED.",
-    "R3-8K remains FOLLOW_UP and depends on R3-8O_RECEIPT_FIX_R1.",
-    "No RunningHub call, Runway call, media upload, submit, query, output download, provider credit consumption, real video generation, source overwrite, push, tag, release, or deploy occurs."
+    "R3-8O_RECEIPT_FIX_R1 commit 507c705 is backfilled where applicable before closeout.",
+    "Closeout report summarizes Runway insufficient-credits evidence.",
+    "Closeout report summarizes RunningHub duration minimum fix, account-type failure, Enterprise Key success, generated artifact, and ffprobe PASS.",
+    "RunningHub Enterprise-Shared API Key path is recorded as the primary validated provider path for M1.",
+    "Future live provider calls remain authorization-gated.",
+    "No provider call, provider credit consumption, real video generation, secret output, source overwrite, push, tag, release, or deploy occurs."
   ],
   "validation": [
-    "JSON parse for updated report/state files",
+    "JSON/YAML parse for closeout report if applicable",
     "npm run secret:scan",
     "git diff --check"
   ],
   "allowed_delivery": [
-    "receipt_metadata_update",
+    "decision_report",
+    "readiness_summary",
     "task_board_update",
     "local_commit"
   ],
   "blocked_delivery": [
-    "runninghub_call",
-    "runway_call",
-    "media_upload_to_provider",
-    "status_poll",
-    "output_download_from_provider",
+    "provider_call",
     "provider_credits_consumed",
     "real_video_generated",
     "secret_value_output",
-    "raw_provider_payload_recording",
-    "signed_url_recording",
     "source_overwrite",
     "push",
     "tag",
     "release",
-    "deploy",
-    "production_credentials_change"
+    "deploy"
   ],
   "depends_on": [
-    "R3-8O_RUNNINGHUB_ENTERPRISE_KEY_6S_SINGLE_SUBMIT_CANARY"
+    "R3-8O_RECEIPT_FIX_R1"
   ],
-  "created_at": "2026-07-08T11:36:49+08:00",
-  "updated_at": "2026-07-08T11:40:34+08:00",
-  "claimed_by": "Codex R3-8O receipt fixer R1",
-  "claim_run_id": "codex-20260708-113927-r3-8o-receipt-fix-r1",
-  "claimed_at": "2026-07-08T11:39:27+08:00",
-  "completed_by": "Codex R3-8O receipt fixer R1",
-  "completed_at": "2026-07-08T11:40:34+08:00",
+  "created_at": "2026-07-07T16:06:04+08:00",
+  "updated_at": "2026-07-08T11:43:46+08:00",
+  "claimed_by": null,
+  "claim_run_id": null,
+  "claimed_at": null,
+  "completed_by": null,
+  "completed_at": null,
   "blocked_by": null,
   "blocked_at": null,
   "failed_by": null,
   "failed_at": null,
   "skipped_by": null,
   "skipped_at": null,
-  "result": "PASS_RECEIPT_FIXED",
-  "validation_result": "PASS",
+  "result": null,
+  "validation_result": null,
   "evidence": [
-    "data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_result.json"
+    "data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_result.json",
+    "data/reports/r3_8n_provider_access_strategy_decision.json",
+    "data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json",
+    "data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json",
+    "data/reports/r3_8e_runway_real_storyboard_keyframe_canary_result.json"
   ],
-  "commit": "pending_at_task_state_write",
+  "commit": null,
   "delivery": "local_only",
-  "boundary_or_safety_stop": "no provider call; receipt repair only",
+  "boundary_or_safety_stop": "closeout only; no provider call or deployment",
   "blocked_reason": null,
   "failure_reason": null,
-  "safe_actions_completed": [
-    "backfilled R3-8O live canary commit 99dd716 in ledger/report metadata",
-    "backfilled R3-8O receipt fix commit c746b08 in report/ledger receipt metadata",
-    "confirmed R3-8K remains FOLLOW_UP and depends on R3-8O_RECEIPT_FIX_R1"
-  ],
+  "safe_actions_completed": [],
   "unsafe_action_not_performed": [
-    "runninghub_call",
-    "runway_call",
-    "media_upload_to_provider",
-    "status_poll",
-    "output_download_from_provider",
+    "provider_call",
     "provider_credits_consumed",
     "real_video_generated",
     "secret_value_output",
-    "raw_provider_payload_recording",
-    "signed_url_recording",
     "source_overwrite",
     "push",
     "tag",
     "release",
-    "deploy",
-    "production_credentials_change"
+    "deploy"
   ],
   "options_for_jenn": [],
   "next_safe_option": [
-    "After this receipt fix, promote R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT to READY if a provider path closeout report is desired.",
+    "After closeout, use RunningHub Enterprise-Shared API Key path as the validated M1 provider lane unless Jenn chooses a different route.",
     "Do not run any additional live provider call without a fresh exact current Jenn authorization phrase."
   ]
 }
