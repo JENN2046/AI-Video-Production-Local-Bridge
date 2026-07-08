@@ -557,5 +557,5 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - Planned ffmpeg executable: `A:\AI-VIDEO\ffmpeg\bin\ffmpeg.exe`.
 - Input path checks and no-overwrite gate passed.
 - Final video was not written.
-- R3-9N local implementation commit: `PENDING_LOCAL_COMMIT`.
+- R3-9N local implementation commit: `f571b0d`.
 - Next safe task: `R3-9O_FINAL_VIDEO_ASSEMBLY_EXECUTION`.

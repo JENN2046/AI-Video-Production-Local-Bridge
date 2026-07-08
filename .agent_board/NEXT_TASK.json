@@ -79,7 +79,7 @@
     "data/reports/r3_9m_assembly_input_manifest.json",
     "data/reports/r3_9n_final_video_assembly_dry_run_result.json"
   ],
-  "commit": null,
+  "commit": "f571b0d",
   "delivery": "local_assembly_dry_run_only",
   "boundary_or_safety_stop": "dry run only; no final video write, provider call, regeneration, batch expansion, env or credential read, source overwrite, push, tag, release, or deploy",
   "blocked_reason": null,

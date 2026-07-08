@@ -1954,4 +1954,4 @@ Notes:
 - Planned ffmpeg concat assembly for 4 accepted clips.
 - Planned output path: `data/media/artifacts/final/r3-9o-final-video/ryan_lunch_break_skullcap_final_r3_9o.mp4`.
 - No-overwrite gate passed and final video was not written.
-- R3-9N local implementation commit: `PENDING_LOCAL_COMMIT`.
+- R3-9N local implementation commit: `f571b0d`.
