@@ -1,14 +1,32 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260708-195644-r1-gpt-bridge-queue-arrangement
-Last result: R1 GPT bridge post-closeout tasks queued
+Last run: codex-20260708-200859-r1-6
+Last result: R1-6 WebGPT bridge reality audit complete
 
 ## Current state
 
 Current task: R1-6_WEBGPT_POST_CLOSEOUT_BRIDGE_REALITY_AUDIT
-Current status: READY
+Current status: DONE
 Current owner: none
+
+## R1-6 In Progress
+
+- Claimed at 2026-07-08T20:08:59+08:00 by Codex R1-6 bridge reality audit.
+- Scope: local-only audit of WebGPT/MCP bridge v0 through v3 after R3-9 final delivery closeout.
+- Boundary: no public tunnel, provider call, `.env` or credential read, production truth mutation, source overwrite, push, tag, release, deploy, publish, or production configuration change.
+- Required report: `data/reports/r1_6_webgpt_post_closeout_bridge_reality_audit_result.json`.
+
+## R1-6 Closeout
+
+- R1-6 completed on 2026-07-08T20:15:42+08:00 with `PASS_GPT_BRIDGE_REALITY_AUDITED`.
+- Report: `data/reports/r1_6_webgpt_post_closeout_bridge_reality_audit_result.json`.
+- Audited R1-0 through R1-5 completion status and bridge evidence.
+- Inventoried WebGPT bridge v0, v0.5, v1, v2, and v3 package scripts, localhost entrypoints, source surfaces, tests, tool lists, routes, and safety flags.
+- Confirmed R3-9R final-approved project evidence is reachable by app-side report references and real app artifact IDs.
+- Recommended next task: `R1-7_WEBGPT_LOCAL_BRIDGE_SMOKE_VALIDATION`.
+- Validation passed: `npm run r1:6:audit`, JSON parse check, `npm run typecheck`, `npm run test:webgpt:bridge`, `npm run test:webgpt:drafts`, `npm run test:webgpt:pending`, `npm run test:webgpt:review`, `npm run test:webgpt:production`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
+- No public tunnel, provider call, `.env` or credential read, production truth mutation, source overwrite, push, tag, release, deploy, publish, or production configuration change occurred.
 
 ## R1 GPT bridge queue arrangement
 

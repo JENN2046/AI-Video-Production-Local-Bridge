@@ -3614,3 +3614,42 @@ Boundary:
 
 Next:
 - Scan backlog for additional eligible READY tasks.
+
+### 2026-07-08T20:15:42+08:00 - R1-6 WebGPT Post-Closeout Bridge Reality Audit
+
+Result: DONE / PASS_GPT_BRIDGE_REALITY_AUDITED
+Project: AI Video Production Workspace GPT Bridge Line
+Lane: WebGPT MCP Bridge Reality Audit
+Run ID: codex-20260708-200859-r1-6
+Completed at: 2026-07-08T20:15:42+08:00
+
+Scope:
+- Audited R1-0 through R1-5 completion status and evidence paths.
+- Inventoried WebGPT bridge v0, v0.5, v1, v2, and v3 package scripts, localhost entrypoints, source surfaces, tests, tool lists, routes, and safety flags.
+- Mapped GPT bridge capabilities to R3-9R final-approved project evidence.
+- Did not start a public tunnel, call providers, read env files or credentials, mutate production truth, overwrite source assets, push, tag, release, deploy, or publish.
+
+Validation:
+- `npm run r1:6:audit`: PASS
+- JSON/final-approved bridge audit check: PASS
+- `npm run typecheck`: PASS
+- `npm run test:webgpt:bridge`: PASS
+- `npm run test:webgpt:drafts`: PASS
+- `npm run test:webgpt:pending`: PASS
+- `npm run test:webgpt:review`: PASS
+- `npm run test:webgpt:production`: PASS
+- `npm run secret:scan`: PASS
+- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r1_6_webgpt_post_closeout_bridge_reality_audit_result.json
+
+Git delivery:
+- commit: PENDING_LOCAL_COMMIT
+- push: no
+
+Boundary:
+- No public tunnel, provider call, `.env` or credential read, production truth mutation, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+
+Next:
+- Proceed to R1-7 local bridge smoke validation if still eligible.

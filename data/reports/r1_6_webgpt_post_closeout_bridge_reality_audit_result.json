@@ -1,0 +1,855 @@
+{
+  "task": "R1-6_WEBGPT_POST_CLOSEOUT_BRIDGE_REALITY_AUDIT",
+  "result": "PASS_GPT_BRIDGE_REALITY_AUDITED",
+  "mode": "local_audit_only",
+  "generated_at": "2026-07-08T12:13:27.140Z",
+  "source_of_truth": {
+    "r1_0_boundary_doc": "docs/three_routes/r1_0_webgpt_mcp_boundary_readonly_bridge_plan.md",
+    "r1_reports": [
+      "data/reports/r1_1_mcp_v0_read_only_service_result.json",
+      "data/reports/r1_2_mcp_v0_5_draft_submission_result.json",
+      "data/reports/r1_3_mcp_v1_human_confirmed_handoff_tools_result.json",
+      "data/reports/r1_4_mcp_v2_review_assistant_tools_result.json",
+      "data/reports/r1_5_mcp_v3_production_assistant_result.json"
+    ],
+    "r3_9r_final_delivery_closeout_report": "data/reports/r3_9r_final_delivery_closeout_result.json",
+    "package_json": "package.json",
+    "bridge_source_files": [
+      "src/tools/webGptReadOnlyBridge.ts",
+      "src/tools/webGptDraftBridge.ts",
+      "src/tools/webGptPendingActions.ts",
+      "src/tools/webGptReviewAssistant.ts",
+      "src/tools/webGptProductionAssistant.ts"
+    ],
+    "bridge_server_entrypoints": [
+      "scripts/webgpt-readonly-bridge.ts",
+      "scripts/webgpt-draft-bridge.ts",
+      "scripts/webgpt-human-handoff-bridge.ts",
+      "scripts/webgpt-review-assistant-bridge.ts",
+      "scripts/webgpt-production-assistant-bridge.ts"
+    ]
+  },
+  "r1_completion_status": [
+    {
+      "task_id": "R1-0_WEBGPT_MCP_BOUNDARY_AND_READONLY_BRIDGE_PLAN",
+      "phase": "boundary_design",
+      "evidence_path": "docs/three_routes/r1_0_webgpt_mcp_boundary_readonly_bridge_plan.md",
+      "evidence_exists": true,
+      "result": "PASS_MCP_BOUNDARY_READY",
+      "runtime_server_implemented": false,
+      "provider_boundary_declared": true
+    },
+    {
+      "task_id": "R1-1_MCP_V0_READ_ONLY_SERVICE",
+      "phase": "v0_read_only",
+      "evidence_path": "data/reports/r1_1_mcp_v0_read_only_service_result.json",
+      "evidence_exists": true,
+      "result": "PASS",
+      "generated_or_completed_at": "2026-07-06T21:43:00+08:00",
+      "validation_pass": true,
+      "latest_report_path": null,
+      "report_path": null
+    },
+    {
+      "task_id": "R1-2_MCP_V0_5_DRAFT_SUBMISSION",
+      "phase": "v0_5_draft_submission",
+      "evidence_path": "data/reports/r1_2_mcp_v0_5_draft_submission_result.json",
+      "evidence_exists": true,
+      "result": "PASS",
+      "generated_or_completed_at": "2026-07-06T22:22:00+08:00",
+      "validation_pass": true,
+      "latest_report_path": null,
+      "report_path": null
+    },
+    {
+      "task_id": "R1-3_MCP_V1_HUMAN_CONFIRMED_HANDOFF_TOOLS",
+      "phase": "v1_pending_human_confirmation",
+      "evidence_path": "data/reports/r1_3_mcp_v1_human_confirmed_handoff_tools_result.json",
+      "evidence_exists": true,
+      "result": "PASS",
+      "generated_or_completed_at": "2026-07-06T22:36:00+08:00",
+      "validation_pass": true,
+      "latest_report_path": null,
+      "report_path": null
+    },
+    {
+      "task_id": "R1-4_MCP_V2_REVIEW_ASSISTANT_TOOLS",
+      "phase": "v2_review_assistant",
+      "evidence_path": "data/reports/r1_4_mcp_v2_review_assistant_tools_result.json",
+      "evidence_exists": true,
+      "result": "PASS",
+      "generated_or_completed_at": "2026-07-06T22:50:00+08:00",
+      "validation_pass": true,
+      "latest_report_path": null,
+      "report_path": null
+    },
+    {
+      "task_id": "R1-5_MCP_V3_PRODUCTION_ASSISTANT",
+      "phase": "v3_production_assistant",
+      "evidence_path": "data/reports/r1_5_mcp_v3_production_assistant_result.json",
+      "evidence_exists": true,
+      "result": "PASS",
+      "generated_or_completed_at": "2026-07-06T14:27:05.978Z",
+      "validation_pass": true,
+      "latest_report_path": "data/reports/r1_5_mcp_v3_production_assistant_result.json",
+      "report_path": "data/reports/r1_5_mcp_v3_production_assistant_result_28dcfff8-329d-4e3a-a6fb-2017ecb2aed7.json"
+    }
+  ],
+  "bridge_inventory": [
+    {
+      "phase": "v0_read_only",
+      "version": "webgpt-readonly-v0.1",
+      "package_script": "webgpt:bridge:v0",
+      "command": "npm run build && node dist/scripts/webgpt-readonly-bridge.js",
+      "source_file": "src/tools/webGptReadOnlyBridge.ts",
+      "server_entrypoint": "scripts/webgpt-readonly-bridge.ts",
+      "test_script": "test:webgpt:bridge",
+      "test_command": "npm run build && node --test dist/tests/webgpt-readonly-bridge.test.js",
+      "bind_host": "127.0.0.1",
+      "routes": [
+        "GET /api/tools",
+        "GET /api/tool/<read_tool>"
+      ],
+      "tools": [
+        "get_workspace_status",
+        "get_project_status",
+        "list_import_candidates",
+        "list_media_artifacts",
+        "get_media_artifact",
+        "get_shot_status",
+        "get_storyboard_package_status",
+        "get_latest_reports",
+        "get_provider_readiness_summary_redacted"
+      ],
+      "tool_flags": [
+        {
+          "name": "get_workspace_status",
+          "description": "Return local workspace bridge status, read-only tool inventory, and current report references.",
+          "input_schema": {},
+          "mode": "READ_ONLY",
+          "mutation_allowed": false,
+          "provider_call_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        },
+        {
+          "name": "get_project_status",
+          "description": "Return current Human Workbench project and readiness summary.",
+          "input_schema": {
+            "project_id": "optional app project id"
+          },
+          "mode": "READ_ONLY",
+          "mutation_allowed": false,
+          "provider_call_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        },
+        {
+          "name": "list_import_candidates",
+          "description": "Return data/imports candidates as app-screened summaries.",
+          "input_schema": {},
+          "mode": "READ_ONLY",
+          "mutation_allowed": false,
+          "provider_call_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        },
+        {
+          "name": "list_media_artifacts",
+          "description": "Return app-owned storyboard image Media Artifact summaries.",
+          "input_schema": {},
+          "mode": "READ_ONLY",
+          "mutation_allowed": false,
+          "provider_call_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        },
+        {
+          "name": "get_media_artifact",
+          "description": "Return one app-owned Media Artifact by real app artifact_id.",
+          "input_schema": {
+            "artifact_id": "required app artifact id"
+          },
+          "mode": "READ_ONLY",
+          "mutation_allowed": false,
+          "provider_call_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        },
+        {
+          "name": "get_shot_status",
+          "description": "Return current shot status from Human Workbench state.",
+          "input_schema": {
+            "shot_id": "optional shot id"
+          },
+          "mode": "READ_ONLY",
+          "mutation_allowed": false,
+          "provider_call_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        },
+        {
+          "name": "get_storyboard_package_status",
+          "description": "Return package candidate blockers and frozen package history.",
+          "input_schema": {},
+          "mode": "READ_ONLY",
+          "mutation_allowed": false,
+          "provider_call_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        },
+        {
+          "name": "get_latest_reports",
+          "description": "Return report references and safe metadata, not raw private logs.",
+          "input_schema": {},
+          "mode": "READ_ONLY",
+          "mutation_allowed": false,
+          "provider_call_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        },
+        {
+          "name": "get_provider_readiness_summary_redacted",
+          "description": "Return redacted provider/canary readiness from existing dry-run reports.",
+          "input_schema": {},
+          "mode": "READ_ONLY",
+          "mutation_allowed": false,
+          "provider_call_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        }
+      ],
+      "source_exists": true,
+      "entrypoint_exists": true,
+      "test_exists": true
+    },
+    {
+      "phase": "v0_5_draft_submission",
+      "version": "webgpt-draft-v0.5",
+      "package_script": "webgpt:bridge:v0.5",
+      "command": "npm run build && node dist/scripts/webgpt-draft-bridge.js",
+      "source_file": "src/tools/webGptDraftBridge.ts",
+      "server_entrypoint": "scripts/webgpt-draft-bridge.ts",
+      "store_file": "data/webgpt/draft_submissions.json",
+      "test_script": "test:webgpt:drafts",
+      "test_command": "npm run build && node --test dist/tests/webgpt-draft-bridge.test.js",
+      "bind_host": "127.0.0.1",
+      "routes": [
+        "GET /api/tools",
+        "GET /api/tool/<read_tool>",
+        "POST /api/draft/<draft_tool>"
+      ],
+      "tools": [
+        "submit_shot_script_draft",
+        "submit_storyboard_package_draft",
+        "propose_artifact_link",
+        "propose_package_validation",
+        "propose_freeze_request"
+      ],
+      "tool_flags": [
+        {
+          "name": "submit_shot_script_draft",
+          "description": "Submit a shot description, video prompt, negative prompt, and duration draft without changing app truth.",
+          "input_schema": {
+            "shot_id": "optional existing app shot id",
+            "proposed_shot_key": "optional non-authoritative draft label",
+            "description": "required draft shot description",
+            "video_prompt": "required draft video prompt",
+            "negative_prompt": "optional draft negative prompt",
+            "duration_seconds": "optional draft duration"
+          },
+          "mode": "DRAFT_SUBMISSION",
+          "draft_write_allowed": true,
+          "production_mutation_allowed": false,
+          "direct_freeze_allowed": false,
+          "direct_artifact_registration_allowed": false,
+          "provider_call_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        },
+        {
+          "name": "submit_storyboard_package_draft",
+          "description": "Submit a non-authoritative storyboard package draft for human review.",
+          "input_schema": {
+            "package_title": "optional draft title",
+            "shots": "array of draft shots; app artifact ids are validated if provided"
+          },
+          "mode": "DRAFT_SUBMISSION",
+          "draft_write_allowed": true,
+          "production_mutation_allowed": false,
+          "direct_freeze_allowed": false,
+          "direct_artifact_registration_allowed": false,
+          "provider_call_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        },
+        {
+          "name": "propose_artifact_link",
+          "description": "Propose linking a real app Media Artifact to an existing shot, without executing the link.",
+          "input_schema": {
+            "shot_id": "required existing app shot id",
+            "artifact_id": "required real app artifact id"
+          },
+          "mode": "DRAFT_SUBMISSION",
+          "draft_write_allowed": true,
+          "production_mutation_allowed": false,
+          "direct_freeze_allowed": false,
+          "direct_artifact_registration_allowed": false,
+          "provider_call_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        },
+        {
+          "name": "propose_package_validation",
+          "description": "Request human review of a package validation proposal without running production validation.",
+          "input_schema": {
+            "package_draft_id": "optional existing draft id",
+            "notes": "optional validation notes"
+          },
+          "mode": "DRAFT_SUBMISSION",
+          "draft_write_allowed": true,
+          "production_mutation_allowed": false,
+          "direct_freeze_allowed": false,
+          "direct_artifact_registration_allowed": false,
+          "provider_call_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        },
+        {
+          "name": "propose_freeze_request",
+          "description": "Request human review of a future package freeze without freezing anything.",
+          "input_schema": {
+            "package_draft_id": "optional existing draft id",
+            "reason": "required freeze request reason"
+          },
+          "mode": "DRAFT_SUBMISSION",
+          "draft_write_allowed": true,
+          "production_mutation_allowed": false,
+          "direct_freeze_allowed": false,
+          "direct_artifact_registration_allowed": false,
+          "provider_call_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        }
+      ],
+      "source_exists": true,
+      "entrypoint_exists": true,
+      "test_exists": true
+    },
+    {
+      "phase": "v1_pending_human_confirmation",
+      "version": "webgpt-pending-actions-v1",
+      "package_script": "webgpt:bridge:v1",
+      "command": "npm run build && node dist/scripts/webgpt-human-handoff-bridge.js",
+      "source_file": "src/tools/webGptPendingActions.ts",
+      "server_entrypoint": "scripts/webgpt-human-handoff-bridge.ts",
+      "store_file": "data/webgpt/pending_actions.json",
+      "test_script": "test:webgpt:pending",
+      "test_command": "npm run build && node --test dist/tests/webgpt-pending-actions.test.js",
+      "bind_host": "127.0.0.1",
+      "routes": [
+        "GET /api/tools",
+        "GET /api/tool/<read_tool>",
+        "POST /api/pending-action/<tool>"
+      ],
+      "tools": [
+        "request_register_media_artifact_from_import",
+        "request_link_artifact_to_shot",
+        "request_validate_storyboard_package",
+        "request_import_storyboard_package"
+      ],
+      "tool_flags": [
+        {
+          "name": "request_register_media_artifact_from_import",
+          "description": "Request that a human confirms registering an app-screened data/imports image as a Media Artifact.",
+          "input_schema": {
+            "import_filename": "required basename from data/imports"
+          },
+          "mode": "PENDING_HUMAN_CONFIRMATION",
+          "pending_action_write_allowed": true,
+          "direct_mutation_allowed": false,
+          "human_confirmation_required": true,
+          "provider_call_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        },
+        {
+          "name": "request_link_artifact_to_shot",
+          "description": "Request that a human confirms linking a real storyboard_image artifact to an existing shot.",
+          "input_schema": {
+            "shot_id": "required existing app shot id",
+            "artifact_id": "required active storyboard_image artifact id"
+          },
+          "mode": "PENDING_HUMAN_CONFIRMATION",
+          "pending_action_write_allowed": true,
+          "direct_mutation_allowed": false,
+          "human_confirmation_required": true,
+          "provider_call_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        },
+        {
+          "name": "request_validate_storyboard_package",
+          "description": "Request that a human confirms running app-side storyboard package validation.",
+          "input_schema": {
+            "notes": "optional request notes"
+          },
+          "mode": "PENDING_HUMAN_CONFIRMATION",
+          "pending_action_write_allowed": true,
+          "direct_mutation_allowed": false,
+          "human_confirmation_required": true,
+          "provider_call_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        },
+        {
+          "name": "request_import_storyboard_package",
+          "description": "Request that a human confirms importing/freezing the current app-ready storyboard package.",
+          "input_schema": {
+            "reason": "required request reason"
+          },
+          "mode": "PENDING_HUMAN_CONFIRMATION",
+          "pending_action_write_allowed": true,
+          "direct_mutation_allowed": false,
+          "human_confirmation_required": true,
+          "provider_call_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        }
+      ],
+      "source_exists": true,
+      "entrypoint_exists": true,
+      "test_exists": true
+    },
+    {
+      "phase": "v2_review_assistant",
+      "version": "webgpt-review-assistant-v2",
+      "package_script": "webgpt:bridge:v2",
+      "command": "npm run build && node dist/scripts/webgpt-review-assistant-bridge.js",
+      "source_file": "src/tools/webGptReviewAssistant.ts",
+      "server_entrypoint": "scripts/webgpt-review-assistant-bridge.ts",
+      "store_file": "data/webgpt/review_assistant_drafts.json",
+      "test_script": "test:webgpt:review",
+      "test_command": "npm run build && node --test dist/tests/webgpt-review-assistant.test.js",
+      "bind_host": "127.0.0.1",
+      "routes": [
+        "GET /api/tools",
+        "GET /api/tool/<read_tool>",
+        "GET /api/review-tool/<tool>",
+        "POST /api/review-tool/<tool>"
+      ],
+      "tools": [
+        "get_generation_run",
+        "get_generated_clip_metadata",
+        "submit_review_note_draft",
+        "propose_rejection_reason",
+        "propose_regeneration_prompt"
+      ],
+      "tool_flags": [
+        {
+          "name": "get_generation_run",
+          "description": "Read one app Generation Run by run_id.",
+          "input_schema": {
+            "run_id": "required app generation run id"
+          },
+          "mode": "REVIEW_ASSISTANT",
+          "read_allowed": true,
+          "draft_write_allowed": false,
+          "final_human_approval_allowed": false,
+          "regeneration_allowed": false,
+          "provider_call_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        },
+        {
+          "name": "get_generated_clip_metadata",
+          "description": "Read one generated_clip Media Artifact with ffprobe metadata and linked run if available.",
+          "input_schema": {
+            "artifact_id": "required generated_clip artifact id"
+          },
+          "mode": "REVIEW_ASSISTANT",
+          "read_allowed": true,
+          "draft_write_allowed": false,
+          "final_human_approval_allowed": false,
+          "regeneration_allowed": false,
+          "provider_call_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        },
+        {
+          "name": "submit_review_note_draft",
+          "description": "Submit a draft review note for human review without changing clip review status.",
+          "input_schema": {
+            "artifact_id": "required generated_clip artifact id",
+            "note": "required draft note"
+          },
+          "mode": "REVIEW_ASSISTANT",
+          "read_allowed": false,
+          "draft_write_allowed": true,
+          "final_human_approval_allowed": false,
+          "regeneration_allowed": false,
+          "provider_call_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        },
+        {
+          "name": "propose_rejection_reason",
+          "description": "Draft a rejection reason for human review without rejecting the clip.",
+          "input_schema": {
+            "artifact_id": "required generated_clip artifact id",
+            "reason": "required draft rejection reason"
+          },
+          "mode": "REVIEW_ASSISTANT",
+          "read_allowed": false,
+          "draft_write_allowed": true,
+          "final_human_approval_allowed": false,
+          "regeneration_allowed": false,
+          "provider_call_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        },
+        {
+          "name": "propose_regeneration_prompt",
+          "description": "Draft a regeneration prompt delta for human review without triggering regeneration.",
+          "input_schema": {
+            "artifact_id": "required generated_clip artifact id",
+            "prompt_delta": "required draft prompt delta"
+          },
+          "mode": "REVIEW_ASSISTANT",
+          "read_allowed": false,
+          "draft_write_allowed": true,
+          "final_human_approval_allowed": false,
+          "regeneration_allowed": false,
+          "provider_call_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        }
+      ],
+      "source_exists": true,
+      "entrypoint_exists": true,
+      "test_exists": true
+    },
+    {
+      "phase": "v3_production_assistant",
+      "version": "webgpt-production-assistant-v3",
+      "package_script": "webgpt:bridge:v3",
+      "command": "npm run build && node dist/scripts/webgpt-production-assistant-bridge.js",
+      "source_file": "src/tools/webGptProductionAssistant.ts",
+      "server_entrypoint": "scripts/webgpt-production-assistant-bridge.ts",
+      "store_file": "data/webgpt/production_assistant_plans.json",
+      "test_script": "test:webgpt:production",
+      "test_command": "npm run build && node --test dist/tests/webgpt-production-assistant.test.js",
+      "bind_host": "127.0.0.1",
+      "routes": [
+        "GET /api/tools",
+        "GET /api/production-tool/<tool>",
+        "POST /api/production-tool/<tool>"
+      ],
+      "tools": [
+        "propose_generation_plan",
+        "propose_regeneration_plan",
+        "propose_final_assembly_plan",
+        "propose_memory_saveback"
+      ],
+      "tool_flags": [
+        {
+          "name": "propose_generation_plan",
+          "description": "Draft a generation plan for human review without starting generation or calling a provider.",
+          "input_schema": {
+            "project_id": "required app project id",
+            "shot_ids": "optional shot id list",
+            "notes": "required plan notes"
+          },
+          "mode": "PRODUCTION_ASSISTANT_PLAN",
+          "plan_write_allowed": true,
+          "execution_allowed": false,
+          "provider_call_allowed": false,
+          "final_delivery_approval_allowed": false,
+          "long_term_memory_write_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        },
+        {
+          "name": "propose_regeneration_plan",
+          "description": "Draft a regeneration plan for a generated clip without triggering regeneration.",
+          "input_schema": {
+            "project_id": "required app project id",
+            "artifact_id": "required generated_clip artifact id",
+            "prompt_delta": "required prompt delta"
+          },
+          "mode": "PRODUCTION_ASSISTANT_PLAN",
+          "plan_write_allowed": true,
+          "execution_allowed": false,
+          "provider_call_allowed": false,
+          "final_delivery_approval_allowed": false,
+          "long_term_memory_write_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        },
+        {
+          "name": "propose_final_assembly_plan",
+          "description": "Draft a final assembly plan without approving delivery or assembling video.",
+          "input_schema": {
+            "project_id": "required app project id",
+            "notes": "optional assembly notes"
+          },
+          "mode": "PRODUCTION_ASSISTANT_PLAN",
+          "plan_write_allowed": true,
+          "execution_allowed": false,
+          "provider_call_allowed": false,
+          "final_delivery_approval_allowed": false,
+          "long_term_memory_write_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        },
+        {
+          "name": "propose_memory_saveback",
+          "description": "Draft a memory saveback plan without writing long-term memory.",
+          "input_schema": {
+            "project_id": "required app project id",
+            "proposal_id": "optional existing saveback proposal id",
+            "notes": "optional saveback notes"
+          },
+          "mode": "PRODUCTION_ASSISTANT_PLAN",
+          "plan_write_allowed": true,
+          "execution_allowed": false,
+          "provider_call_allowed": false,
+          "final_delivery_approval_allowed": false,
+          "long_term_memory_write_allowed": false,
+          "secret_read_allowed": false,
+          "shell_allowed": false
+        }
+      ],
+      "source_exists": true,
+      "entrypoint_exists": true,
+      "test_exists": true
+    }
+  ],
+  "final_approved_project_evidence": {
+    "source_report": "data/reports/r3_9r_final_delivery_closeout_result.json",
+    "source_report_exists": true,
+    "source_report_size_bytes": 8423,
+    "source_report_result": "PASS_FINAL_DELIVERY_CLOSEOUT_READY",
+    "source_report_commit": "17e60e6",
+    "project_id": "project_b742cb15-e44e-41b2-8d2d-4b90a30720df",
+    "project_title": "Ryan's Lunch Break Skullcap",
+    "storyboard_package_id": "storyboard_package_1e5c1eca-624e-4687-9775-31e4b59f428a",
+    "project_found_in_db": true,
+    "project_status_in_report": "final_approved",
+    "project_status_in_db": "final_approved",
+    "final_decision": "accept",
+    "final_reviewer": "Jenn",
+    "final_creative_approval_recorded": true,
+    "final_video_path": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\final\\r3-9o-final-video\\ryan_lunch_break_skullcap_final_r3_9o.mp4",
+    "final_video_exists": true,
+    "final_video_artifact_id": "artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe",
+    "final_video_artifact_found_in_db": true,
+    "final_video_artifact_status_in_report": "active",
+    "final_video_artifact_status_in_db": "active",
+    "final_video_ffprobe_status_in_report": "PASS",
+    "final_video_ffprobe_status_now": "PASS",
+    "final_video_duration_seconds": 24.207683,
+    "source_clip_count": 4,
+    "source_clip_artifacts": [
+      "artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203",
+      "artifact_eeef12a7-9533-4172-beaa-6c25b91415f7",
+      "artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a",
+      "artifact_263a2344-5154-4981-bfe4-120571effb3e"
+    ],
+    "source_clips": [
+      {
+        "order": 1,
+        "shot_id": "g0_r1_shot_001",
+        "source_clip_artifact_id": "artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203",
+        "artifact_found": true,
+        "artifact_status": "active",
+        "local_mp4_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\01-g0_r1_shot_001\\artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203.mp4",
+        "local_mp4_exists": true,
+        "ffprobe_status": "PASS",
+        "duration_seconds": 6.041667
+      },
+      {
+        "order": 2,
+        "shot_id": "g0_r1_shot_002",
+        "source_clip_artifact_id": "artifact_eeef12a7-9533-4172-beaa-6c25b91415f7",
+        "artifact_found": true,
+        "artifact_status": "active",
+        "local_mp4_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\02-g0_r1_shot_002\\artifact_eeef12a7-9533-4172-beaa-6c25b91415f7.mp4",
+        "local_mp4_exists": true,
+        "ffprobe_status": "PASS",
+        "duration_seconds": 6.041667
+      },
+      {
+        "order": 3,
+        "shot_id": "g0_r1_shot_003",
+        "source_clip_artifact_id": "artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a",
+        "artifact_found": true,
+        "artifact_status": "active",
+        "local_mp4_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\03-g0_r1_shot_003\\artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a.mp4",
+        "local_mp4_exists": true,
+        "ffprobe_status": "PASS",
+        "duration_seconds": 6.041667
+      },
+      {
+        "order": 4,
+        "shot_id": "g0_r1_shot_004",
+        "source_clip_artifact_id": "artifact_263a2344-5154-4981-bfe4-120571effb3e",
+        "artifact_found": true,
+        "artifact_status": "active",
+        "local_mp4_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\04-g0_r1_shot_004\\artifact_263a2344-5154-4981-bfe4-120571effb3e.mp4",
+        "local_mp4_exists": true,
+        "ffprobe_status": "PASS",
+        "duration_seconds": 6.041667
+      }
+    ]
+  },
+  "gpt_capability_map_after_final_approval": {
+    "can_read": {
+      "status": true,
+      "bridge_phase": "v0_read_only",
+      "tools": [
+        "get_workspace_status",
+        "get_project_status",
+        "list_import_candidates",
+        "list_media_artifacts",
+        "get_media_artifact",
+        "get_shot_status",
+        "get_storyboard_package_status",
+        "get_latest_reports",
+        "get_provider_readiness_summary_redacted"
+      ],
+      "can_reach_r3_9r_report_reference": true,
+      "can_reach_final_artifact_by_app_id": true
+    },
+    "can_draft": {
+      "status": true,
+      "bridge_phase": "v0_5_draft_submission",
+      "tools": [
+        "submit_shot_script_draft",
+        "submit_storyboard_package_draft",
+        "propose_artifact_link",
+        "propose_package_validation",
+        "propose_freeze_request"
+      ],
+      "production_truth_changed": false
+    },
+    "can_request_human_confirmed_actions": {
+      "status": true,
+      "bridge_phase": "v1_pending_human_confirmation",
+      "tools": [
+        "request_register_media_artifact_from_import",
+        "request_link_artifact_to_shot",
+        "request_validate_storyboard_package",
+        "request_import_storyboard_package"
+      ],
+      "gpt_direct_mutation_allowed": false,
+      "human_confirmation_required": true
+    },
+    "can_assist_review": {
+      "status": true,
+      "bridge_phase": "v2_review_assistant",
+      "tools": [
+        "get_generation_run",
+        "get_generated_clip_metadata",
+        "submit_review_note_draft",
+        "propose_rejection_reason",
+        "propose_regeneration_prompt"
+      ],
+      "final_human_approval_allowed": false,
+      "regeneration_allowed": false
+    },
+    "can_propose_production_plans": {
+      "status": true,
+      "bridge_phase": "v3_production_assistant",
+      "tools": [
+        "propose_generation_plan",
+        "propose_regeneration_plan",
+        "propose_final_assembly_plan",
+        "propose_memory_saveback"
+      ],
+      "execution_allowed": false,
+      "provider_call_allowed": false,
+      "final_delivery_approval_allowed": false,
+      "long_term_memory_write_allowed": false
+    }
+  },
+  "stale_assumptions_found": [
+    "R1-0 through R1-5 were completed before the R3-9 final video reached final_approved; downstream GPT work should now reference R3-9R evidence instead of older H1-only assumptions.",
+    "Public ChatGPT MCP/App packaging remains a separate decision; current bridge entrypoints are localhost-only development bridges.",
+    "GPT may see report references through read-only surfaces, but should not treat chat-provided artifact IDs as authoritative."
+  ],
+  "local_gaps_and_recommendations": {
+    "blockers": [],
+    "non_blocking_gaps": [
+      "No dedicated GPT-facing final-delivery endpoint exists yet; current access is through get_latest_reports plus app artifact/project status.",
+      "v3 production assistant can propose final assembly plans, but it does not have a closeout-specific proposal type for final-approved delivery archive handoff.",
+      "Official ChatGPT MCP packaging, authentication model, and public tunnel/deployment posture are intentionally undecided."
+    ],
+    "recommended_next_tasks": [
+      {
+        "task_id": "R1-7_WEBGPT_LOCAL_BRIDGE_SMOKE_VALIDATION",
+        "recommendation": "PROCEED",
+        "reason": "Run local bridge/test smoke against current final-approved R3-9R evidence without public exposure."
+      },
+      {
+        "task_id": "R1-8_WEBGPT_OPERATOR_RUNBOOK_AND_PROMPT_PACK",
+        "recommendation": "PROCEED_AFTER_R1_7",
+        "reason": "Document Chinese operator flow and prompt pack after current local bridge smoke validation passes."
+      },
+      {
+        "task_id": "R1-9_CHATGPT_MCP_APP_PACKAGING_DECISION",
+        "recommendation": "KEEP_FOLLOW_UP",
+        "reason": "Requires separate decision for official ChatGPT MCP/App packaging, security, auth, and exposure posture."
+      }
+    ]
+  },
+  "provider_boundary": {
+    "public_tunnel_started": false,
+    "network_call_attempted": false,
+    "provider_called": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "provider_credits_consumed": false,
+    "env_files_read": false,
+    "credentials_read": false,
+    "production_truth_mutated": false,
+    "direct_production_mutation_from_gpt": false,
+    "source_assets_overwritten": false,
+    "secret_values_exposed": false,
+    "raw_provider_payload_recorded": false,
+    "signed_url_recorded": false,
+    "publish_performed": false,
+    "release_or_deploy_performed": false,
+    "push_performed": false,
+    "tag_created": false
+  },
+  "validation": {
+    "npm run r1:6:audit": "PASS",
+    "JSON parse for generated R1-6 audit report": "PASS",
+    "npm run typecheck": "PASS",
+    "npm run test:webgpt:bridge": "PASS",
+    "npm run test:webgpt:drafts": "PASS",
+    "npm run test:webgpt:pending": "PASS",
+    "npm run test:webgpt:review": "PASS",
+    "npm run test:webgpt:production": "PASS",
+    "npm run secret:scan": "PASS",
+    "git diff --check": "PASS_WITH_CRLF_WARNINGS_ONLY"
+  },
+  "changed_files": [
+    "package.json",
+    "scripts/r1-6-webgpt-post-closeout-bridge-reality-audit.ts",
+    "data/reports/r1_6_webgpt_post_closeout_bridge_reality_audit_result.json",
+    ".agent_board/*"
+  ],
+  "blocked_reason": null,
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "PENDING_LOCAL_COMMIT",
+    "task": "R1-6_WEBGPT_POST_CLOSEOUT_BRIDGE_REALITY_AUDIT",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  }
+}
