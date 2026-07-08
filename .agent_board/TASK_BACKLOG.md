@@ -2849,3 +2849,94 @@ Apply Jenn's human review decisions for the four RunningHub-generated clips with
 - Generated `data/reports/r3_9f_human_clip_review_decision_apply_result.json`.
 - Validation passed: JSON parse, `npm run r3:9f:apply-review`, `npm run typecheck`, `npm run test:m1`, `npm run secret:scan`, `git diff --check` with CRLF warnings only.
 - No provider call, regeneration, batch expansion, final assembly, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+
+## R3-9G_REGENERATION_STRATEGY_FOR_REVIEW_NOTES - Regeneration Strategy For Review Notes
+
+status: READY
+priority: P0
+lane: Regeneration Strategy
+project: AI Video Production Workspace Three Route Plan
+scope: convert Jenn's regenerate_requested notes for SHOT_001, SHOT_003, and SHOT_004 into a local regeneration strategy without provider calls
+branch: local-only
+depends_on: R3-9F_HUMAN_CLIP_REVIEW_DECISION_APPLY
+source_plan: R3-9F human clip review decision apply result
+report_path: data/reports/r3_9g_regeneration_strategy_for_review_notes_result.json
+allowed_delivery: regeneration_strategy_report,prompt_revision_plan,authorization_phrase_draft,task_board_update,local_commit
+blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,provider_submit,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,regeneration_execution,batch_expansion,final_assembly,source_overwrite,secret_value_output,raw_provider_payload_recording,signed_url_recording,push,tag,release,deploy
+created_at: 2026-07-08T16:22:30+08:00
+updated_at: 2026-07-08T16:22:30+08:00
+
+### Goal
+
+Prepare a local regeneration strategy for the three `regenerate_requested` shots without calling providers.
+
+### Required Work
+
+- Parse `data/reports/r3_9f_human_clip_review_decision_apply_result.json` as the source of truth.
+- Include only `g0_r1_shot_001`, `g0_r1_shot_003`, and `g0_r1_shot_004` as regeneration candidates.
+- Convert Jenn's Chinese review notes into revised action constraints, prompt guidance, negative constraints, and risk notes.
+- Draft a future bounded RunningHub regeneration authorization plan without executing it.
+- Exclude `g0_r1_shot_002`; it belongs to `R3-9H_SHOT_002_REPLACEMENT_DECISION`.
+
+### Acceptance
+
+- `g0_r1_shot_001` strategy addresses food picked from lunchbox and brought to mouth, not picking up the lunchbox.
+- `g0_r1_shot_003` strategy addresses realistic cap fold and fabric behavior when pulled.
+- `g0_r1_shot_004` strategy addresses physically plausible cap lighting and shadow realism.
+- Each candidate has revised prompt guidance, negative constraints, source keyframe/artifact reference, `duration_seconds=6`, and future output directory plan.
+- Budget draft is bounded to `max_upload_calls_total=3` and `max_submit_calls_total=3`, one upload and one submit per candidate, no retry, no second submit, no batch expansion, and no Runway fallback.
+- Report records `network_call_attempted=false`, `runninghub_called=false`, `runway_called=false`, `provider_credits_consumed=false`, `real_video_generated=false`, `regeneration_performed=false`, `secret_values_exposed=false`.
+- No provider call, regeneration execution, batch expansion, final assembly, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurs.
+
+### Validation
+
+- JSON parse for generated regeneration strategy report
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
+
+## R3-9H_SHOT_002_REPLACEMENT_DECISION - SHOT 002 Replacement Decision
+
+status: READY
+priority: P1
+lane: Rejected Shot Decision
+project: AI Video Production Workspace Three Route Plan
+scope: evaluate how to handle rejected SHOT_002 separately from the regenerate_requested shots, without provider calls or storyboard mutation
+branch: local-only
+depends_on: R3-9G_REGENERATION_STRATEGY_FOR_REVIEW_NOTES
+source_plan: R3-9F human clip review decision apply result
+report_path: data/reports/r3_9h_shot_002_replacement_decision_result.json
+allowed_delivery: decision_options_report,recommended_next_path,task_board_update,local_commit
+blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,provider_submit,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,regeneration_execution,batch_expansion,final_assembly,storyboard_package_mutation,source_overwrite,secret_value_output,raw_provider_payload_recording,signed_url_recording,push,tag,release,deploy
+created_at: 2026-07-08T16:22:30+08:00
+updated_at: 2026-07-08T16:22:30+08:00
+
+### Goal
+
+Decide the safe local next path for rejected `g0_r1_shot_002` before any final assembly or provider regeneration.
+
+### Required Work
+
+- Parse `data/reports/r3_9f_human_clip_review_decision_apply_result.json` as the source of truth.
+- Focus only on `g0_r1_shot_002` and Jenn's reject note: "我不要叹气不高兴的表情，这样会让人不想购买产品".
+- Evaluate at least three paths: rework prompt and regenerate from the same keyframe, replace the storyboard keyframe before generation, or remove/resequence the shot before final assembly.
+- Record tradeoffs, blocker status, and a recommended next path.
+- Draft any follow-up task(s) needed, but do not mutate the frozen storyboard package or call providers.
+
+### Acceptance
+
+- Report includes SHOT_002 source generated_clip artifact, source storyboard image artifact, reject reason, and current `revision_needed` state.
+- Report compares rework, replace, and remove/resequence paths.
+- Report records a recommended next safe option or `NEEDS_JENN_DECISION` if the choice cannot be made locally.
+- Report states final assembly remains blocked while there are no accepted clips and SHOT_002 remains unresolved.
+- Report records `network_call_attempted=false`, `runninghub_called=false`, `runway_called=false`, `provider_credits_consumed=false`, `real_video_generated=false`, `regeneration_performed=false`, `final_assembly_performed=false`, `secret_values_exposed=false`.
+- No provider call, regeneration execution, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurs.
+
+### Validation
+
+- JSON parse for generated SHOT_002 decision report
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`

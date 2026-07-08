@@ -1,51 +1,48 @@
 # NEXT_TASK.md
 
-Status: DONE
+Status: READY
 
-Task: R3-9F_HUMAN_CLIP_REVIEW_DECISION_APPLY
+Task: R3-9G_REGENERATION_STRATEGY_FOR_REVIEW_NOTES
 
-Title: Human Clip Review Decision Apply
+Title: Regeneration Strategy For Review Notes
 
 Priority: P0
 
-Lane: Human Clip Review Decision Apply
+Lane: Regeneration Strategy
 
 Project: AI Video Production Workspace Three Route Plan
 
-Depends on: R3-9E_RUNNINGHUB_GENERATED_CLIP_REVIEW_PREP
+Depends on: R3-9F_HUMAN_CLIP_REVIEW_DECISION_APPLY
 
-## Result
+## Goal
 
-PASS_REVIEW_DECISIONS_APPLIED
+Prepare a local regeneration strategy for the three `regenerate_requested` shots without calling providers.
 
-## Completed
+## Required Work
 
-- claimed_by: Codex R3-9F decision apply
-- run_id: codex-20260708-160441-r3-9f
-- claimed_at: 2026-07-08T16:04:41+08:00
-- completed_by: Codex R3-9F decision apply
-- completed_at: 2026-07-08T16:11:25+08:00
-- commit: 05c5c90
+- Parse `data/reports/r3_9f_human_clip_review_decision_apply_result.json` as the source of truth.
+- Include only `SHOT_001`, `SHOT_003`, and `SHOT_004` as regeneration candidates.
+- Convert Jenn's Chinese review notes into revised action constraints, prompt guidance, negative constraints, and risk notes.
+- Draft a future bounded RunningHub regeneration authorization plan without executing it.
+- Exclude `SHOT_002`; it belongs to `R3-9H_SHOT_002_REPLACEMENT_DECISION`.
 
-## Decision Apply
+## Acceptance
 
-- report: data/reports/r3_9f_human_clip_review_decision_apply_result.json
-- source_table: data/reports/r3_9e_runninghub_generated_clip_review_table.md
-- applied_decision_count: 4
-- decision_summary: accept=0, reject=1, regenerate_requested=3
-- local_blocker_count: 0
-- local_app_review_state_mutated: true
-- local_generation_receipt_backfilled: true
+- `SHOT_001` strategy addresses food picked from lunchbox and brought to mouth, not picking up the lunchbox.
+- `SHOT_003` strategy addresses realistic cap fold and fabric behavior when pulled.
+- `SHOT_004` strategy addresses physically plausible cap lighting and shadow realism.
+- Each candidate has revised prompt guidance, negative constraints, source keyframe/artifact reference, `duration_seconds=6`, and future output directory plan.
+- Budget draft is bounded to `max_upload_calls_total=3` and `max_submit_calls_total=3`, one upload and one submit per candidate, no retry, no second submit, no batch expansion, and no Runway fallback.
+- Report records `network_call_attempted=false`, `runninghub_called=false`, `runway_called=false`, `provider_credits_consumed=false`, `real_video_generated=false`, `regeneration_performed=false`, `secret_values_exposed=false`.
 
 ## Validation
 
-- JSON parse for generated decision-apply report: PASS
-- `npm run r3:9f:apply-review`: PASS
-- `npm run typecheck`: PASS
-- `npm run test:m1`: PASS
-- `npm run secret:scan`: PASS
-- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+- JSON parse for generated regeneration strategy report
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
 
-## Boundary
+## Stop Reason
 
-No provider call, regeneration, batch expansion, final assembly, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+Strategy only. Do not call providers, execute regeneration, assemble final video, overwrite source assets, push, tag, release, or deploy.
