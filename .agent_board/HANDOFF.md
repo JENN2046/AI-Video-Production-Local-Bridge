@@ -1,14 +1,26 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260708-162230-r3-9g-r3-9h-queue-arrangement
-Last result: R3-9G and R3-9H queued after review decisions
+Last run: codex-20260708-172325-r3-9i-queue-arrangement
+Last result: R3-9I queued for RunningHub regeneration authorization prep
 
 ## Current state
 
-Current task: R3-9G_REGENERATION_STRATEGY_FOR_REVIEW_NOTES
+Current task: R3-9I_RUNNINGHUB_REGENERATION_AUTHORIZATION_PREP
 Current status: READY
 Current owner: None
+
+## R3-9I queue arrangement
+
+Arranged at: 2026-07-08T17:23:25+08:00
+Result: READY_TASK_QUEUED
+
+- `R3-9I_RUNNINGHUB_REGENERATION_AUTHORIZATION_PREP` is loaded into `NEXT_TASK` as `READY`.
+- R3-9I depends on completed `R3-9H_SHOT_002_REPLACEMENT_DECISION`.
+- R3-9I combines R3-9G's regeneration strategy for `g0_r1_shot_001`, `g0_r1_shot_003`, and `g0_r1_shot_004` with R3-9H's same-keyframe repair recommendation for `g0_r1_shot_002`.
+- Required output: `data/reports/r3_9i_runninghub_regeneration_authorization_prep_result.json`.
+- Budget boundary for the future live task: 4 shots, 6 seconds each, max 4 uploads and 4 submits total, one upload and one submit per shot, no retry, no second submit, no Runway fallback, no batch expansion, stop on first upload or submit failure.
+- R3-9I is local authorization prep only. No `.env` or credential read, RunningHub/Runway call, media upload, provider submit, status poll, provider output download, regeneration execution, final assembly, source overwrite, push, tag, release, or deploy is allowed.
 
 ## R3-9G / R3-9H queue arrangement
 

@@ -1,40 +1,60 @@
 # NEXT_TASK.md
 
-Status: DONE
+Status: READY
 
-Task: R3-9H_SHOT_002_REPLACEMENT_DECISION
+Task: R3-9I_RUNNINGHUB_REGENERATION_AUTHORIZATION_PREP
 
-Title: SHOT 002 Replacement Decision
+Title: RunningHub Regeneration Authorization Prep
 
-Priority: P1
+Priority: P0
 
-Lane: Rejected Shot Decision
+Lane: RunningHub Regeneration Authorization Prep
 
 Project: AI Video Production Workspace Three Route Plan
 
-Depends on: R3-9G_REGENERATION_STRATEGY_FOR_REVIEW_NOTES
-
-## Claim
-
-- claimed_by: Codex R3-9H shot 002 decision
-- run_id: codex-20260708-164524-r3-9h
-- claimed_at: 2026-07-08T16:45:24+08:00
+Depends on: R3-9H_SHOT_002_REPLACEMENT_DECISION
 
 ## Goal
 
-Decide the safe local next path for rejected `g0_r1_shot_002` before any final assembly or provider regeneration.
+Prepare a local-only, auditable RunningHub regeneration authorization package for the four rejected or regeneration-requested clips before any paid live execution.
 
 ## Required Work
 
-- Parse `data/reports/r3_9f_human_clip_review_decision_apply_result.json` as the source of truth.
-- Focus only on `g0_r1_shot_002` and Jenn's reject note.
-- Compare rework, replace, and remove/resequence paths.
-- Record tradeoffs, blocker status, and a recommended next path.
-- Do not call providers, execute regeneration, mutate the frozen storyboard package, assemble final video, or overwrite source assets.
+- Parse `data/reports/r3_9f_human_clip_review_decision_apply_result.json`, `data/reports/r3_9g_regeneration_strategy_for_review_notes_result.json`, and `data/reports/r3_9h_shot_002_replacement_decision_result.json` as the source of truth.
+- Build exactly one 4-shot regeneration authorization plan for `g0_r1_shot_001`, `g0_r1_shot_002`, `g0_r1_shot_003`, and `g0_r1_shot_004`.
+- Use R3-9G revised strategy for SHOT_001, SHOT_003, and SHOT_004.
+- Use R3-9H same-keyframe repair recommendation for SHOT_002.
+- Record each shot's source storyboard image artifact, rejected generated clip artifact, revised prompt guidance, revised negative constraints, provider settings, output directory, and review focus.
+- Draft a future exact authorization phrase for a later live RunningHub task.
+- Do not read env files or credentials, call providers, upload media, submit jobs, poll status, download provider outputs, regenerate clips, batch-expand, assemble final video, mutate the frozen storyboard package, or overwrite source assets.
+
+## Shot Requirements
+
+- SHOT_001: food must be picked from inside the lunchbox and brought to the mouth; the lunchbox stays on the table.
+- SHOT_002: use the same storyboard image artifact; forbid sighing, unhappy expression, slumped posture, disappointment, fatigue, and product-negative mood.
+- SHOT_003: cap folds must become shallower and fabric must respond realistically to pull direction.
+- SHOT_004: cap lighting, shadow direction, fabric texture, and contact shadow must remain physically consistent.
+
+## Budget Boundary
+
+- provider: `runninghub`
+- route: `rhart-video-g/image-to-video`
+- duration: `6` seconds per shot
+- aspectRatio: `9:16`
+- resolution: `480p`
+- max_upload_calls_total: `4`
+- max_submit_calls_total: `4`
+- max_upload_calls_per_shot: `1`
+- max_submit_calls_per_shot: `1`
+- no retry
+- no second submit
+- no Runway fallback
+- no batch expansion
+- stop on first upload or submit failure
 
 ## Validation
 
-- JSON parse for generated SHOT_002 decision report
+- JSON parse for generated R3-9I authorization prep report
 - `npm run typecheck`
 - `npm run test:m1`
 - `npm run secret:scan`
@@ -42,14 +62,4 @@ Decide the safe local next path for rejected `g0_r1_shot_002` before any final a
 
 ## Boundary
 
-Decision only. Do not call providers, execute regeneration, assemble final video, mutate storyboard package, overwrite source assets, push, tag, release, or deploy.
-
-## Result
-
-- completed_by: Codex R3-9H shot 002 decision
-- completed_at: 2026-07-08T16:51:32+08:00
-- result: PASS_SHOT_002_DECISION_READY
-- validation_result: PASS
-- report: data/reports/r3_9h_shot_002_replacement_decision_result.json
-- recommended_next_path: R3-9I_SHOT_002_SAME_KEYFRAME_REGENERATION_PREP
-- commit: d20e63f
+Authorization prep only. No env or credential read, provider call, regeneration execution, final assembly, storyboard package mutation, source overwrite, push, tag, release, or deploy.

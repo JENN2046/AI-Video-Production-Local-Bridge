@@ -2977,3 +2977,60 @@ Decide the safe local next path for rejected `g0_r1_shot_002` before any final a
 - Confirmed final assembly remains blocked because there are zero accepted clips and SHOT_002 remains unresolved.
 - Validation passed: JSON parse, `npm run r3:9h:decision`, `npm run typecheck`, `npm run test:m1`, `npm run secret:scan`, `git diff --check` with CRLF warnings only.
 - No provider call, regeneration execution, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+
+## R3-9I_RUNNINGHUB_REGENERATION_AUTHORIZATION_PREP - RunningHub Regeneration Authorization Prep
+
+status: READY
+priority: P0
+lane: RunningHub Regeneration Authorization Prep
+project: AI Video Production Workspace Three Route Plan
+scope: prepare one coherent local authorization package for regenerating all 4 revision_needed shots through the RunningHub primary lane
+branch: local-only
+depends_on: R3-9H_SHOT_002_REPLACEMENT_DECISION
+source_plan: R3-9F human review decisions plus R3-9G regeneration strategy and R3-9H SHOT_002 decision
+report_path: data/reports/r3_9i_runninghub_regeneration_authorization_prep_result.json
+allowed_delivery: authorization_prep_report,4_shot_regeneration_dry_run_plan,budget_boundary,exact_authorization_phrase_draft,task_board_update,local_commit
+blocked_delivery: env_file_read,credential_read,runninghub_call,runway_call,media_upload_to_provider,provider_submit,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,regeneration_execution,batch_expansion,final_assembly,storyboard_package_mutation,source_overwrite,secret_value_output,raw_provider_payload_recording,signed_url_recording,push,tag,release,deploy
+created_at: 2026-07-08T17:23:25+08:00
+updated_at: 2026-07-08T17:23:25+08:00
+
+### Goal
+
+Prepare a local-only, auditable RunningHub regeneration authorization package for the four rejected or regeneration-requested clips before any paid live execution.
+
+### Required Work
+
+- Parse `data/reports/r3_9f_human_clip_review_decision_apply_result.json`, `data/reports/r3_9g_regeneration_strategy_for_review_notes_result.json`, and `data/reports/r3_9h_shot_002_replacement_decision_result.json` as the source of truth.
+- Build exactly one 4-shot regeneration authorization plan for `g0_r1_shot_001`, `g0_r1_shot_002`, `g0_r1_shot_003`, and `g0_r1_shot_004`.
+- Use R3-9G revised strategy for SHOT_001, SHOT_003, and SHOT_004.
+- Use R3-9H same-keyframe repair recommendation for SHOT_002.
+- Record each shot's source storyboard image artifact, rejected generated clip artifact, revised prompt guidance, revised negative constraints, provider settings, output directory, and review focus.
+- Draft a future exact authorization phrase for a later live RunningHub task.
+- Do not read env files or credentials, call providers, upload media, submit jobs, poll status, download provider outputs, regenerate clips, batch-expand, assemble final video, mutate the frozen storyboard package, or overwrite source assets.
+
+### Acceptance
+
+- Plan includes exactly 4 shots: `g0_r1_shot_001`, `g0_r1_shot_002`, `g0_r1_shot_003`, and `g0_r1_shot_004`.
+- SHOT_001 plan preserves the lunchbox on the table and requires food to be picked from inside the lunchbox and brought to the mouth.
+- SHOT_002 plan uses the same storyboard image artifact and explicitly forbids sighing, unhappy expression, slumped posture, disappointment, fatigue, or product-negative mood.
+- SHOT_003 plan requires realistic cap fold behavior where folds become shallower and fabric responds to pull direction.
+- SHOT_004 plan requires physically consistent cap lighting, shadow direction, fabric texture, and contact shadow.
+- Each shot records source storyboard image artifact id, rejected generated clip artifact id, revised prompt guidance, revised negative constraints, `duration_seconds=6`, `aspectRatio=9:16`, `resolution=480p`, and isolated output directory.
+- Budget boundary records `max_upload_calls_total=4`, `max_submit_calls_total=4`, max one upload and one submit per shot, no retry, no second submit, no Runway fallback, no batch expansion, and stop-on-first upload or submit failure.
+- Report includes a future exact authorization phrase draft but does not execute it.
+- Report states final assembly remains blocked until regenerated clips are reviewed and accepted by a later human review task.
+- Report records `network_call_attempted=false`, `runninghub_called=false`, `runway_called=false`, `credentials_read=false`, `env_files_read=false`, `provider_credits_consumed=false`, `real_video_generated=false`, `regeneration_performed=false`, `final_assembly_performed=false`, `source_assets_overwritten=false`, `secret_values_exposed=false`.
+
+### Validation
+
+- JSON parse for generated R3-9I authorization prep report
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Boundary
+
+- Authorization prep only.
+- No `.env` or credential read.
+- No RunningHub/Runway call, media upload, provider submit, status poll, provider output download, provider credit consumption, real video generation, regeneration execution, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy.
