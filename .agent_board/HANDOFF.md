@@ -545,6 +545,6 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - Verified all 4 accepted regenerated clips are active local `generated_clip` video artifacts with ffprobe `PASS`.
 - Assembly input manifest order: `g0_r1_shot_001`, `g0_r1_shot_002`, `g0_r1_shot_003`, `g0_r1_shot_004`.
 - Final assembly was not executed and no final video was written.
-- R3-9M local implementation commit: `PENDING_LOCAL_COMMIT`.
+- R3-9M local implementation commit: `9cade90`.
 - No provider call, regeneration, batch expansion, final assembly, final video write, `.env` or credential read, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
 - Next safe task: `R3-9N_FINAL_VIDEO_ASSEMBLY_DRY_RUN`.

@@ -1927,5 +1927,5 @@ Notes:
 - Accepted artifacts are active `generated_clip` video artifacts with local MP4 files and ffprobe `PASS`.
 - Built deterministic assembly input manifest in storyboard order `1,2,3,4`.
 - Final assembly was not executed and no final video was written.
-- R3-9M local implementation commit: `PENDING_LOCAL_COMMIT`.
+- R3-9M local implementation commit: `9cade90`.
 - No provider call, regeneration, batch expansion, final assembly, final video write, `.env` or credential read, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.

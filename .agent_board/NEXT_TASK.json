@@ -84,7 +84,7 @@
     "data/reports/r3_9m_final_assembly_readiness_check_result.json",
     "data/reports/r3_9m_assembly_input_manifest.json"
   ],
-  "commit": null,
+  "commit": "9cade90",
   "delivery": "local_readiness_check_only",
   "boundary_or_safety_stop": "readiness check only; no provider call, regeneration execution, final assembly, env or credential read, source overwrite, push, tag, release, or deploy",
   "blocked_reason": null,

@@ -258,7 +258,7 @@
   "git_receipt": {
     "repo": true,
     "branch": "master",
-    "commit": "PENDING_LOCAL_COMMIT",
+    "commit": "9cade90",
     "task": "R3-9M_FINAL_ASSEMBLY_READINESS_CHECK",
     "push": false,
     "pr": null,
