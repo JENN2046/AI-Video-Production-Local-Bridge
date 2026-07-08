@@ -258,6 +258,43 @@ test("M1 RunningHub upload-first request builders stay offline and sanitized", (
   assert.equal(/Bearer\s+[A-Za-z0-9._~+/=-]{8,}/.test(serializedSummaries), false);
 });
 
+test("M1 RunningHub primary lane planning uses 6 second provider minimum without credentials", () => {
+  const configs = listProviderConfigs();
+  const runningHub = configs.find((config) => config.provider_name === "runninghub");
+  const runway = configs.find((config) => config.provider_name === "runway");
+  assert.equal(runningHub?.primary, true);
+  assert.equal(runningHub?.status, "primary_real_provider");
+  assert.equal(runningHub?.required_for_m1_pass, true);
+  assert.equal(runway?.primary, false);
+  assert.equal(runway?.status, "secondary_selectable_provider_port");
+
+  const artifact = fakeStoryboardArtifact();
+  const appShotDurations = [3, 4, 5, 6];
+  for (const appDuration of appShotDurations) {
+    const providerDuration = Math.max(appDuration, RUNNINGHUB_MIN_DURATION_SECONDS);
+    const submit = buildRunningHubImageToVideoSubmitRequest({
+      generation_input: {
+        storyboard_artifact: artifact,
+        video_prompt: "Animate portrait shot.",
+        negative_prompt: "blur",
+        duration_seconds: providerDuration,
+        aspect_ratio: "9:16",
+        resolution: "480p"
+      },
+      uploaded_download_url: RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER
+    });
+
+    assert.equal(providerDuration, RUNNINGHUB_MIN_DURATION_SECONDS);
+    assert.equal(submit.ok, true);
+    if (!submit.ok) return;
+    assert.equal(submit.summary.duration, RUNNINGHUB_MIN_DURATION_SECONDS);
+    assert.equal(submit.summary.image_url_values_included, false);
+    assert.equal(submit.summary.raw_provider_payload_included, false);
+    assert.equal(submit.summary.auth.credential_value_included, false);
+    assert.equal(submit.summary.auth.authorization_value_included, false);
+  }
+});
+
 test("M1 RunningHub synthetic response parsers cover upload, submit, and query outputs", () => {
   const upload = parseRunningHubMediaUploadResponse({
     data: {

@@ -1,14 +1,27 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260708-120229-r3-9-queue-arrangement
-Last result: R3-9A and R3-9B queued after provider path closeout
+Last run: codex-20260708-120613-r3-9a
+Last result: R3-9A RunningHub primary lane wiring dry-run completed
 
 ## Current state
 
-Current task: R3-9A_RUNNINGHUB_PRIMARY_LANE_WIRING_DRY_RUN
-Current status: READY
+Current task: none
+Current status: EMPTY
 Current owner: None
+
+## R3-9A RunningHub primary lane wiring dry-run
+
+Completed at: 2026-07-08T12:11:19+08:00
+Result: PASS_PRIMARY_LANE_WIRED_DRY_RUN
+Report: `data/reports/r3_9a_runninghub_primary_lane_wiring_dry_run_result.json`
+
+- Added `npm run r3:9a:dry-run`.
+- RunningHub is selected as the M1 primary provider planning lane; Runway remains secondary/fallback-only.
+- RunningHub upload-first planning is explicit: local media artifact -> upload request plan -> submit request plan -> query/download readiness.
+- RunningHub provider duration planning uses minimum `6` seconds before any upload or submit could occur; the current 3/4/5 second package shot durations are preserved as app durations but lifted to provider duration `6` in the dry-run plan.
+- Package-level dry-run planning is `SUPPORTED` for 4 shots behind authorization gates.
+- No credentials, `.env` files, RunningHub call, Runway call, provider credit consumption, real video generation, source overwrite, push, tag, release, or deploy occurred.
 
 ## R3-9 queue arrangement
 

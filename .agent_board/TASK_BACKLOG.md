@@ -2433,7 +2433,7 @@ Close the provider-selection loop after Enterprise Key RunningHub canary evidenc
 
 ## R3-9A_RUNNINGHUB_PRIMARY_LANE_WIRING_DRY_RUN - RunningHub Primary Lane Wiring Dry Run
 
-status: READY
+status: DONE
 priority: P1
 lane: Provider Primary Lane Dry Run
 project: AI Video Production Workspace Three Route Plan
@@ -2445,7 +2445,15 @@ report_path: data/reports/r3_9a_runninghub_primary_lane_wiring_dry_run_result.js
 allowed_delivery: source_code_change,dry_run_script,test_update,decision_report,task_board_update,local_commit
 blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,credentials_read,secret_value_output,raw_provider_payload_recording,signed_url_recording,source_overwrite,push,tag,release,deploy,production_credentials_change
 created_at: 2026-07-08T12:02:29+08:00
-updated_at: 2026-07-08T12:02:29+08:00
+updated_at: 2026-07-08T12:11:19+08:00
+claimed_by: Codex R3-9A primary lane dry-run
+claim_run_id: codex-20260708-120613-r3-9a
+claimed_at: 2026-07-08T12:06:13+08:00
+completed_by: Codex R3-9A primary lane dry-run
+completed_at: 2026-07-08T12:11:19+08:00
+result: PASS_PRIMARY_LANE_WIRED_DRY_RUN
+validation_result: PASS
+commit: PENDING_IN_CURRENT_TASK_COMMIT
 
 ### Goal
 
@@ -2476,6 +2484,17 @@ Wire and verify the local primary-provider planning path for RunningHub without 
 - `npm run test:m1`
 - `npm run secret:scan`
 - `git diff --check`
+
+### Result
+
+- Added `npm run r3:9a:dry-run`.
+- Generated `data/reports/r3_9a_runninghub_primary_lane_wiring_dry_run_result.json`.
+- Primary provider selection resolves to `runninghub`.
+- Runway remains secondary/fallback-only.
+- Package-level dry-run planning is `SUPPORTED` for 4 shots.
+- Provider duration planning uses minimum `6` seconds before any upload/submit could occur.
+- Validation passed: `npm run typecheck`, `npm run test:m1`, `npm run secret:scan`, `git diff --check` with CRLF warnings only.
+- No credentials, `.env` files, provider calls, source overwrite, push, tag, release, or deploy occurred.
 
 ## R3-9B_STORYBOARD_PACKAGE_TO_RUNNINGHUB_GENERATION_PLAN - Storyboard Package To RunningHub Generation Plan
 

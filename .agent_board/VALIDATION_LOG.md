@@ -1504,3 +1504,35 @@ Notes:
 - `npm run secret:scan` passed.
 - `git diff --check` passed with CRLF normalization warnings only.
 - No RunningHub call, Runway call, upload, submit, query, output download, provider credit consumption, real video generation, secret output, raw provider payload recording, signed URL recording, source overwrite, push, tag, release, or deploy occurred during this closeout.
+
+### R3-9A - 2026-07-08T12:11:19+08:00
+
+Commands:
+
+```bash
+npm run r3:9a:dry-run
+npm run typecheck
+npm run test:m1
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_PRIMARY_LANE_WIRED_DRY_RUN
+```
+
+Evidence:
+- `data/reports/r3_9a_runninghub_primary_lane_wiring_dry_run_result.json`
+- `data/reports/r3_8k_provider_path_decision_closeout.json`
+- `data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_result.json`
+- `data/reports/secret_scan_result.json`
+
+Notes:
+- Primary provider selection resolves to RunningHub.
+- Runway remains secondary/fallback-only.
+- Package-level plan is supported for 4 shots with provider duration minimum `6`.
+- `npm run typecheck`, `npm run test:m1`, and `npm run secret:scan` passed.
+- `git diff --check` passed with CRLF normalization warnings only.
+- No credentials, `.env` files, provider call, provider credit consumption, real video generation, source overwrite, push, tag, release, or deploy occurred.

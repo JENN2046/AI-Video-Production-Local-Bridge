@@ -1,6 +1,6 @@
 # NEXT_TASK.md
 
-Status: READY
+Status: DONE
 
 Task: R3-9A_RUNNINGHUB_PRIMARY_LANE_WIRING_DRY_RUN
 
@@ -46,3 +46,18 @@ Wire and verify the local primary-provider planning path for RunningHub without 
 ## Stop Reason
 
 Dry-run only. Do not run any provider, credential-read, push, tag, release, or deploy action.
+
+## Claim
+
+- claimed_by: Codex R3-9A primary lane dry-run
+- claim_run_id: codex-20260708-120613-r3-9a
+- claimed_at: 2026-07-08T12:06:13+08:00
+
+## Result
+
+- result: PASS_PRIMARY_LANE_WIRED_DRY_RUN
+- completed_by: Codex R3-9A primary lane dry-run
+- completed_at: 2026-07-08T12:11:19+08:00
+- evidence: data/reports/r3_9a_runninghub_primary_lane_wiring_dry_run_result.json
+- validation: PASS
+- commit: PENDING_IN_CURRENT_TASK_COMMIT

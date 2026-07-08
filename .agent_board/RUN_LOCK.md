@@ -40,6 +40,9 @@ last_completed_r3_8o_receipt_fix_r1_at: 2026-07-08T11:40:34+08:00
 last_completed_r3_8k_run_id: codex-20260708-115033-r3-8k-closeout
 last_completed_r3_8k_task: R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT
 last_completed_r3_8k_at: 2026-07-08T11:53:48+08:00
+last_completed_r3_9a_run_id: codex-20260708-120613-r3-9a
+last_completed_r3_9a_task: R3-9A_RUNNINGHUB_PRIMARY_LANE_WIRING_DRY_RUN
+last_completed_r3_9a_at: 2026-07-08T12:11:19+08:00
 
 ## Rules
 

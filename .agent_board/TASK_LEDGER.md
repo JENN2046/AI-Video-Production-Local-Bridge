@@ -2205,6 +2205,67 @@ Next:
 - No READY task remains in the local queue.
 - Any next live provider call requires a new exact current Jenn authorization phrase.
 
+### 2026-07-08T12:11:19+08:00 - R3-9A RunningHub Primary Lane Wiring Dry Run
+
+Result: DONE / PASS_PRIMARY_LANE_WIRED_DRY_RUN
+Project: AI Video Production Workspace Three Route Plan
+Lane: Provider Primary Lane Dry Run
+Claimed by: Codex R3-9A primary lane dry-run
+Completed by: Codex R3-9A primary lane dry-run
+Run ID: codex-20260708-120613-r3-9a
+Started at: 2026-07-08T12:06:13+08:00
+Completed at: 2026-07-08T12:11:19+08:00
+
+Scope:
+- Added a local RunningHub primary-lane dry-run script.
+- Generated single-shot and package-level upload-first plans behind authorization gates.
+- Verified RunningHub as the primary M1 planning lane and Runway as secondary/fallback-only.
+- Enforced provider duration minimum `6` before upload/submit planning.
+
+Changed files:
+- package.json
+- scripts/r3-9a-runninghub-primary-lane-wiring-dry-run.ts
+- tests/m1-provider-boundary.test.ts
+- data/reports/r3_9a_runninghub_primary_lane_wiring_dry_run_result.json
+- .agent_board/NEXT_TASK.json
+- .agent_board/NEXT_TASK.md
+- .agent_board/RUN_LOCK.md
+- .agent_board/TASK_BACKLOG.md
+- .agent_board/HANDOFF.md
+- .agent_board/VALIDATION_LOG.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: npm run r3:9a:dry-run
+  result: PASS
+- command: npm run typecheck
+  result: PASS
+- command: npm run test:m1
+  result: PASS
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_9a_runninghub_primary_lane_wiring_dry_run_result.json
+- data/reports/r3_8k_provider_path_decision_closeout.json
+- data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_result.json
+- data/reports/secret_scan_result.json
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: pending
+- push: no
+- PR: none
+
+Boundary:
+- No RunningHub call, Runway call, media upload to provider, status query, output download, provider credit consumption, real video generation, credentials read, `.env` read, secret output, raw provider payload recording, signed URL recording, source overwrite, push, tag, release, or deploy occurred.
+
+Next:
+- R3-9B is eligible after R3-9A commit and can be auto-loaded next.
+
 ### 2026-07-08T10:51:49+08:00 - R3-8M Receipt Fix
 
 Result: DONE / PASS_RECEIPT_FIXED
