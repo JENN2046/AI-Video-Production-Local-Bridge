@@ -2068,11 +2068,12 @@ Validation:
 Evidence:
 - data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json
 - git commit: 1f68c36
+- receipt fix commit: 590f7fd
 
 Git delivery:
 - repo: yes
 - branch: master
-- commit: pending_at_ledger_write
+- commit: 590f7fd
 - push: no
 - PR: none
 
@@ -2130,11 +2131,65 @@ Evidence:
 - data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json
 - data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json
 - data/reports/secret_scan_result.json
+- git commit: 18f0d90
 
 Git delivery:
 - repo: yes
 - branch: master
-- commit: pending_at_ledger_write
+- commit: 18f0d90
+- push: no
+- PR: none
+
+Boundary:
+- No RunningHub call, Runway call, media upload to provider, status query, output download, provider credit consumption, real video generation, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
+
+Next:
+- Stop at `R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY` until Jenn provides a fresh exact current authorization phrase with `duration_seconds=6`.
+
+### 2026-07-08T10:16:15+08:00 - R3-8L Receipt Fix R1
+
+Result: DONE / PASS_RECEIPT_FIXED
+Project: AI Video Production Workspace Three Route Plan
+Lane: Provider Evidence Receipt
+Claimed by: Codex R3-8L receipt fixer R1
+Completed by: Codex R3-8L receipt fixer R1
+Run ID: codex-20260708-101350-r3-8l-receipt-fix-r1
+Started at: 2026-07-08T10:13:50+08:00
+Completed at: 2026-07-08T10:16:15+08:00
+
+Scope:
+- Backfilled R3-8J receipt-fix commit `590f7fd`.
+- Backfilled R3-8L duration-contract repair commit `18f0d90`.
+- Kept R3-8M as `FOLLOW_UP` and dependent on `R3-8L_RECEIPT_FIX_R1`.
+
+Changed files:
+- data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json
+- data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json
+- .agent_board/NEXT_TASK.json
+- .agent_board/NEXT_TASK.md
+- .agent_board/RUN_LOCK.md
+- .agent_board/TASK_BACKLOG.md
+- .agent_board/HANDOFF.md
+- .agent_board/VALIDATION_LOG.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: node -e JSON.parse(...)
+  result: PASS
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json
+- data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json
+- data/reports/secret_scan_result.json
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: pending_at_task_state_write
 - push: no
 - PR: none
 

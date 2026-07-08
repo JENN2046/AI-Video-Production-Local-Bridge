@@ -132,6 +132,21 @@
     "tag_created": false,
     "release_or_deploy_performed": false
   },
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "18f0d90",
+    "task": "R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  },
+  "source_receipts": {
+    "r3_8j_live_canary_commit": "1f68c36",
+    "r3_8j_receipt_fix_commit": "590f7fd",
+    "r3_8l_duration_contract_repair_commit": "18f0d90"
+  },
   "acceptance": {
     "r3_8j_failure_receipt_complete": true,
     "duration_3_blocked_before_upload_or_submit": true,

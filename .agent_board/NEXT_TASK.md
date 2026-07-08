@@ -1,6 +1,6 @@
 # NEXT_TASK.md
 
-Status: READY
+Status: DONE
 
 Task: R3-8L_RECEIPT_FIX_R1
 
@@ -43,3 +43,23 @@ Repair the local audit chain after R3-8J receipt fix and R3-8L duration-contract
 ## Stop Reason
 
 Stop before `R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY`. Any live RunningHub upload, submit, status query, output download, provider credit consumption, or real video generation requires a fresh exact current Jenn authorization phrase with `duration_seconds=6`.
+
+## Claim
+
+- claimed_by: Codex R3-8L receipt fixer R1
+- claim_run_id: codex-20260708-101350-r3-8l-receipt-fix-r1
+- claimed_at: 2026-07-08T10:13:50+08:00
+
+## Result
+
+`PASS_RECEIPT_FIXED`
+
+## Completed Work
+
+- Backfilled R3-8J receipt-fix commit `590f7fd`.
+- Backfilled R3-8L duration-contract repair commit `18f0d90`.
+- Confirmed R3-8M remains `FOLLOW_UP` and depends on `R3-8L_RECEIPT_FIX_R1`.
+
+## Completed At
+
+2026-07-08T10:16:15+08:00

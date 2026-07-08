@@ -1992,7 +1992,7 @@ Run exactly one live RunningHub canary under Jenn's fresh exact authorization ph
 
 ## R3-8J_RECEIPT_FIX - R3-8J RunningHub Duration Failure Receipt Fix
 
-status: IN_PROGRESS
+status: DONE
 priority: P0
 lane: Provider Evidence Receipt
 project: AI Video Production Workspace Three Route Plan
@@ -2011,6 +2011,10 @@ claimed_by: Codex R3-8J receipt fixer
 completed_at: 2026-07-07T18:23:37+08:00
 completed_by: Codex R3-8J receipt fixer
 result: PASS_RECEIPT_FIXED
+validation_result: PASS
+evidence: data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json
+delivery: local_only
+commit: 590f7fd
 
 ### Goal
 
@@ -2056,6 +2060,7 @@ result: PASS_DURATION_CONTRACT_REPAIRED
 validation_result: PASS
 evidence: data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json
 delivery: local_only
+commit: 18f0d90
 
 ### Goal
 
@@ -2078,7 +2083,7 @@ Update the local RunningHub contract so `duration_seconds < 6` fails before uplo
 
 ## R3-8L_RECEIPT_FIX_R1 - R3-8L Receipt Fix R1
 
-status: READY
+status: DONE
 priority: P0
 lane: Provider Evidence Receipt
 project: AI Video Production Workspace Three Route Plan
@@ -2090,7 +2095,17 @@ report_path: data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_resu
 allowed_delivery: receipt_metadata_update,task_board_update,local_commit
 blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,secret_value_output,raw_provider_payload_recording,source_overwrite,push,tag,release,deploy
 created_at: 2026-07-08T09:55:24+08:00
-updated_at: 2026-07-08T09:55:24+08:00
+updated_at: 2026-07-08T10:13:50+08:00
+claimed_by: Codex R3-8L receipt fixer R1
+claim_run_id: codex-20260708-101350-r3-8l-receipt-fix-r1
+claimed_at: 2026-07-08T10:13:50+08:00
+completed_by: Codex R3-8L receipt fixer R1
+completed_at: 2026-07-08T10:16:15+08:00
+result: PASS_RECEIPT_FIXED
+validation_result: PASS
+evidence: data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json,data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json
+delivery: local_only
+commit: pending_at_task_state_write
 
 ### Goal
 

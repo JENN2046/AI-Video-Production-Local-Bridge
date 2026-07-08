@@ -1266,6 +1266,33 @@ Notes:
 - No RunningHub call, Runway call, upload, submit, query, output download, provider credit consumption, real video generation, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
 - `git diff --check` passed with CRLF normalization warnings only.
 
+### R3-8L-RECEIPT-FIX-R1 - 2026-07-08T10:16:15+08:00
+
+Commands:
+
+```bash
+node -e JSON.parse(...)
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_RECEIPT_FIXED
+```
+
+Evidence:
+- `data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json`
+- `data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json`
+- `data/reports/secret_scan_result.json`
+
+Notes:
+- Backfilled R3-8J receipt-fix commit `590f7fd`.
+- Backfilled R3-8L duration-contract repair commit `18f0d90`.
+- Confirmed R3-8M remains `FOLLOW_UP` and depends on `R3-8L_RECEIPT_FIX_R1`.
+- No RunningHub call, Runway call, upload, submit, query, output download, provider credit consumption, real video generation, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
+
 ### R3-8J - 2026-07-07T17:46:23+08:00
 
 Commands:

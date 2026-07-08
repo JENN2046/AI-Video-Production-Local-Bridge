@@ -19,6 +19,9 @@ last_completed_receipt_at: 2026-07-07T18:23:37+08:00
 last_completed_duration_contract_run_id: codex-20260707-182633-r3-8l
 last_completed_duration_contract_task: R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN
 last_completed_duration_contract_at: 2026-07-07T18:31:23+08:00
+last_completed_receipt_r1_run_id: codex-20260708-101350-r3-8l-receipt-fix-r1
+last_completed_receipt_r1_task: R3-8L_RECEIPT_FIX_R1
+last_completed_receipt_r1_at: 2026-07-08T10:16:15+08:00
 
 ## Rules
 

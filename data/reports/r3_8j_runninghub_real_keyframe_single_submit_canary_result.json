@@ -162,6 +162,16 @@
     "tag_created": false,
     "release_or_deploy_performed": false
   },
+  "receipt_fix_git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "590f7fd",
+    "task": "R3-8J_RECEIPT_FIX",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  },
   "validation": {
     "npm run r3:8j:live": "PROVIDER_FAILED_DURATION_MIN_6",
     "npm run typecheck": "PASS",
