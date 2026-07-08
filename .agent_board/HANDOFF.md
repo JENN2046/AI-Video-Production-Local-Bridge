@@ -420,3 +420,18 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - No provider call, regeneration execution, batch expansion, final assembly, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
 - R3-9G local implementation commit: `dd5a2ba`.
 - Remaining READY task after this closeout: `R3-9H_SHOT_002_REPLACEMENT_DECISION`.
+
+## R3-9H Closeout
+
+- R3-9H completed on 2026-07-08T16:51:32+08:00 with `PASS_SHOT_002_DECISION_READY`.
+- Report: `data/reports/r3_9h_shot_002_replacement_decision_result.json`.
+- SHOT_002 generated clip artifact: `artifact_2adc2e6d-3183-47c4-8d1b-01bf80bed73f`.
+- SHOT_002 source storyboard image artifact: `artifact_9ad1bfe1-c830-458c-a413-39fd15c9d0c0`.
+- Jenn's reject reason was preserved exactly: "我不要叹气不高兴的表情，这样会让人不想购买产品".
+- Compared three safe next paths: same-keyframe prompt rework, replacement keyframe, and remove/resequence.
+- Recommended next safe local option: promote `R3-9I_SHOT_002_SAME_KEYFRAME_REGENERATION_PREP` if Jenn wants to keep the source keyframe and repair expression/mood through prompt constraints.
+- Replacement keyframe remains the fallback if Jenn rejects the current source keyframe mood.
+- Final assembly remains blocked because there are zero accepted clips and SHOT_002 remains unresolved.
+- No provider call, regeneration execution, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+- R3-9H local implementation commit: `PENDING_LOCAL_COMMIT`.
+- No eligible READY task is currently loaded after R3-9H; next work requires Jenn/Commander to promote a follow-up task.

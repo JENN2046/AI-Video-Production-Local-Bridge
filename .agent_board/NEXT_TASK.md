@@ -2,48 +2,54 @@
 
 Status: DONE
 
-Task: R3-9G_REGENERATION_STRATEGY_FOR_REVIEW_NOTES
+Task: R3-9H_SHOT_002_REPLACEMENT_DECISION
 
-Title: Regeneration Strategy For Review Notes
+Title: SHOT 002 Replacement Decision
 
-Priority: P0
+Priority: P1
 
-Lane: Regeneration Strategy
+Lane: Rejected Shot Decision
 
 Project: AI Video Production Workspace Three Route Plan
 
-Depends on: R3-9F_HUMAN_CLIP_REVIEW_DECISION_APPLY
+Depends on: R3-9G_REGENERATION_STRATEGY_FOR_REVIEW_NOTES
 
-## Result
+## Claim
 
-PASS_REGENERATION_STRATEGY_READY
+- claimed_by: Codex R3-9H shot 002 decision
+- run_id: codex-20260708-164524-r3-9h
+- claimed_at: 2026-07-08T16:45:24+08:00
 
-## Completed
+## Goal
 
-- claimed_by: Codex R3-9G regeneration strategy
-- run_id: codex-20260708-163900-r3-9g
-- claimed_at: 2026-07-08T16:39:00+08:00
-- completed_by: Codex R3-9G regeneration strategy
-- completed_at: 2026-07-08T16:42:00+08:00
-- commit: dd5a2ba
+Decide the safe local next path for rejected `g0_r1_shot_002` before any final assembly or provider regeneration.
 
-## Strategy
+## Required Work
 
-- report: data/reports/r3_9g_regeneration_strategy_for_review_notes_result.json
-- candidates: g0_r1_shot_001, g0_r1_shot_003, g0_r1_shot_004
-- excluded: g0_r1_shot_002 -> R3-9H_SHOT_002_REPLACEMENT_DECISION
-- budget_draft: max_upload_calls_total=3, max_submit_calls_total=3, no retry, no second submit, no batch expansion, no Runway fallback
-- local_blocker_count: 0
+- Parse `data/reports/r3_9f_human_clip_review_decision_apply_result.json` as the source of truth.
+- Focus only on `g0_r1_shot_002` and Jenn's reject note.
+- Compare rework, replace, and remove/resequence paths.
+- Record tradeoffs, blocker status, and a recommended next path.
+- Do not call providers, execute regeneration, mutate the frozen storyboard package, assemble final video, or overwrite source assets.
 
 ## Validation
 
-- JSON parse for generated regeneration strategy report: PASS
-- `npm run r3:9g:strategy`: PASS
-- `npm run typecheck`: PASS
-- `npm run test:m1`: PASS
-- `npm run secret:scan`: PASS
-- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+- JSON parse for generated SHOT_002 decision report
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
 
 ## Boundary
 
-No provider call, regeneration execution, batch expansion, final assembly, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+Decision only. Do not call providers, execute regeneration, assemble final video, mutate storyboard package, overwrite source assets, push, tag, release, or deploy.
+
+## Result
+
+- completed_by: Codex R3-9H shot 002 decision
+- completed_at: 2026-07-08T16:51:32+08:00
+- result: PASS_SHOT_002_DECISION_READY
+- validation_result: PASS
+- report: data/reports/r3_9h_shot_002_replacement_decision_result.json
+- recommended_next_path: R3-9I_SHOT_002_SAME_KEYFRAME_REGENERATION_PREP
+- commit: PENDING_LOCAL_COMMIT

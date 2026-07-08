@@ -1,0 +1,248 @@
+{
+  "task": "R3-9H_SHOT_002_REPLACEMENT_DECISION",
+  "result": "PASS_SHOT_002_DECISION_READY",
+  "mode": "local_decision_only",
+  "generated_at": "2026-07-08T08:50:38.505Z",
+  "source_of_truth": {
+    "primary_review_decision_report": "data/reports/r3_9f_human_clip_review_decision_apply_result.json",
+    "primary_review_decision_result": "PASS_REVIEW_DECISIONS_APPLIED",
+    "primary_review_decision_commit": "05c5c90",
+    "review_prep_report": "data/reports/r3_9e_runninghub_generated_clip_review_prep_result.json",
+    "review_prep_result": "PASS_REVIEW_PACKAGE_READY",
+    "generation_plan_report": "data/reports/r3_9b_storyboard_package_to_runninghub_generation_plan_result.json",
+    "generation_plan_result": "PASS_PACKAGE_GENERATION_PLAN_READY",
+    "regeneration_strategy_report": "data/reports/r3_9g_regeneration_strategy_for_review_notes_result.json",
+    "regeneration_strategy_result": "PASS_REGENERATION_STRATEGY_READY"
+  },
+  "shot_002_context": {
+    "shot_id": "g0_r1_shot_002",
+    "order": 2,
+    "reviewer": "Jenn",
+    "reject_reason": "我不要叹气不高兴的表情，这样会让人不想购买产品",
+    "expected_reject_reason": "我不要叹气不高兴的表情，这样会让人不想购买产品",
+    "app_decision": "revision_needed",
+    "current_state": {
+      "before": {
+        "shot_status": "storyboard_approved",
+        "accepted_clip_artifact_id": "",
+        "clip_version_count": 0
+      },
+      "after": {
+        "shot_status": "revision_needed",
+        "approval_status": "revision_needed",
+        "accepted_clip_artifact_id": "",
+        "clip_review_status": "rejected",
+        "rejection_reasons": [
+          "我不要叹气不高兴的表情，这样会让人不想购买产品"
+        ],
+        "latest_revision_instruction": {
+          "summary": "我不要叹气不高兴的表情，这样会让人不想购买产品",
+          "prompt_delta": "我不要叹气不高兴的表情，这样会让人不想购买产品",
+          "negative_delta": "",
+          "priority": "high"
+        }
+      },
+      "revision_needed": true,
+      "accepted_clip_artifact_id": "",
+      "unresolved": true
+    },
+    "generated_clip_artifact": {
+      "artifact_id": "artifact_2adc2e6d-3183-47c4-8d1b-01bf80bed73f",
+      "artifact_type": "video",
+      "role": "generated_clip",
+      "status": "active",
+      "local_mp4_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9b-runninghub-package\\02-g0_r1_shot_002\\artifact_2adc2e6d-3183-47c4-8d1b-01bf80bed73f.mp4",
+      "file_exists": true,
+      "ffprobe_status": "PASS",
+      "duration_seconds": 6.041667,
+      "provider_source": "runninghub_r3_9d_single_pass_4_shot_execution"
+    },
+    "source_storyboard_image_artifact": {
+      "artifact_id": "artifact_9ad1bfe1-c830-458c-a413-39fd15c9d0c0",
+      "artifact_type": "image",
+      "role": "storyboard_image",
+      "status": "active",
+      "source_path": "A:\\AI Video Production Workspace\\data\\imports\\g0_r1_SHOT_002_IMAGE_WEBGPT_V1.png",
+      "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_9ad1bfe1-c830-458c-a413-39fd15c9d0c0.png",
+      "source_path_exists": true,
+      "storage_uri_exists": true,
+      "source_asset_overwrite_allowed": false
+    },
+    "original_prompt_context": {
+      "shot_description": "Ryan reaches toward the work gloves and nearby gear on the lunch table.",
+      "video_prompt": "Use image as visual anchor. Add small natural hand movement toward the gloves. Keep the gray skullcap visible and stable. Maintain the same lunch table, hard hat, thermos, lunch container, worksite background, and natural daylight.",
+      "negative_prompt": "No broken hands, no extra fingers, no product drift, no text, no poster look."
+    },
+    "runninghub_contract_context": {
+      "provider": "runninghub",
+      "model_route": "rhart-video-g/image-to-video",
+      "duration_seconds": 6,
+      "aspectRatio": "9:16",
+      "resolution": "480p",
+      "no_live_call_authorized_by_this_task": true
+    }
+  },
+  "decision_options": [
+    {
+      "id": "rework_prompt_and_regenerate_same_keyframe",
+      "label": "Use the same storyboard keyframe, revise the motion/expression prompt, and prepare a future single-shot regeneration.",
+      "status": "RECOMMENDED",
+      "tradeoffs": [
+        "Directly targets Jenn's reject note because the problem is the generated emotional expression, not an invalid artifact id or broken keyframe registration.",
+        "Keeps the frozen storyboard package untouched and avoids introducing a new image provenance path.",
+        "Lowest local preparation cost before a future authorized provider call.",
+        "Residual risk: if the source keyframe itself reads unhappy, prompt-only repair may still reproduce a product-negative mood."
+      ],
+      "blockers": [
+        "Needs a future task to prepare the revised single-shot RunningHub plan.",
+        "Needs fresh exact Jenn authorization before any real provider call.",
+        "Needs later human review before final assembly."
+      ],
+      "next_task_draft": "R3-9I_SHOT_002_SAME_KEYFRAME_REGENERATION_PREP"
+    },
+    {
+      "id": "replace_storyboard_keyframe_before_generation",
+      "label": "Import a new approved SHOT_002 keyframe with neutral/positive buyer-safe expression, then prepare generation from that artifact.",
+      "status": "AVAILABLE",
+      "tradeoffs": [
+        "Best option if Jenn judges the current keyframe itself as visually unhappy, tired, or purchase-negative.",
+        "Gives strongest control over facial mood before generation.",
+        "Costs more local work: new WebGPT/keyframe import, media artifact registration, package/update decision, and a new authorization prep.",
+        "Must avoid mutating the existing frozen package silently; any replacement should be explicit and traceable."
+      ],
+      "blockers": [
+        "Requires a newly approved source image from Jenn/WebGPT.",
+        "Requires a new Media Artifact id generated by the app, not by GPT.",
+        "Requires a separate package replacement or derivative package task before provider execution."
+      ],
+      "next_task_draft": "R3-9J_SHOT_002_REPLACEMENT_KEYFRAME_IMPORT_PREP"
+    },
+    {
+      "id": "remove_or_resequence_before_final_assembly",
+      "label": "Remove SHOT_002 from the final edit or resequence around it before assembly.",
+      "status": "NOT_RECOMMENDED_NOW",
+      "tradeoffs": [
+        "Avoids spending another provider submit on SHOT_002.",
+        "May weaken the product story because SHOT_002 is the work-gear/lunch-table transition beat.",
+        "Does not solve the rejected asset; it only changes the edit plan.",
+        "Final assembly would still need accepted clips for the retained shots."
+      ],
+      "blockers": [
+        "Needs Jenn's editorial decision to drop or restructure this beat.",
+        "Needs final assembly plan revision; not safe to do implicitly from this decision report."
+      ],
+      "next_task_draft": "R3-9K_SHOT_002_REMOVE_OR_RESEQUENCE_EDIT_DECISION"
+    }
+  ],
+  "recommended_next_path": {
+    "status": "RECOMMENDED_SAFE_LOCAL_NEXT_OPTION",
+    "option_id": "rework_prompt_and_regenerate_same_keyframe",
+    "rationale": [
+      "Jenn rejected the emotional expression in the generated clip; the current local evidence does not show a broken or invalid storyboard image artifact.",
+      "Same-keyframe rework preserves provenance and avoids mutating the frozen storyboard package.",
+      "The prompt can explicitly prohibit sighing, unhappiness, dejected posture, and product-negative mood.",
+      "Replacement keyframe remains the fallback if Jenn says the source keyframe itself is the problem."
+    ],
+    "prompt_revision_draft": {
+      "shot_description": "Ryan reaches toward the work gloves and nearby gear on the lunch table.",
+      "revised_video_prompt": "Use the same storyboard image as the visual anchor. Keep Ryan neutral, focused, approachable, and product-positive. Add only small natural hand movement toward the gloves or table gear. Do not create a sigh, unhappy expression, slumped posture, disappointment, fatigue, or any emotion that makes the product feel undesirable. Keep the gray skullcap visible and stable, with the same lunch table, hard hat, thermos, lunch container, worksite background, and natural daylight.",
+      "revised_negative_constraints": [
+        "No sighing.",
+        "No unhappy, disappointed, tired, discouraged, irritated, or product-negative facial expression.",
+        "No downturned mouth, heavy exhale, drooping shoulders, or dejected posture.",
+        "No broken hands, no extra fingers, no product drift, no text, no poster look."
+      ],
+      "provider_prompt_not_submitted": true
+    },
+    "future_task_draft": {
+      "task_id": "R3-9I_SHOT_002_SAME_KEYFRAME_REGENERATION_PREP",
+      "status": "FOLLOW_UP_NOT_READY_UNTIL_PROMOTED",
+      "goal": "Prepare a single-shot RunningHub regeneration plan for SHOT_002 using the existing storyboard image artifact and the revised expression-safe prompt.",
+      "provider_call_allowed_in_prep": false,
+      "live_execution_requires_fresh_exact_authorization": true
+    }
+  },
+  "assembly_readiness": {
+    "final_assembly_status": "BLOCKED",
+    "no_accepted_clips": true,
+    "shot_002_unresolved": true,
+    "other_revision_needed_shots": [
+      "g0_r1_shot_001",
+      "g0_r1_shot_003",
+      "g0_r1_shot_004"
+    ],
+    "blocked_reasons": [
+      "R3-9F records zero accepted clips.",
+      "SHOT_002 is rejected and remains revision_needed with no accepted_clip_artifact_id.",
+      "SHOT_001, SHOT_003, and SHOT_004 still need future regeneration and human acceptance."
+    ]
+  },
+  "local_blocker_count": 0,
+  "local_blockers": [],
+  "follow_up_task_drafts": [
+    {
+      "task_id": "R3-9I_SHOT_002_SAME_KEYFRAME_REGENERATION_PREP",
+      "queue_status_recommendation": "FOLLOW_UP",
+      "purpose": "Prepare revised prompt and dry-run plan only; no provider call."
+    },
+    {
+      "task_id": "R3-9J_SHOT_002_REPLACEMENT_KEYFRAME_IMPORT_PREP",
+      "queue_status_recommendation": "FOLLOW_UP",
+      "purpose": "Use only if Jenn chooses keyframe replacement."
+    },
+    {
+      "task_id": "R3-9K_SHOT_002_REMOVE_OR_RESEQUENCE_EDIT_DECISION",
+      "queue_status_recommendation": "FOLLOW_UP",
+      "purpose": "Use only if Jenn chooses to drop or restructure SHOT_002."
+    }
+  ],
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "media_upload_to_provider": false,
+    "provider_submit": false,
+    "status_poll": false,
+    "output_download_from_provider": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "final_assembly_performed": false,
+    "storyboard_package_mutated": false,
+    "source_assets_overwritten": false,
+    "credentials_read": false,
+    "env_files_read": false,
+    "secret_values_exposed": false,
+    "raw_provider_payload_recorded": false,
+    "signed_url_recorded": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  },
+  "validation": {
+    "JSON parse for generated SHOT_002 decision report": "PASS",
+    "npm run r3:9h:decision": "PASS",
+    "npm run typecheck": "PASS",
+    "npm run test:m1": "PASS",
+    "npm run secret:scan": "PASS",
+    "git diff --check": "PASS_WITH_CRLF_WARNINGS_ONLY"
+  },
+  "changed_files": [
+    "package.json",
+    "scripts/r3-9h-shot-002-replacement-decision.ts",
+    "data/reports/r3_9h_shot_002_replacement_decision_result.json",
+    ".agent_board/*"
+  ],
+  "blocked_reason": null,
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "PENDING_LOCAL_COMMIT",
+    "task": "R3-9H_SHOT_002_REPLACEMENT_DECISION",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  }
+}

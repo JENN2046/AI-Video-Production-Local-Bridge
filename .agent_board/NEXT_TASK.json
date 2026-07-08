@@ -2,41 +2,38 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "R3-9G_REGENERATION_STRATEGY_FOR_REVIEW_NOTES",
+  "task_id": "R3-9H_SHOT_002_REPLACEMENT_DECISION",
   "status": "DONE",
-  "priority": "P0",
-  "lane": "Regeneration Strategy",
+  "priority": "P1",
+  "lane": "Rejected Shot Decision",
   "project": "AI Video Production Workspace Three Route Plan",
-  "title": "Regeneration Strategy For Review Notes",
+  "title": "SHOT 002 Replacement Decision",
   "scope": [
-    "turn Jenn's regenerate_requested review notes for SHOT_001, SHOT_003, and SHOT_004 into a local regeneration strategy",
-    "revise action constraints, prompt guidance, negative constraints, and per-shot regeneration risk notes",
-    "draft a future bounded RunningHub regeneration authorization plan without executing it",
-    "do not include SHOT_002 replacement decision in this task"
+    "evaluate how to handle rejected SHOT_002 separately from the regenerate_requested shots",
+    "compare rework prompt and regenerate from same keyframe, replace storyboard keyframe before generation, and remove or resequence before final assembly",
+    "record tradeoffs, blocker status, and a recommended next path",
+    "do not call providers, execute regeneration, mutate the frozen storyboard package, assemble final video, or overwrite source assets"
   ],
-  "goal": "Prepare a local regeneration strategy for the three regenerate_requested shots without calling providers.",
+  "goal": "Decide the safe local next path for rejected g0_r1_shot_002 before any final assembly or provider regeneration.",
   "acceptance": [
     "R3-9F decision report is parsed as the source of truth.",
-    "Only SHOT_001, SHOT_003, and SHOT_004 are included as regeneration candidates.",
-    "SHOT_002 is explicitly excluded and routed to R3-9H.",
-    "SHOT_001 strategy addresses food picked from lunchbox and brought to mouth, not picking up the lunchbox.",
-    "SHOT_003 strategy addresses realistic cap fold and fabric behavior when pulled.",
-    "SHOT_004 strategy addresses physically plausible cap lighting and shadow realism.",
-    "Each candidate has revised prompt guidance, negative constraints, source keyframe/artifact reference, duration_seconds=6, and future output directory plan.",
-    "Budget draft is bounded to max_upload_calls_total=3 and max_submit_calls_total=3, one upload and one submit per candidate, no retry, no second submit, no batch expansion, and no Runway fallback.",
-    "Report records network_call_attempted=false, runninghub_called=false, runway_called=false, provider_credits_consumed=false, real_video_generated=false, regeneration_performed=false, secret_values_exposed=false."
+    "Only g0_r1_shot_002 is evaluated.",
+    "Report includes SHOT_002 source generated_clip artifact, source storyboard image artifact, reject reason, and current revision_needed state.",
+    "Report compares rework, replace, and remove/resequence paths.",
+    "Report records a recommended next safe option or NEEDS_JENN_DECISION if the choice cannot be made locally.",
+    "Report states final assembly remains blocked while there are no accepted clips and SHOT_002 remains unresolved.",
+    "Report records network_call_attempted=false, runninghub_called=false, runway_called=false, provider_credits_consumed=false, real_video_generated=false, regeneration_performed=false, final_assembly_performed=false, secret_values_exposed=false."
   ],
   "validation": [
-    "JSON parse for generated regeneration strategy report",
+    "JSON parse for generated SHOT_002 decision report",
     "npm run typecheck",
     "npm run test:m1",
     "npm run secret:scan",
     "git diff --check"
   ],
   "allowed_delivery": [
-    "regeneration_strategy_report",
-    "prompt_revision_plan",
-    "authorization_phrase_draft",
+    "decision_options_report",
+    "recommended_next_path",
     "task_board_update",
     "local_commit"
   ],
@@ -52,6 +49,7 @@
     "regeneration_execution",
     "batch_expansion",
     "final_assembly",
+    "storyboard_package_mutation",
     "source_overwrite",
     "secret_value_output",
     "raw_provider_payload_recording",
@@ -62,40 +60,39 @@
     "deploy"
   ],
   "depends_on": [
-    "R3-9F_HUMAN_CLIP_REVIEW_DECISION_APPLY"
+    "R3-9G_REGENERATION_STRATEGY_FOR_REVIEW_NOTES"
   ],
   "created_at": "2026-07-08T16:22:30+08:00",
-  "updated_at": "2026-07-08T16:42:00+08:00",
-  "claimed_by": "Codex R3-9G regeneration strategy",
-  "claim_run_id": "codex-20260708-163900-r3-9g",
-  "claimed_at": "2026-07-08T16:39:00+08:00",
-  "completed_by": "Codex R3-9G regeneration strategy",
-  "completed_at": "2026-07-08T16:42:00+08:00",
+  "updated_at": "2026-07-08T16:51:32+08:00",
+  "claimed_by": "Codex R3-9H shot 002 decision",
+  "claim_run_id": "codex-20260708-164524-r3-9h",
+  "claimed_at": "2026-07-08T16:45:24+08:00",
+  "completed_by": "Codex R3-9H shot 002 decision",
+  "completed_at": "2026-07-08T16:51:32+08:00",
   "blocked_by": null,
   "blocked_at": null,
   "failed_by": null,
   "failed_at": null,
   "skipped_by": null,
   "skipped_at": null,
-  "result": "PASS_REGENERATION_STRATEGY_READY",
+  "result": "PASS_SHOT_002_DECISION_READY",
   "validation_result": "PASS",
   "evidence": [
     "data/reports/r3_9f_human_clip_review_decision_apply_result.json",
-    "data/reports/r3_9e_runninghub_generated_clip_review_table.md",
     "data/reports/r3_9g_regeneration_strategy_for_review_notes_result.json",
-    "data/reports/secret_scan_result.json"
+    "data/reports/r3_9e_runninghub_generated_clip_review_table.md",
+    "data/reports/r3_9h_shot_002_replacement_decision_result.json"
   ],
-  "commit": "dd5a2ba",
+  "commit": "PENDING_LOCAL_COMMIT",
   "delivery": "local_only",
-  "boundary_or_safety_stop": "strategy only; no provider call, regeneration execution, final assembly, or deployment",
+  "boundary_or_safety_stop": "decision only; no provider call, regeneration execution, final assembly, storyboard package mutation, or deployment",
   "blocked_reason": null,
   "failure_reason": null,
   "safe_actions_completed": [
-    "Parsed R3-9F decision apply report as the source of truth.",
-    "Prepared local regeneration strategy for g0_r1_shot_001, g0_r1_shot_003, and g0_r1_shot_004.",
-    "Excluded g0_r1_shot_002 and routed it to R3-9H.",
-    "Drafted bounded future RunningHub authorization plan with max 3 uploads and 3 submits.",
-    "Did not call providers, execute regeneration, assemble final video, overwrite source assets, or expose secrets."
+    "Generated data/reports/r3_9h_shot_002_replacement_decision_result.json.",
+    "Compared same-keyframe rework, replacement keyframe, and remove/resequence paths.",
+    "Recommended same-keyframe prompt rework as the next safe local option, with replacement keyframe as fallback if Jenn rejects the source image mood.",
+    "Validated JSON parse, npm run r3:9h:decision, npm run typecheck, npm run test:m1, npm run secret:scan, and git diff --check."
   ],
   "unsafe_action_not_performed": [
     "runninghub_call",
@@ -109,6 +106,7 @@
     "regeneration_execution",
     "batch_expansion",
     "final_assembly",
+    "storyboard_package_mutation",
     "source_overwrite",
     "secret_value_output",
     "raw_provider_payload_recording",
@@ -119,12 +117,12 @@
     "deploy"
   ],
   "options_for_jenn": [
-    "Run R3-9H to decide the separate g0_r1_shot_002 path.",
-    "After R3-9H, prepare a future regeneration authorization task if the three-shot regeneration plan remains desired.",
-    "Any real provider regeneration requires a fresh exact authorization phrase."
+    "Promote R3-9I_SHOT_002_SAME_KEYFRAME_REGENERATION_PREP if you want to keep the same keyframe and repair the expression/mood through prompt constraints.",
+    "Promote R3-9J_SHOT_002_REPLACEMENT_KEYFRAME_IMPORT_PREP if you want a new storyboard keyframe before any regeneration.",
+    "Promote R3-9K_SHOT_002_REMOVE_OR_RESEQUENCE_EDIT_DECISION if you want to remove or restructure this beat before final assembly."
   ],
   "next_safe_option": [
-    "After R3-9G, run R3-9H to decide the separate SHOT_002 path.",
-    "Any real regeneration provider call must be a later task with fresh exact authorization."
+    "After R3-9H, prepare a coherent next task for either SHOT_002 rework/regeneration, storyboard replacement, or edit-plan removal.",
+    "Any real provider call must be a later task with fresh exact authorization."
   ]
 }

@@ -67,6 +67,10 @@ last_completed_r3_9g_run_id: codex-20260708-163900-r3-9g
 last_completed_r3_9g_task: R3-9G_REGENERATION_STRATEGY_FOR_REVIEW_NOTES
 last_completed_r3_9g_at: 2026-07-08T16:42:00+08:00
 
+last_completed_r3_9h_run_id: codex-20260708-164524-r3-9h
+last_completed_r3_9h_task: R3-9H_SHOT_002_REPLACEMENT_DECISION
+last_completed_r3_9h_at: 2026-07-08T16:51:32+08:00
+
 ## Rules
 
 - If status is inactive, a new run may start.

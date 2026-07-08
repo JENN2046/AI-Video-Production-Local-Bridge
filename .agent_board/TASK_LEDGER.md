@@ -3015,3 +3015,73 @@ Boundary:
 
 Next:
 - Load and execute `R3-9H_SHOT_002_REPLACEMENT_DECISION` if eligible.
+
+### 2026-07-08T16:51:32+08:00 - R3-9H Shot 002 Replacement Decision
+
+Result: DONE / PASS_SHOT_002_DECISION_READY
+Project: AI Video Production Workspace Three Route Plan
+Lane: Rejected Shot Decision
+Claimed by: Codex R3-9H shot 002 decision
+Completed by: Codex R3-9H shot 002 decision
+Run ID: codex-20260708-164524-r3-9h
+Started at: 2026-07-08T16:45:24+08:00
+Completed at: 2026-07-08T16:51:32+08:00
+
+Scope:
+- Evaluated only `g0_r1_shot_002`.
+- Used R3-9F as the primary source of truth for Jenn's reject decision.
+- Compared same-keyframe prompt rework, replacement keyframe, and remove/resequence paths.
+- Did not call providers, execute regeneration, mutate the frozen storyboard package, or assemble final video.
+
+Changed files:
+- package.json
+- scripts/r3-9h-shot-002-replacement-decision.ts
+- data/reports/r3_9h_shot_002_replacement_decision_result.json
+- .agent_board/NEXT_TASK.json
+- .agent_board/NEXT_TASK.md
+- .agent_board/RUN_LOCK.md
+- .agent_board/TASK_BACKLOG.md
+- .agent_board/HANDOFF.md
+- .agent_board/VALIDATION_LOG.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: npm run r3:9h:decision
+  result: PASS
+- command: node -e JSON.parse(...)
+  result: PASS
+- command: npm run typecheck
+  result: PASS
+- command: npm run test:m1
+  result: PASS
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_9h_shot_002_replacement_decision_result.json
+- data/reports/r3_9f_human_clip_review_decision_apply_result.json
+- data/reports/r3_9e_runninghub_generated_clip_review_prep_result.json
+- data/reports/secret_scan_result.json
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: PENDING_LOCAL_COMMIT
+- push: no
+- PR: none
+
+Decision summary:
+- rejected shot: g0_r1_shot_002
+- generated clip artifact: artifact_2adc2e6d-3183-47c4-8d1b-01bf80bed73f
+- source storyboard image artifact: artifact_9ad1bfe1-c830-458c-a413-39fd15c9d0c0
+- recommended next path: R3-9I_SHOT_002_SAME_KEYFRAME_REGENERATION_PREP
+
+Boundary:
+- No RunningHub call, Runway call, media upload to provider, provider submit, status poll, output download from provider, provider credit consumption, real video generation, regeneration execution, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+
+Next:
+- Promote `R3-9I_SHOT_002_SAME_KEYFRAME_REGENERATION_PREP` if Jenn wants to repair SHOT_002 with the same keyframe.
+- Promote `R3-9J_SHOT_002_REPLACEMENT_KEYFRAME_IMPORT_PREP` if Jenn wants a new source keyframe.
+- Promote `R3-9K_SHOT_002_REMOVE_OR_RESEQUENCE_EDIT_DECISION` if Jenn wants to drop or restructure the beat.

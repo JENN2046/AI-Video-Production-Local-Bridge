@@ -1723,3 +1723,37 @@ Notes:
 - Excluded `g0_r1_shot_002` and routed it to `R3-9H_SHOT_002_REPLACEMENT_DECISION`.
 - Drafted future RunningHub authorization plan capped at 3 uploads and 3 submits.
 - No provider call, regeneration execution, batch expansion, final assembly, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+
+### R3-9H - 2026-07-08T16:51:32+08:00
+
+Commands:
+
+```bash
+npm run r3:9h:decision
+node -e JSON.parse(...)
+npm run typecheck
+npm run test:m1
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_SHOT_002_DECISION_READY
+```
+
+Evidence:
+- `data/reports/r3_9h_shot_002_replacement_decision_result.json`
+- `data/reports/r3_9f_human_clip_review_decision_apply_result.json`
+- `data/reports/r3_9e_runninghub_generated_clip_review_prep_result.json`
+- `data/reports/secret_scan_result.json`
+
+Notes:
+- Confirmed SHOT_002 generated clip artifact `artifact_2adc2e6d-3183-47c4-8d1b-01bf80bed73f` and source storyboard image artifact `artifact_9ad1bfe1-c830-458c-a413-39fd15c9d0c0`.
+- Preserved Jenn's reject reason exactly: "我不要叹气不高兴的表情，这样会让人不想购买产品".
+- Compared same-keyframe prompt rework, replacement keyframe, and remove/resequence paths.
+- Recommended same-keyframe prompt rework as the next safe local option; replacement keyframe remains the fallback if Jenn rejects the source keyframe mood.
+- Final assembly remains blocked because there are zero accepted clips and SHOT_002 remains unresolved.
+- R3-9H local implementation commit: `PENDING_LOCAL_COMMIT`.
+- No provider call, regeneration execution, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
