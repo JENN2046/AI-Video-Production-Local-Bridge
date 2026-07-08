@@ -1,14 +1,27 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260708-172325-r3-9i-queue-arrangement
-Last result: R3-9I queued for RunningHub regeneration authorization prep
+Last run: codex-20260708-181554-r3-9l-queue-arrangement
+Last result: R3-9L queued for human regenerated clip review decision apply
 
 ## Current state
 
-Current task: R3-9I_RUNNINGHUB_REGENERATION_AUTHORIZATION_PREP
+Current task: R3-9L_HUMAN_REGENERATED_CLIP_REVIEW_DECISION_APPLY
 Current status: READY
 Current owner: None
+
+## R3-9L queue arrangement
+
+Arranged at: 2026-07-08T18:15:54+08:00
+Result: READY_TASK_QUEUED
+
+- `R3-9L_HUMAN_REGENERATED_CLIP_REVIEW_DECISION_APPLY` is loaded into `NEXT_TASK` as `READY`.
+- R3-9L depends on completed `R3-9K_RUNNINGHUB_REGENERATED_CLIP_REVIEW_PREP`.
+- Source table: `data/reports/r3_9k_runninghub_regenerated_clip_review_table.md`, filled by Jenn in the current working tree.
+- Current visible table decisions at arrangement time: 4 `accept`, 0 `reject`, 0 `regenerate_requested`.
+- Required output: `data/reports/r3_9l_human_regenerated_clip_review_decision_apply_result.json`.
+- R3-9L may apply local review decisions and accepted clip selections, but must not call RunningHub/Runway, regenerate, batch-expand, perform final assembly, read `.env` or credentials, overwrite source assets, push, tag, release, or deploy.
+- If all 4 shots are accepted, the next safe task is a final assembly readiness check, not final assembly execution.
 
 ## R3-9I queue arrangement
 

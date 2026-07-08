@@ -1,56 +1,53 @@
-# NEXT_TASK
+# NEXT_TASK.md
 
-task_id: R3-9K_RUNNINGHUB_REGENERATED_CLIP_REVIEW_PREP
-status: DONE
+status: READY
+
+task_id: R3-9L_HUMAN_REGENERATED_CLIP_REVIEW_DECISION_APPLY
+
+title: Human Regenerated Clip Review Decision Apply
+
 priority: P0
-lane: RunningHub Regenerated Clip Review Prep
+
+lane: Human Regenerated Clip Review Decision Apply
+
 project: AI Video Production Workspace Three Route Plan
-claimed_by: Codex R3-9K regenerated clip review prep
-claim_run_id: codex-20260708-180238-r3-9k
-claimed_at: 2026-07-08T18:02:38+08:00
-completed_by: Codex R3-9K regenerated clip review prep
-completed_at: 2026-07-08T18:07:27+08:00
-result: PASS_REVIEW_PACKAGE_READY
-validation_result: PASS
+
+depends_on: R3-9K_RUNNINGHUB_REGENERATED_CLIP_REVIEW_PREP
 
 ## Goal
 
-为 R3-9J 新生成的 4 条视频生成中文人工审查包。
+Apply Jenn's completed R3-9K human review decisions for the four regenerated RunningHub clips, making accepted clips eligible for final assembly readiness checks.
+
+## Required Work
+
+- Read `data/reports/r3_9k_runninghub_regenerated_clip_review_table.md` as the human source of truth.
+- Parse exactly 4 regenerated clip rows.
+- Require exactly one decision per row: `accept`, `reject`, or `regenerate_requested`.
+- Apply accepted regenerated clips to local review state and app database.
+- Preserve Jenn's reviewer and notes in review metadata.
+- Generate `data/reports/r3_9l_human_regenerated_clip_review_decision_apply_result.json`.
+- Do not call providers, regenerate clips, batch-expand, assemble final video, read env files or credentials, overwrite source assets, push, tag, release, or deploy.
 
 ## Acceptance
 
-- 4 个新生成 clip 全部列入审查表。
-- 审查项包含 accept / reject / regenerate_requested。
-- 每条包含本地视频路径、artifact_id、shot_id、上一轮问题、这轮重点检查项。
-- 报告明确 final assembly 仍等待人工 accept。
-
-## Boundary
-
-- 不调用 RunningHub / Runway。
-- 不 regeneration。
-- 不 batch。
-- 不 final assembly。
-- 不改 review decision。
-- 不读 credentials / .env。
-- 不覆盖源资产。
+- R3-9K review table is parsed as the source of truth.
+- Exactly 4 rows are parsed.
+- Each row has exactly one human decision.
+- Accepted rows set the corresponding `accepted_clip_artifact_id` to the R3-9J regenerated clip artifact.
+- Rejected or regenerate_requested rows preserve Jenn's notes and keep final assembly blocked.
+- Report includes per-shot decision, reviewer, note, regenerated clip artifact id, previous rejected clip artifact id, and local video path.
+- Report includes summary counts for `accept`, `reject`, and `regenerate_requested`.
+- If all 4 shots are accepted, report marks final assembly readiness check as the next safe task, not final assembly execution.
 
 ## Validation
 
-- JSON parse: PASS
-- table parse / required rows check: PASS
-- `npm run typecheck`: PASS
-- `npm run test:m1`: PASS
-- `npm run secret:scan`: PASS
-- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+- R3-9K review table parse / required decisions check
+- JSON parse for generated R3-9L decision apply report
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
 
-## Evidence
+## Boundary
 
-- `data/reports/r3_9k_runninghub_regenerated_clip_review_prep_result.json`
-- `data/reports/r3_9k_runninghub_regenerated_clip_review_table.md`
-
-## Result
-
-- 4 个 R3-9J 再生成 clip 已全部列入中文人工审查表。
-- 每条都包含本地视频路径、artifact_id、shot_id、上一轮问题、这轮重点检查项。
-- 审查项包含 accept / reject / regenerate_requested。
-- final assembly 仍等待人工 accept。
+Decision apply only. No RunningHub/Runway call, regeneration execution, batch expansion, final assembly, env or credential read, source overwrite, push, tag, release, or deploy.
