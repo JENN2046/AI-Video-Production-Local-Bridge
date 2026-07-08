@@ -1,14 +1,25 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260708-203918-r1-9
-Last result: R1-9 ChatGPT MCP App packaging decision completed
+Last run: codex-20260708-204851-r2g-0
+Last result: R2G-0 ChatGPT MCP packaging reality audit completed
 
 ## Current state
 
 Current task: none
 Current status: DONE
 Current owner: none
+
+## R2G-0 Closeout
+
+- R2G-0 completed on 2026-07-08T20:52:19+08:00 with `PASS_MCP_PACKAGING_REALITY_AUDITED`.
+- Report: `data/reports/r2g_0_chatgpt_mcp_packaging_reality_audit_result.json`.
+- Audited current official OpenAI Apps SDK / MCP requirements against local R1 bridge v0 through v3.
+- Classified requirements into: can stay local, requires MCP server, and requires later public HTTPS / ChatGPT connector authorization.
+- Validation passed: JSON parse, `npm run typecheck`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
+- R2G-0 local implementation commit: `PENDING_LOCAL_COMMIT`.
+- No server implementation, public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+- Next eligible task: `R2G-A_MCP_SECURITY_AND_PERMISSION_MODEL`, but this run stops at the user-scoped R2G-0 request.
 
 ## R1-9 Closeout
 

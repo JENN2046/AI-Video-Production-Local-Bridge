@@ -2,40 +2,38 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "R1-9_CHATGPT_MCP_APP_PACKAGING_DECISION",
+  "task_id": "R2G-0_CHATGPT_MCP_PACKAGING_REALITY_AUDIT",
   "status": "DONE",
-  "priority": "P1",
-  "lane": "WebGPT Bridge",
+  "priority": "P0",
+  "lane": "ChatGPT MCP Bridge",
   "project": "AI Video Production Workspace GPT Bridge Line",
-  "title": "ChatGPT MCP App Packaging Decision",
+  "title": "ChatGPT MCP Packaging Reality Audit",
   "scope": [
-    "close R1 with a fixed GO_MCP_APP_BRIDGE decision and prepare the R2G ChatGPT MCP/App bridge implementation lane",
-    "review current local bridge maturity after R1-8",
-    "use current official OpenAI Apps SDK / MCP documentation before writing the decision",
-    "compare what remains local-only in R1 with what moves into R2G",
-    "confirm R2G task sequence, safety gates, and no-public-connection boundary",
-    "generate data/reports/r1_9_chatgpt_mcp_app_packaging_decision_result.json"
+    "audit current official ChatGPT Apps SDK and MCP requirements against the local R1 bridge",
+    "identify required MCP server, tool descriptor, structured content, optional UI component, authentication, connection, and submission expectations",
+    "compare those requirements with R1 bridge v0 through v3",
+    "generate data/reports/r2g_0_chatgpt_mcp_packaging_reality_audit_result.json"
   ],
-  "goal": "Close the R1 local WebGPT bridge stage with a fixed GO_MCP_APP_BRIDGE decision and define the handoff into R2G.",
+  "goal": "Map the real current ChatGPT Apps SDK / MCP requirements to the local R1 bridge before implementation.",
   "acceptance": [
-    "Decision report names GO_MCP_APP_BRIDGE as the selected path.",
-    "Decision report cites official OpenAI Apps SDK / MCP docs used for current packaging assumptions.",
-    "Decision report defines R2G entry conditions and confirms R2G-0 through R2G-F remain valid.",
-    "Decision report states public ChatGPT connection, tunnel, deploy, publish, and production configuration remain out of scope until separately authorized."
+    "Report identifies what can stay local, what requires an MCP server, and what requires public HTTPS / ChatGPT connector authorization later.",
+    "Report records network_call_attempted=false except official docs lookup if needed, provider_called=false, env_files_read=false, credentials_read=false, public_tunnel_started=false, secret_values_exposed=false."
   ],
   "validation": [
-    "JSON parse for generated R1-9 report",
+    "JSON parse for generated R2G-0 report",
     "npm run typecheck",
     "npm run secret:scan",
     "git diff --check"
   ],
   "allowed_delivery": [
-    "packaging_decision_report",
+    "mcp_packaging_reality_audit_report",
     "task_board_update",
     "local_commit"
   ],
   "blocked_delivery": [
     "public_tunnel",
+    "public_mcp_endpoint",
+    "chatgpt_connector_creation",
     "provider_call",
     "runninghub_call",
     "runway_call",
@@ -52,41 +50,59 @@
     "production_configuration_change"
   ],
   "depends_on": [
-    "R1-8_WEBGPT_OPERATOR_RUNBOOK_AND_PROMPT_PACK"
+    "R1-9_CHATGPT_MCP_APP_PACKAGING_DECISION"
   ],
-  "source_report": "data/reports/r1_8_webgpt_operator_runbook_and_prompt_pack_result.json",
-  "r1_7_smoke_report": "data/reports/r1_7_webgpt_local_bridge_smoke_validation_result.json",
-  "r1_6_audit_report": "data/reports/r1_6_webgpt_post_closeout_bridge_reality_audit_result.json",
-  "report_path": "data/reports/r1_9_chatgpt_mcp_app_packaging_decision_result.json",
-  "created_at": "2026-07-08T19:56:44+08:00",
-  "updated_at": "2026-07-08T20:42:06+08:00",
-  "claimed_by": "Codex R1-9 packaging decision",
-  "claim_run_id": "codex-20260708-203918-r1-9",
-  "claimed_at": "2026-07-08T20:39:18+08:00",
-  "completed_by": "Codex R1-9 packaging decision",
-  "completed_at": "2026-07-08T20:42:06+08:00",
-  "result": "PASS_GO_MCP_APP_BRIDGE_DECISION_READY",
-  "validation_result": "PASS",
-  "evidence": [
+  "source_reports": [
     "data/reports/r1_9_chatgpt_mcp_app_packaging_decision_result.json",
     "data/reports/r1_8_webgpt_operator_runbook_and_prompt_pack_result.json",
+    "data/reports/r1_7_webgpt_local_bridge_smoke_validation_result.json",
+    "data/reports/r1_6_webgpt_post_closeout_bridge_reality_audit_result.json"
+  ],
+  "official_docs_seed": [
+    "https://developers.openai.com/apps-sdk",
     "https://developers.openai.com/apps-sdk/build/mcp-server",
+    "https://developers.openai.com/apps-sdk/plan/tools",
+    "https://developers.openai.com/apps-sdk/deploy/connect-chatgpt",
+    "https://developers.openai.com/apps-sdk/build/auth",
     "https://developers.openai.com/apps-sdk/deploy/submission"
   ],
-  "commit": "d6510be",
-  "delivery": "local_decision_report_only",
-  "boundary_or_safety_stop": "decision closeout only; no public tunnel, provider call, env or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change",
+  "report_path": "data/reports/r2g_0_chatgpt_mcp_packaging_reality_audit_result.json",
+  "created_at": "2026-07-08T20:34:12+08:00",
+  "updated_at": "2026-07-08T20:52:19+08:00",
+  "claimed_by": "Codex R2G-0 packaging reality audit",
+  "claim_run_id": "codex-20260708-204851-r2g-0",
+  "claimed_at": "2026-07-08T20:48:51+08:00",
+  "completed_by": "Codex R2G-0 packaging reality audit",
+  "completed_at": "2026-07-08T20:52:19+08:00",
+  "result": "PASS_MCP_PACKAGING_REALITY_AUDITED",
+  "validation_result": "PASS",
+  "evidence": [
+    "data/reports/r2g_0_chatgpt_mcp_packaging_reality_audit_result.json",
+    "data/reports/r1_9_chatgpt_mcp_app_packaging_decision_result.json",
+    "https://developers.openai.com/apps-sdk/concepts/mcp-server",
+    "https://developers.openai.com/apps-sdk/build/mcp-server",
+    "https://developers.openai.com/apps-sdk/plan/tools",
+    "https://developers.openai.com/apps-sdk/deploy/connect-chatgpt",
+    "https://developers.openai.com/apps-sdk/build/auth",
+    "https://developers.openai.com/apps-sdk/deploy/submission"
+  ],
+  "commit": "PENDING_LOCAL_COMMIT",
+  "delivery": "local_audit_report_only",
+  "boundary_or_safety_stop": "audit only; no server implementation, public tunnel, ChatGPT connector creation, provider call, env or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change",
   "blocked_reason": null,
   "failure_reason": null,
   "safe_actions_completed": [
-    "reviewed official OpenAI Apps SDK / MCP documentation",
-    "recorded GO_MCP_APP_BRIDGE decision",
-    "confirmed R2G-0 through R2G-F task sequence remains valid",
-    "generated R1-9 packaging decision report",
+    "claimed R2G-0 from task backlog",
+    "reviewed current official OpenAI Apps SDK / MCP documentation",
+    "audited local R1 bridge v0 through v3 against Apps SDK / MCP expectations",
+    "generated R2G-0 packaging reality audit report",
     "validated JSON, typecheck, secret scan, and diff check"
   ],
   "unsafe_action_not_performed": [
+    "server_implementation",
     "public_tunnel",
+    "public_mcp_endpoint",
+    "chatgpt_connector_creation",
     "provider_call",
     "runninghub_call",
     "runway_call",

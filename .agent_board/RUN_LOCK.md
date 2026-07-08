@@ -106,6 +106,9 @@ last_completed_r1_8_at: 2026-07-08T20:35:57+08:00
 last_completed_r1_9_run_id: codex-20260708-203918-r1-9
 last_completed_r1_9_task: R1-9_CHATGPT_MCP_APP_PACKAGING_DECISION
 last_completed_r1_9_at: 2026-07-08T20:42:06+08:00
+last_completed_r2g_0_run_id: codex-20260708-204851-r2g-0
+last_completed_r2g_0_task: R2G-0_CHATGPT_MCP_PACKAGING_REALITY_AUDIT
+last_completed_r2g_0_at: 2026-07-08T20:52:19+08:00
 
 ## Rules
 

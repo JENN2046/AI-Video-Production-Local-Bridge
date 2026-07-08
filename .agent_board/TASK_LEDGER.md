@@ -3767,3 +3767,43 @@ Boundary:
 
 Next:
 - Proceed to `R2G-0_CHATGPT_MCP_PACKAGING_REALITY_AUDIT` if still eligible.
+
+### 2026-07-08T20:52:19+08:00 - R2G-0 ChatGPT MCP Packaging Reality Audit
+
+Result: DONE / PASS_MCP_PACKAGING_REALITY_AUDITED
+Project: AI Video Production Workspace GPT Bridge Line
+Lane: ChatGPT MCP Bridge
+Run ID: codex-20260708-204851-r2g-0
+Completed at: 2026-07-08T20:52:19+08:00
+
+Scope:
+- Claimed R2G-0 after R1-9 `GO_MCP_APP_BRIDGE` decision.
+- Re-read current official OpenAI Apps SDK / MCP documentation.
+- Audited local R1 bridge v0 through v3 against Apps SDK / MCP requirements.
+- Generated a gap matrix classifying what can stay local, what requires an MCP server, and what requires future public HTTPS / ChatGPT connector authorization.
+- Did not implement a server, start a public tunnel, create a ChatGPT connector, call providers/API, read env files or credentials, overwrite source assets, output secrets, push, tag, release, deploy, or publish.
+
+Validation:
+- JSON parse for generated R2G-0 report: PASS
+- `npm run typecheck`: PASS
+- `npm run secret:scan`: PASS
+- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r2g_0_chatgpt_mcp_packaging_reality_audit_result.json
+- https://developers.openai.com/apps-sdk/concepts/mcp-server
+- https://developers.openai.com/apps-sdk/build/mcp-server
+- https://developers.openai.com/apps-sdk/plan/tools
+- https://developers.openai.com/apps-sdk/deploy/connect-chatgpt
+- https://developers.openai.com/apps-sdk/build/auth
+- https://developers.openai.com/apps-sdk/deploy/submission
+
+Git delivery:
+- commit: PENDING_LOCAL_COMMIT
+- push: no
+
+Boundary:
+- No server implementation, public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+
+Next:
+- R2G-A is eligible, but this run stops at the user-scoped R2G-0 request.
