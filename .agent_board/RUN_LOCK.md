@@ -79,6 +79,9 @@ last_completed_r3_9l_at: 2026-07-08T18:26:55+08:00
 last_completed_r3_9m_run_id: codex-20260708-183254-r3-9m
 last_completed_r3_9m_task: R3-9M_FINAL_ASSEMBLY_READINESS_CHECK
 last_completed_r3_9m_at: 2026-07-08T18:36:22+08:00
+last_completed_r3_9n_run_id: codex-20260708-184207-r3-9n
+last_completed_r3_9n_task: R3-9N_FINAL_VIDEO_ASSEMBLY_DRY_RUN
+last_completed_r3_9n_at: 2026-07-08T18:42:54+08:00
 
 ## Rules
 
