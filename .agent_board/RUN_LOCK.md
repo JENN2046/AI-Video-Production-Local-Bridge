@@ -91,6 +91,9 @@ last_completed_r3_9p_at: 2026-07-08T18:57:20+08:00
 last_completed_r3_9q_run_id: codex-20260708-193131-r3-9q
 last_completed_r3_9q_task: R3-9Q_HUMAN_FINAL_VIDEO_REVIEW_DECISION_APPLY
 last_completed_r3_9q_at: 2026-07-08T19:34:48+08:00
+last_completed_r3_9r_run_id: codex-20260708-193755-r3-9r
+last_completed_r3_9r_task: R3-9R_FINAL_DELIVERY_CLOSEOUT
+last_completed_r3_9r_at: 2026-07-08T19:45:15+08:00
 
 ## Rules
 

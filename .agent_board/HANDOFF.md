@@ -1,14 +1,14 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260708-192907-r3-9q-r3-9r-queue-arrangement
-Last result: R3-9Q and R3-9R queued after final video human review
+Last run: codex-20260708-193755-r3-9r
+Last result: R3-9R final delivery closeout ready
 
 ## Current state
 
-Current task: R3-9Q_HUMAN_FINAL_VIDEO_REVIEW_DECISION_APPLY
+Current task: R3-9R_FINAL_DELIVERY_CLOSEOUT
 Current status: DONE
-Current owner: Codex R3-9Q final video review decision apply
+Current owner: none
 
 ## R3-9Q / R3-9R queue arrangement
 
@@ -40,6 +40,24 @@ Result: READY_TASKS_QUEUED_WITH_DEPENDENCIES
 - Local project status changed from `video_review` to `final_approved`.
 - R3-9Q local implementation commit: `57cc63b`.
 - Next safe task: `R3-9R_FINAL_DELIVERY_CLOSEOUT`.
+
+## R3-9R In Progress
+
+- Claimed at 2026-07-08T19:37:55+08:00 by Codex R3-9R final delivery closeout.
+- Source report: `data/reports/r3_9q_human_final_video_review_decision_apply_result.json`.
+- Boundary: local closeout only; no publish, deploy, provider call, regeneration, reassembly, `.env` or credential read, source overwrite, push, tag, release, upload, or production configuration change.
+
+## R3-9R Closeout
+
+- R3-9R completed on 2026-07-08T19:45:15+08:00 with `PASS_FINAL_DELIVERY_CLOSEOUT_READY`.
+- Closeout report: `data/reports/r3_9r_final_delivery_closeout_result.json`.
+- Evidence manifest: `data/reports/r3_9r_final_delivery_evidence_manifest.json`.
+- Local summary: `data/reports/r3_9r_local_video_delivery_summary.md`.
+- Final video path: `A:\AI Video Production Workspace\data\media\artifacts\final\r3-9o-final-video\ryan_lunch_break_skullcap_final_r3_9o.mp4`.
+- Final video artifact: `artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe`.
+- Final human decision: `accept`, reviewer `Jenn`, final creative approval recorded locally.
+- Validation passed: `npm run r3:9r:closeout`, JSON/path/ffprobe/lineage check, `npm run typecheck`, `npm run test:m1`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
+- No publish, deploy, upload, push, tag, release, provider call, env read, credential read, regeneration, batch expansion, final reassembly, source overwrite, raw provider payload recording, signed URL recording, secret output, or production configuration change occurred.
 
 ## R3-9M / R3-9P queue arrangement
 

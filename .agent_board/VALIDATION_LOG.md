@@ -2042,3 +2042,34 @@ Notes:
 - `git diff --check`: PASS with CRLF warnings only.
 - No provider call, regeneration, reassembly, `.env` or credential read, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, deploy, or publish occurred.
 - R3-9Q local implementation commit: `57cc63b`.
+
+### R3-9R - 2026-07-08T19:45:15+08:00
+
+Commands:
+
+```bash
+npm run r3:9r:closeout
+node -e JSON.parse(...) with final path, ffprobe, decision, and source lineage checks
+npm run typecheck
+npm run test:m1
+npm run secret:scan
+git diff --check
+```
+
+Result: `PASS_FINAL_DELIVERY_CLOSEOUT_READY`
+
+Evidence:
+- `data/reports/r3_9r_final_delivery_closeout_result.json`
+- `data/reports/r3_9r_final_delivery_evidence_manifest.json`
+- `data/reports/r3_9r_local_video_delivery_summary.md`
+- `A:\AI Video Production Workspace\data\media\artifacts\final\r3-9o-final-video\ryan_lunch_break_skullcap_final_r3_9o.mp4`
+
+Notes:
+- Final decision: `accept`, reviewer `Jenn`.
+- Final creative approval is recorded locally and project status is `final_approved`.
+- Final video artifact: `artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe`.
+- ffprobe: PASS, duration 24.207683 seconds.
+- Source lineage includes 4 accepted R3-9J regenerated clips.
+- `npm run test:m1`: PASS, 22 tests.
+- `git diff --check`: PASS with CRLF warnings only.
+- No publish, deploy, upload, push, tag, release, provider call, `.env` or credential read, regeneration, batch expansion, final reassembly, source overwrite, secret output, raw provider payload recording, signed URL recording, or production configuration change occurred.

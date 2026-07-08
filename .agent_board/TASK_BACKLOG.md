@@ -3513,7 +3513,7 @@ Apply Jenn's completed final video review decision and, if accepted, mark the lo
 
 ## R3-9R_FINAL_DELIVERY_CLOSEOUT - Final Delivery Closeout
 
-status: READY
+status: DONE
 priority: P0
 lane: Final Delivery Closeout
 project: AI Video Production Workspace Three Route Plan
@@ -3526,7 +3526,15 @@ report_path: data/reports/r3_9r_final_delivery_closeout_result.json
 allowed_delivery: final_delivery_closeout_report,evidence_manifest,local_video_delivery_summary,task_board_update,local_commit
 blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,provider_submit,status_poll,output_download_from_provider,provider_credits_consumed,regeneration_execution,batch_expansion,final_video_reassembly,env_file_read,credential_read,source_overwrite,secret_value_output,raw_provider_payload_recording,signed_url_recording,push,tag,release,deploy,publish,production_configuration_change
 created_at: 2026-07-08T19:29:07+08:00
-updated_at: 2026-07-08T19:29:07+08:00
+updated_at: 2026-07-08T19:45:15+08:00
+claimed_by: Codex R3-9R final delivery closeout
+claim_run_id: codex-20260708-193755-r3-9r
+claimed_at: 2026-07-08T19:37:55+08:00
+completed_by: Codex R3-9R final delivery closeout
+completed_at: 2026-07-08T19:45:15+08:00
+result: PASS_FINAL_DELIVERY_CLOSEOUT_READY
+validation_result: PASS
+commit: PENDING_LOCAL_COMMIT
 
 ### Goal
 
@@ -3568,9 +3576,12 @@ Generate the final local delivery closeout package for the approved final video,
 
 ### Result
 
-- Generated `data/reports/r3_9p_final_video_review_package_result.json`.
-- Generated `data/reports/r3_9p_final_video_review_table.md`.
-- Included final video path, final video artifact id, ffprobe summary, and all 4 source clip artifact ids.
-- Review controls are present but not preselected.
-- Final creative approval remains unrecorded.
-- Validation passed: JSON parse, review table required fields, final video path existence, `npm run typecheck`, `npm run test:m1`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
+- Generated `data/reports/r3_9r_final_delivery_closeout_result.json`.
+- Generated `data/reports/r3_9r_final_delivery_evidence_manifest.json`.
+- Generated `data/reports/r3_9r_local_video_delivery_summary.md`.
+- Final video path: `A:\AI Video Production Workspace\data\media\artifacts\final\r3-9o-final-video\ryan_lunch_break_skullcap_final_r3_9o.mp4`.
+- Final video artifact: `artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe`.
+- Final human decision: `accept`, reviewer `Jenn`, final creative approval recorded locally.
+- Source clip lineage includes all 4 accepted R3-9J regenerated clips with ffprobe `PASS`.
+- No publish, deploy, upload, push, tag, release, provider call, env read, credential read, regeneration, batch expansion, final reassembly, source overwrite, raw provider payload recording, signed URL recording, secret output, or production configuration change occurred.
+- Validation passed: `npm run r3:9r:closeout`, JSON/path/ffprobe/lineage check, `npm run typecheck`, `npm run test:m1`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.

@@ -1,0 +1,190 @@
+{
+  "task": "R3-9R_FINAL_DELIVERY_CLOSEOUT",
+  "result": "PASS_FINAL_DELIVERY_CLOSEOUT_READY",
+  "mode": "local_final_delivery_closeout_only",
+  "generated_at": "2026-07-08T11:43:56.423Z",
+  "source_of_truth": {
+    "r3_9q_final_review_decision_report": "data/reports/r3_9q_human_final_video_review_decision_apply_result.json",
+    "r3_9q_result": "PASS_FINAL_CREATIVE_APPROVAL_RECORDED",
+    "r3_9q_commit": "57cc63b",
+    "r3_9p_final_review_package_report": "data/reports/r3_9p_final_video_review_package_result.json",
+    "r3_9p_result": "PASS_FINAL_VIDEO_REVIEW_PACKAGE_READY",
+    "r3_9p_commit": "0ee3590",
+    "r3_9o_final_video_assembly_report": "data/reports/r3_9o_final_video_assembly_execution_result.json",
+    "r3_9o_result": "PASS_LOCAL_FINAL_VIDEO_ASSEMBLED",
+    "r3_9o_commit": "9056c31"
+  },
+  "project": {
+    "project_id": "project_b742cb15-e44e-41b2-8d2d-4b90a30720df",
+    "project_title": "Ryan's Lunch Break Skullcap",
+    "storyboard_package_id": "storyboard_package_1e5c1eca-624e-4687-9775-31e4b59f428a",
+    "project_status": "final_approved",
+    "project_export_final_video_artifact_id": "artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe",
+    "final_creative_approval_state": "final_approved"
+  },
+  "final_approval": {
+    "decision": "accept",
+    "reviewer": "Jenn",
+    "final_creative_approval_recorded": true,
+    "local_blocker_count": 0
+  },
+  "final_video": {
+    "local_video_path": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\final\\r3-9o-final-video\\ryan_lunch_break_skullcap_final_r3_9o.mp4",
+    "expected_local_video_path": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\final\\r3-9o-final-video\\ryan_lunch_break_skullcap_final_r3_9o.mp4",
+    "local_video_exists": true,
+    "byte_size": 3805481,
+    "final_video_artifact_id": "artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe",
+    "expected_final_video_artifact_id": "artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe",
+    "final_video_artifact_status": "active",
+    "final_video_artifact_role": "final_video",
+    "final_video_artifact_type": "video",
+    "final_video_artifact_storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\final\\r3-9o-final-video\\artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe.mp4",
+    "final_video_artifact_storage_exists": true,
+    "ffprobe_status": "PASS",
+    "ffprobe_duration_seconds": 24.207683,
+    "ffprobe_has_video_stream": true,
+    "ffprobe_stream_count": 2,
+    "assembly_run_id": "run_r3_9o_285f8617-8134-4596-a9a4-1a5f1c24246f"
+  },
+  "source_clip_artifacts": [
+    "artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203",
+    "artifact_eeef12a7-9533-4172-beaa-6c25b91415f7",
+    "artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a",
+    "artifact_263a2344-5154-4981-bfe4-120571effb3e"
+  ],
+  "source_clips": [
+    {
+      "order": 1,
+      "shot_id": "g0_r1_shot_001",
+      "source_clip_artifact_id": "artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203",
+      "artifact_status": "active",
+      "local_mp4_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\01-g0_r1_shot_001\\artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203.mp4",
+      "local_mp4_exists": true,
+      "byte_size": 1690295,
+      "ffprobe_status": "PASS",
+      "duration_seconds": 6.041667,
+      "source_generation_run_id": "run_r3_9j_37d18f76-ec61-4b5d-8f5c-acca2b4ba203",
+      "generation_batch_id": "batch_r3_9j_runninghub_regeneration_single_pass_live_execution"
+    },
+    {
+      "order": 2,
+      "shot_id": "g0_r1_shot_002",
+      "source_clip_artifact_id": "artifact_eeef12a7-9533-4172-beaa-6c25b91415f7",
+      "artifact_status": "active",
+      "local_mp4_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\02-g0_r1_shot_002\\artifact_eeef12a7-9533-4172-beaa-6c25b91415f7.mp4",
+      "local_mp4_exists": true,
+      "byte_size": 1799488,
+      "ffprobe_status": "PASS",
+      "duration_seconds": 6.041667,
+      "source_generation_run_id": "run_r3_9j_eeef12a7-9533-4172-beaa-6c25b91415f7",
+      "generation_batch_id": "batch_r3_9j_runninghub_regeneration_single_pass_live_execution"
+    },
+    {
+      "order": 3,
+      "shot_id": "g0_r1_shot_003",
+      "source_clip_artifact_id": "artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a",
+      "artifact_status": "active",
+      "local_mp4_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\03-g0_r1_shot_003\\artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a.mp4",
+      "local_mp4_exists": true,
+      "byte_size": 2027465,
+      "ffprobe_status": "PASS",
+      "duration_seconds": 6.041667,
+      "source_generation_run_id": "run_r3_9j_20b1ee68-0b75-4fc1-96a8-93f36de31d5a",
+      "generation_batch_id": "batch_r3_9j_runninghub_regeneration_single_pass_live_execution"
+    },
+    {
+      "order": 4,
+      "shot_id": "g0_r1_shot_004",
+      "source_clip_artifact_id": "artifact_263a2344-5154-4981-bfe4-120571effb3e",
+      "artifact_status": "active",
+      "local_mp4_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\04-g0_r1_shot_004\\artifact_263a2344-5154-4981-bfe4-120571effb3e.mp4",
+      "local_mp4_exists": true,
+      "byte_size": 3467023,
+      "ffprobe_status": "PASS",
+      "duration_seconds": 6.041667,
+      "source_generation_run_id": "run_r3_9j_263a2344-5154-4981-bfe4-120571effb3e",
+      "generation_batch_id": "batch_r3_9j_runninghub_regeneration_single_pass_live_execution"
+    }
+  ],
+  "provider_lane_summary": {
+    "primary_provider_lane": "runninghub",
+    "accepted_clip_generation_source": "R3-9J_RUNNINGHUB_REGENERATION_SINGLE_PASS_LIVE_EXECUTION",
+    "generation_batch_ids": [
+      "batch_r3_9j_runninghub_regeneration_single_pass_live_execution"
+    ],
+    "generation_run_ids": [
+      "run_r3_9j_37d18f76-ec61-4b5d-8f5c-acca2b4ba203",
+      "run_r3_9j_eeef12a7-9533-4172-beaa-6c25b91415f7",
+      "run_r3_9j_20b1ee68-0b75-4fc1-96a8-93f36de31d5a",
+      "run_r3_9j_263a2344-5154-4981-bfe4-120571effb3e"
+    ],
+    "provider_raw_payload_recorded": false,
+    "signed_url_recorded": false,
+    "secret_values_exposed": false
+  },
+  "closeout_delivery": {
+    "status": "LOCAL_CLOSEOUT_READY",
+    "evidence_manifest_path": "data/reports/r3_9r_final_delivery_evidence_manifest.json",
+    "local_summary_path": "data/reports/r3_9r_local_video_delivery_summary.md",
+    "final_delivery_published": false,
+    "external_delivery_performed": false,
+    "production_configuration_changed": false,
+    "local_blocker_count": 0,
+    "local_blockers": []
+  },
+  "provider_boundary": {
+    "publish_performed": false,
+    "release_or_deploy_performed": false,
+    "push_performed": false,
+    "tag_created": false,
+    "network_call_attempted": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "media_upload_to_provider": false,
+    "provider_submit": false,
+    "status_poll": false,
+    "output_download_from_provider": false,
+    "provider_credits_consumed": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "final_video_reassembled": false,
+    "env_files_read": false,
+    "credentials_read": false,
+    "source_assets_overwritten": false,
+    "secret_values_exposed": false,
+    "raw_provider_payload_recorded": false,
+    "signed_url_recorded": false,
+    "upload_performed": false,
+    "production_configuration_changed": false
+  },
+  "validation": {
+    "npm run r3:9r:closeout": "PASS",
+    "JSON parse for generated final delivery closeout report": "PASS",
+    "final video path existence check": "PASS",
+    "final video ffprobe evidence check": "PASS",
+    "source clip artifact lineage check": "PASS",
+    "npm run typecheck": "PASS",
+    "npm run test:m1": "PASS",
+    "npm run secret:scan": "PASS",
+    "git diff --check": "PASS_WITH_CRLF_WARNINGS_ONLY"
+  },
+  "changed_files": [
+    "package.json",
+    "scripts/r3-9r-final-delivery-closeout.ts",
+    "data/reports/r3_9r_final_delivery_closeout_result.json",
+    "data/reports/r3_9r_final_delivery_evidence_manifest.json",
+    "data/reports/r3_9r_local_video_delivery_summary.md",
+    ".agent_board/*"
+  ],
+  "blocked_reason": null,
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "PENDING_LOCAL_COMMIT",
+    "task": "R3-9R_FINAL_DELIVERY_CLOSEOUT",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  }
+}
