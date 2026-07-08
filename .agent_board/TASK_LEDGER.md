@@ -2688,3 +2688,62 @@ Boundary:
 
 Next:
 - Stop at `R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY` until Jenn provides a fresh exact current authorization phrase with `duration_seconds=6`.
+
+### 2026-07-08T14:06:34+08:00 - R3-9C RunningHub 4-Shot Live Authorization Prep
+
+Result: DONE / PASS_READY_FOR_USER_AUTHORIZATION
+Project: AI Video Production Workspace Three Route Plan
+Lane: Provider Live Authorization Prep
+Claimed by: Codex R3-9C live authorization prep
+Completed by: Codex R3-9C live authorization prep
+Run ID: codex-20260708-140148-r3-9c
+Started at: 2026-07-08T14:01:48+08:00
+Completed at: 2026-07-08T14:06:34+08:00
+
+Scope:
+- Parsed R3-9B local generation plan as source of truth.
+- Generated the R3-9C hard-gate authorization prep report.
+- Drafted the exact future RunningHub 4-shot live authorization phrase without executing it.
+
+Changed files:
+- package.json
+- scripts/r3-9c-runninghub-4-shot-live-authorization-prep.ts
+- data/reports/r3_9c_runninghub_4_shot_live_authorization_prep_result.json
+- .agent_board/NEXT_TASK.json
+- .agent_board/NEXT_TASK.md
+- .agent_board/RUN_LOCK.md
+- .agent_board/TASK_BACKLOG.md
+- .agent_board/HANDOFF.md
+- .agent_board/VALIDATION_LOG.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: npm run r3:9c:prep
+  result: PASS
+- command: node -e JSON.parse(...)
+  result: PASS
+- command: npm run typecheck
+  result: PASS
+- command: npm run test:m1
+  result: PASS
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_9c_runninghub_4_shot_live_authorization_prep_result.json
+- data/reports/secret_scan_result.json
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: pending
+- push: no
+- PR: none
+
+Boundary:
+- No RunningHub call, Runway call, media upload to provider, status poll/query, output download, provider credit consumption, real video generation, credential read, env file read, secret output, raw provider payload recording, signed URL recording, source overwrite, push, tag, release, or deploy occurred.
+
+Next:
+- Future RunningHub 4-shot live execution requires a new exact current Jenn authorization phrase.

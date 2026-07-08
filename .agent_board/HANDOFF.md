@@ -244,7 +244,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 
 ## Remaining READY tasks
 
-- `R3-9C_RUNNINGHUB_4_SHOT_LIVE_AUTHORIZATION_PREP`
+- None
 
 ## Closeout evidence
 
@@ -304,8 +304,16 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - R3-8O Enterprise-Shared API Key 6-second RunningHub live canary completed successfully after exact authorization.
 - R3-8K provider path decision closeout is complete.
 - RunningHub Enterprise-Shared API Key path is the primary validated M1 provider lane.
-- Next task is `R3-9C_RUNNINGHUB_4_SHOT_LIVE_AUTHORIZATION_PREP`.
-- R3-9C should produce a local hard-gate report and exact authorization phrase draft only; it must not call RunningHub.
 - Any next RunningHub live call requires a new exact current Jenn authorization phrase.
 - Do not submit to RunningHub without a future exact current Jenn authorization phrase.
 - Do not retry Runway canary without a new exact current Jenn authorization phrase.
+
+## R3-9C Closeout
+
+- R3-9C completed on 2026-07-08T14:06:34+08:00 with `PASS_READY_FOR_USER_AUTHORIZATION`.
+- Report: `data/reports/r3_9c_runninghub_4_shot_live_authorization_prep_result.json`.
+- Confirmed 4 eligible RunningHub storyboard shot plans and 0 local blockers.
+- Budget remains capped at 4 uploads and 4 submits total, one upload and one submit per shot, no retry, no second submit, no regeneration, no batch expansion, and no Runway fallback.
+- No credentials, `.env` files, RunningHub call, Runway call, provider upload/submit/query/download, source overwrite, push, tag, release, or deploy occurred.
+- Remaining READY tasks: none.
+- Any future RunningHub 4-shot live execution requires a new exact current Jenn authorization phrase.

@@ -1,6 +1,6 @@
 # NEXT_TASK.md
 
-Status: READY
+Status: DONE
 
 Task: R3-9C_RUNNINGHUB_4_SHOT_LIVE_AUTHORIZATION_PREP
 
@@ -14,36 +14,42 @@ Project: AI Video Production Workspace Three Route Plan
 
 Depends on: R3-9B_STORYBOARD_PACKAGE_TO_RUNNINGHUB_GENERATION_PLAN
 
-## Goal
+## Result
 
-Prepare the final local authorization gate for a future RunningHub 4-shot live run without executing it.
+PASS_READY_FOR_USER_AUTHORIZATION
 
-## Required Work
+## Completed
 
-- Inspect the R3-9B local generation plan and produce a final hard-gate authorization prep report.
-- Verify four planned storyboard shots, artifact IDs, prompts, durations, output directories, budget limits, and stop conditions.
-- Draft the exact future Jenn authorization phrase for one bounded RunningHub 4-shot live execution.
-- Do not read credentials, `.env` files, or make live provider calls.
+- completed_by: Codex R3-9C live authorization prep
+- run_id: codex-20260708-140148-r3-9c
+- completed_at: 2026-07-08T14:06:34+08:00
+- commit: PENDING_LOCAL_COMMIT
 
-## Acceptance
+## Evidence
 
-- R3-9B plan is parsed and referenced as the source of truth.
-- Exactly 4 eligible shot plans are confirmed, with 0 local blockers or a clear `BLOCK_WITH_REASON`.
-- Each shot confirms app-created media artifact ID, `storyboard_image` role, local source path, prompt, provider `duration_seconds=6`, `output_dir`, and future local artifact storage expectations.
-- Budget and stop conditions are explicit: `max_upload_calls_total=4`, `max_submit_calls_total=4`, max one upload and one submit per shot, no retry, no second submit, no regeneration, no batch expansion, no Runway fallback.
-- Future query/download/ffprobe validation path is documented for each shot.
-- A precise future authorization phrase is drafted but not executed.
-- Report records `network_call_attempted=false`, `runninghub_called=false`, `runway_called=false`, `provider_credits_consumed=false`, `real_video_generated=false`, `secret_values_exposed=false`.
-- No credentials, `.env` files, raw provider payloads, signed URLs, source overwrite, push, tag, release, or deploy occurs.
+- data/reports/r3_9c_runninghub_4_shot_live_authorization_prep_result.json
+- data/reports/secret_scan_result.json
 
 ## Validation
 
-- JSON parse for generated authorization prep report
-- `npm run typecheck`
-- `npm run test:m1`
-- `npm run secret:scan`
-- `git diff --check`
+- JSON parse for generated authorization prep report: PASS
+- `npm run r3:9c:prep`: PASS
+- `npm run typecheck`: PASS
+- `npm run test:m1`: PASS
+- `npm run secret:scan`: PASS
+- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
 
-## Stop Reason
+## Provider Boundary
 
-Authorization prep only. Do not run any provider, credential-read, push, tag, release, or deploy action.
+- network_call_attempted: false
+- runninghub_called: false
+- runway_called: false
+- provider_credits_consumed: false
+- real_video_generated: false
+- credentials_read: false
+- env_files_read: false
+- secret_values_exposed: false
+
+## Next
+
+A future RunningHub 4-shot live run requires a new exact current Jenn authorization phrase.
