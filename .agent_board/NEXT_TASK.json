@@ -2,37 +2,33 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN",
-  "status": "DONE",
+  "task_id": "R3-8L_RECEIPT_FIX_R1",
+  "status": "READY",
   "priority": "P0",
-  "lane": "Provider Contract Repair",
+  "lane": "Provider Evidence Receipt",
   "project": "AI Video Production Workspace Three Route Plan",
-  "title": "RunningHub Duration Contract Repair Dry Run",
+  "title": "R3-8L Receipt Fix R1",
   "scope": [
-    "repair RunningHub duration minimum contract offline",
-    "add fail-fast guard before any future live retry",
-    "regenerate a dry-run plan for the same real storyboard keyframe using duration_seconds=6",
+    "backfill R3-8J receipt fix commit 590f7fd",
+    "backfill R3-8L duration contract repair commit 18f0d90",
+    "do not change provider business logic",
     "do not call RunningHub or Runway"
   ],
-  "goal": "Update the local RunningHub contract so duration_seconds < 6 fails before upload or submit.",
+  "goal": "Repair the local audit chain after R3-8J receipt fix and R3-8L duration-contract repair, before any R3-8M live canary authorization.",
   "acceptance": [
-    "RunningHub minimum duration is encoded as 6 for rhart-video-g/image-to-video.",
-    "Future duration_seconds < 6 attempts fail before upload or submit.",
-    "Request-plan builders and authorization-prep logic use duration_seconds=6 for this RunningHub model.",
-    "Tests prove duration_seconds=3 is blocked before upload/submit.",
-    "Dry-run report shows duration_seconds=6, max_upload_calls=1, max_submit_calls=1, query_until_terminal=true, network_call_attempted=false, runninghub_called=false, and provider_credits_consumed=false."
+    "R3-8J receipt-fix ledger entry records commit 590f7fd.",
+    "R3-8L ledger entry records commit 18f0d90.",
+    "R3-8L NEXT_TASK/report receipt metadata records commit 18f0d90 where applicable.",
+    "R3-8M remains FOLLOW_UP and depends on R3-8L_RECEIPT_FIX_R1.",
+    "No RunningHub call, Runway call, media upload, submit, query, output download, provider credit consumption, real video generation, source overwrite, push, tag, release, or deploy occurs."
   ],
   "validation": [
-    "npm run r3:8l:dry-run",
-    "npm run typecheck",
-    "npm run test:m1",
+    "JSON parse for updated report/state files",
     "npm run secret:scan",
     "git diff --check"
   ],
   "allowed_delivery": [
-    "source_code_change",
-    "tests",
-    "dry_run_report",
+    "receipt_metadata_update",
     "task_board_update",
     "local_commit"
   ],
@@ -53,38 +49,33 @@
     "deploy"
   ],
   "depends_on": [
-    "R3-8J_RECEIPT_FIX"
+    "R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN"
   ],
-  "created_at": "2026-07-07T17:55:56+08:00",
-  "updated_at": "2026-07-07T18:31:23+08:00",
-  "claimed_by": "Codex R3-8L executor",
-  "claim_run_id": "codex-20260707-182633-r3-8l",
-  "claimed_at": "2026-07-07T18:26:33+08:00",
-  "completed_by": "Codex R3-8L executor",
-  "completed_at": "2026-07-07T18:31:23+08:00",
+  "created_at": "2026-07-08T09:55:24+08:00",
+  "updated_at": "2026-07-08T09:55:24+08:00",
+  "claimed_by": null,
+  "claim_run_id": null,
+  "claimed_at": null,
+  "completed_by": null,
+  "completed_at": null,
   "blocked_by": null,
   "blocked_at": null,
   "failed_by": null,
   "failed_at": null,
   "skipped_by": null,
   "skipped_at": null,
-  "result": "PASS_DURATION_CONTRACT_REPAIRED",
-  "validation_result": "PASS",
+  "result": null,
+  "validation_result": null,
   "evidence": [
-    "data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json",
-    "data/reports/secret_scan_result.json"
+    "data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json",
+    "data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json"
   ],
   "commit": null,
   "delivery": "local_only",
   "boundary_or_safety_stop": "stop before R3-8M live RunningHub upload-first canary; requires a fresh exact current Jenn authorization phrase with duration_seconds=6",
   "blocked_reason": null,
   "failure_reason": null,
-  "safe_actions_completed": [
-    "encoded RunningHub minimum duration 6 for rhart-video-g/image-to-video",
-    "blocked duration_seconds=3 before upload or submit request construction",
-    "updated RunningHub authorization-prep logic to use duration_seconds=6",
-    "generated R3-8L dry-run report with max_upload_calls=1, max_submit_calls=1, query_until_terminal=true, and no provider network call"
-  ],
+  "safe_actions_completed": [],
   "unsafe_action_not_performed": [
     "runninghub_call",
     "runway_call",
@@ -101,10 +92,8 @@
     "release",
     "deploy"
   ],
-  "options_for_jenn": [
-    "Provide a fresh exact current authorization phrase for R3-8M if you want one RunningHub 6-second live canary."
-  ],
+  "options_for_jenn": [],
   "next_safe_option": [
-    "Stop at R3-8M because any live RunningHub retry requires a fresh exact current Jenn authorization phrase with duration_seconds=6."
+    "After this receipt fix, stop at R3-8M because any live RunningHub retry requires a fresh exact current Jenn authorization phrase with duration_seconds=6."
   ]
 }

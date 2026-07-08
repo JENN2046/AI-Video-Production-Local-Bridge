@@ -2076,21 +2076,55 @@ Update the local RunningHub contract so `duration_seconds < 6` fails before uplo
 - `npm run secret:scan`
 - `git diff --check`
 
+## R3-8L_RECEIPT_FIX_R1 - R3-8L Receipt Fix R1
+
+status: READY
+priority: P0
+lane: Provider Evidence Receipt
+project: AI Video Production Workspace Three Route Plan
+scope: backfill R3-8J receipt fix commit and R3-8L duration contract repair commit before any R3-8M live canary authorization
+branch: local-only
+depends_on: R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN
+source_plan: R3-8L result
+report_path: data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json
+allowed_delivery: receipt_metadata_update,task_board_update,local_commit
+blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,secret_value_output,raw_provider_payload_recording,source_overwrite,push,tag,release,deploy
+created_at: 2026-07-08T09:55:24+08:00
+updated_at: 2026-07-08T09:55:24+08:00
+
+### Goal
+
+Repair the local audit chain after R3-8J receipt fix and R3-8L duration-contract repair, before any R3-8M live canary authorization.
+
+### Acceptance
+
+- R3-8J receipt-fix ledger entry records commit `590f7fd`.
+- R3-8L ledger entry records commit `18f0d90`.
+- R3-8L NEXT_TASK/report receipt metadata records commit `18f0d90` where applicable.
+- R3-8M remains `FOLLOW_UP` and depends on `R3-8L_RECEIPT_FIX_R1`.
+- Do not call RunningHub or Runway.
+
+### Validation
+
+- JSON parse for updated report/state files
+- `npm run secret:scan`
+- `git diff --check`
+
 ## R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY - RunningHub 6s Single-Submit Canary
 
 status: FOLLOW_UP
 priority: P0
 lane: Approval Boundary Live Provider Execution
 project: AI Video Production Workspace Three Route Plan
-scope: execute one RunningHub upload-first live canary using duration_seconds=6 after R3-8L passes and Jenn gives a fresh exact authorization phrase
+scope: execute one RunningHub upload-first live canary using duration_seconds=6 after R3-8L receipt fix passes and Jenn gives a fresh exact authorization phrase
 branch: local-only
-depends_on: R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN
-source_plan: R3-8L dry-run report
+depends_on: R3-8L_RECEIPT_FIX_R1
+source_plan: R3-8L receipt-fixed dry-run report
 report_path: data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json
 allowed_delivery: one_authorized_runninghub_upload,one_authorized_runninghub_submit,status_query,output_download_if_succeeded,ffprobe_if_succeeded,sanitized_live_result_report,local_commit
 blocked_delivery: runninghub_call_without_exact_authorization,runway_call,second_submit,retry_live_submit,regeneration,batch_generation,secret_value_output,raw_provider_payload_recording,source_overwrite,push,tag,release,deploy
 created_at: 2026-07-07T17:55:56+08:00
-updated_at: 2026-07-07T17:55:56+08:00
+updated_at: 2026-07-08T09:55:24+08:00
 
 ### Goal
 

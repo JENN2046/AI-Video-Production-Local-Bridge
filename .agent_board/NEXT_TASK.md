@@ -1,38 +1,44 @@
 # NEXT_TASK.md
 
-Status: DONE
+Status: READY
 
-Task: R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN
+Task: R3-8L_RECEIPT_FIX_R1
 
-Title: RunningHub Duration Contract Repair Dry Run
+Title: R3-8L Receipt Fix R1
 
 Priority: P0
 
-Lane: Provider Contract Repair
+Lane: Provider Evidence Receipt
 
 Project: AI Video Production Workspace Three Route Plan
 
-Depends on: R3-8J_RECEIPT_FIX
+Depends on: R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN
 
-## Result
+## Goal
 
-`PASS_DURATION_CONTRACT_REPAIRED`
+Repair the local audit chain after R3-8J receipt fix and R3-8L duration-contract repair, before any R3-8M live canary authorization.
 
-## Completed Work
+## Required Work
 
-- Encoded RunningHub minimum duration as `6` for `rhart-video-g/image-to-video`.
-- Added the local fail-fast guard so `duration_seconds=3` is blocked before upload or submit request construction.
-- Updated request-plan builders and authorization-prep logic to use `duration_seconds=6` for this RunningHub model.
-- Added tests proving `duration_seconds=3` is blocked locally.
-- Produced `data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json`.
+- Backfill R3-8J receipt-fix commit `590f7fd`.
+- Backfill R3-8L duration-contract repair commit `18f0d90`.
+- Update only receipt metadata, task board state, and local audit ledger where applicable.
+- Keep R3-8M as `FOLLOW_UP` and make it depend on `R3-8L_RECEIPT_FIX_R1`.
+
+## Acceptance
+
+- No network call is attempted.
+- No RunningHub upload, submit, query, poll, or output download is attempted.
+- No Runway call is attempted.
+- No provider credits are consumed.
+- No real video is generated.
+- No secret values, signed URLs, raw provider payloads, or source assets are exposed or overwritten.
 
 ## Validation
 
-- `npm run r3:8l:dry-run` PASS
-- `npm run typecheck` PASS
-- `npm run test:m1` PASS
-- `npm run secret:scan` PASS
-- `git diff --check` PASS_WITH_CRLF_WARNINGS_ONLY
+- JSON parse for updated report/state files
+- `npm run secret:scan`
+- `git diff --check`
 
 ## Stop Reason
 
