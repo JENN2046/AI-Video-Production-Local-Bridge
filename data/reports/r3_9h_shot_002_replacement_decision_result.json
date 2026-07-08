@@ -238,7 +238,7 @@
   "git_receipt": {
     "repo": true,
     "branch": "master",
-    "commit": "PENDING_LOCAL_COMMIT",
+    "commit": "d20e63f",
     "task": "R3-9H_SHOT_002_REPLACEMENT_DECISION",
     "push": false,
     "pr": null,

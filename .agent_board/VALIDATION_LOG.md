@@ -1755,5 +1755,5 @@ Notes:
 - Compared same-keyframe prompt rework, replacement keyframe, and remove/resequence paths.
 - Recommended same-keyframe prompt rework as the next safe local option; replacement keyframe remains the fallback if Jenn rejects the source keyframe mood.
 - Final assembly remains blocked because there are zero accepted clips and SHOT_002 remains unresolved.
-- R3-9H local implementation commit: `PENDING_LOCAL_COMMIT`.
+- R3-9H local implementation commit: `d20e63f`.
 - No provider call, regeneration execution, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.

@@ -52,4 +52,4 @@ Decision only. Do not call providers, execute regeneration, assemble final video
 - validation_result: PASS
 - report: data/reports/r3_9h_shot_002_replacement_decision_result.json
 - recommended_next_path: R3-9I_SHOT_002_SAME_KEYFRAME_REGENERATION_PREP
-- commit: PENDING_LOCAL_COMMIT
+- commit: d20e63f

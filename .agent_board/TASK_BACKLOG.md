@@ -2936,7 +2936,7 @@ completed_by: Codex R3-9H shot 002 decision
 completed_at: 2026-07-08T16:51:32+08:00
 result: PASS_SHOT_002_DECISION_READY
 validation_result: PASS
-commit: PENDING_LOCAL_COMMIT
+commit: d20e63f
 
 ### Goal
 
