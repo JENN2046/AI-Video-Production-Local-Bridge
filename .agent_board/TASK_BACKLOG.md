@@ -2167,22 +2167,99 @@ Run exactly one RunningHub 6-second canary only after Jenn provides a fresh exac
 - no source overwrite
 - no secret output
 
+## R3-8M_RECEIPT_FIX - R3-8M RunningHub Auth Failure Receipt Fix
+
+status: READY
+priority: P0
+lane: Provider Evidence Receipt
+project: AI Video Production Workspace Three Route Plan
+scope: backfill R3-8M live canary commit and R3-8L receipt fix commit before offline provider-access strategy selection
+branch: local-only
+depends_on: R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY
+source_plan: R3-8M result
+report_path: data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json
+allowed_delivery: receipt_metadata_update,task_board_update,local_commit
+blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,secret_value_output,raw_provider_payload_recording,source_overwrite,push,tag,release,deploy,production_credentials_change
+created_at: 2026-07-08T10:47:37+08:00
+updated_at: 2026-07-08T10:47:37+08:00
+
+### Goal
+
+Repair the R3-8M audit chain before offline provider-access strategy selection.
+
+### Acceptance
+
+- R3-8M NEXT_TASK, TASK_LEDGER, TASK_BACKLOG, and report receipt metadata reference commit `95276eb` where applicable.
+- R3-8L_RECEIPT_FIX_R1 TASK_LEDGER and TASK_BACKLOG records reference commit `b12b67c` where applicable.
+- Receipt states upload count `1`, submit count `1`, query count `0`, no task id, no output/channel link, no video artifact, and no ffprobe.
+- Receipt states provider error `1014`: Standard Model API is restricted to Enterprise-Shared API Keys only.
+- R3-8N is left as the next eligible offline provider-access strategy decision task.
+- Do not call RunningHub or Runway.
+
+### Validation
+
+- JSON parse for updated report/state files
+- `npm run secret:scan`
+- `git diff --check`
+
+## R3-8N_PROVIDER_ACCESS_STRATEGY_DECISION - Provider Access Strategy Decision
+
+status: READY
+priority: P0
+lane: Provider Access Strategy
+project: AI Video Production Workspace Three Route Plan
+scope: decide the next provider access path offline after Runway credits failure and RunningHub Standard Model API key-type restriction
+branch: local-only
+depends_on: R3-8M_RECEIPT_FIX
+source_plan: R3-8M sanitized auth failure evidence
+report_path: data/reports/r3_8n_provider_access_strategy_decision.json
+allowed_delivery: decision_report,provider_path_recommendation,task_board_update,local_commit
+blocked_delivery: provider_call,provider_credits_consumed,real_video_generated,secret_value_output,credentials_read,credentials_write,production_credentials_change,source_overwrite,push,tag,release,deploy
+created_at: 2026-07-08T10:47:37+08:00
+updated_at: 2026-07-08T10:47:37+08:00
+
+### Goal
+
+Select the next provider-access strategy without making any live provider call or credential/account change.
+
+### Required Decision Options
+
+- Apply for or configure a RunningHub Enterprise-Shared API Key for Standard Model API.
+- Switch to an authorized RunningHub non-standard-model or workflow API path.
+- Return to Runway only after credits/account readiness is resolved.
+- Add a third provider path if it is lower-risk and can be contract-frozen before live use.
+
+### Acceptance
+
+- Summarize Runway evidence: canary reached provider but failed for credits/account readiness.
+- Summarize RunningHub evidence: duration contract fixed to `6`, but Standard Model API requires Enterprise-Shared API Key.
+- Recommend a primary next path and one fallback path.
+- Produce a no-network decision report with clear approval boundaries for any future live call.
+- Do not read `.env.local` or credentials.
+- Do not call any provider.
+
+### Validation
+
+- JSON parse for decision report
+- `npm run secret:scan`
+- `git diff --check`
+
 ## R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT - Provider Path Decision Closeout
 
 status: FOLLOW_UP
 priority: P1
 lane: Provider Decision Closeout
 project: AI Video Production Workspace Three Route Plan
-scope: summarize Runway and RunningHub evidence and decide M1 provider path readiness after a duration-valid RunningHub canary result
+scope: summarize Runway and RunningHub evidence after provider-access strategy decision and decide M1 provider path readiness
 branch: local-only
-depends_on: R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY
-source_plan: R3-8M result
+depends_on: R3-8N_PROVIDER_ACCESS_STRATEGY_DECISION
+source_plan: R3-8N result
 report_path: data/reports/r3_8k_provider_path_decision_closeout.json
 allowed_delivery: decision_report,readiness_summary,task_board_update,local_commit
 blocked_delivery: provider_call,provider_credits_consumed,real_video_generated,secret_value_output,source_overwrite,push,tag,release,deploy
 created_at: 2026-07-07T16:06:04+08:00
-updated_at: 2026-07-07T17:55:56+08:00
+updated_at: 2026-07-08T10:47:37+08:00
 
 ### Goal
 
-Close the provider-selection loop after duration-valid RunningHub live canary evidence is available. This task does not call any provider.
+Close the provider-selection loop after provider-access strategy decision evidence is available. This task does not call any provider.

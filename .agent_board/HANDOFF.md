@@ -119,6 +119,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - R3-8L completed locally: RunningHub duration guard now blocks `duration_seconds=3` before upload/submit and dry-runs the next real-keyframe plan with `duration_seconds=6`, `max_upload_calls=1`, `max_submit_calls=1`, and `query_until_terminal=true`.
 - R3-8L receipt fix R1 completed locally: R3-8J receipt-fix commit `590f7fd` and R3-8L duration-contract repair commit `18f0d90` are now backfilled in the audit chain.
 - R3-8M executed one authorized RunningHub upload and one authorized submit on 2026-07-08. Result: `PROVIDER_FAILED_AUTH_1014`; RunningHub rejected the submit because Standard Model API is restricted to Enterprise-Shared API Keys only. No task id, output URL, local video artifact, ffprobe result, or channel link exists.
+- Follow-up queue arranged on 2026-07-08: `R3-8M_RECEIPT_FIX` is READY, and `R3-8N_PROVIDER_ACCESS_STRATEGY_DECISION` is READY behind that receipt-fix dependency. Both are local/no-network tasks.
 
 ## Blocked in last run
 
@@ -134,7 +135,8 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 
 ## Remaining READY tasks
 
-- None
+- `R3-8M_RECEIPT_FIX`
+- `R3-8N_PROVIDER_ACCESS_STRATEGY_DECISION` after `R3-8M_RECEIPT_FIX` completes
 
 ## Closeout evidence
 
@@ -186,6 +188,8 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - R3-8J is `FAILED` with `PROVIDER_FAILED_DURATION_MIN_6`; do not rerun it automatically.
 - R3-8L enforced RunningHub minimum duration `6` before upload/submit.
 - R3-8M failed with `PROVIDER_FAILED_AUTH_1014`; do not retry automatically.
+- Next task is `R3-8M_RECEIPT_FIX`, a no-network receipt repair for commits `95276eb` and `b12b67c`.
+- After that, run `R3-8N_PROVIDER_ACCESS_STRATEGY_DECISION` to choose between RunningHub Enterprise-Shared API Key, a different RunningHub workflow/API path, Runway after credits readiness, or a third provider.
 - Any next RunningHub retry requires an Enterprise-Shared API Key or a different authorized provider path, plus a new exact current Jenn authorization phrase.
 - Do not submit to RunningHub without a future exact current Jenn authorization phrase.
 - Do not retry Runway canary without a new exact current Jenn authorization phrase.
