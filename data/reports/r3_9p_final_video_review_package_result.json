@@ -131,7 +131,7 @@
   "git_receipt": {
     "repo": true,
     "branch": "master",
-    "commit": "PENDING_LOCAL_COMMIT",
+    "commit": "0ee3590",
     "task": "R3-9P_FINAL_VIDEO_REVIEW_PACKAGE",
     "push": false,
     "pr": null,

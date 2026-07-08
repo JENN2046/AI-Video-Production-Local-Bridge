@@ -590,5 +590,5 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - Final video: `data/media/artifacts/final/r3-9o-final-video/ryan_lunch_break_skullcap_final_r3_9o.mp4`.
 - Final video artifact: `artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe`.
 - Final creative approval remains unrecorded.
-- R3-9P local implementation commit: `PENDING_LOCAL_COMMIT`.
+- R3-9P local implementation commit: `0ee3590`.
 - Next safe state: wait for human final video review decision before final approval, revision, publish, or closeout.
