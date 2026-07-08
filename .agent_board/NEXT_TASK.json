@@ -81,7 +81,7 @@
     "data/media/artifacts/final/r3-9o-final-video/ryan_lunch_break_skullcap_final_r3_9o.mp4",
     "data/media/artifacts/final/r3-9o-final-video/artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe.mp4"
   ],
-  "commit": null,
+  "commit": "9056c31",
   "delivery": "local_final_video_and_final_video_artifact",
   "boundary_or_safety_stop": "local assembly only; no provider call, regeneration, batch expansion, env or credential read, source overwrite, push, tag, release, deploy, or publish",
   "blocked_reason": null,

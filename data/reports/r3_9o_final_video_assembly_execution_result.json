@@ -160,7 +160,7 @@
   "git_receipt": {
     "repo": true,
     "branch": "master",
-    "commit": "PENDING_LOCAL_COMMIT",
+    "commit": "9056c31",
     "task": "R3-9O_FINAL_VIDEO_ASSEMBLY_EXECUTION",
     "push": false,
     "pr": null,

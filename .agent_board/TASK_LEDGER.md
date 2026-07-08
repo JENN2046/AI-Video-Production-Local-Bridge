@@ -3494,7 +3494,7 @@ Evidence:
 - artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe
 
 Git delivery:
-- commit: PENDING_LOCAL_COMMIT
+- commit: 9056c31
 - push: no
 
 Boundary:
