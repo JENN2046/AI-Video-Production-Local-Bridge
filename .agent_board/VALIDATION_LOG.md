@@ -1473,3 +1473,34 @@ Notes:
 - No second submit, retry, Runway call, regeneration, batch generation, source overwrite, secret output, signed URL recording, raw provider payload recording, push, tag, release, or deploy occurred.
 - `npm run typecheck`, `npm run test:m1`, and `npm run secret:scan` passed.
 - `git diff --check` passed with CRLF normalization warnings only.
+
+### R3-8K - 2026-07-08T11:53:48+08:00
+
+Commands:
+
+```bash
+node -e JSON.parse(...)
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_PROVIDER_PATH_CLOSED
+```
+
+Evidence:
+- `data/reports/r3_8k_provider_path_decision_closeout.json`
+- `data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_result.json`
+- `data/reports/r3_8n_provider_access_strategy_decision.json`
+- `data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json`
+- `data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json`
+- `data/reports/r3_8e_runway_real_storyboard_keyframe_canary_result.json`
+- `data/reports/secret_scan_result.json`
+
+Notes:
+- Closeout report parsed successfully.
+- `npm run secret:scan` passed.
+- `git diff --check` passed with CRLF normalization warnings only.
+- No RunningHub call, Runway call, upload, submit, query, output download, provider credit consumption, real video generation, secret output, raw provider payload recording, signed URL recording, source overwrite, push, tag, release, or deploy occurred during this closeout.

@@ -2146,6 +2146,65 @@ Boundary:
 Next:
 - Stop at `R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY` until Jenn provides a fresh exact current authorization phrase with `duration_seconds=6`.
 
+### 2026-07-08T11:53:48+08:00 - R3-8K Provider Path Decision Closeout
+
+Result: DONE / PASS_PROVIDER_PATH_CLOSED
+Project: AI Video Production Workspace Three Route Plan
+Lane: Provider Decision Closeout
+Claimed by: Codex R3-8K closeout
+Completed by: Codex R3-8K closeout
+Run ID: codex-20260708-115033-r3-8k-closeout
+Started at: 2026-07-08T11:50:33+08:00
+Completed at: 2026-07-08T11:53:48+08:00
+
+Scope:
+- Wrote the offline provider path decision closeout report.
+- Backfilled `R3-8O_RECEIPT_FIX_R1` commit `507c705`.
+- Summarized Runway insufficient-credits evidence.
+- Summarized RunningHub duration minimum fix, account-type failure, Enterprise Key success, generated artifact, and ffprobe PASS.
+- Recorded RunningHub Enterprise-Shared API Key path as the primary validated M1 provider lane.
+
+Changed files:
+- data/reports/r3_8k_provider_path_decision_closeout.json
+- .agent_board/NEXT_TASK.json
+- .agent_board/NEXT_TASK.md
+- .agent_board/RUN_LOCK.md
+- .agent_board/TASK_BACKLOG.md
+- .agent_board/HANDOFF.md
+- .agent_board/VALIDATION_LOG.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: node -e JSON.parse(...)
+  result: PASS
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_8k_provider_path_decision_closeout.json
+- data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_result.json
+- data/reports/r3_8n_provider_access_strategy_decision.json
+- data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json
+- data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json
+- data/reports/r3_8e_runway_real_storyboard_keyframe_canary_result.json
+- data/reports/secret_scan_result.json
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: pending
+- push: no
+- PR: none
+
+Boundary:
+- No RunningHub call, Runway call, media upload to provider, status query, output download, provider credit consumption, real video generation, secret output, raw provider payload recording, signed URL recording, source overwrite, push, tag, release, or deploy occurred during this closeout.
+
+Next:
+- No READY task remains in the local queue.
+- Any next live provider call requires a new exact current Jenn authorization phrase.
+
 ### 2026-07-08T10:51:49+08:00 - R3-8M Receipt Fix
 
 Result: DONE / PASS_RECEIPT_FIXED

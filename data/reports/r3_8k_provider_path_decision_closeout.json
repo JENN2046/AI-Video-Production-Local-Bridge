@@ -1,0 +1,194 @@
+{
+  "task": "R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT",
+  "result": "PASS_PROVIDER_PATH_CLOSED",
+  "mode": "offline_decision_closeout",
+  "generated_at": "2026-07-08T11:50:33+08:00",
+  "run_id": "codex-20260708-115033-r3-8k-closeout",
+  "source_reports": {
+    "runway_real_storyboard_canary": "data/reports/r3_8e_runway_real_storyboard_keyframe_canary_result.json",
+    "runninghub_duration_contract_repair": "data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json",
+    "runninghub_standard_model_key_type_failure": "data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json",
+    "provider_access_strategy_decision": "data/reports/r3_8n_provider_access_strategy_decision.json",
+    "runninghub_enterprise_key_canary": "data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_result.json"
+  },
+  "commit_backfill": {
+    "status": "RECORDED",
+    "r3_8o_live_canary_commit": "99dd716",
+    "r3_8o_receipt_fix_commit": "c746b08",
+    "r3_8o_receipt_fix_r1_commit": "507c705",
+    "r3_8o_receipt_fix_r1_task": "R3-8O_RECEIPT_FIX_R1",
+    "notes": [
+      "Commit 99dd716 records the authorized RunningHub Enterprise Key live canary.",
+      "Commit c746b08 backfilled the initial R3-8O canary receipt.",
+      "Commit 507c705 fixed the R3-8O receipt chain before this provider path closeout."
+    ]
+  },
+  "evidence_summary": {
+    "runway": {
+      "provider": "runway",
+      "latest_real_storyboard_attempt_task": "R3-8E_RUNWAY_REAL_STORYBOARD_KEYFRAME_CANARY",
+      "result": "PROVIDER_FAILED",
+      "failure_class": "PROVIDER_INSUFFICIENT_CREDITS",
+      "endpoint": "POST /v1/image_to_video",
+      "x_runway_version": "2024-11-06",
+      "model": "gen4.5",
+      "duration_seconds": 2,
+      "ratio": "720:1280",
+      "submit_call_count": 1,
+      "provider_job_id_present": false,
+      "real_video_generated": false,
+      "provider_credits_consumed": false,
+      "decision_position": "HOLD_UNTIL_CREDITS_OR_ACCOUNT_READINESS_IS_RESOLVED"
+    },
+    "runninghub": {
+      "provider": "runninghub",
+      "model_route": "rhart-video-g/image-to-video",
+      "duration_contract_repair": {
+        "source_task": "R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN",
+        "result": "PASS_DURATION_CONTRACT_REPAIRED",
+        "minimum_duration_seconds": 6,
+        "rejected_duration_seconds": 3,
+        "accepted_duration_seconds": 6,
+        "local_guard_blocks_duration_3_before_upload_or_submit": true,
+        "dry_run_duration_seconds": 6,
+        "dry_run_aspectRatio": "9:16",
+        "dry_run_resolution": "480p",
+        "dry_run_max_upload_calls": 1,
+        "dry_run_max_submit_calls": 1
+      },
+      "standard_model_key_type_failure": {
+        "source_task": "R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY",
+        "result": "PROVIDER_FAILED",
+        "failure_class": "PROVIDER_FAILED_AUTH_1014",
+        "provider_error_code": "1014",
+        "provider_error_meaning": "Standard Model API is restricted to Enterprise-Shared API Keys only.",
+        "upload_call_count": 1,
+        "submit_call_count": 1,
+        "query_call_count": 0,
+        "provider_job_id_present": false,
+        "real_video_generated": false,
+        "provider_credits_consumed": false,
+        "no_retry_or_second_submit": true
+      },
+      "enterprise_shared_api_key_success": {
+        "source_task": "R3-8O_RUNNINGHUB_ENTERPRISE_KEY_6S_SINGLE_SUBMIT_CANARY",
+        "result": "PASS_LIVE_SINGLE_SUBMIT_COMPLETED",
+        "provider_status": "SUCCESS",
+        "duration_seconds": 6,
+        "aspectRatio": "9:16",
+        "resolution": "480p",
+        "upload_call_count": 1,
+        "submit_call_count": 1,
+        "query_call_count": 12,
+        "provider_job_id_present": true,
+        "generated_artifact_id": "artifact_5bd5b213-3b8b-4717-bec7-298be59b0f62",
+        "local_media_artifact_storage_uri": "A:\\AI Video Production Workspace\\data\\media\\provider-canary\\r3-8o-runninghub-enterprise-key-6s-real-keyframe\\artifact_5bd5b213-3b8b-4717-bec7-298be59b0f62.mp4",
+        "ffprobe_status": "PASS",
+        "ffprobe_duration_seconds": 6.041667,
+        "has_video_stream": true,
+        "stream_count": 3,
+        "provider_credits_consumed_in_prior_authorized_live_task": true,
+        "real_video_generated_in_prior_authorized_live_task": true,
+        "no_retry_or_second_submit": true,
+        "no_raw_provider_payload_or_signed_url_recorded": true
+      }
+    }
+  },
+  "decision": {
+    "primary_validated_m1_provider_path": "runninghub_enterprise_shared_api_key",
+    "provider": "runninghub",
+    "model_route": "rhart-video-g/image-to-video",
+    "status": "PRIMARY_VALIDATED_FOR_M1_CANARY",
+    "readiness": "READY_FOR_AUTHORIZATION_GATED_NEXT_M1_PROVIDER_STEPS",
+    "selected_by": "Jenn",
+    "selected_at": "2026-07-08T11:11:39+08:00",
+    "rationale": [
+      "Runway Gen-4.5 real storyboard keyframe canary reached the provider but failed with insufficient credits before output generation.",
+      "RunningHub Standard Model API contract is now locally guarded at minimum duration 6 seconds.",
+      "RunningHub non-Enterprise key path failed provider-side with account-type error 1014.",
+      "RunningHub Enterprise-Shared API Key path completed one authorized single-submit canary successfully.",
+      "The successful RunningHub result produced a local media artifact and passed ffprobe validation."
+    ],
+    "non_primary_paths": {
+      "runway": "hold_until_credits_or_account_readiness_is_resolved",
+      "runninghub_non_enterprise_standard_model_key": "not_valid_for_standard_model_api_route",
+      "runninghub_authorized_workflow_or_non_standard_model_api": "fallback_if_enterprise_shared_key_path_becomes_unavailable",
+      "third_provider": "defer_unless_lower_risk_than_existing_validated_path"
+    }
+  },
+  "future_authorization_boundaries": {
+    "additional_live_provider_calls_require_fresh_exact_current_user_authorization": true,
+    "additional_credential_reads_require_fresh_exact_current_user_authorization": true,
+    "no_automatic_retry": true,
+    "no_automatic_second_submit": true,
+    "no_batch_generation_without_scope": true,
+    "no_regeneration_without_scope": true,
+    "no_publish_deploy_without_scope": true,
+    "no_source_asset_overwrite_without_explicit_scope": true,
+    "secret_values_must_not_be_printed": true,
+    "raw_provider_payloads_must_not_be_recorded": true,
+    "signed_urls_must_not_be_recorded": true
+  },
+  "provider_boundary_for_this_closeout_task": {
+    "network_call_attempted": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "upload_attempted": false,
+    "submit_attempted": false,
+    "status_poll_attempted": false,
+    "output_download_attempted": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "source_assets_overwritten": false,
+    "secret_values_exposed": false,
+    "raw_provider_payload_recorded": false,
+    "signed_url_recorded": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  },
+  "acceptance": {
+    "r3_8o_receipt_fix_r1_commit_507c705_backfilled": true,
+    "runway_insufficient_credits_evidence_summarized": true,
+    "runninghub_duration_minimum_fix_summarized": true,
+    "runninghub_account_type_failure_summarized": true,
+    "runninghub_enterprise_key_success_summarized": true,
+    "runninghub_generated_artifact_and_ffprobe_pass_summarized": true,
+    "primary_validated_provider_path_recorded": true,
+    "future_live_provider_calls_authorization_gated": true,
+    "no_provider_call_in_this_closeout": true,
+    "no_provider_credits_consumed_in_this_closeout": true,
+    "no_real_video_generated_in_this_closeout": true,
+    "no_secret_value_output_in_this_closeout": true,
+    "no_source_overwrite_in_this_closeout": true,
+    "no_push_tag_release_or_deploy_in_this_closeout": true
+  },
+  "validation": {
+    "json_parse": "PASS",
+    "npm_run_secret_scan": "PASS",
+    "git_diff_check": "PASS_WITH_CRLF_WARNINGS_ONLY"
+  },
+  "changed_files": [
+    "data/reports/r3_8k_provider_path_decision_closeout.json",
+    ".agent_board/NEXT_TASK.json",
+    ".agent_board/NEXT_TASK.md",
+    ".agent_board/RUN_LOCK.md",
+    ".agent_board/TASK_BACKLOG.md",
+    ".agent_board/HANDOFF.md",
+    ".agent_board/VALIDATION_LOG.md",
+    ".agent_board/TASK_LEDGER.md"
+  ],
+  "delivery": {
+    "local_commit": "PENDING_IN_CURRENT_TASK_COMMIT",
+    "push": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  },
+  "next_step": {
+    "recommended": "Use RunningHub Enterprise-Shared API Key path as the primary validated M1 provider lane.",
+    "next_live_provider_call_requires_new_exact_authorization": true,
+    "next_credential_read_requires_new_exact_authorization": true
+  }
+}

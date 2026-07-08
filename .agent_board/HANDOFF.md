@@ -1,14 +1,28 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260708-114346-r3-8k-queue-promotion
-Last result: R3-8K promoted to READY with R3-8O receipt-fix commit backfill as first required step
+Last run: codex-20260708-115033-r3-8k-closeout
+Last result: R3-8K provider path decision closeout completed; RunningHub Enterprise-Shared API Key path is primary validated M1 provider lane
 
 ## Current state
 
-Current task: R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT
-Current status: READY
+Current task: none
+Current status: EMPTY
 Current owner: None
+
+## R3-8K provider path decision closeout
+
+Completed at: 2026-07-08T11:53:48+08:00
+Result: PASS_PROVIDER_PATH_CLOSED
+Report: `data/reports/r3_8k_provider_path_decision_closeout.json`
+
+- Backfilled `R3-8O_RECEIPT_FIX_R1` commit `507c705` into the provider path closeout.
+- Summarized Runway real storyboard canary failure as `PROVIDER_INSUFFICIENT_CREDITS`; Runway remains on hold until credits or account readiness is resolved.
+- Summarized RunningHub duration minimum repair: `duration_seconds=3` is blocked locally, `duration_seconds=6` is the accepted canary contract for the current route.
+- Summarized RunningHub Standard Model API account-type failure: non-Enterprise key path failed with provider error `1014`.
+- Summarized RunningHub Enterprise-Shared API Key success: one authorized upload, one authorized submit, query to `SUCCESS`, generated artifact `artifact_5bd5b213-3b8b-4717-bec7-298be59b0f62`, and ffprobe `PASS`.
+- Decision: RunningHub Enterprise-Shared API Key path is the primary validated provider path for M1.
+- No provider call, provider credit consumption, real video generation, secret output, source overwrite, push, tag, release, or deploy occurred during this closeout.
 
 ## R3-8O receipt fix R1 closeout
 
@@ -181,7 +195,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 
 ## Remaining READY tasks
 
-- `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT`
+- None
 
 ## Closeout evidence
 
@@ -220,6 +234,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - `data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json`
 - `data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json`
 - `data/reports/r3_8n_provider_access_strategy_decision.json`
+- `data/reports/r3_8k_provider_path_decision_closeout.json`
 - `ops/reports/three_route_acceptance_review_package_20260707_103611/THREE_ROUTE_ACCEPTANCE_REVIEW.md`
 - `ops/reports/three_route_acceptance_review_package_20260707_103611/README.md`
 
@@ -238,8 +253,9 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - R3-8N provider access strategy decision is complete.
 - Jenn selected RunningHub Enterprise-Shared API Key as the primary provider-access path.
 - R3-8O Enterprise-Shared API Key 6-second RunningHub live canary completed successfully after exact authorization.
-- Next task is `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT`.
-- R3-8K must first backfill `R3-8O_RECEIPT_FIX_R1` commit `507c705`, then generate provider path closeout.
-- Any next RunningHub retry requires an Enterprise-Shared API Key or a different authorized provider path, plus a new exact current Jenn authorization phrase.
+- R3-8K provider path decision closeout is complete.
+- RunningHub Enterprise-Shared API Key path is the primary validated M1 provider lane.
+- No READY task remains in the local queue.
+- Any next RunningHub live call requires a new exact current Jenn authorization phrase.
 - Do not submit to RunningHub without a future exact current Jenn authorization phrase.
 - Do not retry Runway canary without a new exact current Jenn authorization phrase.

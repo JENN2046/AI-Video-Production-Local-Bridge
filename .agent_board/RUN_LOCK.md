@@ -37,6 +37,9 @@ last_completed_r3_8o_at: 2026-07-08T11:28:19+08:00
 last_completed_r3_8o_receipt_fix_r1_run_id: codex-20260708-113927-r3-8o-receipt-fix-r1
 last_completed_r3_8o_receipt_fix_r1_task: R3-8O_RECEIPT_FIX_R1
 last_completed_r3_8o_receipt_fix_r1_at: 2026-07-08T11:40:34+08:00
+last_completed_r3_8k_run_id: codex-20260708-115033-r3-8k-closeout
+last_completed_r3_8k_task: R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT
+last_completed_r3_8k_at: 2026-07-08T11:53:48+08:00
 
 ## Rules
 

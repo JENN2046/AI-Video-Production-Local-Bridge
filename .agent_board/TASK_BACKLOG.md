@@ -2383,7 +2383,7 @@ Repair the R3-8O audit chain before provider path closeout.
 
 ## R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT - Provider Path Decision Closeout
 
-status: READY
+status: DONE
 priority: P1
 lane: Provider Decision Closeout
 project: AI Video Production Workspace Three Route Plan
@@ -2395,7 +2395,15 @@ report_path: data/reports/r3_8k_provider_path_decision_closeout.json
 allowed_delivery: decision_report,readiness_summary,task_board_update,local_commit
 blocked_delivery: provider_call,provider_credits_consumed,real_video_generated,secret_value_output,source_overwrite,push,tag,release,deploy
 created_at: 2026-07-07T16:06:04+08:00
-updated_at: 2026-07-08T11:43:46+08:00
+updated_at: 2026-07-08T11:53:48+08:00
+claimed_by: Codex R3-8K closeout
+claim_run_id: codex-20260708-115033-r3-8k-closeout
+claimed_at: 2026-07-08T11:50:33+08:00
+completed_by: Codex R3-8K closeout
+completed_at: 2026-07-08T11:53:48+08:00
+result: PASS_PROVIDER_PATH_CLOSED
+validation_result: PASS
+commit: PENDING_IN_CURRENT_TASK_COMMIT
 
 ### Goal
 
@@ -2414,3 +2422,11 @@ Close the provider-selection loop after Enterprise Key RunningHub canary evidenc
 - JSON/YAML parse for closeout report if applicable
 - `npm run secret:scan`
 - `git diff --check`
+
+### Result
+
+- Wrote `data/reports/r3_8k_provider_path_decision_closeout.json`.
+- Recorded `R3-8O_RECEIPT_FIX_R1` commit `507c705`.
+- Recorded RunningHub Enterprise-Shared API Key path as the primary validated M1 provider lane.
+- Validation passed: JSON parse, `npm run secret:scan`, `git diff --check` with CRLF warnings only.
+- No provider call, provider credit consumption, real video generation, secret output, source overwrite, push, tag, release, or deploy occurred.
