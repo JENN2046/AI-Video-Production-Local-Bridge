@@ -82,7 +82,7 @@
     "data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_result.json",
     "data/reports/secret_scan_result.json"
   ],
-  "commit": "PENDING_IN_CURRENT_TASK_COMMIT",
+  "commit": "310ebbf",
   "delivery": "local_only",
   "boundary_or_safety_stop": "dry-run only; no provider call, credential read, or deployment",
   "blocked_reason": null,

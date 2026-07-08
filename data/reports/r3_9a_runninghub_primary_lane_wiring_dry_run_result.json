@@ -565,6 +565,16 @@
     "data/reports/r3_9a_runninghub_primary_lane_wiring_dry_run_result.json",
     ".agent_board/*"
   ],
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "310ebbf",
+    "task": "R3-9A_RUNNINGHUB_PRIMARY_LANE_WIRING_DRY_RUN",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  },
   "blocked_reason": null,
   "next_step": {
     "recommended_task": "R3-9B_STORYBOARD_PACKAGE_TO_RUNNINGHUB_GENERATION_PLAN",
