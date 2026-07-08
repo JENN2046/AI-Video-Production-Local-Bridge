@@ -271,7 +271,7 @@
   "git_receipt": {
     "repo": true,
     "branch": "master",
-    "commit": "PENDING_LOCAL_COMMIT",
+    "commit": "b9e8991",
     "task": "R3-9D_RUNNINGHUB_4_SHOT_SINGLE_PASS_LIVE_EXECUTION",
     "push": false,
     "pr": null,
@@ -279,7 +279,7 @@
     "release_or_deploy_performed": false
   },
   "receipt_metadata": {
-    "receipt_status": "COMPLETE_PENDING_COMMIT",
+    "receipt_status": "COMPLETE",
     "upload_call_count": 4,
     "submit_call_count": 4,
     "query_call_count": 74,
@@ -299,6 +299,7 @@
       "PASS"
     ],
     "no_retry_or_second_submit": true,
-    "no_raw_provider_payload_or_signed_url_recorded": true
+    "no_raw_provider_payload_or_signed_url_recorded": true,
+    "implementation_commit": "b9e8991"
   }
 }

@@ -346,4 +346,5 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - Generated clip artifacts: `artifact_ac71dfd9-371c-4eb4-a6b6-686993291ceb`, `artifact_2adc2e6d-3183-47c4-8d1b-01bf80bed73f`, `artifact_10271f09-278e-4326-b417-6b4ea64ad8ca`, `artifact_1f757b43-a308-4d80-a674-7b7a21ceec21`.
 - All 4 outputs are local media artifacts with ffprobe PASS.
 - No retry, second submit, Runway call, regeneration, batch expansion, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+- R3-9D local implementation commit: `b9e8991`.
 - Remaining READY tasks: none.

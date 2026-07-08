@@ -84,7 +84,7 @@
     "data/reports/provider_preflight_result.json",
     "data/reports/secret_scan_result.json"
   ],
-  "commit": "PENDING_LOCAL_COMMIT",
+  "commit": "b9e8991",
   "delivery": "local_only",
   "boundary_or_safety_stop": "completed exactly one bounded RunningHub 4-shot single-pass live execution; no retry, second submit, Runway, source overwrite, push, tag, release, or deploy occurred",
   "blocked_reason": null,
