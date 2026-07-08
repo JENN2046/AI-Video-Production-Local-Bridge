@@ -2,38 +2,39 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "R3-9B_STORYBOARD_PACKAGE_TO_RUNNINGHUB_GENERATION_PLAN",
-  "status": "DONE",
-  "priority": "P1",
-  "lane": "Provider Production Planning",
+  "task_id": "R3-9C_RUNNINGHUB_4_SHOT_LIVE_AUTHORIZATION_PREP",
+  "status": "READY",
+  "priority": "P0",
+  "lane": "Provider Live Authorization Prep",
   "project": "AI Video Production Workspace Three Route Plan",
-  "title": "Storyboard Package To RunningHub Generation Plan",
+  "title": "RunningHub 4-Shot Live Authorization Prep",
   "scope": [
-    "generate a local shot-by-shot RunningHub execution plan from the frozen storyboard package without live provider calls",
-    "load the current frozen storyboard package using local app data only",
-    "enforce app-created artifact IDs and storyboard_image classification",
-    "apply the RunningHub primary lane contract from R3-9A",
-    "draft the exact future authorization phrase without executing it"
+    "inspect the R3-9B local generation plan and produce a final hard-gate authorization prep report",
+    "verify four planned storyboard shots, artifact IDs, prompts, durations, output directories, budget limits, and stop conditions",
+    "draft the exact future Jenn authorization phrase for one bounded RunningHub 4-shot live execution",
+    "do not read credentials, .env files, or make live provider calls"
   ],
-  "goal": "Generate the production-readiness execution plan that maps the frozen storyboard package to RunningHub shot generation, without making any live provider call.",
+  "goal": "Prepare the final local authorization gate for a future RunningHub 4-shot live run without executing it.",
   "acceptance": [
-    "Report contains one plan entry per eligible shot in the frozen storyboard package.",
-    "Every plan entry references a real app Media Artifact ID and a local source path that is not overwritten.",
-    "Report identifies any shot blocked from live use with a local reason.",
-    "Future live provider execution remains authorization-gated and single-submit/budget bounded per user approval.",
+    "R3-9B plan is parsed and referenced as the source of truth.",
+    "Exactly 4 eligible shot plans are confirmed, with 0 local blockers or a clear BLOCK_WITH_REASON.",
+    "Each shot confirms app-created media artifact ID, storyboard_image role, local source path, prompt, provider duration_seconds=6, output_dir, and future local artifact storage expectations.",
+    "Budget and stop conditions are explicit: max_upload_calls_total=4, max_submit_calls_total=4, max one upload and one submit per shot, no retry, no second submit, no regeneration, no batch expansion, no Runway fallback.",
+    "Future query/download/ffprobe validation path is documented for each shot.",
+    "A precise future authorization phrase is drafted but not executed.",
     "Report records network_call_attempted=false, runninghub_called=false, runway_called=false, provider_credits_consumed=false, real_video_generated=false, secret_values_exposed=false.",
     "No credentials, .env files, raw provider payloads, signed URLs, source overwrite, push, tag, release, or deploy occurs."
   ],
   "validation": [
-    "JSON parse for generated plan report",
+    "JSON parse for generated authorization prep report",
     "npm run typecheck",
     "npm run test:m1",
     "npm run secret:scan",
     "git diff --check"
   ],
   "allowed_delivery": [
-    "planning_script",
-    "execution_plan_report",
+    "authorization_prep_script",
+    "hard_gate_report",
     "authorization_phrase_draft",
     "task_board_update",
     "local_commit"
@@ -47,6 +48,7 @@
     "provider_credits_consumed",
     "real_video_generated",
     "credentials_read",
+    "env_file_read",
     "secret_value_output",
     "raw_provider_payload_recording",
     "signed_url_recording",
@@ -58,45 +60,34 @@
     "production_credentials_change"
   ],
   "depends_on": [
-    "R3-9A_RUNNINGHUB_PRIMARY_LANE_WIRING_DRY_RUN"
+    "R3-9B_STORYBOARD_PACKAGE_TO_RUNNINGHUB_GENERATION_PLAN"
   ],
-  "created_at": "2026-07-08T12:02:29+08:00",
-  "updated_at": "2026-07-08T12:17:58+08:00",
-  "claimed_by": "Codex R3-9B package generation planner",
-  "claim_run_id": "codex-20260708-121358-r3-9b",
-  "claimed_at": "2026-07-08T12:13:58+08:00",
-  "completed_by": "Codex R3-9B package generation planner",
-  "completed_at": "2026-07-08T12:17:58+08:00",
+  "created_at": "2026-07-08T13:54:28+08:00",
+  "updated_at": "2026-07-08T13:54:28+08:00",
+  "claimed_by": null,
+  "claim_run_id": null,
+  "claimed_at": null,
+  "completed_by": null,
+  "completed_at": null,
   "blocked_by": null,
   "blocked_at": null,
   "failed_by": null,
   "failed_at": null,
   "skipped_by": null,
   "skipped_at": null,
-  "result": "PASS_PACKAGE_GENERATION_PLAN_READY",
-  "validation_result": "PASS",
+  "result": null,
+  "validation_result": null,
   "evidence": [
     "data/reports/r3_9b_storyboard_package_to_runninghub_generation_plan_result.json",
     "data/reports/r3_9a_runninghub_primary_lane_wiring_dry_run_result.json",
-    "data/reports/g0_r1_package_freeze_result.json",
-    "data/reports/g0_r1_import_prep_result.json",
-    "data/reports/secret_scan_result.json"
+    "data/reports/r3_8k_provider_path_decision_closeout.json"
   ],
-  "commit": "6a66db8",
+  "commit": null,
   "delivery": "local_only",
-  "boundary_or_safety_stop": "planning only; no provider call, credential read, or deployment",
+  "boundary_or_safety_stop": "authorization prep only; no provider call, credential read, or deployment",
   "blocked_reason": null,
   "failure_reason": null,
-  "safe_actions_completed": [
-    "claimed R3-9B storyboard package to RunningHub generation plan",
-    "added local planning script for storyboard-package-to-RunningHub execution planning",
-    "loaded frozen G0 storyboard package using local app data only",
-    "generated one plan entry for each of 4 eligible shots",
-    "verified every plan entry references an app-created storyboard_image artifact and local import source path",
-    "included future budget and stop conditions with max_upload_calls_total=4 and max_submit_calls_total=4",
-    "drafted a future exact authorization phrase without executing it",
-    "validated JSON parse, typecheck, test:m1, secret scan, and git diff check"
-  ],
+  "safe_actions_completed": [],
   "unsafe_action_not_performed": [
     "runninghub_call",
     "runway_call",
@@ -106,6 +97,7 @@
     "provider_credits_consumed",
     "real_video_generated",
     "credentials_read",
+    "env_file_read",
     "secret_value_output",
     "raw_provider_payload_recording",
     "signed_url_recording",
@@ -118,7 +110,7 @@
   ],
   "options_for_jenn": [],
   "next_safe_option": [
-    "Use the generated plan as the basis for a future exact current Jenn authorization phrase.",
+    "After this prep passes, Jenn may choose whether to provide the exact authorization phrase for a live RunningHub 4-shot run.",
     "Do not perform any live provider call without a future exact current Jenn authorization phrase."
   ]
 }

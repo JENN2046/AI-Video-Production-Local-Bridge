@@ -2560,3 +2560,51 @@ Generate the production-readiness execution plan that maps the frozen storyboard
 - Budget is capped at `max_upload_calls_total=4` and `max_submit_calls_total=4`, one upload/submit per shot, no retry and no second submit.
 - Validation passed: JSON parse, `npm run typecheck`, `npm run test:m1`, `npm run secret:scan`, `git diff --check` with CRLF warnings only.
 - No credentials, `.env` files, provider calls, source overwrite, push, tag, release, or deploy occurred.
+
+## R3-9C_RUNNINGHUB_4_SHOT_LIVE_AUTHORIZATION_PREP - RunningHub 4-Shot Live Authorization Prep
+
+status: READY
+priority: P0
+lane: Provider Live Authorization Prep
+project: AI Video Production Workspace Three Route Plan
+scope: inspect the R3-9B local generation plan and prepare the final hard gate plus exact authorization phrase draft for a future bounded RunningHub 4-shot live run
+branch: local-only
+depends_on: R3-9B_STORYBOARD_PACKAGE_TO_RUNNINGHUB_GENERATION_PLAN
+source_plan: R3-9B storyboard package to RunningHub generation plan
+report_path: data/reports/r3_9c_runninghub_4_shot_live_authorization_prep_result.json
+allowed_delivery: authorization_prep_script,hard_gate_report,authorization_phrase_draft,task_board_update,local_commit
+blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,credentials_read,env_file_read,secret_value_output,raw_provider_payload_recording,signed_url_recording,source_overwrite,push,tag,release,deploy,production_credentials_change
+created_at: 2026-07-08T13:54:28+08:00
+updated_at: 2026-07-08T13:54:28+08:00
+
+### Goal
+
+Prepare the final local authorization gate for a future RunningHub 4-shot live run without executing it.
+
+### Required Work
+
+- Parse `data/reports/r3_9b_storyboard_package_to_runninghub_generation_plan_result.json` as the source of truth.
+- Verify four planned storyboard shots, app-created artifact IDs, prompts, provider durations, output directories, budget limits, and stop conditions.
+- Confirm provider lane is RunningHub primary, upload-first, duration minimum `6`, no Runway fallback, no retry, no second submit, no regeneration, and no batch expansion.
+- Confirm future query/download/ffprobe validation and local media artifact registration paths are documented for each shot.
+- Draft the exact future Jenn authorization phrase for one bounded RunningHub 4-shot live execution.
+- Do not read credentials, `.env` files, raw provider payloads, signed URLs, or make live provider calls.
+
+### Acceptance
+
+- R3-9B plan is parsed and referenced as the source of truth.
+- Exactly 4 eligible shot plans are confirmed, with 0 local blockers or a clear `BLOCK_WITH_REASON`.
+- Each shot confirms app-created media artifact ID, `storyboard_image` role, local source path, prompt, provider `duration_seconds=6`, `output_dir`, and future local artifact storage expectations.
+- Budget and stop conditions are explicit: `max_upload_calls_total=4`, `max_submit_calls_total=4`, max one upload and one submit per shot, no retry, no second submit, no regeneration, no batch expansion, no Runway fallback.
+- Future query/download/ffprobe validation path is documented for each shot.
+- A precise future authorization phrase is drafted but not executed.
+- Report records `network_call_attempted=false`, `runninghub_called=false`, `runway_called=false`, `provider_credits_consumed=false`, `real_video_generated=false`, `secret_values_exposed=false`.
+- No credentials, `.env` files, raw provider payloads, signed URLs, source overwrite, push, tag, release, or deploy occurs.
+
+### Validation
+
+- JSON parse for generated authorization prep report
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`

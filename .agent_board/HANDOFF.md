@@ -1,14 +1,25 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260708-121358-r3-9b
-Last result: R3-9B storyboard package to RunningHub generation plan completed
+Last run: codex-20260708-135428-r3-9c-queue-arrangement
+Last result: R3-9C RunningHub 4-shot live authorization prep queued
 
 ## Current state
 
-Current task: none
-Current status: EMPTY
+Current task: R3-9C_RUNNINGHUB_4_SHOT_LIVE_AUTHORIZATION_PREP
+Current status: READY
 Current owner: None
+
+## R3-9C queue arrangement
+
+Arranged at: 2026-07-08T13:54:28+08:00
+Result: READY_TASK_QUEUED
+
+- `R3-9C_RUNNINGHUB_4_SHOT_LIVE_AUTHORIZATION_PREP` is loaded into `NEXT_TASK` as `READY`.
+- R3-9C depends on `R3-9B_STORYBOARD_PACKAGE_TO_RUNNINGHUB_GENERATION_PLAN`.
+- R3-9C is authorization prep only: it may generate a hard-gate report and exact authorization phrase draft, but must not perform a live provider call.
+- No credentials, `.env` files, raw provider payloads, signed URLs, source overwrite, push, tag, release, or deploy are allowed.
+- Future live RunningHub execution remains gated by a new exact current Jenn authorization phrase.
 
 ## R3-9B storyboard package to RunningHub generation plan
 
@@ -42,10 +53,10 @@ Report: `data/reports/r3_9a_runninghub_primary_lane_wiring_dry_run_result.json`
 Arranged at: 2026-07-08T12:02:29+08:00
 Result: READY_TASKS_QUEUED
 
-- `R3-9A_RUNNINGHUB_PRIMARY_LANE_WIRING_DRY_RUN` is loaded into `NEXT_TASK` as `READY`.
-- `R3-9B_STORYBOARD_PACKAGE_TO_RUNNINGHUB_GENERATION_PLAN` is added to backlog as `READY` and depends on `R3-9A_RUNNINGHUB_PRIMARY_LANE_WIRING_DRY_RUN`.
-- R3-9A is dry-run only: no provider call, no credential read, no source overwrite, no push, tag, release, or deploy.
-- R3-9B is planning only: no provider call, no credential read, no source overwrite, no push, tag, release, or deploy.
+- `R3-9A_RUNNINGHUB_PRIMARY_LANE_WIRING_DRY_RUN` later completed with `PASS_PRIMARY_LANE_WIRED_DRY_RUN`.
+- `R3-9B_STORYBOARD_PACKAGE_TO_RUNNINGHUB_GENERATION_PLAN` later completed with `PASS_PACKAGE_GENERATION_PLAN_READY`.
+- R3-9A was dry-run only: no provider call, no credential read, no source overwrite, no push, tag, release, or deploy.
+- R3-9B was planning only: no provider call, no credential read, no source overwrite, no push, tag, release, or deploy.
 - Future live RunningHub execution remains gated by a new exact current Jenn authorization phrase.
 
 ## R3-8K provider path decision closeout
@@ -233,8 +244,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 
 ## Remaining READY tasks
 
-- `R3-9A_RUNNINGHUB_PRIMARY_LANE_WIRING_DRY_RUN`
-- `R3-9B_STORYBOARD_PACKAGE_TO_RUNNINGHUB_GENERATION_PLAN` depends on `R3-9A_RUNNINGHUB_PRIMARY_LANE_WIRING_DRY_RUN` and should run after R3-9A is DONE.
+- `R3-9C_RUNNINGHUB_4_SHOT_LIVE_AUTHORIZATION_PREP`
 
 ## Closeout evidence
 
@@ -294,8 +304,8 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - R3-8O Enterprise-Shared API Key 6-second RunningHub live canary completed successfully after exact authorization.
 - R3-8K provider path decision closeout is complete.
 - RunningHub Enterprise-Shared API Key path is the primary validated M1 provider lane.
-- Next task is `R3-9A_RUNNINGHUB_PRIMARY_LANE_WIRING_DRY_RUN`.
-- After R3-9A is DONE, `R3-9B_STORYBOARD_PACKAGE_TO_RUNNINGHUB_GENERATION_PLAN` is eligible to run.
+- Next task is `R3-9C_RUNNINGHUB_4_SHOT_LIVE_AUTHORIZATION_PREP`.
+- R3-9C should produce a local hard-gate report and exact authorization phrase draft only; it must not call RunningHub.
 - Any next RunningHub live call requires a new exact current Jenn authorization phrase.
 - Do not submit to RunningHub without a future exact current Jenn authorization phrase.
 - Do not retry Runway canary without a new exact current Jenn authorization phrase.
