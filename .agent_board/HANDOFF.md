@@ -1,21 +1,32 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260708-142157-r3-9d-queue-arrangement
-Last result: R3-9D RunningHub 4-shot live execution arranged as FOLLOW_UP pending exact authorization
+Last run: codex-20260708-145851-r3-9e-queue-arrangement
+Last result: R3-9E RunningHub generated clip review prep queued
 
 ## Current state
 
-Current task: none
-Current status: EMPTY
+Current task: R3-9E_RUNNINGHUB_GENERATED_CLIP_REVIEW_PREP
+Current status: READY
 Current owner: None
+
+## R3-9E queue arrangement
+
+Arranged at: 2026-07-08T14:58:51+08:00
+Result: READY_TASK_QUEUED
+
+- `R3-9E_RUNNINGHUB_GENERATED_CLIP_REVIEW_PREP` is loaded into `NEXT_TASK` as `READY`.
+- R3-9E depends on `R3-9D_RUNNINGHUB_4_SHOT_SINGLE_PASS_LIVE_EXECUTION`.
+- R3-9E is local review prep only: it may prepare a review package and review table, but must not call providers, regenerate clips, assemble final video, or mark review decisions.
+- Review package should cover the 4 generated RunningHub clips, their local mp4 paths, generated artifact IDs, ffprobe summaries, source keyframe references, and prompt context.
+- No provider call, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy may occur.
 
 ## R3-9D queue arrangement
 
 Arranged at: 2026-07-08T14:21:57+08:00
 Result: FOLLOW_UP_TASK_QUEUED
 
-- `R3-9D_RUNNINGHUB_4_SHOT_SINGLE_PASS_LIVE_EXECUTION` is added to backlog as `FOLLOW_UP`.
+- `R3-9D_RUNNINGHUB_4_SHOT_SINGLE_PASS_LIVE_EXECUTION` was added to backlog as `FOLLOW_UP` and later completed after exact authorization.
 - R3-9D depends on `R3-9C_RUNNINGHUB_4_SHOT_LIVE_AUTHORIZATION_PREP`.
 - It must not be promoted to `READY` until Jenn provides a new exact current authorization phrase.
 - Live boundary: provider `runninghub`, 4 storyboard shots, provider duration `6` seconds per shot, max 4 uploads and 4 submits total, max one upload and one submit per shot.
@@ -258,11 +269,11 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 
 ## Remaining READY tasks
 
-- None
+- `R3-9E_RUNNINGHUB_GENERATED_CLIP_REVIEW_PREP`
 
 ## Remaining FOLLOW_UP tasks
 
-- `R3-9D_RUNNINGHUB_4_SHOT_SINGLE_PASS_LIVE_EXECUTION` waits for a new exact current Jenn authorization phrase.
+- None
 
 ## Closeout evidence
 
@@ -322,8 +333,10 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - R3-8O Enterprise-Shared API Key 6-second RunningHub live canary completed successfully after exact authorization.
 - R3-8K provider path decision closeout is complete.
 - RunningHub Enterprise-Shared API Key path is the primary validated M1 provider lane.
-- R3-9D is arranged as `FOLLOW_UP` for a future bounded RunningHub 4-shot live run.
-- Any next RunningHub live call requires a new exact current Jenn authorization phrase.
+- R3-9D completed the bounded RunningHub 4-shot live run successfully.
+- Next task is `R3-9E_RUNNINGHUB_GENERATED_CLIP_REVIEW_PREP`.
+- R3-9E is local review prep only and must not call providers or mutate review decisions.
+- Any future RunningHub live call still requires a new exact current Jenn authorization phrase.
 - Do not submit to RunningHub without a future exact current Jenn authorization phrase.
 - Do not retry Runway canary without a new exact current Jenn authorization phrase.
 
@@ -334,7 +347,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - Confirmed 4 eligible RunningHub storyboard shot plans and 0 local blockers.
 - Budget remains capped at 4 uploads and 4 submits total, one upload and one submit per shot, no retry, no second submit, no regeneration, no batch expansion, and no Runway fallback.
 - No credentials, `.env` files, RunningHub call, Runway call, provider upload/submit/query/download, source overwrite, push, tag, release, or deploy occurred.
-- Remaining READY tasks: none.
+- Remaining READY task after this closeout: `R3-9E_RUNNINGHUB_GENERATED_CLIP_REVIEW_PREP`.
 - R3-9C local implementation commit: `17caf18`.
 - Any future RunningHub 4-shot live execution requires a new exact current Jenn authorization phrase.
 
@@ -347,4 +360,4 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - All 4 outputs are local media artifacts with ffprobe PASS.
 - No retry, second submit, Runway call, regeneration, batch expansion, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
 - R3-9D local implementation commit: `b9e8991`.
-- Remaining READY tasks: none.
+- Remaining READY task after this closeout: `R3-9E_RUNNINGHUB_GENERATED_CLIP_REVIEW_PREP`.

@@ -1,62 +1,48 @@
 # NEXT_TASK.md
 
-Status: DONE
+Status: READY
 
-Task: R3-9D_RUNNINGHUB_4_SHOT_SINGLE_PASS_LIVE_EXECUTION
+Task: R3-9E_RUNNINGHUB_GENERATED_CLIP_REVIEW_PREP
 
-Title: RunningHub 4-Shot Single-Pass Live Execution
+Title: RunningHub Generated Clip Review Prep
 
-Priority: P0
+Priority: P1
 
-Lane: Provider Live Execution
+Lane: Generated Clip Review Prep
 
 Project: AI Video Production Workspace Three Route Plan
 
-## Result
+Depends on: R3-9D_RUNNINGHUB_4_SHOT_SINGLE_PASS_LIVE_EXECUTION
 
-PASS_LIVE_4_SHOT_SINGLE_PASS_COMPLETED
+## Goal
 
-## Completed
+Prepare the human review surface for the four RunningHub-generated clips without changing review state or calling providers.
 
-- completed_by: Codex R3-9D RunningHub live executor
-- run_id: codex-20260708-143236-r3-9d
-- completed_at: 2026-07-08T14:49:31+08:00
-- commit: b9e8991
+## Required Work
 
-## Live Execution
+- Parse the R3-9D live result report as the source of truth.
+- Prepare a local review package for the four generated RunningHub clips.
+- Summarize generated clip artifacts, local mp4 paths, ffprobe results, source keyframe references, and prompt context.
+- Create a human review table with `accept`, `reject`, and `regenerate_requested` decision fields.
+- Do not call providers, regenerate clips, assemble final video, or mark review decisions.
 
-- upload_call_count: 4
-- submit_call_count: 4
-- query_call_count: 74
-- successful_shot_count: 4
-- failed_shot_count: 0
-- skipped_shot_count: 0
+## Acceptance
 
-## Output Artifacts
-
-- g0_r1_shot_001: artifact_ac71dfd9-371c-4eb4-a6b6-686993291ceb (PASS)
-- g0_r1_shot_002: artifact_2adc2e6d-3183-47c4-8d1b-01bf80bed73f (PASS)
-- g0_r1_shot_003: artifact_10271f09-278e-4326-b417-6b4ea64ad8ca (PASS)
-- g0_r1_shot_004: artifact_1f757b43-a308-4d80-a674-7b7a21ceec21 (PASS)
-
-## Evidence
-
-- data/reports/r3_9d_runninghub_4_shot_single_pass_live_execution_result.json
-- data/reports/provider_env_check_result.json
-- data/reports/provider_preflight_result.json
-- data/reports/secret_scan_result.json
+- Review package includes exactly 4 generated clips unless the source report is inconsistent.
+- Each review entry records `shot_id`, generated `artifact_id`, local mp4 path, ffprobe status, duration summary, source storyboard image artifact, source keyframe path, prompt summary, and review decision placeholders.
+- Review decision placeholders include `accept`, `reject`, `regenerate_requested`, notes, and reviewer fields without preselecting a decision.
+- Package includes instructions for the next human review step without modifying app review status.
+- Report records `network_call_attempted=false`, `runninghub_called=false`, `runway_called=false`, `provider_credits_consumed=false`, `real_video_generated=false`, `regeneration_performed=false`, `final_assembly_performed=false`, `secret_values_exposed=false`.
+- No provider call, regeneration, batch expansion, final assembly, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurs.
 
 ## Validation
 
-- `npm run env:check` with RunningHub override: PASS
-- `npm run provider:preflight` with RunningHub override: PASS
-- `npm run r3:9d:live`: PASS
-- JSON parse for generated live report: PASS
-- `npm run typecheck`: PASS
-- `npm run test:m1`: PASS
-- `npm run secret:scan`: PASS
-- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+- JSON/YAML parse for generated review package report
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
 
-## Boundary
+## Stop Reason
 
-No retry, second submit, Runway call, regeneration, batch expansion, secret output, raw provider payload recording, signed URL recording, source overwrite, push, tag, release, or deploy occurred.
+Review prep only. Do not mutate review decisions, call providers, regenerate, assemble final video, push, tag, release, or deploy.
