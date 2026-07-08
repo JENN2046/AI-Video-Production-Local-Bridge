@@ -1982,3 +1982,32 @@ Notes:
 - `git diff --check`: PASS with CRLF warnings only.
 - No provider call, regeneration, batch expansion, `.env` or credential read, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, deploy, or publish occurred.
 - R3-9O local implementation commit: `9056c31`.
+
+### R3-9P - 2026-07-08T18:57:20+08:00
+
+Commands:
+
+```bash
+npm run r3:9p:review-package
+node -e JSON.parse(...) with review table required fields and final video path checks
+npm run typecheck
+npm run test:m1
+npm run secret:scan
+git diff --check
+```
+
+Result: `PASS_FINAL_VIDEO_REVIEW_PACKAGE_READY`
+
+Evidence:
+- `data/reports/r3_9p_final_video_review_package_result.json`
+- `data/reports/r3_9p_final_video_review_table.md`
+- `data/reports/r3_9o_final_video_assembly_execution_result.json`
+
+Notes:
+- Final video path exists and ffprobe evidence from R3-9O is PASS.
+- Review table includes `accept`, `reject`, and `revision_requested` controls with no preselected decision.
+- Final creative approval remains unrecorded.
+- `npm run test:m1`: PASS, 22 tests.
+- `git diff --check`: PASS with CRLF warnings only.
+- No provider call, regeneration, batch expansion, `.env` or credential read, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, deploy, publish, or final creative approval occurred.
+- R3-9P local implementation commit: `PENDING_LOCAL_COMMIT`.

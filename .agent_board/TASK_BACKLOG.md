@@ -3380,7 +3380,7 @@ Create the local final assembled video from the accepted clips using the validat
 
 ## R3-9P_FINAL_VIDEO_REVIEW_PACKAGE - Final Video Review Package
 
-status: READY
+status: DONE
 priority: P1
 lane: Final Video Review
 project: AI Video Production Workspace Three Route Plan
@@ -3393,7 +3393,15 @@ review_table_path: data/reports/r3_9p_final_video_review_table.md
 allowed_delivery: final_video_review_report,final_video_review_table,local_video_link_summary,task_board_update,local_commit
 blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,provider_submit,status_poll,output_download_from_provider,provider_credits_consumed,regeneration_execution,batch_expansion,env_file_read,credential_read,source_overwrite,secret_value_output,raw_provider_payload_recording,signed_url_recording,push,tag,release,deploy,publish,final_creative_approval
 created_at: 2026-07-08T18:22:13+08:00
-updated_at: 2026-07-08T18:22:13+08:00
+updated_at: 2026-07-08T18:57:20+08:00
+claimed_by: Codex R3-9P final video review package
+claim_run_id: codex-20260708-185423-r3-9p
+claimed_at: 2026-07-08T18:54:23+08:00
+completed_by: Codex R3-9P final video review package
+completed_at: 2026-07-08T18:57:20+08:00
+result: PASS_FINAL_VIDEO_REVIEW_PACKAGE_READY
+validation_result: PASS
+commit: PENDING_LOCAL_COMMIT
 
 ### Goal
 
@@ -3426,3 +3434,12 @@ Prepare a local Chinese review package for the assembled final video so Jenn can
 
 - Review package only.
 - No provider call, regeneration, batch expansion, `.env` or credential read, source overwrite, push, tag, release, deploy, publish, or final creative approval.
+
+### Result
+
+- Generated `data/reports/r3_9p_final_video_review_package_result.json`.
+- Generated `data/reports/r3_9p_final_video_review_table.md`.
+- Included final video path, final video artifact id, ffprobe summary, and all 4 source clip artifact ids.
+- Review controls are present but not preselected.
+- Final creative approval remains unrecorded.
+- Validation passed: JSON parse, review table required fields, final video path existence, `npm run typecheck`, `npm run test:m1`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.

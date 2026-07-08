@@ -2,40 +2,37 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "R3-9O_FINAL_VIDEO_ASSEMBLY_EXECUTION",
+  "task_id": "R3-9P_FINAL_VIDEO_REVIEW_PACKAGE",
   "status": "DONE",
-  "priority": "P0",
-  "lane": "Final Assembly Execution",
+  "priority": "P1",
+  "lane": "Final Video Review",
   "project": "AI Video Production Workspace Three Route Plan",
-  "title": "Final Video Assembly Execution",
+  "title": "Final Video Review Package",
   "scope": [
-    "parse data/reports/r3_9n_final_video_assembly_dry_run_result.json",
-    "require R3-9N result PASS_READY_FOR_LOCAL_FINAL_ASSEMBLY_EXECUTION",
-    "execute the validated local assembly command or equivalent project assembly function",
-    "write output only to the isolated final video output path from R3-9N",
-    "register the final video as a local media artifact if supported",
-    "run ffprobe on the produced final video"
+    "parse data/reports/r3_9o_final_video_assembly_execution_result.json",
+    "include final video path, final video artifact id, ffprobe summary, source clip list, and assembly report link",
+    "generate a Chinese final-video review table with placeholders for accept, reject, and revision_requested",
+    "state that the package does not publish, deploy, upload, or mark final creative approval"
   ],
-  "goal": "Create the local final assembled video from the accepted clips using the validated R3-9N assembly plan.",
+  "goal": "Prepare a local Chinese review package for the assembled final video so Jenn can decide final creative approval separately.",
   "acceptance": [
-    "Report includes final video path, final video artifact id if registered, input artifact ids, duration, ffprobe result, and no-overwrite confirmation.",
-    "Result is PASS_LOCAL_FINAL_VIDEO_ASSEMBLED only if final video exists and ffprobe passes.",
-    "Report records network_call_attempted=false, runninghub_called=false, runway_called=false, provider_credits_consumed=false, regeneration_performed=false, batch_generation_performed=false, env_files_read=false, credentials_read=false, source_assets_overwritten=false, secret_values_exposed=false, publish_performed=false, release_or_deploy_performed=false."
+    "Report and review table include the final local video path and all source clip artifact ids.",
+    "Review controls are present but not preselected.",
+    "Report records network_call_attempted=false, runninghub_called=false, runway_called=false, provider_credits_consumed=false, publish_performed=false, release_or_deploy_performed=false, final_creative_approval_recorded=false, env_files_read=false, credentials_read=false, secret_values_exposed=false."
   ],
   "validation": [
-    "JSON parse for generated assembly execution report",
+    "JSON parse for generated final video review package report",
+    "review table required fields check",
     "final video path existence check",
-    "final video ffprobe PASS",
     "npm run typecheck",
     "npm run test:m1",
     "npm run secret:scan",
     "git diff --check"
   ],
   "allowed_delivery": [
-    "local_final_video",
-    "final_video_artifact",
-    "ffprobe_validation",
-    "assembly_execution_report",
+    "final_video_review_report",
+    "final_video_review_table",
+    "local_video_link_summary",
     "task_board_update",
     "local_commit"
   ],
@@ -59,40 +56,41 @@
     "tag",
     "release",
     "deploy",
-    "publish"
+    "publish",
+    "final_creative_approval"
   ],
   "depends_on": [
-    "R3-9N_FINAL_VIDEO_ASSEMBLY_DRY_RUN"
+    "R3-9O_FINAL_VIDEO_ASSEMBLY_EXECUTION"
   ],
-  "source_report": "data/reports/r3_9n_final_video_assembly_dry_run_result.json",
-  "report_path": "data/reports/r3_9o_final_video_assembly_execution_result.json",
+  "source_report": "data/reports/r3_9o_final_video_assembly_execution_result.json",
+  "report_path": "data/reports/r3_9p_final_video_review_package_result.json",
+  "review_table_path": "data/reports/r3_9p_final_video_review_table.md",
   "created_at": "2026-07-08T18:22:13+08:00",
-  "updated_at": "2026-07-08T18:51:49+08:00",
-  "claimed_by": "Codex R3-9O final video assembly execution",
-  "claim_run_id": "codex-20260708-184705-r3-9o",
-  "claimed_at": "2026-07-08T18:47:05+08:00",
-  "completed_by": "Codex R3-9O final video assembly execution",
-  "completed_at": "2026-07-08T18:51:49+08:00",
-  "result": "PASS_LOCAL_FINAL_VIDEO_ASSEMBLED",
+  "updated_at": "2026-07-08T18:57:20+08:00",
+  "claimed_by": "Codex R3-9P final video review package",
+  "claim_run_id": "codex-20260708-185423-r3-9p",
+  "claimed_at": "2026-07-08T18:54:23+08:00",
+  "completed_by": "Codex R3-9P final video review package",
+  "completed_at": "2026-07-08T18:57:20+08:00",
+  "result": "PASS_FINAL_VIDEO_REVIEW_PACKAGE_READY",
   "validation_result": "PASS",
   "evidence": [
-    "data/reports/r3_9n_final_video_assembly_dry_run_result.json",
-    "data/reports/r3_9o_final_video_assembly_execution_result.json",
-    "data/media/artifacts/final/r3-9o-final-video/ryan_lunch_break_skullcap_final_r3_9o.mp4",
-    "data/media/artifacts/final/r3-9o-final-video/artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe.mp4"
+    "data/reports/r3_9p_final_video_review_package_result.json",
+    "data/reports/r3_9p_final_video_review_table.md",
+    "data/reports/r3_9o_final_video_assembly_execution_result.json"
   ],
-  "commit": "9056c31",
-  "delivery": "local_final_video_and_final_video_artifact",
-  "boundary_or_safety_stop": "local assembly only; no provider call, regeneration, batch expansion, env or credential read, source overwrite, push, tag, release, deploy, or publish",
+  "commit": null,
+  "delivery": "local_final_video_review_package",
+  "boundary_or_safety_stop": "review package only; no provider call, regeneration, batch expansion, env or credential read, source overwrite, push, tag, release, deploy, publish, or final creative approval",
   "blocked_reason": null,
   "failure_reason": null,
   "safe_actions_completed": [
-    "Parsed R3-9N dry-run report and required PASS_READY_FOR_LOCAL_FINAL_ASSEMBLY_EXECUTION.",
-    "Executed local ffmpeg concat assembly only inside data/media/artifacts/final/r3-9o-final-video.",
-    "Created final video at data/media/artifacts/final/r3-9o-final-video/ryan_lunch_break_skullcap_final_r3_9o.mp4.",
-    "Registered final video artifact artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe.",
-    "Updated project export final_video_artifact_id and recorded local assemble_video run.",
-    "Validated JSON parse, final video path existence, final video ffprobe PASS, npm run typecheck, npm run test:m1, npm run secret:scan, and git diff --check."
+    "Parsed R3-9O final assembly execution report.",
+    "Generated local Chinese final video review table.",
+    "Generated final video review package JSON report.",
+    "Included final video path, final video artifact id, ffprobe summary, and all 4 source clip artifact ids.",
+    "Recorded final_creative_approval_recorded=false.",
+    "Validated JSON parse, review table required fields, final video path existence, npm run typecheck, npm run test:m1, npm run secret:scan, and git diff --check."
   ],
   "unsafe_action_not_performed": [
     "runninghub_call",
@@ -105,12 +103,13 @@
     "source_overwrite",
     "secret_value_output",
     "publish",
+    "final_creative_approval",
     "push",
     "tag",
     "release",
     "deploy"
   ],
   "next_safe_option": [
-    "Proceed to R3-9P final video review package."
+    "Wait for human final video review decision before any final approval, revision, publish, or closeout task."
   ]
 }
