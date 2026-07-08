@@ -3694,3 +3694,39 @@ Boundary:
 
 Next:
 - Proceed to R1-8 operator runbook and prompt pack if still eligible.
+
+### 2026-07-08T20:35:57+08:00 - R1-8 WebGPT Operator Runbook And Prompt Pack
+
+Result: DONE / PASS_WEBGPT_OPERATOR_RUNBOOK_AND_PROMPT_PACK_READY
+Project: AI Video Production Workspace GPT Bridge Line
+Lane: WebGPT Bridge
+Run ID: codex-20260708-202753-r1-8
+Completed at: 2026-07-08T20:35:57+08:00
+
+Scope:
+- Created a Chinese local operator runbook for WebGPT handoff.
+- Created a Chinese WebGPT prompt pack that forbids invented app IDs.
+- Generated a closeout report for R1-8.
+- Did not start a public tunnel, call providers, read env files or credentials, overwrite source assets, output secrets, push, tag, release, deploy, or publish.
+
+Validation:
+- JSON parse for generated R1-8 report: PASS
+- Required section check for both docs: PASS
+- `npm run typecheck`: PASS
+- `npm run secret:scan`: PASS
+- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- docs/webgpt/WEBGPT_OPERATOR_RUNBOOK_R1_8.md
+- docs/webgpt/WEBGPT_PROMPT_PACK_R1_8.md
+- data/reports/r1_8_webgpt_operator_runbook_and_prompt_pack_result.json
+
+Git delivery:
+- commit: PENDING_LOCAL_COMMIT
+- push: no
+
+Boundary:
+- No public tunnel, provider call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+
+Next:
+- Stop automatic R1 execution because `R1-9_CHATGPT_MCP_APP_PACKAGING_DECISION` remains FOLLOW_UP.

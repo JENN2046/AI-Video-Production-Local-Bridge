@@ -100,6 +100,9 @@ last_completed_r1_6_at: 2026-07-08T20:15:42+08:00
 last_completed_r1_7_run_id: codex-20260708-201837-r1-7
 last_completed_r1_7_task: R1-7_WEBGPT_LOCAL_BRIDGE_SMOKE_VALIDATION
 last_completed_r1_7_at: 2026-07-08T20:25:02+08:00
+last_completed_r1_8_run_id: codex-20260708-202753-r1-8
+last_completed_r1_8_task: R1-8_WEBGPT_OPERATOR_RUNBOOK_AND_PROMPT_PACK
+last_completed_r1_8_at: 2026-07-08T20:35:57+08:00
 
 ## Rules
 

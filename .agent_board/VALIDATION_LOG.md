@@ -2140,3 +2140,29 @@ Notes:
 - `git diff --check`: PASS with CRLF warnings only.
 - No public tunnel, provider call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
 - R1-7 local implementation commit: `4a9f05f`.
+
+### R1-8 - 2026-07-08T20:35:57+08:00
+
+Commands:
+
+```bash
+node -e JSON.parse(...) with required doc section checks
+npm run typecheck
+npm run secret:scan
+git diff --check
+```
+
+Result: `PASS_WEBGPT_OPERATOR_RUNBOOK_AND_PROMPT_PACK_READY`
+
+Evidence:
+- `docs/webgpt/WEBGPT_OPERATOR_RUNBOOK_R1_8.md`
+- `docs/webgpt/WEBGPT_PROMPT_PACK_R1_8.md`
+- `data/reports/r1_8_webgpt_operator_runbook_and_prompt_pack_result.json`
+
+Notes:
+- The operator runbook is Chinese and covers imports, Media Artifact registration, storyboard package freeze, clip generation review, final assembly review, and closeout evidence.
+- The prompt pack is Chinese and explicitly forbids WebGPT from inventing `artifact_id`, `storyboard_package_id`, `project_id`, provider task IDs, or review decisions.
+- The report records all provider and secret boundary flags as false.
+- `git diff --check`: PASS with CRLF warnings only.
+- No public tunnel, provider call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+- R1-8 local implementation commit: `PENDING_LOCAL_COMMIT`.

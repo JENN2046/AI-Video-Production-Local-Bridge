@@ -1,46 +1,43 @@
 # NEXT_TASK
 
-task_id: R1-7_WEBGPT_LOCAL_BRIDGE_SMOKE_VALIDATION
+task_id: R1-8_WEBGPT_OPERATOR_RUNBOOK_AND_PROMPT_PACK
 status: DONE
-priority: P0
+priority: P1
 lane: WebGPT Bridge
 project: AI Video Production Workspace GPT Bridge Line
-title: WebGPT Local Bridge Smoke Validation
-claimed_by: Codex R1-7 local bridge smoke validation
-claim_run_id: codex-20260708-201837-r1-7
-claimed_at: 2026-07-08T20:18:37+08:00
-completed_by: Codex R1-7 local bridge smoke validation
-completed_at: 2026-07-08T20:25:02+08:00
-result: PASS_WEBGPT_LOCAL_BRIDGE_SMOKE_VALIDATED
+title: WebGPT Operator Runbook And Prompt Pack
+claimed_by: Codex R1-8 operator runbook prompt pack
+claim_run_id: codex-20260708-202753-r1-8
+claimed_at: 2026-07-08T20:27:53+08:00
+completed_by: Codex R1-8 operator runbook prompt pack
+completed_at: 2026-07-08T20:35:57+08:00
+result: PASS_WEBGPT_OPERATOR_RUNBOOK_AND_PROMPT_PACK_READY
 validation_result: PASS
-source_report: data/reports/r1_6_webgpt_post_closeout_bridge_reality_audit_result.json
+source_report: data/reports/r1_7_webgpt_local_bridge_smoke_validation_result.json
 final_closeout_report: data/reports/r3_9r_final_delivery_closeout_result.json
-report_path: data/reports/r1_7_webgpt_local_bridge_smoke_validation_result.json
+report_path: data/reports/r1_8_webgpt_operator_runbook_and_prompt_pack_result.json
+runbook_path: docs/webgpt/WEBGPT_OPERATOR_RUNBOOK_R1_8.md
+prompt_pack_path: docs/webgpt/WEBGPT_PROMPT_PACK_R1_8.md
 
 ## Goal
 
-Validate that the local WebGPT bridge commands and test surfaces still work after final video closeout.
+Create a Chinese local operator runbook and WebGPT prompt pack so future Web GPT outputs can be handed into the local system consistently.
 
 ## Boundary
 
-- Local smoke validation only.
+- Documentation and prompt pack only.
 - No public tunnel, provider call, `.env` or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change.
 
 ## Evidence
 
-- `data/reports/r1_7_webgpt_local_bridge_smoke_validation_result.json`
-- `data/reports/r1_6_webgpt_post_closeout_bridge_reality_audit_result.json`
-- `data/reports/r3_9r_final_delivery_closeout_result.json`
+- `docs/webgpt/WEBGPT_OPERATOR_RUNBOOK_R1_8.md`
+- `docs/webgpt/WEBGPT_PROMPT_PACK_R1_8.md`
+- `data/reports/r1_8_webgpt_operator_runbook_and_prompt_pack_result.json`
 
 ## Validation
 
-- `npm run r1:7:smoke`: PASS
-- JSON/direct smoke check: PASS
+- JSON parse for generated R1-8 report: PASS
+- Required section check for both docs: PASS
 - `npm run typecheck`: PASS
-- `npm run test:webgpt:bridge`: PASS
-- `npm run test:webgpt:drafts`: PASS
-- `npm run test:webgpt:pending`: PASS
-- `npm run test:webgpt:review`: PASS
-- `npm run test:webgpt:production`: PASS
 - `npm run secret:scan`: PASS
 - `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY

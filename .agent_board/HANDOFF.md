@@ -1,14 +1,26 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260708-201837-r1-7
-Last result: R1-7 WebGPT local bridge smoke validation completed
+Last run: codex-20260708-202753-r1-8
+Last result: R1-8 WebGPT operator runbook and prompt pack completed
 
 ## Current state
 
 Current task: none
 Current status: DONE
 Current owner: none
+
+## R1-8 Closeout
+
+- R1-8 completed on 2026-07-08T20:35:57+08:00 with `PASS_WEBGPT_OPERATOR_RUNBOOK_AND_PROMPT_PACK_READY`.
+- Created Chinese operator runbook: `docs/webgpt/WEBGPT_OPERATOR_RUNBOOK_R1_8.md`.
+- Created Chinese prompt pack: `docs/webgpt/WEBGPT_PROMPT_PACK_R1_8.md`.
+- Report: `data/reports/r1_8_webgpt_operator_runbook_and_prompt_pack_result.json`.
+- Validation passed: JSON parse, required section check, `npm run typecheck`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
+- R1-8 local implementation commit: `PENDING_LOCAL_COMMIT`.
+- No public tunnel, provider call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+- Backlog now promotes `R1-9_CHATGPT_MCP_APP_PACKAGING_DECISION` to `READY` and adds the downstream R2G ChatGPT MCP bridge task chain.
+- Next eligible task after R1-8 local commit: `R1-9_CHATGPT_MCP_APP_PACKAGING_DECISION`.
 
 ## R1-7 Closeout
 

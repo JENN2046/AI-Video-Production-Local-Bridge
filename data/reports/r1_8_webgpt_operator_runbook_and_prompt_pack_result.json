@@ -1,0 +1,75 @@
+{
+  "task": "R1-8_WEBGPT_OPERATOR_RUNBOOK_AND_PROMPT_PACK",
+  "result": "PASS_WEBGPT_OPERATOR_RUNBOOK_AND_PROMPT_PACK_READY",
+  "mode": "local_docs_and_prompt_pack_only",
+  "generated_at": "2026-07-08T20:32:00+08:00",
+  "source_of_truth": {
+    "r1_7_smoke_report": "data/reports/r1_7_webgpt_local_bridge_smoke_validation_result.json",
+    "r1_6_audit_report": "data/reports/r1_6_webgpt_post_closeout_bridge_reality_audit_result.json",
+    "r3_9r_final_delivery_closeout_report": "data/reports/r3_9r_final_delivery_closeout_result.json"
+  },
+  "created_docs": {
+    "operator_runbook": "docs/webgpt/WEBGPT_OPERATOR_RUNBOOK_R1_8.md",
+    "prompt_pack": "docs/webgpt/WEBGPT_PROMPT_PACK_R1_8.md"
+  },
+  "coverage": {
+    "imports_flow": true,
+    "media_artifact_registration": true,
+    "storyboard_package_freeze": true,
+    "clip_generation_review": true,
+    "final_assembly_review": true,
+    "closeout_evidence": true,
+    "webgpt_allowed_outputs": true,
+    "local_app_assigned_ids": true,
+    "no_gpt_invented_artifact_ids": true,
+    "human_workbench_confirmation": true
+  },
+  "current_final_approved_evidence": {
+    "project_id": "project_b742cb15-e44e-41b2-8d2d-4b90a30720df",
+    "final_video_artifact_id": "artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe",
+    "final_closeout_report": "data/reports/r3_9r_final_delivery_closeout_result.json"
+  },
+  "provider_boundary": {
+    "public_tunnel_started": false,
+    "network_call_attempted": false,
+    "provider_called": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "media_upload_to_provider": false,
+    "env_files_read": false,
+    "credentials_read": false,
+    "production_truth_mutated": false,
+    "source_assets_overwritten": false,
+    "secret_values_exposed": false,
+    "raw_provider_payload_recorded": false,
+    "signed_url_recorded": false,
+    "publish_performed": false,
+    "release_or_deploy_performed": false,
+    "push_performed": false,
+    "tag_created": false
+  },
+  "validation": {
+    "JSON parse for generated R1-8 report": "PASS",
+    "required section check for both docs": "PASS",
+    "npm run typecheck": "PASS",
+    "npm run secret:scan": "PASS",
+    "git diff --check": "PASS_WITH_CRLF_WARNINGS_ONLY"
+  },
+  "changed_files": [
+    "docs/webgpt/WEBGPT_OPERATOR_RUNBOOK_R1_8.md",
+    "docs/webgpt/WEBGPT_PROMPT_PACK_R1_8.md",
+    "data/reports/r1_8_webgpt_operator_runbook_and_prompt_pack_result.json",
+    ".agent_board/*"
+  ],
+  "blocked_reason": null,
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "PENDING_LOCAL_COMMIT",
+    "task": "R1-8_WEBGPT_OPERATOR_RUNBOOK_AND_PROMPT_PACK",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  }
+}

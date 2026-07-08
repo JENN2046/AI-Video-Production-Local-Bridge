@@ -3720,7 +3720,7 @@ Validate that the local WebGPT bridge commands and test surfaces still work afte
 
 ## R1-8_WEBGPT_OPERATOR_RUNBOOK_AND_PROMPT_PACK - WebGPT Operator Runbook And Prompt Pack
 
-status: READY
+status: DONE
 priority: P1
 lane: WebGPT Bridge
 project: AI Video Production Workspace GPT Bridge Line
@@ -3733,7 +3733,15 @@ prompt_pack_path: docs/webgpt/WEBGPT_PROMPT_PACK_R1_8.md
 allowed_delivery: chinese_operator_runbook,chinese_prompt_pack,task_board_update,local_commit
 blocked_delivery: public_tunnel,provider_call,runninghub_call,runway_call,media_upload_to_provider,env_file_read,credential_read,secret_value_output,source_overwrite,push,tag,release,deploy,publish,production_configuration_change
 created_at: 2026-07-08T19:56:44+08:00
-updated_at: 2026-07-08T19:56:44+08:00
+updated_at: 2026-07-08T20:35:57+08:00
+claimed_by: Codex R1-8 operator runbook prompt pack
+claim_run_id: codex-20260708-202753-r1-8
+claimed_at: 2026-07-08T20:27:53+08:00
+completed_by: Codex R1-8 operator runbook prompt pack
+completed_at: 2026-07-08T20:35:57+08:00
+result: PASS_WEBGPT_OPERATOR_RUNBOOK_AND_PROMPT_PACK_READY
+validation_result: PASS
+commit: PENDING_LOCAL_COMMIT
 
 ### Goal
 
@@ -3767,47 +3775,388 @@ Create a Chinese local operator runbook and WebGPT prompt pack so future Web GPT
 - Documentation and prompt pack only.
 - No public tunnel, provider call, `.env` or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change.
 
+### Result
+
+- Created `docs/webgpt/WEBGPT_OPERATOR_RUNBOOK_R1_8.md`.
+- Created `docs/webgpt/WEBGPT_PROMPT_PACK_R1_8.md`.
+- Generated `data/reports/r1_8_webgpt_operator_runbook_and_prompt_pack_result.json`.
+- Validation passed: JSON parse, required section check, `npm run typecheck`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
+- No public tunnel, provider call, `.env` or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change occurred.
+
 ## R1-9_CHATGPT_MCP_APP_PACKAGING_DECISION - ChatGPT MCP App Packaging Decision
 
-status: FOLLOW_UP
+status: READY
 priority: P1
 lane: WebGPT Bridge
 project: AI Video Production Workspace GPT Bridge Line
-scope: decide whether to package the local bridge as an official ChatGPT MCP/App or keep it local-only
+scope: close R1 with a fixed GO_MCP_APP_BRIDGE decision and prepare the R2G ChatGPT MCP/App bridge implementation lane
 branch: local-only
 depends_on: R1-8_WEBGPT_OPERATOR_RUNBOOK_AND_PROMPT_PACK
 report_path: data/reports/r1_9_chatgpt_mcp_app_packaging_decision_result.json
 allowed_delivery: packaging_decision_report,task_board_update,local_commit
 blocked_delivery: public_tunnel,provider_call,runninghub_call,runway_call,media_upload_to_provider,env_file_read,credential_read,secret_value_output,source_overwrite,push,tag,release,deploy,publish,production_configuration_change
 created_at: 2026-07-08T19:56:44+08:00
-updated_at: 2026-07-08T19:56:44+08:00
+updated_at: 2026-07-08T20:34:12+08:00
 
 ### Goal
 
-Decide whether the WebGPT bridge should become an official ChatGPT MCP/App package, remain local-only, or wait for a later productization pass.
+Close the R1 local WebGPT bridge stage with a fixed `GO_MCP_APP_BRIDGE` decision and define the handoff into R2G.
 
 ### Required Work
 
 - Review current local bridge maturity after R1-8.
-- Use current official OpenAI documentation before making an MCP/App packaging recommendation.
-- Compare local-only handoff, ChatGPT MCP/App packaging, and deferred packaging.
+- Use current official OpenAI Apps SDK / MCP documentation before writing the decision.
+- Record the selected path as `GO_MCP_APP_BRIDGE`.
+- Compare what remains local-only in R1 with what moves into R2G.
+- Confirm R2G task sequence, safety gates, and no-public-connection boundary.
 - Generate `data/reports/r1_9_chatgpt_mcp_app_packaging_decision_result.json`.
 
 ### Acceptance
 
-- Decision report names the recommended packaging path and rationale.
-- Decision report lists required implementation work if packaging is recommended.
-- No implementation of public MCP/App packaging occurs unless Jenn separately promotes this task and authorizes the implementation scope.
+- Decision report names `GO_MCP_APP_BRIDGE` as the selected path.
+- Decision report cites official OpenAI Apps SDK / MCP docs used for current packaging assumptions.
+- Decision report defines R2G entry conditions and confirms `R2G-0` through `R2G-F` remain valid.
+- Decision report states public ChatGPT connection, tunnel, deploy, publish, and production configuration remain out of scope until separately authorized.
 
 ### Validation
 
-- JSON parse for generated R1-9 report if the task is later promoted
+- JSON parse for generated R1-9 report
 - `npm run typecheck`
 - `npm run secret:scan`
 - `git diff --check`
 
 ### Boundary
 
-- This task is `FOLLOW_UP` and must not auto-run.
-- If promoted, it is a decision task only unless Jenn separately authorizes implementation.
+- Decision closeout only; implementation begins in R2G after this task completes.
 - No public tunnel, provider call, `.env` or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change.
+
+## R2G-0_CHATGPT_MCP_PACKAGING_REALITY_AUDIT - ChatGPT MCP Packaging Reality Audit
+
+status: READY
+priority: P0
+lane: ChatGPT MCP Bridge
+project: AI Video Production Workspace GPT Bridge Line
+scope: audit current official ChatGPT Apps SDK and MCP requirements against the local R1 bridge
+branch: local-only
+depends_on: R1-9_CHATGPT_MCP_APP_PACKAGING_DECISION
+report_path: data/reports/r2g_0_chatgpt_mcp_packaging_reality_audit_result.json
+official_docs_seed: https://developers.openai.com/apps-sdk,https://developers.openai.com/apps-sdk/build/mcp-server,https://developers.openai.com/apps-sdk/plan/tools,https://developers.openai.com/apps-sdk/deploy/connect-chatgpt,https://developers.openai.com/apps-sdk/build/auth,https://developers.openai.com/apps-sdk/deploy/submission
+allowed_delivery: mcp_packaging_reality_audit_report,task_board_update,local_commit
+blocked_delivery: public_tunnel,public_mcp_endpoint,chatgpt_connector_creation,provider_call,runninghub_call,runway_call,media_upload_to_provider,env_file_read,credential_read,secret_value_output,source_overwrite,push,tag,release,deploy,publish,production_configuration_change
+created_at: 2026-07-08T20:34:12+08:00
+updated_at: 2026-07-08T20:34:12+08:00
+
+### Goal
+
+Map the real current ChatGPT Apps SDK / MCP requirements to the local R1 bridge before implementation.
+
+### Required Work
+
+- Re-read current official OpenAI Apps SDK and MCP docs.
+- Identify required MCP server, tool descriptor, structured content, optional UI component, authentication, connection, and submission expectations.
+- Compare those requirements with R1 bridge v0 through v3.
+- Generate `data/reports/r2g_0_chatgpt_mcp_packaging_reality_audit_result.json`.
+
+### Acceptance
+
+- Report identifies what can stay local, what requires an MCP server, and what requires public HTTPS / ChatGPT connector authorization later.
+- Report records `network_call_attempted=false` except official docs lookup if needed, `provider_called=false`, `env_files_read=false`, `credentials_read=false`, `public_tunnel_started=false`, `secret_values_exposed=false`.
+
+### Validation
+
+- JSON parse for generated R2G-0 report
+- `npm run typecheck`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Boundary
+
+- Audit only.
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, provider call, `.env` or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change.
+
+## R2G-A_MCP_SECURITY_AND_PERMISSION_MODEL - MCP Security And Permission Model
+
+status: READY
+priority: P0
+lane: ChatGPT MCP Bridge
+project: AI Video Production Workspace GPT Bridge Line
+scope: freeze the security and permission model for the ChatGPT MCP bridge
+branch: local-only
+depends_on: R2G-0_CHATGPT_MCP_PACKAGING_REALITY_AUDIT
+report_path: data/reports/r2g_a_mcp_security_and_permission_model_result.json
+allowed_delivery: mcp_security_model_report,task_board_update,local_commit
+blocked_delivery: public_tunnel,public_mcp_endpoint,chatgpt_connector_creation,provider_call,env_file_read,credential_read,secret_value_output,source_overwrite,push,tag,release,deploy,publish,production_configuration_change
+created_at: 2026-07-08T20:34:12+08:00
+updated_at: 2026-07-08T20:34:12+08:00
+
+### Goal
+
+Define what ChatGPT may read, draft, request, and never do directly.
+
+### Required Work
+
+- Define read-only tools, draft-only tools, human-confirmed write tools, and forbidden actions.
+- Require local app-owned artifact IDs and state transitions; GPT must not invent production IDs.
+- Define approval gates for imports, package freeze, review decisions, generation requests, final assembly, and closeout.
+- Generate `data/reports/r2g_a_mcp_security_and_permission_model_result.json`.
+
+### Acceptance
+
+- Permission model is fail-closed and separates GPT suggestions from local app authority.
+- Secrets, provider calls, public publishing, and production configuration changes remain forbidden without separate authorization.
+
+### Validation
+
+- JSON parse for generated R2G-A report
+- `npm run typecheck`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Boundary
+
+- Security model only.
+- No server exposure, provider call, `.env` or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change.
+
+## R2G-B_MCP_TOOL_SCHEMA_AND_CONTRACT_FREEZE - MCP Tool Schema And Contract Freeze
+
+status: READY
+priority: P0
+lane: ChatGPT MCP Bridge
+project: AI Video Production Workspace GPT Bridge Line
+scope: define MCP tool schemas and structured outputs for the local video production bridge
+branch: local-only
+depends_on: R2G-A_MCP_SECURITY_AND_PERMISSION_MODEL
+report_path: data/reports/r2g_b_mcp_tool_schema_and_contract_freeze_result.json
+allowed_delivery: mcp_tool_contract_report,schema_fixtures,task_board_update,local_commit
+blocked_delivery: public_tunnel,public_mcp_endpoint,chatgpt_connector_creation,provider_call,env_file_read,credential_read,secret_value_output,source_overwrite,push,tag,release,deploy,publish,production_configuration_change
+created_at: 2026-07-08T20:34:12+08:00
+updated_at: 2026-07-08T20:34:12+08:00
+
+### Goal
+
+Freeze the MCP tool contract before building the server skeleton.
+
+### Required Work
+
+- Define tool names, input schemas, output schemas, safety metadata, and expected error classes.
+- Cover current local operations: project status read, artifact lookup, storyboard draft intake, import readiness, package freeze request, review package read, human decision draft, and closeout evidence read.
+- Explicitly exclude provider generation and public publishing tools from this contract.
+- Generate `data/reports/r2g_b_mcp_tool_schema_and_contract_freeze_result.json`.
+
+### Acceptance
+
+- Tool schemas are deterministic, typed, and keep write actions behind human confirmation.
+- Report lists which tools are read-only, draft-only, and confirmation-required.
+
+### Validation
+
+- JSON parse for generated R2G-B report
+- schema fixture parse/check
+- `npm run typecheck`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Boundary
+
+- Contract freeze only.
+- No public endpoint, provider call, `.env` or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change.
+
+## R2G-C_LOCAL_MCP_SERVER_SKELETON - Local MCP Server Skeleton
+
+status: READY
+priority: P0
+lane: ChatGPT MCP Bridge
+project: AI Video Production Workspace GPT Bridge Line
+scope: implement a local MCP server skeleton wired to safe local app adapters
+branch: local-only
+depends_on: R2G-B_MCP_TOOL_SCHEMA_AND_CONTRACT_FREEZE
+report_path: data/reports/r2g_c_local_mcp_server_skeleton_result.json
+allowed_delivery: local_mcp_server_skeleton,local_tests,task_board_update,local_commit
+blocked_delivery: public_tunnel,public_mcp_endpoint,chatgpt_connector_creation,provider_call,env_file_read,credential_read,secret_value_output,source_overwrite,push,tag,release,deploy,publish,production_configuration_change
+created_at: 2026-07-08T20:34:12+08:00
+updated_at: 2026-07-08T20:34:12+08:00
+
+### Goal
+
+Build the local MCP server skeleton without exposing it publicly.
+
+### Required Work
+
+- Implement server entrypoint and tool registration for the frozen R2G-B contract.
+- Wire tools to local safe adapters only.
+- Add local tests for tool discovery, schema validation, and fail-closed forbidden actions.
+- Generate `data/reports/r2g_c_local_mcp_server_skeleton_result.json`.
+
+### Acceptance
+
+- Local MCP server starts in local/test mode and exposes only the approved tool set.
+- Forbidden tools/actions are absent or fail closed.
+- No public URL, tunnel, ChatGPT connector, provider call, or credential read is required.
+
+### Validation
+
+- local MCP server smoke test
+- tool schema tests
+- `npm run typecheck`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Boundary
+
+- Local skeleton only.
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, provider call, `.env` or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change.
+
+## R2G-D_CHATGPT_HANDOFF_E2E_DRY_RUN - ChatGPT Handoff E2E Dry Run
+
+status: READY
+priority: P0
+lane: ChatGPT MCP Bridge
+project: AI Video Production Workspace GPT Bridge Line
+scope: run a local end-to-end dry run from GPT-style storyboard handoff to local package readiness
+branch: local-only
+depends_on: R2G-C_LOCAL_MCP_SERVER_SKELETON
+report_path: data/reports/r2g_d_chatgpt_handoff_e2e_dry_run_result.json
+allowed_delivery: local_e2e_dry_run_report,fixtures,task_board_update,local_commit
+blocked_delivery: public_tunnel,public_mcp_endpoint,chatgpt_connector_creation,provider_call,env_file_read,credential_read,secret_value_output,source_overwrite,push,tag,release,deploy,publish,production_configuration_change
+created_at: 2026-07-08T20:34:12+08:00
+updated_at: 2026-07-08T20:34:12+08:00
+
+### Goal
+
+Prove the ChatGPT handoff path locally without real ChatGPT connection or provider execution.
+
+### Required Work
+
+- Use fixture GPT-style storyboard text and keyframe references.
+- Run local MCP tool calls or equivalent harness through import readiness and package readiness.
+- Confirm artifact IDs come from the app, not from GPT fixture text.
+- Generate `data/reports/r2g_d_chatgpt_handoff_e2e_dry_run_result.json`.
+
+### Acceptance
+
+- Dry run reaches app-owned package readiness without provider calls.
+- Report records all boundary flags false for provider, public tunnel, connector creation, credential read, and source overwrite.
+
+### Validation
+
+- local E2E dry-run command
+- JSON parse for generated R2G-D report
+- `npm run typecheck`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Boundary
+
+- Local dry-run only.
+- No real ChatGPT connector, public tunnel, provider call, `.env` or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change.
+
+## R2G-E_HUMAN_CONFIRMATION_AND_WRITE_GATES - Human Confirmation And Write Gates
+
+status: READY
+priority: P0
+lane: ChatGPT MCP Bridge
+project: AI Video Production Workspace GPT Bridge Line
+scope: enforce human confirmation gates for every MCP-triggered write path
+branch: local-only
+depends_on: R2G-D_CHATGPT_HANDOFF_E2E_DRY_RUN
+report_path: data/reports/r2g_e_human_confirmation_and_write_gates_result.json
+allowed_delivery: confirmation_gate_implementation,negative_tests,task_board_update,local_commit
+blocked_delivery: public_tunnel,public_mcp_endpoint,chatgpt_connector_creation,provider_call,env_file_read,credential_read,secret_value_output,source_overwrite,push,tag,release,deploy,publish,production_configuration_change
+created_at: 2026-07-08T20:34:12+08:00
+updated_at: 2026-07-08T20:34:12+08:00
+
+### Goal
+
+Ensure MCP tools cannot directly mutate production truth without a local human-confirmed step.
+
+### Required Work
+
+- Add or verify confirmation gates for all write-like tools.
+- Add negative tests proving draft requests do not mutate final app state.
+- Generate `data/reports/r2g_e_human_confirmation_and_write_gates_result.json`.
+
+### Acceptance
+
+- Read-only tools cannot write.
+- Draft-only tools create drafts only.
+- Confirmation-required tools fail closed without explicit local confirmation.
+
+### Validation
+
+- confirmation gate negative tests
+- JSON parse for generated R2G-E report
+- `npm run typecheck`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Boundary
+
+- Local gate implementation only.
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, provider call, `.env` or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change.
+
+## R2G-F_MCP_PACKAGING_CLOSEOUT - MCP Packaging Closeout
+
+status: READY
+priority: P1
+lane: ChatGPT MCP Bridge
+project: AI Video Production Workspace GPT Bridge Line
+scope: close out the local MCP bridge package and prepare the separately authorized public connection checklist
+branch: local-only
+depends_on: R2G-E_HUMAN_CONFIRMATION_AND_WRITE_GATES
+report_path: data/reports/r2g_f_mcp_packaging_closeout_result.json
+allowed_delivery: mcp_packaging_closeout_report,operator_summary,task_board_update,local_commit
+blocked_delivery: public_tunnel,public_mcp_endpoint,chatgpt_connector_creation,provider_call,env_file_read,credential_read,secret_value_output,source_overwrite,push,tag,release,deploy,publish,production_configuration_change
+created_at: 2026-07-08T20:34:12+08:00
+updated_at: 2026-07-08T20:34:12+08:00
+
+### Goal
+
+Close out the local MCP bridge package before any public ChatGPT connection step.
+
+### Required Work
+
+- Summarize implemented MCP tools, security gates, local tests, and known limitations.
+- Produce a checklist for future public HTTPS / ChatGPT connector authorization.
+- Generate `data/reports/r2g_f_mcp_packaging_closeout_result.json`.
+
+### Acceptance
+
+- Closeout report states whether the local MCP bridge is ready for a separately authorized live ChatGPT connector prep.
+- Report confirms no public tunnel, deploy, publish, provider call, credential read, or production configuration change occurred.
+
+### Validation
+
+- JSON parse for generated R2G-F report
+- local MCP test suite
+- `npm run typecheck`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Boundary
+
+- Local closeout only.
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, provider call, `.env` or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change.
+
+## R2G-G_CHATGPT_CONNECTOR_LIVE_CONNECTION_AUTHORIZATION_PREP - ChatGPT Connector Live Connection Authorization Prep
+
+status: FOLLOW_UP
+priority: P1
+lane: ChatGPT MCP Bridge
+project: AI Video Production Workspace GPT Bridge Line
+scope: prepare a future authorization checklist for public ChatGPT connector connection
+branch: local-only
+depends_on: R2G-F_MCP_PACKAGING_CLOSEOUT
+report_path: data/reports/r2g_g_chatgpt_connector_live_connection_authorization_prep_result.json
+allowed_delivery: authorization_checklist,task_board_update,local_commit
+blocked_delivery: public_tunnel,public_mcp_endpoint,chatgpt_connector_creation,provider_call,env_file_read,credential_read,secret_value_output,source_overwrite,push,tag,release,deploy,publish,production_configuration_change
+created_at: 2026-07-08T20:34:12+08:00
+updated_at: 2026-07-08T20:34:12+08:00
+
+### Goal
+
+Prepare the future live connection authorization checklist after local MCP packaging closes out.
+
+### Boundary
+
+- This is `FOLLOW_UP` and must not auto-run.
+- A real ChatGPT connection likely requires a public HTTPS MCP endpoint, connector creation, and possibly deployment or tunnel work; each must receive separate exact Jenn authorization.

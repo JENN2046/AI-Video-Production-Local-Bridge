@@ -2,39 +2,35 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "R1-7_WEBGPT_LOCAL_BRIDGE_SMOKE_VALIDATION",
+  "task_id": "R1-8_WEBGPT_OPERATOR_RUNBOOK_AND_PROMPT_PACK",
   "status": "DONE",
-  "priority": "P0",
+  "priority": "P1",
   "lane": "WebGPT Bridge",
   "project": "AI Video Production Workspace GPT Bridge Line",
-  "title": "WebGPT Local Bridge Smoke Validation",
+  "title": "WebGPT Operator Runbook And Prompt Pack",
   "scope": [
-    "run a local-only smoke validation for WebGPT bridge v0 through v3 against current final-approved project evidence",
-    "run existing WebGPT bridge tests for v0 through v3",
-    "confirm reports and bridge metadata can reference current final-approved R3-9 output without secrets or provider calls",
-    "generate data/reports/r1_7_webgpt_local_bridge_smoke_validation_result.json"
+    "create Chinese operator documentation and prompt pack for the local WebGPT handoff flow",
+    "document imports, Media Artifact registration, storyboard package freeze, clip generation review, final assembly review, and closeout evidence",
+    "state what WebGPT may provide and what the local app must assign, especially artifact ids and review state",
+    "generate data/reports/r1_8_webgpt_operator_runbook_and_prompt_pack_result.json"
   ],
-  "goal": "Validate that the local WebGPT bridge commands and test surfaces still work after final video closeout.",
+  "goal": "Create a Chinese local operator runbook and WebGPT prompt pack so future Web GPT outputs can be handed into the local system consistently.",
   "acceptance": [
-    "All existing WebGPT bridge tests pass or any failure is classified with a clear local fix path.",
-    "Smoke report references R1-6 audit and R3-9R final closeout evidence.",
-    "Smoke report confirms final video artifact and source clip metadata are reachable through app-owned IDs/report references.",
-    "Report records public_tunnel_started=false, provider_called=false, env_files_read=false, credentials_read=false, secret_values_exposed=false, publish_performed=false, release_or_deploy_performed=false."
+    "Runbook is Chinese and operator-facing.",
+    "Prompt pack is Chinese and avoids asking WebGPT to invent artifact ids.",
+    "Docs clearly state that provider calls, publishing, credentials, and source overwrites are outside this local handoff step.",
+    "Report records created docs and network_call_attempted=false, provider_called=false, env_files_read=false, credentials_read=false, secret_values_exposed=false, publish_performed=false, release_or_deploy_performed=false."
   ],
   "validation": [
-    "JSON parse for generated R1-7 smoke report",
-    "npm run r1:7:smoke",
+    "JSON parse for generated R1-8 report",
+    "required section check for both docs",
     "npm run typecheck",
-    "npm run test:webgpt:bridge",
-    "npm run test:webgpt:drafts",
-    "npm run test:webgpt:pending",
-    "npm run test:webgpt:review",
-    "npm run test:webgpt:production",
     "npm run secret:scan",
     "git diff --check"
   ],
   "allowed_delivery": [
-    "bridge_smoke_validation_report",
+    "chinese_operator_runbook",
+    "chinese_prompt_pack",
     "task_board_update",
     "local_commit"
   ],
@@ -56,35 +52,37 @@
     "production_configuration_change"
   ],
   "depends_on": [
-    "R1-6_WEBGPT_POST_CLOSEOUT_BRIDGE_REALITY_AUDIT"
+    "R1-7_WEBGPT_LOCAL_BRIDGE_SMOKE_VALIDATION"
   ],
-  "source_report": "data/reports/r1_6_webgpt_post_closeout_bridge_reality_audit_result.json",
+  "source_report": "data/reports/r1_7_webgpt_local_bridge_smoke_validation_result.json",
   "final_closeout_report": "data/reports/r3_9r_final_delivery_closeout_result.json",
-  "report_path": "data/reports/r1_7_webgpt_local_bridge_smoke_validation_result.json",
+  "report_path": "data/reports/r1_8_webgpt_operator_runbook_and_prompt_pack_result.json",
+  "runbook_path": "docs/webgpt/WEBGPT_OPERATOR_RUNBOOK_R1_8.md",
+  "prompt_pack_path": "docs/webgpt/WEBGPT_PROMPT_PACK_R1_8.md",
   "created_at": "2026-07-08T19:56:44+08:00",
-  "updated_at": "2026-07-08T20:25:02+08:00",
-  "claimed_by": "Codex R1-7 local bridge smoke validation",
-  "claim_run_id": "codex-20260708-201837-r1-7",
-  "claimed_at": "2026-07-08T20:18:37+08:00",
-  "completed_by": "Codex R1-7 local bridge smoke validation",
-  "completed_at": "2026-07-08T20:25:02+08:00",
-  "result": "PASS_WEBGPT_LOCAL_BRIDGE_SMOKE_VALIDATED",
+  "updated_at": "2026-07-08T20:35:57+08:00",
+  "claimed_by": "Codex R1-8 operator runbook prompt pack",
+  "claim_run_id": "codex-20260708-202753-r1-8",
+  "claimed_at": "2026-07-08T20:27:53+08:00",
+  "completed_by": "Codex R1-8 operator runbook prompt pack",
+  "completed_at": "2026-07-08T20:35:57+08:00",
+  "result": "PASS_WEBGPT_OPERATOR_RUNBOOK_AND_PROMPT_PACK_READY",
   "validation_result": "PASS",
   "evidence": [
-    "data/reports/r1_7_webgpt_local_bridge_smoke_validation_result.json",
-    "data/reports/r1_6_webgpt_post_closeout_bridge_reality_audit_result.json",
-    "data/reports/r3_9r_final_delivery_closeout_result.json"
+    "docs/webgpt/WEBGPT_OPERATOR_RUNBOOK_R1_8.md",
+    "docs/webgpt/WEBGPT_PROMPT_PACK_R1_8.md",
+    "data/reports/r1_8_webgpt_operator_runbook_and_prompt_pack_result.json"
   ],
-  "commit": "4a9f05f",
-  "delivery": "local_smoke_validation_only",
-  "boundary_or_safety_stop": "local smoke validation only; no public tunnel, provider call, env or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change",
+  "commit": "PENDING_LOCAL_COMMIT",
+  "delivery": "local_docs_and_prompt_pack_only",
+  "boundary_or_safety_stop": "documentation and prompt pack only; no public tunnel, provider call, env or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change",
   "blocked_reason": null,
   "failure_reason": null,
   "safe_actions_completed": [
-    "added r1:7 local smoke validation command",
-    "generated R1-7 local bridge smoke report",
-    "validated WebGPT bridge v0 through v3 local tests",
-    "confirmed final-approved R3-9R evidence is reachable through app-owned report/artifact references"
+    "created Chinese WebGPT local handoff operator runbook",
+    "created Chinese WebGPT prompt pack",
+    "generated R1-8 closeout report",
+    "validated JSON, required doc sections, typecheck, secret scan, and diff check"
   ],
   "unsafe_action_not_performed": [
     "public_tunnel",
