@@ -2264,22 +2264,85 @@ Select the next provider-access strategy without making any live provider call o
 - `npm run secret:scan`
 - `git diff --check`
 
+## R3-8O_RUNNINGHUB_ENTERPRISE_KEY_6S_SINGLE_SUBMIT_CANARY - RunningHub Enterprise Key 6s Single-Submit Canary
+
+status: FOLLOW_UP
+priority: P0
+lane: Approval Boundary Live Provider Execution
+project: AI Video Production Workspace Three Route Plan
+scope: execute one RunningHub upload-first live canary using an Enterprise-Shared API Key, duration_seconds=6, and the selected real storyboard keyframe
+branch: local-only
+depends_on: R3-8N_PROVIDER_ACCESS_STRATEGY_DECISION
+source_plan: R3-8N primary provider-access strategy
+report_path: data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_result.json
+allowed_delivery: env_check_with_authorization,provider_preflight_with_authorization,one_authorized_runninghub_upload,one_authorized_runninghub_submit,status_query,output_download_if_succeeded,ffprobe_if_succeeded,sanitized_live_result_report,local_commit
+blocked_delivery: runninghub_call_without_exact_authorization,env_local_read_without_exact_authorization,credential_value_output,runway_call,second_submit,retry_live_submit,regeneration,batch_generation,raw_provider_payload_recording,source_overwrite,push,tag,release,deploy,production_credentials_change
+created_at: 2026-07-08T11:12:10+08:00
+updated_at: 2026-07-08T11:12:10+08:00
+
+### Goal
+
+Run exactly one RunningHub 6-second live canary with the Enterprise-Shared API Key path after Jenn provides a fresh exact current authorization phrase.
+
+### Hard Boundary
+
+- This task must remain `FOLLOW_UP` until Jenn provides a fresh exact authorization phrase.
+- Do not reuse `R3-8M`; this is a new live task with a new report.
+- Read `.env.local` only if the authorization explicitly permits read-only env check / provider preflight.
+- Do not print, summarize, store, or commit secret values.
+- `provider=runninghub`
+- `api_base_url=https://www.runninghub.cn`
+- `model_api_endpoint=/openapi/v2/rhart-video-g/image-to-video`
+- `upload_endpoint=POST /openapi/v2/media/upload/binary`
+- `submit_endpoint=POST /openapi/v2/rhart-video-g/image-to-video`
+- `query_endpoint=POST /openapi/v2/query`
+- `selected_artifact_id=artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7`
+- `duration_seconds=6`
+- `aspectRatio=9:16`
+- `resolution=480p`
+- `max_upload_calls=1`
+- `max_submit_calls=1`
+- no retry or second submit
+- no batch
+- no regeneration
+- no Runway fallback
+- no source overwrite
+- no push, tag, release, or deploy
+
+### Acceptance
+
+- Exactly one authorized RunningHub media upload is attempted.
+- Exactly one authorized RunningHub submit is attempted.
+- Query is allowed only for the returned taskId until terminal status or timeout.
+- If succeeded, output is downloaded to `data/media/provider-canary/r3-8o-runninghub-enterprise-key-6s-real-keyframe/` and ffprobe validated.
+- Report records sanitized evidence and never records raw provider payloads, signed URLs, Authorization values, or secret values.
+- No second submit, retry, Runway call, regeneration, batch generation, source overwrite, push, tag, release, or deploy occurs.
+
+### Validation
+
+- `npm run env:check`
+- `npm run provider:preflight`
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
+
 ## R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT - Provider Path Decision Closeout
 
 status: FOLLOW_UP
 priority: P1
 lane: Provider Decision Closeout
 project: AI Video Production Workspace Three Route Plan
-scope: summarize Runway and RunningHub evidence after provider-access strategy decision and decide M1 provider path readiness
+scope: summarize Runway and RunningHub evidence after Enterprise Key canary result and decide M1 provider path readiness
 branch: local-only
-depends_on: R3-8N_PROVIDER_ACCESS_STRATEGY_DECISION
-source_plan: R3-8N result and Jenn-confirmed RunningHub Enterprise-Shared API Key primary path
+depends_on: R3-8O_RUNNINGHUB_ENTERPRISE_KEY_6S_SINGLE_SUBMIT_CANARY
+source_plan: R3-8O result
 report_path: data/reports/r3_8k_provider_path_decision_closeout.json
 allowed_delivery: decision_report,readiness_summary,task_board_update,local_commit
 blocked_delivery: provider_call,provider_credits_consumed,real_video_generated,secret_value_output,source_overwrite,push,tag,release,deploy
 created_at: 2026-07-07T16:06:04+08:00
-updated_at: 2026-07-08T10:47:37+08:00
+updated_at: 2026-07-08T11:12:10+08:00
 
 ### Goal
 
-Close the provider-selection loop after provider-access strategy decision evidence is available. This task does not call any provider.
+Close the provider-selection loop after Enterprise Key RunningHub canary evidence is available. This task does not call any provider.

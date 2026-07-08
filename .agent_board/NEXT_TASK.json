@@ -103,7 +103,8 @@
   ],
   "options_for_jenn": [],
   "next_safe_option": [
-    "Promote R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT to READY only if a closeout report is desired.",
+    "R3-8O_RUNNINGHUB_ENTERPRISE_KEY_6S_SINGLE_SUBMIT_CANARY is queued as FOLLOW_UP and must not run without Jenn's fresh exact authorization phrase.",
+    "R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT now waits for R3-8O result.",
     "Do not run any new live provider call without a fresh exact current Jenn authorization phrase and provider account readiness confirmation."
   ]
 }

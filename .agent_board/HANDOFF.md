@@ -22,7 +22,8 @@ Report: `data/reports/r3_8n_provider_access_strategy_decision.json`
 - Jenn confirmed on 2026-07-08T11:11:39+08:00 that RunningHub Enterprise-Shared API Key is the selected primary path.
 - No `.env.local` or credentials were read.
 - No RunningHub call, Runway call, upload, submit, query, output download, provider credit consumption, real video generation, credential/account change, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
-- `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT` remains `FOLLOW_UP`; no READY task remains unless Jenn promotes it.
+- `R3-8O_RUNNINGHUB_ENTERPRISE_KEY_6S_SINGLE_SUBMIT_CANARY` has been queued as a new `FOLLOW_UP` live task and must not run without Jenn's fresh exact authorization phrase.
+- `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT` now waits for R3-8O result.
 
 ## R3-8G closeout
 
@@ -151,7 +152,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 
 ## Remaining READY tasks
 
-- None. `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT` remains `FOLLOW_UP` unless Jenn promotes it.
+- None. `R3-8O_RUNNINGHUB_ENTERPRISE_KEY_6S_SINGLE_SUBMIT_CANARY` remains `FOLLOW_UP` until Jenn provides exact live authorization.
 
 ## Closeout evidence
 
@@ -207,7 +208,8 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - R3-8M receipt fix is complete.
 - R3-8N provider access strategy decision is complete.
 - Jenn selected RunningHub Enterprise-Shared API Key as the primary provider-access path.
-- No READY task remains. `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT` remains `FOLLOW_UP` unless Jenn promotes it.
+- R3-8O is queued as the new Enterprise-Shared API Key 6-second RunningHub live canary task; it must not run automatically.
+- R3-8K closeout now depends on R3-8O result.
 - Any next RunningHub retry requires an Enterprise-Shared API Key or a different authorized provider path, plus a new exact current Jenn authorization phrase.
 - Do not submit to RunningHub without a future exact current Jenn authorization phrase.
 - Do not retry Runway canary without a new exact current Jenn authorization phrase.
