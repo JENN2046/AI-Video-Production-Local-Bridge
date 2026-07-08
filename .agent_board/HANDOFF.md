@@ -447,3 +447,15 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - No provider call, regeneration execution, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
 - R3-9H local implementation commit: `d20e63f`.
 - No eligible READY task is currently loaded after R3-9H; next work requires Jenn/Commander to promote a follow-up task.
+
+## R3-9I Closeout
+
+- R3-9I completed on 2026-07-08T17:32:46+08:00 with `PASS_READY_FOR_USER_AUTHORIZATION`.
+- Report: `data/reports/r3_9i_runninghub_regeneration_authorization_prep_result.json`.
+- Prepared one coherent 4-shot RunningHub regeneration authorization package for `g0_r1_shot_001`, `g0_r1_shot_002`, `g0_r1_shot_003`, and `g0_r1_shot_004`.
+- Merged R3-9G strategies for SHOT_001/003/004 with R3-9H same-keyframe repair for SHOT_002.
+- Budget is capped at 4 uploads and 4 submits total, one upload and one submit per shot, no retry, no second submit, no Runway fallback, no batch expansion, and stop on first upload or submit failure.
+- Future exact authorization phrase draft is in the report.
+- Final assembly remains blocked until regenerated clips are reviewed and accepted by a later human review task.
+- No `.env` or credential read, provider call, media upload, submit, status poll, output download, provider credit consumption, real video generation, regeneration execution, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+- R3-9I local implementation commit: `PENDING_LOCAL_COMMIT`.

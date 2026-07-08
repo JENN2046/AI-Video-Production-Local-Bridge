@@ -1757,3 +1757,37 @@ Notes:
 - Final assembly remains blocked because there are zero accepted clips and SHOT_002 remains unresolved.
 - R3-9H local implementation commit: `d20e63f`.
 - No provider call, regeneration execution, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+
+### R3-9I - 2026-07-08T17:32:46+08:00
+
+Commands:
+
+```bash
+npm run r3:9i:prep
+node -e JSON.parse(...)
+npm run typecheck
+npm run test:m1
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_READY_FOR_USER_AUTHORIZATION
+```
+
+Evidence:
+- `data/reports/r3_9i_runninghub_regeneration_authorization_prep_result.json`
+- `data/reports/r3_9f_human_clip_review_decision_apply_result.json`
+- `data/reports/r3_9g_regeneration_strategy_for_review_notes_result.json`
+- `data/reports/r3_9h_shot_002_replacement_decision_result.json`
+- `data/reports/secret_scan_result.json`
+
+Notes:
+- Prepared exactly one 4-shot RunningHub regeneration authorization package for `g0_r1_shot_001`, `g0_r1_shot_002`, `g0_r1_shot_003`, and `g0_r1_shot_004`.
+- Merged R3-9G strategies for SHOT_001/003/004 with R3-9H same-keyframe repair for SHOT_002.
+- Budget is capped at 4 uploads and 4 submits total, one upload and one submit per shot, no retry, no second submit, no Runway fallback, no batch expansion, and stop on first upload or submit failure.
+- Future exact authorization phrase draft is present, but no provider execution occurred.
+- R3-9I local implementation commit: `PENDING_LOCAL_COMMIT`.
+- No `.env` or credential read, RunningHub call, Runway call, media upload, provider submit, status poll, output download, provider credit consumption, real video generation, regeneration execution, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.

@@ -3085,3 +3085,75 @@ Next:
 - Promote `R3-9I_SHOT_002_SAME_KEYFRAME_REGENERATION_PREP` if Jenn wants to repair SHOT_002 with the same keyframe.
 - Promote `R3-9J_SHOT_002_REPLACEMENT_KEYFRAME_IMPORT_PREP` if Jenn wants a new source keyframe.
 - Promote `R3-9K_SHOT_002_REMOVE_OR_RESEQUENCE_EDIT_DECISION` if Jenn wants to drop or restructure the beat.
+
+### 2026-07-08T17:32:46+08:00 - R3-9I RunningHub Regeneration Authorization Prep
+
+Result: DONE / PASS_READY_FOR_USER_AUTHORIZATION
+Project: AI Video Production Workspace Three Route Plan
+Lane: RunningHub Regeneration Authorization Prep
+Claimed by: Codex R3-9I regeneration authorization prep
+Completed by: Codex R3-9I regeneration authorization prep
+Run ID: codex-20260708-172759-r3-9i
+Started at: 2026-07-08T17:27:59+08:00
+Completed at: 2026-07-08T17:32:46+08:00
+
+Scope:
+- Prepared a local-only authorization package for 4-shot RunningHub regeneration.
+- Combined R3-9G strategies for `g0_r1_shot_001`, `g0_r1_shot_003`, and `g0_r1_shot_004` with the R3-9H same-keyframe repair for `g0_r1_shot_002`.
+- Drafted a future exact authorization phrase.
+- Did not read credentials or env files, call providers, regenerate clips, mutate the frozen storyboard package, or assemble final video.
+
+Changed files:
+- package.json
+- scripts/r3-9i-runninghub-regeneration-authorization-prep.ts
+- data/reports/r3_9i_runninghub_regeneration_authorization_prep_result.json
+- .agent_board/NEXT_TASK.json
+- .agent_board/NEXT_TASK.md
+- .agent_board/RUN_LOCK.md
+- .agent_board/TASK_BACKLOG.md
+- .agent_board/HANDOFF.md
+- .agent_board/VALIDATION_LOG.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: npm run r3:9i:prep
+  result: PASS
+- command: node -e JSON.parse(...)
+  result: PASS
+- command: npm run typecheck
+  result: PASS
+- command: npm run test:m1
+  result: PASS
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_9i_runninghub_regeneration_authorization_prep_result.json
+- data/reports/r3_9f_human_clip_review_decision_apply_result.json
+- data/reports/r3_9g_regeneration_strategy_for_review_notes_result.json
+- data/reports/r3_9h_shot_002_replacement_decision_result.json
+- data/reports/secret_scan_result.json
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: PENDING_LOCAL_COMMIT
+- push: no
+- PR: none
+
+Plan summary:
+- planned shots: g0_r1_shot_001, g0_r1_shot_002, g0_r1_shot_003, g0_r1_shot_004
+- max_upload_calls_total: 4
+- max_submit_calls_total: 4
+- duration_seconds_per_shot: 6
+- aspectRatio: 9:16
+- resolution: 480p
+
+Boundary:
+- No `.env` or credential read, RunningHub call, Runway call, media upload, provider submit, status poll, output download, provider credit consumption, real video generation, regeneration execution, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+
+Next:
+- A future live RunningHub regeneration task requires fresh exact current Jenn authorization using the report's authorization phrase draft.
+- After any future live regeneration, regenerated clips must be reviewed and accepted before final assembly.

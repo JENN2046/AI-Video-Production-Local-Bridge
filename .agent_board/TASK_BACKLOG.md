@@ -2980,7 +2980,7 @@ Decide the safe local next path for rejected `g0_r1_shot_002` before any final a
 
 ## R3-9I_RUNNINGHUB_REGENERATION_AUTHORIZATION_PREP - RunningHub Regeneration Authorization Prep
 
-status: READY
+status: DONE
 priority: P0
 lane: RunningHub Regeneration Authorization Prep
 project: AI Video Production Workspace Three Route Plan
@@ -2992,7 +2992,15 @@ report_path: data/reports/r3_9i_runninghub_regeneration_authorization_prep_resul
 allowed_delivery: authorization_prep_report,4_shot_regeneration_dry_run_plan,budget_boundary,exact_authorization_phrase_draft,task_board_update,local_commit
 blocked_delivery: env_file_read,credential_read,runninghub_call,runway_call,media_upload_to_provider,provider_submit,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,regeneration_execution,batch_expansion,final_assembly,storyboard_package_mutation,source_overwrite,secret_value_output,raw_provider_payload_recording,signed_url_recording,push,tag,release,deploy
 created_at: 2026-07-08T17:23:25+08:00
-updated_at: 2026-07-08T17:23:25+08:00
+updated_at: 2026-07-08T17:32:46+08:00
+claimed_by: Codex R3-9I regeneration authorization prep
+claim_run_id: codex-20260708-172759-r3-9i
+claimed_at: 2026-07-08T17:27:59+08:00
+completed_by: Codex R3-9I regeneration authorization prep
+completed_at: 2026-07-08T17:32:46+08:00
+result: PASS_READY_FOR_USER_AUTHORIZATION
+validation_result: PASS
+commit: PENDING_LOCAL_COMMIT
 
 ### Goal
 
@@ -3034,3 +3042,14 @@ Prepare a local-only, auditable RunningHub regeneration authorization package fo
 - Authorization prep only.
 - No `.env` or credential read.
 - No RunningHub/Runway call, media upload, provider submit, status poll, provider output download, provider credit consumption, real video generation, regeneration execution, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy.
+
+### Result
+
+- Generated `data/reports/r3_9i_runninghub_regeneration_authorization_prep_result.json`.
+- Merged R3-9G strategies for `g0_r1_shot_001`, `g0_r1_shot_003`, and `g0_r1_shot_004` with R3-9H same-keyframe repair for `g0_r1_shot_002`.
+- Built exactly one 4-shot RunningHub regeneration authorization prep package.
+- Budget is capped at `max_upload_calls_total=4` and `max_submit_calls_total=4`, one upload and one submit per shot, no retry, no second submit, no Runway fallback, no batch expansion, and stop on first upload or submit failure.
+- Future exact authorization phrase draft is present in the report, but no live call was executed.
+- Final assembly remains blocked until regenerated clips are reviewed and accepted by a later human review task.
+- Validation passed: JSON parse, `npm run r3:9i:prep`, `npm run typecheck`, `npm run test:m1`, `npm run secret:scan`, `git diff --check` with CRLF warnings only.
+- No `.env` or credential read, provider call, media upload, submit, status poll, output download, provider credit consumption, real video generation, regeneration execution, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.

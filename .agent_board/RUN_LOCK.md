@@ -71,6 +71,10 @@ last_completed_r3_9h_run_id: codex-20260708-164524-r3-9h
 last_completed_r3_9h_task: R3-9H_SHOT_002_REPLACEMENT_DECISION
 last_completed_r3_9h_at: 2026-07-08T16:51:32+08:00
 
+last_completed_r3_9i_run_id: codex-20260708-172759-r3-9i
+last_completed_r3_9i_task: R3-9I_RUNNINGHUB_REGENERATION_AUTHORIZATION_PREP
+last_completed_r3_9i_at: 2026-07-08T17:32:46+08:00
+
 ## Rules
 
 - If status is inactive, a new run may start.

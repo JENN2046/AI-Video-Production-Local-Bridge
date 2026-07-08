@@ -1,6 +1,6 @@
 # NEXT_TASK.md
 
-Status: READY
+Status: DONE
 
 Task: R3-9I_RUNNINGHUB_REGENERATION_AUTHORIZATION_PREP
 
@@ -63,3 +63,18 @@ Prepare a local-only, auditable RunningHub regeneration authorization package fo
 ## Boundary
 
 Authorization prep only. No env or credential read, provider call, regeneration execution, final assembly, storyboard package mutation, source overwrite, push, tag, release, or deploy.
+
+## Claim
+
+- claimed_by: Codex R3-9I regeneration authorization prep
+- run_id: codex-20260708-172759-r3-9i
+- claimed_at: 2026-07-08T17:27:59+08:00
+
+## Result
+
+- completed_by: Codex R3-9I regeneration authorization prep
+- completed_at: 2026-07-08T17:32:46+08:00
+- result: PASS_READY_FOR_USER_AUTHORIZATION
+- validation_result: PASS
+- report: data/reports/r3_9i_runninghub_regeneration_authorization_prep_result.json
+- commit: PENDING_LOCAL_COMMIT
