@@ -2260,6 +2260,63 @@ Risks:
 Next:
 - Do not retry RunningHub automatically. A future attempt requires the correct key type or a different authorized provider path plus a fresh exact current Jenn authorization phrase.
 
+### 2026-07-08T11:00:08+08:00 - R3-8N Provider Access Strategy Decision
+
+Result: DONE / PASS_PROVIDER_ACCESS_STRATEGY_DECIDED
+Project: AI Video Production Workspace Three Route Plan
+Lane: Provider Access Strategy
+Claimed by: Codex R3-8N strategy decider
+Completed by: Codex R3-8N strategy decider
+Run ID: codex-20260708-105731-r3-8n-strategy
+Started at: 2026-07-08T10:57:31+08:00
+Completed at: 2026-07-08T11:00:08+08:00
+
+Scope:
+- Decided the next provider-access strategy offline after Runway insufficient-credit evidence and RunningHub Standard Model API key-type restriction evidence.
+- Did not read `.env.local` or credentials.
+- Did not call RunningHub or Runway.
+
+Changed files:
+- data/reports/r3_8n_provider_access_strategy_decision.json
+- .agent_board/NEXT_TASK.json
+- .agent_board/NEXT_TASK.md
+- .agent_board/RUN_LOCK.md
+- .agent_board/TASK_BACKLOG.md
+- .agent_board/HANDOFF.md
+- .agent_board/VALIDATION_LOG.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: node -e JSON.parse(...)
+  result: PASS
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_8n_provider_access_strategy_decision.json
+- data/reports/secret_scan_result.json
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: pending
+- push: no
+- PR: none
+
+Decision:
+- Primary next path: RunningHub Enterprise-Shared API Key access for the current Standard Model API route.
+- Fallback next path: authorized RunningHub workflow or non-standard-model API route, with a new contract freeze and dry-run before live use.
+- Runway position: hold until credits/account readiness is resolved.
+
+Boundary:
+- No provider call, provider credit consumption, real video generation, credential read/write, production credential change, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
+
+Next:
+- Promote `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT` to `READY` only if Jenn wants a closeout report.
+- Any future live provider call requires a fresh exact current Jenn authorization phrase.
+
 ### 2026-07-08T10:16:15+08:00 - R3-8L Receipt Fix R1
 
 Result: DONE / PASS_RECEIPT_FIXED

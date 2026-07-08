@@ -2215,7 +2215,7 @@ Repair the R3-8M audit chain before offline provider-access strategy selection.
 
 ## R3-8N_PROVIDER_ACCESS_STRATEGY_DECISION - Provider Access Strategy Decision
 
-status: READY
+status: DONE
 priority: P0
 lane: Provider Access Strategy
 project: AI Video Production Workspace Three Route Plan
@@ -2227,7 +2227,16 @@ report_path: data/reports/r3_8n_provider_access_strategy_decision.json
 allowed_delivery: decision_report,provider_path_recommendation,task_board_update,local_commit
 blocked_delivery: provider_call,provider_credits_consumed,real_video_generated,secret_value_output,credentials_read,credentials_write,production_credentials_change,source_overwrite,push,tag,release,deploy
 created_at: 2026-07-08T10:47:37+08:00
-updated_at: 2026-07-08T10:47:37+08:00
+updated_at: 2026-07-08T11:00:08+08:00
+claimed_by: Codex R3-8N strategy decider
+claim_run_id: codex-20260708-105731-r3-8n-strategy
+claimed_at: 2026-07-08T10:57:31+08:00
+completed_by: Codex R3-8N strategy decider
+completed_at: 2026-07-08T11:00:08+08:00
+result: PASS_PROVIDER_ACCESS_STRATEGY_DECIDED
+validation_result: PASS
+evidence: data/reports/r3_8n_provider_access_strategy_decision.json,data/reports/secret_scan_result.json
+commit: pending_at_task_state_write
 
 ### Goal
 

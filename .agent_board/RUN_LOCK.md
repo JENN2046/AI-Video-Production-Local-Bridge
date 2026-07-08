@@ -28,6 +28,9 @@ last_failed_r3_8m_at: 2026-07-08T10:30:30+08:00
 last_completed_r3_8m_receipt_run_id: codex-20260708-105033-r3-8m-receipt-fix
 last_completed_r3_8m_receipt_task: R3-8M_RECEIPT_FIX
 last_completed_r3_8m_receipt_at: 2026-07-08T10:51:49+08:00
+last_completed_r3_8n_run_id: codex-20260708-105731-r3-8n-strategy
+last_completed_r3_8n_task: R3-8N_PROVIDER_ACCESS_STRATEGY_DECISION
+last_completed_r3_8n_at: 2026-07-08T11:00:08+08:00
 
 ## Rules
 

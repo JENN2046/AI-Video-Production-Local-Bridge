@@ -2,115 +2,108 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "R3-8M_RECEIPT_FIX",
+  "task_id": "R3-8N_PROVIDER_ACCESS_STRATEGY_DECISION",
   "status": "DONE",
   "priority": "P0",
-  "lane": "Provider Evidence Receipt",
+  "lane": "Provider Access Strategy",
   "project": "AI Video Production Workspace Three Route Plan",
-  "title": "R3-8M RunningHub Auth Failure Receipt Fix",
+  "title": "R3-8N Provider Access Strategy Decision",
   "scope": [
-    "backfill R3-8M live canary commit 95276eb",
-    "backfill R3-8L receipt fix commit b12b67c",
-    "record provider_error_code=1014 as provider account type restriction",
+    "decide the next provider access path offline after Runway credits failure",
+    "decide the next provider access path offline after RunningHub Standard Model API key-type restriction",
+    "do not read .env.local or credentials",
     "do not call RunningHub or Runway"
   ],
-  "goal": "Repair the R3-8M audit chain before offline provider-access strategy selection.",
+  "goal": "Select the next provider-access strategy without making any live provider call or credential/account change.",
   "acceptance": [
-    "R3-8M NEXT_TASK, TASK_LEDGER, TASK_BACKLOG, and report receipt metadata reference commit 95276eb where applicable.",
-    "R3-8L_RECEIPT_FIX_R1 TASK_LEDGER and TASK_BACKLOG records reference commit b12b67c where applicable.",
-    "Receipt states upload_call_count=1, submit_call_count=1, query_call_count=0, provider_job_id_present=false, real_video_generated=false, and output/channel link absent.",
-    "Receipt states RunningHub provider_error_code=1014 means Standard Model API is restricted to Enterprise-Shared API Keys only.",
-    "R3-8N is left as the next eligible offline provider-access strategy decision task.",
-    "No RunningHub call, Runway call, media upload, submit, query, output download, provider credit consumption, real video generation, source overwrite, push, tag, release, or deploy occurs."
+    "Summarize Runway evidence: canary reached provider but failed for credits/account readiness.",
+    "Summarize RunningHub evidence: duration contract fixed to 6, but Standard Model API requires Enterprise-Shared API Key.",
+    "Recommend a primary next path and one fallback path.",
+    "Produce a no-network decision report with clear approval boundaries for any future live call.",
+    "Do not read .env.local or credentials.",
+    "Do not call any provider."
+  ],
+  "required_decision_options": [
+    "Apply for or configure a RunningHub Enterprise-Shared API Key for Standard Model API.",
+    "Switch to an authorized RunningHub non-standard-model or workflow API path.",
+    "Return to Runway only after credits/account readiness is resolved.",
+    "Add a third provider path if it is lower-risk and can be contract-frozen before live use."
   ],
   "validation": [
-    "JSON parse for updated report/state files",
+    "JSON parse for decision report",
     "npm run secret:scan",
     "git diff --check"
   ],
   "allowed_delivery": [
-    "receipt_metadata_update",
+    "decision_report",
+    "provider_path_recommendation",
     "task_board_update",
     "local_commit"
   ],
   "blocked_delivery": [
-    "runninghub_call",
-    "runway_call",
-    "media_upload_to_provider",
-    "status_poll",
-    "output_download_from_provider",
+    "provider_call",
     "provider_credits_consumed",
     "real_video_generated",
     "secret_value_output",
-    "raw_provider_payload_recording",
+    "credentials_read",
+    "credentials_write",
+    "production_credentials_change",
     "source_overwrite",
     "push",
     "tag",
     "release",
-    "deploy",
-    "production_credentials_change"
+    "deploy"
   ],
   "depends_on": [
-    "R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY"
+    "R3-8M_RECEIPT_FIX"
   ],
   "created_at": "2026-07-08T10:47:37+08:00",
-  "updated_at": "2026-07-08T10:51:49+08:00",
-  "claimed_by": "Codex R3-8M receipt fixer",
-  "claim_run_id": "codex-20260708-105033-r3-8m-receipt-fix",
-  "claimed_at": "2026-07-08T10:50:33+08:00",
-  "completed_by": "Codex R3-8M receipt fixer",
-  "completed_at": "2026-07-08T10:51:49+08:00",
+  "updated_at": "2026-07-08T11:00:08+08:00",
+  "claimed_by": "Codex R3-8N strategy decider",
+  "claim_run_id": "codex-20260708-105731-r3-8n-strategy",
+  "claimed_at": "2026-07-08T10:57:31+08:00",
+  "completed_by": "Codex R3-8N strategy decider",
+  "completed_at": "2026-07-08T11:00:08+08:00",
   "blocked_by": null,
   "blocked_at": null,
   "failed_by": null,
   "failed_at": null,
   "skipped_by": null,
   "skipped_at": null,
-  "result": "PASS_RECEIPT_FIXED",
+  "result": "PASS_PROVIDER_ACCESS_STRATEGY_DECIDED",
   "validation_result": "PASS",
   "evidence": [
-    "data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json",
-    "data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json",
-    "data/reports/secret_scan_result.json"
+    "data/reports/r3_8n_provider_access_strategy_decision.json"
   ],
   "commit": "pending_at_task_state_write",
   "delivery": "local_only",
-  "receipt_metadata": {
-    "r3_8m_live_canary_commit": "95276eb",
-    "r3_8l_receipt_fix_commit": "b12b67c",
-    "runninghub_provider_error_code": "1014",
-    "runninghub_provider_error_meaning": "Standard Model API is restricted to Enterprise-Shared API Keys only.",
-    "r3_8n_status": "READY"
-  },
-  "boundary_or_safety_stop": "stop before any new live provider call or credential/account change",
+  "boundary_or_safety_stop": "stop before any provider call, credential read, credential write, account change, push, tag, release, or deploy",
   "blocked_reason": null,
   "failure_reason": null,
   "safe_actions_completed": [
-    "backfilled R3-8M live canary commit 95276eb in ledger, backlog, and report receipt metadata",
-    "backfilled R3-8L receipt fix commit b12b67c in ledger and backlog",
-    "recorded provider_error_code=1014 as a RunningHub account type restriction",
-    "left R3-8N as the next eligible offline provider-access strategy decision task"
+    "produced no-network provider access strategy decision report",
+    "summarized Runway insufficient-credits/account-readiness evidence",
+    "summarized RunningHub duration contract fix and Enterprise-Shared API Key restriction evidence",
+    "recommended RunningHub Enterprise-Shared API Key access as primary path",
+    "recommended authorized RunningHub workflow or non-standard-model route as fallback"
   ],
   "unsafe_action_not_performed": [
-    "runninghub_call",
-    "runway_call",
-    "media_upload_to_provider",
-    "status_poll",
-    "output_download_from_provider",
+    "provider_call",
     "provider_credits_consumed",
     "real_video_generated",
     "secret_value_output",
-    "raw_provider_payload_recording",
+    "credentials_read",
+    "credentials_write",
+    "production_credentials_change",
     "source_overwrite",
     "push",
     "tag",
     "release",
-    "deploy",
-    "production_credentials_change"
+    "deploy"
   ],
   "options_for_jenn": [],
   "next_safe_option": [
-    "After this receipt fix, continue to R3-8N for offline provider-access strategy decision.",
-    "Do not run any new live provider call without a fresh exact current Jenn authorization phrase."
+    "Promote R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT to READY only if a closeout report is desired.",
+    "Do not run any new live provider call without a fresh exact current Jenn authorization phrase and provider account readiness confirmation."
   ]
 }

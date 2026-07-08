@@ -1,0 +1,172 @@
+{
+  "task": "R3-8N_PROVIDER_ACCESS_STRATEGY_DECISION",
+  "result": "PASS_PROVIDER_ACCESS_STRATEGY_DECIDED",
+  "mode": "offline_decision",
+  "generated_at": "2026-07-08T10:59:45+08:00",
+  "source_reports": {
+    "runway_fixture_canary": "data/reports/r3_8b_runway_gen45_single_submit_canary_result.json",
+    "runway_real_storyboard_keyframe_canary": "data/reports/r3_8e_runway_real_storyboard_keyframe_canary_result.json",
+    "runninghub_duration_contract_repair": "data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json",
+    "runninghub_6s_live_canary": "data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json"
+  },
+  "evidence_summary": {
+    "runway": {
+      "provider": "runway",
+      "model": "gen4.5",
+      "endpoint": "POST /v1/image_to_video",
+      "contract_ratio": "720:1280",
+      "duration_seconds": 2,
+      "single_submit_limit_observed": true,
+      "real_storyboard_keyframe_attempted": true,
+      "real_storyboard_keyframe_result": "PROVIDER_FAILED",
+      "sanitized_error_code": "PROVIDER_INSUFFICIENT_CREDITS",
+      "provider_job_id_present": false,
+      "provider_credits_consumed": false,
+      "real_video_generated": false,
+      "readiness_blocker": "Runway account or credit readiness is not sufficient for a successful Gen-4.5 canary.",
+      "strategy_implication": "Runway should not receive another live submit until credits/account readiness is resolved and a fresh exact authorization is provided."
+    },
+    "runninghub": {
+      "provider": "runninghub",
+      "model_route": "rhart-video-g/image-to-video",
+      "duration_contract_status": "fixed_to_6_seconds",
+      "duration_seconds": 6,
+      "aspectRatio": "9:16",
+      "resolution": "480p",
+      "upload_call_count": 1,
+      "submit_call_count": 1,
+      "query_call_count": 0,
+      "provider_job_id_present": false,
+      "provider_credits_consumed": false,
+      "real_video_generated": false,
+      "sanitized_error_code": "PROVIDER_AUTH_FAILED",
+      "provider_error_code": "1014",
+      "provider_error_meaning": "Standard Model API is restricted to Enterprise-Shared API Keys only.",
+      "readiness_blocker": "The selected RunningHub Standard Model API route requires an Enterprise-Shared API Key or an alternate authorized API path.",
+      "strategy_implication": "The local adapter and duration contract are close enough to preserve, but provider access must be changed before any further live submit."
+    }
+  },
+  "decision_options": [
+    {
+      "option_id": "runninghub_enterprise_shared_api_key",
+      "description": "Apply for or configure a RunningHub Enterprise-Shared API Key for the current Standard Model API route.",
+      "status": "recommended_primary",
+      "why": [
+        "R3-8M reached RunningHub upload and submit with exactly one upload call and one submit call.",
+        "The remaining RunningHub blocker is provider account/key type, not local duration mapping or image artifact readiness.",
+        "This preserves the already-tested upload-first standard model route and avoids introducing a new provider contract."
+      ],
+      "required_before_live_retry": [
+        "Human/operator confirms the RunningHub account has an Enterprise-Shared API Key authorized for Standard Model API.",
+        "Credential is configured outside this task boundary without printing or committing secret values.",
+        "Run local env/preflight checks without exposing secret values.",
+        "Run a fresh dry-run guard report against the exact 6 second contract.",
+        "Obtain a new exact user authorization phrase for any live upload/submit."
+      ],
+      "automatic_live_call_allowed": false
+    },
+    {
+      "option_id": "runninghub_authorized_workflow_or_non_standard_model_api",
+      "description": "Switch to an authorized RunningHub non-standard-model or workflow API path that the current account is allowed to use.",
+      "status": "recommended_fallback",
+      "why": [
+        "This is the best fallback if Enterprise-Shared API Key access is not available.",
+        "It keeps the RunningHub direction while avoiding the Standard Model API key-type restriction.",
+        "It will need a new contract-freeze and dry-run before any live call because endpoints, request fields, upload semantics, and output receipts may differ."
+      ],
+      "required_before_live_retry": [
+        "Identify the authorized RunningHub route without reading or printing credentials.",
+        "Freeze the route contract locally.",
+        "Add offline adapter tests for request shape, duration, aspect ratio, upload/output receipts, and fail-closed behavior.",
+        "Generate a dry-run report showing no network call attempted.",
+        "Obtain a new exact user authorization phrase for the first live canary on the new route."
+      ],
+      "automatic_live_call_allowed": false
+    },
+    {
+      "option_id": "return_to_runway_after_account_readiness",
+      "description": "Return to Runway only after credits/account readiness is resolved.",
+      "status": "hold",
+      "why": [
+        "The real storyboard keyframe Runway canary reached the provider boundary and failed for insufficient credits.",
+        "Another Runway submit before account readiness would likely repeat the same paid-call boundary failure.",
+        "Runway remains viable only after the account/credits state changes and a new exact authorization is provided."
+      ],
+      "required_before_live_retry": [
+        "Human/operator confirms Runway credits/account readiness.",
+        "Run env/preflight locally without printing secrets.",
+        "Refresh the canary dry-run guard for model gen4.5, duration 2, and ratio 720:1280.",
+        "Obtain a new exact user authorization phrase for a single-submit live canary."
+      ],
+      "automatic_live_call_allowed": false
+    },
+    {
+      "option_id": "third_provider_path",
+      "description": "Add a third provider path only if it is lower-risk and can be contract-frozen before live use.",
+      "status": "defer_until_lower_risk_than_existing_paths",
+      "why": [
+        "A third provider adds a fresh contract surface, new credential boundary, new failure modes, and new receipt requirements.",
+        "It is justified only if both Runway account readiness and RunningHub access qualification are slower or riskier than integrating a third provider.",
+        "Any third provider must start with contract freeze, offline adapter tests, and dry-run reports before a live canary."
+      ],
+      "required_before_live_retry": [
+        "Select provider and endpoint.",
+        "Freeze request, auth, duration, aspect ratio, output, and receipt contract.",
+        "Add offline tests and secret redaction checks.",
+        "Generate dry-run evidence.",
+        "Obtain a new exact user authorization phrase for any live call."
+      ],
+      "automatic_live_call_allowed": false
+    }
+  ],
+  "recommendation": {
+    "primary_next_path": "runninghub_enterprise_shared_api_key",
+    "fallback_next_path": "runninghub_authorized_workflow_or_non_standard_model_api",
+    "runway_position": "hold_until_credits_or_account_readiness_is_resolved",
+    "third_provider_position": "defer_unless_lower_risk_than_fixing_existing_access",
+    "decision": "Use RunningHub as the next provider-access focus, but do not submit again on the Standard Model API route until Enterprise-Shared API Key access is confirmed. If that access cannot be obtained, switch to an authorized RunningHub workflow or non-standard-model API route and re-freeze the contract offline before live use."
+  },
+  "future_live_call_approval_boundaries": {
+    "requires_new_exact_user_authorization": true,
+    "requires_budget_or_cost_limit": true,
+    "requires_provider_account_readiness_confirmation": true,
+    "requires_no_secret_printing": true,
+    "requires_no_raw_provider_payload_recording": true,
+    "requires_max_upload_calls_or_submit_calls": true,
+    "requires_output_download_and_ffprobe_receipt_if_successful": true,
+    "automatic_retry_allowed": false,
+    "automatic_second_submit_allowed": false,
+    "regeneration_allowed": false,
+    "batch_allowed": false
+  },
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runway_called": false,
+    "runninghub_called": false,
+    "credentials_read": false,
+    "credentials_written": false,
+    "production_credentials_change": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "secret_values_exposed": false,
+    "raw_provider_payload_recorded": false,
+    "source_assets_overwritten": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  },
+  "validation": {
+    "json_parse": "PASS",
+    "npm run secret:scan": "PASS",
+    "git diff --check": "PASS_WITH_CRLF_WARNINGS_ONLY"
+  },
+  "changed_files": [
+    "data/reports/r3_8n_provider_access_strategy_decision.json",
+    ".agent_board/*"
+  ],
+  "next_step": {
+    "do_not_auto_run_live_provider_call": true,
+    "recommended_follow_up": "Promote R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT to READY only if a closeout report is desired after this strategy decision.",
+    "requires_user_decision": "Choose whether to pursue RunningHub Enterprise-Shared API Key access or switch to an authorized RunningHub workflow/non-standard-model route."
+  }
+}

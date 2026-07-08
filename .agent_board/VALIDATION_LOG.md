@@ -1351,6 +1351,34 @@ Notes:
 - Left R3-8N as the next eligible offline provider-access strategy decision task.
 - No RunningHub call, Runway call, upload, submit, query, output download, provider credit consumption, real video generation, credential/account change, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
 
+### R3-8N - 2026-07-08T11:00:08+08:00
+
+Commands:
+
+```bash
+node -e JSON.parse(...)
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_PROVIDER_ACCESS_STRATEGY_DECIDED
+```
+
+Evidence:
+- `data/reports/r3_8n_provider_access_strategy_decision.json`
+- `data/reports/secret_scan_result.json`
+
+Notes:
+- Produced a no-network provider access strategy decision report.
+- Recommended RunningHub Enterprise-Shared API Key access as the primary next path for the current Standard Model API route.
+- Recommended an authorized RunningHub workflow or non-standard-model route as fallback if Enterprise-Shared API Key access is unavailable.
+- Kept Runway on hold until credits/account readiness is resolved.
+- No `.env.local` or credential file was read.
+- No RunningHub call, Runway call, upload, submit, query, output download, provider credit consumption, real video generation, credential/account change, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
+
 ### R3-8J - 2026-07-07T17:46:23+08:00
 
 Commands:

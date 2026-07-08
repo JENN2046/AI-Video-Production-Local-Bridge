@@ -1,14 +1,27 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260707-154200-r3-8g
-Last result: R3-8G completed RunningHub contract freeze and no-network dry-run with PASS_CONTRACT_FREEZE_DRY_RUN
+Last run: codex-20260708-105731-r3-8n-strategy
+Last result: R3-8N completed offline provider access strategy decision with PASS_PROVIDER_ACCESS_STRATEGY_DECIDED
 
 ## Current state
 
-Current task: R3-8G_RUNNINGHUB_CONTRACT_FREEZE_AND_DRY_RUN
+Current task: none
 Current status: DONE
 Current owner: None
+
+## R3-8N closeout
+
+Completed at: 2026-07-08T11:00:08+08:00
+Result: PASS_PROVIDER_ACCESS_STRATEGY_DECIDED
+Report: `data/reports/r3_8n_provider_access_strategy_decision.json`
+
+- Primary next path: obtain/configure RunningHub Enterprise-Shared API Key access for the current Standard Model API route.
+- Fallback next path: switch to an authorized RunningHub workflow or non-standard-model API route, then freeze that contract offline before live use.
+- Runway remains on hold until credits/account readiness is resolved.
+- No `.env.local` or credentials were read.
+- No RunningHub call, Runway call, upload, submit, query, output download, provider credit consumption, real video generation, credential/account change, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
+- `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT` remains `FOLLOW_UP`; no READY task remains unless Jenn promotes it.
 
 ## R3-8G closeout
 
@@ -120,7 +133,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - R3-8L receipt fix R1 completed locally: R3-8J receipt-fix commit `590f7fd` and R3-8L duration-contract repair commit `18f0d90` are now backfilled in the audit chain.
 - R3-8M executed one authorized RunningHub upload and one authorized submit on 2026-07-08. Result: `PROVIDER_FAILED_AUTH_1014`; RunningHub rejected the submit because Standard Model API is restricted to Enterprise-Shared API Keys only. No task id, output URL, local video artifact, ffprobe result, or channel link exists.
 - R3-8M receipt fix completed locally: R3-8M live canary commit `95276eb` and R3-8L receipt fix commit `b12b67c` are now backfilled in the audit chain.
-- Follow-up queue arranged on 2026-07-08: `R3-8N_PROVIDER_ACCESS_STRATEGY_DECISION` is READY. It is a local/no-network task.
+- R3-8N completed locally: provider access strategy is to pursue RunningHub Enterprise-Shared API Key access for the current Standard Model API route, with an authorized RunningHub workflow/non-standard-model route as fallback.
 
 ## Blocked in last run
 
@@ -136,7 +149,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 
 ## Remaining READY tasks
 
-- `R3-8N_PROVIDER_ACCESS_STRATEGY_DECISION`
+- None. `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT` remains `FOLLOW_UP` unless Jenn promotes it.
 
 ## Closeout evidence
 
@@ -174,6 +187,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - `data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json`
 - `data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json`
 - `data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json`
+- `data/reports/r3_8n_provider_access_strategy_decision.json`
 - `ops/reports/three_route_acceptance_review_package_20260707_103611/THREE_ROUTE_ACCEPTANCE_REVIEW.md`
 - `ops/reports/three_route_acceptance_review_package_20260707_103611/README.md`
 
@@ -189,7 +203,8 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - R3-8L enforced RunningHub minimum duration `6` before upload/submit.
 - R3-8M failed with `PROVIDER_FAILED_AUTH_1014`; do not retry automatically.
 - R3-8M receipt fix is complete.
-- Next task is `R3-8N_PROVIDER_ACCESS_STRATEGY_DECISION`, an offline no-credential decision between RunningHub Enterprise-Shared API Key, a different RunningHub workflow/API path, Runway after credits readiness, or a third provider.
+- R3-8N provider access strategy decision is complete.
+- No READY task remains. `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT` remains `FOLLOW_UP` unless Jenn promotes it.
 - Any next RunningHub retry requires an Enterprise-Shared API Key or a different authorized provider path, plus a new exact current Jenn authorization phrase.
 - Do not submit to RunningHub without a future exact current Jenn authorization phrase.
 - Do not retry Runway canary without a new exact current Jenn authorization phrase.

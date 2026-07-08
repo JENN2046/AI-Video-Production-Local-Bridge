@@ -2,66 +2,66 @@
 
 Status: DONE
 
-Task: R3-8M_RECEIPT_FIX
+Task: R3-8N_PROVIDER_ACCESS_STRATEGY_DECISION
 
-Title: R3-8M RunningHub Auth Failure Receipt Fix
+Title: R3-8N Provider Access Strategy Decision
 
 Priority: P0
 
-Lane: Provider Evidence Receipt
+Lane: Provider Access Strategy
 
 Project: AI Video Production Workspace Three Route Plan
 
-Depends on: R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY
+Depends on: R3-8M_RECEIPT_FIX
 
 ## Goal
 
-Repair the R3-8M audit chain before offline provider-access strategy selection.
+Select the next provider-access strategy without making any live provider call or credential/account change.
 
-## Required Work
+## Required Decision Options
 
-- Backfill R3-8M live canary commit `95276eb`.
-- Backfill R3-8L receipt fix commit `b12b67c`.
-- Record `provider_error_code=1014` as a provider account type restriction.
-- Leave R3-8N as the next eligible offline provider-access strategy decision task.
+- Apply for or configure a RunningHub Enterprise-Shared API Key for Standard Model API.
+- Switch to an authorized RunningHub non-standard-model or workflow API path.
+- Return to Runway only after credits/account readiness is resolved.
+- Add a third provider path if it is lower-risk and can be contract-frozen before live use.
 
 ## Acceptance
 
-- No network call is attempted.
-- No RunningHub upload, submit, query, poll, or output download is attempted.
-- No Runway call is attempted.
-- No provider credits are consumed.
-- No real video is generated.
-- No credential/account change is made.
-- No secret values, signed URLs, raw provider payloads, or source assets are exposed or overwritten.
+- Summarize Runway evidence: canary reached provider but failed for credits/account readiness.
+- Summarize RunningHub evidence: duration contract fixed to `6`, but Standard Model API requires Enterprise-Shared API Key.
+- Recommend a primary next path and one fallback path.
+- Produce a no-network decision report with clear approval boundaries for any future live call.
+- Do not read `.env.local` or credentials.
+- Do not call any provider.
 
 ## Validation
 
-- JSON parse for updated report/state files
+- JSON parse for decision report
 - `npm run secret:scan`
 - `git diff --check`
 
 ## Stop Reason
 
-Stop before any new live provider call or credential/account change. R3-8N may decide the next provider-access strategy offline only.
+Stop before any provider call, credential read, credential write, account change, push, tag, release, or deploy.
 
 ## Claim
 
-- claimed_by: Codex R3-8M receipt fixer
-- claim_run_id: codex-20260708-105033-r3-8m-receipt-fix
-- claimed_at: 2026-07-08T10:50:33+08:00
+- claimed_by: Codex R3-8N strategy decider
+- claim_run_id: codex-20260708-105731-r3-8n-strategy
+- claimed_at: 2026-07-08T10:57:31+08:00
 
 ## Result
 
-`PASS_RECEIPT_FIXED`
+`PASS_PROVIDER_ACCESS_STRATEGY_DECIDED`
 
 ## Completed Work
 
-- Backfilled R3-8M live canary commit `95276eb`.
-- Backfilled R3-8L receipt fix commit `b12b67c`.
-- Recorded provider error `1014` as a RunningHub account type restriction.
-- Left R3-8N as the next eligible offline provider-access strategy decision task.
+- Produced `data/reports/r3_8n_provider_access_strategy_decision.json`.
+- Summarized Runway as blocked on credits/account readiness before another live submit.
+- Summarized RunningHub as blocked by Standard Model API key type `1014`.
+- Recommended RunningHub Enterprise-Shared API Key access as the primary next path.
+- Recommended an authorized RunningHub workflow or non-standard-model route as the fallback.
 
 ## Completed At
 
-2026-07-08T10:51:49+08:00
+2026-07-08T11:00:08+08:00
