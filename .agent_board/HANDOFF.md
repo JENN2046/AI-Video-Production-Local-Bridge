@@ -1,21 +1,33 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260708-145851-r3-9e-queue-arrangement
-Last result: R3-9E RunningHub generated clip review prep queued
+Last run: codex-20260708-155650-r3-9f-queue-arrangement
+Last result: R3-9F human clip review decision apply queued
 
 ## Current state
 
-Current task: R3-9E_RUNNINGHUB_GENERATED_CLIP_REVIEW_PREP
+Current task: R3-9F_HUMAN_CLIP_REVIEW_DECISION_APPLY
 Current status: READY
 Current owner: None
+
+## R3-9F queue arrangement
+
+Arranged at: 2026-07-08T15:56:50+08:00
+Result: READY_TASK_QUEUED
+
+- `R3-9F_HUMAN_CLIP_REVIEW_DECISION_APPLY` is loaded into `NEXT_TASK` as `READY`.
+- R3-9F depends on `R3-9E_RUNNINGHUB_GENERATED_CLIP_REVIEW_PREP`.
+- Source table: `data/reports/r3_9e_runninghub_generated_clip_review_table.md`, filled by Jenn in the current working tree.
+- Current decisions: 0 accept, 1 reject, 3 regenerate_requested.
+- SHOT_002 reject note has been updated to: "我不要叹气不高兴的表情，这样会让人不想购买产品".
+- R3-9F may apply review decisions and write a decision report, but must not call providers, regenerate clips, assemble final video, overwrite source assets, push, tag, release, or deploy.
 
 ## R3-9E queue arrangement
 
 Arranged at: 2026-07-08T14:58:51+08:00
 Result: READY_TASK_QUEUED
 
-- `R3-9E_RUNNINGHUB_GENERATED_CLIP_REVIEW_PREP` is loaded into `NEXT_TASK` as `READY`.
+- `R3-9E_RUNNINGHUB_GENERATED_CLIP_REVIEW_PREP` later completed with `PASS_REVIEW_PACKAGE_READY`.
 - R3-9E depends on `R3-9D_RUNNINGHUB_4_SHOT_SINGLE_PASS_LIVE_EXECUTION`.
 - R3-9E is local review prep only: it may prepare a review package and review table, but must not call providers, regenerate clips, assemble final video, or mark review decisions.
 - Review package should cover the 4 generated RunningHub clips, their local mp4 paths, generated artifact IDs, ffprobe summaries, source keyframe references, and prompt context.
@@ -269,7 +281,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 
 ## Remaining READY tasks
 
-- `R3-9E_RUNNINGHUB_GENERATED_CLIP_REVIEW_PREP`
+- `R3-9F_HUMAN_CLIP_REVIEW_DECISION_APPLY`
 
 ## Remaining FOLLOW_UP tasks
 
@@ -334,8 +346,8 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - R3-8K provider path decision closeout is complete.
 - RunningHub Enterprise-Shared API Key path is the primary validated M1 provider lane.
 - R3-9D completed the bounded RunningHub 4-shot live run successfully.
-- Next task is `R3-9E_RUNNINGHUB_GENERATED_CLIP_REVIEW_PREP`.
-- R3-9E is local review prep only and must not call providers or mutate review decisions.
+- Next task is `R3-9F_HUMAN_CLIP_REVIEW_DECISION_APPLY`.
+- R3-9F is local review decision apply only and must not call providers, regenerate clips, or assemble final video.
 - Any future RunningHub live call still requires a new exact current Jenn authorization phrase.
 - Do not submit to RunningHub without a future exact current Jenn authorization phrase.
 - Do not retry Runway canary without a new exact current Jenn authorization phrase.
@@ -347,7 +359,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - Confirmed 4 eligible RunningHub storyboard shot plans and 0 local blockers.
 - Budget remains capped at 4 uploads and 4 submits total, one upload and one submit per shot, no retry, no second submit, no regeneration, no batch expansion, and no Runway fallback.
 - No credentials, `.env` files, RunningHub call, Runway call, provider upload/submit/query/download, source overwrite, push, tag, release, or deploy occurred.
-- Remaining READY task after this closeout: `R3-9E_RUNNINGHUB_GENERATED_CLIP_REVIEW_PREP`.
+- Remaining READY task after this closeout: `R3-9F_HUMAN_CLIP_REVIEW_DECISION_APPLY`.
 - R3-9C local implementation commit: `17caf18`.
 - Any future RunningHub 4-shot live execution requires a new exact current Jenn authorization phrase.
 
@@ -360,7 +372,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - All 4 outputs are local media artifacts with ffprobe PASS.
 - No retry, second submit, Runway call, regeneration, batch expansion, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
 - R3-9D local implementation commit: `b9e8991`.
-- Remaining READY task after this closeout: `R3-9E_RUNNINGHUB_GENERATED_CLIP_REVIEW_PREP`.
+- Remaining READY task after this closeout: `R3-9F_HUMAN_CLIP_REVIEW_DECISION_APPLY`.
 
 ## R3-9E Closeout
 
@@ -370,4 +382,4 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - Generated clip artifacts prepared for review: `artifact_ac71dfd9-371c-4eb4-a6b6-686993291ceb`, `artifact_2adc2e6d-3183-47c4-8d1b-01bf80bed73f`, `artifact_10271f09-278e-4326-b417-6b4ea64ad8ca`, `artifact_1f757b43-a308-4d80-a674-7b7a21ceec21`.
 - No provider call, regeneration, batch expansion, final assembly, review decision mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
 - R3-9E local implementation commit: `1ecc31c`.
-- Remaining READY tasks: none.
+- Remaining READY task after Jenn filled the review table: `R3-9F_HUMAN_CLIP_REVIEW_DECISION_APPLY`.

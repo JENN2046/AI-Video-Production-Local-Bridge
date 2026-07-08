@@ -2776,3 +2776,57 @@ Prepare the human review surface for the four RunningHub-generated clips without
 - Each entry includes shot id, generated artifact id, local MP4 path, ffprobe status, source keyframe reference, prompt context, and blank review decision placeholders.
 - Validation passed: JSON parse, Markdown table existence, `npm run r3:9e:review-prep`, `npm run typecheck`, `npm run test:m1`, `npm run secret:scan`, `git diff --check` with CRLF warnings only.
 - No provider call, regeneration, batch expansion, final assembly, review decision mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+
+## R3-9F_HUMAN_CLIP_REVIEW_DECISION_APPLY - Human Clip Review Decision Apply
+
+status: READY
+priority: P0
+lane: Human Clip Review Decision Apply
+project: AI Video Production Workspace Three Route Plan
+scope: parse Jenn-filled review decisions from the R3-9E review table and apply them to local review state and a decision report without provider calls or regeneration
+branch: local-only
+depends_on: R3-9E_RUNNINGHUB_GENERATED_CLIP_REVIEW_PREP
+source_plan: R3-9E generated clip review table filled by Jenn
+report_path: data/reports/r3_9f_human_clip_review_decision_apply_result.json
+allowed_delivery: review_decision_state_update,decision_apply_report,task_board_update,local_commit
+blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,provider_submit,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,regeneration,batch_expansion,final_assembly,source_overwrite,secret_value_output,raw_provider_payload_recording,signed_url_recording,push,tag,release,deploy
+created_at: 2026-07-08T15:56:50+08:00
+updated_at: 2026-07-08T15:56:50+08:00
+
+### Goal
+
+Apply Jenn's human review decisions for the four RunningHub-generated clips without triggering regeneration or assembly.
+
+### Source Decisions
+
+- `g0_r1_shot_001`: `regenerate_requested`; note says the action should be hand picking food from the lunchbox and bringing it to the mouth, not picking up the lunchbox to eat.
+- `g0_r1_shot_002`: `reject`; note says Jenn does not want a sighing/unhappy expression because it reduces purchase intent.
+- `g0_r1_shot_003`: `regenerate_requested`; note says the cap fold and fabric behavior during pulling is not realistic, and real folds should become shallower as fabric moves.
+- `g0_r1_shot_004`: `regenerate_requested`; note says the cap lighting/shadow realism is not rigorous enough.
+
+### Required Work
+
+- Parse `data/reports/r3_9e_runninghub_generated_clip_review_table.md` as the source of truth from the current working tree.
+- Validate exactly one decision per generated clip.
+- Apply decisions to local app review state using existing project patterns.
+- Generate `data/reports/r3_9f_human_clip_review_decision_apply_result.json`.
+- Preserve Jenn's Chinese notes exactly in the report and any review-state metadata.
+- Do not call providers, regenerate clips, assemble final video, or overwrite source assets.
+
+### Acceptance
+
+- Exactly 4 shot decisions are parsed and applied.
+- Decision summary is `accept=0`, `reject=1`, `regenerate_requested=3`.
+- Source generated clip artifact IDs are recorded for all 4 shots.
+- Jenn's reviewer name and notes are preserved.
+- Report identifies next safe options: regeneration planning for requested shots and separate handling decision for the rejected shot.
+- Report records `network_call_attempted=false`, `runninghub_called=false`, `runway_called=false`, `provider_credits_consumed=false`, `real_video_generated=false`, `regeneration_performed=false`, `final_assembly_performed=false`, `secret_values_exposed=false`.
+- No provider call, regeneration, batch expansion, final assembly, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurs.
+
+### Validation
+
+- JSON parse for generated decision-apply report
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`

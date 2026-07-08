@@ -2,38 +2,41 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "R3-9E_RUNNINGHUB_GENERATED_CLIP_REVIEW_PREP",
-  "status": "DONE",
-  "priority": "P1",
-  "lane": "Generated Clip Review Prep",
+  "task_id": "R3-9F_HUMAN_CLIP_REVIEW_DECISION_APPLY",
+  "status": "READY",
+  "priority": "P0",
+  "lane": "Human Clip Review Decision Apply",
   "project": "AI Video Production Workspace Three Route Plan",
-  "title": "RunningHub Generated Clip Review Prep",
+  "title": "Human Clip Review Decision Apply",
   "scope": [
-    "prepare a local review package for the four generated RunningHub clips from R3-9D",
-    "summarize generated_clip artifacts, local mp4 paths, ffprobe results, source keyframe references, and prompt context",
-    "create a human review table with accept, reject, and regenerate_requested decision fields",
-    "do not call providers, regenerate clips, assemble final video, or mark review decisions"
+    "parse Jenn-filled review decisions from data/reports/r3_9e_runninghub_generated_clip_review_table.md",
+    "apply human review decisions to the local app review state and decision report",
+    "preserve reviewer notes exactly, including the updated SHOT_002 reject reason",
+    "do not call providers, regenerate clips, assemble final video, or overwrite source assets"
   ],
-  "goal": "Prepare the human review surface for the four RunningHub-generated clips without changing review state or calling providers.",
+  "goal": "Apply Jenn's human review decisions for the four RunningHub-generated clips without triggering regeneration or assembly.",
   "acceptance": [
-    "R3-9D live result report is parsed and referenced as the source of truth.",
-    "Review package includes exactly 4 generated clips unless the source report is inconsistent.",
-    "Each review entry records shot_id, generated artifact_id, local mp4 path, ffprobe status, duration summary, source storyboard image artifact, source keyframe path, prompt summary, and review decision placeholders.",
-    "Review decision placeholders include accept, reject, regenerate_requested, notes, and reviewer fields without preselecting a decision.",
-    "Package includes instructions for the next human review step without modifying app review status.",
-    "Report records network_call_attempted=false, runninghub_called=false, runway_called=false, provider_credits_consumed=false, real_video_generated=false, regeneration_performed=false, final_assembly_performed=false, secret_values_exposed=false.",
-    "No provider call, regeneration, batch expansion, final assembly, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurs."
+    "The review table is parsed as the source of truth from the current working tree.",
+    "Exactly 4 shot decisions are parsed, with exactly one decision per shot.",
+    "Decision summary is 0 accept, 1 reject, and 3 regenerate_requested.",
+    "SHOT_001 is recorded as regenerate_requested with Jenn's food-from-lunchbox eating-action note.",
+    "SHOT_002 is recorded as reject with Jenn's note that sighing/unhappy expression hurts purchase intent.",
+    "SHOT_003 is recorded as regenerate_requested with Jenn's cap-fold/fabric realism note.",
+    "SHOT_004 is recorded as regenerate_requested with Jenn's cap lighting realism note.",
+    "Generated decision-apply report records all source generated_clip artifact IDs and review decisions.",
+    "Local review state is updated only for review decisions; no provider generation, regeneration, final assembly, or media overwrite occurs.",
+    "Report records network_call_attempted=false, runninghub_called=false, runway_called=false, provider_credits_consumed=false, real_video_generated=false, regeneration_performed=false, final_assembly_performed=false, secret_values_exposed=false."
   ],
   "validation": [
-    "JSON/YAML parse for generated review package report",
+    "JSON parse for generated decision-apply report",
     "npm run typecheck",
     "npm run test:m1",
     "npm run secret:scan",
     "git diff --check"
   ],
   "allowed_delivery": [
-    "review_package_report",
-    "review_table",
+    "review_decision_state_update",
+    "decision_apply_report",
     "task_board_update",
     "local_commit"
   ],
@@ -49,53 +52,44 @@
     "regeneration",
     "batch_expansion",
     "final_assembly",
-    "review_decision_mutation",
+    "source_overwrite",
     "secret_value_output",
     "raw_provider_payload_recording",
     "signed_url_recording",
-    "source_overwrite",
     "push",
     "tag",
     "release",
     "deploy"
   ],
   "depends_on": [
-    "R3-9D_RUNNINGHUB_4_SHOT_SINGLE_PASS_LIVE_EXECUTION"
+    "R3-9E_RUNNINGHUB_GENERATED_CLIP_REVIEW_PREP"
   ],
-  "created_at": "2026-07-08T14:58:51+08:00",
-  "updated_at": "2026-07-08T15:13:25+08:00",
-  "claimed_by": "Codex R3-9E review prep",
-  "claim_run_id": "codex-20260708-151059-r3-9e",
-  "claimed_at": "2026-07-08T15:10:59+08:00",
-  "completed_by": "Codex R3-9E review prep",
-  "completed_at": "2026-07-08T15:13:25+08:00",
+  "created_at": "2026-07-08T15:56:50+08:00",
+  "updated_at": "2026-07-08T15:56:50+08:00",
+  "claimed_by": null,
+  "claim_run_id": null,
+  "claimed_at": null,
+  "completed_by": null,
+  "completed_at": null,
   "blocked_by": null,
   "blocked_at": null,
   "failed_by": null,
   "failed_at": null,
   "skipped_by": null,
   "skipped_at": null,
-  "result": "PASS_REVIEW_PACKAGE_READY",
-  "validation_result": "PASS",
+  "result": null,
+  "validation_result": null,
   "evidence": [
-    "data/reports/r3_9d_runninghub_4_shot_single_pass_live_execution_result.json",
-    "data/reports/r3_9c_runninghub_4_shot_live_authorization_prep_result.json",
-    "data/reports/r3_9e_runninghub_generated_clip_review_prep_result.json",
     "data/reports/r3_9e_runninghub_generated_clip_review_table.md",
-    "data/reports/secret_scan_result.json"
+    "data/reports/r3_9e_runninghub_generated_clip_review_prep_result.json",
+    "data/reports/r3_9d_runninghub_4_shot_single_pass_live_execution_result.json"
   ],
-  "commit": "1ecc31c",
+  "commit": null,
   "delivery": "local_only",
-  "boundary_or_safety_stop": "review prep only completed; no provider call, review decision mutation, regeneration, final assembly, or deployment occurred",
+  "boundary_or_safety_stop": "review decision apply only; no provider call, regeneration, final assembly, or deployment",
   "blocked_reason": null,
   "failure_reason": null,
-  "safe_actions_completed": [
-    "Parsed R3-9D live result report and R3-9C authorization prep report.",
-    "Generated a local JSON review package for 4 RunningHub generated clips.",
-    "Generated a Markdown human review table with accept, reject, regenerate_requested, reviewer, and notes placeholders.",
-    "Confirmed 4 generated_clip artifacts have local MP4 files and ffprobe PASS.",
-    "Did not mutate app review state or call any provider."
-  ],
+  "safe_actions_completed": [],
   "unsafe_action_not_performed": [
     "runninghub_call",
     "runway_call",
@@ -108,21 +102,18 @@
     "regeneration",
     "batch_expansion",
     "final_assembly",
-    "review_decision_mutation",
+    "source_overwrite",
     "secret_value_output",
     "raw_provider_payload_recording",
     "signed_url_recording",
-    "source_overwrite",
     "push",
     "tag",
     "release",
     "deploy"
   ],
-  "options_for_jenn": [
-    "Open the Markdown review table and local MP4 paths to decide accept, reject, or regenerate_requested per clip.",
-    "Review decisions, regeneration, and final assembly should be separate scoped tasks."
-  ],
+  "options_for_jenn": [],
   "next_safe_option": [
-    "Promote a local review-decision task after Jenn chooses per-clip decisions."
+    "After decision apply, plan regeneration for the three regenerate_requested shots and decide how to handle the rejected SHOT_002.",
+    "Any provider regeneration must be a separate task with fresh exact authorization."
   ]
 }

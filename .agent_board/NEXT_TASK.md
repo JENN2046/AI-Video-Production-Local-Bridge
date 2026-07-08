@@ -1,46 +1,50 @@
 # NEXT_TASK.md
 
-Status: DONE
+Status: READY
 
-Task: R3-9E_RUNNINGHUB_GENERATED_CLIP_REVIEW_PREP
+Task: R3-9F_HUMAN_CLIP_REVIEW_DECISION_APPLY
 
-Title: RunningHub Generated Clip Review Prep
+Title: Human Clip Review Decision Apply
 
-Priority: P1
+Priority: P0
 
-Lane: Generated Clip Review Prep
+Lane: Human Clip Review Decision Apply
 
 Project: AI Video Production Workspace Three Route Plan
 
-## Result
+Depends on: R3-9E_RUNNINGHUB_GENERATED_CLIP_REVIEW_PREP
 
-PASS_REVIEW_PACKAGE_READY
+## Goal
 
-## Completed
+Apply Jenn's human review decisions for the four RunningHub-generated clips without triggering regeneration or assembly.
 
-- completed_by: Codex R3-9E review prep
-- run_id: codex-20260708-151059-r3-9e
-- completed_at: 2026-07-08T15:13:25+08:00
-- commit: 1ecc31c
+## Required Work
 
-## Review Package
+- Parse Jenn-filled review decisions from `data/reports/r3_9e_runninghub_generated_clip_review_table.md`.
+- Apply human review decisions to the local app review state and decision report.
+- Preserve reviewer notes exactly, including the updated SHOT_002 reject reason.
+- Do not call providers, regenerate clips, assemble final video, or overwrite source assets.
 
-- report: data/reports/r3_9e_runninghub_generated_clip_review_prep_result.json
-- review_table: data/reports/r3_9e_runninghub_generated_clip_review_table.md
-- generated_clip_count: 4
-- local_blocker_count: 0
-- generated_artifacts: artifact_ac71dfd9-371c-4eb4-a6b6-686993291ceb, artifact_2adc2e6d-3183-47c4-8d1b-01bf80bed73f, artifact_10271f09-278e-4326-b417-6b4ea64ad8ca, artifact_1f757b43-a308-4d80-a674-7b7a21ceec21
+## Acceptance
+
+- The review table is parsed as the source of truth from the current working tree.
+- Exactly 4 shot decisions are parsed, with exactly one decision per shot.
+- Decision summary is 0 `accept`, 1 `reject`, and 3 `regenerate_requested`.
+- `SHOT_001` is recorded as `regenerate_requested` with Jenn's food-from-lunchbox eating-action note.
+- `SHOT_002` is recorded as `reject` with Jenn's note that sighing/unhappy expression hurts purchase intent.
+- `SHOT_003` is recorded as `regenerate_requested` with Jenn's cap-fold/fabric realism note.
+- `SHOT_004` is recorded as `regenerate_requested` with Jenn's cap lighting realism note.
+- Generated decision-apply report records all source `generated_clip` artifact IDs and review decisions.
+- Local review state is updated only for review decisions; no provider generation, regeneration, final assembly, or media overwrite occurs.
 
 ## Validation
 
-- JSON parse for generated review package report: PASS
-- Markdown review table exists: PASS
-- `npm run r3:9e:review-prep`: PASS
-- `npm run typecheck`: PASS
-- `npm run test:m1`: PASS
-- `npm run secret:scan`: PASS
-- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+- JSON parse for generated decision-apply report
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
 
-## Boundary
+## Stop Reason
 
-No provider call, regeneration, batch expansion, final assembly, review decision mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+Review decision apply only. Do not call providers, regenerate, assemble final video, overwrite source assets, push, tag, release, or deploy.
