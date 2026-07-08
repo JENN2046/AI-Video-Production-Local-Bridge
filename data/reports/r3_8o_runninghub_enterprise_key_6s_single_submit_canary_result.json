@@ -165,6 +165,20 @@
     "tag_created": false,
     "release_or_deploy_performed": false
   },
+  "receipt_metadata": {
+    "receipt_status": "COMPLETE",
+    "live_canary_commit": "99dd716",
+    "receipt_fix_commit": "c746b08",
+    "receipt_fix_task": "R3-8O_RECEIPT_FIX_R1",
+    "upload_call_count": 1,
+    "submit_call_count": 1,
+    "query_call_count": 12,
+    "provider_status": "SUCCESS",
+    "generated_artifact_id": "artifact_5bd5b213-3b8b-4717-bec7-298be59b0f62",
+    "ffprobe_status": "PASS",
+    "no_retry_or_second_submit": true,
+    "no_raw_provider_payload_or_signed_url_recorded": true
+  },
   "blocked_reason": null,
   "next_step": {
     "no_automatic_second_submit": true,

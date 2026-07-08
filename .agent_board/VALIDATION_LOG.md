@@ -1416,6 +1416,32 @@ Notes:
 - Generated local artifact: `artifact_5bd5b213-3b8b-4717-bec7-298be59b0f62`.
 - No retry, second submit, Runway call, regeneration, batch generation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
 
+### R3-8O-RECEIPT-FIX-R1 - 2026-07-08T11:40:34+08:00
+
+Commands:
+
+```bash
+node -e JSON.parse(...)
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_RECEIPT_FIXED
+```
+
+Evidence:
+- `data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_result.json`
+- `data/reports/secret_scan_result.json`
+
+Notes:
+- Backfilled R3-8O live canary commit `99dd716`.
+- Backfilled R3-8O receipt fix commit `c746b08`.
+- Kept R3-8K as `FOLLOW_UP` and dependent on `R3-8O_RECEIPT_FIX_R1`.
+- No RunningHub call, Runway call, upload, submit, query, output download, provider credit consumption, real video generation, secret output, raw provider payload recording, signed URL recording, source overwrite, push, tag, release, or deploy occurred.
+
 ### R3-8J - 2026-07-07T17:46:23+08:00
 
 Commands:

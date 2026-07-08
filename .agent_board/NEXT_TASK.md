@@ -1,6 +1,6 @@
 # NEXT_TASK.md
 
-Status: READY
+Status: DONE
 
 Task: R3-8O_RECEIPT_FIX_R1
 
@@ -43,3 +43,24 @@ Repair the R3-8O audit chain before provider path closeout.
 ## Stop Reason
 
 Stop before R3-8K closeout or any new live provider call. This task is receipt repair only.
+
+## Claim
+
+- claimed_by: Codex R3-8O receipt fixer R1
+- claim_run_id: codex-20260708-113927-r3-8o-receipt-fix-r1
+- claimed_at: 2026-07-08T11:39:27+08:00
+
+## Result
+
+`PASS_RECEIPT_FIXED`
+
+## Completed Work
+
+- Backfilled R3-8O live canary commit `99dd716`.
+- Backfilled R3-8O receipt fix commit `c746b08`.
+- Added receipt metadata to the R3-8O report.
+- Confirmed R3-8K remains `FOLLOW_UP` and depends on `R3-8O_RECEIPT_FIX_R1`.
+
+## Completed At
+
+2026-07-08T11:40:34+08:00

@@ -2340,7 +2340,7 @@ Run exactly one RunningHub 6-second live canary with the Enterprise-Shared API K
 
 ## R3-8O_RECEIPT_FIX_R1 - R3-8O Receipt Fix R1
 
-status: READY
+status: DONE
 priority: P0
 lane: Provider Evidence Receipt
 project: AI Video Production Workspace Three Route Plan
@@ -2352,7 +2352,16 @@ report_path: data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canar
 allowed_delivery: receipt_metadata_update,task_board_update,local_commit
 blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,secret_value_output,raw_provider_payload_recording,signed_url_recording,source_overwrite,push,tag,release,deploy,production_credentials_change
 created_at: 2026-07-08T11:36:49+08:00
-updated_at: 2026-07-08T11:36:49+08:00
+updated_at: 2026-07-08T11:40:34+08:00
+claimed_by: Codex R3-8O receipt fixer R1
+claim_run_id: codex-20260708-113927-r3-8o-receipt-fix-r1
+claimed_at: 2026-07-08T11:39:27+08:00
+completed_by: Codex R3-8O receipt fixer R1
+completed_at: 2026-07-08T11:40:34+08:00
+result: PASS_RECEIPT_FIXED
+validation_result: PASS
+evidence: data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_result.json,data/reports/secret_scan_result.json
+commit: pending_at_task_state_write
 
 ### Goal
 

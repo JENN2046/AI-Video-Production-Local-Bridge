@@ -1,14 +1,26 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260708-112510-r3-8o-live
-Last result: R3-8O completed RunningHub Enterprise Key 6s live canary with PASS_LIVE_SINGLE_SUBMIT_COMPLETED
+Last run: codex-20260708-113927-r3-8o-receipt-fix-r1
+Last result: R3-8O receipt fix R1 completed with PASS_RECEIPT_FIXED
 
 ## Current state
 
 Current task: none
 Current status: DONE
 Current owner: None
+
+## R3-8O receipt fix R1 closeout
+
+Completed at: 2026-07-08T11:40:34+08:00
+Result: PASS_RECEIPT_FIXED
+Report: `data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_result.json`
+
+- Backfilled live canary commit `99dd716`.
+- Backfilled receipt fix commit `c746b08`.
+- Added receipt metadata to the R3-8O report.
+- No RunningHub call, Runway call, upload, submit, query, output download, provider credit consumption, real video generation, secret output, raw provider payload recording, signed URL recording, source overwrite, push, tag, release, or deploy occurred.
+- `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT` remains `FOLLOW_UP` and depends on `R3-8O_RECEIPT_FIX_R1`.
 
 ## R3-8O closeout
 

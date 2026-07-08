@@ -34,6 +34,9 @@ last_completed_r3_8n_at: 2026-07-08T11:00:08+08:00
 last_completed_r3_8o_run_id: codex-20260708-112510-r3-8o-live
 last_completed_r3_8o_task: R3-8O_RUNNINGHUB_ENTERPRISE_KEY_6S_SINGLE_SUBMIT_CANARY
 last_completed_r3_8o_at: 2026-07-08T11:28:19+08:00
+last_completed_r3_8o_receipt_fix_r1_run_id: codex-20260708-113927-r3-8o-receipt-fix-r1
+last_completed_r3_8o_receipt_fix_r1_task: R3-8O_RECEIPT_FIX_R1
+last_completed_r3_8o_receipt_fix_r1_at: 2026-07-08T11:40:34+08:00
 
 ## Rules
 

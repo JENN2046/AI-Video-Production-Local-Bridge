@@ -2379,9 +2379,13 @@ Evidence:
 Git delivery:
 - repo: yes
 - branch: master
-- commit: pending
+- commit: 99dd716
 - push: no
 - PR: none
+
+Receipt metadata:
+- live canary commit: 99dd716
+- receipt fix commit: c746b08
 
 Provider execution:
 - upload_call_count: 1
@@ -2396,6 +2400,57 @@ Boundary:
 
 Next:
 - Promote `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT` to `READY` if a provider path closeout report is desired.
+
+### 2026-07-08T11:40:34+08:00 - R3-8O Receipt Fix R1
+
+Result: DONE / PASS_RECEIPT_FIXED
+Project: AI Video Production Workspace Three Route Plan
+Lane: Provider Evidence Receipt
+Claimed by: Codex R3-8O receipt fixer R1
+Completed by: Codex R3-8O receipt fixer R1
+Run ID: codex-20260708-113927-r3-8o-receipt-fix-r1
+Started at: 2026-07-08T11:39:27+08:00
+Completed at: 2026-07-08T11:40:34+08:00
+
+Scope:
+- Backfilled R3-8O live canary commit `99dd716`.
+- Backfilled R3-8O receipt fix commit `c746b08`.
+- Kept R3-8K as `FOLLOW_UP` and dependent on `R3-8O_RECEIPT_FIX_R1`.
+
+Changed files:
+- data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_result.json
+- .agent_board/NEXT_TASK.json
+- .agent_board/NEXT_TASK.md
+- .agent_board/RUN_LOCK.md
+- .agent_board/TASK_BACKLOG.md
+- .agent_board/HANDOFF.md
+- .agent_board/VALIDATION_LOG.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: node -e JSON.parse(...)
+  result: PASS
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_result.json
+- data/reports/secret_scan_result.json
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: pending
+- push: no
+- PR: none
+
+Boundary:
+- No RunningHub call, Runway call, media upload to provider, status query, output download, provider credit consumption, real video generation, secret output, raw provider payload recording, signed URL recording, source overwrite, push, tag, release, or deploy occurred.
+
+Next:
+- R3-8K remains `FOLLOW_UP` and depends on `R3-8O_RECEIPT_FIX_R1`.
 
 ### 2026-07-08T10:16:15+08:00 - R3-8L Receipt Fix R1
 
