@@ -1661,3 +1661,33 @@ Notes:
 - R3-9E local implementation commit: `1ecc31c`.
 - Review decision placeholders are blank and no app review state was mutated.
 - No provider call, regeneration, batch expansion, final assembly, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+
+### R3-9F - 2026-07-08T16:11:25+08:00
+
+Commands:
+
+```bash
+npm run r3:9f:apply-review
+node -e JSON.parse(...)
+npm run typecheck
+npm run test:m1
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_REVIEW_DECISIONS_APPLIED
+```
+
+Evidence:
+- `data/reports/r3_9f_human_clip_review_decision_apply_result.json`
+- `data/reports/r3_9e_runninghub_generated_clip_review_table.md`
+- `data/reports/secret_scan_result.json`
+
+Notes:
+- Applied 4 local review decisions with summary `accept=0`, `reject=1`, `regenerate_requested=3`.
+- Preserved Jenn's reviewer name and Chinese notes exactly in the decision report and review-state metadata.
+- Backfilled local R3-9D generation receipt links for the four generated clips.
+- No provider call, regeneration, batch expansion, final assembly, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.

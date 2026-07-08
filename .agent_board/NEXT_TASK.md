@@ -1,6 +1,6 @@
 # NEXT_TASK.md
 
-Status: READY
+Status: DONE
 
 Task: R3-9F_HUMAN_CLIP_REVIEW_DECISION_APPLY
 
@@ -14,37 +14,38 @@ Project: AI Video Production Workspace Three Route Plan
 
 Depends on: R3-9E_RUNNINGHUB_GENERATED_CLIP_REVIEW_PREP
 
-## Goal
+## Result
 
-Apply Jenn's human review decisions for the four RunningHub-generated clips without triggering regeneration or assembly.
+PASS_REVIEW_DECISIONS_APPLIED
 
-## Required Work
+## Completed
 
-- Parse Jenn-filled review decisions from `data/reports/r3_9e_runninghub_generated_clip_review_table.md`.
-- Apply human review decisions to the local app review state and decision report.
-- Preserve reviewer notes exactly, including the updated SHOT_002 reject reason.
-- Do not call providers, regenerate clips, assemble final video, or overwrite source assets.
+- claimed_by: Codex R3-9F decision apply
+- run_id: codex-20260708-160441-r3-9f
+- claimed_at: 2026-07-08T16:04:41+08:00
+- completed_by: Codex R3-9F decision apply
+- completed_at: 2026-07-08T16:11:25+08:00
+- commit: PENDING_LOCAL_COMMIT
 
-## Acceptance
+## Decision Apply
 
-- The review table is parsed as the source of truth from the current working tree.
-- Exactly 4 shot decisions are parsed, with exactly one decision per shot.
-- Decision summary is 0 `accept`, 1 `reject`, and 3 `regenerate_requested`.
-- `SHOT_001` is recorded as `regenerate_requested` with Jenn's food-from-lunchbox eating-action note.
-- `SHOT_002` is recorded as `reject` with Jenn's note that sighing/unhappy expression hurts purchase intent.
-- `SHOT_003` is recorded as `regenerate_requested` with Jenn's cap-fold/fabric realism note.
-- `SHOT_004` is recorded as `regenerate_requested` with Jenn's cap lighting realism note.
-- Generated decision-apply report records all source `generated_clip` artifact IDs and review decisions.
-- Local review state is updated only for review decisions; no provider generation, regeneration, final assembly, or media overwrite occurs.
+- report: data/reports/r3_9f_human_clip_review_decision_apply_result.json
+- source_table: data/reports/r3_9e_runninghub_generated_clip_review_table.md
+- applied_decision_count: 4
+- decision_summary: accept=0, reject=1, regenerate_requested=3
+- local_blocker_count: 0
+- local_app_review_state_mutated: true
+- local_generation_receipt_backfilled: true
 
 ## Validation
 
-- JSON parse for generated decision-apply report
-- `npm run typecheck`
-- `npm run test:m1`
-- `npm run secret:scan`
-- `git diff --check`
+- JSON parse for generated decision-apply report: PASS
+- `npm run r3:9f:apply-review`: PASS
+- `npm run typecheck`: PASS
+- `npm run test:m1`: PASS
+- `npm run secret:scan`: PASS
+- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
 
-## Stop Reason
+## Boundary
 
-Review decision apply only. Do not call providers, regenerate, assemble final video, overwrite source assets, push, tag, release, or deploy.
+No provider call, regeneration, batch expansion, final assembly, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.

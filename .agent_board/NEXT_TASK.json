@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "slot": "current",
   "task_id": "R3-9F_HUMAN_CLIP_REVIEW_DECISION_APPLY",
-  "status": "READY",
+  "status": "DONE",
   "priority": "P0",
   "lane": "Human Clip Review Decision Apply",
   "project": "AI Video Production Workspace Three Route Plan",
@@ -65,31 +65,39 @@
     "R3-9E_RUNNINGHUB_GENERATED_CLIP_REVIEW_PREP"
   ],
   "created_at": "2026-07-08T15:56:50+08:00",
-  "updated_at": "2026-07-08T15:56:50+08:00",
-  "claimed_by": null,
-  "claim_run_id": null,
-  "claimed_at": null,
-  "completed_by": null,
-  "completed_at": null,
+  "updated_at": "2026-07-08T16:11:25+08:00",
+  "claimed_by": "Codex R3-9F decision apply",
+  "claim_run_id": "codex-20260708-160441-r3-9f",
+  "claimed_at": "2026-07-08T16:04:41+08:00",
+  "completed_by": "Codex R3-9F decision apply",
+  "completed_at": "2026-07-08T16:11:25+08:00",
   "blocked_by": null,
   "blocked_at": null,
   "failed_by": null,
   "failed_at": null,
   "skipped_by": null,
   "skipped_at": null,
-  "result": null,
-  "validation_result": null,
+  "result": "PASS_REVIEW_DECISIONS_APPLIED",
+  "validation_result": "PASS",
   "evidence": [
     "data/reports/r3_9e_runninghub_generated_clip_review_table.md",
     "data/reports/r3_9e_runninghub_generated_clip_review_prep_result.json",
-    "data/reports/r3_9d_runninghub_4_shot_single_pass_live_execution_result.json"
+    "data/reports/r3_9d_runninghub_4_shot_single_pass_live_execution_result.json",
+    "data/reports/r3_9f_human_clip_review_decision_apply_result.json",
+    "data/reports/secret_scan_result.json"
   ],
-  "commit": null,
+  "commit": "PENDING_LOCAL_COMMIT",
   "delivery": "local_only",
   "boundary_or_safety_stop": "review decision apply only; no provider call, regeneration, final assembly, or deployment",
   "blocked_reason": null,
   "failure_reason": null,
-  "safe_actions_completed": [],
+  "safe_actions_completed": [
+    "Parsed Jenn-filled R3-9E review table from the current working tree.",
+    "Applied exactly 4 local review decisions: accept=0, reject=1, regenerate_requested=3.",
+    "Mapped reject and regenerate_requested to local revision_needed review state while preserving Jenn's notes exactly.",
+    "Backfilled local R3-9D generation receipt links for the four generated clips so shot clip_versions can be reviewed.",
+    "Did not call any provider, regenerate, batch expand, assemble final video, overwrite source assets, or expose secrets."
+  ],
   "unsafe_action_not_performed": [
     "runninghub_call",
     "runway_call",
@@ -111,7 +119,11 @@
     "release",
     "deploy"
   ],
-  "options_for_jenn": [],
+  "options_for_jenn": [
+    "Plan regeneration for g0_r1_shot_001, g0_r1_shot_003, and g0_r1_shot_004 as a separate scoped task.",
+    "Decide whether g0_r1_shot_002 should be reworked, replaced, or removed before final assembly.",
+    "Any future provider regeneration requires a fresh exact authorization phrase."
+  ],
   "next_safe_option": [
     "After decision apply, plan regeneration for the three regenerate_requested shots and decide how to handle the rejected SHOT_002.",
     "Any provider regeneration must be a separate task with fresh exact authorization."

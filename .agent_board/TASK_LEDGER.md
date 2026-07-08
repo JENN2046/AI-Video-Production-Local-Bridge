@@ -2881,3 +2881,72 @@ Boundary:
 
 Next:
 - Jenn can inspect the local MP4 paths and fill accept, reject, or regenerate_requested per clip.
+
+### 2026-07-08T16:11:25+08:00 - R3-9F Human Clip Review Decision Apply
+
+Result: DONE / PASS_REVIEW_DECISIONS_APPLIED
+Project: AI Video Production Workspace Three Route Plan
+Lane: Human Clip Review Decision Apply
+Claimed by: Codex R3-9F decision apply
+Completed by: Codex R3-9F decision apply
+Run ID: codex-20260708-160441-r3-9f
+Started at: 2026-07-08T16:04:41+08:00
+Completed at: 2026-07-08T16:11:25+08:00
+
+Scope:
+- Parsed Jenn-filled review decisions from `data/reports/r3_9e_runninghub_generated_clip_review_table.md`.
+- Applied local review-state decisions for four RunningHub generated clips.
+- Preserved Jenn's Chinese notes exactly.
+- Did not call providers, regenerate clips, or assemble final video.
+
+Changed files:
+- package.json
+- scripts/r3-9f-human-clip-review-decision-apply.ts
+- data/reports/r3_9e_runninghub_generated_clip_review_table.md
+- data/reports/r3_9f_human_clip_review_decision_apply_result.json
+- data/app.sqlite
+- .agent_board/NEXT_TASK.json
+- .agent_board/NEXT_TASK.md
+- .agent_board/RUN_LOCK.md
+- .agent_board/TASK_BACKLOG.md
+- .agent_board/HANDOFF.md
+- .agent_board/VALIDATION_LOG.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: npm run r3:9f:apply-review
+  result: PASS
+- command: node -e JSON.parse(...)
+  result: PASS
+- command: npm run typecheck
+  result: PASS
+- command: npm run test:m1
+  result: PASS
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_9f_human_clip_review_decision_apply_result.json
+- data/reports/r3_9e_runninghub_generated_clip_review_table.md
+- data/reports/secret_scan_result.json
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: pending
+- push: no
+- PR: none
+
+Decision summary:
+- accept: 0
+- reject: 1
+- regenerate_requested: 3
+
+Boundary:
+- No RunningHub call, Runway call, media upload to provider, provider submit, status poll, output download from provider, provider credit consumption, real video generation, regeneration, batch expansion, final assembly, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+
+Next:
+- Plan regeneration for `g0_r1_shot_001`, `g0_r1_shot_003`, and `g0_r1_shot_004` as a separate scoped task.
+- Decide separate handling for rejected `g0_r1_shot_002`.

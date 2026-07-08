@@ -1,0 +1,286 @@
+{
+  "task": "R3-9F_HUMAN_CLIP_REVIEW_DECISION_APPLY",
+  "result": "PASS_REVIEW_DECISIONS_APPLIED",
+  "mode": "local_review_decision_apply_only",
+  "generated_at": "2026-07-08T08:10:18.127Z",
+  "source_of_truth": {
+    "review_table": "data/reports/r3_9e_runninghub_generated_clip_review_table.md",
+    "r3_9e_review_prep_report": "data/reports/r3_9e_runninghub_generated_clip_review_prep_result.json",
+    "r3_9e_result": "PASS_REVIEW_PACKAGE_READY",
+    "r3_9e_commit": "1ecc31c",
+    "r3_9d_live_report": "data/reports/r3_9d_runninghub_4_shot_single_pass_live_execution_result.json",
+    "r3_9d_result": "PASS_LIVE_4_SHOT_SINGLE_PASS_COMPLETED",
+    "r3_9d_commit": "b9e8991"
+  },
+  "decision_apply": {
+    "status": "APPLIED_TO_LOCAL_REVIEW_STATE",
+    "parsed_decision_count": 4,
+    "applied_decision_count": 4,
+    "decision_summary": {
+      "accept": 0,
+      "reject": 1,
+      "regenerate_requested": 3
+    },
+    "expected_decision_summary": {
+      "accept": 0,
+      "reject": 1,
+      "regenerate_requested": 3
+    },
+    "reviewer_names": [
+      "Jenn"
+    ],
+    "local_blocker_count": 0,
+    "local_blockers": [],
+    "live_generation_batch_receipt_backfilled": true,
+    "live_generation_batch_linked_to_project": true,
+    "app_review_state_mutated": true
+  },
+  "decisions": [
+    {
+      "order": 1,
+      "shot_id": "g0_r1_shot_001",
+      "generated_clip_artifact_id": "artifact_ac71dfd9-371c-4eb4-a6b6-686993291ceb",
+      "source_storyboard_image_artifact_id": "artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7",
+      "decision": "regenerate_requested",
+      "reviewer": "Jenn",
+      "note": "不应该是拿起饭盒吃饭，应该是手从饭盒里面拿起食物放到嘴巴进行吃的动作",
+      "mapped_app_decision": "revision_needed",
+      "before": {
+        "shot_status": "video_generated",
+        "accepted_clip_artifact_id": "",
+        "clip_version_count": 2
+      },
+      "after": {
+        "shot_status": "revision_needed",
+        "approval_status": "revision_needed",
+        "accepted_clip_artifact_id": "",
+        "clip_review_status": "rejected",
+        "rejection_reasons": [
+          "不应该是拿起饭盒吃饭，应该是手从饭盒里面拿起食物放到嘴巴进行吃的动作"
+        ],
+        "latest_revision_instruction": {
+          "summary": "不应该是拿起饭盒吃饭，应该是手从饭盒里面拿起食物放到嘴巴进行吃的动作",
+          "prompt_delta": "不应该是拿起饭盒吃饭，应该是手从饭盒里面拿起食物放到嘴巴进行吃的动作",
+          "negative_delta": "",
+          "priority": "high"
+        }
+      },
+      "local_state_links": {
+        "generation_run_id": "run_r3_9d_ac71dfd9-371c-4eb4-a6b6-686993291ceb",
+        "generation_run_created": true,
+        "clip_version_added": true,
+        "generation_batch_id": "batch_r3_9d_runninghub_4_shot_single_pass_live_execution"
+      }
+    },
+    {
+      "order": 2,
+      "shot_id": "g0_r1_shot_002",
+      "generated_clip_artifact_id": "artifact_2adc2e6d-3183-47c4-8d1b-01bf80bed73f",
+      "source_storyboard_image_artifact_id": "artifact_9ad1bfe1-c830-458c-a413-39fd15c9d0c0",
+      "decision": "reject",
+      "reviewer": "Jenn",
+      "note": "我不要叹气不高兴的表情，这样会让人不想购买产品",
+      "mapped_app_decision": "revision_needed",
+      "before": {
+        "shot_status": "storyboard_approved",
+        "accepted_clip_artifact_id": "",
+        "clip_version_count": 0
+      },
+      "after": {
+        "shot_status": "revision_needed",
+        "approval_status": "revision_needed",
+        "accepted_clip_artifact_id": "",
+        "clip_review_status": "rejected",
+        "rejection_reasons": [
+          "我不要叹气不高兴的表情，这样会让人不想购买产品"
+        ],
+        "latest_revision_instruction": {
+          "summary": "我不要叹气不高兴的表情，这样会让人不想购买产品",
+          "prompt_delta": "我不要叹气不高兴的表情，这样会让人不想购买产品",
+          "negative_delta": "",
+          "priority": "high"
+        }
+      },
+      "local_state_links": {
+        "generation_run_id": "run_r3_9d_2adc2e6d-3183-47c4-8d1b-01bf80bed73f",
+        "generation_run_created": true,
+        "clip_version_added": true,
+        "generation_batch_id": "batch_r3_9d_runninghub_4_shot_single_pass_live_execution"
+      }
+    },
+    {
+      "order": 3,
+      "shot_id": "g0_r1_shot_003",
+      "generated_clip_artifact_id": "artifact_10271f09-278e-4326-b417-6b4ea64ad8ca",
+      "source_storyboard_image_artifact_id": "artifact_a7c5d752-cdd6-478e-b396-5790df3af05f",
+      "decision": "regenerate_requested",
+      "reviewer": "Jenn",
+      "note": "拉扯帽子的时候，帽子的折叠位置变化不符合现实效果，真实的效果是折痕会变浅，面料会随着拉起而变化",
+      "mapped_app_decision": "revision_needed",
+      "before": {
+        "shot_status": "storyboard_approved",
+        "accepted_clip_artifact_id": "",
+        "clip_version_count": 0
+      },
+      "after": {
+        "shot_status": "revision_needed",
+        "approval_status": "revision_needed",
+        "accepted_clip_artifact_id": "",
+        "clip_review_status": "rejected",
+        "rejection_reasons": [
+          "拉扯帽子的时候，帽子的折叠位置变化不符合现实效果，真实的效果是折痕会变浅，面料会随着拉起而变化"
+        ],
+        "latest_revision_instruction": {
+          "summary": "拉扯帽子的时候，帽子的折叠位置变化不符合现实效果，真实的效果是折痕会变浅，面料会随着拉起而变化",
+          "prompt_delta": "拉扯帽子的时候，帽子的折叠位置变化不符合现实效果，真实的效果是折痕会变浅，面料会随着拉起而变化",
+          "negative_delta": "",
+          "priority": "high"
+        }
+      },
+      "local_state_links": {
+        "generation_run_id": "run_r3_9d_10271f09-278e-4326-b417-6b4ea64ad8ca",
+        "generation_run_created": true,
+        "clip_version_added": true,
+        "generation_batch_id": "batch_r3_9d_runninghub_4_shot_single_pass_live_execution"
+      }
+    },
+    {
+      "order": 4,
+      "shot_id": "g0_r1_shot_004",
+      "generated_clip_artifact_id": "artifact_1f757b43-a308-4d80-a674-7b7a21ceec21",
+      "source_storyboard_image_artifact_id": "artifact_e35ff0c0-d0fc-4079-bc4b-38b4dbd88cf7",
+      "decision": "regenerate_requested",
+      "reviewer": "Jenn",
+      "note": "主要是帽子的光影没有严谨的符合现实的光影效果",
+      "mapped_app_decision": "revision_needed",
+      "before": {
+        "shot_status": "storyboard_approved",
+        "accepted_clip_artifact_id": "",
+        "clip_version_count": 0
+      },
+      "after": {
+        "shot_status": "revision_needed",
+        "approval_status": "revision_needed",
+        "accepted_clip_artifact_id": "",
+        "clip_review_status": "rejected",
+        "rejection_reasons": [
+          "主要是帽子的光影没有严谨的符合现实的光影效果"
+        ],
+        "latest_revision_instruction": {
+          "summary": "主要是帽子的光影没有严谨的符合现实的光影效果",
+          "prompt_delta": "主要是帽子的光影没有严谨的符合现实的光影效果",
+          "negative_delta": "",
+          "priority": "high"
+        }
+      },
+      "local_state_links": {
+        "generation_run_id": "run_r3_9d_1f757b43-a308-4d80-a674-7b7a21ceec21",
+        "generation_run_created": true,
+        "clip_version_added": true,
+        "generation_batch_id": "batch_r3_9d_runninghub_4_shot_single_pass_live_execution"
+      }
+    }
+  ],
+  "parsed_decisions": [
+    {
+      "order": 1,
+      "shot_id": "g0_r1_shot_001",
+      "generated_clip_artifact_id": "artifact_ac71dfd9-371c-4eb4-a6b6-686993291ceb",
+      "source_storyboard_image_artifact_id": "artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7",
+      "decision": "regenerate_requested",
+      "reviewer": "Jenn",
+      "note": "不应该是拿起饭盒吃饭，应该是手从饭盒里面拿起食物放到嘴巴进行吃的动作",
+      "local_blockers": []
+    },
+    {
+      "order": 2,
+      "shot_id": "g0_r1_shot_002",
+      "generated_clip_artifact_id": "artifact_2adc2e6d-3183-47c4-8d1b-01bf80bed73f",
+      "source_storyboard_image_artifact_id": "artifact_9ad1bfe1-c830-458c-a413-39fd15c9d0c0",
+      "decision": "reject",
+      "reviewer": "Jenn",
+      "note": "我不要叹气不高兴的表情，这样会让人不想购买产品",
+      "local_blockers": []
+    },
+    {
+      "order": 3,
+      "shot_id": "g0_r1_shot_003",
+      "generated_clip_artifact_id": "artifact_10271f09-278e-4326-b417-6b4ea64ad8ca",
+      "source_storyboard_image_artifact_id": "artifact_a7c5d752-cdd6-478e-b396-5790df3af05f",
+      "decision": "regenerate_requested",
+      "reviewer": "Jenn",
+      "note": "拉扯帽子的时候，帽子的折叠位置变化不符合现实效果，真实的效果是折痕会变浅，面料会随着拉起而变化",
+      "local_blockers": []
+    },
+    {
+      "order": 4,
+      "shot_id": "g0_r1_shot_004",
+      "generated_clip_artifact_id": "artifact_1f757b43-a308-4d80-a674-7b7a21ceec21",
+      "source_storyboard_image_artifact_id": "artifact_e35ff0c0-d0fc-4079-bc4b-38b4dbd88cf7",
+      "decision": "regenerate_requested",
+      "reviewer": "Jenn",
+      "note": "主要是帽子的光影没有严谨的符合现实的光影效果",
+      "local_blockers": []
+    }
+  ],
+  "next_safe_options": {
+    "regeneration_planning_for": [
+      "g0_r1_shot_001",
+      "g0_r1_shot_003",
+      "g0_r1_shot_004"
+    ],
+    "rejected_shots_requiring_separate_handling_decision": [
+      "g0_r1_shot_002"
+    ],
+    "provider_regeneration_requires_separate_task_and_fresh_authorization": true,
+    "final_assembly_blocked_until_accepted_clips_exist": true
+  },
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "media_upload_to_provider": false,
+    "provider_submit": false,
+    "status_poll": false,
+    "output_download_from_provider": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "final_assembly_performed": false,
+    "source_assets_overwritten": false,
+    "secret_values_exposed": false,
+    "raw_provider_payload_recorded": false,
+    "signed_url_recorded": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  },
+  "validation": {
+    "JSON parse for generated decision-apply report": "PASS",
+    "npm run r3:9f:apply-review": "PASS",
+    "npm run typecheck": "PASS",
+    "npm run test:m1": "PASS",
+    "npm run secret:scan": "PASS",
+    "git diff --check": "PASS_WITH_CRLF_WARNINGS_ONLY"
+  },
+  "changed_files": [
+    "package.json",
+    "scripts/r3-9f-human-clip-review-decision-apply.ts",
+    "data/reports/r3_9e_runninghub_generated_clip_review_table.md",
+    "data/reports/r3_9f_human_clip_review_decision_apply_result.json",
+    "data/app.sqlite",
+    ".agent_board/*"
+  ],
+  "blocked_reason": null,
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "PENDING_LOCAL_COMMIT",
+    "task": "R3-9F_HUMAN_CLIP_REVIEW_DECISION_APPLY",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  }
+}

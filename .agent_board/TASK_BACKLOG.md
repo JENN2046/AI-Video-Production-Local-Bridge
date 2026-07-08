@@ -2779,7 +2779,7 @@ Prepare the human review surface for the four RunningHub-generated clips without
 
 ## R3-9F_HUMAN_CLIP_REVIEW_DECISION_APPLY - Human Clip Review Decision Apply
 
-status: READY
+status: DONE
 priority: P0
 lane: Human Clip Review Decision Apply
 project: AI Video Production Workspace Three Route Plan
@@ -2791,7 +2791,15 @@ report_path: data/reports/r3_9f_human_clip_review_decision_apply_result.json
 allowed_delivery: review_decision_state_update,decision_apply_report,task_board_update,local_commit
 blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,provider_submit,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,regeneration,batch_expansion,final_assembly,source_overwrite,secret_value_output,raw_provider_payload_recording,signed_url_recording,push,tag,release,deploy
 created_at: 2026-07-08T15:56:50+08:00
-updated_at: 2026-07-08T15:56:50+08:00
+updated_at: 2026-07-08T16:11:25+08:00
+claimed_by: Codex R3-9F decision apply
+claim_run_id: codex-20260708-160441-r3-9f
+claimed_at: 2026-07-08T16:04:41+08:00
+completed_by: Codex R3-9F decision apply
+completed_at: 2026-07-08T16:11:25+08:00
+result: PASS_REVIEW_DECISIONS_APPLIED
+validation_result: PASS
+commit: PENDING_LOCAL_COMMIT
 
 ### Goal
 
@@ -2830,3 +2838,14 @@ Apply Jenn's human review decisions for the four RunningHub-generated clips with
 - `npm run test:m1`
 - `npm run secret:scan`
 - `git diff --check`
+
+
+### Result
+
+- Parsed Jenn-filled `data/reports/r3_9e_runninghub_generated_clip_review_table.md` as the source of truth.
+- Applied exactly 4 local review decisions with summary `accept=0`, `reject=1`, `regenerate_requested=3`.
+- Preserved Jenn's reviewer name and Chinese notes exactly in the decision report and local review-state metadata.
+- Backfilled local R3-9D generation receipt links for the four generated clips so shot `clip_versions` can be reviewed.
+- Generated `data/reports/r3_9f_human_clip_review_decision_apply_result.json`.
+- Validation passed: JSON parse, `npm run r3:9f:apply-review`, `npm run typecheck`, `npm run test:m1`, `npm run secret:scan`, `git diff --check` with CRLF warnings only.
+- No provider call, regeneration, batch expansion, final assembly, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.

@@ -383,3 +383,15 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - No provider call, regeneration, batch expansion, final assembly, review decision mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
 - R3-9E local implementation commit: `1ecc31c`.
 - Remaining READY task after Jenn filled the review table: `R3-9F_HUMAN_CLIP_REVIEW_DECISION_APPLY`.
+
+## R3-9F Closeout
+
+- R3-9F completed on 2026-07-08T16:11:25+08:00 with `PASS_REVIEW_DECISIONS_APPLIED`.
+- Report: `data/reports/r3_9f_human_clip_review_decision_apply_result.json`.
+- Source table: `data/reports/r3_9e_runninghub_generated_clip_review_table.md`.
+- Decision summary: `accept=0`, `reject=1`, `regenerate_requested=3`.
+- Regeneration requested for `g0_r1_shot_001`, `g0_r1_shot_003`, and `g0_r1_shot_004`.
+- `g0_r1_shot_002` was rejected and needs separate handling before final assembly.
+- Local app review state was updated; R3-9D local generation receipt links were backfilled for the four generated clips.
+- No provider call, regeneration, batch expansion, final assembly, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+- Remaining READY tasks: none.
