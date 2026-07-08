@@ -1,14 +1,25 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260708-115033-r3-8k-closeout
-Last result: R3-8K provider path decision closeout completed; RunningHub Enterprise-Shared API Key path is primary validated M1 provider lane
+Last run: codex-20260708-120229-r3-9-queue-arrangement
+Last result: R3-9A and R3-9B queued after provider path closeout
 
 ## Current state
 
-Current task: none
-Current status: EMPTY
+Current task: R3-9A_RUNNINGHUB_PRIMARY_LANE_WIRING_DRY_RUN
+Current status: READY
 Current owner: None
+
+## R3-9 queue arrangement
+
+Arranged at: 2026-07-08T12:02:29+08:00
+Result: READY_TASKS_QUEUED
+
+- `R3-9A_RUNNINGHUB_PRIMARY_LANE_WIRING_DRY_RUN` is loaded into `NEXT_TASK` as `READY`.
+- `R3-9B_STORYBOARD_PACKAGE_TO_RUNNINGHUB_GENERATION_PLAN` is added to backlog as `READY` and depends on `R3-9A_RUNNINGHUB_PRIMARY_LANE_WIRING_DRY_RUN`.
+- R3-9A is dry-run only: no provider call, no credential read, no source overwrite, no push, tag, release, or deploy.
+- R3-9B is planning only: no provider call, no credential read, no source overwrite, no push, tag, release, or deploy.
+- Future live RunningHub execution remains gated by a new exact current Jenn authorization phrase.
 
 ## R3-8K provider path decision closeout
 
@@ -34,7 +45,7 @@ Report: `data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_re
 - Backfilled receipt fix commit `c746b08`.
 - Added receipt metadata to the R3-8O report.
 - No RunningHub call, Runway call, upload, submit, query, output download, provider credit consumption, real video generation, secret output, raw provider payload recording, signed URL recording, source overwrite, push, tag, release, or deploy occurred.
-- `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT` is now `READY` and must first backfill `R3-8O_RECEIPT_FIX_R1` commit `507c705`.
+- `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT` later completed and recorded `R3-8O_RECEIPT_FIX_R1` commit `507c705`.
 
 ## R3-8O closeout
 
@@ -51,7 +62,7 @@ Report: `data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_re
 - ffprobe validation: `PASS`.
 - No retry, second submit, Runway call, regeneration, batch generation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
 - `R3-8O_RECEIPT_FIX_R1` later completed in commit `507c705`, after backfilling commits `99dd716` and `c746b08`.
-- `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT` is now `READY` and must backfill `507c705` before generating provider path closeout.
+- `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT` later completed after backfilling `507c705`.
 
 ## R3-8N closeout
 
@@ -66,7 +77,7 @@ Report: `data/reports/r3_8n_provider_access_strategy_decision.json`
 - No `.env.local` or credentials were read.
 - No RunningHub call, Runway call, upload, submit, query, output download, provider credit consumption, real video generation, credential/account change, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
 - `R3-8O_RUNNINGHUB_ENTERPRISE_KEY_6S_SINGLE_SUBMIT_CANARY` later completed successfully after Jenn's exact authorization.
-- `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT` is now `READY` after R3-8O receipt fix.
+- `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT` later completed after R3-8O receipt fix.
 
 ## R3-8G closeout
 
@@ -195,7 +206,8 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 
 ## Remaining READY tasks
 
-- None
+- `R3-9A_RUNNINGHUB_PRIMARY_LANE_WIRING_DRY_RUN`
+- `R3-9B_STORYBOARD_PACKAGE_TO_RUNNINGHUB_GENERATION_PLAN` depends on `R3-9A_RUNNINGHUB_PRIMARY_LANE_WIRING_DRY_RUN` and should run after R3-9A is DONE.
 
 ## Closeout evidence
 
@@ -255,7 +267,8 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - R3-8O Enterprise-Shared API Key 6-second RunningHub live canary completed successfully after exact authorization.
 - R3-8K provider path decision closeout is complete.
 - RunningHub Enterprise-Shared API Key path is the primary validated M1 provider lane.
-- No READY task remains in the local queue.
+- Next task is `R3-9A_RUNNINGHUB_PRIMARY_LANE_WIRING_DRY_RUN`.
+- After R3-9A is DONE, `R3-9B_STORYBOARD_PACKAGE_TO_RUNNINGHUB_GENERATION_PLAN` is eligible to run.
 - Any next RunningHub live call requires a new exact current Jenn authorization phrase.
 - Do not submit to RunningHub without a future exact current Jenn authorization phrase.
 - Do not retry Runway canary without a new exact current Jenn authorization phrase.

@@ -2430,3 +2430,95 @@ Close the provider-selection loop after Enterprise Key RunningHub canary evidenc
 - Recorded RunningHub Enterprise-Shared API Key path as the primary validated M1 provider lane.
 - Validation passed: JSON parse, `npm run secret:scan`, `git diff --check` with CRLF warnings only.
 - No provider call, provider credit consumption, real video generation, secret output, source overwrite, push, tag, release, or deploy occurred.
+
+## R3-9A_RUNNINGHUB_PRIMARY_LANE_WIRING_DRY_RUN - RunningHub Primary Lane Wiring Dry Run
+
+status: READY
+priority: P1
+lane: Provider Primary Lane Dry Run
+project: AI Video Production Workspace Three Route Plan
+scope: verify local M1 generation planning selects RunningHub Enterprise-Shared API Key as primary provider lane without live provider calls
+branch: local-only
+depends_on: R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT
+source_plan: R3-8K provider path decision closeout
+report_path: data/reports/r3_9a_runninghub_primary_lane_wiring_dry_run_result.json
+allowed_delivery: source_code_change,dry_run_script,test_update,decision_report,task_board_update,local_commit
+blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,credentials_read,secret_value_output,raw_provider_payload_recording,signed_url_recording,source_overwrite,push,tag,release,deploy,production_credentials_change
+created_at: 2026-07-08T12:02:29+08:00
+updated_at: 2026-07-08T12:02:29+08:00
+
+### Goal
+
+Wire and verify the local primary-provider planning path for RunningHub without making any live provider call.
+
+### Required Work
+
+- Verify the M1 generation planning path selects RunningHub Enterprise-Shared API Key as the primary provider lane.
+- Confirm RunningHub request planning uses upload-first media flow and `duration_seconds` minimum `6`.
+- Confirm single-shot and package planning can produce auditable dry-run plans behind authorization gates.
+- Keep Runway as secondary or fallback-only in this dry-run plan.
+- Do not read credentials, `.env` files, raw provider payloads, or signed URLs.
+
+### Acceptance
+
+- Primary provider selection resolves to `runninghub` for M1 generation planning.
+- Runway is not selected by the primary-lane dry run.
+- RunningHub `duration_seconds` is locally validated against the 6-second minimum before any upload or submit could occur.
+- RunningHub upload-first planning is explicit: local media artifact to upload request plan to submit request plan to query/download readiness.
+- Single-shot dry-run plan records selected image artifact, prompt, `duration_seconds`, `output_dir`, `max_upload_calls`, `max_submit_calls`, and `authorization_required`.
+- Package-level dry-run plan is supported or clearly blocked with a local reason and no provider call.
+- Report records `network_call_attempted=false`, `runninghub_called=false`, `runway_called=false`, `provider_credits_consumed=false`, `real_video_generated=false`, `secret_values_exposed=false`.
+- No credentials, `.env` files, raw provider payloads, signed URLs, source overwrite, push, tag, release, or deploy occurs.
+
+### Validation
+
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
+
+## R3-9B_STORYBOARD_PACKAGE_TO_RUNNINGHUB_GENERATION_PLAN - Storyboard Package To RunningHub Generation Plan
+
+status: READY
+priority: P1
+lane: Provider Production Planning
+project: AI Video Production Workspace Three Route Plan
+scope: generate a local shot-by-shot RunningHub execution plan from the frozen storyboard package without live provider calls
+branch: local-only
+depends_on: R3-9A_RUNNINGHUB_PRIMARY_LANE_WIRING_DRY_RUN
+source_plan: R3-9A RunningHub primary lane dry-run result
+report_path: data/reports/r3_9b_storyboard_package_to_runninghub_generation_plan_result.json
+allowed_delivery: planning_script,execution_plan_report,authorization_phrase_draft,task_board_update,local_commit
+blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,credentials_read,secret_value_output,raw_provider_payload_recording,signed_url_recording,source_overwrite,push,tag,release,deploy,production_credentials_change
+created_at: 2026-07-08T12:02:29+08:00
+updated_at: 2026-07-08T12:02:29+08:00
+
+### Goal
+
+Generate the production-readiness execution plan that maps the frozen storyboard package to RunningHub shot generation, without making any live provider call.
+
+### Required Work
+
+- Load the current frozen storyboard package using local app data only.
+- Produce a shot-by-shot RunningHub plan with image artifact, prompt, negative prompt if present, `duration_seconds`, provider ratio/resolution fields, `output_dir`, and expected local artifact registration path.
+- Enforce app-created artifact IDs; reject `PENDING_*`, audit images, product references imported as storyboard images, or missing media artifacts.
+- Apply the RunningHub primary lane contract from R3-9A, including upload-first flow and 6-second minimum duration.
+- Include budget and stop-condition fields for future authorization.
+- Draft the exact future authorization phrase, but do not execute it.
+
+### Acceptance
+
+- Report contains one plan entry per eligible shot in the frozen storyboard package.
+- Every plan entry references a real app Media Artifact ID and a local source path that is not overwritten.
+- Report identifies any shot blocked from live use with a local reason.
+- Future live provider execution remains authorization-gated and single-submit/budget bounded per user approval.
+- Report records `network_call_attempted=false`, `runninghub_called=false`, `runway_called=false`, `provider_credits_consumed=false`, `real_video_generated=false`, `secret_values_exposed=false`.
+- No credentials, `.env` files, raw provider payloads, signed URLs, source overwrite, push, tag, release, or deploy occurs.
+
+### Validation
+
+- JSON parse for generated plan report
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`

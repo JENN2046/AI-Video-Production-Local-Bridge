@@ -1,61 +1,48 @@
 # NEXT_TASK.md
 
-Status: DONE
+Status: READY
 
-Task: R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT
+Task: R3-9A_RUNNINGHUB_PRIMARY_LANE_WIRING_DRY_RUN
 
-Title: Provider Path Decision Closeout
+Title: RunningHub Primary Lane Wiring Dry Run
 
 Priority: P1
 
-Lane: Provider Decision Closeout
+Lane: Provider Primary Lane Dry Run
 
 Project: AI Video Production Workspace Three Route Plan
 
-Depends on: R3-8O_RECEIPT_FIX_R1
+Depends on: R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT
 
 ## Goal
 
-Close the provider-selection loop after Enterprise Key RunningHub canary evidence is available.
+Wire and verify the local primary-provider planning path for RunningHub without making any live provider call.
 
 ## Required Work
 
-- First backfill `R3-8O_RECEIPT_FIX_R1` commit `507c705` where applicable.
-- Summarize Runway insufficient-credits evidence.
-- Summarize RunningHub duration minimum fix, account-type failure, Enterprise Key success, generated artifact, and ffprobe PASS.
-- Record RunningHub Enterprise-Shared API Key path as the primary validated M1 provider path.
-- Keep future live provider calls authorization-gated.
+- Verify the M1 generation planning path selects RunningHub Enterprise-Shared API Key as the primary provider lane.
+- Confirm RunningHub request planning uses upload-first media flow and `duration_seconds` minimum `6`.
+- Confirm single-shot and package planning can produce auditable dry-run plans behind authorization gates.
+- Do not read credentials or call providers.
 
 ## Acceptance
 
-- No provider call is attempted.
-- No provider credits are consumed.
-- No real video is generated.
-- No secret values are exposed.
-- No source assets are overwritten.
-- No push, tag, release, or deploy occurs.
+- Primary provider selection resolves to `runninghub` for M1 generation planning.
+- Runway remains secondary or fallback-only and is not selected by the primary-lane dry run.
+- RunningHub `duration_seconds` is locally validated against the 6-second minimum before any upload or submit could occur.
+- RunningHub upload-first planning is explicit: local media artifact to upload request plan to submit request plan to query/download readiness.
+- Single-shot dry-run plan records selected image artifact, prompt, `duration_seconds`, `output_dir`, `max_upload_calls`, `max_submit_calls`, and `authorization_required`.
+- Package-level dry-run plan is supported or clearly blocked with a local reason and no provider call.
+- Report records `network_call_attempted=false`, `runninghub_called=false`, `runway_called=false`, `provider_credits_consumed=false`, `real_video_generated=false`, `secret_values_exposed=false`.
+- No credentials, `.env` files, raw provider payloads, signed URLs, source overwrite, push, tag, release, or deploy occurs.
 
 ## Validation
 
-- JSON/YAML parse for closeout report if applicable
+- `npm run typecheck`
+- `npm run test:m1`
 - `npm run secret:scan`
 - `git diff --check`
 
 ## Stop Reason
 
-Closeout only. Do not run any provider or deployment action.
-
-## Claim
-
-- claimed_by: Codex R3-8K closeout
-- claim_run_id: codex-20260708-115033-r3-8k-closeout
-- claimed_at: 2026-07-08T11:50:33+08:00
-
-## Result
-
-- result: PASS_PROVIDER_PATH_CLOSED
-- completed_by: Codex R3-8K closeout
-- completed_at: 2026-07-08T11:53:48+08:00
-- evidence: data/reports/r3_8k_provider_path_decision_closeout.json
-- validation: PASS
-- commit: 019e322
+Dry-run only. Do not run any provider, credential-read, push, tag, release, or deploy action.
