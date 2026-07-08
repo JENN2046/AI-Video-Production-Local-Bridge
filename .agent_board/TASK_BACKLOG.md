@@ -2628,3 +2628,75 @@ Prepare the final local authorization gate for a future RunningHub 4-shot live r
 - Drafted the exact future authorization phrase, but did not execute it.
 - Validation passed: JSON parse, `npm run r3:9c:prep`, `npm run typecheck`, `npm run test:m1`, `npm run secret:scan`, `git diff --check` with CRLF warnings only.
 - No credentials, `.env` files, provider calls, media upload to provider, status poll, provider output download, provider credits, real video generation, source overwrite, push, tag, release, or deploy occurred.
+
+## R3-9D_RUNNINGHUB_4_SHOT_SINGLE_PASS_LIVE_EXECUTION - RunningHub 4-Shot Single-Pass Live Execution
+
+status: FOLLOW_UP
+priority: P0
+lane: Provider Live Execution
+project: AI Video Production Workspace Three Route Plan
+scope: execute one bounded RunningHub live generation pass for the 4 storyboard shots from the R3-9C authorization prep, only after Jenn provides a new exact current authorization phrase
+branch: local-only
+depends_on: R3-9C_RUNNINGHUB_4_SHOT_LIVE_AUTHORIZATION_PREP
+source_plan: R3-9C RunningHub 4-shot live authorization prep
+report_path: data/reports/r3_9d_runninghub_4_shot_single_pass_live_execution_result.json
+allowed_delivery: live_provider_execution_after_exact_authorization,provider_upload,provider_submit,provider_query,provider_output_download,ffprobe_validation,media_artifact_registration,result_report,task_board_update,local_commit
+blocked_delivery: live_execution_without_exact_current_authorization,credentials_read_without_exact_authorization,runway_call,retry,second_submit,regeneration,batch_expansion,source_overwrite,secret_value_output,raw_provider_payload_recording,signed_url_recording,push,tag,release,deploy,production_credentials_change
+created_at: 2026-07-08T14:21:57+08:00
+updated_at: 2026-07-08T14:21:57+08:00
+
+### Goal
+
+Run the first bounded four-shot RunningHub live execution pass only after Jenn provides the exact current authorization phrase from the R3-9C gate.
+
+### Authorization Boundary
+
+This task must remain `FOLLOW_UP` until Jenn provides a new exact current authorization phrase for `R3-9D_RUNNINGHUB_4_SHOT_SINGLE_PASS_LIVE_EXECUTION`.
+
+The authorization must explicitly allow:
+
+- provider: `runninghub`
+- source plan: `data/reports/r3_9c_runninghub_4_shot_live_authorization_prep_result.json`
+- shot count: `4`
+- provider duration per shot: `6` seconds
+- max upload calls total: `4`
+- max submit calls total: `4`
+- max one upload and one submit per shot
+- read/use existing RunningHub credentials through the provider execution boundary without printing or recording secret values
+- query only the returned taskId for each submitted shot
+- download successful outputs to local media artifact storage
+- register generated local video artifacts
+- run ffprobe validation
+- stop on first upload or submit failure
+- no retry, no second submit, no regeneration, no batch expansion, no Runway fallback
+
+### Required Work After Authorization
+
+- Re-run local hard gates from R3-9C before any provider call.
+- Read/use credentials only through existing provider execution boundary, never printing or recording secret values.
+- Execute shots sequentially in the order defined by the R3-9C plan.
+- For each shot: upload source image once, submit once, query only the returned taskId until terminal status or timeout, download successful output, register a local video Media Artifact, and run ffprobe.
+- Stop immediately on first upload or submit failure to avoid consuming remaining shot budget.
+- If submit succeeds but query/download/ffprobe fails, stop and record the provider taskId and local failure state without retrying.
+- Write a sanitized result report at `data/reports/r3_9d_runninghub_4_shot_single_pass_live_execution_result.json`.
+
+### Acceptance
+
+- Execution only starts after exact current Jenn authorization.
+- Total upload calls attempted is `<=4`.
+- Total submit calls attempted is `<=4`.
+- Each shot has upload count `<=1` and submit count `<=1`.
+- No retry, second submit, regeneration, batch expansion, Runway fallback, source overwrite, push, tag, release, or deploy occurs.
+- Result report records per-shot status, sanitized provider status, taskId presence, generated artifact ID if any, ffprobe result if any, and stop reason.
+- Report records whether `provider_credits_consumed` is true based on live provider attempts.
+- Secret values, raw provider payloads, signed URLs, and Authorization headers are never printed or recorded.
+- Worktree is committed locally after result and receipts are updated.
+
+### Validation
+
+- `npm run env:check`
+- `npm run provider:preflight`
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`

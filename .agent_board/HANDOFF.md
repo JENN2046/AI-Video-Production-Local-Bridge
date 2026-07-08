@@ -1,14 +1,28 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260708-135428-r3-9c-queue-arrangement
-Last result: R3-9C RunningHub 4-shot live authorization prep queued
+Last run: codex-20260708-142157-r3-9d-queue-arrangement
+Last result: R3-9D RunningHub 4-shot live execution arranged as FOLLOW_UP pending exact authorization
 
 ## Current state
 
-Current task: R3-9C_RUNNINGHUB_4_SHOT_LIVE_AUTHORIZATION_PREP
-Current status: READY
+Current task: none
+Current status: EMPTY
 Current owner: None
+
+## R3-9D queue arrangement
+
+Arranged at: 2026-07-08T14:21:57+08:00
+Result: FOLLOW_UP_TASK_QUEUED
+
+- `R3-9D_RUNNINGHUB_4_SHOT_SINGLE_PASS_LIVE_EXECUTION` is added to backlog as `FOLLOW_UP`.
+- R3-9D depends on `R3-9C_RUNNINGHUB_4_SHOT_LIVE_AUTHORIZATION_PREP`.
+- It must not be promoted to `READY` until Jenn provides a new exact current authorization phrase.
+- Live boundary: provider `runninghub`, 4 storyboard shots, provider duration `6` seconds per shot, max 4 uploads and 4 submits total, max one upload and one submit per shot.
+- Credential boundary: future authorization must explicitly allow using existing RunningHub credentials through the provider execution boundary, without printing or recording secret values.
+- Required stop rules: stop on first upload or submit failure; no retry, no second submit, no regeneration, no batch expansion, no Runway fallback.
+- Success path: download successful outputs into local media artifact storage, register generated video artifacts, and run ffprobe validation.
+- No secret values, raw provider payloads, signed URLs, source overwrite, push, tag, release, or deploy may occur.
 
 ## R3-9C queue arrangement
 
@@ -246,6 +260,10 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 
 - None
 
+## Remaining FOLLOW_UP tasks
+
+- `R3-9D_RUNNINGHUB_4_SHOT_SINGLE_PASS_LIVE_EXECUTION` waits for a new exact current Jenn authorization phrase.
+
 ## Closeout evidence
 
 - `data/reports/m0_closeout.yaml`
@@ -304,6 +322,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - R3-8O Enterprise-Shared API Key 6-second RunningHub live canary completed successfully after exact authorization.
 - R3-8K provider path decision closeout is complete.
 - RunningHub Enterprise-Shared API Key path is the primary validated M1 provider lane.
+- R3-9D is arranged as `FOLLOW_UP` for a future bounded RunningHub 4-shot live run.
 - Any next RunningHub live call requires a new exact current Jenn authorization phrase.
 - Do not submit to RunningHub without a future exact current Jenn authorization phrase.
 - Do not retry Runway canary without a new exact current Jenn authorization phrase.
