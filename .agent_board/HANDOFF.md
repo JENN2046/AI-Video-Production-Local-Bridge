@@ -316,4 +316,5 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - Budget remains capped at 4 uploads and 4 submits total, one upload and one submit per shot, no retry, no second submit, no regeneration, no batch expansion, and no Runway fallback.
 - No credentials, `.env` files, RunningHub call, Runway call, provider upload/submit/query/download, source overwrite, push, tag, release, or deploy occurred.
 - Remaining READY tasks: none.
+- R3-9C local implementation commit: `17caf18`.
 - Any future RunningHub 4-shot live execution requires a new exact current Jenn authorization phrase.

@@ -84,7 +84,7 @@
     "data/reports/r3_9c_runninghub_4_shot_live_authorization_prep_result.json",
     "data/reports/secret_scan_result.json"
   ],
-  "commit": "PENDING_LOCAL_COMMIT",
+  "commit": "17caf18",
   "delivery": "local_only",
   "boundary_or_safety_stop": "authorization prep only; no provider call, credential read, or deployment occurred",
   "blocked_reason": null,

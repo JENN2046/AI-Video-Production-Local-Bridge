@@ -355,7 +355,8 @@
     "do_not_execute_from_this_prep_task": true
   },
   "git_receipt": {
-    "commit": "PENDING_LOCAL_COMMIT",
+    "implementation_commit": "17caf18",
+    "receipt_commit": "PENDING_RECEIPT_COMMIT",
     "push": false,
     "tag": false,
     "release": false,
