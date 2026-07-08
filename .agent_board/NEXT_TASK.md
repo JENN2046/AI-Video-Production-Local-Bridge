@@ -1,38 +1,53 @@
-# NEXT_TASK
+# NEXT_TASK.md
 
-task_id: R3-9R_FINAL_DELIVERY_CLOSEOUT
-status: DONE
+status: READY
+
+task_id: R1-6_WEBGPT_POST_CLOSEOUT_BRIDGE_REALITY_AUDIT
+
+title: WebGPT Post-Closeout Bridge Reality Audit
+
 priority: P0
-lane: Final Delivery Closeout
-project: AI Video Production Workspace Three Route Plan
-title: Final Delivery Closeout
-claimed_by: Codex R3-9R final delivery closeout
-claim_run_id: codex-20260708-193755-r3-9r
-claimed_at: 2026-07-08T19:37:55+08:00
-completed_by: Codex R3-9R final delivery closeout
-completed_at: 2026-07-08T19:45:15+08:00
-result: PASS_FINAL_DELIVERY_CLOSEOUT_READY
-validation_result: PASS
-commit: 17e60e6
-source_report: data/reports/r3_9q_human_final_video_review_decision_apply_result.json
-assembly_report: data/reports/r3_9o_final_video_assembly_execution_result.json
-report_path: data/reports/r3_9r_final_delivery_closeout_result.json
-evidence_manifest_path: data/reports/r3_9r_final_delivery_evidence_manifest.json
-local_summary_path: data/reports/r3_9r_local_video_delivery_summary.md
+
+lane: WebGPT MCP Bridge Reality Audit
+
+project: AI Video Production Workspace GPT Bridge Line
+
+depends_on: R3-9R_FINAL_DELIVERY_CLOSEOUT
 
 ## Goal
 
-Generate the final local delivery closeout package for the approved final video, with evidence and boundaries summarized for project handoff.
+Recalibrate the GPT bridge line against the completed final video project so the next GPT-facing work starts from current app truth instead of stale R1 assumptions.
+
+## Required Work
+
+- Inspect the existing WebGPT/MCP bridge implementation after R3-9 final video closeout.
+- Inventory v0 read-only, v0.5 draft, v1 human-confirmed pending action, v2 review assistant, and v3 production assistant surfaces.
+- Map existing bridge capabilities to the `final_approved` project state and R3-9 closeout evidence.
+- Identify gaps before any new GPT-facing implementation or official ChatGPT MCP app packaging.
+- Generate `data/reports/r1_6_webgpt_post_closeout_bridge_reality_audit_result.json`.
+- Do not start public tunnels, call providers, read env files or credentials, mutate production truth, publish, deploy, push, tag, or release.
+
+## Acceptance
+
+- Report includes current R1-0 through R1-5 completion status and evidence paths.
+- Report inventories package scripts and implemented bridge entrypoints for WebGPT v0, v0.5, v1, v2, and v3.
+- Report maps what GPT can read, draft, request, and propose after R3-9 final approval.
+- Report verifies final approved project evidence from R3-9R is reachable by app-side report references, not GPT-invented IDs.
+- Report identifies local blockers, stale assumptions, and recommended next tasks.
+- Provider, secret, publish, deploy, public tunnel, and direct GPT mutation boundaries remain false.
+
+## Validation
+
+- JSON parse for generated R1-6 audit report
+- `npm run typecheck`
+- `npm run test:webgpt:bridge`
+- `npm run test:webgpt:drafts`
+- `npm run test:webgpt:pending`
+- `npm run test:webgpt:review`
+- `npm run test:webgpt:production`
+- `npm run secret:scan`
+- `git diff --check`
 
 ## Boundary
 
-- Local closeout only.
-- No publish, deploy, provider call, regeneration, reassembly, `.env` or credential read, source overwrite, push, tag, release, upload, or production configuration change.
-
-## Result
-
-- Final video path: `A:\AI Video Production Workspace\data\media\artifacts\final\r3-9o-final-video\ryan_lunch_break_skullcap_final_r3_9o.mp4`.
-- Final video artifact: `artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe`.
-- Final decision: `accept`, reviewer `Jenn`, final creative approval recorded locally.
-- Source clip lineage: 4 accepted R3-9J regenerated clips, ffprobe `PASS`.
-- Validation passed: `npm run r3:9r:closeout`, JSON/path/ffprobe/lineage check, `npm run typecheck`, `npm run test:m1`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
+Audit only. No public tunnel, provider call, env or credential read, production mutation, publish, deploy, push, tag, or release.

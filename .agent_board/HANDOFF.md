@@ -1,14 +1,28 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260708-193755-r3-9r
-Last result: R3-9R final delivery closeout ready
+Last run: codex-20260708-195644-r1-gpt-bridge-queue-arrangement
+Last result: R1 GPT bridge post-closeout tasks queued
 
 ## Current state
 
-Current task: R3-9R_FINAL_DELIVERY_CLOSEOUT
-Current status: DONE
+Current task: R1-6_WEBGPT_POST_CLOSEOUT_BRIDGE_REALITY_AUDIT
+Current status: READY
 Current owner: none
+
+## R1 GPT bridge queue arrangement
+
+Arranged at: 2026-07-08T19:56:44+08:00
+Result: READY_TASKS_QUEUED_WITH_BOUNDARY
+
+- `R1-6_WEBGPT_POST_CLOSEOUT_BRIDGE_REALITY_AUDIT` is loaded into `NEXT_TASK` as `READY`.
+- R1-6 depends on completed `R3-9R_FINAL_DELIVERY_CLOSEOUT`.
+- Added downstream `READY` tasks to backlog; dependency gates should control the order:
+  - `R1-7_WEBGPT_LOCAL_BRIDGE_SMOKE_VALIDATION` depends on `R1-6_WEBGPT_POST_CLOSEOUT_BRIDGE_REALITY_AUDIT`.
+  - `R1-8_WEBGPT_OPERATOR_RUNBOOK_AND_PROMPT_PACK` depends on `R1-7_WEBGPT_LOCAL_BRIDGE_SMOKE_VALIDATION`.
+- Added `R1-9_CHATGPT_MCP_APP_PACKAGING_DECISION` as `FOLLOW_UP`, not auto-executable.
+- Scope is local GPT/WebGPT bridge work only: audit, local smoke validation, Chinese operator runbook, and prompt pack.
+- Boundary: no public tunnel, provider call, `.env` or credential read, production configuration mutation, publish, deploy, push, tag, release, or source asset overwrite.
 
 ## R3-9Q / R3-9R queue arrangement
 

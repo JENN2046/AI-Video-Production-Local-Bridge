@@ -3585,3 +3585,196 @@ Generate the final local delivery closeout package for the approved final video,
 - Source clip lineage includes all 4 accepted R3-9J regenerated clips with ffprobe `PASS`.
 - No publish, deploy, upload, push, tag, release, provider call, env read, credential read, regeneration, batch expansion, final reassembly, source overwrite, raw provider payload recording, signed URL recording, secret output, or production configuration change occurred.
 - Validation passed: `npm run r3:9r:closeout`, JSON/path/ffprobe/lineage check, `npm run typecheck`, `npm run test:m1`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
+
+## R1-6_WEBGPT_POST_CLOSEOUT_BRIDGE_REALITY_AUDIT - WebGPT Post-Closeout Bridge Reality Audit
+
+status: READY
+priority: P0
+lane: WebGPT Bridge
+project: AI Video Production Workspace GPT Bridge Line
+scope: audit the current WebGPT/MCP bridge after R3-9 final closeout and identify the next local bridge gaps
+branch: local-only
+depends_on: R3-9R_FINAL_DELIVERY_CLOSEOUT
+report_path: data/reports/r1_6_webgpt_post_closeout_bridge_reality_audit_result.json
+allowed_delivery: bridge_reality_audit_report,task_board_update,local_commit
+blocked_delivery: public_tunnel,provider_call,runninghub_call,runway_call,media_upload_to_provider,env_file_read,credential_read,secret_value_output,source_overwrite,push,tag,release,deploy,publish,production_configuration_change
+created_at: 2026-07-08T19:56:44+08:00
+updated_at: 2026-07-08T19:56:44+08:00
+
+### Goal
+
+Audit the existing WebGPT bridge line after the R3-9 final video closeout, confirm what v0 through v3 already provide, and decide the smallest safe next bridge tasks.
+
+### Required Work
+
+- Inventory R1-0 through R1-5 task results and reports.
+- Inventory package scripts and source surfaces for WebGPT bridge v0 through v3.
+- Cross-check the bridge surfaces against R3-9R final approved delivery evidence.
+- Identify local-only gaps before any public MCP or ChatGPT App packaging decision.
+- Generate `data/reports/r1_6_webgpt_post_closeout_bridge_reality_audit_result.json`.
+
+### Acceptance
+
+- Report identifies completed WebGPT bridge capabilities from R1-0 through R1-5.
+- Report links current final approved project evidence from R3-9R.
+- Report lists concrete gaps and recommends whether R1-7, R1-8, and R1-9 remain valid.
+- Report records `network_call_attempted=false`, `provider_called=false`, `env_files_read=false`, `credentials_read=false`, `secret_values_exposed=false`, `publish_performed=false`, `release_or_deploy_performed=false`.
+
+### Validation
+
+- JSON parse for generated R1-6 report
+- `npm run typecheck`
+- `npm run test:webgpt:bridge`
+- `npm run test:webgpt:drafts`
+- `npm run test:webgpt:pending`
+- `npm run test:webgpt:review`
+- `npm run test:webgpt:production`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Boundary
+
+- Local audit only.
+- No public tunnel, provider call, `.env` or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change.
+
+## R1-7_WEBGPT_LOCAL_BRIDGE_SMOKE_VALIDATION - WebGPT Local Bridge Smoke Validation
+
+status: READY
+priority: P0
+lane: WebGPT Bridge
+project: AI Video Production Workspace GPT Bridge Line
+scope: run a local-only smoke validation for WebGPT bridge v0 through v3 against current final-approved project evidence
+branch: local-only
+depends_on: R1-6_WEBGPT_POST_CLOSEOUT_BRIDGE_REALITY_AUDIT
+report_path: data/reports/r1_7_webgpt_local_bridge_smoke_validation_result.json
+allowed_delivery: bridge_smoke_validation_report,task_board_update,local_commit
+blocked_delivery: public_tunnel,provider_call,runninghub_call,runway_call,media_upload_to_provider,env_file_read,credential_read,secret_value_output,source_overwrite,push,tag,release,deploy,publish,production_configuration_change
+created_at: 2026-07-08T19:56:44+08:00
+updated_at: 2026-07-08T19:56:44+08:00
+
+### Goal
+
+Validate that the local WebGPT bridge commands and test surfaces still work after final video closeout.
+
+### Required Work
+
+- Run the existing WebGPT bridge tests for v0 through v3.
+- Confirm reports and bridge metadata can reference the current final-approved R3-9 output without requiring secrets or provider calls.
+- Generate `data/reports/r1_7_webgpt_local_bridge_smoke_validation_result.json`.
+
+### Acceptance
+
+- All existing WebGPT bridge tests pass or any failure is classified with a clear local fix path.
+- Report records local command results, target evidence, and bridge readiness state.
+- Report records `network_call_attempted=false`, `provider_called=false`, `env_files_read=false`, `credentials_read=false`, `secret_values_exposed=false`, `publish_performed=false`, `release_or_deploy_performed=false`.
+
+### Validation
+
+- JSON parse for generated R1-7 report
+- `npm run typecheck`
+- `npm run test:webgpt:bridge`
+- `npm run test:webgpt:drafts`
+- `npm run test:webgpt:pending`
+- `npm run test:webgpt:review`
+- `npm run test:webgpt:production`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Boundary
+
+- Local smoke validation only.
+- No public tunnel, provider call, `.env` or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change.
+
+## R1-8_WEBGPT_OPERATOR_RUNBOOK_AND_PROMPT_PACK - WebGPT Operator Runbook And Prompt Pack
+
+status: READY
+priority: P1
+lane: WebGPT Bridge
+project: AI Video Production Workspace GPT Bridge Line
+scope: create Chinese operator documentation and prompt pack for the local WebGPT handoff flow
+branch: local-only
+depends_on: R1-7_WEBGPT_LOCAL_BRIDGE_SMOKE_VALIDATION
+report_path: data/reports/r1_8_webgpt_operator_runbook_and_prompt_pack_result.json
+runbook_path: docs/webgpt/WEBGPT_OPERATOR_RUNBOOK_R1_8.md
+prompt_pack_path: docs/webgpt/WEBGPT_PROMPT_PACK_R1_8.md
+allowed_delivery: chinese_operator_runbook,chinese_prompt_pack,task_board_update,local_commit
+blocked_delivery: public_tunnel,provider_call,runninghub_call,runway_call,media_upload_to_provider,env_file_read,credential_read,secret_value_output,source_overwrite,push,tag,release,deploy,publish,production_configuration_change
+created_at: 2026-07-08T19:56:44+08:00
+updated_at: 2026-07-08T19:56:44+08:00
+
+### Goal
+
+Create a Chinese local operator runbook and WebGPT prompt pack so future Web GPT outputs can be handed into the local system consistently.
+
+### Required Work
+
+- Create `docs/webgpt/WEBGPT_OPERATOR_RUNBOOK_R1_8.md`.
+- Create `docs/webgpt/WEBGPT_PROMPT_PACK_R1_8.md`.
+- Include the current local flow: imports, media artifact registration, storyboard package freeze, clip generation review, final assembly review, and closeout evidence.
+- Include what WebGPT may provide and what the local app must assign, especially artifact ids and review state.
+- Generate `data/reports/r1_8_webgpt_operator_runbook_and_prompt_pack_result.json`.
+
+### Acceptance
+
+- Runbook is Chinese and operator-facing.
+- Prompt pack is Chinese and avoids asking WebGPT to invent artifact ids.
+- Docs clearly state that provider calls, publishing, credentials, and source overwrites are outside this local handoff step.
+- Report records created docs and `network_call_attempted=false`, `provider_called=false`, `env_files_read=false`, `credentials_read=false`, `secret_values_exposed=false`, `publish_performed=false`, `release_or_deploy_performed=false`.
+
+### Validation
+
+- JSON parse for generated R1-8 report
+- required section check for both docs
+- `npm run typecheck`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Boundary
+
+- Documentation and prompt pack only.
+- No public tunnel, provider call, `.env` or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change.
+
+## R1-9_CHATGPT_MCP_APP_PACKAGING_DECISION - ChatGPT MCP App Packaging Decision
+
+status: FOLLOW_UP
+priority: P1
+lane: WebGPT Bridge
+project: AI Video Production Workspace GPT Bridge Line
+scope: decide whether to package the local bridge as an official ChatGPT MCP/App or keep it local-only
+branch: local-only
+depends_on: R1-8_WEBGPT_OPERATOR_RUNBOOK_AND_PROMPT_PACK
+report_path: data/reports/r1_9_chatgpt_mcp_app_packaging_decision_result.json
+allowed_delivery: packaging_decision_report,task_board_update,local_commit
+blocked_delivery: public_tunnel,provider_call,runninghub_call,runway_call,media_upload_to_provider,env_file_read,credential_read,secret_value_output,source_overwrite,push,tag,release,deploy,publish,production_configuration_change
+created_at: 2026-07-08T19:56:44+08:00
+updated_at: 2026-07-08T19:56:44+08:00
+
+### Goal
+
+Decide whether the WebGPT bridge should become an official ChatGPT MCP/App package, remain local-only, or wait for a later productization pass.
+
+### Required Work
+
+- Review current local bridge maturity after R1-8.
+- Use current official OpenAI documentation before making an MCP/App packaging recommendation.
+- Compare local-only handoff, ChatGPT MCP/App packaging, and deferred packaging.
+- Generate `data/reports/r1_9_chatgpt_mcp_app_packaging_decision_result.json`.
+
+### Acceptance
+
+- Decision report names the recommended packaging path and rationale.
+- Decision report lists required implementation work if packaging is recommended.
+- No implementation of public MCP/App packaging occurs unless Jenn separately promotes this task and authorizes the implementation scope.
+
+### Validation
+
+- JSON parse for generated R1-9 report if the task is later promoted
+- `npm run typecheck`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Boundary
+
+- This task is `FOLLOW_UP` and must not auto-run.
+- If promoted, it is a decision task only unless Jenn separately authorizes implementation.
+- No public tunnel, provider call, `.env` or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change.
