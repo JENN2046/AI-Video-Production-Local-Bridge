@@ -1378,6 +1378,7 @@ Notes:
 - Kept Runway on hold until credits/account readiness is resolved.
 - No `.env.local` or credential file was read.
 - No RunningHub call, Runway call, upload, submit, query, output download, provider credit consumption, real video generation, credential/account change, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
+- 2026-07-08T11:11:39+08:00 decision update: Jenn selected RunningHub Enterprise-Shared API Key as the primary path; this selection did not authorize provider calls or credential reads/writes.
 
 ### R3-8J - 2026-07-07T17:46:23+08:00
 

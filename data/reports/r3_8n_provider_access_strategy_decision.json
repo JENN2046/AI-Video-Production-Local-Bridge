@@ -126,6 +126,23 @@
     "third_provider_position": "defer_unless_lower_risk_than_fixing_existing_access",
     "decision": "Use RunningHub as the next provider-access focus, but do not submit again on the Standard Model API route until Enterprise-Shared API Key access is confirmed. If that access cannot be obtained, switch to an authorized RunningHub workflow or non-standard-model API route and re-freeze the contract offline before live use."
   },
+  "human_selection": {
+    "selected_at": "2026-07-08T11:11:39+08:00",
+    "selected_by": "Jenn",
+    "selected_primary_path": "runninghub_enterprise_shared_api_key",
+    "selection_text": "选择 RunningHub Enterprise-Shared API Key 路径作为主路径。",
+    "status": "confirmed_primary_path",
+    "live_provider_call_authorized_by_this_selection": false,
+    "credential_read_authorized_by_this_selection": false,
+    "credential_write_authorized_by_this_selection": false,
+    "production_credential_change_authorized_by_this_selection": false,
+    "next_safe_preparation": [
+      "Confirm outside Codex that the RunningHub account/API key is Enterprise-Shared and authorized for Standard Model API.",
+      "After the credential is configured by the human/operator, run local env/preflight checks without printing secret values.",
+      "Generate a fresh no-network dry-run guard report for the 6 second RunningHub Standard Model API route.",
+      "Use a new exact current user authorization phrase before any live upload or submit."
+    ]
+  },
   "future_live_call_approval_boundaries": {
     "requires_new_exact_user_authorization": true,
     "requires_budget_or_cost_limit": true,
@@ -166,7 +183,7 @@
   ],
   "next_step": {
     "do_not_auto_run_live_provider_call": true,
-    "recommended_follow_up": "Promote R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT to READY only if a closeout report is desired after this strategy decision.",
-    "requires_user_decision": "Choose whether to pursue RunningHub Enterprise-Shared API Key access or switch to an authorized RunningHub workflow/non-standard-model route."
+    "recommended_follow_up": "Prepare RunningHub Enterprise-Shared API Key readiness only after human/operator confirms the key type and provides any needed credential-read authorization.",
+    "requires_user_decision": "DONE: Jenn selected RunningHub Enterprise-Shared API Key as the primary path."
   }
 }

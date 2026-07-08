@@ -2273,7 +2273,7 @@ project: AI Video Production Workspace Three Route Plan
 scope: summarize Runway and RunningHub evidence after provider-access strategy decision and decide M1 provider path readiness
 branch: local-only
 depends_on: R3-8N_PROVIDER_ACCESS_STRATEGY_DECISION
-source_plan: R3-8N result
+source_plan: R3-8N result and Jenn-confirmed RunningHub Enterprise-Shared API Key primary path
 report_path: data/reports/r3_8k_provider_path_decision_closeout.json
 allowed_delivery: decision_report,readiness_summary,task_board_update,local_commit
 blocked_delivery: provider_call,provider_credits_consumed,real_video_generated,secret_value_output,source_overwrite,push,tag,release,deploy

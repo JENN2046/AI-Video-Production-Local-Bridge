@@ -2317,6 +2317,10 @@ Next:
 - Promote `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT` to `READY` only if Jenn wants a closeout report.
 - Any future live provider call requires a fresh exact current Jenn authorization phrase.
 
+Decision update:
+- 2026-07-08T11:11:39+08:00: Jenn selected `runninghub_enterprise_shared_api_key` as the primary provider-access path.
+- This selection did not authorize a live provider call, credential read, credential write, production credential change, push, tag, release, or deploy.
+
 ### 2026-07-08T10:16:15+08:00 - R3-8L Receipt Fix R1
 
 Result: DONE / PASS_RECEIPT_FIXED

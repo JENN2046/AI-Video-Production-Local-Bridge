@@ -19,6 +19,7 @@ Report: `data/reports/r3_8n_provider_access_strategy_decision.json`
 - Primary next path: obtain/configure RunningHub Enterprise-Shared API Key access for the current Standard Model API route.
 - Fallback next path: switch to an authorized RunningHub workflow or non-standard-model API route, then freeze that contract offline before live use.
 - Runway remains on hold until credits/account readiness is resolved.
+- Jenn confirmed on 2026-07-08T11:11:39+08:00 that RunningHub Enterprise-Shared API Key is the selected primary path.
 - No `.env.local` or credentials were read.
 - No RunningHub call, Runway call, upload, submit, query, output download, provider credit consumption, real video generation, credential/account change, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
 - `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT` remains `FOLLOW_UP`; no READY task remains unless Jenn promotes it.
@@ -134,6 +135,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - R3-8M executed one authorized RunningHub upload and one authorized submit on 2026-07-08. Result: `PROVIDER_FAILED_AUTH_1014`; RunningHub rejected the submit because Standard Model API is restricted to Enterprise-Shared API Keys only. No task id, output URL, local video artifact, ffprobe result, or channel link exists.
 - R3-8M receipt fix completed locally: R3-8M live canary commit `95276eb` and R3-8L receipt fix commit `b12b67c` are now backfilled in the audit chain.
 - R3-8N completed locally: provider access strategy is to pursue RunningHub Enterprise-Shared API Key access for the current Standard Model API route, with an authorized RunningHub workflow/non-standard-model route as fallback.
+- Jenn confirmed RunningHub Enterprise-Shared API Key as the selected primary path on 2026-07-08.
 
 ## Blocked in last run
 
@@ -204,6 +206,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - R3-8M failed with `PROVIDER_FAILED_AUTH_1014`; do not retry automatically.
 - R3-8M receipt fix is complete.
 - R3-8N provider access strategy decision is complete.
+- Jenn selected RunningHub Enterprise-Shared API Key as the primary provider-access path.
 - No READY task remains. `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT` remains `FOLLOW_UP` unless Jenn promotes it.
 - Any next RunningHub retry requires an Enterprise-Shared API Key or a different authorized provider path, plus a new exact current Jenn authorization phrase.
 - Do not submit to RunningHub without a future exact current Jenn authorization phrase.
