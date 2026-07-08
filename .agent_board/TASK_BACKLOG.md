@@ -3435,6 +3435,118 @@ Prepare a local Chinese review package for the assembled final video so Jenn can
 - Review package only.
 - No provider call, regeneration, batch expansion, `.env` or credential read, source overwrite, push, tag, release, deploy, publish, or final creative approval.
 
+## R3-9Q_HUMAN_FINAL_VIDEO_REVIEW_DECISION_APPLY - Human Final Video Review Decision Apply
+
+status: READY
+priority: P0
+lane: Human Final Video Review Decision Apply
+project: AI Video Production Workspace Three Route Plan
+scope: apply Jenn's completed R3-9P final video review decision locally
+branch: local-only
+depends_on: R3-9P_FINAL_VIDEO_REVIEW_PACKAGE
+source_table: data/reports/r3_9p_final_video_review_table.md
+source_report: data/reports/r3_9p_final_video_review_package_result.json
+assembly_report: data/reports/r3_9o_final_video_assembly_execution_result.json
+report_path: data/reports/r3_9q_human_final_video_review_decision_apply_result.json
+allowed_delivery: final_video_review_decision_apply_report,local_final_creative_approval_state,task_board_update,local_commit
+blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,provider_submit,status_poll,output_download_from_provider,provider_credits_consumed,regeneration_execution,batch_expansion,final_video_reassembly,env_file_read,credential_read,source_overwrite,secret_value_output,raw_provider_payload_recording,signed_url_recording,push,tag,release,deploy,publish
+created_at: 2026-07-08T19:29:07+08:00
+updated_at: 2026-07-08T19:29:07+08:00
+
+### Goal
+
+Apply Jenn's completed final video review decision and, if accepted, mark the local final video as creatively approved for closeout.
+
+### Required Work
+
+- Read `data/reports/r3_9p_final_video_review_table.md` as the human source of truth.
+- Parse exactly one final video decision row.
+- Require exactly one decision: `accept`, `reject`, or `revision_requested`.
+- If the decision is `accept`, record final creative approval for `artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe`.
+- If the decision is `reject` or `revision_requested`, keep final creative approval false and route to a revision strategy task.
+- Generate `data/reports/r3_9q_human_final_video_review_decision_apply_result.json`.
+- Do not publish, deploy, upload, call providers, regenerate, reassemble, read env files or credentials, overwrite source assets, push, tag, or release.
+
+### Acceptance
+
+- R3-9P final video review table is parsed as the source of truth.
+- Exactly one final video decision row is parsed.
+- Exactly one decision is selected among `accept`, `reject`, and `revision_requested`.
+- If decision is `accept`, final video artifact `artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe` is recorded as final creatively approved in local state/report.
+- If decision is `reject` or `revision_requested`, final creative approval remains false and the report routes to a revision strategy task instead of closeout.
+- Report includes reviewer, note, final video path, final video artifact id, source clip artifacts, ffprobe status, and decision summary.
+- Report records `publish_performed=false`, `release_or_deploy_performed=false`, `network_call_attempted=false`, `runninghub_called=false`, `runway_called=false`, `provider_credits_consumed=false`, `regeneration_performed=false`, `final_video_reassembled=false`, `env_files_read=false`, `credentials_read=false`, `source_assets_overwritten=false`, `secret_values_exposed=false`.
+
+### Validation
+
+- R3-9P final video review table parse / required decision check
+- JSON parse for generated R3-9Q decision apply report
+- final video path existence check
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Boundary
+
+- Decision apply only.
+- No publish, deploy, provider call, regeneration, reassembly, `.env` or credential read, source overwrite, push, tag, or release.
+
+## R3-9R_FINAL_DELIVERY_CLOSEOUT - Final Delivery Closeout
+
+status: READY
+priority: P0
+lane: Final Delivery Closeout
+project: AI Video Production Workspace Three Route Plan
+scope: generate a local-only final delivery closeout after R3-9Q records final creative approval
+branch: local-only
+depends_on: R3-9Q_HUMAN_FINAL_VIDEO_REVIEW_DECISION_APPLY
+source_report: data/reports/r3_9q_human_final_video_review_decision_apply_result.json
+assembly_report: data/reports/r3_9o_final_video_assembly_execution_result.json
+report_path: data/reports/r3_9r_final_delivery_closeout_result.json
+allowed_delivery: final_delivery_closeout_report,evidence_manifest,local_video_delivery_summary,task_board_update,local_commit
+blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,provider_submit,status_poll,output_download_from_provider,provider_credits_consumed,regeneration_execution,batch_expansion,final_video_reassembly,env_file_read,credential_read,source_overwrite,secret_value_output,raw_provider_payload_recording,signed_url_recording,push,tag,release,deploy,publish,production_configuration_change
+created_at: 2026-07-08T19:29:07+08:00
+updated_at: 2026-07-08T19:29:07+08:00
+
+### Goal
+
+Generate the final local delivery closeout package for the approved final video, with evidence and boundaries summarized for project handoff.
+
+### Required Work
+
+- Parse `data/reports/r3_9q_human_final_video_review_decision_apply_result.json`.
+- Require R3-9Q result to show final creative approval accepted by Jenn.
+- Parse `data/reports/r3_9o_final_video_assembly_execution_result.json` for final video artifact, path, ffprobe, and source clip lineage.
+- Include provider lane summary, generation artifacts, accepted clip lineage, final video artifact, final video path, ffprobe status, and validation receipts.
+- Include git receipts for the final assembly and review chain where available.
+- State explicitly that no publish, deploy, push, tag, release, upload, or production configuration change occurred.
+
+### Acceptance
+
+- Closeout report includes final video path `data/media/artifacts/final/r3-9o-final-video/ryan_lunch_break_skullcap_final_r3_9o.mp4`.
+- Closeout report includes final video artifact `artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe`.
+- Closeout report includes source clip artifacts for SHOT_001 through SHOT_004.
+- Closeout report includes final ffprobe `PASS` and duration.
+- Closeout report includes final human decision `accept`, reviewer `Jenn`, and final creative approval recorded locally.
+- Report records `publish_performed=false`, `release_or_deploy_performed=false`, `push_performed=false`, `tag_created=false`, `network_call_attempted=false`, `runninghub_called=false`, `runway_called=false`, `provider_credits_consumed=false`, `env_files_read=false`, `credentials_read=false`, `source_assets_overwritten=false`, `secret_values_exposed=false`.
+
+### Validation
+
+- JSON parse for generated final delivery closeout report
+- final video path existence check
+- final video ffprobe evidence check
+- source clip artifact lineage check
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Boundary
+
+- Local closeout only.
+- No publish, deploy, provider call, regeneration, reassembly, `.env` or credential read, source overwrite, push, tag, release, upload, or production configuration change.
+
 ### Result
 
 - Generated `data/reports/r3_9p_final_video_review_package_result.json`.

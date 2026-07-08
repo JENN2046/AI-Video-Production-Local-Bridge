@@ -1,41 +1,52 @@
-# NEXT_TASK
+# NEXT_TASK.md
 
-task_id: R3-9P_FINAL_VIDEO_REVIEW_PACKAGE
-status: DONE
-priority: P1
-lane: Final Video Review
+status: READY
+
+task_id: R3-9Q_HUMAN_FINAL_VIDEO_REVIEW_DECISION_APPLY
+
+title: Human Final Video Review Decision Apply
+
+priority: P0
+
+lane: Human Final Video Review Decision Apply
+
 project: AI Video Production Workspace Three Route Plan
-title: Final Video Review Package
-claimed_by: Codex R3-9P final video review package
-claim_run_id: codex-20260708-185423-r3-9p
-claimed_at: 2026-07-08T18:54:23+08:00
-completed_by: Codex R3-9P final video review package
-completed_at: 2026-07-08T18:57:20+08:00
-result: PASS_FINAL_VIDEO_REVIEW_PACKAGE_READY
-validation_result: PASS
-source_report: data/reports/r3_9o_final_video_assembly_execution_result.json
-report_path: data/reports/r3_9p_final_video_review_package_result.json
-review_table_path: data/reports/r3_9p_final_video_review_table.md
+
+depends_on: R3-9P_FINAL_VIDEO_REVIEW_PACKAGE
 
 ## Goal
 
-Prepare a local Chinese review package for the assembled final video so Jenn can decide final creative approval separately.
+Apply Jenn's completed final video review decision and, if accepted, mark the local final video as creatively approved for closeout.
 
-## Scope
+## Required Work
 
-- Parse `data/reports/r3_9o_final_video_assembly_execution_result.json`.
-- Include the final video path, final video artifact id, ffprobe summary, source clip list, and assembly report link.
-- Generate a Chinese final-video review table with placeholders for `accept`, `reject`, and `revision_requested`.
-- State that this package does not publish, deploy, upload, or mark final creative approval.
+- Read `data/reports/r3_9p_final_video_review_table.md` as the human source of truth.
+- Parse exactly one final video decision row.
+- Require exactly one decision: `accept`, `reject`, or `revision_requested`.
+- If the decision is `accept`, record final creative approval for `artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe`.
+- If the decision is `reject` or `revision_requested`, keep final creative approval false and route to a revision strategy task.
+- Generate `data/reports/r3_9q_human_final_video_review_decision_apply_result.json`.
+- Do not publish, deploy, upload, call providers, regenerate, reassemble, read env files or credentials, overwrite source assets, push, tag, or release.
+
+## Acceptance
+
+- R3-9P final video review table is parsed as the source of truth.
+- Exactly one final video decision row is parsed.
+- Exactly one decision is selected among `accept`, `reject`, and `revision_requested`.
+- Report includes reviewer, note, final video path, final video artifact id, source clip artifacts, ffprobe status, and decision summary.
+- If accepted, report marks final creative approval as recorded locally and routes next to `R3-9R_FINAL_DELIVERY_CLOSEOUT`.
+- If not accepted, report routes next to a revision strategy task.
+
+## Validation
+
+- R3-9P final video review table parse / required decision check
+- JSON parse for generated R3-9Q decision apply report
+- final video path existence check
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
 
 ## Boundary
 
-- Review package only.
-- No provider call, regeneration, batch expansion, `.env` or credential read, source overwrite, push, tag, release, deploy, publish, or final creative approval.
-
-## Result
-
-- Generated `data/reports/r3_9p_final_video_review_package_result.json`.
-- Generated `data/reports/r3_9p_final_video_review_table.md`.
-- Included final video `data/media/artifacts/final/r3-9o-final-video/ryan_lunch_break_skullcap_final_r3_9o.mp4`.
-- Final creative approval remains unrecorded.
+Decision apply only. No publish, deploy, provider call, regeneration, reassembly, env or credential read, source overwrite, push, tag, or release.

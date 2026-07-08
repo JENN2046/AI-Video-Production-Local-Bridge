@@ -1,14 +1,27 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260708-182213-r3-9m-r3-9p-queue-arrangement
-Last result: R3-9M through R3-9P queued after R3-9L
+Last run: codex-20260708-192907-r3-9q-r3-9r-queue-arrangement
+Last result: R3-9Q and R3-9R queued after final video human review
 
 ## Current state
 
-Current task: R3-9L_HUMAN_REGENERATED_CLIP_REVIEW_DECISION_APPLY
-Current status: IN_PROGRESS
-Current owner: Codex R3-9L human regenerated clip review decision apply
+Current task: R3-9Q_HUMAN_FINAL_VIDEO_REVIEW_DECISION_APPLY
+Current status: READY
+Current owner: None
+
+## R3-9Q / R3-9R queue arrangement
+
+Arranged at: 2026-07-08T19:29:07+08:00
+Result: READY_TASKS_QUEUED_WITH_DEPENDENCIES
+
+- `R3-9Q_HUMAN_FINAL_VIDEO_REVIEW_DECISION_APPLY` is loaded into `NEXT_TASK` as `READY`.
+- R3-9Q depends on completed `R3-9P_FINAL_VIDEO_REVIEW_PACKAGE`.
+- Source table: `data/reports/r3_9p_final_video_review_table.md`, filled by Jenn in the current working tree.
+- Current visible final video decision at arrangement time: `accept`, reviewer `Jenn`.
+- `R3-9R_FINAL_DELIVERY_CLOSEOUT` is added to backlog as `READY` and depends on `R3-9Q_HUMAN_FINAL_VIDEO_REVIEW_DECISION_APPLY`.
+- R3-9Q may record local final creative approval only if the final table decision is `accept`.
+- R3-9R may generate local delivery closeout evidence only; it must not publish, deploy, upload, push, tag, release, or change production configuration.
 
 ## R3-9M / R3-9P queue arrangement
 
