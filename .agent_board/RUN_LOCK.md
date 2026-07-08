@@ -22,6 +22,9 @@ last_completed_duration_contract_at: 2026-07-07T18:31:23+08:00
 last_completed_receipt_r1_run_id: codex-20260708-101350-r3-8l-receipt-fix-r1
 last_completed_receipt_r1_task: R3-8L_RECEIPT_FIX_R1
 last_completed_receipt_r1_at: 2026-07-08T10:16:15+08:00
+last_failed_r3_8m_run_id: codex-20260708-102426-r3-8m-live
+last_failed_r3_8m_task: R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY
+last_failed_r3_8m_at: 2026-07-08T10:30:30+08:00
 
 ## Rules
 

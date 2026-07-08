@@ -1,0 +1,166 @@
+{
+  "task": "R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY",
+  "result": "PROVIDER_FAILED",
+  "mode": "live",
+  "generated_at": "2026-07-08T02:29:29.574Z",
+  "source_reports": {
+    "r3_8l_duration_contract_repair": "data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json",
+    "g0_freeze": "data/reports/g0_r1_package_freeze_result.json"
+  },
+  "authorization": {
+    "required_for_real_call": true,
+    "provided": true,
+    "accepted": true,
+    "mechanism": "R3_8M_AUTHORIZATION_SHA256",
+    "expected_sha256": "6d6c85ce16b03301144b6f1720da12026cb093dfaa22da05c962cf1ba4553e32",
+    "full_phrase_recorded": false
+  },
+  "env": {
+    "env_file_found": true,
+    "loaded_keys": [
+      "REAL_PROVIDER_ENABLED",
+      "M1_REAL_PROVIDER",
+      "M1_REAL_PROVIDER_EXECUTION_ALLOWED",
+      "M1_REAL_PROVIDER_COST_ACK",
+      "RUNNINGHUB_API_KEY",
+      "RUNNINGHUB_API_BASE_URL",
+      "PROVIDER_OUTPUT_DOWNLOAD_TIMEOUT_MS",
+      "PROVIDER_TASK_POLL_INTERVAL_MS",
+      "PROVIDER_TASK_POLL_TIMEOUT_MS"
+    ],
+    "skipped_existing_keys": [],
+    "ignored_keys_count": 4,
+    "parse_error_count": 0,
+    "credential_env_name": "RUNNINGHUB_API_KEY",
+    "credential_present": true,
+    "secret_values_exposed": false
+  },
+  "selected_keyframe": {
+    "artifact_id": "artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7",
+    "source_path": "A:\\AI Video Production Workspace\\data\\imports\\g0_r1_SHOT_001_IMAGE_ACCEPTED_WEBGPT.png",
+    "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png",
+    "mime_type": "image/png",
+    "width": 941,
+    "height": 1672,
+    "aspect_ratio": "941:1672",
+    "sha256": "efbea3aa2507cd7d431501eafba3206cf6cfd000174b2d6109371b5e37e6a474",
+    "source_readable": true,
+    "storage_readable": true,
+    "artifact_role": "storyboard_image",
+    "artifact_status": "active",
+    "artifact_id_from_app_registry": true,
+    "source_asset_overwritten": false
+  },
+  "project_linkage": {
+    "project_id": "project_b742cb15-e44e-41b2-8d2d-4b90a30720df",
+    "storyboard_package_id": "storyboard_package_1e5c1eca-624e-4687-9775-31e4b59f428a",
+    "shot_id": "g0_r1_shot_001",
+    "package_shot_duration_seconds": 3,
+    "runninghub_canary_duration_seconds": 6
+  },
+  "provider_contract": {
+    "provider": "runninghub",
+    "api_base_url": "https://www.runninghub.cn",
+    "model_route": "rhart-video-g/image-to-video",
+    "upload_endpoint": "POST /openapi/v2/media/upload/binary",
+    "submit_endpoint": "POST /openapi/v2/rhart-video-g/image-to-video",
+    "query_endpoint": "POST /openapi/v2/query",
+    "request_fields": [
+      "prompt",
+      "aspectRatio",
+      "imageUrls",
+      "resolution",
+      "duration"
+    ],
+    "duration_seconds": 6,
+    "aspectRatio": "9:16",
+    "resolution": "480p",
+    "max_upload_calls": 1,
+    "max_submit_calls": 1,
+    "retry_submit_allowed": false,
+    "output_dir": "data/media/provider-canary/r3-8m-runninghub-6s-real-keyframe/"
+  },
+  "preflight": {
+    "r3_8l_report_result": "PASS_DURATION_CONTRACT_REPAIRED",
+    "r3_8l_duration_seconds": 6,
+    "r3_8l_git_commit": "18f0d90",
+    "r3_8l_receipt_fix_commit": "590f7fd",
+    "network_call_attempted_before_live_step": false
+  },
+  "live_execution": {
+    "upload_call_count": 1,
+    "submit_call_count": 1,
+    "query_call_count": 0,
+    "output_download_attempted": false,
+    "network_call_attempted": true,
+    "runninghub_called": true,
+    "runway_called": false,
+    "provider_job_id": null,
+    "provider_job_id_present": false,
+    "provider_status": null,
+    "upload_download_url_recorded": false,
+    "upload_download_url_host": "rh-images-switch-1252422369.cos.ap-guangzhou.myqcloud.com",
+    "output_url_recorded": false,
+    "output_url_host": null,
+    "channel_link_recorded": false,
+    "error": {
+      "code": "PROVIDER_AUTH_FAILED",
+      "retryable": false,
+      "message": "RunningHub authentication failed.",
+      "sanitized_provider_error_summary": {
+        "http_status": null,
+        "provider_error_code": "1014",
+        "provider_error_message": "Access Denied: Standard Model API is restricted to Enterprise-Shared API Keys only.|访问被拒绝：标准模型API仅限企业级-共享API Key调用。",
+        "provider_error_field": null,
+        "retryable": false
+      }
+    }
+  },
+  "output_artifact": {
+    "generated_artifact_id": null,
+    "storage_uri": null,
+    "ffprobe_status": null,
+    "duration_seconds": null,
+    "has_video_stream": null,
+    "stream_count": null
+  },
+  "provider_boundary": {
+    "network_call_attempted": true,
+    "runninghub_called": true,
+    "runway_called": false,
+    "upload_attempted": true,
+    "submit_attempted": true,
+    "status_poll_attempted": false,
+    "output_download_attempted": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "source_assets_overwritten": false,
+    "secret_values_exposed": false,
+    "raw_provider_payload_recorded": false,
+    "retry_submit_performed": false,
+    "second_submit_performed": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  },
+  "validation": {
+    "npm run r3:8m:live": "PROVIDER_FAILED_AUTH_1014",
+    "npm run typecheck": "PASS",
+    "npm run test:m1": "PASS",
+    "npm run secret:scan": "PASS",
+    "git diff --check": "PASS_WITH_CRLF_WARNINGS_ONLY"
+  },
+  "changed_files": [
+    "package.json",
+    "scripts/r3-8m-runninghub-6s-single-submit-canary.ts",
+    "data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json",
+    ".agent_board/*"
+  ],
+  "blocked_reason": null,
+  "next_step": {
+    "no_automatic_second_submit": true,
+    "stop_after_terminal_result": true
+  }
+}

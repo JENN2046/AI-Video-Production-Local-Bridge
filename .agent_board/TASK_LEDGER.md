@@ -2146,6 +2146,68 @@ Boundary:
 Next:
 - Stop at `R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY` until Jenn provides a fresh exact current authorization phrase with `duration_seconds=6`.
 
+### 2026-07-08T10:30:30+08:00 - R3-8M RunningHub 6s Single-Submit Canary
+
+Result: FAILED / PROVIDER_FAILED_AUTH_1014
+Project: AI Video Production Workspace Three Route Plan
+Lane: Approval Boundary Live Provider Execution
+Claimed by: Codex R3-8M live runner
+Failed by: Codex R3-8M live runner
+Run ID: codex-20260708-102426-r3-8m-live
+Started at: 2026-07-08T10:24:26+08:00
+Failed at: 2026-07-08T10:30:30+08:00
+
+Scope:
+- Executed one authorized RunningHub upload-first live canary using `duration_seconds=6`.
+- Used selected storyboard keyframe artifact `artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7`.
+- Stopped after provider-side auth failure; no retry or second submit.
+
+Changed files:
+- package.json
+- scripts/r3-8m-runninghub-6s-single-submit-canary.ts
+- data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json
+- .agent_board/NEXT_TASK.json
+- .agent_board/NEXT_TASK.md
+- .agent_board/RUN_LOCK.md
+- .agent_board/TASK_BACKLOG.md
+- .agent_board/HANDOFF.md
+- .agent_board/VALIDATION_LOG.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: npm run r3:8m:live
+  result: PROVIDER_FAILED_AUTH_1014
+- command: npm run typecheck
+  result: PASS
+- command: npm run test:m1
+  result: PASS
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json
+- data/reports/secret_scan_result.json
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: pending_at_task_state_write
+- push: no
+- PR: none
+
+Boundary:
+- One authorized media upload occurred.
+- One authorized submit occurred.
+- No provider job id, status query, output URL, output download, local video artifact, ffprobe result, second submit, retry, Runway call, regeneration, batch generation, source overwrite, secret output, signed URL recording, raw provider payload recording, push, tag, release, or deploy occurred.
+
+Risks:
+- RunningHub Standard Model API requires an Enterprise-Shared API Key for this endpoint.
+
+Next:
+- Do not retry RunningHub automatically. A future attempt requires the correct key type or a different authorized provider path plus a fresh exact current Jenn authorization phrase.
+
 ### 2026-07-08T10:16:15+08:00 - R3-8L Receipt Fix R1
 
 Result: DONE / PASS_RECEIPT_FIXED

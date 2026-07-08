@@ -2,44 +2,51 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "R3-8L_RECEIPT_FIX_R1",
-  "status": "DONE",
+  "task_id": "R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY",
+  "status": "FAILED",
   "priority": "P0",
-  "lane": "Provider Evidence Receipt",
+  "lane": "Approval Boundary Live Provider Execution",
   "project": "AI Video Production Workspace Three Route Plan",
-  "title": "R3-8L Receipt Fix R1",
+  "title": "RunningHub 6s Single-Submit Canary",
   "scope": [
-    "backfill R3-8J receipt fix commit 590f7fd",
-    "backfill R3-8L duration contract repair commit 18f0d90",
-    "do not change provider business logic",
-    "do not call RunningHub or Runway"
+    "execute one RunningHub upload-first live canary using duration_seconds=6",
+    "use the selected real storyboard keyframe artifact",
+    "allow same taskId status queries until terminal or timeout",
+    "download successful output to local media artifact storage and ffprobe validate"
   ],
-  "goal": "Repair the local audit chain after R3-8J receipt fix and R3-8L duration-contract repair, before any R3-8M live canary authorization.",
+  "goal": "Run exactly one authorized RunningHub 6-second live canary after R3-8L receipt fix.",
   "acceptance": [
-    "R3-8J receipt-fix ledger entry records commit 590f7fd.",
-    "R3-8L ledger entry records commit 18f0d90.",
-    "R3-8L NEXT_TASK/report receipt metadata records commit 18f0d90 where applicable.",
-    "R3-8M remains FOLLOW_UP and depends on R3-8L_RECEIPT_FIX_R1.",
-    "No RunningHub call, Runway call, media upload, submit, query, output download, provider credit consumption, real video generation, source overwrite, push, tag, release, or deploy occurs."
+    "provider=runninghub",
+    "duration_seconds=6",
+    "aspectRatio=9:16",
+    "resolution=480p",
+    "max_upload_calls=1",
+    "max_submit_calls=1",
+    "no automatic retry or second billable submit",
+    "R3-8M report records sanitized evidence without raw provider payload or secret values"
   ],
   "validation": [
-    "JSON parse for updated report/state files",
+    "npm run r3:8m:live",
+    "npm run typecheck",
+    "npm run test:m1",
     "npm run secret:scan",
     "git diff --check"
   ],
   "allowed_delivery": [
-    "receipt_metadata_update",
-    "task_board_update",
+    "one_authorized_runninghub_upload",
+    "one_authorized_runninghub_submit",
+    "status_query",
+    "output_download_if_succeeded",
+    "ffprobe_if_succeeded",
+    "sanitized_live_result_report",
     "local_commit"
   ],
   "blocked_delivery": [
-    "runninghub_call",
     "runway_call",
-    "media_upload_to_provider",
-    "status_poll",
-    "output_download_from_provider",
-    "provider_credits_consumed",
-    "real_video_generated",
+    "regeneration",
+    "batch",
+    "automatic_retry",
+    "second_submit",
     "secret_value_output",
     "raw_provider_payload_recording",
     "source_overwrite",
@@ -49,52 +56,50 @@
     "deploy"
   ],
   "depends_on": [
-    "R3-8L_RUNNINGHUB_DURATION_CONTRACT_REPAIR_DRY_RUN"
+    "R3-8L_RECEIPT_FIX_R1"
   ],
   "created_at": "2026-07-08T09:55:24+08:00",
-  "updated_at": "2026-07-08T10:16:15+08:00",
-  "claimed_by": "Codex R3-8L receipt fixer R1",
-  "claim_run_id": "codex-20260708-101350-r3-8l-receipt-fix-r1",
-  "claimed_at": "2026-07-08T10:13:50+08:00",
-  "completed_by": "Codex R3-8L receipt fixer R1",
-  "completed_at": "2026-07-08T10:16:15+08:00",
+  "updated_at": "2026-07-08T10:30:30+08:00",
+  "claimed_by": "Codex R3-8M live runner",
+  "claim_run_id": "codex-20260708-102426-r3-8m-live",
+  "claimed_at": "2026-07-08T10:24:26+08:00",
+  "completed_by": null,
+  "completed_at": null,
   "blocked_by": null,
   "blocked_at": null,
-  "failed_by": null,
-  "failed_at": null,
+  "failed_by": "Codex R3-8M live runner",
+  "failed_at": "2026-07-08T10:30:30+08:00",
   "skipped_by": null,
   "skipped_at": null,
-  "result": "PASS_RECEIPT_FIXED",
-  "validation_result": "PASS",
+  "result": "PROVIDER_FAILED_AUTH_1014",
+  "validation_result": "PASS_LOCAL_VALIDATION_PROVIDER_FAILED",
   "evidence": [
-    "data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json",
+    "data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json",
     "data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json",
     "data/reports/secret_scan_result.json"
   ],
-  "commit": "pending_at_task_state_write",
+  "commit": null,
   "delivery": "local_only",
-  "receipt_metadata": {
-    "r3_8j_receipt_fix_commit": "590f7fd",
-    "r3_8l_duration_contract_repair_commit": "18f0d90",
-    "r3_8m_status": "FOLLOW_UP",
-    "r3_8m_depends_on": "R3-8L_RECEIPT_FIX_R1"
+  "authorization": {
+    "provided": true,
+    "mechanism": "R3_8M_AUTHORIZATION_SHA256",
+    "expected_sha256": "6d6c85ce16b03301144b6f1720da12026cb093dfaa22da05c962cf1ba4553e32",
+    "full_phrase_recorded": false
   },
-  "boundary_or_safety_stop": "stop before R3-8M live RunningHub upload-first canary; requires a fresh exact current Jenn authorization phrase with duration_seconds=6",
+  "boundary_or_safety_stop": "no automatic retry, no second submit, no Runway call, no regeneration, no batch, no push, tag, release, or deploy",
   "blocked_reason": null,
-  "failure_reason": null,
+  "failure_reason": "RunningHub returned provider_error_code=1014: Standard Model API is restricted to Enterprise-Shared API Keys only.",
   "safe_actions_completed": [
-    "backfilled R3-8J receipt-fix commit 590f7fd in ledger and report receipt metadata",
-    "backfilled R3-8L duration-contract repair commit 18f0d90 in ledger and report receipt metadata",
-    "confirmed R3-8M remains FOLLOW_UP and depends on R3-8L_RECEIPT_FIX_R1"
+    "executed exactly one authorized RunningHub media upload",
+    "executed exactly one authorized RunningHub submit",
+    "stopped after provider auth failure without retry, second submit, query, output download, or ffprobe"
   ],
   "unsafe_action_not_performed": [
-    "runninghub_call",
     "runway_call",
-    "media_upload_to_provider",
-    "status_poll",
-    "output_download_from_provider",
-    "provider_credits_consumed",
-    "real_video_generated",
+    "regeneration",
+    "batch",
+    "automatic_retry",
+    "second_submit",
     "secret_value_output",
     "raw_provider_payload_recording",
     "source_overwrite",
@@ -105,6 +110,6 @@
   ],
   "options_for_jenn": [],
   "next_safe_option": [
-    "After this receipt fix, stop at R3-8M because any live RunningHub retry requires a fresh exact current Jenn authorization phrase with duration_seconds=6."
+    "After R3-8M terminal result, record sanitized receipt and stop."
   ]
 }

@@ -118,6 +118,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - R3-8J receipt fix completed locally: R3-8J evidence now references commit `1f68c36`, upload count `1`, submit count `1`, query count `0`, no job id, no output/channel link, and minimum duration `6`.
 - R3-8L completed locally: RunningHub duration guard now blocks `duration_seconds=3` before upload/submit and dry-runs the next real-keyframe plan with `duration_seconds=6`, `max_upload_calls=1`, `max_submit_calls=1`, and `query_until_terminal=true`.
 - R3-8L receipt fix R1 completed locally: R3-8J receipt-fix commit `590f7fd` and R3-8L duration-contract repair commit `18f0d90` are now backfilled in the audit chain.
+- R3-8M executed one authorized RunningHub upload and one authorized submit on 2026-07-08. Result: `PROVIDER_FAILED_AUTH_1014`; RunningHub rejected the submit because Standard Model API is restricted to Enterprise-Shared API Keys only. No task id, output URL, local video artifact, ffprobe result, or channel link exists.
 
 ## Blocked in last run
 
@@ -125,7 +126,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 
 ## Failed in last run
 
-- R3-8J RunningHub real-keyframe canary failed provider-side with `PROVIDER_FAILED_DURATION_MIN_6`.
+- R3-8M RunningHub 6-second canary failed provider-side with `PROVIDER_FAILED_AUTH_1014`.
 
 ## Skipped in last run
 
@@ -170,6 +171,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - `data/reports/r3_8i_runninghub_real_keyframe_authorization_prep_result.json`
 - `data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json`
 - `data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json`
+- `data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json`
 - `ops/reports/three_route_acceptance_review_package_20260707_103611/THREE_ROUTE_ACCEPTANCE_REVIEW.md`
 - `ops/reports/three_route_acceptance_review_package_20260707_103611/README.md`
 
@@ -183,7 +185,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 
 - R3-8J is `FAILED` with `PROVIDER_FAILED_DURATION_MIN_6`; do not rerun it automatically.
 - R3-8L enforced RunningHub minimum duration `6` before upload/submit.
-- Next possible task is `R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY`, but it remains `FOLLOW_UP` and must not run automatically.
-- Any next RunningHub retry must be a new exact current Jenn authorization phrase and must use `duration_seconds=6`.
+- R3-8M failed with `PROVIDER_FAILED_AUTH_1014`; do not retry automatically.
+- Any next RunningHub retry requires an Enterprise-Shared API Key or a different authorized provider path, plus a new exact current Jenn authorization phrase.
 - Do not submit to RunningHub without a future exact current Jenn authorization phrase.
 - Do not retry Runway canary without a new exact current Jenn authorization phrase.

@@ -1293,6 +1293,37 @@ Notes:
 - Confirmed R3-8M remains `FOLLOW_UP` and depends on `R3-8L_RECEIPT_FIX_R1`.
 - No RunningHub call, Runway call, upload, submit, query, output download, provider credit consumption, real video generation, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
 
+### R3-8M - 2026-07-08T10:30:30+08:00
+
+Commands:
+
+```bash
+npm run r3:8m:live
+npm run typecheck
+npm run test:m1
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PROVIDER_FAILED_AUTH_1014
+```
+
+Evidence:
+- `data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json`
+- `data/reports/secret_scan_result.json`
+
+Notes:
+- Exactly one authorized RunningHub media upload was attempted.
+- Exactly one authorized RunningHub submit was attempted.
+- RunningHub returned provider error code `1014`: Standard Model API is restricted to Enterprise-Shared API Keys only.
+- `query_call_count=0`, `provider_job_id_present=false`, `real_video_generated=false`, and `provider_credits_consumed=false`.
+- No retry, second submit, Runway call, regeneration, batch generation, source overwrite, secret output, signed URL recording, raw provider payload recording, push, tag, release, or deploy occurred.
+- `npm run typecheck`, `npm run test:m1`, and `npm run secret:scan` passed.
+- `git diff --check` passed with CRLF normalization warnings only.
+
 ### R3-8J - 2026-07-07T17:46:23+08:00
 
 Commands:

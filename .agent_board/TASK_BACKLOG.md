@@ -2127,7 +2127,7 @@ Repair the local audit chain after R3-8J receipt fix and R3-8L duration-contract
 
 ## R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY - RunningHub 6s Single-Submit Canary
 
-status: FOLLOW_UP
+status: FAILED
 priority: P0
 lane: Approval Boundary Live Provider Execution
 project: AI Video Production Workspace Three Route Plan
@@ -2139,7 +2139,17 @@ report_path: data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json
 allowed_delivery: one_authorized_runninghub_upload,one_authorized_runninghub_submit,status_query,output_download_if_succeeded,ffprobe_if_succeeded,sanitized_live_result_report,local_commit
 blocked_delivery: runninghub_call_without_exact_authorization,runway_call,second_submit,retry_live_submit,regeneration,batch_generation,secret_value_output,raw_provider_payload_recording,source_overwrite,push,tag,release,deploy
 created_at: 2026-07-07T17:55:56+08:00
-updated_at: 2026-07-08T09:55:24+08:00
+updated_at: 2026-07-08T10:24:26+08:00
+claimed_by: Codex R3-8M live runner
+claim_run_id: codex-20260708-102426-r3-8m-live
+claimed_at: 2026-07-08T10:24:26+08:00
+failed_by: Codex R3-8M live runner
+failed_at: 2026-07-08T10:30:30+08:00
+result: PROVIDER_FAILED_AUTH_1014
+validation_result: PASS_LOCAL_VALIDATION_PROVIDER_FAILED
+evidence: data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json
+delivery: local_only
+failure_reason: RunningHub provider_error_code=1014; Standard Model API is restricted to Enterprise-Shared API Keys only.
 
 ### Goal
 
