@@ -13,6 +13,7 @@ completed_by: Codex R3-9R final delivery closeout
 completed_at: 2026-07-08T19:45:15+08:00
 result: PASS_FINAL_DELIVERY_CLOSEOUT_READY
 validation_result: PASS
+commit: 17e60e6
 source_report: data/reports/r3_9q_human_final_video_review_decision_apply_result.json
 assembly_report: data/reports/r3_9o_final_video_assembly_execution_result.json
 report_path: data/reports/r3_9r_final_delivery_closeout_result.json

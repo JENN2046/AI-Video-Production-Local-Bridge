@@ -3606,7 +3606,7 @@ Evidence:
 - A:\AI Video Production Workspace\data\media\artifacts\final\r3-9o-final-video\ryan_lunch_break_skullcap_final_r3_9o.mp4
 
 Git delivery:
-- commit: PENDING_LOCAL_COMMIT
+- commit: 17e60e6
 - push: no
 
 Boundary:

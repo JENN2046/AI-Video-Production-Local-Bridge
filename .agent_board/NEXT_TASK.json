@@ -87,7 +87,7 @@
     "data/reports/r3_9r_final_delivery_evidence_manifest.json",
     "data/reports/r3_9r_local_video_delivery_summary.md"
   ],
-  "commit": "PENDING_LOCAL_COMMIT",
+  "commit": "17e60e6",
   "delivery": {
     "local_closeout_ready": true,
     "final_video_path": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\final\\r3-9o-final-video\\ryan_lunch_break_skullcap_final_r3_9o.mp4",

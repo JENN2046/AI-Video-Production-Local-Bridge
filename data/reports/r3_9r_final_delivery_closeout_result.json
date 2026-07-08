@@ -180,7 +180,7 @@
   "git_receipt": {
     "repo": true,
     "branch": "master",
-    "commit": "PENDING_LOCAL_COMMIT",
+    "commit": "17e60e6",
     "task": "R3-9R_FINAL_DELIVERY_CLOSEOUT",
     "push": false,
     "pr": null,

@@ -57,6 +57,7 @@ Result: READY_TASKS_QUEUED_WITH_DEPENDENCIES
 - Final video artifact: `artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe`.
 - Final human decision: `accept`, reviewer `Jenn`, final creative approval recorded locally.
 - Validation passed: `npm run r3:9r:closeout`, JSON/path/ffprobe/lineage check, `npm run typecheck`, `npm run test:m1`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
+- R3-9R local implementation commit: `17e60e6`.
 - No publish, deploy, upload, push, tag, release, provider call, env read, credential read, regeneration, batch expansion, final reassembly, source overwrite, raw provider payload recording, signed URL recording, secret output, or production configuration change occurred.
 
 ## R3-9M / R3-9P queue arrangement
