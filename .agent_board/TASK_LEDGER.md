@@ -2321,6 +2321,82 @@ Decision update:
 - 2026-07-08T11:11:39+08:00: Jenn selected `runninghub_enterprise_shared_api_key` as the primary provider-access path.
 - This selection did not authorize a live provider call, credential read, credential write, production credential change, push, tag, release, or deploy.
 
+### 2026-07-08T11:28:19+08:00 - R3-8O RunningHub Enterprise Key 6s Single-Submit Canary
+
+Result: DONE / PASS_LIVE_SINGLE_SUBMIT_COMPLETED
+Project: AI Video Production Workspace Three Route Plan
+Lane: Approval Boundary Live Provider Execution
+Claimed by: Codex R3-8O live runner
+Completed by: Codex R3-8O live runner
+Run ID: codex-20260708-112510-r3-8o-live
+Started at: 2026-07-08T11:25:10+08:00
+Completed at: 2026-07-08T11:28:19+08:00
+
+Scope:
+- Used Jenn's exact current authorization for read-only `.env.local` env/preflight and one RunningHub Enterprise Key 6s single-submit canary.
+- Used selected storyboard keyframe artifact `artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7`.
+
+Changed files:
+- package.json
+- scripts/r3-8m-runninghub-6s-single-submit-canary.ts
+- scripts/r3-8o-runninghub-enterprise-key-6s-single-submit-canary.ts
+- data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_result.json
+- data/reports/provider_env_check_result.json
+- data/reports/provider_preflight_result.json
+- data/reports/secret_scan_result.json
+- .agent_board/NEXT_TASK.json
+- .agent_board/NEXT_TASK.md
+- .agent_board/RUN_LOCK.md
+- .agent_board/TASK_BACKLOG.md
+- .agent_board/HANDOFF.md
+- .agent_board/VALIDATION_LOG.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: npm run env:check with RunningHub override
+  result: PASS
+- command: npm run provider:preflight with RunningHub override
+  result: PASS
+- command: npm run typecheck
+  result: PASS
+- command: npm run test:m1
+  result: PASS
+- command: npm run r3:8o:live
+  result: PASS_LIVE_SINGLE_SUBMIT_COMPLETED
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_result.json
+- data/reports/provider_env_check_result.json
+- data/reports/provider_preflight_result.json
+- data/reports/secret_scan_result.json
+- local generated artifact: artifact_5bd5b213-3b8b-4717-bec7-298be59b0f62
+- local generated video: data/media/provider-canary/r3-8o-runninghub-enterprise-key-6s-real-keyframe/artifact_5bd5b213-3b8b-4717-bec7-298be59b0f62.mp4
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: pending
+- push: no
+- PR: none
+
+Provider execution:
+- upload_call_count: 1
+- submit_call_count: 1
+- query_call_count: 12
+- provider_status: SUCCESS
+- generated_artifact_id: artifact_5bd5b213-3b8b-4717-bec7-298be59b0f62
+- ffprobe_status: PASS
+
+Boundary:
+- No retry, second submit, Runway call, regeneration, batch generation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+
+Next:
+- Promote `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT` to `READY` if a provider path closeout report is desired.
+
 ### 2026-07-08T10:16:15+08:00 - R3-8L Receipt Fix R1
 
 Result: DONE / PASS_RECEIPT_FIXED

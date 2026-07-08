@@ -1,10 +1,10 @@
 {
   "result": "PASS",
-  "provider_name": "runway",
+  "provider_name": "runninghub",
   "real_provider_enabled": true,
   "execution_allowed": true,
   "cost_acknowledged": true,
-  "credential_env_name": "RUNWAYML_API_SECRET",
+  "credential_env_name": "RUNNINGHUB_API_KEY",
   "credential_present": true,
   "missing": [],
   "no_network_call": true,
@@ -13,10 +13,6 @@
     "env_file_found": true,
     "disabled": false,
     "loaded_keys": [
-      "REAL_PROVIDER_ENABLED",
-      "M1_REAL_PROVIDER",
-      "M1_REAL_PROVIDER_EXECUTION_ALLOWED",
-      "M1_REAL_PROVIDER_COST_ACK",
       "RUNWAYML_API_SECRET",
       "RUNWAYML_API_BASE_URL",
       "RUNWAYML_API_VERSION",
@@ -27,7 +23,12 @@
       "PROVIDER_TASK_POLL_INTERVAL_MS",
       "PROVIDER_TASK_POLL_TIMEOUT_MS"
     ],
-    "skipped_existing_keys": [],
+    "skipped_existing_keys": [
+      "REAL_PROVIDER_ENABLED",
+      "M1_REAL_PROVIDER",
+      "M1_REAL_PROVIDER_EXECUTION_ALLOWED",
+      "M1_REAL_PROVIDER_COST_ACK"
+    ],
     "ignored_keys": [],
     "parse_errors": [],
     "secret_values_exposed": false

@@ -2,66 +2,77 @@
 
 Status: DONE
 
-Task: R3-8N_PROVIDER_ACCESS_STRATEGY_DECISION
+Task: R3-8O_RUNNINGHUB_ENTERPRISE_KEY_6S_SINGLE_SUBMIT_CANARY
 
-Title: R3-8N Provider Access Strategy Decision
+Title: R3-8O RunningHub Enterprise Key 6s Single-Submit Canary
 
 Priority: P0
 
-Lane: Provider Access Strategy
+Lane: Approval Boundary Live Provider Execution
 
 Project: AI Video Production Workspace Three Route Plan
 
-Depends on: R3-8M_RECEIPT_FIX
+Depends on: R3-8N_PROVIDER_ACCESS_STRATEGY_DECISION
 
 ## Goal
 
-Select the next provider-access strategy without making any live provider call or credential/account change.
+Run exactly one Jenn-authorized RunningHub 6-second live canary with the Enterprise-Shared API Key path.
 
-## Required Decision Options
+## Authorized Scope
 
-- Apply for or configure a RunningHub Enterprise-Shared API Key for Standard Model API.
-- Switch to an authorized RunningHub non-standard-model or workflow API path.
-- Return to Runway only after credits/account readiness is resolved.
-- Add a third provider path if it is lower-risk and can be contract-frozen before live use.
+- Read `A:/AI Video Production Workspace/.env.local` read-only for `env-check` and `provider-preflight`.
+- `provider=runninghub`
+- `api_base_url=https://www.runninghub.cn`
+- `upload_endpoint=POST /openapi/v2/media/upload/binary`
+- `submit_endpoint=POST /openapi/v2/rhart-video-g/image-to-video`
+- `query_endpoint=POST /openapi/v2/query`
+- `selected_artifact_id=artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7`
+- `duration_seconds=6`
+- `aspectRatio=9:16`
+- `resolution=480p`
+- `max_upload_calls=1`
+- `max_submit_calls=1`
 
-## Acceptance
+## Hard Stops
 
-- Summarize Runway evidence: canary reached provider but failed for credits/account readiness.
-- Summarize RunningHub evidence: duration contract fixed to `6`, but Standard Model API requires Enterprise-Shared API Key.
-- Recommend a primary next path and one fallback path.
-- Produce a no-network decision report with clear approval boundaries for any future live call.
-- Do not read `.env.local` or credentials.
-- Do not call any provider.
+- Do not retry or perform a second submit.
+- Do not call Runway.
+- Do not run batch or regeneration.
+- Do not print, record, commit, or leak secret values.
+- Do not record raw provider payloads or signed URLs.
+- Do not overwrite source assets.
+- Do not push, tag, release, or deploy.
 
 ## Validation
 
-- JSON parse for decision report
+- `npm run env:check`
+- `npm run provider:preflight`
+- `npm run typecheck`
+- `npm run test:m1`
 - `npm run secret:scan`
 - `git diff --check`
 
-## Stop Reason
-
-Stop before any provider call, credential read, credential write, account change, push, tag, release, or deploy.
-
 ## Claim
 
-- claimed_by: Codex R3-8N strategy decider
-- claim_run_id: codex-20260708-105731-r3-8n-strategy
-- claimed_at: 2026-07-08T10:57:31+08:00
+- claimed_by: Codex R3-8O live runner
+- claim_run_id: codex-20260708-112510-r3-8o-live
+- claimed_at: 2026-07-08T11:25:10+08:00
 
 ## Result
 
-`PASS_PROVIDER_ACCESS_STRATEGY_DECIDED`
+`PASS_LIVE_SINGLE_SUBMIT_COMPLETED`
 
 ## Completed Work
 
-- Produced `data/reports/r3_8n_provider_access_strategy_decision.json`.
-- Summarized Runway as blocked on credits/account readiness before another live submit.
-- Summarized RunningHub as blocked by Standard Model API key type `1014`.
-- Recommended RunningHub Enterprise-Shared API Key access as the primary next path.
-- Recommended an authorized RunningHub workflow or non-standard-model route as the fallback.
+- Read `.env.local` read-only for authorized env-check and provider-preflight.
+- Ran exactly one RunningHub media upload.
+- Ran exactly one RunningHub submit.
+- Queried the returned `taskId` until `SUCCESS`.
+- Downloaded output to `data/media/provider-canary/r3-8o-runninghub-enterprise-key-6s-real-keyframe/`.
+- Registered generated artifact `artifact_5bd5b213-3b8b-4717-bec7-298be59b0f62`.
+- ffprobe validation: `PASS`.
+- No retry, second submit, Runway call, regeneration, batch, source overwrite, push, tag, release, or deploy occurred.
 
 ## Completed At
 
-2026-07-08T11:00:08+08:00
+2026-07-08T11:28:19+08:00

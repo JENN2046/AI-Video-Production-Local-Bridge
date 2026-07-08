@@ -54,6 +54,7 @@
     "r3:8j:live": "npm run build && node dist/scripts/r3-8j-runninghub-real-keyframe-single-submit-canary.js --live",
     "r3:8l:dry-run": "npm run build && node dist/scripts/r3-8l-runninghub-duration-contract-repair-dry-run.js",
     "r3:8m:live": "npm run build && node dist/scripts/r3-8m-runninghub-6s-single-submit-canary.js --live",
+    "r3:8o:live": "npm run build && node dist/scripts/r3-8o-runninghub-enterprise-key-6s-single-submit-canary.js --live",
     "r2:4:h4-workbench": "npm run build && node dist/scripts/r2-4-h4-final-assembly-workbench.js",
     "r2:5:h5-workbench": "npm run build && node dist/scripts/r2-5-h5-memory-asset-workbench.js",
     "test:m1:real": "npm run build && node dist/scripts/test-m1-real.js",

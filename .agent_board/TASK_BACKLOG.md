@@ -2266,7 +2266,7 @@ Select the next provider-access strategy without making any live provider call o
 
 ## R3-8O_RUNNINGHUB_ENTERPRISE_KEY_6S_SINGLE_SUBMIT_CANARY - RunningHub Enterprise Key 6s Single-Submit Canary
 
-status: FOLLOW_UP
+status: DONE
 priority: P0
 lane: Approval Boundary Live Provider Execution
 project: AI Video Production Workspace Three Route Plan
@@ -2278,7 +2278,18 @@ report_path: data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canar
 allowed_delivery: env_check_with_authorization,provider_preflight_with_authorization,one_authorized_runninghub_upload,one_authorized_runninghub_submit,status_query,output_download_if_succeeded,ffprobe_if_succeeded,sanitized_live_result_report,local_commit
 blocked_delivery: runninghub_call_without_exact_authorization,env_local_read_without_exact_authorization,credential_value_output,runway_call,second_submit,retry_live_submit,regeneration,batch_generation,raw_provider_payload_recording,source_overwrite,push,tag,release,deploy,production_credentials_change
 created_at: 2026-07-08T11:12:10+08:00
-updated_at: 2026-07-08T11:12:10+08:00
+updated_at: 2026-07-08T11:28:19+08:00
+claimed_by: Codex R3-8O live runner
+claim_run_id: codex-20260708-112510-r3-8o-live
+claimed_at: 2026-07-08T11:25:10+08:00
+authorization_sha256: 07adac0bfb9b35a3175e555f81579f6ff3512a178d9d88b61c76cc58f034bf65
+full_authorization_phrase_recorded: false
+completed_by: Codex R3-8O live runner
+completed_at: 2026-07-08T11:28:19+08:00
+result: PASS_LIVE_SINGLE_SUBMIT_COMPLETED
+validation_result: PASS
+evidence: data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_result.json,data/reports/provider_env_check_result.json,data/reports/provider_preflight_result.json,data/reports/secret_scan_result.json
+commit: pending_at_task_state_write
 
 ### Goal
 

@@ -1,14 +1,30 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260708-105731-r3-8n-strategy
-Last result: R3-8N completed offline provider access strategy decision with PASS_PROVIDER_ACCESS_STRATEGY_DECIDED
+Last run: codex-20260708-112510-r3-8o-live
+Last result: R3-8O completed RunningHub Enterprise Key 6s live canary with PASS_LIVE_SINGLE_SUBMIT_COMPLETED
 
 ## Current state
 
 Current task: none
 Current status: DONE
 Current owner: None
+
+## R3-8O closeout
+
+Completed at: 2026-07-08T11:28:19+08:00
+Result: PASS_LIVE_SINGLE_SUBMIT_COMPLETED
+Report: `data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_result.json`
+
+- RunningHub-targeted env-check and provider-preflight passed without printing secret values.
+- Exactly one authorized RunningHub media upload was attempted.
+- Exactly one authorized RunningHub submit was attempted.
+- Query was performed only for the returned taskId until `SUCCESS`; query count was `12`.
+- Output was downloaded into local media storage and registered as generated artifact `artifact_5bd5b213-3b8b-4717-bec7-298be59b0f62`.
+- Local video path: `data/media/provider-canary/r3-8o-runninghub-enterprise-key-6s-real-keyframe/artifact_5bd5b213-3b8b-4717-bec7-298be59b0f62.mp4`.
+- ffprobe validation: `PASS`.
+- No retry, second submit, Runway call, regeneration, batch generation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+- `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT` remains `FOLLOW_UP` unless Jenn promotes it.
 
 ## R3-8N closeout
 

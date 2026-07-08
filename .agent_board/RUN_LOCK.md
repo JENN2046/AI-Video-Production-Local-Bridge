@@ -31,6 +31,9 @@ last_completed_r3_8m_receipt_at: 2026-07-08T10:51:49+08:00
 last_completed_r3_8n_run_id: codex-20260708-105731-r3-8n-strategy
 last_completed_r3_8n_task: R3-8N_PROVIDER_ACCESS_STRATEGY_DECISION
 last_completed_r3_8n_at: 2026-07-08T11:00:08+08:00
+last_completed_r3_8o_run_id: codex-20260708-112510-r3-8o-live
+last_completed_r3_8o_task: R3-8O_RUNNINGHUB_ENTERPRISE_KEY_6S_SINGLE_SUBMIT_CANARY
+last_completed_r3_8o_at: 2026-07-08T11:28:19+08:00
 
 ## Rules
 

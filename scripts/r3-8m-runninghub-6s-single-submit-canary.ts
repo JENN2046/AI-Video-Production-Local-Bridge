@@ -30,18 +30,27 @@ import {
   type ProviderToolError
 } from "../src/index.js";
 
-const TASK = "R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY";
-const R3_8L_REPORT_PATH = "data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json";
-const G0_FREEZE_REPORT_PATH = "data/reports/g0_r1_package_freeze_result.json";
-const OUTPUT_REPORT_PATH = "data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json";
-const OUTPUT_DIR_RELATIVE = "data/media/provider-canary/r3-8m-runninghub-6s-real-keyframe/";
+function envString(name: string, fallback: string): string {
+  const value = process.env[name]?.trim();
+  return value ? value : fallback;
+}
+
+const TASK = envString("RUNNINGHUB_CANARY_TASK", "R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY");
+const R3_8L_REPORT_PATH = envString("RUNNINGHUB_CANARY_R3_8L_REPORT_PATH", "data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json");
+const STRATEGY_REPORT_PATH = process.env.RUNNINGHUB_CANARY_STRATEGY_REPORT_PATH?.trim() ?? "";
+const G0_FREEZE_REPORT_PATH = envString("RUNNINGHUB_CANARY_G0_FREEZE_REPORT_PATH", "data/reports/g0_r1_package_freeze_result.json");
+const OUTPUT_REPORT_PATH = envString("RUNNINGHUB_CANARY_OUTPUT_REPORT_PATH", "data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json");
+const OUTPUT_DIR_RELATIVE = envString("RUNNINGHUB_CANARY_OUTPUT_DIR_RELATIVE", "data/media/provider-canary/r3-8m-runninghub-6s-real-keyframe/");
 const SELECTED_ARTIFACT_ID = "artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7";
 const SELECTED_SOURCE_PATH = "A:\\AI Video Production Workspace\\data\\imports\\g0_r1_SHOT_001_IMAGE_ACCEPTED_WEBGPT.png";
 const SELECTED_STORAGE_URI = "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png";
-const AUTHORIZATION_SHA256 = "6d6c85ce16b03301144b6f1720da12026cb093dfaa22da05c962cf1ba4553e32";
+const AUTHORIZATION_ENV_NAME = envString("RUNNINGHUB_CANARY_AUTHORIZATION_ENV_NAME", "R3_8M_AUTHORIZATION_SHA256");
+const AUTHORIZATION_SHA256 = envString("RUNNINGHUB_CANARY_AUTHORIZATION_EXPECTED_SHA256", "6d6c85ce16b03301144b6f1720da12026cb093dfaa22da05c962cf1ba4553e32");
 const DURATION_SECONDS = 6;
 const ASPECT_RATIO = "9:16";
 const RESOLUTION = RUNNINGHUB_DEFAULT_RESOLUTION;
+const VALIDATION_COMMAND_NAME = envString("RUNNINGHUB_CANARY_VALIDATION_COMMAND_NAME", "npm run r3:8m:live");
+const SCRIPT_PATH_FOR_REPORT = envString("RUNNINGHUB_CANARY_SCRIPT_PATH_FOR_REPORT", "scripts/r3-8m-runninghub-6s-single-submit-canary.ts");
 const POLL_INTERVAL_MS_DEFAULT = 5000;
 const POLL_TIMEOUT_MS_DEFAULT = 600000;
 const REQUEST_TIMEOUT_MS_DEFAULT = 60000;
@@ -428,13 +437,14 @@ function baseReport(input: {
     generated_at: new Date().toISOString(),
     source_reports: {
       r3_8l_duration_contract_repair: R3_8L_REPORT_PATH,
-      g0_freeze: G0_FREEZE_REPORT_PATH
+      g0_freeze: G0_FREEZE_REPORT_PATH,
+      ...(STRATEGY_REPORT_PATH ? { provider_access_strategy: STRATEGY_REPORT_PATH } : {})
     },
     authorization: {
       required_for_real_call: true,
-      provided: Boolean(process.env.R3_8M_AUTHORIZATION_SHA256),
-      accepted: process.env.R3_8M_AUTHORIZATION_SHA256 === AUTHORIZATION_SHA256,
-      mechanism: "R3_8M_AUTHORIZATION_SHA256",
+      provided: Boolean(process.env[AUTHORIZATION_ENV_NAME]),
+      accepted: process.env[AUTHORIZATION_ENV_NAME] === AUTHORIZATION_SHA256,
+      mechanism: AUTHORIZATION_ENV_NAME,
       expected_sha256: AUTHORIZATION_SHA256,
       full_phrase_recorded: false
     },
@@ -542,7 +552,7 @@ function baseReport(input: {
       release_or_deploy_performed: false
     },
     validation: {
-      "npm run r3:8m:live": "PENDING",
+      [VALIDATION_COMMAND_NAME]: "PENDING",
       "npm run typecheck": "PENDING",
       "npm run test:m1": "PENDING",
       "npm run secret:scan": "PENDING",
@@ -550,7 +560,7 @@ function baseReport(input: {
     },
     changed_files: [
       "package.json",
-      "scripts/r3-8m-runninghub-6s-single-submit-canary.ts",
+      SCRIPT_PATH_FOR_REPORT,
       OUTPUT_REPORT_PATH,
       ".agent_board/*"
     ],
@@ -577,8 +587,8 @@ async function main(): Promise<JsonRecord> {
     const credential = process.env.RUNNINGHUB_API_KEY ?? "";
     const secrets = [credential].filter(Boolean);
 
-    if (!process.argv.includes("--live")) return block(report, "R3-8M live runner requires --live.");
-    if (process.env.R3_8M_AUTHORIZATION_SHA256 !== AUTHORIZATION_SHA256) return block(report, "R3-8M live call requires the matching current authorization hash.");
+    if (!process.argv.includes("--live")) return block(report, `${TASK} live runner requires --live.`);
+    if (process.env[AUTHORIZATION_ENV_NAME] !== AUTHORIZATION_SHA256) return block(report, `${TASK} live call requires the matching current authorization hash.`);
     if (!envLoad.credential_present || !credential) return block(report, "RUNNINGHUB_API_KEY is not present.");
     if (r3_8lReport?.result !== "PASS_DURATION_CONTRACT_REPAIRED") return block(report, "R3-8L duration contract report is missing or not PASS.");
     if (payloadObject(r3_8lReport.dry_run_plan).duration_seconds !== DURATION_SECONDS) return block(report, "R3-8L dry-run duration is not 6 seconds.");
@@ -701,7 +711,7 @@ const report = await main();
 const credential = process.env.RUNNINGHUB_API_KEY ?? "";
 if (containsForbiddenLiveLeak(report, [credential])) {
   report.result = "BLOCK_WITH_REASON";
-  report.blocked_reason = "R3-8M report contained forbidden secret-shaped, signed URL, base64, or raw provider payload text.";
+  report.blocked_reason = `${TASK} report contained forbidden secret-shaped, signed URL, base64, or raw provider payload text.`;
   report.provider_boundary = { ...(report.provider_boundary as JsonRecord), secret_values_exposed: false, raw_provider_payload_recorded: false };
 }
 

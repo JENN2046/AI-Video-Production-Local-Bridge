@@ -1380,6 +1380,42 @@ Notes:
 - No RunningHub call, Runway call, upload, submit, query, output download, provider credit consumption, real video generation, credential/account change, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
 - 2026-07-08T11:11:39+08:00 decision update: Jenn selected RunningHub Enterprise-Shared API Key as the primary path; this selection did not authorize provider calls or credential reads/writes.
 
+### R3-8O - 2026-07-08T11:28:19+08:00
+
+Commands:
+
+```bash
+npm run env:check
+npm run provider:preflight
+npm run typecheck
+npm run test:m1
+npm run r3:8o:live
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_LIVE_SINGLE_SUBMIT_COMPLETED
+```
+
+Evidence:
+- `data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_result.json`
+- `data/reports/provider_env_check_result.json`
+- `data/reports/provider_preflight_result.json`
+- `data/reports/secret_scan_result.json`
+- local artifact: `artifact_5bd5b213-3b8b-4717-bec7-298be59b0f62`
+
+Notes:
+- RunningHub-targeted env-check and provider-preflight passed without printing secret values.
+- Exactly one authorized RunningHub media upload was attempted.
+- Exactly one authorized RunningHub submit was attempted.
+- Query was performed only for the returned taskId until `SUCCESS`; query count was `12`.
+- Output was downloaded to local media storage and ffprobe validation returned `PASS`.
+- Generated local artifact: `artifact_5bd5b213-3b8b-4717-bec7-298be59b0f62`.
+- No retry, second submit, Runway call, regeneration, batch generation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+
 ### R3-8J - 2026-07-07T17:46:23+08:00
 
 Commands:
