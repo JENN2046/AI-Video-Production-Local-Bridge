@@ -65,7 +65,7 @@
   "git_receipt": {
     "repo": true,
     "branch": "master",
-    "commit": "PENDING_LOCAL_COMMIT",
+    "commit": "3101e15",
     "task": "R1-8_WEBGPT_OPERATOR_RUNBOOK_AND_PROMPT_PACK",
     "push": false,
     "pr": null,

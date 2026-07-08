@@ -73,7 +73,7 @@
     "docs/webgpt/WEBGPT_PROMPT_PACK_R1_8.md",
     "data/reports/r1_8_webgpt_operator_runbook_and_prompt_pack_result.json"
   ],
-  "commit": "PENDING_LOCAL_COMMIT",
+  "commit": "3101e15",
   "delivery": "local_docs_and_prompt_pack_only",
   "boundary_or_safety_stop": "documentation and prompt pack only; no public tunnel, provider call, env or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change",
   "blocked_reason": null,

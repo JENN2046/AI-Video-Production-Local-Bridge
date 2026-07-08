@@ -17,7 +17,7 @@ Current owner: none
 - Created Chinese prompt pack: `docs/webgpt/WEBGPT_PROMPT_PACK_R1_8.md`.
 - Report: `data/reports/r1_8_webgpt_operator_runbook_and_prompt_pack_result.json`.
 - Validation passed: JSON parse, required section check, `npm run typecheck`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
-- R1-8 local implementation commit: `PENDING_LOCAL_COMMIT`.
+- R1-8 local implementation commit: `3101e15`.
 - No public tunnel, provider call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
 - Backlog now promotes `R1-9_CHATGPT_MCP_APP_PACKAGING_DECISION` to `READY` and adds the downstream R2G ChatGPT MCP bridge task chain.
 - Next eligible task after R1-8 local commit: `R1-9_CHATGPT_MCP_APP_PACKAGING_DECISION`.
