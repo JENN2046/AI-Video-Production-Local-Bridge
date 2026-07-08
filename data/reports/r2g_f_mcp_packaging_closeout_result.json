@@ -118,7 +118,7 @@
   "git_receipt": {
     "repo": true,
     "branch": "master",
-    "commit": "PENDING_LOCAL_COMMIT",
+    "commit": "a19b684",
     "task": "R2G-F_MCP_PACKAGING_CLOSEOUT",
     "push": false,
     "pr": null,

@@ -33,7 +33,7 @@
   "git_receipt": {
     "repo": true,
     "branch": "master",
-    "commit": "PENDING_LOCAL_COMMIT",
+    "commit": "a19b684",
     "task": "R2G-E_HUMAN_CONFIRMATION_AND_WRITE_GATES",
     "push": false,
     "pr": null,
