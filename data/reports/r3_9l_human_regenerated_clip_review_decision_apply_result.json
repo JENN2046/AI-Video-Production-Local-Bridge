@@ -297,7 +297,7 @@
   "git_receipt": {
     "repo": true,
     "branch": "master",
-    "commit": "PENDING_LOCAL_COMMIT",
+    "commit": "fdd0b5c",
     "task": "R3-9L_HUMAN_REGENERATED_CLIP_REVIEW_DECISION_APPLY",
     "push": false,
     "pr": null,

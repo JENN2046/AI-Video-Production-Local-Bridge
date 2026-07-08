@@ -89,7 +89,7 @@
     "data/reports/r3_9j_runninghub_regeneration_single_pass_live_execution_result.json",
     "data/reports/r3_9l_human_regenerated_clip_review_decision_apply_result.json"
   ],
-  "commit": null,
+  "commit": "fdd0b5c",
   "delivery": "local_review_decision_apply_only",
   "boundary_or_safety_stop": "decision apply only; no provider call, regeneration execution, final assembly, env or credential read, source overwrite, or deployment",
   "blocked_reason": null,

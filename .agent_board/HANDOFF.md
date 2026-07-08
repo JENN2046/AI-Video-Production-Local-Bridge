@@ -534,5 +534,5 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
   - `g0_r1_shot_004`: `artifact_263a2344-5154-4981-bfe4-120571effb3e`
 - All 4 shots are locally `approved` and their `accepted_clip_artifact_id` points to the regenerated clip.
 - Final assembly was not executed; next safe task is a separate final assembly readiness check.
-- R3-9L local implementation commit: `PENDING_LOCAL_COMMIT`.
+- R3-9L local implementation commit: `fdd0b5c`.
 - No provider call, regeneration, batch expansion, final assembly, `.env` or credential read, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
