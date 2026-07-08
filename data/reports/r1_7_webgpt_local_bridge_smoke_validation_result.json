@@ -581,7 +581,7 @@
   "git_receipt": {
     "repo": true,
     "branch": "master",
-    "commit": "PENDING_LOCAL_COMMIT",
+    "commit": "4a9f05f",
     "task": "R1-7_WEBGPT_LOCAL_BRIDGE_SMOKE_VALIDATION",
     "push": false,
     "pr": null,

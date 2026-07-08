@@ -3686,7 +3686,7 @@ Evidence:
 - data/reports/r3_9r_final_delivery_closeout_result.json
 
 Git delivery:
-- commit: PENDING_LOCAL_COMMIT
+- commit: 4a9f05f
 - push: no
 
 Boundary:
