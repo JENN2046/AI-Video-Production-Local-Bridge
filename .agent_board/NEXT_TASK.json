@@ -93,7 +93,7 @@
   "evidence": [
     "data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_result.json"
   ],
-  "commit": "pending_at_task_state_write",
+  "commit": "99dd716",
   "delivery": "local_only",
   "boundary_or_safety_stop": "stop after one upload, one submit, and terminal query/timeout; no retry or second submit",
   "blocked_reason": null,

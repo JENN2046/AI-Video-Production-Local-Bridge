@@ -2289,7 +2289,7 @@ completed_at: 2026-07-08T11:28:19+08:00
 result: PASS_LIVE_SINGLE_SUBMIT_COMPLETED
 validation_result: PASS
 evidence: data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_result.json,data/reports/provider_env_check_result.json,data/reports/provider_preflight_result.json,data/reports/secret_scan_result.json
-commit: pending_at_task_state_write
+commit: 99dd716
 
 ### Goal
 

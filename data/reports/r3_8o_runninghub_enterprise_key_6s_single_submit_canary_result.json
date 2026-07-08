@@ -158,7 +158,7 @@
   "git_receipt": {
     "repo": true,
     "branch": "master",
-    "commit": "pending_at_task_state_write",
+    "commit": "99dd716",
     "task": "R3-8O_RUNNINGHUB_ENTERPRISE_KEY_6S_SINGLE_SUBMIT_CANARY",
     "push": false,
     "pr": null,
