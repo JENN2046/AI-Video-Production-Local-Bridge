@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "slot": "current",
   "task_id": "R3-9Q_HUMAN_FINAL_VIDEO_REVIEW_DECISION_APPLY",
-  "status": "READY",
+  "status": "DONE",
   "priority": "P0",
   "lane": "Human Final Video Review Decision Apply",
   "project": "AI Video Production Workspace Three Route Plan",
@@ -68,20 +68,20 @@
     "R3-9P_FINAL_VIDEO_REVIEW_PACKAGE"
   ],
   "created_at": "2026-07-08T19:29:07+08:00",
-  "updated_at": "2026-07-08T19:29:07+08:00",
-  "claimed_by": null,
-  "claim_run_id": null,
-  "claimed_at": null,
-  "completed_by": null,
-  "completed_at": null,
+  "updated_at": "2026-07-08T19:34:48+08:00",
+  "claimed_by": "Codex R3-9Q final video review decision apply",
+  "claim_run_id": "codex-20260708-193131-r3-9q",
+  "claimed_at": "2026-07-08T19:31:31+08:00",
+  "completed_by": "Codex R3-9Q final video review decision apply",
+  "completed_at": "2026-07-08T19:34:48+08:00",
   "blocked_by": null,
   "blocked_at": null,
   "failed_by": null,
   "failed_at": null,
   "skipped_by": null,
   "skipped_at": null,
-  "result": null,
-  "validation_result": null,
+  "result": "PASS_FINAL_CREATIVE_APPROVAL_RECORDED",
+  "validation_result": "PASS",
   "evidence": [
     "data/reports/r3_9p_final_video_review_table.md",
     "data/reports/r3_9p_final_video_review_package_result.json",
@@ -92,7 +92,15 @@
   "boundary_or_safety_stop": "decision apply only; no publish, deploy, provider call, regeneration, reassembly, env or credential read, source overwrite, or push",
   "blocked_reason": null,
   "failure_reason": null,
-  "safe_actions_completed": [],
+  "safe_actions_completed": [
+    "Parsed the Jenn-filled R3-9P final video review table.",
+    "Validated exactly one final video decision row and exactly one selected decision: accept.",
+    "Recorded reviewer Jenn.",
+    "Verified final video path exists and ffprobe status is PASS.",
+    "Marked local project status final_approved for artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe.",
+    "Generated data/reports/r3_9q_human_final_video_review_decision_apply_result.json.",
+    "Validated JSON parse, final video path existence, npm run typecheck, npm run test:m1, npm run secret:scan, and git diff --check."
+  ],
   "unsafe_action_not_performed": [
     "runninghub_call",
     "runway_call",
@@ -121,7 +129,7 @@
     "If R3-9Q records reject or revision_requested, prepare a final video revision strategy instead of delivery closeout."
   ],
   "next_safe_option": [
-    "Claim R3-9Q and apply the completed final video review decision locally.",
-    "Do not publish or deliver externally from R3-9Q."
+    "Proceed to R3-9R_FINAL_DELIVERY_CLOSEOUT.",
+    "Do not publish or deliver externally from R3-9R."
   ]
 }

@@ -11,7 +11,7 @@ ffprobe：`PASS`，时长 `24.207683` 秒，stream_count `2`
 
 | 审查对象 | 本地视频路径 | Final Artifact | 来源 Clip Artifacts | accept | reject | revision_requested | 审查人 | 备注 |
 |---|---|---|---|---|---|---|---|---|
-| 最终成片 | `A:\AI Video Production Workspace\data\media\artifacts\final\r3-9o-final-video\ryan_lunch_break_skullcap_final_r3_9o.mp4` | `artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe` | `artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203`<br>`artifact_eeef12a7-9533-4172-beaa-6c25b91415f7`<br>`artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a`<br>`artifact_263a2344-5154-4981-bfe4-120571effb3e` | [ ] | [ ] | [ ] |  |  |
+| 最终成片 | `A:\AI Video Production Workspace\data\media\artifacts\final\r3-9o-final-video\ryan_lunch_break_skullcap_final_r3_9o.mp4` | `artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe` | `artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203`<br>`artifact_eeef12a7-9533-4172-beaa-6c25b91415f7`<br>`artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a`<br>`artifact_263a2344-5154-4981-bfe4-120571effb3e` | [accept] | [ ] | [ ] | Jenn |  |
 
 ## 来源片段
 

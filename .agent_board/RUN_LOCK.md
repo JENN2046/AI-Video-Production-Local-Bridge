@@ -88,6 +88,9 @@ last_completed_r3_9o_at: 2026-07-08T18:51:49+08:00
 last_completed_r3_9p_run_id: codex-20260708-185423-r3-9p
 last_completed_r3_9p_task: R3-9P_FINAL_VIDEO_REVIEW_PACKAGE
 last_completed_r3_9p_at: 2026-07-08T18:57:20+08:00
+last_completed_r3_9q_run_id: codex-20260708-193131-r3-9q
+last_completed_r3_9q_task: R3-9Q_HUMAN_FINAL_VIDEO_REVIEW_DECISION_APPLY
+last_completed_r3_9q_at: 2026-07-08T19:34:48+08:00
 
 ## Rules
 

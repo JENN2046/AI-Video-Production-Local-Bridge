@@ -71,6 +71,7 @@
     "r3:9n:assembly-dry-run": "npm run build && node dist/scripts/r3-9n-final-video-assembly-dry-run.js",
     "r3:9o:assemble": "npm run build && node dist/scripts/r3-9o-final-video-assembly-execution.js",
     "r3:9p:review-package": "npm run build && node dist/scripts/r3-9p-final-video-review-package.js",
+    "r3:9q:apply-final-review": "npm run build && node dist/scripts/r3-9q-human-final-video-review-decision-apply.js",
     "r2:4:h4-workbench": "npm run build && node dist/scripts/r2-4-h4-final-assembly-workbench.js",
     "r2:5:h5-workbench": "npm run build && node dist/scripts/r2-5-h5-memory-asset-workbench.js",
     "test:m1:real": "npm run build && node dist/scripts/test-m1-real.js",

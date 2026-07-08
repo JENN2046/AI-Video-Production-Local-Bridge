@@ -2011,3 +2011,34 @@ Notes:
 - `git diff --check`: PASS with CRLF warnings only.
 - No provider call, regeneration, batch expansion, `.env` or credential read, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, deploy, publish, or final creative approval occurred.
 - R3-9P local implementation commit: `0ee3590`.
+
+### R3-9Q - 2026-07-08T19:34:48+08:00
+
+Commands:
+
+```bash
+npm run r3:9q:apply-final-review
+node -e JSON.parse(...) with decision, approval, and final video path checks
+npm run typecheck
+npm run test:m1
+npm run secret:scan
+git diff --check
+```
+
+Result: `PASS_FINAL_CREATIVE_APPROVAL_RECORDED`
+
+Evidence:
+- `data/reports/r3_9p_final_video_review_table.md`
+- `data/reports/r3_9q_human_final_video_review_decision_apply_result.json`
+- `data/reports/r3_9o_final_video_assembly_execution_result.json`
+
+Notes:
+- Parsed exactly one final video decision row.
+- Decision: `accept`.
+- Reviewer: `Jenn`.
+- Final creative approval recorded locally for `artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe`.
+- Project status changed from `video_review` to `final_approved`.
+- `npm run test:m1`: PASS, 22 tests.
+- `git diff --check`: PASS with CRLF warnings only.
+- No provider call, regeneration, reassembly, `.env` or credential read, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, deploy, or publish occurred.
+- R3-9Q local implementation commit: `PENDING_LOCAL_COMMIT`.

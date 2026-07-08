@@ -7,8 +7,8 @@ Last result: R3-9Q and R3-9R queued after final video human review
 ## Current state
 
 Current task: R3-9Q_HUMAN_FINAL_VIDEO_REVIEW_DECISION_APPLY
-Current status: READY
-Current owner: None
+Current status: DONE
+Current owner: Codex R3-9Q final video review decision apply
 
 ## R3-9Q / R3-9R queue arrangement
 
@@ -22,6 +22,24 @@ Result: READY_TASKS_QUEUED_WITH_DEPENDENCIES
 - `R3-9R_FINAL_DELIVERY_CLOSEOUT` is added to backlog as `READY` and depends on `R3-9Q_HUMAN_FINAL_VIDEO_REVIEW_DECISION_APPLY`.
 - R3-9Q may record local final creative approval only if the final table decision is `accept`.
 - R3-9R may generate local delivery closeout evidence only; it must not publish, deploy, upload, push, tag, release, or change production configuration.
+
+## R3-9Q In Progress
+
+- Claimed at 2026-07-08T19:31:31+08:00 by Codex R3-9Q final video review decision apply.
+- Source table: `data/reports/r3_9p_final_video_review_table.md`.
+- Visible human decision: `accept`, reviewer `Jenn`.
+- Boundary: decision apply only; no publish, deploy, provider call, regeneration, reassembly, `.env` or credential read, source overwrite, push, tag, or release.
+
+## R3-9Q Closeout
+
+- R3-9Q completed on 2026-07-08T19:34:48+08:00 with `PASS_FINAL_CREATIVE_APPROVAL_RECORDED`.
+- Report: `data/reports/r3_9q_human_final_video_review_decision_apply_result.json`.
+- Decision: `accept`.
+- Reviewer: `Jenn`.
+- Final creative approval recorded locally for final video artifact `artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe`.
+- Local project status changed from `video_review` to `final_approved`.
+- R3-9Q local implementation commit: `PENDING_LOCAL_COMMIT`.
+- Next safe task: `R3-9R_FINAL_DELIVERY_CLOSEOUT`.
 
 ## R3-9M / R3-9P queue arrangement
 
