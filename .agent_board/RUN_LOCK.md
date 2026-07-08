@@ -63,6 +63,10 @@ last_completed_r3_9f_run_id: codex-20260708-160441-r3-9f
 last_completed_r3_9f_task: R3-9F_HUMAN_CLIP_REVIEW_DECISION_APPLY
 last_completed_r3_9f_at: 2026-07-08T16:11:25+08:00
 
+last_completed_r3_9g_run_id: codex-20260708-163900-r3-9g
+last_completed_r3_9g_task: R3-9G_REGENERATION_STRATEGY_FOR_REVIEW_NOTES
+last_completed_r3_9g_at: 2026-07-08T16:42:00+08:00
+
 ## Rules
 
 - If status is inactive, a new run may start.

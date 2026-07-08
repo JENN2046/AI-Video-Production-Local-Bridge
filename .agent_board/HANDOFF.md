@@ -409,3 +409,13 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - No provider call, regeneration, batch expansion, final assembly, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
 - R3-9F local implementation commit: `05c5c90`.
 - Remaining READY tasks: `R3-9G_REGENERATION_STRATEGY_FOR_REVIEW_NOTES`, then `R3-9H_SHOT_002_REPLACEMENT_DECISION`.
+
+## R3-9G Closeout
+
+- R3-9G completed on 2026-07-08T16:42:00+08:00 with `PASS_REGENERATION_STRATEGY_READY`.
+- Report: `data/reports/r3_9g_regeneration_strategy_for_review_notes_result.json`.
+- Regeneration candidates: `g0_r1_shot_001`, `g0_r1_shot_003`, and `g0_r1_shot_004`.
+- `g0_r1_shot_002` was explicitly excluded and routed to `R3-9H_SHOT_002_REPLACEMENT_DECISION`.
+- Future RunningHub regeneration authorization draft is capped at 3 uploads and 3 submits, one per candidate, no retry, no second submit, no batch expansion, no Runway fallback.
+- No provider call, regeneration execution, batch expansion, final assembly, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+- Remaining READY task after this closeout: `R3-9H_SHOT_002_REPLACEMENT_DECISION`.

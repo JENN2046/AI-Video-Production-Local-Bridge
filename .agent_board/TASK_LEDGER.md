@@ -2950,3 +2950,68 @@ Boundary:
 Next:
 - Plan regeneration for `g0_r1_shot_001`, `g0_r1_shot_003`, and `g0_r1_shot_004` as a separate scoped task.
 - Decide separate handling for rejected `g0_r1_shot_002`.
+
+### 2026-07-08T16:42:00+08:00 - R3-9G Regeneration Strategy For Review Notes
+
+Result: DONE / PASS_REGENERATION_STRATEGY_READY
+Project: AI Video Production Workspace Three Route Plan
+Lane: Regeneration Strategy
+Claimed by: Codex R3-9G regeneration strategy
+Completed by: Codex R3-9G regeneration strategy
+Run ID: codex-20260708-163900-r3-9g
+Started at: 2026-07-08T16:39:00+08:00
+Completed at: 2026-07-08T16:42:00+08:00
+
+Scope:
+- Converted Jenn's regenerate_requested notes into a local regeneration strategy.
+- Included only `g0_r1_shot_001`, `g0_r1_shot_003`, and `g0_r1_shot_004`.
+- Excluded `g0_r1_shot_002` for separate R3-9H handling.
+- Did not call providers or execute regeneration.
+
+Changed files:
+- package.json
+- scripts/r3-9g-regeneration-strategy-for-review-notes.ts
+- data/reports/r3_9g_regeneration_strategy_for_review_notes_result.json
+- .agent_board/NEXT_TASK.json
+- .agent_board/NEXT_TASK.md
+- .agent_board/RUN_LOCK.md
+- .agent_board/TASK_BACKLOG.md
+- .agent_board/HANDOFF.md
+- .agent_board/VALIDATION_LOG.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: npm run r3:9g:strategy
+  result: PASS
+- command: node -e JSON.parse(...)
+  result: PASS
+- command: npm run typecheck
+  result: PASS
+- command: npm run test:m1
+  result: PASS
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_9g_regeneration_strategy_for_review_notes_result.json
+- data/reports/r3_9f_human_clip_review_decision_apply_result.json
+- data/reports/secret_scan_result.json
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: pending
+- push: no
+- PR: none
+
+Candidate summary:
+- regenerate: g0_r1_shot_001, g0_r1_shot_003, g0_r1_shot_004
+- excluded for R3-9H: g0_r1_shot_002
+
+Boundary:
+- No RunningHub call, Runway call, media upload to provider, provider submit, status poll, output download from provider, provider credit consumption, real video generation, regeneration execution, batch expansion, final assembly, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+
+Next:
+- Load and execute `R3-9H_SHOT_002_REPLACEMENT_DECISION` if eligible.

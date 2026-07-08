@@ -1692,3 +1692,33 @@ Notes:
 - Preserved Jenn's reviewer name and Chinese notes exactly in the decision report and review-state metadata.
 - Backfilled local R3-9D generation receipt links for the four generated clips.
 - No provider call, regeneration, batch expansion, final assembly, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+
+### R3-9G - 2026-07-08T16:42:00+08:00
+
+Commands:
+
+```bash
+npm run r3:9g:strategy
+node -e JSON.parse(...)
+npm run typecheck
+npm run test:m1
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_REGENERATION_STRATEGY_READY
+```
+
+Evidence:
+- `data/reports/r3_9g_regeneration_strategy_for_review_notes_result.json`
+- `data/reports/r3_9f_human_clip_review_decision_apply_result.json`
+- `data/reports/secret_scan_result.json`
+
+Notes:
+- Prepared regeneration strategy for `g0_r1_shot_001`, `g0_r1_shot_003`, and `g0_r1_shot_004`.
+- Excluded `g0_r1_shot_002` and routed it to `R3-9H_SHOT_002_REPLACEMENT_DECISION`.
+- Drafted future RunningHub authorization plan capped at 3 uploads and 3 submits.
+- No provider call, regeneration execution, batch expansion, final assembly, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.

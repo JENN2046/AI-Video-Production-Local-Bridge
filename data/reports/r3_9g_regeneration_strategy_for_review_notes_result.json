@@ -1,0 +1,329 @@
+{
+  "task": "R3-9G_REGENERATION_STRATEGY_FOR_REVIEW_NOTES",
+  "result": "PASS_REGENERATION_STRATEGY_READY",
+  "mode": "local_regeneration_strategy_only",
+  "generated_at": "2026-07-08T08:41:21.131Z",
+  "source_of_truth": {
+    "r3_9f_decision_apply_report": "data/reports/r3_9f_human_clip_review_decision_apply_result.json",
+    "r3_9f_result": "PASS_REVIEW_DECISIONS_APPLIED",
+    "r3_9f_commit": "05c5c90",
+    "r3_9b_generation_plan_report": "data/reports/r3_9b_storyboard_package_to_runninghub_generation_plan_result.json",
+    "r3_9b_result": "PASS_PACKAGE_GENERATION_PLAN_READY",
+    "r3_9b_commit": "6a66db8"
+  },
+  "regeneration_strategy": {
+    "status": "READY_FOR_FUTURE_AUTHORIZATION_PREP",
+    "candidate_count": 3,
+    "candidate_shot_ids": [
+      "g0_r1_shot_001",
+      "g0_r1_shot_003",
+      "g0_r1_shot_004"
+    ],
+    "excluded_shot_ids": [
+      "g0_r1_shot_002"
+    ],
+    "local_blocker_count": 0,
+    "local_blockers": [],
+    "provider_execution_prepared_but_not_run": true,
+    "shot_002_routed_to_r3_9h": true
+  },
+  "candidates": [
+    {
+      "shot_id": "g0_r1_shot_001",
+      "shot_label": "SHOT_001",
+      "order": 1,
+      "source_review_decision": {
+        "decision": "regenerate_requested",
+        "reviewer": "Jenn",
+        "note": "不应该是拿起饭盒吃饭，应该是手从饭盒里面拿起食物放到嘴巴进行吃的动作",
+        "rejected_generated_clip_artifact_id": "artifact_ac71dfd9-371c-4eb4-a6b6-686993291ceb",
+        "rejected_generation_run_id": "run_r3_9d_ac71dfd9-371c-4eb4-a6b6-686993291ceb"
+      },
+      "source_keyframe": {
+        "storyboard_image_artifact_id": "artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7",
+        "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png",
+        "source_path": "A:\\AI Video Production Workspace\\data\\imports\\g0_r1_SHOT_001_IMAGE_ACCEPTED_WEBGPT.png",
+        "source_asset_overwrite_allowed": false
+      },
+      "original_prompt_context": {
+        "shot_description": "Ryan sits at the construction-site lunch bench with the gray skullcap visible.",
+        "video_prompt": "Use approved image as visual anchor. Add subtle realistic handheld drift. Keep Ryan seated and calm at the lunch area. Maintain gray skullcap, black hoodie, yellow high-vis vest, white hard hat, gloves, lunch items, construction background, and natural daylight.",
+        "negative_prompt": "No face drift, no product deformation, no text, no CGI, no unsafe action."
+      },
+      "revised_strategy": {
+        "action_constraints": [
+          "Ryan stays seated at the lunch table; the lunchbox remains on the table surface.",
+          "A hand picks up a small piece of food from inside the lunchbox and brings the food to the mouth.",
+          "The container itself must not be lifted, tilted, or treated as the item being eaten.",
+          "Motion should be ordinary lunch-break movement, not a product-demo gesture."
+        ],
+        "prompt_guidance": "Use the approved keyframe as the visual anchor. Animate a realistic eating action: Ryan's hand reaches into the open lunchbox, picks up a small bite of food, and brings the food to his mouth. Keep the lunchbox on the table throughout the shot. Maintain the gray skullcap, high-vis vest, hard hat, gloves, table items, worksite background, and natural daylight. Use subtle handheld drift only; keep face, cap, and lunch props stable.",
+        "negative_constraints": [
+          "Do not lift the whole lunchbox.",
+          "Do not make Ryan eat the container.",
+          "No floating food, no broken fingers, no extra fingers.",
+          "No face drift, no product deformation, no text, no CGI, no unsafe action."
+        ],
+        "risk_notes": [
+          "Eating actions can drift into container-lifting; the prompt must explicitly anchor the lunchbox to the table.",
+          "Hand-to-mouth motion can create finger artifacts; keep the movement small and partially occluded by natural posture."
+        ],
+        "review_focus": [
+          "Confirm the regenerated clip fixes Jenn's exact note.",
+          "Confirm identity, gray skullcap, workwear, source composition, and grounded construction-site realism stay stable.",
+          "Confirm no new artifact should enter final assembly until a later human acceptance task marks it approved."
+        ]
+      },
+      "future_runninghub_plan": {
+        "provider": "runninghub",
+        "model_route": "rhart-video-g/image-to-video",
+        "duration_seconds": 6,
+        "aspectRatio": "9:16",
+        "resolution": "480p",
+        "upload_endpoint": "POST /openapi/v2/media/upload/binary",
+        "submit_endpoint": "POST /openapi/v2/rhart-video-g/image-to-video",
+        "query_endpoint": "POST /openapi/v2/query",
+        "max_upload_calls": 1,
+        "max_submit_calls": 1,
+        "max_retry_submit_calls": 0,
+        "max_second_submit_calls": 0,
+        "query_same_task_until_terminal_or_timeout": true,
+        "output_dir": "data/media/provider-runs/r3-9g-regeneration/01-g0_r1_shot_001/",
+        "expected_local_artifact_registration": {
+          "artifact_type": "video",
+          "role": "generated_clip",
+          "provider_name": "runninghub",
+          "project_id": "project_b742cb15-e44e-41b2-8d2d-4b90a30720df",
+          "shot_id": "g0_r1_shot_001",
+          "ffprobe_validation_required": true,
+          "source_asset_overwrite_allowed": false
+        }
+      },
+      "local_blockers": []
+    },
+    {
+      "shot_id": "g0_r1_shot_003",
+      "shot_label": "SHOT_003",
+      "order": 3,
+      "source_review_decision": {
+        "decision": "regenerate_requested",
+        "reviewer": "Jenn",
+        "note": "拉扯帽子的时候，帽子的折叠位置变化不符合现实效果，真实的效果是折痕会变浅，面料会随着拉起而变化",
+        "rejected_generated_clip_artifact_id": "artifact_10271f09-278e-4326-b417-6b4ea64ad8ca",
+        "rejected_generation_run_id": "run_r3_9d_10271f09-278e-4326-b417-6b4ea64ad8ca"
+      },
+      "source_keyframe": {
+        "storyboard_image_artifact_id": "artifact_a7c5d752-cdd6-478e-b396-5790df3af05f",
+        "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_a7c5d752-cdd6-478e-b396-5790df3af05f.png",
+        "source_path": "A:\\AI Video Production Workspace\\data\\imports\\g0_r1_SHOT_003_IMAGE_WEBGPT_V2.png",
+        "source_asset_overwrite_allowed": false
+      },
+      "original_prompt_context": {
+        "shot_description": "Ryan adjusts the gray skullcap with both hands, showing comfort, fit, texture, seam structure, and label.",
+        "video_prompt": "Use image as visual anchor. Add subtle hand adjustment motion around the cap edge. Keep cap texture, seams, label, fit, face, wardrobe, and daylight stable. Motion should feel ordinary and practical.",
+        "negative_prompt": "No distorted hands, no warped cap, no text, no CGI, no face drift, no exaggerated motion."
+      },
+      "revised_strategy": {
+        "action_constraints": [
+          "Ryan pulls or adjusts the cap edge with small, controlled hand motion.",
+          "Fabric tension must change the cap folds: folds should become shallower and shift with the direction of pull.",
+          "The cap remains soft knit fabric, not rubber, plastic, or rigid cloth.",
+          "Seams, label, head fit, and facial identity must remain stable."
+        ],
+        "prompt_guidance": "Use the approved keyframe as the visual anchor. Animate a close, realistic cap adjustment: Ryan lightly pulls the gray knit cap edge while the fabric stretches and the fold depth becomes shallower near the pull direction. Let seams and knit texture move subtly with fabric tension while the cap remains fitted to the head. Keep hands natural, label position stable, face stable, wardrobe consistent, and daylight unchanged.",
+        "negative_constraints": [
+          "No rigid cap surface.",
+          "No folds staying deep and unchanged while the fabric is pulled.",
+          "No warped label, no sliding cap, no face drift.",
+          "No distorted hands, no extra fingers, no exaggerated pulling, no CGI."
+        ],
+        "risk_notes": [
+          "Fabric realism is the core risk; evaluate fold flattening and tension direction frame by frame.",
+          "Hand contact can distort cap geometry; prefer small edge movement over large stretching."
+        ],
+        "review_focus": [
+          "Confirm the regenerated clip fixes Jenn's exact note.",
+          "Confirm identity, gray skullcap, workwear, source composition, and grounded construction-site realism stay stable.",
+          "Confirm no new artifact should enter final assembly until a later human acceptance task marks it approved."
+        ]
+      },
+      "future_runninghub_plan": {
+        "provider": "runninghub",
+        "model_route": "rhart-video-g/image-to-video",
+        "duration_seconds": 6,
+        "aspectRatio": "9:16",
+        "resolution": "480p",
+        "upload_endpoint": "POST /openapi/v2/media/upload/binary",
+        "submit_endpoint": "POST /openapi/v2/rhart-video-g/image-to-video",
+        "query_endpoint": "POST /openapi/v2/query",
+        "max_upload_calls": 1,
+        "max_submit_calls": 1,
+        "max_retry_submit_calls": 0,
+        "max_second_submit_calls": 0,
+        "query_same_task_until_terminal_or_timeout": true,
+        "output_dir": "data/media/provider-runs/r3-9g-regeneration/03-g0_r1_shot_003/",
+        "expected_local_artifact_registration": {
+          "artifact_type": "video",
+          "role": "generated_clip",
+          "provider_name": "runninghub",
+          "project_id": "project_b742cb15-e44e-41b2-8d2d-4b90a30720df",
+          "shot_id": "g0_r1_shot_003",
+          "ffprobe_validation_required": true,
+          "source_asset_overwrite_allowed": false
+        }
+      },
+      "local_blockers": []
+    },
+    {
+      "shot_id": "g0_r1_shot_004",
+      "shot_label": "SHOT_004",
+      "order": 4,
+      "source_review_decision": {
+        "decision": "regenerate_requested",
+        "reviewer": "Jenn",
+        "note": "主要是帽子的光影没有严谨的符合现实的光影效果",
+        "rejected_generated_clip_artifact_id": "artifact_1f757b43-a308-4d80-a674-7b7a21ceec21",
+        "rejected_generation_run_id": "run_r3_9d_1f757b43-a308-4d80-a674-7b7a21ceec21"
+      },
+      "source_keyframe": {
+        "storyboard_image_artifact_id": "artifact_e35ff0c0-d0fc-4079-bc4b-38b4dbd88cf7",
+        "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_e35ff0c0-d0fc-4079-bc4b-38b4dbd88cf7.png",
+        "source_path": "A:\\AI Video Production Workspace\\data\\imports\\g0_r1_SHOT_004_IMAGE_WEBGPT_V2.png",
+        "source_asset_overwrite_allowed": false
+      },
+      "original_prompt_context": {
+        "shot_description": "Ryan stands with hard hat and work bag, ready to return to the worksite while still wearing the gray skullcap.",
+        "video_prompt": "Use image as visual anchor. Add slight forward body movement or gentle handheld follow as Ryan prepares to return to work. Keep the gray skullcap visible and preserve grounded workday realism.",
+        "negative_prompt": "No heroic exaggeration, no unsafe staging, no text, no product drift, no CGI."
+      },
+      "revised_strategy": {
+        "action_constraints": [
+          "Ryan's body movement stays subtle and grounded as he prepares to return to work.",
+          "The cap lighting must match the same key light direction and ambient construction-site daylight as the rest of the scene.",
+          "Cap shadows must remain attached to head and fabric contours.",
+          "No flickering, inconsistent highlight direction, or pasted-on cap appearance."
+        ],
+        "prompt_guidance": "Use the approved keyframe as the visual anchor. Animate slight forward body movement or a gentle handheld follow as Ryan prepares to return to work. Keep the gray skullcap physically integrated with the scene: consistent daylight direction, soft fabric shadowing, stable texture, and natural contact shadow around the head. Preserve work bag, hard hat, vest, face, construction background, and grounded workday realism.",
+        "negative_constraints": [
+          "No inconsistent cap lighting.",
+          "No floating or detached cap shadow.",
+          "No glossy plastic fabric, no flickering highlights.",
+          "No heroic exaggeration, no unsafe staging, no text, no product drift, no CGI."
+        ],
+        "risk_notes": [
+          "Lighting consistency is the main acceptance risk; inspect cap shadow direction against face, vest, and background.",
+          "Avoid large camera or head motion because it increases shadow mismatch risk."
+        ],
+        "review_focus": [
+          "Confirm the regenerated clip fixes Jenn's exact note.",
+          "Confirm identity, gray skullcap, workwear, source composition, and grounded construction-site realism stay stable.",
+          "Confirm no new artifact should enter final assembly until a later human acceptance task marks it approved."
+        ]
+      },
+      "future_runninghub_plan": {
+        "provider": "runninghub",
+        "model_route": "rhart-video-g/image-to-video",
+        "duration_seconds": 6,
+        "aspectRatio": "9:16",
+        "resolution": "480p",
+        "upload_endpoint": "POST /openapi/v2/media/upload/binary",
+        "submit_endpoint": "POST /openapi/v2/rhart-video-g/image-to-video",
+        "query_endpoint": "POST /openapi/v2/query",
+        "max_upload_calls": 1,
+        "max_submit_calls": 1,
+        "max_retry_submit_calls": 0,
+        "max_second_submit_calls": 0,
+        "query_same_task_until_terminal_or_timeout": true,
+        "output_dir": "data/media/provider-runs/r3-9g-regeneration/04-g0_r1_shot_004/",
+        "expected_local_artifact_registration": {
+          "artifact_type": "video",
+          "role": "generated_clip",
+          "provider_name": "runninghub",
+          "project_id": "project_b742cb15-e44e-41b2-8d2d-4b90a30720df",
+          "shot_id": "g0_r1_shot_004",
+          "ffprobe_validation_required": true,
+          "source_asset_overwrite_allowed": false
+        }
+      },
+      "local_blockers": []
+    }
+  ],
+  "excluded_shots": [
+    {
+      "shot_id": "g0_r1_shot_002",
+      "decision": "reject",
+      "reviewer": "Jenn",
+      "note": "我不要叹气不高兴的表情，这样会让人不想购买产品",
+      "route_to": "R3-9H_SHOT_002_REPLACEMENT_DECISION",
+      "reason": "SHOT_002 was rejected, not marked regenerate_requested; it needs a separate replacement/rework decision before any provider regeneration or final assembly."
+    }
+  ],
+  "budget_and_stop_conditions": {
+    "max_upload_calls_total": 3,
+    "max_submit_calls_total": 3,
+    "max_upload_calls_per_candidate": 1,
+    "max_submit_calls_per_candidate": 1,
+    "max_retry_submit_calls": 0,
+    "max_second_submit_calls": 0,
+    "no_batch_expansion": true,
+    "no_runway_fallback": true,
+    "no_shot_002_handling_in_this_task": true,
+    "query_only_same_task_id_until_terminal_or_timeout": true
+  },
+  "future_authorization": {
+    "required_for_real_regeneration": true,
+    "exact_authorization_phrase_draft": "授权执行 1 次 RunningHub 3-shot regeneration planning live execution：，provider=runninghub，model_route=rhart-video-g/image-to-video，project_id=project_b742cb15-e44e-41b2-8d2d-4b90a30720df，storyboard_package_id=storyboard_package_1e5c1eca-624e-4687-9775-31e4b59f428a，shot_count=3，shots=[g0_r1_shot_001: artifact_id=artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7, duration_seconds=6, output_dir=data/media/provider-runs/r3-9g-regeneration/01-g0_r1_shot_001/ | g0_r1_shot_003: artifact_id=artifact_a7c5d752-cdd6-478e-b396-5790df3af05f, duration_seconds=6, output_dir=data/media/provider-runs/r3-9g-regeneration/03-g0_r1_shot_003/ | g0_r1_shot_004: artifact_id=artifact_e35ff0c0-d0fc-4079-bc4b-38b4dbd88cf7, duration_seconds=6, output_dir=data/media/provider-runs/r3-9g-regeneration/04-g0_r1_shot_004/]，duration_seconds_per_shot=6，aspectRatio=9:16，resolution=480p，upload_endpoint=POST /openapi/v2/media/upload/binary，submit_endpoint=POST /openapi/v2/rhart-video-g/image-to-video，query_endpoint=POST /openapi/v2/query，max_upload_calls_total=3，max_submit_calls_total=3，max_upload_calls_per_shot=1，max_submit_calls_per_shot=1，预算/费用上限=仅允许这 3 个 regeneration candidates 各 1 次 upload 和 1 次 submit，不允许 retry 或第二次计费 submit，允许对每个 returned taskId 状态 query 直到 terminal 或 timeout，成功后逐条下载到本地 media artifact storage 并 ffprobe 校验，output_root=data/media/provider-runs/r3-9g-regeneration/，授权只读使用本地 .env.local 中 RUNNINGHUB_API_KEY 用于本次 RunningHub 调用，但不得打印 secret 值，不得调用 Runway，不得扩大 batch，不得处理 SHOT_002，不得发布/部署，不得覆盖源资产，不得打印 secret，不得记录 raw provider payload，不得记录 signed URL",
+    "note": "This is only a draft. A future live regeneration task still requires a fresh exact current Jenn authorization phrase."
+  },
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "media_upload_to_provider": false,
+    "provider_submit": false,
+    "status_poll": false,
+    "output_download_from_provider": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "final_assembly_performed": false,
+    "source_assets_overwritten": false,
+    "secret_values_exposed": false,
+    "raw_provider_payload_recorded": false,
+    "signed_url_recorded": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  },
+  "validation": {
+    "JSON parse for generated regeneration strategy report": "PASS",
+    "npm run r3:9g:strategy": "PASS",
+    "npm run typecheck": "PASS",
+    "npm run test:m1": "PASS",
+    "npm run secret:scan": "PASS",
+    "git diff --check": "PASS_WITH_CRLF_WARNINGS_ONLY"
+  },
+  "changed_files": [
+    "package.json",
+    "scripts/r3-9g-regeneration-strategy-for-review-notes.ts",
+    "data/reports/r3_9g_regeneration_strategy_for_review_notes_result.json",
+    ".agent_board/*"
+  ],
+  "blocked_reason": null,
+  "next_step": {
+    "run_r3_9h_for_shot_002_decision": true,
+    "future_provider_regeneration_requires_fresh_authorization": true,
+    "final_assembly_blocked_until_accepted_clips_exist": true
+  },
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "PENDING_LOCAL_COMMIT",
+    "task": "R3-9G_REGENERATION_STRATEGY_FOR_REVIEW_NOTES",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  }
+}
