@@ -73,7 +73,7 @@
     "https://developers.openai.com/apps-sdk/build/mcp-server",
     "https://developers.openai.com/apps-sdk/deploy/submission"
   ],
-  "commit": "PENDING_LOCAL_COMMIT",
+  "commit": "d6510be",
   "delivery": "local_decision_report_only",
   "boundary_or_safety_stop": "decision closeout only; no public tunnel, provider call, env or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change",
   "blocked_reason": null,

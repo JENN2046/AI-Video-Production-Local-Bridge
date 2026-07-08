@@ -3804,7 +3804,7 @@ completed_by: Codex R1-9 packaging decision
 completed_at: 2026-07-08T20:42:06+08:00
 result: PASS_GO_MCP_APP_BRIDGE_DECISION_READY
 validation_result: PASS
-commit: PENDING_LOCAL_COMMIT
+commit: d6510be
 
 ### Goal
 

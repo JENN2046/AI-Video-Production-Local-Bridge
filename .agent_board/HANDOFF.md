@@ -18,7 +18,7 @@ Current owner: none
 - Official OpenAI docs used: Apps SDK MCP server, MCP concept, tool planning, auth, security/privacy, connect from ChatGPT, and submission docs.
 - R2G-0 through R2G-F remain valid and can proceed in dependency order; R2G-G remains `FOLLOW_UP`.
 - Validation passed: JSON parse, `npm run typecheck`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
-- R1-9 local implementation commit: `PENDING_LOCAL_COMMIT`.
+- R1-9 local implementation commit: `d6510be`.
 - No public tunnel, ChatGPT connector creation, provider call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
 - Next eligible task: `R2G-0_CHATGPT_MCP_PACKAGING_REALITY_AUDIT`.
 
