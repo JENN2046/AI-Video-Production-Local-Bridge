@@ -536,3 +536,15 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - Final assembly was not executed; next safe task is a separate final assembly readiness check.
 - R3-9L local implementation commit: `fdd0b5c`.
 - No provider call, regeneration, batch expansion, final assembly, `.env` or credential read, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+
+## R3-9M Closeout
+
+- R3-9M completed on 2026-07-08T18:36:22+08:00 with `PASS_READY_FOR_FINAL_ASSEMBLY_DRY_RUN`.
+- Report: `data/reports/r3_9m_final_assembly_readiness_check_result.json`.
+- Manifest: `data/reports/r3_9m_assembly_input_manifest.json`.
+- Verified all 4 accepted regenerated clips are active local `generated_clip` video artifacts with ffprobe `PASS`.
+- Assembly input manifest order: `g0_r1_shot_001`, `g0_r1_shot_002`, `g0_r1_shot_003`, `g0_r1_shot_004`.
+- Final assembly was not executed and no final video was written.
+- R3-9M local implementation commit: `PENDING_LOCAL_COMMIT`.
+- No provider call, regeneration, batch expansion, final assembly, final video write, `.env` or credential read, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+- Next safe task: `R3-9N_FINAL_VIDEO_ASSEMBLY_DRY_RUN`.

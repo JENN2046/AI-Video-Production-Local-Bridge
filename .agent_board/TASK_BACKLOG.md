@@ -3175,7 +3175,7 @@ commit: fdd0b5c
 
 ## R3-9M_FINAL_ASSEMBLY_READINESS_CHECK - Final Assembly Readiness Check
 
-status: READY
+status: DONE
 priority: P0
 lane: Final Assembly Readiness
 project: AI Video Production Workspace Three Route Plan
@@ -3187,7 +3187,15 @@ report_path: data/reports/r3_9m_final_assembly_readiness_check_result.json
 allowed_delivery: readiness_report,accepted_clip_inventory,assembly_input_manifest,task_board_update,local_commit
 blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,provider_submit,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,regeneration_execution,batch_expansion,final_assembly,env_file_read,credential_read,source_overwrite,secret_value_output,raw_provider_payload_recording,signed_url_recording,push,tag,release,deploy
 created_at: 2026-07-08T18:22:13+08:00
-updated_at: 2026-07-08T18:22:13+08:00
+updated_at: 2026-07-08T18:36:22+08:00
+claimed_by: Codex R3-9M final assembly readiness check
+claim_run_id: codex-20260708-183254-r3-9m
+claimed_at: 2026-07-08T18:32:54+08:00
+completed_by: Codex R3-9M final assembly readiness check
+completed_at: 2026-07-08T18:36:22+08:00
+result: PASS_READY_FOR_FINAL_ASSEMBLY_DRY_RUN
+validation_result: PASS
+commit: PENDING_LOCAL_COMMIT
 
 ### Goal
 
@@ -3223,6 +3231,18 @@ Confirm whether all required shots have accepted active generated clips and whet
 
 - Readiness check only.
 - No provider call, regeneration, batch expansion, final assembly, `.env` or credential read, source overwrite, push, tag, release, or deploy.
+
+### Result
+
+- Generated `data/reports/r3_9m_final_assembly_readiness_check_result.json`.
+- Generated `data/reports/r3_9m_assembly_input_manifest.json`.
+- Verified all 4 required shots have accepted active generated clips.
+- Verified each accepted local MP4 exists and ffprobe returns `PASS`.
+- Built the deterministic assembly input manifest in storyboard order.
+- Report result is `PASS_READY_FOR_FINAL_ASSEMBLY_DRY_RUN`.
+- Final assembly was not executed and no final video was written.
+- Validation passed: JSON parse, accepted clip path checks, ffprobe evidence, `npm run r3:9m:readiness`, `npm run typecheck`, `npm run test:m1`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
+- No provider call, regeneration, batch expansion, final assembly, final video write, `.env` or credential read, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
 
 ## R3-9N_FINAL_VIDEO_ASSEMBLY_DRY_RUN - Final Video Assembly Dry Run
 

@@ -1896,3 +1896,36 @@ Notes:
 - Final assembly was not executed; the next safe task is a separate final assembly readiness check.
 - R3-9L local implementation commit: `fdd0b5c`.
 - No provider call, regeneration, batch expansion, final assembly, `.env` or credential read, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+
+### R3-9M - 2026-07-08T18:36:22+08:00
+
+Commands:
+
+```bash
+npm run r3:9m:readiness
+node -e JSON.parse(...) with accepted clip path and ffprobe evidence checks
+npm run typecheck
+npm run test:m1
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_READY_FOR_FINAL_ASSEMBLY_DRY_RUN
+```
+
+Evidence:
+- `data/reports/r3_9m_final_assembly_readiness_check_result.json`
+- `data/reports/r3_9m_assembly_input_manifest.json`
+- `data/reports/r3_9l_human_regenerated_clip_review_decision_apply_result.json`
+- `data/reports/secret_scan_result.json`
+
+Notes:
+- Verified exactly 4 required shots: `g0_r1_shot_001`, `g0_r1_shot_002`, `g0_r1_shot_003`, and `g0_r1_shot_004`.
+- Accepted artifacts are active `generated_clip` video artifacts with local MP4 files and ffprobe `PASS`.
+- Built deterministic assembly input manifest in storyboard order `1,2,3,4`.
+- Final assembly was not executed and no final video was written.
+- R3-9M local implementation commit: `PENDING_LOCAL_COMMIT`.
+- No provider call, regeneration, batch expansion, final assembly, final video write, `.env` or credential read, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.

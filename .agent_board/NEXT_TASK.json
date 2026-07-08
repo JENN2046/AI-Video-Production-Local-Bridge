@@ -2,43 +2,39 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "R3-9L_HUMAN_REGENERATED_CLIP_REVIEW_DECISION_APPLY",
+  "task_id": "R3-9M_FINAL_ASSEMBLY_READINESS_CHECK",
   "status": "DONE",
   "priority": "P0",
-  "lane": "Human Regenerated Clip Review Decision Apply",
+  "lane": "Final Assembly Readiness",
   "project": "AI Video Production Workspace Three Route Plan",
-  "title": "Human Regenerated Clip Review Decision Apply",
+  "title": "Final Assembly Readiness Check",
   "scope": [
-    "read the Jenn-filled R3-9K regenerated clip review table",
-    "parse exactly one human decision per regenerated clip: accept, reject, or regenerate_requested",
-    "apply accepted regenerated clips to local review state and app database",
-    "write a review decision apply report with accepted/rejected/regenerate_requested counts",
-    "do not call providers, regenerate clips, batch-expand, assemble final video, read env files or credentials, overwrite source assets, or deploy"
+    "parse data/reports/r3_9l_human_regenerated_clip_review_decision_apply_result.json as the source of truth",
+    "verify the four required shots have accepted active generated clips",
+    "verify accepted clip files exist locally and ffprobe returns PASS",
+    "build a deterministic assembly input manifest in storyboard order",
+    "do not execute final assembly"
   ],
-  "goal": "Apply Jenn's completed R3-9K human review decisions for the four regenerated RunningHub clips, making accepted clips eligible for final assembly readiness checks.",
+  "goal": "Confirm whether all required shots have accepted active generated clips and whether the project is ready for a separate local final assembly dry-run.",
   "acceptance": [
-    "R3-9K review table is parsed as the source of truth.",
-    "Exactly 4 regenerated clip rows are parsed.",
-    "Each row has exactly one decision among accept, reject, and regenerate_requested.",
-    "Accepted rows update the corresponding shot review state and accepted_clip_artifact_id to the R3-9J regenerated clip artifact.",
-    "Rejected or regenerate_requested rows preserve Jenn's notes and keep final assembly blocked.",
-    "Report includes per-shot decision, reviewer, note, regenerated clip artifact id, prior rejected clip artifact id, and local video path.",
-    "Report includes summary counts for accept, reject, and regenerate_requested.",
-    "If all 4 shots are accepted, report marks final assembly readiness check as the next safe task, not final assembly execution.",
-    "Report records network_call_attempted=false, runninghub_called=false, runway_called=false, provider_credits_consumed=false, real_video_generated=false, regeneration_performed=false, batch_generation_performed=false, final_assembly_performed=false, env_files_read=false, credentials_read=false, source_assets_overwritten=false, secret_values_exposed=false."
+    "Report includes one row per required shot with accepted artifact id, local mp4 path, ffprobe status, duration, and source generation task.",
+    "Report result is PASS_READY_FOR_FINAL_ASSEMBLY_DRY_RUN only if all four required shots are accepted and valid.",
+    "If any shot is missing, rejected, regenerate_requested, inactive, unreadable, or ffprobe-invalid, report BLOCK_FINAL_ASSEMBLY_WITH_REASON.",
+    "Report records network_call_attempted=false, runninghub_called=false, runway_called=false, real_video_generated=false, final_assembly_performed=false, env_files_read=false, credentials_read=false, source_assets_overwritten=false, secret_values_exposed=false."
   ],
   "validation": [
-    "R3-9K review table parse / required decisions check",
-    "JSON parse for generated R3-9L decision apply report",
+    "JSON parse for generated readiness report",
+    "accepted clip path existence checks",
+    "ffprobe evidence check from existing reports or local metadata",
     "npm run typecheck",
     "npm run test:m1",
     "npm run secret:scan",
     "git diff --check"
   ],
   "allowed_delivery": [
-    "review_decision_apply_report",
-    "local_review_state_update",
-    "accepted_clip_selection",
+    "readiness_report",
+    "accepted_clip_inventory",
+    "assembly_input_manifest",
     "task_board_update",
     "local_commit"
   ],
@@ -66,42 +62,40 @@
     "deploy"
   ],
   "depends_on": [
-    "R3-9K_RUNNINGHUB_REGENERATED_CLIP_REVIEW_PREP"
+    "R3-9L_HUMAN_REGENERATED_CLIP_REVIEW_DECISION_APPLY"
   ],
-  "created_at": "2026-07-08T18:15:54+08:00",
-  "updated_at": "2026-07-08T18:26:55+08:00",
-  "claimed_by": "Codex R3-9L human regenerated clip review decision apply",
-  "claim_run_id": "codex-20260708-182152-r3-9l",
-  "claimed_at": "2026-07-08T18:21:52+08:00",
-  "completed_by": "Codex R3-9L human regenerated clip review decision apply",
-  "completed_at": "2026-07-08T18:26:55+08:00",
+  "created_at": "2026-07-08T18:22:13+08:00",
+  "updated_at": "2026-07-08T18:36:22+08:00",
+  "claimed_by": "Codex R3-9M final assembly readiness check",
+  "claim_run_id": "codex-20260708-183254-r3-9m",
+  "claimed_at": "2026-07-08T18:32:54+08:00",
+  "completed_by": "Codex R3-9M final assembly readiness check",
+  "completed_at": "2026-07-08T18:36:22+08:00",
   "blocked_by": null,
   "blocked_at": null,
   "failed_by": null,
   "failed_at": null,
   "skipped_by": null,
   "skipped_at": null,
-  "result": "PASS_REVIEW_DECISIONS_APPLIED",
+  "result": "PASS_READY_FOR_FINAL_ASSEMBLY_DRY_RUN",
   "validation_result": "PASS",
   "evidence": [
-    "data/reports/r3_9k_runninghub_regenerated_clip_review_table.md",
-    "data/reports/r3_9k_runninghub_regenerated_clip_review_prep_result.json",
-    "data/reports/r3_9j_runninghub_regeneration_single_pass_live_execution_result.json",
-    "data/reports/r3_9l_human_regenerated_clip_review_decision_apply_result.json"
+    "data/reports/r3_9l_human_regenerated_clip_review_decision_apply_result.json",
+    "data/reports/r3_9m_final_assembly_readiness_check_result.json",
+    "data/reports/r3_9m_assembly_input_manifest.json"
   ],
-  "commit": "fdd0b5c",
-  "delivery": "local_review_decision_apply_only",
-  "boundary_or_safety_stop": "decision apply only; no provider call, regeneration execution, final assembly, env or credential read, source overwrite, or deployment",
+  "commit": null,
+  "delivery": "local_readiness_check_only",
+  "boundary_or_safety_stop": "readiness check only; no provider call, regeneration execution, final assembly, env or credential read, source overwrite, push, tag, release, or deploy",
   "blocked_reason": null,
   "failure_reason": null,
   "safe_actions_completed": [
-    "Parsed Jenn's R3-9K review table with exactly 4 regenerated clip rows.",
-    "Applied 4 accept decisions to local review state.",
-    "Set accepted_clip_artifact_id for each shot to the corresponding R3-9J regenerated clip artifact.",
-    "Cleared stale rejection reasons on approved shots.",
-    "Generated the R3-9L decision apply report.",
-    "Recorded final assembly readiness check as the next safe task without executing final assembly.",
-    "Validated table parse, JSON parse, npm run typecheck, npm run test:m1, npm run secret:scan, and git diff --check."
+    "Parsed R3-9L decision apply report as the source of truth.",
+    "Verified all 4 required shots have accepted active generated_clip video artifacts.",
+    "Verified all 4 accepted MP4 paths exist locally and ffprobe returns PASS.",
+    "Built a deterministic assembly input manifest in storyboard order.",
+    "Recorded that final assembly was not performed and no final video was written.",
+    "Validated JSON parse, path checks, ffprobe evidence, npm run typecheck, npm run test:m1, npm run secret:scan, and git diff --check."
   ],
   "unsafe_action_not_performed": [
     "runninghub_call",
@@ -126,11 +120,8 @@
     "release",
     "deploy"
   ],
-  "options_for_jenn": [
-    "After R3-9L completes, proceed to a final assembly readiness check only if all required shots have accepted clips.",
-    "If any regenerated clip is rejected or marked regenerate_requested, prepare the next local repair strategy instead of final assembly."
-  ],
+  "options_for_jenn": [],
   "next_safe_option": [
-    "Run a separate final assembly readiness check before any final assembly execution."
+    "Proceed to R3-9N final video assembly dry run only."
   ]
 }

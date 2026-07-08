@@ -3370,3 +3370,67 @@ Boundary:
 
 Next:
 - Run a separate final assembly readiness check before any final assembly execution.
+
+### 2026-07-08T18:36:22+08:00 - R3-9M Final Assembly Readiness Check
+
+Result: DONE / PASS_READY_FOR_FINAL_ASSEMBLY_DRY_RUN
+Project: AI Video Production Workspace Three Route Plan
+Lane: Final Assembly Readiness
+Claimed by: Codex R3-9M final assembly readiness check
+Completed by: Codex R3-9M final assembly readiness check
+Run ID: codex-20260708-183254-r3-9m
+Started at: 2026-07-08T18:32:54+08:00
+Completed at: 2026-07-08T18:36:22+08:00
+
+Scope:
+- Parsed `data/reports/r3_9l_human_regenerated_clip_review_decision_apply_result.json`.
+- Verified all 4 required shots have accepted active generated clips.
+- Verified each accepted local MP4 exists and ffprobe returns `PASS`.
+- Built deterministic assembly input manifest in storyboard order.
+- Did not execute final assembly or write a final video.
+
+Changed files:
+- package.json
+- scripts/r3-9m-final-assembly-readiness-check.ts
+- data/reports/r3_9m_final_assembly_readiness_check_result.json
+- data/reports/r3_9m_assembly_input_manifest.json
+- .agent_board/NEXT_TASK.json
+- .agent_board/NEXT_TASK.md
+- .agent_board/RUN_LOCK.md
+- .agent_board/TASK_BACKLOG.md
+- .agent_board/HANDOFF.md
+- .agent_board/VALIDATION_LOG.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: npm run r3:9m:readiness
+  result: PASS
+- command: node -e JSON.parse(...) with accepted clip path and ffprobe evidence checks
+  result: PASS
+- command: npm run typecheck
+  result: PASS
+- command: npm run test:m1
+  result: PASS
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_9m_final_assembly_readiness_check_result.json
+- data/reports/r3_9m_assembly_input_manifest.json
+- data/reports/r3_9l_human_regenerated_clip_review_decision_apply_result.json
+- data/reports/secret_scan_result.json
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: PENDING_LOCAL_COMMIT
+- push: no
+- PR: none
+
+Boundary:
+- No provider call, regeneration, batch expansion, final assembly, final video write, `.env` or credential read, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+
+Next:
+- Proceed to R3-9N final video assembly dry run only.

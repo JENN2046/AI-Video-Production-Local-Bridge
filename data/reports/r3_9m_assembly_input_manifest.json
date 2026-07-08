@@ -1,0 +1,55 @@
+{
+  "task": "R3-9M_FINAL_ASSEMBLY_READINESS_CHECK",
+  "generated_at": "2026-07-08T10:35:26.202Z",
+  "source_report": "data/reports/r3_9l_human_regenerated_clip_review_decision_apply_result.json",
+  "project_id": "project_b742cb15-e44e-41b2-8d2d-4b90a30720df",
+  "project_title": "Ryan's Lunch Break Skullcap",
+  "storyboard_package_id": "storyboard_package_1e5c1eca-624e-4687-9775-31e4b59f428a",
+  "manifest_status": "READY_FOR_DRY_RUN",
+  "assembly_order": [
+    {
+      "order": 1,
+      "shot_id": "g0_r1_shot_001",
+      "accepted_clip_artifact_id": "artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203",
+      "local_mp4_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\01-g0_r1_shot_001\\artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203.mp4",
+      "duration_seconds": 6.041667,
+      "ffprobe_status": "PASS",
+      "source_generation_run_id": "run_r3_9j_37d18f76-ec61-4b5d-8f5c-acca2b4ba203",
+      "generation_batch_id": "batch_r3_9j_runninghub_regeneration_single_pass_live_execution"
+    },
+    {
+      "order": 2,
+      "shot_id": "g0_r1_shot_002",
+      "accepted_clip_artifact_id": "artifact_eeef12a7-9533-4172-beaa-6c25b91415f7",
+      "local_mp4_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\02-g0_r1_shot_002\\artifact_eeef12a7-9533-4172-beaa-6c25b91415f7.mp4",
+      "duration_seconds": 6.041667,
+      "ffprobe_status": "PASS",
+      "source_generation_run_id": "run_r3_9j_eeef12a7-9533-4172-beaa-6c25b91415f7",
+      "generation_batch_id": "batch_r3_9j_runninghub_regeneration_single_pass_live_execution"
+    },
+    {
+      "order": 3,
+      "shot_id": "g0_r1_shot_003",
+      "accepted_clip_artifact_id": "artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a",
+      "local_mp4_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\03-g0_r1_shot_003\\artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a.mp4",
+      "duration_seconds": 6.041667,
+      "ffprobe_status": "PASS",
+      "source_generation_run_id": "run_r3_9j_20b1ee68-0b75-4fc1-96a8-93f36de31d5a",
+      "generation_batch_id": "batch_r3_9j_runninghub_regeneration_single_pass_live_execution"
+    },
+    {
+      "order": 4,
+      "shot_id": "g0_r1_shot_004",
+      "accepted_clip_artifact_id": "artifact_263a2344-5154-4981-bfe4-120571effb3e",
+      "local_mp4_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\04-g0_r1_shot_004\\artifact_263a2344-5154-4981-bfe4-120571effb3e.mp4",
+      "duration_seconds": 6.041667,
+      "ffprobe_status": "PASS",
+      "source_generation_run_id": "run_r3_9j_263a2344-5154-4981-bfe4-120571effb3e",
+      "generation_batch_id": "batch_r3_9j_runninghub_regeneration_single_pass_live_execution"
+    }
+  ],
+  "total_clip_count": 4,
+  "total_duration_seconds": 24.166668,
+  "final_video_write_performed": false,
+  "final_assembly_performed": false
+}
