@@ -1,14 +1,28 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260708-120613-r3-9a
-Last result: R3-9A RunningHub primary lane wiring dry-run completed
+Last run: codex-20260708-121358-r3-9b
+Last result: R3-9B storyboard package to RunningHub generation plan completed
 
 ## Current state
 
 Current task: none
 Current status: EMPTY
 Current owner: None
+
+## R3-9B storyboard package to RunningHub generation plan
+
+Completed at: 2026-07-08T12:17:58+08:00
+Result: PASS_PACKAGE_GENERATION_PLAN_READY
+Report: `data/reports/r3_9b_storyboard_package_to_runninghub_generation_plan_result.json`
+
+- Added `npm run r3:9b:plan`.
+- Generated one RunningHub plan entry per frozen package shot: 4 eligible shots, 0 locally blocked shots.
+- Every plan entry references a real app Media Artifact ID and a local `data/imports` source path; source overwrite is forbidden.
+- Provider duration per shot is planned as `6` seconds, preserving app shot durations separately.
+- Future authorization draft is included but not executed.
+- Budget/stop conditions: max upload calls total `4`, max submit calls total `4`, one upload/submit per shot, no retry, no second submit, query only same taskId until terminal or timeout.
+- No credentials, `.env` files, RunningHub call, Runway call, provider credit consumption, real video generation, source overwrite, push, tag, release, or deploy occurred.
 
 ## R3-9A RunningHub primary lane wiring dry-run
 

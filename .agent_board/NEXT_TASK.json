@@ -2,40 +2,39 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "R3-9A_RUNNINGHUB_PRIMARY_LANE_WIRING_DRY_RUN",
+  "task_id": "R3-9B_STORYBOARD_PACKAGE_TO_RUNNINGHUB_GENERATION_PLAN",
   "status": "DONE",
   "priority": "P1",
-  "lane": "Provider Primary Lane Dry Run",
+  "lane": "Provider Production Planning",
   "project": "AI Video Production Workspace Three Route Plan",
-  "title": "RunningHub Primary Lane Wiring Dry Run",
+  "title": "Storyboard Package To RunningHub Generation Plan",
   "scope": [
-    "verify the M1 generation planning path selects RunningHub Enterprise-Shared API Key as the primary provider lane",
-    "confirm RunningHub request planning uses upload-first media flow and duration_seconds minimum 6",
-    "confirm single-shot and package planning can produce auditable dry-run plans behind authorization gates",
-    "do not read credentials or call providers"
+    "generate a local shot-by-shot RunningHub execution plan from the frozen storyboard package without live provider calls",
+    "load the current frozen storyboard package using local app data only",
+    "enforce app-created artifact IDs and storyboard_image classification",
+    "apply the RunningHub primary lane contract from R3-9A",
+    "draft the exact future authorization phrase without executing it"
   ],
-  "goal": "Wire and verify the local primary-provider planning path for RunningHub without making any live provider call.",
+  "goal": "Generate the production-readiness execution plan that maps the frozen storyboard package to RunningHub shot generation, without making any live provider call.",
   "acceptance": [
-    "Primary provider selection resolves to runninghub for M1 generation planning.",
-    "Runway remains secondary or fallback-only and is not selected by the primary-lane dry run.",
-    "RunningHub duration_seconds is locally validated against the 6-second minimum before any upload or submit could occur.",
-    "RunningHub upload-first planning is explicit: local media artifact to upload request plan to submit request plan to query/download readiness.",
-    "Single-shot dry-run plan records selected image artifact, prompt, duration_seconds, output_dir, max_upload_calls, max_submit_calls, and authorization_required.",
-    "Package-level dry-run plan is supported or clearly blocked with a local reason and no provider call.",
+    "Report contains one plan entry per eligible shot in the frozen storyboard package.",
+    "Every plan entry references a real app Media Artifact ID and a local source path that is not overwritten.",
+    "Report identifies any shot blocked from live use with a local reason.",
+    "Future live provider execution remains authorization-gated and single-submit/budget bounded per user approval.",
     "Report records network_call_attempted=false, runninghub_called=false, runway_called=false, provider_credits_consumed=false, real_video_generated=false, secret_values_exposed=false.",
     "No credentials, .env files, raw provider payloads, signed URLs, source overwrite, push, tag, release, or deploy occurs."
   ],
   "validation": [
+    "JSON parse for generated plan report",
     "npm run typecheck",
     "npm run test:m1",
     "npm run secret:scan",
     "git diff --check"
   ],
   "allowed_delivery": [
-    "source_code_change",
-    "dry_run_script",
-    "test_update",
-    "decision_report",
+    "planning_script",
+    "execution_plan_report",
+    "authorization_phrase_draft",
     "task_board_update",
     "local_commit"
   ],
@@ -59,42 +58,44 @@
     "production_credentials_change"
   ],
   "depends_on": [
-    "R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT"
+    "R3-9A_RUNNINGHUB_PRIMARY_LANE_WIRING_DRY_RUN"
   ],
   "created_at": "2026-07-08T12:02:29+08:00",
-  "updated_at": "2026-07-08T12:11:19+08:00",
-  "claimed_by": "Codex R3-9A primary lane dry-run",
-  "claim_run_id": "codex-20260708-120613-r3-9a",
-  "claimed_at": "2026-07-08T12:06:13+08:00",
-  "completed_by": "Codex R3-9A primary lane dry-run",
-  "completed_at": "2026-07-08T12:11:19+08:00",
+  "updated_at": "2026-07-08T12:17:58+08:00",
+  "claimed_by": "Codex R3-9B package generation planner",
+  "claim_run_id": "codex-20260708-121358-r3-9b",
+  "claimed_at": "2026-07-08T12:13:58+08:00",
+  "completed_by": "Codex R3-9B package generation planner",
+  "completed_at": "2026-07-08T12:17:58+08:00",
   "blocked_by": null,
   "blocked_at": null,
   "failed_by": null,
   "failed_at": null,
   "skipped_by": null,
   "skipped_at": null,
-  "result": "PASS_PRIMARY_LANE_WIRED_DRY_RUN",
+  "result": "PASS_PACKAGE_GENERATION_PLAN_READY",
   "validation_result": "PASS",
   "evidence": [
+    "data/reports/r3_9b_storyboard_package_to_runninghub_generation_plan_result.json",
     "data/reports/r3_9a_runninghub_primary_lane_wiring_dry_run_result.json",
-    "data/reports/r3_8k_provider_path_decision_closeout.json",
-    "data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_result.json",
+    "data/reports/g0_r1_package_freeze_result.json",
+    "data/reports/g0_r1_import_prep_result.json",
     "data/reports/secret_scan_result.json"
   ],
-  "commit": "310ebbf",
+  "commit": "PENDING_IN_CURRENT_TASK_COMMIT",
   "delivery": "local_only",
-  "boundary_or_safety_stop": "dry-run only; no provider call, credential read, or deployment",
+  "boundary_or_safety_stop": "planning only; no provider call, credential read, or deployment",
   "blocked_reason": null,
   "failure_reason": null,
   "safe_actions_completed": [
-    "claimed R3-9A RunningHub primary lane wiring dry-run",
-    "added local dry-run script for RunningHub primary-lane planning",
-    "verified RunningHub is primary and Runway is secondary/fallback-only",
-    "generated single-shot and package-level upload-first dry-run plans",
-    "validated provider duration minimum 6 seconds before upload or submit planning",
-    "added M1 regression coverage for RunningHub primary lane planning duration minimum",
-    "validated typecheck, test:m1, secret scan, and git diff check"
+    "claimed R3-9B storyboard package to RunningHub generation plan",
+    "added local planning script for storyboard-package-to-RunningHub execution planning",
+    "loaded frozen G0 storyboard package using local app data only",
+    "generated one plan entry for each of 4 eligible shots",
+    "verified every plan entry references an app-created storyboard_image artifact and local import source path",
+    "included future budget and stop conditions with max_upload_calls_total=4 and max_submit_calls_total=4",
+    "drafted a future exact authorization phrase without executing it",
+    "validated JSON parse, typecheck, test:m1, secret scan, and git diff check"
   ],
   "unsafe_action_not_performed": [
     "runninghub_call",
@@ -117,7 +118,7 @@
   ],
   "options_for_jenn": [],
   "next_safe_option": [
-    "After this dry run passes, execute R3-9B to generate the storyboard-package-to-RunningHub production execution plan.",
+    "Use the generated plan as the basis for a future exact current Jenn authorization phrase.",
     "Do not perform any live provider call without a future exact current Jenn authorization phrase."
   ]
 }

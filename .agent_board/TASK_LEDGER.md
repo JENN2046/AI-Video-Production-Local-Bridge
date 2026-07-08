@@ -2266,6 +2266,69 @@ Boundary:
 Next:
 - R3-9B is eligible after R3-9A commit and can be auto-loaded next.
 
+### 2026-07-08T12:17:58+08:00 - R3-9B Storyboard Package To RunningHub Generation Plan
+
+Result: DONE / PASS_PACKAGE_GENERATION_PLAN_READY
+Project: AI Video Production Workspace Three Route Plan
+Lane: Provider Production Planning
+Claimed by: Codex R3-9B package generation planner
+Completed by: Codex R3-9B package generation planner
+Run ID: codex-20260708-121358-r3-9b
+Started at: 2026-07-08T12:13:58+08:00
+Completed at: 2026-07-08T12:17:58+08:00
+
+Scope:
+- Added a local planning script for frozen storyboard package to RunningHub execution planning.
+- Generated one future RunningHub plan entry per eligible frozen package shot.
+- Included app artifact IDs, local source paths, prompts, provider duration/resolution fields, output directories, expected artifact registration, budget, stop conditions, and draft authorization phrase.
+- Did not execute the authorization phrase.
+
+Changed files:
+- package.json
+- scripts/r3-9b-storyboard-package-to-runninghub-generation-plan.ts
+- data/reports/r3_9b_storyboard_package_to_runninghub_generation_plan_result.json
+- .agent_board/NEXT_TASK.json
+- .agent_board/NEXT_TASK.md
+- .agent_board/RUN_LOCK.md
+- .agent_board/TASK_BACKLOG.md
+- .agent_board/HANDOFF.md
+- .agent_board/VALIDATION_LOG.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: npm run r3:9b:plan
+  result: PASS
+- command: node -e JSON.parse(...)
+  result: PASS
+- command: npm run typecheck
+  result: PASS
+- command: npm run test:m1
+  result: PASS
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_9b_storyboard_package_to_runninghub_generation_plan_result.json
+- data/reports/r3_9a_runninghub_primary_lane_wiring_dry_run_result.json
+- data/reports/g0_r1_package_freeze_result.json
+- data/reports/g0_r1_import_prep_result.json
+- data/reports/secret_scan_result.json
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: pending
+- push: no
+- PR: none
+
+Boundary:
+- No RunningHub call, Runway call, media upload to provider, status query, output download, provider credit consumption, real video generation, credentials read, `.env` read, secret output, raw provider payload recording, signed URL recording, source overwrite, push, tag, release, or deploy occurred.
+
+Next:
+- Stop before live provider execution. A future RunningHub package generation run requires a fresh exact current Jenn authorization phrase.
+
 ### 2026-07-08T10:51:49+08:00 - R3-8M Receipt Fix
 
 Result: DONE / PASS_RECEIPT_FIXED

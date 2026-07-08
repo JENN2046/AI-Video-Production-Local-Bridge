@@ -1,0 +1,517 @@
+{
+  "task": "R3-9B_STORYBOARD_PACKAGE_TO_RUNNINGHUB_GENERATION_PLAN",
+  "result": "PASS_PACKAGE_GENERATION_PLAN_READY",
+  "mode": "planning_only",
+  "generated_at": "2026-07-08T04:17:36.898Z",
+  "source_reports": {
+    "r3_9a_primary_lane_dry_run": "data/reports/r3_9a_runninghub_primary_lane_wiring_dry_run_result.json",
+    "frozen_storyboard_package": "data/reports/g0_r1_package_freeze_result.json",
+    "import_prep": "data/reports/g0_r1_import_prep_result.json"
+  },
+  "package": {
+    "project_id": "project_b742cb15-e44e-41b2-8d2d-4b90a30720df",
+    "project_title": "Ryan's Lunch Break Skullcap",
+    "storyboard_package_id": "storyboard_package_1e5c1eca-624e-4687-9775-31e4b59f428a",
+    "frozen": true,
+    "status": "approved_for_video_generation",
+    "package_shot_count": 4
+  },
+  "runninghub_primary_lane_contract": {
+    "provider": "runninghub",
+    "model_route": "rhart-video-g/image-to-video",
+    "upload_first_required": true,
+    "upload_endpoint": "POST /openapi/v2/media/upload/binary",
+    "submit_endpoint": "POST /openapi/v2/rhart-video-g/image-to-video",
+    "query_endpoint": "POST /openapi/v2/query",
+    "duration_minimum_seconds": 6,
+    "duration_seconds_per_shot": 6,
+    "aspectRatio": "9:16",
+    "resolution": "480p",
+    "source_contract_report": "data/reports/r3_9a_runninghub_primary_lane_wiring_dry_run_result.json"
+  },
+  "generation_plan": {
+    "status": "READY_FOR_FUTURE_AUTHORIZED_EXECUTION",
+    "eligible_shot_count": 4,
+    "blocked_shot_count": 0,
+    "entries": [
+      {
+        "status": "READY_FOR_FUTURE_AUTHORIZED_SUBMIT",
+        "blocked_reasons": [],
+        "shot_id": "g0_r1_shot_001",
+        "order": 1,
+        "image_artifact": {
+          "artifact_id": "artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7",
+          "artifact_id_from_app": true,
+          "artifact_type": "image",
+          "role": "storyboard_image",
+          "status": "active",
+          "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png",
+          "storage_is_app_media": true,
+          "storage_sha256": "efbea3aa2507cd7d431501eafba3206cf6cfd000174b2d6109371b5e37e6a474",
+          "source_path": "A:\\AI Video Production Workspace\\data\\imports\\g0_r1_SHOT_001_IMAGE_ACCEPTED_WEBGPT.png",
+          "source_sha256": "efbea3aa2507cd7d431501eafba3206cf6cfd000174b2d6109371b5e37e6a474",
+          "source_asset_overwrite_allowed": false
+        },
+        "prompt": {
+          "shot_description": "Ryan sits at the construction-site lunch bench with the gray skullcap visible.",
+          "video_prompt": "Use approved image as visual anchor. Add subtle realistic handheld drift. Keep Ryan seated and calm at the lunch area. Maintain gray skullcap, black hoodie, yellow high-vis vest, white hard hat, gloves, lunch items, construction background, and natural daylight.",
+          "negative_prompt": "No face drift, no product deformation, no text, no CGI, no unsafe action.",
+          "negative_prompt_supported_by_runninghub": false
+        },
+        "duration": {
+          "app_duration_seconds": 3,
+          "provider_duration_seconds": 6,
+          "provider_duration_minimum_seconds": 6,
+          "provider_duration_adjusted_to_minimum": true
+        },
+        "provider_fields": {
+          "provider": "runninghub",
+          "model_route": "rhart-video-g/image-to-video",
+          "aspectRatio": "9:16",
+          "resolution": "480p",
+          "upload_endpoint": "POST /openapi/v2/media/upload/binary",
+          "submit_endpoint": "POST /openapi/v2/rhart-video-g/image-to-video",
+          "query_endpoint": "POST /openapi/v2/query"
+        },
+        "call_budget": {
+          "max_upload_calls": 1,
+          "max_submit_calls": 1,
+          "max_retry_submit_calls": 0,
+          "max_second_submit_calls": 0,
+          "query_same_task_until_terminal_or_timeout": true
+        },
+        "output_plan": {
+          "output_dir": "data/media/provider-runs/r3-9b-runninghub-package/01-g0_r1_shot_001/",
+          "expected_local_artifact_registration": {
+            "artifact_type": "video",
+            "role": "generated_clip",
+            "provider_name": "runninghub",
+            "project_id": "project_b742cb15-e44e-41b2-8d2d-4b90a30720df",
+            "shot_id": "g0_r1_shot_001",
+            "storage_directory": "data/media/provider-runs/r3-9b-runninghub-package/01-g0_r1_shot_001/",
+            "ffprobe_validation_required": true,
+            "source_asset_overwrite_allowed": false
+          }
+        },
+        "request_plan": {
+          "upload": {
+            "endpoint": "POST /openapi/v2/media/upload/binary",
+            "file_field": "file",
+            "file_name": "artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7.png",
+            "mime_type": "image/png",
+            "file_size_bytes": 2243051,
+            "sha256": "efbea3aa2507cd7d431501eafba3206cf6cfd000174b2d6109371b5e37e6a474",
+            "binary_payload_included": false,
+            "base64_included": false,
+            "authorization_value_included": false
+          },
+          "submit": {
+            "endpoint": "POST /openapi/v2/rhart-video-g/image-to-video",
+            "request_fields": [
+              "prompt",
+              "aspectRatio",
+              "imageUrls",
+              "resolution",
+              "duration"
+            ],
+            "prompt_text_length": 262,
+            "negative_prompt_supported": false,
+            "negative_prompt_text_length": 73,
+            "image_url_values_included": false,
+            "image_url_placeholder_used": true,
+            "raw_provider_payload_included": false
+          },
+          "query": {
+            "endpoint": "POST /openapi/v2/query",
+            "body_shape": {
+              "taskId": "string"
+            },
+            "task_id_value_included": false,
+            "status_query_not_a_second_submit": true
+          }
+        }
+      },
+      {
+        "status": "READY_FOR_FUTURE_AUTHORIZED_SUBMIT",
+        "blocked_reasons": [],
+        "shot_id": "g0_r1_shot_002",
+        "order": 2,
+        "image_artifact": {
+          "artifact_id": "artifact_9ad1bfe1-c830-458c-a413-39fd15c9d0c0",
+          "artifact_id_from_app": true,
+          "artifact_type": "image",
+          "role": "storyboard_image",
+          "status": "active",
+          "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_9ad1bfe1-c830-458c-a413-39fd15c9d0c0.png",
+          "storage_is_app_media": true,
+          "storage_sha256": "adf507688a4441805366cfa867a7348ed710e76844eb00050141b48e0e365b88",
+          "source_path": "A:\\AI Video Production Workspace\\data\\imports\\g0_r1_SHOT_002_IMAGE_WEBGPT_V1.png",
+          "source_sha256": "adf507688a4441805366cfa867a7348ed710e76844eb00050141b48e0e365b88",
+          "source_asset_overwrite_allowed": false
+        },
+        "prompt": {
+          "shot_description": "Ryan reaches toward the work gloves and nearby gear on the lunch table.",
+          "video_prompt": "Use image as visual anchor. Add small natural hand movement toward the gloves. Keep the gray skullcap visible and stable. Maintain the same lunch table, hard hat, thermos, lunch container, worksite background, and natural daylight.",
+          "negative_prompt": "No broken hands, no extra fingers, no product drift, no text, no poster look.",
+          "negative_prompt_supported_by_runninghub": false
+        },
+        "duration": {
+          "app_duration_seconds": 3,
+          "provider_duration_seconds": 6,
+          "provider_duration_minimum_seconds": 6,
+          "provider_duration_adjusted_to_minimum": true
+        },
+        "provider_fields": {
+          "provider": "runninghub",
+          "model_route": "rhart-video-g/image-to-video",
+          "aspectRatio": "9:16",
+          "resolution": "480p",
+          "upload_endpoint": "POST /openapi/v2/media/upload/binary",
+          "submit_endpoint": "POST /openapi/v2/rhart-video-g/image-to-video",
+          "query_endpoint": "POST /openapi/v2/query"
+        },
+        "call_budget": {
+          "max_upload_calls": 1,
+          "max_submit_calls": 1,
+          "max_retry_submit_calls": 0,
+          "max_second_submit_calls": 0,
+          "query_same_task_until_terminal_or_timeout": true
+        },
+        "output_plan": {
+          "output_dir": "data/media/provider-runs/r3-9b-runninghub-package/02-g0_r1_shot_002/",
+          "expected_local_artifact_registration": {
+            "artifact_type": "video",
+            "role": "generated_clip",
+            "provider_name": "runninghub",
+            "project_id": "project_b742cb15-e44e-41b2-8d2d-4b90a30720df",
+            "shot_id": "g0_r1_shot_002",
+            "storage_directory": "data/media/provider-runs/r3-9b-runninghub-package/02-g0_r1_shot_002/",
+            "ffprobe_validation_required": true,
+            "source_asset_overwrite_allowed": false
+          }
+        },
+        "request_plan": {
+          "upload": {
+            "endpoint": "POST /openapi/v2/media/upload/binary",
+            "file_field": "file",
+            "file_name": "artifact_9ad1bfe1-c830-458c-a413-39fd15c9d0c0.png",
+            "mime_type": "image/png",
+            "file_size_bytes": 2200884,
+            "sha256": "adf507688a4441805366cfa867a7348ed710e76844eb00050141b48e0e365b88",
+            "binary_payload_included": false,
+            "base64_included": false,
+            "authorization_value_included": false
+          },
+          "submit": {
+            "endpoint": "POST /openapi/v2/rhart-video-g/image-to-video",
+            "request_fields": [
+              "prompt",
+              "aspectRatio",
+              "imageUrls",
+              "resolution",
+              "duration"
+            ],
+            "prompt_text_length": 231,
+            "negative_prompt_supported": false,
+            "negative_prompt_text_length": 77,
+            "image_url_values_included": false,
+            "image_url_placeholder_used": true,
+            "raw_provider_payload_included": false
+          },
+          "query": {
+            "endpoint": "POST /openapi/v2/query",
+            "body_shape": {
+              "taskId": "string"
+            },
+            "task_id_value_included": false,
+            "status_query_not_a_second_submit": true
+          }
+        }
+      },
+      {
+        "status": "READY_FOR_FUTURE_AUTHORIZED_SUBMIT",
+        "blocked_reasons": [],
+        "shot_id": "g0_r1_shot_003",
+        "order": 3,
+        "image_artifact": {
+          "artifact_id": "artifact_a7c5d752-cdd6-478e-b396-5790df3af05f",
+          "artifact_id_from_app": true,
+          "artifact_type": "image",
+          "role": "storyboard_image",
+          "status": "active",
+          "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_a7c5d752-cdd6-478e-b396-5790df3af05f.png",
+          "storage_is_app_media": true,
+          "storage_sha256": "0519663556647657be59b46de19fda254e32ee8f1156f06d599311993e99d2f0",
+          "source_path": "A:\\AI Video Production Workspace\\data\\imports\\g0_r1_SHOT_003_IMAGE_WEBGPT_V2.png",
+          "source_sha256": "0519663556647657be59b46de19fda254e32ee8f1156f06d599311993e99d2f0",
+          "source_asset_overwrite_allowed": false
+        },
+        "prompt": {
+          "shot_description": "Ryan adjusts the gray skullcap with both hands, showing comfort, fit, texture, seam structure, and label.",
+          "video_prompt": "Use image as visual anchor. Add subtle hand adjustment motion around the cap edge. Keep cap texture, seams, label, fit, face, wardrobe, and daylight stable. Motion should feel ordinary and practical.",
+          "negative_prompt": "No distorted hands, no warped cap, no text, no CGI, no face drift, no exaggerated motion.",
+          "negative_prompt_supported_by_runninghub": false
+        },
+        "duration": {
+          "app_duration_seconds": 4,
+          "provider_duration_seconds": 6,
+          "provider_duration_minimum_seconds": 6,
+          "provider_duration_adjusted_to_minimum": true
+        },
+        "provider_fields": {
+          "provider": "runninghub",
+          "model_route": "rhart-video-g/image-to-video",
+          "aspectRatio": "9:16",
+          "resolution": "480p",
+          "upload_endpoint": "POST /openapi/v2/media/upload/binary",
+          "submit_endpoint": "POST /openapi/v2/rhart-video-g/image-to-video",
+          "query_endpoint": "POST /openapi/v2/query"
+        },
+        "call_budget": {
+          "max_upload_calls": 1,
+          "max_submit_calls": 1,
+          "max_retry_submit_calls": 0,
+          "max_second_submit_calls": 0,
+          "query_same_task_until_terminal_or_timeout": true
+        },
+        "output_plan": {
+          "output_dir": "data/media/provider-runs/r3-9b-runninghub-package/03-g0_r1_shot_003/",
+          "expected_local_artifact_registration": {
+            "artifact_type": "video",
+            "role": "generated_clip",
+            "provider_name": "runninghub",
+            "project_id": "project_b742cb15-e44e-41b2-8d2d-4b90a30720df",
+            "shot_id": "g0_r1_shot_003",
+            "storage_directory": "data/media/provider-runs/r3-9b-runninghub-package/03-g0_r1_shot_003/",
+            "ffprobe_validation_required": true,
+            "source_asset_overwrite_allowed": false
+          }
+        },
+        "request_plan": {
+          "upload": {
+            "endpoint": "POST /openapi/v2/media/upload/binary",
+            "file_field": "file",
+            "file_name": "artifact_a7c5d752-cdd6-478e-b396-5790df3af05f.png",
+            "mime_type": "image/png",
+            "file_size_bytes": 2397319,
+            "sha256": "0519663556647657be59b46de19fda254e32ee8f1156f06d599311993e99d2f0",
+            "binary_payload_included": false,
+            "base64_included": false,
+            "authorization_value_included": false
+          },
+          "submit": {
+            "endpoint": "POST /openapi/v2/rhart-video-g/image-to-video",
+            "request_fields": [
+              "prompt",
+              "aspectRatio",
+              "imageUrls",
+              "resolution",
+              "duration"
+            ],
+            "prompt_text_length": 199,
+            "negative_prompt_supported": false,
+            "negative_prompt_text_length": 89,
+            "image_url_values_included": false,
+            "image_url_placeholder_used": true,
+            "raw_provider_payload_included": false
+          },
+          "query": {
+            "endpoint": "POST /openapi/v2/query",
+            "body_shape": {
+              "taskId": "string"
+            },
+            "task_id_value_included": false,
+            "status_query_not_a_second_submit": true
+          }
+        }
+      },
+      {
+        "status": "READY_FOR_FUTURE_AUTHORIZED_SUBMIT",
+        "blocked_reasons": [],
+        "shot_id": "g0_r1_shot_004",
+        "order": 4,
+        "image_artifact": {
+          "artifact_id": "artifact_e35ff0c0-d0fc-4079-bc4b-38b4dbd88cf7",
+          "artifact_id_from_app": true,
+          "artifact_type": "image",
+          "role": "storyboard_image",
+          "status": "active",
+          "storage_uri": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\images\\artifact_e35ff0c0-d0fc-4079-bc4b-38b4dbd88cf7.png",
+          "storage_is_app_media": true,
+          "storage_sha256": "893b5ff2a411098bf80bf6b63cff36764e7eba6e9c963bac2c5f6d5f2283df6b",
+          "source_path": "A:\\AI Video Production Workspace\\data\\imports\\g0_r1_SHOT_004_IMAGE_WEBGPT_V2.png",
+          "source_sha256": "893b5ff2a411098bf80bf6b63cff36764e7eba6e9c963bac2c5f6d5f2283df6b",
+          "source_asset_overwrite_allowed": false
+        },
+        "prompt": {
+          "shot_description": "Ryan stands with hard hat and work bag, ready to return to the worksite while still wearing the gray skullcap.",
+          "video_prompt": "Use image as visual anchor. Add slight forward body movement or gentle handheld follow as Ryan prepares to return to work. Keep the gray skullcap visible and preserve grounded workday realism.",
+          "negative_prompt": "No heroic exaggeration, no unsafe staging, no text, no product drift, no CGI.",
+          "negative_prompt_supported_by_runninghub": false
+        },
+        "duration": {
+          "app_duration_seconds": 5,
+          "provider_duration_seconds": 6,
+          "provider_duration_minimum_seconds": 6,
+          "provider_duration_adjusted_to_minimum": true
+        },
+        "provider_fields": {
+          "provider": "runninghub",
+          "model_route": "rhart-video-g/image-to-video",
+          "aspectRatio": "9:16",
+          "resolution": "480p",
+          "upload_endpoint": "POST /openapi/v2/media/upload/binary",
+          "submit_endpoint": "POST /openapi/v2/rhart-video-g/image-to-video",
+          "query_endpoint": "POST /openapi/v2/query"
+        },
+        "call_budget": {
+          "max_upload_calls": 1,
+          "max_submit_calls": 1,
+          "max_retry_submit_calls": 0,
+          "max_second_submit_calls": 0,
+          "query_same_task_until_terminal_or_timeout": true
+        },
+        "output_plan": {
+          "output_dir": "data/media/provider-runs/r3-9b-runninghub-package/04-g0_r1_shot_004/",
+          "expected_local_artifact_registration": {
+            "artifact_type": "video",
+            "role": "generated_clip",
+            "provider_name": "runninghub",
+            "project_id": "project_b742cb15-e44e-41b2-8d2d-4b90a30720df",
+            "shot_id": "g0_r1_shot_004",
+            "storage_directory": "data/media/provider-runs/r3-9b-runninghub-package/04-g0_r1_shot_004/",
+            "ffprobe_validation_required": true,
+            "source_asset_overwrite_allowed": false
+          }
+        },
+        "request_plan": {
+          "upload": {
+            "endpoint": "POST /openapi/v2/media/upload/binary",
+            "file_field": "file",
+            "file_name": "artifact_e35ff0c0-d0fc-4079-bc4b-38b4dbd88cf7.png",
+            "mime_type": "image/png",
+            "file_size_bytes": 2359723,
+            "sha256": "893b5ff2a411098bf80bf6b63cff36764e7eba6e9c963bac2c5f6d5f2283df6b",
+            "binary_payload_included": false,
+            "base64_included": false,
+            "authorization_value_included": false
+          },
+          "submit": {
+            "endpoint": "POST /openapi/v2/rhart-video-g/image-to-video",
+            "request_fields": [
+              "prompt",
+              "aspectRatio",
+              "imageUrls",
+              "resolution",
+              "duration"
+            ],
+            "prompt_text_length": 192,
+            "negative_prompt_supported": false,
+            "negative_prompt_text_length": 77,
+            "image_url_values_included": false,
+            "image_url_placeholder_used": true,
+            "raw_provider_payload_included": false
+          },
+          "query": {
+            "endpoint": "POST /openapi/v2/query",
+            "body_shape": {
+              "taskId": "string"
+            },
+            "task_id_value_included": false,
+            "status_query_not_a_second_submit": true
+          }
+        }
+      }
+    ]
+  },
+  "future_authorization": {
+    "authorization_required_before_live_call": true,
+    "phrase_is_draft_only": true,
+    "exact_authorization_phrase_draft": "Authorize one RunningHub storyboard-package generation dry-run plan for future live execution only after this phrase is explicitly re-submitted by Jenn:; provider=runninghub; model_route=rhart-video-g/image-to-video; project_id=project_b742cb15-e44e-41b2-8d2d-4b90a30720df; storyboard_package_id=storyboard_package_1e5c1eca-624e-4687-9775-31e4b59f428a; shot_count=4; duration_seconds_per_shot=6; aspectRatio=9:16; resolution=480p; max_upload_calls_total=4; max_submit_calls_total=4; max_upload_calls_per_shot=1; max_submit_calls_per_shot=1; no_retry=true; no_second_submit=true; query_only_same_task_id_until_terminal_or_timeout=true; output_root=data/media/provider-runs/r3-9b-runninghub-package/; download_each_success_to_local_media_artifact_storage=true; ffprobe_validate_each_output=true; do_not_call_runway=true; do_not_regenerate=true; do_not_batch_beyond_listed_shots=true; do_not_publish_or_deploy=true; do_not_overwrite_source_assets=true; do_not_print_secrets=true; do_not_record_raw_provider_payload=true; do_not_record_signed_urls=true",
+    "budget_and_stop_conditions": {
+      "max_upload_calls_total": 4,
+      "max_submit_calls_total": 4,
+      "max_upload_calls_per_shot": 1,
+      "max_submit_calls_per_shot": 1,
+      "no_retry": true,
+      "no_second_submit": true,
+      "stop_if_any_upload_fails": true,
+      "stop_if_any_submit_fails": true,
+      "query_only_same_task_id_until_terminal_or_timeout": true,
+      "no_provider_call_without_new_exact_current_authorization": true
+    }
+  },
+  "import_guard": {
+    "accepted_pending_ids": false,
+    "audit_images_imported": false,
+    "product_reference_imported_as_storyboard_image": false,
+    "rejected_assets_from_import_prep": [
+      {
+        "package_source_file": "audit/FAILED_LAYOUT_OUTPUT_01_DO_NOT_USE_AS_KEYFRAME.png",
+        "status": "REJECTED_AUDIT_IMAGE"
+      },
+      {
+        "package_source_file": "audit/FAILED_LAYOUT_OUTPUT_02_DO_NOT_USE_AS_KEYFRAME.png",
+        "status": "REJECTED_AUDIT_IMAGE"
+      },
+      {
+        "package_source_file": "references/product_reference_gray_skullcap.png",
+        "status": "REJECTED_PRODUCT_REFERENCE"
+      }
+    ]
+  },
+  "acceptance": {
+    "one_plan_entry_per_frozen_package_shot": true,
+    "every_plan_entry_references_real_app_artifact_id": true,
+    "every_plan_entry_has_local_source_path": true,
+    "no_source_asset_overwrite": true,
+    "blocked_shots_identified_with_local_reason": true,
+    "future_live_execution_authorization_gated": true,
+    "single_submit_budget_bounded": true,
+    "no_credentials_or_env_read": true,
+    "no_provider_call": true,
+    "no_raw_provider_payload_or_signed_url_recorded": true
+  },
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "upload_attempted": false,
+    "submit_attempted": false,
+    "status_poll_attempted": false,
+    "output_download_attempted": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "credentials_read": false,
+    "env_files_read": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "source_assets_overwritten": false,
+    "secret_values_exposed": false,
+    "raw_provider_payload_recorded": false,
+    "signed_url_recorded": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false,
+    "production_credentials_change": false
+  },
+  "validation": {
+    "JSON parse for generated plan report": "PASS",
+    "npm run r3:9b:plan": "PASS",
+    "npm run typecheck": "PASS",
+    "npm run test:m1": "PASS",
+    "npm run secret:scan": "PASS",
+    "git diff --check": "PASS_WITH_CRLF_WARNINGS_ONLY"
+  },
+  "changed_files": [
+    "package.json",
+    "scripts/r3-9b-storyboard-package-to-runninghub-generation-plan.ts",
+    "data/reports/r3_9b_storyboard_package_to_runninghub_generation_plan_result.json",
+    ".agent_board/*"
+  ],
+  "blocked_reason": null,
+  "next_step": {
+    "live_provider_call_requires_new_exact_current_authorization": true,
+    "recommended_operator_action": "Review the draft phrase, decide whether to authorize all 4 shots or a subset, then provide a fresh exact authorization phrase before any RunningHub call."
+  }
+}
