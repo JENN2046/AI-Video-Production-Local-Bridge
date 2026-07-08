@@ -459,3 +459,19 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - Final assembly remains blocked until regenerated clips are reviewed and accepted by a later human review task.
 - No `.env` or credential read, provider call, media upload, submit, status poll, output download, provider credit consumption, real video generation, regeneration execution, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
 - R3-9I local implementation commit: `44bb89f`.
+
+## R3-9J Closeout
+
+- R3-9J completed on 2026-07-08T17:54:52+08:00 with `PASS_LIVE_4_SHOT_REGENERATION_COMPLETED`.
+- Report: `data/reports/r3_9j_runninghub_regeneration_single_pass_live_execution_result.json`.
+- RunningHub live execution used 4 uploads, 4 submits, and 36 status queries.
+- The first returned taskId was resumed after a transient query failure without a second submit.
+- Generated clip artifacts:
+  - `g0_r1_shot_001`: `artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203`
+  - `g0_r1_shot_002`: `artifact_eeef12a7-9533-4172-beaa-6c25b91415f7`
+  - `g0_r1_shot_003`: `artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a`
+  - `g0_r1_shot_004`: `artifact_263a2344-5154-4981-bfe4-120571effb3e`
+- All 4 regenerated clips downloaded to local media artifact storage and ffprobe validated with `PASS`.
+- No retry submit, second submit, Runway call, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+- R3-9J local implementation commit: `PENDING_LOCAL_COMMIT`.
+- Next recommended action: prepare a regenerated clip review package before final assembly.

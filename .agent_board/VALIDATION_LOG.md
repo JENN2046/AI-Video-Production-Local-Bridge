@@ -1791,3 +1791,35 @@ Notes:
 - Future exact authorization phrase draft is present, but no provider execution occurred.
 - R3-9I local implementation commit: `44bb89f`.
 - No `.env` or credential read, RunningHub call, Runway call, media upload, provider submit, status poll, output download, provider credit consumption, real video generation, regeneration execution, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+
+### R3-9J - 2026-07-08T17:54:52+08:00
+
+Commands:
+
+```bash
+npm run r3:9j:live
+node -e JSON.parse(...)
+npm run typecheck
+npm run test:m1
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_LIVE_4_SHOT_REGENERATION_COMPLETED
+```
+
+Evidence:
+- `data/reports/r3_9j_runninghub_regeneration_single_pass_live_execution_result.json`
+- `data/reports/r3_9i_runninghub_regeneration_authorization_prep_result.json`
+- `data/reports/secret_scan_result.json`
+
+Notes:
+- RunningHub live execution used 4 uploads, 4 submits, and 36 status queries.
+- Generated artifacts: `artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203`, `artifact_eeef12a7-9533-4172-beaa-6c25b91415f7`, `artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a`, `artifact_263a2344-5154-4981-bfe4-120571effb3e`.
+- All 4 generated clips have ffprobe `PASS`.
+- The first returned taskId was resumed after a transient query failure without a second submit.
+- R3-9J local implementation commit: `PENDING_LOCAL_COMMIT`.
+- No retry submit, second submit, Runway call, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.

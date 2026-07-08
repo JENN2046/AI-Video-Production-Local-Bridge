@@ -2,38 +2,27 @@
 
 Status: DONE
 
-Task: R3-9I_RUNNINGHUB_REGENERATION_AUTHORIZATION_PREP
+Task: R3-9J_RUNNINGHUB_REGENERATION_SINGLE_PASS_LIVE_EXECUTION
 
-Title: RunningHub Regeneration Authorization Prep
+Title: RunningHub Regeneration Single-Pass Live Execution
 
 Priority: P0
 
-Lane: RunningHub Regeneration Authorization Prep
+Lane: RunningHub Regeneration Live Execution
 
 Project: AI Video Production Workspace Three Route Plan
 
-Depends on: R3-9H_SHOT_002_REPLACEMENT_DECISION
+Depends on: R3-9I_RUNNINGHUB_REGENERATION_AUTHORIZATION_PREP
+
+## Claim
+
+- claimed_by: Codex R3-9J RunningHub regeneration live execution
+- run_id: codex-20260708-174525-r3-9j
+- claimed_at: 2026-07-08T17:45:25+08:00
 
 ## Goal
 
-Prepare a local-only, auditable RunningHub regeneration authorization package for the four rejected or regeneration-requested clips before any paid live execution.
-
-## Required Work
-
-- Parse `data/reports/r3_9f_human_clip_review_decision_apply_result.json`, `data/reports/r3_9g_regeneration_strategy_for_review_notes_result.json`, and `data/reports/r3_9h_shot_002_replacement_decision_result.json` as the source of truth.
-- Build exactly one 4-shot regeneration authorization plan for `g0_r1_shot_001`, `g0_r1_shot_002`, `g0_r1_shot_003`, and `g0_r1_shot_004`.
-- Use R3-9G revised strategy for SHOT_001, SHOT_003, and SHOT_004.
-- Use R3-9H same-keyframe repair recommendation for SHOT_002.
-- Record each shot's source storyboard image artifact, rejected generated clip artifact, revised prompt guidance, revised negative constraints, provider settings, output directory, and review focus.
-- Draft a future exact authorization phrase for a later live RunningHub task.
-- Do not read env files or credentials, call providers, upload media, submit jobs, poll status, download provider outputs, regenerate clips, batch-expand, assemble final video, mutate the frozen storyboard package, or overwrite source assets.
-
-## Shot Requirements
-
-- SHOT_001: food must be picked from inside the lunchbox and brought to the mouth; the lunchbox stays on the table.
-- SHOT_002: use the same storyboard image artifact; forbid sighing, unhappy expression, slumped posture, disappointment, fatigue, and product-negative mood.
-- SHOT_003: cap folds must become shallower and fabric must respond realistically to pull direction.
-- SHOT_004: cap lighting, shadow direction, fabric texture, and contact shadow must remain physically consistent.
+Execute the authorized 4-shot RunningHub regeneration run exactly once, with sanitized local evidence and no retry or batch expansion.
 
 ## Budget Boundary
 
@@ -52,29 +41,30 @@ Prepare a local-only, auditable RunningHub regeneration authorization package fo
 - no batch expansion
 - stop on first upload or submit failure
 
+## Boundary
+
+- Authorized to read `.env.local` only for `RUNNINGHUB_API_KEY`; secret values must not be printed or recorded.
+- Authorized to call RunningHub for the 4 planned regeneration shots only.
+- No retry, second submit, Runway fallback, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy.
+
 ## Validation
 
-- JSON parse for generated R3-9I authorization prep report
+- JSON parse for generated R3-9J live report
 - `npm run typecheck`
 - `npm run test:m1`
 - `npm run secret:scan`
 - `git diff --check`
 
-## Boundary
-
-Authorization prep only. No env or credential read, provider call, regeneration execution, final assembly, storyboard package mutation, source overwrite, push, tag, release, or deploy.
-
-## Claim
-
-- claimed_by: Codex R3-9I regeneration authorization prep
-- run_id: codex-20260708-172759-r3-9i
-- claimed_at: 2026-07-08T17:27:59+08:00
-
 ## Result
 
-- completed_by: Codex R3-9I regeneration authorization prep
-- completed_at: 2026-07-08T17:32:46+08:00
-- result: PASS_READY_FOR_USER_AUTHORIZATION
+- completed_by: Codex R3-9J RunningHub regeneration live execution
+- completed_at: 2026-07-08T17:54:52+08:00
+- result: PASS_LIVE_4_SHOT_REGENERATION_COMPLETED
 - validation_result: PASS
-- report: data/reports/r3_9i_runninghub_regeneration_authorization_prep_result.json
-- commit: 44bb89f
+- report: data/reports/r3_9j_runninghub_regeneration_single_pass_live_execution_result.json
+- generated_artifacts:
+  - g0_r1_shot_001: artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203
+  - g0_r1_shot_002: artifact_eeef12a7-9533-4172-beaa-6c25b91415f7
+  - g0_r1_shot_003: artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a
+  - g0_r1_shot_004: artifact_263a2344-5154-4981-bfe4-120571effb3e
+- commit: PENDING_LOCAL_COMMIT

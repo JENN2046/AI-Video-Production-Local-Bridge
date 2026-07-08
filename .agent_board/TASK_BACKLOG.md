@@ -3053,3 +3053,52 @@ Prepare a local-only, auditable RunningHub regeneration authorization package fo
 - Final assembly remains blocked until regenerated clips are reviewed and accepted by a later human review task.
 - Validation passed: JSON parse, `npm run r3:9i:prep`, `npm run typecheck`, `npm run test:m1`, `npm run secret:scan`, `git diff --check` with CRLF warnings only.
 - No `.env` or credential read, provider call, media upload, submit, status poll, output download, provider credit consumption, real video generation, regeneration execution, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+
+## R3-9J_RUNNINGHUB_REGENERATION_SINGLE_PASS_LIVE_EXECUTION - RunningHub Regeneration Single-Pass Live Execution
+
+status: DONE
+priority: P0
+lane: RunningHub Regeneration Live Execution
+project: AI Video Production Workspace Three Route Plan
+scope: execute exactly one authorized RunningHub 4-shot regeneration live pass from R3-9I
+branch: local-only
+depends_on: R3-9I_RUNNINGHUB_REGENERATION_AUTHORIZATION_PREP
+source_plan: data/reports/r3_9i_runninghub_regeneration_authorization_prep_result.json
+report_path: data/reports/r3_9j_runninghub_regeneration_single_pass_live_execution_result.json
+allowed_delivery: live_execution_report,generated_video_artifacts,ffprobe_validation,task_board_update,local_commit
+blocked_delivery: retry,second_submit,runway_call,batch_expansion,final_assembly,storyboard_package_mutation,source_overwrite,secret_value_output,raw_provider_payload_recording,signed_url_recording,push,tag,release,deploy
+created_at: 2026-07-08T17:45:25+08:00
+updated_at: 2026-07-08T17:54:52+08:00
+claimed_by: Codex R3-9J RunningHub regeneration live execution
+claim_run_id: codex-20260708-174525-r3-9j
+claimed_at: 2026-07-08T17:45:25+08:00
+completed_by: Codex R3-9J RunningHub regeneration live execution
+completed_at: 2026-07-08T17:54:52+08:00
+result: PASS_LIVE_4_SHOT_REGENERATION_COMPLETED
+validation_result: PASS
+commit: PENDING_LOCAL_COMMIT
+
+### Goal
+
+Execute the authorized 4-shot RunningHub regeneration run exactly once, with sanitized local evidence and no retry or batch expansion.
+
+### Boundary
+
+- Authorized to read `.env.local` only for `RUNNINGHUB_API_KEY`; secret values must not be printed or recorded.
+- Authorized for at most 4 uploads and 4 submits total, one per planned shot.
+- No retry, second submit, Runway fallback, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy.
+
+### Result
+
+- Completed the authorized 4-shot RunningHub regeneration live pass.
+- Upload calls: 4.
+- Submit calls: 4.
+- Query calls: 36.
+- Generated video artifacts:
+  - `g0_r1_shot_001`: `artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203`
+  - `g0_r1_shot_002`: `artifact_eeef12a7-9533-4172-beaa-6c25b91415f7`
+  - `g0_r1_shot_003`: `artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a`
+  - `g0_r1_shot_004`: `artifact_263a2344-5154-4981-bfe4-120571effb3e`
+- All 4 regenerated clips downloaded to local media artifact storage and ffprobe validated with `PASS`.
+- The first taskId was resumed after a transient query failure without a second submit.
+- No retry submit, second submit, Runway call, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.

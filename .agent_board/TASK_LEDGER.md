@@ -3157,3 +3157,75 @@ Boundary:
 Next:
 - A future live RunningHub regeneration task requires fresh exact current Jenn authorization using the report's authorization phrase draft.
 - After any future live regeneration, regenerated clips must be reviewed and accepted before final assembly.
+
+### 2026-07-08T17:54:52+08:00 - R3-9J RunningHub Regeneration Single-Pass Live Execution
+
+Result: DONE / PASS_LIVE_4_SHOT_REGENERATION_COMPLETED
+Project: AI Video Production Workspace Three Route Plan
+Lane: RunningHub Regeneration Live Execution
+Claimed by: Codex R3-9J RunningHub regeneration live execution
+Completed by: Codex R3-9J RunningHub regeneration live execution
+Run ID: codex-20260708-174525-r3-9j
+Started at: 2026-07-08T17:45:25+08:00
+Completed at: 2026-07-08T17:54:52+08:00
+
+Scope:
+- Executed the user-authorized 4-shot RunningHub regeneration single-pass live run from R3-9I.
+- Read `.env.local` only to load `RUNNINGHUB_API_KEY` and related allowed provider settings.
+- Downloaded successful outputs to local media artifact storage and ffprobe validated them.
+- Did not retry submits, perform second submits, call Runway, expand batch, mutate storyboard package, or assemble final video.
+
+Changed files:
+- package.json
+- scripts/r3-9j-runninghub-regeneration-single-pass-live-execution.ts
+- data/reports/r3_9j_runninghub_regeneration_single_pass_live_execution_result.json
+- .agent_board/NEXT_TASK.json
+- .agent_board/NEXT_TASK.md
+- .agent_board/RUN_LOCK.md
+- .agent_board/TASK_BACKLOG.md
+- .agent_board/HANDOFF.md
+- .agent_board/VALIDATION_LOG.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: npm run r3:9j:live
+  result: PASS
+- command: node -e JSON.parse(...)
+  result: PASS
+- command: npm run typecheck
+  result: PASS
+- command: npm run test:m1
+  result: PASS
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_9j_runninghub_regeneration_single_pass_live_execution_result.json
+- data/reports/r3_9i_runninghub_regeneration_authorization_prep_result.json
+- data/reports/secret_scan_result.json
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: PENDING_LOCAL_COMMIT
+- push: no
+- PR: none
+
+Live summary:
+- upload_call_count: 4
+- submit_call_count: 4
+- query_call_count: 36
+- successful_shot_count: 4
+- generated artifacts:
+  - g0_r1_shot_001: artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203
+  - g0_r1_shot_002: artifact_eeef12a7-9533-4172-beaa-6c25b91415f7
+  - g0_r1_shot_003: artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a
+  - g0_r1_shot_004: artifact_263a2344-5154-4981-bfe4-120571effb3e
+
+Boundary:
+- No retry submit, second submit, Runway call, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+
+Next:
+- Prepare a regenerated clip review package for human acceptance before final assembly.

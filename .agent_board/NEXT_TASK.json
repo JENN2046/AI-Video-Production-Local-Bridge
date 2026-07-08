@@ -2,44 +2,38 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "R3-9I_RUNNINGHUB_REGENERATION_AUTHORIZATION_PREP",
+  "task_id": "R3-9J_RUNNINGHUB_REGENERATION_SINGLE_PASS_LIVE_EXECUTION",
   "status": "DONE",
   "priority": "P0",
-  "lane": "RunningHub Regeneration Authorization Prep",
+  "lane": "RunningHub Regeneration Live Execution",
   "project": "AI Video Production Workspace Three Route Plan",
-  "title": "RunningHub Regeneration Authorization Prep",
+  "title": "RunningHub Regeneration Single-Pass Live Execution",
   "scope": [
-    "prepare one coherent local authorization package for regenerating all 4 revision_needed shots through the RunningHub primary lane",
-    "merge R3-9G regeneration strategies for g0_r1_shot_001, g0_r1_shot_003, and g0_r1_shot_004 with the R3-9H same-keyframe repair recommendation for g0_r1_shot_002",
-    "produce a dry-run execution plan, budget boundary, output directory plan, and exact future authorization phrase draft",
-    "do not read env files or credentials, call providers, upload media, submit jobs, poll status, download provider outputs, regenerate clips, batch-expand, assemble final video, mutate the frozen storyboard package, or overwrite source assets"
+    "execute exactly one authorized RunningHub 4-shot regeneration single-pass live run from the R3-9I source plan",
+    "read local .env.local only for RUNNINGHUB_API_KEY and do not print secret values",
+    "cap execution at max_upload_calls_total=4 and max_submit_calls_total=4, one upload and one submit per planned shot",
+    "download successful outputs to local media artifact storage and ffprobe validate them"
   ],
-  "goal": "Prepare a local-only, auditable RunningHub regeneration authorization package for the four rejected or regeneration-requested clips before any paid live execution.",
+  "goal": "Execute the authorized 4-shot RunningHub regeneration run exactly once, with sanitized local evidence and no retry or batch expansion.",
   "acceptance": [
-    "R3-9F, R3-9G, and R3-9H reports are parsed as the source of truth.",
-    "Plan includes exactly 4 shots: g0_r1_shot_001, g0_r1_shot_002, g0_r1_shot_003, and g0_r1_shot_004.",
-    "SHOT_001 plan preserves the lunchbox on the table and requires food to be picked from inside the lunchbox and brought to the mouth.",
-    "SHOT_002 plan uses the same storyboard image artifact and explicitly forbids sighing, unhappy expression, slumped posture, disappointment, fatigue, or product-negative mood.",
-    "SHOT_003 plan requires realistic cap fold behavior where folds become shallower and fabric responds to pull direction.",
-    "SHOT_004 plan requires physically consistent cap lighting, shadow direction, fabric texture, and contact shadow.",
-    "Each shot records source storyboard image artifact id, rejected generated clip artifact id, revised prompt guidance, revised negative constraints, duration_seconds=6, aspectRatio=9:16, resolution=480p, and isolated output_dir.",
-    "Budget boundary records max_upload_calls_total=4, max_submit_calls_total=4, max one upload and one submit per shot, no retry, no second submit, no Runway fallback, no batch expansion, and stop-on-first upload or submit failure.",
-    "Report includes a future exact authorization phrase draft but does not execute it.",
-    "Report states final assembly remains blocked until regenerated clips are reviewed and accepted by a later human review task.",
-    "Report records network_call_attempted=false, runninghub_called=false, runway_called=false, credentials_read=false, env_files_read=false, provider_credits_consumed=false, real_video_generated=false, regeneration_performed=false, final_assembly_performed=false, source_assets_overwritten=false, secret_values_exposed=false."
+    "R3-9I source plan is parsed and hard-gated before live execution.",
+    "Exactly 4 planned shots are attempted unless stop-on-first failure triggers.",
+    "Execution never exceeds 4 uploads and 4 submits total.",
+    "No retry, second submit, Runway fallback, batch expansion, final assembly, source overwrite, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurs.",
+    "Successful outputs are downloaded, registered as generated video artifacts, and ffprobe validated.",
+    "Report records sanitized provider evidence without secret values or signed URLs."
   ],
   "validation": [
-    "JSON parse for generated R3-9I authorization prep report",
+    "JSON parse for generated R3-9J live report",
     "npm run typecheck",
     "npm run test:m1",
     "npm run secret:scan",
     "git diff --check"
   ],
   "allowed_delivery": [
-    "authorization_prep_report",
-    "4_shot_regeneration_dry_run_plan",
-    "budget_boundary",
-    "exact_authorization_phrase_draft",
+    "live_execution_report",
+    "generated_video_artifacts",
+    "ffprobe_validation",
     "task_board_update",
     "local_commit"
   ],
@@ -68,51 +62,41 @@
     "deploy"
   ],
   "depends_on": [
-    "R3-9H_SHOT_002_REPLACEMENT_DECISION"
+    "R3-9I_RUNNINGHUB_REGENERATION_AUTHORIZATION_PREP"
   ],
-  "created_at": "2026-07-08T17:23:25+08:00",
-  "updated_at": "2026-07-08T17:32:46+08:00",
-  "claimed_by": "Codex R3-9I regeneration authorization prep",
-  "claim_run_id": "codex-20260708-172759-r3-9i",
-  "claimed_at": "2026-07-08T17:27:59+08:00",
-  "completed_by": "Codex R3-9I regeneration authorization prep",
-  "completed_at": "2026-07-08T17:32:46+08:00",
+  "created_at": "2026-07-08T17:45:25+08:00",
+  "updated_at": "2026-07-08T17:54:52+08:00",
+  "claimed_by": "Codex R3-9J RunningHub regeneration live execution",
+  "claim_run_id": "codex-20260708-174525-r3-9j",
+  "claimed_at": "2026-07-08T17:45:25+08:00",
+  "completed_by": "Codex R3-9J RunningHub regeneration live execution",
+  "completed_at": "2026-07-08T17:54:52+08:00",
   "blocked_by": null,
   "blocked_at": null,
   "failed_by": null,
   "failed_at": null,
   "skipped_by": null,
   "skipped_at": null,
-  "result": "PASS_READY_FOR_USER_AUTHORIZATION",
+  "result": "PASS_LIVE_4_SHOT_REGENERATION_COMPLETED",
   "validation_result": "PASS",
   "evidence": [
-    "data/reports/r3_9f_human_clip_review_decision_apply_result.json",
-    "data/reports/r3_9g_regeneration_strategy_for_review_notes_result.json",
-    "data/reports/r3_9h_shot_002_replacement_decision_result.json"
+    "data/reports/r3_9i_runninghub_regeneration_authorization_prep_result.json",
+    "data/reports/r3_9j_runninghub_regeneration_single_pass_live_execution_result.json"
   ],
-  "commit": "44bb89f",
-  "delivery": "local_only_authorization_prep",
-  "boundary_or_safety_stop": "prep only; no provider call, env or credential read, regeneration execution, final assembly, source overwrite, or deployment",
+  "commit": "PENDING_LOCAL_COMMIT",
+  "delivery": "authorized_live_provider_execution",
+  "boundary_or_safety_stop": "live execution authorized only for one 4-shot RunningHub regeneration pass; no retry, no second submit, no batch expansion, no Runway fallback",
   "blocked_reason": null,
   "failure_reason": null,
   "safe_actions_completed": [
-    "Generated data/reports/r3_9i_runninghub_regeneration_authorization_prep_result.json.",
-    "Merged R3-9G strategies for g0_r1_shot_001, g0_r1_shot_003, and g0_r1_shot_004 with R3-9H same-keyframe repair for g0_r1_shot_002.",
-    "Prepared a bounded 4-shot RunningHub regeneration authorization phrase draft with max 4 uploads and max 4 submits.",
-    "Validated JSON parse, npm run r3:9i:prep, npm run typecheck, npm run test:m1, npm run secret:scan, and git diff --check."
+    "Executed one authorized RunningHub 4-shot regeneration single-pass live run from R3-9I.",
+    "Used exactly 4 uploads and 4 submits total, one per planned shot.",
+    "Resumed the first returned taskId after a transient query failure without a second submit.",
+    "Downloaded and registered 4 generated video artifacts with ffprobe PASS.",
+    "Validated JSON parse, npm run r3:9j:live, npm run typecheck, npm run test:m1, npm run secret:scan, and git diff --check."
   ],
   "unsafe_action_not_performed": [
-    "env_file_read",
-    "credential_read",
-    "runninghub_call",
     "runway_call",
-    "media_upload_to_provider",
-    "provider_submit",
-    "status_poll",
-    "output_download_from_provider",
-    "provider_credits_consumed",
-    "real_video_generated",
-    "regeneration_execution",
     "batch_expansion",
     "final_assembly",
     "storyboard_package_mutation",
@@ -126,11 +110,10 @@
     "deploy"
   ],
   "options_for_jenn": [
-    "After R3-9I completes, review the exact authorization phrase draft before any real RunningHub regeneration.",
-    "A future live regeneration task must require fresh exact current authorization and must cap execution to 4 uploads and 4 submits total."
+    "Prepare a human review package for regenerated clips before any final assembly."
   ],
   "next_safe_option": [
-    "Claim R3-9I and generate data/reports/r3_9i_runninghub_regeneration_authorization_prep_result.json locally.",
-    "Do not execute live regeneration until Jenn provides a new exact authorization phrase."
+    "Prepare R3-9K regenerated clip review package.",
+    "Do not assemble final video until regenerated clips are reviewed and accepted."
   ]
 }
