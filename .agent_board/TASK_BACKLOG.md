@@ -2338,6 +2338,40 @@ Run exactly one RunningHub 6-second live canary with the Enterprise-Shared API K
 - `npm run secret:scan`
 - `git diff --check`
 
+## R3-8O_RECEIPT_FIX_R1 - R3-8O Receipt Fix R1
+
+status: READY
+priority: P0
+lane: Provider Evidence Receipt
+project: AI Video Production Workspace Three Route Plan
+scope: backfill R3-8O live canary commit and R3-8O receipt commit before provider path closeout
+branch: local-only
+depends_on: R3-8O_RUNNINGHUB_ENTERPRISE_KEY_6S_SINGLE_SUBMIT_CANARY
+source_plan: R3-8O result
+report_path: data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_result.json
+allowed_delivery: receipt_metadata_update,task_board_update,local_commit
+blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,secret_value_output,raw_provider_payload_recording,signed_url_recording,source_overwrite,push,tag,release,deploy,production_credentials_change
+created_at: 2026-07-08T11:36:49+08:00
+updated_at: 2026-07-08T11:36:49+08:00
+
+### Goal
+
+Repair the R3-8O audit chain before provider path closeout.
+
+### Acceptance
+
+- R3-8O TASK_LEDGER entry records live commit `99dd716`.
+- R3-8O report and ledger receipt metadata records receipt commit `c746b08` where applicable.
+- R3-8O NEXT_TASK/TASK_BACKLOG state remains DONE with result `PASS_LIVE_SINGLE_SUBMIT_COMPLETED`.
+- R3-8K remains `FOLLOW_UP` and depends on `R3-8O_RECEIPT_FIX_R1`.
+- Do not call RunningHub or Runway.
+
+### Validation
+
+- JSON parse for updated report/state files
+- `npm run secret:scan`
+- `git diff --check`
+
 ## R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT - Provider Path Decision Closeout
 
 status: FOLLOW_UP
@@ -2346,13 +2380,13 @@ lane: Provider Decision Closeout
 project: AI Video Production Workspace Three Route Plan
 scope: summarize Runway and RunningHub evidence after Enterprise Key canary result and decide M1 provider path readiness
 branch: local-only
-depends_on: R3-8O_RUNNINGHUB_ENTERPRISE_KEY_6S_SINGLE_SUBMIT_CANARY
-source_plan: R3-8O result
+depends_on: R3-8O_RECEIPT_FIX_R1
+source_plan: R3-8O receipt-fixed result
 report_path: data/reports/r3_8k_provider_path_decision_closeout.json
 allowed_delivery: decision_report,readiness_summary,task_board_update,local_commit
 blocked_delivery: provider_call,provider_credits_consumed,real_video_generated,secret_value_output,source_overwrite,push,tag,release,deploy
 created_at: 2026-07-07T16:06:04+08:00
-updated_at: 2026-07-08T11:12:10+08:00
+updated_at: 2026-07-08T11:36:49+08:00
 
 ### Goal
 

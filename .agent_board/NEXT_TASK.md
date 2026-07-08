@@ -1,78 +1,45 @@
 # NEXT_TASK.md
 
-Status: DONE
+Status: READY
 
-Task: R3-8O_RUNNINGHUB_ENTERPRISE_KEY_6S_SINGLE_SUBMIT_CANARY
+Task: R3-8O_RECEIPT_FIX_R1
 
-Title: R3-8O RunningHub Enterprise Key 6s Single-Submit Canary
+Title: R3-8O Receipt Fix R1
 
 Priority: P0
 
-Lane: Approval Boundary Live Provider Execution
+Lane: Provider Evidence Receipt
 
 Project: AI Video Production Workspace Three Route Plan
 
-Depends on: R3-8N_PROVIDER_ACCESS_STRATEGY_DECISION
+Depends on: R3-8O_RUNNINGHUB_ENTERPRISE_KEY_6S_SINGLE_SUBMIT_CANARY
 
 ## Goal
 
-Run exactly one Jenn-authorized RunningHub 6-second live canary with the Enterprise-Shared API Key path.
+Repair the R3-8O audit chain before provider path closeout.
 
-## Authorized Scope
+## Required Work
 
-- Read `A:/AI Video Production Workspace/.env.local` read-only for `env-check` and `provider-preflight`.
-- `provider=runninghub`
-- `api_base_url=https://www.runninghub.cn`
-- `upload_endpoint=POST /openapi/v2/media/upload/binary`
-- `submit_endpoint=POST /openapi/v2/rhart-video-g/image-to-video`
-- `query_endpoint=POST /openapi/v2/query`
-- `selected_artifact_id=artifact_cbed1c1c-4293-450e-897e-3be49ddf7fb7`
-- `duration_seconds=6`
-- `aspectRatio=9:16`
-- `resolution=480p`
-- `max_upload_calls=1`
-- `max_submit_calls=1`
+- Backfill R3-8O live canary commit `99dd716`.
+- Backfill R3-8O receipt commit `c746b08`.
+- Update only receipt metadata, task board state, and local audit ledger where applicable.
+- Keep R3-8K as `FOLLOW_UP` and make it depend on `R3-8O_RECEIPT_FIX_R1`.
 
-## Hard Stops
+## Acceptance
 
-- Do not retry or perform a second submit.
-- Do not call Runway.
-- Do not run batch or regeneration.
-- Do not print, record, commit, or leak secret values.
-- Do not record raw provider payloads or signed URLs.
-- Do not overwrite source assets.
-- Do not push, tag, release, or deploy.
+- No network call is attempted.
+- No RunningHub upload, submit, query, poll, or output download is attempted.
+- No Runway call is attempted.
+- No provider credits are consumed.
+- No real video is generated.
+- No secret values, signed URLs, raw provider payloads, or source assets are exposed or overwritten.
 
 ## Validation
 
-- `npm run env:check`
-- `npm run provider:preflight`
-- `npm run typecheck`
-- `npm run test:m1`
+- JSON parse for updated report/state files
 - `npm run secret:scan`
 - `git diff --check`
 
-## Claim
+## Stop Reason
 
-- claimed_by: Codex R3-8O live runner
-- claim_run_id: codex-20260708-112510-r3-8o-live
-- claimed_at: 2026-07-08T11:25:10+08:00
-
-## Result
-
-`PASS_LIVE_SINGLE_SUBMIT_COMPLETED`
-
-## Completed Work
-
-- Read `.env.local` read-only for authorized env-check and provider-preflight.
-- Ran exactly one RunningHub media upload.
-- Ran exactly one RunningHub submit.
-- Queried the returned `taskId` until `SUCCESS`.
-- Downloaded output to `data/media/provider-canary/r3-8o-runninghub-enterprise-key-6s-real-keyframe/`.
-- Registered generated artifact `artifact_5bd5b213-3b8b-4717-bec7-298be59b0f62`.
-- ffprobe validation: `PASS`.
-- No retry, second submit, Runway call, regeneration, batch, source overwrite, push, tag, release, or deploy occurred.
-
-## Completed At
-
-2026-07-08T11:28:19+08:00
+Stop before R3-8K closeout or any new live provider call. This task is receipt repair only.

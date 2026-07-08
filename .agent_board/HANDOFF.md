@@ -24,7 +24,8 @@ Report: `data/reports/r3_8o_runninghub_enterprise_key_6s_single_submit_canary_re
 - Local video path: `data/media/provider-canary/r3-8o-runninghub-enterprise-key-6s-real-keyframe/artifact_5bd5b213-3b8b-4717-bec7-298be59b0f62.mp4`.
 - ffprobe validation: `PASS`.
 - No retry, second submit, Runway call, regeneration, batch generation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
-- `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT` remains `FOLLOW_UP` unless Jenn promotes it.
+- `R3-8O_RECEIPT_FIX_R1` is queued to backfill commits `99dd716` and `c746b08` before provider path closeout.
+- `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT` remains `FOLLOW_UP` and now waits for R3-8O receipt fix.
 
 ## R3-8N closeout
 
@@ -39,7 +40,7 @@ Report: `data/reports/r3_8n_provider_access_strategy_decision.json`
 - No `.env.local` or credentials were read.
 - No RunningHub call, Runway call, upload, submit, query, output download, provider credit consumption, real video generation, credential/account change, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
 - `R3-8O_RUNNINGHUB_ENTERPRISE_KEY_6S_SINGLE_SUBMIT_CANARY` has been queued as a new `FOLLOW_UP` live task and must not run without Jenn's fresh exact authorization phrase.
-- `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT` now waits for R3-8O result.
+- `R3-8K_PROVIDER_PATH_DECISION_CLOSEOUT` now waits for R3-8O receipt fix.
 
 ## R3-8G closeout
 
@@ -168,7 +169,7 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 
 ## Remaining READY tasks
 
-- None. `R3-8O_RUNNINGHUB_ENTERPRISE_KEY_6S_SINGLE_SUBMIT_CANARY` remains `FOLLOW_UP` until Jenn provides exact live authorization.
+- `R3-8O_RECEIPT_FIX_R1`
 
 ## Closeout evidence
 
@@ -225,7 +226,8 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - R3-8N provider access strategy decision is complete.
 - Jenn selected RunningHub Enterprise-Shared API Key as the primary provider-access path.
 - R3-8O is queued as the new Enterprise-Shared API Key 6-second RunningHub live canary task; it must not run automatically.
-- R3-8K closeout now depends on R3-8O result.
+- Next task is `R3-8O_RECEIPT_FIX_R1`, a no-network receipt repair for commits `99dd716` and `c746b08`.
+- R3-8K closeout now depends on R3-8O receipt fix.
 - Any next RunningHub retry requires an Enterprise-Shared API Key or a different authorized provider path, plus a new exact current Jenn authorization phrase.
 - Do not submit to RunningHub without a future exact current Jenn authorization phrase.
 - Do not retry Runway canary without a new exact current Jenn authorization phrase.
