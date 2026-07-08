@@ -360,8 +360,8 @@ function copyProviderOutputFile(input: RegisterMediaArtifactInput): RegisterMedi
     throw new Error("copyProviderOutputFile received unsupported source.");
   }
 
-  if (input.artifact_type !== "video" || input.role !== "generated_clip") {
-    return { ok: false, error: { code: "INVALID_ARTIFACT_ROLE", message: "provider_output_file supports generated_clip video artifacts only." } };
+  if (input.artifact_type !== "video" || (input.role !== "generated_clip" && input.role !== "final_video")) {
+    return { ok: false, error: { code: "INVALID_ARTIFACT_ROLE", message: "provider_output_file supports generated_clip and final_video video artifacts only." } };
   }
 
   ensureM0Directories();

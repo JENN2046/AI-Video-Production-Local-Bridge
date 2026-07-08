@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -739,22 +739,57 @@ test("M1 provider output registration blocks symlink storage directories", () =>
       return;
     }
 
-    const result = registerMediaArtifact(
-      {
-        artifact_type: "video",
-        role: "generated_clip",
-        source: { kind: "provider_output_file", path: sourceFile, mime_type: "video/mp4" },
-        storage_directory: symlinkDirectory
-      },
-      db
-    );
-    assert.equal(result.ok, false);
-    if (result.ok) return;
-    assert.equal(result.error.code, "SYMLINK_ESCAPE_BLOCKED");
+    for (const role of ["generated_clip", "final_video"] as const) {
+      const result = registerMediaArtifact(
+        {
+          artifact_type: "video",
+          role,
+          source: { kind: "provider_output_file", path: sourceFile, mime_type: "video/mp4" },
+          storage_directory: symlinkDirectory
+        },
+        db
+      );
+      assert.equal(result.ok, false);
+      if (result.ok) return;
+      assert.equal(result.error.code, "SYMLINK_ESCAPE_BLOCKED");
+    }
   } finally {
     rmSync(symlinkDirectory, { recursive: true, force: true });
     rmSync(sourceDirectory, { recursive: true, force: true });
     rmSync(externalDirectory, { recursive: true, force: true });
+    db.close();
+  }
+});
+
+test("M1 provider output registration supports final_video artifacts inside app media storage", () => {
+  const db = openM0Database();
+  const sourceDirectory = join(paths.mediaRoot, "provider-output-final-video-source");
+
+  try {
+    mkdirSync(sourceDirectory, { recursive: true });
+    const sourceFile = join(sourceDirectory, "source.mp4");
+    writeFileSync(sourceFile, readFileSync(join(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4")));
+
+    const result = registerMediaArtifact(
+      {
+        artifact_type: "video",
+        role: "final_video",
+        source: { kind: "provider_output_file", path: sourceFile, mime_type: "video/mp4" },
+        linked_objects: { project_id: "project_final_video_test" },
+        metadata: { duration_seconds: 2, aspect_ratio: "9:16" },
+        provenance: { provider: "local_assembly" }
+      },
+      db
+    );
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.artifact.role, "final_video");
+    assert.equal(result.artifact.artifact_type, "video");
+    assert.equal(result.artifact.status, "active");
+    assert.equal(result.artifact.source.provider, "local_assembly");
+    assert.equal(existsSync(result.artifact.storage.uri), true);
+  } finally {
+    rmSync(sourceDirectory, { recursive: true, force: true });
     db.close();
   }
 });

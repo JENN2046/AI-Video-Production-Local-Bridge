@@ -2,40 +2,40 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "R3-9N_FINAL_VIDEO_ASSEMBLY_DRY_RUN",
+  "task_id": "R3-9O_FINAL_VIDEO_ASSEMBLY_EXECUTION",
   "status": "DONE",
   "priority": "P0",
-  "lane": "Final Assembly Dry Run",
+  "lane": "Final Assembly Execution",
   "project": "AI Video Production Workspace Three Route Plan",
-  "title": "Final Video Assembly Dry Run",
+  "title": "Final Video Assembly Execution",
   "scope": [
-    "parse data/reports/r3_9m_final_assembly_readiness_check_result.json",
-    "require R3-9M result PASS_READY_FOR_FINAL_ASSEMBLY_DRY_RUN",
-    "build final assembly order from R3-9M manifest",
-    "prepare a local ffmpeg concat command plan without executing final output creation",
-    "define an isolated output directory and no-overwrite gate",
-    "do not create the final video"
+    "parse data/reports/r3_9n_final_video_assembly_dry_run_result.json",
+    "require R3-9N result PASS_READY_FOR_LOCAL_FINAL_ASSEMBLY_EXECUTION",
+    "execute the validated local assembly command or equivalent project assembly function",
+    "write output only to the isolated final video output path from R3-9N",
+    "register the final video as a local media artifact if supported",
+    "run ffprobe on the produced final video"
   ],
-  "goal": "Validate the exact local final assembly plan, output path, ffmpeg inputs, and no-overwrite gate before writing any final video.",
+  "goal": "Create the local final assembled video from the accepted clips using the validated R3-9N assembly plan.",
   "acceptance": [
-    "Report includes ordered input clips, planned output path, estimated total duration, assembly method, codec/container plan, and no-overwrite result.",
-    "Report result is PASS_READY_FOR_LOCAL_FINAL_ASSEMBLY_EXECUTION only if all inputs and output gates pass.",
-    "Report records final_video_written=false, final_assembly_performed=false, network_call_attempted=false, runninghub_called=false, runway_called=false, env_files_read=false, credentials_read=false, source_assets_overwritten=false, secret_values_exposed=false."
+    "Report includes final video path, final video artifact id if registered, input artifact ids, duration, ffprobe result, and no-overwrite confirmation.",
+    "Result is PASS_LOCAL_FINAL_VIDEO_ASSEMBLED only if final video exists and ffprobe passes.",
+    "Report records network_call_attempted=false, runninghub_called=false, runway_called=false, provider_credits_consumed=false, regeneration_performed=false, batch_generation_performed=false, env_files_read=false, credentials_read=false, source_assets_overwritten=false, secret_values_exposed=false, publish_performed=false, release_or_deploy_performed=false."
   ],
   "validation": [
-    "JSON parse for generated dry-run report",
-    "planned input path existence checks",
-    "output no-overwrite check",
+    "JSON parse for generated assembly execution report",
+    "final video path existence check",
+    "final video ffprobe PASS",
     "npm run typecheck",
     "npm run test:m1",
     "npm run secret:scan",
     "git diff --check"
   ],
   "allowed_delivery": [
-    "assembly_dry_run_report",
-    "ffmpeg_plan",
-    "output_path_plan",
-    "no_overwrite_gate",
+    "local_final_video",
+    "final_video_artifact",
+    "ffprobe_validation",
+    "assembly_execution_report",
     "task_board_update",
     "local_commit"
   ],
@@ -47,10 +47,8 @@
     "status_poll",
     "output_download_from_provider",
     "provider_credits_consumed",
-    "real_video_generated",
     "regeneration_execution",
     "batch_expansion",
-    "final_video_write",
     "env_file_read",
     "credential_read",
     "source_overwrite",
@@ -60,37 +58,41 @@
     "push",
     "tag",
     "release",
-    "deploy"
+    "deploy",
+    "publish"
   ],
   "depends_on": [
-    "R3-9M_FINAL_ASSEMBLY_READINESS_CHECK"
+    "R3-9N_FINAL_VIDEO_ASSEMBLY_DRY_RUN"
   ],
+  "source_report": "data/reports/r3_9n_final_video_assembly_dry_run_result.json",
+  "report_path": "data/reports/r3_9o_final_video_assembly_execution_result.json",
   "created_at": "2026-07-08T18:22:13+08:00",
-  "updated_at": "2026-07-08T18:42:54+08:00",
-  "claimed_by": "Codex R3-9N final video assembly dry run",
-  "claim_run_id": "codex-20260708-184207-r3-9n",
-  "claimed_at": "2026-07-08T18:42:07+08:00",
-  "completed_by": "Codex R3-9N final video assembly dry run",
-  "completed_at": "2026-07-08T18:42:54+08:00",
-  "result": "PASS_READY_FOR_LOCAL_FINAL_ASSEMBLY_EXECUTION",
+  "updated_at": "2026-07-08T18:51:49+08:00",
+  "claimed_by": "Codex R3-9O final video assembly execution",
+  "claim_run_id": "codex-20260708-184705-r3-9o",
+  "claimed_at": "2026-07-08T18:47:05+08:00",
+  "completed_by": "Codex R3-9O final video assembly execution",
+  "completed_at": "2026-07-08T18:51:49+08:00",
+  "result": "PASS_LOCAL_FINAL_VIDEO_ASSEMBLED",
   "validation_result": "PASS",
   "evidence": [
-    "data/reports/r3_9m_final_assembly_readiness_check_result.json",
-    "data/reports/r3_9m_assembly_input_manifest.json",
-    "data/reports/r3_9n_final_video_assembly_dry_run_result.json"
+    "data/reports/r3_9n_final_video_assembly_dry_run_result.json",
+    "data/reports/r3_9o_final_video_assembly_execution_result.json",
+    "data/media/artifacts/final/r3-9o-final-video/ryan_lunch_break_skullcap_final_r3_9o.mp4",
+    "data/media/artifacts/final/r3-9o-final-video/artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe.mp4"
   ],
-  "commit": "f571b0d",
-  "delivery": "local_assembly_dry_run_only",
-  "boundary_or_safety_stop": "dry run only; no final video write, provider call, regeneration, batch expansion, env or credential read, source overwrite, push, tag, release, or deploy",
+  "commit": null,
+  "delivery": "local_final_video_and_final_video_artifact",
+  "boundary_or_safety_stop": "local assembly only; no provider call, regeneration, batch expansion, env or credential read, source overwrite, push, tag, release, deploy, or publish",
   "blocked_reason": null,
   "failure_reason": null,
   "safe_actions_completed": [
-    "Parsed R3-9M readiness report and manifest.",
-    "Prepared local ffmpeg concat plan without writing final video.",
-    "Verified 4 planned input paths exist.",
-    "Verified planned output path passes no-overwrite gate.",
-    "Recorded final_video_written=false and final_assembly_performed=false.",
-    "Validated JSON parse, input path checks, no-overwrite check, npm run typecheck, npm run test:m1, npm run secret:scan, and git diff --check."
+    "Parsed R3-9N dry-run report and required PASS_READY_FOR_LOCAL_FINAL_ASSEMBLY_EXECUTION.",
+    "Executed local ffmpeg concat assembly only inside data/media/artifacts/final/r3-9o-final-video.",
+    "Created final video at data/media/artifacts/final/r3-9o-final-video/ryan_lunch_break_skullcap_final_r3_9o.mp4.",
+    "Registered final video artifact artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe.",
+    "Updated project export final_video_artifact_id and recorded local assemble_video run.",
+    "Validated JSON parse, final video path existence, final video ffprobe PASS, npm run typecheck, npm run test:m1, npm run secret:scan, and git diff --check."
   ],
   "unsafe_action_not_performed": [
     "runninghub_call",
@@ -98,17 +100,17 @@
     "provider_credits_consumed",
     "regeneration_execution",
     "batch_expansion",
-    "final_video_write",
     "env_file_read",
     "credential_read",
     "source_overwrite",
     "secret_value_output",
+    "publish",
     "push",
     "tag",
     "release",
     "deploy"
   ],
   "next_safe_option": [
-    "If R3-9N passes, proceed to R3-9O local final video assembly execution."
+    "Proceed to R3-9P final video review package."
   ]
 }
