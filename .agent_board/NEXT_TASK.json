@@ -86,7 +86,7 @@
     "data/reports/r3_9f_human_clip_review_decision_apply_result.json",
     "data/reports/secret_scan_result.json"
   ],
-  "commit": "PENDING_LOCAL_COMMIT",
+  "commit": "05c5c90",
   "delivery": "local_only",
   "boundary_or_safety_stop": "review decision apply only; no provider call, regeneration, final assembly, or deployment",
   "blocked_reason": null,

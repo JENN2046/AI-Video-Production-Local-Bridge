@@ -394,4 +394,5 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - `g0_r1_shot_002` was rejected and needs separate handling before final assembly.
 - Local app review state was updated; R3-9D local generation receipt links were backfilled for the four generated clips.
 - No provider call, regeneration, batch expansion, final assembly, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+- R3-9F local implementation commit: `05c5c90`.
 - Remaining READY tasks: none.

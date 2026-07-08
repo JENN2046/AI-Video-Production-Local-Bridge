@@ -1688,6 +1688,7 @@ Evidence:
 
 Notes:
 - Applied 4 local review decisions with summary `accept=0`, `reject=1`, `regenerate_requested=3`.
+- R3-9F local implementation commit: `05c5c90`.
 - Preserved Jenn's reviewer name and Chinese notes exactly in the decision report and review-state metadata.
 - Backfilled local R3-9D generation receipt links for the four generated clips.
 - No provider call, regeneration, batch expansion, final assembly, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
