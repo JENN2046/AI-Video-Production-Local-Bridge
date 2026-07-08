@@ -2166,3 +2166,35 @@ Notes:
 - `git diff --check`: PASS with CRLF warnings only.
 - No public tunnel, provider call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
 - R1-8 local implementation commit: `3101e15`.
+
+### R1-9 - 2026-07-08T20:42:06+08:00
+
+Commands:
+
+```bash
+node -e JSON.parse(...) with GO_MCP_APP_BRIDGE and R2G checks
+npm run typecheck
+npm run secret:scan
+git diff --check
+```
+
+Result: `PASS_GO_MCP_APP_BRIDGE_DECISION_READY`
+
+Evidence:
+- `data/reports/r1_9_chatgpt_mcp_app_packaging_decision_result.json`
+- Official OpenAI docs:
+  - `https://developers.openai.com/apps-sdk/build/mcp-server`
+  - `https://developers.openai.com/apps-sdk/concepts/mcp-server`
+  - `https://developers.openai.com/apps-sdk/plan/tools`
+  - `https://developers.openai.com/apps-sdk/build/auth`
+  - `https://developers.openai.com/apps-sdk/guides/security-privacy`
+  - `https://developers.openai.com/apps-sdk/deploy/connect-chatgpt`
+  - `https://developers.openai.com/apps-sdk/deploy/submission`
+
+Notes:
+- Selected path: `GO_MCP_APP_BRIDGE`.
+- R1 remains closed as a local bridge stage.
+- R2G-0 through R2G-F remain valid and eligible by dependency order; R2G-G remains `FOLLOW_UP`.
+- `git diff --check`: PASS with CRLF warnings only.
+- No public tunnel, ChatGPT connector creation, provider call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+- R1-9 local implementation commit: `PENDING_LOCAL_COMMIT`.

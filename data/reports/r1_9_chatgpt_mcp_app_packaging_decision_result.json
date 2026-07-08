@@ -1,0 +1,225 @@
+{
+  "task": "R1-9_CHATGPT_MCP_APP_PACKAGING_DECISION",
+  "result": "PASS_GO_MCP_APP_BRIDGE_DECISION_READY",
+  "mode": "local_decision_report_only",
+  "generated_at": "2026-07-08T20:42:06+08:00",
+  "decision": {
+    "selected_path": "GO_MCP_APP_BRIDGE",
+    "summary": "Close R1 as the local WebGPT bridge maturity stage and proceed into R2G to build a local ChatGPT MCP/App bridge skeleton and dry-run path before any live ChatGPT connector exposure.",
+    "why_now": [
+      "R1-6 audited the v0 through v3 WebGPT bridge and confirmed final-approved R3-9R evidence is reachable through app-owned report and artifact references.",
+      "R1-7 smoke validation passed against the final-approved project evidence.",
+      "R1-8 produced a Chinese operator runbook and prompt pack that keeps GPT outputs as drafts, proposals, or pending human-confirmation requests.",
+      "Official OpenAI Apps SDK documentation confirms that ChatGPT Apps are built around an MCP server, tool contracts, optional UI resources, auth where needed, and later connector/testing/submission steps."
+    ],
+    "decision_type": "implementation_lane_decision",
+    "implementation_starts_in": "R2G-0_CHATGPT_MCP_PACKAGING_REALITY_AUDIT",
+    "public_connection_allowed_now": false
+  },
+  "source_of_truth": {
+    "r1_8_report": "data/reports/r1_8_webgpt_operator_runbook_and_prompt_pack_result.json",
+    "r1_7_smoke_report": "data/reports/r1_7_webgpt_local_bridge_smoke_validation_result.json",
+    "r1_6_audit_report": "data/reports/r1_6_webgpt_post_closeout_bridge_reality_audit_result.json",
+    "r3_9r_final_closeout_report": "data/reports/r3_9r_final_delivery_closeout_result.json"
+  },
+  "official_openai_docs_used": [
+    {
+      "title": "Apps SDK - Build your MCP server",
+      "url": "https://developers.openai.com/apps-sdk/build/mcp-server",
+      "used_for": "MCP server, tools, optional server instructions, auth enforcement, structured data, and optional UI bundle responsibilities."
+    },
+    {
+      "title": "Apps SDK - MCP concept",
+      "url": "https://developers.openai.com/apps-sdk/concepts/mcp-server",
+      "used_for": "Minimal MCP capabilities: list tools, call tools, return components, and optional initialization instructions."
+    },
+    {
+      "title": "Apps SDK - Define tools",
+      "url": "https://developers.openai.com/apps-sdk/plan/tools",
+      "used_for": "Tool contract assumptions: one job per tool, explicit inputs, predictable structured outputs, and separate read/write tools."
+    },
+    {
+      "title": "Apps SDK - Authentication",
+      "url": "https://developers.openai.com/apps-sdk/build/auth",
+      "used_for": "Future authenticated MCP server requirements and OAuth 2.1 / protected-resource metadata assumptions."
+    },
+    {
+      "title": "Apps SDK - Security & Privacy",
+      "url": "https://developers.openai.com/apps-sdk/guides/security-privacy",
+      "used_for": "Least privilege, explicit consent, defense in depth, redaction, and human confirmation for irreversible operations."
+    },
+    {
+      "title": "Apps SDK - Connect from ChatGPT",
+      "url": "https://developers.openai.com/apps-sdk/deploy/connect-chatgpt",
+      "used_for": "Future developer-mode connector and metadata refresh assumptions, not executed in R1-9."
+    },
+    {
+      "title": "Apps SDK - Submit and maintain your app",
+      "url": "https://developers.openai.com/apps-sdk/deploy/submission",
+      "used_for": "Public review/submission prerequisite that the MCP server must be a real publicly accessible endpoint, not a local or placeholder endpoint."
+    },
+    {
+      "title": "Apps SDK llms.txt",
+      "url": "https://developers.openai.com/apps-sdk/llms.txt",
+      "used_for": "Official documentation map for Apps SDK pages and Markdown twins."
+    }
+  ],
+  "current_packaging_assumptions": {
+    "mcp_server_required_for_chatgpt_app": true,
+    "ui_component_optional": true,
+    "tool_contracts_required": true,
+    "structured_content_required_for_model_use": true,
+    "auth_required_for_customer_specific_or_write_actions": true,
+    "public_submission_requires_real_public_endpoint": true,
+    "local_server_can_be_used_for_early_development": true,
+    "public_tunnel_or_deploy_not_authorized_in_r1_9": true,
+    "chatgpt_connector_creation_not_authorized_in_r1_9": true
+  },
+  "r1_closeout": {
+    "status": "CLOSED_AS_LOCAL_BRIDGE_STAGE",
+    "remains_local_only": [
+      "localhost-oriented WebGPT bridge v0 through v3",
+      "Human Workbench confirmation as production truth gate",
+      "local reports under data/reports",
+      "local media artifacts and app-owned IDs",
+      "Chinese operator runbook and prompt pack"
+    ],
+    "does_not_move_to_public_yet": [
+      "public HTTPS MCP endpoint",
+      "ChatGPT connector creation",
+      "OAuth production setup",
+      "OpenAI app submission",
+      "provider execution through ChatGPT",
+      "production deploy or publish"
+    ]
+  },
+  "r2g_entry_conditions": {
+    "r1_6_pass": true,
+    "r1_7_pass": true,
+    "r1_8_pass": true,
+    "r1_9_decision": "GO_MCP_APP_BRIDGE",
+    "local_git_commit_required": true,
+    "no_public_connection_before_r2g_g": true,
+    "no_credentials_or_env_read_before_explicit_task_authorization": true,
+    "no_provider_calls_through_mcp": true
+  },
+  "r2g_task_sequence_confirmed": [
+    {
+      "task_id": "R2G-0_CHATGPT_MCP_PACKAGING_REALITY_AUDIT",
+      "status": "READY",
+      "depends_on": "R1-9_CHATGPT_MCP_APP_PACKAGING_DECISION",
+      "purpose": "Audit current official ChatGPT Apps SDK and MCP requirements against the local R1 bridge."
+    },
+    {
+      "task_id": "R2G-A_MCP_SECURITY_AND_PERMISSION_MODEL",
+      "status": "READY",
+      "depends_on": "R2G-0_CHATGPT_MCP_PACKAGING_REALITY_AUDIT",
+      "purpose": "Freeze security and permission model."
+    },
+    {
+      "task_id": "R2G-B_MCP_TOOL_SCHEMA_AND_CONTRACT_FREEZE",
+      "status": "READY",
+      "depends_on": "R2G-A_MCP_SECURITY_AND_PERMISSION_MODEL",
+      "purpose": "Freeze MCP tool schemas and structured output contracts."
+    },
+    {
+      "task_id": "R2G-C_LOCAL_MCP_SERVER_SKELETON",
+      "status": "READY",
+      "depends_on": "R2G-B_MCP_TOOL_SCHEMA_AND_CONTRACT_FREEZE",
+      "purpose": "Implement local MCP server skeleton without public exposure."
+    },
+    {
+      "task_id": "R2G-D_CHATGPT_HANDOFF_E2E_DRY_RUN",
+      "status": "READY",
+      "depends_on": "R2G-C_LOCAL_MCP_SERVER_SKELETON",
+      "purpose": "Run local end-to-end dry-run for the handoff flow."
+    },
+    {
+      "task_id": "R2G-E_HUMAN_CONFIRMATION_AND_WRITE_GATES",
+      "status": "READY",
+      "depends_on": "R2G-D_CHATGPT_HANDOFF_E2E_DRY_RUN",
+      "purpose": "Validate human confirmation and write gates."
+    },
+    {
+      "task_id": "R2G-F_MCP_PACKAGING_CLOSEOUT",
+      "status": "READY",
+      "depends_on": "R2G-E_HUMAN_CONFIRMATION_AND_WRITE_GATES",
+      "purpose": "Close out local MCP packaging readiness."
+    },
+    {
+      "task_id": "R2G-G_CHATGPT_CONNECTOR_LIVE_CONNECTION_AUTHORIZATION_PREP",
+      "status": "FOLLOW_UP",
+      "depends_on": "R2G-F_MCP_PACKAGING_CLOSEOUT",
+      "purpose": "Prepare, but do not execute, future live ChatGPT connector authorization."
+    }
+  ],
+  "r2g_validity": {
+    "r2g_0_through_f_remain_valid": true,
+    "reason": "The task sequence matches official Apps SDK ordering: audit requirements, define security, freeze tool contracts, build local MCP server, dry-run, validate write gates, then close local packaging before any live connector authorization.",
+    "stop_boundary_after_f": "R2G-G remains FOLLOW_UP and must not auto-run until promoted and separately authorized."
+  },
+  "out_of_scope_until_separate_authorization": [
+    "public tunnel",
+    "public HTTPS MCP endpoint",
+    "ChatGPT connector creation",
+    "OpenAI Platform app submission",
+    "OAuth production configuration",
+    "provider calls from ChatGPT",
+    "RunningHub or Runway calls",
+    "media upload to provider",
+    "credentials or .env reads",
+    "push, tag, release, deploy, publish",
+    "production configuration changes"
+  ],
+  "docs_lookup_boundary": {
+    "official_openai_docs_lookup_performed": true,
+    "official_openai_domains_only": true,
+    "domains_used": [
+      "developers.openai.com"
+    ],
+    "provider_or_private_network_call_attempted": false,
+    "credentials_or_env_read_for_docs": false,
+    "secret_values_exposed": false
+  },
+  "provider_boundary": {
+    "public_tunnel_started": false,
+    "provider_called": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "media_upload_to_provider": false,
+    "provider_credits_consumed": false,
+    "env_files_read": false,
+    "credentials_read": false,
+    "production_truth_mutated": false,
+    "source_assets_overwritten": false,
+    "secret_values_exposed": false,
+    "raw_provider_payload_recorded": false,
+    "signed_url_recorded": false,
+    "publish_performed": false,
+    "release_or_deploy_performed": false,
+    "push_performed": false,
+    "tag_created": false,
+    "production_configuration_changed": false
+  },
+  "validation": {
+    "JSON parse for generated R1-9 report": "PASS",
+    "npm run typecheck": "PASS",
+    "npm run secret:scan": "PASS",
+    "git diff --check": "PASS_WITH_CRLF_WARNINGS_ONLY"
+  },
+  "changed_files": [
+    "data/reports/r1_9_chatgpt_mcp_app_packaging_decision_result.json",
+    ".agent_board/*"
+  ],
+  "blocked_reason": null,
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "PENDING_LOCAL_COMMIT",
+    "task": "R1-9_CHATGPT_MCP_APP_PACKAGING_DECISION",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  }
+}

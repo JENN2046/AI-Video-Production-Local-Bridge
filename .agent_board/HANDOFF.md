@@ -1,14 +1,26 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260708-202753-r1-8
-Last result: R1-8 WebGPT operator runbook and prompt pack completed
+Last run: codex-20260708-203918-r1-9
+Last result: R1-9 ChatGPT MCP App packaging decision completed
 
 ## Current state
 
 Current task: none
 Current status: DONE
 Current owner: none
+
+## R1-9 Closeout
+
+- R1-9 completed on 2026-07-08T20:42:06+08:00 with `PASS_GO_MCP_APP_BRIDGE_DECISION_READY`.
+- Decision: `GO_MCP_APP_BRIDGE`.
+- Report: `data/reports/r1_9_chatgpt_mcp_app_packaging_decision_result.json`.
+- Official OpenAI docs used: Apps SDK MCP server, MCP concept, tool planning, auth, security/privacy, connect from ChatGPT, and submission docs.
+- R2G-0 through R2G-F remain valid and can proceed in dependency order; R2G-G remains `FOLLOW_UP`.
+- Validation passed: JSON parse, `npm run typecheck`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
+- R1-9 local implementation commit: `PENDING_LOCAL_COMMIT`.
+- No public tunnel, ChatGPT connector creation, provider call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+- Next eligible task: `R2G-0_CHATGPT_MCP_PACKAGING_REALITY_AUDIT`.
 
 ## R1-8 Closeout
 

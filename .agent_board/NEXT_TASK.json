@@ -2,35 +2,35 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "R1-8_WEBGPT_OPERATOR_RUNBOOK_AND_PROMPT_PACK",
+  "task_id": "R1-9_CHATGPT_MCP_APP_PACKAGING_DECISION",
   "status": "DONE",
   "priority": "P1",
   "lane": "WebGPT Bridge",
   "project": "AI Video Production Workspace GPT Bridge Line",
-  "title": "WebGPT Operator Runbook And Prompt Pack",
+  "title": "ChatGPT MCP App Packaging Decision",
   "scope": [
-    "create Chinese operator documentation and prompt pack for the local WebGPT handoff flow",
-    "document imports, Media Artifact registration, storyboard package freeze, clip generation review, final assembly review, and closeout evidence",
-    "state what WebGPT may provide and what the local app must assign, especially artifact ids and review state",
-    "generate data/reports/r1_8_webgpt_operator_runbook_and_prompt_pack_result.json"
+    "close R1 with a fixed GO_MCP_APP_BRIDGE decision and prepare the R2G ChatGPT MCP/App bridge implementation lane",
+    "review current local bridge maturity after R1-8",
+    "use current official OpenAI Apps SDK / MCP documentation before writing the decision",
+    "compare what remains local-only in R1 with what moves into R2G",
+    "confirm R2G task sequence, safety gates, and no-public-connection boundary",
+    "generate data/reports/r1_9_chatgpt_mcp_app_packaging_decision_result.json"
   ],
-  "goal": "Create a Chinese local operator runbook and WebGPT prompt pack so future Web GPT outputs can be handed into the local system consistently.",
+  "goal": "Close the R1 local WebGPT bridge stage with a fixed GO_MCP_APP_BRIDGE decision and define the handoff into R2G.",
   "acceptance": [
-    "Runbook is Chinese and operator-facing.",
-    "Prompt pack is Chinese and avoids asking WebGPT to invent artifact ids.",
-    "Docs clearly state that provider calls, publishing, credentials, and source overwrites are outside this local handoff step.",
-    "Report records created docs and network_call_attempted=false, provider_called=false, env_files_read=false, credentials_read=false, secret_values_exposed=false, publish_performed=false, release_or_deploy_performed=false."
+    "Decision report names GO_MCP_APP_BRIDGE as the selected path.",
+    "Decision report cites official OpenAI Apps SDK / MCP docs used for current packaging assumptions.",
+    "Decision report defines R2G entry conditions and confirms R2G-0 through R2G-F remain valid.",
+    "Decision report states public ChatGPT connection, tunnel, deploy, publish, and production configuration remain out of scope until separately authorized."
   ],
   "validation": [
-    "JSON parse for generated R1-8 report",
-    "required section check for both docs",
+    "JSON parse for generated R1-9 report",
     "npm run typecheck",
     "npm run secret:scan",
     "git diff --check"
   ],
   "allowed_delivery": [
-    "chinese_operator_runbook",
-    "chinese_prompt_pack",
+    "packaging_decision_report",
     "task_board_update",
     "local_commit"
   ],
@@ -52,37 +52,38 @@
     "production_configuration_change"
   ],
   "depends_on": [
-    "R1-7_WEBGPT_LOCAL_BRIDGE_SMOKE_VALIDATION"
+    "R1-8_WEBGPT_OPERATOR_RUNBOOK_AND_PROMPT_PACK"
   ],
-  "source_report": "data/reports/r1_7_webgpt_local_bridge_smoke_validation_result.json",
-  "final_closeout_report": "data/reports/r3_9r_final_delivery_closeout_result.json",
-  "report_path": "data/reports/r1_8_webgpt_operator_runbook_and_prompt_pack_result.json",
-  "runbook_path": "docs/webgpt/WEBGPT_OPERATOR_RUNBOOK_R1_8.md",
-  "prompt_pack_path": "docs/webgpt/WEBGPT_PROMPT_PACK_R1_8.md",
+  "source_report": "data/reports/r1_8_webgpt_operator_runbook_and_prompt_pack_result.json",
+  "r1_7_smoke_report": "data/reports/r1_7_webgpt_local_bridge_smoke_validation_result.json",
+  "r1_6_audit_report": "data/reports/r1_6_webgpt_post_closeout_bridge_reality_audit_result.json",
+  "report_path": "data/reports/r1_9_chatgpt_mcp_app_packaging_decision_result.json",
   "created_at": "2026-07-08T19:56:44+08:00",
-  "updated_at": "2026-07-08T20:35:57+08:00",
-  "claimed_by": "Codex R1-8 operator runbook prompt pack",
-  "claim_run_id": "codex-20260708-202753-r1-8",
-  "claimed_at": "2026-07-08T20:27:53+08:00",
-  "completed_by": "Codex R1-8 operator runbook prompt pack",
-  "completed_at": "2026-07-08T20:35:57+08:00",
-  "result": "PASS_WEBGPT_OPERATOR_RUNBOOK_AND_PROMPT_PACK_READY",
+  "updated_at": "2026-07-08T20:42:06+08:00",
+  "claimed_by": "Codex R1-9 packaging decision",
+  "claim_run_id": "codex-20260708-203918-r1-9",
+  "claimed_at": "2026-07-08T20:39:18+08:00",
+  "completed_by": "Codex R1-9 packaging decision",
+  "completed_at": "2026-07-08T20:42:06+08:00",
+  "result": "PASS_GO_MCP_APP_BRIDGE_DECISION_READY",
   "validation_result": "PASS",
   "evidence": [
-    "docs/webgpt/WEBGPT_OPERATOR_RUNBOOK_R1_8.md",
-    "docs/webgpt/WEBGPT_PROMPT_PACK_R1_8.md",
-    "data/reports/r1_8_webgpt_operator_runbook_and_prompt_pack_result.json"
+    "data/reports/r1_9_chatgpt_mcp_app_packaging_decision_result.json",
+    "data/reports/r1_8_webgpt_operator_runbook_and_prompt_pack_result.json",
+    "https://developers.openai.com/apps-sdk/build/mcp-server",
+    "https://developers.openai.com/apps-sdk/deploy/submission"
   ],
-  "commit": "3101e15",
-  "delivery": "local_docs_and_prompt_pack_only",
-  "boundary_or_safety_stop": "documentation and prompt pack only; no public tunnel, provider call, env or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change",
+  "commit": "PENDING_LOCAL_COMMIT",
+  "delivery": "local_decision_report_only",
+  "boundary_or_safety_stop": "decision closeout only; no public tunnel, provider call, env or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change",
   "blocked_reason": null,
   "failure_reason": null,
   "safe_actions_completed": [
-    "created Chinese WebGPT local handoff operator runbook",
-    "created Chinese WebGPT prompt pack",
-    "generated R1-8 closeout report",
-    "validated JSON, required doc sections, typecheck, secret scan, and diff check"
+    "reviewed official OpenAI Apps SDK / MCP documentation",
+    "recorded GO_MCP_APP_BRIDGE decision",
+    "confirmed R2G-0 through R2G-F task sequence remains valid",
+    "generated R1-9 packaging decision report",
+    "validated JSON, typecheck, secret scan, and diff check"
   ],
   "unsafe_action_not_performed": [
     "public_tunnel",

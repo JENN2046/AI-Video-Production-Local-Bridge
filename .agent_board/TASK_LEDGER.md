@@ -3729,4 +3729,41 @@ Boundary:
 - No public tunnel, provider call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
 
 Next:
-- Stop automatic R1 execution because `R1-9_CHATGPT_MCP_APP_PACKAGING_DECISION` remains FOLLOW_UP.
+- Proceed to `R1-9_CHATGPT_MCP_APP_PACKAGING_DECISION`; it has been promoted to `READY` in the backlog.
+
+### 2026-07-08T20:42:06+08:00 - R1-9 ChatGPT MCP App Packaging Decision
+
+Result: DONE / PASS_GO_MCP_APP_BRIDGE_DECISION_READY
+Project: AI Video Production Workspace GPT Bridge Line
+Lane: WebGPT Bridge
+Run ID: codex-20260708-203918-r1-9
+Completed at: 2026-07-08T20:42:06+08:00
+
+Scope:
+- Reviewed current R1 bridge maturity after R1-8.
+- Used official OpenAI Apps SDK / MCP docs to close the packaging decision.
+- Recorded selected path as `GO_MCP_APP_BRIDGE`.
+- Confirmed R2G-0 through R2G-F remain valid and R2G-G remains `FOLLOW_UP`.
+- Did not start a public tunnel, create a ChatGPT connector, call providers, read env files or credentials, overwrite source assets, output secrets, push, tag, release, deploy, or publish.
+
+Validation:
+- JSON parse for generated R1-9 report: PASS
+- `npm run typecheck`: PASS
+- `npm run secret:scan`: PASS
+- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r1_9_chatgpt_mcp_app_packaging_decision_result.json
+- https://developers.openai.com/apps-sdk/build/mcp-server
+- https://developers.openai.com/apps-sdk/concepts/mcp-server
+- https://developers.openai.com/apps-sdk/deploy/submission
+
+Git delivery:
+- commit: PENDING_LOCAL_COMMIT
+- push: no
+
+Boundary:
+- No public tunnel, ChatGPT connector creation, provider call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+
+Next:
+- Proceed to `R2G-0_CHATGPT_MCP_PACKAGING_REALITY_AUDIT` if still eligible.
