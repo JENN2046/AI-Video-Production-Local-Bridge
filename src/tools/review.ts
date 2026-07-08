@@ -106,6 +106,8 @@ export function markShotClipReview(
     shot.accepted_clip_artifact_id = input.artifact_id;
     shot.status = "approved";
     shot.review.approval_status = "approved";
+    shot.review.rejection_reasons = [];
+    shot.review.latest_revision_instruction = null;
     clipVersion.review_status = "approved";
   } else {
     shot.status = "revision_needed";

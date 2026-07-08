@@ -1,6 +1,6 @@
 # NEXT_TASK.md
 
-status: READY
+status: DONE
 
 task_id: R3-9L_HUMAN_REGENERATED_CLIP_REVIEW_DECISION_APPLY
 
@@ -11,6 +11,19 @@ priority: P0
 lane: Human Regenerated Clip Review Decision Apply
 
 project: AI Video Production Workspace Three Route Plan
+
+claimed_by: Codex R3-9L human regenerated clip review decision apply
+
+claim_run_id: codex-20260708-182152-r3-9l
+
+claimed_at: 2026-07-08T18:21:52+08:00
+completed_by: Codex R3-9L human regenerated clip review decision apply
+
+completed_at: 2026-07-08T18:26:55+08:00
+
+result: PASS_REVIEW_DECISIONS_APPLIED
+
+validation_result: PASS
 
 depends_on: R3-9K_RUNNINGHUB_REGENERATED_CLIP_REVIEW_PREP
 
@@ -47,6 +60,13 @@ Apply Jenn's completed R3-9K human review decisions for the four regenerated Run
 - `npm run test:m1`
 - `npm run secret:scan`
 - `git diff --check`
+
+## Result
+
+- Parsed 4 regenerated clip rows from `data/reports/r3_9k_runninghub_regenerated_clip_review_table.md`.
+- Applied 4 accept decisions to local review state.
+- Set accepted clip artifacts to the R3-9J regenerated clips.
+- Final assembly was not executed; next safe task is a separate readiness check.
 
 ## Boundary
 

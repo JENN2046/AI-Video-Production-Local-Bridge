@@ -3141,6 +3141,40 @@ commit: ba7162e
 
 ## R3-9L_HUMAN_REGENERATED_CLIP_REVIEW_DECISION_APPLY - Human Regenerated Clip Review Decision Apply
 
+status: DONE
+priority: P0
+lane: Human Regenerated Clip Review Decision Apply
+project: AI Video Production Workspace Three Route Plan
+scope: apply Jenn's completed R3-9K regenerated clip review decisions to local review state
+branch: local-only
+depends_on: R3-9K_RUNNINGHUB_REGENERATED_CLIP_REVIEW_PREP
+source_table: data/reports/r3_9k_runninghub_regenerated_clip_review_table.md
+report_path: data/reports/r3_9l_human_regenerated_clip_review_decision_apply_result.json
+allowed_delivery: review_decision_apply_report,local_review_state_update,accepted_clip_selection,task_board_update,local_commit
+blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,provider_submit,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,regeneration_execution,batch_expansion,final_assembly,env_file_read,credential_read,source_overwrite,secret_value_output,raw_provider_payload_recording,signed_url_recording,push,tag,release,deploy
+created_at: 2026-07-08T18:15:54+08:00
+updated_at: 2026-07-08T18:26:55+08:00
+claimed_by: Codex R3-9L human regenerated clip review decision apply
+claim_run_id: codex-20260708-182152-r3-9l
+claimed_at: 2026-07-08T18:21:52+08:00
+completed_by: Codex R3-9L human regenerated clip review decision apply
+completed_at: 2026-07-08T18:26:55+08:00
+result: PASS_REVIEW_DECISIONS_APPLIED
+validation_result: PASS
+commit: PENDING_LOCAL_COMMIT
+
+### Result
+
+- Parsed 4 Jenn review decisions from `data/reports/r3_9k_runninghub_regenerated_clip_review_table.md`.
+- Applied `accept=4`, `reject=0`, `regenerate_requested=0`.
+- Set accepted clip artifacts to the 4 R3-9J regenerated clips.
+- Marked final assembly readiness check as the next safe task.
+- Did not execute final assembly.
+- Validation passed: R3-9K table parse, R3-9L JSON parse, `npm run r3:9l:apply-review`, `npm run typecheck`, `npm run test:m1`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
+- No provider call, regeneration, batch expansion, final assembly, `.env` or credential read, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+
+## R3-9L_HUMAN_REGENERATED_CLIP_REVIEW_DECISION_APPLY - Human Regenerated Clip Review Decision Apply
+
 status: READY
 priority: P0
 lane: Human Regenerated Clip Review Decision Apply

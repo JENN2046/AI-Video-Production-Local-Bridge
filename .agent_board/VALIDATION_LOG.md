@@ -1857,3 +1857,42 @@ Notes:
 - Final assembly remains blocked pending human accept.
 - R3-9K local implementation commit: `ba7162e`.
 - No provider call, regeneration, batch expansion, final assembly, review decision mutation, `.env` or credential read, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+
+### R3-9L - 2026-07-08T18:26:55+08:00
+
+Commands:
+
+```bash
+npm run r3:9l:apply-review
+node -e JSON.parse(...) and table decision check
+npm run typecheck
+npm run test:m1
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_REVIEW_DECISIONS_APPLIED
+```
+
+Evidence:
+- `data/reports/r3_9l_human_regenerated_clip_review_decision_apply_result.json`
+- `data/reports/r3_9k_runninghub_regenerated_clip_review_table.md`
+- `data/reports/r3_9k_runninghub_regenerated_clip_review_prep_result.json`
+- `data/reports/r3_9j_runninghub_regeneration_single_pass_live_execution_result.json`
+- `data/reports/secret_scan_result.json`
+
+Notes:
+- Parsed 4 Jenn review decisions from the R3-9K table.
+- Decision summary: `accept=4`, `reject=0`, `regenerate_requested=0`.
+- Accepted clips:
+  - `g0_r1_shot_001`: `artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203`
+  - `g0_r1_shot_002`: `artifact_eeef12a7-9533-4172-beaa-6c25b91415f7`
+  - `g0_r1_shot_003`: `artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a`
+  - `g0_r1_shot_004`: `artifact_263a2344-5154-4981-bfe4-120571effb3e`
+- All accepted shots are now marked `approved` locally and stale rejection reasons were cleared.
+- Final assembly was not executed; the next safe task is a separate final assembly readiness check.
+- R3-9L local implementation commit: `PENDING_LOCAL_COMMIT`.
+- No provider call, regeneration, batch expansion, final assembly, `.env` or credential read, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.

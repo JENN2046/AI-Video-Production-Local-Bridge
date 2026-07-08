@@ -3299,3 +3299,74 @@ Boundary:
 
 Next:
 - Jenn should review the Chinese table and decide accept / reject / regenerate_requested for each regenerated clip before any final assembly.
+
+### 2026-07-08T18:26:55+08:00 - R3-9L Human Regenerated Clip Review Decision Apply
+
+Result: DONE / PASS_REVIEW_DECISIONS_APPLIED
+Project: AI Video Production Workspace Three Route Plan
+Lane: Human Regenerated Clip Review Decision Apply
+Claimed by: Codex R3-9L human regenerated clip review decision apply
+Completed by: Codex R3-9L human regenerated clip review decision apply
+Run ID: codex-20260708-182152-r3-9l
+Started at: 2026-07-08T18:21:52+08:00
+Completed at: 2026-07-08T18:26:55+08:00
+
+Scope:
+- Parsed Jenn's completed R3-9K regenerated clip review table.
+- Applied 4 accept decisions to local review state.
+- Set each shot's accepted clip to the corresponding R3-9J regenerated video artifact.
+- Did not call providers, regenerate, batch-expand, assemble final video, read `.env` or credentials, overwrite source assets, push, tag, release, or deploy.
+
+Changed files:
+- package.json
+- src/tools/review.ts
+- scripts/r3-9l-human-regenerated-clip-review-decision-apply.ts
+- data/reports/r3_9k_runninghub_regenerated_clip_review_table.md
+- data/reports/r3_9l_human_regenerated_clip_review_decision_apply_result.json
+- data/app.sqlite
+- .agent_board/NEXT_TASK.json
+- .agent_board/NEXT_TASK.md
+- .agent_board/RUN_LOCK.md
+- .agent_board/TASK_BACKLOG.md
+- .agent_board/HANDOFF.md
+- .agent_board/VALIDATION_LOG.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: npm run r3:9l:apply-review
+  result: PASS
+- command: node -e JSON.parse(...) and table decision check
+  result: PASS
+- command: npm run typecheck
+  result: PASS
+- command: npm run test:m1
+  result: PASS
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_9l_human_regenerated_clip_review_decision_apply_result.json
+- data/reports/r3_9k_runninghub_regenerated_clip_review_table.md
+- data/reports/r3_9k_runninghub_regenerated_clip_review_prep_result.json
+- data/reports/r3_9j_runninghub_regeneration_single_pass_live_execution_result.json
+- data/reports/secret_scan_result.json
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: PENDING_LOCAL_COMMIT
+- push: no
+- PR: none
+
+Decision summary:
+- accept: 4
+- reject: 0
+- regenerate_requested: 0
+
+Boundary:
+- No provider call, regeneration, batch expansion, final assembly, `.env` or credential read, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+
+Next:
+- Run a separate final assembly readiness check before any final assembly execution.

@@ -1,0 +1,307 @@
+{
+  "task": "R3-9L_HUMAN_REGENERATED_CLIP_REVIEW_DECISION_APPLY",
+  "result": "PASS_REVIEW_DECISIONS_APPLIED",
+  "mode": "local_review_decision_apply_only",
+  "generated_at": "2026-07-08T10:25:46.816Z",
+  "source_of_truth": {
+    "review_table": "data/reports/r3_9k_runninghub_regenerated_clip_review_table.md",
+    "r3_9k_review_prep_report": "data/reports/r3_9k_runninghub_regenerated_clip_review_prep_result.json",
+    "r3_9k_result": "PASS_REVIEW_PACKAGE_READY",
+    "r3_9k_commit": "ba7162e",
+    "r3_9j_live_report": "data/reports/r3_9j_runninghub_regeneration_single_pass_live_execution_result.json",
+    "r3_9j_result": "PASS_LIVE_4_SHOT_REGENERATION_COMPLETED",
+    "r3_9j_commit": "dfc8d42"
+  },
+  "decision_apply": {
+    "status": "APPLIED_TO_LOCAL_REVIEW_STATE",
+    "parsed_decision_count": 4,
+    "applied_decision_count": 4,
+    "decision_summary": {
+      "accept": 4,
+      "reject": 0,
+      "regenerate_requested": 0
+    },
+    "all_accepted": true,
+    "reviewer_names": [
+      "Jenn"
+    ],
+    "local_blocker_count": 0,
+    "local_blockers": [],
+    "live_generation_batch_receipt_backfilled": true,
+    "live_generation_batch_linked_to_project": true,
+    "app_review_state_mutated": true
+  },
+  "decisions": [
+    {
+      "order": 1,
+      "shot_id": "g0_r1_shot_001",
+      "generated_clip_artifact_id": "artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203",
+      "previous_rejected_clip_artifact_id": "artifact_ac71dfd9-371c-4eb4-a6b6-686993291ceb",
+      "local_video_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\01-g0_r1_shot_001\\artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203.mp4",
+      "previous_issue_zh": "不应该是拿起饭盒吃饭，应该是手从饭盒里面拿起食物放到嘴巴进行吃的动作",
+      "review_focus_zh": "确认饭盒始终留在桌上，没有被端起来吃。；确认手是从饭盒里面拿起食物，并把食物送到嘴边或嘴里。；确认人物身份、灰色帽子、工装、构图、工地环境和自然光保持稳定。；确认本片段只能进入人工审查，未获得 accept 前不得进入最终合成。",
+      "decision": "accept",
+      "reviewer": "Jenn",
+      "note": "",
+      "mapped_app_decision": "approved",
+      "before": {
+        "shot_status": "revision_needed",
+        "accepted_clip_artifact_id": "",
+        "approval_status": "revision_needed",
+        "rejection_reasons": [
+          "不应该是拿起饭盒吃饭，应该是手从饭盒里面拿起食物放到嘴巴进行吃的动作"
+        ],
+        "clip_version_count": 3
+      },
+      "after": {
+        "shot_status": "approved",
+        "approval_status": "approved",
+        "accepted_clip_artifact_id": "artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203",
+        "clip_review_status": "approved",
+        "rejection_reasons": [],
+        "latest_revision_instruction": null
+      },
+      "local_state_links": {
+        "generation_run_id": "run_r3_9j_37d18f76-ec61-4b5d-8f5c-acca2b4ba203",
+        "generation_run_created": true,
+        "generation_run_linked_to_shot": true,
+        "clip_version_added": true,
+        "generation_batch_id": "batch_r3_9j_runninghub_regeneration_single_pass_live_execution"
+      }
+    },
+    {
+      "order": 2,
+      "shot_id": "g0_r1_shot_002",
+      "generated_clip_artifact_id": "artifact_eeef12a7-9533-4172-beaa-6c25b91415f7",
+      "previous_rejected_clip_artifact_id": "artifact_2adc2e6d-3183-47c4-8d1b-01bf80bed73f",
+      "local_video_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\02-g0_r1_shot_002\\artifact_eeef12a7-9533-4172-beaa-6c25b91415f7.mp4",
+      "previous_issue_zh": "我不要叹气不高兴的表情，这样会让人不想购买产品",
+      "review_focus_zh": "确认没有叹气、不高兴、疲惫、失望、塌肩或让产品显得负面的情绪。；确认 Ryan 保持专注、自然、亲和，并且对产品观感是正向的。；确认灰色帽子、午餐桌、黄色安全帽、保温杯、饭盒、工地背景和自然光保持稳定。",
+      "decision": "accept",
+      "reviewer": "Jenn",
+      "note": "",
+      "mapped_app_decision": "approved",
+      "before": {
+        "shot_status": "revision_needed",
+        "accepted_clip_artifact_id": "",
+        "approval_status": "revision_needed",
+        "rejection_reasons": [
+          "我不要叹气不高兴的表情，这样会让人不想购买产品"
+        ],
+        "clip_version_count": 1
+      },
+      "after": {
+        "shot_status": "approved",
+        "approval_status": "approved",
+        "accepted_clip_artifact_id": "artifact_eeef12a7-9533-4172-beaa-6c25b91415f7",
+        "clip_review_status": "approved",
+        "rejection_reasons": [],
+        "latest_revision_instruction": null
+      },
+      "local_state_links": {
+        "generation_run_id": "run_r3_9j_eeef12a7-9533-4172-beaa-6c25b91415f7",
+        "generation_run_created": true,
+        "generation_run_linked_to_shot": true,
+        "clip_version_added": true,
+        "generation_batch_id": "batch_r3_9j_runninghub_regeneration_single_pass_live_execution"
+      }
+    },
+    {
+      "order": 3,
+      "shot_id": "g0_r1_shot_003",
+      "generated_clip_artifact_id": "artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a",
+      "previous_rejected_clip_artifact_id": "artifact_10271f09-278e-4326-b417-6b4ea64ad8ca",
+      "local_video_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\03-g0_r1_shot_003\\artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a.mp4",
+      "previous_issue_zh": "拉扯帽子的时候，帽子的折叠位置变化不符合现实效果，真实的效果是折痕会变浅，面料会随着拉起而变化",
+      "review_focus_zh": "确认拉扯帽子时折痕会变浅，面料会随着拉起方向产生真实变化。；确认帽子仍贴合头部，标签、织物纹理、手部动作和脸部稳定。；确认人物身份、灰色帽子、工装、构图、工地环境和自然光保持稳定。；确认本片段只能进入人工审查，未获得 accept 前不得进入最终合成。",
+      "decision": "accept",
+      "reviewer": "Jenn",
+      "note": "",
+      "mapped_app_decision": "approved",
+      "before": {
+        "shot_status": "revision_needed",
+        "accepted_clip_artifact_id": "",
+        "approval_status": "revision_needed",
+        "rejection_reasons": [
+          "拉扯帽子的时候，帽子的折叠位置变化不符合现实效果，真实的效果是折痕会变浅，面料会随着拉起而变化"
+        ],
+        "clip_version_count": 1
+      },
+      "after": {
+        "shot_status": "approved",
+        "approval_status": "approved",
+        "accepted_clip_artifact_id": "artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a",
+        "clip_review_status": "approved",
+        "rejection_reasons": [],
+        "latest_revision_instruction": null
+      },
+      "local_state_links": {
+        "generation_run_id": "run_r3_9j_20b1ee68-0b75-4fc1-96a8-93f36de31d5a",
+        "generation_run_created": true,
+        "generation_run_linked_to_shot": true,
+        "clip_version_added": true,
+        "generation_batch_id": "batch_r3_9j_runninghub_regeneration_single_pass_live_execution"
+      }
+    },
+    {
+      "order": 4,
+      "shot_id": "g0_r1_shot_004",
+      "generated_clip_artifact_id": "artifact_263a2344-5154-4981-bfe4-120571effb3e",
+      "previous_rejected_clip_artifact_id": "artifact_1f757b43-a308-4d80-a674-7b7a21ceec21",
+      "local_video_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\04-g0_r1_shot_004\\artifact_263a2344-5154-4981-bfe4-120571effb3e.mp4",
+      "previous_issue_zh": "主要是帽子的光影没有严谨的符合现实的光影效果",
+      "review_focus_zh": "确认帽子的光照方向、阴影、接触阴影和织物质感符合真实场景光影。；确认轻微身体动作或镜头跟随不会破坏帽子、脸部、工装和工地背景稳定性。；确认人物身份、灰色帽子、工装、构图、工地环境和自然光保持稳定。；确认本片段只能进入人工审查，未获得 accept 前不得进入最终合成。",
+      "decision": "accept",
+      "reviewer": "Jenn",
+      "note": "",
+      "mapped_app_decision": "approved",
+      "before": {
+        "shot_status": "revision_needed",
+        "accepted_clip_artifact_id": "",
+        "approval_status": "revision_needed",
+        "rejection_reasons": [
+          "主要是帽子的光影没有严谨的符合现实的光影效果"
+        ],
+        "clip_version_count": 1
+      },
+      "after": {
+        "shot_status": "approved",
+        "approval_status": "approved",
+        "accepted_clip_artifact_id": "artifact_263a2344-5154-4981-bfe4-120571effb3e",
+        "clip_review_status": "approved",
+        "rejection_reasons": [],
+        "latest_revision_instruction": null
+      },
+      "local_state_links": {
+        "generation_run_id": "run_r3_9j_263a2344-5154-4981-bfe4-120571effb3e",
+        "generation_run_created": true,
+        "generation_run_linked_to_shot": true,
+        "clip_version_added": true,
+        "generation_batch_id": "batch_r3_9j_runninghub_regeneration_single_pass_live_execution"
+      }
+    }
+  ],
+  "parsed_decisions": [
+    {
+      "order": 1,
+      "shot_id": "g0_r1_shot_001",
+      "generated_clip_artifact_id": "artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203",
+      "previous_rejected_clip_artifact_id": "artifact_ac71dfd9-371c-4eb4-a6b6-686993291ceb",
+      "local_video_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\01-g0_r1_shot_001\\artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203.mp4",
+      "previous_issue_zh": "不应该是拿起饭盒吃饭，应该是手从饭盒里面拿起食物放到嘴巴进行吃的动作",
+      "review_focus_zh": "确认饭盒始终留在桌上，没有被端起来吃。；确认手是从饭盒里面拿起食物，并把食物送到嘴边或嘴里。；确认人物身份、灰色帽子、工装、构图、工地环境和自然光保持稳定。；确认本片段只能进入人工审查，未获得 accept 前不得进入最终合成。",
+      "decision": "accept",
+      "decision_cell_value": "accept",
+      "reviewer": "Jenn",
+      "note": "",
+      "local_blockers": []
+    },
+    {
+      "order": 2,
+      "shot_id": "g0_r1_shot_002",
+      "generated_clip_artifact_id": "artifact_eeef12a7-9533-4172-beaa-6c25b91415f7",
+      "previous_rejected_clip_artifact_id": "artifact_2adc2e6d-3183-47c4-8d1b-01bf80bed73f",
+      "local_video_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\02-g0_r1_shot_002\\artifact_eeef12a7-9533-4172-beaa-6c25b91415f7.mp4",
+      "previous_issue_zh": "我不要叹气不高兴的表情，这样会让人不想购买产品",
+      "review_focus_zh": "确认没有叹气、不高兴、疲惫、失望、塌肩或让产品显得负面的情绪。；确认 Ryan 保持专注、自然、亲和，并且对产品观感是正向的。；确认灰色帽子、午餐桌、黄色安全帽、保温杯、饭盒、工地背景和自然光保持稳定。",
+      "decision": "accept",
+      "decision_cell_value": "accept",
+      "reviewer": "Jenn",
+      "note": "",
+      "local_blockers": []
+    },
+    {
+      "order": 3,
+      "shot_id": "g0_r1_shot_003",
+      "generated_clip_artifact_id": "artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a",
+      "previous_rejected_clip_artifact_id": "artifact_10271f09-278e-4326-b417-6b4ea64ad8ca",
+      "local_video_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\03-g0_r1_shot_003\\artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a.mp4",
+      "previous_issue_zh": "拉扯帽子的时候，帽子的折叠位置变化不符合现实效果，真实的效果是折痕会变浅，面料会随着拉起而变化",
+      "review_focus_zh": "确认拉扯帽子时折痕会变浅，面料会随着拉起方向产生真实变化。；确认帽子仍贴合头部，标签、织物纹理、手部动作和脸部稳定。；确认人物身份、灰色帽子、工装、构图、工地环境和自然光保持稳定。；确认本片段只能进入人工审查，未获得 accept 前不得进入最终合成。",
+      "decision": "accept",
+      "decision_cell_value": "accept",
+      "reviewer": "Jenn",
+      "note": "",
+      "local_blockers": []
+    },
+    {
+      "order": 4,
+      "shot_id": "g0_r1_shot_004",
+      "generated_clip_artifact_id": "artifact_263a2344-5154-4981-bfe4-120571effb3e",
+      "previous_rejected_clip_artifact_id": "artifact_1f757b43-a308-4d80-a674-7b7a21ceec21",
+      "local_video_path": "A:\\AI Video Production Workspace\\data\\media\\provider-runs\\r3-9i-runninghub-regeneration\\04-g0_r1_shot_004\\artifact_263a2344-5154-4981-bfe4-120571effb3e.mp4",
+      "previous_issue_zh": "主要是帽子的光影没有严谨的符合现实的光影效果",
+      "review_focus_zh": "确认帽子的光照方向、阴影、接触阴影和织物质感符合真实场景光影。；确认轻微身体动作或镜头跟随不会破坏帽子、脸部、工装和工地背景稳定性。；确认人物身份、灰色帽子、工装、构图、工地环境和自然光保持稳定。；确认本片段只能进入人工审查，未获得 accept 前不得进入最终合成。",
+      "decision": "accept",
+      "decision_cell_value": "accept",
+      "reviewer": "Jenn",
+      "note": "",
+      "local_blockers": []
+    }
+  ],
+  "final_assembly_gate": {
+    "final_assembly_performed": false,
+    "final_assembly_readiness_check_next_safe_task": true,
+    "status": "READY_FOR_FINAL_ASSEMBLY_READINESS_CHECK",
+    "reason": "All 4 regenerated clips were accepted locally; run a separate readiness check before any final assembly execution."
+  },
+  "next_safe_options": {
+    "final_assembly_readiness_check": true,
+    "regeneration_planning_for": [],
+    "rejected_shots_requiring_separate_handling_decision": [],
+    "provider_regeneration_requires_separate_task_and_fresh_authorization": true,
+    "final_assembly_requires_separate_task": true
+  },
+  "provider_boundary": {
+    "network_call_attempted": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "media_upload_to_provider": false,
+    "provider_submit": false,
+    "status_poll": false,
+    "output_download_from_provider": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "final_assembly_performed": false,
+    "env_files_read": false,
+    "credentials_read": false,
+    "source_assets_overwritten": false,
+    "secret_values_exposed": false,
+    "raw_provider_payload_recorded": false,
+    "signed_url_recorded": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  },
+  "validation": {
+    "npm run r3:9l:apply-review": "PASS",
+    "R3-9K review table parse / required decisions check": "PASS",
+    "JSON parse for generated R3-9L decision apply report": "PASS",
+    "npm run typecheck": "PASS",
+    "npm run test:m1": "PASS",
+    "npm run secret:scan": "PASS",
+    "git diff --check": "PASS_WITH_CRLF_WARNINGS_ONLY"
+  },
+  "changed_files": [
+    "package.json",
+    "src/tools/review.ts",
+    "scripts/r3-9l-human-regenerated-clip-review-decision-apply.ts",
+    "data/reports/r3_9k_runninghub_regenerated_clip_review_table.md",
+    "data/reports/r3_9l_human_regenerated_clip_review_decision_apply_result.json",
+    "data/app.sqlite",
+    ".agent_board/*"
+  ],
+  "blocked_reason": null,
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "PENDING_LOCAL_COMMIT",
+    "task": "R3-9L_HUMAN_REGENERATED_CLIP_REVIEW_DECISION_APPLY",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  }
+}

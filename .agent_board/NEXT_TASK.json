@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "slot": "current",
   "task_id": "R3-9L_HUMAN_REGENERATED_CLIP_REVIEW_DECISION_APPLY",
-  "status": "READY",
+  "status": "DONE",
   "priority": "P0",
   "lane": "Human Regenerated Clip Review Decision Apply",
   "project": "AI Video Production Workspace Three Route Plan",
@@ -69,31 +69,40 @@
     "R3-9K_RUNNINGHUB_REGENERATED_CLIP_REVIEW_PREP"
   ],
   "created_at": "2026-07-08T18:15:54+08:00",
-  "updated_at": "2026-07-08T18:15:54+08:00",
-  "claimed_by": null,
-  "claim_run_id": null,
-  "claimed_at": null,
-  "completed_by": null,
-  "completed_at": null,
+  "updated_at": "2026-07-08T18:26:55+08:00",
+  "claimed_by": "Codex R3-9L human regenerated clip review decision apply",
+  "claim_run_id": "codex-20260708-182152-r3-9l",
+  "claimed_at": "2026-07-08T18:21:52+08:00",
+  "completed_by": "Codex R3-9L human regenerated clip review decision apply",
+  "completed_at": "2026-07-08T18:26:55+08:00",
   "blocked_by": null,
   "blocked_at": null,
   "failed_by": null,
   "failed_at": null,
   "skipped_by": null,
   "skipped_at": null,
-  "result": null,
-  "validation_result": null,
+  "result": "PASS_REVIEW_DECISIONS_APPLIED",
+  "validation_result": "PASS",
   "evidence": [
     "data/reports/r3_9k_runninghub_regenerated_clip_review_table.md",
     "data/reports/r3_9k_runninghub_regenerated_clip_review_prep_result.json",
-    "data/reports/r3_9j_runninghub_regeneration_single_pass_live_execution_result.json"
+    "data/reports/r3_9j_runninghub_regeneration_single_pass_live_execution_result.json",
+    "data/reports/r3_9l_human_regenerated_clip_review_decision_apply_result.json"
   ],
   "commit": null,
   "delivery": "local_review_decision_apply_only",
   "boundary_or_safety_stop": "decision apply only; no provider call, regeneration execution, final assembly, env or credential read, source overwrite, or deployment",
   "blocked_reason": null,
   "failure_reason": null,
-  "safe_actions_completed": [],
+  "safe_actions_completed": [
+    "Parsed Jenn's R3-9K review table with exactly 4 regenerated clip rows.",
+    "Applied 4 accept decisions to local review state.",
+    "Set accepted_clip_artifact_id for each shot to the corresponding R3-9J regenerated clip artifact.",
+    "Cleared stale rejection reasons on approved shots.",
+    "Generated the R3-9L decision apply report.",
+    "Recorded final assembly readiness check as the next safe task without executing final assembly.",
+    "Validated table parse, JSON parse, npm run typecheck, npm run test:m1, npm run secret:scan, and git diff --check."
+  ],
   "unsafe_action_not_performed": [
     "runninghub_call",
     "runway_call",
@@ -122,7 +131,6 @@
     "If any regenerated clip is rejected or marked regenerate_requested, prepare the next local repair strategy instead of final assembly."
   ],
   "next_safe_option": [
-    "Claim R3-9L and apply the completed R3-9K human review decisions locally.",
-    "Do not assemble final video until a separate readiness check passes."
+    "Run a separate final assembly readiness check before any final assembly execution."
   ]
 }
