@@ -418,4 +418,5 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - `g0_r1_shot_002` was explicitly excluded and routed to `R3-9H_SHOT_002_REPLACEMENT_DECISION`.
 - Future RunningHub regeneration authorization draft is capped at 3 uploads and 3 submits, one per candidate, no retry, no second submit, no batch expansion, no Runway fallback.
 - No provider call, regeneration execution, batch expansion, final assembly, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
+- R3-9G local implementation commit: `dd5a2ba`.
 - Remaining READY task after this closeout: `R3-9H_SHOT_002_REPLACEMENT_DECISION`.

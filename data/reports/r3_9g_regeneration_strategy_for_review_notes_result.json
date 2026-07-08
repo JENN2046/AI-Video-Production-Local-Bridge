@@ -319,7 +319,7 @@
   "git_receipt": {
     "repo": true,
     "branch": "master",
-    "commit": "PENDING_LOCAL_COMMIT",
+    "commit": "dd5a2ba",
     "task": "R3-9G_REGENERATION_STRATEGY_FOR_REVIEW_NOTES",
     "push": false,
     "pr": null,

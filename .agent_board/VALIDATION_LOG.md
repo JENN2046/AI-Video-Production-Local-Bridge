@@ -1719,6 +1719,7 @@ Evidence:
 
 Notes:
 - Prepared regeneration strategy for `g0_r1_shot_001`, `g0_r1_shot_003`, and `g0_r1_shot_004`.
+- R3-9G local implementation commit: `dd5a2ba`.
 - Excluded `g0_r1_shot_002` and routed it to `R3-9H_SHOT_002_REPLACEMENT_DECISION`.
 - Drafted future RunningHub authorization plan capped at 3 uploads and 3 submits.
 - No provider call, regeneration execution, batch expansion, final assembly, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.

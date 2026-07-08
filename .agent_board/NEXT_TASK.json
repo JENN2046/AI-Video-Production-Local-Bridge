@@ -85,7 +85,7 @@
     "data/reports/r3_9g_regeneration_strategy_for_review_notes_result.json",
     "data/reports/secret_scan_result.json"
   ],
-  "commit": "PENDING_LOCAL_COMMIT",
+  "commit": "dd5a2ba",
   "delivery": "local_only",
   "boundary_or_safety_stop": "strategy only; no provider call, regeneration execution, final assembly, or deployment",
   "blocked_reason": null,

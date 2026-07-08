@@ -25,7 +25,7 @@ PASS_REGENERATION_STRATEGY_READY
 - claimed_at: 2026-07-08T16:39:00+08:00
 - completed_by: Codex R3-9G regeneration strategy
 - completed_at: 2026-07-08T16:42:00+08:00
-- commit: PENDING_LOCAL_COMMIT
+- commit: dd5a2ba
 
 ## Strategy
 
