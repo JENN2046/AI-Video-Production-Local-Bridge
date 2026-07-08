@@ -1,14 +1,36 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260708-204851-r2g-0
-Last result: R2G-0 ChatGPT MCP packaging reality audit completed
+Last run: codex-20260708-210000-r2g-a-f
+Last result: R2G-A through R2G-F local ChatGPT MCP packaging completed
 
 ## Current state
 
 Current task: none
 Current status: DONE
 Current owner: none
+
+## R2G-A through R2G-F Closeout
+
+- R2G-A through R2G-F completed on 2026-07-08T21:12:49+08:00 with `PASS_LOCAL_MCP_PACKAGE_READY_FOR_SEPARATE_CONNECTOR_PREP`.
+- Implemented local-only ChatGPT MCP bridge package surfaces:
+  - `src/tools/chatGptMcpBridge.ts`
+  - `scripts/r2g-mcp-packaging.ts`
+  - `tests/chatgpt-mcp-bridge.test.ts`
+  - `fixtures/mcp/chatgpt_mcp_tool_contract_r2g_b.json`
+- Reports:
+  - `data/reports/r2g_a_mcp_security_and_permission_model_result.json`
+  - `data/reports/r2g_b_mcp_tool_schema_and_contract_freeze_result.json`
+  - `data/reports/r2g_c_local_mcp_server_skeleton_result.json`
+  - `data/reports/r2g_d_chatgpt_handoff_e2e_dry_run_result.json`
+  - `data/reports/r2g_e_human_confirmation_and_write_gates_result.json`
+  - `data/reports/r2g_f_mcp_packaging_closeout_result.json`
+- Local MCP package summary: 8 approved tools, official-style `inputSchema` / `outputSchema`, annotations, structured result envelope, local in-process server skeleton, fail-closed forbidden actions, draft-only and pending-action write gates.
+- Validation passed: JSON/fixture parse, `npm run typecheck`, `npm run test:r2g:mcp`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
+- R2G local implementation commit: `PENDING_LOCAL_COMMIT`.
+- R2G-G was not loaded or executed. It remains `FOLLOW_UP`.
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+- Remaining eligible `READY` tasks in this lane: none.
 
 ## R2G-0 Closeout
 

@@ -1,0 +1,59 @@
+{
+  "task_id": "R2G-C_LOCAL_MCP_SERVER_SKELETON",
+  "result": "PASS_LOCAL_MCP_SERVER_SKELETON_READY",
+  "generated_at": "2026-07-08T13:11:19.162Z",
+  "server": {
+    "server_name": "ai-video-production-chatgpt-mcp-local-test",
+    "transport": "in_process_local_test_only",
+    "public_endpoint": false,
+    "chatgpt_connector_created": false,
+    "provider_call_allowed": false,
+    "tool_count": 8,
+    "tools": [
+      "get_project_status",
+      "lookup_media_artifact",
+      "submit_storyboard_draft",
+      "check_import_readiness",
+      "request_package_freeze",
+      "get_review_package",
+      "draft_human_review_decision",
+      "get_closeout_evidence"
+    ]
+  },
+  "smoke": {
+    "list_tools_ok": true,
+    "get_project_status_ok": true,
+    "forbidden_generate_video_fail_closed": true
+  },
+  "provider_boundary": {
+    "public_tunnel_started": false,
+    "public_mcp_endpoint_created": false,
+    "chatgpt_connector_created": false,
+    "network_call_attempted": false,
+    "provider_called": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "provider_credits_consumed": false,
+    "env_files_read": false,
+    "credentials_read": false,
+    "secret_values_exposed": false,
+    "source_assets_overwritten": false,
+    "raw_provider_payload_recorded": false,
+    "signed_url_recorded": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false,
+    "publish_performed": false,
+    "production_configuration_changed": false
+  },
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "PENDING_LOCAL_COMMIT",
+    "task": "R2G-C_LOCAL_MCP_SERVER_SKELETON",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  }
+}

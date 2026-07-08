@@ -2228,3 +2228,47 @@ Notes:
 - `git diff --check`: PASS with CRLF warnings only.
 - No server implementation, public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
 - R2G-0 local implementation commit: `6a4e358`.
+
+### R2G-A through R2G-F - 2026-07-08T21:12:49+08:00
+
+Commands:
+
+```bash
+npm run r2g:a:security-model
+npm run r2g:b:contract
+npm run r2g:c:smoke
+npm run r2g:d:dry-run
+npm run r2g:e:gates
+npm run r2g:f:closeout
+node -e JSON.parse(...) with R2G-A through R2G-F reports and schema fixture checks
+npm run typecheck
+npm run test:r2g:mcp
+npm run secret:scan
+git diff --check
+```
+
+Result: `PASS_LOCAL_MCP_PACKAGE_READY_FOR_SEPARATE_CONNECTOR_PREP`
+
+Evidence:
+- `src/tools/chatGptMcpBridge.ts`
+- `scripts/r2g-mcp-packaging.ts`
+- `tests/chatgpt-mcp-bridge.test.ts`
+- `fixtures/mcp/chatgpt_mcp_tool_contract_r2g_b.json`
+- `data/reports/r2g_a_mcp_security_and_permission_model_result.json`
+- `data/reports/r2g_b_mcp_tool_schema_and_contract_freeze_result.json`
+- `data/reports/r2g_c_local_mcp_server_skeleton_result.json`
+- `data/reports/r2g_d_chatgpt_handoff_e2e_dry_run_result.json`
+- `data/reports/r2g_e_human_confirmation_and_write_gates_result.json`
+- `data/reports/r2g_f_mcp_packaging_closeout_result.json`
+
+Notes:
+- R2G-A froze the fail-closed security and permission model.
+- R2G-B froze 8 MCP-style tool descriptors and a schema fixture.
+- R2G-C implemented the local in-process MCP skeleton without public exposure.
+- R2G-D ran a local GPT-style handoff dry-run.
+- R2G-E verified draft-only and human-confirmation gates with negative tests.
+- R2G-F closed out the local package and prepared a future public connector authorization checklist.
+- `git diff --check`: PASS with CRLF warnings only.
+- R2G-G was not loaded or executed.
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+- R2G local implementation commit: `PENDING_LOCAL_COMMIT`.

@@ -3807,3 +3807,179 @@ Boundary:
 
 Next:
 - R2G-A is eligible, but this run stops at the user-scoped R2G-0 request.
+
+### 2026-07-08T21:12:49+08:00 - R2G-A MCP Security And Permission Model
+
+Result: DONE / PASS_SECURITY_MODEL_FROZEN
+Project: AI Video Production Workspace GPT Bridge Line
+Lane: ChatGPT MCP Bridge
+Run ID: codex-20260708-210000-r2g-a-f
+Completed at: 2026-07-08T21:12:49+08:00
+
+Scope:
+- Froze fail-closed read-only, draft-only, human-confirmed request, and forbidden action classes.
+- Required app-owned IDs and local app authority for state transitions.
+- Did not expose a server, start a tunnel, create a connector, call providers, read env files or credentials, overwrite source assets, push, tag, release, deploy, or publish.
+
+Validation:
+- JSON parse for generated R2G-A report: PASS
+- `npm run typecheck`: PASS
+- `npm run test:r2g:mcp`: PASS
+- `npm run secret:scan`: PASS
+- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r2g_a_mcp_security_and_permission_model_result.json
+
+Git delivery:
+- commit: PENDING_LOCAL_COMMIT
+- push: no
+
+### 2026-07-08T21:12:49+08:00 - R2G-B MCP Tool Schema And Contract Freeze
+
+Result: DONE / PASS_TOOL_CONTRACT_FROZEN
+Project: AI Video Production Workspace GPT Bridge Line
+Lane: ChatGPT MCP Bridge
+Run ID: codex-20260708-210000-r2g-a-f
+Completed at: 2026-07-08T21:12:49+08:00
+
+Scope:
+- Froze 8 local MCP tool descriptors with `inputSchema`, `outputSchema`, annotations, safety metadata, and structured result envelope expectations.
+- Generated the schema fixture for local validation.
+- Explicitly excluded provider generation, public publishing, deploy, env, and credential tools.
+
+Validation:
+- JSON parse for generated R2G-B report: PASS
+- Schema fixture parse/check: PASS
+- `npm run typecheck`: PASS
+- `npm run test:r2g:mcp`: PASS
+- `npm run secret:scan`: PASS
+- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r2g_b_mcp_tool_schema_and_contract_freeze_result.json
+- fixtures/mcp/chatgpt_mcp_tool_contract_r2g_b.json
+
+Git delivery:
+- commit: PENDING_LOCAL_COMMIT
+- push: no
+
+### 2026-07-08T21:12:49+08:00 - R2G-C Local MCP Server Skeleton
+
+Result: DONE / PASS_LOCAL_MCP_SERVER_SKELETON_READY
+Project: AI Video Production Workspace GPT Bridge Line
+Lane: ChatGPT MCP Bridge
+Run ID: codex-20260708-210000-r2g-a-f
+Completed at: 2026-07-08T21:12:49+08:00
+
+Scope:
+- Implemented local in-process MCP skeleton and approved tool registry.
+- Added fail-closed forbidden action handling and structured MCP-style result envelopes.
+- Did not create a public endpoint, tunnel, ChatGPT connector, provider call, or credential dependency.
+
+Validation:
+- Local MCP server smoke test: PASS
+- Tool schema tests: PASS
+- `npm run typecheck`: PASS
+- `npm run test:r2g:mcp`: PASS
+- `npm run secret:scan`: PASS
+- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- src/tools/chatGptMcpBridge.ts
+- scripts/r2g-mcp-packaging.ts
+- tests/chatgpt-mcp-bridge.test.ts
+- data/reports/r2g_c_local_mcp_server_skeleton_result.json
+
+Git delivery:
+- commit: PENDING_LOCAL_COMMIT
+- push: no
+
+### 2026-07-08T21:12:49+08:00 - R2G-D ChatGPT Handoff E2E Dry Run
+
+Result: DONE / PASS_LOCAL_HANDOFF_DRY_RUN
+Project: AI Video Production Workspace GPT Bridge Line
+Lane: ChatGPT MCP Bridge
+Run ID: codex-20260708-210000-r2g-a-f
+Completed at: 2026-07-08T21:12:49+08:00
+
+Scope:
+- Ran local MCP-style handoff through project status, import readiness, storyboard draft, pending package freeze request, and closeout evidence.
+- Confirmed GPT fixture IDs are non-authoritative and app-owned IDs remain local app authority.
+- Did not connect to ChatGPT, call providers, read credentials, overwrite source assets, publish, deploy, or create a public endpoint.
+
+Validation:
+- Local E2E dry-run command: PASS
+- JSON parse for generated R2G-D report: PASS
+- `npm run typecheck`: PASS
+- `npm run test:r2g:mcp`: PASS
+- `npm run secret:scan`: PASS
+- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r2g_d_chatgpt_handoff_e2e_dry_run_result.json
+
+Git delivery:
+- commit: PENDING_LOCAL_COMMIT
+- push: no
+
+### 2026-07-08T21:12:49+08:00 - R2G-E Human Confirmation And Write Gates
+
+Result: DONE / PASS_CONFIRMATION_GATES_ENFORCED
+Project: AI Video Production Workspace GPT Bridge Line
+Lane: ChatGPT MCP Bridge
+Run ID: codex-20260708-210000-r2g-a-f
+Completed at: 2026-07-08T21:12:49+08:00
+
+Scope:
+- Added/verified confirmation gates for write-like local MCP paths.
+- Added negative tests proving draft-only calls do not freeze package truth and confirmation-required calls create pending actions only.
+- Verified fake/pending IDs and provider-like tools fail closed.
+
+Validation:
+- Confirmation gate negative tests: PASS
+- JSON parse for generated R2G-E report: PASS
+- `npm run typecheck`: PASS
+- `npm run test:r2g:mcp`: PASS
+- `npm run secret:scan`: PASS
+- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- tests/chatgpt-mcp-bridge.test.ts
+- data/reports/r2g_e_human_confirmation_and_write_gates_result.json
+
+Git delivery:
+- commit: PENDING_LOCAL_COMMIT
+- push: no
+
+### 2026-07-08T21:12:49+08:00 - R2G-F MCP Packaging Closeout
+
+Result: DONE / PASS_LOCAL_MCP_PACKAGE_READY_FOR_SEPARATE_CONNECTOR_PREP
+Project: AI Video Production Workspace GPT Bridge Line
+Lane: ChatGPT MCP Bridge
+Run ID: codex-20260708-210000-r2g-a-f
+Completed at: 2026-07-08T21:12:49+08:00
+
+Scope:
+- Closed out the local MCP bridge package.
+- Summarized implemented MCP tools, security gates, local tests, known limitations, and future public connector authorization checklist.
+- Stopped before R2G-G as instructed.
+
+Validation:
+- JSON parse for generated R2G-F report: PASS
+- Local MCP test suite: PASS
+- `npm run typecheck`: PASS
+- `npm run test:r2g:mcp`: PASS
+- `npm run secret:scan`: PASS
+- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r2g_f_mcp_packaging_closeout_result.json
+
+Git delivery:
+- commit: PENDING_LOCAL_COMMIT
+- push: no
+
+Boundary:
+- R2G-G was not loaded or executed.
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.

@@ -1,0 +1,54 @@
+{
+  "task_id": "R2G-D_CHATGPT_HANDOFF_E2E_DRY_RUN",
+  "result": "PASS_LOCAL_HANDOFF_DRY_RUN",
+  "generated_at": "2026-07-08T13:11:26.085Z",
+  "dry_run_steps": {
+    "project_status_read": true,
+    "import_readiness_checked": true,
+    "storyboard_draft_stored": true,
+    "package_freeze_pending_request_created": true,
+    "closeout_evidence_read": true
+  },
+  "app_id_authority": {
+    "gpt_fixture_ids_treated_as_non_authoritative": true,
+    "app_owned_artifact_ids_required": true,
+    "pending_or_fake_ids_rejected_by_contract": true
+  },
+  "production_effects": {
+    "provider_call_attempted": false,
+    "package_frozen_directly_by_mcp": false,
+    "source_asset_overwritten": false,
+    "public_connection_created": false
+  },
+  "provider_boundary": {
+    "public_tunnel_started": false,
+    "public_mcp_endpoint_created": false,
+    "chatgpt_connector_created": false,
+    "network_call_attempted": false,
+    "provider_called": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "provider_credits_consumed": false,
+    "env_files_read": false,
+    "credentials_read": false,
+    "secret_values_exposed": false,
+    "source_assets_overwritten": false,
+    "raw_provider_payload_recorded": false,
+    "signed_url_recorded": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false,
+    "publish_performed": false,
+    "production_configuration_changed": false
+  },
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "PENDING_LOCAL_COMMIT",
+    "task": "R2G-D_CHATGPT_HANDOFF_E2E_DRY_RUN",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  }
+}

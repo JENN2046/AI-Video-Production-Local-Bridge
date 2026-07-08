@@ -333,6 +333,31 @@ export type {
   WebGptProductionPlanRecord
 } from "./tools/webGptProductionAssistant.js";
 export {
+  boundaryFlags as chatGptMcpBoundaryFlags,
+  buildR2GCloseoutReport,
+  buildR2GConfirmationGateReport,
+  buildR2GDryRunReport,
+  buildR2GLocalServerSkeletonReport,
+  buildR2GSecurityModelReport,
+  buildR2GToolContractReport,
+  CHATGPT_MCP_BRIDGE_VERSION,
+  CHATGPT_MCP_LOCAL_TEST_SERVER_NAME,
+  CHATGPT_MCP_TOOL_DESCRIPTORS,
+  createChatGptMcpLocalServer,
+  executeChatGptMcpTool,
+  FORBIDDEN_CHATGPT_MCP_TOOL_NAMES,
+  listChatGptMcpToolDescriptors
+} from "./tools/chatGptMcpBridge.js";
+export type {
+  ChatGptMcpContentPart,
+  ChatGptMcpJsonSchema,
+  ChatGptMcpLocalServer,
+  ChatGptMcpToolDescriptor,
+  ChatGptMcpToolMode,
+  ChatGptMcpToolName,
+  ChatGptMcpToolResultEnvelope
+} from "./tools/chatGptMcpBridge.js";
+export {
   confirmMemorySavebackProposal,
   createMemorySavebackProposal,
   generateMemoryRecallPack,

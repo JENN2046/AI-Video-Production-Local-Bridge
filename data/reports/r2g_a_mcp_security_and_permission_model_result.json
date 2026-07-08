@@ -1,0 +1,95 @@
+{
+  "task_id": "R2G-A_MCP_SECURITY_AND_PERMISSION_MODEL",
+  "result": "PASS_SECURITY_MODEL_FROZEN",
+  "generated_at": "2026-07-08T13:10:59.485Z",
+  "bridge_version": "chatgpt-mcp-local-bridge-r2g",
+  "permission_model": {
+    "default_posture": "fail_closed",
+    "app_authority": "local_app_owns_ids_state_transitions_and_artifacts",
+    "gpt_authority": "read_local_safe_state_and_submit_drafts_or_pending_requests_only",
+    "id_policy": {
+      "app_owned_ids_required": true,
+      "gpt_may_not_invent_artifact_ids": true,
+      "pending_fake_placeholder_ids_rejected": true
+    },
+    "tool_classes": {
+      "read_only": [
+        "get_project_status",
+        "lookup_media_artifact",
+        "check_import_readiness",
+        "get_review_package",
+        "get_closeout_evidence"
+      ],
+      "draft_only": [
+        "submit_storyboard_draft",
+        "draft_human_review_decision"
+      ],
+      "human_confirmed_write_request": [
+        "request_package_freeze"
+      ],
+      "forbidden": [
+        "call_runway",
+        "call_runninghub",
+        "generate_video",
+        "regenerate_video",
+        "batch_generate_video",
+        "assemble_final_video",
+        "approve_final_delivery",
+        "publish_video",
+        "deploy_mcp_server",
+        "create_chatgpt_connector",
+        "start_public_tunnel",
+        "read_env",
+        "read_credentials",
+        "write_production_config"
+      ]
+    },
+    "approval_gates": {
+      "import_registration": "local human confirmation through app/workbench only",
+      "package_freeze": "pending request only from MCP; local human confirmation required before freeze",
+      "review_decision": "draft only from MCP; local human applies final review",
+      "generation_request": "not exposed in R2G local MCP package",
+      "final_assembly": "not exposed in R2G local MCP package",
+      "closeout": "read evidence only; no publish or production configuration"
+    },
+    "secrets_and_provider_boundary": {
+      "env_files_read": false,
+      "credentials_read": false,
+      "provider_call_allowed": false,
+      "public_tunnel_allowed": false,
+      "chatgpt_connector_creation_allowed": false,
+      "deploy_publish_allowed": false
+    }
+  },
+  "provider_boundary": {
+    "public_tunnel_started": false,
+    "public_mcp_endpoint_created": false,
+    "chatgpt_connector_created": false,
+    "network_call_attempted": false,
+    "provider_called": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "provider_credits_consumed": false,
+    "env_files_read": false,
+    "credentials_read": false,
+    "secret_values_exposed": false,
+    "source_assets_overwritten": false,
+    "raw_provider_payload_recorded": false,
+    "signed_url_recorded": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false,
+    "publish_performed": false,
+    "production_configuration_changed": false
+  },
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "PENDING_LOCAL_COMMIT",
+    "task": "R2G-A_MCP_SECURITY_AND_PERMISSION_MODEL",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  }
+}

@@ -1,0 +1,520 @@
+{
+  "generated_from_report": "data/reports/r2g_b_mcp_tool_schema_and_contract_freeze_result.json",
+  "generated_at": "2026-07-08T13:11:12.433Z",
+  "bridge_version": "chatgpt-mcp-local-bridge-r2g",
+  "tool_contract": [
+    {
+      "name": "get_project_status",
+      "title": "Get Project Status",
+      "description": "Read the current local project and storyboard readiness summary.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Optional app-owned project id."
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "object"
+          },
+          "boundary": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "ok",
+          "data",
+          "boundary"
+        ],
+        "additionalProperties": true
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "security": {
+        "mode": "READ_ONLY",
+        "reads_private_state": false,
+        "reads_credentials": false,
+        "provider_call_allowed": false,
+        "public_network_allowed": false,
+        "source_overwrite_allowed": false,
+        "production_mutation_allowed": false,
+        "human_confirmation_required": false
+      },
+      "_meta": {
+        "openai/toolInvocation/invoking": "Get Project Status...",
+        "openai/toolInvocation/invoked": "Get Project Status complete.",
+        "local_only": true,
+        "public_endpoint": false
+      }
+    },
+    {
+      "name": "lookup_media_artifact",
+      "title": "Lookup Media Artifact",
+      "description": "Read one app-owned Media Artifact by real artifact_id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "artifact_id": {
+            "type": "string",
+            "description": "Required app-owned artifact id."
+          }
+        },
+        "required": [
+          "artifact_id"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "object"
+          },
+          "boundary": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "ok",
+          "data",
+          "boundary"
+        ],
+        "additionalProperties": true
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "security": {
+        "mode": "READ_ONLY",
+        "reads_private_state": false,
+        "reads_credentials": false,
+        "provider_call_allowed": false,
+        "public_network_allowed": false,
+        "source_overwrite_allowed": false,
+        "production_mutation_allowed": false,
+        "human_confirmation_required": false
+      },
+      "_meta": {
+        "openai/toolInvocation/invoking": "Lookup Media Artifact...",
+        "openai/toolInvocation/invoked": "Lookup Media Artifact complete.",
+        "local_only": true,
+        "public_endpoint": false
+      }
+    },
+    {
+      "name": "submit_storyboard_draft",
+      "title": "Submit Storyboard Draft",
+      "description": "Store a GPT-authored storyboard draft for local human review without changing production truth.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "package_title": {
+            "type": "string",
+            "description": "Optional draft package title."
+          },
+          "shots": {
+            "type": "array",
+            "description": "Draft shots. Artifact ids are optional and must be app-owned if provided.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "shot_id": {
+                  "type": "string",
+                  "description": "Optional app shot id."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Draft shot description."
+                },
+                "video_prompt": {
+                  "type": "string",
+                  "description": "Draft video prompt."
+                },
+                "negative_prompt": {
+                  "type": "string",
+                  "description": "Optional draft negative prompt."
+                },
+                "duration_seconds": {
+                  "type": "number",
+                  "description": "Optional draft duration."
+                },
+                "storyboard_image_artifact_id": {
+                  "type": "string",
+                  "description": "Optional real app storyboard_image artifact id."
+                }
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        "required": [
+          "shots"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "object"
+          },
+          "boundary": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "ok",
+          "data",
+          "boundary"
+        ],
+        "additionalProperties": true
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "security": {
+        "mode": "DRAFT_ONLY",
+        "reads_private_state": false,
+        "reads_credentials": false,
+        "provider_call_allowed": false,
+        "public_network_allowed": false,
+        "source_overwrite_allowed": false,
+        "production_mutation_allowed": false,
+        "human_confirmation_required": false
+      },
+      "_meta": {
+        "openai/toolInvocation/invoking": "Submit Storyboard Draft...",
+        "openai/toolInvocation/invoked": "Submit Storyboard Draft complete.",
+        "local_only": true,
+        "public_endpoint": false
+      }
+    },
+    {
+      "name": "check_import_readiness",
+      "title": "Check Import Readiness",
+      "description": "Read app-screened import candidates and current package readiness.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "object"
+          },
+          "boundary": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "ok",
+          "data",
+          "boundary"
+        ],
+        "additionalProperties": true
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "security": {
+        "mode": "READ_ONLY",
+        "reads_private_state": false,
+        "reads_credentials": false,
+        "provider_call_allowed": false,
+        "public_network_allowed": false,
+        "source_overwrite_allowed": false,
+        "production_mutation_allowed": false,
+        "human_confirmation_required": false
+      },
+      "_meta": {
+        "openai/toolInvocation/invoking": "Check Import Readiness...",
+        "openai/toolInvocation/invoked": "Check Import Readiness complete.",
+        "local_only": true,
+        "public_endpoint": false
+      }
+    },
+    {
+      "name": "request_package_freeze",
+      "title": "Request Package Freeze",
+      "description": "Create a pending human-confirmed package freeze request; this does not freeze the package directly.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "Required reason shown to the human operator."
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "object"
+          },
+          "boundary": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "ok",
+          "data",
+          "boundary"
+        ],
+        "additionalProperties": true
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "security": {
+        "mode": "HUMAN_CONFIRMATION_REQUIRED",
+        "reads_private_state": false,
+        "reads_credentials": false,
+        "provider_call_allowed": false,
+        "public_network_allowed": false,
+        "source_overwrite_allowed": false,
+        "production_mutation_allowed": false,
+        "human_confirmation_required": true
+      },
+      "_meta": {
+        "openai/toolInvocation/invoking": "Request Package Freeze...",
+        "openai/toolInvocation/invoked": "Request Package Freeze complete.",
+        "local_only": true,
+        "public_endpoint": false
+      }
+    },
+    {
+      "name": "get_review_package",
+      "title": "Get Review Package",
+      "description": "Read generated clip review and final assembly readiness summaries.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Optional app-owned project id for final assembly summary."
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "object"
+          },
+          "boundary": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "ok",
+          "data",
+          "boundary"
+        ],
+        "additionalProperties": true
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "security": {
+        "mode": "READ_ONLY",
+        "reads_private_state": false,
+        "reads_credentials": false,
+        "provider_call_allowed": false,
+        "public_network_allowed": false,
+        "source_overwrite_allowed": false,
+        "production_mutation_allowed": false,
+        "human_confirmation_required": false
+      },
+      "_meta": {
+        "openai/toolInvocation/invoking": "Get Review Package...",
+        "openai/toolInvocation/invoked": "Get Review Package complete.",
+        "local_only": true,
+        "public_endpoint": false
+      }
+    },
+    {
+      "name": "draft_human_review_decision",
+      "title": "Draft Human Review Decision",
+      "description": "Draft a clip review note, rejection reason, or regeneration prompt for local human review.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "artifact_id": {
+            "type": "string",
+            "description": "Required generated_clip artifact id."
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "accept",
+              "reject",
+              "regenerate_requested"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "description": "Draft note for accept decisions."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Draft rejection reason."
+          },
+          "prompt_delta": {
+            "type": "string",
+            "description": "Draft regeneration prompt delta."
+          }
+        },
+        "required": [
+          "artifact_id",
+          "decision"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "object"
+          },
+          "boundary": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "ok",
+          "data",
+          "boundary"
+        ],
+        "additionalProperties": true
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "security": {
+        "mode": "DRAFT_ONLY",
+        "reads_private_state": false,
+        "reads_credentials": false,
+        "provider_call_allowed": false,
+        "public_network_allowed": false,
+        "source_overwrite_allowed": false,
+        "production_mutation_allowed": false,
+        "human_confirmation_required": false
+      },
+      "_meta": {
+        "openai/toolInvocation/invoking": "Draft Human Review Decision...",
+        "openai/toolInvocation/invoked": "Draft Human Review Decision complete.",
+        "local_only": true,
+        "public_endpoint": false
+      }
+    },
+    {
+      "name": "get_closeout_evidence",
+      "title": "Get Closeout Evidence",
+      "description": "Read local report references and closeout evidence metadata.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "object"
+          },
+          "boundary": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "ok",
+          "data",
+          "boundary"
+        ],
+        "additionalProperties": true
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "security": {
+        "mode": "READ_ONLY",
+        "reads_private_state": false,
+        "reads_credentials": false,
+        "provider_call_allowed": false,
+        "public_network_allowed": false,
+        "source_overwrite_allowed": false,
+        "production_mutation_allowed": false,
+        "human_confirmation_required": false
+      },
+      "_meta": {
+        "openai/toolInvocation/invoking": "Get Closeout Evidence...",
+        "openai/toolInvocation/invoked": "Get Closeout Evidence complete.",
+        "local_only": true,
+        "public_endpoint": false
+      }
+    }
+  ]
+}

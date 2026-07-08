@@ -1,0 +1,128 @@
+{
+  "task_id": "R2G-F_MCP_PACKAGING_CLOSEOUT",
+  "result": "PASS_LOCAL_MCP_PACKAGE_READY_FOR_SEPARATE_CONNECTOR_PREP",
+  "generated_at": "2026-07-08T13:11:42.932Z",
+  "bridge_version": "chatgpt-mcp-local-bridge-r2g",
+  "implemented_local_package": {
+    "tool_count": 8,
+    "tools": [
+      {
+        "name": "get_project_status",
+        "mode": "READ_ONLY",
+        "read_only": true,
+        "human_confirmation_required": false,
+        "provider_call_allowed": false,
+        "public_network_allowed": false
+      },
+      {
+        "name": "lookup_media_artifact",
+        "mode": "READ_ONLY",
+        "read_only": true,
+        "human_confirmation_required": false,
+        "provider_call_allowed": false,
+        "public_network_allowed": false
+      },
+      {
+        "name": "submit_storyboard_draft",
+        "mode": "DRAFT_ONLY",
+        "read_only": false,
+        "human_confirmation_required": false,
+        "provider_call_allowed": false,
+        "public_network_allowed": false
+      },
+      {
+        "name": "check_import_readiness",
+        "mode": "READ_ONLY",
+        "read_only": true,
+        "human_confirmation_required": false,
+        "provider_call_allowed": false,
+        "public_network_allowed": false
+      },
+      {
+        "name": "request_package_freeze",
+        "mode": "HUMAN_CONFIRMATION_REQUIRED",
+        "read_only": false,
+        "human_confirmation_required": true,
+        "provider_call_allowed": false,
+        "public_network_allowed": false
+      },
+      {
+        "name": "get_review_package",
+        "mode": "READ_ONLY",
+        "read_only": true,
+        "human_confirmation_required": false,
+        "provider_call_allowed": false,
+        "public_network_allowed": false
+      },
+      {
+        "name": "draft_human_review_decision",
+        "mode": "DRAFT_ONLY",
+        "read_only": false,
+        "human_confirmation_required": false,
+        "provider_call_allowed": false,
+        "public_network_allowed": false
+      },
+      {
+        "name": "get_closeout_evidence",
+        "mode": "READ_ONLY",
+        "read_only": true,
+        "human_confirmation_required": false,
+        "provider_call_allowed": false,
+        "public_network_allowed": false
+      }
+    ],
+    "local_server_skeleton": "in_process_local_test_only",
+    "public_endpoint": false,
+    "chatgpt_connector_created": false
+  },
+  "local_tests": {
+    "test_script": "npm run test:r2g:mcp",
+    "typecheck": "npm run typecheck",
+    "secret_scan": "npm run secret:scan",
+    "diff_check": "git diff --check"
+  },
+  "known_limits": [
+    "No public HTTPS /mcp endpoint exists in R2G-F.",
+    "No ChatGPT connector was created.",
+    "No OAuth or live connector auth flow was implemented.",
+    "Provider generation, regeneration, final assembly execution, publishing, deploy, and production configuration are not exposed."
+  ],
+  "future_public_connection_authorization_checklist": [
+    "Authorize public HTTPS endpoint or deployment/tunnel target.",
+    "Authorize ChatGPT connector creation target and account.",
+    "Choose authentication stance before exposing any non-local endpoint.",
+    "Run connector smoke tests without exposing secrets or provider payloads.",
+    "Keep provider/API calls out of connector bring-up unless separately authorized."
+  ],
+  "provider_boundary": {
+    "public_tunnel_started": false,
+    "public_mcp_endpoint_created": false,
+    "chatgpt_connector_created": false,
+    "network_call_attempted": false,
+    "provider_called": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "provider_credits_consumed": false,
+    "env_files_read": false,
+    "credentials_read": false,
+    "secret_values_exposed": false,
+    "source_assets_overwritten": false,
+    "raw_provider_payload_recorded": false,
+    "signed_url_recorded": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false,
+    "publish_performed": false,
+    "production_configuration_changed": false
+  },
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "PENDING_LOCAL_COMMIT",
+    "task": "R2G-F_MCP_PACKAGING_CLOSEOUT",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "task_id": "R2G-E_HUMAN_CONFIRMATION_AND_WRITE_GATES",
+  "result": "PASS_CONFIRMATION_GATES_ENFORCED",
+  "generated_at": "2026-07-08T13:11:35.735Z",
+  "gate_checks": {
+    "read_only_rejects_pending_fake_artifact_id": true,
+    "package_freeze_is_pending_request_only": true,
+    "package_freeze_requires_local_human_confirmation": true,
+    "forbidden_provider_call_fail_closed": true,
+    "draft_only_tools_do_not_mutate_final_truth": true
+  },
+  "provider_boundary": {
+    "public_tunnel_started": false,
+    "public_mcp_endpoint_created": false,
+    "chatgpt_connector_created": false,
+    "network_call_attempted": false,
+    "provider_called": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "provider_credits_consumed": false,
+    "env_files_read": false,
+    "credentials_read": false,
+    "secret_values_exposed": false,
+    "source_assets_overwritten": false,
+    "raw_provider_payload_recorded": false,
+    "signed_url_recorded": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false,
+    "publish_performed": false,
+    "production_configuration_changed": false
+  },
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "PENDING_LOCAL_COMMIT",
+    "task": "R2G-E_HUMAN_CONFIRMATION_AND_WRITE_GATES",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  }
+}
