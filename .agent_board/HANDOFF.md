@@ -1,14 +1,30 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260708-181554-r3-9l-queue-arrangement
-Last result: R3-9L queued for human regenerated clip review decision apply
+Last run: codex-20260708-182213-r3-9m-r3-9p-queue-arrangement
+Last result: R3-9M through R3-9P queued after R3-9L
 
 ## Current state
 
 Current task: R3-9L_HUMAN_REGENERATED_CLIP_REVIEW_DECISION_APPLY
-Current status: READY
-Current owner: None
+Current status: IN_PROGRESS
+Current owner: Codex R3-9L human regenerated clip review decision apply
+
+## R3-9M / R3-9P queue arrangement
+
+Arranged at: 2026-07-08T18:22:13+08:00
+Result: READY_TASKS_QUEUED_WITH_DEPENDENCIES
+
+- Current task is now `R3-9L_HUMAN_REGENERATED_CLIP_REVIEW_DECISION_APPLY`, claimed as `IN_PROGRESS` by `Codex R3-9L human regenerated clip review decision apply`.
+- Added downstream `READY` tasks to backlog; dependency gates should control the order:
+  - `R3-9M_FINAL_ASSEMBLY_READINESS_CHECK` depends on `R3-9L_HUMAN_REGENERATED_CLIP_REVIEW_DECISION_APPLY`.
+  - `R3-9N_FINAL_VIDEO_ASSEMBLY_DRY_RUN` depends on `R3-9M_FINAL_ASSEMBLY_READINESS_CHECK`.
+  - `R3-9O_FINAL_VIDEO_ASSEMBLY_EXECUTION` depends on `R3-9N_FINAL_VIDEO_ASSEMBLY_DRY_RUN`.
+  - `R3-9P_FINAL_VIDEO_REVIEW_PACKAGE` depends on `R3-9O_FINAL_VIDEO_ASSEMBLY_EXECUTION`.
+- R3-9M must fail closed if any required shot lacks an accepted regenerated clip.
+- R3-9N is dry-run only and must not create final video.
+- R3-9O is local assembly only: no RunningHub/Runway call, no regeneration, no source overwrite, no publish/deploy.
+- R3-9P creates a local final-video review package; it must not publish, deploy, upload, or mark final creative approval.
 
 ## R3-9L queue arrangement
 

@@ -3196,3 +3196,205 @@ Apply Jenn's completed R3-9K human review decisions for the four regenerated Run
 
 - Decision apply only.
 - No RunningHub/Runway call, media upload, provider submit, status poll, provider output download, provider credit consumption, real video generation, regeneration execution, batch expansion, final assembly, `.env` or credential read, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy.
+
+## R3-9M_FINAL_ASSEMBLY_READINESS_CHECK - Final Assembly Readiness Check
+
+status: READY
+priority: P0
+lane: Final Assembly Readiness
+project: AI Video Production Workspace Three Route Plan
+scope: verify whether the accepted regenerated clips from R3-9L are sufficient for local final assembly
+branch: local-only
+depends_on: R3-9L_HUMAN_REGENERATED_CLIP_REVIEW_DECISION_APPLY
+source_report: data/reports/r3_9l_human_regenerated_clip_review_decision_apply_result.json
+report_path: data/reports/r3_9m_final_assembly_readiness_check_result.json
+allowed_delivery: readiness_report,accepted_clip_inventory,assembly_input_manifest,task_board_update,local_commit
+blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,provider_submit,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,regeneration_execution,batch_expansion,final_assembly,env_file_read,credential_read,source_overwrite,secret_value_output,raw_provider_payload_recording,signed_url_recording,push,tag,release,deploy
+created_at: 2026-07-08T18:22:13+08:00
+updated_at: 2026-07-08T18:22:13+08:00
+
+### Goal
+
+Confirm whether all required shots have accepted active generated clips and whether the project is ready for a separate local final assembly dry-run.
+
+### Required Work
+
+- Parse `data/reports/r3_9l_human_regenerated_clip_review_decision_apply_result.json` as the source of truth.
+- Verify exactly 4 required shots are present: `g0_r1_shot_001`, `g0_r1_shot_002`, `g0_r1_shot_003`, and `g0_r1_shot_004`.
+- Verify every required shot has an accepted regenerated clip artifact.
+- Verify every accepted clip exists locally, has `role=generated_clip`, `status=active`, and ffprobe `PASS`.
+- Build a deterministic assembly input manifest in storyboard order.
+- Do not assemble the final video in this task.
+
+### Acceptance
+
+- Report includes one row per required shot with accepted artifact id, local mp4 path, ffprobe status, duration, and source generation task.
+- Report result is `PASS_READY_FOR_FINAL_ASSEMBLY_DRY_RUN` only if all four required shots are accepted and valid.
+- If any shot is missing, rejected, regenerate_requested, inactive, unreadable, or ffprobe-invalid, report `BLOCK_FINAL_ASSEMBLY_WITH_REASON`.
+- Report records `network_call_attempted=false`, `runninghub_called=false`, `runway_called=false`, `real_video_generated=false`, `final_assembly_performed=false`, `env_files_read=false`, `credentials_read=false`, `source_assets_overwritten=false`, `secret_values_exposed=false`.
+
+### Validation
+
+- JSON parse for generated readiness report
+- accepted clip path existence checks
+- ffprobe evidence check from existing reports or local metadata
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Boundary
+
+- Readiness check only.
+- No provider call, regeneration, batch expansion, final assembly, `.env` or credential read, source overwrite, push, tag, release, or deploy.
+
+## R3-9N_FINAL_VIDEO_ASSEMBLY_DRY_RUN - Final Video Assembly Dry Run
+
+status: READY
+priority: P0
+lane: Final Assembly Dry Run
+project: AI Video Production Workspace Three Route Plan
+scope: prepare and validate a local final video assembly plan without producing the final video
+branch: local-only
+depends_on: R3-9M_FINAL_ASSEMBLY_READINESS_CHECK
+source_report: data/reports/r3_9m_final_assembly_readiness_check_result.json
+report_path: data/reports/r3_9n_final_video_assembly_dry_run_result.json
+allowed_delivery: assembly_dry_run_report,ffmpeg_plan,output_path_plan,no_overwrite_gate,task_board_update,local_commit
+blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,provider_submit,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,regeneration_execution,batch_expansion,final_video_write,env_file_read,credential_read,source_overwrite,secret_value_output,raw_provider_payload_recording,signed_url_recording,push,tag,release,deploy
+created_at: 2026-07-08T18:22:13+08:00
+updated_at: 2026-07-08T18:22:13+08:00
+
+### Goal
+
+Validate the exact local final assembly plan, output path, ffmpeg inputs, and no-overwrite gate before writing any final video.
+
+### Required Work
+
+- Parse `data/reports/r3_9m_final_assembly_readiness_check_result.json`.
+- Require R3-9M result `PASS_READY_FOR_FINAL_ASSEMBLY_DRY_RUN`.
+- Build the final assembly order from the R3-9M manifest.
+- Prepare a local ffmpeg or project assembly command plan without executing final output creation.
+- Define isolated output directory and final video filename.
+- Verify output path does not overwrite any source asset, imported image, generated clip, or previous final master.
+- Do not create the final video in this task.
+
+### Acceptance
+
+- Report includes ordered input clips, planned output path, estimated total duration, assembly method, codec/container plan, and no-overwrite result.
+- Report result is `PASS_READY_FOR_LOCAL_FINAL_ASSEMBLY_EXECUTION` only if all inputs and output gates pass.
+- Report records `final_video_written=false`, `final_assembly_performed=false`, `network_call_attempted=false`, `runninghub_called=false`, `runway_called=false`, `env_files_read=false`, `credentials_read=false`, `source_assets_overwritten=false`, `secret_values_exposed=false`.
+
+### Validation
+
+- JSON parse for generated dry-run report
+- planned input path existence checks
+- output no-overwrite check
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Boundary
+
+- Dry-run only.
+- No final video write, provider call, regeneration, batch expansion, `.env` or credential read, source overwrite, push, tag, release, or deploy.
+
+## R3-9O_FINAL_VIDEO_ASSEMBLY_EXECUTION - Final Video Assembly Execution
+
+status: READY
+priority: P0
+lane: Final Assembly Execution
+project: AI Video Production Workspace Three Route Plan
+scope: execute the validated local final video assembly plan from R3-9N
+branch: local-only
+depends_on: R3-9N_FINAL_VIDEO_ASSEMBLY_DRY_RUN
+source_report: data/reports/r3_9n_final_video_assembly_dry_run_result.json
+report_path: data/reports/r3_9o_final_video_assembly_execution_result.json
+allowed_delivery: local_final_video,final_video_artifact,ffprobe_validation,assembly_execution_report,task_board_update,local_commit
+blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,provider_submit,status_poll,output_download_from_provider,provider_credits_consumed,regeneration_execution,batch_expansion,env_file_read,credential_read,source_overwrite,secret_value_output,raw_provider_payload_recording,signed_url_recording,push,tag,release,deploy,publish
+created_at: 2026-07-08T18:22:13+08:00
+updated_at: 2026-07-08T18:22:13+08:00
+
+### Goal
+
+Create the local final assembled video from the accepted clips using the validated R3-9N assembly plan.
+
+### Required Work
+
+- Parse `data/reports/r3_9n_final_video_assembly_dry_run_result.json`.
+- Require R3-9N result `PASS_READY_FOR_LOCAL_FINAL_ASSEMBLY_EXECUTION`.
+- Execute only the validated local assembly command or equivalent project assembly function.
+- Write output only to the isolated final video output path from R3-9N.
+- Register the final video as a local media artifact if the project supports final video artifact registration.
+- Run ffprobe on the produced final video.
+- Do not publish, deploy, upload, or overwrite any source asset.
+
+### Acceptance
+
+- Report includes final video path, final video artifact id if registered, input artifact ids, duration, ffprobe result, and no-overwrite confirmation.
+- Result is `PASS_LOCAL_FINAL_VIDEO_ASSEMBLED` only if final video exists and ffprobe passes.
+- Report records `network_call_attempted=false`, `runninghub_called=false`, `runway_called=false`, `provider_credits_consumed=false`, `regeneration_performed=false`, `batch_generation_performed=false`, `env_files_read=false`, `credentials_read=false`, `source_assets_overwritten=false`, `secret_values_exposed=false`, `publish_performed=false`, `release_or_deploy_performed=false`.
+
+### Validation
+
+- JSON parse for generated assembly execution report
+- final video path existence check
+- final video ffprobe PASS
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Boundary
+
+- Local assembly only.
+- No provider call, regeneration, batch expansion, `.env` or credential read, source overwrite, push, tag, release, deploy, or publish.
+
+## R3-9P_FINAL_VIDEO_REVIEW_PACKAGE - Final Video Review Package
+
+status: READY
+priority: P1
+lane: Final Video Review
+project: AI Video Production Workspace Three Route Plan
+scope: generate a local final-video review package after R3-9O assembly execution
+branch: local-only
+depends_on: R3-9O_FINAL_VIDEO_ASSEMBLY_EXECUTION
+source_report: data/reports/r3_9o_final_video_assembly_execution_result.json
+report_path: data/reports/r3_9p_final_video_review_package_result.json
+review_table_path: data/reports/r3_9p_final_video_review_table.md
+allowed_delivery: final_video_review_report,final_video_review_table,local_video_link_summary,task_board_update,local_commit
+blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,provider_submit,status_poll,output_download_from_provider,provider_credits_consumed,regeneration_execution,batch_expansion,env_file_read,credential_read,source_overwrite,secret_value_output,raw_provider_payload_recording,signed_url_recording,push,tag,release,deploy,publish,final_creative_approval
+created_at: 2026-07-08T18:22:13+08:00
+updated_at: 2026-07-08T18:22:13+08:00
+
+### Goal
+
+Prepare a local Chinese review package for the assembled final video so Jenn can decide final creative approval separately.
+
+### Required Work
+
+- Parse `data/reports/r3_9o_final_video_assembly_execution_result.json`.
+- Include the final video path, final video artifact id if available, ffprobe summary, source clip list, and assembly report link.
+- Generate a Chinese final-video review table with placeholders for `accept`, `reject`, and `revision_requested`.
+- State that this package does not publish, deploy, upload, or mark final creative approval.
+
+### Acceptance
+
+- Report and review table include the final local video path and all source clip artifact ids.
+- Review controls are present but not preselected.
+- Report records `network_call_attempted=false`, `runninghub_called=false`, `runway_called=false`, `provider_credits_consumed=false`, `publish_performed=false`, `release_or_deploy_performed=false`, `final_creative_approval_recorded=false`, `env_files_read=false`, `credentials_read=false`, `secret_values_exposed=false`.
+
+### Validation
+
+- JSON parse for generated final video review package report
+- review table required fields check
+- final video path existence check
+- `npm run typecheck`
+- `npm run test:m1`
+- `npm run secret:scan`
+- `git diff --check`
+
+### Boundary
+
+- Review package only.
+- No provider call, regeneration, batch expansion, `.env` or credential read, source overwrite, push, tag, release, deploy, publish, or final creative approval.
