@@ -217,5 +217,15 @@
     "human_review_required": true,
     "provider_regeneration_requires_separate_task": true,
     "final_assembly_requires_separate_task_after_acceptance": true
+  },
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "1ecc31c",
+    "task": "R3-9E_RUNNINGHUB_GENERATED_CLIP_REVIEW_PREP",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
   }
 }

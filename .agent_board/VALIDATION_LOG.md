@@ -1658,5 +1658,6 @@ Evidence:
 
 Notes:
 - Review package includes 4 generated clips and 0 local blockers.
+- R3-9E local implementation commit: `1ecc31c`.
 - Review decision placeholders are blank and no app review state was mutated.
 - No provider call, regeneration, batch expansion, final assembly, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.

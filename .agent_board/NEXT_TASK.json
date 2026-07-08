@@ -84,7 +84,7 @@
     "data/reports/r3_9e_runninghub_generated_clip_review_table.md",
     "data/reports/secret_scan_result.json"
   ],
-  "commit": "PENDING_LOCAL_COMMIT",
+  "commit": "1ecc31c",
   "delivery": "local_only",
   "boundary_or_safety_stop": "review prep only completed; no provider call, review decision mutation, regeneration, final assembly, or deployment occurred",
   "blocked_reason": null,
