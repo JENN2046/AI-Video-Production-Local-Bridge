@@ -13,6 +13,7 @@ completed_by: Codex R1-6 bridge reality audit
 completed_at: 2026-07-08T20:15:42+08:00
 result: PASS_GPT_BRIDGE_REALITY_AUDITED
 validation_result: PASS
+commit: 9803f44
 report_path: data/reports/r1_6_webgpt_post_closeout_bridge_reality_audit_result.json
 
 ## Goal

@@ -845,7 +845,7 @@
   "git_receipt": {
     "repo": true,
     "branch": "master",
-    "commit": "PENDING_LOCAL_COMMIT",
+    "commit": "9803f44",
     "task": "R1-6_WEBGPT_POST_CLOSEOUT_BRIDGE_REALITY_AUDIT",
     "push": false,
     "pr": null,

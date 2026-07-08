@@ -85,7 +85,7 @@
     "data/reports/r1_4_mcp_v2_review_assistant_tools_result.json",
     "data/reports/r1_5_mcp_v3_production_assistant_result.json"
   ],
-  "commit": "PENDING_LOCAL_COMMIT",
+  "commit": "9803f44",
   "delivery": "local_audit_only",
   "boundary_or_safety_stop": "audit only; no public tunnel, provider call, env or credential read, production mutation, publish, deploy, push, tag, or release",
   "blocked_reason": null,

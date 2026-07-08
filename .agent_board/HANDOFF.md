@@ -26,6 +26,7 @@ Current owner: none
 - Confirmed R3-9R final-approved project evidence is reachable by app-side report references and real app artifact IDs.
 - Recommended next task: `R1-7_WEBGPT_LOCAL_BRIDGE_SMOKE_VALIDATION`.
 - Validation passed: `npm run r1:6:audit`, JSON parse check, `npm run typecheck`, `npm run test:webgpt:bridge`, `npm run test:webgpt:drafts`, `npm run test:webgpt:pending`, `npm run test:webgpt:review`, `npm run test:webgpt:production`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
+- R1-6 local implementation commit: `9803f44`.
 - No public tunnel, provider call, `.env` or credential read, production truth mutation, source overwrite, push, tag, release, deploy, publish, or production configuration change occurred.
 
 ## R1 GPT bridge queue arrangement
