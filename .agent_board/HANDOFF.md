@@ -489,5 +489,5 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - All 4 local MP4 files exist and ffprobe returned `PASS`.
 - The table includes accept / reject / regenerate_requested placeholders, local video paths, artifact ids, previous issues, and this-round review focus.
 - Final assembly remains blocked until human accept decisions are applied.
-- R3-9K local implementation commit: `PENDING_LOCAL_COMMIT`.
+- R3-9K local implementation commit: `ba7162e`.
 - No provider call, regeneration, batch expansion, final assembly, review decision mutation, `.env` or credential read, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.

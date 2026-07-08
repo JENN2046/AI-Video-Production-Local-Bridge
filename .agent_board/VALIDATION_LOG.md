@@ -1855,5 +1855,5 @@ Notes:
 - All 4 regenerated local MP4 files exist and ffprobe returned `PASS`.
 - The review table includes accept / reject / regenerate_requested placeholders, local video paths, artifact ids, previous issues, and this-round review focus.
 - Final assembly remains blocked pending human accept.
-- R3-9K local implementation commit: `PENDING_LOCAL_COMMIT`.
+- R3-9K local implementation commit: `ba7162e`.
 - No provider call, regeneration, batch expansion, final assembly, review decision mutation, `.env` or credential read, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.

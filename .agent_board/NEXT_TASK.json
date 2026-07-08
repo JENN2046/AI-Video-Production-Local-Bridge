@@ -76,7 +76,7 @@
     "data/reports/r3_9k_runninghub_regenerated_clip_review_prep_result.json",
     "data/reports/r3_9k_runninghub_regenerated_clip_review_table.md"
   ],
-  "commit": null,
+  "commit": "ba7162e",
   "delivery": "local_review_prep_only",
   "boundary_or_safety_stop": "review prep only; no provider call, no regeneration, no review decision mutation, no final assembly, no env or credential read",
   "blocked_reason": null,
