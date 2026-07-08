@@ -67,4 +67,4 @@ Execute the authorized 4-shot RunningHub regeneration run exactly once, with san
   - g0_r1_shot_002: artifact_eeef12a7-9533-4172-beaa-6c25b91415f7
   - g0_r1_shot_003: artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a
   - g0_r1_shot_004: artifact_263a2344-5154-4981-bfe4-120571effb3e
-- commit: PENDING_LOCAL_COMMIT
+- commit: dfc8d42

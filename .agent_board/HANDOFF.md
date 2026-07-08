@@ -473,5 +473,5 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
   - `g0_r1_shot_004`: `artifact_263a2344-5154-4981-bfe4-120571effb3e`
 - All 4 regenerated clips downloaded to local media artifact storage and ffprobe validated with `PASS`.
 - No retry submit, second submit, Runway call, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.
-- R3-9J local implementation commit: `PENDING_LOCAL_COMMIT`.
+- R3-9J local implementation commit: `dfc8d42`.
 - Next recommended action: prepare a regenerated clip review package before final assembly.

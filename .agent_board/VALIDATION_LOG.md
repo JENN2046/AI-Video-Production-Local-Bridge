@@ -1821,5 +1821,5 @@ Notes:
 - Generated artifacts: `artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203`, `artifact_eeef12a7-9533-4172-beaa-6c25b91415f7`, `artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a`, `artifact_263a2344-5154-4981-bfe4-120571effb3e`.
 - All 4 generated clips have ffprobe `PASS`.
 - The first returned taskId was resumed after a transient query failure without a second submit.
-- R3-9J local implementation commit: `PENDING_LOCAL_COMMIT`.
+- R3-9J local implementation commit: `dfc8d42`.
 - No retry submit, second submit, Runway call, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.

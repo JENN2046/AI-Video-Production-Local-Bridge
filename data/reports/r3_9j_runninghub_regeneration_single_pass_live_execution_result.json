@@ -259,7 +259,7 @@
   "git_receipt": {
     "repo": true,
     "branch": "master",
-    "commit": "PENDING_LOCAL_COMMIT",
+    "commit": "dfc8d42",
     "task": "R3-9J_RUNNINGHUB_REGENERATION_SINGLE_PASS_LIVE_EXECUTION",
     "push": false,
     "pr": null,

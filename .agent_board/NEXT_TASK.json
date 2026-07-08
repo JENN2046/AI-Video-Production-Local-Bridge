@@ -83,7 +83,7 @@
     "data/reports/r3_9i_runninghub_regeneration_authorization_prep_result.json",
     "data/reports/r3_9j_runninghub_regeneration_single_pass_live_execution_result.json"
   ],
-  "commit": "PENDING_LOCAL_COMMIT",
+  "commit": "dfc8d42",
   "delivery": "authorized_live_provider_execution",
   "boundary_or_safety_stop": "live execution authorized only for one 4-shot RunningHub regeneration pass; no retry, no second submit, no batch expansion, no Runway fallback",
   "blocked_reason": null,
