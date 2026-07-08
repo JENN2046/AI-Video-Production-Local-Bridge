@@ -58,4 +58,4 @@ Closeout only. Do not run any provider or deployment action.
 - completed_at: 2026-07-08T11:53:48+08:00
 - evidence: data/reports/r3_8k_provider_path_decision_closeout.json
 - validation: PASS
-- commit: PENDING_IN_CURRENT_TASK_COMMIT
+- commit: 019e322

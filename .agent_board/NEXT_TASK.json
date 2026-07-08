@@ -72,7 +72,7 @@
     "data/reports/r3_8e_runway_real_storyboard_keyframe_canary_result.json",
     "data/reports/secret_scan_result.json"
   ],
-  "commit": "PENDING_IN_CURRENT_TASK_COMMIT",
+  "commit": "019e322",
   "delivery": "local_only",
   "boundary_or_safety_stop": "closeout only; no provider call or deployment",
   "blocked_reason": null,
