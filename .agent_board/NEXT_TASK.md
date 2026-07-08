@@ -1,6 +1,6 @@
 # NEXT_TASK.md
 
-Status: READY
+Status: DONE
 
 Task: R3-8M_RECEIPT_FIX
 
@@ -44,3 +44,24 @@ Repair the R3-8M audit chain before offline provider-access strategy selection.
 ## Stop Reason
 
 Stop before any new live provider call or credential/account change. R3-8N may decide the next provider-access strategy offline only.
+
+## Claim
+
+- claimed_by: Codex R3-8M receipt fixer
+- claim_run_id: codex-20260708-105033-r3-8m-receipt-fix
+- claimed_at: 2026-07-08T10:50:33+08:00
+
+## Result
+
+`PASS_RECEIPT_FIXED`
+
+## Completed Work
+
+- Backfilled R3-8M live canary commit `95276eb`.
+- Backfilled R3-8L receipt fix commit `b12b67c`.
+- Recorded provider error `1014` as a RunningHub account type restriction.
+- Left R3-8N as the next eligible offline provider-access strategy decision task.
+
+## Completed At
+
+2026-07-08T10:51:49+08:00

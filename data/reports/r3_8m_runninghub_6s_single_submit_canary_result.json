@@ -145,6 +145,33 @@
     "tag_created": false,
     "release_or_deploy_performed": false
   },
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "95276eb",
+    "task": "R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  },
+  "failure_receipt": {
+    "receipt_status": "COMPLETE",
+    "implementation_commit": "95276eb",
+    "r3_8l_receipt_fix_commit": "b12b67c",
+    "upload_call_count": 1,
+    "submit_call_count": 1,
+    "query_call_count": 0,
+    "provider_job_id_present": false,
+    "channel_link_available": false,
+    "output_url_available": false,
+    "local_video_artifact_created": false,
+    "ffprobe_available": false,
+    "real_video_generated": false,
+    "provider_error_code": "1014",
+    "provider_error_meaning": "Standard Model API is restricted to Enterprise-Shared API Keys only.",
+    "no_retry_or_second_submit": true
+  },
   "validation": {
     "npm run r3:8m:live": "PROVIDER_FAILED_AUTH_1014",
     "npm run typecheck": "PASS",

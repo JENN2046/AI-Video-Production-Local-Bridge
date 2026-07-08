@@ -2146,6 +2146,58 @@ Boundary:
 Next:
 - Stop at `R3-8M_RUNNINGHUB_6S_SINGLE_SUBMIT_CANARY` until Jenn provides a fresh exact current authorization phrase with `duration_seconds=6`.
 
+### 2026-07-08T10:51:49+08:00 - R3-8M Receipt Fix
+
+Result: DONE / PASS_RECEIPT_FIXED
+Project: AI Video Production Workspace Three Route Plan
+Lane: Provider Evidence Receipt
+Claimed by: Codex R3-8M receipt fixer
+Completed by: Codex R3-8M receipt fixer
+Run ID: codex-20260708-105033-r3-8m-receipt-fix
+Started at: 2026-07-08T10:50:33+08:00
+Completed at: 2026-07-08T10:51:49+08:00
+
+Scope:
+- Backfilled R3-8M live canary commit `95276eb`.
+- Backfilled R3-8L receipt fix commit `b12b67c`.
+- Recorded provider error `1014` as a RunningHub account type restriction.
+- Left R3-8N as the next eligible offline provider-access strategy decision task.
+
+Changed files:
+- data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json
+- .agent_board/NEXT_TASK.json
+- .agent_board/NEXT_TASK.md
+- .agent_board/RUN_LOCK.md
+- .agent_board/TASK_BACKLOG.md
+- .agent_board/HANDOFF.md
+- .agent_board/VALIDATION_LOG.md
+- .agent_board/TASK_LEDGER.md
+
+Validation:
+- command: node -e JSON.parse(...)
+  result: PASS
+- command: npm run secret:scan
+  result: PASS
+- command: git diff --check
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json
+- data/reports/secret_scan_result.json
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: pending_at_task_state_write
+- push: no
+- PR: none
+
+Boundary:
+- No RunningHub call, Runway call, media upload to provider, status query, output download, provider credit consumption, real video generation, credential/account change, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
+
+Next:
+- Continue to `R3-8N_PROVIDER_ACCESS_STRATEGY_DECISION` for offline provider-access strategy selection.
+
 ### 2026-07-08T10:30:30+08:00 - R3-8M RunningHub 6s Single-Submit Canary
 
 Result: FAILED / PROVIDER_FAILED_AUTH_1014
@@ -2193,7 +2245,7 @@ Evidence:
 Git delivery:
 - repo: yes
 - branch: master
-- commit: pending_at_task_state_write
+- commit: 95276eb
 - push: no
 - PR: none
 
@@ -2247,11 +2299,12 @@ Evidence:
 - data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json
 - data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json
 - data/reports/secret_scan_result.json
+- git commit: b12b67c
 
 Git delivery:
 - repo: yes
 - branch: master
-- commit: pending_at_task_state_write
+- commit: b12b67c
 - push: no
 - PR: none
 

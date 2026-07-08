@@ -1324,6 +1324,33 @@ Notes:
 - `npm run typecheck`, `npm run test:m1`, and `npm run secret:scan` passed.
 - `git diff --check` passed with CRLF normalization warnings only.
 
+### R3-8M-RECEIPT-FIX - 2026-07-08T10:51:49+08:00
+
+Commands:
+
+```bash
+node -e JSON.parse(...)
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_RECEIPT_FIXED
+```
+
+Evidence:
+- `data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json`
+- `data/reports/secret_scan_result.json`
+
+Notes:
+- Backfilled R3-8M live canary commit `95276eb`.
+- Backfilled R3-8L receipt fix commit `b12b67c`.
+- Recorded provider error `1014` as a RunningHub account type restriction.
+- Left R3-8N as the next eligible offline provider-access strategy decision task.
+- No RunningHub call, Runway call, upload, submit, query, output download, provider credit consumption, real video generation, credential/account change, secret output, raw provider payload recording, source overwrite, push, tag, release, or deploy occurred.
+
 ### R3-8J - 2026-07-07T17:46:23+08:00
 
 Commands:

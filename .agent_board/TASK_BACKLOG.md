@@ -2105,7 +2105,7 @@ result: PASS_RECEIPT_FIXED
 validation_result: PASS
 evidence: data/reports/r3_8j_runninghub_real_keyframe_single_submit_canary_result.json,data/reports/r3_8l_runninghub_duration_contract_repair_dry_run_result.json
 delivery: local_only
-commit: pending_at_task_state_write
+commit: b12b67c
 
 ### Goal
 
@@ -2150,6 +2150,7 @@ validation_result: PASS_LOCAL_VALIDATION_PROVIDER_FAILED
 evidence: data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json
 delivery: local_only
 failure_reason: RunningHub provider_error_code=1014; Standard Model API is restricted to Enterprise-Shared API Keys only.
+commit: 95276eb
 
 ### Goal
 
@@ -2169,7 +2170,7 @@ Run exactly one RunningHub 6-second canary only after Jenn provides a fresh exac
 
 ## R3-8M_RECEIPT_FIX - R3-8M RunningHub Auth Failure Receipt Fix
 
-status: READY
+status: DONE
 priority: P0
 lane: Provider Evidence Receipt
 project: AI Video Production Workspace Three Route Plan
@@ -2181,7 +2182,17 @@ report_path: data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json
 allowed_delivery: receipt_metadata_update,task_board_update,local_commit
 blocked_delivery: runninghub_call,runway_call,media_upload_to_provider,status_poll,output_download_from_provider,provider_credits_consumed,real_video_generated,secret_value_output,raw_provider_payload_recording,source_overwrite,push,tag,release,deploy,production_credentials_change
 created_at: 2026-07-08T10:47:37+08:00
-updated_at: 2026-07-08T10:47:37+08:00
+updated_at: 2026-07-08T10:50:33+08:00
+claimed_by: Codex R3-8M receipt fixer
+claim_run_id: codex-20260708-105033-r3-8m-receipt-fix
+claimed_at: 2026-07-08T10:50:33+08:00
+completed_by: Codex R3-8M receipt fixer
+completed_at: 2026-07-08T10:51:49+08:00
+result: PASS_RECEIPT_FIXED
+validation_result: PASS
+evidence: data/reports/r3_8m_runninghub_6s_single_submit_canary_result.json
+delivery: local_only
+commit: pending_at_task_state_write
 
 ### Goal
 
