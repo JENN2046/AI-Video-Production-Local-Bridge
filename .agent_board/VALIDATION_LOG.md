@@ -1789,5 +1789,5 @@ Notes:
 - Merged R3-9G strategies for SHOT_001/003/004 with R3-9H same-keyframe repair for SHOT_002.
 - Budget is capped at 4 uploads and 4 submits total, one upload and one submit per shot, no retry, no second submit, no Runway fallback, no batch expansion, and stop on first upload or submit failure.
 - Future exact authorization phrase draft is present, but no provider execution occurred.
-- R3-9I local implementation commit: `PENDING_LOCAL_COMMIT`.
+- R3-9I local implementation commit: `44bb89f`.
 - No `.env` or credential read, RunningHub call, Runway call, media upload, provider submit, status poll, output download, provider credit consumption, real video generation, regeneration execution, batch expansion, final assembly, storyboard package mutation, source overwrite, secret output, raw provider payload recording, signed URL recording, push, tag, release, or deploy occurred.

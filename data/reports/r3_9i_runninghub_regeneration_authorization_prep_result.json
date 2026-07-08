@@ -431,7 +431,7 @@
   "git_receipt": {
     "repo": true,
     "branch": "master",
-    "commit": "PENDING_LOCAL_COMMIT",
+    "commit": "44bb89f",
     "task": "R3-9I_RUNNINGHUB_REGENERATION_AUTHORIZATION_PREP",
     "push": false,
     "pr": null,

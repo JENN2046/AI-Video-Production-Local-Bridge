@@ -90,7 +90,7 @@
     "data/reports/r3_9g_regeneration_strategy_for_review_notes_result.json",
     "data/reports/r3_9h_shot_002_replacement_decision_result.json"
   ],
-  "commit": "PENDING_LOCAL_COMMIT",
+  "commit": "44bb89f",
   "delivery": "local_only_authorization_prep",
   "boundary_or_safety_stop": "prep only; no provider call, env or credential read, regeneration execution, final assembly, source overwrite, or deployment",
   "blocked_reason": null,
