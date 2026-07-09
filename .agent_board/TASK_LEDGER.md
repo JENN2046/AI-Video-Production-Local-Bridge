@@ -4086,7 +4086,7 @@ Evidence:
 - `scripts/r2g-mcp-packaging.ts`
 
 Git delivery:
-- commit: PENDING_LOCAL_COMMIT
+- commit: 6529d7f
 - push: no
 
 Boundary:
