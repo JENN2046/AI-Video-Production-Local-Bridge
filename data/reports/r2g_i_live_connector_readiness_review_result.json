@@ -1,0 +1,170 @@
+{
+  "task_id": "R2G-I_LIVE_CONNECTOR_READINESS_REVIEW",
+  "result": "PASS_REVIEW_COMPLETE_BLOCK_LIVE_EXECUTION_UNTIL_HTTP_MCP_AND_EXACT_AUTHORIZATION",
+  "generated_at": "2026-07-09T06:55:45.377Z",
+  "bridge_version": "chatgpt-mcp-local-bridge-r2g",
+  "reviewed_evidence": {
+    "r2g_h1_hardening_report": {
+      "path": "data/reports/r2g_h1_mcp_schema_and_descriptor_hardening_fix_result.json",
+      "result": "PASS_MCP_SCHEMA_AND_DESCRIPTOR_HARDENED",
+      "commit": "6593a14",
+      "reviewed_findings": [
+        "outputSchema and structuredContent envelope aligned",
+        "inputSchema enforced before handlers, including additionalProperties:false",
+        "descriptor list deep-cloned and global descriptors deep-frozen"
+      ]
+    },
+    "r2g_g_authorization_prep_report": {
+      "path": "data/reports/r2g_g_chatgpt_connector_live_connection_authorization_prep_result.json",
+      "result": "PASS_READY_FOR_SEPARATE_LIVE_CONNECTION_AUTHORIZATION",
+      "commit": "6529d7f",
+      "reviewed_components": [
+        "future exact authorization components",
+        "live connection gaps",
+        "hard stops and provider boundary",
+        "recommended next sequence"
+      ]
+    }
+  },
+  "official_docs_rechecked": [
+    {
+      "title": "Build your MCP server",
+      "url": "https://developers.openai.com/apps-sdk/build/mcp-server",
+      "readiness_implication": "A real ChatGPT app needs an MCP server that defines tools, enforces auth, returns structured data, and can be reached by a client."
+    },
+    {
+      "title": "Quickstart",
+      "url": "https://developers.openai.com/apps-sdk/quickstart",
+      "readiness_implication": "Adding the app to ChatGPT requires developer mode and an HTTPS /mcp URL from a tunnel or deployment."
+    },
+    {
+      "title": "Deploy your app",
+      "url": "https://developers.openai.com/apps-sdk/deploy",
+      "readiness_implication": "A stable live endpoint needs HTTPS, streaming support on /mcp, TLS, and logs/metrics."
+    },
+    {
+      "title": "Connect from ChatGPT",
+      "url": "https://developers.openai.com/apps-sdk/deploy/connect-chatgpt",
+      "readiness_implication": "Connector creation requires a reachable HTTPS MCP server, metadata, connector URL, and a successful tool list fetch."
+    },
+    {
+      "title": "Authentication",
+      "url": "https://developers.openai.com/apps-sdk/build/auth",
+      "readiness_implication": "Live exposure needs a deliberate client-identification and user-auth stance such as mTLS/client identification and OAuth 2.1 where needed."
+    },
+    {
+      "title": "Submit and maintain your app",
+      "url": "https://developers.openai.com/apps-sdk/deploy/submission",
+      "readiness_implication": "Submission/publishing is separate and requires a public non-local MCP endpoint, CSP, permissions, and review metadata."
+    },
+    {
+      "title": "Troubleshooting",
+      "url": "https://developers.openai.com/apps-sdk/deploy/troubleshooting",
+      "readiness_implication": "Live smoke should verify /mcp discovery, schema consistency, component/CSP expectations, streaming behavior, and auth."
+    }
+  ],
+  "readiness_matrix": {
+    "local_tool_contract": "PASS",
+    "output_schema_contract": "PASS",
+    "input_schema_enforcement": "PASS",
+    "descriptor_immutability": "PASS",
+    "forbidden_provider_tools_absent_or_fail_closed": "PASS",
+    "local_test_coverage": "PASS",
+    "local_http_mcp_transport": "BLOCK_MISSING",
+    "public_https_or_tunnel_endpoint": "BLOCK_NOT_AUTHORIZED_AND_NOT_STARTED",
+    "chatgpt_connector_creation_target": "BLOCK_NOT_SELECTED",
+    "live_auth_strategy": "BLOCK_NOT_SELECTED",
+    "live_observability_and_redaction": "BLOCK_NOT_IMPLEMENTED",
+    "submission_or_publication": "OUT_OF_SCOPE_FOR_LIVE_SMOKE"
+  },
+  "minimum_live_path_review": {
+    "current_recommendation": "Do not proceed directly to live ChatGPT connector creation from the current in-process-only MCP skeleton.",
+    "smallest_safe_next_task": "R2G-J_HTTP_MCP_TRANSPORT_LOCAL_DRY_RUN",
+    "why": "Current R2G local server is in_process_local_test_only; ChatGPT connector setup needs an HTTP/HTTPS /mcp endpoint that can list tools and handle calls.",
+    "after_r2g_j_passes": [
+      "Choose endpoint mode: temporary local tunnel or hosted HTTPS.",
+      "Provide exact Jenn authorization for one bounded live connector smoke run.",
+      "Start only the authorized endpoint/tunnel.",
+      "Create one developer-mode connector in the specified ChatGPT account/workspace.",
+      "Smoke test tool discovery plus read-only tools only.",
+      "Do not call providers, write production config, publish, submit for review, or expose secrets.",
+      "Record sanitized receipt and shut down temporary tunnel if used."
+    ]
+  },
+  "exact_authorization_required_before_live": {
+    "live_authorized_now": false,
+    "required_phrase_fields": [
+      "provider_surface=chatgpt_connector",
+      "endpoint_mode=<local_tunnel|hosted_https>",
+      "local_http_mcp_command_or_hosted_url",
+      "exact_mcp_url=https://.../mcp",
+      "chatgpt_account_or_workspace",
+      "connector_name",
+      "auth_mode",
+      "permission_posture",
+      "allowed_tools_or_smoke_tests",
+      "max_connector_creations=1",
+      "max_public_tunnels=1 if tunnel mode",
+      "log_redaction_required=true",
+      "provider_calls_allowed=false",
+      "env_or_credentials_read_allowed=false unless separately authorized",
+      "publish_submit_deploy_allowed=false unless separately authorized",
+      "rollback_or_shutdown_plan"
+    ],
+    "unsafe_without_new_authorization": [
+      "start_public_tunnel",
+      "create_chatgpt_connector",
+      "deploy_or_host_public_endpoint",
+      "read_env_or_credentials",
+      "configure_oauth_client_secrets",
+      "call_runway_or_runninghub",
+      "submit_or_publish_app"
+    ]
+  },
+  "review_boundary_observed": {
+    "official_openai_docs_read_only_lookup_performed": true,
+    "local_reports_read": true,
+    "public_tunnel_started": false,
+    "public_mcp_endpoint_created": false,
+    "chatgpt_connector_created": false,
+    "deploy_performed": false,
+    "env_files_read": false,
+    "credentials_read": false,
+    "provider_api_called": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false,
+    "publish_performed": false
+  },
+  "provider_boundary": {
+    "public_tunnel_started": false,
+    "public_mcp_endpoint_created": false,
+    "chatgpt_connector_created": false,
+    "network_call_attempted": false,
+    "provider_called": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "provider_credits_consumed": false,
+    "env_files_read": false,
+    "credentials_read": false,
+    "secret_values_exposed": false,
+    "source_assets_overwritten": false,
+    "raw_provider_payload_recorded": false,
+    "signed_url_recorded": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false,
+    "publish_performed": false,
+    "production_configuration_changed": false
+  },
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "PENDING_LOCAL_COMMIT",
+    "task": "R2G-I_LIVE_CONNECTOR_READINESS_REVIEW",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  }
+}

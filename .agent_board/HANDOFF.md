@@ -1,14 +1,28 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260709-143219-r2g-g
-Last result: R2G-G ChatGPT connector authorization prep completed
+Last run: codex-20260709-145407-r2g-i
+Last result: R2G-I live connector readiness review completed
 
 ## Current state
 
 Current task: none
 Current status: EMPTY
 Current owner: none
+
+## R2G-I Closeout
+
+- Claimed at 2026-07-09T14:54:07+08:00 by Codex R2G-I live connector readiness review.
+- Run ID: `codex-20260709-145407-r2g-i`.
+- Completed at 2026-07-09T14:56:14+08:00 with `PASS_REVIEW_COMPLETE_BLOCK_LIVE_EXECUTION_UNTIL_HTTP_MCP_AND_EXACT_AUTHORIZATION`.
+- Report: `data/reports/r2g_i_live_connector_readiness_review_result.json`.
+- Reviewed evidence: R2G-H1 hardening report and R2G-G authorization prep report.
+- Official OpenAI Apps SDK/MCP docs were rechecked by read-only web lookup.
+- Key finding: local R2G MCP contract is hardened, but live connector execution is blocked because the server is still `in_process_local_test_only`; a reachable HTTP/HTTPS `/mcp` endpoint and separate exact Jenn authorization are required before live connector work.
+- Recommended next safe task: `R2G-J_HTTP_MCP_TRANSPORT_LOCAL_DRY_RUN`.
+- Validation passed: `npm run r2g:i:readiness-review`, JSON parse and boundary check, `npm run typecheck`, `npm run test:r2g:mcp`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
+- Boundary: no public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, push, tag, release, deploy, publish, or production configuration change occurred.
+- Local commit: `PENDING_LOCAL_COMMIT`.
 
 ## R2G-G Closeout
 

@@ -7,6 +7,7 @@ import {
   buildR2GConnectorAuthorizationPrepReport,
   buildR2GDryRunReport,
   buildR2GHardeningFixReport,
+  buildR2GLiveConnectorReadinessReviewReport,
   buildR2GLocalServerSkeletonReport,
   buildR2GSecurityModelReport,
   buildR2GToolContractReport,
@@ -23,7 +24,8 @@ const REPORTS: Record<string, string> = {
   "r2g-e": "data/reports/r2g_e_human_confirmation_and_write_gates_result.json",
   "r2g-f": "data/reports/r2g_f_mcp_packaging_closeout_result.json",
   "r2g-h1": "data/reports/r2g_h1_mcp_schema_and_descriptor_hardening_fix_result.json",
-  "r2g-g": "data/reports/r2g_g_chatgpt_connector_live_connection_authorization_prep_result.json"
+  "r2g-g": "data/reports/r2g_g_chatgpt_connector_live_connection_authorization_prep_result.json",
+  "r2g-i": "data/reports/r2g_i_live_connector_readiness_review_result.json"
 };
 
 const SCHEMA_FIXTURE = "fixtures/mcp/chatgpt_mcp_tool_contract_r2g_b.json";
@@ -40,6 +42,7 @@ function reportFor(stage: string, generatedAt: string): Record<string, unknown> 
   if (stage === "r2g-f") return buildR2GCloseoutReport(generatedAt);
   if (stage === "r2g-h1") return buildR2GHardeningFixReport(generatedAt);
   if (stage === "r2g-g") return buildR2GConnectorAuthorizationPrepReport(generatedAt);
+  if (stage === "r2g-i") return buildR2GLiveConnectorReadinessReviewReport(generatedAt);
 
   const db = openM0Database();
   try {

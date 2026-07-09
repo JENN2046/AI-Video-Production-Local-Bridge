@@ -2382,3 +2382,31 @@ Notes:
 - The report identifies current local readiness, live connection gaps, future exact authorization components, and hard stops.
 - `git diff --check`: PASS with CRLF warnings only.
 - No public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+
+### R2G-I - 2026-07-09T14:56:14+08:00
+
+Commands:
+
+```bash
+npm run r2g:i:readiness-review
+node -e JSON.parse(...) with R2G-I boundary checks
+npm run typecheck
+npm run test:r2g:mcp
+npm run secret:scan
+git diff --check
+```
+
+Result: `PASS_REVIEW_COMPLETE_BLOCK_LIVE_EXECUTION_UNTIL_HTTP_MCP_AND_EXACT_AUTHORIZATION`
+
+Evidence:
+- `data/reports/r2g_i_live_connector_readiness_review_result.json`
+- `src/tools/chatGptMcpBridge.ts`
+- `scripts/r2g-mcp-packaging.ts`
+- `package.json`
+
+Notes:
+- R2G-H1 and R2G-G evidence passed review.
+- Official OpenAI Apps SDK/MCP docs were rechecked by read-only web lookup.
+- Direct live connector execution is blocked until HTTP/HTTPS `/mcp` transport exists and Jenn gives a separate exact authorization phrase.
+- `git diff --check`: PASS with CRLF warnings only.
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.

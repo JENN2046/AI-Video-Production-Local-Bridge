@@ -4093,6 +4093,45 @@ Boundary:
 - No public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
 - Future live connector execution still requires a separate exact Jenn authorization phrase.
 
+### 2026-07-09T14:56:14+08:00 - R2G-I Live Connector Readiness Review
+
+Result: DONE / PASS_REVIEW_COMPLETE_BLOCK_LIVE_EXECUTION_UNTIL_HTTP_MCP_AND_EXACT_AUTHORIZATION
+Project: AI Video Production Workspace GPT Bridge Line
+Lane: ChatGPT MCP Bridge
+Run ID: codex-20260709-145407-r2g-i
+Completed at: 2026-07-09T14:56:14+08:00
+
+Scope:
+- Rechecked R2G-H1 hardening evidence.
+- Rechecked R2G-G authorization prep evidence.
+- Rechecked official OpenAI Apps SDK/MCP docs by read-only web lookup.
+- Reviewed authorization components and minimum live path.
+
+Finding:
+- Direct live connector execution remains blocked because current MCP server is `in_process_local_test_only`; a reachable HTTP/HTTPS `/mcp` transport and exact live authorization are required.
+
+Validation:
+- `npm run r2g:i:readiness-review`: PASS
+- JSON parse and boundary check for R2G-I report: PASS
+- `npm run typecheck`: PASS
+- `npm run test:r2g:mcp`: PASS
+- `npm run secret:scan`: PASS
+- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- `data/reports/r2g_i_live_connector_readiness_review_result.json`
+- `data/reports/r2g_h1_mcp_schema_and_descriptor_hardening_fix_result.json`
+- `data/reports/r2g_g_chatgpt_connector_live_connection_authorization_prep_result.json`
+- `src/tools/chatGptMcpBridge.ts`
+- `scripts/r2g-mcp-packaging.ts`
+
+Git delivery:
+- commit: PENDING_LOCAL_COMMIT
+- push: no
+
+Boundary:
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+
 ### 2026-07-09T14:16:55+08:00 - R2G-H1 MCP Schema And Descriptor Hardening Fix
 
 Result: DONE / PASS_MCP_SCHEMA_AND_DESCRIPTOR_HARDENED

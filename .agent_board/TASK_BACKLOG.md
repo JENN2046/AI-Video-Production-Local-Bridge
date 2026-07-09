@@ -4443,3 +4443,51 @@ Prepare the future live connection authorization checklist after local MCP packa
 - Report generated: `data/reports/r2g_g_chatgpt_connector_live_connection_authorization_prep_result.json`.
 - No public HTTPS MCP endpoint, public tunnel, ChatGPT connector creation, deployment, `.env` or credential read, provider/API call, push, tag, release, deploy, publish, or production configuration change occurred.
 - A future real ChatGPT connection still requires separate exact Jenn authorization.
+
+## R2G-I_LIVE_CONNECTOR_READINESS_REVIEW - Live Connector Readiness Review
+
+status: DONE
+priority: P0
+lane: ChatGPT MCP Bridge
+project: AI Video Production Workspace GPT Bridge Line
+scope: final local-only review before any live ChatGPT connector work
+branch: local-only
+depends_on: R2G-G_CHATGPT_CONNECTOR_LIVE_CONNECTION_AUTHORIZATION_PREP
+report_path: data/reports/r2g_i_live_connector_readiness_review_result.json
+allowed_delivery: readiness_review_report,task_board_update,local_commit
+blocked_delivery: public_tunnel,public_mcp_endpoint,chatgpt_connector_creation,deploy,provider_call,env_file_read,credential_read,secret_value_output,source_overwrite,push,tag,release,publish,production_configuration_change
+created_at: 2026-07-09T14:54:07+08:00
+updated_at: 2026-07-09T14:56:14+08:00
+claimed_by: Codex R2G-I live connector readiness review
+claim_run_id: codex-20260709-145407-r2g-i
+claimed_at: 2026-07-09T14:54:07+08:00
+completed_by: Codex R2G-I live connector readiness review
+completed_at: 2026-07-09T14:56:14+08:00
+result: PASS_REVIEW_COMPLETE_BLOCK_LIVE_EXECUTION_UNTIL_HTTP_MCP_AND_EXACT_AUTHORIZATION
+validation_result: PASS
+commit: PENDING_LOCAL_COMMIT
+
+### Goal
+
+Perform the final pre-live ChatGPT connector readiness review.
+
+### Result
+
+- Generated `data/reports/r2g_i_live_connector_readiness_review_result.json`.
+- Confirmed R2G-H1 hardening and R2G-G authorization prep evidence are sound.
+- Rechecked official OpenAI Apps SDK/MCP docs.
+- Blocked direct live connector execution because current MCP server is still `in_process_local_test_only` and no HTTP/HTTPS `/mcp` endpoint exists.
+- Recommended next safe task: `R2G-J_HTTP_MCP_TRANSPORT_LOCAL_DRY_RUN`.
+
+### Validation
+
+- `npm run r2g:i:readiness-review`: PASS
+- JSON parse and boundary check for R2G-I report: PASS
+- `npm run typecheck`: PASS
+- `npm run test:r2g:mcp`: PASS
+- `npm run secret:scan`: PASS
+- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+
+### Boundary
+
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, push, tag, release, deploy, publish, or production configuration change occurred.

@@ -339,6 +339,7 @@ export {
   buildR2GConnectorAuthorizationPrepReport,
   buildR2GDryRunReport,
   buildR2GHardeningFixReport,
+  buildR2GLiveConnectorReadinessReviewReport,
   buildR2GLocalServerSkeletonReport,
   buildR2GSecurityModelReport,
   buildR2GToolContractReport,
