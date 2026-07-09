@@ -17,6 +17,7 @@ Current owner: none
 - Taskbook: `docs/webgpt/R2G_H1_MCP_SCHEMA_AND_DESCRIPTOR_HARDENING_TASKBOOK.md`.
 - Taskbook self-review: `data/reports/r2g_h1_taskbook_self_review_result.json`.
 - Self-review result: `PASS_TASKBOOK_READY_FOR_EXECUTION`.
+- R2G-H1 taskbook commit: `701648c`.
 - R2G-H1 scope: local schema and descriptor hardening only.
 - `R2G-G_CHATGPT_CONNECTOR_LIVE_CONNECTION_AUTHORIZATION_PREP` remains `FOLLOW_UP` and must not be executed until R2G-H1 completes and is accepted.
 - No public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.

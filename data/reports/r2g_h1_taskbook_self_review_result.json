@@ -54,7 +54,7 @@
   "git_receipt": {
     "repo": true,
     "branch": "master",
-    "commit": "PENDING_LOCAL_COMMIT",
+    "commit": "701648c",
     "task": "R2G-H1_TASKBOOK_SELF_REVIEW",
     "push": false,
     "pr": null,
