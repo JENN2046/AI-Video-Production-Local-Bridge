@@ -82,7 +82,7 @@
     "fixtures/mcp/chatgpt_mcp_tool_contract_r2g_b.json",
     "tests/chatgpt-mcp-bridge.test.ts"
   ],
-  "commit": "PENDING_LOCAL_COMMIT",
+  "commit": "6593a14",
   "delivery": "local_hardening_only",
   "boundary_or_safety_stop": "local schema and descriptor hardening only; no live connector, public tunnel, provider/API call, env or credential read, push, tag, release, deploy, publish, or production configuration change",
   "blocked_reason": null,
