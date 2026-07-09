@@ -1,5 +1,7 @@
-import { basename } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 
+import { paths } from "../paths.js";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import {
   executeWebGptDraftTool,
@@ -20,7 +22,8 @@ import {
   H1_PROVIDER_BOUNDARY,
   h3VideoReviewSummary,
   h4FinalAssemblyWorkbenchSummary,
-  loadH1WorkbenchState
+  loadH1WorkbenchState,
+  validateH1StoryboardPackage
 } from "./h1Workbench.js";
 
 export const CHATGPT_MCP_BRIDGE_VERSION = "chatgpt-mcp-local-bridge-r2g";
@@ -36,6 +39,7 @@ export type ChatGptMcpToolName =
   | "request_package_freeze"
   | "get_review_package"
   | "draft_human_review_decision"
+  | "get_final_delivery_status"
   | "get_closeout_evidence";
 
 export const FORBIDDEN_CHATGPT_MCP_TOOL_NAMES = [
@@ -304,6 +308,18 @@ export const CHATGPT_MCP_TOOL_DESCRIPTORS: ChatGptMcpToolDescriptor[] = deepFree
     { readOnly: true, idempotent: true }
   ),
   toolDescriptor(
+    "get_final_delivery_status",
+    "Get Final Delivery Status",
+    "Read the final delivery closeout status and distinguish it from the H1 draft workbench state.",
+    "READ_ONLY",
+    {
+      type: "object",
+      properties: {},
+      additionalProperties: false
+    },
+    { readOnly: true, idempotent: true }
+  ),
+  toolDescriptor(
     "draft_human_review_decision",
     "Draft Human Review Decision",
     "Draft a clip review note, rejection reason, or regeneration prompt for local human review.",
@@ -535,9 +551,197 @@ function wrapExistingResult(tool: ChatGptMcpToolName, mode: ChatGptMcpToolMode, 
   return ok(tool, mode, { local_tool_result: result as Record<string, unknown> }, successText);
 }
 
+function reportPath(filename: string): { relativePath: string; absolutePath: string } {
+  const relativePath = `data/reports/${filename}`;
+  return {
+    relativePath,
+    absolutePath: join(paths.workspaceRoot, relativePath)
+  };
+}
+
+function readReportObject(filename: string): { found: boolean; parse_ok: boolean; relative_path: string; data?: Record<string, unknown>; error_code?: string } {
+  const target = reportPath(filename);
+  if (!existsSync(target.absolutePath)) {
+    return { found: false, parse_ok: false, relative_path: target.relativePath, error_code: "REPORT_NOT_FOUND" };
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(target.absolutePath, "utf8")) as unknown;
+    if (!isRecord(parsed)) return { found: true, parse_ok: false, relative_path: target.relativePath, error_code: "REPORT_NOT_OBJECT" };
+    return { found: true, parse_ok: true, relative_path: target.relativePath, data: parsed };
+  } catch {
+    return { found: true, parse_ok: false, relative_path: target.relativePath, error_code: "REPORT_PARSE_FAILED" };
+  }
+}
+
+function recordAt(record: Record<string, unknown> | undefined, field: string): Record<string, unknown> {
+  const value = record?.[field];
+  return isRecord(value) ? value : {};
+}
+
+function arrayAt(record: Record<string, unknown> | undefined, field: string): Record<string, unknown>[] {
+  const value = record?.[field];
+  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => isRecord(item)) : [];
+}
+
+function stringAt(record: Record<string, unknown> | undefined, field: string): string {
+  const value = record?.[field];
+  return typeof value === "string" ? value : "";
+}
+
+function numberAt(record: Record<string, unknown> | undefined, field: string): number | null {
+  const value = record?.[field];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function booleanAt(record: Record<string, unknown> | undefined, field: string): boolean {
+  return record?.[field] === true;
+}
+
+function workspaceRelativePath(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) return "";
+  const resolved = resolve(value);
+  if (!isAbsolute(resolved)) return "";
+  const relativePath = relative(paths.workspaceRoot, resolved);
+  if (relativePath === "" || relativePath.startsWith("..") || isAbsolute(relativePath)) return "";
+  return relativePath.replace(/\\/g, "/");
+}
+
+function buildFinalDeliveryStatus(db: M0Database): Record<string, unknown> {
+  const closeout = readReportObject("r3_9r_final_delivery_closeout_result.json");
+  const evidenceManifest = readReportObject("r3_9r_final_delivery_evidence_manifest.json");
+  const reconciliationReport = readReportObject("r2g_o_final_delivery_dashboard_reconciliation_result.json");
+  const state = loadH1WorkbenchState();
+  const h1ValidationResult = validateH1StoryboardPackage(state, db);
+  const h1Validation = h1ValidationResult.ok ? h1ValidationResult.value.validation : {
+    ok: false,
+    app_ready: false,
+    project_id: state.project.project_id,
+    shot_count: state.shots.length,
+    blockers: [h1ValidationResult.error.code]
+  };
+
+  const closeoutData = closeout.data;
+  const project = recordAt(closeoutData, "project");
+  const finalApproval = recordAt(closeoutData, "final_approval");
+  const finalVideo = recordAt(closeoutData, "final_video");
+  const providerLaneSummary = recordAt(closeoutData, "provider_lane_summary");
+  const sourceClips = arrayAt(closeoutData, "source_clips").map((clip) => ({
+    order: numberAt(clip, "order"),
+    shot_id: stringAt(clip, "shot_id"),
+    source_clip_artifact_id: stringAt(clip, "source_clip_artifact_id"),
+    artifact_status: stringAt(clip, "artifact_status"),
+    local_mp4_exists: booleanAt(clip, "local_mp4_exists"),
+    ffprobe_status: stringAt(clip, "ffprobe_status"),
+    duration_seconds: numberAt(clip, "duration_seconds")
+  }));
+
+  const finalDeliveryComplete = closeout.parse_ok
+    && stringAt(closeoutData, "result") === "PASS_FINAL_DELIVERY_CLOSEOUT_READY"
+    && stringAt(project, "project_status") === "final_approved"
+    && stringAt(finalApproval, "decision") === "accept"
+    && booleanAt(finalVideo, "local_video_exists")
+    && stringAt(finalVideo, "ffprobe_status") === "PASS";
+  const h1AppReady = h1Validation.ok === true && h1Validation.app_ready === true;
+  const stateSurface = finalDeliveryComplete && !h1AppReady
+    ? "R3_FINAL_APPROVED_H1_DRAFT_UNSYNCED"
+    : finalDeliveryComplete && h1AppReady
+      ? "R3_FINAL_APPROVED_H1_APP_READY"
+      : closeout.found
+        ? "FINAL_DELIVERY_EVIDENCE_PRESENT_REVIEW_NEEDED"
+        : "NO_R3_FINAL_DELIVERY_CLOSEOUT_FOUND";
+
+  return {
+    final_delivery: {
+      status: finalDeliveryComplete ? "FINAL_APPROVED" : closeout.found ? "CLOSEOUT_EVIDENCE_PRESENT_REVIEW_NEEDED" : "NO_CLOSEOUT_EVIDENCE",
+      source_surface: "r3_final_delivery_closeout",
+      closeout_result: stringAt(closeoutData, "result"),
+      project: {
+        project_id: stringAt(project, "project_id"),
+        project_title: stringAt(project, "project_title"),
+        storyboard_package_id: stringAt(project, "storyboard_package_id"),
+        project_status: stringAt(project, "project_status"),
+        final_creative_approval_state: stringAt(project, "final_creative_approval_state")
+      },
+      final_approval: {
+        decision: stringAt(finalApproval, "decision"),
+        reviewer: stringAt(finalApproval, "reviewer"),
+        final_creative_approval_recorded: booleanAt(finalApproval, "final_creative_approval_recorded"),
+        local_blocker_count: numberAt(finalApproval, "local_blocker_count")
+      },
+      final_video: {
+        final_video_artifact_id: stringAt(finalVideo, "final_video_artifact_id"),
+        final_video_artifact_status: stringAt(finalVideo, "final_video_artifact_status"),
+        final_video_artifact_role: stringAt(finalVideo, "final_video_artifact_role"),
+        final_video_artifact_type: stringAt(finalVideo, "final_video_artifact_type"),
+        local_video_exists: booleanAt(finalVideo, "local_video_exists"),
+        final_video_artifact_storage_exists: booleanAt(finalVideo, "final_video_artifact_storage_exists"),
+        ffprobe_status: stringAt(finalVideo, "ffprobe_status"),
+        ffprobe_duration_seconds: numberAt(finalVideo, "ffprobe_duration_seconds"),
+        ffprobe_has_video_stream: booleanAt(finalVideo, "ffprobe_has_video_stream"),
+        ffprobe_stream_count: numberAt(finalVideo, "ffprobe_stream_count"),
+        local_video_relative_path: workspaceRelativePath(finalVideo.local_video_path),
+        storage_relative_path: workspaceRelativePath(finalVideo.final_video_artifact_storage_uri)
+      },
+      source_clips: sourceClips,
+      provider_lane_summary: {
+        primary_provider_lane: stringAt(providerLaneSummary, "primary_provider_lane"),
+        accepted_clip_generation_source: stringAt(providerLaneSummary, "accepted_clip_generation_source"),
+        provider_raw_payload_recorded: booleanAt(providerLaneSummary, "provider_raw_payload_recorded"),
+        signed_url_recorded: booleanAt(providerLaneSummary, "signed_url_recorded"),
+        secret_values_exposed: booleanAt(providerLaneSummary, "secret_values_exposed")
+      },
+      reports: {
+        closeout: { found: closeout.found, parse_ok: closeout.parse_ok, relative_path: closeout.relative_path },
+        evidence_manifest: { found: evidenceManifest.found, parse_ok: evidenceManifest.parse_ok, relative_path: evidenceManifest.relative_path },
+        dashboard_reconciliation: { found: reconciliationReport.found, parse_ok: reconciliationReport.parse_ok, relative_path: reconciliationReport.relative_path }
+      }
+    },
+    h1_workbench_state: {
+      source_surface: "h1_human_operator_workbench",
+      status: h1AppReady ? "APP_READY" : "DRAFT_NOT_APP_READY",
+      project: state.project,
+      shots_total: state.shots.length,
+      shots_approved: state.shots.filter((shot) => shot.approval_status === "approved").length,
+      validation: {
+        ok: h1Validation.ok,
+        app_ready: h1Validation.app_ready,
+        project_id: h1Validation.project_id,
+        shot_count: h1Validation.shot_count,
+        blockers_total: h1Validation.blockers.length,
+        blockers: h1Validation.blockers
+      }
+    },
+    reconciliation: {
+      finding: finalDeliveryComplete && !h1AppReady ? "STATE_SURFACE_MISMATCH" : "NO_STATE_SURFACE_MISMATCH_CONFIRMED",
+      state_surface: stateSurface,
+      is_r3_final_delivery_complete: finalDeliveryComplete,
+      is_h1_dashboard_app_ready: h1AppReady,
+      does_get_project_status_surface_final_delivery: true,
+      should_generate_next_without_new_task: false,
+      provider_action_exposed: false,
+      summary: finalDeliveryComplete && !h1AppReady
+        ? "R3 final delivery is final-approved, while the H1 dashboard is a separate draft workbench state with pending shots. Treat the project as delivered on the R3 closeout surface, not ready-to-generate from H1."
+        : "Use the final_delivery and h1_workbench_state sections separately before deciding any next production action."
+    }
+  };
+}
+
+function withFinalDeliverySummary(result: unknown, db: M0Database): unknown {
+  if (!isRecord(result) || result.ok !== true || !isRecord(result.data)) return result;
+  const status = buildFinalDeliveryStatus(db);
+  return {
+    ...result,
+    data: {
+      ...result.data,
+      final_delivery: recordAt(status, "final_delivery"),
+      state_surface_reconciliation: recordAt(status, "reconciliation")
+    }
+  };
+}
+
 const TOOL_HANDLERS: Record<ChatGptMcpToolName, ToolHandler> = {
   get_project_status(input, db) {
-    return { result: executeWebGptReadOnlyTool("get_project_status", input, db) };
+    return { result: withFinalDeliverySummary(executeWebGptReadOnlyTool("get_project_status", input, db), db) };
   },
   lookup_media_artifact(input, db) {
     return { result: executeWebGptReadOnlyTool("get_media_artifact", input, db) };
@@ -567,6 +771,9 @@ const TOOL_HANDLERS: Record<ChatGptMcpToolName, ToolHandler> = {
         final_assembly_started: false
       }
     };
+  },
+  get_final_delivery_status(_input, db) {
+    return buildFinalDeliveryStatus(db);
   },
   draft_human_review_decision(input, db) {
     const decision = requiredText(input, "decision");
@@ -655,7 +862,7 @@ export function buildR2GSecurityModelReport(generatedAt: string): Record<string,
         pending_fake_placeholder_ids_rejected: true
       },
       tool_classes: {
-        read_only: ["get_project_status", "lookup_media_artifact", "check_import_readiness", "get_review_package", "get_closeout_evidence"],
+        read_only: ["get_project_status", "lookup_media_artifact", "check_import_readiness", "get_review_package", "get_final_delivery_status", "get_closeout_evidence"],
         draft_only: ["submit_storyboard_draft", "draft_human_review_decision"],
         human_confirmed_write_request: ["request_package_freeze"],
         forbidden: FORBIDDEN_CHATGPT_MCP_TOOL_NAMES

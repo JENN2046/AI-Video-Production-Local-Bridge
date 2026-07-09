@@ -1,7 +1,7 @@
 {
   "task_id": "R2G-B_MCP_TOOL_SCHEMA_AND_CONTRACT_FREEZE",
   "result": "PASS_TOOL_CONTRACT_FROZEN",
-  "generated_at": "2026-07-09T06:13:38.560Z",
+  "generated_at": "2026-07-09T10:25:39.879Z",
   "bridge_version": "chatgpt-mcp-local-bridge-r2g",
   "official_mcp_shape": {
     "descriptors_use_inputSchema": true,
@@ -415,6 +415,62 @@
       }
     },
     {
+      "name": "get_final_delivery_status",
+      "title": "Get Final Delivery Status",
+      "description": "Read the final delivery closeout status and distinguish it from the H1 draft workbench state.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "object"
+          },
+          "error": {
+            "type": "object"
+          },
+          "boundary": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "ok",
+          "data",
+          "error",
+          "boundary"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "security": {
+        "mode": "READ_ONLY",
+        "reads_private_state": false,
+        "reads_credentials": false,
+        "provider_call_allowed": false,
+        "public_network_allowed": false,
+        "source_overwrite_allowed": false,
+        "production_mutation_allowed": false,
+        "human_confirmation_required": false
+      },
+      "_meta": {
+        "openai/toolInvocation/invoking": "Get Final Delivery Status...",
+        "openai/toolInvocation/invoked": "Get Final Delivery Status complete.",
+        "local_only": true,
+        "public_endpoint": false
+      }
+    },
+    {
       "name": "draft_human_review_decision",
       "title": "Draft Human Review Decision",
       "description": "Draft a clip review note, rejection reason, or regeneration prompt for local human review.",
@@ -597,7 +653,7 @@
   "git_receipt": {
     "repo": true,
     "branch": "master",
-    "commit": "6593a14",
+    "commit": "PENDING_LOCAL_COMMIT",
     "task": "R2G-B_MCP_TOOL_SCHEMA_AND_CONTRACT_FREEZE",
     "push": false,
     "pr": null,

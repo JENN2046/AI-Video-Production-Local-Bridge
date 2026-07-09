@@ -65,6 +65,7 @@ test("R2G MCP tool descriptors use official-style schemas, annotations, and safe
       "check_import_readiness",
       "request_package_freeze",
       "get_review_package",
+      "get_final_delivery_status",
       "draft_human_review_decision",
       "get_closeout_evidence"
     ]
@@ -98,6 +99,7 @@ test("R2G-L read-only live smoke surface lists only READ_ONLY tools", () => {
       "lookup_media_artifact",
       "check_import_readiness",
       "get_review_package",
+      "get_final_delivery_status",
       "get_closeout_evidence"
     ]
   );
@@ -156,6 +158,45 @@ test("R2G local MCP server skeleton lists approved tools and fails closed for fo
   } finally {
     db.close();
   }
+});
+
+test("R2G read-only final delivery status distinguishes R3 closeout from H1 draft state", () => {
+  const result = executeChatGptMcpReadOnlyTool("get_final_delivery_status", {});
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, "READ_ONLY");
+  assertMcpEnvelopeConforms(result);
+
+  const data = nestedRecord(result.structuredContent.data, "final delivery data");
+  const finalDelivery = nestedRecord(data.final_delivery, "final delivery");
+  assert.equal(finalDelivery.status, "FINAL_APPROVED");
+  const finalProject = nestedRecord(finalDelivery.project, "final delivery project");
+  assert.equal(finalProject.project_id, "project_b742cb15-e44e-41b2-8d2d-4b90a30720df");
+  assert.equal(finalProject.project_status, "final_approved");
+
+  const h1State = nestedRecord(data.h1_workbench_state, "h1 workbench state");
+  assert.equal(h1State.status, "DRAFT_NOT_APP_READY");
+  assert.equal(h1State.shots_approved, 0);
+
+  const reconciliation = nestedRecord(data.reconciliation, "reconciliation");
+  assert.equal(reconciliation.finding, "STATE_SURFACE_MISMATCH");
+  assert.equal(reconciliation.state_surface, "R3_FINAL_APPROVED_H1_DRAFT_UNSYNCED");
+  assert.equal(reconciliation.is_r3_final_delivery_complete, true);
+  assert.equal(reconciliation.is_h1_dashboard_app_ready, false);
+  assert.equal(reconciliation.provider_action_exposed, false);
+});
+
+test("R2G project status includes final delivery dashboard distinction", () => {
+  const result = executeChatGptMcpReadOnlyTool("get_project_status", {});
+  assert.equal(result.ok, true);
+
+  const data = nestedRecord(result.structuredContent.data, "project status data");
+  const localToolResult = nestedRecord(data.local_tool_result, "local tool result");
+  const localData = nestedRecord(localToolResult.data, "local tool data");
+  const finalDelivery = nestedRecord(localData.final_delivery, "final delivery summary");
+  assert.equal(finalDelivery.status, "FINAL_APPROVED");
+  const reconciliation = nestedRecord(localData.state_surface_reconciliation, "state surface reconciliation");
+  assert.equal(reconciliation.state_surface, "R3_FINAL_APPROVED_H1_DRAFT_UNSYNCED");
+  assert.equal(reconciliation.should_generate_next_without_new_task, false);
 });
 
 test("R2G draft tool creates draft evidence only and does not freeze package truth", () => {
