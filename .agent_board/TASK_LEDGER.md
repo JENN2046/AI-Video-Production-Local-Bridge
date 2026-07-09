@@ -4147,7 +4147,7 @@ Evidence:
 - `package.json`
 
 Git delivery:
-- commit: PENDING_LOCAL_COMMIT
+- commit: 887ee12
 - push: no
 
 Boundary:
