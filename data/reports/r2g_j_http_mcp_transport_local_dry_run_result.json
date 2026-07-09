@@ -1,0 +1,93 @@
+{
+  "task_id": "R2G-J_HTTP_MCP_TRANSPORT_LOCAL_DRY_RUN",
+  "result": "PASS_LOCAL_HTTP_MCP_TRANSPORT_DRY_RUN",
+  "generated_at": "2026-07-09T07:08:09.702Z",
+  "bridge_version": "chatgpt-mcp-local-bridge-r2g",
+  "http_transport": {
+    "transport": "localhost_http_dry_run",
+    "host": "127.0.0.1",
+    "port": 58702,
+    "mcp_url": "http://127.0.0.1:58702/mcp",
+    "localhost_only": true,
+    "public_endpoint": false,
+    "chatgpt_connector_created": false,
+    "server_closed_after_run": true
+  },
+  "mcp_methods_supported": [
+    "tools/list",
+    "tools/call"
+  ],
+  "dry_run_checks": {
+    "list_tools": {
+      "status": 200,
+      "ok": true,
+      "tool_count": 8
+    },
+    "call_approved_tool": {
+      "status": 200,
+      "ok": true,
+      "tool": "get_project_status",
+      "mode": "READ_ONLY"
+    },
+    "forbidden_tool_fail_closed": {
+      "status": 200,
+      "ok": true,
+      "tool": "call_runninghub",
+      "error_code": "FORBIDDEN_ACTION"
+    },
+    "schema_validation_fail_closed": {
+      "status": 200,
+      "ok": true,
+      "tool": "get_project_status",
+      "error_code": "UNKNOWN_INPUT_FIELD"
+    },
+    "boundary_flags_remain_false": true
+  },
+  "boundary_observed": {
+    "localhost_http_requests_performed": true,
+    "localhost_http_request_count": 4,
+    "public_tunnel_started": false,
+    "public_mcp_endpoint_created": false,
+    "chatgpt_connector_created": false,
+    "deploy_performed": false,
+    "env_files_read": false,
+    "credentials_read": false,
+    "external_provider_or_api_call_attempted": false,
+    "provider_api_called": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false,
+    "publish_performed": false
+  },
+  "provider_boundary": {
+    "public_tunnel_started": false,
+    "public_mcp_endpoint_created": false,
+    "chatgpt_connector_created": false,
+    "network_call_attempted": false,
+    "provider_called": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "provider_credits_consumed": false,
+    "env_files_read": false,
+    "credentials_read": false,
+    "secret_values_exposed": false,
+    "source_assets_overwritten": false,
+    "raw_provider_payload_recorded": false,
+    "signed_url_recorded": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false,
+    "publish_performed": false,
+    "production_configuration_changed": false
+  },
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "PENDING_LOCAL_COMMIT",
+    "task": "R2G-J_HTTP_MCP_TRANSPORT_LOCAL_DRY_RUN",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  }
+}

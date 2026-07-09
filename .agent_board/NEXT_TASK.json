@@ -2,38 +2,40 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "R2G-I_LIVE_CONNECTOR_READINESS_REVIEW",
+  "task_id": "R2G-J_HTTP_MCP_TRANSPORT_LOCAL_DRY_RUN",
   "status": "DONE",
   "priority": "P0",
   "lane": "ChatGPT MCP Bridge",
   "project": "AI Video Production Workspace GPT Bridge Line",
-  "title": "Live Connector Readiness Review",
+  "title": "HTTP MCP Transport Local Dry Run",
   "scope": [
-    "final read-only/local review before live ChatGPT connector work",
-    "recheck R2G-H1 and R2G-G evidence",
-    "recheck official Apps SDK/MCP docs",
-    "review authorization components and minimum live path",
-    "generate a local-only readiness review report"
+    "implement localhost-only /mcp endpoint or equivalent local HTTP harness",
+    "verify list tools over HTTP",
+    "verify approved tool call over HTTP",
+    "verify forbidden tool fail-closed over HTTP",
+    "verify schema validation over HTTP",
+    "verify provider and live connector boundary flags remain false",
+    "generate a local-only dry-run report"
   ],
-  "goal": "Perform the final pre-live ChatGPT connector readiness review without starting any public tunnel, creating a connector, deploying, reading credentials, or calling providers.",
+  "goal": "Implement and validate a localhost-only HTTP MCP transport dry-run without public tunnel, ChatGPT connector creation, deployment, credential reads, provider calls, or publishing.",
   "acceptance": [
-    "data/reports/r2g_i_live_connector_readiness_review_result.json is generated.",
-    "Report reviews R2G-H1 and R2G-G evidence.",
-    "Report reviews official OpenAI Apps SDK/MCP docs requirements.",
-    "Report states the minimum live path and any blockers before live connector execution.",
+    "data/reports/r2g_j_http_mcp_transport_local_dry_run_result.json is generated.",
+    "Report proves localhost-only /mcp or equivalent local HTTP harness works.",
+    "Report includes list tools, approved tool call, forbidden tool fail-closed, schema validation, and boundary flag checks.",
     "Report explicitly confirms no public tunnel, connector creation, deploy, .env/credential read, provider/API call, push, tag, release, deploy, or publish occurred."
   ],
   "validation": [
-    "npm run r2g:i:readiness-review",
-    "JSON parse for data/reports/r2g_i_live_connector_readiness_review_result.json",
+    "npm run r2g:j:http-dry-run",
+    "JSON parse for data/reports/r2g_j_http_mcp_transport_local_dry_run_result.json",
     "npm run typecheck",
     "npm run test:r2g:mcp",
     "npm run secret:scan",
     "git diff --check"
   ],
   "allowed_delivery": [
-    "readiness_review_report",
+    "localhost_http_harness",
     "local_report",
+    "tests",
     "task_board_update",
     "local_commit"
   ],
@@ -41,6 +43,7 @@
     "public_tunnel",
     "public_mcp_endpoint",
     "chatgpt_connector_creation",
+    "deploy",
     "provider_call",
     "env_file_read",
     "credential_read",
@@ -49,46 +52,49 @@
     "push",
     "tag",
     "release",
-    "deploy",
     "publish",
     "production_configuration_change"
   ],
   "depends_on": [
-    "R2G-G_CHATGPT_CONNECTOR_LIVE_CONNECTION_AUTHORIZATION_PREP"
+    "R2G-I_LIVE_CONNECTOR_READINESS_REVIEW"
   ],
-  "source_hardening_report": "data/reports/r2g_h1_mcp_schema_and_descriptor_hardening_fix_result.json",
-  "source_authorization_prep_report": "data/reports/r2g_g_chatgpt_connector_live_connection_authorization_prep_result.json",
-  "report_path": "data/reports/r2g_i_live_connector_readiness_review_result.json",
-  "created_at": "2026-07-09T14:54:07+08:00",
-  "updated_at": "2026-07-09T14:56:14+08:00",
-  "claimed_by": "Codex R2G-I live connector readiness review",
-  "claim_run_id": "codex-20260709-145407-r2g-i",
-  "claimed_at": "2026-07-09T14:54:07+08:00",
-  "completed_by": "Codex R2G-I live connector readiness review",
-  "completed_at": "2026-07-09T14:56:14+08:00",
-  "result": "PASS_REVIEW_COMPLETE_BLOCK_LIVE_EXECUTION_UNTIL_HTTP_MCP_AND_EXACT_AUTHORIZATION",
+  "source_readiness_review_report": "data/reports/r2g_i_live_connector_readiness_review_result.json",
+  "report_path": "data/reports/r2g_j_http_mcp_transport_local_dry_run_result.json",
+  "created_at": "2026-07-09T15:04:56+08:00",
+  "updated_at": "2026-07-09T15:08:34+08:00",
+  "claimed_by": "Codex R2G-J HTTP MCP transport local dry-run",
+  "claim_run_id": "codex-20260709-150456-r2g-j",
+  "claimed_at": "2026-07-09T15:04:56+08:00",
+  "completed_by": "Codex R2G-J HTTP MCP transport local dry-run",
+  "completed_at": "2026-07-09T15:08:34+08:00",
+  "result": "PASS_LOCAL_HTTP_MCP_TRANSPORT_DRY_RUN",
   "validation_result": "PASS",
   "evidence": [
-    "data/reports/r2g_h1_mcp_schema_and_descriptor_hardening_fix_result.json",
-    "data/reports/r2g_g_chatgpt_connector_live_connection_authorization_prep_result.json",
-    "data/reports/r2g_i_live_connector_readiness_review_result.json"
+    "data/reports/r2g_j_http_mcp_transport_local_dry_run_result.json",
+    "src/tools/chatGptMcpHttpTransport.ts",
+    "scripts/r2g-j-http-mcp-transport-local-dry-run.ts",
+    "tests/chatgpt-mcp-bridge.test.ts"
   ],
-  "commit": "7db4377",
-  "delivery": "local_readiness_review_only",
-  "boundary_or_safety_stop": "readiness review only; no public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, env or credential read, provider/API call, push, tag, release, deploy, publish, or production configuration change",
+  "commit": "PENDING_LOCAL_COMMIT",
+  "delivery": "local_http_transport_dry_run_only",
+  "boundary_or_safety_stop": "local dry-run only; no public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, env or credential read, provider/API call, push, tag, release, deploy, publish, or production configuration change",
   "blocked_reason": null,
   "failure_reason": null,
   "safe_actions_completed": [
-    "rechecked R2G-H1 and R2G-G local evidence",
-    "rechecked official OpenAI Apps SDK/MCP docs by read-only web lookup",
-    "generated R2G-I local-only readiness review report",
-    "identified live execution blockers: missing HTTP /mcp transport and missing exact live authorization",
+    "implemented localhost-only HTTP /mcp dry-run harness bound to 127.0.0.1",
+    "implemented R2G-J dry-run script and report writer",
+    "verified tools/list over HTTP",
+    "verified approved get_project_status tool call over HTTP",
+    "verified forbidden provider-style tool fail-closed over HTTP",
+    "verified schema validation fail-closed over HTTP",
+    "verified boundary flags remain false and server closes after dry-run",
     "validated report JSON, typecheck, R2G MCP tests, secret scan, and diff check"
   ],
   "unsafe_action_not_performed": [
     "public_tunnel",
     "public_mcp_endpoint",
     "chatgpt_connector_creation",
+    "deploy",
     "provider_call",
     "env_file_read",
     "credential_read",
@@ -97,17 +103,18 @@
     "push",
     "tag",
     "release",
-    "deploy",
     "publish",
     "production_configuration_change"
   ],
   "do_not_touch": [
     "scripts/h1-workbench.ts",
     "drag_drop_cards_to_planner.gif",
-    "howtouseinbox.gif"
+    "howtouseinbox.gif",
+    "ops/previews/"
   ],
   "next_safe_option": [
-    "Generate the R2G-I local-only readiness review report.",
-    "If review blocks live execution, prepare the smallest safe follow-up before any live connector authorization."
+    "Review the R2G-J report.",
+    "If accepted, the next safe task can prepare a bounded live connector authorization phrase.",
+    "Stop before any public tunnel or ChatGPT connector action until separately authorized."
   ]
 }

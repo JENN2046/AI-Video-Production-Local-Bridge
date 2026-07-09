@@ -15,6 +15,8 @@ import {
   loadWebGptPendingActionStore,
   openM0Database,
   paths,
+  runR2GHttpMcpTransportLocalDryRun,
+  startChatGptMcpHttpLocalHarness,
   type ChatGptMcpToolResultEnvelope
 } from "../src/index.js";
 
@@ -24,6 +26,20 @@ function assertMcpEnvelopeConforms(result: ChatGptMcpToolResultEnvelope): void {
   assert.equal(Boolean(result.structuredContent.data && typeof result.structuredContent.data === "object" && !Array.isArray(result.structuredContent.data)), true);
   assert.equal(Boolean(result.structuredContent.error && typeof result.structuredContent.error === "object" && !Array.isArray(result.structuredContent.error)), true);
   assert.equal(Boolean(result.structuredContent.boundary && typeof result.structuredContent.boundary === "object" && !Array.isArray(result.structuredContent.boundary)), true);
+}
+
+async function postLocalMcp(url: string, payload: unknown): Promise<{ status: number; body: Record<string, unknown> }> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  return { status: response.status, body: await response.json() as Record<string, unknown> };
+}
+
+function nestedRecord(value: unknown, field: string): Record<string, unknown> {
+  assert.equal(Boolean(value && typeof value === "object" && !Array.isArray(value)), true, `${field} must be an object`);
+  return value as Record<string, unknown>;
 }
 
 test("R2G MCP tool descriptors use official-style schemas, annotations, and safe metadata", () => {
@@ -220,4 +236,83 @@ test("R2G-H1 schema fixture matches current MCP tool descriptors", () => {
     tool_contract?: unknown;
   };
   assert.deepEqual(fixture.tool_contract, JSON.parse(JSON.stringify(CHATGPT_MCP_TOOL_DESCRIPTORS)));
+});
+
+test("R2G-J localhost HTTP MCP harness lists tools and calls an approved read-only tool", async () => {
+  const harness = await startChatGptMcpHttpLocalHarness();
+  try {
+    assert.equal(harness.host, "127.0.0.1");
+    assert.equal(harness.public_endpoint, false);
+    assert.equal(harness.chatgpt_connector_created, false);
+
+    const listed = await postLocalMcp(harness.mcpUrl, { method: "tools/list", params: {} });
+    assert.equal(listed.status, 200);
+    assert.equal(listed.body.ok, true);
+    const listedResult = nestedRecord(listed.body.result, "list result");
+    assert.equal(Array.isArray(listedResult.tools), true);
+    assert.equal((listedResult.tools as unknown[]).length, CHATGPT_MCP_TOOL_DESCRIPTORS.length);
+
+    const approved = await postLocalMcp(harness.mcpUrl, {
+      method: "tools/call",
+      params: { name: "get_project_status", arguments: {} }
+    });
+    assert.equal(approved.status, 200);
+    assert.equal(approved.body.ok, true);
+    const approvedResult = nestedRecord(approved.body.result, "approved result") as unknown as ChatGptMcpToolResultEnvelope;
+    assert.equal(approvedResult.ok, true);
+    assert.equal(approvedResult.mode, "READ_ONLY");
+    assert.equal(approvedResult._meta.provider_boundary.network_call_attempted, false);
+  } finally {
+    await harness.close();
+  }
+});
+
+test("R2G-J localhost HTTP MCP harness fails closed for forbidden tools and schema errors", async () => {
+  const harness = await startChatGptMcpHttpLocalHarness();
+  try {
+    const forbidden = await postLocalMcp(harness.mcpUrl, {
+      method: "tools/call",
+      params: { name: "generate_video", arguments: {} }
+    });
+    assert.equal(forbidden.status, 200);
+    const forbiddenResult = nestedRecord(forbidden.body.result, "forbidden result") as unknown as ChatGptMcpToolResultEnvelope;
+    assert.equal(forbiddenResult.ok, false);
+    assert.equal((forbiddenResult.structuredContent.error as { code?: string }).code, "FORBIDDEN_ACTION");
+
+    const schemaInvalid = await postLocalMcp(harness.mcpUrl, {
+      method: "tools/call",
+      params: { name: "get_project_status", arguments: { extra_unexpected: true } }
+    });
+    assert.equal(schemaInvalid.status, 200);
+    const schemaResult = nestedRecord(schemaInvalid.body.result, "schema result") as unknown as ChatGptMcpToolResultEnvelope;
+    assert.equal(schemaResult.ok, false);
+    assert.equal((schemaResult.structuredContent.error as { code?: string }).code, "UNKNOWN_INPUT_FIELD");
+
+    for (const response of [forbidden.body, schemaInvalid.body]) {
+      const boundary = nestedRecord(response.boundary, "http boundary");
+      for (const value of Object.values(boundary)) assert.equal(value, false);
+    }
+  } finally {
+    await harness.close();
+  }
+});
+
+test("R2G-J dry-run report proves local HTTP transport without live side effects", async () => {
+  const report = await runR2GHttpMcpTransportLocalDryRun("2026-07-09T00:00:00.000Z");
+  assert.equal(report.result, "PASS_LOCAL_HTTP_MCP_TRANSPORT_DRY_RUN");
+  const httpTransport = nestedRecord(report.http_transport, "http transport");
+  assert.equal(httpTransport.localhost_only, true);
+  assert.equal(httpTransport.public_endpoint, false);
+  assert.equal(httpTransport.chatgpt_connector_created, false);
+  assert.equal(httpTransport.server_closed_after_run, true);
+  const checks = nestedRecord(report.dry_run_checks, "dry-run checks");
+  for (const value of Object.values(checks)) {
+    if (typeof value === "boolean") assert.equal(value, true);
+    if (value && typeof value === "object" && !Array.isArray(value)) assert.equal((value as { ok?: unknown }).ok, true);
+  }
+  const boundary = nestedRecord(report.boundary_observed, "boundary observed");
+  assert.equal(boundary.public_tunnel_started, false);
+  assert.equal(boundary.chatgpt_connector_created, false);
+  assert.equal(boundary.env_files_read, false);
+  assert.equal(boundary.provider_api_called, false);
 });

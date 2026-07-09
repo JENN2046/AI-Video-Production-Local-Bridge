@@ -4491,3 +4491,51 @@ Perform the final pre-live ChatGPT connector readiness review.
 ### Boundary
 
 - No public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, push, tag, release, deploy, publish, or production configuration change occurred.
+
+## R2G-J_HTTP_MCP_TRANSPORT_LOCAL_DRY_RUN - HTTP MCP Transport Local Dry Run
+
+status: DONE
+priority: P0
+lane: ChatGPT MCP Bridge
+project: AI Video Production Workspace GPT Bridge Line
+scope: localhost-only HTTP MCP transport dry-run
+branch: local-only
+depends_on: R2G-I_LIVE_CONNECTOR_READINESS_REVIEW
+report_path: data/reports/r2g_j_http_mcp_transport_local_dry_run_result.json
+allowed_delivery: localhost_http_harness,local_report,tests,task_board_update,local_commit
+blocked_delivery: public_tunnel,public_mcp_endpoint,chatgpt_connector_creation,deploy,provider_call,env_file_read,credential_read,secret_value_output,source_overwrite,push,tag,release,publish,production_configuration_change
+created_at: 2026-07-09T15:04:56+08:00
+updated_at: 2026-07-09T15:08:34+08:00
+claimed_by: Codex R2G-J HTTP MCP transport local dry-run
+claim_run_id: codex-20260709-150456-r2g-j
+claimed_at: 2026-07-09T15:04:56+08:00
+completed_by: Codex R2G-J HTTP MCP transport local dry-run
+completed_at: 2026-07-09T15:08:34+08:00
+result: PASS_LOCAL_HTTP_MCP_TRANSPORT_DRY_RUN
+validation_result: PASS
+commit: PENDING_LOCAL_COMMIT
+
+### Goal
+
+Implement and validate a localhost-only HTTP MCP transport dry-run.
+
+### Result
+
+- Implemented `src/tools/chatGptMcpHttpTransport.ts`.
+- Added `scripts/r2g-j-http-mcp-transport-local-dry-run.ts`.
+- Added `npm run r2g:j:http-dry-run`.
+- Generated `data/reports/r2g_j_http_mcp_transport_local_dry_run_result.json`.
+- Verified HTTP `tools/list`, approved tool call, forbidden tool fail-closed, schema validation fail-closed, and boundary flags.
+
+### Validation
+
+- `npm run typecheck`: PASS
+- `npm run test:r2g:mcp`: PASS
+- `npm run r2g:j:http-dry-run`: PASS
+- JSON parse and boundary check for R2G-J report: PASS
+- `npm run secret:scan`: PASS
+- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+
+### Boundary
+
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, push, tag, release, deploy, publish, or production configuration change occurred.

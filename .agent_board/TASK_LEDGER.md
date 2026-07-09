@@ -4091,6 +4091,43 @@ Git delivery:
 
 Boundary:
 - No public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+
+### 2026-07-09T15:08:34+08:00 - R2G-J HTTP MCP Transport Local Dry Run
+
+Result: DONE / PASS_LOCAL_HTTP_MCP_TRANSPORT_DRY_RUN
+Project: AI Video Production Workspace GPT Bridge Line
+Lane: ChatGPT MCP Bridge
+Run ID: codex-20260709-150456-r2g-j
+Completed at: 2026-07-09T15:08:34+08:00
+
+Scope:
+- Implemented localhost-only HTTP `/mcp` dry-run harness.
+- Added a report-writing R2G-J dry-run command.
+- Added HTTP transport regression tests.
+
+Finding:
+- Localhost HTTP transport is now proven for `tools/list` and `tools/call`; direct live connector execution still requires a separate public endpoint/tunnel and ChatGPT connector authorization.
+
+Validation:
+- `npm run typecheck`: PASS
+- `npm run test:r2g:mcp`: PASS
+- `npm run r2g:j:http-dry-run`: PASS
+- JSON parse and boundary check for R2G-J report: PASS
+- `npm run secret:scan`: PASS
+- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- `data/reports/r2g_j_http_mcp_transport_local_dry_run_result.json`
+- `src/tools/chatGptMcpHttpTransport.ts`
+- `scripts/r2g-j-http-mcp-transport-local-dry-run.ts`
+- `tests/chatgpt-mcp-bridge.test.ts`
+
+Git delivery:
+- commit: PENDING_LOCAL_COMMIT
+- push: no
+
+Boundary:
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
 - Future live connector execution still requires a separate exact Jenn authorization phrase.
 
 ### 2026-07-09T14:56:14+08:00 - R2G-I Live Connector Readiness Review

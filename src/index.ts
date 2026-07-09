@@ -361,6 +361,13 @@ export type {
   ChatGptMcpToolResultEnvelope
 } from "./tools/chatGptMcpBridge.js";
 export {
+  CHATGPT_MCP_HTTP_LOCAL_HOST,
+  CHATGPT_MCP_HTTP_LOCAL_TRANSPORT,
+  runR2GHttpMcpTransportLocalDryRun,
+  startChatGptMcpHttpLocalHarness
+} from "./tools/chatGptMcpHttpTransport.js";
+export type { ChatGptMcpHttpLocalHarness } from "./tools/chatGptMcpHttpTransport.js";
+export {
   confirmMemorySavebackProposal,
   createMemorySavebackProposal,
   generateMemoryRecallPack,

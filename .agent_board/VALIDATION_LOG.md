@@ -2410,3 +2410,30 @@ Notes:
 - Direct live connector execution is blocked until HTTP/HTTPS `/mcp` transport exists and Jenn gives a separate exact authorization phrase.
 - `git diff --check`: PASS with CRLF warnings only.
 - No public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+
+### R2G-J - 2026-07-09T15:08:34+08:00
+
+Commands:
+
+```bash
+npm run typecheck
+npm run test:r2g:mcp
+npm run r2g:j:http-dry-run
+node -e JSON.parse(...) with R2G-J boundary checks
+npm run secret:scan
+git diff --check
+```
+
+Result: `PASS_LOCAL_HTTP_MCP_TRANSPORT_DRY_RUN`
+
+Evidence:
+- `data/reports/r2g_j_http_mcp_transport_local_dry_run_result.json`
+- `src/tools/chatGptMcpHttpTransport.ts`
+- `scripts/r2g-j-http-mcp-transport-local-dry-run.ts`
+- `tests/chatgpt-mcp-bridge.test.ts`
+
+Notes:
+- Localhost-only HTTP `/mcp` dry-run harness bound to `127.0.0.1` was implemented and validated.
+- HTTP dry-run verified `tools/list`, approved `get_project_status`, forbidden `call_runninghub` fail-closed, schema validation fail-closed, boundary flags, and server shutdown.
+- `git diff --check`: PASS with CRLF warnings only.
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.

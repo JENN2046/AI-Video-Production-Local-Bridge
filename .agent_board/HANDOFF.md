@@ -1,14 +1,27 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260709-145407-r2g-i
-Last result: R2G-I live connector readiness review completed
+Last run: codex-20260709-150456-r2g-j
+Last result: R2G-J HTTP MCP transport local dry-run completed
 
 ## Current state
 
 Current task: none
 Current status: EMPTY
 Current owner: none
+
+## R2G-J Closeout
+
+- Claimed at 2026-07-09T15:04:56+08:00 by Codex R2G-J HTTP MCP transport local dry-run.
+- Run ID: `codex-20260709-150456-r2g-j`.
+- Completed at 2026-07-09T15:08:34+08:00 with `PASS_LOCAL_HTTP_MCP_TRANSPORT_DRY_RUN`.
+- Report: `data/reports/r2g_j_http_mcp_transport_local_dry_run_result.json`.
+- Implemented localhost-only HTTP `/mcp` dry-run harness bound to `127.0.0.1`.
+- Verified HTTP `tools/list`, approved `get_project_status`, forbidden `call_runninghub` fail-closed, schema validation fail-closed, and all provider/live boundary flags false.
+- Server is closed after the dry-run; no public endpoint remains running.
+- Validation passed: `npm run typecheck`, `npm run test:r2g:mcp`, `npm run r2g:j:http-dry-run`, JSON parse and boundary check, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
+- Boundary: no public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, push, tag, release, deploy, publish, or production configuration change occurred.
+- Local commit: `PENDING_LOCAL_COMMIT`.
 
 ## R2G-I Closeout
 
