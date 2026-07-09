@@ -1,0 +1,101 @@
+{
+  "task_id": "R2G-M_TUNNEL_CLIENT_PREPARATION",
+  "result": "PASS_TUNNEL_CLIENT_PREPARED_NO_TUNNEL_STARTED",
+  "generated_at": "2026-07-09T17:48:30+08:00",
+  "source_route": {
+    "selected_route": "openai_secure_mcp_tunnel",
+    "cloudflare_tunnel_used": false,
+    "ngrok_used": false,
+    "public_tunnel_started": false,
+    "chatgpt_connector_created": false
+  },
+  "official_source": {
+    "secure_mcp_tunnel_docs": "https://developers.openai.com/api/docs/guides/secure-mcp-tunnels",
+    "connect_from_chatgpt_docs": "https://developers.openai.com/apps-sdk/deploy/connect-chatgpt",
+    "release_repository": "https://github.com/openai/tunnel-client/releases/latest",
+    "release_tag": "v0.0.10",
+    "release_published_at": "2026-07-02T18:28:29Z"
+  },
+  "local_installation": {
+    "install_mode": "workspace_local_binary",
+    "gitignored_directory": "ops/tools/",
+    "asset_name": "tunnel-client-v0.0.10-windows-amd64.zip",
+    "processor_architecture": "AMD64",
+    "executable_path": "A:\\AI Video Production Workspace\\ops\\tools\\tunnel-client\\v0.0.10\\tunnel-client.exe",
+    "manifest_path": "A:\\AI Video Production Workspace\\ops\\tools\\tunnel-client\\tunnel-client-local-manifest.json",
+    "sha256_verified": true,
+    "sha256": "5e64a056f1d96786da0a6f8db1da5f5f4a03fd19a90d951a25cf2ca8d9093d00",
+    "version": "0.0.10+105e17a79a36e4e5c897fd698ed2b8dbf935b144"
+  },
+  "cli_probe": {
+    "tunnel_client_on_path_before_prep": false,
+    "local_binary_help_ok": true,
+    "local_binary_version_ok": true,
+    "init_help_ok": true,
+    "doctor_help_ok": true,
+    "run_help_ok": true,
+    "quickstart_executable_command_available": false,
+    "quickstart_help_topic_note": "The v0.0.10 Windows binary advertises help quickstart as an agent-first help topic, but 'tunnel-client help quickstart' returned unknown help topic and 'tunnel-client quickstart --help' returned unknown command. This does not block the planned init/doctor/run path."
+  },
+  "planned_profile": {
+    "profile_name": "ai-video-local-http",
+    "mcp_server_url": "http://127.0.0.1:2091/mcp",
+    "local_server_command": "npm run r2g:l:serve-read-only -- --port 2091",
+    "recommended_health_listen_addr": "127.0.0.1:0",
+    "control_plane_api_key_ref": "env:CONTROL_PLANE_API_KEY",
+    "requires_tunnel_id": true,
+    "requires_runtime_api_key": true,
+    "requires_separate_live_authorization": true
+  },
+  "future_manual_commands_template": [
+    "$env:CONTROL_PLANE_API_KEY = '<set locally; do not paste into chat>'",
+    "& 'A:\\AI Video Production Workspace\\ops\\tools\\tunnel-client\\v0.0.10\\tunnel-client.exe' init --profile ai-video-local-http --tunnel-id '<tunnel_id>' --mcp-server-url 'http://127.0.0.1:2091/mcp' --health-listen-addr '127.0.0.1:0'",
+    "& 'A:\\AI Video Production Workspace\\ops\\tools\\tunnel-client\\v0.0.10\\tunnel-client.exe' doctor --profile ai-video-local-http --explain",
+    "& 'A:\\AI Video Production Workspace\\ops\\tools\\tunnel-client\\v0.0.10\\tunnel-client.exe' run --profile ai-video-local-http"
+  ],
+  "validation": {
+    "release_api_lookup": "PASS",
+    "download_windows_amd64_zip": "PASS",
+    "download_sha256sums": "PASS",
+    "sha256_verification": "PASS",
+    "extract_archive": "PASS",
+    "binary_exists": "PASS",
+    "binary_help": "PASS",
+    "binary_version": "PASS",
+    "init_help": "PASS",
+    "doctor_help": "PASS",
+    "run_help": "PASS",
+    "local_mcp_listener_after_prep": "NO_LISTENER_ON_2091"
+  },
+  "boundary_observed": {
+    "env_files_read": false,
+    "credentials_read": false,
+    "secret_values_exposed": false,
+    "runtime_api_key_read_or_written": false,
+    "tunnel_id_read_or_written": false,
+    "raw_payload_recorded": false,
+    "public_tunnel_started": false,
+    "secure_mcp_tunnel_started": false,
+    "chatgpt_connector_created": false,
+    "provider_api_called": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "video_generated": false,
+    "deploy_performed": false,
+    "publish_performed": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false,
+    "source_assets_overwritten": false
+  },
+  "next_step": {
+    "requires_user_action_in_openai_platform": true,
+    "requires_user_authorization_for_live_tunnel": true,
+    "operator_needs_to_prepare": [
+      "Create or choose a Secure MCP Tunnel in OpenAI Platform tunnel settings.",
+      "Create a runtime API key for tunnel-client.",
+      "Keep the runtime API key local only; do not paste it into chat.",
+      "Then authorize one bounded tunnel-client init/doctor/run smoke and one ChatGPT Connector creation smoke."
+    ]
+  }
+}

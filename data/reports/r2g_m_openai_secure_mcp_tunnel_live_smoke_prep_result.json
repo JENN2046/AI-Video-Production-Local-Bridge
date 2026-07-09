@@ -1,0 +1,163 @@
+{
+  "task_id": "R2G-M_OPENAI_SECURE_MCP_TUNNEL_LIVE_SMOKE_PREP",
+  "result": "PASS_PREP_COMPLETE_READY_FOR_SEPARATE_TUNNEL_AND_CONNECTOR_AUTHORIZATION",
+  "generated_at": "2026-07-09T17:36:45+08:00",
+  "route_decision": {
+    "selected_route": "openai_secure_mcp_tunnel",
+    "cloudflare_tunnel_used": false,
+    "cloudflare_billing_card_required_by_user_context": true,
+    "cloudflare_billing_card_bound": false,
+    "custom_domain_for_now": "not_used_for_current_smoke",
+    "future_custom_domain": "aivideo.skmt617.top",
+    "current_smoke_public_hostname_required": false
+  },
+  "official_docs_rechecked": [
+    {
+      "title": "Secure MCP Tunnel",
+      "url": "https://developers.openai.com/api/docs/guides/secure-mcp-tunnels",
+      "relevance": "Secure MCP Tunnel connects private MCP servers to supported OpenAI products without opening inbound firewall ports. tunnel-client runs inside the local network, opens outbound HTTPS to OpenAI, forwards JSON-RPC MCP requests to the private MCP server, and returns responses through the tunnel."
+    },
+    {
+      "title": "Connect from ChatGPT",
+      "url": "https://developers.openai.com/apps-sdk/deploy/connect-chatgpt",
+      "relevance": "ChatGPT connector creation requires developer mode and either a reachable HTTPS /mcp endpoint or Secure MCP Tunnel selected under connector settings."
+    },
+    {
+      "title": "Deploy your app",
+      "url": "https://developers.openai.com/apps-sdk/deploy",
+      "relevance": "Local development can use a tunnel; production should eventually use a stable HTTPS endpoint with reliable TLS, streaming behavior, logs, and metrics."
+    },
+    {
+      "title": "Security & Privacy",
+      "url": "https://developers.openai.com/apps-sdk/guides/security-privacy",
+      "relevance": "Connector surfaces should use least privilege, validate inputs server-side, avoid secrets in structured content or logs, and treat developer mode as full MCP access."
+    }
+  ],
+  "local_mcp_entry": {
+    "source_task": "R2G-L_CHATGPT_CONNECTOR_READ_ONLY_LIVE_SMOKE_LOCAL_ENTRY_PREP",
+    "local_server_command": "npm run r2g:l:serve-read-only -- --port 2091",
+    "local_mcp_url_for_tunnel_client": "http://127.0.0.1:2091/mcp",
+    "bind_host": "127.0.0.1",
+    "recommended_port": 2091,
+    "transport": "read_only_live_smoke_local_entry",
+    "localhost_only": true,
+    "public_endpoint": false,
+    "read_only_only": true,
+    "tool_only_app_archetype": true,
+    "compatible_with_secure_mcp_tunnel": true,
+    "compatibility_reason": "The local entry exposes HTTP /mcp, supports initialize, tools/list, and tools/call over JSON-RPC-like POSTs, and can be reached from the same host where tunnel-client would run."
+  },
+  "localhost_verification": {
+    "performed": true,
+    "fixed_port_tested": 2091,
+    "server_closed_after_run": true,
+    "listener_remaining_on_2091": false,
+    "time_wait_connections_observed_after_close": true,
+    "health_ok": true,
+    "initialize_ok": true,
+    "tools_list_ok": true,
+    "approved_get_project_status_ok": true,
+    "provider_tool_fail_closed": true,
+    "schema_validation_fail_closed": true,
+    "listed_tool_names": [
+      "get_project_status",
+      "lookup_media_artifact",
+      "check_import_readiness",
+      "get_review_package",
+      "get_closeout_evidence"
+    ]
+  },
+  "secure_mcp_tunnel_requirements": {
+    "human_platform_steps_required": true,
+    "openai_platform_tunnel_settings_required": true,
+    "tunnel_id_required": true,
+    "runtime_api_key_required_for_tunnel_client": true,
+    "tunnel_client_binary_required": true,
+    "tunnel_client_found_on_path": false,
+    "chatgpt_developer_mode_required": true,
+    "chatgpt_connector_creation_required_later": true,
+    "connector_connection_mode_later": "Tunnel",
+    "chatgpt_workspace_or_account_must_match_tunnel_association": true,
+    "permissions_summary": {
+      "create_or_edit_tunnel": "Tunnels Read + Manage in the target Platform organization",
+      "run_or_select_tunnel": "Tunnels Read + Use in the target Platform organization",
+      "chatgpt_connector": "ChatGPT developer mode / custom MCP connector permission in the target ChatGPT account or workspace"
+    }
+  },
+  "next_live_smoke_plan": {
+    "step_1_local_server": "npm run r2g:l:serve-read-only -- --port 2091",
+    "step_2_tunnel_client": "Run tunnel-client using a human-created tunnel_id and runtime API key, forwarding to http://127.0.0.1:2091/mcp.",
+    "step_3_chatgpt_connector": "In ChatGPT settings, create a custom connector, choose Tunnel, select or paste the authorized tunnel_id, then verify tools/list and allowed read-only calls.",
+    "allowed_smoke_tests": [
+      "tools/list",
+      "get_project_status",
+      "call_runninghub must fail closed",
+      "schema-invalid get_project_status must fail closed"
+    ],
+    "stop_conditions": [
+      "tunnel-client missing or unhealthy",
+      "tunnel_id unavailable or not associated with target ChatGPT workspace",
+      "runtime API key unavailable or would need to be printed/logged",
+      "ChatGPT developer mode unavailable",
+      "connector creation fails",
+      "tools/list exposes non-read-only tools",
+      "provider or generation tool becomes callable"
+    ]
+  },
+  "validation": {
+    "npm run typecheck": "PASS",
+    "npm run test:r2g:mcp": "PASS",
+    "npm run build": "PASS",
+    "npm run secret:scan": "PASS",
+    "git diff --check": "PASS_WITH_EXISTING_CRLF_WARNING_IN_UNRELATED_scripts_h1_workbench_ts",
+    "tunnel_client_path_check": "TUNNEL_CLIENT_NOT_FOUND_ON_PATH",
+    "localhost_mcp_loopback_smoke": "PASS"
+  },
+  "boundary_observed": {
+    "env_files_read": false,
+    "credentials_read": false,
+    "secret_values_exposed": false,
+    "raw_payload_recorded": false,
+    "provider_calls_allowed": false,
+    "provider_api_called": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "video_generated": false,
+    "video_regenerated": false,
+    "final_assembly_performed": false,
+    "public_tunnel_started": false,
+    "secure_mcp_tunnel_started": false,
+    "chatgpt_connector_created": false,
+    "deploy_performed": false,
+    "publish_performed": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false,
+    "production_configuration_changed": false,
+    "source_assets_overwritten": false
+  },
+  "human_guidance_zh": {
+    "tunnel_client": "tunnel-client 是 OpenAI 的本地隧道客户端，下一步需要在能访问本机 MCP 服务的电脑上运行。",
+    "tunnel_id": "tunnel_id 是 OpenAI Platform tunnel settings 里创建或选择的隧道编号；不要把密钥发到聊天里。",
+    "runtime_api_key": "runtime API key 是 tunnel-client 连接 OpenAI 隧道控制面的运行密钥；不要打印、记录或提交。",
+    "connector": "Connector 是 ChatGPT 里的连接器；创建它会让 ChatGPT 能看到本地 MCP 工具，因此需要单独授权。"
+  },
+  "next_authorization_required": {
+    "required_for_live_tunnel_or_connector": true,
+    "must_name": [
+      "target ChatGPT account or workspace",
+      "authorized tunnel_id or exact tunnel-client profile",
+      "permission to run tunnel-client",
+      "permission to create at most one ChatGPT connector",
+      "allowed smoke tests",
+      "stop and cleanup conditions"
+    ],
+    "do_not_include_in_chat": [
+      "runtime API key value",
+      "OpenAI API key value",
+      "tokens",
+      "cookies",
+      "raw tunnel-client config containing secrets"
+    ]
+  }
+}
