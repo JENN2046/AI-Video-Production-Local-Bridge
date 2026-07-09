@@ -1,0 +1,283 @@
+{
+  "task_id": "R2G-O_FINAL_DELIVERY_DASHBOARD_RECONCILIATION",
+  "result": "PASS_RECONCILIATION_COMPLETE_STATE_SURFACE_MISMATCH_FOUND",
+  "generated_at": "2026-07-09T10:19:10.784Z",
+  "mode": "local_read_only_reconciliation",
+  "scope": {
+    "purpose": "Reconcile the ChatGPT connector / H1 workbench dashboard state with the R3 final delivery closeout evidence.",
+    "files_read": [
+      "data/reports/r3_9r_final_delivery_closeout_result.json",
+      "data/reports/r3_9r_final_delivery_evidence_manifest.json",
+      "data/h1/workbench_state.json",
+      "package.json"
+    ],
+    "local_tools_exercised": [
+      "executeChatGptMcpReadOnlyTool(get_project_status)",
+      "executeChatGptMcpReadOnlyTool(get_review_package)",
+      "loadH1WorkbenchState",
+      "validateH1StoryboardPackage"
+    ],
+    "provider_or_network_actions": "none",
+    "credentials_or_env_read": false,
+    "business_state_mutated": false
+  },
+  "chatgpt_dashboard_surface": {
+    "source": "executeChatGptMcpReadOnlyTool(get_project_status)",
+    "ok": true,
+    "project": {
+      "project_id": "",
+      "title": "Ryan's Lunch Break Skullcap",
+      "project_type": "h1_human_operator_workbench",
+      "duration_seconds": 15,
+      "aspect_ratio": "9:16",
+      "resolution": "1080x1920"
+    },
+    "dashboard": {
+      "project_id": "",
+      "shots_total": 4,
+      "shots_approved": 0,
+      "imports_total": 335,
+      "imports_ready": 178,
+      "blockers_total": 12,
+      "reports_total": 141
+    },
+    "boundary_flags": {
+      "network_call_attempted": false,
+      "runway_called": false,
+      "runninghub_called": false,
+      "provider_credits_consumed": false,
+      "real_video_generated": false,
+      "regeneration_performed": false,
+      "batch_generation_performed": false,
+      "final_assembly_performed": false,
+      "memory_saveback_performed": false,
+      "source_asset_overwritten": false,
+      "secret_values_exposed": false
+    },
+    "interpretation": "The ChatGPT connector default project status currently reads the H1 human-operator workbench draft state, not the R3 final delivery closeout state."
+  },
+  "h1_workbench_state_surface": {
+    "state_path": "data/h1/workbench_state.json",
+    "state_last_write_time_observed_local": "2026-07-09T18:17:45.2594309+08:00",
+    "project": {
+      "project_id": "",
+      "title": "Ryan's Lunch Break Skullcap",
+      "project_type": "h1_human_operator_workbench",
+      "duration_seconds": 15,
+      "aspect_ratio": "9:16",
+      "resolution": "1080x1920"
+    },
+    "shots": [
+      {
+        "shot_id": "SHOT_001",
+        "approval_status": "pending",
+        "storyboard_image_artifact_id": "",
+        "has_video_prompt": false,
+        "duration_seconds": 3
+      },
+      {
+        "shot_id": "SHOT_002",
+        "approval_status": "pending",
+        "storyboard_image_artifact_id": "",
+        "has_video_prompt": false,
+        "duration_seconds": 3
+      },
+      {
+        "shot_id": "SHOT_003",
+        "approval_status": "pending",
+        "storyboard_image_artifact_id": "",
+        "has_video_prompt": false,
+        "duration_seconds": 4
+      },
+      {
+        "shot_id": "SHOT_004",
+        "approval_status": "pending",
+        "storyboard_image_artifact_id": "",
+        "has_video_prompt": false,
+        "duration_seconds": 5
+      }
+    ],
+    "validation": {
+      "ok": false,
+      "app_ready": false,
+      "project_id": "",
+      "shot_count": 4,
+      "blockers_total": 13,
+      "blockers": [
+        "PROJECT_NOT_PREPARED",
+        "SHOT_001:MISSING_STORYBOARD_IMAGE_ARTIFACT_ID",
+        "SHOT_001:MISSING_VIDEO_PROMPT",
+        "SHOT_001:SHOT_NOT_APPROVED",
+        "SHOT_002:MISSING_STORYBOARD_IMAGE_ARTIFACT_ID",
+        "SHOT_002:MISSING_VIDEO_PROMPT",
+        "SHOT_002:SHOT_NOT_APPROVED",
+        "SHOT_003:MISSING_STORYBOARD_IMAGE_ARTIFACT_ID",
+        "SHOT_003:MISSING_VIDEO_PROMPT",
+        "SHOT_003:SHOT_NOT_APPROVED",
+        "SHOT_004:MISSING_STORYBOARD_IMAGE_ARTIFACT_ID",
+        "SHOT_004:MISSING_VIDEO_PROMPT",
+        "SHOT_004:SHOT_NOT_APPROVED"
+      ]
+    },
+    "blocker_count_note": "The dashboard blocker count is 12 because it reflects shot-level blockers; direct H1 package validation reports 13 blockers because it also includes PROJECT_NOT_PREPARED."
+  },
+  "r3_final_delivery_surface": {
+    "closeout_report": "data/reports/r3_9r_final_delivery_closeout_result.json",
+    "evidence_manifest": "data/reports/r3_9r_final_delivery_evidence_manifest.json",
+    "closeout_result": "PASS_FINAL_DELIVERY_CLOSEOUT_READY",
+    "mode": "local_final_delivery_closeout_only",
+    "project": {
+      "project_id": "project_b742cb15-e44e-41b2-8d2d-4b90a30720df",
+      "project_title": "Ryan's Lunch Break Skullcap",
+      "storyboard_package_id": "storyboard_package_1e5c1eca-624e-4687-9775-31e4b59f428a",
+      "project_status": "final_approved",
+      "project_export_final_video_artifact_id": "artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe",
+      "final_creative_approval_state": "final_approved"
+    },
+    "final_approval": {
+      "decision": "accept",
+      "reviewer": "Jenn",
+      "final_creative_approval_recorded": true,
+      "local_blocker_count": 0
+    },
+    "final_video": {
+      "local_video_path": "A:\\AI Video Production Workspace\\data\\media\\artifacts\\final\\r3-9o-final-video\\ryan_lunch_break_skullcap_final_r3_9o.mp4",
+      "local_video_exists": true,
+      "byte_size": 3805481,
+      "final_video_artifact_id": "artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe",
+      "final_video_artifact_status": "active",
+      "final_video_artifact_role": "final_video",
+      "final_video_artifact_type": "video",
+      "final_video_artifact_storage_exists": true,
+      "ffprobe_status": "PASS",
+      "ffprobe_duration_seconds": 24.207683,
+      "ffprobe_has_video_stream": true,
+      "ffprobe_stream_count": 2,
+      "assembly_run_id": "run_r3_9o_285f8617-8134-4596-a9a4-1a5f1c24246f"
+    },
+    "source_clips": [
+      {
+        "order": 1,
+        "shot_id": "g0_r1_shot_001",
+        "source_clip_artifact_id": "artifact_37d18f76-ec61-4b5d-8f5c-acca2b4ba203",
+        "artifact_status": "active",
+        "local_mp4_exists": true,
+        "ffprobe_status": "PASS",
+        "duration_seconds": 6.041667
+      },
+      {
+        "order": 2,
+        "shot_id": "g0_r1_shot_002",
+        "source_clip_artifact_id": "artifact_eeef12a7-9533-4172-beaa-6c25b91415f7",
+        "artifact_status": "active",
+        "local_mp4_exists": true,
+        "ffprobe_status": "PASS",
+        "duration_seconds": 6.041667
+      },
+      {
+        "order": 3,
+        "shot_id": "g0_r1_shot_003",
+        "source_clip_artifact_id": "artifact_20b1ee68-0b75-4fc1-96a8-93f36de31d5a",
+        "artifact_status": "active",
+        "local_mp4_exists": true,
+        "ffprobe_status": "PASS",
+        "duration_seconds": 6.041667
+      },
+      {
+        "order": 4,
+        "shot_id": "g0_r1_shot_004",
+        "source_clip_artifact_id": "artifact_263a2344-5154-4981-bfe4-120571effb3e",
+        "artifact_status": "active",
+        "local_mp4_exists": true,
+        "ffprobe_status": "PASS",
+        "duration_seconds": 6.041667
+      }
+    ],
+    "provider_lane_summary": {
+      "primary_provider_lane": "runninghub",
+      "accepted_clip_generation_source": "R3-9J_RUNNINGHUB_REGENERATION_SINGLE_PASS_LIVE_EXECUTION",
+      "provider_raw_payload_recorded": false,
+      "signed_url_recorded": false,
+      "secret_values_exposed": false
+    },
+    "provider_boundary_for_closeout_task": {
+      "network_call_attempted": false,
+      "runninghub_called": false,
+      "runway_called": false,
+      "media_upload_to_provider": false,
+      "provider_submit": false,
+      "status_poll": false,
+      "output_download_from_provider": false,
+      "provider_credits_consumed": false,
+      "regeneration_performed": false,
+      "batch_generation_performed": false,
+      "final_video_reassembled": false,
+      "env_files_read": false,
+      "credentials_read": false,
+      "source_assets_overwritten": false,
+      "secret_values_exposed": false,
+      "raw_provider_payload_recorded": false,
+      "signed_url_recorded": false
+    }
+  },
+  "reconciliation": {
+    "finding": "STATE_SURFACE_MISMATCH",
+    "is_r3_final_delivery_complete": true,
+    "is_h1_dashboard_app_ready": false,
+    "does_chatgpt_get_project_status_currently_surface_r3_final_delivery": false,
+    "should_generate_next": false,
+    "should_call_provider_next": false,
+    "should_mutate_h1_state_without_explicit_authorization": false,
+    "summary": "The R3 production line is closed out and final-approved for project_b742cb15-e44e-41b2-8d2d-4b90a30720df, with an active final_video artifact and passing ffprobe evidence. The ChatGPT connector dashboard is reading a separate H1 workbench draft with a blank project_id and pending shots, so it reports zero approved shots and blockers. This is a dashboard/state-surface mismatch, not evidence that the R3 final delivery is missing."
+  },
+  "recommended_next_tasks": [
+    {
+      "task": "Add read-only final delivery status tool or dashboard section",
+      "why": "Expose R3 closeout status separately so ChatGPT can distinguish final-approved delivery evidence from the H1 draft workbench state.",
+      "allowed_without_new_provider_authorization": true,
+      "provider_calls_required": false
+    },
+    {
+      "task": "Optional H1 state rehydration or sync design",
+      "why": "If the H1 dashboard should represent the R3 final-approved project, design an explicit sync path instead of silently mutating the draft workbench state.",
+      "allowed_without_new_authorization": "design_only",
+      "provider_calls_required": false
+    }
+  ],
+  "boundary_observed": {
+    "network_call_attempted": false,
+    "provider_called": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "final_assembly_performed": false,
+    "env_files_read": false,
+    "credentials_read": false,
+    "secret_values_exposed": false,
+    "source_assets_overwritten": false,
+    "raw_provider_payload_recorded": false,
+    "signed_url_recorded": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false,
+    "publish_performed": false,
+    "production_configuration_changed": false
+  },
+  "validation": {
+    "JSON parse for this report": "PASS",
+    "npm run secret:scan": "PASS",
+    "git diff --check": "PASS"
+  },
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "PENDING_LOCAL_COMMIT",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  }
+}
