@@ -4397,7 +4397,7 @@ Fix R2G-H acceptance findings before public ChatGPT connector preparation.
 
 ## R2G-G_CHATGPT_CONNECTOR_LIVE_CONNECTION_AUTHORIZATION_PREP - ChatGPT Connector Live Connection Authorization Prep
 
-status: FOLLOW_UP
+status: DONE
 priority: P1
 lane: ChatGPT MCP Bridge
 project: AI Video Production Workspace GPT Bridge Line
@@ -4408,14 +4408,38 @@ report_path: data/reports/r2g_g_chatgpt_connector_live_connection_authorization_
 allowed_delivery: authorization_checklist,task_board_update,local_commit
 blocked_delivery: public_tunnel,public_mcp_endpoint,chatgpt_connector_creation,provider_call,env_file_read,credential_read,secret_value_output,source_overwrite,push,tag,release,deploy,publish,production_configuration_change
 created_at: 2026-07-08T20:34:12+08:00
-updated_at: 2026-07-09T13:51:45+08:00
+updated_at: 2026-07-09T14:35:39+08:00
+claimed_by: Codex R2G-G connector authorization prep
+claim_run_id: codex-20260709-143219-r2g-g
+claimed_at: 2026-07-09T14:32:19+08:00
+completed_by: Codex R2G-G connector authorization prep
+completed_at: 2026-07-09T14:35:39+08:00
+result: PASS_READY_FOR_SEPARATE_LIVE_CONNECTION_AUTHORIZATION
+validation_result: PASS
+commit: PENDING_LOCAL_COMMIT
 
 ### Goal
 
 Prepare the future live connection authorization checklist after local MCP packaging closes out and R2G-H1 hardening fixes complete.
 
+### Validation
+
+- `npm run r2g:g:authorization-prep`: PASS
+- JSON parse and boundary check for R2G-G report: PASS
+- `npm run typecheck`: PASS
+- `npm run test:r2g:mcp`: PASS
+- `npm run secret:scan`: PASS
+- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+
+### Result
+
+- Generated `data/reports/r2g_g_chatgpt_connector_live_connection_authorization_prep_result.json`.
+- Recorded current local readiness, live connector gaps, official OpenAI docs references, future exact authorization components, and hard stops.
+- Confirmed the future live connection still requires a separate exact Jenn authorization phrase.
+
 ### Boundary
 
-- This is `FOLLOW_UP` and must not auto-run.
-- A real ChatGPT connection likely requires a public HTTPS MCP endpoint, connector creation, and possibly deployment or tunnel work; each must receive separate exact Jenn authorization.
-- Do not promote this task until R2G-H1 is completed and accepted.
+- This task was explicitly requested by Jenn and executed as local-only authorization prep.
+- Report generated: `data/reports/r2g_g_chatgpt_connector_live_connection_authorization_prep_result.json`.
+- No public HTTPS MCP endpoint, public tunnel, ChatGPT connector creation, deployment, `.env` or credential read, provider/API call, push, tag, release, deploy, publish, or production configuration change occurred.
+- A future real ChatGPT connection still requires separate exact Jenn authorization.

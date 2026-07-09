@@ -336,6 +336,7 @@ export {
   boundaryFlags as chatGptMcpBoundaryFlags,
   buildR2GCloseoutReport,
   buildR2GConfirmationGateReport,
+  buildR2GConnectorAuthorizationPrepReport,
   buildR2GDryRunReport,
   buildR2GHardeningFixReport,
   buildR2GLocalServerSkeletonReport,

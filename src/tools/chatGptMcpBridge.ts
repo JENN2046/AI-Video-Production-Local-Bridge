@@ -858,6 +858,160 @@ export function buildR2GHardeningFixReport(generatedAt: string): Record<string, 
   };
 }
 
+export function buildR2GConnectorAuthorizationPrepReport(generatedAt: string): Record<string, unknown> {
+  const officialDocs = [
+    {
+      title: "Build your MCP server",
+      url: "https://developers.openai.com/apps-sdk/build/mcp-server",
+      relevance: "Defines the MCP server / widget / model boundary and the server responsibility for tools, auth, structured data, and UI resources."
+    },
+    {
+      title: "Quickstart - Add your app to ChatGPT",
+      url: "https://developers.openai.com/apps-sdk/quickstart",
+      relevance: "Developer-mode connector creation requires an HTTPS + /mcp URL in ChatGPT Settings -> Connectors."
+    },
+    {
+      title: "Deploy your app",
+      url: "https://developers.openai.com/apps-sdk/deploy",
+      relevance: "Local development may use a tunnel, while stable live hosting requires HTTPS, streaming support, TLS, and operational logs/metrics."
+    },
+    {
+      title: "Connect from ChatGPT",
+      url: "https://developers.openai.com/apps-sdk/deploy/connect-chatgpt",
+      relevance: "Live connector setup and metadata refresh happen in ChatGPT connector settings after the MCP endpoint is reachable."
+    },
+    {
+      title: "Authentication",
+      url: "https://developers.openai.com/apps-sdk/build/auth",
+      relevance: "Covers ChatGPT client identification, mTLS, OAuth 2.1 user auth, and token validation expectations."
+    },
+    {
+      title: "Submit and maintain your app",
+      url: "https://developers.openai.com/apps-sdk/deploy/submission",
+      relevance: "Public app submission requires a public non-local MCP endpoint, CSP, app-management permissions, and review metadata."
+    },
+    {
+      title: "Troubleshooting",
+      url: "https://developers.openai.com/apps-sdk/deploy/troubleshooting",
+      relevance: "Highlights common live-connection checks: /mcp discovery, schema consistency, CSP, streaming, auth, and tunnel stability."
+    }
+  ];
+
+  return {
+    task_id: "R2G-G_CHATGPT_CONNECTOR_LIVE_CONNECTION_AUTHORIZATION_PREP",
+    result: "PASS_READY_FOR_SEPARATE_LIVE_CONNECTION_AUTHORIZATION",
+    generated_at: generatedAt,
+    bridge_version: CHATGPT_MCP_BRIDGE_VERSION,
+    source_reports: {
+      local_mcp_closeout: "data/reports/r2g_f_mcp_packaging_closeout_result.json",
+      acceptance_review: "data/reports/r2g_h_local_mcp_package_acceptance_review_result.json",
+      hardening_fix: "data/reports/r2g_h1_mcp_schema_and_descriptor_hardening_fix_result.json"
+    },
+    official_docs_checked: officialDocs,
+    evidence_collection: {
+      official_openai_docs_read_only_lookup_performed: true,
+      docs_lookup_method: "official OpenAI web fallback because local OpenAI Docs MCP tools were not available in this session",
+      external_provider_or_chatgpt_live_action_attempted: false,
+      local_secret_or_credential_file_read: false
+    },
+    current_local_readiness: {
+      local_tool_contract_frozen: true,
+      local_tool_count: CHATGPT_MCP_TOOL_DESCRIPTORS.length,
+      output_schema_hardened: true,
+      input_schema_enforced_before_handlers: true,
+      descriptor_mutation_guarded: true,
+      local_tests_passed_before_prep: true,
+      local_server_mode: "in_process_local_test_only",
+      public_https_mcp_endpoint_exists: false,
+      public_tunnel_started: false,
+      chatgpt_connector_created: false,
+      oauth_or_live_connector_auth_configured: false,
+      provider_tools_exposed: false,
+      deploy_or_publish_performed: false
+    },
+    live_connection_gaps: [
+      {
+        gap: "public_https_mcp_endpoint",
+        status: "MISSING_BY_DESIGN",
+        why_it_matters: "ChatGPT connector creation needs an HTTPS /mcp endpoint or an explicitly authorized development tunnel.",
+        requires_future_authorization: true
+      },
+      {
+        gap: "connector_creation_target",
+        status: "NOT_SELECTED",
+        why_it_matters: "A human must choose the ChatGPT account/workspace, connector name, description, and permission posture.",
+        requires_future_authorization: true
+      },
+      {
+        gap: "auth_strategy",
+        status: "NOT_CONFIGURED",
+        why_it_matters: "Any non-local endpoint needs a deliberate auth and client-identification stance before exposure.",
+        requires_future_authorization: true
+      },
+      {
+        gap: "operator_observability",
+        status: "NOT_CONFIGURED_FOR_LIVE",
+        why_it_matters: "Live connector smoke tests need sanitized logs, metrics, and troubleshooting evidence without raw payload or secret leakage.",
+        requires_future_authorization: true
+      },
+      {
+        gap: "submission_or_publication",
+        status: "OUT_OF_SCOPE",
+        why_it_matters: "App review, publish, or distribution are separate release actions and are not part of connector authorization prep.",
+        requires_future_authorization: true
+      }
+    ],
+    future_exact_authorization_components: {
+      required_before_any_tunnel_or_connector: [
+        "action_scope",
+        "chatgpt_account_or_workspace",
+        "connector_name",
+        "endpoint_mode: local_tunnel or hosted_https",
+        "exact_mcp_url ending with /mcp or exact tunnel/deploy target to create",
+        "auth_mode",
+        "permission_posture",
+        "allowed_smoke_tests",
+        "log_redaction_rules",
+        "budget_or_cost_boundary if any paid hosting/tooling is used",
+        "explicit no-provider-call boundary unless separately authorized",
+        "rollback_or_shutdown_plan"
+      ],
+      draft_phrase_template: "授权执行一次 ChatGPT connector live connection setup：endpoint_mode=<local_tunnel|hosted_https>，mcp_url=<HTTPS /mcp URL or exact tunnel/deploy target>，connector_name=<name>，chatgpt_account_or_workspace=<target>，auth_mode=<none|OAuth2.1|other approved mode>，permission_posture=<read-only/draft/human-confirmed writes>，allowed_smoke_tests=<list>，log_redaction=required，不调用 RunningHub/Runway/provider，不读或打印 secrets，不发布/部署/提交审核，完成后输出本地 receipt 并可关闭/回滚 tunnel。",
+      still_requires_separate_authorization: [
+        "starting a public tunnel",
+        "deploying or hosting a public MCP endpoint",
+        "creating a ChatGPT connector",
+        "reading credentials or editing auth configuration",
+        "submitting an app for review",
+        "publishing or releasing an app",
+        "calling video providers or other paid APIs"
+      ]
+    },
+    recommended_next_sequence: [
+      "R2G-G review/acceptance: human reads this authorization prep report.",
+      "R2G-G1 endpoint decision: choose local tunnel vs hosted HTTPS without executing it yet.",
+      "R2G-G2 auth and permission design: decide no-auth dev-only vs OAuth 2.1 and workspace permission stance.",
+      "R2G-G3 live connector authorization: provide exact authorization phrase for one bounded tunnel/connector smoke run.",
+      "Post-live smoke: record sanitized evidence, refresh metadata if needed, then shut down any temporary tunnel."
+    ],
+    hard_stops_observed_this_task: {
+      public_tunnel_started: false,
+      public_mcp_endpoint_created: false,
+      chatgpt_connector_created: false,
+      deploy_performed: false,
+      env_files_read: false,
+      credentials_read: false,
+      provider_api_called: false,
+      push_performed: false,
+      tag_created: false,
+      release_or_deploy_performed: false,
+      publish_performed: false
+    },
+    provider_boundary: boundaryFlags(),
+    git_receipt: pendingGitReceipt("R2G-G_CHATGPT_CONNECTOR_LIVE_CONNECTION_AUTHORIZATION_PREP")
+  };
+}
+
 function pendingGitReceipt(task: string): Record<string, unknown> {
   return {
     repo: true,

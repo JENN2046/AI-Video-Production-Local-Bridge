@@ -4056,6 +4056,43 @@ Boundary:
 - R2G-G remains `FOLLOW_UP`.
 - No public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
 
+### 2026-07-09T14:35:39+08:00 - R2G-G ChatGPT Connector Live Connection Authorization Prep
+
+Result: DONE / PASS_READY_FOR_SEPARATE_LIVE_CONNECTION_AUTHORIZATION
+Project: AI Video Production Workspace GPT Bridge Line
+Lane: ChatGPT MCP Bridge
+Run ID: codex-20260709-143219-r2g-g
+Completed at: 2026-07-09T14:35:39+08:00
+
+Scope:
+- Prepared a local-only live ChatGPT connector authorization package.
+- Checked official OpenAI Apps SDK/MCP docs by read-only web lookup.
+- Mapped local R2G readiness against live connector prerequisites.
+- Recorded future exact authorization components and still-blocked live actions.
+
+Validation:
+- `npm run r2g:g:authorization-prep`: PASS
+- JSON parse and boundary check for R2G-G report: PASS
+- `npm run typecheck`: PASS
+- `npm run test:r2g:mcp`: PASS
+- `npm run secret:scan`: PASS
+- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- `data/reports/r2g_g_chatgpt_connector_live_connection_authorization_prep_result.json`
+- `data/reports/r2g_f_mcp_packaging_closeout_result.json`
+- `data/reports/r2g_h1_mcp_schema_and_descriptor_hardening_fix_result.json`
+- `src/tools/chatGptMcpBridge.ts`
+- `scripts/r2g-mcp-packaging.ts`
+
+Git delivery:
+- commit: PENDING_LOCAL_COMMIT
+- push: no
+
+Boundary:
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+- Future live connector execution still requires a separate exact Jenn authorization phrase.
+
 ### 2026-07-09T14:16:55+08:00 - R2G-H1 MCP Schema And Descriptor Hardening Fix
 
 Result: DONE / PASS_MCP_SCHEMA_AND_DESCRIPTOR_HARDENED

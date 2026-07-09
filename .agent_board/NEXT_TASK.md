@@ -1,60 +1,44 @@
 # NEXT_TASK
 
-task_id: R2G-H1_MCP_SCHEMA_AND_DESCRIPTOR_HARDENING_FIX
+task_id: R2G-G_CHATGPT_CONNECTOR_LIVE_CONNECTION_AUTHORIZATION_PREP
 status: DONE
-priority: P0
+priority: P1
 lane: ChatGPT MCP Bridge
 project: AI Video Production Workspace GPT Bridge Line
-title: MCP Schema And Descriptor Hardening Fix
-depends_on: R2G-H_LOCAL_MCP_PACKAGE_ACCEPTANCE_REVIEW
-taskbook_path: docs/webgpt/R2G_H1_MCP_SCHEMA_AND_DESCRIPTOR_HARDENING_TASKBOOK.md
-taskbook_self_review_report: data/reports/r2g_h1_taskbook_self_review_result.json
-report_path: data/reports/r2g_h1_mcp_schema_and_descriptor_hardening_fix_result.json
+title: ChatGPT Connector Live Connection Authorization Prep
+depends_on: R2G-H1_MCP_SCHEMA_AND_DESCRIPTOR_HARDENING_FIX
+report_path: data/reports/r2g_g_chatgpt_connector_live_connection_authorization_prep_result.json
 
 ## Goal
 
-Harden the local R2G MCP bridge contract before any live ChatGPT connector preparation.
+Prepare the live ChatGPT connector authorization package without starting any public tunnel, creating any connector, deploying, reading credentials, or calling providers.
 
-## Required Work
+## Result
 
-- Fix R2G-H outputSchema/error-envelope mismatch.
-- Enforce MCP tool inputSchema server-side, including `additionalProperties:false`.
-- Deep-freeze or deep-clone tool descriptors so listed metadata cannot mutate global descriptor state.
-- Add regression tests for all R2G-H findings.
-- Regenerate affected R2G reports and schema fixture.
+result: PASS_READY_FOR_SEPARATE_LIVE_CONNECTION_AUTHORIZATION
+claimed_at: 2026-07-09T14:32:19+08:00
+completed_at: 2026-07-09T14:35:39+08:00
+completed_by: Codex R2G-G connector authorization prep
+commit: PENDING_LOCAL_COMMIT
 
 ## Validation
 
-- `npm run r2g:b:contract`: PASS
-- `npm run r2g:e:gates`: PASS
-- `npm run r2g:f:closeout`: PASS
-- JSON parse for `data/reports/r2g_h1_mcp_schema_and_descriptor_hardening_fix_result.json`: PASS
-- JSON parse for `fixtures/mcp/chatgpt_mcp_tool_contract_r2g_b.json`: PASS
+- `npm run r2g:g:authorization-prep`: PASS
+- JSON parse and boundary check for `data/reports/r2g_g_chatgpt_connector_live_connection_authorization_prep_result.json`: PASS
 - `npm run typecheck`: PASS
 - `npm run test:r2g:mcp`: PASS
 - `npm run secret:scan`: PASS
 - `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
 
-## Result
-
-result: PASS_MCP_SCHEMA_AND_DESCRIPTOR_HARDENED
-completed_at: 2026-07-09T14:16:55+08:00
-completed_by: Codex R2G-H1 schema descriptor hardening
-commit: 6593a14
-
 ## Evidence
 
+- `data/reports/r2g_g_chatgpt_connector_live_connection_authorization_prep_result.json`
+- `data/reports/r2g_f_mcp_packaging_closeout_result.json`
 - `data/reports/r2g_h1_mcp_schema_and_descriptor_hardening_fix_result.json`
-- `fixtures/mcp/chatgpt_mcp_tool_contract_r2g_b.json`
-- `tests/chatgpt-mcp-bridge.test.ts`
-- `src/tools/chatGptMcpBridge.ts`
+- Official OpenAI Apps SDK docs listed inside the R2G-G report.
 
 ## Boundary
 
-- Local hardening only.
-- No public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change.
-- Do not touch unrelated files: `scripts/h1-workbench.ts`, `drag_drop_cards_to_planner.gif`, or `howtouseinbox.gif`.
-
-## Stop
-
-`R2G-G_CHATGPT_CONNECTOR_LIVE_CONNECTION_AUTHORIZATION_PREP` remains `FOLLOW_UP` until R2G-H1 is completed and accepted.
+- Authorization prep only.
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, push, tag, release, deploy, publish, or production configuration change occurred.
+- Future live connection still requires a separate exact Jenn authorization phrase.

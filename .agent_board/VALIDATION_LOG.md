@@ -2355,3 +2355,30 @@ Notes:
 - `git diff --check`: PASS with CRLF warnings only.
 - R2G-G remains `FOLLOW_UP` and was not executed.
 - No public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+
+### R2G-G - 2026-07-09T14:35:39+08:00
+
+Commands:
+
+```bash
+npm run r2g:g:authorization-prep
+node -e JSON.parse(...) with R2G-G boundary checks
+npm run typecheck
+npm run test:r2g:mcp
+npm run secret:scan
+git diff --check
+```
+
+Result: `PASS_READY_FOR_SEPARATE_LIVE_CONNECTION_AUTHORIZATION`
+
+Evidence:
+- `data/reports/r2g_g_chatgpt_connector_live_connection_authorization_prep_result.json`
+- `src/tools/chatGptMcpBridge.ts`
+- `scripts/r2g-mcp-packaging.ts`
+- `package.json`
+
+Notes:
+- Official OpenAI Apps SDK/MCP docs were checked by read-only web lookup and recorded in the report.
+- The report identifies current local readiness, live connection gaps, future exact authorization components, and hard stops.
+- `git diff --check`: PASS with CRLF warnings only.
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.

@@ -45,6 +45,7 @@
     "r2g:d:dry-run": "npm run build && node dist/scripts/r2g-mcp-packaging.js r2g-d",
     "r2g:e:gates": "npm run build && node dist/scripts/r2g-mcp-packaging.js r2g-e",
     "r2g:f:closeout": "npm run build && node dist/scripts/r2g-mcp-packaging.js r2g-f",
+    "r2g:g:authorization-prep": "npm run build && node dist/scripts/r2g-mcp-packaging.js r2g-g",
     "test:r2g:mcp": "npm run build && node --test dist/tests/chatgpt-mcp-bridge.test.js",
     "r1:5:production-assistant": "npm run build && node dist/scripts/r1-5-mcp-v3-production-assistant.js",
     "r1:6:audit": "npm run build && node dist/scripts/r1-6-webgpt-post-closeout-bridge-reality-audit.js",
