@@ -49,6 +49,8 @@
     "r2g:i:readiness-review": "npm run build && node dist/scripts/r2g-mcp-packaging.js r2g-i",
     "r2g:j:http-dry-run": "npm run build && node dist/scripts/r2g-j-http-mcp-transport-local-dry-run.js",
     "r2g:k:authorization-final-prep": "npm run build && node dist/scripts/r2g-mcp-packaging.js r2g-k",
+    "r2g:l:read-only-entry-prep": "npm run build && node dist/scripts/r2g-l-chatgpt-read-only-live-smoke-local-entry-prep.js",
+    "r2g:l:serve-read-only": "npm run build && node dist/scripts/r2g-l-chatgpt-read-only-live-smoke-local-entry-server.js",
     "test:r2g:mcp": "npm run build && node --test dist/tests/chatgpt-mcp-bridge.test.js",
     "r1:5:production-assistant": "npm run build && node dist/scripts/r1-5-mcp-v3-production-assistant.js",
     "r1:6:audit": "npm run build && node dist/scripts/r1-6-webgpt-post-closeout-bridge-reality-audit.js",

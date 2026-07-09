@@ -7,8 +7,10 @@ import {
   chatGptMcpBoundaryFlags,
   CHATGPT_MCP_TOOL_DESCRIPTORS,
   createChatGptMcpLocalServer,
+  executeChatGptMcpReadOnlyTool,
   executeChatGptMcpTool,
   FORBIDDEN_CHATGPT_MCP_TOOL_NAMES,
+  listChatGptMcpReadOnlyToolDescriptors,
   listChatGptMcpToolDescriptors,
   loadH1WorkbenchState,
   loadWebGptDraftStore,
@@ -16,7 +18,9 @@ import {
   openM0Database,
   paths,
   runR2GHttpMcpTransportLocalDryRun,
+  runR2GReadOnlyLiveSmokeLocalEntryPrep,
   startChatGptMcpHttpLocalHarness,
+  startChatGptMcpReadOnlyLiveSmokeLocalEntry,
   type ChatGptMcpToolResultEnvelope
 } from "../src/index.js";
 
@@ -29,6 +33,15 @@ function assertMcpEnvelopeConforms(result: ChatGptMcpToolResultEnvelope): void {
 }
 
 async function postLocalMcp(url: string, payload: unknown): Promise<{ status: number; body: Record<string, unknown> }> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  return { status: response.status, body: await response.json() as Record<string, unknown> };
+}
+
+async function postJsonRpcMcp(url: string, payload: unknown): Promise<{ status: number; body: Record<string, unknown> }> {
   const response = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -74,6 +87,50 @@ test("R2G MCP tool descriptors use official-style schemas, annotations, and safe
   for (const forbidden of FORBIDDEN_CHATGPT_MCP_TOOL_NAMES) {
     assert.equal(allowedNames.has(String(forbidden)), false);
   }
+});
+
+test("R2G-L read-only live smoke surface lists only READ_ONLY tools", () => {
+  const readOnly = listChatGptMcpReadOnlyToolDescriptors();
+  assert.deepEqual(
+    readOnly.map((tool) => tool.name),
+    [
+      "get_project_status",
+      "lookup_media_artifact",
+      "check_import_readiness",
+      "get_review_package",
+      "get_closeout_evidence"
+    ]
+  );
+  for (const descriptor of readOnly) {
+    assert.equal(descriptor.security.mode, "READ_ONLY");
+    assert.equal(descriptor.annotations.readOnlyHint, true);
+    assert.equal(descriptor.security.provider_call_allowed, false);
+    assert.equal(descriptor.security.reads_credentials, false);
+  }
+});
+
+test("R2G-L read-only executor blocks draft and human-confirmed write tools before mutation", () => {
+  const beforeDrafts = loadWebGptDraftStore().drafts.length;
+  const beforeActions = loadWebGptPendingActionStore().actions.length;
+
+  const draft = executeChatGptMcpReadOnlyTool("submit_storyboard_draft", {
+    shots: [{ description: "No write", video_prompt: "No write" }]
+  });
+  assert.equal(draft.ok, false);
+  assert.equal((draft.structuredContent.error as { code?: string }).code, "READ_ONLY_LIVE_SMOKE_ONLY");
+
+  const freeze = executeChatGptMcpReadOnlyTool("request_package_freeze", {
+    reason: "No pending action"
+  });
+  assert.equal(freeze.ok, false);
+  assert.equal((freeze.structuredContent.error as { code?: string }).code, "READ_ONLY_LIVE_SMOKE_ONLY");
+
+  const provider = executeChatGptMcpReadOnlyTool("call_runninghub", {});
+  assert.equal(provider.ok, false);
+  assert.equal((provider.structuredContent.error as { code?: string }).code, "FORBIDDEN_ACTION");
+
+  assert.equal(loadWebGptDraftStore().drafts.length, beforeDrafts);
+  assert.equal(loadWebGptPendingActionStore().actions.length, beforeActions);
 });
 
 test("R2G local MCP server skeleton lists approved tools and fails closed for forbidden actions", () => {
@@ -310,6 +367,134 @@ test("R2G-J dry-run report proves local HTTP transport without live side effects
     if (typeof value === "boolean") assert.equal(value, true);
     if (value && typeof value === "object" && !Array.isArray(value)) assert.equal((value as { ok?: unknown }).ok, true);
   }
+  const boundary = nestedRecord(report.boundary_observed, "boundary observed");
+  assert.equal(boundary.public_tunnel_started, false);
+  assert.equal(boundary.chatgpt_connector_created, false);
+  assert.equal(boundary.env_files_read, false);
+  assert.equal(boundary.provider_api_called, false);
+});
+
+test("R2G-L read-only local entry initializes, lists read-only tools, and calls get_project_status", async () => {
+  const entry = await startChatGptMcpReadOnlyLiveSmokeLocalEntry();
+  try {
+    assert.equal(entry.host, "127.0.0.1");
+    assert.equal(entry.public_endpoint, false);
+    assert.equal(entry.public_tunnel_started, false);
+    assert.equal(entry.chatgpt_connector_created, false);
+    assert.equal(entry.read_only_only, true);
+
+    const initialize = await postJsonRpcMcp(entry.mcpUrl, {
+      jsonrpc: "2.0",
+      id: "init",
+      method: "initialize",
+      params: { protocolVersion: "2025-06-18" }
+    });
+    assert.equal(initialize.status, 200);
+    const initResult = nestedRecord(initialize.body.result, "initialize result");
+    assert.equal(nestedRecord(initResult.serverInfo, "server info").name, "ai-video-production-chatgpt-mcp-local-test");
+
+    const listed = await postJsonRpcMcp(entry.mcpUrl, { jsonrpc: "2.0", id: "list", method: "tools/list", params: {} });
+    assert.equal(listed.status, 200);
+    const listResult = nestedRecord(listed.body.result, "list result");
+    const tools = listResult.tools as Array<{ name?: string; annotations?: { readOnlyHint?: boolean } }>;
+    assert.deepEqual(
+      tools.map((tool) => tool.name),
+      listChatGptMcpReadOnlyToolDescriptors().map((tool) => tool.name)
+    );
+    for (const tool of tools) assert.equal(tool.annotations?.readOnlyHint, true);
+
+    const approved = await postJsonRpcMcp(entry.mcpUrl, {
+      jsonrpc: "2.0",
+      id: "approved",
+      method: "tools/call",
+      params: { name: "get_project_status", arguments: {} }
+    });
+    assert.equal(approved.status, 200);
+    const approvedResult = nestedRecord(approved.body.result, "approved result");
+    assert.equal(approvedResult.isError, false);
+    const approvedStructured = nestedRecord(approvedResult.structuredContent, "approved structured");
+    assert.equal(approvedStructured.ok, true);
+  } finally {
+    await entry.close();
+  }
+});
+
+test("R2G-L read-only local entry fails closed for non-read-only, provider, unknown, and schema-invalid tools", async () => {
+  const beforeDrafts = loadWebGptDraftStore().drafts.length;
+  const beforeActions = loadWebGptPendingActionStore().actions.length;
+  const entry = await startChatGptMcpReadOnlyLiveSmokeLocalEntry();
+  try {
+    const probes = [
+      {
+        name: "submit_storyboard_draft",
+        arguments: { shots: [{ description: "No write", video_prompt: "No write" }] },
+        code: "READ_ONLY_LIVE_SMOKE_ONLY"
+      },
+      {
+        name: "request_package_freeze",
+        arguments: { reason: "No pending action" },
+        code: "READ_ONLY_LIVE_SMOKE_ONLY"
+      },
+      {
+        name: "call_runninghub",
+        arguments: {},
+        code: "FORBIDDEN_ACTION"
+      },
+      {
+        name: "unknown_tool",
+        arguments: {},
+        code: "TOOL_NOT_FOUND"
+      },
+      {
+        name: "get_project_status",
+        arguments: { extra_unexpected: true },
+        code: "UNKNOWN_INPUT_FIELD"
+      }
+    ];
+
+    for (const probe of probes) {
+      const response = await postJsonRpcMcp(entry.mcpUrl, {
+        jsonrpc: "2.0",
+        id: probe.name,
+        method: "tools/call",
+        params: { name: probe.name, arguments: probe.arguments }
+      });
+      assert.equal(response.status, 200);
+      const result = nestedRecord(response.body.result, `${probe.name} result`);
+      assert.equal(result.isError, true);
+      const structured = nestedRecord(result.structuredContent, `${probe.name} structured`);
+      const error = nestedRecord(structured.error, `${probe.name} error`);
+      assert.equal(error.code, probe.code);
+      const boundary = nestedRecord(structured.boundary, `${probe.name} boundary`);
+      for (const value of Object.values(boundary)) assert.equal(value, false);
+    }
+  } finally {
+    await entry.close();
+  }
+  assert.equal(loadWebGptDraftStore().drafts.length, beforeDrafts);
+  assert.equal(loadWebGptPendingActionStore().actions.length, beforeActions);
+});
+
+test("R2G-L prep report proves read-only local entry without live side effects", async () => {
+  const report = await runR2GReadOnlyLiveSmokeLocalEntryPrep("2026-07-09T00:00:00.000Z");
+  assert.equal(report.result, "PASS_READ_ONLY_LIVE_SMOKE_LOCAL_ENTRY_PREP");
+  const localEntry = nestedRecord(report.local_entry, "local entry");
+  assert.equal(localEntry.localhost_only, true);
+  assert.equal(localEntry.public_endpoint, false);
+  assert.equal(localEntry.public_tunnel_started, false);
+  assert.equal(localEntry.chatgpt_connector_created, false);
+  assert.equal(localEntry.read_only_only, true);
+  assert.equal(localEntry.server_closed_after_run, true);
+
+  const toolSurface = nestedRecord(report.tool_surface, "tool surface");
+  assert.deepEqual(toolSurface.listed_tool_names, listChatGptMcpReadOnlyToolDescriptors().map((tool) => tool.name));
+
+  const checks = nestedRecord(report.local_smoke_checks, "local smoke checks");
+  for (const value of Object.values(checks)) {
+    if (typeof value === "boolean") assert.equal(value, true);
+    if (value && typeof value === "object" && !Array.isArray(value)) assert.equal((value as { ok?: unknown }).ok, true);
+  }
+
   const boundary = nestedRecord(report.boundary_observed, "boundary observed");
   assert.equal(boundary.public_tunnel_started, false);
   assert.equal(boundary.chatgpt_connector_created, false);

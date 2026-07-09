@@ -2,37 +2,38 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "R2G-K_CHATGPT_CONNECTOR_LIVE_AUTHORIZATION_FINAL_PREP",
+  "task_id": "R2G-L_CHATGPT_CONNECTOR_READ_ONLY_LIVE_SMOKE_LOCAL_ENTRY_PREP",
   "status": "DONE",
   "priority": "P0",
   "lane": "ChatGPT MCP Bridge",
   "project": "AI Video Production Workspace GPT Bridge Line",
-  "title": "ChatGPT Connector Live Authorization Final Prep",
+  "title": "ChatGPT Connector Read-Only Live Smoke Local Entry Prep",
   "scope": [
-    "review R2G-G, R2G-I, and R2G-J evidence",
-    "prepare a final bounded live connector authorization package",
-    "define exact authorization phrase components for a future live smoke",
-    "define endpoint, account/workspace, connector name, permission posture, log redaction, smoke tests, and rollback requirements",
-    "generate a local-only final authorization prep report"
+    "prepare a local-only read-only MCP HTTP entry for a future ChatGPT connector live smoke",
+    "restrict the live smoke entry to read-only tools only",
+    "prove forbidden provider, generation, draft, and human-confirmed write tools fail closed",
+    "generate a local-only R2G-L readiness report"
   ],
-  "goal": "Prepare the final live ChatGPT connector authorization package without starting a public tunnel, creating a connector, deploying, reading credentials, or calling providers.",
+  "goal": "Prepare the local read-only live smoke MCP entry without starting a public tunnel, creating a ChatGPT connector, reading credentials, calling providers/APIs, or deploying.",
   "acceptance": [
-    "data/reports/r2g_k_chatgpt_connector_live_authorization_final_prep_result.json is generated.",
-    "Report reviews R2G-G, R2G-I, and R2G-J evidence.",
-    "Report includes exact future authorization phrase fields and stop conditions.",
-    "Report defines the minimum live smoke path after user authorization.",
-    "Report explicitly confirms no public tunnel, connector creation, deploy, .env/credential read, provider/API call, push, tag, release, deploy, or publish occurred."
+    "A local read-only live smoke MCP entry exists and can be exercised over localhost.",
+    "Only READ_ONLY tools are listed or callable through the live smoke entry.",
+    "Draft, human-confirmed write, provider, generation, shell, secret, and unknown tools fail closed.",
+    "A local readiness report is generated at data/reports/r2g_l_chatgpt_connector_read_only_live_smoke_local_entry_prep_result.json.",
+    "Report confirms public_tunnel_started=false, chatgpt_connector_created=false, env_files_read=false, credentials_read=false, provider_api_called=false, deploy_performed=false, push_performed=false, tag_created=false, release_or_deploy_performed=false, and publish_performed=false."
   ],
   "validation": [
-    "JSON parse for data/reports/r2g_k_chatgpt_connector_live_authorization_final_prep_result.json",
+    "npm run r2g:l:read-only-entry-prep",
+    "JSON parse for data/reports/r2g_l_chatgpt_connector_read_only_live_smoke_local_entry_prep_result.json",
     "npm run typecheck",
     "npm run test:r2g:mcp",
     "npm run secret:scan",
     "git diff --check"
   ],
   "allowed_delivery": [
-    "authorization_prep_report",
+    "local_read_only_mcp_entry",
     "local_report",
+    "tests",
     "task_board_update",
     "local_commit"
   ],
@@ -53,40 +54,39 @@
     "production_configuration_change"
   ],
   "depends_on": [
-    "R2G-J_HTTP_MCP_TRANSPORT_LOCAL_DRY_RUN"
+    "R2G-K_CHATGPT_CONNECTOR_LIVE_AUTHORIZATION_FINAL_PREP"
   ],
-  "source_authorization_prep_report": "data/reports/r2g_g_chatgpt_connector_live_connection_authorization_prep_result.json",
-  "source_readiness_review_report": "data/reports/r2g_i_live_connector_readiness_review_result.json",
-  "source_http_dry_run_report": "data/reports/r2g_j_http_mcp_transport_local_dry_run_result.json",
-  "report_path": "data/reports/r2g_k_chatgpt_connector_live_authorization_final_prep_result.json",
-  "created_at": "2026-07-09T15:24:47+08:00",
-  "updated_at": "2026-07-09T15:32:43+08:00",
-  "claimed_by": "Codex R2G-K connector authorization final prep",
-  "claim_run_id": "codex-20260709-153013-r2g-k",
-  "claimed_at": "2026-07-09T15:30:13+08:00",
-  "completed_by": "Codex R2G-K connector authorization final prep",
-  "completed_at": "2026-07-09T15:32:43+08:00",
-  "result": "PASS_READY_FOR_EXACT_LIVE_CONNECTOR_AUTHORIZATION",
+  "source_authorization_final_prep_report": "data/reports/r2g_k_chatgpt_connector_live_authorization_final_prep_result.json",
+  "report_path": "data/reports/r2g_l_chatgpt_connector_read_only_live_smoke_local_entry_prep_result.json",
+  "created_at": "2026-07-09T15:56:33+08:00",
+  "updated_at": "2026-07-09T16:07:30+08:00",
+  "claimed_by": "Codex R2G-L read-only live smoke local entry prep",
+  "claim_run_id": "codex-20260709-155633-r2g-l",
+  "claimed_at": "2026-07-09T15:56:33+08:00",
+  "completed_by": "Codex R2G-L read-only live smoke local entry prep",
+  "completed_at": "2026-07-09T16:07:30+08:00",
+  "result": "PASS_READ_ONLY_LIVE_SMOKE_LOCAL_ENTRY_PREP",
   "validation_result": "PASS",
   "evidence": [
-    "data/reports/r2g_k_chatgpt_connector_live_authorization_final_prep_result.json",
-    "data/reports/r2g_g_chatgpt_connector_live_connection_authorization_prep_result.json",
-    "data/reports/r2g_i_live_connector_readiness_review_result.json",
-    "data/reports/r2g_j_http_mcp_transport_local_dry_run_result.json",
+    "data/reports/r2g_l_chatgpt_connector_read_only_live_smoke_local_entry_prep_result.json",
+    "src/tools/chatGptMcpHttpTransport.ts",
     "src/tools/chatGptMcpBridge.ts",
-    "scripts/r2g-mcp-packaging.ts"
+    "scripts/r2g-l-chatgpt-read-only-live-smoke-local-entry-prep.ts",
+    "scripts/r2g-l-chatgpt-read-only-live-smoke-local-entry-server.ts",
+    "tests/chatgpt-mcp-bridge.test.ts",
+    "package.json"
   ],
-  "commit": "887ee12",
-  "delivery": "local_authorization_final_prep_only",
-  "boundary_or_safety_stop": "authorization prep only; no public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, env or credential read, provider/API call, push, tag, release, deploy, publish, or production configuration change",
+  "commit": "PENDING_LOCAL_COMMIT",
+  "delivery": "local_read_only_entry_prep_only",
+  "boundary_or_safety_stop": "local-only preparation; no public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, env or credential read, provider/API call, push, tag, release, deploy, publish, or production configuration change",
   "blocked_reason": null,
   "failure_reason": null,
   "safe_actions_completed": [
-    "claimed R2G-K from READY",
-    "reviewed R2G-G, R2G-I, and R2G-J local evidence",
-    "rechecked official OpenAI Apps SDK/MCP docs by read-only web lookup",
-    "implemented R2G-K final authorization prep report generator",
-    "generated data/reports/r2g_k_chatgpt_connector_live_authorization_final_prep_result.json",
+    "claimed R2G-L from explicit Jenn instruction",
+    "implemented a local-only read-only live smoke MCP entry bound to 127.0.0.1",
+    "restricted R2G-L tool listing and calls to READ_ONLY tools",
+    "added a future local serve command for exact-authorized live smoke",
+    "generated data/reports/r2g_l_chatgpt_connector_read_only_live_smoke_local_entry_prep_result.json",
     "validated report JSON, typecheck, R2G MCP tests, secret scan, and diff check"
   ],
   "unsafe_action_not_performed": [
@@ -107,13 +107,14 @@
   ],
   "do_not_touch": [
     "scripts/h1-workbench.ts",
+    "docs/three_routes/human_workbench_frosted_glass_design_plan.md",
     "drag_drop_cards_to_planner.gif",
     "howtouseinbox.gif",
     "ops/previews/"
   ],
   "next_safe_option": [
-    "Review the R2G-K report and exact authorization phrase components.",
-    "If Jenn wants a live connector smoke, provide a separate exact authorization phrase.",
+    "Review the R2G-L report and read-only local server command.",
+    "If Jenn wants to proceed to real ChatGPT connector setup, provide a separate exact authorization phrase with endpoint mode and concrete tunnel or hosted HTTPS /mcp URL.",
     "Stop before any public tunnel or ChatGPT connector action until separately authorized."
   ]
 }

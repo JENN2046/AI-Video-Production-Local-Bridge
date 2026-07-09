@@ -2487,3 +2487,36 @@ Notes:
 - R2G-K prepared exact live connector authorization fields, minimum live smoke sequence, and stop conditions.
 - `git diff --check`: PASS with CRLF warnings only.
 - No public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+
+### R2G-L - 2026-07-09T16:07:30+08:00
+
+Commands:
+
+```bash
+npm run r2g:l:read-only-entry-prep
+node -e JSON.parse(...) with R2G-L result check
+npm run typecheck
+npm run test:r2g:mcp
+npm run secret:scan
+git diff --check
+```
+
+Result:
+
+```text
+PASS_READ_ONLY_LIVE_SMOKE_LOCAL_ENTRY_PREP
+```
+
+Evidence:
+- `data/reports/r2g_l_chatgpt_connector_read_only_live_smoke_local_entry_prep_result.json`
+- `src/tools/chatGptMcpHttpTransport.ts`
+- `scripts/r2g-l-chatgpt-read-only-live-smoke-local-entry-prep.ts`
+- `scripts/r2g-l-chatgpt-read-only-live-smoke-local-entry-server.ts`
+- `tests/chatgpt-mcp-bridge.test.ts`
+
+Notes:
+- R2G-L local entry binds to `127.0.0.1`, lists only `READ_ONLY` tools, and closes after the prep dry-run.
+- Local smoke verified `initialize`, `tools/list`, approved `get_project_status`, draft/human-confirmed/provider/unknown tool fail-closed, schema fail-closed, and false boundary flags.
+- `npm run test:r2g:mcp`: PASS, 18 tests.
+- `git diff --check`: PASS with CRLF warnings only.
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.

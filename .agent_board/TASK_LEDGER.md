@@ -4270,3 +4270,74 @@ Git delivery:
 Boundary:
 - R2G-G remains `FOLLOW_UP`.
 - No public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+
+### 2026-07-09T16:07:30+08:00 - R2G-L ChatGPT Connector Read-Only Live Smoke Local Entry Prep
+
+Result: DONE / PASS_READ_ONLY_LIVE_SMOKE_LOCAL_ENTRY_PREP
+Project: AI Video Production Workspace GPT Bridge Line
+Lane: ChatGPT MCP Bridge
+Run ID: codex-20260709-155633-r2g-l
+Started at: 2026-07-09T15:56:33+08:00
+Completed at: 2026-07-09T16:07:30+08:00
+
+Scope:
+- Prepared a local-only read-only MCP HTTP entry for a future ChatGPT connector live smoke.
+- Restricted R2G-L tool listing and calls to `READ_ONLY` tools only.
+- Added a future local server command for exact-authorized live smoke.
+- Generated a local-only readiness report.
+
+Changed files:
+- `.agent_board/NEXT_TASK.json`
+- `.agent_board/NEXT_TASK.md`
+- `.agent_board/RUN_LOCK.md`
+- `.agent_board/VALIDATION_LOG.md`
+- `.agent_board/HANDOFF.md`
+- `.agent_board/TASK_LEDGER.md`
+- `package.json`
+- `scripts/r2g-l-chatgpt-read-only-live-smoke-local-entry-prep.ts`
+- `scripts/r2g-l-chatgpt-read-only-live-smoke-local-entry-server.ts`
+- `src/index.ts`
+- `src/tools/chatGptMcpBridge.ts`
+- `src/tools/chatGptMcpHttpTransport.ts`
+- `tests/chatgpt-mcp-bridge.test.ts`
+- `data/reports/r2g_l_chatgpt_connector_read_only_live_smoke_local_entry_prep_result.json`
+
+Validation:
+- command: `npm run r2g:l:read-only-entry-prep`
+  result: PASS
+- command: JSON parse and result check for R2G-L report
+  result: PASS
+- command: `npm run typecheck`
+  result: PASS
+- command: `npm run test:r2g:mcp`
+  result: PASS
+- command: `npm run secret:scan`
+  result: PASS
+- command: `git diff --check`
+  result: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- `data/reports/r2g_l_chatgpt_connector_read_only_live_smoke_local_entry_prep_result.json`
+- R2G-L local smoke verified `initialize`, `tools/list`, approved `get_project_status`, fail-closed blocked tools, schema validation, and false boundary flags.
+
+Git delivery:
+- repo: yes
+- branch: master
+- commit: PENDING_LOCAL_COMMIT
+- push: no
+- PR: none
+
+Memory:
+- written: no
+- location/type: none
+
+Boundary:
+- approval required for next live step: yes, before public tunnel or ChatGPT connector creation.
+- unsafe action not performed: public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, secret output, push, tag, release, publish, or production configuration change.
+
+Risks:
+- R2G-L is still local-only; ChatGPT webpage connection still requires a separately authorized public HTTPS `/mcp` route and connector setup.
+- `ngrok` and `cloudflared` were not installed during the earlier precheck.
+
+Next:
+- Use `npm run r2g:l:serve-read-only -- --port 2091` only as part of a future exact-authorized live connector smoke.

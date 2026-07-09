@@ -1,0 +1,170 @@
+{
+  "task_id": "R2G-L_CHATGPT_CONNECTOR_READ_ONLY_LIVE_SMOKE_LOCAL_ENTRY_PREP",
+  "result": "PASS_READ_ONLY_LIVE_SMOKE_LOCAL_ENTRY_PREP",
+  "generated_at": "2026-07-09T08:05:24.746Z",
+  "bridge_version": "chatgpt-mcp-local-bridge-r2g",
+  "app_archetype": "tool-only",
+  "official_docs_rechecked": [
+    {
+      "title": "Build your MCP server",
+      "url": "https://developers.openai.com/apps-sdk/build/mcp-server",
+      "implication": "The local entry exposes tool descriptors and tool results with structuredContent/content/_meta while enforcing auth and action boundaries server-side."
+    },
+    {
+      "title": "Deploy your app",
+      "url": "https://developers.openai.com/apps-sdk/deploy",
+      "implication": "Future ChatGPT testing needs a public HTTPS tunnel or hosted /mcp endpoint; this task intentionally does not start one."
+    },
+    {
+      "title": "Connect from ChatGPT",
+      "url": "https://developers.openai.com/apps-sdk/deploy/connect-chatgpt",
+      "implication": "Future connector creation needs developer mode, connector metadata, and a reachable HTTPS /mcp URL; this task remains local-only."
+    }
+  ],
+  "local_entry": {
+    "transport": "read_only_live_smoke_local_entry",
+    "host": "127.0.0.1",
+    "port": 60026,
+    "mcp_url": "http://127.0.0.1:60026/mcp",
+    "recommended_future_local_port": 2091,
+    "localhost_only": true,
+    "public_endpoint": false,
+    "public_tunnel_started": false,
+    "chatgpt_connector_created": false,
+    "read_only_only": true,
+    "tunnel_ready_host_header": true,
+    "server_closed_after_run": true
+  },
+  "tool_surface": {
+    "listed_tool_names": [
+      "get_project_status",
+      "lookup_media_artifact",
+      "check_import_readiness",
+      "get_review_package",
+      "get_closeout_evidence"
+    ],
+    "listed_tool_count": 5,
+    "expected_read_only_tool_names": [
+      "get_project_status",
+      "lookup_media_artifact",
+      "check_import_readiness",
+      "get_review_package",
+      "get_closeout_evidence"
+    ],
+    "excluded_non_read_only_tools": [
+      {
+        "name": "submit_storyboard_draft",
+        "mode": "DRAFT_ONLY"
+      },
+      {
+        "name": "request_package_freeze",
+        "mode": "HUMAN_CONFIRMATION_REQUIRED"
+      },
+      {
+        "name": "draft_human_review_decision",
+        "mode": "DRAFT_ONLY"
+      }
+    ],
+    "provider_tools_exposed": false,
+    "write_tools_exposed": false
+  },
+  "local_smoke_checks": {
+    "health": {
+      "status": 200,
+      "ok": true
+    },
+    "initialize": {
+      "status": 200,
+      "ok": true
+    },
+    "list_read_only_tools": {
+      "status": 200,
+      "ok": true,
+      "tool_count": 5
+    },
+    "call_get_project_status": {
+      "status": 200,
+      "ok": true
+    },
+    "deny_draft_tool": {
+      "status": 200,
+      "ok": true,
+      "error_code": "READ_ONLY_LIVE_SMOKE_ONLY"
+    },
+    "deny_human_confirmed_tool": {
+      "status": 200,
+      "ok": true,
+      "error_code": "READ_ONLY_LIVE_SMOKE_ONLY"
+    },
+    "deny_provider_tool": {
+      "status": 200,
+      "ok": true,
+      "error_code": "FORBIDDEN_ACTION"
+    },
+    "deny_unknown_tool": {
+      "status": 200,
+      "ok": true,
+      "error_code": "TOOL_NOT_FOUND"
+    },
+    "schema_validation_fail_closed": {
+      "status": 200,
+      "ok": true,
+      "error_code": "UNKNOWN_INPUT_FIELD"
+    },
+    "boundary_flags_remain_false": true
+  },
+  "boundary_observed": {
+    "localhost_http_requests_performed": true,
+    "localhost_http_request_count": 8,
+    "public_tunnel_started": false,
+    "public_mcp_endpoint_created": false,
+    "chatgpt_connector_created": false,
+    "deploy_performed": false,
+    "env_files_read": false,
+    "credentials_read": false,
+    "external_provider_or_api_call_attempted": false,
+    "provider_api_called": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false,
+    "publish_performed": false,
+    "production_configuration_changed": false
+  },
+  "future_live_smoke_command_template": {
+    "local_server_command": "npm run r2g:l:serve-read-only -- --port 2091",
+    "public_tunnel_command_required_later": true,
+    "chatgpt_connector_creation_required_later": true,
+    "requires_exact_future_authorization": true
+  },
+  "provider_boundary": {
+    "public_tunnel_started": false,
+    "public_mcp_endpoint_created": false,
+    "chatgpt_connector_created": false,
+    "network_call_attempted": false,
+    "provider_called": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "provider_credits_consumed": false,
+    "env_files_read": false,
+    "credentials_read": false,
+    "secret_values_exposed": false,
+    "source_assets_overwritten": false,
+    "raw_provider_payload_recorded": false,
+    "signed_url_recorded": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false,
+    "publish_performed": false,
+    "production_configuration_changed": false
+  },
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "PENDING_LOCAL_COMMIT",
+    "task": "R2G-L_CHATGPT_CONNECTOR_READ_ONLY_LIVE_SMOKE_LOCAL_ENTRY_PREP",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  }
+}

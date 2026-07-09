@@ -340,6 +340,10 @@ export function listChatGptMcpToolDescriptors(): ChatGptMcpToolDescriptor[] {
   return deepClone(CHATGPT_MCP_TOOL_DESCRIPTORS);
 }
 
+export function listChatGptMcpReadOnlyToolDescriptors(): ChatGptMcpToolDescriptor[] {
+  return deepClone(CHATGPT_MCP_TOOL_DESCRIPTORS.filter((descriptor) => descriptor.security.mode === "READ_ONLY"));
+}
+
 function descriptorByName(name: string): ChatGptMcpToolDescriptor | null {
   return CHATGPT_MCP_TOOL_DESCRIPTORS.find((descriptor) => descriptor.name === name) ?? null;
 }
@@ -602,6 +606,25 @@ export function executeChatGptMcpTool(
   const data = TOOL_HANDLERS[descriptor.name](input, db);
   if ("result" in data) return wrapExistingResult(descriptor.name, descriptor.security.mode, data.result, `${descriptor.title} succeeded.`);
   return ok(descriptor.name, descriptor.security.mode, data, `${descriptor.title} succeeded.`);
+}
+
+export function executeChatGptMcpReadOnlyTool(
+  name: string,
+  input: Record<string, unknown> = {},
+  db = openM0Database()
+): ChatGptMcpToolResultEnvelope {
+  if (isForbiddenName(name)) return fail("unknown", "FORBIDDEN", "FORBIDDEN_ACTION", `Forbidden MCP action: ${name}`);
+  const descriptor = descriptorByName(name);
+  if (!descriptor) return fail("unknown", "FORBIDDEN", "TOOL_NOT_FOUND", `MCP tool not found: ${name}`);
+  if (descriptor.security.mode !== "READ_ONLY") {
+    return fail(
+      descriptor.name,
+      "FORBIDDEN",
+      "READ_ONLY_LIVE_SMOKE_ONLY",
+      `The R2G-L live smoke local entry only exposes READ_ONLY tools; ${name} is ${descriptor.security.mode}.`
+    );
+  }
+  return executeChatGptMcpTool(name, input, db);
 }
 
 export function createChatGptMcpLocalServer(db = openM0Database()): ChatGptMcpLocalServer {

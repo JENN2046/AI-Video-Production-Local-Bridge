@@ -348,8 +348,10 @@ export {
   CHATGPT_MCP_LOCAL_TEST_SERVER_NAME,
   CHATGPT_MCP_TOOL_DESCRIPTORS,
   createChatGptMcpLocalServer,
+  executeChatGptMcpReadOnlyTool,
   executeChatGptMcpTool,
   FORBIDDEN_CHATGPT_MCP_TOOL_NAMES,
+  listChatGptMcpReadOnlyToolDescriptors,
   listChatGptMcpToolDescriptors
 } from "./tools/chatGptMcpBridge.js";
 export type {
@@ -364,10 +366,14 @@ export type {
 export {
   CHATGPT_MCP_HTTP_LOCAL_HOST,
   CHATGPT_MCP_HTTP_LOCAL_TRANSPORT,
+  CHATGPT_MCP_HTTP_READ_ONLY_LIVE_SMOKE_LOCAL_TRANSPORT,
+  CHATGPT_MCP_READ_ONLY_LIVE_SMOKE_RECOMMENDED_PORT,
   runR2GHttpMcpTransportLocalDryRun,
-  startChatGptMcpHttpLocalHarness
+  runR2GReadOnlyLiveSmokeLocalEntryPrep,
+  startChatGptMcpHttpLocalHarness,
+  startChatGptMcpReadOnlyLiveSmokeLocalEntry
 } from "./tools/chatGptMcpHttpTransport.js";
-export type { ChatGptMcpHttpLocalHarness } from "./tools/chatGptMcpHttpTransport.js";
+export type { ChatGptMcpHttpLocalHarness, ChatGptMcpReadOnlyLiveSmokeLocalEntry } from "./tools/chatGptMcpHttpTransport.js";
 export {
   confirmMemorySavebackProposal,
   createMemorySavebackProposal,

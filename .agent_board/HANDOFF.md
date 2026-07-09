@@ -1,14 +1,28 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260709-153013-r2g-k
-Last result: R2G-K connector authorization final prep completed
+Last run: codex-20260709-155633-r2g-l
+Last result: R2G-L read-only live smoke local entry prep completed
 
 ## Current state
 
 Current task: none
 Current status: EMPTY
 Current owner: none
+
+## R2G-L Closeout
+
+- Claimed at 2026-07-09T15:56:33+08:00 by Codex R2G-L read-only live smoke local entry prep.
+- Run ID: `codex-20260709-155633-r2g-l`.
+- Completed at 2026-07-09T16:07:30+08:00 with `PASS_READ_ONLY_LIVE_SMOKE_LOCAL_ENTRY_PREP`.
+- Report: `data/reports/r2g_l_chatgpt_connector_read_only_live_smoke_local_entry_prep_result.json`.
+- Implemented a local-only read-only MCP HTTP entry: `read_only_live_smoke_local_entry`.
+- Future local server command: `npm run r2g:l:serve-read-only -- --port 2091`.
+- The R2G-L entry binds to `127.0.0.1`, lists only `READ_ONLY` tools, and denies draft, human-confirmed write, provider, unknown, and schema-invalid tool calls fail-closed.
+- Validation passed: `npm run r2g:l:read-only-entry-prep`, JSON parse/result check, `npm run typecheck`, `npm run test:r2g:mcp`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
+- Boundary: no public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, push, tag, release, deploy, publish, or production configuration change occurred.
+- Local commit: `PENDING_LOCAL_COMMIT`.
+- Next live step still requires a separate exact Jenn authorization phrase with endpoint mode and concrete tunnel or hosted HTTPS `/mcp` URL.
 
 ## R2G-K Closeout
 
