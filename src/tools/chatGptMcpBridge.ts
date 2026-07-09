@@ -786,7 +786,24 @@ const TOOL_HANDLERS: Record<ChatGptMcpToolName, ToolHandler> = {
     return { result: executeWebGptReviewAssistantTool("propose_regeneration_prompt", { artifact_id: input.artifact_id, prompt_delta: input.prompt_delta }, db) };
   },
   get_closeout_evidence(_input, db) {
+    const finalDeliveryStatus = buildFinalDeliveryStatus(db);
+    const finalDelivery = recordAt(finalDeliveryStatus, "final_delivery");
+    const finalVideo = recordAt(finalDelivery, "final_video");
+    const finalApproval = recordAt(finalDelivery, "final_approval");
+    const h1State = recordAt(finalDeliveryStatus, "h1_workbench_state");
+    const h1Validation = recordAt(h1State, "validation");
+    const reports = recordAt(finalDelivery, "reports");
+    const evidenceManifest = recordAt(reports, "evidence_manifest");
     return {
+      final_delivery_status: stringAt(finalDelivery, "status"),
+      closeout_result: stringAt(finalDelivery, "closeout_result"),
+      final_video_review_decision: stringAt(finalApproval, "decision"),
+      final_artifact_id: stringAt(finalVideo, "final_video_artifact_id"),
+      evidence_manifest_path: stringAt(evidenceManifest, "relative_path"),
+      blockers: Array.isArray(h1Validation.blockers) ? h1Validation.blockers : [],
+      final_delivery: finalDelivery,
+      h1_workbench_state: h1State,
+      state_surface_reconciliation: recordAt(finalDeliveryStatus, "reconciliation"),
       latest_reports: executeWebGptReadOnlyTool("get_latest_reports", {}, db),
       draft_summary: webGptDraftWorkbenchSummary(),
       pending_action_summary: webGptPendingActionWorkbenchSummary(),

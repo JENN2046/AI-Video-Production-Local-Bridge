@@ -199,6 +199,25 @@ test("R2G project status includes final delivery dashboard distinction", () => {
   assert.equal(reconciliation.should_generate_next_without_new_task, false);
 });
 
+test("R2G closeout evidence exposes final delivery status for cached connector tool lists", () => {
+  const result = executeChatGptMcpReadOnlyTool("get_closeout_evidence", {});
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, "READ_ONLY");
+  assertMcpEnvelopeConforms(result);
+
+  const data = nestedRecord(result.structuredContent.data, "closeout evidence data");
+  assert.equal(data.final_delivery_status, "FINAL_APPROVED");
+  assert.equal(data.closeout_result, "PASS_FINAL_DELIVERY_CLOSEOUT_READY");
+  assert.equal(data.final_video_review_decision, "accept");
+  assert.equal(data.final_artifact_id, "artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe");
+  assert.equal(data.evidence_manifest_path, "data/reports/r3_9r_final_delivery_evidence_manifest.json");
+
+  const reconciliation = nestedRecord(data.state_surface_reconciliation, "state surface reconciliation");
+  assert.equal(reconciliation.state_surface, "R3_FINAL_APPROVED_H1_DRAFT_UNSYNCED");
+  assert.equal(reconciliation.provider_action_exposed, false);
+  assert.equal(Array.isArray(data.blockers), true);
+});
+
 test("R2G draft tool creates draft evidence only and does not freeze package truth", () => {
   const beforeDrafts = loadWebGptDraftStore().drafts.length;
   const beforeFrozen = loadH1WorkbenchState().frozen_package_history.length;
