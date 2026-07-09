@@ -337,6 +337,7 @@ export {
   buildR2GCloseoutReport,
   buildR2GConfirmationGateReport,
   buildR2GDryRunReport,
+  buildR2GHardeningFixReport,
   buildR2GLocalServerSkeletonReport,
   buildR2GSecurityModelReport,
   buildR2GToolContractReport,

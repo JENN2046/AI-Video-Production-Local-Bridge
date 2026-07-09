@@ -1,7 +1,7 @@
 # NEXT_TASK
 
 task_id: R2G-H1_MCP_SCHEMA_AND_DESCRIPTOR_HARDENING_FIX
-status: READY
+status: DONE
 priority: P0
 lane: ChatGPT MCP Bridge
 project: AI Video Production Workspace GPT Bridge Line
@@ -25,15 +25,29 @@ Harden the local R2G MCP bridge contract before any live ChatGPT connector prepa
 
 ## Validation
 
-- `npm run r2g:b:contract`
-- `npm run r2g:e:gates`
-- `npm run r2g:f:closeout`
-- JSON parse for `data/reports/r2g_h1_mcp_schema_and_descriptor_hardening_fix_result.json`
-- JSON parse for `fixtures/mcp/chatgpt_mcp_tool_contract_r2g_b.json`
-- `npm run typecheck`
-- `npm run test:r2g:mcp`
-- `npm run secret:scan`
-- `git diff --check`
+- `npm run r2g:b:contract`: PASS
+- `npm run r2g:e:gates`: PASS
+- `npm run r2g:f:closeout`: PASS
+- JSON parse for `data/reports/r2g_h1_mcp_schema_and_descriptor_hardening_fix_result.json`: PASS
+- JSON parse for `fixtures/mcp/chatgpt_mcp_tool_contract_r2g_b.json`: PASS
+- `npm run typecheck`: PASS
+- `npm run test:r2g:mcp`: PASS
+- `npm run secret:scan`: PASS
+- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+
+## Result
+
+result: PASS_MCP_SCHEMA_AND_DESCRIPTOR_HARDENED
+completed_at: 2026-07-09T14:16:55+08:00
+completed_by: Codex R2G-H1 schema descriptor hardening
+commit: PENDING_LOCAL_COMMIT
+
+## Evidence
+
+- `data/reports/r2g_h1_mcp_schema_and_descriptor_hardening_fix_result.json`
+- `fixtures/mcp/chatgpt_mcp_tool_contract_r2g_b.json`
+- `tests/chatgpt-mcp-bridge.test.ts`
+- `src/tools/chatGptMcpBridge.ts`
 
 ## Boundary
 

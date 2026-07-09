@@ -4055,3 +4055,44 @@ Git delivery:
 Boundary:
 - R2G-G remains `FOLLOW_UP`.
 - No public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+
+### 2026-07-09T14:16:55+08:00 - R2G-H1 MCP Schema And Descriptor Hardening Fix
+
+Result: DONE / PASS_MCP_SCHEMA_AND_DESCRIPTOR_HARDENED
+Project: AI Video Production Workspace GPT Bridge Line
+Lane: ChatGPT MCP Bridge
+Run ID: codex-20260709-140944-r2g-h1
+Completed at: 2026-07-09T14:16:55+08:00
+
+Scope:
+- Fixed R2G-H finding 001: MCP success and failure `structuredContent` now conform to the declared output schema.
+- Fixed R2G-H finding 002: the executor validates `inputSchema` before handlers and rejects unexpected top-level fields when `additionalProperties:false`.
+- Fixed R2G-H finding 003: global tool descriptors are deep-frozen and descriptor listing returns deep clones.
+- Regenerated affected R2G reports and the R2G-B schema fixture.
+
+Validation:
+- `npm run r2g:b:contract`: PASS
+- `npm run r2g:e:gates`: PASS
+- `npm run r2g:f:closeout`: PASS
+- JSON parse for H1 report and R2G-B fixture: PASS
+- `npm run typecheck`: PASS
+- `npm run test:r2g:mcp`: PASS
+- `npm run secret:scan`: PASS
+- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- `src/tools/chatGptMcpBridge.ts`
+- `tests/chatgpt-mcp-bridge.test.ts`
+- `fixtures/mcp/chatgpt_mcp_tool_contract_r2g_b.json`
+- `data/reports/r2g_h1_mcp_schema_and_descriptor_hardening_fix_result.json`
+- `data/reports/r2g_b_mcp_tool_schema_and_contract_freeze_result.json`
+- `data/reports/r2g_e_human_confirmation_and_write_gates_result.json`
+- `data/reports/r2g_f_mcp_packaging_closeout_result.json`
+
+Git delivery:
+- commit: PENDING_LOCAL_COMMIT
+- push: no
+
+Boundary:
+- R2G-G remains `FOLLOW_UP`.
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.

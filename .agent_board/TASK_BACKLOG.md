@@ -4319,7 +4319,7 @@ Review the R2G local MCP package with a live-connector readiness lens, before an
 
 ## R2G-H1_MCP_SCHEMA_AND_DESCRIPTOR_HARDENING_FIX - MCP Schema And Descriptor Hardening Fix
 
-status: READY
+status: DONE
 priority: P0
 lane: ChatGPT MCP Bridge
 project: AI Video Production Workspace GPT Bridge Line
@@ -4332,7 +4332,15 @@ self_review_report: data/reports/r2g_h1_taskbook_self_review_result.json
 allowed_delivery: schema_validation_fix,descriptor_immutability_fix,tests,task_board_update,local_commit
 blocked_delivery: public_tunnel,public_mcp_endpoint,chatgpt_connector_creation,provider_call,env_file_read,credential_read,secret_value_output,source_overwrite,push,tag,release,deploy,publish,production_configuration_change
 created_at: 2026-07-09T13:51:45+08:00
-updated_at: 2026-07-09T14:01:18+08:00
+updated_at: 2026-07-09T14:16:55+08:00
+claimed_by: Codex R2G-H1 schema descriptor hardening
+claim_run_id: codex-20260709-140944-r2g-h1
+claimed_at: 2026-07-09T14:09:44+08:00
+completed_by: Codex R2G-H1 schema descriptor hardening
+completed_at: 2026-07-09T14:16:55+08:00
+result: PASS_MCP_SCHEMA_AND_DESCRIPTOR_HARDENED
+validation_result: PASS
+commit: PENDING_LOCAL_COMMIT
 
 ### Goal
 
@@ -4372,6 +4380,14 @@ Fix R2G-H acceptance findings before public ChatGPT connector preparation.
 - `npm run test:r2g:mcp`
 - `npm run secret:scan`
 - `git diff --check`
+
+### Result
+
+- Fixed `R2G-H-FINDING-001`: MCP success and failure `structuredContent` now conform to the declared output schema with `ok`, `data`, `error`, and `boundary`.
+- Fixed `R2G-H-FINDING-002`: the executor validates tool `inputSchema` before handlers and rejects unexpected top-level fields when `additionalProperties:false`.
+- Fixed `R2G-H-FINDING-003`: global descriptors are deep-frozen and descriptor listing returns deep clones so nested metadata mutation cannot affect global state.
+- Regenerated R2G-B, R2G-E, R2G-F, H1 report, and the R2G-B schema fixture.
+- Validation passed: `npm run r2g:b:contract`, `npm run r2g:e:gates`, `npm run r2g:f:closeout`, JSON parse checks, `npm run typecheck`, `npm run test:r2g:mcp`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
 
 ### Boundary
 

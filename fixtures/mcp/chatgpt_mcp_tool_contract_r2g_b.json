@@ -1,6 +1,6 @@
 {
   "generated_from_report": "data/reports/r2g_b_mcp_tool_schema_and_contract_freeze_result.json",
-  "generated_at": "2026-07-08T13:11:12.433Z",
+  "generated_at": "2026-07-09T06:13:38.560Z",
   "bridge_version": "chatgpt-mcp-local-bridge-r2g",
   "tool_contract": [
     {
@@ -26,6 +26,9 @@
           "data": {
             "type": "object"
           },
+          "error": {
+            "type": "object"
+          },
           "boundary": {
             "type": "object"
           }
@@ -33,9 +36,10 @@
         "required": [
           "ok",
           "data",
+          "error",
           "boundary"
         ],
-        "additionalProperties": true
+        "additionalProperties": false
       },
       "annotations": {
         "readOnlyHint": true,
@@ -86,6 +90,9 @@
           "data": {
             "type": "object"
           },
+          "error": {
+            "type": "object"
+          },
           "boundary": {
             "type": "object"
           }
@@ -93,9 +100,10 @@
         "required": [
           "ok",
           "data",
+          "error",
           "boundary"
         ],
-        "additionalProperties": true
+        "additionalProperties": false
       },
       "annotations": {
         "readOnlyHint": true,
@@ -180,6 +188,9 @@
           "data": {
             "type": "object"
           },
+          "error": {
+            "type": "object"
+          },
           "boundary": {
             "type": "object"
           }
@@ -187,9 +198,10 @@
         "required": [
           "ok",
           "data",
+          "error",
           "boundary"
         ],
-        "additionalProperties": true
+        "additionalProperties": false
       },
       "annotations": {
         "readOnlyHint": false,
@@ -232,6 +244,9 @@
           "data": {
             "type": "object"
           },
+          "error": {
+            "type": "object"
+          },
           "boundary": {
             "type": "object"
           }
@@ -239,9 +254,10 @@
         "required": [
           "ok",
           "data",
+          "error",
           "boundary"
         ],
-        "additionalProperties": true
+        "additionalProperties": false
       },
       "annotations": {
         "readOnlyHint": true,
@@ -292,6 +308,9 @@
           "data": {
             "type": "object"
           },
+          "error": {
+            "type": "object"
+          },
           "boundary": {
             "type": "object"
           }
@@ -299,9 +318,10 @@
         "required": [
           "ok",
           "data",
+          "error",
           "boundary"
         ],
-        "additionalProperties": true
+        "additionalProperties": false
       },
       "annotations": {
         "readOnlyHint": false,
@@ -349,6 +369,9 @@
           "data": {
             "type": "object"
           },
+          "error": {
+            "type": "object"
+          },
           "boundary": {
             "type": "object"
           }
@@ -356,9 +379,10 @@
         "required": [
           "ok",
           "data",
+          "error",
           "boundary"
         ],
-        "additionalProperties": true
+        "additionalProperties": false
       },
       "annotations": {
         "readOnlyHint": true,
@@ -430,6 +454,9 @@
           "data": {
             "type": "object"
           },
+          "error": {
+            "type": "object"
+          },
           "boundary": {
             "type": "object"
           }
@@ -437,9 +464,10 @@
         "required": [
           "ok",
           "data",
+          "error",
           "boundary"
         ],
-        "additionalProperties": true
+        "additionalProperties": false
       },
       "annotations": {
         "readOnlyHint": false,
@@ -482,6 +510,9 @@
           "data": {
             "type": "object"
           },
+          "error": {
+            "type": "object"
+          },
           "boundary": {
             "type": "object"
           }
@@ -489,9 +520,10 @@
         "required": [
           "ok",
           "data",
+          "error",
           "boundary"
         ],
-        "additionalProperties": true
+        "additionalProperties": false
       },
       "annotations": {
         "readOnlyHint": true,

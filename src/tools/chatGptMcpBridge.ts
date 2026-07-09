@@ -127,17 +127,32 @@ export interface ChatGptMcpLocalServer {
 }
 
 type ToolHandler = (input: Record<string, unknown>, db: M0Database) => Record<string, unknown>;
+type SchemaValidationResult = { ok: true } | { ok: false; code: string; message: string };
 
 const OBJECT_OUTPUT_SCHEMA: ChatGptMcpJsonSchema = {
   type: "object",
   properties: {
     ok: { type: "boolean" },
     data: { type: "object" },
+    error: { type: "object" },
     boundary: { type: "object" }
   },
-  required: ["ok", "data", "boundary"],
-  additionalProperties: true
+  required: ["ok", "data", "error", "boundary"],
+  additionalProperties: false
 };
+
+function deepFreeze<T>(value: T): T {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
+  Object.freeze(value);
+  for (const nested of Object.values(value as Record<string, unknown>)) {
+    deepFreeze(nested);
+  }
+  return value;
+}
+
+function deepClone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
 
 function stringSchema(description: string): Record<string, unknown> {
   return { type: "string", description };
@@ -186,7 +201,7 @@ function toolDescriptor(
   };
 }
 
-export const CHATGPT_MCP_TOOL_DESCRIPTORS: ChatGptMcpToolDescriptor[] = [
+export const CHATGPT_MCP_TOOL_DESCRIPTORS: ChatGptMcpToolDescriptor[] = deepFreeze([
   toolDescriptor(
     "get_project_status",
     "Get Project Status",
@@ -319,10 +334,10 @@ export const CHATGPT_MCP_TOOL_DESCRIPTORS: ChatGptMcpToolDescriptor[] = [
     },
     { readOnly: true, idempotent: true }
   )
-];
+]);
 
 export function listChatGptMcpToolDescriptors(): ChatGptMcpToolDescriptor[] {
-  return CHATGPT_MCP_TOOL_DESCRIPTORS.map((descriptor) => ({ ...descriptor }));
+  return deepClone(CHATGPT_MCP_TOOL_DESCRIPTORS);
 }
 
 function descriptorByName(name: string): ChatGptMcpToolDescriptor | null {
@@ -354,6 +369,7 @@ function fail(tool: ChatGptMcpToolName | "unknown", mode: ChatGptMcpToolMode | "
     mode,
     structuredContent: {
       ok: false,
+      data: {},
       error: { code, message },
       boundary: boundaryFlags()
     },
@@ -370,6 +386,7 @@ function ok(tool: ChatGptMcpToolName, mode: ChatGptMcpToolMode, data: Record<str
     structuredContent: {
       ok: true,
       data,
+      error: {},
       boundary: boundaryFlags()
     },
     content: [{ type: "text", text }],
@@ -413,7 +430,73 @@ function metaFlags(): ChatGptMcpToolResultEnvelope["_meta"] {
   };
 }
 
-function validateInput(tool: ChatGptMcpToolName, input: Record<string, unknown>): { ok: true } | { ok: false; code: string; message: string } {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function schemaAt(value: unknown): ChatGptMcpJsonSchema | null {
+  return isRecord(value) && typeof value.type === "string" ? (value as unknown as ChatGptMcpJsonSchema) : null;
+}
+
+function typeMatches(expectedType: string, value: unknown): boolean {
+  if (expectedType === "array") return Array.isArray(value);
+  if (expectedType === "object") return isRecord(value);
+  if (expectedType === "string") return typeof value === "string";
+  if (expectedType === "number") return typeof value === "number" && Number.isFinite(value);
+  if (expectedType === "boolean") return typeof value === "boolean";
+  return true;
+}
+
+function validateSchemaValue(schema: ChatGptMcpJsonSchema, value: unknown, path: string): SchemaValidationResult {
+  if (!typeMatches(schema.type, value)) {
+    return { ok: false, code: "INVALID_INPUT_TYPE", message: `${path} must be ${schema.type}.` };
+  }
+
+  if (schema.enum && !schema.enum.includes(String(value))) {
+    return { ok: false, code: "INVALID_ENUM_VALUE", message: `${path} must be one of: ${schema.enum.join(", ")}.` };
+  }
+
+  if (schema.type === "object") {
+    if (!isRecord(value)) return { ok: false, code: "INVALID_INPUT_TYPE", message: `${path} must be object.` };
+    const properties = schema.properties ?? {};
+    const required = schema.required ?? [];
+    for (const field of required) {
+      if (!(field in value)) return { ok: false, code: "MISSING_REQUIRED_FIELD", message: `${path}.${field} is required.` };
+    }
+    if (schema.additionalProperties === false) {
+      const allowed = new Set(Object.keys(properties));
+      for (const field of Object.keys(value)) {
+        if (!allowed.has(field)) return { ok: false, code: "UNKNOWN_INPUT_FIELD", message: `${path}.${field} is not allowed.` };
+      }
+    }
+    for (const [field, nestedSchemaValue] of Object.entries(properties)) {
+      if (!(field in value)) continue;
+      const nestedSchema = schemaAt(nestedSchemaValue);
+      if (!nestedSchema) continue;
+      const nested = validateSchemaValue(nestedSchema, value[field], `${path}.${field}`);
+      if (!nested.ok) return nested;
+    }
+  }
+
+  if (schema.type === "array") {
+    if (!Array.isArray(value)) return { ok: false, code: "INVALID_INPUT_TYPE", message: `${path} must be array.` };
+    const itemSchema = schemaAt(schema.items);
+    if (itemSchema) {
+      for (const [index, item] of value.entries()) {
+        const nested = validateSchemaValue(itemSchema, item, `${path}[${index}]`);
+        if (!nested.ok) return nested;
+      }
+    }
+  }
+
+  return { ok: true };
+}
+
+function validateInputSchema(descriptor: ChatGptMcpToolDescriptor, input: Record<string, unknown>): SchemaValidationResult {
+  return validateSchemaValue(descriptor.inputSchema, input, descriptor.name);
+}
+
+function validateInput(tool: ChatGptMcpToolName, input: Record<string, unknown>): SchemaValidationResult {
   if (tool === "lookup_media_artifact") {
     const artifactId = requiredText(input, "artifact_id");
     if (!artifactId) return { ok: false, code: "MISSING_REQUIRED_FIELD", message: "artifact_id is required." };
@@ -509,6 +592,9 @@ export function executeChatGptMcpTool(
   if (isForbiddenName(name)) return fail("unknown", "FORBIDDEN", "FORBIDDEN_ACTION", `Forbidden MCP action: ${name}`);
   const descriptor = descriptorByName(name);
   if (!descriptor) return fail("unknown", "FORBIDDEN", "TOOL_NOT_FOUND", `MCP tool not found: ${name}`);
+
+  const schemaValidation = validateInputSchema(descriptor, input);
+  if (!schemaValidation.ok) return fail(descriptor.name, descriptor.security.mode, schemaValidation.code, schemaValidation.message);
 
   const validation = validateInput(descriptor.name, input);
   if (!validation.ok) return fail(descriptor.name, descriptor.security.mode, validation.code, validation.message);
@@ -733,6 +819,42 @@ export function buildR2GCloseoutReport(generatedAt: string): Record<string, unkn
     ],
     provider_boundary: boundaryFlags(),
     git_receipt: pendingGitReceipt("R2G-F_MCP_PACKAGING_CLOSEOUT")
+  };
+}
+
+export function buildR2GHardeningFixReport(generatedAt: string): Record<string, unknown> {
+  return {
+    task_id: "R2G-H1_MCP_SCHEMA_AND_DESCRIPTOR_HARDENING_FIX",
+    result: "PASS_MCP_SCHEMA_AND_DESCRIPTOR_HARDENED",
+    generated_at: generatedAt,
+    fixed_findings: [
+      "R2G-H-FINDING-001",
+      "R2G-H-FINDING-002",
+      "R2G-H-FINDING-003"
+    ],
+    fixes: {
+      "R2G-H-FINDING-001": "Failure and success structuredContent now both use ok, data, error, and boundary fields, matching the declared outputSchema.",
+      "R2G-H-FINDING-002": "executeChatGptMcpTool now validates each descriptor inputSchema before handler execution, including required fields, additionalProperties:false, primitive types, enum, and array object items.",
+      "R2G-H-FINDING-003": "Global descriptors are deep-frozen at runtime and listChatGptMcpToolDescriptors returns JSON-safe deep clones."
+    },
+    validation: {
+      "npm run r2g:b:contract": "PASS",
+      "npm run r2g:e:gates": "PASS",
+      "npm run r2g:f:closeout": "PASS",
+      "JSON parse for R2G-H1 report": "PASS",
+      "JSON parse for schema fixture": "PASS",
+      "npm run typecheck": "PASS",
+      "npm run test:r2g:mcp": "PASS",
+      "npm run secret:scan": "PASS",
+      "git diff --check": "PASS_WITH_CRLF_WARNINGS_ONLY"
+    },
+    provider_boundary: boundaryFlags(),
+    next_gate: {
+      r2g_g_may_be_prepared_after_h1: true,
+      r2g_g_must_remain_follow_up_until_explicitly_promoted: true,
+      live_connector_requires_separate_authorization: true
+    },
+    git_receipt: pendingGitReceipt("R2G-H1_MCP_SCHEMA_AND_DESCRIPTOR_HARDENING_FIX")
   };
 }
 

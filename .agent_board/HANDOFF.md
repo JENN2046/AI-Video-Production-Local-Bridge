@@ -1,14 +1,30 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260709-140118-r2g-h1-taskbook
-Last result: R2G-H1 taskbook arranged and self-reviewed
+Last run: codex-20260709-140944-r2g-h1
+Last result: R2G-H1 schema descriptor hardening completed
 
 ## Current state
 
-Current task: R2G-H1_MCP_SCHEMA_AND_DESCRIPTOR_HARDENING_FIX
-Current status: READY
+Current task: none
+Current status: EMPTY
 Current owner: none
+
+## R2G-H1 Closeout
+
+- Claimed at 2026-07-09T14:09:44+08:00 by Codex R2G-H1 schema descriptor hardening.
+- Run ID: `codex-20260709-140944-r2g-h1`.
+- Completed at 2026-07-09T14:16:55+08:00 with `PASS_MCP_SCHEMA_AND_DESCRIPTOR_HARDENED`.
+- Report: `data/reports/r2g_h1_mcp_schema_and_descriptor_hardening_fix_result.json`.
+- Fixed R2G-H finding 001: success and failure envelopes now match the declared output schema shape.
+- Fixed R2G-H finding 002: the executor enforces `inputSchema` before handlers and rejects unexpected top-level fields when `additionalProperties:false`.
+- Fixed R2G-H finding 003: tool descriptors are deep-frozen globally and descriptor listings return deep clones.
+- Regenerated R2G-B, R2G-E, R2G-F, H1 report, and `fixtures/mcp/chatgpt_mcp_tool_contract_r2g_b.json`.
+- Validation passed: `npm run r2g:b:contract`, `npm run r2g:e:gates`, `npm run r2g:f:closeout`, JSON parse checks, `npm run typecheck`, `npm run test:r2g:mcp`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
+- Boundary: local hardening only. No R2G-G, public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change.
+- Do not touch files remained untouched by this task: `scripts/h1-workbench.ts`, `drag_drop_cards_to_planner.gif`, `howtouseinbox.gif`.
+- Local commit: `PENDING_LOCAL_COMMIT`.
+- `R2G-G_CHATGPT_CONNECTOR_LIVE_CONNECTION_AUTHORIZATION_PREP` remains `FOLLOW_UP` and was not executed.
 
 ## R2G-H1 Taskbook Arrangement
 

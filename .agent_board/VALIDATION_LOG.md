@@ -2323,3 +2323,35 @@ Notes:
 - Taskbook covers R2G-H findings 001, 002, and 003.
 - R2G-G remains `FOLLOW_UP` and must not run before R2G-H1 is completed and accepted.
 - No public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+
+### R2G-H1 - 2026-07-09T14:16:55+08:00
+
+Commands:
+
+```bash
+npm run r2g:b:contract
+npm run r2g:e:gates
+npm run r2g:f:closeout
+npm run build && node dist/scripts/r2g-mcp-packaging.js r2g-h1
+node -e JSON.parse(...) for H1 report and R2G-B schema fixture
+npm run typecheck
+npm run test:r2g:mcp
+npm run secret:scan
+git diff --check
+```
+
+Result: `PASS_MCP_SCHEMA_AND_DESCRIPTOR_HARDENED`
+
+Evidence:
+- `data/reports/r2g_h1_mcp_schema_and_descriptor_hardening_fix_result.json`
+- `fixtures/mcp/chatgpt_mcp_tool_contract_r2g_b.json`
+- `tests/chatgpt-mcp-bridge.test.ts`
+- `src/tools/chatGptMcpBridge.ts`
+
+Notes:
+- R2G-H finding 001 fixed: MCP success and failure envelopes conform to the declared output schema.
+- R2G-H finding 002 fixed: executor enforces `inputSchema` and rejects top-level unknown fields when `additionalProperties:false`.
+- R2G-H finding 003 fixed: descriptors are deep-frozen globally and descriptor listings are deep-cloned.
+- `git diff --check`: PASS with CRLF warnings only.
+- R2G-G remains `FOLLOW_UP` and was not executed.
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
