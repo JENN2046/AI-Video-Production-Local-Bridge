@@ -26,6 +26,7 @@ const H1_IMPORT_REPORT_STEM = "h1_workbench_import_register_result";
 const H3_REVIEW_REPORT_STEM = "h3_video_review_result";
 const H4_FINAL_ASSEMBLY_REPORT_STEM = "h4_final_assembly_result";
 const H3_REVIEW_CLIP_LIMIT = 50;
+const H3_REVIEW_CLIP_MAX_LIMIT = 200;
 const APPROVED_REVIEW_STATUS = "approved_for_media_artifact_handoff";
 
 export const H1_PROVIDER_BOUNDARY = {
@@ -178,9 +179,30 @@ export interface H3VideoReviewItem {
 export interface H3VideoReviewSummary {
   generated_clips: H3VideoReviewItem[];
   generated_clip_limit: number;
+  generated_clip_offset: number;
   generated_clip_total_available: number;
+  generated_clip_filtered_available: number;
+  generated_clip_status_counts: {
+    all: number;
+    pending: number;
+    approved: number;
+    rejected: number;
+  };
+  generated_clip_shot_count_total: number;
+  generated_clip_shot_counts: Array<{ shot_id: string; count: number }>;
+  generated_clip_filters: {
+    status: "all" | H3VideoReviewItem["clip_review_status"];
+    shot_id: string;
+  };
   regeneration_request_drafts: H3RegenerationRequestDraft[];
   provider_boundary: typeof H1_PROVIDER_BOUNDARY;
+}
+
+export interface H3VideoReviewSummaryOptions {
+  status?: "all" | H3VideoReviewItem["clip_review_status"];
+  shot_id?: string;
+  offset?: number;
+  limit?: number;
 }
 
 export interface H4AssemblyClipPreview {
@@ -829,9 +851,23 @@ function reviewStatusForArtifact(shotId: string, artifactId: string, db: M0Datab
   return version?.review_status ?? "pending";
 }
 
-export function h3VideoReviewSummary(state = loadH1WorkbenchState(), db = openM0Database()): H3VideoReviewSummary {
+export function h3VideoReviewSummary(state = loadH1WorkbenchState(), db = openM0Database(), options: H3VideoReviewSummaryOptions = {}): H3VideoReviewSummary {
+  const statusFilter =
+    options.status === "pending" || options.status === "approved" || options.status === "rejected" ? options.status : "all";
+  const shotFilter = typeof options.shot_id === "string" ? options.shot_id.trim() : "";
+  const offset = Math.max(0, Math.floor(Number(options.offset ?? 0)));
+  const requestedLimit = Math.floor(Number(options.limit ?? H3_REVIEW_CLIP_LIMIT));
+  const limit = Math.min(H3_REVIEW_CLIP_MAX_LIMIT, Math.max(1, Number.isFinite(requestedLimit) ? requestedLimit : H3_REVIEW_CLIP_LIMIT));
   let generated_clip_total_available = 0;
+  let generated_clip_filtered_available = 0;
   const generated_clips: H3VideoReviewItem[] = [];
+  const generated_clip_status_counts = {
+    all: 0,
+    pending: 0,
+    approved: 0,
+    rejected: 0
+  };
+  const shotCounts = new Map<string, number>();
 
   for (const run of listGenerationRuns(db)) {
     const artifactIds = Array.isArray(run.output?.artifact_ids) ? run.output.artifact_ids : [];
@@ -840,9 +876,18 @@ export function h3VideoReviewSummary(state = loadH1WorkbenchState(), db = openM0
       if (!artifact || artifact.role !== "generated_clip" || artifact.artifact_type !== "video") continue;
 
       generated_clip_total_available += 1;
-      if (generated_clips.length >= H3_REVIEW_CLIP_LIMIT) continue;
-
       const shot = getShot(db, run.shot_id);
+      const clip_review_status = reviewStatusForArtifact(run.shot_id, artifact.artifact_id, db);
+      generated_clip_status_counts.all += 1;
+      generated_clip_status_counts[clip_review_status] += 1;
+      shotCounts.set(run.shot_id, (shotCounts.get(run.shot_id) ?? 0) + 1);
+      if (statusFilter !== "all" && clip_review_status !== statusFilter) continue;
+      if (shotFilter && run.shot_id !== shotFilter) continue;
+
+      const filteredIndex = generated_clip_filtered_available;
+      generated_clip_filtered_available += 1;
+      if (filteredIndex < offset || generated_clips.length >= limit) continue;
+
       generated_clips.push({
         shot_id: run.shot_id,
         run_id: run.run_id,
@@ -856,7 +901,7 @@ export function h3VideoReviewSummary(state = loadH1WorkbenchState(), db = openM0
         artifact_status: artifact.status,
         storage_filename: artifact.storage.filename,
         accepted_clip_artifact_id: shot?.accepted_clip_artifact_id ?? "",
-        clip_review_status: reviewStatusForArtifact(run.shot_id, artifact.artifact_id, db),
+        clip_review_status,
         ffprobe: validateMp4File(artifact.storage.uri),
         rejection_reasons: shot?.review.rejection_reasons ?? [],
         latest_revision_instruction: shot?.review.latest_revision_instruction ?? null
@@ -866,8 +911,20 @@ export function h3VideoReviewSummary(state = loadH1WorkbenchState(), db = openM0
 
   return {
     generated_clips,
-    generated_clip_limit: H3_REVIEW_CLIP_LIMIT,
+    generated_clip_limit: limit,
+    generated_clip_offset: offset,
     generated_clip_total_available,
+    generated_clip_filtered_available,
+    generated_clip_status_counts,
+    generated_clip_shot_count_total: shotCounts.size,
+    generated_clip_shot_counts: [...shotCounts.entries()]
+      .map(([shot_id, count]) => ({ shot_id, count }))
+      .sort((a, b) => b.count - a.count || a.shot_id.localeCompare(b.shot_id))
+      .filter((item, index) => index < 200 || item.shot_id === shotFilter),
+    generated_clip_filters: {
+      status: statusFilter,
+      shot_id: shotFilter
+    },
     regeneration_request_drafts: state.regeneration_request_drafts,
     provider_boundary: H1_PROVIDER_BOUNDARY
   };
