@@ -1,0 +1,84 @@
+{
+  "task_id": "R2G-P_WEB_GPT_FINAL_DELIVERY_STATUS_RECEIPT",
+  "result": "PASS_WEB_GPT_SIDE_FINAL_DELIVERY_STATUS_RECEIPT_RECORDED",
+  "generated_at": "2026-07-09T10:36:00.647Z",
+  "mode": "local_receipt_only",
+  "receipt_source": {
+    "source_type": "human_relayed_web_gpt_connector_result",
+    "connector_name": "AI Video Production Local Bridge",
+    "tool_called_by_web_gpt": "get_closeout_evidence",
+    "raw_payload_recorded": false,
+    "secret_values_recorded": false
+  },
+  "web_gpt_observed_fields": {
+    "final_delivery_status": "FINAL_APPROVED",
+    "closeout_result": "PASS_FINAL_DELIVERY_CLOSEOUT_READY",
+    "final_video_review_decision": "accept",
+    "final_artifact_id": "artifact_2fa09a9e-3408-49f8-96f9-42c87cfbbfbe",
+    "evidence_manifest_path": "data/reports/r3_9r_final_delivery_evidence_manifest.json",
+    "state_surface_reconciliation": {
+      "finding": "STATE_SURFACE_MISMATCH",
+      "state_surface": "R3_FINAL_APPROVED_H1_DRAFT_UNSYNCED",
+      "is_r3_final_delivery_complete": true,
+      "is_h1_dashboard_app_ready": false,
+      "does_get_project_status_surface_final_delivery": true,
+      "should_generate_next_without_new_task": false,
+      "provider_action_exposed": false,
+      "summary": "R3 final delivery is final-approved, while the H1 dashboard is a separate draft workbench state with pending shots. Treat the project as delivered on the R3 closeout surface, not ready-to-generate from H1."
+    }
+  },
+  "acceptance_judgement": {
+    "web_gpt_side_acceptance": true,
+    "web_gpt_can_read_final_delivery_status": true,
+    "cached_connector_fallback_tool_works": true,
+    "new_tool_metadata_refresh_still_optional": true,
+    "project_delivery_status_for_r3_closeout_surface": "FINAL_APPROVED",
+    "h1_dashboard_status_interpretation": "draft workbench state, not final delivery failure",
+    "canonical_state_surface": "R3_FINAL_APPROVED_H1_DRAFT_UNSYNCED",
+    "should_treat_h1_blockers_as_final_delivery_failure": false,
+    "should_generate_or_call_provider_next": false
+  },
+  "local_evidence_links": {
+    "final_delivery_closeout_report": "data/reports/r3_9r_final_delivery_closeout_result.json",
+    "final_delivery_evidence_manifest": "data/reports/r3_9r_final_delivery_evidence_manifest.json",
+    "dashboard_reconciliation_report": "data/reports/r2g_o_final_delivery_dashboard_reconciliation_result.json",
+    "bridge_commit_adding_direct_tool": "92da0d6",
+    "bridge_commit_adding_cached_tool_fallback": "3921a12"
+  },
+  "boundary_observed": {
+    "network_call_attempted_by_codex": false,
+    "provider_called": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "regeneration_performed": false,
+    "batch_generation_performed": false,
+    "final_assembly_performed": false,
+    "env_files_read": false,
+    "credentials_read": false,
+    "secret_values_exposed": false,
+    "source_assets_overwritten": false,
+    "raw_provider_payload_recorded": false,
+    "signed_url_recorded": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false,
+    "publish_performed": false,
+    "production_configuration_changed": false
+  },
+  "validation": {
+    "JSON parse for this receipt": "PASS",
+    "npm run secret:scan": "PASS",
+    "git diff --check": "PASS"
+  },
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "PENDING_LOCAL_COMMIT",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  }
+}
