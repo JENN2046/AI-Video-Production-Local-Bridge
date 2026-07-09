@@ -2437,3 +2437,26 @@ Notes:
 - HTTP dry-run verified `tools/list`, approved `get_project_status`, forbidden `call_runninghub` fail-closed, schema validation fail-closed, boundary flags, and server shutdown.
 - `git diff --check`: PASS with CRLF warnings only.
 - No public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+
+### R2G-K promotion - 2026-07-09T15:24:47+08:00
+
+Commands:
+
+```bash
+node -e JSON.parse(...) for NEXT_TASK
+node -e backlog READY task check
+git diff --check
+```
+
+Result: `PASS_READY_TASK_PROMOTED`
+
+Evidence:
+- `.agent_board/NEXT_TASK.json`
+- `.agent_board/NEXT_TASK.md`
+- `.agent_board/TASK_BACKLOG.md`
+
+Notes:
+- `R2G-K_CHATGPT_CONNECTOR_LIVE_AUTHORIZATION_FINAL_PREP` is promoted to `READY`.
+- RUN_LOCK remains inactive and the task is not claimed.
+- Queue JSON parse, READY task check, and `git diff --check` passed with CRLF warnings only.
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.

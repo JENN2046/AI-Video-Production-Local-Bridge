@@ -1,14 +1,25 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260709-150456-r2g-j
-Last result: R2G-J HTTP MCP transport local dry-run completed
+Last run: codex-20260709-152447-r2g-k-promotion
+Last result: R2G-K promoted to READY
 
 ## Current state
 
-Current task: none
-Current status: EMPTY
+Current task: R2G-K_CHATGPT_CONNECTOR_LIVE_AUTHORIZATION_FINAL_PREP
+Current status: READY
 Current owner: none
+
+## R2G-K Promotion
+
+- Promoted at 2026-07-09T15:24:47+08:00.
+- Task: `R2G-K_CHATGPT_CONNECTOR_LIVE_AUTHORIZATION_FINAL_PREP`.
+- Status: `READY`.
+- Depends on: `R2G-J_HTTP_MCP_TRANSPORT_LOCAL_DRY_RUN`.
+- Scope: local-only final authorization prep for a future live ChatGPT connector smoke.
+- Required report: `data/reports/r2g_k_chatgpt_connector_live_authorization_final_prep_result.json`.
+- Boundary: no public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, push, tag, release, deploy, publish, or production configuration change.
+- RUN_LOCK remains inactive; the task has not been claimed.
 
 ## R2G-J Closeout
 

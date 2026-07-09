@@ -4492,6 +4492,48 @@ Perform the final pre-live ChatGPT connector readiness review.
 
 - No public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, push, tag, release, deploy, publish, or production configuration change occurred.
 
+## R2G-K_CHATGPT_CONNECTOR_LIVE_AUTHORIZATION_FINAL_PREP - ChatGPT Connector Live Authorization Final Prep
+
+status: READY
+priority: P0
+lane: ChatGPT MCP Bridge
+project: AI Video Production Workspace GPT Bridge Line
+scope: final live connector authorization prep only
+branch: local-only
+depends_on: R2G-J_HTTP_MCP_TRANSPORT_LOCAL_DRY_RUN
+report_path: data/reports/r2g_k_chatgpt_connector_live_authorization_final_prep_result.json
+allowed_delivery: authorization_prep_report,local_report,task_board_update,local_commit
+blocked_delivery: public_tunnel,public_mcp_endpoint,chatgpt_connector_creation,deploy,provider_call,env_file_read,credential_read,secret_value_output,source_overwrite,push,tag,release,publish,production_configuration_change
+created_at: 2026-07-09T15:24:47+08:00
+updated_at: 2026-07-09T15:24:47+08:00
+
+### Goal
+
+Prepare the final live ChatGPT connector authorization package without executing any live connector action.
+
+### Required Work
+
+- Review R2G-G authorization prep evidence.
+- Review R2G-I readiness review evidence.
+- Review R2G-J localhost HTTP MCP dry-run evidence.
+- Produce a final exact authorization phrase component checklist for a future live connector smoke.
+- Define endpoint mode, ChatGPT account/workspace, connector name, permission posture, allowed smoke tests, log redaction, stop conditions, and rollback/shutdown plan.
+
+### Acceptance
+
+- Report generated at `data/reports/r2g_k_chatgpt_connector_live_authorization_final_prep_result.json`.
+- Report result is `PASS_READY_FOR_EXACT_LIVE_CONNECTOR_AUTHORIZATION` or `BLOCK_WITH_REASON`.
+- Report records `public_tunnel_started=false`, `public_mcp_endpoint_created=false`, `chatgpt_connector_created=false`, `env_files_read=false`, `credentials_read=false`, `provider_api_called=false`, `push_performed=false`, `tag_created=false`, `release_or_deploy_performed=false`, and `publish_performed=false`.
+- Task does not start tunnel, expose public endpoint, create connector, deploy, read credentials, or call providers.
+
+### Validation
+
+- JSON parse for R2G-K report.
+- `npm run typecheck`
+- `npm run test:r2g:mcp`
+- `npm run secret:scan`
+- `git diff --check`
+
 ## R2G-J_HTTP_MCP_TRANSPORT_LOCAL_DRY_RUN - HTTP MCP Transport Local Dry Run
 
 status: DONE
