@@ -21,7 +21,7 @@ Current owner: none
 - The R2G-L entry binds to `127.0.0.1`, lists only `READ_ONLY` tools, and denies draft, human-confirmed write, provider, unknown, and schema-invalid tool calls fail-closed.
 - Validation passed: `npm run r2g:l:read-only-entry-prep`, JSON parse/result check, `npm run typecheck`, `npm run test:r2g:mcp`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
 - Boundary: no public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, push, tag, release, deploy, publish, or production configuration change occurred.
-- Local commit: `PENDING_LOCAL_COMMIT`.
+- Local commit: `bc0fc3c`.
 - Next live step still requires a separate exact Jenn authorization phrase with endpoint mode and concrete tunnel or hosted HTTPS `/mcp` URL.
 
 ## R2G-K Closeout

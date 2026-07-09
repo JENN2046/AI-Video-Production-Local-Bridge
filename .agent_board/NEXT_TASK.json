@@ -76,7 +76,7 @@
     "tests/chatgpt-mcp-bridge.test.ts",
     "package.json"
   ],
-  "commit": "PENDING_LOCAL_COMMIT",
+  "commit": "bc0fc3c",
   "delivery": "local_read_only_entry_prep_only",
   "boundary_or_safety_stop": "local-only preparation; no public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, env or credential read, provider/API call, push, tag, release, deploy, publish, or production configuration change",
   "blocked_reason": null,

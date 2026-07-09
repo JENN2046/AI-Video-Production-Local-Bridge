@@ -160,7 +160,7 @@
   "git_receipt": {
     "repo": true,
     "branch": "master",
-    "commit": "PENDING_LOCAL_COMMIT",
+    "commit": "bc0fc3c",
     "task": "R2G-L_CHATGPT_CONNECTOR_READ_ONLY_LIVE_SMOKE_LOCAL_ENTRY_PREP",
     "push": false,
     "pr": null,

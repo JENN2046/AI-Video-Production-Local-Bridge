@@ -14,7 +14,7 @@ claimed_at: 2026-07-09T15:56:33+08:00
 completed_by: Codex R2G-L read-only live smoke local entry prep
 completed_at: 2026-07-09T16:07:30+08:00
 result: PASS_READ_ONLY_LIVE_SMOKE_LOCAL_ENTRY_PREP
-commit: PENDING_LOCAL_COMMIT
+commit: bc0fc3c
 
 ## Goal
 
