@@ -1,0 +1,151 @@
+{
+  "task_id": "R2G-H_LOCAL_MCP_PACKAGE_ACCEPTANCE_REVIEW",
+  "result": "BLOCK_WITH_FINDINGS_BEFORE_LIVE_CONNECTOR",
+  "generated_at": "2026-07-09T13:51:45+08:00",
+  "review_type": "local_acceptance_review",
+  "scope": {
+    "reviewed_files": [
+      "src/tools/chatGptMcpBridge.ts",
+      "scripts/r2g-mcp-packaging.ts",
+      "tests/chatgpt-mcp-bridge.test.ts",
+      "fixtures/mcp/chatgpt_mcp_tool_contract_r2g_b.json",
+      "data/reports/r2g_a_mcp_security_and_permission_model_result.json",
+      "data/reports/r2g_b_mcp_tool_schema_and_contract_freeze_result.json",
+      "data/reports/r2g_c_local_mcp_server_skeleton_result.json",
+      "data/reports/r2g_d_chatgpt_handoff_e2e_dry_run_result.json",
+      "data/reports/r2g_e_human_confirmation_and_write_gates_result.json",
+      "data/reports/r2g_f_mcp_packaging_closeout_result.json"
+    ],
+    "not_reviewed_or_not_touched": [
+      "scripts/h1-workbench.ts",
+      "drag_drop_cards_to_planner.gif",
+      "howtouseinbox.gif"
+    ]
+  },
+  "official_docs_reference": [
+    {
+      "title": "Define tools - Apps SDK",
+      "url": "https://developers.openai.com/apps-sdk/plan/tools",
+      "relevant_point": "Tool planning should define names, descriptions, inputSchema, outputSchema, annotations, auth requirements, rate limits, and error handling expectations."
+    },
+    {
+      "title": "Build your MCP server - Apps SDK",
+      "url": "https://developers.openai.com/apps-sdk/build/mcp-server",
+      "relevant_point": "MCP responses should use structuredContent and content; read-only tools should be marked with readOnlyHint."
+    },
+    {
+      "title": "Reference - Apps SDK",
+      "url": "https://developers.openai.com/apps-sdk/reference",
+      "relevant_point": "Declare outputSchema for structuredContent so clients can validate results and the model can reason about follow-up calls."
+    },
+    {
+      "title": "Security & Privacy - Apps SDK",
+      "url": "https://developers.openai.com/apps-sdk/guides/security-privacy",
+      "relevant_point": "Validate all inputs server-side even if the model provided them, and require human confirmation for irreversible operations."
+    }
+  ],
+  "findings": [
+    {
+      "id": "R2G-H-FINDING-001",
+      "severity": "P1",
+      "title": "Error tool results violate the declared outputSchema",
+      "file": "src/tools/chatGptMcpBridge.ts",
+      "line_refs": [
+        "src/tools/chatGptMcpBridge.ts:131",
+        "src/tools/chatGptMcpBridge.ts:138",
+        "src/tools/chatGptMcpBridge.ts:350",
+        "src/tools/chatGptMcpBridge.ts:355"
+      ],
+      "evidence": "OBJECT_OUTPUT_SCHEMA requires structuredContent fields ok, data, and boundary, but fail() returns ok, error, and boundary without data.",
+      "risk": "A real Apps/MCP client can validate structuredContent against outputSchema. Failure responses for forbidden or invalid inputs can fail client-side validation, weakening the fail-closed contract exactly when the tool needs to communicate a safe denial.",
+      "recommended_fix": "Either add an explicit error shape to every outputSchema, or normalize fail() to include data:null plus a schema-declared error field and update tests to validate both success and failure envelopes."
+    },
+    {
+      "id": "R2G-H-FINDING-002",
+      "severity": "P1",
+      "title": "Input schemas advertise additionalProperties:false but the local executor accepts extra fields",
+      "file": "src/tools/chatGptMcpBridge.ts",
+      "line_refs": [
+        "src/tools/chatGptMcpBridge.ts:267",
+        "src/tools/chatGptMcpBridge.ts:273",
+        "src/tools/chatGptMcpBridge.ts:416",
+        "src/tools/chatGptMcpBridge.ts:425",
+        "src/tools/chatGptMcpBridge.ts:516"
+      ],
+      "evidence": "Probe executeChatGptMcpTool('request_package_freeze', { reason:'schema probe', extra_unexpected:true }) returned ok=true and created a pending request, despite the descriptor declaring additionalProperties:false.",
+      "risk": "The server is not enforcing its own MCP contract. A model or malicious prompt could smuggle unexpected fields into draft/pending stores, increasing review ambiguity and contradicting the security requirement to validate all inputs server-side.",
+      "recommended_fix": "Add a generic schema guard before handler execution that rejects extra fields and validates required primitive fields for every tool, then add negative tests for extra properties on read-only, draft-only, and human-confirmation-required tools."
+    },
+    {
+      "id": "R2G-H-FINDING-003",
+      "severity": "P2",
+      "title": "Tool descriptors are shallow-copied and can be mutated by in-process consumers",
+      "file": "src/tools/chatGptMcpBridge.ts",
+      "line_refs": [
+        "src/tools/chatGptMcpBridge.ts:189",
+        "src/tools/chatGptMcpBridge.ts:324"
+      ],
+      "evidence": "Probe mutated listChatGptMcpToolDescriptors()[0].security.provider_call_allowed and the exported global CHATGPT_MCP_TOOL_DESCRIPTORS reflected the mutation in the same process.",
+      "risk": "The local in-process server can have its published metadata altered by a consumer that mutates a listed descriptor. Even if handler behavior remains guarded, metadata drift can mislabel provider or endpoint safety and invalidate reports/tests in long-lived local processes.",
+      "recommended_fix": "Deep-freeze the descriptor constants and return deep clones from listChatGptMcpToolDescriptors(), or generate descriptors fresh from immutable definitions."
+    }
+  ],
+  "acceptance_review": {
+    "schema_fixture_parse": "PASS",
+    "r2g_reports_parse": "PASS",
+    "typecheck": "PASS",
+    "test_r2g_mcp": "PASS",
+    "negative_probe_forbidden_provider": "PASS",
+    "negative_probe_fake_artifact": "PASS",
+    "negative_probe_missing_reason": "PASS",
+    "negative_probe_extra_property_rejection": "FAIL",
+    "descriptor_immutability_probe": "FAIL",
+    "live_connector_readiness": "BLOCKED_PENDING_FIXES"
+  },
+  "provider_boundary": {
+    "public_tunnel_started": false,
+    "public_mcp_endpoint_created": false,
+    "chatgpt_connector_created": false,
+    "network_call_attempted": false,
+    "provider_called": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "provider_credits_consumed": false,
+    "env_files_read": false,
+    "credentials_read": false,
+    "secret_values_exposed": false,
+    "source_assets_overwritten": false,
+    "raw_provider_payload_recorded": false,
+    "signed_url_recorded": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false,
+    "publish_performed": false,
+    "production_configuration_changed": false
+  },
+  "validation": {
+    "commands": [
+      "npm run typecheck",
+      "npm run test:r2g:mcp",
+      "node -e JSON.parse(...) for R2G-A through R2G-F reports and schema fixture",
+      "manual negative probe: forbidden provider / fake ids / missing required field",
+      "manual negative probe: extra unexpected field",
+      "manual descriptor immutability probe"
+    ],
+    "result": "PASS_FOR_REVIEW_EXECUTION_WITH_FINDINGS"
+  },
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "PENDING_LOCAL_COMMIT",
+    "task": "R2G-H_LOCAL_MCP_PACKAGE_ACCEPTANCE_REVIEW",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  },
+  "next_recommended_task": {
+    "task_id": "R2G-H1_MCP_SCHEMA_AND_DESCRIPTOR_HARDENING_FIX",
+    "reason": "Fix outputSchema/error-envelope mismatch, enforce input schemas server-side, and deep-freeze/clone tool descriptors before any live connector preparation."
+  }
+}

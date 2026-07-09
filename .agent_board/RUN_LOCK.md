@@ -112,6 +112,9 @@ last_completed_r2g_0_at: 2026-07-08T20:52:19+08:00
 last_completed_r2g_f_run_id: codex-20260708-210000-r2g-a-f
 last_completed_r2g_f_task: R2G-F_MCP_PACKAGING_CLOSEOUT
 last_completed_r2g_f_at: 2026-07-08T21:12:49+08:00
+last_completed_r2g_h_run_id: codex-20260709-135145-r2g-h
+last_completed_r2g_h_task: R2G-H_LOCAL_MCP_PACKAGE_ACCEPTANCE_REVIEW
+last_completed_r2g_h_at: 2026-07-09T13:51:45+08:00
 
 ## Rules
 

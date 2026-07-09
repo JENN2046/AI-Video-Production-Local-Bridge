@@ -3983,3 +3983,41 @@ Git delivery:
 Boundary:
 - R2G-G was not loaded or executed.
 - No public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+
+### 2026-07-09T13:51:45+08:00 - R2G-H Local MCP Package Acceptance Review
+
+Result: DONE / BLOCK_WITH_FINDINGS_BEFORE_LIVE_CONNECTOR
+Project: AI Video Production Workspace GPT Bridge Line
+Lane: ChatGPT MCP Bridge
+Run ID: codex-20260709-135145-r2g-h
+Completed at: 2026-07-09T13:51:45+08:00
+
+Scope:
+- Reviewed the R2G local MCP package before live connector preparation.
+- Checked implementation, tests, schema fixture, R2G-A through R2G-F reports, and boundary claims.
+- Did not modify implementation code.
+
+Findings:
+- P1: Error results do not match the declared `outputSchema`.
+- P1: Extra input properties are accepted despite `additionalProperties:false`.
+- P2: Tool descriptors are shallow-copied and mutable by in-process consumers.
+
+Validation:
+- JSON parse for R2G-A through R2G-F reports and schema fixture: PASS
+- `npm run typecheck`: PASS
+- `npm run test:r2g:mcp`: PASS
+- Manual negative probes for forbidden provider / fake IDs / missing required field: PASS
+- Manual extra-property rejection probe: FAIL, finding recorded
+- Manual descriptor immutability probe: FAIL, finding recorded
+
+Evidence:
+- data/reports/r2g_h_local_mcp_package_acceptance_review_result.json
+
+Git delivery:
+- commit: PENDING_LOCAL_COMMIT
+- push: no
+
+Boundary:
+- R2G-G remains `FOLLOW_UP`.
+- R2G-H1 is recorded as `FOLLOW_UP` before R2G-G can be promoted.
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.

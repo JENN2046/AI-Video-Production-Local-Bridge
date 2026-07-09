@@ -2272,3 +2272,29 @@ Notes:
 - R2G-G was not loaded or executed.
 - No public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
 - R2G local implementation commit: `a19b684`.
+
+### R2G-H - 2026-07-09T13:51:45+08:00
+
+Commands:
+
+```bash
+node -e JSON.parse(...) for R2G-A through R2G-F reports and schema fixture
+npm run typecheck
+npm run test:r2g:mcp
+node --input-type=module negative probes for forbidden provider, fake IDs, missing required field
+node --input-type=module probes for extra unexpected field and descriptor mutability
+```
+
+Result: `BLOCK_WITH_FINDINGS_BEFORE_LIVE_CONNECTOR`
+
+Evidence:
+- `data/reports/r2g_h_local_mcp_package_acceptance_review_result.json`
+
+Notes:
+- Review execution validation passed, but acceptance found blockers before live connector preparation.
+- Finding P1: error result envelope does not match the declared `outputSchema`.
+- Finding P1: executor accepts extra fields despite `additionalProperties:false`.
+- Finding P2: listed descriptors can mutate nested global descriptor metadata in-process.
+- R2G-H1 is recorded as `FOLLOW_UP`.
+- R2G-G remains `FOLLOW_UP` and must not be promoted until R2G-H1 is completed and accepted.
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.

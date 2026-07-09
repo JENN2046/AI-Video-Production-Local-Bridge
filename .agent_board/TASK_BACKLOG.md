@@ -4264,6 +4264,90 @@ Close out the local MCP bridge package before any public ChatGPT connection step
 - No public tunnel, public MCP endpoint, connector, provider call, `.env` or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change occurred.
 - Validation passed: JSON parse, local MCP test suite, `npm run typecheck`, `npm run test:r2g:mcp`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
 
+## R2G-H_LOCAL_MCP_PACKAGE_ACCEPTANCE_REVIEW - Local MCP Package Acceptance Review
+
+status: DONE
+priority: P0
+lane: ChatGPT MCP Bridge
+project: AI Video Production Workspace GPT Bridge Line
+scope: review the R2G local MCP package before any live ChatGPT connector preparation
+branch: local-only
+depends_on: R2G-F_MCP_PACKAGING_CLOSEOUT
+report_path: data/reports/r2g_h_local_mcp_package_acceptance_review_result.json
+allowed_delivery: acceptance_review_report,task_board_update,local_commit
+blocked_delivery: public_tunnel,public_mcp_endpoint,chatgpt_connector_creation,provider_call,env_file_read,credential_read,secret_value_output,source_overwrite,push,tag,release,deploy,publish,production_configuration_change
+created_at: 2026-07-09T13:51:45+08:00
+updated_at: 2026-07-09T13:51:45+08:00
+claimed_by: Codex R2G-H local MCP acceptance review
+claim_run_id: codex-20260709-135145-r2g-h
+claimed_at: 2026-07-09T13:51:45+08:00
+completed_by: Codex R2G-H local MCP acceptance review
+completed_at: 2026-07-09T13:51:45+08:00
+result: BLOCK_WITH_FINDINGS_BEFORE_LIVE_CONNECTOR
+validation_result: PASS_FOR_REVIEW_EXECUTION_WITH_FINDINGS
+commit: PENDING_LOCAL_COMMIT
+
+### Goal
+
+Review the R2G local MCP package with a live-connector readiness lens, before any public endpoint or ChatGPT connector work.
+
+### Findings
+
+- P1: Error results violate the declared `outputSchema`; failure envelopes return `error` but the schema requires `data`.
+- P1: Tool `inputSchema` values advertise `additionalProperties:false`, but the local executor accepts extra fields and stores them in draft/pending records.
+- P2: Tool descriptors are shallow-copied; in-process consumers can mutate nested global descriptor metadata.
+
+### Validation
+
+- JSON parse for R2G-A through R2G-F reports and schema fixture: PASS
+- `npm run typecheck`: PASS
+- `npm run test:r2g:mcp`: PASS
+- Manual negative probes for forbidden provider / fake IDs / missing required field: PASS
+- Manual extra-property rejection probe: FAIL, finding recorded
+- Manual descriptor immutability probe: FAIL, finding recorded
+
+### Boundary
+
+- Review only.
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change.
+
+### Result
+
+- Generated `data/reports/r2g_h_local_mcp_package_acceptance_review_result.json`.
+- R2G local MCP package is not accepted for live connector preparation until R2G-H1 hardening fixes are completed.
+- `R2G-G_CHATGPT_CONNECTOR_LIVE_CONNECTION_AUTHORIZATION_PREP` remains `FOLLOW_UP`.
+
+## R2G-H1_MCP_SCHEMA_AND_DESCRIPTOR_HARDENING_FIX - MCP Schema And Descriptor Hardening Fix
+
+status: FOLLOW_UP
+priority: P0
+lane: ChatGPT MCP Bridge
+project: AI Video Production Workspace GPT Bridge Line
+scope: fix R2G-H findings before any live ChatGPT connector preparation
+branch: local-only
+depends_on: R2G-H_LOCAL_MCP_PACKAGE_ACCEPTANCE_REVIEW
+report_path: data/reports/r2g_h1_mcp_schema_and_descriptor_hardening_fix_result.json
+allowed_delivery: schema_validation_fix,descriptor_immutability_fix,tests,task_board_update,local_commit
+blocked_delivery: public_tunnel,public_mcp_endpoint,chatgpt_connector_creation,provider_call,env_file_read,credential_read,secret_value_output,source_overwrite,push,tag,release,deploy,publish,production_configuration_change
+created_at: 2026-07-09T13:51:45+08:00
+updated_at: 2026-07-09T13:51:45+08:00
+
+### Goal
+
+Fix R2G-H acceptance findings before public ChatGPT connector preparation.
+
+### Required Work
+
+- Align failure envelopes and `outputSchema` so success and error structuredContent validate.
+- Enforce tool `inputSchema` server-side, including `additionalProperties:false`.
+- Deep-freeze or deep-clone MCP tool descriptors so listed metadata cannot mutate global descriptor state.
+- Add regression tests for all three findings.
+
+### Boundary
+
+- Local hardening only.
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, push, tag, release, deploy, publish, or production configuration change.
+
 ## R2G-G_CHATGPT_CONNECTOR_LIVE_CONNECTION_AUTHORIZATION_PREP - ChatGPT Connector Live Connection Authorization Prep
 
 status: FOLLOW_UP
@@ -4272,18 +4356,19 @@ lane: ChatGPT MCP Bridge
 project: AI Video Production Workspace GPT Bridge Line
 scope: prepare a future authorization checklist for public ChatGPT connector connection
 branch: local-only
-depends_on: R2G-F_MCP_PACKAGING_CLOSEOUT
+depends_on: R2G-H1_MCP_SCHEMA_AND_DESCRIPTOR_HARDENING_FIX
 report_path: data/reports/r2g_g_chatgpt_connector_live_connection_authorization_prep_result.json
 allowed_delivery: authorization_checklist,task_board_update,local_commit
 blocked_delivery: public_tunnel,public_mcp_endpoint,chatgpt_connector_creation,provider_call,env_file_read,credential_read,secret_value_output,source_overwrite,push,tag,release,deploy,publish,production_configuration_change
 created_at: 2026-07-08T20:34:12+08:00
-updated_at: 2026-07-08T20:34:12+08:00
+updated_at: 2026-07-09T13:51:45+08:00
 
 ### Goal
 
-Prepare the future live connection authorization checklist after local MCP packaging closes out.
+Prepare the future live connection authorization checklist after local MCP packaging closes out and R2G-H1 hardening fixes complete.
 
 ### Boundary
 
 - This is `FOLLOW_UP` and must not auto-run.
 - A real ChatGPT connection likely requires a public HTTPS MCP endpoint, connector creation, and possibly deployment or tunnel work; each must receive separate exact Jenn authorization.
+- Do not promote this task until R2G-H1 is completed and accepted.

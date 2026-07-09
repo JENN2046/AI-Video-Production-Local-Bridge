@@ -1,14 +1,26 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260708-210000-r2g-a-f
-Last result: R2G-A through R2G-F local ChatGPT MCP packaging completed
+Last run: codex-20260709-135145-r2g-h
+Last result: R2G-H local MCP package acceptance review found blockers before live connector
 
 ## Current state
 
-Current task: none
+Current task: R2G-H_LOCAL_MCP_PACKAGE_ACCEPTANCE_REVIEW
 Current status: DONE
 Current owner: none
+
+## R2G-H Acceptance Review
+
+- R2G-H completed on 2026-07-09T13:51:45+08:00 with `BLOCK_WITH_FINDINGS_BEFORE_LIVE_CONNECTOR`.
+- Report: `data/reports/r2g_h_local_mcp_package_acceptance_review_result.json`.
+- Finding P1: error tool results violate the declared `outputSchema`; failure envelopes return `error` while schema requires `data`.
+- Finding P1: tool schemas advertise `additionalProperties:false`, but the local executor accepts extra fields and can store them in draft/pending records.
+- Finding P2: tool descriptors are shallow-copied; in-process consumers can mutate nested global descriptor metadata.
+- Validation passed for review execution: JSON parse for R2G-A through R2G-F reports and schema fixture, `npm run typecheck`, `npm run test:r2g:mcp`, and manual negative probes.
+- `R2G-H1_MCP_SCHEMA_AND_DESCRIPTOR_HARDENING_FIX` is recorded as `FOLLOW_UP`.
+- `R2G-G_CHATGPT_CONNECTOR_LIVE_CONNECTION_AUTHORIZATION_PREP` remains `FOLLOW_UP` and now depends on R2G-H1.
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
 
 ## R2G-A through R2G-F Closeout
 
