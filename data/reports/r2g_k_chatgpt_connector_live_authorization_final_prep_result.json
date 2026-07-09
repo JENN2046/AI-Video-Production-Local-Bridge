@@ -1,0 +1,191 @@
+{
+  "task_id": "R2G-K_CHATGPT_CONNECTOR_LIVE_AUTHORIZATION_FINAL_PREP",
+  "result": "PASS_READY_FOR_EXACT_LIVE_CONNECTOR_AUTHORIZATION",
+  "generated_at": "2026-07-09T07:32:13.457Z",
+  "bridge_version": "chatgpt-mcp-local-bridge-r2g",
+  "reviewed_evidence": {
+    "r2g_g_authorization_prep": {
+      "path": "data/reports/r2g_g_chatgpt_connector_live_connection_authorization_prep_result.json",
+      "result": "PASS_READY_FOR_SEPARATE_LIVE_CONNECTION_AUTHORIZATION",
+      "commit": "6529d7f",
+      "accepted_for_final_prep": true
+    },
+    "r2g_i_readiness_review": {
+      "path": "data/reports/r2g_i_live_connector_readiness_review_result.json",
+      "result": "PASS_REVIEW_COMPLETE_BLOCK_LIVE_EXECUTION_UNTIL_HTTP_MCP_AND_EXACT_AUTHORIZATION",
+      "commit": "7db4377",
+      "resolved_blocker": "R2G-J proved a localhost-only HTTP /mcp dry-run harness."
+    },
+    "r2g_j_http_transport_dry_run": {
+      "path": "data/reports/r2g_j_http_mcp_transport_local_dry_run_result.json",
+      "result": "PASS_LOCAL_HTTP_MCP_TRANSPORT_DRY_RUN",
+      "commit": "a29dc6e",
+      "proved": [
+        "tools/list over local HTTP",
+        "approved get_project_status tool call over local HTTP",
+        "forbidden provider-style tool fail-closed",
+        "schema validation fail-closed",
+        "boundary flags remain false",
+        "local server closes after dry-run"
+      ]
+    }
+  },
+  "official_docs_rechecked": [
+    {
+      "title": "Build your MCP server",
+      "url": "https://developers.openai.com/apps-sdk/build/mcp-server",
+      "final_prep_implication": "The MCP server owns tool definitions, auth enforcement, structured data, and tool-to-UI metadata; ChatGPT decides tool use from metadata."
+    },
+    {
+      "title": "Quickstart",
+      "url": "https://developers.openai.com/apps-sdk/quickstart",
+      "final_prep_implication": "Local MCP inspection can use localhost, but ChatGPT development testing needs the server exposed with a public /mcp URL."
+    },
+    {
+      "title": "Deploy your app",
+      "url": "https://developers.openai.com/apps-sdk/deploy",
+      "final_prep_implication": "Live connector testing needs a reachable HTTPS /mcp endpoint, or an explicitly authorized local tunnel for development."
+    },
+    {
+      "title": "Connect from ChatGPT",
+      "url": "https://developers.openai.com/apps-sdk/deploy/connect-chatgpt",
+      "final_prep_implication": "Developer-mode connector creation requires the target ChatGPT account/workspace, connector metadata, and the public /mcp URL."
+    },
+    {
+      "title": "Authentication",
+      "url": "https://developers.openai.com/apps-sdk/build/auth",
+      "final_prep_implication": "Read-only anonymous mode may be acceptable for non-private smoke tests; user-specific data or write actions require a deliberate OAuth 2.1/auth stance."
+    },
+    {
+      "title": "Submit and maintain your app",
+      "url": "https://developers.openai.com/apps-sdk/deploy/submission",
+      "final_prep_implication": "Submission and publication are separate from live smoke and require a public non-local endpoint plus review prerequisites."
+    },
+    {
+      "title": "Troubleshooting",
+      "url": "https://developers.openai.com/apps-sdk/deploy/troubleshooting",
+      "final_prep_implication": "Live smoke should check /mcp discovery, tool listing, schema alignment, auth loops, and connector metadata refresh."
+    }
+  ],
+  "current_local_readiness": {
+    "local_mcp_tool_contract_ready": true,
+    "local_http_mcp_dry_run_ready": true,
+    "approved_tool_count": 8,
+    "provider_tools_exposed": false,
+    "live_provider_calls_allowed": false,
+    "public_https_mcp_endpoint_exists": false,
+    "public_tunnel_started": false,
+    "chatgpt_connector_created": false,
+    "deploy_or_publish_performed": false,
+    "credentials_or_env_read": false
+  },
+  "final_live_smoke_scope": {
+    "allowed_after_exact_authorization_only": [
+      "start one explicitly named public tunnel or use one explicitly named hosted HTTPS /mcp endpoint",
+      "create one developer-mode ChatGPT connector in the specified account/workspace",
+      "refresh connector metadata once if needed",
+      "verify advertised tool list",
+      "run only allowed read-only smoke prompts/tools",
+      "record sanitized receipt",
+      "shut down temporary tunnel if tunnel mode is used"
+    ],
+    "still_forbidden_without_separate_authorization": [
+      "read .env or credential files",
+      "configure OAuth client secrets",
+      "call RunningHub or Runway",
+      "trigger video generation, regeneration, batch generation, final assembly, publish, submit for review, or deploy",
+      "record raw provider payloads, signed URLs, secrets, or private account data"
+    ]
+  },
+  "exact_authorization_phrase_components": {
+    "required_fields": [
+      "action=ChatGPT connector live smoke",
+      "endpoint_mode=<secure_mcp_tunnel|ngrok|cloudflare_tunnel|hosted_https>",
+      "exact_local_command_or_exact_hosted_mcp_url",
+      "exact_mcp_url=https://.../mcp",
+      "chatgpt_account_or_workspace=<target>",
+      "developer_mode_enabled_by_human=true",
+      "connector_name=<name>",
+      "connector_description=<description>",
+      "auth_mode=<anonymous_read_only|oauth_2_1|other explicitly approved mode>",
+      "permission_posture=<read_only_only|draft_only|human_confirmed_writes>",
+      "allowed_smoke_tests=<tools/list plus named read-only tool calls/prompts>",
+      "max_public_tunnels=1",
+      "max_connector_creations=1",
+      "max_metadata_refreshes=<number>",
+      "provider_calls_allowed=false",
+      "env_or_credentials_read_allowed=false unless separately authorized",
+      "deploy_publish_submit_allowed=false",
+      "log_redaction_required=true",
+      "raw_payload_recording_allowed=false",
+      "rollback_or_shutdown_plan=<specific steps>",
+      "stop_on_first_connector_or_auth_failure=true"
+    ],
+    "recommended_permission_posture_for_first_smoke": "read_only_only",
+    "recommended_auth_mode_for_first_smoke": "anonymous_read_only_with_no_private_data",
+    "draft_authorization_phrase_zh": "授权执行 1 次 ChatGPT connector live smoke：endpoint_mode=<secure_mcp_tunnel|ngrok|cloudflare_tunnel|hosted_https>，exact_mcp_url=<HTTPS /mcp URL>，chatgpt_account_or_workspace=<target>，connector_name=<name>，connector_description=<description>，auth_mode=anonymous_read_only_with_no_private_data，permission_posture=read_only_only，allowed_smoke_tests=tools/list + get_project_status + forbidden/provider tool must fail-closed，max_public_tunnels=1，max_connector_creations=1，max_metadata_refreshes=1，log_redaction_required=true，provider_calls_allowed=false，env_or_credentials_read_allowed=false，deploy_publish_submit_allowed=false，raw_payload_recording_allowed=false，stop_on_first_connector_or_auth_failure=true，完成后输出 sanitized local receipt 并关闭临时 tunnel（如果使用 tunnel）。"
+  },
+  "minimum_live_sequence_after_authorization": [
+    "Confirm endpoint mode and exact /mcp URL from Jenn's authorization phrase.",
+    "Start only the authorized tunnel or use only the authorized hosted HTTPS endpoint.",
+    "Verify local server health and /mcp reachability without reading secrets.",
+    "Create exactly one ChatGPT connector in the authorized account/workspace.",
+    "Confirm ChatGPT lists the expected approved tools and no provider/generation tools.",
+    "Run only the authorized read-only smoke prompt/tool calls.",
+    "Record sanitized evidence without raw payloads or secrets.",
+    "Shut down the temporary tunnel if one was started."
+  ],
+  "stop_conditions": [
+    "Any request would read .env, credentials, tokens, OAuth client secrets, cookies, or private account state.",
+    "Any tool path attempts RunningHub, Runway, provider upload/submit/query/download, video generation, regeneration, batch expansion, final assembly, publish, deploy, tag, release, or production configuration change.",
+    "The connector creation flow asks for a different account/workspace, connector name, endpoint, auth mode, or permission posture than authorized.",
+    "The endpoint advertises unexpected tools, provider tools, write tools without human confirmation, or schema mismatch.",
+    "The first connector creation, metadata refresh, or smoke test fails in a way that would require retry beyond the authorized counts."
+  ],
+  "final_prep_boundary_observed": {
+    "official_openai_docs_read_only_lookup_performed": true,
+    "local_reports_read": true,
+    "public_tunnel_started": false,
+    "public_mcp_endpoint_created": false,
+    "chatgpt_connector_created": false,
+    "deploy_performed": false,
+    "env_files_read": false,
+    "credentials_read": false,
+    "provider_api_called": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false,
+    "publish_performed": false
+  },
+  "provider_boundary": {
+    "public_tunnel_started": false,
+    "public_mcp_endpoint_created": false,
+    "chatgpt_connector_created": false,
+    "network_call_attempted": false,
+    "provider_called": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "provider_credits_consumed": false,
+    "env_files_read": false,
+    "credentials_read": false,
+    "secret_values_exposed": false,
+    "source_assets_overwritten": false,
+    "raw_provider_payload_recorded": false,
+    "signed_url_recorded": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false,
+    "publish_performed": false,
+    "production_configuration_changed": false
+  },
+  "git_receipt": {
+    "repo": true,
+    "branch": "master",
+    "commit": "PENDING_LOCAL_COMMIT",
+    "task": "R2G-K_CHATGPT_CONNECTOR_LIVE_AUTHORIZATION_FINAL_PREP",
+    "push": false,
+    "pr": null,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  }
+}

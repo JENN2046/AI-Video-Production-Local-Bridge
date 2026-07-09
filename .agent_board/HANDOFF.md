@@ -1,14 +1,27 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260709-152447-r2g-k-promotion
-Last result: R2G-K promoted to READY
+Last run: codex-20260709-153013-r2g-k
+Last result: R2G-K connector authorization final prep completed
 
 ## Current state
 
-Current task: R2G-K_CHATGPT_CONNECTOR_LIVE_AUTHORIZATION_FINAL_PREP
-Current status: READY
+Current task: none
+Current status: EMPTY
 Current owner: none
+
+## R2G-K Closeout
+
+- Claimed at 2026-07-09T15:30:13+08:00 by Codex R2G-K connector authorization final prep.
+- Run ID: `codex-20260709-153013-r2g-k`.
+- Completed at 2026-07-09T15:32:43+08:00 with `PASS_READY_FOR_EXACT_LIVE_CONNECTOR_AUTHORIZATION`.
+- Report: `data/reports/r2g_k_chatgpt_connector_live_authorization_final_prep_result.json`.
+- Reviewed evidence: R2G-G authorization prep, R2G-I readiness review, and R2G-J localhost HTTP MCP dry-run.
+- Official OpenAI Apps SDK/MCP docs were rechecked by read-only web lookup.
+- Key result: exact live connector authorization components and stop conditions are prepared, but no live connector action is authorized or performed.
+- Validation passed: `npm run r2g:k:authorization-final-prep`, JSON parse and boundary check, `npm run typecheck`, `npm run test:r2g:mcp`, `npm run secret:scan`, and `git diff --check` with CRLF warnings only.
+- Boundary: no public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, push, tag, release, deploy, publish, or production configuration change occurred.
+- Local commit: `PENDING_LOCAL_COMMIT`.
 
 ## R2G-K Promotion
 

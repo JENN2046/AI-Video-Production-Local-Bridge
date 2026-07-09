@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "slot": "current",
   "task_id": "R2G-K_CHATGPT_CONNECTOR_LIVE_AUTHORIZATION_FINAL_PREP",
-  "status": "READY",
+  "status": "DONE",
   "priority": "P0",
   "lane": "ChatGPT MCP Bridge",
   "project": "AI Video Production Workspace GPT Bridge Line",
@@ -60,21 +60,35 @@
   "source_http_dry_run_report": "data/reports/r2g_j_http_mcp_transport_local_dry_run_result.json",
   "report_path": "data/reports/r2g_k_chatgpt_connector_live_authorization_final_prep_result.json",
   "created_at": "2026-07-09T15:24:47+08:00",
-  "updated_at": "2026-07-09T15:24:47+08:00",
-  "claimed_by": null,
-  "claim_run_id": null,
-  "claimed_at": null,
-  "completed_by": null,
-  "completed_at": null,
-  "result": null,
-  "validation_result": null,
-  "evidence": [],
-  "commit": null,
+  "updated_at": "2026-07-09T15:32:43+08:00",
+  "claimed_by": "Codex R2G-K connector authorization final prep",
+  "claim_run_id": "codex-20260709-153013-r2g-k",
+  "claimed_at": "2026-07-09T15:30:13+08:00",
+  "completed_by": "Codex R2G-K connector authorization final prep",
+  "completed_at": "2026-07-09T15:32:43+08:00",
+  "result": "PASS_READY_FOR_EXACT_LIVE_CONNECTOR_AUTHORIZATION",
+  "validation_result": "PASS",
+  "evidence": [
+    "data/reports/r2g_k_chatgpt_connector_live_authorization_final_prep_result.json",
+    "data/reports/r2g_g_chatgpt_connector_live_connection_authorization_prep_result.json",
+    "data/reports/r2g_i_live_connector_readiness_review_result.json",
+    "data/reports/r2g_j_http_mcp_transport_local_dry_run_result.json",
+    "src/tools/chatGptMcpBridge.ts",
+    "scripts/r2g-mcp-packaging.ts"
+  ],
+  "commit": "PENDING_LOCAL_COMMIT",
   "delivery": "local_authorization_final_prep_only",
   "boundary_or_safety_stop": "authorization prep only; no public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, env or credential read, provider/API call, push, tag, release, deploy, publish, or production configuration change",
   "blocked_reason": null,
   "failure_reason": null,
-  "safe_actions_completed": [],
+  "safe_actions_completed": [
+    "claimed R2G-K from READY",
+    "reviewed R2G-G, R2G-I, and R2G-J local evidence",
+    "rechecked official OpenAI Apps SDK/MCP docs by read-only web lookup",
+    "implemented R2G-K final authorization prep report generator",
+    "generated data/reports/r2g_k_chatgpt_connector_live_authorization_final_prep_result.json",
+    "validated report JSON, typecheck, R2G MCP tests, secret scan, and diff check"
+  ],
   "unsafe_action_not_performed": [
     "public_tunnel",
     "public_mcp_endpoint",
@@ -98,7 +112,8 @@
     "ops/previews/"
   ],
   "next_safe_option": [
-    "Claim R2G-K and generate the local-only final authorization prep report.",
-    "Stop before any public tunnel or ChatGPT connector action until Jenn provides a separate exact authorization phrase."
+    "Review the R2G-K report and exact authorization phrase components.",
+    "If Jenn wants a live connector smoke, provide a separate exact authorization phrase.",
+    "Stop before any public tunnel or ChatGPT connector action until separately authorized."
   ]
 }

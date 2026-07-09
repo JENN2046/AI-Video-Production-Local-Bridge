@@ -4117,6 +4117,42 @@ Git delivery:
 - commit: 3627501
 - push: no
 
+### 2026-07-09T15:32:43+08:00 - R2G-K ChatGPT Connector Live Authorization Final Prep
+
+Result: DONE / PASS_READY_FOR_EXACT_LIVE_CONNECTOR_AUTHORIZATION
+Project: AI Video Production Workspace GPT Bridge Line
+Lane: ChatGPT MCP Bridge
+Run ID: codex-20260709-153013-r2g-k
+Completed at: 2026-07-09T15:32:43+08:00
+
+Scope:
+- Reviewed R2G-G authorization prep evidence.
+- Reviewed R2G-I readiness review evidence.
+- Reviewed R2G-J localhost HTTP MCP transport dry-run evidence.
+- Rechecked official OpenAI Apps SDK/MCP docs by read-only web lookup.
+- Generated local-only final live connector authorization prep report.
+
+Validation:
+- `npm run r2g:k:authorization-final-prep`: PASS
+- JSON parse and boundary check for R2G-K report: PASS
+- `npm run typecheck`: PASS
+- `npm run test:r2g:mcp`: PASS
+- `npm run secret:scan`: PASS
+- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Evidence:
+- `data/reports/r2g_k_chatgpt_connector_live_authorization_final_prep_result.json`
+- `src/tools/chatGptMcpBridge.ts`
+- `scripts/r2g-mcp-packaging.ts`
+- `package.json`
+
+Git delivery:
+- commit: PENDING_LOCAL_COMMIT
+- push: no
+
+Boundary:
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+
 ### 2026-07-09T15:08:34+08:00 - R2G-J HTTP MCP Transport Local Dry Run
 
 Result: DONE / PASS_LOCAL_HTTP_MCP_TRANSPORT_DRY_RUN

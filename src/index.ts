@@ -337,6 +337,7 @@ export {
   buildR2GCloseoutReport,
   buildR2GConfirmationGateReport,
   buildR2GConnectorAuthorizationPrepReport,
+  buildR2GConnectorLiveAuthorizationFinalPrepReport,
   buildR2GDryRunReport,
   buildR2GHardeningFixReport,
   buildR2GLiveConnectorReadinessReviewReport,

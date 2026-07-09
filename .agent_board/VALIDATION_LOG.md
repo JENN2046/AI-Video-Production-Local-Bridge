@@ -2460,3 +2460,30 @@ Notes:
 - RUN_LOCK remains inactive and the task is not claimed.
 - Queue JSON parse, READY task check, and `git diff --check` passed with CRLF warnings only.
 - No public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+
+### R2G-K - 2026-07-09T15:32:43+08:00
+
+Commands:
+
+```bash
+npm run r2g:k:authorization-final-prep
+node -e JSON.parse(...) with R2G-K boundary checks
+npm run typecheck
+npm run test:r2g:mcp
+npm run secret:scan
+git diff --check
+```
+
+Result: `PASS_READY_FOR_EXACT_LIVE_CONNECTOR_AUTHORIZATION`
+
+Evidence:
+- `data/reports/r2g_k_chatgpt_connector_live_authorization_final_prep_result.json`
+- `src/tools/chatGptMcpBridge.ts`
+- `scripts/r2g-mcp-packaging.ts`
+- `package.json`
+
+Notes:
+- Official OpenAI Apps SDK/MCP docs were rechecked by read-only web lookup.
+- R2G-K prepared exact live connector authorization fields, minimum live smoke sequence, and stop conditions.
+- `git diff --check`: PASS with CRLF warnings only.
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
