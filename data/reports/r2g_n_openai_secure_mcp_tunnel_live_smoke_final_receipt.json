@@ -1,0 +1,101 @@
+{
+  "task_id": "R2G-N_OPENAI_SECURE_MCP_TUNNEL_LIVE_SMOKE",
+  "result": "PASS_USER_OBSERVED_LIVE_SMOKE_READ_ONLY_CONNECTOR",
+  "generated_at": "2026-07-09T18:14:35+08:00",
+  "evidence_source": "user_reported_sanitized_chatgpt_connector_results",
+  "route": {
+    "endpoint_mode": "openai_secure_mcp_tunnel",
+    "tunnel_name": "ai-video-local-bridge",
+    "tunnel_id": "tunnel_6a4f6e9b06d88191bfed0271c80dfad7",
+    "chatgpt_workspace": "Personal workspace",
+    "connector_name": "AI Video Production Local Bridge",
+    "authentication_mode": "no_authentication",
+    "permission_posture": "read_only_only"
+  },
+  "execution_attribution": {
+    "local_mcp_server_started_by_human": true,
+    "tunnel_client_run_started_by_human": true,
+    "chatgpt_connector_created_by_human": true,
+    "codex_created_connector": false,
+    "codex_started_tunnel": false,
+    "codex_read_runtime_api_key": false
+  },
+  "positive_smoke": {
+    "status": "PASS",
+    "chatgpt_tool_used": "get_project_status",
+    "project_status_returned": true,
+    "reported_project_name": "Ryan's Lunch Break Skullcap",
+    "reported_project_type": "h1_human_operator_workbench",
+    "reported_shots_total": 4,
+    "reported_imports_total": 330,
+    "reported_imports_ready": 176,
+    "reported_blockers_total": 12,
+    "boundary_flags_all_false_in_user_report": true
+  },
+  "negative_smoke": {
+    "status": "PASS_FAIL_CLOSED",
+    "requested_action": "attempt RunningHub video generation from ChatGPT connector",
+    "reported_result": "RunningHub/provider generation capability was not available in the read-only connector.",
+    "provider_tool_exposed": false,
+    "generation_tool_exposed": false,
+    "provider_call_attempted": false,
+    "provider_job_submitted": false,
+    "expected_error_class": "BLOCKED_PROVIDER_CALL_NOT_AVAILABLE_IN_READ_ONLY_BRIDGE"
+  },
+  "tool_surface_observed": {
+    "read_only_tools_expected": [
+      "get_project_status",
+      "lookup_media_artifact",
+      "check_import_readiness",
+      "get_review_package",
+      "get_closeout_evidence"
+    ],
+    "read_only_tools_reported_examples": [
+      "get_project_status",
+      "get_review_package"
+    ],
+    "forbidden_tools_reported_absent": [
+      "runninghub",
+      "runway",
+      "generate_video",
+      "regenerate",
+      "assemble",
+      "publish",
+      "deploy"
+    ]
+  },
+  "boundary_observed": {
+    "env_files_read_by_codex": false,
+    "credentials_read_by_codex": false,
+    "secret_values_exposed": false,
+    "runtime_api_key_printed_or_recorded": false,
+    "raw_provider_payload_recorded": false,
+    "chatgpt_raw_conversation_payload_recorded": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "provider_api_called": false,
+    "provider_credits_consumed": false,
+    "real_video_generated": false,
+    "video_regenerated": false,
+    "batch_generation_performed": false,
+    "final_assembly_performed": false,
+    "memory_saveback_performed": false,
+    "source_assets_overwritten": false,
+    "deploy_performed": false,
+    "publish_performed": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false
+  },
+  "known_follow_up": {
+    "dashboard_state_needs_read_only_reconciliation": true,
+    "reason": "The positive smoke returned useful project status, but the dashboard showed project_id empty, shots_approved 0, blockers_total 12, and many historical final-delivery report pointers.",
+    "recommended_next_task": "Run a read-only report reconciliation between r3_9r final delivery closeout/evidence reports and current h1 dashboard state."
+  },
+  "closeout": {
+    "live_smoke_goal_met": true,
+    "ready_to_keep_connector_for_read_only_use": true,
+    "ready_for_provider_calls": false,
+    "provider_calls_require_separate_future_authorization": true
+  }
+}
