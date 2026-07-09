@@ -2,34 +2,43 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "R2G-H_LOCAL_MCP_PACKAGE_ACCEPTANCE_REVIEW",
-  "status": "DONE",
+  "task_id": "R2G-H1_MCP_SCHEMA_AND_DESCRIPTOR_HARDENING_FIX",
+  "status": "READY",
   "priority": "P0",
   "lane": "ChatGPT MCP Bridge",
   "project": "AI Video Production Workspace GPT Bridge Line",
-  "title": "Local MCP Package Acceptance Review",
+  "title": "MCP Schema And Descriptor Hardening Fix",
   "scope": [
-    "review the R2G local MCP package before any live ChatGPT connector preparation",
-    "verify schema/result envelope consistency",
-    "probe input validation and descriptor immutability",
-    "record findings without changing implementation code"
+    "fix R2G-H outputSchema/error-envelope mismatch",
+    "enforce MCP tool inputSchema server-side including additionalProperties:false",
+    "deep-freeze or deep-clone tool descriptors so listed metadata cannot mutate global descriptor state",
+    "add regression tests for all R2G-H findings",
+    "regenerate affected R2G reports and schema fixture"
   ],
-  "goal": "Determine whether the local R2G MCP package is safe to move toward live ChatGPT connector preparation.",
+  "goal": "Harden the local R2G MCP bridge contract before any live ChatGPT connector preparation.",
   "acceptance": [
-    "Review report includes findings or no-issue acceptance decision.",
-    "Review verifies R2G reports, schema fixture, tests, fail-closed boundaries, and live connector stop boundary.",
-    "Report records provider, credential, public tunnel, connector, publish, deploy, and production configuration boundaries as false."
+    "R2G-H-FINDING-001 is fixed: success and failure structuredContent conform to the declared outputSchema.",
+    "R2G-H-FINDING-002 is fixed: unexpected top-level input fields are rejected when additionalProperties:false.",
+    "R2G-H-FINDING-003 is fixed: listChatGptMcpToolDescriptors() cannot mutate global descriptor metadata.",
+    "Regression tests cover all three findings.",
+    "data/reports/r2g_h1_mcp_schema_and_descriptor_hardening_fix_result.json is generated.",
+    "R2G-G remains FOLLOW_UP and is not executed."
   ],
   "validation": [
-    "JSON parse for R2G-A through R2G-F reports and schema fixture",
+    "npm run r2g:b:contract",
+    "npm run r2g:e:gates",
+    "npm run r2g:f:closeout",
+    "JSON parse for data/reports/r2g_h1_mcp_schema_and_descriptor_hardening_fix_result.json",
+    "JSON parse for fixtures/mcp/chatgpt_mcp_tool_contract_r2g_b.json",
     "npm run typecheck",
     "npm run test:r2g:mcp",
-    "manual negative probe: forbidden provider / fake ids / missing required field",
-    "manual negative probe: extra unexpected field",
-    "manual descriptor immutability probe"
+    "npm run secret:scan",
+    "git diff --check"
   ],
   "allowed_delivery": [
-    "acceptance_review_report",
+    "schema_validation_fix",
+    "descriptor_immutability_fix",
+    "tests",
     "task_board_update",
     "local_commit"
   ],
@@ -50,35 +59,32 @@
     "production_configuration_change"
   ],
   "depends_on": [
-    "R2G-F_MCP_PACKAGING_CLOSEOUT"
+    "R2G-H_LOCAL_MCP_PACKAGE_ACCEPTANCE_REVIEW"
   ],
-  "report_path": "data/reports/r2g_h_local_mcp_package_acceptance_review_result.json",
-  "created_at": "2026-07-09T13:51:45+08:00",
-  "updated_at": "2026-07-09T13:51:45+08:00",
-  "claimed_by": "Codex R2G-H local MCP acceptance review",
-  "claim_run_id": "codex-20260709-135145-r2g-h",
-  "claimed_at": "2026-07-09T13:51:45+08:00",
-  "completed_by": "Codex R2G-H local MCP acceptance review",
-  "completed_at": "2026-07-09T13:51:45+08:00",
-  "result": "BLOCK_WITH_FINDINGS_BEFORE_LIVE_CONNECTOR",
-  "validation_result": "PASS_FOR_REVIEW_EXECUTION_WITH_FINDINGS",
+  "source_review_report": "data/reports/r2g_h_local_mcp_package_acceptance_review_result.json",
+  "taskbook_path": "docs/webgpt/R2G_H1_MCP_SCHEMA_AND_DESCRIPTOR_HARDENING_TASKBOOK.md",
+  "taskbook_self_review_report": "data/reports/r2g_h1_taskbook_self_review_result.json",
+  "report_path": "data/reports/r2g_h1_mcp_schema_and_descriptor_hardening_fix_result.json",
+  "created_at": "2026-07-09T14:01:18+08:00",
+  "updated_at": "2026-07-09T14:01:18+08:00",
+  "claimed_by": null,
+  "claim_run_id": null,
+  "claimed_at": null,
+  "completed_by": null,
+  "completed_at": null,
+  "result": null,
+  "validation_result": null,
   "evidence": [
-    "data/reports/r2g_h_local_mcp_package_acceptance_review_result.json",
-    "src/tools/chatGptMcpBridge.ts",
-    "tests/chatgpt-mcp-bridge.test.ts",
-    "fixtures/mcp/chatgpt_mcp_tool_contract_r2g_b.json"
+    "docs/webgpt/R2G_H1_MCP_SCHEMA_AND_DESCRIPTOR_HARDENING_TASKBOOK.md",
+    "data/reports/r2g_h1_taskbook_self_review_result.json",
+    "data/reports/r2g_h_local_mcp_package_acceptance_review_result.json"
   ],
-  "commit": "9ccfc2a",
-  "delivery": "acceptance_review_only",
-  "boundary_or_safety_stop": "R2G local MCP package is blocked before live connector preparation until R2G-H1 hardening fixes are completed",
-  "blocked_reason": "R2G-H found outputSchema/error-envelope mismatch, missing server-side additionalProperties enforcement, and mutable nested tool descriptor metadata.",
+  "commit": null,
+  "delivery": "local_hardening_only",
+  "boundary_or_safety_stop": "local schema and descriptor hardening only; no live connector, public tunnel, provider/API call, env or credential read, push, tag, release, deploy, publish, or production configuration change",
+  "blocked_reason": null,
   "failure_reason": null,
-  "safe_actions_completed": [
-    "reviewed R2G local MCP bridge implementation, tests, fixture, and reports",
-    "ran typecheck and R2G MCP tests",
-    "ran manual negative probes for forbidden provider actions, fake IDs, missing required fields, extra unexpected fields, and descriptor immutability",
-    "generated acceptance review report"
-  ],
+  "safe_actions_completed": [],
   "unsafe_action_not_performed": [
     "public_tunnel",
     "public_mcp_endpoint",
@@ -95,8 +101,13 @@
     "publish",
     "production_configuration_change"
   ],
-  "options_for_jenn": [
-    "Promote and execute R2G-H1_MCP_SCHEMA_AND_DESCRIPTOR_HARDENING_FIX.",
+  "do_not_touch": [
+    "scripts/h1-workbench.ts",
+    "drag_drop_cards_to_planner.gif",
+    "howtouseinbox.gif"
+  ],
+  "next_safe_option": [
+    "Claim R2G-H1 and implement the local hardening fixes described in the taskbook.",
     "Keep R2G-G as FOLLOW_UP until R2G-H1 is completed and accepted."
   ]
 }

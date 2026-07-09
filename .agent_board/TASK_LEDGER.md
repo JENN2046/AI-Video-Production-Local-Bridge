@@ -4021,3 +4021,37 @@ Boundary:
 - R2G-G remains `FOLLOW_UP`.
 - R2G-H1 is recorded as `FOLLOW_UP` before R2G-G can be promoted.
 - No public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+
+### 2026-07-09T14:01:18+08:00 - R2G-H1 Taskbook Arrangement And Self Review
+
+Result: DONE / PASS_TASKBOOK_READY_FOR_EXECUTION
+Project: AI Video Production Workspace GPT Bridge Line
+Lane: ChatGPT MCP Bridge
+Run ID: codex-20260709-140118-r2g-h1-taskbook
+Completed at: 2026-07-09T14:01:18+08:00
+
+Scope:
+- Promoted `R2G-H1_MCP_SCHEMA_AND_DESCRIPTOR_HARDENING_FIX` to `READY`.
+- Wrote a full Chinese taskbook for the R2G-H findings fix.
+- Ran a taskbook self-review and recorded the result.
+- Did not implement the fix in this taskbook arrangement step.
+
+Evidence:
+- docs/webgpt/R2G_H1_MCP_SCHEMA_AND_DESCRIPTOR_HARDENING_TASKBOOK.md
+- data/reports/r2g_h1_taskbook_self_review_result.json
+- .agent_board/NEXT_TASK.json
+- .agent_board/NEXT_TASK.md
+
+Validation:
+- JSON parse for NEXT_TASK and taskbook self-review report: PASS
+- Taskbook required section check: PASS
+- `npm run secret:scan`: PASS
+- `git diff --check`: PASS_WITH_CRLF_WARNINGS_ONLY
+
+Git delivery:
+- commit: PENDING_LOCAL_COMMIT
+- push: no
+
+Boundary:
+- R2G-G remains `FOLLOW_UP`.
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.

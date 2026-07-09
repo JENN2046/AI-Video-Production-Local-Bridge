@@ -1,14 +1,25 @@
 # HANDOFF.md
 
 Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260709-135145-r2g-h
-Last result: R2G-H local MCP package acceptance review found blockers before live connector
+Last run: codex-20260709-140118-r2g-h1-taskbook
+Last result: R2G-H1 taskbook arranged and self-reviewed
 
 ## Current state
 
-Current task: R2G-H_LOCAL_MCP_PACKAGE_ACCEPTANCE_REVIEW
-Current status: DONE
+Current task: R2G-H1_MCP_SCHEMA_AND_DESCRIPTOR_HARDENING_FIX
+Current status: READY
 Current owner: none
+
+## R2G-H1 Taskbook Arrangement
+
+- Arranged at 2026-07-09T14:01:18+08:00.
+- `R2G-H1_MCP_SCHEMA_AND_DESCRIPTOR_HARDENING_FIX` is promoted to `READY`.
+- Taskbook: `docs/webgpt/R2G_H1_MCP_SCHEMA_AND_DESCRIPTOR_HARDENING_TASKBOOK.md`.
+- Taskbook self-review: `data/reports/r2g_h1_taskbook_self_review_result.json`.
+- Self-review result: `PASS_TASKBOOK_READY_FOR_EXECUTION`.
+- R2G-H1 scope: local schema and descriptor hardening only.
+- `R2G-G_CHATGPT_CONNECTOR_LIVE_CONNECTION_AUTHORIZATION_PREP` remains `FOLLOW_UP` and must not be executed until R2G-H1 completes and is accepted.
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
 
 ## R2G-H Acceptance Review
 

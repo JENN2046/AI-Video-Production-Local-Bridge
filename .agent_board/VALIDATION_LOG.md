@@ -2298,3 +2298,28 @@ Notes:
 - R2G-H1 is recorded as `FOLLOW_UP`.
 - R2G-G remains `FOLLOW_UP` and must not be promoted until R2G-H1 is completed and accepted.
 - No public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+
+### R2G-H1 Taskbook - 2026-07-09T14:01:18+08:00
+
+Commands:
+
+```bash
+node -e JSON.parse(...) for NEXT_TASK and taskbook self-review report
+Select-String required section check for R2G-H1 taskbook
+npm run secret:scan
+git diff --check
+```
+
+Result: `PASS_TASKBOOK_READY_FOR_EXECUTION`
+
+Evidence:
+- `docs/webgpt/R2G_H1_MCP_SCHEMA_AND_DESCRIPTOR_HARDENING_TASKBOOK.md`
+- `data/reports/r2g_h1_taskbook_self_review_result.json`
+- `.agent_board/NEXT_TASK.json`
+- `.agent_board/NEXT_TASK.md`
+
+Notes:
+- R2G-H1 is promoted to `READY`.
+- Taskbook covers R2G-H findings 001, 002, and 003.
+- R2G-G remains `FOLLOW_UP` and must not run before R2G-H1 is completed and accepted.
+- No public tunnel, public MCP endpoint, ChatGPT connector creation, provider/API call, `.env` or credential read, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
