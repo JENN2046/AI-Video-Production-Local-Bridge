@@ -14,7 +14,7 @@ claimed_at: 2026-07-09T15:04:56+08:00
 completed_by: Codex R2G-J HTTP MCP transport local dry-run
 completed_at: 2026-07-09T15:08:34+08:00
 result: PASS_LOCAL_HTTP_MCP_TRANSPORT_DRY_RUN
-commit: PENDING_LOCAL_COMMIT
+commit: a29dc6e
 
 ## Goal
 

@@ -4123,7 +4123,7 @@ Evidence:
 - `tests/chatgpt-mcp-bridge.test.ts`
 
 Git delivery:
-- commit: PENDING_LOCAL_COMMIT
+- commit: a29dc6e
 - push: no
 
 Boundary:

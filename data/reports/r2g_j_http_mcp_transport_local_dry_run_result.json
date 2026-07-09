@@ -83,7 +83,7 @@
   "git_receipt": {
     "repo": true,
     "branch": "master",
-    "commit": "PENDING_LOCAL_COMMIT",
+    "commit": "a29dc6e",
     "task": "R2G-J_HTTP_MCP_TRANSPORT_LOCAL_DRY_RUN",
     "push": false,
     "pr": null,
