@@ -160,7 +160,7 @@
   "git_receipt": {
     "repo": true,
     "branch": "master",
-    "commit": "PENDING_LOCAL_COMMIT",
+    "commit": "7db4377",
     "task": "R2G-I_LIVE_CONNECTOR_READINESS_REVIEW",
     "push": false,
     "pr": null,
