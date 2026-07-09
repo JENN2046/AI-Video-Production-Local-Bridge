@@ -68,7 +68,7 @@
     "tests/chatgpt-mcp-bridge.test.ts",
     "fixtures/mcp/chatgpt_mcp_tool_contract_r2g_b.json"
   ],
-  "commit": "PENDING_LOCAL_COMMIT",
+  "commit": "9ccfc2a",
   "delivery": "acceptance_review_only",
   "boundary_or_safety_stop": "R2G local MCP package is blocked before live connector preparation until R2G-H1 hardening fixes are completed",
   "blocked_reason": "R2G-H found outputSchema/error-envelope mismatch, missing server-side additionalProperties enforcement, and mutable nested tool descriptor metadata.",

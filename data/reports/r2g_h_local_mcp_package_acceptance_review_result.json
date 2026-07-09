@@ -137,7 +137,7 @@
   "git_receipt": {
     "repo": true,
     "branch": "master",
-    "commit": "PENDING_LOCAL_COMMIT",
+    "commit": "9ccfc2a",
     "task": "R2G-H_LOCAL_MCP_PACKAGE_ACCEPTANCE_REVIEW",
     "push": false,
     "pr": null,

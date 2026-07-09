@@ -4014,7 +4014,7 @@ Evidence:
 - data/reports/r2g_h_local_mcp_package_acceptance_review_result.json
 
 Git delivery:
-- commit: PENDING_LOCAL_COMMIT
+- commit: 9ccfc2a
 - push: no
 
 Boundary:
