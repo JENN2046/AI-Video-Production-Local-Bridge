@@ -1,0 +1,87 @@
+{
+  "task_id": "R2G-N_OPENAI_SECURE_MCP_TUNNEL_LIVE_SMOKE",
+  "result": "BLOCK_WITH_REASON",
+  "generated_at": "2026-07-09T18:00:30+08:00",
+  "block_reason": "CONTROL_PLANE_API_KEY was not present in the Codex shell process environment, so tunnel-client could not be started without reading another secret source or prompting for a secret value.",
+  "authorized_scope": {
+    "route": "openai_secure_mcp_tunnel",
+    "tunnel_name": "ai-video-local-bridge",
+    "tunnel_id": "tunnel_6a4f6e9b06d88191bfed0271c80dfad7",
+    "chatgpt_workspace": "Personal workspace",
+    "local_mcp_server_command": "npm run r2g:l:serve-read-only -- --port 2091",
+    "tunnel_profile": "ai-video-local-http",
+    "profile_dir": "A:\\AI Video Production Workspace\\ops\\tools\\tunnel-client\\profiles",
+    "tunnel_client": "A:\\AI Video Production Workspace\\ops\\tools\\tunnel-client\\v0.0.10\\tunnel-client.exe",
+    "connector_name": "AI Video Production Local Bridge",
+    "permission_posture": "read_only_only"
+  },
+  "preflight_observed": {
+    "CONTROL_PLANE_API_KEY_present": false,
+    "CONTROL_PLANE_API_KEY_value_printed": false,
+    "env_files_read": false,
+    "credentials_read": false,
+    "profile_initialized": true,
+    "tunnel_client_prepared": true,
+    "tunnel_client_version": "0.0.10+105e17a79a36e4e5c897fd698ed2b8dbf935b144",
+    "local_mcp_listener_started": false,
+    "doctor_run": false,
+    "tunnel_run_started": false,
+    "chatgpt_connector_created": false
+  },
+  "safe_actions_completed": [
+    "Read current git status without touching unrelated worktree changes.",
+    "Confirmed the tunnel profile and tunnel-client had already been prepared.",
+    "Checked only whether CONTROL_PLANE_API_KEY was present in the Codex shell process environment.",
+    "Stopped before starting local MCP, running doctor, starting tunnel-client run, or creating a ChatGPT connector."
+  ],
+  "unsafe_action_not_performed": [
+    "Did not read .env, .env.local, credentials, token stores, cookies, or private account files.",
+    "Did not print or record CONTROL_PLANE_API_KEY.",
+    "Did not start Secure MCP Tunnel.",
+    "Did not create a ChatGPT Connector.",
+    "Did not call RunningHub, Runway, or any provider API.",
+    "Did not generate, regenerate, assemble, publish, deploy, push, tag, or release."
+  ],
+  "boundary_observed": {
+    "env_files_read": false,
+    "credentials_read": false,
+    "secret_values_exposed": false,
+    "raw_payload_recorded": false,
+    "provider_api_called": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "video_generated": false,
+    "video_regenerated": false,
+    "final_assembly_performed": false,
+    "public_tunnel_started": false,
+    "secure_mcp_tunnel_started": false,
+    "chatgpt_connector_created": false,
+    "deploy_performed": false,
+    "publish_performed": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false,
+    "production_configuration_changed": false,
+    "source_assets_overwritten": false
+  },
+  "next_safe_options": [
+    {
+      "option": "manual_run",
+      "description": "User runs local MCP server and tunnel-client manually in the same PowerShell session where CONTROL_PLANE_API_KEY is set, then Codex can assist with ChatGPT-side connector steps."
+    },
+    {
+      "option": "codex_inherited_env",
+      "description": "User makes CONTROL_PLANE_API_KEY available to the Codex app process environment, restarts Codex if needed, then re-authorizes the same R2G-N live smoke."
+    },
+    {
+      "option": "explicit_secret_file_authorization",
+      "description": "User authorizes Codex to read a specific local private key file only for launching tunnel-client, without printing or recording its value."
+    }
+  ],
+  "recommended_manual_commands_zh": [
+    "在一个新的 PowerShell 里运行：cd \"A:\\AI Video Production Workspace\"",
+    "在同一个 PowerShell 里设置：$env:CONTROL_PLANE_API_KEY = \"<你的 runtime API key，不要发到聊天里>\"",
+    "启动本地 MCP：npm run r2g:l:serve-read-only -- --port 2091",
+    "另开第二个 PowerShell，同样设置 CONTROL_PLANE_API_KEY，然后运行 tunnel-client doctor/run；或者授权 Codex 在可见到该环境变量后继续。"
+  ]
+}
