@@ -1,0 +1,56 @@
+{
+  "task_id": "R2G-M_TUNNEL_PROFILE_INITIALIZATION",
+  "result": "PASS_LOCAL_TUNNEL_PROFILE_INITIALIZED_NO_TUNNEL_STARTED",
+  "generated_at": "2026-07-09T17:51:30+08:00",
+  "input_from_user": {
+    "tunnel_name": "ai-video-local-bridge",
+    "tunnel_id": "tunnel_6a4f6e9b06d88191bfed0271c80dfad7",
+    "chatgpt_workspace": "Personal workspace"
+  },
+  "local_profile": {
+    "profile_name": "ai-video-local-http",
+    "profile_dir": "A:\\AI Video Production Workspace\\ops\\tools\\tunnel-client\\profiles",
+    "profile_path": "A:\\AI Video Production Workspace\\ops\\tools\\tunnel-client\\profiles\\ai-video-local-http.yaml",
+    "profile_gitignored": true,
+    "mcp_server_url": "http://127.0.0.1:2091/mcp",
+    "health_listen_addr": "127.0.0.1:0",
+    "control_plane_api_key_ref": "env:CONTROL_PLANE_API_KEY",
+    "runtime_api_key_stored_in_profile": false
+  },
+  "validation": {
+    "tunnel_client_init": "PASS",
+    "profile_file_exists": "PASS",
+    "profile_list_contains_ai_video_local_http": "PASS",
+    "profile_contains_tunnel_id": "PASS",
+    "profile_contains_mcp_server_url": "PASS",
+    "profile_contains_no_sk_key_literal": "PASS",
+    "profile_file_is_gitignored": "PASS"
+  },
+  "boundary_observed": {
+    "env_files_read": false,
+    "credentials_read": false,
+    "secret_values_exposed": false,
+    "runtime_api_key_read_or_written": false,
+    "public_tunnel_started": false,
+    "secure_mcp_tunnel_started": false,
+    "chatgpt_connector_created": false,
+    "provider_api_called": false,
+    "runninghub_called": false,
+    "runway_called": false,
+    "video_generated": false,
+    "deploy_performed": false,
+    "publish_performed": false,
+    "push_performed": false,
+    "tag_created": false,
+    "release_or_deploy_performed": false,
+    "source_assets_overwritten": false
+  },
+  "next_step": {
+    "requires_runtime_api_key_local_only": true,
+    "requires_user_authorization_for_tunnel_run": true,
+    "requires_user_authorization_for_chatgpt_connector_creation": true,
+    "local_mcp_server_command": "npm run r2g:l:serve-read-only -- --port 2091",
+    "doctor_command_after_key_is_set_locally": "& 'A:\\AI Video Production Workspace\\ops\\tools\\tunnel-client\\v0.0.10\\tunnel-client.exe' doctor --profile ai-video-local-http --profile-dir 'A:\\AI Video Production Workspace\\ops\\tools\\tunnel-client\\profiles' --explain",
+    "run_command_after_authorization": "& 'A:\\AI Video Production Workspace\\ops\\tools\\tunnel-client\\v0.0.10\\tunnel-client.exe' run --profile ai-video-local-http --profile-dir 'A:\\AI Video Production Workspace\\ops\\tools\\tunnel-client\\profiles'"
+  }
+}
