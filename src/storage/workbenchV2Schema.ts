@@ -2,13 +2,14 @@ import type { M0Database } from "./sqlite.js";
 
 export const WORKBENCH_V2_SCHEMA_VERSION = "workbench-v2-4";
 
-export function initializeWorkbenchV2Schema(db: M0Database): void {
+export function initializeWorkbenchV2Schema(db: M0Database, options: { manage_transaction?: boolean } = {}): void {
+  const manageTransaction = options.manage_transaction !== false;
   const current = db.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string } | undefined;
   if (current && !["m0-a", "workbench-v2-1", "workbench-v2-2", "workbench-v2-3", WORKBENCH_V2_SCHEMA_VERSION].includes(current.value)) {
     throw new Error(`Unsupported schema version: ${current.value}`);
   }
 
-  db.exec("BEGIN IMMEDIATE");
+  if (manageTransaction) db.exec("BEGIN IMMEDIATE");
   try {
     db.exec(`
       CREATE TABLE IF NOT EXISTS workbench_project_meta (
@@ -258,9 +259,9 @@ export function initializeWorkbenchV2Schema(db: M0Database): void {
       INSERT OR REPLACE INTO m0_meta (key, value, updated_at)
       VALUES ('schema_version', ?, CURRENT_TIMESTAMP)
     `).run(WORKBENCH_V2_SCHEMA_VERSION);
-    db.exec("COMMIT");
+    if (manageTransaction) db.exec("COMMIT");
   } catch (error) {
-    db.exec("ROLLBACK");
+    if (manageTransaction) db.exec("ROLLBACK");
     throw error;
   }
 }

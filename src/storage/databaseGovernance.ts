@@ -1,0 +1,83 @@
+import { existsSync, mkdirSync, statSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+
+import { paths } from "../paths.js";
+import { assertSchemaCurrent, runDatabaseMigrations } from "./migrations.js";
+
+export interface DatabaseCheckResult {
+  result: "PASS" | "FAIL";
+  quick_check: string;
+  schema_current: boolean;
+  invalid_json_rows: number;
+  structured_drift_rows: number;
+  orphan_rows: number;
+  missing_media_files: number;
+}
+
+function scalarCount(db: DatabaseSync, sql: string): number {
+  return Number((db.prepare(sql).get() as { count: number }).count);
+}
+
+export function checkDatabase(sqlitePath = paths.sqlitePath): DatabaseCheckResult {
+  const db = new DatabaseSync(sqlitePath, { readOnly: true });
+  try {
+    db.exec("PRAGMA query_only = ON; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
+    const quick = db.prepare("PRAGMA quick_check").get() as { quick_check: string };
+    let schemaCurrent = true;
+    try { assertSchemaCurrent(db); } catch { schemaCurrent = false; }
+    const invalidJsonRows = ["projects", "shots", "storyboard_packages", "media_artifacts", "generation_batches", "generation_runs"]
+      .reduce((sum, table) => sum + scalarCount(db, `SELECT COUNT(*) AS count FROM ${table} WHERE json_valid(data_json) = 0`), 0);
+    const structuredDriftRows = scalarCount(db, "SELECT COUNT(*) AS count FROM projects WHERE json_extract(data_json, '$.project_id') <> project_id")
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM shots WHERE json_extract(data_json, '$.shot_id') <> shot_id OR json_extract(data_json, '$.project_id') <> project_id")
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_runs WHERE json_extract(data_json, '$.run_id') <> run_id OR json_extract(data_json, '$.project_id') <> project_id")
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM media_artifacts WHERE json_extract(data_json, '$.artifact_id') <> artifact_id");
+    const orphanRows = scalarCount(db, "SELECT COUNT(*) AS count FROM shots s LEFT JOIN projects p ON p.project_id = s.project_id WHERE p.project_id IS NULL")
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_runs r LEFT JOIN projects p ON p.project_id = r.project_id WHERE p.project_id IS NULL")
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_runs r LEFT JOIN shots s ON s.shot_id = r.shot_id WHERE r.shot_id IS NOT NULL AND r.shot_id <> '' AND s.shot_id IS NULL")
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM media_artifacts a LEFT JOIN projects p ON p.project_id = a.project_id WHERE a.project_id IS NOT NULL AND a.project_id <> '' AND p.project_id IS NULL")
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM media_artifacts a LEFT JOIN shots s ON s.shot_id = a.shot_id WHERE a.shot_id IS NOT NULL AND a.shot_id <> '' AND s.shot_id IS NULL")
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM storyboard_packages s LEFT JOIN projects p ON p.project_id = s.project_id WHERE p.project_id IS NULL")
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_batches b LEFT JOIN projects p ON p.project_id = b.project_id WHERE p.project_id IS NULL");
+    const mediaRows = db.prepare("SELECT data_json FROM media_artifacts").all() as Array<{ data_json: string }>;
+    const missingMediaFiles = mediaRows.reduce((count, row) => {
+      try {
+        const parsed = JSON.parse(row.data_json) as { storage?: { uri?: string } };
+        return parsed.storage?.uri && !existsSync(parsed.storage.uri) ? count + 1 : count;
+      } catch {
+        return count;
+      }
+    }, 0);
+    const pass = quick.quick_check === "ok" && schemaCurrent && invalidJsonRows === 0 && structuredDriftRows === 0 && orphanRows === 0 && missingMediaFiles === 0;
+    return { result: pass ? "PASS" : "FAIL", quick_check: quick.quick_check, schema_current: schemaCurrent, invalid_json_rows: invalidJsonRows, structured_drift_rows: structuredDriftRows, orphan_rows: orphanRows, missing_media_files: missingMediaFiles };
+  } finally {
+    db.close();
+  }
+}
+
+export function backupDatabase(input: { sqlite_path?: string; backup_root?: string; timestamp?: Date } = {}): { backup_path: string; filename: string } {
+  const sqlitePath = resolve(input.sqlite_path ?? paths.sqlitePath);
+  if (!existsSync(sqlitePath) || statSync(sqlitePath).size === 0) throw new Error("DATABASE_NOT_FOUND");
+  const backupRoot = resolve(input.backup_root ?? join(paths.workspaceRoot, "ops", "backups"));
+  mkdirSync(backupRoot, { recursive: true });
+  const stamp = (input.timestamp ?? new Date()).toISOString().replace(/[:.]/g, "-");
+  const target = resolve(backupRoot, `app-${stamp}.sqlite`);
+  if (existsSync(target)) throw new Error("DATABASE_BACKUP_EXISTS");
+  const db = new DatabaseSync(sqlitePath);
+  try {
+    db.exec("PRAGMA busy_timeout = 5000;");
+    db.prepare("VACUUM INTO ?").run(target);
+  } finally {
+    db.close();
+  }
+  return { backup_path: target, filename: basename(target) };
+}
+
+export function migrateDatabase(sqlitePath = paths.sqlitePath): { applied: string[]; baselined: boolean } {
+  const db = new DatabaseSync(sqlitePath);
+  try {
+    return runDatabaseMigrations(db);
+  } finally {
+    db.close();
+  }
+}

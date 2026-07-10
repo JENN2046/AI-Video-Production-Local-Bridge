@@ -13,7 +13,8 @@ try {
     env: {
       ...process.env,
       AI_VIDEO_WORKSPACE_DATA_ROOT: dataRoot,
-      AI_VIDEO_WORKSPACE_DB_PATH: sqlitePath
+      AI_VIDEO_WORKSPACE_DB_PATH: sqlitePath,
+      AI_VIDEO_AUTO_MIGRATE: "true"
     },
     stdio: "inherit"
   });
