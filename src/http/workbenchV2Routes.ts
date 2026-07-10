@@ -404,7 +404,7 @@ export async function handleWorkbenchV2Api(
     const jobId = decodeSegment(generationReconcileMatch[1]);
     await mutation(request, response, actionNonce, (body) => {
       const result = withDatabase((db) => reconcileGenerationJob(jobId, {
-        decision: optionalText(body.decision),
+        decision: optionalText(body.decision) ?? "",
         provider_task_id: optionalText(body.provider_task_id),
         reason: optionalText(body.reason),
         human_confirmation: body.human_confirmation === true
