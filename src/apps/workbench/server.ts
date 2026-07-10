@@ -1,0 +1,245 @@
+import { randomUUID } from "node:crypto";
+import { createReadStream, existsSync, lstatSync, realpathSync, statSync } from "node:fs";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { basename, extname, isAbsolute, relative, resolve } from "node:path";
+
+import { ensureM0Directories, paths } from "../../paths.js";
+import { handleWorkbenchV2Api } from "../../packages/domain/index.js";
+import { getMediaArtifact, validateImageFile } from "../../packages/media/index.js";
+import { resumeWorkbenchGenerationJobs } from "../../packages/providers/index.js";
+import { openM0Database } from "../../packages/storage/index.js";
+import { migrateLegacyWorkbenchInboxStores } from "../../tools/workbenchInboxStore.js";
+
+export const WORKBENCH_HOST = "127.0.0.1";
+export const WORKBENCH_PORT = 4181;
+
+const IMAGE_CONTENT_TYPES: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg"
+};
+const MEDIA_CONTENT_TYPES: Record<string, string> = { ...IMAGE_CONTENT_TYPES, ".mp4": "video/mp4" };
+const V2_CONTENT_TYPES: Record<string, string> = {
+  ".css": "text/css; charset=utf-8",
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".map": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".woff2": "font/woff2"
+};
+
+export interface WorkbenchRuntime {
+  host: string;
+  port: number;
+  url: string;
+  close: () => Promise<void>;
+}
+
+function sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
+  response.writeHead(statusCode, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+  response.end(JSON.stringify(payload));
+}
+
+function isPathInside(child: string, parent: string): boolean {
+  const value = relative(resolve(parent), resolve(child));
+  return value === "" || (!value.startsWith("..") && !isAbsolute(value));
+}
+
+function normalizedHost(hostHeader: string | undefined): string {
+  const host = (hostHeader ?? "").toLowerCase();
+  if (host.startsWith("[::1]")) return "::1";
+  const colon = host.indexOf(":");
+  return colon === -1 ? host : host.slice(0, colon);
+}
+
+function isLocalRequest(request: IncomingMessage): boolean {
+  const remote = request.socket.remoteAddress ?? "";
+  if (!new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]).has(remote)) return false;
+  return new Set(["127.0.0.1", "localhost", "::1"]).has(normalizedHost(request.headers.host));
+}
+
+function safeFile(root: string, filename: string): string | null {
+  const target = resolve(root, filename);
+  if (!isPathInside(target, root) || !existsSync(target) || lstatSync(target).isSymbolicLink()) return null;
+  const actual = realpathSync(target);
+  if (!isPathInside(actual, root) || !statSync(actual).isFile()) return null;
+  return actual;
+}
+
+function serveImport(pathname: string, response: ServerResponse): void {
+  const filename = basename(decodeURIComponent(pathname.slice("/imports/".length)));
+  const contentType = IMAGE_CONTENT_TYPES[extname(filename).toLowerCase()];
+  const target = contentType ? safeFile(resolve(paths.importsRoot), filename) : null;
+  if (!target || !validateImageFile(target).ok) {
+    sendJson(response, 404, { ok: false, error: { code: "NOT_FOUND", message: "Import image was not found." } });
+    return;
+  }
+  response.writeHead(200, { "content-type": contentType, "cache-control": "no-store" });
+  createReadStream(target).pipe(response);
+}
+
+function serveUiAsset(pathname: string, response: ServerResponse): void {
+  const filename = basename(decodeURIComponent(pathname.slice("/ui-assets/".length)));
+  const contentType = IMAGE_CONTENT_TYPES[extname(filename).toLowerCase()];
+  const target = contentType ? safeFile(resolve(paths.workspaceRoot, "data", "ui"), filename) : null;
+  if (!target) {
+    sendJson(response, 404, { ok: false, error: { code: "NOT_FOUND", message: "UI asset was not found." } });
+    return;
+  }
+  response.writeHead(200, { "content-type": contentType, "cache-control": "no-store" });
+  createReadStream(target).pipe(response);
+}
+
+function serveWorkbenchUi(pathname: string, response: ServerResponse): void {
+  const root = resolve(paths.workspaceRoot, "dist", "workbench-ui");
+  const target = pathname.startsWith("/v2-assets/")
+    ? safeFile(root, pathname.slice(1))
+    : safeFile(root, "index.html");
+  if (!target) {
+    sendJson(response, 503, { ok: false, error: { code: "V2_UI_NOT_BUILT", message: "Workbench UI has not been built." } });
+    return;
+  }
+  response.writeHead(200, {
+    "content-type": V2_CONTENT_TYPES[extname(target).toLowerCase()] ?? "application/octet-stream",
+    "cache-control": pathname.startsWith("/v2-assets/") ? "public, max-age=31536000, immutable" : "no-store"
+  });
+  createReadStream(target).pipe(response);
+}
+
+function withDatabase<T>(operation: (db: ReturnType<typeof openM0Database>) => T): T {
+  const db = openM0Database();
+  try {
+    return operation(db);
+  } finally {
+    db.close();
+  }
+}
+
+function serveMedia(pathname: string, request: IncomingMessage, response: ServerResponse): void {
+  const artifactId = basename(decodeURIComponent(pathname.slice("/media/artifacts/".length)));
+  if (!/^artifact_[0-9a-f-]+$/i.test(artifactId)) {
+    sendJson(response, 404, { ok: false, error: { code: "NOT_FOUND", message: "Media artifact was not found." } });
+    return;
+  }
+  const artifact = withDatabase((db) => getMediaArtifact(db, artifactId));
+  if (!artifact || artifact.status !== "active") {
+    sendJson(response, 404, { ok: false, error: { code: "NOT_FOUND", message: "Media artifact was not found." } });
+    return;
+  }
+  const mediaRoot = resolve(paths.mediaRoot);
+  const target = resolve(artifact.storage.uri);
+  const actual = isPathInside(target, mediaRoot) ? safeFile(mediaRoot, relative(mediaRoot, target)) : null;
+  if (!actual) {
+    sendJson(response, 404, { ok: false, error: { code: "NOT_FOUND", message: "Media artifact was not found." } });
+    return;
+  }
+  const size = statSync(actual).size;
+  const contentType = artifact.storage.mime_type || MEDIA_CONTENT_TYPES[extname(actual).toLowerCase()] || "application/octet-stream";
+  const headers = { "content-type": contentType, "cache-control": "no-store", "accept-ranges": artifact.artifact_type === "video" ? "bytes" : "none" };
+  const range = request.headers.range;
+  if (artifact.artifact_type === "video" && typeof range === "string") {
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+    if (match) {
+      const start = match[1] ? Number(match[1]) : 0;
+      const end = match[2] ? Number(match[2]) : size - 1;
+      if (Number.isInteger(start) && Number.isInteger(end) && start >= 0 && end >= start && end < size) {
+        response.writeHead(206, { ...headers, "content-range": `bytes ${start}-${end}/${size}`, "content-length": String(end - start + 1) });
+        createReadStream(actual, { start, end }).pipe(response);
+        return;
+      }
+    }
+    response.writeHead(416, { "content-range": `bytes */${size}` });
+    response.end();
+    return;
+  }
+  response.writeHead(200, { ...headers, "content-length": String(size) });
+  createReadStream(actual).pipe(response);
+}
+
+async function route(request: IncomingMessage, response: ServerResponse, actionNonce: string): Promise<void> {
+  if (!isLocalRequest(request)) {
+    sendJson(response, 403, { ok: false, error: { code: "LOCALHOST_ONLY", message: "Workbench accepts local requests only." } });
+    return;
+  }
+  const url = new URL(request.url ?? "/", `http://${WORKBENCH_HOST}`);
+  if (await handleWorkbenchV2Api(request, response, url, actionNonce)) return;
+  if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/") {
+    response.writeHead(302, { location: "/v2/dashboard", "cache-control": "no-store" });
+    response.end();
+    return;
+  }
+  if (request.method === "GET" && (url.pathname === "/v2" || url.pathname.startsWith("/v2/") || url.pathname.startsWith("/v2-assets/"))) {
+    serveWorkbenchUi(url.pathname, response);
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/favicon.ico") {
+    response.writeHead(204, { "cache-control": "no-store" });
+    response.end();
+    return;
+  }
+  if (request.method === "GET" && url.pathname.startsWith("/ui-assets/")) {
+    serveUiAsset(url.pathname, response);
+    return;
+  }
+  if (request.method === "GET" && url.pathname.startsWith("/imports/")) {
+    serveImport(url.pathname, response);
+    return;
+  }
+  if (request.method === "GET" && url.pathname.startsWith("/media/artifacts/")) {
+    serveMedia(url.pathname, request, response);
+    return;
+  }
+  sendJson(response, 404, { ok: false, error: { code: "NOT_FOUND", message: "Route was not found." } });
+}
+
+function listen(server: Server, startPort: number): Promise<number> {
+  return new Promise((resolveListen, reject) => {
+    const attempt = (port: number): void => {
+      const onError = (error: NodeJS.ErrnoException): void => {
+        server.off("listening", onListening);
+        if (error.code === "EADDRINUSE" && port < startPort + 20) attempt(port + 1);
+        else reject(error);
+      };
+      const onListening = (): void => {
+        server.off("error", onError);
+        const address = server.address();
+        resolveListen(typeof address === "object" && address ? address.port : port);
+      };
+      server.once("error", onError);
+      server.once("listening", onListening);
+      server.listen(port, WORKBENCH_HOST);
+    };
+    attempt(startPort);
+  });
+}
+
+export async function startWorkbenchApplication(startPort = Number(process.env.H1_WORKBENCH_PORT || process.env.PORT || WORKBENCH_PORT)): Promise<WorkbenchRuntime> {
+  ensureM0Directories();
+  migrateLegacyWorkbenchInboxStores();
+  resumeWorkbenchGenerationJobs();
+  const actionNonce = randomUUID();
+  const server = createServer((request, response) => {
+    void route(request, response, actionNonce).catch(() => {
+      if (!response.headersSent) sendJson(response, 500, { ok: false, error: { code: "SERVER_ERROR", message: "Workbench server error." } });
+      else if (!response.writableEnded) response.end();
+    });
+  });
+  const port = await listen(server, startPort);
+  return {
+    host: WORKBENCH_HOST,
+    port,
+    url: `http://${WORKBENCH_HOST}:${port}`,
+    close: () => new Promise((resolveClose, reject) => server.close((error) => error ? reject(error) : resolveClose()))
+  };
+}
+
+export function installWorkbenchShutdownHandlers(runtime: WorkbenchRuntime): void {
+  const shutdown = async (): Promise<void> => {
+    await runtime.close();
+    process.exit(0);
+  };
+  process.on("SIGINT", () => { void shutdown(); });
+  process.on("SIGTERM", () => { void shutdown(); });
+}

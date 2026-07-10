@@ -15,6 +15,7 @@ import {
   decideWorkbenchClip,
   decideWorkbenchImport,
   getWorkbenchDashboard,
+  getWorkbenchReport,
   getWorkbenchProjectWorkspace,
   getWorkbenchShell,
   listWorkbenchAssets,
@@ -233,6 +234,11 @@ export async function handleWorkbenchV2Api(
   }
   if (request.method === "GET" && url.pathname === "/api/v2/system/reports") {
     sendPage(response, listWorkbenchReports({ limit: numberParam(url.searchParams.get("limit")), offset: numberParam(url.searchParams.get("offset")) }));
+    return true;
+  }
+  const reportMatch = url.pathname.match(/^\/api\/v2\/system\/reports\/([^/]+)$/);
+  if (request.method === "GET" && reportMatch) {
+    sendResult(response, getWorkbenchReport(decodeSegment(reportMatch[1])));
     return true;
   }
   if (request.method === "GET" && url.pathname === "/api/v2/system/governance") {

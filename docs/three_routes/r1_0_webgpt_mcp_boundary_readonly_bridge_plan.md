@@ -7,7 +7,7 @@ created_at: 2026-07-06T21:23:00+08:00
 workspace: A:\AI Video Production Workspace
 source_plan:
   - docs/three_routes/THREE_ROUTE_ADAPTED_DISPATCH_v1_1.md
-  - docs/three_routes/source_v1_1/05_R1_WEBGPT_MCP_ROUTE_TASKBOOK.md
+  - legacy/docs/three_routes/source_v1_1/05_R1_WEBGPT_MCP_ROUTE_TASKBOOK.md
   - docs/three_routes/r3_0_local_app_contract_freeze_result.md
 intent: planning_and_contract_only
 runtime_server_implemented: false

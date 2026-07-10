@@ -29,8 +29,8 @@ npm ci
 npm run typecheck
 npm run build
 npm run dev:v2
-npm run h1:workbench
-npm run webgpt:v4:serve
+npm run start:local
+npm run start:webgpt
 npm run test:v2
 npm run test:v2:ui
 npm run test:webgpt:v4
@@ -39,7 +39,7 @@ npm run test:v2:browser
 npm run secret:scan
 ```
 
-`h1:workbench` 和 `webgpt:v4:serve` 是当前真实入口。稳定化版本后续 PR 才会加入 `start:*`、`db:*`、`preflight` 和统一 `test`；在实现落地前，这些名称不是可执行接口。
+`start:local` 只启动本地 Workbench。`start:webgpt` 单独启动 WebGPT V4 MCP 与媒体网关。`db:*`、`preflight` 和统一 `test` 会在对应能力实现时加入。
 
 ## 本地启动
 
@@ -47,13 +47,13 @@ npm run secret:scan
 
 ```powershell
 npm run build
-npm run h1:workbench
+npm run start:local
 ```
 
 Workbench 默认监听 `http://127.0.0.1:4181`。WebGPT V4 是独立服务：
 
 ```powershell
-npm run webgpt:v4:serve
+npm run start:webgpt
 ```
 
 默认 MCP 与媒体端口为 `2091` 和 `2092`，只绑定 `127.0.0.1`。未配置 OAuth 时健康检查可以通过，但 `/readyz` 和 MCP 调用保持关闭。
