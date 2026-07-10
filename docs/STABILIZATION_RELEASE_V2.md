@@ -1,7 +1,9 @@
 # Stabilization Release v2 Taskbook
 
-Target: `0.1.0-beta.1`  
-Audience: Jenn local Windows production  
+Target: `0.1.0-beta.1`
+
+Audience: Jenn local Windows production
+
 Baseline: `d38b69b`
 
 ## Outcome
@@ -43,4 +45,3 @@ Each delivery is an independent PR. A PR must build and pass its relevant tests 
 ## Authorization gates
 
 Before implementation performs a bulk historical file move or migrates Jenn's active database, it must provide a concrete preflight and obtain current explicit authorization. Test migrations operate only on disposable databases.
-

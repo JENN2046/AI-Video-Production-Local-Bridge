@@ -44,4 +44,3 @@ WebGPT app
 ```
 
 External Auth0, secure tunnel, public HTTPS media origin and Windows automatic startup are explicitly outside this stabilization release.
-

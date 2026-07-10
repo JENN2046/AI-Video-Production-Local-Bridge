@@ -72,4 +72,3 @@ npm run webgpt:v4:serve
 本版本冻结 WebGPT V5、Workbench V3 和新 Provider。当前建设顺序是：CI 基线、主路径模块化、版本化 migration、持久化生成 worker、媒体资源调度和 readiness。
 
 详见 [当前状态](CURRENT_STATE.md)、[架构](docs/ARCHITECTURE.md) 和 [Stabilization Release v2 taskbook](docs/STABILIZATION_RELEASE_V2.md)。
-
