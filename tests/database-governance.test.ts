@@ -18,7 +18,7 @@ test("fresh database migrates explicitly and remains idempotent", () => {
   try {
     const sqlitePath = join(root, "app.sqlite");
     const first = migrateDatabase(sqlitePath);
-    assert.deepEqual(first.applied, ["0001", "0002"]);
+    assert.deepEqual(first.applied, ["0001", "0002", "0003"]);
     assert.equal(first.baselined, false);
     const second = migrateDatabase(sqlitePath);
     assert.deepEqual(second.applied, []);

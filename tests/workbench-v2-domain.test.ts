@@ -11,7 +11,7 @@ import {
   setWorkbenchProjectLifecycle,
   updateWorkbenchProject
 } from "../src/tools/workbenchV2.js";
-import { confirmWorkbenchGeneration, preflightWorkbenchGeneration } from "../src/tools/workbenchGeneration.js";
+import { confirmWorkbenchGeneration, preflightWorkbenchGeneration, reconcileGenerationJob } from "../src/tools/workbenchGeneration.js";
 import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
 
 test("V2 schema is transactional, versioned, and initializes project metadata", () => {
@@ -117,6 +117,14 @@ test("generation preflight enforces official estimate, balance gate, budget and 
     assert.equal(first.data.intent.currency, "CNY");
     const confirmed = confirmWorkbenchGeneration({ intent_id: first.data.intent.intent_id, budget_limit_value: 1, cost_confirmed: true, human_confirmation: true }, db);
     assert.equal(confirmed.ok, true);
+    if (!confirmed.ok) return;
+    assert.equal(confirmed.data.status, "queued");
+    assert.match(confirmed.data.job_id, /^job_/);
+    const queuedJob = db.prepare("SELECT state FROM generation_jobs WHERE job_id = ?").get(confirmed.data.job_id) as { state: string };
+    assert.equal(queuedJob.state, "queued");
+    const queuedEvent = db.prepare("SELECT to_state, reason_code FROM generation_job_events WHERE job_id = ? ORDER BY created_at LIMIT 1").get(confirmed.data.job_id) as { to_state: string; reason_code: string };
+    assert.equal(queuedEvent.to_state, "queued");
+    assert.equal(queuedEvent.reason_code, "HUMAN_CONFIRMED");
     const conflicting = confirmWorkbenchGeneration({ intent_id: second.data.intent.intent_id, budget_limit_value: 1, cost_confirmed: true, human_confirmation: true }, db);
     assert.equal(conflicting.ok, false);
     if (!conflicting.ok) assert.equal(conflicting.error.code, "REAL_GENERATION_ALREADY_ACTIVE");
@@ -124,6 +132,34 @@ test("generation preflight enforces official estimate, balance gate, budget and 
     assert.equal(row.upload_attempts, 1);
     assert.equal(row.submit_attempts, 1);
     assert.equal(row.status, "queued");
+
+    db.prepare("UPDATE generation_jobs SET state = 'manual_reconciliation', reconciliation_reason = 'PROVIDER_SUBMIT_OUTCOME_UNKNOWN' WHERE job_id = ?").run(confirmed.data.job_id);
+    const unconfirmedAttach = reconcileGenerationJob(confirmed.data.job_id, { decision: "attach_existing_task", provider_task_id: "existing-task-123", human_confirmation: false }, db);
+    assert.equal(unconfirmedAttach.ok, false);
+    if (!unconfirmedAttach.ok) assert.equal(unconfirmedAttach.error.code, "GENERATION_CONFIRMATION_REQUIRED");
+    const invalidDecision = reconcileGenerationJob(confirmed.data.job_id, { decision: "retry_submit", human_confirmation: true }, db);
+    assert.equal(invalidDecision.ok, false);
+    if (!invalidDecision.ok) assert.equal(invalidDecision.error.code, "INVALID_RECONCILIATION_DECISION");
+    const attached = reconcileGenerationJob(confirmed.data.job_id, { decision: "attach_existing_task", provider_task_id: "existing-task-123", human_confirmation: true }, db);
+    assert.equal(attached.ok, true);
+    if (attached.ok) {
+      assert.equal(attached.data.job.state, "polling");
+      assert.equal(attached.data.intent.provider_task_id, "existing-task-123");
+    }
+    const reconciliationEvent = db.prepare("SELECT to_state, reason_code FROM generation_job_events WHERE job_id = ? ORDER BY rowid DESC LIMIT 1").get(confirmed.data.job_id) as { to_state: string; reason_code: string };
+    assert.equal(reconciliationEvent.to_state, "polling");
+    assert.equal(reconciliationEvent.reason_code, "HUMAN_ATTACHED_EXISTING_TASK");
+    assert.throws(() => db.prepare("UPDATE generation_job_events SET reason_code = 'rewritten' WHERE job_id = ?").run(confirmed.data.job_id), /GENERATION_JOB_EVENTS_APPEND_ONLY/);
+
+    db.prepare("INSERT INTO generation_jobs (job_id, intent_id, state, reconciliation_reason) VALUES (?, ?, 'manual_reconciliation', 'PROVIDER_SUBMIT_OUTCOME_UNKNOWN')")
+      .run("job_abandon_test", second.data.intent.intent_id);
+    const abandoned = reconcileGenerationJob("job_abandon_test", { decision: "abandon", reason: "Human verified that no provider task exists.", human_confirmation: true }, db);
+    assert.equal(abandoned.ok, true);
+    if (abandoned.ok) {
+      assert.equal(abandoned.data.job.state, "cancelled");
+      assert.equal(abandoned.data.intent.status, "cancelled");
+      assert.equal(abandoned.data.intent.provider_task_id, "");
+    }
   } finally {
     db.close();
   }

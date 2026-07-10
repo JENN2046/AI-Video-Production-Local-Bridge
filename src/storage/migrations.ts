@@ -78,6 +78,47 @@ const WORKBENCH_V2_4_CANONICAL = [
   "webgpt_media_grants", "webgpt_provider_price_cache"
 ].join("\n");
 
+const GENERATION_JOBS_SQL = `
+  CREATE TABLE IF NOT EXISTS generation_jobs (
+    job_id TEXT PRIMARY KEY,
+    intent_id TEXT NOT NULL UNIQUE REFERENCES generation_intents(intent_id),
+    state TEXT NOT NULL,
+    lease_owner TEXT NOT NULL DEFAULT '',
+    lease_token TEXT NOT NULL DEFAULT '',
+    lease_expires_at TEXT,
+    next_attempt_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    reconciliation_reason TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (state IN ('queued','submitting','polling','downloading','finalizing','manual_reconciliation','succeeded','failed','cancelled'))
+  );
+  CREATE TABLE IF NOT EXISTS generation_job_events (
+    event_id TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL REFERENCES generation_jobs(job_id),
+    from_state TEXT NOT NULL DEFAULT '',
+    to_state TEXT NOT NULL,
+    reason_code TEXT NOT NULL DEFAULT '',
+    data_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_generation_jobs_due ON generation_jobs(state, next_attempt_at, created_at);
+  CREATE INDEX IF NOT EXISTS idx_generation_job_events_job ON generation_job_events(job_id, created_at);
+  CREATE TRIGGER IF NOT EXISTS generation_job_events_no_update
+    BEFORE UPDATE ON generation_job_events BEGIN
+      SELECT RAISE(ABORT, 'GENERATION_JOB_EVENTS_APPEND_ONLY');
+    END;
+  CREATE TRIGGER IF NOT EXISTS generation_job_events_no_delete
+    BEFORE DELETE ON generation_job_events BEGIN
+      SELECT RAISE(ABORT, 'GENERATION_JOB_EVENTS_APPEND_ONLY');
+    END;
+  INSERT OR IGNORE INTO generation_jobs (job_id, intent_id, state, reconciliation_reason)
+  SELECT 'job_' || intent_id, intent_id,
+    CASE WHEN provider_task_id <> '' THEN 'polling' ELSE 'manual_reconciliation' END,
+    CASE WHEN provider_task_id <> '' THEN '' ELSE 'PROVIDER_SUBMIT_OUTCOME_UNKNOWN' END
+  FROM generation_intents WHERE confirmed = 1 AND status IN ('queued', 'running');
+`;
+
 interface Migration {
   id: string;
   name: string;
@@ -97,6 +138,12 @@ export const DATABASE_MIGRATIONS: readonly Migration[] = [
     name: "workbench_v2_4_baseline",
     canonical: WORKBENCH_V2_4_CANONICAL,
     apply: (db) => initializeWorkbenchV2Schema(db, { manage_transaction: false })
+  },
+  {
+    id: "0003",
+    name: "persistent_generation_jobs",
+    canonical: GENERATION_JOBS_SQL,
+    apply: (db) => db.exec(GENERATION_JOBS_SQL)
   }
 ];
 
@@ -157,20 +204,22 @@ export function assertSchemaCurrent(db: M0Database): void {
 
 export function runDatabaseMigrations(db: M0Database): { applied: string[]; baselined: boolean } {
   db.exec("PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
+  let baselined = false;
+  const appliedIds: string[] = [];
   if (isCurrentUnledgeredDatabase(db)) {
     db.exec("BEGIN EXCLUSIVE");
     try {
       ensureLedger(db);
-      for (const migration of DATABASE_MIGRATIONS) insertMigration(db, migration);
+      for (const migration of DATABASE_MIGRATIONS.slice(0, 2)) insertMigration(db, migration);
       db.exec("COMMIT");
-      return { applied: DATABASE_MIGRATIONS.map((migration) => migration.id), baselined: true };
+      appliedIds.push(...DATABASE_MIGRATIONS.slice(0, 2).map((migration) => migration.id));
+      baselined = true;
     } catch (error) {
       db.exec("ROLLBACK");
       throw error;
     }
   }
 
-  const appliedIds: string[] = [];
   for (const migration of DATABASE_MIGRATIONS) {
     const tables = tableNames(db);
     const existing = tables.has("schema_migrations")
@@ -195,5 +244,5 @@ export function runDatabaseMigrations(db: M0Database): { applied: string[]; base
     }
   }
   assertSchemaCurrent(db);
-  return { applied: appliedIds, baselined: false };
+  return { applied: appliedIds, baselined };
 }

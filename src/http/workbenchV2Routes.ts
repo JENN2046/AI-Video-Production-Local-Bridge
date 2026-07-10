@@ -8,6 +8,7 @@ import {
   confirmWorkbenchGeneration,
   getWorkbenchGenerationIntent,
   preflightWorkbenchGeneration,
+  reconcileGenerationJob,
   startWorkbenchGeneration
 } from "../tools/workbenchGeneration.js";
 import {
@@ -55,8 +56,8 @@ function statusForError(error: WorkbenchV2Error): number {
   return 400;
 }
 
-function sendResult<T>(response: ServerResponse, result: WorkbenchV2Result<T>): void {
-  if (result.ok) sendOk(response, result.data);
+function sendResult<T>(response: ServerResponse, result: WorkbenchV2Result<T>, successStatus = 200): void {
+  if (result.ok) send(response, successStatus, { ok: true, data: result.data });
   else send(response, statusForError(result.error), { ok: false, error: result.error });
 }
 
@@ -393,6 +394,22 @@ export async function handleWorkbenchV2Api(
         human_confirmation: body.human_confirmation === true
       }, db));
       if (result.ok) startWorkbenchGeneration(intentId, { allow_submit: true });
+      sendResult(response, result, 202);
+    });
+    return true;
+  }
+
+  const generationReconcileMatch = url.pathname.match(/^\/api\/v2\/generation\/jobs\/([^/]+)\/reconcile$/);
+  if (request.method === "POST" && generationReconcileMatch) {
+    const jobId = decodeSegment(generationReconcileMatch[1]);
+    await mutation(request, response, actionNonce, (body) => {
+      const result = withDatabase((db) => reconcileGenerationJob(jobId, {
+        decision: optionalText(body.decision),
+        provider_task_id: optionalText(body.provider_task_id),
+        reason: optionalText(body.reason),
+        human_confirmation: body.human_confirmation === true
+      }, db));
+      if (result.ok && result.data.job.state === "polling") startWorkbenchGeneration(result.data.intent.intent_id, { allow_submit: false });
       sendResult(response, result);
     });
     return true;
