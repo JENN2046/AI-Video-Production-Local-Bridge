@@ -1,9 +1,9 @@
 {
   "name": "ai-video-production-workspace",
-  "version": "0.0.0-m0",
+  "version": "0.1.0-beta.1",
   "private": true,
   "type": "module",
-  "description": "M0 mock-provider-first video production loop skeleton.",
+  "description": "Governance-first AI video production workspace Beta for Jenn's local Windows environment.",
   "engines": {
     "node": ">=22.5.0"
   },
