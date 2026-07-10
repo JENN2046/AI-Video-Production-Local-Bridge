@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { writeFileSync } from "node:fs";
+import { basename, join } from "node:path";
 
 import { ensureM0Directories, paths } from "../paths.js";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { getMediaArtifact } from "./mediaArtifacts.js";
+import { listWorkbenchPendingActionRecords, saveWorkbenchPendingActionRecord } from "./workbenchInboxStore.js";
 import {
   freezeH1StoryboardPackage,
   H1_PROVIDER_BOUNDARY,
@@ -173,26 +174,14 @@ function now(): string {
   return new Date().toISOString();
 }
 
-function storePath(): string {
-  return join(paths.workspaceRoot, WEBGPT_PENDING_ACTION_STORE_FILE);
+export function loadWebGptPendingActionStore(db = openM0Database()): WebGptPendingActionStore {
+  const actions = listWorkbenchPendingActionRecords(db) as unknown as WebGptPendingActionRecord[];
+  return { version: "webgpt-pending-action-store-v1", updated_at: actions.at(-1)?.updated_at ?? now(), actions };
 }
 
-export function loadWebGptPendingActionStore(): WebGptPendingActionStore {
-  const target = storePath();
-  if (!existsSync(target)) return { version: "webgpt-pending-action-store-v1", updated_at: now(), actions: [] };
-  const parsed = JSON.parse(readFileSync(target, "utf8")) as Partial<WebGptPendingActionStore>;
-  return {
-    version: "webgpt-pending-action-store-v1",
-    updated_at: typeof parsed.updated_at === "string" ? parsed.updated_at : now(),
-    actions: Array.isArray(parsed.actions) ? parsed.actions : []
-  };
-}
-
-function saveWebGptPendingActionStore(store: WebGptPendingActionStore): WebGptPendingActionStore {
+function saveWebGptPendingActionStore(store: WebGptPendingActionStore, db = openM0Database()): WebGptPendingActionStore {
   const next = { ...store, updated_at: now() };
-  const target = storePath();
-  mkdirSync(dirname(target), { recursive: true });
-  writeFileSync(target, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  for (const action of next.actions) saveWorkbenchPendingActionRecord(action as unknown as Record<string, unknown>, db);
   return next;
 }
 
@@ -233,15 +222,16 @@ function safePayload(input: Record<string, unknown>): Record<string, unknown> {
   return JSON.parse(JSON.stringify(input)) as Record<string, unknown>;
 }
 
-function currentShotIds(): Set<string> {
-  return new Set(loadH1WorkbenchState().shots.map((shot) => shot.shot_id));
+function currentShotIds(db: M0Database): Set<string> {
+  const rows = db.prepare("SELECT shot_id FROM shots").all() as Array<{ shot_id: string }>;
+  return new Set(rows.map((shot) => shot.shot_id));
 }
 
-function validateExistingShotId(tool: WebGptPendingActionToolName, input: Record<string, unknown>): WebGptPendingActionToolResult | null {
+function validateExistingShotId(tool: WebGptPendingActionToolName, input: Record<string, unknown>, db: M0Database): WebGptPendingActionToolResult | null {
   const shotId = typeof input.shot_id === "string" ? input.shot_id.trim() : "";
   if (!shotId) return fail(tool, "MISSING_REQUIRED_FIELD", "shot_id is required.");
   if (!plainId(shotId)) return fail(tool, "INVALID_APP_ID", "Only real app shot_id values are accepted.");
-  if (!currentShotIds().has(shotId)) return fail(tool, "SHOT_NOT_FOUND", `Shot not found in current workbench state: ${shotId}`);
+  if (!currentShotIds(db).has(shotId)) return fail(tool, "SHOT_NOT_FOUND", `Shot not found in current workbench state: ${shotId}`);
   return null;
 }
 
@@ -269,7 +259,7 @@ function validateImportFilename(tool: WebGptPendingActionToolName, input: Record
   return null;
 }
 
-function appendAction(tool: WebGptPendingActionToolName, input: Record<string, unknown>): WebGptPendingActionRecord {
+function appendAction(tool: WebGptPendingActionToolName, input: Record<string, unknown>, db: M0Database): WebGptPendingActionRecord {
   const createdAt = now();
   const action: WebGptPendingActionRecord = {
     action_id: `webgpt_action_${randomUUID()}`,
@@ -306,9 +296,7 @@ function appendAction(tool: WebGptPendingActionToolName, input: Record<string, u
       source_asset_overwritten: false
     }
   };
-  const store = loadWebGptPendingActionStore();
-  saveWebGptPendingActionStore({ ...store, actions: [...store.actions, action] });
-  return action;
+  return saveWorkbenchPendingActionRecord(action as unknown as Record<string, unknown>, db) as unknown as WebGptPendingActionRecord;
 }
 
 export function executeWebGptPendingActionTool(
@@ -323,39 +311,39 @@ export function executeWebGptPendingActionTool(
   if (tool === "request_register_media_artifact_from_import") {
     const importError = validateImportFilename(tool, input, db);
     if (importError) return importError;
-    return ok(tool, appendAction(tool, input));
+    return ok(tool, appendAction(tool, input, db));
   }
 
   if (tool === "request_link_artifact_to_shot") {
-    const shotError = validateExistingShotId(tool, input);
+    const shotError = validateExistingShotId(tool, input, db);
     if (shotError) return shotError;
     const artifactError = validateArtifactId(tool, input, db);
     if (artifactError) return artifactError;
-    return ok(tool, appendAction(tool, input));
+    return ok(tool, appendAction(tool, input, db));
   }
 
   if (tool === "request_validate_storyboard_package") {
-    return ok(tool, appendAction(tool, input));
+    return ok(tool, appendAction(tool, input, db));
   }
 
   if (tool === "request_import_storyboard_package") {
     if (typeof input.reason !== "string" || input.reason.trim() === "") return fail(tool, "MISSING_REQUIRED_FIELD", "reason is required.");
-    return ok(tool, appendAction(tool, input));
+    return ok(tool, appendAction(tool, input, db));
   }
 
   return fail("unknown", "TOOL_NOT_FOUND", `Pending action tool not found: ${tool}`);
 }
 
-function updateAction(action: WebGptPendingActionRecord): WebGptPendingActionRecord {
-  const store = loadWebGptPendingActionStore();
+function updateAction(action: WebGptPendingActionRecord, db: M0Database): WebGptPendingActionRecord {
+  const store = loadWebGptPendingActionStore(db);
   const actions = store.actions.map((candidate) => (candidate.action_id === action.action_id ? action : candidate));
-  saveWebGptPendingActionStore({ ...store, actions });
+  saveWebGptPendingActionStore({ ...store, actions }, db);
   return action;
 }
 
-function findAction(actionId: string): WebGptPendingActionRecord | null {
+function findAction(actionId: string, db: M0Database): WebGptPendingActionRecord | null {
   if (!plainId(actionId) || !actionId.startsWith("webgpt_action_")) return null;
-  return loadWebGptPendingActionStore().actions.find((action) => action.action_id === actionId) ?? null;
+  return loadWebGptPendingActionStore(db).actions.find((action) => action.action_id === actionId) ?? null;
 }
 
 function writePendingActionReport(action: WebGptPendingActionRecord): string {
@@ -377,7 +365,7 @@ function writePendingActionReport(action: WebGptPendingActionRecord): string {
     }
   };
   writeFileSync(reportPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
-  writeFileSync(join(paths.workspaceRoot, WEBGPT_PENDING_ACTION_REPORT_LATEST), `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  writeFileSync(join(paths.reportsRoot, "r1_3_pending_action_result.json"), `${JSON.stringify(payload, null, 2)}\n`, "utf8");
   return relativeReportPath;
 }
 
@@ -435,7 +423,7 @@ export function confirmWebGptPendingAction(
   db = openM0Database()
 ): { ok: true; action: WebGptPendingActionRecord } | { ok: false; error: { code: string; message: string } } {
   if (input.human_confirmation !== true) return { ok: false, error: { code: "HUMAN_CONFIRMATION_REQUIRED", message: "Human confirmation is required before executing a pending action." } };
-  const action = findAction(input.action_id);
+  const action = findAction(input.action_id, db);
   if (!action) return { ok: false, error: { code: "ACTION_NOT_FOUND", message: `Pending action not found: ${input.action_id}` } };
   if (action.status !== "pending") return { ok: false, error: { code: "ACTION_NOT_PENDING", message: `Action is not pending: ${action.status}` } };
 
@@ -466,11 +454,11 @@ export function confirmWebGptPendingAction(
     }
   };
   next.execution.report_path = writePendingActionReport(next);
-  return { ok: true, action: updateAction(next) };
+  return { ok: true, action: updateAction(next, db) };
 }
 
-export function rejectWebGptPendingAction(input: { action_id: string; reason: string }): { ok: true; action: WebGptPendingActionRecord } | { ok: false; error: { code: string; message: string } } {
-  const action = findAction(input.action_id);
+export function rejectWebGptPendingAction(input: { action_id: string; reason: string }, db = openM0Database()): { ok: true; action: WebGptPendingActionRecord } | { ok: false; error: { code: string; message: string } } {
+  const action = findAction(input.action_id, db);
   if (!action) return { ok: false, error: { code: "ACTION_NOT_FOUND", message: `Pending action not found: ${input.action_id}` } };
   if (action.status !== "pending") return { ok: false, error: { code: "ACTION_NOT_PENDING", message: `Action is not pending: ${action.status}` } };
   const rejectedAt = now();
@@ -486,11 +474,11 @@ export function rejectWebGptPendingAction(input: { action_id: string; reason: st
     }
   };
   next.execution.report_path = writePendingActionReport(next);
-  return { ok: true, action: updateAction(next) };
+  return { ok: true, action: updateAction(next, db) };
 }
 
-export function webGptPendingActionWorkbenchSummary(): WebGptPendingActionWorkbenchSummary {
-  const actions = [...loadWebGptPendingActionStore().actions].reverse();
+export function webGptPendingActionWorkbenchSummary(db = openM0Database()): WebGptPendingActionWorkbenchSummary {
+  const actions = [...loadWebGptPendingActionStore(db).actions].reverse();
   return {
     bridge_version: WEBGPT_PENDING_ACTION_VERSION,
     store_file: WEBGPT_PENDING_ACTION_STORE_FILE,

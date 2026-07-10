@@ -171,7 +171,7 @@ function now(): string {
 }
 
 function storePath(): string {
-  return join(paths.workspaceRoot, WEBGPT_REVIEW_ASSISTANT_STORE_FILE);
+  return join(paths.dataRoot, "webgpt", "review_assistant_drafts.json");
 }
 
 function isFakeOrPendingId(value: string): boolean {

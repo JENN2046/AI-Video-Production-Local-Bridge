@@ -97,8 +97,11 @@ export function createProject(
 
 export function saveProject(db: M0Database, project: Project): void {
   db.prepare(`
-    INSERT OR REPLACE INTO projects (project_id, data_json, updated_at)
+    INSERT INTO projects (project_id, data_json, updated_at)
     VALUES (?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(project_id) DO UPDATE SET
+      data_json = excluded.data_json,
+      updated_at = CURRENT_TIMESTAMP
   `).run(project.project_id, JSON.stringify(project));
 }
 

@@ -35,3 +35,6 @@ ops/tools/
 ops/reports/*.zip
 ops/reports/*.zip.sha256.txt
 ops/reports/m0_acceptance_review_package_*/
+ops/backups/
+test-results/
+playwright-report/

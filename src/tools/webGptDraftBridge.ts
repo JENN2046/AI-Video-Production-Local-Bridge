@@ -1,11 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename } from "node:path";
 
-import { paths } from "../paths.js";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { getMediaArtifact } from "./mediaArtifacts.js";
-import { defaultH1WorkbenchState, H1_PROVIDER_BOUNDARY, H1_STATE_FILE, type H1WorkbenchState } from "./h1Workbench.js";
+import { H1_PROVIDER_BOUNDARY } from "./h1Workbench.js";
+import { appendWorkbenchInboxEvent, getWorkbenchDraftRecord, listWorkbenchDraftRecords, saveWorkbenchDraftRecord } from "./workbenchInboxStore.js";
 
 export const WEBGPT_DRAFT_BRIDGE_VERSION = "webgpt-draft-v0.5";
 export const WEBGPT_DRAFT_STORE_FILE = "data/webgpt/draft_submissions.json";
@@ -34,7 +33,7 @@ export interface WebGptDraftToolDefinition {
 export interface WebGptDraftRecord {
   draft_id: string;
   tool: WebGptDraftToolName;
-  status: "submitted";
+  status: "pending" | "revision_needed" | "promoted" | "closed";
   created_at: string;
   updated_at: string;
   source: "webgpt_bridge_v0_5";
@@ -56,6 +55,12 @@ export interface WebGptDraftRecord {
     provider_call_attempted: false;
     source_asset_overwritten: false;
   };
+  parent_draft_id?: string;
+  revision_note?: string;
+  target_project_id?: string;
+  target_shot_id?: string;
+  promoted_object_type?: string;
+  promoted_object_id?: string;
 }
 
 export interface WebGptDraftStore {
@@ -198,42 +203,9 @@ function now(): string {
   return new Date().toISOString();
 }
 
-function storePath(): string {
-  return join(paths.workspaceRoot, WEBGPT_DRAFT_STORE_FILE);
-}
-
-function h1StatePath(): string {
-  return join(paths.workspaceRoot, H1_STATE_FILE);
-}
-
-function loadH1DraftState(): H1WorkbenchState {
-  const target = h1StatePath();
-  if (!existsSync(target)) return defaultH1WorkbenchState();
-  const parsed = JSON.parse(readFileSync(target, "utf8")) as H1WorkbenchState;
-  return {
-    ...defaultH1WorkbenchState(),
-    ...parsed,
-    regeneration_request_drafts: parsed.regeneration_request_drafts ?? []
-  };
-}
-
-export function loadWebGptDraftStore(): WebGptDraftStore {
-  const target = storePath();
-  if (!existsSync(target)) return { version: "webgpt-draft-store-v0.5", updated_at: now(), drafts: [] };
-  const parsed = JSON.parse(readFileSync(target, "utf8")) as Partial<WebGptDraftStore>;
-  return {
-    version: "webgpt-draft-store-v0.5",
-    updated_at: typeof parsed.updated_at === "string" ? parsed.updated_at : now(),
-    drafts: Array.isArray(parsed.drafts) ? parsed.drafts : []
-  };
-}
-
-function saveWebGptDraftStore(store: WebGptDraftStore): WebGptDraftStore {
-  const next = { ...store, updated_at: now() };
-  const target = storePath();
-  mkdirSync(dirname(target), { recursive: true });
-  writeFileSync(target, `${JSON.stringify(next, null, 2)}\n`, "utf8");
-  return next;
+export function loadWebGptDraftStore(db = openM0Database()): WebGptDraftStore {
+  const drafts = listWorkbenchDraftRecords(db) as unknown as WebGptDraftRecord[];
+  return { version: "webgpt-draft-store-v0.5", updated_at: drafts.at(-1)?.updated_at ?? now(), drafts };
 }
 
 function fail(tool: WebGptDraftToolName | "unknown", code: string, message: string): WebGptDraftToolResult {
@@ -269,15 +241,16 @@ function plainId(value: string): boolean {
   return value !== "" && value === basename(value) && !value.includes("/") && !value.includes("\\") && !isFakeOrPendingId(value);
 }
 
-function currentShotIds(): Set<string> {
-  return new Set(loadH1DraftState().shots.map((shot) => shot.shot_id));
+function currentShotIds(db: M0Database): Set<string> {
+  const rows = db.prepare("SELECT shot_id FROM shots").all() as Array<{ shot_id: string }>;
+  return new Set(rows.map((shot) => shot.shot_id));
 }
 
-function validateExistingShotId(tool: WebGptDraftToolName, input: Record<string, unknown>, required: boolean): WebGptDraftToolResult | null {
+function validateExistingShotId(tool: WebGptDraftToolName, input: Record<string, unknown>, required: boolean, db: M0Database): WebGptDraftToolResult | null {
   const shotId = typeof input.shot_id === "string" ? input.shot_id.trim() : "";
   if (!shotId) return required ? fail(tool, "MISSING_REQUIRED_FIELD", "shot_id is required.") : null;
   if (!plainId(shotId)) return fail(tool, "INVALID_APP_ID", "Only real app shot_id values are accepted.");
-  if (!currentShotIds().has(shotId)) return fail(tool, "SHOT_NOT_FOUND", `Shot not found in current workbench state: ${shotId}`);
+  if (!currentShotIds(db).has(shotId)) return fail(tool, "SHOT_NOT_FOUND", `Shot not found in current workbench state: ${shotId}`);
   return null;
 }
 
@@ -292,11 +265,11 @@ function validateArtifactId(tool: WebGptDraftToolName, artifactId: string, db: M
   return null;
 }
 
-function validateDraftId(tool: WebGptDraftToolName, input: Record<string, unknown>, required: boolean): WebGptDraftToolResult | null {
+function validateDraftId(tool: WebGptDraftToolName, input: Record<string, unknown>, required: boolean, db: M0Database): WebGptDraftToolResult | null {
   const draftId = typeof input.package_draft_id === "string" ? input.package_draft_id.trim() : "";
   if (!draftId) return required ? fail(tool, "MISSING_REQUIRED_FIELD", "package_draft_id is required.") : null;
   if (!plainId(draftId) || !draftId.startsWith("webgpt_draft_")) return fail(tool, "INVALID_DRAFT_ID", "Only real app draft ids are accepted.");
-  const draft = loadWebGptDraftStore().drafts.find((candidate) => candidate.draft_id === draftId);
+  const draft = getWorkbenchDraftRecord(draftId, db) as unknown as WebGptDraftRecord | null;
   if (!draft) return fail(tool, "DRAFT_NOT_FOUND", `Draft not found: ${draftId}`);
   if (draft.tool !== "submit_storyboard_package_draft") return fail(tool, "DRAFT_TYPE_NOT_PACKAGE", "package_draft_id must refer to a storyboard package draft.");
   return null;
@@ -306,12 +279,12 @@ function draftPayload(input: Record<string, unknown>): Record<string, unknown> {
   return JSON.parse(JSON.stringify(input)) as Record<string, unknown>;
 }
 
-function appendDraft(tool: WebGptDraftToolName, input: Record<string, unknown>): WebGptDraftRecord {
+function appendDraft(tool: WebGptDraftToolName, input: Record<string, unknown>, db: M0Database): WebGptDraftRecord {
   const createdAt = now();
   const draft: WebGptDraftRecord = {
     draft_id: `webgpt_draft_${randomUUID()}`,
     tool,
-    status: "submitted",
+    status: "pending",
     created_at: createdAt,
     updated_at: createdAt,
     source: "webgpt_bridge_v0_5",
@@ -323,9 +296,17 @@ function appendDraft(tool: WebGptDraftToolName, input: Record<string, unknown>):
     },
     production_effects: { ...NO_PRODUCTION_EFFECTS }
   };
-  const store = loadWebGptDraftStore();
-  saveWebGptDraftStore({ ...store, drafts: [...store.drafts, draft] });
-  return draft;
+  const revisesDraftId = typeof input.revises_draft_id === "string" ? input.revises_draft_id.trim() : "";
+  if (revisesDraftId) {
+    const parent = getWorkbenchDraftRecord(revisesDraftId, db);
+    if (!parent) throw new Error(`Revised draft was not found: ${revisesDraftId}`);
+    draft.parent_draft_id = revisesDraftId;
+    saveWorkbenchDraftRecord({ ...parent, status: "closed", updated_at: createdAt }, db);
+    appendWorkbenchInboxEvent({ object_type: "draft", object_id: revisesDraftId, event_type: "superseded", from_status: parent.status, to_status: "closed", data: { replacement_draft_id: draft.draft_id } }, db);
+  }
+  const saved = saveWorkbenchDraftRecord(draft as unknown as Record<string, unknown>, db) as unknown as WebGptDraftRecord;
+  appendWorkbenchInboxEvent({ object_type: "draft", object_id: saved.draft_id, event_type: "submitted", to_status: "pending", data: { tool } }, db);
+  return saved;
 }
 
 function storyboardDraftShots(input: Record<string, unknown>): Array<Record<string, unknown>> {
@@ -357,46 +338,46 @@ export function executeWebGptDraftTool(
   }
 
   if (tool === "submit_shot_script_draft") {
-    const shotError = validateExistingShotId(tool, input, false);
+    const shotError = validateExistingShotId(tool, input, false, db);
     if (shotError) return shotError;
     if (typeof input.description !== "string" || input.description.trim() === "") return fail(tool, "MISSING_REQUIRED_FIELD", "description is required.");
     if (typeof input.video_prompt !== "string" || input.video_prompt.trim() === "") return fail(tool, "MISSING_REQUIRED_FIELD", "video_prompt is required.");
-    return ok(tool, appendDraft(tool, input));
+    return ok(tool, appendDraft(tool, input, db));
   }
 
   if (tool === "submit_storyboard_package_draft") {
     const artifactError = validateStoryboardDraftArtifacts(tool, input, db);
     if (artifactError) return artifactError;
-    return ok(tool, appendDraft(tool, input));
+    return ok(tool, appendDraft(tool, input, db));
   }
 
   if (tool === "propose_artifact_link") {
-    const shotError = validateExistingShotId(tool, input, true);
+    const shotError = validateExistingShotId(tool, input, true, db);
     if (shotError) return shotError;
     const artifactId = typeof input.artifact_id === "string" ? input.artifact_id.trim() : "";
     const artifactError = validateArtifactId(tool, artifactId, db);
     if (artifactError) return artifactError;
-    return ok(tool, appendDraft(tool, input));
+    return ok(tool, appendDraft(tool, input, db));
   }
 
   if (tool === "propose_package_validation") {
-    const draftError = validateDraftId(tool, input, false);
+    const draftError = validateDraftId(tool, input, false, db);
     if (draftError) return draftError;
-    return ok(tool, appendDraft(tool, input));
+    return ok(tool, appendDraft(tool, input, db));
   }
 
   if (tool === "propose_freeze_request") {
-    const draftError = validateDraftId(tool, input, false);
+    const draftError = validateDraftId(tool, input, false, db);
     if (draftError) return draftError;
     if (typeof input.reason !== "string" || input.reason.trim() === "") return fail(tool, "MISSING_REQUIRED_FIELD", "reason is required.");
-    return ok(tool, appendDraft(tool, input));
+    return ok(tool, appendDraft(tool, input, db));
   }
 
   return fail("unknown", "TOOL_NOT_FOUND", `Draft tool not found: ${tool}`);
 }
 
-export function webGptDraftWorkbenchSummary(): WebGptDraftWorkbenchSummary {
-  const drafts = [...loadWebGptDraftStore().drafts].reverse();
+export function webGptDraftWorkbenchSummary(db = openM0Database()): WebGptDraftWorkbenchSummary {
+  const drafts = [...loadWebGptDraftStore(db).drafts].reverse();
   return {
     bridge_version: WEBGPT_DRAFT_BRIDGE_VERSION,
     store_file: WEBGPT_DRAFT_STORE_FILE,

@@ -254,7 +254,7 @@ function h1Root(): string {
 }
 
 function h1StatePath(): string {
-  return join(paths.workspaceRoot, H1_STATE_FILE);
+  return join(h1Root(), "workbench_state.json");
 }
 
 function ensureH1Directories(): void {

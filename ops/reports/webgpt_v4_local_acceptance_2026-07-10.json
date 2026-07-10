@@ -1,0 +1,75 @@
+{
+  "result": "PARTIAL_EXTERNAL_GATE",
+  "scope": "WebGPT V4 local production-assistant implementation",
+  "schema_version": "workbench-v2-4",
+  "backup": "ops/backups/webgpt-v4-2026-07-10T08-24-20-131Z",
+  "migration": {
+    "review_drafts": 19,
+    "production_plans": 33,
+    "inserted": 52,
+    "second_run_inserted": 0,
+    "legacy_rows_open": 0,
+    "source_json_written": false,
+    "source_hashes_unchanged": true
+  },
+  "production_visibility": {
+    "active_production_projects": 2,
+    "all_visible_production_projects": 2,
+    "test_or_unclassified_visible": 0
+  },
+  "validation": {
+    "webgpt_v4_tests": "17 passed",
+    "workbench_v2_tests": "15 passed",
+    "workbench_ui_tests": "1 passed",
+    "h1_tests": "8 passed",
+    "browser_tests": "9 passed",
+    "typecheck_server": "passed",
+    "typecheck_ui": "passed",
+    "production_build": "passed",
+    "diff_check": "passed"
+  },
+  "runtime": {
+    "mcp": "http://127.0.0.1:2091/mcp",
+    "media": "http://127.0.0.1:2092",
+    "health": 200,
+    "media_health": 200,
+    "ready": 503,
+    "unauthenticated_mcp": 401,
+    "unauthenticated_media": 401,
+    "legacy_listener_count": 0,
+    "oauth_configured": false,
+    "tunnel_started": false
+  },
+  "hard_gates": {
+    "real_provider_requests": 0,
+    "source_media_overwrites": 0,
+    "external_configuration_changes": 0,
+    "production_mutation_tools_without_audit": 0
+  },
+  "review_fixes": {
+    "oauth_tool_security_schemes": "top-level and compatibility metadata verified",
+    "insufficient_scope_challenge": "verified",
+    "proposal_payload_whitelists": "strict per proposal kind",
+    "review_decision_default": "removed; invalid or missing decisions fail closed",
+    "media_grant_binding": "project + artifact + authenticated actor",
+    "media_route_resilience": "malformed encoding returns 400 without process exit",
+    "widget_dom_safety": "textContent-only dynamic rendering and parent source validation",
+    "read_connections": "schema migration removed from request-time reads",
+    "read_side_effects": "project context does not update last_opened_at",
+    "media_analysis": "ffprobe, scene detection and frame extraction are asynchronous",
+    "identity_disclosure": "actor_hash and author_hash removed from public results",
+    "output_schemas": "tool-specific object contracts"
+  },
+  "remaining_authorization": [
+    "Auth0 tenant, application, audience, PKCE and Jenn subject allowlist",
+    "Official Secure MCP Tunnel target account and tunnel lifecycle",
+    "HTTPS media hostname, widget origin and query-log redaction",
+    "Windows automatic-start tasks and rollback"
+  ],
+  "notes": [
+    "The workbench and WebGPT V4 local processes were restarted with the reviewed build.",
+    "All local WebGPT V4, V2, H1, UI and browser checks passed after the review fixes.",
+    "The media content route now requires an Auth0-backed media session in addition to its five-minute capability grant.",
+    "WebGPT V4 intentionally remains fail-closed until the external authorization groups are approved and configured."
+  ]
+}

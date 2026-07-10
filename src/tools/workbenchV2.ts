@@ -1,0 +1,965 @@
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
+
+import { paths } from "../paths.js";
+import { openM0Database, type M0Database } from "../storage/sqlite.js";
+import { classifyStoryboardImageImport } from "./importClassifier.js";
+import { validateImageFile } from "./imageValidity.js";
+import { listH1Reports, loadH1WorkbenchState, registerH1ApprovedKeyframe, type H1WorkbenchState } from "./h1Workbench.js";
+import { getMediaArtifact, type MediaArtifact } from "./mediaArtifacts.js";
+import { loadMemorySavebackStore } from "./memorySaveback.js";
+import { createProject, getProject, getShot, listProjectShots, saveProject, saveShot, type Project, type Shot } from "./projects.js";
+import { markShotClipReview, type RevisionInstruction } from "./review.js";
+import { listWorkbenchDraftRecords, listWorkbenchPendingActionRecords } from "./workbenchInboxStore.js";
+
+export type WorkbenchProjectClassification = "unclassified" | "production" | "test";
+export type WorkbenchProjectLifecycle = "active" | "archived";
+export type WorkbenchWorkspace = "overview" | "storyboard" | "generation" | "review" | "delivery";
+export type WorkbenchProjectPriority = "urgent" | "high" | "normal";
+export type WorkbenchProjectScope = "daily" | "all";
+
+export interface WorkbenchNextAction {
+  source: "derived" | "override";
+  label: string;
+  reason_code: string;
+  priority: WorkbenchProjectPriority;
+  expires_at: string | null;
+  derived: {
+    label: string;
+    reason_code: string;
+    priority: WorkbenchProjectPriority;
+  };
+}
+
+export interface WorkbenchProjectSummary {
+  project: Project;
+  meta: WorkbenchProjectMeta;
+  shot_count: number;
+  accepted_count: number;
+  active_run_count: number;
+  blocker_count: number;
+  blocker_reason: string;
+  review_pending_count: number;
+  delivery_state: "not_ready" | "ready_to_assemble" | "final_review" | "delivered";
+  next_action: WorkbenchNextAction;
+  risk: "blocked" | "attention" | "clear";
+}
+
+export interface WorkbenchProjectMeta {
+  project_id: string;
+  classification: WorkbenchProjectClassification;
+  lifecycle: WorkbenchProjectLifecycle;
+  pinned: boolean;
+  last_opened_at: string | null;
+  next_action_override: string;
+  next_action_priority: WorkbenchProjectPriority | null;
+  next_action_expires_at: string | null;
+  next_action_project_status: string | null;
+  next_action_updated_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkbenchPage<T> {
+  items: T[];
+  meta: {
+    limit: number;
+    offset: number;
+    total: number;
+    has_more: boolean;
+  };
+}
+
+export interface WorkbenchV2Error {
+  code: string;
+  message: string;
+  field?: string;
+}
+
+export type WorkbenchV2Result<T> = { ok: true; data: T } | { ok: false; error: WorkbenchV2Error };
+
+interface ProjectRow {
+  project_id: string;
+  data_json: string;
+  created_at: string;
+  updated_at: string;
+  classification: WorkbenchProjectClassification;
+  lifecycle: WorkbenchProjectLifecycle;
+  pinned: number;
+  last_opened_at: string | null;
+  next_action_override: string;
+  next_action_priority: WorkbenchProjectPriority | null;
+  next_action_expires_at: string | null;
+  next_action_project_status: string | null;
+  next_action_updated_at: string | null;
+  shot_count: number;
+  accepted_count: number;
+  active_run_count: number;
+  blocker_count: number;
+  missing_image_count: number;
+  missing_prompt_count: number;
+  review_pending_count: number;
+  revision_needed_count: number;
+  latest_failed_count: number;
+}
+
+interface ImportIndexRow {
+  relative_path: string;
+  filename: string;
+  size_bytes: number;
+  mtime_ms: number;
+  checksum: string;
+  metadata_json: string;
+  scanned_at: string;
+  decision: string | null;
+  target_project_id: string | null;
+  artifact_id: string | null;
+  reason: string | null;
+}
+
+function now(): string {
+  return new Date().toISOString();
+}
+
+function clampLimit(value: number | undefined, fallback = 50, maximum = 200): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(maximum, Math.max(1, Math.trunc(value ?? fallback)));
+}
+
+function clampOffset(value: number | undefined): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.trunc(value ?? 0));
+}
+
+function page<T>(items: T[], total: number, limit: number, offset: number): WorkbenchPage<T> {
+  return { items, meta: { limit, offset, total, has_more: offset + items.length < total } };
+}
+
+function parseJson<T>(value: string, fallback: T): T {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function projectMetaFromRow(row: ProjectRow): WorkbenchProjectMeta {
+  return {
+    project_id: row.project_id,
+    classification: row.classification,
+    lifecycle: row.lifecycle,
+    pinned: row.pinned === 1,
+    last_opened_at: row.last_opened_at,
+    next_action_override: row.next_action_override ?? "",
+    next_action_priority: row.next_action_priority ?? null,
+    next_action_expires_at: row.next_action_expires_at ?? null,
+    next_action_project_status: row.next_action_project_status ?? null,
+    next_action_updated_at: row.next_action_updated_at ?? null,
+    created_at: row.created_at,
+    updated_at: row.updated_at
+  };
+}
+
+function ensureProjectMeta(db: M0Database, projectId: string): void {
+  db.prepare("INSERT OR IGNORE INTO workbench_project_meta (project_id) VALUES (?)").run(projectId);
+}
+
+function projectMeta(db: M0Database, projectId: string): WorkbenchProjectMeta | null {
+  ensureProjectMeta(db, projectId);
+  const row = db.prepare(`
+    SELECT project_id, classification, lifecycle, pinned, last_opened_at,
+      next_action_override, next_action_priority, next_action_expires_at,
+      next_action_project_status, next_action_updated_at, created_at, updated_at
+    FROM workbench_project_meta WHERE project_id = ?
+  `).get(projectId) as {
+    project_id: string;
+    classification: WorkbenchProjectClassification;
+    lifecycle: WorkbenchProjectLifecycle;
+    pinned: number;
+    last_opened_at: string | null;
+    next_action_override: string;
+    next_action_priority: WorkbenchProjectPriority | null;
+    next_action_expires_at: string | null;
+    next_action_project_status: string | null;
+    next_action_updated_at: string | null;
+    created_at: string;
+    updated_at: string;
+  } | undefined;
+  return row ? { ...row, pinned: row.pinned === 1 } : null;
+}
+
+function projectNotFound(projectId: string): WorkbenchV2Result<never> {
+  return { ok: false, error: { code: "PROJECT_NOT_FOUND", message: `Project not found: ${projectId}`, field: "project_id" } };
+}
+
+export function assertWorkbenchProjectWritable(db: M0Database, projectId: string): WorkbenchV2Result<{ project: Project; meta: WorkbenchProjectMeta }> {
+  const project = getProject(db, projectId);
+  if (!project) return projectNotFound(projectId);
+  const meta = projectMeta(db, projectId);
+  if (!meta) return projectNotFound(projectId);
+  if (meta.lifecycle === "archived") {
+    return { ok: false, error: { code: "PROJECT_ARCHIVED", message: "Archived projects are read-only.", field: "project_id" } };
+  }
+  return { ok: true, data: { project, meta } };
+}
+
+export function listWorkbenchProjects(
+  input: {
+    scope?: WorkbenchProjectScope;
+    lifecycle?: WorkbenchProjectLifecycle | "all";
+    classification?: WorkbenchProjectClassification | "all";
+    query?: string;
+    limit?: number;
+    offset?: number;
+  } = {},
+  db = openM0Database()
+): WorkbenchPage<WorkbenchProjectSummary> {
+  const limit = clampLimit(input.limit);
+  const offset = clampOffset(input.offset);
+  const lifecycle = input.lifecycle ?? "active";
+  const classification = input.classification ?? "all";
+  const scope = input.scope ?? "daily";
+  const query = input.query?.trim() ?? "";
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+  if (scope === "daily") {
+    clauses.push("m.lifecycle = 'active'");
+    clauses.push("m.classification IN ('production', 'unclassified')");
+  } else {
+    if (lifecycle !== "all") {
+      clauses.push("m.lifecycle = ?");
+      params.push(lifecycle);
+    }
+    if (classification !== "all") {
+      clauses.push("m.classification = ?");
+      params.push(classification);
+    }
+  }
+  if (query) {
+    clauses.push("(json_extract(p.data_json, '$.title') LIKE ? OR p.project_id LIKE ?)");
+    params.push(`%${query}%`, `%${query}%`);
+  }
+  const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+  const totalRow = db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM projects p
+    JOIN workbench_project_meta m ON m.project_id = p.project_id
+    ${where}
+  `).get(...params) as { count: number };
+  const rows = db.prepare(`
+    SELECT p.project_id, p.data_json, p.created_at, p.updated_at,
+      m.classification, m.lifecycle, m.pinned, m.last_opened_at,
+      m.next_action_override, m.next_action_priority, m.next_action_expires_at,
+      m.next_action_project_status, m.next_action_updated_at,
+      (SELECT COUNT(*) FROM shots s WHERE s.project_id = p.project_id) AS shot_count,
+      (SELECT COUNT(*) FROM shots s WHERE s.project_id = p.project_id AND json_extract(s.data_json, '$.accepted_clip_artifact_id') <> '') AS accepted_count,
+      (SELECT COUNT(*) FROM generation_runs r WHERE r.project_id = p.project_id AND r.status IN ('queued', 'running')) AS active_run_count,
+      (SELECT COUNT(*) FROM shots s WHERE s.project_id = p.project_id AND (COALESCE(json_extract(s.data_json, '$.storyboard_image_artifact_id'), '') = '' OR COALESCE(json_extract(s.data_json, '$.video_prompt'), '') = '')) AS blocker_count,
+      (SELECT COUNT(*) FROM shots s WHERE s.project_id = p.project_id AND COALESCE(json_extract(s.data_json, '$.storyboard_image_artifact_id'), '') = '') AS missing_image_count,
+      (SELECT COUNT(*) FROM shots s WHERE s.project_id = p.project_id AND COALESCE(json_extract(s.data_json, '$.video_prompt'), '') = '') AS missing_prompt_count,
+      (SELECT COUNT(*) FROM shots s WHERE s.project_id = p.project_id AND COALESCE(json_array_length(json_extract(s.data_json, '$.clip_versions')), 0) > 0 AND json_extract(s.data_json, '$.review.approval_status') = 'pending') AS review_pending_count,
+      (SELECT COUNT(*) FROM shots s WHERE s.project_id = p.project_id AND (json_extract(s.data_json, '$.status') = 'revision_needed' OR json_extract(s.data_json, '$.review.approval_status') = 'revision_needed')) AS revision_needed_count,
+      (SELECT COUNT(*) FROM generation_runs r WHERE r.project_id = p.project_id AND r.status = 'failed' AND r.updated_at = (SELECT MAX(r2.updated_at) FROM generation_runs r2 WHERE r2.project_id = r.project_id AND COALESCE(r2.shot_id, '') = COALESCE(r.shot_id, ''))) AS latest_failed_count
+    FROM projects p
+    JOIN workbench_project_meta m ON m.project_id = p.project_id
+    ${where}
+    ORDER BY m.pinned DESC,
+      CASE json_extract(p.data_json, '$.status')
+        WHEN 'video_review' THEN 0
+        WHEN 'video_generation_in_progress' THEN 1
+        WHEN 'storyboard_approved' THEN 2
+        WHEN 'draft' THEN 3
+        ELSE 4
+      END,
+      COALESCE(m.last_opened_at, p.updated_at) DESC,
+      p.project_id DESC
+    LIMIT ? OFFSET ?
+  `).all(...params, limit, offset) as ProjectRow[];
+
+  return page(rows.map((row) => {
+    const project = parseJson<Project>(row.data_json, null as unknown as Project);
+    return projectSummaryFromRow(project, row);
+  }).filter((item) => Boolean(item.project?.project_id)), totalRow.count, limit, offset);
+}
+
+export function getWorkbenchProjectSummary(projectId: string, db = openM0Database()): WorkbenchProjectSummary | null {
+  const result = listWorkbenchProjects({ scope: "all", lifecycle: "all", classification: "all", query: projectId, limit: 10 }, db);
+  return result.items.find((item) => item.project.project_id === projectId) ?? null;
+}
+
+function projectSummaryFromRow(project: Project, row: ProjectRow): WorkbenchProjectSummary {
+  const meta = projectMetaFromRow(row);
+  const derived = deriveNextAction(project, row);
+  const overrideValid = Boolean(
+    meta.next_action_override
+    && meta.next_action_priority
+    && meta.next_action_expires_at
+    && new Date(meta.next_action_expires_at).getTime() > Date.now()
+    && meta.next_action_project_status === project.status
+  );
+  const nextAction: WorkbenchNextAction = overrideValid ? {
+    source: "override",
+    label: meta.next_action_override,
+    reason_code: "manual_override",
+    priority: meta.next_action_priority as WorkbenchProjectPriority,
+    expires_at: meta.next_action_expires_at,
+    derived
+  } : { source: "derived", ...derived, expires_at: null, derived };
+  const deliveryState = project.status === "final_approved"
+    ? "delivered"
+    : project.exports.final_video_artifact_id
+      ? "final_review"
+      : row.shot_count > 0 && row.accepted_count === row.shot_count
+        ? "ready_to_assemble"
+        : "not_ready";
+  const blockerParts: string[] = [];
+  if (row.latest_failed_count > 0) blockerParts.push(`${row.latest_failed_count} 个生成失败`);
+  if (row.missing_image_count > 0) blockerParts.push(`${row.missing_image_count} 个缺分镜图`);
+  if (row.missing_prompt_count > 0) blockerParts.push(`${row.missing_prompt_count} 个缺提示词`);
+  if (row.revision_needed_count > 0) blockerParts.push(`${row.revision_needed_count} 个需修改`);
+  const totalBlockers = row.blocker_count + row.revision_needed_count + row.latest_failed_count;
+  const risk: "blocked" | "attention" | "clear" = totalBlockers > 0 ? "blocked" : row.active_run_count > 0 || row.review_pending_count > 0 ? "attention" : "clear";
+  return {
+    project,
+    meta,
+    shot_count: row.shot_count,
+    accepted_count: row.accepted_count,
+    active_run_count: row.active_run_count,
+    blocker_count: totalBlockers,
+    blocker_reason: blockerParts.join("、"),
+    review_pending_count: row.review_pending_count,
+    delivery_state: deliveryState,
+    next_action: nextAction,
+    risk
+  };
+}
+
+function deriveNextAction(project: Project, row: ProjectRow): WorkbenchNextAction["derived"] {
+  if (row.latest_failed_count > 0) return { label: "处理生成失败", reason_code: "generation_failed", priority: "urgent" };
+  if (row.shot_count === 0) return { label: "创建第一个 SHOT", reason_code: "no_shots", priority: "high" };
+  if (row.blocker_count > 0) return { label: "补齐分镜门禁", reason_code: "storyboard_blocked", priority: "urgent" };
+  if (row.revision_needed_count > 0) return { label: "处理需修改 SHOT", reason_code: "revision_required", priority: "urgent" };
+  if (project.status === "draft") return { label: "审批分镜", reason_code: "storyboard_review", priority: "high" };
+  if (row.active_run_count > 0) return { label: "等待生成完成", reason_code: "generation_running", priority: "normal" };
+  if (row.accepted_count < row.shot_count && row.review_pending_count === 0) return { label: "生成缺失 SHOT", reason_code: "generate_shot", priority: "high" };
+  if (row.review_pending_count > 0) return { label: "审片", reason_code: "clip_review", priority: "high" };
+  if (row.accepted_count === row.shot_count && !project.exports.final_video_artifact_id) return { label: "合成交付", reason_code: "assemble", priority: "high" };
+  if (project.exports.final_video_artifact_id && project.status !== "final_approved") return { label: "最终审查", reason_code: "final_review", priority: "high" };
+  return { label: "已交付", reason_code: "delivered", priority: "normal" };
+}
+
+export function createWorkbenchProject(
+  input: { title: string; classification?: WorkbenchProjectClassification; project_type?: string; duration_seconds?: number; aspect_ratio?: string; resolution?: string },
+  db = openM0Database()
+): WorkbenchV2Result<{ project: Project; meta: WorkbenchProjectMeta }> {
+  const title = input.title?.trim();
+  if (!title) return { ok: false, error: { code: "MISSING_REQUIRED_FIELD", message: "Project title is required.", field: "title" } };
+  if (input.classification !== "production" && input.classification !== "test") {
+    return { ok: false, error: { code: "CLASSIFICATION_REQUIRED", message: "Project classification must be production or test.", field: "classification" } };
+  }
+  const created = createProject({
+    title,
+    project_type: input.project_type ?? "human_workbench_v2",
+    video_spec: {
+      duration_seconds: input.duration_seconds ?? 15,
+      aspect_ratio: input.aspect_ratio ?? "9:16",
+      resolution: input.resolution ?? "1080x1920"
+    }
+  }, db);
+  if (!created.ok) return created;
+  ensureProjectMeta(db, created.project_id);
+  db.prepare("UPDATE workbench_project_meta SET classification = ?, lifecycle = 'active', updated_at = CURRENT_TIMESTAMP WHERE project_id = ?").run(input.classification, created.project_id);
+  return { ok: true, data: { project: created.project, meta: projectMeta(db, created.project_id) as WorkbenchProjectMeta } };
+}
+
+export function updateWorkbenchProject(
+  projectId: string,
+  input: {
+    title?: string;
+    classification?: WorkbenchProjectClassification;
+    pinned?: boolean;
+    next_action_override?: { label: string; priority: WorkbenchProjectPriority } | null;
+  },
+  db = openM0Database()
+): WorkbenchV2Result<{ project: Project; meta: WorkbenchProjectMeta }> {
+  const writable = assertWorkbenchProjectWritable(db, projectId);
+  if (!writable.ok) return writable;
+  const project = writable.data.project;
+  if (input.title !== undefined) {
+    const title = input.title.trim();
+    if (!title) return { ok: false, error: { code: "MISSING_REQUIRED_FIELD", message: "Project title is required.", field: "title" } };
+    project.title = title;
+    saveProject(db, project);
+  }
+  const classification = input.classification ?? writable.data.meta.classification;
+  const pinned = input.pinned ?? writable.data.meta.pinned;
+  let overrideLabel = writable.data.meta.next_action_override;
+  let overridePriority = writable.data.meta.next_action_priority;
+  let overrideExpiresAt = writable.data.meta.next_action_expires_at;
+  let overrideProjectStatus = writable.data.meta.next_action_project_status;
+  let overrideUpdatedAt = writable.data.meta.next_action_updated_at;
+  if (input.next_action_override === null) {
+    overrideLabel = "";
+    overridePriority = null;
+    overrideExpiresAt = null;
+    overrideProjectStatus = null;
+    overrideUpdatedAt = now();
+  } else if (input.next_action_override !== undefined) {
+    const label = input.next_action_override.label?.trim();
+    const priority = input.next_action_override.priority;
+    if (!label || label.length > 120) return { ok: false, error: { code: "NEXT_ACTION_OVERRIDE_INVALID", message: "Next action must contain 1 to 120 characters.", field: "next_action_override.label" } };
+    if (priority !== "urgent" && priority !== "high" && priority !== "normal") {
+      return { ok: false, error: { code: "NEXT_ACTION_OVERRIDE_INVALID", message: "Next action priority is invalid.", field: "next_action_override.priority" } };
+    }
+    const updatedAt = new Date();
+    overrideLabel = label;
+    overridePriority = priority;
+    overrideExpiresAt = new Date(updatedAt.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    overrideProjectStatus = project.status;
+    overrideUpdatedAt = updatedAt.toISOString();
+  }
+  db.prepare(`
+    UPDATE workbench_project_meta
+    SET classification = ?, pinned = ?, next_action_override = ?, next_action_priority = ?,
+      next_action_expires_at = ?, next_action_project_status = ?, next_action_updated_at = ?,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE project_id = ?
+  `).run(classification, pinned ? 1 : 0, overrideLabel, overridePriority, overrideExpiresAt, overrideProjectStatus, overrideUpdatedAt, projectId);
+  return { ok: true, data: { project, meta: projectMeta(db, projectId) as WorkbenchProjectMeta } };
+}
+
+export function setWorkbenchProjectLifecycle(
+  projectId: string,
+  lifecycle: WorkbenchProjectLifecycle,
+  db = openM0Database()
+): WorkbenchV2Result<{ project: Project; meta: WorkbenchProjectMeta }> {
+  const project = getProject(db, projectId);
+  if (!project) return projectNotFound(projectId);
+  ensureProjectMeta(db, projectId);
+  db.prepare(`UPDATE workbench_project_meta SET lifecycle = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ?`).run(lifecycle, projectId);
+  return { ok: true, data: { project, meta: projectMeta(db, projectId) as WorkbenchProjectMeta } };
+}
+
+export function updateWorkbenchShot(
+  projectId: string,
+  shotId: string,
+  input: {
+    description?: string;
+    video_prompt?: string;
+    negative_prompt?: string;
+    duration_seconds?: number;
+    storyboard_image_artifact_id?: string;
+    approve_storyboard?: boolean;
+    human_confirmation?: boolean;
+  },
+  db = openM0Database()
+): WorkbenchV2Result<{ shot: Shot }> {
+  const writable = assertWorkbenchProjectWritable(db, projectId);
+  if (!writable.ok) return writable;
+  const shot = getShot(db, shotId);
+  if (!shot || shot.project_id !== projectId) return { ok: false, error: { code: "SHOT_NOT_FOUND", message: `Shot not found in project: ${shotId}`, field: "shot_id" } };
+  if (input.duration_seconds !== undefined) {
+    if (!Number.isFinite(input.duration_seconds) || input.duration_seconds <= 0) {
+      return { ok: false, error: { code: "INVALID_FIELD", message: "Duration must be positive.", field: "duration_seconds" } };
+    }
+    shot.duration_seconds = input.duration_seconds;
+  }
+  if (input.description !== undefined) shot.description = input.description;
+  if (input.video_prompt !== undefined) shot.video_prompt = input.video_prompt;
+  if (input.negative_prompt !== undefined) shot.negative_prompt = input.negative_prompt;
+  if (input.storyboard_image_artifact_id !== undefined) {
+    const artifact = getMediaArtifact(db, input.storyboard_image_artifact_id);
+    if (!artifact || artifact.status !== "active" || artifact.artifact_type !== "image" || artifact.role !== "storyboard_image") {
+      return { ok: false, error: { code: "INVALID_ARTIFACT_ROLE", message: "SHOT requires an active storyboard image.", field: "storyboard_image_artifact_id" } };
+    }
+    shot.storyboard_image_artifact_id = artifact.artifact_id;
+  }
+  if (input.approve_storyboard) {
+    if (input.human_confirmation !== true) return { ok: false, error: { code: "HUMAN_CONFIRMATION_REQUIRED", message: "Storyboard approval requires confirmation." } };
+    if (!shot.storyboard_image_artifact_id || !shot.video_prompt) return { ok: false, error: { code: "SHOT_BLOCKED", message: "Storyboard image and video prompt are required before approval." } };
+    shot.status = "storyboard_approved";
+  }
+  saveShot(db, shot);
+  return { ok: true, data: { shot } };
+}
+
+export function decideWorkbenchClip(
+  projectId: string,
+  input: {
+    shot_id: string;
+    artifact_id: string;
+    decision: "approved" | "revision_needed";
+    rejection_reasons?: string[];
+    revision_instruction?: RevisionInstruction;
+  },
+  db = openM0Database()
+): WorkbenchV2Result<{ shot: Shot; regeneration_request?: Record<string, unknown> }> {
+  const writable = assertWorkbenchProjectWritable(db, projectId);
+  if (!writable.ok) return writable;
+  const candidate = getShot(db, input.shot_id);
+  if (!candidate || candidate.project_id !== projectId) return { ok: false, error: { code: "SHOT_NOT_FOUND", message: "SHOT does not belong to the selected project.", field: "shot_id" } };
+  const result = markShotClipReview({
+    shot_id: input.shot_id,
+    artifact_id: input.artifact_id,
+    decision: input.decision,
+    rejection_reasons: input.rejection_reasons,
+    revision_instruction: input.revision_instruction
+  }, db);
+  if (!result.ok) return result;
+  if (input.decision === "approved") return { ok: true, data: { shot: result.shot } };
+  const version = result.shot.clip_versions.find((item) => item.artifact_id === input.artifact_id);
+  const request = {
+    request_id: `regen_${randomUUID()}`,
+    project_id: projectId,
+    shot_id: input.shot_id,
+    artifact_id: input.artifact_id,
+    previous_run_id: version?.run_id ?? "",
+    rejection_reasons: input.rejection_reasons ?? [],
+    revision_instruction: input.revision_instruction ?? null,
+    status: "draft",
+    created_at: now()
+  };
+  db.prepare(`
+    INSERT INTO regeneration_requests (request_id, project_id, shot_id, artifact_id, previous_run_id, status, data_json, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?)
+  `).run(request.request_id, projectId, request.shot_id, request.artifact_id, request.previous_run_id, JSON.stringify(request), request.created_at, request.created_at);
+  return { ok: true, data: { shot: result.shot, regeneration_request: request } };
+}
+
+function artifactMap(db: M0Database, artifactIds: string[]): Record<string, MediaArtifact> {
+  const result: Record<string, MediaArtifact> = {};
+  for (const artifactId of [...new Set(artifactIds.filter(Boolean))].slice(0, 500)) {
+    const artifact = getMediaArtifact(db, artifactId);
+    if (artifact) result[artifactId] = artifact;
+  }
+  return result;
+}
+
+export function getWorkbenchProjectWorkspace(
+  projectId: string,
+  workspace: WorkbenchWorkspace,
+  db = openM0Database(),
+  options: { touch_last_opened?: boolean } = {}
+): WorkbenchV2Result<Record<string, unknown>> {
+  const project = getProject(db, projectId);
+  if (!project) return projectNotFound(projectId);
+  const meta = projectMeta(db, projectId) as WorkbenchProjectMeta;
+  if (options.touch_last_opened !== false) {
+    db.prepare("UPDATE workbench_project_meta SET last_opened_at = CURRENT_TIMESTAMP WHERE project_id = ?").run(projectId);
+  }
+  const shots = listProjectShots(db, projectId);
+  const runRows = db.prepare(`SELECT data_json FROM generation_runs WHERE project_id = ? ORDER BY updated_at DESC LIMIT 200`).all(projectId) as Array<{ data_json: string }>;
+  const runs = runRows.map((row) => parseJson<Record<string, unknown>>(row.data_json, {}));
+  const packageRows = db.prepare(`SELECT data_json FROM storyboard_packages WHERE project_id = ? ORDER BY updated_at DESC LIMIT 25`).all(projectId) as Array<{ data_json: string }>;
+  const packages = packageRows.map((row) => parseJson<Record<string, unknown>>(row.data_json, {}));
+  const artifactIds = shots.flatMap((shot) => [shot.storyboard_image_artifact_id, shot.accepted_clip_artifact_id, ...shot.clip_versions.map((version) => version.artifact_id)]);
+  const artifacts = artifactMap(db, artifactIds);
+  const regenerationRows = db.prepare(`SELECT data_json FROM regeneration_requests WHERE project_id = ? ORDER BY updated_at DESC LIMIT 100`).all(projectId) as Array<{ data_json: string }>;
+  const regeneration_requests = regenerationRows.map((row) => parseJson<Record<string, unknown>>(row.data_json, {}));
+  const summary = getWorkbenchProjectSummary(projectId, db);
+  const base = { project, meta, summary, workspace };
+
+  if (workspace === "overview") {
+    return { ok: true, data: {
+      ...base,
+      metrics: {
+        shots: shots.length,
+        storyboard_approved: shots.filter((shot) => shot.status === "storyboard_approved").length,
+        generation_active: runs.filter((run) => run.status === "queued" || run.status === "running").length,
+        review_pending: shots.filter((shot) => shot.clip_versions.length > 0 && shot.review.approval_status === "pending").length,
+        accepted_clips: shots.filter((shot) => Boolean(shot.accepted_clip_artifact_id)).length
+      },
+      blockers: shots.filter((shot) => !shot.storyboard_image_artifact_id || !shot.video_prompt).map((shot) => ({ shot_id: shot.shot_id, order: shot.order, missing_image: !shot.storyboard_image_artifact_id, missing_prompt: !shot.video_prompt })),
+      recent_runs: runs.slice(0, 8)
+    } };
+  }
+  if (workspace === "storyboard") return { ok: true, data: { ...base, shots, packages, artifacts } };
+  if (workspace === "generation") return { ok: true, data: { ...base, shots, runs, artifacts } };
+  if (workspace === "review") {
+    const version_stacks = shots.map((shot) => ({
+      shot,
+      versions: shot.clip_versions.map((version) => ({ ...version, artifact: artifacts[version.artifact_id] ?? null }))
+    }));
+    const review_notes = db.prepare(`
+      SELECT note_id, project_id, shot_id, artifact_id, author_hash, note, source, created_at, updated_at
+      FROM workbench_review_notes WHERE project_id = ? ORDER BY created_at DESC
+    `).all(projectId) as Array<Record<string, unknown>>;
+    return { ok: true, data: { ...base, version_stacks, regeneration_requests, review_notes } };
+  }
+  return { ok: true, data: {
+    ...base,
+    ready_for_assembly: shots.length > 0 && shots.every((shot) => Boolean(shot.accepted_clip_artifact_id)),
+    accepted_clips: shots.map((shot) => ({ shot_id: shot.shot_id, order: shot.order, artifact: artifacts[shot.accepted_clip_artifact_id] ?? null })),
+    final_artifact: project.exports.final_video_artifact_id ? getMediaArtifact(db, project.exports.final_video_artifact_id) : null
+  } };
+}
+
+export function getWorkbenchShell(db = openM0Database()): Record<string, unknown> {
+  const pending = listWorkbenchPendingActionRecords(db);
+  const drafts = listWorkbenchDraftRecords(db);
+  const dashboard = getDashboardTotals(db);
+  const counts = db.prepare(`
+    SELECT
+      (SELECT COUNT(*) FROM import_index i LEFT JOIN import_decisions d ON d.checksum = i.checksum WHERE d.decision IS NULL OR d.decision = 'quarantined') AS quarantined_imports,
+      (SELECT COUNT(*) FROM media_artifacts a WHERE (a.project_id IS NULL OR a.project_id = '' OR NOT EXISTS (SELECT 1 FROM workbench_project_meta m WHERE m.project_id = a.project_id))) AS unassigned_assets
+  `).get() as { quarantined_imports: number; unassigned_assets: number };
+  const pendingConfirmations = pending.filter((item) => item.status === "pending").length;
+  const activeDrafts = drafts.filter((item) => item.status === "pending" || item.status === "revision_needed").length;
+  return {
+    version: "human-workbench-v2.1",
+    operator: "Jenn",
+    navigation: {
+      dashboard: dashboard.blocked_projects + dashboard.review_pending + dashboard.pending_delivery,
+      inbox: pendingConfirmations + activeDrafts + counts.quarantined_imports,
+      projects: 0,
+      assets: 0,
+      system: 0
+    },
+    actionable: {
+      pending_confirmations: pendingConfirmations,
+      gpt_drafts: activeDrafts,
+      quarantined_imports: counts.quarantined_imports,
+      review_pending: dashboard.review_pending,
+      running_jobs: dashboard.generation_active,
+      unassigned_assets: counts.unassigned_assets
+    },
+    capabilities: {
+      legacy_available: true,
+      real_generation_requires_preflight: true,
+      max_real_generation_jobs: 1,
+      automatic_retry: false
+    }
+  };
+}
+
+export function getWorkbenchDashboard(db = openM0Database()): Record<string, unknown> {
+  const projects = listWorkbenchProjects({ scope: "daily", limit: 12, offset: 0 }, db);
+  const totals = getDashboardTotals(db);
+  return { totals, projects: projects.items, generated_at: now() };
+}
+
+function getDashboardTotals(db: M0Database): { pending_confirmations: number; blocked_projects: number; review_pending: number; generation_active: number; pending_delivery: number } {
+  return db.prepare(`
+    WITH daily_projects AS (
+      SELECT p.project_id, p.data_json
+      FROM projects p JOIN workbench_project_meta m ON m.project_id = p.project_id
+      WHERE m.lifecycle = 'active' AND m.classification IN ('production', 'unclassified')
+    )
+    SELECT
+      (SELECT COUNT(*) FROM workbench_pending_actions WHERE status = 'pending')
+        + (SELECT COUNT(*) FROM workbench_drafts WHERE status IN ('pending', 'revision_needed')) AS pending_confirmations,
+      (SELECT COUNT(*) FROM daily_projects p WHERE
+        EXISTS (SELECT 1 FROM shots s WHERE s.project_id = p.project_id AND (
+          COALESCE(json_extract(s.data_json, '$.storyboard_image_artifact_id'), '') = ''
+          OR COALESCE(json_extract(s.data_json, '$.video_prompt'), '') = ''
+          OR json_extract(s.data_json, '$.status') = 'revision_needed'
+          OR json_extract(s.data_json, '$.review.approval_status') = 'revision_needed'
+        ))
+        OR EXISTS (SELECT 1 FROM generation_runs r WHERE r.project_id = p.project_id AND r.status = 'failed'
+          AND r.updated_at = (SELECT MAX(r2.updated_at) FROM generation_runs r2 WHERE r2.project_id = r.project_id AND COALESCE(r2.shot_id, '') = COALESCE(r.shot_id, '')))
+      ) AS blocked_projects,
+      (SELECT COUNT(*) FROM shots s JOIN daily_projects p ON p.project_id = s.project_id
+        WHERE COALESCE(json_array_length(json_extract(s.data_json, '$.clip_versions')), 0) > 0
+          AND json_extract(s.data_json, '$.review.approval_status') = 'pending') AS review_pending,
+      (SELECT COUNT(*) FROM generation_runs r JOIN daily_projects p ON p.project_id = r.project_id
+        WHERE r.status IN ('queued', 'running')) AS generation_active,
+      (SELECT COUNT(*) FROM daily_projects p WHERE json_extract(p.data_json, '$.status') <> 'final_approved'
+        AND (SELECT COUNT(*) FROM shots s WHERE s.project_id = p.project_id) > 0
+        AND (SELECT COUNT(*) FROM shots s WHERE s.project_id = p.project_id)
+          = (SELECT COUNT(*) FROM shots s WHERE s.project_id = p.project_id AND COALESCE(json_extract(s.data_json, '$.accepted_clip_artifact_id'), '') <> '')) AS pending_delivery
+  `).get() as { pending_confirmations: number; blocked_projects: number; review_pending: number; generation_active: number; pending_delivery: number };
+}
+
+export function refreshWorkbenchImportIndex(db = openM0Database()): { indexed: number; reused: number; rescanned: number; removed: number } {
+  const existingRows = db.prepare("SELECT relative_path, size_bytes, mtime_ms FROM import_index").all() as Array<{ relative_path: string; size_bytes: number; mtime_ms: number }>;
+  const existing = new Map(existingRows.map((row) => [row.relative_path, row]));
+  const seen = new Set<string>();
+  let reused = 0;
+  let rescanned = 0;
+  if (existsSync(paths.importsRoot)) {
+    for (const entry of readdirSync(paths.importsRoot, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      const relativePath = `data/imports/${entry.name}`;
+      const absolutePath = join(paths.importsRoot, entry.name);
+      const stat = statSync(absolutePath);
+      const mtimeMs = Math.trunc(stat.mtimeMs);
+      seen.add(relativePath);
+      const cached = existing.get(relativePath);
+      if (cached && cached.size_bytes === stat.size && cached.mtime_ms === mtimeMs) {
+        reused += 1;
+        continue;
+      }
+      const validation = validateImageFile(absolutePath);
+      const classification = classifyStoryboardImageImport(entry.name);
+      const blockers: string[] = [];
+      if (!classification.ok) blockers.push(classification.reason_code);
+      if (!validation.ok) blockers.push(validation.error_code || "IMAGE_FILE_INVALID");
+      if (validation.ok && validation.aspect_ratio !== "9:16") blockers.push("ASPECT_RATIO_NOT_9_16");
+      const checksum = validation.ok ? validation.sha256 : createHash("sha256").update(`${entry.name}:${stat.size}:${mtimeMs}`).digest("hex");
+      const metadata = validation.ok
+        ? { readable_image: true, mime_type: validation.detected_mime, width: validation.width, height: validation.height, aspect_ratio: validation.aspect_ratio, blockers }
+        : { readable_image: false, mime_type: "", width: 0, height: 0, aspect_ratio: "", blockers };
+      db.prepare(`
+        INSERT OR REPLACE INTO import_index (relative_path, filename, size_bytes, mtime_ms, checksum, metadata_json, scanned_at)
+        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `).run(relativePath, entry.name, stat.size, mtimeMs, checksum, JSON.stringify(metadata));
+      rescanned += 1;
+    }
+  }
+  let removed = 0;
+  for (const row of existingRows) {
+    if (seen.has(row.relative_path)) continue;
+    db.prepare("DELETE FROM import_index WHERE relative_path = ?").run(row.relative_path);
+    removed += 1;
+  }
+  return { indexed: seen.size, reused, rescanned, removed };
+}
+
+export function listWorkbenchInbox(
+  tab: "pending" | "drafts" | "quarantine",
+  input: { status?: string; limit?: number; offset?: number } = {},
+  db = openM0Database()
+): WorkbenchPage<Record<string, unknown>> {
+  const limit = clampLimit(input.limit);
+  const offset = clampOffset(input.offset);
+  if (tab === "pending") {
+    const all = [...listWorkbenchPendingActionRecords(db)].reverse().filter((item) => !input.status || input.status === "all" || item.status === input.status);
+    return page(all.slice(offset, offset + limit) as unknown as Record<string, unknown>[], all.length, limit, offset);
+  }
+  if (tab === "drafts") {
+    const all = [...listWorkbenchDraftRecords(db)].reverse().filter((item) => !input.status || input.status === "all" || item.status === input.status);
+    return page(all.slice(offset, offset + limit) as unknown as Record<string, unknown>[], all.length, limit, offset);
+  }
+  const statusClause = input.status && input.status !== "all" ? "AND COALESCE(d.decision, 'quarantined') = ?" : "";
+  const statusParams = statusClause ? [input.status] : [];
+  const countRow = db.prepare(`
+    SELECT COUNT(*) AS count FROM import_index i LEFT JOIN import_decisions d ON d.checksum = i.checksum
+    WHERE 1 = 1 ${statusClause}
+  `).get(...statusParams) as { count: number };
+  const rows = db.prepare(`
+    SELECT i.*, d.decision, d.target_project_id, d.artifact_id, d.reason
+    FROM import_index i LEFT JOIN import_decisions d ON d.checksum = i.checksum
+    WHERE 1 = 1 ${statusClause}
+    ORDER BY i.scanned_at DESC, i.filename
+    LIMIT ? OFFSET ?
+  `).all(...statusParams, limit, offset) as ImportIndexRow[];
+  const items = rows.map((row) => ({
+    relative_path: row.relative_path,
+    filename: row.filename,
+    size_bytes: row.size_bytes,
+    checksum: row.checksum,
+    ...(parseJson<Record<string, unknown>>(row.metadata_json, {})),
+    decision: row.decision ?? "quarantined",
+    target_project_id: row.target_project_id ?? "",
+    artifact_id: row.artifact_id ?? "",
+    reason: row.reason ?? ""
+  }));
+  return page(items, countRow.count, limit, offset);
+}
+
+export function decideWorkbenchImport(
+  checksum: string,
+  input: { decision: "quarantined" | "excluded" | "registered"; target_project_id?: string; reason?: string },
+  db = openM0Database()
+): WorkbenchV2Result<Record<string, unknown>> {
+  const row = db.prepare("SELECT filename, metadata_json FROM import_index WHERE checksum = ?").get(checksum) as { filename: string; metadata_json: string } | undefined;
+  if (!row) return { ok: false, error: { code: "IMPORT_NOT_FOUND", message: "Import checksum was not found.", field: "checksum" } };
+  let artifactId = "";
+  if (input.decision === "registered") {
+    if (!input.target_project_id) return { ok: false, error: { code: "MISSING_REQUIRED_FIELD", message: "Target project is required.", field: "target_project_id" } };
+    const writable = assertWorkbenchProjectWritable(db, input.target_project_id);
+    if (!writable.ok) return writable;
+    const metadata = parseJson<{ blockers?: string[] }>(row.metadata_json, {});
+    if ((metadata.blockers ?? []).length > 0) return { ok: false, error: { code: "IMPORT_BLOCKED", message: `Import is blocked: ${(metadata.blockers ?? []).join(", ")}` } };
+    const existing = db.prepare("SELECT artifact_id, data_json FROM media_artifacts WHERE json_extract(data_json, '$.metadata.sha256') = ? LIMIT 1").get(checksum) as { artifact_id: string; data_json: string } | undefined;
+    if (existing) {
+      artifactId = existing.artifact_id;
+    } else {
+      const registered = registerH1ApprovedKeyframe({
+        import_filename: row.filename,
+        review_status: "approved_for_media_artifact_handoff",
+        write_report: false
+      }, db);
+      if (!registered.ok) return registered;
+      artifactId = registered.value.artifact.artifact_id;
+    }
+    const artifact = getMediaArtifact(db, artifactId);
+    if (artifact) {
+      artifact.linked_objects.project_id = input.target_project_id;
+      db.prepare(`UPDATE media_artifacts SET project_id = ?, data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE artifact_id = ?`).run(input.target_project_id, JSON.stringify(artifact), artifactId);
+    }
+  }
+  db.prepare(`
+    INSERT INTO import_decisions (checksum, filename, decision, target_project_id, artifact_id, reason, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(checksum) DO UPDATE SET
+      filename = excluded.filename,
+      decision = excluded.decision,
+      target_project_id = excluded.target_project_id,
+      artifact_id = excluded.artifact_id,
+      reason = excluded.reason,
+      updated_at = CURRENT_TIMESTAMP
+  `).run(checksum, row.filename, input.decision, input.target_project_id ?? null, artifactId || null, input.reason ?? "");
+  return { ok: true, data: { checksum, filename: row.filename, decision: input.decision, target_project_id: input.target_project_id ?? "", artifact_id: artifactId } };
+}
+
+export function listWorkbenchAssets(
+  tab: "media" | "memory" | "reference" | "recall",
+  input: { scope?: "daily" | "unassigned" | "all"; project_id?: string; type?: string; role?: string; status?: string; limit?: number; offset?: number } = {},
+  db = openM0Database()
+): WorkbenchPage<Record<string, unknown>> {
+  const limit = clampLimit(input.limit);
+  const offset = clampOffset(input.offset);
+  const scope = input.scope ?? "daily";
+  if (tab !== "media") {
+    const store = loadMemorySavebackStore();
+    const source = tab === "memory" ? store.memory_items : tab === "reference" ? store.references : store.recall_packs;
+    const filtered = source.filter((item) => {
+      const projectId = assetLikeProjectId(item as unknown as Record<string, unknown>);
+      if (input.project_id && projectId !== input.project_id) return false;
+      const meta = projectId ? projectMeta(db, projectId) : null;
+      if (scope === "daily") return Boolean(meta && meta.lifecycle === "active" && (meta.classification === "production" || meta.classification === "unclassified"));
+      if (scope === "unassigned") return !projectId || !meta;
+      return true;
+    });
+    const reversed = [...filtered].reverse();
+    return page(reversed.slice(offset, offset + limit) as unknown as Record<string, unknown>[], reversed.length, limit, offset);
+  }
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+  if (scope === "daily") clauses.push("EXISTS (SELECT 1 FROM workbench_project_meta m WHERE m.project_id = a.project_id AND m.lifecycle = 'active' AND m.classification IN ('production', 'unclassified'))");
+  if (scope === "unassigned") clauses.push("(a.project_id IS NULL OR a.project_id = '' OR NOT EXISTS (SELECT 1 FROM workbench_project_meta m WHERE m.project_id = a.project_id))");
+  if (input.project_id) { clauses.push("a.project_id = ?"); params.push(input.project_id); }
+  if (input.type) { clauses.push("a.artifact_type = ?"); params.push(input.type); }
+  if (input.role) { clauses.push("a.role = ?"); params.push(input.role); }
+  if (input.status) { clauses.push("a.status = ?"); params.push(input.status); }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const countRow = db.prepare(`SELECT COUNT(*) AS count FROM media_artifacts a ${where}`).get(...params) as { count: number };
+  const rows = db.prepare(`SELECT a.data_json FROM media_artifacts a ${where} ORDER BY a.updated_at DESC, a.artifact_id DESC LIMIT ? OFFSET ?`).all(...params, limit, offset) as Array<{ data_json: string }>;
+  return page(rows.map((row) => parseJson<Record<string, unknown>>(row.data_json, {})), countRow.count, limit, offset);
+}
+
+function assetLikeProjectId(item: Record<string, unknown>): string {
+  if (typeof item.project_id === "string") return item.project_id;
+  const linked = item.linked_objects;
+  if (linked && typeof linked === "object" && typeof (linked as Record<string, unknown>).project_id === "string") return String((linked as Record<string, unknown>).project_id);
+  return "";
+}
+
+export function listWorkbenchReports(input: { limit?: number; offset?: number } = {}): WorkbenchPage<Record<string, unknown>> {
+  const limit = clampLimit(input.limit);
+  const offset = clampOffset(input.offset);
+  const all = listH1Reports();
+  return page(all.slice(offset, offset + limit) as unknown as Record<string, unknown>[], all.length, limit, offset);
+}
+
+function shotFromH1(projectId: string, shot: H1WorkbenchState["shots"][number]): Shot {
+  return {
+    shot_id: shot.shot_id,
+    project_id: projectId,
+    order: shot.order,
+    status: shot.approval_status === "approved" ? "storyboard_approved" : shot.approval_status === "revision_needed" ? "revision_needed" : "draft",
+    duration_seconds: shot.duration_seconds,
+    description: shot.description,
+    storyboard_image_artifact_id: shot.storyboard_image_artifact_id,
+    video_prompt: shot.video_prompt,
+    negative_prompt: shot.negative_prompt,
+    generation_run_ids: [],
+    accepted_clip_artifact_id: "",
+    clip_versions: [],
+    review: { approval_status: "pending", rejection_reasons: [], latest_revision_instruction: null }
+  };
+}
+
+export function migrateH1StateToWorkbenchV2(db = openM0Database()): Record<string, unknown> {
+  const prior = db.prepare("SELECT value FROM m0_meta WHERE key = 'workbench_v2_h1_migrated_at'").get() as { value: string } | undefined;
+  if (prior) {
+    const project = db.prepare("SELECT value FROM m0_meta WHERE key = 'workbench_v2_h1_project_id'").get() as { value: string } | undefined;
+    return { migrated: false, already_migrated_at: prior.value, target_project_id: project?.value ?? "" };
+  }
+  const state = loadH1WorkbenchState();
+  const createdProjects: string[] = [];
+  const createdShots: string[] = [];
+  const unresolvedImports: string[] = [];
+  let projectId = state.project.project_id;
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    if (!projectId) {
+      const created = createProject({
+        title: state.project.title,
+        project_type: state.project.project_type,
+        video_spec: { duration_seconds: state.project.duration_seconds, aspect_ratio: state.project.aspect_ratio, resolution: state.project.resolution }
+      }, db);
+      if (!created.ok) throw new Error(created.error.message);
+      projectId = created.project_id;
+      createdProjects.push(projectId);
+    } else if (!getProject(db, projectId)) {
+      const project: Project = {
+        project_id: projectId,
+        title: state.project.title,
+        project_type: state.project.project_type,
+        status: "draft",
+        brief: {},
+        video_spec: { duration_seconds: state.project.duration_seconds, aspect_ratio: state.project.aspect_ratio, resolution: state.project.resolution },
+        shot_ids: [], active_storyboard_package_id: "", generation_batch_ids: [], exports: { final_video_artifact_id: "" }
+      };
+      saveProject(db, project);
+      createdProjects.push(projectId);
+    }
+    ensureProjectMeta(db, projectId);
+    const project = getProject(db, projectId) as Project;
+    for (const h1Shot of state.shots) {
+      if (getShot(db, h1Shot.shot_id)) continue;
+      const shot = shotFromH1(projectId, h1Shot);
+      saveShot(db, shot);
+      project.shot_ids.push(shot.shot_id);
+      createdShots.push(shot.shot_id);
+    }
+    saveProject(db, project);
+    for (const rejected of state.rejected_imports) {
+      const indexed = db.prepare("SELECT checksum FROM import_index WHERE filename = ? LIMIT 1").get(rejected.import_filename) as { checksum: string } | undefined;
+      if (!indexed) {
+        unresolvedImports.push(rejected.import_filename);
+        continue;
+      }
+      db.prepare(`
+        INSERT OR IGNORE INTO import_decisions (checksum, filename, decision, reason, created_at, updated_at)
+        VALUES (?, ?, 'excluded', ?, ?, ?)
+      `).run(indexed.checksum, rejected.import_filename, rejected.reason, rejected.rejected_at, rejected.rejected_at);
+    }
+    for (const draft of state.regeneration_request_drafts) {
+      const shot = getShot(db, draft.shot_id);
+      if (!shot) continue;
+      db.prepare(`
+        INSERT OR IGNORE INTO regeneration_requests (request_id, project_id, shot_id, artifact_id, previous_run_id, status, data_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?)
+      `).run(draft.draft_id, shot.project_id, draft.shot_id, draft.artifact_id, draft.previous_run_id, JSON.stringify({ ...draft, project_id: shot.project_id }), draft.created_at, draft.created_at);
+    }
+    const migratedAt = now();
+    db.prepare("INSERT INTO m0_meta (key, value, updated_at) VALUES ('workbench_v2_h1_migrated_at', ?, CURRENT_TIMESTAMP)").run(migratedAt);
+    db.prepare("INSERT INTO m0_meta (key, value, updated_at) VALUES ('workbench_v2_h1_project_id', ?, CURRENT_TIMESTAMP)").run(projectId);
+    db.prepare("UPDATE workbench_project_meta SET pinned = 1, updated_at = CURRENT_TIMESTAMP WHERE project_id = ?").run(projectId);
+    db.exec("COMMIT");
+    const suggestions = db.prepare(`
+      SELECT project_id, json_extract(data_json, '$.title') AS title FROM projects
+      WHERE lower(json_extract(data_json, '$.title')) LIKE '%test%'
+      ORDER BY updated_at DESC LIMIT 100
+    `).all() as Array<{ project_id: string; title: string }>;
+    return {
+      migrated: true,
+      migrated_at: migratedAt,
+      h1_source_kept_read_only: true,
+      target_project_id: projectId,
+      created_projects: createdProjects,
+      created_shots: createdShots,
+      rejected_imports_unresolved: unresolvedImports,
+      test_classification_suggestions: suggestions,
+      automatic_classification_changes: 0,
+      deleted_or_hidden_records: 0
+    };
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}

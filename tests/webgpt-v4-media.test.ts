@@ -1,0 +1,152 @@
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { createServer } from "node:http";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+
+import { openM0Database } from "../src/storage/sqlite.js";
+import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
+import { coverageFramePlan, createMediaGrant, handleMediaGatewayRequest, inspectProductionMedia, invalidateMediaGrantsForRestart, resolveFfmpegExecutable, resolveProductionMediaPath, validateMediaGrant } from "../src/webgpt-v4/media.js";
+import { actorFromSubject, WebGptV4Error } from "../src/webgpt-v4/types.js";
+
+const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nCEAAAAASUVORK5CYII=", "base64");
+
+test("media grants are project-bound, expire, and support one HTTP byte range", async () => {
+  const root = mkdtempSync(join(tmpdir(), "webgpt-v4-media-"));
+  const mediaRoot = join(root, "media");
+  mkdirSync(mediaRoot, { recursive: true });
+  const imagePath = join(mediaRoot, "image.png");
+  writeFileSync(imagePath, onePixelPng);
+  const db = openM0Database(join(root, "app.sqlite"));
+  try {
+    const created = createProject({ title: "Media project" }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    db.prepare("UPDATE workbench_project_meta SET classification = 'production' WHERE project_id = ?").run(created.project_id);
+    const artifact = {
+      artifact_id: "artifact_media_image",
+      artifact_type: "image",
+      role: "storyboard_image",
+      status: "active",
+      storage: { uri: imagePath, mime_type: "image/png", filename: "image.png" },
+      metadata: { width: 1, height: 1, duration_seconds: null, aspect_ratio: "1:1", sha256: "png-hash" },
+      linked_objects: { project_id: created.project_id, shot_id: "shot_media" },
+      source: { kind: "fixture_path", provider: "", provider_job_id: "", sha256: "png-hash", external_url_host: "" }
+    };
+    db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)")
+      .run(artifact.artifact_id, created.project_id, "shot_media", JSON.stringify(artifact));
+    const actor = actorFromSubject("auth0|jenn", ["media.read"]);
+    const grant = createMediaGrant(db, { actor, project_id: created.project_id, artifact_id: artifact.artifact_id });
+    assert.equal(validateMediaGrant(db, { token: grant.token, actor_hash: actor.actor_hash, project_id: created.project_id, artifact_id: artifact.artifact_id }).grant_id, grant.grant_id);
+    assert.throws(() => validateMediaGrant(db, { token: grant.token, actor_hash: actor.actor_hash, project_id: "project_other", artifact_id: artifact.artifact_id }), (error) => error instanceof WebGptV4Error && error.code === "MEDIA_GRANT_INVALID");
+    const otherActor = actorFromSubject("auth0|not-jenn", ["media.read"]);
+    assert.throws(() => validateMediaGrant(db, { token: grant.token, actor_hash: otherActor.actor_hash, project_id: created.project_id, artifact_id: artifact.artifact_id }), (error) => error instanceof WebGptV4Error && error.code === "MEDIA_GRANT_INVALID");
+
+    const server = createServer((request, response) => handleMediaGatewayRequest(request, response, {
+      project_id: created.project_id,
+      artifact_id: artifact.artifact_id,
+      token: new URL(request.url ?? "/", "http://localhost").searchParams.get("grant") ?? "",
+      actor_hash: actor.actor_hash,
+      db,
+      options: { allowed_media_roots: [mediaRoot] }
+    }));
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server failed");
+    const response = await fetch(`http://127.0.0.1:${address.port}/media?grant=${encodeURIComponent(grant.token)}`, { headers: { Range: "bytes=0-9" } });
+    assert.equal(response.status, 206);
+    assert.equal((await response.arrayBuffer()).byteLength, 10);
+    const invalidRange = await fetch(`http://127.0.0.1:${address.port}/media?grant=${encodeURIComponent(grant.token)}`, { headers: { Range: "bytes=0-1,3-4" } });
+    assert.equal(invalidRange.status, 416);
+    assert.equal(JSON.stringify(await invalidRange.json()).includes("INVALID_MEDIA_RANGE"), true);
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+
+    const expiredGrant = createMediaGrant(db, { actor, project_id: created.project_id, artifact_id: artifact.artifact_id }, { now: () => new Date("2026-01-01T00:00:00.000Z") });
+    assert.throws(() => validateMediaGrant(db, { token: expiredGrant.token, actor_hash: actor.actor_hash, project_id: created.project_id, artifact_id: artifact.artifact_id }, { now: () => new Date("2026-01-01T00:06:00.000Z") }), (error) => error instanceof WebGptV4Error && error.code === "MEDIA_GRANT_INVALID");
+
+    const outside = { ...artifact, artifact_id: "artifact_outside", storage: { ...artifact.storage, uri: join(root, "outside.png") } };
+    writeFileSync(outside.storage.uri, onePixelPng);
+    db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)")
+      .run(outside.artifact_id, created.project_id, "shot_media", JSON.stringify(outside));
+    assert.throws(() => validateMediaGrant(db, { token: grant.token, actor_hash: actor.actor_hash, project_id: created.project_id, artifact_id: outside.artifact_id }), (error) => error instanceof WebGptV4Error && error.code === "MEDIA_GRANT_INVALID");
+    assert.throws(() => resolveProductionMediaPath(db, created.project_id, outside.artifact_id, { allowed_media_roots: [mediaRoot] }), (error) => error instanceof WebGptV4Error && error.code === "MEDIA_NOT_AVAILABLE");
+    const restartGrant = createMediaGrant(db, { actor, project_id: created.project_id, artifact_id: artifact.artifact_id });
+    assert.equal(invalidateMediaGrantsForRestart(db) >= 1, true);
+    assert.throws(() => validateMediaGrant(db, { token: restartGrant.token, actor_hash: actor.actor_hash, project_id: created.project_id, artifact_id: artifact.artifact_id }), (error) => error instanceof WebGptV4Error && error.code === "MEDIA_GRANT_INVALID");
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("video inspection produces a full-duration timestamp plan and paged model frames", async () => {
+  const root = mkdtempSync(join(tmpdir(), "webgpt-v4-video-"));
+  const mediaRoot = join(root, "media");
+  const analysisRoot = join(root, "analysis");
+  mkdirSync(mediaRoot, { recursive: true });
+  const videoPath = join(mediaRoot, "fixture.mp4");
+  const ffmpeg = await resolveFfmpegExecutable();
+  execFileSync(ffmpeg, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=red:s=320x180:d=2", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-y", videoPath], { windowsHide: true, timeout: 30_000 });
+  const db = openM0Database(join(root, "app.sqlite"));
+  try {
+    const created = createProject({ title: "Video project" }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    db.prepare("UPDATE workbench_project_meta SET classification = 'production' WHERE project_id = ?").run(created.project_id);
+    const shot: Shot = {
+      shot_id: "shot_video",
+      project_id: created.project_id,
+      order: 1,
+      status: "video_review",
+      duration_seconds: 2,
+      description: "Video",
+      storyboard_image_artifact_id: "",
+      video_prompt: "",
+      negative_prompt: "",
+      generation_run_ids: [],
+      accepted_clip_artifact_id: "",
+      clip_versions: [{ artifact_id: "artifact_video", run_id: "run_video", attempt_number: 1, review_status: "pending" }],
+      review: { approval_status: "pending", rejection_reasons: [], latest_revision_instruction: null }
+    };
+    saveShot(db, shot);
+    created.project.shot_ids = [shot.shot_id];
+    saveProject(db, created.project);
+    const artifact = {
+      artifact_id: "artifact_video",
+      artifact_type: "video",
+      role: "generated_clip",
+      status: "active",
+      storage: { uri: videoPath, mime_type: "video/mp4", filename: "fixture.mp4" },
+      metadata: { width: 320, height: 180, duration_seconds: 2, aspect_ratio: "16:9", sha256: "video-hash" },
+      linked_objects: { project_id: created.project_id, shot_id: shot.shot_id },
+      source: { kind: "fixture_path", provider: "fake", provider_job_id: "", sha256: "video-hash", external_url_host: "" }
+    };
+    db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES (?, ?, ?, 'generated_clip', 'video', 'active', ?)")
+      .run(artifact.artifact_id, created.project_id, shot.shot_id, JSON.stringify(artifact));
+    const plan = coverageFramePlan(2, [0.75]);
+    assert.equal(plan[0].timestamp_seconds, 0);
+    assert.equal(plan.at(-1)?.timestamp_seconds, 2);
+    assert.equal(plan.some((frame) => frame.reason === "scene_change"), true);
+
+    const inspected = await inspectProductionMedia(db, { project_id: created.project_id, artifact_id: artifact.artifact_id, frame_limit: 3 }, actorFromSubject("auth0|jenn", ["media.read"]), {
+      public_origin: "https://media.example.test",
+      ffmpeg_path: ffmpeg,
+      allowed_media_roots: [mediaRoot],
+      analysis_root: analysisRoot
+    });
+    assert.equal(inspected.playback.available, true);
+    assert.equal(inspected.model_images.length, 3);
+    assert.equal(inspected.model_images.every((frame) => /^[a-f0-9]{64}$/.test(frame.sha256)), true);
+    const analysis = inspected.data.analysis as Record<string, unknown>;
+    assert.equal(analysis.direct_video_model_input, false);
+    assert.equal((analysis.frame_plan as unknown[]).length >= 3, true);
+    assert.equal((analysis.model_frames as Array<{ sha256: string }>).every((frame) => /^[a-f0-9]{64}$/.test(frame.sha256)), true);
+    assert.equal(JSON.stringify(inspected.data).includes(mediaRoot), false);
+    assert.equal(JSON.stringify(inspected.data).includes("fixture.mp4\""), true);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 
@@ -81,7 +81,7 @@ test("WebGPT v1 request creates a pending action only and human confirmation exe
     assert.equal(confirmed.action.production_effects.media_artifact_registered, true);
     assert.equal(confirmed.action.production_effects.provider_call_attempted, false);
     assert.equal(confirmed.action.production_effects.source_asset_overwritten, false);
-    assert.equal(existsSync(join(paths.workspaceRoot, confirmed.action.execution.report_path)), true);
+    assert.equal(existsSync(join(paths.reportsRoot, basename(confirmed.action.execution.report_path))), true);
 
     const result = confirmed.action.execution.result as { artifact?: { artifact_id?: string } };
     assert.equal(Boolean(result.artifact?.artifact_id && getMediaArtifact(db, result.artifact.artifact_id)), true);
@@ -109,7 +109,7 @@ test("WebGPT v1 rejects fake IDs and can reject pending actions without executio
     assert.equal(rejected.action.status, "rejected");
     assert.equal(rejected.action.execution.attempted, false);
     assert.equal(rejected.action.production_effects.package_validated, false);
-    assert.equal(existsSync(join(paths.workspaceRoot, rejected.action.execution.report_path)), true);
+    assert.equal(existsSync(join(paths.reportsRoot, basename(rejected.action.execution.report_path))), true);
   } finally {
     db.close();
   }

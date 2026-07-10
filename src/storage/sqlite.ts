@@ -1,12 +1,21 @@
 import { DatabaseSync } from "node:sqlite";
 
 import { ensureM0Directories, paths } from "../paths.js";
+import { initializeWorkbenchV2Schema } from "./workbenchV2Schema.js";
 
 export type M0Database = DatabaseSync;
 
+export function openM0DatabaseConnection(sqlitePath = paths.sqlitePath, options: { readOnly?: boolean } = {}): M0Database {
+  const readOnly = options.readOnly === true;
+  if (!readOnly) ensureM0Directories();
+  const db = new DatabaseSync(sqlitePath, { readOnly });
+  db.exec("PRAGMA busy_timeout = 5000;");
+  if (readOnly) db.exec("PRAGMA query_only = ON;");
+  return db;
+}
+
 export function openM0Database(sqlitePath = paths.sqlitePath): M0Database {
-  ensureM0Directories();
-  const db = new DatabaseSync(sqlitePath);
+  const db = openM0DatabaseConnection(sqlitePath);
   initializeM0Schema(db);
   return db;
 }
@@ -80,9 +89,11 @@ export function initializeM0Schema(db: M0Database): void {
   `);
 
   db.prepare(`
-    INSERT OR REPLACE INTO m0_meta (key, value, updated_at)
+    INSERT OR IGNORE INTO m0_meta (key, value, updated_at)
     VALUES ('schema_version', 'm0-a', CURRENT_TIMESTAMP)
   `).run();
+
+  initializeWorkbenchV2Schema(db);
 }
 
 export function listTables(db: M0Database): string[] {

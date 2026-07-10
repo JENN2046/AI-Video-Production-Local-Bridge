@@ -5,6 +5,8 @@ import { randomUUID } from "node:crypto";
 import test from "node:test";
 
 import {
+  buildStoryboardApprovedShot,
+  createProject,
   ensureM0Directories,
   executeWebGptDraftTool,
   loadH1WorkbenchState,
@@ -12,6 +14,8 @@ import {
   openM0Database,
   paths,
   registerH1ApprovedKeyframe,
+  saveProject,
+  saveShot,
   WEBGPT_DRAFT_TOOLS,
   webGptDraftWorkbenchSummary
 } from "../src/index.js";
@@ -27,9 +31,16 @@ function copyDraftImport(filename: string): string {
   return filename;
 }
 
-function currentShotId(): string {
-  const shot = loadH1WorkbenchState().shots[0];
-  assert.ok(shot, "Expected at least one H1 workbench shot.");
+function currentShotId(db: ReturnType<typeof openM0Database>): string {
+  const existing = db.prepare("SELECT shot_id FROM shots ORDER BY created_at LIMIT 1").get() as { shot_id: string } | undefined;
+  if (existing) return existing.shot_id;
+  const created = createProject({ title: "WebGPT draft test target" }, db);
+  assert.equal(created.ok, true);
+  if (!created.ok) throw new Error("Failed to create draft test project.");
+  const shot = buildStoryboardApprovedShot({ project_id: created.project_id, order: 1, duration_seconds: 3, storyboard_image_artifact_id: "", video_prompt: "Existing prompt" });
+  saveShot(db, shot);
+  created.project.shot_ids = [shot.shot_id];
+  saveProject(db, created.project);
   return shot.shot_id;
 }
 
@@ -58,16 +69,17 @@ test("WebGPT v0.5 draft tool inventory exposes draft-only tools with no producti
 });
 
 test("WebGPT v0.5 stores shot script drafts separately from app-ready truth", () => {
+  const db = openM0Database();
   const beforeStore = loadWebGptDraftStore();
   const beforeFrozenCount = loadH1WorkbenchState().frozen_package_history.length;
 
   const result = executeWebGptDraftTool("submit_shot_script_draft", {
-    shot_id: currentShotId(),
+    shot_id: currentShotId(db),
     description: "Draft-only shot description from WebGPT.",
     video_prompt: "Draft-only camera move suggestion.",
     negative_prompt: "",
     duration_seconds: 2
-  });
+  }, db);
 
   assert.equal(result.ok, true);
   if (!result.ok) return;
@@ -80,6 +92,7 @@ test("WebGPT v0.5 stores shot script drafts separately from app-ready truth", ()
   assert.equal(afterStore.drafts.length, beforeStore.drafts.length + 1);
   assert.equal(afterStore.drafts.some((draft) => draft.draft_id === result.draft.draft_id), true);
   assert.equal(loadH1WorkbenchState().frozen_package_history.length, beforeFrozenCount);
+  db.close();
 });
 
 test("WebGPT v0.5 rejects fake ids and accepts only real app artifact link proposals", () => {
@@ -91,7 +104,8 @@ test("WebGPT v0.5 rejects fake ids and accepts only real app artifact link propo
     if (fake.ok) return;
     assert.equal(fake.error.code, "INVALID_APP_ID");
 
-    const pending = executeWebGptDraftTool("propose_artifact_link", { shot_id: currentShotId(), artifact_id: "PENDING_ACTIVE_ARTIFACT_ID" }, db);
+    const shotId = currentShotId(db);
+    const pending = executeWebGptDraftTool("propose_artifact_link", { shot_id: shotId, artifact_id: "PENDING_ACTIVE_ARTIFACT_ID" }, db);
     assert.equal(pending.ok, false);
     if (pending.ok) return;
     assert.equal(pending.error.code, "INVALID_APP_ID");
@@ -110,7 +124,7 @@ test("WebGPT v0.5 rejects fake ids and accepts only real app artifact link propo
 
     const accepted = executeWebGptDraftTool(
       "propose_artifact_link",
-      { shot_id: currentShotId(), artifact_id: registered.value.artifact.artifact_id },
+      { shot_id: shotId, artifact_id: registered.value.artifact.artifact_id },
       db
     );
     assert.equal(accepted.ok, true);
@@ -123,23 +137,24 @@ test("WebGPT v0.5 rejects fake ids and accepts only real app artifact link propo
 });
 
 test("WebGPT v0.5 package validation and freeze requests remain drafts only", () => {
+  const db = openM0Database();
   const packageDraft = executeWebGptDraftTool("submit_storyboard_package_draft", {
     package_title: "Draft package only",
     shots: [
       {
-        shot_id: currentShotId(),
+        shot_id: currentShotId(db),
         description: "Draft package shot.",
         video_prompt: "Draft-only motion."
       }
     ]
-  });
+  }, db);
   assert.equal(packageDraft.ok, true);
   if (!packageDraft.ok) return;
 
   const validation = executeWebGptDraftTool("propose_package_validation", {
     package_draft_id: packageDraft.draft.draft_id,
     notes: "Please validate this package candidate."
-  });
+  }, db);
   assert.equal(validation.ok, true);
   if (!validation.ok) return;
   assert.equal(validation.draft.production_effects.package_validated, false);
@@ -148,7 +163,7 @@ test("WebGPT v0.5 package validation and freeze requests remain drafts only", ()
   const freeze = executeWebGptDraftTool("propose_freeze_request", {
     package_draft_id: packageDraft.draft.draft_id,
     reason: "Human should review before any freeze."
-  });
+  }, db);
   assert.equal(freeze.ok, true);
   if (!freeze.ok) return;
   assert.equal(freeze.draft.production_effects.package_frozen, false);
@@ -157,10 +172,11 @@ test("WebGPT v0.5 package validation and freeze requests remain drafts only", ()
   const fakeFreeze = executeWebGptDraftTool("propose_freeze_request", {
     package_draft_id: "webgpt_draft_fake",
     reason: "Should fail."
-  });
+  }, db);
   assert.equal(fakeFreeze.ok, false);
   if (fakeFreeze.ok) return;
   assert.equal(fakeFreeze.error.code, "INVALID_DRAFT_ID");
+  db.close();
 });
 
 test("WebGPT v0.5 draft workbench summary is visible and offline", () => {

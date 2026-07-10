@@ -15,15 +15,19 @@ export interface M0Paths {
 
 export function getM0Paths(workspaceRoot = process.cwd()): M0Paths {
   const root = resolve(workspaceRoot);
-  const dataRoot = join(root, "data");
+  const configuredDataRoot = process.env.AI_VIDEO_WORKSPACE_DATA_ROOT?.trim();
+  const dataRoot = configuredDataRoot ? resolve(root, configuredDataRoot) : join(root, "data");
   const mediaRoot = join(dataRoot, "media");
   const artifactsRoot = join(mediaRoot, "artifacts");
+  const configuredSqlitePath = process.env.AI_VIDEO_WORKSPACE_DB_PATH?.trim();
 
   return {
     workspaceRoot: root,
     dataRoot,
     importsRoot: join(dataRoot, "imports"),
-    sqlitePath: join(dataRoot, "app.sqlite"),
+    sqlitePath: configuredSqlitePath
+      ? resolve(root, configuredSqlitePath)
+      : join(dataRoot, "app.sqlite"),
     mediaRoot,
     imageArtifactsRoot: join(artifactsRoot, "images"),
     videoArtifactsRoot: join(artifactsRoot, "videos"),

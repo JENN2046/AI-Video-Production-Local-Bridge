@@ -1,0 +1,35 @@
+:root {
+  font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  color: #172b4d;
+  background: #dce3ef url("/ui-assets/trello-vivid-board-background.png") center / cover fixed no-repeat;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --ink: #172b4d;
+  --muted: #5e6c84;
+  --line: rgba(9, 30, 66, 0.14);
+  --line-strong: rgba(9, 30, 66, 0.23);
+  --surface: rgba(255, 255, 255, 0.82);
+  --surface-strong: rgba(255, 255, 255, 0.94);
+  --surface-soft: rgba(244, 247, 251, 0.76);
+  --blue: #0c66e4;
+  --blue-soft: #e9f2ff;
+  --green: #216e4e;
+  --green-soft: #dcfff1;
+  --amber: #7f5f01;
+  --amber-soft: #fff7d6;
+  --red: #ae2e24;
+  --red-soft: #ffeceb;
+  --purple: #5e4db2;
+  --shadow: 0 10px 26px rgba(9, 30, 66, 0.12);
+}
+
+* { box-sizing: border-box; }
+html, body, #root { width: 100%; height: 100%; margin: 0; }
+body { overflow: hidden; letter-spacing: 0; }
+body::before { content: ""; position: fixed; inset: 0; z-index: -1; background: rgba(236, 241, 248, 0.57); backdrop-filter: blur(16px) saturate(0.9); }
+button, input, select, textarea { font: inherit; letter-spacing: 0; }
+button { color: inherit; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline: 2px solid #0c66e4; outline-offset: 2px; }
+button:disabled { cursor: not-allowed; opacity: 0.5; }
+a { color: inherit; }
+pre { font-family: "Cascadia Code", Consolas, monospace; }

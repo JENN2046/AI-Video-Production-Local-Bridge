@@ -144,7 +144,7 @@ function memoryRoot(): string {
 }
 
 function storePath(): string {
-  return join(paths.workspaceRoot, MEMORY_SAVEBACK_STORE_FILE);
+  return join(memoryRoot(), "saveback_store.json");
 }
 
 function ensureMemoryDirectories(): void {

@@ -233,7 +233,7 @@ function delay(ms: number): Promise<void> {
 
 function adapterForSelectedProvider(providerName: ProviderPortName, credential?: string): VideoProviderAdapter {
   if (providerName === "runway") return new RunwayVideoProviderAdapter({ credential: credential ?? "" });
-  if (providerName === "runninghub") return new RunningHubVideoProviderAdapter();
+  if (providerName === "runninghub") return new RunningHubVideoProviderAdapter({ credential: credential ?? "" });
   return new MockVideoProviderAdapter();
 }
 
@@ -382,6 +382,7 @@ export async function startStoryboardVideoGeneration(
     selected_shot_ids?: string[];
     confirmation?: Confirmation;
     provider_output_storage_directory?: string;
+    allow_live_provider?: boolean;
   },
   db = openM0Database()
 ): Promise<ToolResult<{ batch: GenerationBatch; runs: GenerationRun[] }>> {
@@ -405,6 +406,9 @@ export async function startStoryboardVideoGeneration(
           },
           credential: undefined
         };
+  if (selectedProvider.provider === "real" && input.allow_live_provider !== true) {
+    return { ok: false, error: { code: "PROVIDER_DISABLED", message: "Legacy batch generation cannot call a real provider. Use the V2 single-SHOT intent flow or an explicitly authorized canary." } };
+  }
   const adapter = adapterForSelectedProvider(selectedProvider.provider_name, selectedProvider.credential);
 
   const project = getProject(db, input.project_id);

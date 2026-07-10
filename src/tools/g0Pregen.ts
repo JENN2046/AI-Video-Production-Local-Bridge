@@ -101,7 +101,7 @@ export function g0ProjectRoot(projectId: string): string {
   if (!safe) {
     throw new Error(`Invalid project id for G0 storage: ${projectId}`);
   }
-  return assertInsideWorkspace(resolve(paths.dataRoot, "projects", safe, "g0"));
+  return assertInsideWorkspace(resolve(paths.dataRoot, "projects", safe, "g0"), paths.dataRoot);
 }
 
 function ensureG0ProjectRoot(projectId: string): string {
@@ -127,7 +127,7 @@ export function saveG0Artifact(
   if (!filename) return { ok: false, error: { code: "G0_UNSUPPORTED_ARTIFACT_KIND", message: `Unsupported G0 artifact kind: ${input.kind}` } };
 
   const root = ensureG0ProjectRoot(input.project_id);
-  const target = assertInsideWorkspace(join(root, filename));
+  const target = assertInsideWorkspace(join(root, filename), root);
   const savedAt = new Date().toISOString();
   const envelope: G0SavedArtifactEnvelope = {
     project_id: input.project_id,

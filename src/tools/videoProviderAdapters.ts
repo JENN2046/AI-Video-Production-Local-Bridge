@@ -628,6 +628,11 @@ export function mapRunningHubProviderError(input: {
     return providerError("PROVIDER_TRANSIENT_FAILURE", "RunningHub returned a transient server error.", true, summary);
   }
 
+  if (status === 400 || status === 422) {
+    summary.retryable = false;
+    return providerError("PROVIDER_UNSUPPORTED_INPUT", "RunningHub rejected the request input.", false, summary);
+  }
+
   if (text.includes("generation") || text.includes("failed") || text.includes("failure")) {
     summary.retryable = false;
     return providerError("PROVIDER_REQUEST_FAILED", "RunningHub generation failed.", false, summary);
@@ -698,6 +703,8 @@ function runningHubResultUrls(payload: Record<string, unknown>): string[] {
     .map((item) => {
       if (typeof item === "string") return item;
       const record = payloadObject(item);
+      const outputType = stringField(record, "outputType").toLowerCase();
+      if (outputType && !outputType.includes("video") && !outputType.includes("mp4")) return "";
       return stringField(record, "url");
     })
     .filter(Boolean);
@@ -1110,28 +1117,101 @@ export class RunwayVideoProviderAdapter implements VideoProviderAdapter {
 export class RunningHubVideoProviderAdapter implements VideoProviderAdapter {
   provider_name = "runninghub" as const;
   model_name = RUNNINGHUB_MODEL_ROUTE;
+  private readonly apiBase: string;
+  private readonly credential: string;
+  private readonly fetchImpl: typeof fetch;
+  private readonly timeoutMs: number;
 
-  async submitGeneration(): Promise<ProviderSubmitResult> {
+  constructor(input: { credential?: string; fetch_impl?: typeof fetch; api_base?: string; timeout_ms?: number } = {}) {
+    this.credential = input.credential ?? "";
+    this.fetchImpl = input.fetch_impl ?? fetch;
+    this.apiBase = input.api_base ?? RUNNINGHUB_API_BASE_URL;
+    this.timeoutMs = Math.max(1000, input.timeout_ms ?? 60_000);
+  }
+
+  private async request(url: string, init: RequestInit, operation: string): Promise<{ response: Response; payload: Record<string, unknown> } | { error: ProviderToolError }> {
+    if (!this.credential) return { error: providerError("PROVIDER_CREDENTIAL_MISSING", "RunningHub credential is missing.") };
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const response = await this.fetchImpl(url, { ...init, signal: controller.signal });
+      return { response, payload: await safeJson(response) };
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        return { error: providerError("PROVIDER_TIMEOUT", `RunningHub ${operation} request timed out.`, true) };
+      }
+      return { error: providerError("PROVIDER_REQUEST_FAILED", `RunningHub ${operation} request failed.`, true) };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async submitGeneration(input: ProviderGenerationInput): Promise<ProviderSubmitResult> {
+    const uploadRequest = buildRunningHubMediaUploadRequest({ storyboard_artifact: input.storyboard_artifact });
+    if (!uploadRequest.ok) return uploadRequest;
+    const form = new FormData();
+    const bytes = readFileSync(input.storyboard_artifact.storage.uri);
+    form.append(RUNNINGHUB_MEDIA_UPLOAD_FILE_FIELD, new Blob([bytes], { type: uploadRequest.multipart.content_type }), uploadRequest.multipart.file_name);
+    const uploadResponse = await this.request(`${this.apiBase}${uploadRequest.endpoint}`, {
+      method: uploadRequest.method,
+      headers: { Authorization: `Bearer ${this.credential}` },
+      body: form
+    }, "upload");
+    if ("error" in uploadResponse) return { ok: false, error: uploadResponse.error };
+    if (!uploadResponse.response.ok) {
+      return { ok: false, error: mapRunningHubProviderError({ http_status: uploadResponse.response.status, payload: uploadResponse.payload, secrets: [this.credential] }) };
+    }
+    const uploaded = parseRunningHubMediaUploadResponse(uploadResponse.payload, [this.credential]);
+    if (!uploaded.ok) return uploaded;
+
+    const submitRequest = buildRunningHubImageToVideoSubmitRequest({ generation_input: input, uploaded_download_url: uploaded.download_url });
+    if (!submitRequest.ok) return submitRequest;
+    const submitResponse = await this.request(`${this.apiBase}${submitRequest.endpoint}`, {
+      method: submitRequest.method,
+      headers: { Authorization: `Bearer ${this.credential}`, "Content-Type": "application/json" },
+      body: JSON.stringify(submitRequest.body)
+    }, "submit");
+    if ("error" in submitResponse) return { ok: false, error: submitResponse.error };
+    if (!submitResponse.response.ok) {
+      return { ok: false, error: mapRunningHubProviderError({ http_status: submitResponse.response.status, payload: submitResponse.payload, secrets: [this.credential] }) };
+    }
+    return parseRunningHubSubmitResponse(submitResponse.payload, [this.credential]);
+  }
+
+  async pollStatus(providerJobId: string): Promise<ProviderStatusResult> {
+    const query = buildRunningHubQueryRequest(providerJobId);
+    if (!query.ok) return query;
+    const result = await this.request(`${this.apiBase}${query.endpoint}`, {
+      method: query.method,
+      headers: { Authorization: `Bearer ${this.credential}`, "Content-Type": "application/json" },
+      body: JSON.stringify(query.body)
+    }, "query");
+    if ("error" in result) return { ok: false, error: result.error };
+    if (!result.response.ok) {
+      return { ok: false, error: mapRunningHubProviderError({ http_status: result.response.status, payload: result.payload, secrets: [this.credential] }) };
+    }
+    const parsed = parseRunningHubQueryResponse(result.payload, providerJobId, [this.credential]);
+    if (!parsed.ok) return parsed;
+    if (parsed.provider_job_id !== providerJobId) {
+      return { ok: false, error: providerError("PROVIDER_REQUEST_FAILED", "RunningHub query returned a mismatched taskId.") };
+    }
     return {
-      ok: false,
-      error: providerError(
-        "PROVIDER_UNSUPPORTED",
-        "RunningHub live generation is not implemented. R3-8H provides offline request builders and parsers only; upload, submit, polling, and output download require a separate live-call task and exact authorization."
-      )
+      ok: true,
+      provider_job_id: providerJobId,
+      status: parsed.status,
+      provider_status: parsed.provider_status,
+      retryable: parsed.retryable,
+      ...(parsed.output_url ? { output_url: parsed.output_url } : {})
     };
   }
 
-  async pollStatus(): Promise<ProviderStatusResult> {
-    return {
-      ok: false,
-      error: providerError("PROVIDER_UNSUPPORTED", "RunningHub status polling is unavailable until a live-call task is authorized.")
-    };
-  }
-
-  async fetchOutput(): Promise<ProviderOutputResult> {
-    return {
-      ok: false,
-      error: providerError("PROVIDER_UNSUPPORTED", "RunningHub output fetching is unavailable until a live-call task is authorized.")
-    };
+  async fetchOutput(providerJobId: string): Promise<ProviderOutputResult> {
+    const status = await this.pollStatus(providerJobId);
+    if (!status.ok) return status;
+    if (status.status !== "succeeded") {
+      return { ok: false, error: providerError(status.retryable ? "PROVIDER_OUTPUT_PENDING" : "PROVIDER_REQUEST_FAILED", `RunningHub task is ${status.provider_status}.`, status.retryable) };
+    }
+    if (!status.output_url) return { ok: false, error: providerError("PROVIDER_OUTPUT_MISSING", "RunningHub task succeeded without an output URL.") };
+    return { ok: true, provider_job_id: providerJobId, output_url: status.output_url, provider_status: status.provider_status };
   }
 }

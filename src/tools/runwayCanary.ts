@@ -448,6 +448,7 @@ export async function runStrictRunwayCanary(input: RunwayCanaryOptions = {}, db:
         storyboard_package_id: storyboard.storyboard_package_id,
         selected_shot_ids: [storyboard.shots[0].shot_id],
         provider_output_storage_directory: join(paths.mediaRoot, "provider-canary", "m1-r0-runway-canary"),
+        allow_live_provider: true,
         provider_execution: {
           provider: "real",
           provider_name: "runway",

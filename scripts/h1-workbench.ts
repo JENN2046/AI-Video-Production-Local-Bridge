@@ -3,6 +3,10 @@ import { createReadStream, existsSync, lstatSync, readFileSync, realpathSync, st
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
 
+import { handleWorkbenchV2Api } from "../src/http/workbenchV2Routes.js";
+import { resumeWorkbenchGenerationJobs } from "../src/tools/workbenchGeneration.js";
+import { migrateLegacyWorkbenchInboxStores } from "../src/tools/workbenchInboxStore.js";
+
 import {
   ensureM0Directories,
   approveH3GeneratedClip,
@@ -57,6 +61,17 @@ const MEDIA_CONTENT_TYPES: Record<string, string> = {
   ".mp4": "video/mp4"
 };
 const UI_ASSETS_ROOT = resolve(paths.workspaceRoot, "data", "ui");
+const V2_UI_ROOT = resolve(paths.workspaceRoot, "dist", "workbench-ui");
+const V2_CONTENT_TYPES: Record<string, string> = {
+  ".css": "text/css; charset=utf-8",
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".map": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".woff2": "font/woff2"
+};
 
 function sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
   response.writeHead(statusCode, {
@@ -169,6 +184,27 @@ function serveUiAsset(pathname: string, response: ServerResponse): void {
   }
 
   response.writeHead(200, { "content-type": contentType, "cache-control": "no-store" });
+  createReadStream(realTarget).pipe(response);
+}
+
+function serveWorkbenchV2(pathname: string, response: ServerResponse): void {
+  const target = pathname.startsWith("/v2-assets/")
+    ? resolve(V2_UI_ROOT, pathname.slice(1))
+    : resolve(V2_UI_ROOT, "index.html");
+  if (!isPathInside(target, V2_UI_ROOT) || !existsSync(target) || lstatSync(target).isSymbolicLink()) {
+    sendJson(response, 503, { ok: false, error: { code: "V2_UI_NOT_BUILT", message: "V2 UI has not been built yet." } });
+    return;
+  }
+  const realTarget = realpathSync(target);
+  if (!isPathInside(realTarget, V2_UI_ROOT) || !statSync(realTarget).isFile()) {
+    sendJson(response, 404, { ok: false, error: { code: "NOT_FOUND", message: "V2 asset was not found." } });
+    return;
+  }
+  const contentType = V2_CONTENT_TYPES[extname(realTarget).toLowerCase()] ?? "application/octet-stream";
+  response.writeHead(200, {
+    "content-type": contentType,
+    "cache-control": pathname.startsWith("/v2-assets/") ? "public, max-age=31536000, immutable" : "no-store"
+  });
   createReadStream(realTarget).pipe(response);
 }
 
@@ -922,7 +958,7 @@ function appHtml(): string {
   <header>
     <div class="brand-lockup">
       <h1>AI Video Production 人类工作台</h1>
-      <div class="brand-subtitle">Trello 式生产指挥台 · 批次、SHOT、草稿、确认动作集中处理</div>
+      <div class="brand-subtitle">Legacy 只读视图 · 历史批次、SHOT、草稿与确认记录</div>
     </div>
     <div class="top-status">
       <span id="topProject" class="pill">项目加载中</span>
@@ -3088,7 +3124,16 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   }
 
   const url = new URL(request.url ?? "/", "http://localhost");
-  if (request.method === "GET" && url.pathname === "/") return sendHtml(response, appHtml());
+  if (await handleWorkbenchV2Api(request, response, url, ACTION_NONCE)) return;
+  if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/") {
+    response.writeHead(302, { location: "/v2/dashboard", "cache-control": "no-store" });
+    response.end();
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/legacy") return sendHtml(response, appHtml());
+  if (request.method === "GET" && (url.pathname === "/v2" || url.pathname.startsWith("/v2/") || url.pathname.startsWith("/v2-assets/"))) {
+    return serveWorkbenchV2(url.pathname, response);
+  }
   if (request.method === "GET" && url.pathname === "/favicon.ico") {
     response.writeHead(204, { "cache-control": "no-store" });
     response.end();
@@ -3117,6 +3162,11 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   if (request.method === "GET" && url.pathname.startsWith("/ui-assets/")) return serveUiAsset(url.pathname, response);
   if (request.method === "GET" && url.pathname.startsWith("/imports/")) return serveImportImage(url.pathname, response);
   if (request.method === "GET" && url.pathname.startsWith("/media/artifacts/")) return serveMediaArtifact(url.pathname, request, response);
+
+  if (request.method !== "GET" && url.pathname.startsWith("/api/")) {
+    sendJson(response, 410, { ok: false, error: { code: "LEGACY_READ_ONLY", message: "Legacy 已切换为只读，请在 V2 工作台执行生产操作。" } });
+    return;
+  }
 
   if (request.method === "POST" && url.pathname === "/api/imports/register") {
     return mutate(request, response, (body) =>
@@ -3292,6 +3342,8 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
 }
 
 ensureM0Directories();
+migrateLegacyWorkbenchInboxStores();
+resumeWorkbenchGenerationJobs();
 const startPort = Number(process.env.H1_WORKBENCH_PORT || process.env.PORT || DEFAULT_PORT);
 const server = createServer((request, response) => {
   route(request, response).catch(() => sendJson(response, 500, { ok: false, error: { code: "SERVER_ERROR", message: "服务器错误。" } }));

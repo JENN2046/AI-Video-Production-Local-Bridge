@@ -163,7 +163,7 @@ function isPendingId(value: string): boolean {
 }
 
 function h1StatePath(): string {
-  return join(paths.workspaceRoot, H1_STATE_FILE);
+  return join(paths.dataRoot, "h1", "workbench_state.json");
 }
 
 function loadH1ReadonlyState(): H1WorkbenchState {

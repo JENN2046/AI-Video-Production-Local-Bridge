@@ -89,6 +89,7 @@ try {
   const single = await startStoryboardVideoGeneration(
     {
       project_id: project.project_id,
+      allow_live_provider: true,
       provider_execution: { provider: "real", provider_name: providerName, cost_acknowledged: true },
       confirmation: { confirmation_level: "hard_gate", user_confirmed: true }
     },

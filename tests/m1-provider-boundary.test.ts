@@ -416,7 +416,7 @@ test("M1 real provider gates block disabled, missing cost ack, mismatch, and mis
   if (!missingCredential.ok) assert.equal(missingCredential.error.code, "PROVIDER_CREDENTIAL_MISSING");
 });
 
-test("M1 RunningHub selectable boundary fails honestly without fake success", async () => {
+test("M1 legacy batch lane blocks RunningHub and routes real generation to V2", async () => {
   const db = openM0Database();
   try {
     const { project } = setupOneShotProject(db);
@@ -439,13 +439,9 @@ test("M1 RunningHub selectable boundary fails honestly without fake success", as
         )
     );
 
-    assert.equal(result.ok, true);
-    if (!result.ok) return;
-    assert.equal(result.runs.length, 1);
-    assert.equal(result.runs[0].status, "failed");
-    assert.equal(result.runs[0].provider.provider_name, "runninghub");
-    assert.equal(result.runs[0].error.code, "PROVIDER_UNSUPPORTED");
-    assert.deepEqual(result.runs[0].output.artifact_ids, []);
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.error.code, "PROVIDER_DISABLED");
   } finally {
     db.close();
   }

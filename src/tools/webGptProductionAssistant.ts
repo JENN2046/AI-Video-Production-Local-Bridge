@@ -167,7 +167,7 @@ function now(): string {
 }
 
 function storePath(): string {
-  return join(paths.workspaceRoot, WEBGPT_PRODUCTION_ASSISTANT_STORE_FILE);
+  return join(paths.dataRoot, "webgpt", "production_assistant_plans.json");
 }
 
 export function loadWebGptProductionAssistantStore(): WebGptProductionAssistantStore {
