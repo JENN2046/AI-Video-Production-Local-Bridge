@@ -21,6 +21,7 @@
     "db:backup": "npm run build:server && node dist/scripts/db-backup.js",
     "db:check": "npm run build:server && node dist/scripts/db-check.js",
     "db:migrate": "npm run build:server && node dist/scripts/db-migrate.js",
+    "preflight": "npm run build:server && node dist/scripts/preflight.js",
     "test:v2": "npm run build:server && node dist/scripts/run-isolated-tests.js dist/tests/workbench-v2-*.test.js",
     "test:v2:ui": "vitest run --config vitest.config.ts",
     "test:v2:browser": "npm run build && playwright test --config playwright.config.ts",
@@ -34,7 +35,8 @@
     "source:audit": "npm run build && node dist/scripts/source-package-audit.js",
     "source:export": "npm run build && node dist/scripts/source-clean-export.js",
     "package:audit": "npm run source:audit",
-    "test:source-audit": "npm run build && node dist/scripts/run-isolated-tests.js dist/tests/source-audit.test.js"
+    "test:source-audit": "npm run build && node dist/scripts/run-isolated-tests.js dist/tests/source-audit.test.js",
+    "test": "npm run typecheck && npm run build && npm run test:db && npm run test:v2 && npm run test:v2:ui && npm run test:h1 && npm run test:webgpt:v4 && npm run test:v2:browser && npm run secret:scan"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

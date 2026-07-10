@@ -1,1 +1,1 @@
-export { resumeWorkbenchGenerationJobs } from "../../tools/workbenchGeneration.js";
+export { generationWorkerStatus, resumeWorkbenchGenerationJobs } from "../../tools/workbenchGeneration.js";

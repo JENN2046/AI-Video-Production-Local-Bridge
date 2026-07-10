@@ -195,6 +195,11 @@ test("media server rejects malformed encoded paths without terminating the servi
     assert.equal(JSON.stringify(await malformed.json()).includes("INVALID_MEDIA_PATH"), true);
     const health = await fetch(`${runtime.media_url}/healthz`);
     assert.equal(health.status, 200);
+    const ready = await fetch(`${runtime.media_url}/readyz`);
+    assert.equal(ready.status, 503);
+    const readyBody = await ready.json() as { ok: boolean; auth_configured: boolean };
+    assert.equal(readyBody.ok, false);
+    assert.equal(readyBody.auth_configured, false);
   } finally {
     await runtime.close();
     rmSync(root, { recursive: true, force: true });

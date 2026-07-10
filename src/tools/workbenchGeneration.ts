@@ -103,6 +103,10 @@ export interface GenerationJob {
 
 const activeExecutions = new Map<string, Promise<void>>();
 
+export function generationWorkerStatus(): { ready: true; active: number; concurrency: 1 } {
+  return { ready: true, active: activeExecutions.size, concurrency: 1 };
+}
+
 class GenerationJobLeaseLostError extends Error {
   constructor() {
     super("Generation job lease was lost before the worker could write its result.");
