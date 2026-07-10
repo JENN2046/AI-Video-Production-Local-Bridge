@@ -4,6 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { checkProviderEnv, loadProviderEnvFile, maskSecret, paths, providerPreflight, runSecretScan } from "../src/index.js";
+import { secretFindingForText } from "../src/tools/providerEnv.js";
 
 const DUMMY_SECRET = "dummy_RUNWAY_secret_for_tests_1234";
 
@@ -110,4 +111,11 @@ test("Secret scan covers tracked text files and reports without reading credenti
   assert.equal(scan.git_tracked_files, "PASS");
   assert.equal(scan.reports, "PASS");
   assert.equal(scan.sqlite_or_runtime_state, "NOT_APPLICABLE");
+});
+
+test("Secret scan distinguishes OAuth protocol text and fixtures from bearer credentials", () => {
+  assert.equal(secretFindingForText("const match = /^Bearer\\s+(.+)$/i;"), null);
+  assert.equal(secretFindingForText("Authorization: Bearer test-token"), null);
+  const credentialShapedHeader = ["Authorization:", "Bearer", "abcdefghijklmnopqrstuvwxyz012345"].join(" ");
+  assert.equal(secretFindingForText(credentialShapedHeader), "unredacted bearer token");
 });

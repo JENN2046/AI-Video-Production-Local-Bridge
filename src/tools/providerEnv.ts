@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { assertInsideWorkspace, paths } from "../paths.js";
@@ -146,7 +146,12 @@ export function loadProviderEnvFile(input: {
   disabled?: boolean;
 }): ProviderEnvLoadResult {
   const env = input.env ?? process.env;
-  const envFilePath = assertInsideWorkspace(input.filePath);
+  const candidate = resolve(input.filePath);
+  const approvedRoots = [paths.workspaceRoot, paths.dataRoot].map((root) => resolve(root));
+  const envFilePath = approvedRoots.some((root) => {
+    const value = relative(root, candidate);
+    return value === "" || (!value.startsWith("..") && !isAbsolute(value));
+  }) ? candidate : assertInsideWorkspace(input.filePath);
   const result: ProviderEnvLoadResult = {
     env_file_path: envFilePath,
     env_file_found: existsSync(envFilePath),
@@ -308,7 +313,7 @@ function valueAfterAssignment(line: string, key: string): string | null {
   return match?.[1] ?? null;
 }
 
-function hasUnsafeSecretText(text: string): string | null {
+export function secretFindingForText(text: string): string | null {
   const keys = ["RUNWAYML_API_SECRET", "RUNNINGHUB_API_KEY"];
   for (const line of text.split(/\r?\n/)) {
     for (const key of keys) {
@@ -343,7 +348,7 @@ function hasUnsafeSecretText(text: string): string | null {
     }
   }
 
-  const bearerMatch = text.match(/Bearer\s+([A-Za-z0-9._~+/=-]{8,})/);
+  const bearerMatch = text.match(/\bBearer\s+([A-Za-z0-9._~+/=-]{20,})\b/);
   if (bearerMatch) {
     const value = bearerMatch[1];
     if (!value.includes("<") && !value.toLowerCase().includes("dummy") && !value.toLowerCase().includes("fake")) {
@@ -379,7 +384,7 @@ function scanPaths(pathsToScan: string[]): Array<{ path: string; reason: string 
     if (!existsSync(absolutePath)) continue;
     const stats = statSync(absolutePath);
     if (!stats.isFile() || stats.size > 1024 * 1024 || !fileLooksText(relativePath)) continue;
-    const reason = hasUnsafeSecretText(readFileSync(absolutePath, "utf8"));
+    const reason = secretFindingForText(readFileSync(absolutePath, "utf8"));
     if (reason) findings.push({ path: relativePath, reason });
   }
   return findings;
