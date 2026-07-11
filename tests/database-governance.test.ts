@@ -64,6 +64,27 @@ test("migration checksum drift fails closed", () => {
   }
 });
 
+test("database check detects missing structured identifiers and accepts external media URLs", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "app.sqlite");
+    migrateDatabase(sqlitePath);
+    const db = new DatabaseSync(sqlitePath);
+    db.prepare("INSERT INTO projects (project_id, data_json) VALUES ('project_missing_json_id', ?)")
+      .run(JSON.stringify({ title: "Missing JSON identifier" }));
+    db.prepare("INSERT INTO media_artifacts (artifact_id, role, artifact_type, status, data_json) VALUES ('artifact_external', 'source', 'image', 'active', ?)")
+      .run(JSON.stringify({ artifact_id: "artifact_external", storage: { uri: "https://example.test/media/storyboard.png" } }));
+    db.close();
+
+    const checked = checkDatabase(sqlitePath);
+    assert.equal(checked.structured_drift_rows, 1);
+    assert.equal(checked.missing_media_files, 0);
+    assert.equal(checked.result, "FAIL");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("backup and isolated restore preserve a valid database", () => {
   const root = tempRoot();
   try {

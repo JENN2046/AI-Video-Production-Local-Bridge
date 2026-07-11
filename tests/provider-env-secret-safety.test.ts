@@ -116,6 +116,9 @@ test("Secret scan covers tracked text files and reports without reading credenti
 test("Secret scan distinguishes OAuth protocol text and fixtures from bearer credentials", () => {
   assert.equal(secretFindingForText("const match = /^Bearer\\s+(.+)$/i;"), null);
   assert.equal(secretFindingForText("Authorization: Bearer test-token"), null);
+  assert.equal(secretFindingForText('Bearer resource_metadata="https://example.test/.well-known/oauth-protected-resource"'), null);
+  const shortCredentialHeader = ["Authorization:", "Bearer", "abcd1234efgh"].join(" ");
+  assert.equal(secretFindingForText(shortCredentialHeader), "unredacted bearer token");
   const credentialShapedHeader = ["Authorization:", "Bearer", "abcdefghijklmnopqrstuvwxyz012345"].join(" ");
   assert.equal(secretFindingForText(credentialShapedHeader), "unredacted bearer token");
 });
