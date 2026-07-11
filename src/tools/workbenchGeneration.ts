@@ -87,6 +87,8 @@ export interface WorkbenchGenerationDependencies {
   fetch_impl?: typeof fetch;
   adapter_factory?: (credential: string) => VideoProviderAdapter;
   open_database?: (sqlitePath?: string) => M0Database;
+  scheduler_retry_ms?: number;
+  on_scheduler_error?: (error: unknown) => void;
   now?: () => Date;
   poll_interval_ms?: number;
   timeout_ms?: number;
@@ -910,7 +912,13 @@ function scheduleNextPersistedGeneration(dependencies: WorkbenchGenerationDepend
   if (existing) clearTimeout(existing);
   const timer = setTimeout(() => {
     scheduledWakeups.delete(key);
-    startNextPersistedGeneration(dependencies);
+    try {
+      startNextPersistedGeneration(dependencies);
+    } catch (error) {
+      try { dependencies.on_scheduler_error?.(error); } catch { /* observer failures must not escape the wakeup */ }
+      const retryDelay = Math.min(30_000, Math.max(250, dependencies.scheduler_retry_ms ?? 1_000));
+      scheduleNextPersistedGeneration(dependencies, retryDelay);
+    }
   }, Math.max(0, delayMs));
   timer.unref();
   scheduledWakeups.set(key, timer);
@@ -918,7 +926,7 @@ function scheduleNextPersistedGeneration(dependencies: WorkbenchGenerationDepend
 
 function startNextPersistedGeneration(dependencies: WorkbenchGenerationDependencies): void {
   if (activeExecutions.size >= 1) return;
-  const db = openM0Database(dependencies.sqlite_path);
+  const db = (dependencies.open_database ?? openM0Database)(dependencies.sqlite_path);
   try {
     const row = db.prepare(`SELECT i.intent_id, i.provider_task_id, j.state FROM generation_intents i
       JOIN generation_jobs j ON j.intent_id = i.intent_id

@@ -282,6 +282,36 @@ test("worker closes its database when claiming the job throws", async () => {
   assert.equal(closed, true);
 });
 
+test("persisted generation wakeup catches database failures and retries", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-wakeup-retry-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    migrateDatabase(sqlitePath);
+    let wakeupOpenAttempts = 0;
+    const observedErrors: string[] = [];
+    const dependencies = {
+      sqlite_path: sqlitePath,
+      scheduler_retry_ms: 1,
+      open_database: (path?: string) => {
+        wakeupOpenAttempts += 1;
+        if (wakeupOpenAttempts === 1) throw new Error("INJECTED_WAKEUP_DATABASE_FAILURE");
+        return openM0Database(path);
+      },
+      on_scheduler_error: (error: unknown) => {
+        observedErrors.push(error instanceof Error ? error.message : String(error));
+      }
+    };
+    assert.deepEqual(resumeWorkbenchGenerationJobs(dependencies), { resumed: [], reconciled: [] });
+    for (let attempt = 0; attempt < 60 && wakeupOpenAttempts < 2; attempt += 1) {
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
+    }
+    assert.equal(wakeupOpenAttempts, 2);
+    assert.deepEqual(observedErrors, ["INJECTED_WAKEUP_DATABASE_FAILURE"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("each worker claim performs one provider step and defers a still-running task", async () => {
   const root = mkdtempSync(join(tmpdir(), "generation-poll-timeout-"));
   const sqlitePath = join(root, "app.sqlite");
