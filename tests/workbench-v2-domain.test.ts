@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -13,8 +13,9 @@ import {
   setWorkbenchProjectLifecycle,
   updateWorkbenchProject
 } from "../src/tools/workbenchV2.js";
-import { confirmWorkbenchGeneration, generationWorkerStatus, preflightWorkbenchGeneration, reconcileGenerationJob, runWorkbenchGenerationOnce } from "../src/tools/workbenchGeneration.js";
+import { confirmWorkbenchGeneration, generationWorkerStatus, preflightWorkbenchGeneration, reconcileGenerationJob, resumeWorkbenchGenerationJobs, runWorkbenchGenerationOnce } from "../src/tools/workbenchGeneration.js";
 import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
+import { downloadProviderOutputToArtifact } from "../src/tools/providerOutputDownloader.js";
 import type { VideoProviderAdapter } from "../src/tools/videoProviderAdapters.js";
 
 test("V2 schema is transactional, versioned, and initializes project metadata", () => {
@@ -155,7 +156,7 @@ test("generation preflight enforces official estimate, balance gate, budget and 
     assert.equal(attachedRunData.provider.provider_job_id, "existing-task-123");
     assert.equal(attachedRunData.provider.provider_status, "HUMAN_ATTACHED_EXISTING_TASK");
     assert.equal(attachedRunData.error.code, "");
-    assert.deepEqual(generationWorkerStatus(db), { ready: false, active: 0, concurrency: 1, stale_leases: 0, unowned_runnable: 1 });
+    assert.deepEqual(generationWorkerStatus(db), { ready: false, active: 0, concurrency: 1, stale_leases: 0, unowned_runnable: 1, runnable: 1 });
     const reconciliationEvent = db.prepare("SELECT to_state, reason_code FROM generation_job_events WHERE job_id = ? ORDER BY rowid DESC LIMIT 1").get(confirmed.data.job_id) as { to_state: string; reason_code: string };
     assert.equal(reconciliationEvent.to_state, "polling");
     assert.equal(reconciliationEvent.reason_code, "HUMAN_ATTACHED_EXISTING_TASK");
@@ -213,6 +214,20 @@ test("unknown provider submit is reconciled manually and abandon restores projec
       pollStatus: async () => { throw new Error("poll must not run"); },
       fetchOutput: async () => { throw new Error("output must not run"); }
     } as VideoProviderAdapter;
+    const leaseProbe = openM0Database(sqlitePath);
+    leaseProbe.prepare("UPDATE generation_intents SET provider_task_id = 'leased-task', status = 'running' WHERE intent_id = ?").run(prepared.data.intent.intent_id);
+    leaseProbe.prepare("UPDATE generation_jobs SET state = 'polling', lease_owner = 'dead-worker', lease_token = 'old-token', lease_expires_at = ? WHERE job_id = ?")
+      .run(new Date(Date.now() + 5 * 60_000).toISOString(), confirmed.data.job_id);
+    leaseProbe.close();
+    assert.deepEqual(resumeWorkbenchGenerationJobs({ sqlite_path: sqlitePath }), { resumed: [prepared.data.intent.intent_id], reconciled: [] });
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 25));
+    const afterResume = openM0Database(sqlitePath);
+    const leaseState = afterResume.prepare("SELECT attempt_count FROM generation_jobs WHERE job_id = ?").get(confirmed.data.job_id) as { attempt_count: number };
+    assert.equal(leaseState.attempt_count, 0);
+    assert.equal(generationWorkerStatus(afterResume).ready, false);
+    afterResume.prepare("UPDATE generation_intents SET provider_task_id = '', status = 'queued' WHERE intent_id = ?").run(prepared.data.intent.intent_id);
+    afterResume.prepare("UPDATE generation_jobs SET state = 'queued', lease_owner = '', lease_token = '', lease_expires_at = NULL WHERE job_id = ?").run(confirmed.data.job_id);
+    afterResume.close();
     const crashInjection = openM0Database(sqlitePath);
     crashInjection.exec(`CREATE TRIGGER generation_job_events_crash_injection BEFORE INSERT ON generation_job_events
       BEGIN SELECT RAISE(ABORT, 'INJECTED_EVENT_WRITE_FAILURE'); END`);
@@ -264,6 +279,38 @@ test("unknown provider submit is reconciled manually and abandon restores projec
     } finally { check.close(); }
   } finally {
     try { db.close(); } catch { /* already closed before worker execution */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("provider output registration is idempotent by provider task ID", async () => {
+  const root = mkdtempSync(join(tmpdir(), "provider-output-idempotent-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const db = openM0Database(sqlitePath);
+  try {
+    const fixture = readFileSync(resolve("fixtures/video/mock_clip.mp4"));
+    const input = {
+      url: "https://cdn.example.test/output.mp4",
+      provider_name: "runninghub",
+      provider_job_id: "task-idempotent-1",
+      project_id: "project_idempotent",
+      shot_id: "shot_idempotent",
+      duration_seconds: 2,
+      aspect_ratio: "9:16",
+      storage_directory: join(root, "media"),
+      allowed_storage_root: join(root, "media"),
+      fetch_impl: (async () => new Response(fixture, { status: 200, headers: { "content-type": "video/mp4", "content-length": String(fixture.length) } })) as typeof fetch
+    };
+    const first = await downloadProviderOutputToArtifact(input, db);
+    const second = await downloadProviderOutputToArtifact(input, db);
+    assert.equal(first.ok, true, first.ok ? undefined : first.error.message);
+    assert.equal(second.ok, true, second.ok ? undefined : second.error.message);
+    if (!first.ok || !second.ok) return;
+    assert.equal(second.artifact.artifact_id, first.artifact.artifact_id);
+    const count = db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE json_extract(data_json, '$.source.provider_job_id') = 'task-idempotent-1'").get() as { count: number };
+    assert.equal(count.count, 1);
+  } finally {
+    db.close();
     rmSync(root, { recursive: true, force: true });
   }
 });

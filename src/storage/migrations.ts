@@ -71,7 +71,26 @@ export const M0_BASE_SCHEMA_SQL = `
   VALUES ('schema_version', 'm0-a', CURRENT_TIMESTAMP);
 `;
 
-const WORKBENCH_V2_4_CANONICAL = `${WORKBENCH_V2_SCHEMA_VERSION}\n${initializeWorkbenchV2Schema.toString()}`;
+function workbenchV24SemanticCanonical(): string {
+  const reference = new DatabaseSync(":memory:");
+  try {
+    reference.exec(M0_BASE_SCHEMA_SQL);
+    initializeWorkbenchV2Schema(reference);
+    const objects = reference.prepare(`SELECT type, name, sql FROM sqlite_master
+      WHERE type IN ('table', 'index', 'trigger') AND name NOT LIKE 'sqlite_%'
+      ORDER BY type, name`).all() as unknown as Array<{ type: string; name: string; sql: string | null }>;
+    return JSON.stringify({
+      version: WORKBENCH_V2_SCHEMA_VERSION,
+      schema: objects.map((row) => ({ type: row.type, name: row.name, sql: normalizeDefinition(row.sql) })),
+      data_upgrade: "webgpt_audit_v2_3_result_envelope_v1"
+    });
+  } finally {
+    reference.close();
+  }
+}
+
+// Migration 0002 is the immutable v2-4 baseline. Future schema work must add a new migration.
+const WORKBENCH_V2_4_CANONICAL = workbenchV24SemanticCanonical();
 
 const V24_EXPECTED_COLUMNS: Record<string, readonly string[]> = {
   m0_meta: ["key", "value", "updated_at"],
@@ -131,6 +150,9 @@ const GENERATION_JOBS_SQL = `
   );
   CREATE INDEX IF NOT EXISTS idx_generation_jobs_due ON generation_jobs(state, next_attempt_at, created_at);
   CREATE INDEX IF NOT EXISTS idx_generation_job_events_job ON generation_job_events(job_id, created_at);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_media_provider_task_unique
+    ON media_artifacts(json_extract(data_json, '$.source.provider'), json_extract(data_json, '$.source.provider_job_id'))
+    WHERE json_valid(data_json) = 1 AND json_extract(data_json, '$.source.provider_job_id') <> '';
   CREATE TRIGGER IF NOT EXISTS generation_job_events_no_update
     BEFORE UPDATE ON generation_job_events BEGIN
       SELECT RAISE(ABORT, 'GENERATION_JOB_EVENTS_APPEND_ONLY');
@@ -257,7 +279,7 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     generation_jobs: ["job_id", "intent_id", "state", "lease_owner", "lease_token", "lease_expires_at", "next_attempt_at", "attempt_count", "reconciliation_reason", "created_at", "updated_at"],
     generation_job_events: ["event_id", "job_id", "from_state", "to_state", "reason_code", "data_json", "created_at"]
   } : V24_EXPECTED_COLUMNS;
-  const expectedIndexes = includeJobs ? [...V24_EXPECTED_INDEXES, "idx_generation_jobs_due", "idx_generation_job_events_job"] : [...V24_EXPECTED_INDEXES];
+  const expectedIndexes = includeJobs ? [...V24_EXPECTED_INDEXES, "idx_generation_jobs_due", "idx_generation_job_events_job", "idx_media_provider_task_unique"] : [...V24_EXPECTED_INDEXES];
   const expectedTriggers = includeJobs ? ["generation_job_events_no_update", "generation_job_events_no_delete"] : [];
   const definitions = expectedSchemaDefinitions(includeJobs, expectedColumns, [...expectedIndexes, ...expectedTriggers]);
   for (const [table, expected] of Object.entries(expectedColumns)) {

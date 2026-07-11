@@ -103,8 +103,13 @@ export interface GenerationJob {
 }
 
 const activeExecutions = new Map<string, Promise<void>>();
+const scheduledWakeups = new Map<string, NodeJS.Timeout>();
 
-export function generationWorkerStatus(db: M0Database): { ready: boolean; active: number; concurrency: 1; stale_leases: number; unowned_runnable: number } {
+function schedulerKey(dependencies: WorkbenchGenerationDependencies): string {
+  return dependencies.sqlite_path ?? "__default_workbench_database__";
+}
+
+export function generationWorkerStatus(db: M0Database): { ready: boolean; active: number; concurrency: 1; stale_leases: number; unowned_runnable: number; runnable: number } {
   const staleRow = db.prepare(`SELECT COUNT(*) AS count FROM generation_jobs
     WHERE state IN ('submitting','polling','downloading','finalizing')
       AND lease_token <> '' AND lease_expires_at IS NOT NULL
@@ -114,8 +119,10 @@ export function generationWorkerStatus(db: M0Database): { ready: boolean; active
       AND (lease_token = '' OR lease_expires_at IS NULL OR datetime(lease_expires_at) <= CURRENT_TIMESTAMP)`).get() as { count: number };
   const staleLeases = Number(staleRow.count);
   const unownedRunnable = Number(unownedRow.count);
+  const runnable = Number((db.prepare(`SELECT COUNT(*) AS count FROM generation_jobs
+    WHERE state IN ('queued','submitting','polling','downloading','finalizing')`).get() as { count: number }).count);
   const active = activeExecutions.size;
-  return { ready: active <= 1 && staleLeases === 0 && (active > 0 || unownedRunnable === 0), active, concurrency: 1, stale_leases: staleLeases, unowned_runnable: unownedRunnable };
+  return { ready: active <= 1 && staleLeases === 0 && (active > 0 || runnable === 0), active, concurrency: 1, stale_leases: staleLeases, unowned_runnable: unownedRunnable, runnable };
 }
 
 class GenerationJobLeaseLostError extends Error {
@@ -588,8 +595,11 @@ function cancelIntent(db: M0Database, intent: WorkbenchGenerationIntent, reason:
   }
 }
 
-function existingOutputArtifact(db: M0Database, providerTaskId: string): MediaArtifact | null {
-  const row = db.prepare("SELECT data_json FROM media_artifacts WHERE json_extract(data_json, '$.source.provider_job_id') = ? LIMIT 1").get(providerTaskId) as { data_json: string } | undefined;
+function existingOutputArtifact(db: M0Database, providerTaskId: string, projectId: string, shotId: string): MediaArtifact | null {
+  const row = db.prepare(`SELECT data_json FROM media_artifacts
+    WHERE json_extract(data_json, '$.source.provider') = 'runninghub'
+      AND json_extract(data_json, '$.source.provider_job_id') = ?
+      AND project_id = ? AND shot_id = ? LIMIT 1`).get(providerTaskId, projectId, shotId) as { data_json: string } | undefined;
   return row ? JSON.parse(row.data_json) as MediaArtifact : null;
 }
 
@@ -712,7 +722,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       failIntent(db, intent, "timeout", providerError("PROVIDER_TIMEOUT", "RunningHub task did not complete before timeout.", true), leaseToken);
       return;
     }
-    let output = existingOutputArtifact(db, taskId);
+    let output = existingOutputArtifact(db, taskId, intent.project_id, intent.shot_id);
     if (!output) {
       job = setJobState(db, job, "downloading", "", { lease_token: leaseToken });
       assertJobLease(db, job.job_id, leaseToken);
@@ -778,11 +788,29 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
 export function startWorkbenchGeneration(intentId: string, input: { allow_submit: boolean; dependencies?: WorkbenchGenerationDependencies }): void {
   if (activeExecutions.has(intentId) || activeExecutions.size >= 1) return;
   const dependencies = input.dependencies ?? {};
+  const scheduled = scheduledWakeups.get(schedulerKey(dependencies));
+  if (scheduled) {
+    clearTimeout(scheduled);
+    scheduledWakeups.delete(schedulerKey(dependencies));
+  }
   const execution = executeIntent(intentId, input.allow_submit, dependencies).catch(() => undefined).finally(() => {
     activeExecutions.delete(intentId);
-    queueMicrotask(() => startNextPersistedGeneration(dependencies));
+    scheduleNextPersistedGeneration(dependencies);
   });
   activeExecutions.set(intentId, execution);
+}
+
+function scheduleNextPersistedGeneration(dependencies: WorkbenchGenerationDependencies, delayMs = 0): void {
+  if (activeExecutions.size >= 1) return;
+  const key = schedulerKey(dependencies);
+  const existing = scheduledWakeups.get(key);
+  if (existing) clearTimeout(existing);
+  const timer = setTimeout(() => {
+    scheduledWakeups.delete(key);
+    startNextPersistedGeneration(dependencies);
+  }, Math.max(0, delayMs));
+  timer.unref();
+  scheduledWakeups.set(key, timer);
 }
 
 function startNextPersistedGeneration(dependencies: WorkbenchGenerationDependencies): void {
@@ -793,8 +821,19 @@ function startNextPersistedGeneration(dependencies: WorkbenchGenerationDependenc
       JOIN generation_jobs j ON j.intent_id = i.intent_id
       WHERE i.status IN ('queued','running') AND i.provider_task_id <> ''
         AND j.state IN ('queued','polling','downloading','finalizing')
+        AND (j.lease_token = '' OR j.lease_expires_at IS NULL OR datetime(j.lease_expires_at) <= CURRENT_TIMESTAMP)
       ORDER BY j.created_at LIMIT 1`).get() as { intent_id: string } | undefined;
-    if (row) startWorkbenchGeneration(row.intent_id, { allow_submit: false, dependencies });
+    if (row) {
+      startWorkbenchGeneration(row.intent_id, { allow_submit: false, dependencies });
+      return;
+    }
+    const lease = db.prepare(`SELECT MIN(j.lease_expires_at) AS lease_expires_at FROM generation_intents i
+      JOIN generation_jobs j ON j.intent_id = i.intent_id
+      WHERE i.status IN ('queued','running') AND i.provider_task_id <> ''
+        AND j.state IN ('queued','polling','downloading','finalizing')
+        AND j.lease_token <> '' AND j.lease_expires_at IS NOT NULL
+        AND datetime(j.lease_expires_at) > CURRENT_TIMESTAMP`).get() as { lease_expires_at: string | null };
+    if (lease.lease_expires_at) scheduleNextPersistedGeneration(dependencies, Math.max(50, Date.parse(lease.lease_expires_at) - Date.now() + 50));
   } finally { db.close(); }
 }
 
@@ -817,7 +856,7 @@ export function resumeWorkbenchGenerationJobs(dependencies: WorkbenchGenerationD
         reconciled.push(row.intent_id);
       }
     }
-    queueMicrotask(() => startNextPersistedGeneration(dependencies));
+    scheduleNextPersistedGeneration(dependencies);
     return { resumed, reconciled };
   } finally {
     db.close();

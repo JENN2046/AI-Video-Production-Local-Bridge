@@ -23,6 +23,7 @@ export interface ProviderOutputDownloadInput {
   duration_seconds: number;
   aspect_ratio: string;
   storage_directory?: string;
+  allowed_storage_root?: string;
   fetch_impl?: typeof fetch;
   safety?: Partial<ProviderOutputDownloadSafety>;
 }
@@ -87,21 +88,22 @@ function hasExistingSymlinkAncestor(child: string, parent: string): boolean {
 }
 
 function outputStorageDirectory(input: ProviderOutputDownloadInput): { ok: true; path: string } | { ok: false; error: ProviderToolError } {
+  const mediaRoot = resolve(input.allowed_storage_root ?? paths.mediaRoot);
   const directory = resolve(input.storage_directory ?? paths.videoArtifactsRoot);
-  if (!isPathInside(directory, paths.mediaRoot)) {
+  if (!isPathInside(directory, mediaRoot)) {
     return { ok: false, error: providerError("PROVIDER_OUTPUT_STORAGE_BLOCKED", "Provider output storage directory must be inside app-controlled media storage.") };
   }
-  if (hasExistingSymlinkAncestor(directory, paths.mediaRoot)) {
+  if (hasExistingSymlinkAncestor(directory, mediaRoot)) {
     return { ok: false, error: providerError("PROVIDER_OUTPUT_STORAGE_BLOCKED", "Provider output storage directory must not pass through symbolic links.") };
   }
   mkdirSync(directory, { recursive: true });
-  if (lstatSync(paths.mediaRoot).isSymbolicLink()) {
+  if (lstatSync(mediaRoot).isSymbolicLink()) {
     return { ok: false, error: providerError("PROVIDER_OUTPUT_STORAGE_BLOCKED", "App media root symbolic links are blocked for provider outputs.") };
   }
   if (lstatSync(directory).isSymbolicLink()) {
     return { ok: false, error: providerError("PROVIDER_OUTPUT_STORAGE_BLOCKED", "Provider output storage directory symbolic links are blocked.") };
   }
-  const realMediaRoot = realpathSync(paths.mediaRoot);
+  const realMediaRoot = realpathSync(mediaRoot);
   const realDirectory = realpathSync(directory);
   if (!isPathInside(realDirectory, realMediaRoot)) {
     return { ok: false, error: providerError("PROVIDER_OUTPUT_STORAGE_BLOCKED", "Provider output storage directory resolves outside app-controlled media storage.") };
@@ -234,8 +236,23 @@ export async function downloadProviderOutputToArtifact(
       return { ok: false, error: providerError("PROVIDER_OUTPUT_INVALID", ffprobe.error || "Provider output is not ffprobe-valid.") };
     }
 
-    const artifact = registerMediaArtifact(
-      {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      const existingRow = db.prepare(`SELECT data_json FROM media_artifacts
+        WHERE json_valid(data_json) = 1
+          AND json_extract(data_json, '$.source.provider') = ?
+          AND json_extract(data_json, '$.source.provider_job_id') = ?
+        LIMIT 1`).get(input.provider_name, input.provider_job_id) as { data_json: string } | undefined;
+      if (existingRow) {
+        const existing = JSON.parse(existingRow.data_json) as MediaArtifact;
+        if (existing.linked_objects.project_id !== input.project_id || existing.linked_objects.shot_id !== input.shot_id) {
+          db.exec("ROLLBACK");
+          return { ok: false, error: providerError("PROVIDER_OUTPUT_TASK_CONFLICT", "Provider task output is already bound to a different project or SHOT.") };
+        }
+        db.exec("COMMIT");
+        return { ok: true, artifact: existing, ffprobe, output_url_hostname: fetched.finalUrl.hostname };
+      }
+      const artifact = registerMediaArtifact({
         artifact_type: "video",
         role: "generated_clip",
         source: {
@@ -244,6 +261,7 @@ export async function downloadProviderOutputToArtifact(
           mime_type: contentType ?? "video/mp4"
         },
         storage_directory: storageDirectory.path,
+        allowed_storage_root: input.allowed_storage_root,
         linked_objects: {
           project_id: input.project_id,
           shot_id: input.shot_id
@@ -257,15 +275,19 @@ export async function downloadProviderOutputToArtifact(
           provider_job_id: input.provider_job_id,
           external_url_host: fetched.finalUrl.hostname
         }
-      },
-      db
-    );
+      }, db);
 
-    if (!artifact.ok) {
-      return { ok: false, error: providerError("PROVIDER_OUTPUT_DOWNLOAD_FAILED", artifact.error.message) };
+      if (!artifact.ok) {
+        db.exec("ROLLBACK");
+        return { ok: false, error: providerError("PROVIDER_OUTPUT_DOWNLOAD_FAILED", artifact.error.message) };
+      }
+
+      db.exec("COMMIT");
+      return { ok: true, artifact: artifact.artifact, ffprobe, output_url_hostname: fetched.finalUrl.hostname };
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
     }
-
-    return { ok: true, artifact: artifact.artifact, ffprobe, output_url_hostname: fetched.finalUrl.hostname };
   } finally {
     if (existsSync(tempPath)) rmSync(tempPath, { force: true });
   }

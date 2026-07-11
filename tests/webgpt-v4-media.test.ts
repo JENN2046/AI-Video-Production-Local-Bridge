@@ -109,6 +109,19 @@ test("timed out analysis retains its slot until the underlying process settles",
   assert.equal(queue.status().active, 0);
 });
 
+test("media analysis timeout includes time spent waiting in the queue", async () => {
+  const queue = new MediaAnalysisQueue(1, 1, 20);
+  let release: (() => void) | undefined;
+  const active = queue.run(() => new Promise<void>((resolveOperation) => { release = resolveOperation; }));
+  const waiting = queue.run(async () => undefined);
+  const activeRejection = assert.rejects(active, (error) => error instanceof WebGptV4Error && error.code === "MEDIA_ANALYSIS_TIMEOUT");
+  await assert.rejects(waiting, (error) => error instanceof WebGptV4Error && error.code === "MEDIA_ANALYSIS_TIMEOUT");
+  assert.deepEqual(queue.status(), { active: 1, waiting: 0, capacity: 2 });
+  await activeRejection;
+  release?.();
+  await new Promise((resolveTick) => setImmediate(resolveTick));
+});
+
 test("analysis cache cleanup removes only analyzer-owned hash directories", async () => {
   const root = mkdtempSync(join(tmpdir(), "media-cache-cleanup-"));
   try {

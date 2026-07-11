@@ -132,6 +132,7 @@ test("database check returns a structured failure for malformed JSON and missing
     const missingResult = checkDatabase(missingPath);
     assert.equal(missingResult.result, "FAIL");
     assert.equal(missingResult.schema_current, false);
+    assert.equal(missingResult.check_errors > 0, true);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -149,6 +150,23 @@ test("database check reports orphan rows", () => {
     const checked = checkDatabase(sqlitePath);
     assert.equal(checked.result, "FAIL");
     assert.equal(checked.orphan_rows > 0, true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("provider task IDs are unique per provider at the database boundary", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "app.sqlite");
+    migrateDatabase(sqlitePath);
+    const db = new DatabaseSync(sqlitePath);
+    const artifact = (artifactId: string) => JSON.stringify({ artifact_id: artifactId, source: { provider: "runninghub", provider_job_id: "task_unique" } });
+    db.prepare("INSERT INTO media_artifacts (artifact_id, role, artifact_type, status, data_json) VALUES (?, 'generated_clip', 'video', 'active', ?)")
+      .run("artifact_unique_1", artifact("artifact_unique_1"));
+    assert.throws(() => db.prepare("INSERT INTO media_artifacts (artifact_id, role, artifact_type, status, data_json) VALUES (?, 'generated_clip', 'video', 'active', ?)")
+      .run("artifact_unique_2", artifact("artifact_unique_2")), /UNIQUE constraint failed/);
+    db.close();
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -186,4 +204,5 @@ test("backup and isolated restore preserve a valid database", () => {
 test("migration checksum is deterministic", () => {
   assert.equal(migrationChecksum(DATABASE_MIGRATIONS[0]), migrationChecksum(DATABASE_MIGRATIONS[0]));
   assert.notEqual(migrationChecksum(DATABASE_MIGRATIONS[0]), migrationChecksum(DATABASE_MIGRATIONS[1]));
+  assert.doesNotMatch(DATABASE_MIGRATIONS[1].canonical, /function\s+initializeWorkbenchV2Schema/);
 });

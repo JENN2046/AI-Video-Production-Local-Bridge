@@ -23,7 +23,7 @@ let lastCacheCleanupAt = 0;
 
 export class MediaAnalysisQueue {
   private active = 0;
-  private readonly waiting: Array<() => void> = [];
+  private readonly waiting: Array<{ start: () => void; reject: (error: unknown) => void; timer: NodeJS.Timeout; settled: boolean }> = [];
 
   constructor(private readonly concurrency = 1, private readonly maximumWaiting = 4, private readonly timeoutMs = MEDIA_ANALYSIS_TIMEOUT_MS) {}
 
@@ -36,25 +36,47 @@ export class MediaAnalysisQueue {
       return Promise.reject(new WebGptV4Error("MEDIA_ANALYSIS_BUSY", "Media analysis queue is full; retry later.", undefined, true));
     }
     return new Promise<T>((resolveRun, rejectRun) => {
+      const entry = {
+        start: (): void => undefined,
+        reject: rejectRun,
+        timer: undefined as unknown as NodeJS.Timeout,
+        settled: false
+      };
+      let started = false;
       const start = (): void => {
+        if (entry.settled) return;
+        started = true;
         this.active += 1;
-        let settled = false;
-        const timer = setTimeout(() => {
-          settled = true;
-          rejectRun(new WebGptV4Error("MEDIA_ANALYSIS_TIMEOUT", "Media analysis exceeded the 120 second limit.", undefined, true));
-        }, this.timeoutMs);
         void Promise.resolve().then(operation).then((value) => {
-          if (!settled) resolveRun(value);
+          if (!entry.settled) {
+            entry.settled = true;
+            resolveRun(value);
+          }
         }, (error) => {
-          if (!settled) rejectRun(error);
+          if (!entry.settled) {
+            entry.settled = true;
+            rejectRun(error);
+          }
         }).finally(() => {
-          clearTimeout(timer);
+          clearTimeout(entry.timer);
           this.active -= 1;
-          this.waiting.shift()?.();
+          let next = this.waiting.shift();
+          while (next?.settled) next = this.waiting.shift();
+          next?.start();
         });
       };
+      entry.start = start;
+      entry.timer = setTimeout(() => {
+        if (entry.settled) return;
+        entry.settled = true;
+        if (!started) {
+          const index = this.waiting.indexOf(entry);
+          if (index >= 0) this.waiting.splice(index, 1);
+        }
+        entry.reject(new WebGptV4Error("MEDIA_ANALYSIS_TIMEOUT", "Media analysis exceeded the 120 second end-to-end limit.", undefined, true));
+      }, this.timeoutMs);
       if (this.active < this.concurrency) start();
-      else this.waiting.push(start);
+      else this.waiting.push(entry);
     });
   }
 }

@@ -13,12 +13,14 @@ export interface DatabaseCheckResult {
   structured_drift_rows: number;
   orphan_rows: number;
   missing_media_files: number;
+  check_errors: number;
 }
 
-function scalarCount(db: DatabaseSync, sql: string): number {
+function scalarCount(db: DatabaseSync, sql: string, errors: string[]): number {
   try {
     return Number((db.prepare(sql).get() as { count: number }).count);
-  } catch {
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : "DATABASE_CHECK_QUERY_FAILED");
     return 0;
   }
 }
@@ -31,25 +33,33 @@ export function checkDatabase(sqlitePath = paths.sqlitePath): DatabaseCheckResul
     try { quickCheck = (db.prepare("PRAGMA quick_check").get() as { quick_check: string }).quick_check; } catch { /* reported as FAIL */ }
     let schemaCurrent = true;
     try { assertSchemaCurrent(db); } catch { schemaCurrent = false; }
-    const invalidJsonRows = ["projects", "shots", "storyboard_packages", "media_artifacts", "generation_batches", "generation_runs"]
-      .reduce((sum, table) => sum + scalarCount(db, `SELECT COUNT(*) AS count FROM ${table} WHERE json_valid(data_json) = 0`), 0);
-    const structuredDriftRows = scalarCount(db, "SELECT COUNT(*) AS count FROM projects WHERE json_valid(data_json) = 1 AND json_extract(data_json, '$.project_id') IS NOT project_id")
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM shots WHERE json_valid(data_json) = 1 AND (json_extract(data_json, '$.shot_id') IS NOT shot_id OR json_extract(data_json, '$.project_id') IS NOT project_id)")
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_runs WHERE json_valid(data_json) = 1 AND (json_extract(data_json, '$.run_id') IS NOT run_id OR json_extract(data_json, '$.project_id') IS NOT project_id)")
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM media_artifacts WHERE json_valid(data_json) = 1 AND json_extract(data_json, '$.artifact_id') IS NOT artifact_id");
-    const orphanRows = scalarCount(db, "SELECT COUNT(*) AS count FROM shots s LEFT JOIN projects p ON p.project_id = s.project_id WHERE p.project_id IS NULL")
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_runs r LEFT JOIN projects p ON p.project_id = r.project_id WHERE p.project_id IS NULL")
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_runs r LEFT JOIN shots s ON s.shot_id = r.shot_id WHERE r.shot_id IS NOT NULL AND r.shot_id <> '' AND s.shot_id IS NULL")
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM media_artifacts a LEFT JOIN projects p ON p.project_id = a.project_id WHERE a.project_id IS NOT NULL AND a.project_id <> '' AND p.project_id IS NULL")
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM media_artifacts a LEFT JOIN shots s ON s.shot_id = a.shot_id WHERE a.shot_id IS NOT NULL AND a.shot_id <> '' AND s.shot_id IS NULL")
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM storyboard_packages s LEFT JOIN projects p ON p.project_id = s.project_id WHERE p.project_id IS NULL")
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_batches b LEFT JOIN projects p ON p.project_id = b.project_id WHERE p.project_id IS NULL")
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_intents i LEFT JOIN projects p ON p.project_id = i.project_id WHERE p.project_id IS NULL")
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_intents i LEFT JOIN shots s ON s.shot_id = i.shot_id WHERE s.shot_id IS NULL")
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_jobs j LEFT JOIN generation_intents i ON i.intent_id = j.intent_id WHERE i.intent_id IS NULL")
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_job_events e LEFT JOIN generation_jobs j ON j.job_id = e.job_id WHERE j.job_id IS NULL");
+    const errors: string[] = [];
+    const jsonColumns = [
+      ["projects", "data_json"], ["shots", "data_json"], ["storyboard_packages", "data_json"], ["media_artifacts", "data_json"],
+      ["generation_batches", "data_json"], ["generation_runs", "data_json"], ["import_index", "metadata_json"],
+      ["regeneration_requests", "data_json"], ["generation_intents", "sanitized_error_json"], ["generation_intents", "data_json"],
+      ["workbench_drafts", "data_json"], ["workbench_pending_actions", "data_json"], ["workbench_pending_actions", "result_json"],
+      ["workbench_inbox_events", "data_json"], ["workbench_governance_runs", "rule_groups_json"],
+      ["webgpt_audit_events", "changed_fields_json"], ["webgpt_audit_events", "result_json"], ["generation_job_events", "data_json"]
+    ] as const;
+    const invalidJsonRows = jsonColumns.reduce((sum, [table, column]) => sum + scalarCount(db, `SELECT COUNT(*) AS count FROM ${table} WHERE json_valid(${column}) = 0`, errors), 0);
+    const structuredDriftRows = scalarCount(db, "SELECT COUNT(*) AS count FROM projects WHERE json_valid(data_json) = 1 AND json_extract(data_json, '$.project_id') IS NOT project_id", errors)
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM shots WHERE json_valid(data_json) = 1 AND (json_extract(data_json, '$.shot_id') IS NOT shot_id OR json_extract(data_json, '$.project_id') IS NOT project_id)", errors)
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_runs WHERE json_valid(data_json) = 1 AND (json_extract(data_json, '$.run_id') IS NOT run_id OR json_extract(data_json, '$.project_id') IS NOT project_id)", errors)
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM media_artifacts WHERE json_valid(data_json) = 1 AND json_extract(data_json, '$.artifact_id') IS NOT artifact_id", errors);
+    const orphanRows = scalarCount(db, "SELECT COUNT(*) AS count FROM shots s LEFT JOIN projects p ON p.project_id = s.project_id WHERE p.project_id IS NULL", errors)
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_runs r LEFT JOIN projects p ON p.project_id = r.project_id WHERE p.project_id IS NULL", errors)
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_runs r LEFT JOIN shots s ON s.shot_id = r.shot_id WHERE r.shot_id IS NOT NULL AND r.shot_id <> '' AND s.shot_id IS NULL", errors)
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM media_artifacts a LEFT JOIN projects p ON p.project_id = a.project_id WHERE a.project_id IS NOT NULL AND a.project_id <> '' AND p.project_id IS NULL", errors)
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM media_artifacts a LEFT JOIN shots s ON s.shot_id = a.shot_id WHERE a.shot_id IS NOT NULL AND a.shot_id <> '' AND s.shot_id IS NULL", errors)
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM storyboard_packages s LEFT JOIN projects p ON p.project_id = s.project_id WHERE p.project_id IS NULL", errors)
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_batches b LEFT JOIN projects p ON p.project_id = b.project_id WHERE p.project_id IS NULL", errors)
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_intents i LEFT JOIN projects p ON p.project_id = i.project_id WHERE p.project_id IS NULL", errors)
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_intents i LEFT JOIN shots s ON s.shot_id = i.shot_id WHERE s.shot_id IS NULL", errors)
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_jobs j LEFT JOIN generation_intents i ON i.intent_id = j.intent_id WHERE i.intent_id IS NULL", errors)
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_job_events e LEFT JOIN generation_jobs j ON j.job_id = e.job_id WHERE j.job_id IS NULL", errors);
     let mediaRows: Array<{ data_json: string }> = [];
-    try { mediaRows = db.prepare("SELECT data_json FROM media_artifacts").all() as Array<{ data_json: string }>; } catch { /* missing schema is already a FAIL */ }
+    try { mediaRows = db.prepare("SELECT data_json FROM media_artifacts").all() as Array<{ data_json: string }>; } catch (error) { errors.push(error instanceof Error ? error.message : "MEDIA_FILE_CHECK_FAILED"); }
     const missingMediaFiles = mediaRows.reduce((count, row) => {
       try {
         const parsed = JSON.parse(row.data_json) as { storage?: { uri?: string } };
@@ -58,8 +68,8 @@ export function checkDatabase(sqlitePath = paths.sqlitePath): DatabaseCheckResul
         return count;
       }
     }, 0);
-    const pass = quickCheck === "ok" && schemaCurrent && invalidJsonRows === 0 && structuredDriftRows === 0 && orphanRows === 0 && missingMediaFiles === 0;
-    return { result: pass ? "PASS" : "FAIL", quick_check: quickCheck, schema_current: schemaCurrent, invalid_json_rows: invalidJsonRows, structured_drift_rows: structuredDriftRows, orphan_rows: orphanRows, missing_media_files: missingMediaFiles };
+    const pass = quickCheck === "ok" && schemaCurrent && errors.length === 0 && invalidJsonRows === 0 && structuredDriftRows === 0 && orphanRows === 0 && missingMediaFiles === 0;
+    return { result: pass ? "PASS" : "FAIL", quick_check: quickCheck, schema_current: schemaCurrent, invalid_json_rows: invalidJsonRows, structured_drift_rows: structuredDriftRows, orphan_rows: orphanRows, missing_media_files: missingMediaFiles, check_errors: errors.length };
   } finally {
     db.close();
   }
