@@ -1046,7 +1046,8 @@ export function buildR2GCloseoutReport(generatedAt: string): Record<string, unkn
       chatgpt_connector_created: false
     },
     local_tests: {
-      test_script: "npm run test:webgpt:v4",
+      test_script: null,
+      status: "retired_with_legacy_r2g_harness",
       typecheck: "npm run typecheck",
       secret_scan: "npm run secret:scan",
       diff_check: "git diff --check"
@@ -1091,7 +1092,7 @@ export function buildR2GHardeningFixReport(generatedAt: string): Record<string, 
       "JSON parse for R2G-H1 report": "PASS",
       "JSON parse for schema fixture": "PASS",
       "npm run typecheck": "PASS",
-      "npm run test:webgpt:v4": "CURRENT_REPLACEMENT",
+      "historical R2G MCP test": "PASS_BEFORE_RETIREMENT",
       "npm run secret:scan": "PASS",
       "git diff --check": "PASS_WITH_CRLF_WARNINGS_ONLY"
     },
