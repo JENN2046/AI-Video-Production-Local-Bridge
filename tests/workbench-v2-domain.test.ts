@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -16,6 +16,7 @@ import {
 } from "../src/tools/workbenchV2.js";
 import { confirmWorkbenchGeneration, preflightWorkbenchGeneration, reconcileGenerationJob, resumeWorkbenchGenerationJobs, runWorkbenchGenerationOnce } from "../src/tools/workbenchGeneration.js";
 import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
+import { downloadProviderOutputToArtifact } from "../src/tools/providerOutputDownloader.js";
 import type { VideoProviderAdapter } from "../src/tools/videoProviderAdapters.js";
 
 async function prepareConfirmedGeneration(sqlitePath: string, title: string): Promise<{ intent_id: string; job_id: string; env: NodeJS.ProcessEnv }> {
@@ -265,7 +266,7 @@ test("provider task persistence failure enters manual reconciliation without los
   }
 });
 
-test("known provider task remains active when the local polling deadline expires", async () => {
+test("each worker claim performs one provider step and defers a still-running task", async () => {
   const root = mkdtempSync(join(tmpdir(), "generation-poll-timeout-"));
   const sqlitePath = join(root, "app.sqlite");
   try {
@@ -276,12 +277,17 @@ test("known provider task remains active when the local polling deadline expires
       pollStatus: async () => ({ ok: true as const, status: "running" as const, provider_status: "RUNNING" }),
       fetchOutput: async () => { throw new Error("output must not run"); }
     } as unknown as VideoProviderAdapter;
-    await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: true, dependencies: { sqlite_path: sqlitePath, env: prepared.env, adapter_factory: () => adapter, timeout_ms: 30, poll_interval_ms: 10 } });
+    const dependencies = { sqlite_path: sqlitePath, env: prepared.env, adapter_factory: () => adapter, poll_interval_ms: 10 };
+    await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: true, dependencies });
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 15));
+    await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: false, dependencies });
     const checked = openM0Database(sqlitePath);
     const intent = checked.prepare("SELECT status, provider_task_id FROM generation_intents WHERE intent_id = ?").get(prepared.intent_id) as { status: string; provider_task_id: string };
-    const job = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?").get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    const job = checked.prepare("SELECT state, reconciliation_reason, next_attempt_at FROM generation_jobs WHERE job_id = ?").get(prepared.job_id) as { state: string; reconciliation_reason: string; next_attempt_at: string };
     assert.deepEqual({ ...intent }, { status: "running", provider_task_id: "task-still-running" });
-    assert.deepEqual({ ...job }, { state: "manual_reconciliation", reconciliation_reason: "PROVIDER_POLL_TIMEOUT_REQUIRES_RECONCILIATION" });
+    assert.equal(job.state, "polling");
+    assert.equal(job.reconciliation_reason, "");
+    assert.equal(Date.parse(job.next_attempt_at) > Date.now() - 1_000, true);
     checked.close();
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -366,6 +372,47 @@ test("startup recovery resumes a confirmed queued job before any provider submit
     await new Promise((resolveTurn) => setImmediate(resolveTurn));
     await new Promise((resolveTurn) => setImmediate(resolveTurn));
   } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("provider output registration is idempotent by provider task ID", async () => {
+  const root = mkdtempSync(join(tmpdir(), "provider-output-idempotent-"));
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const fixture = readFileSync(resolve("fixtures/video/mock_clip.mp4"));
+    const input = {
+      url: "https://cdn.example.test/output.mp4",
+      provider_name: "runninghub",
+      provider_job_id: "task-idempotent-1",
+      project_id: "project_idempotent",
+      shot_id: "shot_idempotent",
+      duration_seconds: 2,
+      aspect_ratio: "9:16",
+      storage_directory: join(root, "media"),
+      fetch_impl: (async () => new Response(fixture, { status: 200, headers: { "content-type": "video/mp4", "content-length": String(fixture.length) } })) as typeof fetch
+    };
+    await assert.rejects(() => downloadProviderOutputToArtifact(input, db, {
+      storage_root: join(root, "media"),
+      fault_injection_after_file_commit: () => { throw new Error("INJECTED_AFTER_FILE_COMMIT"); }
+    }), /INJECTED_AFTER_FILE_COMMIT/);
+    const afterCrash = db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE json_extract(data_json, '$.source.provider_job_id') = 'task-idempotent-1'").get() as { count: number };
+    assert.equal(afterCrash.count, 0);
+    assert.equal(readdirSync(join(root, "media")).filter((name) => /^artifact_[a-f0-9]{64}\.mp4$/.test(name)).length, 1);
+    const runtime = { storage_root: join(root, "media") };
+    const first = await downloadProviderOutputToArtifact(input, db, runtime);
+    const second = await downloadProviderOutputToArtifact(input, db, runtime);
+    assert.equal(first.ok, true, first.ok ? undefined : first.error.message);
+    assert.equal(second.ok, true, second.ok ? undefined : second.error.message);
+    if (!first.ok || !second.ok) return;
+    assert.equal(second.artifact.artifact_id, first.artifact.artifact_id);
+    const count = db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE json_extract(data_json, '$.source.provider_job_id') = 'task-idempotent-1'").get() as { count: number };
+    assert.equal(count.count, 1);
+    assert.equal(readdirSync(join(root, "media")).filter((name) => /^artifact_[a-f0-9]{64}\.mp4$/.test(name)).length, 1);
+  } finally {
+    db.close();
     rmSync(root, { recursive: true, force: true });
   }
 });

@@ -104,6 +104,7 @@ export interface GenerationJob {
 
 const activeExecutions = new Map<string, Promise<void>>();
 const scheduledWakeups = new Map<string, NodeJS.Timeout>();
+const DUE_GENERATION_JOB_SQL = "datetime(next_attempt_at) <= CURRENT_TIMESTAMP";
 
 function schedulerKey(dependencies: WorkbenchGenerationDependencies): string {
   return dependencies.sqlite_path ?? "__default_workbench_database__";
@@ -116,11 +117,13 @@ export function generationWorkerStatus(db: M0Database): { ready: boolean; active
       AND datetime(lease_expires_at) <= CURRENT_TIMESTAMP`).get() as { count: number };
   const unownedRow = db.prepare(`SELECT COUNT(*) AS count FROM generation_jobs
     WHERE state IN ('queued','submitting','polling','downloading','finalizing')
+      AND ${DUE_GENERATION_JOB_SQL}
       AND (lease_token = '' OR lease_expires_at IS NULL OR datetime(lease_expires_at) <= CURRENT_TIMESTAMP)`).get() as { count: number };
   const staleLeases = Number(staleRow.count);
   const unownedRunnable = Number(unownedRow.count);
   const runnable = Number((db.prepare(`SELECT COUNT(*) AS count FROM generation_jobs
-    WHERE state IN ('queued','submitting','polling','downloading','finalizing')`).get() as { count: number }).count);
+    WHERE state IN ('queued','submitting','polling','downloading','finalizing')
+      AND ${DUE_GENERATION_JOB_SQL}`).get() as { count: number }).count);
   const active = activeExecutions.size;
   return { ready: active <= 1 && staleLeases === 0 && (active > 0 || runnable === 0), active, concurrency: 1, stale_leases: staleLeases, unowned_runnable: unownedRunnable, runnable };
 }
@@ -678,6 +681,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
     db.close();
     return;
   }
+  const claimedJobId = job.job_id;
   let providerTaskMayExist = false;
   let knownTaskId = "";
   const heartbeat = setInterval(() => {
@@ -705,6 +709,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
     const adapter = dependencies.adapter_factory?.(selection.selected.credential)
       ?? new RunningHubVideoProviderAdapter({ credential: selection.selected.credential, fetch_impl: dependencies.fetch_impl });
     let taskId = intent.provider_task_id;
+    let submittedNow = false;
     providerTaskMayExist = Boolean(taskId);
     knownTaskId = taskId;
     if (!taskId) {
@@ -753,48 +758,55 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         return;
       }
       intent = getIntent(db, intent.intent_id) as WorkbenchGenerationIntent;
+      submittedNow = true;
     }
 
-    const deadline = Date.now() + Math.max(10, dependencies.timeout_ms ?? 20 * 60_000);
     const interval = Math.max(10, dependencies.poll_interval_ms ?? 5_000);
-    let outputUrl = "";
-    while (Date.now() < deadline) {
-      const polled = await adapter.pollStatus(taskId);
-      assertJobLease(db, job.job_id, leaseToken);
-      if (!polled.ok) {
-        if (polled.error.retryable) {
-          await new Promise((resolveDelay) => setTimeout(resolveDelay, interval));
-          continue;
-        }
-        job = markKnownProviderTaskForReconciliation(db, intent, job, taskId, polled.error, leaseToken, "PROVIDER_POLL_REQUIRES_RECONCILIATION");
-        return;
-      }
-      db.exec("BEGIN IMMEDIATE");
-      try {
-        assertJobLease(db, job.job_id, leaseToken);
-        const run = getGenerationRun(db, intent.run_id);
-        if (run) {
-          run.provider.provider_status = polled.provider_status;
-          saveGenerationRun(db, run);
-        }
-        db.exec("COMMIT");
-      } catch (error) {
-        db.exec("ROLLBACK");
-        throw error;
-      }
-      if (polled.status === "succeeded") {
-        outputUrl = polled.output_url ?? "";
-        break;
-      }
-      if (polled.status === "failed" || polled.status === "cancelled") {
-        if (polled.status === "cancelled") cancelIntent(db, intent, "PROVIDER_CANCELLED", leaseToken);
-        else failIntent(db, intent, "failed", providerError("PROVIDER_REQUEST_FAILED", `RunningHub task ended with ${polled.provider_status}.`), leaseToken);
-        return;
-      }
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, interval));
+    const deferPolling = (): void => {
+      assertJobLease(db, claimedJobId, leaseToken);
+      db.prepare(`UPDATE generation_jobs SET next_attempt_at = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE job_id = ? AND lease_token = ?`).run(new Date(Date.now() + interval).toISOString(), claimedJobId, leaseToken);
+    };
+    if (submittedNow) {
+      deferPolling();
+      return;
     }
+
+    const polled = await adapter.pollStatus(taskId);
+    assertJobLease(db, job.job_id, leaseToken);
+    if (!polled.ok) {
+      if (polled.error.retryable) {
+        deferPolling();
+        return;
+      }
+      job = markKnownProviderTaskForReconciliation(db, intent, job, taskId, polled.error, leaseToken, "PROVIDER_POLL_REQUIRES_RECONCILIATION");
+      return;
+    }
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      assertJobLease(db, job.job_id, leaseToken);
+      const run = getGenerationRun(db, intent.run_id);
+      if (run) {
+        run.provider.provider_status = polled.provider_status;
+        saveGenerationRun(db, run);
+      }
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+    if (polled.status === "failed" || polled.status === "cancelled") {
+      if (polled.status === "cancelled") cancelIntent(db, intent, "PROVIDER_CANCELLED", leaseToken);
+      else failIntent(db, intent, "failed", providerError("PROVIDER_REQUEST_FAILED", `RunningHub task ended with ${polled.provider_status}.`), leaseToken);
+      return;
+    }
+    if (polled.status !== "succeeded") {
+      deferPolling();
+      return;
+    }
+    const outputUrl = polled.output_url ?? "";
     if (!outputUrl) {
-      job = markKnownProviderTaskForReconciliation(db, intent, job, taskId, providerError("PROVIDER_TIMEOUT", "RunningHub task did not complete before the local polling deadline.", true), leaseToken, "PROVIDER_POLL_TIMEOUT_REQUIRES_RECONCILIATION");
+      job = markKnownProviderTaskForReconciliation(db, intent, job, taskId, providerError("PROVIDER_OUTPUT_MISSING", "Provider reported success without an output URL."), leaseToken, "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION");
       return;
     }
     let output = existingOutputArtifact(db, taskId, intent.project_id, intent.shot_id);
@@ -903,20 +915,24 @@ function startNextPersistedGeneration(dependencies: WorkbenchGenerationDependenc
       WHERE i.status IN ('queued','running')
         AND (i.provider_task_id <> '' OR (i.provider_task_id = '' AND j.state = 'queued'))
         AND j.state IN ('queued','polling','downloading','finalizing')
+        AND datetime(j.next_attempt_at) <= CURRENT_TIMESTAMP
         AND (j.lease_token = '' OR j.lease_expires_at IS NULL OR datetime(j.lease_expires_at) <= CURRENT_TIMESTAMP)
       ORDER BY j.created_at LIMIT 1`).get() as { intent_id: string; provider_task_id: string; state: GenerationJobState } | undefined;
     if (row) {
       startWorkbenchGeneration(row.intent_id, { allow_submit: row.state === "queued" && row.provider_task_id === "", dependencies });
       return;
     }
-    const lease = db.prepare(`SELECT MIN(j.lease_expires_at) AS lease_expires_at FROM generation_intents i
+    const wakeup = db.prepare(`SELECT MIN(CASE
+        WHEN j.lease_token <> '' AND j.lease_expires_at IS NOT NULL AND datetime(j.lease_expires_at) > CURRENT_TIMESTAMP
+          THEN j.lease_expires_at
+        ELSE j.next_attempt_at END) AS wake_at FROM generation_intents i
       JOIN generation_jobs j ON j.intent_id = i.intent_id
       WHERE i.status IN ('queued','running')
         AND (i.provider_task_id <> '' OR (i.provider_task_id = '' AND j.state = 'queued'))
         AND j.state IN ('queued','polling','downloading','finalizing')
-        AND j.lease_token <> '' AND j.lease_expires_at IS NOT NULL
-        AND datetime(j.lease_expires_at) > CURRENT_TIMESTAMP`).get() as { lease_expires_at: string | null };
-    if (lease.lease_expires_at) scheduleNextPersistedGeneration(dependencies, Math.max(50, Date.parse(lease.lease_expires_at) - Date.now() + 50));
+        AND (datetime(j.next_attempt_at) > CURRENT_TIMESTAMP
+          OR (j.lease_token <> '' AND j.lease_expires_at IS NOT NULL AND datetime(j.lease_expires_at) > CURRENT_TIMESTAMP))`).get() as { wake_at: string | null };
+    if (wakeup.wake_at) scheduleNextPersistedGeneration(dependencies, Math.max(50, Date.parse(wakeup.wake_at) - Date.now() + 50));
   } finally { db.close(); }
 }
 

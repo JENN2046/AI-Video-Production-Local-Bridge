@@ -50,7 +50,7 @@ const successMetaSchema = z.object({
   idempotent_replay: z.boolean().optional()
 });
 
-const errorSchema = z.object({ code: z.string(), message: z.string(), field: z.string().optional() });
+const errorSchema = z.object({ code: z.string(), message: z.string(), field: z.string().optional(), retryable: z.boolean().optional() });
 const jsonRecordSchema = z.record(z.string(), z.json());
 const pageSchema = z.object({ limit: z.number().int(), offset: z.number().int(), total: z.number().int(), has_more: z.boolean() });
 const projectSchema = z.object({ project_id: z.string(), title: z.string(), status: z.string(), shot_ids: z.array(z.string()) }).passthrough();

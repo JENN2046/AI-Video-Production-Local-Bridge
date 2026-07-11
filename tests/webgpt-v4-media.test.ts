@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { openM0Database } from "../src/storage/sqlite.js";
 import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
-import { coverageFramePlan, createMediaGrant, handleMediaGatewayRequest, inspectProductionMedia, invalidateMediaGrantsForRestart, resolveFfmpegExecutable, resolveProductionMediaPath, validateMediaGrant } from "../src/webgpt-v4/media.js";
+import { cleanupMediaAnalysisCache, coverageFramePlan, createMediaGrant, handleMediaGatewayRequest, inspectProductionMedia, invalidateMediaGrantsForRestart, MediaAnalysisQueue, resolveFfmpegExecutable, resolveProductionMediaPath, validateMediaGrant } from "../src/webgpt-v4/media.js";
 import { actorFromSubject, WebGptV4Error } from "../src/webgpt-v4/types.js";
 
 const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nCEAAAAASUVORK5CYII=", "base64");
@@ -79,6 +79,80 @@ test("media grants are project-bound, expire, and support one HTTP byte range", 
     db.close();
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("media analysis queue runs one, waits four, and rejects the sixth", async () => {
+  const queue = new MediaAnalysisQueue(1, 4, 2_000);
+  const releases: Array<() => void> = [];
+  const operations = Array.from({ length: 5 }, (_, index) => queue.run(() => new Promise<number>((resolveOperation) => {
+    releases.push(() => resolveOperation(index));
+  })));
+  await new Promise((resolveTick) => setImmediate(resolveTick));
+  assert.deepEqual(queue.status(), { active: 1, waiting: 4, capacity: 5 });
+  await assert.rejects(() => queue.run(async () => 6), (error) => error instanceof WebGptV4Error && error.code === "MEDIA_ANALYSIS_BUSY" && error.retryable === true);
+  for (let index = 0; index < 5; index += 1) {
+    releases[index]();
+    await new Promise((resolveTick) => setImmediate(resolveTick));
+  }
+  assert.deepEqual(await Promise.all(operations), [0, 1, 2, 3, 4]);
+  assert.deepEqual(queue.status(), { active: 0, waiting: 0, capacity: 5 });
+});
+
+test("timed out analysis retains its slot until the underlying process settles", async () => {
+  const queue = new MediaAnalysisQueue(1, 0, 10);
+  let release: (() => void) | undefined;
+  const operation = queue.run(() => new Promise<void>((resolveOperation) => { release = resolveOperation; }));
+  await assert.rejects(operation, (error) => error instanceof WebGptV4Error && error.code === "MEDIA_ANALYSIS_TIMEOUT" && error.retryable === true);
+  assert.equal(queue.status().active, 1);
+  release?.();
+  await new Promise((resolveTick) => setImmediate(resolveTick));
+  assert.equal(queue.status().active, 0);
+});
+
+test("timed out analysis aborts the running operation and releases its slot", async () => {
+  const queue = new MediaAnalysisQueue(1, 0, 10);
+  let aborted = false;
+  const operation = queue.run((signal) => new Promise<void>((resolveOperation) => {
+    signal.addEventListener("abort", () => {
+      aborted = true;
+      setImmediate(resolveOperation);
+    }, { once: true });
+  }));
+  await assert.rejects(operation, (error) => error instanceof WebGptV4Error && error.code === "MEDIA_ANALYSIS_TIMEOUT");
+  await new Promise((resolveTick) => setImmediate(resolveTick));
+  await new Promise((resolveTick) => setImmediate(resolveTick));
+  assert.equal(aborted, true);
+  assert.equal(queue.status().active, 0);
+});
+
+test("media analysis timeout includes time spent waiting in the queue", async () => {
+  const queue = new MediaAnalysisQueue(1, 1, 20);
+  let release: (() => void) | undefined;
+  const active = queue.run(() => new Promise<void>((resolveOperation) => { release = resolveOperation; }));
+  const waiting = queue.run(async () => undefined);
+  const activeRejection = assert.rejects(active, (error) => error instanceof WebGptV4Error && error.code === "MEDIA_ANALYSIS_TIMEOUT");
+  await assert.rejects(waiting, (error) => error instanceof WebGptV4Error && error.code === "MEDIA_ANALYSIS_TIMEOUT");
+  assert.deepEqual(queue.status(), { active: 1, waiting: 0, capacity: 2 });
+  await activeRejection;
+  release?.();
+  await new Promise((resolveTick) => setImmediate(resolveTick));
+});
+
+test("analysis cache cleanup removes only analyzer-owned hash directories", async () => {
+  const root = mkdtempSync(join(tmpdir(), "media-cache-cleanup-"));
+  try {
+    const generated = join(root, "a".repeat(64));
+    const sourceLike = join(root, "source-media");
+    mkdirSync(generated);
+    mkdirSync(sourceLike);
+    writeFileSync(join(generated, "frame.jpg"), Buffer.alloc(16));
+    writeFileSync(join(sourceLike, "source.mp4"), Buffer.alloc(16));
+    utimesSync(generated, new Date(0), new Date(0));
+    const result = await cleanupMediaAnalysisCache(root, { now: Date.now(), max_age_ms: 1, max_bytes: 1 });
+    assert.equal(result.removed, 1);
+    assert.equal(existsSync(generated), false);
+    assert.equal(existsSync(join(sourceLike, "source.mp4")), true);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test("video inspection produces a full-duration timestamp plan and paged model frames", async () => {

@@ -71,6 +71,7 @@ export const M0_BASE_SCHEMA_SQL = `
   VALUES ('schema_version', 'm0-a', CURRENT_TIMESTAMP);
 `;
 
+// Migration 0002 is the immutable v2-4 baseline. Future schema work must add a new migration.
 const WORKBENCH_V2_4_CANONICAL = [
   WORKBENCH_V2_SCHEMA_VERSION,
   "workbench_project_meta", "import_index", "import_decisions", "regeneration_requests",
@@ -152,11 +153,38 @@ const GENERATION_JOBS_SQL = `
   FROM generation_intents WHERE confirmed = 1 AND status IN ('queued', 'running');
 `;
 
+const GENERATION_JOBS_STABILIZATION_SQL = `
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_media_provider_task_unique
+    ON media_artifacts(json_extract(data_json, '$.source.provider'), json_extract(data_json, '$.source.provider_job_id'))
+    WHERE json_valid(data_json) = 1 AND json_extract(data_json, '$.source.provider_job_id') <> '';
+  INSERT OR IGNORE INTO generation_job_events (event_id, job_id, from_state, to_state, reason_code, data_json)
+  SELECT 'job_event_backfill_' || job_id, job_id, '', state,
+    CASE WHEN state = 'manual_reconciliation' THEN 'PROVIDER_SUBMIT_OUTCOME_UNKNOWN' ELSE 'MIGRATION_BACKFILL' END,
+    '{"source":"migration_0004"}'
+  FROM generation_jobs
+  WHERE NOT EXISTS (SELECT 1 FROM generation_job_events events WHERE events.job_id = generation_jobs.job_id);
+`;
+
 interface Migration {
   id: string;
   name: string;
   canonical: string;
   apply: (db: M0Database) => void;
+}
+
+function assertNoDuplicateProviderTasks(db: M0Database): void {
+  const row = db.prepare(`SELECT COUNT(*) AS count FROM (
+    SELECT provider, provider_task_id FROM (
+      SELECT
+        json_extract(CASE WHEN json_valid(data_json) = 1 THEN data_json ELSE '{}' END, '$.source.provider') AS provider,
+        json_extract(CASE WHEN json_valid(data_json) = 1 THEN data_json ELSE '{}' END, '$.source.provider_job_id') AS provider_task_id
+      FROM media_artifacts
+    ) WHERE provider_task_id IS NOT NULL AND provider_task_id <> ''
+    GROUP BY provider, provider_task_id HAVING COUNT(*) > 1
+  )`).get() as { count: number };
+  if (Number(row.count) > 0) {
+    throw new SchemaMigrationRequiredError(`PROVIDER_TASK_DUPLICATES_REQUIRE_RECONCILIATION: ${Number(row.count)} duplicate provider task group(s) must be reconciled before migration 0004.`);
+  }
 }
 
 export const DATABASE_MIGRATIONS: readonly Migration[] = [
@@ -177,6 +205,15 @@ export const DATABASE_MIGRATIONS: readonly Migration[] = [
     name: "persistent_generation_jobs",
     canonical: GENERATION_JOBS_SQL,
     apply: (db) => db.exec(GENERATION_JOBS_SQL)
+  },
+  {
+    id: "0004",
+    name: "generation_jobs_stabilization",
+    canonical: `${GENERATION_JOBS_STABILIZATION_SQL}\nPRECONDITION provider_task_duplicates_require_reconciliation_v1`,
+    apply: (db) => {
+      assertNoDuplicateProviderTasks(db);
+      db.exec(GENERATION_JOBS_STABILIZATION_SQL);
+    }
   }
 ];
 
@@ -252,7 +289,7 @@ function expectedSchemaDefinitions(includeJobs: boolean, expectedColumns: Record
   try {
     reference.exec(M0_BASE_SCHEMA_SQL);
     applyWorkbenchV24Baseline(reference);
-    if (includeJobs) reference.exec(GENERATION_JOBS_SQL);
+    if (includeJobs) reference.exec(`${GENERATION_JOBS_SQL}\n${GENERATION_JOBS_STABILIZATION_SQL}`);
     const columns = new Map<string, Map<string, string>>();
     const checks = new Map<string, string[]>();
     for (const table of Object.keys(expectedColumns)) {
@@ -281,7 +318,7 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     generation_jobs: ["job_id", "intent_id", "state", "lease_owner", "lease_token", "lease_expires_at", "next_attempt_at", "attempt_count", "reconciliation_reason", "created_at", "updated_at"],
     generation_job_events: ["event_id", "job_id", "from_state", "to_state", "reason_code", "data_json", "created_at"]
   } : V24_EXPECTED_COLUMNS;
-  const expectedIndexes = includeJobs ? [...V24_EXPECTED_INDEXES, "idx_generation_jobs_due", "idx_generation_job_events_job"] : [...V24_EXPECTED_INDEXES];
+  const expectedIndexes = includeJobs ? [...V24_EXPECTED_INDEXES, "idx_generation_jobs_due", "idx_generation_job_events_job", "idx_media_provider_task_unique"] : [...V24_EXPECTED_INDEXES];
   const expectedTriggers = includeJobs
     ? ["trg_workbench_project_meta_after_insert", "generation_job_events_no_update", "generation_job_events_no_delete"]
     : ["trg_workbench_project_meta_after_insert"];
@@ -376,7 +413,6 @@ export function runDatabaseMigrations(db: M0Database): { applied: string[]; base
         if (issues.length > 0) throw new SchemaMigrationRequiredError(`Existing v2-4 baseline validation failed: ${issues.join(", ")}.`);
       }
     }
-
     if (isCurrentUnledgeredDatabase(db)) {
       ensureLedger(db);
       for (const migration of DATABASE_MIGRATIONS.slice(0, 2)) insertMigration(db, migration);
@@ -389,7 +425,12 @@ export function runDatabaseMigrations(db: M0Database): { applied: string[]; base
       const existing = tables.has("schema_migrations")
         ? db.prepare("SELECT name, checksum FROM schema_migrations WHERE migration_id = ?").get(migration.id) as { name: string; checksum: string } | undefined
         : undefined;
-      if (existing) continue;
+      if (existing) {
+        if (existing.name !== migration.name || existing.checksum !== migrationChecksum(migration)) {
+          throw new SchemaMigrationRequiredError(`Database migration checksum mismatch for ${migration.id}.`);
+        }
+        continue;
+      }
       ensureLedger(db);
       migration.apply(db);
       insertMigration(db, migration);

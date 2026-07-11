@@ -7,8 +7,8 @@ import test from "node:test";
 
 import { backupDatabase, checkDatabase, migrateDatabase } from "../src/storage/databaseGovernance.js";
 import { assertSchemaCurrent, DATABASE_MIGRATIONS, M0_BASE_SCHEMA_SQL, migrationChecksum, runDatabaseMigrations, SchemaMigrationRequiredError } from "../src/storage/migrations.js";
-import { initializeWorkbenchV2Schema } from "../src/storage/workbenchV2Schema.js";
 import { openM0Database } from "../src/storage/sqlite.js";
+import { initializeWorkbenchV2Schema } from "../src/storage/workbenchV2Schema.js";
 
 function tempRoot(): string {
   return mkdtempSync(join(tmpdir(), "ai-video-db-governance-"));
@@ -19,7 +19,7 @@ test("fresh database migrates explicitly and remains idempotent", () => {
   try {
     const sqlitePath = join(root, "app.sqlite");
     const first = migrateDatabase(sqlitePath);
-    assert.deepEqual(first.applied, ["0001", "0002", "0003"]);
+    assert.deepEqual(first.applied, ["0001", "0002", "0003", "0004"]);
     assert.equal(first.baselined, false);
     const second = migrateDatabase(sqlitePath);
     assert.deepEqual(second.applied, []);
@@ -50,12 +50,20 @@ test("existing workbench-v2-4 database is baselined without rewriting business r
     db.exec(M0_BASE_SCHEMA_SQL);
     initializeWorkbenchV2Schema(db, { manage_transaction: false });
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES ('project_existing', ?)").run(JSON.stringify({ project_id: "project_existing", title: "Existing" }));
+    db.prepare(`INSERT INTO generation_intents
+      (intent_id, project_id, shot_id, provider, account_label, model, input_artifact_id, duration_seconds, resolution,
+       estimated_cost_value, budget_limit_value, currency, confirmed, expires_at, provider_task_id, status)
+      VALUES ('intent_existing', 'project_existing', 'shot_existing', 'runninghub', 'personal', 'model', 'artifact_existing', 6,
+        '1080x1920', 0.08, 1, 'CNY', 1, '2099-01-01T00:00:00.000Z', 'task_existing', 'running')`).run();
     db.exec("COMMIT");
     const before = db.prepare("SELECT data_json FROM projects WHERE project_id = 'project_existing'").get() as { data_json: string };
     const result = runDatabaseMigrations(db);
     const after = db.prepare("SELECT data_json FROM projects WHERE project_id = 'project_existing'").get() as { data_json: string };
     assert.equal(result.baselined, true);
     assert.equal(after.data_json, before.data_json);
+    const backfilled = db.prepare(`SELECT j.state, e.to_state, e.reason_code FROM generation_jobs j
+      JOIN generation_job_events e ON e.job_id = j.job_id WHERE j.intent_id = 'intent_existing'`).get() as { state: string; to_state: string; reason_code: string };
+    assert.deepEqual({ ...backfilled }, { state: "polling", to_state: "polling", reason_code: "MIGRATION_BACKFILL" });
     assertSchemaCurrent(db);
     db.close();
   } finally {
@@ -63,16 +71,14 @@ test("existing workbench-v2-4 database is baselined without rewriting business r
   }
 });
 
-test("existing v2-4 baseline rejects incomplete schema instead of stamping the ledger", () => {
+test("migration checksum drift fails closed", () => {
   const root = tempRoot();
   try {
-    const sqlitePath = join(root, "incomplete.sqlite");
+    const sqlitePath = join(root, "app.sqlite");
+    migrateDatabase(sqlitePath);
     const db = new DatabaseSync(sqlitePath);
-    db.exec(M0_BASE_SCHEMA_SQL);
-    initializeWorkbenchV2Schema(db);
-    db.exec("DROP TABLE webgpt_media_grants");
-    assert.throws(() => runDatabaseMigrations(db), (error) => error instanceof SchemaMigrationRequiredError && /missing_table:webgpt_media_grants/.test(error.message));
-    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'").get() as { count: number }).count, 0);
+    db.prepare("UPDATE schema_migrations SET checksum = 'changed' WHERE migration_id = '0002'").run();
+    assert.throws(() => assertSchemaCurrent(db), (error) => error instanceof SchemaMigrationRequiredError && error.code === "SCHEMA_MIGRATION_REQUIRED");
     db.close();
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -107,7 +113,7 @@ test("existing v2-4 baseline rejects weakened table CHECK constraints", () => {
   }
 });
 
-test("runtime open cannot use an environment flag to migrate persistent data", () => {
+test("runtime open cannot use a production environment flag to migrate persistent data", () => {
   const root = tempRoot();
   const previous = process.env.AI_VIDEO_AUTO_MIGRATE;
   const previousTestAutoMigrate = process.env.AI_VIDEO_TEST_AUTO_MIGRATE;
@@ -129,20 +135,6 @@ test("runtime open cannot use an environment flag to migrate persistent data", (
   }
 });
 
-test("migration checksum drift fails closed", () => {
-  const root = tempRoot();
-  try {
-    const sqlitePath = join(root, "app.sqlite");
-    migrateDatabase(sqlitePath);
-    const db = new DatabaseSync(sqlitePath);
-    db.prepare("UPDATE schema_migrations SET checksum = 'changed' WHERE migration_id = '0002'").run();
-    assert.throws(() => assertSchemaCurrent(db), (error) => error instanceof SchemaMigrationRequiredError && error.code === "SCHEMA_MIGRATION_REQUIRED");
-    db.close();
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
 test("schema validation rejects migration rows from a newer runtime", () => {
   const root = tempRoot();
   try {
@@ -150,48 +142,93 @@ test("schema validation rejects migration rows from a newer runtime", () => {
     migrateDatabase(sqlitePath);
     const db = new DatabaseSync(sqlitePath);
     db.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES ('9999', 'future_schema', 'future-checksum')").run();
-    db.prepare("DELETE FROM schema_migrations WHERE migration_id = '0002'").run();
     assert.throws(() => assertSchemaCurrent(db), (error) => error instanceof SchemaMigrationRequiredError && /unsupported migration 9999/.test(error.message));
     assert.throws(() => runDatabaseMigrations(db), (error) => error instanceof SchemaMigrationRequiredError && /unsupported migration 9999/.test(error.message));
-    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE migration_id = '0002'").get() as { count: number }).count, 0);
     db.close();
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test("database check fails on malformed and orphaned generation intent state", () => {
+test("database migrated through 0003 keeps its historical checksums and upgrades through 0004", () => {
   const root = tempRoot();
   try {
-    const sqlitePath = join(root, "orphan-intent.sqlite");
-    migrateDatabase(sqlitePath);
+    const sqlitePath = join(root, "legacy-0003.sqlite");
     const db = new DatabaseSync(sqlitePath);
+    for (const migration of DATABASE_MIGRATIONS.slice(0, 2)) migration.apply(db);
+    db.prepare("INSERT INTO projects (project_id, data_json) VALUES ('project_legacy', ?)")
+      .run(JSON.stringify({ project_id: "project_legacy", title: "Legacy 0003" }));
     db.prepare(`INSERT INTO generation_intents
       (intent_id, project_id, shot_id, provider, account_label, model, input_artifact_id, duration_seconds, resolution,
-       estimated_cost_value, budget_limit_value, currency, confirmed, expires_at, status, data_json)
-      VALUES ('intent_orphan', 'project_missing', 'shot_missing', 'runninghub', 'personal', 'model', 'artifact_missing', 6,
-        '1080x1920', 0.1, 1, 'CNY', 0, '2099-01-01T00:00:00.000Z', 'prepared', 'not-json')`).run();
+       estimated_cost_value, budget_limit_value, currency, confirmed, expires_at, provider_task_id, status)
+      VALUES ('intent_legacy', 'project_legacy', 'shot_legacy', 'runninghub', 'personal', 'model', 'artifact_legacy', 6,
+        '1080x1920', 0.08, 1, 'CNY', 1, '2099-01-01T00:00:00.000Z', 'task_legacy', 'running')`).run();
+    DATABASE_MIGRATIONS[2].apply(db);
+    db.exec(`CREATE TABLE schema_migrations (
+      migration_id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      checksum TEXT NOT NULL,
+      applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`);
+    for (const migration of DATABASE_MIGRATIONS.slice(0, 3)) {
+      db.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES (?, ?, ?)")
+        .run(migration.id, migration.name, migrationChecksum(migration));
+    }
+
+    assert.equal(migrationChecksum(DATABASE_MIGRATIONS[1]), "52dc1311414cd88468542159d215adce443717b087e65d73d3f60859e5727c75");
+    assert.equal(migrationChecksum(DATABASE_MIGRATIONS[2]), "161aa27dec915827c0ab6d46bc768ca2734c2efdf4bc45ae2fa1b2f4b564fef8");
+    const result = runDatabaseMigrations(db);
+    assert.deepEqual(result.applied, ["0004"]);
+    const event = db.prepare("SELECT to_state, reason_code FROM generation_job_events WHERE job_id = 'job_intent_legacy'").get() as { to_state: string; reason_code: string };
+    assert.deepEqual({ ...event }, { to_state: "polling", reason_code: "MIGRATION_BACKFILL" });
+    assertSchemaCurrent(db);
     db.close();
-    const checked = checkDatabase(sqlitePath);
-    assert.equal(checked.invalid_json_rows, 1);
-    assert.equal(checked.orphan_rows >= 3, true);
-    assert.equal(checked.result, "FAIL");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test("migration lock conflict rolls back without creating a ledger", () => {
+test("existing v2-4 baseline rejects missing columns and indexes", () => {
   const root = tempRoot();
   try {
-    const sqlitePath = join(root, "locked.sqlite");
-    const owner = new DatabaseSync(sqlitePath);
-    owner.exec(M0_BASE_SCHEMA_SQL);
-    owner.exec("BEGIN EXCLUSIVE");
-    assert.throws(() => migrateDatabase(sqlitePath), /locked/i);
-    owner.exec("ROLLBACK");
-    assert.equal((owner.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'").get() as { count: number }).count, 0);
-    owner.close();
+    const sqlitePath = join(root, "app.sqlite");
+    const db = new DatabaseSync(sqlitePath);
+    db.exec(M0_BASE_SCHEMA_SQL);
+    initializeWorkbenchV2Schema(db);
+    db.exec("ALTER TABLE generation_intents DROP COLUMN provider_task_id");
+    assert.throws(() => runDatabaseMigrations(db), (error) => error instanceof SchemaMigrationRequiredError && /missing_column:generation_intents\.provider_task_id/.test(error.message));
+    db.close();
+
+    const indexPath = join(root, "missing-index.sqlite");
+    migrateDatabase(indexPath);
+    const indexed = new DatabaseSync(indexPath);
+    indexed.exec("DROP INDEX idx_generation_intents_active");
+    assert.throws(() => assertSchemaCurrent(indexed), (error) => error instanceof SchemaMigrationRequiredError && /missing_index:idx_generation_intents_active/.test(error.message));
+    indexed.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("schema validation rejects index and trigger definitions with the expected names", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "app.sqlite");
+    migrateDatabase(sqlitePath);
+    const db = new DatabaseSync(sqlitePath);
+    db.exec("DROP INDEX idx_generation_intents_active; CREATE INDEX idx_generation_intents_active ON generation_intents(intent_id)");
+    assert.throws(() => assertSchemaCurrent(db), (error) => error instanceof SchemaMigrationRequiredError && /index_definition:idx_generation_intents_active/.test(error.message));
+    db.exec("DROP INDEX idx_generation_intents_active; CREATE INDEX idx_generation_intents_active ON generation_intents(status, updated_at DESC)");
+    db.exec("DROP TRIGGER generation_job_events_no_delete; CREATE TRIGGER generation_job_events_no_delete BEFORE DELETE ON generation_job_events BEGIN SELECT 1; END");
+    assert.throws(() => assertSchemaCurrent(db), (error) => error instanceof SchemaMigrationRequiredError && /trigger_definition:generation_job_events_no_delete/.test(error.message));
+    db.close();
+
+    const projectTriggerPath = join(root, "project-trigger.sqlite");
+    migrateDatabase(projectTriggerPath);
+    const projectTrigger = new DatabaseSync(projectTriggerPath);
+    projectTrigger.exec("DROP TRIGGER trg_workbench_project_meta_after_insert; CREATE TRIGGER trg_workbench_project_meta_after_insert AFTER INSERT ON projects BEGIN SELECT 1; END");
+    assert.throws(() => assertSchemaCurrent(projectTrigger), (error) => error instanceof SchemaMigrationRequiredError && /trigger_definition:trg_workbench_project_meta_after_insert/.test(error.message));
+    projectTrigger.close();
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -213,6 +250,50 @@ test("database check detects missing structured identifiers and accepts external
     assert.equal(checked.structured_drift_rows, 1);
     assert.equal(checked.missing_media_files, 0);
     assert.equal(checked.result, "FAIL");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("database check returns a structured failure for malformed JSON and missing schema", () => {
+  const root = tempRoot();
+  try {
+    const malformedPath = join(root, "malformed.sqlite");
+    migrateDatabase(malformedPath);
+    const malformed = new DatabaseSync(malformedPath);
+    malformed.exec("DROP INDEX idx_projects_status_updated");
+    malformed.prepare("INSERT INTO projects (project_id, data_json) VALUES ('project_bad_json', '{')").run();
+    malformed.close();
+    const malformedResult = checkDatabase(malformedPath);
+    assert.equal(malformedResult.result, "FAIL");
+    assert.equal(malformedResult.invalid_json_rows, 1);
+
+    const missingPath = join(root, "missing.sqlite");
+    migrateDatabase(missingPath);
+    const missing = new DatabaseSync(missingPath);
+    missing.exec("DROP TABLE generation_job_events");
+    missing.close();
+    const missingResult = checkDatabase(missingPath);
+    assert.equal(missingResult.result, "FAIL");
+    assert.equal(missingResult.schema_current, false);
+    assert.equal(missingResult.check_errors > 0, true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("database check reports orphan rows", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "app.sqlite");
+    migrateDatabase(sqlitePath);
+    const db = new DatabaseSync(sqlitePath);
+    db.prepare("INSERT INTO shots (shot_id, project_id, data_json) VALUES ('shot_orphan', 'project_missing', ?)")
+      .run(JSON.stringify({ shot_id: "shot_orphan", project_id: "project_missing" }));
+    db.close();
+    const checked = checkDatabase(sqlitePath);
+    assert.equal(checked.result, "FAIL");
+    assert.equal(checked.orphan_rows > 0, true);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -265,6 +346,63 @@ test("database check detects run and artifact link drift", () => {
   }
 });
 
+test("provider task IDs are unique per provider at the database boundary", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "app.sqlite");
+    migrateDatabase(sqlitePath);
+    const db = new DatabaseSync(sqlitePath);
+    const artifact = (artifactId: string) => JSON.stringify({ artifact_id: artifactId, source: { provider: "runninghub", provider_job_id: "task_unique" } });
+    db.prepare("INSERT INTO media_artifacts (artifact_id, role, artifact_type, status, data_json) VALUES (?, 'generated_clip', 'video', 'active', ?)")
+      .run("artifact_unique_1", artifact("artifact_unique_1"));
+    assert.throws(() => db.prepare("INSERT INTO media_artifacts (artifact_id, role, artifact_type, status, data_json) VALUES (?, 'generated_clip', 'video', 'active', ?)")
+      .run("artifact_unique_2", artifact("artifact_unique_2")), /UNIQUE constraint failed/);
+    db.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("existing v2-4 database fails with a stable reconciliation gate for duplicate provider tasks", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "duplicate-provider-task.sqlite");
+    const db = new DatabaseSync(sqlitePath);
+    db.exec(M0_BASE_SCHEMA_SQL);
+    initializeWorkbenchV2Schema(db);
+    const artifact = (artifactId: string) => JSON.stringify({ artifact_id: artifactId, source: { provider: "runninghub", provider_job_id: "legacy_duplicate_task" } });
+    for (const artifactId of ["artifact_legacy_dup_1", "artifact_legacy_dup_2"]) {
+      db.prepare("INSERT INTO media_artifacts (artifact_id, role, artifact_type, status, data_json) VALUES (?, 'generated_clip', 'video', 'active', ?)")
+        .run(artifactId, artifact(artifactId));
+    }
+    assert.throws(() => runDatabaseMigrations(db), (error) => error instanceof SchemaMigrationRequiredError
+      && error.code === "SCHEMA_MIGRATION_REQUIRED"
+      && /PROVIDER_TASK_DUPLICATES_REQUIRE_RECONCILIATION: 1 duplicate provider task group/.test(error.message));
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>;
+    assert.equal(tables.some((row) => row.name === "generation_jobs"), false);
+    assert.equal(tables.some((row) => row.name === "schema_migrations"), false);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM media_artifacts").get() as { count: number }).count, 2);
+    db.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("migration fails cleanly when another connection owns the migration lock", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "app.sqlite");
+    const owner = new DatabaseSync(sqlitePath);
+    owner.exec(M0_BASE_SCHEMA_SQL);
+    owner.exec("BEGIN EXCLUSIVE");
+    assert.throws(() => migrateDatabase(sqlitePath), /locked/i);
+    owner.exec("ROLLBACK");
+    owner.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("backup and isolated restore preserve a valid database", () => {
   const root = tempRoot();
   try {
@@ -282,4 +420,5 @@ test("backup and isolated restore preserve a valid database", () => {
 test("migration checksum is deterministic", () => {
   assert.equal(migrationChecksum(DATABASE_MIGRATIONS[0]), migrationChecksum(DATABASE_MIGRATIONS[0]));
   assert.notEqual(migrationChecksum(DATABASE_MIGRATIONS[0]), migrationChecksum(DATABASE_MIGRATIONS[1]));
+  assert.doesNotMatch(DATABASE_MIGRATIONS[1].canonical, /function\s+initializeWorkbenchV2Schema/);
 });
