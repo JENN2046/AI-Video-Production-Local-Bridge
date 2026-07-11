@@ -907,15 +907,16 @@ function startNextPersistedGeneration(dependencies: WorkbenchGenerationDependenc
   if (activeExecutions.size >= 1) return;
   const db = openM0Database(dependencies.sqlite_path);
   try {
-    const row = db.prepare(`SELECT i.intent_id FROM generation_intents i
+    const row = db.prepare(`SELECT i.intent_id, i.provider_task_id, j.state FROM generation_intents i
       JOIN generation_jobs j ON j.intent_id = i.intent_id
-      WHERE i.status IN ('queued','running') AND i.provider_task_id <> ''
+      WHERE i.status IN ('queued','running')
+        AND (i.provider_task_id <> '' OR (i.provider_task_id = '' AND j.state = 'queued'))
         AND j.state IN ('queued','polling','downloading','finalizing')
         AND datetime(j.next_attempt_at) <= CURRENT_TIMESTAMP
         AND (j.lease_token = '' OR j.lease_expires_at IS NULL OR datetime(j.lease_expires_at) <= CURRENT_TIMESTAMP)
-      ORDER BY j.created_at LIMIT 1`).get() as { intent_id: string } | undefined;
+      ORDER BY j.created_at LIMIT 1`).get() as { intent_id: string; provider_task_id: string; state: GenerationJobState } | undefined;
     if (row) {
-      startWorkbenchGeneration(row.intent_id, { allow_submit: false, dependencies });
+      startWorkbenchGeneration(row.intent_id, { allow_submit: row.state === "queued" && row.provider_task_id === "", dependencies });
       return;
     }
     const wakeup = db.prepare(`SELECT MIN(CASE
@@ -923,7 +924,8 @@ function startNextPersistedGeneration(dependencies: WorkbenchGenerationDependenc
           THEN j.lease_expires_at
         ELSE j.next_attempt_at END) AS wake_at FROM generation_intents i
       JOIN generation_jobs j ON j.intent_id = i.intent_id
-      WHERE i.status IN ('queued','running') AND i.provider_task_id <> ''
+      WHERE i.status IN ('queued','running')
+        AND (i.provider_task_id <> '' OR (i.provider_task_id = '' AND j.state = 'queued'))
         AND j.state IN ('queued','polling','downloading','finalizing')
         AND (datetime(j.next_attempt_at) > CURRENT_TIMESTAMP
           OR (j.lease_token <> '' AND j.lease_expires_at IS NOT NULL AND datetime(j.lease_expires_at) > CURRENT_TIMESTAMP))`).get() as { wake_at: string | null };
@@ -942,7 +944,7 @@ export function resumeWorkbenchGenerationJobs(dependencies: WorkbenchGenerationD
     for (const row of rows) {
       if (row.state === "manual_reconciliation") {
         reconciled.push(row.intent_id);
-      } else if (row.provider_task_id) {
+      } else if (row.provider_task_id || row.state === "queued") {
         resumed.push(row.intent_id);
       } else {
         const job = jobForIntent(db, row.intent_id);
