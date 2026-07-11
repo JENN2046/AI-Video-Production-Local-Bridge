@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, statSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { paths } from "../paths.js";
@@ -100,7 +100,9 @@ export function backupDatabase(input: { sqlite_path?: string; backup_root?: stri
 }
 
 export function migrateDatabase(sqlitePath = paths.sqlitePath): { applied: string[]; baselined: boolean } {
-  const db = new DatabaseSync(sqlitePath);
+  const resolvedPath = resolve(sqlitePath);
+  mkdirSync(dirname(resolvedPath), { recursive: true });
+  const db = new DatabaseSync(resolvedPath);
   try {
     return runDatabaseMigrations(db);
   } finally {

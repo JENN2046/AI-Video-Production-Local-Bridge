@@ -217,6 +217,11 @@ test("unknown provider submit is reconciled manually and abandon restores projec
     const prepared = await preflightWorkbenchGeneration({ project_id: projectResult.project_id, shot_id: shot.shot_id, account_label: "personal", budget_limit_value: 1 }, db, { env, fetch_impl: fetchImpl });
     assert.equal(prepared.ok, true);
     if (!prepared.ok) return;
+    shot.status = "revision_needed";
+    shot.review.approval_status = "revision_needed";
+    saveShot(db, shot);
+    projectResult.project.status = "video_review";
+    saveProject(db, projectResult.project);
     const confirmed = confirmWorkbenchGeneration({ intent_id: prepared.data.intent.intent_id, budget_limit_value: 1, cost_confirmed: true, human_confirmation: true }, db);
     assert.equal(confirmed.ok, true);
     if (!confirmed.ok) return;
@@ -232,13 +237,25 @@ test("unknown provider submit is reconciled manually and abandon restores projec
     leaseProbe.prepare("UPDATE generation_intents SET provider_task_id = 'leased-task', status = 'running' WHERE intent_id = ?").run(prepared.data.intent.intent_id);
     leaseProbe.prepare("UPDATE generation_jobs SET state = 'polling', lease_owner = 'dead-worker', lease_token = 'old-token', lease_expires_at = ? WHERE job_id = ?")
       .run(new Date(Date.now() + 5 * 60_000).toISOString(), confirmed.data.job_id);
+    leaseProbe.prepare(`INSERT INTO generation_intents
+      (intent_id, project_id, shot_id, provider, account_label, model, input_artifact_id, duration_seconds, resolution,
+       estimated_cost_value, budget_limit_value, currency, confirmed, expires_at, provider_task_id, status)
+      VALUES ('intent_reconcile_lease', 'project_reconcile', 'shot_reconcile', 'runninghub', 'personal', 'model', 'artifact_reconcile', 6,
+        '1080x1920', 0.08, 1, 'CNY', 1, '2099-01-01T00:00:00.000Z', '', 'queued')`).run();
+    leaseProbe.prepare(`INSERT INTO generation_jobs
+      (job_id, intent_id, state, lease_owner, lease_token, lease_expires_at)
+      VALUES ('job_reconcile_lease', 'intent_reconcile_lease', 'submitting', 'crashed-worker', 'inherited-token', '2099-01-01T00:00:00.000Z')`).run();
     leaseProbe.close();
-    assert.deepEqual(resumeWorkbenchGenerationJobs({ sqlite_path: sqlitePath }), { resumed: [prepared.data.intent.intent_id], reconciled: [] });
+    assert.deepEqual(resumeWorkbenchGenerationJobs({ sqlite_path: sqlitePath }), { resumed: [prepared.data.intent.intent_id], reconciled: ["intent_reconcile_lease"] });
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 25));
     const afterResume = openM0Database(sqlitePath);
     const leaseState = afterResume.prepare("SELECT attempt_count FROM generation_jobs WHERE job_id = ?").get(confirmed.data.job_id) as { attempt_count: number };
     assert.equal(leaseState.attempt_count, 0);
+    const reconciledLease = afterResume.prepare("SELECT state, lease_owner, lease_token, lease_expires_at FROM generation_jobs WHERE job_id = 'job_reconcile_lease'").get() as { state: string; lease_owner: string; lease_token: string; lease_expires_at: string | null };
+    assert.deepEqual({ ...reconciledLease }, { state: "manual_reconciliation", lease_owner: "", lease_token: "", lease_expires_at: null });
     assert.equal(generationWorkerStatus(afterResume).ready, false);
+    afterResume.prepare("UPDATE generation_intents SET status = 'cancelled' WHERE intent_id = 'intent_reconcile_lease'").run();
+    afterResume.prepare("UPDATE generation_jobs SET state = 'cancelled' WHERE job_id = 'job_reconcile_lease'").run();
     afterResume.prepare("UPDATE generation_intents SET provider_task_id = '', status = 'queued' WHERE intent_id = ?").run(prepared.data.intent.intent_id);
     afterResume.prepare("UPDATE generation_jobs SET state = 'queued', lease_owner = '', lease_token = '', lease_expires_at = NULL WHERE job_id = ?").run(confirmed.data.job_id);
     afterResume.close();
@@ -264,12 +281,22 @@ test("unknown provider submit is reconciled manually and abandon restores projec
       const job = check.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?").get(confirmed.data.job_id) as { state: string; reconciliation_reason: string };
       assert.deepEqual({ ...intent }, { status: "running", provider_task_id: "" });
       assert.deepEqual({ ...job }, { state: "manual_reconciliation", reconciliation_reason: "PROVIDER_SUBMIT_OUTCOME_UNKNOWN" });
+      check.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES ('artifact_cross_provider', ?, ?, 'generated_clip', 'video', 'active', ?)")
+        .run(projectResult.project_id, shot.shot_id, JSON.stringify({ artifact_id: "artifact_cross_provider", source: { provider: "runway", provider_job_id: "cross-provider-task" }, linked_objects: { project_id: projectResult.project_id, shot_id: shot.shot_id } }));
+      const crossProviderTask = reconcileGenerationJob(confirmed.data.job_id, { decision: "attach_existing_task", provider_task_id: "cross-provider-task", human_confirmation: true }, check);
+      assert.equal(crossProviderTask.ok, false);
+      if (!crossProviderTask.ok) assert.equal(crossProviderTask.error.code, "PROVIDER_TASK_ALREADY_OWNED");
+      check.prepare("UPDATE workbench_project_meta SET lifecycle = 'archived' WHERE project_id = ?").run(projectResult.project_id);
+      const archivedAbandon = reconcileGenerationJob(confirmed.data.job_id, { decision: "abandon", reason: "Blocked while archived.", human_confirmation: true }, check);
+      assert.equal(archivedAbandon.ok, false);
+      if (!archivedAbandon.ok) assert.equal(archivedAbandon.error.code, "PROJECT_ARCHIVED");
+      check.prepare("UPDATE workbench_project_meta SET lifecycle = 'active' WHERE project_id = ?").run(projectResult.project_id);
       const abandoned = reconcileGenerationJob(confirmed.data.job_id, { decision: "abandon", reason: "Provider confirmed no task exists.", human_confirmation: true }, check);
       assert.equal(abandoned.ok, true);
       const restoredShot = check.prepare("SELECT json_extract(data_json, '$.status') AS status FROM shots WHERE shot_id = ?").get(shot.shot_id) as { status: string };
       const restoredProject = check.prepare("SELECT json_extract(data_json, '$.status') AS status FROM projects WHERE project_id = ?").get(projectResult.project_id) as { status: string };
-      assert.equal(restoredShot.status, "storyboard_approved");
-      assert.equal(restoredProject.status, "storyboard_approved");
+      assert.equal(restoredShot.status, "revision_needed");
+      assert.equal(restoredProject.status, "video_review");
 
       const retryPrepared = await preflightWorkbenchGeneration({ project_id: projectResult.project_id, shot_id: shot.shot_id, account_label: "personal", budget_limit_value: 1 }, check, { env, fetch_impl: fetchImpl });
       assert.equal(retryPrepared.ok, true);
@@ -288,8 +315,8 @@ test("unknown provider submit is reconciled manually and abandon restores projec
       const failedProject = check.prepare("SELECT json_extract(data_json, '$.status') AS status FROM projects WHERE project_id = ?").get(projectResult.project_id) as { status: string };
       assert.equal(failedIntent.status, "failed");
       assert.equal(failedJob.state, "failed");
-      assert.equal(failedShot.status, "storyboard_approved");
-      assert.equal(failedProject.status, "storyboard_approved");
+      assert.equal(failedShot.status, "revision_needed");
+      assert.equal(failedProject.status, "video_review");
     } finally { check.close(); }
   } finally {
     try { db.close(); } catch { /* already closed before worker execution */ }

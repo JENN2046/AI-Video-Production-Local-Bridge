@@ -5,7 +5,7 @@ import { getGenerationRun, saveGenerationRun, type GenerationRun } from "./gener
 import { getMediaArtifact, type MediaArtifact } from "./mediaArtifacts.js";
 import { providerError, selectM1ProviderPort, type ProviderToolError } from "./provider.js";
 import { downloadProviderOutputToArtifact } from "./providerOutputDownloader.js";
-import { getProject, getShot, listProjectShots, saveProject, saveShot } from "./projects.js";
+import { getProject, getShot, listProjectShots, saveProject, saveShot, type ProjectStatus, type ShotStatus } from "./projects.js";
 import {
   buildRunningHubImageToVideoSubmitRequest,
   mapRunningHubProviderError,
@@ -168,6 +168,21 @@ function setJobState(
     if (!options.in_transaction) db.exec("ROLLBACK");
     throw error;
   }
+}
+
+function reconciliationRestoreState(db: M0Database, intentId: string): { shot_status: ShotStatus; project_status: ProjectStatus } {
+  const row = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(intentId) as { data_json: string } | undefined;
+  const data = parseRecord(row?.data_json ?? "");
+  const restore = data.reconciliation_restore && typeof data.reconciliation_restore === "object" && !Array.isArray(data.reconciliation_restore)
+    ? data.reconciliation_restore as Record<string, unknown>
+    : {};
+  const shotStatus = typeof restore.shot_status === "string" && ["draft", "storyboard_approved", "video_generated", "video_review", "approved", "revision_needed"].includes(restore.shot_status)
+    ? restore.shot_status as ShotStatus
+    : "storyboard_approved";
+  const projectStatus = typeof restore.project_status === "string" && ["draft", "storyboard_approved", "video_review", "final_approved"].includes(restore.project_status)
+    ? restore.project_status as ProjectStatus
+    : "storyboard_approved";
+  return { shot_status: shotStatus, project_status: projectStatus };
 }
 
 function claimJob(db: M0Database, intentId: string, owner: string, token: string): GenerationJob | null {
@@ -473,6 +488,9 @@ export function confirmWorkbenchGeneration(
       return { ok: false, error: { code: "SHOT_NOT_FOUND", message: "SHOT was not found in the selected project." } };
     }
     const runId = `run_${randomUUID()}`;
+    const intentDataRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(intent.intent_id) as { data_json: string };
+    const intentData = parseRecord(intentDataRow.data_json);
+    intentData.reconciliation_restore = { shot_status: shot.status, project_status: writable.data.project.status };
     const run: GenerationRun = {
       run_id: runId,
       batch_id: "",
@@ -502,9 +520,9 @@ export function confirmWorkbenchGeneration(
     db.prepare(`
       UPDATE generation_intents
       SET run_id = ?, confirmed = 1, budget_limit_value = ?, status = 'queued',
-        upload_attempts = 1, submit_attempts = 1, updated_at = CURRENT_TIMESTAMP
+        upload_attempts = 1, submit_attempts = 1, data_json = ?, updated_at = CURRENT_TIMESTAMP
       WHERE intent_id = ?
-    `).run(runId, input.budget_limit_value, intent.intent_id);
+    `).run(runId, input.budget_limit_value, JSON.stringify(intentData), intent.intent_id);
     const jobId = `job_${randomUUID()}`;
     db.prepare("INSERT INTO generation_jobs (job_id, intent_id, state) VALUES (?, ?, 'queued')").run(jobId, intent.intent_id);
     appendJobEvent(db, jobId, "", "queued", "HUMAN_CONFIRMED");
@@ -544,16 +562,15 @@ function restoreProjectAfterTerminalGeneration(db: M0Database, intent: Workbench
   const shot = getShot(db, intent.shot_id);
   const project = getProject(db, intent.project_id);
   if (!shot || !project) return;
-  shot.status = shot.clip_versions.length > 0 ? "revision_needed" : "storyboard_approved";
+  const restore = reconciliationRestoreState(db, intent.intent_id);
+  shot.status = shot.clip_versions.length > 0 ? "revision_needed" : restore.shot_status;
   saveShot(db, shot);
   const shots = listProjectShots(db, project.project_id);
   project.status = shots.some((candidate) => candidate.status === "video_pending")
     ? "video_generation_in_progress"
     : shots.some((candidate) => candidate.clip_versions.length > 0 || ["video_review", "video_generated", "approved", "revision_needed"].includes(candidate.status))
       ? "video_review"
-      : shots.length > 0 && shots.every((candidate) => candidate.status === "storyboard_approved")
-        ? "storyboard_approved"
-        : "draft";
+      : restore.project_status;
   saveProject(db, project);
 }
 
@@ -852,7 +869,17 @@ export function resumeWorkbenchGenerationJobs(dependencies: WorkbenchGenerationD
         resumed.push(row.intent_id);
       } else {
         const job = jobForIntent(db, row.intent_id);
-        if (job) setJobState(db, job, "manual_reconciliation", "PROVIDER_SUBMIT_OUTCOME_UNKNOWN");
+        if (job) {
+          db.exec("BEGIN IMMEDIATE");
+          try {
+            setJobState(db, job, "manual_reconciliation", "PROVIDER_SUBMIT_OUTCOME_UNKNOWN", { in_transaction: true });
+            db.prepare("UPDATE generation_jobs SET lease_owner = '', lease_token = '', lease_expires_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE job_id = ?").run(job.job_id);
+            db.exec("COMMIT");
+          } catch (error) {
+            db.exec("ROLLBACK");
+            throw error;
+          }
+        }
         reconciled.push(row.intent_id);
       }
     }
@@ -888,18 +915,19 @@ export function reconcileGenerationJob(
     if (row.state !== "manual_reconciliation") { db.exec("ROLLBACK"); return { ok: false, error: { code: "GENERATION_JOB_NOT_RECONCILABLE", message: "Generation job does not require reconciliation." } }; }
     const intent = getIntent(db, row.intent_id);
     if (!intent) { db.exec("ROLLBACK"); return { ok: false, error: { code: "GENERATION_INTENT_NOT_FOUND", message: "Generation intent was not found." } }; }
+    const writable = assertWorkbenchProjectWritable(db, intent.project_id);
+    if (!writable.ok) { db.exec("ROLLBACK"); return writable; }
     let job: GenerationJob;
     if (input.decision === "attach_existing_task") {
       const taskId = input.provider_task_id?.trim() ?? "";
       if (!/^[A-Za-z0-9._:-]{3,200}$/.test(taskId)) { db.exec("ROLLBACK"); return { ok: false, error: { code: "INVALID_PROVIDER_TASK_ID", message: "Provider task ID is invalid." } }; }
       const owningIntent = db.prepare("SELECT intent_id FROM generation_intents WHERE provider_task_id = ? AND intent_id <> ? LIMIT 1")
         .get(taskId, intent.intent_id) as { intent_id: string } | undefined;
-      const owningArtifact = db.prepare(`SELECT artifact_id, project_id, shot_id FROM media_artifacts
+      const owningArtifact = db.prepare(`SELECT artifact_id, project_id, shot_id, json_extract(data_json, '$.source.provider') AS provider FROM media_artifacts
         WHERE json_valid(data_json) = 1
-          AND json_extract(data_json, '$.source.provider') = ?
           AND json_extract(data_json, '$.source.provider_job_id') = ?
-        LIMIT 1`).get(intent.provider, taskId) as { artifact_id: string; project_id: string | null; shot_id: string | null } | undefined;
-      if (owningIntent || (owningArtifact && (owningArtifact.project_id !== intent.project_id || owningArtifact.shot_id !== intent.shot_id))) {
+        LIMIT 1`).get(taskId) as { artifact_id: string; project_id: string | null; shot_id: string | null; provider: string | null } | undefined;
+      if (owningIntent || (owningArtifact && (owningArtifact.provider !== intent.provider || owningArtifact.project_id !== intent.project_id || owningArtifact.shot_id !== intent.shot_id))) {
         db.exec("ROLLBACK");
         return { ok: false, error: { code: "PROVIDER_TASK_ALREADY_OWNED", message: "Provider task ID is already owned by another generation." } };
       }
