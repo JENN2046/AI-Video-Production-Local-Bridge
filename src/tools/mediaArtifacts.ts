@@ -161,7 +161,7 @@ function defaultMetadata(artifactType: ArtifactType, metadata: RegisterMediaArti
 
 export function persistMediaArtifact(db: M0Database, artifact: MediaArtifact): void {
   db.prepare(`
-    INSERT OR REPLACE INTO media_artifacts (
+    INSERT INTO media_artifacts (
       artifact_id,
       project_id,
       shot_id,
@@ -172,6 +172,14 @@ export function persistMediaArtifact(db: M0Database, artifact: MediaArtifact): v
       updated_at
     )
     VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(artifact_id) DO UPDATE SET
+      project_id = excluded.project_id,
+      shot_id = excluded.shot_id,
+      role = excluded.role,
+      artifact_type = excluded.artifact_type,
+      status = excluded.status,
+      data_json = excluded.data_json,
+      updated_at = CURRENT_TIMESTAMP
   `).run(
     artifact.artifact_id,
     artifact.linked_objects.project_id || null,
