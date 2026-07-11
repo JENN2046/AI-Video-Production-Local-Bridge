@@ -121,4 +121,16 @@ test("Secret scan distinguishes OAuth protocol text and fixtures from bearer cre
   assert.equal(secretFindingForText(shortCredentialHeader), "unredacted bearer token");
   const credentialShapedHeader = ["Authorization:", "Bearer", "abcdefghijklmnopqrstuvwxyz012345"].join(" ");
   assert.equal(secretFindingForText(credentialShapedHeader), "unredacted bearer token");
+  const multipleBearers = [
+    ["Authorization:", "Bearer", "test-token"].join(" "),
+    ["Authorization:", "Bearer", "abcdefghijklmnop"].join(" ")
+  ].join("\n");
+  assert.equal(secretFindingForText(multipleBearers), "unredacted bearer token");
+  const multipleJsonSecrets = [
+    ["\"", "RUNNINGHUB_API_KEY", "\":\"", "dummy", "\""].join(""),
+    ["\"", "RUNWAYML_API_SECRET", "\":\"", "real-secret-value", "\""].join("")
+  ].join("\n");
+  assert.equal(secretFindingForText(multipleJsonSecrets), "RUNWAYML_API_SECRET has a non-placeholder JSON value");
+  const multipleTokenPatterns = [["sk", "-", "dummy_dummy_dummy"].join(""), ["sk", "-", "abcdefghijklmnopqrstuvwxyz"].join("")].join("\n");
+  assert.equal(secretFindingForText(multipleTokenPatterns), "token-like secret pattern");
 });
