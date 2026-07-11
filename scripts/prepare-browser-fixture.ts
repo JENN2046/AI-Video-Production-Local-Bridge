@@ -1,13 +1,15 @@
 import { rmSync } from "node:fs";
+import { relative } from "node:path";
 
 import { assertInsideWorkspace, ensureM0Directories, paths } from "../src/paths.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 
 const dataRoot = assertInsideWorkspace(paths.dataRoot);
-const expectedSuffix = "ops\\tools\\playwright-data";
-if (!dataRoot.toLowerCase().endsWith(expectedSuffix)) {
-  throw new Error(`Refusing to prepare browser fixture outside ${expectedSuffix}.`);
+const expectedRelativePath = "ops/tools/playwright-data";
+const relativeDataRoot = relative(paths.workspaceRoot, dataRoot).split(/[\\/]+/).join("/").toLowerCase();
+if (relativeDataRoot !== expectedRelativePath) {
+  throw new Error(`Refusing to prepare browser fixture outside ${expectedRelativePath}.`);
 }
 
 rmSync(dataRoot, { recursive: true, force: true });
