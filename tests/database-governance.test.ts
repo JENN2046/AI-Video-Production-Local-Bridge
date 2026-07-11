@@ -180,7 +180,7 @@ test("database check detects missing structured identifiers and accepts external
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES ('project_missing_json_id', ?)")
       .run(JSON.stringify({ title: "Missing JSON identifier" }));
     db.prepare("INSERT INTO media_artifacts (artifact_id, role, artifact_type, status, data_json) VALUES ('artifact_external', 'source', 'image', 'active', ?)")
-      .run(JSON.stringify({ artifact_id: "artifact_external", storage: { uri: "https://example.test/media/storyboard.png" } }));
+      .run(JSON.stringify({ artifact_id: "artifact_external", storage: { uri: "https://example.test/media/storyboard.png" }, linked_objects: { project_id: "", shot_id: "" } }));
     db.close();
 
     const checked = checkDatabase(sqlitePath);
@@ -255,6 +255,28 @@ test("database check detects package and batch drift plus missing batch links", 
     const checked = checkDatabase(sqlitePath);
     assert.equal(checked.structured_drift_rows, 1);
     assert.equal(checked.orphan_rows, 2);
+    assert.equal(checked.result, "FAIL");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("database check detects run and artifact link drift", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "link-drift.sqlite");
+    migrateDatabase(sqlitePath);
+    const db = new DatabaseSync(sqlitePath);
+    db.prepare("INSERT INTO projects (project_id, data_json) VALUES ('project_link_drift', ?)")
+      .run(JSON.stringify({ project_id: "project_link_drift" }));
+    db.prepare("INSERT INTO generation_runs (run_id, batch_id, project_id, shot_id, run_type, status, data_json) VALUES ('run_link_drift', '', 'project_link_drift', '', 'image_to_video', 'queued', ?)")
+      .run(JSON.stringify({ run_id: "run_link_drift", batch_id: "batch_wrong", project_id: "project_link_drift", shot_id: "shot_wrong" }));
+    db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES ('artifact_link_drift', 'project_link_drift', NULL, 'source', 'image', 'active', ?)")
+      .run(JSON.stringify({ artifact_id: "artifact_link_drift", linked_objects: { project_id: "project_wrong", shot_id: "shot_wrong" } }));
+    db.close();
+
+    const checked = checkDatabase(sqlitePath);
+    assert.equal(checked.structured_drift_rows, 2);
     assert.equal(checked.result, "FAIL");
   } finally {
     rmSync(root, { recursive: true, force: true });
