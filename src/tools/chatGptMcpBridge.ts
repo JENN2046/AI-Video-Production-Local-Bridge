@@ -1046,7 +1046,7 @@ export function buildR2GCloseoutReport(generatedAt: string): Record<string, unkn
       chatgpt_connector_created: false
     },
     local_tests: {
-      test_script: "npm run test:r2g:mcp",
+      test_script: "npm run test:webgpt:v4",
       typecheck: "npm run typecheck",
       secret_scan: "npm run secret:scan",
       diff_check: "git diff --check"
@@ -1085,13 +1085,13 @@ export function buildR2GHardeningFixReport(generatedAt: string): Record<string, 
       "R2G-H-FINDING-003": "Global descriptors are deep-frozen at runtime and listChatGptMcpToolDescriptors returns JSON-safe deep clones."
     },
     validation: {
-      "npm run r2g:b:contract": "PASS",
-      "npm run r2g:e:gates": "PASS",
-      "npm run r2g:f:closeout": "PASS",
+      "historical R2G-B contract validation": "PASS",
+      "historical R2G-E gate validation": "PASS",
+      "historical R2G-F closeout validation": "PASS",
       "JSON parse for R2G-H1 report": "PASS",
       "JSON parse for schema fixture": "PASS",
       "npm run typecheck": "PASS",
-      "npm run test:r2g:mcp": "PASS",
+      "npm run test:webgpt:v4": "CURRENT_REPLACEMENT",
       "npm run secret:scan": "PASS",
       "git diff --check": "PASS_WITH_CRLF_WARNINGS_ONLY"
     },
