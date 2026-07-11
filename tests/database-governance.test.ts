@@ -113,6 +113,60 @@ test("existing v2-4 baseline rejects weakened table CHECK constraints", () => {
   }
 });
 
+test("schema validation rejects weakened UNIQUE and REFERENCES constraints", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "weakened-non-check-constraints.sqlite");
+    migrateDatabase(sqlitePath);
+    const db = new DatabaseSync(sqlitePath);
+    db.exec(`
+      PRAGMA foreign_keys = OFF;
+      DROP TABLE generation_job_events;
+      DROP TABLE generation_jobs;
+      CREATE TABLE generation_jobs (
+        job_id TEXT PRIMARY KEY,
+        intent_id TEXT NOT NULL,
+        state TEXT NOT NULL,
+        lease_owner TEXT NOT NULL DEFAULT '',
+        lease_token TEXT NOT NULL DEFAULT '',
+        lease_expires_at TEXT,
+        next_attempt_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        reconciliation_reason TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CHECK (state IN ('queued','submitting','polling','downloading','finalizing','manual_reconciliation','succeeded','failed','cancelled'))
+      );
+      CREATE TABLE generation_job_events (
+        event_id TEXT PRIMARY KEY,
+        job_id TEXT NOT NULL,
+        from_state TEXT NOT NULL DEFAULT '',
+        to_state TEXT NOT NULL,
+        reason_code TEXT NOT NULL DEFAULT '',
+        data_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX idx_generation_jobs_due ON generation_jobs(state, next_attempt_at, created_at);
+      CREATE INDEX idx_generation_job_events_job ON generation_job_events(job_id, created_at);
+      CREATE TRIGGER generation_job_events_no_update
+        BEFORE UPDATE ON generation_job_events BEGIN
+          SELECT RAISE(ABORT, 'GENERATION_JOB_EVENTS_APPEND_ONLY');
+        END;
+      CREATE TRIGGER generation_job_events_no_delete
+        BEFORE DELETE ON generation_job_events BEGIN
+          SELECT RAISE(ABORT, 'GENERATION_JOB_EVENTS_APPEND_ONLY');
+        END;
+    `);
+    assert.throws(() => assertSchemaCurrent(db), (error) => error instanceof SchemaMigrationRequiredError
+      && /unique_constraints:generation_jobs/.test(error.message)
+      && /foreign_keys:generation_jobs/.test(error.message)
+      && /foreign_keys:generation_job_events/.test(error.message));
+    db.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("runtime open cannot use a production environment flag to migrate persistent data", () => {
   const root = tempRoot();
   const previous = process.env.AI_VIDEO_AUTO_MIGRATE;

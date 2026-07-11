@@ -250,6 +250,8 @@ interface ExpectedSchemaDefinitions {
   columns: Map<string, Map<string, string>>;
   objects: Map<string, string>;
   checks: Map<string, string[]>;
+  uniqueConstraints: Map<string, string[]>;
+  foreignKeys: Map<string, string[]>;
 }
 
 const expectedDefinitionCache = new Map<boolean, ExpectedSchemaDefinitions>();
@@ -282,6 +284,45 @@ function checkConstraints(sql: unknown): string[] {
   return checks.sort();
 }
 
+function quotedIdentifier(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+function uniqueConstraintSignatures(db: M0Database, table: string): string[] {
+  const indexes = db.prepare(`PRAGMA index_list(${quotedIdentifier(table)})`).all() as unknown as Array<{ name: string; unique: number; origin: string }>;
+  return indexes
+    .filter((index) => Number(index.unique) === 1 && index.origin === "u")
+    .map((index) => {
+      const columns = db.prepare(`PRAGMA index_info(${quotedIdentifier(index.name)})`).all() as unknown as Array<{ seqno: number; name: string | null }>;
+      return columns
+        .sort((left, right) => Number(left.seqno) - Number(right.seqno))
+        .map((column) => normalizeDefinition(column.name))
+        .join(",");
+    })
+    .sort();
+}
+
+function foreignKeySignatures(db: M0Database, table: string): string[] {
+  const rows = db.prepare(`PRAGMA foreign_key_list(${quotedIdentifier(table)})`).all() as unknown as Array<{
+    id: number;
+    seq: number;
+    table: string;
+    from: string;
+    to: string;
+    on_update: string;
+    on_delete: string;
+    match: string;
+  }>;
+  const groups = new Map<number, typeof rows>();
+  for (const row of rows) groups.set(Number(row.id), [...(groups.get(Number(row.id)) ?? []), row]);
+  return [...groups.values()]
+    .map((group) => group
+      .sort((left, right) => Number(left.seq) - Number(right.seq))
+      .map((row) => [row.table, row.from, row.to, row.on_update, row.on_delete, row.match].map(normalizeDefinition).join("|"))
+      .join("&"))
+    .sort();
+}
+
 function expectedSchemaDefinitions(includeJobs: boolean, expectedColumns: Record<string, readonly string[]>, expectedObjects: readonly string[]): ExpectedSchemaDefinitions {
   const cached = expectedDefinitionCache.get(includeJobs);
   if (cached) return cached;
@@ -292,18 +333,22 @@ function expectedSchemaDefinitions(includeJobs: boolean, expectedColumns: Record
     if (includeJobs) reference.exec(`${GENERATION_JOBS_SQL}\n${GENERATION_JOBS_STABILIZATION_SQL}`);
     const columns = new Map<string, Map<string, string>>();
     const checks = new Map<string, string[]>();
+    const uniqueConstraints = new Map<string, string[]>();
+    const foreignKeys = new Map<string, string[]>();
     for (const table of Object.keys(expectedColumns)) {
       const tableColumns = reference.prepare(`PRAGMA table_info(${table})`).all() as unknown as ColumnDefinition[];
       columns.set(table, new Map(tableColumns.map((column) => [column.name, columnSignature(column)])));
       const row = reference.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as { sql: string | null } | undefined;
       checks.set(table, checkConstraints(row?.sql));
+      uniqueConstraints.set(table, uniqueConstraintSignatures(reference, table));
+      foreignKeys.set(table, foreignKeySignatures(reference, table));
     }
     const objects = new Map<string, string>();
     for (const name of expectedObjects) {
       const row = reference.prepare("SELECT sql FROM sqlite_master WHERE name = ? AND type IN ('index', 'trigger')").get(name) as { sql: string | null } | undefined;
       objects.set(name, normalizeDefinition(row?.sql));
     }
-    const definitions = { columns, objects, checks };
+    const definitions = { columns, objects, checks, uniqueConstraints, foreignKeys };
     expectedDefinitionCache.set(includeJobs, definitions);
     return definitions;
   } finally {
@@ -335,6 +380,8 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     if (columns.size > 0) {
       const tableRow = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as { sql: string | null } | undefined;
       if (JSON.stringify(checkConstraints(tableRow?.sql)) !== JSON.stringify(definitions.checks.get(table) ?? [])) issues.push(`check_constraints:${table}`);
+      if (JSON.stringify(uniqueConstraintSignatures(db, table)) !== JSON.stringify(definitions.uniqueConstraints.get(table) ?? [])) issues.push(`unique_constraints:${table}`);
+      if (JSON.stringify(foreignKeySignatures(db, table)) !== JSON.stringify(definitions.foreignKeys.get(table) ?? [])) issues.push(`foreign_keys:${table}`);
     }
   }
   for (const [kind, names] of [["index", expectedIndexes], ["trigger", expectedTriggers]] as const) {
