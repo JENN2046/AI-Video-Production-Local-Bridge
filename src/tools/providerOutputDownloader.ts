@@ -27,6 +27,7 @@ export interface ProviderOutputDownloadInput {
   duration_seconds: number;
   aspect_ratio: string;
   storage_directory?: string;
+  /** @deprecated Provider output transports must use runtime.fetch_pinned_address so validated DNS addresses cannot be ignored. */
   fetch_impl?: typeof fetch;
   safety?: Partial<ProviderOutputDownloadSafety>;
 }
@@ -264,7 +265,6 @@ function extensionForUrl(url: URL): string {
 
 async function fetchWithRedirects(
   initialUrl: URL,
-  fetchImpl: typeof fetch | undefined,
   safety: ProviderOutputDownloadSafety,
   resolver: (hostname: string) => Promise<Array<{ address: string; family: 4 | 6 }>>,
   fetchAddress: (url: URL, signal: AbortSignal, address: { address: string; family: 4 | 6 }) => Promise<Response>
@@ -276,9 +276,7 @@ async function fetchWithRedirects(
     let response: Response;
     try {
       const addresses = await abortable(publicAddresses(currentUrl.hostname, resolver), controller.signal);
-      response = fetchImpl
-        ? await fetchImpl(currentUrl, { method: "GET", redirect: "manual", signal: controller.signal })
-        : await fetchFromValidatedAddresses(currentUrl, controller.signal, addresses, fetchAddress);
+      response = await fetchFromValidatedAddresses(currentUrl, controller.signal, addresses, fetchAddress);
     } catch (error) {
       clearTimeout(timeout);
       if (error instanceof Error && error.message === "PROVIDER_OUTPUT_URI_BLOCKED") {
@@ -361,13 +359,21 @@ export async function downloadProviderOutputToArtifact(
   const urlValidation = validateProviderOutputUrl(input.url);
   if (!urlValidation.ok) return { ok: false, error: urlValidation.error };
 
-  const resolver = runtime.resolve_hostname ?? (input.fetch_impl
-    ? async () => [{ address: "8.8.8.8", family: 4 as const }]
-    : async (hostname: string) => {
-      const result = await lookup(hostname, { all: true, verbatim: true });
-      return result.map((entry) => ({ address: entry.address, family: entry.family as 4 | 6 }));
-    });
-  const fetched = await fetchWithRedirects(urlValidation.url, input.fetch_impl, safety, resolver, runtime.fetch_pinned_address ?? pinnedHttpsFetch);
+  if (input.fetch_impl) {
+    return {
+      ok: false,
+      error: providerError(
+        "PROVIDER_OUTPUT_PINNED_TRANSPORT_REQUIRED",
+        "Injected provider output transports must consume the validated address through runtime.fetch_pinned_address."
+      )
+    };
+  }
+
+  const resolver = runtime.resolve_hostname ?? (async (hostname: string) => {
+    const result = await lookup(hostname, { all: true, verbatim: true });
+    return result.map((entry) => ({ address: entry.address, family: entry.family as 4 | 6 }));
+  });
+  const fetched = await fetchWithRedirects(urlValidation.url, safety, resolver, runtime.fetch_pinned_address ?? pinnedHttpsFetch);
   if ("error" in fetched) return { ok: false, error: fetched.error };
 
   const contentType = fetched.response.headers.get("content-type");

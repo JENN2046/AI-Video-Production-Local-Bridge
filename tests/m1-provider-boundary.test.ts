@@ -740,14 +740,42 @@ test("M1 provider output downloader rejects private DNS answers before transport
       shot_id: "shot_dns",
       duration_seconds: 2,
       aspect_ratio: "9:16",
-      storage_directory: root,
-      fetch_impl: (async () => { fetched = true; throw new Error("transport must not run"); }) as typeof fetch
+      storage_directory: root
     }, db, {
       storage_root: root,
-      resolve_hostname: async () => [{ address: "127.0.0.1", family: 4 }]
+      resolve_hostname: async () => [{ address: "127.0.0.1", family: 4 }],
+      fetch_pinned_address: async () => { fetched = true; throw new Error("transport must not run"); }
     });
     assert.equal(result.ok, false);
     if (!result.ok) assert.equal(result.error.code, "PROVIDER_OUTPUT_URI_BLOCKED");
+    assert.equal(fetched, false);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("M1 provider output downloader rejects a generic injected fetch that cannot consume pinned addresses", async () => {
+  const db = openM0Database(":memory:");
+  const root = mkdtempSync(join(tmpdir(), "provider-output-unpinned-fetch-"));
+  let fetched = false;
+  try {
+    const result = await downloadProviderOutputToArtifact({
+      url: "https://cdn.example.test/output.mp4",
+      provider_name: "runninghub",
+      provider_job_id: "unpinned-fetch-task",
+      project_id: "project_unpinned_fetch",
+      shot_id: "shot_unpinned_fetch",
+      duration_seconds: 2,
+      aspect_ratio: "9:16",
+      storage_directory: root,
+      fetch_impl: (async () => { fetched = true; throw new Error("generic fetch must not run"); }) as typeof fetch
+    }, db, {
+      storage_root: root,
+      resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }]
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "PROVIDER_OUTPUT_PINNED_TRANSPORT_REQUIRED");
     assert.equal(fetched, false);
   } finally {
     db.close();
@@ -806,27 +834,33 @@ test("M1 provider output downloader enforces size and timeout while streaming", 
     const oversized = await downloadProviderOutputToArtifact({
       ...base,
       provider_job_id: "oversized-task",
-      safety: { max_size_mb: 0.000001 },
-      fetch_impl: (async () => new Response(new ReadableStream({
+      safety: { max_size_mb: 0.000001 }
+    }, db, {
+      storage_root: root,
+      resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+      fetch_pinned_address: async () => new Response(new ReadableStream({
         start(controller) {
           controller.enqueue(new Uint8Array(32));
           controller.close();
         }
-      }), { status: 200, headers: { "content-type": "video/mp4" } })) as typeof fetch
-    }, db, { storage_root: root });
+      }), { status: 200, headers: { "content-type": "video/mp4" } })
+    });
     assert.equal(oversized.ok, false);
     if (!oversized.ok) assert.equal(oversized.error.code, "PROVIDER_OUTPUT_TOO_LARGE");
 
     const timedOut = await downloadProviderOutputToArtifact({
       ...base,
       provider_job_id: "timeout-task",
-      safety: { timeout_seconds: 0.01 },
-      fetch_impl: (async (_input, init) => new Response(new ReadableStream({
+      safety: { timeout_seconds: 0.01 }
+    }, db, {
+      storage_root: root,
+      resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+      fetch_pinned_address: async (_url, signal) => new Response(new ReadableStream({
         start(controller) {
-          init?.signal?.addEventListener("abort", () => controller.error(new DOMException("aborted", "AbortError")), { once: true });
+          signal.addEventListener("abort", () => controller.error(new DOMException("aborted", "AbortError")), { once: true });
         }
-      }), { status: 200, headers: { "content-type": "video/mp4" } })) as typeof fetch
-    }, db, { storage_root: root });
+      }), { status: 200, headers: { "content-type": "video/mp4" } })
+    });
     assert.equal(timedOut.ok, false);
     if (!timedOut.ok) {
       assert.equal(timedOut.error.code, "PROVIDER_OUTPUT_DOWNLOAD_FAILED");
@@ -901,9 +935,12 @@ test("M1 provider output downloader rejects a preexisting symlink final artifact
       shot_id: "shot_final_symlink",
       duration_seconds: 2,
       aspect_ratio: "9:16",
-      storage_directory: root,
-      fetch_impl: (async () => new Response(fixtureBytes, { status: 200, headers: { "content-type": "video/mp4" } })) as typeof fetch
-    }, db, { storage_root: root });
+      storage_directory: root
+    }, db, {
+      storage_root: root,
+      resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+      fetch_pinned_address: async () => new Response(fixtureBytes, { status: 200, headers: { "content-type": "video/mp4" } })
+    });
     assert.equal(result.ok, false);
     if (!result.ok) assert.equal(result.error.code, "PROVIDER_OUTPUT_STORAGE_BLOCKED");
     assert.equal(readFileSync(externalFile).equals(fixtureBytes), true);
@@ -963,17 +1000,20 @@ test("M1 provider output downloader saves ffprobe-valid local artifact without p
         shot_id: "shot_test",
         duration_seconds: 2,
         aspect_ratio: "9:16",
-        storage_directory: storageDirectory,
-        fetch_impl: (async () =>
+        storage_directory: storageDirectory
+      },
+      db,
+      {
+        resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+        fetch_pinned_address: async () =>
           new Response(fixtureBytes, {
             status: 200,
             headers: {
               "content-type": "video/mp4",
               "content-length": String(fixtureBytes.length)
             }
-          })) as typeof fetch
-      },
-      db
+          })
+      }
     );
 
     assert.equal(result.ok, true);
