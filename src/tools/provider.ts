@@ -67,6 +67,7 @@ export interface ProviderToolError {
   message: string;
   retryable?: boolean;
   sanitized_provider_error_summary?: SanitizedProviderErrorSummary;
+  submission_outcome_unknown?: boolean;
 }
 
 export type ProviderSelectionResult =

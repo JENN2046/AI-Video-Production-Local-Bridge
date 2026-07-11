@@ -89,7 +89,7 @@ test("media analysis queue runs one, waits four, and rejects the sixth", async (
   })));
   await new Promise((resolveTick) => setImmediate(resolveTick));
   assert.deepEqual(queue.status(), { active: 1, waiting: 4, capacity: 5 });
-  await assert.rejects(() => queue.run(async () => 6), (error) => error instanceof WebGptV4Error && error.code === "MEDIA_ANALYSIS_BUSY");
+  await assert.rejects(() => queue.run(async () => 6), (error) => error instanceof WebGptV4Error && error.code === "MEDIA_ANALYSIS_BUSY" && error.retryable === true);
   for (let index = 0; index < 5; index += 1) {
     releases[index]();
     await new Promise((resolveTick) => setImmediate(resolveTick));
@@ -102,7 +102,7 @@ test("timed out analysis retains its slot until the underlying process settles",
   const queue = new MediaAnalysisQueue(1, 0, 10);
   let release: (() => void) | undefined;
   const operation = queue.run(() => new Promise<void>((resolveOperation) => { release = resolveOperation; }));
-  await assert.rejects(operation, (error) => error instanceof WebGptV4Error && error.code === "MEDIA_ANALYSIS_TIMEOUT");
+  await assert.rejects(operation, (error) => error instanceof WebGptV4Error && error.code === "MEDIA_ANALYSIS_TIMEOUT" && error.retryable === true);
   assert.equal(queue.status().active, 1);
   release?.();
   await new Promise((resolveTick) => setImmediate(resolveTick));

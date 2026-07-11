@@ -17,7 +17,7 @@ export default defineConfig({
   webServer: {
     command: "node dist/scripts/prepare-browser-fixture.js && node dist/scripts/h1-workbench.js",
     url: "http://127.0.0.1:4181/api/v2/shell",
-    reuseExistingServer: true,
+    reuseExistingServer: false,
     timeout: 120_000,
     env: {
       AI_VIDEO_WORKSPACE_DATA_ROOT: "ops/tools/playwright-data",

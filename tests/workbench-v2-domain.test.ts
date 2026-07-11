@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { resolve } from "node:path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import test from "node:test";
 
 import { openM0Database } from "../src/storage/sqlite.js";
@@ -11,8 +13,9 @@ import {
   setWorkbenchProjectLifecycle,
   updateWorkbenchProject
 } from "../src/tools/workbenchV2.js";
-import { confirmWorkbenchGeneration, preflightWorkbenchGeneration, reconcileGenerationJob } from "../src/tools/workbenchGeneration.js";
+import { confirmWorkbenchGeneration, preflightWorkbenchGeneration, reconcileGenerationJob, runWorkbenchGenerationOnce } from "../src/tools/workbenchGeneration.js";
 import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
+import type { VideoProviderAdapter } from "../src/tools/videoProviderAdapters.js";
 
 test("V2 schema is transactional, versioned, and initializes project metadata", () => {
   const db = openM0Database(":memory:");
@@ -162,5 +165,84 @@ test("generation preflight enforces official estimate, balance gate, budget and 
     }
   } finally {
     db.close();
+  }
+});
+
+test("unknown provider submit is reconciled manually and abandon restores project state", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-unknown-submit-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const db = openM0Database(sqlitePath);
+  try {
+    const projectResult = createProject({ title: "Unknown submit", video_spec: { duration_seconds: 6, aspect_ratio: "9:16", resolution: "1080x1920" } }, db);
+    assert.equal(projectResult.ok, true);
+    if (!projectResult.ok) return;
+    const artifactResult = registerMediaArtifact({
+      artifact_type: "image", role: "storyboard_image",
+      source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
+      linked_objects: { project_id: projectResult.project_id }
+    }, db);
+    assert.equal(artifactResult.ok, true);
+    if (!artifactResult.ok) return;
+    const shot = buildStoryboardApprovedShot({ project_id: projectResult.project_id, order: 1, duration_seconds: 6, storyboard_image_artifact_id: artifactResult.artifact.artifact_id, video_prompt: "Safe unknown submit test." });
+    saveShot(db, shot);
+    projectResult.project.shot_ids.push(shot.shot_id);
+    projectResult.project.status = "storyboard_approved";
+    saveProject(db, projectResult.project);
+    const env = { REAL_PROVIDER_ENABLED: "true", M1_REAL_PROVIDER: "runninghub", M1_REAL_PROVIDER_EXECUTION_ALLOWED: "true", M1_REAL_PROVIDER_COST_ACK: "true", RUNNINGHUB_API_KEY: "synthetic-test-key" } as NodeJS.ProcessEnv;
+    const fetchImpl: typeof fetch = async (input) => String(input).includes("price-preview")
+      ? new Response(JSON.stringify({ errorCode: "", estimatedPrice: 0.08, currency: "CNY" }), { status: 200 })
+      : new Response(JSON.stringify({ code: 0, data: { remainMoney: "10", currency: "CNY" } }), { status: 200 });
+    const prepared = await preflightWorkbenchGeneration({ project_id: projectResult.project_id, shot_id: shot.shot_id, account_label: "personal", budget_limit_value: 1 }, db, { env, fetch_impl: fetchImpl });
+    assert.equal(prepared.ok, true);
+    if (!prepared.ok) return;
+    const confirmed = confirmWorkbenchGeneration({ intent_id: prepared.data.intent.intent_id, budget_limit_value: 1, cost_confirmed: true, human_confirmation: true }, db);
+    assert.equal(confirmed.ok, true);
+    if (!confirmed.ok) return;
+    db.close();
+
+    const adapter = {
+      provider_name: "runninghub", model_name: prepared.data.intent.model,
+      submitGeneration: async () => ({ ok: false as const, error: { code: "PROVIDER_TIMEOUT", message: "Submit response was lost.", retryable: true, submission_outcome_unknown: true } }),
+      pollStatus: async () => { throw new Error("poll must not run"); },
+      fetchOutput: async () => { throw new Error("output must not run"); }
+    } as VideoProviderAdapter;
+    await runWorkbenchGenerationOnce(prepared.data.intent.intent_id, { allow_submit: true, dependencies: { sqlite_path: sqlitePath, env, adapter_factory: () => adapter } });
+
+    const check = openM0Database(sqlitePath);
+    try {
+      const intent = check.prepare("SELECT status, provider_task_id FROM generation_intents WHERE intent_id = ?").get(prepared.data.intent.intent_id) as { status: string; provider_task_id: string };
+      const job = check.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?").get(confirmed.data.job_id) as { state: string; reconciliation_reason: string };
+      assert.deepEqual({ ...intent }, { status: "running", provider_task_id: "" });
+      assert.deepEqual({ ...job }, { state: "manual_reconciliation", reconciliation_reason: "PROVIDER_SUBMIT_OUTCOME_UNKNOWN" });
+      const abandoned = reconcileGenerationJob(confirmed.data.job_id, { decision: "abandon", reason: "Provider confirmed no task exists.", human_confirmation: true }, check);
+      assert.equal(abandoned.ok, true);
+      const restoredShot = check.prepare("SELECT json_extract(data_json, '$.status') AS status FROM shots WHERE shot_id = ?").get(shot.shot_id) as { status: string };
+      const restoredProject = check.prepare("SELECT json_extract(data_json, '$.status') AS status FROM projects WHERE project_id = ?").get(projectResult.project_id) as { status: string };
+      assert.equal(restoredShot.status, "storyboard_approved");
+      assert.equal(restoredProject.status, "storyboard_approved");
+
+      const retryPrepared = await preflightWorkbenchGeneration({ project_id: projectResult.project_id, shot_id: shot.shot_id, account_label: "personal", budget_limit_value: 1 }, check, { env, fetch_impl: fetchImpl });
+      assert.equal(retryPrepared.ok, true);
+      if (!retryPrepared.ok) return;
+      const retryConfirmed = confirmWorkbenchGeneration({ intent_id: retryPrepared.data.intent.intent_id, budget_limit_value: 1, cost_confirmed: true, human_confirmation: true }, check);
+      assert.equal(retryConfirmed.ok, true);
+      if (!retryConfirmed.ok) return;
+      const rejectedAdapter = {
+        ...adapter,
+        submitGeneration: async () => ({ ok: false as const, error: { code: "PROVIDER_CONTENT_REJECTED", message: "Provider rejected input.", retryable: false } })
+      } as VideoProviderAdapter;
+      await runWorkbenchGenerationOnce(retryPrepared.data.intent.intent_id, { allow_submit: true, dependencies: { sqlite_path: sqlitePath, env, adapter_factory: () => rejectedAdapter } });
+      const failedIntent = check.prepare("SELECT status FROM generation_intents WHERE intent_id = ?").get(retryPrepared.data.intent.intent_id) as { status: string };
+      const failedJob = check.prepare("SELECT state FROM generation_jobs WHERE job_id = ?").get(retryConfirmed.data.job_id) as { state: string };
+      const failedShot = check.prepare("SELECT json_extract(data_json, '$.status') AS status FROM shots WHERE shot_id = ?").get(shot.shot_id) as { status: string };
+      const failedProject = check.prepare("SELECT json_extract(data_json, '$.status') AS status FROM projects WHERE project_id = ?").get(projectResult.project_id) as { status: string };
+      assert.equal(failedIntent.status, "failed");
+      assert.equal(failedJob.state, "failed");
+      assert.equal(failedShot.status, "storyboard_approved");
+      assert.equal(failedProject.status, "storyboard_approved");
+    } finally { check.close(); }
+  } finally {
+    try { db.close(); } catch { /* already closed before worker execution */ }
+    rmSync(root, { recursive: true, force: true });
   }
 });

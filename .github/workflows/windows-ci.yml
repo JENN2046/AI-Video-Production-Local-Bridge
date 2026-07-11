@@ -65,6 +65,9 @@ jobs:
       - name: Workbench V2 domain tests
         run: npm run test:v2
 
+      - name: Database governance tests
+        run: npm run test:db
+
       - name: Workbench V2 UI tests
         run: npm run test:v2:ui
 

@@ -70,13 +70,39 @@ export const M0_BASE_SCHEMA_SQL = `
   VALUES ('schema_version', 'm0-a', CURRENT_TIMESTAMP);
 `;
 
-const WORKBENCH_V2_4_CANONICAL = [
-  WORKBENCH_V2_SCHEMA_VERSION,
-  "workbench_project_meta", "import_index", "import_decisions", "regeneration_requests",
-  "generation_intents", "workbench_drafts", "workbench_pending_actions", "workbench_inbox_events",
-  "workbench_governance_runs", "workbench_review_notes", "webgpt_audit_events",
-  "webgpt_media_grants", "webgpt_provider_price_cache"
-].join("\n");
+const WORKBENCH_V2_4_CANONICAL = `${WORKBENCH_V2_SCHEMA_VERSION}\n${initializeWorkbenchV2Schema.toString()}`;
+
+const V24_EXPECTED_COLUMNS: Record<string, readonly string[]> = {
+  m0_meta: ["key", "value", "updated_at"],
+  projects: ["project_id", "data_json", "created_at", "updated_at"],
+  shots: ["shot_id", "project_id", "data_json", "created_at", "updated_at"],
+  storyboard_packages: ["storyboard_package_id", "project_id", "data_json", "created_at", "updated_at"],
+  media_artifacts: ["artifact_id", "project_id", "shot_id", "role", "artifact_type", "status", "data_json", "created_at", "updated_at"],
+  generation_batches: ["batch_id", "project_id", "storyboard_package_id", "data_json", "created_at", "updated_at"],
+  generation_runs: ["run_id", "batch_id", "project_id", "shot_id", "run_type", "status", "data_json", "created_at", "updated_at"],
+  workbench_project_meta: ["project_id", "classification", "lifecycle", "pinned", "last_opened_at", "next_action_override", "next_action_priority", "next_action_expires_at", "next_action_project_status", "next_action_updated_at", "created_at", "updated_at"],
+  import_index: ["relative_path", "filename", "size_bytes", "mtime_ms", "checksum", "metadata_json", "scanned_at"],
+  import_decisions: ["checksum", "filename", "decision", "target_project_id", "artifact_id", "reason", "created_at", "updated_at"],
+  regeneration_requests: ["request_id", "project_id", "shot_id", "artifact_id", "previous_run_id", "status", "data_json", "created_at", "updated_at"],
+  generation_intents: ["intent_id", "run_id", "project_id", "shot_id", "provider", "account_label", "model", "input_artifact_id", "duration_seconds", "resolution", "estimated_cost_value", "budget_limit_value", "currency", "confirmed", "expires_at", "provider_task_id", "status", "upload_attempts", "submit_attempts", "output_artifact_id", "sanitized_error_json", "data_json", "created_at", "updated_at"],
+  workbench_drafts: ["draft_id", "tool", "status", "source", "parent_draft_id", "target_project_id", "target_shot_id", "promoted_object_type", "promoted_object_id", "revision_note", "data_json", "created_at", "updated_at"],
+  workbench_pending_actions: ["action_id", "tool", "status", "source", "project_id", "data_json", "result_json", "created_at", "updated_at"],
+  workbench_inbox_events: ["event_id", "object_type", "object_id", "event_type", "from_status", "to_status", "data_json", "created_at"],
+  workbench_governance_runs: ["run_id", "snapshot_hash", "rule_groups_json", "affected_count", "result", "created_at"],
+  workbench_review_notes: ["note_id", "project_id", "shot_id", "artifact_id", "author_hash", "note", "source", "created_at", "updated_at"],
+  webgpt_audit_events: ["event_id", "request_id", "idempotency_key", "request_hash", "actor_hash", "tool", "project_id", "object_type", "object_id", "changed_fields_json", "before_hash", "after_hash", "result", "error_code", "result_json", "created_at"],
+  webgpt_media_grants: ["grant_id", "token_hash", "actor_hash", "project_id", "artifact_id", "expires_at", "revoked_at", "created_at"],
+  webgpt_provider_price_cache: ["provider", "model", "duration_seconds", "resolution", "estimated_cost_value", "currency", "source", "fetched_at", "expires_at"]
+};
+
+const V24_EXPECTED_INDEXES = [
+  "idx_projects_updated", "idx_projects_status_updated", "idx_shots_project_order", "idx_media_updated",
+  "idx_media_project_updated", "idx_media_type_role_status", "idx_runs_updated", "idx_runs_project_shot",
+  "idx_project_meta_lifecycle", "idx_regeneration_project", "idx_generation_intents_active",
+  "idx_import_decisions_project", "idx_workbench_drafts_status", "idx_workbench_pending_status",
+  "idx_workbench_inbox_events_object", "idx_workbench_review_notes_shot", "idx_webgpt_audit_idempotency",
+  "idx_webgpt_audit_project", "idx_webgpt_media_grants_expiry"
+] as const;
 
 const GENERATION_JOBS_SQL = `
   CREATE TABLE IF NOT EXISTS generation_jobs (
@@ -168,12 +194,34 @@ function tableNames(db: M0Database): Set<string> {
   return new Set(rows.map((row) => row.name));
 }
 
+function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
+  const issues: string[] = [];
+  const expectedColumns: Record<string, readonly string[]> = includeJobs ? {
+    ...V24_EXPECTED_COLUMNS,
+    generation_jobs: ["job_id", "intent_id", "state", "lease_owner", "lease_token", "lease_expires_at", "next_attempt_at", "attempt_count", "reconciliation_reason", "created_at", "updated_at"],
+    generation_job_events: ["event_id", "job_id", "from_state", "to_state", "reason_code", "data_json", "created_at"]
+  } : V24_EXPECTED_COLUMNS;
+  for (const [table, expected] of Object.entries(expectedColumns)) {
+    const columns = new Set((db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((row) => row.name));
+    if (columns.size === 0) issues.push(`missing_table:${table}`);
+    else for (const column of expected) if (!columns.has(column)) issues.push(`missing_column:${table}.${column}`);
+  }
+  const expectedIndexes = includeJobs ? [...V24_EXPECTED_INDEXES, "idx_generation_jobs_due", "idx_generation_job_events_job"] : [...V24_EXPECTED_INDEXES];
+  const indexes = new Set((db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all() as Array<{ name: string }>).map((row) => row.name));
+  for (const index of expectedIndexes) if (!indexes.has(index)) issues.push(`missing_index:${index}`);
+  if (includeJobs) {
+    const triggers = new Set((db.prepare("SELECT name FROM sqlite_master WHERE type = 'trigger'").all() as Array<{ name: string }>).map((row) => row.name));
+    for (const trigger of ["generation_job_events_no_update", "generation_job_events_no_delete"]) if (!triggers.has(trigger)) issues.push(`missing_trigger:${trigger}`);
+  }
+  return issues;
+}
+
 function isCurrentUnledgeredDatabase(db: M0Database): boolean {
   const tables = tableNames(db);
   const required = ["m0_meta", "projects", "shots", "media_artifacts", "generation_runs", "workbench_project_meta", "generation_intents", "webgpt_audit_events"];
   if (!required.every((name) => tables.has(name)) || tables.has("schema_migrations")) return false;
   const row = db.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string } | undefined;
-  return row?.value === WORKBENCH_V2_SCHEMA_VERSION;
+  return row?.value === WORKBENCH_V2_SCHEMA_VERSION && schemaObjects(db, false).length === 0;
 }
 
 function insertMigration(db: M0Database, migration: Migration): void {
@@ -200,49 +248,52 @@ export function assertSchemaCurrent(db: M0Database): void {
       throw new SchemaMigrationRequiredError(`Database migration checksum mismatch for ${migration.id}.`);
     }
   }
+  const issues = schemaObjects(db, true);
+  if (issues.length > 0) throw new SchemaMigrationRequiredError(`Database schema structure mismatch: ${issues.join(", ")}.`);
 }
 
 export function runDatabaseMigrations(db: M0Database): { applied: string[]; baselined: boolean } {
   db.exec("PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
   let baselined = false;
   const appliedIds: string[] = [];
-  if (isCurrentUnledgeredDatabase(db)) {
-    db.exec("BEGIN EXCLUSIVE");
-    try {
+  db.exec("BEGIN EXCLUSIVE");
+  try {
+    const initialTables = tableNames(db);
+    if (!initialTables.has("schema_migrations") && initialTables.has("m0_meta")) {
+      const row = db.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string } | undefined;
+      if (row?.value === WORKBENCH_V2_SCHEMA_VERSION) {
+        const issues = schemaObjects(db, false);
+        if (issues.length > 0) throw new SchemaMigrationRequiredError(`Existing v2-4 baseline validation failed: ${issues.join(", ")}.`);
+      }
+    }
+    if (isCurrentUnledgeredDatabase(db)) {
       ensureLedger(db);
       for (const migration of DATABASE_MIGRATIONS.slice(0, 2)) insertMigration(db, migration);
-      db.exec("COMMIT");
       appliedIds.push(...DATABASE_MIGRATIONS.slice(0, 2).map((migration) => migration.id));
       baselined = true;
-    } catch (error) {
-      db.exec("ROLLBACK");
-      throw error;
     }
-  }
 
-  for (const migration of DATABASE_MIGRATIONS) {
-    const tables = tableNames(db);
-    const existing = tables.has("schema_migrations")
-      ? db.prepare("SELECT name, checksum FROM schema_migrations WHERE migration_id = ?").get(migration.id) as { name: string; checksum: string } | undefined
-      : undefined;
-    if (existing) {
-      if (existing.name !== migration.name || existing.checksum !== migrationChecksum(migration)) {
-        throw new SchemaMigrationRequiredError(`Database migration checksum mismatch for ${migration.id}.`);
+    for (const migration of DATABASE_MIGRATIONS) {
+      const tables = tableNames(db);
+      const existing = tables.has("schema_migrations")
+        ? db.prepare("SELECT name, checksum FROM schema_migrations WHERE migration_id = ?").get(migration.id) as { name: string; checksum: string } | undefined
+        : undefined;
+      if (existing) {
+        if (existing.name !== migration.name || existing.checksum !== migrationChecksum(migration)) {
+          throw new SchemaMigrationRequiredError(`Database migration checksum mismatch for ${migration.id}.`);
+        }
+        continue;
       }
-      continue;
-    }
-    db.exec("BEGIN EXCLUSIVE");
-    try {
       ensureLedger(db);
       migration.apply(db);
       insertMigration(db, migration);
-      db.exec("COMMIT");
       appliedIds.push(migration.id);
-    } catch (error) {
-      db.exec("ROLLBACK");
-      throw error;
     }
+    assertSchemaCurrent(db);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
   }
-  assertSchemaCurrent(db);
   return { applied: appliedIds, baselined };
 }

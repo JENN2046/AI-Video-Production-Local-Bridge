@@ -33,7 +33,7 @@ export class MediaAnalysisQueue {
 
   run<T>(operation: () => Promise<T>): Promise<T> {
     if (this.active >= this.concurrency && this.waiting.length >= this.maximumWaiting) {
-      return Promise.reject(new WebGptV4Error("MEDIA_ANALYSIS_BUSY", "Media analysis queue is full; retry later."));
+      return Promise.reject(new WebGptV4Error("MEDIA_ANALYSIS_BUSY", "Media analysis queue is full; retry later.", undefined, true));
     }
     return new Promise<T>((resolveRun, rejectRun) => {
       const start = (): void => {
@@ -41,9 +41,9 @@ export class MediaAnalysisQueue {
         let settled = false;
         const timer = setTimeout(() => {
           settled = true;
-          rejectRun(new WebGptV4Error("MEDIA_ANALYSIS_TIMEOUT", "Media analysis exceeded the 120 second limit."));
+          rejectRun(new WebGptV4Error("MEDIA_ANALYSIS_TIMEOUT", "Media analysis exceeded the 120 second limit.", undefined, true));
         }, this.timeoutMs);
-        void operation().then((value) => {
+        void Promise.resolve().then(operation).then((value) => {
           if (!settled) resolveRun(value);
         }, (error) => {
           if (!settled) rejectRun(error);

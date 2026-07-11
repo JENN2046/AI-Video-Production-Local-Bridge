@@ -5,7 +5,7 @@ import { getGenerationRun, saveGenerationRun, type GenerationRun } from "./gener
 import { getMediaArtifact, type MediaArtifact } from "./mediaArtifacts.js";
 import { providerError, selectM1ProviderPort, type ProviderToolError } from "./provider.js";
 import { downloadProviderOutputToArtifact } from "./providerOutputDownloader.js";
-import { getProject, getShot, saveProject, saveShot } from "./projects.js";
+import { getProject, getShot, listProjectShots, saveProject, saveShot } from "./projects.js";
 import {
   buildRunningHubImageToVideoSubmitRequest,
   mapRunningHubProviderError,
@@ -89,6 +89,7 @@ export interface WorkbenchGenerationDependencies {
   now?: () => Date;
   poll_interval_ms?: number;
   timeout_ms?: number;
+  sqlite_path?: string;
 }
 
 export type GenerationJobState = "queued" | "submitting" | "polling" | "downloading" | "finalizing" | "manual_reconciliation" | "succeeded" | "failed" | "cancelled";
@@ -103,8 +104,13 @@ export interface GenerationJob {
 
 const activeExecutions = new Map<string, Promise<void>>();
 
-export function generationWorkerStatus(): { ready: true; active: number; concurrency: 1 } {
-  return { ready: true, active: activeExecutions.size, concurrency: 1 };
+export function generationWorkerStatus(db: M0Database): { ready: boolean; active: number; concurrency: 1; stale_leases: number } {
+  const row = db.prepare(`SELECT COUNT(*) AS count FROM generation_jobs
+    WHERE state IN ('submitting','polling','downloading','finalizing')
+      AND lease_token <> '' AND lease_expires_at IS NOT NULL
+      AND datetime(lease_expires_at) <= CURRENT_TIMESTAMP`).get() as { count: number };
+  const staleLeases = Number(row.count);
+  return { ready: activeExecutions.size <= 1 && staleLeases === 0, active: activeExecutions.size, concurrency: 1, stale_leases: staleLeases };
 }
 
 class GenerationJobLeaseLostError extends Error {
@@ -491,8 +497,64 @@ function failIntent(db: M0Database, intent: WorkbenchGenerationIntent, status: "
         saveGenerationRun(db, run);
       }
     }
+    restoreProjectAfterTerminalGeneration(db, intent);
     const job = jobForIntent(db, intent.intent_id);
     if (job) setJobState(db, job, "failed", String(safe.code ?? "PROVIDER_REQUEST_FAILED"));
+    db.exec("COMMIT");
+  } catch (failure) {
+    db.exec("ROLLBACK");
+    throw failure;
+  }
+}
+
+function restoreProjectAfterTerminalGeneration(db: M0Database, intent: WorkbenchGenerationIntent): void {
+  const shot = getShot(db, intent.shot_id);
+  const project = getProject(db, intent.project_id);
+  if (!shot || !project) return;
+  shot.status = shot.clip_versions.length > 0 ? "revision_needed" : "storyboard_approved";
+  saveShot(db, shot);
+  const shots = listProjectShots(db, project.project_id);
+  project.status = shots.some((candidate) => candidate.status === "video_pending")
+    ? "video_generation_in_progress"
+    : shots.some((candidate) => candidate.clip_versions.length > 0 || ["video_review", "video_generated", "approved", "revision_needed"].includes(candidate.status))
+      ? "video_review"
+      : shots.length > 0 && shots.every((candidate) => candidate.status === "storyboard_approved")
+        ? "storyboard_approved"
+        : "draft";
+  saveProject(db, project);
+}
+
+function markUnknownSubmission(db: M0Database, intent: WorkbenchGenerationIntent, job: GenerationJob, error: ProviderToolError): GenerationJob {
+  const safe = sanitizedError(error);
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.prepare("UPDATE generation_intents SET status = 'running', sanitized_error_json = ?, updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?")
+      .run(JSON.stringify(safe), intent.intent_id);
+    const run = getGenerationRun(db, intent.run_id);
+    if (run) {
+      run.status = "running";
+      run.provider.provider_status = "SUBMIT_OUTCOME_UNKNOWN";
+      run.error = { code: String(safe.code ?? "PROVIDER_REQUEST_FAILED"), message: "Provider submission outcome requires human reconciliation.", retryable: false };
+      saveGenerationRun(db, run);
+    }
+    const updated = setJobState(db, job, "manual_reconciliation", "PROVIDER_SUBMIT_OUTCOME_UNKNOWN");
+    db.exec("COMMIT");
+    return updated;
+  } catch (failure) {
+    db.exec("ROLLBACK");
+    throw failure;
+  }
+}
+
+function cancelIntent(db: M0Database, intent: WorkbenchGenerationIntent, reason: string): void {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.prepare("UPDATE generation_intents SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(intent.intent_id);
+    const run = getGenerationRun(db, intent.run_id);
+    if (run) { run.status = "cancelled"; saveGenerationRun(db, run); }
+    restoreProjectAfterTerminalGeneration(db, intent);
+    const job = jobForIntent(db, intent.intent_id);
+    if (job) setJobState(db, job, "cancelled", reason);
     db.exec("COMMIT");
   } catch (failure) {
     db.exec("ROLLBACK");
@@ -506,7 +568,7 @@ function existingOutputArtifact(db: M0Database, providerTaskId: string): MediaAr
 }
 
 async function executeIntent(intentId: string, allowSubmit: boolean, dependencies: WorkbenchGenerationDependencies): Promise<void> {
-  const db = openM0Database();
+  const db = openM0Database(dependencies.sqlite_path);
   const leaseOwner = `worker_${process.pid}`;
   const leaseToken = randomUUID();
   let job = claimJob(db, intentId, leaseOwner, leaseToken);
@@ -515,8 +577,12 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
     return;
   }
   const heartbeat = setInterval(() => {
-    const expiresAt = new Date(Date.now() + 5 * 60_000).toISOString();
-    db.prepare("UPDATE generation_jobs SET lease_expires_at = ?, updated_at = CURRENT_TIMESTAMP WHERE job_id = ? AND lease_token = ?").run(expiresAt, job?.job_id, leaseToken);
+    try {
+      const expiresAt = new Date(Date.now() + 5 * 60_000).toISOString();
+      db.prepare("UPDATE generation_jobs SET lease_expires_at = ?, updated_at = CURRENT_TIMESTAMP WHERE job_id = ? AND lease_token = ?").run(expiresAt, job?.job_id, leaseToken);
+    } catch {
+      // The next conditional lease assertion decides whether this worker may write back.
+    }
   }, 30_000);
   try {
     let intent = getIntent(db, intentId);
@@ -550,6 +616,10 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       });
       assertJobLease(db, job.job_id, leaseToken);
       if (!submit.ok) {
+        if (submit.error.submission_outcome_unknown === true) {
+          job = markUnknownSubmission(db, intent, job, submit.error);
+          return;
+        }
         failIntent(db, intent, "failed", submit.error);
         return;
       }
@@ -597,7 +667,8 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         break;
       }
       if (polled.status === "failed" || polled.status === "cancelled") {
-        failIntent(db, intent, "failed", providerError("PROVIDER_REQUEST_FAILED", `RunningHub task ended with ${polled.provider_status}.`));
+        if (polled.status === "cancelled") cancelIntent(db, intent, "PROVIDER_CANCELLED");
+        else failIntent(db, intent, "failed", providerError("PROVIDER_REQUEST_FAILED", `RunningHub task ended with ${polled.provider_status}.`));
         return;
       }
       await new Promise((resolveDelay) => setTimeout(resolveDelay, interval));
@@ -668,13 +739,30 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
 }
 
 export function startWorkbenchGeneration(intentId: string, input: { allow_submit: boolean; dependencies?: WorkbenchGenerationDependencies }): void {
-  if (activeExecutions.has(intentId)) return;
-  const execution = executeIntent(intentId, input.allow_submit, input.dependencies ?? {}).finally(() => activeExecutions.delete(intentId));
+  if (activeExecutions.has(intentId) || activeExecutions.size >= 1) return;
+  const dependencies = input.dependencies ?? {};
+  const execution = executeIntent(intentId, input.allow_submit, dependencies).catch(() => undefined).finally(() => {
+    activeExecutions.delete(intentId);
+    queueMicrotask(() => startNextPersistedGeneration(dependencies));
+  });
   activeExecutions.set(intentId, execution);
 }
 
+function startNextPersistedGeneration(dependencies: WorkbenchGenerationDependencies): void {
+  if (activeExecutions.size >= 1) return;
+  const db = openM0Database(dependencies.sqlite_path);
+  try {
+    const row = db.prepare(`SELECT i.intent_id FROM generation_intents i
+      JOIN generation_jobs j ON j.intent_id = i.intent_id
+      WHERE i.status IN ('queued','running') AND i.provider_task_id <> ''
+        AND j.state IN ('queued','polling','downloading','finalizing')
+      ORDER BY j.created_at LIMIT 1`).get() as { intent_id: string } | undefined;
+    if (row) startWorkbenchGeneration(row.intent_id, { allow_submit: false, dependencies });
+  } finally { db.close(); }
+}
+
 export function resumeWorkbenchGenerationJobs(dependencies: WorkbenchGenerationDependencies = {}): { resumed: string[]; reconciled: string[] } {
-  const db = openM0Database();
+  const db = openM0Database(dependencies.sqlite_path);
   try {
     const rows = db.prepare(`SELECT i.intent_id, i.provider_task_id, j.state, j.job_id
       FROM generation_intents i JOIN generation_jobs j ON j.intent_id = i.intent_id
@@ -685,7 +773,6 @@ export function resumeWorkbenchGenerationJobs(dependencies: WorkbenchGenerationD
       if (row.state === "manual_reconciliation") {
         reconciled.push(row.intent_id);
       } else if (row.provider_task_id) {
-        startWorkbenchGeneration(row.intent_id, { allow_submit: false, dependencies });
         resumed.push(row.intent_id);
       } else {
         const job = jobForIntent(db, row.intent_id);
@@ -693,6 +780,7 @@ export function resumeWorkbenchGenerationJobs(dependencies: WorkbenchGenerationD
         reconciled.push(row.intent_id);
       }
     }
+    queueMicrotask(() => startNextPersistedGeneration(dependencies));
     return { resumed, reconciled };
   } finally {
     db.close();
@@ -702,6 +790,10 @@ export function resumeWorkbenchGenerationJobs(dependencies: WorkbenchGenerationD
 export function getWorkbenchGenerationIntent(intentId: string, db = openM0Database()): WorkbenchV2Result<{ intent: WorkbenchGenerationIntent; job: GenerationJob | null }> {
   const intent = getIntent(db, intentId);
   return intent ? { ok: true, data: { intent, job: jobForIntent(db, intentId) } } : { ok: false, error: { code: "GENERATION_INTENT_NOT_FOUND", message: "Generation intent was not found." } };
+}
+
+export async function runWorkbenchGenerationOnce(intentId: string, input: { allow_submit: boolean; dependencies?: WorkbenchGenerationDependencies }): Promise<void> {
+  await executeIntent(intentId, input.allow_submit, input.dependencies ?? {});
 }
 
 export function reconcileGenerationJob(
@@ -730,6 +822,7 @@ export function reconcileGenerationJob(
       db.prepare("UPDATE generation_intents SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(intent.intent_id);
       const run = getGenerationRun(db, intent.run_id);
       if (run) { run.status = "cancelled"; saveGenerationRun(db, run); }
+      restoreProjectAfterTerminalGeneration(db, intent);
       job = setJobState(db, row, "cancelled", input.reason?.trim() || "HUMAN_ABANDONED");
     }
     db.exec("COMMIT");

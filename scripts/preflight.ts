@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 
 import { paths } from "../src/paths.js";
 import { openM0Database } from "../src/storage/sqlite.js";
+import { checkProviderEnv } from "../src/tools/providerEnv.js";
 import { loadWebGptV4AuthConfig } from "../src/webgpt-v4/auth.js";
 import { resolveFfmpegExecutable, resolveFfprobeExecutable } from "../src/webgpt-v4/media.js";
 
@@ -51,10 +52,19 @@ for (const [name, directory] of Object.entries({ data_directory: paths.dataRoot,
   } catch { checks[name] = { ok: false, detail: `${directory} is not readable and writable` }; }
 }
 
-const ports = profile === "webgpt" ? [2091, 2092] : [4181];
+const ports = profile === "webgpt"
+  ? [Number(process.env.WEBGPT_V4_MCP_PORT || 2091), Number(process.env.WEBGPT_V4_MEDIA_PORT || 2092)]
+  : [Number(process.env.H1_WORKBENCH_PORT || process.env.PORT || 4181)];
 checks.ports = { ok: (await Promise.all(ports.map(portAvailable))).every(Boolean), detail: ports.join(", ") };
-if (profile === "webgpt") checks.oauth = { ok: Boolean(loadWebGptV4AuthConfig()), detail: loadWebGptV4AuthConfig() ? "configured" : "not configured (WebGPT remains fail closed)" };
-if (process.env.REAL_PROVIDER_ENABLED === "true") checks.provider = { ok: Boolean(process.env.RUNNINGHUB_API_KEY?.trim()), detail: "required only for enabled real-provider lane" };
+if (profile === "webgpt") {
+  const auth = loadWebGptV4AuthConfig();
+  checks.oauth = { ok: Boolean(auth), detail: auth ? "configured" : "not configured (WebGPT remains fail closed)" };
+}
+if (process.env.REAL_PROVIDER_ENABLED === "true") {
+  const provider = checkProviderEnv();
+  const ok = provider.result === "PASS" && provider.provider_name === "runninghub";
+  checks.provider = { ok, detail: provider.missing.length > 0 ? `missing: ${provider.missing.join(", ")}` : ok ? "real-provider gates configured" : "M1_REAL_PROVIDER must be runninghub" };
+}
 
 const ok = Object.values(checks).every((check) => check.ok);
 console.log(JSON.stringify({ ok, profile, checks }, null, 2));

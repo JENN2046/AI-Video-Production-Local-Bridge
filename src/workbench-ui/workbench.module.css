@@ -14,11 +14,10 @@
 .navLabel { white-space: nowrap; }
 .navBadge { min-width: 22px; padding: 2px 5px; border-radius: 9px; color: #fff; background: #ae2e24; text-align: center; font-size: 10px; }
 .navCollapsed .brand { padding: 0 13px; }
-.navCollapsed .brandText, .navCollapsed .navLabel, .navCollapsed .legacyLink, .navCollapsed .collapseButton span { display: none; }
+.navCollapsed .brandText, .navCollapsed .navLabel, .navCollapsed .collapseButton span { display: none; }
 .navCollapsed .navItem { grid-template-columns: 28px; justify-content: center; padding: 0; }
 .navCollapsed .navBadge { position: absolute; margin: -25px 0 0 27px; }
 .sidebarBottom { margin-top: auto; display: flex; align-items: center; justify-content: space-between; padding: 9px; border-top: 1px solid var(--line); }
-.legacyLink { padding: 6px 8px; color: var(--muted); font-size: 11px; text-decoration: none; }
 .collapseButton, .iconButton { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 0; background: transparent; cursor: pointer; }
 .collapseButton { min-width: 34px; height: 32px; padding: 0 8px; color: var(--muted); font-size: 12px; }
 .shell { display: grid; grid-template-rows: 42px minmax(0, 1fr); border-radius: 8px; }
@@ -236,7 +235,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 @media (max-width: 1360px) {
   .app { grid-template-columns: 64px minmax(0, 1fr); }
-  .brandText, .navLabel, .legacyLink, .collapseButton span { display: none; }
+  .brandText, .navLabel, .collapseButton span { display: none; }
   .navItem { grid-template-columns: 28px; justify-content: center; padding: 0; }
   .navBadge { position: absolute; margin: -25px 0 0 27px; }
   .threePane { grid-template-columns: 294px minmax(420px, 1fr) 310px; }

@@ -67,3 +67,18 @@ test("RunningHub adapter rejects a mismatched taskId and never resubmits", async
   if (!result.ok) assert.equal(result.error.code, "PROVIDER_REQUEST_FAILED");
   assert.equal(queryCalls, 1);
 });
+
+test("RunningHub adapter marks a lost submit response as outcome unknown", async () => {
+  const adapter = new RunningHubVideoProviderAdapter({ credential: "synthetic-test-key", api_base: "https://runninghub.test", fetch_impl: async (input) => {
+    if (String(input).endsWith("/media/upload/binary")) {
+      return new Response(JSON.stringify({ data: { download_url: "https://example.invalid/uploaded.png" } }), { status: 200 });
+    }
+    throw new TypeError("connection closed after request upload");
+  } });
+  const result = await adapter.submitGeneration({ storyboard_artifact: fixtureArtifact(), video_prompt: "Move gently.", negative_prompt: "", duration_seconds: 6, aspect_ratio: "9:16", resolution: "480p" });
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.retryable, true);
+    assert.equal(result.error.submission_outcome_unknown, true);
+  }
+});

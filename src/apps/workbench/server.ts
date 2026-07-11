@@ -8,7 +8,7 @@ import { handleWorkbenchV2Api } from "../../packages/domain/index.js";
 import { getMediaArtifact, validateImageFile } from "../../packages/media/index.js";
 import { generationWorkerStatus, resumeWorkbenchGenerationJobs } from "../../packages/providers/index.js";
 import { openM0Database } from "../../packages/storage/index.js";
-import { migrateLegacyWorkbenchInboxStores } from "../../tools/workbenchInboxStore.js";
+import { checkProviderEnv } from "../../tools/providerEnv.js";
 import { resolveFfmpegExecutable, resolveFfprobeExecutable } from "../../webgpt-v4/media.js";
 
 export const WORKBENCH_HOST = "127.0.0.1";
@@ -126,6 +126,7 @@ async function workbenchReadiness(): Promise<{ status: number; body: Record<stri
     withDatabase((db) => {
       checks.database = (db.prepare("SELECT 1 AS ok").get() as { ok: number }).ok === 1;
       checks.schema = (db.prepare("PRAGMA quick_check").get() as { quick_check: string }).quick_check === "ok";
+      checks.worker = generationWorkerStatus(db).ready;
     });
   } catch { checks.database = false; }
   try { accessSync(paths.mediaRoot, constants.R_OK | constants.W_OK); checks.media_directory = true; } catch { checks.media_directory = false; }
@@ -135,8 +136,10 @@ async function workbenchReadiness(): Promise<{ status: number; body: Record<stri
     await resolveFfprobeExecutable(ffmpeg);
     checks.ffprobe = true;
   } catch { checks.ffmpeg = false; checks.ffprobe = false; }
-  checks.worker = generationWorkerStatus().ready;
-  if (process.env.REAL_PROVIDER_ENABLED === "true") checks.provider = Boolean(process.env.RUNNINGHUB_API_KEY?.trim());
+  if (process.env.REAL_PROVIDER_ENABLED === "true") {
+    const provider = checkProviderEnv();
+    checks.provider = provider.result === "PASS" && provider.provider_name === "runninghub";
+  }
   const ok = Object.values(checks).every(Boolean);
   const result = { status: ok ? 200 : 503, body: { ok, service: "workbench-v2", checks } };
   readinessCache = { ...result, expires: Date.now() + 30_000 };
@@ -252,7 +255,6 @@ function listen(server: Server, startPort: number): Promise<number> {
 
 export async function startWorkbenchApplication(startPort = Number(process.env.H1_WORKBENCH_PORT || process.env.PORT || WORKBENCH_PORT)): Promise<WorkbenchRuntime> {
   ensureM0Directories();
-  migrateLegacyWorkbenchInboxStores();
   resumeWorkbenchGenerationJobs();
   const actionNonce = randomUUID();
   const server = createServer((request, response) => {

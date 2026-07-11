@@ -64,6 +64,60 @@ test("migration checksum drift fails closed", () => {
   }
 });
 
+test("existing v2-4 baseline rejects missing columns and indexes", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "app.sqlite");
+    const db = new DatabaseSync(sqlitePath);
+    db.exec(M0_BASE_SCHEMA_SQL);
+    initializeWorkbenchV2Schema(db);
+    db.exec("ALTER TABLE generation_intents DROP COLUMN provider_task_id");
+    assert.throws(() => runDatabaseMigrations(db), (error) => error instanceof SchemaMigrationRequiredError && /missing_column:generation_intents\.provider_task_id/.test(error.message));
+    db.close();
+
+    const indexPath = join(root, "missing-index.sqlite");
+    migrateDatabase(indexPath);
+    const indexed = new DatabaseSync(indexPath);
+    indexed.exec("DROP INDEX idx_generation_intents_active");
+    assert.throws(() => assertSchemaCurrent(indexed), (error) => error instanceof SchemaMigrationRequiredError && /missing_index:idx_generation_intents_active/.test(error.message));
+    indexed.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("database check reports orphan rows", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "app.sqlite");
+    migrateDatabase(sqlitePath);
+    const db = new DatabaseSync(sqlitePath);
+    db.prepare("INSERT INTO shots (shot_id, project_id, data_json) VALUES ('shot_orphan', 'project_missing', ?)")
+      .run(JSON.stringify({ shot_id: "shot_orphan", project_id: "project_missing" }));
+    db.close();
+    const checked = checkDatabase(sqlitePath);
+    assert.equal(checked.result, "FAIL");
+    assert.equal(checked.orphan_rows > 0, true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("migration fails cleanly when another connection owns the migration lock", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "app.sqlite");
+    const owner = new DatabaseSync(sqlitePath);
+    owner.exec(M0_BASE_SCHEMA_SQL);
+    owner.exec("BEGIN EXCLUSIVE");
+    assert.throws(() => migrateDatabase(sqlitePath), /locked/i);
+    owner.exec("ROLLBACK");
+    owner.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("backup and isolated restore preserve a valid database", () => {
   const root = tempRoot();
   try {

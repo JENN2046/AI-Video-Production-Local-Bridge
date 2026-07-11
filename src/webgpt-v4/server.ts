@@ -10,7 +10,6 @@ import { loadWebGptV4AuthConfig, createAuth0Authenticator, createAuth0MediaAuthe
 import { errorBody, WEBGPT_V4_VERSION } from "./types.js";
 import { createWebGptV4McpApp, WEBGPT_V4_TOOL_SCOPES } from "./mcpApp.js";
 import { handleMediaGatewayRequest, invalidateMediaGrantsForRestart, mediaAnalysisQueue, resolveFfmpegExecutable, resolveFfprobeExecutable, type MediaRuntimeOptions } from "./media.js";
-import { migrateLegacyWebGptV4History } from "./migration.js";
 import { withToolSecuritySchemes } from "./securityTransport.js";
 
 export const WEBGPT_V4_HOST = "127.0.0.1";
@@ -36,7 +35,6 @@ export interface WebGptV4Runtime {
   media_url: string;
   auth_configured: boolean;
   invalidated_media_grants: number;
-  migration: ReturnType<typeof migrateLegacyWebGptV4History>;
   close: () => Promise<void>;
 }
 
@@ -108,7 +106,6 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
     : unavailableAuthenticator());
   const maximum = options.max_body_bytes ?? 1024 * 1024;
   const bootstrapDb = openM0Database(options.sqlite_path);
-  const migration = migrateLegacyWebGptV4History(bootstrapDb, options.data_root);
   const invalidatedMediaGrants = invalidateMediaGrantsForRestart(bootstrapDb);
   bootstrapDb.close();
 
@@ -269,7 +266,6 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
     media_url: `http://${WEBGPT_V4_HOST}:${mediaPort}`,
     auth_configured: Boolean(authConfig),
     invalidated_media_grants: invalidatedMediaGrants,
-    migration,
     close: async () => {
       await Promise.all([close(mcpServer), close(mediaServer)]);
       await Promise.allSettled([...activeRequests]);

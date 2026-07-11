@@ -118,7 +118,9 @@ test("指挥台显示五项行动指标，治理页只预览不自动应用", as
   await expect(page.getByRole("button", { name: "确认所选分组" })).toBeDisabled();
 });
 
-test("Legacy 页面和 API 已退出活动路径", async ({ request }) => {
+test("Legacy 页面和 API 已退出活动路径", async ({ page, request }) => {
+  await page.goto("/v2/dashboard");
+  await expect(page.getByRole("link", { name: "Legacy" })).toHaveCount(0);
   const pageResponse = await request.get("/legacy");
   expect(pageResponse.status()).toBe(404);
   await expect(pageResponse.json()).resolves.toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });

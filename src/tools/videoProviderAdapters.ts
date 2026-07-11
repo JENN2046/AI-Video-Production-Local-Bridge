@@ -1171,11 +1171,13 @@ export class RunningHubVideoProviderAdapter implements VideoProviderAdapter {
       headers: { Authorization: `Bearer ${this.credential}`, "Content-Type": "application/json" },
       body: JSON.stringify(submitRequest.body)
     }, "submit");
-    if ("error" in submitResponse) return { ok: false, error: submitResponse.error };
+    if ("error" in submitResponse) return { ok: false, error: { ...submitResponse.error, submission_outcome_unknown: true } };
     if (!submitResponse.response.ok) {
-      return { ok: false, error: mapRunningHubProviderError({ http_status: submitResponse.response.status, payload: submitResponse.payload, secrets: [this.credential] }) };
+      const error = mapRunningHubProviderError({ http_status: submitResponse.response.status, payload: submitResponse.payload, secrets: [this.credential] });
+      return { ok: false, error: { ...error, ...(submitResponse.response.status >= 500 || submitResponse.response.status === 408 ? { submission_outcome_unknown: true } : {}) } };
     }
-    return parseRunningHubSubmitResponse(submitResponse.payload, [this.credential]);
+    const parsed = parseRunningHubSubmitResponse(submitResponse.payload, [this.credential]);
+    return parsed.ok ? parsed : { ok: false, error: { ...parsed.error, submission_outcome_unknown: true } };
   }
 
   async pollStatus(providerJobId: string): Promise<ProviderStatusResult> {

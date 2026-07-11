@@ -200,6 +200,11 @@ test("media server rejects malformed encoded paths without terminating the servi
     const readyBody = await ready.json() as { ok: boolean; auth_configured: boolean };
     assert.equal(readyBody.ok, false);
     assert.equal(readyBody.auth_configured, false);
+    const startupDb = openM0Database(join(root, "app.sqlite"));
+    try {
+      const marker = startupDb.prepare("SELECT COUNT(*) AS count FROM m0_meta WHERE key = 'webgpt_v4_legacy_history_migrated_at'").get() as { count: number };
+      assert.equal(marker.count, 0, "service startup must not run legacy data migrations");
+    } finally { startupDb.close(); }
   } finally {
     await runtime.close();
     rmSync(root, { recursive: true, force: true });
