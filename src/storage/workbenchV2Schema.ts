@@ -2,7 +2,8 @@ import type { M0Database } from "./sqlite.js";
 
 export const WORKBENCH_V2_SCHEMA_VERSION = "workbench-v2-4";
 
-export function initializeWorkbenchV2Schema(db: M0Database, options: { manage_transaction?: boolean } = {}): void {
+// Frozen implementation for migration 0002. Do not edit; add a new migration instead.
+export function applyWorkbenchV24Baseline(db: M0Database, options: { manage_transaction?: boolean } = {}): void {
   const manageTransaction = options.manage_transaction !== false;
   const ensureColumn = (table: string, column: string, definition: string): void => {
     const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
@@ -268,4 +269,8 @@ export function initializeWorkbenchV2Schema(db: M0Database, options: { manage_tr
     if (manageTransaction) db.exec("ROLLBACK");
     throw error;
   }
+}
+
+export function initializeWorkbenchV2Schema(db: M0Database, options: { manage_transaction?: boolean } = {}): void {
+  applyWorkbenchV24Baseline(db, options);
 }

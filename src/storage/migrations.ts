@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 
 import type { M0Database } from "./sqlite.js";
-import { initializeWorkbenchV2Schema, WORKBENCH_V2_SCHEMA_VERSION } from "./workbenchV2Schema.js";
+import { applyWorkbenchV24Baseline, WORKBENCH_V2_SCHEMA_VERSION } from "./workbenchV2Schema.js";
 
 export const M0_BASE_SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS m0_meta (
@@ -75,7 +75,7 @@ function workbenchV24SemanticCanonical(): string {
   const reference = new DatabaseSync(":memory:");
   try {
     reference.exec(M0_BASE_SCHEMA_SQL);
-    initializeWorkbenchV2Schema(reference);
+    applyWorkbenchV24Baseline(reference);
     const objects = reference.prepare(`SELECT type, name, sql FROM sqlite_master
       WHERE type IN ('table', 'index', 'trigger') AND name NOT LIKE 'sqlite_%'
       ORDER BY type, name`).all() as unknown as Array<{ type: string; name: string; sql: string | null }>;
@@ -207,7 +207,7 @@ export const DATABASE_MIGRATIONS: readonly Migration[] = [
     id: "0002",
     name: "workbench_v2_4_baseline",
     canonical: WORKBENCH_V2_4_CANONICAL,
-    apply: (db) => initializeWorkbenchV2Schema(db, { manage_transaction: false })
+    apply: (db) => applyWorkbenchV24Baseline(db, { manage_transaction: false })
   },
   {
     id: "0003",
@@ -270,7 +270,7 @@ function expectedSchemaDefinitions(includeJobs: boolean, expectedColumns: Record
   const reference = new DatabaseSync(":memory:");
   try {
     reference.exec(M0_BASE_SCHEMA_SQL);
-    initializeWorkbenchV2Schema(reference);
+    applyWorkbenchV24Baseline(reference);
     if (includeJobs) reference.exec(GENERATION_JOBS_SQL);
     const columns = new Map<string, Map<string, string>>();
     for (const table of Object.keys(expectedColumns)) {

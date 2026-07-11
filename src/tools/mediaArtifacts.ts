@@ -24,7 +24,6 @@ export interface RegisterMediaArtifactInput {
   role: ArtifactRole;
   source: MediaArtifactSource;
   storage_directory?: string;
-  allowed_storage_root?: string;
   linked_objects?: {
     project_id?: string;
     shot_id?: string;
@@ -365,10 +364,9 @@ function copyProviderOutputFile(input: RegisterMediaArtifactInput): RegisterMedi
     return { ok: false, error: { code: "INVALID_ARTIFACT_ROLE", message: "provider_output_file supports generated_clip and final_video video artifacts only." } };
   }
 
-  if (input.allowed_storage_root) mkdirSync(resolve(input.allowed_storage_root), { recursive: true });
-  else ensureM0Directories();
+  ensureM0Directories();
   const sourcePath = resolve(input.source.path);
-  const mediaRoot = resolve(input.allowed_storage_root ?? paths.mediaRoot);
+  const mediaRoot = resolve(paths.mediaRoot);
   if (lstatSync(mediaRoot).isSymbolicLink()) {
     return { ok: false, error: { code: "SYMLINK_ESCAPE_BLOCKED", message: "App media root symbolic links are blocked for provider outputs." } };
   }

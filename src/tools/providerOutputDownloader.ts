@@ -23,7 +23,6 @@ export interface ProviderOutputDownloadInput {
   duration_seconds: number;
   aspect_ratio: string;
   storage_directory?: string;
-  allowed_storage_root?: string;
   fetch_impl?: typeof fetch;
   safety?: Partial<ProviderOutputDownloadSafety>;
 }
@@ -33,6 +32,7 @@ export type ProviderOutputDownloadResult =
   | { ok: false; error: ProviderToolError };
 
 export interface ProviderOutputDownloadRuntime {
+  storage_root?: string;
   fault_injection_after_file_commit?: (path: string) => void;
 }
 
@@ -91,8 +91,8 @@ function hasExistingSymlinkAncestor(child: string, parent: string): boolean {
   return false;
 }
 
-function outputStorageDirectory(input: ProviderOutputDownloadInput): { ok: true; path: string } | { ok: false; error: ProviderToolError } {
-  const mediaRoot = resolve(input.allowed_storage_root ?? paths.mediaRoot);
+function outputStorageDirectory(input: ProviderOutputDownloadInput, runtime: ProviderOutputDownloadRuntime): { ok: true; path: string } | { ok: false; error: ProviderToolError } {
+  const mediaRoot = resolve(runtime.storage_root ?? paths.mediaRoot);
   const directory = resolve(input.storage_directory ?? paths.videoArtifactsRoot);
   if (!isPathInside(directory, mediaRoot)) {
     return { ok: false, error: providerError("PROVIDER_OUTPUT_STORAGE_BLOCKED", "Provider output storage directory must be inside app-controlled media storage.") };
@@ -205,7 +205,7 @@ export async function downloadProviderOutputToArtifact(
   runtime: ProviderOutputDownloadRuntime = {}
 ): Promise<ProviderOutputDownloadResult> {
   const safety: ProviderOutputDownloadSafety = { ...DEFAULT_SAFETY, ...input.safety };
-  const storageDirectory = outputStorageDirectory(input);
+  const storageDirectory = outputStorageDirectory(input, runtime);
   if (!storageDirectory.ok) return { ok: false, error: storageDirectory.error };
 
   const urlValidation = validateProviderOutputUrl(input.url);
