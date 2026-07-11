@@ -333,48 +333,6 @@ export type {
   WebGptProductionPlanRecord
 } from "./tools/webGptProductionAssistant.js";
 export {
-  boundaryFlags as chatGptMcpBoundaryFlags,
-  buildR2GCloseoutReport,
-  buildR2GConfirmationGateReport,
-  buildR2GConnectorAuthorizationPrepReport,
-  buildR2GConnectorLiveAuthorizationFinalPrepReport,
-  buildR2GDryRunReport,
-  buildR2GHardeningFixReport,
-  buildR2GLiveConnectorReadinessReviewReport,
-  buildR2GLocalServerSkeletonReport,
-  buildR2GSecurityModelReport,
-  buildR2GToolContractReport,
-  CHATGPT_MCP_BRIDGE_VERSION,
-  CHATGPT_MCP_LOCAL_TEST_SERVER_NAME,
-  CHATGPT_MCP_TOOL_DESCRIPTORS,
-  createChatGptMcpLocalServer,
-  executeChatGptMcpReadOnlyTool,
-  executeChatGptMcpTool,
-  FORBIDDEN_CHATGPT_MCP_TOOL_NAMES,
-  listChatGptMcpReadOnlyToolDescriptors,
-  listChatGptMcpToolDescriptors
-} from "./tools/chatGptMcpBridge.js";
-export type {
-  ChatGptMcpContentPart,
-  ChatGptMcpJsonSchema,
-  ChatGptMcpLocalServer,
-  ChatGptMcpToolDescriptor,
-  ChatGptMcpToolMode,
-  ChatGptMcpToolName,
-  ChatGptMcpToolResultEnvelope
-} from "./tools/chatGptMcpBridge.js";
-export {
-  CHATGPT_MCP_HTTP_LOCAL_HOST,
-  CHATGPT_MCP_HTTP_LOCAL_TRANSPORT,
-  CHATGPT_MCP_HTTP_READ_ONLY_LIVE_SMOKE_LOCAL_TRANSPORT,
-  CHATGPT_MCP_READ_ONLY_LIVE_SMOKE_RECOMMENDED_PORT,
-  runR2GHttpMcpTransportLocalDryRun,
-  runR2GReadOnlyLiveSmokeLocalEntryPrep,
-  startChatGptMcpHttpLocalHarness,
-  startChatGptMcpReadOnlyLiveSmokeLocalEntry
-} from "./tools/chatGptMcpHttpTransport.js";
-export type { ChatGptMcpHttpLocalHarness, ChatGptMcpReadOnlyLiveSmokeLocalEntry } from "./tools/chatGptMcpHttpTransport.js";
-export {
   confirmMemorySavebackProposal,
   createMemorySavebackProposal,
   generateMemoryRecallPack,

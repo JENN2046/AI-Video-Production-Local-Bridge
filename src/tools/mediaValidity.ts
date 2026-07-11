@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { delimiter } from "node:path";
+import { delimiter, join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 export type MediaValidityStatus = "PASS" | "FAIL" | "NOT_TESTED";
@@ -44,6 +44,7 @@ function executableCandidates(name: "ffprobe"): string[] {
     name,
     `${name}.exe`,
     "A:\\AI-VIDEO\\ffmpeg\\bin\\ffprobe.exe",
+    ...(process.platform === "win32" && process.env.LOCALAPPDATA ? [join(process.env.LOCALAPPDATA, "Microsoft", "WinGet", "Links", "ffprobe.exe")] : []),
     ...pathCandidates
   ];
 }

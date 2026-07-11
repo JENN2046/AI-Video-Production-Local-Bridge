@@ -16,9 +16,10 @@
 ## 本地命令
 
 ```powershell
+npm run db:migrate
 npm run migrate:webgpt:v4
 npm run test:webgpt:v4
-npm run webgpt:v4:serve
+npm run start:webgpt
 ```
 
 未配置 OAuth 时，服务仍可启动用于本机健康检查，但 `/readyz` 返回 `503`，`/mcp` 拒绝所有调用。这是预期的 fail-closed 状态。
@@ -40,11 +41,7 @@ GET http://127.0.0.1:2092/healthz
 
 ## 旧入口
 
-4182–4186 和 R2G-L 的脚本已冻结为一次性离线只读命令，不再监听端口。直接运行时只输出兼容模式和可用只读工具；显式读取可使用：
-
-```powershell
-npm run webgpt:legacy:offline -- --tool <read-only-tool> --input-json '<json>'
-```
+4182–4186 和 R2G-L 的脚本已冻结为只读历史证据，不再作为公共 npm command 或监听端口。
 
 旧入口不得恢复写能力。V4 是唯一允许连接 ChatGPT 的生产辅助面。
 

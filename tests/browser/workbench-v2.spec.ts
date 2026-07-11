@@ -118,12 +118,15 @@ test("指挥台显示五项行动指标，治理页只预览不自动应用", as
   await expect(page.getByRole("button", { name: "确认所选分组" })).toBeDisabled();
 });
 
-test("Legacy 可查看但拒绝旧写请求", async ({ page, request }) => {
-  await page.goto("/legacy");
-  await expect(page.getByText("Legacy 只读视图", { exact: false })).toBeVisible();
-  const response = await request.post("/api/shots/update", { data: {} });
-  expect(response.status()).toBe(410);
-  await expect(response.json()).resolves.toMatchObject({ ok: false, error: { code: "LEGACY_READ_ONLY" } });
+test("Legacy 页面和 API 已退出活动路径", async ({ page, request }) => {
+  await page.goto("/v2/dashboard");
+  await expect(page.getByRole("link", { name: "Legacy" })).toHaveCount(0);
+  const pageResponse = await request.get("/legacy");
+  expect(pageResponse.status()).toBe(404);
+  await expect(pageResponse.json()).resolves.toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+  const mutationResponse = await request.post("/api/shots/update", { data: {} });
+  expect(mutationResponse.status()).toBe(404);
+  await expect(mutationResponse.json()).resolves.toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
 });
 
 for (const viewport of [

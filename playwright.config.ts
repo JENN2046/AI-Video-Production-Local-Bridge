@@ -15,9 +15,13 @@ export default defineConfig({
     trace: "retain-on-failure"
   },
   webServer: {
-    command: "node dist/scripts/h1-workbench.js",
+    command: "node dist/scripts/prepare-browser-fixture.js && node dist/scripts/h1-workbench.js",
     url: "http://127.0.0.1:4181/api/v2/shell",
-    reuseExistingServer: true,
-    timeout: 120_000
+    reuseExistingServer: false,
+    timeout: 120_000,
+    env: {
+      AI_VIDEO_WORKSPACE_DATA_ROOT: "ops/tools/playwright-data",
+      AI_VIDEO_WORKSPACE_DB_PATH: "ops/tools/playwright-data/app.sqlite"
+    }
   }
 });
