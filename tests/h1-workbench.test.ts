@@ -273,6 +273,7 @@ test("H2 canary workbench summary is read-only and redacted", () => {
   assert.equal(summary.provider_boundary.runninghub_called, false);
   assert.equal(summary.provider_boundary.real_video_generated, false);
   assert.equal(summary.provider_boundary.secret_values_exposed, false);
+  assert.equal(summary.dry_run_plan.command, "npm run build:server && node dist/scripts/runway-canary.js");
   assert.equal(summary.provider_boundary.real_submit_available, false);
   assert.equal(summary.provider_boundary.real_submit_requires_separate_authorization, true);
   assert.equal(summary.dry_run_plan.can_generate_from_workbench, false);

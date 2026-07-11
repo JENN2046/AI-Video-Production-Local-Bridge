@@ -45,7 +45,7 @@ export function preflightGeneration(projectId: string, body: { shot_id: string; 
 }
 
 export function confirmGeneration(intentId: string, budget: number) {
-  return apiMutation<{ intent: GenerationIntent; run_id: string }>(`/api/v2/generation/intents/${encodeURIComponent(intentId)}/confirm`, "POST", {
+  return apiMutation<{ intent: GenerationIntent; run_id: string; job_id: string; status: "queued" }>(`/api/v2/generation/intents/${encodeURIComponent(intentId)}/confirm`, "POST", {
     budget_limit_value: budget,
     cost_confirmed: true,
     human_confirmation: true

@@ -5,7 +5,7 @@ result: PASS_UX_STATE_READY
 task_id: R2-0_HUMAN_WORKBENCH_UX_STATE_PLAN
 created_at: 2026-07-06T21:03:00+08:00
 workspace: A:\AI Video Production Workspace
-source_plan: docs/three_routes/source_v1_1/04_R2_HUMAN_WORKBENCH_ROUTE_TASKBOOK.md
+source_plan: legacy/docs/three_routes/source_v1_1/04_R2_HUMAN_WORKBENCH_ROUTE_TASKBOOK.md
 provider_boundary:
   network_call_attempted: false
   runway_called: false

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { checkProviderEnv, loadProviderEnvFile, maskSecret, paths, providerPreflight, runSecretScan } from "../src/index.js";
+import { secretFindingForText } from "../src/tools/providerEnv.js";
 
 const DUMMY_SECRET = "dummy_RUNWAY_secret_for_tests_1234";
 
@@ -110,4 +111,26 @@ test("Secret scan covers tracked text files and reports without reading credenti
   assert.equal(scan.git_tracked_files, "PASS");
   assert.equal(scan.reports, "PASS");
   assert.equal(scan.sqlite_or_runtime_state, "NOT_APPLICABLE");
+});
+
+test("Secret scan distinguishes OAuth protocol text and fixtures from bearer credentials", () => {
+  assert.equal(secretFindingForText("const match = /^Bearer\\s+(.+)$/i;"), null);
+  assert.equal(secretFindingForText("Authorization: Bearer test-token"), null);
+  assert.equal(secretFindingForText('Bearer resource_metadata="https://example.test/.well-known/oauth-protected-resource"'), null);
+  const shortCredentialHeader = ["Authorization:", "Bearer", "abcd1234efgh"].join(" ");
+  assert.equal(secretFindingForText(shortCredentialHeader), "unredacted bearer token");
+  const credentialShapedHeader = ["Authorization:", "Bearer", "abcdefghijklmnopqrstuvwxyz012345"].join(" ");
+  assert.equal(secretFindingForText(credentialShapedHeader), "unredacted bearer token");
+  const multipleBearers = [
+    ["Authorization:", "Bearer", "test-token"].join(" "),
+    ["Authorization:", "Bearer", "abcdefghijklmnop"].join(" ")
+  ].join("\n");
+  assert.equal(secretFindingForText(multipleBearers), "unredacted bearer token");
+  const multipleJsonSecrets = [
+    ["\"", "RUNNINGHUB_API_KEY", "\":\"", "dummy", "\""].join(""),
+    ["\"", "RUNWAYML_API_SECRET", "\":\"", "real-secret-value", "\""].join("")
+  ].join("\n");
+  assert.equal(secretFindingForText(multipleJsonSecrets), "RUNWAYML_API_SECRET has a non-placeholder JSON value");
+  const multipleTokenPatterns = [["sk", "-", "dummy_dummy_dummy"].join(""), ["sk", "-", "abcdefghijklmnopqrstuvwxyz"].join("")].join("\n");
+  assert.equal(secretFindingForText(multipleTokenPatterns), "token-like secret pattern");
 });

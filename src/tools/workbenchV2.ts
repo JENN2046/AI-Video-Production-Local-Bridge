@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
 
 import { paths } from "../paths.js";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
@@ -625,7 +625,7 @@ export function getWorkbenchShell(db = openM0Database()): Record<string, unknown
       unassigned_assets: counts.unassigned_assets
     },
     capabilities: {
-      legacy_available: true,
+      legacy_available: false,
       real_generation_requires_preflight: true,
       max_real_generation_jobs: 1,
       automatic_retry: false
@@ -852,6 +852,24 @@ export function listWorkbenchReports(input: { limit?: number; offset?: number } 
   const offset = clampOffset(input.offset);
   const all = listH1Reports();
   return page(all.slice(offset, offset + limit) as unknown as Record<string, unknown>[], all.length, limit, offset);
+}
+
+export function getWorkbenchReport(name: string): WorkbenchV2Result<Record<string, unknown>> {
+  const filename = basename(name);
+  if (!filename || filename !== name || !filename.endsWith(".json")) {
+    return { ok: false, error: { code: "REPORT_NOT_FOUND", message: "Report was not found." } };
+  }
+  const known = listH1Reports().some((report) => String((report as unknown as Record<string, unknown>).name ?? "") === filename);
+  if (!known) return { ok: false, error: { code: "REPORT_NOT_FOUND", message: "Report was not found." } };
+  try {
+    const value = JSON.parse(readFileSync(resolve(paths.reportsRoot, filename), "utf8")) as unknown;
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return { ok: false, error: { code: "REPORT_INVALID", message: "Report must contain a JSON object." } };
+    }
+    return { ok: true, data: value as Record<string, unknown> };
+  } catch {
+    return { ok: false, error: { code: "REPORT_INVALID", message: "Report could not be parsed." } };
+  }
 }
 
 function shotFromH1(projectId: string, shot: H1WorkbenchState["shots"][number]): Shot {

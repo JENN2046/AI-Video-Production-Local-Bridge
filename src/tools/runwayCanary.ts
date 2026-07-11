@@ -19,7 +19,7 @@ import {
 import { validateImageFile } from "./imageValidity.js";
 import { redactSecrets } from "./provider.js";
 
-export const RUNWAY_CANARY_COMMAND = "npm run runway:canary";
+export const RUNWAY_CANARY_COMMAND = "npm run build:server && node dist/scripts/runway-canary.js";
 export const RUNWAY_CANARY_LIVE_AUTHORIZATION_PHRASE = "I_AUTHORIZE_SINGLE_SUBMIT_RUNWAY_CANARY";
 export const RUNWAY_CANARY_INPUT_READINESS_REPORT = "data/reports/m1_r0_runway_canary_input_readiness.json";
 export const RUNWAY_CANARY_DRY_RUN_REPORT = "data/reports/m1_r0_runway_canary_dry_run_report.json";

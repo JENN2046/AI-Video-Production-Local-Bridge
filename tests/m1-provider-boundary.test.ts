@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -707,7 +708,14 @@ test("M1 provider output URL safety blocks unsafe destinations", () => {
     "https://sub.localhost/video.mp4",
     "https://127.0.0.1/video.mp4",
     "https://[::1]/video.mp4",
+    "https://[::127.0.0.1]/video.mp4",
+    "https://[::ffff:127.0.0.1]/video.mp4",
     "https://[fc00::1]/video.mp4",
+    "https://[fe90::1]/video.mp4",
+    "https://[febf::1]/video.mp4",
+    "https://[fec0::1]/video.mp4",
+    "https://[feff::1]/video.mp4",
+    "https://[2001:db8::1]/video.mp4",
     "https://user:password@cdn.example.test/video.mp4",
     "https://10.0.0.2/video.mp4",
     "https://169.254.169.254/latest/meta-data"
@@ -717,6 +725,151 @@ test("M1 provider output URL safety blocks unsafe destinations", () => {
     if (!result.ok) assert.equal(result.error.code, "PROVIDER_OUTPUT_URI_BLOCKED");
   }
   assert.equal(validateProviderOutputUrl("https://cdn.example.test/video.mp4").ok, true);
+});
+
+test("M1 provider output downloader rejects private DNS answers before transport", async () => {
+  const db = openM0Database(":memory:");
+  const root = mkdtempSync(join(tmpdir(), "provider-output-dns-"));
+  let fetched = false;
+  try {
+    const result = await downloadProviderOutputToArtifact({
+      url: "https://cdn.example.test/output.mp4",
+      provider_name: "runninghub",
+      provider_job_id: "private-dns-task",
+      project_id: "project_dns",
+      shot_id: "shot_dns",
+      duration_seconds: 2,
+      aspect_ratio: "9:16",
+      storage_directory: root
+    }, db, {
+      storage_root: root,
+      resolve_hostname: async () => [{ address: "127.0.0.1", family: 4 }],
+      fetch_pinned_address: async () => { fetched = true; throw new Error("transport must not run"); }
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "PROVIDER_OUTPUT_URI_BLOCKED");
+    assert.equal(fetched, false);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("M1 provider output downloader rejects a generic injected fetch that cannot consume pinned addresses", async () => {
+  const db = openM0Database(":memory:");
+  const root = mkdtempSync(join(tmpdir(), "provider-output-unpinned-fetch-"));
+  let fetched = false;
+  try {
+    const result = await downloadProviderOutputToArtifact({
+      url: "https://cdn.example.test/output.mp4",
+      provider_name: "runninghub",
+      provider_job_id: "unpinned-fetch-task",
+      project_id: "project_unpinned_fetch",
+      shot_id: "shot_unpinned_fetch",
+      duration_seconds: 2,
+      aspect_ratio: "9:16",
+      storage_directory: root,
+      fetch_impl: (async () => { fetched = true; throw new Error("generic fetch must not run"); }) as typeof fetch
+    }, db, {
+      storage_root: root,
+      resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }]
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "PROVIDER_OUTPUT_PINNED_TRANSPORT_REQUIRED");
+    assert.equal(fetched, false);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("M1 provider output downloader retries every validated public address", async () => {
+  const db = openM0Database(":memory:");
+  const root = mkdtempSync(join(tmpdir(), "provider-output-address-fallback-"));
+  const fixtureBytes = readFileSync(join(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4"));
+  const attempts: string[] = [];
+  try {
+    const result = await downloadProviderOutputToArtifact({
+      url: "https://cdn.example.test/output.mp4",
+      provider_name: "runninghub",
+      provider_job_id: "address-fallback-task",
+      project_id: "project_address_fallback",
+      shot_id: "shot_address_fallback",
+      duration_seconds: 2,
+      aspect_ratio: "9:16",
+      storage_directory: root
+    }, db, {
+      storage_root: root,
+      resolve_hostname: async () => [
+        { address: "2001:4860:4860::8888", family: 6 },
+        { address: "8.8.8.8", family: 4 }
+      ],
+      fetch_pinned_address: async (_url, _signal, address) => {
+        attempts.push(address.address);
+        if (address.family === 6) throw new Error("IPv6 route unavailable");
+        return new Response(fixtureBytes, { status: 200, headers: { "content-type": "video/mp4", "content-length": String(fixtureBytes.length) } });
+      }
+    });
+    assert.equal(result.ok, true);
+    assert.deepEqual(attempts, ["2001:4860:4860::8888", "8.8.8.8"]);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("M1 provider output downloader enforces size and timeout while streaming", async () => {
+  const db = openM0Database(":memory:");
+  const root = mkdtempSync(join(tmpdir(), "provider-output-stream-"));
+  const base = {
+    url: "https://cdn.example.test/output.mp4",
+    provider_name: "runninghub",
+    project_id: "project_stream",
+    shot_id: "shot_stream",
+    duration_seconds: 2,
+    aspect_ratio: "9:16",
+    storage_directory: root
+  };
+  try {
+    const oversized = await downloadProviderOutputToArtifact({
+      ...base,
+      provider_job_id: "oversized-task",
+      safety: { max_size_mb: 0.000001 }
+    }, db, {
+      storage_root: root,
+      resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+      fetch_pinned_address: async () => new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array(32));
+          controller.close();
+        }
+      }), { status: 200, headers: { "content-type": "video/mp4" } })
+    });
+    assert.equal(oversized.ok, false);
+    if (!oversized.ok) assert.equal(oversized.error.code, "PROVIDER_OUTPUT_TOO_LARGE");
+
+    const timedOut = await downloadProviderOutputToArtifact({
+      ...base,
+      provider_job_id: "timeout-task",
+      safety: { timeout_seconds: 0.01 }
+    }, db, {
+      storage_root: root,
+      resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+      fetch_pinned_address: async (_url, signal) => new Response(new ReadableStream({
+        start(controller) {
+          signal.addEventListener("abort", () => controller.error(new DOMException("aborted", "AbortError")), { once: true });
+        }
+      }), { status: 200, headers: { "content-type": "video/mp4" } })
+    });
+    assert.equal(timedOut.ok, false);
+    if (!timedOut.ok) {
+      assert.equal(timedOut.error.code, "PROVIDER_OUTPUT_DOWNLOAD_FAILED");
+      assert.match(timedOut.error.message, /timed out/i);
+    }
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("M1 provider output registration blocks symlink storage directories", () => {
@@ -753,6 +906,48 @@ test("M1 provider output registration blocks symlink storage directories", () =>
     rmSync(symlinkDirectory, { recursive: true, force: true });
     rmSync(sourceDirectory, { recursive: true, force: true });
     rmSync(externalDirectory, { recursive: true, force: true });
+    db.close();
+  }
+});
+
+test("M1 provider output downloader rejects a preexisting symlink final artifact", async () => {
+  const db = openM0Database(":memory:");
+  const root = mkdtempSync(join(tmpdir(), "provider-output-final-symlink-"));
+  const externalRoot = mkdtempSync(join(tmpdir(), "provider-output-final-external-"));
+  const fixtureBytes = readFileSync(join(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4"));
+  const providerName = "runninghub";
+  const providerJobId = "preexisting-symlink-task";
+  const identity = createHash("sha256").update(`${providerName}\0${providerJobId}`).digest("hex");
+  const finalPath = join(root, `artifact_${identity}.mp4`);
+  const externalFile = join(externalRoot, "outside.mp4");
+  writeFileSync(externalFile, fixtureBytes);
+  try {
+    try {
+      symlinkSync(externalFile, finalPath, "file");
+    } catch {
+      return;
+    }
+    const result = await downloadProviderOutputToArtifact({
+      url: "https://cdn.example.test/output.mp4",
+      provider_name: providerName,
+      provider_job_id: providerJobId,
+      project_id: "project_final_symlink",
+      shot_id: "shot_final_symlink",
+      duration_seconds: 2,
+      aspect_ratio: "9:16",
+      storage_directory: root
+    }, db, {
+      storage_root: root,
+      resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+      fetch_pinned_address: async () => new Response(fixtureBytes, { status: 200, headers: { "content-type": "video/mp4" } })
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "PROVIDER_OUTPUT_STORAGE_BLOCKED");
+    assert.equal(readFileSync(externalFile).equals(fixtureBytes), true);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM media_artifacts").get() as { count: number }).count, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(externalRoot, { recursive: true, force: true });
     db.close();
   }
 });
@@ -805,17 +1000,20 @@ test("M1 provider output downloader saves ffprobe-valid local artifact without p
         shot_id: "shot_test",
         duration_seconds: 2,
         aspect_ratio: "9:16",
-        storage_directory: storageDirectory,
-        fetch_impl: (async () =>
+        storage_directory: storageDirectory
+      },
+      db,
+      {
+        resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+        fetch_pinned_address: async () =>
           new Response(fixtureBytes, {
             status: 200,
             headers: {
               "content-type": "video/mp4",
               "content-length": String(fixtureBytes.length)
             }
-          })) as typeof fetch
-      },
-      db
+          })
+      }
     );
 
     assert.equal(result.ok, true);
