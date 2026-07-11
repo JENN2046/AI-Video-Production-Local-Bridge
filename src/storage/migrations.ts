@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
 
 import type { M0Database } from "./sqlite.js";
 import { initializeWorkbenchV2Schema, WORKBENCH_V2_SCHEMA_VERSION } from "./workbenchV2Schema.js";
@@ -143,6 +144,12 @@ const GENERATION_JOBS_SQL = `
     CASE WHEN provider_task_id <> '' THEN 'polling' ELSE 'manual_reconciliation' END,
     CASE WHEN provider_task_id <> '' THEN '' ELSE 'PROVIDER_SUBMIT_OUTCOME_UNKNOWN' END
   FROM generation_intents WHERE confirmed = 1 AND status IN ('queued', 'running');
+  INSERT OR IGNORE INTO generation_job_events (event_id, job_id, from_state, to_state, reason_code, data_json)
+  SELECT 'job_event_backfill_' || job_id, job_id, '', state,
+    CASE WHEN state = 'manual_reconciliation' THEN 'PROVIDER_SUBMIT_OUTCOME_UNKNOWN' ELSE 'MIGRATION_BACKFILL' END,
+    '{"source":"migration_0003"}'
+  FROM generation_jobs
+  WHERE NOT EXISTS (SELECT 1 FROM generation_job_events events WHERE events.job_id = generation_jobs.job_id);
 `;
 
 interface Migration {
@@ -194,6 +201,55 @@ function tableNames(db: M0Database): Set<string> {
   return new Set(rows.map((row) => row.name));
 }
 
+interface ColumnDefinition {
+  name: string;
+  type: string;
+  notnull: number;
+  dflt_value: string | null;
+  pk: number;
+}
+
+interface ExpectedSchemaDefinitions {
+  columns: Map<string, Map<string, string>>;
+  objects: Map<string, string>;
+}
+
+const expectedDefinitionCache = new Map<boolean, ExpectedSchemaDefinitions>();
+
+function normalizeDefinition(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase().replace(/if\s+not\s+exists/g, "").replace(/["`\[\]]/g, "").replace(/\s+/g, "");
+}
+
+function columnSignature(column: ColumnDefinition): string {
+  return [normalizeDefinition(column.type), Number(column.notnull), normalizeDefinition(column.dflt_value), Number(column.pk)].join("|");
+}
+
+function expectedSchemaDefinitions(includeJobs: boolean, expectedColumns: Record<string, readonly string[]>, expectedObjects: readonly string[]): ExpectedSchemaDefinitions {
+  const cached = expectedDefinitionCache.get(includeJobs);
+  if (cached) return cached;
+  const reference = new DatabaseSync(":memory:");
+  try {
+    reference.exec(M0_BASE_SCHEMA_SQL);
+    initializeWorkbenchV2Schema(reference);
+    if (includeJobs) reference.exec(GENERATION_JOBS_SQL);
+    const columns = new Map<string, Map<string, string>>();
+    for (const table of Object.keys(expectedColumns)) {
+      const tableColumns = reference.prepare(`PRAGMA table_info(${table})`).all() as unknown as ColumnDefinition[];
+      columns.set(table, new Map(tableColumns.map((column) => [column.name, columnSignature(column)])));
+    }
+    const objects = new Map<string, string>();
+    for (const name of expectedObjects) {
+      const row = reference.prepare("SELECT sql FROM sqlite_master WHERE name = ? AND type IN ('index', 'trigger')").get(name) as { sql: string | null } | undefined;
+      objects.set(name, normalizeDefinition(row?.sql));
+    }
+    const definitions = { columns, objects };
+    expectedDefinitionCache.set(includeJobs, definitions);
+    return definitions;
+  } finally {
+    reference.close();
+  }
+}
+
 function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
   const issues: string[] = [];
   const expectedColumns: Record<string, readonly string[]> = includeJobs ? {
@@ -201,17 +257,25 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     generation_jobs: ["job_id", "intent_id", "state", "lease_owner", "lease_token", "lease_expires_at", "next_attempt_at", "attempt_count", "reconciliation_reason", "created_at", "updated_at"],
     generation_job_events: ["event_id", "job_id", "from_state", "to_state", "reason_code", "data_json", "created_at"]
   } : V24_EXPECTED_COLUMNS;
-  for (const [table, expected] of Object.entries(expectedColumns)) {
-    const columns = new Set((db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((row) => row.name));
-    if (columns.size === 0) issues.push(`missing_table:${table}`);
-    else for (const column of expected) if (!columns.has(column)) issues.push(`missing_column:${table}.${column}`);
-  }
   const expectedIndexes = includeJobs ? [...V24_EXPECTED_INDEXES, "idx_generation_jobs_due", "idx_generation_job_events_job"] : [...V24_EXPECTED_INDEXES];
-  const indexes = new Set((db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all() as Array<{ name: string }>).map((row) => row.name));
-  for (const index of expectedIndexes) if (!indexes.has(index)) issues.push(`missing_index:${index}`);
-  if (includeJobs) {
-    const triggers = new Set((db.prepare("SELECT name FROM sqlite_master WHERE type = 'trigger'").all() as Array<{ name: string }>).map((row) => row.name));
-    for (const trigger of ["generation_job_events_no_update", "generation_job_events_no_delete"]) if (!triggers.has(trigger)) issues.push(`missing_trigger:${trigger}`);
+  const expectedTriggers = includeJobs ? ["generation_job_events_no_update", "generation_job_events_no_delete"] : [];
+  const definitions = expectedSchemaDefinitions(includeJobs, expectedColumns, [...expectedIndexes, ...expectedTriggers]);
+  for (const [table, expected] of Object.entries(expectedColumns)) {
+    const rows = db.prepare(`PRAGMA table_info(${table})`).all() as unknown as ColumnDefinition[];
+    const columns = new Map(rows.map((row) => [row.name, row]));
+    if (columns.size === 0) issues.push(`missing_table:${table}`);
+    else for (const column of expected) {
+      const actual = columns.get(column);
+      if (!actual) issues.push(`missing_column:${table}.${column}`);
+      else if (columnSignature(actual) !== definitions.columns.get(table)?.get(column)) issues.push(`column_definition:${table}.${column}`);
+    }
+  }
+  for (const [kind, names] of [["index", expectedIndexes], ["trigger", expectedTriggers]] as const) {
+    for (const name of names) {
+      const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = ? AND name = ?").get(kind, name) as { sql: string | null } | undefined;
+      if (!row) issues.push(`missing_${kind}:${name}`);
+      else if (normalizeDefinition(row.sql) !== definitions.objects.get(name)) issues.push(`${kind}_definition:${name}`);
+    }
   }
   return issues;
 }

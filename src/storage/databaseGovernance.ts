@@ -16,22 +16,27 @@ export interface DatabaseCheckResult {
 }
 
 function scalarCount(db: DatabaseSync, sql: string): number {
-  return Number((db.prepare(sql).get() as { count: number }).count);
+  try {
+    return Number((db.prepare(sql).get() as { count: number }).count);
+  } catch {
+    return 0;
+  }
 }
 
 export function checkDatabase(sqlitePath = paths.sqlitePath): DatabaseCheckResult {
   const db = new DatabaseSync(sqlitePath, { readOnly: true });
   try {
     db.exec("PRAGMA query_only = ON; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
-    const quick = db.prepare("PRAGMA quick_check").get() as { quick_check: string };
+    let quickCheck = "error";
+    try { quickCheck = (db.prepare("PRAGMA quick_check").get() as { quick_check: string }).quick_check; } catch { /* reported as FAIL */ }
     let schemaCurrent = true;
     try { assertSchemaCurrent(db); } catch { schemaCurrent = false; }
     const invalidJsonRows = ["projects", "shots", "storyboard_packages", "media_artifacts", "generation_batches", "generation_runs"]
       .reduce((sum, table) => sum + scalarCount(db, `SELECT COUNT(*) AS count FROM ${table} WHERE json_valid(data_json) = 0`), 0);
-    const structuredDriftRows = scalarCount(db, "SELECT COUNT(*) AS count FROM projects WHERE json_extract(data_json, '$.project_id') IS NOT project_id")
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM shots WHERE json_extract(data_json, '$.shot_id') IS NOT shot_id OR json_extract(data_json, '$.project_id') IS NOT project_id")
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_runs WHERE json_extract(data_json, '$.run_id') IS NOT run_id OR json_extract(data_json, '$.project_id') IS NOT project_id")
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM media_artifacts WHERE json_extract(data_json, '$.artifact_id') IS NOT artifact_id");
+    const structuredDriftRows = scalarCount(db, "SELECT COUNT(*) AS count FROM projects WHERE json_valid(data_json) = 1 AND json_extract(data_json, '$.project_id') IS NOT project_id")
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM shots WHERE json_valid(data_json) = 1 AND (json_extract(data_json, '$.shot_id') IS NOT shot_id OR json_extract(data_json, '$.project_id') IS NOT project_id)")
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_runs WHERE json_valid(data_json) = 1 AND (json_extract(data_json, '$.run_id') IS NOT run_id OR json_extract(data_json, '$.project_id') IS NOT project_id)")
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM media_artifacts WHERE json_valid(data_json) = 1 AND json_extract(data_json, '$.artifact_id') IS NOT artifact_id");
     const orphanRows = scalarCount(db, "SELECT COUNT(*) AS count FROM shots s LEFT JOIN projects p ON p.project_id = s.project_id WHERE p.project_id IS NULL")
       + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_runs r LEFT JOIN projects p ON p.project_id = r.project_id WHERE p.project_id IS NULL")
       + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_runs r LEFT JOIN shots s ON s.shot_id = r.shot_id WHERE r.shot_id IS NOT NULL AND r.shot_id <> '' AND s.shot_id IS NULL")
@@ -43,7 +48,8 @@ export function checkDatabase(sqlitePath = paths.sqlitePath): DatabaseCheckResul
       + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_intents i LEFT JOIN shots s ON s.shot_id = i.shot_id WHERE s.shot_id IS NULL")
       + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_jobs j LEFT JOIN generation_intents i ON i.intent_id = j.intent_id WHERE i.intent_id IS NULL")
       + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_job_events e LEFT JOIN generation_jobs j ON j.job_id = e.job_id WHERE j.job_id IS NULL");
-    const mediaRows = db.prepare("SELECT data_json FROM media_artifacts").all() as Array<{ data_json: string }>;
+    let mediaRows: Array<{ data_json: string }> = [];
+    try { mediaRows = db.prepare("SELECT data_json FROM media_artifacts").all() as Array<{ data_json: string }>; } catch { /* missing schema is already a FAIL */ }
     const missingMediaFiles = mediaRows.reduce((count, row) => {
       try {
         const parsed = JSON.parse(row.data_json) as { storage?: { uri?: string } };
@@ -52,8 +58,8 @@ export function checkDatabase(sqlitePath = paths.sqlitePath): DatabaseCheckResul
         return count;
       }
     }, 0);
-    const pass = quick.quick_check === "ok" && schemaCurrent && invalidJsonRows === 0 && structuredDriftRows === 0 && orphanRows === 0 && missingMediaFiles === 0;
-    return { result: pass ? "PASS" : "FAIL", quick_check: quick.quick_check, schema_current: schemaCurrent, invalid_json_rows: invalidJsonRows, structured_drift_rows: structuredDriftRows, orphan_rows: orphanRows, missing_media_files: missingMediaFiles };
+    const pass = quickCheck === "ok" && schemaCurrent && invalidJsonRows === 0 && structuredDriftRows === 0 && orphanRows === 0 && missingMediaFiles === 0;
+    return { result: pass ? "PASS" : "FAIL", quick_check: quickCheck, schema_current: schemaCurrent, invalid_json_rows: invalidJsonRows, structured_drift_rows: structuredDriftRows, orphan_rows: orphanRows, missing_media_files: missingMediaFiles };
   } finally {
     db.close();
   }

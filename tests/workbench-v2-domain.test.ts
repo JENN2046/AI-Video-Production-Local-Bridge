@@ -13,7 +13,7 @@ import {
   setWorkbenchProjectLifecycle,
   updateWorkbenchProject
 } from "../src/tools/workbenchV2.js";
-import { confirmWorkbenchGeneration, preflightWorkbenchGeneration, reconcileGenerationJob, runWorkbenchGenerationOnce } from "../src/tools/workbenchGeneration.js";
+import { confirmWorkbenchGeneration, generationWorkerStatus, preflightWorkbenchGeneration, reconcileGenerationJob, runWorkbenchGenerationOnce } from "../src/tools/workbenchGeneration.js";
 import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
 import type { VideoProviderAdapter } from "../src/tools/videoProviderAdapters.js";
 
@@ -149,6 +149,13 @@ test("generation preflight enforces official estimate, balance gate, budget and 
       assert.equal(attached.data.job.state, "polling");
       assert.equal(attached.data.intent.provider_task_id, "existing-task-123");
     }
+    const attachedRun = db.prepare("SELECT status, data_json FROM generation_runs WHERE run_id = ?").get(confirmed.data.run_id) as { status: string; data_json: string };
+    const attachedRunData = JSON.parse(attachedRun.data_json) as { provider: { provider_job_id: string; provider_status: string }; error: { code: string } };
+    assert.equal(attachedRun.status, "running");
+    assert.equal(attachedRunData.provider.provider_job_id, "existing-task-123");
+    assert.equal(attachedRunData.provider.provider_status, "HUMAN_ATTACHED_EXISTING_TASK");
+    assert.equal(attachedRunData.error.code, "");
+    assert.deepEqual(generationWorkerStatus(db), { ready: false, active: 0, concurrency: 1, stale_leases: 0, unowned_runnable: 1 });
     const reconciliationEvent = db.prepare("SELECT to_state, reason_code FROM generation_job_events WHERE job_id = ? ORDER BY rowid DESC LIMIT 1").get(confirmed.data.job_id) as { to_state: string; reason_code: string };
     assert.equal(reconciliationEvent.to_state, "polling");
     assert.equal(reconciliationEvent.reason_code, "HUMAN_ATTACHED_EXISTING_TASK");
@@ -206,6 +213,20 @@ test("unknown provider submit is reconciled manually and abandon restores projec
       pollStatus: async () => { throw new Error("poll must not run"); },
       fetchOutput: async () => { throw new Error("output must not run"); }
     } as VideoProviderAdapter;
+    const crashInjection = openM0Database(sqlitePath);
+    crashInjection.exec(`CREATE TRIGGER generation_job_events_crash_injection BEFORE INSERT ON generation_job_events
+      BEGIN SELECT RAISE(ABORT, 'INJECTED_EVENT_WRITE_FAILURE'); END`);
+    crashInjection.close();
+    await assert.rejects(
+      () => runWorkbenchGenerationOnce(prepared.data.intent.intent_id, { allow_submit: true, dependencies: { sqlite_path: sqlitePath, env, adapter_factory: () => adapter } }),
+      /INJECTED_EVENT_WRITE_FAILURE/
+    );
+    const afterInjectedCrash = openM0Database(sqlitePath);
+    const crashJob = afterInjectedCrash.prepare("SELECT state FROM generation_jobs WHERE job_id = ?").get(confirmed.data.job_id) as { state: string };
+    const crashIntent = afterInjectedCrash.prepare("SELECT status FROM generation_intents WHERE intent_id = ?").get(prepared.data.intent.intent_id) as { status: string };
+    assert.deepEqual({ job: crashJob.state, intent: crashIntent.status }, { job: "queued", intent: "queued" });
+    afterInjectedCrash.exec("DROP TRIGGER generation_job_events_crash_injection");
+    afterInjectedCrash.close();
     await runWorkbenchGenerationOnce(prepared.data.intent.intent_id, { allow_submit: true, dependencies: { sqlite_path: sqlitePath, env, adapter_factory: () => adapter } });
 
     const check = openM0Database(sqlitePath);

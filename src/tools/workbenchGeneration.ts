@@ -104,13 +104,18 @@ export interface GenerationJob {
 
 const activeExecutions = new Map<string, Promise<void>>();
 
-export function generationWorkerStatus(db: M0Database): { ready: boolean; active: number; concurrency: 1; stale_leases: number } {
-  const row = db.prepare(`SELECT COUNT(*) AS count FROM generation_jobs
+export function generationWorkerStatus(db: M0Database): { ready: boolean; active: number; concurrency: 1; stale_leases: number; unowned_runnable: number } {
+  const staleRow = db.prepare(`SELECT COUNT(*) AS count FROM generation_jobs
     WHERE state IN ('submitting','polling','downloading','finalizing')
       AND lease_token <> '' AND lease_expires_at IS NOT NULL
       AND datetime(lease_expires_at) <= CURRENT_TIMESTAMP`).get() as { count: number };
-  const staleLeases = Number(row.count);
-  return { ready: activeExecutions.size <= 1 && staleLeases === 0, active: activeExecutions.size, concurrency: 1, stale_leases: staleLeases };
+  const unownedRow = db.prepare(`SELECT COUNT(*) AS count FROM generation_jobs
+    WHERE state IN ('queued','submitting','polling','downloading','finalizing')
+      AND (lease_token = '' OR lease_expires_at IS NULL OR datetime(lease_expires_at) <= CURRENT_TIMESTAMP)`).get() as { count: number };
+  const staleLeases = Number(staleRow.count);
+  const unownedRunnable = Number(unownedRow.count);
+  const active = activeExecutions.size;
+  return { ready: active <= 1 && staleLeases === 0 && (active > 0 || unownedRunnable === 0), active, concurrency: 1, stale_leases: staleLeases, unowned_runnable: unownedRunnable };
 }
 
 class GenerationJobLeaseLostError extends Error {
@@ -130,11 +135,32 @@ function appendJobEvent(db: M0Database, jobId: string, fromState: string, toStat
     .run(`job_event_${randomUUID()}`, jobId, fromState, toState, reasonCode, JSON.stringify(data));
 }
 
-function setJobState(db: M0Database, job: GenerationJob, state: GenerationJobState, reasonCode = ""): GenerationJob {
-  db.prepare("UPDATE generation_jobs SET state = ?, reconciliation_reason = ?, updated_at = CURRENT_TIMESTAMP WHERE job_id = ?")
-    .run(state, reasonCode, job.job_id);
-  appendJobEvent(db, job.job_id, job.state, state, reasonCode);
-  return { ...job, state, reconciliation_reason: reasonCode };
+function setJobState(
+  db: M0Database,
+  job: GenerationJob,
+  state: GenerationJobState,
+  reasonCode = "",
+  options: { lease_token?: string; in_transaction?: boolean } = {}
+): GenerationJob {
+  if (!options.in_transaction) db.exec("BEGIN IMMEDIATE");
+  try {
+    const result = options.lease_token
+      ? db.prepare(`UPDATE generation_jobs SET state = ?, reconciliation_reason = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE job_id = ? AND lease_token = ? AND lease_expires_at IS NOT NULL AND datetime(lease_expires_at) > CURRENT_TIMESTAMP`)
+        .run(state, reasonCode, job.job_id, options.lease_token) as { changes: number | bigint }
+      : db.prepare("UPDATE generation_jobs SET state = ?, reconciliation_reason = ?, updated_at = CURRENT_TIMESTAMP WHERE job_id = ?")
+        .run(state, reasonCode, job.job_id) as { changes: number | bigint };
+    if (Number(result.changes) !== 1) {
+      if (options.lease_token) throw new GenerationJobLeaseLostError();
+      throw new Error("GENERATION_JOB_NOT_FOUND");
+    }
+    appendJobEvent(db, job.job_id, job.state, state, reasonCode);
+    if (!options.in_transaction) db.exec("COMMIT");
+    return { ...job, state, reconciliation_reason: reasonCode };
+  } catch (error) {
+    if (!options.in_transaction) db.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 function claimJob(db: M0Database, intentId: string, owner: string, token: string): GenerationJob | null {
@@ -483,7 +509,7 @@ export function confirmWorkbenchGeneration(
   }
 }
 
-function failIntent(db: M0Database, intent: WorkbenchGenerationIntent, status: "failed" | "timeout", error: ProviderToolError | { code: string; message: string; retryable?: boolean }): void {
+function failIntent(db: M0Database, intent: WorkbenchGenerationIntent, status: "failed" | "timeout", error: ProviderToolError | { code: string; message: string; retryable?: boolean }, leaseToken: string): void {
   const safe = sanitizedError(error);
   db.exec("BEGIN IMMEDIATE");
   try {
@@ -499,7 +525,7 @@ function failIntent(db: M0Database, intent: WorkbenchGenerationIntent, status: "
     }
     restoreProjectAfterTerminalGeneration(db, intent);
     const job = jobForIntent(db, intent.intent_id);
-    if (job) setJobState(db, job, "failed", String(safe.code ?? "PROVIDER_REQUEST_FAILED"));
+    if (job) setJobState(db, job, "failed", String(safe.code ?? "PROVIDER_REQUEST_FAILED"), { lease_token: leaseToken, in_transaction: true });
     db.exec("COMMIT");
   } catch (failure) {
     db.exec("ROLLBACK");
@@ -524,7 +550,7 @@ function restoreProjectAfterTerminalGeneration(db: M0Database, intent: Workbench
   saveProject(db, project);
 }
 
-function markUnknownSubmission(db: M0Database, intent: WorkbenchGenerationIntent, job: GenerationJob, error: ProviderToolError): GenerationJob {
+function markUnknownSubmission(db: M0Database, intent: WorkbenchGenerationIntent, job: GenerationJob, error: ProviderToolError, leaseToken: string): GenerationJob {
   const safe = sanitizedError(error);
   db.exec("BEGIN IMMEDIATE");
   try {
@@ -537,7 +563,7 @@ function markUnknownSubmission(db: M0Database, intent: WorkbenchGenerationIntent
       run.error = { code: String(safe.code ?? "PROVIDER_REQUEST_FAILED"), message: "Provider submission outcome requires human reconciliation.", retryable: false };
       saveGenerationRun(db, run);
     }
-    const updated = setJobState(db, job, "manual_reconciliation", "PROVIDER_SUBMIT_OUTCOME_UNKNOWN");
+    const updated = setJobState(db, job, "manual_reconciliation", "PROVIDER_SUBMIT_OUTCOME_UNKNOWN", { lease_token: leaseToken, in_transaction: true });
     db.exec("COMMIT");
     return updated;
   } catch (failure) {
@@ -546,7 +572,7 @@ function markUnknownSubmission(db: M0Database, intent: WorkbenchGenerationIntent
   }
 }
 
-function cancelIntent(db: M0Database, intent: WorkbenchGenerationIntent, reason: string): void {
+function cancelIntent(db: M0Database, intent: WorkbenchGenerationIntent, reason: string, leaseToken: string): void {
   db.exec("BEGIN IMMEDIATE");
   try {
     db.prepare("UPDATE generation_intents SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(intent.intent_id);
@@ -554,7 +580,7 @@ function cancelIntent(db: M0Database, intent: WorkbenchGenerationIntent, reason:
     if (run) { run.status = "cancelled"; saveGenerationRun(db, run); }
     restoreProjectAfterTerminalGeneration(db, intent);
     const job = jobForIntent(db, intent.intent_id);
-    if (job) setJobState(db, job, "cancelled", reason);
+    if (job) setJobState(db, job, "cancelled", reason, { lease_token: leaseToken, in_transaction: true });
     db.exec("COMMIT");
   } catch (failure) {
     db.exec("ROLLBACK");
@@ -579,7 +605,8 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
   const heartbeat = setInterval(() => {
     try {
       const expiresAt = new Date(Date.now() + 5 * 60_000).toISOString();
-      db.prepare("UPDATE generation_jobs SET lease_expires_at = ?, updated_at = CURRENT_TIMESTAMP WHERE job_id = ? AND lease_token = ?").run(expiresAt, job?.job_id, leaseToken);
+      db.prepare(`UPDATE generation_jobs SET lease_expires_at = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE job_id = ? AND lease_token = ? AND lease_expires_at IS NOT NULL AND datetime(lease_expires_at) > CURRENT_TIMESTAMP`).run(expiresAt, job?.job_id, leaseToken);
     } catch {
       // The next conditional lease assertion decides whether this worker may write back.
     }
@@ -589,12 +616,12 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
     if (!intent || (intent.status !== "queued" && intent.status !== "running")) return;
     const selection = selectM1ProviderPort({ provider: "real", provider_name: "runninghub", model_name: RUNNINGHUB_MODEL_ROUTE, cost_acknowledged: true }, dependencies.env ?? process.env);
     if (!selection.ok || selection.selected.provider_name !== "runninghub" || !selection.selected.credential) {
-      failIntent(db, intent, "failed", selection.ok ? providerError("PROVIDER_SELECTION_MISMATCH", "RunningHub provider selection changed after confirmation.") : selection.error);
+      failIntent(db, intent, "failed", selection.ok ? providerError("PROVIDER_SELECTION_MISMATCH", "RunningHub provider selection changed after confirmation.") : selection.error, leaseToken);
       return;
     }
     const artifact = getMediaArtifact(db, intent.input_artifact_id);
     if (!artifact) {
-      failIntent(db, intent, "failed", providerError("ARTIFACT_NOT_FOUND", "Generation input artifact is missing."));
+      failIntent(db, intent, "failed", providerError("ARTIFACT_NOT_FOUND", "Generation input artifact is missing."), leaseToken);
       return;
     }
     const adapter = dependencies.adapter_factory?.(selection.selected.credential)
@@ -602,10 +629,10 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
     let taskId = intent.provider_task_id;
     if (!taskId) {
       if (!allowSubmit) {
-        job = setJobState(db, job, "manual_reconciliation", "PROVIDER_SUBMIT_OUTCOME_UNKNOWN");
+        job = setJobState(db, job, "manual_reconciliation", "PROVIDER_SUBMIT_OUTCOME_UNKNOWN", { lease_token: leaseToken });
         return;
       }
-      job = setJobState(db, job, "submitting");
+      job = setJobState(db, job, "submitting", "", { lease_token: leaseToken });
       const submit = await adapter.submitGeneration({
         storyboard_artifact: artifact,
         video_prompt: intent.input_snapshot.video_prompt,
@@ -617,10 +644,10 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       assertJobLease(db, job.job_id, leaseToken);
       if (!submit.ok) {
         if (submit.error.submission_outcome_unknown === true) {
-          job = markUnknownSubmission(db, intent, job, submit.error);
+          job = markUnknownSubmission(db, intent, job, submit.error, leaseToken);
           return;
         }
-        failIntent(db, intent, "failed", submit.error);
+        failIntent(db, intent, "failed", submit.error, leaseToken);
         return;
       }
       taskId = submit.provider_job_id;
@@ -634,7 +661,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
           run.provider.provider_status = submit.provider_status;
           saveGenerationRun(db, run);
         }
-        job = setJobState(db, job, "polling");
+        job = setJobState(db, job, "polling", "", { lease_token: leaseToken, in_transaction: true });
         db.exec("COMMIT");
       } catch (error) {
         db.exec("ROLLBACK");
@@ -654,32 +681,40 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
           await new Promise((resolveDelay) => setTimeout(resolveDelay, interval));
           continue;
         }
-        failIntent(db, intent, "failed", polled.error);
+        failIntent(db, intent, "failed", polled.error, leaseToken);
         return;
       }
-      const run = getGenerationRun(db, intent.run_id);
-      if (run) {
-        run.provider.provider_status = polled.provider_status;
-        saveGenerationRun(db, run);
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        assertJobLease(db, job.job_id, leaseToken);
+        const run = getGenerationRun(db, intent.run_id);
+        if (run) {
+          run.provider.provider_status = polled.provider_status;
+          saveGenerationRun(db, run);
+        }
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
       }
       if (polled.status === "succeeded") {
         outputUrl = polled.output_url ?? "";
         break;
       }
       if (polled.status === "failed" || polled.status === "cancelled") {
-        if (polled.status === "cancelled") cancelIntent(db, intent, "PROVIDER_CANCELLED");
-        else failIntent(db, intent, "failed", providerError("PROVIDER_REQUEST_FAILED", `RunningHub task ended with ${polled.provider_status}.`));
+        if (polled.status === "cancelled") cancelIntent(db, intent, "PROVIDER_CANCELLED", leaseToken);
+        else failIntent(db, intent, "failed", providerError("PROVIDER_REQUEST_FAILED", `RunningHub task ended with ${polled.provider_status}.`), leaseToken);
         return;
       }
       await new Promise((resolveDelay) => setTimeout(resolveDelay, interval));
     }
     if (!outputUrl) {
-      failIntent(db, intent, "timeout", providerError("PROVIDER_TIMEOUT", "RunningHub task did not complete before timeout.", true));
+      failIntent(db, intent, "timeout", providerError("PROVIDER_TIMEOUT", "RunningHub task did not complete before timeout.", true), leaseToken);
       return;
     }
     let output = existingOutputArtifact(db, taskId);
     if (!output) {
-      job = setJobState(db, job, "downloading");
+      job = setJobState(db, job, "downloading", "", { lease_token: leaseToken });
       assertJobLease(db, job.job_id, leaseToken);
       const downloaded = await downloadProviderOutputToArtifact({
         url: outputUrl,
@@ -692,7 +727,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       }, db);
       assertJobLease(db, job.job_id, leaseToken);
       if (!downloaded.ok) {
-        failIntent(db, intent, "failed", downloaded.error);
+        failIntent(db, intent, "failed", downloaded.error, leaseToken);
         return;
       }
       output = downloaded.artifact;
@@ -701,10 +736,10 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
     const project = getProject(db, intent.project_id);
     const run = getGenerationRun(db, intent.run_id);
     if (!shot || !project || !run) {
-      failIntent(db, intent, "failed", providerError("PROVIDER_REQUEST_FAILED", "Local project state was missing after provider completion."));
+      failIntent(db, intent, "failed", providerError("PROVIDER_REQUEST_FAILED", "Local project state was missing after provider completion."), leaseToken);
       return;
     }
-    job = setJobState(db, job, "finalizing");
+    job = setJobState(db, job, "finalizing", "", { lease_token: leaseToken });
     assertJobLease(db, job.job_id, leaseToken);
     if (!shot.clip_versions.some((version) => version.artifact_id === output?.artifact_id)) {
       shot.clip_versions.push({ artifact_id: output.artifact_id, run_id: run.run_id, attempt_number: run.versioning.attempt_number, review_status: "pending" });
@@ -717,11 +752,13 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       saveProject(db, project);
       run.status = "succeeded";
       run.output.artifact_ids = [output.artifact_id];
+      run.provider.provider_job_id = taskId;
       run.provider.provider_status = "SUCCESS";
+      run.error = { code: "", message: "", retryable: false };
       saveGenerationRun(db, run);
       db.prepare(`UPDATE generation_intents SET status = 'succeeded', output_artifact_id = ?, sanitized_error_json = '{}', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?`)
         .run(output.artifact_id, intent.intent_id);
-      job = setJobState(db, job, "succeeded");
+      job = setJobState(db, job, "succeeded", "", { lease_token: leaseToken, in_transaction: true });
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");
@@ -730,7 +767,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
   } catch (error) {
     if (error instanceof GenerationJobLeaseLostError) return;
     const intent = getIntent(db, intentId);
-    if (intent) failIntent(db, intent, "failed", providerError("PROVIDER_REQUEST_FAILED", error instanceof Error ? error.message : "Generation worker failed."));
+    if (intent) failIntent(db, intent, "failed", providerError("PROVIDER_REQUEST_FAILED", error instanceof Error ? error.message : "Generation worker failed."), leaseToken);
   } finally {
     clearInterval(heartbeat);
     releaseJobLease(db, job.job_id, leaseToken);
@@ -817,13 +854,21 @@ export function reconcileGenerationJob(
       const taskId = input.provider_task_id?.trim() ?? "";
       if (!/^[A-Za-z0-9._:-]{3,200}$/.test(taskId)) { db.exec("ROLLBACK"); return { ok: false, error: { code: "INVALID_PROVIDER_TASK_ID", message: "Provider task ID is invalid." } }; }
       db.prepare("UPDATE generation_intents SET provider_task_id = ?, status = 'running', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(taskId, intent.intent_id);
-      job = setJobState(db, row, "polling", "HUMAN_ATTACHED_EXISTING_TASK");
+      const run = getGenerationRun(db, intent.run_id);
+      if (run) {
+        run.status = "running";
+        run.provider.provider_job_id = taskId;
+        run.provider.provider_status = "HUMAN_ATTACHED_EXISTING_TASK";
+        run.error = { code: "", message: "", retryable: false };
+        saveGenerationRun(db, run);
+      }
+      job = setJobState(db, row, "polling", "HUMAN_ATTACHED_EXISTING_TASK", { in_transaction: true });
     } else {
       db.prepare("UPDATE generation_intents SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(intent.intent_id);
       const run = getGenerationRun(db, intent.run_id);
       if (run) { run.status = "cancelled"; saveGenerationRun(db, run); }
       restoreProjectAfterTerminalGeneration(db, intent);
-      job = setJobState(db, row, "cancelled", input.reason?.trim() || "HUMAN_ABANDONED");
+      job = setJobState(db, row, "cancelled", input.reason?.trim() || "HUMAN_ABANDONED", { in_transaction: true });
     }
     db.exec("COMMIT");
     return { ok: true, data: { job, intent: getIntent(db, intent.intent_id) as WorkbenchGenerationIntent } };
