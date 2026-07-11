@@ -434,6 +434,50 @@ test("database check detects run and artifact link drift", () => {
   }
 });
 
+test("database check detects every regeneration request mirror-field drift", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "regeneration-request-drift.sqlite");
+    migrateDatabase(sqlitePath);
+    const db = new DatabaseSync(sqlitePath);
+    db.prepare("INSERT INTO projects (project_id, data_json) VALUES ('project_regen_drift', ?)")
+      .run(JSON.stringify({ project_id: "project_regen_drift" }));
+    db.prepare("INSERT INTO shots (shot_id, project_id, data_json) VALUES ('shot_regen_drift', 'project_regen_drift', ?)")
+      .run(JSON.stringify({ shot_id: "shot_regen_drift", project_id: "project_regen_drift" }));
+    db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES ('artifact_regen_drift', 'project_regen_drift', 'shot_regen_drift', 'source', 'image', 'active', ?)")
+      .run(JSON.stringify({
+        artifact_id: "artifact_regen_drift",
+        storage: { uri: "https://media.example.test/artifact_regen_drift.png" },
+        linked_objects: { project_id: "project_regen_drift", shot_id: "shot_regen_drift" }
+      }));
+
+    const mirroredFields = ["request_id", "project_id", "shot_id", "artifact_id", "previous_run_id", "status"] as const;
+    const insertRequest = db.prepare("INSERT INTO regeneration_requests (request_id, project_id, shot_id, artifact_id, previous_run_id, status, data_json) VALUES (?, 'project_regen_drift', 'shot_regen_drift', 'artifact_regen_drift', 'run_regen_drift', 'draft', ?)");
+    for (const field of mirroredFields) {
+      const requestId = `request_${field}_drift`;
+      const data = {
+        request_id: requestId,
+        project_id: "project_regen_drift",
+        shot_id: "shot_regen_drift",
+        artifact_id: "artifact_regen_drift",
+        previous_run_id: "run_regen_drift",
+        status: "draft"
+      };
+      data[field] = field === "status" ? "submitted" : `${data[field]}_wrong`;
+      insertRequest.run(requestId, JSON.stringify(data));
+    }
+    db.close();
+
+    const checked = checkDatabase(sqlitePath);
+    assert.equal(checked.structured_drift_rows, mirroredFields.length);
+    assert.equal(checked.orphan_rows, 0);
+    assert.equal(checked.missing_media_files, 0);
+    assert.equal(checked.result, "FAIL");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("provider task IDs are unique per provider at the database boundary", () => {
   const root = tempRoot();
   try {
