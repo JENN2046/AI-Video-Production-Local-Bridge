@@ -266,6 +266,22 @@ test("provider task persistence failure enters manual reconciliation without los
   }
 });
 
+test("worker closes its database when claiming the job throws", async () => {
+  let closed = false;
+  const injectedDatabase = {
+    exec: (sql: string) => {
+      if (sql === "BEGIN IMMEDIATE") throw new Error("INJECTED_CLAIM_FAILURE");
+      throw new Error(`unexpected SQL after claim failure: ${sql}`);
+    },
+    close: () => { closed = true; }
+  } as unknown as ReturnType<typeof openM0Database>;
+  await assert.rejects(() => runWorkbenchGenerationOnce("intent_claim_failure", {
+    allow_submit: false,
+    dependencies: { open_database: () => injectedDatabase }
+  }), /INJECTED_CLAIM_FAILURE/);
+  assert.equal(closed, true);
+});
+
 test("each worker claim performs one provider step and defers a still-running task", async () => {
   const root = mkdtempSync(join(tmpdir(), "generation-poll-timeout-"));
   const sqlitePath = join(root, "app.sqlite");

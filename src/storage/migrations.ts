@@ -257,7 +257,34 @@ interface ExpectedSchemaDefinitions {
 const expectedDefinitionCache = new Map<boolean, ExpectedSchemaDefinitions>();
 
 function normalizeDefinition(value: unknown): string {
-  return String(value ?? "").trim().toLowerCase().replace(/if\s+not\s+exists/g, "").replace(/["`\[\]]/g, "").replace(/\s+/g, "");
+  const source = String(value ?? "").trim();
+  let normalized = "";
+  let inStringLiteral = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    if (character === "'") {
+      normalized += character;
+      if (inStringLiteral && source[index + 1] === "'") {
+        normalized += source[index + 1];
+        index += 1;
+      } else {
+        inStringLiteral = !inStringLiteral;
+      }
+      continue;
+    }
+    if (inStringLiteral) {
+      normalized += character;
+      continue;
+    }
+    const optionalClause = source.slice(index).match(/^if\s+not\s+exists\b/i);
+    if (optionalClause && (index === 0 || !/[A-Za-z0-9_]/.test(source[index - 1]))) {
+      index += optionalClause[0].length - 1;
+      continue;
+    }
+    if (/\s/.test(character) || /["`\[\]]/.test(character)) continue;
+    normalized += character.toLowerCase();
+  }
+  return normalized;
 }
 
 function columnSignature(column: ColumnDefinition): string {

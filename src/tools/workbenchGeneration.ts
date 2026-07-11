@@ -86,6 +86,7 @@ export interface WorkbenchGenerationDependencies {
   env?: NodeJS.ProcessEnv;
   fetch_impl?: typeof fetch;
   adapter_factory?: (credential: string) => VideoProviderAdapter;
+  open_database?: (sqlitePath?: string) => M0Database;
   now?: () => Date;
   poll_interval_ms?: number;
   timeout_ms?: number;
@@ -673,10 +674,16 @@ function existingOutputArtifact(db: M0Database, providerTaskId: string, projectI
 }
 
 async function executeIntent(intentId: string, allowSubmit: boolean, dependencies: WorkbenchGenerationDependencies): Promise<void> {
-  const db = openM0Database(dependencies.sqlite_path);
+  const db = (dependencies.open_database ?? openM0Database)(dependencies.sqlite_path);
   const leaseOwner = `worker_${process.pid}`;
   const leaseToken = randomUUID();
-  let job = claimJob(db, intentId, leaseOwner, leaseToken);
+  let job: GenerationJob | null;
+  try {
+    job = claimJob(db, intentId, leaseOwner, leaseToken);
+  } catch (error) {
+    db.close();
+    throw error;
+  }
   if (!job) {
     db.close();
     return;
@@ -873,8 +880,11 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
     }
   } finally {
     clearInterval(heartbeat);
-    releaseJobLease(db, job.job_id, leaseToken);
-    db.close();
+    try {
+      releaseJobLease(db, job.job_id, leaseToken);
+    } finally {
+      db.close();
+    }
   }
 }
 

@@ -167,6 +167,39 @@ test("schema validation rejects weakened UNIQUE and REFERENCES constraints", () 
   }
 });
 
+test("schema validation preserves case-sensitive CHECK and default string literals", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "case-sensitive-schema-literals.sqlite");
+    migrateDatabase(sqlitePath);
+    const db = new DatabaseSync(sqlitePath);
+    const jobTable = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'generation_jobs'").get() as { sql: string };
+    const jobIndexes = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'generation_jobs' AND sql IS NOT NULL").all() as Array<{ sql: string }>;
+    const driftedJobSql = jobTable.sql.replace("'queued'", "'QUEUED'");
+    assert.notEqual(driftedJobSql, jobTable.sql);
+
+    const metaTable = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'workbench_project_meta'").get() as { sql: string };
+    const metaIndexes = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'workbench_project_meta' AND sql IS NOT NULL").all() as Array<{ sql: string }>;
+    const driftedMetaSql = metaTable.sql.replace("DEFAULT 'active'", "DEFAULT 'ACTIVE'");
+    assert.notEqual(driftedMetaSql, metaTable.sql);
+
+    db.exec("PRAGMA foreign_keys = OFF; DROP TABLE generation_jobs;");
+    db.exec(driftedJobSql);
+    for (const index of jobIndexes) db.exec(index.sql);
+    db.exec("DROP TABLE workbench_project_meta;");
+    db.exec(driftedMetaSql);
+    for (const index of metaIndexes) db.exec(index.sql);
+    db.exec("PRAGMA foreign_keys = ON;");
+
+    assert.throws(() => assertSchemaCurrent(db), (error) => error instanceof SchemaMigrationRequiredError
+      && /check_constraints:generation_jobs/.test(error.message)
+      && /column_definition:workbench_project_meta.lifecycle/.test(error.message));
+    db.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("runtime open cannot use a production environment flag to migrate persistent data", () => {
   const root = tempRoot();
   const previous = process.env.AI_VIDEO_AUTO_MIGRATE;
