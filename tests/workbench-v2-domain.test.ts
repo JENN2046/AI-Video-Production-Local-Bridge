@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -301,6 +301,12 @@ test("provider output registration is idempotent by provider task ID", async () 
       allowed_storage_root: join(root, "media"),
       fetch_impl: (async () => new Response(fixture, { status: 200, headers: { "content-type": "video/mp4", "content-length": String(fixture.length) } })) as typeof fetch
     };
+    await assert.rejects(() => downloadProviderOutputToArtifact(input, db, {
+      fault_injection_after_file_commit: () => { throw new Error("INJECTED_AFTER_FILE_COMMIT"); }
+    }), /INJECTED_AFTER_FILE_COMMIT/);
+    const afterCrash = db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE json_extract(data_json, '$.source.provider_job_id') = 'task-idempotent-1'").get() as { count: number };
+    assert.equal(afterCrash.count, 0);
+    assert.equal(readdirSync(join(root, "media")).filter((name) => /^artifact_[a-f0-9]{64}\.mp4$/.test(name)).length, 1);
     const first = await downloadProviderOutputToArtifact(input, db);
     const second = await downloadProviderOutputToArtifact(input, db);
     assert.equal(first.ok, true, first.ok ? undefined : first.error.message);
@@ -309,6 +315,7 @@ test("provider output registration is idempotent by provider task ID", async () 
     assert.equal(second.artifact.artifact_id, first.artifact.artifact_id);
     const count = db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE json_extract(data_json, '$.source.provider_job_id') = 'task-idempotent-1'").get() as { count: number };
     assert.equal(count.count, 1);
+    assert.equal(readdirSync(join(root, "media")).filter((name) => /^artifact_[a-f0-9]{64}\.mp4$/.test(name)).length, 1);
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });

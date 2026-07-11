@@ -181,6 +181,21 @@ interface Migration {
   apply: (db: M0Database) => void;
 }
 
+function assertNoDuplicateProviderTasks(db: M0Database): void {
+  const row = db.prepare(`SELECT COUNT(*) AS count FROM (
+    SELECT provider, provider_task_id FROM (
+      SELECT
+        json_extract(CASE WHEN json_valid(data_json) = 1 THEN data_json ELSE '{}' END, '$.source.provider') AS provider,
+        json_extract(CASE WHEN json_valid(data_json) = 1 THEN data_json ELSE '{}' END, '$.source.provider_job_id') AS provider_task_id
+      FROM media_artifacts
+    ) WHERE provider_task_id IS NOT NULL AND provider_task_id <> ''
+    GROUP BY provider, provider_task_id HAVING COUNT(*) > 1
+  )`).get() as { count: number };
+  if (Number(row.count) > 0) {
+    throw new SchemaMigrationRequiredError(`PROVIDER_TASK_DUPLICATES_REQUIRE_RECONCILIATION: ${Number(row.count)} duplicate provider task group(s) must be reconciled before migration 0003.`);
+  }
+}
+
 export const DATABASE_MIGRATIONS: readonly Migration[] = [
   {
     id: "0001",
@@ -197,8 +212,11 @@ export const DATABASE_MIGRATIONS: readonly Migration[] = [
   {
     id: "0003",
     name: "persistent_generation_jobs",
-    canonical: GENERATION_JOBS_SQL,
-    apply: (db) => db.exec(GENERATION_JOBS_SQL)
+    canonical: `${GENERATION_JOBS_SQL}\nPRECONDITION provider_task_duplicates_require_reconciliation_v1`,
+    apply: (db) => {
+      assertNoDuplicateProviderTasks(db);
+      db.exec(GENERATION_JOBS_SQL);
+    }
   }
 ];
 

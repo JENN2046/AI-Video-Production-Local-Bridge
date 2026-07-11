@@ -1,9 +1,9 @@
-import { randomUUID } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { extname, isAbsolute, relative, resolve } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, linkSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { basename, extname, isAbsolute, relative, resolve } from "node:path";
 
 import { paths } from "../paths.js";
-import { registerMediaArtifact, type MediaArtifact } from "./mediaArtifacts.js";
+import { persistMediaArtifact, type MediaArtifact } from "./mediaArtifacts.js";
 import { validateMp4File, type Mp4ValidationResult } from "./mediaValidity.js";
 import { providerError, type ProviderToolError } from "./provider.js";
 import type { M0Database } from "../storage/sqlite.js";
@@ -31,6 +31,10 @@ export interface ProviderOutputDownloadInput {
 export type ProviderOutputDownloadResult =
   | { ok: true; artifact: MediaArtifact; ffprobe: Mp4ValidationResult; output_url_hostname: string }
   | { ok: false; error: ProviderToolError };
+
+export interface ProviderOutputDownloadRuntime {
+  fault_injection_after_file_commit?: (path: string) => void;
+}
 
 const DEFAULT_SAFETY: ProviderOutputDownloadSafety = {
   timeout_seconds: 30,
@@ -197,7 +201,8 @@ async function fetchWithRedirects(
 
 export async function downloadProviderOutputToArtifact(
   input: ProviderOutputDownloadInput,
-  db: M0Database
+  db: M0Database,
+  runtime: ProviderOutputDownloadRuntime = {}
 ): Promise<ProviderOutputDownloadResult> {
   const safety: ProviderOutputDownloadSafety = { ...DEFAULT_SAFETY, ...input.safety };
   const storageDirectory = outputStorageDirectory(input);
@@ -236,6 +241,35 @@ export async function downloadProviderOutputToArtifact(
       return { ok: false, error: providerError("PROVIDER_OUTPUT_INVALID", ffprobe.error || "Provider output is not ffprobe-valid.") };
     }
 
+    const identity = createHash("sha256").update(`${input.provider_name}\0${input.provider_job_id}`).digest("hex");
+    const artifactId = `artifact_${identity}`;
+    const finalPath = resolve(storageDirectory.path, `${artifactId}.mp4`);
+    if (!isPathInside(finalPath, storageDirectory.path)) throw new Error("PROVIDER_OUTPUT_STORAGE_BLOCKED");
+    let createdFinal = false;
+    try {
+      linkSync(tempPath, finalPath);
+      createdFinal = true;
+    } catch (error) {
+      if (!existsSync(finalPath)) throw error;
+    }
+    const committedValidation = validateMp4File(finalPath);
+    if (committedValidation.status !== "PASS") {
+      if (createdFinal) rmSync(finalPath, { force: true });
+      return { ok: false, error: providerError("PROVIDER_OUTPUT_INVALID", committedValidation.error || "Committed provider output is invalid.") };
+    }
+    const sha256 = createHash("sha256").update(readFileSync(finalPath)).digest("hex");
+    const preparedArtifact: MediaArtifact = {
+      artifact_id: artifactId,
+      artifact_type: "video",
+      role: "generated_clip",
+      status: "active",
+      storage: { uri: finalPath, mime_type: contentType ?? "video/mp4", filename: basename(finalPath) },
+      metadata: { width: 1080, height: 1920, duration_seconds: committedValidation.duration_seconds ?? input.duration_seconds, aspect_ratio: input.aspect_ratio, sha256 },
+      linked_objects: { project_id: input.project_id, shot_id: input.shot_id },
+      source: { kind: "provider_output_file", provider: input.provider_name, provider_job_id: input.provider_job_id, sha256, external_url_host: fetched.finalUrl.hostname }
+    };
+    runtime.fault_injection_after_file_commit?.(finalPath);
+
     db.exec("BEGIN IMMEDIATE");
     try {
       const existingRow = db.prepare(`SELECT data_json FROM media_artifacts
@@ -246,44 +280,17 @@ export async function downloadProviderOutputToArtifact(
       if (existingRow) {
         const existing = JSON.parse(existingRow.data_json) as MediaArtifact;
         if (existing.linked_objects.project_id !== input.project_id || existing.linked_objects.shot_id !== input.shot_id) {
+          if (createdFinal && resolve(existing.storage.uri) !== finalPath) rmSync(finalPath, { force: true });
           db.exec("ROLLBACK");
           return { ok: false, error: providerError("PROVIDER_OUTPUT_TASK_CONFLICT", "Provider task output is already bound to a different project or SHOT.") };
         }
+        if (createdFinal && resolve(existing.storage.uri) !== finalPath) rmSync(finalPath, { force: true });
         db.exec("COMMIT");
         return { ok: true, artifact: existing, ffprobe, output_url_hostname: fetched.finalUrl.hostname };
       }
-      const artifact = registerMediaArtifact({
-        artifact_type: "video",
-        role: "generated_clip",
-        source: {
-          kind: "provider_output_file",
-          path: tempPath,
-          mime_type: contentType ?? "video/mp4"
-        },
-        storage_directory: storageDirectory.path,
-        allowed_storage_root: input.allowed_storage_root,
-        linked_objects: {
-          project_id: input.project_id,
-          shot_id: input.shot_id
-        },
-        metadata: {
-          duration_seconds: ffprobe.duration_seconds ?? input.duration_seconds,
-          aspect_ratio: input.aspect_ratio
-        },
-        provenance: {
-          provider: input.provider_name,
-          provider_job_id: input.provider_job_id,
-          external_url_host: fetched.finalUrl.hostname
-        }
-      }, db);
-
-      if (!artifact.ok) {
-        db.exec("ROLLBACK");
-        return { ok: false, error: providerError("PROVIDER_OUTPUT_DOWNLOAD_FAILED", artifact.error.message) };
-      }
-
+      persistMediaArtifact(db, preparedArtifact);
       db.exec("COMMIT");
-      return { ok: true, artifact: artifact.artifact, ffprobe, output_url_hostname: fetched.finalUrl.hostname };
+      return { ok: true, artifact: preparedArtifact, ffprobe, output_url_hostname: fetched.finalUrl.hostname };
     } catch (error) {
       db.exec("ROLLBACK");
       throw error;

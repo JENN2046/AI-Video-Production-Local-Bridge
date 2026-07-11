@@ -172,6 +172,31 @@ test("provider task IDs are unique per provider at the database boundary", () =>
   }
 });
 
+test("existing v2-4 database fails with a stable reconciliation gate for duplicate provider tasks", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "duplicate-provider-task.sqlite");
+    const db = new DatabaseSync(sqlitePath);
+    db.exec(M0_BASE_SCHEMA_SQL);
+    initializeWorkbenchV2Schema(db);
+    const artifact = (artifactId: string) => JSON.stringify({ artifact_id: artifactId, source: { provider: "runninghub", provider_job_id: "legacy_duplicate_task" } });
+    for (const artifactId of ["artifact_legacy_dup_1", "artifact_legacy_dup_2"]) {
+      db.prepare("INSERT INTO media_artifacts (artifact_id, role, artifact_type, status, data_json) VALUES (?, 'generated_clip', 'video', 'active', ?)")
+        .run(artifactId, artifact(artifactId));
+    }
+    assert.throws(() => runDatabaseMigrations(db), (error) => error instanceof SchemaMigrationRequiredError
+      && error.code === "SCHEMA_MIGRATION_REQUIRED"
+      && /PROVIDER_TASK_DUPLICATES_REQUIRE_RECONCILIATION: 1 duplicate provider task group/.test(error.message));
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>;
+    assert.equal(tables.some((row) => row.name === "generation_jobs"), false);
+    assert.equal(tables.some((row) => row.name === "schema_migrations"), false);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM media_artifacts").get() as { count: number }).count, 2);
+    db.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("migration fails cleanly when another connection owns the migration lock", () => {
   const root = tempRoot();
   try {

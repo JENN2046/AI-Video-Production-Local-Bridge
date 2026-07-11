@@ -16,7 +16,7 @@ AI Video Production Workspace 已经越过概念验证：Workbench V2、WebGPT V
 
 - `npm run typecheck`: PASS
 - `npm run build`: PASS
-- `npm test`: PASS，包括 DB 11/11、V2 19/19、UI 1/1、H1 8/8、WebGPT V4 20/20、browser 9/9 与 secret scan
+- `npm test`: PASS，包括 DB 12/12、V2 19/19、UI 1/1、H1 8/8、WebGPT V4 20/20、browser 9/9 与 secret scan
 - Stabilization review remediation: PASS，包括未知 submit 人工核对、五对象终态收敛、完整 schema baseline、单一 migration lock、Legacy UI 退出和显式 legacy backfill
 - `npm run preflight`: PASS on an isolated local profile
 - FFmpeg/FFprobe 8.1.2: PASS，通过 WinGet Links 自动发现
