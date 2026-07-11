@@ -215,6 +215,19 @@ function outputStorageDirectory(input: ProviderOutputDownloadInput, runtime: Pro
   return { ok: true, path: directory };
 }
 
+function validateCommittedOutputPath(finalPath: string, storageDirectory: string): ProviderToolError | null {
+  const entry = lstatSync(finalPath);
+  if (entry.isSymbolicLink() || !entry.isFile()) {
+    return providerError("PROVIDER_OUTPUT_STORAGE_BLOCKED", "Existing provider output path must be a regular non-symlink file.");
+  }
+  const realDirectory = realpathSync(storageDirectory);
+  const realFinalPath = realpathSync(finalPath);
+  if (!isPathInside(realFinalPath, realDirectory)) {
+    return providerError("PROVIDER_OUTPUT_STORAGE_BLOCKED", "Existing provider output path resolves outside app-controlled media storage.");
+  }
+  return null;
+}
+
 export function validateProviderOutputUrl(urlInput: string): { ok: true; url: URL } | { ok: false; error: ProviderToolError } {
   let url: URL;
   try {
@@ -396,7 +409,17 @@ export async function downloadProviderOutputToArtifact(
       linkSync(tempPath, finalPath);
       createdFinal = true;
     } catch (error) {
-      if (!existsSync(finalPath)) throw error;
+      try {
+        const boundaryError = validateCommittedOutputPath(finalPath, storageDirectory.path);
+        if (boundaryError) return { ok: false, error: boundaryError };
+      } catch {
+        throw error;
+      }
+    }
+    const boundaryError = validateCommittedOutputPath(finalPath, storageDirectory.path);
+    if (boundaryError) {
+      if (createdFinal) rmSync(finalPath, { force: true });
+      return { ok: false, error: boundaryError };
     }
     const committedValidation = validateMp4File(finalPath);
     if (committedValidation.status !== "PASS") {

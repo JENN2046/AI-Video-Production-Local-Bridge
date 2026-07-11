@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -871,6 +872,45 @@ test("M1 provider output registration blocks symlink storage directories", () =>
     rmSync(symlinkDirectory, { recursive: true, force: true });
     rmSync(sourceDirectory, { recursive: true, force: true });
     rmSync(externalDirectory, { recursive: true, force: true });
+    db.close();
+  }
+});
+
+test("M1 provider output downloader rejects a preexisting symlink final artifact", async () => {
+  const db = openM0Database(":memory:");
+  const root = mkdtempSync(join(tmpdir(), "provider-output-final-symlink-"));
+  const externalRoot = mkdtempSync(join(tmpdir(), "provider-output-final-external-"));
+  const fixtureBytes = readFileSync(join(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4"));
+  const providerName = "runninghub";
+  const providerJobId = "preexisting-symlink-task";
+  const identity = createHash("sha256").update(`${providerName}\0${providerJobId}`).digest("hex");
+  const finalPath = join(root, `artifact_${identity}.mp4`);
+  const externalFile = join(externalRoot, "outside.mp4");
+  writeFileSync(externalFile, fixtureBytes);
+  try {
+    try {
+      symlinkSync(externalFile, finalPath, "file");
+    } catch {
+      return;
+    }
+    const result = await downloadProviderOutputToArtifact({
+      url: "https://cdn.example.test/output.mp4",
+      provider_name: providerName,
+      provider_job_id: providerJobId,
+      project_id: "project_final_symlink",
+      shot_id: "shot_final_symlink",
+      duration_seconds: 2,
+      aspect_ratio: "9:16",
+      storage_directory: root,
+      fetch_impl: (async () => new Response(fixtureBytes, { status: 200, headers: { "content-type": "video/mp4" } })) as typeof fetch
+    }, db, { storage_root: root });
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "PROVIDER_OUTPUT_STORAGE_BLOCKED");
+    assert.equal(readFileSync(externalFile).equals(fixtureBytes), true);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM media_artifacts").get() as { count: number }).count, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(externalRoot, { recursive: true, force: true });
     db.close();
   }
 });
