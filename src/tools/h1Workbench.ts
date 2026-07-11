@@ -1263,7 +1263,7 @@ export function h2CanaryWorkbenchSummary(reportRelativePath = H2_RUNWAY_CANARY_D
       real_submit_requires_separate_authorization: true
     },
     dry_run_plan: {
-      command: "npm run runway:canary",
+      command: "npm run provider:preflight",
       can_open_latest_report: false,
       can_generate_from_workbench: false,
       regeneration_allowed: false,
@@ -1320,7 +1320,7 @@ export function h2CanaryWorkbenchSummary(reportRelativePath = H2_RUNWAY_CANARY_D
       },
       dry_run_plan: {
         ...fallback.dry_run_plan,
-        command: safeString(report.command) || fallback.dry_run_plan.command,
+        command: fallback.dry_run_plan.command,
         can_open_latest_report: true,
         regeneration_allowed: false,
         batch_generation_allowed: false,

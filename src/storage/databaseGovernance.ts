@@ -30,6 +30,8 @@ export function checkDatabase(sqlitePath = paths.sqlitePath): DatabaseCheckResul
       .reduce((sum, table) => sum + scalarCount(db, `SELECT COUNT(*) AS count FROM ${table} WHERE json_valid(data_json) = 0`), 0);
     const structuredDriftRows = scalarCount(db, "SELECT COUNT(*) AS count FROM projects WHERE json_valid(data_json) = 1 AND json_extract(data_json, '$.project_id') IS NOT project_id")
       + scalarCount(db, "SELECT COUNT(*) AS count FROM shots WHERE json_valid(data_json) = 1 AND (json_extract(data_json, '$.shot_id') IS NOT shot_id OR json_extract(data_json, '$.project_id') IS NOT project_id)")
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM storyboard_packages WHERE json_valid(data_json) = 1 AND (json_extract(data_json, '$.storyboard_package_id') IS NOT storyboard_package_id OR json_extract(data_json, '$.project_id') IS NOT project_id)")
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_batches WHERE json_valid(data_json) = 1 AND (json_extract(data_json, '$.batch_id') IS NOT batch_id OR json_extract(data_json, '$.project_id') IS NOT project_id OR json_extract(data_json, '$.storyboard_package_id') IS NOT storyboard_package_id)")
       + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_runs WHERE json_valid(data_json) = 1 AND (json_extract(data_json, '$.run_id') IS NOT run_id OR json_extract(data_json, '$.project_id') IS NOT project_id)")
       + scalarCount(db, "SELECT COUNT(*) AS count FROM media_artifacts WHERE json_valid(data_json) = 1 AND json_extract(data_json, '$.artifact_id') IS NOT artifact_id");
     const orphanRows = scalarCount(db, "SELECT COUNT(*) AS count FROM shots s LEFT JOIN projects p ON p.project_id = s.project_id WHERE p.project_id IS NULL")
@@ -38,7 +40,9 @@ export function checkDatabase(sqlitePath = paths.sqlitePath): DatabaseCheckResul
       + scalarCount(db, "SELECT COUNT(*) AS count FROM media_artifacts a LEFT JOIN projects p ON p.project_id = a.project_id WHERE a.project_id IS NOT NULL AND a.project_id <> '' AND p.project_id IS NULL")
       + scalarCount(db, "SELECT COUNT(*) AS count FROM media_artifacts a LEFT JOIN shots s ON s.shot_id = a.shot_id WHERE a.shot_id IS NOT NULL AND a.shot_id <> '' AND s.shot_id IS NULL")
       + scalarCount(db, "SELECT COUNT(*) AS count FROM storyboard_packages s LEFT JOIN projects p ON p.project_id = s.project_id WHERE p.project_id IS NULL")
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_batches b LEFT JOIN projects p ON p.project_id = b.project_id WHERE p.project_id IS NULL");
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_batches b LEFT JOIN projects p ON p.project_id = b.project_id WHERE p.project_id IS NULL")
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_batches b LEFT JOIN storyboard_packages s ON s.storyboard_package_id = b.storyboard_package_id WHERE b.storyboard_package_id <> '' AND s.storyboard_package_id IS NULL")
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_runs r LEFT JOIN generation_batches b ON b.batch_id = r.batch_id WHERE r.batch_id <> '' AND b.batch_id IS NULL");
     const mediaRows = db.prepare("SELECT data_json FROM media_artifacts").all() as Array<{ data_json: string }>;
     const missingMediaFiles = mediaRows.reduce((count, row) => {
       try {
