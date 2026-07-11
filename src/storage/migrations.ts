@@ -165,6 +165,7 @@ interface ColumnDefinition {
 interface ExpectedSchemaDefinitions {
   columns: Map<string, Map<string, string>>;
   objects: Map<string, string>;
+  checks: Map<string, string[]>;
 }
 
 let expectedDefinitionCache: ExpectedSchemaDefinitions | null = null;
@@ -177,6 +178,26 @@ function columnSignature(column: ColumnDefinition): string {
   return [normalizeDefinition(column.type), Number(column.notnull), normalizeDefinition(column.dflt_value), Number(column.pk)].join("|");
 }
 
+function checkConstraints(sql: unknown): string[] {
+  const normalized = normalizeDefinition(sql);
+  const checks: string[] = [];
+  let cursor = 0;
+  while ((cursor = normalized.indexOf("check(", cursor)) >= 0) {
+    const start = cursor + "check(".length;
+    let depth = 1;
+    let end = start;
+    while (end < normalized.length && depth > 0) {
+      if (normalized[end] === "(") depth += 1;
+      else if (normalized[end] === ")") depth -= 1;
+      end += 1;
+    }
+    if (depth !== 0) break;
+    checks.push(normalized.slice(start, end - 1));
+    cursor = end;
+  }
+  return checks.sort();
+}
+
 function expectedSchemaDefinitions(): ExpectedSchemaDefinitions {
   if (expectedDefinitionCache) return expectedDefinitionCache;
   const reference = new DatabaseSync(":memory:");
@@ -184,16 +205,19 @@ function expectedSchemaDefinitions(): ExpectedSchemaDefinitions {
     reference.exec(M0_BASE_SCHEMA_SQL);
     applyWorkbenchV24Baseline(reference);
     const columns = new Map<string, Map<string, string>>();
+    const checks = new Map<string, string[]>();
     for (const table of Object.keys(V24_EXPECTED_COLUMNS)) {
       const tableColumns = reference.prepare(`PRAGMA table_info(${table})`).all() as unknown as ColumnDefinition[];
       columns.set(table, new Map(tableColumns.map((column) => [column.name, columnSignature(column)])));
+      const row = reference.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as { sql: string | null } | undefined;
+      checks.set(table, checkConstraints(row?.sql));
     }
     const objects = new Map<string, string>();
     for (const name of [...V24_EXPECTED_INDEXES, "trg_workbench_project_meta_after_insert"]) {
       const row = reference.prepare("SELECT sql FROM sqlite_master WHERE name = ? AND type IN ('index', 'trigger')").get(name) as { sql: string | null } | undefined;
       objects.set(name, normalizeDefinition(row?.sql));
     }
-    expectedDefinitionCache = { columns, objects };
+    expectedDefinitionCache = { columns, objects, checks };
     return expectedDefinitionCache;
   } finally {
     reference.close();
@@ -211,6 +235,10 @@ function schemaObjects(db: M0Database): string[] {
       const actual = columns.get(column);
       if (!actual) issues.push(`missing_column:${table}.${column}`);
       else if (columnSignature(actual) !== definitions.columns.get(table)?.get(column)) issues.push(`column_definition:${table}.${column}`);
+    }
+    if (columns.size > 0) {
+      const tableRow = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as { sql: string | null } | undefined;
+      if (JSON.stringify(checkConstraints(tableRow?.sql)) !== JSON.stringify(definitions.checks.get(table) ?? [])) issues.push(`check_constraints:${table}`);
     }
   }
   for (const [kind, names] of [["index", V24_EXPECTED_INDEXES], ["trigger", ["trg_workbench_project_meta_after_insert"]]] as const) {

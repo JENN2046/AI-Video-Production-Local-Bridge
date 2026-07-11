@@ -79,9 +79,38 @@ test("existing v2-4 baseline rejects incomplete schema instead of stamping the l
   }
 });
 
+test("existing v2-4 baseline rejects weakened table CHECK constraints", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    db.exec(M0_BASE_SCHEMA_SQL);
+    initializeWorkbenchV2Schema(db);
+    db.exec("ALTER TABLE workbench_project_meta RENAME TO workbench_project_meta_canonical");
+    db.exec(`CREATE TABLE workbench_project_meta (
+      project_id TEXT PRIMARY KEY,
+      classification TEXT NOT NULL DEFAULT 'unclassified',
+      lifecycle TEXT NOT NULL DEFAULT 'active',
+      pinned INTEGER NOT NULL DEFAULT 0,
+      last_opened_at TEXT,
+      next_action_override TEXT NOT NULL DEFAULT '',
+      next_action_priority TEXT,
+      next_action_expires_at TEXT,
+      next_action_project_status TEXT,
+      next_action_updated_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`);
+    db.exec("DROP TABLE workbench_project_meta_canonical");
+    assert.throws(() => runDatabaseMigrations(db), (error) => error instanceof SchemaMigrationRequiredError && /check_constraints:workbench_project_meta/.test(error.message));
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'").get() as { count: number }).count, 0);
+  } finally {
+    db.close();
+  }
+});
+
 test("runtime open cannot use an environment flag to migrate persistent data", () => {
   const root = tempRoot();
   const previous = process.env.AI_VIDEO_AUTO_MIGRATE;
+  const previousTestAutoMigrate = process.env.AI_VIDEO_TEST_AUTO_MIGRATE;
   try {
     const sqlitePath = join(root, "runtime.sqlite");
     const db = new DatabaseSync(sqlitePath);
@@ -89,10 +118,13 @@ test("runtime open cannot use an environment flag to migrate persistent data", (
     initializeWorkbenchV2Schema(db);
     db.close();
     process.env.AI_VIDEO_AUTO_MIGRATE = "true";
+    delete process.env.AI_VIDEO_TEST_AUTO_MIGRATE;
     assert.throws(() => openM0Database(sqlitePath), (error) => error instanceof SchemaMigrationRequiredError);
   } finally {
     if (previous === undefined) delete process.env.AI_VIDEO_AUTO_MIGRATE;
     else process.env.AI_VIDEO_AUTO_MIGRATE = previous;
+    if (previousTestAutoMigrate === undefined) delete process.env.AI_VIDEO_TEST_AUTO_MIGRATE;
+    else process.env.AI_VIDEO_TEST_AUTO_MIGRATE = previousTestAutoMigrate;
     rmSync(root, { recursive: true, force: true });
   }
 });
