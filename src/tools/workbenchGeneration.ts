@@ -104,6 +104,7 @@ export interface GenerationJob {
 
 const activeExecutions = new Map<string, Promise<void>>();
 const scheduledWakeups = new Map<string, NodeJS.Timeout>();
+const DUE_GENERATION_JOB_SQL = "datetime(next_attempt_at) <= CURRENT_TIMESTAMP";
 
 function schedulerKey(dependencies: WorkbenchGenerationDependencies): string {
   return dependencies.sqlite_path ?? "__default_workbench_database__";
@@ -116,11 +117,13 @@ export function generationWorkerStatus(db: M0Database): { ready: boolean; active
       AND datetime(lease_expires_at) <= CURRENT_TIMESTAMP`).get() as { count: number };
   const unownedRow = db.prepare(`SELECT COUNT(*) AS count FROM generation_jobs
     WHERE state IN ('queued','submitting','polling','downloading','finalizing')
+      AND ${DUE_GENERATION_JOB_SQL}
       AND (lease_token = '' OR lease_expires_at IS NULL OR datetime(lease_expires_at) <= CURRENT_TIMESTAMP)`).get() as { count: number };
   const staleLeases = Number(staleRow.count);
   const unownedRunnable = Number(unownedRow.count);
   const runnable = Number((db.prepare(`SELECT COUNT(*) AS count FROM generation_jobs
-    WHERE state IN ('queued','submitting','polling','downloading','finalizing')`).get() as { count: number }).count);
+    WHERE state IN ('queued','submitting','polling','downloading','finalizing')
+      AND ${DUE_GENERATION_JOB_SQL}`).get() as { count: number }).count);
   const active = activeExecutions.size;
   return { ready: active <= 1 && staleLeases === 0 && (active > 0 || runnable === 0), active, concurrency: 1, stale_leases: staleLeases, unowned_runnable: unownedRunnable, runnable };
 }

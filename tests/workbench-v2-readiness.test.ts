@@ -35,6 +35,28 @@ test("Workbench health is liveness-only and readiness verifies local dependencie
     assert.equal(staleCacheProbe.status, 503);
     assert.equal(staleCacheBody.ok, false);
     assert.equal(staleCacheBody.checks.worker, false);
+
+    const deferredDb = openM0Database();
+    try {
+      deferredDb.prepare("UPDATE generation_intents SET provider_task_id = 'task_readiness_dynamic', status = 'running' WHERE intent_id = 'intent_readiness_dynamic'").run();
+      deferredDb.prepare("UPDATE generation_jobs SET state = 'polling', next_attempt_at = ? WHERE job_id = 'job_readiness_dynamic'")
+        .run(new Date(Date.now() + 60_000).toISOString());
+    } finally { deferredDb.close(); }
+    const deferredProbe = await fetch(`${runtime.url}/readyz`);
+    const deferredBody = await deferredProbe.json() as { ok: boolean; checks: Record<string, boolean> };
+    assert.equal(deferredProbe.status, 200);
+    assert.equal(deferredBody.ok, true);
+    assert.equal(deferredBody.checks.worker, true);
+
+    const dueDb = openM0Database();
+    try {
+      dueDb.prepare("UPDATE generation_jobs SET next_attempt_at = CURRENT_TIMESTAMP WHERE job_id = 'job_readiness_dynamic'").run();
+    } finally { dueDb.close(); }
+    const dueProbe = await fetch(`${runtime.url}/readyz`);
+    const dueBody = await dueProbe.json() as { ok: boolean; checks: Record<string, boolean> };
+    assert.equal(dueProbe.status, 503);
+    assert.equal(dueBody.ok, false);
+    assert.equal(dueBody.checks.worker, false);
   } finally {
     await runtime.close();
     if (previousProvider === undefined) delete process.env.REAL_PROVIDER_ENABLED;
