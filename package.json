@@ -21,6 +21,7 @@
     "db:backup": "npm run build:server && node dist/scripts/db-backup.js",
     "db:check": "npm run build:server && node dist/scripts/db-check.js",
     "db:migrate": "npm run build:server && node dist/scripts/db-migrate.js",
+    "migrate:webgpt:v4": "npm run build:server && node dist/scripts/migrate-webgpt-v4.js",
     "test:v2": "npm run build:server && node dist/scripts/run-isolated-tests.js dist/tests/workbench-v2-*.test.js",
     "test:v2:ui": "vitest run --config vitest.config.ts",
     "test:v2:browser": "npm run build && playwright test --config playwright.config.ts",
