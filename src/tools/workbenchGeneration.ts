@@ -89,6 +89,7 @@ export interface WorkbenchGenerationDependencies {
   now?: () => Date;
   poll_interval_ms?: number;
   timeout_ms?: number;
+  sqlite_path?: string;
 }
 
 export type GenerationJobState = "queued" | "submitting" | "polling" | "downloading" | "finalizing" | "manual_reconciliation" | "succeeded" | "failed" | "cancelled";
@@ -502,7 +503,7 @@ function existingOutputArtifact(db: M0Database, providerTaskId: string): MediaAr
 }
 
 async function executeIntent(intentId: string, allowSubmit: boolean, dependencies: WorkbenchGenerationDependencies): Promise<void> {
-  const db = openM0Database();
+  const db = openM0Database(dependencies.sqlite_path);
   const leaseOwner = `worker_${process.pid}`;
   const leaseToken = randomUUID();
   let job = claimJob(db, intentId, leaseOwner, leaseToken);
@@ -670,7 +671,7 @@ export function startWorkbenchGeneration(intentId: string, input: { allow_submit
 }
 
 export function resumeWorkbenchGenerationJobs(dependencies: WorkbenchGenerationDependencies = {}): { resumed: string[]; reconciled: string[] } {
-  const db = openM0Database();
+  const db = openM0Database(dependencies.sqlite_path);
   try {
     const rows = db.prepare(`SELECT i.intent_id, i.provider_task_id, j.state, j.job_id
       FROM generation_intents i JOIN generation_jobs j ON j.intent_id = i.intent_id
@@ -681,6 +682,9 @@ export function resumeWorkbenchGenerationJobs(dependencies: WorkbenchGenerationD
       if (row.state === "manual_reconciliation") {
         reconciled.push(row.intent_id);
       } else if (row.provider_task_id) {
+        db.prepare(`UPDATE generation_jobs
+          SET lease_owner = '', lease_token = '', lease_expires_at = NULL, updated_at = CURRENT_TIMESTAMP
+          WHERE job_id = ?`).run(row.job_id);
         startWorkbenchGeneration(row.intent_id, { allow_submit: false, dependencies });
         resumed.push(row.intent_id);
       } else {
@@ -720,12 +724,31 @@ export function reconcileGenerationJob(
     if (input.decision === "attach_existing_task") {
       const taskId = input.provider_task_id?.trim() ?? "";
       if (!/^[A-Za-z0-9._:-]{3,200}$/.test(taskId)) { db.exec("ROLLBACK"); return { ok: false, error: { code: "INVALID_PROVIDER_TASK_ID", message: "Provider task ID is invalid." } }; }
+      const run = getGenerationRun(db, intent.run_id);
+      if (!run) { db.exec("ROLLBACK"); return { ok: false, error: { code: "GENERATION_RUN_NOT_FOUND", message: "Generation run was not found." } }; }
       db.prepare("UPDATE generation_intents SET provider_task_id = ?, status = 'running', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(taskId, intent.intent_id);
+      run.status = "running";
+      run.provider.provider_job_id = taskId;
+      run.provider.provider_status = "PENDING";
+      saveGenerationRun(db, run);
       job = setJobState(db, row, "polling", "HUMAN_ATTACHED_EXISTING_TASK");
     } else {
       db.prepare("UPDATE generation_intents SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(intent.intent_id);
       const run = getGenerationRun(db, intent.run_id);
       if (run) { run.status = "cancelled"; saveGenerationRun(db, run); }
+      const shot = getShot(db, intent.shot_id);
+      const project = getProject(db, intent.project_id);
+      const otherActive = db.prepare(`SELECT COUNT(*) AS count FROM generation_jobs j
+        JOIN generation_intents i ON i.intent_id = j.intent_id
+        WHERE j.job_id <> ? AND i.project_id = ? AND j.state NOT IN ('succeeded', 'failed', 'cancelled')`).get(jobId, intent.project_id) as { count: number };
+      if (shot?.status === "video_pending") {
+        shot.status = "storyboard_approved";
+        saveShot(db, shot);
+      }
+      if (project?.status === "video_generation_in_progress" && Number(otherActive.count) === 0) {
+        project.status = "storyboard_approved";
+        saveProject(db, project);
+      }
       job = setJobState(db, row, "cancelled", input.reason?.trim() || "HUMAN_ABANDONED");
     }
     db.exec("COMMIT");

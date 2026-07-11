@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
-import { resolve } from "node:path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import test from "node:test";
 
+import { migrateDatabase } from "../src/storage/databaseGovernance.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import { WORKBENCH_V2_SCHEMA_VERSION } from "../src/storage/workbenchV2Schema.js";
 import { buildStoryboardApprovedShot, createProject, saveProject, saveShot } from "../src/tools/projects.js";
@@ -11,7 +14,7 @@ import {
   setWorkbenchProjectLifecycle,
   updateWorkbenchProject
 } from "../src/tools/workbenchV2.js";
-import { confirmWorkbenchGeneration, preflightWorkbenchGeneration, reconcileGenerationJob } from "../src/tools/workbenchGeneration.js";
+import { confirmWorkbenchGeneration, preflightWorkbenchGeneration, reconcileGenerationJob, resumeWorkbenchGenerationJobs } from "../src/tools/workbenchGeneration.js";
 import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
 
 test("V2 schema is transactional, versioned, and initializes project metadata", () => {
@@ -146,21 +149,67 @@ test("generation preflight enforces official estimate, balance gate, budget and 
       assert.equal(attached.data.job.state, "polling");
       assert.equal(attached.data.intent.provider_task_id, "existing-task-123");
     }
+    const attachedRun = db.prepare("SELECT data_json FROM generation_runs WHERE run_id = ?").get(confirmed.data.run_id) as { data_json: string };
+    const attachedRunData = JSON.parse(attachedRun.data_json) as { status: string; provider: { provider_job_id: string; provider_status: string } };
+    assert.equal(attachedRunData.status, "running");
+    assert.equal(attachedRunData.provider.provider_job_id, "existing-task-123");
+    assert.equal(attachedRunData.provider.provider_status, "PENDING");
     const reconciliationEvent = db.prepare("SELECT to_state, reason_code FROM generation_job_events WHERE job_id = ? ORDER BY rowid DESC LIMIT 1").get(confirmed.data.job_id) as { to_state: string; reason_code: string };
     assert.equal(reconciliationEvent.to_state, "polling");
     assert.equal(reconciliationEvent.reason_code, "HUMAN_ATTACHED_EXISTING_TASK");
     assert.throws(() => db.prepare("UPDATE generation_job_events SET reason_code = 'rewritten' WHERE job_id = ?").run(confirmed.data.job_id), /GENERATION_JOB_EVENTS_APPEND_ONLY/);
 
-    db.prepare("INSERT INTO generation_jobs (job_id, intent_id, state, reconciliation_reason) VALUES (?, ?, 'manual_reconciliation', 'PROVIDER_SUBMIT_OUTCOME_UNKNOWN')")
-      .run("job_abandon_test", second.data.intent.intent_id);
-    const abandoned = reconcileGenerationJob("job_abandon_test", { decision: "abandon", reason: "Human verified that no provider task exists.", human_confirmation: true }, db);
+    db.prepare("UPDATE generation_jobs SET state = 'cancelled' WHERE job_id = ?").run(confirmed.data.job_id);
+    db.prepare("UPDATE generation_intents SET status = 'cancelled' WHERE intent_id = ?").run(first.data.intent.intent_id);
+    const secondConfirmed = confirmWorkbenchGeneration({ intent_id: second.data.intent.intent_id, budget_limit_value: 1, cost_confirmed: true, human_confirmation: true }, db);
+    assert.equal(secondConfirmed.ok, true);
+    if (!secondConfirmed.ok) return;
+    db.prepare("UPDATE generation_jobs SET state = 'manual_reconciliation', reconciliation_reason = 'PROVIDER_SUBMIT_OUTCOME_UNKNOWN' WHERE job_id = ?")
+      .run(secondConfirmed.data.job_id);
+    const abandoned = reconcileGenerationJob(secondConfirmed.data.job_id, { decision: "abandon", reason: "Human verified that no provider task exists.", human_confirmation: true }, db);
     assert.equal(abandoned.ok, true);
     if (abandoned.ok) {
       assert.equal(abandoned.data.job.state, "cancelled");
       assert.equal(abandoned.data.intent.status, "cancelled");
       assert.equal(abandoned.data.intent.provider_task_id, "");
     }
+    const restoredShot = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(shot.shot_id) as { data_json: string };
+    const restoredProject = db.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(projectResult.project_id) as { data_json: string };
+    const abandonedRun = db.prepare("SELECT data_json FROM generation_runs WHERE run_id = ?").get(secondConfirmed.data.run_id) as { data_json: string };
+    assert.equal((JSON.parse(restoredShot.data_json) as { status: string }).status, "storyboard_approved");
+    assert.equal((JSON.parse(restoredProject.data_json) as { status: string }).status, "storyboard_approved");
+    assert.equal((JSON.parse(abandonedRun.data_json) as { status: string }).status, "cancelled");
   } finally {
     db.close();
+  }
+});
+
+test("startup recovery clears an inherited lease before resuming a paid provider task", () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-resume-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    migrateDatabase(sqlitePath);
+    const db = openM0Database(sqlitePath);
+    db.prepare(`INSERT INTO generation_intents
+      (intent_id, project_id, shot_id, provider, account_label, model, input_artifact_id, duration_seconds, resolution,
+       estimated_cost_value, budget_limit_value, currency, confirmed, expires_at, provider_task_id, status)
+      VALUES ('intent_resume', 'project_resume', 'shot_resume', 'runninghub', 'personal', 'model', 'artifact_resume', 6,
+        '1080x1920', 0.08, 1, 'CNY', 1, '2099-01-01T00:00:00.000Z', 'task_resume', 'running')`).run();
+    db.prepare(`INSERT INTO generation_jobs
+      (job_id, intent_id, state, lease_owner, lease_token, lease_expires_at)
+      VALUES ('job_resume', 'intent_resume', 'polling', 'crashed_worker', 'stale_lease', '2099-01-01T00:00:00.000Z')`).run();
+    db.close();
+
+    const result = resumeWorkbenchGenerationJobs({ sqlite_path: sqlitePath, env: {} });
+    assert.deepEqual(result, { resumed: ["intent_resume"], reconciled: [] });
+    const checked = openM0Database(sqlitePath);
+    const recovered = checked.prepare("SELECT state, lease_token, lease_expires_at, attempt_count FROM generation_jobs WHERE job_id = 'job_resume'").get() as { state: string; lease_token: string; lease_expires_at: string | null; attempt_count: number };
+    assert.equal(recovered.state, "failed");
+    assert.equal(recovered.lease_token, "");
+    assert.equal(recovered.lease_expires_at, null);
+    assert.equal(recovered.attempt_count, 1);
+    checked.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
