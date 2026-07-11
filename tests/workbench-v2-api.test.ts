@@ -18,9 +18,10 @@ test("V2 API uses stable envelopes, pagination, nonce and archived write blockin
   assert.equal(typeof address, "object");
   const base = `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`;
 
-  const shell = await fetch(`${base}/api/v2/shell`).then((response) => response.json()) as { ok: boolean; data: { action_nonce: string } };
+  const shell = await fetch(`${base}/api/v2/shell`).then((response) => response.json()) as { ok: boolean; data: { action_nonce: string; capabilities: { legacy_available: boolean } } };
   assert.equal(shell.ok, true);
   assert.equal(shell.data.action_nonce, nonce);
+  assert.equal(shell.data.capabilities.legacy_available, false);
 
   const denied = await fetch(`${base}/api/v2/projects`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "Denied" }) });
   assert.equal(denied.status, 403);

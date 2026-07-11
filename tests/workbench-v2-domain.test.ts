@@ -162,15 +162,26 @@ test("generation preflight enforces official estimate, balance gate, budget and 
     assert.equal(reconciliationEvent.reason_code, "HUMAN_ATTACHED_EXISTING_TASK");
     assert.throws(() => db.prepare("UPDATE generation_job_events SET reason_code = 'rewritten' WHERE job_id = ?").run(confirmed.data.job_id), /GENERATION_JOB_EVENTS_APPEND_ONLY/);
 
-    db.prepare("INSERT INTO generation_jobs (job_id, intent_id, state, reconciliation_reason) VALUES (?, ?, 'manual_reconciliation', 'PROVIDER_SUBMIT_OUTCOME_UNKNOWN')")
-      .run("job_abandon_test", second.data.intent.intent_id);
-    const abandoned = reconcileGenerationJob("job_abandon_test", { decision: "abandon", reason: "Human verified that no provider task exists.", human_confirmation: true }, db);
+    db.prepare("UPDATE generation_jobs SET state = 'cancelled' WHERE job_id = ?").run(confirmed.data.job_id);
+    db.prepare("UPDATE generation_intents SET status = 'cancelled' WHERE intent_id = ?").run(first.data.intent.intent_id);
+    const secondConfirmed = confirmWorkbenchGeneration({ intent_id: second.data.intent.intent_id, budget_limit_value: 1, cost_confirmed: true, human_confirmation: true }, db);
+    assert.equal(secondConfirmed.ok, true);
+    if (!secondConfirmed.ok) return;
+    db.prepare("UPDATE generation_jobs SET state = 'manual_reconciliation', reconciliation_reason = 'PROVIDER_SUBMIT_OUTCOME_UNKNOWN' WHERE job_id = ?")
+      .run(secondConfirmed.data.job_id);
+    const abandoned = reconcileGenerationJob(secondConfirmed.data.job_id, { decision: "abandon", reason: "Human verified that no provider task exists.", human_confirmation: true }, db);
     assert.equal(abandoned.ok, true);
     if (abandoned.ok) {
       assert.equal(abandoned.data.job.state, "cancelled");
       assert.equal(abandoned.data.intent.status, "cancelled");
       assert.equal(abandoned.data.intent.provider_task_id, "");
     }
+    const restoredShot = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(shot.shot_id) as { data_json: string };
+    const restoredProject = db.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(projectResult.project_id) as { data_json: string };
+    const abandonedRun = db.prepare("SELECT data_json FROM generation_runs WHERE run_id = ?").get(secondConfirmed.data.run_id) as { data_json: string };
+    assert.equal((JSON.parse(restoredShot.data_json) as { status: string }).status, "storyboard_approved");
+    assert.equal((JSON.parse(restoredProject.data_json) as { status: string }).status, "storyboard_approved");
+    assert.equal((JSON.parse(abandonedRun.data_json) as { status: string }).status, "cancelled");
   } finally {
     db.close();
   }

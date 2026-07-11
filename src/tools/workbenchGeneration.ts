@@ -892,15 +892,14 @@ export function reconcileGenerationJob(
     if (input.decision === "attach_existing_task") {
       const taskId = input.provider_task_id?.trim() ?? "";
       if (!/^[A-Za-z0-9._:-]{3,200}$/.test(taskId)) { db.exec("ROLLBACK"); return { ok: false, error: { code: "INVALID_PROVIDER_TASK_ID", message: "Provider task ID is invalid." } }; }
-      db.prepare("UPDATE generation_intents SET provider_task_id = ?, status = 'running', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(taskId, intent.intent_id);
       const run = getGenerationRun(db, intent.run_id);
-      if (run) {
-        run.status = "running";
-        run.provider.provider_job_id = taskId;
-        run.provider.provider_status = "HUMAN_ATTACHED_EXISTING_TASK";
-        run.error = { code: "", message: "", retryable: false };
-        saveGenerationRun(db, run);
-      }
+      if (!run) { db.exec("ROLLBACK"); return { ok: false, error: { code: "GENERATION_RUN_NOT_FOUND", message: "Generation run was not found." } }; }
+      db.prepare("UPDATE generation_intents SET provider_task_id = ?, status = 'running', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(taskId, intent.intent_id);
+      run.status = "running";
+      run.provider.provider_job_id = taskId;
+      run.provider.provider_status = "HUMAN_ATTACHED_EXISTING_TASK";
+      run.error = { code: "", message: "", retryable: false };
+      saveGenerationRun(db, run);
       job = setJobState(db, row, "polling", "HUMAN_ATTACHED_EXISTING_TASK", { in_transaction: true });
     } else {
       db.prepare("UPDATE generation_intents SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(intent.intent_id);

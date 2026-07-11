@@ -63,7 +63,9 @@ export function checkDatabase(sqlitePath = paths.sqlitePath): DatabaseCheckResul
     const missingMediaFiles = mediaRows.reduce((count, row) => {
       try {
         const parsed = JSON.parse(row.data_json) as { storage?: { uri?: string } };
-        return parsed.storage?.uri && !existsSync(parsed.storage.uri) ? count + 1 : count;
+        const uri = parsed.storage?.uri;
+        if (!uri || /^https?:\/\//i.test(uri)) return count;
+        return !existsSync(uri) ? count + 1 : count;
       } catch {
         return count;
       }

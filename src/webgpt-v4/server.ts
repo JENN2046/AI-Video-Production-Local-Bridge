@@ -128,7 +128,8 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
       await resolveFfprobeExecutable(ffmpeg);
       checks.ffprobe = true;
     } catch { checks.ffmpeg = false; checks.ffprobe = false; }
-    checks.media_queue = mediaAnalysisQueue.status().active <= 1;
+    const queueStatus = mediaAnalysisQueue.status();
+    checks.media_queue = queueStatus.active + queueStatus.waiting < queueStatus.capacity;
     const ok = Object.values(checks).every(Boolean);
     const result = { status: ok ? 200 : 503, body: { ok, service: "webgpt-v4", checks, provider_calls_allowed: false } };
     readinessCache = { ...result, expires: Date.now() + 30_000 };

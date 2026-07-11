@@ -9,6 +9,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 
 import { openM0Database } from "../src/storage/sqlite.js";
 import { createProject } from "../src/tools/projects.js";
+import { mediaAnalysisQueue } from "../src/webgpt-v4/media.js";
 import { WEBGPT_V4_WIDGET_URI } from "../src/webgpt-v4/mcpApp.js";
 import { startWebGptV4 } from "../src/webgpt-v4/server.js";
 import { actorFromSubject, WebGptV4Error, WEBGPT_V4_SCOPES } from "../src/webgpt-v4/types.js";
@@ -206,6 +207,35 @@ test("media server rejects malformed encoded paths without terminating the servi
       assert.equal(marker.count, 0, "service startup must not run legacy data migrations");
     } finally { startupDb.close(); }
   } finally {
+    await runtime.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("readiness reports a saturated media analysis queue", async () => {
+  const root = mkdtempSync(join(tmpdir(), "webgpt-v4-ready-queue-"));
+  const dataRoot = join(root, "data");
+  mkdirSync(join(dataRoot, "webgpt"), { recursive: true });
+  const runtime = await startWebGptV4({
+    mcp_port: 0,
+    media_port: 0,
+    sqlite_path: join(root, "app.sqlite"),
+    data_root: dataRoot
+  });
+  let release: (() => void) | undefined;
+  const blocked = new Promise<void>((resolveBlocked) => { release = resolveBlocked; });
+  const queued = Array.from({ length: 5 }, () => mediaAnalysisQueue.run(async () => blocked));
+  try {
+    await new Promise((resolveTurn) => setImmediate(resolveTurn));
+    assert.deepEqual(mediaAnalysisQueue.status(), { active: 1, waiting: 4, capacity: 5 });
+    const response = await fetch(`${runtime.media_url}/readyz`);
+    const payload = await response.json() as { ok: boolean; checks: { media_queue: boolean } };
+    assert.equal(response.status, 503);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.checks.media_queue, false);
+  } finally {
+    release?.();
+    await Promise.all(queued);
     await runtime.close();
     rmSync(root, { recursive: true, force: true });
   }
