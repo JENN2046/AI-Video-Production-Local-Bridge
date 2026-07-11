@@ -18,7 +18,7 @@ test("fresh database migrates explicitly and remains idempotent", () => {
   try {
     const sqlitePath = join(root, "app.sqlite");
     const first = migrateDatabase(sqlitePath);
-    assert.deepEqual(first.applied, ["0001", "0002", "0003"]);
+    assert.deepEqual(first.applied, ["0001", "0002", "0003", "0004"]);
     assert.equal(first.baselined, false);
     const second = migrateDatabase(sqlitePath);
     assert.deepEqual(second.applied, []);
@@ -72,6 +72,44 @@ test("migration checksum drift fails closed", () => {
   }
 });
 
+test("database migrated through 0003 keeps its historical checksums and upgrades through 0004", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "legacy-0003.sqlite");
+    const db = new DatabaseSync(sqlitePath);
+    for (const migration of DATABASE_MIGRATIONS.slice(0, 2)) migration.apply(db);
+    db.prepare("INSERT INTO projects (project_id, data_json) VALUES ('project_legacy', ?)")
+      .run(JSON.stringify({ project_id: "project_legacy", title: "Legacy 0003" }));
+    db.prepare(`INSERT INTO generation_intents
+      (intent_id, project_id, shot_id, provider, account_label, model, input_artifact_id, duration_seconds, resolution,
+       estimated_cost_value, budget_limit_value, currency, confirmed, expires_at, provider_task_id, status)
+      VALUES ('intent_legacy', 'project_legacy', 'shot_legacy', 'runninghub', 'personal', 'model', 'artifact_legacy', 6,
+        '1080x1920', 0.08, 1, 'CNY', 1, '2099-01-01T00:00:00.000Z', 'task_legacy', 'running')`).run();
+    DATABASE_MIGRATIONS[2].apply(db);
+    db.exec(`CREATE TABLE schema_migrations (
+      migration_id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      checksum TEXT NOT NULL,
+      applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`);
+    for (const migration of DATABASE_MIGRATIONS.slice(0, 3)) {
+      db.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES (?, ?, ?)")
+        .run(migration.id, migration.name, migrationChecksum(migration));
+    }
+
+    assert.equal(migrationChecksum(DATABASE_MIGRATIONS[1]), "52dc1311414cd88468542159d215adce443717b087e65d73d3f60859e5727c75");
+    assert.equal(migrationChecksum(DATABASE_MIGRATIONS[2]), "161aa27dec915827c0ab6d46bc768ca2734c2efdf4bc45ae2fa1b2f4b564fef8");
+    const result = runDatabaseMigrations(db);
+    assert.deepEqual(result.applied, ["0004"]);
+    const event = db.prepare("SELECT to_state, reason_code FROM generation_job_events WHERE job_id = 'job_intent_legacy'").get() as { to_state: string; reason_code: string };
+    assert.deepEqual({ ...event }, { to_state: "polling", reason_code: "MIGRATION_BACKFILL" });
+    assertSchemaCurrent(db);
+    db.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("existing v2-4 baseline rejects missing columns and indexes", () => {
   const root = tempRoot();
   try {
@@ -106,6 +144,13 @@ test("schema validation rejects index and trigger definitions with the expected 
     db.exec("DROP TRIGGER generation_job_events_no_delete; CREATE TRIGGER generation_job_events_no_delete BEFORE DELETE ON generation_job_events BEGIN SELECT 1; END");
     assert.throws(() => assertSchemaCurrent(db), (error) => error instanceof SchemaMigrationRequiredError && /trigger_definition:generation_job_events_no_delete/.test(error.message));
     db.close();
+
+    const projectTriggerPath = join(root, "project-trigger.sqlite");
+    migrateDatabase(projectTriggerPath);
+    const projectTrigger = new DatabaseSync(projectTriggerPath);
+    projectTrigger.exec("DROP TRIGGER trg_workbench_project_meta_after_insert; CREATE TRIGGER trg_workbench_project_meta_after_insert AFTER INSERT ON projects BEGIN SELECT 1; END");
+    assert.throws(() => assertSchemaCurrent(projectTrigger), (error) => error instanceof SchemaMigrationRequiredError && /trigger_definition:trg_workbench_project_meta_after_insert/.test(error.message));
+    projectTrigger.close();
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

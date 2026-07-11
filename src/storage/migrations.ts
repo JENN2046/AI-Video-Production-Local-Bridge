@@ -71,26 +71,14 @@ export const M0_BASE_SCHEMA_SQL = `
   VALUES ('schema_version', 'm0-a', CURRENT_TIMESTAMP);
 `;
 
-function workbenchV24SemanticCanonical(): string {
-  const reference = new DatabaseSync(":memory:");
-  try {
-    reference.exec(M0_BASE_SCHEMA_SQL);
-    applyWorkbenchV24Baseline(reference);
-    const objects = reference.prepare(`SELECT type, name, sql FROM sqlite_master
-      WHERE type IN ('table', 'index', 'trigger') AND name NOT LIKE 'sqlite_%'
-      ORDER BY type, name`).all() as unknown as Array<{ type: string; name: string; sql: string | null }>;
-    return JSON.stringify({
-      version: WORKBENCH_V2_SCHEMA_VERSION,
-      schema: objects.map((row) => ({ type: row.type, name: row.name, sql: normalizeDefinition(row.sql) })),
-      data_upgrade: "webgpt_audit_v2_3_result_envelope_v1"
-    });
-  } finally {
-    reference.close();
-  }
-}
-
 // Migration 0002 is the immutable v2-4 baseline. Future schema work must add a new migration.
-const WORKBENCH_V2_4_CANONICAL = workbenchV24SemanticCanonical();
+const WORKBENCH_V2_4_CANONICAL = [
+  WORKBENCH_V2_SCHEMA_VERSION,
+  "workbench_project_meta", "import_index", "import_decisions", "regeneration_requests",
+  "generation_intents", "workbench_drafts", "workbench_pending_actions", "workbench_inbox_events",
+  "workbench_governance_runs", "workbench_review_notes", "webgpt_audit_events",
+  "webgpt_media_grants", "webgpt_provider_price_cache"
+].join("\n");
 
 const V24_EXPECTED_COLUMNS: Record<string, readonly string[]> = {
   m0_meta: ["key", "value", "updated_at"],
@@ -150,9 +138,6 @@ const GENERATION_JOBS_SQL = `
   );
   CREATE INDEX IF NOT EXISTS idx_generation_jobs_due ON generation_jobs(state, next_attempt_at, created_at);
   CREATE INDEX IF NOT EXISTS idx_generation_job_events_job ON generation_job_events(job_id, created_at);
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_media_provider_task_unique
-    ON media_artifacts(json_extract(data_json, '$.source.provider'), json_extract(data_json, '$.source.provider_job_id'))
-    WHERE json_valid(data_json) = 1 AND json_extract(data_json, '$.source.provider_job_id') <> '';
   CREATE TRIGGER IF NOT EXISTS generation_job_events_no_update
     BEFORE UPDATE ON generation_job_events BEGIN
       SELECT RAISE(ABORT, 'GENERATION_JOB_EVENTS_APPEND_ONLY');
@@ -166,10 +151,16 @@ const GENERATION_JOBS_SQL = `
     CASE WHEN provider_task_id <> '' THEN 'polling' ELSE 'manual_reconciliation' END,
     CASE WHEN provider_task_id <> '' THEN '' ELSE 'PROVIDER_SUBMIT_OUTCOME_UNKNOWN' END
   FROM generation_intents WHERE confirmed = 1 AND status IN ('queued', 'running');
+`;
+
+const GENERATION_JOBS_STABILIZATION_SQL = `
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_media_provider_task_unique
+    ON media_artifacts(json_extract(data_json, '$.source.provider'), json_extract(data_json, '$.source.provider_job_id'))
+    WHERE json_valid(data_json) = 1 AND json_extract(data_json, '$.source.provider_job_id') <> '';
   INSERT OR IGNORE INTO generation_job_events (event_id, job_id, from_state, to_state, reason_code, data_json)
   SELECT 'job_event_backfill_' || job_id, job_id, '', state,
     CASE WHEN state = 'manual_reconciliation' THEN 'PROVIDER_SUBMIT_OUTCOME_UNKNOWN' ELSE 'MIGRATION_BACKFILL' END,
-    '{"source":"migration_0003"}'
+    '{"source":"migration_0004"}'
   FROM generation_jobs
   WHERE NOT EXISTS (SELECT 1 FROM generation_job_events events WHERE events.job_id = generation_jobs.job_id);
 `;
@@ -192,7 +183,7 @@ function assertNoDuplicateProviderTasks(db: M0Database): void {
     GROUP BY provider, provider_task_id HAVING COUNT(*) > 1
   )`).get() as { count: number };
   if (Number(row.count) > 0) {
-    throw new SchemaMigrationRequiredError(`PROVIDER_TASK_DUPLICATES_REQUIRE_RECONCILIATION: ${Number(row.count)} duplicate provider task group(s) must be reconciled before migration 0003.`);
+    throw new SchemaMigrationRequiredError(`PROVIDER_TASK_DUPLICATES_REQUIRE_RECONCILIATION: ${Number(row.count)} duplicate provider task group(s) must be reconciled before migration 0004.`);
   }
 }
 
@@ -212,10 +203,16 @@ export const DATABASE_MIGRATIONS: readonly Migration[] = [
   {
     id: "0003",
     name: "persistent_generation_jobs",
-    canonical: `${GENERATION_JOBS_SQL}\nPRECONDITION provider_task_duplicates_require_reconciliation_v1`,
+    canonical: GENERATION_JOBS_SQL,
+    apply: (db) => db.exec(GENERATION_JOBS_SQL)
+  },
+  {
+    id: "0004",
+    name: "generation_jobs_stabilization",
+    canonical: `${GENERATION_JOBS_STABILIZATION_SQL}\nPRECONDITION provider_task_duplicates_require_reconciliation_v1`,
     apply: (db) => {
       assertNoDuplicateProviderTasks(db);
-      db.exec(GENERATION_JOBS_SQL);
+      db.exec(GENERATION_JOBS_STABILIZATION_SQL);
     }
   }
 ];
@@ -271,7 +268,7 @@ function expectedSchemaDefinitions(includeJobs: boolean, expectedColumns: Record
   try {
     reference.exec(M0_BASE_SCHEMA_SQL);
     applyWorkbenchV24Baseline(reference);
-    if (includeJobs) reference.exec(GENERATION_JOBS_SQL);
+    if (includeJobs) reference.exec(`${GENERATION_JOBS_SQL}\n${GENERATION_JOBS_STABILIZATION_SQL}`);
     const columns = new Map<string, Map<string, string>>();
     for (const table of Object.keys(expectedColumns)) {
       const tableColumns = reference.prepare(`PRAGMA table_info(${table})`).all() as unknown as ColumnDefinition[];
@@ -298,7 +295,9 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     generation_job_events: ["event_id", "job_id", "from_state", "to_state", "reason_code", "data_json", "created_at"]
   } : V24_EXPECTED_COLUMNS;
   const expectedIndexes = includeJobs ? [...V24_EXPECTED_INDEXES, "idx_generation_jobs_due", "idx_generation_job_events_job", "idx_media_provider_task_unique"] : [...V24_EXPECTED_INDEXES];
-  const expectedTriggers = includeJobs ? ["generation_job_events_no_update", "generation_job_events_no_delete"] : [];
+  const expectedTriggers = includeJobs
+    ? ["trg_workbench_project_meta_after_insert", "generation_job_events_no_update", "generation_job_events_no_delete"]
+    : ["trg_workbench_project_meta_after_insert"];
   const definitions = expectedSchemaDefinitions(includeJobs, expectedColumns, [...expectedIndexes, ...expectedTriggers]);
   for (const [table, expected] of Object.entries(expectedColumns)) {
     const rows = db.prepare(`PRAGMA table_info(${table})`).all() as unknown as ColumnDefinition[];
