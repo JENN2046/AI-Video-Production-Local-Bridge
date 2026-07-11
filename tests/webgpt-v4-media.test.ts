@@ -109,6 +109,22 @@ test("timed out analysis retains its slot until the underlying process settles",
   assert.equal(queue.status().active, 0);
 });
 
+test("timed out analysis aborts the running operation and releases its slot", async () => {
+  const queue = new MediaAnalysisQueue(1, 0, 10);
+  let aborted = false;
+  const operation = queue.run((signal) => new Promise<void>((resolveOperation) => {
+    signal.addEventListener("abort", () => {
+      aborted = true;
+      setImmediate(resolveOperation);
+    }, { once: true });
+  }));
+  await assert.rejects(operation, (error) => error instanceof WebGptV4Error && error.code === "MEDIA_ANALYSIS_TIMEOUT");
+  await new Promise((resolveTick) => setImmediate(resolveTick));
+  await new Promise((resolveTick) => setImmediate(resolveTick));
+  assert.equal(aborted, true);
+  assert.equal(queue.status().active, 0);
+});
+
 test("media analysis timeout includes time spent waiting in the queue", async () => {
   const queue = new MediaAnalysisQueue(1, 1, 20);
   let release: (() => void) | undefined;

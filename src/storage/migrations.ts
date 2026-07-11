@@ -367,7 +367,18 @@ export function runDatabaseMigrations(db: M0Database): { applied: string[]; base
   db.exec("BEGIN EXCLUSIVE");
   try {
     const initialTables = tableNames(db);
-    if (!initialTables.has("schema_migrations") && initialTables.has("m0_meta")) {
+    if (initialTables.has("schema_migrations")) {
+      const rows = db.prepare("SELECT migration_id, name, checksum FROM schema_migrations ORDER BY migration_id").all() as Array<{ migration_id: string; name: string; checksum: string }>;
+      const known = new Map(DATABASE_MIGRATIONS.map((migration) => [migration.id, migration]));
+      const unsupported = rows.find((row) => !known.has(row.migration_id));
+      if (unsupported) throw new SchemaMigrationRequiredError(`Database contains unsupported migration ${unsupported.migration_id}.`);
+      for (const row of rows) {
+        const migration = known.get(row.migration_id) as Migration;
+        if (row.name !== migration.name || row.checksum !== migrationChecksum(migration)) {
+          throw new SchemaMigrationRequiredError(`Database migration checksum mismatch for ${row.migration_id}.`);
+        }
+      }
+    } else if (initialTables.has("m0_meta")) {
       const row = db.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string } | undefined;
       if (row?.value === WORKBENCH_V2_SCHEMA_VERSION) {
         const issues = schemaObjects(db, false);

@@ -77,6 +77,9 @@ jobs:
       - name: H1 Workbench tests
         run: npm run test:h1
 
+      - name: Legacy archive integrity
+        run: npm run test:legacy
+
       - name: Secret scan
         run: npm run secret:scan
 

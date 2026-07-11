@@ -110,29 +110,33 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
   bootstrapDb.close();
 
   const activeRequests = new Set<Promise<void>>();
-  let readinessCache: { expires: number; status: number; body: Record<string, unknown> } | null = null;
+  let readinessCache: { expires: number; checks: Record<string, boolean> } | null = null;
   const readiness = async (): Promise<{ status: number; body: Record<string, unknown> }> => {
-    if (readinessCache && readinessCache.expires > Date.now()) return readinessCache;
-    const checks: Record<string, boolean> = { oauth: Boolean(authConfig), schema: false, database: false, media_directory: false, ffmpeg: false, ffprobe: false, media_queue: true };
-    try {
-      const db = openM0Database(options.sqlite_path);
+    let staticChecks: Record<string, boolean>;
+    if (readinessCache && readinessCache.expires > Date.now()) {
+      staticChecks = readinessCache.checks;
+    } else {
+      staticChecks = { oauth: Boolean(authConfig), schema: false, database: false, media_directory: false, ffmpeg: false, ffprobe: false };
       try {
-        checks.database = (db.prepare("SELECT 1 AS ok").get() as { ok: number }).ok === 1;
-        checks.schema = (db.prepare("PRAGMA quick_check").get() as { quick_check: string }).quick_check === "ok";
-      } finally { db.close(); }
-    } catch { checks.database = false; }
-    try { accessSync(paths.mediaRoot, constants.R_OK | constants.W_OK); checks.media_directory = true; } catch { checks.media_directory = false; }
-    try {
-      const ffmpeg = await resolveFfmpegExecutable(options.media?.ffmpeg_path);
-      checks.ffmpeg = true;
-      await resolveFfprobeExecutable(ffmpeg);
-      checks.ffprobe = true;
-    } catch { checks.ffmpeg = false; checks.ffprobe = false; }
+        const db = openM0Database(options.sqlite_path);
+        try {
+          staticChecks.database = (db.prepare("SELECT 1 AS ok").get() as { ok: number }).ok === 1;
+          staticChecks.schema = (db.prepare("PRAGMA quick_check").get() as { quick_check: string }).quick_check === "ok";
+        } finally { db.close(); }
+      } catch { staticChecks.database = false; }
+      try { accessSync(paths.mediaRoot, constants.R_OK | constants.W_OK); staticChecks.media_directory = true; } catch { staticChecks.media_directory = false; }
+      try {
+        const ffmpeg = await resolveFfmpegExecutable(options.media?.ffmpeg_path);
+        staticChecks.ffmpeg = true;
+        await resolveFfprobeExecutable(ffmpeg);
+        staticChecks.ffprobe = true;
+      } catch { staticChecks.ffmpeg = false; staticChecks.ffprobe = false; }
+      readinessCache = { checks: staticChecks, expires: Date.now() + 30_000 };
+    }
     const queueStatus = mediaAnalysisQueue.status();
-    checks.media_queue = queueStatus.active + queueStatus.waiting < queueStatus.capacity;
+    const checks = { ...staticChecks, media_queue: queueStatus.active + queueStatus.waiting < queueStatus.capacity };
     const ok = Object.values(checks).every(Boolean);
     const result = { status: ok ? 200 : 503, body: { ok, service: "webgpt-v4", checks, provider_calls_allowed: false } };
-    readinessCache = { ...result, expires: Date.now() + 30_000 };
     return result;
   };
   const trackRequest = (task: Promise<void>): void => {

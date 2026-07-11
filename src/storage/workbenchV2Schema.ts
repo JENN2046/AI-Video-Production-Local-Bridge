@@ -2,13 +2,9 @@ import type { M0Database } from "./sqlite.js";
 
 export const WORKBENCH_V2_SCHEMA_VERSION = "workbench-v2-4";
 
-// Frozen implementation for migration 0002. Do not edit; add a new migration instead.
+// Frozen implementation for migration 0002. Future schema work must add a new migration.
 export function applyWorkbenchV24Baseline(db: M0Database, options: { manage_transaction?: boolean } = {}): void {
   const manageTransaction = options.manage_transaction !== false;
-  const ensureColumn = (table: string, column: string, definition: string): void => {
-    const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
-    if (!columns.some((candidate) => candidate.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-  };
   const current = db.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string } | undefined;
   if (current && !["m0-a", "workbench-v2-1", "workbench-v2-2", "workbench-v2-3", WORKBENCH_V2_SCHEMA_VERSION].includes(current.value)) {
     throw new Error(`Unsupported schema version: ${current.value}`);
@@ -239,11 +235,11 @@ export function applyWorkbenchV24Baseline(db: M0Database, options: { manage_tran
       SELECT project_id FROM projects;
     `);
 
-    ensureColumn("workbench_project_meta", "next_action_override", "TEXT NOT NULL DEFAULT ''");
-    ensureColumn("workbench_project_meta", "next_action_priority", "TEXT");
-    ensureColumn("workbench_project_meta", "next_action_expires_at", "TEXT");
-    ensureColumn("workbench_project_meta", "next_action_project_status", "TEXT");
-    ensureColumn("workbench_project_meta", "next_action_updated_at", "TEXT");
+    ensureColumn(db, "workbench_project_meta", "next_action_override", "TEXT NOT NULL DEFAULT ''");
+    ensureColumn(db, "workbench_project_meta", "next_action_priority", "TEXT");
+    ensureColumn(db, "workbench_project_meta", "next_action_expires_at", "TEXT");
+    ensureColumn(db, "workbench_project_meta", "next_action_project_status", "TEXT");
+    ensureColumn(db, "workbench_project_meta", "next_action_updated_at", "TEXT");
 
     if (current?.value === "workbench-v2-3") {
       const rows = db.prepare("SELECT event_id, result_json FROM webgpt_audit_events WHERE result = 'succeeded'").all() as Array<{ event_id: string; result_json: string }>;
@@ -273,4 +269,11 @@ export function applyWorkbenchV24Baseline(db: M0Database, options: { manage_tran
 
 export function initializeWorkbenchV2Schema(db: M0Database, options: { manage_transaction?: boolean } = {}): void {
   applyWorkbenchV24Baseline(db, options);
+}
+
+function ensureColumn(db: M0Database, table: string, column: string, definition: string): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (!columns.some((candidate) => candidate.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
 }

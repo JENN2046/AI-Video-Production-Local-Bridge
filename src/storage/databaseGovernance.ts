@@ -49,19 +49,34 @@ export function checkDatabase(sqlitePath = paths.sqlitePath): DatabaseCheckResul
       + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_batches WHERE json_valid(data_json) = 1 AND (json_extract(data_json, '$.batch_id') IS NOT batch_id OR json_extract(data_json, '$.project_id') IS NOT project_id OR json_extract(data_json, '$.storyboard_package_id') IS NOT storyboard_package_id)", errors)
       + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_runs WHERE json_valid(data_json) = 1 AND (json_extract(data_json, '$.run_id') IS NOT run_id OR json_extract(data_json, '$.batch_id') IS NOT batch_id OR json_extract(data_json, '$.project_id') IS NOT project_id OR json_extract(data_json, '$.shot_id') IS NOT shot_id)", errors)
       + scalarCount(db, "SELECT COUNT(*) AS count FROM media_artifacts WHERE json_valid(data_json) = 1 AND (json_extract(data_json, '$.artifact_id') IS NOT artifact_id OR json_extract(data_json, '$.linked_objects.project_id') IS NOT COALESCE(project_id, '') OR json_extract(data_json, '$.linked_objects.shot_id') IS NOT COALESCE(shot_id, ''))", errors);
-    const orphanRows = scalarCount(db, "SELECT COUNT(*) AS count FROM shots s LEFT JOIN projects p ON p.project_id = s.project_id WHERE p.project_id IS NULL", errors)
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_runs r LEFT JOIN projects p ON p.project_id = r.project_id WHERE p.project_id IS NULL", errors)
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_runs r LEFT JOIN shots s ON s.shot_id = r.shot_id WHERE r.shot_id IS NOT NULL AND r.shot_id <> '' AND s.shot_id IS NULL", errors)
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM media_artifacts a LEFT JOIN projects p ON p.project_id = a.project_id WHERE a.project_id IS NOT NULL AND a.project_id <> '' AND p.project_id IS NULL", errors)
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM media_artifacts a LEFT JOIN shots s ON s.shot_id = a.shot_id WHERE a.shot_id IS NOT NULL AND a.shot_id <> '' AND s.shot_id IS NULL", errors)
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM storyboard_packages s LEFT JOIN projects p ON p.project_id = s.project_id WHERE p.project_id IS NULL", errors)
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_batches b LEFT JOIN projects p ON p.project_id = b.project_id WHERE p.project_id IS NULL", errors)
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_batches b LEFT JOIN storyboard_packages s ON s.storyboard_package_id = b.storyboard_package_id WHERE b.storyboard_package_id <> '' AND s.storyboard_package_id IS NULL", errors)
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_runs r LEFT JOIN generation_batches b ON b.batch_id = r.batch_id WHERE r.batch_id <> '' AND b.batch_id IS NULL", errors)
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_intents i LEFT JOIN projects p ON p.project_id = i.project_id WHERE p.project_id IS NULL", errors)
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_intents i LEFT JOIN shots s ON s.shot_id = i.shot_id WHERE s.shot_id IS NULL", errors)
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_jobs j LEFT JOIN generation_intents i ON i.intent_id = j.intent_id WHERE i.intent_id IS NULL", errors)
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM generation_job_events e LEFT JOIN generation_jobs j ON j.job_id = e.job_id WHERE j.job_id IS NULL", errors);
+    const orphanQueries = [
+      "SELECT COUNT(*) AS count FROM shots s LEFT JOIN projects p ON p.project_id = s.project_id WHERE p.project_id IS NULL",
+      "SELECT COUNT(*) AS count FROM generation_runs r LEFT JOIN projects p ON p.project_id = r.project_id WHERE p.project_id IS NULL",
+      "SELECT COUNT(*) AS count FROM generation_runs r LEFT JOIN shots s ON s.shot_id = r.shot_id WHERE r.shot_id IS NOT NULL AND r.shot_id <> '' AND s.shot_id IS NULL",
+      "SELECT COUNT(*) AS count FROM generation_runs r LEFT JOIN generation_batches b ON b.batch_id = r.batch_id WHERE r.batch_id <> '' AND b.batch_id IS NULL",
+      "SELECT COUNT(*) AS count FROM media_artifacts a LEFT JOIN projects p ON p.project_id = a.project_id WHERE a.project_id IS NOT NULL AND a.project_id <> '' AND p.project_id IS NULL",
+      "SELECT COUNT(*) AS count FROM media_artifacts a LEFT JOIN shots s ON s.shot_id = a.shot_id WHERE a.shot_id IS NOT NULL AND a.shot_id <> '' AND s.shot_id IS NULL",
+      "SELECT COUNT(*) AS count FROM storyboard_packages s LEFT JOIN projects p ON p.project_id = s.project_id WHERE p.project_id IS NULL",
+      "SELECT COUNT(*) AS count FROM generation_batches b LEFT JOIN projects p ON p.project_id = b.project_id WHERE p.project_id IS NULL",
+      "SELECT COUNT(*) AS count FROM generation_batches b LEFT JOIN storyboard_packages s ON s.storyboard_package_id = b.storyboard_package_id WHERE b.storyboard_package_id <> '' AND s.storyboard_package_id IS NULL",
+      "SELECT COUNT(*) AS count FROM workbench_project_meta m LEFT JOIN projects p ON p.project_id = m.project_id WHERE p.project_id IS NULL",
+      "SELECT COUNT(*) AS count FROM regeneration_requests r LEFT JOIN projects p ON p.project_id = r.project_id WHERE p.project_id IS NULL",
+      "SELECT COUNT(*) AS count FROM regeneration_requests r LEFT JOIN shots s ON s.shot_id = r.shot_id WHERE s.shot_id IS NULL",
+      "SELECT COUNT(*) AS count FROM regeneration_requests r LEFT JOIN media_artifacts a ON a.artifact_id = r.artifact_id WHERE a.artifact_id IS NULL",
+      "SELECT COUNT(*) AS count FROM generation_intents i LEFT JOIN projects p ON p.project_id = i.project_id WHERE p.project_id IS NULL",
+      "SELECT COUNT(*) AS count FROM generation_intents i LEFT JOIN shots s ON s.shot_id = i.shot_id WHERE s.shot_id IS NULL",
+      "SELECT COUNT(*) AS count FROM generation_intents i LEFT JOIN media_artifacts a ON a.artifact_id = i.input_artifact_id WHERE a.artifact_id IS NULL",
+      "SELECT COUNT(*) AS count FROM generation_intents i LEFT JOIN generation_runs r ON r.run_id = i.run_id WHERE i.run_id IS NOT NULL AND i.run_id <> '' AND r.run_id IS NULL",
+      "SELECT COUNT(*) AS count FROM generation_intents i LEFT JOIN media_artifacts a ON a.artifact_id = i.output_artifact_id WHERE i.output_artifact_id <> '' AND a.artifact_id IS NULL",
+      "SELECT COUNT(*) AS count FROM workbench_review_notes n LEFT JOIN projects p ON p.project_id = n.project_id WHERE p.project_id IS NULL",
+      "SELECT COUNT(*) AS count FROM workbench_review_notes n LEFT JOIN shots s ON s.shot_id = n.shot_id WHERE s.shot_id IS NULL",
+      "SELECT COUNT(*) AS count FROM workbench_review_notes n LEFT JOIN media_artifacts a ON a.artifact_id = n.artifact_id WHERE n.artifact_id IS NOT NULL AND n.artifact_id <> '' AND a.artifact_id IS NULL",
+      "SELECT COUNT(*) AS count FROM webgpt_media_grants g LEFT JOIN projects p ON p.project_id = g.project_id WHERE p.project_id IS NULL",
+      "SELECT COUNT(*) AS count FROM webgpt_media_grants g LEFT JOIN media_artifacts a ON a.artifact_id = g.artifact_id WHERE a.artifact_id IS NULL",
+      "SELECT COUNT(*) AS count FROM generation_jobs j LEFT JOIN generation_intents i ON i.intent_id = j.intent_id WHERE i.intent_id IS NULL",
+      "SELECT COUNT(*) AS count FROM generation_job_events e LEFT JOIN generation_jobs j ON j.job_id = e.job_id WHERE j.job_id IS NULL"
+    ];
+    const orphanRows = orphanQueries.reduce((sum, sql) => sum + scalarCount(db, sql, errors), 0);
     let mediaRows: Array<{ data_json: string }> = [];
     try { mediaRows = db.prepare("SELECT data_json FROM media_artifacts").all() as Array<{ data_json: string }>; } catch (error) { errors.push(error instanceof Error ? error.message : "MEDIA_FILE_CHECK_FAILED"); }
     const missingMediaFiles = mediaRows.reduce((count, row) => {

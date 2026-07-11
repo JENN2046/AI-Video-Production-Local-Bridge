@@ -1,9 +1,17 @@
 import { DatabaseSync } from "node:sqlite";
+import { tmpdir } from "node:os";
+import { isAbsolute, relative, resolve } from "node:path";
 
 import { ensureM0Directories, paths } from "../paths.js";
 import { assertSchemaCurrent, runDatabaseMigrations } from "./migrations.js";
 
 export type M0Database = DatabaseSync;
+
+function isEphemeralTestDatabase(sqlitePath: string): boolean {
+  if (process.env.AI_VIDEO_TEST_AUTO_MIGRATE !== "true") return false;
+  const rel = relative(resolve(tmpdir()), resolve(sqlitePath));
+  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+}
 
 export function openM0DatabaseConnection(sqlitePath = paths.sqlitePath, options: { readOnly?: boolean } = {}): M0Database {
   const readOnly = options.readOnly === true;
@@ -17,7 +25,7 @@ export function openM0DatabaseConnection(sqlitePath = paths.sqlitePath, options:
 export function openM0Database(sqlitePath = paths.sqlitePath): M0Database {
   const db = openM0DatabaseConnection(sqlitePath);
   try {
-    if (process.env.AI_VIDEO_AUTO_MIGRATE === "true") runDatabaseMigrations(db);
+    if (sqlitePath === ":memory:" || isEphemeralTestDatabase(sqlitePath)) runDatabaseMigrations(db);
     else assertSchemaCurrent(db);
     return db;
   } catch (error) {

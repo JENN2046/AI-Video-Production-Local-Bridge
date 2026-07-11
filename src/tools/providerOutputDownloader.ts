@@ -1,6 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
+import { lookup } from "node:dns/promises";
 import { existsSync, linkSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { request as httpsRequest } from "node:https";
+import { isIP } from "node:net";
 import { basename, extname, isAbsolute, relative, resolve } from "node:path";
+import { Readable } from "node:stream";
 
 import { paths } from "../paths.js";
 import { persistMediaArtifact, type MediaArtifact } from "./mediaArtifacts.js";
@@ -34,6 +38,7 @@ export type ProviderOutputDownloadResult =
 export interface ProviderOutputDownloadRuntime {
   storage_root?: string;
   fault_injection_after_file_commit?: (path: string) => void;
+  resolve_hostname?: (hostname: string) => Promise<Array<{ address: string; family: 4 | 6 }>>;
 }
 
 const DEFAULT_SAFETY: ProviderOutputDownloadSafety = {
@@ -59,7 +64,15 @@ function isPrivateHost(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
   if (host === "localhost" || host.endsWith(".localhost") || host === "0.0.0.0" || host === "::" || host === "::1") return true;
   if (host === "169.254.169.254") return true;
-  if (host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd")) return true;
+  const mappedIpv4 = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(host)?.[1];
+  if (mappedIpv4) return isPrivateHost(mappedIpv4);
+  const mappedHex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(host);
+  if (mappedHex) {
+    const high = Number.parseInt(mappedHex[1], 16);
+    const low = Number.parseInt(mappedHex[2], 16);
+    return isPrivateHost(`${high >>> 8}.${high & 0xff}.${low >>> 8}.${low & 0xff}`);
+  }
+  if (host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("ff")) return true;
 
   const ipv4 = ipv4ToNumber(host);
   if (ipv4 === null) return false;
@@ -69,7 +82,56 @@ function isPrivateHost(hostname: string): boolean {
   if (first === 172 && second >= 16 && second <= 31) return true;
   if (first === 192 && second === 168) return true;
   if (first === 169 && second === 254) return true;
+  if (first === 100 && second >= 64 && second <= 127) return true;
+  if (first === 198 && (second === 18 || second === 19)) return true;
+  if (first >= 224) return true;
   return false;
+}
+
+async function publicAddresses(
+  hostname: string,
+  resolver: (hostname: string) => Promise<Array<{ address: string; family: 4 | 6 }>>
+): Promise<Array<{ address: string; family: 4 | 6 }>> {
+  const normalizedHostname = hostname.replace(/^\[|\]$/g, "");
+  const literalFamily = isIP(normalizedHostname);
+  const addresses = literalFamily
+    ? [{ address: normalizedHostname, family: literalFamily as 4 | 6 }]
+    : await resolver(normalizedHostname);
+  if (addresses.length === 0 || addresses.some((candidate) => isPrivateHost(candidate.address))) {
+    throw new Error("PROVIDER_OUTPUT_URI_BLOCKED");
+  }
+  return addresses;
+}
+
+async function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) throw new DOMException("aborted", "AbortError");
+  return await new Promise<T>((resolveValue, rejectValue) => {
+    const abort = (): void => rejectValue(new DOMException("aborted", "AbortError"));
+    signal.addEventListener("abort", abort, { once: true });
+    void promise.then(resolveValue, rejectValue).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+
+async function pinnedHttpsFetch(url: URL, signal: AbortSignal, address: { address: string; family: 4 | 6 }): Promise<Response> {
+  return await new Promise<Response>((resolveResponse, rejectResponse) => {
+    const request = httpsRequest(url, {
+      method: "GET",
+      signal,
+      lookup: (_hostname, _options, callback) => callback(null, address.address, address.family)
+    }, (response) => {
+      const headers = new Headers();
+      for (const [name, value] of Object.entries(response.headers)) {
+        if (Array.isArray(value)) for (const item of value) headers.append(name, item);
+        else if (value !== undefined) headers.set(name, value);
+      }
+      const body = [204, 205, 304].includes(response.statusCode ?? 500)
+        ? null
+        : Readable.toWeb(response) as ReadableStream<Uint8Array>;
+      resolveResponse(new Response(body, { status: response.statusCode ?? 500, statusText: response.statusMessage, headers }));
+    });
+    request.on("error", rejectResponse);
+    request.end();
+  });
 }
 
 function isPathInside(child: string, parent: string): boolean {
@@ -151,21 +213,25 @@ function extensionForUrl(url: URL): string {
 
 async function fetchWithRedirects(
   initialUrl: URL,
-  fetchImpl: typeof fetch,
-  safety: ProviderOutputDownloadSafety
-): Promise<{ response: Response; finalUrl: URL } | { error: ProviderToolError }> {
+  fetchImpl: typeof fetch | undefined,
+  safety: ProviderOutputDownloadSafety,
+  resolver: (hostname: string) => Promise<Array<{ address: string; family: 4 | 6 }>>
+): Promise<{ response: Response; finalUrl: URL; cleanup: () => void } | { error: ProviderToolError }> {
   let currentUrl = initialUrl;
   for (let attempt = 0; attempt <= safety.redirect_limit; attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), safety.timeout_seconds * 1000);
     let response: Response;
     try {
-      response = await fetchImpl(currentUrl, {
-        method: "GET",
-        redirect: "manual",
-        signal: controller.signal
-      });
+      const addresses = await abortable(publicAddresses(currentUrl.hostname, resolver), controller.signal);
+      response = fetchImpl
+        ? await fetchImpl(currentUrl, { method: "GET", redirect: "manual", signal: controller.signal })
+        : await pinnedHttpsFetch(currentUrl, controller.signal, addresses[0]);
     } catch (error) {
+      clearTimeout(timeout);
+      if (error instanceof Error && error.message === "PROVIDER_OUTPUT_URI_BLOCKED") {
+        return { error: providerError("PROVIDER_OUTPUT_URI_BLOCKED", "Provider output URL resolved to a private or local network address.") };
+      }
       return {
         error: providerError(
           "PROVIDER_OUTPUT_DOWNLOAD_FAILED",
@@ -173,11 +239,11 @@ async function fetchWithRedirects(
           true
         )
       };
-    } finally {
-      clearTimeout(timeout);
     }
 
     if (response.status >= 300 && response.status < 400) {
+      clearTimeout(timeout);
+      await response.body?.cancel().catch(() => undefined);
       const location = response.headers.get("location");
       if (!location) {
         return { error: providerError("PROVIDER_OUTPUT_DOWNLOAD_FAILED", "Provider output redirect was missing a Location header.", true) };
@@ -190,13 +256,45 @@ async function fetchWithRedirects(
     }
 
     if (!response.ok) {
+      clearTimeout(timeout);
+      await response.body?.cancel().catch(() => undefined);
       return { error: providerError("PROVIDER_OUTPUT_DOWNLOAD_FAILED", `Provider output download returned HTTP ${response.status}.`, true) };
     }
 
-    return { response, finalUrl: currentUrl };
+    return { response, finalUrl: currentUrl, cleanup: () => clearTimeout(timeout) };
   }
 
   return { error: providerError("PROVIDER_OUTPUT_DOWNLOAD_FAILED", "Provider output exceeded redirect limit.", true) };
+}
+
+async function readBoundedResponseBody(response: Response, maxBytes: number): Promise<{ body: Buffer } | { error: ProviderToolError }> {
+  if (!response.body) return { error: providerError("PROVIDER_OUTPUT_DOWNLOAD_FAILED", "Provider output response had no body.", true) };
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const next = await reader.read();
+      if (next.done) break;
+      total += next.value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel("PROVIDER_OUTPUT_TOO_LARGE").catch(() => undefined);
+        return { error: providerError("PROVIDER_OUTPUT_TOO_LARGE", "Provider output is larger than the configured maximum.") };
+      }
+      chunks.push(Buffer.from(next.value));
+    }
+    return { body: Buffer.concat(chunks, total) };
+  } catch (error) {
+    return {
+      error: providerError(
+        "PROVIDER_OUTPUT_DOWNLOAD_FAILED",
+        error instanceof Error && error.name === "AbortError" ? "Provider output download timed out." : "Provider output download failed.",
+        true
+      )
+    };
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 export async function downloadProviderOutputToArtifact(
@@ -211,25 +309,34 @@ export async function downloadProviderOutputToArtifact(
   const urlValidation = validateProviderOutputUrl(input.url);
   if (!urlValidation.ok) return { ok: false, error: urlValidation.error };
 
-  const fetchImpl = input.fetch_impl ?? fetch;
-  const fetched = await fetchWithRedirects(urlValidation.url, fetchImpl, safety);
+  const resolver = runtime.resolve_hostname ?? (input.fetch_impl
+    ? async () => [{ address: "203.0.113.1", family: 4 as const }]
+    : async (hostname: string) => {
+      const result = await lookup(hostname, { all: true, verbatim: true });
+      return result.map((entry) => ({ address: entry.address, family: entry.family as 4 | 6 }));
+    });
+  const fetched = await fetchWithRedirects(urlValidation.url, input.fetch_impl, safety, resolver);
   if ("error" in fetched) return { ok: false, error: fetched.error };
 
   const contentType = fetched.response.headers.get("content-type");
   if (!isAllowedContentType(contentType)) {
+    fetched.cleanup();
+    await fetched.response.body?.cancel().catch(() => undefined);
     return { ok: false, error: providerError("PROVIDER_OUTPUT_INVALID_CONTENT_TYPE", "Provider output did not advertise a video-compatible content type.") };
   }
 
   const contentLength = Number(fetched.response.headers.get("content-length"));
   const maxBytes = safety.max_size_mb * 1024 * 1024;
   if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    fetched.cleanup();
+    await fetched.response.body?.cancel().catch(() => undefined);
     return { ok: false, error: providerError("PROVIDER_OUTPUT_TOO_LARGE", "Provider output is larger than the configured maximum.") };
   }
 
-  const body = Buffer.from(await fetched.response.arrayBuffer());
-  if (body.byteLength > maxBytes) {
-    return { ok: false, error: providerError("PROVIDER_OUTPUT_TOO_LARGE", "Provider output is larger than the configured maximum.") };
-  }
+  const downloaded = await readBoundedResponseBody(fetched.response, maxBytes);
+  fetched.cleanup();
+  if ("error" in downloaded) return { ok: false, error: downloaded.error };
+  const body = downloaded.body;
 
   mkdirSync(storageDirectory.path, { recursive: true });
   const tempPath = resolve(storageDirectory.path, `provider_download_${randomUUID()}${extensionForUrl(fetched.finalUrl)}`);

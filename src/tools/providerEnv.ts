@@ -333,8 +333,7 @@ export function secretFindingForText(text: string): string | null {
     }
   }
 
-  const jsonSecretMatch = text.match(/"(RUNWAYML_API_SECRET|RUNNINGHUB_API_KEY)"\s*:\s*"([^"]+)"/);
-  if (jsonSecretMatch) {
+  for (const jsonSecretMatch of text.matchAll(/"(RUNWAYML_API_SECRET|RUNNINGHUB_API_KEY)"\s*:\s*"([^"]+)"/g)) {
     const value = jsonSecretMatch[2];
     if (
       value &&
@@ -349,16 +348,16 @@ export function secretFindingForText(text: string): string | null {
     }
   }
 
-  const bearerMatch = text.match(/\bBearer\s+([A-Za-z0-9._~+/=-]{8,})\b/);
-  if (bearerMatch) {
+  for (const bearerMatch of text.matchAll(/\bBearer\s+([A-Za-z0-9._~+/=-]{8,})\b/g)) {
     const value = bearerMatch[1];
     if (!SAFE_BEARER_PLACEHOLDERS.has(value) && !value.includes("<") && !value.toLowerCase().includes("dummy") && !value.toLowerCase().includes("fake")) {
       return "unredacted bearer token";
     }
   }
 
-  const tokenMatch = text.match(/\b(sk-[A-Za-z0-9_-]{16,}|rk_[A-Za-z0-9_-]{16,})\b/);
-  if (tokenMatch && !tokenMatch[0].toLowerCase().includes("dummy")) return "token-like secret pattern";
+  for (const tokenMatch of text.matchAll(/\b(sk-[A-Za-z0-9_-]{16,}|rk_[A-Za-z0-9_-]{16,})\b/g)) {
+    if (!tokenMatch[0].toLowerCase().includes("dummy")) return "token-like secret pattern";
+  }
 
   return null;
 }

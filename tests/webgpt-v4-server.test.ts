@@ -224,8 +224,12 @@ test("readiness reports a saturated media analysis queue", async () => {
   });
   let release: (() => void) | undefined;
   const blocked = new Promise<void>((resolveBlocked) => { release = resolveBlocked; });
-  const queued = Array.from({ length: 5 }, () => mediaAnalysisQueue.run(async () => blocked));
+  let queued: Array<Promise<void>> = [];
   try {
+    const warmResponse = await fetch(`${runtime.media_url}/readyz`);
+    const warmPayload = await warmResponse.json() as { checks: { media_queue: boolean } };
+    assert.equal(warmPayload.checks.media_queue, true);
+    queued = Array.from({ length: 5 }, () => mediaAnalysisQueue.run(async () => blocked));
     await new Promise((resolveTurn) => setImmediate(resolveTurn));
     assert.deepEqual(mediaAnalysisQueue.status(), { active: 1, waiting: 4, capacity: 5 });
     const response = await fetch(`${runtime.media_url}/readyz`);
@@ -233,9 +237,11 @@ test("readiness reports a saturated media analysis queue", async () => {
     assert.equal(response.status, 503);
     assert.equal(payload.ok, false);
     assert.equal(payload.checks.media_queue, false);
-  } finally {
     release?.();
     await Promise.all(queued);
+  } finally {
+    release?.();
+    await Promise.allSettled(queued);
     await runtime.close();
     rmSync(root, { recursive: true, force: true });
   }

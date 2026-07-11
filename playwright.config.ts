@@ -21,8 +21,7 @@ export default defineConfig({
     timeout: 120_000,
     env: {
       AI_VIDEO_WORKSPACE_DATA_ROOT: "ops/tools/playwright-data",
-      AI_VIDEO_WORKSPACE_DB_PATH: "ops/tools/playwright-data/app.sqlite",
-      AI_VIDEO_AUTO_MIGRATE: "true"
+      AI_VIDEO_WORKSPACE_DB_PATH: "ops/tools/playwright-data/app.sqlite"
     }
   }
 });

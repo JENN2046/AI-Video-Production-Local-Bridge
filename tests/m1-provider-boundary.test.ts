@@ -707,6 +707,7 @@ test("M1 provider output URL safety blocks unsafe destinations", () => {
     "https://sub.localhost/video.mp4",
     "https://127.0.0.1/video.mp4",
     "https://[::1]/video.mp4",
+    "https://[::ffff:127.0.0.1]/video.mp4",
     "https://[fc00::1]/video.mp4",
     "https://user:password@cdn.example.test/video.mp4",
     "https://10.0.0.2/video.mp4",
@@ -717,6 +718,82 @@ test("M1 provider output URL safety blocks unsafe destinations", () => {
     if (!result.ok) assert.equal(result.error.code, "PROVIDER_OUTPUT_URI_BLOCKED");
   }
   assert.equal(validateProviderOutputUrl("https://cdn.example.test/video.mp4").ok, true);
+});
+
+test("M1 provider output downloader rejects private DNS answers before transport", async () => {
+  const db = openM0Database(":memory:");
+  const root = mkdtempSync(join(tmpdir(), "provider-output-dns-"));
+  let fetched = false;
+  try {
+    const result = await downloadProviderOutputToArtifact({
+      url: "https://cdn.example.test/output.mp4",
+      provider_name: "runninghub",
+      provider_job_id: "private-dns-task",
+      project_id: "project_dns",
+      shot_id: "shot_dns",
+      duration_seconds: 2,
+      aspect_ratio: "9:16",
+      storage_directory: root,
+      fetch_impl: (async () => { fetched = true; throw new Error("transport must not run"); }) as typeof fetch
+    }, db, {
+      storage_root: root,
+      resolve_hostname: async () => [{ address: "127.0.0.1", family: 4 }]
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "PROVIDER_OUTPUT_URI_BLOCKED");
+    assert.equal(fetched, false);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("M1 provider output downloader enforces size and timeout while streaming", async () => {
+  const db = openM0Database(":memory:");
+  const root = mkdtempSync(join(tmpdir(), "provider-output-stream-"));
+  const base = {
+    url: "https://cdn.example.test/output.mp4",
+    provider_name: "runninghub",
+    project_id: "project_stream",
+    shot_id: "shot_stream",
+    duration_seconds: 2,
+    aspect_ratio: "9:16",
+    storage_directory: root
+  };
+  try {
+    const oversized = await downloadProviderOutputToArtifact({
+      ...base,
+      provider_job_id: "oversized-task",
+      safety: { max_size_mb: 0.000001 },
+      fetch_impl: (async () => new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array(32));
+          controller.close();
+        }
+      }), { status: 200, headers: { "content-type": "video/mp4" } })) as typeof fetch
+    }, db, { storage_root: root });
+    assert.equal(oversized.ok, false);
+    if (!oversized.ok) assert.equal(oversized.error.code, "PROVIDER_OUTPUT_TOO_LARGE");
+
+    const timedOut = await downloadProviderOutputToArtifact({
+      ...base,
+      provider_job_id: "timeout-task",
+      safety: { timeout_seconds: 0.01 },
+      fetch_impl: (async (_input, init) => new Response(new ReadableStream({
+        start(controller) {
+          init?.signal?.addEventListener("abort", () => controller.error(new DOMException("aborted", "AbortError")), { once: true });
+        }
+      }), { status: 200, headers: { "content-type": "video/mp4" } })) as typeof fetch
+    }, db, { storage_root: root });
+    assert.equal(timedOut.ok, false);
+    if (!timedOut.ok) {
+      assert.equal(timedOut.error.code, "PROVIDER_OUTPUT_DOWNLOAD_FAILED");
+      assert.match(timedOut.error.message, /timed out/i);
+    }
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("M1 provider output registration blocks symlink storage directories", () => {

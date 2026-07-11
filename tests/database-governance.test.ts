@@ -7,6 +7,7 @@ import test from "node:test";
 
 import { backupDatabase, checkDatabase, migrateDatabase } from "../src/storage/databaseGovernance.js";
 import { assertSchemaCurrent, DATABASE_MIGRATIONS, M0_BASE_SCHEMA_SQL, migrationChecksum, runDatabaseMigrations, SchemaMigrationRequiredError } from "../src/storage/migrations.js";
+import { openM0Database } from "../src/storage/sqlite.js";
 import { initializeWorkbenchV2Schema } from "../src/storage/workbenchV2Schema.js";
 
 function tempRoot(): string {
@@ -80,6 +81,28 @@ test("migration checksum drift fails closed", () => {
     assert.throws(() => assertSchemaCurrent(db), (error) => error instanceof SchemaMigrationRequiredError && error.code === "SCHEMA_MIGRATION_REQUIRED");
     db.close();
   } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("runtime open cannot use a production environment flag to migrate persistent data", () => {
+  const root = tempRoot();
+  const previous = process.env.AI_VIDEO_AUTO_MIGRATE;
+  const previousTestAutoMigrate = process.env.AI_VIDEO_TEST_AUTO_MIGRATE;
+  try {
+    const sqlitePath = join(root, "runtime.sqlite");
+    const db = new DatabaseSync(sqlitePath);
+    db.exec(M0_BASE_SCHEMA_SQL);
+    initializeWorkbenchV2Schema(db);
+    db.close();
+    process.env.AI_VIDEO_AUTO_MIGRATE = "true";
+    delete process.env.AI_VIDEO_TEST_AUTO_MIGRATE;
+    assert.throws(() => openM0Database(sqlitePath), (error) => error instanceof SchemaMigrationRequiredError);
+  } finally {
+    if (previous === undefined) delete process.env.AI_VIDEO_AUTO_MIGRATE;
+    else process.env.AI_VIDEO_AUTO_MIGRATE = previous;
+    if (previousTestAutoMigrate === undefined) delete process.env.AI_VIDEO_TEST_AUTO_MIGRATE;
+    else process.env.AI_VIDEO_TEST_AUTO_MIGRATE = previousTestAutoMigrate;
     rmSync(root, { recursive: true, force: true });
   }
 });
