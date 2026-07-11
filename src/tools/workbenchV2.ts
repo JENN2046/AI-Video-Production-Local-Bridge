@@ -625,7 +625,7 @@ export function getWorkbenchShell(db = openM0Database()): Record<string, unknown
       unassigned_assets: counts.unassigned_assets
     },
     capabilities: {
-      legacy_available: true,
+      legacy_available: false,
       real_generation_requires_preflight: true,
       max_real_generation_jobs: 1,
       automatic_retry: false
