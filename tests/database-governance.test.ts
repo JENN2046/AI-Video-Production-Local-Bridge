@@ -28,6 +28,18 @@ test("fresh database migrates explicitly and remains idempotent", () => {
   }
 });
 
+test("fresh database migration creates a missing parent directory", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "new", "nested", "app.sqlite");
+    const result = migrateDatabase(sqlitePath);
+    assert.deepEqual(result.applied, ["0001", "0002"]);
+    assert.equal(checkDatabase(sqlitePath).result, "PASS");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("existing workbench-v2-4 database is baselined without rewriting business rows", () => {
   const root = tempRoot();
   try {
