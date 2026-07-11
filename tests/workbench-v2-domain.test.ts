@@ -288,7 +288,7 @@ test("known provider task remains active when the local polling deadline expires
   }
 });
 
-test("startup recovery preserves a live lease and quarantines unknown submission state", () => {
+test("startup recovery preserves a live lease and quarantines unknown submission state", async () => {
   const root = mkdtempSync(join(tmpdir(), "generation-resume-"));
   const sqlitePath = join(root, "app.sqlite");
   try {
@@ -324,6 +324,47 @@ test("startup recovery preserves a live lease and quarantines unknown submission
     const reconciled = checked.prepare("SELECT state, lease_owner, lease_token, lease_expires_at FROM generation_jobs WHERE job_id = 'job_reconcile'").get() as { state: string; lease_owner: string; lease_token: string; lease_expires_at: string | null };
     assert.deepEqual({ ...reconciled }, { state: "manual_reconciliation", lease_owner: "", lease_token: "", lease_expires_at: null });
     checked.close();
+    await new Promise((resolveTurn) => setImmediate(resolveTurn));
+    await new Promise((resolveTurn) => setImmediate(resolveTurn));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("startup recovery resumes a confirmed queued job before any provider submit", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-resume-queued-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Resume queued generation");
+    let submitCalls = 0;
+    const adapter = {
+      provider_name: "runninghub", model_name: "model",
+      submitGeneration: async () => {
+        submitCalls += 1;
+        return { ok: true as const, provider_job_id: "task-resumed-queued", provider_status: "PENDING", sanitized_request: {} };
+      },
+      pollStatus: async () => ({ ok: true as const, status: "cancelled" as const, provider_status: "CANCELLED" }),
+      fetchOutput: async () => { throw new Error("output must not run"); }
+    } as unknown as VideoProviderAdapter;
+    const result = resumeWorkbenchGenerationJobs({ sqlite_path: sqlitePath, env: prepared.env, adapter_factory: () => adapter, poll_interval_ms: 10 });
+    assert.deepEqual(result, { resumed: [prepared.intent_id], reconciled: [] });
+    for (let attempt = 0; attempt < 50 && submitCalls === 0; attempt += 1) {
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
+    }
+    assert.equal(submitCalls, 1);
+    let finalState = "";
+    for (let attempt = 0; attempt < 50 && finalState !== "cancelled"; attempt += 1) {
+      const checked = openM0Database(sqlitePath);
+      const intent = checked.prepare("SELECT provider_task_id FROM generation_intents WHERE intent_id = ?").get(prepared.intent_id) as { provider_task_id: string };
+      const job = checked.prepare("SELECT state FROM generation_jobs WHERE job_id = ?").get(prepared.job_id) as { state: string };
+      assert.equal(intent.provider_task_id, "task-resumed-queued");
+      finalState = job.state;
+      checked.close();
+      if (finalState !== "cancelled") await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
+    }
+    assert.equal(finalState, "cancelled");
+    await new Promise((resolveTurn) => setImmediate(resolveTurn));
+    await new Promise((resolveTurn) => setImmediate(resolveTurn));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
