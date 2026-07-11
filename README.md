@@ -31,15 +31,23 @@ npm run build
 npm run dev:v2
 npm run start:local
 npm run start:webgpt
+npm run db:backup
+npm run db:check
+npm run db:migrate
+npm run preflight
+npm test
 npm run test:v2
 npm run test:v2:ui
 npm run test:webgpt:v4
 npm run test:h1
+npm run test:db
 npm run test:v2:browser
 npm run secret:scan
 ```
 
-`start:local` 只启动本地 Workbench。`start:webgpt` 单独启动 WebGPT V4 MCP 与媒体网关。`db:*`、`preflight` 和统一 `test` 会在对应能力实现时加入。
+`start:local` 只启动本地 Workbench。`start:webgpt` 单独启动 WebGPT V4 MCP 与媒体网关。`preflight` 默认检查本地 Workbench profile；WebGPT 使用 `npm run preflight -- --profile=webgpt`，OAuth 缺失时会明确失败并保持 fail closed。
+
+数据库 schema 不再在服务启动时静默升级。首次使用或升级后必须在服务停止状态下显式执行 `npm run db:migrate`；命令会在迁移现有数据库前创建 `ops/backups/` 快照。对 Jenn 活动数据库执行迁移前仍需遵守当前授权边界。
 
 ## 本地启动
 

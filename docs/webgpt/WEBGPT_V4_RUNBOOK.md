@@ -16,6 +16,7 @@
 ## 本地命令
 
 ```powershell
+npm run db:migrate
 npm run migrate:webgpt:v4
 npm run test:webgpt:v4
 npm run start:webgpt

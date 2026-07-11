@@ -1,14 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { createReadStream, existsSync, lstatSync, realpathSync, statSync } from "node:fs";
+import { accessSync, constants, createReadStream, existsSync, lstatSync, realpathSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { basename, extname, isAbsolute, relative, resolve } from "node:path";
 
 import { ensureM0Directories, paths } from "../../paths.js";
 import { handleWorkbenchV2Api } from "../../packages/domain/index.js";
 import { getMediaArtifact, validateImageFile } from "../../packages/media/index.js";
-import { resumeWorkbenchGenerationJobs } from "../../packages/providers/index.js";
+import { generationWorkerStatus, resumeWorkbenchGenerationJobs } from "../../packages/providers/index.js";
 import { openM0Database } from "../../packages/storage/index.js";
-import { migrateLegacyWorkbenchInboxStores } from "../../tools/workbenchInboxStore.js";
+import { checkProviderEnv } from "../../tools/providerEnv.js";
+import { resolveFfmpegExecutable, resolveFfprobeExecutable } from "../../webgpt-v4/media.js";
 
 export const WORKBENCH_HOST = "127.0.0.1";
 export const WORKBENCH_PORT = 4181;
@@ -29,6 +30,7 @@ const V2_CONTENT_TYPES: Record<string, string> = {
   ".svg": "image/svg+xml",
   ".woff2": "font/woff2"
 };
+let readinessCache: { expires: number; checks: Record<string, boolean> } | null = null;
 
 export interface WorkbenchRuntime {
   host: string;
@@ -117,6 +119,39 @@ function withDatabase<T>(operation: (db: ReturnType<typeof openM0Database>) => T
   }
 }
 
+async function workbenchReadiness(): Promise<{ status: number; body: Record<string, unknown> }> {
+  let staticChecks: Record<string, boolean>;
+  if (readinessCache && readinessCache.expires > Date.now()) {
+    staticChecks = readinessCache.checks;
+  } else {
+    staticChecks = { schema: false, database: false, media_directory: false, ffmpeg: false, ffprobe: false, provider: true };
+    try {
+      withDatabase((db) => {
+        staticChecks.database = (db.prepare("SELECT 1 AS ok").get() as { ok: number }).ok === 1;
+        staticChecks.schema = (db.prepare("PRAGMA quick_check").get() as { quick_check: string }).quick_check === "ok";
+      });
+    } catch { staticChecks.database = false; }
+    try { accessSync(paths.mediaRoot, constants.R_OK | constants.W_OK); staticChecks.media_directory = true; } catch { staticChecks.media_directory = false; }
+    try {
+      const ffmpeg = await resolveFfmpegExecutable();
+      staticChecks.ffmpeg = true;
+      await resolveFfprobeExecutable(ffmpeg);
+      staticChecks.ffprobe = true;
+    } catch { staticChecks.ffmpeg = false; staticChecks.ffprobe = false; }
+    if (process.env.REAL_PROVIDER_ENABLED === "true") {
+      const provider = checkProviderEnv();
+      staticChecks.provider = provider.result === "PASS" && provider.provider_name === "runninghub";
+    }
+    readinessCache = { checks: staticChecks, expires: Date.now() + 30_000 };
+  }
+  let worker = false;
+  try { worker = withDatabase((db) => generationWorkerStatus(db).ready); } catch { worker = false; }
+  const checks = { ...staticChecks, worker };
+  const ok = Object.values(checks).every(Boolean);
+  const result = { status: ok ? 200 : 503, body: { ok, service: "workbench-v2", checks } };
+  return result;
+}
+
 function serveMedia(pathname: string, request: IncomingMessage, response: ServerResponse): void {
   const artifactId = basename(decodeURIComponent(pathname.slice("/media/artifacts/".length)));
   if (!/^artifact_[0-9a-f-]+$/i.test(artifactId)) {
@@ -164,6 +199,15 @@ async function route(request: IncomingMessage, response: ServerResponse, actionN
     return;
   }
   const url = new URL(request.url ?? "/", `http://${WORKBENCH_HOST}`);
+  if (request.method === "GET" && url.pathname === "/healthz") {
+    sendJson(response, 200, { ok: true, service: "workbench-v2" });
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/readyz") {
+    const ready = await workbenchReadiness();
+    sendJson(response, ready.status, ready.body);
+    return;
+  }
   if (await handleWorkbenchV2Api(request, response, url, actionNonce)) return;
   if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/") {
     response.writeHead(302, { location: "/v2/dashboard", "cache-control": "no-store" });
@@ -217,7 +261,6 @@ function listen(server: Server, startPort: number): Promise<number> {
 
 export async function startWorkbenchApplication(startPort = Number(process.env.H1_WORKBENCH_PORT || process.env.PORT || WORKBENCH_PORT)): Promise<WorkbenchRuntime> {
   ensureM0Directories();
-  migrateLegacyWorkbenchInboxStores();
   resumeWorkbenchGenerationJobs();
   const actionNonce = randomUUID();
   const server = createServer((request, response) => {

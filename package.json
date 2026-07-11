@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "npm run build:server && npm run build:ui",
-    "build:server": "tsc -p tsconfig.json",
+    "build:server": "node scripts/clean-server-dist.mjs && tsc -p tsconfig.json",
     "build:ui": "vite build --config vite.config.ts",
     "typecheck": "npm run typecheck:server && npm run typecheck:ui",
     "typecheck:server": "tsc --noEmit -p tsconfig.json",
@@ -18,12 +18,16 @@
     "start:workbench": "npm run build && node dist/scripts/h1-workbench.js",
     "start:local": "npm run start:workbench",
     "start:webgpt": "npm run build && node dist/scripts/webgpt-v4-server.js",
-    "migrate:v2": "npm run build:server && node dist/scripts/migrate-workbench-v2.js",
+    "db:backup": "npm run build:server && node dist/scripts/db-backup.js",
+    "db:check": "npm run build:server && node dist/scripts/db-check.js",
+    "db:migrate": "npm run build:server && node dist/scripts/db-migrate.js",
+    "preflight": "npm run build:server && node dist/scripts/preflight.js",
     "migrate:webgpt:v4": "npm run build:server && node dist/scripts/migrate-webgpt-v4.js",
     "test:v2": "npm run build:server && node dist/scripts/run-isolated-tests.js dist/tests/workbench-v2-*.test.js",
     "test:v2:ui": "vitest run --config vitest.config.ts",
     "test:v2:browser": "npm run build && playwright test --config playwright.config.ts",
     "test:h1": "npm run build && node dist/scripts/run-isolated-tests.js dist/tests/h1-workbench.test.js",
+    "test:db": "npm run build:server && node dist/scripts/run-isolated-tests.js dist/tests/database-governance.test.js",
     "test:legacy": "npm run build:server && node --test dist/tests/legacy-manifest.test.js",
     "test:webgpt:v4": "npm run build:server && node dist/scripts/run-isolated-tests.js dist/tests/webgpt-v4-auth.test.js dist/tests/webgpt-v4-domain.test.js dist/tests/webgpt-v4-media.test.js dist/tests/webgpt-v4-metadata.test.js dist/tests/webgpt-v4-server.test.js",
     "test:memory": "npm run build && node dist/scripts/run-isolated-tests.js dist/tests/memory-saveback.test.js",
@@ -33,7 +37,8 @@
     "source:audit": "npm run build && node dist/scripts/source-package-audit.js",
     "source:export": "npm run build && node dist/scripts/source-clean-export.js",
     "package:audit": "npm run source:audit",
-    "test:source-audit": "npm run build && node dist/scripts/run-isolated-tests.js dist/tests/source-audit.test.js"
+    "test:source-audit": "npm run build && node dist/scripts/run-isolated-tests.js dist/tests/source-audit.test.js",
+    "test": "npm run typecheck && npm run build && npm run test:db && npm run test:v2 && npm run test:v2:ui && npm run test:h1 && npm run test:webgpt:v4 && npm run test:v2:browser && npm run secret:scan"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
