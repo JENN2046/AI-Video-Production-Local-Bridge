@@ -1,14 +1,15 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { accessSync, constants } from "node:fs";
 
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
 import { openM0Database, openM0DatabaseConnection } from "../storage/sqlite.js";
+import { paths } from "../paths.js";
 import { loadWebGptV4AuthConfig, createAuth0Authenticator, createAuth0MediaAuthenticator, protectedResourceMetadata, unavailableAuthenticator, wwwAuthenticate, type WebGptV4AuthConfig, type WebGptV4Authenticator } from "./auth.js";
 import { errorBody, WEBGPT_V4_VERSION } from "./types.js";
 import { createWebGptV4McpApp, WEBGPT_V4_TOOL_SCOPES } from "./mcpApp.js";
-import { handleMediaGatewayRequest, invalidateMediaGrantsForRestart, type MediaRuntimeOptions } from "./media.js";
-import { migrateLegacyWebGptV4History } from "./migration.js";
+import { handleMediaGatewayRequest, invalidateMediaGrantsForRestart, mediaAnalysisQueue, resolveFfmpegExecutable, resolveFfprobeExecutable, type MediaRuntimeOptions } from "./media.js";
 import { withToolSecuritySchemes } from "./securityTransport.js";
 
 export const WEBGPT_V4_HOST = "127.0.0.1";
@@ -34,7 +35,6 @@ export interface WebGptV4Runtime {
   media_url: string;
   auth_configured: boolean;
   invalidated_media_grants: number;
-  migration: ReturnType<typeof migrateLegacyWebGptV4History>;
   close: () => Promise<void>;
 }
 
@@ -106,11 +106,39 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
     : unavailableAuthenticator());
   const maximum = options.max_body_bytes ?? 1024 * 1024;
   const bootstrapDb = openM0Database(options.sqlite_path);
-  const migration = migrateLegacyWebGptV4History(bootstrapDb, options.data_root);
   const invalidatedMediaGrants = invalidateMediaGrantsForRestart(bootstrapDb);
   bootstrapDb.close();
 
   const activeRequests = new Set<Promise<void>>();
+  let readinessCache: { expires: number; checks: Record<string, boolean> } | null = null;
+  const readiness = async (): Promise<{ status: number; body: Record<string, unknown> }> => {
+    let staticChecks: Record<string, boolean>;
+    if (readinessCache && readinessCache.expires > Date.now()) {
+      staticChecks = readinessCache.checks;
+    } else {
+      staticChecks = { oauth: Boolean(authConfig), schema: false, database: false, media_directory: false, ffmpeg: false, ffprobe: false };
+      try {
+        const db = openM0Database(options.sqlite_path);
+        try {
+          staticChecks.database = (db.prepare("SELECT 1 AS ok").get() as { ok: number }).ok === 1;
+          staticChecks.schema = (db.prepare("PRAGMA quick_check").get() as { quick_check: string }).quick_check === "ok";
+        } finally { db.close(); }
+      } catch { staticChecks.database = false; }
+      try { accessSync(paths.mediaRoot, constants.R_OK | constants.W_OK); staticChecks.media_directory = true; } catch { staticChecks.media_directory = false; }
+      try {
+        const ffmpeg = await resolveFfmpegExecutable(options.media?.ffmpeg_path);
+        staticChecks.ffmpeg = true;
+        await resolveFfprobeExecutable(ffmpeg);
+        staticChecks.ffprobe = true;
+      } catch { staticChecks.ffmpeg = false; staticChecks.ffprobe = false; }
+      readinessCache = { checks: staticChecks, expires: Date.now() + 30_000 };
+    }
+    const queueStatus = mediaAnalysisQueue.status();
+    const checks = { ...staticChecks, media_queue: queueStatus.active + queueStatus.waiting < queueStatus.capacity };
+    const ok = Object.values(checks).every(Boolean);
+    const result = { status: ok ? 200 : 503, body: { ok, service: "webgpt-v4", checks, provider_calls_allowed: false } };
+    return result;
+  };
   const trackRequest = (task: Promise<void>): void => {
     activeRequests.add(task);
     void task.finally(() => activeRequests.delete(task)).catch(() => undefined);
@@ -123,7 +151,8 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
       return;
     }
     if (request.method === "GET" && url.pathname === "/readyz") {
-      sendJson(response, authConfig ? 200 : 503, { ok: Boolean(authConfig), service: "webgpt-v4-mcp", auth_configured: Boolean(authConfig), provider_calls_allowed: false });
+      const ready = await readiness();
+      sendJson(response, ready.status, { ...ready.body, service: "webgpt-v4-mcp", auth_configured: Boolean(authConfig) });
       return;
     }
     if (request.method === "GET" && url.pathname === "/.well-known/oauth-protected-resource") {
@@ -179,6 +208,11 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
     const url = new URL(request.url ?? "/", `http://${WEBGPT_V4_HOST}`);
     if (request.method === "GET" && url.pathname === "/healthz") {
       sendJson(response, 200, { ok: true, service: "webgpt-v4-media", version: WEBGPT_V4_VERSION });
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/readyz") {
+      const ready = await readiness();
+      sendJson(response, ready.status, { ...ready.body, service: "webgpt-v4-media", auth_configured: Boolean(authConfig) });
       return;
     }
     const match = /^\/media\/v4\/projects\/([^/]+)\/artifacts\/([^/]+)\/content$/.exec(url.pathname);
@@ -237,7 +271,6 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
     media_url: `http://${WEBGPT_V4_HOST}:${mediaPort}`,
     auth_configured: Boolean(authConfig),
     invalidated_media_grants: invalidatedMediaGrants,
-    migration,
     close: async () => {
       await Promise.all([close(mcpServer), close(mediaServer)]);
       await Promise.allSettled([...activeRequests]);

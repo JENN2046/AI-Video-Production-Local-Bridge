@@ -1,5 +1,5 @@
 import { createReadStream, existsSync, lstatSync, realpathSync, statSync } from "node:fs";
-import { mkdir, readFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
@@ -14,7 +14,77 @@ import { sha256, WebGptV4Error, type WebGptV4Actor } from "./types.js";
 const MEDIA_GRANT_TTL_MS = 5 * 60 * 1000;
 const MAX_MODEL_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_FRAME_PAGE = 12;
+const MEDIA_ANALYZER_VERSION = "webgpt-v4-frames-v2";
+const MEDIA_ANALYSIS_TIMEOUT_MS = 120_000;
+const MEDIA_CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const MEDIA_CACHE_MAX_BYTES = 5 * 1024 * 1024 * 1024;
 const execFileAsync = promisify(execFile);
+let lastCacheCleanupAt = 0;
+
+export class MediaAnalysisQueue {
+  private active = 0;
+  private readonly waiting: Array<{ start: () => void; reject: (error: unknown) => void; timer: NodeJS.Timeout; settled: boolean }> = [];
+
+  constructor(private readonly concurrency = 1, private readonly maximumWaiting = 4, private readonly timeoutMs = MEDIA_ANALYSIS_TIMEOUT_MS) {}
+
+  status(): { active: number; waiting: number; capacity: number } {
+    return { active: this.active, waiting: this.waiting.length, capacity: this.concurrency + this.maximumWaiting };
+  }
+
+  run<T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    if (this.active >= this.concurrency && this.waiting.length >= this.maximumWaiting) {
+      return Promise.reject(new WebGptV4Error("MEDIA_ANALYSIS_BUSY", "Media analysis queue is full; retry later.", undefined, true));
+    }
+    return new Promise<T>((resolveRun, rejectRun) => {
+      const entry = {
+        start: (): void => undefined,
+        reject: rejectRun,
+        timer: undefined as unknown as NodeJS.Timeout,
+        settled: false
+      };
+      let started = false;
+      const controller = new AbortController();
+      const start = (): void => {
+        if (entry.settled) return;
+        started = true;
+        this.active += 1;
+        void Promise.resolve().then(() => operation(controller.signal)).then((value) => {
+          if (!entry.settled) {
+            entry.settled = true;
+            resolveRun(value);
+          }
+        }, (error) => {
+          if (!entry.settled) {
+            entry.settled = true;
+            rejectRun(error);
+          }
+        }).finally(() => {
+          clearTimeout(entry.timer);
+          this.active -= 1;
+          let next = this.waiting.shift();
+          while (next?.settled) next = this.waiting.shift();
+          next?.start();
+        });
+      };
+      entry.start = start;
+      entry.timer = setTimeout(() => {
+        if (entry.settled) return;
+        entry.settled = true;
+        if (!started) {
+          const index = this.waiting.indexOf(entry);
+          if (index >= 0) this.waiting.splice(index, 1);
+        } else {
+          controller.abort();
+        }
+        entry.reject(new WebGptV4Error("MEDIA_ANALYSIS_TIMEOUT", "Media analysis exceeded the 120 second end-to-end limit.", undefined, true));
+      }, this.timeoutMs);
+      if (this.active < this.concurrency) start();
+      else this.waiting.push(entry);
+    });
+  }
+}
+
+export const mediaAnalysisQueue = new MediaAnalysisQueue();
 
 export interface ModelImage {
   data: string;
@@ -131,10 +201,14 @@ async function executableAvailable(candidate: string): Promise<boolean> {
 }
 
 export async function resolveFfmpegExecutable(configured?: string): Promise<string> {
+  const winGetLinks = process.platform === "win32" && process.env.LOCALAPPDATA
+    ? join(process.env.LOCALAPPDATA, "Microsoft", "WinGet", "Links", "ffmpeg.exe")
+    : undefined;
   const candidates = [
     configured,
     process.env.FFMPEG_PATH,
     process.platform === "win32" ? "A:\\AI-VIDEO\\ffmpeg\\bin\\ffmpeg.exe" : undefined,
+    winGetLinks,
     process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg"
   ].filter((candidate): candidate is string => Boolean(candidate?.trim()));
   for (const candidate of [...new Set(candidates)]) {
@@ -143,7 +217,7 @@ export async function resolveFfmpegExecutable(configured?: string): Promise<stri
   throw new WebGptV4Error("MEDIA_TOOL_UNAVAILABLE", "FFmpeg is not available for video inspection.");
 }
 
-async function resolveFfprobeExecutable(ffmpegPath: string): Promise<string> {
+export async function resolveFfprobeExecutable(ffmpegPath: string): Promise<string> {
   const adjacent = ffmpegPath.replace(/ffmpeg(?:\.exe)?$/i, process.platform === "win32" ? "ffprobe.exe" : "ffprobe");
   const candidates = [
     process.env.FFPROBE_PATH,
@@ -166,13 +240,14 @@ interface PublicVideoValidation {
   error: string;
 }
 
-async function validateVideo(filePath: string, ffmpegPath: string): Promise<PublicVideoValidation> {
+async function validateVideo(filePath: string, ffmpegPath: string, signal?: AbortSignal): Promise<PublicVideoValidation> {
   const ffprobe = await resolveFfprobeExecutable(ffmpegPath);
   try {
     const { stdout } = await execFileAsync(ffprobe, ["-v", "error", "-show_entries", "format=duration", "-show_streams", "-of", "json", filePath], {
       encoding: "utf8",
       maxBuffer: 10 * 1024 * 1024,
       timeout: 30_000,
+      signal,
       windowsHide: true
     });
     const parsed = JSON.parse(stdout) as { streams?: Array<{ codec_type?: string; duration?: string }>; format?: { duration?: string } };
@@ -214,13 +289,13 @@ export function coverageFramePlan(durationSeconds: number, sceneTimestamps: numb
   return [...result.entries()].sort(([left], [right]) => left - right).slice(0, 48).map(([timestamp_seconds, reason]) => ({ timestamp_seconds, reason }));
 }
 
-async function detectSceneChanges(filePath: string, ffmpegPath: string): Promise<number[]> {
+async function detectSceneChanges(filePath: string, ffmpegPath: string, signal?: AbortSignal): Promise<number[]> {
   try {
     const { stdout } = await execFileAsync(ffmpegPath, [
       "-hide_banner", "-loglevel", "error", "-i", filePath,
       "-vf", "select=gt(scene\\,0.30),metadata=print:file=-",
       "-an", "-f", "null", process.platform === "win32" ? "NUL" : "/dev/null"
-    ], { encoding: "utf8", timeout: 30_000, maxBuffer: 4 * 1024 * 1024, windowsHide: true });
+    ], { encoding: "utf8", timeout: 30_000, maxBuffer: 4 * 1024 * 1024, signal, windowsHide: true });
     return [...stdout.matchAll(/pts_time:([0-9.]+)/g)].map((match) => Number(match[1])).filter(Number.isFinite);
   } catch {
     return [];
@@ -232,14 +307,54 @@ function framePath(root: string, artifactId: string, timestamp: number): string 
   return join(root, artifactId, `${safeTimestamp}.jpg`);
 }
 
-async function extractFrame(filePath: string, outputPath: string, timestamp: number, ffmpegPath: string): Promise<void> {
+function analysisCacheRoot(root: string, artifactSha256: string, plan: Array<{ timestamp_seconds: number }>, frameLimit: number): string {
+  const key = sha256(JSON.stringify({ artifact_sha256: artifactSha256, analyzer: MEDIA_ANALYZER_VERSION, plan, frame_limit: frameLimit, scale: 1280, quality: 3 }));
+  return join(root, key);
+}
+
+async function directoryBytes(root: string): Promise<number> {
+  let total = 0;
+  for (const entry of await readdir(root, { withFileTypes: true })) {
+    const target = join(root, entry.name);
+    if (entry.isSymbolicLink()) continue;
+    if (entry.isDirectory()) total += await directoryBytes(target);
+    else if (entry.isFile()) total += (await stat(target)).size;
+  }
+  return total;
+}
+
+export async function cleanupMediaAnalysisCache(root: string, options: { now?: number; max_age_ms?: number; max_bytes?: number } = {}): Promise<{ removed: number; bytes: number }> {
+  const current = options.now ?? Date.now();
+  const maxAge = options.max_age_ms ?? MEDIA_CACHE_MAX_AGE_MS;
+  const maxBytes = options.max_bytes ?? MEDIA_CACHE_MAX_BYTES;
+  await mkdir(root, { recursive: true });
+  const candidates: Array<{ path: string; modified: number; bytes: number }> = [];
+  for (const entry of await readdir(root, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !/^[a-f0-9]{64}$/.test(entry.name)) continue;
+    const target = join(root, entry.name);
+    const info = await lstat(target);
+    if (info.isSymbolicLink()) continue;
+    candidates.push({ path: target, modified: info.mtimeMs, bytes: await directoryBytes(target) });
+  }
+  let bytes = candidates.reduce((sum, item) => sum + item.bytes, 0);
+  let removed = 0;
+  for (const item of candidates.sort((left, right) => left.modified - right.modified)) {
+    if (current - item.modified <= maxAge && bytes <= maxBytes) continue;
+    await rm(item.path, { recursive: true, force: true });
+    bytes -= item.bytes;
+    removed += 1;
+  }
+  return { removed, bytes };
+}
+
+async function extractFrame(filePath: string, outputPath: string, timestamp: number, ffmpegPath: string, signal?: AbortSignal): Promise<void> {
   if (existsSync(outputPath) && statSync(outputPath).size > 0) return;
   await mkdir(dirname(outputPath), { recursive: true });
   try {
     await execFileAsync(ffmpegPath, [
       "-hide_banner", "-loglevel", "error", "-ss", timestamp.toFixed(3), "-i", filePath,
       "-frames:v", "1", "-vf", "scale='min(1280,iw)':-2", "-q:v", "3", "-y", outputPath
-    ], { timeout: 30_000, windowsHide: true, maxBuffer: 2 * 1024 * 1024 });
+    ], { timeout: 30_000, signal, windowsHide: true, maxBuffer: 2 * 1024 * 1024 });
   } catch {
     throw new WebGptV4Error("MEDIA_ANALYSIS_FAILED", "A review frame could not be extracted from the video.");
   }
@@ -264,8 +379,6 @@ export async function inspectProductionMedia(
 ): Promise<MediaInspection> {
   const artifact = productionArtifact(db, input.project_id, input.artifact_id);
   const media = resolveProductionMediaPath(db, input.project_id, input.artifact_id, options);
-  const grant = createMediaGrant(db, { actor, project_id: input.project_id, artifact_id: input.artifact_id }, options);
-  const url = playbackUrl(options.public_origin, input.project_id, input.artifact_id, grant.token);
   const modelImages: ModelImage[] = [];
   let analysis: Record<string, unknown>;
 
@@ -276,36 +389,46 @@ export async function inspectProductionMedia(
     modelImages.push({ data: bytes.toString("base64"), mime_type: mime, sha256: sha256(bytes) });
     analysis = { kind: "image", model_input: "original_image", sha256: artifact.metadata.sha256, width: artifact.metadata.width, height: artifact.metadata.height };
   } else {
-    const ffmpeg = await resolveFfmpegExecutable(options.ffmpeg_path);
-    const validation = await validateVideo(media.path, ffmpeg);
-    if (validation.status !== "PASS" || validation.duration_seconds === null) throw new WebGptV4Error("MEDIA_INVALID", validation.error || "Video validation failed.");
-    const scenes = await detectSceneChanges(media.path, ffmpeg);
-    const plan = coverageFramePlan(validation.duration_seconds, scenes);
-    const offset = Math.max(0, Math.trunc(input.frame_offset ?? 0));
-    const limit = Math.min(MAX_FRAME_PAGE, Math.max(1, Math.trunc(input.frame_limit ?? 8)));
-    const selected = plan.slice(offset, offset + limit);
-    const root = options.analysis_root ?? join(paths.mediaRoot, "analysis", "webgpt-v4");
-    const modelFrames: Array<{ timestamp_seconds: number; reason: "coverage" | "scene_change"; sha256: string }> = [];
-    for (const frame of selected) {
-      const output = framePath(root, artifact.artifact_id, frame.timestamp_seconds);
-      await extractFrame(media.path, output, decodableTimestamp(frame.timestamp_seconds, validation.duration_seconds), ffmpeg);
-      const bytes = await readFile(output);
-      const frameHash = sha256(bytes);
-      modelImages.push({ data: bytes.toString("base64"), mime_type: "image/jpeg", timestamp_seconds: frame.timestamp_seconds, reason: frame.reason, sha256: frameHash });
-      modelFrames.push({ timestamp_seconds: frame.timestamp_seconds, reason: frame.reason, sha256: frameHash });
-    }
-    analysis = {
-      kind: "video",
-      model_input: "timestamped_frame_bundle",
-      direct_video_model_input: false,
-      validation,
-      frame_plan: plan,
-      model_frames: modelFrames,
-      frame_page: { offset, limit, returned: selected.length, total: plan.length, has_more: offset + selected.length < plan.length },
-      scene_change_frames: scenes.length,
-      sha256: artifact.metadata.sha256
-    };
+    const result = await mediaAnalysisQueue.run(async (signal) => {
+      const ffmpeg = await resolveFfmpegExecutable(options.ffmpeg_path);
+      const validation = await validateVideo(media.path, ffmpeg, signal);
+      if (validation.status !== "PASS" || validation.duration_seconds === null) throw new WebGptV4Error("MEDIA_INVALID", validation.error || "Video validation failed.");
+      const scenes = await detectSceneChanges(media.path, ffmpeg, signal);
+      const plan = coverageFramePlan(validation.duration_seconds, scenes);
+      const offset = Math.max(0, Math.trunc(input.frame_offset ?? 0));
+      const limit = Math.min(MAX_FRAME_PAGE, Math.max(1, Math.trunc(input.frame_limit ?? 8)));
+      const selected = plan.slice(offset, offset + limit);
+      const generatedRoot = options.analysis_root ?? join(paths.mediaRoot, "analysis", "webgpt-v4");
+      if (Date.now() - lastCacheCleanupAt > 60 * 60 * 1000) {
+        await cleanupMediaAnalysisCache(generatedRoot);
+        lastCacheCleanupAt = Date.now();
+      }
+      const root = analysisCacheRoot(generatedRoot, artifact.metadata.sha256, plan, limit);
+      const frames: ModelImage[] = [];
+      const modelFrames: Array<{ timestamp_seconds: number; reason: "coverage" | "scene_change"; sha256: string }> = [];
+      for (const frame of selected) {
+        const output = framePath(root, artifact.artifact_id, frame.timestamp_seconds);
+        await extractFrame(media.path, output, decodableTimestamp(frame.timestamp_seconds, validation.duration_seconds), ffmpeg, signal);
+        const bytes = await readFile(output);
+        const frameHash = sha256(bytes);
+        frames.push({ data: bytes.toString("base64"), mime_type: "image/jpeg", timestamp_seconds: frame.timestamp_seconds, reason: frame.reason, sha256: frameHash });
+        modelFrames.push({ timestamp_seconds: frame.timestamp_seconds, reason: frame.reason, sha256: frameHash });
+      }
+      await cleanupMediaAnalysisCache(generatedRoot);
+      lastCacheCleanupAt = Date.now();
+      return { frames, analysis: {
+        kind: "video", model_input: "timestamped_frame_bundle", direct_video_model_input: false,
+        analyzer_version: MEDIA_ANALYZER_VERSION, validation, frame_plan: plan, model_frames: modelFrames,
+        frame_page: { offset, limit, returned: selected.length, total: plan.length, has_more: offset + selected.length < plan.length },
+        scene_change_frames: scenes.length, sha256: artifact.metadata.sha256
+      } };
+    });
+    modelImages.push(...result.frames);
+    analysis = result.analysis;
   }
+
+  const grant = createMediaGrant(db, { actor, project_id: input.project_id, artifact_id: input.artifact_id }, options);
+  const url = playbackUrl(options.public_origin, input.project_id, input.artifact_id, grant.token);
 
   return {
     data: { artifact: publicArtifact(artifact), analysis },

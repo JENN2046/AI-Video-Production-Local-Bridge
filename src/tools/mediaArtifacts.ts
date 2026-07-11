@@ -159,7 +159,7 @@ function defaultMetadata(artifactType: ArtifactType, metadata: RegisterMediaArti
   };
 }
 
-function persistArtifact(db: M0Database, artifact: MediaArtifact): void {
+export function persistMediaArtifact(db: M0Database, artifact: MediaArtifact): void {
   db.prepare(`
     INSERT OR REPLACE INTO media_artifacts (
       artifact_id,
@@ -616,7 +616,7 @@ export function registerMediaArtifact(input: RegisterMediaArtifactInput, db = op
   }
 
   if (result.ok) {
-    persistArtifact(db, result.artifact);
+    persistMediaArtifact(db, result.artifact);
   }
 
   return result;
@@ -663,7 +663,7 @@ export function activatePendingMediaArtifact(input: ActivatePendingMediaArtifact
   }
 
   if (!result.ok) return result;
-  persistArtifact(db, result.artifact);
+  persistMediaArtifact(db, result.artifact);
   return { ok: true, artifact: result.artifact };
 }
 

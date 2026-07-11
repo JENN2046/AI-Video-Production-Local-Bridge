@@ -40,7 +40,7 @@ export function checkDatabase(sqlitePath = paths.sqlitePath): DatabaseCheckResul
       ["regeneration_requests", "data_json"], ["generation_intents", "sanitized_error_json"], ["generation_intents", "data_json"],
       ["workbench_drafts", "data_json"], ["workbench_pending_actions", "data_json"], ["workbench_pending_actions", "result_json"],
       ["workbench_inbox_events", "data_json"], ["workbench_governance_runs", "rule_groups_json"],
-      ["webgpt_audit_events", "changed_fields_json"], ["webgpt_audit_events", "result_json"]
+      ["webgpt_audit_events", "changed_fields_json"], ["webgpt_audit_events", "result_json"], ["generation_job_events", "data_json"]
     ] as const;
     const invalidJsonRows = jsonColumns.reduce((sum, [table, column]) => sum + scalarCount(db, `SELECT COUNT(*) AS count FROM ${table} WHERE json_valid(${column}) = 0`, errors), 0);
     const structuredDriftRows = scalarCount(db, "SELECT COUNT(*) AS count FROM projects WHERE json_valid(data_json) = 1 AND json_extract(data_json, '$.project_id') IS NOT project_id", errors)
@@ -72,7 +72,9 @@ export function checkDatabase(sqlitePath = paths.sqlitePath): DatabaseCheckResul
       "SELECT COUNT(*) AS count FROM workbench_review_notes n LEFT JOIN shots s ON s.shot_id = n.shot_id WHERE s.shot_id IS NULL",
       "SELECT COUNT(*) AS count FROM workbench_review_notes n LEFT JOIN media_artifacts a ON a.artifact_id = n.artifact_id WHERE n.artifact_id IS NOT NULL AND n.artifact_id <> '' AND a.artifact_id IS NULL",
       "SELECT COUNT(*) AS count FROM webgpt_media_grants g LEFT JOIN projects p ON p.project_id = g.project_id WHERE p.project_id IS NULL",
-      "SELECT COUNT(*) AS count FROM webgpt_media_grants g LEFT JOIN media_artifacts a ON a.artifact_id = g.artifact_id WHERE a.artifact_id IS NULL"
+      "SELECT COUNT(*) AS count FROM webgpt_media_grants g LEFT JOIN media_artifacts a ON a.artifact_id = g.artifact_id WHERE a.artifact_id IS NULL",
+      "SELECT COUNT(*) AS count FROM generation_jobs j LEFT JOIN generation_intents i ON i.intent_id = j.intent_id WHERE i.intent_id IS NULL",
+      "SELECT COUNT(*) AS count FROM generation_job_events e LEFT JOIN generation_jobs j ON j.job_id = e.job_id WHERE j.job_id IS NULL"
     ];
     const orphanRows = orphanQueries.reduce((sum, sql) => sum + scalarCount(db, sql, errors), 0);
     let mediaRows: Array<{ data_json: string }> = [];

@@ -30,6 +30,7 @@ export interface WebGptV4ErrorBody {
   code: string;
   message: string;
   field?: string;
+  retryable?: boolean;
 }
 
 export type WebGptV4Result<T> =
@@ -37,7 +38,7 @@ export type WebGptV4Result<T> =
   | { ok: false; error: WebGptV4ErrorBody; meta: WebGptV4Meta };
 
 export class WebGptV4Error extends Error {
-  constructor(readonly code: string, message: string, readonly field?: string) {
+  constructor(readonly code: string, message: string, readonly field?: string, readonly retryable = false) {
     super(message);
   }
 }
@@ -69,7 +70,7 @@ export function fail<T = never>(id: string, error: WebGptV4ErrorBody): WebGptV4R
 
 export function errorBody(error: unknown): WebGptV4ErrorBody {
   if (error instanceof WebGptV4Error) {
-    return { code: error.code, message: error.message, ...(error.field ? { field: error.field } : {}) };
+    return { code: error.code, message: error.message, ...(error.field ? { field: error.field } : {}), ...(error.retryable ? { retryable: true } : {}) };
   }
   return { code: "WEBGPT_V4_INTERNAL_ERROR", message: "WebGPT V4 could not complete the request." };
 }

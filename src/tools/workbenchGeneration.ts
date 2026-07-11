@@ -5,7 +5,7 @@ import { getGenerationRun, saveGenerationRun, type GenerationRun } from "./gener
 import { getMediaArtifact, type MediaArtifact } from "./mediaArtifacts.js";
 import { providerError, selectM1ProviderPort, type ProviderToolError } from "./provider.js";
 import { downloadProviderOutputToArtifact } from "./providerOutputDownloader.js";
-import { getProject, getShot, saveProject, saveShot } from "./projects.js";
+import { getProject, getShot, listProjectShots, saveProject, saveShot, type ProjectStatus, type ShotStatus } from "./projects.js";
 import {
   buildRunningHubImageToVideoSubmitRequest,
   mapRunningHubProviderError,
@@ -89,9 +89,138 @@ export interface WorkbenchGenerationDependencies {
   now?: () => Date;
   poll_interval_ms?: number;
   timeout_ms?: number;
+  sqlite_path?: string;
+}
+
+export type GenerationJobState = "queued" | "submitting" | "polling" | "downloading" | "finalizing" | "manual_reconciliation" | "succeeded" | "failed" | "cancelled";
+
+export interface GenerationJob {
+  job_id: string;
+  intent_id: string;
+  state: GenerationJobState;
+  reconciliation_reason: string;
+  lease_expires_at: string | null;
 }
 
 const activeExecutions = new Map<string, Promise<void>>();
+const scheduledWakeups = new Map<string, NodeJS.Timeout>();
+const DUE_GENERATION_JOB_SQL = "datetime(next_attempt_at) <= CURRENT_TIMESTAMP";
+
+function schedulerKey(dependencies: WorkbenchGenerationDependencies): string {
+  return dependencies.sqlite_path ?? "__default_workbench_database__";
+}
+
+export function generationWorkerStatus(db: M0Database): { ready: boolean; active: number; concurrency: 1; stale_leases: number; unowned_runnable: number; runnable: number } {
+  const staleRow = db.prepare(`SELECT COUNT(*) AS count FROM generation_jobs
+    WHERE state IN ('submitting','polling','downloading','finalizing')
+      AND lease_token <> '' AND lease_expires_at IS NOT NULL
+      AND datetime(lease_expires_at) <= CURRENT_TIMESTAMP`).get() as { count: number };
+  const unownedRow = db.prepare(`SELECT COUNT(*) AS count FROM generation_jobs
+    WHERE state IN ('queued','submitting','polling','downloading','finalizing')
+      AND ${DUE_GENERATION_JOB_SQL}
+      AND (lease_token = '' OR lease_expires_at IS NULL OR datetime(lease_expires_at) <= CURRENT_TIMESTAMP)`).get() as { count: number };
+  const staleLeases = Number(staleRow.count);
+  const unownedRunnable = Number(unownedRow.count);
+  const runnable = Number((db.prepare(`SELECT COUNT(*) AS count FROM generation_jobs
+    WHERE state IN ('queued','submitting','polling','downloading','finalizing')
+      AND ${DUE_GENERATION_JOB_SQL}`).get() as { count: number }).count);
+  const active = activeExecutions.size;
+  return { ready: active <= 1 && staleLeases === 0 && (active > 0 || runnable === 0), active, concurrency: 1, stale_leases: staleLeases, unowned_runnable: unownedRunnable, runnable };
+}
+
+class GenerationJobLeaseLostError extends Error {
+  constructor() {
+    super("Generation job lease was lost before the worker could write its result.");
+    this.name = "GenerationJobLeaseLostError";
+  }
+}
+
+function jobForIntent(db: M0Database, intentId: string): GenerationJob | null {
+  const row = db.prepare("SELECT job_id, intent_id, state, reconciliation_reason, lease_expires_at FROM generation_jobs WHERE intent_id = ?").get(intentId) as GenerationJob | undefined;
+  return row ?? null;
+}
+
+function appendJobEvent(db: M0Database, jobId: string, fromState: string, toState: GenerationJobState, reasonCode = "", data: Record<string, unknown> = {}): void {
+  db.prepare("INSERT INTO generation_job_events (event_id, job_id, from_state, to_state, reason_code, data_json) VALUES (?, ?, ?, ?, ?, ?)")
+    .run(`job_event_${randomUUID()}`, jobId, fromState, toState, reasonCode, JSON.stringify(data));
+}
+
+function setJobState(
+  db: M0Database,
+  job: GenerationJob,
+  state: GenerationJobState,
+  reasonCode = "",
+  options: { lease_token?: string; in_transaction?: boolean } = {}
+): GenerationJob {
+  if (!options.in_transaction) db.exec("BEGIN IMMEDIATE");
+  try {
+    const result = options.lease_token
+      ? db.prepare(`UPDATE generation_jobs SET state = ?, reconciliation_reason = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE job_id = ? AND lease_token = ? AND lease_expires_at IS NOT NULL AND datetime(lease_expires_at) > CURRENT_TIMESTAMP`)
+        .run(state, reasonCode, job.job_id, options.lease_token) as { changes: number | bigint }
+      : db.prepare("UPDATE generation_jobs SET state = ?, reconciliation_reason = ?, updated_at = CURRENT_TIMESTAMP WHERE job_id = ?")
+        .run(state, reasonCode, job.job_id) as { changes: number | bigint };
+    if (Number(result.changes) !== 1) {
+      if (options.lease_token) throw new GenerationJobLeaseLostError();
+      throw new Error("GENERATION_JOB_NOT_FOUND");
+    }
+    appendJobEvent(db, job.job_id, job.state, state, reasonCode);
+    if (!options.in_transaction) db.exec("COMMIT");
+    return { ...job, state, reconciliation_reason: reasonCode };
+  } catch (error) {
+    if (!options.in_transaction) db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+function reconciliationRestoreState(db: M0Database, intentId: string): { shot_status: ShotStatus; project_status: ProjectStatus } {
+  const row = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(intentId) as { data_json: string } | undefined;
+  const data = parseRecord(row?.data_json ?? "");
+  const restore = data.reconciliation_restore && typeof data.reconciliation_restore === "object" && !Array.isArray(data.reconciliation_restore)
+    ? data.reconciliation_restore as Record<string, unknown>
+    : {};
+  const shotStatus = typeof restore.shot_status === "string" && ["draft", "storyboard_approved", "video_generated", "video_review", "approved", "revision_needed"].includes(restore.shot_status)
+    ? restore.shot_status as ShotStatus
+    : "storyboard_approved";
+  const projectStatus = typeof restore.project_status === "string" && ["draft", "storyboard_approved", "video_review", "final_approved"].includes(restore.project_status)
+    ? restore.project_status as ProjectStatus
+    : "storyboard_approved";
+  return { shot_status: shotStatus, project_status: projectStatus };
+}
+
+function claimJob(db: M0Database, intentId: string, owner: string, token: string): GenerationJob | null {
+  const expiresAt = new Date(Date.now() + 5 * 60_000).toISOString();
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const job = jobForIntent(db, intentId);
+    if (!job || ["succeeded", "failed", "cancelled", "manual_reconciliation"].includes(job.state)) {
+      db.exec("ROLLBACK");
+      return null;
+    }
+    const result = db.prepare(`UPDATE generation_jobs SET lease_owner = ?, lease_token = ?, lease_expires_at = ?, attempt_count = attempt_count + 1, updated_at = CURRENT_TIMESTAMP
+      WHERE job_id = ? AND (lease_token = '' OR lease_expires_at IS NULL OR datetime(lease_expires_at) <= CURRENT_TIMESTAMP)`).run(owner, token, expiresAt, job.job_id) as { changes: number | bigint };
+    if (Number(result.changes) !== 1) {
+      db.exec("ROLLBACK");
+      return null;
+    }
+    db.exec("COMMIT");
+    return { ...job, lease_expires_at: expiresAt };
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+function releaseJobLease(db: M0Database, jobId: string, token: string): void {
+  db.prepare("UPDATE generation_jobs SET lease_owner = '', lease_token = '', lease_expires_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE job_id = ? AND lease_token = ?").run(jobId, token);
+}
+
+function assertJobLease(db: M0Database, jobId: string, token: string): void {
+  const row = db.prepare(`SELECT 1 AS valid FROM generation_jobs
+    WHERE job_id = ? AND lease_token = ? AND lease_expires_at IS NOT NULL
+      AND datetime(lease_expires_at) > CURRENT_TIMESTAMP`).get(jobId, token) as { valid: number } | undefined;
+  if (!row) throw new GenerationJobLeaseLostError();
+}
 
 function dateNow(dependencies: WorkbenchGenerationDependencies): Date {
   return dependencies.now?.() ?? new Date();
@@ -319,7 +448,7 @@ export function confirmWorkbenchGeneration(
   input: { intent_id: string; budget_limit_value: number; cost_confirmed: boolean; human_confirmation: boolean },
   db = openM0Database(),
   dependencies: WorkbenchGenerationDependencies = {}
-): WorkbenchV2Result<{ intent: WorkbenchGenerationIntent; run_id: string }> {
+): WorkbenchV2Result<{ intent: WorkbenchGenerationIntent; run_id: string; job_id: string; status: "queued" }> {
   if (input.cost_confirmed !== true || input.human_confirmation !== true) {
     return { ok: false, error: { code: "GENERATION_CONFIRMATION_REQUIRED", message: "Cost and generation confirmation are required." } };
   }
@@ -362,6 +491,9 @@ export function confirmWorkbenchGeneration(
       return { ok: false, error: { code: "SHOT_NOT_FOUND", message: "SHOT was not found in the selected project." } };
     }
     const runId = `run_${randomUUID()}`;
+    const intentDataRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(intent.intent_id) as { data_json: string };
+    const intentData = parseRecord(intentDataRow.data_json);
+    intentData.reconciliation_restore = { shot_status: shot.status, project_status: writable.data.project.status };
     const run: GenerationRun = {
       run_id: runId,
       batch_id: "",
@@ -391,59 +523,201 @@ export function confirmWorkbenchGeneration(
     db.prepare(`
       UPDATE generation_intents
       SET run_id = ?, confirmed = 1, budget_limit_value = ?, status = 'queued',
-        upload_attempts = 1, submit_attempts = 1, updated_at = CURRENT_TIMESTAMP
+        upload_attempts = 1, submit_attempts = 1, data_json = ?, updated_at = CURRENT_TIMESTAMP
       WHERE intent_id = ?
-    `).run(runId, input.budget_limit_value, intent.intent_id);
+    `).run(runId, input.budget_limit_value, JSON.stringify(intentData), intent.intent_id);
+    const jobId = `job_${randomUUID()}`;
+    db.prepare("INSERT INTO generation_jobs (job_id, intent_id, state) VALUES (?, ?, 'queued')").run(jobId, intent.intent_id);
+    appendJobEvent(db, jobId, "", "queued", "HUMAN_CONFIRMED");
     db.exec("COMMIT");
-    return { ok: true, data: { intent: getIntent(db, intent.intent_id) as WorkbenchGenerationIntent, run_id: runId } };
+    return { ok: true, data: { intent: getIntent(db, intent.intent_id) as WorkbenchGenerationIntent, run_id: runId, job_id: jobId, status: "queued" } };
   } catch (error) {
     db.exec("ROLLBACK");
     throw error;
   }
 }
 
-function failIntent(db: M0Database, intent: WorkbenchGenerationIntent, status: "failed" | "timeout", error: ProviderToolError | { code: string; message: string; retryable?: boolean }): void {
+function failIntent(db: M0Database, intent: WorkbenchGenerationIntent, status: "failed" | "timeout", error: ProviderToolError | { code: string; message: string; retryable?: boolean }, leaseToken: string): void {
   const safe = sanitizedError(error);
-  db.prepare("UPDATE generation_intents SET status = ?, sanitized_error_json = ?, updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?")
-    .run(status, JSON.stringify(safe), intent.intent_id);
-  if (intent.run_id) {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.prepare("UPDATE generation_intents SET status = ?, sanitized_error_json = ?, updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?")
+      .run(status, JSON.stringify(safe), intent.intent_id);
+    if (intent.run_id) {
+      const run = getGenerationRun(db, intent.run_id);
+      if (run) {
+        run.status = "failed";
+        run.error = { code: String(safe.code ?? "PROVIDER_REQUEST_FAILED"), message: String(safe.message ?? "Generation failed."), retryable: safe.retryable === true };
+        saveGenerationRun(db, run);
+      }
+    }
+    restoreProjectAfterTerminalGeneration(db, intent);
+    const job = jobForIntent(db, intent.intent_id);
+    if (job) setJobState(db, job, "failed", String(safe.code ?? "PROVIDER_REQUEST_FAILED"), { lease_token: leaseToken, in_transaction: true });
+    db.exec("COMMIT");
+  } catch (failure) {
+    db.exec("ROLLBACK");
+    throw failure;
+  }
+}
+
+function restoreProjectAfterTerminalGeneration(db: M0Database, intent: WorkbenchGenerationIntent): void {
+  const shot = getShot(db, intent.shot_id);
+  const project = getProject(db, intent.project_id);
+  if (!shot || !project) return;
+  const restore = reconciliationRestoreState(db, intent.intent_id);
+  shot.status = shot.clip_versions.length > 0 ? "revision_needed" : restore.shot_status;
+  saveShot(db, shot);
+  const shots = listProjectShots(db, project.project_id);
+  project.status = shots.some((candidate) => candidate.status === "video_pending")
+    ? "video_generation_in_progress"
+    : shots.some((candidate) => candidate.clip_versions.length > 0 || ["video_review", "video_generated", "approved", "revision_needed"].includes(candidate.status))
+      ? "video_review"
+      : restore.project_status;
+  saveProject(db, project);
+}
+
+function markUnknownSubmission(db: M0Database, intent: WorkbenchGenerationIntent, job: GenerationJob, error: ProviderToolError, leaseToken: string): GenerationJob {
+  const safe = sanitizedError(error);
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.prepare("UPDATE generation_intents SET status = 'running', sanitized_error_json = ?, updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?")
+      .run(JSON.stringify(safe), intent.intent_id);
     const run = getGenerationRun(db, intent.run_id);
     if (run) {
-      run.status = "failed";
-      run.error = { code: String(safe.code ?? "PROVIDER_REQUEST_FAILED"), message: String(safe.message ?? "Generation failed."), retryable: safe.retryable === true };
+      run.status = "running";
+      run.provider.provider_status = "SUBMIT_OUTCOME_UNKNOWN";
+      run.error = { code: String(safe.code ?? "PROVIDER_REQUEST_FAILED"), message: "Provider submission outcome requires human reconciliation.", retryable: false };
       saveGenerationRun(db, run);
+    }
+    const updated = setJobState(db, job, "manual_reconciliation", "PROVIDER_SUBMIT_OUTCOME_UNKNOWN", { lease_token: leaseToken, in_transaction: true });
+    db.exec("COMMIT");
+    return updated;
+  } catch (failure) {
+    db.exec("ROLLBACK");
+    throw failure;
+  }
+}
+
+function markKnownProviderTaskForReconciliation(
+  db: M0Database,
+  intent: WorkbenchGenerationIntent,
+  job: GenerationJob,
+  taskId: string,
+  error: ProviderToolError | { code: string; message: string; retryable?: boolean },
+  leaseToken: string,
+  reasonCode: string
+): GenerationJob {
+  const safe = sanitizedError(error);
+  const persist = (withEvent: boolean): GenerationJob => {
+    db.prepare("UPDATE generation_intents SET provider_task_id = ?, status = 'running', sanitized_error_json = ?, updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?")
+      .run(taskId, JSON.stringify(safe), intent.intent_id);
+    const run = getGenerationRun(db, intent.run_id);
+    if (run) {
+      run.status = "running";
+      run.provider.provider_job_id = taskId;
+      run.provider.provider_status = reasonCode;
+      run.error = { code: String(safe.code ?? reasonCode), message: "Provider task requires human reconciliation.", retryable: false };
+      saveGenerationRun(db, run);
+    }
+    if (withEvent) return setJobState(db, job, "manual_reconciliation", reasonCode, { lease_token: leaseToken, in_transaction: true });
+    const result = db.prepare(`UPDATE generation_jobs SET state = 'manual_reconciliation', reconciliation_reason = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE job_id = ? AND lease_token = ? AND lease_expires_at IS NOT NULL AND datetime(lease_expires_at) > CURRENT_TIMESTAMP`)
+      .run(reasonCode, job.job_id, leaseToken) as { changes: number | bigint };
+    if (Number(result.changes) !== 1) throw new GenerationJobLeaseLostError();
+    return { ...job, state: "manual_reconciliation", reconciliation_reason: reasonCode };
+  };
+
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const updated = persist(true);
+    db.exec("COMMIT");
+    return updated;
+  } catch {
+    db.exec("ROLLBACK");
+    // A broken audit trigger must not turn an already-created paid task into a retryable failed intent.
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      const updated = persist(false);
+      db.exec("COMMIT");
+      return updated;
+    } catch (fallbackError) {
+      db.exec("ROLLBACK");
+      throw fallbackError;
     }
   }
 }
 
-function existingOutputArtifact(db: M0Database, providerTaskId: string): MediaArtifact | null {
-  const row = db.prepare("SELECT data_json FROM media_artifacts WHERE json_extract(data_json, '$.source.provider_job_id') = ? LIMIT 1").get(providerTaskId) as { data_json: string } | undefined;
+function cancelIntent(db: M0Database, intent: WorkbenchGenerationIntent, reason: string, leaseToken: string): void {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.prepare("UPDATE generation_intents SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(intent.intent_id);
+    const run = getGenerationRun(db, intent.run_id);
+    if (run) { run.status = "cancelled"; saveGenerationRun(db, run); }
+    restoreProjectAfterTerminalGeneration(db, intent);
+    const job = jobForIntent(db, intent.intent_id);
+    if (job) setJobState(db, job, "cancelled", reason, { lease_token: leaseToken, in_transaction: true });
+    db.exec("COMMIT");
+  } catch (failure) {
+    db.exec("ROLLBACK");
+    throw failure;
+  }
+}
+
+function existingOutputArtifact(db: M0Database, providerTaskId: string, projectId: string, shotId: string): MediaArtifact | null {
+  const row = db.prepare(`SELECT data_json FROM media_artifacts
+    WHERE json_extract(data_json, '$.source.provider') = 'runninghub'
+      AND json_extract(data_json, '$.source.provider_job_id') = ?
+      AND project_id = ? AND shot_id = ? LIMIT 1`).get(providerTaskId, projectId, shotId) as { data_json: string } | undefined;
   return row ? JSON.parse(row.data_json) as MediaArtifact : null;
 }
 
 async function executeIntent(intentId: string, allowSubmit: boolean, dependencies: WorkbenchGenerationDependencies): Promise<void> {
-  const db = openM0Database();
+  const db = openM0Database(dependencies.sqlite_path);
+  const leaseOwner = `worker_${process.pid}`;
+  const leaseToken = randomUUID();
+  let job = claimJob(db, intentId, leaseOwner, leaseToken);
+  if (!job) {
+    db.close();
+    return;
+  }
+  const claimedJobId = job.job_id;
+  let providerTaskMayExist = false;
+  let knownTaskId = "";
+  const heartbeat = setInterval(() => {
+    try {
+      const expiresAt = new Date(Date.now() + 5 * 60_000).toISOString();
+      db.prepare(`UPDATE generation_jobs SET lease_expires_at = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE job_id = ? AND lease_token = ? AND lease_expires_at IS NOT NULL AND datetime(lease_expires_at) > CURRENT_TIMESTAMP`).run(expiresAt, job?.job_id, leaseToken);
+    } catch {
+      // The next conditional lease assertion decides whether this worker may write back.
+    }
+  }, 30_000);
   try {
     let intent = getIntent(db, intentId);
     if (!intent || (intent.status !== "queued" && intent.status !== "running")) return;
     const selection = selectM1ProviderPort({ provider: "real", provider_name: "runninghub", model_name: RUNNINGHUB_MODEL_ROUTE, cost_acknowledged: true }, dependencies.env ?? process.env);
     if (!selection.ok || selection.selected.provider_name !== "runninghub" || !selection.selected.credential) {
-      failIntent(db, intent, "failed", selection.ok ? providerError("PROVIDER_SELECTION_MISMATCH", "RunningHub provider selection changed after confirmation.") : selection.error);
+      failIntent(db, intent, "failed", selection.ok ? providerError("PROVIDER_SELECTION_MISMATCH", "RunningHub provider selection changed after confirmation.") : selection.error, leaseToken);
       return;
     }
     const artifact = getMediaArtifact(db, intent.input_artifact_id);
     if (!artifact) {
-      failIntent(db, intent, "failed", providerError("ARTIFACT_NOT_FOUND", "Generation input artifact is missing."));
+      failIntent(db, intent, "failed", providerError("ARTIFACT_NOT_FOUND", "Generation input artifact is missing."), leaseToken);
       return;
     }
     const adapter = dependencies.adapter_factory?.(selection.selected.credential)
       ?? new RunningHubVideoProviderAdapter({ credential: selection.selected.credential, fetch_impl: dependencies.fetch_impl });
     let taskId = intent.provider_task_id;
+    let submittedNow = false;
+    providerTaskMayExist = Boolean(taskId);
+    knownTaskId = taskId;
     if (!taskId) {
       if (!allowSubmit) {
-        failIntent(db, intent, "failed", providerError("PROVIDER_SUBMIT_OUTCOME_UNKNOWN", "Submission was attempted before restart but no taskId was persisted. Manual reconciliation is required."));
+        job = setJobState(db, job, "manual_reconciliation", "PROVIDER_SUBMIT_OUTCOME_UNKNOWN", { lease_token: leaseToken });
         return;
       }
+      job = setJobState(db, job, "submitting", "", { lease_token: leaseToken });
       const submit = await adapter.submitGeneration({
         storyboard_artifact: artifact,
         video_prompt: intent.input_snapshot.video_prompt,
@@ -452,56 +726,93 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         aspect_ratio: intent.input_snapshot.aspect_ratio,
         resolution: intent.resolution
       });
+      assertJobLease(db, job.job_id, leaseToken);
       if (!submit.ok) {
-        failIntent(db, intent, "failed", submit.error);
+        if (submit.error.submission_outcome_unknown === true) {
+          job = markUnknownSubmission(db, intent, job, submit.error, leaseToken);
+          return;
+        }
+        failIntent(db, intent, "failed", submit.error, leaseToken);
         return;
       }
       taskId = submit.provider_job_id;
-      db.prepare(`UPDATE generation_intents SET provider_task_id = ?, status = 'running', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?`).run(taskId, intent.intent_id);
-      const run = getGenerationRun(db, intent.run_id);
-      if (run) {
-        run.status = "running";
-        run.provider.provider_job_id = taskId;
-        run.provider.provider_status = submit.provider_status;
-        saveGenerationRun(db, run);
-      }
-      intent = getIntent(db, intent.intent_id) as WorkbenchGenerationIntent;
-    }
-
-    const deadline = Date.now() + Math.max(10_000, dependencies.timeout_ms ?? 20 * 60_000);
-    const interval = Math.max(250, dependencies.poll_interval_ms ?? 5_000);
-    let outputUrl = "";
-    while (Date.now() < deadline) {
-      const polled = await adapter.pollStatus(taskId);
-      if (!polled.ok) {
-        if (polled.error.retryable) {
-          await new Promise((resolveDelay) => setTimeout(resolveDelay, interval));
-          continue;
+      providerTaskMayExist = true;
+      knownTaskId = taskId;
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        db.prepare(`UPDATE generation_intents SET provider_task_id = ?, status = 'running', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?`).run(taskId, intent.intent_id);
+        const run = getGenerationRun(db, intent.run_id);
+        if (run) {
+          run.status = "running";
+          run.provider.provider_job_id = taskId;
+          run.provider.provider_status = submit.provider_status;
+          saveGenerationRun(db, run);
         }
-        failIntent(db, intent, "failed", polled.error);
+        job = setJobState(db, job, "polling", "", { lease_token: leaseToken, in_transaction: true });
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        try {
+          job = markKnownProviderTaskForReconciliation(db, intent, job, taskId, providerError("LOCAL_TASK_PERSISTENCE_UNKNOWN", error instanceof Error ? error.message : "Provider task persistence failed."), leaseToken, "PROVIDER_TASK_PERSISTENCE_UNKNOWN");
+        } catch { /* restart recovery will quarantine any remaining submitting job */ }
         return;
       }
+      intent = getIntent(db, intent.intent_id) as WorkbenchGenerationIntent;
+      submittedNow = true;
+    }
+
+    const interval = Math.max(10, dependencies.poll_interval_ms ?? 5_000);
+    const deferPolling = (): void => {
+      assertJobLease(db, claimedJobId, leaseToken);
+      db.prepare(`UPDATE generation_jobs SET next_attempt_at = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE job_id = ? AND lease_token = ?`).run(new Date(Date.now() + interval).toISOString(), claimedJobId, leaseToken);
+    };
+    if (submittedNow) {
+      deferPolling();
+      return;
+    }
+
+    const polled = await adapter.pollStatus(taskId);
+    assertJobLease(db, job.job_id, leaseToken);
+    if (!polled.ok) {
+      if (polled.error.retryable) {
+        deferPolling();
+        return;
+      }
+      job = markKnownProviderTaskForReconciliation(db, intent, job, taskId, polled.error, leaseToken, "PROVIDER_POLL_REQUIRES_RECONCILIATION");
+      return;
+    }
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      assertJobLease(db, job.job_id, leaseToken);
       const run = getGenerationRun(db, intent.run_id);
       if (run) {
         run.provider.provider_status = polled.provider_status;
         saveGenerationRun(db, run);
       }
-      if (polled.status === "succeeded") {
-        outputUrl = polled.output_url ?? "";
-        break;
-      }
-      if (polled.status === "failed" || polled.status === "cancelled") {
-        failIntent(db, intent, "failed", providerError("PROVIDER_REQUEST_FAILED", `RunningHub task ended with ${polled.provider_status}.`));
-        return;
-      }
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, interval));
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
     }
-    if (!outputUrl) {
-      failIntent(db, intent, "timeout", providerError("PROVIDER_TIMEOUT", "RunningHub task did not complete before timeout.", true));
+    if (polled.status === "failed" || polled.status === "cancelled") {
+      if (polled.status === "cancelled") cancelIntent(db, intent, "PROVIDER_CANCELLED", leaseToken);
+      else failIntent(db, intent, "failed", providerError("PROVIDER_REQUEST_FAILED", `RunningHub task ended with ${polled.provider_status}.`), leaseToken);
       return;
     }
-    let output = existingOutputArtifact(db, taskId);
+    if (polled.status !== "succeeded") {
+      deferPolling();
+      return;
+    }
+    const outputUrl = polled.output_url ?? "";
+    if (!outputUrl) {
+      job = markKnownProviderTaskForReconciliation(db, intent, job, taskId, providerError("PROVIDER_OUTPUT_MISSING", "Provider reported success without an output URL."), leaseToken, "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION");
+      return;
+    }
+    let output = existingOutputArtifact(db, taskId, intent.project_id, intent.shot_id);
     if (!output) {
+      job = setJobState(db, job, "downloading", "", { lease_token: leaseToken });
+      assertJobLease(db, job.job_id, leaseToken);
       const downloaded = await downloadProviderOutputToArtifact({
         url: outputUrl,
         provider_name: "runninghub",
@@ -511,8 +822,9 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         duration_seconds: intent.duration_seconds,
         aspect_ratio: intent.input_snapshot.aspect_ratio
       }, db);
+      assertJobLease(db, job.job_id, leaseToken);
       if (!downloaded.ok) {
-        failIntent(db, intent, "failed", downloaded.error);
+        job = markKnownProviderTaskForReconciliation(db, intent, job, taskId, downloaded.error, leaseToken, "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION");
         return;
       }
       output = downloaded.artifact;
@@ -521,59 +833,206 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
     const project = getProject(db, intent.project_id);
     const run = getGenerationRun(db, intent.run_id);
     if (!shot || !project || !run) {
-      failIntent(db, intent, "failed", providerError("PROVIDER_REQUEST_FAILED", "Local project state was missing after provider completion."));
+      job = markKnownProviderTaskForReconciliation(db, intent, job, taskId, providerError("LOCAL_FINALIZATION_STATE_MISSING", "Local project state was missing after provider completion."), leaseToken, "LOCAL_FINALIZATION_REQUIRES_RECONCILIATION");
       return;
     }
+    job = setJobState(db, job, "finalizing", "", { lease_token: leaseToken });
+    assertJobLease(db, job.job_id, leaseToken);
     if (!shot.clip_versions.some((version) => version.artifact_id === output?.artifact_id)) {
       shot.clip_versions.push({ artifact_id: output.artifact_id, run_id: run.run_id, attempt_number: run.versioning.attempt_number, review_status: "pending" });
     }
-    shot.status = "video_review";
-    saveShot(db, shot);
-    project.status = "video_review";
-    saveProject(db, project);
-    run.status = "succeeded";
-    run.output.artifact_ids = [output.artifact_id];
-    run.provider.provider_status = "SUCCESS";
-    saveGenerationRun(db, run);
-    db.prepare(`UPDATE generation_intents SET status = 'succeeded', output_artifact_id = ?, sanitized_error_json = '{}', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?`)
-      .run(output.artifact_id, intent.intent_id);
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      shot.status = "video_review";
+      saveShot(db, shot);
+      project.status = "video_review";
+      saveProject(db, project);
+      run.status = "succeeded";
+      run.output.artifact_ids = [output.artifact_id];
+      run.provider.provider_job_id = taskId;
+      run.provider.provider_status = "SUCCESS";
+      run.error = { code: "", message: "", retryable: false };
+      saveGenerationRun(db, run);
+      db.prepare(`UPDATE generation_intents SET status = 'succeeded', output_artifact_id = ?, sanitized_error_json = '{}', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?`)
+        .run(output.artifact_id, intent.intent_id);
+      job = setJobState(db, job, "succeeded", "", { lease_token: leaseToken, in_transaction: true });
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
   } catch (error) {
+    if (error instanceof GenerationJobLeaseLostError) return;
     const intent = getIntent(db, intentId);
-    if (intent) failIntent(db, intent, "failed", providerError("PROVIDER_REQUEST_FAILED", error instanceof Error ? error.message : "Generation worker failed."));
+    if (intent && providerTaskMayExist && knownTaskId) {
+      try {
+        job = markKnownProviderTaskForReconciliation(db, intent, job, knownTaskId, providerError("LOCAL_WORKER_STATE_UNKNOWN", error instanceof Error ? error.message : "Generation worker failed after provider submission."), leaseToken, "LOCAL_WORKER_REQUIRES_RECONCILIATION");
+      } catch { /* leave the active intent non-terminal for restart recovery */ }
+    } else if (intent) {
+      failIntent(db, intent, "failed", providerError("PROVIDER_REQUEST_FAILED", error instanceof Error ? error.message : "Generation worker failed."), leaseToken);
+    }
   } finally {
+    clearInterval(heartbeat);
+    releaseJobLease(db, job.job_id, leaseToken);
     db.close();
   }
 }
 
 export function startWorkbenchGeneration(intentId: string, input: { allow_submit: boolean; dependencies?: WorkbenchGenerationDependencies }): void {
-  if (activeExecutions.has(intentId)) return;
-  const execution = executeIntent(intentId, input.allow_submit, input.dependencies ?? {}).finally(() => activeExecutions.delete(intentId));
+  if (activeExecutions.has(intentId) || activeExecutions.size >= 1) return;
+  const dependencies = input.dependencies ?? {};
+  const scheduled = scheduledWakeups.get(schedulerKey(dependencies));
+  if (scheduled) {
+    clearTimeout(scheduled);
+    scheduledWakeups.delete(schedulerKey(dependencies));
+  }
+  const execution = executeIntent(intentId, input.allow_submit, dependencies).catch(() => undefined).finally(() => {
+    activeExecutions.delete(intentId);
+    scheduleNextPersistedGeneration(dependencies);
+  });
   activeExecutions.set(intentId, execution);
 }
 
-export function resumeWorkbenchGenerationJobs(dependencies: WorkbenchGenerationDependencies = {}): { resumed: string[]; reconciled: string[] } {
-  const db = openM0Database();
+function scheduleNextPersistedGeneration(dependencies: WorkbenchGenerationDependencies, delayMs = 0): void {
+  if (activeExecutions.size >= 1) return;
+  const key = schedulerKey(dependencies);
+  const existing = scheduledWakeups.get(key);
+  if (existing) clearTimeout(existing);
+  const timer = setTimeout(() => {
+    scheduledWakeups.delete(key);
+    startNextPersistedGeneration(dependencies);
+  }, Math.max(0, delayMs));
+  timer.unref();
+  scheduledWakeups.set(key, timer);
+}
+
+function startNextPersistedGeneration(dependencies: WorkbenchGenerationDependencies): void {
+  if (activeExecutions.size >= 1) return;
+  const db = openM0Database(dependencies.sqlite_path);
   try {
-    const rows = db.prepare("SELECT intent_id, provider_task_id FROM generation_intents WHERE status IN ('queued', 'running') ORDER BY created_at").all() as Array<{ intent_id: string; provider_task_id: string }>;
+    const row = db.prepare(`SELECT i.intent_id, i.provider_task_id, j.state FROM generation_intents i
+      JOIN generation_jobs j ON j.intent_id = i.intent_id
+      WHERE i.status IN ('queued','running')
+        AND (i.provider_task_id <> '' OR (i.provider_task_id = '' AND j.state = 'queued'))
+        AND j.state IN ('queued','polling','downloading','finalizing')
+        AND datetime(j.next_attempt_at) <= CURRENT_TIMESTAMP
+        AND (j.lease_token = '' OR j.lease_expires_at IS NULL OR datetime(j.lease_expires_at) <= CURRENT_TIMESTAMP)
+      ORDER BY j.created_at LIMIT 1`).get() as { intent_id: string; provider_task_id: string; state: GenerationJobState } | undefined;
+    if (row) {
+      startWorkbenchGeneration(row.intent_id, { allow_submit: row.state === "queued" && row.provider_task_id === "", dependencies });
+      return;
+    }
+    const wakeup = db.prepare(`SELECT MIN(CASE
+        WHEN j.lease_token <> '' AND j.lease_expires_at IS NOT NULL AND datetime(j.lease_expires_at) > CURRENT_TIMESTAMP
+          THEN j.lease_expires_at
+        ELSE j.next_attempt_at END) AS wake_at FROM generation_intents i
+      JOIN generation_jobs j ON j.intent_id = i.intent_id
+      WHERE i.status IN ('queued','running')
+        AND (i.provider_task_id <> '' OR (i.provider_task_id = '' AND j.state = 'queued'))
+        AND j.state IN ('queued','polling','downloading','finalizing')
+        AND (datetime(j.next_attempt_at) > CURRENT_TIMESTAMP
+          OR (j.lease_token <> '' AND j.lease_expires_at IS NOT NULL AND datetime(j.lease_expires_at) > CURRENT_TIMESTAMP))`).get() as { wake_at: string | null };
+    if (wakeup.wake_at) scheduleNextPersistedGeneration(dependencies, Math.max(50, Date.parse(wakeup.wake_at) - Date.now() + 50));
+  } finally { db.close(); }
+}
+
+export function resumeWorkbenchGenerationJobs(dependencies: WorkbenchGenerationDependencies = {}): { resumed: string[]; reconciled: string[] } {
+  const db = openM0Database(dependencies.sqlite_path);
+  try {
+    const rows = db.prepare(`SELECT i.intent_id, i.provider_task_id, j.state, j.job_id
+      FROM generation_intents i JOIN generation_jobs j ON j.intent_id = i.intent_id
+      WHERE i.status IN ('queued', 'running') AND j.state NOT IN ('succeeded', 'failed', 'cancelled') ORDER BY j.created_at`).all() as Array<{ intent_id: string; provider_task_id: string; state: GenerationJobState; job_id: string }>;
     const resumed: string[] = [];
     const reconciled: string[] = [];
     for (const row of rows) {
-      if (row.provider_task_id) {
-        startWorkbenchGeneration(row.intent_id, { allow_submit: false, dependencies });
+      if (row.state === "manual_reconciliation") {
+        reconciled.push(row.intent_id);
+      } else if (row.provider_task_id || row.state === "queued") {
         resumed.push(row.intent_id);
       } else {
-        const intent = getIntent(db, row.intent_id);
-        if (intent) failIntent(db, intent, "failed", providerError("PROVIDER_SUBMIT_OUTCOME_UNKNOWN", "No taskId was persisted before restart; automatic resubmission is blocked."));
+        const job = jobForIntent(db, row.intent_id);
+        if (job) {
+          db.exec("BEGIN IMMEDIATE");
+          try {
+            setJobState(db, job, "manual_reconciliation", "PROVIDER_SUBMIT_OUTCOME_UNKNOWN", { in_transaction: true });
+            db.prepare("UPDATE generation_jobs SET lease_owner = '', lease_token = '', lease_expires_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE job_id = ?").run(job.job_id);
+            db.exec("COMMIT");
+          } catch (error) {
+            db.exec("ROLLBACK");
+            throw error;
+          }
+        }
         reconciled.push(row.intent_id);
       }
     }
+    scheduleNextPersistedGeneration(dependencies);
     return { resumed, reconciled };
   } finally {
     db.close();
   }
 }
 
-export function getWorkbenchGenerationIntent(intentId: string, db = openM0Database()): WorkbenchV2Result<{ intent: WorkbenchGenerationIntent }> {
+export function getWorkbenchGenerationIntent(intentId: string, db = openM0Database()): WorkbenchV2Result<{ intent: WorkbenchGenerationIntent; job: GenerationJob | null }> {
   const intent = getIntent(db, intentId);
-  return intent ? { ok: true, data: { intent } } : { ok: false, error: { code: "GENERATION_INTENT_NOT_FOUND", message: "Generation intent was not found." } };
+  return intent ? { ok: true, data: { intent, job: jobForIntent(db, intentId) } } : { ok: false, error: { code: "GENERATION_INTENT_NOT_FOUND", message: "Generation intent was not found." } };
+}
+
+export async function runWorkbenchGenerationOnce(intentId: string, input: { allow_submit: boolean; dependencies?: WorkbenchGenerationDependencies }): Promise<void> {
+  await executeIntent(intentId, input.allow_submit, input.dependencies ?? {});
+}
+
+export function reconcileGenerationJob(
+  jobId: string,
+  input: { decision: string; provider_task_id?: string; reason?: string; human_confirmation: boolean },
+  db = openM0Database()
+): WorkbenchV2Result<{ job: GenerationJob; intent: WorkbenchGenerationIntent }> {
+  if (input.human_confirmation !== true) return { ok: false, error: { code: "GENERATION_CONFIRMATION_REQUIRED", message: "Human confirmation is required." } };
+  if (input.decision !== "attach_existing_task" && input.decision !== "abandon") {
+    return { ok: false, error: { code: "INVALID_RECONCILIATION_DECISION", message: "Decision must be attach_existing_task or abandon.", field: "decision" } };
+  }
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const row = db.prepare("SELECT job_id, intent_id, state, reconciliation_reason, lease_expires_at FROM generation_jobs WHERE job_id = ?").get(jobId) as GenerationJob | undefined;
+    if (!row) { db.exec("ROLLBACK"); return { ok: false, error: { code: "GENERATION_JOB_NOT_FOUND", message: "Generation job was not found." } }; }
+    if (row.state !== "manual_reconciliation") { db.exec("ROLLBACK"); return { ok: false, error: { code: "GENERATION_JOB_NOT_RECONCILABLE", message: "Generation job does not require reconciliation." } }; }
+    const intent = getIntent(db, row.intent_id);
+    if (!intent) { db.exec("ROLLBACK"); return { ok: false, error: { code: "GENERATION_INTENT_NOT_FOUND", message: "Generation intent was not found." } }; }
+    const writable = assertWorkbenchProjectWritable(db, intent.project_id);
+    if (!writable.ok) { db.exec("ROLLBACK"); return writable; }
+    let job: GenerationJob;
+    if (input.decision === "attach_existing_task") {
+      const taskId = input.provider_task_id?.trim() ?? "";
+      if (!/^[A-Za-z0-9._:-]{3,200}$/.test(taskId)) { db.exec("ROLLBACK"); return { ok: false, error: { code: "INVALID_PROVIDER_TASK_ID", message: "Provider task ID is invalid." } }; }
+      const owningIntent = db.prepare("SELECT intent_id FROM generation_intents WHERE provider_task_id = ? AND intent_id <> ? LIMIT 1")
+        .get(taskId, intent.intent_id) as { intent_id: string } | undefined;
+      const owningArtifact = db.prepare(`SELECT artifact_id, project_id, shot_id, json_extract(data_json, '$.source.provider') AS provider FROM media_artifacts
+        WHERE json_valid(data_json) = 1
+          AND json_extract(data_json, '$.source.provider_job_id') = ?
+        LIMIT 1`).get(taskId) as { artifact_id: string; project_id: string | null; shot_id: string | null; provider: string | null } | undefined;
+      if (owningIntent || (owningArtifact && (owningArtifact.provider !== intent.provider || owningArtifact.project_id !== intent.project_id || owningArtifact.shot_id !== intent.shot_id))) {
+        db.exec("ROLLBACK");
+        return { ok: false, error: { code: "PROVIDER_TASK_ALREADY_OWNED", message: "Provider task ID is already owned by another generation." } };
+      }
+      const run = getGenerationRun(db, intent.run_id);
+      if (!run) { db.exec("ROLLBACK"); return { ok: false, error: { code: "GENERATION_RUN_NOT_FOUND", message: "Generation run was not found." } }; }
+      db.prepare("UPDATE generation_intents SET provider_task_id = ?, status = 'running', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(taskId, intent.intent_id);
+      run.status = "running";
+      run.provider.provider_job_id = taskId;
+      run.provider.provider_status = "HUMAN_ATTACHED_EXISTING_TASK";
+      run.error = { code: "", message: "", retryable: false };
+      saveGenerationRun(db, run);
+      job = setJobState(db, row, "polling", "HUMAN_ATTACHED_EXISTING_TASK", { in_transaction: true });
+    } else {
+      db.prepare("UPDATE generation_intents SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(intent.intent_id);
+      const run = getGenerationRun(db, intent.run_id);
+      if (run) { run.status = "cancelled"; saveGenerationRun(db, run); }
+      restoreProjectAfterTerminalGeneration(db, intent);
+      job = setJobState(db, row, "cancelled", input.reason?.trim() || "HUMAN_ABANDONED", { in_transaction: true });
+    }
+    db.exec("COMMIT");
+    return { ok: true, data: { job, intent: getIntent(db, intent.intent_id) as WorkbenchGenerationIntent } };
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
 }
