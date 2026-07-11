@@ -2,6 +2,7 @@ import { rmSync } from "node:fs";
 
 import { assertInsideWorkspace, ensureM0Directories, paths } from "../src/paths.js";
 import { openM0Database } from "../src/storage/sqlite.js";
+import { migrateDatabase } from "../src/storage/databaseGovernance.js";
 import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 
 const dataRoot = assertInsideWorkspace(paths.dataRoot);
@@ -12,6 +13,7 @@ if (!dataRoot.toLowerCase().endsWith(expectedSuffix)) {
 
 rmSync(dataRoot, { recursive: true, force: true });
 ensureM0Directories();
+migrateDatabase(paths.sqlitePath);
 
 const db = openM0Database();
 try {

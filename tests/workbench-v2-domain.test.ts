@@ -14,8 +14,44 @@ import {
   setWorkbenchProjectLifecycle,
   updateWorkbenchProject
 } from "../src/tools/workbenchV2.js";
-import { confirmWorkbenchGeneration, preflightWorkbenchGeneration, reconcileGenerationJob, resumeWorkbenchGenerationJobs } from "../src/tools/workbenchGeneration.js";
+import { confirmWorkbenchGeneration, preflightWorkbenchGeneration, reconcileGenerationJob, resumeWorkbenchGenerationJobs, runWorkbenchGenerationOnce } from "../src/tools/workbenchGeneration.js";
 import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
+import type { VideoProviderAdapter } from "../src/tools/videoProviderAdapters.js";
+
+async function prepareConfirmedGeneration(sqlitePath: string, title: string): Promise<{ intent_id: string; job_id: string; env: NodeJS.ProcessEnv }> {
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const project = createProject({ title, video_spec: { duration_seconds: 6, aspect_ratio: "9:16", resolution: "1080x1920" } }, db);
+    assert.equal(project.ok, true);
+    if (!project.ok) throw new Error("project setup failed");
+    const artifact = registerMediaArtifact({
+      artifact_type: "image", role: "storyboard_image",
+      source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
+      linked_objects: { project_id: project.project_id }
+    }, db);
+    assert.equal(artifact.ok, true);
+    if (!artifact.ok) throw new Error("artifact setup failed");
+    const shot = buildStoryboardApprovedShot({ project_id: project.project_id, order: 1, duration_seconds: 6, storyboard_image_artifact_id: artifact.artifact.artifact_id, video_prompt: "Fault injection generation." });
+    saveShot(db, shot);
+    project.project.shot_ids.push(shot.shot_id);
+    project.project.status = "storyboard_approved";
+    saveProject(db, project.project);
+    const env = { REAL_PROVIDER_ENABLED: "true", M1_REAL_PROVIDER: "runninghub", M1_REAL_PROVIDER_EXECUTION_ALLOWED: "true", M1_REAL_PROVIDER_COST_ACK: "true", RUNNINGHUB_API_KEY: "synthetic-test-key" } as NodeJS.ProcessEnv;
+    const fetchImpl: typeof fetch = async (input) => String(input).includes("price-preview")
+      ? new Response(JSON.stringify({ errorCode: "", estimatedPrice: 0.08, currency: "CNY" }), { status: 200 })
+      : new Response(JSON.stringify({ code: 0, data: { remainMoney: "10", currency: "CNY" } }), { status: 200 });
+    const prepared = await preflightWorkbenchGeneration({ project_id: project.project_id, shot_id: shot.shot_id, account_label: "personal", budget_limit_value: 1 }, db, { env, fetch_impl: fetchImpl });
+    assert.equal(prepared.ok, true);
+    if (!prepared.ok) throw new Error("generation preflight failed");
+    const confirmed = confirmWorkbenchGeneration({ intent_id: prepared.data.intent.intent_id, budget_limit_value: 1, cost_confirmed: true, human_confirmation: true }, db);
+    assert.equal(confirmed.ok, true);
+    if (!confirmed.ok) throw new Error("generation confirmation failed");
+    return { intent_id: prepared.data.intent.intent_id, job_id: confirmed.data.job_id, env };
+  } finally {
+    db.close();
+  }
+}
 
 test("V2 schema is transactional, versioned, and initializes project metadata", () => {
   const db = openM0Database(":memory:");
@@ -153,7 +189,7 @@ test("generation preflight enforces official estimate, balance gate, budget and 
     const attachedRunData = JSON.parse(attachedRun.data_json) as { status: string; provider: { provider_job_id: string; provider_status: string } };
     assert.equal(attachedRunData.status, "running");
     assert.equal(attachedRunData.provider.provider_job_id, "existing-task-123");
-    assert.equal(attachedRunData.provider.provider_status, "PENDING");
+    assert.equal(attachedRunData.provider.provider_status, "HUMAN_ATTACHED_EXISTING_TASK");
     const reconciliationEvent = db.prepare("SELECT to_state, reason_code FROM generation_job_events WHERE job_id = ? ORDER BY rowid DESC LIMIT 1").get(confirmed.data.job_id) as { to_state: string; reason_code: string };
     assert.equal(reconciliationEvent.to_state, "polling");
     assert.equal(reconciliationEvent.reason_code, "HUMAN_ATTACHED_EXISTING_TASK");
@@ -202,7 +238,57 @@ test("generation preflight enforces official estimate, balance gate, budget and 
   }
 });
 
-test("startup recovery clears an inherited lease before resuming a paid provider task", () => {
+test("provider task persistence failure enters manual reconciliation without losing the paid task ID", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-persist-fault-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Persistence fault");
+    const db = openM0Database(sqlitePath);
+    db.exec(`CREATE TRIGGER inject_polling_event_failure BEFORE INSERT ON generation_job_events
+      WHEN NEW.to_state = 'polling' BEGIN SELECT RAISE(ABORT, 'INJECTED_POLLING_EVENT_FAILURE'); END`);
+    db.close();
+    const adapter = {
+      provider_name: "runninghub", model_name: "model",
+      submitGeneration: async () => ({ ok: true as const, provider_job_id: "task-persisted-after-fault", provider_status: "PENDING", sanitized_request: {} }),
+      pollStatus: async () => { throw new Error("poll must not run after persistence fault"); },
+      fetchOutput: async () => { throw new Error("output must not run"); }
+    } as unknown as VideoProviderAdapter;
+    await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: true, dependencies: { sqlite_path: sqlitePath, env: prepared.env, adapter_factory: () => adapter } });
+    const checked = openM0Database(sqlitePath);
+    const intent = checked.prepare("SELECT status, provider_task_id FROM generation_intents WHERE intent_id = ?").get(prepared.intent_id) as { status: string; provider_task_id: string };
+    const job = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?").get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    assert.deepEqual({ ...intent }, { status: "running", provider_task_id: "task-persisted-after-fault" });
+    assert.deepEqual({ ...job }, { state: "manual_reconciliation", reconciliation_reason: "PROVIDER_TASK_PERSISTENCE_UNKNOWN" });
+    checked.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("known provider task remains active when the local polling deadline expires", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-poll-timeout-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Polling timeout");
+    const adapter = {
+      provider_name: "runninghub", model_name: "model",
+      submitGeneration: async () => ({ ok: true as const, provider_job_id: "task-still-running", provider_status: "PENDING", sanitized_request: {} }),
+      pollStatus: async () => ({ ok: true as const, status: "running" as const, provider_status: "RUNNING" }),
+      fetchOutput: async () => { throw new Error("output must not run"); }
+    } as unknown as VideoProviderAdapter;
+    await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: true, dependencies: { sqlite_path: sqlitePath, env: prepared.env, adapter_factory: () => adapter, timeout_ms: 30, poll_interval_ms: 10 } });
+    const checked = openM0Database(sqlitePath);
+    const intent = checked.prepare("SELECT status, provider_task_id FROM generation_intents WHERE intent_id = ?").get(prepared.intent_id) as { status: string; provider_task_id: string };
+    const job = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?").get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    assert.deepEqual({ ...intent }, { status: "running", provider_task_id: "task-still-running" });
+    assert.deepEqual({ ...job }, { state: "manual_reconciliation", reconciliation_reason: "PROVIDER_POLL_TIMEOUT_REQUIRES_RECONCILIATION" });
+    checked.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("startup recovery preserves a live lease and quarantines unknown submission state", () => {
   const root = mkdtempSync(join(tmpdir(), "generation-resume-"));
   const sqlitePath = join(root, "app.sqlite");
   try {
@@ -213,9 +299,10 @@ test("startup recovery clears an inherited lease before resuming a paid provider
        estimated_cost_value, budget_limit_value, currency, confirmed, expires_at, provider_task_id, status)
       VALUES ('intent_resume', 'project_resume', 'shot_resume', 'runninghub', 'personal', 'model', 'artifact_resume', 6,
         '1080x1920', 0.08, 1, 'CNY', 1, '2099-01-01T00:00:00.000Z', 'task_resume', 'running')`).run();
+    const inheritedLeaseExpiry = new Date(Date.now() + 5 * 60_000).toISOString();
     db.prepare(`INSERT INTO generation_jobs
       (job_id, intent_id, state, lease_owner, lease_token, lease_expires_at)
-      VALUES ('job_resume', 'intent_resume', 'polling', 'crashed_worker', 'stale_lease', '2099-01-01T00:00:00.000Z')`).run();
+      VALUES ('job_resume', 'intent_resume', 'polling', 'crashed_worker', 'live_lease', ?)`).run(inheritedLeaseExpiry);
     db.prepare(`INSERT INTO generation_intents
       (intent_id, project_id, shot_id, provider, account_label, model, input_artifact_id, duration_seconds, resolution,
        estimated_cost_value, budget_limit_value, currency, confirmed, expires_at, provider_task_id, status)
@@ -230,10 +317,10 @@ test("startup recovery clears an inherited lease before resuming a paid provider
     assert.deepEqual(result, { resumed: ["intent_resume"], reconciled: ["intent_reconcile"] });
     const checked = openM0Database(sqlitePath);
     const recovered = checked.prepare("SELECT state, lease_token, lease_expires_at, attempt_count FROM generation_jobs WHERE job_id = 'job_resume'").get() as { state: string; lease_token: string; lease_expires_at: string | null; attempt_count: number };
-    assert.equal(recovered.state, "failed");
-    assert.equal(recovered.lease_token, "");
-    assert.equal(recovered.lease_expires_at, null);
-    assert.equal(recovered.attempt_count, 1);
+    assert.equal(recovered.state, "polling");
+    assert.equal(recovered.lease_token, "live_lease");
+    assert.equal(recovered.lease_expires_at, inheritedLeaseExpiry);
+    assert.equal(recovered.attempt_count, 0);
     const reconciled = checked.prepare("SELECT state, lease_owner, lease_token, lease_expires_at FROM generation_jobs WHERE job_id = 'job_reconcile'").get() as { state: string; lease_owner: string; lease_token: string; lease_expires_at: string | null };
     assert.deepEqual({ ...reconciled }, { state: "manual_reconciliation", lease_owner: "", lease_token: "", lease_expires_at: null });
     checked.close();

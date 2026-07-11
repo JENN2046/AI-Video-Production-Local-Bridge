@@ -13,6 +13,7 @@ import { validateImageFile, type ImageValidationResult } from "./imageValidity.j
 import { validateMp4File, type Mp4ValidationResult } from "./mediaValidity.js";
 import { markShotClipReview, type RevisionInstruction } from "./review.js";
 import { classifyStoryboardImageImport, isNineSixteenAspectRatio, isNineSixteenDimensions } from "./importClassifier.js";
+import { RUNWAY_CANARY_COMMAND } from "./runwayCanary.js";
 
 export const H1_STATE_FILE = "data/h1/workbench_state.json";
 export const H1_FREEZE_REPORT_LATEST = "data/reports/h1_workbench_package_freeze_result.json";
@@ -1263,7 +1264,7 @@ export function h2CanaryWorkbenchSummary(reportRelativePath = H2_RUNWAY_CANARY_D
       real_submit_requires_separate_authorization: true
     },
     dry_run_plan: {
-      command: "npm run provider:preflight",
+      command: RUNWAY_CANARY_COMMAND,
       can_open_latest_report: false,
       can_generate_from_workbench: false,
       regeneration_allowed: false,

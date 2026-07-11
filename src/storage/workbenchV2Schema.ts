@@ -2,7 +2,8 @@ import type { M0Database } from "./sqlite.js";
 
 export const WORKBENCH_V2_SCHEMA_VERSION = "workbench-v2-4";
 
-export function initializeWorkbenchV2Schema(db: M0Database, options: { manage_transaction?: boolean } = {}): void {
+// Frozen implementation for migration 0002. Future schema work must add a new migration.
+export function applyWorkbenchV24Baseline(db: M0Database, options: { manage_transaction?: boolean } = {}): void {
   const manageTransaction = options.manage_transaction !== false;
   const current = db.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string } | undefined;
   if (current && !["m0-a", "workbench-v2-1", "workbench-v2-2", "workbench-v2-3", WORKBENCH_V2_SCHEMA_VERSION].includes(current.value)) {
@@ -264,6 +265,10 @@ export function initializeWorkbenchV2Schema(db: M0Database, options: { manage_tr
     if (manageTransaction) db.exec("ROLLBACK");
     throw error;
   }
+}
+
+export function initializeWorkbenchV2Schema(db: M0Database, options: { manage_transaction?: boolean } = {}): void {
+  applyWorkbenchV24Baseline(db, options);
 }
 
 function ensureColumn(db: M0Database, table: string, column: string, definition: string): void {
