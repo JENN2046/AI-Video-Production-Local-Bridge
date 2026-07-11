@@ -8,6 +8,7 @@ import test from "node:test";
 import { backupDatabase, checkDatabase, migrateDatabase } from "../src/storage/databaseGovernance.js";
 import { assertSchemaCurrent, DATABASE_MIGRATIONS, M0_BASE_SCHEMA_SQL, migrationChecksum, runDatabaseMigrations, SchemaMigrationRequiredError } from "../src/storage/migrations.js";
 import { initializeWorkbenchV2Schema } from "../src/storage/workbenchV2Schema.js";
+import { openM0Database } from "../src/storage/sqlite.js";
 
 function tempRoot(): string {
   return mkdtempSync(join(tmpdir(), "ai-video-db-governance-"));
@@ -62,6 +63,40 @@ test("existing workbench-v2-4 database is baselined without rewriting business r
   }
 });
 
+test("existing v2-4 baseline rejects incomplete schema instead of stamping the ledger", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "incomplete.sqlite");
+    const db = new DatabaseSync(sqlitePath);
+    db.exec(M0_BASE_SCHEMA_SQL);
+    initializeWorkbenchV2Schema(db);
+    db.exec("DROP TABLE webgpt_media_grants");
+    assert.throws(() => runDatabaseMigrations(db), (error) => error instanceof SchemaMigrationRequiredError && /missing_table:webgpt_media_grants/.test(error.message));
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'").get() as { count: number }).count, 0);
+    db.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("runtime open cannot use an environment flag to migrate persistent data", () => {
+  const root = tempRoot();
+  const previous = process.env.AI_VIDEO_AUTO_MIGRATE;
+  try {
+    const sqlitePath = join(root, "runtime.sqlite");
+    const db = new DatabaseSync(sqlitePath);
+    db.exec(M0_BASE_SCHEMA_SQL);
+    initializeWorkbenchV2Schema(db);
+    db.close();
+    process.env.AI_VIDEO_AUTO_MIGRATE = "true";
+    assert.throws(() => openM0Database(sqlitePath), (error) => error instanceof SchemaMigrationRequiredError);
+  } finally {
+    if (previous === undefined) delete process.env.AI_VIDEO_AUTO_MIGRATE;
+    else process.env.AI_VIDEO_AUTO_MIGRATE = previous;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("migration checksum drift fails closed", () => {
   const root = tempRoot();
   try {
@@ -83,9 +118,48 @@ test("schema validation rejects migration rows from a newer runtime", () => {
     migrateDatabase(sqlitePath);
     const db = new DatabaseSync(sqlitePath);
     db.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES ('9999', 'future_schema', 'future-checksum')").run();
+    db.prepare("DELETE FROM schema_migrations WHERE migration_id = '0002'").run();
     assert.throws(() => assertSchemaCurrent(db), (error) => error instanceof SchemaMigrationRequiredError && /unsupported migration 9999/.test(error.message));
     assert.throws(() => runDatabaseMigrations(db), (error) => error instanceof SchemaMigrationRequiredError && /unsupported migration 9999/.test(error.message));
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE migration_id = '0002'").get() as { count: number }).count, 0);
     db.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("database check fails on malformed and orphaned generation intent state", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "orphan-intent.sqlite");
+    migrateDatabase(sqlitePath);
+    const db = new DatabaseSync(sqlitePath);
+    db.prepare(`INSERT INTO generation_intents
+      (intent_id, project_id, shot_id, provider, account_label, model, input_artifact_id, duration_seconds, resolution,
+       estimated_cost_value, budget_limit_value, currency, confirmed, expires_at, status, data_json)
+      VALUES ('intent_orphan', 'project_missing', 'shot_missing', 'runninghub', 'personal', 'model', 'artifact_missing', 6,
+        '1080x1920', 0.1, 1, 'CNY', 0, '2099-01-01T00:00:00.000Z', 'prepared', 'not-json')`).run();
+    db.close();
+    const checked = checkDatabase(sqlitePath);
+    assert.equal(checked.invalid_json_rows, 1);
+    assert.equal(checked.orphan_rows >= 3, true);
+    assert.equal(checked.result, "FAIL");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("migration lock conflict rolls back without creating a ledger", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "locked.sqlite");
+    const owner = new DatabaseSync(sqlitePath);
+    owner.exec(M0_BASE_SCHEMA_SQL);
+    owner.exec("BEGIN EXCLUSIVE");
+    assert.throws(() => migrateDatabase(sqlitePath), /locked/i);
+    owner.exec("ROLLBACK");
+    assert.equal((owner.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'").get() as { count: number }).count, 0);
+    owner.close();
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

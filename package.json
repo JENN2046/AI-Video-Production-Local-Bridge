@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "npm run build:server && npm run build:ui",
-    "build:server": "tsc -p tsconfig.json",
+    "build:server": "node scripts/clean-server-dist.mjs && tsc -p tsconfig.json",
     "build:ui": "vite build --config vite.config.ts",
     "typecheck": "npm run typecheck:server && npm run typecheck:ui",
     "typecheck:server": "tsc --noEmit -p tsconfig.json",
@@ -27,6 +27,7 @@
     "test:v2:browser": "npm run build && playwright test --config playwright.config.ts",
     "test:h1": "npm run build && node dist/scripts/run-isolated-tests.js dist/tests/h1-workbench.test.js",
     "test:db": "npm run build:server && node dist/scripts/run-isolated-tests.js dist/tests/database-governance.test.js",
+    "test:legacy": "npm run build:server && node --test dist/tests/legacy-manifest.test.js",
     "test:webgpt:v4": "npm run build:server && node dist/scripts/run-isolated-tests.js dist/tests/webgpt-v4-auth.test.js dist/tests/webgpt-v4-domain.test.js dist/tests/webgpt-v4-media.test.js dist/tests/webgpt-v4-metadata.test.js dist/tests/webgpt-v4-server.test.js",
     "test:memory": "npm run build && node dist/scripts/run-isolated-tests.js dist/tests/memory-saveback.test.js",
     "env:check": "npm run build && node dist/scripts/env-check.js",
