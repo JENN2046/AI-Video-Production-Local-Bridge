@@ -166,6 +166,9 @@ test("generation preflight enforces official estimate, balance gate, budget and 
     if (!secondConfirmed.ok) return;
     db.prepare("UPDATE generation_jobs SET state = 'manual_reconciliation', reconciliation_reason = 'PROVIDER_SUBMIT_OUTCOME_UNKNOWN' WHERE job_id = ?")
       .run(secondConfirmed.data.job_id);
+    const reusedTask = reconcileGenerationJob(secondConfirmed.data.job_id, { decision: "attach_existing_task", provider_task_id: "existing-task-123", human_confirmation: true }, db);
+    assert.equal(reusedTask.ok, false);
+    if (!reusedTask.ok) assert.equal(reusedTask.error.code, "PROVIDER_TASK_ALREADY_OWNED");
     const abandoned = reconcileGenerationJob(secondConfirmed.data.job_id, { decision: "abandon", reason: "Human verified that no provider task exists.", human_confirmation: true }, db);
     assert.equal(abandoned.ok, true);
     if (abandoned.ok) {
