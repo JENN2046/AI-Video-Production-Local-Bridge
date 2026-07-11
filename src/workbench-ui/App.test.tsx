@@ -11,7 +11,7 @@ const shell = {
   action_nonce: "test-nonce",
   navigation: { dashboard: 2, inbox: 3, projects: 0, assets: 0, system: 0 },
   actionable: { pending_confirmations: 1, gpt_drafts: 1, quarantined_imports: 1, review_pending: 2, running_jobs: 0 },
-  capabilities: { legacy_available: true, real_generation_requires_preflight: true, max_real_generation_jobs: 1, automatic_retry: false }
+  capabilities: { legacy_available: false, real_generation_requires_preflight: true, max_real_generation_jobs: 1, automatic_retry: false }
 };
 
 describe("Human Workbench V2 shell", () => {
@@ -41,5 +41,6 @@ describe("Human Workbench V2 shell", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/v2/dashboard", expect.anything()));
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/bootstrap"))).toBe(false);
     expect(screen.getByRole("link", { name: /收件箱/ })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Legacy" })).not.toBeInTheDocument();
   });
 });

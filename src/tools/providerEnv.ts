@@ -69,6 +69,7 @@ export interface ProviderEnvLoadResult {
 }
 
 const SAFE_PLACEHOLDERS = new Set(["", "dummy", "DUMMY", "example", "EXAMPLE", "<REDACTED>", "<your key>", "<your_api_key>"]);
+const SAFE_BEARER_PLACEHOLDERS = new Set(["test-token", "resource_metadata"]);
 const PROVIDER_ENV_KEY_SET = new Set<string>(PROVIDER_ENV_KEYS);
 const TEXT_EXTENSIONS = new Set([
   ".ts",
@@ -348,10 +349,10 @@ export function secretFindingForText(text: string): string | null {
     }
   }
 
-  const bearerMatch = text.match(/\bBearer\s+([A-Za-z0-9._~+/=-]{20,})\b/);
+  const bearerMatch = text.match(/\bBearer\s+([A-Za-z0-9._~+/=-]{8,})\b/);
   if (bearerMatch) {
     const value = bearerMatch[1];
-    if (!value.includes("<") && !value.toLowerCase().includes("dummy") && !value.toLowerCase().includes("fake")) {
+    if (!SAFE_BEARER_PLACEHOLDERS.has(value) && !value.includes("<") && !value.toLowerCase().includes("dummy") && !value.toLowerCase().includes("fake")) {
       return "unredacted bearer token";
     }
   }
