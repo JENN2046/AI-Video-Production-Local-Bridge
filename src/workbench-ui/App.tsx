@@ -47,7 +47,6 @@ function AppShell() {
         })}
       </nav>
       <div className={s.sidebarBottom}>
-        <a className={s.legacyLink} href="/legacy">Legacy</a>
         <button className={s.collapseButton} onClick={toggle} title={collapsed ? "展开导航" : "收起导航"}>{collapsed ? <ChevronRight size={17} /> : <><ChevronLeft size={17} /><span>收起</span></>}</button>
       </div>
     </aside>

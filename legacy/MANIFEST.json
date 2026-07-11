@@ -1,0 +1,313 @@
+{
+  "version": 1,
+  "baseline_commit": "d38b69b",
+  "authorized_file_count": 61,
+  "policy": "read-only historical evidence; excluded from TypeScript compilation and public commands",
+  "entries": [
+    {
+      "source": "docs/m0/M0_Codex_Handoff_Prompt_v1.1.md",
+      "destination": "legacy/docs/m0/M0_Codex_Handoff_Prompt_v1.1.md",
+      "sha256": "0c5348716e0da4c0770f424f494691579711c48e5d847ac223b7d4514dba1e0d"
+    },
+    {
+      "source": "docs/m0/M0_TASK_DECOMPOSITION.md",
+      "destination": "legacy/docs/m0/M0_TASK_DECOMPOSITION.md",
+      "sha256": "4d8bec6eb0709e884435481d567397ea085a56a85de676c935f66a38bc2ead0f"
+    },
+    {
+      "source": "docs/three_routes/source_v1_1/00_README.md",
+      "destination": "legacy/docs/three_routes/source_v1_1/00_README.md",
+      "sha256": "483e489cd1d87d2b53b1343b909e2e8f64a2a47e5a2a8e783f9c0ae707b11c91"
+    },
+    {
+      "source": "docs/three_routes/source_v1_1/01_PLAN_REVIEW.md",
+      "destination": "legacy/docs/three_routes/source_v1_1/01_PLAN_REVIEW.md",
+      "sha256": "73a806c554e941ba22f45affd3a389257fe0666a542a0c55bc50a921d5572300"
+    },
+    {
+      "source": "docs/three_routes/source_v1_1/02_MASTER_PLAN_v1_1.md",
+      "destination": "legacy/docs/three_routes/source_v1_1/02_MASTER_PLAN_v1_1.md",
+      "sha256": "e2b1f8cb4af28b229213de724b61799cbf186d26336a38f0e7c707549f9825ea"
+    },
+    {
+      "source": "docs/three_routes/source_v1_1/03_R3_LOCAL_APP_ROUTE_TASKBOOK.md",
+      "destination": "legacy/docs/three_routes/source_v1_1/03_R3_LOCAL_APP_ROUTE_TASKBOOK.md",
+      "sha256": "c8cbb211c8e899bd4c320edf4ae140ec0acd0d34c1960555d51c3bed96050832"
+    },
+    {
+      "source": "docs/three_routes/source_v1_1/04_R2_HUMAN_WORKBENCH_ROUTE_TASKBOOK.md",
+      "destination": "legacy/docs/three_routes/source_v1_1/04_R2_HUMAN_WORKBENCH_ROUTE_TASKBOOK.md",
+      "sha256": "c10aa73ec1dd8b0236d9fdcc17f0fc625366ca039cf6921595898ae334c3aca0"
+    },
+    {
+      "source": "docs/three_routes/source_v1_1/05_R1_WEBGPT_MCP_ROUTE_TASKBOOK.md",
+      "destination": "legacy/docs/three_routes/source_v1_1/05_R1_WEBGPT_MCP_ROUTE_TASKBOOK.md",
+      "sha256": "7a3a2b9c280eadcb93b669e68073040a6b27b24f678f92c448e535c97dc96660"
+    },
+    {
+      "source": "docs/three_routes/source_v1_1/06_INTEGRATION_ROADMAP_AND_ACCEPTANCE.md",
+      "destination": "legacy/docs/three_routes/source_v1_1/06_INTEGRATION_ROADMAP_AND_ACCEPTANCE.md",
+      "sha256": "98763fed1507dd45517103c4fbc1317c6ab0c6e00cbdef52fb968e8e21ec1563"
+    },
+    {
+      "source": "docs/three_routes/source_v1_1/07_CODEX_DISPATCH_TASKS.md",
+      "destination": "legacy/docs/three_routes/source_v1_1/07_CODEX_DISPATCH_TASKS.md",
+      "sha256": "b35327a3485578bf8cde743baea9f889f89ca0fe7270ed54b0193097fab1b285"
+    },
+    {
+      "source": "docs/three_routes/source_v1_1/manifest.json",
+      "destination": "legacy/docs/three_routes/source_v1_1/manifest.json",
+      "sha256": "ab2c64509322e6fed10edea2a90f96c6e2c23f5617093d7b872dfb4d2b2315cb"
+    },
+    {
+      "source": "scripts/g0-r1-import-prep.ts",
+      "destination": "legacy/scripts/g0-r1-import-prep.ts",
+      "sha256": "f0d11b6a71758471f27c04511156e72664518ade23a464de3e955bd03bb585e4"
+    },
+    {
+      "source": "scripts/g0-r1-package-freeze.ts",
+      "destination": "legacy/scripts/g0-r1-package-freeze.ts",
+      "sha256": "294c54125809b3a34d9a1584ea25c4bdfa6eeeafd94f6dd657f76257942ea17e"
+    },
+    {
+      "source": "scripts/m0-reset.ts",
+      "destination": "legacy/scripts/m0-reset.ts",
+      "sha256": "428b6668e85a2fb4b2fbb2fe4e34bd7119d28ab713548017ecae9bc6794489fd"
+    },
+    {
+      "source": "scripts/r1-5-mcp-v3-production-assistant.ts",
+      "destination": "legacy/scripts/r1-5-mcp-v3-production-assistant.ts",
+      "sha256": "bd85192e7557a6061ae3042f710d4e521d9f1f01144e8c10f1dea2fa285a94c6"
+    },
+    {
+      "source": "scripts/r1-6-webgpt-post-closeout-bridge-reality-audit.ts",
+      "destination": "legacy/scripts/r1-6-webgpt-post-closeout-bridge-reality-audit.ts",
+      "sha256": "b7283b2ebdfaa5cdca87cd8191d19b9359e68f44de5cbec005fe19ed39712301"
+    },
+    {
+      "source": "scripts/r1-7-webgpt-local-bridge-smoke-validation.ts",
+      "destination": "legacy/scripts/r1-7-webgpt-local-bridge-smoke-validation.ts",
+      "sha256": "c3f34de4944e3b9718f0ca542de32065a0f90c9879462bf109654bab41c3da67"
+    },
+    {
+      "source": "scripts/r2g-j-http-mcp-transport-local-dry-run.ts",
+      "destination": "legacy/scripts/r2g-j-http-mcp-transport-local-dry-run.ts",
+      "sha256": "e25ab1cf47a25eb8e2de0a8b41c1d22ab61ab0ab896125a1f1d58949b86dc985"
+    },
+    {
+      "source": "scripts/r2g-l-chatgpt-read-only-live-smoke-local-entry-prep.ts",
+      "destination": "legacy/scripts/r2g-l-chatgpt-read-only-live-smoke-local-entry-prep.ts",
+      "sha256": "37859e5fed14951e758f28b83dc199034175938eeac52ee384b12e2c1741ab5f"
+    },
+    {
+      "source": "scripts/r2g-l-chatgpt-read-only-live-smoke-local-entry-server.ts",
+      "destination": "legacy/scripts/r2g-l-chatgpt-read-only-live-smoke-local-entry-server.ts",
+      "sha256": "d529d7b259f41c46709c46a6dc930fb440d542df1007d406354ef3fcf905630f"
+    },
+    {
+      "source": "scripts/r2g-mcp-packaging.ts",
+      "destination": "legacy/scripts/r2g-mcp-packaging.ts",
+      "sha256": "c78def2d23ce0f4a920143d66661e0d6280be45394f0e56a083116917506e946"
+    },
+    {
+      "source": "scripts/r3-4-package-shot-generation.ts",
+      "destination": "legacy/scripts/r3-4-package-shot-generation.ts",
+      "sha256": "308238b43a9ab7ab51001a3553f00545045d68353d7e0635f0dba67c1e10cb53"
+    },
+    {
+      "source": "scripts/r3-5-review-regeneration-final-assembly-core.ts",
+      "destination": "legacy/scripts/r3-5-review-regeneration-final-assembly-core.ts",
+      "sha256": "3d63b6bb488e3ed2976c99026cc0cc4b9764d9030997af2c31ac78fd2e3d8ad0"
+    },
+    {
+      "source": "scripts/r3-6-memory-asset-saveback-core.ts",
+      "destination": "legacy/scripts/r3-6-memory-asset-saveback-core.ts",
+      "sha256": "0ab35068740d00018a426a5f6c92d419ced0049a618265364ef64d439cc5f2a2"
+    },
+    {
+      "source": "scripts/r3-8a-runway-gen45-contract-dry-run.ts",
+      "destination": "legacy/scripts/r3-8a-runway-gen45-contract-dry-run.ts",
+      "sha256": "3da70abbe1b782949ca44f81065cfc69cb958e21031ae9ca494b7ccc023512de"
+    },
+    {
+      "source": "scripts/r3-8c-runway-submit-failure-triage.ts",
+      "destination": "legacy/scripts/r3-8c-runway-submit-failure-triage.ts",
+      "sha256": "ff514457fdd53acbc4eca7668ca950ae977641d50f53783de245c8794d00ed6d"
+    },
+    {
+      "source": "scripts/r3-8d-real-storyboard-keyframe-canary-prepare.ts",
+      "destination": "legacy/scripts/r3-8d-real-storyboard-keyframe-canary-prepare.ts",
+      "sha256": "bfd2139acc5fb0bb498fd3c4fc314902540974da4fe60bc3dce38597ce1989a3"
+    },
+    {
+      "source": "scripts/r3-8e-runway-real-storyboard-keyframe-canary.ts",
+      "destination": "legacy/scripts/r3-8e-runway-real-storyboard-keyframe-canary.ts",
+      "sha256": "c0cc48af40d82e0b773975a9e3622433ef8186f6508fe97f1d1ddd55eea38217"
+    },
+    {
+      "source": "scripts/r3-8g-runninghub-contract-freeze-dry-run.ts",
+      "destination": "legacy/scripts/r3-8g-runninghub-contract-freeze-dry-run.ts",
+      "sha256": "969439f5a4d9b186982cd956177a39606803fd3b134bd0fbab9b0746ff68e3c2"
+    },
+    {
+      "source": "scripts/r3-8h-runninghub-adapter-skeleton-offline.ts",
+      "destination": "legacy/scripts/r3-8h-runninghub-adapter-skeleton-offline.ts",
+      "sha256": "03197c808f9bf39c39b625af297c0c21ec1c7037941b015dfa754285c2d95b7b"
+    },
+    {
+      "source": "scripts/r3-8i-runninghub-real-keyframe-authorization-prep.ts",
+      "destination": "legacy/scripts/r3-8i-runninghub-real-keyframe-authorization-prep.ts",
+      "sha256": "ee181ad65c7e260c61920bc9184a284e232de74623890c44d634a59c834bc248"
+    },
+    {
+      "source": "scripts/r3-8j-runninghub-real-keyframe-single-submit-canary.ts",
+      "destination": "legacy/scripts/r3-8j-runninghub-real-keyframe-single-submit-canary.ts",
+      "sha256": "2e1fcf8cad64b8fe2249fc4ec47e832a309b9d71b9bbceb89ee18a19984272e0"
+    },
+    {
+      "source": "scripts/r3-8l-runninghub-duration-contract-repair-dry-run.ts",
+      "destination": "legacy/scripts/r3-8l-runninghub-duration-contract-repair-dry-run.ts",
+      "sha256": "3b093e96fc75cf09c4bdf1bf668124fbb1d1bf0db136e7fc707733a695266097"
+    },
+    {
+      "source": "scripts/r3-8m-runninghub-6s-single-submit-canary.ts",
+      "destination": "legacy/scripts/r3-8m-runninghub-6s-single-submit-canary.ts",
+      "sha256": "6cebe763a14279860b64c4a55e760ea89bb1ff28aba8d30461a6d00088fc4670"
+    },
+    {
+      "source": "scripts/r3-8o-runninghub-enterprise-key-6s-single-submit-canary.ts",
+      "destination": "legacy/scripts/r3-8o-runninghub-enterprise-key-6s-single-submit-canary.ts",
+      "sha256": "cfbdf83e8da82163665a84004fb3e504a92129aaf204021c11aa43739e68e1cc"
+    },
+    {
+      "source": "scripts/r3-9a-runninghub-primary-lane-wiring-dry-run.ts",
+      "destination": "legacy/scripts/r3-9a-runninghub-primary-lane-wiring-dry-run.ts",
+      "sha256": "a74d0d844bffe6d69d6b2b5604d9cc14500b2d0a1f97e5d00d13f6ac51c8ff39"
+    },
+    {
+      "source": "scripts/r3-9b-storyboard-package-to-runninghub-generation-plan.ts",
+      "destination": "legacy/scripts/r3-9b-storyboard-package-to-runninghub-generation-plan.ts",
+      "sha256": "18f548f3388ebc2351e1ad2b9f1e9e8a6365a4723ed98cc70acc66f6a533c9ff"
+    },
+    {
+      "source": "scripts/r3-9c-runninghub-4-shot-live-authorization-prep.ts",
+      "destination": "legacy/scripts/r3-9c-runninghub-4-shot-live-authorization-prep.ts",
+      "sha256": "da59e37fa6ad8b2856e86ac34587ad8616ba269156732fe3286f8601c91d8fad"
+    },
+    {
+      "source": "scripts/r3-9d-runninghub-4-shot-single-pass-live-execution.ts",
+      "destination": "legacy/scripts/r3-9d-runninghub-4-shot-single-pass-live-execution.ts",
+      "sha256": "1a63cd7f1935bf9e8dd77b3594552962e45dbc86840a1f1dbce100822a8b7f28"
+    },
+    {
+      "source": "scripts/r3-9e-runninghub-generated-clip-review-prep.ts",
+      "destination": "legacy/scripts/r3-9e-runninghub-generated-clip-review-prep.ts",
+      "sha256": "e3e7f1ff8b4f06435b1e109a44319022b6fa781ca6e0feaf0150357c538a8326"
+    },
+    {
+      "source": "scripts/r3-9f-human-clip-review-decision-apply.ts",
+      "destination": "legacy/scripts/r3-9f-human-clip-review-decision-apply.ts",
+      "sha256": "797910e5750fb1b9dfef22da2840494d0e468db6d93738fcae7aa5662d9f2d9a"
+    },
+    {
+      "source": "scripts/r3-9g-regeneration-strategy-for-review-notes.ts",
+      "destination": "legacy/scripts/r3-9g-regeneration-strategy-for-review-notes.ts",
+      "sha256": "f2b17946f6f4acc0b09926e2da30081d7b951374ffb5e4c652881c45accd4922"
+    },
+    {
+      "source": "scripts/r3-9h-shot-002-replacement-decision.ts",
+      "destination": "legacy/scripts/r3-9h-shot-002-replacement-decision.ts",
+      "sha256": "5c9d9af157212b10eed61d9a6aeea24a6f77edda753b5c67bda9b120a6d0e0eb"
+    },
+    {
+      "source": "scripts/r3-9i-runninghub-regeneration-authorization-prep.ts",
+      "destination": "legacy/scripts/r3-9i-runninghub-regeneration-authorization-prep.ts",
+      "sha256": "54d61efba5f7bc38c340a073b8ba0558094b0e1a82748110694ce37383ecdc2c"
+    },
+    {
+      "source": "scripts/r3-9j-runninghub-regeneration-single-pass-live-execution.ts",
+      "destination": "legacy/scripts/r3-9j-runninghub-regeneration-single-pass-live-execution.ts",
+      "sha256": "916a61afd732e441e48ebcc63a0b2555bf4a781dbd30be4340b6cb7cf00d2ce4"
+    },
+    {
+      "source": "scripts/r3-9k-runninghub-regenerated-clip-review-prep.ts",
+      "destination": "legacy/scripts/r3-9k-runninghub-regenerated-clip-review-prep.ts",
+      "sha256": "3d572d0fb12c4c0f33baaf481fe76ab7f421b8d991f38392bf80923a6ae8f30f"
+    },
+    {
+      "source": "scripts/r3-9l-human-regenerated-clip-review-decision-apply.ts",
+      "destination": "legacy/scripts/r3-9l-human-regenerated-clip-review-decision-apply.ts",
+      "sha256": "781aeafefa53dff682bdd37cf4947a673c4766282e8bebdb08cf080eac829539"
+    },
+    {
+      "source": "scripts/r3-9m-final-assembly-readiness-check.ts",
+      "destination": "legacy/scripts/r3-9m-final-assembly-readiness-check.ts",
+      "sha256": "ad34a51208484f294443a6d853e0a48886483810196a91886fbcb5cbcdb2fe86"
+    },
+    {
+      "source": "scripts/r3-9n-final-video-assembly-dry-run.ts",
+      "destination": "legacy/scripts/r3-9n-final-video-assembly-dry-run.ts",
+      "sha256": "f91a9deb816739b79c448a1e16755560dc971e4845965b0f11ce6be1b6c1af55"
+    },
+    {
+      "source": "scripts/r3-9o-final-video-assembly-execution.ts",
+      "destination": "legacy/scripts/r3-9o-final-video-assembly-execution.ts",
+      "sha256": "43226ed440b4f6e20a3e9624bb5f032ef1f655d489f553cacac1df5cce38134c"
+    },
+    {
+      "source": "scripts/r3-9p-final-video-review-package.ts",
+      "destination": "legacy/scripts/r3-9p-final-video-review-package.ts",
+      "sha256": "8c7ac221111f325ee87236787c7db13fb7b238c76e55f6b1094475526fd1f149"
+    },
+    {
+      "source": "scripts/r3-9q-human-final-video-review-decision-apply.ts",
+      "destination": "legacy/scripts/r3-9q-human-final-video-review-decision-apply.ts",
+      "sha256": "0ad38c0f802e049e5b7a29eeb8d2d810aaa082c361b493a6261a763a83b0c0e8"
+    },
+    {
+      "source": "scripts/r3-9r-final-delivery-closeout.ts",
+      "destination": "legacy/scripts/r3-9r-final-delivery-closeout.ts",
+      "sha256": "c4dab53467725dea54218cf58c88a0dcca3f7facf8dc25ec09452bc8a3793221"
+    },
+    {
+      "source": "scripts/webgpt-draft-bridge.ts",
+      "destination": "legacy/scripts/webgpt-draft-bridge.ts",
+      "sha256": "e1192a97a843b5e552c1b1f1f623469bfd858c59b1dcf4f913871f828fa72beb"
+    },
+    {
+      "source": "scripts/webgpt-human-handoff-bridge.ts",
+      "destination": "legacy/scripts/webgpt-human-handoff-bridge.ts",
+      "sha256": "0e876aa4afdc6074a5b0de9f58786cab9215cb98beca1f47fbcc42c76ded5cf0"
+    },
+    {
+      "source": "scripts/webgpt-legacy-offline.ts",
+      "destination": "legacy/scripts/webgpt-legacy-offline.ts",
+      "sha256": "1b7053ad99b52adda77b41c037032d6b245ccad33f3ab94ecacb7d85a66fbb97"
+    },
+    {
+      "source": "scripts/webgpt-production-assistant-bridge.ts",
+      "destination": "legacy/scripts/webgpt-production-assistant-bridge.ts",
+      "sha256": "3ffa399979d091ea16105d67a6a5ab4e320e0447ae612986bcea2e433e76731e"
+    },
+    {
+      "source": "scripts/webgpt-readonly-bridge.ts",
+      "destination": "legacy/scripts/webgpt-readonly-bridge.ts",
+      "sha256": "f3a8120aee53ce07f0d0b6cea101e010ce3be731bb230ba64e1727736764628d"
+    },
+    {
+      "source": "scripts/webgpt-review-assistant-bridge.ts",
+      "destination": "legacy/scripts/webgpt-review-assistant-bridge.ts",
+      "sha256": "ef7c5cabf96b6408443f1d06c201a63a808f1614cbccd8ae82a073dff609747f"
+    },
+    {
+      "source": "tests/chatgpt-mcp-bridge.test.ts",
+      "destination": "legacy/tests/chatgpt-mcp-bridge.test.ts",
+      "sha256": "bf1f58ad16c08e875bcaa4f85ed973646e7fe3ad825af26167a1758a9c55b2ec"
+    },
+    {
+      "source": "tests/webgpt-v4-legacy.test.ts",
+      "destination": "legacy/tests/webgpt-v4-legacy.test.ts",
+      "sha256": "98c68b85b50ef70aa40fc0f5f6a2a9e3b17272dc704bda9dbc95d2c0db80f757"
+    }
+  ]
+}

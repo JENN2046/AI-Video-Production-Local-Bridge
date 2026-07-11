@@ -840,7 +840,9 @@ export async function runR2GReadOnlyLiveSmokeLocalEntryPrep(generatedAt = new Da
         production_configuration_changed: false
       },
       future_live_smoke_command_template: {
-        local_server_command: `npm run r2g:l:serve-read-only -- --port ${CHATGPT_MCP_READ_ONLY_LIVE_SMOKE_RECOMMENDED_PORT}`,
+        local_server_command: null,
+        status: "retired_with_legacy_r2g_harness",
+        historical_recommended_port: CHATGPT_MCP_READ_ONLY_LIVE_SMOKE_RECOMMENDED_PORT,
         public_tunnel_command_required_later: true,
         chatgpt_connector_creation_required_later: true,
         requires_exact_future_authorization: true
