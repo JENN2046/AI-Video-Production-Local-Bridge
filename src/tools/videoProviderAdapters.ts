@@ -1177,7 +1177,12 @@ export class RunningHubVideoProviderAdapter implements VideoProviderAdapter {
       return { ok: false, error: { ...error, ...(submitResponse.response.status >= 500 || submitResponse.response.status === 408 ? { submission_outcome_unknown: true } : {}) } };
     }
     const parsed = parseRunningHubSubmitResponse(submitResponse.payload, [this.credential]);
-    return parsed.ok ? parsed : { ok: false, error: { ...parsed.error, submission_outcome_unknown: true } };
+    if (parsed.ok) return parsed;
+    const providerDeclaredRejection = parsed.error.sanitized_provider_error_summary;
+    if (providerDeclaredRejection?.provider_error_code || providerDeclaredRejection?.provider_error_message) {
+      return parsed;
+    }
+    return { ok: false, error: { ...parsed.error, submission_outcome_unknown: true } };
   }
 
   async pollStatus(providerJobId: string): Promise<ProviderStatusResult> {
