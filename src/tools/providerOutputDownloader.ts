@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { existsSync, linkSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { request as httpsRequest } from "node:https";
-import { isIP } from "node:net";
+import { BlockList, isIP } from "node:net";
 import { basename, extname, isAbsolute, relative, resolve } from "node:path";
 import { Readable } from "node:stream";
 
@@ -39,6 +39,7 @@ export interface ProviderOutputDownloadRuntime {
   storage_root?: string;
   fault_injection_after_file_commit?: (path: string) => void;
   resolve_hostname?: (hostname: string) => Promise<Array<{ address: string; family: 4 | 6 }>>;
+  fetch_pinned_address?: (url: URL, signal: AbortSignal, address: { address: string; family: 4 | 6 }) => Promise<Response>;
 }
 
 const DEFAULT_SAFETY: ProviderOutputDownloadSafety = {
@@ -46,6 +47,20 @@ const DEFAULT_SAFETY: ProviderOutputDownloadSafety = {
   redirect_limit: 3,
   max_size_mb: 200
 };
+
+const BLOCKED_IPV6 = new BlockList();
+for (const [network, prefix] of [
+  ["::", 96],
+  ["::", 128],
+  ["::1", 128],
+  ["100::", 64],
+  ["2001:db8::", 32],
+  ["3fff::", 20],
+  ["fc00::", 7],
+  ["fe80::", 10],
+  ["fec0::", 10],
+  ["ff00::", 8]
+] as const) BLOCKED_IPV6.addSubnet(network, prefix, "ipv6");
 
 function ipv4ToNumber(host: string): number | null {
   const parts = host.split(".");
@@ -62,7 +77,7 @@ function ipv4ToNumber(host: string): number | null {
 
 function isPrivateHost(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
-  if (host === "localhost" || host.endsWith(".localhost") || host === "0.0.0.0" || host === "::" || host === "::1") return true;
+  if (host === "localhost" || host.endsWith(".localhost") || host === "0.0.0.0") return true;
   if (host === "169.254.169.254") return true;
   const mappedIpv4 = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(host)?.[1];
   if (mappedIpv4) return isPrivateHost(mappedIpv4);
@@ -72,18 +87,23 @@ function isPrivateHost(hostname: string): boolean {
     const low = Number.parseInt(mappedHex[2], 16);
     return isPrivateHost(`${high >>> 8}.${high & 0xff}.${low >>> 8}.${low & 0xff}`);
   }
-  if (host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("ff")) return true;
+  if (isIP(host) === 6) return BLOCKED_IPV6.check(host, "ipv6");
 
   const ipv4 = ipv4ToNumber(host);
   if (ipv4 === null) return false;
   const first = (ipv4 >>> 24) & 0xff;
   const second = (ipv4 >>> 16) & 0xff;
+  const third = (ipv4 >>> 8) & 0xff;
   if (first === 10 || first === 127 || first === 0) return true;
   if (first === 172 && second >= 16 && second <= 31) return true;
   if (first === 192 && second === 168) return true;
   if (first === 169 && second === 254) return true;
   if (first === 100 && second >= 64 && second <= 127) return true;
   if (first === 198 && (second === 18 || second === 19)) return true;
+  if (first === 192 && second === 0 && (third === 0 || third === 2)) return true;
+  if (first === 192 && second === 88 && third === 99) return true;
+  if (first === 198 && second === 51 && third === 100) return true;
+  if (first === 203 && second === 0 && third === 113) return true;
   if (first >= 224) return true;
   return false;
 }
@@ -132,6 +152,24 @@ async function pinnedHttpsFetch(url: URL, signal: AbortSignal, address: { addres
     request.on("error", rejectResponse);
     request.end();
   });
+}
+
+async function fetchFromValidatedAddresses(
+  url: URL,
+  signal: AbortSignal,
+  addresses: Array<{ address: string; family: 4 | 6 }>,
+  fetchAddress: (url: URL, signal: AbortSignal, address: { address: string; family: 4 | 6 }) => Promise<Response>
+): Promise<Response> {
+  let lastError: unknown = new Error("Provider output hostname had no reachable public address.");
+  for (const address of addresses) {
+    try {
+      return await fetchAddress(url, signal, address);
+    } catch (error) {
+      if (signal.aborted) throw error;
+      lastError = error;
+    }
+  }
+  throw lastError;
 }
 
 function isPathInside(child: string, parent: string): boolean {
@@ -215,7 +253,8 @@ async function fetchWithRedirects(
   initialUrl: URL,
   fetchImpl: typeof fetch | undefined,
   safety: ProviderOutputDownloadSafety,
-  resolver: (hostname: string) => Promise<Array<{ address: string; family: 4 | 6 }>>
+  resolver: (hostname: string) => Promise<Array<{ address: string; family: 4 | 6 }>>,
+  fetchAddress: (url: URL, signal: AbortSignal, address: { address: string; family: 4 | 6 }) => Promise<Response>
 ): Promise<{ response: Response; finalUrl: URL; cleanup: () => void } | { error: ProviderToolError }> {
   let currentUrl = initialUrl;
   for (let attempt = 0; attempt <= safety.redirect_limit; attempt += 1) {
@@ -226,7 +265,7 @@ async function fetchWithRedirects(
       const addresses = await abortable(publicAddresses(currentUrl.hostname, resolver), controller.signal);
       response = fetchImpl
         ? await fetchImpl(currentUrl, { method: "GET", redirect: "manual", signal: controller.signal })
-        : await pinnedHttpsFetch(currentUrl, controller.signal, addresses[0]);
+        : await fetchFromValidatedAddresses(currentUrl, controller.signal, addresses, fetchAddress);
     } catch (error) {
       clearTimeout(timeout);
       if (error instanceof Error && error.message === "PROVIDER_OUTPUT_URI_BLOCKED") {
@@ -310,12 +349,12 @@ export async function downloadProviderOutputToArtifact(
   if (!urlValidation.ok) return { ok: false, error: urlValidation.error };
 
   const resolver = runtime.resolve_hostname ?? (input.fetch_impl
-    ? async () => [{ address: "203.0.113.1", family: 4 as const }]
+    ? async () => [{ address: "8.8.8.8", family: 4 as const }]
     : async (hostname: string) => {
       const result = await lookup(hostname, { all: true, verbatim: true });
       return result.map((entry) => ({ address: entry.address, family: entry.family as 4 | 6 }));
     });
-  const fetched = await fetchWithRedirects(urlValidation.url, input.fetch_impl, safety, resolver);
+  const fetched = await fetchWithRedirects(urlValidation.url, input.fetch_impl, safety, resolver, runtime.fetch_pinned_address ?? pinnedHttpsFetch);
   if ("error" in fetched) return { ok: false, error: fetched.error };
 
   const contentType = fetched.response.headers.get("content-type");

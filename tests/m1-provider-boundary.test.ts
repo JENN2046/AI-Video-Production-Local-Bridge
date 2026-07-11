@@ -707,8 +707,14 @@ test("M1 provider output URL safety blocks unsafe destinations", () => {
     "https://sub.localhost/video.mp4",
     "https://127.0.0.1/video.mp4",
     "https://[::1]/video.mp4",
+    "https://[::127.0.0.1]/video.mp4",
     "https://[::ffff:127.0.0.1]/video.mp4",
     "https://[fc00::1]/video.mp4",
+    "https://[fe90::1]/video.mp4",
+    "https://[febf::1]/video.mp4",
+    "https://[fec0::1]/video.mp4",
+    "https://[feff::1]/video.mp4",
+    "https://[2001:db8::1]/video.mp4",
     "https://user:password@cdn.example.test/video.mp4",
     "https://10.0.0.2/video.mp4",
     "https://169.254.169.254/latest/meta-data"
@@ -742,6 +748,41 @@ test("M1 provider output downloader rejects private DNS answers before transport
     assert.equal(result.ok, false);
     if (!result.ok) assert.equal(result.error.code, "PROVIDER_OUTPUT_URI_BLOCKED");
     assert.equal(fetched, false);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("M1 provider output downloader retries every validated public address", async () => {
+  const db = openM0Database(":memory:");
+  const root = mkdtempSync(join(tmpdir(), "provider-output-address-fallback-"));
+  const fixtureBytes = readFileSync(join(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4"));
+  const attempts: string[] = [];
+  try {
+    const result = await downloadProviderOutputToArtifact({
+      url: "https://cdn.example.test/output.mp4",
+      provider_name: "runninghub",
+      provider_job_id: "address-fallback-task",
+      project_id: "project_address_fallback",
+      shot_id: "shot_address_fallback",
+      duration_seconds: 2,
+      aspect_ratio: "9:16",
+      storage_directory: root
+    }, db, {
+      storage_root: root,
+      resolve_hostname: async () => [
+        { address: "2001:4860:4860::8888", family: 6 },
+        { address: "8.8.8.8", family: 4 }
+      ],
+      fetch_pinned_address: async (_url, _signal, address) => {
+        attempts.push(address.address);
+        if (address.family === 6) throw new Error("IPv6 route unavailable");
+        return new Response(fixtureBytes, { status: 200, headers: { "content-type": "video/mp4", "content-length": String(fixtureBytes.length) } });
+      }
+    });
+    assert.equal(result.ok, true);
+    assert.deepEqual(attempts, ["2001:4860:4860::8888", "8.8.8.8"]);
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });
