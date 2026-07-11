@@ -30,7 +30,7 @@ const V2_CONTENT_TYPES: Record<string, string> = {
   ".svg": "image/svg+xml",
   ".woff2": "font/woff2"
 };
-let readinessCache: { expires: number; status: number; body: Record<string, unknown> } | null = null;
+let readinessCache: { expires: number; checks: Record<string, boolean> } | null = null;
 
 export interface WorkbenchRuntime {
   host: string;
@@ -120,29 +120,35 @@ function withDatabase<T>(operation: (db: ReturnType<typeof openM0Database>) => T
 }
 
 async function workbenchReadiness(): Promise<{ status: number; body: Record<string, unknown> }> {
-  if (readinessCache && readinessCache.expires > Date.now()) return readinessCache;
-  const checks: Record<string, boolean> = { schema: false, database: false, media_directory: false, ffmpeg: false, ffprobe: false, worker: false, provider: true };
-  try {
-    withDatabase((db) => {
-      checks.database = (db.prepare("SELECT 1 AS ok").get() as { ok: number }).ok === 1;
-      checks.schema = (db.prepare("PRAGMA quick_check").get() as { quick_check: string }).quick_check === "ok";
-      checks.worker = generationWorkerStatus(db).ready;
-    });
-  } catch { checks.database = false; }
-  try { accessSync(paths.mediaRoot, constants.R_OK | constants.W_OK); checks.media_directory = true; } catch { checks.media_directory = false; }
-  try {
-    const ffmpeg = await resolveFfmpegExecutable();
-    checks.ffmpeg = true;
-    await resolveFfprobeExecutable(ffmpeg);
-    checks.ffprobe = true;
-  } catch { checks.ffmpeg = false; checks.ffprobe = false; }
-  if (process.env.REAL_PROVIDER_ENABLED === "true") {
-    const provider = checkProviderEnv();
-    checks.provider = provider.result === "PASS" && provider.provider_name === "runninghub";
+  let staticChecks: Record<string, boolean>;
+  if (readinessCache && readinessCache.expires > Date.now()) {
+    staticChecks = readinessCache.checks;
+  } else {
+    staticChecks = { schema: false, database: false, media_directory: false, ffmpeg: false, ffprobe: false, provider: true };
+    try {
+      withDatabase((db) => {
+        staticChecks.database = (db.prepare("SELECT 1 AS ok").get() as { ok: number }).ok === 1;
+        staticChecks.schema = (db.prepare("PRAGMA quick_check").get() as { quick_check: string }).quick_check === "ok";
+      });
+    } catch { staticChecks.database = false; }
+    try { accessSync(paths.mediaRoot, constants.R_OK | constants.W_OK); staticChecks.media_directory = true; } catch { staticChecks.media_directory = false; }
+    try {
+      const ffmpeg = await resolveFfmpegExecutable();
+      staticChecks.ffmpeg = true;
+      await resolveFfprobeExecutable(ffmpeg);
+      staticChecks.ffprobe = true;
+    } catch { staticChecks.ffmpeg = false; staticChecks.ffprobe = false; }
+    if (process.env.REAL_PROVIDER_ENABLED === "true") {
+      const provider = checkProviderEnv();
+      staticChecks.provider = provider.result === "PASS" && provider.provider_name === "runninghub";
+    }
+    readinessCache = { checks: staticChecks, expires: Date.now() + 30_000 };
   }
+  let worker = false;
+  try { worker = withDatabase((db) => generationWorkerStatus(db).ready); } catch { worker = false; }
+  const checks = { ...staticChecks, worker };
   const ok = Object.values(checks).every(Boolean);
   const result = { status: ok ? 200 : 503, body: { ok, service: "workbench-v2", checks } };
-  readinessCache = { ...result, expires: Date.now() + 30_000 };
   return result;
 }
 
