@@ -72,6 +72,21 @@ test("migration checksum drift fails closed", () => {
   }
 });
 
+test("schema validation rejects migration rows from a newer runtime", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "future.sqlite");
+    migrateDatabase(sqlitePath);
+    const db = new DatabaseSync(sqlitePath);
+    db.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES ('9999', 'future_schema', 'future-checksum')").run();
+    assert.throws(() => assertSchemaCurrent(db), (error) => error instanceof SchemaMigrationRequiredError && /unsupported migration 9999/.test(error.message));
+    assert.throws(() => runDatabaseMigrations(db), (error) => error instanceof SchemaMigrationRequiredError && /unsupported migration 9999/.test(error.message));
+    db.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("database migrated through 0003 keeps its historical checksums and upgrades through 0004", () => {
   const root = tempRoot();
   try {
@@ -216,6 +231,31 @@ test("database check reports orphan rows", () => {
     const checked = checkDatabase(sqlitePath);
     assert.equal(checked.result, "FAIL");
     assert.equal(checked.orphan_rows > 0, true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("database check detects package and batch drift plus missing batch links", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "links.sqlite");
+    migrateDatabase(sqlitePath);
+    const db = new DatabaseSync(sqlitePath);
+    db.prepare("INSERT INTO projects (project_id, data_json) VALUES ('project_links', ?)")
+      .run(JSON.stringify({ project_id: "project_links" }));
+    db.prepare("INSERT INTO storyboard_packages (storyboard_package_id, project_id, data_json) VALUES ('package_drift', 'project_links', ?)")
+      .run(JSON.stringify({ storyboard_package_id: "package_other", project_id: "project_links" }));
+    db.prepare("INSERT INTO generation_batches (batch_id, project_id, storyboard_package_id, data_json) VALUES ('batch_orphan_package', 'project_links', 'package_missing', ?)")
+      .run(JSON.stringify({ batch_id: "batch_orphan_package", project_id: "project_links", storyboard_package_id: "package_missing" }));
+    db.prepare("INSERT INTO generation_runs (run_id, batch_id, project_id, shot_id, run_type, status, data_json) VALUES ('run_orphan_batch', 'batch_missing', 'project_links', '', 'image_to_video', 'queued', ?)")
+      .run(JSON.stringify({ run_id: "run_orphan_batch", batch_id: "batch_missing", project_id: "project_links", shot_id: "" }));
+    db.close();
+
+    const checked = checkDatabase(sqlitePath);
+    assert.equal(checked.structured_drift_rows, 1);
+    assert.equal(checked.orphan_rows, 2);
+    assert.equal(checked.result, "FAIL");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

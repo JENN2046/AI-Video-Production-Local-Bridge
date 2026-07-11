@@ -344,6 +344,11 @@ export function assertSchemaCurrent(db: M0Database): void {
   const tables = tableNames(db);
   if (!tables.has("schema_migrations")) throw new SchemaMigrationRequiredError();
   const applied = db.prepare("SELECT migration_id, name, checksum FROM schema_migrations ORDER BY migration_id").all() as Array<{ migration_id: string; name: string; checksum: string }>;
+  const knownIds = new Set(DATABASE_MIGRATIONS.map((migration) => migration.id));
+  const futureRows = applied.filter((row) => !knownIds.has(row.migration_id));
+  if (futureRows.length > 0) {
+    throw new SchemaMigrationRequiredError(`Database contains unsupported migration ${futureRows[0].migration_id}.`);
+  }
   for (const migration of DATABASE_MIGRATIONS) {
     const row = applied.find((candidate) => candidate.migration_id === migration.id);
     if (!row) throw new SchemaMigrationRequiredError(`Missing database migration ${migration.id}.`);
