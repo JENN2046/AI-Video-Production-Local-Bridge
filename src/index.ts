@@ -2,10 +2,14 @@ export { getM0Paths, ensureM0Directories, paths } from "./paths.js";
 export { initializeM0Schema, listTables, openM0Database } from "./storage/sqlite.js";
 export {
   activatePendingMediaArtifact,
+  attachArtifactToShot,
+  createScopedArtifactFromBlob,
   fixturePath,
   getMediaArtifact,
+  getMediaBlob,
   getStoryboardImageTransferGate,
-  registerMediaArtifact
+  registerMediaArtifact,
+  transitionMediaArtifactStatus
 } from "./tools/mediaArtifacts.js";
 export {
   buildStoryboardApprovedShot,
@@ -154,11 +158,14 @@ export type {
 } from "./tools/videoProviderAdapters.js";
 export type {
   ArtifactRole,
+  ArtifactShotReference,
   ArtifactStatus,
   ArtifactType,
   ActivatePendingMediaArtifactInput,
   ActivatePendingMediaArtifactResult,
   MediaArtifact,
+  MediaBlob,
+  MediaBlobIntegrityState,
   RegisterMediaArtifactInput,
   RegisterMediaArtifactResult,
   StoryboardImageTransferGate

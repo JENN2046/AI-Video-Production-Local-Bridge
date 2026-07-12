@@ -5,10 +5,22 @@ import { createHash, randomUUID } from "node:crypto";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { ensureM0Directories, paths } from "../paths.js";
 import { validateImageBuffer, validateImageFile, type ImageValidationResult } from "./imageValidity.js";
+import { getProject, getShot, type Shot } from "./projects.js";
 
 export type ArtifactType = "image" | "video";
 export type ArtifactRole = "storyboard_image" | "generated_clip" | "final_video";
 export type ArtifactStatus = "pending_upload" | "active" | "inaccessible" | "expired" | "archived";
+export type MediaBlobIntegrityState = "verified" | "unverified" | "missing" | "quarantined";
+
+export interface MediaBlob {
+  blob_id: string;
+  sha256: string;
+  size_bytes: number;
+  detected_mime: string;
+  storage_uri: string;
+  integrity_state: MediaBlobIntegrityState;
+  provenance: Record<string, unknown>;
+}
 
 export type MediaArtifactSource =
   | { kind: "fixture_path"; path: string }
@@ -34,6 +46,7 @@ export interface RegisterMediaArtifactInput {
 
 export interface MediaArtifact {
   artifact_id: string;
+  blob_id: string;
   artifact_type: ArtifactType;
   role: ArtifactRole;
   status: ArtifactStatus;
@@ -86,6 +99,14 @@ export interface ActivatePendingMediaArtifactInput {
 export interface StoryboardImageTransferGate {
   fixture_path: "PASS" | "FAIL";
   external_transfer_path: "PASS" | "FAIL" | "NOT_TESTED";
+}
+
+export class ArtifactStructuredDriftError extends Error {
+  readonly code = "ARTIFACT_STRUCTURED_DRIFT";
+
+  constructor(artifactId: string) {
+    super(`ARTIFACT_STRUCTURED_DRIFT: ${artifactId} relational binding differs from data_json.`);
+  }
 }
 
 function isPathInside(child: string, parent: string): boolean {
@@ -159,41 +180,193 @@ function defaultMetadata(artifactType: ArtifactType, metadata: RegisterMediaArti
   };
 }
 
-export function persistMediaArtifact(db: M0Database, artifact: MediaArtifact): void {
+function detectMimeFromBytes(bytes: Buffer): string {
+  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (bytes.length >= 12 && bytes.subarray(4, 8).toString("ascii") === "ftyp") return "video/mp4";
+  return "";
+}
+
+function databaseIsInTransaction(db: M0Database): boolean {
+  return Boolean((db as unknown as { isTransaction?: boolean }).isTransaction);
+}
+
+function buildBlobForArtifact(artifact: MediaArtifact): MediaBlob {
+  const uri = artifact.storage.uri;
+  if (uri && !/^https?:\/\//i.test(uri) && existsSync(uri) && !lstatSync(uri).isSymbolicLink() && statSync(uri).isFile()) {
+    const bytes = readFileSync(uri);
+    const detectedMime = detectMimeFromBytes(bytes);
+    const typeMatches = artifact.artifact_type === "image" ? detectedMime.startsWith("image/") : detectedMime === "video/mp4";
+    if (bytes.length > 0 && typeMatches) {
+      const sha256 = createHash("sha256").update(bytes).digest("hex");
+      return {
+        blob_id: `blob_sha256_${sha256}`,
+        sha256,
+        size_bytes: bytes.length,
+        detected_mime: detectedMime,
+        storage_uri: resolve(uri),
+        integrity_state: "verified",
+        provenance: { source: artifact.source.kind, immutable: true }
+      };
+    }
+  }
+
+  const missing = Boolean(uri && !/^https?:\/\//i.test(uri) && !existsSync(uri));
+  return {
+    blob_id: `blob_unverified_${createHash("sha256").update(artifact.artifact_id).digest("hex")}`,
+    sha256: "",
+    size_bytes: 0,
+    detected_mime: "",
+    storage_uri: uri,
+    integrity_state: missing ? "missing" : "unverified",
+    provenance: { source: artifact.source.kind, immutable: true, reason: missing ? "LOCAL_FILE_MISSING" : "CONTENT_NOT_LOCALLY_VERIFIABLE" }
+  };
+}
+
+function persistBlob(db: M0Database, blob: MediaBlob): MediaBlob {
+  if (blob.integrity_state === "verified") {
+    const existing = db.prepare(`
+      SELECT blob_id, sha256, size_bytes, detected_mime, storage_uri, integrity_state, provenance_json
+      FROM media_blobs WHERE sha256 = ? AND integrity_state = 'verified'
+    `).get(blob.sha256) as {
+      blob_id: string;
+      sha256: string;
+      size_bytes: number;
+      detected_mime: string;
+      storage_uri: string;
+      integrity_state: MediaBlobIntegrityState;
+      provenance_json: string;
+    } | undefined;
+    if (existing) {
+      if (Number(existing.size_bytes) !== blob.size_bytes || existing.detected_mime !== blob.detected_mime) {
+        throw new Error("MEDIA_BLOB_CONTENT_CONFLICT");
+      }
+      return {
+        blob_id: existing.blob_id,
+        sha256: existing.sha256,
+        size_bytes: Number(existing.size_bytes),
+        detected_mime: existing.detected_mime,
+        storage_uri: existing.storage_uri,
+        integrity_state: existing.integrity_state,
+        provenance: JSON.parse(existing.provenance_json) as Record<string, unknown>
+      };
+    }
+  }
   db.prepare(`
-    INSERT INTO media_artifacts (
-      artifact_id,
-      project_id,
-      shot_id,
-      role,
-      artifact_type,
-      status,
-      data_json,
-      updated_at
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(artifact_id) DO UPDATE SET
-      project_id = excluded.project_id,
-      shot_id = excluded.shot_id,
-      role = excluded.role,
-      artifact_type = excluded.artifact_type,
-      status = excluded.status,
-      data_json = excluded.data_json,
-      updated_at = CURRENT_TIMESTAMP
-  `).run(
-    artifact.artifact_id,
-    artifact.linked_objects.project_id || null,
-    artifact.linked_objects.shot_id || null,
-    artifact.role,
-    artifact.artifact_type,
-    artifact.status,
-    JSON.stringify(artifact)
-  );
+    INSERT INTO media_blobs (blob_id, sha256, size_bytes, detected_mime, storage_uri, integrity_state, provenance_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(blob.blob_id, blob.sha256, blob.size_bytes, blob.detected_mime, blob.storage_uri, blob.integrity_state, JSON.stringify(blob.provenance));
+  return blob;
+}
+
+function persistMediaArtifactInternal(db: M0Database, artifact: MediaArtifact, allowStatusTransition: boolean): void {
+  const manageTransaction = !databaseIsInTransaction(db);
+  if (manageTransaction) db.exec("BEGIN IMMEDIATE");
+  try {
+    const existing = db.prepare(`
+      SELECT project_id, shot_id, role, artifact_type, status FROM media_artifacts WHERE artifact_id = ?
+    `).get(artifact.artifact_id) as { project_id: string | null; shot_id: string | null; role: string; artifact_type: string; status: ArtifactStatus } | undefined;
+    if (existing && (
+      (existing.project_id ?? "") !== artifact.linked_objects.project_id
+      || (existing.shot_id ?? "") !== artifact.linked_objects.shot_id
+      || existing.role !== artifact.role
+      || existing.artifact_type !== artifact.artifact_type
+    )) {
+      throw new Error("MEDIA_ARTIFACT_IDENTITY_IMMUTABLE");
+    }
+    if (existing && existing.status !== artifact.status && !allowStatusTransition) {
+      throw new Error("MEDIA_ARTIFACT_STATUS_TRANSITION_REQUIRED");
+    }
+
+    let blob: MediaBlob;
+    if (artifact.blob_id) {
+      const row = db.prepare(`
+        SELECT blob_id, sha256, size_bytes, detected_mime, storage_uri, integrity_state, provenance_json
+        FROM media_blobs WHERE blob_id = ?
+      `).get(artifact.blob_id) as {
+        blob_id: string; sha256: string; size_bytes: number; detected_mime: string; storage_uri: string;
+        integrity_state: MediaBlobIntegrityState; provenance_json: string;
+      } | undefined;
+      if (!row) throw new Error("MEDIA_BLOB_NOT_FOUND");
+      blob = { ...row, size_bytes: Number(row.size_bytes), provenance: JSON.parse(row.provenance_json) as Record<string, unknown> };
+    } else {
+      blob = persistBlob(db, buildBlobForArtifact(artifact));
+      artifact.blob_id = blob.blob_id;
+    }
+    if (blob.integrity_state === "verified") {
+      artifact.metadata.sha256 = blob.sha256;
+      artifact.source.sha256 = blob.sha256;
+      artifact.storage.mime_type = blob.detected_mime;
+      artifact.storage.uri = blob.storage_uri;
+      artifact.storage.filename = basename(blob.storage_uri);
+    } else if (artifact.status === "active") {
+      throw new Error("ACTIVE_ARTIFACT_REQUIRES_VERIFIED_BLOB");
+    }
+
+    db.prepare(`
+      INSERT INTO media_artifacts (
+        artifact_id, project_id, shot_id, role, artifact_type, status, data_json, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(artifact_id) DO UPDATE SET
+        status = excluded.status,
+        data_json = excluded.data_json,
+        updated_at = CURRENT_TIMESTAMP
+    `).run(
+      artifact.artifact_id,
+      artifact.linked_objects.project_id || null,
+      artifact.linked_objects.shot_id || null,
+      artifact.role,
+      artifact.artifact_type,
+      artifact.status,
+      JSON.stringify(artifact)
+    );
+    db.prepare(`
+      INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)
+      ON CONFLICT(artifact_id) DO UPDATE SET blob_id = excluded.blob_id
+    `).run(artifact.artifact_id, artifact.blob_id);
+    if (manageTransaction) db.exec("COMMIT");
+  } catch (error) {
+    if (manageTransaction) db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+export function persistMediaArtifact(db: M0Database, artifact: MediaArtifact): void {
+  persistMediaArtifactInternal(db, artifact, false);
+}
+
+const ARTIFACT_STATUS_TRANSITIONS: Readonly<Record<ArtifactStatus, readonly ArtifactStatus[]>> = {
+  pending_upload: ["active", "inaccessible", "archived"],
+  active: ["inaccessible", "expired", "archived"],
+  inaccessible: ["active", "expired", "archived"],
+  expired: ["archived"],
+  archived: []
+};
+
+export function transitionMediaArtifactStatus(
+  artifactId: string,
+  nextStatus: ArtifactStatus,
+  db = openM0Database()
+): { ok: true; artifact: MediaArtifact } | { ok: false; error: ToolError } {
+  const artifact = getMediaArtifact(db, artifactId);
+  if (!artifact) return { ok: false, error: { code: "ARTIFACT_NOT_FOUND", message: `Artifact not found: ${artifactId}` } };
+  if (artifact.status === nextStatus) return { ok: true, artifact };
+  if (!ARTIFACT_STATUS_TRANSITIONS[artifact.status].includes(nextStatus)) {
+    return { ok: false, error: { code: "INVALID_ARTIFACT_STATUS_TRANSITION", message: `${artifact.status} cannot transition to ${nextStatus}.` } };
+  }
+  artifact.status = nextStatus;
+  try {
+    persistMediaArtifactInternal(db, artifact, true);
+    return { ok: true, artifact };
+  } catch (error) {
+    return { ok: false, error: { code: "ARTIFACT_STATUS_TRANSITION_FAILED", message: error instanceof Error ? error.message : "Artifact status transition failed." } };
+  }
 }
 
 function buildArtifact(input: RegisterMediaArtifactInput, status: ArtifactStatus, filename: string, uri: string, mimeType: string): MediaArtifact {
   return {
     artifact_id: `artifact_${randomUUID()}`,
+    blob_id: "",
     artifact_type: input.artifact_type,
     role: input.role,
     status,
@@ -233,7 +406,12 @@ function buildValidatedImageArtifact(
           width: validation.width,
           height: validation.height,
           duration_seconds: null,
-          aspect_ratio: validation.aspect_ratio
+          aspect_ratio: validation.aspect_ratio,
+          sha256: validation.sha256
+        },
+        provenance: {
+          ...input.provenance,
+          sha256: validation.sha256
         }
       },
       "active",
@@ -671,7 +849,7 @@ export function activatePendingMediaArtifact(input: ActivatePendingMediaArtifact
   }
 
   if (!result.ok) return result;
-  persistMediaArtifact(db, result.artifact);
+  persistMediaArtifactInternal(db, result.artifact, true);
   return { ok: true, artifact: result.artifact };
 }
 
@@ -683,8 +861,174 @@ export function getStoryboardImageTransferGate(): StoryboardImageTransferGate {
 }
 
 export function getMediaArtifact(db: M0Database, artifactId: string): MediaArtifact | null {
-  const row = db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = ?").get(artifactId) as { data_json: string } | undefined;
-  return row ? (JSON.parse(row.data_json) as MediaArtifact) : null;
+  const row = db.prepare(`
+    SELECT a.artifact_id, a.project_id, a.shot_id, a.role, a.artifact_type, a.status, a.data_json, m.blob_id
+    FROM media_artifacts a
+    LEFT JOIN media_artifact_blobs m ON m.artifact_id = a.artifact_id
+    WHERE a.artifact_id = ?
+  `).get(artifactId) as {
+    artifact_id: string;
+    project_id: string | null;
+    shot_id: string | null;
+    role: string;
+    artifact_type: string;
+    status: string;
+    data_json: string;
+    blob_id: string | null;
+  } | undefined;
+  if (!row) return null;
+  const artifact = JSON.parse(row.data_json) as MediaArtifact;
+  if (
+    artifact.artifact_id !== row.artifact_id
+    || artifact.linked_objects?.project_id !== (row.project_id ?? "")
+    || artifact.linked_objects?.shot_id !== (row.shot_id ?? "")
+    || artifact.role !== row.role
+    || artifact.artifact_type !== row.artifact_type
+    || artifact.status !== row.status
+    || (row.blob_id !== null && artifact.blob_id !== row.blob_id)
+  ) {
+    throw new ArtifactStructuredDriftError(artifactId);
+  }
+  return artifact;
+}
+
+export function getMediaBlob(db: M0Database, blobId: string): MediaBlob | null {
+  const row = db.prepare(`
+    SELECT blob_id, sha256, size_bytes, detected_mime, storage_uri, integrity_state, provenance_json
+    FROM media_blobs WHERE blob_id = ?
+  `).get(blobId) as {
+    blob_id: string;
+    sha256: string;
+    size_bytes: number;
+    detected_mime: string;
+    storage_uri: string;
+    integrity_state: MediaBlobIntegrityState;
+    provenance_json: string;
+  } | undefined;
+  return row ? {
+    blob_id: row.blob_id,
+    sha256: row.sha256,
+    size_bytes: Number(row.size_bytes),
+    detected_mime: row.detected_mime,
+    storage_uri: row.storage_uri,
+    integrity_state: row.integrity_state,
+    provenance: JSON.parse(row.provenance_json) as Record<string, unknown>
+  } : null;
+}
+
+export type ArtifactShotReference = "storyboard_image_artifact_id" | "accepted_clip_artifact_id";
+
+export type ScopedArtifactResult =
+  | { ok: true; artifact: MediaArtifact }
+  | { ok: false; error: ToolError };
+
+export function createScopedArtifactFromBlob(
+  input: {
+    source_artifact_id: string;
+    project_id: string;
+    shot_id?: string;
+    role?: ArtifactRole;
+  },
+  db = openM0Database()
+): ScopedArtifactResult {
+  const source = getMediaArtifact(db, input.source_artifact_id);
+  if (!source) return { ok: false, error: { code: "ARTIFACT_NOT_FOUND", message: `Artifact not found: ${input.source_artifact_id}` } };
+  const sourceBlob = source.blob_id ? getMediaBlob(db, source.blob_id) : null;
+  if (!sourceBlob) {
+    return { ok: false, error: { code: "MEDIA_BLOB_NOT_FOUND", message: "Source Artifact has no registered MediaBlob." } };
+  }
+  if (source.status !== "active" || sourceBlob.integrity_state !== "verified") {
+    return { ok: false, error: { code: "ARTIFACT_INTEGRITY_UNVERIFIED", message: "Only an active Artifact with a verified MediaBlob can create a scoped Artifact." } };
+  }
+  const project = getProject(db, input.project_id);
+  if (!project) return { ok: false, error: { code: "PROJECT_NOT_FOUND", message: `Project not found: ${input.project_id}` } };
+  const role = input.role ?? source.role;
+  const roleError = validateRole(source.artifact_type, role);
+  if (roleError) return { ok: false, error: roleError };
+  const shotId = input.shot_id ?? "";
+  if (role === "final_video") {
+    if (shotId) return { ok: false, error: { code: "INVALID_ARTIFACT_SCOPE", message: "final_video Artifacts are project-scoped." } };
+  } else if (shotId) {
+    const shot = getShot(db, shotId);
+    if (!shot || shot.project_id !== input.project_id) {
+      return { ok: false, error: { code: "INVALID_ARTIFACT_SCOPE", message: `${role} Artifacts require a SHOT in the target project.` } };
+    }
+  }
+  const artifact: MediaArtifact = {
+    ...structuredClone(source),
+    artifact_id: `artifact_${randomUUID()}`,
+    blob_id: source.blob_id,
+    role,
+    linked_objects: { project_id: input.project_id, shot_id: shotId },
+    source: { ...source.source, kind: "scoped_blob_reference" }
+  };
+  try {
+    persistMediaArtifact(db, artifact);
+  } catch (error) {
+    return { ok: false, error: { code: "ARTIFACT_SCOPE_CREATION_FAILED", message: error instanceof Error ? error.message : "Scoped Artifact creation failed." } };
+  }
+  return { ok: true, artifact };
+}
+
+export type AttachArtifactResult =
+  | { ok: true; shot: Shot; artifact: MediaArtifact }
+  | { ok: false; error: ToolError };
+
+export function attachArtifactToShot(
+  input: {
+    project_id: string;
+    shot_id: string;
+    artifact_id: string;
+    reference: ArtifactShotReference;
+    expected_current_artifact_id?: string;
+  },
+  db = openM0Database()
+): AttachArtifactResult {
+  const manageTransaction = !databaseIsInTransaction(db);
+  if (manageTransaction) db.exec("BEGIN IMMEDIATE");
+  try {
+    if (!getProject(db, input.project_id)) {
+      if (manageTransaction) db.exec("ROLLBACK");
+      return { ok: false, error: { code: "PROJECT_NOT_FOUND", message: "Target project was not found." } };
+    }
+    const shot = getShot(db, input.shot_id);
+    if (!shot || shot.project_id !== input.project_id) {
+      if (manageTransaction) db.exec("ROLLBACK");
+      return { ok: false, error: { code: "SHOT_NOT_FOUND", message: "SHOT does not belong to the selected project." } };
+    }
+    const artifact = getMediaArtifact(db, input.artifact_id);
+    const expectedRole: ArtifactRole = input.reference === "storyboard_image_artifact_id" ? "storyboard_image" : "generated_clip";
+    const expectedType: ArtifactType = input.reference === "storyboard_image_artifact_id" ? "image" : "video";
+    const blob = artifact?.blob_id ? getMediaBlob(db, artifact.blob_id) : null;
+    if (
+      !artifact
+      || artifact.linked_objects.project_id !== input.project_id
+      || artifact.linked_objects.shot_id !== input.shot_id
+      || artifact.role !== expectedRole
+      || artifact.artifact_type !== expectedType
+      || artifact.status !== "active"
+      || blob?.integrity_state !== "verified"
+    ) {
+      if (manageTransaction) db.exec("ROLLBACK");
+      return { ok: false, error: { code: "INVALID_ARTIFACT_BINDING", message: "Artifact must be active, verified, and scoped to the target project and SHOT." } };
+    }
+    const current = shot[input.reference];
+    if (input.expected_current_artifact_id !== undefined && current !== input.expected_current_artifact_id) {
+      if (manageTransaction) db.exec("ROLLBACK");
+      return { ok: false, error: { code: "CONFLICT_STALE_ARTIFACT_REFERENCE", message: "SHOT Artifact reference changed before attach." } };
+    }
+    const nextShot = { ...shot, [input.reference]: artifact.artifact_id } as Shot;
+    const result = db.prepare(`
+      UPDATE shots SET data_json = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE shot_id = ? AND project_id = ? AND json_extract(data_json, ?) IS ?
+    `).run(JSON.stringify(nextShot), input.shot_id, input.project_id, `$.${input.reference}`, current) as { changes: number | bigint };
+    if (Number(result.changes) !== 1) throw new Error("CONFLICT_STALE_ARTIFACT_REFERENCE");
+    if (manageTransaction) db.exec("COMMIT");
+    return { ok: true, shot: nextShot, artifact };
+  } catch (error) {
+    if (manageTransaction && databaseIsInTransaction(db)) db.exec("ROLLBACK");
+    return { ok: false, error: { code: error instanceof Error ? error.message : "ARTIFACT_ATTACH_FAILED", message: "Artifact attach transaction failed." } };
+  }
 }
 
 export function fixturePath(filename: string): string {

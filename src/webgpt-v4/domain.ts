@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { M0Database } from "../storage/sqlite.js";
-import type { MediaArtifact } from "../tools/mediaArtifacts.js";
+import { ArtifactStructuredDriftError, type MediaArtifact } from "../tools/mediaArtifacts.js";
 import { listProjectShots, type Project, type Shot } from "../tools/projects.js";
 import { getWorkbenchProjectSummary, getWorkbenchProjectWorkspace } from "../tools/workbenchV2.js";
 import { appendWorkbenchInboxEvent, getWorkbenchDraftRecord, saveWorkbenchDraftRecord, type WorkbenchDraftRecord } from "../tools/workbenchInboxStore.js";
@@ -64,6 +64,17 @@ function dataIntegrityViolation(field: string): never {
     "Stored production data does not match its project binding.",
     field
   );
+}
+
+function domainErrorBody(error: unknown) {
+  if (error instanceof ArtifactStructuredDriftError) {
+    return {
+      code: "WEBGPT_V4_DATA_INTEGRITY_VIOLATION",
+      message: "Stored production data does not match its Artifact binding.",
+      field: "artifact_id"
+    };
+  }
+  return errorBody(error);
 }
 
 function parseBoundJson<T>(value: string, field: string): T {
@@ -365,7 +376,7 @@ function mutation<T>(db: M0Database, tool: string, context: MutationContext, inp
     return result;
   } catch (error) {
     db.exec("ROLLBACK");
-    const result = fail<T>(id, errorBody(error));
+    const result = fail<T>(id, domainErrorBody(error));
     try {
       audit(db, { request_id: id, idempotency_key: key, request_hash: hash, actor_hash: context.actor.actor_hash, tool, result });
     } catch {
@@ -422,7 +433,7 @@ export function getProductionProjectContext(
     assertWorkspaceBindings(result.data, input.project_id, db);
     return ok(id, sanitize(result.data) as Record<string, unknown>);
   } catch (error) {
-    return fail(id, errorBody(error));
+    return fail(id, domainErrorBody(error));
   }
 }
 
@@ -443,7 +454,7 @@ export function listProductionProjectShots(input: { project_id: string; limit?: 
     const hasMore = offset + items.length < total;
     return ok(id, { items, page: { limit, offset, total, has_more: hasMore, next_offset: hasMore ? offset + limit : null } });
   } catch (error) {
-    return fail(id, errorBody(error));
+    return fail(id, domainErrorBody(error));
   }
 }
 
@@ -471,7 +482,7 @@ export function listProductionProjectMedia(
     const hasMore = offset + items.length < total;
     return ok(id, { items, page: { limit, offset, total, has_more: hasMore, next_offset: hasMore ? offset + limit : null } });
   } catch (error) {
-    return fail(id, errorBody(error));
+    return fail(id, domainErrorBody(error));
   }
 }
 
@@ -489,7 +500,7 @@ export function getProductionReviewPackage(input: { project_id: string; shot_id:
     const versions = shot.clip_versions.map((version) => ({ ...version, artifact: publicArtifact(requireArtifact(db, input.project_id, version.artifact_id)) }));
     return ok(id, { shot, versions, notes, notes_total: notesTotal, selected_artifact_id: input.artifact_id ?? shot.accepted_clip_artifact_id ?? "" });
   } catch (error) {
-    return fail(id, errorBody(error));
+    return fail(id, domainErrorBody(error));
   }
 }
 
@@ -514,7 +525,7 @@ export function getProductionDeliveryStatus(input: { project_id: string }, db: M
       delivered: project.status === "final_approved" && Boolean(finalArtifact)
     });
   } catch (error) {
-    return fail(id, errorBody(error));
+    return fail(id, domainErrorBody(error));
   }
 }
 

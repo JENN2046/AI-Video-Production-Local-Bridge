@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
-import { getMediaArtifact } from "./mediaArtifacts.js";
+import { attachArtifactToShot, createScopedArtifactFromBlob, getMediaArtifact } from "./mediaArtifacts.js";
 import {
   buildStoryboardApprovedShot,
   getProject,
+  getShot,
   saveProject,
   saveShot,
   type Project,
@@ -116,6 +117,41 @@ export function importStoryboardPackage(input: ImportStoryboardPackageInput, db 
   }
 
   const frozenSnapshots = structuredClone(input.approved_shot_snapshots);
+  const sourceArtifactIds = frozenSnapshots.map((snapshot) => snapshot.storyboard_image_artifact_id);
+  let shots = frozenSnapshots.map((snapshot) =>
+    buildStoryboardApprovedShot({
+      ...snapshot,
+      project_id: project.project_id,
+      storyboard_image_artifact_id: ""
+    })
+  );
+  const ownsTransaction = !(db as unknown as { isTransaction?: boolean }).isTransaction;
+  if (ownsTransaction) db.exec("BEGIN IMMEDIATE");
+  else db.exec("SAVEPOINT sr1_storyboard_package");
+  try {
+    for (const shot of shots) {
+      if (getShot(db, shot.shot_id)) throw new Error("SHOT_ID_CONFLICT");
+      saveShot(db, shot);
+    }
+    for (const [index, shot] of shots.entries()) {
+      const source = getMediaArtifact(db, sourceArtifactIds[index]);
+      if (!source) throw new Error("ARTIFACT_NOT_FOUND");
+      const scoped = source.linked_objects.project_id === project.project_id && source.linked_objects.shot_id === shot.shot_id
+        ? { ok: true as const, artifact: source }
+        : createScopedArtifactFromBlob({ source_artifact_id: source.artifact_id, project_id: project.project_id, shot_id: shot.shot_id }, db);
+      if (!scoped.ok) throw new Error(scoped.error.code);
+      const attached = attachArtifactToShot({
+        project_id: project.project_id,
+        shot_id: shot.shot_id,
+        artifact_id: scoped.artifact.artifact_id,
+        reference: "storyboard_image_artifact_id",
+        expected_current_artifact_id: ""
+      }, db);
+      if (!attached.ok) throw new Error(attached.error.code);
+      shots[index] = attached.shot;
+      frozenSnapshots[index].shot_id = shot.shot_id;
+      frozenSnapshots[index].storyboard_image_artifact_id = scoped.artifact.artifact_id;
+    }
   const storyboardPackage: StoryboardPackage = {
     storyboard_package_id: input.storyboard_package_id || `storyboard_package_${randomUUID()}`,
     project_id: input.project_id,
@@ -126,22 +162,13 @@ export function importStoryboardPackage(input: ImportStoryboardPackageInput, db 
     }
   };
 
-  const shots = frozenSnapshots.map((snapshot) =>
-    buildStoryboardApprovedShot({
-      ...snapshot,
-      project_id: project.project_id
-    })
-  );
-
-  for (const shot of shots) {
-    saveShot(db, shot);
-  }
-
   project.status = "storyboard_approved";
   project.active_storyboard_package_id = storyboardPackage.storyboard_package_id;
   project.shot_ids = shots.map((shot) => shot.shot_id);
   saveProject(db, project);
   saveStoryboardPackage(db, storyboardPackage);
+  if (ownsTransaction) db.exec("COMMIT");
+  else db.exec("RELEASE SAVEPOINT sr1_storyboard_package");
 
   return {
     ok: true,
@@ -150,4 +177,9 @@ export function importStoryboardPackage(input: ImportStoryboardPackageInput, db 
     shots,
     storyboard_package: storyboardPackage
   };
+  } catch (error) {
+    if (ownsTransaction && (db as unknown as { isTransaction?: boolean }).isTransaction) db.exec("ROLLBACK");
+    else if (!ownsTransaction) db.exec("ROLLBACK TO SAVEPOINT sr1_storyboard_package; RELEASE SAVEPOINT sr1_storyboard_package");
+    return { ok: false, error: { code: error instanceof Error ? error.message : "STORYBOARD_PACKAGE_BINDING_FAILED", message: "Storyboard Package Artifact binding failed." } };
+  }
 }

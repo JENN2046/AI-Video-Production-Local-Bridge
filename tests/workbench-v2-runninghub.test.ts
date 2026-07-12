@@ -8,6 +8,7 @@ import type { MediaArtifact } from "../src/tools/mediaArtifacts.js";
 function fixtureArtifact(): MediaArtifact {
   return {
     artifact_id: "artifact_fixture",
+    blob_id: "",
     artifact_type: "image",
     role: "storyboard_image",
     status: "active",

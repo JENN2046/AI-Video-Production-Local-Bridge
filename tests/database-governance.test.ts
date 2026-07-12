@@ -1,18 +1,44 @@
 import assert from "node:assert/strict";
 import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
-import { backupDatabase, checkDatabase, migrateDatabase } from "../src/storage/databaseGovernance.js";
+import { backupDatabase, checkDatabase, databaseLogicalManifest, migrateDatabase } from "../src/storage/databaseGovernance.js";
 import { assertSchemaCurrent, DATABASE_MIGRATIONS, M0_BASE_SCHEMA_SQL, migrationChecksum, runDatabaseMigrations, SchemaMigrationRequiredError } from "../src/storage/migrations.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import { initializeWorkbenchV2Schema } from "../src/storage/workbenchV2Schema.js";
-import { persistMediaArtifact, type MediaArtifact } from "../src/tools/mediaArtifacts.js";
+import { persistMediaArtifact, transitionMediaArtifactStatus, type MediaArtifact } from "../src/tools/mediaArtifacts.js";
 
 function tempRoot(): string {
   return mkdtempSync(join(tmpdir(), "ai-video-db-governance-"));
+}
+
+function insertUnverifiedArtifact(
+  db: DatabaseSync,
+  input: { artifact_id: string; project_id?: string; shot_id?: string; uri: string }
+): void {
+  const blobId = `blob_${input.artifact_id}`;
+  db.prepare(`INSERT INTO media_blobs
+    (blob_id, sha256, size_bytes, detected_mime, storage_uri, integrity_state, provenance_json)
+    VALUES (?, '', 0, '', ?, 'unverified', '{}')`).run(blobId, input.uri);
+  const artifact = {
+    artifact_id: input.artifact_id,
+    blob_id: blobId,
+    artifact_type: "image",
+    role: "storyboard_image",
+    status: "inaccessible",
+    storage: { uri: input.uri, mime_type: "image/png", filename: `${input.artifact_id}.png` },
+    metadata: { width: 0, height: 0, duration_seconds: null, aspect_ratio: "", sha256: "" },
+    linked_objects: { project_id: input.project_id ?? "", shot_id: input.shot_id ?? "" },
+    source: { kind: "accessible_uri", provider: "", provider_job_id: "", sha256: "", external_url_host: "media.example.test" }
+  };
+  db.prepare(`INSERT INTO media_artifacts
+    (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
+    VALUES (?, ?, ?, 'storyboard_image', 'image', 'inaccessible', ?)`)
+    .run(input.artifact_id, input.project_id || null, input.shot_id || null, JSON.stringify(artifact));
+  db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)").run(input.artifact_id, blobId);
 }
 
 test("fresh database migrates explicitly and remains idempotent", () => {
@@ -20,7 +46,7 @@ test("fresh database migrates explicitly and remains idempotent", () => {
   try {
     const sqlitePath = join(root, "app.sqlite");
     const first = migrateDatabase(sqlitePath);
-    assert.deepEqual(first.applied, ["0001", "0002", "0003", "0004"]);
+    assert.deepEqual(first.applied, DATABASE_MIGRATIONS.map((migration) => migration.id));
     assert.equal(first.baselined, false);
     const second = migrateDatabase(sqlitePath);
     assert.deepEqual(second.applied, []);
@@ -238,7 +264,7 @@ test("schema validation rejects migration rows from a newer runtime", () => {
   }
 });
 
-test("database migrated through 0003 keeps its historical checksums and upgrades through 0004", () => {
+test("database migrated through 0003 keeps its historical checksums and upgrades through current", () => {
   const root = tempRoot();
   try {
     const sqlitePath = join(root, "legacy-0003.sqlite");
@@ -266,7 +292,7 @@ test("database migrated through 0003 keeps its historical checksums and upgrades
     assert.equal(migrationChecksum(DATABASE_MIGRATIONS[1]), "52dc1311414cd88468542159d215adce443717b087e65d73d3f60859e5727c75");
     assert.equal(migrationChecksum(DATABASE_MIGRATIONS[2]), "161aa27dec915827c0ab6d46bc768ca2734c2efdf4bc45ae2fa1b2f4b564fef8");
     const result = runDatabaseMigrations(db);
-    assert.deepEqual(result.applied, ["0004"]);
+    assert.deepEqual(result.applied, ["0004", "0005"]);
     const event = db.prepare("SELECT to_state, reason_code FROM generation_job_events WHERE job_id = 'job_intent_legacy'").get() as { to_state: string; reason_code: string };
     assert.deepEqual({ ...event }, { to_state: "polling", reason_code: "MIGRATION_BACKFILL" });
     assertSchemaCurrent(db);
@@ -330,8 +356,7 @@ test("database check detects missing structured identifiers and accepts external
     const db = new DatabaseSync(sqlitePath);
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES ('project_missing_json_id', ?)")
       .run(JSON.stringify({ title: "Missing JSON identifier" }));
-    db.prepare("INSERT INTO media_artifacts (artifact_id, role, artifact_type, status, data_json) VALUES ('artifact_external', 'source', 'image', 'active', ?)")
-      .run(JSON.stringify({ artifact_id: "artifact_external", storage: { uri: "https://example.test/media/storyboard.png" }, linked_objects: { project_id: "", shot_id: "" } }));
+    insertUnverifiedArtifact(db, { artifact_id: "artifact_external", uri: "https://example.test/media/storyboard.png" });
     db.close();
 
     const checked = checkDatabase(sqlitePath);
@@ -422,8 +447,11 @@ test("database check detects run and artifact link drift", () => {
       .run(JSON.stringify({ project_id: "project_link_drift" }));
     db.prepare("INSERT INTO generation_runs (run_id, batch_id, project_id, shot_id, run_type, status, data_json) VALUES ('run_link_drift', '', 'project_link_drift', '', 'image_to_video', 'queued', ?)")
       .run(JSON.stringify({ run_id: "run_link_drift", batch_id: "batch_wrong", project_id: "project_link_drift", shot_id: "shot_wrong" }));
-    db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES ('artifact_link_drift', 'project_link_drift', NULL, 'source', 'image', 'active', ?)")
-      .run(JSON.stringify({ artifact_id: "artifact_link_drift", linked_objects: { project_id: "project_wrong", shot_id: "shot_wrong" } }));
+    insertUnverifiedArtifact(db, { artifact_id: "artifact_link_drift", project_id: "project_link_drift", uri: "https://media.example.test/artifact_link_drift.png" });
+    const driftedArtifact = db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = 'artifact_link_drift'").get() as { data_json: string };
+    const driftedJson = JSON.parse(driftedArtifact.data_json) as { linked_objects: { project_id: string; shot_id: string } };
+    driftedJson.linked_objects = { project_id: "project_wrong", shot_id: "shot_wrong" };
+    db.prepare("UPDATE media_artifacts SET data_json = ? WHERE artifact_id = 'artifact_link_drift'").run(JSON.stringify(driftedJson));
     db.close();
 
     const checked = checkDatabase(sqlitePath);
@@ -444,12 +472,12 @@ test("database check detects every regeneration request mirror-field drift", () 
       .run(JSON.stringify({ project_id: "project_regen_drift" }));
     db.prepare("INSERT INTO shots (shot_id, project_id, data_json) VALUES ('shot_regen_drift', 'project_regen_drift', ?)")
       .run(JSON.stringify({ shot_id: "shot_regen_drift", project_id: "project_regen_drift" }));
-    db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES ('artifact_regen_drift', 'project_regen_drift', 'shot_regen_drift', 'source', 'image', 'active', ?)")
-      .run(JSON.stringify({
-        artifact_id: "artifact_regen_drift",
-        storage: { uri: "https://media.example.test/artifact_regen_drift.png" },
-        linked_objects: { project_id: "project_regen_drift", shot_id: "shot_regen_drift" }
-      }));
+    insertUnverifiedArtifact(db, {
+      artifact_id: "artifact_regen_drift",
+      project_id: "project_regen_drift",
+      shot_id: "shot_regen_drift",
+      uri: "https://media.example.test/artifact_regen_drift.png"
+    });
 
     const mirroredFields = ["request_id", "project_id", "shot_id", "artifact_id", "previous_run_id", "status"] as const;
     const insertRequest = db.prepare("INSERT INTO regeneration_requests (request_id, project_id, shot_id, artifact_id, previous_run_id, status, data_json) VALUES (?, 'project_regen_drift', 'shot_regen_drift', 'artifact_regen_drift', 'run_regen_drift', 'draft', ?)");
@@ -503,10 +531,11 @@ test("artifact persistence preserves the existing row on provider task conflicts
     const db = openM0Database(sqlitePath);
     const artifact = (artifactId: string, status: MediaArtifact["status"] = "active"): MediaArtifact => ({
       artifact_id: artifactId,
+      blob_id: "",
       artifact_type: "video",
       role: "generated_clip",
       status,
-      storage: { uri: join(root, `${artifactId}.mp4`), mime_type: "video/mp4", filename: `${artifactId}.mp4` },
+      storage: { uri: resolve("fixtures/video/mock_clip.mp4"), mime_type: "video/mp4", filename: "mock_clip.mp4" },
       metadata: { width: 1080, height: 1920, duration_seconds: 6, aspect_ratio: "9:16", sha256: `sha-${artifactId}` },
       linked_objects: { project_id: "project_artifact_conflict", shot_id: "shot_artifact_conflict" },
       source: { kind: "provider_output_file", provider: "runninghub", provider_job_id: "task_artifact_conflict", sha256: `sha-${artifactId}`, external_url_host: "cdn.example.test" }
@@ -522,7 +551,8 @@ test("artifact persistence preserves the existing row on provider task conflicts
     const referencedRun = db.prepare("SELECT data_json FROM generation_runs WHERE run_id = 'run_artifact_reference'").get() as { data_json: string };
     assert.deepEqual((JSON.parse(referencedRun.data_json) as { output: { artifact_ids: string[] } }).output.artifact_ids, ["artifact_original"]);
 
-    persistMediaArtifact(db, artifact("artifact_original", "archived"));
+    const archived = transitionMediaArtifactStatus("artifact_original", "archived", db);
+    assert.equal(archived.ok, true);
     const updated = db.prepare("SELECT status, data_json FROM media_artifacts WHERE artifact_id = 'artifact_original'").get() as { status: string; data_json: string };
     assert.equal(updated.status, "archived");
     assert.equal((JSON.parse(updated.data_json) as MediaArtifact).status, "archived");
@@ -581,6 +611,7 @@ test("backup and isolated restore preserve a valid database", () => {
     const restoredPath = join(root, "restored.sqlite");
     copyFileSync(backup.backup_path, restoredPath);
     assert.equal(checkDatabase(restoredPath).result, "PASS");
+    assert.deepEqual(databaseLogicalManifest(restoredPath), databaseLogicalManifest(sqlitePath));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
