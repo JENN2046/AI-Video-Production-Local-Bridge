@@ -252,7 +252,7 @@ export function listProductionProjects(
   input: { query?: string; include_archived?: boolean; limit?: number; offset?: number } = {},
   db: M0Database,
   idValue?: string
-): WebGptV4Result<{ items: Record<string, unknown>[]; page: { limit: number; offset: number; total: number; has_more: boolean } }> {
+): WebGptV4Result<{ items: Record<string, unknown>[]; page: { limit: number; offset: number; total: number; has_more: boolean; next_offset: number | null } }> {
   const id = requestId(idValue);
   const limit = clamp(input.limit, 25, 100);
   const offset = Math.max(0, Math.trunc(input.offset ?? 0));
@@ -277,7 +277,8 @@ export function listProductionProjects(
     const summary = getWorkbenchProjectSummary(row.project_id, db);
     return sanitize({ project, lifecycle: row.lifecycle, pinned: row.pinned === 1, last_opened_at: row.last_opened_at, updated_at: row.updated_at, summary }) as Record<string, unknown>;
   });
-  return ok(id, { items, page: { limit, offset, total, has_more: offset + items.length < total } });
+  const hasMore = offset + items.length < total;
+  return ok(id, { items, page: { limit, offset, total, has_more: hasMore, next_offset: hasMore ? offset + limit : null } });
 }
 
 export function getProductionProjectContext(
@@ -306,7 +307,8 @@ export function listProductionProjectShots(input: { project_id: string; limit?: 
     const rows = db.prepare("SELECT data_json, updated_at FROM shots WHERE project_id = ? ORDER BY json_extract(data_json, '$.order'), shot_id LIMIT ? OFFSET ?")
       .all(input.project_id, limit, offset) as Array<{ data_json: string; updated_at: string }>;
     const items = rows.map((row) => ({ ...parseJson<Record<string, unknown>>(row.data_json, {}), updated_at: row.updated_at }));
-    return ok(id, { items, page: { limit, offset, total, has_more: offset + items.length < total } });
+    const hasMore = offset + items.length < total;
+    return ok(id, { items, page: { limit, offset, total, has_more: hasMore, next_offset: hasMore ? offset + limit : null } });
   } catch (error) {
     return fail(id, errorBody(error));
   }
@@ -333,22 +335,26 @@ export function listProductionProjectMedia(
     const rows = db.prepare(`SELECT data_json, updated_at FROM media_artifacts WHERE ${where} ORDER BY updated_at DESC, artifact_id DESC LIMIT ? OFFSET ?`)
       .all(...values, limit, offset) as Array<{ data_json: string; updated_at: string }>;
     const items = rows.map((row) => ({ ...publicArtifact(parseJson<MediaArtifact>(row.data_json, {} as MediaArtifact)), updated_at: row.updated_at }));
-    return ok(id, { items, page: { limit, offset, total, has_more: offset + items.length < total } });
+    const hasMore = offset + items.length < total;
+    return ok(id, { items, page: { limit, offset, total, has_more: hasMore, next_offset: hasMore ? offset + limit : null } });
   } catch (error) {
     return fail(id, errorBody(error));
   }
 }
 
-export function getProductionReviewPackage(input: { project_id: string; shot_id: string; artifact_id?: string }, db: M0Database, idValue?: string): WebGptV4Result<Record<string, unknown>> {
+export function getProductionReviewPackage(input: { project_id: string; shot_id: string; artifact_id?: string; notes_limit?: number }, db: M0Database, idValue?: string): WebGptV4Result<Record<string, unknown>> {
   const id = requestId(idValue);
   try {
     projectRow(db, input.project_id);
     const { shot } = requireShot(db, input.project_id, input.shot_id);
     if (input.artifact_id) requireArtifact(db, input.project_id, input.artifact_id);
-    const notes = db.prepare("SELECT note_id, artifact_id, note, source, created_at, updated_at FROM workbench_review_notes WHERE project_id = ? AND shot_id = ? ORDER BY created_at DESC")
-      .all(input.project_id, shot.shot_id) as Array<Record<string, unknown>>;
+    const notesLimit = clamp(input.notes_limit, 10, 50);
+    const notesTotal = Number((db.prepare("SELECT COUNT(*) count FROM workbench_review_notes WHERE project_id = ? AND shot_id = ?")
+      .get(input.project_id, shot.shot_id) as { count: number }).count);
+    const notes = db.prepare("SELECT note_id, artifact_id, note, source, created_at, updated_at FROM workbench_review_notes WHERE project_id = ? AND shot_id = ? ORDER BY created_at DESC LIMIT ?")
+      .all(input.project_id, shot.shot_id, notesLimit) as Array<Record<string, unknown>>;
     const versions = shot.clip_versions.map((version) => ({ ...version, artifact: publicArtifact(requireArtifact(db, input.project_id, version.artifact_id)) }));
-    return ok(id, { shot, versions, notes, selected_artifact_id: input.artifact_id ?? shot.accepted_clip_artifact_id ?? "" });
+    return ok(id, { shot, versions, notes, notes_total: notesTotal, selected_artifact_id: input.artifact_id ?? shot.accepted_clip_artifact_id ?? "" });
   } catch (error) {
     return fail(id, errorBody(error));
   }

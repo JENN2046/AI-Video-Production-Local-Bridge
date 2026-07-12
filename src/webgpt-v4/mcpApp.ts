@@ -22,7 +22,21 @@ import {
 } from "./domain.js";
 import { inspectProductionMedia, type MediaRuntimeOptions } from "./media.js";
 import { productionProposalRevisionSchema, productionProposalSubmitSchema } from "./proposals.js";
-import { readonlyDelivery, readonlyProjectContext, readonlyProjectList, readonlyReviewPackage, readonlyShotList, WEBGPT_V4_READONLY_OUTPUT_SCHEMAS } from "./readonlyContracts.js";
+import {
+  fullGenerationIntent,
+  fullInspection,
+  fullProposal,
+  fullReviewNote,
+  fullShotCopy,
+  readDelivery,
+  readMediaList,
+  readProjectContext,
+  readProjectList,
+  readReviewPackage,
+  readShotList,
+  WEBGPT_V4_FULL_OUTPUT_SCHEMAS,
+  WEBGPT_V4_READ_OUTPUT_SCHEMAS
+} from "./contracts.js";
 import { WEBGPT_V4_FULL_TOOL_SCOPES } from "./toolCatalog.js";
 import { webGptV4Tool, webGptV4ToolsForProfile, type WebGptV4Profile, type WebGptV4ToolName } from "./toolCatalog.js";
 import { errorBody, fail, requestId, requireScope, WEBGPT_V4_VERSION, WebGptV4Error, type WebGptV4Actor, type WebGptV4Result, type WebGptV4Scope } from "./types.js";
@@ -30,82 +44,6 @@ import { errorBody, fail, requestId, requireScope, WEBGPT_V4_VERSION, WebGptV4Er
 export const WEBGPT_V4_WIDGET_URI = "ui://webgpt-v4/media-inspector.html";
 
 export const WEBGPT_V4_TOOL_SCOPES = WEBGPT_V4_FULL_TOOL_SCOPES;
-
-const successMetaSchema = z.object({
-  request_id: z.string(),
-  source_version: z.string(),
-  updated_at: z.string(),
-  idempotent_replay: z.boolean().optional()
-});
-
-const errorSchema = z.object({ code: z.string(), message: z.string(), field: z.string().optional(), retryable: z.boolean().optional() });
-const jsonRecordSchema = z.record(z.string(), z.json());
-const pageSchema = z.object({ limit: z.number().int(), offset: z.number().int(), total: z.number().int(), has_more: z.boolean() });
-const projectSchema = z.object({ project_id: z.string(), title: z.string(), status: z.string(), shot_ids: z.array(z.string()) }).passthrough();
-const shotSchema = z.object({
-  shot_id: z.string(), project_id: z.string(), order: z.number(), status: z.string(), duration_seconds: z.number(),
-  description: z.string(), storyboard_image_artifact_id: z.string(), video_prompt: z.string(), negative_prompt: z.string(),
-  generation_run_ids: z.array(z.string()), accepted_clip_artifact_id: z.string(), clip_versions: z.array(jsonRecordSchema), review: jsonRecordSchema,
-  updated_at: z.string().optional()
-}).passthrough();
-const artifactSchema = z.object({
-  artifact_id: z.string(), artifact_type: z.enum(["image", "video"]), role: z.enum(["storyboard_image", "generated_clip", "final_video"]),
-  status: z.string(), filename: z.string(), mime_type: z.string(), metadata: jsonRecordSchema, linked_objects: jsonRecordSchema,
-  provenance: jsonRecordSchema, updated_at: z.string().optional()
-}).passthrough();
-const draftSchema = z.object({
-  draft_id: z.string(), tool: z.string(), status: z.string(), source: z.string(), created_at: z.string(), updated_at: z.string(),
-  target_project_id: z.string(), target_shot_id: z.string(), payload: jsonRecordSchema
-}).passthrough();
-const reviewNoteSchema = z.object({
-  note_id: z.string(), project_id: z.string(), shot_id: z.string(), artifact_id: z.string(), note: z.string(), source: z.string(), created_at: z.string(), updated_at: z.string()
-});
-const generationIntentSchema = z.object({
-  intent_id: z.string(), project_id: z.string(), shot_id: z.string(), provider: z.literal("runninghub"), account_label: z.enum(["personal", "team"]),
-  model: z.string(), input_artifact_id: z.string(), estimated_cost_value: z.number(), budget_limit_value: z.number(), currency: z.string(),
-  confirmed: z.boolean(), status: z.literal("prepared"), expires_at: z.string(), requires_human_preflight: z.boolean(), provider_call_attempted: z.boolean()
-});
-const projectListSchema = z.object({ items: z.array(z.object({ project: projectSchema, lifecycle: z.string(), pinned: z.boolean(), last_opened_at: z.string().nullable(), updated_at: z.string(), summary: jsonRecordSchema }).passthrough()), page: pageSchema });
-const shotListSchema = z.object({ items: z.array(shotSchema), page: pageSchema });
-const mediaListSchema = z.object({ items: z.array(artifactSchema), page: pageSchema });
-const projectContextSchema = z.object({
-  project: projectSchema, meta: jsonRecordSchema, summary: jsonRecordSchema,
-  workspace: z.enum(["overview", "storyboard", "generation", "review", "delivery"]),
-  metrics: jsonRecordSchema.optional(), blockers: z.array(jsonRecordSchema).optional(), recent_runs: z.array(jsonRecordSchema).optional(),
-  shots: z.array(shotSchema).optional(), packages: z.array(jsonRecordSchema).optional(), artifacts: jsonRecordSchema.optional(), runs: z.array(jsonRecordSchema).optional(),
-  version_stacks: z.array(jsonRecordSchema).optional(), regeneration_requests: z.array(jsonRecordSchema).optional(), review_notes: z.array(reviewNoteSchema).optional(),
-  ready_for_assembly: z.boolean().optional(), accepted_clips: z.array(jsonRecordSchema).optional(), final_artifact: artifactSchema.nullable().optional()
-}).passthrough();
-const inspectSchema = z.object({ artifact: artifactSchema, analysis: z.object({ kind: z.enum(["image", "video"]), model_input: z.string(), sha256: z.string() }).passthrough() });
-const reviewPackageSchema = z.object({ shot: shotSchema, versions: z.array(jsonRecordSchema), notes: z.array(reviewNoteSchema), selected_artifact_id: z.string() });
-const deliverySchema = z.object({ project_id: z.string(), project_status: z.string(), shots_total: z.number().int(), shots_accepted: z.number().int(), ready_for_assembly: z.boolean(), final_artifact: artifactSchema.nullable(), delivered: z.boolean() });
-const closeoutSchema = deliverySchema.extend({ evidence: z.object({ source: z.literal("sqlite_structured_summary"), webgpt_audit_events: z.number().int(), raw_reports_exposed: z.literal(false) }) });
-const shotCopySchema = z.object({ shot: shotSchema, updated_at: z.string() });
-const proposalSchema = z.object({ draft: draftSchema });
-const revisedProposalSchema = z.object({ draft: draftSchema, closed_draft_id: z.string() });
-
-function resultSchema(dataSchema: z.ZodType): Record<string, z.ZodType> {
-  return {
-    ok: z.boolean(),
-    data: dataSchema.optional(),
-    error: errorSchema.optional(),
-    meta: successMetaSchema
-  };
-}
-
-const projectListResultSchema = resultSchema(projectListSchema);
-const shotListResultSchema = resultSchema(shotListSchema);
-const mediaListResultSchema = resultSchema(mediaListSchema);
-const projectContextResultSchema = resultSchema(projectContextSchema);
-const inspectResultSchema = resultSchema(inspectSchema);
-const reviewPackageResultSchema = resultSchema(reviewPackageSchema);
-const deliveryResultSchema = resultSchema(deliverySchema);
-const closeoutResultSchema = resultSchema(closeoutSchema);
-const shotCopyResultSchema = resultSchema(shotCopySchema);
-const reviewNoteResultSchema = resultSchema(reviewNoteSchema);
-const proposalResultSchema = resultSchema(proposalSchema);
-const revisedProposalResultSchema = resultSchema(revisedProposalSchema);
-const generationIntentResultSchema = resultSchema(generationIntentSchema);
 
 function security(scope: WebGptV4Scope): Record<string, unknown> {
   return { securitySchemes: [{ type: "oauth2", scopes: [scope] }] };
@@ -119,11 +57,25 @@ function contract(name: WebGptV4ToolName): { annotations: WebGptV4ToolCatalogAnn
 type WebGptV4ToolCatalogAnnotations = ReturnType<typeof webGptV4Tool>["annotations"];
 
 function asToolResult<T>(result: WebGptV4Result<T>, extra?: { content?: Array<Record<string, unknown>>; meta?: Record<string, unknown> }): Record<string, unknown> {
-  const message = result.ok ? JSON.stringify(result.data) : `${result.error.code}: ${result.error.message}`;
+  const serialized = JSON.stringify(result);
+  const bounded: WebGptV4Result<unknown> = Buffer.byteLength(serialized, "utf8") <= 128 * 1024
+    ? result
+    : fail(result.meta.request_id, {
+      code: "RESPONSE_BUDGET_EXCEEDED",
+      message: "The requested result exceeds the WebGPT response budget.",
+      field: result.ok && typeof result.data === "object" && result.data !== null && "detail" in result.data ? "detail" : "limit",
+      retryable: false,
+      suggested_parameters: result.ok && typeof result.data === "object" && result.data !== null && "detail" in result.data
+        ? { detail: "compact", limit: 20 }
+        : { limit: 20 }
+    });
+  const message = bounded.ok
+    ? "请求已完成；结构化结果位于 structuredContent。"
+    : `${bounded.error.code}: ${bounded.error.message}`;
   return {
-    isError: !result.ok,
-    structuredContent: result,
-    content: extra?.content ?? [{ type: "text", text: message }],
+    isError: !bounded.ok,
+    structuredContent: bounded,
+    content: bounded.ok && extra?.content ? extra.content : [{ type: "text", text: message.slice(0, 1024) }],
     _meta: extra?.meta ?? {}
   };
 }
@@ -193,46 +145,43 @@ export function createWebGptV4McpApp(options: CreateWebGptV4McpAppOptions): McpS
   if (enabledTools.has("list_production_projects")) server.registerTool("list_production_projects", {
     title: "列出生产项目",
     description: "Use this when the user needs to select or find a real production project. Never returns test or unclassified projects.",
-    inputSchema: { query: z.string().max(200).optional(), include_archived: z.boolean().default(false), limit: z.number().int().min(1).max(100).default(25), offset: z.number().int().min(0).default(0), request_id: z.string().max(128).optional() },
-    outputSchema: profile === "readonly" ? WEBGPT_V4_READONLY_OUTPUT_SCHEMAS.list_production_projects : projectListResultSchema,
+    inputSchema: { query: z.string().max(200).optional(), include_archived: z.boolean().default(false), detail: z.enum(["compact", "full"]).default("compact"), limit: z.number().int().min(1).max(100).default(25), offset: z.number().int().min(0).default(0), request_id: z.string().max(128).optional() },
+    outputSchema: WEBGPT_V4_READ_OUTPUT_SCHEMAS.list_production_projects,
     ...contract("list_production_projects")
   }, async (input) => guarded("projects.read", actor, authConfig, input.request_id, () => {
-    const result = listProductionProjects(input, db, input.request_id);
-    return profile === "readonly" ? readonlyProjectList(result) : result;
+    return readProjectList(listProductionProjects(input, db, input.request_id), input.detail);
   }) as never);
 
   if (enabledTools.has("get_project_context")) server.registerTool("get_project_context", {
     title: "读取项目上下文",
     description: "Use this when the user needs the authoritative overview, storyboard, generation, review, or delivery context for one production project.",
-    inputSchema: { project_id: z.string(), workspace: z.enum(["overview", "storyboard", "generation", "review", "delivery"]).default("overview"), request_id: z.string().max(128).optional() },
-    outputSchema: profile === "readonly" ? WEBGPT_V4_READONLY_OUTPUT_SCHEMAS.get_project_context : projectContextResultSchema, ...contract("get_project_context")
+    inputSchema: { project_id: z.string(), workspace: z.enum(["overview", "storyboard", "generation", "review", "delivery"]).default("overview"), detail: z.enum(["compact", "full"]).default("compact"), request_id: z.string().max(128).optional() },
+    outputSchema: WEBGPT_V4_READ_OUTPUT_SCHEMAS.get_project_context, ...contract("get_project_context")
   }, async (input) => guarded("projects.read", actor, authConfig, input.request_id, () => {
-    const result = getProductionProjectContext(input, db, input.request_id);
-    return profile === "readonly" ? readonlyProjectContext(result) : result;
+    return readProjectContext(getProductionProjectContext(input, db, input.request_id), input.detail);
   }) as never);
 
   if (enabledTools.has("list_project_shots")) server.registerTool("list_project_shots", {
     title: "列出项目 SHOT",
     description: "Use this when the user needs SHOT ids, copy, state, versions, and optimistic-lock timestamps for one production project.",
-    inputSchema: { project_id: z.string(), limit: z.number().int().min(1).max(100).default(50), offset: z.number().int().min(0).default(0), request_id: z.string().max(128).optional() },
-    outputSchema: profile === "readonly" ? WEBGPT_V4_READONLY_OUTPUT_SCHEMAS.list_project_shots : shotListResultSchema, ...contract("list_project_shots")
+    inputSchema: { project_id: z.string(), detail: z.enum(["compact", "full"]).default("compact"), limit: z.number().int().min(1).max(100).default(50), offset: z.number().int().min(0).default(0), request_id: z.string().max(128).optional() },
+    outputSchema: WEBGPT_V4_READ_OUTPUT_SCHEMAS.list_project_shots, ...contract("list_project_shots")
   }, async (input) => guarded("projects.read", actor, authConfig, input.request_id, () => {
-    const result = listProductionProjectShots(input, db, input.request_id);
-    return profile === "readonly" ? readonlyShotList(result) : result;
+    return readShotList(listProductionProjectShots(input, db, input.request_id), input.detail);
   }) as never);
 
   if (enabledTools.has("list_project_media")) server.registerTool("list_project_media", {
     title: "列出项目媒体",
     description: "Use this when the user needs registered storyboard images, generated clips, or final videos from one production project.",
-    inputSchema: { project_id: z.string(), shot_id: z.string().optional(), role: z.enum(["storyboard_image", "generated_clip", "final_video"]).optional(), type: z.enum(["image", "video"]).optional(), status: z.enum(["active", "pending_upload", "inaccessible", "expired", "archived"]).optional(), limit: z.number().int().min(1).max(100).default(50), offset: z.number().int().min(0).default(0), request_id: z.string().max(128).optional() },
-    outputSchema: mediaListResultSchema, ...contract("list_project_media")
-  }, async (input) => guarded("media.read", actor, authConfig, input.request_id, () => listProductionProjectMedia(input, db, input.request_id)) as never);
+    inputSchema: { project_id: z.string(), shot_id: z.string().optional(), role: z.enum(["storyboard_image", "generated_clip", "final_video"]).optional(), type: z.enum(["image", "video"]).optional(), status: z.enum(["active", "pending_upload", "inaccessible", "expired", "archived"]).optional(), detail: z.enum(["compact", "full"]).default("compact"), limit: z.number().int().min(1).max(100).default(50), offset: z.number().int().min(0).default(0), request_id: z.string().max(128).optional() },
+    outputSchema: WEBGPT_V4_READ_OUTPUT_SCHEMAS.list_project_media, ...contract("list_project_media")
+  }, async (input) => guarded("media.read", actor, authConfig, input.request_id, () => readMediaList(listProductionProjectMedia(input, db, input.request_id), input.detail)) as never);
 
   if (enabledTools.has("inspect_media")) registerAppTool(server, "inspect_media", {
     title: "检查生产媒体",
     description: "Use this when the user needs to inspect one project-owned image or video. Video reasoning uses timestamped frames; this never sends video as a native model input.",
     inputSchema: { project_id: z.string(), artifact_id: z.string(), frame_offset: z.number().int().min(0).default(0), frame_limit: z.number().int().min(1).max(12).default(8), request_id: z.string().max(128).optional() },
-    outputSchema: inspectResultSchema,
+    outputSchema: WEBGPT_V4_FULL_OUTPUT_SCHEMAS.inspect_media,
     annotations: webGptV4Tool("inspect_media").annotations,
     _meta: { ...security("media.read"), ui: { resourceUri: WEBGPT_V4_WIDGET_URI }, "openai/outputTemplate": WEBGPT_V4_WIDGET_URI }
   }, async (input) => {
@@ -240,8 +189,8 @@ export function createWebGptV4McpApp(options: CreateWebGptV4McpAppOptions): McpS
     try {
       requireScope(actor, "media.read");
       const inspected = await inspectProductionMedia(db, input, actor, options.media);
-      const result: WebGptV4Result<Record<string, unknown>> = { ok: true, data: inspected.data, meta: { request_id: id, source_version: WEBGPT_V4_VERSION, updated_at: new Date().toISOString() } };
-      const content: Array<Record<string, unknown>> = [{ type: "text", text: JSON.stringify(inspected.data) }];
+      const result = fullInspection({ ok: true, data: inspected.data, meta: { request_id: id, source_version: WEBGPT_V4_VERSION, updated_at: new Date().toISOString() } });
+      const content: Array<Record<string, unknown>> = [{ type: "text", text: "媒体检查已完成；分析结果位于 structuredContent。" }];
       for (const image of inspected.model_images) content.push({ type: "image", data: image.data, mimeType: image.mime_type });
       return asToolResult(result, { content, meta: { playback_url: inspected.playback.url, playback_expires_at: inspected.playback.expires_at } }) as never;
     } catch (error) {
@@ -256,72 +205,69 @@ export function createWebGptV4McpApp(options: CreateWebGptV4McpAppOptions): McpS
   if (enabledTools.has("get_review_package")) server.registerTool("get_review_package", {
     title: "读取审片包",
     description: "Use this when the user needs a SHOT version stack, prior notes, and the selected generated clip before drafting review feedback.",
-    inputSchema: { project_id: z.string(), shot_id: z.string(), artifact_id: z.string().optional(), request_id: z.string().max(128).optional() },
-    outputSchema: profile === "readonly" ? WEBGPT_V4_READONLY_OUTPUT_SCHEMAS.get_review_package : reviewPackageResultSchema, ...contract("get_review_package")
+    inputSchema: { project_id: z.string(), shot_id: z.string(), artifact_id: z.string().optional(), detail: z.enum(["compact", "full"]).default("compact"), notes_limit: z.number().int().min(1).max(50).default(10), request_id: z.string().max(128).optional() },
+    outputSchema: WEBGPT_V4_READ_OUTPUT_SCHEMAS.get_review_package, ...contract("get_review_package")
   }, async (input) => guarded("projects.read", actor, authConfig, input.request_id, () => {
-    const result = getProductionReviewPackage(input, db, input.request_id);
-    return profile === "readonly" ? readonlyReviewPackage(result, input.project_id, input.shot_id) : result;
+    return readReviewPackage(getProductionReviewPackage(input, db, input.request_id), input.detail, input.project_id, input.shot_id);
   }) as never);
 
   if (enabledTools.has("get_delivery_status")) server.registerTool("get_delivery_status", {
     title: "读取交付状态",
     description: "Use this when the user asks whether a production project is ready to assemble, in final review, or delivered.",
-    inputSchema: { project_id: z.string(), request_id: z.string().max(128).optional() }, outputSchema: profile === "readonly" ? WEBGPT_V4_READONLY_OUTPUT_SCHEMAS.get_delivery_status : deliveryResultSchema, ...contract("get_delivery_status")
+    inputSchema: { project_id: z.string(), request_id: z.string().max(128).optional() }, outputSchema: WEBGPT_V4_READ_OUTPUT_SCHEMAS.get_delivery_status, ...contract("get_delivery_status")
   }, async (input) => guarded("projects.read", actor, authConfig, input.request_id, () => {
-    const result = getProductionDeliveryStatus(input, db, input.request_id);
-    return profile === "readonly" ? readonlyDelivery(result) : result;
+    return readDelivery(getProductionDeliveryStatus(input, db, input.request_id));
   }) as never);
 
   if (enabledTools.has("get_closeout_evidence")) server.registerTool("get_closeout_evidence", {
     title: "读取收尾证据",
     description: "Use this when the user needs a structured closeout summary without raw reports, logs, local paths, or provider payloads.",
-    inputSchema: { project_id: z.string(), request_id: z.string().max(128).optional() }, outputSchema: profile === "readonly" ? WEBGPT_V4_READONLY_OUTPUT_SCHEMAS.get_closeout_evidence : closeoutResultSchema, ...contract("get_closeout_evidence")
+    inputSchema: { project_id: z.string(), request_id: z.string().max(128).optional() }, outputSchema: WEBGPT_V4_READ_OUTPUT_SCHEMAS.get_closeout_evidence, ...contract("get_closeout_evidence")
   }, async (input) => guarded("projects.read", actor, authConfig, input.request_id, () => {
-    const result = getProductionCloseoutEvidence(input, db, input.request_id);
-    return profile === "readonly" ? readonlyDelivery(result, true) : result;
+    return readDelivery(getProductionCloseoutEvidence(input, db, input.request_id), true);
   }) as never);
 
   if (enabledTools.has("update_shot_copy")) server.registerTool("update_shot_copy", {
     title: "更新 SHOT 文案",
     description: "Use this when the user explicitly wants to update SHOT description, prompt, negative prompt, or duration. Never changes media bindings or workflow status.",
     inputSchema: { project_id: z.string(), shot_id: z.string(), expected_updated_at: z.string(), idempotency_key: z.string().min(1).max(200), description: z.string().max(2000).optional(), video_prompt: z.string().max(8000).optional(), negative_prompt: z.string().max(4000).optional(), duration_seconds: z.number().int().min(1).max(60).optional(), request_id: z.string().max(128).optional() },
-    outputSchema: shotCopyResultSchema, ...contract("update_shot_copy")
-  }, async (input) => guarded("shots.write", actor, authConfig, input.request_id, () => updateProductionShotCopy(input, { actor, request_id: input.request_id, idempotency_key: input.idempotency_key }, db)) as never);
+    outputSchema: WEBGPT_V4_FULL_OUTPUT_SCHEMAS.update_shot_copy, ...contract("update_shot_copy")
+  }, async (input) => guarded("shots.write", actor, authConfig, input.request_id, () => fullShotCopy(updateProductionShotCopy(input, { actor, request_id: input.request_id, idempotency_key: input.idempotency_key }, db))) as never);
 
   if (enabledTools.has("add_review_note")) server.registerTool("add_review_note", {
     title: "添加审片注记",
     description: "Use this when the user wants to attach non-decisional review notes to a SHOT or clip. Never approves, rejects, or requests regeneration.",
     inputSchema: { project_id: z.string(), shot_id: z.string(), artifact_id: z.string().optional(), note: z.string().min(1).max(2000), idempotency_key: z.string().min(1).max(200), request_id: z.string().max(128).optional() },
-    outputSchema: reviewNoteResultSchema, ...contract("add_review_note")
-  }, async (input) => guarded("reviews.write", actor, authConfig, input.request_id, () => addProductionReviewNote(input, { actor, request_id: input.request_id, idempotency_key: input.idempotency_key }, db)) as never);
+    outputSchema: WEBGPT_V4_FULL_OUTPUT_SCHEMAS.add_review_note, ...contract("add_review_note")
+  }, async (input) => guarded("reviews.write", actor, authConfig, input.request_id, () => fullReviewNote(addProductionReviewNote(input, { actor, request_id: input.request_id, idempotency_key: input.idempotency_key }, db))) as never);
 
   if (enabledTools.has("submit_production_proposal")) server.registerTool("submit_production_proposal", {
     title: "提交生产提议",
     description: "Use this when the user wants a storyboard, review decision, regeneration, assembly, memory, or package-freeze proposal placed in the human workbench inbox.",
     inputSchema: productionProposalSubmitSchema,
-    outputSchema: proposalResultSchema, ...contract("submit_production_proposal")
-  }, async (input) => guarded("proposals.write", actor, authConfig, input.request_id, () => submitProductionProposal({ ...input, kind: input.kind as ProductionProposalKind }, { actor, request_id: input.request_id, idempotency_key: input.idempotency_key }, db)) as never);
+    outputSchema: WEBGPT_V4_FULL_OUTPUT_SCHEMAS.submit_production_proposal, ...contract("submit_production_proposal")
+  }, async (input) => guarded("proposals.write", actor, authConfig, input.request_id, () => fullProposal(submitProductionProposal({ ...input, kind: input.kind as ProductionProposalKind }, { actor, request_id: input.request_id, idempotency_key: input.idempotency_key }, db), "submit")) as never);
 
   if (enabledTools.has("revise_production_proposal")) server.registerTool("revise_production_proposal", {
     title: "修订生产提议",
     description: "Use this when the user wants to supersede an active WebGPT V4 proposal while preserving its history.",
     inputSchema: productionProposalRevisionSchema,
-    outputSchema: revisedProposalResultSchema, ...contract("revise_production_proposal")
-  }, async (input) => guarded("proposals.write", actor, authConfig, input.request_id, () => reviseProductionProposal(input, { actor, request_id: input.request_id, idempotency_key: input.idempotency_key }, db)) as never);
+    outputSchema: WEBGPT_V4_FULL_OUTPUT_SCHEMAS.revise_production_proposal, ...contract("revise_production_proposal")
+  }, async (input) => guarded("proposals.write", actor, authConfig, input.request_id, () => fullProposal(reviseProductionProposal(input, { actor, request_id: input.request_id, idempotency_key: input.idempotency_key }, db), "revise")) as never);
 
   if (enabledTools.has("close_production_proposal")) server.registerTool("close_production_proposal", {
     title: "关闭生产提议",
     description: "Use this when the user wants to close an active WebGPT V4 proposal without applying it.",
     inputSchema: { project_id: z.string(), draft_id: z.string(), reason: z.string().max(500).optional(), idempotency_key: z.string().min(1).max(200), request_id: z.string().max(128).optional() },
-    outputSchema: proposalResultSchema, ...contract("close_production_proposal")
-  }, async (input) => guarded("proposals.write", actor, authConfig, input.request_id, () => closeProductionProposal(input, { actor, request_id: input.request_id, idempotency_key: input.idempotency_key }, db)) as never);
+    outputSchema: WEBGPT_V4_FULL_OUTPUT_SCHEMAS.close_production_proposal, ...contract("close_production_proposal")
+  }, async (input) => guarded("proposals.write", actor, authConfig, input.request_id, () => fullProposal(closeProductionProposal(input, { actor, request_id: input.request_id, idempotency_key: input.idempotency_key }, db), "close")) as never);
 
   if (enabledTools.has("prepare_generation_intent")) server.registerTool("prepare_generation_intent", {
     title: "准备生成意图",
     description: "Use this when the user wants a non-confirmed generation intent based only on a current local price cache. Never contacts RunningHub, uploads, confirms cost, or submits a task.",
     inputSchema: { project_id: z.string(), shot_id: z.string(), account_label: z.enum(["personal", "team"]), budget_limit_value: z.number().positive(), idempotency_key: z.string().min(1).max(200), request_id: z.string().max(128).optional() },
-    outputSchema: generationIntentResultSchema, ...contract("prepare_generation_intent")
-  }, async (input) => guarded("generation.prepare", actor, authConfig, input.request_id, () => prepareProductionGenerationIntent(input, { actor, request_id: input.request_id, idempotency_key: input.idempotency_key }, db)) as never);
+    outputSchema: WEBGPT_V4_FULL_OUTPUT_SCHEMAS.prepare_generation_intent, ...contract("prepare_generation_intent")
+  }, async (input) => guarded("generation.prepare", actor, authConfig, input.request_id, () => fullGenerationIntent(prepareProductionGenerationIntent(input, { actor, request_id: input.request_id, idempotency_key: input.idempotency_key }, db))) as never);
 
   return server;
 }

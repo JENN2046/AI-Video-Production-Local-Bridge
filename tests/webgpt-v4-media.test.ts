@@ -8,8 +8,9 @@ import test from "node:test";
 
 import { openM0Database } from "../src/storage/sqlite.js";
 import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
+import { fullInspection } from "../src/webgpt-v4/contracts.js";
 import { cleanupMediaAnalysisCache, coverageFramePlan, createMediaGrant, handleMediaGatewayRequest, inspectProductionMedia, invalidateMediaGrantsForRestart, MediaAnalysisQueue, resolveFfmpegExecutable, resolveProductionMediaPath, validateMediaGrant } from "../src/webgpt-v4/media.js";
-import { actorFromSubject, WebGptV4Error } from "../src/webgpt-v4/types.js";
+import { actorFromSubject, ok, WebGptV4Error } from "../src/webgpt-v4/types.js";
 
 const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nCEAAAAASUVORK5CYII=", "base64");
 
@@ -219,6 +220,8 @@ test("video inspection produces a full-duration timestamp plan and paged model f
     assert.equal((analysis.model_frames as Array<{ sha256: string }>).every((frame) => /^[a-f0-9]{64}$/.test(frame.sha256)), true);
     assert.equal(JSON.stringify(inspected.data).includes(mediaRoot), false);
     assert.equal(JSON.stringify(inspected.data).includes("fixture.mp4\""), true);
+    const contracted = fullInspection(ok("media-contract", inspected.data));
+    assert.equal(contracted.ok, true, JSON.stringify(contracted));
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });
