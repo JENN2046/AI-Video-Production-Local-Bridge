@@ -63,3 +63,29 @@ test("Workbench health is liveness-only and readiness verifies local dependencie
     else process.env.REAL_PROVIDER_ENABLED = previousProvider;
   }
 });
+
+test("Workbench local shutdown requires the configured token", async () => {
+  let requested = 0;
+  const runtime = await startWorkbenchApplication(0, {
+    shutdown_token: "fixture-shutdown-token",
+    on_shutdown_requested: () => { requested += 1; }
+  });
+  try {
+    const rejected = await fetch(`${runtime.url}/_local/shutdown`, {
+      method: "POST",
+      headers: { "x-ai-video-shutdown-token": "wrong-shutdown-token" }
+    });
+    assert.equal(rejected.status, 403);
+    assert.equal(requested, 0);
+
+    const accepted = await fetch(`${runtime.url}/_local/shutdown`, {
+      method: "POST",
+      headers: { "x-ai-video-shutdown-token": "fixture-shutdown-token" }
+    });
+    assert.equal(accepted.status, 202);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(requested, 1);
+  } finally {
+    await runtime.close();
+  }
+});
