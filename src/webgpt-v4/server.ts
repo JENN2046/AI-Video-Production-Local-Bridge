@@ -5,7 +5,8 @@ import { join } from "node:path";
 
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
-import { openM0Database, openM0DatabaseConnection } from "../storage/sqlite.js";
+import { openM0Database, openM0DatabaseConnection, type M0Database } from "../storage/sqlite.js";
+import { assertSchemaCurrent, SchemaMigrationRequiredError } from "../storage/migrations.js";
 import { paths } from "../paths.js";
 import { loadWebGptV4AuthConfig, createAuth0Authenticator, createAuth0MediaAuthenticator, protectedResourceMetadata, unavailableAuthenticator, wwwAuthenticate, type WebGptV4AuthConfig, type WebGptV4Authenticator } from "./auth.js";
 import { errorBody, WEBGPT_V4_VERSION, WebGptV4Error } from "./types.js";
@@ -13,7 +14,7 @@ import { createWebGptV4McpApp } from "./mcpApp.js";
 import { handleMediaGatewayRequest, invalidateMediaGrantsForRestart, mediaAnalysisQueue, resolveFfmpegExecutable, resolveFfprobeExecutable, type MediaRuntimeOptions } from "./media.js";
 import { withToolSecuritySchemes } from "./securityTransport.js";
 import { parseWebGptV4Profile, webGptV4ScopesForProfile, webGptV4ToolNeedsWrite, webGptV4ToolScopesForProfile, type WebGptV4Profile } from "./toolCatalog.js";
-import { createWebGptTelemetrySink, parseWebGptTelemetryMode, parseWebGptWidgetDomain, type WebGptTelemetryMode, type WebGptTelemetrySink } from "./telemetry.js";
+import { createWebGptTelemetrySink, parseWebGptMediaPublicOrigin, parseWebGptTelemetryMode, parseWebGptWidgetDomain, type WebGptTelemetryMode, type WebGptTelemetrySink } from "./telemetry.js";
 
 export const WEBGPT_V4_HOST = "127.0.0.1";
 export const WEBGPT_V4_MCP_PORT = 2091;
@@ -98,6 +99,31 @@ function mcpRequestNeedsWrite(parsedBody: Record<string, unknown> | undefined, p
   return webGptV4ToolNeedsWrite(String((params as Record<string, unknown>).name ?? ""), profile);
 }
 
+function safeJsonRpcId(value: unknown): string | number | null {
+  return typeof value === "string" || typeof value === "number" ? value : null;
+}
+
+function openValidatedDatabase(sqlitePath: string | undefined, readOnly: boolean): M0Database {
+  const db = openM0DatabaseConnection(sqlitePath, { readOnly });
+  try {
+    assertSchemaCurrent(db);
+    return db;
+  } catch (error) {
+    db.close();
+    if (error instanceof SchemaMigrationRequiredError) {
+      throw new WebGptV4Error("SCHEMA_MIGRATION_REQUIRED", "The database schema must be migrated before WebGPT can start.");
+    }
+    throw error;
+  }
+}
+
+function isExternalHttpsOrigin(origin: string | null): boolean {
+  if (!origin) return false;
+  const parsed = new URL(origin);
+  return parsed.protocol === "https:"
+    && parsed.hostname !== "127.0.0.1" && parsed.hostname !== "localhost" && parsed.hostname !== "[::1]";
+}
+
 export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise<WebGptV4Runtime> {
   let profile: WebGptV4Profile;
   try {
@@ -112,6 +138,10 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
   const telemetry = options.telemetry_sink ?? createWebGptTelemetrySink(configuredTelemetryMode, join(options.data_root ?? paths.dataRoot, "webgpt", "telemetry"));
   const telemetryMode = telemetry.mode;
   const widgetDomain = parseWebGptWidgetDomain(options.widget_domain);
+  const mediaPublicOrigin = profile === "full" ? parseWebGptMediaPublicOrigin(options.media?.public_origin) : null;
+  const mediaOptions = profile === "full" && options.media
+    ? { ...options.media, public_origin: mediaPublicOrigin ?? undefined }
+    : options.media;
   const authConfig = options.auth_config === undefined ? loadWebGptV4AuthConfig() : options.auth_config;
   const authenticate = options.authenticate ?? (authConfig ? createAuth0Authenticator(authConfig) : unavailableAuthenticator());
   const authenticateMedia = options.authenticate_media ?? (profile === "full" && authConfig
@@ -134,9 +164,7 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
     } else {
       staticChecks = { oauth: Boolean(authConfig), schema: false, database: false };
       try {
-        const db = profile === "readonly"
-          ? openM0DatabaseConnection(options.sqlite_path, { readOnly: true })
-          : openM0Database(options.sqlite_path);
+        const db = openValidatedDatabase(options.sqlite_path, profile === "readonly");
         try {
           staticChecks.database = (db.prepare("SELECT 1 AS ok").get() as { ok: number }).ok === 1;
           staticChecks.schema = (db.prepare("PRAGMA quick_check").get() as { quick_check: string }).quick_check === "ok";
@@ -148,7 +176,7 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
         staticChecks.ffprobe = false;
         try { accessSync(paths.mediaRoot, constants.R_OK | constants.W_OK); staticChecks.media_directory = true; } catch { staticChecks.media_directory = false; }
         try {
-          const ffmpeg = await resolveFfmpegExecutable(options.media?.ffmpeg_path);
+          const ffmpeg = await resolveFfmpegExecutable(mediaOptions?.ffmpeg_path);
           staticChecks.ffmpeg = true;
           await resolveFfprobeExecutable(ffmpeg);
           staticChecks.ffprobe = true;
@@ -166,7 +194,10 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
       status: ok ? 200 : 503,
       body: {
         ok, service: "webgpt-v4", profile, checks, provider_calls_allowed: false,
-        external_release_gate: { widget_domain: profile === "readonly" || Boolean(widgetDomain) }
+        external_release_gate: {
+          widget_domain: profile === "readonly" || Boolean(widgetDomain),
+          media_public_origin: profile === "readonly" || isExternalHttpsOrigin(mediaPublicOrigin)
+        }
       }
     };
     return result;
@@ -214,8 +245,15 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
       return;
     }
 
-    const db = openM0DatabaseConnection(options.sqlite_path, { readOnly: !mcpRequestNeedsWrite(parsedBody, profile) });
-    const app = createWebGptV4McpApp({ db, actor, profile, auth_config: authConfig, media: options.media, telemetry, widget_domain: widgetDomain });
+    let db: M0Database;
+    try {
+      db = openValidatedDatabase(options.sqlite_path, !mcpRequestNeedsWrite(parsedBody, profile));
+    } catch (error) {
+      const safe = errorBody(error);
+      sendJson(response, 503, { jsonrpc: "2.0", id: safeJsonRpcId(parsedBody?.id), error: { code: -32003, message: safe.message, data: safe } });
+      return;
+    }
+    const app = createWebGptV4McpApp({ db, actor, profile, auth_config: authConfig, media: mediaOptions, telemetry, widget_domain: widgetDomain });
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     const securedTransport = withToolSecuritySchemes(transport, webGptV4ToolScopesForProfile(profile));
     try {
@@ -269,7 +307,13 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
       sendJson(response, 400, { ok: false, error: { code: "INVALID_MEDIA_PATH", message: "Media route contains an invalid path segment." } });
       return;
     }
-    const db = openM0DatabaseConnection(options.sqlite_path, { readOnly: true });
+    let db: M0Database;
+    try {
+      db = openValidatedDatabase(options.sqlite_path, true);
+    } catch (error) {
+      sendJson(response, 503, { ok: false, error: errorBody(error) });
+      return;
+    }
     try {
       handleMediaGatewayRequest(request, response, {
         project_id: projectId,
@@ -278,7 +322,7 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
         actor_hash: actor.actor_hash,
         db,
         allowed_origin: widgetDomain ?? undefined,
-        options: options.media
+        options: mediaOptions
       });
     } finally {
       db.close();

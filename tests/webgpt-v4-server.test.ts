@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -77,8 +77,10 @@ test("official MCP transport advertises the V4 scoped tool contract and hides te
       assert.equal(schemes[0].type, "oauth2");
       assert.equal(schemes[0].scopes.length, 1);
       assert.equal((WEBGPT_V4_SCOPES as readonly string[]).includes(schemes[0].scopes[0]), true);
-      const output = tool.outputSchema as { properties?: Record<string, unknown> };
+      const output = tool.outputSchema as { properties?: Record<string, unknown>; oneOf?: Array<Record<string, unknown>> };
       assert.equal(Boolean(output.properties?.data), true);
+      assert.equal(output.oneOf?.length, 2);
+      assert.deepEqual(output.oneOf?.map((branch) => branch.required), [["ok", "data", "meta"], ["ok", "error", "meta"]]);
     }
     const rawListResponse = await fetch(runtime.mcp_url, {
       method: "POST",
@@ -173,6 +175,40 @@ test("official MCP transport advertises the V4 scoped tool contract and hides te
     assert.equal((blockedIntent.structuredContent as { error: { code: string } }).error.code, "ARTIFACT_NOT_FOUND");
   } finally {
     await client.close();
+    await runtime.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("readonly readiness and MCP requests fail closed on an unmigrated database", async () => {
+  const root = mkdtempSync(join(tmpdir(), "webgpt-v4-schema-gate-"));
+  const sqlitePath = join(root, "blank.sqlite");
+  writeFileSync(sqlitePath, "");
+  const authConfig = {
+    issuer: "https://auth.example.test/", audience: "fixture", resource_url: "https://mcp.example.test",
+    jwks_uri: "https://auth.example.test/.well-known/jwks.json", allowed_subject_hash: "a".repeat(64)
+  };
+  const runtime = await startWebGptV4({
+    profile: "readonly", mcp_port: 0, sqlite_path: sqlitePath, auth_config: authConfig,
+    authenticate: async () => actorFromSubject("auth0|jenn", ["projects.read"])
+  });
+  try {
+    const ready = await fetch(runtime.mcp_url.replace(/\/mcp$/, "/readyz"));
+    assert.equal(ready.status, 503);
+    const readiness = await ready.json() as { checks: { schema: boolean; database: boolean } };
+    assert.equal(readiness.checks.schema, false);
+    assert.equal(readiness.checks.database, false);
+
+    const response = await fetch(runtime.mcp_url, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer fixture" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: { attacker_controlled: true }, method: "tools/list", params: {} })
+    });
+    assert.equal(response.status, 503);
+    const payload = await response.json() as { id: unknown; error: { data: { code: string } } };
+    assert.equal(payload.id, null);
+    assert.equal(payload.error.data.code, "SCHEMA_MIGRATION_REQUIRED");
+  } finally {
     await runtime.close();
     rmSync(root, { recursive: true, force: true });
   }

@@ -12,6 +12,8 @@ import { createProject, saveProject, saveShot, type Project, type Shot } from ".
 import {
   addProductionReviewNote,
   getProductionProjectContext,
+  listProductionProjectMedia,
+  listProductionProjectShots,
   listProductionProjects,
   prepareProductionGenerationIntent,
   submitProductionProposal,
@@ -65,6 +67,39 @@ function teardown(context: TestContext): void {
 }
 
 const actor = actorFromSubject("auth0|jenn", ["projects.read", "shots.write", "reviews.write", "proposals.write", "generation.prepare"]);
+
+test("project-scoped reads fail closed when structured columns and JSON bindings drift", () => {
+  const context = setup();
+  try {
+    const foreignProjectId = context.testProject.project_id;
+    const driftedShot = { ...context.productionShot, project_id: foreignProjectId, description: "foreign body must not escape" };
+    context.db.prepare("UPDATE shots SET data_json = ? WHERE shot_id = ?").run(JSON.stringify(driftedShot), context.productionShot.shot_id);
+
+    const shots = listProductionProjectShots({ project_id: context.production.project_id }, context.db);
+    assert.equal(shots.ok, false);
+    if (!shots.ok) assert.equal(shots.error.code, "WEBGPT_V4_DATA_INTEGRITY_VIOLATION");
+
+    const workspace = getProductionProjectContext({ project_id: context.production.project_id, workspace: "storyboard" }, context.db);
+    assert.equal(workspace.ok, false);
+    if (!workspace.ok) assert.equal(workspace.error.code, "WEBGPT_V4_DATA_INTEGRITY_VIOLATION");
+
+    context.db.prepare("UPDATE shots SET data_json = ? WHERE shot_id = ?").run(JSON.stringify(context.productionShot), context.productionShot.shot_id);
+    const artifact = {
+      artifact_id: "artifact_drifted", artifact_type: "image", role: "storyboard_image", status: "active",
+      storage: { uri: join(context.root, "drifted.png"), mime_type: "image/png", filename: "drifted.png" },
+      metadata: { width: 1, height: 1, duration_seconds: null, aspect_ratio: "1:1", sha256: "drifted" },
+      linked_objects: { project_id: foreignProjectId, shot_id: context.productionShot.shot_id },
+      source: { kind: "fixture_path", provider: "", provider_job_id: "", sha256: "drifted", external_url_host: "" }
+    };
+    context.db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)")
+      .run(artifact.artifact_id, context.production.project_id, context.productionShot.shot_id, JSON.stringify(artifact));
+    const media = listProductionProjectMedia({ project_id: context.production.project_id }, context.db);
+    assert.equal(media.ok, false);
+    if (!media.ok) assert.equal(media.error.code, "WEBGPT_V4_DATA_INTEGRITY_VIOLATION");
+  } finally {
+    teardown(context);
+  }
+});
 
 test("production project listing excludes test and unclassified projects", () => {
   const context = setup();

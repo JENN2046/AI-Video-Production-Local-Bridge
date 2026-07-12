@@ -26,7 +26,14 @@ export function resultContractSchema<T extends z.ZodType>(data: T) {
 }
 
 export function resultOutputSchema<T extends z.ZodType>(data: T) {
-  return z.object({ ok: z.boolean(), data: data.optional(), error: WEBGPT_V4_ERROR_SCHEMA.optional(), meta: WEBGPT_V4_META_SCHEMA }).strict();
+  return z.object({
+    ok: z.boolean(), data: data.optional(), error: WEBGPT_V4_ERROR_SCHEMA.optional(), meta: WEBGPT_V4_META_SCHEMA
+  }).strict().meta({
+    oneOf: [
+      { properties: { ok: { const: true } }, required: ["ok", "data", "meta"], not: { required: ["error"] } },
+      { properties: { ok: { const: false } }, required: ["ok", "error", "meta"], not: { required: ["data"] } }
+    ]
+  });
 }
 
 export const WEBGPT_V4_PROJECT_SCHEMA = z.object({ project_id: z.string(), title: z.string(), status: projectStatusSchema, shot_ids: z.array(z.string()) }).strict();

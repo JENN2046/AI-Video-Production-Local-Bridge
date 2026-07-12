@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 
 import type { M0Database } from "../storage/sqlite.js";
-import { getMediaArtifact, type MediaArtifact } from "../tools/mediaArtifacts.js";
-import { getProject, getShot, listProjectShots, type Project, type Shot } from "../tools/projects.js";
+import type { MediaArtifact } from "../tools/mediaArtifacts.js";
+import { listProjectShots, type Project, type Shot } from "../tools/projects.js";
 import { getWorkbenchProjectSummary, getWorkbenchProjectWorkspace } from "../tools/workbenchV2.js";
 import { appendWorkbenchInboxEvent, getWorkbenchDraftRecord, saveWorkbenchDraftRecord, type WorkbenchDraftRecord } from "../tools/workbenchInboxStore.js";
 import { parseProductionProposalPayload } from "./proposals.js";
@@ -58,6 +58,37 @@ function parseJson<T>(value: string, fallback: T): T {
   }
 }
 
+function dataIntegrityViolation(field: string): never {
+  throw new WebGptV4Error(
+    "WEBGPT_V4_DATA_INTEGRITY_VIOLATION",
+    "Stored production data does not match its project binding.",
+    field
+  );
+}
+
+function parseBoundJson<T>(value: string, field: string): T {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return dataIntegrityViolation(field);
+    return parsed as T;
+  } catch {
+    return dataIntegrityViolation(field);
+  }
+}
+
+function assertProjectScopedValue(value: unknown, projectId: string): void {
+  if (Array.isArray(value)) {
+    for (const item of value) assertProjectScopedValue(item, projectId);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  const record = value as Record<string, unknown>;
+  if (Object.prototype.hasOwnProperty.call(record, "project_id") && record.project_id !== projectId) {
+    dataIntegrityViolation("project_id");
+  }
+  for (const item of Object.values(record)) assertProjectScopedValue(item, projectId);
+}
+
 function stable(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stable);
   if (value && typeof value === "object") {
@@ -90,22 +121,39 @@ function projectRow(db: M0Database, projectId: string, write = false): ProjectRo
     WHERE p.project_id = ? AND m.classification = 'production'
   `).get(id) as ProjectRow | undefined;
   if (!row) throw new WebGptV4Error("PROJECT_NOT_FOUND", "Production project was not found.", "project_id");
+  const project = parseBoundJson<Project>(row.data_json, "project_id");
+  if (project.project_id !== row.project_id) dataIntegrityViolation("project_id");
   if (write && row.lifecycle !== "active") throw new WebGptV4Error("PROJECT_ARCHIVED", "Archived production projects are read-only.", "project_id");
   return row;
 }
 
 function requireShot(db: M0Database, projectId: string, shotId: string): { shot: Shot; updated_at: string } {
   const id = plainId(shotId, "shot_id");
-  const row = db.prepare("SELECT data_json, updated_at FROM shots WHERE shot_id = ? AND project_id = ?").get(id, projectId) as { data_json: string; updated_at: string } | undefined;
+  const row = db.prepare("SELECT shot_id, project_id, data_json, updated_at FROM shots WHERE shot_id = ? AND project_id = ?")
+    .get(id, projectId) as { shot_id: string; project_id: string; data_json: string; updated_at: string } | undefined;
   if (!row) throw new WebGptV4Error("SHOT_NOT_FOUND", "SHOT was not found in the production project.", "shot_id");
-  return { shot: parseJson<Shot>(row.data_json, getShot(db, id) as Shot), updated_at: row.updated_at };
+  const shot = parseBoundJson<Shot>(row.data_json, "shot_id");
+  if (shot.shot_id !== row.shot_id || shot.project_id !== row.project_id) dataIntegrityViolation("shot_id");
+  return { shot, updated_at: row.updated_at };
 }
 
 function requireArtifact(db: M0Database, projectId: string, artifactId: string, requireActive = false): MediaArtifact {
   const id = plainId(artifactId, "artifact_id");
-  const artifact = getMediaArtifact(db, id);
-  if (!artifact || artifact.linked_objects.project_id !== projectId || !["storyboard_image", "generated_clip", "final_video"].includes(artifact.role)) {
+  const row = db.prepare(`
+    SELECT artifact_id, project_id, shot_id, role, artifact_type, status, data_json
+    FROM media_artifacts WHERE artifact_id = ? AND project_id = ?
+  `).get(id, projectId) as {
+    artifact_id: string; project_id: string; shot_id: string | null; role: string; artifact_type: string; status: string; data_json: string;
+  } | undefined;
+  if (!row || !["storyboard_image", "generated_clip", "final_video"].includes(row.role)) {
     throw new WebGptV4Error("ARTIFACT_NOT_FOUND", "Production media artifact was not found.", "artifact_id");
+  }
+  const artifact = parseBoundJson<MediaArtifact>(row.data_json, "artifact_id");
+  if (artifact.artifact_id !== row.artifact_id
+    || artifact.linked_objects?.project_id !== row.project_id
+    || artifact.linked_objects?.shot_id !== (row.shot_id ?? "")
+    || artifact.role !== row.role || artifact.artifact_type !== row.artifact_type || artifact.status !== row.status) {
+    dataIntegrityViolation("artifact_id");
   }
   if (requireActive && artifact.status !== "active") throw new WebGptV4Error("MEDIA_NOT_AVAILABLE", "Media artifact is not currently accessible.", "artifact_id");
   return artifact;
@@ -273,7 +321,8 @@ export function listProductionProjects(
     ORDER BY m.pinned DESC, p.updated_at DESC, p.project_id DESC LIMIT ? OFFSET ?
   `).all(...values, limit, offset) as Array<{ project_id: string; data_json: string; updated_at: string; lifecycle: string; pinned: number; last_opened_at: string | null }>;
   const items = rows.map((row) => {
-    const project = parseJson<Project>(row.data_json, getProject(db, row.project_id) as Project);
+    const project = parseBoundJson<Project>(row.data_json, "project_id");
+    if (project.project_id !== row.project_id) dataIntegrityViolation("project_id");
     const summary = getWorkbenchProjectSummary(row.project_id, db);
     return sanitize({ project, lifecycle: row.lifecycle, pinned: row.pinned === 1, last_opened_at: row.last_opened_at, updated_at: row.updated_at, summary }) as Record<string, unknown>;
   });
@@ -291,6 +340,7 @@ export function getProductionProjectContext(
     projectRow(db, input.project_id);
     const result = getWorkbenchProjectWorkspace(input.project_id, input.workspace ?? "overview", db, { touch_last_opened: false });
     if (!result.ok) throw new WebGptV4Error(result.error.code, result.error.message, result.error.field);
+    assertProjectScopedValue(result.data, input.project_id);
     return ok(id, sanitize(result.data) as Record<string, unknown>);
   } catch (error) {
     return fail(id, errorBody(error));
@@ -304,9 +354,13 @@ export function listProductionProjectShots(input: { project_id: string; limit?: 
     const limit = clamp(input.limit, 50, 100);
     const offset = Math.max(0, Math.trunc(input.offset ?? 0));
     const total = Number((db.prepare("SELECT COUNT(*) count FROM shots WHERE project_id = ?").get(input.project_id) as { count: number }).count);
-    const rows = db.prepare("SELECT data_json, updated_at FROM shots WHERE project_id = ? ORDER BY json_extract(data_json, '$.order'), shot_id LIMIT ? OFFSET ?")
-      .all(input.project_id, limit, offset) as Array<{ data_json: string; updated_at: string }>;
-    const items = rows.map((row) => ({ ...parseJson<Record<string, unknown>>(row.data_json, {}), updated_at: row.updated_at }));
+    const rows = db.prepare("SELECT shot_id, project_id, data_json, updated_at FROM shots WHERE project_id = ? ORDER BY json_extract(data_json, '$.order'), shot_id LIMIT ? OFFSET ?")
+      .all(input.project_id, limit, offset) as Array<{ shot_id: string; project_id: string; data_json: string; updated_at: string }>;
+    const items = rows.map((row) => {
+      const shot = parseBoundJson<Shot>(row.data_json, "shot_id");
+      if (shot.shot_id !== row.shot_id || shot.project_id !== row.project_id) dataIntegrityViolation("shot_id");
+      return { ...shot, updated_at: row.updated_at };
+    });
     const hasMore = offset + items.length < total;
     return ok(id, { items, page: { limit, offset, total, has_more: hasMore, next_offset: hasMore ? offset + limit : null } });
   } catch (error) {
@@ -332,9 +386,9 @@ export function listProductionProjectMedia(
     const limit = clamp(input.limit, 50, 100);
     const offset = Math.max(0, Math.trunc(input.offset ?? 0));
     const total = Number((db.prepare(`SELECT COUNT(*) count FROM media_artifacts WHERE ${where}`).get(...values) as { count: number }).count);
-    const rows = db.prepare(`SELECT data_json, updated_at FROM media_artifacts WHERE ${where} ORDER BY updated_at DESC, artifact_id DESC LIMIT ? OFFSET ?`)
-      .all(...values, limit, offset) as Array<{ data_json: string; updated_at: string }>;
-    const items = rows.map((row) => ({ ...publicArtifact(parseJson<MediaArtifact>(row.data_json, {} as MediaArtifact)), updated_at: row.updated_at }));
+    const rows = db.prepare(`SELECT artifact_id, updated_at FROM media_artifacts WHERE ${where} ORDER BY updated_at DESC, artifact_id DESC LIMIT ? OFFSET ?`)
+      .all(...values, limit, offset) as Array<{ artifact_id: string; updated_at: string }>;
+    const items = rows.map((row) => ({ ...publicArtifact(requireArtifact(db, input.project_id, row.artifact_id)), updated_at: row.updated_at }));
     const hasMore = offset + items.length < total;
     return ok(id, { items, page: { limit, offset, total, has_more: hasMore, next_offset: hasMore ? offset + limit : null } });
   } catch (error) {
@@ -364,8 +418,12 @@ export function getProductionDeliveryStatus(input: { project_id: string }, db: M
   const id = requestId(idValue);
   try {
     const row = projectRow(db, input.project_id);
-    const project = parseJson<Project>(row.data_json, getProject(db, input.project_id) as Project);
+    const project = parseBoundJson<Project>(row.data_json, "project_id");
+    if (project.project_id !== row.project_id) dataIntegrityViolation("project_id");
     const shots = listProjectShots(db, input.project_id);
+    for (const shot of shots) {
+      if (shot.project_id !== input.project_id) dataIntegrityViolation("shot_id");
+    }
     const finalArtifact = project.exports.final_video_artifact_id ? publicArtifact(requireArtifact(db, input.project_id, project.exports.final_video_artifact_id)) : null;
     return ok(id, {
       project_id: project.project_id,
@@ -546,7 +604,8 @@ export function prepareProductionGenerationIntent(
 ): WebGptV4Result<Record<string, unknown>> {
   return mutation(db, "prepare_generation_intent", context, input, () => {
     const row = projectRow(db, input.project_id, true);
-    const project = parseJson<Project>(row.data_json, getProject(db, input.project_id) as Project);
+    const project = parseBoundJson<Project>(row.data_json, "project_id");
+    if (project.project_id !== row.project_id) dataIntegrityViolation("project_id");
     const { shot } = requireShot(db, input.project_id, input.shot_id);
     if (shot.status !== "storyboard_approved" && shot.status !== "revision_needed") throw new WebGptV4Error("SHOT_NOT_APPROVED", "Storyboard approval is required before generation preparation.");
     const artifact = requireArtifact(db, input.project_id, shot.storyboard_image_artifact_id, true);
