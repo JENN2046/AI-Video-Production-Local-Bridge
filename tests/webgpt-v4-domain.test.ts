@@ -101,6 +101,24 @@ test("project-scoped reads fail closed when structured columns and JSON bindings
   }
 });
 
+test("project context ignores project_id keys inside free-form business metadata", () => {
+  const context = setup();
+  try {
+    const stored = context.db.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(context.production.project_id) as { data_json: string };
+    const project = JSON.parse(stored.data_json) as Record<string, unknown>;
+    project.brief = {
+      client_reference: { project_id: "external-client-project" },
+      provider_metadata: { project_id: "provider-side-project" }
+    };
+    context.db.prepare("UPDATE projects SET data_json = ? WHERE project_id = ?").run(JSON.stringify(project), context.production.project_id);
+
+    const result = getProductionProjectContext({ project_id: context.production.project_id, workspace: "storyboard" }, context.db);
+    assert.equal(result.ok, true, JSON.stringify(result));
+  } finally {
+    teardown(context);
+  }
+});
+
 test("production project listing excludes test and unclassified projects", () => {
   const context = setup();
   try {
