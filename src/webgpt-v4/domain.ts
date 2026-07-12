@@ -141,7 +141,7 @@ export function publicArtifact(artifact: MediaArtifact): Record<string, unknown>
 }
 
 function successfulReplay<T>(db: M0Database, tool: string, row: { project_id: string; object_id: string }, id: string): WebGptV4Result<T> {
-  const meta = { request_id: id, source_version: "webgpt-v4.0.0" as const, updated_at: new Date().toISOString(), idempotent_replay: true as const };
+  const meta = { request_id: id, source_version: "webgpt-v4.1.0" as const, updated_at: new Date().toISOString(), idempotent_replay: true as const };
   if (tool === "update_shot_copy") {
     const current = requireShot(db, row.project_id, row.object_id);
     return { ok: true, data: { shot: current.shot, updated_at: current.updated_at } as T, meta };
