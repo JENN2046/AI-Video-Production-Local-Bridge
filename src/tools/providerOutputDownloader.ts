@@ -1,13 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { lookup } from "node:dns/promises";
-import { existsSync, linkSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { request as httpsRequest } from "node:https";
 import { BlockList, isIP } from "node:net";
 import { basename, extname, isAbsolute, relative, resolve } from "node:path";
 import { Readable } from "node:stream";
 
 import { paths } from "../paths.js";
-import { persistMediaArtifact, type MediaArtifact } from "./mediaArtifacts.js";
+import { activateLocalMediaArtifact, recoverMediaActivations, type MediaArtifact } from "./mediaArtifacts.js";
 import { validateMp4File, type Mp4ValidationResult } from "./mediaValidity.js";
 import { providerError, type ProviderToolError } from "./provider.js";
 import type { M0Database } from "../storage/sqlite.js";
@@ -352,6 +352,7 @@ export async function downloadProviderOutputToArtifact(
   db: M0Database,
   runtime: ProviderOutputDownloadRuntime = {}
 ): Promise<ProviderOutputDownloadResult> {
+  recoverMediaActivations(db);
   const safety: ProviderOutputDownloadSafety = { ...DEFAULT_SAFETY, ...input.safety };
   const storageDirectory = outputStorageDirectory(input, runtime);
   if (!storageDirectory.ok) return { ok: false, error: storageDirectory.error };
@@ -410,29 +411,22 @@ export async function downloadProviderOutputToArtifact(
     const artifactId = `artifact_${identity}`;
     const finalPath = resolve(storageDirectory.path, `${artifactId}.mp4`);
     if (!isPathInside(finalPath, storageDirectory.path)) throw new Error("PROVIDER_OUTPUT_STORAGE_BLOCKED");
-    let createdFinal = false;
-    try {
-      linkSync(tempPath, finalPath);
-      createdFinal = true;
-    } catch (error) {
-      try {
-        const boundaryError = validateCommittedOutputPath(finalPath, storageDirectory.path);
-        if (boundaryError) return { ok: false, error: boundaryError };
-      } catch {
-        throw error;
+    if (existsSync(finalPath)) {
+      const boundaryError = validateCommittedOutputPath(finalPath, storageDirectory.path);
+      if (boundaryError) return { ok: false, error: boundaryError };
+    }
+    const existingRow = db.prepare(`SELECT data_json FROM media_artifacts
+      WHERE json_valid(data_json) = 1
+        AND json_extract(data_json, '$.source.provider') = ?
+        AND json_extract(data_json, '$.source.provider_job_id') = ?
+      LIMIT 1`).get(input.provider_name, input.provider_job_id) as { data_json: string } | undefined;
+    if (existingRow) {
+      const existing = JSON.parse(existingRow.data_json) as MediaArtifact;
+      if (existing.linked_objects.project_id !== input.project_id || existing.linked_objects.shot_id !== input.shot_id) {
+        return { ok: false, error: providerError("PROVIDER_OUTPUT_TASK_CONFLICT", "Provider task output is already bound to a different project or SHOT.") };
       }
+      return { ok: true, artifact: existing, ffprobe, output_url_hostname: fetched.finalUrl.hostname };
     }
-    const boundaryError = validateCommittedOutputPath(finalPath, storageDirectory.path);
-    if (boundaryError) {
-      if (createdFinal) rmSync(finalPath, { force: true });
-      return { ok: false, error: boundaryError };
-    }
-    const committedValidation = validateMp4File(finalPath);
-    if (committedValidation.status !== "PASS") {
-      if (createdFinal) rmSync(finalPath, { force: true });
-      return { ok: false, error: providerError("PROVIDER_OUTPUT_INVALID", committedValidation.error || "Committed provider output is invalid.") };
-    }
-    const sha256 = createHash("sha256").update(readFileSync(finalPath)).digest("hex");
     const preparedArtifact: MediaArtifact = {
       artifact_id: artifactId,
       blob_id: "",
@@ -440,37 +434,13 @@ export async function downloadProviderOutputToArtifact(
       role: "generated_clip",
       status: "active",
       storage: { uri: finalPath, mime_type: contentType ?? "video/mp4", filename: basename(finalPath) },
-      metadata: { width: 1080, height: 1920, duration_seconds: committedValidation.duration_seconds ?? input.duration_seconds, aspect_ratio: input.aspect_ratio, sha256 },
+      metadata: { width: 1080, height: 1920, duration_seconds: ffprobe.duration_seconds ?? input.duration_seconds, aspect_ratio: input.aspect_ratio, sha256: "" },
       linked_objects: { project_id: input.project_id, shot_id: input.shot_id },
-      source: { kind: "provider_output_file", provider: input.provider_name, provider_job_id: input.provider_job_id, sha256, external_url_host: fetched.finalUrl.hostname }
+      source: { kind: "provider_output_file", provider: input.provider_name, provider_job_id: input.provider_job_id, sha256: "", external_url_host: fetched.finalUrl.hostname }
     };
-    runtime.fault_injection_after_file_commit?.(finalPath);
-
-    db.exec("BEGIN IMMEDIATE");
-    try {
-      const existingRow = db.prepare(`SELECT data_json FROM media_artifacts
-        WHERE json_valid(data_json) = 1
-          AND json_extract(data_json, '$.source.provider') = ?
-          AND json_extract(data_json, '$.source.provider_job_id') = ?
-        LIMIT 1`).get(input.provider_name, input.provider_job_id) as { data_json: string } | undefined;
-      if (existingRow) {
-        const existing = JSON.parse(existingRow.data_json) as MediaArtifact;
-        if (existing.linked_objects.project_id !== input.project_id || existing.linked_objects.shot_id !== input.shot_id) {
-          if (createdFinal && resolve(existing.storage.uri) !== finalPath) rmSync(finalPath, { force: true });
-          db.exec("ROLLBACK");
-          return { ok: false, error: providerError("PROVIDER_OUTPUT_TASK_CONFLICT", "Provider task output is already bound to a different project or SHOT.") };
-        }
-        if (createdFinal && resolve(existing.storage.uri) !== finalPath) rmSync(finalPath, { force: true });
-        db.exec("COMMIT");
-        return { ok: true, artifact: existing, ffprobe, output_url_hostname: fetched.finalUrl.hostname };
-      }
-      persistMediaArtifact(db, preparedArtifact);
-      db.exec("COMMIT");
-      return { ok: true, artifact: preparedArtifact, ffprobe, output_url_hostname: fetched.finalUrl.hostname };
-    } catch (error) {
-      db.exec("ROLLBACK");
-      throw error;
-    }
+    const activated = activateLocalMediaArtifact({ artifact: preparedArtifact, source_path: tempPath, media_root: storageDirectory.path, after_file_placed: runtime.fault_injection_after_file_commit }, db);
+    if (!activated.ok) return { ok: false, error: providerError(activated.error.code, activated.error.message) };
+    return { ok: true, artifact: activated.artifact, ffprobe, output_url_hostname: fetched.finalUrl.hostname };
   } finally {
     if (existsSync(tempPath)) rmSync(tempPath, { force: true });
   }

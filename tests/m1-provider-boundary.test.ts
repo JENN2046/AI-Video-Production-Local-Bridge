@@ -113,14 +113,16 @@ function setupOneShotProject(db: ReturnType<typeof openM0Database>, aspectRatio 
 }
 
 function fakeStoryboardArtifact(): MediaArtifact {
+  const uri = join(paths.workspaceRoot, "fixtures", "storyboard", "shot_001.png");
+  const sha256 = createHash("sha256").update(readFileSync(uri)).digest("hex");
   return {
     status: "active",
     artifact_type: "image",
     role: "storyboard_image",
-    storage: { uri: join(paths.workspaceRoot, "fixtures", "storyboard", "shot_001.png"), mime_type: "image/png", filename: "shot_001.png" },
-    metadata: { width: 720, height: 1280, duration_seconds: null, aspect_ratio: "9:16", sha256: "0".repeat(64) },
+    storage: { uri, mime_type: "image/png", filename: "shot_001.png" },
+    metadata: { width: 720, height: 1280, duration_seconds: null, aspect_ratio: "9:16", sha256 },
     linked_objects: { project_id: "", shot_id: "" },
-    source: { kind: "fixture_path", provider: "", provider_job_id: "", sha256: "0".repeat(64), external_url_host: "" }
+    source: { kind: "fixture_path", provider: "", provider_job_id: "", sha256, external_url_host: "" }
   } as MediaArtifact;
 }
 

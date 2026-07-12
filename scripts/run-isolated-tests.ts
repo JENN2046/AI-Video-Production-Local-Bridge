@@ -11,7 +11,7 @@ const sqlitePath = join(dataRoot, "app.sqlite");
 
 try {
   migrateDatabase(sqlitePath);
-  const result = spawnSync(process.execPath, ["--test", ...process.argv.slice(2)], {
+  const result = spawnSync(process.execPath, ["--test", "--test-concurrency=1", ...process.argv.slice(2)], {
     cwd: process.cwd(),
     env: {
       ...process.env,

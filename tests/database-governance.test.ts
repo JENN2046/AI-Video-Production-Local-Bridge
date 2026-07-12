@@ -292,7 +292,7 @@ test("database migrated through 0003 keeps its historical checksums and upgrades
     assert.equal(migrationChecksum(DATABASE_MIGRATIONS[1]), "52dc1311414cd88468542159d215adce443717b087e65d73d3f60859e5727c75");
     assert.equal(migrationChecksum(DATABASE_MIGRATIONS[2]), "161aa27dec915827c0ab6d46bc768ca2734c2efdf4bc45ae2fa1b2f4b564fef8");
     const result = runDatabaseMigrations(db);
-    assert.deepEqual(result.applied, ["0004", "0005"]);
+    assert.deepEqual(result.applied, ["0004", "0005", "0006"]);
     const event = db.prepare("SELECT to_state, reason_code FROM generation_job_events WHERE job_id = 'job_intent_legacy'").get() as { to_state: string; reason_code: string };
     assert.deepEqual({ ...event }, { to_state: "polling", reason_code: "MIGRATION_BACKFILL" });
     assertSchemaCurrent(db);

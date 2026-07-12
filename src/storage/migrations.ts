@@ -237,6 +237,37 @@ const ARTIFACT_BLOBS_SQL = `
     END;
 `;
 
+const MEDIA_ACTIVATION_JOURNAL_SQL = `
+  CREATE TABLE IF NOT EXISTS media_activation_journal (
+    activation_id TEXT PRIMARY KEY,
+    artifact_id TEXT NOT NULL,
+    state TEXT NOT NULL,
+    artifact_type TEXT NOT NULL,
+    role TEXT NOT NULL,
+    expected_sha256 TEXT NOT NULL,
+    expected_size_bytes INTEGER NOT NULL,
+    detected_mime TEXT NOT NULL,
+    staging_path TEXT NOT NULL,
+    pending_path TEXT NOT NULL,
+    final_path TEXT NOT NULL,
+    artifact_json TEXT NOT NULL,
+    error_code TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (state IN ('staged','file_placed','committed','failed')),
+    CHECK (artifact_type IN ('image','video')),
+    CHECK (role IN ('storyboard_image','generated_clip','final_video')),
+    CHECK (expected_size_bytes > 0),
+    CHECK (length(expected_sha256) = 64),
+    CHECK (json_valid(artifact_json) = 1)
+  );
+  CREATE INDEX IF NOT EXISTS idx_media_activation_journal_state
+    ON media_activation_journal(state, updated_at, activation_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_media_activation_journal_active_artifact
+    ON media_activation_journal(artifact_id)
+    WHERE state IN ('staged','file_placed');
+`;
+
 interface Migration {
   id: string;
   name: string;
@@ -394,6 +425,12 @@ export const DATABASE_MIGRATIONS: readonly Migration[] = [
     name: "immutable_media_blobs",
     canonical: `${ARTIFACT_BLOBS_SQL}\nBACKFILL verified_local_bytes_v1\nPRECONDITION artifact_structured_drift_v1\nSCHEMA ${WORKBENCH_V2_SCHEMA_VERSION}`,
     apply: applyArtifactBlobMigration
+  },
+  {
+    id: "0006",
+    name: "media_activation_journal",
+    canonical: `${MEDIA_ACTIVATION_JOURNAL_SQL}\nRECOVERY deterministic_file_activation_v1\nSCHEMA ${WORKBENCH_V2_SCHEMA_VERSION}`,
+    apply: (db) => db.exec(MEDIA_ACTIVATION_JOURNAL_SQL)
   }
 ];
 
@@ -540,6 +577,7 @@ function expectedSchemaDefinitions(includeJobs: boolean, expectedColumns: Record
     if (includeJobs) {
       reference.exec(`${GENERATION_JOBS_SQL}\n${GENERATION_JOBS_STABILIZATION_SQL}`);
       applyArtifactBlobMigration(reference);
+      reference.exec(MEDIA_ACTIVATION_JOURNAL_SQL);
     }
     const columns = new Map<string, Map<string, string>>();
     const checks = new Map<string, string[]>();
@@ -573,7 +611,8 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     generation_jobs: ["job_id", "intent_id", "state", "lease_owner", "lease_token", "lease_expires_at", "next_attempt_at", "attempt_count", "reconciliation_reason", "created_at", "updated_at"],
     generation_job_events: ["event_id", "job_id", "from_state", "to_state", "reason_code", "data_json", "created_at"],
     media_blobs: ["blob_id", "sha256", "size_bytes", "detected_mime", "storage_uri", "integrity_state", "provenance_json", "created_at"],
-    media_artifact_blobs: ["artifact_id", "blob_id", "created_at"]
+    media_artifact_blobs: ["artifact_id", "blob_id", "created_at"],
+    media_activation_journal: ["activation_id", "artifact_id", "state", "artifact_type", "role", "expected_sha256", "expected_size_bytes", "detected_mime", "staging_path", "pending_path", "final_path", "artifact_json", "error_code", "created_at", "updated_at"]
   } : V24_EXPECTED_COLUMNS;
   const expectedIndexes = includeJobs ? [
     ...V24_EXPECTED_INDEXES,
@@ -581,7 +620,9 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     "idx_generation_job_events_job",
     "idx_media_provider_task_unique",
     "idx_media_blobs_verified_sha256",
-    "idx_media_artifact_blobs_blob"
+    "idx_media_artifact_blobs_blob",
+    "idx_media_activation_journal_state",
+    "idx_media_activation_journal_active_artifact"
   ] : [...V24_EXPECTED_INDEXES];
   const expectedTriggers = includeJobs
     ? [

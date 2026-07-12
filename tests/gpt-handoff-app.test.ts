@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
@@ -136,12 +136,12 @@ test("M1.5 prevalidates all shots before registering any media artifact", () => 
     const runId = randomUUID().slice(0, 8);
     const validImport = copyTestImport(runId, 1);
     const invalidImport = `gpt_handoff_test_${runId}_bad.png`;
+    const projectTitle = `M1.5 Prevalidation Test ${runId}`;
     writeFileSync(join(paths.importsRoot, invalidImport), "not an image", "utf8");
-    const mediaFileCountBefore = readdirSync(paths.imageArtifactsRoot).length;
 
     const result = freezeGptHandoffStoryboardPackage(
       {
-        project_title: "M1.5 Prevalidation Test",
+        project_title: projectTitle,
         approved_by_user: true,
         write_report: false,
         shots: [
@@ -168,7 +168,8 @@ test("M1.5 prevalidates all shots before registering any media artifact", () => 
     if (result.ok) return;
     assert.equal(result.error.code, "IMAGE_FILE_INVALID");
     assert.equal(result.report.imported_artifacts.length, 0);
-    assert.equal(readdirSync(paths.imageArtifactsRoot).length, mediaFileCountBefore);
+    const createdProject = db.prepare("SELECT project_id FROM projects WHERE json_extract(data_json, '$.title') = ?").get(projectTitle);
+    assert.equal(createdProject, undefined);
   } finally {
     db.close();
   }

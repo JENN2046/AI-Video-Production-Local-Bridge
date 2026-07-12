@@ -10,6 +10,11 @@ export interface M0Paths {
   imageArtifactsRoot: string;
   videoArtifactsRoot: string;
   finalArtifactsRoot: string;
+  mediaActivationRoot: string;
+  mediaActivationStagingRoot: string;
+  mediaActivationPendingRoot: string;
+  mediaActivationQuarantineRoot: string;
+  mediaActivationJournalRoot: string;
   reportsRoot: string;
 }
 
@@ -32,6 +37,11 @@ export function getM0Paths(workspaceRoot = process.cwd()): M0Paths {
     imageArtifactsRoot: join(artifactsRoot, "images"),
     videoArtifactsRoot: join(artifactsRoot, "videos"),
     finalArtifactsRoot: join(artifactsRoot, "final"),
+    mediaActivationRoot: join(mediaRoot, ".activation"),
+    mediaActivationStagingRoot: join(mediaRoot, ".activation", "staging"),
+    mediaActivationPendingRoot: join(mediaRoot, ".activation", "pending"),
+    mediaActivationQuarantineRoot: join(mediaRoot, ".activation", "quarantine"),
+    mediaActivationJournalRoot: join(mediaRoot, ".activation", "journal"),
     reportsRoot: join(dataRoot, "reports")
   };
 }
@@ -62,5 +72,9 @@ export function ensureM0Directories(m0Paths = paths): void {
   ensureDir(m0Paths.imageArtifactsRoot);
   ensureDir(m0Paths.videoArtifactsRoot);
   ensureDir(m0Paths.finalArtifactsRoot);
+  ensureDir(m0Paths.mediaActivationStagingRoot);
+  ensureDir(m0Paths.mediaActivationPendingRoot);
+  ensureDir(m0Paths.mediaActivationQuarantineRoot);
+  ensureDir(m0Paths.mediaActivationJournalRoot);
   ensureDir(m0Paths.reportsRoot);
 }

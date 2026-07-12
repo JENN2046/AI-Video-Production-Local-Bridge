@@ -421,6 +421,11 @@ function runningHubUploadFacts(artifact: MediaArtifact):
       error: providerError("PROVIDER_UNSUPPORTED_INPUT", error instanceof Error ? error.message : "RunningHub upload image size is not readable.")
     };
   }
+  if ((artifact.metadata.sha256 && artifact.metadata.sha256 !== validation.sha256)
+    || (artifact.source.sha256 && artifact.source.sha256 !== validation.sha256)
+    || (artifact.storage.mime_type && artifact.storage.mime_type !== validation.detected_mime)) {
+    return { ok: false, error: providerError("PROVIDER_INPUT_INTEGRITY_DRIFT", "RunningHub upload bytes differ from the registered Artifact facts.") };
+  }
 
   return {
     ok: true,

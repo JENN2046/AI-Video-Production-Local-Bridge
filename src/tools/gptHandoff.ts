@@ -6,7 +6,7 @@ import { ensureM0Directories, paths } from "../paths.js";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { validateImageFile, type ImageValidationResult } from "./imageValidity.js";
 import { importG0AppReadyStoryboardPackage, validateG0StoryboardPackage, type G0StoryboardPackageInput } from "./g0Pregen.js";
-import { registerMediaArtifact, type MediaArtifact } from "./mediaArtifacts.js";
+import { cleanupCommittedMediaActivationMarkers, discardMediaActivationMarkers, registerMediaArtifact, type MediaArtifact } from "./mediaArtifacts.js";
 import { createProject, getProject, type Project } from "./projects.js";
 import { classifyStoryboardImageImport, isNineSixteenDimensions, STORYBOARD_IMAGE_EXTENSIONS } from "./importClassifier.js";
 
@@ -363,6 +363,7 @@ export function freezeGptHandoffStoryboardPackage(input: FreezeGptHandoffInput, 
       db.exec("ROLLBACK");
       transactionOpen = false;
     }
+    discardMediaActivationMarkers(report.imported_artifacts.map((artifact) => artifact.artifact_id));
     cleanupImportedArtifactFiles(report);
   };
 
@@ -505,6 +506,7 @@ export function freezeGptHandoffStoryboardPackage(input: FreezeGptHandoffInput, 
   }
 
   if (!successReport) return block(activeReport, "HANDOFF_FREEZE_FAILED", "Unexpected handoff freeze failure.", writeReport);
+  cleanupCommittedMediaActivationMarkers(db, successReport.imported_artifacts.map((artifact) => artifact.artifact_id));
   if (writeReport) writeFreezeReport(successReport);
   return { ok: true, report: successReport };
 }
