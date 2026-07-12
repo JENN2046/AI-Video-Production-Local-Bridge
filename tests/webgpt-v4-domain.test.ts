@@ -21,6 +21,7 @@ import {
 } from "../src/webgpt-v4/domain.js";
 import { migrateLegacyWebGptV4History } from "../src/webgpt-v4/migration.js";
 import { actorFromSubject } from "../src/webgpt-v4/types.js";
+import { buildProviderCapabilityKey, buildProviderPriceCacheKey, RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY } from "../src/tools/providerCapabilities.js";
 
 interface TestContext {
   root: string;
@@ -367,11 +368,32 @@ test("WebGPT generation intent requires local cache and cannot bypass official h
     if (!blocked.ok) assert.equal(blocked.error.code, "GENERATION_PREP_BLOCKED");
 
     const now = new Date();
-    context.db.prepare(`INSERT INTO webgpt_provider_price_cache (provider, model, duration_seconds, resolution, estimated_cost_value, currency, source, fetched_at, expires_at) VALUES ('runninghub', 'runninghub_kling_3_0_image_to_video', 6, '720p', 12, 'RH_COINS', 'test', ?, ?)`)
-      .run(now.toISOString(), new Date(now.getTime() + 60_000).toISOString());
+    const capability = buildProviderCapabilityKey({
+      provider: "runninghub",
+      model: RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY.model,
+      duration_seconds: context.productionShot.duration_seconds,
+      resolution: context.production.video_spec.resolution,
+      aspect_ratio: context.production.video_spec.aspect_ratio
+    });
+    assert.equal(capability.ok, true);
+    if (!capability.ok) return;
+    const priceKey = buildProviderPriceCacheKey(capability.key, capability.capability);
+    context.db.prepare(`INSERT INTO webgpt_provider_price_cache (provider, model, duration_seconds, resolution, estimated_cost_value, currency, source, fetched_at, expires_at) VALUES ('runninghub', 'stale-model-key', 6, '480p', 1, 'RH_COINS', ?, ?, ?)`)
+      .run(priceKey.source, now.toISOString(), new Date(now.getTime() + 60_000).toISOString());
+    const staleKey = prepareProductionGenerationIntent({ project_id: context.production.project_id, shot_id: context.productionShot.shot_id, account_label: "personal", budget_limit_value: 100 }, { actor, idempotency_key: "intent-stale-key" }, context.db);
+    assert.equal(staleKey.ok, false);
+    if (!staleKey.ok) assert.equal(staleKey.error.code, "GENERATION_PREP_BLOCKED");
+    context.db.prepare(`INSERT INTO webgpt_provider_price_cache (provider, model, duration_seconds, resolution, estimated_cost_value, currency, source, fetched_at, expires_at) VALUES (?, ?, ?, ?, 12, 'RH_COINS', 'legacy-capability-source', ?, ?)`)
+      .run(priceKey.provider, priceKey.model, priceKey.duration_seconds, priceKey.resolution, now.toISOString(), new Date(now.getTime() + 60_000).toISOString());
+    const staleSource = prepareProductionGenerationIntent({ project_id: context.production.project_id, shot_id: context.productionShot.shot_id, account_label: "personal", budget_limit_value: 100 }, { actor, idempotency_key: "intent-stale-source" }, context.db);
+    assert.equal(staleSource.ok, false);
+    if (!staleSource.ok) assert.equal(staleSource.error.code, "GENERATION_PREP_BLOCKED");
+    context.db.prepare("UPDATE webgpt_provider_price_cache SET source = ? WHERE provider = ? AND model = ? AND duration_seconds = ? AND resolution = ?")
+      .run(priceKey.source, priceKey.provider, priceKey.model, priceKey.duration_seconds, priceKey.resolution);
     const prepared = prepareProductionGenerationIntent({ project_id: context.production.project_id, shot_id: context.productionShot.shot_id, account_label: "personal", budget_limit_value: 100 }, { actor, idempotency_key: "intent-ready" }, context.db);
     assert.equal(prepared.ok, true);
     if (!prepared.ok) return;
+    assert.equal(prepared.data.model, "rhart-video-g/image-to-video");
     const confirmed = confirmWorkbenchGeneration({ intent_id: String(prepared.data.intent_id), budget_limit_value: 100, cost_confirmed: true, human_confirmation: true }, context.db);
     assert.equal(confirmed.ok, false);
     if (!confirmed.ok) assert.equal(confirmed.error.code, "OFFICIAL_PREFLIGHT_REQUIRED");

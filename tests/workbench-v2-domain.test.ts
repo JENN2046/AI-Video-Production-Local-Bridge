@@ -137,9 +137,13 @@ test("generation preflight enforces official estimate, balance gate, budget and 
       M1_REAL_PROVIDER_COST_ACK: "true",
       RUNNINGHUB_API_KEY: "synthetic-test-key"
     } as NodeJS.ProcessEnv;
-    const fetchImpl: typeof fetch = async (input) => {
+    const priceBodies: Array<Record<string, unknown>> = [];
+    const fetchImpl: typeof fetch = async (input, init) => {
       const url = String(input);
-      if (url.includes("price-preview")) return new Response(JSON.stringify({ errorCode: "", errorMessage: "", estimatedPrice: 0.08, currency: "CNY" }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url.includes("price-preview")) {
+        priceBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response(JSON.stringify({ errorCode: "", errorMessage: "", estimatedPrice: 0.08, currency: "CNY" }), { status: 200, headers: { "content-type": "application/json" } });
+      }
       if (url.includes("accountStatus")) return new Response(JSON.stringify({ code: 0, data: { remainCoins: "99", remainMoney: "10", currency: "CNY" } }), { status: 200, headers: { "content-type": "application/json" } });
       throw new Error(`unexpected URL ${url}`);
     };
@@ -155,6 +159,12 @@ test("generation preflight enforces official estimate, balance gate, budget and 
     if (!first.ok || !second.ok) return;
     assert.equal(first.data.intent.estimated_cost_value, 0.08);
     assert.equal(first.data.intent.currency, "CNY");
+    assert.equal(first.data.intent.model, "rhart-video-g/image-to-video");
+    assert.equal(first.data.intent.resolution, "480p");
+    assert.equal(first.data.intent.input_snapshot.capability_key, "provider-capabilities-v1|runninghub.image_to_video.v1|runninghub|rhart-video-g/image-to-video|6|480p");
+    assert.equal(priceBodies.every((body) => body.duration === 6 && body.resolution === "480p"), true);
+    const priceKey = db.prepare("SELECT provider, model, duration_seconds, resolution FROM webgpt_provider_price_cache WHERE model = ?").get(first.data.intent.model) as { provider: string; model: string; duration_seconds: number; resolution: string };
+    assert.deepEqual({ ...priceKey }, { provider: "runninghub", model: first.data.intent.model, duration_seconds: first.data.intent.duration_seconds, resolution: first.data.intent.resolution });
     const confirmed = confirmWorkbenchGeneration({ intent_id: first.data.intent.intent_id, budget_limit_value: 1, cost_confirmed: true, human_confirmation: true }, db);
     assert.equal(confirmed.ok, true);
     if (!confirmed.ok) return;
@@ -249,7 +259,7 @@ test("provider task persistence failure enters manual reconciliation without los
       WHEN NEW.to_state = 'polling' BEGIN SELECT RAISE(ABORT, 'INJECTED_POLLING_EVENT_FAILURE'); END`);
     db.close();
     const adapter = {
-      provider_name: "runninghub", model_name: "model",
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
       submitGeneration: async () => ({ ok: true as const, provider_job_id: "task-persisted-after-fault", provider_status: "PENDING", sanitized_request: {} }),
       pollStatus: async () => { throw new Error("poll must not run after persistence fault"); },
       fetchOutput: async () => { throw new Error("output must not run"); }
@@ -260,6 +270,33 @@ test("provider task persistence failure enters manual reconciliation without los
     const job = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?").get(prepared.job_id) as { state: string; reconciliation_reason: string };
     assert.deepEqual({ ...intent }, { status: "running", provider_task_id: "task-persisted-after-fault" });
     assert.deepEqual({ ...job }, { state: "manual_reconciliation", reconciliation_reason: "PROVIDER_TASK_PERSISTENCE_UNKNOWN" });
+    checked.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("worker rejects an injected adapter outside the confirmed capability before submit", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-capability-mismatch-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Capability mismatch");
+    let submitCalls = 0;
+    const adapter = {
+      provider_name: "runninghub",
+      model_name: "stale-model",
+      submitGeneration: async () => { submitCalls += 1; throw new Error("submit must not run"); },
+      pollStatus: async () => { throw new Error("poll must not run"); },
+      fetchOutput: async () => { throw new Error("output must not run"); }
+    } as unknown as VideoProviderAdapter;
+    await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: true, dependencies: { sqlite_path: sqlitePath, env: prepared.env, adapter_factory: () => adapter } });
+    const checked = openM0Database(sqlitePath);
+    const intent = checked.prepare("SELECT status, sanitized_error_json FROM generation_intents WHERE intent_id = ?").get(prepared.intent_id) as { status: string; sanitized_error_json: string };
+    const job = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?").get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    assert.equal(submitCalls, 0);
+    assert.equal(intent.status, "failed");
+    assert.equal((JSON.parse(intent.sanitized_error_json) as { code: string }).code, "PROVIDER_CAPABILITY_CONTRACT_MISMATCH");
+    assert.deepEqual({ ...job }, { state: "failed", reconciliation_reason: "PROVIDER_CAPABILITY_CONTRACT_MISMATCH" });
     checked.close();
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -318,7 +355,7 @@ test("each worker claim performs one provider step and defers a still-running ta
   try {
     const prepared = await prepareConfirmedGeneration(sqlitePath, "Polling timeout");
     const adapter = {
-      provider_name: "runninghub", model_name: "model",
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
       submitGeneration: async () => ({ ok: true as const, provider_job_id: "task-still-running", provider_status: "PENDING", sanitized_request: {} }),
       pollStatus: async () => ({ ok: true as const, status: "running" as const, provider_status: "RUNNING" }),
       fetchOutput: async () => { throw new Error("output must not run"); }
@@ -390,7 +427,7 @@ test("startup recovery resumes a confirmed queued job before any provider submit
     const prepared = await prepareConfirmedGeneration(sqlitePath, "Resume queued generation");
     let submitCalls = 0;
     const adapter = {
-      provider_name: "runninghub", model_name: "model",
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
       submitGeneration: async () => {
         submitCalls += 1;
         return { ok: true as const, provider_job_id: "task-resumed-queued", provider_status: "PENDING", sanitized_request: {} };

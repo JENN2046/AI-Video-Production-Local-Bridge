@@ -1,5 +1,6 @@
 import { z } from "zod/v4";
 
+import { RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY } from "../tools/providerCapabilities.js";
 import { fail, type WebGptV4Result } from "./types.js";
 
 export type WebGptV4Detail = "compact" | "full";
@@ -355,7 +356,7 @@ const proposalDraftSchema = z.object({
 }).strict();
 const generationIntentSchema = z.object({
   intent_id: z.string(), project_id: z.string(), shot_id: z.string(), provider: z.literal("runninghub"), account_label: z.enum(["personal", "team"]),
-  model: z.literal("runninghub_kling_3_0_image_to_video"), input_artifact_id: z.string(), estimated_cost_value: z.number(), budget_limit_value: z.number(),
+  model: z.literal(RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY.model), input_artifact_id: z.string(), estimated_cost_value: z.number(), budget_limit_value: z.number(),
   currency: z.string(), confirmed: z.literal(false), status: z.literal("prepared"), expires_at: z.string(), requires_human_preflight: z.literal(true),
   provider_call_attempted: z.literal(false)
 }).strict();

@@ -5,6 +5,7 @@ import { ArtifactStructuredDriftError, type MediaArtifact } from "../tools/media
 import { listProjectShots, type Project, type Shot } from "../tools/projects.js";
 import { getWorkbenchProjectSummary, getWorkbenchProjectWorkspace } from "../tools/workbenchV2.js";
 import { appendWorkbenchInboxEvent, getWorkbenchDraftRecord, saveWorkbenchDraftRecord, type WorkbenchDraftRecord } from "../tools/workbenchInboxStore.js";
+import { buildProviderCapabilityKey, buildProviderPriceCacheKey, providerCapabilityErrorMessage, RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY } from "../tools/providerCapabilities.js";
 import { parseProductionProposalPayload } from "./proposals.js";
 import {
   errorBody,
@@ -701,12 +702,20 @@ export function prepareProductionGenerationIntent(
     const artifact = requireArtifact(db, input.project_id, shot.storyboard_image_artifact_id, true);
     if (artifact.role !== "storyboard_image" || artifact.artifact_type !== "image") throw new WebGptV4Error("ARTIFACT_NOT_FOUND", "An active storyboard image is required.");
     if (!Number.isFinite(input.budget_limit_value) || input.budget_limit_value <= 0) throw new WebGptV4Error("BUDGET_LIMIT_REQUIRED", "A positive budget limit is required.", "budget_limit_value");
-    const model = "runninghub_kling_3_0_image_to_video";
-    const resolution = project.video_spec.resolution.includes("x") ? "720p" : project.video_spec.resolution;
+    const capability = buildProviderCapabilityKey({
+      provider: "runninghub",
+      model: RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY.model,
+      duration_seconds: shot.duration_seconds,
+      resolution: project.video_spec.resolution,
+      aspect_ratio: project.video_spec.aspect_ratio
+    });
+    if (!capability.ok) throw new WebGptV4Error(capability.code, providerCapabilityErrorMessage(capability), capability.field);
+    const { model, resolution, duration_seconds: durationSeconds } = capability.key;
+    const priceCacheKey = buildProviderPriceCacheKey(capability.key, capability.capability);
     const cache = db.prepare(`
       SELECT * FROM webgpt_provider_price_cache
-      WHERE provider = 'runninghub' AND model = ? AND duration_seconds = ? AND resolution = ? AND expires_at > ?
-    `).get(model, shot.duration_seconds, resolution, new Date().toISOString()) as Record<string, unknown> | undefined;
+      WHERE provider = ? AND model = ? AND duration_seconds = ? AND resolution = ? AND source = ? AND expires_at > ?
+    `).get(priceCacheKey.provider, priceCacheKey.model, priceCacheKey.duration_seconds, priceCacheKey.resolution, priceCacheKey.source, new Date().toISOString()) as Record<string, unknown> | undefined;
     if (!cache) throw new WebGptV4Error("GENERATION_PREP_BLOCKED", "No current human-verified local price cache is available. Run preflight in the human workbench first.");
     const estimated = Number(cache.estimated_cost_value);
     if (estimated > input.budget_limit_value) throw new WebGptV4Error("BUDGET_LIMIT_EXCEEDED", "Cached estimate exceeds the proposed budget limit.", "budget_limit_value");
@@ -720,7 +729,8 @@ export function prepareProductionGenerationIntent(
       price_source: "local_verified_cache",
       balance_gate: "not_checked",
       requires_human_preflight: true,
-      prepared_by: "webgpt_v4"
+      prepared_by: "webgpt_v4",
+      capability_key: capability.key.serialized
     };
     db.prepare(`
       INSERT INTO generation_intents (
@@ -728,7 +738,7 @@ export function prepareProductionGenerationIntent(
         duration_seconds, resolution, estimated_cost_value, budget_limit_value, currency,
         confirmed, expires_at, status, data_json, created_at, updated_at
       ) VALUES (?, ?, ?, 'runninghub', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'prepared', ?, ?, ?)
-    `).run(intentId, input.project_id, shot.shot_id, input.account_label, model, artifact.artifact_id, shot.duration_seconds, resolution, estimated, input.budget_limit_value, String(cache.currency), expiresAt, JSON.stringify({ input_snapshot: snapshot }), now.toISOString(), now.toISOString());
+    `).run(intentId, input.project_id, shot.shot_id, input.account_label, model, artifact.artifact_id, durationSeconds, resolution, estimated, input.budget_limit_value, String(cache.currency), expiresAt, JSON.stringify({ input_snapshot: snapshot }), now.toISOString(), now.toISOString());
     const data = {
       intent_id: intentId,
       project_id: input.project_id,

@@ -4,6 +4,12 @@ import { randomUUID } from "node:crypto";
 import type { MediaArtifact } from "./mediaArtifacts.js";
 import { validateImageBuffer, validateImageFile } from "./imageValidity.js";
 import {
+  projectProviderRequest,
+  providerCapabilityErrorMessage,
+  RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY,
+  RUNWAY_IMAGE_TO_VIDEO_CAPABILITY
+} from "./providerCapabilities.js";
+import {
   providerError,
   redactSecrets,
   type SanitizedProviderErrorSummary,
@@ -15,12 +21,12 @@ export type ProviderJobStatus = "queued" | "running" | "succeeded" | "failed" | 
 export const RUNWAY_API_VERSION = "2024-11-06";
 export const RUNWAY_IMAGE_TO_VIDEO_ENDPOINT = "/v1/image_to_video";
 export const RUNNINGHUB_API_BASE_URL = "https://www.runninghub.cn";
-export const RUNNINGHUB_MODEL_ROUTE = "rhart-video-g/image-to-video";
+export const RUNNINGHUB_MODEL_ROUTE = RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY.model;
 export const RUNNINGHUB_IMAGE_TO_VIDEO_ENDPOINT = `/openapi/v2/${RUNNINGHUB_MODEL_ROUTE}`;
 export const RUNNINGHUB_QUERY_ENDPOINT = "/openapi/v2/query";
 export const RUNNINGHUB_MEDIA_UPLOAD_ENDPOINT = "/openapi/v2/media/upload/binary";
-export const RUNNINGHUB_DEFAULT_RESOLUTION = "480p";
-export const RUNNINGHUB_MIN_DURATION_SECONDS = 6;
+export const RUNNINGHUB_DEFAULT_RESOLUTION = RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY.default_resolution;
+export const RUNNINGHUB_MIN_DURATION_SECONDS = RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY.duration.min_seconds;
 export const RUNNINGHUB_DOC_EXAMPLE_DURATION_SECONDS = RUNNINGHUB_MIN_DURATION_SECONDS;
 export const RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER = "<RUNNINGHUB_UPLOAD_DOWNLOAD_URL>";
 export const RUNNINGHUB_AUTHORIZATION_HEADER_PLACEHOLDER = "Bearer <RUNNINGHUB_API_KEY>";
@@ -350,19 +356,21 @@ export function mapRunwayAspectRatio(aspectRatio: string): string | null {
 }
 
 export function normalizeRunwayDuration(durationSeconds: number): number | null {
+  const rule = RUNWAY_IMAGE_TO_VIDEO_CAPABILITY.duration;
   if (!Number.isInteger(durationSeconds)) return null;
-  if (durationSeconds < 2 || durationSeconds > 10) return null;
+  if (durationSeconds < rule.min_seconds || durationSeconds > rule.max_seconds) return null;
   return durationSeconds;
 }
 
 export function mapRunningHubAspectRatio(aspectRatio: string): string | null {
-  if (["9:16", "16:9", "2:3", "3:2", "1:1"].includes(aspectRatio)) return aspectRatio;
+  if (RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY.allowed_aspect_ratios.includes(aspectRatio)) return aspectRatio;
   return null;
 }
 
 export function normalizeRunningHubDurationForDryRun(durationSeconds: number): number | null {
+  const rule = RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY.duration;
   if (!Number.isInteger(durationSeconds)) return null;
-  if (durationSeconds < RUNNINGHUB_MIN_DURATION_SECONDS) return null;
+  if (durationSeconds < rule.min_seconds || durationSeconds > rule.max_seconds || (durationSeconds - rule.min_seconds) % rule.step_seconds !== 0) return null;
   return durationSeconds;
 }
 
@@ -467,21 +475,22 @@ export function buildRunningHubImageToVideoSubmitRequest(input: {
   const artifactGate = ensureRunningHubStoryboardImageArtifact(input.generation_input.storyboard_artifact);
   if (!artifactGate.ok) return { ok: false, error: artifactGate.error };
 
-  const aspectRatio = mapRunningHubAspectRatio(input.generation_input.aspect_ratio);
-  if (!aspectRatio) {
-    return { ok: false, error: providerError("PROVIDER_UNSUPPORTED_INPUT", `Unsupported RunningHub aspectRatio: ${input.generation_input.aspect_ratio}.`) };
-  }
-
-  const duration = normalizeRunningHubDurationForDryRun(input.generation_input.duration_seconds);
-  if (duration === null) {
+  const contract = projectProviderRequest({
+    provider: "runninghub",
+    model: RUNNINGHUB_MODEL_ROUTE,
+    duration_seconds: input.generation_input.duration_seconds,
+    resolution: input.generation_input.resolution,
+    aspect_ratio: input.generation_input.aspect_ratio
+  });
+  if (!contract.ok) {
     return {
       ok: false,
-      error: providerError(
-        "PROVIDER_UNSUPPORTED_INPUT",
-        `Unsupported RunningHub duration: ${input.generation_input.duration_seconds}. Minimum supported duration is ${RUNNINGHUB_MIN_DURATION_SECONDS}.`
-      )
+      error: providerError("PROVIDER_UNSUPPORTED_INPUT", providerCapabilityErrorMessage(contract))
     };
   }
+  const aspectRatio = contract.request.aspect_ratio;
+  const duration = contract.request.duration_seconds;
+  const resolution = contract.request.resolution;
 
   const uploadedDownloadUrl = input.uploaded_download_url ?? RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER;
   if (!uploadedDownloadUrl.trim()) {
@@ -499,7 +508,7 @@ export function buildRunningHubImageToVideoSubmitRequest(input: {
     image_urls_count: 1,
     image_url_values_included: false,
     imageUrls: [RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER],
-    resolution: input.generation_input.resolution || RUNNINGHUB_DEFAULT_RESOLUTION,
+    resolution,
     duration,
     raw_provider_payload_included: false
   };
@@ -516,7 +525,7 @@ export function buildRunningHubImageToVideoSubmitRequest(input: {
       prompt: input.generation_input.video_prompt,
       aspectRatio,
       imageUrls: [uploadedDownloadUrl],
-      resolution: input.generation_input.resolution || RUNNINGHUB_DEFAULT_RESOLUTION,
+      resolution,
       duration
     },
     summary
@@ -749,18 +758,21 @@ export function buildRunningHubImageToVideoDryRunPlan(input: ProviderGenerationI
   const artifactGate = ensureRunningHubStoryboardImageArtifact(input.storyboard_artifact);
   if (!artifactGate.ok) return { ok: false, error: artifactGate.error };
 
-  const aspectRatio = mapRunningHubAspectRatio(input.aspect_ratio);
-  if (!aspectRatio) {
-    return { ok: false, error: providerError("PROVIDER_UNSUPPORTED_INPUT", `Unsupported RunningHub aspectRatio: ${input.aspect_ratio}.`) };
-  }
-
-  const duration = normalizeRunningHubDurationForDryRun(input.duration_seconds);
-  if (duration === null) {
+  const contract = projectProviderRequest({
+    provider: "runninghub",
+    model: RUNNINGHUB_MODEL_ROUTE,
+    duration_seconds: input.duration_seconds,
+    resolution: input.resolution,
+    aspect_ratio: input.aspect_ratio
+  });
+  if (!contract.ok) {
     return {
       ok: false,
-      error: providerError("PROVIDER_UNSUPPORTED_INPUT", `Unsupported RunningHub duration: ${input.duration_seconds}. Minimum supported duration is ${RUNNINGHUB_MIN_DURATION_SECONDS}.`)
+      error: providerError("PROVIDER_UNSUPPORTED_INPUT", providerCapabilityErrorMessage(contract))
     };
   }
+  const aspectRatio = contract.request.aspect_ratio;
+  const duration = contract.request.duration_seconds;
 
   return {
     ok: true,
@@ -788,7 +800,7 @@ export function buildRunningHubImageToVideoDryRunPlan(input: ProviderGenerationI
         negative_prompt_text_length: input.negative_prompt.length,
         aspectRatio,
         imageUrls: [RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER],
-        resolution: input.resolution || RUNNINGHUB_DEFAULT_RESOLUTION,
+        resolution: contract.request.resolution,
         duration
       },
       image_reference: {
@@ -882,7 +894,7 @@ function dataUriFromImageArtifact(artifact: MediaArtifact): { ok: true; data_uri
   };
 }
 
-export function buildRunwayImageToVideoRequest(input: ProviderGenerationInput, modelName = "gen4.5"): RunwayImageToVideoRequestBuildResult {
+export function buildRunwayImageToVideoRequest(input: ProviderGenerationInput, modelName = RUNWAY_IMAGE_TO_VIDEO_CAPABILITY.model): RunwayImageToVideoRequestBuildResult {
   const ratio = mapRunwayAspectRatio(input.aspect_ratio);
   if (!ratio) return { ok: false, error: providerError("PROVIDER_UNSUPPORTED_INPUT", `Unsupported Runway aspect ratio: ${input.aspect_ratio}.`) };
 
@@ -1009,7 +1021,7 @@ function firstOutputUrl(payload: Record<string, unknown>): string {
 
 export class RunwayVideoProviderAdapter implements VideoProviderAdapter {
   provider_name = "runway" as const;
-  model_name = "gen4.5";
+  model_name = RUNWAY_IMAGE_TO_VIDEO_CAPABILITY.model;
   private readonly apiBase: string;
   private readonly credential: string;
   private readonly fetchImpl: typeof fetch;

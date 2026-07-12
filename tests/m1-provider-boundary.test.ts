@@ -240,7 +240,7 @@ test("M1 RunningHub upload-first request builders stay offline and sanitized", (
   assert.equal(durationTooShort.ok, false);
   if (durationTooShort.ok) throw new Error("duration_seconds=3 should fail before RunningHub submit request construction.");
   assert.equal(durationTooShort.error.code, "PROVIDER_UNSUPPORTED_INPUT");
-  assert.equal(durationTooShort.error.message.includes("Minimum supported duration is 6"), true);
+  assert.equal(durationTooShort.error.message.includes("PROVIDER_CAPABILITY_DURATION_UNSUPPORTED"), true);
 
   const query = buildRunningHubQueryRequest("runninghub_task_synthetic");
   assert.equal(query.ok, true);

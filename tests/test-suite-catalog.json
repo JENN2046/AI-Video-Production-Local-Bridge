@@ -35,6 +35,7 @@
         "tests/m0-g-provider-boundary.test.ts",
         "tests/m1-0-external-image-transfer.test.ts",
         "tests/m1-provider-boundary.test.ts",
+        "tests/provider-capability-contract.test.ts",
         "tests/provider-env-secret-safety.test.ts"
       ]
     },

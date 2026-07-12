@@ -18,6 +18,7 @@ import {
 } from "./videoProviderAdapters.js";
 import { validateImageFile } from "./imageValidity.js";
 import { redactSecrets } from "./provider.js";
+import { RUNWAY_IMAGE_TO_VIDEO_CAPABILITY } from "./providerCapabilities.js";
 
 export const RUNWAY_CANARY_COMMAND = "npm run build:server && node dist/scripts/runway-canary.js";
 export const RUNWAY_CANARY_LIVE_AUTHORIZATION_PHRASE = "I_AUTHORIZE_SINGLE_SUBMIT_RUNWAY_CANARY";
@@ -45,7 +46,7 @@ export interface RunwayCanaryReport {
   secret_values_exposed: false;
   provider_boundary: {
     provider: "runway";
-    model: "gen4.5";
+    model: typeof RUNWAY_IMAGE_TO_VIDEO_CAPABILITY.model;
     max_submit_calls: 1;
     duration_seconds: 2;
     input_image: string;
@@ -175,7 +176,7 @@ function baseReport(input: {
     secret_values_exposed: false,
     provider_boundary: {
       provider: "runway",
-      model: "gen4.5",
+      model: RUNWAY_IMAGE_TO_VIDEO_CAPABILITY.model,
       max_submit_calls: 1,
       duration_seconds: 2,
       input_image: selectedPath,
