@@ -39,7 +39,7 @@ Record the Beta 2 snapshot accurately: local capability exists, but its external
 
 Before changing Artifact, Provider, or media behavior, make the existing safety suites part of the required baseline.
 
-- Add a named Provider-boundary test command for `m1-provider-boundary`; add it, `test:memory`, and `test:source-audit` to canonical `npm test`.
+- Add named test commands for `tests/m1-provider-boundary.test.ts` and `tests/provider-env-secret-safety.test.ts`; add both commands, `test:memory`, and `test:source-audit` to canonical `npm test`.
 - Add separate named Windows CI steps for those suites, retaining the existing named steps for failure diagnosis.
 - Add a meta-test that independently fails when any declared safety suite is omitted from canonical `npm test` **or** from Windows CI; presence on one surface never satisfies the other.
 
