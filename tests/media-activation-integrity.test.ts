@@ -136,6 +136,55 @@ test("interrupted file placement is recovered without creating a second Artifact
   }
 });
 
+test("recovery advances a staged journal when the file already reached pending", () => {
+  const db = openM0Database();
+  const artifact = preparedArtifact();
+  try {
+    assert.throws(() => activateLocalMediaArtifact({
+      artifact,
+      source_path: IMAGE_FIXTURE,
+      after_pending_placed: () => { throw new Error("INJECTED_AFTER_PENDING_RENAME"); }
+    }, db), /INJECTED_AFTER_PENDING_RENAME/);
+    const row = db.prepare("SELECT activation_id, state, pending_path FROM media_activation_journal WHERE artifact_id = ?").get(artifact.artifact_id) as { activation_id: string; state: string; pending_path: string };
+    assert.equal(row.state, "staged");
+    assert.equal(existsSync(row.pending_path), true);
+
+    const recovered = recoverMediaActivations(db);
+    assert.equal(recovered.failed.some((failure) => failure.activation_id === row.activation_id), false);
+    assert.equal(recovered.committed.includes(row.activation_id), true);
+    const stored = getMediaArtifact(db, artifact.artifact_id);
+    assert.equal(stored ? verifyMediaArtifactBytes(db, stored).ok : false, true);
+  } finally {
+    db.close();
+  }
+});
+
+test("verified Blob provenance preserves a caller-controlled custom media root", () => {
+  const root = mkdtempSync(join(tmpdir(), "media-activation-custom-root-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  const artifact = preparedArtifact();
+  artifact.storage.uri = join(mediaRoot, "artifacts", "images", `${artifact.artifact_id}.png`);
+  artifact.storage.filename = `${artifact.artifact_id}.png`;
+  try {
+    const activated = activateLocalMediaArtifact({ artifact, source_path: IMAGE_FIXTURE, media_root: mediaRoot }, db);
+    assert.equal(activated.ok, true, activated.ok ? undefined : activated.error.code);
+    if (!activated.ok) return;
+    const verified = verifyMediaArtifactBytes(db, activated.artifact);
+    assert.equal(verified.ok, true, verified.ok ? undefined : verified.error.code);
+    if (verified.ok) assert.equal(verified.blob.provenance.media_root, resolve(mediaRoot));
+  } finally {
+    db.close();
+  }
+  try {
+    assert.equal(checkDatabase(sqlitePath).result, "PASS");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("an outer transaction rollback cannot leave an unrecorded active file", () => {
   const db = openM0Database();
   const artifact = preparedArtifact();
