@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
 import test from "node:test";
 
@@ -16,10 +16,7 @@ import {
   validateImageFile
 } from "../src/index.js";
 
-const SAMPLE_PNG = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
-  "base64"
-);
+const SAMPLE_PNG = readFileSync(join(paths.workspaceRoot, "fixtures", "provider-canary", "m1-r0", "shot_001_canary_720x1280.png"));
 
 function writeImportImage(filename: string, bytes = SAMPLE_PNG): string {
   ensureM0Directories();
@@ -52,8 +49,8 @@ test("M1-0 local import real image becomes active artifact usable by Storyboard 
 
     assert.equal(artifact.artifact.status, "active");
     assert.equal(artifact.artifact.storage.mime_type, "image/png");
-    assert.equal(artifact.artifact.metadata.width, 1);
-    assert.equal(artifact.artifact.metadata.height, 1);
+    assert.equal(artifact.artifact.metadata.width, 720);
+    assert.equal(artifact.artifact.metadata.height, 1280);
     assertPathInside(artifact.artifact.storage.uri, paths.imageArtifactsRoot);
     assert.equal(resolve(sourcePath).startsWith(resolve(paths.importsRoot)), true);
     assert.equal(resolve(sourcePath).includes(`${resolve(paths.workspaceRoot)}\\fixtures\\`), false);

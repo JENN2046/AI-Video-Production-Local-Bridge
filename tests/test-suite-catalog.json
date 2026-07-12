@@ -1,0 +1,133 @@
+{
+  "version": 1,
+  "groups": [
+    {
+      "id": "selection-gate",
+      "classification": "mandatory",
+      "npm_script": "test:selection-gate",
+      "ci_step": "Test selection gate",
+      "paths": ["tests/test-selection-gate.test.ts"]
+    },
+    {
+      "id": "foundation-boundaries",
+      "classification": "mandatory",
+      "npm_script": "test:foundation-boundaries",
+      "ci_step": "Foundation and media boundary tests",
+      "paths": [
+        "tests/g0-pregen.test.ts",
+        "tests/gpt-handoff-app.test.ts",
+        "tests/m0-a-skeleton.test.ts",
+        "tests/m0-b-media-artifacts.test.ts",
+        "tests/m0-c-storyboard-package.test.ts",
+        "tests/m0-d-generation.test.ts",
+        "tests/m0-e-review-regeneration.test.ts",
+        "tests/m0-f-assembly.test.ts",
+        "tests/m0-r1-media-validity.test.ts"
+      ]
+    },
+    {
+      "id": "provider-boundaries",
+      "classification": "mandatory",
+      "npm_script": "test:provider-boundaries",
+      "ci_step": "Provider and transfer safety tests",
+      "paths": [
+        "tests/m0-g-provider-boundary.test.ts",
+        "tests/m1-0-external-image-transfer.test.ts",
+        "tests/m1-provider-boundary.test.ts",
+        "tests/provider-env-secret-safety.test.ts"
+      ]
+    },
+    {
+      "id": "database-governance",
+      "classification": "mandatory",
+      "npm_script": "test:db",
+      "ci_step": "Database governance tests",
+      "paths": ["tests/database-governance.test.ts"]
+    },
+    {
+      "id": "workbench-v2",
+      "classification": "mandatory",
+      "npm_script": "test:v2",
+      "ci_step": "Workbench V2 domain tests",
+      "paths": [
+        "tests/workbench-v2-api.test.ts",
+        "tests/workbench-v2-domain.test.ts",
+        "tests/workbench-v2-governance.test.ts",
+        "tests/workbench-v2-inbox.test.ts",
+        "tests/workbench-v2-readiness.test.ts",
+        "tests/workbench-v2-runninghub.test.ts"
+      ]
+    },
+    {
+      "id": "h1-workbench",
+      "classification": "mandatory",
+      "npm_script": "test:h1",
+      "ci_step": "H1 Workbench tests",
+      "paths": ["tests/h1-workbench.test.ts"]
+    },
+    {
+      "id": "webgpt-legacy-boundaries",
+      "classification": "mandatory",
+      "npm_script": "test:webgpt:legacy-boundaries",
+      "ci_step": "WebGPT legacy boundary tests",
+      "paths": [
+        "tests/webgpt-draft-bridge.test.ts",
+        "tests/webgpt-pending-actions.test.ts",
+        "tests/webgpt-production-assistant.test.ts",
+        "tests/webgpt-readonly-bridge.test.ts",
+        "tests/webgpt-review-assistant.test.ts"
+      ]
+    },
+    {
+      "id": "webgpt-v4",
+      "classification": "mandatory",
+      "npm_script": "test:webgpt:v4",
+      "ci_step": "WebGPT V4 integration tests",
+      "paths": [
+        "tests/webgpt-v4-auth.test.ts",
+        "tests/webgpt-v4-context-budget.test.ts",
+        "tests/webgpt-v4-domain.test.ts",
+        "tests/webgpt-v4-eval.test.ts",
+        "tests/webgpt-v4-media.test.ts",
+        "tests/webgpt-v4-metadata.test.ts",
+        "tests/webgpt-v4-profile.test.ts",
+        "tests/webgpt-v4-server.test.ts",
+        "tests/webgpt-v4-telemetry.test.ts",
+        "tests/webgpt-v4-widget.test.ts"
+      ]
+    },
+    {
+      "id": "memory",
+      "classification": "mandatory",
+      "npm_script": "test:memory",
+      "ci_step": "Memory safety tests",
+      "paths": ["tests/memory-saveback.test.ts"]
+    },
+    {
+      "id": "source-audit",
+      "classification": "mandatory",
+      "npm_script": "test:source-audit",
+      "ci_step": "Source audit safety tests",
+      "paths": ["tests/source-audit.test.ts"]
+    },
+    {
+      "id": "legacy-integrity",
+      "classification": "mandatory",
+      "npm_script": "test:legacy",
+      "ci_step": "Legacy archive integrity",
+      "paths": ["tests/legacy-manifest.test.ts"]
+    },
+    {
+      "id": "browser-smoke",
+      "classification": "mandatory",
+      "npm_script": "test:v2:browser",
+      "ci_step": "Run browser smoke tests",
+      "paths": ["tests/browser/workbench-v2.spec.ts"]
+    }
+  ],
+  "required_commands": [
+    { "npm_script": "test:v2:ui", "ci_step": "Workbench V2 UI tests" },
+    { "npm_script": "test:windows-runtime", "ci_step": "Windows managed runtime controls" },
+    { "npm_script": "secret:scan", "ci_step": "Secret scan" }
+  ]
+}
