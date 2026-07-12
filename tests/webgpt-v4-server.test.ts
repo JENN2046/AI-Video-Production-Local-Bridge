@@ -49,7 +49,7 @@ test("official MCP transport advertises the V4 scoped tool contract and hides te
   db.close();
 
   const actor = actorFromSubject("auth0|jenn", WEBGPT_V4_SCOPES);
-  const runtime = await startWebGptV4({ profile: "full", mcp_port: 0, media_port: 0, sqlite_path: sqlitePath, data_root: dataRoot, authenticate: async () => actor, media: { public_origin: "https://media.example.test" } });
+  const runtime = await startWebGptV4({ profile: "full", mcp_port: 0, media_port: 0, sqlite_path: sqlitePath, data_root: dataRoot, widget_domain: "https://widgets.example.test", authenticate: async () => actor, media: { public_origin: "https://media.example.test" } });
   const transport = new StreamableHTTPClientTransport(new URL(runtime.mcp_url), { requestInit: { headers: { Authorization: "Bearer test-token" } } });
   const client = new Client({ name: "webgpt-v4-test", version: "1.0.0" });
   try {
@@ -105,12 +105,23 @@ test("official MCP transport advertises the V4 scoped tool contract and hides te
     assert.equal(Boolean(generationData?.provider_call_attempted), true);
     const resources = await client.listResources();
     assert.equal(resources.resources.some((resource) => resource.uri === WEBGPT_V4_WIDGET_URI), true);
+    const inspectTool = tools.tools.find((tool) => tool.name === "inspect_media");
+    const inspectMeta = inspectTool?._meta as Record<string, unknown>;
+    assert.deepEqual((inspectMeta.ui as { visibility: string[] }).visibility, ["model", "app"]);
+    assert.equal(typeof inspectMeta["openai/toolInvocation/invoking"], "string");
+    assert.equal(typeof inspectMeta["openai/toolInvocation/invoked"], "string");
     const widget = await client.readResource({ uri: WEBGPT_V4_WIDGET_URI });
     const widgetContent = widget.contents[0];
     const widgetHtml = widgetContent && "text" in widgetContent ? widgetContent.text : "";
     assert.equal(widgetHtml.includes("innerHTML"), false);
     assert.equal(widgetHtml.includes("event.source!==window.parent"), true);
     assert.equal(widgetHtml.includes("use-credentials"), true);
+    const widgetMeta = widgetContent?._meta as Record<string, unknown>;
+    assert.equal(typeof widgetMeta["openai/widgetDescription"], "string");
+    const widgetUi = widgetMeta.ui as { domain: string; csp: { connectDomains: string[]; resourceDomains: string[] } };
+    assert.equal(widgetUi.domain, "https://widgets.example.test");
+    assert.deepEqual(widgetUi.csp.connectDomains, []);
+    assert.deepEqual(widgetUi.csp.resourceDomains, ["https://media.example.test"]);
 
     const listed = await client.callTool({ name: "list_production_projects", arguments: {} });
     const content = listed.structuredContent as { ok: boolean; data: { items: Array<{ project: { project_id: string; title: string } }> } };
@@ -257,9 +268,10 @@ test("media server rejects malformed encoded paths without terminating the servi
     assert.equal(health.status, 200);
     const ready = await fetch(`${runtime.media_url}/readyz`);
     assert.equal(ready.status, 503);
-    const readyBody = await ready.json() as { ok: boolean; auth_configured: boolean };
+    const readyBody = await ready.json() as { ok: boolean; auth_configured: boolean; external_release_gate: { widget_domain: boolean } };
     assert.equal(readyBody.ok, false);
     assert.equal(readyBody.auth_configured, false);
+    assert.equal(readyBody.external_release_gate.widget_domain, false);
     const startupDb = openM0Database(join(root, "app.sqlite"));
     try {
       const marker = startupDb.prepare("SELECT COUNT(*) AS count FROM m0_meta WHERE key = 'webgpt_v4_legacy_history_migrated_at'").get() as { count: number };

@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { accessSync, constants } from "node:fs";
+import { join } from "node:path";
 
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
@@ -12,6 +13,7 @@ import { createWebGptV4McpApp } from "./mcpApp.js";
 import { handleMediaGatewayRequest, invalidateMediaGrantsForRestart, mediaAnalysisQueue, resolveFfmpegExecutable, resolveFfprobeExecutable, type MediaRuntimeOptions } from "./media.js";
 import { withToolSecuritySchemes } from "./securityTransport.js";
 import { parseWebGptV4Profile, webGptV4ScopesForProfile, webGptV4ToolNeedsWrite, webGptV4ToolScopesForProfile, type WebGptV4Profile } from "./toolCatalog.js";
+import { createWebGptTelemetrySink, parseWebGptTelemetryMode, parseWebGptWidgetDomain, type WebGptTelemetryMode, type WebGptTelemetrySink } from "./telemetry.js";
 
 export const WEBGPT_V4_HOST = "127.0.0.1";
 export const WEBGPT_V4_MCP_PORT = 2091;
@@ -28,6 +30,9 @@ export interface StartWebGptV4Options {
   authenticate_media?: WebGptV4Authenticator;
   media?: MediaRuntimeOptions;
   max_body_bytes?: number;
+  widget_domain?: string;
+  telemetry_mode?: string;
+  telemetry_sink?: WebGptTelemetrySink;
 }
 
 export interface WebGptV4Runtime {
@@ -38,6 +43,8 @@ export interface WebGptV4Runtime {
   media_url: string | null;
   auth_configured: boolean;
   invalidated_media_grants: number;
+  telemetry_mode: WebGptTelemetryMode;
+  widget_domain: string | null;
   close: () => Promise<void>;
 }
 
@@ -98,6 +105,13 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
   } catch {
     throw new WebGptV4Error("INVALID_WEBGPT_PROFILE", "WEBGPT_V4_PROFILE must be readonly or full.", "WEBGPT_V4_PROFILE");
   }
+  const configuredTelemetryMode = parseWebGptTelemetryMode(options.telemetry_mode);
+  if (options.telemetry_sink && options.telemetry_mode !== undefined && options.telemetry_sink.mode !== configuredTelemetryMode) {
+    throw new WebGptV4Error("INVALID_WEBGPT_TELEMETRY_MODE", "Injected telemetry mode does not match WEBGPT_V4_TELEMETRY_MODE.", "WEBGPT_V4_TELEMETRY_MODE");
+  }
+  const telemetry = options.telemetry_sink ?? createWebGptTelemetrySink(configuredTelemetryMode, join(options.data_root ?? paths.dataRoot, "webgpt", "telemetry"));
+  const telemetryMode = telemetry.mode;
+  const widgetDomain = parseWebGptWidgetDomain(options.widget_domain);
   const authConfig = options.auth_config === undefined ? loadWebGptV4AuthConfig() : options.auth_config;
   const authenticate = options.authenticate ?? (authConfig ? createAuth0Authenticator(authConfig) : unavailableAuthenticator());
   const authenticateMedia = options.authenticate_media ?? (profile === "full" && authConfig
@@ -146,8 +160,15 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
     const checks = profile === "full"
       ? { ...staticChecks, media_queue: queueStatus.active + queueStatus.waiting < queueStatus.capacity }
       : staticChecks;
+    if (telemetryMode === "jsonl") checks.telemetry = telemetry.probe();
     const ok = Object.values(checks).every(Boolean);
-    const result = { status: ok ? 200 : 503, body: { ok, service: "webgpt-v4", profile, checks, provider_calls_allowed: false } };
+    const result = {
+      status: ok ? 200 : 503,
+      body: {
+        ok, service: "webgpt-v4", profile, checks, provider_calls_allowed: false,
+        external_release_gate: { widget_domain: profile === "readonly" || Boolean(widgetDomain) }
+      }
+    };
     return result;
   };
   const trackRequest = (task: Promise<void>): void => {
@@ -194,7 +215,7 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
     }
 
     const db = openM0DatabaseConnection(options.sqlite_path, { readOnly: !mcpRequestNeedsWrite(parsedBody, profile) });
-    const app = createWebGptV4McpApp({ db, actor, profile, auth_config: authConfig, media: options.media });
+    const app = createWebGptV4McpApp({ db, actor, profile, auth_config: authConfig, media: options.media, telemetry, widget_domain: widgetDomain });
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     const securedTransport = withToolSecuritySchemes(transport, webGptV4ToolScopesForProfile(profile));
     try {
@@ -256,7 +277,7 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
         token: url.searchParams.get("grant") ?? "",
         actor_hash: actor.actor_hash,
         db,
-        allowed_origin: process.env.WEBGPT_V4_WIDGET_ORIGIN?.trim(),
+        allowed_origin: widgetDomain ?? undefined,
         options: options.media
       });
     } finally {
@@ -287,6 +308,8 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
     media_url: mediaPort === null ? null : `http://${WEBGPT_V4_HOST}:${mediaPort}`,
     auth_configured: Boolean(authConfig),
     invalidated_media_grants: invalidatedMediaGrants,
+    telemetry_mode: telemetryMode,
+    widget_domain: widgetDomain,
     close: async () => {
       await Promise.all([close(mcpServer), ...(mediaServer ? [close(mediaServer)] : [])]);
       await Promise.allSettled([...activeRequests]);

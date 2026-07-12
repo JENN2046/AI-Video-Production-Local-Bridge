@@ -2,12 +2,13 @@
 
 AI Video Production Workspace 是面向 Jenn 本地 Windows 生产环境的、治理优先的 AI 视频生产系统 Beta。
 
-当前版本为 `0.1.0-beta.1`。系统已经包含 Workbench V2、WebGPT V4、MCP App、真实 Provider 生成边界、审片、重生成、合成、交付、Memory 与媒体分析能力。它适合单人本地生产和受控验证，但尚不是成熟的无人值守生产服务或可直接公网部署的平台。
+当前版本为 `0.1.0-beta.2`，MCP service 版本为 `webgpt-v4.1.0`。系统已经包含 Workbench V2、WebGPT V4、MCP App、真实 Provider 生成边界、审片、重生成、合成、交付、Memory 与媒体分析能力。它适合单人本地生产和受控验证，但尚不是成熟的无人值守生产服务或可直接公网部署的平台。
 
 ## 当前边界
 
 - Workbench 是唯一允许确认费用、提交真实 Provider、采纳审片结果和交付资产的人类执行面。
 - WebGPT V4 默认以 `readonly` profile 运行，只注册六个 `projects.read` 工具；现有有限写入和媒体能力只在显式 `full` profile 中注册。
+- WebGPT 的大型读取默认返回 `compact` DTO，结构化结果上限为 128 KiB；超限会明确返回 `RESPONSE_BUDGET_EXCEEDED`，不会静默裁断业务对象。
 - WebGPT V4 不得上传媒体、确认费用、提交 Provider、采纳审片、合成、交付或删除资产。
 - 未配置 OAuth 时 MCP 必须 fail closed；本项目不提供匿名 MCP 模式。
 - Provider 密钥、OAuth 配置、私有状态和本地媒体不进入 Git。
@@ -43,6 +44,8 @@ npm test
 npm run test:v2
 npm run test:v2:ui
 npm run test:webgpt:v4
+npm run test:webgpt:eval
+npm run eval:webgpt:replay -- --input <sanitized-result.json>
 npm run test:h1
 npm run test:db
 npm run test:v2:browser
@@ -69,6 +72,8 @@ npm run start:webgpt
 ```
 
 Readonly 默认仅在 `127.0.0.1:2091` 提供 MCP；Full 额外在 `127.0.0.1:2092` 提供媒体网关。未配置 OAuth 时健康检查可以通过，但 `/readyz` 和 MCP 调用保持关闭。
+
+`WEBGPT_V4_TELEMETRY_MODE` 默认 `off`，不会创建 Telemetry 目录。显式设置为 `jsonl` 时，只向 Git 忽略的 `data/webgpt/telemetry/` 写入请求 ID、工具名、耗时、结果大小和安全错误码等低披露字段；写入或探针失败会使 `/readyz` 返回 503，但不改变工具业务结果。`WEBGPT_V4_WIDGET_DOMAIN` 只接受 HTTPS origin，并与媒体 public origin 分开验证；缺失时允许本地 Full 测试，但外部发布 gate 仍未满足。
 
 ### Windows 受管启停
 
@@ -101,6 +106,6 @@ PID 状态和按次启动日志只写入 Git 忽略的 `ops/tools/workbench-runt
 
 ## 稳定化路线
 
-本版本冻结 WebGPT V5、Workbench V3 和新 Provider。当前建设顺序是：CI 基线、主路径模块化、版本化 migration、持久化生成 worker、媒体资源调度和 readiness。
+本版本冻结 WebGPT V5、Workbench V3 和新 Provider。GPT 服务面已完成默认 Readonly、严格 DTO、Compact context、离线 eval、Widget v2 metadata 和低披露 Telemetry 收敛；Auth0、Secure MCP Tunnel、外部 HTTPS、媒体外部开放、Windows 自动启动与真实 Provider canary 仍是后续独立 gate。
 
-详见 [当前状态](CURRENT_STATE.md)、[架构](docs/ARCHITECTURE.md) 和 [Stabilization Release v2 taskbook](docs/STABILIZATION_RELEASE_V2.md)。
+详见 [当前状态](CURRENT_STATE.md)、[GPT Service Capability Hardening](docs/GPT_SERVICE_CAPABILITY_HARDENING.md)、[架构](docs/ARCHITECTURE.md) 和 [Stabilization Release v2 taskbook](docs/STABILIZATION_RELEASE_V2.md)。

@@ -74,6 +74,8 @@ test("default readonly profile exposes six project tools and performs no databas
       const metadata = tool._meta as { securitySchemes?: Array<{ scopes: string[] }> };
       assert.deepEqual(metadata.securitySchemes?.[0]?.scopes, ["projects.read"]);
     }
+    const resources = await client.listResources().catch(() => ({ resources: [] }));
+    assert.equal(resources.resources.some((resource) => resource.uri.includes("media-inspector")), false);
 
     const calls = [
       { name: "list_production_projects", arguments: {} },
@@ -149,7 +151,7 @@ test("readonly contract violations return a stable safe envelope", () => {
   const result = readProjectContext({
     ok: true,
     data: { project: { project_id: "project_invalid" } },
-    meta: { request_id: "contract-fixture", source_version: "webgpt-v4.0.0", updated_at: "2026-01-01T00:00:00.000Z" }
+    meta: { request_id: "contract-fixture", source_version: "webgpt-v4.1.0", updated_at: "2026-01-01T00:00:00.000Z" }
   }, "full");
   assert.equal(result.ok, false);
   if (!result.ok) {
