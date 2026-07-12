@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import type { M0Database } from "./sqlite.js";
@@ -268,6 +268,31 @@ const MEDIA_ACTIVATION_JOURNAL_SQL = `
     WHERE state IN ('staged','file_placed');
 `;
 
+function applyMediaActivationMigration(db: M0Database): void {
+  db.exec(MEDIA_ACTIVATION_JOURNAL_SQL);
+  const rows = db.prepare(`SELECT a.artifact_id, a.data_json, m.blob_id, b.sha256, b.detected_mime, b.storage_uri
+    FROM media_artifacts a
+    JOIN media_artifact_blobs m ON m.artifact_id = a.artifact_id
+    JOIN media_blobs b ON b.blob_id = m.blob_id
+    WHERE a.status = 'active' AND b.integrity_state = 'verified'
+    ORDER BY a.artifact_id`).all() as unknown as Array<{
+      artifact_id: string; data_json: string; blob_id: string; sha256: string; detected_mime: string; storage_uri: string;
+    }>;
+  const update = db.prepare("UPDATE media_artifacts SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE artifact_id = ?");
+  for (const row of rows) {
+    const artifact = JSON.parse(row.data_json) as Record<string, unknown>;
+    const storage = { ...((artifact.storage ?? {}) as Record<string, unknown>) };
+    const metadata = { ...((artifact.metadata ?? {}) as Record<string, unknown>) };
+    const source = { ...((artifact.source ?? {}) as Record<string, unknown>) };
+    storage.uri = row.storage_uri;
+    storage.mime_type = row.detected_mime;
+    storage.filename = basename(row.storage_uri);
+    metadata.sha256 = row.sha256;
+    source.sha256 = row.sha256;
+    update.run(JSON.stringify({ ...artifact, blob_id: row.blob_id, storage, metadata, source }), row.artifact_id);
+  }
+}
+
 interface Migration {
   id: string;
   name: string;
@@ -429,8 +454,8 @@ export const DATABASE_MIGRATIONS: readonly Migration[] = [
   {
     id: "0006",
     name: "media_activation_journal",
-    canonical: `${MEDIA_ACTIVATION_JOURNAL_SQL}\nRECOVERY deterministic_file_activation_v1\nSCHEMA ${WORKBENCH_V2_SCHEMA_VERSION}`,
-    apply: (db) => db.exec(MEDIA_ACTIVATION_JOURNAL_SQL)
+    canonical: `${MEDIA_ACTIVATION_JOURNAL_SQL}\nBACKFILL active_artifact_blob_facts_v1\nRECOVERY deterministic_file_activation_v1\nSCHEMA ${WORKBENCH_V2_SCHEMA_VERSION}`,
+    apply: applyMediaActivationMigration
   }
 ];
 

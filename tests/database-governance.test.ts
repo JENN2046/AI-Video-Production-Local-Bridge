@@ -302,6 +302,55 @@ test("database migrated through 0003 keeps its historical checksums and upgrades
   }
 });
 
+test("migration 0006 backfills active legacy Artifact facts from the verified Blob", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "legacy-0005.sqlite");
+    const db = new DatabaseSync(sqlitePath);
+    for (const migration of DATABASE_MIGRATIONS.slice(0, 4)) migration.apply(db);
+    const sourcePath = resolve("fixtures", "provider-canary", "m1-r0", "shot_001_canary_720x1280.png");
+    const artifact = {
+      artifact_id: "artifact_legacy_facts",
+      blob_id: "",
+      artifact_type: "image",
+      role: "storyboard_image",
+      status: "active",
+      storage: { uri: sourcePath, mime_type: "application/octet-stream", filename: "legacy-declared.jpg" },
+      metadata: { width: 720, height: 1280, duration_seconds: null, aspect_ratio: "9:16", sha256: "legacy-placeholder" },
+      linked_objects: { project_id: "", shot_id: "" },
+      source: { kind: "legacy_import", provider: "", provider_job_id: "", sha256: "", external_url_host: "" },
+      business_note: "must survive fact backfill"
+    };
+    db.prepare("INSERT INTO media_artifacts (artifact_id, role, artifact_type, status, data_json) VALUES (?, 'storyboard_image', 'image', 'active', ?)")
+      .run(artifact.artifact_id, JSON.stringify(artifact));
+    DATABASE_MIGRATIONS[4].apply(db);
+    const before = db.prepare(`SELECT a.data_json, b.sha256, b.detected_mime, b.storage_uri
+      FROM media_artifacts a JOIN media_artifact_blobs m ON m.artifact_id = a.artifact_id JOIN media_blobs b ON b.blob_id = m.blob_id
+      WHERE a.artifact_id = ?`).get(artifact.artifact_id) as { data_json: string; sha256: string; detected_mime: string; storage_uri: string };
+    assert.equal((JSON.parse(before.data_json) as typeof artifact).metadata.sha256, "legacy-placeholder");
+
+    db.exec(`CREATE TABLE schema_migrations (
+      migration_id TEXT PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`);
+    const insertLedger = db.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES (?, ?, ?)");
+    for (const migration of DATABASE_MIGRATIONS.slice(0, 5)) insertLedger.run(migration.id, migration.name, migrationChecksum(migration));
+    const migrated = runDatabaseMigrations(db);
+    assert.deepEqual(migrated.applied, ["0006"]);
+
+    const after = JSON.parse((db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = ?").get(artifact.artifact_id) as { data_json: string }).data_json) as typeof artifact;
+    assert.equal(after.metadata.sha256, before.sha256);
+    assert.equal(after.source.sha256, before.sha256);
+    assert.equal(after.storage.mime_type, before.detected_mime);
+    assert.equal(after.storage.uri, before.storage_uri);
+    assert.equal(after.storage.filename, "shot_001_canary_720x1280.png");
+    assert.equal(after.business_note, "must survive fact backfill");
+    assertSchemaCurrent(db);
+    db.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("existing v2-4 baseline rejects missing columns and indexes", () => {
   const root = tempRoot();
   try {
