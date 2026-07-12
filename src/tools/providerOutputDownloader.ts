@@ -435,6 +435,7 @@ export async function downloadProviderOutputToArtifact(
     const sha256 = createHash("sha256").update(readFileSync(finalPath)).digest("hex");
     const preparedArtifact: MediaArtifact = {
       artifact_id: artifactId,
+      blob_id: "",
       artifact_type: "video",
       role: "generated_clip",
       status: "active",

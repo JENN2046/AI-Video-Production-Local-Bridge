@@ -1,12 +1,13 @@
 import type { M0Database } from "./sqlite.js";
 
-export const WORKBENCH_V2_SCHEMA_VERSION = "workbench-v2-4";
+export const WORKBENCH_V2_4_SCHEMA_VERSION = "workbench-v2-4";
+export const WORKBENCH_V2_SCHEMA_VERSION = "workbench-v2-5";
 
 // Frozen implementation for migration 0002. Future schema work must add a new migration.
 export function applyWorkbenchV24Baseline(db: M0Database, options: { manage_transaction?: boolean } = {}): void {
   const manageTransaction = options.manage_transaction !== false;
   const current = db.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string } | undefined;
-  if (current && !["m0-a", "workbench-v2-1", "workbench-v2-2", "workbench-v2-3", WORKBENCH_V2_SCHEMA_VERSION].includes(current.value)) {
+  if (current && !["m0-a", "workbench-v2-1", "workbench-v2-2", "workbench-v2-3", WORKBENCH_V2_4_SCHEMA_VERSION].includes(current.value)) {
     throw new Error(`Unsupported schema version: ${current.value}`);
   }
 
@@ -259,7 +260,7 @@ export function applyWorkbenchV24Baseline(db: M0Database, options: { manage_tran
     db.prepare(`
       INSERT OR REPLACE INTO m0_meta (key, value, updated_at)
       VALUES ('schema_version', ?, CURRENT_TIMESTAMP)
-    `).run(WORKBENCH_V2_SCHEMA_VERSION);
+    `).run(WORKBENCH_V2_4_SCHEMA_VERSION);
     if (manageTransaction) db.exec("COMMIT");
   } catch (error) {
     if (manageTransaction) db.exec("ROLLBACK");

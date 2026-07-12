@@ -14,6 +14,7 @@
       "npm_script": "test:foundation-boundaries",
       "ci_step": "Foundation and media boundary tests",
       "paths": [
+        "tests/artifact-blob-boundary.test.ts",
         "tests/g0-pregen.test.ts",
         "tests/gpt-handoff-app.test.ts",
         "tests/m0-a-skeleton.test.ts",

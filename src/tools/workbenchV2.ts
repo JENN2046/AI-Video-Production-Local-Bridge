@@ -7,7 +7,12 @@ import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { classifyStoryboardImageImport } from "./importClassifier.js";
 import { validateImageFile } from "./imageValidity.js";
 import { listH1Reports, loadH1WorkbenchState, registerH1ApprovedKeyframe, type H1WorkbenchState } from "./h1Workbench.js";
-import { getMediaArtifact, type MediaArtifact } from "./mediaArtifacts.js";
+import {
+  attachArtifactToShot,
+  createScopedArtifactFromBlob,
+  getMediaArtifact,
+  type MediaArtifact
+} from "./mediaArtifacts.js";
 import { loadMemorySavebackStore } from "./memorySaveback.js";
 import { createProject, getProject, getShot, listProjectShots, saveProject, saveShot, type Project, type Shot } from "./projects.js";
 import { markShotClipReview, type RevisionInstruction } from "./review.js";
@@ -457,8 +462,11 @@ export function updateWorkbenchShot(
 ): WorkbenchV2Result<{ shot: Shot }> {
   const writable = assertWorkbenchProjectWritable(db, projectId);
   if (!writable.ok) return writable;
-  const shot = getShot(db, shotId);
+  let shot = getShot(db, shotId);
   if (!shot || shot.project_id !== projectId) return { ok: false, error: { code: "SHOT_NOT_FOUND", message: `Shot not found in project: ${shotId}`, field: "shot_id" } };
+  const ownsTransaction = input.storyboard_image_artifact_id !== undefined
+    && !(db as unknown as { isTransaction?: boolean }).isTransaction;
+  try {
   if (input.duration_seconds !== undefined) {
     if (!Number.isFinite(input.duration_seconds) || input.duration_seconds <= 0) {
       return { ok: false, error: { code: "INVALID_FIELD", message: "Duration must be positive.", field: "duration_seconds" } };
@@ -468,20 +476,54 @@ export function updateWorkbenchShot(
   if (input.description !== undefined) shot.description = input.description;
   if (input.video_prompt !== undefined) shot.video_prompt = input.video_prompt;
   if (input.negative_prompt !== undefined) shot.negative_prompt = input.negative_prompt;
-  if (input.storyboard_image_artifact_id !== undefined) {
-    const artifact = getMediaArtifact(db, input.storyboard_image_artifact_id);
-    if (!artifact || artifact.status !== "active" || artifact.artifact_type !== "image" || artifact.role !== "storyboard_image") {
-      return { ok: false, error: { code: "INVALID_ARTIFACT_ROLE", message: "SHOT requires an active storyboard image.", field: "storyboard_image_artifact_id" } };
-    }
-    shot.storyboard_image_artifact_id = artifact.artifact_id;
-  }
   if (input.approve_storyboard) {
     if (input.human_confirmation !== true) return { ok: false, error: { code: "HUMAN_CONFIRMATION_REQUIRED", message: "Storyboard approval requires confirmation." } };
-    if (!shot.storyboard_image_artifact_id || !shot.video_prompt) return { ok: false, error: { code: "SHOT_BLOCKED", message: "Storyboard image and video prompt are required before approval." } };
+    if (!(input.storyboard_image_artifact_id || shot.storyboard_image_artifact_id) || !shot.video_prompt) {
+      return { ok: false, error: { code: "SHOT_BLOCKED", message: "Storyboard image and video prompt are required before approval." } };
+    }
+  }
+  if (input.storyboard_image_artifact_id !== undefined) {
+    if (ownsTransaction) db.exec("BEGIN IMMEDIATE");
+    let artifact = getMediaArtifact(db, input.storyboard_image_artifact_id);
+    if (!artifact || artifact.status !== "active" || artifact.artifact_type !== "image" || artifact.role !== "storyboard_image") {
+      if (ownsTransaction) db.exec("ROLLBACK");
+      return { ok: false, error: { code: "INVALID_ARTIFACT_ROLE", message: "SHOT requires an active storyboard image.", field: "storyboard_image_artifact_id" } };
+    }
+    if (artifact.linked_objects.project_id !== projectId || artifact.linked_objects.shot_id !== shotId) {
+      const scoped = createScopedArtifactFromBlob({ source_artifact_id: artifact.artifact_id, project_id: projectId, shot_id: shotId }, db);
+      if (!scoped.ok) {
+        if (ownsTransaction) db.exec("ROLLBACK");
+        return { ok: false, error: { ...scoped.error, field: "storyboard_image_artifact_id" } };
+      }
+      artifact = scoped.artifact;
+    }
+    const attached = attachArtifactToShot({
+      project_id: projectId,
+      shot_id: shotId,
+      artifact_id: artifact.artifact_id,
+      reference: "storyboard_image_artifact_id",
+      expected_current_artifact_id: shot.storyboard_image_artifact_id
+    }, db);
+    if (!attached.ok) {
+      if (ownsTransaction) db.exec("ROLLBACK");
+      return { ok: false, error: { ...attached.error, field: "storyboard_image_artifact_id" } };
+    }
+    shot = attached.shot;
+    if (input.duration_seconds !== undefined) shot.duration_seconds = input.duration_seconds;
+    if (input.description !== undefined) shot.description = input.description;
+    if (input.video_prompt !== undefined) shot.video_prompt = input.video_prompt;
+    if (input.negative_prompt !== undefined) shot.negative_prompt = input.negative_prompt;
+  }
+  if (input.approve_storyboard) {
     shot.status = "storyboard_approved";
   }
   saveShot(db, shot);
+  if (ownsTransaction) db.exec("COMMIT");
   return { ok: true, data: { shot } };
+  } catch (error) {
+    if (ownsTransaction && (db as unknown as { isTransaction?: boolean }).isTransaction) db.exec("ROLLBACK");
+    return { ok: false, error: { code: "SHOT_UPDATE_FAILED", message: error instanceof Error ? error.message : "SHOT update failed." } };
+  }
 }
 
 export function decideWorkbenchClip(
@@ -772,22 +814,35 @@ export function decideWorkbenchImport(
     if (!writable.ok) return writable;
     const metadata = parseJson<{ blockers?: string[] }>(row.metadata_json, {});
     if ((metadata.blockers ?? []).length > 0) return { ok: false, error: { code: "IMPORT_BLOCKED", message: `Import is blocked: ${(metadata.blockers ?? []).join(", ")}` } };
-    const existing = db.prepare("SELECT artifact_id, data_json FROM media_artifacts WHERE json_extract(data_json, '$.metadata.sha256') = ? LIMIT 1").get(checksum) as { artifact_id: string; data_json: string } | undefined;
-    if (existing) {
-      artifactId = existing.artifact_id;
+    const prior = db.prepare(`
+      SELECT artifact_id FROM import_decisions
+      WHERE checksum = ? AND decision = 'registered' AND target_project_id = ? AND artifact_id IS NOT NULL
+    `).get(checksum, input.target_project_id) as { artifact_id: string } | undefined;
+    const priorArtifact = prior ? getMediaArtifact(db, prior.artifact_id) : null;
+    if (priorArtifact?.status === "active" && priorArtifact.linked_objects.project_id === input.target_project_id && priorArtifact.linked_objects.shot_id === "") {
+      artifactId = priorArtifact.artifact_id;
     } else {
+      const existing = db.prepare(`
+        SELECT m.artifact_id
+        FROM media_blobs b
+        JOIN media_artifact_blobs m ON m.blob_id = b.blob_id
+        JOIN media_artifacts a ON a.artifact_id = m.artifact_id
+        WHERE b.sha256 = ? AND b.integrity_state = 'verified' AND a.status = 'active'
+        ORDER BY m.created_at, m.artifact_id LIMIT 1
+      `).get(checksum) as { artifact_id: string } | undefined;
+      let sourceArtifactId = existing?.artifact_id ?? "";
+      if (!sourceArtifactId) {
       const registered = registerH1ApprovedKeyframe({
         import_filename: row.filename,
         review_status: "approved_for_media_artifact_handoff",
         write_report: false
       }, db);
       if (!registered.ok) return registered;
-      artifactId = registered.value.artifact.artifact_id;
-    }
-    const artifact = getMediaArtifact(db, artifactId);
-    if (artifact) {
-      artifact.linked_objects.project_id = input.target_project_id;
-      db.prepare(`UPDATE media_artifacts SET project_id = ?, data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE artifact_id = ?`).run(input.target_project_id, JSON.stringify(artifact), artifactId);
+        sourceArtifactId = registered.value.artifact.artifact_id;
+      }
+      const scoped = createScopedArtifactFromBlob({ source_artifact_id: sourceArtifactId, project_id: input.target_project_id }, db);
+      if (!scoped.ok) return { ok: false, error: scoped.error };
+      artifactId = scoped.artifact.artifact_id;
     }
   }
   db.prepare(`

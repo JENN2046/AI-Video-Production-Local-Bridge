@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   createProject,
+  getMediaArtifact,
   getProject,
   importG0AppReadyStoryboardPackage,
   openM0Database,
@@ -205,7 +206,10 @@ test("G0 valid app-ready package imports through existing Storyboard Package cha
     if (!imported.ok) return;
     assert.equal(imported.project.status, "storyboard_approved");
     assert.equal(imported.shots.length, 1);
-    assert.equal(imported.shots[0].storyboard_image_artifact_id, active.artifact_id);
+    assert.notEqual(imported.shots[0].storyboard_image_artifact_id, active.artifact_id);
+    const scoped = getMediaArtifact(db, imported.shots[0].storyboard_image_artifact_id);
+    assert.equal(scoped?.blob_id, active.blob_id);
+    assert.deepEqual(scoped?.linked_objects, { project_id: project.project_id, shot_id: imported.shots[0].shot_id });
 
     const saved = readG0Artifact(project.project_id, "storyboard_package");
     assert.equal(saved?.kind, "storyboard_package");

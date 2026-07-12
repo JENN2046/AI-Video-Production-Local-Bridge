@@ -16,6 +16,7 @@ import {
   createProject,
   downloadProviderOutputToArtifact,
   getMediaArtifact,
+  getMediaBlob,
   importStoryboardPackage,
   listProviderConfigs,
   mapRunwayAspectRatio,
@@ -1023,7 +1024,8 @@ test("M1 provider output downloader saves ffprobe-valid local artifact without p
     assert.equal(artifact?.source.provider_job_id, "runway_job_test");
     assert.equal(artifact?.source.external_url_host, "cdn.example.test");
     assert.equal(artifact?.storage.uri.includes("signature"), false);
-    assert.equal(artifact?.storage.uri.startsWith(storageDirectory), true);
+    assert.equal(artifact?.storage.uri.startsWith(paths.mediaRoot), true);
+    assert.equal(artifact ? getMediaBlob(db, artifact.blob_id)?.storage_uri : null, artifact?.storage.uri);
     assert.equal(result.ffprobe.status, "PASS");
   } finally {
     db.close();

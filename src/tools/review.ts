@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
-import { getMediaArtifact, registerMediaArtifact } from "./mediaArtifacts.js";
+import { attachArtifactToShot, getMediaArtifact, getMediaBlob, registerMediaArtifact } from "./mediaArtifacts.js";
 import { getGenerationRun, saveGenerationRun, type Confirmation, type GenerationRun } from "./generation.js";
 import { getProject, getShot, saveShot, type Shot, type ToolError } from "./projects.js";
 import { providerError, selectM1ProviderPort, type ProviderExecutionRequest, type ProviderPortName, type ProviderToolError } from "./provider.js";
@@ -32,12 +32,18 @@ function findClipVersion(shot: Shot, artifactId: string) {
   return shot.clip_versions.find((version) => version.artifact_id === artifactId);
 }
 
-function validateGeneratedClip(db: M0Database, artifactId: string): ToolError | null {
+function validateGeneratedClip(db: M0Database, artifactId: string, shot: Shot): ToolError | null {
   const artifact = getMediaArtifact(db, artifactId);
   if (!artifact) return { code: "ARTIFACT_NOT_FOUND", message: `Artifact not found: ${artifactId}` };
   if (artifact.status !== "active") return { code: "ARTIFACT_INACCESSIBLE", message: `Artifact is not active: ${artifact.status}` };
   if (artifact.artifact_type !== "video" || artifact.role !== "generated_clip") {
     return { code: "INVALID_ARTIFACT_ROLE", message: "Shot review requires active generated_clip video artifacts." };
+  }
+  if (artifact.linked_objects.project_id !== shot.project_id || artifact.linked_objects.shot_id !== shot.shot_id) {
+    return { code: "INVALID_ARTIFACT_BINDING", message: "Generated clip does not belong to the reviewed SHOT." };
+  }
+  if (!artifact.blob_id || getMediaBlob(db, artifact.blob_id)?.integrity_state !== "verified") {
+    return { code: "ARTIFACT_INTEGRITY_UNVERIFIED", message: "Generated clip content has not been verified." };
   }
   return null;
 }
@@ -94,7 +100,7 @@ export function markShotClipReview(
   const shot = getShot(db, input.shot_id);
   if (!shot) return { ok: false, error: { code: "SHOT_NOT_FOUND", message: `Shot not found: ${input.shot_id}` } };
 
-  const artifactError = validateGeneratedClip(db, input.artifact_id);
+  const artifactError = validateGeneratedClip(db, input.artifact_id, shot);
   if (artifactError) return { ok: false, error: artifactError };
 
   const clipVersion = findClipVersion(shot, input.artifact_id);
@@ -103,12 +109,35 @@ export function markShotClipReview(
   }
 
   if (input.decision === "approved") {
-    shot.accepted_clip_artifact_id = input.artifact_id;
-    shot.status = "approved";
-    shot.review.approval_status = "approved";
-    shot.review.rejection_reasons = [];
-    shot.review.latest_revision_instruction = null;
-    clipVersion.review_status = "approved";
+    const ownsTransaction = !(db as unknown as { isTransaction?: boolean }).isTransaction;
+    if (ownsTransaction) db.exec("BEGIN IMMEDIATE");
+    try {
+      const attached = attachArtifactToShot({
+        project_id: shot.project_id,
+        shot_id: shot.shot_id,
+        artifact_id: input.artifact_id,
+        reference: "accepted_clip_artifact_id",
+        expected_current_artifact_id: shot.accepted_clip_artifact_id
+      }, db);
+      if (!attached.ok) {
+        if (ownsTransaction) db.exec("ROLLBACK");
+        return attached;
+      }
+      const nextShot = attached.shot;
+      nextShot.status = "approved";
+      nextShot.review.approval_status = "approved";
+      nextShot.review.rejection_reasons = [];
+      nextShot.review.latest_revision_instruction = null;
+      const nextVersion = findClipVersion(nextShot, input.artifact_id);
+      if (!nextVersion) throw new Error("ARTIFACT_NOT_FOUND");
+      nextVersion.review_status = "approved";
+      saveShot(db, nextShot);
+      if (ownsTransaction) db.exec("COMMIT");
+      return { ok: true, shot: nextShot };
+    } catch (error) {
+      if (ownsTransaction && (db as unknown as { isTransaction?: boolean }).isTransaction) db.exec("ROLLBACK");
+      return { ok: false, error: { code: "CLIP_REVIEW_TRANSACTION_FAILED", message: error instanceof Error ? error.message : "Clip review failed." } };
+    }
   } else {
     shot.status = "revision_needed";
     shot.review.approval_status = "revision_needed";
