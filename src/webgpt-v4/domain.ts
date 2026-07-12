@@ -715,7 +715,7 @@ export function prepareProductionGenerationIntent(
     const cache = db.prepare(`
       SELECT * FROM webgpt_provider_price_cache
       WHERE provider = ? AND model = ? AND duration_seconds = ? AND resolution = ? AND source = ? AND expires_at > ?
-    `).get(priceCacheKey.provider, priceCacheKey.model, priceCacheKey.duration_seconds, priceCacheKey.resolution, priceCacheKey.source, new Date().toISOString()) as Record<string, unknown> | undefined;
+    `).get(priceCacheKey.provider, priceCacheKey.model, priceCacheKey.duration_seconds, priceCacheKey.storage_resolution, priceCacheKey.source, new Date().toISOString()) as Record<string, unknown> | undefined;
     if (!cache) throw new WebGptV4Error("GENERATION_PREP_BLOCKED", "No current human-verified local price cache is available. Run preflight in the human workbench first.");
     const estimated = Number(cache.estimated_cost_value);
     if (estimated > input.budget_limit_value) throw new WebGptV4Error("BUDGET_LIMIT_EXCEEDED", "Cached estimate exceeds the proposed budget limit.", "budget_limit_value");

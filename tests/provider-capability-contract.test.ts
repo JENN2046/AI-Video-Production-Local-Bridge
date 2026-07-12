@@ -45,10 +45,10 @@ test("Provider capability key rejects model, duration, resolution, and aspect dr
   assert.equal(otherAspect.ok, true);
   if (valid.ok && otherAspect.ok) {
     assert.notEqual(valid.key.serialized, otherAspect.key.serialized);
-    assert.notEqual(
-      buildProviderPriceCacheKey(valid.key, valid.capability).serialized,
-      buildProviderPriceCacheKey(otherAspect.key, otherAspect.capability).serialized
-    );
+    const validPriceKey = buildProviderPriceCacheKey(valid.key, valid.capability);
+    const otherPriceKey = buildProviderPriceCacheKey(otherAspect.key, otherAspect.capability);
+    assert.notEqual(validPriceKey.serialized, otherPriceKey.serialized);
+    assert.notEqual(validPriceKey.storage_resolution, otherPriceKey.storage_resolution);
   }
 
   const cases = [

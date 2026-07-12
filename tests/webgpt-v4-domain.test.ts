@@ -384,12 +384,12 @@ test("WebGPT generation intent requires local cache and cannot bypass official h
     assert.equal(staleKey.ok, false);
     if (!staleKey.ok) assert.equal(staleKey.error.code, "GENERATION_PREP_BLOCKED");
     context.db.prepare(`INSERT INTO webgpt_provider_price_cache (provider, model, duration_seconds, resolution, estimated_cost_value, currency, source, fetched_at, expires_at) VALUES (?, ?, ?, ?, 12, 'RH_COINS', 'legacy-capability-source', ?, ?)`)
-      .run(priceKey.provider, priceKey.model, priceKey.duration_seconds, priceKey.resolution, now.toISOString(), new Date(now.getTime() + 60_000).toISOString());
+      .run(priceKey.provider, priceKey.model, priceKey.duration_seconds, priceKey.storage_resolution, now.toISOString(), new Date(now.getTime() + 60_000).toISOString());
     const staleSource = prepareProductionGenerationIntent({ project_id: context.production.project_id, shot_id: context.productionShot.shot_id, account_label: "personal", budget_limit_value: 100 }, { actor, idempotency_key: "intent-stale-source" }, context.db);
     assert.equal(staleSource.ok, false);
     if (!staleSource.ok) assert.equal(staleSource.error.code, "GENERATION_PREP_BLOCKED");
     context.db.prepare("UPDATE webgpt_provider_price_cache SET source = ? WHERE provider = ? AND model = ? AND duration_seconds = ? AND resolution = ?")
-      .run(priceKey.source, priceKey.provider, priceKey.model, priceKey.duration_seconds, priceKey.resolution);
+      .run(priceKey.source, priceKey.provider, priceKey.model, priceKey.duration_seconds, priceKey.storage_resolution);
     const prepared = prepareProductionGenerationIntent({ project_id: context.production.project_id, shot_id: context.productionShot.shot_id, account_label: "personal", budget_limit_value: 100 }, { actor, idempotency_key: "intent-ready" }, context.db);
     assert.equal(prepared.ok, true);
     if (!prepared.ok) return;

@@ -164,7 +164,20 @@ test("generation preflight enforces official estimate, balance gate, budget and 
     assert.equal(first.data.intent.input_snapshot.capability_key, "provider-capabilities-v1|runninghub.image_to_video.v1|runninghub|rhart-video-g/image-to-video|6|480p|9:16");
     assert.equal(priceBodies.every((body) => body.duration === 6 && body.resolution === "480p"), true);
     const priceKey = db.prepare("SELECT provider, model, duration_seconds, resolution FROM webgpt_provider_price_cache WHERE model = ?").get(first.data.intent.model) as { provider: string; model: string; duration_seconds: number; resolution: string };
-    assert.deepEqual({ ...priceKey }, { provider: "runninghub", model: first.data.intent.model, duration_seconds: first.data.intent.duration_seconds, resolution: first.data.intent.resolution });
+    assert.deepEqual({ ...priceKey }, {
+      provider: "runninghub",
+      model: first.data.intent.model,
+      duration_seconds: first.data.intent.duration_seconds,
+      resolution: `${first.data.intent.resolution}@human_workbench_official_preflight@provider-capabilities-v1:runninghub.image_to_video.v1:9:16`
+    });
+    projectResult.project.video_spec.aspect_ratio = "16:9";
+    saveProject(db, projectResult.project);
+    const otherAspect = await preflightWorkbenchGeneration({ project_id: projectResult.project_id, shot_id: shot.shot_id, account_label: "personal", budget_limit_value: 1 }, db, { env, fetch_impl: fetchImpl });
+    assert.equal(otherAspect.ok, true);
+    const cacheRows = db.prepare("SELECT COUNT(*) AS count FROM webgpt_provider_price_cache WHERE provider = 'runninghub' AND model = ?").get(first.data.intent.model) as { count: number };
+    assert.equal(cacheRows.count, 2);
+    projectResult.project.video_spec.aspect_ratio = "9:16";
+    saveProject(db, projectResult.project);
     const originalIntentJson = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(first.data.intent.intent_id) as { data_json: string };
     const driftedIntent = JSON.parse(originalIntentJson.data_json) as { input_snapshot: { aspect_ratio: string } };
     driftedIntent.input_snapshot.aspect_ratio = "16:9";

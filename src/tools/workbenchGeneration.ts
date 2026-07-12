@@ -439,7 +439,7 @@ export async function preflightWorkbenchGeneration(
     priceCacheKey.provider,
     priceCacheKey.model,
     priceCacheKey.duration_seconds,
-    priceCacheKey.resolution,
+    priceCacheKey.storage_resolution,
     estimatedPrice,
     currency,
     priceCacheKey.source,

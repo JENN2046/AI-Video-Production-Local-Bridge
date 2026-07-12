@@ -75,6 +75,7 @@ export interface ProviderPriceCacheKey {
   model: string;
   duration_seconds: number;
   resolution: string;
+  storage_resolution: string;
   aspect_ratio: string;
   source: string;
   serialized: string;
@@ -162,11 +163,16 @@ export function buildProviderPriceCacheKey(key: ProviderCapabilityKey, capabilit
     throw new Error("PROVIDER_CAPABILITY_PRICE_KEY_MISMATCH");
   }
   const source = providerCapabilityPriceSource(capability, key.aspect_ratio);
+  // The v2-4 cache table's primary key predates capability sources. Folding the
+  // versioned source into its resolution dimension preserves distinct verified
+  // estimates without changing the workbench-v2-5 schema ledger.
+  const storageResolution = `${key.resolution}@${source}`;
   return {
     provider: key.provider,
     model: key.model,
     duration_seconds: key.duration_seconds,
     resolution: key.resolution,
+    storage_resolution: storageResolution,
     aspect_ratio: key.aspect_ratio,
     source,
     serialized: [source, key.provider, key.model, key.duration_seconds, key.resolution, key.aspect_ratio].join("|")
