@@ -21,7 +21,7 @@ AI Video Production Workspace 已经越过概念验证：Workbench V2、WebGPT V
 - `npm run preflight`: PASS on an isolated local profile
 - FFmpeg/FFprobe 8.1.2: PASS，通过 WinGet Links 自动发现
 - Workbench `/healthz`、`/readyz`: PASS；WebGPT 无 OAuth 时 `/readyz`: expected 503 fail closed
-- Active database migration and read-only soak report: PASS，证据见 `ops/reports/2026-07-12-active-database-migration-acceptance.md`
+- Active database migration and read-only soak: PASS，属于 Jenn 本机的 local-only/untracked evidence，不是本仓库提交的公开 release artifact；本基线不把它宣称为可独立审计的仓库证据。需要复核时，请在本机用 Node `22.23.1` 重新执行 `npm run preflight`、`npm run db:check`、`npm run test:windows-runtime` 和只读 Workbench 验收路径。
 
 These results are local evidence, not a substitute for remote CI. PR2 establishes the Windows Node 22 CI baseline; every stacked PR must retain that gate.
 
