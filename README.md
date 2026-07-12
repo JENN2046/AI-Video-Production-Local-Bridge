@@ -108,4 +108,4 @@ PID 状态和按次启动日志只写入 Git 忽略的 `ops/tools/workbench-runt
 
 本版本冻结 WebGPT V5、Workbench V3 和新 Provider。GPT 服务面已完成默认 Readonly、严格 DTO、Compact context、离线 eval、Widget v2 metadata 和低披露 Telemetry 收敛；Auth0、Secure MCP Tunnel、外部 HTTPS、媒体外部开放、Windows 自动启动与真实 Provider canary 仍是后续独立 gate。
 
-详见 [当前状态](CURRENT_STATE.md)、[GPT Service Capability Hardening](docs/GPT_SERVICE_CAPABILITY_HARDENING.md)、[架构](docs/ARCHITECTURE.md) 和 [Stabilization Release v2 taskbook](docs/STABILIZATION_RELEASE_V2.md)。
+详见 [当前状态](CURRENT_STATE.md)、[Stabilization Remediation](docs/STABILIZATION_REMEDIATION.md)、[GPT Service Capability Hardening](docs/GPT_SERVICE_CAPABILITY_HARDENING.md)、[架构](docs/ARCHITECTURE.md) 和 [Stabilization Release v2 taskbook](docs/STABILIZATION_RELEASE_V2.md)。

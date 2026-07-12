@@ -2,7 +2,7 @@
 
 Date: 2026-07-12
 
-Baseline: GPT Service Capability Hardening v1, delivered sequentially through PR #9–#13
+Baseline: GPT Service Capability Hardening v1, delivered sequentially through PR #9–#13; Stabilization Remediation is now the active route
 
 Target version: `0.1.0-beta.2`; MCP service: `webgpt-v4.1.0`
 
@@ -29,12 +29,12 @@ WebGPT V4 已收敛为 `webgpt-v4.1.0`：默认 Readonly 仅暴露六个 `projec
 
 Remote CI evidence: PR #9–#13 均已合并；每个 PR 的 Windows `Quality and integration` 与 `Browser smoke` 均为 `SUCCESS`。PR #13 的最终 Windows CI run 为 [29187898165](https://github.com/JENN2046/AI-Video-Production-Local-Bridge/actions/runs/29187898165)。PR2 establishes the Windows Node 22 CI baseline; every future PR must retain that gate.
 
-## Beta 2 freeze
+## Beta 2 snapshot and remediation gate
 
-- `0.1.0-beta.2` 的运行实现冻结在 `main@fbba4ce`；本 Closeout 只更新状态文档，不改变运行逻辑。
-- 冻结不创建 Git tag、不发布 package、不执行 release 或 deploy。
-- 后续运行代码变化必须通过新的独立计划和 PR，不在本 Closeout 中继续扩展 WebGPT、Workbench 或 Provider 能力。
-- Auth0、Secure MCP Tunnel、媒体公网 HTTPS、Windows 自动启动和真实 Provider canary 均未完成，也不属于该冻结基线的已交付能力。
+- `0.1.0-beta.2` 的运行实现快照为 `main@fbba4ce`；Closeout 位于 `main@de8c2cd`。它们保留为已验证的历史基线，而不是外部连接发布裁决。
+- 独立审查发现 Artifact 绑定/所有权、Provider 定价契约、媒体内容完整性、跨 SHOT 引用和 CI 覆盖仍有阻断缺口。详情与实施顺序见 [Stabilization Remediation](docs/STABILIZATION_REMEDIATION.md)。
+- 因此冻结不创建 Git tag、不发布 package、不执行 release 或 deploy；后续运行代码只能通过 Remediation 独立 PR 推进。
+- Auth0、Secure MCP Tunnel、媒体公网 HTTPS、Windows 自动启动和真实 Provider canary 均继续冻结，且不得在 Remediation 全部重新验收前启动。
 
 ## Stabilization policy
 
@@ -50,3 +50,4 @@ Remote CI evidence: PR #9–#13 均已合并；每个 PR 的 Windows `Quality an
 - GPT hardening PRs retain the Windows Node 22 + FFmpeg 8.1.2 CI and browser-smoke gates.
 - Keep Auth0, Secure MCP Tunnel, public media HTTPS, Windows auto-start, real Provider canary, WebGPT V5, Workbench V3 and new Providers outside this release.
 - Do not make a paid Provider call as part of stabilization acceptance.
+- Do not enter external-connection work until the remediation exit gates pass.
