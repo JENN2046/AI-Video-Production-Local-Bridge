@@ -1,4 +1,4 @@
-import { closeSync, copyFileSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, constants, copyFileSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 
@@ -485,6 +485,30 @@ function mediaActivationErrorCode(error: unknown): string {
   return "MEDIA_ACTIVATION_FAILED";
 }
 
+function copyToStagingExclusively(sourcePath: string, stagingPath: string): ToolError | null {
+  try {
+    copyFileSync(sourcePath, stagingPath, constants.COPYFILE_EXCL);
+    return null;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      return { code: "MEDIA_ACTIVATION_ALREADY_PENDING", message: "An existing staged activation owns this Artifact id." };
+    }
+    return { code: "MEDIA_ACTIVATION_IO_FAILED", message: "Media bytes could not be copied into app-controlled staging." };
+  }
+}
+
+function writeToStagingExclusively(stagingPath: string, bytes: Buffer): ToolError | null {
+  try {
+    writeFileSync(stagingPath, bytes, { flag: "wx" });
+    return null;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      return { code: "MEDIA_ACTIVATION_ALREADY_PENDING", message: "An existing staged activation owns this Artifact id." };
+    }
+    return { code: "MEDIA_ACTIVATION_IO_FAILED", message: "Media bytes could not be written into app-controlled staging." };
+  }
+}
+
 function activationRoots(mediaRoot: string): { activation: string; staging: string; pending: string; quarantine: string; journal: string } {
   const activation = resolve(mediaRoot, ".activation");
   return {
@@ -622,7 +646,7 @@ function commitStagedMediaArtifact(
   db: M0Database,
   artifact: MediaArtifact,
   allowStatusTransition: boolean,
-  options: { after_pending_placed?: (pendingPath: string) => void; after_file_placed?: (finalPath: string) => void; media_root?: string } = {}
+  options: { after_journal_staged?: (stagingPath: string) => void; after_pending_placed?: (pendingPath: string) => void; after_file_placed?: (finalPath: string) => void; media_root?: string } = {}
 ): RegisterMediaArtifactResult {
   const activationId = `activation_${randomUUID()}`;
   const mediaRoot = resolve(options.media_root ?? paths.mediaRoot);
@@ -674,6 +698,9 @@ function commitStagedMediaArtifact(
     writeActivationMarker(marker);
     markerCreated = true;
     if (!manageTransaction) insertJournal();
+    if (options.after_journal_staged) {
+      try { options.after_journal_staged(stagingPath); } catch (error) { throw new MediaActivationInjectedCrash(error); }
+    }
     renameSync(stagingPath, pendingPath);
     if (options.after_pending_placed) {
       try { options.after_pending_placed(pendingPath); } catch (error) { throw new MediaActivationInjectedCrash(error); }
@@ -717,7 +744,7 @@ function commitStagedMediaArtifact(
 }
 
 export function activateLocalMediaArtifact(
-  input: { artifact: MediaArtifact; source_path: string; media_root?: string; allow_status_transition?: boolean; after_pending_placed?: (pendingPath: string) => void; after_file_placed?: (finalPath: string) => void },
+  input: { artifact: MediaArtifact; source_path: string; media_root?: string; allow_status_transition?: boolean; after_journal_staged?: (stagingPath: string) => void; after_pending_placed?: (pendingPath: string) => void; after_file_placed?: (finalPath: string) => void },
   db = openM0Database()
 ): RegisterMediaArtifactResult {
   ensureM0Directories();
@@ -733,8 +760,9 @@ export function activateLocalMediaArtifact(
   mkdirSync(roots.quarantine, { recursive: true });
   mkdirSync(roots.journal, { recursive: true });
   const stagingPath = stagedPathForArtifact(input.artifact, mediaRoot);
-  copyFileSync(sourcePath, stagingPath);
-  return commitStagedMediaArtifact(db, input.artifact, input.allow_status_transition === true, { after_pending_placed: input.after_pending_placed, after_file_placed: input.after_file_placed, media_root: mediaRoot });
+  const stageError = copyToStagingExclusively(sourcePath, stagingPath);
+  if (stageError) return { ok: false, error: stageError };
+  return commitStagedMediaArtifact(db, input.artifact, input.allow_status_transition === true, { after_journal_staged: input.after_journal_staged, after_pending_placed: input.after_pending_placed, after_file_placed: input.after_file_placed, media_root: mediaRoot });
 }
 
 function activationMarkerPaths(): string[] {
@@ -996,7 +1024,8 @@ function copyFixture(input: RegisterMediaArtifactInput): RegisterMediaArtifactRe
 
   const prepared = { ...buildArtifact(input, "active", filename, destinationPath, mimeTypeFor(sourcePath, input.artifact_type)), artifact_id: artifactId };
   const stagingPath = stagedPathForArtifact(prepared);
-  copyFileSync(sourcePath, stagingPath);
+  const stageError = copyToStagingExclusively(sourcePath, stagingPath);
+  if (stageError) return { ok: false, error: stageError };
   readFileSync(stagingPath);
 
   if (input.artifact_type === "image") {
@@ -1038,7 +1067,8 @@ function writeUploadedBytes(input: RegisterMediaArtifactInput, artifactId = `art
     ensureM0Directories();
     const prepared = buildValidatedImageArtifact(input, artifactId, filename, destinationPath, validation);
     const stagingPath = stagedPathForArtifact(prepared);
-    writeFileSync(stagingPath, decoded);
+    const stageError = writeToStagingExclusively(stagingPath, decoded);
+    if (stageError) return { ok: false, error: stageError };
     readFileSync(stagingPath);
 
     const storedValidation = validateImageFile(stagingPath);
@@ -1063,7 +1093,8 @@ function writeUploadedBytes(input: RegisterMediaArtifactInput, artifactId = `art
     artifact_id: artifactId
   };
   const stagingPath = stagedPathForArtifact(artifact);
-  writeFileSync(stagingPath, decoded);
+  const stageError = writeToStagingExclusively(stagingPath, decoded);
+  if (stageError) return { ok: false, error: stageError };
   readFileSync(stagingPath);
   return { ok: true, artifact };
 }
@@ -1132,7 +1163,8 @@ function copyProviderOutputFile(input: RegisterMediaArtifactInput): RegisterMedi
     artifact_id: artifactId
   };
   const stagingPath = stagedPathForArtifact(preparedBase);
-  copyFileSync(realSourcePath, stagingPath);
+  const stageError = copyToStagingExclusively(realSourcePath, stagingPath);
+  if (stageError) return { ok: false, error: stageError };
   const sha256 = sha256ForFile(stagingPath);
 
   const artifact: MediaArtifact = {
@@ -1216,7 +1248,8 @@ function copyLocalImageImport(input: RegisterMediaArtifactInput, artifactId = `a
 
   const prepared = buildValidatedImageArtifact(input, artifactId, filename, destinationPath, validation);
   const stagingPath = stagedPathForArtifact(prepared);
-  copyFileSync(realSourcePath, stagingPath);
+  const stageError = copyToStagingExclusively(realSourcePath, stagingPath);
+  if (stageError) return { ok: false, error: stageError };
   readFileSync(stagingPath);
 
   const storedValidation = validateImageFile(stagingPath);

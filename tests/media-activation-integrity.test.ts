@@ -112,6 +112,33 @@ test("only one non-terminal activation may own an Artifact id", () => {
   }
 });
 
+test("a retry cannot overwrite bytes owned by a staged journal", () => {
+  const db = openM0Database();
+  const artifact = preparedArtifact();
+  try {
+    assert.throws(() => activateLocalMediaArtifact({
+      artifact,
+      source_path: IMAGE_FIXTURE,
+      after_journal_staged: () => { throw new Error("INJECTED_AFTER_JOURNAL_STAGED"); }
+    }, db), /INJECTED_AFTER_JOURNAL_STAGED/);
+    const row = db.prepare("SELECT activation_id, staging_path, state FROM media_activation_journal WHERE artifact_id = ?").get(artifact.artifact_id) as { activation_id: string; staging_path: string; state: string };
+    assert.equal(row.state, "staged");
+    const originalBytes = readFileSync(row.staging_path);
+
+    const retry = activateLocalMediaArtifact({ artifact: structuredClone(artifact), source_path: IMAGE_FIXTURE }, db);
+    assert.equal(retry.ok, false);
+    if (!retry.ok) assert.equal(retry.error.code, "MEDIA_ACTIVATION_ALREADY_PENDING");
+    assert.equal(readFileSync(row.staging_path).equals(originalBytes), true);
+
+    const recovered = recoverMediaActivations(db);
+    assert.equal(recovered.committed.includes(row.activation_id), true);
+    const stored = getMediaArtifact(db, artifact.artifact_id);
+    assert.equal(stored ? verifyMediaArtifactBytes(db, stored).ok : false, true);
+  } finally {
+    db.close();
+  }
+});
+
 test("interrupted file placement is recovered without creating a second Artifact", () => {
   const db = openM0Database();
   const artifact = preparedArtifact();
