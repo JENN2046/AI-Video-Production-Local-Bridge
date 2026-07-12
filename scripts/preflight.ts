@@ -7,6 +7,7 @@ import { openM0Database } from "../src/storage/sqlite.js";
 import { checkProviderEnv } from "../src/tools/providerEnv.js";
 import { loadWebGptV4AuthConfig } from "../src/webgpt-v4/auth.js";
 import { resolveFfmpegExecutable, resolveFfprobeExecutable } from "../src/webgpt-v4/media.js";
+import { parseWebGptV4Profile } from "../src/webgpt-v4/toolCatalog.js";
 
 type Check = { ok: boolean; detail: string };
 
@@ -20,19 +21,29 @@ function portAvailable(port: number): Promise<boolean> {
 
 const profileArg = process.argv.find((value) => value.startsWith("--profile="))?.split("=")[1];
 const profile = profileArg === "webgpt" ? "webgpt" : "local";
+let webgptProfile: "readonly" | "full" | null = null;
+if (profile === "webgpt") {
+  try { webgptProfile = parseWebGptV4Profile(process.env.WEBGPT_V4_PROFILE); }
+  catch {
+    console.log(JSON.stringify({ ok: false, profile, error: { code: "INVALID_WEBGPT_PROFILE", message: "WEBGPT_V4_PROFILE must be readonly or full." } }, null, 2));
+    process.exit(1);
+  }
+}
 const checks: Record<string, Check> = {};
 const [major, minor] = process.versions.node.split(".").map(Number);
 checks.node = { ok: major > 22 || (major === 22 && minor >= 5), detail: `Node ${process.versions.node}; minimum is 22.5.0 and CI is pinned to 22` };
 
-try {
-  const ffmpeg = await resolveFfmpegExecutable();
-  const ffprobe = await resolveFfprobeExecutable(ffmpeg);
-  const version = execFileSync(ffmpeg, ["-version"], { encoding: "utf8", windowsHide: true, timeout: 5_000 }).split(/\r?\n/, 1)[0] ?? "";
-  checks.ffmpeg = { ok: /ffmpeg version 8\.1\.2(?:[-\s]|$)/i.test(version), detail: `${ffmpeg} (${version})` };
-  checks.ffprobe = { ok: true, detail: ffprobe };
-} catch {
-  checks.ffmpeg = { ok: false, detail: "FFmpeg 8.1.2 was not resolved" };
-  checks.ffprobe = { ok: false, detail: "FFprobe was not resolved" };
+if (profile === "local" || webgptProfile === "full") {
+  try {
+    const ffmpeg = await resolveFfmpegExecutable();
+    const ffprobe = await resolveFfprobeExecutable(ffmpeg);
+    const version = execFileSync(ffmpeg, ["-version"], { encoding: "utf8", windowsHide: true, timeout: 5_000 }).split(/\r?\n/, 1)[0] ?? "";
+    checks.ffmpeg = { ok: /ffmpeg version 8\.1\.2(?:[-\s]|$)/i.test(version), detail: `${ffmpeg} (${version})` };
+    checks.ffprobe = { ok: true, detail: ffprobe };
+  } catch {
+    checks.ffmpeg = { ok: false, detail: "FFmpeg 8.1.2 was not resolved" };
+    checks.ffprobe = { ok: false, detail: "FFprobe was not resolved" };
+  }
 }
 
 try {
@@ -45,7 +56,10 @@ try {
   checks.schema = { ok: false, detail: error instanceof Error ? error.message : "Schema validation failed" };
 }
 
-for (const [name, directory] of Object.entries({ data_directory: paths.dataRoot, media_directory: paths.mediaRoot })) {
+const directories = profile === "webgpt" && webgptProfile === "readonly"
+  ? { data_directory: paths.dataRoot }
+  : { data_directory: paths.dataRoot, media_directory: paths.mediaRoot };
+for (const [name, directory] of Object.entries(directories)) {
   try {
     accessSync(directory, constants.R_OK | constants.W_OK);
     checks[name] = { ok: true, detail: directory };
@@ -53,7 +67,9 @@ for (const [name, directory] of Object.entries({ data_directory: paths.dataRoot,
 }
 
 const ports = profile === "webgpt"
-  ? [Number(process.env.WEBGPT_V4_MCP_PORT || 2091), Number(process.env.WEBGPT_V4_MEDIA_PORT || 2092)]
+  ? webgptProfile === "full"
+    ? [Number(process.env.WEBGPT_V4_MCP_PORT || 2091), Number(process.env.WEBGPT_V4_MEDIA_PORT || 2092)]
+    : [Number(process.env.WEBGPT_V4_MCP_PORT || 2091)]
   : [Number(process.env.H1_WORKBENCH_PORT || process.env.PORT || 4181)];
 checks.ports = { ok: (await Promise.all(ports.map(portAvailable))).every(Boolean), detail: ports.join(", ") };
 if (profile === "webgpt") {
@@ -67,5 +83,5 @@ if (process.env.REAL_PROVIDER_ENABLED === "true") {
 }
 
 const ok = Object.values(checks).every((check) => check.ok);
-console.log(JSON.stringify({ ok, profile, checks }, null, 2));
+console.log(JSON.stringify({ ok, profile, ...(webgptProfile ? { webgpt_profile: webgptProfile } : {}), checks }, null, 2));
 process.exitCode = ok ? 0 : 1;

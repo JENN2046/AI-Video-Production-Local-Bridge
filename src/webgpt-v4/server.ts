@@ -7,16 +7,18 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { openM0Database, openM0DatabaseConnection } from "../storage/sqlite.js";
 import { paths } from "../paths.js";
 import { loadWebGptV4AuthConfig, createAuth0Authenticator, createAuth0MediaAuthenticator, protectedResourceMetadata, unavailableAuthenticator, wwwAuthenticate, type WebGptV4AuthConfig, type WebGptV4Authenticator } from "./auth.js";
-import { errorBody, WEBGPT_V4_VERSION } from "./types.js";
-import { createWebGptV4McpApp, WEBGPT_V4_TOOL_SCOPES } from "./mcpApp.js";
+import { errorBody, WEBGPT_V4_VERSION, WebGptV4Error } from "./types.js";
+import { createWebGptV4McpApp } from "./mcpApp.js";
 import { handleMediaGatewayRequest, invalidateMediaGrantsForRestart, mediaAnalysisQueue, resolveFfmpegExecutable, resolveFfprobeExecutable, type MediaRuntimeOptions } from "./media.js";
 import { withToolSecuritySchemes } from "./securityTransport.js";
+import { parseWebGptV4Profile, webGptV4ScopesForProfile, webGptV4ToolNeedsWrite, webGptV4ToolScopesForProfile, type WebGptV4Profile } from "./toolCatalog.js";
 
 export const WEBGPT_V4_HOST = "127.0.0.1";
 export const WEBGPT_V4_MCP_PORT = 2091;
 export const WEBGPT_V4_MEDIA_PORT = 2092;
 
 export interface StartWebGptV4Options {
+  profile?: string;
   mcp_port?: number;
   media_port?: number;
   sqlite_path?: string;
@@ -29,10 +31,11 @@ export interface StartWebGptV4Options {
 }
 
 export interface WebGptV4Runtime {
+  profile: WebGptV4Profile;
   mcp_port: number;
-  media_port: number;
+  media_port: number | null;
   mcp_url: string;
-  media_url: string;
+  media_url: string | null;
   auth_configured: boolean;
   invalidated_media_grants: number;
   close: () => Promise<void>;
@@ -81,33 +84,32 @@ function decodedPathSegment(value: string): string {
   }
 }
 
-const MCP_WRITE_TOOLS = new Set([
-  "inspect_media",
-  "update_shot_copy",
-  "add_review_note",
-  "submit_production_proposal",
-  "revise_production_proposal",
-  "close_production_proposal",
-  "prepare_generation_intent"
-]);
-
-function mcpRequestNeedsWrite(parsedBody: Record<string, unknown> | undefined): boolean {
+function mcpRequestNeedsWrite(parsedBody: Record<string, unknown> | undefined, profile: WebGptV4Profile): boolean {
   if (parsedBody?.method !== "tools/call") return false;
   const params = parsedBody.params;
   if (!params || typeof params !== "object" || Array.isArray(params)) return false;
-  return MCP_WRITE_TOOLS.has(String((params as Record<string, unknown>).name ?? ""));
+  return webGptV4ToolNeedsWrite(String((params as Record<string, unknown>).name ?? ""), profile);
 }
 
 export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise<WebGptV4Runtime> {
+  let profile: WebGptV4Profile;
+  try {
+    profile = parseWebGptV4Profile(options.profile);
+  } catch {
+    throw new WebGptV4Error("INVALID_WEBGPT_PROFILE", "WEBGPT_V4_PROFILE must be readonly or full.", "WEBGPT_V4_PROFILE");
+  }
   const authConfig = options.auth_config === undefined ? loadWebGptV4AuthConfig() : options.auth_config;
   const authenticate = options.authenticate ?? (authConfig ? createAuth0Authenticator(authConfig) : unavailableAuthenticator());
-  const authenticateMedia = options.authenticate_media ?? (authConfig
+  const authenticateMedia = options.authenticate_media ?? (profile === "full" && authConfig
     ? createAuth0MediaAuthenticator(authConfig, process.env.WEBGPT_V4_MEDIA_AUTH_COOKIE_NAME?.trim() || undefined)
     : unavailableAuthenticator());
   const maximum = options.max_body_bytes ?? 1024 * 1024;
-  const bootstrapDb = openM0Database(options.sqlite_path);
-  const invalidatedMediaGrants = invalidateMediaGrantsForRestart(bootstrapDb);
-  bootstrapDb.close();
+  let invalidatedMediaGrants = 0;
+  if (profile === "full") {
+    const bootstrapDb = openM0Database(options.sqlite_path);
+    try { invalidatedMediaGrants = invalidateMediaGrantsForRestart(bootstrapDb); }
+    finally { bootstrapDb.close(); }
+  }
 
   const activeRequests = new Set<Promise<void>>();
   let readinessCache: { expires: number; checks: Record<string, boolean> } | null = null;
@@ -116,27 +118,36 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
     if (readinessCache && readinessCache.expires > Date.now()) {
       staticChecks = readinessCache.checks;
     } else {
-      staticChecks = { oauth: Boolean(authConfig), schema: false, database: false, media_directory: false, ffmpeg: false, ffprobe: false };
+      staticChecks = { oauth: Boolean(authConfig), schema: false, database: false };
       try {
-        const db = openM0Database(options.sqlite_path);
+        const db = profile === "readonly"
+          ? openM0DatabaseConnection(options.sqlite_path, { readOnly: true })
+          : openM0Database(options.sqlite_path);
         try {
           staticChecks.database = (db.prepare("SELECT 1 AS ok").get() as { ok: number }).ok === 1;
           staticChecks.schema = (db.prepare("PRAGMA quick_check").get() as { quick_check: string }).quick_check === "ok";
         } finally { db.close(); }
       } catch { staticChecks.database = false; }
-      try { accessSync(paths.mediaRoot, constants.R_OK | constants.W_OK); staticChecks.media_directory = true; } catch { staticChecks.media_directory = false; }
-      try {
-        const ffmpeg = await resolveFfmpegExecutable(options.media?.ffmpeg_path);
-        staticChecks.ffmpeg = true;
-        await resolveFfprobeExecutable(ffmpeg);
-        staticChecks.ffprobe = true;
-      } catch { staticChecks.ffmpeg = false; staticChecks.ffprobe = false; }
+      if (profile === "full") {
+        staticChecks.media_directory = false;
+        staticChecks.ffmpeg = false;
+        staticChecks.ffprobe = false;
+        try { accessSync(paths.mediaRoot, constants.R_OK | constants.W_OK); staticChecks.media_directory = true; } catch { staticChecks.media_directory = false; }
+        try {
+          const ffmpeg = await resolveFfmpegExecutable(options.media?.ffmpeg_path);
+          staticChecks.ffmpeg = true;
+          await resolveFfprobeExecutable(ffmpeg);
+          staticChecks.ffprobe = true;
+        } catch { staticChecks.ffmpeg = false; staticChecks.ffprobe = false; }
+      }
       readinessCache = { checks: staticChecks, expires: Date.now() + 30_000 };
     }
     const queueStatus = mediaAnalysisQueue.status();
-    const checks = { ...staticChecks, media_queue: queueStatus.active + queueStatus.waiting < queueStatus.capacity };
+    const checks = profile === "full"
+      ? { ...staticChecks, media_queue: queueStatus.active + queueStatus.waiting < queueStatus.capacity }
+      : staticChecks;
     const ok = Object.values(checks).every(Boolean);
-    const result = { status: ok ? 200 : 503, body: { ok, service: "webgpt-v4", checks, provider_calls_allowed: false } };
+    const result = { status: ok ? 200 : 503, body: { ok, service: "webgpt-v4", profile, checks, provider_calls_allowed: false } };
     return result;
   };
   const trackRequest = (task: Promise<void>): void => {
@@ -156,7 +167,7 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
       return;
     }
     if (request.method === "GET" && url.pathname === "/.well-known/oauth-protected-resource") {
-      sendJson(response, 200, protectedResourceMetadata(authConfig));
+      sendJson(response, 200, protectedResourceMetadata(authConfig, webGptV4ScopesForProfile(profile)));
       return;
     }
     if (url.pathname !== "/mcp") {
@@ -182,10 +193,10 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
       return;
     }
 
-    const db = openM0DatabaseConnection(options.sqlite_path, { readOnly: !mcpRequestNeedsWrite(parsedBody) });
-    const app = createWebGptV4McpApp({ db, actor, auth_config: authConfig, media: options.media });
+    const db = openM0DatabaseConnection(options.sqlite_path, { readOnly: !mcpRequestNeedsWrite(parsedBody, profile) });
+    const app = createWebGptV4McpApp({ db, actor, profile, auth_config: authConfig, media: options.media });
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    const securedTransport = withToolSecuritySchemes(transport, WEBGPT_V4_TOOL_SCOPES);
+    const securedTransport = withToolSecuritySchemes(transport, webGptV4ToolScopesForProfile(profile));
     try {
       await app.connect(securedTransport);
       await transport.handleRequest(request, response, parsedBody);
@@ -253,26 +264,31 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
     }
   };
 
-  const mediaServer = createServer((request, response) => {
+  const mediaServer = profile === "full" ? createServer((request, response) => {
     trackRequest(handleMediaRequest(request, response).catch(() => {
       if (!response.headersSent) sendJson(response, 500, { ok: false, error: { code: "MEDIA_GATEWAY_ERROR", message: "Media request failed." } });
       else if (!response.writableEnded) response.end();
     }));
-  });
+  }) : null;
 
-  const [mcpPort, mediaPort] = await Promise.all([
-    listen(mcpServer, options.mcp_port ?? WEBGPT_V4_MCP_PORT),
-    listen(mediaServer, options.media_port ?? WEBGPT_V4_MEDIA_PORT)
-  ]);
+  const mcpPort = await listen(mcpServer, options.mcp_port ?? WEBGPT_V4_MCP_PORT);
+  let mediaPort: number | null = null;
+  try {
+    mediaPort = mediaServer ? await listen(mediaServer, options.media_port ?? WEBGPT_V4_MEDIA_PORT) : null;
+  } catch (error) {
+    await close(mcpServer);
+    throw error;
+  }
   return {
+    profile,
     mcp_port: mcpPort,
     media_port: mediaPort,
     mcp_url: `http://${WEBGPT_V4_HOST}:${mcpPort}/mcp`,
-    media_url: `http://${WEBGPT_V4_HOST}:${mediaPort}`,
+    media_url: mediaPort === null ? null : `http://${WEBGPT_V4_HOST}:${mediaPort}`,
     auth_configured: Boolean(authConfig),
     invalidated_media_grants: invalidatedMediaGrants,
     close: async () => {
-      await Promise.all([close(mcpServer), close(mediaServer)]);
+      await Promise.all([close(mcpServer), ...(mediaServer ? [close(mediaServer)] : [])]);
       await Promise.allSettled([...activeRequests]);
     }
   };
