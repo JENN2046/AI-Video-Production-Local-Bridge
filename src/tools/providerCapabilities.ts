@@ -59,6 +59,7 @@ export interface ProviderCapabilityKey {
   model: string;
   duration_seconds: number;
   resolution: string;
+  aspect_ratio: string;
   serialized: string;
 }
 
@@ -74,6 +75,7 @@ export interface ProviderPriceCacheKey {
   model: string;
   duration_seconds: number;
   resolution: string;
+  aspect_ratio: string;
   source: string;
   serialized: string;
 }
@@ -123,7 +125,8 @@ export function buildProviderCapabilityKey(input: {
     model: capability.model,
     duration_seconds: input.duration_seconds,
     resolution,
-    serialized: [capability.version, capability.capability_id, capability.provider, capability.model, input.duration_seconds, resolution].join("|")
+    aspect_ratio: input.aspect_ratio,
+    serialized: [capability.version, capability.capability_id, capability.provider, capability.model, input.duration_seconds, resolution, input.aspect_ratio].join("|")
   };
   return { ok: true, capability, key, aspect_ratio: input.aspect_ratio };
 }
@@ -150,21 +153,22 @@ export function providerCapabilityErrorMessage(result: Extract<ProviderCapabilit
   return `${result.code}: unsupported ${result.field}.`;
 }
 
-export function providerCapabilityPriceSource(capability: ProviderCapability): string {
-  return `human_workbench_official_preflight@${capability.version}:${capability.capability_id}`;
+export function providerCapabilityPriceSource(capability: ProviderCapability, aspectRatio: string): string {
+  return `human_workbench_official_preflight@${capability.version}:${capability.capability_id}:${aspectRatio}`;
 }
 
 export function buildProviderPriceCacheKey(key: ProviderCapabilityKey, capability: ProviderCapability): ProviderPriceCacheKey {
   if (key.registry_version !== capability.version || key.capability_id !== capability.capability_id) {
     throw new Error("PROVIDER_CAPABILITY_PRICE_KEY_MISMATCH");
   }
-  const source = providerCapabilityPriceSource(capability);
+  const source = providerCapabilityPriceSource(capability, key.aspect_ratio);
   return {
     provider: key.provider,
     model: key.model,
     duration_seconds: key.duration_seconds,
     resolution: key.resolution,
+    aspect_ratio: key.aspect_ratio,
     source,
-    serialized: [source, key.provider, key.model, key.duration_seconds, key.resolution].join("|")
+    serialized: [source, key.provider, key.model, key.duration_seconds, key.resolution, key.aspect_ratio].join("|")
   };
 }
