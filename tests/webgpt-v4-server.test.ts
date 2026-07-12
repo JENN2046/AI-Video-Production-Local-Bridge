@@ -30,7 +30,7 @@ test("official MCP transport advertises the V4 scoped tool contract and hides te
   db.close();
 
   const actor = actorFromSubject("auth0|jenn", WEBGPT_V4_SCOPES);
-  const runtime = await startWebGptV4({ mcp_port: 0, media_port: 0, sqlite_path: sqlitePath, data_root: dataRoot, authenticate: async () => actor, media: { public_origin: "https://media.example.test" } });
+  const runtime = await startWebGptV4({ profile: "full", mcp_port: 0, media_port: 0, sqlite_path: sqlitePath, data_root: dataRoot, authenticate: async () => actor, media: { public_origin: "https://media.example.test" } });
   const transport = new StreamableHTTPClientTransport(new URL(runtime.mcp_url), { requestInit: { headers: { Authorization: "Bearer test-token" } } });
   const client = new Client({ name: "webgpt-v4-test", version: "1.0.0" });
   try {
@@ -116,6 +116,7 @@ test("MCP endpoint fails closed without OAuth and exposes only protected-resourc
   const dataRoot = join(root, "data");
   mkdirSync(join(dataRoot, "webgpt"), { recursive: true });
   const runtime = await startWebGptV4({
+    profile: "full",
     mcp_port: 0,
     media_port: 0,
     sqlite_path: join(root, "app.sqlite"),
@@ -153,6 +154,7 @@ test("MCP tools reject callers that lack the exact write scope", async () => {
   const dataRoot = join(root, "data");
   mkdirSync(join(dataRoot, "webgpt"), { recursive: true });
   const runtime = await startWebGptV4({
+    profile: "full",
     mcp_port: 0,
     media_port: 0,
     sqlite_path: join(root, "app.sqlite"),
@@ -183,6 +185,7 @@ test("media server rejects malformed encoded paths without terminating the servi
   mkdirSync(join(dataRoot, "webgpt"), { recursive: true });
   const actor = actorFromSubject("auth0|jenn", ["media.read"]);
   const runtime = await startWebGptV4({
+    profile: "full",
     mcp_port: 0,
     media_port: 0,
     sqlite_path: join(root, "app.sqlite"),
@@ -217,6 +220,7 @@ test("readiness reports a saturated media analysis queue", async () => {
   const dataRoot = join(root, "data");
   mkdirSync(join(dataRoot, "webgpt"), { recursive: true });
   const runtime = await startWebGptV4({
+    profile: "full",
     mcp_port: 0,
     media_port: 0,
     sqlite_path: join(root, "app.sqlite"),

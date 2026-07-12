@@ -31,6 +31,11 @@ export interface WebGptV4ErrorBody {
   message: string;
   field?: string;
   retryable?: boolean;
+  suggested_parameters?: {
+    detail?: "compact";
+    limit?: number;
+    notes_limit?: number;
+  };
 }
 
 export type WebGptV4Result<T> =

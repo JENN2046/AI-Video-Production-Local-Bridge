@@ -13,6 +13,7 @@ import { evaluateWebGptV4Replay } from "../src/webgpt-v4/eval.js";
 import { WEBGPT_V4_METADATA_GOLDEN_PROMPTS } from "../src/webgpt-v4/metadataGoldenPrompts.js";
 import { startWebGptV4 } from "../src/webgpt-v4/server.js";
 import { WEBGPT_V4_TOOL_CATALOG } from "../src/webgpt-v4/toolCatalog.js";
+import { webGptV4ToolNeedsWrite } from "../src/webgpt-v4/toolCatalog.js";
 import { actorFromSubject, WEBGPT_V4_SCOPES, WebGptV4Error } from "../src/webgpt-v4/types.js";
 
 test("eval corpus has stable unique ids across direct, indirect, negative, and adversarial categories", () => {
@@ -23,6 +24,15 @@ test("eval corpus has stable unique ids across direct, indirect, negative, and a
     assert.equal(item.prompt.length > 0, true);
     assert.equal(new Set(item.expected_argument_keys).size, item.expected_argument_keys.length);
   }
+});
+
+test("tool catalog separates model read-only hints from SQLite write requirements", () => {
+  const inspect = WEBGPT_V4_TOOL_CATALOG.find((tool) => tool.name === "inspect_media");
+  assert.equal(inspect?.annotations.readOnlyHint, true);
+  assert.equal(inspect?.database_access, "write");
+  assert.equal(webGptV4ToolNeedsWrite("inspect_media", "full"), true);
+  assert.equal(webGptV4ToolNeedsWrite("inspect_media", "readonly"), false);
+  assert.equal(webGptV4ToolNeedsWrite("get_project_context", "readonly"), false);
 });
 
 test("sanitized replay scores selections without accepting raw argument values", () => {
@@ -81,7 +91,7 @@ test("official MCP client contract matches the catalog and stored instructions r
   db.close();
 
   const actor = actorFromSubject("auth0|jenn", WEBGPT_V4_SCOPES);
-  const runtime = await startWebGptV4({ mcp_port: 0, media_port: 0, sqlite_path: sqlitePath, data_root: dataRoot, authenticate: async () => actor });
+  const runtime = await startWebGptV4({ profile: "full", mcp_port: 0, media_port: 0, sqlite_path: sqlitePath, data_root: dataRoot, authenticate: async () => actor });
   const transport = new StreamableHTTPClientTransport(new URL(runtime.mcp_url), { requestInit: { headers: { Authorization: "Bearer fixture" } } });
   const client = new Client({ name: "webgpt-v4-eval", version: "1.0.0" });
   try {

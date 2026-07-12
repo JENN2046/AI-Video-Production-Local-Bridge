@@ -1,7 +1,7 @@
 import type { IncomingMessage } from "node:http";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 
-import { actorFromSubject, sha256, WebGptV4Error, WEBGPT_V4_SCOPES, type WebGptV4Actor } from "./types.js";
+import { actorFromSubject, sha256, WebGptV4Error, WEBGPT_V4_SCOPES, type WebGptV4Actor, type WebGptV4Scope } from "./types.js";
 
 export interface WebGptV4AuthConfig {
   issuer: string;
@@ -103,12 +103,12 @@ export function unavailableAuthenticator(): WebGptV4Authenticator {
   return async () => { throw new WebGptV4Error("AUTH_NOT_CONFIGURED", "WebGPT V4 OAuth is not configured."); };
 }
 
-export function protectedResourceMetadata(config: WebGptV4AuthConfig | null): Record<string, unknown> {
+export function protectedResourceMetadata(config: WebGptV4AuthConfig | null, scopes: readonly WebGptV4Scope[] = WEBGPT_V4_SCOPES): Record<string, unknown> {
   return {
     resource: config?.resource_url ?? "",
     resource_name: "AI Video Production Assistant",
     authorization_servers: config ? [config.issuer] : [],
-    scopes_supported: [...WEBGPT_V4_SCOPES],
+    scopes_supported: [...scopes],
     bearer_methods_supported: ["header"],
     configured: Boolean(config)
   };

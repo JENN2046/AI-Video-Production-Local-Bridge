@@ -165,8 +165,8 @@ function ensureProjectMeta(db: M0Database, projectId: string): void {
   db.prepare("INSERT OR IGNORE INTO workbench_project_meta (project_id) VALUES (?)").run(projectId);
 }
 
-function projectMeta(db: M0Database, projectId: string): WorkbenchProjectMeta | null {
-  ensureProjectMeta(db, projectId);
+function projectMeta(db: M0Database, projectId: string, ensure = true): WorkbenchProjectMeta | null {
+  if (ensure) ensureProjectMeta(db, projectId);
   const row = db.prepare(`
     SELECT project_id, classification, lifecycle, pinned, last_opened_at,
       next_action_override, next_action_priority, next_action_expires_at,
@@ -544,7 +544,7 @@ export function getWorkbenchProjectWorkspace(
 ): WorkbenchV2Result<Record<string, unknown>> {
   const project = getProject(db, projectId);
   if (!project) return projectNotFound(projectId);
-  const meta = projectMeta(db, projectId) as WorkbenchProjectMeta;
+  const meta = projectMeta(db, projectId, options.touch_last_opened !== false) as WorkbenchProjectMeta;
   if (options.touch_last_opened !== false) {
     db.prepare("UPDATE workbench_project_meta SET last_opened_at = CURRENT_TIMESTAMP WHERE project_id = ?").run(projectId);
   }
