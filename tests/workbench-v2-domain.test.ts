@@ -356,6 +356,38 @@ test("worker preserves a known paid task when a resumed capability drifts", asyn
   }
 });
 
+test("worker preserves a known paid task when the adapter contract drifts", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-known-task-adapter-drift-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Known task adapter drift");
+    const db = openM0Database(sqlitePath);
+    db.prepare("UPDATE generation_intents SET provider_task_id = 'paid-task-adapter', status = 'running' WHERE intent_id = ?").run(prepared.intent_id);
+    db.prepare("UPDATE generation_jobs SET state = 'polling' WHERE job_id = ?").run(prepared.job_id);
+    db.close();
+    let providerCalls = 0;
+    const adapter = {
+      provider_name: "runninghub",
+      model_name: "stale-model",
+      submitGeneration: async () => { providerCalls += 1; throw new Error("submit must not run"); },
+      pollStatus: async () => { providerCalls += 1; throw new Error("poll must not run"); },
+      fetchOutput: async () => { providerCalls += 1; throw new Error("output must not run"); }
+    } as unknown as VideoProviderAdapter;
+
+    await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: false, dependencies: { sqlite_path: sqlitePath, env: prepared.env, adapter_factory: () => adapter } });
+
+    const checked = openM0Database(sqlitePath);
+    const intent = checked.prepare("SELECT status, provider_task_id FROM generation_intents WHERE intent_id = ?").get(prepared.intent_id) as { status: string; provider_task_id: string };
+    const job = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?").get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    assert.equal(providerCalls, 0);
+    assert.deepEqual({ ...intent }, { status: "running", provider_task_id: "paid-task-adapter" });
+    assert.deepEqual({ ...job }, { state: "manual_reconciliation", reconciliation_reason: "PROVIDER_ADAPTER_REQUIRES_RECONCILIATION" });
+    checked.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("worker closes its database when claiming the job throws", async () => {
   let closed = false;
   const injectedDatabase = {

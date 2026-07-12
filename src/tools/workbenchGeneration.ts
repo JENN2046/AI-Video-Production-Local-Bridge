@@ -731,6 +731,13 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
     if (!intent || (intent.status !== "queued" && intent.status !== "running")) return;
     knownTaskId = intent.provider_task_id;
     providerTaskMayExist = Boolean(knownTaskId);
+    const failOrReconcileKnownTask = (currentIntent: WorkbenchGenerationIntent, currentJob: GenerationJob, error: ProviderToolError, reconciliationReason: string): void => {
+      if (knownTaskId) {
+        job = markKnownProviderTaskForReconciliation(db, currentIntent, currentJob, knownTaskId, error, leaseToken, reconciliationReason);
+      } else {
+        failIntent(db, currentIntent, "failed", error, leaseToken);
+      }
+    };
     const capability = buildProviderCapabilityKey({
       provider: "runninghub",
       model: intent.model,
@@ -740,32 +747,28 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
     });
     if (!capability.ok || (intent.input_snapshot.capability_key && intent.input_snapshot.capability_key !== capability.key.serialized)) {
       const error = providerError("PROVIDER_CAPABILITY_CONTRACT_MISMATCH", "Generation intent no longer matches the declared Provider capability.");
-      if (knownTaskId) {
-        job = markKnownProviderTaskForReconciliation(db, intent, job, knownTaskId, error, leaseToken, "PROVIDER_CAPABILITY_REQUIRES_RECONCILIATION");
-      } else {
-        failIntent(db, intent, "failed", error, leaseToken);
-      }
+      failOrReconcileKnownTask(intent, job, error, "PROVIDER_CAPABILITY_REQUIRES_RECONCILIATION");
       return;
     }
     const selection = selectM1ProviderPort({ provider: "real", provider_name: "runninghub", model_name: capability.key.model, cost_acknowledged: true }, dependencies.env ?? process.env);
     if (!selection.ok || selection.selected.provider_name !== "runninghub" || !selection.selected.credential) {
-      failIntent(db, intent, "failed", selection.ok ? providerError("PROVIDER_SELECTION_MISMATCH", "RunningHub provider selection changed after confirmation.") : selection.error, leaseToken);
-      return;
-    }
-    const artifact = getMediaArtifact(db, intent.input_artifact_id);
-    if (!artifact) {
-      failIntent(db, intent, "failed", providerError("ARTIFACT_NOT_FOUND", "Generation input artifact is missing."), leaseToken);
+      failOrReconcileKnownTask(intent, job, selection.ok ? providerError("PROVIDER_SELECTION_MISMATCH", "RunningHub provider selection changed after confirmation.") : selection.error, "PROVIDER_SELECTION_REQUIRES_RECONCILIATION");
       return;
     }
     const adapter = dependencies.adapter_factory?.(selection.selected.credential)
       ?? new RunningHubVideoProviderAdapter({ credential: selection.selected.credential, fetch_impl: dependencies.fetch_impl });
     if (adapter.provider_name !== capability.key.provider || adapter.model_name !== capability.key.model) {
-      failIntent(db, intent, "failed", providerError("PROVIDER_CAPABILITY_CONTRACT_MISMATCH", "Provider adapter does not match the confirmed generation capability."), leaseToken);
+      failOrReconcileKnownTask(intent, job, providerError("PROVIDER_CAPABILITY_CONTRACT_MISMATCH", "Provider adapter does not match the confirmed generation capability."), "PROVIDER_ADAPTER_REQUIRES_RECONCILIATION");
       return;
     }
     let taskId = knownTaskId;
     let submittedNow = false;
     if (!taskId) {
+      const artifact = getMediaArtifact(db, intent.input_artifact_id);
+      if (!artifact) {
+        failIntent(db, intent, "failed", providerError("ARTIFACT_NOT_FOUND", "Generation input artifact is missing."), leaseToken);
+        return;
+      }
       if (!allowSubmit) {
         job = setJobState(db, job, "manual_reconciliation", "PROVIDER_SUBMIT_OUTCOME_UNKNOWN", { lease_token: leaseToken });
         return;
