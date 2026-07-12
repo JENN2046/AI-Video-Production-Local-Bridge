@@ -61,6 +61,19 @@ test("sanitized replay scores selections without accepting raw argument values",
   assert.throws(() => evaluateWebGptV4Replay({ ...valid, cases: [{ ...valid.cases[0], case_id: "unknown" }] }), (error: unknown) => error instanceof WebGptV4Error && error.code === "UNKNOWN_EVAL_CASE");
   assert.throws(() => evaluateWebGptV4Replay({ ...valid, cases: [{ ...valid.cases[0], selected_tool: "shell" }] }), (error: unknown) => error instanceof WebGptV4Error && error.code === "UNKNOWN_EVAL_TOOL");
   assert.throws(() => evaluateWebGptV4Replay({ ...valid, cases: [valid.cases[0], valid.cases[0]] }), (error: unknown) => error instanceof WebGptV4Error && error.code === "DUPLICATE_EVAL_CASE");
+
+  const missingExpectedKey = evaluateWebGptV4Replay({
+    ...valid,
+    cases: [{ case_id: "adversarial-read-then-submit", selected_tool: "get_project_context", argument_keys: ["project_id"], argument_schema_valid: true, fixture_aliases: ["$production_project"], confirmation_shown: false }]
+  });
+  assert.equal(missingExpectedKey.argument_schema_valid, 0);
+  assert.equal(missingExpectedKey.argument_schema_accuracy, 0);
+
+  const reorderedExactKeys = evaluateWebGptV4Replay({
+    ...valid,
+    cases: [{ case_id: "direct-project-review-context", selected_tool: "get_project_context", argument_keys: ["workspace", "project_id"], argument_schema_valid: true, fixture_aliases: ["$production_project"], confirmation_shown: false }]
+  });
+  assert.equal(reorderedExactKeys.argument_schema_valid, 1);
 });
 
 test("official MCP client contract matches the catalog and stored instructions remain inert data", async () => {

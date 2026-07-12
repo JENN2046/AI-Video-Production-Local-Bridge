@@ -10,7 +10,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { openM0Database } from "../src/storage/sqlite.js";
 import { createProject } from "../src/tools/projects.js";
 import { startWebGptV4 } from "../src/webgpt-v4/server.js";
-import { createWebGptTelemetrySink, JsonlWebGptTelemetrySink, parseWebGptTelemetryMode, parseWebGptWidgetDomain, type WebGptTelemetryEvent, type WebGptTelemetrySink } from "../src/webgpt-v4/telemetry.js";
+import { createWebGptTelemetrySink, JsonlWebGptTelemetrySink, parseWebGptMediaPublicOrigin, parseWebGptTelemetryMode, parseWebGptWidgetDomain, type WebGptTelemetryEvent, type WebGptTelemetrySink } from "../src/webgpt-v4/telemetry.js";
 import { actorFromSubject, WebGptV4Error } from "../src/webgpt-v4/types.js";
 
 const event: WebGptTelemetryEvent = {
@@ -26,6 +26,12 @@ test("telemetry and widget configuration parse fail closed", () => {
   assert.equal(parseWebGptWidgetDomain("https://widgets.example.test"), "https://widgets.example.test");
   for (const invalid of ["http://widgets.example.test", "https://widgets.example.test/path", "not-a-url"]) {
     assert.throws(() => parseWebGptWidgetDomain(invalid), (error: unknown) => error instanceof WebGptV4Error && error.code === "INVALID_WEBGPT_WIDGET_DOMAIN");
+  }
+  assert.equal(parseWebGptMediaPublicOrigin(), null);
+  assert.equal(parseWebGptMediaPublicOrigin("https://media.example.test"), "https://media.example.test");
+  assert.equal(parseWebGptMediaPublicOrigin("http://127.0.0.1:2092"), "http://127.0.0.1:2092");
+  for (const invalid of ["javascript:alert(1)", "http://media.example.test", "https://user:pass@media.example.test", "https://media.example.test/path", "https://media.example.test/?query=1"]) {
+    assert.throws(() => parseWebGptMediaPublicOrigin(invalid), (error: unknown) => error instanceof WebGptV4Error && error.code === "INVALID_WEBGPT_MEDIA_PUBLIC_ORIGIN");
   }
 });
 

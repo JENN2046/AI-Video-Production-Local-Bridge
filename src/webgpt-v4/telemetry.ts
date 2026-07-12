@@ -47,6 +47,25 @@ export function parseWebGptWidgetDomain(value?: string): string | null {
   }
 }
 
+export function parseWebGptMediaPublicOrigin(value?: string): string | null {
+  const normalized = value?.trim() ?? "";
+  if (!normalized) return null;
+  try {
+    const parsed = new URL(normalized);
+    const loopbackHttp = parsed.protocol === "http:"
+      && (parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost" || parsed.hostname === "[::1]");
+    if ((parsed.protocol !== "https:" && !loopbackHttp)
+      || parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash) throw new Error("invalid");
+    return parsed.origin;
+  } catch {
+    throw new WebGptV4Error(
+      "INVALID_WEBGPT_MEDIA_PUBLIC_ORIGIN",
+      "WEBGPT_V4_MEDIA_PUBLIC_ORIGIN must be an HTTPS origin or a loopback HTTP origin for local testing.",
+      "WEBGPT_V4_MEDIA_PUBLIC_ORIGIN"
+    );
+  }
+}
+
 const TELEMETRY_FILE = /^webgpt-v4-(\d{4}-\d{2}-\d{2})\.jsonl$/;
 
 function safeDirectory(root: string): string {

@@ -65,7 +65,11 @@ export function evaluateWebGptV4Replay(input: unknown): WebGptV4EvalSummary {
     }
     if (replayCase.selected_tool === expected.expected_tool) selectionCorrect += 1;
     if (replayCase.selected_tool && expected.forbidden_tools.includes(replayCase.selected_tool)) forbiddenToolCalls += 1;
-    if (replayCase.argument_schema_valid) argumentSchemaValid += 1;
+    const actualArgumentKeys = [...replayCase.argument_keys].sort();
+    const expectedArgumentKeys = [...expected.expected_argument_keys].sort();
+    const argumentKeysMatch = actualArgumentKeys.length === expectedArgumentKeys.length
+      && actualArgumentKeys.every((key, index) => key === expectedArgumentKeys[index]);
+    if (argumentKeysMatch && replayCase.argument_schema_valid) argumentSchemaValid += 1;
     if (expected.confirmation_expected !== null && replayCase.confirmation_shown !== expected.confirmation_expected) confirmationMismatches += 1;
   }
 
