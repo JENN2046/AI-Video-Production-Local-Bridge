@@ -41,9 +41,9 @@ Before changing Artifact, Provider, or media behavior, make the existing safety 
 
 - Add a named Provider-boundary test command for `m1-provider-boundary`; add it, `test:memory`, and `test:source-audit` to canonical `npm test`.
 - Add separate named Windows CI steps for those suites, retaining the existing named steps for failure diagnosis.
-- Add a meta-test that fails when a declared safety suite is omitted from both canonical `npm test` and CI.
+- Add a meta-test that independently fails when any declared safety suite is omitted from canonical `npm test` **or** from Windows CI; presence on one surface never satisfies the other.
 
-Acceptance is a clean Windows run and an intentional fixture proving each added suite is selected. SR1–SR4 may not start until SR0.5 is merged.
+Acceptance is a clean Windows run and intentional fixtures proving each declared suite is selected by both the local canonical command and Windows CI. SR1–SR4 may not start until SR0.5 is merged.
 
 ### SR1 — immutable blobs and atomic Artifact binding
 
