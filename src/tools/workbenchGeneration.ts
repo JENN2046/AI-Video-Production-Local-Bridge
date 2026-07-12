@@ -4,13 +4,13 @@ import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { getGenerationRun, saveGenerationRun, type GenerationRun } from "./generation.js";
 import { getMediaArtifact, type MediaArtifact } from "./mediaArtifacts.js";
 import { providerError, selectM1ProviderPort, type ProviderToolError } from "./provider.js";
+import { buildProviderCapabilityKey, buildProviderPriceCacheKey, providerCapabilityErrorMessage } from "./providerCapabilities.js";
 import { downloadProviderOutputToArtifact } from "./providerOutputDownloader.js";
 import { getProject, getShot, listProjectShots, saveProject, saveShot, type ProjectStatus, type ShotStatus } from "./projects.js";
 import {
   buildRunningHubImageToVideoSubmitRequest,
   mapRunningHubProviderError,
   RUNNINGHUB_API_BASE_URL,
-  RUNNINGHUB_DEFAULT_RESOLUTION,
   RUNNINGHUB_MODEL_ROUTE,
   RunningHubVideoProviderAdapter,
   type ProviderGenerationInput,
@@ -50,6 +50,7 @@ export interface WorkbenchGenerationIntent {
     balance_gate: "pass" | "not_checked";
     requires_human_preflight?: boolean;
     prepared_by?: "human_workbench" | "webgpt_v4";
+    capability_key?: string;
   };
   created_at: string;
   updated_at: string;
@@ -349,24 +350,33 @@ export async function preflightWorkbenchGeneration(
     return { ok: false, error: { code: "ARTIFACT_NOT_FOUND", message: "An active storyboard image is required." } };
   }
 
-  const selection = selectM1ProviderPort({ provider: "real", provider_name: "runninghub", model_name: RUNNINGHUB_MODEL_ROUTE, cost_acknowledged: true }, dependencies.env ?? process.env);
+  const capability = buildProviderCapabilityKey({
+    provider: "runninghub",
+    model: RUNNINGHUB_MODEL_ROUTE,
+    duration_seconds: shot.duration_seconds,
+    resolution: writable.data.project.video_spec.resolution,
+    aspect_ratio: writable.data.project.video_spec.aspect_ratio
+  });
+  if (!capability.ok) return { ok: false, error: { code: capability.code, message: providerCapabilityErrorMessage(capability), field: capability.field } };
+  const priceCacheKey = buildProviderPriceCacheKey(capability.key, capability.capability);
+  const selection = selectM1ProviderPort({ provider: "real", provider_name: "runninghub", model_name: capability.key.model, cost_acknowledged: true }, dependencies.env ?? process.env);
   if (!selection.ok) return { ok: false, error: selection.error };
   if (selection.selected.provider_name !== "runninghub" || !selection.selected.credential) {
     return { ok: false, error: { code: "PROVIDER_SELECTION_MISMATCH", message: "RunningHub must be the selected real provider." } };
   }
-  const providerResolution = writable.data.project.video_spec.resolution.includes("x") ? RUNNINGHUB_DEFAULT_RESOLUTION : writable.data.project.video_spec.resolution;
   const generationInput: ProviderGenerationInput = {
     storyboard_artifact: artifact,
     video_prompt: shot.video_prompt,
     negative_prompt: shot.negative_prompt,
-    duration_seconds: shot.duration_seconds,
+    duration_seconds: capability.key.duration_seconds,
     aspect_ratio: writable.data.project.video_spec.aspect_ratio,
-    resolution: providerResolution
+    resolution: capability.key.resolution
   };
   const priceRequest = buildRunningHubImageToVideoSubmitRequest({ generation_input: generationInput, uploaded_download_url: "https://example.invalid/input.png" });
   if (!priceRequest.ok) return { ok: false, error: priceRequest.error };
+  if (!capability.capability.price_preview_path) return { ok: false, error: { code: "PRICE_ESTIMATE_UNAVAILABLE", message: "Provider capability does not declare a price-preview route." } };
   const credential = selection.selected.credential;
-  const price = await fetchJson(`${RUNNINGHUB_API_BASE_URL}/openapi/v2/price-preview/${RUNNINGHUB_MODEL_ROUTE}`, {
+  const price = await fetchJson(`${RUNNINGHUB_API_BASE_URL}${capability.capability.price_preview_path}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${credential}`, "Content-Type": "application/json" },
     body: JSON.stringify(priceRequest.body)
@@ -411,13 +421,14 @@ export async function preflightWorkbenchGeneration(
     price_source: "runninghub_price_preview",
     balance_gate: "pass",
     requires_human_preflight: false,
-    prepared_by: "human_workbench"
+    prepared_by: "human_workbench",
+    capability_key: capability.key.serialized
   };
   db.prepare(`
     INSERT INTO webgpt_provider_price_cache (
       provider, model, duration_seconds, resolution, estimated_cost_value, currency,
       source, fetched_at, expires_at
-    ) VALUES ('runninghub', ?, ?, ?, ?, ?, 'human_workbench_official_preflight', ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(provider, model, duration_seconds, resolution) DO UPDATE SET
       estimated_cost_value = excluded.estimated_cost_value,
       currency = excluded.currency,
@@ -425,11 +436,13 @@ export async function preflightWorkbenchGeneration(
       fetched_at = excluded.fetched_at,
       expires_at = excluded.expires_at
   `).run(
-    RUNNINGHUB_MODEL_ROUTE,
-    shot.duration_seconds,
-    providerResolution,
+    priceCacheKey.provider,
+    priceCacheKey.model,
+    priceCacheKey.duration_seconds,
+    priceCacheKey.storage_resolution,
     estimatedPrice,
     currency,
+    priceCacheKey.source,
     createdAt.toISOString(),
     new Date(createdAt.getTime() + 24 * 60 * 60 * 1000).toISOString()
   );
@@ -440,8 +453,8 @@ export async function preflightWorkbenchGeneration(
       confirmed, expires_at, status, data_json, created_at, updated_at
     ) VALUES (?, ?, ?, 'runninghub', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'prepared', ?, ?, ?)
   `).run(
-    intentId, input.project_id, input.shot_id, input.account_label, RUNNINGHUB_MODEL_ROUTE, artifact.artifact_id,
-    shot.duration_seconds, providerResolution, estimatedPrice, input.budget_limit_value, currency,
+    intentId, input.project_id, input.shot_id, input.account_label, capability.key.model, artifact.artifact_id,
+    capability.key.duration_seconds, capability.key.resolution, estimatedPrice, input.budget_limit_value, currency,
     expiresAt.toISOString(), JSON.stringify({ input_snapshot: inputSnapshot }), createdAt.toISOString(), createdAt.toISOString()
   );
   return { ok: true, data: { intent: getIntent(db, intentId) as WorkbenchGenerationIntent } };
@@ -469,6 +482,17 @@ export function confirmWorkbenchGeneration(
     if (intent.input_snapshot.requires_human_preflight === true || intent.input_snapshot.balance_gate !== "pass") {
       db.exec("ROLLBACK");
       return { ok: false, error: { code: "OFFICIAL_PREFLIGHT_REQUIRED", message: "Run a fresh official preflight in the human workbench before confirmation." } };
+    }
+    const capability = buildProviderCapabilityKey({
+      provider: "runninghub",
+      model: intent.model,
+      duration_seconds: intent.duration_seconds,
+      resolution: intent.resolution,
+      aspect_ratio: intent.input_snapshot.aspect_ratio
+    });
+    if (!capability.ok || (intent.input_snapshot.capability_key && intent.input_snapshot.capability_key !== capability.key.serialized)) {
+      db.exec("ROLLBACK");
+      return { ok: false, error: { code: "PROVIDER_CAPABILITY_CONTRACT_MISMATCH", message: "Generation intent no longer matches the declared Provider capability." } };
     }
     if (dateNow(dependencies).getTime() >= Date.parse(intent.expires_at)) {
       db.exec("ROLLBACK");
@@ -705,23 +729,46 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
   try {
     let intent = getIntent(db, intentId);
     if (!intent || (intent.status !== "queued" && intent.status !== "running")) return;
-    const selection = selectM1ProviderPort({ provider: "real", provider_name: "runninghub", model_name: RUNNINGHUB_MODEL_ROUTE, cost_acknowledged: true }, dependencies.env ?? process.env);
-    if (!selection.ok || selection.selected.provider_name !== "runninghub" || !selection.selected.credential) {
-      failIntent(db, intent, "failed", selection.ok ? providerError("PROVIDER_SELECTION_MISMATCH", "RunningHub provider selection changed after confirmation.") : selection.error, leaseToken);
+    knownTaskId = intent.provider_task_id;
+    providerTaskMayExist = Boolean(knownTaskId);
+    const failOrReconcileKnownTask = (currentIntent: WorkbenchGenerationIntent, currentJob: GenerationJob, error: ProviderToolError, reconciliationReason: string): void => {
+      if (knownTaskId) {
+        job = markKnownProviderTaskForReconciliation(db, currentIntent, currentJob, knownTaskId, error, leaseToken, reconciliationReason);
+      } else {
+        failIntent(db, currentIntent, "failed", error, leaseToken);
+      }
+    };
+    const capability = buildProviderCapabilityKey({
+      provider: "runninghub",
+      model: intent.model,
+      duration_seconds: intent.duration_seconds,
+      resolution: intent.resolution,
+      aspect_ratio: intent.input_snapshot.aspect_ratio
+    });
+    if (!capability.ok || (intent.input_snapshot.capability_key && intent.input_snapshot.capability_key !== capability.key.serialized)) {
+      const error = providerError("PROVIDER_CAPABILITY_CONTRACT_MISMATCH", "Generation intent no longer matches the declared Provider capability.");
+      failOrReconcileKnownTask(intent, job, error, "PROVIDER_CAPABILITY_REQUIRES_RECONCILIATION");
       return;
     }
-    const artifact = getMediaArtifact(db, intent.input_artifact_id);
-    if (!artifact) {
-      failIntent(db, intent, "failed", providerError("ARTIFACT_NOT_FOUND", "Generation input artifact is missing."), leaseToken);
+    const selection = selectM1ProviderPort({ provider: "real", provider_name: "runninghub", model_name: capability.key.model, cost_acknowledged: true }, dependencies.env ?? process.env);
+    if (!selection.ok || selection.selected.provider_name !== "runninghub" || !selection.selected.credential) {
+      failOrReconcileKnownTask(intent, job, selection.ok ? providerError("PROVIDER_SELECTION_MISMATCH", "RunningHub provider selection changed after confirmation.") : selection.error, "PROVIDER_SELECTION_REQUIRES_RECONCILIATION");
       return;
     }
     const adapter = dependencies.adapter_factory?.(selection.selected.credential)
       ?? new RunningHubVideoProviderAdapter({ credential: selection.selected.credential, fetch_impl: dependencies.fetch_impl });
-    let taskId = intent.provider_task_id;
+    if (adapter.provider_name !== capability.key.provider || adapter.model_name !== capability.key.model) {
+      failOrReconcileKnownTask(intent, job, providerError("PROVIDER_CAPABILITY_CONTRACT_MISMATCH", "Provider adapter does not match the confirmed generation capability."), "PROVIDER_ADAPTER_REQUIRES_RECONCILIATION");
+      return;
+    }
+    let taskId = knownTaskId;
     let submittedNow = false;
-    providerTaskMayExist = Boolean(taskId);
-    knownTaskId = taskId;
     if (!taskId) {
+      const artifact = getMediaArtifact(db, intent.input_artifact_id);
+      if (!artifact) {
+        failIntent(db, intent, "failed", providerError("ARTIFACT_NOT_FOUND", "Generation input artifact is missing."), leaseToken);
+        return;
+      }
       if (!allowSubmit) {
         job = setJobState(db, job, "manual_reconciliation", "PROVIDER_SUBMIT_OUTCOME_UNKNOWN", { lease_token: leaseToken });
         return;
@@ -731,9 +778,9 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         storyboard_artifact: artifact,
         video_prompt: intent.input_snapshot.video_prompt,
         negative_prompt: intent.input_snapshot.negative_prompt,
-        duration_seconds: intent.duration_seconds,
+        duration_seconds: capability.key.duration_seconds,
         aspect_ratio: intent.input_snapshot.aspect_ratio,
-        resolution: intent.resolution
+        resolution: capability.key.resolution
       });
       assertJobLease(db, job.job_id, leaseToken);
       if (!submit.ok) {

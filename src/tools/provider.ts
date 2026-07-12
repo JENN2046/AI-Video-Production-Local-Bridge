@@ -1,3 +1,5 @@
+import { RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY, RUNWAY_IMAGE_TO_VIDEO_CAPABILITY } from "./providerCapabilities.js";
+
 export type ProviderName = "mock" | "real";
 export type RealProviderName = "runway" | "runninghub";
 export type ProviderPortName = "mock" | RealProviderName;
@@ -92,7 +94,7 @@ export const M1_PROVIDER_CONFIGS: Record<ProviderPortName, ProviderConfig> = {
     provider_name: "runway",
     provider_display_name: "Runway API",
     type: "real",
-    model_name: "gen4.5",
+    model_name: RUNWAY_IMAGE_TO_VIDEO_CAPABILITY.model,
     generation_mode: "image_to_video",
     default: false,
     selectable: true,
@@ -105,7 +107,7 @@ export const M1_PROVIDER_CONFIGS: Record<ProviderPortName, ProviderConfig> = {
     provider_name: "runninghub",
     provider_display_name: "RunningHub.cn",
     type: "real",
-    model_name: "rhart-video-g/image-to-video",
+    model_name: RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY.model,
     generation_mode: "image_to_video",
     default: false,
     selectable: true,
@@ -196,6 +198,9 @@ export function selectM1ProviderPort(
   const config = M1_PROVIDER_CONFIGS[envProvider];
   if (!config?.selectable) {
     return { ok: false, error: providerError("PROVIDER_NOT_FOUND", `Provider is not registered: ${envProvider}`) };
+  }
+  if (request.model_name && request.model_name !== config.model_name) {
+    return { ok: false, error: providerError("PROVIDER_CAPABILITY_MODEL_MISMATCH", `Requested model does not match the declared ${config.provider_name} capability.`) };
   }
 
   if (!envTrue(env, "REAL_PROVIDER_ENABLED") || !envTrue(env, "M1_REAL_PROVIDER_EXECUTION_ALLOWED")) {

@@ -1,6 +1,25 @@
 export { getM0Paths, ensureM0Directories, paths } from "./paths.js";
 export { initializeM0Schema, listTables, openM0Database } from "./storage/sqlite.js";
 export {
+  buildProviderCapabilityKey,
+  buildProviderPriceCacheKey,
+  projectProviderRequest,
+  providerCapabilityErrorMessage,
+  providerCapabilityPriceSource,
+  PROVIDER_CAPABILITIES,
+  PROVIDER_CAPABILITY_REGISTRY_VERSION,
+  RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY,
+  RUNWAY_IMAGE_TO_VIDEO_CAPABILITY
+} from "./tools/providerCapabilities.js";
+export type {
+  CapabilityProviderName,
+  ProviderCapability,
+  ProviderCapabilityKey,
+  ProviderCapabilityKeyResult,
+  ProviderPriceCacheKey,
+  ProviderRequestProjection
+} from "./tools/providerCapabilities.js";
+export {
   activatePendingMediaArtifact,
   attachArtifactToShot,
   createScopedArtifactFromBlob,
