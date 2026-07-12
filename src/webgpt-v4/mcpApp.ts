@@ -22,26 +22,12 @@ import {
 } from "./domain.js";
 import { inspectProductionMedia, type MediaRuntimeOptions } from "./media.js";
 import { productionProposalRevisionSchema, productionProposalSubmitSchema } from "./proposals.js";
+import { WEBGPT_V4_FULL_TOOL_SCOPES } from "./toolCatalog.js";
 import { errorBody, fail, requestId, requireScope, WEBGPT_V4_VERSION, WebGptV4Error, type WebGptV4Actor, type WebGptV4Result, type WebGptV4Scope } from "./types.js";
 
 export const WEBGPT_V4_WIDGET_URI = "ui://webgpt-v4/media-inspector.html";
 
-export const WEBGPT_V4_TOOL_SCOPES = {
-  list_production_projects: "projects.read",
-  get_project_context: "projects.read",
-  list_project_shots: "projects.read",
-  list_project_media: "media.read",
-  inspect_media: "media.read",
-  get_review_package: "projects.read",
-  get_delivery_status: "projects.read",
-  get_closeout_evidence: "projects.read",
-  update_shot_copy: "shots.write",
-  add_review_note: "reviews.write",
-  submit_production_proposal: "proposals.write",
-  revise_production_proposal: "proposals.write",
-  close_production_proposal: "proposals.write",
-  prepare_generation_intent: "generation.prepare"
-} as const satisfies Record<string, WebGptV4Scope>;
+export const WEBGPT_V4_TOOL_SCOPES = WEBGPT_V4_FULL_TOOL_SCOPES;
 
 const successMetaSchema = z.object({
   request_id: z.string(),
