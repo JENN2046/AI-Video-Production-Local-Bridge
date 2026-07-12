@@ -189,6 +189,37 @@ test("storyboard context binds artifact map entries to the referencing shot", ()
   }
 });
 
+test("workspace artifacts reject role, type, and status drift from structured columns", () => {
+  const context = setup();
+  try {
+    const cases = [
+      { suffix: "role", change: { role: "generated_clip" } },
+      { suffix: "type", change: { artifact_type: "video" } },
+      { suffix: "status", change: { status: "archived" } }
+    ];
+    for (const item of cases) {
+      const artifactId = `artifact_structured_${item.suffix}`;
+      const artifact = {
+        artifact_id: artifactId, artifact_type: "image", role: "storyboard_image", status: "active",
+        storage: { uri: join(context.root, `${item.suffix}.png`), mime_type: "image/png", filename: `${item.suffix}.png` },
+        metadata: { width: 1080, height: 1920, duration_seconds: null, aspect_ratio: "9:16", sha256: item.suffix },
+        linked_objects: { project_id: context.production.project_id, shot_id: context.productionShot.shot_id },
+        source: { kind: "fixture_path", provider: "", provider_job_id: "", sha256: item.suffix, external_url_host: "" },
+        ...item.change
+      };
+      context.db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)")
+        .run(artifactId, context.production.project_id, context.productionShot.shot_id, JSON.stringify(artifact));
+      saveShot(context.db, { ...context.productionShot, storyboard_image_artifact_id: artifactId });
+
+      const result = getProductionProjectContext({ project_id: context.production.project_id, workspace: "storyboard" }, context.db);
+      assert.equal(result.ok, false, item.suffix);
+      if (!result.ok) assert.equal(result.error.code, "WEBGPT_V4_DATA_INTEGRITY_VIOLATION", item.suffix);
+    }
+  } finally {
+    teardown(context);
+  }
+});
+
 test("production project listing excludes test and unclassified projects", () => {
   const context = setup();
   try {

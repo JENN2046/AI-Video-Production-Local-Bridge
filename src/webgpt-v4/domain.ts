@@ -94,12 +94,11 @@ function assertBoundArtifactObject(
 ): void {
   const item = recordValue(value);
   const links = recordValue(item?.linked_objects);
-  const row = db.prepare("SELECT project_id, shot_id FROM media_artifacts WHERE artifact_id = ?")
-    .get(expectedArtifactId) as { project_id: string | null; shot_id: string | null } | undefined;
-  const rowShotId = row?.shot_id ?? "";
-  if (!item || item.artifact_id !== expectedArtifactId || !links
-    || row?.project_id !== projectId || links.project_id !== row.project_id
-    || links.shot_id !== rowShotId || (expectedShotId !== undefined && rowShotId !== expectedShotId)) {
+  const artifact = requireArtifact(db, projectId, expectedArtifactId);
+  if (!item || item.artifact_id !== artifact.artifact_id || !links
+    || links.project_id !== artifact.linked_objects.project_id || links.shot_id !== artifact.linked_objects.shot_id
+    || item.role !== artifact.role || item.artifact_type !== artifact.artifact_type || item.status !== artifact.status
+    || (expectedShotId !== undefined && artifact.linked_objects.shot_id !== expectedShotId)) {
     dataIntegrityViolation("artifact_id");
   }
 }
