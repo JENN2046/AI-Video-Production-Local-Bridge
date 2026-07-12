@@ -41,7 +41,7 @@ test("Provider capability key rejects model, duration, resolution, and aspect dr
   assert.equal(valid.ok, true);
   if (valid.ok) assert.equal(valid.key.resolution, "480p");
   if (valid.ok) assert.match(valid.key.serialized, /^provider-capabilities-v1\|runninghub\.image_to_video\.v1\|/);
-  const otherAspect = buildProviderCapabilityKey({ provider: "runninghub", model: RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY.model, duration_seconds: 6, resolution: "1080x1920", aspect_ratio: "16:9" });
+  const otherAspect = buildProviderCapabilityKey({ provider: "runninghub", model: RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY.model, duration_seconds: 6, resolution: "1920x1080", aspect_ratio: "16:9" });
   assert.equal(otherAspect.ok, true);
   if (valid.ok && otherAspect.ok) {
     assert.notEqual(valid.key.serialized, otherAspect.key.serialized);
@@ -65,6 +65,18 @@ test("Provider capability key rejects model, duration, resolution, and aspect dr
     "PROVIDER_CAPABILITY_RESOLUTION_UNSUPPORTED",
     "PROVIDER_CAPABILITY_ASPECT_RATIO_UNSUPPORTED"
   ]);
+});
+
+test("Provider capability maps pixel dimensions by Provider aspect instead of a global default", () => {
+  const vertical = buildProviderCapabilityKey({ provider: "runway", model: RUNWAY_IMAGE_TO_VIDEO_CAPABILITY.model, duration_seconds: 5, resolution: "720x1280", aspect_ratio: "9:16" });
+  const horizontal = buildProviderCapabilityKey({ provider: "runway", model: RUNWAY_IMAGE_TO_VIDEO_CAPABILITY.model, duration_seconds: 5, resolution: "1280x768", aspect_ratio: "16:9" });
+  const inconsistent = buildProviderCapabilityKey({ provider: "runway", model: RUNWAY_IMAGE_TO_VIDEO_CAPABILITY.model, duration_seconds: 5, resolution: "1280x768", aspect_ratio: "9:16" });
+  assert.equal(vertical.ok, true);
+  assert.equal(horizontal.ok, true);
+  if (vertical.ok) assert.equal(vertical.key.resolution, "720:1280");
+  if (horizontal.ok) assert.equal(horizontal.key.resolution, "1280:768");
+  assert.equal(inconsistent.ok, false);
+  if (!inconsistent.ok) assert.equal(inconsistent.code, "PROVIDER_CAPABILITY_RESOLUTION_UNSUPPORTED");
 });
 
 test("estimate, intent, and submit projections produce one identical RunningHub key", () => {

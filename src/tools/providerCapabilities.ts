@@ -11,6 +11,7 @@ export interface ProviderCapability {
   generation_mode: "image_to_video";
   allowed_resolutions: readonly string[];
   default_resolution: string;
+  pixel_resolution_by_aspect: Readonly<Record<string, string>>;
   duration: {
     min_seconds: number;
     max_seconds: number;
@@ -29,6 +30,7 @@ export const RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY = Object.freeze({
   generation_mode: "image_to_video",
   allowed_resolutions: Object.freeze(["480p", "720p"]),
   default_resolution: "480p",
+  pixel_resolution_by_aspect: Object.freeze({ "9:16": "480p", "16:9": "480p", "2:3": "480p", "3:2": "480p", "1:1": "480p" }),
   duration: Object.freeze({ min_seconds: 6, max_seconds: 60, step_seconds: 1, default_seconds: 6 }),
   allowed_aspect_ratios: Object.freeze(["9:16", "16:9", "2:3", "3:2", "1:1"]),
   price_preview_path: `/openapi/v2/price-preview/${RUNNINGHUB_IMAGE_TO_VIDEO_MODEL}`
@@ -42,6 +44,7 @@ export const RUNWAY_IMAGE_TO_VIDEO_CAPABILITY = Object.freeze({
   generation_mode: "image_to_video",
   allowed_resolutions: Object.freeze(["720:1280", "1280:768"]),
   default_resolution: "720:1280",
+  pixel_resolution_by_aspect: Object.freeze({ "9:16": "720:1280", "16:9": "1280:768" }),
   duration: Object.freeze({ min_seconds: 2, max_seconds: 10, step_seconds: 1, default_seconds: 5 }),
   allowed_aspect_ratios: Object.freeze(["9:16", "16:9"]),
   price_preview_path: null
@@ -85,9 +88,24 @@ export type ProviderCapabilityKeyResult =
   | { ok: true; capability: ProviderCapability; key: ProviderCapabilityKey; aspect_ratio: string }
   | { ok: false; code: "PROVIDER_CAPABILITY_NOT_FOUND" | "PROVIDER_CAPABILITY_MODEL_MISMATCH" | "PROVIDER_CAPABILITY_DURATION_UNSUPPORTED" | "PROVIDER_CAPABILITY_RESOLUTION_UNSUPPORTED" | "PROVIDER_CAPABILITY_ASPECT_RATIO_UNSUPPORTED"; field: "provider" | "model" | "duration_seconds" | "resolution" | "aspect_ratio" };
 
-function normalizeResolution(capability: ProviderCapability, resolution: string): string | null {
+function pixelOrientationMatches(width: number, height: number, aspectRatio: string): boolean {
+  if (aspectRatio === "1:1") return width === height;
+  const [aspectWidth, aspectHeight] = aspectRatio.split(":").map(Number);
+  if (!Number.isFinite(aspectWidth) || !Number.isFinite(aspectHeight)) return false;
+  if (aspectWidth === aspectHeight) return width === height;
+  return aspectWidth < aspectHeight ? width < height : width > height;
+}
+
+function normalizeResolution(capability: ProviderCapability, resolution: string, aspectRatio: string): string | null {
   const requested = resolution.trim();
-  if (!requested || /^\d+x\d+$/.test(requested)) return capability.default_resolution;
+  if (!requested) return capability.pixel_resolution_by_aspect[aspectRatio] ?? capability.default_resolution;
+  const pixels = /^(\d+)x(\d+)$/.exec(requested);
+  if (pixels) {
+    const width = Number(pixels[1]);
+    const height = Number(pixels[2]);
+    if (width <= 0 || height <= 0 || !pixelOrientationMatches(width, height, aspectRatio)) return null;
+    return capability.pixel_resolution_by_aspect[aspectRatio] ?? null;
+  }
   return capability.allowed_resolutions.includes(requested) ? requested : null;
 }
 
@@ -114,7 +132,7 @@ export function buildProviderCapabilityKey(input: {
   if (!durationAllowed(capability, input.duration_seconds)) {
     return { ok: false, code: "PROVIDER_CAPABILITY_DURATION_UNSUPPORTED", field: "duration_seconds" };
   }
-  const resolution = normalizeResolution(capability, input.resolution);
+  const resolution = normalizeResolution(capability, input.resolution, input.aspect_ratio);
   if (!resolution) return { ok: false, code: "PROVIDER_CAPABILITY_RESOLUTION_UNSUPPORTED", field: "resolution" };
   if (!capability.allowed_aspect_ratios.includes(input.aspect_ratio)) {
     return { ok: false, code: "PROVIDER_CAPABILITY_ASPECT_RATIO_UNSUPPORTED", field: "aspect_ratio" };
