@@ -2,7 +2,18 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $script:WorkspaceRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
-$script:RuntimeRoot = Join-Path $script:WorkspaceRoot "ops\tools\workbench-runtime"
+$configuredRuntimeRoot = $env:AI_VIDEO_WORKBENCH_RUNTIME_ROOT
+if ([string]::IsNullOrWhiteSpace($configuredRuntimeRoot)) {
+  $configuredRuntimeRoot = "ops\tools\workbench-runtime"
+}
+if (-not [System.IO.Path]::IsPathRooted($configuredRuntimeRoot)) {
+  $configuredRuntimeRoot = Join-Path $script:WorkspaceRoot $configuredRuntimeRoot
+}
+$script:RuntimeRoot = [System.IO.Path]::GetFullPath($configuredRuntimeRoot)
+$workspacePrefix = $script:WorkspaceRoot.TrimEnd('\') + '\'
+if (-not $script:RuntimeRoot.StartsWith($workspacePrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+  throw "WORKBENCH_RUNTIME_ROOT_OUTSIDE_WORKSPACE: $script:RuntimeRoot"
+}
 $script:StatePath = Join-Path $script:RuntimeRoot "workbench-state.json"
 
 function Resolve-WorkbenchNode22 {
@@ -90,17 +101,17 @@ function Test-WorkbenchProcessIdentity($State) {
   )
 }
 
-function Get-WorkbenchHttpStatus([int]$Port) {
+function Get-WorkbenchHttpStatus([int]$Port, [int]$HealthTimeoutSec = 5, [int]$ReadyTimeoutSec = 10) {
   $healthStatus = 0
   $readyStatus = 0
   $ready = $false
   $checks = $null
   try {
-    $healthResponse = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$Port/healthz" -TimeoutSec 5
+    $healthResponse = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$Port/healthz" -TimeoutSec $HealthTimeoutSec
     $healthStatus = [int]$healthResponse.StatusCode
   } catch { }
   try {
-    $readyResponse = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$Port/readyz" -TimeoutSec 10
+    $readyResponse = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$Port/readyz" -TimeoutSec $ReadyTimeoutSec
     $readyStatus = [int]$readyResponse.StatusCode
     $body = $readyResponse.Content | ConvertFrom-Json
     $ready = [bool]$body.ok

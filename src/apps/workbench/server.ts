@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { accessSync, constants, createReadStream, existsSync, lstatSync, realpathSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { basename, extname, isAbsolute, relative, resolve } from "node:path";
@@ -37,6 +37,11 @@ export interface WorkbenchRuntime {
   port: number;
   url: string;
   close: () => Promise<void>;
+}
+
+export interface WorkbenchStartOptions {
+  shutdown_token?: string;
+  on_shutdown_requested?: () => void;
 }
 
 function sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
@@ -193,7 +198,20 @@ function serveMedia(pathname: string, request: IncomingMessage, response: Server
   createReadStream(actual).pipe(response);
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, actionNonce: string): Promise<void> {
+function shutdownTokenMatches(request: IncomingMessage, expected: string): boolean {
+  const provided = request.headers["x-ai-video-shutdown-token"];
+  if (typeof provided !== "string") return false;
+  const actualBytes = Buffer.from(provided, "utf8");
+  const expectedBytes = Buffer.from(expected, "utf8");
+  return actualBytes.length === expectedBytes.length && timingSafeEqual(actualBytes, expectedBytes);
+}
+
+async function route(
+  request: IncomingMessage,
+  response: ServerResponse,
+  actionNonce: string,
+  shutdown?: { token: string; request: () => void }
+): Promise<void> {
   if (!isLocalRequest(request)) {
     sendJson(response, 403, { ok: false, error: { code: "LOCALHOST_ONLY", message: "Workbench accepts local requests only." } });
     return;
@@ -206,6 +224,15 @@ async function route(request: IncomingMessage, response: ServerResponse, actionN
   if (request.method === "GET" && url.pathname === "/readyz") {
     const ready = await workbenchReadiness();
     sendJson(response, ready.status, ready.body);
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/_local/shutdown" && shutdown) {
+    if (!shutdownTokenMatches(request, shutdown.token)) {
+      sendJson(response, 403, { ok: false, error: { code: "SHUTDOWN_FORBIDDEN", message: "Shutdown request was rejected." } });
+      return;
+    }
+    sendJson(response, 202, { ok: true, status: "shutting_down" });
+    setImmediate(shutdown.request);
     return;
   }
   if (await handleWorkbenchV2Api(request, response, url, actionNonce)) return;
@@ -259,12 +286,18 @@ function listen(server: Server, startPort: number): Promise<number> {
   });
 }
 
-export async function startWorkbenchApplication(startPort = Number(process.env.H1_WORKBENCH_PORT || process.env.PORT || WORKBENCH_PORT)): Promise<WorkbenchRuntime> {
+export async function startWorkbenchApplication(
+  startPort = Number(process.env.H1_WORKBENCH_PORT || process.env.PORT || WORKBENCH_PORT),
+  options: WorkbenchStartOptions = {}
+): Promise<WorkbenchRuntime> {
   ensureM0Directories();
   resumeWorkbenchGenerationJobs();
   const actionNonce = randomUUID();
+  const shutdown = options.shutdown_token?.trim() && options.on_shutdown_requested
+    ? { token: options.shutdown_token.trim(), request: options.on_shutdown_requested }
+    : undefined;
   const server = createServer((request, response) => {
-    void route(request, response, actionNonce).catch(() => {
+    void route(request, response, actionNonce, shutdown).catch(() => {
       if (!response.headersSent) sendJson(response, 500, { ok: false, error: { code: "SERVER_ERROR", message: "Workbench server error." } });
       else if (!response.writableEnded) response.end();
     });
@@ -278,11 +311,11 @@ export async function startWorkbenchApplication(startPort = Number(process.env.H
   };
 }
 
-export function installWorkbenchShutdownHandlers(runtime: WorkbenchRuntime): void {
-  const shutdown = async (): Promise<void> => {
+export function installWorkbenchShutdownHandlers(runtime: WorkbenchRuntime, requestedShutdown?: () => Promise<void>): void {
+  const shutdown = requestedShutdown ?? (async (): Promise<void> => {
     await runtime.close();
     process.exit(0);
-  };
+  });
   process.on("SIGINT", () => { void shutdown(); });
   process.on("SIGTERM", () => { void shutdown(); });
 }

@@ -2,8 +2,8 @@
 
 try {
   $state = Read-WorkbenchState
-  $defaultPort = Resolve-WorkbenchPort
   if ($null -eq $state) {
+    $defaultPort = Resolve-WorkbenchPort
     $listenerPid = Get-WorkbenchListenerPid $defaultPort
     Write-WorkbenchJson ([pscustomobject]@{
       result = if ($null -eq $listenerPid) { "STOPPED" } else { "UNMANAGED_LISTENER" }

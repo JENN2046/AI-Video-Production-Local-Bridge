@@ -2,10 +2,8 @@
 
 try {
   New-Item -ItemType Directory -Force -Path $script:RuntimeRoot | Out-Null
-  $runtime = Resolve-WorkbenchNode22
-  $databasePath = Resolve-WorkbenchDatabasePath
-  $port = Resolve-WorkbenchPort
   $state = Read-WorkbenchState
+  $port = if ($null -ne $state) { [int]$state.port } else { Resolve-WorkbenchPort }
   $listenerPid = Get-WorkbenchListenerPid $port
 
   if ($null -ne $state) {
@@ -32,6 +30,8 @@ try {
     throw "WORKBENCH_PORT_IN_USE: port $port is owned by unmanaged PID $listenerPid"
   }
 
+  $runtime = Resolve-WorkbenchNode22
+  $databasePath = Resolve-WorkbenchDatabasePath
   if (-not (Test-Path -LiteralPath $databasePath -PathType Leaf)) {
     throw "WORKBENCH_DATABASE_NOT_FOUND: $databasePath"
   }
@@ -42,6 +42,11 @@ try {
   $env:M1_REAL_PROVIDER_EXECUTION_ALLOWED = "false"
   $env:M1_REAL_PROVIDER_COST_ACK = "false"
   $env:H1_WORKBENCH_PORT = [string]$port
+  $shutdownBytes = New-Object byte[] 32
+  $random = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+  try { $random.GetBytes($shutdownBytes) } finally { $random.Dispose() }
+  $shutdownToken = [Convert]::ToBase64String($shutdownBytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+  $env:AI_VIDEO_WORKBENCH_SHUTDOWN_TOKEN = $shutdownToken
 
   Push-Location $script:WorkspaceRoot
   try {
@@ -65,9 +70,10 @@ try {
     -PassThru
 
   $http = $null
-  for ($attempt = 0; $attempt -lt 60; $attempt += 1) {
+  $startupDeadline = [DateTime]::UtcNow.AddSeconds(60)
+  while ([DateTime]::UtcNow -lt $startupDeadline) {
     if ($process.HasExited) { break }
-    $http = Get-WorkbenchHttpStatus $port
+    $http = Get-WorkbenchHttpStatus $port 1 1
     if ($http.health_status -eq 200 -and $http.ready_status -eq 200 -and $http.ready) { break }
     Start-Sleep -Milliseconds 500
   }
@@ -93,6 +99,7 @@ try {
     database_path = $databasePath
     workspace_root = $script:WorkspaceRoot
     provider_enabled = $false
+    shutdown_token = $shutdownToken
     stdout_path = $stdoutPath
     stderr_path = $stderrPath
   }

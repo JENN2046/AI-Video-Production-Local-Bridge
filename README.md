@@ -33,6 +33,7 @@ npm run start:local
 npm run windows:start
 npm run windows:status
 npm run windows:stop
+npm run test:windows-runtime
 npm run start:webgpt
 npm run db:backup
 npm run db:check
@@ -85,9 +86,9 @@ npm run windows:stop
 - 显式设置 `REAL_PROVIDER_ENABLED=false`、`M1_REAL_PROVIDER_EXECUTION_ALLOWED=false` 和 `M1_REAL_PROVIDER_COST_ACK=false`；
 - 运行本地 `preflight` 和完整 build；
 - 检查 PID、进程启动时间、Node 路径和 4181 端口，拒绝覆盖未知监听进程；
-- 等待 `/healthz` 与 `/readyz` 通过后，才写入本地受管状态。
+- 使用 60 秒总 deadline 等待 `/healthz` 与 `/readyz`，通过后才写入本地受管状态。
 
-PID 状态和按次启动日志只写入 Git 忽略的 `ops/tools/workbench-runtime/`。`windows:stop` 只有在 PID、进程身份和监听端口同时匹配时才会停止进程；状态不一致时保持现场并 fail closed。当前命令不会创建或修改 Windows Task Scheduler，自启动仍需后续单独授权。
+PID 状态和按次启动日志只写入 Git 忽略的 `ops/tools/workbench-runtime/`，也可通过 `AI_VIDEO_WORKBENCH_RUNTIME_ROOT` 指向工作区内的其他隔离目录。`windows:stop` 只有在 PID、进程身份和监听端口同时匹配时才会发送带一次性 token 的本地 graceful shutdown 请求；等待超时后才使用强制终止，并在结果中明确标记 `forced`。状态不一致时保持现场并 fail closed。`test:windows-runtime` 使用隔离数据库、状态目录和非生产端口覆盖 start/status/重复 start/graceful stop/强制 fallback，并在最后运行 `db:check`。当前命令不会创建或修改 Windows Task Scheduler，自启动仍需后续单独授权。
 
 ## 数据边界
 
