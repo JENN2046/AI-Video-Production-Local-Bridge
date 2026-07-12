@@ -729,6 +729,8 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
   try {
     let intent = getIntent(db, intentId);
     if (!intent || (intent.status !== "queued" && intent.status !== "running")) return;
+    knownTaskId = intent.provider_task_id;
+    providerTaskMayExist = Boolean(knownTaskId);
     const capability = buildProviderCapabilityKey({
       provider: "runninghub",
       model: intent.model,
@@ -737,7 +739,12 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       aspect_ratio: intent.input_snapshot.aspect_ratio
     });
     if (!capability.ok || (intent.input_snapshot.capability_key && intent.input_snapshot.capability_key !== capability.key.serialized)) {
-      failIntent(db, intent, "failed", providerError("PROVIDER_CAPABILITY_CONTRACT_MISMATCH", "Generation intent no longer matches the declared Provider capability."), leaseToken);
+      const error = providerError("PROVIDER_CAPABILITY_CONTRACT_MISMATCH", "Generation intent no longer matches the declared Provider capability.");
+      if (knownTaskId) {
+        job = markKnownProviderTaskForReconciliation(db, intent, job, knownTaskId, error, leaseToken, "PROVIDER_CAPABILITY_REQUIRES_RECONCILIATION");
+      } else {
+        failIntent(db, intent, "failed", error, leaseToken);
+      }
       return;
     }
     const selection = selectM1ProviderPort({ provider: "real", provider_name: "runninghub", model_name: capability.key.model, cost_acknowledged: true }, dependencies.env ?? process.env);
@@ -756,10 +763,8 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       failIntent(db, intent, "failed", providerError("PROVIDER_CAPABILITY_CONTRACT_MISMATCH", "Provider adapter does not match the confirmed generation capability."), leaseToken);
       return;
     }
-    let taskId = intent.provider_task_id;
+    let taskId = knownTaskId;
     let submittedNow = false;
-    providerTaskMayExist = Boolean(taskId);
-    knownTaskId = taskId;
     if (!taskId) {
       if (!allowSubmit) {
         job = setJobState(db, job, "manual_reconciliation", "PROVIDER_SUBMIT_OUTCOME_UNKNOWN", { lease_token: leaseToken });

@@ -324,6 +324,38 @@ test("worker rejects an injected adapter outside the confirmed capability before
   }
 });
 
+test("worker preserves a known paid task when a resumed capability drifts", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-known-task-capability-drift-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Known task capability drift");
+    const db = openM0Database(sqlitePath);
+    db.prepare("UPDATE generation_intents SET model = 'stale-model', provider_task_id = 'paid-task-known', status = 'running' WHERE intent_id = ?").run(prepared.intent_id);
+    db.prepare("UPDATE generation_jobs SET state = 'polling' WHERE job_id = ?").run(prepared.job_id);
+    db.close();
+
+    await runWorkbenchGenerationOnce(prepared.intent_id, {
+      allow_submit: false,
+      dependencies: {
+        sqlite_path: sqlitePath,
+        env: prepared.env,
+        adapter_factory: () => { throw new Error("adapter must not be created for capability drift"); }
+      }
+    });
+
+    const checked = openM0Database(sqlitePath);
+    const intent = checked.prepare("SELECT status, provider_task_id, sanitized_error_json FROM generation_intents WHERE intent_id = ?").get(prepared.intent_id) as { status: string; provider_task_id: string; sanitized_error_json: string };
+    const job = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?").get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    assert.equal(intent.status, "running");
+    assert.equal(intent.provider_task_id, "paid-task-known");
+    assert.equal((JSON.parse(intent.sanitized_error_json) as { code: string }).code, "PROVIDER_CAPABILITY_CONTRACT_MISMATCH");
+    assert.deepEqual({ ...job }, { state: "manual_reconciliation", reconciliation_reason: "PROVIDER_CAPABILITY_REQUIRES_RECONCILIATION" });
+    checked.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("worker closes its database when claiming the job throws", async () => {
   let closed = false;
   const injectedDatabase = {
