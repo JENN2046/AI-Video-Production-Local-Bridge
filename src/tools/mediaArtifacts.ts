@@ -673,8 +673,8 @@ function commitStagedMediaArtifact(
     if (manageTransaction) db.exec("BEGIN IMMEDIATE");
     try {
       persistMediaArtifactInternal(db, artifact, allowStatusTransition);
-      db.prepare("UPDATE media_activation_journal SET state = 'committed', artifact_json = ?, error_code = '', updated_at = CURRENT_TIMESTAMP WHERE activation_id = ? AND state = 'file_placed'")
-        .run(JSON.stringify(artifact), activationId);
+      db.prepare("UPDATE media_activation_journal SET state = 'committed', final_path = ?, artifact_json = ?, error_code = '', updated_at = CURRENT_TIMESTAMP WHERE activation_id = ? AND state = 'file_placed'")
+        .run(artifact.storage.uri, JSON.stringify(artifact), activationId);
       if (manageTransaction) db.exec("COMMIT");
     } catch (error) {
       if (manageTransaction) db.exec("ROLLBACK");
@@ -869,8 +869,8 @@ export function recoverMediaActivations(db = openM0Database()): MediaActivationR
       db.exec("BEGIN IMMEDIATE");
       try {
         persistMediaArtifactInternal(db, artifact, true);
-        db.prepare("UPDATE media_activation_journal SET state = 'committed', artifact_json = ?, error_code = '', updated_at = CURRENT_TIMESTAMP WHERE activation_id = ? AND state = 'file_placed'")
-          .run(JSON.stringify(artifact), row.activation_id);
+        db.prepare("UPDATE media_activation_journal SET state = 'committed', final_path = ?, artifact_json = ?, error_code = '', updated_at = CURRENT_TIMESTAMP WHERE activation_id = ? AND state = 'file_placed'")
+          .run(artifact.storage.uri, JSON.stringify(artifact), row.activation_id);
         db.exec("COMMIT");
       } catch (error) {
         db.exec("ROLLBACK");
@@ -965,7 +965,7 @@ function copyFixture(input: RegisterMediaArtifactInput): RegisterMediaArtifactRe
   return { ok: true, artifact: prepared };
 }
 
-function writeUploadedBytes(input: RegisterMediaArtifactInput): RegisterMediaArtifactResult {
+function writeUploadedBytes(input: RegisterMediaArtifactInput, artifactId = `artifact_${randomUUID()}`): RegisterMediaArtifactResult {
   if (input.source.kind !== "file_handle" && input.source.kind !== "app_upload") {
     throw new Error("writeUploadedBytes received unsupported source.");
   }
@@ -978,7 +978,6 @@ function writeUploadedBytes(input: RegisterMediaArtifactInput): RegisterMediaArt
     return { ok: false, error: { code: "STORAGE_PATH_NOT_ALLOWED", message: "Upload filename must not contain path traversal." } };
   }
 
-  const artifactId = `artifact_${randomUUID()}`;
   const decoded = Buffer.from(input.source.bytes_base64, "base64");
   if (input.artifact_type === "image") {
     const validation = validateImageBuffer(decoded, unsafeName);
@@ -1332,10 +1331,7 @@ export function activatePendingMediaArtifact(input: ActivatePendingMediaArtifact
   if (input.source.kind === "local_file_import") {
     result = copyLocalImageImport(activationInput, existing.artifact_id);
   } else if (input.source.kind === "app_upload") {
-    result = writeUploadedBytes(activationInput);
-    if (result.ok) {
-      result.artifact.artifact_id = existing.artifact_id;
-    }
+    result = writeUploadedBytes(activationInput, existing.artifact_id);
   } else {
     const uriValidation = validateAccessibleUri(input.source.uri);
     if (uriValidation.error) return { ok: false, error: uriValidation.error };

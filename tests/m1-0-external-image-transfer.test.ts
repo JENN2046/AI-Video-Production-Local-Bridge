@@ -188,6 +188,31 @@ test("M1-0 pending upload activates with same artifact id and can enter Storyboa
   }
 });
 
+test("M1-0 pending app upload stages bytes under the existing artifact id", () => {
+  const db = openM0Database();
+  try {
+    const pending = registerMediaArtifact({
+      artifact_type: "image",
+      role: "storyboard_image",
+      source: { kind: "pending_user_upload", filename: "pending-app.png", mime_type: "image/png" }
+    }, db);
+    assert.equal(pending.ok, true);
+    if (!pending.ok) return;
+
+    const activated = activatePendingMediaArtifact({
+      artifact_id: pending.artifact.artifact_id,
+      source: { kind: "app_upload", filename: "uploaded.png", mime_type: "image/png", bytes_base64: SAMPLE_PNG.toString("base64") }
+    }, db);
+    assert.equal(activated.ok, true, activated.ok ? undefined : activated.error.code);
+    if (!activated.ok) return;
+    assert.equal(activated.artifact.artifact_id, pending.artifact.artifact_id);
+    assert.equal(activated.artifact.status, "active");
+    assert.equal(existsSync(activated.artifact.storage.uri), true);
+  } finally {
+    db.close();
+  }
+});
+
 test("M1-0 invalid disguised image is rejected", () => {
   const db = openM0Database();
   writeImportImage("gpt_storyboard_invalid.png", Buffer.from("not an image", "utf8"));

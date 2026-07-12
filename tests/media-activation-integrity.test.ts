@@ -60,6 +60,37 @@ test("media activation commits a decoded image through the persistent journal", 
   }
 });
 
+test("blob dedupe keeps committed journal paths aligned with the authoritative Blob", () => {
+  const root = mkdtempSync(join(tmpdir(), "media-activation-dedupe-"));
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  let storagePath = "";
+  try {
+    const first = registerMediaArtifact({ artifact_type: "image", role: "storyboard_image", source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" } }, db);
+    const second = registerMediaArtifact({ artifact_type: "image", role: "storyboard_image", source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" } }, db);
+    assert.equal(first.ok, true);
+    assert.equal(second.ok, true);
+    if (!first.ok || !second.ok) return;
+    storagePath = first.artifact.storage.uri;
+    assert.equal(second.artifact.blob_id, first.artifact.blob_id);
+    assert.equal(second.artifact.storage.uri, first.artifact.storage.uri);
+    const journal = db.prepare("SELECT final_path, artifact_json FROM media_activation_journal WHERE artifact_id = ? AND state = 'committed'").get(second.artifact.artifact_id) as { final_path: string; artifact_json: string };
+    assert.equal(journal.final_path, second.artifact.storage.uri);
+    assert.equal((JSON.parse(journal.artifact_json) as MediaArtifact).storage.uri, second.artifact.storage.uri);
+  } finally {
+    db.close();
+  }
+  try {
+    const checked = checkDatabase(sqlitePath);
+    assert.equal(checked.result, "PASS");
+    assert.equal(checked.structured_drift_rows, 0);
+  } finally {
+    if (storagePath) rmSync(storagePath, { force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("only one non-terminal activation may own an Artifact id", () => {
   const db = openM0Database();
   const artifact = preparedArtifact();
