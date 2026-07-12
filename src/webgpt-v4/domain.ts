@@ -110,7 +110,23 @@ function assertWorkspaceBindings(value: unknown, projectId: string, db: M0Databa
   assertBoundProjectObject(workspace.project, projectId);
   if (workspace.meta !== undefined) assertBoundProjectObject(workspace.meta, projectId);
 
-  for (const shot of Array.isArray(workspace.shots) ? workspace.shots : []) assertBoundProjectObject(shot, projectId);
+  const artifactShotBindings = new Map<string, Set<string>>();
+  const bindArtifactToShot = (artifactId: unknown, shotId: string): void => {
+    if (typeof artifactId !== "string" || !artifactId) return;
+    const shotIds = artifactShotBindings.get(artifactId) ?? new Set<string>();
+    shotIds.add(shotId);
+    artifactShotBindings.set(artifactId, shotIds);
+  };
+  for (const shotValue of Array.isArray(workspace.shots) ? workspace.shots : []) {
+    assertBoundProjectObject(shotValue, projectId);
+    const shot = recordValue(shotValue);
+    if (typeof shot?.shot_id !== "string") dataIntegrityViolation("shot_id");
+    bindArtifactToShot(shot.storyboard_image_artifact_id, shot.shot_id);
+    bindArtifactToShot(shot.accepted_clip_artifact_id, shot.shot_id);
+    for (const versionValue of Array.isArray(shot.clip_versions) ? shot.clip_versions : []) {
+      bindArtifactToShot(recordValue(versionValue)?.artifact_id, shot.shot_id);
+    }
+  }
   for (const stackValue of Array.isArray(workspace.version_stacks) ? workspace.version_stacks : []) {
     const stack = recordValue(stackValue);
     if (!stack) dataIntegrityViolation("shot_id");
@@ -127,7 +143,13 @@ function assertWorkspaceBindings(value: unknown, projectId: string, db: M0Databa
   }
   for (const note of Array.isArray(workspace.review_notes) ? workspace.review_notes : []) assertBoundProjectObject(note, projectId);
   for (const [artifactId, artifact] of Object.entries(recordValue(workspace.artifacts) ?? {})) {
-    if (artifact) assertBoundArtifactObject(artifact, projectId, artifactId, db);
+    if (artifact) {
+      const expectedShotIds = artifactShotBindings.get(artifactId);
+      if (!expectedShotIds || expectedShotIds.size !== 1) dataIntegrityViolation("artifact_id");
+      const expectedShotId = expectedShotIds.values().next().value;
+      if (typeof expectedShotId !== "string") dataIntegrityViolation("shot_id");
+      assertBoundArtifactObject(artifact, projectId, artifactId, db, expectedShotId);
+    }
   }
   for (const clipValue of Array.isArray(workspace.accepted_clips) ? workspace.accepted_clips : []) {
     const clip = recordValue(clipValue);

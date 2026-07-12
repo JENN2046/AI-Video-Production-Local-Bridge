@@ -165,6 +165,30 @@ test("project context rejects an artifact whose JSON shot binding drifts within 
   }
 });
 
+test("storyboard context binds artifact map entries to the referencing shot", () => {
+  const context = setup();
+  try {
+    const secondShot: Shot = { ...context.productionShot, shot_id: "shot_artifact_owner", order: 2, description: "Artifact owner" };
+    saveShot(context.db, secondShot);
+    const artifact = {
+      artifact_id: "artifact_wrong_storyboard_owner", artifact_type: "image", role: "storyboard_image", status: "active",
+      storage: { uri: join(context.root, "storyboard.png"), mime_type: "image/png", filename: "storyboard.png" },
+      metadata: { width: 1080, height: 1920, duration_seconds: null, aspect_ratio: "9:16", sha256: "storyboard-owner" },
+      linked_objects: { project_id: context.production.project_id, shot_id: secondShot.shot_id },
+      source: { kind: "fixture_path", provider: "", provider_job_id: "", sha256: "storyboard-owner", external_url_host: "" }
+    };
+    context.db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)")
+      .run(artifact.artifact_id, context.production.project_id, secondShot.shot_id, JSON.stringify(artifact));
+    saveShot(context.db, { ...context.productionShot, storyboard_image_artifact_id: artifact.artifact_id });
+
+    const result = getProductionProjectContext({ project_id: context.production.project_id, workspace: "storyboard" }, context.db);
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "WEBGPT_V4_DATA_INTEGRITY_VIOLATION");
+  } finally {
+    teardown(context);
+  }
+});
+
 test("production project listing excludes test and unclassified projects", () => {
   const context = setup();
   try {
