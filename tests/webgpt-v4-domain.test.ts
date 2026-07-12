@@ -141,6 +141,30 @@ test("project context rejects an artifact whose JSON id drifts from its bound sl
   }
 });
 
+test("project context rejects an artifact whose JSON shot binding drifts within the project", () => {
+  const context = setup();
+  try {
+    const secondShot: Shot = { ...context.productionShot, shot_id: "shot_same_project_other", order: 2, description: "Other shot" };
+    saveShot(context.db, secondShot);
+    const artifact = {
+      artifact_id: "artifact_shot_binding", artifact_type: "video", role: "generated_clip", status: "active",
+      storage: { uri: join(context.root, "bound-clip.mp4"), mime_type: "video/mp4", filename: "bound-clip.mp4" },
+      metadata: { width: 1080, height: 1920, duration_seconds: 6, aspect_ratio: "9:16", sha256: "shot-drift" },
+      linked_objects: { project_id: context.production.project_id, shot_id: secondShot.shot_id },
+      source: { kind: "provider_download", provider: "fixture", provider_job_id: "fixture-shot-task", sha256: "shot-drift", external_url_host: "" }
+    };
+    context.db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES (?, ?, ?, 'generated_clip', 'video', 'active', ?)")
+      .run(artifact.artifact_id, context.production.project_id, context.productionShot.shot_id, JSON.stringify(artifact));
+    saveShot(context.db, { ...context.productionShot, accepted_clip_artifact_id: artifact.artifact_id });
+
+    const result = getProductionProjectContext({ project_id: context.production.project_id, workspace: "delivery" }, context.db);
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "WEBGPT_V4_DATA_INTEGRITY_VIOLATION");
+  } finally {
+    teardown(context);
+  }
+});
+
 test("production project listing excludes test and unclassified projects", () => {
   const context = setup();
   try {

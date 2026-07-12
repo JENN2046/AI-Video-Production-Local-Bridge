@@ -85,10 +85,21 @@ function assertBoundProjectObject(value: unknown, projectId: string): void {
   if (!item || item.project_id !== projectId) dataIntegrityViolation("project_id");
 }
 
-function assertBoundArtifactObject(value: unknown, projectId: string, expectedArtifactId: string): void {
+function assertBoundArtifactObject(
+  value: unknown,
+  projectId: string,
+  expectedArtifactId: string,
+  db: M0Database,
+  expectedShotId?: string
+): void {
   const item = recordValue(value);
   const links = recordValue(item?.linked_objects);
-  if (!item || item.artifact_id !== expectedArtifactId || !links || links.project_id !== projectId) {
+  const row = db.prepare("SELECT project_id, shot_id FROM media_artifacts WHERE artifact_id = ?")
+    .get(expectedArtifactId) as { project_id: string | null; shot_id: string | null } | undefined;
+  const rowShotId = row?.shot_id ?? "";
+  if (!item || item.artifact_id !== expectedArtifactId || !links
+    || row?.project_id !== projectId || links.project_id !== row.project_id
+    || links.shot_id !== rowShotId || (expectedShotId !== undefined && rowShotId !== expectedShotId)) {
     dataIntegrityViolation("artifact_id");
   }
 }
@@ -104,17 +115,19 @@ function assertWorkspaceBindings(value: unknown, projectId: string, db: M0Databa
     const stack = recordValue(stackValue);
     if (!stack) dataIntegrityViolation("shot_id");
     assertBoundProjectObject(stack.shot, projectId);
+    const stackShot = recordValue(stack.shot);
+    if (typeof stackShot?.shot_id !== "string") dataIntegrityViolation("shot_id");
     for (const versionValue of Array.isArray(stack.versions) ? stack.versions : []) {
       const version = recordValue(versionValue);
       if (version?.artifact) {
         if (typeof version.artifact_id !== "string") dataIntegrityViolation("artifact_id");
-        assertBoundArtifactObject(version.artifact, projectId, version.artifact_id);
+        assertBoundArtifactObject(version.artifact, projectId, version.artifact_id, db, stackShot.shot_id);
       }
     }
   }
   for (const note of Array.isArray(workspace.review_notes) ? workspace.review_notes : []) assertBoundProjectObject(note, projectId);
   for (const [artifactId, artifact] of Object.entries(recordValue(workspace.artifacts) ?? {})) {
-    if (artifact) assertBoundArtifactObject(artifact, projectId, artifactId);
+    if (artifact) assertBoundArtifactObject(artifact, projectId, artifactId, db);
   }
   for (const clipValue of Array.isArray(workspace.accepted_clips) ? workspace.accepted_clips : []) {
     const clip = recordValue(clipValue);
@@ -122,7 +135,7 @@ function assertWorkspaceBindings(value: unknown, projectId: string, db: M0Databa
       if (typeof clip.shot_id !== "string") dataIntegrityViolation("shot_id");
       const expectedArtifactId = requireShot(db, projectId, clip.shot_id).shot.accepted_clip_artifact_id;
       if (!expectedArtifactId) dataIntegrityViolation("artifact_id");
-      assertBoundArtifactObject(clip.artifact, projectId, expectedArtifactId);
+      assertBoundArtifactObject(clip.artifact, projectId, expectedArtifactId, db, clip.shot_id);
     }
   }
   if (workspace.final_artifact) {
@@ -130,7 +143,7 @@ function assertWorkspaceBindings(value: unknown, projectId: string, db: M0Databa
     const exports = recordValue(project?.exports);
     const expectedArtifactId = exports?.final_video_artifact_id;
     if (typeof expectedArtifactId !== "string" || !expectedArtifactId) dataIntegrityViolation("artifact_id");
-    assertBoundArtifactObject(workspace.final_artifact, projectId, expectedArtifactId);
+    assertBoundArtifactObject(workspace.final_artifact, projectId, expectedArtifactId, db);
   }
 }
 
