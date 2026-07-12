@@ -30,6 +30,9 @@ npm run typecheck
 npm run build
 npm run dev:v2
 npm run start:local
+npm run windows:start
+npm run windows:status
+npm run windows:stop
 npm run start:webgpt
 npm run db:backup
 npm run db:check
@@ -45,7 +48,7 @@ npm run test:v2:browser
 npm run secret:scan
 ```
 
-`start:local` 只启动本地 Workbench。`start:webgpt` 单独启动 WebGPT V4 MCP 与媒体网关。`preflight` 默认检查本地 Workbench profile；WebGPT 使用 `npm run preflight -- --profile=webgpt`，OAuth 缺失时会明确失败并保持 fail closed。
+`start:local` 以前台方式启动本地 Workbench。`windows:start`、`windows:status`、`windows:stop` 提供普通用户权限的 Windows 受管启停入口，但不会创建 Task Scheduler 或配置自动启动。`start:webgpt` 单独启动 WebGPT V4 MCP 与媒体网关。`preflight` 默认检查本地 Workbench profile；WebGPT 使用 `npm run preflight -- --profile=webgpt`，OAuth 缺失时会明确失败并保持 fail closed。
 
 数据库 schema 不再在服务启动时静默升级。首次使用或升级后必须在服务停止状态下显式执行 `npm run db:migrate`；命令会在迁移现有数据库前创建 `ops/backups/` 快照。对 Jenn 活动数据库执行迁移前仍需遵守当前授权边界。
 
@@ -65,6 +68,26 @@ npm run start:webgpt
 ```
 
 默认 MCP 与媒体端口为 `2091` 和 `2092`，只绑定 `127.0.0.1`。未配置 OAuth 时健康检查可以通过，但 `/readyz` 和 MCP 调用保持关闭。
+
+### Windows 受管启停
+
+完成显式数据库迁移后，可以使用普通用户权限的受管入口：
+
+```powershell
+npm run windows:start
+npm run windows:status
+npm run windows:stop
+```
+
+`windows:start` 在后台启动 Workbench 前会：
+
+- 要求 Node.js 22；默认解析 `ops/tools/node-v22.23.1-win-x64/node.exe`，也可通过 `AI_VIDEO_NODE22_PATH` 指定其他 Node 22 可执行文件；
+- 显式设置 `REAL_PROVIDER_ENABLED=false`、`M1_REAL_PROVIDER_EXECUTION_ALLOWED=false` 和 `M1_REAL_PROVIDER_COST_ACK=false`；
+- 运行本地 `preflight` 和完整 build；
+- 检查 PID、进程启动时间、Node 路径和 4181 端口，拒绝覆盖未知监听进程；
+- 等待 `/healthz` 与 `/readyz` 通过后，才写入本地受管状态。
+
+PID 状态和按次启动日志只写入 Git 忽略的 `ops/tools/workbench-runtime/`。`windows:stop` 只有在 PID、进程身份和监听端口同时匹配时才会停止进程；状态不一致时保持现场并 fail closed。当前命令不会创建或修改 Windows Task Scheduler，自启动仍需后续单独授权。
 
 ## 数据边界
 
