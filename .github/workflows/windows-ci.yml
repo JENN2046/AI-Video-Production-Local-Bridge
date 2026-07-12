@@ -62,6 +62,15 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Test selection gate
+        run: npm run test:selection-gate
+
+      - name: Foundation and media boundary tests
+        run: npm run test:foundation-boundaries
+
+      - name: Provider and transfer safety tests
+        run: npm run test:provider-boundaries
+
       - name: Workbench V2 domain tests
         run: npm run test:v2
 
@@ -76,6 +85,15 @@ jobs:
 
       - name: H1 Workbench tests
         run: npm run test:h1
+
+      - name: WebGPT legacy boundary tests
+        run: npm run test:webgpt:legacy-boundaries
+
+      - name: Memory safety tests
+        run: npm run test:memory
+
+      - name: Source audit safety tests
+        run: npm run test:source-audit
 
       - name: Windows managed runtime controls
         run: npm run test:windows-runtime
