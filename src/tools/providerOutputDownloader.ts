@@ -7,7 +7,7 @@ import { basename, extname, isAbsolute, relative, resolve } from "node:path";
 import { Readable } from "node:stream";
 
 import { paths } from "../paths.js";
-import { activateLocalMediaArtifact, recoverMediaActivations, type MediaArtifact } from "./mediaArtifacts.js";
+import { activateLocalMediaArtifact, recoverMediaActivations, verifyMediaArtifactBytes, type MediaArtifact } from "./mediaArtifacts.js";
 import { validateMp4File, type Mp4ValidationResult } from "./mediaValidity.js";
 import { providerError, type ProviderToolError } from "./provider.js";
 import type { M0Database } from "../storage/sqlite.js";
@@ -425,6 +425,8 @@ export async function downloadProviderOutputToArtifact(
       if (existing.linked_objects.project_id !== input.project_id || existing.linked_objects.shot_id !== input.shot_id) {
         return { ok: false, error: providerError("PROVIDER_OUTPUT_TASK_CONFLICT", "Provider task output is already bound to a different project or SHOT.") };
       }
+      const integrity = verifyMediaArtifactBytes(db, existing);
+      if (!integrity.ok) return { ok: false, error: providerError(integrity.error.code, integrity.error.message) };
       return { ok: true, artifact: existing, ffprobe, output_url_hostname: fetched.finalUrl.hostname };
     }
     const preparedArtifact: MediaArtifact = {

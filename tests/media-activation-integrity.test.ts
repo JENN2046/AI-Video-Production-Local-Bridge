@@ -185,6 +185,39 @@ test("verified Blob provenance preserves a caller-controlled custom media root",
   }
 });
 
+test("default recovery discovers an orphan marker for a custom media root", () => {
+  const root = mkdtempSync(join(tmpdir(), "media-activation-custom-orphan-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  const artifact = preparedArtifact();
+  artifact.storage.uri = join(mediaRoot, "artifacts", "images", `${artifact.artifact_id}.png`);
+  artifact.storage.filename = `${artifact.artifact_id}.png`;
+  let activationId = "";
+  try {
+    db.exec("BEGIN IMMEDIATE");
+    assert.throws(() => activateLocalMediaArtifact({
+      artifact,
+      source_path: IMAGE_FIXTURE,
+      media_root: mediaRoot,
+      after_file_placed: () => { throw new Error("INJECTED_CUSTOM_ROOT_OUTER_ROLLBACK"); }
+    }, db), /INJECTED_CUSTOM_ROOT_OUTER_ROLLBACK/);
+    activationId = (db.prepare("SELECT activation_id FROM media_activation_journal WHERE artifact_id = ?").get(artifact.artifact_id) as { activation_id: string }).activation_id;
+    assert.equal(existsSync(join(paths.mediaActivationJournalRoot, `${activationId}.json`)), true);
+    db.exec("ROLLBACK");
+
+    const recovered = recoverMediaActivations(db);
+    assert.equal(recovered.failed.some((failure) => failure.activation_id === activationId && failure.code === "MEDIA_ACTIVATION_DB_RECORD_MISSING"), true);
+    assert.equal(existsSync(artifact.storage.uri), false);
+    assert.equal((db.prepare("SELECT state FROM media_activation_journal WHERE activation_id = ?").get(activationId) as { state: string }).state, "failed");
+  } finally {
+    db.close();
+    if (activationId) rmSync(join(paths.mediaActivationJournalRoot, `${activationId}.json`), { force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("an outer transaction rollback cannot leave an unrecorded active file", () => {
   const db = openM0Database();
   const artifact = preparedArtifact();

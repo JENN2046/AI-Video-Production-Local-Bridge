@@ -994,8 +994,7 @@ test("M1 provider output downloader saves ffprobe-valid local artifact without p
     const fixtureBytes = readFileSync(join(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4"));
     const storageDirectory = join(paths.mediaRoot, "provider-canary", "m1-r0-runway-canary-test");
     mkdirSync(storageDirectory, { recursive: true });
-    const result = await downloadProviderOutputToArtifact(
-      {
+    const input = {
         url: "https://cdn.example.test/generated/output.mp4?signature=secret",
         provider_name: "runway",
         provider_job_id: "runway_job_test",
@@ -1004,10 +1003,9 @@ test("M1 provider output downloader saves ffprobe-valid local artifact without p
         duration_seconds: 2,
         aspect_ratio: "9:16",
         storage_directory: storageDirectory
-      },
-      db,
-      {
-        resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+      } as const;
+    const runtime = {
+        resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 as const }],
         fetch_pinned_address: async () =>
           new Response(fixtureBytes, {
             status: 200,
@@ -1016,8 +1014,8 @@ test("M1 provider output downloader saves ffprobe-valid local artifact without p
               "content-length": String(fixtureBytes.length)
             }
           })
-      }
-    );
+      };
+    const result = await downloadProviderOutputToArtifact(input, db, runtime);
 
     assert.equal(result.ok, true);
     if (!result.ok) return;
@@ -1029,6 +1027,11 @@ test("M1 provider output downloader saves ffprobe-valid local artifact without p
     assert.equal(artifact?.storage.uri.startsWith(paths.mediaRoot), true);
     assert.equal(artifact ? getMediaBlob(db, artifact.blob_id)?.storage_uri : null, artifact?.storage.uri);
     assert.equal(result.ffprobe.status, "PASS");
+
+    if (artifact) writeFileSync(artifact.storage.uri, Buffer.from("tampered-provider-output", "utf8"));
+    const retry = await downloadProviderOutputToArtifact(input, db, runtime);
+    assert.equal(retry.ok, false);
+    if (!retry.ok) assert.equal(new Set(["MEDIA_BLOB_CONTENT_DRIFT", "VIDEO_FILE_INVALID"]).has(retry.error.code), true);
   } finally {
     db.close();
   }

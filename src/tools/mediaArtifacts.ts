@@ -509,6 +509,7 @@ interface MediaActivationMarker {
   version: 1;
   activation_id: string;
   artifact_id: string;
+  media_root: string;
   artifact_type: ArtifactType;
   role: ArtifactRole;
   expected_sha256: string;
@@ -520,26 +521,26 @@ interface MediaActivationMarker {
   artifact_json: string;
 }
 
-function markerPath(activationId: string, mediaRoot = paths.mediaRoot): string {
+function markerPath(activationId: string): string {
   if (!/^activation_[0-9a-f-]{36}$/i.test(activationId)) throw new Error("MEDIA_ACTIVATION_MARKER_INVALID");
-  const roots = activationRoots(mediaRoot);
+  const roots = activationRoots(paths.mediaRoot);
   const target = resolve(roots.journal, `${activationId}.json`);
   if (!isPathInside(target, roots.journal) || hasExistingSymlinkAncestor(target, roots.activation)) throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
   return target;
 }
 
-function writeActivationMarker(marker: MediaActivationMarker, mediaRoot: string): string {
-  const roots = activationRoots(mediaRoot);
+function writeActivationMarker(marker: MediaActivationMarker): string {
+  const roots = activationRoots(paths.mediaRoot);
   mkdirSync(roots.journal, { recursive: true });
-  const target = markerPath(marker.activation_id, mediaRoot);
+  const target = markerPath(marker.activation_id);
   const temporary = `${target}.tmp`;
   writeFileSync(temporary, `${JSON.stringify(marker)}\n`, { encoding: "utf8", flag: "wx" });
   renameSync(temporary, target);
   return target;
 }
 
-function removeActivationMarker(activationId: string, mediaRoot: string): void {
-  const target = markerPath(activationId, mediaRoot);
+function removeActivationMarker(activationId: string): void {
+  const target = markerPath(activationId);
   if (existsSync(target) && !lstatSync(target).isSymbolicLink()) rmSync(target, { force: true });
   const temporary = `${target}.tmp`;
   if (existsSync(temporary) && !lstatSync(temporary).isSymbolicLink()) rmSync(temporary, { force: true });
@@ -649,6 +650,7 @@ function commitStagedMediaArtifact(
       version: 1,
       activation_id: activationId,
       artifact_id: artifact.artifact_id,
+      media_root: mediaRoot,
       artifact_type: artifact.artifact_type,
       role: artifact.role,
       expected_sha256: facts.sha256,
@@ -669,7 +671,7 @@ function commitStagedMediaArtifact(
       journalCreated = true;
     };
     if (manageTransaction) insertJournal();
-    writeActivationMarker(marker, mediaRoot);
+    writeActivationMarker(marker);
     markerCreated = true;
     if (!manageTransaction) insertJournal();
     renameSync(stagingPath, pendingPath);
@@ -695,7 +697,7 @@ function commitStagedMediaArtifact(
       if (manageTransaction) db.exec("ROLLBACK");
       throw error;
     }
-    if (manageTransaction) removeActivationMarker(activationId, mediaRoot);
+    if (manageTransaction) removeActivationMarker(activationId);
     if (resolve(artifact.storage.uri) !== finalPath && existsSync(finalPath)) rmSync(finalPath, { force: true });
     return { ok: true, artifact };
   } catch (error) {
@@ -708,7 +710,7 @@ function commitStagedMediaArtifact(
       rmSync(stagingPath, { force: true });
     }
     if (markerCreated && (!journalCreated || manageTransaction)) {
-      try { removeActivationMarker(activationId, mediaRoot); } catch { /* a leftover marker fails closed during recovery */ }
+      try { removeActivationMarker(activationId); } catch { /* a leftover marker fails closed during recovery */ }
     }
     return { ok: false, error: { code, message: "Media activation failed before the Artifact became active." } };
   }
@@ -735,8 +737,8 @@ export function activateLocalMediaArtifact(
   return commitStagedMediaArtifact(db, input.artifact, input.allow_status_transition === true, { after_pending_placed: input.after_pending_placed, after_file_placed: input.after_file_placed, media_root: mediaRoot });
 }
 
-function activationMarkerPaths(mediaRoot = paths.mediaRoot): string[] {
-  const roots = activationRoots(resolve(mediaRoot));
+function activationMarkerPaths(): string[] {
+  const roots = activationRoots(paths.mediaRoot);
   if (!existsSync(roots.journal)) return [];
   if (lstatSync(roots.journal).isSymbolicLink() || !statSync(roots.journal).isDirectory()) throw new Error("MEDIA_ACTIVATION_JOURNAL_UNSAFE");
   return readdirSync(roots.journal, { withFileTypes: true })
@@ -744,15 +746,15 @@ function activationMarkerPaths(mediaRoot = paths.mediaRoot): string[] {
     .map((entry) => resolve(roots.journal, entry.name));
 }
 
-function readActivationMarker(filePath: string, mediaRoot = paths.mediaRoot): MediaActivationMarker {
-  const root = resolve(mediaRoot);
-  const roots = activationRoots(root);
+function readActivationMarker(filePath: string): MediaActivationMarker {
+  const journalRoots = activationRoots(paths.mediaRoot);
   const target = resolve(filePath);
-  if (!isPathInside(target, roots.journal) || lstatSync(target).isSymbolicLink() || !statSync(target).isFile()) throw new Error("MEDIA_ACTIVATION_MARKER_INVALID");
+  if (!isPathInside(target, journalRoots.journal) || lstatSync(target).isSymbolicLink() || !statSync(target).isFile()) throw new Error("MEDIA_ACTIVATION_MARKER_INVALID");
   const marker = JSON.parse(readFileSync(target, "utf8")) as Partial<MediaActivationMarker>;
   if (marker.version !== 1
     || typeof marker.activation_id !== "string"
     || typeof marker.artifact_id !== "string"
+    || typeof marker.media_root !== "string" || !isAbsolute(marker.media_root)
     || (marker.artifact_type !== "image" && marker.artifact_type !== "video")
     || !(["storyboard_image", "generated_clip", "final_video"] as const).includes(marker.role as ArtifactRole)
     || !/^[a-f0-9]{64}$/i.test(String(marker.expected_sha256 ?? ""))
@@ -762,7 +764,14 @@ function readActivationMarker(filePath: string, mediaRoot = paths.mediaRoot): Me
     || typeof marker.pending_path !== "string"
     || typeof marker.final_path !== "string"
     || typeof marker.artifact_json !== "string"
-    || markerPath(marker.activation_id, root) !== target) throw new Error("MEDIA_ACTIVATION_MARKER_INVALID");
+    || markerPath(marker.activation_id) !== target) throw new Error("MEDIA_ACTIVATION_MARKER_INVALID");
+  const root = resolve(marker.media_root);
+  const roots = activationRoots(root);
+  if (existsSync(root)) {
+    const canonicalRoot = resolve(realpathSync(root));
+    const rootMatches = process.platform === "win32" ? canonicalRoot.toLowerCase() === root.toLowerCase() : canonicalRoot === root;
+    if (lstatSync(root).isSymbolicLink() || !statSync(root).isDirectory() || !rootMatches) throw new Error("MEDIA_ACTIVATION_MARKER_INVALID");
+  }
   const artifact = JSON.parse(marker.artifact_json) as MediaArtifact;
   if (artifact.artifact_id !== marker.artifact_id
     || artifact.artifact_type !== marker.artifact_type
@@ -777,25 +786,25 @@ function readActivationMarker(filePath: string, mediaRoot = paths.mediaRoot): Me
   return marker as MediaActivationMarker;
 }
 
-export function discardMediaActivationMarkers(artifactIds: readonly string[], mediaRoot = paths.mediaRoot): void {
+export function discardMediaActivationMarkers(artifactIds: readonly string[]): void {
   const wanted = new Set(artifactIds);
   let filePaths: string[] = [];
-  try { filePaths = activationMarkerPaths(mediaRoot); } catch { return; }
+  try { filePaths = activationMarkerPaths(); } catch { return; }
   for (const filePath of filePaths) {
     try {
-      const marker = readActivationMarker(filePath, mediaRoot);
+      const marker = readActivationMarker(filePath);
       if (wanted.has(marker.artifact_id)) rmSync(filePath, { force: true });
     } catch { /* invalid markers remain visible to recovery and db:check */ }
   }
 }
 
-export function cleanupCommittedMediaActivationMarkers(db: M0Database, artifactIds: readonly string[], mediaRoot = paths.mediaRoot): void {
+export function cleanupCommittedMediaActivationMarkers(db: M0Database, artifactIds: readonly string[]): void {
   const wanted = new Set(artifactIds);
   let filePaths: string[] = [];
-  try { filePaths = activationMarkerPaths(mediaRoot); } catch { return; }
+  try { filePaths = activationMarkerPaths(); } catch { return; }
   for (const filePath of filePaths) {
     try {
-      const marker = readActivationMarker(filePath, mediaRoot);
+      const marker = readActivationMarker(filePath);
       if (!wanted.has(marker.artifact_id)) continue;
       const row = db.prepare(`SELECT j.state FROM media_activation_journal j
         JOIN media_artifacts a ON a.artifact_id = j.artifact_id
@@ -805,11 +814,11 @@ export function cleanupCommittedMediaActivationMarkers(db: M0Database, artifactI
   }
 }
 
-function reconcileUnrecordedActivationMarkers(db: M0Database, result: MediaActivationRecoveryResult, mediaRoot = paths.mediaRoot): void {
-  for (const filePath of activationMarkerPaths(mediaRoot)) {
+function reconcileUnrecordedActivationMarkers(db: M0Database, result: MediaActivationRecoveryResult): void {
+  for (const filePath of activationMarkerPaths()) {
     let marker: MediaActivationMarker;
     try {
-      marker = readActivationMarker(filePath, mediaRoot);
+      marker = readActivationMarker(filePath);
     } catch {
       result.failed.push({ activation_id: basename(filePath, ".json"), code: "MEDIA_ACTIVATION_MARKER_INVALID" });
       continue;
@@ -821,7 +830,7 @@ function reconcileUnrecordedActivationMarkers(db: M0Database, result: MediaActiv
     }
     if (existing) continue;
     const artifact = JSON.parse(marker.artifact_json) as MediaArtifact;
-    try { quarantineActivationFile(artifact, [resolve(marker.final_path), resolve(marker.pending_path), resolve(marker.staging_path)], mediaRoot); } catch { /* retain stable failed evidence even when no file can be moved */ }
+    try { quarantineActivationFile(artifact, [resolve(marker.final_path), resolve(marker.pending_path), resolve(marker.staging_path)], resolve(marker.media_root)); } catch { /* retain stable failed evidence even when no file can be moved */ }
     db.prepare(`INSERT INTO media_activation_journal
       (activation_id, artifact_id, state, artifact_type, role, expected_sha256, expected_size_bytes, detected_mime,
        staging_path, pending_path, final_path, artifact_json, error_code)
@@ -898,7 +907,7 @@ export function recoverMediaActivations(db = openM0Database()): MediaActivationR
         db.exec("ROLLBACK");
         throw error;
       }
-      try { removeActivationMarker(row.activation_id, mediaRoot); } catch { /* committed DB state remains authoritative */ }
+      try { removeActivationMarker(row.activation_id); } catch { /* committed DB state remains authoritative */ }
       result.committed.push(row.activation_id);
     } catch (error) {
       const code = mediaActivationErrorCode(error);
@@ -908,8 +917,7 @@ export function recoverMediaActivations(db = openM0Database()): MediaActivationR
       }
       try { db.prepare("UPDATE media_activation_journal SET state = 'failed', error_code = ?, updated_at = CURRENT_TIMESTAMP WHERE activation_id = ?").run(code, row.activation_id); } catch { /* schema checks report the remaining record */ }
       try {
-        const mediaRoot = dirname(dirname(dirname(resolve(row.staging_path))));
-        removeActivationMarker(row.activation_id, mediaRoot);
+        removeActivationMarker(row.activation_id);
       } catch { /* db:check will keep reporting any unsafe marker */ }
       result.failed.push({ activation_id: row.activation_id, code });
     }
