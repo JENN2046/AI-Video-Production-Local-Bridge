@@ -8,11 +8,20 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 import { openM0Database } from "../src/storage/sqlite.js";
-import { createProject } from "../src/tools/projects.js";
+import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 import { mediaAnalysisQueue } from "../src/webgpt-v4/media.js";
 import { WEBGPT_V4_WIDGET_URI } from "../src/webgpt-v4/mcpApp.js";
 import { startWebGptV4 } from "../src/webgpt-v4/server.js";
 import { actorFromSubject, WebGptV4Error, WEBGPT_V4_SCOPES } from "../src/webgpt-v4/types.js";
+
+function schemaContainsProperty(value: unknown, property: string): boolean {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  if (record.properties && typeof record.properties === "object" && property in record.properties) return true;
+  return Object.values(record).some((item) => Array.isArray(item)
+    ? item.some((entry) => schemaContainsProperty(entry, property))
+    : schemaContainsProperty(item, property));
+}
 
 test("official MCP transport advertises the V4 scoped tool contract and hides test projects", async () => {
   const root = mkdtempSync(join(tmpdir(), "webgpt-v4-server-"));
@@ -27,6 +36,16 @@ test("official MCP transport advertises the V4 scoped tool contract and hides te
   if (!production.ok || !fixture.ok) return;
   db.prepare("UPDATE workbench_project_meta SET classification = 'production' WHERE project_id = ?").run(production.project_id);
   db.prepare("UPDATE workbench_project_meta SET classification = 'test' WHERE project_id = ?").run(fixture.project_id);
+  const shot: Shot = {
+    shot_id: "shot_server_contract", project_id: production.project_id, order: 1, status: "storyboard_approved", duration_seconds: 6,
+    description: "Server contract", storyboard_image_artifact_id: "artifact_missing", video_prompt: "Contract prompt", negative_prompt: "",
+    generation_run_ids: [], accepted_clip_artifact_id: "", clip_versions: [],
+    review: { approval_status: "pending", rejection_reasons: [], latest_revision_instruction: null }
+  };
+  saveShot(db, shot);
+  production.project.shot_ids = [shot.shot_id];
+  saveProject(db, production.project);
+  const shotUpdatedAt = (db.prepare("SELECT updated_at FROM shots WHERE shot_id = ?").get(shot.shot_id) as { updated_at: string }).updated_at;
   db.close();
 
   const actor = actorFromSubject("auth0|jenn", WEBGPT_V4_SCOPES);
@@ -77,9 +96,9 @@ test("official MCP transport advertises the V4 scoped tool contract and hides te
       assert.equal(tool.securitySchemes?.[0]?.scopes.length, 1);
     }
     const contextTool = tools.tools.find((tool) => tool.name === "get_project_context");
-    const contextData = ((contextTool?.outputSchema as { properties?: { data?: { properties?: Record<string, unknown> } } })?.properties?.data)?.properties;
-    assert.equal(Boolean(contextData?.project), true);
-    assert.equal(Boolean(contextData?.workspace), true);
+    const contextData = (contextTool?.outputSchema as { properties?: { data?: unknown } })?.properties?.data;
+    assert.equal(schemaContainsProperty(contextData, "project"), true);
+    assert.equal(schemaContainsProperty(contextData, "workspace"), true);
     const generationTool = tools.tools.find((tool) => tool.name === "prepare_generation_intent");
     const generationData = ((generationTool?.outputSchema as { properties?: { data?: { properties?: Record<string, unknown> } } })?.properties?.data)?.properties;
     assert.equal(Boolean(generationData?.intent_id), true);
@@ -104,6 +123,43 @@ test("official MCP transport advertises the V4 scoped tool contract and hides te
     assert.equal(hidden.isError, true);
     assert.equal(JSON.stringify(hidden).includes("Secret fixture"), false);
     assert.equal((hidden.structuredContent as { error: { code: string } }).error.code, "PROJECT_NOT_FOUND");
+
+    const updated = await client.callTool({ name: "update_shot_copy", arguments: {
+      project_id: production.project_id, shot_id: shot.shot_id, expected_updated_at: shotUpdatedAt,
+      description: "Updated through strict DTO", idempotency_key: "server-contract-update"
+    } });
+    assert.equal(updated.isError, false, JSON.stringify(updated.structuredContent));
+    assert.equal((updated.structuredContent as { data: { shot: { description: string } } }).data.shot.description, "Updated through strict DTO");
+
+    const note = await client.callTool({ name: "add_review_note", arguments: {
+      project_id: production.project_id, shot_id: shot.shot_id, note: "Strict review note", idempotency_key: "server-contract-note"
+    } });
+    assert.equal(note.isError, false, JSON.stringify(note.structuredContent));
+
+    const submitted = await client.callTool({ name: "submit_production_proposal", arguments: {
+      project_id: production.project_id, kind: "storyboard_package", payload: { notes: "Strict proposal" }, idempotency_key: "server-contract-submit"
+    } });
+    assert.equal(submitted.isError, false, JSON.stringify(submitted.structuredContent));
+    const submittedDraft = (submitted.structuredContent as { data: { draft: { draft_id: string; payload: { kind: string } } } }).data.draft;
+    assert.equal(submittedDraft.payload.kind, "storyboard_package");
+
+    const revised = await client.callTool({ name: "revise_production_proposal", arguments: {
+      project_id: production.project_id, draft_id: submittedDraft.draft_id, payload: { notes: "Revised strict proposal" }, idempotency_key: "server-contract-revise"
+    } });
+    assert.equal(revised.isError, false, JSON.stringify(revised.structuredContent));
+    const revisedDraftId = (revised.structuredContent as { data: { draft: { draft_id: string } } }).data.draft.draft_id;
+
+    const closed = await client.callTool({ name: "close_production_proposal", arguments: {
+      project_id: production.project_id, draft_id: revisedDraftId, reason: "Contract complete", idempotency_key: "server-contract-close"
+    } });
+    assert.equal(closed.isError, false, JSON.stringify(closed.structuredContent));
+
+    const blockedIntent = await client.callTool({ name: "prepare_generation_intent", arguments: {
+      project_id: production.project_id, shot_id: shot.shot_id, account_label: "personal", budget_limit_value: 1,
+      idempotency_key: "server-contract-intent"
+    } });
+    assert.equal(blockedIntent.isError, true);
+    assert.equal((blockedIntent.structuredContent as { error: { code: string } }).error.code, "ARTIFACT_NOT_FOUND");
   } finally {
     await client.close();
     await runtime.close();

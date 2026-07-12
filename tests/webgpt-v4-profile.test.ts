@@ -12,7 +12,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { openM0Database, type M0Database } from "../src/storage/sqlite.js";
 import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 import { getProductionProjectContext } from "../src/webgpt-v4/domain.js";
-import { readonlyProjectContext } from "../src/webgpt-v4/readonlyContracts.js";
+import { readProjectContext } from "../src/webgpt-v4/contracts.js";
 import { startWebGptV4 } from "../src/webgpt-v4/server.js";
 import { webGptV4ToolsForProfile } from "../src/webgpt-v4/toolCatalog.js";
 import { actorFromSubject, WEBGPT_V4_SCOPES, WebGptV4Error } from "../src/webgpt-v4/types.js";
@@ -54,7 +54,7 @@ test("default readonly profile exposes six project tools and performs no databas
   saveShot(db, shot);
   created.project.shot_ids = [shot.shot_id];
   saveProject(db, created.project);
-  const projectedContext = readonlyProjectContext(getProductionProjectContext({ project_id: created.project_id, workspace: "overview" }, db));
+  const projectedContext = readProjectContext(getProductionProjectContext({ project_id: created.project_id, workspace: "overview" }, db), "full");
   assert.equal(projectedContext.ok, true, JSON.stringify(projectedContext));
   const before = logicalManifest(db);
   db.close();
@@ -146,11 +146,11 @@ test("full profile remains explicit and invalid profiles fail closed", async () 
 });
 
 test("readonly contract violations return a stable safe envelope", () => {
-  const result = readonlyProjectContext({
+  const result = readProjectContext({
     ok: true,
     data: { project: { project_id: "project_invalid" } },
     meta: { request_id: "contract-fixture", source_version: "webgpt-v4.0.0", updated_at: "2026-01-01T00:00:00.000Z" }
-  });
+  }, "full");
   assert.equal(result.ok, false);
   if (!result.ok) {
     assert.equal(result.error.code, "WEBGPT_V4_OUTPUT_CONTRACT_VIOLATION");
