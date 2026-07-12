@@ -589,6 +589,22 @@ function removeStagingOwnership(artifactId: string): void {
   if (existsSync(target) && !lstatSync(target).isSymbolicLink()) rmSync(target, { force: true });
 }
 
+function reconcileFailedStagingWrite(artifactId: string, stagingPath: string, stageError: ToolError): void {
+  if (stageError.code === "MEDIA_ACTIVATION_ALREADY_PENDING") return;
+  let stagingCleared = !existsSync(stagingPath);
+  if (!stagingCleared) {
+    try {
+      if (!lstatSync(stagingPath).isSymbolicLink() && statSync(stagingPath).isFile()) {
+        rmSync(stagingPath, { force: true });
+        stagingCleared = !existsSync(stagingPath);
+      }
+    } catch { /* retain the owner so recovery can retry safe cleanup */ }
+  }
+  if (stagingCleared) {
+    try { removeStagingOwnership(artifactId); } catch { /* recovery retains the ownership record */ }
+  }
+}
+
 function copyToOwnedStaging(
   artifact: MediaArtifact,
   sourcePath: string,
@@ -600,7 +616,7 @@ function copyToOwnedStaging(
   const stagingPath = stagedPathForArtifact(artifact, mediaRoot);
   const stageError = copyToStagingExclusively(sourcePath, stagingPath);
   if (stageError) {
-    try { removeStagingOwnership(artifact.artifact_id); } catch { /* recovery retains the ownership record */ }
+    reconcileFailedStagingWrite(artifact.artifact_id, stagingPath, stageError);
     return stageError;
   }
   if (afterStagingWritten) {
@@ -615,7 +631,7 @@ function writeToOwnedStaging(artifact: MediaArtifact, bytes: Buffer, mediaRoot =
   const stagingPath = stagedPathForArtifact(artifact, mediaRoot);
   const stageError = writeToStagingExclusively(stagingPath, bytes);
   if (stageError) {
-    try { removeStagingOwnership(artifact.artifact_id); } catch { /* recovery retains the ownership record */ }
+    reconcileFailedStagingWrite(artifact.artifact_id, stagingPath, stageError);
     return stageError;
   }
   return null;
@@ -892,8 +908,17 @@ function reconcileStagingOwners(db: M0Database, result: MediaActivationRecoveryR
       ORDER BY created_at DESC LIMIT 1`).get(owner.artifact_id, resolve(owner.staging_path)) as { activation_id: string } | undefined;
     if (!transferred) {
       const stagingPath = resolve(owner.staging_path);
-      if (existsSync(stagingPath) && !lstatSync(stagingPath).isSymbolicLink() && statSync(stagingPath).isFile()) rmSync(stagingPath, { force: true });
+      let stagingCleared = !existsSync(stagingPath);
+      if (!stagingCleared) {
+        try {
+          if (!lstatSync(stagingPath).isSymbolicLink() && statSync(stagingPath).isFile()) {
+            rmSync(stagingPath, { force: true });
+            stagingCleared = !existsSync(stagingPath);
+          }
+        } catch { /* preserve the owner so the unsafe or unavailable path remains fail closed */ }
+      }
       result.failed.push({ activation_id: basename(filePath, ".json"), code: "MEDIA_ACTIVATION_DB_RECORD_MISSING" });
+      if (!stagingCleared) continue;
     }
     rmSync(filePath, { force: true });
   }
@@ -1085,6 +1110,13 @@ export function verifyMediaArtifactBytes(db: M0Database, artifact: MediaArtifact
     return { ok: false, error: { code: "ARTIFACT_INTEGRITY_UNVERIFIED", message: "Artifact does not reference an active verified MediaBlob." } };
   }
   const localPath = resolve(blob.storage_uri);
+  const artifactPath = resolve(artifact.storage.uri);
+  const pathsMatch = process.platform === "win32"
+    ? artifactPath.toLowerCase() === localPath.toLowerCase()
+    : artifactPath === localPath;
+  if (!pathsMatch) {
+    return { ok: false, error: { code: "MEDIA_BLOB_CONTENT_DRIFT", message: "Artifact storage URI differs from its authoritative MediaBlob." } };
+  }
   const registeredRoot = typeof blob.provenance.media_root === "string" && isAbsolute(blob.provenance.media_root)
     ? resolve(blob.provenance.media_root)
     : paths.mediaRoot;

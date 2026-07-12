@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -177,6 +177,31 @@ test("recovery removes staging bytes that crashed before journal creation", () =
     db.close();
     rmSync(artifact.storage.uri, { force: true });
     if (stagingPath) rmSync(stagingPath, { force: true });
+  }
+});
+
+test("a partial staging file keeps its owner until recovery clears both", () => {
+  const db = openM0Database();
+  const artifact = preparedArtifact();
+  const stagingPath = resolve(paths.mediaActivationStagingRoot, `${artifact.artifact_id}.png.stage`);
+  try {
+    mkdirSync(paths.mediaActivationStagingRoot, { recursive: true });
+    writeFileSync(stagingPath, Buffer.from("partial-staging-write", "utf8"), { flag: "wx" });
+    const blocked = activateLocalMediaArtifact({ artifact, source_path: IMAGE_FIXTURE }, db);
+    assert.equal(blocked.ok, false);
+    if (!blocked.ok) assert.equal(blocked.error.code, "MEDIA_ACTIVATION_ALREADY_PENDING");
+    assert.equal(existsSync(stagingPath), true);
+
+    const recovered = recoverMediaActivations(db);
+    assert.equal(recovered.failed.some((failure) => failure.code === "MEDIA_ACTIVATION_DB_RECORD_MISSING"), true);
+    assert.equal(existsSync(stagingPath), false);
+
+    const retry = activateLocalMediaArtifact({ artifact: structuredClone(artifact), source_path: IMAGE_FIXTURE }, db);
+    assert.equal(retry.ok, true, retry.ok ? undefined : retry.error.code);
+  } finally {
+    db.close();
+    rmSync(stagingPath, { force: true });
+    rmSync(artifact.storage.uri, { force: true });
   }
 });
 
@@ -367,6 +392,36 @@ test("db:check detects tampered and missing active media bytes", () => {
     assert.equal(missing.media_integrity_errors, 1);
   } finally {
     if (finalPath && existsSync(finalPath)) rmSync(finalPath, { force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("db:check rejects Artifact storage URI drift from its authoritative Blob", () => {
+  const root = mkdtempSync(join(tmpdir(), "media-integrity-uri-drift-"));
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  let finalPath = "";
+  try {
+    const result = registerMediaArtifact({ artifact_type: "image", role: "storyboard_image", source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" } }, db);
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    finalPath = result.artifact.storage.uri;
+    const drifted = structuredClone(result.artifact);
+    drifted.storage.uri = resolve(paths.imageArtifactsRoot, `${drifted.artifact_id}-drifted.png`);
+    const verified = verifyMediaArtifactBytes(db, drifted);
+    assert.equal(verified.ok, false);
+    if (!verified.ok) assert.equal(verified.error.code, "MEDIA_BLOB_CONTENT_DRIFT");
+    db.prepare("UPDATE media_artifacts SET data_json = ? WHERE artifact_id = ?").run(JSON.stringify(drifted), drifted.artifact_id);
+  } finally {
+    db.close();
+  }
+  try {
+    const checked = checkDatabase(sqlitePath);
+    assert.equal(checked.result, "FAIL");
+    assert.equal(checked.media_integrity_errors, 1);
+  } finally {
+    if (finalPath) rmSync(finalPath, { force: true });
     rmSync(root, { recursive: true, force: true });
   }
 });
