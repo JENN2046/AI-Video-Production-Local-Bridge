@@ -85,15 +85,15 @@ function assertBoundProjectObject(value: unknown, projectId: string): void {
   if (!item || item.project_id !== projectId) dataIntegrityViolation("project_id");
 }
 
-function assertBoundArtifactObject(value: unknown, projectId: string): void {
+function assertBoundArtifactObject(value: unknown, projectId: string, expectedArtifactId: string): void {
   const item = recordValue(value);
   const links = recordValue(item?.linked_objects);
-  if (!item || typeof item.artifact_id !== "string" || !links || links.project_id !== projectId) {
+  if (!item || item.artifact_id !== expectedArtifactId || !links || links.project_id !== projectId) {
     dataIntegrityViolation("artifact_id");
   }
 }
 
-function assertWorkspaceBindings(value: unknown, projectId: string): void {
+function assertWorkspaceBindings(value: unknown, projectId: string, db: M0Database): void {
   const workspace = recordValue(value);
   if (!workspace) dataIntegrityViolation("project_id");
   assertBoundProjectObject(workspace.project, projectId);
@@ -106,18 +106,32 @@ function assertWorkspaceBindings(value: unknown, projectId: string): void {
     assertBoundProjectObject(stack.shot, projectId);
     for (const versionValue of Array.isArray(stack.versions) ? stack.versions : []) {
       const version = recordValue(versionValue);
-      if (version?.artifact) assertBoundArtifactObject(version.artifact, projectId);
+      if (version?.artifact) {
+        if (typeof version.artifact_id !== "string") dataIntegrityViolation("artifact_id");
+        assertBoundArtifactObject(version.artifact, projectId, version.artifact_id);
+      }
     }
   }
   for (const note of Array.isArray(workspace.review_notes) ? workspace.review_notes : []) assertBoundProjectObject(note, projectId);
-  for (const artifact of Object.values(recordValue(workspace.artifacts) ?? {})) {
-    if (artifact) assertBoundArtifactObject(artifact, projectId);
+  for (const [artifactId, artifact] of Object.entries(recordValue(workspace.artifacts) ?? {})) {
+    if (artifact) assertBoundArtifactObject(artifact, projectId, artifactId);
   }
   for (const clipValue of Array.isArray(workspace.accepted_clips) ? workspace.accepted_clips : []) {
     const clip = recordValue(clipValue);
-    if (clip?.artifact) assertBoundArtifactObject(clip.artifact, projectId);
+    if (clip?.artifact) {
+      if (typeof clip.shot_id !== "string") dataIntegrityViolation("shot_id");
+      const expectedArtifactId = requireShot(db, projectId, clip.shot_id).shot.accepted_clip_artifact_id;
+      if (!expectedArtifactId) dataIntegrityViolation("artifact_id");
+      assertBoundArtifactObject(clip.artifact, projectId, expectedArtifactId);
+    }
   }
-  if (workspace.final_artifact) assertBoundArtifactObject(workspace.final_artifact, projectId);
+  if (workspace.final_artifact) {
+    const project = recordValue(workspace.project);
+    const exports = recordValue(project?.exports);
+    const expectedArtifactId = exports?.final_video_artifact_id;
+    if (typeof expectedArtifactId !== "string" || !expectedArtifactId) dataIntegrityViolation("artifact_id");
+    assertBoundArtifactObject(workspace.final_artifact, projectId, expectedArtifactId);
+  }
 }
 
 function stable(value: unknown): unknown {
@@ -371,7 +385,7 @@ export function getProductionProjectContext(
     projectRow(db, input.project_id);
     const result = getWorkbenchProjectWorkspace(input.project_id, input.workspace ?? "overview", db, { touch_last_opened: false });
     if (!result.ok) throw new WebGptV4Error(result.error.code, result.error.message, result.error.field);
-    assertWorkspaceBindings(result.data, input.project_id);
+    assertWorkspaceBindings(result.data, input.project_id, db);
     return ok(id, sanitize(result.data) as Record<string, unknown>);
   } catch (error) {
     return fail(id, errorBody(error));
