@@ -12,6 +12,7 @@ export interface ProviderCapability {
   allowed_resolutions: readonly string[];
   default_resolution: string;
   pixel_resolution_by_aspect: Readonly<Record<string, string>>;
+  resolution_aspects: Readonly<Record<string, readonly string[]>>;
   duration: {
     min_seconds: number;
     max_seconds: number;
@@ -31,6 +32,10 @@ export const RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY = Object.freeze({
   allowed_resolutions: Object.freeze(["480p", "720p"]),
   default_resolution: "480p",
   pixel_resolution_by_aspect: Object.freeze({ "9:16": "480p", "16:9": "480p", "2:3": "480p", "3:2": "480p", "1:1": "480p" }),
+  resolution_aspects: Object.freeze({
+    "480p": Object.freeze(["9:16", "16:9", "2:3", "3:2", "1:1"]),
+    "720p": Object.freeze(["9:16", "16:9", "2:3", "3:2", "1:1"])
+  }),
   duration: Object.freeze({ min_seconds: 6, max_seconds: 60, step_seconds: 1, default_seconds: 6 }),
   allowed_aspect_ratios: Object.freeze(["9:16", "16:9", "2:3", "3:2", "1:1"]),
   price_preview_path: `/openapi/v2/price-preview/${RUNNINGHUB_IMAGE_TO_VIDEO_MODEL}`
@@ -45,6 +50,7 @@ export const RUNWAY_IMAGE_TO_VIDEO_CAPABILITY = Object.freeze({
   allowed_resolutions: Object.freeze(["720:1280", "1280:768"]),
   default_resolution: "720:1280",
   pixel_resolution_by_aspect: Object.freeze({ "9:16": "720:1280", "16:9": "1280:768" }),
+  resolution_aspects: Object.freeze({ "720:1280": Object.freeze(["9:16"]), "1280:768": Object.freeze(["16:9"]) }),
   duration: Object.freeze({ min_seconds: 2, max_seconds: 10, step_seconds: 1, default_seconds: 5 }),
   allowed_aspect_ratios: Object.freeze(["9:16", "16:9"]),
   price_preview_path: null
@@ -106,7 +112,8 @@ function normalizeResolution(capability: ProviderCapability, resolution: string,
     if (width <= 0 || height <= 0 || !pixelOrientationMatches(width, height, aspectRatio)) return null;
     return capability.pixel_resolution_by_aspect[aspectRatio] ?? null;
   }
-  return capability.allowed_resolutions.includes(requested) ? requested : null;
+  if (!capability.allowed_resolutions.includes(requested)) return null;
+  return capability.resolution_aspects[requested]?.includes(aspectRatio) ? requested : null;
 }
 
 function durationAllowed(capability: ProviderCapability, durationSeconds: number): boolean {
@@ -132,11 +139,11 @@ export function buildProviderCapabilityKey(input: {
   if (!durationAllowed(capability, input.duration_seconds)) {
     return { ok: false, code: "PROVIDER_CAPABILITY_DURATION_UNSUPPORTED", field: "duration_seconds" };
   }
-  const resolution = normalizeResolution(capability, input.resolution, input.aspect_ratio);
-  if (!resolution) return { ok: false, code: "PROVIDER_CAPABILITY_RESOLUTION_UNSUPPORTED", field: "resolution" };
   if (!capability.allowed_aspect_ratios.includes(input.aspect_ratio)) {
     return { ok: false, code: "PROVIDER_CAPABILITY_ASPECT_RATIO_UNSUPPORTED", field: "aspect_ratio" };
   }
+  const resolution = normalizeResolution(capability, input.resolution, input.aspect_ratio);
+  if (!resolution) return { ok: false, code: "PROVIDER_CAPABILITY_RESOLUTION_UNSUPPORTED", field: "resolution" };
   const key: ProviderCapabilityKey = {
     registry_version: PROVIDER_CAPABILITY_REGISTRY_VERSION,
     capability_id: capability.capability_id,

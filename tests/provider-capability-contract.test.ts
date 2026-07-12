@@ -71,12 +71,15 @@ test("Provider capability maps pixel dimensions by Provider aspect instead of a 
   const vertical = buildProviderCapabilityKey({ provider: "runway", model: RUNWAY_IMAGE_TO_VIDEO_CAPABILITY.model, duration_seconds: 5, resolution: "720x1280", aspect_ratio: "9:16" });
   const horizontal = buildProviderCapabilityKey({ provider: "runway", model: RUNWAY_IMAGE_TO_VIDEO_CAPABILITY.model, duration_seconds: 5, resolution: "1280x768", aspect_ratio: "16:9" });
   const inconsistent = buildProviderCapabilityKey({ provider: "runway", model: RUNWAY_IMAGE_TO_VIDEO_CAPABILITY.model, duration_seconds: 5, resolution: "1280x768", aspect_ratio: "9:16" });
+  const nativeMismatch = buildProviderCapabilityKey({ provider: "runway", model: RUNWAY_IMAGE_TO_VIDEO_CAPABILITY.model, duration_seconds: 5, resolution: "720:1280", aspect_ratio: "16:9" });
   assert.equal(vertical.ok, true);
   assert.equal(horizontal.ok, true);
   if (vertical.ok) assert.equal(vertical.key.resolution, "720:1280");
   if (horizontal.ok) assert.equal(horizontal.key.resolution, "1280:768");
   assert.equal(inconsistent.ok, false);
   if (!inconsistent.ok) assert.equal(inconsistent.code, "PROVIDER_CAPABILITY_RESOLUTION_UNSUPPORTED");
+  assert.equal(nativeMismatch.ok, false);
+  if (!nativeMismatch.ok) assert.equal(nativeMismatch.code, "PROVIDER_CAPABILITY_RESOLUTION_UNSUPPORTED");
 });
 
 test("estimate, intent, and submit projections produce one identical RunningHub key", () => {
