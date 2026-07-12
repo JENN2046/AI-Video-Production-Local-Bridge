@@ -139,6 +139,47 @@ test("a retry cannot overwrite bytes owned by a staged journal", () => {
   }
 });
 
+test("recovery removes staging bytes that crashed before journal creation", () => {
+  const db = openM0Database();
+  const artifact = preparedArtifact();
+  const stagingOwnerNamesBefore = new Set(existsSync(paths.mediaActivationJournalRoot)
+    ? readdirSync(paths.mediaActivationJournalRoot).filter((name) => name.startsWith("staging-owner-"))
+    : []);
+  let stagingPath = "";
+  try {
+    assert.throws(() => activateLocalMediaArtifact({
+      artifact,
+      source_path: IMAGE_FIXTURE,
+      after_staging_written: (path) => {
+        stagingPath = path;
+        throw new Error("INJECTED_BEFORE_JOURNAL_CREATION");
+      }
+    }, db), /INJECTED_BEFORE_JOURNAL_CREATION/);
+    assert.equal(existsSync(stagingPath), true);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM media_activation_journal WHERE artifact_id = ?").get(artifact.artifact_id) as { count: number }).count, 0);
+
+    const blocked = activateLocalMediaArtifact({ artifact: structuredClone(artifact), source_path: IMAGE_FIXTURE }, db);
+    assert.equal(blocked.ok, false);
+    if (!blocked.ok) assert.equal(blocked.error.code, "MEDIA_ACTIVATION_ALREADY_PENDING");
+
+    const recovered = recoverMediaActivations(db);
+    assert.equal(recovered.failed.some((failure) => failure.code === "MEDIA_ACTIVATION_DB_RECORD_MISSING"), true);
+    assert.equal(existsSync(stagingPath), false);
+    const remainingOwners = existsSync(paths.mediaActivationJournalRoot)
+      ? readdirSync(paths.mediaActivationJournalRoot).filter((name) => name.startsWith("staging-owner-") && !stagingOwnerNamesBefore.has(name))
+      : [];
+    assert.deepEqual(remainingOwners, []);
+
+    const retry = activateLocalMediaArtifact({ artifact: structuredClone(artifact), source_path: IMAGE_FIXTURE }, db);
+    assert.equal(retry.ok, true, retry.ok ? undefined : retry.error.code);
+    if (retry.ok) assert.equal(verifyMediaArtifactBytes(db, retry.artifact).ok, true);
+  } finally {
+    db.close();
+    rmSync(artifact.storage.uri, { force: true });
+    if (stagingPath) rmSync(stagingPath, { force: true });
+  }
+});
+
 test("interrupted file placement is recovered without creating a second Artifact", () => {
   const db = openM0Database();
   const artifact = preparedArtifact();

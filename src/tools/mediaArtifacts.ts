@@ -545,6 +545,82 @@ interface MediaActivationMarker {
   artifact_json: string;
 }
 
+interface MediaStagingOwner {
+  version: 1;
+  artifact_id: string;
+  media_root: string;
+  staging_path: string;
+}
+
+function stagingOwnerPath(artifactId: string): string {
+  const roots = activationRoots(paths.mediaRoot);
+  const digest = createHash("sha256").update(artifactId).digest("hex");
+  const target = resolve(roots.journal, `staging-owner-${digest}.json`);
+  if (!isPathInside(target, roots.journal) || hasExistingSymlinkAncestor(target, roots.activation)) throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
+  return target;
+}
+
+function claimStagingOwnership(artifact: MediaArtifact, mediaRoot: string): ToolError | null {
+  const roots = activationRoots(paths.mediaRoot);
+  mkdirSync(roots.journal, { recursive: true });
+  const target = stagingOwnerPath(artifact.artifact_id);
+  const owner: MediaStagingOwner = {
+    version: 1,
+    artifact_id: artifact.artifact_id,
+    media_root: resolve(mediaRoot),
+    staging_path: stagedPathForArtifact(artifact, mediaRoot)
+  };
+  try {
+    writeFileSync(target, `${JSON.stringify(owner)}\n`, { encoding: "utf8", flag: "wx" });
+    return null;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      return { code: "MEDIA_ACTIVATION_ALREADY_PENDING", message: "An existing staging owner controls this Artifact id." };
+    }
+    if (existsSync(target)) {
+      try { rmSync(target, { force: true }); } catch { /* recovery will fail closed on a partial owner record */ }
+    }
+    return { code: "MEDIA_ACTIVATION_IO_FAILED", message: "Media staging ownership could not be recorded." };
+  }
+}
+
+function removeStagingOwnership(artifactId: string): void {
+  const target = stagingOwnerPath(artifactId);
+  if (existsSync(target) && !lstatSync(target).isSymbolicLink()) rmSync(target, { force: true });
+}
+
+function copyToOwnedStaging(
+  artifact: MediaArtifact,
+  sourcePath: string,
+  mediaRoot = paths.mediaRoot,
+  afterStagingWritten?: (stagingPath: string) => void
+): ToolError | null {
+  const ownerError = claimStagingOwnership(artifact, mediaRoot);
+  if (ownerError) return ownerError;
+  const stagingPath = stagedPathForArtifact(artifact, mediaRoot);
+  const stageError = copyToStagingExclusively(sourcePath, stagingPath);
+  if (stageError) {
+    try { removeStagingOwnership(artifact.artifact_id); } catch { /* recovery retains the ownership record */ }
+    return stageError;
+  }
+  if (afterStagingWritten) {
+    try { afterStagingWritten(stagingPath); } catch (error) { throw new MediaActivationInjectedCrash(error); }
+  }
+  return null;
+}
+
+function writeToOwnedStaging(artifact: MediaArtifact, bytes: Buffer, mediaRoot = paths.mediaRoot): ToolError | null {
+  const ownerError = claimStagingOwnership(artifact, mediaRoot);
+  if (ownerError) return ownerError;
+  const stagingPath = stagedPathForArtifact(artifact, mediaRoot);
+  const stageError = writeToStagingExclusively(stagingPath, bytes);
+  if (stageError) {
+    try { removeStagingOwnership(artifact.artifact_id); } catch { /* recovery retains the ownership record */ }
+    return stageError;
+  }
+  return null;
+}
+
 function markerPath(activationId: string): string {
   if (!/^activation_[0-9a-f-]{36}$/i.test(activationId)) throw new Error("MEDIA_ACTIVATION_MARKER_INVALID");
   const roots = activationRoots(paths.mediaRoot);
@@ -698,6 +774,7 @@ function commitStagedMediaArtifact(
     writeActivationMarker(marker);
     markerCreated = true;
     if (!manageTransaction) insertJournal();
+    removeStagingOwnership(artifact.artifact_id);
     if (options.after_journal_staged) {
       try { options.after_journal_staged(stagingPath); } catch (error) { throw new MediaActivationInjectedCrash(error); }
     }
@@ -739,12 +816,13 @@ function commitStagedMediaArtifact(
     if (markerCreated && (!journalCreated || manageTransaction)) {
       try { removeActivationMarker(activationId); } catch { /* a leftover marker fails closed during recovery */ }
     }
+    try { removeStagingOwnership(artifact.artifact_id); } catch { /* recovery will reconcile the owner record */ }
     return { ok: false, error: { code, message: "Media activation failed before the Artifact became active." } };
   }
 }
 
 export function activateLocalMediaArtifact(
-  input: { artifact: MediaArtifact; source_path: string; media_root?: string; allow_status_transition?: boolean; after_journal_staged?: (stagingPath: string) => void; after_pending_placed?: (pendingPath: string) => void; after_file_placed?: (finalPath: string) => void },
+  input: { artifact: MediaArtifact; source_path: string; media_root?: string; allow_status_transition?: boolean; after_staging_written?: (stagingPath: string) => void; after_journal_staged?: (stagingPath: string) => void; after_pending_placed?: (pendingPath: string) => void; after_file_placed?: (finalPath: string) => void },
   db = openM0Database()
 ): RegisterMediaArtifactResult {
   ensureM0Directories();
@@ -759,8 +837,7 @@ export function activateLocalMediaArtifact(
   mkdirSync(roots.pending, { recursive: true });
   mkdirSync(roots.quarantine, { recursive: true });
   mkdirSync(roots.journal, { recursive: true });
-  const stagingPath = stagedPathForArtifact(input.artifact, mediaRoot);
-  const stageError = copyToStagingExclusively(sourcePath, stagingPath);
+  const stageError = copyToOwnedStaging(input.artifact, sourcePath, mediaRoot, input.after_staging_written);
   if (stageError) return { ok: false, error: stageError };
   return commitStagedMediaArtifact(db, input.artifact, input.allow_status_transition === true, { after_journal_staged: input.after_journal_staged, after_pending_placed: input.after_pending_placed, after_file_placed: input.after_file_placed, media_root: mediaRoot });
 }
@@ -772,6 +849,54 @@ function activationMarkerPaths(): string[] {
   return readdirSync(roots.journal, { withFileTypes: true })
     .filter((entry) => entry.isFile() && !entry.isSymbolicLink() && /^activation_[0-9a-f-]{36}\.json$/i.test(entry.name))
     .map((entry) => resolve(roots.journal, entry.name));
+}
+
+function stagingOwnerPaths(): string[] {
+  const roots = activationRoots(paths.mediaRoot);
+  if (!existsSync(roots.journal)) return [];
+  if (lstatSync(roots.journal).isSymbolicLink() || !statSync(roots.journal).isDirectory()) throw new Error("MEDIA_ACTIVATION_JOURNAL_UNSAFE");
+  return readdirSync(roots.journal, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && !entry.isSymbolicLink() && /^staging-owner-[a-f0-9]{64}\.json$/i.test(entry.name))
+    .map((entry) => resolve(roots.journal, entry.name));
+}
+
+function readStagingOwner(filePath: string): MediaStagingOwner {
+  const journalRoots = activationRoots(paths.mediaRoot);
+  const target = resolve(filePath);
+  if (!isPathInside(target, journalRoots.journal) || lstatSync(target).isSymbolicLink() || !statSync(target).isFile()) throw new Error("MEDIA_STAGING_OWNER_INVALID");
+  const owner = JSON.parse(readFileSync(target, "utf8")) as Partial<MediaStagingOwner>;
+  if (owner.version !== 1
+    || typeof owner.artifact_id !== "string" || owner.artifact_id.length === 0
+    || typeof owner.media_root !== "string" || !isAbsolute(owner.media_root)
+    || typeof owner.staging_path !== "string"
+    || stagingOwnerPath(owner.artifact_id) !== target) throw new Error("MEDIA_STAGING_OWNER_INVALID");
+  const mediaRoot = resolve(owner.media_root);
+  const roots = activationRoots(mediaRoot);
+  if (!isPathInside(resolve(owner.staging_path), roots.staging)
+    || hasExistingSymlinkAncestor(resolve(owner.staging_path), roots.activation)) throw new Error("MEDIA_STAGING_OWNER_INVALID");
+  return owner as MediaStagingOwner;
+}
+
+function reconcileStagingOwners(db: M0Database, result: MediaActivationRecoveryResult): void {
+  for (const filePath of stagingOwnerPaths()) {
+    let owner: MediaStagingOwner;
+    try {
+      owner = readStagingOwner(filePath);
+    } catch {
+      rmSync(filePath, { force: true });
+      result.failed.push({ activation_id: basename(filePath, ".json"), code: "MEDIA_STAGING_OWNER_INVALID" });
+      continue;
+    }
+    const transferred = db.prepare(`SELECT activation_id FROM media_activation_journal
+      WHERE artifact_id = ? AND staging_path = ? AND state IN ('staged','file_placed')
+      ORDER BY created_at DESC LIMIT 1`).get(owner.artifact_id, resolve(owner.staging_path)) as { activation_id: string } | undefined;
+    if (!transferred) {
+      const stagingPath = resolve(owner.staging_path);
+      if (existsSync(stagingPath) && !lstatSync(stagingPath).isSymbolicLink() && statSync(stagingPath).isFile()) rmSync(stagingPath, { force: true });
+      result.failed.push({ activation_id: basename(filePath, ".json"), code: "MEDIA_ACTIVATION_DB_RECORD_MISSING" });
+    }
+    rmSync(filePath, { force: true });
+  }
 }
 
 function readActivationMarker(filePath: string): MediaActivationMarker {
@@ -886,6 +1011,7 @@ export function recoverMediaActivations(db = openM0Database()): MediaActivationR
     if (manageMarkerTransaction && databaseIsInTransaction(db)) db.exec("ROLLBACK");
     throw error;
   }
+  reconcileStagingOwners(db, result);
   const rows = db.prepare(`SELECT activation_id, state, expected_sha256, expected_size_bytes, detected_mime,
       staging_path, pending_path, final_path, artifact_json
     FROM media_activation_journal WHERE state IN ('staged','file_placed') ORDER BY created_at, activation_id`).all() as Array<{
@@ -1024,7 +1150,7 @@ function copyFixture(input: RegisterMediaArtifactInput): RegisterMediaArtifactRe
 
   const prepared = { ...buildArtifact(input, "active", filename, destinationPath, mimeTypeFor(sourcePath, input.artifact_type)), artifact_id: artifactId };
   const stagingPath = stagedPathForArtifact(prepared);
-  const stageError = copyToStagingExclusively(sourcePath, stagingPath);
+  const stageError = copyToOwnedStaging(prepared, sourcePath);
   if (stageError) return { ok: false, error: stageError };
   readFileSync(stagingPath);
 
@@ -1032,6 +1158,7 @@ function copyFixture(input: RegisterMediaArtifactInput): RegisterMediaArtifactRe
     const validation = validateImageFile(stagingPath);
     if (!validation.ok) {
       rmSync(stagingPath, { force: true });
+      try { removeStagingOwnership(prepared.artifact_id); } catch { /* recovery will reconcile the owner record */ }
       return { ok: false, error: imageValidationError(validation) };
     }
     return { ok: true, artifact: buildValidatedImageArtifact(input, artifactId, filename, destinationPath, validation) };
@@ -1067,13 +1194,14 @@ function writeUploadedBytes(input: RegisterMediaArtifactInput, artifactId = `art
     ensureM0Directories();
     const prepared = buildValidatedImageArtifact(input, artifactId, filename, destinationPath, validation);
     const stagingPath = stagedPathForArtifact(prepared);
-    const stageError = writeToStagingExclusively(stagingPath, decoded);
+    const stageError = writeToOwnedStaging(prepared, decoded);
     if (stageError) return { ok: false, error: stageError };
     readFileSync(stagingPath);
 
     const storedValidation = validateImageFile(stagingPath);
     if (!storedValidation.ok) {
       rmSync(stagingPath, { force: true });
+      try { removeStagingOwnership(prepared.artifact_id); } catch { /* recovery will reconcile the owner record */ }
       return { ok: false, error: imageValidationError(storedValidation) };
     }
 
@@ -1093,7 +1221,7 @@ function writeUploadedBytes(input: RegisterMediaArtifactInput, artifactId = `art
     artifact_id: artifactId
   };
   const stagingPath = stagedPathForArtifact(artifact);
-  const stageError = writeToStagingExclusively(stagingPath, decoded);
+  const stageError = writeToOwnedStaging(artifact, decoded);
   if (stageError) return { ok: false, error: stageError };
   readFileSync(stagingPath);
   return { ok: true, artifact };
@@ -1163,7 +1291,7 @@ function copyProviderOutputFile(input: RegisterMediaArtifactInput): RegisterMedi
     artifact_id: artifactId
   };
   const stagingPath = stagedPathForArtifact(preparedBase);
-  const stageError = copyToStagingExclusively(realSourcePath, stagingPath);
+  const stageError = copyToOwnedStaging(preparedBase, realSourcePath);
   if (stageError) return { ok: false, error: stageError };
   const sha256 = sha256ForFile(stagingPath);
 
@@ -1248,13 +1376,14 @@ function copyLocalImageImport(input: RegisterMediaArtifactInput, artifactId = `a
 
   const prepared = buildValidatedImageArtifact(input, artifactId, filename, destinationPath, validation);
   const stagingPath = stagedPathForArtifact(prepared);
-  const stageError = copyToStagingExclusively(realSourcePath, stagingPath);
+  const stageError = copyToOwnedStaging(prepared, realSourcePath);
   if (stageError) return { ok: false, error: stageError };
   readFileSync(stagingPath);
 
   const storedValidation = validateImageFile(stagingPath);
   if (!storedValidation.ok) {
     rmSync(stagingPath, { force: true });
+    try { removeStagingOwnership(prepared.artifact_id); } catch { /* recovery will reconcile the owner record */ }
     return { ok: false, error: imageValidationError(storedValidation) };
   }
 
