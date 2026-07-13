@@ -98,6 +98,8 @@ function globMatches(pattern: string, value: string): boolean {
 }
 
 function packageScriptSelectsPath(command: string, sourcePath: string): boolean {
+  const unsupportedControlOperators = command.replaceAll("&&", "");
+  if (/[;|&\r\n]/.test(unsupportedControlOperators)) return false;
   const expected = expectedRunnerPath(sourcePath);
   return command.split("&&").some((rawSegment) => {
     const segment = rawSegment.trim();

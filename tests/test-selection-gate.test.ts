@@ -69,6 +69,17 @@ test("selection catalog does not accept a test path that is only echoed", () => 
   assert.ok(auditTestSelection(input).includes("PACKAGE_SUITE_PATH_MISSING: test:provider -> tests/provider.test.ts"));
 });
 
+test("selection catalog rejects mandatory runners whose failure is masked by shell control operators", () => {
+  for (const suffix of ["|| true", "; exit 0", "| Out-Null", "& echo masked"]) {
+    const input = fixture();
+    input.package_scripts["test:provider"] = `node dist/tests/provider.test.js ${suffix}`;
+    assert.ok(
+      auditTestSelection(input).includes("PACKAGE_SUITE_PATH_MISSING: test:provider -> tests/provider.test.ts"),
+      suffix
+    );
+  }
+});
+
 test("selection catalog does not accept an echoed npm command as local execution", () => {
   const input = fixture();
   input.package_scripts.test = "npm run test:selection-gate && echo npm run test:provider";
