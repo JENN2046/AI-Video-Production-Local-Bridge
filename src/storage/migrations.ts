@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, readFileSync, statSync } from "node:fs";
-import { basename, resolve } from "node:path";
+import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { basename, dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import type { M0Database } from "./sqlite.js";
@@ -171,6 +171,13 @@ const GENERATION_JOBS_STABILIZATION_SQL = `
   WHERE NOT EXISTS (SELECT 1 FROM generation_job_events events WHERE events.job_id = generation_jobs.job_id);
 `;
 
+const MEDIA_BLOBS_NO_UPDATE_TRIGGER_SQL = `
+  CREATE TRIGGER IF NOT EXISTS media_blobs_no_update
+    BEFORE UPDATE ON media_blobs BEGIN
+      SELECT RAISE(ABORT, 'MEDIA_BLOB_IMMUTABLE');
+    END;
+`;
+
 const ARTIFACT_BLOBS_SQL = `
   CREATE TABLE IF NOT EXISTS media_blobs (
     blob_id TEXT PRIMARY KEY,
@@ -194,10 +201,7 @@ const ARTIFACT_BLOBS_SQL = `
   CREATE UNIQUE INDEX IF NOT EXISTS idx_media_blobs_verified_sha256
     ON media_blobs(sha256) WHERE integrity_state = 'verified';
   CREATE INDEX IF NOT EXISTS idx_media_artifact_blobs_blob ON media_artifact_blobs(blob_id, artifact_id);
-  CREATE TRIGGER IF NOT EXISTS media_blobs_no_update
-    BEFORE UPDATE ON media_blobs BEGIN
-      SELECT RAISE(ABORT, 'MEDIA_BLOB_IMMUTABLE');
-    END;
+  ${MEDIA_BLOBS_NO_UPDATE_TRIGGER_SQL}
   CREATE TRIGGER IF NOT EXISTS media_blobs_no_delete
     BEFORE DELETE ON media_blobs BEGIN
       SELECT RAISE(ABORT, 'MEDIA_BLOB_IMMUTABLE');
@@ -270,26 +274,43 @@ const MEDIA_ACTIVATION_JOURNAL_SQL = `
 
 function applyMediaActivationMigration(db: M0Database): void {
   db.exec(MEDIA_ACTIVATION_JOURNAL_SQL);
-  const rows = db.prepare(`SELECT a.artifact_id, a.data_json, m.blob_id, b.sha256, b.detected_mime, b.storage_uri
+  const rows = db.prepare(`SELECT a.artifact_id, a.data_json, m.blob_id, b.sha256, b.detected_mime, b.storage_uri, b.provenance_json
     FROM media_artifacts a
     JOIN media_artifact_blobs m ON m.artifact_id = a.artifact_id
     JOIN media_blobs b ON b.blob_id = m.blob_id
     WHERE a.status = 'active' AND b.integrity_state = 'verified'
     ORDER BY a.artifact_id`).all() as unknown as Array<{
-      artifact_id: string; data_json: string; blob_id: string; sha256: string; detected_mime: string; storage_uri: string;
+      artifact_id: string; data_json: string; blob_id: string; sha256: string; detected_mime: string; storage_uri: string; provenance_json: string;
     }>;
   const update = db.prepare("UPDATE media_artifacts SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE artifact_id = ?");
-  for (const row of rows) {
-    const artifact = JSON.parse(row.data_json) as Record<string, unknown>;
-    const storage = { ...((artifact.storage ?? {}) as Record<string, unknown>) };
-    const metadata = { ...((artifact.metadata ?? {}) as Record<string, unknown>) };
-    const source = { ...((artifact.source ?? {}) as Record<string, unknown>) };
-    storage.uri = row.storage_uri;
-    storage.mime_type = row.detected_mime;
-    storage.filename = basename(row.storage_uri);
-    metadata.sha256 = row.sha256;
-    source.sha256 = row.sha256;
-    update.run(JSON.stringify({ ...artifact, blob_id: row.blob_id, storage, metadata, source }), row.artifact_id);
+  const updateBlobRoot = db.prepare("UPDATE media_blobs SET storage_uri = ?, provenance_json = ? WHERE blob_id = ?");
+  db.exec("DROP TRIGGER IF EXISTS media_blobs_no_update");
+  try {
+    for (const row of rows) {
+      let storageUri = row.storage_uri;
+      let provenance = JSON.parse(row.provenance_json) as Record<string, unknown>;
+      if (typeof provenance.media_root !== "string") {
+        try {
+          storageUri = resolve(realpathSync(resolve(row.storage_uri)));
+          provenance = { ...provenance, media_root: dirname(storageUri) };
+          updateBlobRoot.run(storageUri, JSON.stringify(provenance), row.blob_id);
+        } catch {
+          throw new SchemaMigrationRequiredError(`MEDIA_BLOB_PATH_RECONCILIATION_REQUIRED: ${row.blob_id} has no verifiable local root.`);
+        }
+      }
+      const artifact = JSON.parse(row.data_json) as Record<string, unknown>;
+      const storage = { ...((artifact.storage ?? {}) as Record<string, unknown>) };
+      const metadata = { ...((artifact.metadata ?? {}) as Record<string, unknown>) };
+      const source = { ...((artifact.source ?? {}) as Record<string, unknown>) };
+      storage.uri = storageUri;
+      storage.mime_type = row.detected_mime;
+      storage.filename = basename(storageUri);
+      metadata.sha256 = row.sha256;
+      source.sha256 = row.sha256;
+      update.run(JSON.stringify({ ...artifact, blob_id: row.blob_id, storage, metadata, source }), row.artifact_id);
+    }
+  } finally {
+    db.exec(MEDIA_BLOBS_NO_UPDATE_TRIGGER_SQL);
   }
 }
 
@@ -403,7 +424,11 @@ function applyArtifactBlobMigration(db: M0Database): void {
     if (integrityState === "verified") {
       const existing = findVerified.get(sha256) as { blob_id: string } | undefined;
       blobId = existing?.blob_id ?? `blob_sha256_${sha256}`;
-      if (!existing) insertBlob.run(blobId, sha256, sizeBytes, mime, resolve(uri), integrityState, JSON.stringify({ source: "migration_0005", immutable: true }));
+      if (!existing) {
+        const canonicalStorageUri = resolve(realpathSync(resolve(uri)));
+        insertBlob.run(blobId, sha256, sizeBytes, mime, canonicalStorageUri, integrityState,
+          JSON.stringify({ source: "migration_0005", immutable: true, media_root: dirname(canonicalStorageUri) }));
+      }
     } else {
       blobId = `blob_unverified_${createHash("sha256").update(row.artifact_id).digest("hex")}`;
       insertBlob.run(blobId, "", 0, "", uri, integrityState, JSON.stringify({ source: "migration_0005", immutable: true, reason: integrityState === "missing" ? "LOCAL_FILE_MISSING" : "CONTENT_NOT_LOCALLY_VERIFIABLE" }));
@@ -454,7 +479,7 @@ export const DATABASE_MIGRATIONS: readonly Migration[] = [
   {
     id: "0006",
     name: "media_activation_journal",
-    canonical: `${MEDIA_ACTIVATION_JOURNAL_SQL}\nBACKFILL active_artifact_blob_facts_v1\nRECOVERY deterministic_file_activation_v1\nSCHEMA ${WORKBENCH_V2_SCHEMA_VERSION}`,
+    canonical: `${MEDIA_ACTIVATION_JOURNAL_SQL}\nBACKFILL active_artifact_blob_facts_and_roots_v2\nRECOVERY deterministic_file_activation_v1\nSCHEMA ${WORKBENCH_V2_SCHEMA_VERSION}`,
     apply: applyMediaActivationMigration
   }
 ];

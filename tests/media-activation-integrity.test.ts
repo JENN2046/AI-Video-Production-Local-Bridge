@@ -509,6 +509,39 @@ test("default recovery discovers an orphan marker for a custom media root", () =
   }
 });
 
+test("recovery never quarantines a pre-existing final that the activation did not own", () => {
+  const root = mkdtempSync(join(tmpdir(), "media-activation-unowned-final-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  const artifact = preparedArtifact();
+  artifact.storage.uri = join(mediaRoot, "artifacts", "images", `${artifact.artifact_id}.png`);
+  artifact.storage.filename = `${artifact.artifact_id}.png`;
+  const preExistingBytes = Buffer.from("pre-existing-final-owned-by-another-operation", "utf8");
+  let activationId = "";
+  try {
+    mkdirSync(resolve(artifact.storage.uri, ".."), { recursive: true });
+    writeFileSync(artifact.storage.uri, preExistingBytes, { flag: "wx" });
+    db.exec("BEGIN IMMEDIATE");
+    const activated = activateLocalMediaArtifact({ artifact, source_path: IMAGE_FIXTURE, media_root: mediaRoot }, db);
+    assert.equal(activated.ok, false);
+    if (!activated.ok) assert.equal(activated.error.code, "MEDIA_ACTIVATION_FINAL_PATH_EXISTS");
+    activationId = (db.prepare("SELECT activation_id FROM media_activation_journal WHERE artifact_id = ?").get(artifact.artifact_id) as { activation_id: string }).activation_id;
+    const marker = JSON.parse(readFileSync(join(paths.mediaActivationJournalRoot, `${activationId}.json`), "utf8")) as { final_path_owned: boolean };
+    assert.equal(marker.final_path_owned, false);
+    db.exec("ROLLBACK");
+
+    const recovered = recoverMediaActivations(db);
+    assert.equal(recovered.failed.some((failure) => failure.activation_id === activationId && failure.code === "MEDIA_ACTIVATION_DB_RECORD_MISSING"), true);
+    assert.equal(readFileSync(artifact.storage.uri).equals(preExistingBytes), true);
+  } finally {
+    db.close();
+    if (activationId) rmSync(join(paths.mediaActivationJournalRoot, `${activationId}.json`), { force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("an outer transaction rollback cannot leave an unrecorded active file", () => {
   const db = openM0Database();
   const artifact = preparedArtifact();

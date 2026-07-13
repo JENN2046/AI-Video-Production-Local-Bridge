@@ -560,6 +560,7 @@ interface MediaActivationMarker {
   activation_id: string;
   artifact_id: string;
   media_root: string;
+  final_path_owned: boolean;
   artifact_type: ArtifactType;
   role: ArtifactRole;
   expected_sha256: string;
@@ -675,9 +676,13 @@ function markerPath(activationId: string): string {
 function writeActivationMarker(marker: MediaActivationMarker): string {
   const roots = ensureSafeActivationRoots(paths.mediaRoot, true);
   const target = markerPath(marker.activation_id);
-  const temporary = `${target}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(marker)}\n`, { encoding: "utf8", flag: "wx" });
-  renameSync(temporary, target);
+  const temporary = `${target}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporary, `${JSON.stringify(marker)}\n`, { encoding: "utf8", flag: "wx" });
+    renameSync(temporary, target);
+  } finally {
+    if (existsSync(temporary) && !lstatSync(temporary).isSymbolicLink()) rmSync(temporary, { force: true });
+  }
   return target;
 }
 
@@ -760,7 +765,7 @@ function quarantineActivationFile(artifact: MediaArtifact, candidates: string[],
   }
 }
 
-function moveActivationFileExclusively(sourcePath: string, finalPath: string): void {
+function moveActivationFileExclusively(sourcePath: string, finalPath: string, afterLinked?: () => void): void {
   try {
     linkSync(sourcePath, finalPath);
   } catch (error) {
@@ -768,6 +773,7 @@ function moveActivationFileExclusively(sourcePath: string, finalPath: string): v
     throw error;
   }
   try {
+    if (afterLinked) afterLinked();
     rmSync(sourcePath);
   } catch (error) {
     try { rmSync(finalPath, { force: true }); } catch { /* recovery detects the two-link crash window */ }
@@ -812,6 +818,7 @@ function commitStagedMediaArtifact(
       activation_id: activationId,
       artifact_id: artifact.artifact_id,
       media_root: mediaRoot,
+      final_path_owned: false,
       artifact_type: artifact.artifact_type,
       role: artifact.role,
       expected_sha256: facts.sha256,
@@ -844,7 +851,10 @@ function commitStagedMediaArtifact(
       try { options.after_pending_placed(pendingPath); } catch (error) { throw new MediaActivationInjectedCrash(error); }
     }
     db.prepare("UPDATE media_activation_journal SET state = 'file_placed', updated_at = CURRENT_TIMESTAMP WHERE activation_id = ? AND state = 'staged'").run(activationId);
-    moveActivationFileExclusively(pendingPath, finalPath);
+    moveActivationFileExclusively(pendingPath, finalPath, () => {
+      marker.final_path_owned = true;
+      writeActivationMarker(marker);
+    });
     finalPathOwned = true;
     if (options.after_file_placed) {
       try { options.after_file_placed(finalPath); } catch (error) { throw new MediaActivationInjectedCrash(error); }
@@ -987,6 +997,7 @@ function readActivationMarker(filePath: string): MediaActivationMarker {
     || typeof marker.activation_id !== "string"
     || typeof marker.artifact_id !== "string"
     || typeof marker.media_root !== "string" || !isAbsolute(marker.media_root)
+    || typeof marker.final_path_owned !== "boolean"
     || (marker.artifact_type !== "image" && marker.artifact_type !== "video")
     || !(["storyboard_image", "generated_clip", "final_video"] as const).includes(marker.role as ArtifactRole)
     || !/^[a-f0-9]{64}$/i.test(String(marker.expected_sha256 ?? ""))
@@ -1121,7 +1132,19 @@ function reconcileUnrecordedActivationMarkers(db: M0Database, result: MediaActiv
     }
     if (existing) continue;
     const artifact = JSON.parse(marker.artifact_json) as MediaArtifact;
-    try { quarantineActivationFile(artifact, [resolve(marker.final_path), resolve(marker.pending_path), resolve(marker.staging_path)], resolve(marker.media_root)); } catch { /* retain stable failed evidence even when no file can be moved */ }
+    const finalPath = resolve(marker.final_path);
+    const pendingPath = resolve(marker.pending_path);
+    const stagingPath = resolve(marker.staging_path);
+    const linkedFinalOwned = samePhysicalFile(pendingPath, finalPath);
+    const ownedCandidates = marker.final_path_owned || linkedFinalOwned
+      ? [finalPath, pendingPath, stagingPath]
+      : [pendingPath, stagingPath];
+    try {
+      quarantineActivationFile(artifact, ownedCandidates, resolve(marker.media_root));
+      for (const candidate of [pendingPath, stagingPath]) {
+        if (existsSync(candidate) && !lstatSync(candidate).isSymbolicLink() && statSync(candidate).isFile()) rmSync(candidate, { force: true });
+      }
+    } catch { /* retain stable failed evidence even when no file can be moved */ }
     db.prepare(`INSERT INTO media_activation_journal
       (activation_id, artifact_id, state, artifact_type, role, expected_sha256, expected_size_bytes, detected_mime,
        staging_path, pending_path, final_path, artifact_json, error_code)

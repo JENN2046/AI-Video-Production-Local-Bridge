@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
@@ -304,9 +304,10 @@ test("database migrated through 0003 keeps its historical checksums and upgrades
 
 test("migration 0006 backfills active legacy Artifact facts from the verified Blob", () => {
   const root = tempRoot();
+  let db: DatabaseSync | null = null;
   try {
     const sqlitePath = join(root, "legacy-0005.sqlite");
-    const db = new DatabaseSync(sqlitePath);
+    db = new DatabaseSync(sqlitePath);
     for (const migration of DATABASE_MIGRATIONS.slice(0, 4)) migration.apply(db);
     const sourcePath = resolve("fixtures", "provider-canary", "m1-r0", "shot_001_canary_720x1280.png");
     const artifact = {
@@ -328,6 +329,12 @@ test("migration 0006 backfills active legacy Artifact facts from the verified Bl
       FROM media_artifacts a JOIN media_artifact_blobs m ON m.artifact_id = a.artifact_id JOIN media_blobs b ON b.blob_id = m.blob_id
       WHERE a.artifact_id = ?`).get(artifact.artifact_id) as { data_json: string; sha256: string; detected_mime: string; storage_uri: string };
     assert.equal((JSON.parse(before.data_json) as typeof artifact).metadata.sha256, "legacy-placeholder");
+    db.exec("DROP TRIGGER media_blobs_no_update");
+    db.prepare("UPDATE media_blobs SET provenance_json = ? WHERE blob_id = (SELECT blob_id FROM media_artifact_blobs WHERE artifact_id = ?)")
+      .run(JSON.stringify({ source: "migration_0005", immutable: true }), artifact.artifact_id);
+    db.exec(`CREATE TRIGGER media_blobs_no_update BEFORE UPDATE ON media_blobs BEGIN
+      SELECT RAISE(ABORT, 'MEDIA_BLOB_IMMUTABLE');
+    END`);
 
     db.exec(`CREATE TABLE schema_migrations (
       migration_id TEXT PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -344,9 +351,16 @@ test("migration 0006 backfills active legacy Artifact facts from the verified Bl
     assert.equal(after.storage.uri, before.storage_uri);
     assert.equal(after.storage.filename, "shot_001_canary_720x1280.png");
     assert.equal(after.business_note, "must survive fact backfill");
+    const blobAfter = db.prepare("SELECT storage_uri, provenance_json FROM media_blobs WHERE blob_id = ?").get(after.blob_id) as { storage_uri: string; provenance_json: string };
+    const canonicalSource = resolve(realpathSync(sourcePath));
+    assert.equal(blobAfter.storage_uri, canonicalSource);
+    assert.equal((JSON.parse(blobAfter.provenance_json) as { media_root: string }).media_root, dirname(canonicalSource));
     assertSchemaCurrent(db);
     db.close();
+    db = null;
+    assert.equal(checkDatabase(sqlitePath).result, "PASS");
   } finally {
+    try { db?.close(); } catch { /* retain the primary assertion failure */ }
     rmSync(root, { recursive: true, force: true });
   }
 });
