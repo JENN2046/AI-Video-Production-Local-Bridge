@@ -9,6 +9,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 
 import { openM0Database } from "../src/storage/sqlite.js";
 import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
+import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { startWebGptV4 } from "../src/webgpt-v4/server.js";
 import { actorFromSubject, WEBGPT_V4_SCOPES } from "../src/webgpt-v4/types.js";
 
@@ -38,6 +39,14 @@ test("compact context is materially smaller, paginated, bounded, and does not du
   }
   created.project.shot_ids = shots.map((shot) => shot.shot_id);
   saveProject(db, created.project);
+  const largeImage = registerMediaArtifact({
+    artifact_type: "image",
+    role: "storyboard_image",
+    source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
+    linked_objects: { project_id: created.project_id, shot_id: shots[0].shot_id }
+  }, db);
+  assert.equal(largeImage.ok, true);
+  if (!largeImage.ok) throw new Error("large image fixture failed");
   const insertNote = db.prepare(`INSERT INTO workbench_review_notes
     (note_id, project_id, shot_id, artifact_id, author_hash, note, source, created_at, updated_at)
     VALUES (?, ?, ?, '', 'fixture-author', ?, 'webgpt_v4', ?, ?)`);
@@ -65,6 +74,13 @@ test("compact context is materially smaller, paginated, bounded, and does not du
     const compactText = (compact.content as Array<{ type: string; text?: string }>).find((item) => item.type === "text")?.text ?? "";
     assert.ok(Buffer.byteLength(compactText, "utf8") <= 1024);
     assert.equal(compactText.includes("video-"), false);
+
+    const oversizedMedia = await client.callTool({ name: "inspect_media", arguments: { project_id: created.project_id, artifact_id: largeImage.artifact.artifact_id } });
+    assert.equal(oversizedMedia.isError, true);
+    const mediaBudget = (oversizedMedia.structuredContent as { error: { code: string; field: string } }).error;
+    assert.deepEqual({ code: mediaBudget.code, field: mediaBudget.field }, { code: "RESPONSE_BUDGET_EXCEEDED", field: "content" });
+    assert.equal((oversizedMedia.content as Array<{ type: string }>).some((item) => item.type === "image"), false);
+    assert.ok(bytes({ structuredContent: oversizedMedia.structuredContent, content: oversizedMedia.content, _meta: oversizedMedia._meta }) <= 128 * 1024);
 
     const firstPage = await client.callTool({ name: "list_project_shots", arguments: { project_id: created.project_id, detail: "compact", limit: 20 } });
     const page = (firstPage.structuredContent as { data: { page: { next_offset: number | null } } }).data.page;
@@ -99,6 +115,7 @@ test("compact context is materially smaller, paginated, bounded, and does not du
   } finally {
     await client.close();
     await runtime.close();
+    rmSync(largeImage.artifact.storage.uri, { force: true });
     rmSync(root, { recursive: true, force: true });
   }
 });

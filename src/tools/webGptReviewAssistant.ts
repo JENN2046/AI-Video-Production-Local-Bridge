@@ -5,7 +5,7 @@ import { basename, dirname, join } from "node:path";
 import { paths } from "../paths.js";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { getGenerationRun, type GenerationRun } from "./generation.js";
-import { getMediaArtifact, type MediaArtifact } from "./mediaArtifacts.js";
+import { validateActiveArtifactReference, type MediaArtifact } from "./mediaArtifacts.js";
 import { validateMp4File } from "./mediaValidity.js";
 import { getShot } from "./projects.js";
 import { H1_PROVIDER_BOUNDARY } from "./h1Workbench.js";
@@ -239,13 +239,21 @@ function requireGeneratedClip(tool: WebGptReviewAssistantToolName, input: Record
   const artifactId = typeof input.artifact_id === "string" ? input.artifact_id.trim() : "";
   if (!artifactId) return { ok: false, result: fail(tool, "MISSING_REQUIRED_FIELD", "artifact_id is required.") };
   if (!plainId(artifactId)) return { ok: false, result: fail(tool, "INVALID_APP_ID", "Only real app generated_clip artifact ids are accepted.") };
-  const artifact = getMediaArtifact(db, artifactId);
-  if (!artifact) return { ok: false, result: fail(tool, "ARTIFACT_NOT_FOUND", `Artifact not found: ${artifactId}`) };
-  if (artifact.artifact_type !== "video" || artifact.role !== "generated_clip") {
-    return { ok: false, result: fail(tool, "ARTIFACT_NOT_GENERATED_CLIP", "Artifact must be a generated_clip video.") };
-  }
   const run = findRunForArtifact(db, artifactId);
-  return { ok: true, artifact, run, shot_id: run?.shot_id ?? "" };
+  if (!run) return { ok: false, result: fail(tool, "GENERATION_RUN_NOT_FOUND", "Generated clip is not owned by a generation run.") };
+  const shot = getShot(db, run.shot_id);
+  if (!shot || shot.project_id !== run.project_id || !shot.clip_versions.some((version) => version.artifact_id === artifactId)) {
+    return { ok: false, result: fail(tool, "ARTIFACT_NOT_IN_SHOT_REVIEW", "Generated clip is not bound to the generation run SHOT.") };
+  }
+  const artifact = validateActiveArtifactReference(db, {
+    artifact_id: artifactId,
+    project_id: run.project_id,
+    shot_id: run.shot_id,
+    role: "generated_clip",
+    artifact_type: "video"
+  });
+  if (!artifact.ok) return { ok: false, result: fail(tool, artifact.error.code, artifact.error.message) };
+  return { ok: true, artifact: artifact.artifact, run, shot_id: run.shot_id };
 }
 
 function requiredText(tool: WebGptReviewAssistantToolName, input: Record<string, unknown>, field: string): WebGptReviewAssistantToolResult | null {

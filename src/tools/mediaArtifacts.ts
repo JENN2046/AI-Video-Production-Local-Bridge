@@ -1336,6 +1336,67 @@ export function verifyMediaArtifactBytes(db: M0Database, artifact: MediaArtifact
   }
 }
 
+export interface ArtifactReferenceRequirement {
+  artifact_id: string;
+  project_id: string;
+  shot_id: string;
+  role: ArtifactRole;
+  artifact_type: ArtifactType;
+}
+
+export type ActiveArtifactReferenceResult =
+  | { ok: true; artifact: MediaArtifact; blob: MediaBlob }
+  | { ok: false; error: ToolError };
+
+export function validateActiveArtifactReference(
+  db: M0Database,
+  expected: ArtifactReferenceRequirement
+): ActiveArtifactReferenceResult {
+  let artifact: MediaArtifact | null;
+  try {
+    artifact = getMediaArtifact(db, expected.artifact_id);
+  } catch (error) {
+    if (error instanceof ArtifactStructuredDriftError) {
+      return { ok: false, error: { code: error.code, message: "Artifact structured columns and JSON projection do not match." } };
+    }
+    return { ok: false, error: { code: "ARTIFACT_REFERENCE_CHECK_FAILED", message: "Artifact reference could not be verified." } };
+  }
+  if (!artifact) return { ok: false, error: { code: "ARTIFACT_NOT_FOUND", message: `Artifact not found: ${expected.artifact_id}` } };
+  if (artifact.artifact_id !== expected.artifact_id
+    || artifact.linked_objects.project_id !== expected.project_id
+    || artifact.linked_objects.shot_id !== expected.shot_id) {
+    return { ok: false, error: { code: "ARTIFACT_REFERENCE_BINDING_MISMATCH", message: "Artifact does not match the expected project and SHOT binding." } };
+  }
+  if (artifact.role !== expected.role || artifact.artifact_type !== expected.artifact_type) {
+    return { ok: false, error: { code: "ARTIFACT_REFERENCE_ROLE_MISMATCH", message: "Artifact role or type does not match the workflow reference." } };
+  }
+  if (artifact.status !== "active") {
+    return { ok: false, error: { code: "ARTIFACT_REFERENCE_INACTIVE", message: `Artifact is not active: ${artifact.status}` } };
+  }
+  const verified = verifyMediaArtifactBytes(db, artifact);
+  if (!verified.ok) return verified;
+  return { ok: true, artifact, blob: verified.blob };
+}
+
+export function validateAcceptedClipReference(
+  db: M0Database,
+  shot: Pick<Shot, "project_id" | "shot_id" | "accepted_clip_artifact_id" | "clip_versions">
+): ActiveArtifactReferenceResult {
+  if (!shot.accepted_clip_artifact_id) {
+    return { ok: false, error: { code: "SHOT_ACCEPTED_CLIP_MISSING", message: "SHOT has no accepted clip reference." } };
+  }
+  if (!shot.clip_versions.some((version) => version.artifact_id === shot.accepted_clip_artifact_id)) {
+    return { ok: false, error: { code: "ARTIFACT_NOT_IN_SHOT_REVIEW", message: "Accepted clip is not a reviewed version of the SHOT." } };
+  }
+  return validateActiveArtifactReference(db, {
+    artifact_id: shot.accepted_clip_artifact_id,
+    project_id: shot.project_id,
+    shot_id: shot.shot_id,
+    role: "generated_clip",
+    artifact_type: "video"
+  });
+}
+
 function copyFixture(input: RegisterMediaArtifactInput): RegisterMediaArtifactResult {
   if (input.source.kind !== "fixture_path") {
     throw new Error("copyFixture received non-fixture source.");
@@ -1857,6 +1918,8 @@ export function createScopedArtifactFromBlob(
   if (source.status !== "active" || sourceBlob.integrity_state !== "verified") {
     return { ok: false, error: { code: "ARTIFACT_INTEGRITY_UNVERIFIED", message: "Only an active Artifact with a verified MediaBlob can create a scoped Artifact." } };
   }
+  const sourceIntegrity = verifyMediaArtifactBytes(db, source);
+  if (!sourceIntegrity.ok) return sourceIntegrity;
   const project = getProject(db, input.project_id);
   if (!project) return { ok: false, error: { code: "PROJECT_NOT_FOUND", message: `Project not found: ${input.project_id}` } };
   const role = input.role ?? source.role;
@@ -1913,22 +1976,23 @@ export function attachArtifactToShot(
       if (manageTransaction) db.exec("ROLLBACK");
       return { ok: false, error: { code: "SHOT_NOT_FOUND", message: "SHOT does not belong to the selected project." } };
     }
-    const artifact = getMediaArtifact(db, input.artifact_id);
     const expectedRole: ArtifactRole = input.reference === "storyboard_image_artifact_id" ? "storyboard_image" : "generated_clip";
     const expectedType: ArtifactType = input.reference === "storyboard_image_artifact_id" ? "image" : "video";
-    const blob = artifact?.blob_id ? getMediaBlob(db, artifact.blob_id) : null;
-    if (
-      !artifact
-      || artifact.linked_objects.project_id !== input.project_id
-      || artifact.linked_objects.shot_id !== input.shot_id
-      || artifact.role !== expectedRole
-      || artifact.artifact_type !== expectedType
-      || artifact.status !== "active"
-      || blob?.integrity_state !== "verified"
-    ) {
+    const validated = validateActiveArtifactReference(db, {
+      artifact_id: input.artifact_id,
+      project_id: input.project_id,
+      shot_id: input.shot_id,
+      role: expectedRole,
+      artifact_type: expectedType
+    });
+    if (!validated.ok) {
       if (manageTransaction) db.exec("ROLLBACK");
+      if (!["ARTIFACT_NOT_FOUND", "ARTIFACT_REFERENCE_BINDING_MISMATCH", "ARTIFACT_REFERENCE_ROLE_MISMATCH", "ARTIFACT_REFERENCE_INACTIVE"].includes(validated.error.code)) {
+        return { ok: false, error: validated.error };
+      }
       return { ok: false, error: { code: "INVALID_ARTIFACT_BINDING", message: "Artifact must be active, verified, and scoped to the target project and SHOT." } };
     }
+    const artifact = validated.artifact;
     const current = shot[input.reference];
     if (input.expected_current_artifact_id !== undefined && current !== input.expected_current_artifact_id) {
       if (manageTransaction) db.exec("ROLLBACK");

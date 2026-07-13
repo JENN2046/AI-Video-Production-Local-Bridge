@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { M0Database } from "../storage/sqlite.js";
-import { ArtifactStructuredDriftError, type MediaArtifact } from "../tools/mediaArtifacts.js";
+import { ArtifactStructuredDriftError, validateAcceptedClipReference, validateActiveArtifactReference, type ArtifactRole, type ArtifactType, type MediaArtifact } from "../tools/mediaArtifacts.js";
 import { listProjectShots, type Project, type Shot } from "../tools/projects.js";
 import { getWorkbenchProjectSummary, getWorkbenchProjectWorkspace } from "../tools/workbenchV2.js";
 import { appendWorkbenchInboxEvent, getWorkbenchDraftRecord, saveWorkbenchDraftRecord, type WorkbenchDraftRecord } from "../tools/workbenchInboxStore.js";
@@ -152,7 +152,19 @@ function assertWorkspaceBindings(value: unknown, projectId: string, db: M0Databa
       }
     }
   }
-  for (const note of Array.isArray(workspace.review_notes) ? workspace.review_notes : []) assertBoundProjectObject(note, projectId);
+  for (const noteValue of Array.isArray(workspace.review_notes) ? workspace.review_notes : []) {
+    assertBoundProjectObject(noteValue, projectId);
+    const note = recordValue(noteValue);
+    if (!note || typeof note.shot_id !== "string") dataIntegrityViolation("shot_id");
+    const shot = requireShot(db, projectId, note.shot_id).shot;
+    if (typeof note.artifact_id === "string" && note.artifact_id) {
+      if (!shot.clip_versions.some((version) => version.artifact_id === note.artifact_id)) dataIntegrityViolation("artifact_id");
+      const validated = validateActiveArtifactReference(db, {
+        artifact_id: note.artifact_id, project_id: projectId, shot_id: shot.shot_id, role: "generated_clip", artifact_type: "video"
+      });
+      if (!validated.ok) throw new WebGptV4Error(validated.error.code, validated.error.message, "artifact_id");
+    }
+  }
   for (const [artifactId, artifact] of Object.entries(recordValue(workspace.artifacts) ?? {})) {
     if (artifact) {
       const expectedShotIds = artifactShotBindings.get(artifactId);
@@ -228,7 +240,13 @@ function requireShot(db: M0Database, projectId: string, shotId: string): { shot:
   return { shot, updated_at: row.updated_at };
 }
 
-function requireArtifact(db: M0Database, projectId: string, artifactId: string, requireActive = false): MediaArtifact {
+function requireArtifact(
+  db: M0Database,
+  projectId: string,
+  artifactId: string,
+  requireActive = false,
+  expected?: { shot_id: string; role: ArtifactRole; artifact_type: ArtifactType }
+): MediaArtifact {
   const id = plainId(artifactId, "artifact_id");
   const row = db.prepare(`
     SELECT artifact_id, project_id, shot_id, role, artifact_type, status, data_json
@@ -246,7 +264,16 @@ function requireArtifact(db: M0Database, projectId: string, artifactId: string, 
     || artifact.role !== row.role || artifact.artifact_type !== row.artifact_type || artifact.status !== row.status) {
     dataIntegrityViolation("artifact_id");
   }
-  if (requireActive && artifact.status !== "active") throw new WebGptV4Error("MEDIA_NOT_AVAILABLE", "Media artifact is not currently accessible.", "artifact_id");
+  if (requireActive) {
+    const validated = validateActiveArtifactReference(db, {
+      artifact_id: artifact.artifact_id,
+      project_id: projectId,
+      shot_id: expected?.shot_id ?? artifact.linked_objects.shot_id,
+      role: expected?.role ?? artifact.role,
+      artifact_type: expected?.artifact_type ?? artifact.artifact_type
+    });
+    if (!validated.ok) throw new WebGptV4Error(validated.error.code, validated.error.message, "artifact_id");
+  }
   return artifact;
 }
 
@@ -492,13 +519,19 @@ export function getProductionReviewPackage(input: { project_id: string; shot_id:
   try {
     projectRow(db, input.project_id);
     const { shot } = requireShot(db, input.project_id, input.shot_id);
-    if (input.artifact_id) requireArtifact(db, input.project_id, input.artifact_id);
+    if (input.artifact_id) {
+      if (!shot.clip_versions.some((version) => version.artifact_id === input.artifact_id)) throw new WebGptV4Error("ARTIFACT_NOT_IN_SHOT_REVIEW", "Artifact is not a version of the requested SHOT.", "artifact_id");
+      requireArtifact(db, input.project_id, input.artifact_id, true, { shot_id: shot.shot_id, role: "generated_clip", artifact_type: "video" });
+    }
     const notesLimit = clamp(input.notes_limit, 10, 50);
     const notesTotal = Number((db.prepare("SELECT COUNT(*) count FROM workbench_review_notes WHERE project_id = ? AND shot_id = ?")
       .get(input.project_id, shot.shot_id) as { count: number }).count);
     const notes = db.prepare("SELECT note_id, artifact_id, note, source, created_at, updated_at FROM workbench_review_notes WHERE project_id = ? AND shot_id = ? ORDER BY created_at DESC LIMIT ?")
       .all(input.project_id, shot.shot_id, notesLimit) as Array<Record<string, unknown>>;
-    const versions = shot.clip_versions.map((version) => ({ ...version, artifact: publicArtifact(requireArtifact(db, input.project_id, version.artifact_id)) }));
+    for (const note of notes) {
+      if (typeof note.artifact_id === "string" && note.artifact_id) requireArtifact(db, input.project_id, note.artifact_id, true, { shot_id: shot.shot_id, role: "generated_clip", artifact_type: "video" });
+    }
+    const versions = shot.clip_versions.map((version) => ({ ...version, artifact: publicArtifact(requireArtifact(db, input.project_id, version.artifact_id, true, { shot_id: shot.shot_id, role: "generated_clip", artifact_type: "video" })) }));
     return ok(id, { shot, versions, notes, notes_total: notesTotal, selected_artifact_id: input.artifact_id ?? shot.accepted_clip_artifact_id ?? "" });
   } catch (error) {
     return fail(id, domainErrorBody(error));
@@ -515,14 +548,26 @@ export function getProductionDeliveryStatus(input: { project_id: string }, db: M
     for (const shot of shots) {
       if (shot.project_id !== input.project_id) dataIntegrityViolation("shot_id");
     }
-    const finalArtifact = project.exports.final_video_artifact_id ? publicArtifact(requireArtifact(db, input.project_id, project.exports.final_video_artifact_id)) : null;
+    const accepted = shots.map((shot) => {
+      if (!shot.accepted_clip_artifact_id) return { artifact: null, check: { shot_id: shot.shot_id, artifact_id: "", ok: false, reason_code: "SHOT_ACCEPTED_CLIP_MISSING" } };
+      const validated = validateAcceptedClipReference(db, shot);
+      return validated.ok
+        ? { artifact: validated.artifact, check: { shot_id: shot.shot_id, artifact_id: shot.accepted_clip_artifact_id, ok: true, reason_code: "SHOT_ACCEPTED_CLIP_READY" } }
+        : { artifact: null, check: { shot_id: shot.shot_id, artifact_id: shot.accepted_clip_artifact_id, ok: false, reason_code: validated.error.code } };
+    });
+    const finalValidated = project.exports.final_video_artifact_id
+      ? validateActiveArtifactReference(db, { artifact_id: project.exports.final_video_artifact_id, project_id: input.project_id, shot_id: "", role: "final_video", artifact_type: "video" })
+      : null;
+    const finalArtifact = finalValidated?.ok ? publicArtifact(finalValidated.artifact) : null;
     return ok(id, {
       project_id: project.project_id,
       project_status: project.status,
       shots_total: shots.length,
-      shots_accepted: shots.filter((shot) => Boolean(shot.accepted_clip_artifact_id)).length,
-      ready_for_assembly: shots.length > 0 && shots.every((shot) => Boolean(shot.accepted_clip_artifact_id)),
+      shots_accepted: accepted.filter((item) => item.artifact !== null).length,
+      ready_for_assembly: shots.length > 0 && accepted.every((item) => item.check.ok),
+      readiness_checks: accepted.map((item) => item.check),
       final_artifact: finalArtifact,
+      final_artifact_reason_code: finalValidated && !finalValidated.ok ? finalValidated.error.code : "",
       delivered: project.status === "final_approved" && Boolean(finalArtifact)
     });
   } catch (error) {
@@ -582,7 +627,10 @@ export function addProductionReviewNote(
   return mutation(db, "add_review_note", context, input, () => {
     projectRow(db, input.project_id, true);
     const { shot } = requireShot(db, input.project_id, input.shot_id);
-    if (input.artifact_id) requireArtifact(db, input.project_id, input.artifact_id);
+    if (input.artifact_id) {
+      if (!shot.clip_versions.some((version) => version.artifact_id === input.artifact_id)) throw new WebGptV4Error("ARTIFACT_NOT_IN_SHOT_REVIEW", "Artifact is not a version of the requested SHOT.", "artifact_id");
+      requireArtifact(db, input.project_id, input.artifact_id, true, { shot_id: shot.shot_id, role: "generated_clip", artifact_type: "video" });
+    }
     const note = input.note.trim();
     if (!note || note.length > 2000) throw new WebGptV4Error("INVALID_FIELD", "Review note must contain 1 to 2000 characters.", "note");
     const now = new Date().toISOString();
@@ -599,9 +647,10 @@ function validateProposal(kind: ProductionProposalKind, projectId: string, paylo
   const artifactId = typeof payload.artifact_id === "string" ? payload.artifact_id : "";
   if (["review_decision", "regeneration"].includes(kind)) {
     if (!shotId) throw new WebGptV4Error("MISSING_REQUIRED_FIELD", "shot_id is required for this proposal.", "shot_id");
-    requireShot(db, projectId, shotId);
+    const { shot } = requireShot(db, projectId, shotId);
     if (!artifactId) throw new WebGptV4Error("MISSING_REQUIRED_FIELD", "artifact_id is required for this proposal.", "artifact_id");
-    requireArtifact(db, projectId, artifactId);
+    if (!shot.clip_versions.some((version) => version.artifact_id === artifactId)) throw new WebGptV4Error("ARTIFACT_NOT_IN_SHOT_REVIEW", "Artifact is not a version of the requested SHOT.", "artifact_id");
+    requireArtifact(db, projectId, artifactId, true, { shot_id: shot.shot_id, role: "generated_clip", artifact_type: "video" });
   }
   return { shot_id: shotId, artifact_id: artifactId };
 }
@@ -699,8 +748,7 @@ export function prepareProductionGenerationIntent(
     if (project.project_id !== row.project_id) dataIntegrityViolation("project_id");
     const { shot } = requireShot(db, input.project_id, input.shot_id);
     if (shot.status !== "storyboard_approved" && shot.status !== "revision_needed") throw new WebGptV4Error("SHOT_NOT_APPROVED", "Storyboard approval is required before generation preparation.");
-    const artifact = requireArtifact(db, input.project_id, shot.storyboard_image_artifact_id, true);
-    if (artifact.role !== "storyboard_image" || artifact.artifact_type !== "image") throw new WebGptV4Error("ARTIFACT_NOT_FOUND", "An active storyboard image is required.");
+    const artifact = requireArtifact(db, input.project_id, shot.storyboard_image_artifact_id, true, { shot_id: shot.shot_id, role: "storyboard_image", artifact_type: "image" });
     if (!Number.isFinite(input.budget_limit_value) || input.budget_limit_value <= 0) throw new WebGptV4Error("BUDGET_LIMIT_REQUIRED", "A positive budget limit is required.", "budget_limit_value");
     const capability = buildProviderCapabilityKey({
       provider: "runninghub",

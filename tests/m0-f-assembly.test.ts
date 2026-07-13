@@ -7,10 +7,12 @@ import {
   createProject,
   getMediaArtifact,
   getProject,
+  getShot,
   importStoryboardPackage,
   markShotClipReview,
   openM0Database,
   registerMediaArtifact,
+  saveShot,
   startStoryboardVideoGeneration
 } from "../src/index.js";
 
@@ -129,6 +131,45 @@ test("M0-F assembly succeeds after all shots are approved", async () => {
     assert.equal(existsSync(artifact?.storage.uri ?? ""), true);
     assert.equal(readFileSync(artifact?.storage.uri ?? "").length > 0, true);
     assert.equal(getProject(db, project.project_id)?.exports.final_video_artifact_id, assembled.final_video_artifact_id);
+  } finally {
+    db.close();
+  }
+});
+
+test("M0-F assembly rejects an accepted clip that is not in the SHOT version stack", async () => {
+  const db = openM0Database();
+
+  try {
+    const { project, storyboard, generation } = await setupGeneratedProject(db);
+    for (const shot of storyboard.shots) {
+      const run = generation.runs.find((item) => item.shot_id === shot.shot_id);
+      assert(run);
+      const review = markShotClipReview({ shot_id: shot.shot_id, artifact_id: run.output.artifact_ids[0], decision: "approved" }, db);
+      assert.equal(review.ok, true);
+    }
+    const target = getShot(db, storyboard.shots[0].shot_id);
+    assert.ok(target);
+    if (!target) return;
+    const stale = registerMediaArtifact({
+      artifact_type: "video",
+      role: "generated_clip",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: project.project_id, shot_id: target.shot_id }
+    }, db);
+    assert.equal(stale.ok, true);
+    if (!stale.ok) return;
+    target.accepted_clip_artifact_id = stale.artifact.artifact_id;
+    saveShot(db, target);
+
+    const assembled = assembleFinalVideo({
+      project_id: project.project_id,
+      confirmation: { confirmation_level: "explicit", user_confirmed: true }
+    }, db);
+    assert.equal(assembled.ok, false);
+    if (!assembled.ok) {
+      assert.equal(assembled.error.code, "FINAL_ASSEMBLY_NOT_READY");
+      assert.equal(assembled.blocking_reasons?.some((reason) => reason.includes("ARTIFACT_NOT_IN_SHOT_REVIEW")), true);
+    }
   } finally {
     db.close();
   }

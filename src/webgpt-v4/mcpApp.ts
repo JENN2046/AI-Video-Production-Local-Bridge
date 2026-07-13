@@ -71,7 +71,7 @@ function asToolResult<T>(
   telemetry?: { sink: WebGptTelemetrySink; profile: WebGptV4Profile; tool: WebGptV4ToolName; started_at: number; request_id?: string; detail?: "compact" | "full" }
 ): Record<string, unknown> {
   const serialized = JSON.stringify(result);
-  const bounded: WebGptV4Result<unknown> = Buffer.byteLength(serialized, "utf8") <= 128 * 1024
+  let bounded: WebGptV4Result<unknown> = Buffer.byteLength(serialized, "utf8") <= 128 * 1024
     ? result
     : fail(result.meta.request_id, {
       code: "RESPONSE_BUDGET_EXCEEDED",
@@ -82,16 +82,32 @@ function asToolResult<T>(
         ? { detail: "compact", limit: 20 }
         : { limit: 20 }
     });
-  const message = bounded.ok
+  let message = bounded.ok
     ? "请求已完成；结构化结果位于 structuredContent。"
     : `${bounded.error.code}: ${bounded.error.message}`;
+  let content = bounded.ok && extra?.content ? extra.content : [{ type: "text", text: message.slice(0, 1024) }];
+  let meta = extra?.meta ?? {};
+  if (bounded.ok && Buffer.byteLength(JSON.stringify({ structuredContent: bounded, content, _meta: meta }), "utf8") > 128 * 1024) {
+    const budgetFailure = fail(bounded.meta.request_id, {
+      code: "RESPONSE_BUDGET_EXCEEDED",
+      message: "The serialized tool result, including content and metadata, exceeds the WebGPT response budget.",
+      field: "content",
+      retryable: false,
+      suggested_parameters: { detail: "compact", limit: 1 }
+    });
+    bounded = budgetFailure;
+    message = "RESPONSE_BUDGET_EXCEEDED: The serialized tool result exceeds the WebGPT response budget.";
+    content = [{ type: "text", text: message.slice(0, 1024) }];
+    meta = {};
+  }
+  const resultBytes = Buffer.byteLength(JSON.stringify({ structuredContent: bounded, content, _meta: meta }), "utf8");
   if (telemetry) {
     try {
       telemetry.sink.record({
         timestamp: new Date().toISOString(), request_id: telemetry.request_id ?? bounded.meta.request_id, profile: telemetry.profile, tool: telemetry.tool,
         duration_ms: Math.max(0, Date.now() - telemetry.started_at), outcome: bounded.ok ? "success" : "error",
         ...(!bounded.ok ? { error_code: bounded.error.code, retryable: bounded.error.retryable === true } : {}),
-        result_bytes: Buffer.byteLength(JSON.stringify(bounded), "utf8"),
+        result_bytes: resultBytes,
         ...(itemCount(bounded) !== undefined ? { item_count: itemCount(bounded) } : {}),
         ...(telemetry.detail ? { detail_level: telemetry.detail } : {})
       });
@@ -102,8 +118,8 @@ function asToolResult<T>(
   return {
     isError: !bounded.ok,
     structuredContent: bounded,
-    content: bounded.ok && extra?.content ? extra.content : [{ type: "text", text: message.slice(0, 1024) }],
-    _meta: extra?.meta ?? {}
+    content,
+    _meta: meta
   };
 }
 

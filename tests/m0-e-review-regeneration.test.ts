@@ -135,3 +135,21 @@ test("M0-E revision_needed saves rejection and regeneration preserves old artifa
     db.close();
   }
 });
+
+test("legacy regeneration cannot submit to a real Provider outside the persisted worker", async () => {
+  const db = openM0Database();
+  try {
+    const { shot, run } = await setupGeneratedShot(db);
+    const result = await regenerateShotVideo({
+      shot_id: shot.shot_id,
+      previous_run_id: run.run_id,
+      updated_prompt: "Do not submit this legacy regeneration",
+      provider_execution: { provider: "real", provider_name: "runninghub", cost_acknowledged: true },
+      confirmation: { confirmation_level: "hard_gate", user_confirmed: true }
+    }, db);
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "LEGACY_REGENERATION_RETIRED");
+  } finally {
+    db.close();
+  }
+});

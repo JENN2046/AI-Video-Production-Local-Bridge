@@ -10,9 +10,11 @@ import {
   createProject,
   executeH4FinalAssembly,
   generateMemoryRecallPack,
+  getShot,
   importStoryboardPackage,
   openM0Database,
-  registerMediaArtifact
+  registerMediaArtifact,
+  saveShot
 } from "../src/index.js";
 
 async function setupClosedProject(db: ReturnType<typeof openM0Database>) {
@@ -225,6 +227,33 @@ test("R3-6 rejects invalid or unknown saveback decisions instead of materializin
     assert.equal(unknownItem.ok, false);
     if (unknownItem.ok) return;
     assert.equal(unknownItem.error.code, "PROPOSAL_ITEM_NOT_FOUND");
+  } finally {
+    db.close();
+  }
+});
+
+test("R3-6 refuses saveback proposals with stale accepted clip references", async () => {
+  const db = openM0Database();
+
+  try {
+    const { project, storyboard } = await setupClosedProject(db);
+    const shot = getShot(db, storyboard.shots[0].shot_id);
+    assert.ok(shot);
+    if (!shot) return;
+    const stale = registerMediaArtifact({
+      artifact_type: "video",
+      role: "generated_clip",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: project.project_id, shot_id: shot.shot_id }
+    }, db);
+    assert.equal(stale.ok, true);
+    if (!stale.ok) return;
+    shot.accepted_clip_artifact_id = stale.artifact.artifact_id;
+    saveShot(db, shot);
+
+    const created = createMemorySavebackProposal({ project_id: project.project_id, write_report: false }, db);
+    assert.equal(created.ok, false);
+    if (!created.ok) assert.equal(created.error.code, "ARTIFACT_NOT_IN_SHOT_REVIEW");
   } finally {
     db.close();
   }

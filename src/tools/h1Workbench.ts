@@ -8,7 +8,7 @@ import { createProject, getProject, getShot, listProjectShots, type Project, typ
 import { type GenerationRun } from "./generation.js";
 import { assembleFinalVideo } from "./assembly.js";
 import { importG0AppReadyStoryboardPackage, validateG0StoryboardPackage, type G0StoryboardPackageInput } from "./g0Pregen.js";
-import { getMediaArtifact, registerMediaArtifact, type MediaArtifact } from "./mediaArtifacts.js";
+import { getMediaArtifact, registerMediaArtifact, validateAcceptedClipReference, validateActiveArtifactReference, verifyMediaArtifactBytes, type MediaArtifact } from "./mediaArtifacts.js";
 import { validateImageFile, type ImageValidationResult } from "./imageValidity.js";
 import { validateMp4File, type Mp4ValidationResult } from "./mediaValidity.js";
 import { markShotClipReview, type RevisionInstruction } from "./review.js";
@@ -570,6 +570,8 @@ export function linkH1ArtifactToShot(
   if (artifact.artifact_type !== "image" || artifact.role !== "storyboard_image") {
     return { ok: false, error: toolError("INVALID_ARTIFACT_ROLE", "Shot can only link active storyboard_image image artifacts.") };
   }
+  const integrity = verifyMediaArtifactBytes(db, artifact);
+  if (!integrity.ok) return { ok: false, error: integrity.error };
 
   return {
     ok: true,
@@ -640,6 +642,8 @@ export function h1ShotBlockers(shot: H1ShotDraft, db = openM0Database()): string
       if (artifact.status !== "active") blockers.push(`ARTIFACT_${artifact.status.toUpperCase()}`);
       if (artifact.artifact_type !== "image" || artifact.role !== "storyboard_image") blockers.push("INVALID_ARTIFACT_ROLE");
       if (!isNineSixteenAspectRatio(artifact.metadata.aspect_ratio)) blockers.push("STORYBOARD_IMAGE_ASPECT_RATIO_NOT_9_16");
+      const integrity = verifyMediaArtifactBytes(db, artifact);
+      if (!integrity.ok) blockers.push(integrity.error.code);
     }
   }
   return blockers;
@@ -873,12 +877,19 @@ export function h3VideoReviewSummary(state = loadH1WorkbenchState(), db = openM0
   for (const run of listGenerationRuns(db)) {
     const artifactIds = Array.isArray(run.output?.artifact_ids) ? run.output.artifact_ids : [];
     for (const artifactId of artifactIds) {
-      const artifact = getMediaArtifact(db, artifactId);
-      if (!artifact || artifact.role !== "generated_clip" || artifact.artifact_type !== "video") continue;
+      const shot = getShot(db, run.shot_id);
+      if (!shot || shot.project_id !== run.project_id || !shot.clip_versions.some((version) => version.artifact_id === artifactId)) continue;
+      const artifact = validateActiveArtifactReference(db, {
+        artifact_id: artifactId,
+        project_id: run.project_id,
+        shot_id: run.shot_id,
+        role: "generated_clip",
+        artifact_type: "video"
+      });
+      if (!artifact.ok) continue;
 
       generated_clip_total_available += 1;
-      const shot = getShot(db, run.shot_id);
-      const clip_review_status = reviewStatusForArtifact(run.shot_id, artifact.artifact_id, db);
+      const clip_review_status = reviewStatusForArtifact(run.shot_id, artifact.artifact.artifact_id, db);
       generated_clip_status_counts.all += 1;
       generated_clip_status_counts[clip_review_status] += 1;
       shotCounts.set(run.shot_id, (shotCounts.get(run.shot_id) ?? 0) + 1);
@@ -896,14 +907,14 @@ export function h3VideoReviewSummary(state = loadH1WorkbenchState(), db = openM0
         run_type: run.run_type,
         provider_name: run.provider?.provider_name ?? "unknown",
         provider_job_id: run.provider?.provider_job_id ?? "",
-        artifact_id: artifact.artifact_id,
-        artifact_type: artifact.artifact_type,
-        artifact_role: artifact.role,
-        artifact_status: artifact.status,
-        storage_filename: artifact.storage.filename,
+        artifact_id: artifact.artifact.artifact_id,
+        artifact_type: artifact.artifact.artifact_type,
+        artifact_role: artifact.artifact.role,
+        artifact_status: artifact.artifact.status,
+        storage_filename: artifact.artifact.storage.filename,
         accepted_clip_artifact_id: shot?.accepted_clip_artifact_id ?? "",
         clip_review_status,
-        ffprobe: validateMp4File(artifact.storage.uri),
+        ffprobe: validateMp4File(artifact.artifact.storage.uri),
         rejection_reasons: shot?.review.rejection_reasons ?? [],
         latest_revision_instruction: shot?.review.latest_revision_instruction ?? null
       });
@@ -1042,7 +1053,8 @@ function inferH4Project(state: H1WorkbenchState, db: M0Database, explicitProject
 function finalVideoArtifactSummary(project: Project, db: M0Database): H4FinalVideoArtifactSummary | null {
   const artifactId = project.exports.final_video_artifact_id;
   if (!artifactId) return null;
-  const artifact = getMediaArtifact(db, artifactId);
+  const validated = validateActiveArtifactReference(db, { artifact_id: artifactId, project_id: project.project_id, shot_id: "", role: "final_video", artifact_type: "video" });
+  const artifact = validated.ok ? validated.artifact : null;
   return {
     artifact_id: artifactId,
     exists: Boolean(artifact),
@@ -1057,12 +1069,9 @@ function finalVideoArtifactSummary(project: Project, db: M0Database): H4FinalVid
 function assemblyClipPreviewForShot(shot: Shot, db: M0Database): H4AssemblyClipPreview {
   const blockers: string[] = [];
   if (!shot.accepted_clip_artifact_id) blockers.push("MISSING_ACCEPTED_CLIP");
-  const artifact = shot.accepted_clip_artifact_id ? getMediaArtifact(db, shot.accepted_clip_artifact_id) : null;
-  if (shot.accepted_clip_artifact_id && !artifact) blockers.push("ACCEPTED_CLIP_ARTIFACT_MISSING");
-  if (artifact) {
-    if (artifact.status !== "active") blockers.push(`ACCEPTED_CLIP_${artifact.status.toUpperCase()}`);
-    if (artifact.artifact_type !== "video" || artifact.role !== "generated_clip") blockers.push("ACCEPTED_CLIP_NOT_GENERATED_VIDEO");
-  }
+  const validated = shot.accepted_clip_artifact_id ? validateAcceptedClipReference(db, shot) : null;
+  const artifact = validated?.ok ? validated.artifact : null;
+  if (validated && !validated.ok) blockers.push(validated.error.code);
 
   return {
     shot_id: shot.shot_id,

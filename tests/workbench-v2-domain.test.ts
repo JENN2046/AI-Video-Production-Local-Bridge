@@ -26,14 +26,15 @@ async function prepareConfirmedGeneration(sqlitePath: string, title: string): Pr
     const project = createProject({ title, video_spec: { duration_seconds: 6, aspect_ratio: "9:16", resolution: "1080x1920" } }, db);
     assert.equal(project.ok, true);
     if (!project.ok) throw new Error("project setup failed");
+    const shot = buildStoryboardApprovedShot({ project_id: project.project_id, order: 1, duration_seconds: 6, storyboard_image_artifact_id: "", video_prompt: "Fault injection generation." });
     const artifact = registerMediaArtifact({
       artifact_type: "image", role: "storyboard_image",
       source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
-      linked_objects: { project_id: project.project_id }
+      linked_objects: { project_id: project.project_id, shot_id: shot.shot_id }
     }, db);
     assert.equal(artifact.ok, true);
     if (!artifact.ok) throw new Error("artifact setup failed");
-    const shot = buildStoryboardApprovedShot({ project_id: project.project_id, order: 1, duration_seconds: 6, storyboard_image_artifact_id: artifact.artifact.artifact_id, video_prompt: "Fault injection generation." });
+    shot.storyboard_image_artifact_id = artifact.artifact.artifact_id;
     saveShot(db, shot);
     project.project.shot_ids.push(shot.shot_id);
     project.project.status = "storyboard_approved";
@@ -111,21 +112,52 @@ test("saving a project preserves V2 classification metadata", () => {
   }
 });
 
+test("generation preflight rejects a storyboard Artifact bound to another SHOT", async () => {
+  const db = openM0Database(":memory:");
+  try {
+    const project = createProject({ title: "Cross-SHOT generation guard", video_spec: { duration_seconds: 6, aspect_ratio: "9:16", resolution: "1080x1920" } }, db);
+    assert.equal(project.ok, true);
+    if (!project.ok) return;
+    const target = buildStoryboardApprovedShot({ project_id: project.project_id, order: 1, duration_seconds: 6, storyboard_image_artifact_id: "", video_prompt: "Target" });
+    const other = buildStoryboardApprovedShot({ project_id: project.project_id, order: 2, duration_seconds: 6, storyboard_image_artifact_id: "", video_prompt: "Other" });
+    const wrongArtifact = registerMediaArtifact({
+      artifact_type: "image",
+      role: "storyboard_image",
+      source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
+      linked_objects: { project_id: project.project_id, shot_id: other.shot_id }
+    }, db);
+    assert.equal(wrongArtifact.ok, true);
+    if (!wrongArtifact.ok) return;
+    target.storyboard_image_artifact_id = wrongArtifact.artifact.artifact_id;
+    saveShot(db, target);
+    saveShot(db, other);
+    project.project.shot_ids = [target.shot_id, other.shot_id];
+    saveProject(db, project.project);
+
+    const result = await preflightWorkbenchGeneration({ project_id: project.project_id, shot_id: target.shot_id, account_label: "personal", budget_limit_value: 1 }, db, { env: {} });
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "ARTIFACT_REFERENCE_BINDING_MISMATCH");
+  } finally {
+    db.close();
+  }
+});
+
 test("generation preflight enforces official estimate, balance gate, budget and one active submit", async () => {
   const db = openM0Database(":memory:");
   try {
     const projectResult = createProject({ title: "Generation gate", video_spec: { duration_seconds: 6, aspect_ratio: "9:16", resolution: "1080x1920" } }, db);
     assert.equal(projectResult.ok, true);
     if (!projectResult.ok) return;
+    const shot = buildStoryboardApprovedShot({ project_id: projectResult.project_id, order: 1, duration_seconds: 6, storyboard_image_artifact_id: "", video_prompt: "Subtle camera move." });
     const artifactResult = registerMediaArtifact({
       artifact_type: "image",
       role: "storyboard_image",
       source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
-      linked_objects: { project_id: projectResult.project_id }
+      linked_objects: { project_id: projectResult.project_id, shot_id: shot.shot_id }
     }, db);
     assert.equal(artifactResult.ok, true);
     if (!artifactResult.ok) return;
-    const shot = buildStoryboardApprovedShot({ project_id: projectResult.project_id, order: 1, duration_seconds: 6, storyboard_image_artifact_id: artifactResult.artifact.artifact_id, video_prompt: "Subtle camera move." });
+    shot.storyboard_image_artifact_id = artifactResult.artifact.artifact_id;
     saveShot(db, shot);
     projectResult.project.shot_ids.push(shot.shot_id);
     saveProject(db, projectResult.project);

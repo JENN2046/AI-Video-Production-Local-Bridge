@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { ensureM0Directories, paths } from "../paths.js";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { getGenerationRun } from "./generation.js";
+import { validateAcceptedClipReference, validateActiveArtifactReference } from "./mediaArtifacts.js";
 import { getProject, listProjectShots, type Project, type Shot, type ToolError } from "./projects.js";
 
 export const MEMORY_SAVEBACK_STORE_FILE = "data/memory/saveback_store.json";
@@ -299,6 +300,21 @@ export function createMemorySavebackProposal(
 ): MemorySavebackResult<{ proposal: MemorySavebackProposal; store: MemorySavebackStore; report: unknown }> {
   const project = getProject(db, input.project_id);
   if (!project) return { ok: false, error: toolError("PROJECT_NOT_FOUND", `Project not found: ${input.project_id}`) };
+  for (const shot of listProjectShots(db, project.project_id)) {
+    if (!shot.accepted_clip_artifact_id) continue;
+    const accepted = validateAcceptedClipReference(db, shot);
+    if (!accepted.ok) return { ok: false, error: accepted.error };
+  }
+  if (project.exports.final_video_artifact_id) {
+    const finalArtifact = validateActiveArtifactReference(db, {
+      artifact_id: project.exports.final_video_artifact_id,
+      project_id: project.project_id,
+      shot_id: "",
+      role: "final_video",
+      artifact_type: "video"
+    });
+    if (!finalArtifact.ok) return { ok: false, error: finalArtifact.error };
+  }
 
   const proposal: MemorySavebackProposal = {
     proposal_id: `memory_proposal_${randomUUID()}`,

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { getGenerationRun, saveGenerationRun, type GenerationRun } from "./generation.js";
-import { getMediaArtifact, verifyMediaArtifactBytes, type MediaArtifact } from "./mediaArtifacts.js";
+import { validateActiveArtifactReference, type MediaArtifact } from "./mediaArtifacts.js";
 import { providerError, selectM1ProviderPort, type ProviderToolError } from "./provider.js";
 import { buildProviderCapabilityKey, buildProviderPriceCacheKey, providerCapabilityErrorMessage } from "./providerCapabilities.js";
 import { downloadProviderOutputToArtifact } from "./providerOutputDownloader.js";
@@ -345,12 +345,10 @@ export async function preflightWorkbenchGeneration(
   }
   const active = db.prepare("SELECT intent_id FROM generation_intents WHERE status IN ('queued', 'running') LIMIT 1").get() as { intent_id: string } | undefined;
   if (active) return { ok: false, error: { code: "REAL_GENERATION_ALREADY_ACTIVE", message: "Only one real generation task may run at a time." } };
-  const artifact = getMediaArtifact(db, shot.storyboard_image_artifact_id);
-  if (!artifact || artifact.status !== "active" || artifact.artifact_type !== "image") {
-    return { ok: false, error: { code: "ARTIFACT_NOT_FOUND", message: "An active storyboard image is required." } };
-  }
-  const artifactIntegrity = verifyMediaArtifactBytes(db, artifact);
-  if (!artifactIntegrity.ok) return { ok: false, error: artifactIntegrity.error };
+  const artifact = validateActiveArtifactReference(db, {
+    artifact_id: shot.storyboard_image_artifact_id, project_id: input.project_id, shot_id: shot.shot_id, role: "storyboard_image", artifact_type: "image"
+  });
+  if (!artifact.ok) return { ok: false, error: artifact.error };
 
   const capability = buildProviderCapabilityKey({
     provider: "runninghub",
@@ -367,7 +365,7 @@ export async function preflightWorkbenchGeneration(
     return { ok: false, error: { code: "PROVIDER_SELECTION_MISMATCH", message: "RunningHub must be the selected real provider." } };
   }
   const generationInput: ProviderGenerationInput = {
-    storyboard_artifact: artifact,
+    storyboard_artifact: artifact.artifact,
     video_prompt: shot.video_prompt,
     negative_prompt: shot.negative_prompt,
     duration_seconds: capability.key.duration_seconds,
@@ -455,7 +453,7 @@ export async function preflightWorkbenchGeneration(
       confirmed, expires_at, status, data_json, created_at, updated_at
     ) VALUES (?, ?, ?, 'runninghub', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'prepared', ?, ?, ?)
   `).run(
-    intentId, input.project_id, input.shot_id, input.account_label, capability.key.model, artifact.artifact_id,
+    intentId, input.project_id, input.shot_id, input.account_label, capability.key.model, artifact.artifact.artifact_id,
     capability.key.duration_seconds, capability.key.resolution, estimatedPrice, input.budget_limit_value, currency,
     expiresAt.toISOString(), JSON.stringify({ input_snapshot: inputSnapshot }), createdAt.toISOString(), createdAt.toISOString()
   );
@@ -766,14 +764,11 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
     let taskId = knownTaskId;
     let submittedNow = false;
     if (!taskId) {
-      const artifact = getMediaArtifact(db, intent.input_artifact_id);
-      if (!artifact) {
-        failIntent(db, intent, "failed", providerError("ARTIFACT_NOT_FOUND", "Generation input artifact is missing."), leaseToken);
-        return;
-      }
-      const artifactIntegrity = verifyMediaArtifactBytes(db, artifact);
-      if (!artifactIntegrity.ok) {
-        failIntent(db, intent, "failed", providerError(artifactIntegrity.error.code, artifactIntegrity.error.message), leaseToken);
+      const artifact = validateActiveArtifactReference(db, {
+        artifact_id: intent.input_artifact_id, project_id: intent.project_id, shot_id: intent.shot_id, role: "storyboard_image", artifact_type: "image"
+      });
+      if (!artifact.ok) {
+        failIntent(db, intent, "failed", providerError(artifact.error.code, artifact.error.message), leaseToken);
         return;
       }
       if (!allowSubmit) {
@@ -782,7 +777,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       }
       job = setJobState(db, job, "submitting", "", { lease_token: leaseToken });
       const submit = await adapter.submitGeneration({
-        storyboard_artifact: artifact,
+        storyboard_artifact: artifact.artifact,
         video_prompt: intent.input_snapshot.video_prompt,
         negative_prompt: intent.input_snapshot.negative_prompt,
         duration_seconds: capability.key.duration_seconds,

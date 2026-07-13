@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
+import { validateAcceptedClipReference } from "./mediaArtifacts.js";
 
 export type ProjectStatus = "draft" | "storyboard_approved" | "video_generation_in_progress" | "video_review" | "final_approved";
 export type ShotStatus = "draft" | "storyboard_approved" | "video_pending" | "video_generated" | "video_review" | "approved" | "revision_needed";
@@ -134,9 +135,18 @@ export function getProjectStatus(input: { project_id: string }, db = openM0Datab
   }
 
   const shots = listProjectShots(db, project.project_id);
-  const blocking_reasons = shots
-    .filter((shot) => !shot.accepted_clip_artifact_id)
-    .map((shot) => `Shot ${String(shot.order).padStart(3, "0")} has no accepted clip`);
+  const readiness_checks = shots.map((shot) => {
+    if (!shot.accepted_clip_artifact_id) {
+      return { ok: false as const, code: "SHOT_ACCEPTED_CLIP_MISSING", shot_id: shot.shot_id, artifact_id: "" };
+    }
+    const validated = validateAcceptedClipReference(db, shot);
+    return validated.ok
+      ? { ok: true as const, code: "SHOT_ACCEPTED_CLIP_READY", shot_id: shot.shot_id, artifact_id: shot.accepted_clip_artifact_id }
+      : { ok: false as const, code: validated.error.code, shot_id: shot.shot_id, artifact_id: shot.accepted_clip_artifact_id };
+  });
+  const blocking_reasons = readiness_checks
+    .filter((check) => !check.ok)
+    .map((check) => `Shot ${String(shots.find((shot) => shot.shot_id === check.shot_id)?.order ?? 0).padStart(3, "0")} [${check.code}]`);
 
   return {
     ok: true as const,
@@ -145,8 +155,9 @@ export function getProjectStatus(input: { project_id: string }, db = openM0Datab
     shots,
     generation_batches: project.generation_batch_ids,
     generation_runs: shots.flatMap((shot) => shot.generation_run_ids),
-    ready_for_assembly: shots.length > 0 && blocking_reasons.length === 0,
+    ready_for_assembly: shots.length > 0 && readiness_checks.every((check) => check.ok),
     blocking_reasons,
+    readiness_checks,
     final_video_artifact_id: project.exports.final_video_artifact_id
   };
 }

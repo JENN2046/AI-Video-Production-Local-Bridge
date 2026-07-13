@@ -10,6 +10,7 @@ import {
   loadWebGptReviewAssistantStore,
   openM0Database,
   registerMediaArtifact,
+  saveShot,
   WEBGPT_REVIEW_ASSISTANT_TOOLS,
   webGptReviewAssistantWorkbenchSummary,
   type GenerationRun
@@ -144,6 +145,32 @@ test("WebGPT v2 stores review drafts without changing clip review or triggering 
     assert.equal(draft.production_effects.regeneration_triggered, false);
     assert.equal(draft.production_effects.final_human_approval_changed, false);
     assert.equal(draft.production_effects.provider_call_attempted, false);
+  } finally {
+    db.close();
+  }
+});
+
+test("WebGPT v2 review assistant rejects a run whose clip is rebound to another SHOT", async () => {
+  const db = openM0Database();
+
+  try {
+    const clip = await createReviewClip(db);
+    const originalShot = getShot(db, clip.shot_id);
+    assert.ok(originalShot);
+    if (!originalShot) return;
+    const wrongShot = {
+      ...structuredClone(originalShot),
+      shot_id: `${originalShot.shot_id}_wrong`,
+      order: originalShot.order + 1,
+      clip_versions: structuredClone(originalShot.clip_versions)
+    };
+    saveShot(db, wrongShot);
+    const driftedRun = { ...clip.run, shot_id: wrongShot.shot_id };
+    db.prepare("UPDATE generation_runs SET data_json = ? WHERE run_id = ?").run(JSON.stringify(driftedRun), clip.run.run_id);
+
+    const result = executeWebGptReviewAssistantTool("get_generated_clip_metadata", { artifact_id: clip.artifact_id }, db);
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "ARTIFACT_REFERENCE_BINDING_MISMATCH");
   } finally {
     db.close();
   }

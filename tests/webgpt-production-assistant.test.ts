@@ -219,3 +219,33 @@ test("WebGPT v3 rejects cross-project generated clips and memory proposals", asy
     db.close();
   }
 });
+
+test("WebGPT v3 rejects stale same-SHOT clips and archived project plans", async () => {
+  const db = openM0Database();
+
+  try {
+    const context = await createProductionContext(db);
+    const stale = registerMediaArtifact({
+      artifact_type: "video",
+      role: "generated_clip",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: context.project_id, shot_id: context.shot_id }
+    }, db);
+    assert.equal(stale.ok, true);
+    if (!stale.ok) return;
+    const stalePlan = executeWebGptProductionAssistantTool(
+      "propose_regeneration_plan",
+      { project_id: context.project_id, artifact_id: stale.artifact.artifact_id, prompt_delta: "must fail" },
+      db
+    );
+    assert.equal(stalePlan.ok, false);
+    if (!stalePlan.ok) assert.equal(stalePlan.error.code, "ARTIFACT_NOT_IN_SHOT_REVIEW");
+
+    db.prepare("UPDATE workbench_project_meta SET lifecycle = 'archived' WHERE project_id = ?").run(context.project_id);
+    const archivedPlan = executeWebGptProductionAssistantTool("propose_generation_plan", { project_id: context.project_id, notes: "must fail" }, db);
+    assert.equal(archivedPlan.ok, false);
+    if (!archivedPlan.ok) assert.equal(archivedPlan.error.code, "PROJECT_ARCHIVED");
+  } finally {
+    db.close();
+  }
+});
