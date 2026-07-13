@@ -111,6 +111,8 @@ Make safety tests mandatory rather than merely available.
 
 - Add the SR1–SR4 fault-injection and migration-copy suites to the appropriate unit/integration lanes.
 - Extend the SR0.5 selection meta-test to cover every new remediation suite and preserve named CI steps for failure diagnosis.
+- The versioned test catalog maps each remediation suite and named regression case to one mandatory npm lane and one named Windows CI step. The selection gate verifies the case still exists, both surfaces independently select its lane, and the lane command actually selects every registered test path; merely declaring a file in the catalog is not sufficient.
+- The remediation matrix covers SR1 Artifact/Blob faults and legacy-copy migration, SR2 Provider contract/outcome faults, SR3 activation recovery and integrity migration copies, and SR4 reference/readiness plus WebGPT cross-SHOT boundaries.
 
 Acceptance is a clean Windows Node 22 + FFmpeg 8.1.2 CI run, browser smoke, secret scan, and an intentional failing fixture proving the added suites are actually selected.
 

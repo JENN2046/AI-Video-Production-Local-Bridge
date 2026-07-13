@@ -21,7 +21,8 @@ const catalog = JSON.parse(readFileSync(join(workspaceRoot, "tests", "test-suite
 const packageJson = JSON.parse(readFileSync(join(workspaceRoot, "package.json"), "utf8")) as { scripts?: Record<string, string> };
 const workflowText = readFileSync(join(workspaceRoot, ".github", "workflows", "windows-ci.yml"), "utf8");
 const sourceFiles = discoverTests(join(workspaceRoot, "tests"));
-const errors = auditTestSelection({ catalog, source_files: sourceFiles, package_scripts: packageJson.scripts ?? {}, workflow_text: workflowText });
+const sourceTexts = Object.fromEntries(sourceFiles.map((path) => [path, readFileSync(join(workspaceRoot, path), "utf8")]));
+const errors = auditTestSelection({ catalog, source_files: sourceFiles, source_texts: sourceTexts, package_scripts: packageJson.scripts ?? {}, workflow_text: workflowText });
 
 if (errors.length > 0) {
   for (const error of errors) process.stderr.write(`${error}\n`);
@@ -30,5 +31,5 @@ if (errors.length > 0) {
   const mandatoryFiles = catalog.groups
     .filter((group) => group.classification === "mandatory")
     .reduce((count, group) => count + group.paths.length, 0);
-  process.stdout.write(`TEST_SELECTION_GATE_PASS files=${sourceFiles.length} mandatory=${mandatoryFiles}\n`);
+  process.stdout.write(`TEST_SELECTION_GATE_PASS files=${sourceFiles.length} mandatory=${mandatoryFiles} remediation=${catalog.remediation_suites.length}\n`);
 }

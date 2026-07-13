@@ -16,15 +16,30 @@ export interface RequiredCommand {
   ci_step: string;
 }
 
+export type RemediationStage = "SR1" | "SR2" | "SR3" | "SR4";
+export type RemediationKind = "fault_injection" | "migration_copy" | "boundary";
+
+export interface RemediationSuite {
+  id: string;
+  stage: RemediationStage;
+  kind: RemediationKind;
+  path: string;
+  npm_script: string;
+  ci_step: string;
+  case_name: string;
+}
+
 export interface TestSuiteCatalog {
-  version: 1;
+  version: 2;
   groups: TestSuiteGroup[];
   required_commands?: RequiredCommand[];
+  remediation_suites: RemediationSuite[];
 }
 
 export interface TestSelectionAuditInput {
   catalog: TestSuiteCatalog;
   source_files: string[];
+  source_texts: Record<string, string>;
   package_scripts: Record<string, string>;
   workflow_text: string;
 }
@@ -60,10 +75,48 @@ function workflowNpmSteps(workflow: string): Map<string, Set<string>> {
   return result;
 }
 
+function expectedRunnerPath(sourcePath: string): string {
+  const normalized = normalizePath(sourcePath);
+  if (normalized.startsWith("tests/browser/")) return normalized;
+  return `dist/${normalized.replace(/\.ts$/, ".js")}`;
+}
+
+function globMatches(pattern: string, value: string): boolean {
+  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replaceAll("*", ".*");
+  return new RegExp(`^${escaped}$`).test(value);
+}
+
+function packageScriptSelectsPath(command: string, sourcePath: string): boolean {
+  const expected = expectedRunnerPath(sourcePath);
+  return command.split("&&").some((rawSegment) => {
+    const segment = rawSegment.trim();
+    const tokens = segment
+      .split(/\s+/)
+      .map((token) => token.replace(/^["']|["',]$/g, ""))
+      .filter(Boolean);
+    const pathIndex = tokens.findIndex((token) => globMatches(normalizePath(token), expected));
+    if (pathIndex < 0) return false;
+    const isDirectNodeRunner = tokens[0] === "node" && pathIndex === 1;
+    const isNodeTestRunner = tokens[0] === "node" && tokens[1] === "--test" && pathIndex >= 2;
+    const isIsolatedNodeRunner = tokens[0] === "node" && /run-isolated-tests\.(?:js|mjs)$/.test(tokens[1] ?? "") && pathIndex >= 2;
+    const playwrightOffset = tokens[0] === "npx" ? 1 : 0;
+    const isPlaywrightRunner = tokens[playwrightOffset] === "playwright"
+      && tokens[playwrightOffset + 1] === "test"
+      && pathIndex > playwrightOffset + 1;
+    return isDirectNodeRunner || isNodeTestRunner || isIsolatedNodeRunner || isPlaywrightRunner;
+  });
+}
+
+function sourceContainsNamedCase(source: string, caseName: string): boolean {
+  const escaped = caseName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b(?:test|it)\\s*\\(\\s*["'\`]${escaped}["'\`]`).test(source);
+}
+
 export function auditTestSelection(input: TestSelectionAuditInput): string[] {
   const errors: string[] = [];
-  if (input.catalog.version !== 1) return ["CATALOG_VERSION_INVALID"];
+  if (input.catalog.version !== 2) return ["CATALOG_VERSION_INVALID"];
   if (!Array.isArray(input.catalog.groups)) return ["CATALOG_GROUPS_INVALID"];
+  if (!Array.isArray(input.catalog.remediation_suites)) return ["CATALOG_REMEDIATION_SUITES_INVALID"];
 
   const sourceFiles = new Set(input.source_files.map(normalizePath));
   const catalogPaths = new Map<string, string>();
@@ -104,6 +157,44 @@ export function auditTestSelection(input: TestSelectionAuditInput): string[] {
     if (!sourceFiles.has(path)) errors.push(`CATALOG_FILE_MISSING: ${path}`);
   }
 
+  const remediationIds = new Set<string>();
+  const remediationStages = new Set<RemediationStage>();
+  const remediationKinds = new Set<RemediationKind>();
+  for (const suite of input.catalog.remediation_suites) {
+    const path = normalizePath(suite.path ?? "");
+    if (!suite.id?.trim() || remediationIds.has(suite.id)) {
+      errors.push(`REMEDIATION_SUITE_ID_INVALID: ${suite.id || "<missing>"}`);
+    } else {
+      remediationIds.add(suite.id);
+    }
+    if (!["SR1", "SR2", "SR3", "SR4"].includes(suite.stage)) {
+      errors.push(`REMEDIATION_STAGE_INVALID: ${suite.id}`);
+    } else {
+      remediationStages.add(suite.stage);
+    }
+    if (!["fault_injection", "migration_copy", "boundary"].includes(suite.kind)) {
+      errors.push(`REMEDIATION_KIND_INVALID: ${suite.id}`);
+    } else {
+      remediationKinds.add(suite.kind);
+    }
+    const ownerId = catalogPaths.get(path);
+    const owner = input.catalog.groups.find((group) => group.id === ownerId);
+    if (!owner || owner.classification !== "mandatory") {
+      errors.push(`REMEDIATION_SUITE_NOT_MANDATORY: ${suite.id} -> ${path || "<missing>"}`);
+    } else if (owner.npm_script !== suite.npm_script || owner.ci_step !== suite.ci_step) {
+      errors.push(`REMEDIATION_LANE_MISMATCH: ${suite.id}`);
+    }
+    if (!suite.case_name?.trim() || !sourceContainsNamedCase(input.source_texts[path] ?? "", suite.case_name)) {
+      errors.push(`REMEDIATION_CASE_MISSING: ${suite.id} -> ${suite.case_name || "<missing>"}`);
+    }
+  }
+  for (const stage of ["SR1", "SR2", "SR3", "SR4"] as const) {
+    if (!remediationStages.has(stage)) errors.push(`REMEDIATION_STAGE_MISSING: ${stage}`);
+  }
+  for (const kind of ["fault_injection", "migration_copy"] as const) {
+    if (!remediationKinds.has(kind)) errors.push(`REMEDIATION_KIND_MISSING: ${kind}`);
+  }
+
   const canonicalRuns = npmRuns(input.package_scripts.test ?? "");
   const workflowSteps = workflowNpmSteps(input.workflow_text);
   const uniqueRequirements = new Map<string, RequiredCommand>();
@@ -121,6 +212,15 @@ export function auditTestSelection(input: TestSelectionAuditInput): string[] {
     const names = workflowSteps.get(requirement.npm_script);
     if (!names) errors.push(`CI_GATE_MISSING: ${requirement.npm_script}`);
     else if (!names.has(requirement.ci_step)) errors.push(`CI_STEP_MISMATCH: ${requirement.npm_script} expected ${requirement.ci_step}`);
+  }
+
+  for (const group of input.catalog.groups.filter((item) => item.classification === "mandatory")) {
+    const command = input.package_scripts[group.npm_script ?? ""] ?? "";
+    for (const path of group.paths) {
+      if (!packageScriptSelectsPath(command, path)) {
+        errors.push(`PACKAGE_SUITE_PATH_MISSING: ${group.npm_script} -> ${normalizePath(path)}`);
+      }
+    }
   }
 
   return errors;
