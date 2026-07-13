@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
@@ -12,6 +12,8 @@ import {
   openM0Database,
   paths,
   recoverMediaActivations,
+  registerMediaArtifact,
+  verifyMediaArtifactBytes,
   scanGptHandoffImports
 } from "../src/index.js";
 
@@ -198,7 +200,7 @@ test("M1.5 rollback retains activation recovery evidence when file cleanup fails
       db,
       {
         after_artifact_activated: () => { throw new Error("INJECTED_HANDOFF_ROLLBACK"); },
-        remove_imported_artifact: () => { throw new Error("INJECTED_CLEANUP_FAILURE"); }
+        remove_activation_file: () => { throw new Error("INJECTED_CLEANUP_FAILURE"); }
       }
     );
     assert.equal(result.ok, false);
@@ -212,6 +214,49 @@ test("M1.5 rollback retains activation recovery evidence when file cleanup fails
     const recovered = recoverMediaActivations(db);
     assert.equal(recovered.failed.some((failure) => failure.code === "MEDIA_ACTIVATION_DB_RECORD_MISSING"), true);
     assert.equal(existsSync(imported.storage_uri), false);
+  } finally {
+    db.close();
+  }
+});
+
+test("M1.5 rollback never deletes a deduplicated Blob owned by a committed Artifact", () => {
+  const db = openM0Database();
+  const runId = randomUUID().slice(0, 8);
+  const validImport = copyTestImport(runId, 1);
+  try {
+    const committed = registerMediaArtifact({
+      artifact_type: "image",
+      role: "storyboard_image",
+      source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" }
+    }, db);
+    assert.equal(committed.ok, true);
+    if (!committed.ok) return;
+    const committedBytes = readFileSync(committed.artifact.storage.uri);
+
+    const result = freezeGptHandoffStoryboardPackage(
+      {
+        project_title: `M1.5 Shared Blob Rollback ${runId}`,
+        approved_by_user: true,
+        write_report: false,
+        shots: [{
+          import_filename: validImport,
+          order: 1,
+          duration_seconds: 2,
+          shot_description: "Force rollback after Blob dedupe.",
+          video_prompt: "Do not delete shared Blob storage."
+        }]
+      },
+      db,
+      { after_artifact_activated: () => { throw new Error("INJECTED_SHARED_BLOB_ROLLBACK"); } }
+    );
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.report.imported_artifacts[0].storage_uri, committed.artifact.storage.uri);
+    assert.equal(existsSync(committed.artifact.storage.uri), true);
+    const stored = getMediaArtifact(db, committed.artifact.artifact_id);
+    assert.equal(stored ? verifyMediaArtifactBytes(db, stored).ok : false, true);
+    assert.equal(readFileSync(committed.artifact.storage.uri).equals(committedBytes), true);
+    assert.deepEqual(recoverMediaActivations(db), { committed: [], failed: [] });
   } finally {
     db.close();
   }

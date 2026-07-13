@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, lstatSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { extname, isAbsolute, join, relative, resolve } from "node:path";
 
 import { ensureM0Directories, paths } from "../paths.js";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { validateImageFile, type ImageValidationResult } from "./imageValidity.js";
 import { importG0AppReadyStoryboardPackage, validateG0StoryboardPackage, type G0StoryboardPackageInput } from "./g0Pregen.js";
-import { cleanupCommittedMediaActivationMarkers, discardMediaActivationMarkers, registerMediaArtifact, type MediaArtifact } from "./mediaArtifacts.js";
+import { cleanupCommittedMediaActivationMarkers, cleanupRolledBackMediaActivationFiles, registerMediaArtifact, type MediaArtifact } from "./mediaArtifacts.js";
 import { createProject, getProject, type Project } from "./projects.js";
 import { classifyStoryboardImageImport, isNineSixteenDimensions, STORYBOARD_IMAGE_EXTENSIONS } from "./importClassifier.js";
 
@@ -49,7 +49,7 @@ export interface FreezeGptHandoffInput {
 
 export interface GptHandoffRuntime {
   after_artifact_activated?: (artifact: MediaArtifact) => void;
-  remove_imported_artifact?: (target: string) => void;
+  remove_activation_file?: (target: string) => void;
 }
 
 export interface FreezeGptHandoffReport {
@@ -198,19 +198,10 @@ function validImportFilename(filename: string): boolean {
 }
 
 function cleanupImportedArtifactFiles(report: FreezeGptHandoffReport, runtime: GptHandoffRuntime): boolean {
-  let cleaned = true;
-  for (const artifact of report.imported_artifacts) {
-    const target = resolve(artifact.storage_uri);
-    if (isPathInside(target, paths.imageArtifactsRoot)) {
-      try {
-        if (runtime.remove_imported_artifact) runtime.remove_imported_artifact(target);
-        else rmSync(target, { force: true });
-      }
-      catch { cleaned = false; }
-      if (existsSync(target)) cleaned = false;
-    }
-  }
-  return cleaned;
+  return cleanupRolledBackMediaActivationFiles(
+    report.imported_artifacts.map((artifact) => artifact.artifact_id),
+    { remove_file: runtime.remove_activation_file }
+  );
 }
 
 function validateImportImageReady(filename: string): { ok: true; validation: ImageValidationResult } | { ok: false; error: HandoffError } {
@@ -376,7 +367,7 @@ export function freezeGptHandoffStoryboardPackage(input: FreezeGptHandoffInput, 
       transactionOpen = false;
     }
     const filesRemoved = cleanupImportedArtifactFiles(report, runtime);
-    if (filesRemoved) discardMediaActivationMarkers(report.imported_artifacts.map((artifact) => artifact.artifact_id));
+    if (!filesRemoved) return;
   };
 
   const mutationFallbackProject: Project = {

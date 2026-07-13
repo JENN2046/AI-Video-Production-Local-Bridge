@@ -1013,6 +1013,41 @@ export function discardMediaActivationMarkers(artifactIds: readonly string[]): v
   }
 }
 
+export function cleanupRolledBackMediaActivationFiles(
+  artifactIds: readonly string[],
+  options: { remove_file?: (target: string) => void } = {}
+): boolean {
+  const wanted = new Set(artifactIds);
+  let complete = true;
+  let filePaths: string[] = [];
+  try { filePaths = activationMarkerPaths(); } catch { return false; }
+  for (const filePath of filePaths) {
+    let marker: MediaActivationMarker;
+    try { marker = readActivationMarker(filePath); }
+    catch { complete = false; continue; }
+    if (!wanted.has(marker.artifact_id)) continue;
+    let markerClean = true;
+    for (const candidate of [marker.final_path, marker.pending_path, marker.staging_path]) {
+      const target = resolve(candidate);
+      if (!existsSync(target)) continue;
+      try {
+        if (lstatSync(target).isSymbolicLink() || !statSync(target).isFile()) {
+          markerClean = false;
+          continue;
+        }
+        if (options.remove_file) options.remove_file(target);
+        else rmSync(target, { force: true });
+      } catch { markerClean = false; }
+      if (existsSync(target)) markerClean = false;
+    }
+    if (markerClean) {
+      try { rmSync(filePath, { force: true }); }
+      catch { complete = false; }
+    } else complete = false;
+  }
+  return complete;
+}
+
 export function cleanupCommittedMediaActivationMarkers(db: M0Database, artifactIds: readonly string[]): void {
   const wanted = new Set(artifactIds);
   let filePaths: string[] = [];
