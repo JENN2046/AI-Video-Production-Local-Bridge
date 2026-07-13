@@ -60,6 +60,32 @@ test("media activation commits a decoded image through the persistent journal", 
   }
 });
 
+test("activation never overwrites or quarantines a pre-existing final path", () => {
+  const root = mkdtempSync(join(tmpdir(), "media-activation-existing-final-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  const artifact = preparedArtifact();
+  artifact.storage.uri = join(mediaRoot, "artifacts", "images", `${artifact.artifact_id}.png`);
+  artifact.storage.filename = `${artifact.artifact_id}.png`;
+  try {
+    mkdirSync(resolve(artifact.storage.uri, ".."), { recursive: true });
+    const existingBytes = Buffer.from("bytes-owned-by-another-artifact", "utf8");
+    writeFileSync(artifact.storage.uri, existingBytes, { flag: "wx" });
+
+    const result = activateLocalMediaArtifact({ artifact, source_path: IMAGE_FIXTURE, media_root: mediaRoot }, db);
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "MEDIA_ACTIVATION_FINAL_PATH_EXISTS");
+    assert.equal(readFileSync(artifact.storage.uri).equals(existingBytes), true);
+    const journal = db.prepare("SELECT state, error_code FROM media_activation_journal WHERE artifact_id = ?").get(artifact.artifact_id) as { state: string; error_code: string };
+    assert.deepEqual({ ...journal }, { state: "failed", error_code: "MEDIA_ACTIVATION_FINAL_PATH_EXISTS" });
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("blob dedupe keeps committed journal paths aligned with the authoritative Blob", () => {
   const root = mkdtempSync(join(tmpdir(), "media-activation-dedupe-"));
   const sqlitePath = join(root, "app.sqlite");

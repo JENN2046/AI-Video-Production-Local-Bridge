@@ -1,4 +1,4 @@
-import { closeSync, constants, copyFileSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, constants, copyFileSync, existsSync, fstatSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 
@@ -754,6 +754,29 @@ function quarantineActivationFile(artifact: MediaArtifact, candidates: string[],
   }
 }
 
+function moveActivationFileExclusively(sourcePath: string, finalPath: string): void {
+  try {
+    linkSync(sourcePath, finalPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new Error("MEDIA_ACTIVATION_FINAL_PATH_EXISTS");
+    throw error;
+  }
+  try {
+    rmSync(sourcePath);
+  } catch (error) {
+    try { rmSync(finalPath, { force: true }); } catch { /* recovery detects the two-link crash window */ }
+    throw error;
+  }
+}
+
+function samePhysicalFile(firstPath: string, secondPath: string): boolean {
+  if (!existsSync(firstPath) || !existsSync(secondPath)) return false;
+  if (lstatSync(firstPath).isSymbolicLink() || lstatSync(secondPath).isSymbolicLink()) return false;
+  const first = statSync(firstPath);
+  const second = statSync(secondPath);
+  return first.isFile() && second.isFile() && first.dev === second.dev && first.ino !== 0 && first.ino === second.ino;
+}
+
 function commitStagedMediaArtifact(
   db: M0Database,
   artifact: MediaArtifact,
@@ -769,6 +792,7 @@ function commitStagedMediaArtifact(
   const manageTransaction = !databaseIsInTransaction(db);
   let journalCreated = false;
   let markerCreated = false;
+  let finalPathOwned = false;
   try {
     if (!isPathInside(finalPath, mediaRoot) || hasExistingSymlinkAncestor(finalPath, mediaRoot)) {
       throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
@@ -814,7 +838,8 @@ function commitStagedMediaArtifact(
       try { options.after_pending_placed(pendingPath); } catch (error) { throw new MediaActivationInjectedCrash(error); }
     }
     db.prepare("UPDATE media_activation_journal SET state = 'file_placed', updated_at = CURRENT_TIMESTAMP WHERE activation_id = ? AND state = 'staged'").run(activationId);
-    renameSync(pendingPath, finalPath);
+    moveActivationFileExclusively(pendingPath, finalPath);
+    finalPathOwned = true;
     if (options.after_file_placed) {
       try { options.after_file_placed(finalPath); } catch (error) { throw new MediaActivationInjectedCrash(error); }
     }
@@ -839,7 +864,8 @@ function commitStagedMediaArtifact(
     if (error instanceof MediaActivationInjectedCrash) throw error.causeValue;
     const code = mediaActivationErrorCode(error);
     if (journalCreated) {
-      try { quarantineActivationFile(artifact, [finalPath, pendingPath, stagingPath], mediaRoot); } catch { /* preserve the journal failure even when quarantine cannot move the file */ }
+      const ownedCandidates = finalPathOwned ? [finalPath, pendingPath, stagingPath] : [pendingPath, stagingPath];
+      try { quarantineActivationFile(artifact, ownedCandidates, mediaRoot); } catch { /* preserve the journal failure even when quarantine cannot move the file */ }
       try { db.prepare("UPDATE media_activation_journal SET state = 'failed', error_code = ?, updated_at = CURRENT_TIMESTAMP WHERE activation_id = ?").run(code, activationId); } catch { /* db:check will surface the non-terminal record */ }
     } else if (existsSync(stagingPath)) {
       rmSync(stagingPath, { force: true });
@@ -1056,6 +1082,9 @@ export function recoverMediaActivations(db = openM0Database()): MediaActivationR
     }>;
   for (const row of rows) {
     let artifact: MediaArtifact | null = null;
+    let failureStagingPath = resolve(row.staging_path);
+    let failurePendingPath = resolve(row.pending_path);
+    let failureFinalPath: string | null = null;
     try {
       artifact = JSON.parse(row.artifact_json) as MediaArtifact;
       const stagingPath = resolve(row.staging_path);
@@ -1069,18 +1098,27 @@ export function recoverMediaActivations(db = openM0Database()): MediaActivationR
         || hasExistingSymlinkAncestor(stagingPath, roots.activation)
         || hasExistingSymlinkAncestor(pendingPath, roots.activation)
         || hasExistingSymlinkAncestor(finalPath, mediaRoot)) throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
+      if (samePhysicalFile(pendingPath, finalPath)) {
+        rmSync(pendingPath);
+        failureFinalPath = finalPath;
+      }
       if (row.state === "staged") {
         const present = [stagingPath, pendingPath, finalPath].filter((candidate) => existsSync(candidate));
         if (present.length === 0) throw new Error("MEDIA_ACTIVATION_STAGED_FILE_MISSING");
         if (present.length !== 1) throw new Error("MEDIA_ACTIVATION_MULTIPLE_FILES_PRESENT");
         if (present[0] === stagingPath) renameSync(stagingPath, pendingPath);
+        if (present[0] === finalPath) failureFinalPath = finalPath;
         db.prepare("UPDATE media_activation_journal SET state = 'file_placed', updated_at = CURRENT_TIMESTAMP WHERE activation_id = ? AND state = 'staged'").run(row.activation_id);
       } else {
         const present = [pendingPath, finalPath].filter((candidate) => existsSync(candidate));
         if (present.length === 0) throw new Error("MEDIA_ACTIVATION_PLACED_FILE_MISSING");
         if (present.length !== 1 || existsSync(stagingPath)) throw new Error("MEDIA_ACTIVATION_MULTIPLE_FILES_PRESENT");
+        if (present[0] === finalPath) failureFinalPath = finalPath;
       }
-      if (existsSync(pendingPath)) renameSync(pendingPath, finalPath);
+      if (existsSync(pendingPath)) {
+        moveActivationFileExclusively(pendingPath, finalPath);
+        failureFinalPath = finalPath;
+      }
       if (!existsSync(finalPath)) throw new Error("MEDIA_ACTIVATION_PLACED_FILE_MISSING");
       const facts = localMediaFacts(finalPath, artifact);
       if (facts.sha256 !== row.expected_sha256 || facts.size_bytes !== Number(row.expected_size_bytes) || facts.detected_mime !== row.detected_mime) {
@@ -1103,7 +1141,10 @@ export function recoverMediaActivations(db = openM0Database()): MediaActivationR
       const code = mediaActivationErrorCode(error);
       if (artifact) {
         const mediaRoot = dirname(dirname(dirname(resolve(row.staging_path))));
-        try { quarantineActivationFile(artifact, [resolve(row.final_path), resolve(row.pending_path), resolve(row.staging_path)], mediaRoot); } catch { /* retain failure evidence in the journal */ }
+        const ownedCandidates = failureFinalPath
+          ? [failureFinalPath, failurePendingPath, failureStagingPath]
+          : [failurePendingPath, failureStagingPath];
+        try { quarantineActivationFile(artifact, ownedCandidates, mediaRoot); } catch { /* retain failure evidence in the journal */ }
       }
       try { db.prepare("UPDATE media_activation_journal SET state = 'failed', error_code = ?, updated_at = CURRENT_TIMESTAMP WHERE activation_id = ?").run(code, row.activation_id); } catch { /* schema checks report the remaining record */ }
       try {
