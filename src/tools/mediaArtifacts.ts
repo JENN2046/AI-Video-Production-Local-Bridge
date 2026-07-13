@@ -977,7 +977,9 @@ function readStagingOwner(filePath: string): MediaStagingOwner {
     || typeof owner.staging_path !== "string"
     || stagingOwnerPath(owner.artifact_id) !== target) throw new Error("MEDIA_STAGING_OWNER_INVALID");
   const mediaRoot = resolve(owner.media_root);
-  const roots = activationRoots(mediaRoot);
+  let roots: ReturnType<typeof activationRoots>;
+  try { roots = ensureSafeActivationRoots(mediaRoot, false); }
+  catch { throw new Error("MEDIA_STAGING_OWNER_INVALID"); }
   if (!isPathInside(resolve(owner.staging_path), roots.staging)
     || hasExistingSymlinkAncestor(resolve(owner.staging_path), roots.activation)) throw new Error("MEDIA_STAGING_OWNER_INVALID");
   return owner as MediaStagingOwner;
@@ -1216,7 +1218,7 @@ export function recoverMediaActivations(db = openM0Database()): MediaActivationR
       const pendingPath = resolve(row.pending_path);
       const finalPath = resolve(row.final_path);
       const mediaRoot = dirname(dirname(dirname(stagingPath)));
-      const roots = activationRoots(mediaRoot);
+      const roots = ensureSafeActivationRoots(mediaRoot, false);
       if (!isPathInside(stagingPath, roots.staging)
         || !isPathInside(pendingPath, roots.pending)
         || !isPathInside(finalPath, mediaRoot)
@@ -1279,7 +1281,10 @@ export function recoverMediaActivations(db = openM0Database()): MediaActivationR
         const ownedCandidates = failureFinalPath
           ? [failureFinalPath, failurePendingPath, failureStagingPath]
           : [failurePendingPath, failureStagingPath];
-        try { quarantineActivationFile(artifact, ownedCandidates, mediaRoot); } catch { /* retain failure evidence in the journal */ }
+        try {
+          ensureSafeActivationRoots(mediaRoot, false);
+          quarantineActivationFile(artifact, ownedCandidates, mediaRoot);
+        } catch { /* retain failure evidence in the journal without touching an unsafe root */ }
       }
       try { db.prepare("UPDATE media_activation_journal SET state = 'failed', error_code = ?, updated_at = CURRENT_TIMESTAMP WHERE activation_id = ?").run(code, row.activation_id); } catch { /* schema checks report the remaining record */ }
       try {

@@ -466,6 +466,84 @@ test("activation rejects symlinked activation roots and immediate subdirectories
   }
 });
 
+test("staging-owner recovery rejects a custom media root replaced by a junction", (context) => {
+  const root = mkdtempSync(join(tmpdir(), "media-owner-root-swap-"));
+  const mediaRoot = join(root, "media");
+  const outsideRoot = join(root, "outside-media");
+  const db = openM0Database(":memory:");
+  const artifact = preparedArtifact();
+  artifact.storage.uri = join(mediaRoot, "artifacts", "images", `${artifact.artifact_id}.png`);
+  artifact.storage.filename = `${artifact.artifact_id}.png`;
+  let stagingPath = "";
+  try {
+    assert.throws(() => activateLocalMediaArtifact({
+      artifact,
+      source_path: IMAGE_FIXTURE,
+      media_root: mediaRoot,
+      after_staging_written: (path) => {
+        stagingPath = path;
+        throw new Error("INJECTED_OWNER_ROOT_SWAP");
+      }
+    }, db), /INJECTED_OWNER_ROOT_SWAP/);
+    renameSync(mediaRoot, outsideRoot);
+    try { symlinkSync(outsideRoot, mediaRoot, "junction"); }
+    catch (error) {
+      context.skip(`Directory symlinks are unavailable: ${error instanceof Error ? error.message : "SYMLINK_UNAVAILABLE"}`);
+      return;
+    }
+    const externalStaging = stagingPath.replace(resolve(mediaRoot), resolve(outsideRoot));
+    const recovered = recoverMediaActivations(db);
+    assert.equal(recovered.failed.some((failure) => failure.code === "MEDIA_STAGING_OWNER_INVALID"), true);
+    assert.equal(existsSync(externalStaging), true);
+  } finally {
+    db.close();
+    if (existsSync(mediaRoot)) rmSync(mediaRoot, { force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("journal recovery rejects a custom media root replaced by a junction", (context) => {
+  const root = mkdtempSync(join(tmpdir(), "media-journal-root-swap-"));
+  const mediaRoot = join(root, "media");
+  const outsideRoot = join(root, "outside-media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  const artifact = preparedArtifact();
+  artifact.storage.uri = join(mediaRoot, "artifacts", "images", `${artifact.artifact_id}.png`);
+  artifact.storage.filename = `${artifact.artifact_id}.png`;
+  let activationId = "";
+  let stagingPath = "";
+  try {
+    assert.throws(() => activateLocalMediaArtifact({
+      artifact,
+      source_path: IMAGE_FIXTURE,
+      media_root: mediaRoot,
+      after_journal_staged: (path) => {
+        stagingPath = path;
+        throw new Error("INJECTED_JOURNAL_ROOT_SWAP");
+      }
+    }, db), /INJECTED_JOURNAL_ROOT_SWAP/);
+    activationId = (db.prepare("SELECT activation_id FROM media_activation_journal WHERE artifact_id = ?").get(artifact.artifact_id) as { activation_id: string }).activation_id;
+    renameSync(mediaRoot, outsideRoot);
+    try { symlinkSync(outsideRoot, mediaRoot, "junction"); }
+    catch (error) {
+      context.skip(`Directory symlinks are unavailable: ${error instanceof Error ? error.message : "SYMLINK_UNAVAILABLE"}`);
+      return;
+    }
+    const externalStaging = stagingPath.replace(resolve(mediaRoot), resolve(outsideRoot));
+    const recovered = recoverMediaActivations(db);
+    assert.equal(recovered.failed.some((failure) => failure.activation_id === activationId && failure.code === "MEDIA_ACTIVATION_PATH_UNSAFE"), true);
+    assert.equal(existsSync(externalStaging), true);
+    assert.equal((db.prepare("SELECT state, error_code FROM media_activation_journal WHERE activation_id = ?").get(activationId) as { state: string; error_code: string }).state, "failed");
+  } finally {
+    db.close();
+    if (activationId) rmSync(join(paths.mediaActivationJournalRoot, `${activationId}.json`), { force: true });
+    if (existsSync(mediaRoot)) rmSync(mediaRoot, { force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("recovery rejects marker paths whose media ancestor became a symlink", (context) => {
   const root = mkdtempSync(join(tmpdir(), "media-marker-symlink-swap-"));
   const mediaRoot = join(root, "media");
