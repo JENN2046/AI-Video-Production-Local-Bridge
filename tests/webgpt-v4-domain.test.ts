@@ -346,11 +346,50 @@ test("review and delivery guards reject same-project wrong-SHOT and tampered art
     if (workbenchReview.ok) assert.equal(JSON.stringify(workbenchReview.data.review_notes).includes("ARTIFACT_NOT_IN_SHOT_REVIEW"), true);
     context.db.prepare("DELETE FROM workbench_review_notes WHERE note_id = 'note_wrong_shot'").run();
 
-    context.productionShot.accepted_clip_artifact_id = stale.artifact.artifact_id;
+    context.production.status = "video_review";
+    saveProject(context.db, context.production);
+    context.productionShot.accepted_clip_artifact_id = first.artifact.artifact_id;
+    context.productionShot.review.approval_status = "approved";
+    saveShot(context.db, context.productionShot);
+    context.db.prepare(`UPDATE workbench_project_meta SET
+      next_action_override = '继续人工审片', next_action_priority = 'high',
+      next_action_expires_at = '2099-01-01T00:00:00.000Z', next_action_project_status = 'video_review'
+      WHERE project_id = ?`).run(context.production.project_id);
+    const incompleteWorkbench = getWorkbenchProjectWorkspace(context.production.project_id, "delivery", context.db, { touch_last_opened: false });
+    assert.equal(incompleteWorkbench.ok, true);
+    if (incompleteWorkbench.ok) {
+      assert.equal(incompleteWorkbench.data.ready_for_assembly, false);
+      const summary = incompleteWorkbench.data.summary as { blocker_count: number; blocker_reason: string; next_action: { source: string; label: string; reason_code: string }; risk: string };
+      assert.equal(summary.blocker_reason.includes("采纳片段无效"), false);
+      assert.deepEqual(
+        { source: summary.next_action.source, label: summary.next_action.label, reason_code: summary.next_action.reason_code },
+        { source: "override", label: "继续人工审片", reason_code: "manual_override" }
+      );
+      assert.notEqual(summary.risk, "blocked");
+    }
     secondShot.clip_versions = [{ artifact_id: second.artifact.artifact_id, run_id: "run_second", attempt_number: 1, review_status: "approved" }];
     secondShot.accepted_clip_artifact_id = second.artifact.artifact_id;
+    secondShot.review.approval_status = "approved";
     saveShot(context.db, context.productionShot);
     saveShot(context.db, secondShot);
+    const validWorkbench = getWorkbenchProjectWorkspace(context.production.project_id, "delivery", context.db, { touch_last_opened: false });
+    assert.equal(validWorkbench.ok, true);
+    if (validWorkbench.ok) {
+      assert.equal(validWorkbench.data.ready_for_assembly, true);
+      const summary = validWorkbench.data.summary as { delivery_state: string; next_action: { source: string; reason_code: string; derived: { reason_code: string } } };
+      assert.equal(summary.delivery_state, "ready_to_assemble");
+      assert.deepEqual(
+        { source: summary.next_action.source, reason_code: summary.next_action.reason_code, derived_reason_code: summary.next_action.derived.reason_code },
+        { source: "override", reason_code: "manual_override", derived_reason_code: "assemble" }
+      );
+    }
+
+    context.db.prepare(`UPDATE workbench_project_meta SET
+      next_action_override = '合成交付', next_action_priority = 'high',
+      next_action_expires_at = '2099-01-01T00:00:00.000Z', next_action_project_status = 'video_review'
+      WHERE project_id = ?`).run(context.production.project_id);
+    context.productionShot.accepted_clip_artifact_id = stale.artifact.artifact_id;
+    saveShot(context.db, context.productionShot);
     const staleDelivery = getProductionDeliveryStatus({ project_id: context.production.project_id }, context.db);
     assert.equal(staleDelivery.ok, true);
     if (staleDelivery.ok) {
@@ -362,7 +401,21 @@ test("review and delivery guards reject same-project wrong-SHOT and tampered art
     if (staleStatus.ok) assert.equal(staleStatus.readiness_checks.some((check) => check.code === "ARTIFACT_NOT_IN_SHOT_REVIEW"), true);
     const staleWorkbench = getWorkbenchProjectWorkspace(context.production.project_id, "delivery", context.db, { touch_last_opened: false });
     assert.equal(staleWorkbench.ok, true);
-    if (staleWorkbench.ok) assert.equal(JSON.stringify(staleWorkbench.data.readiness_checks).includes("ARTIFACT_NOT_IN_SHOT_REVIEW"), true);
+    if (staleWorkbench.ok) {
+      assert.equal(JSON.stringify(staleWorkbench.data.readiness_checks).includes("ARTIFACT_NOT_IN_SHOT_REVIEW"), true);
+      const summary = staleWorkbench.data.summary as { delivery_state: string; next_action: { source: string; reason_code: string }; risk: string };
+      assert.equal(summary.delivery_state, "not_ready");
+      assert.deepEqual({ source: summary.next_action.source, reason_code: summary.next_action.reason_code }, { source: "derived", reason_code: "accepted_clip_invalid" });
+      assert.equal(summary.risk, "blocked");
+    }
+    const staleList = listProductionProjects({}, context.db);
+    assert.equal(staleList.ok, true);
+    if (staleList.ok) {
+      const listed = staleList.data.items.find((item) => (item.project as Project).project_id === context.production.project_id) as { summary: { delivery_state: string; next_action: { reason_code: string }; risk: string } };
+      assert.equal(listed.summary.delivery_state, "not_ready");
+      assert.equal(listed.summary.next_action.reason_code, "assembly_readiness_required");
+      assert.equal(listed.summary.risk, "attention");
+    }
 
     context.productionShot.accepted_clip_artifact_id = first.artifact.artifact_id;
     saveShot(context.db, context.productionShot);
@@ -384,6 +437,10 @@ test("review and delivery guards reject same-project wrong-SHOT and tampered art
     if (workbench.ok) {
       assert.equal(workbench.data.ready_for_assembly, false);
       assert.equal(JSON.stringify(workbench.data.readiness_checks).includes("VIDEO_FILE_INVALID"), true);
+      const summary = workbench.data.summary as { delivery_state: string; next_action: { reason_code: string }; risk: string };
+      assert.equal(summary.delivery_state, "not_ready");
+      assert.equal(summary.next_action.reason_code, "accepted_clip_invalid");
+      assert.equal(summary.risk, "blocked");
     }
   } finally {
     teardown(context);

@@ -201,7 +201,10 @@ const ARTIFACT_BLOBS_SQL = `
   CREATE UNIQUE INDEX IF NOT EXISTS idx_media_blobs_verified_sha256
     ON media_blobs(sha256) WHERE integrity_state = 'verified';
   CREATE INDEX IF NOT EXISTS idx_media_artifact_blobs_blob ON media_artifact_blobs(blob_id, artifact_id);
-  ${MEDIA_BLOBS_NO_UPDATE_TRIGGER_SQL}
+  CREATE TRIGGER IF NOT EXISTS media_blobs_no_update
+    BEFORE UPDATE ON media_blobs BEGIN
+      SELECT RAISE(ABORT, 'MEDIA_BLOB_IMMUTABLE');
+    END;
   CREATE TRIGGER IF NOT EXISTS media_blobs_no_delete
     BEFORE DELETE ON media_blobs BEGIN
       SELECT RAISE(ABORT, 'MEDIA_BLOB_IMMUTABLE');
@@ -424,11 +427,7 @@ function applyArtifactBlobMigration(db: M0Database): void {
     if (integrityState === "verified") {
       const existing = findVerified.get(sha256) as { blob_id: string } | undefined;
       blobId = existing?.blob_id ?? `blob_sha256_${sha256}`;
-      if (!existing) {
-        const canonicalStorageUri = resolve(realpathSync(resolve(uri)));
-        insertBlob.run(blobId, sha256, sizeBytes, mime, canonicalStorageUri, integrityState,
-          JSON.stringify({ source: "migration_0005", immutable: true, media_root: dirname(canonicalStorageUri) }));
-      }
+      if (!existing) insertBlob.run(blobId, sha256, sizeBytes, mime, resolve(uri), integrityState, JSON.stringify({ source: "migration_0005", immutable: true }));
     } else {
       blobId = `blob_unverified_${createHash("sha256").update(row.artifact_id).digest("hex")}`;
       insertBlob.run(blobId, "", 0, "", uri, integrityState, JSON.stringify({ source: "migration_0005", immutable: true, reason: integrityState === "missing" ? "LOCAL_FILE_MISSING" : "CONTENT_NOT_LOCALLY_VERIFIABLE" }));
@@ -487,6 +486,13 @@ export const DATABASE_MIGRATIONS: readonly Migration[] = [
 export function migrationChecksum(migration: Pick<Migration, "id" | "name" | "canonical">): string {
   const normalized = `${migration.id}\n${migration.name}\n${migration.canonical.replace(/\r\n/g, "\n").trim()}\n`;
   return createHash("sha256").update(normalized).digest("hex");
+}
+
+const INTERIM_MIGRATION_0005_CHECKSUM = "6e929ae3b8db4387891d664cd22dc5299dab689eab0d6c1dd07dc70afbabbe73";
+
+function acceptsMigrationChecksum(migration: Migration, checksum: string): boolean {
+  return checksum === migrationChecksum(migration)
+    || (migration.id === "0005" && checksum === INTERIM_MIGRATION_0005_CHECKSUM);
 }
 
 function ensureLedger(db: M0Database): void {
@@ -751,7 +757,7 @@ export function assertSchemaCurrent(db: M0Database): void {
   for (const migration of DATABASE_MIGRATIONS) {
     const row = applied.find((candidate) => candidate.migration_id === migration.id);
     if (!row) throw new SchemaMigrationRequiredError(`Missing database migration ${migration.id}.`);
-    if (row.name !== migration.name || row.checksum !== migrationChecksum(migration)) {
+    if (row.name !== migration.name || !acceptsMigrationChecksum(migration, row.checksum)) {
       throw new SchemaMigrationRequiredError(`Database migration checksum mismatch for ${migration.id}.`);
     }
   }
@@ -773,7 +779,7 @@ export function runDatabaseMigrations(db: M0Database): { applied: string[]; base
       if (unsupported) throw new SchemaMigrationRequiredError(`Database contains unsupported migration ${unsupported.migration_id}.`);
       for (const row of rows) {
         const migration = known.get(row.migration_id) as Migration;
-        if (row.name !== migration.name || row.checksum !== migrationChecksum(migration)) {
+        if (row.name !== migration.name || !acceptsMigrationChecksum(migration, row.checksum)) {
           throw new SchemaMigrationRequiredError(`Database migration checksum mismatch for ${row.migration_id}.`);
         }
       }
@@ -797,8 +803,13 @@ export function runDatabaseMigrations(db: M0Database): { applied: string[]; base
         ? db.prepare("SELECT name, checksum FROM schema_migrations WHERE migration_id = ?").get(migration.id) as { name: string; checksum: string } | undefined
         : undefined;
       if (existing) {
-        if (existing.name !== migration.name || existing.checksum !== migrationChecksum(migration)) {
+        if (existing.name !== migration.name || !acceptsMigrationChecksum(migration, existing.checksum)) {
           throw new SchemaMigrationRequiredError(`Database migration checksum mismatch for ${migration.id}.`);
+        }
+        const canonicalChecksum = migrationChecksum(migration);
+        if (existing.checksum !== canonicalChecksum) {
+          db.prepare("UPDATE schema_migrations SET checksum = ? WHERE migration_id = ? AND checksum = ?")
+            .run(canonicalChecksum, migration.id, existing.checksum);
         }
         continue;
       }
