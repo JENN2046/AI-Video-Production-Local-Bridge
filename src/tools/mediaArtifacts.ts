@@ -529,6 +529,26 @@ function ensureSafeMediaRoot(mediaRoot: string): void {
   if (comparable(canonical) !== comparable(root)) throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
 }
 
+function ensureSafeActivationRoots(mediaRoot: string, create: boolean): ReturnType<typeof activationRoots> {
+  const root = resolve(mediaRoot);
+  if (create) ensureSafeMediaRoot(root);
+  if (!existsSync(root)) {
+    if (!create) return activationRoots(root);
+    throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
+  }
+  if (lstatSync(root).isSymbolicLink() || !statSync(root).isDirectory()) throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
+  const canonicalRoot = resolve(realpathSync(root));
+  const roots = activationRoots(root);
+  for (const directory of [roots.activation, roots.staging, roots.pending, roots.quarantine, roots.journal]) {
+    if (create && !existsSync(directory)) mkdirSync(directory);
+    if (!existsSync(directory)) continue;
+    if (lstatSync(directory).isSymbolicLink() || !statSync(directory).isDirectory()) throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
+    const canonicalDirectory = resolve(realpathSync(directory));
+    if (!isPathInside(canonicalDirectory, canonicalRoot)) throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
+  }
+  return roots;
+}
+
 interface MediaActivationMarker {
   version: 1;
   activation_id: string;
@@ -553,7 +573,7 @@ interface MediaStagingOwner {
 }
 
 function stagingOwnerPath(artifactId: string): string {
-  const roots = activationRoots(paths.mediaRoot);
+  const roots = ensureSafeActivationRoots(paths.mediaRoot, false);
   const digest = createHash("sha256").update(artifactId).digest("hex");
   const target = resolve(roots.journal, `staging-owner-${digest}.json`);
   if (!isPathInside(target, roots.journal) || hasExistingSymlinkAncestor(target, roots.activation)) throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
@@ -561,8 +581,9 @@ function stagingOwnerPath(artifactId: string): string {
 }
 
 function claimStagingOwnership(artifact: MediaArtifact, mediaRoot: string): ToolError | null {
-  const roots = activationRoots(paths.mediaRoot);
-  mkdirSync(roots.journal, { recursive: true });
+  let roots: ReturnType<typeof activationRoots>;
+  try { roots = ensureSafeActivationRoots(paths.mediaRoot, true); }
+  catch { return { code: "MEDIA_ACTIVATION_PATH_UNSAFE", message: "Media activation ownership storage is not app-controlled." }; }
   const target = stagingOwnerPath(artifact.artifact_id);
   const owner: MediaStagingOwner = {
     version: 1,
@@ -639,15 +660,14 @@ function writeToOwnedStaging(artifact: MediaArtifact, bytes: Buffer, mediaRoot =
 
 function markerPath(activationId: string): string {
   if (!/^activation_[0-9a-f-]{36}$/i.test(activationId)) throw new Error("MEDIA_ACTIVATION_MARKER_INVALID");
-  const roots = activationRoots(paths.mediaRoot);
+  const roots = ensureSafeActivationRoots(paths.mediaRoot, false);
   const target = resolve(roots.journal, `${activationId}.json`);
   if (!isPathInside(target, roots.journal) || hasExistingSymlinkAncestor(target, roots.activation)) throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
   return target;
 }
 
 function writeActivationMarker(marker: MediaActivationMarker): string {
-  const roots = activationRoots(paths.mediaRoot);
-  mkdirSync(roots.journal, { recursive: true });
+  const roots = ensureSafeActivationRoots(paths.mediaRoot, true);
   const target = markerPath(marker.activation_id);
   const temporary = `${target}.tmp`;
   writeFileSync(temporary, `${JSON.stringify(marker)}\n`, { encoding: "utf8", flag: "wx" });
@@ -742,12 +762,7 @@ function commitStagedMediaArtifact(
 ): RegisterMediaArtifactResult {
   const activationId = `activation_${randomUUID()}`;
   const mediaRoot = resolve(options.media_root ?? paths.mediaRoot);
-  ensureSafeMediaRoot(mediaRoot);
-  const roots = activationRoots(mediaRoot);
-  mkdirSync(roots.staging, { recursive: true });
-  mkdirSync(roots.pending, { recursive: true });
-  mkdirSync(roots.quarantine, { recursive: true });
-  mkdirSync(roots.journal, { recursive: true });
+  const roots = ensureSafeActivationRoots(mediaRoot, true);
   const stagingPath = stagedPathForArtifact(artifact, mediaRoot);
   const pendingPath = pendingPathForArtifact(artifact, mediaRoot);
   const finalPath = resolve(artifact.storage.uri);
@@ -847,19 +862,15 @@ export function activateLocalMediaArtifact(
     return { ok: false, error: { code: "MEDIA_ACTIVATION_FILE_UNREADABLE", message: "Activation source file is not a regular readable file." } };
   }
   const mediaRoot = resolve(input.media_root ?? paths.mediaRoot);
-  ensureSafeMediaRoot(mediaRoot);
-  const roots = activationRoots(mediaRoot);
-  mkdirSync(roots.staging, { recursive: true });
-  mkdirSync(roots.pending, { recursive: true });
-  mkdirSync(roots.quarantine, { recursive: true });
-  mkdirSync(roots.journal, { recursive: true });
+  try { ensureSafeActivationRoots(mediaRoot, true); }
+  catch { return { ok: false, error: { code: "MEDIA_ACTIVATION_PATH_UNSAFE", message: "Media activation directories are not app-controlled." } }; }
   const stageError = copyToOwnedStaging(input.artifact, sourcePath, mediaRoot, input.after_staging_written);
   if (stageError) return { ok: false, error: stageError };
   return commitStagedMediaArtifact(db, input.artifact, input.allow_status_transition === true, { after_journal_staged: input.after_journal_staged, after_pending_placed: input.after_pending_placed, after_file_placed: input.after_file_placed, media_root: mediaRoot });
 }
 
 function activationMarkerPaths(): string[] {
-  const roots = activationRoots(paths.mediaRoot);
+  const roots = ensureSafeActivationRoots(paths.mediaRoot, false);
   if (!existsSync(roots.journal)) return [];
   if (lstatSync(roots.journal).isSymbolicLink() || !statSync(roots.journal).isDirectory()) throw new Error("MEDIA_ACTIVATION_JOURNAL_UNSAFE");
   return readdirSync(roots.journal, { withFileTypes: true })
@@ -868,7 +879,7 @@ function activationMarkerPaths(): string[] {
 }
 
 function stagingOwnerPaths(): string[] {
-  const roots = activationRoots(paths.mediaRoot);
+  const roots = ensureSafeActivationRoots(paths.mediaRoot, false);
   if (!existsSync(roots.journal)) return [];
   if (lstatSync(roots.journal).isSymbolicLink() || !statSync(roots.journal).isDirectory()) throw new Error("MEDIA_ACTIVATION_JOURNAL_UNSAFE");
   return readdirSync(roots.journal, { withFileTypes: true })

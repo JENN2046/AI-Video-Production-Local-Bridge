@@ -278,6 +278,44 @@ test("verified Blob provenance preserves a caller-controlled custom media root",
   }
 });
 
+test("activation rejects symlinked activation roots and immediate subdirectories", (context) => {
+  const root = mkdtempSync(join(tmpdir(), "media-activation-symlink-root-"));
+  const outside = join(root, "outside");
+  const mediaRoot = join(root, "media");
+  const activationPath = join(mediaRoot, ".activation");
+  const stagingPath = join(activationPath, "staging");
+  const db = openM0Database(":memory:");
+  mkdirSync(outside, { recursive: true });
+  mkdirSync(mediaRoot, { recursive: true });
+  const artifact = preparedArtifact();
+  artifact.storage.uri = join(mediaRoot, "artifacts", "images", `${artifact.artifact_id}.png`);
+  artifact.storage.filename = `${artifact.artifact_id}.png`;
+  try {
+    try { symlinkSync(outside, activationPath, "junction"); }
+    catch (error) {
+      context.skip(`Directory symlinks are unavailable: ${error instanceof Error ? error.message : "SYMLINK_UNAVAILABLE"}`);
+      return;
+    }
+    const rootResult = activateLocalMediaArtifact({ artifact: structuredClone(artifact), source_path: IMAGE_FIXTURE, media_root: mediaRoot }, db);
+    assert.equal(rootResult.ok, false);
+    if (!rootResult.ok) assert.equal(rootResult.error.code, "MEDIA_ACTIVATION_PATH_UNSAFE");
+    assert.equal(readdirSync(outside).length, 0);
+
+    rmSync(activationPath, { force: true });
+    mkdirSync(activationPath);
+    symlinkSync(outside, stagingPath, "junction");
+    const childResult = activateLocalMediaArtifact({ artifact: structuredClone(artifact), source_path: IMAGE_FIXTURE, media_root: mediaRoot }, db);
+    assert.equal(childResult.ok, false);
+    if (!childResult.ok) assert.equal(childResult.error.code, "MEDIA_ACTIVATION_PATH_UNSAFE");
+    assert.equal(readdirSync(outside).length, 0);
+  } finally {
+    db.close();
+    if (existsSync(stagingPath)) rmSync(stagingPath, { force: true });
+    if (existsSync(activationPath)) rmSync(activationPath, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("default recovery discovers an orphan marker for a custom media root", () => {
   const root = mkdtempSync(join(tmpdir(), "media-activation-custom-orphan-"));
   const mediaRoot = join(root, "media");
