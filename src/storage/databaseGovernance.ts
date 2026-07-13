@@ -182,7 +182,7 @@ export function checkDatabase(sqlitePath = paths.sqlitePath): DatabaseCheckResul
     }
     const pendingMediaActivations = scalarCount(db, "SELECT COUNT(*) AS count FROM media_activation_journal WHERE state IN ('staged','file_placed')", errors);
     const quarantinedMediaActivations = scalarCount(db, "SELECT COUNT(*) AS count FROM media_activation_journal WHERE state = 'failed'", errors);
-    const pass = quickCheck === "ok" && schemaCurrent && errors.length === 0 && invalidJsonRows === 0 && structuredDriftRows === 0 && orphanRows === 0 && missingMediaFiles === 0 && mediaIntegrityErrors === 0 && pendingMediaActivations === 0;
+    const pass = quickCheck === "ok" && schemaCurrent && errors.length === 0 && invalidJsonRows === 0 && structuredDriftRows === 0 && orphanRows === 0 && missingMediaFiles === 0 && mediaIntegrityErrors === 0 && pendingMediaActivations === 0 && quarantinedMediaActivations === 0;
     return { result: pass ? "PASS" : "FAIL", quick_check: quickCheck, schema_current: schemaCurrent, invalid_json_rows: invalidJsonRows, structured_drift_rows: structuredDriftRows, orphan_rows: orphanRows, missing_media_files: missingMediaFiles, media_integrity_errors: mediaIntegrityErrors, pending_media_activations: pendingMediaActivations, quarantined_media_activations: quarantinedMediaActivations, check_errors: errors.length };
   } finally {
     db.close();

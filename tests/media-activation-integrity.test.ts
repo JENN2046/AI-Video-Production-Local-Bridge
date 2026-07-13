@@ -80,6 +80,9 @@ test("activation never overwrites or quarantines a pre-existing final path", () 
     assert.equal(readFileSync(artifact.storage.uri).equals(existingBytes), true);
     const journal = db.prepare("SELECT state, error_code FROM media_activation_journal WHERE artifact_id = ?").get(artifact.artifact_id) as { state: string; error_code: string };
     assert.deepEqual({ ...journal }, { state: "failed", error_code: "MEDIA_ACTIVATION_FINAL_PATH_EXISTS" });
+    const checked = checkDatabase(sqlitePath);
+    assert.equal(checked.result, "FAIL");
+    assert.equal(checked.quarantined_media_activations, 1);
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });
