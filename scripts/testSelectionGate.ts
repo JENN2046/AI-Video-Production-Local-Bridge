@@ -1,3 +1,5 @@
+import ts from "typescript";
+
 export type TestSuiteClassification = "mandatory" | "historical_non_runtime";
 
 export interface TestSuiteGroup {
@@ -29,15 +31,15 @@ export interface RemediationSuite {
   case_name: string;
 }
 
-export const REQUIRED_REMEDIATION_SUITES: ReadonlyArray<Pick<RemediationSuite, "id" | "stage" | "kind">> = [
-  { id: "sr1-artifact-blob-faults", stage: "SR1", kind: "fault_injection" },
-  { id: "sr1-legacy-migration-copy", stage: "SR1", kind: "migration_copy" },
-  { id: "sr2-provider-contract-faults", stage: "SR2", kind: "fault_injection" },
-  { id: "sr2-worker-outcome-boundary", stage: "SR2", kind: "boundary" },
-  { id: "sr3-activation-recovery-faults", stage: "SR3", kind: "fault_injection" },
-  { id: "sr3-integrity-migration-copy", stage: "SR3", kind: "migration_copy" },
-  { id: "sr4-reference-readiness-faults", stage: "SR4", kind: "fault_injection" },
-  { id: "sr4-webgpt-cross-shot-boundary", stage: "SR4", kind: "boundary" }
+export const REQUIRED_REMEDIATION_SUITES: ReadonlyArray<RemediationSuite> = [
+  { id: "sr1-artifact-blob-faults", stage: "SR1", kind: "fault_injection", path: "tests/artifact-blob-boundary.test.ts", npm_script: "test:foundation-boundaries", ci_step: "Foundation and media boundary tests", case_name: "cross-SHOT reuse and stale concurrent binding attempts fail closed" },
+  { id: "sr1-legacy-migration-copy", stage: "SR1", kind: "migration_copy", path: "tests/artifact-blob-boundary.test.ts", npm_script: "test:foundation-boundaries", ci_step: "Foundation and media boundary tests", case_name: "v2-4 migration derives Blob facts from local bytes and fails closed on structured drift" },
+  { id: "sr2-provider-contract-faults", stage: "SR2", kind: "fault_injection", path: "tests/provider-capability-contract.test.ts", npm_script: "test:provider-boundaries", ci_step: "Provider and transfer safety tests", case_name: "Provider capability key rejects model, duration, resolution, and aspect drift" },
+  { id: "sr2-worker-outcome-boundary", stage: "SR2", kind: "boundary", path: "tests/workbench-v2-domain.test.ts", npm_script: "test:v2", ci_step: "Workbench V2 domain tests", case_name: "provider task persistence failure enters manual reconciliation without losing the paid task ID" },
+  { id: "sr3-activation-recovery-faults", stage: "SR3", kind: "fault_injection", path: "tests/media-activation-integrity.test.ts", npm_script: "test:foundation-boundaries", ci_step: "Foundation and media boundary tests", case_name: "recovery removes an activation-owned duplicate final after Blob dedupe" },
+  { id: "sr3-integrity-migration-copy", stage: "SR3", kind: "migration_copy", path: "tests/database-governance.test.ts", npm_script: "test:db", ci_step: "Database governance tests", case_name: "migration 0006 backfills active legacy Artifact facts from the verified Blob" },
+  { id: "sr4-reference-readiness-faults", stage: "SR4", kind: "fault_injection", path: "tests/workbench-v2-domain.test.ts", npm_script: "test:v2", ci_step: "Workbench V2 domain tests", case_name: "generation preflight rejects a storyboard Artifact bound to another SHOT" },
+  { id: "sr4-webgpt-cross-shot-boundary", stage: "SR4", kind: "boundary", path: "tests/webgpt-v4-domain.test.ts", npm_script: "test:webgpt:v4", ci_step: "WebGPT V4 integration tests", case_name: "review and delivery guards reject same-project wrong-SHOT and tampered artifacts" }
 ];
 
 export interface TestSuiteCatalog {
@@ -53,6 +55,7 @@ export interface TestSelectionAuditInput {
   source_texts: Record<string, string>;
   package_scripts: Record<string, string>;
   workflow_text: string;
+  required_remediation_suites?: ReadonlyArray<RemediationSuite>;
 }
 
 function normalizePath(value: string): string {
@@ -121,8 +124,31 @@ function packageScriptSelectsPath(command: string, sourcePath: string): boolean 
 }
 
 function sourceContainsNamedCase(source: string, caseName: string): boolean {
-  const escaped = caseName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`\\b(?:test|it)\\s*\\(\\s*["'\`]${escaped}["'\`]`).test(source);
+  const sourceFile = ts.createSourceFile("selection-gate-case.ts", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  let found = false;
+  const visit = (node: ts.Node): void => {
+    if (found) return;
+    if (ts.isCallExpression(node)
+      && ts.isIdentifier(node.expression)
+      && (node.expression.text === "test" || node.expression.text === "it")) {
+      const name = node.arguments[0];
+      const nameMatches = name && (ts.isStringLiteral(name) || ts.isNoSubstitutionTemplateLiteral(name)) && name.text === caseName;
+      if (nameMatches) {
+        const options = node.arguments[1];
+        const disabled = options && ts.isObjectLiteralExpression(options) && options.properties.some((property) => {
+          if (ts.isShorthandPropertyAssignment(property)) return property.name.text === "skip" || property.name.text === "todo";
+          if (!ts.isPropertyAssignment(property)) return false;
+          const propertyName = ts.isIdentifier(property.name) || ts.isStringLiteral(property.name) ? property.name.text : "";
+          if (propertyName !== "skip" && propertyName !== "todo") return false;
+          return property.initializer.kind !== ts.SyntaxKind.FalseKeyword;
+        });
+        if (!disabled) found = true;
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return found;
 }
 
 export function auditTestSelection(input: TestSelectionAuditInput): string[] {
@@ -201,13 +227,19 @@ export function auditTestSelection(input: TestSelectionAuditInput): string[] {
       errors.push(`REMEDIATION_CASE_MISSING: ${suite.id} -> ${suite.case_name || "<missing>"}`);
     }
   }
-  const requiredRemediation = new Map(REQUIRED_REMEDIATION_SUITES.map((suite) => [suite.id, suite]));
+  const requiredSuites = input.required_remediation_suites ?? REQUIRED_REMEDIATION_SUITES;
+  const requiredRemediation = new Map(requiredSuites.map((suite) => [suite.id, suite]));
   const actualRemediation = new Map(input.catalog.remediation_suites.map((suite) => [suite.id, suite]));
-  for (const required of REQUIRED_REMEDIATION_SUITES) {
+  for (const required of requiredSuites) {
     const actual = actualRemediation.get(required.id);
     if (!actual) {
       errors.push(`REMEDIATION_SUITE_MISSING: ${required.id}`);
-    } else if (actual.stage !== required.stage || actual.kind !== required.kind) {
+    } else if (actual.stage !== required.stage
+      || actual.kind !== required.kind
+      || normalizePath(actual.path) !== normalizePath(required.path)
+      || actual.npm_script !== required.npm_script
+      || actual.ci_step !== required.ci_step
+      || actual.case_name !== required.case_name) {
       errors.push(`REMEDIATION_SUITE_SIGNATURE_MISMATCH: ${required.id}`);
     }
   }
