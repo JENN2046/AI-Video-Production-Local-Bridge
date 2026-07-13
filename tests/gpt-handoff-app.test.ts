@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
@@ -11,6 +11,7 @@ import {
   getProjectStatus,
   openM0Database,
   paths,
+  recoverMediaActivations,
   scanGptHandoffImports
 } from "../src/index.js";
 
@@ -170,6 +171,47 @@ test("M1.5 prevalidates all shots before registering any media artifact", () => 
     assert.equal(result.report.imported_artifacts.length, 0);
     const createdProject = db.prepare("SELECT project_id FROM projects WHERE json_extract(data_json, '$.title') = ?").get(projectTitle);
     assert.equal(createdProject, undefined);
+  } finally {
+    db.close();
+  }
+});
+
+test("M1.5 rollback retains activation recovery evidence when file cleanup fails", () => {
+  const db = openM0Database();
+  const runId = randomUUID().slice(0, 8);
+  const validImport = copyTestImport(runId, 1);
+  appendFileSync(join(paths.importsRoot, validImport), Buffer.from(`unique-${runId}`, "utf8"));
+  try {
+    const result = freezeGptHandoffStoryboardPackage(
+      {
+        project_title: `M1.5 Rollback Recovery ${runId}`,
+        approved_by_user: true,
+        write_report: false,
+        shots: [{
+          import_filename: validImport,
+          order: 1,
+          duration_seconds: 2,
+          shot_description: "Force rollback after activation.",
+          video_prompt: "Preserve the marker until cleanup succeeds."
+        }]
+      },
+      db,
+      {
+        after_artifact_activated: () => { throw new Error("INJECTED_HANDOFF_ROLLBACK"); },
+        remove_imported_artifact: () => { throw new Error("INJECTED_CLEANUP_FAILURE"); }
+      }
+    );
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.error.code, "HANDOFF_FREEZE_FAILED");
+    assert.equal(result.report.imported_artifacts.length, 1);
+    const imported = result.report.imported_artifacts[0];
+    assert.equal(existsSync(imported.storage_uri), true);
+    assert.equal(getMediaArtifact(db, imported.artifact_id), null);
+
+    const recovered = recoverMediaActivations(db);
+    assert.equal(recovered.failed.some((failure) => failure.code === "MEDIA_ACTIVATION_DB_RECORD_MISSING"), true);
+    assert.equal(existsSync(imported.storage_uri), false);
   } finally {
     db.close();
   }
