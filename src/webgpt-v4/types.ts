@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 
-export const WEBGPT_V4_VERSION = "webgpt-v4.1.0";
+export const WEBGPT_V4_VERSION = "webgpt-v4.1.1";
 
 export const WEBGPT_V4_SCOPES = [
   "projects.read",

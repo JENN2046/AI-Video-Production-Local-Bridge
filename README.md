@@ -2,7 +2,7 @@
 
 AI Video Production Workspace 是面向 Jenn 本地 Windows 生产环境的、治理优先的 AI 视频生产系统 Beta。
 
-当前版本为 `0.1.0-beta.2`，MCP service 版本为 `webgpt-v4.1.0`。系统已经包含 Workbench V2、WebGPT V4、MCP App、真实 Provider 生成边界、审片、重生成、合成、交付、Memory 与媒体分析能力。它适合单人本地生产和受控验证，但尚不是成熟的无人值守生产服务或可直接公网部署的平台。
+当前候选版本为 `0.1.0-beta.3`，MCP service 版本为 `webgpt-v4.1.1`，数据库 schema 为 `workbench-v2-5`。系统已经包含 Workbench V2、WebGPT V4、MCP App、真实 Provider 生成边界、审片、重生成、合成、交付、Memory 与媒体分析能力。它适合单人本地生产和受控验证，但在 SR6 活动数据库重新验收完成前仍是候选基线，尚不是成熟的无人值守生产服务或可直接公网部署的平台。
 
 ## 当前边界
 
@@ -107,5 +107,7 @@ PID 状态和按次启动日志只写入 Git 忽略的 `ops/tools/workbench-runt
 ## 稳定化路线
 
 本版本冻结 WebGPT V5、Workbench V3 和新 Provider。GPT 服务面已完成默认 Readonly、严格 DTO、Compact context、离线 eval、Widget v2 metadata 和低披露 Telemetry 收敛；Auth0、Secure MCP Tunnel、外部 HTTPS、媒体外部开放、Windows 自动启动与真实 Provider canary 仍是后续独立 gate。
+
+SR0–SR5 已合入 `main`。SR6 的 disposable Stage 1 已使用隔离数据库完成迁移、完整性检查、备份恢复、preflight 和两轮启停验收，脱敏证据见 [SR6 Disposable Database Acceptance](ops/reports/2026-07-13-sr6-disposable-acceptance.md)。这不授权访问活动 `data/app.sqlite`；活动库迁移与重新验收仍需要 Jenn 的单独明确授权，完成前 `0.1.0-beta.3` 保持候选状态。
 
 详见 [当前状态](CURRENT_STATE.md)、[Stabilization Remediation](docs/STABILIZATION_REMEDIATION.md)、[GPT Service Capability Hardening](docs/GPT_SERVICE_CAPABILITY_HARDENING.md)、[架构](docs/ARCHITECTURE.md) 和 [Stabilization Release v2 taskbook](docs/STABILIZATION_RELEASE_V2.md)。

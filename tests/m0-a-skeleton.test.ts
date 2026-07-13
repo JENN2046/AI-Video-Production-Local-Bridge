@@ -1,8 +1,20 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 import { callM0ToolPlaceholder, listM0Tools, listTables, openM0Database, paths } from "../src/index.js";
+import { WORKBENCH_V2_SCHEMA_VERSION } from "../src/storage/workbenchV2Schema.js";
+import { WEBGPT_V4_VERSION } from "../src/webgpt-v4/types.js";
+
+test("SR6 candidate reports the remediated package, MCP, and schema identities", () => {
+  const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as { version: string };
+  const packageLock = JSON.parse(readFileSync("package-lock.json", "utf8")) as { version: string; packages: { "": { version: string } } };
+  assert.equal(packageJson.version, "0.1.0-beta.3");
+  assert.equal(packageLock.version, packageJson.version);
+  assert.equal(packageLock.packages[""].version, packageJson.version);
+  assert.equal(WEBGPT_V4_VERSION, "webgpt-v4.1.1");
+  assert.equal(WORKBENCH_V2_SCHEMA_VERSION, "workbench-v2-5");
+});
 
 test("M0-A initializes SQLite metadata storage", () => {
   const db = openM0Database();

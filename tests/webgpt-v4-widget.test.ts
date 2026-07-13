@@ -11,7 +11,7 @@ const toolOutput = (filename: string) => ({
     artifact: { artifact_id: "artifact_widget", artifact_type: "image", role: "storyboard_image", filename, mime_type: "image/png", metadata: { aspect_ratio: "9:16" } },
     analysis: { kind: "image", model_input: "original_image" }
   },
-  meta: { request_id: "widget", source_version: "webgpt-v4.1.0", updated_at: "2026-07-12T00:00:00.000Z" }
+  meta: { request_id: "widget", source_version: "webgpt-v4.1.1", updated_at: "2026-07-12T00:00:00.000Z" }
 });
 
 test("widget restores toolOutput, handles parent notifications, and rejects malformed or foreign messages", () => {
