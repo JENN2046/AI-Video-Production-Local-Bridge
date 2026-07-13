@@ -188,6 +188,12 @@ function detectMimeFromBytes(bytes: Buffer): string {
   return "";
 }
 
+function sameResolvedPath(first: string, second: string): boolean {
+  const left = resolve(first);
+  const right = resolve(second);
+  return process.platform === "win32" ? left.toLowerCase() === right.toLowerCase() : left === right;
+}
+
 function hashLocalFile(filePath: string): { sha256: string; size_bytes: number; header: Buffer } {
   const descriptor = openSync(filePath, "r");
   try {
@@ -781,7 +787,7 @@ function commitStagedMediaArtifact(
   db: M0Database,
   artifact: MediaArtifact,
   allowStatusTransition: boolean,
-  options: { after_journal_staged?: (stagingPath: string) => void; after_pending_placed?: (pendingPath: string) => void; after_file_placed?: (finalPath: string) => void; media_root?: string } = {}
+  options: { after_journal_staged?: (stagingPath: string) => void; after_pending_placed?: (pendingPath: string) => void; after_file_placed?: (finalPath: string) => void; remove_post_commit_file?: (finalPath: string) => void; media_root?: string } = {}
 ): RegisterMediaArtifactResult {
   const activationId = `activation_${randomUUID()}`;
   const mediaRoot = resolve(options.media_root ?? paths.mediaRoot);
@@ -857,8 +863,19 @@ function commitStagedMediaArtifact(
       if (manageTransaction) db.exec("ROLLBACK");
       throw error;
     }
-    if (manageTransaction) removeActivationMarker(activationId);
-    if (resolve(artifact.storage.uri) !== finalPath && existsSync(finalPath)) rmSync(finalPath, { force: true });
+    if (manageTransaction) {
+      let cleanupComplete = true;
+      if (resolve(artifact.storage.uri) !== finalPath && existsSync(finalPath)) {
+        try {
+          if (options.remove_post_commit_file) options.remove_post_commit_file(finalPath);
+          else rmSync(finalPath, { force: true });
+        } catch { cleanupComplete = false; }
+        if (existsSync(finalPath)) cleanupComplete = false;
+      }
+      if (cleanupComplete) {
+        try { removeActivationMarker(activationId); } catch { /* committed marker cleanup is recoverable */ }
+      }
+    }
     return { ok: true, artifact };
   } catch (error) {
     if (error instanceof MediaActivationInjectedCrash) throw error.causeValue;
@@ -879,7 +896,7 @@ function commitStagedMediaArtifact(
 }
 
 export function activateLocalMediaArtifact(
-  input: { artifact: MediaArtifact; source_path: string; media_root?: string; allow_status_transition?: boolean; after_staging_written?: (stagingPath: string) => void; after_journal_staged?: (stagingPath: string) => void; after_pending_placed?: (pendingPath: string) => void; after_file_placed?: (finalPath: string) => void },
+  input: { artifact: MediaArtifact; source_path: string; media_root?: string; allow_status_transition?: boolean; after_staging_written?: (stagingPath: string) => void; after_journal_staged?: (stagingPath: string) => void; after_pending_placed?: (pendingPath: string) => void; after_file_placed?: (finalPath: string) => void; remove_post_commit_file?: (finalPath: string) => void },
   db = openM0Database()
 ): RegisterMediaArtifactResult {
   ensureM0Directories();
@@ -892,7 +909,7 @@ export function activateLocalMediaArtifact(
   catch { return { ok: false, error: { code: "MEDIA_ACTIVATION_PATH_UNSAFE", message: "Media activation directories are not app-controlled." } }; }
   const stageError = copyToOwnedStaging(input.artifact, sourcePath, mediaRoot, input.after_staging_written);
   if (stageError) return { ok: false, error: stageError };
-  return commitStagedMediaArtifact(db, input.artifact, input.allow_status_transition === true, { after_journal_staged: input.after_journal_staged, after_pending_placed: input.after_pending_placed, after_file_placed: input.after_file_placed, media_root: mediaRoot });
+  return commitStagedMediaArtifact(db, input.artifact, input.allow_status_transition === true, { after_journal_staged: input.after_journal_staged, after_pending_placed: input.after_pending_placed, after_file_placed: input.after_file_placed, remove_post_commit_file: input.remove_post_commit_file, media_root: mediaRoot });
 }
 
 function activationMarkerPaths(): string[] {
@@ -981,7 +998,7 @@ function readActivationMarker(filePath: string): MediaActivationMarker {
     || typeof marker.artifact_json !== "string"
     || markerPath(marker.activation_id) !== target) throw new Error("MEDIA_ACTIVATION_MARKER_INVALID");
   const root = resolve(marker.media_root);
-  const roots = activationRoots(root);
+  const roots = ensureSafeActivationRoots(root, false);
   if (existsSync(root)) {
     const canonicalRoot = resolve(realpathSync(root));
     const rootMatches = process.platform === "win32" ? canonicalRoot.toLowerCase() === root.toLowerCase() : canonicalRoot === root;
@@ -997,7 +1014,10 @@ function readActivationMarker(filePath: string): MediaActivationMarker {
     || artifact.source.sha256 !== marker.expected_sha256
     || !isPathInside(resolve(marker.staging_path), roots.staging)
     || !isPathInside(resolve(marker.pending_path), roots.pending)
-    || !isPathInside(resolve(marker.final_path), root)) throw new Error("MEDIA_ACTIVATION_MARKER_INVALID");
+    || !isPathInside(resolve(marker.final_path), root)
+    || hasExistingSymlinkAncestor(resolve(marker.staging_path), roots.activation)
+    || hasExistingSymlinkAncestor(resolve(marker.pending_path), roots.activation)
+    || hasExistingSymlinkAncestor(resolve(marker.final_path), root)) throw new Error("MEDIA_ACTIVATION_MARKER_INVALID");
   return marker as MediaActivationMarker;
 }
 
@@ -1056,12 +1076,27 @@ export function cleanupCommittedMediaActivationMarkers(db: M0Database, artifactI
     try {
       const marker = readActivationMarker(filePath);
       if (!wanted.has(marker.artifact_id)) continue;
-      const row = db.prepare(`SELECT j.state FROM media_activation_journal j
+      const row = db.prepare(`SELECT j.state, j.final_path FROM media_activation_journal j
         JOIN media_artifacts a ON a.artifact_id = j.artifact_id
-        WHERE j.activation_id = ?`).get(marker.activation_id) as { state: string } | undefined;
-      if (row?.state === "committed") rmSync(filePath, { force: true });
+        WHERE j.activation_id = ?`).get(marker.activation_id) as { state: string; final_path: string } | undefined;
+      if (row?.state === "committed") cleanupCommittedActivationMarker(marker, filePath, row.final_path);
     } catch { /* startup recovery handles markers that cannot be safely cleared */ }
   }
+}
+
+function cleanupCommittedActivationMarker(marker: MediaActivationMarker, filePath: string, authoritativeFinalPath: string): boolean {
+  for (const candidate of [marker.final_path, marker.pending_path, marker.staging_path]) {
+    const target = resolve(candidate);
+    if (sameResolvedPath(target, authoritativeFinalPath) || !existsSync(target)) continue;
+    try {
+      if (lstatSync(target).isSymbolicLink() || !statSync(target).isFile()) return false;
+      rmSync(target, { force: true });
+    } catch { return false; }
+    if (existsSync(target)) return false;
+  }
+  try { rmSync(filePath, { force: true }); }
+  catch { return false; }
+  return !existsSync(filePath);
 }
 
 function reconcileUnrecordedActivationMarkers(db: M0Database, result: MediaActivationRecoveryResult): void {
@@ -1073,8 +1108,14 @@ function reconcileUnrecordedActivationMarkers(db: M0Database, result: MediaActiv
       result.failed.push({ activation_id: basename(filePath, ".json"), code: "MEDIA_ACTIVATION_MARKER_INVALID" });
       continue;
     }
-    const existing = db.prepare("SELECT state FROM media_activation_journal WHERE activation_id = ?").get(marker.activation_id) as { state: string } | undefined;
-    if (existing?.state === "committed" || existing?.state === "failed") {
+    const existing = db.prepare("SELECT state, final_path FROM media_activation_journal WHERE activation_id = ?").get(marker.activation_id) as { state: string; final_path: string } | undefined;
+    if (existing?.state === "committed") {
+      if (!cleanupCommittedActivationMarker(marker, filePath, existing.final_path)) {
+        result.failed.push({ activation_id: marker.activation_id, code: "MEDIA_ACTIVATION_POST_COMMIT_CLEANUP_FAILED" });
+      }
+      continue;
+    }
+    if (existing?.state === "failed") {
       rmSync(filePath, { force: true });
       continue;
     }
@@ -1198,10 +1239,7 @@ export function verifyMediaArtifactBytes(db: M0Database, artifact: MediaArtifact
   }
   const localPath = resolve(blob.storage_uri);
   const artifactPath = resolve(artifact.storage.uri);
-  const pathsMatch = process.platform === "win32"
-    ? artifactPath.toLowerCase() === localPath.toLowerCase()
-    : artifactPath === localPath;
-  if (!pathsMatch) {
+  if (!sameResolvedPath(artifactPath, localPath)) {
     return { ok: false, error: { code: "MEDIA_BLOB_CONTENT_DRIFT", message: "Artifact storage URI differs from its authoritative MediaBlob." } };
   }
   const registeredRoot = typeof blob.provenance.media_root === "string" && isAbsolute(blob.provenance.media_root)

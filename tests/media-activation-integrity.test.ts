@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -116,6 +116,49 @@ test("blob dedupe keeps committed journal paths aligned with the authoritative B
     assert.equal(checked.structured_drift_rows, 0);
   } finally {
     if (storagePath) rmSync(storagePath, { force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("post-commit dedupe cleanup failure preserves activation success and recovers later", () => {
+  const root = mkdtempSync(join(tmpdir(), "media-activation-post-commit-cleanup-"));
+  const mediaRoot = join(root, "custom-media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  let sharedPath = "";
+  const artifact = preparedArtifact();
+  artifact.storage.uri = join(mediaRoot, "artifacts", "images", `${artifact.artifact_id}.png`);
+  artifact.storage.filename = `${artifact.artifact_id}.png`;
+  const activationOwnedFinal = artifact.storage.uri;
+  try {
+    const first = registerMediaArtifact({ artifact_type: "image", role: "storyboard_image", source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" } }, db);
+    assert.equal(first.ok, true);
+    if (!first.ok) return;
+    sharedPath = first.artifact.storage.uri;
+
+    const activated = activateLocalMediaArtifact({
+      artifact,
+      source_path: IMAGE_FIXTURE,
+      media_root: mediaRoot,
+      remove_post_commit_file: () => { throw new Error("INJECTED_POST_COMMIT_CLEANUP_FAILURE"); }
+    }, db);
+    assert.equal(activated.ok, true, activated.ok ? undefined : activated.error.code);
+    if (!activated.ok) return;
+    assert.equal(activated.artifact.storage.uri, sharedPath);
+    assert.equal(existsSync(activationOwnedFinal), true);
+    const row = db.prepare("SELECT activation_id, state FROM media_activation_journal WHERE artifact_id = ?").get(artifact.artifact_id) as { activation_id: string; state: string };
+    assert.equal(row.state, "committed");
+
+    const recovered = recoverMediaActivations(db);
+    assert.deepEqual(recovered.failed, []);
+    assert.equal(existsSync(activationOwnedFinal), false);
+    assert.equal(existsSync(sharedPath), true);
+    const stored = getMediaArtifact(db, artifact.artifact_id);
+    assert.equal(stored ? verifyMediaArtifactBytes(db, stored).ok : false, true);
+  } finally {
+    db.close();
+    if (sharedPath) rmSync(sharedPath, { force: true });
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -341,6 +384,48 @@ test("activation rejects symlinked activation roots and immediate subdirectories
     db.close();
     if (existsSync(stagingPath)) rmSync(stagingPath, { force: true });
     if (existsSync(activationPath)) rmSync(activationPath, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("recovery rejects marker paths whose media ancestor became a symlink", (context) => {
+  const root = mkdtempSync(join(tmpdir(), "media-marker-symlink-swap-"));
+  const mediaRoot = join(root, "media");
+  const outsideRoot = join(root, "outside");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  const artifact = preparedArtifact();
+  artifact.storage.uri = join(mediaRoot, "artifacts", "images", `${artifact.artifact_id}.png`);
+  artifact.storage.filename = `${artifact.artifact_id}.png`;
+  let activationId = "";
+  try {
+    db.exec("BEGIN IMMEDIATE");
+    assert.throws(() => activateLocalMediaArtifact({
+      artifact,
+      source_path: IMAGE_FIXTURE,
+      media_root: mediaRoot,
+      after_file_placed: () => { throw new Error("INJECTED_BEFORE_SYMLINK_SWAP"); }
+    }, db), /INJECTED_BEFORE_SYMLINK_SWAP/);
+    activationId = (db.prepare("SELECT activation_id FROM media_activation_journal WHERE artifact_id = ?").get(artifact.artifact_id) as { activation_id: string }).activation_id;
+    db.exec("ROLLBACK");
+
+    mkdirSync(outsideRoot, { recursive: true });
+    const originalArtifacts = join(mediaRoot, "artifacts");
+    const outsideArtifacts = join(outsideRoot, "artifacts");
+    renameSync(originalArtifacts, outsideArtifacts);
+    try { symlinkSync(outsideArtifacts, originalArtifacts, "junction"); }
+    catch (error) {
+      context.skip(`Directory symlinks are unavailable: ${error instanceof Error ? error.message : "SYMLINK_UNAVAILABLE"}`);
+      return;
+    }
+    const externalFile = join(outsideArtifacts, "images", `${artifact.artifact_id}.png`);
+    const recovered = recoverMediaActivations(db);
+    assert.equal(recovered.failed.some((failure) => failure.activation_id === activationId && failure.code === "MEDIA_ACTIVATION_MARKER_INVALID"), true);
+    assert.equal(existsSync(externalFile), true);
+  } finally {
+    db.close();
+    if (activationId) rmSync(join(paths.mediaActivationJournalRoot, `${activationId}.json`), { force: true });
     rmSync(root, { recursive: true, force: true });
   }
 });
