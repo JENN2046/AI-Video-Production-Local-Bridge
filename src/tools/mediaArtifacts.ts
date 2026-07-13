@@ -1211,7 +1211,17 @@ export function recoverMediaActivations(db = openM0Database()): MediaActivationR
         db.exec("ROLLBACK");
         throw error;
       }
-      try { removeActivationMarker(row.activation_id); } catch { /* committed DB state remains authoritative */ }
+      try {
+        const committedMarkerPath = markerPath(row.activation_id);
+        if (existsSync(committedMarkerPath)) {
+          const committedMarker = readActivationMarker(committedMarkerPath);
+          if (!cleanupCommittedActivationMarker(committedMarker, committedMarkerPath, artifact.storage.uri)) {
+            result.failed.push({ activation_id: row.activation_id, code: "MEDIA_ACTIVATION_POST_COMMIT_CLEANUP_FAILED" });
+          }
+        }
+      } catch {
+        result.failed.push({ activation_id: row.activation_id, code: "MEDIA_ACTIVATION_POST_COMMIT_CLEANUP_FAILED" });
+      }
       result.committed.push(row.activation_id);
     } catch (error) {
       const code = mediaActivationErrorCode(error);

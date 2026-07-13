@@ -163,6 +163,52 @@ test("post-commit dedupe cleanup failure preserves activation success and recove
   }
 });
 
+test("recovery removes an activation-owned duplicate final after Blob dedupe", () => {
+  const root = mkdtempSync(join(tmpdir(), "media-activation-recovery-dedupe-"));
+  const mediaRoot = join(root, "custom-media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  let sharedPath = "";
+  let activationId = "";
+  const artifact = preparedArtifact();
+  artifact.storage.uri = join(mediaRoot, "artifacts", "images", `${artifact.artifact_id}.png`);
+  artifact.storage.filename = `${artifact.artifact_id}.png`;
+  const activationOwnedFinal = artifact.storage.uri;
+  try {
+    const first = registerMediaArtifact({ artifact_type: "image", role: "storyboard_image", source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" } }, db);
+    assert.equal(first.ok, true);
+    if (!first.ok) return;
+    sharedPath = first.artifact.storage.uri;
+
+    assert.throws(() => activateLocalMediaArtifact({
+      artifact,
+      source_path: IMAGE_FIXTURE,
+      media_root: mediaRoot,
+      after_file_placed: () => { throw new Error("INJECTED_DUPLICATE_ACTIVATION_CRASH"); }
+    }, db), /INJECTED_DUPLICATE_ACTIVATION_CRASH/);
+    const row = db.prepare("SELECT activation_id, state FROM media_activation_journal WHERE artifact_id = ?").get(artifact.artifact_id) as { activation_id: string; state: string };
+    activationId = row.activation_id;
+    assert.equal(row.state, "file_placed");
+    assert.equal(existsSync(activationOwnedFinal), true);
+    assert.equal(existsSync(sharedPath), true);
+
+    const recovered = recoverMediaActivations(db);
+    assert.equal(recovered.committed.includes(activationId), true);
+    assert.equal(recovered.failed.some((failure) => failure.activation_id === activationId), false);
+    assert.equal(existsSync(activationOwnedFinal), false);
+    assert.equal(existsSync(sharedPath), true);
+    const stored = getMediaArtifact(db, artifact.artifact_id);
+    assert.equal(stored?.storage.uri, sharedPath);
+    assert.equal(stored ? verifyMediaArtifactBytes(db, stored).ok : false, true);
+  } finally {
+    if (activationId) discardMediaActivationMarkers([artifact.artifact_id]);
+    db.close();
+    if (sharedPath) rmSync(sharedPath, { force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("only one non-terminal activation may own an Artifact id", () => {
   const db = openM0Database();
   const artifact = preparedArtifact();
