@@ -29,6 +29,17 @@ export interface RemediationSuite {
   case_name: string;
 }
 
+export const REQUIRED_REMEDIATION_SUITES: ReadonlyArray<Pick<RemediationSuite, "id" | "stage" | "kind">> = [
+  { id: "sr1-artifact-blob-faults", stage: "SR1", kind: "fault_injection" },
+  { id: "sr1-legacy-migration-copy", stage: "SR1", kind: "migration_copy" },
+  { id: "sr2-provider-contract-faults", stage: "SR2", kind: "fault_injection" },
+  { id: "sr2-worker-outcome-boundary", stage: "SR2", kind: "boundary" },
+  { id: "sr3-activation-recovery-faults", stage: "SR3", kind: "fault_injection" },
+  { id: "sr3-integrity-migration-copy", stage: "SR3", kind: "migration_copy" },
+  { id: "sr4-reference-readiness-faults", stage: "SR4", kind: "fault_injection" },
+  { id: "sr4-webgpt-cross-shot-boundary", stage: "SR4", kind: "boundary" }
+];
+
 export interface TestSuiteCatalog {
   version: 2;
   groups: TestSuiteGroup[];
@@ -187,6 +198,19 @@ export function auditTestSelection(input: TestSelectionAuditInput): string[] {
     if (!suite.case_name?.trim() || !sourceContainsNamedCase(input.source_texts[path] ?? "", suite.case_name)) {
       errors.push(`REMEDIATION_CASE_MISSING: ${suite.id} -> ${suite.case_name || "<missing>"}`);
     }
+  }
+  const requiredRemediation = new Map(REQUIRED_REMEDIATION_SUITES.map((suite) => [suite.id, suite]));
+  const actualRemediation = new Map(input.catalog.remediation_suites.map((suite) => [suite.id, suite]));
+  for (const required of REQUIRED_REMEDIATION_SUITES) {
+    const actual = actualRemediation.get(required.id);
+    if (!actual) {
+      errors.push(`REMEDIATION_SUITE_MISSING: ${required.id}`);
+    } else if (actual.stage !== required.stage || actual.kind !== required.kind) {
+      errors.push(`REMEDIATION_SUITE_SIGNATURE_MISMATCH: ${required.id}`);
+    }
+  }
+  for (const suite of input.catalog.remediation_suites) {
+    if (!requiredRemediation.has(suite.id)) errors.push(`REMEDIATION_SUITE_UNDECLARED: ${suite.id}`);
   }
   for (const stage of ["SR1", "SR2", "SR3", "SR4"] as const) {
     if (!remediationStages.has(stage)) errors.push(`REMEDIATION_STAGE_MISSING: ${stage}`);

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { auditTestSelection, type TestSelectionAuditInput, type TestSuiteCatalog } from "../scripts/testSelectionGate.js";
+import { auditTestSelection, REQUIRED_REMEDIATION_SUITES, type TestSelectionAuditInput, type TestSuiteCatalog } from "../scripts/testSelectionGate.js";
 
 const baseCatalog: TestSuiteCatalog = {
   version: 2,
@@ -9,12 +9,13 @@ const baseCatalog: TestSuiteCatalog = {
     { id: "selection", classification: "mandatory", paths: ["tests/test-selection-gate.test.ts"], npm_script: "test:selection-gate", ci_step: "Test selection gate" },
     { id: "provider", classification: "mandatory", paths: ["tests/provider.test.ts"], npm_script: "test:provider", ci_step: "Provider tests" }
   ],
-  remediation_suites: [
-    { id: "sr1-provider", stage: "SR1", kind: "fault_injection", path: "tests/provider.test.ts", npm_script: "test:provider", ci_step: "Provider tests", case_name: "provider remediation case" },
-    { id: "sr2-provider", stage: "SR2", kind: "boundary", path: "tests/provider.test.ts", npm_script: "test:provider", ci_step: "Provider tests", case_name: "provider remediation case" },
-    { id: "sr3-provider", stage: "SR3", kind: "migration_copy", path: "tests/provider.test.ts", npm_script: "test:provider", ci_step: "Provider tests", case_name: "provider remediation case" },
-    { id: "sr4-provider", stage: "SR4", kind: "boundary", path: "tests/provider.test.ts", npm_script: "test:provider", ci_step: "Provider tests", case_name: "provider remediation case" }
-  ]
+  remediation_suites: REQUIRED_REMEDIATION_SUITES.map((suite) => ({
+    ...suite,
+    path: "tests/provider.test.ts",
+    npm_script: "test:provider",
+    ci_step: "Provider tests",
+    case_name: "provider remediation case"
+  }))
 };
 
 function fixture(overrides: Partial<TestSelectionAuditInput> = {}): TestSelectionAuditInput {
@@ -125,11 +126,23 @@ test("selection catalog requires every remediation stage and a valid mandatory l
 
   const mismatch = fixture();
   mismatch.catalog.remediation_suites[0].ci_step = "Wrong provider step";
-  assert.ok(auditTestSelection(mismatch).includes("REMEDIATION_LANE_MISMATCH: sr1-provider"));
+  assert.ok(auditTestSelection(mismatch).includes("REMEDIATION_LANE_MISMATCH: sr1-artifact-blob-faults"));
 });
 
 test("selection catalog rejects a remediation row whose named regression case disappeared", () => {
   const input = fixture();
   input.source_texts["tests/provider.test.ts"] = 'test("different case", () => {})';
-  assert.ok(auditTestSelection(input).includes("REMEDIATION_CASE_MISSING: sr1-provider -> provider remediation case"));
+  assert.ok(auditTestSelection(input).includes("REMEDIATION_CASE_MISSING: sr1-artifact-blob-faults -> provider remediation case"));
+});
+
+test("selection catalog rejects removal or signature drift of a concrete remediation suite", () => {
+  const missing = fixture();
+  missing.catalog.remediation_suites = missing.catalog.remediation_suites.filter((suite) => suite.id !== "sr4-reference-readiness-faults");
+  assert.ok(auditTestSelection(missing).includes("REMEDIATION_SUITE_MISSING: sr4-reference-readiness-faults"));
+
+  const drift = fixture();
+  const suite = drift.catalog.remediation_suites.find((item) => item.id === "sr3-integrity-migration-copy");
+  assert.ok(suite);
+  if (suite) suite.kind = "boundary";
+  assert.ok(auditTestSelection(drift).includes("REMEDIATION_SUITE_SIGNATURE_MISMATCH: sr3-integrity-migration-copy"));
 });
