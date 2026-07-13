@@ -350,6 +350,16 @@ test("review and delivery guards reject same-project wrong-SHOT and tampered art
     saveProject(context.db, context.production);
     context.productionShot.accepted_clip_artifact_id = first.artifact.artifact_id;
     context.productionShot.review.approval_status = "approved";
+    saveShot(context.db, context.productionShot);
+    const incompleteWorkbench = getWorkbenchProjectWorkspace(context.production.project_id, "delivery", context.db, { touch_last_opened: false });
+    assert.equal(incompleteWorkbench.ok, true);
+    if (incompleteWorkbench.ok) {
+      assert.equal(incompleteWorkbench.data.ready_for_assembly, false);
+      const summary = incompleteWorkbench.data.summary as { blocker_count: number; blocker_reason: string; next_action: { reason_code: string }; risk: string };
+      assert.equal(summary.blocker_reason.includes("采纳片段无效"), false);
+      assert.notEqual(summary.next_action.reason_code, "accepted_clip_invalid");
+      assert.notEqual(summary.risk, "blocked");
+    }
     secondShot.clip_versions = [{ artifact_id: second.artifact.artifact_id, run_id: "run_second", attempt_number: 1, review_status: "approved" }];
     secondShot.accepted_clip_artifact_id = second.artifact.artifact_id;
     secondShot.review.approval_status = "approved";

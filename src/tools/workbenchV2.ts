@@ -735,7 +735,8 @@ export function getWorkbenchProjectWorkspace(
     })
     : null;
   const readyForAssembly = accepted_clips.length > 0 && accepted_clips.every((clip) => clip.artifact !== null);
-  const deliverySummary = withValidatedAssemblyReadiness(summary, readyForAssembly, accepted_clips.filter((clip) => clip.artifact === null).length);
+  const invalidAcceptedClipCount = accepted_clips.filter((clip) => clip.artifact_id && clip.artifact === null).length;
+  const deliverySummary = withValidatedAssemblyReadiness(summary, readyForAssembly, invalidAcceptedClipCount);
   return { ok: true, data: {
     ...base,
     summary: deliverySummary,
