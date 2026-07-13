@@ -201,7 +201,10 @@ const ARTIFACT_BLOBS_SQL = `
   CREATE UNIQUE INDEX IF NOT EXISTS idx_media_blobs_verified_sha256
     ON media_blobs(sha256) WHERE integrity_state = 'verified';
   CREATE INDEX IF NOT EXISTS idx_media_artifact_blobs_blob ON media_artifact_blobs(blob_id, artifact_id);
-  ${MEDIA_BLOBS_NO_UPDATE_TRIGGER_SQL}
+  CREATE TRIGGER IF NOT EXISTS media_blobs_no_update
+    BEFORE UPDATE ON media_blobs BEGIN
+      SELECT RAISE(ABORT, 'MEDIA_BLOB_IMMUTABLE');
+    END;
   CREATE TRIGGER IF NOT EXISTS media_blobs_no_delete
     BEFORE DELETE ON media_blobs BEGIN
       SELECT RAISE(ABORT, 'MEDIA_BLOB_IMMUTABLE');
@@ -424,11 +427,7 @@ function applyArtifactBlobMigration(db: M0Database): void {
     if (integrityState === "verified") {
       const existing = findVerified.get(sha256) as { blob_id: string } | undefined;
       blobId = existing?.blob_id ?? `blob_sha256_${sha256}`;
-      if (!existing) {
-        const canonicalStorageUri = resolve(realpathSync(resolve(uri)));
-        insertBlob.run(blobId, sha256, sizeBytes, mime, canonicalStorageUri, integrityState,
-          JSON.stringify({ source: "migration_0005", immutable: true, media_root: dirname(canonicalStorageUri) }));
-      }
+      if (!existing) insertBlob.run(blobId, sha256, sizeBytes, mime, resolve(uri), integrityState, JSON.stringify({ source: "migration_0005", immutable: true }));
     } else {
       blobId = `blob_unverified_${createHash("sha256").update(row.artifact_id).digest("hex")}`;
       insertBlob.run(blobId, "", 0, "", uri, integrityState, JSON.stringify({ source: "migration_0005", immutable: true, reason: integrityState === "missing" ? "LOCAL_FILE_MISSING" : "CONTENT_NOT_LOCALLY_VERIFIABLE" }));

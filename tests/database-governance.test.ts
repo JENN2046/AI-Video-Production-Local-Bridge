@@ -12,6 +12,8 @@ import { initializeWorkbenchV2Schema } from "../src/storage/workbenchV2Schema.js
 import { paths } from "../src/paths.js";
 import { persistMediaArtifact, transitionMediaArtifactStatus, type MediaArtifact } from "../src/tools/mediaArtifacts.js";
 
+const HISTORICAL_MIGRATION_0005_CHECKSUM = "92297a3ce2996e427b8a8e3dae39a25f33a294c29142b5ca723cdcd4700ad8b0";
+
 function tempRoot(): string {
   return mkdtempSync(join(tmpdir(), "ai-video-db-governance-"));
 }
@@ -330,18 +332,17 @@ test("migration 0006 backfills active legacy Artifact facts from the verified Bl
       FROM media_artifacts a JOIN media_artifact_blobs m ON m.artifact_id = a.artifact_id JOIN media_blobs b ON b.blob_id = m.blob_id
       WHERE a.artifact_id = ?`).get(artifact.artifact_id) as { data_json: string; sha256: string; detected_mime: string; storage_uri: string };
     assert.equal((JSON.parse(before.data_json) as typeof artifact).metadata.sha256, "legacy-placeholder");
-    db.exec("DROP TRIGGER media_blobs_no_update");
-    db.prepare("UPDATE media_blobs SET provenance_json = ? WHERE blob_id = (SELECT blob_id FROM media_artifact_blobs WHERE artifact_id = ?)")
-      .run(JSON.stringify({ source: "migration_0005", immutable: true }), artifact.artifact_id);
-    db.exec(`CREATE TRIGGER media_blobs_no_update BEFORE UPDATE ON media_blobs BEGIN
-      SELECT RAISE(ABORT, 'MEDIA_BLOB_IMMUTABLE');
-    END`);
+    const historicalBlob = db.prepare("SELECT provenance_json FROM media_blobs WHERE blob_id = (SELECT blob_id FROM media_artifact_blobs WHERE artifact_id = ?)")
+      .get(artifact.artifact_id) as { provenance_json: string };
+    assert.equal(Object.hasOwn(JSON.parse(historicalBlob.provenance_json) as Record<string, unknown>, "media_root"), false);
 
     db.exec(`CREATE TABLE schema_migrations (
       migration_id TEXT PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`);
     const insertLedger = db.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES (?, ?, ?)");
-    for (const migration of DATABASE_MIGRATIONS.slice(0, 5)) insertLedger.run(migration.id, migration.name, migrationChecksum(migration));
+    for (const migration of DATABASE_MIGRATIONS.slice(0, 4)) insertLedger.run(migration.id, migration.name, migrationChecksum(migration));
+    assert.equal(migrationChecksum(DATABASE_MIGRATIONS[4]), HISTORICAL_MIGRATION_0005_CHECKSUM);
+    insertLedger.run(DATABASE_MIGRATIONS[4].id, DATABASE_MIGRATIONS[4].name, HISTORICAL_MIGRATION_0005_CHECKSUM);
     const migrated = runDatabaseMigrations(db);
     assert.deepEqual(migrated.applied, ["0006"]);
 

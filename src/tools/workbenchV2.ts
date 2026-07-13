@@ -295,11 +295,19 @@ export function getWorkbenchProjectSummary(projectId: string, db = openM0Databas
   return result.items.find((item) => item.project.project_id === projectId) ?? null;
 }
 
+type SummaryAssemblyReadiness = "not_applicable" | "unverified" | "ready" | "invalid";
+
 function projectSummaryFromRow(project: Project, row: ProjectRow): WorkbenchProjectSummary {
   const meta = projectMetaFromRow(row);
-  const derived = deriveNextAction(project, row);
+  const assemblyReadiness: SummaryAssemblyReadiness = row.shot_count > 0
+    && row.accepted_count === row.shot_count
+    && !project.exports.final_video_artifact_id
+    ? "unverified"
+    : "not_applicable";
+  const derived = deriveNextAction(project, row, assemblyReadiness);
   const overrideValid = Boolean(
-    meta.next_action_override
+    assemblyReadiness !== "unverified"
+    && meta.next_action_override
     && meta.next_action_priority
     && meta.next_action_expires_at
     && new Date(meta.next_action_expires_at).getTime() > Date.now()
@@ -317,16 +325,18 @@ function projectSummaryFromRow(project: Project, row: ProjectRow): WorkbenchProj
     ? "delivered"
     : project.exports.final_video_artifact_id
       ? "final_review"
-      : row.shot_count > 0 && row.accepted_count === row.shot_count
-        ? "ready_to_assemble"
-        : "not_ready";
+      : "not_ready";
   const blockerParts: string[] = [];
   if (row.latest_failed_count > 0) blockerParts.push(`${row.latest_failed_count} 个生成失败`);
   if (row.missing_image_count > 0) blockerParts.push(`${row.missing_image_count} 个缺分镜图`);
   if (row.missing_prompt_count > 0) blockerParts.push(`${row.missing_prompt_count} 个缺提示词`);
   if (row.revision_needed_count > 0) blockerParts.push(`${row.revision_needed_count} 个需修改`);
   const totalBlockers = row.blocker_count + row.revision_needed_count + row.latest_failed_count;
-  const risk: "blocked" | "attention" | "clear" = totalBlockers > 0 ? "blocked" : row.active_run_count > 0 || row.review_pending_count > 0 ? "attention" : "clear";
+  const risk: "blocked" | "attention" | "clear" = totalBlockers > 0
+    ? "blocked"
+    : assemblyReadiness === "unverified" || row.active_run_count > 0 || row.review_pending_count > 0
+      ? "attention"
+      : "clear";
   return {
     project,
     meta,
@@ -342,7 +352,7 @@ function projectSummaryFromRow(project: Project, row: ProjectRow): WorkbenchProj
   };
 }
 
-function deriveNextAction(project: Project, row: ProjectRow): WorkbenchNextAction["derived"] {
+function deriveNextAction(project: Project, row: ProjectRow, assemblyReadiness: SummaryAssemblyReadiness = "not_applicable"): WorkbenchNextAction["derived"] {
   if (row.latest_failed_count > 0) return { label: "处理生成失败", reason_code: "generation_failed", priority: "urgent" };
   if (row.shot_count === 0) return { label: "创建第一个 SHOT", reason_code: "no_shots", priority: "high" };
   if (row.blocker_count > 0) return { label: "补齐分镜门禁", reason_code: "storyboard_blocked", priority: "urgent" };
@@ -351,9 +361,52 @@ function deriveNextAction(project: Project, row: ProjectRow): WorkbenchNextActio
   if (row.active_run_count > 0) return { label: "等待生成完成", reason_code: "generation_running", priority: "normal" };
   if (row.accepted_count < row.shot_count && row.review_pending_count === 0) return { label: "生成缺失 SHOT", reason_code: "generate_shot", priority: "high" };
   if (row.review_pending_count > 0) return { label: "审片", reason_code: "clip_review", priority: "high" };
-  if (row.accepted_count === row.shot_count && !project.exports.final_video_artifact_id) return { label: "合成交付", reason_code: "assemble", priority: "high" };
+  if (row.accepted_count === row.shot_count && !project.exports.final_video_artifact_id) {
+    if (assemblyReadiness === "ready") return { label: "合成交付", reason_code: "assemble", priority: "high" };
+    if (assemblyReadiness === "invalid") return { label: "修复无效采纳片段", reason_code: "accepted_clip_invalid", priority: "urgent" };
+    return { label: "验证合成就绪状态", reason_code: "assembly_readiness_required", priority: "high" };
+  }
   if (project.exports.final_video_artifact_id && project.status !== "final_approved") return { label: "最终审查", reason_code: "final_review", priority: "high" };
   return { label: "已交付", reason_code: "delivered", priority: "normal" };
+}
+
+function withValidatedAssemblyReadiness(
+  summary: WorkbenchProjectSummary | null,
+  ready: boolean,
+  invalidCount: number
+): WorkbenchProjectSummary | null {
+  if (!summary || summary.project.exports.final_video_artifact_id) return summary;
+  const readinessDerived: WorkbenchNextAction["derived"] = ready
+    ? { label: "合成交付", reason_code: "assemble", priority: "high" }
+    : { label: "修复无效采纳片段", reason_code: "accepted_clip_invalid", priority: "urgent" };
+  const derived = summary.next_action.derived.reason_code === "assembly_readiness_required"
+    ? readinessDerived
+    : summary.next_action.derived;
+  const overrideValid = Boolean(
+    ready
+    && summary.meta.next_action_override
+    && summary.meta.next_action_priority
+    && summary.meta.next_action_expires_at
+    && new Date(summary.meta.next_action_expires_at).getTime() > Date.now()
+    && summary.meta.next_action_project_status === summary.project.status
+  );
+  const nextAction: WorkbenchNextAction = overrideValid ? {
+    source: "override",
+    label: summary.meta.next_action_override,
+    reason_code: "manual_override",
+    priority: summary.meta.next_action_priority as WorkbenchProjectPriority,
+    expires_at: summary.meta.next_action_expires_at,
+    derived
+  } : { source: "derived", ...derived, expires_at: null, derived };
+  const blockerCount = summary.blocker_count + invalidCount;
+  return {
+    ...summary,
+    blocker_count: blockerCount,
+    blocker_reason: [summary.blocker_reason, invalidCount > 0 ? `${invalidCount} 个采纳片段无效` : ""].filter(Boolean).join("、"),
+    delivery_state: ready ? "ready_to_assemble" : "not_ready",
+    next_action: nextAction,
+    risk: blockerCount > 0 ? "blocked" : summary.active_run_count > 0 || summary.review_pending_count > 0 ? "attention" : "clear"
+  };
 }
 
 export function createWorkbenchProject(
@@ -681,9 +734,12 @@ export function getWorkbenchProjectWorkspace(
       artifact_id: project.exports.final_video_artifact_id, project_id: projectId, shot_id: "", role: "final_video", artifact_type: "video"
     })
     : null;
+  const readyForAssembly = accepted_clips.length > 0 && accepted_clips.every((clip) => clip.artifact !== null);
+  const deliverySummary = withValidatedAssemblyReadiness(summary, readyForAssembly, accepted_clips.filter((clip) => clip.artifact === null).length);
   return { ok: true, data: {
     ...base,
-    ready_for_assembly: accepted_clips.length > 0 && accepted_clips.every((clip) => clip.artifact !== null),
+    summary: deliverySummary,
+    ready_for_assembly: readyForAssembly,
     readiness_checks: accepted_clips.map((clip) => ({ shot_id: clip.shot_id, artifact_id: clip.artifact_id, ok: clip.artifact !== null, reason_code: clip.artifact ? "SHOT_ACCEPTED_CLIP_READY" : clip.reference_error_code })),
     accepted_clips,
     final_artifact: finalArtifact?.ok ? finalArtifact.artifact : null,
