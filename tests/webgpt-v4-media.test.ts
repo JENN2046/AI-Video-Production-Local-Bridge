@@ -1,33 +1,37 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
-import { existsSync, mkdtempSync, mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import test from "node:test";
 
 import { openM0Database } from "../src/storage/sqlite.js";
+import { activateLocalMediaArtifact, type MediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 import { fullInspection } from "../src/webgpt-v4/contracts.js";
 import { cleanupMediaAnalysisCache, coverageFramePlan, createMediaGrant, handleMediaGatewayRequest, inspectProductionMedia, invalidateMediaGrantsForRestart, MediaAnalysisQueue, resolveFfmpegExecutable, resolveProductionMediaPath, validateMediaGrant } from "../src/webgpt-v4/media.js";
 import { actorFromSubject, ok, WebGptV4Error } from "../src/webgpt-v4/types.js";
 
-const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nCEAAAAASUVORK5CYII=", "base64");
+const validPng = readFileSync(resolve("fixtures/provider-canary/m1-r0/shot_001_canary_720x1280.png"));
+const alternatePng = readFileSync(resolve("fixtures/storyboard/shot_001.png"));
 
 test("media grants are project-bound, expire, and support one HTTP byte range", async () => {
   const root = mkdtempSync(join(tmpdir(), "webgpt-v4-media-"));
   const mediaRoot = join(root, "media");
   mkdirSync(mediaRoot, { recursive: true });
+  const imageSourcePath = join(root, "image-source.png");
   const imagePath = join(mediaRoot, "image.png");
-  writeFileSync(imagePath, onePixelPng);
+  writeFileSync(imageSourcePath, validPng);
   const db = openM0Database(join(root, "app.sqlite"));
   try {
     const created = createProject({ title: "Media project" }, db);
     assert.equal(created.ok, true);
     if (!created.ok) return;
     db.prepare("UPDATE workbench_project_meta SET classification = 'production' WHERE project_id = ?").run(created.project_id);
-    const artifact = {
+    const artifact: MediaArtifact = {
       artifact_id: "artifact_media_image",
+      blob_id: "",
       artifact_type: "image",
       role: "storyboard_image",
       status: "active",
@@ -36,8 +40,9 @@ test("media grants are project-bound, expire, and support one HTTP byte range", 
       linked_objects: { project_id: created.project_id, shot_id: "shot_media" },
       source: { kind: "fixture_path", provider: "", provider_job_id: "", sha256: "png-hash", external_url_host: "" }
     };
-    db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)")
-      .run(artifact.artifact_id, created.project_id, "shot_media", JSON.stringify(artifact));
+    const activated = activateLocalMediaArtifact({ artifact, source_path: imageSourcePath, media_root: mediaRoot }, db);
+    assert.equal(activated.ok, true, activated.ok ? undefined : activated.error.code);
+    if (!activated.ok) return;
     const actor = actorFromSubject("auth0|jenn", ["media.read"]);
     const grant = createMediaGrant(db, { actor, project_id: created.project_id, artifact_id: artifact.artifact_id });
     assert.equal(validateMediaGrant(db, { token: grant.token, actor_hash: actor.actor_hash, project_id: created.project_id, artifact_id: artifact.artifact_id }).grant_id, grant.grant_id);
@@ -67,10 +72,13 @@ test("media grants are project-bound, expire, and support one HTTP byte range", 
     const expiredGrant = createMediaGrant(db, { actor, project_id: created.project_id, artifact_id: artifact.artifact_id }, { now: () => new Date("2026-01-01T00:00:00.000Z") });
     assert.throws(() => validateMediaGrant(db, { token: expiredGrant.token, actor_hash: actor.actor_hash, project_id: created.project_id, artifact_id: artifact.artifact_id }, { now: () => new Date("2026-01-01T00:06:00.000Z") }), (error) => error instanceof WebGptV4Error && error.code === "MEDIA_GRANT_INVALID");
 
-    const outside = { ...artifact, artifact_id: "artifact_outside", storage: { ...artifact.storage, uri: join(root, "outside.png") } };
-    writeFileSync(outside.storage.uri, onePixelPng);
-    db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)")
-      .run(outside.artifact_id, created.project_id, "shot_media", JSON.stringify(outside));
+    const outsideRoot = join(root, "outside-media");
+    const outsideSourcePath = join(root, "outside-source.png");
+    writeFileSync(outsideSourcePath, alternatePng);
+    const outside: MediaArtifact = { ...structuredClone(artifact), artifact_id: "artifact_outside", blob_id: "", storage: { ...artifact.storage, uri: join(outsideRoot, "outside.png") } };
+    const outsideActivated = activateLocalMediaArtifact({ artifact: outside, source_path: outsideSourcePath, media_root: outsideRoot }, db);
+    assert.equal(outsideActivated.ok, true, outsideActivated.ok ? undefined : outsideActivated.error.code);
+    if (!outsideActivated.ok) return;
     assert.throws(() => validateMediaGrant(db, { token: grant.token, actor_hash: actor.actor_hash, project_id: created.project_id, artifact_id: outside.artifact_id }), (error) => error instanceof WebGptV4Error && error.code === "MEDIA_GRANT_INVALID");
     assert.throws(() => resolveProductionMediaPath(db, created.project_id, outside.artifact_id, { allowed_media_roots: [mediaRoot] }), (error) => error instanceof WebGptV4Error && error.code === "MEDIA_NOT_AVAILABLE");
     const restartGrant = createMediaGrant(db, { actor, project_id: created.project_id, artifact_id: artifact.artifact_id });
@@ -161,9 +169,10 @@ test("video inspection produces a full-duration timestamp plan and paged model f
   const mediaRoot = join(root, "media");
   const analysisRoot = join(root, "analysis");
   mkdirSync(mediaRoot, { recursive: true });
+  const videoSourcePath = join(root, "fixture-source.mp4");
   const videoPath = join(mediaRoot, "fixture.mp4");
   const ffmpeg = await resolveFfmpegExecutable();
-  execFileSync(ffmpeg, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=red:s=320x180:d=2", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-y", videoPath], { windowsHide: true, timeout: 30_000 });
+  execFileSync(ffmpeg, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=red:s=320x180:d=2", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-y", videoSourcePath], { windowsHide: true, timeout: 30_000 });
   const db = openM0Database(join(root, "app.sqlite"));
   try {
     const created = createProject({ title: "Video project" }, db);
@@ -188,8 +197,9 @@ test("video inspection produces a full-duration timestamp plan and paged model f
     saveShot(db, shot);
     created.project.shot_ids = [shot.shot_id];
     saveProject(db, created.project);
-    const artifact = {
+    const artifact: MediaArtifact = {
       artifact_id: "artifact_video",
+      blob_id: "",
       artifact_type: "video",
       role: "generated_clip",
       status: "active",
@@ -198,8 +208,9 @@ test("video inspection produces a full-duration timestamp plan and paged model f
       linked_objects: { project_id: created.project_id, shot_id: shot.shot_id },
       source: { kind: "fixture_path", provider: "fake", provider_job_id: "", sha256: "video-hash", external_url_host: "" }
     };
-    db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES (?, ?, ?, 'generated_clip', 'video', 'active', ?)")
-      .run(artifact.artifact_id, created.project_id, shot.shot_id, JSON.stringify(artifact));
+    const activated = activateLocalMediaArtifact({ artifact, source_path: videoSourcePath, media_root: mediaRoot }, db);
+    assert.equal(activated.ok, true, activated.ok ? undefined : activated.error.code);
+    if (!activated.ok) return;
     const plan = coverageFramePlan(2, [0.75]);
     assert.equal(plan[0].timestamp_seconds, 0);
     assert.equal(plan.at(-1)?.timestamp_seconds, 2);

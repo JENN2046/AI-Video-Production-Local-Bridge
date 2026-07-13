@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { basename } from "node:path";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
-import { getMediaArtifact } from "./mediaArtifacts.js";
+import { getMediaArtifact, verifyMediaArtifactBytes } from "./mediaArtifacts.js";
 import { H1_PROVIDER_BOUNDARY } from "./h1Workbench.js";
 import { appendWorkbenchInboxEvent, getWorkbenchDraftRecord, listWorkbenchDraftRecords, saveWorkbenchDraftRecord } from "./workbenchInboxStore.js";
 
@@ -262,6 +262,8 @@ function validateArtifactId(tool: WebGptDraftToolName, artifactId: string, db: M
   if (artifact.artifact_type !== "image" || artifact.role !== "storyboard_image" || artifact.status !== "active") {
     return fail(tool, "ARTIFACT_NOT_LINKABLE", "Artifact must be an active storyboard_image image artifact.");
   }
+  const integrity = verifyMediaArtifactBytes(db, artifact);
+  if (!integrity.ok) return fail(tool, integrity.error.code, integrity.error.message);
   return null;
 }
 

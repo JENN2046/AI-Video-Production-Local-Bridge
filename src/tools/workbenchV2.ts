@@ -11,6 +11,8 @@ import {
   attachArtifactToShot,
   createScopedArtifactFromBlob,
   getMediaArtifact,
+  validateAcceptedClipReference,
+  validateActiveArtifactReference,
   type MediaArtifact
 } from "./mediaArtifacts.js";
 import { loadMemorySavebackStore } from "./memorySaveback.js";
@@ -597,8 +599,30 @@ export function getWorkbenchProjectWorkspace(
   const packages = packageRows.map((row) => parseJson<Record<string, unknown>>(row.data_json, {}));
   const artifactIds = shots.flatMap((shot) => [shot.storyboard_image_artifact_id, shot.accepted_clip_artifact_id, ...shot.clip_versions.map((version) => version.artifact_id)]);
   const artifacts = artifactMap(db, artifactIds);
-  const regenerationRows = db.prepare(`SELECT data_json FROM regeneration_requests WHERE project_id = ? ORDER BY updated_at DESC LIMIT 100`).all(projectId) as Array<{ data_json: string }>;
-  const regeneration_requests = regenerationRows.map((row) => parseJson<Record<string, unknown>>(row.data_json, {}));
+  const shotsById = new Map(shots.map((shot) => [shot.shot_id, shot]));
+  const regenerationRows = db.prepare(`
+    SELECT request_id, project_id, shot_id, artifact_id, previous_run_id, status, data_json
+    FROM regeneration_requests WHERE project_id = ? ORDER BY updated_at DESC LIMIT 100
+  `).all(projectId) as Array<{ request_id: string; project_id: string; shot_id: string; artifact_id: string; previous_run_id: string; status: string; data_json: string }>;
+  const regeneration_requests = regenerationRows.map((row) => {
+    const data = parseJson<Record<string, unknown>>(row.data_json, {});
+    let reference_error_code = "";
+    if (data.request_id !== row.request_id || data.project_id !== row.project_id || data.shot_id !== row.shot_id
+      || data.artifact_id !== row.artifact_id || data.previous_run_id !== row.previous_run_id || data.status !== row.status) {
+      reference_error_code = "REGENERATION_REQUEST_STRUCTURED_DRIFT";
+    } else {
+      const shot = shotsById.get(row.shot_id);
+      if (!shot || !shot.clip_versions.some((version) => version.artifact_id === row.artifact_id)) {
+        reference_error_code = "ARTIFACT_NOT_IN_SHOT_REVIEW";
+      } else {
+        const validated = validateActiveArtifactReference(db, {
+          artifact_id: row.artifact_id, project_id: projectId, shot_id: row.shot_id, role: "generated_clip", artifact_type: "video"
+        });
+        if (!validated.ok) reference_error_code = validated.error.code;
+      }
+    }
+    return { ...data, ...(reference_error_code ? { reference_error_code } : {}) };
+  });
   const summary = getWorkbenchProjectSummary(projectId, db);
   const base = { project, meta, summary, workspace };
 
@@ -621,19 +645,49 @@ export function getWorkbenchProjectWorkspace(
   if (workspace === "review") {
     const version_stacks = shots.map((shot) => ({
       shot,
-      versions: shot.clip_versions.map((version) => ({ ...version, artifact: artifacts[version.artifact_id] ?? null }))
+      versions: shot.clip_versions.map((version) => {
+        const validated = validateActiveArtifactReference(db, {
+          artifact_id: version.artifact_id, project_id: projectId, shot_id: shot.shot_id, role: "generated_clip", artifact_type: "video"
+        });
+        return { ...version, artifact: validated.ok ? validated.artifact : null, ...(!validated.ok ? { reference_error_code: validated.error.code } : {}) };
+      })
     }));
-    const review_notes = db.prepare(`
+    const reviewNoteRows = db.prepare(`
       SELECT note_id, project_id, shot_id, artifact_id, author_hash, note, source, created_at, updated_at
       FROM workbench_review_notes WHERE project_id = ? ORDER BY created_at DESC
     `).all(projectId) as Array<Record<string, unknown>>;
+    const review_notes = reviewNoteRows.map((note) => {
+      const shotId = typeof note.shot_id === "string" ? note.shot_id : "";
+      const artifactId = typeof note.artifact_id === "string" ? note.artifact_id : "";
+      if (!artifactId) return note;
+      const shot = shotsById.get(shotId);
+      if (!shot || !shot.clip_versions.some((version) => version.artifact_id === artifactId)) {
+        return { ...note, reference_error_code: "ARTIFACT_NOT_IN_SHOT_REVIEW" };
+      }
+      const validated = validateActiveArtifactReference(db, {
+        artifact_id: artifactId, project_id: projectId, shot_id: shotId, role: "generated_clip", artifact_type: "video"
+      });
+      return validated.ok ? note : { ...note, reference_error_code: validated.error.code };
+    });
     return { ok: true, data: { ...base, version_stacks, regeneration_requests, review_notes } };
   }
+  const accepted_clips = shots.map((shot) => {
+    if (!shot.accepted_clip_artifact_id) return { shot_id: shot.shot_id, order: shot.order, artifact_id: "", artifact: null, reference_error_code: "SHOT_ACCEPTED_CLIP_MISSING" };
+    const validated = validateAcceptedClipReference(db, shot);
+    return { shot_id: shot.shot_id, order: shot.order, artifact_id: shot.accepted_clip_artifact_id, artifact: validated.ok ? validated.artifact : null, ...(!validated.ok ? { reference_error_code: validated.error.code } : {}) };
+  });
+  const finalArtifact = project.exports.final_video_artifact_id
+    ? validateActiveArtifactReference(db, {
+      artifact_id: project.exports.final_video_artifact_id, project_id: projectId, shot_id: "", role: "final_video", artifact_type: "video"
+    })
+    : null;
   return { ok: true, data: {
     ...base,
-    ready_for_assembly: shots.length > 0 && shots.every((shot) => Boolean(shot.accepted_clip_artifact_id)),
-    accepted_clips: shots.map((shot) => ({ shot_id: shot.shot_id, order: shot.order, artifact: artifacts[shot.accepted_clip_artifact_id] ?? null })),
-    final_artifact: project.exports.final_video_artifact_id ? getMediaArtifact(db, project.exports.final_video_artifact_id) : null
+    ready_for_assembly: accepted_clips.length > 0 && accepted_clips.every((clip) => clip.artifact !== null),
+    readiness_checks: accepted_clips.map((clip) => ({ shot_id: clip.shot_id, artifact_id: clip.artifact_id, ok: clip.artifact !== null, reason_code: clip.artifact ? "SHOT_ACCEPTED_CLIP_READY" : clip.reference_error_code })),
+    accepted_clips,
+    final_artifact: finalArtifact?.ok ? finalArtifact.artifact : null,
+    final_artifact_reason_code: finalArtifact && !finalArtifact.ok ? finalArtifact.error.code : ""
   } };
 }
 
@@ -818,9 +872,15 @@ export function decideWorkbenchImport(
       SELECT artifact_id FROM import_decisions
       WHERE checksum = ? AND decision = 'registered' AND target_project_id = ? AND artifact_id IS NOT NULL
     `).get(checksum, input.target_project_id) as { artifact_id: string } | undefined;
-    const priorArtifact = prior ? getMediaArtifact(db, prior.artifact_id) : null;
-    if (priorArtifact?.status === "active" && priorArtifact.linked_objects.project_id === input.target_project_id && priorArtifact.linked_objects.shot_id === "") {
-      artifactId = priorArtifact.artifact_id;
+    const priorValidated = prior ? validateActiveArtifactReference(db, {
+      artifact_id: prior.artifact_id,
+      project_id: input.target_project_id,
+      shot_id: "",
+      role: "storyboard_image",
+      artifact_type: "image"
+    }) : null;
+    if (priorValidated?.ok) {
+      artifactId = priorValidated.artifact.artifact_id;
     } else {
       const existing = db.prepare(`
         SELECT m.artifact_id

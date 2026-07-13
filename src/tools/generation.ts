@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
-import { getMediaArtifact, registerMediaArtifact, verifyMediaArtifactBytes } from "./mediaArtifacts.js";
+import { getMediaArtifact, registerMediaArtifact, validateActiveArtifactReference } from "./mediaArtifacts.js";
 import { getProject, getProjectStatus, getShot, listProjectShots, saveProject, saveShot, type Project, type Shot, type ToolError } from "./projects.js";
 import { getStoryboardPackage } from "./storyboardPackages.js";
 import { providerError, selectM0Provider, selectM1ProviderPort, type ProviderExecutionRequest, type ProviderPortName, type ProviderToolError } from "./provider.js";
@@ -252,15 +252,17 @@ async function pollProviderUntilComplete(adapter: VideoProviderAdapter, provider
 }
 
 function providerInputFromShotWithDb(db: M0Database, project: Project, shot: Shot): ProviderGenerationInput | { error: ProviderToolError } {
-  const storyboardArtifact = getMediaArtifact(db, shot.storyboard_image_artifact_id);
-  if (!storyboardArtifact) {
-    return { error: providerError("PROVIDER_UNSUPPORTED_INPUT", `Storyboard artifact not found: ${shot.storyboard_image_artifact_id}.`) };
-  }
-  const integrity = verifyMediaArtifactBytes(db, storyboardArtifact);
-  if (!integrity.ok) return { error: providerError(integrity.error.code, integrity.error.message) };
+  const storyboardArtifact = validateActiveArtifactReference(db, {
+    artifact_id: shot.storyboard_image_artifact_id,
+    project_id: project.project_id,
+    shot_id: shot.shot_id,
+    role: "storyboard_image",
+    artifact_type: "image"
+  });
+  if (!storyboardArtifact.ok) return { error: providerError(storyboardArtifact.error.code, storyboardArtifact.error.message) };
 
   return {
-    storyboard_artifact: storyboardArtifact,
+    storyboard_artifact: storyboardArtifact.artifact,
     video_prompt: shot.video_prompt,
     negative_prompt: shot.negative_prompt,
     duration_seconds: shot.duration_seconds,
@@ -436,10 +438,10 @@ export async function startStoryboardVideoGeneration(
   const runs: GenerationRun[] = [];
 
   for (const shot of shots) {
-    const storyboardArtifact = getMediaArtifact(db, shot.storyboard_image_artifact_id);
-    if (!storyboardArtifact || storyboardArtifact.status !== "active") {
-      return { ok: false, error: { code: "SHOT_NOT_READY_FOR_GENERATION", message: `Shot is missing active storyboard artifact: ${shot.shot_id}` } };
-    }
+    const storyboardArtifact = validateActiveArtifactReference(db, {
+      artifact_id: shot.storyboard_image_artifact_id, project_id: project.project_id, shot_id: shot.shot_id, role: "storyboard_image", artifact_type: "image"
+    });
+    if (!storyboardArtifact.ok) return { ok: false, error: storyboardArtifact.error };
 
     const run: GenerationRun = {
       run_id: `run_${randomUUID()}`,

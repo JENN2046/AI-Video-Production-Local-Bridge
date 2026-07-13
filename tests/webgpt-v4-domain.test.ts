@@ -11,7 +11,9 @@ import { saveWorkbenchPendingActionRecord } from "../src/tools/workbenchInboxSto
 import { createProject, saveProject, saveShot, type Project, type Shot } from "../src/tools/projects.js";
 import {
   addProductionReviewNote,
+  getProductionDeliveryStatus,
   getProductionProjectContext,
+  getProductionReviewPackage,
   listProductionProjectMedia,
   listProductionProjectShots,
   listProductionProjects,
@@ -22,6 +24,9 @@ import {
 import { migrateLegacyWebGptV4History } from "../src/webgpt-v4/migration.js";
 import { actorFromSubject } from "../src/webgpt-v4/types.js";
 import { buildProviderCapabilityKey, buildProviderPriceCacheKey, RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY } from "../src/tools/providerCapabilities.js";
+import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
+import { getProjectStatus } from "../src/tools/projects.js";
+import { getWorkbenchProjectWorkspace } from "../src/tools/workbenchV2.js";
 
 interface TestContext {
   root: string;
@@ -299,6 +304,93 @@ test("review notes and production proposals enter SQLite without changing review
   }
 });
 
+test("review and delivery guards reject same-project wrong-SHOT and tampered artifacts", () => {
+  const context = setup();
+  let blobPath = "";
+  try {
+    const secondShot: Shot = { ...structuredClone(context.productionShot), shot_id: "shot_real_002", order: 2, clip_versions: [], accepted_clip_artifact_id: "" };
+    saveShot(context.db, secondShot);
+    context.production.shot_ids.push(secondShot.shot_id);
+    saveProject(context.db, context.production);
+    const first = registerMediaArtifact({ artifact_type: "video", role: "generated_clip", source: { kind: "fixture_path", path: "video/mock_clip.mp4" }, linked_objects: { project_id: context.production.project_id, shot_id: context.productionShot.shot_id } }, context.db);
+    const second = registerMediaArtifact({ artifact_type: "video", role: "generated_clip", source: { kind: "fixture_path", path: "video/mock_clip.mp4" }, linked_objects: { project_id: context.production.project_id, shot_id: secondShot.shot_id } }, context.db);
+    const stale = registerMediaArtifact({ artifact_type: "video", role: "generated_clip", source: { kind: "fixture_path", path: "video/mock_clip.mp4" }, linked_objects: { project_id: context.production.project_id, shot_id: context.productionShot.shot_id } }, context.db);
+    assert.equal(first.ok, true);
+    assert.equal(second.ok, true);
+    assert.equal(stale.ok, true);
+    if (!first.ok || !second.ok || !stale.ok) return;
+    blobPath = first.artifact.storage.uri;
+    context.productionShot.clip_versions = [{ artifact_id: second.artifact.artifact_id, run_id: "run_wrong_shot", attempt_number: 1, review_status: "pending" }];
+    saveShot(context.db, context.productionShot);
+
+    const note = addProductionReviewNote({ project_id: context.production.project_id, shot_id: context.productionShot.shot_id, artifact_id: second.artifact.artifact_id, note: "must fail" }, { actor, idempotency_key: "wrong-shot-note" }, context.db);
+    assert.equal(note.ok, false);
+    if (!note.ok) assert.equal(note.error.code, "ARTIFACT_REFERENCE_BINDING_MISMATCH");
+    const review = getProductionReviewPackage({ project_id: context.production.project_id, shot_id: context.productionShot.shot_id }, context.db);
+    assert.equal(review.ok, false);
+    if (!review.ok) assert.equal(review.error.code, "ARTIFACT_REFERENCE_BINDING_MISMATCH");
+    const proposal = submitProductionProposal({ project_id: context.production.project_id, kind: "regeneration", payload: { shot_id: context.productionShot.shot_id, artifact_id: second.artifact.artifact_id, prompt_delta: "must fail" } }, { actor, idempotency_key: "wrong-shot-proposal" }, context.db);
+    assert.equal(proposal.ok, false);
+
+    context.productionShot.clip_versions = [{ artifact_id: first.artifact.artifact_id, run_id: "run_first", attempt_number: 1, review_status: "approved" }];
+    saveShot(context.db, context.productionShot);
+    context.db.prepare(`INSERT INTO workbench_review_notes
+      (note_id, project_id, shot_id, artifact_id, author_hash, note, source, created_at, updated_at)
+      VALUES ('note_wrong_shot', ?, ?, ?, 'fixture', 'must fail closed', 'fixture', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+      .run(context.production.project_id, context.productionShot.shot_id, second.artifact.artifact_id);
+    const contextWithWrongNote = getProductionProjectContext({ project_id: context.production.project_id, workspace: "review" }, context.db);
+    assert.equal(contextWithWrongNote.ok, false);
+    if (!contextWithWrongNote.ok) assert.equal(contextWithWrongNote.error.code, "WEBGPT_V4_DATA_INTEGRITY_VIOLATION");
+    const workbenchReview = getWorkbenchProjectWorkspace(context.production.project_id, "review", context.db, { touch_last_opened: false });
+    assert.equal(workbenchReview.ok, true);
+    if (workbenchReview.ok) assert.equal(JSON.stringify(workbenchReview.data.review_notes).includes("ARTIFACT_NOT_IN_SHOT_REVIEW"), true);
+    context.db.prepare("DELETE FROM workbench_review_notes WHERE note_id = 'note_wrong_shot'").run();
+
+    context.productionShot.accepted_clip_artifact_id = stale.artifact.artifact_id;
+    secondShot.clip_versions = [{ artifact_id: second.artifact.artifact_id, run_id: "run_second", attempt_number: 1, review_status: "approved" }];
+    secondShot.accepted_clip_artifact_id = second.artifact.artifact_id;
+    saveShot(context.db, context.productionShot);
+    saveShot(context.db, secondShot);
+    const staleDelivery = getProductionDeliveryStatus({ project_id: context.production.project_id }, context.db);
+    assert.equal(staleDelivery.ok, true);
+    if (staleDelivery.ok) {
+      assert.equal(staleDelivery.data.ready_for_assembly, false);
+      assert.equal(JSON.stringify(staleDelivery.data.readiness_checks).includes("ARTIFACT_NOT_IN_SHOT_REVIEW"), true);
+    }
+    const staleStatus = getProjectStatus({ project_id: context.production.project_id }, context.db);
+    assert.equal(staleStatus.ok, true);
+    if (staleStatus.ok) assert.equal(staleStatus.readiness_checks.some((check) => check.code === "ARTIFACT_NOT_IN_SHOT_REVIEW"), true);
+    const staleWorkbench = getWorkbenchProjectWorkspace(context.production.project_id, "delivery", context.db, { touch_last_opened: false });
+    assert.equal(staleWorkbench.ok, true);
+    if (staleWorkbench.ok) assert.equal(JSON.stringify(staleWorkbench.data.readiness_checks).includes("ARTIFACT_NOT_IN_SHOT_REVIEW"), true);
+
+    context.productionShot.accepted_clip_artifact_id = first.artifact.artifact_id;
+    saveShot(context.db, context.productionShot);
+    writeFileSync(blobPath, Buffer.from("tampered-delivery-media", "utf8"));
+    const delivery = getProductionDeliveryStatus({ project_id: context.production.project_id }, context.db);
+    assert.equal(delivery.ok, true);
+    if (delivery.ok) {
+      assert.equal(delivery.data.ready_for_assembly, false);
+      assert.equal(JSON.stringify(delivery.data.readiness_checks).includes("VIDEO_FILE_INVALID"), true);
+    }
+    const status = getProjectStatus({ project_id: context.production.project_id }, context.db);
+    assert.equal(status.ok, true);
+    if (status.ok) {
+      assert.equal(status.ready_for_assembly, false);
+      assert.equal(status.readiness_checks.some((check) => check.code === "VIDEO_FILE_INVALID"), true);
+    }
+    const workbench = getWorkbenchProjectWorkspace(context.production.project_id, "delivery", context.db, { touch_last_opened: false });
+    assert.equal(workbench.ok, true);
+    if (workbench.ok) {
+      assert.equal(workbench.data.ready_for_assembly, false);
+      assert.equal(JSON.stringify(workbench.data.readiness_checks).includes("VIDEO_FILE_INVALID"), true);
+    }
+  } finally {
+    teardown(context);
+    if (blobPath) rmSync(blobPath, { force: true });
+  }
+});
+
 test("project context is read-only and removes actor identity hashes", () => {
   const context = setup();
   try {
@@ -350,19 +442,19 @@ test("proposal payloads and promoted review decisions fail closed", () => {
 
 test("WebGPT generation intent requires local cache and cannot bypass official human preflight", () => {
   const context = setup();
+  let mediaPath = "";
   try {
-    const artifact = {
-      artifact_id: "artifact_storyboard_001",
+    const registered = registerMediaArtifact({
       artifact_type: "image",
       role: "storyboard_image",
-      status: "active",
-      storage: { uri: join(context.root, "image.png"), mime_type: "image/png", filename: "image.png" },
-      metadata: { width: 1, height: 1, duration_seconds: null, aspect_ratio: "1:1", sha256: "abc" },
-      linked_objects: { project_id: context.production.project_id, shot_id: context.productionShot.shot_id },
-      source: { kind: "fixture_path", provider: "", provider_job_id: "", sha256: "abc", external_url_host: "" }
-    };
-    context.db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)")
-      .run(artifact.artifact_id, context.production.project_id, context.productionShot.shot_id, JSON.stringify(artifact));
+      source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
+      linked_objects: { project_id: context.production.project_id, shot_id: context.productionShot.shot_id }
+    }, context.db);
+    assert.equal(registered.ok, true);
+    if (!registered.ok) return;
+    mediaPath = registered.artifact.storage.uri;
+    context.productionShot.storyboard_image_artifact_id = registered.artifact.artifact_id;
+    saveShot(context.db, context.productionShot);
     const blocked = prepareProductionGenerationIntent({ project_id: context.production.project_id, shot_id: context.productionShot.shot_id, account_label: "personal", budget_limit_value: 100 }, { actor, idempotency_key: "intent-blocked" }, context.db);
     assert.equal(blocked.ok, false);
     if (!blocked.ok) assert.equal(blocked.error.code, "GENERATION_PREP_BLOCKED");
@@ -399,6 +491,7 @@ test("WebGPT generation intent requires local cache and cannot bypass official h
     if (!confirmed.ok) assert.equal(confirmed.error.code, "OFFICIAL_PREFLIGHT_REQUIRED");
   } finally {
     teardown(context);
+    if (mediaPath) rmSync(mediaPath, { force: true });
   }
 });
 

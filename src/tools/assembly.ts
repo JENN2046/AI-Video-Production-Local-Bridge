@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
-import { getMediaArtifact, registerMediaArtifact } from "./mediaArtifacts.js";
+import { registerMediaArtifact, validateAcceptedClipReference } from "./mediaArtifacts.js";
 import { saveGenerationRun, type Confirmation, type GenerationRun } from "./generation.js";
 import { getProject, listProjectShots, saveProject, type ToolError } from "./projects.js";
 
@@ -24,15 +24,8 @@ function finalAssemblyBlockingReasons(db: M0Database, projectId: string): string
       continue;
     }
 
-    const artifact = getMediaArtifact(db, shot.accepted_clip_artifact_id);
-    if (!artifact) {
-      reasons.push(`Shot ${String(shot.order).padStart(3, "0")} accepted clip artifact is missing`);
-      continue;
-    }
-    if (artifact.status !== "active") reasons.push(`Shot ${String(shot.order).padStart(3, "0")} accepted clip is not active`);
-    if (artifact.artifact_type !== "video" || artifact.role !== "generated_clip") {
-      reasons.push(`Shot ${String(shot.order).padStart(3, "0")} accepted clip is not a generated_clip video`);
-    }
+    const validated = validateAcceptedClipReference(db, shot);
+    if (!validated.ok) reasons.push(`Shot ${String(shot.order).padStart(3, "0")} [${validated.error.code}] ${validated.error.message}`);
   }
 
   return reasons;

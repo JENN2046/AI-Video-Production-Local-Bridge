@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
-import { attachArtifactToShot, createScopedArtifactFromBlob, getMediaArtifact } from "./mediaArtifacts.js";
+import { attachArtifactToShot, createScopedArtifactFromBlob, getMediaArtifact, verifyMediaArtifactBytes } from "./mediaArtifacts.js";
 import {
   buildStoryboardApprovedShot,
   getProject,
@@ -78,6 +78,8 @@ function validateSnapshot(snapshot: ApprovedShotSnapshot, index: number, db: M0D
   if (artifact.role !== "storyboard_image" || artifact.artifact_type !== "image") {
     return { code: "INVALID_ARTIFACT_ROLE", message: "Storyboard Package requires active storyboard_image image artifacts." };
   }
+  const integrity = verifyMediaArtifactBytes(db, artifact);
+  if (!integrity.ok) return integrity.error;
   if (!isNineSixteenAspectRatio(artifact.metadata.aspect_ratio)) {
     return { code: "STORYBOARD_IMAGE_ASPECT_RATIO_NOT_9_16", message: "Storyboard Package requires vertical 9:16 storyboard_image artifacts." };
   }

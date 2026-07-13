@@ -4,7 +4,7 @@ import { basename, join } from "node:path";
 
 import { ensureM0Directories, paths } from "../paths.js";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
-import { getMediaArtifact } from "./mediaArtifacts.js";
+import { getMediaArtifact, verifyMediaArtifactBytes } from "./mediaArtifacts.js";
 import { listWorkbenchPendingActionRecords, saveWorkbenchPendingActionRecord } from "./workbenchInboxStore.js";
 import {
   freezeH1StoryboardPackage,
@@ -244,6 +244,8 @@ function validateArtifactId(tool: WebGptPendingActionToolName, input: Record<str
   if (artifact.artifact_type !== "image" || artifact.role !== "storyboard_image" || artifact.status !== "active") {
     return fail(tool, "ARTIFACT_NOT_LINKABLE", "Artifact must be an active storyboard_image image artifact.");
   }
+  const integrity = verifyMediaArtifactBytes(db, artifact);
+  if (!integrity.ok) return fail(tool, integrity.error.code, integrity.error.message);
   return null;
 }
 

@@ -133,7 +133,7 @@ test("official MCP client contract matches the catalog and stored instructions r
 
     const fakeArtifact = await client.callTool({ name: "get_review_package", arguments: { project_id: first.project_id, shot_id: firstShot.shot_id, artifact_id: "artifact_forged" } });
     assert.equal(fakeArtifact.isError, true);
-    assert.equal((fakeArtifact.structuredContent as { error: { code: string } }).error.code, "ARTIFACT_NOT_FOUND");
+    assert.equal((fakeArtifact.structuredContent as { error: { code: string } }).error.code, "ARTIFACT_NOT_IN_SHOT_REVIEW");
 
     const verifyDb = openM0Database(sqlitePath);
     try {

@@ -4,8 +4,8 @@ import { basename, dirname, join } from "node:path";
 
 import { paths } from "../paths.js";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
-import { getMediaArtifact } from "./mediaArtifacts.js";
-import { getProject } from "./projects.js";
+import { getMediaArtifact, validateActiveArtifactReference } from "./mediaArtifacts.js";
+import { getProject, getShot } from "./projects.js";
 import { H1_PROVIDER_BOUNDARY } from "./h1Workbench.js";
 import { loadMemorySavebackStore } from "./memorySaveback.js";
 
@@ -228,6 +228,8 @@ function requiredProject(tool: WebGptProductionAssistantToolName, input: Record<
   if (!plainId(projectId)) return { ok: false, result: fail(tool, "INVALID_APP_ID", "Only real app project_id values are accepted.") };
   const project = getProject(db, projectId);
   if (!project) return { ok: false, result: fail(tool, "PROJECT_NOT_FOUND", `Project not found: ${projectId}`) };
+  const meta = db.prepare("SELECT lifecycle FROM workbench_project_meta WHERE project_id = ?").get(projectId) as { lifecycle: string } | undefined;
+  if (meta?.lifecycle === "archived") return { ok: false, result: fail(tool, "PROJECT_ARCHIVED", "Archived projects cannot accept new production plans.") };
   return { ok: true, project_id: project.project_id };
 }
 
@@ -251,6 +253,18 @@ function requiredGeneratedClip(
   if (!artifact.linked_objects.shot_id) {
     return { ok: false, result: fail(tool, "ARTIFACT_SHOT_LINK_MISSING", "Generated clip artifact is missing its shot link.") };
   }
+  const shot = getShot(db, artifact.linked_objects.shot_id);
+  if (!shot || shot.project_id !== projectId || !shot.clip_versions.some((version) => version.artifact_id === artifact.artifact_id)) {
+    return { ok: false, result: fail(tool, "ARTIFACT_NOT_IN_SHOT_REVIEW", "Generated clip is not a reviewed version of its SHOT.") };
+  }
+  const validated = validateActiveArtifactReference(db, {
+    artifact_id: artifact.artifact_id,
+    project_id: projectId,
+    shot_id: shot.shot_id,
+    role: "generated_clip",
+    artifact_type: "video"
+  });
+  if (!validated.ok) return { ok: false, result: fail(tool, validated.error.code, validated.error.message) };
   return { ok: true, artifact_id: artifact.artifact_id, shot_id: artifact.linked_objects.shot_id };
 }
 

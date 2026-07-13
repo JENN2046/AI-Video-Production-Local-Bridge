@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
-import { getMediaArtifact } from "./mediaArtifacts.js";
+import { attachArtifactToShot, createScopedArtifactFromBlob, validateAcceptedClipReference, validateActiveArtifactReference } from "./mediaArtifacts.js";
 import { createProject, getProject, getShot, listProjectShots, saveProject, saveShot, type Project, type Shot } from "./projects.js";
 import { saveStoryboardPackage, type StoryboardPackage } from "./storyboardPackages.js";
 import { decideWorkbenchClip, decideWorkbenchImport, updateWorkbenchShot, type WorkbenchPage, type WorkbenchProjectClassification, type WorkbenchV2Result } from "./workbenchV2.js";
@@ -254,21 +254,15 @@ function promotePackageDraft(
     if (!raw || typeof raw !== "object") throw new InboxDomainError("DRAFT_APPLY_BLOCKED", `SHOT ${index + 1} is invalid.`);
     const item = raw as Record<string, unknown>;
     const artifactId = String(item.storyboard_image_artifact_id ?? "");
-    if (artifactId) {
-      const artifact = getMediaArtifact(db, artifactId);
-      if (!artifact || artifact.status !== "active" || artifact.role !== "storyboard_image" || artifact.artifact_type !== "image") {
-        throw new InboxDomainError("DRAFT_APPLY_BLOCKED", `SHOT ${index + 1} references an invalid storyboard image.`);
-      }
-    }
     const videoPrompt = String(item.video_prompt ?? "");
-    const shot: Shot = {
+    let shot: Shot = {
       shot_id: `shot_${randomUUID()}`,
       project_id: created.project_id,
       order: index + 1,
-      status: artifactId && videoPrompt ? "storyboard_approved" : "draft",
+      status: "draft",
       duration_seconds: positiveNumber(item.duration_seconds, 3),
       description: String(item.description ?? item.shot_description ?? ""),
-      storyboard_image_artifact_id: artifactId,
+      storyboard_image_artifact_id: "",
       video_prompt: videoPrompt,
       negative_prompt: String(item.negative_prompt ?? ""),
       generation_run_ids: [],
@@ -277,9 +271,24 @@ function promotePackageDraft(
       review: { approval_status: "pending", rejection_reasons: [], latest_revision_instruction: null }
     };
     saveShot(db, shot);
+    if (artifactId) {
+      const scoped = createScopedArtifactFromBlob({ source_artifact_id: artifactId, project_id: created.project_id, shot_id: shot.shot_id }, db);
+      if (!scoped.ok) throw new InboxDomainError("DRAFT_APPLY_BLOCKED", `SHOT ${index + 1} storyboard image could not be scoped [${scoped.error.code}].`);
+      const attached = attachArtifactToShot({
+        project_id: created.project_id,
+        shot_id: shot.shot_id,
+        artifact_id: scoped.artifact.artifact_id,
+        reference: "storyboard_image_artifact_id",
+        expected_current_artifact_id: ""
+      }, db);
+      if (!attached.ok) throw new InboxDomainError("DRAFT_APPLY_BLOCKED", `SHOT ${index + 1} storyboard image could not be attached [${attached.error.code}].`);
+      shot = { ...attached.shot, status: videoPrompt ? "storyboard_approved" : "draft" };
+      saveShot(db, shot);
+    }
     shots.push(shot);
   }
   created.project.shot_ids = shots.map((shot) => shot.shot_id);
+  created.project.status = shots.every((shot) => shot.status === "storyboard_approved") ? "storyboard_approved" : "draft";
   saveProject(db, created.project);
   return { project: created.project };
 }
@@ -428,23 +437,26 @@ function executePendingAction(action: WorkbenchPendingActionRecord, requestedPro
     const project = writableProject(projectId, db);
     const shot = getShot(db, String(action.payload.shot_id ?? ""));
     if (!shot || shot.project_id !== project.project_id) throw new InboxDomainError("SHOT_NOT_FOUND", "Regeneration target SHOT was not found.", "shot_id");
-    const artifact = getMediaArtifact(db, String(action.payload.artifact_id ?? ""));
-    if (!artifact || artifact.linked_objects.project_id !== projectId || artifact.linked_objects.shot_id !== shot.shot_id) {
-      throw new InboxDomainError("ARTIFACT_NOT_FOUND", "Regeneration target artifact was not found.", "artifact_id");
+    const artifact = validateActiveArtifactReference(db, {
+      artifact_id: String(action.payload.artifact_id ?? ""), project_id: projectId, shot_id: shot.shot_id, role: "generated_clip", artifact_type: "video"
+    });
+    if (!artifact.ok || !shot.clip_versions.some((version) => version.artifact_id === artifact.artifact.artifact_id)) {
+      throw new InboxDomainError(artifact.ok ? "ARTIFACT_NOT_IN_SHOT_REVIEW" : artifact.error.code, artifact.ok ? "Regeneration target is not a clip version of the SHOT." : artifact.error.message, "artifact_id");
     }
     const requestId = `regeneration_${randomUUID()}`;
     const createdAt = new Date().toISOString();
-    const data = { ...action.payload, request_id: requestId, project_id: projectId, shot_id: shot.shot_id, artifact_id: artifact.artifact_id, status: "draft", created_at: createdAt };
+    const data = { ...action.payload, request_id: requestId, project_id: projectId, shot_id: shot.shot_id, artifact_id: artifact.artifact.artifact_id, status: "draft", created_at: createdAt };
     db.prepare(`
       INSERT INTO regeneration_requests (request_id, project_id, shot_id, artifact_id, previous_run_id, status, data_json, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?)
-    `).run(requestId, projectId, shot.shot_id, artifact.artifact_id, String(action.payload.previous_run_id ?? ""), JSON.stringify(data), createdAt, createdAt);
+    `).run(requestId, projectId, shot.shot_id, artifact.artifact.artifact_id, String(action.payload.previous_run_id ?? ""), JSON.stringify(data), createdAt, createdAt);
     return { project_id: projectId, result: data, effects: { app_ready_truth_changed: true } };
   }
   if (action.tool === "request_webgpt_final_assembly_plan") {
     writableProject(projectId, db);
     const shots = listProjectShots(db, projectId);
-    if (shots.length === 0 || shots.some((shot) => !shot.accepted_clip_artifact_id)) {
+    const accepted = shots.map((shot) => shot.accepted_clip_artifact_id ? validateAcceptedClipReference(db, shot) : null);
+    if (shots.length === 0 || accepted.some((artifact) => !artifact?.ok)) {
       throw new InboxDomainError("ASSEMBLY_NOT_READY", "Every SHOT must have an accepted clip before accepting the assembly plan.");
     }
     return { project_id: projectId, result: { accepted: true, kind: "final_assembly", shot_order: shots.map((shot) => ({ shot_id: shot.shot_id, artifact_id: shot.accepted_clip_artifact_id })) }, effects: { app_ready_truth_changed: false } };
@@ -492,9 +504,15 @@ function validateProjectStoryboard(projectId: string, db: M0Database): Shot[] {
   if (shots.length === 0) throw new InboxDomainError("PACKAGE_BLOCKED", "Project has no SHOTs.");
   for (const shot of shots) {
     if (!shot.storyboard_image_artifact_id || !shot.video_prompt) throw new InboxDomainError("PACKAGE_BLOCKED", `SHOT ${shot.shot_id} is missing image or prompt.`);
-    const artifact = getMediaArtifact(db, shot.storyboard_image_artifact_id);
-    if (!artifact || artifact.status !== "active" || artifact.role !== "storyboard_image" || artifact.artifact_type !== "image") {
-      throw new InboxDomainError("PACKAGE_BLOCKED", `SHOT ${shot.shot_id} has an invalid storyboard image.`);
+    const artifact = validateActiveArtifactReference(db, {
+      artifact_id: shot.storyboard_image_artifact_id,
+      project_id: projectId,
+      shot_id: shot.shot_id,
+      role: "storyboard_image",
+      artifact_type: "image"
+    });
+    if (!artifact.ok) {
+      throw new InboxDomainError("PACKAGE_BLOCKED", `SHOT ${shot.shot_id} has an invalid storyboard image [${artifact.error.code}].`);
     }
   }
   return shots;

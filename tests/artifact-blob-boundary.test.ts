@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -133,6 +133,69 @@ test("cross-SHOT reuse and stale concurrent binding attempts fail closed", () =>
     assert.equal(getShot(db, first.shot.shot_id)?.storyboard_image_artifact_id, firstScoped.artifact.artifact_id);
     db.close();
   } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("scoped Artifact creation revalidates source bytes instead of trusting verified state", () => {
+  const root = tempRoot();
+  let sourcePath = "";
+  try {
+    const sqlitePath = join(root, "app.sqlite");
+    migrateDatabase(sqlitePath);
+    const db = openM0Database(sqlitePath);
+    const target = createProjectShot(db, "tampered-source");
+    const source = registerSource(db);
+    sourcePath = source.storage.uri;
+    writeFileSync(sourcePath, Buffer.from("not-a-valid-image", "utf8"));
+
+    const scoped = createScopedArtifactFromBlob({
+      source_artifact_id: source.artifact_id,
+      project_id: target.project.project_id,
+      shot_id: target.shot.shot_id
+    }, db);
+    assert.equal(scoped.ok, false);
+    if (!scoped.ok) assert.equal(scoped.error.code, "IMAGE_FILE_INVALID");
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ?").get(target.project.project_id) as { count: number }).count, 0);
+    db.close();
+  } finally {
+    if (sourcePath) rmSync(sourcePath, { force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("SHOT attachment rejects a target-scoped Artifact whose bytes drifted", () => {
+  const root = tempRoot();
+  let mediaPath = "";
+  try {
+    const sqlitePath = join(root, "app.sqlite");
+    migrateDatabase(sqlitePath);
+    const db = openM0Database(sqlitePath);
+    const target = createProjectShot(db, "tampered-attach");
+    const source = registerSource(db);
+    const scoped = createScopedArtifactFromBlob({
+      source_artifact_id: source.artifact_id,
+      project_id: target.project.project_id,
+      shot_id: target.shot.shot_id
+    }, db);
+    assert.equal(scoped.ok, true);
+    if (!scoped.ok) throw new Error("SCOPE_SETUP_FAILED");
+    mediaPath = scoped.artifact.storage.uri;
+    writeFileSync(mediaPath, Buffer.from("not-a-valid-image", "utf8"));
+
+    const attached = attachArtifactToShot({
+      project_id: target.project.project_id,
+      shot_id: target.shot.shot_id,
+      artifact_id: scoped.artifact.artifact_id,
+      reference: "storyboard_image_artifact_id",
+      expected_current_artifact_id: ""
+    }, db);
+    assert.equal(attached.ok, false);
+    if (!attached.ok) assert.equal(attached.error.code, "IMAGE_FILE_INVALID");
+    assert.equal(getShot(db, target.shot.shot_id)?.storyboard_image_artifact_id, "");
+    db.close();
+  } finally {
+    if (mediaPath) rmSync(mediaPath, { force: true });
     rmSync(root, { recursive: true, force: true });
   }
 });

@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 
 import { assertInsideWorkspace, paths } from "../paths.js";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
-import { getMediaArtifact } from "./mediaArtifacts.js";
+import { getMediaArtifact, verifyMediaArtifactBytes } from "./mediaArtifacts.js";
 import { getProject, saveProject, type Project, type Shot, type ToolError } from "./projects.js";
 import { importStoryboardPackage, type ImportStoryboardPackageInput } from "./storyboardPackages.js";
 import { isNineSixteenAspectRatio } from "./importClassifier.js";
@@ -193,6 +193,8 @@ function validateAppReadyShot(snapshot: G0StoryboardPackageShotSnapshot, index: 
   if (artifact.artifact_type !== "image" || artifact.role !== "storyboard_image") {
     return { code: "INVALID_ARTIFACT_ROLE", message: "G0 app-ready package requires active storyboard_image image artifacts." };
   }
+  const integrity = verifyMediaArtifactBytes(db, artifact);
+  if (!integrity.ok) return integrity.error;
   if (!isNineSixteenAspectRatio(artifact.metadata.aspect_ratio)) {
     return { code: "STORYBOARD_IMAGE_ASPECT_RATIO_NOT_9_16", message: "G0 app-ready package requires vertical 9:16 storyboard_image artifacts." };
   }
