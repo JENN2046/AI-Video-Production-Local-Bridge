@@ -120,6 +120,38 @@ test("blob dedupe keeps committed journal paths aligned with the authoritative B
   }
 });
 
+test("dedupe fails closed and retains new bytes when the existing Blob is invalid", () => {
+  const root = mkdtempSync(join(tmpdir(), "media-activation-invalid-dedupe-"));
+  const mediaRoot = join(root, "custom-media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  let existingBlobPath = "";
+  const artifact = preparedArtifact();
+  artifact.storage.uri = join(mediaRoot, "artifacts", "images", `${artifact.artifact_id}.png`);
+  artifact.storage.filename = `${artifact.artifact_id}.png`;
+  const quarantinePath = join(mediaRoot, ".activation", "quarantine", `${artifact.artifact_id}.png.failed`);
+  try {
+    const first = registerMediaArtifact({ artifact_type: "image", role: "storyboard_image", source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" } }, db);
+    assert.equal(first.ok, true);
+    if (!first.ok) return;
+    existingBlobPath = first.artifact.storage.uri;
+    writeFileSync(existingBlobPath, Buffer.from("tampered-existing-blob", "utf8"));
+
+    const activated = activateLocalMediaArtifact({ artifact, source_path: IMAGE_FIXTURE, media_root: mediaRoot }, db);
+    assert.equal(activated.ok, false);
+    if (!activated.ok) assert.equal(activated.error.code, "MEDIA_BLOB_EXISTING_BYTES_INVALID");
+    assert.equal(readFileSync(existingBlobPath).toString("utf8"), "tampered-existing-blob");
+    assert.equal(existsSync(quarantinePath), true);
+    assert.equal(readFileSync(quarantinePath).equals(readFileSync(IMAGE_FIXTURE)), true);
+    assert.equal(getMediaArtifact(db, artifact.artifact_id), null);
+  } finally {
+    db.close();
+    if (existingBlobPath) rmSync(existingBlobPath, { force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("post-commit dedupe cleanup failure preserves activation success and recovers later", () => {
   const root = mkdtempSync(join(tmpdir(), "media-activation-post-commit-cleanup-"));
   const mediaRoot = join(root, "custom-media");

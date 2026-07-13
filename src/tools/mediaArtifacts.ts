@@ -257,6 +257,30 @@ function buildBlobForArtifact(artifact: MediaArtifact, mediaRoot = paths.mediaRo
   };
 }
 
+function verifiedBlobStorageIsReusable(blob: MediaBlob): boolean {
+  if (blob.integrity_state !== "verified") return false;
+  const rootValue = blob.provenance.media_root;
+  if (typeof rootValue !== "string" || !isAbsolute(rootValue)) return false;
+  const registeredRoot = resolve(rootValue);
+  const localPath = resolve(blob.storage_uri);
+  try {
+    const canonicalRoot = resolve(realpathSync(registeredRoot));
+    if (!sameResolvedPath(canonicalRoot, registeredRoot)
+      || lstatSync(registeredRoot).isSymbolicLink()
+      || !statSync(registeredRoot).isDirectory()
+      || !isPathInside(localPath, registeredRoot)
+      || hasExistingSymlinkAncestor(localPath, registeredRoot)
+      || lstatSync(localPath).isSymbolicLink()
+      || !statSync(localPath).isFile()) return false;
+    const facts = hashLocalFile(localPath);
+    return facts.sha256 === blob.sha256
+      && facts.size_bytes === blob.size_bytes
+      && detectMimeFromBytes(facts.header) === blob.detected_mime;
+  } catch {
+    return false;
+  }
+}
+
 function persistBlob(db: M0Database, blob: MediaBlob): MediaBlob {
   if (blob.integrity_state === "verified") {
     const existing = db.prepare(`
@@ -275,7 +299,7 @@ function persistBlob(db: M0Database, blob: MediaBlob): MediaBlob {
       if (Number(existing.size_bytes) !== blob.size_bytes || existing.detected_mime !== blob.detected_mime) {
         throw new Error("MEDIA_BLOB_CONTENT_CONFLICT");
       }
-      return {
+      const reusable: MediaBlob = {
         blob_id: existing.blob_id,
         sha256: existing.sha256,
         size_bytes: Number(existing.size_bytes),
@@ -284,6 +308,8 @@ function persistBlob(db: M0Database, blob: MediaBlob): MediaBlob {
         integrity_state: existing.integrity_state,
         provenance: JSON.parse(existing.provenance_json) as Record<string, unknown>
       };
+      if (!verifiedBlobStorageIsReusable(reusable)) throw new Error("MEDIA_BLOB_EXISTING_BYTES_INVALID");
+      return reusable;
     }
   }
   db.prepare(`

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { copyFileSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
@@ -9,6 +9,7 @@ import { backupDatabase, checkDatabase, databaseLogicalManifest, migrateDatabase
 import { assertSchemaCurrent, DATABASE_MIGRATIONS, M0_BASE_SCHEMA_SQL, migrationChecksum, runDatabaseMigrations, SchemaMigrationRequiredError } from "../src/storage/migrations.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import { initializeWorkbenchV2Schema } from "../src/storage/workbenchV2Schema.js";
+import { paths } from "../src/paths.js";
 import { persistMediaArtifact, transitionMediaArtifactStatus, type MediaArtifact } from "../src/tools/mediaArtifacts.js";
 
 function tempRoot(): string {
@@ -588,39 +589,47 @@ test("provider task IDs are unique per provider at the database boundary", () =>
 
 test("artifact persistence preserves the existing row on provider task conflicts", () => {
   const root = tempRoot();
+  const mediaPath = join(paths.videoArtifactsRoot, `${basename(root)}-provider-conflict.mp4`);
+  let db: ReturnType<typeof openM0Database> | null = null;
   try {
     const sqlitePath = join(root, "artifact-provider-task-conflict.sqlite");
     migrateDatabase(sqlitePath);
-    const db = openM0Database(sqlitePath);
+    mkdirSync(dirname(mediaPath), { recursive: true });
+    copyFileSync(resolve("fixtures/video/mock_clip.mp4"), mediaPath);
+    db = openM0Database(sqlitePath);
+    const activeDb = db;
     const artifact = (artifactId: string, status: MediaArtifact["status"] = "active"): MediaArtifact => ({
       artifact_id: artifactId,
       blob_id: "",
       artifact_type: "video",
       role: "generated_clip",
       status,
-      storage: { uri: resolve("fixtures/video/mock_clip.mp4"), mime_type: "video/mp4", filename: "mock_clip.mp4" },
+      storage: { uri: mediaPath, mime_type: "video/mp4", filename: "mock_clip.mp4" },
       metadata: { width: 1080, height: 1920, duration_seconds: 6, aspect_ratio: "9:16", sha256: `sha-${artifactId}` },
       linked_objects: { project_id: "project_artifact_conflict", shot_id: "shot_artifact_conflict" },
       source: { kind: "provider_output_file", provider: "runninghub", provider_job_id: "task_artifact_conflict", sha256: `sha-${artifactId}`, external_url_host: "cdn.example.test" }
     });
 
-    persistMediaArtifact(db, artifact("artifact_original"));
-    db.prepare("INSERT INTO generation_runs (run_id, batch_id, project_id, shot_id, run_type, status, data_json) VALUES ('run_artifact_reference', '', 'project_artifact_conflict', 'shot_artifact_conflict', 'image_to_video', 'succeeded', ?)")
+    persistMediaArtifact(activeDb, artifact("artifact_original"));
+    activeDb.prepare("INSERT INTO generation_runs (run_id, batch_id, project_id, shot_id, run_type, status, data_json) VALUES ('run_artifact_reference', '', 'project_artifact_conflict', 'shot_artifact_conflict', 'image_to_video', 'succeeded', ?)")
       .run(JSON.stringify({ run_id: "run_artifact_reference", output: { artifact_ids: ["artifact_original"] } }));
 
-    assert.throws(() => persistMediaArtifact(db, artifact("artifact_conflicting")), /UNIQUE constraint failed/);
-    const rowsAfterConflict = db.prepare("SELECT artifact_id FROM media_artifacts WHERE json_extract(data_json, '$.source.provider_job_id') = 'task_artifact_conflict'").all() as Array<{ artifact_id: string }>;
+    assert.throws(() => persistMediaArtifact(activeDb, artifact("artifact_conflicting")), /UNIQUE constraint failed/);
+    const rowsAfterConflict = activeDb.prepare("SELECT artifact_id FROM media_artifacts WHERE json_extract(data_json, '$.source.provider_job_id') = 'task_artifact_conflict'").all() as Array<{ artifact_id: string }>;
     assert.deepEqual(rowsAfterConflict.map((row) => row.artifact_id), ["artifact_original"]);
-    const referencedRun = db.prepare("SELECT data_json FROM generation_runs WHERE run_id = 'run_artifact_reference'").get() as { data_json: string };
+    const referencedRun = activeDb.prepare("SELECT data_json FROM generation_runs WHERE run_id = 'run_artifact_reference'").get() as { data_json: string };
     assert.deepEqual((JSON.parse(referencedRun.data_json) as { output: { artifact_ids: string[] } }).output.artifact_ids, ["artifact_original"]);
 
-    const archived = transitionMediaArtifactStatus("artifact_original", "archived", db);
+    const archived = transitionMediaArtifactStatus("artifact_original", "archived", activeDb);
     assert.equal(archived.ok, true);
-    const updated = db.prepare("SELECT status, data_json FROM media_artifacts WHERE artifact_id = 'artifact_original'").get() as { status: string; data_json: string };
+    const updated = activeDb.prepare("SELECT status, data_json FROM media_artifacts WHERE artifact_id = 'artifact_original'").get() as { status: string; data_json: string };
     assert.equal(updated.status, "archived");
     assert.equal((JSON.parse(updated.data_json) as MediaArtifact).status, "archived");
-    db.close();
+    activeDb.close();
+    db = null;
   } finally {
+    try { db?.close(); } catch { /* retain the primary assertion failure */ }
+    rmSync(mediaPath, { force: true });
     rmSync(root, { recursive: true, force: true });
   }
 });
