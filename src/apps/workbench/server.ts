@@ -5,7 +5,7 @@ import { basename, extname, isAbsolute, relative, resolve } from "node:path";
 
 import { ensureM0Directories, paths } from "../../paths.js";
 import { handleWorkbenchV2Api } from "../../packages/domain/index.js";
-import { getMediaArtifact, validateImageFile } from "../../packages/media/index.js";
+import { getMediaArtifact, recoverMediaActivations, validateImageFile } from "../../packages/media/index.js";
 import { generationWorkerStatus, resumeWorkbenchGenerationJobs } from "../../packages/providers/index.js";
 import { openM0Database } from "../../packages/storage/index.js";
 import { checkProviderEnv } from "../../tools/providerEnv.js";
@@ -291,6 +291,7 @@ export async function startWorkbenchApplication(
   options: WorkbenchStartOptions = {}
 ): Promise<WorkbenchRuntime> {
   ensureM0Directories();
+  withDatabase((db) => recoverMediaActivations(db));
   resumeWorkbenchGenerationJobs();
   const actionNonce = randomUUID();
   const shutdown = options.shutdown_token?.trim() && options.on_shutdown_requested

@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, lstatSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { extname, isAbsolute, join, relative, resolve } from "node:path";
 
 import { ensureM0Directories, paths } from "../paths.js";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { validateImageFile, type ImageValidationResult } from "./imageValidity.js";
 import { importG0AppReadyStoryboardPackage, validateG0StoryboardPackage, type G0StoryboardPackageInput } from "./g0Pregen.js";
-import { registerMediaArtifact, type MediaArtifact } from "./mediaArtifacts.js";
+import { cleanupCommittedMediaActivationMarkers, cleanupRolledBackMediaActivationFiles, registerMediaArtifact, type MediaArtifact } from "./mediaArtifacts.js";
 import { createProject, getProject, type Project } from "./projects.js";
 import { classifyStoryboardImageImport, isNineSixteenDimensions, STORYBOARD_IMAGE_EXTENSIONS } from "./importClassifier.js";
 
@@ -45,6 +45,11 @@ export interface FreezeGptHandoffInput {
   shots: GptHandoffShotInput[];
   approved_by_user?: boolean;
   write_report?: boolean;
+}
+
+export interface GptHandoffRuntime {
+  after_artifact_activated?: (artifact: MediaArtifact) => void;
+  remove_activation_file?: (target: string) => void;
 }
 
 export interface FreezeGptHandoffReport {
@@ -192,13 +197,11 @@ function validImportFilename(filename: string): boolean {
   return classifyStoryboardImageImport(filename).ok;
 }
 
-function cleanupImportedArtifactFiles(report: FreezeGptHandoffReport): void {
-  for (const artifact of report.imported_artifacts) {
-    const target = resolve(artifact.storage_uri);
-    if (isPathInside(target, paths.imageArtifactsRoot)) {
-      rmSync(target, { force: true });
-    }
-  }
+function cleanupImportedArtifactFiles(report: FreezeGptHandoffReport, runtime: GptHandoffRuntime): boolean {
+  return cleanupRolledBackMediaActivationFiles(
+    report.imported_artifacts.map((artifact) => artifact.artifact_id),
+    { remove_file: runtime.remove_activation_file }
+  );
 }
 
 function validateImportImageReady(filename: string): { ok: true; validation: ImageValidationResult } | { ok: false; error: HandoffError } {
@@ -336,7 +339,7 @@ export function writeFreezeReport(report: FreezeGptHandoffReport): string {
   return immutableTarget;
 }
 
-export function freezeGptHandoffStoryboardPackage(input: FreezeGptHandoffInput, db = openM0Database()): FreezeResult {
+export function freezeGptHandoffStoryboardPackage(input: FreezeGptHandoffInput, db = openM0Database(), runtime: GptHandoffRuntime = {}): FreezeResult {
   ensureM0Directories();
   const runId = randomUUID();
   const writeReport = input.write_report !== false;
@@ -363,7 +366,8 @@ export function freezeGptHandoffStoryboardPackage(input: FreezeGptHandoffInput, 
       db.exec("ROLLBACK");
       transactionOpen = false;
     }
-    cleanupImportedArtifactFiles(report);
+    const filesRemoved = cleanupImportedArtifactFiles(report, runtime);
+    if (!filesRemoved) return;
   };
 
   const mutationFallbackProject: Project = {
@@ -431,6 +435,7 @@ export function freezeGptHandoffStoryboardPackage(input: FreezeGptHandoffInput, 
       height: artifact.metadata.height,
       aspect_ratio: artifact.metadata.aspect_ratio
     });
+    if (runtime.after_artifact_activated) runtime.after_artifact_activated(artifact);
 
     packageShots.push({
       shot_id: shotIdFor(order),
@@ -505,6 +510,7 @@ export function freezeGptHandoffStoryboardPackage(input: FreezeGptHandoffInput, 
   }
 
   if (!successReport) return block(activeReport, "HANDOFF_FREEZE_FAILED", "Unexpected handoff freeze failure.", writeReport);
+  cleanupCommittedMediaActivationMarkers(db, successReport.imported_artifacts.map((artifact) => artifact.artifact_id));
   if (writeReport) writeFreezeReport(successReport);
   return { ok: true, report: successReport };
 }

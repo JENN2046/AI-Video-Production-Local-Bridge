@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import { paths } from "../paths.js";
 import { assertSchemaCurrent, runDatabaseMigrations } from "./migrations.js";
+import { getMediaArtifact, recoverMediaActivations, verifyMediaArtifactBytes } from "../tools/mediaArtifacts.js";
 
 export interface DatabaseCheckResult {
   result: "PASS" | "FAIL";
@@ -14,6 +15,9 @@ export interface DatabaseCheckResult {
   structured_drift_rows: number;
   orphan_rows: number;
   missing_media_files: number;
+  media_integrity_errors: number;
+  pending_media_activations: number;
+  quarantined_media_activations: number;
   check_errors: number;
 }
 
@@ -60,6 +64,18 @@ function scalarCount(db: DatabaseSync, sql: string, errors: string[]): number {
 }
 
 export function checkDatabase(sqlitePath = paths.sqlitePath): DatabaseCheckResult {
+  let recoveryErrors = 0;
+  const recoveryDb = new DatabaseSync(sqlitePath);
+  try {
+    recoveryDb.exec("PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
+    assertSchemaCurrent(recoveryDb);
+    const recovery = recoverMediaActivations(recoveryDb);
+    recoveryErrors = recovery.failed.length;
+  } catch {
+    recoveryErrors = 1;
+  } finally {
+    recoveryDb.close();
+  }
   const db = new DatabaseSync(sqlitePath, { readOnly: true });
   try {
     db.exec("PRAGMA query_only = ON; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
@@ -67,7 +83,7 @@ export function checkDatabase(sqlitePath = paths.sqlitePath): DatabaseCheckResul
     try { quickCheck = (db.prepare("PRAGMA quick_check").get() as { quick_check: string }).quick_check; } catch { /* reported as FAIL */ }
     let schemaCurrent = true;
     try { assertSchemaCurrent(db); } catch { schemaCurrent = false; }
-    const errors: string[] = [];
+    const errors: string[] = recoveryErrors > 0 ? ["MEDIA_ACTIVATION_RECOVERY_FAILED"] : [];
     const jsonColumns = [
       ["projects", "data_json"], ["shots", "data_json"], ["storyboard_packages", "data_json"], ["media_artifacts", "data_json"],
       ["generation_batches", "data_json"], ["generation_runs", "data_json"], ["import_index", "metadata_json"],
@@ -75,7 +91,7 @@ export function checkDatabase(sqlitePath = paths.sqlitePath): DatabaseCheckResul
       ["workbench_drafts", "data_json"], ["workbench_pending_actions", "data_json"], ["workbench_pending_actions", "result_json"],
       ["workbench_inbox_events", "data_json"], ["workbench_governance_runs", "rule_groups_json"],
       ["webgpt_audit_events", "changed_fields_json"], ["webgpt_audit_events", "result_json"], ["generation_job_events", "data_json"],
-      ["media_blobs", "provenance_json"]
+      ["media_blobs", "provenance_json"], ["media_activation_journal", "artifact_json"]
     ] as const;
     const invalidJsonRows = jsonColumns.reduce((sum, [table, column]) => sum + scalarCount(db, `SELECT COUNT(*) AS count FROM ${table} WHERE json_valid(${column}) = 0`, errors), 0);
     const structuredDriftRows = scalarCount(db, "SELECT COUNT(*) AS count FROM projects WHERE json_valid(data_json) = 1 AND json_extract(data_json, '$.project_id') IS NOT project_id", errors)
@@ -93,7 +109,17 @@ export function checkDatabase(sqlitePath = paths.sqlitePath): DatabaseCheckResul
             OR json_extract(a.data_json, '$.status') IS NOT a.status
             OR json_extract(a.data_json, '$.blob_id') IS NOT m.blob_id
           )`, errors)
-      + scalarCount(db, "SELECT COUNT(*) AS count FROM regeneration_requests WHERE json_valid(data_json) = 1 AND (json_extract(data_json, '$.request_id') IS NOT request_id OR json_extract(data_json, '$.project_id') IS NOT project_id OR json_extract(data_json, '$.shot_id') IS NOT shot_id OR json_extract(data_json, '$.artifact_id') IS NOT artifact_id OR json_extract(data_json, '$.previous_run_id') IS NOT previous_run_id OR json_extract(data_json, '$.status') IS NOT status)", errors);
+      + scalarCount(db, "SELECT COUNT(*) AS count FROM regeneration_requests WHERE json_valid(data_json) = 1 AND (json_extract(data_json, '$.request_id') IS NOT request_id OR json_extract(data_json, '$.project_id') IS NOT project_id OR json_extract(data_json, '$.shot_id') IS NOT shot_id OR json_extract(data_json, '$.artifact_id') IS NOT artifact_id OR json_extract(data_json, '$.previous_run_id') IS NOT previous_run_id OR json_extract(data_json, '$.status') IS NOT status)", errors)
+      + scalarCount(db, `SELECT COUNT(*) AS count FROM media_activation_journal
+          WHERE json_valid(artifact_json) = 1 AND (
+            json_extract(artifact_json, '$.artifact_id') IS NOT artifact_id
+            OR json_extract(artifact_json, '$.artifact_type') IS NOT artifact_type
+            OR json_extract(artifact_json, '$.role') IS NOT role
+            OR json_extract(artifact_json, '$.storage.uri') IS NOT final_path
+            OR json_extract(artifact_json, '$.storage.mime_type') IS NOT detected_mime
+            OR json_extract(artifact_json, '$.metadata.sha256') IS NOT expected_sha256
+            OR json_extract(artifact_json, '$.source.sha256') IS NOT expected_sha256
+          )`, errors);
     const orphanQueries = [
       "SELECT COUNT(*) AS count FROM shots s LEFT JOIN projects p ON p.project_id = s.project_id WHERE p.project_id IS NULL",
       "SELECT COUNT(*) AS count FROM generation_runs r LEFT JOIN projects p ON p.project_id = r.project_id WHERE p.project_id IS NULL",
@@ -127,6 +153,7 @@ export function checkDatabase(sqlitePath = paths.sqlitePath): DatabaseCheckResul
         JOIN media_artifact_blobs m ON m.artifact_id = a.artifact_id
         JOIN media_blobs b ON b.blob_id = m.blob_id
         WHERE a.status = 'active' AND b.integrity_state <> 'verified'`
+      ,"SELECT COUNT(*) AS count FROM media_activation_journal j LEFT JOIN media_artifacts a ON a.artifact_id = j.artifact_id WHERE j.state = 'committed' AND a.artifact_id IS NULL"
     ];
     const orphanRows = orphanQueries.reduce((sum, sql) => sum + scalarCount(db, sql, errors), 0);
     let mediaRows: Array<{ data_json: string }> = [];
@@ -141,8 +168,22 @@ export function checkDatabase(sqlitePath = paths.sqlitePath): DatabaseCheckResul
         return count;
       }
     }, 0);
-    const pass = quickCheck === "ok" && schemaCurrent && errors.length === 0 && invalidJsonRows === 0 && structuredDriftRows === 0 && orphanRows === 0 && missingMediaFiles === 0;
-    return { result: pass ? "PASS" : "FAIL", quick_check: quickCheck, schema_current: schemaCurrent, invalid_json_rows: invalidJsonRows, structured_drift_rows: structuredDriftRows, orphan_rows: orphanRows, missing_media_files: missingMediaFiles, check_errors: errors.length };
+    let mediaIntegrityErrors = 0;
+    try {
+      const activeRows = db.prepare("SELECT artifact_id FROM media_artifacts WHERE status = 'active' ORDER BY artifact_id").all() as Array<{ artifact_id: string }>;
+      for (const row of activeRows) {
+        try {
+          const artifact = getMediaArtifact(db, row.artifact_id);
+          if (!artifact || !verifyMediaArtifactBytes(db, artifact).ok) mediaIntegrityErrors += 1;
+        } catch { mediaIntegrityErrors += 1; }
+      }
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : "MEDIA_INTEGRITY_CHECK_FAILED");
+    }
+    const pendingMediaActivations = scalarCount(db, "SELECT COUNT(*) AS count FROM media_activation_journal WHERE state IN ('staged','file_placed')", errors);
+    const quarantinedMediaActivations = scalarCount(db, "SELECT COUNT(*) AS count FROM media_activation_journal WHERE state = 'failed'", errors);
+    const pass = quickCheck === "ok" && schemaCurrent && errors.length === 0 && invalidJsonRows === 0 && structuredDriftRows === 0 && orphanRows === 0 && missingMediaFiles === 0 && mediaIntegrityErrors === 0 && pendingMediaActivations === 0 && quarantinedMediaActivations === 0;
+    return { result: pass ? "PASS" : "FAIL", quick_check: quickCheck, schema_current: schemaCurrent, invalid_json_rows: invalidJsonRows, structured_drift_rows: structuredDriftRows, orphan_rows: orphanRows, missing_media_files: missingMediaFiles, media_integrity_errors: mediaIntegrityErrors, pending_media_activations: pendingMediaActivations, quarantined_media_activations: quarantinedMediaActivations, check_errors: errors.length };
   } finally {
     db.close();
   }

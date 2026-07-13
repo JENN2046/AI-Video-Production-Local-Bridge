@@ -21,14 +21,19 @@ export type {
 } from "./tools/providerCapabilities.js";
 export {
   activatePendingMediaArtifact,
+  activateLocalMediaArtifact,
   attachArtifactToShot,
+  cleanupCommittedMediaActivationMarkers,
   createScopedArtifactFromBlob,
+  discardMediaActivationMarkers,
   fixturePath,
   getMediaArtifact,
   getMediaBlob,
   getStoryboardImageTransferGate,
+  recoverMediaActivations,
   registerMediaArtifact,
-  transitionMediaArtifactStatus
+  transitionMediaArtifactStatus,
+  verifyMediaArtifactBytes
 } from "./tools/mediaArtifacts.js";
 export {
   buildStoryboardApprovedShot,
@@ -185,6 +190,7 @@ export type {
   MediaArtifact,
   MediaBlob,
   MediaBlobIntegrityState,
+  MediaActivationRecoveryResult,
   RegisterMediaArtifactInput,
   RegisterMediaArtifactResult,
   StoryboardImageTransferGate

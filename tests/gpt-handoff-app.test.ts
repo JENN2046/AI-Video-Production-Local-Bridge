@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
@@ -11,6 +11,9 @@ import {
   getProjectStatus,
   openM0Database,
   paths,
+  recoverMediaActivations,
+  registerMediaArtifact,
+  verifyMediaArtifactBytes,
   scanGptHandoffImports
 } from "../src/index.js";
 
@@ -136,12 +139,12 @@ test("M1.5 prevalidates all shots before registering any media artifact", () => 
     const runId = randomUUID().slice(0, 8);
     const validImport = copyTestImport(runId, 1);
     const invalidImport = `gpt_handoff_test_${runId}_bad.png`;
+    const projectTitle = `M1.5 Prevalidation Test ${runId}`;
     writeFileSync(join(paths.importsRoot, invalidImport), "not an image", "utf8");
-    const mediaFileCountBefore = readdirSync(paths.imageArtifactsRoot).length;
 
     const result = freezeGptHandoffStoryboardPackage(
       {
-        project_title: "M1.5 Prevalidation Test",
+        project_title: projectTitle,
         approved_by_user: true,
         write_report: false,
         shots: [
@@ -168,7 +171,92 @@ test("M1.5 prevalidates all shots before registering any media artifact", () => 
     if (result.ok) return;
     assert.equal(result.error.code, "IMAGE_FILE_INVALID");
     assert.equal(result.report.imported_artifacts.length, 0);
-    assert.equal(readdirSync(paths.imageArtifactsRoot).length, mediaFileCountBefore);
+    const createdProject = db.prepare("SELECT project_id FROM projects WHERE json_extract(data_json, '$.title') = ?").get(projectTitle);
+    assert.equal(createdProject, undefined);
+  } finally {
+    db.close();
+  }
+});
+
+test("M1.5 rollback retains activation recovery evidence when file cleanup fails", () => {
+  const db = openM0Database();
+  const runId = randomUUID().slice(0, 8);
+  const validImport = copyTestImport(runId, 1);
+  appendFileSync(join(paths.importsRoot, validImport), Buffer.from(`unique-${runId}`, "utf8"));
+  try {
+    const result = freezeGptHandoffStoryboardPackage(
+      {
+        project_title: `M1.5 Rollback Recovery ${runId}`,
+        approved_by_user: true,
+        write_report: false,
+        shots: [{
+          import_filename: validImport,
+          order: 1,
+          duration_seconds: 2,
+          shot_description: "Force rollback after activation.",
+          video_prompt: "Preserve the marker until cleanup succeeds."
+        }]
+      },
+      db,
+      {
+        after_artifact_activated: () => { throw new Error("INJECTED_HANDOFF_ROLLBACK"); },
+        remove_activation_file: () => { throw new Error("INJECTED_CLEANUP_FAILURE"); }
+      }
+    );
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.error.code, "HANDOFF_FREEZE_FAILED");
+    assert.equal(result.report.imported_artifacts.length, 1);
+    const imported = result.report.imported_artifacts[0];
+    assert.equal(existsSync(imported.storage_uri), true);
+    assert.equal(getMediaArtifact(db, imported.artifact_id), null);
+
+    const recovered = recoverMediaActivations(db);
+    assert.equal(recovered.failed.some((failure) => failure.code === "MEDIA_ACTIVATION_DB_RECORD_MISSING"), true);
+    assert.equal(existsSync(imported.storage_uri), false);
+  } finally {
+    db.close();
+  }
+});
+
+test("M1.5 rollback never deletes a deduplicated Blob owned by a committed Artifact", () => {
+  const db = openM0Database();
+  const runId = randomUUID().slice(0, 8);
+  const validImport = copyTestImport(runId, 1);
+  try {
+    const committed = registerMediaArtifact({
+      artifact_type: "image",
+      role: "storyboard_image",
+      source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" }
+    }, db);
+    assert.equal(committed.ok, true);
+    if (!committed.ok) return;
+    const committedBytes = readFileSync(committed.artifact.storage.uri);
+
+    const result = freezeGptHandoffStoryboardPackage(
+      {
+        project_title: `M1.5 Shared Blob Rollback ${runId}`,
+        approved_by_user: true,
+        write_report: false,
+        shots: [{
+          import_filename: validImport,
+          order: 1,
+          duration_seconds: 2,
+          shot_description: "Force rollback after Blob dedupe.",
+          video_prompt: "Do not delete shared Blob storage."
+        }]
+      },
+      db,
+      { after_artifact_activated: () => { throw new Error("INJECTED_SHARED_BLOB_ROLLBACK"); } }
+    );
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.report.imported_artifacts[0].storage_uri, committed.artifact.storage.uri);
+    assert.equal(existsSync(committed.artifact.storage.uri), true);
+    const stored = getMediaArtifact(db, committed.artifact.artifact_id);
+    assert.equal(stored ? verifyMediaArtifactBytes(db, stored).ok : false, true);
+    assert.equal(readFileSync(committed.artifact.storage.uri).equals(committedBytes), true);
+    assert.deepEqual(recoverMediaActivations(db), { committed: [], failed: [] });
   } finally {
     db.close();
   }

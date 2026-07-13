@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
-import { getMediaArtifact, registerMediaArtifact } from "./mediaArtifacts.js";
+import { getMediaArtifact, registerMediaArtifact, verifyMediaArtifactBytes } from "./mediaArtifacts.js";
 import { getProject, getProjectStatus, getShot, listProjectShots, saveProject, saveShot, type Project, type Shot, type ToolError } from "./projects.js";
 import { getStoryboardPackage } from "./storyboardPackages.js";
 import { providerError, selectM0Provider, selectM1ProviderPort, type ProviderExecutionRequest, type ProviderPortName, type ProviderToolError } from "./provider.js";
@@ -256,6 +256,8 @@ function providerInputFromShotWithDb(db: M0Database, project: Project, shot: Sho
   if (!storyboardArtifact) {
     return { error: providerError("PROVIDER_UNSUPPORTED_INPUT", `Storyboard artifact not found: ${shot.storyboard_image_artifact_id}.`) };
   }
+  const integrity = verifyMediaArtifactBytes(db, storyboardArtifact);
+  if (!integrity.ok) return { error: providerError(integrity.error.code, integrity.error.message) };
 
   return {
     storyboard_artifact: storyboardArtifact,

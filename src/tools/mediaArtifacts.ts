@@ -1,10 +1,11 @@
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { closeSync, constants, copyFileSync, existsSync, fstatSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { ensureM0Directories, paths } from "../paths.js";
 import { validateImageBuffer, validateImageFile, type ImageValidationResult } from "./imageValidity.js";
+import { validateMp4File } from "./mediaValidity.js";
 import { getProject, getShot, type Shot } from "./projects.js";
 
 export type ArtifactType = "image" | "video";
@@ -187,26 +188,59 @@ function detectMimeFromBytes(bytes: Buffer): string {
   return "";
 }
 
+function sameResolvedPath(first: string, second: string): boolean {
+  const left = resolve(first);
+  const right = resolve(second);
+  return process.platform === "win32" ? left.toLowerCase() === right.toLowerCase() : left === right;
+}
+
+function hashLocalFile(filePath: string): { sha256: string; size_bytes: number; header: Buffer } {
+  const descriptor = openSync(filePath, "r");
+  try {
+    const before = fstatSync(descriptor);
+    const hash = createHash("sha256");
+    const chunk = Buffer.allocUnsafe(1024 * 1024);
+    const header = Buffer.alloc(16);
+    let size = 0;
+    let headerLength = 0;
+    while (true) {
+      const read = readSync(descriptor, chunk, 0, chunk.length, null);
+      if (read === 0) break;
+      hash.update(chunk.subarray(0, read));
+      if (headerLength < header.length) {
+        const copied = Math.min(read, header.length - headerLength);
+        chunk.copy(header, headerLength, 0, copied);
+        headerLength += copied;
+      }
+      size += read;
+    }
+    const after = fstatSync(descriptor);
+    if (before.size !== after.size || before.mtimeMs !== after.mtimeMs || size !== after.size) throw new Error("MEDIA_FILE_CHANGED_DURING_HASH");
+    return { sha256: hash.digest("hex"), size_bytes: size, header: header.subarray(0, headerLength) };
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
 function databaseIsInTransaction(db: M0Database): boolean {
   return Boolean((db as unknown as { isTransaction?: boolean }).isTransaction);
 }
 
-function buildBlobForArtifact(artifact: MediaArtifact): MediaBlob {
+function buildBlobForArtifact(artifact: MediaArtifact, mediaRoot = paths.mediaRoot): MediaBlob {
   const uri = artifact.storage.uri;
   if (uri && !/^https?:\/\//i.test(uri) && existsSync(uri) && !lstatSync(uri).isSymbolicLink() && statSync(uri).isFile()) {
-    const bytes = readFileSync(uri);
-    const detectedMime = detectMimeFromBytes(bytes);
+    const facts = hashLocalFile(uri);
+    const detectedMime = detectMimeFromBytes(facts.header);
     const typeMatches = artifact.artifact_type === "image" ? detectedMime.startsWith("image/") : detectedMime === "video/mp4";
-    if (bytes.length > 0 && typeMatches) {
-      const sha256 = createHash("sha256").update(bytes).digest("hex");
+    if (facts.size_bytes > 0 && typeMatches) {
       return {
-        blob_id: `blob_sha256_${sha256}`,
-        sha256,
-        size_bytes: bytes.length,
+        blob_id: `blob_sha256_${facts.sha256}`,
+        sha256: facts.sha256,
+        size_bytes: facts.size_bytes,
         detected_mime: detectedMime,
         storage_uri: resolve(uri),
         integrity_state: "verified",
-        provenance: { source: artifact.source.kind, immutable: true }
+        provenance: { source: artifact.source.kind, immutable: true, media_root: resolve(mediaRoot) }
       };
     }
   }
@@ -221,6 +255,30 @@ function buildBlobForArtifact(artifact: MediaArtifact): MediaBlob {
     integrity_state: missing ? "missing" : "unverified",
     provenance: { source: artifact.source.kind, immutable: true, reason: missing ? "LOCAL_FILE_MISSING" : "CONTENT_NOT_LOCALLY_VERIFIABLE" }
   };
+}
+
+function verifiedBlobStorageIsReusable(blob: MediaBlob): boolean {
+  if (blob.integrity_state !== "verified") return false;
+  const rootValue = blob.provenance.media_root;
+  if (typeof rootValue !== "string" || !isAbsolute(rootValue)) return false;
+  const registeredRoot = resolve(rootValue);
+  const localPath = resolve(blob.storage_uri);
+  try {
+    const canonicalRoot = resolve(realpathSync(registeredRoot));
+    if (!sameResolvedPath(canonicalRoot, registeredRoot)
+      || lstatSync(registeredRoot).isSymbolicLink()
+      || !statSync(registeredRoot).isDirectory()
+      || !isPathInside(localPath, registeredRoot)
+      || hasExistingSymlinkAncestor(localPath, registeredRoot)
+      || lstatSync(localPath).isSymbolicLink()
+      || !statSync(localPath).isFile()) return false;
+    const facts = hashLocalFile(localPath);
+    return facts.sha256 === blob.sha256
+      && facts.size_bytes === blob.size_bytes
+      && detectMimeFromBytes(facts.header) === blob.detected_mime;
+  } catch {
+    return false;
+  }
 }
 
 function persistBlob(db: M0Database, blob: MediaBlob): MediaBlob {
@@ -241,7 +299,7 @@ function persistBlob(db: M0Database, blob: MediaBlob): MediaBlob {
       if (Number(existing.size_bytes) !== blob.size_bytes || existing.detected_mime !== blob.detected_mime) {
         throw new Error("MEDIA_BLOB_CONTENT_CONFLICT");
       }
-      return {
+      const reusable: MediaBlob = {
         blob_id: existing.blob_id,
         sha256: existing.sha256,
         size_bytes: Number(existing.size_bytes),
@@ -250,6 +308,8 @@ function persistBlob(db: M0Database, blob: MediaBlob): MediaBlob {
         integrity_state: existing.integrity_state,
         provenance: JSON.parse(existing.provenance_json) as Record<string, unknown>
       };
+      if (!verifiedBlobStorageIsReusable(reusable)) throw new Error("MEDIA_BLOB_EXISTING_BYTES_INVALID");
+      return reusable;
     }
   }
   db.prepare(`
@@ -259,7 +319,7 @@ function persistBlob(db: M0Database, blob: MediaBlob): MediaBlob {
   return blob;
 }
 
-function persistMediaArtifactInternal(db: M0Database, artifact: MediaArtifact, allowStatusTransition: boolean): void {
+function persistMediaArtifactInternal(db: M0Database, artifact: MediaArtifact, allowStatusTransition: boolean, mediaRoot = paths.mediaRoot): void {
   const manageTransaction = !databaseIsInTransaction(db);
   if (manageTransaction) db.exec("BEGIN IMMEDIATE");
   try {
@@ -290,7 +350,7 @@ function persistMediaArtifactInternal(db: M0Database, artifact: MediaArtifact, a
       if (!row) throw new Error("MEDIA_BLOB_NOT_FOUND");
       blob = { ...row, size_bytes: Number(row.size_bytes), provenance: JSON.parse(row.provenance_json) as Record<string, unknown> };
     } else {
-      blob = persistBlob(db, buildBlobForArtifact(artifact));
+      blob = persistBlob(db, buildBlobForArtifact(artifact, mediaRoot));
       artifact.blob_id = blob.blob_id;
     }
     if (blob.integrity_state === "verified") {
@@ -428,7 +488,852 @@ function filenameHasPathTraversal(filename: string): boolean {
 }
 
 function sha256ForFile(filePath: string): string {
-  return createHash("sha256").update(readFileSync(filePath)).digest("hex");
+  return hashLocalFile(filePath).sha256;
+}
+
+interface LocalMediaFacts {
+  sha256: string;
+  size_bytes: number;
+  detected_mime: string;
+  width: number;
+  height: number;
+  duration_seconds: number | null;
+  aspect_ratio: string;
+}
+
+class MediaActivationInjectedCrash extends Error {
+  constructor(readonly causeValue: unknown) {
+    super(causeValue instanceof Error ? causeValue.message : "MEDIA_ACTIVATION_INJECTED_CRASH");
+  }
+}
+
+function mediaActivationErrorCode(error: unknown): string {
+  const raw = error instanceof Error ? error.message : "MEDIA_ACTIVATION_FAILED";
+  if (raw.includes("media_activation_journal.artifact_id")) return "MEDIA_ACTIVATION_ALREADY_PENDING";
+  if (/^[A-Z][A-Z0-9_]+$/.test(raw)) return raw;
+  const systemCode = (error as NodeJS.ErrnoException | undefined)?.code;
+  if (typeof systemCode === "string" && /^E[A-Z]+$/.test(systemCode)) return "MEDIA_ACTIVATION_IO_FAILED";
+  if (/constraint|sqlite|database/i.test(raw)) return "MEDIA_ACTIVATION_DATABASE_FAILED";
+  return "MEDIA_ACTIVATION_FAILED";
+}
+
+function copyToStagingExclusively(sourcePath: string, stagingPath: string): ToolError | null {
+  try {
+    copyFileSync(sourcePath, stagingPath, constants.COPYFILE_EXCL);
+    return null;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      return { code: "MEDIA_ACTIVATION_ALREADY_PENDING", message: "An existing staged activation owns this Artifact id." };
+    }
+    return { code: "MEDIA_ACTIVATION_IO_FAILED", message: "Media bytes could not be copied into app-controlled staging." };
+  }
+}
+
+function writeToStagingExclusively(stagingPath: string, bytes: Buffer): ToolError | null {
+  try {
+    writeFileSync(stagingPath, bytes, { flag: "wx" });
+    return null;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      return { code: "MEDIA_ACTIVATION_ALREADY_PENDING", message: "An existing staged activation owns this Artifact id." };
+    }
+    return { code: "MEDIA_ACTIVATION_IO_FAILED", message: "Media bytes could not be written into app-controlled staging." };
+  }
+}
+
+function activationRoots(mediaRoot: string): { activation: string; staging: string; pending: string; quarantine: string; journal: string } {
+  const activation = resolve(mediaRoot, ".activation");
+  return {
+    activation,
+    staging: resolve(activation, "staging"),
+    pending: resolve(activation, "pending"),
+    quarantine: resolve(activation, "quarantine"),
+    journal: resolve(activation, "journal")
+  };
+}
+
+function ensureSafeMediaRoot(mediaRoot: string): void {
+  const root = resolve(mediaRoot);
+  mkdirSync(root, { recursive: true });
+  if (lstatSync(root).isSymbolicLink() || !statSync(root).isDirectory()) throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
+  const canonical = resolve(realpathSync(root));
+  const comparable = (value: string): string => process.platform === "win32" ? value.toLowerCase() : value;
+  if (comparable(canonical) !== comparable(root)) throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
+}
+
+function ensureSafeActivationRoots(mediaRoot: string, create: boolean): ReturnType<typeof activationRoots> {
+  const root = resolve(mediaRoot);
+  if (create) ensureSafeMediaRoot(root);
+  if (!existsSync(root)) {
+    if (!create) return activationRoots(root);
+    throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
+  }
+  if (lstatSync(root).isSymbolicLink() || !statSync(root).isDirectory()) throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
+  const canonicalRoot = resolve(realpathSync(root));
+  const roots = activationRoots(root);
+  for (const directory of [roots.activation, roots.staging, roots.pending, roots.quarantine, roots.journal]) {
+    if (create && !existsSync(directory)) mkdirSync(directory);
+    if (!existsSync(directory)) continue;
+    if (lstatSync(directory).isSymbolicLink() || !statSync(directory).isDirectory()) throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
+    const canonicalDirectory = resolve(realpathSync(directory));
+    if (!isPathInside(canonicalDirectory, canonicalRoot)) throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
+  }
+  return roots;
+}
+
+interface MediaActivationMarker {
+  version: 1;
+  activation_id: string;
+  artifact_id: string;
+  media_root: string;
+  final_path_owned: boolean;
+  artifact_type: ArtifactType;
+  role: ArtifactRole;
+  expected_sha256: string;
+  expected_size_bytes: number;
+  detected_mime: string;
+  staging_path: string;
+  pending_path: string;
+  final_path: string;
+  artifact_json: string;
+}
+
+interface MediaStagingOwner {
+  version: 1;
+  artifact_id: string;
+  media_root: string;
+  staging_path: string;
+}
+
+function stagingOwnerPath(artifactId: string): string {
+  const roots = ensureSafeActivationRoots(paths.mediaRoot, false);
+  const digest = createHash("sha256").update(artifactId).digest("hex");
+  const target = resolve(roots.journal, `staging-owner-${digest}.json`);
+  if (!isPathInside(target, roots.journal) || hasExistingSymlinkAncestor(target, roots.activation)) throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
+  return target;
+}
+
+function claimStagingOwnership(artifact: MediaArtifact, mediaRoot: string): ToolError | null {
+  let roots: ReturnType<typeof activationRoots>;
+  try { roots = ensureSafeActivationRoots(paths.mediaRoot, true); }
+  catch { return { code: "MEDIA_ACTIVATION_PATH_UNSAFE", message: "Media activation ownership storage is not app-controlled." }; }
+  const target = stagingOwnerPath(artifact.artifact_id);
+  const owner: MediaStagingOwner = {
+    version: 1,
+    artifact_id: artifact.artifact_id,
+    media_root: resolve(mediaRoot),
+    staging_path: stagedPathForArtifact(artifact, mediaRoot)
+  };
+  try {
+    writeFileSync(target, `${JSON.stringify(owner)}\n`, { encoding: "utf8", flag: "wx" });
+    return null;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      return { code: "MEDIA_ACTIVATION_ALREADY_PENDING", message: "An existing staging owner controls this Artifact id." };
+    }
+    if (existsSync(target)) {
+      try { rmSync(target, { force: true }); } catch { /* recovery will fail closed on a partial owner record */ }
+    }
+    return { code: "MEDIA_ACTIVATION_IO_FAILED", message: "Media staging ownership could not be recorded." };
+  }
+}
+
+function removeStagingOwnership(artifactId: string): void {
+  const target = stagingOwnerPath(artifactId);
+  if (existsSync(target) && !lstatSync(target).isSymbolicLink()) rmSync(target, { force: true });
+}
+
+function reconcileFailedStagingWrite(artifactId: string, stagingPath: string, stageError: ToolError): void {
+  if (stageError.code === "MEDIA_ACTIVATION_ALREADY_PENDING") return;
+  let stagingCleared = !existsSync(stagingPath);
+  if (!stagingCleared) {
+    try {
+      if (!lstatSync(stagingPath).isSymbolicLink() && statSync(stagingPath).isFile()) {
+        rmSync(stagingPath, { force: true });
+        stagingCleared = !existsSync(stagingPath);
+      }
+    } catch { /* retain the owner so recovery can retry safe cleanup */ }
+  }
+  if (stagingCleared) {
+    try { removeStagingOwnership(artifactId); } catch { /* recovery retains the ownership record */ }
+  }
+}
+
+function copyToOwnedStaging(
+  artifact: MediaArtifact,
+  sourcePath: string,
+  mediaRoot = paths.mediaRoot,
+  afterStagingWritten?: (stagingPath: string) => void
+): ToolError | null {
+  const ownerError = claimStagingOwnership(artifact, mediaRoot);
+  if (ownerError) return ownerError;
+  const stagingPath = stagedPathForArtifact(artifact, mediaRoot);
+  const stageError = copyToStagingExclusively(sourcePath, stagingPath);
+  if (stageError) {
+    reconcileFailedStagingWrite(artifact.artifact_id, stagingPath, stageError);
+    return stageError;
+  }
+  if (afterStagingWritten) {
+    try { afterStagingWritten(stagingPath); } catch (error) { throw new MediaActivationInjectedCrash(error); }
+  }
+  return null;
+}
+
+function writeToOwnedStaging(artifact: MediaArtifact, bytes: Buffer, mediaRoot = paths.mediaRoot): ToolError | null {
+  const ownerError = claimStagingOwnership(artifact, mediaRoot);
+  if (ownerError) return ownerError;
+  const stagingPath = stagedPathForArtifact(artifact, mediaRoot);
+  const stageError = writeToStagingExclusively(stagingPath, bytes);
+  if (stageError) {
+    reconcileFailedStagingWrite(artifact.artifact_id, stagingPath, stageError);
+    return stageError;
+  }
+  return null;
+}
+
+function markerPath(activationId: string): string {
+  if (!/^activation_[0-9a-f-]{36}$/i.test(activationId)) throw new Error("MEDIA_ACTIVATION_MARKER_INVALID");
+  const roots = ensureSafeActivationRoots(paths.mediaRoot, false);
+  const target = resolve(roots.journal, `${activationId}.json`);
+  if (!isPathInside(target, roots.journal) || hasExistingSymlinkAncestor(target, roots.activation)) throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
+  return target;
+}
+
+function writeActivationMarker(marker: MediaActivationMarker): string {
+  const roots = ensureSafeActivationRoots(paths.mediaRoot, true);
+  const target = markerPath(marker.activation_id);
+  const temporary = `${target}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporary, `${JSON.stringify(marker)}\n`, { encoding: "utf8", flag: "wx" });
+    renameSync(temporary, target);
+  } finally {
+    if (existsSync(temporary) && !lstatSync(temporary).isSymbolicLink()) rmSync(temporary, { force: true });
+  }
+  return target;
+}
+
+function removeActivationMarker(activationId: string): void {
+  const target = markerPath(activationId);
+  if (existsSync(target) && !lstatSync(target).isSymbolicLink()) rmSync(target, { force: true });
+  const temporary = `${target}.tmp`;
+  if (existsSync(temporary) && !lstatSync(temporary).isSymbolicLink()) rmSync(temporary, { force: true });
+}
+
+function activationFilePath(root: string, artifact: MediaArtifact, suffix: string, activationRoot = paths.mediaActivationRoot): string {
+  const extension = extname(artifact.storage.filename).toLowerCase() || (artifact.artifact_type === "image" ? ".img" : ".mp4");
+  const target = resolve(root, `${artifact.artifact_id}${extension}${suffix}`);
+  if (!isPathInside(target, root) || hasExistingSymlinkAncestor(target, activationRoot)) throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
+  return target;
+}
+
+function stagedPathForArtifact(artifact: MediaArtifact, mediaRoot = paths.mediaRoot): string {
+  const roots = activationRoots(mediaRoot);
+  return activationFilePath(roots.staging, artifact, ".stage", roots.activation);
+}
+
+function pendingPathForArtifact(artifact: MediaArtifact, mediaRoot = paths.mediaRoot): string {
+  const roots = activationRoots(mediaRoot);
+  return activationFilePath(roots.pending, artifact, ".pending", roots.activation);
+}
+
+function localMediaFacts(filePath: string, artifact: MediaArtifact): LocalMediaFacts {
+  if (!existsSync(filePath) || lstatSync(filePath).isSymbolicLink() || !statSync(filePath).isFile()) throw new Error("MEDIA_ACTIVATION_FILE_UNREADABLE");
+  const fileFacts = hashLocalFile(filePath);
+  if (artifact.artifact_type === "image") {
+    const validation = validateImageFile(filePath);
+    if (!validation.ok) throw new Error(validation.error_code || "IMAGE_DECODE_FAILED");
+    return {
+      sha256: validation.sha256,
+      size_bytes: fileFacts.size_bytes,
+      detected_mime: validation.detected_mime,
+      width: validation.width,
+      height: validation.height,
+      duration_seconds: null,
+      aspect_ratio: validation.aspect_ratio
+    };
+  }
+  const validation = validateMp4File(filePath);
+  if (validation.status !== "PASS") throw new Error(validation.status === "NOT_TESTED" ? "VIDEO_PROBE_UNAVAILABLE" : "VIDEO_FILE_INVALID");
+  const detectedMime = detectMimeFromBytes(fileFacts.header);
+  if (detectedMime !== "video/mp4") throw new Error("MEDIA_MIME_MISMATCH");
+  return {
+    sha256: fileFacts.sha256,
+    size_bytes: fileFacts.size_bytes,
+    detected_mime: detectedMime,
+    width: artifact.metadata.width,
+    height: artifact.metadata.height,
+    duration_seconds: validation.duration_seconds,
+    aspect_ratio: artifact.metadata.aspect_ratio
+  };
+}
+
+function applyLocalMediaFacts(artifact: MediaArtifact, facts: LocalMediaFacts): void {
+  artifact.metadata = {
+    width: facts.width,
+    height: facts.height,
+    duration_seconds: facts.duration_seconds,
+    aspect_ratio: facts.aspect_ratio,
+    sha256: facts.sha256
+  };
+  artifact.source.sha256 = facts.sha256;
+  artifact.storage.mime_type = facts.detected_mime;
+}
+
+function quarantineActivationFile(artifact: MediaArtifact, candidates: string[], mediaRoot = paths.mediaRoot): void {
+  const roots = activationRoots(mediaRoot);
+  mkdirSync(roots.quarantine, { recursive: true });
+  const quarantine = activationFilePath(roots.quarantine, artifact, ".failed", roots.activation);
+  for (const candidate of candidates) {
+    if (!existsSync(candidate) || lstatSync(candidate).isSymbolicLink()) continue;
+    if (existsSync(quarantine)) rmSync(quarantine, { force: true });
+    renameSync(candidate, quarantine);
+    return;
+  }
+}
+
+function moveActivationFileExclusively(sourcePath: string, finalPath: string, afterLinked?: () => void): void {
+  try {
+    linkSync(sourcePath, finalPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new Error("MEDIA_ACTIVATION_FINAL_PATH_EXISTS");
+    throw error;
+  }
+  try {
+    if (afterLinked) afterLinked();
+    rmSync(sourcePath);
+  } catch (error) {
+    try { rmSync(finalPath, { force: true }); } catch { /* recovery detects the two-link crash window */ }
+    throw error;
+  }
+}
+
+function samePhysicalFile(firstPath: string, secondPath: string): boolean {
+  if (!existsSync(firstPath) || !existsSync(secondPath)) return false;
+  if (lstatSync(firstPath).isSymbolicLink() || lstatSync(secondPath).isSymbolicLink()) return false;
+  const first = statSync(firstPath);
+  const second = statSync(secondPath);
+  return first.isFile() && second.isFile() && first.dev === second.dev && first.ino !== 0 && first.ino === second.ino;
+}
+
+function commitStagedMediaArtifact(
+  db: M0Database,
+  artifact: MediaArtifact,
+  allowStatusTransition: boolean,
+  options: { after_journal_staged?: (stagingPath: string) => void; after_pending_placed?: (pendingPath: string) => void; after_file_placed?: (finalPath: string) => void; remove_post_commit_file?: (finalPath: string) => void; media_root?: string } = {}
+): RegisterMediaArtifactResult {
+  const activationId = `activation_${randomUUID()}`;
+  const mediaRoot = resolve(options.media_root ?? paths.mediaRoot);
+  const roots = ensureSafeActivationRoots(mediaRoot, true);
+  const stagingPath = stagedPathForArtifact(artifact, mediaRoot);
+  const pendingPath = pendingPathForArtifact(artifact, mediaRoot);
+  const finalPath = resolve(artifact.storage.uri);
+  const manageTransaction = !databaseIsInTransaction(db);
+  let journalCreated = false;
+  let markerCreated = false;
+  let finalPathOwned = false;
+  try {
+    if (!isPathInside(finalPath, mediaRoot) || hasExistingSymlinkAncestor(finalPath, mediaRoot)) {
+      throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
+    }
+    mkdirSync(dirname(finalPath), { recursive: true });
+    if (hasExistingSymlinkAncestor(finalPath, mediaRoot)) throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
+    const facts = localMediaFacts(stagingPath, artifact);
+    applyLocalMediaFacts(artifact, facts);
+    const marker: MediaActivationMarker = {
+      version: 1,
+      activation_id: activationId,
+      artifact_id: artifact.artifact_id,
+      media_root: mediaRoot,
+      final_path_owned: false,
+      artifact_type: artifact.artifact_type,
+      role: artifact.role,
+      expected_sha256: facts.sha256,
+      expected_size_bytes: facts.size_bytes,
+      detected_mime: facts.detected_mime,
+      staging_path: stagingPath,
+      pending_path: pendingPath,
+      final_path: finalPath,
+      artifact_json: JSON.stringify(artifact)
+    };
+    const insertJournal = (): void => {
+      db.prepare(`INSERT INTO media_activation_journal
+        (activation_id, artifact_id, state, artifact_type, role, expected_sha256, expected_size_bytes, detected_mime,
+         staging_path, pending_path, final_path, artifact_json)
+        VALUES (?, ?, 'staged', ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(activationId, artifact.artifact_id, artifact.artifact_type, artifact.role, facts.sha256, facts.size_bytes, facts.detected_mime,
+          stagingPath, pendingPath, finalPath, JSON.stringify(artifact));
+      journalCreated = true;
+    };
+    if (manageTransaction) insertJournal();
+    writeActivationMarker(marker);
+    markerCreated = true;
+    if (!manageTransaction) insertJournal();
+    removeStagingOwnership(artifact.artifact_id);
+    if (options.after_journal_staged) {
+      try { options.after_journal_staged(stagingPath); } catch (error) { throw new MediaActivationInjectedCrash(error); }
+    }
+    renameSync(stagingPath, pendingPath);
+    if (options.after_pending_placed) {
+      try { options.after_pending_placed(pendingPath); } catch (error) { throw new MediaActivationInjectedCrash(error); }
+    }
+    db.prepare("UPDATE media_activation_journal SET state = 'file_placed', updated_at = CURRENT_TIMESTAMP WHERE activation_id = ? AND state = 'staged'").run(activationId);
+    moveActivationFileExclusively(pendingPath, finalPath, () => {
+      marker.final_path_owned = true;
+      writeActivationMarker(marker);
+    });
+    finalPathOwned = true;
+    if (options.after_file_placed) {
+      try { options.after_file_placed(finalPath); } catch (error) { throw new MediaActivationInjectedCrash(error); }
+    }
+    const committedFacts = localMediaFacts(finalPath, artifact);
+    if (committedFacts.sha256 !== facts.sha256 || committedFacts.size_bytes !== facts.size_bytes || committedFacts.detected_mime !== facts.detected_mime) {
+      throw new Error("MEDIA_ACTIVATION_CONTENT_DRIFT");
+    }
+    if (manageTransaction) db.exec("BEGIN IMMEDIATE");
+    try {
+      persistMediaArtifactInternal(db, artifact, allowStatusTransition, mediaRoot);
+      db.prepare("UPDATE media_activation_journal SET state = 'committed', final_path = ?, artifact_json = ?, error_code = '', updated_at = CURRENT_TIMESTAMP WHERE activation_id = ? AND state = 'file_placed'")
+        .run(artifact.storage.uri, JSON.stringify(artifact), activationId);
+      if (manageTransaction) db.exec("COMMIT");
+    } catch (error) {
+      if (manageTransaction) db.exec("ROLLBACK");
+      throw error;
+    }
+    if (manageTransaction) {
+      let cleanupComplete = true;
+      if (resolve(artifact.storage.uri) !== finalPath && existsSync(finalPath)) {
+        try {
+          if (options.remove_post_commit_file) options.remove_post_commit_file(finalPath);
+          else rmSync(finalPath, { force: true });
+        } catch { cleanupComplete = false; }
+        if (existsSync(finalPath)) cleanupComplete = false;
+      }
+      if (cleanupComplete) {
+        try { removeActivationMarker(activationId); } catch { /* committed marker cleanup is recoverable */ }
+      }
+    }
+    return { ok: true, artifact };
+  } catch (error) {
+    if (error instanceof MediaActivationInjectedCrash) throw error.causeValue;
+    const code = mediaActivationErrorCode(error);
+    if (journalCreated) {
+      const ownedCandidates = finalPathOwned ? [finalPath, pendingPath, stagingPath] : [pendingPath, stagingPath];
+      try { quarantineActivationFile(artifact, ownedCandidates, mediaRoot); } catch { /* preserve the journal failure even when quarantine cannot move the file */ }
+      try { db.prepare("UPDATE media_activation_journal SET state = 'failed', error_code = ?, updated_at = CURRENT_TIMESTAMP WHERE activation_id = ?").run(code, activationId); } catch { /* db:check will surface the non-terminal record */ }
+    } else if (existsSync(stagingPath)) {
+      rmSync(stagingPath, { force: true });
+    }
+    if (markerCreated && (!journalCreated || manageTransaction)) {
+      try { removeActivationMarker(activationId); } catch { /* a leftover marker fails closed during recovery */ }
+    }
+    try { removeStagingOwnership(artifact.artifact_id); } catch { /* recovery will reconcile the owner record */ }
+    return { ok: false, error: { code, message: "Media activation failed before the Artifact became active." } };
+  }
+}
+
+export function activateLocalMediaArtifact(
+  input: { artifact: MediaArtifact; source_path: string; media_root?: string; allow_status_transition?: boolean; after_staging_written?: (stagingPath: string) => void; after_journal_staged?: (stagingPath: string) => void; after_pending_placed?: (pendingPath: string) => void; after_file_placed?: (finalPath: string) => void; remove_post_commit_file?: (finalPath: string) => void },
+  db = openM0Database()
+): RegisterMediaArtifactResult {
+  ensureM0Directories();
+  const sourcePath = resolve(input.source_path);
+  if (!existsSync(sourcePath) || lstatSync(sourcePath).isSymbolicLink() || !statSync(sourcePath).isFile()) {
+    return { ok: false, error: { code: "MEDIA_ACTIVATION_FILE_UNREADABLE", message: "Activation source file is not a regular readable file." } };
+  }
+  const mediaRoot = resolve(input.media_root ?? paths.mediaRoot);
+  try { ensureSafeActivationRoots(mediaRoot, true); }
+  catch { return { ok: false, error: { code: "MEDIA_ACTIVATION_PATH_UNSAFE", message: "Media activation directories are not app-controlled." } }; }
+  const stageError = copyToOwnedStaging(input.artifact, sourcePath, mediaRoot, input.after_staging_written);
+  if (stageError) return { ok: false, error: stageError };
+  return commitStagedMediaArtifact(db, input.artifact, input.allow_status_transition === true, { after_journal_staged: input.after_journal_staged, after_pending_placed: input.after_pending_placed, after_file_placed: input.after_file_placed, remove_post_commit_file: input.remove_post_commit_file, media_root: mediaRoot });
+}
+
+function activationMarkerPaths(): string[] {
+  const roots = ensureSafeActivationRoots(paths.mediaRoot, false);
+  if (!existsSync(roots.journal)) return [];
+  if (lstatSync(roots.journal).isSymbolicLink() || !statSync(roots.journal).isDirectory()) throw new Error("MEDIA_ACTIVATION_JOURNAL_UNSAFE");
+  return readdirSync(roots.journal, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && !entry.isSymbolicLink() && /^activation_[0-9a-f-]{36}\.json$/i.test(entry.name))
+    .map((entry) => resolve(roots.journal, entry.name));
+}
+
+function stagingOwnerPaths(): string[] {
+  const roots = ensureSafeActivationRoots(paths.mediaRoot, false);
+  if (!existsSync(roots.journal)) return [];
+  if (lstatSync(roots.journal).isSymbolicLink() || !statSync(roots.journal).isDirectory()) throw new Error("MEDIA_ACTIVATION_JOURNAL_UNSAFE");
+  return readdirSync(roots.journal, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && !entry.isSymbolicLink() && /^staging-owner-[a-f0-9]{64}\.json$/i.test(entry.name))
+    .map((entry) => resolve(roots.journal, entry.name));
+}
+
+function readStagingOwner(filePath: string): MediaStagingOwner {
+  const journalRoots = activationRoots(paths.mediaRoot);
+  const target = resolve(filePath);
+  if (!isPathInside(target, journalRoots.journal) || lstatSync(target).isSymbolicLink() || !statSync(target).isFile()) throw new Error("MEDIA_STAGING_OWNER_INVALID");
+  const owner = JSON.parse(readFileSync(target, "utf8")) as Partial<MediaStagingOwner>;
+  if (owner.version !== 1
+    || typeof owner.artifact_id !== "string" || owner.artifact_id.length === 0
+    || typeof owner.media_root !== "string" || !isAbsolute(owner.media_root)
+    || typeof owner.staging_path !== "string"
+    || stagingOwnerPath(owner.artifact_id) !== target) throw new Error("MEDIA_STAGING_OWNER_INVALID");
+  const mediaRoot = resolve(owner.media_root);
+  let roots: ReturnType<typeof activationRoots>;
+  try { roots = ensureSafeActivationRoots(mediaRoot, false); }
+  catch { throw new Error("MEDIA_STAGING_OWNER_INVALID"); }
+  if (!isPathInside(resolve(owner.staging_path), roots.staging)
+    || hasExistingSymlinkAncestor(resolve(owner.staging_path), roots.activation)) throw new Error("MEDIA_STAGING_OWNER_INVALID");
+  return owner as MediaStagingOwner;
+}
+
+function reconcileStagingOwners(db: M0Database, result: MediaActivationRecoveryResult): void {
+  for (const filePath of stagingOwnerPaths()) {
+    let owner: MediaStagingOwner;
+    try {
+      owner = readStagingOwner(filePath);
+    } catch {
+      rmSync(filePath, { force: true });
+      result.failed.push({ activation_id: basename(filePath, ".json"), code: "MEDIA_STAGING_OWNER_INVALID" });
+      continue;
+    }
+    const transferred = db.prepare(`SELECT activation_id FROM media_activation_journal
+      WHERE artifact_id = ? AND staging_path = ? AND state IN ('staged','file_placed')
+      ORDER BY created_at DESC LIMIT 1`).get(owner.artifact_id, resolve(owner.staging_path)) as { activation_id: string } | undefined;
+    if (!transferred) {
+      const stagingPath = resolve(owner.staging_path);
+      let stagingCleared = !existsSync(stagingPath);
+      if (!stagingCleared) {
+        try {
+          if (!lstatSync(stagingPath).isSymbolicLink() && statSync(stagingPath).isFile()) {
+            rmSync(stagingPath, { force: true });
+            stagingCleared = !existsSync(stagingPath);
+          }
+        } catch { /* preserve the owner so the unsafe or unavailable path remains fail closed */ }
+      }
+      result.failed.push({ activation_id: basename(filePath, ".json"), code: "MEDIA_ACTIVATION_DB_RECORD_MISSING" });
+      if (!stagingCleared) continue;
+    }
+    rmSync(filePath, { force: true });
+  }
+}
+
+function readActivationMarker(filePath: string): MediaActivationMarker {
+  const journalRoots = activationRoots(paths.mediaRoot);
+  const target = resolve(filePath);
+  if (!isPathInside(target, journalRoots.journal) || lstatSync(target).isSymbolicLink() || !statSync(target).isFile()) throw new Error("MEDIA_ACTIVATION_MARKER_INVALID");
+  const marker = JSON.parse(readFileSync(target, "utf8")) as Partial<MediaActivationMarker>;
+  if (marker.version !== 1
+    || typeof marker.activation_id !== "string"
+    || typeof marker.artifact_id !== "string"
+    || typeof marker.media_root !== "string" || !isAbsolute(marker.media_root)
+    || typeof marker.final_path_owned !== "boolean"
+    || (marker.artifact_type !== "image" && marker.artifact_type !== "video")
+    || !(["storyboard_image", "generated_clip", "final_video"] as const).includes(marker.role as ArtifactRole)
+    || !/^[a-f0-9]{64}$/i.test(String(marker.expected_sha256 ?? ""))
+    || !Number.isInteger(marker.expected_size_bytes) || Number(marker.expected_size_bytes) <= 0
+    || typeof marker.detected_mime !== "string"
+    || typeof marker.staging_path !== "string"
+    || typeof marker.pending_path !== "string"
+    || typeof marker.final_path !== "string"
+    || typeof marker.artifact_json !== "string"
+    || markerPath(marker.activation_id) !== target) throw new Error("MEDIA_ACTIVATION_MARKER_INVALID");
+  const root = resolve(marker.media_root);
+  const roots = ensureSafeActivationRoots(root, false);
+  if (existsSync(root)) {
+    const canonicalRoot = resolve(realpathSync(root));
+    const rootMatches = process.platform === "win32" ? canonicalRoot.toLowerCase() === root.toLowerCase() : canonicalRoot === root;
+    if (lstatSync(root).isSymbolicLink() || !statSync(root).isDirectory() || !rootMatches) throw new Error("MEDIA_ACTIVATION_MARKER_INVALID");
+  }
+  const artifact = JSON.parse(marker.artifact_json) as MediaArtifact;
+  if (artifact.artifact_id !== marker.artifact_id
+    || artifact.artifact_type !== marker.artifact_type
+    || artifact.role !== marker.role
+    || artifact.storage.uri !== marker.final_path
+    || artifact.storage.mime_type !== marker.detected_mime
+    || artifact.metadata.sha256 !== marker.expected_sha256
+    || artifact.source.sha256 !== marker.expected_sha256
+    || !isPathInside(resolve(marker.staging_path), roots.staging)
+    || !isPathInside(resolve(marker.pending_path), roots.pending)
+    || !isPathInside(resolve(marker.final_path), root)
+    || hasExistingSymlinkAncestor(resolve(marker.staging_path), roots.activation)
+    || hasExistingSymlinkAncestor(resolve(marker.pending_path), roots.activation)
+    || hasExistingSymlinkAncestor(resolve(marker.final_path), root)) throw new Error("MEDIA_ACTIVATION_MARKER_INVALID");
+  return marker as MediaActivationMarker;
+}
+
+export function discardMediaActivationMarkers(artifactIds: readonly string[]): void {
+  const wanted = new Set(artifactIds);
+  let filePaths: string[] = [];
+  try { filePaths = activationMarkerPaths(); } catch { return; }
+  for (const filePath of filePaths) {
+    try {
+      const marker = readActivationMarker(filePath);
+      if (wanted.has(marker.artifact_id)) rmSync(filePath, { force: true });
+    } catch { /* invalid markers remain visible to recovery and db:check */ }
+  }
+}
+
+export function cleanupRolledBackMediaActivationFiles(
+  artifactIds: readonly string[],
+  options: { remove_file?: (target: string) => void } = {}
+): boolean {
+  const wanted = new Set(artifactIds);
+  let complete = true;
+  let filePaths: string[] = [];
+  try { filePaths = activationMarkerPaths(); } catch { return false; }
+  for (const filePath of filePaths) {
+    let marker: MediaActivationMarker;
+    try { marker = readActivationMarker(filePath); }
+    catch { complete = false; continue; }
+    if (!wanted.has(marker.artifact_id)) continue;
+    let markerClean = true;
+    for (const candidate of [marker.final_path, marker.pending_path, marker.staging_path]) {
+      const target = resolve(candidate);
+      if (!existsSync(target)) continue;
+      try {
+        if (lstatSync(target).isSymbolicLink() || !statSync(target).isFile()) {
+          markerClean = false;
+          continue;
+        }
+        if (options.remove_file) options.remove_file(target);
+        else rmSync(target, { force: true });
+      } catch { markerClean = false; }
+      if (existsSync(target)) markerClean = false;
+    }
+    if (markerClean) {
+      try { rmSync(filePath, { force: true }); }
+      catch { complete = false; }
+    } else complete = false;
+  }
+  return complete;
+}
+
+export function cleanupCommittedMediaActivationMarkers(db: M0Database, artifactIds: readonly string[]): void {
+  const wanted = new Set(artifactIds);
+  let filePaths: string[] = [];
+  try { filePaths = activationMarkerPaths(); } catch { return; }
+  for (const filePath of filePaths) {
+    try {
+      const marker = readActivationMarker(filePath);
+      if (!wanted.has(marker.artifact_id)) continue;
+      const row = db.prepare(`SELECT j.state, j.final_path FROM media_activation_journal j
+        JOIN media_artifacts a ON a.artifact_id = j.artifact_id
+        WHERE j.activation_id = ?`).get(marker.activation_id) as { state: string; final_path: string } | undefined;
+      if (row?.state === "committed") cleanupCommittedActivationMarker(marker, filePath, row.final_path);
+    } catch { /* startup recovery handles markers that cannot be safely cleared */ }
+  }
+}
+
+function cleanupCommittedActivationMarker(marker: MediaActivationMarker, filePath: string, authoritativeFinalPath: string): boolean {
+  for (const candidate of [marker.final_path, marker.pending_path, marker.staging_path]) {
+    const target = resolve(candidate);
+    if (sameResolvedPath(target, authoritativeFinalPath) || !existsSync(target)) continue;
+    try {
+      if (lstatSync(target).isSymbolicLink() || !statSync(target).isFile()) return false;
+      rmSync(target, { force: true });
+    } catch { return false; }
+    if (existsSync(target)) return false;
+  }
+  try { rmSync(filePath, { force: true }); }
+  catch { return false; }
+  return !existsSync(filePath);
+}
+
+function reconcileUnrecordedActivationMarkers(db: M0Database, result: MediaActivationRecoveryResult): void {
+  for (const filePath of activationMarkerPaths()) {
+    let marker: MediaActivationMarker;
+    try {
+      marker = readActivationMarker(filePath);
+    } catch {
+      result.failed.push({ activation_id: basename(filePath, ".json"), code: "MEDIA_ACTIVATION_MARKER_INVALID" });
+      continue;
+    }
+    const existing = db.prepare("SELECT state, final_path FROM media_activation_journal WHERE activation_id = ?").get(marker.activation_id) as { state: string; final_path: string } | undefined;
+    if (existing?.state === "committed") {
+      if (!cleanupCommittedActivationMarker(marker, filePath, existing.final_path)) {
+        result.failed.push({ activation_id: marker.activation_id, code: "MEDIA_ACTIVATION_POST_COMMIT_CLEANUP_FAILED" });
+      }
+      continue;
+    }
+    if (existing?.state === "failed") {
+      rmSync(filePath, { force: true });
+      continue;
+    }
+    if (existing) continue;
+    const artifact = JSON.parse(marker.artifact_json) as MediaArtifact;
+    const finalPath = resolve(marker.final_path);
+    const pendingPath = resolve(marker.pending_path);
+    const stagingPath = resolve(marker.staging_path);
+    const linkedFinalOwned = samePhysicalFile(pendingPath, finalPath);
+    const ownedCandidates = marker.final_path_owned || linkedFinalOwned
+      ? [finalPath, pendingPath, stagingPath]
+      : [pendingPath, stagingPath];
+    try {
+      quarantineActivationFile(artifact, ownedCandidates, resolve(marker.media_root));
+      for (const candidate of [pendingPath, stagingPath]) {
+        if (existsSync(candidate) && !lstatSync(candidate).isSymbolicLink() && statSync(candidate).isFile()) rmSync(candidate, { force: true });
+      }
+    } catch { /* retain stable failed evidence even when no file can be moved */ }
+    db.prepare(`INSERT INTO media_activation_journal
+      (activation_id, artifact_id, state, artifact_type, role, expected_sha256, expected_size_bytes, detected_mime,
+       staging_path, pending_path, final_path, artifact_json, error_code)
+      VALUES (?, ?, 'failed', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'MEDIA_ACTIVATION_DB_RECORD_MISSING')`)
+      .run(marker.activation_id, marker.artifact_id, marker.artifact_type, marker.role, marker.expected_sha256, marker.expected_size_bytes,
+        marker.detected_mime, marker.staging_path, marker.pending_path, marker.final_path, marker.artifact_json);
+    rmSync(filePath, { force: true });
+    result.failed.push({ activation_id: marker.activation_id, code: "MEDIA_ACTIVATION_DB_RECORD_MISSING" });
+  }
+}
+
+export interface MediaActivationRecoveryResult {
+  committed: string[];
+  failed: Array<{ activation_id: string; code: string }>;
+}
+
+export function recoverMediaActivations(db = openM0Database()): MediaActivationRecoveryResult {
+  const result: MediaActivationRecoveryResult = { committed: [], failed: [] };
+  const manageMarkerTransaction = !databaseIsInTransaction(db);
+  if (manageMarkerTransaction) db.exec("BEGIN IMMEDIATE");
+  try {
+    reconcileUnrecordedActivationMarkers(db, result);
+    if (manageMarkerTransaction) db.exec("COMMIT");
+  } catch (error) {
+    if (manageMarkerTransaction && databaseIsInTransaction(db)) db.exec("ROLLBACK");
+    throw error;
+  }
+  reconcileStagingOwners(db, result);
+  const rows = db.prepare(`SELECT activation_id, state, expected_sha256, expected_size_bytes, detected_mime,
+      staging_path, pending_path, final_path, artifact_json
+    FROM media_activation_journal WHERE state IN ('staged','file_placed') ORDER BY created_at, activation_id`).all() as Array<{
+      activation_id: string; state: "staged" | "file_placed"; expected_sha256: string; expected_size_bytes: number; detected_mime: string;
+      staging_path: string; pending_path: string; final_path: string; artifact_json: string;
+    }>;
+  for (const row of rows) {
+    let artifact: MediaArtifact | null = null;
+    let failureStagingPath = resolve(row.staging_path);
+    let failurePendingPath = resolve(row.pending_path);
+    let failureFinalPath: string | null = null;
+    try {
+      artifact = JSON.parse(row.artifact_json) as MediaArtifact;
+      const stagingPath = resolve(row.staging_path);
+      const pendingPath = resolve(row.pending_path);
+      const finalPath = resolve(row.final_path);
+      const mediaRoot = dirname(dirname(dirname(stagingPath)));
+      const roots = ensureSafeActivationRoots(mediaRoot, false);
+      if (!isPathInside(stagingPath, roots.staging)
+        || !isPathInside(pendingPath, roots.pending)
+        || !isPathInside(finalPath, mediaRoot)
+        || hasExistingSymlinkAncestor(stagingPath, roots.activation)
+        || hasExistingSymlinkAncestor(pendingPath, roots.activation)
+        || hasExistingSymlinkAncestor(finalPath, mediaRoot)) throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
+      if (samePhysicalFile(pendingPath, finalPath)) {
+        rmSync(pendingPath);
+        failureFinalPath = finalPath;
+      }
+      if (row.state === "staged") {
+        const present = [stagingPath, pendingPath, finalPath].filter((candidate) => existsSync(candidate));
+        if (present.length === 0) throw new Error("MEDIA_ACTIVATION_STAGED_FILE_MISSING");
+        if (present.length !== 1) throw new Error("MEDIA_ACTIVATION_MULTIPLE_FILES_PRESENT");
+        if (present[0] === stagingPath) renameSync(stagingPath, pendingPath);
+        if (present[0] === finalPath) failureFinalPath = finalPath;
+        db.prepare("UPDATE media_activation_journal SET state = 'file_placed', updated_at = CURRENT_TIMESTAMP WHERE activation_id = ? AND state = 'staged'").run(row.activation_id);
+      } else {
+        const present = [pendingPath, finalPath].filter((candidate) => existsSync(candidate));
+        if (present.length === 0) throw new Error("MEDIA_ACTIVATION_PLACED_FILE_MISSING");
+        if (present.length !== 1 || existsSync(stagingPath)) throw new Error("MEDIA_ACTIVATION_MULTIPLE_FILES_PRESENT");
+        if (present[0] === finalPath) failureFinalPath = finalPath;
+      }
+      if (existsSync(pendingPath)) {
+        moveActivationFileExclusively(pendingPath, finalPath);
+        failureFinalPath = finalPath;
+      }
+      if (!existsSync(finalPath)) throw new Error("MEDIA_ACTIVATION_PLACED_FILE_MISSING");
+      const facts = localMediaFacts(finalPath, artifact);
+      if (facts.sha256 !== row.expected_sha256 || facts.size_bytes !== Number(row.expected_size_bytes) || facts.detected_mime !== row.detected_mime) {
+        throw new Error("MEDIA_ACTIVATION_CONTENT_DRIFT");
+      }
+      applyLocalMediaFacts(artifact, facts);
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        persistMediaArtifactInternal(db, artifact, true, mediaRoot);
+        db.prepare("UPDATE media_activation_journal SET state = 'committed', final_path = ?, artifact_json = ?, error_code = '', updated_at = CURRENT_TIMESTAMP WHERE activation_id = ? AND state = 'file_placed'")
+          .run(artifact.storage.uri, JSON.stringify(artifact), row.activation_id);
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+      try {
+        const committedMarkerPath = markerPath(row.activation_id);
+        if (existsSync(committedMarkerPath)) {
+          const committedMarker = readActivationMarker(committedMarkerPath);
+          if (!cleanupCommittedActivationMarker(committedMarker, committedMarkerPath, artifact.storage.uri)) {
+            result.failed.push({ activation_id: row.activation_id, code: "MEDIA_ACTIVATION_POST_COMMIT_CLEANUP_FAILED" });
+          }
+        }
+      } catch {
+        result.failed.push({ activation_id: row.activation_id, code: "MEDIA_ACTIVATION_POST_COMMIT_CLEANUP_FAILED" });
+      }
+      result.committed.push(row.activation_id);
+    } catch (error) {
+      const code = mediaActivationErrorCode(error);
+      if (artifact) {
+        const mediaRoot = dirname(dirname(dirname(resolve(row.staging_path))));
+        const ownedCandidates = failureFinalPath
+          ? [failureFinalPath, failurePendingPath, failureStagingPath]
+          : [failurePendingPath, failureStagingPath];
+        try {
+          ensureSafeActivationRoots(mediaRoot, false);
+          quarantineActivationFile(artifact, ownedCandidates, mediaRoot);
+        } catch { /* retain failure evidence in the journal without touching an unsafe root */ }
+      }
+      try { db.prepare("UPDATE media_activation_journal SET state = 'failed', error_code = ?, updated_at = CURRENT_TIMESTAMP WHERE activation_id = ?").run(code, row.activation_id); } catch { /* schema checks report the remaining record */ }
+      try {
+        removeActivationMarker(row.activation_id);
+      } catch { /* db:check will keep reporting any unsafe marker */ }
+      result.failed.push({ activation_id: row.activation_id, code });
+    }
+  }
+  return result;
+}
+
+export function verifyMediaArtifactBytes(db: M0Database, artifact: MediaArtifact): { ok: true; blob: MediaBlob } | { ok: false; error: ToolError } {
+  const blob = artifact.blob_id ? getMediaBlob(db, artifact.blob_id) : null;
+  if (!blob || blob.integrity_state !== "verified" || artifact.status !== "active") {
+    return { ok: false, error: { code: "ARTIFACT_INTEGRITY_UNVERIFIED", message: "Artifact does not reference an active verified MediaBlob." } };
+  }
+  const localPath = resolve(blob.storage_uri);
+  const artifactPath = resolve(artifact.storage.uri);
+  if (!sameResolvedPath(artifactPath, localPath)) {
+    return { ok: false, error: { code: "MEDIA_BLOB_CONTENT_DRIFT", message: "Artifact storage URI differs from its authoritative MediaBlob." } };
+  }
+  const registeredRoot = typeof blob.provenance.media_root === "string" && isAbsolute(blob.provenance.media_root)
+    ? resolve(blob.provenance.media_root)
+    : paths.mediaRoot;
+  try {
+    const canonicalRoot = resolve(realpathSync(registeredRoot));
+    const rootMatches = process.platform === "win32"
+      ? canonicalRoot.toLowerCase() === resolve(registeredRoot).toLowerCase()
+      : canonicalRoot === resolve(registeredRoot);
+    if (!existsSync(registeredRoot)
+      || lstatSync(registeredRoot).isSymbolicLink()
+      || !statSync(registeredRoot).isDirectory()
+      || !rootMatches
+      || !isPathInside(localPath, registeredRoot)
+      || hasExistingSymlinkAncestor(localPath, registeredRoot)
+      || lstatSync(localPath).isSymbolicLink()) {
+      return { ok: false, error: { code: "MEDIA_BLOB_PATH_UNSAFE", message: "MediaBlob path is outside app-controlled storage or uses a symbolic link." } };
+    }
+    const facts = localMediaFacts(localPath, artifact);
+    if (facts.sha256 !== blob.sha256 || facts.size_bytes !== blob.size_bytes || facts.detected_mime !== blob.detected_mime
+      || artifact.metadata.sha256 !== blob.sha256 || artifact.source.sha256 !== blob.sha256 || artifact.storage.mime_type !== blob.detected_mime) {
+      return { ok: false, error: { code: "MEDIA_BLOB_CONTENT_DRIFT", message: "Stored media bytes differ from the registered MediaBlob facts." } };
+    }
+    return { ok: true, blob };
+  } catch (error) {
+    const raw = error instanceof Error ? error.message : "MEDIA_BLOB_CHECK_FAILED";
+    const code = /^[A-Z][A-Z0-9_]+$/.test(raw) ? raw : "MEDIA_BLOB_CHECK_FAILED";
+    return { ok: false, error: { code, message: "Stored media bytes could not be verified." } };
+  }
 }
 
 function copyFixture(input: RegisterMediaArtifactInput): RegisterMediaArtifactResult {
@@ -464,27 +1369,25 @@ function copyFixture(input: RegisterMediaArtifactInput): RegisterMediaArtifactRe
     return { ok: false, error: { code: "STORAGE_PATH_NOT_ALLOWED", message: "Destination path resolved outside app-controlled media storage." } };
   }
 
-  copyFileSync(sourcePath, destinationPath);
-  readFileSync(destinationPath);
+  const prepared = { ...buildArtifact(input, "active", filename, destinationPath, mimeTypeFor(sourcePath, input.artifact_type)), artifact_id: artifactId };
+  const stagingPath = stagedPathForArtifact(prepared);
+  const stageError = copyToOwnedStaging(prepared, sourcePath);
+  if (stageError) return { ok: false, error: stageError };
+  readFileSync(stagingPath);
 
   if (input.artifact_type === "image") {
-    const validation = validateImageFile(destinationPath);
+    const validation = validateImageFile(stagingPath);
     if (!validation.ok) {
-      rmSync(destinationPath, { force: true });
+      rmSync(stagingPath, { force: true });
+      try { removeStagingOwnership(prepared.artifact_id); } catch { /* recovery will reconcile the owner record */ }
       return { ok: false, error: imageValidationError(validation) };
     }
     return { ok: true, artifact: buildValidatedImageArtifact(input, artifactId, filename, destinationPath, validation) };
   }
-
-  const artifact: MediaArtifact = {
-    ...buildArtifact(input, "active", filename, destinationPath, mimeTypeFor(sourcePath, input.artifact_type)),
-    artifact_id: artifactId
-  };
-
-  return { ok: true, artifact };
+  return { ok: true, artifact: prepared };
 }
 
-function writeUploadedBytes(input: RegisterMediaArtifactInput): RegisterMediaArtifactResult {
+function writeUploadedBytes(input: RegisterMediaArtifactInput, artifactId = `artifact_${randomUUID()}`): RegisterMediaArtifactResult {
   if (input.source.kind !== "file_handle" && input.source.kind !== "app_upload") {
     throw new Error("writeUploadedBytes received unsupported source.");
   }
@@ -497,7 +1400,6 @@ function writeUploadedBytes(input: RegisterMediaArtifactInput): RegisterMediaArt
     return { ok: false, error: { code: "STORAGE_PATH_NOT_ALLOWED", message: "Upload filename must not contain path traversal." } };
   }
 
-  const artifactId = `artifact_${randomUUID()}`;
   const decoded = Buffer.from(input.source.bytes_base64, "base64");
   if (input.artifact_type === "image") {
     const validation = validateImageBuffer(decoded, unsafeName);
@@ -511,12 +1413,16 @@ function writeUploadedBytes(input: RegisterMediaArtifactInput): RegisterMediaArt
     }
 
     ensureM0Directories();
-    writeFileSync(destinationPath, decoded);
-    readFileSync(destinationPath);
+    const prepared = buildValidatedImageArtifact(input, artifactId, filename, destinationPath, validation);
+    const stagingPath = stagedPathForArtifact(prepared);
+    const stageError = writeToOwnedStaging(prepared, decoded);
+    if (stageError) return { ok: false, error: stageError };
+    readFileSync(stagingPath);
 
-    const storedValidation = validateImageFile(destinationPath);
+    const storedValidation = validateImageFile(stagingPath);
     if (!storedValidation.ok) {
-      rmSync(destinationPath, { force: true });
+      rmSync(stagingPath, { force: true });
+      try { removeStagingOwnership(prepared.artifact_id); } catch { /* recovery will reconcile the owner record */ }
       return { ok: false, error: imageValidationError(storedValidation) };
     }
 
@@ -531,13 +1437,14 @@ function writeUploadedBytes(input: RegisterMediaArtifactInput): RegisterMediaArt
   }
 
   ensureM0Directories();
-  writeFileSync(destinationPath, decoded);
-  readFileSync(destinationPath);
-
   const artifact: MediaArtifact = {
     ...buildArtifact(input, "active", filename, destinationPath, input.source.mime_type),
     artifact_id: artifactId
   };
+  const stagingPath = stagedPathForArtifact(artifact);
+  const stageError = writeToOwnedStaging(artifact, decoded);
+  if (stageError) return { ok: false, error: stageError };
+  readFileSync(stagingPath);
   return { ok: true, artifact };
 }
 
@@ -600,8 +1507,14 @@ function copyProviderOutputFile(input: RegisterMediaArtifactInput): RegisterMedi
     return { ok: false, error: { code: "STORAGE_PATH_NOT_ALLOWED", message: "Provider artifact destination resolved outside app media storage." } };
   }
 
-  copyFileSync(realSourcePath, destinationPath);
-  const sha256 = sha256ForFile(destinationPath);
+  const preparedBase: MediaArtifact = {
+    ...buildArtifact(input, "active", filename, destinationPath, input.source.mime_type ?? mimeTypeFor(filename, input.artifact_type)),
+    artifact_id: artifactId
+  };
+  const stagingPath = stagedPathForArtifact(preparedBase);
+  const stageError = copyToOwnedStaging(preparedBase, realSourcePath);
+  if (stageError) return { ok: false, error: stageError };
+  const sha256 = sha256ForFile(stagingPath);
 
   const artifact: MediaArtifact = {
     ...buildArtifact(
@@ -682,12 +1595,16 @@ function copyLocalImageImport(input: RegisterMediaArtifactInput, artifactId = `a
     return { ok: false, error: { code: "STORAGE_PATH_NOT_ALLOWED", message: "Local import destination resolved outside app media storage." } };
   }
 
-  copyFileSync(realSourcePath, destinationPath);
-  readFileSync(destinationPath);
+  const prepared = buildValidatedImageArtifact(input, artifactId, filename, destinationPath, validation);
+  const stagingPath = stagedPathForArtifact(prepared);
+  const stageError = copyToOwnedStaging(prepared, realSourcePath);
+  if (stageError) return { ok: false, error: stageError };
+  readFileSync(stagingPath);
 
-  const storedValidation = validateImageFile(destinationPath);
+  const storedValidation = validateImageFile(stagingPath);
   if (!storedValidation.ok) {
-    rmSync(destinationPath, { force: true });
+    rmSync(stagingPath, { force: true });
+    try { removeStagingOwnership(prepared.artifact_id); } catch { /* recovery will reconcile the owner record */ }
     return { ok: false, error: imageValidationError(storedValidation) };
   }
 
@@ -802,7 +1719,11 @@ export function registerMediaArtifact(input: RegisterMediaArtifactInput, db = op
   }
 
   if (result.ok) {
-    persistMediaArtifact(db, result.artifact);
+    if (result.artifact.status === "active" && !/^https?:\/\//i.test(result.artifact.storage.uri)) {
+      result = commitStagedMediaArtifact(db, result.artifact, false);
+    } else {
+      persistMediaArtifact(db, result.artifact);
+    }
   }
 
   return result;
@@ -838,10 +1759,7 @@ export function activatePendingMediaArtifact(input: ActivatePendingMediaArtifact
   if (input.source.kind === "local_file_import") {
     result = copyLocalImageImport(activationInput, existing.artifact_id);
   } else if (input.source.kind === "app_upload") {
-    result = writeUploadedBytes(activationInput);
-    if (result.ok) {
-      result.artifact.artifact_id = existing.artifact_id;
-    }
+    result = writeUploadedBytes(activationInput, existing.artifact_id);
   } else {
     const uriValidation = validateAccessibleUri(input.source.uri);
     if (uriValidation.error) return { ok: false, error: uriValidation.error };
@@ -849,8 +1767,7 @@ export function activatePendingMediaArtifact(input: ActivatePendingMediaArtifact
   }
 
   if (!result.ok) return result;
-  persistMediaArtifactInternal(db, result.artifact, true);
-  return { ok: true, artifact: result.artifact };
+  return commitStagedMediaArtifact(db, result.artifact, true);
 }
 
 export function getStoryboardImageTransferGate(): StoryboardImageTransferGate {

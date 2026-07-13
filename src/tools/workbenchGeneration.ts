@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { getGenerationRun, saveGenerationRun, type GenerationRun } from "./generation.js";
-import { getMediaArtifact, type MediaArtifact } from "./mediaArtifacts.js";
+import { getMediaArtifact, verifyMediaArtifactBytes, type MediaArtifact } from "./mediaArtifacts.js";
 import { providerError, selectM1ProviderPort, type ProviderToolError } from "./provider.js";
 import { buildProviderCapabilityKey, buildProviderPriceCacheKey, providerCapabilityErrorMessage } from "./providerCapabilities.js";
 import { downloadProviderOutputToArtifact } from "./providerOutputDownloader.js";
@@ -349,6 +349,8 @@ export async function preflightWorkbenchGeneration(
   if (!artifact || artifact.status !== "active" || artifact.artifact_type !== "image") {
     return { ok: false, error: { code: "ARTIFACT_NOT_FOUND", message: "An active storyboard image is required." } };
   }
+  const artifactIntegrity = verifyMediaArtifactBytes(db, artifact);
+  if (!artifactIntegrity.ok) return { ok: false, error: artifactIntegrity.error };
 
   const capability = buildProviderCapabilityKey({
     provider: "runninghub",
@@ -767,6 +769,11 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       const artifact = getMediaArtifact(db, intent.input_artifact_id);
       if (!artifact) {
         failIntent(db, intent, "failed", providerError("ARTIFACT_NOT_FOUND", "Generation input artifact is missing."), leaseToken);
+        return;
+      }
+      const artifactIntegrity = verifyMediaArtifactBytes(db, artifact);
+      if (!artifactIntegrity.ok) {
+        failIntent(db, intent, "failed", providerError(artifactIntegrity.error.code, artifactIntegrity.error.message), leaseToken);
         return;
       }
       if (!allowSubmit) {

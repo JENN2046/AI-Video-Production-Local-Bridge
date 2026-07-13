@@ -248,14 +248,16 @@ test("v2-4 migration derives Blob facts from local bytes and fails closed on str
         .run(candidate.artifact_id, candidate.role, candidate.artifact_type, candidate.status, JSON.stringify(candidate));
     }
     const result = runDatabaseMigrations(db);
-    assert.deepEqual(result.applied, ["0001", "0002", "0003", "0004", "0005"]);
+    assert.deepEqual(result.applied, ["0001", "0002", "0003", "0004", "0005", "0006"]);
     const migrated = getMediaArtifact(db, artifact.artifact_id);
     assert.equal(migrated?.status, "active");
-    assert.equal(migrated?.metadata.sha256, "legacy-json-value");
     const blob = migrated ? getMediaBlob(db, migrated.blob_id) : null;
     assert.equal(blob?.integrity_state, "verified");
     assert.equal(blob?.sha256.length, 64);
     assert.equal(blob?.size_bytes > 0, true);
+    assert.equal(migrated?.metadata.sha256, blob?.sha256);
+    assert.equal(migrated?.source.sha256, blob?.sha256);
+    assert.equal(migrated?.storage.mime_type, blob?.detected_mime);
     const duplicate = getMediaArtifact(db, duplicateArtifact.artifact_id);
     assert.equal(duplicate?.blob_id, migrated?.blob_id);
     assert.equal((db.prepare("SELECT COUNT(*) AS count FROM media_blobs WHERE integrity_state = 'verified'").get() as { count: number }).count, 1);
