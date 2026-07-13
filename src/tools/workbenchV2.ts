@@ -383,7 +383,7 @@ function withValidatedAssemblyReadiness(
     ? readinessDerived
     : summary.next_action.derived;
   const overrideValid = Boolean(
-    ready
+    invalidCount === 0
     && summary.meta.next_action_override
     && summary.meta.next_action_priority
     && summary.meta.next_action_expires_at

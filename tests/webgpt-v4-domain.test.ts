@@ -351,13 +351,20 @@ test("review and delivery guards reject same-project wrong-SHOT and tampered art
     context.productionShot.accepted_clip_artifact_id = first.artifact.artifact_id;
     context.productionShot.review.approval_status = "approved";
     saveShot(context.db, context.productionShot);
+    context.db.prepare(`UPDATE workbench_project_meta SET
+      next_action_override = '继续人工审片', next_action_priority = 'high',
+      next_action_expires_at = '2099-01-01T00:00:00.000Z', next_action_project_status = 'video_review'
+      WHERE project_id = ?`).run(context.production.project_id);
     const incompleteWorkbench = getWorkbenchProjectWorkspace(context.production.project_id, "delivery", context.db, { touch_last_opened: false });
     assert.equal(incompleteWorkbench.ok, true);
     if (incompleteWorkbench.ok) {
       assert.equal(incompleteWorkbench.data.ready_for_assembly, false);
-      const summary = incompleteWorkbench.data.summary as { blocker_count: number; blocker_reason: string; next_action: { reason_code: string }; risk: string };
+      const summary = incompleteWorkbench.data.summary as { blocker_count: number; blocker_reason: string; next_action: { source: string; label: string; reason_code: string }; risk: string };
       assert.equal(summary.blocker_reason.includes("采纳片段无效"), false);
-      assert.notEqual(summary.next_action.reason_code, "accepted_clip_invalid");
+      assert.deepEqual(
+        { source: summary.next_action.source, label: summary.next_action.label, reason_code: summary.next_action.reason_code },
+        { source: "override", label: "继续人工审片", reason_code: "manual_override" }
+      );
       assert.notEqual(summary.risk, "blocked");
     }
     secondShot.clip_versions = [{ artifact_id: second.artifact.artifact_id, run_id: "run_second", attempt_number: 1, review_status: "approved" }];
@@ -369,9 +376,12 @@ test("review and delivery guards reject same-project wrong-SHOT and tampered art
     assert.equal(validWorkbench.ok, true);
     if (validWorkbench.ok) {
       assert.equal(validWorkbench.data.ready_for_assembly, true);
-      const summary = validWorkbench.data.summary as { delivery_state: string; next_action: { reason_code: string } };
+      const summary = validWorkbench.data.summary as { delivery_state: string; next_action: { source: string; reason_code: string; derived: { reason_code: string } } };
       assert.equal(summary.delivery_state, "ready_to_assemble");
-      assert.equal(summary.next_action.reason_code, "assemble");
+      assert.deepEqual(
+        { source: summary.next_action.source, reason_code: summary.next_action.reason_code, derived_reason_code: summary.next_action.derived.reason_code },
+        { source: "override", reason_code: "manual_override", derived_reason_code: "assemble" }
+      );
     }
 
     context.db.prepare(`UPDATE workbench_project_meta SET
