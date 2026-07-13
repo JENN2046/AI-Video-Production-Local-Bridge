@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
-import { validateAcceptedClipReference, validateActiveArtifactReference } from "./mediaArtifacts.js";
+import { attachArtifactToShot, createScopedArtifactFromBlob, validateAcceptedClipReference, validateActiveArtifactReference } from "./mediaArtifacts.js";
 import { createProject, getProject, getShot, listProjectShots, saveProject, saveShot, type Project, type Shot } from "./projects.js";
 import { saveStoryboardPackage, type StoryboardPackage } from "./storyboardPackages.js";
 import { decideWorkbenchClip, decideWorkbenchImport, updateWorkbenchShot, type WorkbenchPage, type WorkbenchProjectClassification, type WorkbenchV2Result } from "./workbenchV2.js";
@@ -254,21 +254,15 @@ function promotePackageDraft(
     if (!raw || typeof raw !== "object") throw new InboxDomainError("DRAFT_APPLY_BLOCKED", `SHOT ${index + 1} is invalid.`);
     const item = raw as Record<string, unknown>;
     const artifactId = String(item.storyboard_image_artifact_id ?? "");
-    if (artifactId) {
-      throw new InboxDomainError(
-        "DRAFT_APPLY_BLOCKED",
-        `SHOT ${index + 1} must attach its storyboard image through the project-bound media workflow after promotion.`
-      );
-    }
     const videoPrompt = String(item.video_prompt ?? "");
-    const shot: Shot = {
+    let shot: Shot = {
       shot_id: `shot_${randomUUID()}`,
       project_id: created.project_id,
       order: index + 1,
-      status: artifactId && videoPrompt ? "storyboard_approved" : "draft",
+      status: "draft",
       duration_seconds: positiveNumber(item.duration_seconds, 3),
       description: String(item.description ?? item.shot_description ?? ""),
-      storyboard_image_artifact_id: artifactId,
+      storyboard_image_artifact_id: "",
       video_prompt: videoPrompt,
       negative_prompt: String(item.negative_prompt ?? ""),
       generation_run_ids: [],
@@ -277,9 +271,24 @@ function promotePackageDraft(
       review: { approval_status: "pending", rejection_reasons: [], latest_revision_instruction: null }
     };
     saveShot(db, shot);
+    if (artifactId) {
+      const scoped = createScopedArtifactFromBlob({ source_artifact_id: artifactId, project_id: created.project_id, shot_id: shot.shot_id }, db);
+      if (!scoped.ok) throw new InboxDomainError("DRAFT_APPLY_BLOCKED", `SHOT ${index + 1} storyboard image could not be scoped [${scoped.error.code}].`);
+      const attached = attachArtifactToShot({
+        project_id: created.project_id,
+        shot_id: shot.shot_id,
+        artifact_id: scoped.artifact.artifact_id,
+        reference: "storyboard_image_artifact_id",
+        expected_current_artifact_id: ""
+      }, db);
+      if (!attached.ok) throw new InboxDomainError("DRAFT_APPLY_BLOCKED", `SHOT ${index + 1} storyboard image could not be attached [${attached.error.code}].`);
+      shot = { ...attached.shot, status: videoPrompt ? "storyboard_approved" : "draft" };
+      saveShot(db, shot);
+    }
     shots.push(shot);
   }
   created.project.shot_ids = shots.map((shot) => shot.shot_id);
+  created.project.status = shots.every((shot) => shot.status === "storyboard_approved") ? "storyboard_approved" : "draft";
   saveProject(db, created.project);
   return { project: created.project };
 }

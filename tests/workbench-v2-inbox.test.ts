@@ -6,7 +6,8 @@ import test from "node:test";
 
 import { paths } from "../src/paths.js";
 import { openM0Database } from "../src/storage/sqlite.js";
-import { getShot, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
+import { getShot, listProjectShots, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
+import { getMediaArtifact, registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { decideWorkbenchPendingAction, transitionWorkbenchDraft } from "../src/tools/workbenchInbox.js";
 import { getWorkbenchDraftRecord, getWorkbenchPendingActionRecord, migrateLegacyWorkbenchInboxStores, saveWorkbenchDraftRecord, saveWorkbenchPendingActionRecord } from "../src/tools/workbenchInboxStore.js";
 import { createWorkbenchProject } from "../src/tools/workbenchV2.js";
@@ -82,6 +83,40 @@ test("failed package promotion rolls back project creation and draft status", ()
     const after = (db.prepare("SELECT COUNT(*) count FROM projects").get() as { count: number }).count;
     assert.equal(after, before);
     assert.equal(getWorkbenchDraftRecord("draft_package", db)?.status, "pending");
+  } finally {
+    db.close();
+  }
+});
+
+test("package promotion scopes and attaches validated storyboard media atomically", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const source = registerMediaArtifact({
+      artifact_type: "image",
+      role: "storyboard_image",
+      source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" }
+    }, db);
+    assert.equal(source.ok, true);
+    if (!source.ok) return;
+    saveWorkbenchDraftRecord({
+      draft_id: "draft_package_with_media",
+      tool: "submit_storyboard_package_draft",
+      status: "pending",
+      source: "test",
+      payload: { shots: [{ description: "Scoped media", storyboard_image_artifact_id: source.artifact.artifact_id, video_prompt: "Move" }] }
+    }, db);
+
+    const result = transitionWorkbenchDraft("draft_package_with_media", { action: "promote", project_title: "Scoped package", classification: "production" }, db);
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    const projectId = result.data.project?.project_id ?? "";
+    const shots = listProjectShots(db, projectId);
+    assert.equal(shots.length, 1);
+    assert.notEqual(shots[0].storyboard_image_artifact_id, source.artifact.artifact_id);
+    assert.equal(shots[0].status, "storyboard_approved");
+    const scoped = getMediaArtifact(db, shots[0].storyboard_image_artifact_id);
+    assert.deepEqual(scoped?.linked_objects, { project_id: projectId, shot_id: shots[0].shot_id });
+    assert.equal(getWorkbenchDraftRecord("draft_package_with_media", db)?.status, "promoted");
   } finally {
     db.close();
   }
