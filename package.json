@@ -29,7 +29,7 @@
     "migrate:webgpt:v4": "npm run build:server && node dist/scripts/migrate-webgpt-v4.js",
     "test:v2": "npm run build:server && node dist/scripts/run-isolated-tests.js dist/tests/workbench-v2-*.test.js",
     "test:v2:ui": "vitest run --config vitest.config.ts",
-    "test:v2:browser": "npm run build && playwright test --config playwright.config.ts",
+    "test:v2:browser": "npm run build && playwright test tests/browser/workbench-v2.spec.ts --config playwright.config.ts",
     "test:h1": "npm run build && node dist/scripts/run-isolated-tests.js dist/tests/h1-workbench.test.js",
     "test:db": "npm run build:server && node dist/scripts/run-isolated-tests.js dist/tests/database-governance.test.js",
     "test:legacy": "npm run build:server && node --test dist/tests/legacy-manifest.test.js",
