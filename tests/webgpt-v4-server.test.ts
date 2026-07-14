@@ -261,6 +261,13 @@ test("Descope readonly becomes ready only after an active production owner is bo
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} })
     });
     assert.equal(response.status, 200);
+    const revokeDb = openM0Database(sqlitePath);
+    revokeDb.prepare("UPDATE webgpt_project_memberships SET status = 'revoked' WHERE principal_id = ? AND project_id = ?")
+      .run(actor.principal_id, project.project_id);
+    revokeDb.close();
+    const revokedReady = await fetch(runtime.mcp_url.replace(/\/mcp$/, "/readyz"));
+    assert.equal(revokedReady.status, 503, "owner authorization readiness must not use the 30-second static cache");
+    assert.equal(((await revokedReady.json()) as { checks: { authorization: boolean } }).checks.authorization, false);
   } finally {
     await runtime.close();
     rmSync(root, { recursive: true, force: true });

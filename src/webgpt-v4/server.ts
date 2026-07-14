@@ -192,13 +192,11 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
       staticChecks = readinessCache.checks;
     } else {
       staticChecks = { oauth: Boolean(authConfig), schema: false, database: false };
-      if (projectAuthorizationEnabled) staticChecks.authorization = false;
       try {
         const db = openValidatedDatabase(options.sqlite_path, profile === "readonly");
         try {
           staticChecks.database = (db.prepare("SELECT 1 AS ok").get() as { ok: number }).ok === 1;
           staticChecks.schema = (db.prepare("PRAGMA quick_check").get() as { quick_check: string }).quick_check === "ok";
-          if (projectAuthorizationEnabled) staticChecks.authorization = webGptProjectAuthorizationReady(db);
         } finally { db.close(); }
       } catch { staticChecks.database = false; }
       if (profile === "full") {
@@ -215,10 +213,19 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
       }
       readinessCache = { checks: staticChecks, expires: Date.now() + 30_000 };
     }
+    let authorization = true;
+    if (projectAuthorizationEnabled) {
+      try {
+        const db = openValidatedDatabase(options.sqlite_path, true);
+        try { authorization = webGptProjectAuthorizationReady(db); }
+        finally { db.close(); }
+      } catch { authorization = false; }
+    }
     const queueStatus = mediaAnalysisQueue.status();
+    const baseChecks = projectAuthorizationEnabled ? { ...staticChecks, authorization } : staticChecks;
     const checks = profile === "full"
-      ? { ...staticChecks, media_queue: queueStatus.active + queueStatus.waiting < queueStatus.capacity }
-      : staticChecks;
+      ? { ...baseChecks, media_queue: queueStatus.active + queueStatus.waiting < queueStatus.capacity }
+      : baseChecks;
     if (telemetryMode === "jsonl") checks.telemetry = telemetry.probe();
     const ok = Object.values(checks).every(Boolean);
     const result = {
