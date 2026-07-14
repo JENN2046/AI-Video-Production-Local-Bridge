@@ -73,7 +73,7 @@ const ports = profile === "webgpt"
   : [Number(process.env.H1_WORKBENCH_PORT || process.env.PORT || 4181)];
 checks.ports = { ok: (await Promise.all(ports.map(portAvailable))).every(Boolean), detail: ports.join(", ") };
 if (profile === "webgpt") {
-  const auth = loadWebGptV4AuthConfig();
+  const auth = loadWebGptV4AuthConfig(webgptProfile!);
   checks.oauth = { ok: Boolean(auth), detail: auth ? "configured" : "not configured (WebGPT remains fail closed)" };
 }
 if (process.env.REAL_PROVIDER_ENABLED === "true") {

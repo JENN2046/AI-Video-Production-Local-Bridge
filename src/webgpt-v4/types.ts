@@ -14,7 +14,7 @@ export const WEBGPT_V4_SCOPES = [
 export type WebGptV4Scope = typeof WEBGPT_V4_SCOPES[number];
 
 export interface WebGptV4Actor {
-  subject: string;
+  principal_id: string;
   actor_hash: string;
   scopes: ReadonlySet<string>;
 }
@@ -53,7 +53,18 @@ export function sha256(value: string | Buffer): string {
 }
 
 export function actorFromSubject(subject: string, scopes: Iterable<string>): WebGptV4Actor {
-  return { subject, actor_hash: sha256(subject), scopes: new Set(scopes) };
+  const principalId = sha256(subject);
+  return { principal_id: principalId, actor_hash: principalId, scopes: new Set(scopes) };
+}
+
+export function principalIdFromFederatedSubject(issuer: string, subject: string): string {
+  const normalizedIssuer = `${issuer.trim().replace(/\/+$/, "")}/`;
+  return sha256(`${normalizedIssuer}\0${sha256(subject)}`);
+}
+
+export function actorFromFederatedSubject(issuer: string, subject: string, scopes: Iterable<string>): WebGptV4Actor {
+  const principalId = principalIdFromFederatedSubject(issuer, subject);
+  return { principal_id: principalId, actor_hash: principalId, scopes: new Set(scopes) };
 }
 
 export function requestId(value?: string): string {

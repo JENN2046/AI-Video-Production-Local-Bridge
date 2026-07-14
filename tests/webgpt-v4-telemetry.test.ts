@@ -137,13 +137,9 @@ test("telemetry write failures preserve tool results and gate readiness until pr
     probe: () => { if (recover) healthy = true; return healthy; },
     isHealthy: () => healthy
   };
-  const authConfig = {
-    issuer: "https://auth.example.test/", audience: "fixture", resource_url: "https://mcp.example.test",
-    jwks_uri: "https://auth.example.test/.well-known/jwks.json", allowed_subject_hash: "a".repeat(64)
-  };
   const actor = actorFromSubject("auth0|jenn", ["projects.read"]);
   const runtime = await startWebGptV4({
-    profile: "readonly", telemetry_sink: sink, mcp_port: 0, sqlite_path: sqlitePath, auth_config: authConfig, authenticate: async () => actor
+    profile: "readonly", telemetry_sink: sink, mcp_port: 0, sqlite_path: sqlitePath, auth_config: null, authenticate: async () => actor
   });
   const transport = new StreamableHTTPClientTransport(new URL(runtime.mcp_url), { requestInit: { headers: { Authorization: "Bearer fixture" } } });
   const client = new Client({ name: "telemetry-recovery", version: "1.0.0" });
@@ -159,7 +155,7 @@ test("telemetry write failures preserve tool results and gate readiness until pr
     assert.equal(((await failed.json()) as { checks: { telemetry: boolean } }).checks.telemetry, false);
     recover = true;
     const restored = await fetch(runtime.mcp_url.replace(/\/mcp$/, "/readyz"));
-    assert.equal(restored.status, 200);
+    assert.equal(restored.status, 503, "OAuth remains intentionally unconfigured in this telemetry fixture");
     assert.equal(((await restored.json()) as { checks: { telemetry: boolean } }).checks.telemetry, true);
     const health = await fetch(runtime.mcp_url.replace(/\/mcp$/, "/healthz"));
     assert.equal(health.status, 200);
