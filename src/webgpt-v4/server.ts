@@ -290,7 +290,14 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
       actor = await authenticate(request);
     } catch (error) {
       const safe = errorBody(error);
-      sendJson(response, 401, { jsonrpc: "2.0", id: null, error: { code: -32001, message: safe.message, data: safe } }, { "www-authenticate": wwwAuthenticate(authConfig, safe.code === "AUTH_REQUIRED" ? "invalid_request" : "invalid_token") });
+      // The private MCP endpoint must challenge with its private discovery URL.
+      // tunnel-client rewrites this URL to the OpenAI-hosted Tunnel resource for
+      // connector callers. Advertising the public URL here makes the client's
+      // startup probe recurse into the not-yet-ready Tunnel endpoint.
+      const localChallengeConfig = authConfig && localMcpResourceUrl
+        ? { ...authConfig, resource_url: localMcpResourceUrl }
+        : authConfig;
+      sendJson(response, 401, { jsonrpc: "2.0", id: null, error: { code: -32001, message: safe.message, data: safe } }, { "www-authenticate": wwwAuthenticate(localChallengeConfig, safe.code === "AUTH_REQUIRED" ? "invalid_request" : "invalid_token") });
       return;
     }
     let parsedBody: Record<string, unknown> | undefined;

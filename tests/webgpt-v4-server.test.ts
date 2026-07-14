@@ -390,7 +390,9 @@ test("protected-resource metadata preserves the public resource path and exposes
       resource: runtime.mcp_url
     });
     const denied = await fetch(runtime.mcp_url, { method: "POST" });
-    assert.equal(denied.headers.get("www-authenticate")?.includes("/.well-known/oauth-protected-resource/tenant/mcp?region=us"), true);
+    const challenge = denied.headers.get("www-authenticate") ?? "";
+    assert.equal(challenge.includes(`${origin}/.well-known/oauth-protected-resource/mcp`), true);
+    assert.equal(challenge.includes("/.well-known/oauth-protected-resource/tenant/mcp?region=us"), false);
   } finally {
     await runtime.close();
     rmSync(root, { recursive: true, force: true });
