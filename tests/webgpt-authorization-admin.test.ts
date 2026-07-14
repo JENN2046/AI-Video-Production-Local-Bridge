@@ -236,10 +236,39 @@ test("owner bootstrap write preflight rolls back without authorization changes",
   const db = openM0Database(":memory:");
   try {
     createProductionProject(db);
-    assert.doesNotThrow(() => assertWebGptOwnerBootstrapWritable(db));
+    const before = db.prepare("SELECT classification, updated_at FROM workbench_project_meta WHERE project_id = ?")
+      .get("project_auth_fixture");
+    assert.doesNotThrow(() => assertWebGptOwnerBootstrapWritable(db, "project_auth_fixture"));
+    const after = db.prepare("SELECT classification, updated_at FROM workbench_project_meta WHERE project_id = ?")
+      .get("project_auth_fixture");
+    assert.deepEqual(after, before);
     assert.deepEqual(listWebGptAuthorizationSummary(db), { principals: 0, active_memberships: 0, revoked_memberships: 0, events: 0 });
   } finally {
     db.close();
+  }
+});
+
+test("owner bootstrap write preflight rejects a read-only database after a real rolled-back write", () => {
+  if (process.platform !== "win32") return;
+  const root = mkdtempSync(join(tmpdir(), "webgpt-auth-readonly-preflight-"));
+  const selected = join(root, "selected.sqlite");
+  try {
+    const setup = new DatabaseSync(selected);
+    runDatabaseMigrations(setup);
+    createProductionProject(setup);
+    setup.close();
+    const makeReadOnly = spawnSync("attrib.exe", ["+R", selected], { encoding: "utf8" });
+    assert.equal(makeReadOnly.status, 0, makeReadOnly.stderr);
+
+    const db = openM0Database(selected);
+    try {
+      assert.throws(() => assertWebGptOwnerBootstrapWritable(db, "project_auth_fixture"), /readonly database/i);
+    } finally {
+      db.close();
+    }
+  } finally {
+    spawnSync("attrib.exe", ["-R", selected], { encoding: "utf8" });
+    rmSync(root, { recursive: true, force: true });
   }
 });
 
@@ -325,7 +354,7 @@ test("interactive owner bootstrap rejects an invalid target before consuming pri
   }
 });
 
-test("owner bootstrap preflight validates the target without stdin or database writes", () => {
+test("owner bootstrap preflight validates the target without stdin or committed database changes", () => {
   const root = mkdtempSync(join(tmpdir(), "webgpt-auth-cli-preflight-"));
   try {
     const selected = join(root, "selected.sqlite");

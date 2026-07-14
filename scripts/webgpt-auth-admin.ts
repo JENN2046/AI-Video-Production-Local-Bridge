@@ -74,7 +74,7 @@ try {
     const writableDb = openM0Database(request.database_path);
     try {
       assertWebGptOwnerBootstrapTarget(writableDb, request.project_id as string);
-      assertWebGptOwnerBootstrapWritable(writableDb);
+      assertWebGptOwnerBootstrapWritable(writableDb, request.project_id as string);
     } finally {
       writableDb.close();
     }

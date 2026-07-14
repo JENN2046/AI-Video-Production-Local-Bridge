@@ -176,11 +176,17 @@ export function assertWebGptOwnerBootstrapTarget(db: M0Database, projectId: stri
   if (!project) throw new WebGptAuthAdminInputError("Project must exist and be classified as production.");
 }
 
-export function assertWebGptOwnerBootstrapWritable(db: M0Database): void {
+export function assertWebGptOwnerBootstrapWritable(db: M0Database, projectId: string): void {
   let transactionOpen = false;
   try {
     db.exec("BEGIN IMMEDIATE");
     transactionOpen = true;
+    const result = db.prepare(`UPDATE workbench_project_meta
+      SET classification = classification
+      WHERE project_id = ? AND classification = 'production'`).run(projectId) as { changes: number | bigint };
+    if (Number(result.changes) !== 1) {
+      throw new WebGptAuthAdminInputError("Project must exist and be classified as production.");
+    }
     db.exec("ROLLBACK");
     transactionOpen = false;
   } finally {
