@@ -103,6 +103,9 @@ test("default readonly profile exposes six project tools and performs no databas
     const metadataResponse = await fetch(runtime.mcp_url.replace(/\/mcp$/, "/.well-known/oauth-protected-resource"));
     const metadata = await metadataResponse.json() as { scopes_supported: string[] };
     assert.deepEqual(metadata.scopes_supported, ["projects.read"]);
+    const resourceMetadataResponse = await fetch(runtime.mcp_url.replace(/\/mcp$/, "/.well-known/oauth-protected-resource/mcp"));
+    assert.equal(resourceMetadataResponse.status, 200);
+    assert.deepEqual(await resourceMetadataResponse.json(), metadata);
     const readyResponse = await fetch(runtime.mcp_url.replace(/\/mcp$/, "/readyz"));
     const ready = await readyResponse.json() as { checks: Record<string, boolean>; profile: string };
     assert.equal(ready.profile, "readonly");

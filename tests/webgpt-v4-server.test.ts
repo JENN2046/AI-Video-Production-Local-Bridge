@@ -236,10 +236,14 @@ test("MCP endpoint fails closed without OAuth and exposes only protected-resourc
     const metadataBody = await metadata.json() as { configured: boolean; scopes_supported: string[] };
     assert.equal(metadataBody.configured, false);
     assert.deepEqual(metadataBody.scopes_supported, [...WEBGPT_V4_SCOPES]);
+    const resourceMetadata = await fetch(runtime.mcp_url.replace(/\/mcp$/, "/.well-known/oauth-protected-resource/mcp"));
+    assert.equal(resourceMetadata.status, 200);
+    assert.deepEqual(await resourceMetadata.json(), metadataBody);
 
     const denied = await fetch(runtime.mcp_url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }) });
     assert.equal(denied.status, 401);
     assert.equal(denied.headers.has("www-authenticate"), true);
+    assert.equal(denied.headers.get("www-authenticate")?.includes("/.well-known/oauth-protected-resource/mcp"), true);
     assert.equal(JSON.stringify(await denied.json()).includes("AUTH_REQUIRED"), true);
     const oversized = await fetch(runtime.mcp_url, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer fixture" }, body: JSON.stringify({ value: "x".repeat(512) }) });
     assert.equal(oversized.status, 400);

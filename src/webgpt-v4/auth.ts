@@ -124,8 +124,8 @@ export function wwwAuthenticate(
   options: { scope?: string; error_description?: string } = {}
 ): string {
   const metadataUrl = config
-    ? new URL("/.well-known/oauth-protected-resource", config.resource_url).toString()
-    : "/.well-known/oauth-protected-resource";
+    ? new URL("/.well-known/oauth-protected-resource/mcp", config.resource_url).toString()
+    : "/.well-known/oauth-protected-resource/mcp";
   const parts = [`Bearer resource_metadata="${challengeValue(metadataUrl)}"`, `error="${challengeValue(error)}"`];
   if (options.error_description) parts.push(`error_description="${challengeValue(options.error_description)}"`);
   if (options.scope) parts.push(`scope="${challengeValue(options.scope)}"`);

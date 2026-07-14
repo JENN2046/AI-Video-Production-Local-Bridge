@@ -218,7 +218,10 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
       sendJson(response, ready.status, { ...ready.body, service: "webgpt-v4-mcp", auth_configured: Boolean(authConfig) });
       return;
     }
-    if (request.method === "GET" && url.pathname === "/.well-known/oauth-protected-resource") {
+    if (request.method === "GET" && (
+      url.pathname === "/.well-known/oauth-protected-resource"
+      || url.pathname === "/.well-known/oauth-protected-resource/mcp"
+    )) {
       sendJson(response, 200, protectedResourceMetadata(authConfig, webGptV4ScopesForProfile(profile)));
       return;
     }

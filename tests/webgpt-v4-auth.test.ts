@@ -69,6 +69,6 @@ test("OAuth environment configuration fails closed for incomplete or non-HTTPS e
   assert.equal(loadWebGptV4AuthConfig({ ...base, WEBGPT_V4_AUTH0_ISSUER: "http://tenant.example.test" }), null);
   assert.equal(loadWebGptV4AuthConfig({ ...base, WEBGPT_V4_ALLOWED_SUBJECT_SHA256: "plaintext-subject" }), null);
   const challenge = wwwAuthenticate({ ...loadWebGptV4AuthConfig(base)!, resource_url: "https://mcp.example.test/mcp" });
-  assert.equal(challenge.includes("https://mcp.example.test/.well-known/oauth-protected-resource"), true);
+  assert.equal(challenge.includes("https://mcp.example.test/.well-known/oauth-protected-resource/mcp"), true);
   assert.equal(challenge.includes("/mcp/.well-known"), false);
 });
