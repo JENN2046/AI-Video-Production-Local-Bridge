@@ -256,6 +256,39 @@ test("MCP endpoint fails closed without OAuth and exposes only protected-resourc
   }
 });
 
+test("protected-resource metadata preserves the configured resource path and query", async () => {
+  const root = mkdtempSync(join(tmpdir(), "webgpt-v4-prmd-prefix-"));
+  const dataRoot = join(root, "data");
+  const sqlitePath = join(root, "app.sqlite");
+  mkdirSync(join(dataRoot, "webgpt"), { recursive: true });
+  openM0Database(sqlitePath).close();
+  const runtime = await startWebGptV4({
+    mcp_port: 0,
+    sqlite_path: sqlitePath,
+    data_root: dataRoot,
+    auth_config: {
+      issuer: "https://auth.example.test/",
+      audience: "fixture",
+      resource_url: "https://mcp.example.test/tenant/mcp?region=us",
+      jwks_uri: "https://auth.example.test/.well-known/jwks.json",
+      allowed_subject_hash: "a".repeat(64)
+    },
+    authenticate: async () => { throw new WebGptV4Error("AUTH_REQUIRED", "Authentication is required."); }
+  });
+  try {
+    const origin = runtime.mcp_url.replace(/\/mcp$/, "");
+    const metadata = await fetch(`${origin}/.well-known/oauth-protected-resource/tenant/mcp?region=us`);
+    assert.equal(metadata.status, 200);
+    assert.equal((await metadata.json() as { resource: string }).resource, "https://mcp.example.test/tenant/mcp?region=us");
+    assert.equal((await fetch(`${origin}/.well-known/oauth-protected-resource/mcp`)).status, 404);
+    const denied = await fetch(runtime.mcp_url, { method: "POST" });
+    assert.equal(denied.headers.get("www-authenticate")?.includes("/.well-known/oauth-protected-resource/tenant/mcp?region=us"), true);
+  } finally {
+    await runtime.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("MCP tools reject callers that lack the exact write scope", async () => {
   const root = mkdtempSync(join(tmpdir(), "webgpt-v4-scope-"));
   const dataRoot = join(root, "data");

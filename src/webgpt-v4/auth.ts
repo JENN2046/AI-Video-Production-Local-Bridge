@@ -114,6 +114,13 @@ export function protectedResourceMetadata(config: WebGptV4AuthConfig | null, sco
   };
 }
 
+export function protectedResourceMetadataUrl(resourceUrl: string): string {
+  const metadataUrl = new URL(resourceUrl);
+  const resourcePath = metadataUrl.pathname === "/" ? "" : metadataUrl.pathname;
+  metadataUrl.pathname = `/.well-known/oauth-protected-resource${resourcePath}`;
+  return metadataUrl.toString();
+}
+
 function challengeValue(value: string): string {
   return value.replace(/["\\\r\n]/g, " ").trim();
 }
@@ -124,7 +131,7 @@ export function wwwAuthenticate(
   options: { scope?: string; error_description?: string } = {}
 ): string {
   const metadataUrl = config
-    ? new URL("/.well-known/oauth-protected-resource/mcp", config.resource_url).toString()
+    ? protectedResourceMetadataUrl(config.resource_url)
     : "/.well-known/oauth-protected-resource/mcp";
   const parts = [`Bearer resource_metadata="${challengeValue(metadataUrl)}"`, `error="${challengeValue(error)}"`];
   if (options.error_description) parts.push(`error_description="${challengeValue(options.error_description)}"`);

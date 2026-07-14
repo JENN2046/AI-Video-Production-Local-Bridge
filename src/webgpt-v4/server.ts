@@ -8,7 +8,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { openM0Database, openM0DatabaseConnection, type M0Database } from "../storage/sqlite.js";
 import { assertSchemaCurrent, SchemaMigrationRequiredError } from "../storage/migrations.js";
 import { paths } from "../paths.js";
-import { loadWebGptV4AuthConfig, createAuth0Authenticator, createAuth0MediaAuthenticator, protectedResourceMetadata, unavailableAuthenticator, wwwAuthenticate, type WebGptV4AuthConfig, type WebGptV4Authenticator } from "./auth.js";
+import { loadWebGptV4AuthConfig, createAuth0Authenticator, createAuth0MediaAuthenticator, protectedResourceMetadata, protectedResourceMetadataUrl, unavailableAuthenticator, wwwAuthenticate, type WebGptV4AuthConfig, type WebGptV4Authenticator } from "./auth.js";
 import { errorBody, WEBGPT_V4_VERSION, WebGptV4Error } from "./types.js";
 import { createWebGptV4McpApp } from "./mcpApp.js";
 import { handleMediaGatewayRequest, invalidateMediaGrantsForRestart, mediaAnalysisQueue, resolveFfmpegExecutable, resolveFfprobeExecutable, type MediaRuntimeOptions } from "./media.js";
@@ -206,6 +206,9 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
     activeRequests.add(task);
     void task.finally(() => activeRequests.delete(task)).catch(() => undefined);
   };
+  const configuredMetadataUrl = authConfig
+    ? new URL(protectedResourceMetadataUrl(authConfig.resource_url))
+    : new URL("http://localhost/.well-known/oauth-protected-resource/mcp");
 
   const handleMcpRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     const url = new URL(request.url ?? "/", `http://${WEBGPT_V4_HOST}`);
@@ -218,10 +221,9 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
       sendJson(response, ready.status, { ...ready.body, service: "webgpt-v4-mcp", auth_configured: Boolean(authConfig) });
       return;
     }
-    if (request.method === "GET" && (
-      url.pathname === "/.well-known/oauth-protected-resource"
-      || url.pathname === "/.well-known/oauth-protected-resource/mcp"
-    )) {
+    const isCompatibilityMetadataPath = url.pathname === "/.well-known/oauth-protected-resource" && url.search === "";
+    const isConfiguredMetadataPath = url.pathname === configuredMetadataUrl.pathname && url.search === configuredMetadataUrl.search;
+    if (request.method === "GET" && (isCompatibilityMetadataPath || isConfiguredMetadataPath)) {
       sendJson(response, 200, protectedResourceMetadata(authConfig, webGptV4ScopesForProfile(profile)));
       return;
     }
