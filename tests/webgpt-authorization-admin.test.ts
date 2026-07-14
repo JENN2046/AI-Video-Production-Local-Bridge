@@ -3,12 +3,13 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import test from "node:test";
 
 import { DATABASE_MIGRATIONS, assertSchemaCurrent, migrationChecksum, runDatabaseMigrations, WEBGPT_AUTHORIZATION_WORKSPACE_ID } from "../src/storage/migrations.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import {
+  assertWebGptOwnerBootstrapTarget,
   bootstrapWebGptProjectOwner,
   grantWebGptProjectMembership,
   listWebGptAuthorizationSummary,
@@ -213,6 +214,18 @@ test("admin opens only the explicitly selected migrated fixture database", () =>
   }
 });
 
+test("owner bootstrap target preflight is read-only and production-only", () => {
+  const db = openM0Database(":memory:");
+  try {
+    createProductionProject(db);
+    assert.doesNotThrow(() => assertWebGptOwnerBootstrapTarget(db, "project_auth_fixture"));
+    assert.throws(() => assertWebGptOwnerBootstrapTarget(db, "project_missing"), /classified as production/);
+    assert.deepEqual(listWebGptAuthorizationSummary(db), { principals: 0, active_memberships: 0, revoked_memberships: 0, events: 0 });
+  } finally {
+    db.close();
+  }
+});
+
 test("interactive owner bootstrap consumes subject only from stdin and never discloses it", () => {
   const root = mkdtempSync(join(tmpdir(), "webgpt-auth-interactive-"));
   const subject = "descope-user-private-fixture";
@@ -262,6 +275,34 @@ test("interactive owner bootstrap consumes subject only from stdin and never dis
     const unchanged = new DatabaseSync(selected, { readOnly: true });
     assert.deepEqual(listWebGptAuthorizationSummary(unchanged), { principals: 1, active_memberships: 1, revoked_memberships: 0, events: 2 });
     unchanged.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("interactive owner bootstrap rejects an invalid target before consuming private stdin", async () => {
+  const root = mkdtempSync(join(tmpdir(), "webgpt-auth-preflight-"));
+  try {
+    const selected = join(root, "selected.sqlite");
+    const db = new DatabaseSync(selected);
+    runDatabaseMigrations(db);
+    db.close();
+    const command = join(process.cwd(), "dist", "scripts", "webgpt-auth-admin.js");
+    const child = spawn(process.execPath, [command, "bootstrap-owner-interactive", "--db", selected,
+      "--issuer", "https://issuer.example", "--project", "project_missing"], { stdio: ["pipe", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8").on("data", (chunk: string) => { stdout += chunk; });
+    child.stderr.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk; });
+    const status = await Promise.race([
+      new Promise<number | null>((resolveExit) => child.once("exit", resolveExit)),
+      new Promise<"timeout">((resolveTimeout) => setTimeout(() => resolveTimeout("timeout"), 2_000))
+    ]);
+    if (status === "timeout") child.kill();
+    assert.notEqual(status, "timeout", "process waited for stdin before validating the target");
+    assert.equal(status, 1);
+    assert.equal(stdout.includes("project_missing"), false);
+    assert.match(stderr, /INVALID_WEBGPT_AUTH_ADMIN_INPUT/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

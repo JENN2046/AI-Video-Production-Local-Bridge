@@ -1,5 +1,7 @@
-import { openM0Database } from "../src/storage/sqlite.js";
+import { assertSchemaCurrent } from "../src/storage/migrations.js";
+import { openM0Database, openM0DatabaseConnection } from "../src/storage/sqlite.js";
 import {
+  assertWebGptOwnerBootstrapTarget,
   bootstrapWebGptProjectOwner,
   grantWebGptProjectMembership,
   listWebGptAuthorizationSummary,
@@ -38,6 +40,15 @@ async function readSubjectFromSecureStdin(): Promise<string> {
 
 try {
   const request = parseWebGptAuthAdminArguments(process.argv.slice(2));
+  if (request.action === "bootstrap-owner-interactive") {
+    const preflightDb = openM0DatabaseConnection(request.database_path, { readOnly: true });
+    try {
+      assertSchemaCurrent(preflightDb);
+      assertWebGptOwnerBootstrapTarget(preflightDb, request.project_id as string);
+    } finally {
+      preflightDb.close();
+    }
+  }
   const principalId = request.action === "bootstrap-owner-interactive"
     ? principalIdFromFederatedSubject(request.issuer as string, await readSubjectFromSecureStdin())
     : request.principal_id;

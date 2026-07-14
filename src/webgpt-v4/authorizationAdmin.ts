@@ -138,10 +138,7 @@ export function bootstrapWebGptProjectOwner(db: M0Database, principalId: string,
   if (!PRINCIPAL_PATTERN.test(principalId)) throw new WebGptAuthAdminInputError("Invalid principal.");
   db.exec("BEGIN IMMEDIATE");
   try {
-    const project = db.prepare(`SELECT p.project_id FROM projects p
-      JOIN workbench_project_meta m ON m.project_id = p.project_id
-      WHERE p.project_id = ? AND m.classification = 'production'`).get(projectId);
-    if (!project) throw new WebGptAuthAdminInputError("Project must exist and be classified as production.");
+    assertWebGptOwnerBootstrapTarget(db, projectId);
     const principalResult = db.prepare(`INSERT OR IGNORE INTO webgpt_auth_principals
       (workspace_id, principal_id) VALUES (?, ?)`).run(WEBGPT_AUTHORIZATION_WORKSPACE_ID, principalId) as { changes: number | bigint };
     const principalCreated = Number(principalResult.changes) === 1;
@@ -169,6 +166,13 @@ export function bootstrapWebGptProjectOwner(db: M0Database, principalId: string,
     db.exec("ROLLBACK");
     throw error;
   }
+}
+
+export function assertWebGptOwnerBootstrapTarget(db: M0Database, projectId: string): void {
+  const project = db.prepare(`SELECT p.project_id FROM projects p
+    JOIN workbench_project_meta m ON m.project_id = p.project_id
+    WHERE p.project_id = ? AND m.classification = 'production'`).get(projectId);
+  if (!project) throw new WebGptAuthAdminInputError("Project must exist and be classified as production.");
 }
 
 export function grantWebGptProjectMembership(db: M0Database, principalId: string, projectId: string, role: WebGptProjectRole, reasonCode: string): { changed: boolean } {
