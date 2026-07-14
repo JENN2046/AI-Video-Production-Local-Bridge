@@ -3,17 +3,26 @@ import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 import { callM0ToolPlaceholder, listM0Tools, listTables, openM0Database, paths } from "../src/index.js";
+import { DATABASE_MIGRATIONS } from "../src/storage/migrations.js";
 import { WORKBENCH_V2_SCHEMA_VERSION } from "../src/storage/workbenchV2Schema.js";
 import { WEBGPT_V4_VERSION } from "../src/webgpt-v4/types.js";
 
-test("SR6 candidate reports the remediated package, MCP, and schema identities", () => {
+test("beta.4 closeout reports consistent package, MCP, schema, and migration identities", () => {
   const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as { version: string };
   const packageLock = JSON.parse(readFileSync("package-lock.json", "utf8")) as { version: string; packages: { "": { version: string } } };
-  assert.equal(packageJson.version, "0.1.0-beta.3");
+  const readme = readFileSync("README.md", "utf8");
+  const currentState = readFileSync("CURRENT_STATE.md", "utf8");
+
+  assert.equal(packageJson.version, "0.1.0-beta.4");
   assert.equal(packageLock.version, packageJson.version);
   assert.equal(packageLock.packages[""].version, packageJson.version);
-  assert.equal(WEBGPT_V4_VERSION, "webgpt-v4.1.1");
+  assert.equal(WEBGPT_V4_VERSION, "webgpt-v4.2.0");
   assert.equal(WORKBENCH_V2_SCHEMA_VERSION, "workbench-v2-5");
+  assert.equal(DATABASE_MIGRATIONS.at(-1)?.id, "0007");
+  for (const document of [readme, currentState]) {
+    assert.match(document, /0\.1\.0-beta\.4/);
+    assert.match(document, /webgpt-v4\.2\.0/);
+  }
 });
 
 test("M0-A initializes SQLite metadata storage", () => {
