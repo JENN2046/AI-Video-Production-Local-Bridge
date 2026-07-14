@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -20,6 +20,7 @@ import {
 import { authorizedWebGptProjectIds, requireWebGptProjectReadAccess, webGptProjectAuthorizationReady } from "../src/webgpt-v4/projectAuthorization.js";
 import { listProductionProjects } from "../src/webgpt-v4/domain.js";
 import { createProject } from "../src/tools/projects.js";
+import { principalIdFromFederatedSubject } from "../src/webgpt-v4/types.js";
 
 const PRINCIPAL = "a".repeat(64);
 
@@ -96,6 +97,17 @@ test("admin parser requires an explicit database and rejects raw identity-shaped
   const parsed = parseWebGptAuthAdminArguments(["register", "--db", "fixture.sqlite", "--principal", PRINCIPAL]);
   assert.equal(parsed.database_path.endsWith("fixture.sqlite"), true);
   assert.equal(parsed.reason_code, "LOCAL_ADMIN_APPROVED");
+  const interactive = parseWebGptAuthAdminArguments([
+    "bootstrap-owner-interactive", "--db", "fixture.sqlite", "--issuer", "https://issuer.example/", "--project", "project_auth_fixture"
+  ]);
+  assert.equal(interactive.issuer, "https://issuer.example/");
+  assert.equal(interactive.principal_id, undefined);
+  assert.throws(() => parseWebGptAuthAdminArguments([
+    "bootstrap-owner-interactive", "--db", "fixture.sqlite", "--issuer", "http://issuer.example", "--project", "project_auth_fixture"
+  ]), /HTTPS issuer URL/);
+  assert.throws(() => parseWebGptAuthAdminArguments([
+    "bootstrap-owner-interactive", "--db", "fixture.sqlite", "--issuer", "https://issuer.example", "--project", "project_auth_fixture", "--principal", PRINCIPAL
+  ]), /not valid for bootstrap-owner-interactive/);
 });
 
 test("registration, grant and revoke are transactional, idempotent and production-only", () => {
@@ -198,5 +210,76 @@ test("admin opens only the explicitly selected migrated fixture database", () =>
     assert.match(missingDatabase.stderr, /INVALID_WEBGPT_AUTH_ADMIN_INPUT/);
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("interactive owner bootstrap consumes subject only from stdin and never discloses it", () => {
+  const root = mkdtempSync(join(tmpdir(), "webgpt-auth-interactive-"));
+  const subject = "descope-user-private-fixture";
+  const issuer = "https://api.descope.example/project-fixture";
+  const principal = principalIdFromFederatedSubject(issuer, subject);
+  try {
+    const selected = join(root, "selected.sqlite");
+    const db = new DatabaseSync(selected);
+    runDatabaseMigrations(db);
+    createProductionProject(db);
+    db.close();
+    const command = join(process.cwd(), "dist", "scripts", "webgpt-auth-admin.js");
+    const success = spawnSync(process.execPath, [command, "bootstrap-owner-interactive", "--db", selected,
+      "--issuer", issuer, "--project", "project_auth_fixture", "--reason", "TEST_INTERACTIVE"], {
+      encoding: "utf8",
+      input: `${subject}\n`
+    });
+    assert.equal(success.status, 0, success.stderr);
+    assert.deepEqual(JSON.parse(success.stdout) as unknown, {
+      result: "PASS", action: "bootstrap-owner-interactive", principal_created: true, membership_created: true
+    });
+    assert.equal(`${success.stdout}${success.stderr}`.includes(subject), false);
+    assert.equal(`${success.stdout}${success.stderr}`.includes(principal), false);
+
+    const verify = new DatabaseSync(selected, { readOnly: true });
+    const stored = JSON.stringify({
+      principals: verify.prepare("SELECT * FROM webgpt_auth_principals").all(),
+      memberships: verify.prepare("SELECT * FROM webgpt_project_memberships").all(),
+      events: verify.prepare("SELECT * FROM webgpt_auth_events").all()
+    });
+    assert.equal(stored.includes(subject), false);
+    assert.equal(stored.includes(principal), true);
+    assert.equal((verify.prepare("SELECT COUNT(*) AS count FROM webgpt_project_memberships WHERE role = 'owner' AND status = 'active'").get() as { count: number }).count, 1);
+    verify.close();
+
+    const missing = spawnSync(process.execPath, [command, "bootstrap-owner-interactive", "--db", selected,
+      "--issuer", issuer, "--project", "project_auth_fixture"], { encoding: "utf8", input: "" });
+    assert.equal(missing.status, 1);
+    assert.match(missing.stderr, /INVALID_WEBGPT_AUTH_ADMIN_INPUT/);
+    assert.equal(missing.stderr.includes(subject), false);
+
+    const invalidProject = spawnSync(process.execPath, [command, "bootstrap-owner-interactive", "--db", selected,
+      "--issuer", issuer, "--project", "project_missing"], { encoding: "utf8", input: `${subject}\n` });
+    assert.equal(invalidProject.status, 1);
+    assert.equal(`${invalidProject.stdout}${invalidProject.stderr}`.includes(subject), false);
+    assert.equal(`${invalidProject.stdout}${invalidProject.stderr}`.includes(principal), false);
+    const unchanged = new DatabaseSync(selected, { readOnly: true });
+    assert.deepEqual(listWebGptAuthorizationSummary(unchanged), { principals: 1, active_memberships: 1, revoked_memberships: 0, events: 2 });
+    unchanged.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Windows bootstrap wrapper uses hidden input and remains compatible with Windows PowerShell", () => {
+  const wrapper = join(process.cwd(), "scripts", "windows", "webgpt-bootstrap-owner.ps1");
+  const source = readFileSync(wrapper, "utf8");
+  assert.match(source, /Read-Host .* -AsSecureString/);
+  assert.match(source, /ZeroFreeBSTR/);
+  assert.equal(source.includes("HashData"), false);
+  assert.equal(source.includes("ToHexString"), false);
+  if (process.platform === "win32") {
+    const parsed = spawnSync("powershell.exe", ["-NoProfile", "-Command",
+      "$null = [scriptblock]::Create((Get-Content -Raw -LiteralPath $env:WEBGPT_WRAPPER_TEST_PATH))"], {
+      encoding: "utf8",
+      env: { ...process.env, WEBGPT_WRAPPER_TEST_PATH: wrapper }
+    });
+    assert.equal(parsed.status, 0, parsed.stderr);
   }
 });

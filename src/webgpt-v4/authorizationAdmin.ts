@@ -5,12 +5,13 @@ import type { M0Database } from "../storage/sqlite.js";
 import { WEBGPT_AUTHORIZATION_WORKSPACE_ID } from "../storage/migrations.js";
 
 export type WebGptProjectRole = "owner" | "viewer";
-export type WebGptAuthAdminAction = "bootstrap-owner" | "register" | "grant" | "revoke" | "list";
+export type WebGptAuthAdminAction = "bootstrap-owner" | "bootstrap-owner-interactive" | "register" | "grant" | "revoke" | "list";
 
 export interface WebGptAuthAdminRequest {
   action: WebGptAuthAdminAction;
   database_path: string;
   principal_id?: string;
+  issuer?: string;
   project_id?: string;
   role?: WebGptProjectRole;
   reason_code?: string;
@@ -47,10 +48,21 @@ function validateReason(value: string | undefined): string {
   return reason;
 }
 
+function validateIssuer(value: string | undefined): string {
+  const issuer = required(value, "--issuer");
+  try {
+    const parsed = new URL(issuer);
+    if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.hash || parsed.search) throw new Error();
+    return `${issuer.trim().replace(/\/+$/, "")}/`;
+  } catch {
+    throw new WebGptAuthAdminInputError("--issuer must be an HTTPS issuer URL without credentials, query, or fragment.");
+  }
+}
+
 export function parseWebGptAuthAdminArguments(argv: readonly string[]): WebGptAuthAdminRequest {
   const [actionRaw, ...rest] = argv;
-  if (!(["bootstrap-owner", "register", "grant", "revoke", "list"] as const).includes(actionRaw as WebGptAuthAdminAction)) {
-    throw new WebGptAuthAdminInputError("Action must be bootstrap-owner, register, grant, revoke, or list.");
+  if (!(["bootstrap-owner", "bootstrap-owner-interactive", "register", "grant", "revoke", "list"] as const).includes(actionRaw as WebGptAuthAdminAction)) {
+    throw new WebGptAuthAdminInputError("Action must be bootstrap-owner, bootstrap-owner-interactive, register, grant, revoke, or list.");
   }
   const values = new Map<string, string>();
   for (let index = 0; index < rest.length; index += 2) {
@@ -60,10 +72,11 @@ export function parseWebGptAuthAdminArguments(argv: readonly string[]): WebGptAu
     if (values.has(key)) throw new WebGptAuthAdminInputError(`Duplicate argument ${key}.`);
     values.set(key, value);
   }
-  const allowed = new Set(["--db", "--principal", "--project", "--role", "--reason"]);
+  const allowed = new Set(["--db", "--principal", "--issuer", "--project", "--role", "--reason"]);
   for (const key of values.keys()) if (!allowed.has(key)) throw new WebGptAuthAdminInputError(`Unknown argument ${key}.`);
   const actionArguments: Record<WebGptAuthAdminAction, ReadonlySet<string>> = {
     "bootstrap-owner": new Set(["--db", "--principal", "--project", "--reason"]),
+    "bootstrap-owner-interactive": new Set(["--db", "--issuer", "--project", "--reason"]),
     register: new Set(["--db", "--principal", "--reason"]),
     grant: new Set(["--db", "--principal", "--project", "--role", "--reason"]),
     revoke: new Set(["--db", "--principal", "--project", "--reason"]),
@@ -79,8 +92,9 @@ export function parseWebGptAuthAdminArguments(argv: readonly string[]): WebGptAu
   if (!isAbsolute(databasePath)) throw new WebGptAuthAdminInputError("--db must resolve to an absolute path.");
   const action = actionRaw as WebGptAuthAdminAction;
   const request: WebGptAuthAdminRequest = { action, database_path: databasePath };
-  if (action !== "list") request.principal_id = validatePrincipal(values.get("--principal"));
-  if (action === "bootstrap-owner" || action === "grant" || action === "revoke") request.project_id = validateProject(values.get("--project"));
+  if (action !== "list" && action !== "bootstrap-owner-interactive") request.principal_id = validatePrincipal(values.get("--principal"));
+  if (action === "bootstrap-owner-interactive") request.issuer = validateIssuer(values.get("--issuer"));
+  if (action === "bootstrap-owner" || action === "bootstrap-owner-interactive" || action === "grant" || action === "revoke") request.project_id = validateProject(values.get("--project"));
   if (action === "grant") {
     const role = required(values.get("--role"), "--role");
     if (role !== "owner" && role !== "viewer") throw new WebGptAuthAdminInputError("--role must be owner or viewer.");

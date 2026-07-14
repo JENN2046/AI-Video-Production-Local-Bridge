@@ -59,8 +59,8 @@ The phases below are ordered. Do not begin ChatGPT app discovery before local ow
 2. Write only the non-secret values required by `.env.example`: resource URL, issuer, audience, and JWKS URI.
 3. Run `npm run preflight -- --profile=webgpt` with `WEBGPT_V4_PROFILE=readonly` and `REAL_PROVIDER_ENABLED=false`.
 4. Start WebGPT and verify `/healthz=200`, canonical PRMD `=200`, anonymous `/mcp=401`, and `/readyz=503` until an active owner exists.
-5. Derive the issuer-bound opaque principal without printing or persisting the raw subject.
-6. Under a separate database-write authorization, back up the activity database and run `bootstrap-owner` with the explicit database path and one production project.
+5. Under a separate database-write authorization, back up the activity database and run `npm run auth:webgpt:bootstrap-owner -- -DatabasePath <path> -Issuer <https-issuer> -ProjectId <production-project-id>`.
+6. Enter the Descope subject only in the hidden prompt; the helper derives the issuer-bound principal and performs the atomic owner bootstrap without printing or persisting the raw subject.
 7. Verify `/readyz=200`. Do not attempt ChatGPT discovery while readiness is `503`.
 
 ### Phase C — OpenAI Platform and Tunnel

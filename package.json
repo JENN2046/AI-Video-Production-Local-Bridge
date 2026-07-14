@@ -26,6 +26,7 @@
     "db:check": "npm run build:server && node dist/scripts/db-check.js",
     "db:migrate": "npm run build:server && node dist/scripts/db-migrate.js",
     "auth:webgpt": "npm run build:server && node dist/scripts/webgpt-auth-admin.js",
+    "auth:webgpt:bootstrap-owner": "npm run build:server && powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File scripts/windows/webgpt-bootstrap-owner.ps1",
     "preflight": "npm run build:server && node dist/scripts/preflight.js",
     "migrate:webgpt:v4": "npm run build:server && node dist/scripts/migrate-webgpt-v4.js",
     "test:v2": "npm run build:server && node dist/scripts/run-isolated-tests.js dist/tests/workbench-v2-*.test.js",
