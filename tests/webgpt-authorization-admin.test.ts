@@ -389,6 +389,8 @@ test("Windows bootstrap wrapper uses hidden input and remains compatible with Wi
   assert.match(source, /Read-Host .* -AsSecureString/);
   assert.match(source, /ZeroFreeBSTR/);
   assert.ok(source.indexOf("bootstrap-owner-preflight") < source.indexOf("Read-Host"));
+  assert.match(source, /bootstrap-owner-preflight[\s\S]*?--reason \$Reason \| Out-Null[\s\S]*?Read-Host/,
+    "the preflight must not add a second JSON document to successful wrapper stdout");
   assert.equal(source.includes("HashData"), false);
   assert.equal(source.includes("ToHexString"), false);
   if (process.platform === "win32") {

@@ -25,7 +25,7 @@ if (-not (Test-Path -LiteralPath $command -PathType Leaf)) {
   --db $resolvedDatabase `
   --issuer $Issuer `
   --project $ProjectId `
-  --reason $Reason
+  --reason $Reason | Out-Null
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $secureSubject = Read-Host "Descope subject (input hidden)" -AsSecureString
