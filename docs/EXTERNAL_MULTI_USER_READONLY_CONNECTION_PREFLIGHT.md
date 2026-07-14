@@ -40,7 +40,9 @@ The external connection must preserve all of these invariants:
 
 No value in this checklist is permission to create or change an object.
 
-### Descope
+The phases below are ordered. Do not begin ChatGPT app discovery before local owner readiness and the Tunnel are healthy.
+
+### Phase A — Descope resource and client capability
 
 1. Select the target Descope project.
 2. Create or select one MCP Server Resource whose URL is the final MCP resource URI.
@@ -51,16 +53,7 @@ No value in this checklist is permission to create or change an object.
 7. Associate the Agentic Client with only this MCP Server Resource and only `projects.read`.
 8. Configure a consent/login flow that cannot silently add scopes.
 
-### OpenAI Platform and ChatGPT
-
-1. Confirm the target Platform organization and target ChatGPT workspace before any write.
-2. Associate the existing or newly approved Tunnel with both targets.
-3. Use a runtime API key with Tunnel Read + Use only; creation or editing requires a separately scoped management credential.
-4. In ChatGPT Developer mode, create a private app using **Tunnel**, not a public MCP URL.
-5. Copy the exact callback URI presented by ChatGPT into Descope only if the selected registration mode requires it. Do not guess a callback ID.
-6. Confirm discovery shows exactly the six Readonly tools before connecting a user.
-
-### Local runtime
+### Phase B — Local owner readiness
 
 1. Keep all secret values in ignored local secret storage. Do not print, copy, commit, or include them in receipts.
 2. Write only the non-secret values required by `.env.example`: resource URL, issuer, audience, and JWKS URI.
@@ -68,7 +61,20 @@ No value in this checklist is permission to create or change an object.
 4. Start WebGPT and verify `/healthz=200`, canonical PRMD `=200`, anonymous `/mcp=401`, and `/readyz=503` until an active owner exists.
 5. Derive the issuer-bound opaque principal without printing or persisting the raw subject.
 6. Under a separate database-write authorization, back up the activity database and run `bootstrap-owner` with the explicit database path and one production project.
-7. Verify `/readyz=200`, then run `tunnel-client doctor` and start the Tunnel.
+7. Verify `/readyz=200`. Do not attempt ChatGPT discovery while readiness is `503`.
+
+### Phase C — OpenAI Platform and Tunnel
+
+1. Confirm the target Platform organization and target ChatGPT workspace before any write.
+2. Associate the existing or newly approved Tunnel with both targets.
+3. Use a runtime API key with Tunnel Read + Use only; creation or editing requires a separately scoped management credential.
+4. Run `tunnel-client doctor`, start the Tunnel, and verify its health endpoint before creating the ChatGPT app.
+
+### Phase D — ChatGPT app and discovery
+
+1. In ChatGPT Developer mode, create a private app using **Tunnel**, not a public MCP URL.
+2. If the selected registration mode requires an approved redirect, copy the exact callback URI presented by ChatGPT into Descope and then resume connection. Do not guess a callback ID.
+3. Confirm discovery shows exactly the six Readonly tools before connecting the first user.
 
 ## Multi-user golden path
 
