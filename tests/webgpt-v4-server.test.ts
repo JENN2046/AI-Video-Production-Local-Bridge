@@ -236,16 +236,53 @@ test("MCP endpoint fails closed without OAuth and exposes only protected-resourc
     const metadataBody = await metadata.json() as { configured: boolean; scopes_supported: string[] };
     assert.equal(metadataBody.configured, false);
     assert.deepEqual(metadataBody.scopes_supported, [...WEBGPT_V4_SCOPES]);
+    const resourceMetadata = await fetch(runtime.mcp_url.replace(/\/mcp$/, "/.well-known/oauth-protected-resource/mcp"));
+    assert.equal(resourceMetadata.status, 200);
+    assert.deepEqual(await resourceMetadata.json(), metadataBody);
 
     const denied = await fetch(runtime.mcp_url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }) });
     assert.equal(denied.status, 401);
     assert.equal(denied.headers.has("www-authenticate"), true);
+    assert.equal(denied.headers.get("www-authenticate")?.includes("/.well-known/oauth-protected-resource/mcp"), true);
     assert.equal(JSON.stringify(await denied.json()).includes("AUTH_REQUIRED"), true);
     const oversized = await fetch(runtime.mcp_url, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer fixture" }, body: JSON.stringify({ value: "x".repeat(512) }) });
     assert.equal(oversized.status, 400);
     assert.equal(JSON.stringify(await oversized.json()).includes("BODY_TOO_LARGE"), true);
     const mediaDenied = await fetch(`${runtime.media_url}/media/v4/projects/project/artifacts/artifact/content?grant=fixture`);
     assert.equal(mediaDenied.status, 401);
+  } finally {
+    await runtime.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("protected-resource metadata preserves the configured resource path and query", async () => {
+  const root = mkdtempSync(join(tmpdir(), "webgpt-v4-prmd-prefix-"));
+  const dataRoot = join(root, "data");
+  const sqlitePath = join(root, "app.sqlite");
+  mkdirSync(join(dataRoot, "webgpt"), { recursive: true });
+  openM0Database(sqlitePath).close();
+  const runtime = await startWebGptV4({
+    mcp_port: 0,
+    sqlite_path: sqlitePath,
+    data_root: dataRoot,
+    auth_config: {
+      issuer: "https://auth.example.test/",
+      audience: "fixture",
+      resource_url: "https://mcp.example.test/tenant/mcp?region=us",
+      jwks_uri: "https://auth.example.test/.well-known/jwks.json",
+      allowed_subject_hash: "a".repeat(64)
+    },
+    authenticate: async () => { throw new WebGptV4Error("AUTH_REQUIRED", "Authentication is required."); }
+  });
+  try {
+    const origin = runtime.mcp_url.replace(/\/mcp$/, "");
+    const metadata = await fetch(`${origin}/.well-known/oauth-protected-resource/tenant/mcp?region=us`);
+    assert.equal(metadata.status, 200);
+    assert.equal((await metadata.json() as { resource: string }).resource, "https://mcp.example.test/tenant/mcp?region=us");
+    assert.equal((await fetch(`${origin}/.well-known/oauth-protected-resource/mcp`)).status, 404);
+    const denied = await fetch(runtime.mcp_url, { method: "POST" });
+    assert.equal(denied.headers.get("www-authenticate")?.includes("/.well-known/oauth-protected-resource/tenant/mcp?region=us"), true);
   } finally {
     await runtime.close();
     rmSync(root, { recursive: true, force: true });

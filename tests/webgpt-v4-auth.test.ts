@@ -4,7 +4,7 @@ import test from "node:test";
 
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 
-import { createAuth0Authenticator, createAuth0MediaAuthenticator, loadWebGptV4AuthConfig, wwwAuthenticate, type WebGptV4AuthConfig } from "../src/webgpt-v4/auth.js";
+import { createAuth0Authenticator, createAuth0MediaAuthenticator, loadWebGptV4AuthConfig, protectedResourceMetadataUrl, wwwAuthenticate, type WebGptV4AuthConfig } from "../src/webgpt-v4/auth.js";
 import { sha256, WebGptV4Error } from "../src/webgpt-v4/types.js";
 
 test("Auth0 verifier enforces JWKS signature, issuer, audience, expiry, subject allowlist, and scopes", async () => {
@@ -69,6 +69,12 @@ test("OAuth environment configuration fails closed for incomplete or non-HTTPS e
   assert.equal(loadWebGptV4AuthConfig({ ...base, WEBGPT_V4_AUTH0_ISSUER: "http://tenant.example.test" }), null);
   assert.equal(loadWebGptV4AuthConfig({ ...base, WEBGPT_V4_ALLOWED_SUBJECT_SHA256: "plaintext-subject" }), null);
   const challenge = wwwAuthenticate({ ...loadWebGptV4AuthConfig(base)!, resource_url: "https://mcp.example.test/mcp" });
-  assert.equal(challenge.includes("https://mcp.example.test/.well-known/oauth-protected-resource"), true);
+  assert.equal(challenge.includes("https://mcp.example.test/.well-known/oauth-protected-resource/mcp"), true);
   assert.equal(challenge.includes("/mcp/.well-known"), false);
+  assert.equal(
+    protectedResourceMetadataUrl("https://mcp.example.test/tenant/mcp?region=us"),
+    "https://mcp.example.test/.well-known/oauth-protected-resource/tenant/mcp?region=us"
+  );
+  const prefixedChallenge = wwwAuthenticate({ ...loadWebGptV4AuthConfig(base)!, resource_url: "https://mcp.example.test/tenant/mcp?region=us" });
+  assert.equal(prefixedChallenge.includes("https://mcp.example.test/.well-known/oauth-protected-resource/tenant/mcp?region=us"), true);
 });
