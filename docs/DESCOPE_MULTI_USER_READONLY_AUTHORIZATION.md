@@ -45,6 +45,7 @@ Admin commands require `--db`; omission fails with `INVALID_WEBGPT_AUTH_ADMIN_IN
 
 ```powershell
 npm run auth:webgpt -- bootstrap-owner --db <path> --principal <opaque-sha256> --project <production-project-id>
+npm run auth:webgpt:bootstrap-owner -- -DatabasePath <path> -Issuer <https-issuer> -ProjectId <production-project-id>
 npm run auth:webgpt -- register --db <path> --principal <opaque-sha256>
 npm run auth:webgpt -- grant --db <path> --principal <opaque-sha256> --project <production-project-id> --role owner|viewer
 npm run auth:webgpt -- revoke --db <path> --principal <opaque-sha256> --project <production-project-id>
@@ -52,6 +53,8 @@ npm run auth:webgpt -- list --db <path>
 ```
 
 `bootstrap-owner` creates the principal, owner membership and events atomically. It refuses disabled principals and will not overwrite a different existing membership. `grant` requires an active registered principal and a production-classified project. `revoke` preserves the membership record and appends an audit event. `list` returns counts only.
+
+On Windows, `auth:webgpt:bootstrap-owner` is the preferred first-owner path. Its PowerShell wrapper uses `Read-Host -AsSecureString`, sends the subject only through child-process stdin, reuses the runtime issuer normalization and principal derivation, and returns only creation booleans. It never accepts the subject in argv or writes it to the database. Direct `bootstrap-owner-interactive` invocation from a TTY fails closed so an unmasked prompt cannot be mistaken for the supported path.
 
 ## Test and CI evidence
 
