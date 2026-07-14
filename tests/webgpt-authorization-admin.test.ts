@@ -10,6 +10,7 @@ import { DATABASE_MIGRATIONS, assertSchemaCurrent, migrationChecksum, runDatabas
 import { openM0Database } from "../src/storage/sqlite.js";
 import {
   assertWebGptOwnerBootstrapTarget,
+  assertWebGptOwnerBootstrapWritable,
   bootstrapWebGptProjectOwner,
   grantWebGptProjectMembership,
   listWebGptAuthorizationSummary,
@@ -231,6 +232,17 @@ test("owner bootstrap target preflight is read-only and production-only", () => 
   }
 });
 
+test("owner bootstrap write preflight rolls back without authorization changes", () => {
+  const db = openM0Database(":memory:");
+  try {
+    createProductionProject(db);
+    assert.doesNotThrow(() => assertWebGptOwnerBootstrapWritable(db));
+    assert.deepEqual(listWebGptAuthorizationSummary(db), { principals: 0, active_memberships: 0, revoked_memberships: 0, events: 0 });
+  } finally {
+    db.close();
+  }
+});
+
 test("interactive owner bootstrap consumes subject only from stdin and never discloses it", () => {
   const root = mkdtempSync(join(tmpdir(), "webgpt-auth-interactive-"));
   const subject = "descope-user-private-fixture";
@@ -332,6 +344,41 @@ test("owner bootstrap preflight validates the target without stdin or database w
     assert.deepEqual(listWebGptAuthorizationSummary(verify), { principals: 0, active_memberships: 0, revoked_memberships: 0, events: 0 });
     verify.close();
   } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("interactive owner bootstrap rejects writer contention before consuming private stdin", async () => {
+  const root = mkdtempSync(join(tmpdir(), "webgpt-auth-lock-preflight-"));
+  let lockDb: DatabaseSync | undefined;
+  try {
+    const selected = join(root, "selected.sqlite");
+    const setup = new DatabaseSync(selected);
+    runDatabaseMigrations(setup);
+    createProductionProject(setup);
+    setup.close();
+    lockDb = new DatabaseSync(selected);
+    lockDb.exec("BEGIN IMMEDIATE");
+
+    const command = join(process.cwd(), "dist", "scripts", "webgpt-auth-admin.js");
+    const child = spawn(process.execPath, [command, "bootstrap-owner-interactive", "--db", selected,
+      "--issuer", "https://issuer.example", "--project", "project_auth_fixture"], { stdio: ["pipe", "pipe", "pipe"] });
+    let stderr = "";
+    child.stderr.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk; });
+    const status = await Promise.race([
+      new Promise<number | null>((resolveExit) => child.once("exit", resolveExit)),
+      new Promise<"timeout">((resolveTimeout) => setTimeout(() => resolveTimeout("timeout"), 8_000))
+    ]);
+    if (status === "timeout") child.kill();
+    assert.notEqual(status, "timeout", "process waited for stdin instead of rejecting writer contention");
+    assert.equal(status, 1);
+    assert.match(stderr, /database is locked/i);
+    assert.deepEqual(listWebGptAuthorizationSummary(lockDb), { principals: 0, active_memberships: 0, revoked_memberships: 0, events: 0 });
+  } finally {
+    if (lockDb) {
+      try { lockDb.exec("ROLLBACK"); } catch { /* already closed or rolled back */ }
+      lockDb.close();
+    }
     rmSync(root, { recursive: true, force: true });
   }
 });

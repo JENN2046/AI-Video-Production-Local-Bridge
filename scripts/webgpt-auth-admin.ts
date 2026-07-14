@@ -2,6 +2,7 @@ import { assertSchemaCurrent } from "../src/storage/migrations.js";
 import { openM0Database, openM0DatabaseConnection } from "../src/storage/sqlite.js";
 import {
   assertWebGptOwnerBootstrapTarget,
+  assertWebGptOwnerBootstrapWritable,
   bootstrapWebGptProjectOwner,
   grantWebGptProjectMembership,
   listWebGptAuthorizationSummary,
@@ -47,6 +48,13 @@ try {
       assertWebGptOwnerBootstrapTarget(preflightDb, request.project_id as string);
     } finally {
       preflightDb.close();
+    }
+    const writableDb = openM0Database(request.database_path);
+    try {
+      assertWebGptOwnerBootstrapTarget(writableDb, request.project_id as string);
+      assertWebGptOwnerBootstrapWritable(writableDb);
+    } finally {
+      writableDb.close();
     }
   }
   if (request.action === "bootstrap-owner-preflight") {

@@ -176,6 +176,20 @@ export function assertWebGptOwnerBootstrapTarget(db: M0Database, projectId: stri
   if (!project) throw new WebGptAuthAdminInputError("Project must exist and be classified as production.");
 }
 
+export function assertWebGptOwnerBootstrapWritable(db: M0Database): void {
+  let transactionOpen = false;
+  try {
+    db.exec("BEGIN IMMEDIATE");
+    transactionOpen = true;
+    db.exec("ROLLBACK");
+    transactionOpen = false;
+  } finally {
+    if (transactionOpen) {
+      try { db.exec("ROLLBACK"); } catch { /* preserve the original write-access failure */ }
+    }
+  }
+}
+
 export function grantWebGptProjectMembership(db: M0Database, principalId: string, projectId: string, role: WebGptProjectRole, reasonCode: string): { changed: boolean } {
   db.exec("BEGIN IMMEDIATE");
   try {
