@@ -27,7 +27,7 @@ The external connection must preserve all of these invariants:
 - OAuth resource identifier is the final ChatGPT-visible MCP resource URI ending in `/mcp`.
 - `WEBGPT_V4_RESOURCE_URL` and `WEBGPT_V4_DESCOPE_AUDIENCE` are identical to that resource identifier.
 - The same RFC 8707 `resource` value is used on authorization and token requests and appears in the access-token audience.
-- Descope issuer and explicit HTTPS JWKS URI match the authorization-server discovery document.
+- Descope JWT issuer and explicit HTTPS JWKS URI match the issued access token. `WEBGPT_V4_DESCOPE_AUTHORIZATION_SERVER_URL` is the resource-specific agentic discovery base and may differ from that issuer; it must resolve to metadata that advertises DCR and PKCE S256.
 - Authorization code with PKCE S256 is enabled; client credentials is not used for an end-user connector.
 - The only granted and advertised application scope is `projects.read`.
 - MCP Protected Resource Metadata is reachable at the path-aware URL `/.well-known/oauth-protected-resource/mcp`.

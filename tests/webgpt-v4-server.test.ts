@@ -247,6 +247,7 @@ test("Descope readonly becomes ready only after an active production owner is bo
       issuer: "https://api.descope.com/project-fixture/",
       audience: "https://mcp.example.test/mcp",
       resource_url: "https://mcp.example.test/mcp",
+      authorization_server_url: "https://api.descope.com/v1/apps/agentic/project-fixture/resource-fixture",
       jwks_uri: "https://api.descope.com/project-fixture/.well-known/jwks.json"
     },
     authenticate: async () => actor
@@ -291,6 +292,7 @@ test("Descope readonly rejects an authorized viewer until an active production o
     auth_config: {
       provider: "descope", issuer: "https://api.descope.com/project-fixture/",
       audience: "https://mcp.example.test/mcp", resource_url: "https://mcp.example.test/mcp",
+      authorization_server_url: "https://api.descope.com/v1/apps/agentic/project-fixture/resource-fixture",
       jwks_uri: "https://api.descope.com/project-fixture/.well-known/jwks.json"
     },
     authenticate: async () => actor
@@ -367,6 +369,7 @@ test("protected-resource metadata preserves the public resource path and exposes
       issuer: "https://auth.example.test/",
       audience: "fixture",
       resource_url: "https://mcp.example.test/tenant/mcp?region=us",
+      authorization_server_url: "https://auth.example.test/agentic/resource",
       jwks_uri: "https://auth.example.test/.well-known/jwks.json"
     },
     authenticate: async () => { throw new WebGptV4Error("AUTH_REQUIRED", "Authentication is required."); }
