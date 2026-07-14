@@ -61,8 +61,9 @@ No test reads Jenn's activity database or calls Descope, ChatGPT, Tunnel, OpenAI
 
 ## External gates still closed
 
-- create or select the production Descope project and Inbound App;
-- configure allowed redirect/callback URLs and ChatGPT connector metadata;
+- create or select the production Descope project and MCP Server Resource;
+- associate an Agentic Client using CIMD first, DCR only as a compatibility fallback, or a public pre-registered client only when required;
+- configure exact redirect/callback URLs and ChatGPT app metadata without guessing the callback identifier;
 - migrate Jenn's activity database through `0007` under a new explicit authorization;
 - derive/register the first production owner without exposing the raw subject;
 - start and verify Secure MCP Tunnel;
@@ -70,3 +71,5 @@ No test reads Jenn's activity database or calls Descope, ChatGPT, Tunnel, OpenAI
 - separately decide Full/Auth0, media public HTTPS, Windows automatic startup and real Provider canary.
 
 This document is not external-connection authorization and does not claim deployment readiness.
+
+The exact external object model and gate sequence are defined in [External Multi-User Readonly Connection — Preflight](EXTERNAL_MULTI_USER_READONLY_CONNECTION_PREFLIGHT.md).
