@@ -154,6 +154,10 @@ export function checkDatabase(sqlitePath = paths.sqlitePath): DatabaseCheckResul
         JOIN media_blobs b ON b.blob_id = m.blob_id
         WHERE a.status = 'active' AND b.integrity_state <> 'verified'`
       ,"SELECT COUNT(*) AS count FROM media_activation_journal j LEFT JOIN media_artifacts a ON a.artifact_id = j.artifact_id WHERE j.state = 'committed' AND a.artifact_id IS NULL"
+      ,"SELECT COUNT(*) AS count FROM webgpt_project_memberships m LEFT JOIN webgpt_auth_principals p ON p.workspace_id = m.workspace_id AND p.principal_id = m.principal_id WHERE p.principal_id IS NULL"
+      ,"SELECT COUNT(*) AS count FROM webgpt_project_memberships m LEFT JOIN projects p ON p.project_id = m.project_id WHERE p.project_id IS NULL"
+      ,"SELECT COUNT(*) AS count FROM webgpt_auth_events e LEFT JOIN webgpt_auth_principals p ON p.workspace_id = e.workspace_id AND p.principal_id = e.principal_id WHERE p.principal_id IS NULL"
+      ,"SELECT COUNT(*) AS count FROM webgpt_auth_events e LEFT JOIN projects p ON p.project_id = e.project_id WHERE e.project_id IS NOT NULL AND p.project_id IS NULL"
     ];
     const orphanRows = orphanQueries.reduce((sum, sql) => sum + scalarCount(db, sql, errors), 0);
     let mediaRows: Array<{ data_json: string }> = [];
