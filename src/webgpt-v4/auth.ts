@@ -1,15 +1,26 @@
 import type { IncomingMessage } from "node:http";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 
-import { actorFromSubject, sha256, WebGptV4Error, WEBGPT_V4_SCOPES, type WebGptV4Actor, type WebGptV4Scope } from "./types.js";
+import { actorFromFederatedSubject, actorFromSubject, sha256, WebGptV4Error, WEBGPT_V4_SCOPES, type WebGptV4Actor, type WebGptV4Scope } from "./types.js";
+import type { WebGptV4Profile } from "./toolCatalog.js";
 
-export interface WebGptV4AuthConfig {
+interface WebGptV4AuthConfigBase {
   issuer: string;
   audience: string;
   resource_url: string;
   jwks_uri: string;
+}
+
+export interface WebGptV4DescopeAuthConfig extends WebGptV4AuthConfigBase {
+  provider: "descope";
+}
+
+export interface WebGptV4Auth0Config extends WebGptV4AuthConfigBase {
+  provider: "auth0";
   allowed_subject_hash: string;
 }
+
+export type WebGptV4AuthConfig = WebGptV4DescopeAuthConfig | WebGptV4Auth0Config;
 
 export type WebGptV4Authenticator = (request: IncomingMessage) => Promise<WebGptV4Actor>;
 
@@ -19,28 +30,56 @@ function trimSlash(value: string): string {
 
 function secureUrl(value: string): boolean {
   try {
-    return new URL(value).protocol === "https:";
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" && !parsed.username && !parsed.password && !parsed.hash;
   } catch {
     return false;
   }
 }
 
-export function loadWebGptV4AuthConfig(env: NodeJS.ProcessEnv = process.env): WebGptV4AuthConfig | null {
-  const issuer = env.WEBGPT_V4_AUTH0_ISSUER?.trim() ?? "";
-  const audience = env.WEBGPT_V4_AUTH0_AUDIENCE?.trim() ?? "";
+function authBase(
+  issuerValue: string | undefined,
+  audienceValue: string | undefined,
+  jwksValue: string | undefined,
+  env: NodeJS.ProcessEnv,
+  options: { require_explicit_jwks?: boolean; issuer_trailing_slash?: boolean } = {}
+): WebGptV4AuthConfigBase | null {
+  const issuer = issuerValue?.trim() ?? "";
+  const audience = audienceValue?.trim() ?? "";
   const resourceUrl = env.WEBGPT_V4_RESOURCE_URL?.trim() ?? "";
-  const allowedSubjectHash = env.WEBGPT_V4_ALLOWED_SUBJECT_SHA256?.trim().toLowerCase() ?? "";
-  if (!issuer || !audience || !resourceUrl || !secureUrl(issuer) || !secureUrl(resourceUrl) || !/^[a-f0-9]{64}$/.test(allowedSubjectHash)) return null;
-  const normalizedIssuer = `${trimSlash(issuer)}/`;
-  const jwksUri = env.WEBGPT_V4_AUTH0_JWKS_URI?.trim() || `${normalizedIssuer}.well-known/jwks.json`;
+  if (!issuer || !audience || !resourceUrl || !secureUrl(issuer) || !secureUrl(resourceUrl)) return null;
+  const normalizedIssuer = options.issuer_trailing_slash === false ? trimSlash(issuer) : `${trimSlash(issuer)}/`;
+  const explicitJwksUri = jwksValue?.trim() ?? "";
+  if (options.require_explicit_jwks && !explicitJwksUri) return null;
+  const jwksUri = explicitJwksUri || new URL(".well-known/jwks.json", normalizedIssuer).toString();
   if (!secureUrl(jwksUri)) return null;
-  return {
-    issuer: normalizedIssuer,
-    audience,
-    resource_url: trimSlash(resourceUrl),
-    jwks_uri: jwksUri,
-    allowed_subject_hash: allowedSubjectHash
-  };
+  return { issuer: normalizedIssuer, audience, resource_url: trimSlash(resourceUrl), jwks_uri: jwksUri };
+}
+
+export function loadWebGptV4AuthConfig(
+  profile: WebGptV4Profile = "readonly",
+  env: NodeJS.ProcessEnv = process.env
+): WebGptV4AuthConfig | null {
+  if (profile === "readonly") {
+    const base = authBase(
+      env.WEBGPT_V4_DESCOPE_ISSUER,
+      env.WEBGPT_V4_DESCOPE_AUDIENCE,
+      env.WEBGPT_V4_DESCOPE_JWKS_URI,
+      env,
+      { require_explicit_jwks: true, issuer_trailing_slash: false }
+    );
+    return base && base.audience === base.resource_url ? { provider: "descope", ...base } : null;
+  }
+  const base = authBase(
+    env.WEBGPT_V4_AUTH0_ISSUER,
+    env.WEBGPT_V4_AUTH0_AUDIENCE,
+    env.WEBGPT_V4_AUTH0_JWKS_URI,
+    env
+  );
+  const allowedSubjectHash = env.WEBGPT_V4_ALLOWED_SUBJECT_SHA256?.trim().toLowerCase() ?? "";
+  return base && /^[a-f0-9]{64}$/.test(allowedSubjectHash)
+    ? { provider: "auth0", ...base, allowed_subject_hash: allowedSubjectHash }
+    : null;
 }
 
 function bearerToken(request: IncomingMessage): string {
@@ -74,21 +113,35 @@ function createTokenAuthenticator(config: WebGptV4AuthConfig): (token: string) =
       throw new WebGptV4Error("AUTH_INVALID", "OAuth token validation failed.");
     }
     const subject = typeof payload.sub === "string" ? payload.sub : "";
-    if (!subject || sha256(subject) !== config.allowed_subject_hash) throw new WebGptV4Error("AUTH_SUBJECT_DENIED", "OAuth subject is not allowed for this app.");
-    const rawScopes = typeof payload.scope === "string"
-      ? payload.scope.split(/\s+/)
-      : Array.isArray(payload.permissions) ? payload.permissions.filter((value): value is string => typeof value === "string") : [];
-    return actorFromSubject(subject, rawScopes);
+    if (!subject) throw new WebGptV4Error("AUTH_INVALID", "OAuth token is missing a subject.");
+    if (config.provider === "auth0" && sha256(subject) !== config.allowed_subject_hash) {
+      throw new WebGptV4Error("AUTH_SUBJECT_DENIED", "OAuth subject is not allowed for this app.");
+    }
+    const scopeClaim = payload.scope ?? payload.scopes;
+    const rawScopes = typeof scopeClaim === "string"
+      ? scopeClaim.split(/\s+/)
+      : Array.isArray(scopeClaim)
+        ? scopeClaim.filter((value): value is string => typeof value === "string")
+        : config.provider === "auth0" && Array.isArray(payload.permissions)
+          ? payload.permissions.filter((value): value is string => typeof value === "string")
+          : [];
+    return config.provider === "descope"
+      ? actorFromFederatedSubject(config.issuer, subject, rawScopes)
+      : actorFromSubject(subject, rawScopes);
   };
 }
 
-export function createAuth0Authenticator(config: WebGptV4AuthConfig): WebGptV4Authenticator {
+export function createOAuthAuthenticator(config: WebGptV4AuthConfig): WebGptV4Authenticator {
   const authenticateToken = createTokenAuthenticator(config);
   return async (request) => authenticateToken(bearerToken(request));
 }
 
+export function createAuth0Authenticator(config: WebGptV4Auth0Config): WebGptV4Authenticator {
+  return createOAuthAuthenticator(config);
+}
+
 export function createAuth0MediaAuthenticator(
-  config: WebGptV4AuthConfig,
+  config: WebGptV4Auth0Config,
   cookieName = "__Host-webgpt_v4_media"
 ): WebGptV4Authenticator {
   const authenticateToken = createTokenAuthenticator(config);

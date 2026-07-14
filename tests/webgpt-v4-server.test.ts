@@ -184,12 +184,8 @@ test("readonly readiness and MCP requests fail closed on an unmigrated database"
   const root = mkdtempSync(join(tmpdir(), "webgpt-v4-schema-gate-"));
   const sqlitePath = join(root, "blank.sqlite");
   writeFileSync(sqlitePath, "");
-  const authConfig = {
-    issuer: "https://auth.example.test/", audience: "fixture", resource_url: "https://mcp.example.test",
-    jwks_uri: "https://auth.example.test/.well-known/jwks.json", allowed_subject_hash: "a".repeat(64)
-  };
   const runtime = await startWebGptV4({
-    profile: "readonly", mcp_port: 0, sqlite_path: sqlitePath, auth_config: authConfig,
+    profile: "readonly", mcp_port: 0, sqlite_path: sqlitePath, auth_config: null,
     authenticate: async () => actorFromSubject("auth0|jenn", ["projects.read"])
   });
   try {
@@ -208,6 +204,43 @@ test("readonly readiness and MCP requests fail closed on an unmigrated database"
     const payload = await response.json() as { id: unknown; error: { data: { code: string } } };
     assert.equal(payload.id, null);
     assert.equal(payload.error.data.code, "SCHEMA_MIGRATION_REQUIRED");
+  } finally {
+    await runtime.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Descope readonly stays fail closed until project authorization is implemented", async () => {
+  const root = mkdtempSync(join(tmpdir(), "webgpt-v4-authz-pending-"));
+  const sqlitePath = join(root, "app.sqlite");
+  openM0Database(sqlitePath).close();
+  const runtime = await startWebGptV4({
+    profile: "readonly",
+    mcp_port: 0,
+    sqlite_path: sqlitePath,
+    auth_config: {
+      provider: "descope",
+      issuer: "https://api.descope.com/project-fixture/",
+      audience: "https://mcp.example.test/mcp",
+      resource_url: "https://mcp.example.test/mcp",
+      jwks_uri: "https://api.descope.com/project-fixture/.well-known/jwks.json"
+    },
+    authenticate: async () => actorFromSubject("descope-user-fixture", ["projects.read"])
+  });
+  try {
+    const ready = await fetch(runtime.mcp_url.replace(/\/mcp$/, "/readyz"));
+    assert.equal(ready.status, 503);
+    assert.equal(((await ready.json()) as { checks: { authorization: boolean } }).checks.authorization, false);
+    const response = await fetch(runtime.mcp_url, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer fixture" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} })
+    });
+    assert.equal(response.status, 503);
+    assert.equal(
+      ((await response.json()) as { error: { data: { code: string } } }).error.data.code,
+      "MULTI_USER_AUTHORIZATION_NOT_READY"
+    );
   } finally {
     await runtime.close();
     rmSync(root, { recursive: true, force: true });
@@ -267,11 +300,11 @@ test("protected-resource metadata preserves the configured resource path and que
     sqlite_path: sqlitePath,
     data_root: dataRoot,
     auth_config: {
+      provider: "descope",
       issuer: "https://auth.example.test/",
       audience: "fixture",
       resource_url: "https://mcp.example.test/tenant/mcp?region=us",
-      jwks_uri: "https://auth.example.test/.well-known/jwks.json",
-      allowed_subject_hash: "a".repeat(64)
+      jwks_uri: "https://auth.example.test/.well-known/jwks.json"
     },
     authenticate: async () => { throw new WebGptV4Error("AUTH_REQUIRED", "Authentication is required."); }
   });

@@ -129,6 +129,20 @@ test("default readonly profile exposes six project tools and performs no databas
 
 test("full profile remains explicit and invalid profiles fail closed", async () => {
   await assert.rejects(() => startWebGptV4({ profile: "expanded" }), (error: unknown) => error instanceof WebGptV4Error && error.code === "INVALID_WEBGPT_PROFILE");
+  const commonAuth = {
+    issuer: "https://issuer.example.test/",
+    audience: "https://mcp.example.test/mcp",
+    resource_url: "https://mcp.example.test/mcp",
+    jwks_uri: "https://issuer.example.test/.well-known/jwks.json"
+  };
+  await assert.rejects(
+    () => startWebGptV4({ profile: "readonly", auth_config: { provider: "auth0", ...commonAuth, allowed_subject_hash: "a".repeat(64) } }),
+    (error: unknown) => error instanceof WebGptV4Error && error.code === "INVALID_WEBGPT_AUTH_PROVIDER"
+  );
+  await assert.rejects(
+    () => startWebGptV4({ profile: "full", auth_config: { provider: "descope", ...commonAuth } }),
+    (error: unknown) => error instanceof WebGptV4Error && error.code === "INVALID_WEBGPT_AUTH_PROVIDER"
+  );
   const root = mkdtempSync(join(tmpdir(), "webgpt-v4-full-profile-"));
   const sqlitePath = join(root, "app.sqlite");
   openM0Database(sqlitePath).close();
@@ -179,10 +193,10 @@ test("WebGPT preflight skips media dependencies for the readonly profile", () =>
         AI_VIDEO_WORKSPACE_DB_PATH: sqlitePath,
         WEBGPT_V4_PROFILE: "readonly",
         WEBGPT_V4_MCP_PORT: "0",
-        WEBGPT_V4_AUTH0_ISSUER: "https://auth.example.test/",
-        WEBGPT_V4_AUTH0_AUDIENCE: "https://workspace.example.test",
+        WEBGPT_V4_DESCOPE_ISSUER: "https://api.descope.com/project-fixture/",
+        WEBGPT_V4_DESCOPE_AUDIENCE: "https://workspace.example.test",
         WEBGPT_V4_RESOURCE_URL: "https://workspace.example.test",
-        WEBGPT_V4_ALLOWED_SUBJECT_SHA256: "0".repeat(64)
+        WEBGPT_V4_DESCOPE_JWKS_URI: "https://api.descope.com/project-fixture/.well-known/jwks.json"
       }
     });
     const report = JSON.parse(output) as { ok: boolean; webgpt_profile: string; checks: Record<string, { ok: boolean; detail: string }> };
