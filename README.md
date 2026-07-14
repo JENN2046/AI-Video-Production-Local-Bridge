@@ -2,7 +2,7 @@
 
 AI Video Production Workspace 是面向 Jenn 本地 Windows 生产环境的、治理优先的 AI 视频生产系统 Beta。
 
-当前代码基线版本为 `0.1.0-beta.4`，MCP service 版本为 `webgpt-v4.2.0`，数据库 schema 为 `workbench-v2-5`，migration ledger 最新为 `0007`。系统已经包含 Workbench V2、WebGPT V4、MCP App、真实 Provider 生成边界、审片、重生成、合成、交付、Memory 与媒体分析能力。它适合 Jenn 的本地生产与受控的多用户只读授权验证，但尚不是成熟的无人值守生产服务或可直接公网部署的平台。
+当前接受的 Jenn 本地运行版本为 `0.1.0-beta.4`，MCP service 版本为 `webgpt-v4.2.0`，数据库 schema 为 `workbench-v2-5`，migration ledger 最新为 `0007`。系统已经包含 Workbench V2、WebGPT V4、MCP App、真实 Provider 生成边界、审片、重生成、合成、交付、Memory 与媒体分析能力。它适合 Jenn 的本地生产与受控的多用户只读授权验证，但尚不是成熟的无人值守生产服务或可直接公网部署的平台。
 
 ## 当前边界
 
@@ -125,6 +125,6 @@ PID 状态和按次启动日志只写入 Git 忽略的 `ops/tools/workbench-runt
 
 本版本冻结 WebGPT V5、Workbench V3 和新 Provider。GPT 服务面已完成默认 Readonly、严格 DTO、Compact context、离线 eval、Widget v2 metadata、低披露 Telemetry、Descope JWT 验证、显式项目 membership 与有界并发收敛；Descope tenant/ChatGPT connector 的实际外部切换、Secure MCP Tunnel、外部 HTTPS、媒体外部开放、Windows 自动启动、Full/Auth0 外部化与真实 Provider canary 仍是后续独立 gate。
 
-SR0–SR5 已合入 `main`。SR6 disposable Stage 1 已使用隔离数据库完成迁移、完整性检查、备份恢复、preflight 和两轮启停验收，脱敏证据见 [SR6 Disposable Database Acceptance](ops/reports/2026-07-13-sr6-disposable-acceptance.md)。经 Jenn 单独明确授权，active-database Stage 2 又完成活动库备份、迁移、`db:check`、隔离恢复、核心记录一致性比较、两轮只读黄金路径和有界 soak，脱敏证据见 [SR6 Active Database Acceptance](ops/reports/2026-07-13-sr6-active-database-acceptance.md)。`0.1.0-beta.3` 保留为已验收活动库运行基线；`0.1.0-beta.4` 是完成多用户只读授权实现和 CI 收口的候选代码基线，尚未迁移 Jenn 活动数据库或完成外部 Descope/ChatGPT 接线。
+SR0–SR5 已合入 `main`。SR6 disposable Stage 1 已使用隔离数据库完成迁移、完整性检查、备份恢复、preflight 和两轮启停验收，脱敏证据见 [SR6 Disposable Database Acceptance](ops/reports/2026-07-13-sr6-disposable-acceptance.md)。经 Jenn 单独明确授权，active-database Stage 2 又完成活动库备份、迁移、`db:check`、隔离恢复、核心记录一致性比较、两轮只读黄金路径和有界 soak，脱敏证据见 [SR6 Active Database Acceptance](ops/reports/2026-07-13-sr6-active-database-acceptance.md)。beta.4 活动库验收进一步应用 migration `0007`，完成业务核心 hash 比较、隔离恢复、两轮只读启动和 10 分钟有界 soak，脱敏证据见 [Beta 4 Active Database Acceptance](ops/reports/2026-07-14-beta4-active-database-acceptance.md)。`0.1.0-beta.4` 现为 Jenn 接受的本地运行基线；外部 Descope/ChatGPT 多用户接线仍未完成。
 
 详见 [当前状态](CURRENT_STATE.md)、[Stabilization Remediation](docs/STABILIZATION_REMEDIATION.md)、[GPT Service Capability Hardening](docs/GPT_SERVICE_CAPABILITY_HARDENING.md)、[架构](docs/ARCHITECTURE.md) 和 [Stabilization Release v2 taskbook](docs/STABILIZATION_RELEASE_V2.md)。
