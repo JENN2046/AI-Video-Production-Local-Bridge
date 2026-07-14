@@ -418,7 +418,8 @@ function mutation<T>(db: M0Database, tool: string, context: MutationContext, inp
 export function listProductionProjects(
   input: { query?: string; include_archived?: boolean; limit?: number; offset?: number } = {},
   db: M0Database,
-  idValue?: string
+  idValue?: string,
+  authorizedProjectIds?: readonly string[]
 ): WebGptV4Result<{ items: Record<string, unknown>[]; page: { limit: number; offset: number; total: number; has_more: boolean; next_offset: number | null } }> {
   const id = requestId(idValue);
   const limit = clamp(input.limit, 25, 100);
@@ -426,6 +427,13 @@ export function listProductionProjects(
   const query = input.query?.trim() ?? "";
   const clauses = ["m.classification = 'production'"];
   const values: unknown[] = [];
+  if (authorizedProjectIds) {
+    if (authorizedProjectIds.length === 0) clauses.push("1 = 0");
+    else {
+      clauses.push(`p.project_id IN (${authorizedProjectIds.map(() => "?").join(",")})`);
+      values.push(...authorizedProjectIds);
+    }
+  }
   if (!input.include_archived) clauses.push("m.lifecycle = 'active'");
   if (query) {
     clauses.push("(p.project_id LIKE ? OR json_extract(p.data_json, '$.title') LIKE ?)");

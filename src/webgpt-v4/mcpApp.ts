@@ -22,6 +22,7 @@ import {
 } from "./domain.js";
 import { inspectProductionMedia, type MediaRuntimeOptions } from "./media.js";
 import { productionProposalRevisionSchema, productionProposalSubmitSchema } from "./proposals.js";
+import { authorizedWebGptProjectIds, requireWebGptProjectReadAccess } from "./projectAuthorization.js";
 import {
   fullGenerationIntent,
   fullInspection,
@@ -178,6 +179,10 @@ export function createWebGptV4McpApp(options: CreateWebGptV4McpAppOptions): McpS
   const profile = options.profile ?? "readonly";
   const enabledTools = new Set(webGptV4ToolsForProfile(profile).map((tool) => tool.name));
   const authConfig = options.auth_config ?? null;
+  const projectAuthorizationEnabled = profile === "readonly" && authConfig?.provider === "descope";
+  const requireProject = (projectId: string): void => {
+    if (projectAuthorizationEnabled) requireWebGptProjectReadAccess(db, actor.principal_id, projectId);
+  };
   const server = new McpServer(
     { name: "ai-video-production-assistant", version: WEBGPT_V4_VERSION },
     {
@@ -208,7 +213,8 @@ export function createWebGptV4McpApp(options: CreateWebGptV4McpAppOptions): McpS
     outputSchema: WEBGPT_V4_READ_OUTPUT_SCHEMAS.list_production_projects,
     ...contract("list_production_projects")
   }, async (input) => guarded("list_production_projects", "projects.read", actor, authConfig, input.request_id, profile, options.telemetry, () => {
-    return readProjectList(listProductionProjects(input, db, input.request_id), input.detail);
+    const projects = projectAuthorizationEnabled ? authorizedWebGptProjectIds(db, actor.principal_id) : undefined;
+    return readProjectList(listProductionProjects(input, db, input.request_id, projects), input.detail);
   }, input.detail) as never);
 
   if (enabledTools.has("get_project_context")) server.registerTool("get_project_context", {
@@ -217,6 +223,7 @@ export function createWebGptV4McpApp(options: CreateWebGptV4McpAppOptions): McpS
     inputSchema: { project_id: z.string(), workspace: z.enum(["overview", "storyboard", "generation", "review", "delivery"]).default("overview"), detail: z.enum(["compact", "full"]).default("compact"), request_id: z.string().max(128).optional() },
     outputSchema: WEBGPT_V4_READ_OUTPUT_SCHEMAS.get_project_context, ...contract("get_project_context")
   }, async (input) => guarded("get_project_context", "projects.read", actor, authConfig, input.request_id, profile, options.telemetry, () => {
+    requireProject(input.project_id);
     return readProjectContext(getProductionProjectContext(input, db, input.request_id), input.detail);
   }, input.detail) as never);
 
@@ -226,6 +233,7 @@ export function createWebGptV4McpApp(options: CreateWebGptV4McpAppOptions): McpS
     inputSchema: { project_id: z.string(), detail: z.enum(["compact", "full"]).default("compact"), limit: z.number().int().min(1).max(100).default(50), offset: z.number().int().min(0).default(0), request_id: z.string().max(128).optional() },
     outputSchema: WEBGPT_V4_READ_OUTPUT_SCHEMAS.list_project_shots, ...contract("list_project_shots")
   }, async (input) => guarded("list_project_shots", "projects.read", actor, authConfig, input.request_id, profile, options.telemetry, () => {
+    requireProject(input.project_id);
     return readShotList(listProductionProjectShots(input, db, input.request_id), input.detail);
   }, input.detail) as never);
 
@@ -274,6 +282,7 @@ export function createWebGptV4McpApp(options: CreateWebGptV4McpAppOptions): McpS
     inputSchema: { project_id: z.string(), shot_id: z.string(), artifact_id: z.string().optional(), detail: z.enum(["compact", "full"]).default("compact"), notes_limit: z.number().int().min(1).max(50).default(10), request_id: z.string().max(128).optional() },
     outputSchema: WEBGPT_V4_READ_OUTPUT_SCHEMAS.get_review_package, ...contract("get_review_package")
   }, async (input) => guarded("get_review_package", "projects.read", actor, authConfig, input.request_id, profile, options.telemetry, () => {
+    requireProject(input.project_id);
     return readReviewPackage(getProductionReviewPackage(input, db, input.request_id), input.detail, input.project_id, input.shot_id);
   }, input.detail) as never);
 
@@ -282,6 +291,7 @@ export function createWebGptV4McpApp(options: CreateWebGptV4McpAppOptions): McpS
     description: "Use this when the user asks whether a production project is ready to assemble, in final review, or delivered.",
     inputSchema: { project_id: z.string(), request_id: z.string().max(128).optional() }, outputSchema: WEBGPT_V4_READ_OUTPUT_SCHEMAS.get_delivery_status, ...contract("get_delivery_status")
   }, async (input) => guarded("get_delivery_status", "projects.read", actor, authConfig, input.request_id, profile, options.telemetry, () => {
+    requireProject(input.project_id);
     return readDelivery(getProductionDeliveryStatus(input, db, input.request_id));
   }) as never);
 
@@ -290,6 +300,7 @@ export function createWebGptV4McpApp(options: CreateWebGptV4McpAppOptions): McpS
     description: "Use this when the user needs a structured closeout summary without raw reports, logs, local paths, or provider payloads.",
     inputSchema: { project_id: z.string(), request_id: z.string().max(128).optional() }, outputSchema: WEBGPT_V4_READ_OUTPUT_SCHEMAS.get_closeout_evidence, ...contract("get_closeout_evidence")
   }, async (input) => guarded("get_closeout_evidence", "projects.read", actor, authConfig, input.request_id, profile, options.telemetry, () => {
+    requireProject(input.project_id);
     return readDelivery(getProductionCloseoutEvidence(input, db, input.request_id), true);
   }) as never);
 

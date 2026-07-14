@@ -11,7 +11,8 @@ import { openM0Database } from "../src/storage/sqlite.js";
 import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 import { mediaAnalysisQueue } from "../src/webgpt-v4/media.js";
 import { WEBGPT_V4_WIDGET_URI } from "../src/webgpt-v4/mcpApp.js";
-import { startWebGptV4 } from "../src/webgpt-v4/server.js";
+import { bootstrapWebGptProjectOwner, grantWebGptProjectMembership, registerWebGptPrincipal } from "../src/webgpt-v4/authorizationAdmin.js";
+import { startWebGptV4, WebGptRequestLimiter } from "../src/webgpt-v4/server.js";
 import { actorFromSubject, WebGptV4Error, WEBGPT_V4_SCOPES } from "../src/webgpt-v4/types.js";
 
 function schemaContainsProperty(value: unknown, property: string): boolean {
@@ -22,6 +23,22 @@ function schemaContainsProperty(value: unknown, property: string): boolean {
     ? item.some((entry) => schemaContainsProperty(entry, property))
     : schemaContainsProperty(item, property));
 }
+
+test("request limiter enforces global and per-principal bounds and releases idempotently", () => {
+  const limiter = new WebGptRequestLimiter(3, 2);
+  const first = limiter.acquire("principal-a");
+  const second = limiter.acquire("principal-a");
+  assert.ok(first && second);
+  assert.equal(limiter.acquire("principal-a"), null);
+  const third = limiter.acquire("principal-b");
+  assert.ok(third);
+  assert.equal(limiter.acquire("principal-c"), null);
+  first();
+  first();
+  assert.ok(limiter.acquire("principal-c"));
+  second();
+  third();
+});
 
 test("official MCP transport advertises the V4 scoped tool contract and hides test projects", async () => {
   const root = mkdtempSync(join(tmpdir(), "webgpt-v4-server-"));
@@ -197,7 +214,7 @@ test("readonly readiness and MCP requests fail closed on an unmigrated database"
 
     const response = await fetch(runtime.mcp_url, {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: "Bearer fixture" },
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", authorization: "Bearer fixture" },
       body: JSON.stringify({ jsonrpc: "2.0", id: { attacker_controlled: true }, method: "tools/list", params: {} })
     });
     assert.equal(response.status, 503);
@@ -210,10 +227,17 @@ test("readonly readiness and MCP requests fail closed on an unmigrated database"
   }
 });
 
-test("Descope readonly stays fail closed until project authorization is implemented", async () => {
+test("Descope readonly becomes ready only after an active production owner is bootstrapped", async () => {
   const root = mkdtempSync(join(tmpdir(), "webgpt-v4-authz-pending-"));
   const sqlitePath = join(root, "app.sqlite");
-  openM0Database(sqlitePath).close();
+  const actor = actorFromSubject("descope-user-fixture", ["projects.read"]);
+  const db = openM0Database(sqlitePath);
+  const project = createProject({ title: "Authorized production" }, db);
+  assert.equal(project.ok, true);
+  if (!project.ok) return;
+  db.prepare("UPDATE workbench_project_meta SET classification = 'production' WHERE project_id = ?").run(project.project_id);
+  bootstrapWebGptProjectOwner(db, actor.principal_id, project.project_id, "TEST_BOOTSTRAP");
+  db.close();
   const runtime = await startWebGptV4({
     profile: "readonly",
     mcp_port: 0,
@@ -225,22 +249,61 @@ test("Descope readonly stays fail closed until project authorization is implemen
       resource_url: "https://mcp.example.test/mcp",
       jwks_uri: "https://api.descope.com/project-fixture/.well-known/jwks.json"
     },
-    authenticate: async () => actorFromSubject("descope-user-fixture", ["projects.read"])
+    authenticate: async () => actor
   });
   try {
     const ready = await fetch(runtime.mcp_url.replace(/\/mcp$/, "/readyz"));
-    assert.equal(ready.status, 503);
-    assert.equal(((await ready.json()) as { checks: { authorization: boolean } }).checks.authorization, false);
+    assert.equal(ready.status, 200);
+    assert.equal(((await ready.json()) as { checks: { authorization: boolean } }).checks.authorization, true);
     const response = await fetch(runtime.mcp_url, {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: "Bearer fixture" },
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", authorization: "Bearer fixture" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} })
+    });
+    assert.equal(response.status, 200);
+    const revokeDb = openM0Database(sqlitePath);
+    revokeDb.prepare("UPDATE webgpt_project_memberships SET status = 'revoked' WHERE principal_id = ? AND project_id = ?")
+      .run(actor.principal_id, project.project_id);
+    revokeDb.close();
+    const revokedReady = await fetch(runtime.mcp_url.replace(/\/mcp$/, "/readyz"));
+    assert.equal(revokedReady.status, 503, "owner authorization readiness must not use the 30-second static cache");
+    assert.equal(((await revokedReady.json()) as { checks: { authorization: boolean } }).checks.authorization, false);
+  } finally {
+    await runtime.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Descope readonly rejects an authorized viewer until an active production owner exists", async () => {
+  const root = mkdtempSync(join(tmpdir(), "webgpt-v4-authz-owner-gate-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const actor = actorFromSubject("descope-viewer-fixture", ["projects.read"]);
+  const db = openM0Database(sqlitePath);
+  const project = createProject({ title: "Viewer-only production" }, db);
+  assert.equal(project.ok, true);
+  if (!project.ok) return;
+  db.prepare("UPDATE workbench_project_meta SET classification = 'production' WHERE project_id = ?").run(project.project_id);
+  registerWebGptPrincipal(db, actor.principal_id, "TEST_REGISTER");
+  grantWebGptProjectMembership(db, actor.principal_id, project.project_id, "viewer", "TEST_GRANT");
+  db.close();
+  const runtime = await startWebGptV4({
+    profile: "readonly", mcp_port: 0, sqlite_path: sqlitePath,
+    auth_config: {
+      provider: "descope", issuer: "https://api.descope.com/project-fixture/",
+      audience: "https://mcp.example.test/mcp", resource_url: "https://mcp.example.test/mcp",
+      jwks_uri: "https://api.descope.com/project-fixture/.well-known/jwks.json"
+    },
+    authenticate: async () => actor
+  });
+  try {
+    assert.equal((await fetch(runtime.mcp_url.replace(/\/mcp$/, "/readyz"))).status, 503);
+    const response = await fetch(runtime.mcp_url, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", authorization: "Bearer fixture" },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} })
     });
     assert.equal(response.status, 503);
-    assert.equal(
-      ((await response.json()) as { error: { data: { code: string } } }).error.data.code,
-      "MULTI_USER_AUTHORIZATION_NOT_READY"
-    );
+    assert.equal(((await response.json()) as { error: { data: { code: string } } }).error.data.code, "MULTI_USER_AUTHORIZATION_NOT_READY");
   } finally {
     await runtime.close();
     rmSync(root, { recursive: true, force: true });
