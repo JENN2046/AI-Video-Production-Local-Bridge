@@ -391,6 +391,8 @@ test("Windows bootstrap wrapper uses hidden input and remains compatible with Wi
   assert.ok(source.indexOf("bootstrap-owner-preflight") < source.indexOf("Read-Host"));
   assert.match(source, /bootstrap-owner-preflight[\s\S]*?--reason \$Reason \| Out-Null[\s\S]*?Read-Host/,
     "the preflight must not add a second JSON document to successful wrapper stdout");
+  assert.match(source, /\$OutputEncoding = \[System\.Text\.UTF8Encoding\]::new\(\$false\)/);
+  assert.match(source, /finally \{\s*\$OutputEncoding = \$previousOutputEncoding/);
   assert.equal(source.includes("HashData"), false);
   assert.equal(source.includes("ToHexString"), false);
   if (process.platform === "win32") {
@@ -400,5 +402,54 @@ test("Windows bootstrap wrapper uses hidden input and remains compatible with Wi
       env: { ...process.env, WEBGPT_WRAPPER_TEST_PATH: wrapper }
     });
     assert.equal(parsed.status, 0, parsed.stderr);
+  }
+});
+
+test("Windows bootstrap wrapper preserves a Unicode subject across the PowerShell-to-Node pipe", () => {
+  if (process.platform !== "win32") return;
+  const root = mkdtempSync(join(tmpdir(), "webgpt-auth-wrapper-unicode-"));
+  const subject = "descope-用户-α";
+  const issuer = "https://issuer.example/unicode-fixture";
+  try {
+    const selected = join(root, "selected.sqlite");
+    const db = new DatabaseSync(selected);
+    runDatabaseMigrations(db);
+    createProductionProject(db);
+    db.close();
+    const wrapper = join(process.cwd(), "scripts", "windows", "webgpt-bootstrap-owner.ps1");
+    const command = [
+      "function Read-Host {",
+      "  param([string]$Prompt, [switch]$AsSecureString)",
+      "  $secure = [System.Security.SecureString]::new()",
+      "  foreach ($character in $env:WEBGPT_TEST_SUBJECT.ToCharArray()) { $secure.AppendChar($character) }",
+      "  $secure.MakeReadOnly()",
+      "  $secure",
+      "}",
+      "& $env:WEBGPT_TEST_WRAPPER -DatabasePath $env:WEBGPT_TEST_DB -Issuer $env:WEBGPT_TEST_ISSUER -ProjectId project_auth_fixture -Reason TEST_UNICODE_PIPE"
+    ].join("\n");
+    const result = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        WEBGPT_TEST_SUBJECT: subject,
+        WEBGPT_TEST_WRAPPER: wrapper,
+        WEBGPT_TEST_DB: selected,
+        WEBGPT_TEST_ISSUER: issuer
+      }
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout) as unknown, {
+      result: "PASS", action: "bootstrap-owner-interactive", principal_created: true, membership_created: true
+    });
+    assert.equal(`${result.stdout}${result.stderr}`.includes(subject), false);
+
+    const verify = new DatabaseSync(selected, { readOnly: true });
+    const membership = verify.prepare(`SELECT principal_id FROM webgpt_project_memberships
+      WHERE workspace_id = ? AND project_id = ? AND role = 'owner' AND status = 'active'`)
+      .get(WEBGPT_AUTHORIZATION_WORKSPACE_ID, "project_auth_fixture") as { principal_id: string } | undefined;
+    verify.close();
+    assert.equal(membership?.principal_id, principalIdFromFederatedSubject(issuer, subject));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });

@@ -31,12 +31,14 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $secureSubject = Read-Host "Descope subject (input hidden)" -AsSecureString
 $bstr = [IntPtr]::Zero
 $plainSubject = $null
+$previousOutputEncoding = $OutputEncoding
 try {
   $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureSubject)
   $plainSubject = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
   if ([string]::IsNullOrWhiteSpace($plainSubject)) {
     throw "Descope subject is required."
   }
+  $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
   $plainSubject | & node $command bootstrap-owner-interactive `
     --db $resolvedDatabase `
     --issuer $Issuer `
@@ -44,6 +46,7 @@ try {
     --reason $Reason
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 } finally {
+  $OutputEncoding = $previousOutputEncoding
   $plainSubject = $null
   $secureSubject = $null
   if ($bstr -ne [IntPtr]::Zero) {
