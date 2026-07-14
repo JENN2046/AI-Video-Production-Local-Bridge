@@ -296,6 +296,15 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
       sendJson(response, 503, { jsonrpc: "2.0", id: safeJsonRpcId(parsedBody?.id), error: { code: -32003, message: safe.message, data: safe } });
       return;
     }
+    if (projectAuthorizationEnabled && !webGptProjectAuthorizationReady(db)) {
+      db.close();
+      releaseAdmission();
+      const safe = { code: "MULTI_USER_AUTHORIZATION_NOT_READY", message: "Multi-user project authorization is not ready." };
+      sendJson(response, 503, { jsonrpc: "2.0", id: safeJsonRpcId(parsedBody?.id), error: {
+        code: -32003, message: safe.message, data: safe
+      } });
+      return;
+    }
     let app: ReturnType<typeof createWebGptV4McpApp> | null = null;
     let transport: StreamableHTTPServerTransport | null = null;
     try {
