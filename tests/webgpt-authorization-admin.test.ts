@@ -103,6 +103,11 @@ test("admin parser requires an explicit database and rejects raw identity-shaped
   ]);
   assert.equal(interactive.issuer, "https://issuer.example/");
   assert.equal(interactive.principal_id, undefined);
+  const preflight = parseWebGptAuthAdminArguments([
+    "bootstrap-owner-preflight", "--db", "fixture.sqlite", "--issuer", "https://issuer.example/", "--project", "project_auth_fixture"
+  ]);
+  assert.equal(preflight.issuer, "https://issuer.example/");
+  assert.equal(preflight.principal_id, undefined);
   assert.throws(() => parseWebGptAuthAdminArguments([
     "bootstrap-owner-interactive", "--db", "fixture.sqlite", "--issuer", "http://issuer.example", "--project", "project_auth_fixture"
   ]), /HTTPS issuer URL/);
@@ -308,11 +313,35 @@ test("interactive owner bootstrap rejects an invalid target before consuming pri
   }
 });
 
+test("owner bootstrap preflight validates the target without stdin or database writes", () => {
+  const root = mkdtempSync(join(tmpdir(), "webgpt-auth-cli-preflight-"));
+  try {
+    const selected = join(root, "selected.sqlite");
+    const db = new DatabaseSync(selected);
+    runDatabaseMigrations(db);
+    createProductionProject(db);
+    db.close();
+    const command = join(process.cwd(), "dist", "scripts", "webgpt-auth-admin.js");
+    const result = spawnSync(process.execPath, [command, "bootstrap-owner-preflight", "--db", selected,
+      "--issuer", "https://issuer.example", "--project", "project_auth_fixture"], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout) as unknown, {
+      result: "PASS", action: "bootstrap-owner-preflight", target_valid: true
+    });
+    const verify = new DatabaseSync(selected, { readOnly: true });
+    assert.deepEqual(listWebGptAuthorizationSummary(verify), { principals: 0, active_memberships: 0, revoked_memberships: 0, events: 0 });
+    verify.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("Windows bootstrap wrapper uses hidden input and remains compatible with Windows PowerShell", () => {
   const wrapper = join(process.cwd(), "scripts", "windows", "webgpt-bootstrap-owner.ps1");
   const source = readFileSync(wrapper, "utf8");
   assert.match(source, /Read-Host .* -AsSecureString/);
   assert.match(source, /ZeroFreeBSTR/);
+  assert.ok(source.indexOf("bootstrap-owner-preflight") < source.indexOf("Read-Host"));
   assert.equal(source.includes("HashData"), false);
   assert.equal(source.includes("ToHexString"), false);
   if (process.platform === "win32") {

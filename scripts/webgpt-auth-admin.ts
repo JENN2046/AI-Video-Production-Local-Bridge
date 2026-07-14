@@ -40,7 +40,7 @@ async function readSubjectFromSecureStdin(): Promise<string> {
 
 try {
   const request = parseWebGptAuthAdminArguments(process.argv.slice(2));
-  if (request.action === "bootstrap-owner-interactive") {
+  if (request.action === "bootstrap-owner-preflight" || request.action === "bootstrap-owner-interactive") {
     const preflightDb = openM0DatabaseConnection(request.database_path, { readOnly: true });
     try {
       assertSchemaCurrent(preflightDb);
@@ -49,23 +49,27 @@ try {
       preflightDb.close();
     }
   }
-  const principalId = request.action === "bootstrap-owner-interactive"
-    ? principalIdFromFederatedSubject(request.issuer as string, await readSubjectFromSecureStdin())
-    : request.principal_id;
-  const db = openM0Database(request.database_path);
-  try {
-    const result = request.action === "bootstrap-owner" || request.action === "bootstrap-owner-interactive"
-      ? bootstrapWebGptProjectOwner(db, principalId as string, request.project_id as string, request.reason_code as string)
-      : request.action === "register"
-        ? registerWebGptPrincipal(db, request.principal_id as string, request.reason_code as string)
-        : request.action === "grant"
-          ? grantWebGptProjectMembership(db, request.principal_id as string, request.project_id as string, request.role as "owner" | "viewer", request.reason_code as string)
-          : request.action === "revoke"
-            ? revokeWebGptProjectMembership(db, request.principal_id as string, request.project_id as string, request.reason_code as string)
-            : listWebGptAuthorizationSummary(db);
-    console.log(JSON.stringify({ result: "PASS", action: request.action, ...result }, null, 2));
-  } finally {
-    db.close();
+  if (request.action === "bootstrap-owner-preflight") {
+    console.log(JSON.stringify({ result: "PASS", action: request.action, target_valid: true }, null, 2));
+  } else {
+    const principalId = request.action === "bootstrap-owner-interactive"
+      ? principalIdFromFederatedSubject(request.issuer as string, await readSubjectFromSecureStdin())
+      : request.principal_id;
+    const db = openM0Database(request.database_path);
+    try {
+      const result = request.action === "bootstrap-owner" || request.action === "bootstrap-owner-interactive"
+        ? bootstrapWebGptProjectOwner(db, principalId as string, request.project_id as string, request.reason_code as string)
+        : request.action === "register"
+          ? registerWebGptPrincipal(db, request.principal_id as string, request.reason_code as string)
+          : request.action === "grant"
+            ? grantWebGptProjectMembership(db, request.principal_id as string, request.project_id as string, request.role as "owner" | "viewer", request.reason_code as string)
+            : request.action === "revoke"
+              ? revokeWebGptProjectMembership(db, request.principal_id as string, request.project_id as string, request.reason_code as string)
+              : listWebGptAuthorizationSummary(db);
+      console.log(JSON.stringify({ result: "PASS", action: request.action, ...result }, null, 2));
+    } finally {
+      db.close();
+    }
   }
 } catch (error) {
   const code = error && typeof error === "object" && "code" in error ? String(error.code) : "WEBGPT_AUTH_ADMIN_FAILED";

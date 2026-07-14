@@ -21,6 +21,13 @@ if (-not (Test-Path -LiteralPath $command -PathType Leaf)) {
   throw "Build output is missing. Run npm run build:server first."
 }
 
+& node $command bootstrap-owner-preflight `
+  --db $resolvedDatabase `
+  --issuer $Issuer `
+  --project $ProjectId `
+  --reason $Reason
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 $secureSubject = Read-Host "Descope subject (input hidden)" -AsSecureString
 $bstr = [IntPtr]::Zero
 $plainSubject = $null
