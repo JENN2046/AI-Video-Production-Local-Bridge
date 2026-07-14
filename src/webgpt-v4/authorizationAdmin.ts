@@ -131,6 +131,10 @@ export function bootstrapWebGptProjectOwner(db: M0Database, principalId: string,
     const principalResult = db.prepare(`INSERT OR IGNORE INTO webgpt_auth_principals
       (workspace_id, principal_id) VALUES (?, ?)`).run(WEBGPT_AUTHORIZATION_WORKSPACE_ID, principalId) as { changes: number | bigint };
     const principalCreated = Number(principalResult.changes) === 1;
+    const principal = db.prepare(`SELECT status FROM webgpt_auth_principals
+      WHERE workspace_id = ? AND principal_id = ?`)
+      .get(WEBGPT_AUTHORIZATION_WORKSPACE_ID, principalId) as { status: string } | undefined;
+    if (principal?.status !== "active") throw new WebGptAuthAdminInputError("Principal is not active.");
     const existing = db.prepare(`SELECT role, status FROM webgpt_project_memberships
       WHERE workspace_id = ? AND project_id = ? AND principal_id = ?`)
       .get(WEBGPT_AUTHORIZATION_WORKSPACE_ID, projectId, principalId) as { role: string; status: string } | undefined;

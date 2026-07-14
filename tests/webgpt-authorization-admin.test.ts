@@ -138,6 +138,21 @@ test("owner bootstrap atomically creates the principal and production membership
   }
 });
 
+test("owner bootstrap rejects a disabled principal and rolls back without membership events", () => {
+  const db = openM0Database(":memory:");
+  try {
+    createProductionProject(db);
+    registerWebGptPrincipal(db, PRINCIPAL, "TEST_REGISTER");
+    db.prepare("UPDATE webgpt_auth_principals SET status = 'disabled' WHERE workspace_id = ? AND principal_id = ?")
+      .run(WEBGPT_AUTHORIZATION_WORKSPACE_ID, PRINCIPAL);
+    const before = listWebGptAuthorizationSummary(db);
+    assert.throws(() => bootstrapWebGptProjectOwner(db, PRINCIPAL, "project_auth_fixture", "TEST_BOOTSTRAP"), /not active/);
+    assert.deepEqual(listWebGptAuthorizationSummary(db), before);
+  } finally {
+    db.close();
+  }
+});
+
 test("admin opens only the explicitly selected migrated fixture database", () => {
   const root = mkdtempSync(join(tmpdir(), "webgpt-auth-admin-"));
   try {
