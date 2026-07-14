@@ -352,7 +352,7 @@ test("MCP endpoint fails closed without OAuth and exposes only protected-resourc
   }
 });
 
-test("protected-resource metadata preserves the configured resource path and query", async () => {
+test("protected-resource metadata preserves the public resource path and exposes the local MCP transport alias", async () => {
   const root = mkdtempSync(join(tmpdir(), "webgpt-v4-prmd-prefix-"));
   const dataRoot = join(root, "data");
   const sqlitePath = join(root, "app.sqlite");
@@ -375,8 +375,11 @@ test("protected-resource metadata preserves the configured resource path and que
     const origin = runtime.mcp_url.replace(/\/mcp$/, "");
     const metadata = await fetch(`${origin}/.well-known/oauth-protected-resource/tenant/mcp?region=us`);
     assert.equal(metadata.status, 200);
-    assert.equal((await metadata.json() as { resource: string }).resource, "https://mcp.example.test/tenant/mcp?region=us");
-    assert.equal((await fetch(`${origin}/.well-known/oauth-protected-resource/mcp`)).status, 404);
+    const metadataBody = await metadata.json() as { resource: string };
+    assert.equal(metadataBody.resource, "https://mcp.example.test/tenant/mcp?region=us");
+    const localTransportMetadata = await fetch(`${origin}/.well-known/oauth-protected-resource/mcp`);
+    assert.equal(localTransportMetadata.status, 200);
+    assert.deepEqual(await localTransportMetadata.json(), metadataBody);
     const denied = await fetch(runtime.mcp_url, { method: "POST" });
     assert.equal(denied.headers.get("www-authenticate")?.includes("/.well-known/oauth-protected-resource/tenant/mcp?region=us"), true);
   } finally {

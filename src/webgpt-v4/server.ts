@@ -260,8 +260,13 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
       return;
     }
     const isCompatibilityMetadataPath = url.pathname === "/.well-known/oauth-protected-resource" && url.search === "";
+    // The local MCP transport is always mounted at /mcp, even when a secure
+    // tunnel gives the public resource a longer, path-based audience. Tunnel
+    // discovery derives PRMD from the local target, so keep this transport
+    // alias alongside the public resource's path-aware metadata endpoint.
+    const isLocalMcpMetadataPath = url.pathname === "/.well-known/oauth-protected-resource/mcp" && url.search === "";
     const isConfiguredMetadataPath = url.pathname === configuredMetadataUrl.pathname && url.search === configuredMetadataUrl.search;
-    if (request.method === "GET" && (isCompatibilityMetadataPath || isConfiguredMetadataPath)) {
+    if (request.method === "GET" && (isCompatibilityMetadataPath || isLocalMcpMetadataPath || isConfiguredMetadataPath)) {
       sendJson(response, 200, protectedResourceMetadata(authConfig, webGptV4ScopesForProfile(profile)));
       return;
     }
