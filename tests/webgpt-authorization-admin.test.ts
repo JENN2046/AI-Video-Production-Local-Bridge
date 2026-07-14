@@ -258,7 +258,7 @@ test("interactive owner bootstrap consumes subject only from stdin and never dis
     const success = spawnSync(process.execPath, [command, "bootstrap-owner-interactive", "--db", selected,
       "--issuer", issuer, "--project", "project_auth_fixture", "--reason", "TEST_INTERACTIVE"], {
       encoding: "utf8",
-      input: `${subject}\n`
+      input: `${Buffer.from(subject, "utf8").toString("base64")}\n`
     });
     assert.equal(success.status, 0, success.stderr);
     assert.deepEqual(JSON.parse(success.stdout) as unknown, {
@@ -285,7 +285,7 @@ test("interactive owner bootstrap consumes subject only from stdin and never dis
     assert.equal(missing.stderr.includes(subject), false);
 
     const invalidProject = spawnSync(process.execPath, [command, "bootstrap-owner-interactive", "--db", selected,
-      "--issuer", issuer, "--project", "project_missing"], { encoding: "utf8", input: `${subject}\n` });
+      "--issuer", issuer, "--project", "project_missing"], { encoding: "utf8", input: `${Buffer.from(subject, "utf8").toString("base64")}\n` });
     assert.equal(invalidProject.status, 1);
     assert.equal(`${invalidProject.stdout}${invalidProject.stderr}`.includes(subject), false);
     assert.equal(`${invalidProject.stdout}${invalidProject.stderr}`.includes(principal), false);
@@ -391,7 +391,9 @@ test("Windows bootstrap wrapper uses hidden input and remains compatible with Wi
   assert.ok(source.indexOf("bootstrap-owner-preflight") < source.indexOf("Read-Host"));
   assert.match(source, /bootstrap-owner-preflight[\s\S]*?--reason \$Reason \| Out-Null[\s\S]*?Read-Host/,
     "the preflight must not add a second JSON document to successful wrapper stdout");
-  assert.match(source, /\$OutputEncoding = \[System\.Text\.UTF8Encoding\]::new\(\$false\)/);
+  assert.match(source, /\[System\.Text\.Encoding\]::UTF8\.GetBytes\(\$plainSubject\)/);
+  assert.match(source, /\[Convert\]::ToBase64String\(\$subjectBytes\)/);
+  assert.match(source, /\$OutputEncoding = \[System\.Text\.ASCIIEncoding\]::new\(\)/);
   assert.match(source, /finally \{\s*\$OutputEncoding = \$previousOutputEncoding/);
   assert.equal(source.includes("HashData"), false);
   assert.equal(source.includes("ToHexString"), false);

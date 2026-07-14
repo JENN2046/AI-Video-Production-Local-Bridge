@@ -1,3 +1,5 @@
+import { TextDecoder } from "node:util";
+
 import { assertSchemaCurrent } from "../src/storage/migrations.js";
 import { openM0Database, openM0DatabaseConnection } from "../src/storage/sqlite.js";
 import {
@@ -13,6 +15,7 @@ import {
 import { principalIdFromFederatedSubject } from "../src/webgpt-v4/types.js";
 
 const MAX_SUBJECT_BYTES = 4096;
+const MAX_ENCODED_SUBJECT_BYTES = Math.ceil(MAX_SUBJECT_BYTES / 3) * 4;
 
 async function readSubjectFromSecureStdin(): Promise<string> {
   if (process.stdin.isTTY) {
@@ -20,23 +23,42 @@ async function readSubjectFromSecureStdin(): Promise<string> {
     Object.assign(error, { code: "WEBGPT_SECURE_INPUT_REQUIRED" });
     throw error;
   }
-  let subject = "";
+  let encodedSubject = "";
   process.stdin.setEncoding("utf8");
   for await (const chunk of process.stdin) {
-    subject += chunk;
-    if (Buffer.byteLength(subject, "utf8") > MAX_SUBJECT_BYTES) {
+    encodedSubject += chunk;
+    if (Buffer.byteLength(encodedSubject, "utf8") > MAX_ENCODED_SUBJECT_BYTES + 8) {
       const error = new Error("Federated subject input exceeds the safe limit.");
       Object.assign(error, { code: "INVALID_WEBGPT_AUTH_ADMIN_INPUT" });
       throw error;
     }
   }
-  const normalized = subject.replace(/[\r\n]+$/, "");
-  if (!normalized || /[\r\n]/.test(normalized)) {
+  const normalized = encodedSubject.replace(/^\uFEFF/, "").replace(/[\r\n]+$/, "");
+  if (!normalized || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(normalized)) {
     const error = new Error("Federated subject input is missing or malformed.");
     Object.assign(error, { code: "INVALID_WEBGPT_AUTH_ADMIN_INPUT" });
     throw error;
   }
-  return normalized;
+  const subjectBytes = Buffer.from(normalized, "base64");
+  if (subjectBytes.length > MAX_SUBJECT_BYTES || subjectBytes.toString("base64") !== normalized) {
+    const error = new Error("Federated subject input is missing or malformed.");
+    Object.assign(error, { code: "INVALID_WEBGPT_AUTH_ADMIN_INPUT" });
+    throw error;
+  }
+  let subject: string;
+  try {
+    subject = new TextDecoder("utf-8", { fatal: true }).decode(subjectBytes);
+  } catch {
+    const error = new Error("Federated subject input is missing or malformed.");
+    Object.assign(error, { code: "INVALID_WEBGPT_AUTH_ADMIN_INPUT" });
+    throw error;
+  }
+  if (!subject || /[\r\n]/.test(subject)) {
+    const error = new Error("Federated subject input is missing or malformed.");
+    Object.assign(error, { code: "INVALID_WEBGPT_AUTH_ADMIN_INPUT" });
+    throw error;
+  }
+  return subject;
 }
 
 try {
