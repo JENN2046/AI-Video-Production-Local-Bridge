@@ -379,7 +379,16 @@ test("protected-resource metadata preserves the public resource path and exposes
     assert.equal(metadataBody.resource, "https://mcp.example.test/tenant/mcp?region=us");
     const localTransportMetadata = await fetch(`${origin}/.well-known/oauth-protected-resource/mcp`);
     assert.equal(localTransportMetadata.status, 200);
-    assert.deepEqual(await localTransportMetadata.json(), metadataBody);
+    assert.deepEqual(await localTransportMetadata.json(), {
+      ...metadataBody,
+      resource: runtime.mcp_url
+    });
+    const compatibilityMetadata = await fetch(`${origin}/.well-known/oauth-protected-resource`);
+    assert.equal(compatibilityMetadata.status, 200);
+    assert.deepEqual(await compatibilityMetadata.json(), {
+      ...metadataBody,
+      resource: runtime.mcp_url
+    });
     const denied = await fetch(runtime.mcp_url, { method: "POST" });
     assert.equal(denied.headers.get("www-authenticate")?.includes("/.well-known/oauth-protected-resource/tenant/mcp?region=us"), true);
   } finally {
