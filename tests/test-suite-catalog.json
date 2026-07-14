@@ -45,7 +45,10 @@
       "classification": "mandatory",
       "npm_script": "test:db",
       "ci_step": "Database governance tests",
-      "paths": ["tests/database-governance.test.ts"]
+      "paths": [
+        "tests/database-governance.test.ts",
+        "tests/webgpt-authorization-admin.test.ts"
+      ]
     },
     {
       "id": "workbench-v2",

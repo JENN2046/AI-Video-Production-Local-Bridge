@@ -441,6 +441,68 @@ function applyArtifactBlobMigration(db: M0Database): void {
   db.prepare("UPDATE m0_meta SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = 'schema_version'").run(WORKBENCH_V2_SCHEMA_VERSION);
 }
 
+export const WEBGPT_AUTHORIZATION_WORKSPACE_ID = "jenn-ai-video-workspace";
+
+const WEBGPT_MULTI_USER_AUTHORIZATION_SQL = `
+  CREATE TABLE webgpt_auth_principals (
+    workspace_id TEXT NOT NULL,
+    principal_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (workspace_id, principal_id),
+    CHECK (workspace_id = 'jenn-ai-video-workspace'),
+    CHECK (length(principal_id) = 64 AND principal_id NOT GLOB '*[^0-9a-f]*'),
+    CHECK (status IN ('active','disabled'))
+  );
+  CREATE TABLE webgpt_project_memberships (
+    workspace_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    principal_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (workspace_id, project_id, principal_id),
+    FOREIGN KEY (workspace_id, principal_id)
+      REFERENCES webgpt_auth_principals(workspace_id, principal_id) ON DELETE RESTRICT,
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE RESTRICT,
+    CHECK (workspace_id = 'jenn-ai-video-workspace'),
+    CHECK (role IN ('owner','viewer')),
+    CHECK (status IN ('active','revoked'))
+  );
+  CREATE TABLE webgpt_auth_events (
+    event_id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    principal_id TEXT NOT NULL,
+    project_id TEXT,
+    event_type TEXT NOT NULL,
+    role TEXT,
+    reason_code TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (workspace_id, principal_id)
+      REFERENCES webgpt_auth_principals(workspace_id, principal_id) ON DELETE RESTRICT,
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE RESTRICT,
+    CHECK (workspace_id = 'jenn-ai-video-workspace'),
+    CHECK (length(principal_id) = 64 AND principal_id NOT GLOB '*[^0-9a-f]*'),
+    CHECK (event_type IN ('principal_registered','membership_granted','membership_revoked')),
+    CHECK (role IS NULL OR role IN ('owner','viewer')),
+    CHECK (length(reason_code) BETWEEN 1 AND 64)
+  );
+  CREATE INDEX idx_webgpt_memberships_principal
+    ON webgpt_project_memberships(workspace_id, principal_id, status, project_id);
+  CREATE INDEX idx_webgpt_auth_events_principal
+    ON webgpt_auth_events(workspace_id, principal_id, created_at);
+  CREATE TRIGGER webgpt_auth_events_no_update
+    BEFORE UPDATE ON webgpt_auth_events BEGIN
+      SELECT RAISE(ABORT, 'WEBGPT_AUTH_EVENTS_APPEND_ONLY');
+    END;
+  CREATE TRIGGER webgpt_auth_events_no_delete
+    BEFORE DELETE ON webgpt_auth_events BEGIN
+      SELECT RAISE(ABORT, 'WEBGPT_AUTH_EVENTS_APPEND_ONLY');
+    END;
+`;
+
 export const DATABASE_MIGRATIONS: readonly Migration[] = [
   {
     id: "0001",
@@ -480,6 +542,12 @@ export const DATABASE_MIGRATIONS: readonly Migration[] = [
     name: "media_activation_journal",
     canonical: `${MEDIA_ACTIVATION_JOURNAL_SQL}\nBACKFILL active_artifact_blob_facts_and_roots_v2\nRECOVERY deterministic_file_activation_v1\nSCHEMA ${WORKBENCH_V2_SCHEMA_VERSION}`,
     apply: applyMediaActivationMigration
+  },
+  {
+    id: "0007",
+    name: "webgpt_multi_user_authorization",
+    canonical: WEBGPT_MULTI_USER_AUTHORIZATION_SQL,
+    apply: (db) => db.exec(WEBGPT_MULTI_USER_AUTHORIZATION_SQL)
   }
 ];
 
@@ -634,6 +702,7 @@ function expectedSchemaDefinitions(includeJobs: boolean, expectedColumns: Record
       reference.exec(`${GENERATION_JOBS_SQL}\n${GENERATION_JOBS_STABILIZATION_SQL}`);
       applyArtifactBlobMigration(reference);
       reference.exec(MEDIA_ACTIVATION_JOURNAL_SQL);
+      reference.exec(WEBGPT_MULTI_USER_AUTHORIZATION_SQL);
     }
     const columns = new Map<string, Map<string, string>>();
     const checks = new Map<string, string[]>();
@@ -668,7 +737,10 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     generation_job_events: ["event_id", "job_id", "from_state", "to_state", "reason_code", "data_json", "created_at"],
     media_blobs: ["blob_id", "sha256", "size_bytes", "detected_mime", "storage_uri", "integrity_state", "provenance_json", "created_at"],
     media_artifact_blobs: ["artifact_id", "blob_id", "created_at"],
-    media_activation_journal: ["activation_id", "artifact_id", "state", "artifact_type", "role", "expected_sha256", "expected_size_bytes", "detected_mime", "staging_path", "pending_path", "final_path", "artifact_json", "error_code", "created_at", "updated_at"]
+    media_activation_journal: ["activation_id", "artifact_id", "state", "artifact_type", "role", "expected_sha256", "expected_size_bytes", "detected_mime", "staging_path", "pending_path", "final_path", "artifact_json", "error_code", "created_at", "updated_at"],
+    webgpt_auth_principals: ["workspace_id", "principal_id", "status", "created_at", "updated_at"],
+    webgpt_project_memberships: ["workspace_id", "project_id", "principal_id", "role", "status", "created_at", "updated_at"],
+    webgpt_auth_events: ["event_id", "workspace_id", "principal_id", "project_id", "event_type", "role", "reason_code", "created_at"]
   } : V24_EXPECTED_COLUMNS;
   const expectedIndexes = includeJobs ? [
     ...V24_EXPECTED_INDEXES,
@@ -678,7 +750,9 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     "idx_media_blobs_verified_sha256",
     "idx_media_artifact_blobs_blob",
     "idx_media_activation_journal_state",
-    "idx_media_activation_journal_active_artifact"
+    "idx_media_activation_journal_active_artifact",
+    "idx_webgpt_memberships_principal",
+    "idx_webgpt_auth_events_principal"
   ] : [...V24_EXPECTED_INDEXES];
   const expectedTriggers = includeJobs
     ? [
@@ -690,7 +764,9 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "media_artifact_identity_immutable",
         "media_artifact_status_transition",
         "media_artifact_blob_transition",
-        "media_artifact_blobs_no_delete"
+        "media_artifact_blobs_no_delete",
+        "webgpt_auth_events_no_update",
+        "webgpt_auth_events_no_delete"
       ]
     : ["trg_workbench_project_meta_after_insert"];
   const definitions = expectedSchemaDefinitions(includeJobs, expectedColumns, [...expectedIndexes, ...expectedTriggers]);
