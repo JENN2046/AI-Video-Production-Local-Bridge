@@ -44,7 +44,7 @@
       "id": "database-governance",
       "classification": "mandatory",
       "npm_script": "test:db",
-      "ci_step": "Database governance tests",
+      "ci_step": "Database and authorization governance tests",
       "paths": [
         "tests/database-governance.test.ts",
         "tests/webgpt-authorization-admin.test.ts"
@@ -183,7 +183,7 @@
       "kind": "migration_copy",
       "path": "tests/database-governance.test.ts",
       "npm_script": "test:db",
-      "ci_step": "Database governance tests",
+      "ci_step": "Database and authorization governance tests",
       "case_name": "migration 0006 backfills active legacy Artifact facts from the verified Blob"
     },
     {

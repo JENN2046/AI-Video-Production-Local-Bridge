@@ -1,6 +1,6 @@
 # WebGPT V4 本地运行与外部接线手册
 
-状态：本地生产辅助面已实现；外部 Auth0、Secure MCP Tunnel、媒体域名和 Windows 自动启动尚未配置。
+状态：`webgpt-v4.2.0` 多用户 Readonly 服务面已实现；外部 Descope/ChatGPT connector、Secure MCP Tunnel、媒体域名和 Windows 自动启动尚未配置。
 
 ## 固定边界
 
@@ -8,9 +8,8 @@
 - 媒体：`127.0.0.1:2092`
 - 数据源：V2 SQLite
 - 可见范围：仅 `classification=production`
-- 活动项目默认可见；归档生产项目只读且需显式查询
-- 直接写入：SHOT 文案字段、审片注记
-- 其他生产动作：只创建工作台提议或未确认生成 intent
+- Readonly：仅显式 membership 授权的 production 项目可见；owner/viewer 均只有六个 `projects.read` 工具
+- Full：保留既有 SHOT 文案、审片注记、工作台提议和未确认 generation intent；必须显式设置 `WEBGPT_V4_PROFILE=full`
 - 禁止：Provider 请求、上传、费用确认、生成提交、采纳、合成、交付、删除、任意文件读取
 
 ## 本地命令
@@ -18,6 +17,7 @@
 ```powershell
 npm run db:migrate
 npm run migrate:webgpt:v4
+npm run auth:webgpt -- list --db <explicit-database-path>
 npm run test:webgpt:v4
 npm run start:webgpt
 ```
@@ -49,10 +49,18 @@ GET http://127.0.0.1:2092/healthz
 
 以下四组均属于外部连接或生产配置，执行前需要 Jenn 单独确认目标、范围和回滚方式。
 
-### Auth0
+### Descope Readonly
+
+- 目标 Descope project、Inbound App、issuer、resource audience 与显式 HTTPS JWKS URI
+- ChatGPT connector 只申请 `projects.read`
+- principal 由 issuer 与 subject 派生为不可逆 SHA-256；不保存原始 subject 或邮箱
+- 先在活动库副本验证 migration `0007`，再经单独授权迁移活动库并 bootstrap first owner
+- 回滚：停止 connector/Tunnel，撤销 membership 或禁用 principal；不删除 authorization event
+
+### Full/Auth0（独立后续 gate）
 
 - 目标 Auth0 tenant 和 API audience
-- 单用户 Application，Authorization Code + PKCE
+- 既有单用户 Full Application 边界
 - Jenn 账户的允许主体；仓库仅保存主体 SHA-256，不保存明文主体
 - scopes：`projects.read`、`media.read`、`shots.write`、`reviews.write`、`proposals.write`、`generation.prepare`
 - ChatGPT App 权限设为“修改前询问”
@@ -87,9 +95,9 @@ GET http://127.0.0.1:2092/healthz
 
 1. 本地 V4 单元、MCP/Auth、媒体和元数据测试。
 2. V2、H1、前端、浏览器与生产构建回归。
-3. Auth0 只读 scopes 与官方 Tunnel 接线。
-4. Developer Mode 黄金提示集验证并刷新工具元数据。
-5. 依次开放 `proposals.write`、`shots.write/reviews.write`、`generation.prepare`。
-6. 最后开放媒体域名与播放器。
+3. 对数据库副本验证 migration `0007`、owner bootstrap、viewer grant/revoke 和 immediate readiness failure。
+4. Descope `projects.read` 与官方 Tunnel 接线。
+5. 使用两个真实用户完成 Developer Mode 只读黄金提示集和跨项目拒绝验证。
+6. Full/Auth0、写 scopes 和媒体域名分别制定新计划，不由 Readonly 验收自动开放。
 
 任何阶段发现测试项目、未归属媒体或真实 Provider 请求，立即停止并撤销对应外部连接。数据库回滚必须使用开工前在线备份，并在执行前再次获得覆盖当前数据库的明确授权。
