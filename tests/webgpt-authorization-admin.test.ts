@@ -17,6 +17,9 @@ import {
   revokeWebGptProjectMembership,
   WebGptAuthAdminInputError
 } from "../src/webgpt-v4/authorizationAdmin.js";
+import { authorizedWebGptProjectIds, requireWebGptProjectReadAccess, webGptProjectAuthorizationReady } from "../src/webgpt-v4/projectAuthorization.js";
+import { listProductionProjects } from "../src/webgpt-v4/domain.js";
+import { createProject } from "../src/tools/projects.js";
 
 const PRINCIPAL = "a".repeat(64);
 
@@ -148,6 +151,28 @@ test("owner bootstrap rejects a disabled principal and rolls back without member
     const before = listWebGptAuthorizationSummary(db);
     assert.throws(() => bootstrapWebGptProjectOwner(db, PRINCIPAL, "project_auth_fixture", "TEST_BOOTSTRAP"), /not active/);
     assert.deepEqual(listWebGptAuthorizationSummary(db), before);
+  } finally {
+    db.close();
+  }
+});
+
+test("runtime authorization filters project discovery and hides cross-project access", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const allowed = createProject({ title: "Allowed" }, db);
+    const hidden = createProject({ title: "Hidden" }, db);
+    assert.equal(allowed.ok && hidden.ok, true);
+    if (!allowed.ok || !hidden.ok) return;
+    db.prepare("UPDATE workbench_project_meta SET classification = 'production' WHERE project_id IN (?, ?)")
+      .run(allowed.project_id, hidden.project_id);
+    bootstrapWebGptProjectOwner(db, PRINCIPAL, allowed.project_id, "TEST_BOOTSTRAP");
+    assert.equal(webGptProjectAuthorizationReady(db), true);
+    assert.deepEqual(authorizedWebGptProjectIds(db, PRINCIPAL), [allowed.project_id]);
+    const result = listProductionProjects({}, db, "request_fixture", authorizedWebGptProjectIds(db, PRINCIPAL));
+    assert.equal(result.ok, true);
+    if (result.ok) assert.deepEqual(result.data.items.map((item) => (item.project as { project_id: string }).project_id), [allowed.project_id]);
+    assert.throws(() => requireWebGptProjectReadAccess(db, PRINCIPAL, hidden.project_id), (error) =>
+      error instanceof Error && "code" in error && error.code === "PROJECT_NOT_FOUND");
   } finally {
     db.close();
   }

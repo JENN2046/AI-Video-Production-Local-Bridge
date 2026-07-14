@@ -11,6 +11,7 @@ import { paths } from "../paths.js";
 import { loadWebGptV4AuthConfig, createOAuthAuthenticator, createAuth0MediaAuthenticator, protectedResourceMetadata, protectedResourceMetadataUrl, unavailableAuthenticator, wwwAuthenticate, type WebGptV4AuthConfig, type WebGptV4Authenticator } from "./auth.js";
 import { errorBody, WEBGPT_V4_VERSION, WebGptV4Error } from "./types.js";
 import { createWebGptV4McpApp } from "./mcpApp.js";
+import { webGptProjectAuthorizationReady } from "./projectAuthorization.js";
 import { handleMediaGatewayRequest, invalidateMediaGrantsForRestart, mediaAnalysisQueue, resolveFfmpegExecutable, resolveFfprobeExecutable, type MediaRuntimeOptions } from "./media.js";
 import { withToolSecuritySchemes } from "./securityTransport.js";
 import { parseWebGptV4Profile, webGptV4ScopesForProfile, webGptV4ToolNeedsWrite, webGptV4ToolScopesForProfile, type WebGptV4Profile } from "./toolCatalog.js";
@@ -19,6 +20,29 @@ import { createWebGptTelemetrySink, parseWebGptMediaPublicOrigin, parseWebGptTel
 export const WEBGPT_V4_HOST = "127.0.0.1";
 export const WEBGPT_V4_MCP_PORT = 2091;
 export const WEBGPT_V4_MEDIA_PORT = 2092;
+
+export class WebGptRequestLimiter {
+  private active = 0;
+  private readonly principals = new Map<string, number>();
+
+  constructor(private readonly globalMaximum = 8, private readonly principalMaximum = 4) {}
+
+  acquire(principalId: string): (() => void) | null {
+    const principalActive = this.principals.get(principalId) ?? 0;
+    if (this.active >= this.globalMaximum || principalActive >= this.principalMaximum) return null;
+    this.active += 1;
+    this.principals.set(principalId, principalActive + 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.active -= 1;
+      const remaining = (this.principals.get(principalId) ?? 1) - 1;
+      if (remaining <= 0) this.principals.delete(principalId);
+      else this.principals.set(principalId, remaining);
+    };
+  }
+}
 
 export interface StartWebGptV4Options {
   profile?: string;
@@ -150,7 +174,7 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
   const authenticateMedia = options.authenticate_media ?? (profile === "full" && authConfig?.provider === "auth0"
     ? createAuth0MediaAuthenticator(authConfig, process.env.WEBGPT_V4_MEDIA_AUTH_COOKIE_NAME?.trim() || undefined)
     : unavailableAuthenticator());
-  const multiUserAuthorizationPending = profile === "readonly" && authConfig?.provider === "descope";
+  const projectAuthorizationEnabled = profile === "readonly" && authConfig?.provider === "descope";
   const maximum = options.max_body_bytes ?? 1024 * 1024;
   let invalidatedMediaGrants = 0;
   if (profile === "full") {
@@ -160,6 +184,7 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
   }
 
   const activeRequests = new Set<Promise<void>>();
+  const requestLimiter = new WebGptRequestLimiter();
   let readinessCache: { expires: number; checks: Record<string, boolean> } | null = null;
   const readiness = async (): Promise<{ status: number; body: Record<string, unknown> }> => {
     let staticChecks: Record<string, boolean>;
@@ -167,12 +192,13 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
       staticChecks = readinessCache.checks;
     } else {
       staticChecks = { oauth: Boolean(authConfig), schema: false, database: false };
-      if (multiUserAuthorizationPending) staticChecks.authorization = false;
+      if (projectAuthorizationEnabled) staticChecks.authorization = false;
       try {
         const db = openValidatedDatabase(options.sqlite_path, profile === "readonly");
         try {
           staticChecks.database = (db.prepare("SELECT 1 AS ok").get() as { ok: number }).ok === 1;
           staticChecks.schema = (db.prepare("PRAGMA quick_check").get() as { quick_check: string }).quick_check === "ok";
+          if (projectAuthorizationEnabled) staticChecks.authorization = webGptProjectAuthorizationReady(db);
         } finally { db.close(); }
       } catch { staticChecks.database = false; }
       if (profile === "full") {
@@ -245,19 +271,6 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
       sendJson(response, 401, { jsonrpc: "2.0", id: null, error: { code: -32001, message: safe.message, data: safe } }, { "www-authenticate": wwwAuthenticate(authConfig, safe.code === "AUTH_REQUIRED" ? "invalid_request" : "invalid_token") });
       return;
     }
-    if (multiUserAuthorizationPending) {
-      const safe = {
-        code: "MULTI_USER_AUTHORIZATION_NOT_READY",
-        message: "Multi-user project authorization is not ready."
-      };
-      sendJson(response, 503, {
-        jsonrpc: "2.0",
-        id: null,
-        error: { code: -32003, message: safe.message, data: safe }
-      });
-      return;
-    }
-
     let parsedBody: Record<string, unknown> | undefined;
     try {
       parsedBody = await body(request, maximum);
@@ -268,24 +281,35 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
     }
 
     let db: M0Database;
+    const releaseAdmission = requestLimiter.acquire(actor.principal_id);
+    if (!releaseAdmission) {
+      sendJson(response, 429, { jsonrpc: "2.0", id: safeJsonRpcId(parsedBody?.id), error: {
+        code: -32004, message: "WebGPT request capacity is busy.", data: { code: "WEBGPT_REQUEST_BUSY", retryable: true }
+      } }, { "retry-after": "1" });
+      return;
+    }
     try {
       db = openValidatedDatabase(options.sqlite_path, !mcpRequestNeedsWrite(parsedBody, profile));
     } catch (error) {
+      releaseAdmission();
       const safe = errorBody(error);
       sendJson(response, 503, { jsonrpc: "2.0", id: safeJsonRpcId(parsedBody?.id), error: { code: -32003, message: safe.message, data: safe } });
       return;
     }
-    const app = createWebGptV4McpApp({ db, actor, profile, auth_config: authConfig, media: mediaOptions, telemetry, widget_domain: widgetDomain });
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    const securedTransport = withToolSecuritySchemes(transport, webGptV4ToolScopesForProfile(profile));
+    let app: ReturnType<typeof createWebGptV4McpApp> | null = null;
+    let transport: StreamableHTTPServerTransport | null = null;
     try {
+      app = createWebGptV4McpApp({ db, actor, profile, auth_config: authConfig, media: mediaOptions, telemetry, widget_domain: widgetDomain });
+      transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+      const securedTransport = withToolSecuritySchemes(transport, webGptV4ToolScopesForProfile(profile));
       await app.connect(securedTransport);
       await transport.handleRequest(request, response, parsedBody);
     } catch {
       if (!response.headersSent) sendJson(response, 500, { jsonrpc: "2.0", id: null, error: { code: -32603, message: "Internal MCP server error." } });
     } finally {
-      await Promise.allSettled([transport.close(), app.close()]);
+      await Promise.allSettled([...(transport ? [transport.close()] : []), ...(app ? [app.close()] : [])]);
       db.close();
+      releaseAdmission();
     }
   };
 
