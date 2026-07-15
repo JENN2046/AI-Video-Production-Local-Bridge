@@ -4,11 +4,11 @@ Date: 2026-07-14
 
 Baseline: `0.1.0-beta.4` accepted local runtime; external multi-user readonly connection remains closed
 
-Accepted version: `0.1.0-beta.4`; MCP service: `webgpt-v4.2.0`; database schema: `workbench-v2-5`; migration ledger: `0007`
+Accepted version: `0.1.0-beta.4`; MCP service: `webgpt-v4.2.0`; database schema: `workbench-v2-5`; accepted activity-database ledger: `0007`; repository candidate runtime requires: `0008`
 
 Acceptance source baseline: `main@c796c40` (`Merge pull request #29`)
 
-Current accepted active-database runtime: `0.1.0-beta.4` on schema `workbench-v2-5`, migration ledger `0007`
+Current accepted active-database runtime: `0.1.0-beta.4` on schema `workbench-v2-5`, migration ledger `0007`. Repository runtime requiring `0008` remains a candidate until separately authorized activity-database migration and acceptance.
 
 ## Product state
 

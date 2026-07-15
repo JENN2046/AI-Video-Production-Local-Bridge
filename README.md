@@ -2,7 +2,7 @@
 
 AI Video Production Workspace 是面向 Jenn 本地 Windows 生产环境的、治理优先的 AI 视频生产系统 Beta。
 
-当前接受的 Jenn 本地运行版本为 `0.1.0-beta.4`，MCP service 版本为 `webgpt-v4.2.0`，数据库 schema 为 `workbench-v2-5`，migration ledger 最新为 `0007`。系统已经包含 Workbench V2、WebGPT V4、MCP App、真实 Provider 生成边界、审片、重生成、合成、交付、Memory 与媒体分析能力。它适合 Jenn 的本地生产与受控的多用户只读授权验证，但尚不是成熟的无人值守生产服务或可直接公网部署的平台。
+当前接受的 Jenn 本地运行版本仍为 `0.1.0-beta.4`，MCP service 版本为 `webgpt-v4.2.0`，数据库 schema 为 `workbench-v2-5`，已验收活动库停留在 migration ledger `0007`。仓库候选运行时代码要求 migration `0008`；在另行授权的活动库迁移与验收完成前，不得用该候选运行时打开 `0007` 活动库。系统已经包含 Workbench V2、WebGPT V4、MCP App、真实 Provider 生成边界、审片、重生成、合成、交付、Memory 与媒体分析能力。它适合 Jenn 的本地生产与受控的多用户只读授权验证，但尚不是成熟的无人值守生产服务或可直接公网部署的平台。
 
 ## 当前边界
 

@@ -29,7 +29,7 @@ There is no JIT authorization. A valid first login that has not been explicitly 
 Readonly becomes ready only when all of the following are true:
 
 - Descope OAuth configuration is complete;
-- migration `0007` and the full schema contract are current;
+- repository migration `0008` and the full schema contract are current; the accepted activity database remains at `0007` until separately authorized cutover;
 - the database is readable;
 - at least one active principal has an active `owner` membership on a production project.
 
@@ -59,7 +59,7 @@ On Windows, `auth:webgpt:bootstrap-owner` is the preferred first-owner path. Its
 
 ## Test and CI evidence
 
-The mandatory `test:db` lane covers migration `0007`, schema drift, append-only events, explicit DB selection, owner bootstrap, disabled principals, grants/revocation and cross-project filtering. The `test:webgpt:v4` lane covers Descope JWT verification, readiness, viewer-without-owner failure, immediate owner-revocation failure, MCP project authorization and request admission. Both lanes are selected by canonical `npm test` and the named Windows CI steps.
+The mandatory `test:db` lane covers the `0007` authorization baseline, migration `0008` issuer binding, schema drift, append-only events, explicit DB selection, owner bootstrap, disabled principals, grants/revocation and cross-project filtering. The `test:webgpt:v4` lane covers Federated JWT verification, readiness, viewer-without-owner failure, immediate owner-revocation failure, MCP project authorization and request admission. Both lanes are selected by canonical `npm test` and the named Windows CI steps.
 
 No test reads Jenn's activity database or calls Descope, ChatGPT, Tunnel, OpenAI, RunningHub or another paid API.
 
@@ -68,7 +68,7 @@ No test reads Jenn's activity database or calls Descope, ChatGPT, Tunnel, OpenAI
 - create or select the production Descope project and MCP Server Resource;
 - associate an Agentic Client using CIMD first, DCR only as a compatibility fallback, or a public pre-registered client only when required;
 - configure exact redirect/callback URLs and ChatGPT app metadata without guessing the callback identifier;
-- migrate Jenn's activity database through `0007` under a new explicit authorization;
+- migrate Jenn's activity database through `0008` under a new explicit authorization;
 - derive/register the first production owner without exposing the raw subject;
 - start and verify Secure MCP Tunnel;
 - complete a real multi-user readonly golden-path acceptance;
