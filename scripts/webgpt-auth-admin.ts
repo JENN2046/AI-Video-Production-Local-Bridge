@@ -5,6 +5,8 @@ import { openM0Database, openM0DatabaseConnection } from "../src/storage/sqlite.
 import {
   assertWebGptOwnerBootstrapTarget,
   assertWebGptOwnerBootstrapWritable,
+  assertWebGptPrincipalBindingWritable,
+  bindWebGptPrincipalIssuer,
   bootstrapWebGptProjectOwner,
   grantWebGptProjectMembership,
   listWebGptAuthorizationSummary,
@@ -12,7 +14,7 @@ import {
   registerWebGptPrincipal,
   revokeWebGptProjectMembership
 } from "../src/webgpt-v4/authorizationAdmin.js";
-import { principalIdFromFederatedSubject } from "../src/webgpt-v4/types.js";
+import { issuerHash, principalIdFromFederatedSubject } from "../src/webgpt-v4/types.js";
 
 const MAX_SUBJECT_BYTES = 4096;
 const MAX_ENCODED_SUBJECT_BYTES = Math.ceil(MAX_SUBJECT_BYTES / 3) * 4;
@@ -79,16 +81,32 @@ try {
       writableDb.close();
     }
   }
-  if (request.action === "bootstrap-owner-preflight") {
-    console.log(JSON.stringify({ result: "PASS", action: request.action, target_valid: true }, null, 2));
+  if (request.action === "bind-principal-preflight" || request.action === "bind-principal-interactive") {
+    const preflightDb = openM0DatabaseConnection(request.database_path, { readOnly: true });
+    try { assertSchemaCurrent(preflightDb); }
+    finally { preflightDb.close(); }
+    const writableDb = openM0Database(request.database_path);
+    try { assertWebGptPrincipalBindingWritable(writableDb); }
+    finally { writableDb.close(); }
+  }
+  if (request.action === "bootstrap-owner-preflight" || request.action === "bind-principal-preflight") {
+    console.log(JSON.stringify({
+      result: "PASS", action: request.action,
+      ...(request.action === "bootstrap-owner-preflight" ? { target_valid: true } : { binding_writable: true })
+    }, null, 2));
   } else {
-    const principalId = request.action === "bootstrap-owner-interactive"
-      ? principalIdFromFederatedSubject(request.issuer as string, await readSubjectFromSecureStdin())
+    const interactive = request.action === "bootstrap-owner-interactive" || request.action === "bind-principal-interactive";
+    const subject = interactive ? await readSubjectFromSecureStdin() : undefined;
+    const principalId = interactive
+      ? principalIdFromFederatedSubject(request.issuer as string, subject as string)
       : request.principal_id;
+    const bindingIssuerHash = request.issuer ? issuerHash(request.issuer) : undefined;
     const db = openM0Database(request.database_path);
     try {
       const result = request.action === "bootstrap-owner" || request.action === "bootstrap-owner-interactive"
-        ? bootstrapWebGptProjectOwner(db, principalId as string, request.project_id as string, request.reason_code as string)
+        ? bootstrapWebGptProjectOwner(db, principalId as string, request.project_id as string, request.reason_code as string, bindingIssuerHash as string)
+        : request.action === "bind-principal-interactive"
+          ? bindWebGptPrincipalIssuer(db, principalId as string, bindingIssuerHash as string)
         : request.action === "register"
           ? registerWebGptPrincipal(db, request.principal_id as string, request.reason_code as string)
           : request.action === "grant"

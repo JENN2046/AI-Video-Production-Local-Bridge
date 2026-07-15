@@ -2,7 +2,7 @@
 
 AI Video Production Workspace 是面向 Jenn 本地 Windows 生产环境的、治理优先的 AI 视频生产系统 Beta。
 
-当前接受的 Jenn 本地运行版本为 `0.1.0-beta.4`，MCP service 版本为 `webgpt-v4.2.0`，数据库 schema 为 `workbench-v2-5`，migration ledger 最新为 `0007`。系统已经包含 Workbench V2、WebGPT V4、MCP App、真实 Provider 生成边界、审片、重生成、合成、交付、Memory 与媒体分析能力。它适合 Jenn 的本地生产与受控的多用户只读授权验证，但尚不是成熟的无人值守生产服务或可直接公网部署的平台。
+当前接受的 Jenn 本地运行版本仍为 `0.1.0-beta.4`，MCP service 版本为 `webgpt-v4.2.0`，数据库 schema 为 `workbench-v2-5`，已验收活动库停留在 migration ledger `0007`。仓库候选运行时代码要求 migration `0008`；在另行授权的活动库迁移与验收完成前，不得用该候选运行时打开 `0007` 活动库。系统已经包含 Workbench V2、WebGPT V4、MCP App、真实 Provider 生成边界、审片、重生成、合成、交付、Memory 与媒体分析能力。它适合 Jenn 的本地生产与受控的多用户只读授权验证，但尚不是成熟的无人值守生产服务或可直接公网部署的平台。
 
 ## 当前边界
 
@@ -63,15 +63,16 @@ npm run secret:scan
 `0.1.0-beta.4` 建立了 Descope 多用户只读服务边界，但不自动配置 Descope tenant、ChatGPT connector 或 Tunnel。外部对象模型、CIMD/DCR 决策和双用户验收门禁见 [External Multi-User Readonly Connection — Preflight](docs/EXTERNAL_MULTI_USER_READONLY_CONNECTION_PREFLIGHT.md)。授权管理命令必须显式提供数据库路径，不会默认写入 `data/app.sqlite`：
 
 ```powershell
-npm run auth:webgpt -- bootstrap-owner --db <path> --principal <opaque-sha256> --project <production-project-id>
+npm run auth:webgpt -- bootstrap-owner --db <path> --principal <opaque-sha256> --issuer <https-issuer> --project <production-project-id>
 npm run auth:webgpt:bootstrap-owner -- -DatabasePath <path> -Issuer <https-issuer> -ProjectId <production-project-id>
 npm run auth:webgpt -- register --db <path> --principal <opaque-sha256>
+npm run auth:webgpt:bind-principal -- -DatabasePath <path> -Issuer <https-issuer>
 npm run auth:webgpt -- grant --db <path> --principal <opaque-sha256> --project <production-project-id> --role viewer
 npm run auth:webgpt -- revoke --db <path> --principal <opaque-sha256> --project <production-project-id>
 npm run auth:webgpt -- list --db <path>
 ```
 
-普通管理命令只接受 issuer-bound 的小写 SHA-256 principal，不接受原始 subject、邮箱、token 或凭据。Windows 专用的 `auth:webgpt:bootstrap-owner` 使用隐藏提示读取 Descope subject，经 stdin 交给本地进程并直接完成原子 owner bootstrap；subject 不进入命令参数、输出或数据库。`bootstrap-owner`、grant/revoke 与 append-only authorization event 在单一事务中完成；只允许授权 `classification=production` 项目。对 Jenn 活动数据库运行这些写命令仍需当次明确授权。完整边界见 [Descope Multi-User Readonly Authorization](docs/DESCOPE_MULTI_USER_READONLY_AUTHORIZATION.md)。
+普通管理命令只接受 issuer-bound 的小写 SHA-256 principal，不接受原始 subject、邮箱、token 或凭据。非首个 viewer/owner 的固定顺序是 `register`、`auth:webgpt:bind-principal` 隐藏输入绑定、再 `grant`；未绑定 principal 必须拒绝授权。Windows 专用的 `auth:webgpt:bootstrap-owner` 使用隐藏提示读取 Federated subject，经 stdin 交给本地进程并直接完成原子 owner bootstrap；subject 不进入命令参数、输出或数据库。`bootstrap-owner`、grant/revoke 与 append-only authorization event 在单一事务中完成；只允许授权 `classification=production` 项目。对 Jenn 活动数据库运行这些写命令仍需当次明确授权。完整边界见 [Descope Multi-User Readonly Authorization](docs/DESCOPE_MULTI_USER_READONLY_AUTHORIZATION.md)。
 
 数据库 schema 不再在服务启动时静默升级。首次使用或升级后必须在服务停止状态下显式执行 `npm run db:migrate`；命令会在迁移现有数据库前创建 `ops/backups/` 快照。对 Jenn 活动数据库执行迁移前仍需遵守当前授权边界。
 

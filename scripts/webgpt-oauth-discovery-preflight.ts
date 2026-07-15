@@ -1,6 +1,7 @@
-import { loadWebGptV4AuthConfig } from "../src/webgpt-v4/auth.js";
+import { loadWebGptV4AuthConfig, type WebGptV4AuthConfig } from "../src/webgpt-v4/auth.js";
 import { probeWebGptOAuthDiscovery } from "../src/webgpt-v4/oauthDiscovery.js";
 import { parseWebGptV4Profile } from "../src/webgpt-v4/toolCatalog.js";
+import { WebGptV4Error } from "../src/webgpt-v4/types.js";
 
 let profile: "readonly" | "full";
 try {
@@ -10,9 +11,18 @@ try {
   process.exit(1);
 }
 
-const auth = loadWebGptV4AuthConfig(profile);
-if (profile !== "readonly" || auth?.provider !== "descope") {
-  console.log(JSON.stringify({ ok: false, code: "OAUTH_DISCOVERY_REQUIRES_READONLY_DESCOPE" }, null, 2));
+let auth: WebGptV4AuthConfig | null;
+try {
+  auth = loadWebGptV4AuthConfig(profile);
+} catch (error) {
+  console.log(JSON.stringify({
+    ok: false,
+    code: error instanceof WebGptV4Error ? error.code : "INVALID_WEBGPT_AUTH_CONFIG"
+  }, null, 2));
+  process.exit(1);
+}
+if (profile !== "readonly" || auth?.provider !== "federated" || auth.configuration_source !== "legacy_descope") {
+  console.log(JSON.stringify({ ok: false, code: "OAUTH_DISCOVERY_REQUIRES_LEGACY_DESCOPE" }, null, 2));
   process.exit(1);
 }
 

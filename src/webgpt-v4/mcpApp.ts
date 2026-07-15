@@ -179,9 +179,18 @@ export function createWebGptV4McpApp(options: CreateWebGptV4McpAppOptions): McpS
   const profile = options.profile ?? "readonly";
   const enabledTools = new Set(webGptV4ToolsForProfile(profile).map((tool) => tool.name));
   const authConfig = options.auth_config ?? null;
-  const projectAuthorizationEnabled = profile === "readonly" && authConfig?.provider === "descope";
+  const projectAuthorizationEnabled = profile === "readonly" && authConfig?.access_model === "project_membership";
+  const currentIssuerHash = projectAuthorizationEnabled ? authConfig.issuer_hash : undefined;
+  const assertActorIssuer = (): void => {
+    if (projectAuthorizationEnabled && actor.issuer_hash !== currentIssuerHash) {
+      throw new WebGptV4Error("WEBGPT_PRINCIPAL_NOT_REGISTERED", "This identity is not registered for the local workspace.");
+    }
+  };
   const requireProject = (projectId: string): void => {
-    if (projectAuthorizationEnabled) requireWebGptProjectReadAccess(db, actor.principal_id, projectId);
+    if (projectAuthorizationEnabled) {
+      assertActorIssuer();
+      requireWebGptProjectReadAccess(db, actor.principal_id, currentIssuerHash, projectId);
+    }
   };
   const server = new McpServer(
     { name: "ai-video-production-assistant", version: WEBGPT_V4_VERSION },
@@ -213,7 +222,8 @@ export function createWebGptV4McpApp(options: CreateWebGptV4McpAppOptions): McpS
     outputSchema: WEBGPT_V4_READ_OUTPUT_SCHEMAS.list_production_projects,
     ...contract("list_production_projects")
   }, async (input) => guarded("list_production_projects", "projects.read", actor, authConfig, input.request_id, profile, options.telemetry, () => {
-    const projects = projectAuthorizationEnabled ? authorizedWebGptProjectIds(db, actor.principal_id) : undefined;
+    if (projectAuthorizationEnabled) assertActorIssuer();
+    const projects = projectAuthorizationEnabled ? authorizedWebGptProjectIds(db, actor.principal_id, currentIssuerHash) : undefined;
     return readProjectList(listProductionProjects(input, db, input.request_id, projects), input.detail);
   }, input.detail) as never);
 

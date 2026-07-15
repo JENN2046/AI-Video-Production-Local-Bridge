@@ -1,7 +1,7 @@
 import type { IncomingMessage } from "node:http";
-import { createRemoteJWKSet, jwtVerify } from "jose";
+import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
 
-import { actorFromFederatedSubject, actorFromSubject, sha256, WebGptV4Error, WEBGPT_V4_SCOPES, type WebGptV4Actor, type WebGptV4Scope } from "./types.js";
+import { actorFromFederatedSubject, actorFromSubject, issuerHash, sha256, WebGptV4Error, WEBGPT_V4_SCOPES, type WebGptV4Actor, type WebGptV4Scope } from "./types.js";
 import type { WebGptV4Profile } from "./toolCatalog.js";
 
 interface WebGptV4AuthConfigBase {
@@ -11,17 +11,24 @@ interface WebGptV4AuthConfigBase {
   jwks_uri: string;
 }
 
-export interface WebGptV4DescopeAuthConfig extends WebGptV4AuthConfigBase {
-  provider: "descope";
-  authorization_server_url: string;
+export type WebGptV4ClientRegistration = "predefined" | "cimd" | "dcr";
+
+export interface WebGptV4ReadonlyFederatedAuthConfig extends WebGptV4AuthConfigBase {
+  provider: "federated";
+  access_model: "project_membership";
+  issuer_hash: string;
+  client_registration: WebGptV4ClientRegistration;
+  configuration_source: "generic" | "legacy_descope";
+  legacy_authorization_server_url?: string;
 }
 
 export interface WebGptV4Auth0Config extends WebGptV4AuthConfigBase {
   provider: "auth0";
+  access_model: "single_subject";
   allowed_subject_hash: string;
 }
 
-export type WebGptV4AuthConfig = WebGptV4DescopeAuthConfig | WebGptV4Auth0Config;
+export type WebGptV4AuthConfig = WebGptV4ReadonlyFederatedAuthConfig | WebGptV4Auth0Config;
 
 export type WebGptV4Authenticator = (request: IncomingMessage) => Promise<WebGptV4Actor>;
 
@@ -29,19 +36,78 @@ function trimSlash(value: string): string {
   return value.replace(/\/+$/, "");
 }
 
-function secureUrl(value: string): boolean {
+function secureUrl(value: string, options: { allow_query?: boolean } = {}): boolean {
   try {
     const parsed = new URL(value);
-    return parsed.protocol === "https:" && !parsed.username && !parsed.password && !parsed.hash;
+    return parsed.protocol === "https:" && !parsed.username && !parsed.password && !parsed.hash
+      && (options.allow_query === true || !parsed.search);
   } catch {
     return false;
   }
 }
 
 function secureIssuerIdentifier(value: string): boolean {
-  if (!secureUrl(value)) return false;
-  const parsed = new URL(value);
-  return !parsed.search;
+  return secureUrl(value);
+}
+
+const READONLY_GENERIC_KEYS = [
+  "WEBGPT_V4_READONLY_OAUTH_ISSUER",
+  "WEBGPT_V4_READONLY_OAUTH_AUDIENCE",
+  "WEBGPT_V4_READONLY_OAUTH_JWKS_URI",
+  "WEBGPT_V4_READONLY_OAUTH_CLIENT_REGISTRATION"
+] as const;
+
+const READONLY_LEGACY_DESCOPE_KEYS = [
+  "WEBGPT_V4_DESCOPE_ISSUER",
+  "WEBGPT_V4_DESCOPE_AUDIENCE",
+  "WEBGPT_V4_DESCOPE_JWKS_URI",
+  "WEBGPT_V4_DESCOPE_AUTHORIZATION_SERVER_URL"
+] as const;
+
+function configured(env: NodeJS.ProcessEnv, key: string): boolean {
+  return typeof env[key] === "string" && env[key]?.trim() !== "";
+}
+
+function invalidAuthConfig(code: "INVALID_WEBGPT_AUTH_CONFIG" | "AMBIGUOUS_WEBGPT_AUTH_CONFIG", message: string): never {
+  throw new WebGptV4Error(code, message, "WEBGPT_V4_READONLY_OAUTH_ISSUER");
+}
+
+export function assertWebGptV4AuthConfig(config: WebGptV4AuthConfig): void {
+  if (config.provider === "federated") {
+    const valid = config.access_model === "project_membership"
+      && secureIssuerIdentifier(config.issuer)
+      && secureUrl(config.audience)
+      && secureUrl(config.resource_url)
+      && secureUrl(config.jwks_uri)
+      && config.audience === config.resource_url
+      && config.issuer_hash === issuerHash(config.issuer)
+      && (["predefined", "cimd", "dcr"] as const).includes(config.client_registration)
+      && (config.configuration_source === "generic"
+        ? config.legacy_authorization_server_url === undefined
+        : config.client_registration === "cimd" && secureIssuerIdentifier(config.legacy_authorization_server_url ?? ""));
+    if (!valid) invalidAuthConfig("INVALID_WEBGPT_AUTH_CONFIG", "Readonly Federated OAuth configuration is incomplete or invalid.");
+    return;
+  }
+  if (config.access_model !== "single_subject" || !/^[a-f0-9]{64}$/.test(config.allowed_subject_hash)) {
+    throw new WebGptV4Error("INVALID_WEBGPT_AUTH_CONFIG", "Full Auth0 OAuth configuration is incomplete or invalid.");
+  }
+}
+
+function readonlyBase(input: {
+  issuer?: string;
+  audience?: string;
+  jwks_uri?: string;
+  resource_url?: string;
+}): WebGptV4AuthConfigBase | null {
+  const issuer = input.issuer?.trim() ?? "";
+  const audience = input.audience?.trim() ?? "";
+  const jwksUri = input.jwks_uri?.trim() ?? "";
+  const resourceUrl = input.resource_url?.trim() ?? "";
+  if (!issuer || !audience || !jwksUri || !resourceUrl) return null;
+  // The Federated public contract rejects query and fragment identifiers even though Full's legacy metadata helper can format them.
+  if (![issuer, audience, jwksUri, resourceUrl].every((value) => secureUrl(value))) return null;
+  if (audience !== resourceUrl) return null;
+  return { issuer, audience, resource_url: resourceUrl, jwks_uri: jwksUri };
 }
 
 function authBase(
@@ -54,12 +120,12 @@ function authBase(
   const issuer = issuerValue?.trim() ?? "";
   const audience = audienceValue?.trim() ?? "";
   const resourceUrl = env.WEBGPT_V4_RESOURCE_URL?.trim() ?? "";
-  if (!issuer || !audience || !resourceUrl || !secureIssuerIdentifier(issuer) || !secureUrl(resourceUrl)) return null;
+  if (!issuer || !audience || !resourceUrl || !secureIssuerIdentifier(issuer) || !secureUrl(resourceUrl, { allow_query: true })) return null;
   const normalizedIssuer = options.issuer_trailing_slash === false ? trimSlash(issuer) : `${trimSlash(issuer)}/`;
   const explicitJwksUri = jwksValue?.trim() ?? "";
   if (options.require_explicit_jwks && !explicitJwksUri) return null;
   const jwksUri = explicitJwksUri || new URL(".well-known/jwks.json", normalizedIssuer).toString();
-  if (!secureUrl(jwksUri)) return null;
+  if (!secureUrl(jwksUri, { allow_query: true })) return null;
   return { issuer: normalizedIssuer, audience, resource_url: trimSlash(resourceUrl), jwks_uri: jwksUri };
 }
 
@@ -68,17 +134,44 @@ export function loadWebGptV4AuthConfig(
   env: NodeJS.ProcessEnv = process.env
 ): WebGptV4AuthConfig | null {
   if (profile === "readonly") {
-    const base = authBase(
-      env.WEBGPT_V4_DESCOPE_ISSUER,
-      env.WEBGPT_V4_DESCOPE_AUDIENCE,
-      env.WEBGPT_V4_DESCOPE_JWKS_URI,
-      env,
-      { require_explicit_jwks: true, issuer_trailing_slash: false }
-    );
-    const authorizationServerUrl = env.WEBGPT_V4_DESCOPE_AUTHORIZATION_SERVER_URL?.trim() ?? "";
-    return base && base.audience === base.resource_url && secureIssuerIdentifier(authorizationServerUrl)
-      ? { provider: "descope", ...base, authorization_server_url: trimSlash(authorizationServerUrl) }
-      : null;
+    const hasGeneric = READONLY_GENERIC_KEYS.some((key) => configured(env, key));
+    const hasLegacy = READONLY_LEGACY_DESCOPE_KEYS.some((key) => configured(env, key));
+    if (hasGeneric && hasLegacy) {
+      invalidAuthConfig("AMBIGUOUS_WEBGPT_AUTH_CONFIG", "Generic and legacy Readonly OAuth configuration cannot be combined.");
+    }
+    if (!hasGeneric && !hasLegacy) return null;
+    if (hasGeneric) {
+      const base = readonlyBase({
+        issuer: env.WEBGPT_V4_READONLY_OAUTH_ISSUER,
+        audience: env.WEBGPT_V4_READONLY_OAUTH_AUDIENCE,
+        jwks_uri: env.WEBGPT_V4_READONLY_OAUTH_JWKS_URI,
+        resource_url: env.WEBGPT_V4_RESOURCE_URL
+      });
+      const registration = env.WEBGPT_V4_READONLY_OAUTH_CLIENT_REGISTRATION?.trim() as WebGptV4ClientRegistration | undefined;
+      if (!base || !registration || !(["predefined", "cimd", "dcr"] as const).includes(registration)) {
+        invalidAuthConfig("INVALID_WEBGPT_AUTH_CONFIG", "Readonly Federated OAuth configuration is incomplete or invalid.");
+      }
+      return {
+        provider: "federated", access_model: "project_membership", ...base,
+        issuer_hash: issuerHash(base.issuer), client_registration: registration, configuration_source: "generic"
+      };
+    }
+    const base = readonlyBase({
+      // Preserve the previous Descope adapter's trailing-slash normalization for one compatibility cycle.
+      issuer: trimSlash(env.WEBGPT_V4_DESCOPE_ISSUER?.trim() ?? ""),
+      audience: env.WEBGPT_V4_DESCOPE_AUDIENCE,
+      jwks_uri: env.WEBGPT_V4_DESCOPE_JWKS_URI,
+      resource_url: trimSlash(env.WEBGPT_V4_RESOURCE_URL?.trim() ?? "")
+    });
+    const authorizationServerUrl = trimSlash(env.WEBGPT_V4_DESCOPE_AUTHORIZATION_SERVER_URL?.trim() ?? "");
+    if (!base || !secureIssuerIdentifier(authorizationServerUrl)) {
+      invalidAuthConfig("INVALID_WEBGPT_AUTH_CONFIG", "Legacy Descope Readonly OAuth configuration is incomplete or invalid.");
+    }
+    return {
+      provider: "federated", access_model: "project_membership", ...base,
+      issuer_hash: issuerHash(base.issuer), client_registration: "cimd", configuration_source: "legacy_descope",
+      legacy_authorization_server_url: authorizationServerUrl
+    };
   }
   const base = authBase(
     env.WEBGPT_V4_AUTH0_ISSUER,
@@ -88,7 +181,7 @@ export function loadWebGptV4AuthConfig(
   );
   const allowedSubjectHash = env.WEBGPT_V4_ALLOWED_SUBJECT_SHA256?.trim().toLowerCase() ?? "";
   return base && /^[a-f0-9]{64}$/.test(allowedSubjectHash)
-    ? { provider: "auth0", ...base, allowed_subject_hash: allowedSubjectHash }
+    ? { provider: "auth0", access_model: "single_subject", ...base, allowed_subject_hash: allowedSubjectHash }
     : null;
 }
 
@@ -113,8 +206,8 @@ function cookieValue(request: IncomingMessage, name: string): string {
   throw new WebGptV4Error("AUTH_REQUIRED", "A valid OAuth media session is required.");
 }
 
-function createTokenAuthenticator(config: WebGptV4AuthConfig): (token: string) => Promise<WebGptV4Actor> {
-  const jwks = createRemoteJWKSet(new URL(config.jwks_uri));
+function createTokenAuthenticator(config: WebGptV4AuthConfig, jwksOverride?: JWTVerifyGetKey): (token: string) => Promise<WebGptV4Actor> {
+  const jwks = jwksOverride ?? createRemoteJWKSet(new URL(config.jwks_uri));
   return async (token) => {
     let payload: Awaited<ReturnType<typeof jwtVerify>>["payload"];
     try {
@@ -127,22 +220,39 @@ function createTokenAuthenticator(config: WebGptV4AuthConfig): (token: string) =
     if (config.provider === "auth0" && sha256(subject) !== config.allowed_subject_hash) {
       throw new WebGptV4Error("AUTH_SUBJECT_DENIED", "OAuth subject is not allowed for this app.");
     }
+    if (config.provider === "federated") {
+      // Readonly deliberately accepts only the standard scope claim and the compatible scp form.
+      const scopePresent = payload.scope !== undefined;
+      const scpPresent = payload.scp !== undefined;
+      if (scopePresent && typeof payload.scope !== "string") throw new WebGptV4Error("AUTH_INVALID", "OAuth scope claim is malformed.");
+      if (scpPresent && typeof payload.scp !== "string" && !(Array.isArray(payload.scp) && payload.scp.every((value) => typeof value === "string"))) {
+        throw new WebGptV4Error("AUTH_INVALID", "OAuth scp claim is malformed.");
+      }
+      const scopeSet = new Set(typeof payload.scope === "string" ? payload.scope.split(/\s+/).filter(Boolean) : []);
+      const scpValues = typeof payload.scp === "string" ? payload.scp.split(/\s+/).filter(Boolean) : Array.isArray(payload.scp) ? payload.scp : [];
+      const scpSet = new Set(scpValues);
+      if (scopePresent && scpPresent && (scopeSet.size !== scpSet.size || [...scopeSet].some((scope) => !scpSet.has(scope)))) {
+        throw new WebGptV4Error("AUTH_SCOPE_CLAIM_CONFLICT", "OAuth scope and scp claims disagree.");
+      }
+      const scopes = scopePresent ? scopeSet : scpSet;
+      if (!scopes.has("projects.read")) throw new WebGptV4Error("INSUFFICIENT_SCOPE", "Required scope is missing: projects.read");
+      return actorFromFederatedSubject(config.issuer, subject, scopes);
+    }
     const scopeClaim = payload.scope ?? payload.scopes;
     const rawScopes = typeof scopeClaim === "string"
       ? scopeClaim.split(/\s+/)
       : Array.isArray(scopeClaim)
         ? scopeClaim.filter((value): value is string => typeof value === "string")
-        : config.provider === "auth0" && Array.isArray(payload.permissions)
+        : Array.isArray(payload.permissions)
           ? payload.permissions.filter((value): value is string => typeof value === "string")
           : [];
-    return config.provider === "descope"
-      ? actorFromFederatedSubject(config.issuer, subject, rawScopes)
-      : actorFromSubject(subject, rawScopes);
+    return actorFromSubject(subject, rawScopes);
   };
 }
 
-export function createOAuthAuthenticator(config: WebGptV4AuthConfig): WebGptV4Authenticator {
-  const authenticateToken = createTokenAuthenticator(config);
+export function createOAuthAuthenticator(config: WebGptV4AuthConfig, options: { jwks?: JWTVerifyGetKey } = {}): WebGptV4Authenticator {
+  assertWebGptV4AuthConfig(config);
+  const authenticateToken = createTokenAuthenticator(config, options.jwks);
   return async (request) => authenticateToken(bearerToken(request));
 }
 
@@ -171,7 +281,9 @@ export function protectedResourceMetadata(config: WebGptV4AuthConfig | null, sco
     resource: config?.resource_url ?? "",
     resource_name: "AI Video Production Assistant",
     authorization_servers: config
-      ? [config.provider === "descope" ? config.authorization_server_url : config.issuer]
+      ? [config.provider === "federated" && config.configuration_source === "legacy_descope"
+          ? config.legacy_authorization_server_url ?? config.issuer
+          : config.issuer]
       : [],
     scopes_supported: [...scopes],
     bearer_methods_supported: ["header"],

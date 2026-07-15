@@ -17,6 +17,7 @@ export interface WebGptV4Actor {
   principal_id: string;
   actor_hash: string;
   scopes: ReadonlySet<string>;
+  issuer_hash?: string;
 }
 
 export interface WebGptV4Meta {
@@ -58,13 +59,21 @@ export function actorFromSubject(subject: string, scopes: Iterable<string>): Web
 }
 
 export function principalIdFromFederatedSubject(issuer: string, subject: string): string {
-  const normalizedIssuer = `${issuer.trim().replace(/\/+$/, "")}/`;
+  const normalizedIssuer = normalizeFederatedIssuer(issuer);
   return sha256(`${normalizedIssuer}\0${sha256(subject)}`);
+}
+
+export function normalizeFederatedIssuer(issuer: string): string {
+  return `${issuer.trim().replace(/\/+$/, "")}/`;
+}
+
+export function issuerHash(issuer: string): string {
+  return sha256(normalizeFederatedIssuer(issuer));
 }
 
 export function actorFromFederatedSubject(issuer: string, subject: string, scopes: Iterable<string>): WebGptV4Actor {
   const principalId = principalIdFromFederatedSubject(issuer, subject);
-  return { principal_id: principalId, actor_hash: principalId, scopes: new Set(scopes) };
+  return { principal_id: principalId, actor_hash: principalId, issuer_hash: issuerHash(issuer), scopes: new Set(scopes) };
 }
 
 export function requestId(value?: string): string {

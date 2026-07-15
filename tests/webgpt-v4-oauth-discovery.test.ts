@@ -9,15 +9,20 @@ import {
   validateAuthorizationServerMetadata,
   vendorAppendedAuthorizationServerMetadataUrl
 } from "../src/webgpt-v4/oauthDiscovery.js";
-import type { WebGptV4DescopeAuthConfig } from "../src/webgpt-v4/auth.js";
+import type { WebGptV4ReadonlyFederatedAuthConfig } from "../src/webgpt-v4/auth.js";
+import { issuerHash } from "../src/webgpt-v4/types.js";
 
 const identifier = "https://api.descope.com/v1/apps/agentic/project-fixture/resource-fixture";
-const config: WebGptV4DescopeAuthConfig = {
-  provider: "descope",
+const config: WebGptV4ReadonlyFederatedAuthConfig = {
+  provider: "federated",
+  access_model: "project_membership",
   issuer: "https://api.descope.com/v1/apps/project-fixture",
+  issuer_hash: issuerHash("https://api.descope.com/v1/apps/project-fixture"),
   audience: "https://mcp.example.test/mcp",
   resource_url: "https://mcp.example.test/mcp",
-  authorization_server_url: identifier,
+  client_registration: "cimd",
+  configuration_source: "legacy_descope",
+  legacy_authorization_server_url: identifier,
   jwks_uri: "https://api.descope.com/v1/apps/project-fixture/.well-known/jwks.json"
 };
 
@@ -156,7 +161,32 @@ test("dedicated discovery preflight fails closed without reading database state"
   assert.equal(result.status, 1);
   assert.deepEqual(JSON.parse(result.stdout), {
     ok: false,
-    code: "OAUTH_DISCOVERY_REQUIRES_READONLY_DESCOPE"
+    code: "OAUTH_DISCOVERY_REQUIRES_LEGACY_DESCOPE"
   });
   assert.equal(result.stderr, "");
+
+  const generic = spawnSync(process.execPath, [join(process.cwd(), "dist", "scripts", "webgpt-oauth-discovery-preflight.js")], {
+    cwd: process.cwd(), encoding: "utf8", windowsHide: true, timeout: 10_000,
+    env: {
+      PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, WEBGPT_V4_PROFILE: "readonly",
+      WEBGPT_V4_RESOURCE_URL: "https://mcp.example.test/mcp",
+      WEBGPT_V4_READONLY_OAUTH_ISSUER: "https://tenant.example.test/oauth",
+      WEBGPT_V4_READONLY_OAUTH_AUDIENCE: "https://mcp.example.test/mcp",
+      WEBGPT_V4_READONLY_OAUTH_JWKS_URI: "https://keys.example.test/jwks.json",
+      WEBGPT_V4_READONLY_OAUTH_CLIENT_REGISTRATION: "predefined"
+    }
+  });
+  assert.equal(generic.status, 1);
+  assert.deepEqual(JSON.parse(generic.stdout), { ok: false, code: "OAUTH_DISCOVERY_REQUIRES_LEGACY_DESCOPE" });
+
+  const invalid = spawnSync(process.execPath, [join(process.cwd(), "dist", "scripts", "webgpt-oauth-discovery-preflight.js")], {
+    cwd: process.cwd(), encoding: "utf8", windowsHide: true, timeout: 10_000,
+    env: {
+      PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, WEBGPT_V4_PROFILE: "readonly",
+      WEBGPT_V4_READONLY_OAUTH_ISSUER: "https://tenant.example.test/oauth"
+    }
+  });
+  assert.equal(invalid.status, 1);
+  assert.deepEqual(JSON.parse(invalid.stdout), { ok: false, code: "INVALID_WEBGPT_AUTH_CONFIG" });
+  assert.equal(invalid.stderr, "");
 });

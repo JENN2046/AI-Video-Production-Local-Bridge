@@ -59,7 +59,7 @@ GET http://127.0.0.1:2092/healthz
 - 客户端注册优先使用 CIMD，DCR 仅作为兼容回退；预注册客户端必须是 public/non-confidential、PKCE S256、token auth `none`
 - ChatGPT connector 只申请 `projects.read`
 - principal 由 issuer 与 subject 派生为不可逆 SHA-256；不保存原始 subject 或邮箱
-- 先在活动库副本验证 migration `0007`，再经单独授权迁移活动库并 bootstrap first owner
+- 先在活动库副本验证 migration `0008`，再经单独授权迁移活动库并 bootstrap issuer-bound first owner
 - 回滚：停止 connector/Tunnel，撤销 membership 或禁用 principal；不删除 authorization event
 
 ### Full/Auth0（独立后续 gate）
@@ -100,7 +100,7 @@ GET http://127.0.0.1:2092/healthz
 
 1. 本地 V4 单元、MCP/Auth、媒体和元数据测试。
 2. V2、H1、前端、浏览器与生产构建回归。
-3. 对数据库副本验证 migration `0007`、owner bootstrap、viewer grant/revoke 和 immediate readiness failure。
+3. 对数据库副本验证 migration `0008`、issuer binding、owner bootstrap、viewer grant/revoke 和 immediate readiness failure。
 4. 按 [External Multi-User Readonly Connection — Preflight](../EXTERNAL_MULTI_USER_READONLY_CONNECTION_PREFLIGHT.md) 完成 Descope `projects.read`、ChatGPT app 与官方 Tunnel 接线。
 5. 使用两个真实用户完成 Developer Mode 只读黄金提示集和跨项目拒绝验证。
 6. Full/Auth0、写 scopes 和媒体域名分别制定新计划，不由 Readonly 验收自动开放。

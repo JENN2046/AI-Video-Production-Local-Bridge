@@ -7,10 +7,12 @@ import { spawn, spawnSync } from "node:child_process";
 import test from "node:test";
 
 import { DATABASE_MIGRATIONS, assertSchemaCurrent, migrationChecksum, runDatabaseMigrations, WEBGPT_AUTHORIZATION_WORKSPACE_ID } from "../src/storage/migrations.js";
+import { checkDatabase } from "../src/storage/databaseGovernance.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import {
   assertWebGptOwnerBootstrapTarget,
   assertWebGptOwnerBootstrapWritable,
+  bindWebGptPrincipalIssuer,
   bootstrapWebGptProjectOwner,
   grantWebGptProjectMembership,
   listWebGptAuthorizationSummary,
@@ -22,9 +24,11 @@ import {
 import { authorizedWebGptProjectIds, requireWebGptProjectReadAccess, webGptProjectAuthorizationReady } from "../src/webgpt-v4/projectAuthorization.js";
 import { listProductionProjects } from "../src/webgpt-v4/domain.js";
 import { createProject } from "../src/tools/projects.js";
-import { principalIdFromFederatedSubject } from "../src/webgpt-v4/types.js";
+import { issuerHash, principalIdFromFederatedSubject } from "../src/webgpt-v4/types.js";
 
 const PRINCIPAL = "a".repeat(64);
+const ISSUER = "https://issuer.example/";
+const ISSUER_HASH = issuerHash(ISSUER);
 
 function createProductionProject(db: DatabaseSync, id = "project_auth_fixture"): void {
   const data = JSON.stringify({ project_id: id, title: "Authorization fixture", status: "draft", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
@@ -32,18 +36,21 @@ function createProductionProject(db: DatabaseSync, id = "project_auth_fixture"):
   db.prepare("UPDATE workbench_project_meta SET classification = 'production' WHERE project_id = ?").run(id);
 }
 
-test("migration 0007 creates constrained authorization tables and append-only events", () => {
+test("migration 0008 creates immutable issuer bindings and preserves append-only authorization events", () => {
   const db = new DatabaseSync(":memory:");
   try {
     const result = runDatabaseMigrations(db);
-    assert.equal(result.applied.at(-1), "0007");
+    assert.equal(result.applied.at(-1), "0008");
     assertSchemaCurrent(db);
     createProductionProject(db);
     registerWebGptPrincipal(db, PRINCIPAL, "TEST_BOOTSTRAP");
+    bindWebGptPrincipalIssuer(db, PRINCIPAL, ISSUER_HASH);
     grantWebGptProjectMembership(db, PRINCIPAL, "project_auth_fixture", "owner", "TEST_GRANT");
     const event = db.prepare("SELECT event_id FROM webgpt_auth_events WHERE event_type = 'membership_granted'").get() as { event_id: string };
     assert.throws(() => db.prepare("UPDATE webgpt_auth_events SET reason_code = 'TAMPERED' WHERE event_id = ?").run(event.event_id), /WEBGPT_AUTH_EVENTS_APPEND_ONLY/);
     assert.throws(() => db.prepare("DELETE FROM webgpt_auth_events WHERE event_id = ?").run(event.event_id), /WEBGPT_AUTH_EVENTS_APPEND_ONLY/);
+    assert.throws(() => db.prepare("UPDATE webgpt_auth_principal_bindings SET issuer_hash = ? WHERE principal_id = ?").run("b".repeat(64), PRINCIPAL), /WEBGPT_AUTH_PRINCIPAL_BINDINGS_IMMUTABLE/);
+    assert.throws(() => db.prepare("DELETE FROM webgpt_auth_principal_bindings WHERE principal_id = ?").run(PRINCIPAL), /WEBGPT_AUTH_PRINCIPAL_BINDINGS_IMMUTABLE/);
   } finally {
     db.close();
   }
@@ -74,19 +81,45 @@ test("schema validation rejects authorization trigger and constraint drift", () 
   }
 });
 
-test("an existing 0006 database applies only 0007", () => {
+test("schema validation rejects issuer-binding index, trigger, CHECK, and foreign-key drift", () => {
+  for (const [statement, expected] of [
+    ["DROP INDEX idx_webgpt_auth_bindings_issuer", /missing_index:idx_webgpt_auth_bindings_issuer/],
+    ["DROP TRIGGER webgpt_auth_principal_bindings_no_delete", /missing_trigger:webgpt_auth_principal_bindings_no_delete/]
+  ] as const) {
+    const db = new DatabaseSync(":memory:");
+    try {
+      runDatabaseMigrations(db);
+      db.exec(statement);
+      assert.throws(() => assertSchemaCurrent(db), expected);
+    } finally { db.close(); }
+  }
+  const tableDb = new DatabaseSync(":memory:");
+  try {
+    runDatabaseMigrations(tableDb);
+    tableDb.exec("ALTER TABLE webgpt_auth_principal_bindings RENAME TO webgpt_auth_principal_bindings_canonical");
+    tableDb.exec(`CREATE TABLE webgpt_auth_principal_bindings (
+      workspace_id TEXT NOT NULL, principal_id TEXT NOT NULL, issuer_hash TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (workspace_id, principal_id))`);
+    assert.throws(() => assertSchemaCurrent(tableDb), /check_constraints:webgpt_auth_principal_bindings|foreign_keys:webgpt_auth_principal_bindings/);
+  } finally { tableDb.close(); }
+});
+
+test("an existing 0007 database applies only 0008 without guessing issuer bindings", () => {
   const db = new DatabaseSync(":memory:");
   try {
-    for (const migration of DATABASE_MIGRATIONS.slice(0, 6)) migration.apply(db);
+    for (const migration of DATABASE_MIGRATIONS.slice(0, 7)) migration.apply(db);
+    createProductionProject(db);
+    registerWebGptPrincipal(db, PRINCIPAL, "TEST_EXISTING");
     db.exec(`CREATE TABLE schema_migrations (
       migration_id TEXT PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL,
       applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
-    for (const migration of DATABASE_MIGRATIONS.slice(0, 6)) {
+    for (const migration of DATABASE_MIGRATIONS.slice(0, 7)) {
       db.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES (?, ?, ?)")
         .run(migration.id, migration.name, migrationChecksum(migration));
     }
-    assert.deepEqual(runDatabaseMigrations(db).applied, ["0007"]);
+    assert.deepEqual(runDatabaseMigrations(db).applied, ["0008"]);
     assertSchemaCurrent(db);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM webgpt_auth_principal_bindings").get() as { count: number }).count, 0);
   } finally {
     db.close();
   }
@@ -104,11 +137,31 @@ test("admin parser requires an explicit database and rejects raw identity-shaped
   ]);
   assert.equal(interactive.issuer, "https://issuer.example/");
   assert.equal(interactive.principal_id, undefined);
+  const bind = parseWebGptAuthAdminArguments([
+    "bind-principal-interactive", "--db", "fixture.sqlite", "--issuer", ISSUER
+  ]);
+  assert.equal(bind.issuer, ISSUER);
+  assert.equal(bind.principal_id, undefined);
+  assert.equal(bind.reason_code, undefined);
+  const bindPreflight = parseWebGptAuthAdminArguments([
+    "bind-principal-preflight", "--db", "fixture.sqlite", "--issuer", ISSUER
+  ]);
+  assert.equal(bindPreflight.issuer, ISSUER);
+  assert.equal(bindPreflight.principal_id, undefined);
+  assert.equal(bindPreflight.reason_code, undefined);
   const preflight = parseWebGptAuthAdminArguments([
     "bootstrap-owner-preflight", "--db", "fixture.sqlite", "--issuer", "https://issuer.example/", "--project", "project_auth_fixture"
   ]);
   assert.equal(preflight.issuer, "https://issuer.example/");
   assert.equal(preflight.principal_id, undefined);
+  const directBootstrap = parseWebGptAuthAdminArguments([
+    "bootstrap-owner", "--db", "fixture.sqlite", "--principal", PRINCIPAL,
+    "--issuer", "https://issuer.example", "--project", "project_auth_fixture"
+  ]);
+  assert.equal(directBootstrap.issuer, "https://issuer.example/");
+  assert.throws(() => parseWebGptAuthAdminArguments([
+    "bootstrap-owner", "--db", "fixture.sqlite", "--principal", PRINCIPAL, "--project", "project_auth_fixture"
+  ]), /--issuer is required/);
   assert.throws(() => parseWebGptAuthAdminArguments([
     "bootstrap-owner-interactive", "--db", "fixture.sqlite", "--issuer", "http://issuer.example", "--project", "project_auth_fixture"
   ]), /HTTPS issuer URL/);
@@ -127,6 +180,11 @@ test("registration, grant and revoke are transactional, idempotent and productio
 
     assert.deepEqual(registerWebGptPrincipal(db, PRINCIPAL, "TEST_REGISTER"), { created: true });
     assert.deepEqual(registerWebGptPrincipal(db, PRINCIPAL, "TEST_REGISTER"), { created: false });
+    assert.throws(
+      () => grantWebGptProjectMembership(db, PRINCIPAL, "project_auth_fixture", "viewer", "TEST_GRANT"),
+      /complete the secure binding step/
+    );
+    bindWebGptPrincipalIssuer(db, PRINCIPAL, ISSUER_HASH);
     assert.throws(() => grantWebGptProjectMembership(db, PRINCIPAL, "project_test", "viewer", "TEST_GRANT"), /classified as production/);
     assert.deepEqual(grantWebGptProjectMembership(db, PRINCIPAL, "project_auth_fixture", "viewer", "TEST_GRANT"), { changed: true });
     assert.deepEqual(grantWebGptProjectMembership(db, PRINCIPAL, "project_auth_fixture", "viewer", "TEST_GRANT"), { changed: false });
@@ -142,16 +200,53 @@ test("registration, grant and revoke are transactional, idempotent and productio
   }
 });
 
+test("issuer binding is idempotent, immutable, and rejects a conflicting issuer", () => {
+  const db = openM0Database(":memory:");
+  try {
+    registerWebGptPrincipal(db, PRINCIPAL, "TEST_REGISTER");
+    assert.deepEqual(bindWebGptPrincipalIssuer(db, PRINCIPAL, ISSUER_HASH), { binding_created: true });
+    assert.deepEqual(bindWebGptPrincipalIssuer(db, PRINCIPAL, ISSUER_HASH), { binding_created: false });
+    assert.throws(() => bindWebGptPrincipalIssuer(db, PRINCIPAL, "b".repeat(64)), /different issuer/);
+    assert.equal((db.prepare("SELECT issuer_hash FROM webgpt_auth_principal_bindings WHERE principal_id = ?").get(PRINCIPAL) as { issuer_hash: string }).issuer_hash, ISSUER_HASH);
+  } finally { db.close(); }
+});
+
+test("db:check reports active authorization rows left unbound by migration 0008", () => {
+  const root = mkdtempSync(join(tmpdir(), "webgpt-auth-unbound-check-"));
+  try {
+    const selected = join(root, "selected.sqlite");
+    const db = new DatabaseSync(selected);
+    runDatabaseMigrations(db);
+    createProductionProject(db);
+    registerWebGptPrincipal(db, PRINCIPAL, "TEST_REGISTER");
+    db.prepare(`INSERT INTO webgpt_project_memberships
+      (workspace_id, project_id, principal_id, role, status) VALUES (?, 'project_auth_fixture', ?, 'viewer', 'active')`)
+      .run(WEBGPT_AUTHORIZATION_WORKSPACE_ID, PRINCIPAL);
+    db.close();
+    const unbound = checkDatabase(selected);
+    assert.equal(unbound.result, "FAIL");
+    assert.equal(unbound.unbound_webgpt_authorization_rows, 2);
+    const bindDb = openM0Database(selected);
+    bindWebGptPrincipalIssuer(bindDb, PRINCIPAL, ISSUER_HASH);
+    bindDb.close();
+    const bound = checkDatabase(selected);
+    assert.equal(bound.result, "PASS");
+    assert.equal(bound.unbound_webgpt_authorization_rows, 0);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test("owner bootstrap atomically creates the principal and production membership", () => {
   const db = openM0Database(":memory:");
   try {
     createProductionProject(db);
-    assert.deepEqual(bootstrapWebGptProjectOwner(db, PRINCIPAL, "project_auth_fixture", "TEST_BOOTSTRAP"), {
+    assert.deepEqual(bootstrapWebGptProjectOwner(db, PRINCIPAL, "project_auth_fixture", "TEST_BOOTSTRAP", ISSUER_HASH), {
       principal_created: true,
+      binding_created: true,
       membership_created: true
     });
-    assert.deepEqual(bootstrapWebGptProjectOwner(db, PRINCIPAL, "project_auth_fixture", "TEST_BOOTSTRAP"), {
+    assert.deepEqual(bootstrapWebGptProjectOwner(db, PRINCIPAL, "project_auth_fixture", "TEST_BOOTSTRAP", ISSUER_HASH), {
       principal_created: false,
+      binding_created: false,
       membership_created: false
     });
     assert.deepEqual(listWebGptAuthorizationSummary(db), { principals: 1, active_memberships: 1, revoked_memberships: 0, events: 2 });
@@ -168,7 +263,7 @@ test("owner bootstrap rejects a disabled principal and rolls back without member
     db.prepare("UPDATE webgpt_auth_principals SET status = 'disabled' WHERE workspace_id = ? AND principal_id = ?")
       .run(WEBGPT_AUTHORIZATION_WORKSPACE_ID, PRINCIPAL);
     const before = listWebGptAuthorizationSummary(db);
-    assert.throws(() => bootstrapWebGptProjectOwner(db, PRINCIPAL, "project_auth_fixture", "TEST_BOOTSTRAP"), /not active/);
+    assert.throws(() => bootstrapWebGptProjectOwner(db, PRINCIPAL, "project_auth_fixture", "TEST_BOOTSTRAP", ISSUER_HASH), /not active/);
     assert.deepEqual(listWebGptAuthorizationSummary(db), before);
   } finally {
     db.close();
@@ -184,13 +279,16 @@ test("runtime authorization filters project discovery and hides cross-project ac
     if (!allowed.ok || !hidden.ok) return;
     db.prepare("UPDATE workbench_project_meta SET classification = 'production' WHERE project_id IN (?, ?)")
       .run(allowed.project_id, hidden.project_id);
-    bootstrapWebGptProjectOwner(db, PRINCIPAL, allowed.project_id, "TEST_BOOTSTRAP");
-    assert.equal(webGptProjectAuthorizationReady(db), true);
-    assert.deepEqual(authorizedWebGptProjectIds(db, PRINCIPAL), [allowed.project_id]);
-    const result = listProductionProjects({}, db, "request_fixture", authorizedWebGptProjectIds(db, PRINCIPAL));
+    bootstrapWebGptProjectOwner(db, PRINCIPAL, allowed.project_id, "TEST_BOOTSTRAP", ISSUER_HASH);
+    assert.equal(webGptProjectAuthorizationReady(db, ISSUER_HASH), true);
+    assert.equal(webGptProjectAuthorizationReady(db, "b".repeat(64)), false);
+    assert.deepEqual(authorizedWebGptProjectIds(db, PRINCIPAL, ISSUER_HASH), [allowed.project_id]);
+    assert.throws(() => authorizedWebGptProjectIds(db, PRINCIPAL, "b".repeat(64)), (error) =>
+      error instanceof Error && "code" in error && error.code === "WEBGPT_PRINCIPAL_NOT_REGISTERED");
+    const result = listProductionProjects({}, db, "request_fixture", authorizedWebGptProjectIds(db, PRINCIPAL, ISSUER_HASH));
     assert.equal(result.ok, true);
     if (result.ok) assert.deepEqual(result.data.items.map((item) => (item.project as { project_id: string }).project_id), [allowed.project_id]);
-    assert.throws(() => requireWebGptProjectReadAccess(db, PRINCIPAL, hidden.project_id), (error) =>
+    assert.throws(() => requireWebGptProjectReadAccess(db, PRINCIPAL, ISSUER_HASH, hidden.project_id), (error) =>
       error instanceof Error && "code" in error && error.code === "PROJECT_NOT_FOUND");
   } finally {
     db.close();
@@ -291,7 +389,7 @@ test("interactive owner bootstrap consumes subject only from stdin and never dis
     });
     assert.equal(success.status, 0, success.stderr);
     assert.deepEqual(JSON.parse(success.stdout) as unknown, {
-      result: "PASS", action: "bootstrap-owner-interactive", principal_created: true, membership_created: true
+      result: "PASS", action: "bootstrap-owner-interactive", principal_created: true, binding_created: true, membership_created: true
     });
     assert.equal(`${success.stdout}${success.stderr}`.includes(subject), false);
     assert.equal(`${success.stdout}${success.stderr}`.includes(principal), false);
@@ -324,6 +422,51 @@ test("interactive owner bootstrap consumes subject only from stdin and never dis
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("interactive principal binding uses hidden subject input and discloses no identifiers", () => {
+  const root = mkdtempSync(join(tmpdir(), "webgpt-auth-bind-interactive-"));
+  const subject = "federated-user-private-fixture";
+  const issuer = "https://issuer.example/binding-fixture";
+  const principal = principalIdFromFederatedSubject(issuer, subject);
+  try {
+    const selected = join(root, "selected.sqlite");
+    const db = new DatabaseSync(selected);
+    runDatabaseMigrations(db);
+    registerWebGptPrincipal(db, principal, "TEST_REGISTER");
+    db.close();
+    const command = join(process.cwd(), "dist", "scripts", "webgpt-auth-admin.js");
+    const args = [command, "bind-principal-interactive", "--db", selected, "--issuer", issuer];
+    const input = `${Buffer.from(subject, "utf8").toString("base64")}\n`;
+    const first = spawnSync(process.execPath, args, { encoding: "utf8", input });
+    assert.equal(first.status, 0, first.stderr);
+    assert.deepEqual(JSON.parse(first.stdout), { result: "PASS", action: "bind-principal-interactive", binding_created: true });
+    const replay = spawnSync(process.execPath, args, { encoding: "utf8", input });
+    assert.equal(replay.status, 0, replay.stderr);
+    assert.deepEqual(JSON.parse(replay.stdout), { result: "PASS", action: "bind-principal-interactive", binding_created: false });
+    const output = `${first.stdout}${first.stderr}${replay.stdout}${replay.stderr}`;
+    assert.equal(output.includes(subject), false);
+    assert.equal(output.includes(principal), false);
+    assert.equal(output.includes(issuerHash(issuer)), false);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("principal binding preflight validates schema and writer access without stdin", () => {
+  const root = mkdtempSync(join(tmpdir(), "webgpt-auth-bind-preflight-"));
+  try {
+    const selected = join(root, "selected.sqlite");
+    const db = new DatabaseSync(selected);
+    runDatabaseMigrations(db);
+    db.close();
+    const command = join(process.cwd(), "dist", "scripts", "webgpt-auth-admin.js");
+    const result = spawnSync(process.execPath, [command, "bind-principal-preflight", "--db", selected,
+      "--issuer", "https://issuer.example"], { encoding: "utf8", env: { ...process.env, NODE_NO_WARNINGS: "1" } });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      result: "PASS", action: "bind-principal-preflight", binding_writable: true
+    });
+    assert.equal(result.stderr, "");
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test("interactive owner bootstrap rejects an invalid target before consuming private stdin", async () => {
@@ -436,6 +579,21 @@ test("Windows bootstrap wrapper uses hidden input and remains compatible with Wi
   }
 });
 
+test("Windows principal-binding wrapper uses the same UTF-8 hidden-input boundary", () => {
+  const wrapper = join(process.cwd(), "scripts", "windows", "webgpt-bind-principal.ps1");
+  const source = readFileSync(wrapper, "utf8");
+  assert.match(source, /Read-Host .* -AsSecureString/);
+  assert.match(source, /ZeroFreeBSTR/);
+  assert.ok(source.indexOf("bind-principal-preflight") < source.indexOf("Read-Host"));
+  assert.match(source, /bind-principal-preflight[\s\S]*?--issuer \$Issuer \| Out-Null[\s\S]*?Read-Host/,
+    "the binding preflight must complete before the wrapper reads the private subject");
+  assert.match(source, /UTF8\.GetBytes\(\$plainSubject\)/);
+  assert.match(source, /ToBase64String\(\$subjectBytes\)/);
+  assert.match(source, /bind-principal-interactive/);
+  assert.equal(source.includes("HashData"), false);
+  assert.equal(source.includes("ToHexString"), false);
+});
+
 test("Windows bootstrap wrapper preserves a Unicode subject across the PowerShell-to-Node pipe", () => {
   if (process.platform !== "win32") return;
   const root = mkdtempSync(join(tmpdir(), "webgpt-auth-wrapper-unicode-"));
@@ -470,7 +628,7 @@ test("Windows bootstrap wrapper preserves a Unicode subject across the PowerShel
     });
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(JSON.parse(result.stdout) as unknown, {
-      result: "PASS", action: "bootstrap-owner-interactive", principal_created: true, membership_created: true
+      result: "PASS", action: "bootstrap-owner-interactive", principal_created: true, binding_created: true, membership_created: true
     });
     assert.equal(`${result.stdout}${result.stderr}`.includes(subject), false);
 

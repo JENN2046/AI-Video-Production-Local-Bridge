@@ -15,7 +15,7 @@ import { getProductionProjectContext } from "../src/webgpt-v4/domain.js";
 import { readProjectContext } from "../src/webgpt-v4/contracts.js";
 import { startWebGptV4 } from "../src/webgpt-v4/server.js";
 import { webGptV4ToolsForProfile } from "../src/webgpt-v4/toolCatalog.js";
-import { actorFromSubject, WEBGPT_V4_SCOPES, WebGptV4Error } from "../src/webgpt-v4/types.js";
+import { actorFromSubject, issuerHash, WEBGPT_V4_SCOPES, WebGptV4Error } from "../src/webgpt-v4/types.js";
 
 function stableValue(value: unknown): unknown {
   if (typeof value === "bigint") return value.toString();
@@ -136,11 +136,11 @@ test("full profile remains explicit and invalid profiles fail closed", async () 
     jwks_uri: "https://issuer.example.test/.well-known/jwks.json"
   };
   await assert.rejects(
-    () => startWebGptV4({ profile: "readonly", auth_config: { provider: "auth0", ...commonAuth, allowed_subject_hash: "a".repeat(64) } }),
+    () => startWebGptV4({ profile: "readonly", auth_config: { provider: "auth0", access_model: "single_subject", ...commonAuth, allowed_subject_hash: "a".repeat(64) } }),
     (error: unknown) => error instanceof WebGptV4Error && error.code === "INVALID_WEBGPT_AUTH_PROVIDER"
   );
   await assert.rejects(
-    () => startWebGptV4({ profile: "full", auth_config: { provider: "descope", ...commonAuth, authorization_server_url: "https://issuer.example.test/agentic/resource" } }),
+    () => startWebGptV4({ profile: "full", auth_config: { provider: "federated", access_model: "project_membership", ...commonAuth, issuer_hash: issuerHash(commonAuth.issuer), client_registration: "predefined", configuration_source: "generic" } }),
     (error: unknown) => error instanceof WebGptV4Error && error.code === "INVALID_WEBGPT_AUTH_PROVIDER"
   );
   const root = mkdtempSync(join(tmpdir(), "webgpt-v4-full-profile-"));

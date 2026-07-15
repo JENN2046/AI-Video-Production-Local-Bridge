@@ -29,7 +29,7 @@ There is no JIT authorization. A valid first login that has not been explicitly 
 Readonly becomes ready only when all of the following are true:
 
 - Descope OAuth configuration is complete;
-- migration `0007` and the full schema contract are current;
+- repository migration `0008` and the full schema contract are current; the accepted activity database remains at `0007` until separately authorized cutover;
 - the database is readable;
 - at least one active principal has an active `owner` membership on a production project.
 
@@ -39,26 +39,27 @@ Request admission is bounded to 8 active MCP requests globally and 4 per princip
 
 ## Migration and admin commands
 
-Migration `0007` creates the authorization tables, constraints, indexes and append-only triggers. Runtime startup only verifies the schema; it does not migrate automatically.
+Migration `0007` creates the authorization tables, constraints, indexes and append-only triggers. Migration `0008` adds the immutable issuer binding required by current Readonly authorization. Runtime startup only verifies the schema; it does not migrate automatically.
 
 Admin commands require `--db`; omission fails with `INVALID_WEBGPT_AUTH_ADMIN_INPUT`. There is no default activity-database target.
 
 ```powershell
-npm run auth:webgpt -- bootstrap-owner --db <path> --principal <opaque-sha256> --project <production-project-id>
+npm run auth:webgpt -- bootstrap-owner --db <path> --principal <opaque-sha256> --issuer <https-issuer> --project <production-project-id>
 npm run auth:webgpt:bootstrap-owner -- -DatabasePath <path> -Issuer <https-issuer> -ProjectId <production-project-id>
 npm run auth:webgpt -- register --db <path> --principal <opaque-sha256>
+npm run auth:webgpt:bind-principal -- -DatabasePath <path> -Issuer <https-issuer>
 npm run auth:webgpt -- grant --db <path> --principal <opaque-sha256> --project <production-project-id> --role owner|viewer
 npm run auth:webgpt -- revoke --db <path> --principal <opaque-sha256> --project <production-project-id>
 npm run auth:webgpt -- list --db <path>
 ```
 
-`bootstrap-owner` creates the principal, owner membership and events atomically. It refuses disabled principals and will not overwrite a different existing membership. `grant` requires an active registered principal and a production-classified project. `revoke` preserves the membership record and appends an audit event. `list` returns counts only.
+`bootstrap-owner` creates the principal, immutable issuer binding, owner membership and events atomically. It refuses disabled principals and will not overwrite a different existing membership. For every later viewer or owner, run `register`, then the hidden-input `auth:webgpt:bind-principal`, and only then `grant`; `grant` rejects an unbound principal. `revoke` preserves the membership record and appends an audit event. `list` returns counts only.
 
 On Windows, `auth:webgpt:bootstrap-owner` is the preferred first-owner path. Its PowerShell wrapper uses `Read-Host -AsSecureString`, sends the subject only through child-process stdin, reuses the runtime issuer normalization and principal derivation, and returns only creation booleans. It never accepts the subject in argv or writes it to the database. Direct `bootstrap-owner-interactive` invocation from a TTY fails closed so an unmasked prompt cannot be mistaken for the supported path.
 
 ## Test and CI evidence
 
-The mandatory `test:db` lane covers migration `0007`, schema drift, append-only events, explicit DB selection, owner bootstrap, disabled principals, grants/revocation and cross-project filtering. The `test:webgpt:v4` lane covers Descope JWT verification, readiness, viewer-without-owner failure, immediate owner-revocation failure, MCP project authorization and request admission. Both lanes are selected by canonical `npm test` and the named Windows CI steps.
+The mandatory `test:db` lane covers the `0007` authorization baseline, migration `0008` issuer binding, schema drift, append-only events, explicit DB selection, owner bootstrap, disabled principals, grants/revocation and cross-project filtering. The `test:webgpt:v4` lane covers Federated JWT verification, readiness, viewer-without-owner failure, immediate owner-revocation failure, MCP project authorization and request admission. Both lanes are selected by canonical `npm test` and the named Windows CI steps.
 
 No test reads Jenn's activity database or calls Descope, ChatGPT, Tunnel, OpenAI, RunningHub or another paid API.
 
@@ -67,7 +68,7 @@ No test reads Jenn's activity database or calls Descope, ChatGPT, Tunnel, OpenAI
 - create or select the production Descope project and MCP Server Resource;
 - associate an Agentic Client using CIMD first, DCR only as a compatibility fallback, or a public pre-registered client only when required;
 - configure exact redirect/callback URLs and ChatGPT app metadata without guessing the callback identifier;
-- migrate Jenn's activity database through `0007` under a new explicit authorization;
+- migrate Jenn's activity database through `0008` under a new explicit authorization;
 - derive/register the first production owner without exposing the raw subject;
 - start and verify Secure MCP Tunnel;
 - complete a real multi-user readonly golden-path acceptance;
