@@ -115,6 +115,11 @@ test("OAuth environment configuration selects one strict Readonly source and fai
     { ...generic, WEBGPT_V4_READONLY_OAUTH_JWKS_URI: "" },
     { ...generic, WEBGPT_V4_READONLY_OAUTH_CLIENT_REGISTRATION: "implicit" },
     { ...generic, WEBGPT_V4_READONLY_OAUTH_ISSUER: "https://tenant.example.test/oauth?tenant=other" },
+    {
+      ...generic,
+      WEBGPT_V4_READONLY_OAUTH_AUDIENCE: "https://mcp.example.test/mcp?region=us",
+      WEBGPT_V4_RESOURCE_URL: "https://mcp.example.test/mcp?region=us"
+    },
     { ...generic, WEBGPT_V4_RESOURCE_URL: "https://mcp.example.test/mcp#fragment" },
     { ...generic, WEBGPT_V4_READONLY_OAUTH_AUDIENCE: "https://other-resource.example/mcp" }
   ]) assert.throws(() => loadWebGptV4AuthConfig("readonly", invalid), (error) => error instanceof WebGptV4Error && error.code === "INVALID_WEBGPT_AUTH_CONFIG");
@@ -189,6 +194,11 @@ test("Federated verifier accepts multiple subjects, enforces standard scope clai
     const permissionsOnlyToken = await sign("descope-user-a", { permissions: ["projects.read"] });
     await assert.rejects(
       () => authenticate(request(permissionsOnlyToken)),
+      (error) => error instanceof WebGptV4Error && error.code === "INSUFFICIENT_SCOPE"
+    );
+    const legacyScopesOnlyToken = await sign("descope-user-a", { scopes: ["projects.read"] });
+    await assert.rejects(
+      () => authenticate(request(legacyScopesOnlyToken)),
       (error) => error instanceof WebGptV4Error && error.code === "INSUFFICIENT_SCOPE"
     );
     const missingSubjectToken = await sign("", { scope: "projects.read" });

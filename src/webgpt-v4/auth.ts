@@ -104,6 +104,7 @@ function readonlyBase(input: {
   const jwksUri = input.jwks_uri?.trim() ?? "";
   const resourceUrl = input.resource_url?.trim() ?? "";
   if (!issuer || !audience || !jwksUri || !resourceUrl) return null;
+  // The Federated public contract rejects query and fragment identifiers even though Full's legacy metadata helper can format them.
   if (![issuer, audience, jwksUri, resourceUrl].every((value) => secureUrl(value))) return null;
   if (audience !== resourceUrl) return null;
   return { issuer, audience, resource_url: resourceUrl, jwks_uri: jwksUri };
@@ -219,6 +220,7 @@ function createTokenAuthenticator(config: WebGptV4AuthConfig, jwksOverride?: JWT
       throw new WebGptV4Error("AUTH_SUBJECT_DENIED", "OAuth subject is not allowed for this app.");
     }
     if (config.provider === "federated") {
+      // Readonly deliberately accepts only the standard scope claim and the compatible scp form.
       const scopePresent = payload.scope !== undefined;
       const scpPresent = payload.scp !== undefined;
       if (scopePresent && typeof payload.scope !== "string") throw new WebGptV4Error("AUTH_INVALID", "OAuth scope claim is malformed.");
