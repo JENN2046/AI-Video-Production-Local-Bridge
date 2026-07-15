@@ -27,7 +27,7 @@ The external connection must preserve all of these invariants:
 - OAuth resource identifier is the final ChatGPT-visible MCP resource URI ending in `/mcp`.
 - `WEBGPT_V4_RESOURCE_URL` and `WEBGPT_V4_DESCOPE_AUDIENCE` are identical to that resource identifier.
 - The same RFC 8707 `resource` value is used on authorization and token requests and appears in the access-token audience.
-- Descope issuer and explicit HTTPS JWKS URI match the authorization-server discovery document.
+- Descope JWT issuer and explicit HTTPS JWKS URI match the issued access token. `WEBGPT_V4_DESCOPE_AUTHORIZATION_SERVER_URL` is the authorization-server issuer identifier advertised by PRMD. Its RFC 8414 metadata response must return that identifier as an exact `issuer` match and advertise PKCE S256, public-client token authentication `none`, plus CIMD or DCR. A vendor-appended metadata URL is diagnostic only and cannot satisfy this gate when the RFC 8414 location or exact issuer check fails.
 - Authorization code with PKCE S256 is enabled; client credentials is not used for an end-user connector.
 - The only granted and advertised application scope is `projects.read`.
 - MCP Protected Resource Metadata is reachable at the path-aware URL `/.well-known/oauth-protected-resource/mcp`.
@@ -57,7 +57,7 @@ The phases below are ordered. Do not begin ChatGPT app discovery before local ow
 
 1. Keep all secret values in ignored local secret storage. Do not print, copy, commit, or include them in receipts.
 2. Write only the non-secret values required by `.env.example`: resource URL, issuer, audience, and JWKS URI.
-3. Run `npm run preflight -- --profile=webgpt` with `WEBGPT_V4_PROFILE=readonly` and `REAL_PROVIDER_ENABLED=false`.
+3. Run `npm run preflight -- --profile=webgpt`, then run the separate `npm run preflight:webgpt:oauth`, with `WEBGPT_V4_PROFILE=readonly` and `REAL_PROVIDER_ENABLED=false`. The dedicated OAuth command does not open the database or inspect local business state; it performs anonymous metadata GETs only against the current `api.descope.com` allowlist and reports stable compatibility codes without printing endpoint identifiers or response bodies. A future Descope custom domain requires a separately reviewed allowlist change.
 4. Start WebGPT and verify `/healthz=200`, canonical PRMD `=200`, anonymous `/mcp=401`, and `/readyz=503` until an active owner exists.
 5. Under a separate database-write authorization, back up the activity database and run `npm run auth:webgpt:bootstrap-owner -- -DatabasePath <path> -Issuer <https-issuer> -ProjectId <production-project-id>`.
 6. Enter the Descope subject only in the hidden prompt; the helper derives the issuer-bound principal and performs the atomic owner bootstrap without printing or persisting the raw subject.

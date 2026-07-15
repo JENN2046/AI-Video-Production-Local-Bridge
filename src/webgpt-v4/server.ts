@@ -247,6 +247,7 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
   const configuredMetadataUrl = authConfig
     ? new URL(protectedResourceMetadataUrl(authConfig.resource_url))
     : new URL("http://localhost/.well-known/oauth-protected-resource/mcp");
+  let localMcpResourceUrl: string | null = null;
 
   const handleMcpRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     const url = new URL(request.url ?? "/", `http://${WEBGPT_V4_HOST}`);
@@ -260,9 +261,27 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
       return;
     }
     const isCompatibilityMetadataPath = url.pathname === "/.well-known/oauth-protected-resource" && url.search === "";
+    // The local MCP transport is always mounted at /mcp, even when a secure
+    // tunnel gives the public resource a longer, path-based audience. Tunnel
+    // discovery derives PRMD from the local target, so keep this transport
+    // alias alongside the public resource's path-aware metadata endpoint.
+    const isLocalMcpMetadataPath = url.pathname === "/.well-known/oauth-protected-resource/mcp" && url.search === "";
     const isConfiguredMetadataPath = url.pathname === configuredMetadataUrl.pathname && url.search === configuredMetadataUrl.search;
-    if (request.method === "GET" && (isCompatibilityMetadataPath || isConfiguredMetadataPath)) {
-      sendJson(response, 200, protectedResourceMetadata(authConfig, webGptV4ScopesForProfile(profile)));
+    if (request.method === "GET" && (isCompatibilityMetadataPath || isLocalMcpMetadataPath || isConfiguredMetadataPath)) {
+      const metadata = protectedResourceMetadata(authConfig, webGptV4ScopesForProfile(profile));
+      const shouldExposeLocalMcpResource = isLocalMcpMetadataPath
+        || (isCompatibilityMetadataPath && !isConfiguredMetadataPath);
+      if (authConfig && shouldExposeLocalMcpResource && localMcpResourceUrl) {
+        // tunnel-client discovers OAuth through the private MCP target and
+        // rewrites this resource to the OpenAI-hosted Tunnel URL for callers.
+        // Keep JWT validation bound to the configured public audience while
+        // preventing the local transport alias from recursively probing that
+        // public URL. The /mcp alias wins when the configured public resource
+        // also ends in /mcp because the private listener cannot represent both
+        // identities at the same path.
+        metadata.resource = localMcpResourceUrl;
+      }
+      sendJson(response, 200, metadata);
       return;
     }
     if (url.pathname !== "/mcp") {
@@ -275,7 +294,14 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
       actor = await authenticate(request);
     } catch (error) {
       const safe = errorBody(error);
-      sendJson(response, 401, { jsonrpc: "2.0", id: null, error: { code: -32001, message: safe.message, data: safe } }, { "www-authenticate": wwwAuthenticate(authConfig, safe.code === "AUTH_REQUIRED" ? "invalid_request" : "invalid_token") });
+      // The private MCP endpoint must challenge with its private discovery URL.
+      // tunnel-client rewrites this URL to the OpenAI-hosted Tunnel resource for
+      // connector callers. Advertising the public URL here makes the client's
+      // startup probe recurse into the not-yet-ready Tunnel endpoint.
+      const localChallengeConfig = authConfig && localMcpResourceUrl
+        ? { ...authConfig, resource_url: localMcpResourceUrl }
+        : authConfig;
+      sendJson(response, 401, { jsonrpc: "2.0", id: null, error: { code: -32001, message: safe.message, data: safe } }, { "www-authenticate": wwwAuthenticate(localChallengeConfig, safe.code === "AUTH_REQUIRED" ? "invalid_request" : "invalid_token") });
       return;
     }
     let parsedBody: Record<string, unknown> | undefined;
@@ -399,6 +425,7 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
   }) : null;
 
   const mcpPort = await listen(mcpServer, options.mcp_port ?? WEBGPT_V4_MCP_PORT);
+  localMcpResourceUrl = `http://${WEBGPT_V4_HOST}:${mcpPort}/mcp`;
   let mediaPort: number | null = null;
   try {
     mediaPort = mediaServer ? await listen(mediaServer, options.media_port ?? WEBGPT_V4_MEDIA_PORT) : null;

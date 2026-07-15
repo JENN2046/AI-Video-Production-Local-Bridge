@@ -4,7 +4,7 @@ import test from "node:test";
 
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 
-import { createAuth0Authenticator, createAuth0MediaAuthenticator, createOAuthAuthenticator, loadWebGptV4AuthConfig, protectedResourceMetadataUrl, wwwAuthenticate, type WebGptV4Auth0Config } from "../src/webgpt-v4/auth.js";
+import { createAuth0Authenticator, createAuth0MediaAuthenticator, createOAuthAuthenticator, loadWebGptV4AuthConfig, protectedResourceMetadata, protectedResourceMetadataUrl, wwwAuthenticate, type WebGptV4Auth0Config } from "../src/webgpt-v4/auth.js";
 import { principalIdFromFederatedSubject, sha256, WebGptV4Error } from "../src/webgpt-v4/types.js";
 
 test("Auth0 verifier enforces JWKS signature, issuer, audience, expiry, subject allowlist, and scopes", async () => {
@@ -72,19 +72,28 @@ test("OAuth environment configuration fails closed for incomplete or non-HTTPS e
     WEBGPT_V4_DESCOPE_ISSUER: "https://api.descope.com/project-fixture",
     WEBGPT_V4_DESCOPE_AUDIENCE: "https://mcp.example.test/mcp",
     WEBGPT_V4_DESCOPE_JWKS_URI: "https://api.descope.com/project-fixture/.well-known/jwks.json",
+    WEBGPT_V4_DESCOPE_AUTHORIZATION_SERVER_URL: "https://api.descope.com/v1/apps/agentic/project-fixture/resource-fixture",
     WEBGPT_V4_RESOURCE_URL: "https://mcp.example.test/mcp"
   } as NodeJS.ProcessEnv;
   assert.equal(loadWebGptV4AuthConfig("full", auth0)?.issuer, "https://tenant.example.test/");
-  assert.equal(loadWebGptV4AuthConfig("readonly", descope)?.provider, "descope");
-  assert.equal(loadWebGptV4AuthConfig("readonly", descope)?.issuer, "https://api.descope.com/project-fixture");
+  const descopeConfig = loadWebGptV4AuthConfig("readonly", descope);
+  assert.equal(descopeConfig?.provider, "descope");
+  assert.equal(descopeConfig?.issuer, "https://api.descope.com/project-fixture");
+  assert.equal(descopeConfig?.provider === "descope" ? descopeConfig.authorization_server_url : undefined, "https://api.descope.com/v1/apps/agentic/project-fixture/resource-fixture");
   assert.equal(loadWebGptV4AuthConfig("readonly", auth0), null, "readonly must not fall back to Auth0");
   assert.equal(loadWebGptV4AuthConfig("full", descope), null, "full must not use Descope");
   assert.equal(loadWebGptV4AuthConfig("full", { ...auth0, WEBGPT_V4_AUTH0_ISSUER: "http://tenant.example.test" }), null);
   assert.equal(loadWebGptV4AuthConfig("full", { ...auth0, WEBGPT_V4_ALLOWED_SUBJECT_SHA256: "plaintext-subject" }), null);
   assert.equal(loadWebGptV4AuthConfig("readonly", { ...descope, WEBGPT_V4_DESCOPE_JWKS_URI: "http://api.descope.test/jwks" }), null);
   assert.equal(loadWebGptV4AuthConfig("readonly", { ...descope, WEBGPT_V4_DESCOPE_JWKS_URI: "" }), null);
+  assert.equal(loadWebGptV4AuthConfig("readonly", { ...descope, WEBGPT_V4_DESCOPE_AUTHORIZATION_SERVER_URL: "" }), null);
+  assert.equal(loadWebGptV4AuthConfig("readonly", { ...descope, WEBGPT_V4_DESCOPE_AUTHORIZATION_SERVER_URL: "http://api.descope.test/resource" }), null);
+  assert.equal(loadWebGptV4AuthConfig("readonly", { ...descope, WEBGPT_V4_DESCOPE_AUTHORIZATION_SERVER_URL: "https://api.descope.com/resource?mode=cimd" }), null);
+  assert.equal(loadWebGptV4AuthConfig("readonly", { ...descope, WEBGPT_V4_DESCOPE_ISSUER: "https://api.descope.com/project-fixture?tenant=other" }), null);
   assert.equal(loadWebGptV4AuthConfig("readonly", { ...descope, WEBGPT_V4_RESOURCE_URL: "https://mcp.example.test/mcp#fragment" }), null);
   assert.equal(loadWebGptV4AuthConfig("readonly", { ...descope, WEBGPT_V4_DESCOPE_AUDIENCE: "https://other-resource.example/mcp" }), null);
+  const descopeMetadata = protectedResourceMetadata(descopeConfig);
+  assert.deepEqual(descopeMetadata.authorization_servers, ["https://api.descope.com/v1/apps/agentic/project-fixture/resource-fixture"]);
   const challenge = wwwAuthenticate({ ...loadWebGptV4AuthConfig("full", auth0)!, resource_url: "https://mcp.example.test/mcp" });
   assert.equal(challenge.includes("https://mcp.example.test/.well-known/oauth-protected-resource/mcp"), true);
   assert.equal(challenge.includes("/mcp/.well-known"), false);
@@ -114,6 +123,7 @@ test("Descope verifier accepts multiple subjects and derives issuer-bound opaque
     issuer,
     audience,
     resource_url: audience,
+    authorization_server_url: "https://api.descope.com/v1/apps/agentic/project-fixture/resource-fixture",
     jwks_uri: `http://127.0.0.1:${address.port}/jwks.json`
   };
   const sign = (subject: string, claims: Record<string, unknown> = { scopes: ["projects.read"] }) => new SignJWT(claims)

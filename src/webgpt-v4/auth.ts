@@ -13,6 +13,7 @@ interface WebGptV4AuthConfigBase {
 
 export interface WebGptV4DescopeAuthConfig extends WebGptV4AuthConfigBase {
   provider: "descope";
+  authorization_server_url: string;
 }
 
 export interface WebGptV4Auth0Config extends WebGptV4AuthConfigBase {
@@ -37,6 +38,12 @@ function secureUrl(value: string): boolean {
   }
 }
 
+function secureIssuerIdentifier(value: string): boolean {
+  if (!secureUrl(value)) return false;
+  const parsed = new URL(value);
+  return !parsed.search;
+}
+
 function authBase(
   issuerValue: string | undefined,
   audienceValue: string | undefined,
@@ -47,7 +54,7 @@ function authBase(
   const issuer = issuerValue?.trim() ?? "";
   const audience = audienceValue?.trim() ?? "";
   const resourceUrl = env.WEBGPT_V4_RESOURCE_URL?.trim() ?? "";
-  if (!issuer || !audience || !resourceUrl || !secureUrl(issuer) || !secureUrl(resourceUrl)) return null;
+  if (!issuer || !audience || !resourceUrl || !secureIssuerIdentifier(issuer) || !secureUrl(resourceUrl)) return null;
   const normalizedIssuer = options.issuer_trailing_slash === false ? trimSlash(issuer) : `${trimSlash(issuer)}/`;
   const explicitJwksUri = jwksValue?.trim() ?? "";
   if (options.require_explicit_jwks && !explicitJwksUri) return null;
@@ -68,7 +75,10 @@ export function loadWebGptV4AuthConfig(
       env,
       { require_explicit_jwks: true, issuer_trailing_slash: false }
     );
-    return base && base.audience === base.resource_url ? { provider: "descope", ...base } : null;
+    const authorizationServerUrl = env.WEBGPT_V4_DESCOPE_AUTHORIZATION_SERVER_URL?.trim() ?? "";
+    return base && base.audience === base.resource_url && secureIssuerIdentifier(authorizationServerUrl)
+      ? { provider: "descope", ...base, authorization_server_url: trimSlash(authorizationServerUrl) }
+      : null;
   }
   const base = authBase(
     env.WEBGPT_V4_AUTH0_ISSUER,
@@ -160,7 +170,9 @@ export function protectedResourceMetadata(config: WebGptV4AuthConfig | null, sco
   return {
     resource: config?.resource_url ?? "",
     resource_name: "AI Video Production Assistant",
-    authorization_servers: config ? [config.issuer] : [],
+    authorization_servers: config
+      ? [config.provider === "descope" ? config.authorization_server_url : config.issuer]
+      : [],
     scopes_supported: [...scopes],
     bearer_methods_supported: ["header"],
     configured: Boolean(config)

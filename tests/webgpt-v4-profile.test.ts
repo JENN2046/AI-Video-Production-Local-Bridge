@@ -140,7 +140,7 @@ test("full profile remains explicit and invalid profiles fail closed", async () 
     (error: unknown) => error instanceof WebGptV4Error && error.code === "INVALID_WEBGPT_AUTH_PROVIDER"
   );
   await assert.rejects(
-    () => startWebGptV4({ profile: "full", auth_config: { provider: "descope", ...commonAuth } }),
+    () => startWebGptV4({ profile: "full", auth_config: { provider: "descope", ...commonAuth, authorization_server_url: "https://issuer.example.test/agentic/resource" } }),
     (error: unknown) => error instanceof WebGptV4Error && error.code === "INVALID_WEBGPT_AUTH_PROVIDER"
   );
   const root = mkdtempSync(join(tmpdir(), "webgpt-v4-full-profile-"));
@@ -196,7 +196,8 @@ test("WebGPT preflight skips media dependencies for the readonly profile", () =>
         WEBGPT_V4_DESCOPE_ISSUER: "https://api.descope.com/project-fixture/",
         WEBGPT_V4_DESCOPE_AUDIENCE: "https://workspace.example.test",
         WEBGPT_V4_RESOURCE_URL: "https://workspace.example.test",
-        WEBGPT_V4_DESCOPE_JWKS_URI: "https://api.descope.com/project-fixture/.well-known/jwks.json"
+        WEBGPT_V4_DESCOPE_JWKS_URI: "https://api.descope.com/project-fixture/.well-known/jwks.json",
+        WEBGPT_V4_DESCOPE_AUTHORIZATION_SERVER_URL: "https://api.descope.com/v1/apps/agentic/project-fixture/resource-fixture"
       }
     });
     const report = JSON.parse(output) as { ok: boolean; webgpt_profile: string; checks: Record<string, { ok: boolean; detail: string }> };
