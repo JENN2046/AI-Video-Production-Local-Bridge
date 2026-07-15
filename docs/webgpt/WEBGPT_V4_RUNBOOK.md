@@ -1,6 +1,6 @@
 # WebGPT V4 本地运行与外部接线手册
 
-状态：`webgpt-v4.2.0` 多用户 Readonly 服务面已实现；外部 Descope/ChatGPT connector、Secure MCP Tunnel、媒体域名和 Windows 自动启动尚未配置。
+状态：接受的本地运行基线仍为 `webgpt-v4.2.0`；仓库候选运行时已建立 provider-neutral Federated OAuth、issuer binding 与安全 discovery/JWKS transport。外部 IdP/ChatGPT connector、Secure MCP Tunnel、媒体域名和 Windows 自动启动尚未通过新路线验收。
 
 ## 固定边界
 
@@ -24,7 +24,11 @@ npm run test:webgpt:v4
 npm run start:webgpt
 ```
 
-普通 `preflight` 和 `/readyz` 证明本地服务边界，不代表 ChatGPT 已接受外部 OAuth discovery。外部 Readonly 接线前必须另外运行 `preflight:webgpt:oauth`；这个独立命令不打开数据库，要求 RFC 8414 metadata 的 `issuer` 与 PRMD 中的 authorization-server identifier 完全一致，并要求 PKCE S256、public client token auth `none` 及 CIMD/DCR 至少一种注册能力。探针当前只允许 `api.descope.com`，不发送 credential、不跟随 redirect、不输出 endpoint identifier 或 response body。Provider 自定义的 appended-path metadata 只作为诊断证据，不能把标准 discovery 失败提升为 PASS。
+普通 `preflight` 和 `/readyz` 证明本地服务边界，不代表 ChatGPT 已接受外部 OAuth discovery。外部 Readonly 接线前必须另外运行 `preflight:webgpt:oauth`；这个独立命令不打开数据库，先按 RFC 8414 规则从 issuer 推导 metadata URL，不可用时再尝试 OIDC discovery。两条路径都要求匿名 `200`、精确 issuer、精确 JWKS URI、HTTPS authorize/token/JWKS、PKCE S256 与 public client token auth `none`；`cimd` 还要求 CIMD capability，`dcr` 还要求 HTTPS registration endpoint，`predefined` 把外部 Client ID 验证保留给真实连接验收。
+
+Discovery 与运行时 JWKS refresh 共用 DNS-pinned HTTPS transport：拒绝 loopback/private/link-local/multicast/reserved 地址和混合公私 DNS 结果，禁止 redirect，单次超时 10 秒，metadata/JWKS 上限 256 KiB。任何注入测试 transport 都必须接收已验证的 pinned address；普通 injected `fetch` 或代理不能替代这个边界。探针不发送 credential，也不输出 endpoint identifier 或 response body。Descope vendor-appended metadata 仅进入 legacy 诊断，不能把标准 discovery 失败提升为 PASS。
+
+探针公共结果只使用以下稳定 code：`OAUTH_DISCOVERY_COMPATIBLE`、`OAUTH_DISCOVERY_FETCH_FAILED`、`OAUTH_DISCOVERY_STANDARD_METADATA_UNAVAILABLE`、`OAUTH_DISCOVERY_ISSUER_MISMATCH`、`OAUTH_DISCOVERY_PKCE_S256_MISSING`、`OAUTH_DISCOVERY_PUBLIC_CLIENT_UNSUPPORTED`、`OAUTH_DISCOVERY_CIMD_MISSING`、`OAUTH_DISCOVERY_DCR_MISSING`、`OAUTH_DISCOVERY_JWKS_MISMATCH`、`OAUTH_DISCOVERY_UNSAFE_IDENTIFIER`、`OAUTH_DISCOVERY_UNSAFE_NETWORK_TARGET`、`OAUTH_DISCOVERY_RESPONSE_TOO_LARGE`、`OAUTH_DISCOVERY_INVALID_JSON`。输出只包含布尔检查、HTTP status、所用标准路径类型和注册状态，不包含实际 URL 或 metadata body。
 
 未配置 OAuth 时，服务仍可启动用于本机健康检查，但 `/readyz` 返回 `503`，`/mcp` 拒绝所有调用。这是预期的 fail-closed 状态。
 
@@ -53,10 +57,17 @@ GET http://127.0.0.1:2092/healthz
 
 以下四组均属于外部连接或生产配置，执行前需要 Jenn 单独确认目标、范围和回滚方式。
 
-### Descope Readonly
+### Federated Readonly
+
+- 通用配置使用 `WEBGPT_V4_READONLY_OAUTH_ISSUER`、`WEBGPT_V4_READONLY_OAUTH_AUDIENCE`、`WEBGPT_V4_READONLY_OAUTH_JWKS_URI` 和显式 `WEBGPT_V4_READONLY_OAUTH_CLIENT_REGISTRATION`
+- issuer 同时是 PRMD authorization server 与 JWT `iss`；audience 必须与 `WEBGPT_V4_RESOURCE_URL` 完全相同
+- IdP 只认证身份；本地 issuer-bound principal/membership 始终是 production-project 授权权威
+- 首选 Provider 与 predefined public client 仍需 Stage 0 capability gate 后确定
+
+### Descope Readonly（legacy adapter）
 
 - 目标 Descope project、MCP Server Resource、Agentic Client、issuer、resource audience 与显式 HTTPS JWKS URI
-- 客户端注册优先使用 CIMD，DCR 仅作为兼容回退；预注册客户端必须是 public/non-confidential、PKCE S256、token auth `none`
+- 旧 Descope 配置固定为 `cimd` legacy adapter；vendor-specific metadata 只能提供诊断，不能声明 portability-compatible
 - ChatGPT connector 只申请 `projects.read`
 - principal 由 issuer 与 subject 派生为不可逆 SHA-256；不保存原始 subject 或邮箱
 - 先在活动库副本验证 migration `0008`，再经单独授权迁移活动库并 bootstrap issuer-bound first owner
@@ -101,7 +112,7 @@ GET http://127.0.0.1:2092/healthz
 1. 本地 V4 单元、MCP/Auth、媒体和元数据测试。
 2. V2、H1、前端、浏览器与生产构建回归。
 3. 对数据库副本验证 migration `0008`、issuer binding、owner bootstrap、viewer grant/revoke 和 immediate readiness failure。
-4. 按 [External Multi-User Readonly Connection — Preflight](../EXTERNAL_MULTI_USER_READONLY_CONNECTION_PREFLIGHT.md) 完成 Descope `projects.read`、ChatGPT app 与官方 Tunnel 接线。
+4. 先完成首选 IdP Stage 0 capability gate；随后按 provider-neutral taskbook 完成 `projects.read`、predefined public client、ChatGPT app 与官方 Tunnel 接线。旧 [External Multi-User Readonly Connection — Preflight](../EXTERNAL_MULTI_USER_READONLY_CONNECTION_PREFLIGHT.md) 仅保留为 Descope 历史路线证据。
 5. 使用两个真实用户完成 Developer Mode 只读黄金提示集和跨项目拒绝验证。
 6. Full/Auth0、写 scopes 和媒体域名分别制定新计划，不由 Readonly 验收自动开放。
 

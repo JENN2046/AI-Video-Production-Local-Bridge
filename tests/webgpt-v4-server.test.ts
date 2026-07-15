@@ -420,14 +420,16 @@ test("protected-resource metadata preserves the public resource path and exposes
     const origin = runtime.mcp_url.replace(/\/mcp$/, "");
     const metadata = await fetch(`${origin}/.well-known/oauth-protected-resource/tenant/mcp`);
     assert.equal(metadata.status, 200);
-    const metadataBody = await metadata.json() as { resource: string };
+    const metadataBody = await metadata.json() as { resource: string; authorization_servers: string[] };
     assert.equal(metadataBody.resource, "https://mcp.example.test/tenant/mcp");
+    assert.deepEqual(metadataBody.authorization_servers, ["https://auth.example.test/"]);
     const localTransportMetadata = await fetch(`${origin}/.well-known/oauth-protected-resource/mcp`);
     assert.equal(localTransportMetadata.status, 200);
     assert.deepEqual(await localTransportMetadata.json(), {
       ...metadataBody,
       resource: runtime.mcp_url
     });
+    assert.deepEqual((await (await fetch(`${origin}/.well-known/oauth-protected-resource/mcp`)).json() as { authorization_servers: string[] }).authorization_servers, ["https://auth.example.test/"]);
     const compatibilityMetadata = await fetch(`${origin}/.well-known/oauth-protected-resource`);
     assert.equal(compatibilityMetadata.status, 200);
     assert.deepEqual(await compatibilityMetadata.json(), {

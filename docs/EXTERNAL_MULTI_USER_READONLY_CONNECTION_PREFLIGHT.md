@@ -1,6 +1,6 @@
 # External Multi-User Readonly Connection — Preflight
 
-Status: prepared; no external or local authorization state changed
+Status: historical Descope route; retained as evidence, not the current portability implementation gate
 
 Baseline: `main@385144d`, package `0.1.0-beta.4`, MCP service `webgpt-v4.2.0`
 
@@ -57,7 +57,7 @@ The phases below are ordered. Do not begin ChatGPT app discovery before local ow
 
 1. Keep all secret values in ignored local secret storage. Do not print, copy, commit, or include them in receipts.
 2. Write only the non-secret values required by `.env.example`: resource URL, issuer, audience, and JWKS URI.
-3. Run `npm run preflight -- --profile=webgpt`, then run the separate `npm run preflight:webgpt:oauth`, with `WEBGPT_V4_PROFILE=readonly` and `REAL_PROVIDER_ENABLED=false`. The dedicated OAuth command does not open the database or inspect local business state; it performs anonymous metadata GETs only against the current `api.descope.com` allowlist and reports stable compatibility codes without printing endpoint identifiers or response bodies. A future Descope custom domain requires a separately reviewed allowlist change.
+3. Run `npm run preflight -- --profile=webgpt`, then run the separate `npm run preflight:webgpt:oauth`, with `WEBGPT_V4_PROFILE=readonly` and `REAL_PROVIDER_ENABLED=false`. The dedicated OAuth command does not open the database or inspect local business state. Current candidate code uses provider-neutral DNS-pinned RFC 8414/OIDC discovery and reports stable compatibility codes without printing endpoint identifiers or response bodies. This historical Descope configuration enters the legacy adapter and vendor-appended metadata cannot satisfy the portability gate.
 4. Start WebGPT and verify `/healthz=200`, canonical PRMD `=200`, anonymous `/mcp=401`, and `/readyz=503` until an active owner exists.
 5. Under a separate database-write authorization, back up the activity database and run `npm run auth:webgpt:bootstrap-owner -- -DatabasePath <path> -Issuer <https-issuer> -ProjectId <production-project-id>`.
 6. Enter the Descope subject only in the hidden prompt; the helper derives the issuer-bound principal and performs the atomic owner bootstrap without printing or persisting the raw subject.

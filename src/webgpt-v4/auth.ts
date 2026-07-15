@@ -1,6 +1,7 @@
 import type { IncomingMessage } from "node:http";
-import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
+import { createRemoteJWKSet, customFetch, jwtVerify, type JWTVerifyGetKey } from "jose";
 
+import { createBoundedPinnedFetch, type PinnedHttpsRuntime } from "../net/pinnedHttpsTransport.js";
 import { actorFromFederatedSubject, actorFromSubject, issuerHash, sha256, WebGptV4Error, WEBGPT_V4_SCOPES, type WebGptV4Actor, type WebGptV4Scope } from "./types.js";
 import type { WebGptV4Profile } from "./toolCatalog.js";
 
@@ -206,8 +207,16 @@ function cookieValue(request: IncomingMessage, name: string): string {
   throw new WebGptV4Error("AUTH_REQUIRED", "A valid OAuth media session is required.");
 }
 
-function createTokenAuthenticator(config: WebGptV4AuthConfig, jwksOverride?: JWTVerifyGetKey): (token: string) => Promise<WebGptV4Actor> {
-  const jwks = jwksOverride ?? createRemoteJWKSet(new URL(config.jwks_uri));
+export interface WebGptV4AuthenticatorOptions {
+  jwks?: JWTVerifyGetKey;
+  jwks_transport?: PinnedHttpsRuntime;
+}
+
+function createTokenAuthenticator(config: WebGptV4AuthConfig, options: WebGptV4AuthenticatorOptions = {}): (token: string) => Promise<WebGptV4Actor> {
+  const jwks = options.jwks ?? createRemoteJWKSet(new URL(config.jwks_uri), {
+    timeoutDuration: 10_000,
+    [customFetch]: createBoundedPinnedFetch(options.jwks_transport, { max_bytes: 256 * 1024, timeout_ms: 10_000 })
+  });
   return async (token) => {
     let payload: Awaited<ReturnType<typeof jwtVerify>>["payload"];
     try {
@@ -250,21 +259,22 @@ function createTokenAuthenticator(config: WebGptV4AuthConfig, jwksOverride?: JWT
   };
 }
 
-export function createOAuthAuthenticator(config: WebGptV4AuthConfig, options: { jwks?: JWTVerifyGetKey } = {}): WebGptV4Authenticator {
+export function createOAuthAuthenticator(config: WebGptV4AuthConfig, options: WebGptV4AuthenticatorOptions = {}): WebGptV4Authenticator {
   assertWebGptV4AuthConfig(config);
-  const authenticateToken = createTokenAuthenticator(config, options.jwks);
+  const authenticateToken = createTokenAuthenticator(config, options);
   return async (request) => authenticateToken(bearerToken(request));
 }
 
-export function createAuth0Authenticator(config: WebGptV4Auth0Config): WebGptV4Authenticator {
-  return createOAuthAuthenticator(config);
+export function createAuth0Authenticator(config: WebGptV4Auth0Config, options: WebGptV4AuthenticatorOptions = {}): WebGptV4Authenticator {
+  return createOAuthAuthenticator(config, options);
 }
 
 export function createAuth0MediaAuthenticator(
   config: WebGptV4Auth0Config,
-  cookieName = "__Host-webgpt_v4_media"
+  cookieName = "__Host-webgpt_v4_media",
+  options: WebGptV4AuthenticatorOptions = {}
 ): WebGptV4Authenticator {
-  const authenticateToken = createTokenAuthenticator(config);
+  const authenticateToken = createTokenAuthenticator(config, options);
   return async (request) => {
     const header = request.headers.authorization ?? "";
     const match = /^Bearer\s+(.+)$/i.exec(header);
