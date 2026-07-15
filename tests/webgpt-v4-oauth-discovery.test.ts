@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import test from "node:test";
 
-import type { PinnedHttpsRuntime } from "../src/net/pinnedHttpsTransport.js";
+import { createPinnedLookup, isUnsafeNetworkHost, type PinnedHttpsRuntime } from "../src/net/pinnedHttpsTransport.js";
 import {
   oidcAuthorizationServerMetadataUrl,
   probeWebGptOAuthDiscovery,
@@ -95,6 +95,31 @@ test("standard metadata URL builders preserve path-based issuer semantics", () =
     "https://tenant.example.test/oauth?tenant=other",
     "https://tenant.example.test/oauth#fragment"
   ]) assert.throws(() => rfc8414AuthorizationServerMetadataUrl(unsafe), /OAUTH_DISCOVERY_UNSAFE_IDENTIFIER/);
+});
+
+test("pinned lookup supports Node 22 all-address callbacks and blocks NAT64 private-address aliases", async () => {
+  const address = { address: "8.8.8.8", family: 4 as const };
+  const lookup = createPinnedLookup(address);
+  const allResult = await new Promise<{ result: string | Array<{ address: string; family: number }>; family?: number }>((resolve) => {
+    lookup("tenant.example.test", { all: true }, (_error, result, family) => resolve({ result, family }));
+  });
+  assert.deepEqual(allResult, { result: [address], family: undefined });
+  const oneResult = await new Promise<{ result: string | Array<{ address: string; family: number }>; family?: number }>((resolve) => {
+    lookup("tenant.example.test", { all: false }, (_error, result, family) => resolve({ result, family }));
+  });
+  assert.deepEqual(oneResult, { result: "8.8.8.8", family: 4 });
+  assert.equal(isUnsafeNetworkHost("64:ff9b::a9fe:a9fe"), true);
+
+  let transported = false;
+  const result = await probeWebGptOAuthDiscovery(genericConfig(), {
+    resolve_hostname: async () => [{ address: "64:ff9b::a9fe:a9fe", family: 6 }],
+    fetch_pinned_address: async () => {
+      transported = true;
+      return new Response(null, { status: 200 });
+    }
+  });
+  assert.equal(result.code, "OAUTH_DISCOVERY_UNSAFE_NETWORK_TARGET");
+  assert.equal(transported, false);
 });
 
 test("metadata validation enforces exact issuer, endpoints, JWKS, PKCE, public client, and selected registration mode", () => {

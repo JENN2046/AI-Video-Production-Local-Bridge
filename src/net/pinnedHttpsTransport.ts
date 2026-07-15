@@ -1,4 +1,5 @@
 import { lookup } from "node:dns/promises";
+import type { LookupAddress, LookupOptions } from "node:dns";
 import { request as httpsRequest } from "node:https";
 import { BlockList, isIP } from "node:net";
 import { Readable } from "node:stream";
@@ -27,6 +28,7 @@ for (const [network, prefix] of [
   ["::", 96],
   ["::", 128],
   ["::1", 128],
+  ["64:ff9b::", 96],
   ["64:ff9b:1::", 48],
   ["100::", 64],
   ["2001::", 32],
@@ -130,12 +132,23 @@ export async function abortable<T>(promise: Promise<T>, signal: AbortSignal): Pr
   });
 }
 
+export function createPinnedLookup(address: PinnedNetworkAddress): (
+  hostname: string,
+  options: LookupOptions,
+  callback: (error: NodeJS.ErrnoException | null, result: string | LookupAddress[], family?: number) => void
+) => void {
+  return (_hostname, options, callback) => {
+    if (options.all === true) callback(null, [address]);
+    else callback(null, address.address, address.family);
+  };
+}
+
 export async function pinnedHttpsFetch(url: URL, signal: AbortSignal, address: PinnedNetworkAddress): Promise<Response> {
   return await new Promise<Response>((resolveResponse, rejectResponse) => {
     const request = httpsRequest(url, {
       method: "GET",
       signal,
-      lookup: (_hostname, _options, callback) => callback(null, address.address, address.family)
+      lookup: createPinnedLookup(address)
     }, (response) => {
       const headers = new Headers();
       for (const [name, value] of Object.entries(response.headers)) {
