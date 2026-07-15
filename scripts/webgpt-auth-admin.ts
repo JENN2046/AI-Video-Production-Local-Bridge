@@ -81,7 +81,7 @@ try {
       writableDb.close();
     }
   }
-  if (request.action === "bind-principal-interactive") {
+  if (request.action === "bind-principal-preflight" || request.action === "bind-principal-interactive") {
     const preflightDb = openM0DatabaseConnection(request.database_path, { readOnly: true });
     try { assertSchemaCurrent(preflightDb); }
     finally { preflightDb.close(); }
@@ -89,8 +89,11 @@ try {
     try { assertWebGptPrincipalBindingWritable(writableDb); }
     finally { writableDb.close(); }
   }
-  if (request.action === "bootstrap-owner-preflight") {
-    console.log(JSON.stringify({ result: "PASS", action: request.action, target_valid: true }, null, 2));
+  if (request.action === "bootstrap-owner-preflight" || request.action === "bind-principal-preflight") {
+    console.log(JSON.stringify({
+      result: "PASS", action: request.action,
+      ...(request.action === "bootstrap-owner-preflight" ? { target_valid: true } : { binding_writable: true })
+    }, null, 2));
   } else {
     const interactive = request.action === "bootstrap-owner-interactive" || request.action === "bind-principal-interactive";
     const subject = interactive ? await readSubjectFromSecureStdin() : undefined;

@@ -5,7 +5,7 @@ import type { M0Database } from "../storage/sqlite.js";
 import { WEBGPT_AUTHORIZATION_WORKSPACE_ID } from "../storage/migrations.js";
 
 export type WebGptProjectRole = "owner" | "viewer";
-export type WebGptAuthAdminAction = "bootstrap-owner" | "bootstrap-owner-preflight" | "bootstrap-owner-interactive" | "bind-principal-interactive" | "register" | "grant" | "revoke" | "list";
+export type WebGptAuthAdminAction = "bootstrap-owner" | "bootstrap-owner-preflight" | "bootstrap-owner-interactive" | "bind-principal-preflight" | "bind-principal-interactive" | "register" | "grant" | "revoke" | "list";
 
 export interface WebGptAuthAdminRequest {
   action: WebGptAuthAdminAction;
@@ -61,8 +61,8 @@ function validateIssuer(value: string | undefined): string {
 
 export function parseWebGptAuthAdminArguments(argv: readonly string[]): WebGptAuthAdminRequest {
   const [actionRaw, ...rest] = argv;
-  if (!(["bootstrap-owner", "bootstrap-owner-preflight", "bootstrap-owner-interactive", "bind-principal-interactive", "register", "grant", "revoke", "list"] as const).includes(actionRaw as WebGptAuthAdminAction)) {
-    throw new WebGptAuthAdminInputError("Action must be bootstrap-owner, bootstrap-owner-preflight, bootstrap-owner-interactive, bind-principal-interactive, register, grant, revoke, or list.");
+  if (!(["bootstrap-owner", "bootstrap-owner-preflight", "bootstrap-owner-interactive", "bind-principal-preflight", "bind-principal-interactive", "register", "grant", "revoke", "list"] as const).includes(actionRaw as WebGptAuthAdminAction)) {
+    throw new WebGptAuthAdminInputError("Action must be bootstrap-owner, bootstrap-owner-preflight, bootstrap-owner-interactive, bind-principal-preflight, bind-principal-interactive, register, grant, revoke, or list.");
   }
   const values = new Map<string, string>();
   for (let index = 0; index < rest.length; index += 2) {
@@ -78,6 +78,7 @@ export function parseWebGptAuthAdminArguments(argv: readonly string[]): WebGptAu
     "bootstrap-owner": new Set(["--db", "--principal", "--issuer", "--project", "--reason"]),
     "bootstrap-owner-preflight": new Set(["--db", "--issuer", "--project", "--reason"]),
     "bootstrap-owner-interactive": new Set(["--db", "--issuer", "--project", "--reason"]),
+    "bind-principal-preflight": new Set(["--db", "--issuer"]),
     "bind-principal-interactive": new Set(["--db", "--issuer"]),
     register: new Set(["--db", "--principal", "--reason"]),
     grant: new Set(["--db", "--principal", "--project", "--role", "--reason"]),
@@ -94,15 +95,15 @@ export function parseWebGptAuthAdminArguments(argv: readonly string[]): WebGptAu
   if (!isAbsolute(databasePath)) throw new WebGptAuthAdminInputError("--db must resolve to an absolute path.");
   const action = actionRaw as WebGptAuthAdminAction;
   const request: WebGptAuthAdminRequest = { action, database_path: databasePath };
-  if (action !== "list" && action !== "bootstrap-owner-preflight" && action !== "bootstrap-owner-interactive" && action !== "bind-principal-interactive") request.principal_id = validatePrincipal(values.get("--principal"));
-  if (action === "bootstrap-owner" || action === "bootstrap-owner-preflight" || action === "bootstrap-owner-interactive" || action === "bind-principal-interactive") request.issuer = validateIssuer(values.get("--issuer"));
+  if (action !== "list" && action !== "bootstrap-owner-preflight" && action !== "bootstrap-owner-interactive" && action !== "bind-principal-preflight" && action !== "bind-principal-interactive") request.principal_id = validatePrincipal(values.get("--principal"));
+  if (action === "bootstrap-owner" || action === "bootstrap-owner-preflight" || action === "bootstrap-owner-interactive" || action === "bind-principal-preflight" || action === "bind-principal-interactive") request.issuer = validateIssuer(values.get("--issuer"));
   if (action === "bootstrap-owner" || action === "bootstrap-owner-preflight" || action === "bootstrap-owner-interactive" || action === "grant" || action === "revoke") request.project_id = validateProject(values.get("--project"));
   if (action === "grant") {
     const role = required(values.get("--role"), "--role");
     if (role !== "owner" && role !== "viewer") throw new WebGptAuthAdminInputError("--role must be owner or viewer.");
     request.role = role;
   }
-  if (action !== "list" && action !== "bind-principal-interactive") request.reason_code = validateReason(values.get("--reason"));
+  if (action !== "list" && action !== "bind-principal-preflight" && action !== "bind-principal-interactive") request.reason_code = validateReason(values.get("--reason"));
   return request;
 }
 

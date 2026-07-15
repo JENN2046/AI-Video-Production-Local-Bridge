@@ -19,6 +19,11 @@ if (-not (Test-Path -LiteralPath $resolvedDatabase -PathType Leaf)) {
   throw "Database does not exist."
 }
 
+& node $command bind-principal-preflight `
+  --db $resolvedDatabase `
+  --issuer $Issuer | Out-Null
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 $secureSubject = Read-Host "Federated OAuth subject (input hidden)" -AsSecureString
 $bstr = [IntPtr]::Zero
 $plainSubject = $null

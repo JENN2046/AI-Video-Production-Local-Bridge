@@ -143,6 +143,12 @@ test("admin parser requires an explicit database and rejects raw identity-shaped
   assert.equal(bind.issuer, ISSUER);
   assert.equal(bind.principal_id, undefined);
   assert.equal(bind.reason_code, undefined);
+  const bindPreflight = parseWebGptAuthAdminArguments([
+    "bind-principal-preflight", "--db", "fixture.sqlite", "--issuer", ISSUER
+  ]);
+  assert.equal(bindPreflight.issuer, ISSUER);
+  assert.equal(bindPreflight.principal_id, undefined);
+  assert.equal(bindPreflight.reason_code, undefined);
   const preflight = parseWebGptAuthAdminArguments([
     "bootstrap-owner-preflight", "--db", "fixture.sqlite", "--issuer", "https://issuer.example/", "--project", "project_auth_fixture"
   ]);
@@ -445,6 +451,24 @@ test("interactive principal binding uses hidden subject input and discloses no i
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test("principal binding preflight validates schema and writer access without stdin", () => {
+  const root = mkdtempSync(join(tmpdir(), "webgpt-auth-bind-preflight-"));
+  try {
+    const selected = join(root, "selected.sqlite");
+    const db = new DatabaseSync(selected);
+    runDatabaseMigrations(db);
+    db.close();
+    const command = join(process.cwd(), "dist", "scripts", "webgpt-auth-admin.js");
+    const result = spawnSync(process.execPath, [command, "bind-principal-preflight", "--db", selected,
+      "--issuer", "https://issuer.example"], { encoding: "utf8", env: { ...process.env, NODE_NO_WARNINGS: "1" } });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      result: "PASS", action: "bind-principal-preflight", binding_writable: true
+    });
+    assert.equal(result.stderr, "");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test("interactive owner bootstrap rejects an invalid target before consuming private stdin", async () => {
   const root = mkdtempSync(join(tmpdir(), "webgpt-auth-preflight-"));
   try {
@@ -560,6 +584,9 @@ test("Windows principal-binding wrapper uses the same UTF-8 hidden-input boundar
   const source = readFileSync(wrapper, "utf8");
   assert.match(source, /Read-Host .* -AsSecureString/);
   assert.match(source, /ZeroFreeBSTR/);
+  assert.ok(source.indexOf("bind-principal-preflight") < source.indexOf("Read-Host"));
+  assert.match(source, /bind-principal-preflight[\s\S]*?--issuer \$Issuer \| Out-Null[\s\S]*?Read-Host/,
+    "the binding preflight must complete before the wrapper reads the private subject");
   assert.match(source, /UTF8\.GetBytes\(\$plainSubject\)/);
   assert.match(source, /ToBase64String\(\$subjectBytes\)/);
   assert.match(source, /bind-principal-interactive/);
