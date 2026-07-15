@@ -44,7 +44,7 @@ Migration `0007` creates the authorization tables, constraints, indexes and appe
 Admin commands require `--db`; omission fails with `INVALID_WEBGPT_AUTH_ADMIN_INPUT`. There is no default activity-database target.
 
 ```powershell
-npm run auth:webgpt -- bootstrap-owner --db <path> --principal <opaque-sha256> --project <production-project-id>
+npm run auth:webgpt -- bootstrap-owner --db <path> --principal <opaque-sha256> --issuer <https-issuer> --project <production-project-id>
 npm run auth:webgpt:bootstrap-owner -- -DatabasePath <path> -Issuer <https-issuer> -ProjectId <production-project-id>
 npm run auth:webgpt -- register --db <path> --principal <opaque-sha256>
 npm run auth:webgpt:bind-principal -- -DatabasePath <path> -Issuer <https-issuer>

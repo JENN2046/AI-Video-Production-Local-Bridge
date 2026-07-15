@@ -148,6 +148,14 @@ test("admin parser requires an explicit database and rejects raw identity-shaped
   ]);
   assert.equal(preflight.issuer, "https://issuer.example/");
   assert.equal(preflight.principal_id, undefined);
+  const directBootstrap = parseWebGptAuthAdminArguments([
+    "bootstrap-owner", "--db", "fixture.sqlite", "--principal", PRINCIPAL,
+    "--issuer", "https://issuer.example", "--project", "project_auth_fixture"
+  ]);
+  assert.equal(directBootstrap.issuer, "https://issuer.example/");
+  assert.throws(() => parseWebGptAuthAdminArguments([
+    "bootstrap-owner", "--db", "fixture.sqlite", "--principal", PRINCIPAL, "--project", "project_auth_fixture"
+  ]), /--issuer is required/);
   assert.throws(() => parseWebGptAuthAdminArguments([
     "bootstrap-owner-interactive", "--db", "fixture.sqlite", "--issuer", "http://issuer.example", "--project", "project_auth_fixture"
   ]), /HTTPS issuer URL/);

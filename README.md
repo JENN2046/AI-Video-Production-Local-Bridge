@@ -63,7 +63,7 @@ npm run secret:scan
 `0.1.0-beta.4` 建立了 Descope 多用户只读服务边界，但不自动配置 Descope tenant、ChatGPT connector 或 Tunnel。外部对象模型、CIMD/DCR 决策和双用户验收门禁见 [External Multi-User Readonly Connection — Preflight](docs/EXTERNAL_MULTI_USER_READONLY_CONNECTION_PREFLIGHT.md)。授权管理命令必须显式提供数据库路径，不会默认写入 `data/app.sqlite`：
 
 ```powershell
-npm run auth:webgpt -- bootstrap-owner --db <path> --principal <opaque-sha256> --project <production-project-id>
+npm run auth:webgpt -- bootstrap-owner --db <path> --principal <opaque-sha256> --issuer <https-issuer> --project <production-project-id>
 npm run auth:webgpt:bootstrap-owner -- -DatabasePath <path> -Issuer <https-issuer> -ProjectId <production-project-id>
 npm run auth:webgpt -- register --db <path> --principal <opaque-sha256>
 npm run auth:webgpt:bind-principal -- -DatabasePath <path> -Issuer <https-issuer>
