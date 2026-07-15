@@ -269,12 +269,16 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
     const isConfiguredMetadataPath = url.pathname === configuredMetadataUrl.pathname && url.search === configuredMetadataUrl.search;
     if (request.method === "GET" && (isCompatibilityMetadataPath || isLocalMcpMetadataPath || isConfiguredMetadataPath)) {
       const metadata = protectedResourceMetadata(authConfig, webGptV4ScopesForProfile(profile));
-      if (authConfig && !isConfiguredMetadataPath && (isCompatibilityMetadataPath || isLocalMcpMetadataPath) && localMcpResourceUrl) {
+      const shouldExposeLocalMcpResource = isLocalMcpMetadataPath
+        || (isCompatibilityMetadataPath && !isConfiguredMetadataPath);
+      if (authConfig && shouldExposeLocalMcpResource && localMcpResourceUrl) {
         // tunnel-client discovers OAuth through the private MCP target and
         // rewrites this resource to the OpenAI-hosted Tunnel URL for callers.
         // Keep JWT validation bound to the configured public audience while
-        // preventing either local discovery candidate from recursively probing
-        // that public URL.
+        // preventing the local transport alias from recursively probing that
+        // public URL. The /mcp alias wins when the configured public resource
+        // also ends in /mcp because the private listener cannot represent both
+        // identities at the same path.
         metadata.resource = localMcpResourceUrl;
       }
       sendJson(response, 200, metadata);
