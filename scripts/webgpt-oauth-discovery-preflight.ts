@@ -11,8 +11,8 @@ try {
 }
 
 const auth = loadWebGptV4AuthConfig(profile);
-if (profile !== "readonly" || auth?.provider !== "descope") {
-  console.log(JSON.stringify({ ok: false, code: "OAUTH_DISCOVERY_REQUIRES_READONLY_DESCOPE" }, null, 2));
+if (profile !== "readonly" || auth?.provider !== "federated") {
+  console.log(JSON.stringify({ ok: false, code: "OAUTH_DISCOVERY_REQUIRES_READONLY_FEDERATED" }, null, 2));
   process.exit(1);
 }
 

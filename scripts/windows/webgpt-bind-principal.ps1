@@ -4,12 +4,7 @@ param(
   [string]$DatabasePath,
 
   [Parameter(Mandatory = $true)]
-  [string]$Issuer,
-
-  [Parameter(Mandatory = $true)]
-  [string]$ProjectId,
-
-  [string]$Reason = "LOCAL_ADMIN_APPROVED"
+  [string]$Issuer
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,13 +15,9 @@ $resolvedDatabase = [System.IO.Path]::GetFullPath($DatabasePath)
 if (-not (Test-Path -LiteralPath $command -PathType Leaf)) {
   throw "Build output is missing. Run npm run build:server first."
 }
-
-& node $command bootstrap-owner-preflight `
-  --db $resolvedDatabase `
-  --issuer $Issuer `
-  --project $ProjectId `
-  --reason $Reason | Out-Null
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if (-not (Test-Path -LiteralPath $resolvedDatabase -PathType Leaf)) {
+  throw "Database does not exist."
+}
 
 $secureSubject = Read-Host "Federated OAuth subject (input hidden)" -AsSecureString
 $bstr = [IntPtr]::Zero
@@ -43,11 +34,9 @@ try {
   $subjectBytes = [System.Text.Encoding]::UTF8.GetBytes($plainSubject)
   $encodedSubject = [Convert]::ToBase64String($subjectBytes)
   $OutputEncoding = [System.Text.ASCIIEncoding]::new()
-  $encodedSubject | & node $command bootstrap-owner-interactive `
+  $encodedSubject | & node $command bind-principal-interactive `
     --db $resolvedDatabase `
-    --issuer $Issuer `
-    --project $ProjectId `
-    --reason $Reason
+    --issuer $Issuer
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 } finally {
   $OutputEncoding = $previousOutputEncoding

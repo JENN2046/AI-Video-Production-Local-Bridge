@@ -18,6 +18,7 @@ export interface DatabaseCheckResult {
   media_integrity_errors: number;
   pending_media_activations: number;
   quarantined_media_activations: number;
+  unbound_webgpt_authorization_rows: number;
   check_errors: number;
 }
 
@@ -155,6 +156,7 @@ export function checkDatabase(sqlitePath = paths.sqlitePath): DatabaseCheckResul
         WHERE a.status = 'active' AND b.integrity_state <> 'verified'`
       ,"SELECT COUNT(*) AS count FROM media_activation_journal j LEFT JOIN media_artifacts a ON a.artifact_id = j.artifact_id WHERE j.state = 'committed' AND a.artifact_id IS NULL"
       ,"SELECT COUNT(*) AS count FROM webgpt_project_memberships m LEFT JOIN webgpt_auth_principals p ON p.workspace_id = m.workspace_id AND p.principal_id = m.principal_id WHERE p.principal_id IS NULL"
+      ,"SELECT COUNT(*) AS count FROM webgpt_auth_principal_bindings b LEFT JOIN webgpt_auth_principals p ON p.workspace_id = b.workspace_id AND p.principal_id = b.principal_id WHERE p.principal_id IS NULL"
       ,"SELECT COUNT(*) AS count FROM webgpt_project_memberships m LEFT JOIN projects p ON p.project_id = m.project_id WHERE p.project_id IS NULL"
       ,"SELECT COUNT(*) AS count FROM webgpt_auth_events e LEFT JOIN webgpt_auth_principals p ON p.workspace_id = e.workspace_id AND p.principal_id = e.principal_id WHERE p.principal_id IS NULL"
       ,"SELECT COUNT(*) AS count FROM webgpt_auth_events e LEFT JOIN projects p ON p.project_id = e.project_id WHERE e.project_id IS NOT NULL AND p.project_id IS NULL"
@@ -186,8 +188,14 @@ export function checkDatabase(sqlitePath = paths.sqlitePath): DatabaseCheckResul
     }
     const pendingMediaActivations = scalarCount(db, "SELECT COUNT(*) AS count FROM media_activation_journal WHERE state IN ('staged','file_placed')", errors);
     const quarantinedMediaActivations = scalarCount(db, "SELECT COUNT(*) AS count FROM media_activation_journal WHERE state = 'failed'", errors);
-    const pass = quickCheck === "ok" && schemaCurrent && errors.length === 0 && invalidJsonRows === 0 && structuredDriftRows === 0 && orphanRows === 0 && missingMediaFiles === 0 && mediaIntegrityErrors === 0 && pendingMediaActivations === 0 && quarantinedMediaActivations === 0;
-    return { result: pass ? "PASS" : "FAIL", quick_check: quickCheck, schema_current: schemaCurrent, invalid_json_rows: invalidJsonRows, structured_drift_rows: structuredDriftRows, orphan_rows: orphanRows, missing_media_files: missingMediaFiles, media_integrity_errors: mediaIntegrityErrors, pending_media_activations: pendingMediaActivations, quarantined_media_activations: quarantinedMediaActivations, check_errors: errors.length };
+    const unboundWebGptAuthorizationRows = scalarCount(db, `SELECT COUNT(*) AS count FROM webgpt_auth_principals p
+      LEFT JOIN webgpt_auth_principal_bindings b ON b.workspace_id = p.workspace_id AND b.principal_id = p.principal_id
+      WHERE p.status = 'active' AND b.principal_id IS NULL`, errors)
+      + scalarCount(db, `SELECT COUNT(*) AS count FROM webgpt_project_memberships m
+        LEFT JOIN webgpt_auth_principal_bindings b ON b.workspace_id = m.workspace_id AND b.principal_id = m.principal_id
+        WHERE m.status = 'active' AND b.principal_id IS NULL`, errors);
+    const pass = quickCheck === "ok" && schemaCurrent && errors.length === 0 && invalidJsonRows === 0 && structuredDriftRows === 0 && orphanRows === 0 && missingMediaFiles === 0 && mediaIntegrityErrors === 0 && pendingMediaActivations === 0 && quarantinedMediaActivations === 0 && unboundWebGptAuthorizationRows === 0;
+    return { result: pass ? "PASS" : "FAIL", quick_check: quickCheck, schema_current: schemaCurrent, invalid_json_rows: invalidJsonRows, structured_drift_rows: structuredDriftRows, orphan_rows: orphanRows, missing_media_files: missingMediaFiles, media_integrity_errors: mediaIntegrityErrors, pending_media_activations: pendingMediaActivations, quarantined_media_activations: quarantinedMediaActivations, unbound_webgpt_authorization_rows: unboundWebGptAuthorizationRows, check_errors: errors.length };
   } finally {
     db.close();
   }

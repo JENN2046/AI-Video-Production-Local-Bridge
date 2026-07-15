@@ -8,7 +8,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { openM0Database, openM0DatabaseConnection, type M0Database } from "../storage/sqlite.js";
 import { assertSchemaCurrent, SchemaMigrationRequiredError } from "../storage/migrations.js";
 import { paths } from "../paths.js";
-import { loadWebGptV4AuthConfig, createOAuthAuthenticator, createAuth0MediaAuthenticator, protectedResourceMetadata, protectedResourceMetadataUrl, unavailableAuthenticator, wwwAuthenticate, type WebGptV4AuthConfig, type WebGptV4Authenticator } from "./auth.js";
+import { assertWebGptV4AuthConfig, loadWebGptV4AuthConfig, createOAuthAuthenticator, createAuth0MediaAuthenticator, protectedResourceMetadata, protectedResourceMetadataUrl, unavailableAuthenticator, wwwAuthenticate, type WebGptV4AuthConfig, type WebGptV4Authenticator } from "./auth.js";
 import { errorBody, WEBGPT_V4_VERSION, WebGptV4Error } from "./types.js";
 import { createWebGptV4McpApp } from "./mcpApp.js";
 import { webGptProjectAuthorizationReady } from "./projectAuthorization.js";
@@ -167,14 +167,17 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
     ? { ...options.media, public_origin: mediaPublicOrigin ?? undefined }
     : options.media;
   const authConfig = options.auth_config === undefined ? loadWebGptV4AuthConfig(profile) : options.auth_config;
-  if (authConfig && authConfig.provider !== (profile === "readonly" ? "descope" : "auth0")) {
+  if (authConfig) assertWebGptV4AuthConfig(authConfig);
+  if (authConfig && (profile === "readonly"
+    ? authConfig.provider !== "federated" || authConfig.access_model !== "project_membership"
+    : authConfig.provider !== "auth0" || authConfig.access_model !== "single_subject")) {
     throw new WebGptV4Error("INVALID_WEBGPT_AUTH_PROVIDER", `${profile} profile cannot use the configured OAuth provider.`);
   }
   const authenticate = options.authenticate ?? (authConfig ? createOAuthAuthenticator(authConfig) : unavailableAuthenticator());
   const authenticateMedia = options.authenticate_media ?? (profile === "full" && authConfig?.provider === "auth0"
     ? createAuth0MediaAuthenticator(authConfig, process.env.WEBGPT_V4_MEDIA_AUTH_COOKIE_NAME?.trim() || undefined)
     : unavailableAuthenticator());
-  const projectAuthorizationEnabled = profile === "readonly" && authConfig?.provider === "descope";
+  const projectAuthorizationEnabled = profile === "readonly" && authConfig?.access_model === "project_membership";
   const maximum = options.max_body_bytes ?? 1024 * 1024;
   let invalidatedMediaGrants = 0;
   if (profile === "full") {
@@ -217,7 +220,7 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
     if (projectAuthorizationEnabled) {
       try {
         const db = openValidatedDatabase(options.sqlite_path, true);
-        try { authorization = webGptProjectAuthorizationReady(db); }
+        try { authorization = webGptProjectAuthorizationReady(db, authConfig?.provider === "federated" ? authConfig.issuer_hash : undefined); }
         finally { db.close(); }
       } catch { authorization = false; }
     }
@@ -329,7 +332,7 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
       sendJson(response, 503, { jsonrpc: "2.0", id: safeJsonRpcId(parsedBody?.id), error: { code: -32003, message: safe.message, data: safe } });
       return;
     }
-    if (projectAuthorizationEnabled && !webGptProjectAuthorizationReady(db)) {
+    if (projectAuthorizationEnabled && !webGptProjectAuthorizationReady(db, authConfig?.provider === "federated" ? authConfig.issuer_hash : undefined)) {
       db.close();
       releaseAdmission();
       const safe = { code: "MULTI_USER_AUTHORIZATION_NOT_READY", message: "Multi-user project authorization is not ready." };

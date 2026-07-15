@@ -503,6 +503,31 @@ const WEBGPT_MULTI_USER_AUTHORIZATION_SQL = `
     END;
 `;
 
+const WEBGPT_ISSUER_BINDINGS_SQL = `
+  CREATE TABLE webgpt_auth_principal_bindings (
+    workspace_id TEXT NOT NULL,
+    principal_id TEXT NOT NULL,
+    issuer_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (workspace_id, principal_id),
+    FOREIGN KEY (workspace_id, principal_id)
+      REFERENCES webgpt_auth_principals(workspace_id, principal_id) ON DELETE RESTRICT,
+    CHECK (workspace_id = 'jenn-ai-video-workspace'),
+    CHECK (length(principal_id) = 64 AND principal_id NOT GLOB '*[^0-9a-f]*'),
+    CHECK (length(issuer_hash) = 64 AND issuer_hash NOT GLOB '*[^0-9a-f]*')
+  );
+  CREATE INDEX idx_webgpt_auth_bindings_issuer
+    ON webgpt_auth_principal_bindings(workspace_id, issuer_hash, principal_id);
+  CREATE TRIGGER webgpt_auth_principal_bindings_no_update
+    BEFORE UPDATE ON webgpt_auth_principal_bindings BEGIN
+      SELECT RAISE(ABORT, 'WEBGPT_AUTH_PRINCIPAL_BINDINGS_IMMUTABLE');
+    END;
+  CREATE TRIGGER webgpt_auth_principal_bindings_no_delete
+    BEFORE DELETE ON webgpt_auth_principal_bindings BEGIN
+      SELECT RAISE(ABORT, 'WEBGPT_AUTH_PRINCIPAL_BINDINGS_IMMUTABLE');
+    END;
+`;
+
 export const DATABASE_MIGRATIONS: readonly Migration[] = [
   {
     id: "0001",
@@ -548,6 +573,12 @@ export const DATABASE_MIGRATIONS: readonly Migration[] = [
     name: "webgpt_multi_user_authorization",
     canonical: WEBGPT_MULTI_USER_AUTHORIZATION_SQL,
     apply: (db) => db.exec(WEBGPT_MULTI_USER_AUTHORIZATION_SQL)
+  },
+  {
+    id: "0008",
+    name: "webgpt_issuer_bound_principals",
+    canonical: WEBGPT_ISSUER_BINDINGS_SQL,
+    apply: (db) => db.exec(WEBGPT_ISSUER_BINDINGS_SQL)
   }
 ];
 
@@ -703,6 +734,7 @@ function expectedSchemaDefinitions(includeJobs: boolean, expectedColumns: Record
       applyArtifactBlobMigration(reference);
       reference.exec(MEDIA_ACTIVATION_JOURNAL_SQL);
       reference.exec(WEBGPT_MULTI_USER_AUTHORIZATION_SQL);
+      reference.exec(WEBGPT_ISSUER_BINDINGS_SQL);
     }
     const columns = new Map<string, Map<string, string>>();
     const checks = new Map<string, string[]>();
@@ -739,6 +771,7 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     media_artifact_blobs: ["artifact_id", "blob_id", "created_at"],
     media_activation_journal: ["activation_id", "artifact_id", "state", "artifact_type", "role", "expected_sha256", "expected_size_bytes", "detected_mime", "staging_path", "pending_path", "final_path", "artifact_json", "error_code", "created_at", "updated_at"],
     webgpt_auth_principals: ["workspace_id", "principal_id", "status", "created_at", "updated_at"],
+    webgpt_auth_principal_bindings: ["workspace_id", "principal_id", "issuer_hash", "created_at"],
     webgpt_project_memberships: ["workspace_id", "project_id", "principal_id", "role", "status", "created_at", "updated_at"],
     webgpt_auth_events: ["event_id", "workspace_id", "principal_id", "project_id", "event_type", "role", "reason_code", "created_at"]
   } : V24_EXPECTED_COLUMNS;
@@ -752,6 +785,7 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     "idx_media_activation_journal_state",
     "idx_media_activation_journal_active_artifact",
     "idx_webgpt_memberships_principal",
+    "idx_webgpt_auth_bindings_issuer",
     "idx_webgpt_auth_events_principal"
   ] : [...V24_EXPECTED_INDEXES];
   const expectedTriggers = includeJobs
@@ -766,7 +800,9 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "media_artifact_blob_transition",
         "media_artifact_blobs_no_delete",
         "webgpt_auth_events_no_update",
-        "webgpt_auth_events_no_delete"
+        "webgpt_auth_events_no_delete",
+        "webgpt_auth_principal_bindings_no_update",
+        "webgpt_auth_principal_bindings_no_delete"
       ]
     : ["trg_workbench_project_meta_after_insert"];
   const definitions = expectedSchemaDefinitions(includeJobs, expectedColumns, [...expectedIndexes, ...expectedTriggers]);

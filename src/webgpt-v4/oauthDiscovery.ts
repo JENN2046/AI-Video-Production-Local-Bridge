@@ -1,4 +1,4 @@
-import type { WebGptV4DescopeAuthConfig } from "./auth.js";
+import type { WebGptV4ReadonlyFederatedAuthConfig } from "./auth.js";
 
 const MAX_METADATA_BYTES = 256 * 1024;
 const DISCOVERY_TIMEOUT_MS = 10_000;
@@ -220,10 +220,10 @@ function primaryFetchFailure(result: FetchResult): WebGptOAuthDiscoveryCode {
 }
 
 export async function probeWebGptOAuthDiscovery(
-  config: WebGptV4DescopeAuthConfig,
+  config: WebGptV4ReadonlyFederatedAuthConfig,
   fetchImpl: typeof fetch = fetch
 ): Promise<WebGptOAuthDiscoveryReport> {
-  const identifier = config.authorization_server_url;
+  const identifier = config.legacy_authorization_server_url ?? config.issuer;
   if (!authorizationServerIdentifier(identifier)) {
     return { ok: false, code: "OAUTH_DISCOVERY_UNSAFE_IDENTIFIER", checks: emptyChecks(), diagnostics: emptyDiagnostics() };
   }

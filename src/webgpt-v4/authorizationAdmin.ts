@@ -5,7 +5,7 @@ import type { M0Database } from "../storage/sqlite.js";
 import { WEBGPT_AUTHORIZATION_WORKSPACE_ID } from "../storage/migrations.js";
 
 export type WebGptProjectRole = "owner" | "viewer";
-export type WebGptAuthAdminAction = "bootstrap-owner" | "bootstrap-owner-preflight" | "bootstrap-owner-interactive" | "register" | "grant" | "revoke" | "list";
+export type WebGptAuthAdminAction = "bootstrap-owner" | "bootstrap-owner-preflight" | "bootstrap-owner-interactive" | "bind-principal-interactive" | "register" | "grant" | "revoke" | "list";
 
 export interface WebGptAuthAdminRequest {
   action: WebGptAuthAdminAction;
@@ -61,8 +61,8 @@ function validateIssuer(value: string | undefined): string {
 
 export function parseWebGptAuthAdminArguments(argv: readonly string[]): WebGptAuthAdminRequest {
   const [actionRaw, ...rest] = argv;
-  if (!(["bootstrap-owner", "bootstrap-owner-preflight", "bootstrap-owner-interactive", "register", "grant", "revoke", "list"] as const).includes(actionRaw as WebGptAuthAdminAction)) {
-    throw new WebGptAuthAdminInputError("Action must be bootstrap-owner, bootstrap-owner-preflight, bootstrap-owner-interactive, register, grant, revoke, or list.");
+  if (!(["bootstrap-owner", "bootstrap-owner-preflight", "bootstrap-owner-interactive", "bind-principal-interactive", "register", "grant", "revoke", "list"] as const).includes(actionRaw as WebGptAuthAdminAction)) {
+    throw new WebGptAuthAdminInputError("Action must be bootstrap-owner, bootstrap-owner-preflight, bootstrap-owner-interactive, bind-principal-interactive, register, grant, revoke, or list.");
   }
   const values = new Map<string, string>();
   for (let index = 0; index < rest.length; index += 2) {
@@ -75,9 +75,10 @@ export function parseWebGptAuthAdminArguments(argv: readonly string[]): WebGptAu
   const allowed = new Set(["--db", "--principal", "--issuer", "--project", "--role", "--reason"]);
   for (const key of values.keys()) if (!allowed.has(key)) throw new WebGptAuthAdminInputError(`Unknown argument ${key}.`);
   const actionArguments: Record<WebGptAuthAdminAction, ReadonlySet<string>> = {
-    "bootstrap-owner": new Set(["--db", "--principal", "--project", "--reason"]),
+    "bootstrap-owner": new Set(["--db", "--principal", "--issuer", "--project", "--reason"]),
     "bootstrap-owner-preflight": new Set(["--db", "--issuer", "--project", "--reason"]),
     "bootstrap-owner-interactive": new Set(["--db", "--issuer", "--project", "--reason"]),
+    "bind-principal-interactive": new Set(["--db", "--issuer"]),
     register: new Set(["--db", "--principal", "--reason"]),
     grant: new Set(["--db", "--principal", "--project", "--role", "--reason"]),
     revoke: new Set(["--db", "--principal", "--project", "--reason"]),
@@ -93,15 +94,15 @@ export function parseWebGptAuthAdminArguments(argv: readonly string[]): WebGptAu
   if (!isAbsolute(databasePath)) throw new WebGptAuthAdminInputError("--db must resolve to an absolute path.");
   const action = actionRaw as WebGptAuthAdminAction;
   const request: WebGptAuthAdminRequest = { action, database_path: databasePath };
-  if (action !== "list" && action !== "bootstrap-owner-preflight" && action !== "bootstrap-owner-interactive") request.principal_id = validatePrincipal(values.get("--principal"));
-  if (action === "bootstrap-owner-preflight" || action === "bootstrap-owner-interactive") request.issuer = validateIssuer(values.get("--issuer"));
+  if (action !== "list" && action !== "bootstrap-owner-preflight" && action !== "bootstrap-owner-interactive" && action !== "bind-principal-interactive") request.principal_id = validatePrincipal(values.get("--principal"));
+  if (action === "bootstrap-owner" || action === "bootstrap-owner-preflight" || action === "bootstrap-owner-interactive" || action === "bind-principal-interactive") request.issuer = validateIssuer(values.get("--issuer"));
   if (action === "bootstrap-owner" || action === "bootstrap-owner-preflight" || action === "bootstrap-owner-interactive" || action === "grant" || action === "revoke") request.project_id = validateProject(values.get("--project"));
   if (action === "grant") {
     const role = required(values.get("--role"), "--role");
     if (role !== "owner" && role !== "viewer") throw new WebGptAuthAdminInputError("--role must be owner or viewer.");
     request.role = role;
   }
-  if (action !== "list") request.reason_code = validateReason(values.get("--reason"));
+  if (action !== "list" && action !== "bind-principal-interactive") request.reason_code = validateReason(values.get("--reason"));
   return request;
 }
 
@@ -135,8 +136,33 @@ export function registerWebGptPrincipal(db: M0Database, principalId: string, rea
   }
 }
 
-export function bootstrapWebGptProjectOwner(db: M0Database, principalId: string, projectId: string, reasonCode: string): { principal_created: boolean; membership_created: boolean } {
+export function bindWebGptPrincipalIssuer(db: M0Database, principalId: string, issuerHash: string): { binding_created: boolean } {
+  if (!PRINCIPAL_PATTERN.test(principalId) || !PRINCIPAL_PATTERN.test(issuerHash)) throw new WebGptAuthAdminInputError("Invalid principal or issuer binding.");
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const principal = db.prepare(`SELECT 1 FROM webgpt_auth_principals
+      WHERE workspace_id = ? AND principal_id = ?`).get(WEBGPT_AUTHORIZATION_WORKSPACE_ID, principalId);
+    if (!principal) throw new WebGptAuthAdminInputError("Principal must already exist before issuer binding.");
+    const existing = db.prepare(`SELECT issuer_hash FROM webgpt_auth_principal_bindings
+      WHERE workspace_id = ? AND principal_id = ?`).get(WEBGPT_AUTHORIZATION_WORKSPACE_ID, principalId) as { issuer_hash: string } | undefined;
+    if (existing && existing.issuer_hash !== issuerHash) throw new WebGptAuthAdminInputError("Principal is already bound to a different issuer.");
+    const created = !existing;
+    if (created) {
+      db.prepare(`INSERT INTO webgpt_auth_principal_bindings
+        (workspace_id, principal_id, issuer_hash) VALUES (?, ?, ?)`)
+        .run(WEBGPT_AUTHORIZATION_WORKSPACE_ID, principalId, issuerHash);
+    }
+    db.exec("COMMIT");
+    return { binding_created: created };
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+export function bootstrapWebGptProjectOwner(db: M0Database, principalId: string, projectId: string, reasonCode: string, issuerHash: string): { principal_created: boolean; binding_created: boolean; membership_created: boolean } {
   if (!PRINCIPAL_PATTERN.test(principalId)) throw new WebGptAuthAdminInputError("Invalid principal.");
+  if (!PRINCIPAL_PATTERN.test(issuerHash)) throw new WebGptAuthAdminInputError("Invalid issuer binding.");
   db.exec("BEGIN IMMEDIATE");
   try {
     assertWebGptOwnerBootstrapTarget(db, projectId);
@@ -147,6 +173,17 @@ export function bootstrapWebGptProjectOwner(db: M0Database, principalId: string,
       WHERE workspace_id = ? AND principal_id = ?`)
       .get(WEBGPT_AUTHORIZATION_WORKSPACE_ID, principalId) as { status: string } | undefined;
     if (principal?.status !== "active") throw new WebGptAuthAdminInputError("Principal is not active.");
+    const existingBinding = db.prepare(`SELECT issuer_hash FROM webgpt_auth_principal_bindings
+      WHERE workspace_id = ? AND principal_id = ?`).get(WEBGPT_AUTHORIZATION_WORKSPACE_ID, principalId) as { issuer_hash: string } | undefined;
+    if (existingBinding && existingBinding.issuer_hash !== issuerHash) {
+      throw new WebGptAuthAdminInputError("Principal is already bound to a different issuer.");
+    }
+    const bindingCreated = !existingBinding;
+    if (bindingCreated) {
+      db.prepare(`INSERT INTO webgpt_auth_principal_bindings
+        (workspace_id, principal_id, issuer_hash) VALUES (?, ?, ?)`)
+        .run(WEBGPT_AUTHORIZATION_WORKSPACE_ID, principalId, issuerHash);
+    }
     const existing = db.prepare(`SELECT role, status FROM webgpt_project_memberships
       WHERE workspace_id = ? AND project_id = ? AND principal_id = ?`)
       .get(WEBGPT_AUTHORIZATION_WORKSPACE_ID, projectId, principalId) as { role: string; status: string } | undefined;
@@ -162,7 +199,7 @@ export function bootstrapWebGptProjectOwner(db: M0Database, principalId: string,
       insertEvent(db, { principal_id: principalId, project_id: projectId, event_type: "membership_granted", role: "owner", reason_code: reasonCode });
     }
     db.exec("COMMIT");
-    return { principal_created: principalCreated, membership_created: membershipCreated };
+    return { principal_created: principalCreated, binding_created: bindingCreated, membership_created: membershipCreated };
   } catch (error) {
     db.exec("ROLLBACK");
     throw error;
@@ -196,6 +233,22 @@ export function assertWebGptOwnerBootstrapWritable(db: M0Database, projectId: st
   }
 }
 
+export function assertWebGptPrincipalBindingWritable(db: M0Database): void {
+  let transactionOpen = false;
+  try {
+    db.exec("BEGIN IMMEDIATE");
+    transactionOpen = true;
+    const result = db.prepare("UPDATE m0_meta SET value = value WHERE key = 'schema_version'").run() as { changes: number | bigint };
+    if (Number(result.changes) !== 1) throw new WebGptAuthAdminInputError("Database schema version row is missing.");
+    db.exec("ROLLBACK");
+    transactionOpen = false;
+  } finally {
+    if (transactionOpen) {
+      try { db.exec("ROLLBACK"); } catch { /* preserve the original write-access failure */ }
+    }
+  }
+}
+
 export function grantWebGptProjectMembership(db: M0Database, principalId: string, projectId: string, role: WebGptProjectRole, reasonCode: string): { changed: boolean } {
   db.exec("BEGIN IMMEDIATE");
   try {
@@ -203,10 +256,11 @@ export function grantWebGptProjectMembership(db: M0Database, principalId: string
       JOIN workbench_project_meta m ON m.project_id = p.project_id
       WHERE p.project_id = ? AND m.classification = 'production'`).get(projectId);
     if (!project) throw new WebGptAuthAdminInputError("Project must exist and be classified as production.");
-    const principal = db.prepare(`SELECT 1 FROM webgpt_auth_principals
-      WHERE workspace_id = ? AND principal_id = ? AND status = 'active'`)
+    const principal = db.prepare(`SELECT 1 FROM webgpt_auth_principals p
+      JOIN webgpt_auth_principal_bindings b ON b.workspace_id = p.workspace_id AND b.principal_id = p.principal_id
+      WHERE p.workspace_id = ? AND p.principal_id = ? AND p.status = 'active'`)
       .get(WEBGPT_AUTHORIZATION_WORKSPACE_ID, principalId);
-    if (!principal) throw new WebGptAuthAdminInputError("Principal is not registered and active.");
+    if (!principal) throw new WebGptAuthAdminInputError("Principal is not registered, bound, and active.");
     const previous = db.prepare(`SELECT role, status FROM webgpt_project_memberships
       WHERE workspace_id = ? AND project_id = ? AND principal_id = ?`)
       .get(WEBGPT_AUTHORIZATION_WORKSPACE_ID, projectId, principalId) as { role: string; status: string } | undefined;

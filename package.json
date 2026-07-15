@@ -27,6 +27,7 @@
     "db:migrate": "npm run build:server && node dist/scripts/db-migrate.js",
     "auth:webgpt": "npm run build:server && node dist/scripts/webgpt-auth-admin.js",
     "auth:webgpt:bootstrap-owner": "npm run build:server && powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File scripts/windows/webgpt-bootstrap-owner.ps1",
+    "auth:webgpt:bind-principal": "npm run build:server && powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File scripts/windows/webgpt-bind-principal.ps1",
     "preflight": "npm run build:server && node dist/scripts/preflight.js",
     "preflight:webgpt:oauth": "npm run build:server && node dist/scripts/webgpt-oauth-discovery-preflight.js",
     "migrate:webgpt:v4": "npm run build:server && node dist/scripts/migrate-webgpt-v4.js",

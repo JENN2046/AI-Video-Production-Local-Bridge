@@ -11,9 +11,26 @@ import { openM0Database } from "../src/storage/sqlite.js";
 import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 import { mediaAnalysisQueue } from "../src/webgpt-v4/media.js";
 import { WEBGPT_V4_WIDGET_URI } from "../src/webgpt-v4/mcpApp.js";
-import { bootstrapWebGptProjectOwner, grantWebGptProjectMembership, registerWebGptPrincipal } from "../src/webgpt-v4/authorizationAdmin.js";
+import { bindWebGptPrincipalIssuer, bootstrapWebGptProjectOwner, grantWebGptProjectMembership, registerWebGptPrincipal } from "../src/webgpt-v4/authorizationAdmin.js";
 import { startWebGptV4, WebGptRequestLimiter } from "../src/webgpt-v4/server.js";
-import { actorFromSubject, WebGptV4Error, WEBGPT_V4_SCOPES } from "../src/webgpt-v4/types.js";
+import { actorFromFederatedSubject, actorFromSubject, issuerHash, WebGptV4Error, WEBGPT_V4_SCOPES } from "../src/webgpt-v4/types.js";
+
+const FEDERATED_ISSUER = "https://api.descope.com/project-fixture/";
+
+function federatedAuthConfig(overrides: Record<string, unknown> = {}) {
+  return {
+    provider: "federated" as const,
+    access_model: "project_membership" as const,
+    issuer: FEDERATED_ISSUER,
+    issuer_hash: issuerHash(FEDERATED_ISSUER),
+    audience: "https://mcp.example.test/mcp",
+    resource_url: "https://mcp.example.test/mcp",
+    jwks_uri: "https://api.descope.com/project-fixture/.well-known/jwks.json",
+    client_registration: "predefined" as const,
+    configuration_source: "generic" as const,
+    ...overrides
+  };
+}
 
 function schemaContainsProperty(value: unknown, property: string): boolean {
   if (!value || typeof value !== "object") return false;
@@ -227,29 +244,22 @@ test("readonly readiness and MCP requests fail closed on an unmigrated database"
   }
 });
 
-test("Descope readonly becomes ready only after an active production owner is bootstrapped", async () => {
+test("Federated readonly becomes ready only after a current-issuer production owner is bootstrapped", async () => {
   const root = mkdtempSync(join(tmpdir(), "webgpt-v4-authz-pending-"));
   const sqlitePath = join(root, "app.sqlite");
-  const actor = actorFromSubject("descope-user-fixture", ["projects.read"]);
+  const actor = actorFromFederatedSubject(FEDERATED_ISSUER, "descope-user-fixture", ["projects.read"]);
   const db = openM0Database(sqlitePath);
   const project = createProject({ title: "Authorized production" }, db);
   assert.equal(project.ok, true);
   if (!project.ok) return;
   db.prepare("UPDATE workbench_project_meta SET classification = 'production' WHERE project_id = ?").run(project.project_id);
-  bootstrapWebGptProjectOwner(db, actor.principal_id, project.project_id, "TEST_BOOTSTRAP");
+  bootstrapWebGptProjectOwner(db, actor.principal_id, project.project_id, "TEST_BOOTSTRAP", issuerHash(FEDERATED_ISSUER));
   db.close();
   const runtime = await startWebGptV4({
     profile: "readonly",
     mcp_port: 0,
     sqlite_path: sqlitePath,
-    auth_config: {
-      provider: "descope",
-      issuer: "https://api.descope.com/project-fixture/",
-      audience: "https://mcp.example.test/mcp",
-      resource_url: "https://mcp.example.test/mcp",
-      authorization_server_url: "https://api.descope.com/v1/apps/agentic/project-fixture/resource-fixture",
-      jwks_uri: "https://api.descope.com/project-fixture/.well-known/jwks.json"
-    },
+    auth_config: federatedAuthConfig(),
     authenticate: async () => actor
   });
   try {
@@ -275,30 +285,65 @@ test("Descope readonly becomes ready only after an active production owner is bo
   }
 });
 
-test("Descope readonly rejects an authorized viewer until an active production owner exists", async () => {
+test("Federated readonly rejects an authorized viewer until an active production owner exists", async () => {
   const root = mkdtempSync(join(tmpdir(), "webgpt-v4-authz-owner-gate-"));
   const sqlitePath = join(root, "app.sqlite");
-  const actor = actorFromSubject("descope-viewer-fixture", ["projects.read"]);
+  const actor = actorFromFederatedSubject(FEDERATED_ISSUER, "descope-viewer-fixture", ["projects.read"]);
   const db = openM0Database(sqlitePath);
   const project = createProject({ title: "Viewer-only production" }, db);
   assert.equal(project.ok, true);
   if (!project.ok) return;
   db.prepare("UPDATE workbench_project_meta SET classification = 'production' WHERE project_id = ?").run(project.project_id);
   registerWebGptPrincipal(db, actor.principal_id, "TEST_REGISTER");
+  bindWebGptPrincipalIssuer(db, actor.principal_id, issuerHash(FEDERATED_ISSUER));
   grantWebGptProjectMembership(db, actor.principal_id, project.project_id, "viewer", "TEST_GRANT");
   db.close();
   const runtime = await startWebGptV4({
     profile: "readonly", mcp_port: 0, sqlite_path: sqlitePath,
-    auth_config: {
-      provider: "descope", issuer: "https://api.descope.com/project-fixture/",
-      audience: "https://mcp.example.test/mcp", resource_url: "https://mcp.example.test/mcp",
-      authorization_server_url: "https://api.descope.com/v1/apps/agentic/project-fixture/resource-fixture",
-      jwks_uri: "https://api.descope.com/project-fixture/.well-known/jwks.json"
-    },
+    auth_config: federatedAuthConfig(),
     authenticate: async () => actor
   });
   try {
     assert.equal((await fetch(runtime.mcp_url.replace(/\/mcp$/, "/readyz"))).status, 503);
+    const response = await fetch(runtime.mcp_url, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", authorization: "Bearer fixture" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} })
+    });
+    assert.equal(response.status, 503);
+    assert.equal(((await response.json()) as { error: { data: { code: string } } }).error.data.code, "MULTI_USER_AUTHORIZATION_NOT_READY");
+  } finally {
+    await runtime.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Readonly readiness ignores active owners bound to a different issuer", async () => {
+  const root = mkdtempSync(join(tmpdir(), "webgpt-v4-authz-issuer-gate-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const previousIssuer = "https://issuer-a.example/";
+  const currentIssuer = "https://issuer-b.example/";
+  const previousOwner = actorFromFederatedSubject(previousIssuer, "shared-user", ["projects.read"]);
+  const currentActor = actorFromFederatedSubject(currentIssuer, "shared-user", ["projects.read"]);
+  const db = openM0Database(sqlitePath);
+  const project = createProject({ title: "Issuer-bound production" }, db);
+  assert.equal(project.ok, true);
+  if (!project.ok) return;
+  db.prepare("UPDATE workbench_project_meta SET classification = 'production' WHERE project_id = ?").run(project.project_id);
+  bootstrapWebGptProjectOwner(db, previousOwner.principal_id, project.project_id, "TEST_PREVIOUS_ISSUER", issuerHash(previousIssuer));
+  db.close();
+  const runtime = await startWebGptV4({
+    profile: "readonly", mcp_port: 0, sqlite_path: sqlitePath,
+    auth_config: federatedAuthConfig({
+      issuer: currentIssuer, issuer_hash: issuerHash(currentIssuer),
+      jwks_uri: "https://issuer-b.example/jwks.json"
+    }),
+    authenticate: async () => currentActor
+  });
+  try {
+    const ready = await fetch(runtime.mcp_url.replace(/\/mcp$/, "/readyz"));
+    assert.equal(ready.status, 503);
+    assert.equal(((await ready.json()) as { checks: { authorization: boolean } }).checks.authorization, false);
     const response = await fetch(runtime.mcp_url, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json, text/event-stream", authorization: "Bearer fixture" },
@@ -364,22 +409,19 @@ test("protected-resource metadata preserves the public resource path and exposes
     mcp_port: 0,
     sqlite_path: sqlitePath,
     data_root: dataRoot,
-    auth_config: {
-      provider: "descope",
-      issuer: "https://auth.example.test/",
-      audience: "fixture",
-      resource_url: "https://mcp.example.test/tenant/mcp?region=us",
-      authorization_server_url: "https://auth.example.test/agentic/resource",
+    auth_config: federatedAuthConfig({
+      issuer: "https://auth.example.test/", issuer_hash: issuerHash("https://auth.example.test/"),
+      audience: "https://mcp.example.test/tenant/mcp", resource_url: "https://mcp.example.test/tenant/mcp",
       jwks_uri: "https://auth.example.test/.well-known/jwks.json"
-    },
+    }),
     authenticate: async () => { throw new WebGptV4Error("AUTH_REQUIRED", "Authentication is required."); }
   });
   try {
     const origin = runtime.mcp_url.replace(/\/mcp$/, "");
-    const metadata = await fetch(`${origin}/.well-known/oauth-protected-resource/tenant/mcp?region=us`);
+    const metadata = await fetch(`${origin}/.well-known/oauth-protected-resource/tenant/mcp`);
     assert.equal(metadata.status, 200);
     const metadataBody = await metadata.json() as { resource: string };
-    assert.equal(metadataBody.resource, "https://mcp.example.test/tenant/mcp?region=us");
+    assert.equal(metadataBody.resource, "https://mcp.example.test/tenant/mcp");
     const localTransportMetadata = await fetch(`${origin}/.well-known/oauth-protected-resource/mcp`);
     assert.equal(localTransportMetadata.status, 200);
     assert.deepEqual(await localTransportMetadata.json(), {
@@ -395,7 +437,7 @@ test("protected-resource metadata preserves the public resource path and exposes
     const denied = await fetch(runtime.mcp_url, { method: "POST" });
     const challenge = denied.headers.get("www-authenticate") ?? "";
     assert.equal(challenge.includes(`${origin}/.well-known/oauth-protected-resource/mcp`), true);
-    assert.equal(challenge.includes("/.well-known/oauth-protected-resource/tenant/mcp?region=us"), false);
+    assert.equal(challenge.includes("/.well-known/oauth-protected-resource/tenant/mcp"), false);
   } finally {
     await runtime.close();
     rmSync(root, { recursive: true, force: true });
@@ -412,14 +454,11 @@ test("local MCP protected-resource alias wins when the public resource also ends
     mcp_port: 0,
     sqlite_path: sqlitePath,
     data_root: dataRoot,
-    auth_config: {
-      provider: "descope",
-      issuer: "https://auth.example.test/",
-      audience: "https://mcp.example.test/mcp",
-      resource_url: "https://mcp.example.test/mcp",
-      authorization_server_url: "https://auth.example.test/agentic/resource",
+    auth_config: federatedAuthConfig({
+      issuer: "https://auth.example.test/", issuer_hash: issuerHash("https://auth.example.test/"),
+      audience: "https://mcp.example.test/mcp", resource_url: "https://mcp.example.test/mcp",
       jwks_uri: "https://auth.example.test/.well-known/jwks.json"
-    },
+    }),
     authenticate: async () => { throw new WebGptV4Error("AUTH_REQUIRED", "Authentication is required."); }
   });
   try {
