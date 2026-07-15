@@ -96,6 +96,7 @@
         "tests/webgpt-v4-eval.test.ts",
         "tests/webgpt-v4-media.test.ts",
         "tests/webgpt-v4-metadata.test.ts",
+        "tests/webgpt-v4-oauth-discovery.test.ts",
         "tests/webgpt-v4-profile.test.ts",
         "tests/webgpt-v4-server.test.ts",
         "tests/webgpt-v4-telemetry.test.ts",

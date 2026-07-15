@@ -18,9 +18,13 @@
 npm run db:migrate
 npm run migrate:webgpt:v4
 npm run auth:webgpt -- list --db <explicit-database-path>
+npm run preflight -- --profile=webgpt
+npm run preflight:webgpt:oauth
 npm run test:webgpt:v4
 npm run start:webgpt
 ```
+
+普通 `preflight` 和 `/readyz` 证明本地服务边界，不代表 ChatGPT 已接受外部 OAuth discovery。外部 Readonly 接线前必须另外运行 `preflight:webgpt:oauth`；这个独立命令不打开数据库，要求 RFC 8414 metadata 的 `issuer` 与 PRMD 中的 authorization-server identifier 完全一致，并要求 PKCE S256、public client token auth `none` 及 CIMD/DCR 至少一种注册能力。探针当前只允许 `api.descope.com`，不发送 credential、不跟随 redirect、不输出 endpoint identifier 或 response body。Provider 自定义的 appended-path metadata 只作为诊断证据，不能把标准 discovery 失败提升为 PASS。
 
 未配置 OAuth 时，服务仍可启动用于本机健康检查，但 `/readyz` 返回 `503`，`/mcp` 拒绝所有调用。这是预期的 fail-closed 状态。
 

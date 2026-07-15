@@ -43,6 +43,7 @@ npm run db:check
 npm run db:migrate
 npm run auth:webgpt -- list --db <explicit-database-path>
 npm run preflight
+npm run preflight:webgpt:oauth
 npm test
 npm run test:v2
 npm run test:v2:ui
@@ -55,7 +56,7 @@ npm run test:v2:browser
 npm run secret:scan
 ```
 
-`start:local` 以前台方式启动本地 Workbench。`windows:start`、`windows:status`、`windows:stop` 提供普通用户权限的 Windows 受管启停入口，但不会创建 Task Scheduler 或配置自动启动。`start:webgpt` 默认只启动 Readonly MCP；只有显式设置 `WEBGPT_V4_PROFILE=full` 才会同时启动媒体网关和现有有限写入工具。`preflight` 默认检查本地 Workbench profile；WebGPT 使用 `npm run preflight -- --profile=webgpt` 并按 Readonly/Full 检查对应端口和依赖，OAuth 缺失时会明确失败并保持 fail closed。
+`start:local` 以前台方式启动本地 Workbench。`windows:start`、`windows:status`、`windows:stop` 提供普通用户权限的 Windows 受管启停入口，但不会创建 Task Scheduler 或配置自动启动。`start:webgpt` 默认只启动 Readonly MCP；只有显式设置 `WEBGPT_V4_PROFILE=full` 才会同时启动媒体网关和现有有限写入工具。`preflight` 默认检查本地 Workbench profile；WebGPT 使用 `npm run preflight -- --profile=webgpt` 并按 Readonly/Full 检查对应端口和依赖，OAuth 缺失时会明确失败并保持 fail closed。外部 Readonly 接线还必须单独运行 `preflight:webgpt:oauth`；该命令不打开数据库，只匿名验证 RFC 8414 issuer、PKCE S256、public-client auth 与 CIMD/DCR capability。
 
 ### 多用户只读授权
 

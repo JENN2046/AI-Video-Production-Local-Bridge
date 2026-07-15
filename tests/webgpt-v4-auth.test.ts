@@ -88,6 +88,8 @@ test("OAuth environment configuration fails closed for incomplete or non-HTTPS e
   assert.equal(loadWebGptV4AuthConfig("readonly", { ...descope, WEBGPT_V4_DESCOPE_JWKS_URI: "" }), null);
   assert.equal(loadWebGptV4AuthConfig("readonly", { ...descope, WEBGPT_V4_DESCOPE_AUTHORIZATION_SERVER_URL: "" }), null);
   assert.equal(loadWebGptV4AuthConfig("readonly", { ...descope, WEBGPT_V4_DESCOPE_AUTHORIZATION_SERVER_URL: "http://api.descope.test/resource" }), null);
+  assert.equal(loadWebGptV4AuthConfig("readonly", { ...descope, WEBGPT_V4_DESCOPE_AUTHORIZATION_SERVER_URL: "https://api.descope.com/resource?mode=cimd" }), null);
+  assert.equal(loadWebGptV4AuthConfig("readonly", { ...descope, WEBGPT_V4_DESCOPE_ISSUER: "https://api.descope.com/project-fixture?tenant=other" }), null);
   assert.equal(loadWebGptV4AuthConfig("readonly", { ...descope, WEBGPT_V4_RESOURCE_URL: "https://mcp.example.test/mcp#fragment" }), null);
   assert.equal(loadWebGptV4AuthConfig("readonly", { ...descope, WEBGPT_V4_DESCOPE_AUDIENCE: "https://other-resource.example/mcp" }), null);
   const descopeMetadata = protectedResourceMetadata(descopeConfig);
