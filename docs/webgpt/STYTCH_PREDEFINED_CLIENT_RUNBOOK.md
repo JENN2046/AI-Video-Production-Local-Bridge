@@ -19,15 +19,19 @@ redirect URI: exact URI displayed by the target ChatGPT App
 client secret: absent
 client credentials: disabled
 access token custom audience: exact WEBGPT_V4_RESOURCE_URL
+authorization endpoint: public HTTPS UI hosted by the application
+end-user flow: login, consent, PKCE return, and code exchange verified end to end
 ```
 
-Stytch terminology and APIs may change. Current official references describe `third_party_public`, PKCE, custom OAuth scopes, and `access_token_custom_audience`; the external preflight must re-check the current project rather than copying this document blindly.
+Stytch terminology and APIs may change. Current official references describe `third_party_public`, PKCE, custom OAuth scopes, and `access_token_custom_audience`; they also state that the application, not Stytch, hosts the `authorization_endpoint` UI using `IdentityProvider` or `B2BIdentityProvider`. A default project issuer may not be fully OIDC compatible, so the external preflight must verify the exact project domain/issuer and any custom-domain requirement rather than copying this document blindly.
 
 ## Fail-closed capability preflight
 
-Stop with `SELECTED_PROVIDER_CAPABILITY_GATE_FAILED` if any item is false or cannot be verified:
+Stop with `SELECTED_PROVIDER_CAPABILITY_GATE_FAILED` if any item is false or cannot be verified. A syntactically valid authorization URL, placeholder URL, or offline fixture is not proof that the end-user flow is ready:
 
 - anonymous standard discovery returns exact issuer metadata;
+- discovery advertises the exact public HTTPS authorization endpoint that was actually deployed;
+- the authorization endpoint completes login and consent without a client secret or private local network dependency;
 - authorization/token/JWKS endpoints are HTTPS;
 - PKCE advertises S256;
 - public-client token authentication supports `none`;
@@ -43,14 +47,22 @@ Do not compensate for a failed item by changing WebGPT issuer/audience checks, a
 ## Isolated acceptance order
 
 1. Record non-secret object names and IDs in a local, ignored acceptance worksheet.
-2. Create the resource/API and only `projects.read`.
-3. Create the predefined public client with the exact ChatGPT redirect.
-4. Configure exact custom audience equal to the Tunnel-visible MCP resource.
-5. Create a new private ChatGPT test App; leave historical Descope objects unchanged.
-6. Use a database copy migrated to `0008`; enter subjects only through hidden prompts.
-7. Verify owner, unregistered second user, viewer grant, cross-project refusal, revoke, and last-owner fail-closed readiness.
-8. Call exactly the six Readonly tools and compare the complete logical manifest.
-9. Stop WebGPT/Tunnel and confirm ports `2091`, `2092`, and `2093` are released.
+2. Confirm the project exposes a standards-compatible issuer; configure a custom domain first if the exact client requires it.
+3. Deploy the application-hosted authorization/login/consent surface and configure its exact HTTPS Authorization URL.
+4. Create the resource/API and only `projects.read`.
+5. Create the predefined public client with the exact ChatGPT redirect.
+6. Configure exact custom audience equal to the Tunnel-visible MCP resource.
+7. Create a new private ChatGPT test App; leave historical Descope objects unchanged.
+8. Use a database copy migrated to `0008`; enter subjects only through hidden prompts.
+9. Verify owner, unregistered second user, viewer grant, cross-project refusal, revoke, and last-owner fail-closed readiness.
+10. Call exactly the six Readonly tools and compare the complete logical manifest.
+11. Stop WebGPT/Tunnel and confirm ports `2091`, `2092`, and `2093` are released.
+
+Official references:
+
+- [Stytch MCP authorization overview](https://stytch.com/docs/connected-apps/guides/mcp-auth-overview)
+- [Stytch OpenID configuration](https://stytch.com/docs/api-reference/consumer/api/connected-apps/configuration/get-openid-configuration)
+- [Stytch custom auth domains](https://stytch.com/docs/resources/branding/custom-domains)
 
 ## Evidence rules
 

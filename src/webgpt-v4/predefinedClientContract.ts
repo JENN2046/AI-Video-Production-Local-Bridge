@@ -3,6 +3,10 @@ import { WebGptV4Error } from "./types.js";
 export interface WebGptPredefinedPublicClientCapability {
   provider_id: string;
   client_registration: "predefined";
+  authorization_endpoint: string;
+  authorization_endpoint_hosting: "provider_hosted" | "application_hosted" | string;
+  authorization_endpoint_reachable: boolean;
+  end_user_login_and_consent_ready: boolean;
   grant_types: readonly string[];
   pkce_code_challenge_method: "S256" | string;
   token_endpoint_auth_method: "none" | string;
@@ -49,6 +53,11 @@ export function assertWebGptPredefinedPublicClientCapability(
 ): WebGptPredefinedPublicClientCompatibility {
   if (typeof capability.provider_id !== "string" || !/^[a-z0-9][a-z0-9_-]{1,63}$/.test(capability.provider_id)) capabilityError("provider_id");
   if (capability.client_registration !== "predefined") capabilityError("client_registration");
+  if (!isHttpsIdentifier(capability.authorization_endpoint)) capabilityError("authorization_endpoint");
+  if (capability.authorization_endpoint_hosting !== "provider_hosted"
+    && capability.authorization_endpoint_hosting !== "application_hosted") capabilityError("authorization_endpoint_hosting");
+  if (capability.authorization_endpoint_reachable !== true) capabilityError("authorization_endpoint_reachable");
+  if (capability.end_user_login_and_consent_ready !== true) capabilityError("end_user_login_and_consent_ready");
   if (!Array.isArray(capability.grant_types) || capability.grant_types.length !== 1 || capability.grant_types[0] !== "authorization_code") capabilityError("grant_types");
   if (capability.pkce_code_challenge_method !== "S256") capabilityError("pkce_code_challenge_method");
   if (capability.token_endpoint_auth_method !== "none") capabilityError("token_endpoint_auth_method");
