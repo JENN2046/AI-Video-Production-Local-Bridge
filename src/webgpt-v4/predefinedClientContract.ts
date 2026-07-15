@@ -21,6 +21,11 @@ export interface WebGptPredefinedPublicClientCompatibility {
   external_client_registration: "pending" | "verified";
 }
 
+export interface WebGptPredefinedPublicClientTarget {
+  resource_url: string;
+  redirect_uri: string;
+}
+
 function capabilityError(field: keyof WebGptPredefinedPublicClientCapability): never {
   throw new WebGptV4Error(
     "INVALID_WEBGPT_PROVIDER_CAPABILITY",
@@ -39,7 +44,8 @@ function isHttpsIdentifier(value: string): boolean {
 }
 
 export function assertWebGptPredefinedPublicClientCapability(
-  capability: WebGptPredefinedPublicClientCapability
+  capability: WebGptPredefinedPublicClientCapability,
+  expected: WebGptPredefinedPublicClientTarget
 ): WebGptPredefinedPublicClientCompatibility {
   if (!/^[a-z0-9][a-z0-9_-]{1,63}$/.test(capability.provider_id)) capabilityError("provider_id");
   if (capability.client_registration !== "predefined") capabilityError("client_registration");
@@ -47,9 +53,11 @@ export function assertWebGptPredefinedPublicClientCapability(
   if (capability.pkce_code_challenge_method !== "S256") capabilityError("pkce_code_challenge_method");
   if (capability.token_endpoint_auth_method !== "none") capabilityError("token_endpoint_auth_method");
   if (capability.configured_scopes.length !== 1 || capability.configured_scopes[0] !== "projects.read") capabilityError("configured_scopes");
-  if (capability.redirect_policy !== "exact_allowlist" || capability.redirect_uris.length !== 1
+  if (!isHttpsIdentifier(expected.redirect_uri) || capability.redirect_policy !== "exact_allowlist"
+    || capability.redirect_uris.length !== 1 || capability.redirect_uris[0] !== expected.redirect_uri
     || capability.redirect_uris.some((value) => !isHttpsIdentifier(value))) capabilityError("redirect_uris");
-  if (!isHttpsIdentifier(capability.resource_url)) capabilityError("resource_url");
+  if (!isHttpsIdentifier(expected.resource_url) || !isHttpsIdentifier(capability.resource_url)
+    || capability.resource_url !== expected.resource_url) capabilityError("resource_url");
   if (capability.access_token_audience !== capability.resource_url) capabilityError("access_token_audience");
   if (capability.client_credentials_enabled) capabilityError("client_credentials_enabled");
   if (capability.client_secret_present) capabilityError("client_secret_present");

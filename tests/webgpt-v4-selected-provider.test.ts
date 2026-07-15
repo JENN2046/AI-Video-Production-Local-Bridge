@@ -22,6 +22,8 @@ import { actorFromFederatedSubject, issuerHash, WebGptV4Error } from "../src/web
 
 const ISSUER = "https://fixture.stytch.example/oauth2";
 const RESOURCE = "https://api.openai.com/v1/mcp/tunnel_fixture";
+const REDIRECT_URI = "https://chatgpt.example.test/oauth/callback";
+const EXPECTED_CLIENT_TARGET = { resource_url: RESOURCE, redirect_uri: REDIRECT_URI };
 
 function federatedConfig(): WebGptV4ReadonlyFederatedAuthConfig {
   return {
@@ -44,7 +46,7 @@ const stytchFixtureCapability: WebGptPredefinedPublicClientCapability = {
   pkce_code_challenge_method: "S256",
   token_endpoint_auth_method: "none",
   configured_scopes: ["projects.read"],
-  redirect_uris: ["https://chatgpt.example.test/oauth/callback"],
+  redirect_uris: [REDIRECT_URI],
   redirect_policy: "exact_allowlist",
   resource_url: RESOURCE,
   access_token_audience: RESOURCE,
@@ -98,7 +100,7 @@ function makeProductionProject(db: M0Database, title: string, shotId?: string): 
 }
 
 test("selected provider capability rejects missing PKCE, public-client, audience, and scope guarantees", () => {
-  assert.deepEqual(assertWebGptPredefinedPublicClientCapability(stytchFixtureCapability), {
+  assert.deepEqual(assertWebGptPredefinedPublicClientCapability(stytchFixtureCapability, EXPECTED_CLIENT_TARGET), {
     compatible: true,
     client_registration: "predefined",
     external_client_registration: "pending"
@@ -107,17 +109,19 @@ test("selected provider capability rejects missing PKCE, public-client, audience
     { pkce_code_challenge_method: "plain" },
     { token_endpoint_auth_method: "client_secret_post" },
     { access_token_audience: "https://wrong-audience.example/mcp" },
+    { resource_url: "https://wrong-resource.example/mcp", access_token_audience: "https://wrong-resource.example/mcp" },
     { configured_scopes: [] },
     { configured_scopes: ["projects.read", "media.read"] },
     { grant_types: ["authorization_code", "client_credentials"] },
     { client_credentials_enabled: true },
     { client_secret_present: true },
     { redirect_uris: ["http://localhost/callback"] },
+    { redirect_uris: ["https://other-chatgpt-app.example.test/oauth/callback"] },
     { redirect_uris: ["https://chatgpt.example.test/oauth/callback", "https://extra.example.test/callback"] }
   ];
   for (const override of invalid) {
     assert.throws(
-      () => assertWebGptPredefinedPublicClientCapability({ ...stytchFixtureCapability, ...override }),
+      () => assertWebGptPredefinedPublicClientCapability({ ...stytchFixtureCapability, ...override }, EXPECTED_CLIENT_TARGET),
       (error) => error instanceof WebGptV4Error && error.code === "INVALID_WEBGPT_PROVIDER_CAPABILITY"
     );
   }
