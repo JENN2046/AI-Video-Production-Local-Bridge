@@ -189,7 +189,12 @@ async function boundedJson(response: Response): Promise<MetadataDocument> {
 
 async function fetchMetadata(url: string, runtime: PinnedHttpsRuntime): Promise<FetchResult> {
   try {
-    const response = await fetchPinnedHttps(new URL(url), withTimeout(undefined, WEBGPT_OAUTH_FETCH_TIMEOUT_MS), runtime);
+    const response = await fetchPinnedHttps(
+      new URL(url),
+      withTimeout(undefined, WEBGPT_OAUTH_FETCH_TIMEOUT_MS),
+      runtime,
+      new Headers({ accept: "application/json" })
+    );
     if (response.status !== 200) {
       try { await response.body?.cancel(); } catch { /* the status remains authoritative */ }
       return { status: response.status, document: null, failure: null };

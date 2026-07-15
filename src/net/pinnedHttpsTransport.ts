@@ -11,7 +11,7 @@ export interface PinnedNetworkAddress {
 
 export interface PinnedHttpsRuntime {
   resolve_hostname?: (hostname: string) => Promise<PinnedNetworkAddress[]>;
-  fetch_pinned_address?: (url: URL, signal: AbortSignal, address: PinnedNetworkAddress) => Promise<Response>;
+  fetch_pinned_address?: (url: URL, signal: AbortSignal, address: PinnedNetworkAddress, headers?: Headers) => Promise<Response>;
 }
 
 export type PinnedHttpsErrorCode = "UNSAFE_NETWORK_TARGET" | "FETCH_FAILED" | "RESPONSE_TOO_LARGE";
@@ -143,12 +143,36 @@ export function createPinnedLookup(address: PinnedNetworkAddress): (
   };
 }
 
-export async function pinnedHttpsFetch(url: URL, signal: AbortSignal, address: PinnedNetworkAddress): Promise<Response> {
+const SAFE_OUTBOUND_HEADERS = new Set([
+  "accept",
+  "accept-encoding",
+  "cache-control",
+  "if-modified-since",
+  "if-none-match",
+  "user-agent"
+]);
+
+export function safePinnedRequestHeaders(input: Headers = new Headers()): Headers {
+  const output = new Headers();
+  for (const [name, value] of input.entries()) {
+    if (SAFE_OUTBOUND_HEADERS.has(name.toLowerCase())) output.append(name, value);
+  }
+  return output;
+}
+
+export async function pinnedHttpsFetch(
+  url: URL,
+  signal: AbortSignal,
+  address: PinnedNetworkAddress,
+  headers: Headers = new Headers()
+): Promise<Response> {
   return await new Promise<Response>((resolveResponse, rejectResponse) => {
+    const safeHeaders = safePinnedRequestHeaders(headers);
     const request = httpsRequest(url, {
       method: "GET",
       signal,
-      lookup: createPinnedLookup(address)
+      lookup: createPinnedLookup(address),
+      headers: Object.fromEntries(safeHeaders.entries())
     }, (response) => {
       const headers = new Headers();
       for (const [name, value] of Object.entries(response.headers)) {
@@ -169,12 +193,13 @@ export async function fetchFromValidatedAddresses(
   url: URL,
   signal: AbortSignal,
   addresses: PinnedNetworkAddress[],
-  fetchAddress: (url: URL, signal: AbortSignal, address: PinnedNetworkAddress) => Promise<Response> = pinnedHttpsFetch
+  fetchAddress: (url: URL, signal: AbortSignal, address: PinnedNetworkAddress, headers?: Headers) => Promise<Response> = pinnedHttpsFetch,
+  headers: Headers = new Headers()
 ): Promise<Response> {
   let lastError: unknown = new PinnedHttpsError("FETCH_FAILED");
   for (const address of addresses) {
     try {
-      return await fetchAddress(url, signal, address);
+      return await fetchAddress(url, signal, address, headers);
     } catch (error) {
       if (signal.aborted) throw error;
       lastError = error;
@@ -186,12 +211,14 @@ export async function fetchFromValidatedAddresses(
 export async function fetchPinnedHttps(
   url: URL,
   signal: AbortSignal,
-  runtime: PinnedHttpsRuntime = {}
+  runtime: PinnedHttpsRuntime = {},
+  headers: Headers = new Headers()
 ): Promise<Response> {
   assertSafeHttpsUrl(url);
   const addresses = await abortable(resolvePublicAddresses(url.hostname, runtime.resolve_hostname), signal);
+  const safeHeaders = safePinnedRequestHeaders(headers);
   try {
-    return await fetchFromValidatedAddresses(url, signal, addresses, runtime.fetch_pinned_address);
+    return await fetchFromValidatedAddresses(url, signal, addresses, runtime.fetch_pinned_address, safeHeaders);
   } catch (error) {
     if (error instanceof PinnedHttpsError || (error instanceof Error && error.name === "AbortError")) throw error;
     throw new PinnedHttpsError("FETCH_FAILED");
@@ -241,7 +268,7 @@ export function createBoundedPinnedFetch(
 ): (url: string, init: { headers: Headers; method: "GET"; redirect: "manual"; signal: AbortSignal }) => Promise<Response> {
   return async (url, init) => {
     if (init.method !== "GET" || init.redirect !== "manual") throw new PinnedHttpsError("FETCH_FAILED");
-    const response = await fetchPinnedHttps(new URL(url), withTimeout(init.signal, options.timeout_ms), runtime);
+    const response = await fetchPinnedHttps(new URL(url), withTimeout(init.signal, options.timeout_ms), runtime, init.headers);
     const body = await readBoundedBytes(response, options.max_bytes);
     if ([204, 205, 304].includes(response.status)) {
       return new Response(null, { status: response.status, statusText: response.statusText, headers: response.headers });

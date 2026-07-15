@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import test from "node:test";
 
-import { createPinnedLookup, isUnsafeNetworkHost, type PinnedHttpsRuntime } from "../src/net/pinnedHttpsTransport.js";
+import { createBoundedPinnedFetch, createPinnedLookup, isUnsafeNetworkHost, type PinnedHttpsRuntime } from "../src/net/pinnedHttpsTransport.js";
 import {
   oidcAuthorizationServerMetadataUrl,
   probeWebGptOAuthDiscovery,
@@ -60,11 +60,11 @@ function compatibleMetadata(
 }
 
 function pinnedRuntime(
-  handler: (url: URL, address: { address: string; family: 4 | 6 }, signal: AbortSignal) => Promise<Response>
+  handler: (url: URL, address: { address: string; family: 4 | 6 }, signal: AbortSignal, headers: Headers) => Promise<Response>
 ): PinnedHttpsRuntime {
   return {
     resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
-    fetch_pinned_address: (url, signal, address) => handler(url, address, signal)
+    fetch_pinned_address: (url, signal, address, headers = new Headers()) => handler(url, address, signal, headers)
   };
 }
 
@@ -120,6 +120,32 @@ test("pinned lookup supports Node 22 all-address callbacks and blocks NAT64 priv
   });
   assert.equal(result.code, "OAUTH_DISCOVERY_UNSAFE_NETWORK_TARGET");
   assert.equal(transported, false);
+
+  let forwarded = new Headers();
+  const boundedFetch = createBoundedPinnedFetch({
+    resolve_hostname: async () => [address],
+    fetch_pinned_address: async (_url, _signal, _address, headers = new Headers()) => {
+      forwarded = new Headers(headers);
+      return new Response(JSON.stringify({ keys: [] }), { status: 200 });
+    }
+  }, { max_bytes: 256 * 1024, timeout_ms: 10_000 });
+  await boundedFetch("https://keys.example.test/jwks.json", {
+    method: "GET",
+    redirect: "manual",
+    signal: new AbortController().signal,
+    headers: new Headers({
+      accept: "application/json",
+      "if-none-match": "fixture-etag",
+      authorization: "Bearer fake-must-not-forward",
+      cookie: "session=must-not-forward",
+      "x-api-key": "must-not-forward"
+    })
+  });
+  assert.equal(forwarded.get("accept"), "application/json");
+  assert.equal(forwarded.get("if-none-match"), "fixture-etag");
+  assert.equal(forwarded.has("authorization"), false);
+  assert.equal(forwarded.has("cookie"), false);
+  assert.equal(forwarded.has("x-api-key"), false);
 });
 
 test("metadata validation enforces exact issuer, endpoints, JWKS, PKCE, public client, and selected registration mode", () => {
@@ -160,17 +186,27 @@ test("metadata validation enforces exact issuer, endpoints, JWKS, PKCE, public c
 });
 
 test("probe uses a DNS-pinned RFC 8414 request and predefined mode does not require CIMD or DCR", async () => {
-  const requests: Array<{ url: string; address: string }> = [];
+  const requests: Array<{ url: string; address: string; accept: string | null; authorization: string | null }> = [];
   const config = genericConfig("predefined");
-  const result = await probeWebGptOAuthDiscovery(config, pinnedRuntime(async (url, address) => {
-    requests.push({ url: url.toString(), address: address.address });
+  const result = await probeWebGptOAuthDiscovery(config, pinnedRuntime(async (url, address, _signal, headers) => {
+    requests.push({
+      url: url.toString(),
+      address: address.address,
+      accept: headers.get("accept"),
+      authorization: headers.get("authorization")
+    });
     return new Response(JSON.stringify(compatibleMetadata(config)), { status: 200, headers: { "content-type": "application/json" } });
   }));
   assert.equal(result.ok, true);
   assert.equal(result.code, "OAUTH_DISCOVERY_COMPATIBLE");
   assert.equal(result.checks.standard_metadata_kind, "rfc8414");
   assert.equal(result.checks.external_client_registration, "pending");
-  assert.deepEqual(requests, [{ url: rfc8414AuthorizationServerMetadataUrl(issuer), address: "8.8.8.8" }]);
+  assert.deepEqual(requests, [{
+    url: rfc8414AuthorizationServerMetadataUrl(issuer),
+    address: "8.8.8.8",
+    accept: "application/json",
+    authorization: null
+  }]);
   assert.equal(JSON.stringify(result).includes("tenant.example.test"), false);
 });
 
