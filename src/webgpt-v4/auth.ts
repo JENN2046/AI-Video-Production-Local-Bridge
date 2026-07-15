@@ -157,12 +157,13 @@ export function loadWebGptV4AuthConfig(
       };
     }
     const base = readonlyBase({
-      issuer: env.WEBGPT_V4_DESCOPE_ISSUER,
+      // Preserve the previous Descope adapter's trailing-slash normalization for one compatibility cycle.
+      issuer: trimSlash(env.WEBGPT_V4_DESCOPE_ISSUER?.trim() ?? ""),
       audience: env.WEBGPT_V4_DESCOPE_AUDIENCE,
       jwks_uri: env.WEBGPT_V4_DESCOPE_JWKS_URI,
-      resource_url: env.WEBGPT_V4_RESOURCE_URL
+      resource_url: trimSlash(env.WEBGPT_V4_RESOURCE_URL?.trim() ?? "")
     });
-    const authorizationServerUrl = env.WEBGPT_V4_DESCOPE_AUTHORIZATION_SERVER_URL?.trim() ?? "";
+    const authorizationServerUrl = trimSlash(env.WEBGPT_V4_DESCOPE_AUTHORIZATION_SERVER_URL?.trim() ?? "");
     if (!base || !secureIssuerIdentifier(authorizationServerUrl)) {
       invalidAuthConfig("INVALID_WEBGPT_AUTH_CONFIG", "Legacy Descope Readonly OAuth configuration is incomplete or invalid.");
     }

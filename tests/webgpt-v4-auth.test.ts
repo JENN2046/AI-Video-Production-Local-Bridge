@@ -105,6 +105,21 @@ test("OAuth environment configuration selects one strict Readonly source and fai
   assert.equal(descopeConfig?.provider, "federated");
   assert.equal(descopeConfig?.issuer, "https://api.descope.com/project-fixture");
   assert.equal(descopeConfig?.provider === "federated" ? descopeConfig.legacy_authorization_server_url : undefined, "https://api.descope.com/v1/apps/agentic/project-fixture/resource-fixture");
+  const legacyTrailingSlash = loadWebGptV4AuthConfig("readonly", {
+    ...descope,
+    WEBGPT_V4_DESCOPE_ISSUER: `${descope.WEBGPT_V4_DESCOPE_ISSUER}/`,
+    WEBGPT_V4_DESCOPE_AUTHORIZATION_SERVER_URL: `${descope.WEBGPT_V4_DESCOPE_AUTHORIZATION_SERVER_URL}/`,
+    WEBGPT_V4_RESOURCE_URL: `${descope.WEBGPT_V4_RESOURCE_URL}/`
+  });
+  assert.equal(legacyTrailingSlash?.issuer, descope.WEBGPT_V4_DESCOPE_ISSUER);
+  assert.equal(legacyTrailingSlash?.resource_url, descope.WEBGPT_V4_RESOURCE_URL);
+  assert.equal(
+    legacyTrailingSlash?.provider === "federated" ? legacyTrailingSlash.legacy_authorization_server_url : undefined,
+    descope.WEBGPT_V4_DESCOPE_AUTHORIZATION_SERVER_URL
+  );
+  assert.equal(loadWebGptV4AuthConfig("readonly", {
+    ...generic, WEBGPT_V4_READONLY_OAUTH_ISSUER: "https://tenant.example.test/oauth/"
+  })?.issuer, "https://tenant.example.test/oauth/", "generic issuer form must remain exact");
   assert.equal(loadWebGptV4AuthConfig("readonly", { ...emptyReadonlyPlaceholders, ...descope })?.provider, "federated");
   assert.equal(loadWebGptV4AuthConfig("readonly", auth0), null, "readonly must not fall back to Auth0");
   assert.equal(loadWebGptV4AuthConfig("full", descope), null, "full must not use Descope");
