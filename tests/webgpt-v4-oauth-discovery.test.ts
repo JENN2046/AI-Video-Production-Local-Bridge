@@ -135,6 +135,7 @@ test("pinned lookup supports Node 22 all-address callbacks and blocks NAT64 priv
     signal: new AbortController().signal,
     headers: new Headers({
       accept: "application/json",
+      "accept-encoding": "gzip",
       "if-none-match": "fixture-etag",
       authorization: "Bearer fake-must-not-forward",
       cookie: "session=must-not-forward",
@@ -142,6 +143,7 @@ test("pinned lookup supports Node 22 all-address callbacks and blocks NAT64 priv
     })
   });
   assert.equal(forwarded.get("accept"), "application/json");
+  assert.equal(forwarded.has("accept-encoding"), false);
   assert.equal(forwarded.get("if-none-match"), "fixture-etag");
   assert.equal(forwarded.has("authorization"), false);
   assert.equal(forwarded.has("cookie"), false);

@@ -145,7 +145,6 @@ export function createPinnedLookup(address: PinnedNetworkAddress): (
 
 const SAFE_OUTBOUND_HEADERS = new Set([
   "accept",
-  "accept-encoding",
   "cache-control",
   "if-modified-since",
   "if-none-match",
