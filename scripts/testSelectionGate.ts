@@ -31,6 +31,21 @@ export interface RemediationSuite {
   case_name: string;
 }
 
+export interface OAuthPortabilitySuite {
+  id: string;
+  path: string;
+  npm_script: string;
+  ci_step: string;
+  case_name: string;
+}
+
+export const REQUIRED_OAUTH_PORTABILITY_SUITES: ReadonlyArray<OAuthPortabilitySuite> = [
+  { id: "oauth-selected-provider-capability", path: "tests/webgpt-v4-selected-provider.test.ts", npm_script: "test:webgpt:v4", ci_step: "WebGPT V4 integration tests", case_name: "selected provider capability rejects missing PKCE, public-client, audience, and scope guarantees" },
+  { id: "oauth-selected-provider-jwt", path: "tests/webgpt-v4-selected-provider.test.ts", npm_script: "test:webgpt:v4", ci_step: "WebGPT V4 integration tests", case_name: "selected provider JWT verifies signature, issuer, audience, expiry, scope claims, and key rotation" },
+  { id: "oauth-selected-provider-authorization", path: "tests/webgpt-v4-selected-provider.test.ts", npm_script: "test:webgpt:v4", ci_step: "WebGPT V4 integration tests", case_name: "selected provider authorization distinguishes unregistered, owner, viewer, revoked, and cross-project access" },
+  { id: "oauth-selected-provider-six-tools", path: "tests/webgpt-v4-selected-provider.test.ts", npm_script: "test:webgpt:v4", ci_step: "WebGPT V4 integration tests", case_name: "selected provider six readonly tools preserve the complete database logical manifest" }
+];
+
 export const REQUIRED_REMEDIATION_SUITES: ReadonlyArray<RemediationSuite> = [
   { id: "sr1-artifact-blob-faults", stage: "SR1", kind: "fault_injection", path: "tests/artifact-blob-boundary.test.ts", npm_script: "test:foundation-boundaries", ci_step: "Foundation and media boundary tests", case_name: "cross-SHOT reuse and stale concurrent binding attempts fail closed" },
   { id: "sr1-legacy-migration-copy", stage: "SR1", kind: "migration_copy", path: "tests/artifact-blob-boundary.test.ts", npm_script: "test:foundation-boundaries", ci_step: "Foundation and media boundary tests", case_name: "v2-4 migration derives Blob facts from local bytes and fails closed on structured drift" },
@@ -47,6 +62,7 @@ export interface TestSuiteCatalog {
   groups: TestSuiteGroup[];
   required_commands?: RequiredCommand[];
   remediation_suites: RemediationSuite[];
+  oauth_portability_suites: OAuthPortabilitySuite[];
 }
 
 export interface TestSelectionAuditInput {
@@ -56,6 +72,7 @@ export interface TestSelectionAuditInput {
   package_scripts: Record<string, string>;
   workflow_text: string;
   required_remediation_suites?: ReadonlyArray<RemediationSuite>;
+  required_oauth_portability_suites?: ReadonlyArray<OAuthPortabilitySuite>;
 }
 
 function normalizePath(value: string): string {
@@ -156,6 +173,7 @@ export function auditTestSelection(input: TestSelectionAuditInput): string[] {
   if (input.catalog.version !== 2) return ["CATALOG_VERSION_INVALID"];
   if (!Array.isArray(input.catalog.groups)) return ["CATALOG_GROUPS_INVALID"];
   if (!Array.isArray(input.catalog.remediation_suites)) return ["CATALOG_REMEDIATION_SUITES_INVALID"];
+  if (!Array.isArray(input.catalog.oauth_portability_suites)) return ["CATALOG_OAUTH_PORTABILITY_SUITES_INVALID"];
 
   const sourceFiles = new Set(input.source_files.map(normalizePath));
   const catalogPaths = new Map<string, string>();
@@ -251,6 +269,38 @@ export function auditTestSelection(input: TestSelectionAuditInput): string[] {
   }
   for (const kind of ["fault_injection", "migration_copy"] as const) {
     if (!remediationKinds.has(kind)) errors.push(`REMEDIATION_KIND_MISSING: ${kind}`);
+  }
+
+  const requiredOauthSuites = input.required_oauth_portability_suites ?? REQUIRED_OAUTH_PORTABILITY_SUITES;
+  const requiredOauth = new Map(requiredOauthSuites.map((suite) => [suite.id, suite]));
+  const actualOauth = new Map(input.catalog.oauth_portability_suites.map((suite) => [suite.id, suite]));
+  if (actualOauth.size !== input.catalog.oauth_portability_suites.length) errors.push("OAUTH_PORTABILITY_SUITE_ID_DUPLICATE");
+  for (const required of requiredOauthSuites) {
+    const actual = actualOauth.get(required.id);
+    if (!actual) {
+      errors.push(`OAUTH_PORTABILITY_SUITE_MISSING: ${required.id}`);
+      continue;
+    }
+    if (normalizePath(actual.path) !== normalizePath(required.path)
+      || actual.npm_script !== required.npm_script
+      || actual.ci_step !== required.ci_step
+      || actual.case_name !== required.case_name) {
+      errors.push(`OAUTH_PORTABILITY_SUITE_SIGNATURE_MISMATCH: ${required.id}`);
+    }
+  }
+  for (const suite of input.catalog.oauth_portability_suites) {
+    if (!requiredOauth.has(suite.id)) errors.push(`OAUTH_PORTABILITY_SUITE_UNDECLARED: ${suite.id}`);
+    const path = normalizePath(suite.path ?? "");
+    const ownerId = catalogPaths.get(path);
+    const owner = input.catalog.groups.find((group) => group.id === ownerId);
+    if (!owner || owner.classification !== "mandatory") {
+      errors.push(`OAUTH_PORTABILITY_SUITE_NOT_MANDATORY: ${suite.id} -> ${path || "<missing>"}`);
+    } else if (owner.npm_script !== suite.npm_script || owner.ci_step !== suite.ci_step) {
+      errors.push(`OAUTH_PORTABILITY_LANE_MISMATCH: ${suite.id}`);
+    }
+    if (!suite.case_name?.trim() || !sourceContainsNamedCase(input.source_texts[path] ?? "", suite.case_name)) {
+      errors.push(`OAUTH_PORTABILITY_CASE_MISSING: ${suite.id} -> ${suite.case_name || "<missing>"}`);
+    }
   }
 
   const canonicalRuns = npmRuns(input.package_scripts.test ?? "");

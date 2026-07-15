@@ -62,7 +62,8 @@ GET http://127.0.0.1:2092/healthz
 - 通用配置使用 `WEBGPT_V4_READONLY_OAUTH_ISSUER`、`WEBGPT_V4_READONLY_OAUTH_AUDIENCE`、`WEBGPT_V4_READONLY_OAUTH_JWKS_URI` 和显式 `WEBGPT_V4_READONLY_OAUTH_CLIENT_REGISTRATION`
 - issuer 同时是 PRMD authorization server 与 JWT `iss`；audience 必须与 `WEBGPT_V4_RESOURCE_URL` 完全相同
 - IdP 只认证身份；本地 issuer-bound principal/membership 始终是 production-project 授权权威
-- 首选 Provider 与 predefined public client 仍需 Stage 0 capability gate 后确定
+- Stage 0 因当前 Auth0 tenant/plan 的 resource-to-audience 行为无法只读核实而记录 `AUTH0_CAPABILITY_GATE_FAILED`；候选路线已切换为 Stytch predefined public-client capability fixture，但外部对象与真实 token 仍未验收
+- 运行时保持 provider-neutral，不允许根据 Stytch/Descope 品牌绕过 issuer、audience、JWKS、scope 或 membership
 
 ### Descope Readonly（legacy adapter）
 
@@ -112,7 +113,7 @@ GET http://127.0.0.1:2092/healthz
 1. 本地 V4 单元、MCP/Auth、媒体和元数据测试。
 2. V2、H1、前端、浏览器与生产构建回归。
 3. 对数据库副本验证 migration `0008`、issuer binding、owner bootstrap、viewer grant/revoke 和 immediate readiness failure。
-4. 先完成首选 IdP Stage 0 capability gate；随后按 provider-neutral taskbook 完成 `projects.read`、predefined public client、ChatGPT app 与官方 Tunnel 接线。旧 [External Multi-User Readonly Connection — Preflight](../EXTERNAL_MULTI_USER_READONLY_CONNECTION_PREFLIGHT.md) 仅保留为 Descope 历史路线证据。
+4. 按 [Readonly Federated OAuth Portability v1](../READONLY_FEDERATED_OAUTH_PORTABILITY.md) 和 [Stytch Predefined Public Client Runbook](STYTCH_PREDEFINED_CLIENT_RUNBOOK.md) 完成新的 capability gate、`projects.read`、predefined public client、ChatGPT test App 与官方 Tunnel 隔离接线。旧 [External Multi-User Readonly Connection — Preflight](../EXTERNAL_MULTI_USER_READONLY_CONNECTION_PREFLIGHT.md) 仅保留为 Descope 历史路线证据。
 5. 使用两个真实用户完成 Developer Mode 只读黄金提示集和跨项目拒绝验证。
 6. Full/Auth0、写 scopes 和媒体域名分别制定新计划，不由 Readonly 验收自动开放。
 

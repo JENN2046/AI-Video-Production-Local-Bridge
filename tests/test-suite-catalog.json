@@ -98,6 +98,7 @@
         "tests/webgpt-v4-metadata.test.ts",
         "tests/webgpt-v4-oauth-discovery.test.ts",
         "tests/webgpt-v4-profile.test.ts",
+        "tests/webgpt-v4-selected-provider.test.ts",
         "tests/webgpt-v4-server.test.ts",
         "tests/webgpt-v4-telemetry.test.ts",
         "tests/webgpt-v4-widget.test.ts"
@@ -130,6 +131,36 @@
       "npm_script": "test:v2:browser",
       "ci_step": "Run browser smoke tests",
       "paths": ["tests/browser/workbench-v2.spec.ts"]
+    }
+  ],
+  "oauth_portability_suites": [
+    {
+      "id": "oauth-selected-provider-capability",
+      "path": "tests/webgpt-v4-selected-provider.test.ts",
+      "npm_script": "test:webgpt:v4",
+      "ci_step": "WebGPT V4 integration tests",
+      "case_name": "selected provider capability rejects missing PKCE, public-client, audience, and scope guarantees"
+    },
+    {
+      "id": "oauth-selected-provider-jwt",
+      "path": "tests/webgpt-v4-selected-provider.test.ts",
+      "npm_script": "test:webgpt:v4",
+      "ci_step": "WebGPT V4 integration tests",
+      "case_name": "selected provider JWT verifies signature, issuer, audience, expiry, scope claims, and key rotation"
+    },
+    {
+      "id": "oauth-selected-provider-authorization",
+      "path": "tests/webgpt-v4-selected-provider.test.ts",
+      "npm_script": "test:webgpt:v4",
+      "ci_step": "WebGPT V4 integration tests",
+      "case_name": "selected provider authorization distinguishes unregistered, owner, viewer, revoked, and cross-project access"
+    },
+    {
+      "id": "oauth-selected-provider-six-tools",
+      "path": "tests/webgpt-v4-selected-provider.test.ts",
+      "npm_script": "test:webgpt:v4",
+      "ci_step": "WebGPT V4 integration tests",
+      "case_name": "selected provider six readonly tools preserve the complete database logical manifest"
     }
   ],
   "remediation_suites": [
