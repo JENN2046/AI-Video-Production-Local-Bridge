@@ -113,9 +113,14 @@ test("selected provider capability rejects missing PKCE, public-client, audience
     { configured_scopes: [] },
     { configured_scopes: ["projects.read", "media.read"] },
     { grant_types: ["authorization_code", "client_credentials"] },
+    { grant_types: undefined as unknown as readonly string[] },
+    { configured_scopes: undefined as unknown as readonly string[] },
     { client_credentials_enabled: true },
+    { client_credentials_enabled: undefined as unknown as boolean },
     { client_secret_present: true },
+    { client_secret_present: null as unknown as boolean },
     { redirect_uris: ["http://localhost/callback"] },
+    { redirect_uris: undefined as unknown as readonly string[] },
     { redirect_uris: ["https://other-chatgpt-app.example.test/oauth/callback"] },
     { redirect_uris: ["https://chatgpt.example.test/oauth/callback", "https://extra.example.test/callback"] }
   ];
