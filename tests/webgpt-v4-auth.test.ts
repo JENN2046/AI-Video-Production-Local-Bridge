@@ -11,13 +11,6 @@ test("Auth0 verifier enforces JWKS signature, issuer, audience, expiry, subject 
   const { privateKey, publicKey } = await generateKeyPair("RS256");
   const jwk = await exportJWK(publicKey);
   Object.assign(jwk, { kid: "webgpt-v4-test", alg: "RS256", use: "sig" });
-  const jwksServer = createServer((_request, response) => {
-    response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
-    response.end(JSON.stringify({ keys: [jwk] }));
-  });
-  await new Promise<void>((resolve) => jwksServer.listen(0, "127.0.0.1", resolve));
-  const address = jwksServer.address();
-  if (!address || typeof address === "string") throw new Error("JWKS fixture did not start.");
   const issuer = "https://auth.example.test/";
   const subject = "auth0|jenn-fixture";
   const config: WebGptV4Auth0Config = {
@@ -26,7 +19,7 @@ test("Auth0 verifier enforces JWKS signature, issuer, audience, expiry, subject 
     issuer,
     audience: "https://webgpt-v4.example.test",
     resource_url: "https://mcp.example.test",
-    jwks_uri: `http://127.0.0.1:${address.port}/jwks.json`,
+    jwks_uri: "https://keys.example.test/jwks.json",
     allowed_subject_hash: sha256(subject)
   };
   const sign = (sub: string, tokenIssuer = issuer, expires = "5m", tokenAudience = config.audience) => new SignJWT({ scope: "projects.read media.read" })
@@ -38,14 +31,15 @@ test("Auth0 verifier enforces JWKS signature, issuer, audience, expiry, subject 
     .setExpirationTime(expires)
     .sign(privateKey);
   const request = (token: string) => ({ headers: { authorization: `Bearer ${token}` } }) as IncomingMessage;
-  try {
-    const authenticate = createAuth0Authenticator(config);
+  const localJwks = createLocalJWKSet({ keys: [jwk] });
+  {
+    const authenticate = createAuth0Authenticator(config, { jwks: localJwks });
     const token = await sign(subject);
     const actor = await authenticate(request(token));
     assert.equal(actor.actor_hash, sha256(subject));
     assert.equal(actor.scopes.has("projects.read"), true);
     assert.equal(actor.scopes.has("shots.write"), false);
-    const authenticateMedia = createAuth0MediaAuthenticator(config, "fixture_media_session");
+    const authenticateMedia = createAuth0MediaAuthenticator(config, "fixture_media_session", { jwks: localJwks });
     const cookieActor = await authenticateMedia({ headers: { cookie: `fixture_media_session=${encodeURIComponent(token)}` } } as IncomingMessage);
     assert.equal(cookieActor.actor_hash, actor.actor_hash);
     await assert.rejects(() => authenticateMedia({ headers: { cookie: "fixture_media_session=%ZZ" } } as IncomingMessage), (error) => error instanceof WebGptV4Error && error.code === "AUTH_INVALID");
@@ -57,9 +51,70 @@ test("Auth0 verifier enforces JWKS signature, issuer, audience, expiry, subject 
     await assert.rejects(() => authenticate(request(wrongIssuerToken)), (error) => error instanceof WebGptV4Error && error.code === "AUTH_INVALID");
     await assert.rejects(() => authenticate(request(wrongAudienceToken)), (error) => error instanceof WebGptV4Error && error.code === "AUTH_INVALID");
     await assert.rejects(() => authenticate(request(expiredToken)), (error) => error instanceof WebGptV4Error && error.code === "AUTH_INVALID");
-  } finally {
-    await new Promise<void>((resolve, reject) => jwksServer.close((error) => error ? reject(error) : resolve()));
   }
+});
+
+test("remote JWKS retrieval uses validated pinned addresses and enforces the response budget", async () => {
+  const { privateKey, publicKey } = await generateKeyPair("RS256");
+  const jwk = await exportJWK(publicKey);
+  Object.assign(jwk, { kid: "pinned-jwks", alg: "RS256", use: "sig" });
+  const issuer = "https://auth.example.test/";
+  const subject = "auth0|pinned-fixture";
+  const config: WebGptV4Auth0Config = {
+    provider: "auth0",
+    access_model: "single_subject",
+    issuer,
+    audience: "https://mcp.example.test",
+    resource_url: "https://mcp.example.test",
+    jwks_uri: "https://keys.example.test/jwks.json",
+    allowed_subject_hash: sha256(subject)
+  };
+  const token = await new SignJWT({ scope: "projects.read" })
+    .setProtectedHeader({ alg: "RS256", kid: "pinned-jwks" })
+    .setIssuer(issuer)
+    .setAudience(config.audience)
+    .setSubject(subject)
+    .setIssuedAt()
+    .setExpirationTime("5m")
+    .sign(privateKey);
+  const request = { headers: { authorization: `Bearer ${token}` } } as IncomingMessage;
+
+  const pinnedAddresses: string[] = [];
+  const authenticate = createAuth0Authenticator(config, {
+    jwks_transport: {
+      resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+      fetch_pinned_address: async (_url, _signal, address) => {
+        pinnedAddresses.push(address.address);
+        return new Response(JSON.stringify({ keys: [jwk] }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+    }
+  });
+  assert.equal((await authenticate(request)).actor_hash, sha256(subject));
+  assert.deepEqual(pinnedAddresses, ["8.8.8.8"]);
+
+  let privateTransportRan = false;
+  const privateTarget = createAuth0Authenticator(config, {
+    jwks_transport: {
+      resolve_hostname: async () => [{ address: "127.0.0.1", family: 4 }],
+      fetch_pinned_address: async () => {
+        privateTransportRan = true;
+        return new Response(JSON.stringify({ keys: [jwk] }), { status: 200 });
+      }
+    }
+  });
+  await assert.rejects(() => privateTarget(request), (error) => error instanceof WebGptV4Error && error.code === "AUTH_INVALID");
+  assert.equal(privateTransportRan, false);
+
+  const oversized = createAuth0Authenticator(config, {
+    jwks_transport: {
+      resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+      fetch_pinned_address: async () => new Response("x".repeat(256 * 1024 + 1), {
+        status: 200,
+        headers: { "content-length": String(256 * 1024 + 1) }
+      })
+    }
+  });
+  await assert.rejects(() => oversized(request), (error) => error instanceof WebGptV4Error && error.code === "AUTH_INVALID");
 });
 
 test("OAuth environment configuration selects one strict Readonly source and fails closed on ambiguity", () => {
@@ -177,10 +232,14 @@ test("Federated verifier accepts multiple subjects, enforces standard scope clai
     configuration_source: "generic" as const,
     jwks_uri: "https://keys.example.test/jwks.json"
   };
-  const sign = (subject: string, claims: Record<string, unknown> = { scope: "projects.read" }) => new SignJWT(claims)
+  const sign = (
+    subject: string,
+    claims: Record<string, unknown> = { scope: "projects.read" },
+    tokenAudience = audience
+  ) => new SignJWT(claims)
     .setProtectedHeader({ alg: "RS256", kid: "descope-fixture" })
     .setIssuer(issuer)
-    .setAudience(audience)
+    .setAudience(tokenAudience)
     .setSubject(subject)
     .setIssuedAt()
     .setExpirationTime("5m")
@@ -201,6 +260,11 @@ test("Federated verifier accepts multiple subjects, enforces standard scope clai
       principalIdFromFederatedSubject("https://issuer-b.example", "shared-subject")
     );
     assert.equal(first.issuer_hash, issuerHash(issuer));
+    const localTunnelTargetAudience = await sign("descope-user-a", { scope: "projects.read" }, "http://127.0.0.1:2091/mcp");
+    await assert.rejects(
+      () => authenticate(request(localTunnelTargetAudience)),
+      (error) => error instanceof WebGptV4Error && error.code === "AUTH_INVALID"
+    );
     const conflictingScopeToken = await sign("descope-user-a", { scope: "projects.read", scp: ["projects.read", "media.read"] });
     await assert.rejects(
       () => authenticate(request(conflictingScopeToken)),

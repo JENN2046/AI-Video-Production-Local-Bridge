@@ -1,12 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lookup } from "node:dns/promises";
 import { existsSync, lstatSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { request as httpsRequest } from "node:https";
-import { BlockList, isIP } from "node:net";
 import { basename, extname, isAbsolute, relative, resolve } from "node:path";
-import { Readable } from "node:stream";
 
 import { paths } from "../paths.js";
+import { abortable, fetchFromValidatedAddresses, isUnsafeNetworkHost, pinnedHttpsFetch, PinnedHttpsError, resolvePublicAddresses } from "../net/pinnedHttpsTransport.js";
 import { activateLocalMediaArtifact, recoverMediaActivations, verifyMediaArtifactBytes, type MediaArtifact } from "./mediaArtifacts.js";
 import { validateMp4File, type Mp4ValidationResult } from "./mediaValidity.js";
 import { providerError, type ProviderToolError } from "./provider.js";
@@ -48,130 +45,6 @@ const DEFAULT_SAFETY: ProviderOutputDownloadSafety = {
   redirect_limit: 3,
   max_size_mb: 200
 };
-
-const BLOCKED_IPV6 = new BlockList();
-for (const [network, prefix] of [
-  ["::", 96],
-  ["::", 128],
-  ["::1", 128],
-  ["100::", 64],
-  ["2001:db8::", 32],
-  ["3fff::", 20],
-  ["fc00::", 7],
-  ["fe80::", 10],
-  ["fec0::", 10],
-  ["ff00::", 8]
-] as const) BLOCKED_IPV6.addSubnet(network, prefix, "ipv6");
-
-function ipv4ToNumber(host: string): number | null {
-  const parts = host.split(".");
-  if (parts.length !== 4) return null;
-  let value = 0;
-  for (const part of parts) {
-    if (!/^\d+$/.test(part)) return null;
-    const parsed = Number(part);
-    if (!Number.isInteger(parsed) || parsed < 0 || parsed > 255) return null;
-    value = (value << 8) + parsed;
-  }
-  return value >>> 0;
-}
-
-function isPrivateHost(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
-  if (host === "localhost" || host.endsWith(".localhost") || host === "0.0.0.0") return true;
-  if (host === "169.254.169.254") return true;
-  const mappedIpv4 = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(host)?.[1];
-  if (mappedIpv4) return isPrivateHost(mappedIpv4);
-  const mappedHex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(host);
-  if (mappedHex) {
-    const high = Number.parseInt(mappedHex[1], 16);
-    const low = Number.parseInt(mappedHex[2], 16);
-    return isPrivateHost(`${high >>> 8}.${high & 0xff}.${low >>> 8}.${low & 0xff}`);
-  }
-  if (isIP(host) === 6) return BLOCKED_IPV6.check(host, "ipv6");
-
-  const ipv4 = ipv4ToNumber(host);
-  if (ipv4 === null) return false;
-  const first = (ipv4 >>> 24) & 0xff;
-  const second = (ipv4 >>> 16) & 0xff;
-  const third = (ipv4 >>> 8) & 0xff;
-  if (first === 10 || first === 127 || first === 0) return true;
-  if (first === 172 && second >= 16 && second <= 31) return true;
-  if (first === 192 && second === 168) return true;
-  if (first === 169 && second === 254) return true;
-  if (first === 100 && second >= 64 && second <= 127) return true;
-  if (first === 198 && (second === 18 || second === 19)) return true;
-  if (first === 192 && second === 0 && (third === 0 || third === 2)) return true;
-  if (first === 192 && second === 88 && third === 99) return true;
-  if (first === 198 && second === 51 && third === 100) return true;
-  if (first === 203 && second === 0 && third === 113) return true;
-  if (first >= 224) return true;
-  return false;
-}
-
-async function publicAddresses(
-  hostname: string,
-  resolver: (hostname: string) => Promise<Array<{ address: string; family: 4 | 6 }>>
-): Promise<Array<{ address: string; family: 4 | 6 }>> {
-  const normalizedHostname = hostname.replace(/^\[|\]$/g, "");
-  const literalFamily = isIP(normalizedHostname);
-  const addresses = literalFamily
-    ? [{ address: normalizedHostname, family: literalFamily as 4 | 6 }]
-    : await resolver(normalizedHostname);
-  if (addresses.length === 0 || addresses.some((candidate) => isPrivateHost(candidate.address))) {
-    throw new Error("PROVIDER_OUTPUT_URI_BLOCKED");
-  }
-  return addresses;
-}
-
-async function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) throw new DOMException("aborted", "AbortError");
-  return await new Promise<T>((resolveValue, rejectValue) => {
-    const abort = (): void => rejectValue(new DOMException("aborted", "AbortError"));
-    signal.addEventListener("abort", abort, { once: true });
-    void promise.then(resolveValue, rejectValue).finally(() => signal.removeEventListener("abort", abort));
-  });
-}
-
-async function pinnedHttpsFetch(url: URL, signal: AbortSignal, address: { address: string; family: 4 | 6 }): Promise<Response> {
-  return await new Promise<Response>((resolveResponse, rejectResponse) => {
-    const request = httpsRequest(url, {
-      method: "GET",
-      signal,
-      lookup: (_hostname, _options, callback) => callback(null, address.address, address.family)
-    }, (response) => {
-      const headers = new Headers();
-      for (const [name, value] of Object.entries(response.headers)) {
-        if (Array.isArray(value)) for (const item of value) headers.append(name, item);
-        else if (value !== undefined) headers.set(name, value);
-      }
-      const body = [204, 205, 304].includes(response.statusCode ?? 500)
-        ? null
-        : Readable.toWeb(response) as ReadableStream<Uint8Array>;
-      resolveResponse(new Response(body, { status: response.statusCode ?? 500, statusText: response.statusMessage, headers }));
-    });
-    request.on("error", rejectResponse);
-    request.end();
-  });
-}
-
-async function fetchFromValidatedAddresses(
-  url: URL,
-  signal: AbortSignal,
-  addresses: Array<{ address: string; family: 4 | 6 }>,
-  fetchAddress: (url: URL, signal: AbortSignal, address: { address: string; family: 4 | 6 }) => Promise<Response>
-): Promise<Response> {
-  let lastError: unknown = new Error("Provider output hostname had no reachable public address.");
-  for (const address of addresses) {
-    try {
-      return await fetchAddress(url, signal, address);
-    } catch (error) {
-      if (signal.aborted) throw error;
-      lastError = error;
-    }
-  }
-  throw lastError;
-}
 
 function isPathInside(child: string, parent: string): boolean {
   const rel = relative(resolve(parent), resolve(child));
@@ -245,7 +118,7 @@ export function validateProviderOutputUrl(urlInput: string): { ok: true; url: UR
     return { ok: false, error: providerError("PROVIDER_OUTPUT_URI_BLOCKED", "Provider output URL must not contain embedded credentials.") };
   }
 
-  if (isPrivateHost(url.hostname)) {
+  if (isUnsafeNetworkHost(url.hostname)) {
     return { ok: false, error: providerError("PROVIDER_OUTPUT_URI_BLOCKED", "Provider output URL targets a private or local network host.") };
   }
 
@@ -266,7 +139,7 @@ function extensionForUrl(url: URL): string {
 async function fetchWithRedirects(
   initialUrl: URL,
   safety: ProviderOutputDownloadSafety,
-  resolver: (hostname: string) => Promise<Array<{ address: string; family: 4 | 6 }>>,
+  resolver: ((hostname: string) => Promise<Array<{ address: string; family: 4 | 6 }>>) | undefined,
   fetchAddress: (url: URL, signal: AbortSignal, address: { address: string; family: 4 | 6 }) => Promise<Response>
 ): Promise<{ response: Response; finalUrl: URL; cleanup: () => void } | { error: ProviderToolError }> {
   let currentUrl = initialUrl;
@@ -275,11 +148,11 @@ async function fetchWithRedirects(
     const timeout = setTimeout(() => controller.abort(), safety.timeout_seconds * 1000);
     let response: Response;
     try {
-      const addresses = await abortable(publicAddresses(currentUrl.hostname, resolver), controller.signal);
+      const addresses = await abortable(resolvePublicAddresses(currentUrl.hostname, resolver), controller.signal);
       response = await fetchFromValidatedAddresses(currentUrl, controller.signal, addresses, fetchAddress);
     } catch (error) {
       clearTimeout(timeout);
-      if (error instanceof Error && error.message === "PROVIDER_OUTPUT_URI_BLOCKED") {
+      if (error instanceof PinnedHttpsError && error.code === "UNSAFE_NETWORK_TARGET") {
         return { error: providerError("PROVIDER_OUTPUT_URI_BLOCKED", "Provider output URL resolved to a private or local network address.") };
       }
       return {
@@ -370,11 +243,7 @@ export async function downloadProviderOutputToArtifact(
     };
   }
 
-  const resolver = runtime.resolve_hostname ?? (async (hostname: string) => {
-    const result = await lookup(hostname, { all: true, verbatim: true });
-    return result.map((entry) => ({ address: entry.address, family: entry.family as 4 | 6 }));
-  });
-  const fetched = await fetchWithRedirects(urlValidation.url, safety, resolver, runtime.fetch_pinned_address ?? pinnedHttpsFetch);
+  const fetched = await fetchWithRedirects(urlValidation.url, safety, runtime.resolve_hostname, runtime.fetch_pinned_address ?? pinnedHttpsFetch);
   if ("error" in fetched) return { ok: false, error: fetched.error };
 
   const contentType = fetched.response.headers.get("content-type");
