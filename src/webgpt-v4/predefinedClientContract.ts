@@ -1,4 +1,5 @@
 import { WebGptV4Error } from "./types.js";
+import { assertSafeHttpsUrl } from "../net/pinnedHttpsTransport.js";
 
 export interface WebGptPredefinedPublicClientCapability {
   provider_id: string;
@@ -41,7 +42,9 @@ function capabilityError(field: keyof WebGptPredefinedPublicClientCapability): n
 function isHttpsIdentifier(value: string): boolean {
   try {
     const parsed = new URL(value);
-    return parsed.protocol === "https:" && !parsed.username && !parsed.password && !parsed.search && !parsed.hash;
+    if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.search || parsed.hash) return false;
+    assertSafeHttpsUrl(parsed);
+    return true;
   } catch {
     return false;
   }

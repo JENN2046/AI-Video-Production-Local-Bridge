@@ -112,6 +112,10 @@ test("selected provider capability rejects missing PKCE, public-client, audience
   const invalid: Array<Partial<WebGptPredefinedPublicClientCapability>> = [
     { pkce_code_challenge_method: "plain" },
     { authorization_endpoint: "http://localhost/authorize" },
+    { authorization_endpoint: "https://localhost/authorize" },
+    { authorization_endpoint: "https://127.0.0.1/authorize" },
+    { authorization_endpoint: "https://192.168.1.5/authorize" },
+    { authorization_endpoint: "https://[::1]/authorize" },
     { authorization_endpoint: "https://authorize.fixture.stytch.example/authorize?client_id=embedded" },
     { authorization_endpoint: undefined as unknown as string },
     { authorization_endpoint_hosting: "unknown" },
