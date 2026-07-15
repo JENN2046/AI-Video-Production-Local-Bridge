@@ -39,7 +39,7 @@ Request admission is bounded to 8 active MCP requests globally and 4 per princip
 
 ## Migration and admin commands
 
-Migration `0007` creates the authorization tables, constraints, indexes and append-only triggers. Runtime startup only verifies the schema; it does not migrate automatically.
+Migration `0007` creates the authorization tables, constraints, indexes and append-only triggers. Migration `0008` adds the immutable issuer binding required by current Readonly authorization. Runtime startup only verifies the schema; it does not migrate automatically.
 
 Admin commands require `--db`; omission fails with `INVALID_WEBGPT_AUTH_ADMIN_INPUT`. There is no default activity-database target.
 
@@ -47,12 +47,13 @@ Admin commands require `--db`; omission fails with `INVALID_WEBGPT_AUTH_ADMIN_IN
 npm run auth:webgpt -- bootstrap-owner --db <path> --principal <opaque-sha256> --project <production-project-id>
 npm run auth:webgpt:bootstrap-owner -- -DatabasePath <path> -Issuer <https-issuer> -ProjectId <production-project-id>
 npm run auth:webgpt -- register --db <path> --principal <opaque-sha256>
+npm run auth:webgpt:bind-principal -- -DatabasePath <path> -Issuer <https-issuer>
 npm run auth:webgpt -- grant --db <path> --principal <opaque-sha256> --project <production-project-id> --role owner|viewer
 npm run auth:webgpt -- revoke --db <path> --principal <opaque-sha256> --project <production-project-id>
 npm run auth:webgpt -- list --db <path>
 ```
 
-`bootstrap-owner` creates the principal, owner membership and events atomically. It refuses disabled principals and will not overwrite a different existing membership. `grant` requires an active registered principal and a production-classified project. `revoke` preserves the membership record and appends an audit event. `list` returns counts only.
+`bootstrap-owner` creates the principal, immutable issuer binding, owner membership and events atomically. It refuses disabled principals and will not overwrite a different existing membership. For every later viewer or owner, run `register`, then the hidden-input `auth:webgpt:bind-principal`, and only then `grant`; `grant` rejects an unbound principal. `revoke` preserves the membership record and appends an audit event. `list` returns counts only.
 
 On Windows, `auth:webgpt:bootstrap-owner` is the preferred first-owner path. Its PowerShell wrapper uses `Read-Host -AsSecureString`, sends the subject only through child-process stdin, reuses the runtime issuer normalization and principal derivation, and returns only creation booleans. It never accepts the subject in argv or writes it to the database. Direct `bootstrap-owner-interactive` invocation from a TTY fails closed so an unmasked prompt cannot be mistaken for the supported path.
 

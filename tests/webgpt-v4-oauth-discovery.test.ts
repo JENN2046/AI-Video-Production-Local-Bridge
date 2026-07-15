@@ -178,4 +178,15 @@ test("dedicated discovery preflight fails closed without reading database state"
   });
   assert.equal(generic.status, 1);
   assert.deepEqual(JSON.parse(generic.stdout), { ok: false, code: "OAUTH_DISCOVERY_REQUIRES_LEGACY_DESCOPE" });
+
+  const invalid = spawnSync(process.execPath, [join(process.cwd(), "dist", "scripts", "webgpt-oauth-discovery-preflight.js")], {
+    cwd: process.cwd(), encoding: "utf8", windowsHide: true, timeout: 10_000,
+    env: {
+      PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, WEBGPT_V4_PROFILE: "readonly",
+      WEBGPT_V4_READONLY_OAUTH_ISSUER: "https://tenant.example.test/oauth"
+    }
+  });
+  assert.equal(invalid.status, 1);
+  assert.deepEqual(JSON.parse(invalid.stdout), { ok: false, code: "INVALID_WEBGPT_AUTH_CONFIG" });
+  assert.equal(invalid.stderr, "");
 });

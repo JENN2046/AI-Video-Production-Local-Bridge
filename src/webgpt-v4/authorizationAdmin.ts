@@ -260,7 +260,7 @@ export function grantWebGptProjectMembership(db: M0Database, principalId: string
       JOIN webgpt_auth_principal_bindings b ON b.workspace_id = p.workspace_id AND b.principal_id = p.principal_id
       WHERE p.workspace_id = ? AND p.principal_id = ? AND p.status = 'active'`)
       .get(WEBGPT_AUTHORIZATION_WORKSPACE_ID, principalId);
-    if (!principal) throw new WebGptAuthAdminInputError("Principal is not registered, bound, and active.");
+    if (!principal) throw new WebGptAuthAdminInputError("Principal is not registered, issuer-bound, and active; complete the secure binding step before granting access.");
     const previous = db.prepare(`SELECT role, status FROM webgpt_project_memberships
       WHERE workspace_id = ? AND project_id = ? AND principal_id = ?`)
       .get(WEBGPT_AUTHORIZATION_WORKSPACE_ID, projectId, principalId) as { role: string; status: string } | undefined;

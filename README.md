@@ -66,12 +66,13 @@ npm run secret:scan
 npm run auth:webgpt -- bootstrap-owner --db <path> --principal <opaque-sha256> --project <production-project-id>
 npm run auth:webgpt:bootstrap-owner -- -DatabasePath <path> -Issuer <https-issuer> -ProjectId <production-project-id>
 npm run auth:webgpt -- register --db <path> --principal <opaque-sha256>
+npm run auth:webgpt:bind-principal -- -DatabasePath <path> -Issuer <https-issuer>
 npm run auth:webgpt -- grant --db <path> --principal <opaque-sha256> --project <production-project-id> --role viewer
 npm run auth:webgpt -- revoke --db <path> --principal <opaque-sha256> --project <production-project-id>
 npm run auth:webgpt -- list --db <path>
 ```
 
-普通管理命令只接受 issuer-bound 的小写 SHA-256 principal，不接受原始 subject、邮箱、token 或凭据。Windows 专用的 `auth:webgpt:bootstrap-owner` 使用隐藏提示读取 Descope subject，经 stdin 交给本地进程并直接完成原子 owner bootstrap；subject 不进入命令参数、输出或数据库。`bootstrap-owner`、grant/revoke 与 append-only authorization event 在单一事务中完成；只允许授权 `classification=production` 项目。对 Jenn 活动数据库运行这些写命令仍需当次明确授权。完整边界见 [Descope Multi-User Readonly Authorization](docs/DESCOPE_MULTI_USER_READONLY_AUTHORIZATION.md)。
+普通管理命令只接受 issuer-bound 的小写 SHA-256 principal，不接受原始 subject、邮箱、token 或凭据。非首个 viewer/owner 的固定顺序是 `register`、`auth:webgpt:bind-principal` 隐藏输入绑定、再 `grant`；未绑定 principal 必须拒绝授权。Windows 专用的 `auth:webgpt:bootstrap-owner` 使用隐藏提示读取 Federated subject，经 stdin 交给本地进程并直接完成原子 owner bootstrap；subject 不进入命令参数、输出或数据库。`bootstrap-owner`、grant/revoke 与 append-only authorization event 在单一事务中完成；只允许授权 `classification=production` 项目。对 Jenn 活动数据库运行这些写命令仍需当次明确授权。完整边界见 [Descope Multi-User Readonly Authorization](docs/DESCOPE_MULTI_USER_READONLY_AUTHORIZATION.md)。
 
 数据库 schema 不再在服务启动时静默升级。首次使用或升级后必须在服务停止状态下显式执行 `npm run db:migrate`；命令会在迁移现有数据库前创建 `ops/backups/` 快照。对 Jenn 活动数据库执行迁移前仍需遵守当前授权边界。
 
