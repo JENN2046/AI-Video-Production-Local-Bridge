@@ -65,7 +65,7 @@ const READONLY_LEGACY_DESCOPE_KEYS = [
 ] as const;
 
 function configured(env: NodeJS.ProcessEnv, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(env, key) && env[key] !== undefined;
+  return typeof env[key] === "string" && env[key]?.trim() !== "";
 }
 
 function invalidAuthConfig(code: "INVALID_WEBGPT_AUTH_CONFIG" | "AMBIGUOUS_WEBGPT_AUTH_CONFIG", message: string): never {

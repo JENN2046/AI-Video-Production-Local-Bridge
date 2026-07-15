@@ -83,6 +83,18 @@ test("OAuth environment configuration selects one strict Readonly source and fai
     WEBGPT_V4_READONLY_OAUTH_CLIENT_REGISTRATION: "predefined",
     WEBGPT_V4_RESOURCE_URL: "https://mcp.example.test/mcp"
   } as NodeJS.ProcessEnv;
+  const emptyReadonlyPlaceholders = {
+    WEBGPT_V4_READONLY_OAUTH_ISSUER: "",
+    WEBGPT_V4_READONLY_OAUTH_AUDIENCE: "",
+    WEBGPT_V4_READONLY_OAUTH_JWKS_URI: "",
+    WEBGPT_V4_READONLY_OAUTH_CLIENT_REGISTRATION: "",
+    WEBGPT_V4_DESCOPE_ISSUER: "",
+    WEBGPT_V4_DESCOPE_AUDIENCE: "",
+    WEBGPT_V4_DESCOPE_JWKS_URI: "",
+    WEBGPT_V4_DESCOPE_AUTHORIZATION_SERVER_URL: "",
+    WEBGPT_V4_RESOURCE_URL: ""
+  } as NodeJS.ProcessEnv;
+  assert.equal(loadWebGptV4AuthConfig("readonly", emptyReadonlyPlaceholders), null);
   assert.equal(loadWebGptV4AuthConfig("full", auth0)?.issuer, "https://tenant.example.test/");
   const genericConfig = loadWebGptV4AuthConfig("readonly", generic);
   assert.equal(genericConfig?.provider, "federated");
@@ -93,6 +105,7 @@ test("OAuth environment configuration selects one strict Readonly source and fai
   assert.equal(descopeConfig?.provider, "federated");
   assert.equal(descopeConfig?.issuer, "https://api.descope.com/project-fixture");
   assert.equal(descopeConfig?.provider === "federated" ? descopeConfig.legacy_authorization_server_url : undefined, "https://api.descope.com/v1/apps/agentic/project-fixture/resource-fixture");
+  assert.equal(loadWebGptV4AuthConfig("readonly", { ...emptyReadonlyPlaceholders, ...descope })?.provider, "federated");
   assert.equal(loadWebGptV4AuthConfig("readonly", auth0), null, "readonly must not fall back to Auth0");
   assert.equal(loadWebGptV4AuthConfig("full", descope), null, "full must not use Descope");
   assert.equal(loadWebGptV4AuthConfig("full", { ...auth0, WEBGPT_V4_AUTH0_ISSUER: "http://tenant.example.test" }), null);

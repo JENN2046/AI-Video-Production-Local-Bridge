@@ -161,7 +161,21 @@ test("dedicated discovery preflight fails closed without reading database state"
   assert.equal(result.status, 1);
   assert.deepEqual(JSON.parse(result.stdout), {
     ok: false,
-    code: "OAUTH_DISCOVERY_REQUIRES_READONLY_FEDERATED"
+    code: "OAUTH_DISCOVERY_REQUIRES_LEGACY_DESCOPE"
   });
   assert.equal(result.stderr, "");
+
+  const generic = spawnSync(process.execPath, [join(process.cwd(), "dist", "scripts", "webgpt-oauth-discovery-preflight.js")], {
+    cwd: process.cwd(), encoding: "utf8", windowsHide: true, timeout: 10_000,
+    env: {
+      PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, WEBGPT_V4_PROFILE: "readonly",
+      WEBGPT_V4_RESOURCE_URL: "https://mcp.example.test/mcp",
+      WEBGPT_V4_READONLY_OAUTH_ISSUER: "https://tenant.example.test/oauth",
+      WEBGPT_V4_READONLY_OAUTH_AUDIENCE: "https://mcp.example.test/mcp",
+      WEBGPT_V4_READONLY_OAUTH_JWKS_URI: "https://keys.example.test/jwks.json",
+      WEBGPT_V4_READONLY_OAUTH_CLIENT_REGISTRATION: "predefined"
+    }
+  });
+  assert.equal(generic.status, 1);
+  assert.deepEqual(JSON.parse(generic.stdout), { ok: false, code: "OAUTH_DISCOVERY_REQUIRES_LEGACY_DESCOPE" });
 });
