@@ -2,6 +2,8 @@
 
 Status: historical Descope route; retained as evidence, not the current portability implementation gate
 
+Current route: [Readonly Federated OAuth Portability v1](READONLY_FEDERATED_OAUTH_PORTABILITY.md). Do not use this historical checklist to create or modify new Descope objects.
+
 Baseline: `main@385144d`, package `0.1.0-beta.4`, MCP service `webgpt-v4.2.0`
 
 Profile: `readonly`

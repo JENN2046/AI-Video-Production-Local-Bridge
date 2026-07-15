@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { auditTestSelection, type RemediationSuite, type TestSelectionAuditInput, type TestSuiteCatalog } from "../scripts/testSelectionGate.js";
+import { auditTestSelection, type OAuthPortabilitySuite, type RemediationSuite, type TestSelectionAuditInput, type TestSuiteCatalog } from "../scripts/testSelectionGate.js";
 
 const baseRequiredRemediation: RemediationSuite[] = [
   { id: "sr1-provider", stage: "SR1", kind: "fault_injection", path: "tests/provider.test.ts", npm_script: "test:provider", ci_step: "Provider tests", case_name: "provider remediation case" },
@@ -16,7 +16,8 @@ const baseCatalog: TestSuiteCatalog = {
     { id: "selection", classification: "mandatory", paths: ["tests/test-selection-gate.test.ts"], npm_script: "test:selection-gate", ci_step: "Test selection gate" },
     { id: "provider", classification: "mandatory", paths: ["tests/provider.test.ts"], npm_script: "test:provider", ci_step: "Provider tests" }
   ],
-  remediation_suites: structuredClone(baseRequiredRemediation)
+  remediation_suites: structuredClone(baseRequiredRemediation),
+  oauth_portability_suites: []
 };
 
 function fixture(overrides: Partial<TestSelectionAuditInput> = {}): TestSelectionAuditInput {
@@ -39,6 +40,7 @@ function fixture(overrides: Partial<TestSelectionAuditInput> = {}): TestSelectio
       "  run: npm run test:provider"
     ].join("\n"),
     required_remediation_suites: structuredClone(baseRequiredRemediation),
+    required_oauth_portability_suites: [],
     ...overrides
   };
 }
@@ -180,4 +182,41 @@ test("selection catalog treats commented, skipped, and todo remediation cases as
     input.source_texts["tests/provider.test.ts"] = source;
     assert.ok(auditTestSelection(input).includes("REMEDIATION_CASE_MISSING: sr1-provider -> provider remediation case"), source);
   }
+});
+
+test("selection catalog freezes OAuth portability file, lane, CI step, and concrete safety case", () => {
+  const required: OAuthPortabilitySuite = {
+    id: "oauth-provider",
+    path: "tests/provider.test.ts",
+    npm_script: "test:provider",
+    ci_step: "Provider tests",
+    case_name: "provider remediation case"
+  };
+  const input = fixture({ required_oauth_portability_suites: [required] });
+  input.catalog.oauth_portability_suites = [structuredClone(required)];
+  assert.deepEqual(auditTestSelection(input), []);
+
+  const missing = fixture({ required_oauth_portability_suites: [required] });
+  assert.ok(auditTestSelection(missing).includes("OAUTH_PORTABILITY_SUITE_MISSING: oauth-provider"));
+
+  const caseMissing = fixture({ required_oauth_portability_suites: [required] });
+  caseMissing.catalog.oauth_portability_suites = [structuredClone(required)];
+  caseMissing.source_texts["tests/provider.test.ts"] = 'test("different case", () => {})';
+  assert.ok(auditTestSelection(caseMissing).includes("OAUTH_PORTABILITY_CASE_MISSING: oauth-provider -> provider remediation case"));
+
+  for (const field of ["path", "npm_script", "ci_step", "case_name"] as const) {
+    const drift = fixture({ required_oauth_portability_suites: [required] });
+    drift.catalog.oauth_portability_suites = [structuredClone(required)];
+    drift.catalog.oauth_portability_suites[0][field] = `drifted-${field}`;
+    assert.ok(auditTestSelection(drift).includes("OAUTH_PORTABILITY_SUITE_SIGNATURE_MISMATCH: oauth-provider"), field);
+  }
+
+  const disabled = fixture({ required_oauth_portability_suites: [required] });
+  disabled.catalog.oauth_portability_suites = [structuredClone(required)];
+  disabled.source_texts["tests/provider.test.ts"] = 'test("provider remediation case", { skip: true }, () => {})';
+  assert.ok(auditTestSelection(disabled).includes("OAUTH_PORTABILITY_CASE_MISSING: oauth-provider -> provider remediation case"));
+
+  const malformed = fixture();
+  delete (malformed.catalog as unknown as { oauth_portability_suites?: OAuthPortabilitySuite[] }).oauth_portability_suites;
+  assert.deepEqual(auditTestSelection(malformed), ["CATALOG_OAUTH_PORTABILITY_SUITES_INVALID"]);
 });

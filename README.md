@@ -60,7 +60,7 @@ npm run secret:scan
 
 ### 多用户只读授权
 
-`0.1.0-beta.4` 建立了 Descope 多用户只读服务边界；当前仓库候选代码进一步建立 provider-neutral Federated OAuth/issuer binding，但不自动配置 IdP、ChatGPT connector 或 Tunnel。Descope 文档保留为历史兼容路线；新的 Provider capability 与双用户验收仍需后续 PR 和单独外部授权。授权管理命令必须显式提供数据库路径，不会默认写入 `data/app.sqlite`：
+`0.1.0-beta.4` 建立了 Descope 多用户只读服务边界；当前仓库候选代码进一步建立 provider-neutral Federated OAuth/issuer binding 与安全 discovery。Stage 0 因当前 Auth0 tenant/plan 无法只读核实而 fail closed，PR3 采用 Stytch predefined public-client capability fixture；这不是外部验收通过。Descope 文档保留为历史兼容路线；新的 IdP/ChatGPT 双用户验收仍需后续独立授权。完整候选边界见 [Readonly Federated OAuth Portability v1](docs/READONLY_FEDERATED_OAUTH_PORTABILITY.md)。授权管理命令必须显式提供数据库路径，不会默认写入 `data/app.sqlite`：
 
 ```powershell
 npm run auth:webgpt -- bootstrap-owner --db <path> --principal <opaque-sha256> --issuer <https-issuer> --project <production-project-id>

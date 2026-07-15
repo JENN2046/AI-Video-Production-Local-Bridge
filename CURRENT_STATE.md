@@ -18,7 +18,7 @@ AI Video Production Workspace 已经越过概念验证：Workbench V2、WebGPT V
 
 WebGPT V4 已收敛为默认 Readonly 的严格契约服务面：默认仅暴露六个 `projects.read` 工具；14 个 Full 工具均使用显式公共 DTO；大型上下文默认 Compact 并受 128 KiB 预算约束；离线 contract/eval、Widget v2 和可选低披露 JSONL Telemetry 均有故障路径测试。PR #25–#28 又完成 path-aware PRMD、readonly Descope JWT、migration `0007`、opaque principal、显式 production-project membership、append-only authorization event、active-owner readiness 与全局 8/每 principal 4 的 request admission。`webgpt-v4.2.0` 的代码服务面已经形成；此状态不表示外部 Descope、ChatGPT connector 或 Tunnel 接线已完成。
 
-Readonly Federated OAuth portability 候选路线已开始：PR #34 在 repository runtime 中加入 migration `0008`、不可变 issuer binding、provider-neutral Federated config、严格 `scope`/`scp` 和 current-issuer owner readiness；活动库仍停留在已验收的 `0007`。后续候选实现把 discovery/JWKS 收敛到 RFC 8414→OIDC、精确 issuer/JWKS、registration-mode gate 与 DNS-pinned HTTPS transport。上述候选状态不等于首选 IdP capability、ChatGPT 外部连接或活动库 cutover 已通过。
+Readonly Federated OAuth portability 候选路线已推进：PR #34 在 repository runtime 中加入 migration `0008`、不可变 issuer binding、provider-neutral Federated config、严格 `scope`/`scp` 和 current-issuer owner readiness；PR #35 把 discovery/JWKS 收敛到 RFC 8414→OIDC、精确 issuer/JWKS、registration-mode gate 与 DNS-pinned HTTPS transport。Stage 0 因当前 Auth0 tenant/plan 无法完成只读 capability 核实而记录 `AUTH0_CAPABILITY_GATE_FAILED`；PR3 候选使用 Stytch predefined public-client capability fixture，并新增 JWT/轮换、双用户授权、跨项目与六工具整库零写入门禁。活动库仍停留在已验收的 `0007`；上述候选状态不等于 IdP、ChatGPT 外部连接或活动库 cutover 已通过。
 
 Stabilization Remediation 已完成代码与门禁收敛：SR0/SR0.5 固定实施路线和测试选择双门禁；SR1 建立不可变 Blob 与原子 Artifact 绑定；SR2 收敛共享 Provider capability/pricing contract；SR3 建立媒体激活、字节校验和恢复门禁；SR4 修复跨 SHOT 引用、readiness 和旧再生旁路；SR5 冻结可执行的故障注入回归矩阵。上述实现已经通过 PR #15–#21 合入 `main@958df57`。
 
