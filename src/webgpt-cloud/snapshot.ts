@@ -62,6 +62,123 @@ export const READONLY_PROJECT_PROJECTION_SCHEMA = z.object({
   closeout: WEBGPT_V4_CLOSEOUT_DATA_SCHEMA
 }).strict();
 
+type ReadonlyProjectProjectionShape = z.infer<typeof READONLY_PROJECT_PROJECTION_SCHEMA>;
+
+function addBindingIssue(context: z.core.$RefinementCtx, path: Array<string | number>, message: string): void {
+  context.addIssue({ code: "custom", message, path });
+}
+
+function validateArtifactBinding(
+  artifact: { linked_objects: { project_id: string; shot_id: string } } | null,
+  projectId: string,
+  expectedShotId: string | null,
+  path: Array<string | number>,
+  context: z.core.$RefinementCtx
+): void {
+  if (!artifact) return;
+  if (artifact.linked_objects.project_id !== projectId) {
+    addBindingIssue(context, [...path, "linked_objects", "project_id"], "Artifact project binding mismatch.");
+  }
+  if (expectedShotId !== null && artifact.linked_objects.shot_id !== expectedShotId) {
+    addBindingIssue(context, [...path, "linked_objects", "shot_id"], "Artifact SHOT binding mismatch.");
+  }
+}
+
+function validateProjectProjectionBindings(
+  project: ReadonlyProjectProjectionShape,
+  projectIndex: number,
+  context: z.core.$RefinementCtx
+): void {
+  const base = ["projects", projectIndex] as Array<string | number>;
+  const projectId = project.project_id;
+  const shotIds = new Set(project.shots_full.map((shot) => shot.shot_id));
+  if (shotIds.size !== project.shots_full.length) addBindingIssue(context, [...base, "shots_full"], "Duplicate full SHOT binding.");
+
+  if (project.list_item_compact.project.project_id !== projectId || project.list_item_full.project.project_id !== projectId) {
+    addBindingIssue(context, base, "Projected project binding mismatch.");
+  }
+  for (const [shotIndex, shot] of project.shots_compact.entries()) {
+    if (shot.project_id !== projectId) addBindingIssue(context, [...base, "shots_compact", shotIndex, "project_id"], "SHOT project binding mismatch.");
+    if (!shotIds.has(shot.shot_id)) addBindingIssue(context, [...base, "shots_compact", shotIndex, "shot_id"], "Compact SHOT is absent from the full SHOT projection.");
+  }
+  if (project.shots_compact.length !== shotIds.size) addBindingIssue(context, [...base, "shots_compact"], "Compact and full SHOT bindings differ.");
+  for (const [shotIndex, shot] of project.shots_full.entries()) {
+    if (shot.project_id !== projectId) addBindingIssue(context, [...base, "shots_full", shotIndex, "project_id"], "SHOT project binding mismatch.");
+  }
+  const listedShotIds = project.list_item_full.project.shot_ids;
+  if (listedShotIds.length !== shotIds.size || listedShotIds.some((shotId) => !shotIds.has(shotId))) {
+    addBindingIssue(context, [...base, "list_item_full", "project", "shot_ids"], "Project SHOT list binding mismatch.");
+  }
+
+  const contextWorkspaces = new Set(project.contexts.map((projection) => projection.workspace));
+  if (contextWorkspaces.size !== project.contexts.length) addBindingIssue(context, [...base, "contexts"], "Duplicate project context workspace.");
+  for (const [contextIndex, projection] of project.contexts.entries()) {
+    for (const [detail, value] of [["compact", projection.compact], ["full", projection.full]] as const) {
+      const path = [...base, "contexts", contextIndex, detail] as Array<string | number>;
+      if (value.workspace !== projection.workspace) addBindingIssue(context, [...path, "workspace"], "Context workspace binding mismatch.");
+      if (value.project.project_id !== projectId) addBindingIssue(context, [...path, "project", "project_id"], "Context project binding mismatch.");
+      if ("meta" in value && value.meta.project_id !== projectId) addBindingIssue(context, [...path, "meta", "project_id"], "Context metadata project binding mismatch.");
+      if ("shots" in value) {
+        for (const [shotIndex, shot] of value.shots.entries()) {
+          if (shot.project_id !== projectId || !shotIds.has(shot.shot_id)) {
+            addBindingIssue(context, [...path, "shots", shotIndex], "Context SHOT binding mismatch.");
+          }
+        }
+      }
+      if ("review_notes" in value) {
+        for (const [noteIndex, note] of value.review_notes.entries()) {
+          if (note.project_id !== projectId || !shotIds.has(note.shot_id)) {
+            addBindingIssue(context, [...path, "review_notes", noteIndex], "Review note binding mismatch.");
+          }
+        }
+      }
+      if ("accepted_clips" in value) {
+        for (const [clipIndex, clip] of value.accepted_clips.entries()) {
+          if (!shotIds.has(clip.shot_id)) addBindingIssue(context, [...path, "accepted_clips", clipIndex, "shot_id"], "Accepted clip SHOT binding mismatch.");
+          validateArtifactBinding(clip.artifact, projectId, clip.shot_id, [...path, "accepted_clips", clipIndex, "artifact"], context);
+        }
+        validateArtifactBinding(value.final_artifact, projectId, null, [...path, "final_artifact"], context);
+      }
+    }
+  }
+
+  for (const [reviewIndex, review] of project.review_packages.entries()) {
+    const path = [...base, "review_packages", reviewIndex] as Array<string | number>;
+    if (!shotIds.has(review.shot_id)) addBindingIssue(context, [...path, "shot_id"], "Review package SHOT binding mismatch.");
+    for (const [detail, value] of [["compact", review.compact], ["full", review.full]] as const) {
+      const detailPath = [...path, detail] as Array<string | number>;
+      if (value.shot.project_id !== projectId || value.shot.shot_id !== review.shot_id) {
+        addBindingIssue(context, [...detailPath, "shot"], "Review package SHOT binding mismatch.");
+      }
+      for (const [noteIndex, note] of value.notes.entries()) {
+        if (note.project_id !== projectId || note.shot_id !== review.shot_id) {
+          addBindingIssue(context, [...detailPath, "notes", noteIndex], "Review package note binding mismatch.");
+        }
+      }
+      for (const [versionIndex, version] of value.versions.entries()) {
+        if ("artifact" in version) {
+          validateArtifactBinding(
+            version.artifact as { linked_objects: { project_id: string; shot_id: string } },
+            projectId,
+            review.shot_id,
+            [...detailPath, "versions", versionIndex, "artifact"],
+            context
+          );
+        }
+      }
+    }
+  }
+
+  for (const [name, value] of [["delivery", project.delivery], ["closeout", project.closeout]] as const) {
+    const path = [...base, name] as Array<string | number>;
+    if (value.project_id !== projectId) addBindingIssue(context, [...path, "project_id"], "Delivery project binding mismatch.");
+    for (const [checkIndex, check] of value.readiness_checks.entries()) {
+      if (!shotIds.has(check.shot_id)) addBindingIssue(context, [...path, "readiness_checks", checkIndex, "shot_id"], "Delivery SHOT binding mismatch.");
+    }
+    validateArtifactBinding(value.final_artifact, projectId, null, [...path, "final_artifact"], context);
+  }
+}
+
 const readonlySnapshotShape = {
   schema_version: z.literal(READONLY_SNAPSHOT_SCHEMA_VERSION),
   source_schema: z.literal(READONLY_SNAPSHOT_REQUIRED_SCHEMA),
@@ -77,15 +194,13 @@ const readonlySnapshotShape = {
 
 function validateSnapshotBindings(value: {
   authorization: { principals: Array<{ principal_id: string; project_ids: string[] }> };
-  projects: Array<{ project_id: string; list_item_compact: { project: { project_id: string } }; list_item_full: { project: { project_id: string } } }>;
+  projects: ReadonlyProjectProjectionShape[];
 }, context: z.core.$RefinementCtx): void {
   const projectIds = new Set<string>();
-  for (const project of value.projects) {
+  for (const [projectIndex, project] of value.projects.entries()) {
     if (projectIds.has(project.project_id)) context.addIssue({ code: "custom", message: "Duplicate projected project id.", path: ["projects"] });
     projectIds.add(project.project_id);
-    if (project.list_item_compact.project.project_id !== project.project_id || project.list_item_full.project.project_id !== project.project_id) {
-      context.addIssue({ code: "custom", message: "Projected project binding mismatch.", path: ["projects"] });
-    }
+    validateProjectProjectionBindings(project, projectIndex, context);
   }
   const principals = new Set<string>();
   for (const principal of value.authorization.principals) {

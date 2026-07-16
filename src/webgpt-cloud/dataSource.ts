@@ -29,7 +29,7 @@ import {
   listProductionProjectShots
 } from "../webgpt-v4/domain.js";
 import { authorizedWebGptProjectIds } from "../webgpt-v4/projectAuthorization.js";
-import { fail, ok, requestId, WEBGPT_V4_VERSION, type WebGptV4Result } from "../webgpt-v4/types.js";
+import { errorBody, fail, ok, requestId, WebGptV4Error, WEBGPT_V4_VERSION, type WebGptV4Result } from "../webgpt-v4/types.js";
 import {
   finalizeReadonlySnapshot,
   parseReadonlySnapshot,
@@ -113,12 +113,13 @@ export class SqliteReadonlyDataSource implements ReadonlyDataSource {
     private readonly issuerHash: string
   ) {}
 
-  private authorizedProjectIds(): string[] {
-    return authorizedWebGptProjectIds(this.db, this.principalId, this.issuerHash);
-  }
-
-  private canRead(projectId: string): boolean {
-    return this.authorizedProjectIds().includes(projectId);
+  private authorization(idValue?: string): string[] | WebGptV4Result<never> {
+    try {
+      return authorizedWebGptProjectIds(this.db, this.principalId, this.issuerHash);
+    } catch (error) {
+      if (error instanceof WebGptV4Error) return fail(requestId(idValue), errorBody(error));
+      throw error;
+    }
   }
 
   private denied(idValue?: string): WebGptV4Result<never> {
@@ -126,32 +127,44 @@ export class SqliteReadonlyDataSource implements ReadonlyDataSource {
   }
 
   listProductionProjects(input: ReadonlyProjectListInput = {}, idValue?: string): WebGptV4Result<unknown> {
+    const authorization = this.authorization(idValue);
+    if (!Array.isArray(authorization)) return authorization;
     const detail = input.detail ?? "compact";
-    return readProjectList(listProductionProjects(input, this.db, idValue, this.authorizedProjectIds()), detail);
+    return readProjectList(listProductionProjects(input, this.db, idValue, authorization), detail);
   }
 
   getProjectContext(input: ReadonlyProjectContextInput, idValue?: string): WebGptV4Result<unknown> {
-    if (!this.canRead(input.project_id)) return this.denied(idValue);
+    const authorization = this.authorization(idValue);
+    if (!Array.isArray(authorization)) return authorization;
+    if (!authorization.includes(input.project_id)) return this.denied(idValue);
     return readProjectContext(getProductionProjectContext(input, this.db, idValue), input.detail ?? "compact");
   }
 
   listProjectShots(input: ReadonlyShotListInput, idValue?: string): WebGptV4Result<unknown> {
-    if (!this.canRead(input.project_id)) return this.denied(idValue);
+    const authorization = this.authorization(idValue);
+    if (!Array.isArray(authorization)) return authorization;
+    if (!authorization.includes(input.project_id)) return this.denied(idValue);
     return readShotList(listProductionProjectShots(input, this.db, idValue), input.detail ?? "compact");
   }
 
   getReviewPackage(input: ReadonlyReviewInput, idValue?: string): WebGptV4Result<unknown> {
-    if (!this.canRead(input.project_id)) return this.denied(idValue);
+    const authorization = this.authorization(idValue);
+    if (!Array.isArray(authorization)) return authorization;
+    if (!authorization.includes(input.project_id)) return this.denied(idValue);
     return readReviewPackage(getProductionReviewPackage(input, this.db, idValue), input.detail ?? "compact", input.project_id, input.shot_id);
   }
 
   getDeliveryStatus(projectId: string, idValue?: string): WebGptV4Result<unknown> {
-    if (!this.canRead(projectId)) return this.denied(idValue);
+    const authorization = this.authorization(idValue);
+    if (!Array.isArray(authorization)) return authorization;
+    if (!authorization.includes(projectId)) return this.denied(idValue);
     return readDelivery(getProductionDeliveryStatus({ project_id: projectId }, this.db, idValue));
   }
 
   getCloseoutEvidence(projectId: string, idValue?: string): WebGptV4Result<unknown> {
-    if (!this.canRead(projectId)) return this.denied(idValue);
+    const authorization = this.authorization(idValue);
+    if (!Array.isArray(authorization)) return authorization;
+    if (!authorization.includes(projectId)) return this.denied(idValue);
     return readDelivery(getProductionCloseoutEvidence({ project_id: projectId }, this.db, idValue), true);
   }
 }

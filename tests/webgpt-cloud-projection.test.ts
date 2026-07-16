@@ -175,6 +175,24 @@ test("SQLite and Snapshot readonly adapters preserve six-tool DTO parity and dat
     const emptySnapshot = new SnapshotReadonlyDataSource(snapshot, fixture.unassigned_actor.principal_id, fixture.unassigned_actor.issuer_hash!);
     assert.deepEqual(stripMeta(emptySnapshot.listProductionProjects({}, "same")), stripMeta(emptySqlite.listProductionProjects({}, "same")));
     assert.equal((resultData(emptySnapshot.listProductionProjects()) as { items: unknown[] }).items.length, 0);
+
+    for (const source of [
+      new SqliteReadonlyDataSource(db, "f".repeat(64), fixture.actor.issuer_hash!),
+      new SqliteReadonlyDataSource(db, fixture.actor.principal_id, "e".repeat(64))
+    ]) {
+      const denied = [
+        source.listProductionProjects({}, "auth-denied"),
+        source.getProjectContext({ project_id: fixture.project_id }, "auth-denied"),
+        source.listProjectShots({ project_id: fixture.project_id }, "auth-denied"),
+        source.getReviewPackage({ project_id: fixture.project_id, shot_id: fixture.shot_id }, "auth-denied"),
+        source.getDeliveryStatus(fixture.project_id, "auth-denied"),
+        source.getCloseoutEvidence(fixture.project_id, "auth-denied")
+      ];
+      for (const result of denied) {
+        assert.equal(result.ok, false);
+        if (!result.ok) assert.equal(result.error.code, "WEBGPT_PRINCIPAL_NOT_REGISTERED");
+      }
+    }
   } finally {
     db.close();
   }
@@ -246,6 +264,53 @@ test("snapshot fingerprint uses deterministic JCS input and server time remains 
     freshness_status: "snapshot_expired",
     snapshot_fingerprint: futureSnapshot.snapshot_fingerprint
   });
+});
+
+test("SQLite readonly adapter returns a stable denial for a disabled principal", () => {
+  const root = mkdtempSync(join(tmpdir(), "readonly-projection-disabled-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const fixture = createFixture(sqlitePath);
+  const db = openM0DatabaseConnection(sqlitePath);
+  try {
+    db.prepare("UPDATE webgpt_auth_principals SET status = 'disabled' WHERE principal_id = ?").run(fixture.actor.principal_id);
+    const source = new SqliteReadonlyDataSource(db, fixture.actor.principal_id, fixture.actor.issuer_hash!);
+    const result = source.listProductionProjects({}, "disabled");
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "WEBGPT_PRINCIPAL_DISABLED");
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("snapshot validation rejects nested cross-project DTO bindings", () => {
+  const root = mkdtempSync(join(tmpdir(), "readonly-projection-bindings-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const fixture = createFixture(sqlitePath);
+  try {
+    const snapshot = exportReadonlySnapshotFromDatabase({
+      database_path: sqlitePath,
+      issuer_hash: fixture.actor.issuer_hash!,
+      resource_url: RESOURCE,
+      generated_at: new Date(Date.now() - 1_000).toISOString(),
+      ttl_seconds: 3600
+    });
+    const { snapshot_fingerprint: _fingerprint, ...unsigned } = snapshot;
+    const mutations: Array<(candidate: ReadonlySnapshotUnsigned) => void> = [
+      (candidate) => { candidate.projects[0]!.contexts[0]!.compact.project.project_id = "project_cross_binding"; },
+      (candidate) => { candidate.projects[0]!.shots_full[0]!.project_id = "project_cross_binding"; },
+      (candidate) => { candidate.projects[0]!.review_packages[0]!.full.shot.project_id = "project_cross_binding"; },
+      (candidate) => { candidate.projects[0]!.delivery.project_id = "project_cross_binding"; },
+      (candidate) => { candidate.projects[0]!.closeout.project_id = "project_cross_binding"; }
+    ];
+    for (const mutate of mutations) {
+      const candidate = structuredClone(unsigned);
+      mutate(candidate);
+      assert.throws(() => finalizeReadonlySnapshot(candidate), /binding mismatch/i);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("readonly exporter holds every schema and projection query inside one read transaction", () => {
