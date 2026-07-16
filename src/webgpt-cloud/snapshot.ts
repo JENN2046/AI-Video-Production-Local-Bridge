@@ -359,6 +359,26 @@ function validateProjectProjectionBindings(
           addBindingIssue(context, [...base, "contexts", contextIndex, "full", "accepted_clips"], "Delivery context accepted-clip projection mismatch.");
         }
       }
+    } else if (projection.full.workspace === "overview") {
+      const expectedMetrics = {
+        shots: project.shots_full.length,
+        storyboard_approved: project.shots_full.filter((shot) => shot.status === "storyboard_approved").length,
+        generation_active: project.list_item_full.summary.active_run_count,
+        review_pending: project.shots_full.filter((shot) => shot.clip_versions.length > 0 && shot.review.approval_status === "pending").length,
+        accepted_clips: project.shots_full.filter((shot) => Boolean(shot.accepted_clip_artifact_id)).length
+      };
+      const expectedBlockers = project.shots_full
+        .filter((shot) => !shot.storyboard_image_artifact_id || !shot.video_prompt)
+        .map((shot) => ({
+          shot_id: shot.shot_id,
+          order: shot.order,
+          missing_image: !shot.storyboard_image_artifact_id,
+          missing_prompt: !shot.video_prompt
+        }));
+      if (canonicalizeJcs(projection.full.metrics) !== canonicalizeJcs(expectedMetrics)
+        || canonicalizeJcs(projection.full.blockers) !== canonicalizeJcs(expectedBlockers)) {
+        addBindingIssue(context, [...base, "contexts", contextIndex, "full"], "Overview metrics or blockers canonical projection mismatch.");
+      }
     }
   }
 
@@ -418,6 +438,15 @@ function validateProjectProjectionBindings(
     }
     const canonicalShot = project.shots_full.find((shot) => shot.shot_id === review.shot_id);
     const versionIds = new Set(review.full.versions.map((version) => version.artifact_id));
+    const projectedVersions = review.full.versions.map(({ artifact: _artifact, ...version }) => version);
+    if (canonicalShot && canonicalizeJcs(projectedVersions) !== canonicalizeJcs(canonicalShot.clip_versions)) {
+      addBindingIssue(context, [...path, "full", "versions"], "Review version stack differs from the canonical SHOT versions.");
+    }
+    for (const [noteIndex, note] of review.full.notes.entries()) {
+      if (note.artifact_id && !versionIds.has(note.artifact_id)) {
+        addBindingIssue(context, [...path, "full", "notes", noteIndex, "artifact_id"], "Review note artifact is absent from the canonical SHOT versions.");
+      }
+    }
     if (canonicalShot?.accepted_clip_artifact_id && !versionIds.has(canonicalShot.accepted_clip_artifact_id)) {
       addBindingIssue(context, [...path, "full", "versions"], "Accepted clip is absent from the SHOT review versions.");
     }

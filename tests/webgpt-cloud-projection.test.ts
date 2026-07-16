@@ -464,6 +464,32 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     notReadyProject.closeout.readiness_checks = structuredClone(notReadyProject.delivery.readiness_checks);
     assert.throws(() => finalizeReadonlySnapshot(acceptedArtifactMarkedNotReady), /delivery accepted-clip readiness mismatch/i);
 
+    const extraReviewVersion = structuredClone(unsigned);
+    extraReviewVersion.projects[0]!.review_packages[0]!.full.versions.push({
+      artifact_id: generatedArtifact.artifact_id,
+      run_id: "run_extra",
+      attempt_number: 1,
+      review_status: "pending",
+      artifact: structuredClone(generatedArtifact)
+    });
+    extraReviewVersion.projects[0]!.review_packages[0]!.compact.versions.push({ artifact_id: generatedArtifact.artifact_id, attempt_number: 1, review_status: "pending" });
+    assert.throws(() => finalizeReadonlySnapshot(extraReviewVersion), /review version stack differs from the canonical SHOT versions/i);
+
+    const unrelatedReviewNote = structuredClone(unsigned);
+    const note = {
+      note_id: "note_unrelated_artifact",
+      project_id: unrelatedReviewNote.projects[0]!.project_id,
+      shot_id: unrelatedReviewNote.projects[0]!.shots_full[0]!.shot_id,
+      artifact_id: "artifact_not_in_versions",
+      note: "Synthetic note",
+      source: "fixture",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    unrelatedReviewNote.projects[0]!.review_packages[0]!.full.notes.push(note);
+    unrelatedReviewNote.projects[0]!.review_packages[0]!.compact.notes.push(structuredClone(note));
+    assert.throws(() => finalizeReadonlySnapshot(unrelatedReviewNote), /review note artifact is absent from the canonical SHOT versions/i);
+
     const divergentSummary = structuredClone(unsigned);
     const summaryProject = divergentSummary.projects[0]!;
     summaryProject.list_item_full.summary.shot_count = 99;
@@ -473,6 +499,13 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
       context.compact.summary.shot_count = 99;
     }
     assert.throws(() => finalizeReadonlySnapshot(divergentSummary), /project summary canonical state mismatch/i);
+
+    const divergentOverview = structuredClone(unsigned);
+    const overview = divergentOverview.projects[0]!.contexts.find((context) => context.workspace === "overview");
+    assert.ok(overview && "metrics" in overview.full && "metrics" in overview.compact);
+    overview.full.metrics.shots = 99;
+    overview.compact.metrics.shots = 99;
+    assert.throws(() => finalizeReadonlySnapshot(divergentOverview), /overview metrics or blockers canonical projection mismatch/i);
 
     const deliveryAdjustedSummary = structuredClone(unsigned);
     const adjustedProject = deliveryAdjustedSummary.projects[0]!;
