@@ -2,7 +2,7 @@
 
 Status: `PARTIAL_EXTERNAL_GATE`
 
-Repository implementation baseline: `main@acc63d4` plus the PR3 candidate branch
+Repository implementation baseline: `main@c0239eb`
 
 Accepted local runtime remains: package `0.1.0-beta.4`, MCP service `webgpt-v4.2.0`, activity-database ledger `0007`
 
@@ -37,7 +37,7 @@ Result: `AUTH0_CAPABILITY_GATE_FAILED`
 
 This result does not claim that Auth0 lacks the product capability. Official Auth0 documentation describes Resource Parameter Compatibility Profile, public/native applications, PKCE, custom APIs, and custom scopes. The hard gate failed because the currently intended tenant/plan and its exact resource-to-audience behavior could not be verified read-only in the available session. The implementation therefore did not create or modify an Auth0 API/Application and did not relax the resource server.
 
-Per the approved fallback rule, PR3 uses a Stytch predefined public-client capability fixture. Official Stytch documentation describes public third-party clients, token endpoint authentication `none`, PKCE, custom OAuth scopes, JWKS-backed JWTs, and an access-token custom audience. This is capability evidence only; it is not proof that Jenn's future Stytch project or a ChatGPT connection has passed.
+Per the approved fallback rule, PR3 uses a Stytch predefined public-client capability fixture. Official Stytch documentation describes public third-party clients, token endpoint authentication `none`, PKCE, custom OAuth scopes, JWKS-backed JWTs, and an access-token custom audience. It also requires the integrating application to host the authorization/login/consent surface and warns that the default issuer is not fully OIDC compatible without the appropriate project domain. This is capability evidence only; it is not proof that Jenn's future Stytch project, authorization surface, issuer, or a ChatGPT connection has passed.
 
 References:
 
@@ -64,7 +64,7 @@ No OpenAI API, ChatGPT, IdP, Tunnel, Provider, activity database, `.env`, secret
 
 External acceptance requires new, separate authorization for each write surface. The order is fixed:
 
-1. Verify the selected IdP project/plan supports the exact predefined public-client contract and exact MCP resource audience.
+1. Verify the selected IdP project/plan supports the exact predefined public-client contract, exact MCP resource audience, standards-compatible issuer, and a publicly reachable end-user authorization/login/consent flow.
 2. Create one isolated IdP API/resource and one public client using the exact redirect URI displayed by the ChatGPT management page. Do not guess the redirect.
 3. Create one new private ChatGPT test App without changing the historical Descope App.
 4. Write only non-secret values to an explicitly authorized Git-ignored runtime profile or isolated child-process environment.
