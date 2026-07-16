@@ -83,6 +83,9 @@ jobs:
       - name: WebGPT V4 integration tests
         run: npm run test:webgpt:v4
 
+      - name: Direct OAuth compatibility canary tests
+        run: npm run test:webgpt:direct-canary
+
       - name: H1 Workbench tests
         run: npm run test:h1
 

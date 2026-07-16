@@ -105,6 +105,13 @@
       ]
     },
     {
+      "id": "webgpt-direct-oauth-canary",
+      "classification": "mandatory",
+      "npm_script": "test:webgpt:direct-canary",
+      "ci_step": "Direct OAuth compatibility canary tests",
+      "paths": ["tests/direct-oauth-canary.test.ts"]
+    },
+    {
       "id": "memory",
       "classification": "mandatory",
       "npm_script": "test:memory",
@@ -134,6 +141,20 @@
     }
   ],
   "oauth_portability_suites": [
+    {
+      "id": "direct-oauth-canary-prmd-challenge",
+      "path": "tests/direct-oauth-canary.test.ts",
+      "npm_script": "test:webgpt:direct-canary",
+      "ci_step": "Direct OAuth compatibility canary tests",
+      "case_name": "direct OAuth canary exposes only health, PRMD, and a protected MCP smoke tool"
+    },
+    {
+      "id": "direct-oauth-canary-mcp-contract",
+      "path": "tests/direct-oauth-canary.test.ts",
+      "npm_script": "test:webgpt:direct-canary",
+      "ci_step": "Direct OAuth compatibility canary tests",
+      "case_name": "official MCP client sees exactly one scoped read-only tool and invokes it without production data"
+    },
     {
       "id": "oauth-selected-provider-capability",
       "path": "tests/webgpt-v4-selected-provider.test.ts",
