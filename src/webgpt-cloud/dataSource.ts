@@ -375,11 +375,6 @@ export function exportReadonlySnapshotFromDatabase(input: ExportReadonlySnapshot
       const projectId = fullItem.project.project_id;
       const compactItem = compactItems.get(projectId);
       if (!compactItem) throw new ReadonlyProjectionError("READONLY_PROJECTION_CONTRACT_VIOLATION", "Compact project projection is missing.");
-      const contexts = workspaces.map((workspace) => ({
-        workspace,
-        compact: requireSuccess(readProjectContext(getProductionProjectContext({ project_id: projectId, workspace }, db, "readonly_export"), "compact"), WEBGPT_V4_PROJECT_CONTEXT_DATA_SCHEMA),
-        full: requireSuccess(readProjectContext(getProductionProjectContext({ project_id: projectId, workspace }, db, "readonly_export"), "full"), WEBGPT_V4_PROJECT_CONTEXT_DATA_SCHEMA)
-      }));
       const shotList = (detail: WebGptV4Detail): ShotListData => allPages(
         (pageOffset) => readShotList(listProductionProjectShots({ project_id: projectId, limit: 100, offset: pageOffset }, db, "readonly_export"), detail),
         WEBGPT_V4_SHOT_LIST_DATA_SCHEMA
@@ -388,6 +383,17 @@ export function exportReadonlySnapshotFromDatabase(input: ExportReadonlySnapshot
       const fullShots = shotList("full");
       const compactShotItems = compactShots.items.map((shot) => WEBGPT_V4_COMPACT_SHOT_SCHEMA.parse(shot));
       const fullShotItems = fullShots.items.map((shot) => WEBGPT_V4_SHOT_SCHEMA.parse(shot));
+      const canonicalShotIds = fullShotItems.map((shot) => shot.shot_id);
+      fullItem.project.shot_ids = [...canonicalShotIds];
+      const contexts = workspaces.map((workspace) => {
+        const compact = requireSuccess(readProjectContext(getProductionProjectContext({ project_id: projectId, workspace }, db, "readonly_export"), "compact"), WEBGPT_V4_PROJECT_CONTEXT_DATA_SCHEMA);
+        const full = requireSuccess(readProjectContext(getProductionProjectContext({ project_id: projectId, workspace }, db, "readonly_export"), "full"), WEBGPT_V4_PROJECT_CONTEXT_DATA_SCHEMA);
+        if (!("shot_ids" in full.project)) {
+          throw new ReadonlyProjectionError("READONLY_PROJECTION_CONTRACT_VIOLATION", "Full project context projection is missing SHOT bindings.");
+        }
+        full.project.shot_ids = [...canonicalShotIds];
+        return { workspace, compact, full };
+      });
       const reviewPackages = fullShotItems.map((shot) => ({
         shot_id: shot.shot_id,
         compact: requireSuccess(readReviewPackage(getProductionReviewPackage({ project_id: projectId, shot_id: shot.shot_id, notes_limit: 50 }, db, "readonly_export"), "compact", projectId, shot.shot_id), WEBGPT_V4_REVIEW_PACKAGE_DATA_SCHEMA),

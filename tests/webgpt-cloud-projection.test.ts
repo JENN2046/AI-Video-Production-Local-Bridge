@@ -97,15 +97,19 @@ function createFixture(sqlitePath: string): {
   }
 }
 
-function addSecondFixtureShot(sqlitePath: string, projectId: string): void {
+function addSecondFixtureShot(
+  sqlitePath: string,
+  projectId: string,
+  options: { order?: number; shot_id?: string } = {}
+): void {
   const db = openM0Database(sqlitePath);
   try {
     const project = getProject(db, projectId);
     assert.ok(project);
     const secondShot: Shot = {
-      shot_id: "shot_cloud_projection_002",
+      shot_id: options.shot_id ?? "shot_cloud_projection_002",
       project_id: projectId,
-      order: 2,
+      order: options.order ?? 2,
       status: "storyboard_approved",
       duration_seconds: 4,
       description: "Second readonly projection shot",
@@ -637,6 +641,32 @@ test("readonly snapshot requires compact and full SHOT ordering parity", () => {
     assert.equal(unsigned.projects[0]!.shots_full.length, 2);
     unsigned.projects[0]!.shots_compact.reverse();
     assert.throws(() => finalizeReadonlySnapshot(unsigned), /compact and full SHOT ordering differs/i);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("readonly exporter uses shot_id as the deterministic tiebreaker for equal SHOT order", () => {
+  const root = mkdtempSync(join(tmpdir(), "readonly-projection-shot-order-tie-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const fixture = createFixture(sqlitePath);
+  addSecondFixtureShot(sqlitePath, fixture.project_id, { order: 1, shot_id: "shot_cloud_projection_000" });
+  try {
+    const snapshot = exportReadonlySnapshotFromDatabase({
+      database_path: sqlitePath,
+      issuer_hash: fixture.actor.issuer_hash!,
+      resource_url: RESOURCE
+    });
+    const project = snapshot.projects[0]!;
+    const expectedShotIds = ["shot_cloud_projection_000", "shot_cloud_projection_001"];
+    assert.deepEqual(project.shots_full.map((shot) => shot.shot_id), expectedShotIds);
+    assert.deepEqual(project.shots_compact.map((shot) => shot.shot_id), expectedShotIds);
+    for (const context of project.contexts) {
+      if ("shots" in context.full) assert.deepEqual(context.full.shots.map((shot) => shot.shot_id), expectedShotIds);
+      if ("shots" in context.compact) assert.deepEqual(context.compact.shots.map((shot) => shot.shot_id), expectedShotIds);
+    }
+    assert.deepEqual(project.delivery.readiness_checks.map((check) => check.shot_id), expectedShotIds);
+    assert.deepEqual(project.closeout.readiness_checks.map((check) => check.shot_id), expectedShotIds);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
