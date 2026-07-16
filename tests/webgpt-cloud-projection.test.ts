@@ -343,6 +343,11 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     divergentCompactContext.projects[0]!.contexts[0]!.compact.project.title = "Divergent context title";
     assert.throws(() => finalizeReadonlySnapshot(divergentCompactContext), /context parity mismatch/i);
 
+    const divergentCanonicalContext = structuredClone(unsigned);
+    divergentCanonicalContext.projects[0]!.contexts[0]!.full.project.title = "Divergent canonical context";
+    divergentCanonicalContext.projects[0]!.contexts[0]!.compact.project.title = "Divergent canonical context";
+    assert.throws(() => finalizeReadonlySnapshot(divergentCanonicalContext), /context\/project canonical projection mismatch/i);
+
     const divergentCompactReview = structuredClone(unsigned);
     divergentCompactReview.projects[0]!.review_packages[0]!.compact.selected_artifact_id = "artifact_divergent";
     assert.throws(() => finalizeReadonlySnapshot(divergentCompactReview), /review package parity mismatch/i);
@@ -350,6 +355,11 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     const divergentCloseout = structuredClone(unsigned);
     divergentCloseout.projects[0]!.closeout.delivered = !divergentCloseout.projects[0]!.delivery.delivered;
     assert.throws(() => finalizeReadonlySnapshot(divergentCloseout), /closeout\/delivery parity mismatch/i);
+
+    const fabricatedDeliveryCounts = structuredClone(unsigned);
+    fabricatedDeliveryCounts.projects[0]!.delivery.shots_total += 1;
+    fabricatedDeliveryCounts.projects[0]!.closeout.shots_total += 1;
+    assert.throws(() => finalizeReadonlySnapshot(fabricatedDeliveryCounts), /delivery\/canonical project state mismatch/i);
 
     const divergentReviewShot = structuredClone(unsigned);
     divergentReviewShot.projects[0]!.review_packages[0]!.full.shot.description = "Divergent review SHOT";

@@ -260,6 +260,31 @@ function validateProjectProjectionBindings(
     if (canonicalizeJcs(projection.compact) !== canonicalizeJcs(expectedCompactContext)) {
       addBindingIssue(context, [...base, "contexts", contextIndex, "compact"], "Compact/full context parity mismatch.");
     }
+    if (canonicalizeJcs(projection.full.project) !== canonicalizeJcs(project.list_item_full.project)
+      || canonicalizeJcs(projection.full.summary) !== canonicalizeJcs(project.list_item_full.summary)) {
+      addBindingIssue(context, [...base, "contexts", contextIndex, "full"], "Context/project canonical projection mismatch.");
+    }
+    if ("shots" in projection.full
+      && canonicalizeJcs(projection.full.shots.map(shotParityValue)) !== canonicalizeJcs(project.shots_full.map(shotParityValue))) {
+      addBindingIssue(context, [...base, "contexts", contextIndex, "full", "shots"], "Context/canonical SHOT projection mismatch.");
+    }
+    if (projection.full.workspace === "delivery") {
+      const sharedDelivery = {
+        ready_for_assembly: project.delivery.ready_for_assembly,
+        readiness_checks: project.delivery.readiness_checks,
+        final_artifact: project.delivery.final_artifact,
+        final_artifact_reason_code: project.delivery.final_artifact_reason_code
+      };
+      const contextDelivery = {
+        ready_for_assembly: projection.full.ready_for_assembly,
+        readiness_checks: projection.full.readiness_checks,
+        final_artifact: projection.full.final_artifact,
+        final_artifact_reason_code: projection.full.final_artifact_reason_code
+      };
+      if (canonicalizeJcs(contextDelivery) !== canonicalizeJcs(sharedDelivery)) {
+        addBindingIssue(context, [...base, "contexts", contextIndex, "full"], "Context/delivery canonical projection mismatch.");
+      }
+    }
   }
 
   const reviewShotIds = new Set(project.review_packages.map((review) => review.shot_id));
@@ -326,6 +351,33 @@ function validateProjectProjectionBindings(
   const { evidence: _evidence, ...closeoutDelivery } = project.closeout;
   if (canonicalizeJcs(closeoutDelivery) !== canonicalizeJcs(project.delivery)) {
     addBindingIssue(context, [...base, "closeout"], "Closeout/delivery parity mismatch.");
+  }
+  const checksByShot = new Map(project.delivery.readiness_checks.map((check) => [check.shot_id, check]));
+  if (checksByShot.size !== project.delivery.readiness_checks.length || checksByShot.size !== project.shots_full.length) {
+    addBindingIssue(context, [...base, "delivery", "readiness_checks"], "Delivery readiness SHOT set mismatch.");
+  }
+  for (const shot of project.shots_full) {
+    const check = checksByShot.get(shot.shot_id);
+    if (!check) continue;
+    if (check.artifact_id !== shot.accepted_clip_artifact_id) {
+      addBindingIssue(context, [...base, "delivery", "readiness_checks"], "Delivery accepted artifact reference mismatch.");
+    }
+    if (!shot.accepted_clip_artifact_id && (check.ok || check.reason_code !== "SHOT_ACCEPTED_CLIP_MISSING")) {
+      addBindingIssue(context, [...base, "delivery", "readiness_checks"], "Delivery missing-clip readiness mismatch.");
+    }
+    if (check.ok && check.reason_code !== "SHOT_ACCEPTED_CLIP_READY") {
+      addBindingIssue(context, [...base, "delivery", "readiness_checks"], "Delivery ready-clip reason mismatch.");
+    }
+  }
+  const acceptedCount = project.delivery.readiness_checks.filter((check) => check.ok).length;
+  const readyForAssembly = project.shots_full.length > 0 && project.delivery.readiness_checks.every((check) => check.ok);
+  const delivered = project.list_item_full.project.status === "final_approved" && project.delivery.final_artifact !== null;
+  if (project.delivery.project_status !== project.list_item_full.project.status
+    || project.delivery.shots_total !== project.shots_full.length
+    || project.delivery.shots_accepted !== acceptedCount
+    || project.delivery.ready_for_assembly !== readyForAssembly
+    || project.delivery.delivered !== delivered) {
+    addBindingIssue(context, [...base, "delivery"], "Delivery/canonical project state mismatch.");
   }
 }
 
