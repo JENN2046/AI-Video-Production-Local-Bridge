@@ -2,6 +2,7 @@ import { z } from "zod/v4";
 
 import { assertSchemaCurrent, SchemaMigrationRequiredError } from "../storage/migrations.js";
 import { openM0DatabaseConnection, type M0Database } from "../storage/sqlite.js";
+import { getProject } from "../tools/projects.js";
 import {
   readDelivery,
   readProjectContext,
@@ -373,6 +374,8 @@ export function exportReadonlySnapshotFromDatabase(input: ExportReadonlySnapshot
 
     const projects: ReadonlyProjectProjection[] = [...fullItems.values()].map((fullItem) => {
       const projectId = fullItem.project.project_id;
+      const sourceProject = getProject(db, projectId);
+      if (!sourceProject) throw new ReadonlyProjectionError("READONLY_PROJECTION_CONTRACT_VIOLATION", "Source project is missing during readonly export.");
       const compactItem = compactItems.get(projectId);
       if (!compactItem) throw new ReadonlyProjectionError("READONLY_PROJECTION_CONTRACT_VIOLATION", "Compact project projection is missing.");
       const shotList = (detail: WebGptV4Detail): ShotListData => allPages(
@@ -399,6 +402,7 @@ export function exportReadonlySnapshotFromDatabase(input: ExportReadonlySnapshot
       }));
       return READONLY_PROJECT_PROJECTION_SCHEMA.parse({
         project_id: projectId,
+        final_video_artifact_id: sourceProject.exports.final_video_artifact_id,
         context_meta_updated_at: firstFullContext.meta.updated_at,
         list_item_compact: compactItem,
         list_item_full: fullItem,

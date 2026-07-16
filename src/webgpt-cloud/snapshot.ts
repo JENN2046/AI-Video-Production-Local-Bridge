@@ -73,6 +73,7 @@ const reviewProjectionSchema = z.object({
 
 export const READONLY_PROJECT_PROJECTION_SCHEMA = z.object({
   project_id: z.string().min(1),
+  final_video_artifact_id: z.string(),
   context_meta_updated_at: z.string(),
   list_item_compact: WEBGPT_V4_COMPACT_PROJECT_LIST_ITEM_SCHEMA,
   list_item_full: WEBGPT_V4_FULL_PROJECT_LIST_ITEM_SCHEMA,
@@ -284,6 +285,9 @@ function validateProjectProjectionBindings(
     || canonicalSummary.review_pending_count !== expectedSummaryState.review_pending_count
     || canonicalSummary.delivery_state !== expectedSummaryState.delivery_state) {
     addBindingIssue(context, [...base, "list_item_full", "summary"], "Project summary canonical state mismatch.");
+  }
+  if (canonicalSummary.active_run_count < 0 || canonicalSummary.blocker_count < 0) {
+    addBindingIssue(context, [...base, "list_item_full", "summary"], "Project summary counts cannot be negative.");
   }
   if (storyboardBlockerCount > 0) {
     const requiredReasons = [
@@ -532,6 +536,12 @@ function validateProjectProjectionBindings(
     if (value.final_artifact && value.final_artifact_reason_code) {
       addBindingIssue(context, [...path, "final_artifact_reason_code"], "Usable final artifact cannot carry an error reason.");
     }
+  }
+  if ((!project.final_video_artifact_id && (project.delivery.final_artifact !== null || Boolean(project.delivery.final_artifact_reason_code)))
+    || (project.final_video_artifact_id
+      && ((project.delivery.final_artifact !== null && project.delivery.final_artifact.artifact_id !== project.final_video_artifact_id)
+        || (project.delivery.final_artifact === null && !project.delivery.final_artifact_reason_code)))) {
+    addBindingIssue(context, [...base, "delivery", "final_artifact"], "Final artifact differs from canonical project export.");
   }
   const { evidence: _evidence, ...closeoutDelivery } = project.closeout;
   if (canonicalizeJcs(closeoutDelivery) !== canonicalizeJcs(project.delivery)) {

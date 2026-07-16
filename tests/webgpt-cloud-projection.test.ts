@@ -553,6 +553,14 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     }
     assert.throws(() => finalizeReadonlySnapshot(divergentSummary), /project summary canonical state mismatch/i);
 
+    const negativeSummaryCount = structuredClone(unsigned);
+    negativeSummaryCount.projects[0]!.list_item_full.summary.active_run_count = -1;
+    for (const context of negativeSummaryCount.projects[0]!.contexts) {
+      context.full.summary.active_run_count = -1;
+      context.compact.summary.active_run_count = -1;
+    }
+    assert.throws(() => finalizeReadonlySnapshot(negativeSummaryCount), /project summary counts cannot be negative/i);
+
     const understatedBlockers = structuredClone(unsigned);
     const clearSummary = {
       blocker_count: 0,
@@ -618,6 +626,7 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
 
     const invalidFinalArtifactReference = structuredClone(unsigned);
     const invalidFinalProject = invalidFinalArtifactReference.projects[0]!;
+    invalidFinalProject.final_video_artifact_id = "artifact_inaccessible_final";
     invalidFinalProject.list_item_full.summary.delivery_state = "final_review";
     invalidFinalProject.list_item_compact.summary.delivery_state = "final_review";
     invalidFinalProject.delivery.final_artifact_reason_code = "ARTIFACT_INACCESSIBLE";
@@ -642,6 +651,11 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     contradictoryFinalArtifact.projects[0]!.delivery.final_artifact = usableFinalArtifact;
     contradictoryFinalArtifact.projects[0]!.delivery.final_artifact_reason_code = "ARTIFACT_INACCESSIBLE";
     assert.throws(() => finalizeReadonlySnapshot(contradictoryFinalArtifact), /usable final artifact cannot carry an error reason/i);
+
+    const nonCanonicalFinalArtifact = structuredClone(unsigned);
+    nonCanonicalFinalArtifact.projects[0]!.delivery.final_artifact = structuredClone(usableFinalArtifact);
+    nonCanonicalFinalArtifact.projects[0]!.closeout.final_artifact = structuredClone(usableFinalArtifact);
+    assert.throws(() => finalizeReadonlySnapshot(nonCanonicalFinalArtifact), /final artifact differs from canonical project export/i);
 
     const deliveryAdjustedSummary = structuredClone(unsigned);
     const adjustedProject = deliveryAdjustedSummary.projects[0]!;
