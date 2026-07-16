@@ -468,6 +468,9 @@ function validateProjectProjectionBindings(
       if (value.notes_total < 0 || value.notes_total < value.notes.length) {
         addBindingIssue(context, [...detailPath, "notes_total"], "Review notes total is smaller than returned notes.");
       }
+      if (value.notes.some((note, noteIndex) => noteIndex > 0 && value.notes[noteIndex - 1]!.created_at < note.created_at)) {
+        addBindingIssue(context, [...detailPath, "notes"], "Review notes are not ordered newest first.");
+      }
       if (detail === "full") {
         const canonicalShot = project.shots_full.find((shot) => shot.shot_id === review.shot_id);
         if (canonicalShot && canonicalizeJcs(shotParityValue(value.shot)) !== canonicalizeJcs(shotParityValue(canonicalShot))) {
@@ -544,6 +547,9 @@ function validateProjectProjectionBindings(
     addBindingIssue(context, [...base, "delivery", "final_artifact"], "Final artifact differs from canonical project export.");
   }
   const { evidence: _evidence, ...closeoutDelivery } = project.closeout;
+  if (project.closeout.evidence.webgpt_audit_events < 0) {
+    addBindingIssue(context, [...base, "closeout", "evidence", "webgpt_audit_events"], "Closeout audit event count cannot be negative.");
+  }
   if (canonicalizeJcs(closeoutDelivery) !== canonicalizeJcs(project.delivery)) {
     addBindingIssue(context, [...base, "closeout"], "Closeout/delivery parity mismatch.");
   }

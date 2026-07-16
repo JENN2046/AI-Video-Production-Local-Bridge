@@ -524,6 +524,15 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     negativeReviewTotal.projects[0]!.review_packages[0]!.compact.notes_total = -1;
     assert.throws(() => finalizeReadonlySnapshot(negativeReviewTotal), /review notes total is smaller than returned notes/i);
 
+    const reversedReviewNotes = structuredClone(unsigned);
+    const olderNote = { ...note, note_id: "note_older", artifact_id: "", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" };
+    const newerNote = { ...note, note_id: "note_newer", artifact_id: "", created_at: "2026-01-02T00:00:00.000Z", updated_at: "2026-01-02T00:00:00.000Z" };
+    reversedReviewNotes.projects[0]!.review_packages[0]!.full.notes.push(olderNote, newerNote);
+    reversedReviewNotes.projects[0]!.review_packages[0]!.compact.notes.push(structuredClone(olderNote), structuredClone(newerNote));
+    reversedReviewNotes.projects[0]!.review_packages[0]!.full.notes_total = 2;
+    reversedReviewNotes.projects[0]!.review_packages[0]!.compact.notes_total = 2;
+    assert.throws(() => finalizeReadonlySnapshot(reversedReviewNotes), /review notes are not ordered newest first/i);
+
     const unrelatedContextReviewNote = structuredClone(unsigned);
     const reviewContext = unrelatedContextReviewNote.projects[0]!.contexts.find((context) => context.workspace === "review");
     assert.ok(reviewContext && "review_notes" in reviewContext.full && "review_notes" in reviewContext.compact);
@@ -656,6 +665,10 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     nonCanonicalFinalArtifact.projects[0]!.delivery.final_artifact = structuredClone(usableFinalArtifact);
     nonCanonicalFinalArtifact.projects[0]!.closeout.final_artifact = structuredClone(usableFinalArtifact);
     assert.throws(() => finalizeReadonlySnapshot(nonCanonicalFinalArtifact), /final artifact differs from canonical project export/i);
+
+    const negativeCloseoutEvidence = structuredClone(unsigned);
+    negativeCloseoutEvidence.projects[0]!.closeout.evidence.webgpt_audit_events = -1;
+    assert.throws(() => finalizeReadonlySnapshot(negativeCloseoutEvidence), /closeout audit event count cannot be negative/i);
 
     const deliveryAdjustedSummary = structuredClone(unsigned);
     const adjustedProject = deliveryAdjustedSummary.projects[0]!;
