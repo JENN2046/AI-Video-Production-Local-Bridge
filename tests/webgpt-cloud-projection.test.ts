@@ -533,6 +533,13 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     reversedReviewNotes.projects[0]!.review_packages[0]!.compact.notes_total = 2;
     assert.throws(() => finalizeReadonlySnapshot(reversedReviewNotes), /review notes are not ordered newest first/i);
 
+    const reversedContextReviewNotes = structuredClone(unsigned);
+    const reversedContext = reversedContextReviewNotes.projects[0]!.contexts.find((context) => context.workspace === "review");
+    assert.ok(reversedContext && "review_notes" in reversedContext.full && "review_notes" in reversedContext.compact);
+    reversedContext.full.review_notes.push(structuredClone(olderNote), structuredClone(newerNote));
+    reversedContext.compact.review_notes.push(structuredClone(olderNote), structuredClone(newerNote));
+    assert.throws(() => finalizeReadonlySnapshot(reversedContextReviewNotes), /review context notes are not ordered newest first/i);
+
     const unrelatedContextReviewNote = structuredClone(unsigned);
     const reviewContext = unrelatedContextReviewNote.projects[0]!.contexts.find((context) => context.workspace === "review");
     assert.ok(reviewContext && "review_notes" in reviewContext.full && "review_notes" in reviewContext.compact);

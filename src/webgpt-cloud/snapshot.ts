@@ -355,6 +355,9 @@ function validateProjectProjectionBindings(
             addBindingIssue(context, [...path, "review_notes", noteIndex, "artifact_id"], "Review context note artifact is absent from the canonical SHOT versions.");
           }
         }
+        if (value.review_notes.some((note, noteIndex) => noteIndex > 0 && value.review_notes[noteIndex - 1]!.created_at < note.created_at)) {
+          addBindingIssue(context, [...path, "review_notes"], "Review context notes are not ordered newest first.");
+        }
       }
       if ("accepted_clips" in value) {
         for (const [clipIndex, clip] of value.accepted_clips.entries()) {
