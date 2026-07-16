@@ -214,6 +214,7 @@ function validateProjectProjectionBindings(
   const projectId = project.project_id;
   const shotIds = new Set(project.shots_full.map((shot) => shot.shot_id));
   const compactShotIds = new Set(project.shots_compact.map((shot) => shot.shot_id));
+  const reviewByShot = new Map(project.review_packages.map((review) => [review.shot_id, review]));
   if (shotIds.size !== project.shots_full.length) addBindingIssue(context, [...base, "shots_full"], "Duplicate full SHOT binding.");
   if (compactShotIds.size !== project.shots_compact.length) addBindingIssue(context, [...base, "shots_compact"], "Duplicate compact SHOT binding.");
 
@@ -316,6 +317,10 @@ function validateProjectProjectionBindings(
           if (note.project_id !== projectId || !shotIds.has(note.shot_id)) {
             addBindingIssue(context, [...path, "review_notes", noteIndex], "Review note binding mismatch.");
           }
+          const canonicalVersionIds = new Set(reviewByShot.get(note.shot_id)?.full.versions.map((version) => version.artifact_id) ?? []);
+          if (note.artifact_id && !canonicalVersionIds.has(note.artifact_id)) {
+            addBindingIssue(context, [...path, "review_notes", noteIndex, "artifact_id"], "Review context note artifact is absent from the canonical SHOT versions.");
+          }
         }
       }
       if ("accepted_clips" in value) {
@@ -375,9 +380,12 @@ function validateProjectProjectionBindings(
       for (const shot of project.shots_full) {
         const clip = clipsByShot.get(shot.shot_id);
         const check = checksByShot.get(shot.shot_id);
+        const canonicalArtifact = reviewByShot.get(shot.shot_id)?.full.versions
+          .find((version) => version.artifact_id === shot.accepted_clip_artifact_id)?.artifact;
         if (!clip || !check) continue;
         if (clip.order !== shot.order
           || (check.ok && (!clip.artifact || clip.artifact.artifact_id !== shot.accepted_clip_artifact_id))
+          || (check.ok && (!canonicalArtifact || canonicalizeJcs(clip.artifact) !== canonicalizeJcs(canonicalArtifact)))
           || (!check.ok && clip.artifact !== null)) {
           addBindingIssue(context, [...base, "contexts", contextIndex, "full", "accepted_clips"], "Delivery context accepted-clip projection mismatch.");
         }

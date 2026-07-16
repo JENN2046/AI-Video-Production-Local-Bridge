@@ -490,6 +490,25 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     unrelatedReviewNote.projects[0]!.review_packages[0]!.compact.notes.push(structuredClone(note));
     assert.throws(() => finalizeReadonlySnapshot(unrelatedReviewNote), /review note artifact is absent from the canonical SHOT versions/i);
 
+    const unrelatedContextReviewNote = structuredClone(unsigned);
+    const reviewContext = unrelatedContextReviewNote.projects[0]!.contexts.find((context) => context.workspace === "review");
+    assert.ok(reviewContext && "review_notes" in reviewContext.full && "review_notes" in reviewContext.compact);
+    reviewContext.full.review_notes.push(structuredClone(note));
+    reviewContext.compact.review_notes.push(structuredClone(note));
+    assert.throws(() => finalizeReadonlySnapshot(unrelatedContextReviewNote), /review context note artifact is absent from the canonical SHOT versions/i);
+
+    const divergentDeliveryArtifact = structuredClone(acceptedArtifactMarkedNotReady);
+    const divergentDeliveryProject = divergentDeliveryArtifact.projects[0]!;
+    divergentDeliveryProject.delivery.readiness_checks[0]!.ok = true;
+    divergentDeliveryProject.delivery.readiness_checks[0]!.reason_code = "SHOT_ACCEPTED_CLIP_READY";
+    const divergentDeliveryContext = divergentDeliveryProject.contexts.find((context) => context.workspace === "delivery");
+    assert.ok(divergentDeliveryContext && "accepted_clips" in divergentDeliveryContext.full);
+    divergentDeliveryContext.full.accepted_clips[0]!.artifact = {
+      ...structuredClone(generatedArtifact),
+      filename: "divergent-provider-payload.mp4"
+    };
+    assert.throws(() => finalizeReadonlySnapshot(divergentDeliveryArtifact), /delivery context accepted-clip projection mismatch/i);
+
     const divergentSummary = structuredClone(unsigned);
     const summaryProject = divergentSummary.projects[0]!;
     summaryProject.list_item_full.summary.shot_count = 99;
