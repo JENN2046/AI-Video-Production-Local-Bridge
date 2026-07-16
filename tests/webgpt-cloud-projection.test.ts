@@ -562,6 +562,13 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     laterFullContext.meta.updated_at = "2099-01-01T00:00:00.000Z";
     assert.throws(() => finalizeReadonlySnapshot(divergentMetaTimestamp), /context metadata canonical projection mismatch/i);
 
+    const divergentAllMetaTimestamps = structuredClone(unsigned);
+    for (const context of divergentAllMetaTimestamps.projects[0]!.contexts) {
+      assert.ok("meta" in context.full);
+      context.full.meta.updated_at = "2099-01-01T00:00:00.000Z";
+    }
+    assert.throws(() => finalizeReadonlySnapshot(divergentAllMetaTimestamps), /context metadata canonical projection mismatch/i);
+
     const invalidFinalArtifactReference = structuredClone(unsigned);
     const invalidFinalProject = invalidFinalArtifactReference.projects[0]!;
     invalidFinalProject.list_item_full.summary.delivery_state = "final_review";

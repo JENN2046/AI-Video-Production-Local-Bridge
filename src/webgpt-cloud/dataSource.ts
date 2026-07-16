@@ -388,6 +388,10 @@ export function exportReadonlySnapshotFromDatabase(input: ExportReadonlySnapshot
         const full = requireSuccess(readProjectContext(getProductionProjectContext({ project_id: projectId, workspace }, db, "readonly_export"), "full"), WEBGPT_V4_PROJECT_CONTEXT_DATA_SCHEMA);
         return { workspace, compact, full };
       });
+      const firstFullContext = contexts[0]?.full;
+      if (!firstFullContext || !("meta" in firstFullContext)) {
+        throw new ReadonlyProjectionError("READONLY_PROJECTION_CONTRACT_VIOLATION", "Full project context projection is missing metadata.");
+      }
       const reviewPackages = fullShotItems.map((shot) => ({
         shot_id: shot.shot_id,
         compact: requireSuccess(readReviewPackage(getProductionReviewPackage({ project_id: projectId, shot_id: shot.shot_id, notes_limit: 50 }, db, "readonly_export"), "compact", projectId, shot.shot_id), WEBGPT_V4_REVIEW_PACKAGE_DATA_SCHEMA),
@@ -395,6 +399,7 @@ export function exportReadonlySnapshotFromDatabase(input: ExportReadonlySnapshot
       }));
       return READONLY_PROJECT_PROJECTION_SCHEMA.parse({
         project_id: projectId,
+        context_meta_updated_at: firstFullContext.meta.updated_at,
         list_item_compact: compactItem,
         list_item_full: fullItem,
         contexts,

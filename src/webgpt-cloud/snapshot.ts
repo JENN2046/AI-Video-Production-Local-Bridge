@@ -73,6 +73,7 @@ const reviewProjectionSchema = z.object({
 
 export const READONLY_PROJECT_PROJECTION_SCHEMA = z.object({
   project_id: z.string().min(1),
+  context_meta_updated_at: z.string(),
   list_item_compact: WEBGPT_V4_COMPACT_PROJECT_LIST_ITEM_SCHEMA,
   list_item_full: WEBGPT_V4_FULL_PROJECT_LIST_ITEM_SCHEMA,
   contexts: z.array(contextProjectionSchema).length(5),
@@ -291,14 +292,16 @@ function validateProjectProjectionBindings(
           classification: "production",
           lifecycle: project.list_item_full.lifecycle,
           pinned: project.list_item_full.pinned,
-          last_opened_at: project.list_item_full.last_opened_at
+          last_opened_at: project.list_item_full.last_opened_at,
+          updated_at: project.context_meta_updated_at
         };
         const listComparableMeta = {
           project_id: value.meta.project_id,
           classification: value.meta.classification,
           lifecycle: value.meta.lifecycle,
           pinned: value.meta.pinned,
-          last_opened_at: value.meta.last_opened_at
+          last_opened_at: value.meta.last_opened_at,
+          updated_at: value.meta.updated_at
         };
         if (canonicalizeJcs(listComparableMeta) !== canonicalizeJcs(expectedListMeta)
           || (canonicalContextMeta && canonicalizeJcs(value.meta) !== canonicalizeJcs(canonicalContextMeta))) {
