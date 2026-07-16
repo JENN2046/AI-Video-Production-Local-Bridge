@@ -429,6 +429,9 @@ function validateProjectProjectionBindings(
       if (value.shot.project_id !== projectId || value.shot.shot_id !== review.shot_id) {
         addBindingIssue(context, [...detailPath, "shot"], "Review package SHOT binding mismatch.");
       }
+      if (value.notes_total < 0 || value.notes_total < value.notes.length) {
+        addBindingIssue(context, [...detailPath, "notes_total"], "Review notes total is smaller than returned notes.");
+      }
       if (detail === "full") {
         const canonicalShot = project.shots_full.find((shot) => shot.shot_id === review.shot_id);
         if (canonicalShot && canonicalizeJcs(shotParityValue(value.shot)) !== canonicalizeJcs(shotParityValue(canonicalShot))) {

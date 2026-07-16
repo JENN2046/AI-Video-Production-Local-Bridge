@@ -494,6 +494,19 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     unrelatedReviewNote.projects[0]!.review_packages[0]!.compact.notes.push(structuredClone(note));
     assert.throws(() => finalizeReadonlySnapshot(unrelatedReviewNote), /review note artifact is absent from the canonical SHOT versions/i);
 
+    const impossibleReviewTotal = structuredClone(unsigned);
+    const validNote = { ...note, note_id: "note_valid_unbound", artifact_id: "" };
+    impossibleReviewTotal.projects[0]!.review_packages[0]!.full.notes.push(validNote);
+    impossibleReviewTotal.projects[0]!.review_packages[0]!.compact.notes.push(structuredClone(validNote));
+    impossibleReviewTotal.projects[0]!.review_packages[0]!.full.notes_total = 0;
+    impossibleReviewTotal.projects[0]!.review_packages[0]!.compact.notes_total = 0;
+    assert.throws(() => finalizeReadonlySnapshot(impossibleReviewTotal), /review notes total is smaller than returned notes/i);
+
+    const negativeReviewTotal = structuredClone(unsigned);
+    negativeReviewTotal.projects[0]!.review_packages[0]!.full.notes_total = -1;
+    negativeReviewTotal.projects[0]!.review_packages[0]!.compact.notes_total = -1;
+    assert.throws(() => finalizeReadonlySnapshot(negativeReviewTotal), /review notes total is smaller than returned notes/i);
+
     const unrelatedContextReviewNote = structuredClone(unsigned);
     const reviewContext = unrelatedContextReviewNote.projects[0]!.contexts.find((context) => context.workspace === "review");
     assert.ok(reviewContext && "review_notes" in reviewContext.full && "review_notes" in reviewContext.compact);
