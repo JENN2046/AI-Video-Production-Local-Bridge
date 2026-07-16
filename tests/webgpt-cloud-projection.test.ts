@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import { bindWebGptPrincipalIssuer, bootstrapWebGptProjectOwner, registerWebGptPrincipal } from "../src/webgpt-v4/authorizationAdmin.js";
@@ -223,4 +224,73 @@ test("snapshot fingerprint uses deterministic JCS input and server time remains 
     snapshot_fingerprint: snapshot.snapshot_fingerprint
   });
   assert.equal(readonlySnapshotStatus(snapshot, new Date("2026-07-16T01:00:00.000Z")).freshness_status, "snapshot_expired");
+
+  const futureUnsigned = structuredClone(unsigned);
+  futureUnsigned.generated_at = "2026-07-17T00:00:00.000Z";
+  futureUnsigned.expires_at = "2026-07-17T01:00:00.000Z";
+  assert.throws(
+    () => finalizeReadonlySnapshot(futureUnsigned, new Date("2026-07-16T23:59:59.999Z")),
+    /READONLY_SNAPSHOT_GENERATED_IN_FUTURE/
+  );
+  const futureSnapshot = finalizeReadonlySnapshot(futureUnsigned, new Date("2026-07-17T00:00:00.000Z"));
+  assert.throws(
+    () => parseReadonlySnapshot(futureSnapshot, new Date("2026-07-16T23:59:59.999Z")),
+    /READONLY_SNAPSHOT_GENERATED_IN_FUTURE/
+  );
+  assert.deepEqual(readonlySnapshotStatus(futureSnapshot, new Date("2026-07-16T23:59:59.999Z")), {
+    server_now: "2026-07-16T23:59:59.999Z",
+    generated_at: "2026-07-17T00:00:00.000Z",
+    expires_at: "2026-07-17T01:00:00.000Z",
+    age_seconds: 0,
+    ttl_remaining_seconds: 0,
+    freshness_status: "snapshot_expired",
+    snapshot_fingerprint: futureSnapshot.snapshot_fingerprint
+  });
+});
+
+test("readonly exporter holds every schema and projection query inside one read transaction", () => {
+  const root = mkdtempSync(join(tmpdir(), "readonly-projection-transaction-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const fixture = createFixture(sqlitePath);
+  const originalExec = DatabaseSync.prototype.exec;
+  const originalPrepare = DatabaseSync.prototype.prepare;
+  let transactionOpen = false;
+  let beginCount = 0;
+  let commitCount = 0;
+  let prepareCount = 0;
+  DatabaseSync.prototype.exec = function patchedExec(sql: string): void {
+    const normalized = sql.trim().toUpperCase();
+    if (normalized === "BEGIN;") {
+      assert.equal(transactionOpen, false);
+      transactionOpen = true;
+      beginCount += 1;
+    } else if (normalized === "COMMIT;") {
+      assert.equal(transactionOpen, true);
+      commitCount += 1;
+      transactionOpen = false;
+    }
+    originalExec.call(this, sql);
+  };
+  DatabaseSync.prototype.prepare = function patchedPrepare(sql: string) {
+    assert.equal(transactionOpen, true, `query escaped readonly export transaction: ${sql.slice(0, 40)}`);
+    prepareCount += 1;
+    return originalPrepare.call(this, sql);
+  };
+  try {
+    exportReadonlySnapshotFromDatabase({
+      database_path: sqlitePath,
+      issuer_hash: fixture.actor.issuer_hash!,
+      resource_url: RESOURCE,
+      generated_at: new Date(Date.now() - 1_000).toISOString(),
+      ttl_seconds: 3600
+    });
+    assert.equal(beginCount, 1);
+    assert.equal(commitCount, 1);
+    assert.ok(prepareCount > 10);
+    assert.equal(transactionOpen, false);
+  } finally {
+    DatabaseSync.prototype.exec = originalExec;
+    DatabaseSync.prototype.prepare = originalPrepare;
+    rmSync(root, { recursive: true, force: true });
+  }
 });

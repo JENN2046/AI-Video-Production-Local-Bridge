@@ -311,7 +311,10 @@ export type ExportReadonlySnapshotInput = {
 
 export function exportReadonlySnapshotFromDatabase(input: ExportReadonlySnapshotInput): ReadonlySnapshot {
   const db = openM0DatabaseConnection(input.database_path, { readOnly: true });
+  let transactionOpen = false;
   try {
+    db.exec("BEGIN;");
+    transactionOpen = true;
     try {
       assertSchemaCurrent(db);
     } catch (error) {
@@ -407,7 +410,19 @@ export function exportReadonlySnapshotFromDatabase(input: ExportReadonlySnapshot
       authorization: { principals },
       projects
     };
-    return finalizeReadonlySnapshot(unsigned);
+    const snapshot = finalizeReadonlySnapshot(unsigned);
+    db.exec("COMMIT;");
+    transactionOpen = false;
+    return snapshot;
+  } catch (error) {
+    if (transactionOpen) {
+      try {
+        db.exec("ROLLBACK;");
+      } catch {
+        // Preserve the original export failure.
+      }
+    }
+    throw error;
   } finally {
     db.close();
   }

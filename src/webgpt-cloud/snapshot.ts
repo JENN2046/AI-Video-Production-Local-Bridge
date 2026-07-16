@@ -155,18 +155,19 @@ export function snapshotFingerprint(snapshot: ReadonlySnapshotUnsigned): string 
   return createHash("sha256").update(canonicalizeJcs(validated), "utf8").digest("hex");
 }
 
-function assertSnapshotTimeWindow(snapshot: ReadonlySnapshotUnsigned): void {
+function assertSnapshotTimeWindow(snapshot: ReadonlySnapshotUnsigned, now = new Date()): void {
   const generated = Date.parse(snapshot.generated_at);
   const expires = Date.parse(snapshot.expires_at);
   const ttlSeconds = (expires - generated) / 1000;
   if (!(ttlSeconds > 0 && ttlSeconds <= READONLY_SNAPSHOT_MAX_TTL_SECONDS)) {
     throw new Error("READONLY_SNAPSHOT_INVALID_TTL");
   }
+  if (generated > now.getTime()) throw new Error("READONLY_SNAPSHOT_GENERATED_IN_FUTURE");
 }
 
-export function finalizeReadonlySnapshot(input: ReadonlySnapshotUnsigned): ReadonlySnapshot {
+export function finalizeReadonlySnapshot(input: ReadonlySnapshotUnsigned, now = new Date()): ReadonlySnapshot {
   const validated = READONLY_SNAPSHOT_UNSIGNED_SCHEMA.parse(input);
-  assertSnapshotTimeWindow(validated);
+  assertSnapshotTimeWindow(validated, now);
   const snapshot = READONLY_SNAPSHOT_SCHEMA.parse({ ...validated, snapshot_fingerprint: snapshotFingerprint(validated) });
   if (Buffer.byteLength(JSON.stringify(snapshot), "utf8") > READONLY_SNAPSHOT_MAX_BYTES) {
     throw new Error("READONLY_SNAPSHOT_TOO_LARGE");
@@ -174,9 +175,9 @@ export function finalizeReadonlySnapshot(input: ReadonlySnapshotUnsigned): Reado
   return snapshot;
 }
 
-export function parseReadonlySnapshot(input: unknown): ReadonlySnapshot {
+export function parseReadonlySnapshot(input: unknown, now = new Date()): ReadonlySnapshot {
   const snapshot = READONLY_SNAPSHOT_SCHEMA.parse(input);
-  assertSnapshotTimeWindow(snapshot);
+  assertSnapshotTimeWindow(snapshot, now);
   const { snapshot_fingerprint: claimed, ...unsigned } = snapshot;
   if (snapshotFingerprint(unsigned) !== claimed) throw new Error("READONLY_SNAPSHOT_FINGERPRINT_MISMATCH");
   if (Buffer.byteLength(JSON.stringify(snapshot), "utf8") > READONLY_SNAPSHOT_MAX_BYTES) throw new Error("READONLY_SNAPSHOT_TOO_LARGE");
@@ -202,6 +203,15 @@ export function readonlySnapshotStatus(snapshot: ReadonlySnapshot | null, now = 
   const nowMs = now.getTime();
   const generatedMs = Date.parse(snapshot.generated_at);
   const expiresMs = Date.parse(snapshot.expires_at);
+  if (generatedMs > nowMs) return {
+    server_now: serverNow,
+    generated_at: snapshot.generated_at,
+    expires_at: snapshot.expires_at,
+    age_seconds: 0,
+    ttl_remaining_seconds: 0,
+    freshness_status: "snapshot_expired",
+    snapshot_fingerprint: snapshot.snapshot_fingerprint
+  };
   const remaining = Math.max(0, Math.ceil((expiresMs - nowMs) / 1000));
   return {
     server_now: serverNow,
