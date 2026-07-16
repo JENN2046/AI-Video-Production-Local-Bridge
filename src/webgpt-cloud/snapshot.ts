@@ -38,16 +38,33 @@ const authorizationPrincipalSchema = z.object({
   project_ids: z.array(z.string().min(1)).max(10000)
 }).strict();
 
+const compactProjectContextDataSchema = WEBGPT_V4_PROJECT_CONTEXT_DATA_SCHEMA.refine(
+  (value) => value.detail === "compact",
+  "Compact context slot requires a compact DTO."
+);
+const fullProjectContextDataSchema = WEBGPT_V4_PROJECT_CONTEXT_DATA_SCHEMA.refine(
+  (value) => value.detail === "full",
+  "Full context slot requires a full DTO."
+);
+const compactReviewPackageDataSchema = WEBGPT_V4_REVIEW_PACKAGE_DATA_SCHEMA.refine(
+  (value) => value.detail === "compact",
+  "Compact review slot requires a compact DTO."
+);
+const fullReviewPackageDataSchema = WEBGPT_V4_REVIEW_PACKAGE_DATA_SCHEMA.refine(
+  (value) => value.detail === "full",
+  "Full review slot requires a full DTO."
+);
+
 const contextProjectionSchema = z.object({
   workspace: z.enum(["overview", "storyboard", "generation", "review", "delivery"]),
-  compact: WEBGPT_V4_PROJECT_CONTEXT_DATA_SCHEMA,
-  full: WEBGPT_V4_PROJECT_CONTEXT_DATA_SCHEMA
+  compact: compactProjectContextDataSchema,
+  full: fullProjectContextDataSchema
 }).strict();
 
 const reviewProjectionSchema = z.object({
   shot_id: z.string().min(1),
-  compact: WEBGPT_V4_REVIEW_PACKAGE_DATA_SCHEMA,
-  full: WEBGPT_V4_REVIEW_PACKAGE_DATA_SCHEMA
+  compact: compactReviewPackageDataSchema,
+  full: fullReviewPackageDataSchema
 }).strict();
 
 export const READONLY_PROJECT_PROJECTION_SCHEMA = z.object({
@@ -142,6 +159,11 @@ function validateProjectProjectionBindings(
     }
   }
 
+  const reviewShotIds = new Set(project.review_packages.map((review) => review.shot_id));
+  if (reviewShotIds.size !== project.review_packages.length) addBindingIssue(context, [...base, "review_packages"], "Duplicate review package SHOT binding.");
+  if (reviewShotIds.size !== shotIds.size || [...shotIds].some((shotId) => !reviewShotIds.has(shotId))) {
+    addBindingIssue(context, [...base, "review_packages"], "Review package and full SHOT bindings differ.");
+  }
   for (const [reviewIndex, review] of project.review_packages.entries()) {
     const path = [...base, "review_packages", reviewIndex] as Array<string | number>;
     if (!shotIds.has(review.shot_id)) addBindingIssue(context, [...path, "shot_id"], "Review package SHOT binding mismatch.");

@@ -301,13 +301,24 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
       (candidate) => { candidate.projects[0]!.shots_full[0]!.project_id = "project_cross_binding"; },
       (candidate) => { candidate.projects[0]!.review_packages[0]!.full.shot.project_id = "project_cross_binding"; },
       (candidate) => { candidate.projects[0]!.delivery.project_id = "project_cross_binding"; },
-      (candidate) => { candidate.projects[0]!.closeout.project_id = "project_cross_binding"; }
+      (candidate) => { candidate.projects[0]!.closeout.project_id = "project_cross_binding"; },
+      (candidate) => { candidate.projects[0]!.review_packages = []; }
     ];
     for (const mutate of mutations) {
       const candidate = structuredClone(unsigned);
       mutate(candidate);
-      assert.throws(() => finalizeReadonlySnapshot(candidate), /binding mismatch/i);
+      assert.throws(() => finalizeReadonlySnapshot(candidate), /(binding mismatch|bindings differ)/i);
     }
+
+    const fullContextInCompactSlot = structuredClone(unsigned);
+    (fullContextInCompactSlot.projects[0]!.contexts[0] as unknown as { compact: unknown }).compact =
+      structuredClone(fullContextInCompactSlot.projects[0]!.contexts[0]!.full);
+    assert.throws(() => finalizeReadonlySnapshot(fullContextInCompactSlot), /compact context slot/i);
+
+    const fullReviewInCompactSlot = structuredClone(unsigned);
+    (fullReviewInCompactSlot.projects[0]!.review_packages[0] as unknown as { compact: unknown }).compact =
+      structuredClone(fullReviewInCompactSlot.projects[0]!.review_packages[0]!.full);
+    assert.throws(() => finalizeReadonlySnapshot(fullReviewInCompactSlot), /compact review slot/i);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

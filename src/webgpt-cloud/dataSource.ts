@@ -34,6 +34,7 @@ import {
   finalizeReadonlySnapshot,
   parseReadonlySnapshot,
   readonlySnapshotStatus,
+  READONLY_PROJECT_PROJECTION_SCHEMA,
   READONLY_SNAPSHOT_REQUIRED_MIGRATION,
   READONLY_SNAPSHOT_REQUIRED_SCHEMA,
   READONLY_SNAPSHOT_SCHEMA_VERSION,
@@ -392,7 +393,7 @@ export function exportReadonlySnapshotFromDatabase(input: ExportReadonlySnapshot
         compact: requireSuccess(readReviewPackage(getProductionReviewPackage({ project_id: projectId, shot_id: shot.shot_id, notes_limit: 50 }, db, "readonly_export"), "compact", projectId, shot.shot_id), WEBGPT_V4_REVIEW_PACKAGE_DATA_SCHEMA),
         full: requireSuccess(readReviewPackage(getProductionReviewPackage({ project_id: projectId, shot_id: shot.shot_id, notes_limit: 50 }, db, "readonly_export"), "full", projectId, shot.shot_id), WEBGPT_V4_REVIEW_PACKAGE_DATA_SCHEMA)
       }));
-      return {
+      return READONLY_PROJECT_PROJECTION_SCHEMA.parse({
         project_id: projectId,
         list_item_compact: compactItem,
         list_item_full: fullItem,
@@ -402,7 +403,7 @@ export function exportReadonlySnapshotFromDatabase(input: ExportReadonlySnapshot
         review_packages: reviewPackages,
         delivery: requireSuccess(readDelivery(getProductionDeliveryStatus({ project_id: projectId }, db, "readonly_export")), WEBGPT_V4_DELIVERY_DATA_SCHEMA),
         closeout: requireSuccess(readDelivery(getProductionCloseoutEvidence({ project_id: projectId }, db, "readonly_export"), true), WEBGPT_V4_CLOSEOUT_DATA_SCHEMA)
-      };
+      });
     });
     assertNoForbiddenProjectionFields(projects);
 
