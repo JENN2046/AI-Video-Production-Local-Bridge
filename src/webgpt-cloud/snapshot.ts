@@ -10,7 +10,9 @@ import {
   WEBGPT_V4_PROJECT_CONTEXT_DATA_SCHEMA,
   WEBGPT_V4_REVIEW_PACKAGE_DATA_SCHEMA,
   WEBGPT_V4_SHOT_SCHEMA,
-  WEBGPT_V4_COMPACT_SHOT_SCHEMA
+  WEBGPT_V4_COMPACT_SHOT_SCHEMA,
+  publicProject,
+  publicSummary
 } from "../webgpt-v4/contracts.js";
 
 export const READONLY_SNAPSHOT_SCHEMA_VERSION = "readonly-snapshot-v1";
@@ -115,6 +117,16 @@ function validateProjectProjectionBindings(
 
   if (project.list_item_compact.project.project_id !== projectId || project.list_item_full.project.project_id !== projectId) {
     addBindingIssue(context, base, "Projected project binding mismatch.");
+  }
+  const expectedCompactListItem = WEBGPT_V4_COMPACT_PROJECT_LIST_ITEM_SCHEMA.parse({
+    project: publicProject(project.list_item_full.project, true),
+    lifecycle: project.list_item_full.lifecycle,
+    pinned: project.list_item_full.pinned,
+    updated_at: project.list_item_full.updated_at,
+    summary: publicSummary(project.list_item_full.summary, true)
+  });
+  if (canonicalizeJcs(project.list_item_compact) !== canonicalizeJcs(expectedCompactListItem)) {
+    addBindingIssue(context, [...base, "list_item_compact"], "Compact/full project list parity mismatch.");
   }
   for (const [shotIndex, shot] of project.shots_compact.entries()) {
     if (shot.project_id !== projectId) addBindingIssue(context, [...base, "shots_compact", shotIndex, "project_id"], "SHOT project binding mismatch.");

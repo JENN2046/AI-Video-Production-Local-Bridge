@@ -320,6 +320,10 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
       structuredClone(fullReviewInCompactSlot.projects[0]!.review_packages[0]!.full);
     assert.throws(() => finalizeReadonlySnapshot(fullReviewInCompactSlot), /compact review slot/i);
 
+    const divergentCompactProject = structuredClone(unsigned);
+    divergentCompactProject.projects[0]!.list_item_compact.project.title = "Divergent compact title";
+    assert.throws(() => finalizeReadonlySnapshot(divergentCompactProject), /project list parity mismatch/i);
+
     const duplicateCompactShot = structuredClone(unsigned);
     const projected = duplicateCompactShot.projects[0]!;
     const secondShotId = "shot_cloud_projection_002";
