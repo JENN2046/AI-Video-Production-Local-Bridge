@@ -590,6 +590,13 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     boundedOverview.compact.metrics.generation_active = 17;
     assert.doesNotThrow(() => finalizeReadonlySnapshot(boundedOverviewRuns));
 
+    const negativeOverviewRuns = structuredClone(unsigned);
+    const negativeOverview = negativeOverviewRuns.projects[0]!.contexts.find((context) => context.workspace === "overview");
+    assert.ok(negativeOverview && "metrics" in negativeOverview.full && "metrics" in negativeOverview.compact);
+    negativeOverview.full.metrics.generation_active = -1;
+    negativeOverview.compact.metrics.generation_active = -1;
+    assert.throws(() => finalizeReadonlySnapshot(negativeOverviewRuns), /overview generation active count cannot be negative/i);
+
     const divergentMeta = structuredClone(unsigned);
     const fullContext = divergentMeta.projects[0]!.contexts[0]!.full;
     assert.ok("meta" in fullContext);
@@ -717,6 +724,28 @@ test("readonly snapshot requires compact and full SHOT ordering parity", () => {
     assert.equal(unsigned.projects[0]!.shots_full.length, 2);
     unsigned.projects[0]!.shots_compact.reverse();
     assert.throws(() => finalizeReadonlySnapshot(unsigned), /compact and full SHOT ordering differs/i);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("readonly snapshot requires canonical full SHOT ordering", () => {
+  const root = mkdtempSync(join(tmpdir(), "readonly-projection-canonical-shot-order-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const fixture = createFixture(sqlitePath);
+  addSecondFixtureShot(sqlitePath, fixture.project_id);
+  try {
+    const snapshot = exportReadonlySnapshotFromDatabase({
+      database_path: sqlitePath,
+      issuer_hash: fixture.actor.issuer_hash!,
+      resource_url: RESOURCE
+    });
+    const { snapshot_fingerprint: _fingerprint, ...unsigned } = snapshot;
+    const project = unsigned.projects[0]!;
+    project.shots_full.reverse();
+    project.shots_compact.reverse();
+    project.list_item_full.project.shot_ids.reverse();
+    assert.throws(() => finalizeReadonlySnapshot(unsigned), /full SHOT ordering is not canonical/i);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

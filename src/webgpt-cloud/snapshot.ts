@@ -249,6 +249,11 @@ function validateProjectProjectionBindings(
   if (project.shots_compact.some((shot, shotIndex) => shot.shot_id !== project.shots_full[shotIndex]?.shot_id)) {
     addBindingIssue(context, [...base, "shots_compact"], "Compact and full SHOT ordering differs.");
   }
+  const canonicalShotOrder = [...project.shots_full]
+    .sort((left, right) => left.order - right.order || left.shot_id.localeCompare(right.shot_id));
+  if (project.shots_full.some((shot, shotIndex) => shot.shot_id !== canonicalShotOrder[shotIndex]?.shot_id)) {
+    addBindingIssue(context, [...base, "shots_full"], "Full SHOT ordering is not canonical.");
+  }
   for (const [shotIndex, shot] of project.shots_full.entries()) {
     if (shot.project_id !== projectId) addBindingIssue(context, [...base, "shots_full", shotIndex, "project_id"], "SHOT project binding mismatch.");
   }
@@ -430,6 +435,9 @@ function validateProjectProjectionBindings(
           missing_image: !shot.storyboard_image_artifact_id,
           missing_prompt: !shot.video_prompt
         }));
+      if (projection.full.metrics.generation_active < 0) {
+        addBindingIssue(context, [...base, "contexts", contextIndex, "full", "metrics", "generation_active"], "Overview generation active count cannot be negative.");
+      }
       if (canonicalizeJcs(shotDerivedMetrics) !== canonicalizeJcs(expectedMetrics)
         || canonicalizeJcs(projection.full.blockers) !== canonicalizeJcs(expectedBlockers)) {
         addBindingIssue(context, [...base, "contexts", contextIndex, "full"], "Overview metrics or blockers canonical projection mismatch.");
