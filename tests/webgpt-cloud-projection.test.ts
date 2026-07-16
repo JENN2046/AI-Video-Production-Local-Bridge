@@ -414,6 +414,10 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     nonFinalDeliveryArtifact.projects[0]!.closeout.final_artifact = structuredClone(generatedArtifact);
     assert.throws(() => finalizeReadonlySnapshot(nonFinalDeliveryArtifact), /final artifact contract mismatch/i);
 
+    const acceptedArtifactOutsideReview = structuredClone(unsigned);
+    acceptedArtifactOutsideReview.projects[0]!.shots_full[0]!.accepted_clip_artifact_id = "artifact_not_in_review";
+    assert.throws(() => finalizeReadonlySnapshot(acceptedArtifactOutsideReview), /accepted clip is absent from the SHOT review versions/i);
+
     const duplicateCompactShot = structuredClone(unsigned);
     const projected = duplicateCompactShot.projects[0]!;
     const secondShotId = "shot_cloud_projection_002";
@@ -472,6 +476,35 @@ test("readonly snapshot requires compact and full SHOT ordering parity", () => {
     assert.equal(unsigned.projects[0]!.shots_full.length, 2);
     unsigned.projects[0]!.shots_compact.reverse();
     assert.throws(() => finalizeReadonlySnapshot(unsigned), /compact and full SHOT ordering differs/i);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("readonly snapshot requires canonical project list ordering", () => {
+  const root = mkdtempSync(join(tmpdir(), "readonly-projection-project-order-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const fixture = createFixture(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const second = createProject({ title: "Second authorized project" }, db);
+    assert.equal(second.ok, true);
+    if (!second.ok) throw new Error("fixture setup failed");
+    db.prepare("UPDATE workbench_project_meta SET classification = 'production' WHERE project_id = ?").run(second.project_id);
+    bootstrapWebGptProjectOwner(db, fixture.actor.principal_id, second.project_id, "READONLY_CLOUD_SECOND_PROJECT", fixture.actor.issuer_hash!);
+  } finally {
+    db.close();
+  }
+  try {
+    const snapshot = exportReadonlySnapshotFromDatabase({
+      database_path: sqlitePath,
+      issuer_hash: fixture.actor.issuer_hash!,
+      resource_url: RESOURCE
+    });
+    const { snapshot_fingerprint: _fingerprint, ...unsigned } = snapshot;
+    assert.equal(unsigned.projects.length, 2);
+    unsigned.projects.reverse();
+    assert.throws(() => finalizeReadonlySnapshot(unsigned), /project ordering differs from the canonical project list order/i);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

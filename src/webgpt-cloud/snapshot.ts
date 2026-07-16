@@ -358,6 +358,9 @@ function validateProjectProjectionBindings(
     }
     const canonicalShot = project.shots_full.find((shot) => shot.shot_id === review.shot_id);
     const versionIds = new Set(review.full.versions.map((version) => version.artifact_id));
+    if (canonicalShot?.accepted_clip_artifact_id && !versionIds.has(canonicalShot.accepted_clip_artifact_id)) {
+      addBindingIssue(context, [...path, "full", "versions"], "Accepted clip is absent from the SHOT review versions.");
+    }
     if (canonicalShot
       && review.full.selected_artifact_id !== canonicalShot.accepted_clip_artifact_id
       && !versionIds.has(review.full.selected_artifact_id)) {
@@ -429,6 +432,17 @@ function validateSnapshotBindings(value: {
     if (projectIds.has(project.project_id)) context.addIssue({ code: "custom", message: "Duplicate projected project id.", path: ["projects"] });
     projectIds.add(project.project_id);
     validateProjectProjectionBindings(project, projectIndex, context);
+  }
+  const expectedProjectOrder = [...value.projects].sort((left, right) => {
+    const pinnedDifference = Number(right.list_item_full.pinned) - Number(left.list_item_full.pinned);
+    if (pinnedDifference !== 0) return pinnedDifference;
+    const leftUpdatedAt = left.list_item_full.updated_at;
+    const rightUpdatedAt = right.list_item_full.updated_at;
+    if (leftUpdatedAt !== rightUpdatedAt) return leftUpdatedAt > rightUpdatedAt ? -1 : 1;
+    return left.project_id === right.project_id ? 0 : left.project_id > right.project_id ? -1 : 1;
+  });
+  if (value.projects.some((project, index) => project.project_id !== expectedProjectOrder[index]?.project_id)) {
+    context.addIssue({ code: "custom", message: "Projected project ordering differs from the canonical project list order.", path: ["projects"] });
   }
   const principals = new Set<string>();
   for (const principal of value.authorization.principals) {
