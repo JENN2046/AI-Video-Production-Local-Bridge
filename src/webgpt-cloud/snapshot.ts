@@ -109,7 +109,9 @@ function validateProjectProjectionBindings(
   const base = ["projects", projectIndex] as Array<string | number>;
   const projectId = project.project_id;
   const shotIds = new Set(project.shots_full.map((shot) => shot.shot_id));
+  const compactShotIds = new Set(project.shots_compact.map((shot) => shot.shot_id));
   if (shotIds.size !== project.shots_full.length) addBindingIssue(context, [...base, "shots_full"], "Duplicate full SHOT binding.");
+  if (compactShotIds.size !== project.shots_compact.length) addBindingIssue(context, [...base, "shots_compact"], "Duplicate compact SHOT binding.");
 
   if (project.list_item_compact.project.project_id !== projectId || project.list_item_full.project.project_id !== projectId) {
     addBindingIssue(context, base, "Projected project binding mismatch.");
@@ -118,7 +120,9 @@ function validateProjectProjectionBindings(
     if (shot.project_id !== projectId) addBindingIssue(context, [...base, "shots_compact", shotIndex, "project_id"], "SHOT project binding mismatch.");
     if (!shotIds.has(shot.shot_id)) addBindingIssue(context, [...base, "shots_compact", shotIndex, "shot_id"], "Compact SHOT is absent from the full SHOT projection.");
   }
-  if (project.shots_compact.length !== shotIds.size) addBindingIssue(context, [...base, "shots_compact"], "Compact and full SHOT bindings differ.");
+  if (compactShotIds.size !== shotIds.size || [...shotIds].some((shotId) => !compactShotIds.has(shotId))) {
+    addBindingIssue(context, [...base, "shots_compact"], "Compact and full SHOT bindings differ.");
+  }
   for (const [shotIndex, shot] of project.shots_full.entries()) {
     if (shot.project_id !== projectId) addBindingIssue(context, [...base, "shots_full", shotIndex, "project_id"], "SHOT project binding mismatch.");
   }

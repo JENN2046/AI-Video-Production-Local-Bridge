@@ -319,6 +319,21 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     (fullReviewInCompactSlot.projects[0]!.review_packages[0] as unknown as { compact: unknown }).compact =
       structuredClone(fullReviewInCompactSlot.projects[0]!.review_packages[0]!.full);
     assert.throws(() => finalizeReadonlySnapshot(fullReviewInCompactSlot), /compact review slot/i);
+
+    const duplicateCompactShot = structuredClone(unsigned);
+    const projected = duplicateCompactShot.projects[0]!;
+    const secondShotId = "shot_cloud_projection_002";
+    const secondFullShot = structuredClone(projected.shots_full[0]!);
+    secondFullShot.shot_id = secondShotId;
+    projected.shots_full.push(secondFullShot);
+    projected.list_item_full.project.shot_ids.push(secondShotId);
+    projected.shots_compact.push(structuredClone(projected.shots_compact[0]!));
+    const secondReview = structuredClone(projected.review_packages[0]!);
+    secondReview.shot_id = secondShotId;
+    secondReview.compact.shot.shot_id = secondShotId;
+    secondReview.full.shot.shot_id = secondShotId;
+    projected.review_packages.push(secondReview);
+    assert.throws(() => finalizeReadonlySnapshot(duplicateCompactShot), /duplicate compact SHOT binding/i);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

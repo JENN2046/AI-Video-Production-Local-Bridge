@@ -188,6 +188,7 @@ export function auditTestSelection(input: TestSelectionAuditInput): string[] {
   if (!Array.isArray(input.catalog.groups)) return ["CATALOG_GROUPS_INVALID"];
   if (!Array.isArray(input.catalog.remediation_suites)) return ["CATALOG_REMEDIATION_SUITES_INVALID"];
   if (!Array.isArray(input.catalog.oauth_portability_suites)) return ["CATALOG_OAUTH_PORTABILITY_SUITES_INVALID"];
+  if (!Array.isArray(input.catalog.readonly_app_suites)) return ["CATALOG_READONLY_APP_SUITES_INVALID"];
 
   const sourceFiles = new Set(input.source_files.map(normalizePath));
   const catalogPaths = new Map<string, string>();

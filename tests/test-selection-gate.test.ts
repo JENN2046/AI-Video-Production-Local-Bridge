@@ -116,6 +116,16 @@ test("selection catalog requires declared readonly App security cases in their e
   assert.ok(errors.includes("READONLY_APP_CASE_MISSING: readonly-app-case -> missing readonly app case"));
 });
 
+test("selection catalog rejects missing and non-array readonly App suite catalogs with a stable diagnostic", () => {
+  const missing = fixture();
+  delete (missing.catalog as unknown as { readonly_app_suites?: ReadonlyAppSuite[] }).readonly_app_suites;
+  assert.deepEqual(auditTestSelection(missing), ["CATALOG_READONLY_APP_SUITES_INVALID"]);
+
+  const malformed = fixture();
+  (malformed.catalog as unknown as { readonly_app_suites: unknown }).readonly_app_suites = {};
+  assert.deepEqual(auditTestSelection(malformed), ["CATALOG_READONLY_APP_SUITES_INVALID"]);
+});
+
 test("selection catalog rejects unclassified, duplicate, and missing files", () => {
   const input = fixture({ source_files: ["tests/test-selection-gate.test.ts", "tests/unclassified.test.ts"] });
   input.catalog.groups.push({
