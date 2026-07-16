@@ -667,6 +667,23 @@ test("readonly exporter uses shot_id as the deterministic tiebreaker for equal S
     }
     assert.deepEqual(project.delivery.readiness_checks.map((check) => check.shot_id), expectedShotIds);
     assert.deepEqual(project.closeout.readiness_checks.map((check) => check.shot_id), expectedShotIds);
+    const db = openM0DatabaseConnection(sqlitePath, { readOnly: true });
+    try {
+      const sqlite = new SqliteReadonlyDataSource(db, fixture.actor.principal_id, fixture.actor.issuer_hash!);
+      const projected = new SnapshotReadonlyDataSource(snapshot, fixture.actor.principal_id, fixture.actor.issuer_hash!);
+      assert.deepEqual(
+        stripMeta(projected.listProductionProjects({ detail: "full" }, "tie-order")),
+        stripMeta(sqlite.listProductionProjects({ detail: "full" }, "tie-order"))
+      );
+      for (const workspace of ["overview", "storyboard", "generation", "review", "delivery"] as const) {
+        assert.deepEqual(
+          stripMeta(projected.getProjectContext({ project_id: fixture.project_id, workspace, detail: "full" }, "tie-order")),
+          stripMeta(sqlite.getProjectContext({ project_id: fixture.project_id, workspace, detail: "full" }, "tie-order"))
+        );
+      }
+    } finally {
+      db.close();
+    }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
