@@ -11,7 +11,9 @@ import {
   WEBGPT_V4_REVIEW_PACKAGE_DATA_SCHEMA,
   WEBGPT_V4_SHOT_SCHEMA,
   WEBGPT_V4_COMPACT_SHOT_SCHEMA,
+  publicArtifact,
   publicProject,
+  publicShot,
   publicSummary
 } from "../webgpt-v4/contracts.js";
 
@@ -82,6 +84,51 @@ export const READONLY_PROJECT_PROJECTION_SCHEMA = z.object({
 }).strict();
 
 type ReadonlyProjectProjectionShape = z.infer<typeof READONLY_PROJECT_PROJECTION_SCHEMA>;
+type FullContextProjection = ReadonlyProjectProjectionShape["contexts"][number]["full"];
+type FullReviewProjection = ReadonlyProjectProjectionShape["review_packages"][number]["full"];
+
+function compactContextFromFull(value: FullContextProjection): unknown {
+  const base = {
+    detail: "compact" as const,
+    project: publicProject(value.project, true),
+    summary: value.summary,
+    workspace: value.workspace
+  };
+  if (value.workspace === "overview") return { ...base, metrics: value.metrics, blockers: value.blockers };
+  if (value.workspace === "storyboard" || value.workspace === "generation") {
+    return { ...base, shots: value.shots.map((shot) => publicShot(shot, true)) };
+  }
+  if (value.workspace === "review") {
+    return { ...base, shots: value.shots.map((shot) => publicShot(shot, true)), review_notes: value.review_notes };
+  }
+  return {
+    ...base,
+    ready_for_assembly: value.ready_for_assembly,
+    readiness_checks: value.readiness_checks,
+    accepted_clips: value.accepted_clips.map((clip) => ({
+      shot_id: clip.shot_id,
+      order: clip.order,
+      artifact: clip.artifact ? publicArtifact(clip.artifact, true) : null
+    })),
+    final_artifact: value.final_artifact ? publicArtifact(value.final_artifact, true) : null,
+    final_artifact_reason_code: value.final_artifact_reason_code
+  };
+}
+
+function compactReviewFromFull(value: FullReviewProjection): unknown {
+  return {
+    detail: "compact" as const,
+    shot: publicShot(value.shot, true),
+    versions: value.versions.map((version) => ({
+      artifact_id: version.artifact_id,
+      attempt_number: version.attempt_number,
+      review_status: version.review_status
+    })),
+    notes: value.notes,
+    notes_total: value.notes_total,
+    selected_artifact_id: value.selected_artifact_id
+  };
+}
 
 function addBindingIssue(context: z.core.$RefinementCtx, path: Array<string | number>, message: string): void {
   context.addIssue({ code: "custom", message, path });
@@ -131,6 +178,13 @@ function validateProjectProjectionBindings(
   for (const [shotIndex, shot] of project.shots_compact.entries()) {
     if (shot.project_id !== projectId) addBindingIssue(context, [...base, "shots_compact", shotIndex, "project_id"], "SHOT project binding mismatch.");
     if (!shotIds.has(shot.shot_id)) addBindingIssue(context, [...base, "shots_compact", shotIndex, "shot_id"], "Compact SHOT is absent from the full SHOT projection.");
+    const fullShot = project.shots_full.find((candidate) => candidate.shot_id === shot.shot_id);
+    if (fullShot) {
+      const expectedCompactShot = WEBGPT_V4_COMPACT_SHOT_SCHEMA.parse(publicShot(fullShot, true));
+      if (canonicalizeJcs(shot) !== canonicalizeJcs(expectedCompactShot)) {
+        addBindingIssue(context, [...base, "shots_compact", shotIndex], "Compact/full SHOT parity mismatch.");
+      }
+    }
   }
   if (compactShotIds.size !== shotIds.size || [...shotIds].some((shotId) => !compactShotIds.has(shotId))) {
     addBindingIssue(context, [...base, "shots_compact"], "Compact and full SHOT bindings differ.");
@@ -173,6 +227,10 @@ function validateProjectProjectionBindings(
         validateArtifactBinding(value.final_artifact, projectId, null, [...path, "final_artifact"], context);
       }
     }
+    const expectedCompactContext = compactProjectContextDataSchema.parse(compactContextFromFull(projection.full));
+    if (canonicalizeJcs(projection.compact) !== canonicalizeJcs(expectedCompactContext)) {
+      addBindingIssue(context, [...base, "contexts", contextIndex, "compact"], "Compact/full context parity mismatch.");
+    }
   }
 
   const reviewShotIds = new Set(project.review_packages.map((review) => review.shot_id));
@@ -205,6 +263,10 @@ function validateProjectProjectionBindings(
         }
       }
     }
+    const expectedCompactReview = compactReviewPackageDataSchema.parse(compactReviewFromFull(review.full));
+    if (canonicalizeJcs(review.compact) !== canonicalizeJcs(expectedCompactReview)) {
+      addBindingIssue(context, [...path, "compact"], "Compact/full review package parity mismatch.");
+    }
   }
 
   for (const [name, value] of [["delivery", project.delivery], ["closeout", project.closeout]] as const) {
@@ -214,6 +276,10 @@ function validateProjectProjectionBindings(
       if (!shotIds.has(check.shot_id)) addBindingIssue(context, [...path, "readiness_checks", checkIndex, "shot_id"], "Delivery SHOT binding mismatch.");
     }
     validateArtifactBinding(value.final_artifact, projectId, null, [...path, "final_artifact"], context);
+  }
+  const { evidence: _evidence, ...closeoutDelivery } = project.closeout;
+  if (canonicalizeJcs(closeoutDelivery) !== canonicalizeJcs(project.delivery)) {
+    addBindingIssue(context, [...base, "closeout"], "Closeout/delivery parity mismatch.");
   }
 }
 

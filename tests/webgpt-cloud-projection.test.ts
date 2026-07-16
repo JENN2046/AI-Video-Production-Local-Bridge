@@ -324,6 +324,22 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     divergentCompactProject.projects[0]!.list_item_compact.project.title = "Divergent compact title";
     assert.throws(() => finalizeReadonlySnapshot(divergentCompactProject), /project list parity mismatch/i);
 
+    const divergentCompactShot = structuredClone(unsigned);
+    divergentCompactShot.projects[0]!.shots_compact[0]!.description = "Divergent compact SHOT";
+    assert.throws(() => finalizeReadonlySnapshot(divergentCompactShot), /SHOT parity mismatch/i);
+
+    const divergentCompactContext = structuredClone(unsigned);
+    divergentCompactContext.projects[0]!.contexts[0]!.compact.project.title = "Divergent context title";
+    assert.throws(() => finalizeReadonlySnapshot(divergentCompactContext), /context parity mismatch/i);
+
+    const divergentCompactReview = structuredClone(unsigned);
+    divergentCompactReview.projects[0]!.review_packages[0]!.compact.selected_artifact_id = "artifact_divergent";
+    assert.throws(() => finalizeReadonlySnapshot(divergentCompactReview), /review package parity mismatch/i);
+
+    const divergentCloseout = structuredClone(unsigned);
+    divergentCloseout.projects[0]!.closeout.delivered = !divergentCloseout.projects[0]!.delivery.delivered;
+    assert.throws(() => finalizeReadonlySnapshot(divergentCloseout), /closeout\/delivery parity mismatch/i);
+
     const duplicateCompactShot = structuredClone(unsigned);
     const projected = duplicateCompactShot.projects[0]!;
     const secondShotId = "shot_cloud_projection_002";
