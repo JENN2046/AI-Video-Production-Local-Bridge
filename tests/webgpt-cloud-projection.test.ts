@@ -507,11 +507,24 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     overview.compact.metrics.shots = 99;
     assert.throws(() => finalizeReadonlySnapshot(divergentOverview), /overview metrics or blockers canonical projection mismatch/i);
 
+    const boundedOverviewRuns = structuredClone(unsigned);
+    const boundedOverview = boundedOverviewRuns.projects[0]!.contexts.find((context) => context.workspace === "overview");
+    assert.ok(boundedOverview && "metrics" in boundedOverview.full && "metrics" in boundedOverview.compact);
+    boundedOverview.full.metrics.generation_active = 17;
+    boundedOverview.compact.metrics.generation_active = 17;
+    assert.doesNotThrow(() => finalizeReadonlySnapshot(boundedOverviewRuns));
+
     const divergentMeta = structuredClone(unsigned);
     const fullContext = divergentMeta.projects[0]!.contexts[0]!.full;
     assert.ok("meta" in fullContext);
     fullContext.meta.pinned = !fullContext.meta.pinned;
     assert.throws(() => finalizeReadonlySnapshot(divergentMeta), /context metadata canonical projection mismatch/i);
+
+    const divergentMetaTimestamp = structuredClone(unsigned);
+    const laterFullContext = divergentMetaTimestamp.projects[0]!.contexts[1]!.full;
+    assert.ok("meta" in laterFullContext);
+    laterFullContext.meta.updated_at = "2099-01-01T00:00:00.000Z";
+    assert.throws(() => finalizeReadonlySnapshot(divergentMetaTimestamp), /context metadata canonical projection mismatch/i);
 
     const invalidFinalArtifactReference = structuredClone(unsigned);
     const invalidFinalProject = invalidFinalArtifactReference.projects[0]!;

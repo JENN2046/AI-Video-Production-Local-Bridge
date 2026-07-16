@@ -278,21 +278,29 @@ function validateProjectProjectionBindings(
 
   const contextWorkspaces = new Set(project.contexts.map((projection) => projection.workspace));
   if (contextWorkspaces.size !== project.contexts.length) addBindingIssue(context, [...base, "contexts"], "Duplicate project context workspace.");
+  const canonicalContextMeta = project.contexts[0]?.full.meta;
   for (const [contextIndex, projection] of project.contexts.entries()) {
     for (const [detail, value] of [["compact", projection.compact], ["full", projection.full]] as const) {
       const path = [...base, "contexts", contextIndex, detail] as Array<string | number>;
       if (value.workspace !== projection.workspace) addBindingIssue(context, [...path, "workspace"], "Context workspace binding mismatch.");
       if (value.project.project_id !== projectId) addBindingIssue(context, [...path, "project", "project_id"], "Context project binding mismatch.");
       if ("meta" in value) {
-        const expectedMeta = {
+        const expectedListMeta = {
           project_id: projectId,
           classification: "production",
           lifecycle: project.list_item_full.lifecycle,
           pinned: project.list_item_full.pinned,
-          last_opened_at: project.list_item_full.last_opened_at,
-          updated_at: project.list_item_full.updated_at
+          last_opened_at: project.list_item_full.last_opened_at
         };
-        if (canonicalizeJcs(value.meta) !== canonicalizeJcs(expectedMeta)) {
+        const listComparableMeta = {
+          project_id: value.meta.project_id,
+          classification: value.meta.classification,
+          lifecycle: value.meta.lifecycle,
+          pinned: value.meta.pinned,
+          last_opened_at: value.meta.last_opened_at
+        };
+        if (canonicalizeJcs(listComparableMeta) !== canonicalizeJcs(expectedListMeta)
+          || (canonicalContextMeta && canonicalizeJcs(value.meta) !== canonicalizeJcs(canonicalContextMeta))) {
           addBindingIssue(context, [...path, "meta"], "Context metadata canonical projection mismatch.");
         }
       }
@@ -378,10 +386,10 @@ function validateProjectProjectionBindings(
       const expectedMetrics = {
         shots: project.shots_full.length,
         storyboard_approved: project.shots_full.filter((shot) => shot.status === "storyboard_approved").length,
-        generation_active: project.list_item_full.summary.active_run_count,
         review_pending: project.shots_full.filter((shot) => shot.clip_versions.length > 0 && shot.review.approval_status === "pending").length,
         accepted_clips: project.shots_full.filter((shot) => Boolean(shot.accepted_clip_artifact_id)).length
       };
+      const { generation_active: _generationActive, ...shotDerivedMetrics } = projection.full.metrics;
       const expectedBlockers = project.shots_full
         .filter((shot) => !shot.storyboard_image_artifact_id || !shot.video_prompt)
         .map((shot) => ({
@@ -390,7 +398,7 @@ function validateProjectProjectionBindings(
           missing_image: !shot.storyboard_image_artifact_id,
           missing_prompt: !shot.video_prompt
         }));
-      if (canonicalizeJcs(projection.full.metrics) !== canonicalizeJcs(expectedMetrics)
+      if (canonicalizeJcs(shotDerivedMetrics) !== canonicalizeJcs(expectedMetrics)
         || canonicalizeJcs(projection.full.blockers) !== canonicalizeJcs(expectedBlockers)) {
         addBindingIssue(context, [...base, "contexts", contextIndex, "full"], "Overview metrics or blockers canonical projection mismatch.");
       }
