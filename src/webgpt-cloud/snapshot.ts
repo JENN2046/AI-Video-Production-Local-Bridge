@@ -137,7 +137,7 @@ function shotParityValue<T extends { updated_at?: string }>(value: T): Omit<T, "
 
 function expectedDeliveryContextSummary(project: ReadonlyProjectProjectionShape): ReadonlyProjectProjectionShape["list_item_full"]["summary"] {
   const summary = structuredClone(project.list_item_full.summary);
-  if (project.delivery.final_artifact) return summary;
+  if (project.delivery.final_artifact || project.delivery.final_artifact_reason_code) return summary;
   const invalidCount = project.delivery.readiness_checks.filter((check) => Boolean(check.artifact_id) && !check.ok).length;
   const readinessDerived = project.delivery.ready_for_assembly
     ? { label: "合成交付", reason_code: "assemble", priority: "high" as const }
@@ -265,7 +265,7 @@ function validateProjectProjectionBindings(
     review_pending_count: project.shots_full.filter((shot) => shot.clip_versions.length > 0 && shot.review.approval_status === "pending").length,
     delivery_state: project.list_item_full.project.status === "final_approved"
       ? "delivered"
-      : project.delivery.final_artifact
+      : project.delivery.final_artifact || project.delivery.final_artifact_reason_code
         ? "final_review"
         : "not_ready"
   };
@@ -283,7 +283,19 @@ function validateProjectProjectionBindings(
       const path = [...base, "contexts", contextIndex, detail] as Array<string | number>;
       if (value.workspace !== projection.workspace) addBindingIssue(context, [...path, "workspace"], "Context workspace binding mismatch.");
       if (value.project.project_id !== projectId) addBindingIssue(context, [...path, "project", "project_id"], "Context project binding mismatch.");
-      if ("meta" in value && value.meta.project_id !== projectId) addBindingIssue(context, [...path, "meta", "project_id"], "Context metadata project binding mismatch.");
+      if ("meta" in value) {
+        const expectedMeta = {
+          project_id: projectId,
+          classification: "production",
+          lifecycle: project.list_item_full.lifecycle,
+          pinned: project.list_item_full.pinned,
+          last_opened_at: project.list_item_full.last_opened_at,
+          updated_at: project.list_item_full.updated_at
+        };
+        if (canonicalizeJcs(value.meta) !== canonicalizeJcs(expectedMeta)) {
+          addBindingIssue(context, [...path, "meta"], "Context metadata canonical projection mismatch.");
+        }
+      }
       if ("shots" in value) {
         for (const [shotIndex, shot] of value.shots.entries()) {
           if (shot.project_id !== projectId || !shotIds.has(shot.shot_id)) {
@@ -306,6 +318,9 @@ function validateProjectProjectionBindings(
         }
         validateArtifactBinding(value.final_artifact, projectId, null, [...path, "final_artifact"], context);
         validateFinalArtifact(value.final_artifact, [...path, "final_artifact"], context);
+        if (value.final_artifact && value.final_artifact_reason_code) {
+          addBindingIssue(context, [...path, "final_artifact_reason_code"], "Usable final artifact cannot carry an error reason.");
+        }
         if (value.accepted_clips.some((clip, clipIndex) => clip.shot_id !== project.shots_full[clipIndex]?.shot_id)) {
           addBindingIssue(context, [...path, "accepted_clips"], "Delivery context accepted-clip ordering differs.");
         }
@@ -465,6 +480,9 @@ function validateProjectProjectionBindings(
     }
     validateArtifactBinding(value.final_artifact, projectId, null, [...path, "final_artifact"], context);
     validateFinalArtifact(value.final_artifact, [...path, "final_artifact"], context);
+    if (value.final_artifact && value.final_artifact_reason_code) {
+      addBindingIssue(context, [...path, "final_artifact_reason_code"], "Usable final artifact cannot carry an error reason.");
+    }
   }
   const { evidence: _evidence, ...closeoutDelivery } = project.closeout;
   if (canonicalizeJcs(closeoutDelivery) !== canonicalizeJcs(project.delivery)) {

@@ -507,6 +507,39 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     overview.compact.metrics.shots = 99;
     assert.throws(() => finalizeReadonlySnapshot(divergentOverview), /overview metrics or blockers canonical projection mismatch/i);
 
+    const divergentMeta = structuredClone(unsigned);
+    const fullContext = divergentMeta.projects[0]!.contexts[0]!.full;
+    assert.ok("meta" in fullContext);
+    fullContext.meta.pinned = !fullContext.meta.pinned;
+    assert.throws(() => finalizeReadonlySnapshot(divergentMeta), /context metadata canonical projection mismatch/i);
+
+    const invalidFinalArtifactReference = structuredClone(unsigned);
+    const invalidFinalProject = invalidFinalArtifactReference.projects[0]!;
+    invalidFinalProject.list_item_full.summary.delivery_state = "final_review";
+    invalidFinalProject.list_item_compact.summary.delivery_state = "final_review";
+    invalidFinalProject.delivery.final_artifact_reason_code = "ARTIFACT_INACCESSIBLE";
+    invalidFinalProject.closeout.final_artifact_reason_code = "ARTIFACT_INACCESSIBLE";
+    for (const context of invalidFinalProject.contexts) {
+      context.full.summary.delivery_state = "final_review";
+      context.compact.summary.delivery_state = "final_review";
+      if (context.workspace === "delivery" && "final_artifact_reason_code" in context.full && "final_artifact_reason_code" in context.compact) {
+        context.full.final_artifact_reason_code = "ARTIFACT_INACCESSIBLE";
+        context.compact.final_artifact_reason_code = "ARTIFACT_INACCESSIBLE";
+      }
+    }
+    assert.doesNotThrow(() => finalizeReadonlySnapshot(invalidFinalArtifactReference));
+
+    const contradictoryFinalArtifact = structuredClone(unsigned);
+    const usableFinalArtifact = {
+      ...structuredClone(generatedArtifact),
+      artifact_id: "artifact_final_video",
+      role: "final_video" as const,
+      linked_objects: { project_id: contradictoryFinalArtifact.projects[0]!.project_id, shot_id: "" }
+    };
+    contradictoryFinalArtifact.projects[0]!.delivery.final_artifact = usableFinalArtifact;
+    contradictoryFinalArtifact.projects[0]!.delivery.final_artifact_reason_code = "ARTIFACT_INACCESSIBLE";
+    assert.throws(() => finalizeReadonlySnapshot(contradictoryFinalArtifact), /usable final artifact cannot carry an error reason/i);
+
     const deliveryAdjustedSummary = structuredClone(unsigned);
     const adjustedProject = deliveryAdjustedSummary.projects[0]!;
     const assemblyRequired = {
