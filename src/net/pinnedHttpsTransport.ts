@@ -57,6 +57,14 @@ function ipv4ToNumber(host: string): number | null {
   return value >>> 0;
 }
 
+export function isBenchmarkFakeIpv4(host: string): boolean {
+  const ipv4 = ipv4ToNumber(host);
+  if (ipv4 === null) return false;
+  const first = (ipv4 >>> 24) & 0xff;
+  const second = (ipv4 >>> 16) & 0xff;
+  return first === 198 && (second === 18 || second === 19);
+}
+
 export function isUnsafeNetworkHost(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
   if (host === "localhost" || host.endsWith(".localhost") || host === "0.0.0.0") return true;
@@ -83,7 +91,7 @@ export function isUnsafeNetworkHost(hostname: string): boolean {
   if (first === 192 && second === 0 && third === 2) return true;
   if (first === 192 && second === 88 && third === 99) return true;
   if (first === 192 && second === 168) return true;
-  if (first === 198 && (second === 18 || second === 19)) return true;
+  if (isBenchmarkFakeIpv4(host)) return true;
   if (first === 198 && second === 51 && third === 100) return true;
   if (first === 203 && second === 0 && third === 113) return true;
   if (first >= 224) return true;
@@ -275,5 +283,127 @@ export function createBoundedPinnedFetch(
     const copy = new Uint8Array(body.byteLength);
     copy.set(body);
     return new Response(copy.buffer, { status: response.status, statusText: response.statusText, headers: response.headers });
+  };
+}
+
+const PUBLIC_DOH_ENDPOINT = "https://1.1.1.1/dns-query";
+const PUBLIC_DOH_MAX_BYTES = 64 * 1024;
+const PUBLIC_DOH_TIMEOUT_MS = 10_000;
+
+export interface BenchmarkFakeIpResolverOptions {
+  lookup_hostname?: (hostname: string) => Promise<PinnedNetworkAddress[]>;
+  fetch_doh?: (url: URL, signal: AbortSignal) => Promise<Response>;
+}
+
+function normalizedDnsName(value: string): string {
+  return value.toLowerCase().replace(/\.$/, "");
+}
+
+function validDnsHostname(hostname: string): boolean {
+  const normalized = normalizedDnsName(hostname);
+  if (!normalized || normalized.length > 253 || !/^[a-z0-9.-]+$/.test(normalized)) return false;
+  const labels = normalized.split(".");
+  return labels.every((label) => label.length > 0 && label.length <= 63
+    && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label));
+}
+
+async function defaultPublicDohFetch(url: URL, signal: AbortSignal): Promise<Response> {
+  return fetchPinnedHttps(url, signal, {}, new Headers({ accept: "application/dns-json" }));
+}
+
+async function publicDohQuery(
+  hostname: string,
+  recordType: 1 | 28,
+  fetchDoh: (url: URL, signal: AbortSignal) => Promise<Response>,
+  signal: AbortSignal
+): Promise<PinnedNetworkAddress[]> {
+  const url = new URL(PUBLIC_DOH_ENDPOINT);
+  url.searchParams.set("name", hostname);
+  url.searchParams.set("type", recordType === 1 ? "A" : "AAAA");
+  let response: Response;
+  try {
+    response = await fetchDoh(url, signal);
+  } catch (error) {
+    if (error instanceof PinnedHttpsError || (error instanceof Error && error.name === "AbortError")) throw error;
+    throw new PinnedHttpsError("FETCH_FAILED");
+  }
+  if (response.status !== 200) {
+    try { await response.body?.cancel(); } catch { /* preserve the fetch failure */ }
+    throw new PinnedHttpsError("FETCH_FAILED");
+  }
+  const body = await readBoundedBytes(response, PUBLIC_DOH_MAX_BYTES);
+  let document: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(new TextDecoder().decode(body)) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("invalid document");
+    document = parsed as Record<string, unknown>;
+  } catch {
+    throw new PinnedHttpsError("FETCH_FAILED");
+  }
+  if (document.Status !== 0 || document.TC === true || !Array.isArray(document.Question)) {
+    throw new PinnedHttpsError("FETCH_FAILED");
+  }
+  const questionMatches = document.Question.some((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
+    const question = entry as Record<string, unknown>;
+    return normalizedDnsName(String(question.name ?? "")) === normalizedDnsName(hostname)
+      && question.type === recordType;
+  });
+  if (!questionMatches) throw new PinnedHttpsError("FETCH_FAILED");
+  const answers = Array.isArray(document.Answer)
+    ? document.Answer.filter((entry): entry is Record<string, unknown> => Boolean(entry)
+        && typeof entry === "object" && !Array.isArray(entry))
+    : [];
+  const boundNames = new Set([normalizedDnsName(hostname)]);
+  for (let depth = 0; depth < 16; depth += 1) {
+    let added = false;
+    for (const answer of answers) {
+      if (answer.type !== 5 || typeof answer.name !== "string" || typeof answer.data !== "string") continue;
+      if (!boundNames.has(normalizedDnsName(answer.name))) continue;
+      const target = normalizedDnsName(answer.data);
+      if (!validDnsHostname(target) || boundNames.has(target)) continue;
+      boundNames.add(target);
+      added = true;
+    }
+    if (!added) break;
+  }
+  const family = recordType === 1 ? 4 : 6;
+  const addresses: PinnedNetworkAddress[] = [];
+  for (const answer of answers) {
+    if (answer.type !== recordType || typeof answer.name !== "string" || typeof answer.data !== "string") continue;
+    if (!boundNames.has(normalizedDnsName(answer.name)) || isIP(answer.data) !== family) continue;
+    addresses.push({ address: answer.data, family });
+  }
+  return addresses;
+}
+
+/**
+ * Recovers only from RFC 2544 benchmark-range answers commonly emitted by
+ * local fake-IP proxies. All resolved DoH addresses still pass through the
+ * existing public-address validation before any TLS connection is attempted.
+ */
+export function createBenchmarkFakeIpRecoveringResolver(
+  options: BenchmarkFakeIpResolverOptions = {}
+): (hostname: string) => Promise<PinnedNetworkAddress[]> {
+  const lookupHostname = options.lookup_hostname ?? (async (hostname: string) => {
+    const result = await lookup(hostname, { all: true, verbatim: true });
+    return result.map((entry) => ({ address: entry.address, family: entry.family as 4 | 6 }));
+  });
+  const fetchDoh = options.fetch_doh ?? defaultPublicDohFetch;
+  return async (hostname) => {
+    if (!validDnsHostname(hostname)) throw new PinnedHttpsError("FETCH_FAILED");
+    const systemAddresses = await lookupHostname(hostname);
+    if (systemAddresses.length === 0 || !systemAddresses.every((entry) => entry.family === 4 && isBenchmarkFakeIpv4(entry.address))) {
+      return systemAddresses;
+    }
+    const signal = AbortSignal.timeout(PUBLIC_DOH_TIMEOUT_MS);
+    const [ipv4, ipv6] = await Promise.all([
+      publicDohQuery(hostname, 1, fetchDoh, signal),
+      publicDohQuery(hostname, 28, fetchDoh, signal)
+    ]);
+    const unique = new Map<string, PinnedNetworkAddress>();
+    for (const address of [...ipv4, ...ipv6]) unique.set(`${address.family}:${address.address.toLowerCase()}`, address);
+    if (unique.size === 0) throw new PinnedHttpsError("FETCH_FAILED");
+    return [...unique.values()];
   };
 }

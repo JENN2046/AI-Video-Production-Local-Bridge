@@ -161,6 +161,20 @@
       "npm_script": "test:webgpt:v4",
       "ci_step": "WebGPT V4 integration tests",
       "case_name": "selected provider six readonly tools preserve the complete database logical manifest"
+    },
+    {
+      "id": "oauth-fakeip-doh-boundary",
+      "path": "tests/webgpt-v4-oauth-discovery.test.ts",
+      "npm_script": "test:webgpt:v4",
+      "ci_step": "WebGPT V4 integration tests",
+      "case_name": "benchmark fake-IP recovery uses bounded public DoH without weakening private-address rejection"
+    },
+    {
+      "id": "oauth-fakeip-jwks-pinning",
+      "path": "tests/webgpt-v4-server.test.ts",
+      "npm_script": "test:webgpt:v4",
+      "ci_step": "WebGPT V4 integration tests",
+      "case_name": "server authentication carries benchmark fake-IP recovery through remote JWKS pinning"
     }
   ],
   "remediation_suites": [

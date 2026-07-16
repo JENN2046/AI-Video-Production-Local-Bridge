@@ -2,6 +2,7 @@ import { loadWebGptV4AuthConfig, type WebGptV4AuthConfig } from "../src/webgpt-v
 import { probeWebGptOAuthDiscovery } from "../src/webgpt-v4/oauthDiscovery.js";
 import { parseWebGptV4Profile } from "../src/webgpt-v4/toolCatalog.js";
 import { WebGptV4Error } from "../src/webgpt-v4/types.js";
+import { createBenchmarkFakeIpRecoveringResolver } from "../src/net/pinnedHttpsTransport.js";
 
 let profile: "readonly" | "full";
 try {
@@ -26,6 +27,8 @@ if (profile !== "readonly" || auth?.provider !== "federated") {
   process.exit(1);
 }
 
-const report = await probeWebGptOAuthDiscovery(auth);
+const report = await probeWebGptOAuthDiscovery(auth, {
+  resolve_hostname: createBenchmarkFakeIpRecoveringResolver()
+});
 console.log(JSON.stringify(report, null, 2));
 process.exitCode = report.ok ? 0 : 1;

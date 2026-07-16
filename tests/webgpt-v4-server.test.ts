@@ -6,7 +6,9 @@ import test from "node:test";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { exportJWK, generateKeyPair, SignJWT } from "jose";
 
+import { createBenchmarkFakeIpRecoveringResolver } from "../src/net/pinnedHttpsTransport.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 import { mediaAnalysisQueue } from "../src/webgpt-v4/media.js";
@@ -55,6 +57,76 @@ test("request limiter enforces global and per-principal bounds and releases idem
   assert.ok(limiter.acquire("principal-c"));
   second();
   third();
+});
+
+test("server authentication carries benchmark fake-IP recovery through remote JWKS pinning", async () => {
+  const root = mkdtempSync(join(tmpdir(), "webgpt-v4-fakeip-jwks-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const subject = "auth0|fakeip-owner";
+  const actor = actorFromFederatedSubject(FEDERATED_ISSUER, subject, ["projects.read"]);
+  const db = openM0Database(sqlitePath);
+  const project = createProject({ title: "Fake-IP recovery project" }, db);
+  assert.equal(project.ok, true);
+  if (!project.ok) return;
+  db.prepare("UPDATE workbench_project_meta SET classification = 'production' WHERE project_id = ?").run(project.project_id);
+  bootstrapWebGptProjectOwner(db, actor.principal_id, project.project_id, "TEST_FAKEIP_OWNER", actor.issuer_hash!);
+  db.close();
+
+  const { privateKey, publicKey } = await generateKeyPair("RS256");
+  const jwk = await exportJWK(publicKey);
+  Object.assign(jwk, { kid: "fakeip-jwks", alg: "RS256", use: "sig" });
+  const token = await new SignJWT({ scope: "projects.read" })
+    .setProtectedHeader({ alg: "RS256", kid: "fakeip-jwks" })
+    .setIssuer(FEDERATED_ISSUER)
+    .setAudience("https://mcp.example.test/mcp")
+    .setSubject(subject)
+    .setIssuedAt()
+    .setExpirationTime("5m")
+    .sign(privateKey);
+  let dohQueries = 0;
+  const pinnedAddresses: string[] = [];
+  const runtime = await startWebGptV4({
+    profile: "readonly",
+    mcp_port: 0,
+    sqlite_path: sqlitePath,
+    auth_config: federatedAuthConfig(),
+    auth_transport: {
+      resolve_hostname: createBenchmarkFakeIpRecoveringResolver({
+        lookup_hostname: async () => [{ address: "198.18.0.144", family: 4 }],
+        fetch_doh: async (url) => {
+          dohQueries += 1;
+          const recordType = url.searchParams.get("type") === "A" ? 1 : 28;
+          const name = url.searchParams.get("name") ?? "";
+          return new Response(JSON.stringify({
+            Status: 0,
+            Question: [{ name: `${name}.`, type: recordType }],
+            Answer: recordType === 1 ? [{ name: `${name}.`, type: 1, data: "8.8.8.8" }] : []
+          }), { status: 200 });
+        }
+      }),
+      fetch_pinned_address: async (_url, _signal, address) => {
+        pinnedAddresses.push(address.address);
+        return new Response(JSON.stringify({ keys: [jwk] }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+    }
+  });
+  try {
+    const response = await fetch(runtime.mcp_url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+        authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} })
+    });
+    assert.equal(response.status, 200);
+    assert.equal(dohQueries, 2);
+    assert.deepEqual(pinnedAddresses, ["8.8.8.8"]);
+  } finally {
+    await runtime.close();
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("official MCP transport advertises the V4 scoped tool contract and hides test projects", async () => {

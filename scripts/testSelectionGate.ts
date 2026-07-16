@@ -43,7 +43,9 @@ export const REQUIRED_OAUTH_PORTABILITY_SUITES: ReadonlyArray<OAuthPortabilitySu
   { id: "oauth-selected-provider-capability", path: "tests/webgpt-v4-selected-provider.test.ts", npm_script: "test:webgpt:v4", ci_step: "WebGPT V4 integration tests", case_name: "selected provider capability rejects missing PKCE, public-client, audience, and scope guarantees" },
   { id: "oauth-selected-provider-jwt", path: "tests/webgpt-v4-selected-provider.test.ts", npm_script: "test:webgpt:v4", ci_step: "WebGPT V4 integration tests", case_name: "selected provider JWT verifies signature, issuer, audience, expiry, scope claims, and key rotation" },
   { id: "oauth-selected-provider-authorization", path: "tests/webgpt-v4-selected-provider.test.ts", npm_script: "test:webgpt:v4", ci_step: "WebGPT V4 integration tests", case_name: "selected provider authorization distinguishes unregistered, owner, viewer, revoked, and cross-project access" },
-  { id: "oauth-selected-provider-six-tools", path: "tests/webgpt-v4-selected-provider.test.ts", npm_script: "test:webgpt:v4", ci_step: "WebGPT V4 integration tests", case_name: "selected provider six readonly tools preserve the complete database logical manifest" }
+  { id: "oauth-selected-provider-six-tools", path: "tests/webgpt-v4-selected-provider.test.ts", npm_script: "test:webgpt:v4", ci_step: "WebGPT V4 integration tests", case_name: "selected provider six readonly tools preserve the complete database logical manifest" },
+  { id: "oauth-fakeip-doh-boundary", path: "tests/webgpt-v4-oauth-discovery.test.ts", npm_script: "test:webgpt:v4", ci_step: "WebGPT V4 integration tests", case_name: "benchmark fake-IP recovery uses bounded public DoH without weakening private-address rejection" },
+  { id: "oauth-fakeip-jwks-pinning", path: "tests/webgpt-v4-server.test.ts", npm_script: "test:webgpt:v4", ci_step: "WebGPT V4 integration tests", case_name: "server authentication carries benchmark fake-IP recovery through remote JWKS pinning" }
 ];
 
 export const REQUIRED_REMEDIATION_SUITES: ReadonlyArray<RemediationSuite> = [

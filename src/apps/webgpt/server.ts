@@ -1,4 +1,5 @@
 import { startWebGptV4, WEBGPT_V4_MCP_PORT, WEBGPT_V4_MEDIA_PORT } from "../../webgpt-v4/server.js";
+import { createBenchmarkFakeIpRecoveringResolver } from "../../net/pinnedHttpsTransport.js";
 
 export async function startWebGptApplication(): Promise<Awaited<ReturnType<typeof startWebGptV4>>> {
   const mcpPort = Number(process.env.WEBGPT_V4_MCP_PORT ?? WEBGPT_V4_MCP_PORT);
@@ -6,6 +7,7 @@ export async function startWebGptApplication(): Promise<Awaited<ReturnType<typeo
   const publicMediaOrigin = process.env.WEBGPT_V4_MEDIA_PUBLIC_ORIGIN?.trim() || `http://127.0.0.1:${mediaPort}`;
   return startWebGptV4({
     profile: process.env.WEBGPT_V4_PROFILE,
+    auth_transport: { resolve_hostname: createBenchmarkFakeIpRecoveringResolver() },
     mcp_port: mcpPort,
     media_port: mediaPort,
     widget_domain: process.env.WEBGPT_V4_WIDGET_DOMAIN,
