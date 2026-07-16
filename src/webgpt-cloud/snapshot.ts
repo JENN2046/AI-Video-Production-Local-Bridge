@@ -130,6 +130,11 @@ function compactReviewFromFull(value: FullReviewProjection): unknown {
   };
 }
 
+function shotParityValue<T extends { updated_at?: string }>(value: T): Omit<T, "updated_at"> {
+  const { updated_at: _updatedAt, ...stable } = value;
+  return stable;
+}
+
 function addBindingIssue(context: z.core.$RefinementCtx, path: Array<string | number>, message: string): void {
   context.addIssue({ code: "custom", message, path });
 }
@@ -147,6 +152,28 @@ function validateArtifactBinding(
   }
   if (expectedShotId !== null && artifact.linked_objects.shot_id !== expectedShotId) {
     addBindingIssue(context, [...path, "linked_objects", "shot_id"], "Artifact SHOT binding mismatch.");
+  }
+}
+
+function validateGeneratedClipArtifact(
+  artifact: { artifact_type: string; role: string; linked_objects: { shot_id: string } },
+  expectedShotId: string,
+  path: Array<string | number>,
+  context: z.core.$RefinementCtx
+): void {
+  if (artifact.artifact_type !== "video" || artifact.role !== "generated_clip" || artifact.linked_objects.shot_id !== expectedShotId) {
+    addBindingIssue(context, path, "Generated clip artifact contract mismatch.");
+  }
+}
+
+function validateFinalArtifact(
+  artifact: { artifact_type: string; role: string; linked_objects: { shot_id: string } } | null,
+  path: Array<string | number>,
+  context: z.core.$RefinementCtx
+): void {
+  if (!artifact) return;
+  if (artifact.artifact_type !== "video" || artifact.role !== "final_video" || artifact.linked_objects.shot_id !== "") {
+    addBindingIssue(context, path, "Final artifact contract mismatch.");
   }
 }
 
@@ -223,8 +250,10 @@ function validateProjectProjectionBindings(
         for (const [clipIndex, clip] of value.accepted_clips.entries()) {
           if (!shotIds.has(clip.shot_id)) addBindingIssue(context, [...path, "accepted_clips", clipIndex, "shot_id"], "Accepted clip SHOT binding mismatch.");
           validateArtifactBinding(clip.artifact, projectId, clip.shot_id, [...path, "accepted_clips", clipIndex, "artifact"], context);
+          if (clip.artifact) validateGeneratedClipArtifact(clip.artifact, clip.shot_id, [...path, "accepted_clips", clipIndex, "artifact"], context);
         }
         validateArtifactBinding(value.final_artifact, projectId, null, [...path, "final_artifact"], context);
+        validateFinalArtifact(value.final_artifact, [...path, "final_artifact"], context);
       }
     }
     const expectedCompactContext = compactProjectContextDataSchema.parse(compactContextFromFull(projection.full));
@@ -246,6 +275,12 @@ function validateProjectProjectionBindings(
       if (value.shot.project_id !== projectId || value.shot.shot_id !== review.shot_id) {
         addBindingIssue(context, [...detailPath, "shot"], "Review package SHOT binding mismatch.");
       }
+      if (detail === "full") {
+        const canonicalShot = project.shots_full.find((shot) => shot.shot_id === review.shot_id);
+        if (canonicalShot && canonicalizeJcs(shotParityValue(value.shot)) !== canonicalizeJcs(shotParityValue(canonicalShot))) {
+          addBindingIssue(context, [...detailPath, "shot"], "Review/project SHOT parity mismatch.");
+        }
+      }
       for (const [noteIndex, note] of value.notes.entries()) {
         if (note.project_id !== projectId || note.shot_id !== review.shot_id) {
           addBindingIssue(context, [...detailPath, "notes", noteIndex], "Review package note binding mismatch.");
@@ -253,13 +288,23 @@ function validateProjectProjectionBindings(
       }
       for (const [versionIndex, version] of value.versions.entries()) {
         if ("artifact" in version) {
+          const artifact = version.artifact as {
+            artifact_id: string;
+            artifact_type: string;
+            role: string;
+            linked_objects: { project_id: string; shot_id: string };
+          };
           validateArtifactBinding(
-            version.artifact as { linked_objects: { project_id: string; shot_id: string } },
+            artifact,
             projectId,
             review.shot_id,
             [...detailPath, "versions", versionIndex, "artifact"],
             context
           );
+          if (artifact.artifact_id !== version.artifact_id) {
+            addBindingIssue(context, [...detailPath, "versions", versionIndex, "artifact", "artifact_id"], "Review version artifact id mismatch.");
+          }
+          validateGeneratedClipArtifact(artifact, review.shot_id, [...detailPath, "versions", versionIndex, "artifact"], context);
         }
       }
     }
@@ -276,6 +321,7 @@ function validateProjectProjectionBindings(
       if (!shotIds.has(check.shot_id)) addBindingIssue(context, [...path, "readiness_checks", checkIndex, "shot_id"], "Delivery SHOT binding mismatch.");
     }
     validateArtifactBinding(value.final_artifact, projectId, null, [...path, "final_artifact"], context);
+    validateFinalArtifact(value.final_artifact, [...path, "final_artifact"], context);
   }
   const { evidence: _evidence, ...closeoutDelivery } = project.closeout;
   if (canonicalizeJcs(closeoutDelivery) !== canonicalizeJcs(project.delivery)) {

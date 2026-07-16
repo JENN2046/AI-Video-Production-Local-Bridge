@@ -296,6 +296,17 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
       ttl_seconds: 3600
     });
     const { snapshot_fingerprint: _fingerprint, ...unsigned } = snapshot;
+    const generatedArtifact = {
+      artifact_id: "artifact_generated_001",
+      artifact_type: "video" as const,
+      role: "generated_clip" as const,
+      status: "active" as const,
+      filename: "generated.mp4",
+      mime_type: "video/mp4",
+      metadata: { width: 1920, height: 1080, duration_seconds: 6, aspect_ratio: "16:9", sha256: "a".repeat(64) },
+      linked_objects: { project_id: fixture.project_id, shot_id: fixture.shot_id },
+      provenance: { kind: "provider", provider: "fixture", sha256: "a".repeat(64) }
+    };
     const mutations: Array<(candidate: ReadonlySnapshotUnsigned) => void> = [
       (candidate) => { candidate.projects[0]!.contexts[0]!.compact.project.project_id = "project_cross_binding"; },
       (candidate) => { candidate.projects[0]!.shots_full[0]!.project_id = "project_cross_binding"; },
@@ -339,6 +350,31 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     const divergentCloseout = structuredClone(unsigned);
     divergentCloseout.projects[0]!.closeout.delivered = !divergentCloseout.projects[0]!.delivery.delivered;
     assert.throws(() => finalizeReadonlySnapshot(divergentCloseout), /closeout\/delivery parity mismatch/i);
+
+    const divergentReviewShot = structuredClone(unsigned);
+    divergentReviewShot.projects[0]!.review_packages[0]!.full.shot.description = "Divergent review SHOT";
+    divergentReviewShot.projects[0]!.review_packages[0]!.compact.shot.description = "Divergent review SHOT";
+    assert.throws(() => finalizeReadonlySnapshot(divergentReviewShot), /review\/project SHOT parity mismatch/i);
+
+    const mismatchedVersionArtifact = structuredClone(unsigned);
+    mismatchedVersionArtifact.projects[0]!.review_packages[0]!.full.versions.push({
+      artifact_id: "artifact_version_slot",
+      run_id: "run_fixture",
+      attempt_number: 1,
+      review_status: "pending",
+      artifact: structuredClone(generatedArtifact)
+    });
+    mismatchedVersionArtifact.projects[0]!.review_packages[0]!.compact.versions.push({
+      artifact_id: "artifact_version_slot",
+      attempt_number: 1,
+      review_status: "pending"
+    });
+    assert.throws(() => finalizeReadonlySnapshot(mismatchedVersionArtifact), /review version artifact id mismatch/i);
+
+    const nonFinalDeliveryArtifact = structuredClone(unsigned);
+    nonFinalDeliveryArtifact.projects[0]!.delivery.final_artifact = structuredClone(generatedArtifact);
+    nonFinalDeliveryArtifact.projects[0]!.closeout.final_artifact = structuredClone(generatedArtifact);
+    assert.throws(() => finalizeReadonlySnapshot(nonFinalDeliveryArtifact), /final artifact contract mismatch/i);
 
     const duplicateCompactShot = structuredClone(unsigned);
     const projected = duplicateCompactShot.projects[0]!;
