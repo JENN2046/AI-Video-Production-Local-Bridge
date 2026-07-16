@@ -40,6 +40,8 @@ export interface OAuthPortabilitySuite {
 }
 
 export const REQUIRED_OAUTH_PORTABILITY_SUITES: ReadonlyArray<OAuthPortabilitySuite> = [
+  { id: "direct-oauth-canary-prmd-challenge", path: "tests/direct-oauth-canary.test.ts", npm_script: "test:webgpt:direct-canary", ci_step: "Direct OAuth compatibility canary tests", case_name: "direct OAuth canary exposes only health, PRMD, and a protected MCP smoke tool" },
+  { id: "direct-oauth-canary-mcp-contract", path: "tests/direct-oauth-canary.test.ts", npm_script: "test:webgpt:direct-canary", ci_step: "Direct OAuth compatibility canary tests", case_name: "official MCP client sees exactly one scoped read-only tool and invokes it without production data" },
   { id: "oauth-selected-provider-capability", path: "tests/webgpt-v4-selected-provider.test.ts", npm_script: "test:webgpt:v4", ci_step: "WebGPT V4 integration tests", case_name: "selected provider capability rejects missing PKCE, public-client, audience, and scope guarantees" },
   { id: "oauth-selected-provider-jwt", path: "tests/webgpt-v4-selected-provider.test.ts", npm_script: "test:webgpt:v4", ci_step: "WebGPT V4 integration tests", case_name: "selected provider JWT verifies signature, issuer, audience, expiry, scope claims, and key rotation" },
   { id: "oauth-selected-provider-authorization", path: "tests/webgpt-v4-selected-provider.test.ts", npm_script: "test:webgpt:v4", ci_step: "WebGPT V4 integration tests", case_name: "selected provider authorization distinguishes unregistered, owner, viewer, revoked, and cross-project access" },
