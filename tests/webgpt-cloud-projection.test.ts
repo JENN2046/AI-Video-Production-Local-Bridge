@@ -1,0 +1,226 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+
+import { bindWebGptPrincipalIssuer, bootstrapWebGptProjectOwner, registerWebGptPrincipal } from "../src/webgpt-v4/authorizationAdmin.js";
+import { actorFromFederatedSubject, type WebGptV4Result } from "../src/webgpt-v4/types.js";
+import { openM0Database, openM0DatabaseConnection, type M0Database } from "../src/storage/sqlite.js";
+import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
+import {
+  exportReadonlySnapshotFromDatabase,
+  ReadonlyProjectionError,
+  SnapshotReadonlyDataSource,
+  SqliteReadonlyDataSource
+} from "../src/webgpt-cloud/dataSource.js";
+import {
+  canonicalizeJcs,
+  finalizeReadonlySnapshot,
+  parseReadonlySnapshot,
+  readonlySnapshotStatus,
+  snapshotFingerprint,
+  type ReadonlySnapshotUnsigned
+} from "../src/webgpt-cloud/snapshot.js";
+
+const ISSUER = "https://issuer.example.test/";
+const RESOURCE = "https://aivideo.example.test/mcp";
+
+function stableValue(value: unknown): unknown {
+  if (typeof value === "bigint") return value.toString();
+  if (Buffer.isBuffer(value)) return { buffer_sha256: createHash("sha256").update(value).digest("hex") };
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, item]) => [key, stableValue(item)]));
+}
+
+function logicalManifest(db: M0Database): { table_count: number; row_count: number; sha256: string } {
+  const tables = (db.prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as Array<{ name: string }>).map((row) => row.name);
+  let rowCount = 0;
+  const payload = tables.map((name) => {
+    if (!/^[A-Za-z0-9_]+$/.test(name)) throw new Error("unsafe fixture table name");
+    const rows = (db.prepare(`SELECT * FROM "${name}"`).all() as Array<Record<string, unknown>>).map(stableValue);
+    rows.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+    rowCount += rows.length;
+    return { name, rows };
+  });
+  return { table_count: tables.length, row_count: rowCount, sha256: createHash("sha256").update(JSON.stringify(payload)).digest("hex") };
+}
+
+function createFixture(sqlitePath: string): {
+  actor: ReturnType<typeof actorFromFederatedSubject>;
+  unassigned_actor: ReturnType<typeof actorFromFederatedSubject>;
+  project_id: string;
+  hidden_project_id: string;
+  shot_id: string;
+} {
+  const db = openM0Database(sqlitePath);
+  try {
+    const created = createProject({ title: "Readonly MCP App fixture" }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) throw new Error("fixture setup failed");
+    db.prepare("UPDATE workbench_project_meta SET classification = 'production' WHERE project_id = ?").run(created.project_id);
+    const shot: Shot = {
+      shot_id: "shot_cloud_projection_001",
+      project_id: created.project_id,
+      order: 1,
+      status: "storyboard_approved",
+      duration_seconds: 6,
+      description: "Readonly projection shot",
+      storyboard_image_artifact_id: "",
+      video_prompt: "A safe fixture prompt",
+      negative_prompt: "",
+      generation_run_ids: [],
+      accepted_clip_artifact_id: "",
+      clip_versions: [],
+      review: { approval_status: "pending", rejection_reasons: [], latest_revision_instruction: null }
+    };
+    saveShot(db, shot);
+    created.project.shot_ids = [shot.shot_id];
+    saveProject(db, created.project);
+    const actor = actorFromFederatedSubject(ISSUER, "readonly-cloud-owner", ["projects.read"]);
+    bootstrapWebGptProjectOwner(db, actor.principal_id, created.project_id, "READONLY_CLOUD_FIXTURE", actor.issuer_hash!);
+    const hidden = createProject({ title: "Hidden production fixture" }, db);
+    assert.equal(hidden.ok, true);
+    if (!hidden.ok) throw new Error("hidden fixture setup failed");
+    db.prepare("UPDATE workbench_project_meta SET classification = 'production' WHERE project_id = ?").run(hidden.project_id);
+    const unassignedActor = actorFromFederatedSubject(ISSUER, "readonly-cloud-unassigned", ["projects.read"]);
+    registerWebGptPrincipal(db, unassignedActor.principal_id, "READONLY_CLOUD_UNASSIGNED");
+    bindWebGptPrincipalIssuer(db, unassignedActor.principal_id, unassignedActor.issuer_hash!);
+    return { actor, unassigned_actor: unassignedActor, project_id: created.project_id, hidden_project_id: hidden.project_id, shot_id: shot.shot_id };
+  } finally {
+    db.close();
+  }
+}
+
+function resultData(result: WebGptV4Result<unknown>): unknown {
+  if (!result.ok) throw new Error(result.error.code);
+  return result.data;
+}
+
+function stripMeta(result: ReturnType<SqliteReadonlyDataSource["listProductionProjects"]>): unknown {
+  return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error };
+}
+
+test("readonly projection requires migration 0008 and never upgrades an older database", () => {
+  const root = mkdtempSync(join(tmpdir(), "readonly-projection-ledger-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const db = openM0Database(sqlitePath);
+  db.exec(`
+    DROP TABLE webgpt_auth_principal_bindings;
+    DELETE FROM schema_migrations WHERE migration_id = '0008';
+  `);
+  db.close();
+  try {
+    assert.throws(
+      () => exportReadonlySnapshotFromDatabase({
+        database_path: sqlitePath,
+        issuer_hash: "a".repeat(64),
+        resource_url: RESOURCE
+      }),
+      (error) => error instanceof ReadonlyProjectionError && error.code === "READONLY_PROJECTION_SCHEMA_MIGRATION_REQUIRED"
+    );
+    const verify = openM0DatabaseConnection(sqlitePath, { readOnly: true });
+    try {
+      assert.equal((verify.prepare("SELECT COUNT(*) count FROM schema_migrations WHERE migration_id = '0008'").get() as { count: number }).count, 0);
+      assert.equal((verify.prepare("SELECT COUNT(*) count FROM sqlite_schema WHERE type = 'table' AND name = 'webgpt_auth_principal_bindings'").get() as { count: number }).count, 0);
+    } finally {
+      verify.close();
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("SQLite and Snapshot readonly adapters preserve six-tool DTO parity and database zero-write manifest", () => {
+  const root = mkdtempSync(join(tmpdir(), "readonly-projection-parity-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const fixture = createFixture(sqlitePath);
+  const beforeDb = openM0DatabaseConnection(sqlitePath, { readOnly: true });
+  const before = logicalManifest(beforeDb);
+  beforeDb.close();
+  const generatedAt = new Date(Date.now() - 60_000).toISOString();
+  const snapshot = exportReadonlySnapshotFromDatabase({
+    database_path: sqlitePath,
+    issuer_hash: fixture.actor.issuer_hash!,
+    resource_url: RESOURCE,
+    generated_at: generatedAt,
+    ttl_seconds: 3600
+  });
+  assert.doesNotMatch(JSON.stringify(snapshot), /"(?:local_path|provider_payload|actor_hash|subject|idempotency_key)":/);
+  const db = openM0DatabaseConnection(sqlitePath, { readOnly: true });
+  try {
+    const sqlite = new SqliteReadonlyDataSource(db, fixture.actor.principal_id, fixture.actor.issuer_hash!);
+    const projected = new SnapshotReadonlyDataSource(snapshot, fixture.actor.principal_id, fixture.actor.issuer_hash!);
+    const pairs = [
+      [sqlite.listProductionProjects({ detail: "compact" }, "same"), projected.listProductionProjects({ detail: "compact" }, "same")],
+      [sqlite.listProductionProjects({ detail: "full", query: "%MCP_App%" }, "same"), projected.listProductionProjects({ detail: "full", query: "%MCP_App%" }, "same")],
+      [sqlite.getProjectContext({ project_id: fixture.project_id, workspace: "overview", detail: "compact" }, "same"), projected.getProjectContext({ project_id: fixture.project_id, workspace: "overview", detail: "compact" }, "same")],
+      [sqlite.listProjectShots({ project_id: fixture.project_id, detail: "full" }, "same"), projected.listProjectShots({ project_id: fixture.project_id, detail: "full" }, "same")],
+      [sqlite.getReviewPackage({ project_id: fixture.project_id, shot_id: fixture.shot_id, detail: "compact" }, "same"), projected.getReviewPackage({ project_id: fixture.project_id, shot_id: fixture.shot_id, detail: "compact" }, "same")],
+      [sqlite.getDeliveryStatus(fixture.project_id, "same"), projected.getDeliveryStatus(fixture.project_id, "same")],
+      [sqlite.getCloseoutEvidence(fixture.project_id, "same"), projected.getCloseoutEvidence(fixture.project_id, "same")]
+    ];
+    for (const [local, cloud] of pairs) assert.deepEqual(stripMeta(cloud), stripMeta(local));
+    assert.equal((resultData(projected.listProductionProjects()) as { items: unknown[] }).items.length, 1);
+    assert.deepEqual(
+      stripMeta(projected.getProjectContext({ project_id: fixture.hidden_project_id }, "same")),
+      stripMeta(sqlite.getProjectContext({ project_id: fixture.hidden_project_id }, "same"))
+    );
+    const emptySqlite = new SqliteReadonlyDataSource(db, fixture.unassigned_actor.principal_id, fixture.unassigned_actor.issuer_hash!);
+    const emptySnapshot = new SnapshotReadonlyDataSource(snapshot, fixture.unassigned_actor.principal_id, fixture.unassigned_actor.issuer_hash!);
+    assert.deepEqual(stripMeta(emptySnapshot.listProductionProjects({}, "same")), stripMeta(emptySqlite.listProductionProjects({}, "same")));
+    assert.equal((resultData(emptySnapshot.listProductionProjects()) as { items: unknown[] }).items.length, 0);
+  } finally {
+    db.close();
+  }
+  const afterDb = openM0DatabaseConnection(sqlitePath, { readOnly: true });
+  try {
+    assert.deepEqual(logicalManifest(afterDb), before);
+  } finally {
+    afterDb.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("snapshot fingerprint uses deterministic JCS input and server time remains authoritative", () => {
+  assert.equal(canonicalizeJcs({ b: 2, a: 1 }), '{"a":1,"b":2}');
+  assert.equal(canonicalizeJcs({ a: -0 }), '{"a":0}');
+  assert.throws(() => canonicalizeJcs("\ud800"), /JCS_INVALID_UNICODE/);
+  const generatedAt = "2026-07-16T00:00:00.000Z";
+  const unsigned: ReadonlySnapshotUnsigned = {
+    schema_version: "readonly-snapshot-v1",
+    source_schema: "workbench-v2-5",
+    source_migration: "0008",
+    source_version: "webgpt-v4.2.0",
+    generated_at: generatedAt,
+    expires_at: "2026-07-16T01:00:00.000Z",
+    resource_url: RESOURCE,
+    issuer_hash: "a".repeat(64),
+    authorization: { principals: [] },
+    projects: []
+  };
+  const reordered = JSON.parse(JSON.stringify(unsigned)) as ReadonlySnapshotUnsigned;
+  assert.equal(snapshotFingerprint(unsigned), snapshotFingerprint(reordered));
+  const changed = structuredClone(unsigned);
+  changed.expires_at = "2026-07-16T00:59:59.000Z";
+  assert.notEqual(snapshotFingerprint(unsigned), snapshotFingerprint(changed));
+  const snapshot = finalizeReadonlySnapshot(unsigned);
+  assert.match(snapshot.snapshot_fingerprint, /^[0-9a-f]{64}$/);
+  const tampered = structuredClone(snapshot);
+  tampered.expires_at = "2026-07-16T00:59:59.000Z";
+  assert.throws(() => parseReadonlySnapshot(tampered), /READONLY_SNAPSHOT_FINGERPRINT_MISMATCH/);
+  assert.deepEqual(readonlySnapshotStatus(snapshot, new Date("2026-07-16T00:30:00.000Z")), {
+    server_now: "2026-07-16T00:30:00.000Z",
+    generated_at: generatedAt,
+    expires_at: "2026-07-16T01:00:00.000Z",
+    age_seconds: 1800,
+    ttl_remaining_seconds: 1800,
+    freshness_status: "fresh",
+    snapshot_fingerprint: snapshot.snapshot_fingerprint
+  });
+  assert.equal(readonlySnapshotStatus(snapshot, new Date("2026-07-16T01:00:00.000Z")).freshness_status, "snapshot_expired");
+});
