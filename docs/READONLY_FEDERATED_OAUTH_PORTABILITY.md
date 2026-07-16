@@ -33,11 +33,13 @@ The generic runtime does not branch on `provider === "stytch"` or `provider === 
 
 ## Stage 0 decision
 
-Result: `AUTH0_CAPABILITY_GATE_FAILED`
+Result: `AUTH0_CAPABILITY_GATE_PASSED`
 
-This result does not claim that Auth0 lacks the product capability. Official Auth0 documentation describes Resource Parameter Compatibility Profile, public/native applications, PKCE, custom APIs, and custom scopes. The hard gate failed because the currently intended tenant/plan and its exact resource-to-audience behavior could not be verified read-only in the available session. The implementation therefore did not create or modify an Auth0 API/Application and did not relax the resource server.
+The current Auth0 tenant passed the read-only standards capability probe: anonymous RFC 8414 metadata returned `200`; metadata issuer and JWKS matched exactly; PKCE S256 and public-client token authentication `none` were advertised; and Resource Parameter Compatibility Profile was enabled. The repository preflight also completed through the real local Fake-IP environment using the bounded recovery path described below. No Auth0 API/Application was created or modified.
 
-Per the approved fallback rule, PR3 uses a Stytch predefined public-client capability fixture. Official Stytch documentation describes public third-party clients, token endpoint authentication `none`, PKCE, custom OAuth scopes, JWKS-backed JWTs, and an access-token custom audience. It also requires the integrating application to host the authorization/login/consent surface and warns that the default issuer is not fully OIDC compatible without the appropriate project domain. This is capability evidence only; it is not proof that Jenn's future Stytch project, authorization surface, issuer, or a ChatGPT connection has passed.
+This is not yet a token or connector acceptance result. The exact Tunnel resource API, predefined Native client, ChatGPT redirect, signed access-token audience/scope, consent path, and two-user flow remain external gates. The tenant also reports its current Application/SSO Integration capacity is exhausted, so the external object plan must reuse only the dedicated historical Readonly client or obtain capacity without touching unrelated applications. Stytch remains a capability fixture/fallback only and is not selected while Auth0 continues to satisfy the hard gates.
+
+Local proxy compatibility is deliberately narrow: if every system DNS answer is in the RFC 2544 benchmark range `198.18.0.0/15`, WebGPT queries a fixed public DoH endpoint over bounded pinned HTTPS, binds answers to the original question/CNAME chain, rejects unsafe results, and pins the recovered address to discovery/JWKS TLS. Any ordinary private, mixed, malformed, oversized, redirected, or mismatched response still fails closed. There is no arbitrary resolver or host allowlist environment variable.
 
 References:
 

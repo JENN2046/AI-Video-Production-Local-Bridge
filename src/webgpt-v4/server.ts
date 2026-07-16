@@ -8,6 +8,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { openM0Database, openM0DatabaseConnection, type M0Database } from "../storage/sqlite.js";
 import { assertSchemaCurrent, SchemaMigrationRequiredError } from "../storage/migrations.js";
 import { paths } from "../paths.js";
+import type { PinnedHttpsRuntime } from "../net/pinnedHttpsTransport.js";
 import { assertWebGptV4AuthConfig, loadWebGptV4AuthConfig, createOAuthAuthenticator, createAuth0MediaAuthenticator, protectedResourceMetadata, protectedResourceMetadataUrl, unavailableAuthenticator, wwwAuthenticate, type WebGptV4AuthConfig, type WebGptV4Authenticator } from "./auth.js";
 import { errorBody, WEBGPT_V4_VERSION, WebGptV4Error } from "./types.js";
 import { createWebGptV4McpApp } from "./mcpApp.js";
@@ -51,6 +52,7 @@ export interface StartWebGptV4Options {
   sqlite_path?: string;
   data_root?: string;
   auth_config?: WebGptV4AuthConfig | null;
+  auth_transport?: PinnedHttpsRuntime;
   authenticate?: WebGptV4Authenticator;
   authenticate_media?: WebGptV4Authenticator;
   media?: MediaRuntimeOptions;
@@ -173,9 +175,15 @@ export async function startWebGptV4(options: StartWebGptV4Options = {}): Promise
     : authConfig.provider !== "auth0" || authConfig.access_model !== "single_subject")) {
     throw new WebGptV4Error("INVALID_WEBGPT_AUTH_PROVIDER", `${profile} profile cannot use the configured OAuth provider.`);
   }
-  const authenticate = options.authenticate ?? (authConfig ? createOAuthAuthenticator(authConfig) : unavailableAuthenticator());
+  const authenticate = options.authenticate ?? (authConfig
+    ? createOAuthAuthenticator(authConfig, { jwks_transport: options.auth_transport })
+    : unavailableAuthenticator());
   const authenticateMedia = options.authenticate_media ?? (profile === "full" && authConfig?.provider === "auth0"
-    ? createAuth0MediaAuthenticator(authConfig, process.env.WEBGPT_V4_MEDIA_AUTH_COOKIE_NAME?.trim() || undefined)
+    ? createAuth0MediaAuthenticator(
+        authConfig,
+        process.env.WEBGPT_V4_MEDIA_AUTH_COOKIE_NAME?.trim() || undefined,
+        { jwks_transport: options.auth_transport }
+      )
     : unavailableAuthenticator());
   const projectAuthorizationEnabled = profile === "readonly" && authConfig?.access_model === "project_membership";
   const maximum = options.max_body_bytes ?? 1024 * 1024;

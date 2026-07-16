@@ -56,7 +56,7 @@ npm run test:v2:browser
 npm run secret:scan
 ```
 
-`start:local` 以前台方式启动本地 Workbench。`windows:start`、`windows:status`、`windows:stop` 提供普通用户权限的 Windows 受管启停入口，但不会创建 Task Scheduler 或配置自动启动。`start:webgpt` 默认只启动 Readonly MCP；只有显式设置 `WEBGPT_V4_PROFILE=full` 才会同时启动媒体网关和现有有限写入工具。`preflight` 默认检查本地 Workbench profile；WebGPT 使用 `npm run preflight -- --profile=webgpt` 并按 Readonly/Full 检查对应端口和依赖，OAuth 缺失时会明确失败并保持 fail closed。外部 Readonly 接线还必须单独运行 `preflight:webgpt:oauth`；该命令不打开数据库，通过 DNS-pinned HTTPS 依次验证 RFC 8414/OIDC metadata、精确 issuer/JWKS、PKCE S256、public-client auth，并按 `predefined | cimd | dcr` 检查对应注册能力。探针不跟随 redirect，也不输出 endpoint 或响应正文。
+`start:local` 以前台方式启动本地 Workbench。`windows:start`、`windows:status`、`windows:stop` 提供普通用户权限的 Windows 受管启停入口，但不会创建 Task Scheduler 或配置自动启动。`start:webgpt` 默认只启动 Readonly MCP；只有显式设置 `WEBGPT_V4_PROFILE=full` 才会同时启动媒体网关和现有有限写入工具。`preflight` 默认检查本地 Workbench profile；WebGPT 使用 `npm run preflight -- --profile=webgpt` 并按 Readonly/Full 检查对应端口和依赖，OAuth 缺失时会明确失败并保持 fail closed。外部 Readonly 接线还必须单独运行 `preflight:webgpt:oauth`；该命令不打开数据库，通过 DNS-pinned HTTPS 依次验证 RFC 8414/OIDC metadata、精确 issuer/JWKS、PKCE S256、public-client auth，并按 `predefined | cimd | dcr` 检查对应注册能力。探针不跟随 redirect，也不输出 endpoint 或响应正文。若本机代理只返回 RFC 2544 `198.18.0.0/15` Fake-IP，OAuth discovery 与 JWKS transport 会使用固定、受限的公共 DoH 恢复真实地址；普通 private/mixed DNS 结果仍立即拒绝，恢复后的地址仍必须通过同一校验并被 TLS transport 固定。
 
 ### 多用户只读授权
 

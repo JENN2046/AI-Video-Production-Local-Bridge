@@ -26,7 +26,7 @@ npm run start:webgpt
 
 普通 `preflight` 和 `/readyz` 证明本地服务边界，不代表 ChatGPT 已接受外部 OAuth discovery。外部 Readonly 接线前必须另外运行 `preflight:webgpt:oauth`；这个独立命令不打开数据库，先按 RFC 8414 规则从 issuer 推导 metadata URL，不可用时再尝试 OIDC discovery。两条路径都要求匿名 `200`、精确 issuer、精确 JWKS URI、HTTPS authorize/token/JWKS、PKCE S256 与 public client token auth `none`；`cimd` 还要求 CIMD capability，`dcr` 还要求 HTTPS registration endpoint，`predefined` 把外部 Client ID 验证保留给真实连接验收。
 
-Discovery 与运行时 JWKS refresh 共用 DNS-pinned HTTPS transport：拒绝 loopback/private/link-local/multicast/reserved 地址和混合公私 DNS 结果，禁止 redirect，单次超时 10 秒，metadata/JWKS 上限 256 KiB。任何注入测试 transport 都必须接收已验证的 pinned address；普通 injected `fetch` 或代理不能替代这个边界。探针不发送 credential，也不输出 endpoint identifier 或 response body。Descope vendor-appended metadata 仅进入 legacy 诊断，不能把标准 discovery 失败提升为 PASS。
+Discovery 与运行时 JWKS refresh 共用 DNS-pinned HTTPS transport：拒绝 loopback/private/link-local/multicast/reserved 地址和混合公私 DNS 结果，禁止 redirect，单次超时 10 秒，metadata/JWKS 上限 256 KiB。若且仅若系统 DNS 的全部结果都落在 RFC 2544 benchmark 范围 `198.18.0.0/15`，transport 才通过固定的公共 DoH endpoint 重新查询 A/AAAA；DoH 请求自身使用 bounded pinned HTTPS，响应必须匹配原问题和受控 CNAME 链，恢复地址仍要通过完整的公有地址校验并固定到实际 TLS 请求。普通 private/mixed/畸形 DNS 结果不会触发 fallback。任何注入测试 transport 都必须接收已验证的 pinned address；普通 injected `fetch` 或代理不能替代这个边界。探针不发送 credential，也不输出 endpoint identifier 或 response body。Descope vendor-appended metadata 仅进入 legacy 诊断，不能把标准 discovery 失败提升为 PASS。
 
 探针公共结果只使用以下稳定 code：`OAUTH_DISCOVERY_COMPATIBLE`、`OAUTH_DISCOVERY_FETCH_FAILED`、`OAUTH_DISCOVERY_STANDARD_METADATA_UNAVAILABLE`、`OAUTH_DISCOVERY_ISSUER_MISMATCH`、`OAUTH_DISCOVERY_PKCE_S256_MISSING`、`OAUTH_DISCOVERY_PUBLIC_CLIENT_UNSUPPORTED`、`OAUTH_DISCOVERY_CIMD_MISSING`、`OAUTH_DISCOVERY_DCR_MISSING`、`OAUTH_DISCOVERY_JWKS_MISMATCH`、`OAUTH_DISCOVERY_UNSAFE_IDENTIFIER`、`OAUTH_DISCOVERY_UNSAFE_NETWORK_TARGET`、`OAUTH_DISCOVERY_RESPONSE_TOO_LARGE`、`OAUTH_DISCOVERY_INVALID_JSON`。输出只包含布尔检查、HTTP status、所用标准路径类型和注册状态，不包含实际 URL 或 metadata body。
 
@@ -62,7 +62,7 @@ GET http://127.0.0.1:2092/healthz
 - 通用配置使用 `WEBGPT_V4_READONLY_OAUTH_ISSUER`、`WEBGPT_V4_READONLY_OAUTH_AUDIENCE`、`WEBGPT_V4_READONLY_OAUTH_JWKS_URI` 和显式 `WEBGPT_V4_READONLY_OAUTH_CLIENT_REGISTRATION`
 - issuer 同时是 PRMD authorization server 与 JWT `iss`；audience 必须与 `WEBGPT_V4_RESOURCE_URL` 完全相同
 - IdP 只认证身份；本地 issuer-bound principal/membership 始终是 production-project 授权权威
-- Stage 0 因当前 Auth0 tenant/plan 的 resource-to-audience 行为无法只读核实而记录 `AUTH0_CAPABILITY_GATE_FAILED`；候选路线已切换为 Stytch predefined public-client capability fixture，但外部对象与真实 token 仍未验收
+- Auth0 Stage 0 标准能力探针已通过：RFC 8414 metadata、精确 issuer/JWKS、PKCE S256、public-client `none` 与 Resource Parameter Compatibility Profile 均满足；新 API/client、ChatGPT redirect、真实 token audience/scope 和双用户路径仍未验收，因此仍是 `PARTIAL_EXTERNAL_GATE`
 - 运行时保持 provider-neutral，不允许根据 Stytch/Descope 品牌绕过 issuer、audience、JWKS、scope 或 membership
 
 ### Descope Readonly（legacy adapter）

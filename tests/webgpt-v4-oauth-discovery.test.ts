@@ -3,7 +3,16 @@ import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import test from "node:test";
 
-import { createBoundedPinnedFetch, createPinnedLookup, isUnsafeNetworkHost, type PinnedHttpsRuntime } from "../src/net/pinnedHttpsTransport.js";
+import {
+  createBenchmarkFakeIpRecoveringResolver,
+  createBoundedPinnedFetch,
+  createPinnedLookup,
+  isBenchmarkFakeIpv4,
+  isUnsafeNetworkHost,
+  PinnedHttpsError,
+  resolvePublicAddresses,
+  type PinnedHttpsRuntime
+} from "../src/net/pinnedHttpsTransport.js";
 import {
   oidcAuthorizationServerMetadataUrl,
   probeWebGptOAuthDiscovery,
@@ -148,6 +157,111 @@ test("pinned lookup supports Node 22 all-address callbacks and blocks NAT64 priv
   assert.equal(forwarded.has("authorization"), false);
   assert.equal(forwarded.has("cookie"), false);
   assert.equal(forwarded.has("x-api-key"), false);
+});
+
+test("benchmark fake-IP recovery uses bounded public DoH without weakening private-address rejection", async () => {
+  assert.equal(isBenchmarkFakeIpv4("198.18.0.1"), true);
+  assert.equal(isBenchmarkFakeIpv4("198.19.255.254"), true);
+  assert.equal(isBenchmarkFakeIpv4("198.20.0.1"), false);
+
+  const queries: string[] = [];
+  const resolver = createBenchmarkFakeIpRecoveringResolver({
+    lookup_hostname: async () => [{ address: "198.18.0.144", family: 4 }],
+    fetch_doh: async (url) => {
+      queries.push(`${url.hostname}:${url.searchParams.get("type")}`);
+      const type = url.searchParams.get("type");
+      return new Response(JSON.stringify({
+        Status: 0,
+        TC: false,
+        Question: [{ name: "auth.example.test.", type: type === "A" ? 1 : 28 }],
+        Answer: type === "A"
+          ? [
+              { name: "auth.example.test.", type: 5, data: "auth-edge.example.test." },
+              { name: "auth-edge.example.test.", type: 1, data: "104.18.43.182" }
+            ]
+          : [{ name: "auth.example.test.", type: 28, data: "2606:4700:4400::6812:2bb6" }]
+      }), { status: 200, headers: { "content-type": "application/dns-json" } });
+    }
+  });
+  assert.deepEqual(await resolvePublicAddresses("auth.example.test", resolver), [
+    { address: "104.18.43.182", family: 4 },
+    { address: "2606:4700:4400::6812:2bb6", family: 6 }
+  ]);
+  assert.deepEqual(queries.sort(), ["1.1.1.1:A", "1.1.1.1:AAAA"]);
+
+  let privateFallbackRan = false;
+  const privateSystemResolver = createBenchmarkFakeIpRecoveringResolver({
+    lookup_hostname: async () => [{ address: "127.0.0.1", family: 4 }],
+    fetch_doh: async () => {
+      privateFallbackRan = true;
+      return new Response(null, { status: 500 });
+    }
+  });
+  await assert.rejects(
+    () => resolvePublicAddresses("auth.example.test", privateSystemResolver),
+    (error) => error instanceof PinnedHttpsError && error.code === "UNSAFE_NETWORK_TARGET"
+  );
+  assert.equal(privateFallbackRan, false, "ordinary private DNS answers must never trigger the public fallback");
+
+  const privateDohResolver = createBenchmarkFakeIpRecoveringResolver({
+    lookup_hostname: async () => [{ address: "198.18.0.144", family: 4 }],
+    fetch_doh: async (url) => {
+      const recordType = url.searchParams.get("type") === "A" ? 1 : 28;
+      return new Response(JSON.stringify({
+        Status: 0,
+        TC: false,
+        Question: [{ name: "auth.example.test.", type: recordType }],
+        Answer: recordType === 1 ? [{ name: "auth.example.test.", type: 1, data: "10.0.0.8" }] : []
+      }), { status: 200 });
+    }
+  });
+  await assert.rejects(
+    () => resolvePublicAddresses("auth.example.test", privateDohResolver),
+    (error) => error instanceof PinnedHttpsError && error.code === "UNSAFE_NETWORK_TARGET"
+  );
+});
+
+test("benchmark fake-IP recovery fails closed on malformed or mismatched DoH responses", async () => {
+  const malformed = createBenchmarkFakeIpRecoveringResolver({
+    lookup_hostname: async () => [{ address: "198.18.0.144", family: 4 }],
+    fetch_doh: async () => new Response(JSON.stringify({
+      Status: 0,
+      Question: [{ name: "other.example.test.", type: 1 }],
+      Answer: [{ name: "other.example.test.", type: 1, data: "8.8.8.8" }]
+    }), { status: 200 })
+  });
+  await assert.rejects(
+    () => resolvePublicAddresses("auth.example.test", malformed),
+    (error) => error instanceof PinnedHttpsError && error.code === "FETCH_FAILED"
+  );
+
+  const mismatchedAnswer = createBenchmarkFakeIpRecoveringResolver({
+    lookup_hostname: async () => [{ address: "198.18.0.144", family: 4 }],
+    fetch_doh: async (url) => {
+      const recordType = url.searchParams.get("type") === "A" ? 1 : 28;
+      return new Response(JSON.stringify({
+        Status: 0,
+        Question: [{ name: "auth.example.test.", type: recordType }],
+        Answer: recordType === 1 ? [{ name: "other.example.test.", type: 1, data: "8.8.8.8" }] : []
+      }), { status: 200 });
+    }
+  });
+  await assert.rejects(
+    () => resolvePublicAddresses("auth.example.test", mismatchedAnswer),
+    (error) => error instanceof PinnedHttpsError && error.code === "FETCH_FAILED"
+  );
+
+  const oversized = createBenchmarkFakeIpRecoveringResolver({
+    lookup_hostname: async () => [{ address: "198.18.0.144", family: 4 }],
+    fetch_doh: async () => new Response("x".repeat(64 * 1024 + 1), {
+      status: 200,
+      headers: { "content-length": String(64 * 1024 + 1) }
+    })
+  });
+  await assert.rejects(
+    () => resolvePublicAddresses("auth.example.test", oversized),
+    (error) => error instanceof PinnedHttpsError && error.code === "RESPONSE_TOO_LARGE"
+  );
 });
 
 test("metadata validation enforces exact issuer, endpoints, JWKS, PKCE, public client, and selected registration mode", () => {
