@@ -9,7 +9,7 @@ import test from "node:test";
 import { bindWebGptPrincipalIssuer, bootstrapWebGptProjectOwner, registerWebGptPrincipal } from "../src/webgpt-v4/authorizationAdmin.js";
 import { actorFromFederatedSubject, type WebGptV4Result } from "../src/webgpt-v4/types.js";
 import { openM0Database, openM0DatabaseConnection, type M0Database } from "../src/storage/sqlite.js";
-import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
+import { createProject, getProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 import {
   exportReadonlySnapshotFromDatabase,
   ReadonlyProjectionError,
@@ -428,6 +428,50 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     secondReview.full.shot.shot_id = secondShotId;
     projected.review_packages.push(secondReview);
     assert.throws(() => finalizeReadonlySnapshot(duplicateCompactShot), /duplicate compact SHOT binding/i);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("readonly snapshot requires compact and full SHOT ordering parity", () => {
+  const root = mkdtempSync(join(tmpdir(), "readonly-projection-shot-order-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const fixture = createFixture(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const project = getProject(db, fixture.project_id);
+    assert.ok(project);
+    const secondShot: Shot = {
+      shot_id: "shot_cloud_projection_002",
+      project_id: fixture.project_id,
+      order: 2,
+      status: "storyboard_approved",
+      duration_seconds: 4,
+      description: "Second readonly projection shot",
+      storyboard_image_artifact_id: "",
+      video_prompt: "A second safe fixture prompt",
+      negative_prompt: "",
+      generation_run_ids: [],
+      accepted_clip_artifact_id: "",
+      clip_versions: [],
+      review: { approval_status: "pending", rejection_reasons: [], latest_revision_instruction: null }
+    };
+    saveShot(db, secondShot);
+    project.shot_ids.push(secondShot.shot_id);
+    saveProject(db, project);
+  } finally {
+    db.close();
+  }
+  try {
+    const snapshot = exportReadonlySnapshotFromDatabase({
+      database_path: sqlitePath,
+      issuer_hash: fixture.actor.issuer_hash!,
+      resource_url: RESOURCE
+    });
+    const { snapshot_fingerprint: _fingerprint, ...unsigned } = snapshot;
+    assert.equal(unsigned.projects[0]!.shots_full.length, 2);
+    unsigned.projects[0]!.shots_compact.reverse();
+    assert.throws(() => finalizeReadonlySnapshot(unsigned), /compact and full SHOT ordering differs/i);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

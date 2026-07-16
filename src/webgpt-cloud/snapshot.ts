@@ -216,6 +216,9 @@ function validateProjectProjectionBindings(
   if (compactShotIds.size !== shotIds.size || [...shotIds].some((shotId) => !compactShotIds.has(shotId))) {
     addBindingIssue(context, [...base, "shots_compact"], "Compact and full SHOT bindings differ.");
   }
+  if (project.shots_compact.some((shot, shotIndex) => shot.shot_id !== project.shots_full[shotIndex]?.shot_id)) {
+    addBindingIssue(context, [...base, "shots_compact"], "Compact and full SHOT ordering differs.");
+  }
   for (const [shotIndex, shot] of project.shots_full.entries()) {
     if (shot.project_id !== projectId) addBindingIssue(context, [...base, "shots_full", shotIndex, "project_id"], "SHOT project binding mismatch.");
   }
