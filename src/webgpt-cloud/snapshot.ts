@@ -135,6 +135,34 @@ function shotParityValue<T extends { updated_at?: string }>(value: T): Omit<T, "
   return stable;
 }
 
+function expectedDeliveryContextSummary(project: ReadonlyProjectProjectionShape): ReadonlyProjectProjectionShape["list_item_full"]["summary"] {
+  const summary = structuredClone(project.list_item_full.summary);
+  if (project.delivery.final_artifact) return summary;
+  const invalidCount = project.delivery.readiness_checks.filter((check) => Boolean(check.artifact_id) && !check.ok).length;
+  const readinessDerived = project.delivery.ready_for_assembly
+    ? { label: "合成交付", reason_code: "assemble", priority: "high" as const }
+    : { label: "修复无效采纳片段", reason_code: "accepted_clip_invalid", priority: "urgent" as const };
+  const derived = summary.next_action.derived.reason_code === "assembly_readiness_required"
+    ? readinessDerived
+    : summary.next_action.derived;
+  const preserveOverride = summary.next_action.source === "override" && invalidCount === 0;
+  const blockerCount = summary.blocker_count + invalidCount;
+  return {
+    ...summary,
+    blocker_count: blockerCount,
+    blocker_reason: [summary.blocker_reason, invalidCount > 0 ? `${invalidCount} 个采纳片段无效` : ""].filter(Boolean).join("、"),
+    delivery_state: project.delivery.ready_for_assembly ? "ready_to_assemble" : "not_ready",
+    next_action: preserveOverride
+      ? { ...summary.next_action, derived }
+      : { source: "derived", ...derived, expires_at: null, derived },
+    risk: blockerCount > 0
+      ? "blocked"
+      : summary.active_run_count > 0 || summary.review_pending_count > 0
+        ? "attention"
+        : "clear"
+  };
+}
+
 function addBindingIssue(context: z.core.$RefinementCtx, path: Array<string | number>, message: string): void {
   context.addIssue({ code: "custom", message, path });
 }
@@ -287,9 +315,14 @@ function validateProjectProjectionBindings(
     if (canonicalizeJcs(projection.compact) !== canonicalizeJcs(expectedCompactContext)) {
       addBindingIssue(context, [...base, "contexts", contextIndex, "compact"], "Compact/full context parity mismatch.");
     }
-    if (canonicalizeJcs(projection.full.project) !== canonicalizeJcs(project.list_item_full.project)
-      || canonicalizeJcs(projection.full.summary) !== canonicalizeJcs(project.list_item_full.summary)) {
-      addBindingIssue(context, [...base, "contexts", contextIndex, "full"], "Context/project canonical projection mismatch.");
+    if (canonicalizeJcs(projection.full.project) !== canonicalizeJcs(project.list_item_full.project)) {
+      addBindingIssue(context, [...base, "contexts", contextIndex, "full", "project"], "Context/project canonical projection mismatch.");
+    }
+    const expectedContextSummary = projection.workspace === "delivery"
+      ? expectedDeliveryContextSummary(project)
+      : project.list_item_full.summary;
+    if (canonicalizeJcs(projection.full.summary) !== canonicalizeJcs(expectedContextSummary)) {
+      addBindingIssue(context, [...base, "contexts", contextIndex, "full", "summary"], "Context summary canonical projection mismatch.");
     }
     if ("shots" in projection.full
       && canonicalizeJcs(projection.full.shots.map(shotParityValue)) !== canonicalizeJcs(project.shots_full.map(shotParityValue))) {
@@ -424,7 +457,9 @@ function validateProjectProjectionBindings(
     if (!shot.accepted_clip_artifact_id && (check.ok || check.reason_code !== "SHOT_ACCEPTED_CLIP_MISSING")) {
       addBindingIssue(context, [...base, "delivery", "readiness_checks"], "Delivery missing-clip readiness mismatch.");
     }
-    if (check.ok && check.reason_code !== "SHOT_ACCEPTED_CLIP_READY") {
+    if (shot.accepted_clip_artifact_id && (!check.ok || check.reason_code !== "SHOT_ACCEPTED_CLIP_READY")) {
+      addBindingIssue(context, [...base, "delivery", "readiness_checks"], "Delivery accepted-clip readiness mismatch.");
+    } else if (check.ok && check.reason_code !== "SHOT_ACCEPTED_CLIP_READY") {
       addBindingIssue(context, [...base, "delivery", "readiness_checks"], "Delivery ready-clip reason mismatch.");
     }
   }

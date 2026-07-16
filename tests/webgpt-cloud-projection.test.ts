@@ -446,6 +446,24 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     acceptedArtifactOutsideReview.projects[0]!.shots_full[0]!.accepted_clip_artifact_id = "artifact_not_in_review";
     assert.throws(() => finalizeReadonlySnapshot(acceptedArtifactOutsideReview), /accepted clip is absent from the SHOT review versions/i);
 
+    const acceptedArtifactMarkedNotReady = structuredClone(unsigned);
+    const notReadyProject = acceptedArtifactMarkedNotReady.projects[0]!;
+    notReadyProject.shots_full[0]!.accepted_clip_artifact_id = generatedArtifact.artifact_id;
+    notReadyProject.shots_full[0]!.clip_versions.push({ artifact_id: generatedArtifact.artifact_id, run_id: "run_generated", attempt_number: 1, review_status: "approved" });
+    notReadyProject.review_packages[0]!.full.versions.push({
+      artifact_id: generatedArtifact.artifact_id,
+      run_id: "run_generated",
+      attempt_number: 1,
+      review_status: "approved",
+      artifact: structuredClone(generatedArtifact)
+    });
+    notReadyProject.review_packages[0]!.compact.versions.push({ artifact_id: generatedArtifact.artifact_id, attempt_number: 1, review_status: "approved" });
+    notReadyProject.delivery.readiness_checks[0]!.artifact_id = generatedArtifact.artifact_id;
+    notReadyProject.delivery.readiness_checks[0]!.ok = false;
+    notReadyProject.delivery.readiness_checks[0]!.reason_code = "ARTIFACT_INACCESSIBLE";
+    notReadyProject.closeout.readiness_checks = structuredClone(notReadyProject.delivery.readiness_checks);
+    assert.throws(() => finalizeReadonlySnapshot(acceptedArtifactMarkedNotReady), /delivery accepted-clip readiness mismatch/i);
+
     const divergentSummary = structuredClone(unsigned);
     const summaryProject = divergentSummary.projects[0]!;
     summaryProject.list_item_full.summary.shot_count = 99;
@@ -455,6 +473,37 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
       context.compact.summary.shot_count = 99;
     }
     assert.throws(() => finalizeReadonlySnapshot(divergentSummary), /project summary canonical state mismatch/i);
+
+    const deliveryAdjustedSummary = structuredClone(unsigned);
+    const adjustedProject = deliveryAdjustedSummary.projects[0]!;
+    const assemblyRequired = {
+      source: "derived" as const,
+      label: "验证合成就绪状态",
+      reason_code: "assembly_readiness_required",
+      priority: "high" as const,
+      expires_at: null,
+      derived: { label: "验证合成就绪状态", reason_code: "assembly_readiness_required", priority: "high" as const }
+    };
+    adjustedProject.list_item_full.summary.next_action = structuredClone(assemblyRequired);
+    adjustedProject.list_item_compact.summary.next_action = structuredClone(assemblyRequired);
+    for (const context of adjustedProject.contexts) {
+      if (context.workspace === "delivery") {
+        const adjusted = {
+          source: "derived" as const,
+          label: "修复无效采纳片段",
+          reason_code: "accepted_clip_invalid",
+          priority: "urgent" as const,
+          expires_at: null,
+          derived: { label: "修复无效采纳片段", reason_code: "accepted_clip_invalid", priority: "urgent" as const }
+        };
+        context.full.summary.next_action = structuredClone(adjusted);
+        context.compact.summary.next_action = structuredClone(adjusted);
+      } else {
+        context.full.summary.next_action = structuredClone(assemblyRequired);
+        context.compact.summary.next_action = structuredClone(assemblyRequired);
+      }
+    }
+    assert.doesNotThrow(() => finalizeReadonlySnapshot(deliveryAdjustedSummary));
 
     const duplicateCompactShot = structuredClone(unsigned);
     const projected = duplicateCompactShot.projects[0]!;
