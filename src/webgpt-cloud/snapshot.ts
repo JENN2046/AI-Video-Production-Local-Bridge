@@ -156,23 +156,23 @@ function validateArtifactBinding(
 }
 
 function validateGeneratedClipArtifact(
-  artifact: { artifact_type: string; role: string; linked_objects: { shot_id: string } },
+  artifact: { artifact_type: string; role: string; status: string; linked_objects: { shot_id: string } },
   expectedShotId: string,
   path: Array<string | number>,
   context: z.core.$RefinementCtx
 ): void {
-  if (artifact.artifact_type !== "video" || artifact.role !== "generated_clip" || artifact.linked_objects.shot_id !== expectedShotId) {
+  if (artifact.artifact_type !== "video" || artifact.role !== "generated_clip" || artifact.status !== "active" || artifact.linked_objects.shot_id !== expectedShotId) {
     addBindingIssue(context, path, "Generated clip artifact contract mismatch.");
   }
 }
 
 function validateFinalArtifact(
-  artifact: { artifact_type: string; role: string; linked_objects: { shot_id: string } } | null,
+  artifact: { artifact_type: string; role: string; status: string; linked_objects: { shot_id: string } } | null,
   path: Array<string | number>,
   context: z.core.$RefinementCtx
 ): void {
   if (!artifact) return;
-  if (artifact.artifact_type !== "video" || artifact.role !== "final_video" || artifact.linked_objects.shot_id !== "") {
+  if (artifact.artifact_type !== "video" || artifact.role !== "final_video" || artifact.status !== "active" || artifact.linked_objects.shot_id !== "") {
     addBindingIssue(context, path, "Final artifact contract mismatch.");
   }
 }
@@ -284,6 +284,21 @@ function validateProjectProjectionBindings(
       if (canonicalizeJcs(contextDelivery) !== canonicalizeJcs(sharedDelivery)) {
         addBindingIssue(context, [...base, "contexts", contextIndex, "full"], "Context/delivery canonical projection mismatch.");
       }
+      const clipsByShot = new Map(projection.full.accepted_clips.map((clip) => [clip.shot_id, clip]));
+      if (clipsByShot.size !== projection.full.accepted_clips.length || clipsByShot.size !== project.shots_full.length) {
+        addBindingIssue(context, [...base, "contexts", contextIndex, "full", "accepted_clips"], "Delivery context accepted-clip SHOT set mismatch.");
+      }
+      const checksByShot = new Map(project.delivery.readiness_checks.map((check) => [check.shot_id, check]));
+      for (const shot of project.shots_full) {
+        const clip = clipsByShot.get(shot.shot_id);
+        const check = checksByShot.get(shot.shot_id);
+        if (!clip || !check) continue;
+        if (clip.order !== shot.order
+          || (check.ok && (!clip.artifact || clip.artifact.artifact_id !== shot.accepted_clip_artifact_id))
+          || (!check.ok && clip.artifact !== null)) {
+          addBindingIssue(context, [...base, "contexts", contextIndex, "full", "accepted_clips"], "Delivery context accepted-clip projection mismatch.");
+        }
+      }
     }
   }
 
@@ -317,6 +332,7 @@ function validateProjectProjectionBindings(
             artifact_id: string;
             artifact_type: string;
             role: string;
+            status: string;
             linked_objects: { project_id: string; shot_id: string };
           };
           validateArtifactBinding(
@@ -336,6 +352,13 @@ function validateProjectProjectionBindings(
     const expectedCompactReview = compactReviewPackageDataSchema.parse(compactReviewFromFull(review.full));
     if (canonicalizeJcs(review.compact) !== canonicalizeJcs(expectedCompactReview)) {
       addBindingIssue(context, [...path, "compact"], "Compact/full review package parity mismatch.");
+    }
+    const canonicalShot = project.shots_full.find((shot) => shot.shot_id === review.shot_id);
+    const versionIds = new Set(review.full.versions.map((version) => version.artifact_id));
+    if (canonicalShot
+      && review.full.selected_artifact_id !== canonicalShot.accepted_clip_artifact_id
+      && !versionIds.has(review.full.selected_artifact_id)) {
+      addBindingIssue(context, [...path, "full", "selected_artifact_id"], "Review selected artifact binding mismatch.");
     }
   }
 

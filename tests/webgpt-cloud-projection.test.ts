@@ -361,6 +361,13 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     fabricatedDeliveryCounts.projects[0]!.closeout.shots_total += 1;
     assert.throws(() => finalizeReadonlySnapshot(fabricatedDeliveryCounts), /delivery\/canonical project state mismatch/i);
 
+    const missingDeliveryContextClip = structuredClone(unsigned);
+    const deliveryContext = missingDeliveryContextClip.projects[0]!.contexts.find((item) => item.workspace === "delivery")!;
+    if (deliveryContext.full.workspace !== "delivery" || deliveryContext.compact.workspace !== "delivery") throw new Error("delivery fixture missing");
+    deliveryContext.full.accepted_clips = [];
+    deliveryContext.compact.accepted_clips = [];
+    assert.throws(() => finalizeReadonlySnapshot(missingDeliveryContextClip), /accepted-clip SHOT set mismatch/i);
+
     const divergentReviewShot = structuredClone(unsigned);
     divergentReviewShot.projects[0]!.review_packages[0]!.full.shot.description = "Divergent review SHOT";
     divergentReviewShot.projects[0]!.review_packages[0]!.compact.shot.description = "Divergent review SHOT";
@@ -380,6 +387,27 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
       review_status: "pending"
     });
     assert.throws(() => finalizeReadonlySnapshot(mismatchedVersionArtifact), /review version artifact id mismatch/i);
+
+    const unboundSelectedArtifact = structuredClone(unsigned);
+    unboundSelectedArtifact.projects[0]!.review_packages[0]!.full.selected_artifact_id = "artifact_unbound";
+    unboundSelectedArtifact.projects[0]!.review_packages[0]!.compact.selected_artifact_id = "artifact_unbound";
+    assert.throws(() => finalizeReadonlySnapshot(unboundSelectedArtifact), /review selected artifact binding mismatch/i);
+
+    const inactiveVersionArtifact = structuredClone(unsigned);
+    const archivedArtifact = { ...structuredClone(generatedArtifact), status: "archived" as const };
+    inactiveVersionArtifact.projects[0]!.review_packages[0]!.full.versions.push({
+      artifact_id: archivedArtifact.artifact_id,
+      run_id: "run_archived",
+      attempt_number: 1,
+      review_status: "pending",
+      artifact: archivedArtifact
+    });
+    inactiveVersionArtifact.projects[0]!.review_packages[0]!.compact.versions.push({
+      artifact_id: archivedArtifact.artifact_id,
+      attempt_number: 1,
+      review_status: "pending"
+    });
+    assert.throws(() => finalizeReadonlySnapshot(inactiveVersionArtifact), /generated clip artifact contract mismatch/i);
 
     const nonFinalDeliveryArtifact = structuredClone(unsigned);
     nonFinalDeliveryArtifact.projects[0]!.delivery.final_artifact = structuredClone(generatedArtifact);
