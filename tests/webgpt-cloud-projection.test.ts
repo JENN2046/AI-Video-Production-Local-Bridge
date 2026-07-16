@@ -479,6 +479,23 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     extraReviewVersion.projects[0]!.review_packages[0]!.compact.versions.push({ artifact_id: generatedArtifact.artifact_id, attempt_number: 1, review_status: "pending" });
     assert.throws(() => finalizeReadonlySnapshot(extraReviewVersion), /review version stack differs from the canonical SHOT versions/i);
 
+    const selectedNonAcceptedVersion = structuredClone(extraReviewVersion);
+    const selectedProject = selectedNonAcceptedVersion.projects[0]!;
+    const selectedVersion = { artifact_id: generatedArtifact.artifact_id, run_id: "run_extra", attempt_number: 1, review_status: "pending" as const };
+    selectedProject.shots_full[0]!.clip_versions.push(selectedVersion);
+    selectedProject.review_packages[0]!.full.selected_artifact_id = generatedArtifact.artifact_id;
+    selectedProject.review_packages[0]!.compact.selected_artifact_id = generatedArtifact.artifact_id;
+    selectedProject.list_item_full.summary.review_pending_count = 1;
+    selectedProject.list_item_compact.summary.review_pending_count = 1;
+    for (const context of selectedProject.contexts) {
+      context.full.summary.review_pending_count = 1;
+      context.compact.summary.review_pending_count = 1;
+      if ("shots" in context.full) context.full.shots[0]!.clip_versions.push(structuredClone(selectedVersion));
+      if (context.full.workspace === "overview") context.full.metrics.review_pending = 1;
+      if (context.compact.workspace === "overview") context.compact.metrics.review_pending = 1;
+    }
+    assert.throws(() => finalizeReadonlySnapshot(selectedNonAcceptedVersion), /review selected artifact binding mismatch/i);
+
     const unrelatedReviewNote = structuredClone(unsigned);
     const note = {
       note_id: "note_unrelated_artifact",
@@ -535,6 +552,29 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
       context.compact.summary.shot_count = 99;
     }
     assert.throws(() => finalizeReadonlySnapshot(divergentSummary), /project summary canonical state mismatch/i);
+
+    const understatedBlockers = structuredClone(unsigned);
+    const clearSummary = {
+      blocker_count: 0,
+      blocker_reason: "",
+      risk: "clear" as const,
+      next_action: {
+        source: "derived" as const,
+        label: "已交付",
+        reason_code: "delivered",
+        priority: "normal" as const,
+        expires_at: null,
+        derived: { label: "已交付", reason_code: "delivered", priority: "normal" as const }
+      }
+    };
+    const { blocker_reason: _blockerReason, ...clearCompactSummary } = clearSummary;
+    Object.assign(understatedBlockers.projects[0]!.list_item_full.summary, structuredClone(clearSummary));
+    Object.assign(understatedBlockers.projects[0]!.list_item_compact.summary, structuredClone(clearCompactSummary));
+    for (const context of understatedBlockers.projects[0]!.contexts) {
+      Object.assign(context.full.summary, structuredClone(clearSummary));
+      Object.assign(context.compact.summary, structuredClone(clearCompactSummary));
+    }
+    assert.throws(() => finalizeReadonlySnapshot(understatedBlockers), /project blocker summary differs from canonical SHOT blockers/i);
 
     const divergentOverview = structuredClone(unsigned);
     const overview = divergentOverview.projects[0]!.contexts.find((context) => context.workspace === "overview");
@@ -606,9 +646,25 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
       expires_at: null,
       derived: { label: "验证合成就绪状态", reason_code: "assembly_readiness_required", priority: "high" as const }
     };
+    adjustedProject.shots_full[0]!.storyboard_image_artifact_id = "artifact_storyboard_present";
+    adjustedProject.review_packages[0]!.full.shot.storyboard_image_artifact_id = "artifact_storyboard_present";
+    adjustedProject.list_item_full.summary.blocker_count = 0;
+    adjustedProject.list_item_full.summary.blocker_reason = "";
+    adjustedProject.list_item_full.summary.risk = "clear";
+    adjustedProject.list_item_compact.summary.blocker_count = 0;
+    adjustedProject.list_item_compact.summary.risk = "clear";
     adjustedProject.list_item_full.summary.next_action = structuredClone(assemblyRequired);
     adjustedProject.list_item_compact.summary.next_action = structuredClone(assemblyRequired);
     for (const context of adjustedProject.contexts) {
+      context.full.summary.blocker_count = 0;
+      context.full.summary.blocker_reason = "";
+      context.full.summary.risk = "clear";
+      context.compact.summary.blocker_count = 0;
+      context.compact.summary.blocker_reason = "";
+      context.compact.summary.risk = "clear";
+      if ("shots" in context.full) context.full.shots[0]!.storyboard_image_artifact_id = "artifact_storyboard_present";
+      if (context.full.workspace === "overview") context.full.blockers = [];
+      if (context.compact.workspace === "overview") context.compact.blockers = [];
       if (context.workspace === "delivery") {
         const adjusted = {
           source: "derived" as const,

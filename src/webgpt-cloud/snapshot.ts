@@ -261,6 +261,9 @@ function validateProjectProjectionBindings(
   }
 
   const canonicalSummary = project.list_item_full.summary;
+  const missingImageCount = project.shots_full.filter((shot) => !shot.storyboard_image_artifact_id).length;
+  const missingPromptCount = project.shots_full.filter((shot) => !shot.video_prompt).length;
+  const storyboardBlockerCount = project.shots_full.filter((shot) => !shot.storyboard_image_artifact_id || !shot.video_prompt).length;
   const expectedSummaryState = {
     shot_count: project.shots_full.length,
     accepted_count: project.shots_full.filter((shot) => Boolean(shot.accepted_clip_artifact_id)).length,
@@ -276,6 +279,24 @@ function validateProjectProjectionBindings(
     || canonicalSummary.review_pending_count !== expectedSummaryState.review_pending_count
     || canonicalSummary.delivery_state !== expectedSummaryState.delivery_state) {
     addBindingIssue(context, [...base, "list_item_full", "summary"], "Project summary canonical state mismatch.");
+  }
+  if (storyboardBlockerCount > 0) {
+    const requiredReasons = [
+      missingImageCount > 0 ? `${missingImageCount} 个缺分镜图` : "",
+      missingPromptCount > 0 ? `${missingPromptCount} 个缺提示词` : ""
+    ].filter(Boolean);
+    const derived = canonicalSummary.next_action.derived;
+    const derivedMatchesTopLevel = canonicalSummary.next_action.source !== "derived"
+      || (canonicalSummary.next_action.label === derived.label
+        && canonicalSummary.next_action.reason_code === derived.reason_code
+        && canonicalSummary.next_action.priority === derived.priority);
+    if (canonicalSummary.blocker_count < storyboardBlockerCount
+      || requiredReasons.some((reason) => !canonicalSummary.blocker_reason.includes(reason))
+      || canonicalSummary.risk !== "blocked"
+      || !["generation_failed", "storyboard_blocked"].includes(derived.reason_code)
+      || !derivedMatchesTopLevel) {
+      addBindingIssue(context, [...base, "list_item_full", "summary"], "Project blocker summary differs from canonical SHOT blockers.");
+    }
   }
 
   const contextWorkspaces = new Set(project.contexts.map((projection) => projection.workspace));
@@ -487,9 +508,7 @@ function validateProjectProjectionBindings(
     if (canonicalShot?.accepted_clip_artifact_id && !versionIds.has(canonicalShot.accepted_clip_artifact_id)) {
       addBindingIssue(context, [...path, "full", "versions"], "Accepted clip is absent from the SHOT review versions.");
     }
-    if (canonicalShot
-      && review.full.selected_artifact_id !== canonicalShot.accepted_clip_artifact_id
-      && !versionIds.has(review.full.selected_artifact_id)) {
+    if (canonicalShot && review.full.selected_artifact_id !== canonicalShot.accepted_clip_artifact_id) {
       addBindingIssue(context, [...path, "full", "selected_artifact_id"], "Review selected artifact binding mismatch.");
     }
   }
