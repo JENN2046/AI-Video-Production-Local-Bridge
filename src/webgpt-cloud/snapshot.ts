@@ -226,6 +226,27 @@ function validateProjectProjectionBindings(
   if (listedShotIds.length !== shotIds.size || listedShotIds.some((shotId) => !shotIds.has(shotId))) {
     addBindingIssue(context, [...base, "list_item_full", "project", "shot_ids"], "Project SHOT list binding mismatch.");
   }
+  if (listedShotIds.some((shotId, shotIndex) => shotId !== project.shots_full[shotIndex]?.shot_id)) {
+    addBindingIssue(context, [...base, "list_item_full", "project", "shot_ids"], "Project SHOT list ordering differs.");
+  }
+
+  const canonicalSummary = project.list_item_full.summary;
+  const expectedSummaryState = {
+    shot_count: project.shots_full.length,
+    accepted_count: project.shots_full.filter((shot) => Boolean(shot.accepted_clip_artifact_id)).length,
+    review_pending_count: project.shots_full.filter((shot) => shot.clip_versions.length > 0 && shot.review.approval_status === "pending").length,
+    delivery_state: project.list_item_full.project.status === "final_approved"
+      ? "delivered"
+      : project.delivery.final_artifact
+        ? "final_review"
+        : "not_ready"
+  };
+  if (canonicalSummary.shot_count !== expectedSummaryState.shot_count
+    || canonicalSummary.accepted_count !== expectedSummaryState.accepted_count
+    || canonicalSummary.review_pending_count !== expectedSummaryState.review_pending_count
+    || canonicalSummary.delivery_state !== expectedSummaryState.delivery_state) {
+    addBindingIssue(context, [...base, "list_item_full", "summary"], "Project summary canonical state mismatch.");
+  }
 
   const contextWorkspaces = new Set(project.contexts.map((projection) => projection.workspace));
   if (contextWorkspaces.size !== project.contexts.length) addBindingIssue(context, [...base, "contexts"], "Duplicate project context workspace.");
@@ -257,6 +278,9 @@ function validateProjectProjectionBindings(
         }
         validateArtifactBinding(value.final_artifact, projectId, null, [...path, "final_artifact"], context);
         validateFinalArtifact(value.final_artifact, [...path, "final_artifact"], context);
+        if (value.accepted_clips.some((clip, clipIndex) => clip.shot_id !== project.shots_full[clipIndex]?.shot_id)) {
+          addBindingIssue(context, [...path, "accepted_clips"], "Delivery context accepted-clip ordering differs.");
+        }
       }
     }
     const expectedCompactContext = compactProjectContextDataSchema.parse(compactContextFromFull(projection.full));
@@ -309,6 +333,9 @@ function validateProjectProjectionBindings(
   if (reviewShotIds.size !== project.review_packages.length) addBindingIssue(context, [...base, "review_packages"], "Duplicate review package SHOT binding.");
   if (reviewShotIds.size !== shotIds.size || [...shotIds].some((shotId) => !reviewShotIds.has(shotId))) {
     addBindingIssue(context, [...base, "review_packages"], "Review package and full SHOT bindings differ.");
+  }
+  if (project.review_packages.some((review, reviewIndex) => review.shot_id !== project.shots_full[reviewIndex]?.shot_id)) {
+    addBindingIssue(context, [...base, "review_packages"], "Review package SHOT ordering differs.");
   }
   for (const [reviewIndex, review] of project.review_packages.entries()) {
     const path = [...base, "review_packages", reviewIndex] as Array<string | number>;
@@ -384,6 +411,9 @@ function validateProjectProjectionBindings(
   const checksByShot = new Map(project.delivery.readiness_checks.map((check) => [check.shot_id, check]));
   if (checksByShot.size !== project.delivery.readiness_checks.length || checksByShot.size !== project.shots_full.length) {
     addBindingIssue(context, [...base, "delivery", "readiness_checks"], "Delivery readiness SHOT set mismatch.");
+  }
+  if (project.delivery.readiness_checks.some((check, checkIndex) => check.shot_id !== project.shots_full[checkIndex]?.shot_id)) {
+    addBindingIssue(context, [...base, "delivery", "readiness_checks"], "Delivery readiness SHOT ordering differs.");
   }
   for (const shot of project.shots_full) {
     const check = checksByShot.get(shot.shot_id);

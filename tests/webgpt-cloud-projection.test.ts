@@ -97,6 +97,34 @@ function createFixture(sqlitePath: string): {
   }
 }
 
+function addSecondFixtureShot(sqlitePath: string, projectId: string): void {
+  const db = openM0Database(sqlitePath);
+  try {
+    const project = getProject(db, projectId);
+    assert.ok(project);
+    const secondShot: Shot = {
+      shot_id: "shot_cloud_projection_002",
+      project_id: projectId,
+      order: 2,
+      status: "storyboard_approved",
+      duration_seconds: 4,
+      description: "Second readonly projection shot",
+      storyboard_image_artifact_id: "",
+      video_prompt: "A second safe fixture prompt",
+      negative_prompt: "",
+      generation_run_ids: [],
+      accepted_clip_artifact_id: "",
+      clip_versions: [],
+      review: { approval_status: "pending", rejection_reasons: [], latest_revision_instruction: null }
+    };
+    saveShot(db, secondShot);
+    project.shot_ids.push(secondShot.shot_id);
+    saveProject(db, project);
+  } finally {
+    db.close();
+  }
+}
+
 function resultData(result: WebGptV4Result<unknown>): unknown {
   if (!result.ok) throw new Error(result.error.code);
   return result.data;
@@ -418,6 +446,16 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     acceptedArtifactOutsideReview.projects[0]!.shots_full[0]!.accepted_clip_artifact_id = "artifact_not_in_review";
     assert.throws(() => finalizeReadonlySnapshot(acceptedArtifactOutsideReview), /accepted clip is absent from the SHOT review versions/i);
 
+    const divergentSummary = structuredClone(unsigned);
+    const summaryProject = divergentSummary.projects[0]!;
+    summaryProject.list_item_full.summary.shot_count = 99;
+    summaryProject.list_item_compact.summary.shot_count = 99;
+    for (const context of summaryProject.contexts) {
+      context.full.summary.shot_count = 99;
+      context.compact.summary.shot_count = 99;
+    }
+    assert.throws(() => finalizeReadonlySnapshot(divergentSummary), /project summary canonical state mismatch/i);
+
     const duplicateCompactShot = structuredClone(unsigned);
     const projected = duplicateCompactShot.projects[0]!;
     const secondShotId = "shot_cloud_projection_002";
@@ -441,31 +479,7 @@ test("readonly snapshot requires compact and full SHOT ordering parity", () => {
   const root = mkdtempSync(join(tmpdir(), "readonly-projection-shot-order-"));
   const sqlitePath = join(root, "app.sqlite");
   const fixture = createFixture(sqlitePath);
-  const db = openM0Database(sqlitePath);
-  try {
-    const project = getProject(db, fixture.project_id);
-    assert.ok(project);
-    const secondShot: Shot = {
-      shot_id: "shot_cloud_projection_002",
-      project_id: fixture.project_id,
-      order: 2,
-      status: "storyboard_approved",
-      duration_seconds: 4,
-      description: "Second readonly projection shot",
-      storyboard_image_artifact_id: "",
-      video_prompt: "A second safe fixture prompt",
-      negative_prompt: "",
-      generation_run_ids: [],
-      accepted_clip_artifact_id: "",
-      clip_versions: [],
-      review: { approval_status: "pending", rejection_reasons: [], latest_revision_instruction: null }
-    };
-    saveShot(db, secondShot);
-    project.shot_ids.push(secondShot.shot_id);
-    saveProject(db, project);
-  } finally {
-    db.close();
-  }
+  addSecondFixtureShot(sqlitePath, fixture.project_id);
   try {
     const snapshot = exportReadonlySnapshotFromDatabase({
       database_path: sqlitePath,
@@ -476,6 +490,32 @@ test("readonly snapshot requires compact and full SHOT ordering parity", () => {
     assert.equal(unsigned.projects[0]!.shots_full.length, 2);
     unsigned.projects[0]!.shots_compact.reverse();
     assert.throws(() => finalizeReadonlySnapshot(unsigned), /compact and full SHOT ordering differs/i);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("readonly snapshot requires canonical readiness ordering", () => {
+  const root = mkdtempSync(join(tmpdir(), "readonly-projection-readiness-order-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const fixture = createFixture(sqlitePath);
+  addSecondFixtureShot(sqlitePath, fixture.project_id);
+  try {
+    const snapshot = exportReadonlySnapshotFromDatabase({
+      database_path: sqlitePath,
+      issuer_hash: fixture.actor.issuer_hash!,
+      resource_url: RESOURCE
+    });
+    const { snapshot_fingerprint: _fingerprint, ...unsigned } = snapshot;
+    const project = unsigned.projects[0]!;
+    assert.equal(project.delivery.readiness_checks.length, 2);
+    project.delivery.readiness_checks.reverse();
+    project.closeout.readiness_checks.reverse();
+    const deliveryContext = project.contexts.find((context) => context.workspace === "delivery");
+    assert.ok(deliveryContext && "readiness_checks" in deliveryContext.full && "readiness_checks" in deliveryContext.compact);
+    deliveryContext.full.readiness_checks.reverse();
+    deliveryContext.compact.readiness_checks.reverse();
+    assert.throws(() => finalizeReadonlySnapshot(unsigned), /delivery readiness SHOT ordering differs/i);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
