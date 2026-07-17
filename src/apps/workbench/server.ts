@@ -10,6 +10,11 @@ import { generationWorkerStatus, resumeWorkbenchGenerationJobs } from "../../pac
 import { openM0Database } from "../../packages/storage/index.js";
 import { checkProviderEnv } from "../../tools/providerEnv.js";
 import { resolveFfmpegExecutable, resolveFfprobeExecutable } from "../../webgpt-v4/media.js";
+import {
+  createPersonalReadonlyOperationsService,
+  DEFAULT_READONLY_PUBLISHER_PROFILE_PATH,
+  type PersonalReadonlyOperationsService
+} from "../../webgpt-cloud/personalReadonlyOperations.js";
 
 export const WORKBENCH_HOST = "127.0.0.1";
 export const WORKBENCH_PORT = 4181;
@@ -42,6 +47,8 @@ export interface WorkbenchRuntime {
 export interface WorkbenchStartOptions {
   shutdown_token?: string;
   on_shutdown_requested?: () => void;
+  readonly_operations?: PersonalReadonlyOperationsService;
+  readonly_publisher_profile_path?: string;
 }
 
 function sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
@@ -210,6 +217,7 @@ async function route(
   request: IncomingMessage,
   response: ServerResponse,
   actionNonce: string,
+  readonlyOperations: PersonalReadonlyOperationsService,
   shutdown?: { token: string; request: () => void }
 ): Promise<void> {
   if (!isLocalRequest(request)) {
@@ -235,7 +243,7 @@ async function route(
     setImmediate(shutdown.request);
     return;
   }
-  if (await handleWorkbenchV2Api(request, response, url, actionNonce)) return;
+  if (await handleWorkbenchV2Api(request, response, url, actionNonce, { readonly_operations: readonlyOperations })) return;
   if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/") {
     response.writeHead(302, { location: "/v2/dashboard", "cache-control": "no-store" });
     response.end();
@@ -297,8 +305,13 @@ export async function startWorkbenchApplication(
   const shutdown = options.shutdown_token?.trim() && options.on_shutdown_requested
     ? { token: options.shutdown_token.trim(), request: options.on_shutdown_requested }
     : undefined;
+  const readonlyOperations = options.readonly_operations ?? createPersonalReadonlyOperationsService(
+    options.readonly_publisher_profile_path?.trim()
+      || process.env.WEBGPT_READONLY_PUBLISHER_PROFILE_PATH?.trim()
+      || DEFAULT_READONLY_PUBLISHER_PROFILE_PATH
+  );
   const server = createServer((request, response) => {
-    void route(request, response, actionNonce, shutdown).catch(() => {
+    void route(request, response, actionNonce, readonlyOperations, shutdown).catch(() => {
       if (!response.headersSent) sendJson(response, 500, { ok: false, error: { code: "SERVER_ERROR", message: "Workbench server error." } });
       else if (!response.writableEnded) response.end();
     });

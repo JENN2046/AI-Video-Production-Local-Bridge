@@ -407,6 +407,20 @@
       "case_name": "publisher signs a strict projection, sends only the envelope, and writes a sanitized receipt"
     },
     {
+      "id": "personal-readonly-operations-safety",
+      "path": "tests/webgpt-cloud-delivery.test.ts",
+      "npm_script": "test:webgpt:cloud",
+      "ci_step": "WebGPT cloud projection tests",
+      "case_name": "personal readonly operations keep status read-only and run one explicit preflight-publish lane"
+    },
+    {
+      "id": "personal-readonly-operations-api",
+      "path": "tests/workbench-v2-api.test.ts",
+      "npm_script": "test:v2",
+      "ci_step": "Workbench V2 domain tests",
+      "case_name": "personal readonly operations API requires nonce and explicit publish confirmation"
+    },
+    {
       "id": "readonly-render-blueprint",
       "path": "tests/webgpt-cloud-delivery.test.ts",
       "npm_script": "test:webgpt:cloud",

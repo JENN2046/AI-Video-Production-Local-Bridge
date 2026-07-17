@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, Database, FileJson, ShieldCheck, TestTube2 } from "lucide-react";
+import { Archive, Cloud, Database, FileJson, RefreshCw, ShieldCheck, TestTube2, UploadCloud } from "lucide-react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { apiGet, apiMutation, apiPage } from "../api";
 import { EmptyState, ErrorState, KeyValue, LoadingState, Modal, PageHeader, preserveVisibleVirtualScrolls, SegmentedTabs, StatusPill, VirtualList } from "../components";
+import type { PersonalReadonlyOperationResult, PersonalReadonlyOperationsStatus } from "../types";
 import s from "../workbench.module.css";
 
-const tabs = [{ id: "runninghub", label: "RunningHub 门禁" }, { id: "canary", label: "Canary" }, { id: "reports", label: "证据报告" }, { id: "governance", label: "数据治理" }];
+const tabs = [{ id: "runninghub", label: "RunningHub 门禁" }, { id: "readonly", label: "只读 App 发布" }, { id: "canary", label: "Canary" }, { id: "reports", label: "证据报告" }, { id: "governance", label: "数据治理" }];
 
 interface GovernancePreview {
   rule_version: string;
@@ -24,7 +25,91 @@ export function SystemPage() {
   return <div className={s.page}>
     <PageHeader eyebrow="本地运行边界" title="系统" description="查看 Provider 门禁、Canary 和结构化证据；原始 JSON 默认折叠。" />
     <div className={s.subnav}><SegmentedTabs items={tabs} active={tab} onChange={(value) => navigate(`/v2/system/${value}`)} /></div>
-    {tab === "reports" ? <ReportsView /> : tab === "governance" ? <GovernanceView /> : <CanaryView mode={tab} />}
+    {tab === "reports" ? <ReportsView /> : tab === "governance" ? <GovernanceView /> : tab === "readonly" ? <ReadonlyOperationsView /> : <CanaryView mode={tab} />}
+  </div>;
+}
+
+function statusTone(value: boolean | null): "success" | "warning" | "danger" | "neutral" {
+  return value === true ? "success" : value === false ? "danger" : "neutral";
+}
+
+function statusText(value: boolean | null): string {
+  return value === true ? "通过" : value === false ? "未通过" : "未知";
+}
+
+function shortFingerprint(value: string | null | undefined): string {
+  return value ? `${value.slice(0, 12)}…${value.slice(-6)}` : "—";
+}
+
+function ReadonlyOperationsView() {
+  const queryClient = useQueryClient();
+  const [confirming, setConfirming] = useState(false);
+  const query = useQuery({
+    queryKey: ["system", "readonly-operations"],
+    queryFn: () => apiGet<PersonalReadonlyOperationsStatus>("/api/v2/system/readonly-operations"),
+    refetchInterval: 60_000
+  });
+  const preflight = useMutation({
+    mutationFn: () => apiMutation<PersonalReadonlyOperationResult>("/api/v2/system/readonly-operations/preflight", "POST", {}),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["system", "readonly-operations"] })
+  });
+  const publish = useMutation({
+    mutationFn: () => apiMutation<PersonalReadonlyOperationResult>("/api/v2/system/readonly-operations/publish", "POST", { human_confirmation: true }),
+    onSuccess: () => {
+      setConfirming(false);
+      queryClient.invalidateQueries({ queryKey: ["system", "readonly-operations"] });
+    }
+  });
+  if (query.isLoading) return <LoadingState label="正在读取只读 App 发布状态" />;
+  if (query.isError || !query.data) return <ErrorState error={query.error} />;
+  const data = query.data;
+  const snapshot = data.remote.snapshot;
+  const last = data.last_publish;
+  const busy = preflight.isPending || publish.isPending;
+  const snapshotLabel = snapshot.freshness_status === "fresh" ? "新鲜"
+    : snapshot.freshness_status === "snapshot_expired" ? "已过期"
+      : snapshot.freshness_status === "no_snapshot" ? "未发布" : "未知";
+  return <div className={s.systemGrid}>
+    <section className={s.systemBand}>
+      <div className={s.systemIcon}><Cloud size={22} /></div>
+      <div><span className={s.eyebrow}>{data.operations_version}</span><h2>只读 MCP App 发布</h2><p>一键执行只读预检、签名和远端 Snapshot 替换；不会写业务数据库、调用 Provider 或启用媒体。</p></div>
+      <div className={s.headerActions}>
+        <button className={s.secondaryButton} disabled={query.isFetching || busy} onClick={() => void query.refetch()}><RefreshCw size={15} />刷新状态</button>
+        <button className={s.secondaryButton} disabled={!data.ready_to_preflight || busy} onClick={() => preflight.mutate()}><ShieldCheck size={15} />运行预检</button>
+        <button className={s.primaryButton} disabled={!data.ready_to_publish || busy} onClick={() => setConfirming(true)}><UploadCloud size={15} />预检并发布</button>
+      </div>
+    </section>
+    <section className={s.systemPanel}><h3>本地发布条件</h3><KeyValue rows={[
+      ["配置", data.configuration === "ready" ? "已就绪" : data.configuration === "missing" ? "未配置" : "配置无效"],
+      ["活动数据库", statusText(data.database_available)],
+      ["DPAPI 发布密钥", statusText(data.publisher_key_available)],
+      ["稳定错误码", data.stable_error_code ?? "—"]
+    ]} /></section>
+    <section className={s.systemPanel}><h3>远端服务</h3><KeyValue rows={[
+      ["连接", <StatusPill tone={statusTone(data.remote.reachable)}>{data.remote.reachable ? "可达" : "不可达"}</StatusPill>],
+      ["Readiness", <StatusPill tone={statusTone(data.remote.ready)}>{data.remote.ready ? "Ready" : "Not ready"}</StatusPill>],
+      ["HTTP", `${data.remote.health_http_status ?? "—"} / ${data.remote.readiness_http_status ?? "—"}`],
+      ["服务版本", data.remote.service_version ?? "—"]
+    ]} /></section>
+    <section className={s.systemPanel}><h3>Snapshot</h3><KeyValue rows={[
+      ["状态", <StatusPill tone={snapshot.freshness_status === "fresh" ? "success" : snapshot.freshness_status === "unknown" ? "neutral" : "warning"}>{snapshotLabel}</StatusPill>],
+      ["Fingerprint", <code>{shortFingerprint(snapshot.snapshot_fingerprint)}</code>],
+      ["生成时间", formatTime(snapshot.generated_at ?? "") || "—"],
+      ["剩余 TTL", snapshot.ttl_remaining_seconds === null ? "—" : `${Math.max(0, Math.floor(snapshot.ttl_remaining_seconds / 60))} 分钟`]
+    ]} /></section>
+    <section className={s.systemPanel}><h3>远端门禁</h3><div className={s.checkList}>{Object.entries(data.remote.checks).map(([key, value]) => <div key={key}><span className={value ? s.checkGood : s.checkDanger} />{key}<strong>{statusText(value)}</strong></div>)}</div></section>
+    <section className={s.systemPanel}><h3>最近发布回执</h3><KeyValue rows={[
+      ["回执状态", data.last_receipt_state === "valid" ? "已验证" : data.last_receipt_state === "invalid" ? "无效" : "暂无"],
+      ["结果", last?.result ?? "—"],
+      ["时间", formatTime(last?.timestamp ?? "") || "—"],
+      ["Fingerprint", <code>{shortFingerprint(last?.snapshot_fingerprint)}</code>]
+    ]} /></section>
+    {preflight.isSuccess && <div className={s.successReceipt}>预检通过：{shortFingerprint(preflight.data.snapshot_fingerprint)}，尚未替换远端 Snapshot。</div>}
+    {publish.isSuccess && <div className={s.successReceipt}>发布完成：HTTP {publish.data.http_status} · {shortFingerprint(publish.data.snapshot_fingerprint)}</div>}
+    {(preflight.isError || publish.isError) && <div className={s.inlineError}>{preflight.error?.message ?? publish.error?.message}</div>}
+    {confirming && <Modal title="确认发布只读 Snapshot" onClose={() => setConfirming(false)} footer={<><button className={s.secondaryButton} onClick={() => setConfirming(false)}>取消</button><button className={s.primaryButton} disabled={publish.isPending} onClick={() => publish.mutate()}><UploadCloud size={15} />确认预检并发布</button></>}>
+      <div className={s.advisoryBox}><span>本次操作</span><strong>只读导出 → DPAPI 签名 → HTTPS Snapshot 替换</strong><small>不会修改业务数据库、授权关系、媒体、Provider 或系统自动启动配置。</small></div>
+    </Modal>}
   </div>;
 }
 

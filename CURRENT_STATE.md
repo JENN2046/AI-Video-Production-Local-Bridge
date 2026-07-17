@@ -76,6 +76,7 @@ Remote CI evidence: PR #9–#13、Remediation PR #15–#21、SR6 PR #22、Hotfix
 
 - GPT hardening PRs retain the Windows Node 22 + FFmpeg 8.1.2 CI and browser-smoke gates.
 - Single-user Auth0/ChatGPT MCP App access is accepted; a second real user and multi-user revoke path remain `PARTIAL_MULTI_USER_GATE`.
-- Manual Snapshot publish is accepted; automatic synchronization, low-maintenance Human Workbench publishing and Windows auto-start remain separate gates.
+- Manual Snapshot publish is accepted; automatic synchronization and Windows auto-start remain separate gates.
+- The Personal Readonly Operations surface provides Human Workbench status, explicit readonly preflight and a confirmed one-click publish path while keeping automatic synchronization and Windows auto-start disabled.
 - Keep Full profile externalization, public media, real Provider canary, WebGPT V5, Workbench V3 and new Providers outside this release.
 - Do not make a paid Provider call as part of this closeout.
