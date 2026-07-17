@@ -201,6 +201,34 @@ test("readonly workbench escapes malicious business text and ignores stale cross
   }
 });
 
+test("readonly workbench refresh recovers an existing empty shell through the data tool", async () => {
+  let calls = 0;
+  const dom = new JSDOM(readonlyWorkbenchWidgetHtml(), {
+    runScripts: "dangerously",
+    pretendToBeVisual: true,
+    beforeParse(window) {
+      Object.defineProperty(window, "openai", { value: {
+        toolOutput: shell("no_snapshot"),
+        callTool: async (name: string) => {
+          calls += 1;
+          assert.equal(name, "list_production_projects");
+          return toolResult({ items: [], page: { next_offset: null } });
+        }
+      }, configurable: true });
+    }
+  });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(dom.window.document.querySelector<HTMLElement>("#workspace")?.hidden, true);
+    dom.window.document.querySelector<HTMLButtonElement>("#refresh")!.click();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(calls, 1);
+    assert.equal(dom.window.document.body.textContent?.includes("No authorized projects"), true);
+  } finally {
+    dom.window.close();
+  }
+});
+
 test("render shell never reveals an unauthorized initial project", () => {
   const result = readonlyWorkbenchShell(ACTOR, null, { initial_project_id: "project_secret", initial_panel: "delivery" }, new Date("2026-07-17T00:00:00.000Z"));
   assert.equal(result.app_state, "no_snapshot");

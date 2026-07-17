@@ -285,6 +285,13 @@
       "npm_script": "test:webgpt:app",
       "ci_step": "WebGPT MCP App tests",
       "case_name": "readonly workbench escapes malicious business text and ignores stale cross-project responses"
+    },
+    {
+      "id": "readonly-app-empty-refresh-recovery",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench refresh recovers an existing empty shell through the data tool"
     }
   ],
   "remediation_suites": [
