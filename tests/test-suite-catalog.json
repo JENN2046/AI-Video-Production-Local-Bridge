@@ -109,7 +109,10 @@
       "classification": "mandatory",
       "npm_script": "test:webgpt:cloud",
       "ci_step": "WebGPT cloud projection tests",
-      "paths": ["tests/webgpt-cloud-projection.test.ts"]
+      "paths": [
+        "tests/webgpt-cloud-projection.test.ts",
+        "tests/webgpt-cloud-remote-runtime.test.ts"
+      ]
     },
     {
       "id": "webgpt-app",
@@ -212,6 +215,41 @@
       "npm_script": "test:webgpt:cloud",
       "ci_step": "WebGPT cloud projection tests",
       "case_name": "snapshot fingerprint uses deterministic JCS input and server time remains authoritative"
+    },
+    {
+      "id": "readonly-signed-snapshot-transport",
+      "path": "tests/webgpt-cloud-remote-runtime.test.ts",
+      "npm_script": "test:webgpt:cloud",
+      "ci_step": "WebGPT cloud projection tests",
+      "case_name": "signed snapshot transport rejects tampering and atomically replaces only newer snapshots"
+    },
+    {
+      "id": "readonly-remote-no-database",
+      "path": "tests/webgpt-cloud-remote-runtime.test.ts",
+      "npm_script": "test:webgpt:cloud",
+      "ci_step": "WebGPT cloud projection tests",
+      "case_name": "remote runtime module graph excludes SQLite and local database adapter entrypoints"
+    },
+    {
+      "id": "readonly-remote-oauth-tools",
+      "path": "tests/webgpt-cloud-remote-runtime.test.ts",
+      "npm_script": "test:webgpt:cloud",
+      "ci_step": "WebGPT cloud projection tests",
+      "case_name": "remote OAuth challenges, signed publish, six readonly tools, and readiness stay fail closed"
+    },
+    {
+      "id": "readonly-remote-publish-limits",
+      "path": "tests/webgpt-cloud-remote-runtime.test.ts",
+      "npm_script": "test:webgpt:cloud",
+      "ci_step": "WebGPT cloud projection tests",
+      "case_name": "remote runtime rejects oversized and rate-limited publish attempts without replacing the snapshot"
+    },
+    {
+      "id": "readonly-remote-expiry",
+      "path": "tests/webgpt-cloud-remote-runtime.test.ts",
+      "npm_script": "test:webgpt:cloud",
+      "ci_step": "WebGPT cloud projection tests",
+      "case_name": "remote snapshot expiry makes readiness and data tools fail closed while health stays live"
     },
     {
       "id": "readonly-app-resource-contract",
