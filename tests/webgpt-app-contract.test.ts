@@ -262,6 +262,73 @@ test("readonly workbench maps an unregistered principal refresh to no authorized
   }
 });
 
+test("readonly workbench clears business panels as soon as the client TTL reaches zero", async () => {
+  const baseShell = shell();
+  const expiringShell = {
+    ...baseShell,
+    status: { ...baseShell.status, ttl_remaining_seconds: 0.1 }
+  };
+  const dom = new JSDOM(readonlyWorkbenchWidgetHtml(), {
+    runScripts: "dangerously",
+    pretendToBeVisual: true,
+    beforeParse(window) {
+      const nativeSetInterval = window.setInterval.bind(window);
+      window.setInterval = ((handler: TimerHandler, timeout?: number, ...args: unknown[]) =>
+        nativeSetInterval(handler, timeout === 1000 ? 10 : timeout, ...args)) as typeof window.setInterval;
+      Object.defineProperty(window, "openai", { value: {
+        toolOutput: expiringShell,
+        callTool: async (name: string, args: Record<string, unknown>) => {
+          if (name === "list_production_projects") {
+            const result = toolResult({
+              items: [{ project: { project_id: "project_ttl", title: "Expiring project", status: "active" }, lifecycle: "active", updated_at: "2026-07-17" }],
+              page: { next_offset: null }
+            });
+            record(result._meta).snapshot_status = expiringShell.status;
+            return result;
+          }
+          if (name === "get_project_context") return toolResult({ project: { project_id: args.project_id, title: "Expiring project", status: "active" }, workspace: "overview", summary: {} });
+          if (name === "list_project_shots") return toolResult({ items: [], page: { next_offset: null } });
+          return toolResult({ project_status: "active", readiness_checks: [] });
+        }
+      }, configurable: true });
+    }
+  });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.equal(dom.window.document.querySelector<HTMLElement>("#workspace")?.hidden, false);
+    assert.equal(dom.window.document.querySelector<HTMLElement>("#context")?.textContent?.includes("Expiring project"), true);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(dom.window.document.querySelector<HTMLElement>("#workspace")?.hidden, true);
+    assert.equal(dom.window.document.querySelector<HTMLElement>("#global-state")?.textContent?.includes("Snapshot expired"), true);
+    assert.equal(dom.window.document.querySelector<HTMLElement>("#context")?.textContent, "");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("readonly workbench does not mount business panels when the initial TTL is zero", async () => {
+  const baseShell = shell();
+  let calls = 0;
+  const dom = new JSDOM(readonlyWorkbenchWidgetHtml(), {
+    runScripts: "dangerously",
+    pretendToBeVisual: true,
+    beforeParse(window) {
+      Object.defineProperty(window, "openai", { value: {
+        toolOutput: { ...baseShell, status: { ...baseShell.status, ttl_remaining_seconds: 0 } },
+        callTool: async () => { calls += 1; return toolResult({ items: [], page: { next_offset: null } }); }
+      }, configurable: true });
+    }
+  });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(calls, 0);
+    assert.equal(dom.window.document.querySelector<HTMLElement>("#workspace")?.hidden, true);
+    assert.equal(dom.window.document.querySelector<HTMLElement>("#global-state")?.textContent?.includes("Snapshot expired"), true);
+  } finally {
+    dom.window.close();
+  }
+});
+
 test("readonly workbench preserves a selected project outside the first page", async () => {
   const projectCalls: string[] = [];
   const baseShell = shell();

@@ -64,7 +64,9 @@ export const REQUIRED_READONLY_APP_SUITES: ReadonlyArray<ReadonlyAppSuite> = [
   { id: "readonly-app-refresh-selection-recovery", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly workbench preserves the selected project when refresh fails" },
   { id: "readonly-app-snapshot-page-reset", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly workbench reloads project pages from offset zero after snapshot changes" },
   { id: "readonly-app-selected-shot-refresh", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly workbench preserves the selected paged SHOT across refresh" },
-  { id: "readonly-app-unregistered-principal-empty", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly workbench maps an unregistered principal refresh to no authorized projects" }
+  { id: "readonly-app-unregistered-principal-empty", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly workbench maps an unregistered principal refresh to no authorized projects" },
+  { id: "readonly-app-client-ttl-expiry", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly workbench clears business panels as soon as the client TTL reaches zero" },
+  { id: "readonly-app-initial-zero-ttl", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly workbench does not mount business panels when the initial TTL is zero" }
 ];
 
 export const REQUIRED_OAUTH_PORTABILITY_SUITES: ReadonlyArray<OAuthPortabilitySuite> = [
