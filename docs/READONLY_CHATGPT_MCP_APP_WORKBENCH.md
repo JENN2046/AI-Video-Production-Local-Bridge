@@ -60,3 +60,11 @@ PARTIAL_MULTI_USER_GATE
 ```
 
 This route does not claim `PERSONAL_READONLY_PRODUCTION_READY`, automatic synchronization, public App Directory readiness or multi-user completion.
+
+## PR2 remote runtime contract
+
+The remote runtime is database-free. It starts with no Snapshot, keeps at most one verified Snapshot in memory, and returns `503` from `/readyz` until OAuth, the Ed25519 publisher verification key, and a fresh Snapshot are all present. Restarting the process returns it to `no_snapshot`.
+
+The publish surface is `PUT /snapshot`. A publisher sends a strict `readonly-snapshot-envelope-v1` containing the finalized Snapshot, key id, Ed25519 signature and no credentials. The signature covers a domain-separated JCS representation of the complete finalized Snapshot. A replacement is accepted only after schema, fingerprint, TTL, key id and signature verification; an older Snapshot cannot replace a newer one, while an identical signed Snapshot is idempotent.
+
+The remote `/mcp` surface exposes only the six `projects.read` data tools in this stage. OAuth failures return the HTTP challenge and `mcp/www_authenticate` metadata without business data. `/healthz` means process liveness only. Runtime stdout events are restricted to low-disclosure operational fields and never include identity, project identifiers, tool arguments/results or Snapshot content.
