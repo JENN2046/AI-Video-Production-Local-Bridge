@@ -508,6 +508,50 @@ test("readonly workbench reloads project pages from offset zero after snapshot c
   }
 });
 
+test("readonly workbench preserves the selected paged SHOT across refresh", async () => {
+  const reviewShots: string[] = [];
+  const dom = new JSDOM(readonlyWorkbenchWidgetHtml(), {
+    runScripts: "dangerously",
+    pretendToBeVisual: true,
+    beforeParse(window) {
+      Object.defineProperty(window, "openai", { value: {
+        toolOutput: shell(),
+        callTool: async (name: string, args: Record<string, unknown>) => {
+          if (name === "list_production_projects") return toolResult({ items: [{ project: { project_id: "project_a", title: "Project A", status: "active" } }], page: { next_offset: null } });
+          if (name === "get_project_context") return toolResult({ project: { project_id: "project_a", title: "Project A", status: "active" }, workspace: "overview", summary: {} });
+          if (name === "list_project_shots") {
+            const offset = Number(args.offset ?? 0);
+            return toolResult({
+              items: [{ shot_id: offset === 0 ? "shot_1" : "shot_101", order: offset === 0 ? 1 : 101, status: "ready", description: offset === 0 ? "First SHOT" : "Paged SHOT" }],
+              page: { next_offset: offset === 0 ? 100 : null }
+            });
+          }
+          if (name === "get_review_package") {
+            const shotId = String(args.shot_id ?? "");
+            reviewShots.push(shotId);
+            return toolResult({ shot: { shot_id: shotId, description: shotId === "shot_101" ? "Paged review" : "First review" }, versions: [], notes: [] });
+          }
+          return toolResult({ project_status: "active", readiness_checks: [] });
+        }
+      }, configurable: true });
+    }
+  });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    dom.window.document.querySelector<HTMLButtonElement>("#more-shots")!.click();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    dom.window.document.querySelector<HTMLButtonElement>('button[data-shot-id="shot_101"]')!.click();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    dom.window.document.querySelector<HTMLButtonElement>("#refresh")!.click();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(reviewShots.at(-1), "shot_101");
+    assert.equal(dom.window.document.querySelector("#review")?.textContent?.includes("Paged review"), true);
+    assert.equal(dom.window.document.querySelector("#review")?.textContent?.includes("First review"), false);
+  } finally {
+    dom.window.close();
+  }
+});
+
 test("render shell never reveals an unauthorized initial project", () => {
   const result = readonlyWorkbenchShell(ACTOR, null, { initial_project_id: "project_secret", initial_panel: "delivery" }, new Date("2026-07-17T00:00:00.000Z"));
   assert.equal(result.app_state, "no_snapshot");
