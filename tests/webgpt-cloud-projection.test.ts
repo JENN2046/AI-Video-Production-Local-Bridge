@@ -246,7 +246,7 @@ test("snapshot fingerprint uses deterministic JCS input and server time remains 
     schema_version: "readonly-snapshot-v1",
     source_schema: "workbench-v2-5",
     source_migration: "0008",
-    source_version: "webgpt-v4.2.0",
+    source_version: "webgpt-v4.3.0",
     generated_at: generatedAt,
     expires_at: "2026-07-16T01:00:00.000Z",
     resource_url: RESOURCE,

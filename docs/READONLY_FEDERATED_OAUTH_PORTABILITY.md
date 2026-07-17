@@ -1,12 +1,12 @@
 # Readonly Federated OAuth Portability v1
 
-Status: `PARTIAL_EXTERNAL_GATE`
+Status: `JENN_SINGLE_USER_MCP_APP_PASS` / `PARTIAL_MULTI_USER_GATE`
 
 Repository implementation baseline: `main@c0239eb`
 
-Accepted local runtime remains: package `0.1.0-beta.4`, MCP service `webgpt-v4.2.0`, activity-database ledger `0007`
+Accepted local runtime: package `0.1.0-beta.5`, MCP service `webgpt-v4.3.0`, activity-database ledger `0008`
 
-Candidate database contract: Workbench schema `workbench-v2-5`, migration ledger `0008`
+Accepted database contract: Workbench schema `workbench-v2-5`, migration ledger `0008`
 
 ## Purpose
 

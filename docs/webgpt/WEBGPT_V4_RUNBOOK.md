@@ -1,6 +1,6 @@
 # WebGPT V4 本地运行与外部接线手册
 
-状态：接受的本地运行基线仍为 `webgpt-v4.2.0`；仓库候选运行时已建立 provider-neutral Federated OAuth、issuer binding 与安全 discovery/JWKS transport。外部 IdP/ChatGPT connector、Secure MCP Tunnel、媒体域名和 Windows 自动启动尚未通过新路线验收。
+状态：接受的运行基线为 `webgpt-v4.3.0`；provider-neutral Federated OAuth、issuer binding、Auth0 predefined public-client 与 Readonly ChatGPT MCP App 已完成 Jenn 单用户真实活动库验收。状态为 `MANUAL_PUBLISH_OPERATIONAL_READY`；第二真实用户、媒体域名、自动同步和 Windows 自动启动仍未验收。
 
 ## 固定边界
 
