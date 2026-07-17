@@ -10,6 +10,7 @@ data/app.sqlite-shm
 data/app.sqlite-wal
 data/imports/**
 data/media/**
+data/webgpt/publisher/
 
 # Secrets and private account state.
 .env

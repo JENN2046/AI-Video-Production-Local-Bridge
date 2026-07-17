@@ -111,7 +111,8 @@
       "ci_step": "WebGPT cloud projection tests",
       "paths": [
         "tests/webgpt-cloud-projection.test.ts",
-        "tests/webgpt-cloud-remote-runtime.test.ts"
+        "tests/webgpt-cloud-remote-runtime.test.ts",
+        "tests/webgpt-cloud-delivery.test.ts"
       ]
     },
     {
@@ -120,6 +121,13 @@
       "npm_script": "test:webgpt:app",
       "ci_step": "WebGPT MCP App tests",
       "paths": ["tests/webgpt-app-contract.test.ts"]
+    },
+    {
+      "id": "webgpt-apps-smoke",
+      "classification": "mandatory",
+      "npm_script": "smoke:webgpt:app",
+      "ci_step": "WebGPT Apps smoke",
+      "paths": ["tests/webgpt-apps-smoke.test.ts"]
     },
     {
       "id": "memory",
@@ -376,6 +384,48 @@
       "npm_script": "test:webgpt:app",
       "ci_step": "WebGPT MCP App tests",
       "case_name": "readonly workbench ignores project responses that arrive after a non-ready host shell"
+    },
+    {
+      "id": "readonly-publisher-dpapi",
+      "path": "tests/webgpt-cloud-delivery.test.ts",
+      "npm_script": "test:webgpt:cloud",
+      "ci_step": "WebGPT cloud projection tests",
+      "case_name": "Windows DPAPI CurrentUser roundtrip keeps plaintext out of files and output"
+    },
+    {
+      "id": "readonly-publisher-ignored-paths",
+      "path": "tests/webgpt-cloud-delivery.test.ts",
+      "npm_script": "test:webgpt:cloud",
+      "ci_step": "WebGPT cloud projection tests",
+      "case_name": "publisher refuses runtime profile, key, or receipt paths that are not Git ignored"
+    },
+    {
+      "id": "readonly-publisher-signed-delivery",
+      "path": "tests/webgpt-cloud-delivery.test.ts",
+      "npm_script": "test:webgpt:cloud",
+      "ci_step": "WebGPT cloud projection tests",
+      "case_name": "publisher signs a strict projection, sends only the envelope, and writes a sanitized receipt"
+    },
+    {
+      "id": "readonly-render-blueprint",
+      "path": "tests/webgpt-cloud-delivery.test.ts",
+      "npm_script": "test:webgpt:cloud",
+      "ci_step": "WebGPT cloud projection tests",
+      "case_name": "Render blueprint freezes one always-on instance without disk or auto deploy"
+    },
+    {
+      "id": "readonly-render-no-database",
+      "path": "tests/webgpt-cloud-delivery.test.ts",
+      "npm_script": "test:webgpt:cloud",
+      "ci_step": "WebGPT cloud projection tests",
+      "case_name": "Render entrypoint keeps publisher, exporter, and SQLite modules out of the remote graph"
+    },
+    {
+      "id": "readonly-apps-smoke",
+      "path": "tests/webgpt-apps-smoke.test.ts",
+      "npm_script": "smoke:webgpt:app",
+      "ci_step": "WebGPT Apps smoke",
+      "case_name": "Apps smoke discovers seven readonly tools, reads the UI resource, and renders an empty authenticated shell"
     }
   ],
   "remediation_suites": [
