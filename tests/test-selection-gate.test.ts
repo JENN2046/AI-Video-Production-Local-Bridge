@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { auditTestSelection, type OAuthPortabilitySuite, type RemediationSuite, type TestSelectionAuditInput, type TestSuiteCatalog } from "../scripts/testSelectionGate.js";
+import { auditTestSelection, type OAuthPortabilitySuite, type ReadonlyAppSuite, type RemediationSuite, type TestSelectionAuditInput, type TestSuiteCatalog } from "../scripts/testSelectionGate.js";
 
 const baseRequiredRemediation: RemediationSuite[] = [
   { id: "sr1-provider", stage: "SR1", kind: "fault_injection", path: "tests/provider.test.ts", npm_script: "test:provider", ci_step: "Provider tests", case_name: "provider remediation case" },
@@ -17,7 +17,8 @@ const baseCatalog: TestSuiteCatalog = {
     { id: "provider", classification: "mandatory", paths: ["tests/provider.test.ts"], npm_script: "test:provider", ci_step: "Provider tests" }
   ],
   remediation_suites: structuredClone(baseRequiredRemediation),
-  oauth_portability_suites: []
+  oauth_portability_suites: [],
+  readonly_app_suites: []
 };
 
 function fixture(overrides: Partial<TestSelectionAuditInput> = {}): TestSelectionAuditInput {
@@ -41,6 +42,7 @@ function fixture(overrides: Partial<TestSelectionAuditInput> = {}): TestSelectio
     ].join("\n"),
     required_remediation_suites: structuredClone(baseRequiredRemediation),
     required_oauth_portability_suites: [],
+    required_readonly_app_suites: [],
     ...overrides
   };
 }
@@ -93,6 +95,35 @@ test("selection catalog does not accept an echoed npm command as local execution
 test("selection catalog rejects a suite missing from the Windows CI gate", () => {
   const input = fixture({ workflow_text: "- name: Test selection gate\n  run: npm run test:selection-gate" });
   assert.ok(auditTestSelection(input).includes("CI_GATE_MISSING: test:provider"));
+});
+
+test("selection catalog requires declared readonly App security cases in their exact local and CI lane", () => {
+  const suite: ReadonlyAppSuite = {
+    id: "readonly-app-case",
+    path: "tests/provider.test.ts",
+    npm_script: "test:provider",
+    ci_step: "Provider tests",
+    case_name: "provider remediation case"
+  };
+  const valid = fixture({
+    catalog: { ...structuredClone(baseCatalog), readonly_app_suites: [structuredClone(suite)] },
+    required_readonly_app_suites: [suite]
+  });
+  assert.deepEqual(auditTestSelection(valid), []);
+  valid.catalog.readonly_app_suites[0].case_name = "missing readonly app case";
+  const errors = auditTestSelection(valid);
+  assert.ok(errors.includes("READONLY_APP_SUITE_SIGNATURE_MISMATCH: readonly-app-case"));
+  assert.ok(errors.includes("READONLY_APP_CASE_MISSING: readonly-app-case -> missing readonly app case"));
+});
+
+test("selection catalog rejects missing and non-array readonly App suite catalogs with a stable diagnostic", () => {
+  const missing = fixture();
+  delete (missing.catalog as unknown as { readonly_app_suites?: ReadonlyAppSuite[] }).readonly_app_suites;
+  assert.deepEqual(auditTestSelection(missing), ["CATALOG_READONLY_APP_SUITES_INVALID"]);
+
+  const malformed = fixture();
+  (malformed.catalog as unknown as { readonly_app_suites: unknown }).readonly_app_suites = {};
+  assert.deepEqual(auditTestSelection(malformed), ["CATALOG_READONLY_APP_SUITES_INVALID"]);
 });
 
 test("selection catalog rejects unclassified, duplicate, and missing files", () => {

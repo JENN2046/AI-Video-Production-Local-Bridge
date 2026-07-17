@@ -39,6 +39,16 @@ export interface OAuthPortabilitySuite {
   case_name: string;
 }
 
+export interface ReadonlyAppSuite extends OAuthPortabilitySuite {}
+
+export const REQUIRED_READONLY_APP_SUITES: ReadonlyArray<ReadonlyAppSuite> = [
+  { id: "readonly-projection-ledger-gate", path: "tests/webgpt-cloud-projection.test.ts", npm_script: "test:webgpt:cloud", ci_step: "WebGPT cloud projection tests", case_name: "readonly projection requires migration 0008 and never upgrades an older database" },
+  { id: "readonly-projection-dto-parity", path: "tests/webgpt-cloud-projection.test.ts", npm_script: "test:webgpt:cloud", ci_step: "WebGPT cloud projection tests", case_name: "SQLite and Snapshot readonly adapters preserve six-tool DTO parity and database zero-write manifest" },
+  { id: "readonly-snapshot-fingerprint", path: "tests/webgpt-cloud-projection.test.ts", npm_script: "test:webgpt:cloud", ci_step: "WebGPT cloud projection tests", case_name: "snapshot fingerprint uses deterministic JCS input and server time remains authoritative" },
+  { id: "readonly-app-resource-contract", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly MCP App contract freezes one render tool, six data tools, and the v1 resource" },
+  { id: "readonly-app-shell-disclosure", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "render contract accepts only low-disclosure shell state and initial intent" }
+];
+
 export const REQUIRED_OAUTH_PORTABILITY_SUITES: ReadonlyArray<OAuthPortabilitySuite> = [
   { id: "oauth-selected-provider-capability", path: "tests/webgpt-v4-selected-provider.test.ts", npm_script: "test:webgpt:v4", ci_step: "WebGPT V4 integration tests", case_name: "selected provider capability rejects missing PKCE, public-client, audience, and scope guarantees" },
   { id: "oauth-selected-provider-jwt", path: "tests/webgpt-v4-selected-provider.test.ts", npm_script: "test:webgpt:v4", ci_step: "WebGPT V4 integration tests", case_name: "selected provider JWT verifies signature, issuer, audience, expiry, scope claims, and key rotation" },
@@ -65,6 +75,7 @@ export interface TestSuiteCatalog {
   required_commands?: RequiredCommand[];
   remediation_suites: RemediationSuite[];
   oauth_portability_suites: OAuthPortabilitySuite[];
+  readonly_app_suites: ReadonlyAppSuite[];
 }
 
 export interface TestSelectionAuditInput {
@@ -75,6 +86,7 @@ export interface TestSelectionAuditInput {
   workflow_text: string;
   required_remediation_suites?: ReadonlyArray<RemediationSuite>;
   required_oauth_portability_suites?: ReadonlyArray<OAuthPortabilitySuite>;
+  required_readonly_app_suites?: ReadonlyArray<ReadonlyAppSuite>;
 }
 
 function normalizePath(value: string): string {
@@ -176,6 +188,7 @@ export function auditTestSelection(input: TestSelectionAuditInput): string[] {
   if (!Array.isArray(input.catalog.groups)) return ["CATALOG_GROUPS_INVALID"];
   if (!Array.isArray(input.catalog.remediation_suites)) return ["CATALOG_REMEDIATION_SUITES_INVALID"];
   if (!Array.isArray(input.catalog.oauth_portability_suites)) return ["CATALOG_OAUTH_PORTABILITY_SUITES_INVALID"];
+  if (!Array.isArray(input.catalog.readonly_app_suites)) return ["CATALOG_READONLY_APP_SUITES_INVALID"];
 
   const sourceFiles = new Set(input.source_files.map(normalizePath));
   const catalogPaths = new Map<string, string>();
@@ -302,6 +315,38 @@ export function auditTestSelection(input: TestSelectionAuditInput): string[] {
     }
     if (!suite.case_name?.trim() || !sourceContainsNamedCase(input.source_texts[path] ?? "", suite.case_name)) {
       errors.push(`OAUTH_PORTABILITY_CASE_MISSING: ${suite.id} -> ${suite.case_name || "<missing>"}`);
+    }
+  }
+
+  const requiredReadonlyAppSuites = input.required_readonly_app_suites ?? REQUIRED_READONLY_APP_SUITES;
+  const requiredReadonlyApps = new Map(requiredReadonlyAppSuites.map((suite) => [suite.id, suite]));
+  const actualReadonlyApps = new Map(input.catalog.readonly_app_suites.map((suite) => [suite.id, suite]));
+  if (actualReadonlyApps.size !== input.catalog.readonly_app_suites.length) errors.push("READONLY_APP_SUITE_ID_DUPLICATE");
+  for (const required of requiredReadonlyAppSuites) {
+    const actual = actualReadonlyApps.get(required.id);
+    if (!actual) {
+      errors.push(`READONLY_APP_SUITE_MISSING: ${required.id}`);
+      continue;
+    }
+    if (normalizePath(actual.path) !== normalizePath(required.path)
+      || actual.npm_script !== required.npm_script
+      || actual.ci_step !== required.ci_step
+      || actual.case_name !== required.case_name) {
+      errors.push(`READONLY_APP_SUITE_SIGNATURE_MISMATCH: ${required.id}`);
+    }
+  }
+  for (const suite of input.catalog.readonly_app_suites) {
+    if (!requiredReadonlyApps.has(suite.id)) errors.push(`READONLY_APP_SUITE_UNDECLARED: ${suite.id}`);
+    const path = normalizePath(suite.path ?? "");
+    const ownerId = catalogPaths.get(path);
+    const owner = input.catalog.groups.find((group) => group.id === ownerId);
+    if (!owner || owner.classification !== "mandatory") {
+      errors.push(`READONLY_APP_SUITE_NOT_MANDATORY: ${suite.id} -> ${path || "<missing>"}`);
+    } else if (owner.npm_script !== suite.npm_script || owner.ci_step !== suite.ci_step) {
+      errors.push(`READONLY_APP_SUITE_LANE_MISMATCH: ${suite.id}`);
+    }
+    if (!suite.case_name?.trim() || !sourceContainsNamedCase(input.source_texts[path] ?? "", suite.case_name)) {
+      errors.push(`READONLY_APP_CASE_MISSING: ${suite.id} -> ${suite.case_name || "<missing>"}`);
     }
   }
 

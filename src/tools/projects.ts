@@ -124,7 +124,7 @@ export function getShot(db: M0Database, shotId: string): Shot | null {
 }
 
 export function listProjectShots(db: M0Database, projectId: string): Shot[] {
-  const rows = db.prepare("SELECT data_json FROM shots WHERE project_id = ? ORDER BY json_extract(data_json, '$.order')").all(projectId) as Array<{ data_json: string }>;
+  const rows = db.prepare("SELECT data_json FROM shots WHERE project_id = ? ORDER BY json_extract(data_json, '$.order'), shot_id").all(projectId) as Array<{ data_json: string }>;
   return rows.map((row) => JSON.parse(row.data_json) as Shot);
 }
 

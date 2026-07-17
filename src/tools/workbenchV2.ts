@@ -646,6 +646,7 @@ export function getWorkbenchProjectWorkspace(
     db.prepare("UPDATE workbench_project_meta SET last_opened_at = CURRENT_TIMESTAMP WHERE project_id = ?").run(projectId);
   }
   const shots = listProjectShots(db, projectId);
+  project.shot_ids = shots.map((shot) => shot.shot_id);
   const runRows = db.prepare(`SELECT data_json FROM generation_runs WHERE project_id = ? ORDER BY updated_at DESC LIMIT 200`).all(projectId) as Array<{ data_json: string }>;
   const runs = runRows.map((row) => parseJson<Record<string, unknown>>(row.data_json, {}));
   const packageRows = db.prepare(`SELECT data_json FROM storyboard_packages WHERE project_id = ? ORDER BY updated_at DESC LIMIT 25`).all(projectId) as Array<{ data_json: string }>;

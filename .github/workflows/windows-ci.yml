@@ -83,6 +83,12 @@ jobs:
       - name: WebGPT V4 integration tests
         run: npm run test:webgpt:v4
 
+      - name: WebGPT cloud projection tests
+        run: npm run test:webgpt:cloud
+
+      - name: WebGPT MCP App tests
+        run: npm run test:webgpt:app
+
       - name: H1 Workbench tests
         run: npm run test:h1
 
