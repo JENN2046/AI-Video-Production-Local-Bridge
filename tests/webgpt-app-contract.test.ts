@@ -468,6 +468,46 @@ test("readonly workbench preserves the selected project when refresh fails", asy
   }
 });
 
+test("readonly workbench reloads project pages from offset zero after snapshot changes", async () => {
+  const offsets: number[] = [];
+  const secondFingerprint = "d".repeat(64);
+  let projectListCalls = 0;
+  const dom = new JSDOM(readonlyWorkbenchWidgetHtml(), {
+    runScripts: "dangerously",
+    pretendToBeVisual: true,
+    beforeParse(window) {
+      Object.defineProperty(window, "openai", { value: {
+        toolOutput: shell(),
+        callTool: async (name: string, args: Record<string, unknown>) => {
+          if (name === "list_production_projects") {
+            projectListCalls += 1;
+            const offset = Number(args.offset ?? 0);
+            offsets.push(offset);
+            if (projectListCalls === 1) return toolResult({ items: [{ project: { project_id: "project_old", title: "Old first page", status: "active" } }], page: { next_offset: 25 } });
+            if (projectListCalls === 2) return toolResult({ items: [{ project: { project_id: "project_wrong_page", title: "New second page", status: "active" } }], page: { next_offset: null } }, secondFingerprint);
+            return toolResult({ items: [{ project: { project_id: "project_new", title: "New first page", status: "active" } }], page: { next_offset: null } }, secondFingerprint);
+          }
+          if (name === "get_project_context") return toolResult({ project: { project_id: args.project_id, title: String(args.project_id), status: "active" }, workspace: "overview", summary: {} }, projectListCalls >= 3 ? secondFingerprint : FINGERPRINT);
+          if (name === "list_project_shots") return toolResult({ items: [], page: { next_offset: null } }, projectListCalls >= 3 ? secondFingerprint : FINGERPRINT);
+          return toolResult({ project_status: "active", readiness_checks: [] }, projectListCalls >= 3 ? secondFingerprint : FINGERPRINT);
+        }
+      }, configurable: true });
+    }
+  });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    dom.window.document.querySelector<HTMLButtonElement>("#more-projects")!.click();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    assert.deepEqual(offsets, [0, 25, 0]);
+    assert.equal(dom.window.document.body.textContent?.includes("New first page"), true);
+    assert.equal(dom.window.document.body.textContent?.includes("New second page"), false);
+    assert.equal(dom.window.document.body.textContent?.includes("Old first page"), false);
+    assert.equal(dom.window.document.querySelector("#context")?.textContent?.includes("project_new"), true);
+  } finally {
+    dom.window.close();
+  }
+});
+
 test("render shell never reveals an unauthorized initial project", () => {
   const result = readonlyWorkbenchShell(ACTOR, null, { initial_project_id: "project_secret", initial_panel: "delivery" }, new Date("2026-07-17T00:00:00.000Z"));
   assert.equal(result.app_state, "no_snapshot");

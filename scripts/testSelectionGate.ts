@@ -61,7 +61,8 @@ export const REQUIRED_READONLY_APP_SUITES: ReadonlyArray<ReadonlyAppSuite> = [
   { id: "readonly-app-shot-pagination", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly workbench paginates SHOTs without changing project generation" },
   { id: "readonly-app-panel-error-routing", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly workbench routes parallel tool failures to their own panels" },
   { id: "readonly-app-review-selection-race", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly workbench rejects stale review responses for prior SHOT selections" },
-  { id: "readonly-app-refresh-selection-recovery", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly workbench preserves the selected project when refresh fails" }
+  { id: "readonly-app-refresh-selection-recovery", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly workbench preserves the selected project when refresh fails" },
+  { id: "readonly-app-snapshot-page-reset", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly workbench reloads project pages from offset zero after snapshot changes" }
 ];
 
 export const REQUIRED_OAUTH_PORTABILITY_SUITES: ReadonlyArray<OAuthPortabilitySuite> = [

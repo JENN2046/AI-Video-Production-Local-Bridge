@@ -334,6 +334,13 @@
       "npm_script": "test:webgpt:app",
       "ci_step": "WebGPT MCP App tests",
       "case_name": "readonly workbench preserves the selected project when refresh fails"
+    },
+    {
+      "id": "readonly-app-snapshot-page-reset",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench reloads project pages from offset zero after snapshot changes"
     }
   ],
   "remediation_suites": [
