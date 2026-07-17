@@ -306,6 +306,20 @@
       "npm_script": "test:webgpt:app",
       "ci_step": "WebGPT MCP App tests",
       "case_name": "readonly workbench appends project pages without cancelling detail loads"
+    },
+    {
+      "id": "readonly-app-shot-pagination",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench paginates SHOTs without changing project generation"
+    },
+    {
+      "id": "readonly-app-panel-error-routing",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench routes parallel tool failures to their own panels"
     }
   ],
   "remediation_suites": [

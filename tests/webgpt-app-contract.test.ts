@@ -63,6 +63,17 @@ function toolResult(data: unknown, fingerprint = FINGERPRINT): Record<string, un
   };
 }
 
+function toolFailure(code: string): Record<string, unknown> {
+  return {
+    structuredContent: {
+      ok: false,
+      error: { code, message: code, retryable: false },
+      meta: { request_id: "fixture", source_version: "webgpt-v4.2.0", updated_at: "2026-07-17T00:00:00.000Z" }
+    },
+    _meta: { snapshot_fingerprint: FINGERPRINT, snapshot_status: shell().status }
+  };
+}
+
 test("readonly MCP App contract freezes one render tool, six data tools, and the v1 resource", () => {
   assert.equal(READONLY_WORKBENCH_RENDER_TOOL, "render_ai_video_workspace_app");
   assert.deepEqual(READONLY_WORKBENCH_DATA_TOOLS, [
@@ -299,6 +310,81 @@ test("readonly workbench appends project pages without cancelling detail loads",
     await new Promise((resolve) => setTimeout(resolve, 25));
     assert.equal(dom.window.document.body.textContent?.includes("Loaded context"), true);
     assert.equal(dom.window.document.querySelector("#context")?.textContent?.includes("Loading"), false);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("readonly workbench paginates SHOTs without changing project generation", async () => {
+  const shotOffsets: number[] = [];
+  const dom = new JSDOM(readonlyWorkbenchWidgetHtml(), {
+    runScripts: "dangerously",
+    pretendToBeVisual: true,
+    beforeParse(window) {
+      Object.defineProperty(window, "openai", { value: {
+        toolOutput: shell(),
+        callTool: async (name: string, args: Record<string, unknown>) => {
+          if (name === "list_production_projects") return toolResult({
+            items: [{ project: { project_id: "project_a", title: "Project A", status: "active" }, lifecycle: "active", updated_at: "2026-07-17" }],
+            page: { next_offset: null }
+          });
+          if (name === "get_project_context") return toolResult({ project: { project_id: "project_a", title: "Project A", status: "active" }, workspace: "overview", summary: {} });
+          if (name === "list_project_shots") {
+            const offset = Number(args.offset ?? 0);
+            shotOffsets.push(offset);
+            return toolResult({
+              items: [{ shot_id: offset === 0 ? "shot_1" : "shot_101", order: offset === 0 ? 1 : 101, status: "ready", description: offset === 0 ? "First SHOT" : "Later SHOT" }],
+              page: { next_offset: offset === 0 ? 100 : null }
+            });
+          }
+          if (name === "get_review_package") return toolResult({ shot: { shot_id: args.shot_id, description: String(args.shot_id) }, versions: [], notes: [] });
+          return toolResult({ project_status: "active", readiness_checks: [] });
+        }
+      }, configurable: true });
+    }
+  });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 35));
+    assert.deepEqual(shotOffsets, [0]);
+    dom.window.document.querySelector<HTMLButtonElement>('button[data-shot-id="shot_1"]')!.click();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    dom.window.document.querySelector<HTMLButtonElement>("#more-shots")!.click();
+    await new Promise((resolve) => setTimeout(resolve, 35));
+    assert.deepEqual(shotOffsets, [0, 100]);
+    assert.equal(dom.window.document.querySelector("#shots")?.textContent?.includes("First SHOT"), true);
+    assert.equal(dom.window.document.querySelector("#shots")?.textContent?.includes("Later SHOT"), true);
+    assert.equal(dom.window.document.querySelector("#context")?.textContent?.includes("Project A"), true);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("readonly workbench routes parallel tool failures to their own panels", async () => {
+  const dom = new JSDOM(readonlyWorkbenchWidgetHtml(), {
+    runScripts: "dangerously",
+    pretendToBeVisual: true,
+    beforeParse(window) {
+      Object.defineProperty(window, "openai", { value: {
+        toolOutput: shell(),
+        callTool: async (name: string) => {
+          if (name === "list_production_projects") return toolResult({
+            items: [{ project: { project_id: "project_a", title: "Project A", status: "active" }, lifecycle: "active", updated_at: "2026-07-17" }],
+            page: { next_offset: null }
+          });
+          if (name === "get_project_context") return toolResult({ project: { project_id: "project_a", title: "Healthy context", status: "active" }, workspace: "overview", summary: {} });
+          if (name === "list_project_shots") return toolResult({ items: [], page: { next_offset: null } });
+          if (name === "get_delivery_status") return toolFailure("RESPONSE_BUDGET_EXCEEDED");
+          return toolResult({ project_status: "active", readiness_checks: [] });
+        }
+      }, configurable: true });
+    }
+  });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.equal(dom.window.document.querySelector("#context")?.textContent?.includes("Healthy context"), true);
+    assert.equal(dom.window.document.querySelector("#context")?.textContent?.includes("RESPONSE_BUDGET_EXCEEDED"), false);
+    assert.equal(dom.window.document.querySelector("#delivery")?.textContent?.includes("RESPONSE_BUDGET_EXCEEDED"), true);
+    assert.equal(dom.window.document.querySelector("#closeout")?.textContent?.includes("RESPONSE_BUDGET_EXCEEDED"), false);
   } finally {
     dom.window.close();
   }
