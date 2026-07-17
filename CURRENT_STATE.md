@@ -1,6 +1,6 @@
 # Current State
 
-Date: 2026-07-18
+Date (Asia/Shanghai, UTC+08:00): 2026-07-18
 
 Baseline: `0.1.0-beta.5` accepted Jenn single-user MCP App runtime; multi-user gate remains partial
 

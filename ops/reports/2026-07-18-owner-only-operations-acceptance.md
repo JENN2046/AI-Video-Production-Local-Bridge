@@ -1,6 +1,13 @@
 # Owner-Only Readonly Operations Acceptance
 
-Date: 2026-07-18
+Acceptance date (Asia/Shanghai, UTC+08:00): 2026-07-18
+
+UTC evidence date: 2026-07-17
+
+The signed Snapshot publish timestamp was `2026-07-17T17:00:16Z`, which is
+`2026-07-18 01:00:16` in the workspace's `Asia/Shanghai` timezone. GitHub shows
+the commit and review on 2026-07-17 because those timestamps are rendered in
+UTC; this report uses the workspace-local acceptance date.
 
 Result: `PASS_OWNER_ONLY_ONE_CLICK_PUBLISH`
 
