@@ -68,3 +68,9 @@ The remote runtime is database-free. It starts with no Snapshot, keeps at most o
 The publish surface is `PUT /snapshot`. A publisher sends a strict `readonly-snapshot-envelope-v1` containing the finalized Snapshot, key id, Ed25519 signature and no credentials. The signature covers a domain-separated JCS representation of the complete finalized Snapshot. A replacement is accepted only after schema, fingerprint, TTL, key id and signature verification; an older Snapshot cannot replace a newer one, while an identical signed Snapshot is idempotent.
 
 The remote `/mcp` surface exposes only the six `projects.read` data tools in this stage. OAuth failures return the HTTP challenge and `mcp/www_authenticate` metadata without business data. `/healthz` means process liveness only. Runtime stdout events are restricted to low-disclosure operational fields and never include identity, project identifiers, tool arguments/results or Snapshot content.
+
+## PR4 delivery contract
+
+The Windows publisher uses an Ed25519 private key protected by DPAPI `CurrentUser`, a Git-ignored runtime profile and sanitized append-only receipts. It runs the strict ledger-`0008` readonly exporter, signs one Snapshot and sends only the envelope to `PUT /snapshot` with redirects disabled and no credentials. Publishing remains a manual operator action.
+
+The tracked Render Blueprint defines one always-on `starter` instance, no persistent disk and `autoDeployTrigger: off`. It is configuration evidence only: this repository change does not create a Render service, DNS record, Auth0 object or ChatGPT App. External delivery follows `docs/webgpt/READONLY_MCP_APP_DELIVERY_RUNBOOK.md` under separate authorization.

@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: jenn-ai-video-readonly-mcp-app
+    runtime: node
+    plan: starter
+    numInstances: 1
+    region: oregon
+    buildCommand: npm ci && npm run build:server
+    startCommand: node dist/scripts/webgpt-cloud-server.js
+    healthCheckPath: /healthz
+    autoDeployTrigger: off
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: WEBGPT_V4_RESOURCE_URL
+        sync: false
+      - key: WEBGPT_V4_READONLY_OAUTH_ISSUER
+        sync: false
+      - key: WEBGPT_V4_READONLY_OAUTH_AUDIENCE
+        sync: false
+      - key: WEBGPT_V4_READONLY_OAUTH_JWKS_URI
+        sync: false
+      - key: WEBGPT_V4_READONLY_OAUTH_CLIENT_REGISTRATION
+        value: predefined
+      - key: WEBGPT_CLOUD_PUBLISHER_KEY_ID
+        sync: false
+      - key: WEBGPT_CLOUD_PUBLISHER_PUBLIC_KEY_B64
+        sync: false
