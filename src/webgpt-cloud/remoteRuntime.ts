@@ -51,6 +51,7 @@ export const READONLY_REMOTE_SERVICE_VERSION = "readonly-remote-v1.0.0";
 export const READONLY_REMOTE_DEFAULT_HOST = "127.0.0.1";
 export const READONLY_REMOTE_DEFAULT_PORT = 2094;
 export const READONLY_REMOTE_PUBLISH_PATH = "/snapshot";
+export const READONLY_REMOTE_TOOL_RESULT_MAX_BYTES = 128 * 1024;
 
 type RemoteToolName = typeof READONLY_WORKBENCH_DATA_TOOLS[number];
 
@@ -194,30 +195,29 @@ function safeJsonRpcId(value: unknown): string | number | null {
   return typeof value === "string" || typeof value === "number" ? value : null;
 }
 
-function responseBudget<T>(result: WebGptV4Result<T>): WebGptV4Result<T | never> {
-  if (Buffer.byteLength(JSON.stringify(result), "utf8") <= 128 * 1024) return result;
-  return fail(result.meta.request_id, {
-    code: "RESPONSE_BUDGET_EXCEEDED",
-    message: "The requested result exceeds the WebGPT response budget.",
-    field: "detail",
-    retryable: false,
-    suggested_parameters: { detail: "compact", limit: 20 }
-  });
-}
-
-function toolResult<T>(resultInput: WebGptV4Result<T>, fingerprint: string | null, challenge?: string): Record<string, unknown> {
-  const result = responseBudget(resultInput);
-  const message = result.ok ? "请求已完成；结构化结果位于 structuredContent。" : `${result.error.code}: ${result.error.message}`;
+export function buildReadonlyRemoteToolResult<T>(resultInput: WebGptV4Result<T>, fingerprint: string | null, challenge?: string): Record<string, unknown> {
   const meta: Record<string, unknown> = {
     snapshot_fingerprint: fingerprint,
     ...(challenge ? { "mcp/www_authenticate": [challenge] } : {})
   };
-  return {
-    isError: !result.ok,
-    structuredContent: result,
-    content: [{ type: "text", text: message.slice(0, 1024) }],
-    _meta: meta
+  const serialize = (result: WebGptV4Result<unknown>): Record<string, unknown> => {
+    const message = result.ok ? "请求已完成；结构化结果位于 structuredContent。" : `${result.error.code}: ${result.error.message}`;
+    return {
+      isError: !result.ok,
+      structuredContent: result,
+      content: [{ type: "text", text: message.slice(0, 1024) }],
+      _meta: meta
+    };
   };
+  const candidate = serialize(resultInput);
+  if (Buffer.byteLength(JSON.stringify(candidate), "utf8") <= READONLY_REMOTE_TOOL_RESULT_MAX_BYTES) return candidate;
+  return serialize(fail(resultInput.meta.request_id, {
+    code: "RESPONSE_BUDGET_EXCEEDED",
+    message: "The complete MCP tool result exceeds the WebGPT response budget.",
+    field: resultInput.ok && typeof resultInput.data === "object" && resultInput.data !== null && "detail" in resultInput.data ? "detail" : "limit",
+    retryable: false,
+    suggested_parameters: { detail: "compact", limit: 20 }
+  }));
 }
 
 function unavailableResult(idValue?: string): WebGptV4Result<never> {
@@ -247,13 +247,13 @@ function createReadonlyRemoteMcpApp(
   const invoke = <T>(idValue: string | undefined, operation: (dataSource: ReadonlyDataSource) => WebGptV4Result<T>): Record<string, unknown> => {
     try {
       requireScope(actor, "projects.read");
-      return toolResult(source ? operation(source) : unavailableResult(idValue), fingerprint);
+      return buildReadonlyRemoteToolResult(source ? operation(source) : unavailableResult(idValue), fingerprint);
     } catch (error) {
       const safe = errorBody(error);
       const challenge = safe.code === "INSUFFICIENT_SCOPE"
         ? wwwAuthenticate(authConfig, "insufficient_scope", { scope: "projects.read", error_description: safe.message })
         : undefined;
-      return toolResult(fail(requestId(idValue), safe), fingerprint, challenge);
+      return buildReadonlyRemoteToolResult(fail(requestId(idValue), safe), fingerprint, challenge);
     }
   };
 

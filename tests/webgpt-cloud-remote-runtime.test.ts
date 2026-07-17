@@ -13,10 +13,12 @@ import { openM0Database } from "../src/storage/sqlite.js";
 import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 import { bootstrapWebGptProjectOwner } from "../src/webgpt-v4/authorizationAdmin.js";
 import type { WebGptV4ReadonlyFederatedAuthConfig } from "../src/webgpt-v4/auth.js";
-import { actorFromFederatedSubject, issuerHash } from "../src/webgpt-v4/types.js";
+import { actorFromFederatedSubject, issuerHash, WEBGPT_V4_VERSION } from "../src/webgpt-v4/types.js";
 import { exportReadonlySnapshotFromDatabase } from "../src/webgpt-cloud/dataSource.js";
 import {
+  buildReadonlyRemoteToolResult,
   READONLY_REMOTE_SERVICE_VERSION,
+  READONLY_REMOTE_TOOL_RESULT_MAX_BYTES,
   startReadonlyRemoteRuntime,
   type ReadonlyRemoteLogEvent
 } from "../src/webgpt-cloud/remoteRuntime.js";
@@ -162,6 +164,18 @@ test("signed snapshot transport rejects tampering and atomically replaces only n
 });
 
 test("remote OAuth challenges, signed publish, six readonly tools, and readiness stay fail closed", async () => {
+  const budgetCandidate = {
+    ok: true,
+    data: { detail: "full", payload: "" },
+    meta: { request_id: "budget-test", source_version: WEBGPT_V4_VERSION, updated_at: new Date().toISOString() }
+  } as const;
+  const payloadBytes = READONLY_REMOTE_TOOL_RESULT_MAX_BYTES - Buffer.byteLength(JSON.stringify(budgetCandidate), "utf8");
+  const boundedEnvelope = { ...budgetCandidate, data: { ...budgetCandidate.data, payload: "x".repeat(payloadBytes) } };
+  assert.equal(Buffer.byteLength(JSON.stringify(boundedEnvelope), "utf8"), READONLY_REMOTE_TOOL_RESULT_MAX_BYTES);
+  const nearLimitResult = buildReadonlyRemoteToolResult(boundedEnvelope, "a".repeat(64));
+  assert.ok(Buffer.byteLength(JSON.stringify(nearLimitResult), "utf8") <= READONLY_REMOTE_TOOL_RESULT_MAX_BYTES);
+  assert.equal(jsonRecord(jsonRecord(nearLimitResult.structuredContent).error).code, "RESPONSE_BUDGET_EXCEEDED");
+
   const fixture = fixtureSnapshot();
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const jwtKeys = generateKeyPairSync("rsa", { modulusLength: 2048 });
