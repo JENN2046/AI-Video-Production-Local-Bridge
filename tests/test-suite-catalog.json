@@ -264,6 +264,27 @@
       "npm_script": "test:webgpt:app",
       "ci_step": "WebGPT MCP App tests",
       "case_name": "render contract accepts only low-disclosure shell state and initial intent"
+    },
+    {
+      "id": "readonly-app-render-binding",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly App resource and render binding expose a low-disclosure authenticated shell"
+    },
+    {
+      "id": "readonly-app-widget-security",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench HTML enforces CSP-compatible local rendering and inline escaping"
+    },
+    {
+      "id": "readonly-app-race-isolation",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench escapes malicious business text and ignores stale cross-project responses"
     }
   ],
   "remediation_suites": [

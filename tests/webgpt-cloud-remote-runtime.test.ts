@@ -268,6 +268,7 @@ test("remote OAuth challenges, signed publish, six readonly tools, and readiness
       await client.connect(transport);
       const tools = await client.listTools();
       assert.deepEqual(tools.tools.map((tool) => tool.name), [
+        "render_ai_video_workspace_app",
         "list_production_projects", "get_project_context", "list_project_shots",
         "get_review_package", "get_delivery_status", "get_closeout_evidence"
       ]);
@@ -288,6 +289,7 @@ test("remote OAuth challenges, signed publish, six readonly tools, and readiness
         assert.equal(result.isError, false, call.name);
         assert.equal(jsonRecord(result.structuredContent).ok, true);
         assert.equal(jsonRecord(result._meta).snapshot_fingerprint, fixture.snapshot.snapshot_fingerprint);
+        assert.equal(jsonRecord(jsonRecord(result._meta).snapshot_status).freshness_status, "fresh");
       }
       const crossProject = await client.callTool({ name: "get_project_context", arguments: { project_id: "project_not_authorized", workspace: "overview" } });
       assert.equal(crossProject.isError, true);
@@ -300,6 +302,10 @@ test("remote OAuth challenges, signed publish, six readonly tools, and readiness
     const unregisteredClient = new Client({ name: "readonly-remote-unregistered-test", version: "1.0.0" });
     try {
       await unregisteredClient.connect(unregisteredTransport);
+      const shellResult = await unregisteredClient.callTool({ name: "render_ai_video_workspace_app", arguments: {} });
+      assert.equal(shellResult.isError, false);
+      assert.equal(jsonRecord(shellResult.structuredContent).app_state, "no_authorized_projects");
+      assert.equal(JSON.stringify(shellResult.structuredContent).includes(fixture.project_id), false);
       const result = await unregisteredClient.callTool({ name: "list_production_projects", arguments: {} });
       assert.equal(result.isError, true);
       const structured = jsonRecord(result.structuredContent);
@@ -347,6 +353,9 @@ test("remote snapshot expiry makes readiness and data tools fail closed while he
     const client = new Client({ name: "readonly-remote-expiry-test", version: "1.0.0" });
     try {
       await client.connect(transport);
+      const shellResult = await client.callTool({ name: "render_ai_video_workspace_app", arguments: {} });
+      assert.equal(shellResult.isError, false);
+      assert.equal(jsonRecord(shellResult.structuredContent).app_state, "snapshot_expired");
       const result = await client.callTool({ name: "list_production_projects", arguments: {} });
       assert.equal(result.isError, true);
       assert.equal(jsonRecord(jsonRecord(result.structuredContent).error).code, "WEBGPT_CLOUD_SNAPSHOT_EXPIRED");

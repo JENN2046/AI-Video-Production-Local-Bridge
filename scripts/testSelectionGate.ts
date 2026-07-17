@@ -51,7 +51,10 @@ export const REQUIRED_READONLY_APP_SUITES: ReadonlyArray<ReadonlyAppSuite> = [
   { id: "readonly-remote-publish-limits", path: "tests/webgpt-cloud-remote-runtime.test.ts", npm_script: "test:webgpt:cloud", ci_step: "WebGPT cloud projection tests", case_name: "remote runtime rejects oversized and rate-limited publish attempts without replacing the snapshot" },
   { id: "readonly-remote-expiry", path: "tests/webgpt-cloud-remote-runtime.test.ts", npm_script: "test:webgpt:cloud", ci_step: "WebGPT cloud projection tests", case_name: "remote snapshot expiry makes readiness and data tools fail closed while health stays live" },
   { id: "readonly-app-resource-contract", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly MCP App contract freezes one render tool, six data tools, and the v1 resource" },
-  { id: "readonly-app-shell-disclosure", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "render contract accepts only low-disclosure shell state and initial intent" }
+  { id: "readonly-app-shell-disclosure", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "render contract accepts only low-disclosure shell state and initial intent" },
+  { id: "readonly-app-render-binding", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly App resource and render binding expose a low-disclosure authenticated shell" },
+  { id: "readonly-app-widget-security", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly workbench HTML enforces CSP-compatible local rendering and inline escaping" },
+  { id: "readonly-app-race-isolation", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly workbench escapes malicious business text and ignores stale cross-project responses" }
 ];
 
 export const REQUIRED_OAUTH_PORTABILITY_SUITES: ReadonlyArray<OAuthPortabilitySuite> = [
