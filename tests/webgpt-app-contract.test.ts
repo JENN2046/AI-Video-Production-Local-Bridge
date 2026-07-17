@@ -329,6 +329,37 @@ test("readonly workbench does not mount business panels when the initial TTL is 
   }
 });
 
+test("readonly workbench ignores project responses that arrive after a non-ready host shell", async () => {
+  let resolveProjects!: (value: Record<string, unknown>) => void;
+  const pendingProjects = new Promise<Record<string, unknown>>((resolve) => { resolveProjects = resolve; });
+  const dom = new JSDOM(readonlyWorkbenchWidgetHtml(), {
+    runScripts: "dangerously",
+    pretendToBeVisual: true,
+    beforeParse(window) {
+      Object.defineProperty(window, "openai", { value: {
+        toolOutput: shell(),
+        callTool: async () => pendingProjects
+      }, configurable: true });
+    }
+  });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    dom.window.dispatchEvent(new dom.window.CustomEvent("openai:set_globals", {
+      detail: { globals: { toolOutput: shell("no_snapshot") } }
+    }));
+    resolveProjects(toolResult({
+      items: [{ project: { project_id: "stale_project", title: "Stale project", status: "active" } }],
+      page: { next_offset: null }
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(dom.window.document.querySelector<HTMLElement>("#workspace")?.hidden, true);
+    assert.equal(dom.window.document.querySelector<HTMLElement>("#global-state")?.textContent?.includes("No snapshot published"), true);
+    assert.equal(dom.window.document.querySelector<HTMLElement>("#projects")?.textContent?.includes("Stale project"), false);
+  } finally {
+    dom.window.close();
+  }
+});
+
 test("readonly workbench preserves a selected project outside the first page", async () => {
   const projectCalls: string[] = [];
   const baseShell = shell();

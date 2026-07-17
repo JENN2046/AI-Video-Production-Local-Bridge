@@ -369,6 +369,13 @@
       "npm_script": "test:webgpt:app",
       "ci_step": "WebGPT MCP App tests",
       "case_name": "readonly workbench does not mount business panels when the initial TTL is zero"
+    },
+    {
+      "id": "readonly-app-host-shell-invalidation",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench ignores project responses that arrive after a non-ready host shell"
     }
   ],
   "remediation_suites": [
