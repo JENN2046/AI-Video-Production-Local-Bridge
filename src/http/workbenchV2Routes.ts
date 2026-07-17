@@ -1,6 +1,10 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { openM0Database } from "../storage/sqlite.js";
+import {
+  PersonalReadonlyOperationsError,
+  type PersonalReadonlyOperationsService
+} from "../webgpt-cloud/personalReadonlyOperations.js";
 import { h2CanaryWorkbenchSummary } from "../tools/h1Workbench.js";
 import { applyWorkbenchGovernance, getWorkbenchGovernancePreview } from "../tools/workbenchGovernance.js";
 import { decideWorkbenchPendingAction, listWorkbenchInboxV21, transitionWorkbenchDraft } from "../tools/workbenchInbox.js";
@@ -63,6 +67,19 @@ function sendResult<T>(response: ServerResponse, result: WorkbenchV2Result<T>, s
 
 function sendPage(response: ServerResponse, result: { items: unknown[]; meta: unknown }): void {
   sendOk(response, result.items, result.meta);
+}
+
+function sendReadonlyOperationsError(response: ServerResponse, error: unknown): void {
+  const code = error instanceof PersonalReadonlyOperationsError ? error.code : "READONLY_PERSONAL_OPERATIONS_FAILED";
+  const status = code === "READONLY_PUBLISH_OPERATION_IN_PROGRESS" ? 409
+    : code === "READONLY_PUBLISHER_REMOTE_REJECTED" ? 502
+      : code === "READONLY_PUBLISHER_PROFILE_NOT_CONFIGURED" || code === "READONLY_PUBLISHER_PROFILE_INVALID" || code === "READONLY_PUBLISHER_PATH_NOT_IGNORED" ? 503
+        : 500;
+  send(response, status, { ok: false, error: { code, message: "Readonly Snapshot operation did not complete." } });
+}
+
+export interface WorkbenchV2ApiServices {
+  readonly_operations?: PersonalReadonlyOperationsService;
 }
 
 function numberParam(value: string | null): number | undefined {
@@ -152,7 +169,8 @@ export async function handleWorkbenchV2Api(
   request: IncomingMessage,
   response: ServerResponse,
   url: URL,
-  actionNonce: string
+  actionNonce: string,
+  services: WorkbenchV2ApiServices = {}
 ): Promise<boolean> {
   if (!url.pathname.startsWith("/api/v2/")) return false;
 
@@ -231,6 +249,50 @@ export async function handleWorkbenchV2Api(
 
   if (request.method === "GET" && url.pathname === "/api/v2/system/canary") {
     sendOk(response, h2CanaryWorkbenchSummary());
+    return true;
+  }
+  if (request.method === "GET" && url.pathname === "/api/v2/system/readonly-operations") {
+    if (!services.readonly_operations) {
+      send(response, 503, { ok: false, error: { code: "READONLY_PERSONAL_OPERATIONS_NOT_CONFIGURED", message: "Readonly operations are not configured." } });
+      return true;
+    }
+    try {
+      sendOk(response, await services.readonly_operations.status());
+    } catch (error) {
+      sendReadonlyOperationsError(response, error);
+    }
+    return true;
+  }
+  if (request.method === "POST" && url.pathname === "/api/v2/system/readonly-operations/preflight") {
+    await mutation(request, response, actionNonce, async () => {
+      if (!services.readonly_operations) {
+        send(response, 503, { ok: false, error: { code: "READONLY_PERSONAL_OPERATIONS_NOT_CONFIGURED", message: "Readonly operations are not configured." } });
+        return;
+      }
+      try {
+        sendOk(response, await services.readonly_operations.preflight());
+      } catch (error) {
+        sendReadonlyOperationsError(response, error);
+      }
+    });
+    return true;
+  }
+  if (request.method === "POST" && url.pathname === "/api/v2/system/readonly-operations/publish") {
+    await mutation(request, response, actionNonce, async (body) => {
+      if (body.human_confirmation !== true) {
+        send(response, 403, { ok: false, error: { code: "READONLY_PUBLISH_CONFIRMATION_REQUIRED", message: "Human confirmation is required." } });
+        return;
+      }
+      if (!services.readonly_operations) {
+        send(response, 503, { ok: false, error: { code: "READONLY_PERSONAL_OPERATIONS_NOT_CONFIGURED", message: "Readonly operations are not configured." } });
+        return;
+      }
+      try {
+        sendOk(response, await services.readonly_operations.publish());
+      } catch (error) {
+        sendReadonlyOperationsError(response, error);
+      }
+    });
     return true;
   }
   if (request.method === "GET" && url.pathname === "/api/v2/system/reports") {

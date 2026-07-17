@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -15,6 +15,10 @@ import {
   type ReadonlyDpapi,
   type ReadonlyPublisherProfile
 } from "../src/webgpt-cloud/publisher.js";
+import {
+  createPersonalReadonlyOperationsService,
+  PersonalReadonlyOperationsError
+} from "../src/webgpt-cloud/personalReadonlyOperations.js";
 import { verifyReadonlySignedSnapshot } from "../src/webgpt-cloud/signedSnapshot.js";
 import {
   finalizeReadonlySnapshot,
@@ -176,6 +180,110 @@ test("publisher records a stable failure receipt without reading a remote respon
     assert.deepEqual({ result: receipt.result, stable_error_code: receipt.stable_error_code, http_status: receipt.http_status }, {
       result: "FAIL", stable_error_code: "READONLY_PUBLISHER_REMOTE_REJECTED", http_status: 503
     });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("personal readonly operations keep status read-only and run one explicit preflight-publish lane", async () => {
+  const root = await mkdtemp(join(tmpdir(), "readonly-personal-operations-"));
+  try {
+    const configured = profile(root);
+    const profilePath = join(root, "profile.json");
+    await writeFile(configured.database_path, "fixture");
+    createReadonlyPublisherKey(configured, reversibleProtector);
+    let exportCount = 0;
+    let publishCount = 0;
+    const statusBody = JSON.stringify({
+      ok: true,
+      version: "readonly-remote-v1.0.0",
+      checks: { oauth: true, publisher_key: true, snapshot_fresh: true, authorization_projection: true },
+      snapshot: {
+        freshness_status: "fresh",
+        generated_at: NOW.toISOString(),
+        expires_at: new Date(NOW.getTime() + 3600_000).toISOString(),
+        age_seconds: 0,
+        ttl_remaining_seconds: 3600,
+        snapshot_fingerprint: snapshot().snapshot_fingerprint
+      },
+      forbidden_business_text: "must-not-escape"
+    });
+    const service = createPersonalReadonlyOperationsService(profilePath, {
+      now: () => NOW,
+      assert_paths_ignored: () => undefined,
+      publisher: {
+        dpapi: reversibleProtector,
+        now: () => NOW,
+        export_snapshot: () => { exportCount += 1; return snapshot(); },
+        fetch_impl: async () => { publishCount += 1; return { ok: true, status: 202 }; }
+      },
+      status_fetch_impl: async (url, init) => {
+        assert.equal(init.method, "GET");
+        assert.equal(init.redirect, "manual");
+        return url.endsWith("/healthz")
+          ? { ok: true, status: 200, text: async () => JSON.stringify({ ok: true }) }
+          : { ok: true, status: 200, text: async () => statusBody };
+      }
+    });
+    await writeFile(profilePath, JSON.stringify(configured));
+    const before = await service.status();
+    assert.equal(exportCount, 0, "status must not export or open business rows");
+    assert.equal(before.ready_to_publish, true);
+    assert.equal(before.remote.ready, true);
+    assert.equal(before.remote.snapshot.snapshot_fingerprint, snapshot().snapshot_fingerprint);
+    assert.equal(JSON.stringify(before).includes("must-not-escape"), false);
+    assert.equal(JSON.stringify(before).includes(configured.database_path), false);
+    assert.equal(JSON.stringify(before).includes(configured.snapshot_url), false);
+
+    const prepared = await service.preflight();
+    assert.equal(prepared.result, "PASS");
+    assert.equal(exportCount, 1);
+    assert.equal(publishCount, 0);
+    assert.equal(existsSync(configured.receipts_directory), false, "preflight must not write a receipt");
+
+    const published = await service.publish();
+    assert.equal(published.http_status, 202);
+    assert.equal(exportCount, 2);
+    assert.equal(publishCount, 1);
+    const after = await service.status();
+    assert.equal(after.last_receipt_state, "valid");
+    assert.equal(after.last_publish?.result, "PASS");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("personal readonly operations reject overlapping publish attempts", async () => {
+  const root = await mkdtemp(join(tmpdir(), "readonly-personal-operations-lock-"));
+  const profilePath = join(root, "profile.json");
+  try {
+    const configured = profile(root);
+    await writeFile(configured.database_path, "fixture");
+    await writeFile(profilePath, JSON.stringify(configured));
+    createReadonlyPublisherKey(configured, reversibleProtector);
+    let releasePublish: (() => void) | undefined;
+    let startedPublish: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => { startedPublish = resolve; });
+    const released = new Promise<void>((resolve) => { releasePublish = resolve; });
+    const service = createPersonalReadonlyOperationsService(profilePath, {
+      assert_paths_ignored: () => undefined,
+      publisher: {
+        dpapi: reversibleProtector,
+        now: () => NOW,
+        export_snapshot: () => snapshot(),
+        fetch_impl: async () => {
+          startedPublish?.();
+          await released;
+          return { ok: true, status: 202 };
+        }
+      }
+    });
+    const first = service.publish();
+    await started;
+    await assert.rejects(() => service.publish(), (error: unknown) =>
+      error instanceof PersonalReadonlyOperationsError && error.code === "READONLY_PUBLISH_OPERATION_IN_PROGRESS");
+    releasePublish?.();
+    await first;
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -37,6 +37,23 @@ npm run publish:webgpt:snapshot -- --profile data/webgpt/publisher/profile.json
 
 Preflight validates ledger `0008`, exports through a readonly connection, verifies the DPAPI key pair, signs the strict Snapshot and reports only counts/fingerprint/time metadata. Publish uses `PUT /snapshot`, disables redirects, does not send credentials and does not read the remote response body. Each attempt writes a sanitized append-only receipt.
 
+## Personal readonly operations
+
+The local Human Workbench exposes the same frozen publisher through `系统 → 只读 App 发布`. It uses the Git-ignored profile selected by:
+
+```text
+WEBGPT_READONLY_PUBLISHER_PROFILE_PATH=data/webgpt/publisher/profile.json
+```
+
+If the variable is absent, the path above is the default. The browser never supplies or receives the profile path, database path, resource URL, key material or response body.
+
+- Status checks only profile/key/database file availability, sanitized local receipt metadata and the public remote `/healthz`/`/readyz` projection. It does not export business rows or unlock the private key.
+- `运行预检` performs the existing ledger-`0008` readonly export and DPAPI signature check without a remote write or receipt.
+- `预检并发布` requires the Workbench action nonce plus an explicit human confirmation, serializes concurrent attempts, runs the same preflight and performs one `PUT /snapshot`.
+- Remote errors are reduced to stable codes and HTTP status. No remote response body, business content or local path is returned to the UI.
+
+This is still manual publishing. It does not schedule refreshes, start Windows automatically or change Render/Auth0/ChatGPT configuration.
+
 ## Render delivery contract
 
 `render.yaml` freezes one `starter` instance, no disk and `autoDeployTrigger: off`. External Stage 1 must separately authorize service creation and set:

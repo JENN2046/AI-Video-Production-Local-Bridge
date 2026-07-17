@@ -39,6 +39,51 @@ export interface ShellData {
   };
 }
 
+export interface PersonalReadonlyOperationsStatus {
+  operations_version: "personal-readonly-operations-v1";
+  checked_at: string;
+  configuration: "missing" | "invalid" | "ready";
+  stable_error_code: string | null;
+  database_available: boolean;
+  publisher_key_available: boolean;
+  ready_to_preflight: boolean;
+  ready_to_publish: boolean;
+  remote: {
+    reachable: boolean;
+    ready: boolean;
+    health_http_status: number | null;
+    readiness_http_status: number | null;
+    service_version: string | null;
+    checks: Record<"oauth" | "publisher_key" | "snapshot_fresh" | "authorization_projection", boolean | null>;
+    snapshot: {
+      freshness_status: "no_snapshot" | "fresh" | "snapshot_expired" | "unknown";
+      generated_at: string | null;
+      expires_at: string | null;
+      age_seconds: number | null;
+      ttl_remaining_seconds: number | null;
+      snapshot_fingerprint: string | null;
+    };
+  };
+  last_publish: {
+    timestamp: string;
+    result: "PASS" | "FAIL";
+    stable_error_code: string | null;
+    http_status: number | null;
+    snapshot_fingerprint: string | null;
+    generated_at: string | null;
+    expires_at: string | null;
+  } | null;
+  last_receipt_state: "none" | "valid" | "invalid";
+}
+
+export interface PersonalReadonlyOperationResult {
+  result: "PASS";
+  snapshot_fingerprint: string;
+  generated_at: string;
+  expires_at: string;
+  http_status?: number;
+}
+
 export interface Project {
   project_id: string;
   title: string;

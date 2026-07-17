@@ -43,17 +43,26 @@ export const READONLY_PUBLISHER_PROFILE_SCHEMA = z.object({
 
 export type ReadonlyPublisherProfile = z.infer<typeof READONLY_PUBLISHER_PROFILE_SCHEMA>;
 
-export interface ReadonlyPublisherReceipt {
-  receipt_version: "readonly-publisher-receipt-v1";
-  timestamp: string;
-  result: "PASS" | "FAIL";
-  stable_error_code: string | null;
-  http_status: number | null;
-  key_id: string;
-  snapshot_fingerprint: string | null;
-  generated_at: string | null;
-  expires_at: string | null;
-}
+export const READONLY_PUBLISHER_RECEIPT_SCHEMA = z.object({
+  receipt_version: z.literal("readonly-publisher-receipt-v1"),
+  timestamp: z.iso.datetime(),
+  result: z.enum(["PASS", "FAIL"]),
+  stable_error_code: z.string().nullable(),
+  http_status: z.number().int().min(100).max(599).nullable(),
+  key_id: z.string().regex(/^[A-Za-z0-9._-]{1,128}$/),
+  snapshot_fingerprint: z.string().regex(/^[0-9a-f]{64}$/).nullable(),
+  generated_at: z.iso.datetime().nullable(),
+  expires_at: z.iso.datetime().nullable()
+}).strict().superRefine((value, context) => {
+  if (value.result === "PASS" && (value.stable_error_code !== null || value.http_status !== 202 || !value.snapshot_fingerprint || !value.generated_at || !value.expires_at)) {
+    context.addIssue({ code: "custom", message: "A successful publisher receipt must describe one accepted Snapshot." });
+  }
+  if (value.result === "FAIL" && !value.stable_error_code) {
+    context.addIssue({ code: "custom", message: "A failed publisher receipt must include a stable error code." });
+  }
+});
+
+export type ReadonlyPublisherReceipt = z.infer<typeof READONLY_PUBLISHER_RECEIPT_SCHEMA>;
 
 export interface ReadonlyDpapi {
   protect(value: Buffer): Buffer;
@@ -215,7 +224,8 @@ function writeReceipt(directory: string, receipt: ReadonlyPublisherReceipt): str
   const target = join(directory, name);
   const temporary = join(directory, `.${basename(name)}.tmp`);
   try {
-    writeFileSync(temporary, `${JSON.stringify(receipt, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+    const validated = READONLY_PUBLISHER_RECEIPT_SCHEMA.parse(receipt);
+    writeFileSync(temporary, `${JSON.stringify(validated, null, 2)}\n`, { flag: "wx", mode: 0o600 });
     renameSync(temporary, target);
     return target;
   } catch {

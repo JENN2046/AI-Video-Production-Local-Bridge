@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import test from "node:test";
 
 import { handleWorkbenchV2Api } from "../src/http/workbenchV2Routes.js";
+import type { PersonalReadonlyOperationsService } from "../src/webgpt-cloud/personalReadonlyOperations.js";
 
 test("V2 API uses stable envelopes, pagination, nonce and archived write blocking", async (t) => {
   const nonce = "synthetic-action-nonce";
@@ -50,4 +51,78 @@ test("V2 API uses stable envelopes, pagination, nonce and archived write blockin
 
   const missing = await fetch(`${base}/api/v2/projects/not-a-project/overview`);
   assert.equal(missing.status, 404);
+});
+
+test("personal readonly operations API requires nonce and explicit publish confirmation", async (t) => {
+  const nonce = "readonly-operations-nonce";
+  const calls = { status: 0, preflight: 0, publish: 0 };
+  const service: PersonalReadonlyOperationsService = {
+    status: async () => {
+      calls.status += 1;
+      return {
+        operations_version: "personal-readonly-operations-v1",
+        checked_at: "2026-07-17T00:00:00.000Z",
+        configuration: "ready",
+        stable_error_code: null,
+        database_available: true,
+        publisher_key_available: true,
+        ready_to_preflight: true,
+        ready_to_publish: true,
+        remote: {
+          reachable: true,
+          ready: true,
+          health_http_status: 200,
+          readiness_http_status: 200,
+          service_version: "readonly-remote-v1.0.0",
+          checks: { oauth: true, publisher_key: true, snapshot_fresh: true, authorization_projection: true },
+          snapshot: { freshness_status: "fresh", generated_at: null, expires_at: null, age_seconds: 0, ttl_remaining_seconds: 3600, snapshot_fingerprint: null }
+        },
+        last_publish: null,
+        last_receipt_state: "none"
+      };
+    },
+    preflight: async () => {
+      calls.preflight += 1;
+      return { result: "PASS", snapshot_fingerprint: "a".repeat(64), generated_at: "2026-07-17T00:00:00.000Z", expires_at: "2026-07-18T00:00:00.000Z" };
+    },
+    publish: async () => {
+      calls.publish += 1;
+      return { result: "PASS", http_status: 202, snapshot_fingerprint: "a".repeat(64), generated_at: "2026-07-17T00:00:00.000Z", expires_at: "2026-07-18T00:00:00.000Z" };
+    }
+  };
+  const server = createServer((request, response) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    void handleWorkbenchV2Api(request, response, url, nonce, { readonly_operations: service }).then((handled) => {
+      if (!handled) { response.writeHead(404); response.end(); }
+    });
+  });
+  await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+  t.after(() => server.close());
+  const address = server.address();
+  const base = `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`;
+
+  const status = await fetch(`${base}/api/v2/system/readonly-operations`);
+  assert.equal(status.status, 200);
+  assert.equal(calls.status, 1);
+
+  const noNonce = await fetch(`${base}/api/v2/system/readonly-operations/preflight`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+  assert.equal(noNonce.status, 403);
+  assert.equal(calls.preflight, 0);
+
+  const prepared = await fetch(`${base}/api/v2/system/readonly-operations/preflight`, { method: "POST", headers: { "content-type": "application/json", "x-h1-action-nonce": nonce }, body: "{}" });
+  assert.equal(prepared.status, 200);
+  assert.equal(calls.preflight, 1);
+
+  const unconfirmed = await fetch(`${base}/api/v2/system/readonly-operations/publish`, { method: "POST", headers: { "content-type": "application/json", "x-h1-action-nonce": nonce }, body: "{}" });
+  assert.equal(unconfirmed.status, 403);
+  assert.equal((await unconfirmed.json() as { error: { code: string } }).error.code, "READONLY_PUBLISH_CONFIRMATION_REQUIRED");
+  assert.equal(calls.publish, 0);
+
+  const published = await fetch(`${base}/api/v2/system/readonly-operations/publish`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-h1-action-nonce": nonce },
+    body: JSON.stringify({ human_confirmation: true })
+  });
+  assert.equal(published.status, 200);
+  assert.equal(calls.publish, 1);
 });

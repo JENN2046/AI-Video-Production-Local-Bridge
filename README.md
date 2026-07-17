@@ -67,6 +67,8 @@ npm run secret:scan
 
 Cloud MCP App 交付命令不会自动创建或修改 Render、DNS、Auth0 或 ChatGPT 对象。Publisher profile、DPAPI 私钥材料和脱敏 receipt 必须位于 Git 忽略的 `data/webgpt/publisher/`；`preflight:webgpt:publisher` 只读验证 ledger `0008`、投影和签名，`publish:webgpt:snapshot` 才执行经单独授权的远端 Snapshot 替换。当前 Render Free 实例可能休眠或重启，远端只保存内存 Snapshot；实例重启或 24 小时 TTL 到期后必须手动重新发布。ChatGPT developer-mode 验收时平台 CSP enforcement 开关未启用，因此 CSP 仍保留为后续平台实测限制。完整边界见 [Readonly MCP App Delivery Runbook](docs/webgpt/READONLY_MCP_APP_DELIVERY_RUNBOOK.md) 和 [Stage 3 Acceptance](ops/reports/2026-07-17-readonly-mcp-app-stage3-acceptance.md)。
 
+本地 Workbench 的“系统 → 只读 App 发布”将上述命令收敛为受 action nonce 和人工确认保护的日常操作面：状态读取不会打开业务行或 DPAPI 私钥，预检不会写 receipt 或远端状态，“预检并发布”才执行一次签名 Snapshot 替换。浏览器不能传入 profile、数据库路径或远端 URL；Workbench 只使用 `WEBGPT_READONLY_PUBLISHER_PROFILE_PATH` 指定的 Git-ignored profile，未设置时使用 `data/webgpt/publisher/profile.json`。该入口仍是人工操作，不会创建计划任务或自动发布。
+
 ### 多用户只读授权
 
 `0.1.0-beta.4` 建立了 Descope 多用户只读服务边界；`0.1.0-beta.5` 接受 provider-neutral Federated OAuth/issuer binding、Auth0 predefined public-client 和 Jenn 单用户 ChatGPT MCP App 路线。旧 Descope principal、membership 和事件继续保留并绑定原 issuer；多用户正式验收仍为 `PARTIAL_MULTI_USER_GATE`。完整边界见 [Readonly Federated OAuth Portability v1](docs/READONLY_FEDERATED_OAUTH_PORTABILITY.md)。授权管理命令必须显式提供数据库路径，不会默认写入 `data/app.sqlite`：
