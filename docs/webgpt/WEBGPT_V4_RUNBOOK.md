@@ -1,6 +1,6 @@
 # WebGPT V4 本地运行与外部接线手册
 
-状态：接受的运行基线为 `webgpt-v4.3.0`；provider-neutral Federated OAuth、issuer binding、Auth0 predefined public-client 与 Readonly ChatGPT MCP App 已完成 Jenn 单用户真实活动库验收。状态为 `MANUAL_PUBLISH_OPERATIONAL_READY`；第二真实用户、媒体域名、自动同步和 Windows 自动启动仍未验收。
+状态：接受的运行基线为 `webgpt-v4.3.0`；provider-neutral Federated OAuth、issuer binding、Auth0 predefined public-client 与 Readonly ChatGPT MCP App 已完成 Jenn 单用户真实活动库验收。Human Workbench 的一键 preflight/publish 和七工具 owner-only 路径也已真实通过。状态为 `MANUAL_PUBLISH_OPERATIONAL_READY`；第二真实用户已由 Jenn 延期，Render Free 冷启动恢复、媒体域名、自动同步和 Windows 自动启动仍未验收。
 
 ## 固定边界
 
@@ -23,6 +23,21 @@ npm run preflight:webgpt:oauth
 npm run test:webgpt:v4
 npm run start:webgpt
 ```
+
+## Owner-only 日常发布
+
+Human Workbench 的“系统 → 只读 App 发布”是当前接受的 Jenn 日常入口：
+
+1. 使用 `windows:start` 启动 Workbench，并确认 `windows:status` 为 ready。
+2. 打开“系统 → 只读 App 发布”，先读取低披露状态。
+3. 选择“预检并发布”，完成 action nonce 与人工确认。
+4. 等待 HTTP `202`，确认 Snapshot 状态为 fresh。
+5. 在 ChatGPT Test App 运行 render tool 与六个只读数据工具。
+6. 使用完成后运行 `npm run db:check`，再通过 `windows:stop` 停止本地 Workbench。
+
+该路径已在 `main@932e145e201ddf5763ab5fcbdc11b88fa8c81bad`、Windows Node `22.23.1`、活动库 ledger `0008` 和 `REAL_PROVIDER_ENABLED=false` 条件下通过一次真实验收。公开脱敏证据见 [Owner-Only Operations Acceptance](../../ops/reports/2026-07-18-owner-only-operations-acceptance.md)。
+
+当前 Render Free 服务仍只保存内存 Snapshot。服务休眠、重启或 24 小时 TTL 到期后必须重新发布。`no_snapshot → 一键重新发布 → 七工具恢复` 冷启动演练尚未执行，属于需要单独授权的外部运行门禁；不得把尚未演练的恢复能力描述为自动恢复。
 
 普通 `preflight` 和 `/readyz` 证明本地服务边界，不代表 ChatGPT 已接受外部 OAuth discovery。外部 Readonly 接线前必须另外运行 `preflight:webgpt:oauth`；这个独立命令不打开数据库，先按 RFC 8414 规则从 issuer 推导 metadata URL，不可用时再尝试 OIDC discovery。两条路径都要求匿名 `200`、精确 issuer、精确 JWKS URI、HTTPS authorize/token/JWKS、PKCE S256 与 public client token auth `none`；`cimd` 还要求 CIMD capability，`dcr` 还要求 HTTPS registration endpoint，`predefined` 把外部 Client ID 验证保留给真实连接验收。
 
@@ -63,7 +78,7 @@ GET http://127.0.0.1:2092/healthz
 - issuer 同时是 PRMD authorization server 与 JWT `iss`；audience 必须与 `WEBGPT_V4_RESOURCE_URL` 完全相同
 - IdP 只认证身份；本地 issuer-bound principal/membership 始终是 production-project 授权权威
 - Auth0 Stage 0 标准能力探针已通过；External Stage 3 又完成专用 API、predefined public client、精确 ChatGPT redirect、真实 token audience/scope、Jenn issuer-bound owner、七工具与 Workbench 验收。当前状态为 `JENN_SINGLE_USER_MCP_APP_PASS` 和 `MANUAL_PUBLISH_OPERATIONAL_READY`
-- 剩余 Auth0 gate 仅为第二真实用户的 viewer grant、跨项目拒绝和即时 revoke 验收；通过前保持 `PARTIAL_MULTI_USER_GATE`，不否定 beta.5 单用户基线
+- 第二真实用户的 viewer grant、跨项目拒绝和即时 revoke 验收已由 Jenn 延期；状态保持 `PARTIAL_MULTI_USER_GATE`，不否定 beta.5 单用户与 owner-only 手动发布基线
 - 运行时保持 provider-neutral，不允许根据 Stytch/Descope 品牌绕过 issuer、audience、JWKS、scope 或 membership
 
 ### Descope Readonly（legacy adapter）
@@ -115,7 +130,7 @@ GET http://127.0.0.1:2092/healthz
 2. V2、H1、前端、浏览器与生产构建回归。
 3. 对数据库副本验证 migration `0008`、issuer binding、owner bootstrap、viewer grant/revoke 和 immediate readiness failure。
 4. 按 [Readonly Federated OAuth Portability v1](../READONLY_FEDERATED_OAUTH_PORTABILITY.md) 和 [Stytch Predefined Public Client Runbook](STYTCH_PREDEFINED_CLIENT_RUNBOOK.md) 完成新的 capability gate、`projects.read`、predefined public client、ChatGPT test App 与官方 Tunnel 隔离接线。旧 [External Multi-User Readonly Connection — Preflight](../EXTERNAL_MULTI_USER_READONLY_CONNECTION_PREFLIGHT.md) 仅保留为 Descope 历史路线证据。
-5. 使用两个真实用户完成 Developer Mode 只读黄金提示集和跨项目拒绝验证。
+5. 若 Jenn 重新启用多用户路线，再使用两个真实用户完成 Developer Mode 只读黄金提示集、跨项目拒绝和即时 revoke 验证；当前保持延期。
 6. Full/Auth0、写 scopes 和媒体域名分别制定新计划，不由 Readonly 验收自动开放。
 
 任何阶段发现测试项目、未归属媒体或真实 Provider 请求，立即停止并撤销对应外部连接。数据库回滚必须使用开工前在线备份，并在执行前再次获得覆盖当前数据库的明确授权。
