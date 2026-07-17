@@ -56,7 +56,8 @@ export const REQUIRED_READONLY_APP_SUITES: ReadonlyArray<ReadonlyAppSuite> = [
   { id: "readonly-app-widget-security", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly workbench HTML enforces CSP-compatible local rendering and inline escaping" },
   { id: "readonly-app-race-isolation", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly workbench escapes malicious business text and ignores stale cross-project responses" },
   { id: "readonly-app-empty-refresh-recovery", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly workbench refresh recovers an existing empty shell through the data tool" },
-  { id: "readonly-app-off-page-selection", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly workbench preserves a selected project outside the first page" }
+  { id: "readonly-app-off-page-selection", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly workbench preserves a selected project outside the first page" },
+  { id: "readonly-app-pagination-generation", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly workbench appends project pages without cancelling detail loads" }
 ];
 
 export const REQUIRED_OAUTH_PORTABILITY_SUITES: ReadonlyArray<OAuthPortabilitySuite> = [

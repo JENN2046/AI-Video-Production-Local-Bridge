@@ -299,6 +299,13 @@
       "npm_script": "test:webgpt:app",
       "ci_step": "WebGPT MCP App tests",
       "case_name": "readonly workbench preserves a selected project outside the first page"
+    },
+    {
+      "id": "readonly-app-pagination-generation",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench appends project pages without cancelling detail loads"
     }
   ],
   "remediation_suites": [

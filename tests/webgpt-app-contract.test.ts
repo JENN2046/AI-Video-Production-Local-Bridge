@@ -266,6 +266,44 @@ test("readonly workbench preserves a selected project outside the first page", a
   }
 });
 
+test("readonly workbench appends project pages without cancelling detail loads", async () => {
+  const contextRequest: { resolve: ((value: Record<string, unknown>) => void) | null } = { resolve: null };
+  const dom = new JSDOM(readonlyWorkbenchWidgetHtml(), {
+    runScripts: "dangerously",
+    pretendToBeVisual: true,
+    beforeParse(window) {
+      Object.defineProperty(window, "openai", { value: {
+        toolOutput: shell(),
+        callTool: async (name: string, args: Record<string, unknown>) => {
+          if (name === "list_production_projects") {
+            const secondPage = args.offset === 25;
+            return toolResult({
+              items: [{ project: { project_id: secondPage ? "project_b" : "project_a", title: secondPage ? "Project B" : "Project A", status: "active" }, lifecycle: "active", updated_at: "2026-07-17" }],
+              page: { next_offset: secondPage ? null : 25 }
+            });
+          }
+          if (name === "get_project_context") return new Promise((resolve) => { contextRequest.resolve = resolve; });
+          if (name === "list_project_shots") return toolResult({ items: [] });
+          return toolResult({ project_status: "active", readiness_checks: [] });
+        }
+      }, configurable: true });
+    }
+  });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.ok(contextRequest.resolve);
+    dom.window.document.querySelector<HTMLButtonElement>("#more-projects")!.click();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(dom.window.document.body.textContent?.includes("Project B"), true);
+    contextRequest.resolve(toolResult({ project: { project_id: "project_a", title: "Loaded context", status: "active" }, workspace: "overview", summary: {} }));
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(dom.window.document.body.textContent?.includes("Loaded context"), true);
+    assert.equal(dom.window.document.querySelector("#context")?.textContent?.includes("Loading"), false);
+  } finally {
+    dom.window.close();
+  }
+});
+
 test("render shell never reveals an unauthorized initial project", () => {
   const result = readonlyWorkbenchShell(ACTOR, null, { initial_project_id: "project_secret", initial_panel: "delivery" }, new Date("2026-07-17T00:00:00.000Z"));
   assert.equal(result.app_state, "no_snapshot");
