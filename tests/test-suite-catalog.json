@@ -348,6 +348,13 @@
       "npm_script": "test:webgpt:app",
       "ci_step": "WebGPT MCP App tests",
       "case_name": "readonly workbench preserves the selected paged SHOT across refresh"
+    },
+    {
+      "id": "readonly-app-unregistered-principal-empty",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench maps an unregistered principal refresh to no authorized projects"
     }
   ],
   "remediation_suites": [

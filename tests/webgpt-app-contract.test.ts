@@ -240,6 +240,28 @@ test("readonly workbench refresh recovers an existing empty shell through the da
   }
 });
 
+test("readonly workbench maps an unregistered principal refresh to no authorized projects", async () => {
+  const dom = new JSDOM(readonlyWorkbenchWidgetHtml(), {
+    runScripts: "dangerously",
+    pretendToBeVisual: true,
+    beforeParse(window) {
+      Object.defineProperty(window, "openai", { value: {
+        toolOutput: shell(),
+        callTool: async () => toolFailure("WEBGPT_PRINCIPAL_NOT_REGISTERED")
+      }, configurable: true });
+    }
+  });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(dom.window.document.querySelector<HTMLElement>("#workspace")?.hidden, true);
+    const visibleState = dom.window.document.querySelector<HTMLElement>("#global-state")?.textContent ?? "";
+    assert.equal(visibleState.includes("No authorized projects"), true);
+    assert.equal(visibleState.includes("Service temporarily unavailable"), false);
+  } finally {
+    dom.window.close();
+  }
+});
+
 test("readonly workbench preserves a selected project outside the first page", async () => {
   const projectCalls: string[] = [];
   const baseShell = shell();
