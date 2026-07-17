@@ -2,7 +2,7 @@
 
 AI Video Production Workspace 是面向 Jenn 本地 Windows 生产环境的、治理优先的 AI 视频生产系统 Beta。
 
-当前接受的 Jenn 本地运行版本仍为 `0.1.0-beta.4`，MCP service 版本为 `webgpt-v4.2.0`，数据库 schema 为 `workbench-v2-5`，已验收活动库停留在 migration ledger `0007`。仓库候选运行时代码要求 migration `0008`；在另行授权的活动库迁移与验收完成前，不得用该候选运行时打开 `0007` 活动库。系统已经包含 Workbench V2、WebGPT V4、MCP App、真实 Provider 生成边界、审片、重生成、合成、交付、Memory 与媒体分析能力。它适合 Jenn 的本地生产与受控的多用户只读授权验证，但尚不是成熟的无人值守生产服务或可直接公网部署的平台。
+当前接受的 Jenn 本地运行版本为 `0.1.0-beta.5`，MCP service 版本为 `webgpt-v4.3.0`，Remote App service 为 `readonly-remote-v1.0.0`，数据库 schema 为 `workbench-v2-5`，活动库已验收至 migration ledger `0008`。Readonly ChatGPT MCP App 已完成 Jenn 单用户真实活动库验收；系统状态为 `JENN_SINGLE_USER_MCP_APP_PASS`、`MANUAL_PUBLISH_OPERATIONAL_READY` 和 `PARTIAL_MULTI_USER_GATE`。系统已经包含 Workbench V2、WebGPT V4、MCP App、真实 Provider 生成边界、审片、重生成、合成、交付、Memory 与媒体分析能力，但尚不是成熟的无人值守生产服务。
 
 ## 当前边界
 
@@ -65,11 +65,11 @@ npm run secret:scan
 
 `start:local` 以前台方式启动本地 Workbench。`windows:start`、`windows:status`、`windows:stop` 提供普通用户权限的 Windows 受管启停入口，但不会创建 Task Scheduler 或配置自动启动。`start:webgpt` 默认只启动 Readonly MCP；只有显式设置 `WEBGPT_V4_PROFILE=full` 才会同时启动媒体网关和现有有限写入工具。`preflight` 默认检查本地 Workbench profile；WebGPT 使用 `npm run preflight -- --profile=webgpt` 并按 Readonly/Full 检查对应端口和依赖，OAuth 缺失时会明确失败并保持 fail closed。外部 Readonly 接线还必须单独运行 `preflight:webgpt:oauth`；该命令不打开数据库，通过 DNS-pinned HTTPS 依次验证 RFC 8414/OIDC metadata、精确 issuer/JWKS、PKCE S256、public-client auth，并按 `predefined | cimd | dcr` 检查对应注册能力。探针不跟随 redirect，也不输出 endpoint 或响应正文。若本机代理只返回 RFC 2544 `198.18.0.0/15` Fake-IP，OAuth discovery 与 JWKS transport 会使用固定、受限的公共 DoH 恢复真实地址；普通 private/mixed DNS 结果仍立即拒绝，恢复后的地址仍必须通过同一校验并被 TLS transport 固定。
 
-Cloud MCP App 交付命令只形成代码与本地验收面，不会自动创建 Render、DNS、Auth0 或 ChatGPT 对象。Publisher profile、DPAPI 私钥材料和脱敏 receipt 必须位于 Git 忽略的 `data/webgpt/publisher/`；`preflight:webgpt:publisher` 只读验证 ledger `0008`、投影和签名，`publish:webgpt:snapshot` 才执行经单独授权的远端 Snapshot 替换。完整边界见 [Readonly MCP App Delivery Runbook](docs/webgpt/READONLY_MCP_APP_DELIVERY_RUNBOOK.md)。
+Cloud MCP App 交付命令不会自动创建或修改 Render、DNS、Auth0 或 ChatGPT 对象。Publisher profile、DPAPI 私钥材料和脱敏 receipt 必须位于 Git 忽略的 `data/webgpt/publisher/`；`preflight:webgpt:publisher` 只读验证 ledger `0008`、投影和签名，`publish:webgpt:snapshot` 才执行经单独授权的远端 Snapshot 替换。当前 Render Free 实例可能休眠或重启，远端只保存内存 Snapshot；实例重启或 24 小时 TTL 到期后必须手动重新发布。ChatGPT developer-mode 验收时平台 CSP enforcement 开关未启用，因此 CSP 仍保留为后续平台实测限制。完整边界见 [Readonly MCP App Delivery Runbook](docs/webgpt/READONLY_MCP_APP_DELIVERY_RUNBOOK.md) 和 [Stage 3 Acceptance](ops/reports/2026-07-17-readonly-mcp-app-stage3-acceptance.md)。
 
 ### 多用户只读授权
 
-`0.1.0-beta.4` 建立了 Descope 多用户只读服务边界；当前仓库候选代码进一步建立 provider-neutral Federated OAuth/issuer binding 与安全 discovery。Stage 0 因当前 Auth0 tenant/plan 尚未完成只读 capability 核实而 fail closed，PR3 采用 Stytch predefined public-client capability fixture；这不是外部验收通过。Stytch 的真实路线还要求应用托管公网 authorization/login/consent UI 并核实 standards-compatible issuer。Descope 文档保留为历史兼容路线；新的 IdP/ChatGPT 双用户验收仍需后续独立授权。完整候选边界见 [Readonly Federated OAuth Portability v1](docs/READONLY_FEDERATED_OAUTH_PORTABILITY.md)。授权管理命令必须显式提供数据库路径，不会默认写入 `data/app.sqlite`：
+`0.1.0-beta.4` 建立了 Descope 多用户只读服务边界；`0.1.0-beta.5` 接受 provider-neutral Federated OAuth/issuer binding、Auth0 predefined public-client 和 Jenn 单用户 ChatGPT MCP App 路线。旧 Descope principal、membership 和事件继续保留并绑定原 issuer；多用户正式验收仍为 `PARTIAL_MULTI_USER_GATE`。完整边界见 [Readonly Federated OAuth Portability v1](docs/READONLY_FEDERATED_OAUTH_PORTABILITY.md)。授权管理命令必须显式提供数据库路径，不会默认写入 `data/app.sqlite`：
 
 ```powershell
 npm run auth:webgpt -- bootstrap-owner --db <path> --principal <opaque-sha256> --issuer <https-issuer> --project <production-project-id>
@@ -137,6 +137,6 @@ PID 状态和按次启动日志只写入 Git 忽略的 `ops/tools/workbench-runt
 
 本版本冻结 WebGPT V5、Workbench V3 和新 Provider。GPT 服务面已完成默认 Readonly、严格 DTO、Compact context、离线 eval、Widget v2 metadata、低披露 Telemetry、Descope JWT 验证、显式项目 membership 与有界并发收敛；Descope tenant/ChatGPT connector 的实际外部切换、Secure MCP Tunnel、外部 HTTPS、媒体外部开放、Windows 自动启动、Full/Auth0 外部化与真实 Provider canary 仍是后续独立 gate。
 
-SR0–SR5 已合入 `main`。SR6 disposable Stage 1 已使用隔离数据库完成迁移、完整性检查、备份恢复、preflight 和两轮启停验收，脱敏证据见 [SR6 Disposable Database Acceptance](ops/reports/2026-07-13-sr6-disposable-acceptance.md)。经 Jenn 单独明确授权，active-database Stage 2 又完成活动库备份、迁移、`db:check`、隔离恢复、核心记录一致性比较、两轮只读黄金路径和有界 soak，脱敏证据见 [SR6 Active Database Acceptance](ops/reports/2026-07-13-sr6-active-database-acceptance.md)。beta.4 活动库验收进一步应用 migration `0007`，完成业务核心 hash 比较、隔离恢复、两轮只读启动和 10 分钟有界 soak，脱敏证据见 [Beta 4 Active Database Acceptance](ops/reports/2026-07-14-beta4-active-database-acceptance.md)。`0.1.0-beta.4` 现为 Jenn 接受的本地运行基线；外部 Descope/ChatGPT 多用户接线仍未完成。
+SR0–SR5 已合入 `main`。SR6 disposable Stage 1 已使用隔离数据库完成迁移、完整性检查、备份恢复、preflight 和两轮启停验收，脱敏证据见 [SR6 Disposable Database Acceptance](ops/reports/2026-07-13-sr6-disposable-acceptance.md)。经 Jenn 单独明确授权，active-database Stage 2 又完成活动库备份、迁移、`db:check`、隔离恢复、核心记录一致性比较、两轮只读黄金路径和有界 soak，脱敏证据见 [SR6 Active Database Acceptance](ops/reports/2026-07-13-sr6-active-database-acceptance.md)。beta.4 活动库验收进一步应用 migration `0007`，脱敏证据见 [Beta 4 Active Database Acceptance](ops/reports/2026-07-14-beta4-active-database-acceptance.md)。MCP App Stage 3 已将活动库迁移至 `0008`，完成 issuer binding、恢复演练、真实 Snapshot 发布、七工具、Workbench、关闭—重开与有界 soak；脱敏证据见 [Stage 3 Acceptance](ops/reports/2026-07-17-readonly-mcp-app-stage3-acceptance.md)。`0.1.0-beta.5` 现为 Jenn 接受的单用户手动发布运行基线；多用户验收、自动同步和自动启动仍未完成。
 
 详见 [当前状态](CURRENT_STATE.md)、[Stabilization Remediation](docs/STABILIZATION_REMEDIATION.md)、[GPT Service Capability Hardening](docs/GPT_SERVICE_CAPABILITY_HARDENING.md)、[架构](docs/ARCHITECTURE.md) 和 [Stabilization Release v2 taskbook](docs/STABILIZATION_RELEASE_V2.md)。

@@ -1,6 +1,6 @@
 # WebGPT V4 本地运行与外部接线手册
 
-状态：接受的本地运行基线仍为 `webgpt-v4.2.0`；仓库候选运行时已建立 provider-neutral Federated OAuth、issuer binding 与安全 discovery/JWKS transport。外部 IdP/ChatGPT connector、Secure MCP Tunnel、媒体域名和 Windows 自动启动尚未通过新路线验收。
+状态：接受的运行基线为 `webgpt-v4.3.0`；provider-neutral Federated OAuth、issuer binding、Auth0 predefined public-client 与 Readonly ChatGPT MCP App 已完成 Jenn 单用户真实活动库验收。状态为 `MANUAL_PUBLISH_OPERATIONAL_READY`；第二真实用户、媒体域名、自动同步和 Windows 自动启动仍未验收。
 
 ## 固定边界
 
@@ -62,7 +62,8 @@ GET http://127.0.0.1:2092/healthz
 - 通用配置使用 `WEBGPT_V4_READONLY_OAUTH_ISSUER`、`WEBGPT_V4_READONLY_OAUTH_AUDIENCE`、`WEBGPT_V4_READONLY_OAUTH_JWKS_URI` 和显式 `WEBGPT_V4_READONLY_OAUTH_CLIENT_REGISTRATION`
 - issuer 同时是 PRMD authorization server 与 JWT `iss`；audience 必须与 `WEBGPT_V4_RESOURCE_URL` 完全相同
 - IdP 只认证身份；本地 issuer-bound principal/membership 始终是 production-project 授权权威
-- Auth0 Stage 0 标准能力探针已通过：RFC 8414 metadata、精确 issuer/JWKS、PKCE S256、public-client `none` 与 Resource Parameter Compatibility Profile 均满足；新 API/client、ChatGPT redirect、真实 token audience/scope 和双用户路径仍未验收，因此仍是 `PARTIAL_EXTERNAL_GATE`
+- Auth0 Stage 0 标准能力探针已通过；External Stage 3 又完成专用 API、predefined public client、精确 ChatGPT redirect、真实 token audience/scope、Jenn issuer-bound owner、七工具与 Workbench 验收。当前状态为 `JENN_SINGLE_USER_MCP_APP_PASS` 和 `MANUAL_PUBLISH_OPERATIONAL_READY`
+- 剩余 Auth0 gate 仅为第二真实用户的 viewer grant、跨项目拒绝和即时 revoke 验收；通过前保持 `PARTIAL_MULTI_USER_GATE`，不否定 beta.5 单用户基线
 - 运行时保持 provider-neutral，不允许根据 Stytch/Descope 品牌绕过 issuer、audience、JWKS、scope 或 membership
 
 ### Descope Readonly（legacy adapter）
@@ -71,7 +72,7 @@ GET http://127.0.0.1:2092/healthz
 - 旧 Descope 配置固定为 `cimd` legacy adapter；vendor-specific metadata 只能提供诊断，不能声明 portability-compatible
 - ChatGPT connector 只申请 `projects.read`
 - principal 由 issuer 与 subject 派生为不可逆 SHA-256；不保存原始 subject 或邮箱
-- 先在活动库副本验证 migration `0008`，再经单独授权迁移活动库并 bootstrap issuer-bound first owner
+- 活动库已验收至 migration `0008`；历史 Descope principal、issuer binding、membership 与 append-only events 保留，但不参与当前 Auth0 issuer readiness
 - 回滚：停止 connector/Tunnel，撤销 membership 或禁用 principal；不删除 authorization event
 
 ### Full/Auth0（独立后续 gate）

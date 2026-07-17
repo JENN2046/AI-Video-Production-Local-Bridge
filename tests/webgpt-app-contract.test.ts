@@ -55,7 +55,7 @@ function shell(appState: "ready" | "no_snapshot" = "ready") {
 
 function toolResult(data: unknown, fingerprint = FINGERPRINT): Record<string, unknown> {
   return {
-    structuredContent: { ok: true, data, meta: { request_id: "fixture", source_version: "webgpt-v4.2.0", updated_at: "2026-07-17T00:00:00.000Z" } },
+    structuredContent: { ok: true, data, meta: { request_id: "fixture", source_version: "webgpt-v4.3.0", updated_at: "2026-07-17T00:00:00.000Z" } },
     _meta: {
       snapshot_fingerprint: fingerprint,
       snapshot_status: shell().status
@@ -68,7 +68,7 @@ function toolFailure(code: string): Record<string, unknown> {
     structuredContent: {
       ok: false,
       error: { code, message: code, retryable: false },
-      meta: { request_id: "fixture", source_version: "webgpt-v4.2.0", updated_at: "2026-07-17T00:00:00.000Z" }
+      meta: { request_id: "fixture", source_version: "webgpt-v4.3.0", updated_at: "2026-07-17T00:00:00.000Z" }
     },
     _meta: { snapshot_fingerprint: FINGERPRINT, snapshot_status: shell().status }
   };
@@ -88,7 +88,7 @@ test("readonly MCP App contract freezes one render tool, six data tools, and the
 test("render contract accepts only low-disclosure shell state and initial intent", () => {
   const shell = {
     app_state: "no_snapshot",
-    service_version: "webgpt-v4.2.0",
+    service_version: "webgpt-v4.3.0",
     resource_version: READONLY_WORKBENCH_RESOURCE_VERSION,
     status: {
       server_now: "2026-07-16T00:00:00.000Z",

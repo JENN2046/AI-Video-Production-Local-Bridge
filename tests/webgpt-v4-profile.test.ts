@@ -168,7 +168,7 @@ test("readonly contract violations return a stable safe envelope", () => {
   const result = readProjectContext({
     ok: true,
     data: { project: { project_id: "project_invalid" } },
-    meta: { request_id: "contract-fixture", source_version: "webgpt-v4.2.0", updated_at: "2026-01-01T00:00:00.000Z" }
+    meta: { request_id: "contract-fixture", source_version: "webgpt-v4.3.0", updated_at: "2026-01-01T00:00:00.000Z" }
   }, "full");
   assert.equal(result.ok, false);
   if (!result.ok) {

@@ -1,14 +1,14 @@
 # Current State
 
-Date: 2026-07-14
+Date: 2026-07-17
 
-Baseline: `0.1.0-beta.4` accepted local runtime; external multi-user readonly connection remains closed
+Baseline: `0.1.0-beta.5` accepted Jenn single-user MCP App runtime; multi-user gate remains partial
 
-Accepted version: `0.1.0-beta.4`; MCP service: `webgpt-v4.2.0`; database schema: `workbench-v2-5`; accepted activity-database ledger: `0007`; repository candidate runtime requires: `0008`
+Accepted version: `0.1.0-beta.5`; MCP service: `webgpt-v4.3.0`; Remote App service: `readonly-remote-v1.0.0`; database schema: `workbench-v2-5`; accepted activity-database ledger: `0008`
 
-Acceptance source baseline: `main@c796c40` (`Merge pull request #29`); repository candidate issuer-binding baseline: `main@cd1d708` (PR #34)
+Stage 3 acceptance source baseline: `main@07ad045f3b1d1ade1b2249ce256bafa2fc05385c`
 
-Current accepted active-database runtime: `0.1.0-beta.4` on schema `workbench-v2-5`, migration ledger `0007`. Repository runtime requiring `0008` remains a candidate until separately authorized activity-database migration and acceptance.
+Current accepted active-database runtime: `0.1.0-beta.5` on schema `workbench-v2-5`, migration ledger `0008`. Jenn's single-user Readonly ChatGPT MCP App has passed real activity-database acceptance with manual Snapshot publishing.
 
 ## Product state
 
@@ -16,9 +16,9 @@ AI Video Production Workspace 已经越过概念验证：Workbench V2、WebGPT V
 
 系统当前适合 Jenn 的单人 Windows 本地生产与受控验证。Stabilization Release v2 已完成，PR #1–#7 均已合并：版本化数据库迁移、持久化 generation worker、媒体有界队列、完整 readiness、标准本地 preflight 和受保护的 Windows Workbench 生命周期控制均已实现。活动数据库已完成备份、迁移、`db:check`、隔离恢复演练与约四小时只读 soak；外部 OAuth/Tunnel 接线和 Windows 自动启动仍被冻结。
 
-WebGPT V4 已收敛为默认 Readonly 的严格契约服务面：默认仅暴露六个 `projects.read` 工具；14 个 Full 工具均使用显式公共 DTO；大型上下文默认 Compact 并受 128 KiB 预算约束；离线 contract/eval、Widget v2 和可选低披露 JSONL Telemetry 均有故障路径测试。PR #25–#28 又完成 path-aware PRMD、readonly Descope JWT、migration `0007`、opaque principal、显式 production-project membership、append-only authorization event、active-owner readiness 与全局 8/每 principal 4 的 request admission。`webgpt-v4.2.0` 的代码服务面已经形成；此状态不表示外部 Descope、ChatGPT connector 或 Tunnel 接线已完成。
+WebGPT V4 已收敛为默认 Readonly 的严格契约服务面：默认仅暴露六个 `projects.read` 工具；14 个 Full 工具均使用显式公共 DTO；大型上下文默认 Compact 并受 128 KiB 预算约束；离线 contract/eval、Widget v2 和可选低披露 JSONL Telemetry 均有故障路径测试。PR #25–#28 又完成 path-aware PRMD、readonly Descope JWT、migration `0007`、opaque principal、显式 production-project membership、append-only authorization event、active-owner readiness 与全局 8/每 principal 4 的 request admission。`webgpt-v4.2.0` 保留为 Beta 4 历史边界；当前接受服务版本为 `webgpt-v4.3.0`。
 
-Readonly Federated OAuth portability 候选路线已推进：PR #34 在 repository runtime 中加入 migration `0008`、不可变 issuer binding、provider-neutral Federated config、严格 `scope`/`scp` 和 current-issuer owner readiness；PR #35 把 discovery/JWKS 收敛到 RFC 8414→OIDC、精确 issuer/JWKS、registration-mode gate 与 DNS-pinned HTTPS transport；PR #36 加入 predefined public-client、JWT/轮换、双用户授权、跨项目与六工具整库零写入门禁。当前 Auth0 tenant 的 Stage 0 只读 capability gate 已通过 RFC 8414、精确 issuer/JWKS、PKCE S256、public-client `none` 与 Resource Parameter Compatibility 检查；候选 transport 还为仅返回 `198.18.0.0/15` 的本机 Fake-IP 代理增加了 bounded pinned DoH 恢复，不放宽其他 private/mixed DNS 拒绝规则。新 Auth0 API/client、ChatGPT redirect、真实 token audience/scope、双用户与活动库 cutover 尚未完成。Stytch 仍只是离线 capability fixture。活动库仍停留在已验收的 `0007`，整体状态继续是 `PARTIAL_EXTERNAL_GATE`。
+Readonly Federated OAuth 与 MCP App 单用户路线已经验收：migration `0008`、不可变 issuer binding、provider-neutral Federated config、严格 `scope`/`scp`、Auth0 predefined public-client、签名 Snapshot、Remote MCP Runtime、七个只读工具和 iframe Workbench 已完成真实活动库黄金路径。活动库迁移、`db:check`、业务核心 manifest、隔离恢复、手动发布、关闭—重开和有界 soak 均通过。当前状态为 `JENN_SINGLE_USER_MCP_APP_PASS`、`MANUAL_PUBLISH_OPERATIONAL_READY` 和 `PARTIAL_MULTI_USER_GATE`；第二真实用户、自动同步与自动启动仍未验收。
 
 Stabilization Remediation 已完成代码与门禁收敛：SR0/SR0.5 固定实施路线和测试选择双门禁；SR1 建立不可变 Blob 与原子 Artifact 绑定；SR2 收敛共享 Provider capability/pricing contract；SR3 建立媒体激活、字节校验和恢复门禁；SR4 修复跨 SHOT 引用、readiness 和旧再生旁路；SR5 冻结可执行的故障注入回归矩阵。上述实现已经通过 PR #15–#21 合入 `main@958df57`。
 
@@ -53,6 +53,17 @@ Remote CI evidence: PR #9–#13、Remediation PR #15–#21、SR6 PR #22、Hotfix
 - 外部 Descope tenant、ChatGPT connector、Secure MCP Tunnel 和真实多用户黄金路径尚未配置或验收；Beta 4 的本地运行验收不等于外部多用户 readiness。
 - 不创建 Git tag、不发布 package、不执行 release 或 deploy。
 
+## Accepted Beta 5 MCP App boundary
+
+- Package 为 `0.1.0-beta.5`，MCP service 为 `webgpt-v4.3.0`，Remote App service 保持 `readonly-remote-v1.0.0`。
+- 经 Jenn 明确授权，活动库从 ledger `0007` 迁移至 `0008`；旧 Descope 授权记录完整保留并绑定原 issuer，新 Auth0 owner 使用不可变 issuer binding。
+- 活动库与隔离恢复副本均通过 `db:check`；迁移前后业务核心 manifest 完全一致，Snapshot 发布和七工具调用未写回活动库。
+- ChatGPT Test App 完成 OAuth、七工具、五个 Workbench 面板、关闭—重开和 60 秒/5 次 readiness soak。
+- 当前状态是 `JENN_SINGLE_USER_MCP_APP_PASS`、`MANUAL_PUBLISH_OPERATIONAL_READY`、`PARTIAL_MULTI_USER_GATE`。
+- Render Free 可能休眠或重启并清空内存 Snapshot；Snapshot TTL 为 24 小时，因此当前路线要求手动重新发布。
+- ChatGPT developer-mode 验收未开启平台 CSP enforcement 开关；资源自身的 CSP 契约有自动化测试，但平台强制 CSP 仍是外部实测限制。
+- 不创建 Git tag、不发布 package、不执行 release 或额外部署。
+
 ## Stabilization policy
 
 - Freeze WebGPT V5, Workbench V3 and new providers.
@@ -64,6 +75,7 @@ Remote CI evidence: PR #9–#13、Remediation PR #15–#21、SR6 PR #22、Hotfix
 ## Remaining external gates
 
 - GPT hardening PRs retain the Windows Node 22 + FFmpeg 8.1.2 CI and browser-smoke gates.
-- Keep external Descope/ChatGPT cutover, Full/Auth0 externalization, Secure MCP Tunnel, public media HTTPS, Windows auto-start, real Provider canary, WebGPT V5, Workbench V3 and new Providers outside this release.
-- Do not make a paid Provider call as part of stabilization acceptance.
-- Remediation exit gates now pass; external-connection work still requires Jenn's separate scope and authorization.
+- Single-user Auth0/ChatGPT MCP App access is accepted; a second real user and multi-user revoke path remain `PARTIAL_MULTI_USER_GATE`.
+- Manual Snapshot publish is accepted; automatic synchronization, low-maintenance Human Workbench publishing and Windows auto-start remain separate gates.
+- Keep Full profile externalization, public media, real Provider canary, WebGPT V5, Workbench V3 and new Providers outside this release.
+- Do not make a paid Provider call as part of this closeout.
