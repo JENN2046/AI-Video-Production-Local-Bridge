@@ -229,6 +229,43 @@ test("readonly workbench refresh recovers an existing empty shell through the da
   }
 });
 
+test("readonly workbench preserves a selected project outside the first page", async () => {
+  const projectCalls: string[] = [];
+  const baseShell = shell();
+  const initial = { ...baseShell, initial_intent: { ...baseShell.initial_intent, project_id: "project_page_2" } };
+  const dom = new JSDOM(readonlyWorkbenchWidgetHtml(), {
+    runScripts: "dangerously",
+    pretendToBeVisual: true,
+    beforeParse(window) {
+      Object.defineProperty(window, "openai", { value: {
+        toolOutput: initial,
+        callTool: async (name: string, args: Record<string, unknown>) => {
+          if (name === "list_production_projects") return toolResult({
+            items: [{ project: { project_id: "project_page_1", title: "First page", status: "active" }, lifecycle: "active", updated_at: "2026-07-17" }],
+            page: { next_offset: 25 }
+          });
+          projectCalls.push(String(args.project_id ?? ""));
+          if (name === "get_project_context") return toolResult({ project: { project_id: args.project_id, title: "Selected page 2", status: "active" }, workspace: "overview", summary: {} });
+          if (name === "list_project_shots") return toolResult({ items: [] });
+          return toolResult({ project_status: "active", readiness_checks: [] });
+        }
+      }, configurable: true });
+    }
+  });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.equal(projectCalls.length > 0, true);
+    assert.deepEqual(new Set(projectCalls), new Set(["project_page_2"]));
+    assert.equal(dom.window.document.body.textContent?.includes("Selected page 2"), true);
+    dom.window.document.querySelector<HTMLButtonElement>("#refresh")!.click();
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.deepEqual(new Set(projectCalls), new Set(["project_page_2"]));
+    assert.equal(dom.window.document.body.textContent?.includes("Selected page 2"), true);
+  } finally {
+    dom.window.close();
+  }
+});
+
 test("render shell never reveals an unauthorized initial project", () => {
   const result = readonlyWorkbenchShell(ACTOR, null, { initial_project_id: "project_secret", initial_panel: "delivery" }, new Date("2026-07-17T00:00:00.000Z"));
   assert.equal(result.app_state, "no_snapshot");
