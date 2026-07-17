@@ -37,7 +37,7 @@ Result: `AUTH0_CAPABILITY_GATE_PASSED`
 
 The current Auth0 tenant passed the read-only standards capability probe: anonymous RFC 8414 metadata returned `200`; metadata issuer and JWKS matched exactly; PKCE S256 and public-client token authentication `none` were advertised; and Resource Parameter Compatibility Profile was enabled. The repository preflight also completed through the real local Fake-IP environment using the bounded recovery path described below. No Auth0 API/Application was created or modified.
 
-This is not yet a token or connector acceptance result. The exact Tunnel resource API, predefined Native client, ChatGPT redirect, signed access-token audience/scope, consent path, and two-user flow remain external gates. The tenant also reports its current Application/SSO Integration capacity is exhausted, so the external object plan must reuse only the dedicated historical Readonly client or obtain capacity without touching unrelated applications. Stytch remains a capability fixture/fallback only and is not selected while Auth0 continues to satisfy the hard gates.
+At Stage 0 this was not yet a token or connector acceptance result. External Stage 3 later accepted the predefined Native client, exact public MCP resource, ChatGPT redirect, signed access-token audience/scope, consent path and Jenn single-user flow. The second real-user grant/revoke path remains an external gate. Stytch remains a capability fixture/fallback only and is not selected while Auth0 continues to satisfy the hard gates.
 
 Local proxy compatibility is deliberately narrow: if every system DNS answer is in the RFC 2544 benchmark range `198.18.0.0/15`, WebGPT queries a fixed public DoH endpoint over bounded pinned HTTPS, binds answers to the original question/CNAME chain, rejects unsafe results, and pins the recovered address to discovery/JWKS TLS. Any ordinary private, mixed, malformed, oversized, redirected, or mismatched response still fails closed. There is no arbitrary resolver or host allowlist environment variable.
 
@@ -64,18 +64,30 @@ No OpenAI API, ChatGPT, IdP, Tunnel, Provider, activity database, `.env`, secret
 
 ## External gates
 
-External acceptance requires new, separate authorization for each write surface. The order is fixed:
+The single-user external gate is complete. External Stage 3 accepted the Auth0
+predefined public client, direct public MCP resource, ChatGPT test App, activity
+database ledger `0008`, issuer-bound Jenn owner, signed Snapshot publication,
+seven readonly tools, Workbench restart recovery and bounded soak. Package
+`0.1.0-beta.5` and service `webgpt-v4.3.0` are the accepted single-user manual
+publish baseline.
 
-1. Verify the selected IdP project/plan supports the exact predefined public-client contract, exact MCP resource audience, standards-compatible issuer, and a publicly reachable end-user authorization/login/consent flow.
-2. Create one isolated IdP API/resource and one public client using the exact redirect URI displayed by the ChatGPT management page. Do not guess the redirect.
-3. Create one new private ChatGPT test App without changing the historical Descope App.
-4. Write only non-secret values to an explicitly authorized Git-ignored runtime profile or isolated child-process environment.
-5. Back up the activity database, migrate a copy to `0008`, and bootstrap issuer-bound owner/viewer principals through hidden input.
-6. Start Readonly WebGPT and Tunnel with `REAL_PROVIDER_ENABLED=false`; verify two-user login, PKCE, audience, scope, six tools, cross-project rejection, immediate revoke, and last-owner readiness failure.
-7. Compare the database logical manifest and stop all test processes.
-8. Only after the isolated gate passes may a separately authorized activity-database cutover begin.
+The remaining external gate is multi-user only and still requires new, separate
+authorization for each write surface. Its order is fixed:
 
-Until both users, activity-database migration, restart recovery, and bounded soak pass, status remains `PARTIAL_EXTERNAL_GATE`. Package `0.1.0-beta.5` and service `webgpt-v4.3.0` must not be claimed or published.
+1. Select a second real Auth0 user without changing the accepted Jenn owner.
+2. Register and issuer-bind that principal through hidden input, then grant only
+   an explicit production-project viewer membership.
+3. Verify direct public MCP App login, PKCE, exact audience, `projects.read`, six
+   data tools, project allowlisting and cross-project rejection.
+4. Revoke the viewer and verify immediate denial without weakening the current
+   Jenn owner or readiness boundary.
+5. Compare the database logical manifest, preserve append-only authorization
+   evidence, and stop any temporary test process.
+
+Until that path passes, status remains `PARTIAL_MULTI_USER_GATE`. This status
+does not invalidate `JENN_SINGLE_USER_MCP_APP_PASS` or
+`MANUAL_PUBLISH_OPERATIONAL_READY`, and it does not block the accepted beta.5
+single-user baseline.
 
 ## Rollback
 
