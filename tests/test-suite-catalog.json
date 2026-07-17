@@ -320,6 +320,20 @@
       "npm_script": "test:webgpt:app",
       "ci_step": "WebGPT MCP App tests",
       "case_name": "readonly workbench routes parallel tool failures to their own panels"
+    },
+    {
+      "id": "readonly-app-review-selection-race",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench rejects stale review responses for prior SHOT selections"
+    },
+    {
+      "id": "readonly-app-refresh-selection-recovery",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench preserves the selected project when refresh fails"
     }
   ],
   "remediation_suites": [

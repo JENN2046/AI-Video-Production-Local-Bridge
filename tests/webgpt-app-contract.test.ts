@@ -390,6 +390,84 @@ test("readonly workbench routes parallel tool failures to their own panels", asy
   }
 });
 
+test("readonly workbench rejects stale review responses for prior SHOT selections", async () => {
+  const firstReview: { resolve: ((value: Record<string, unknown>) => void) | null } = { resolve: null };
+  const dom = new JSDOM(readonlyWorkbenchWidgetHtml(), {
+    runScripts: "dangerously",
+    pretendToBeVisual: true,
+    beforeParse(window) {
+      Object.defineProperty(window, "openai", { value: {
+        toolOutput: shell(),
+        callTool: async (name: string, args: Record<string, unknown>) => {
+          if (name === "list_production_projects") return toolResult({ items: [{ project: { project_id: "project_a", title: "Project A", status: "active" } }], page: { next_offset: null } });
+          if (name === "get_project_context") return toolResult({ project: { project_id: "project_a", title: "Project A", status: "active" }, workspace: "overview", summary: {} });
+          if (name === "list_project_shots") return toolResult({ items: [
+            { shot_id: "shot_1", order: 1, status: "ready", description: "First SHOT" },
+            { shot_id: "shot_2", order: 2, status: "ready", description: "Second SHOT" }
+          ], page: { next_offset: null } });
+          if (name === "get_review_package" && args.shot_id === "shot_1") return new Promise((resolve) => { firstReview.resolve = resolve; });
+          if (name === "get_review_package") return toolResult({ shot: { shot_id: "shot_2", description: "Second review" }, versions: [], notes: [] });
+          return toolResult({ project_status: "active", readiness_checks: [] });
+        }
+      }, configurable: true });
+    }
+  });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 35));
+    assert.ok(firstReview.resolve);
+    dom.window.document.querySelector<HTMLButtonElement>('button[data-shot-id="shot_2"]')!.click();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(dom.window.document.querySelector("#review")?.textContent?.includes("Second review"), true);
+    firstReview.resolve(toolResult({ shot: { shot_id: "shot_1", description: "STALE FIRST REVIEW" }, versions: [], notes: [] }));
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(dom.window.document.querySelector("#review")?.textContent?.includes("Second review"), true);
+    assert.equal(dom.window.document.querySelector("#review")?.textContent?.includes("STALE FIRST REVIEW"), false);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("readonly workbench preserves the selected project when refresh fails", async () => {
+  let projectListCalls = 0;
+  const contextProjects: string[] = [];
+  const baseShell = shell();
+  const initial = { ...baseShell, initial_intent: { ...baseShell.initial_intent, project_id: "project_page_2" } };
+  const dom = new JSDOM(readonlyWorkbenchWidgetHtml(), {
+    runScripts: "dangerously",
+    pretendToBeVisual: true,
+    beforeParse(window) {
+      Object.defineProperty(window, "openai", { value: {
+        toolOutput: initial,
+        callTool: async (name: string, args: Record<string, unknown>) => {
+          if (name === "list_production_projects") {
+            projectListCalls += 1;
+            if (projectListCalls === 2) return toolFailure("SERVICE_TEMPORARILY_UNAVAILABLE");
+            return toolResult({ items: [{ project: { project_id: "project_page_1", title: "First page", status: "active" } }], page: { next_offset: 25 } });
+          }
+          if (name === "get_project_context") {
+            contextProjects.push(String(args.project_id ?? ""));
+            return toolResult({ project: { project_id: args.project_id, title: "Selected page 2", status: "active" }, workspace: "overview", summary: {} });
+          }
+          if (name === "list_project_shots") return toolResult({ items: [], page: { next_offset: null } });
+          return toolResult({ project_status: "active", readiness_checks: [] });
+        }
+      }, configurable: true });
+    }
+  });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    dom.window.document.querySelector<HTMLButtonElement>("#refresh")!.click();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    dom.window.document.querySelector<HTMLButtonElement>("#refresh")!.click();
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.equal(projectListCalls, 3);
+    assert.deepEqual(new Set(contextProjects), new Set(["project_page_2"]));
+    assert.equal(dom.window.document.querySelector("#context")?.textContent?.includes("Selected page 2"), true);
+  } finally {
+    dom.window.close();
+  }
+});
+
 test("render shell never reveals an unauthorized initial project", () => {
   const result = readonlyWorkbenchShell(ACTOR, null, { initial_project_id: "project_secret", initial_panel: "delivery" }, new Date("2026-07-17T00:00:00.000Z"));
   assert.equal(result.app_state, "no_snapshot");
