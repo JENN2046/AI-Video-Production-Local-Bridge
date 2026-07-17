@@ -264,6 +264,118 @@
       "npm_script": "test:webgpt:app",
       "ci_step": "WebGPT MCP App tests",
       "case_name": "render contract accepts only low-disclosure shell state and initial intent"
+    },
+    {
+      "id": "readonly-app-render-binding",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly App resource and render binding expose a low-disclosure authenticated shell"
+    },
+    {
+      "id": "readonly-app-widget-security",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench HTML enforces CSP-compatible local rendering and inline escaping"
+    },
+    {
+      "id": "readonly-app-race-isolation",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench escapes malicious business text and ignores stale cross-project responses"
+    },
+    {
+      "id": "readonly-app-empty-refresh-recovery",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench refresh recovers an existing empty shell through the data tool"
+    },
+    {
+      "id": "readonly-app-off-page-selection",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench preserves a selected project outside the first page"
+    },
+    {
+      "id": "readonly-app-pagination-generation",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench appends project pages without cancelling detail loads"
+    },
+    {
+      "id": "readonly-app-shot-pagination",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench paginates SHOTs without changing project generation"
+    },
+    {
+      "id": "readonly-app-panel-error-routing",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench routes parallel tool failures to their own panels"
+    },
+    {
+      "id": "readonly-app-review-selection-race",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench rejects stale review responses for prior SHOT selections"
+    },
+    {
+      "id": "readonly-app-refresh-selection-recovery",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench preserves the selected project when refresh fails"
+    },
+    {
+      "id": "readonly-app-snapshot-page-reset",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench reloads project pages from offset zero after snapshot changes"
+    },
+    {
+      "id": "readonly-app-selected-shot-refresh",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench preserves the selected paged SHOT across refresh"
+    },
+    {
+      "id": "readonly-app-unregistered-principal-empty",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench maps an unregistered principal refresh to no authorized projects"
+    },
+    {
+      "id": "readonly-app-client-ttl-expiry",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench clears business panels as soon as the client TTL reaches zero"
+    },
+    {
+      "id": "readonly-app-initial-zero-ttl",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench does not mount business panels when the initial TTL is zero"
+    },
+    {
+      "id": "readonly-app-host-shell-invalidation",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench ignores project responses that arrive after a non-ready host shell"
     }
   ],
   "remediation_suites": [

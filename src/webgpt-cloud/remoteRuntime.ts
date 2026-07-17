@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { registerAppResource, registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod/v4";
 import type { JWTVerifyGetKey } from "jose";
 
@@ -31,7 +32,15 @@ import {
   type WebGptV4Result
 } from "../webgpt-v4/types.js";
 import {
-  READONLY_WORKBENCH_DATA_TOOLS
+  READONLY_WORKBENCH_DATA_TOOLS,
+  READONLY_WORKBENCH_RENDER_INPUT_SCHEMA,
+  READONLY_WORKBENCH_RENDER_TOOL,
+  READONLY_WORKBENCH_RESOURCE_MIME,
+  READONLY_WORKBENCH_RESOURCE_URI,
+  READONLY_WORKBENCH_RESOURCE_VERSION,
+  READONLY_WORKBENCH_SHELL_SCHEMA,
+  type ReadonlyWorkbenchRenderInput,
+  type ReadonlyWorkbenchShell
 } from "./appContract.js";
 import type {
   ReadonlyDataSource,
@@ -46,6 +55,10 @@ import {
   ReadonlySnapshotStore,
   type ReadonlySigningPublicKey
 } from "./signedSnapshot.js";
+import {
+  READONLY_WORKBENCH_WIDGET_DOMAIN,
+  readonlyWorkbenchWidgetHtml
+} from "./readonlyWorkbenchWidget.js";
 
 export const READONLY_REMOTE_SERVICE_VERSION = "readonly-remote-v1.0.0";
 export const READONLY_REMOTE_DEFAULT_HOST = "127.0.0.1";
@@ -53,9 +66,11 @@ export const READONLY_REMOTE_DEFAULT_PORT = 2094;
 export const READONLY_REMOTE_PUBLISH_PATH = "/snapshot";
 export const READONLY_REMOTE_TOOL_RESULT_MAX_BYTES = 128 * 1024;
 
-type RemoteToolName = typeof READONLY_WORKBENCH_DATA_TOOLS[number];
+type RemoteToolName = typeof READONLY_WORKBENCH_DATA_TOOLS[number] | typeof READONLY_WORKBENCH_RENDER_TOOL;
 
-const toolScopes = Object.fromEntries(READONLY_WORKBENCH_DATA_TOOLS.map((name) => [name, "projects.read"])) as Record<RemoteToolName, "projects.read">;
+const toolScopes = Object.fromEntries(
+  [READONLY_WORKBENCH_RENDER_TOOL, ...READONLY_WORKBENCH_DATA_TOOLS].map((name) => [name, "projects.read"])
+) as Record<RemoteToolName, "projects.read">;
 
 export interface ReadonlyRemoteLogEvent {
   timestamp: string;
@@ -195,9 +210,15 @@ function safeJsonRpcId(value: unknown): string | number | null {
   return typeof value === "string" || typeof value === "number" ? value : null;
 }
 
-export function buildReadonlyRemoteToolResult<T>(resultInput: WebGptV4Result<T>, fingerprint: string | null, challenge?: string): Record<string, unknown> {
+export function buildReadonlyRemoteToolResult<T>(
+  resultInput: WebGptV4Result<T>,
+  fingerprint: string | null,
+  challenge?: string,
+  snapshotStatus?: ReadonlySnapshotStatus
+): Record<string, unknown> {
   const meta: Record<string, unknown> = {
     snapshot_fingerprint: fingerprint,
+    ...(snapshotStatus ? { snapshot_status: snapshotStatus } : {}),
     ...(challenge ? { "mcp/www_authenticate": [challenge] } : {})
   };
   const serialize = (result: WebGptV4Result<unknown>): Record<string, unknown> => {
@@ -224,6 +245,39 @@ function unavailableResult(idValue?: string): WebGptV4Result<never> {
   return fail(requestId(idValue), { code: "WEBGPT_CLOUD_SNAPSHOT_UNAVAILABLE", message: "No readonly snapshot is currently available." });
 }
 
+export function readonlyWorkbenchShell(
+  actor: WebGptV4Actor,
+  snapshot: ReadonlySnapshot | null,
+  input: ReadonlyWorkbenchRenderInput,
+  now = new Date()
+): ReadonlyWorkbenchShell {
+  const status = readonlySnapshotStatus(snapshot, now);
+  const authorizedProjects = snapshot && actor.issuer_hash === snapshot.issuer_hash
+    ? snapshot.authorization.principals.find((principal) => principal.principal_id === actor.principal_id)?.project_ids ?? []
+    : [];
+  const appState: ReadonlyWorkbenchShell["app_state"] = status.freshness_status === "no_snapshot"
+    ? "no_snapshot"
+    : status.freshness_status === "snapshot_expired"
+      ? "snapshot_expired"
+      : authorizedProjects.length === 0
+        ? "no_authorized_projects"
+        : "ready";
+  const requestedProject = input.initial_project_id;
+  const initialProject = appState === "ready" && requestedProject && authorizedProjects.includes(requestedProject)
+    ? requestedProject
+    : null;
+  return READONLY_WORKBENCH_SHELL_SCHEMA.parse({
+    app_state: appState,
+    service_version: READONLY_REMOTE_SERVICE_VERSION,
+    resource_version: READONLY_WORKBENCH_RESOURCE_VERSION,
+    status,
+    initial_intent: {
+      project_id: initialProject,
+      panel: input.initial_panel ?? "projects"
+    }
+  });
+}
+
 function createReadonlyRemoteMcpApp(
   actor: WebGptV4Actor,
   snapshot: ReadonlySnapshot | null,
@@ -240,22 +294,80 @@ function createReadonlyRemoteMcpApp(
       ? new SnapshotReadonlyDataSource(snapshot, actor.principal_id, "", now)
       : null;
   const fingerprint = snapshot?.snapshot_fingerprint ?? null;
+  const snapshotStatus = readonlySnapshotStatus(snapshot, now());
   const security = (name: RemoteToolName) => ({
-    annotations: webGptV4Tool(name).annotations,
-    _meta: { securitySchemes: [{ type: "oauth2", scopes: ["projects.read"] }] }
+    annotations: name === READONLY_WORKBENCH_RENDER_TOOL
+      ? { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+      : webGptV4Tool(name).annotations,
+    _meta: {
+      securitySchemes: [{ type: "oauth2", scopes: ["projects.read"] }],
+      ui: { visibility: ["model", "app"] }
+    }
   });
   const invoke = <T>(idValue: string | undefined, operation: (dataSource: ReadonlyDataSource) => WebGptV4Result<T>): Record<string, unknown> => {
     try {
       requireScope(actor, "projects.read");
-      return buildReadonlyRemoteToolResult(source ? operation(source) : unavailableResult(idValue), fingerprint);
+      return buildReadonlyRemoteToolResult(source ? operation(source) : unavailableResult(idValue), fingerprint, undefined, snapshotStatus);
     } catch (error) {
       const safe = errorBody(error);
       const challenge = safe.code === "INSUFFICIENT_SCOPE"
         ? wwwAuthenticate(authConfig, "insufficient_scope", { scope: "projects.read", error_description: safe.message })
         : undefined;
-      return buildReadonlyRemoteToolResult(fail(requestId(idValue), safe), fingerprint, challenge);
+      return buildReadonlyRemoteToolResult(fail(requestId(idValue), safe), fingerprint, challenge, snapshotStatus);
     }
   };
+
+  const resourceMeta = {
+    "openai/widgetDescription": "Open Jenn's signed-snapshot readonly production workbench.",
+    ui: {
+      prefersBorder: true,
+      domain: READONLY_WORKBENCH_WIDGET_DOMAIN,
+      csp: { connectDomains: [], resourceDomains: [], frameDomains: [] }
+    }
+  };
+  registerAppResource(server, "Jenn AI Video Workspace Readonly Workbench", READONLY_WORKBENCH_RESOURCE_URI, {
+    description: "Readonly project, SHOT, review, delivery, and closeout workbench.",
+    _meta: resourceMeta
+  }, async () => ({
+    contents: [{
+      uri: READONLY_WORKBENCH_RESOURCE_URI,
+      mimeType: READONLY_WORKBENCH_RESOURCE_MIME,
+      text: readonlyWorkbenchWidgetHtml(),
+      _meta: resourceMeta
+    }]
+  }));
+
+  registerAppTool(server, READONLY_WORKBENCH_RENDER_TOOL, {
+    title: "打开只读 AI 视频生产工作台",
+    description: "Open the readonly ChatGPT MCP App shell. Project data is loaded only through the six projects.read data tools.",
+    inputSchema: READONLY_WORKBENCH_RENDER_INPUT_SCHEMA.shape,
+    outputSchema: READONLY_WORKBENCH_SHELL_SCHEMA.shape,
+    ...security(READONLY_WORKBENCH_RENDER_TOOL),
+    _meta: {
+      ...security(READONLY_WORKBENCH_RENDER_TOOL)._meta,
+      ui: { resourceUri: READONLY_WORKBENCH_RESOURCE_URI, visibility: ["model", "app"] },
+      "openai/outputTemplate": READONLY_WORKBENCH_RESOURCE_URI,
+      "openai/toolInvocation/invoking": "Opening readonly production workspace…",
+      "openai/toolInvocation/invoked": "Readonly production workspace opened"
+    }
+  }, async (input) => {
+    try {
+      requireScope(actor, "projects.read");
+      const shell = readonlyWorkbenchShell(actor, snapshot, input, now());
+      return {
+        isError: false,
+        structuredContent: shell,
+        content: [{ type: "text", text: "只读 AI 视频生产工作台已打开；项目数据由 Widget 按需读取。" }],
+        _meta: { snapshot_fingerprint: shell.status.snapshot_fingerprint }
+      } as never;
+    } catch (error) {
+      const safe = errorBody(error);
+      const challenge = safe.code === "INSUFFICIENT_SCOPE"
+        ? wwwAuthenticate(authConfig, "insufficient_scope", { scope: "projects.read", error_description: safe.message })
+        : undefined;
+      return buildReadonlyRemoteToolResult(fail(requestId(), safe), fingerprint, challenge, snapshotStatus) as never;
+    }
+  });
 
   server.registerTool("list_production_projects", {
     title: "列出生产项目", description: "List authorized production projects from the signed readonly snapshot.",
