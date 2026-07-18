@@ -196,7 +196,7 @@ export function deriveShotOperationalState(facts: ShotOperationalFacts): ShotOpe
   const activeJob = facts.generation_job_state;
   const generationStage: ShotOperationalState["generation"]["stage"] = activeJob === "manual_reconciliation"
     ? "manual_reconciliation"
-    : activeJob === "queued" || activeJob === "submitting"
+    : activeJob === "queued" || activeJob === "submitting" || facts.latest_generation_run_status === "queued"
       ? "queued"
       : activeJob === "polling" || activeJob === "downloading" || activeJob === "finalizing" || facts.latest_generation_run_status === "running"
         ? "running"
