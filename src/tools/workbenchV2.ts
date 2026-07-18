@@ -443,6 +443,9 @@ function deriveNextAction(project: Project, state: ProjectOperationalSummary, as
     return { label: "修复项目运行数据", reason_code: "operational_data_integrity", priority: "urgent" };
   }
   if (state.shot_count === 0) return { label: "创建第一个 SHOT", reason_code: "no_shots", priority: "high" };
+  if (state.blocker_codes.some((code) => code === "STORYBOARD_IMAGE_MISSING" || code === "VIDEO_PROMPT_MISSING")) {
+    return { label: "补齐分镜门禁", reason_code: "storyboard_blocked", priority: "urgent" };
+  }
   if (state.revision_needed_count > 0) return { label: "处理需修改 SHOT", reason_code: "revision_required", priority: "urgent" };
   if (hasAcceptedClipIntegrityBlocker(state)) {
     return { label: "修复无效采纳片段", reason_code: "accepted_clip_invalid", priority: "urgent" };

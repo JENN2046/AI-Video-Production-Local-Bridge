@@ -695,6 +695,51 @@ test("Workbench project summary treats a complete draft storyboard as awaiting a
   }
 });
 
+test("Workbench project summary keeps missing storyboard inputs ahead of clip revision", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const created = createWorkbenchProject({ title: "Revision with missing storyboard", classification: "production" }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    const shot = buildStoryboardApprovedShot({
+      shot_id: "shot_revision_missing_storyboard",
+      project_id: created.data.project.project_id,
+      order: 1,
+      duration_seconds: 6,
+      storyboard_image_artifact_id: "",
+      video_prompt: "A revision fixture."
+    });
+    const generated = registerMediaArtifact({
+      artifact_type: "video",
+      role: "generated_clip",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: created.data.project.project_id, shot_id: shot.shot_id }
+    }, db);
+    assert.equal(generated.ok, true);
+    if (!generated.ok) return;
+    shot.status = "revision_needed";
+    shot.review.approval_status = "revision_needed";
+    shot.clip_versions = [{
+      artifact_id: generated.artifact.artifact_id,
+      run_id: "run_revision_missing_storyboard",
+      attempt_number: 1,
+      review_status: "rejected"
+    }];
+    saveShot(db, shot);
+    created.data.project.shot_ids = [shot.shot_id];
+    created.data.project.status = "video_review";
+    saveProject(db, created.data.project);
+
+    const summary = listWorkbenchProjects({ scope: "daily" }, db).items
+      .find((item) => item.project.project_id === created.data.project.project_id);
+    assert.ok(summary?.blocker_codes.includes("STORYBOARD_IMAGE_MISSING"));
+    assert.ok(summary?.blocker_codes.includes("CLIP_REVISION_REQUIRED"));
+    assert.equal(summary?.next_action.reason_code, "storyboard_blocked");
+  } finally {
+    db.close();
+  }
+});
+
 test("Workbench list, dashboard, and workspace fail closed on project row and JSON id drift", () => {
   const db = openM0Database(":memory:");
   try {
