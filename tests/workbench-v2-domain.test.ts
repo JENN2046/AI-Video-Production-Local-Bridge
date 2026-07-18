@@ -167,6 +167,7 @@ test("shared operational state fails closed on inconsistent accepted-clip and re
   assert.equal(state.primary_stage, "state_inconsistent");
   assert.equal(state.delivery.ready, false);
   assert.ok(state.blocker_codes.includes("SHOT_STATE_INCONSISTENT"));
+  assert.equal(deriveProjectOperationalSummary([state]).accepted_count, 1);
 
   const impossibleApprovedStatus = deriveShotOperationalState(operationalFacts({
     stored_workflow_status: "approved",
@@ -587,6 +588,11 @@ test("operational facts fail closed when a referenced Artifact JSON binding drif
       () => collectProjectOperationalBundles(db, [created.data.project]),
       /ARTIFACT_OPERATIONAL_FACT_INVALID/
     );
+    const listed = listWorkbenchProjects({ scope: "daily" }, db);
+    const blocked = listed.items.find((item) => item.project.project_id === created.data.project.project_id);
+    assert.equal(blocked?.risk, "blocked");
+    assert.equal(blocked?.next_action.reason_code, "storyboard_blocked");
+    assert.deepEqual(blocked?.blocker_codes, ["PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION"]);
   } finally {
     db.close();
   }

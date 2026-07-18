@@ -292,7 +292,7 @@ export function deriveProjectOperationalSummary(
   }, {});
   return {
     shot_count: states.length,
-    accepted_count: states.filter((state) => state.delivery.ready).length,
+    accepted_count: states.filter((state) => Boolean(state.delivery.accepted_clip_artifact_id)).length,
     active_run_count: states.filter((state) => ["queued", "running", "manual_reconciliation"].includes(state.generation.stage)).length
       + (["queued", "running"].includes(projectFacts.latest_generation_run_status ?? "") ? 1 : 0),
     blocked_shot_count: states.filter((state) => state.blocker_codes.length > 0).length,

@@ -17,7 +17,7 @@ import {
 } from "./mediaArtifacts.js";
 import { loadMemorySavebackStore } from "./memorySaveback.js";
 import { createProject, getProject, getShot, listProjectShots, saveProject, saveShot, type Project, type Shot } from "./projects.js";
-import { collectProjectOperationalBundle, collectProjectOperationalBundles } from "./operationalStateFacts.js";
+import { collectProjectOperationalBundle, collectProjectOperationalBundles, OperationalStateIntegrityError } from "./operationalStateFacts.js";
 import type { ProjectOperationalSummary } from "../packages/domain/operationalState.js";
 import { markShotClipReview, type RevisionInstruction } from "./review.js";
 import { listWorkbenchDraftRecords, listWorkbenchPendingActionRecords } from "./workbenchInboxStore.js";
@@ -272,9 +272,9 @@ export function listWorkbenchProjects(
 
   const parsed = rows.map((row) => ({ row, project: parseJson<Project>(row.data_json, null as unknown as Project) }))
     .filter((item) => Boolean(item.project?.project_id));
-  const bundles = collectProjectOperationalBundles(db, parsed.map((item) => item.project));
+  const summaries = collectOperationalSummariesForList(db, parsed.map((item) => item.project));
   return page(parsed.map(({ row, project }) => {
-    const operational = bundles.get(project.project_id)?.summary ?? {
+    const operational = summaries.get(project.project_id) ?? {
       shot_count: 0,
       accepted_count: 0,
       active_run_count: 0,
@@ -288,6 +288,43 @@ export function listWorkbenchProjects(
     };
     return projectSummaryFromRow(project, row, operational);
   }), totalRow.count, limit, offset);
+}
+
+function integrityBlockedSummary(project: Project): ProjectOperationalSummary {
+  const shotCount = project.shot_ids.length;
+  const code = "PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION";
+  return {
+    shot_count: shotCount,
+    accepted_count: 0,
+    active_run_count: 0,
+    blocked_shot_count: shotCount > 0 ? 1 : 0,
+    blocker_count: 1,
+    blocker_codes: [code],
+    blocker_code_counts: { [code]: 1 },
+    review_pending_count: 0,
+    revision_needed_count: 0,
+    latest_failed_count: 0
+  };
+}
+
+function collectOperationalSummariesForList(db: M0Database, projects: Project[]): Map<string, ProjectOperationalSummary> {
+  try {
+    const bundles = collectProjectOperationalBundles(db, projects);
+    return new Map([...bundles].map(([projectId, bundle]) => [projectId, bundle.summary]));
+  } catch (error) {
+    if (!(error instanceof OperationalStateIntegrityError)) throw error;
+  }
+
+  const summaries = new Map<string, ProjectOperationalSummary>();
+  for (const project of projects) {
+    try {
+      summaries.set(project.project_id, collectProjectOperationalBundle(db, project).summary);
+    } catch (error) {
+      if (!(error instanceof OperationalStateIntegrityError)) throw error;
+      summaries.set(project.project_id, integrityBlockedSummary(project));
+    }
+  }
+  return summaries;
 }
 
 export function getWorkbenchProjectSummary(projectId: string, db = openM0Database()): WorkbenchProjectSummary | null {
@@ -841,8 +878,8 @@ function getDashboardTotals(db: M0Database): { pending_confirmations: number; bl
     WHERE m.lifecycle = 'active' AND m.classification IN ('production', 'unclassified')
   `).all() as Array<{ data_json: string }>;
   const projects = rows.map((row) => parseJson<Project | null>(row.data_json, null)).filter((project): project is Project => Boolean(project?.project_id));
-  const bundles = collectProjectOperationalBundles(db, projects);
-  const summaries = projects.map((project) => ({ project, summary: bundles.get(project.project_id)?.summary }));
+  const operationalSummaries = collectOperationalSummariesForList(db, projects);
+  const summaries = projects.map((project) => ({ project, summary: operationalSummaries.get(project.project_id) }));
   const pending = db.prepare(`
     SELECT
       (SELECT COUNT(*) FROM workbench_pending_actions WHERE status = 'pending')
