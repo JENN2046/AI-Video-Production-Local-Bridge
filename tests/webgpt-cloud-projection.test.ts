@@ -149,6 +149,82 @@ function addSecondFixtureShot(
   }
 }
 
+function configureFiveStageFixture(sqlitePath: string, projectId: string): void {
+  const db = openM0Database(sqlitePath);
+  try {
+    const project = getProject(db, projectId);
+    assert.ok(project);
+    const storyboard = (shotId: string): string => {
+      const result = registerMediaArtifact({
+        artifact_type: "image",
+        role: "storyboard_image",
+        source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
+        linked_objects: { project_id: projectId, shot_id: shotId }
+      }, db);
+      assert.equal(result.ok, true);
+      if (!result.ok) throw new Error("storyboard fixture registration failed");
+      return result.artifact.artifact_id;
+    };
+    const clip = (shotId: string): string => {
+      const result = registerMediaArtifact({
+        artifact_type: "video",
+        role: "generated_clip",
+        source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+        linked_objects: { project_id: projectId, shot_id: shotId }
+      }, db);
+      assert.equal(result.ok, true);
+      if (!result.ok) throw new Error("clip fixture registration failed");
+      return result.artifact.artifact_id;
+    };
+    const base = (shotId: string, order: number): Shot => ({
+      shot_id: shotId,
+      project_id: projectId,
+      order,
+      status: "draft",
+      duration_seconds: 6,
+      description: `Cloud five-stage fixture ${order}`,
+      storyboard_image_artifact_id: "",
+      video_prompt: "Fixture prompt",
+      negative_prompt: "",
+      generation_run_ids: [],
+      accepted_clip_artifact_id: "",
+      clip_versions: [],
+      review: { approval_status: "pending", rejection_reasons: [], latest_revision_instruction: null }
+    });
+
+    const draft = base("shot_cloud_stage_draft", 1);
+    const ready = base("shot_cloud_stage_ready", 2);
+    ready.status = "storyboard_approved";
+    ready.storyboard_image_artifact_id = storyboard(ready.shot_id);
+    const pending = base("shot_cloud_stage_pending", 3);
+    pending.status = "video_review";
+    pending.storyboard_image_artifact_id = storyboard(pending.shot_id);
+    const pendingClip = clip(pending.shot_id);
+    pending.clip_versions = [{ artifact_id: pendingClip, run_id: "run_cloud_stage_pending", attempt_number: 1, review_status: "pending" }];
+    const rejected = base("shot_cloud_stage_rejected", 4);
+    rejected.status = "revision_needed";
+    rejected.storyboard_image_artifact_id = storyboard(rejected.shot_id);
+    const rejectedClip = clip(rejected.shot_id);
+    rejected.clip_versions = [{ artifact_id: rejectedClip, run_id: "run_cloud_stage_rejected", attempt_number: 1, review_status: "rejected" }];
+    rejected.review = { approval_status: "revision_needed", rejection_reasons: ["Fixture pacing"], latest_revision_instruction: null };
+    const accepted = base("shot_cloud_stage_accepted", 5);
+    accepted.status = "approved";
+    accepted.storyboard_image_artifact_id = storyboard(accepted.shot_id);
+    const acceptedClip = clip(accepted.shot_id);
+    accepted.clip_versions = [{ artifact_id: acceptedClip, run_id: "run_cloud_stage_accepted", attempt_number: 1, review_status: "approved" }];
+    accepted.accepted_clip_artifact_id = acceptedClip;
+    accepted.review = { approval_status: "approved", rejection_reasons: [], latest_revision_instruction: null };
+
+    const shots = [draft, ready, pending, rejected, accepted];
+    db.prepare("DELETE FROM shots WHERE project_id = ?").run(projectId);
+    for (const shot of shots) saveShot(db, shot);
+    project.shot_ids = shots.map((shot) => shot.shot_id);
+    saveProject(db, project);
+  } finally {
+    db.close();
+  }
+}
+
 function resultData(result: WebGptV4Result<unknown>): unknown {
   if (!result.ok) throw new Error(result.error.code);
   return result.data;
@@ -275,6 +351,60 @@ test("SQLite and Snapshot readonly adapters preserve six-tool DTO parity and dat
     assert.deepEqual(logicalManifest(afterDb), before);
   } finally {
     afterDb.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("five-stage operational state exports through Snapshot v2 and guards derived overview parity", () => {
+  const root = mkdtempSync(join(tmpdir(), "readonly-projection-five-stage-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const fixture = createFixture(sqlitePath);
+  try {
+    configureFiveStageFixture(sqlitePath, fixture.project_id);
+    const snapshot = exportReadonlySnapshotFromDatabase({
+      database_path: sqlitePath,
+      issuer_hash: fixture.actor.issuer_hash!,
+      resource_url: RESOURCE,
+      generated_at: new Date(Date.now() - 1_000).toISOString(),
+      ttl_seconds: 3600
+    });
+    const project = snapshot.projects[0]!;
+    assert.deepEqual(project.shots_full.map((shot) => shot.operational_state.primary_stage), [
+      "storyboard_draft", "generation_ready", "review_pending", "clip_revision_needed", "accepted"
+    ]);
+    const overview = project.contexts.find((context) => context.workspace === "overview");
+    assert.ok(overview && "metrics" in overview.full && "metrics" in overview.compact);
+    assert.deepEqual(overview.full.metrics, {
+      shots: 5,
+      storyboard_approved: 4,
+      generation_active: 0,
+      review_pending: 1,
+      accepted_clips: 1
+    });
+    assert.deepEqual(overview.full.blockers.map((blocker) => ({
+      order: blocker.order,
+      missing_image: blocker.missing_image,
+      missing_prompt: blocker.missing_prompt
+    })), [
+      { order: 1, missing_image: true, missing_prompt: false },
+      { order: 4, missing_image: false, missing_prompt: false }
+    ]);
+
+    const { snapshot_fingerprint: _fingerprint, ...unsigned } = snapshot;
+    const divergentMetrics = structuredClone(unsigned);
+    const metricsContext = divergentMetrics.projects[0]!.contexts.find((context) => context.workspace === "overview");
+    assert.ok(metricsContext && "metrics" in metricsContext.full && "metrics" in metricsContext.compact);
+    metricsContext.full.metrics.storyboard_approved = 1;
+    metricsContext.compact.metrics.storyboard_approved = 1;
+    assert.throws(() => finalizeReadonlySnapshot(divergentMetrics), /overview metrics or blockers canonical projection mismatch/i);
+
+    const divergentBlockers = structuredClone(unsigned);
+    const blockersContext = divergentBlockers.projects[0]!.contexts.find((context) => context.workspace === "overview");
+    assert.ok(blockersContext && "blockers" in blockersContext.full && "blockers" in blockersContext.compact);
+    blockersContext.full.blockers = blockersContext.full.blockers.slice(0, 1);
+    blockersContext.compact.blockers = blockersContext.compact.blockers.slice(0, 1);
+    assert.throws(() => finalizeReadonlySnapshot(divergentBlockers), /overview metrics or blockers canonical projection mismatch/i);
+  } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
