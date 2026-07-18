@@ -4,10 +4,12 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
+import { deriveProjectOperationalSummary, deriveShotOperationalState, type ShotOperationalFacts } from "../src/packages/domain/operationalState.js";
 import { databaseLogicalManifest, migrateDatabase } from "../src/storage/databaseGovernance.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import { WORKBENCH_V2_SCHEMA_VERSION } from "../src/storage/workbenchV2Schema.js";
 import { buildStoryboardApprovedShot, createProject, saveProject, saveShot } from "../src/tools/projects.js";
+import { collectProjectOperationalBundles } from "../src/tools/operationalStateFacts.js";
 import {
   createWorkbenchProject,
   getWorkbenchProjectWorkspace,
@@ -19,6 +21,180 @@ import { confirmWorkbenchGeneration, preflightWorkbenchGeneration, reconcileGene
 import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { downloadProviderOutputToArtifact } from "../src/tools/providerOutputDownloader.js";
 import type { VideoProviderAdapter } from "../src/tools/videoProviderAdapters.js";
+
+function operationalFacts(overrides: Partial<ShotOperationalFacts> = {}): ShotOperationalFacts {
+  return {
+    shot_id: "shot_operational_001",
+    project_id: "project_operational_001",
+    stored_workflow_status: "draft",
+    duration_seconds: 6,
+    video_prompt_present: true,
+    storyboard_artifact: { artifact_id: null, status: "missing", verification_level: "none" },
+    accepted_clip_artifact: { artifact_id: null, status: "missing", verification_level: "none" },
+    generation_version_count: 0,
+    accepted_clip_in_version_stack: false,
+    accepted_clip_review_status: null,
+    review_approval_status: "pending",
+    latest_version_review_status: null,
+    generation_job_state: null,
+    latest_generation_run_status: null,
+    ...overrides
+  };
+}
+
+test("shared operational state separates approval, artifact availability, generation, review, and delivery", () => {
+  const approvedWithoutArtifact = deriveShotOperationalState(operationalFacts({ stored_workflow_status: "storyboard_approved" }));
+  assert.equal(approvedWithoutArtifact.storyboard.approval_status, "approved");
+  assert.equal(approvedWithoutArtifact.storyboard.artifact_status, "missing");
+  assert.equal(approvedWithoutArtifact.primary_stage, "storyboard_blocked");
+  assert.equal(approvedWithoutArtifact.generation.workflow_ready, false);
+  assert.ok(approvedWithoutArtifact.blocker_codes.includes("STORYBOARD_IMAGE_MISSING"));
+
+  const noGeneratedClip = deriveShotOperationalState(operationalFacts());
+  assert.deepEqual(noGeneratedClip.review, {
+    stage: "not_started",
+    reviewable: false,
+    approval_status: null,
+    selected_artifact_id: null
+  });
+  assert.equal(deriveProjectOperationalSummary([noGeneratedClip]).review_pending_count, 0);
+});
+
+test("shared operational state derives the generation, review, revision, and accepted path consistently", () => {
+  const storyboard = { artifact_id: "artifact_storyboard", status: "active", verification_level: "ledger_verified" } as const;
+  const generated = deriveShotOperationalState(operationalFacts({
+    stored_workflow_status: "storyboard_approved",
+    storyboard_artifact: storyboard
+  }));
+  assert.equal(generated.primary_stage, "generation_ready");
+  assert.equal(generated.allowed_workflow_actions.prepare_generation, true);
+
+  const pending = deriveShotOperationalState(operationalFacts({
+    stored_workflow_status: "video_review",
+    storyboard_artifact: storyboard,
+    generation_version_count: 1,
+    latest_version_review_status: "pending"
+  }));
+  assert.equal(pending.primary_stage, "review_pending");
+  assert.equal(pending.review.approval_status, "pending");
+
+  const revision = deriveShotOperationalState(operationalFacts({
+    stored_workflow_status: "revision_needed",
+    storyboard_artifact: storyboard,
+    generation_version_count: 1,
+    review_approval_status: "revision_needed",
+    latest_version_review_status: "rejected"
+  }));
+  assert.equal(revision.primary_stage, "clip_revision_needed");
+  assert.ok(revision.blocker_codes.includes("CLIP_REVISION_REQUIRED"));
+
+  const acceptedClip = { artifact_id: "artifact_clip", status: "active", verification_level: "ledger_verified" } as const;
+  const accepted = deriveShotOperationalState(operationalFacts({
+    stored_workflow_status: "approved",
+    storyboard_artifact: storyboard,
+    accepted_clip_artifact: acceptedClip,
+    generation_version_count: 1,
+    accepted_clip_in_version_stack: true,
+    accepted_clip_review_status: "approved",
+    review_approval_status: "approved",
+    latest_version_review_status: "approved"
+  }));
+  assert.equal(accepted.primary_stage, "accepted");
+  assert.equal(accepted.delivery.ready, true);
+  assert.equal(accepted.blocker_codes.length, 0);
+});
+
+test("shared operational state fails closed on inconsistent accepted-clip and review facts", () => {
+  const state = deriveShotOperationalState(operationalFacts({
+    stored_workflow_status: "approved",
+    storyboard_artifact: { artifact_id: "artifact_storyboard", status: "active", verification_level: "ledger_verified" },
+    accepted_clip_artifact: { artifact_id: "artifact_clip", status: "active", verification_level: "ledger_verified" },
+    generation_version_count: 1,
+    accepted_clip_in_version_stack: false,
+    accepted_clip_review_status: "approved",
+    review_approval_status: "approved",
+    latest_version_review_status: "approved"
+  }));
+  assert.equal(state.primary_stage, "state_inconsistent");
+  assert.equal(state.delivery.ready, false);
+  assert.ok(state.blocker_codes.includes("SHOT_STATE_INCONSISTENT"));
+
+  const impossibleApprovedStatus = deriveShotOperationalState(operationalFacts({
+    stored_workflow_status: "approved",
+    storyboard_artifact: { artifact_id: "artifact_storyboard", status: "active", verification_level: "ledger_verified" }
+  }));
+  assert.equal(impossibleApprovedStatus.primary_stage, "state_inconsistent");
+  assert.equal(impossibleApprovedStatus.review.stage, "inconsistent");
+});
+
+test("operational fact collection uses a fixed query count for a 100-SHOT project", () => {
+  const project = {
+    project_id: "project_bulk_operational",
+    title: "Bulk operational fixture",
+    project_type: "m0_video_loop",
+    status: "storyboard_approved" as const,
+    brief: {},
+    video_spec: { duration_seconds: 600, aspect_ratio: "9:16", resolution: "1080x1920" },
+    shot_ids: [],
+    active_storyboard_package_id: "",
+    generation_batch_ids: [],
+    exports: { final_video_artifact_id: "" }
+  };
+  const shots = Array.from({ length: 100 }, (_, index) => buildStoryboardApprovedShot({
+    shot_id: `shot_bulk_${String(index).padStart(3, "0")}`,
+    project_id: project.project_id,
+    order: index + 1,
+    duration_seconds: 6,
+    storyboard_image_artifact_id: "",
+    video_prompt: "Bulk fixture prompt."
+  }));
+  let queryCount = 0;
+  const db = {
+    prepare(sql: string) {
+      queryCount += 1;
+      return {
+        all() {
+          if (sql.includes("FROM shots")) return shots.map((shot) => ({ shot_id: shot.shot_id, project_id: project.project_id, data_json: JSON.stringify(shot) }));
+          return [];
+        }
+      };
+    }
+  } as unknown as Parameters<typeof collectProjectOperationalBundles>[0];
+
+  const bundle = collectProjectOperationalBundles(db, [project]).get(project.project_id);
+  assert.equal(queryCount, 4);
+  assert.equal(bundle?.states.length, 100);
+  assert.equal(bundle?.summary.blocked_shot_count, 100);
+});
+
+test("operational fact collection fails closed on structured SHOT binding drift", () => {
+  const project = {
+    project_id: "project_drift",
+    title: "Drift fixture",
+    project_type: "m0_video_loop",
+    status: "draft" as const,
+    brief: {},
+    video_spec: { duration_seconds: 6, aspect_ratio: "9:16", resolution: "1080x1920" },
+    shot_ids: [],
+    active_storyboard_package_id: "",
+    generation_batch_ids: [],
+    exports: { final_video_artifact_id: "" }
+  };
+  const drifted = buildStoryboardApprovedShot({
+    shot_id: "shot_json_id",
+    project_id: project.project_id,
+    order: 1,
+    duration_seconds: 6,
+    storyboard_image_artifact_id: "",
+    video_prompt: "Fixture."
+  });
+  const db = {
+    prepare(sql: string) {
+      return { all: () => sql.includes("FROM shots") ? [{ shot_id: "shot_row_id", project_id: project.project_id, data_json: JSON.stringify(drifted) }] : [] };
+    }
+  } as unknown as Parameters<typeof collectProjectOperationalBundles>[0];
+  assert.throws(() => collectProjectOperationalBundles(db, [project]), /SHOT_OPERATIONAL_FACT_INVALID/);
+});
 
 async function prepareConfirmedGeneration(sqlitePath: string, title: string): Promise<{ intent_id: string; job_id: string; env: NodeJS.ProcessEnv }> {
   migrateDatabase(sqlitePath);
@@ -134,6 +310,53 @@ test("readonly workspace reads preserve the complete database logical manifest u
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Workbench read surfaces use shared operational state for approved-but-missing storyboard and unstarted review", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const created = createWorkbenchProject({ title: "Operational state projection", classification: "production" }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    const shot = buildStoryboardApprovedShot({
+      shot_id: "shot_operational_projection",
+      project_id: created.data.project.project_id,
+      order: 1,
+      duration_seconds: 6,
+      storyboard_image_artifact_id: "",
+      video_prompt: "A safe fixture prompt."
+    });
+    saveShot(db, shot);
+    created.data.project.shot_ids = [shot.shot_id];
+    created.data.project.status = "storyboard_approved";
+    saveProject(db, created.data.project);
+
+    const overview = getWorkbenchProjectWorkspace(created.data.project.project_id, "overview", db);
+    assert.equal(overview.ok, true);
+    if (!overview.ok) return;
+    const metrics = overview.data.metrics as Record<string, number>;
+    const blockers = overview.data.blockers as Array<{ shot_id: string; missing_image: boolean; reason_codes: string[] }>;
+    assert.equal(metrics.storyboard_approved, 1);
+    assert.equal(metrics.review_pending, 0);
+    assert.deepEqual(blockers, [{
+      shot_id: shot.shot_id,
+      order: 1,
+      missing_image: true,
+      missing_prompt: false,
+      reason_codes: ["STORYBOARD_IMAGE_MISSING"]
+    }]);
+
+    const storyboard = getWorkbenchProjectWorkspace(created.data.project.project_id, "storyboard", db);
+    assert.equal(storyboard.ok, true);
+    if (!storyboard.ok) return;
+    const projectedShot = (storyboard.data.shots as Array<{ operational_state: ReturnType<typeof deriveShotOperationalState> }>)[0];
+    assert.equal(projectedShot.operational_state.storyboard.approval_status, "approved");
+    assert.equal(projectedShot.operational_state.storyboard.artifact_status, "missing");
+    assert.equal(projectedShot.operational_state.review.stage, "not_started");
+    assert.equal(projectedShot.operational_state.review.approval_status, null);
+  } finally {
+    db.close();
   }
 });
 

@@ -1,3 +1,5 @@
+import type { ShotOperationalState } from "../packages/domain/operationalState";
+
 export interface ApiError {
   code: string;
   message: string;
@@ -132,6 +134,8 @@ export interface ProjectSummary {
   accepted_count: number;
   active_run_count: number;
   blocker_count: number;
+  blocked_shot_count: number;
+  blocker_codes: string[];
   blocker_reason: string;
   review_pending_count: number;
   delivery_state: "not_ready" | "ready_to_assemble" | "final_review" | "delivered";
@@ -157,6 +161,7 @@ export interface Shot {
     rejection_reasons: string[];
     latest_revision_instruction: Record<string, unknown> | null;
   };
+  operational_state?: ShotOperationalState;
 }
 
 export interface ClipVersion {

@@ -17,6 +17,8 @@ import {
 } from "./mediaArtifacts.js";
 import { loadMemorySavebackStore } from "./memorySaveback.js";
 import { createProject, getProject, getShot, listProjectShots, saveProject, saveShot, type Project, type Shot } from "./projects.js";
+import { collectProjectOperationalBundle, collectProjectOperationalBundles } from "./operationalStateFacts.js";
+import type { ProjectOperationalSummary } from "../packages/domain/operationalState.js";
 import { markShotClipReview, type RevisionInstruction } from "./review.js";
 import { listWorkbenchDraftRecords, listWorkbenchPendingActionRecords } from "./workbenchInboxStore.js";
 
@@ -46,6 +48,8 @@ export interface WorkbenchProjectSummary {
   accepted_count: number;
   active_run_count: number;
   blocker_count: number;
+  blocked_shot_count: number;
+  blocker_codes: string[];
   blocker_reason: string;
   review_pending_count: number;
   delivery_state: "not_ready" | "ready_to_assemble" | "final_review" | "delivered";
@@ -100,15 +104,6 @@ interface ProjectRow {
   next_action_expires_at: string | null;
   next_action_project_status: string | null;
   next_action_updated_at: string | null;
-  shot_count: number;
-  accepted_count: number;
-  active_run_count: number;
-  blocker_count: number;
-  missing_image_count: number;
-  missing_prompt_count: number;
-  review_pending_count: number;
-  revision_needed_count: number;
-  latest_failed_count: number;
 }
 
 interface ImportIndexRow {
@@ -258,16 +253,7 @@ export function listWorkbenchProjects(
     SELECT p.project_id, p.data_json, p.created_at, p.updated_at,
       m.classification, m.lifecycle, m.pinned, m.last_opened_at,
       m.next_action_override, m.next_action_priority, m.next_action_expires_at,
-      m.next_action_project_status, m.next_action_updated_at,
-      (SELECT COUNT(*) FROM shots s WHERE s.project_id = p.project_id) AS shot_count,
-      (SELECT COUNT(*) FROM shots s WHERE s.project_id = p.project_id AND json_extract(s.data_json, '$.accepted_clip_artifact_id') <> '') AS accepted_count,
-      (SELECT COUNT(*) FROM generation_runs r WHERE r.project_id = p.project_id AND r.status IN ('queued', 'running')) AS active_run_count,
-      (SELECT COUNT(*) FROM shots s WHERE s.project_id = p.project_id AND (COALESCE(json_extract(s.data_json, '$.storyboard_image_artifact_id'), '') = '' OR COALESCE(json_extract(s.data_json, '$.video_prompt'), '') = '')) AS blocker_count,
-      (SELECT COUNT(*) FROM shots s WHERE s.project_id = p.project_id AND COALESCE(json_extract(s.data_json, '$.storyboard_image_artifact_id'), '') = '') AS missing_image_count,
-      (SELECT COUNT(*) FROM shots s WHERE s.project_id = p.project_id AND COALESCE(json_extract(s.data_json, '$.video_prompt'), '') = '') AS missing_prompt_count,
-      (SELECT COUNT(*) FROM shots s WHERE s.project_id = p.project_id AND COALESCE(json_array_length(json_extract(s.data_json, '$.clip_versions')), 0) > 0 AND json_extract(s.data_json, '$.review.approval_status') = 'pending') AS review_pending_count,
-      (SELECT COUNT(*) FROM shots s WHERE s.project_id = p.project_id AND (json_extract(s.data_json, '$.status') = 'revision_needed' OR json_extract(s.data_json, '$.review.approval_status') = 'revision_needed')) AS revision_needed_count,
-      (SELECT COUNT(*) FROM generation_runs r WHERE r.project_id = p.project_id AND r.status = 'failed' AND r.updated_at = (SELECT MAX(r2.updated_at) FROM generation_runs r2 WHERE r2.project_id = r.project_id AND COALESCE(r2.shot_id, '') = COALESCE(r.shot_id, ''))) AS latest_failed_count
+      m.next_action_project_status, m.next_action_updated_at
     FROM projects p
     JOIN workbench_project_meta m ON m.project_id = p.project_id
     ${where}
@@ -284,10 +270,24 @@ export function listWorkbenchProjects(
     LIMIT ? OFFSET ?
   `).all(...params, limit, offset) as ProjectRow[];
 
-  return page(rows.map((row) => {
-    const project = parseJson<Project>(row.data_json, null as unknown as Project);
-    return projectSummaryFromRow(project, row);
-  }).filter((item) => Boolean(item.project?.project_id)), totalRow.count, limit, offset);
+  const parsed = rows.map((row) => ({ row, project: parseJson<Project>(row.data_json, null as unknown as Project) }))
+    .filter((item) => Boolean(item.project?.project_id));
+  const bundles = collectProjectOperationalBundles(db, parsed.map((item) => item.project));
+  return page(parsed.map(({ row, project }) => {
+    const operational = bundles.get(project.project_id)?.summary ?? {
+      shot_count: 0,
+      accepted_count: 0,
+      active_run_count: 0,
+      blocked_shot_count: 0,
+      blocker_count: 0,
+      blocker_codes: [],
+      blocker_code_counts: {},
+      review_pending_count: 0,
+      revision_needed_count: 0,
+      latest_failed_count: 0
+    };
+    return projectSummaryFromRow(project, row, operational);
+  }), totalRow.count, limit, offset);
 }
 
 export function getWorkbenchProjectSummary(projectId: string, db = openM0Database()): WorkbenchProjectSummary | null {
@@ -297,16 +297,41 @@ export function getWorkbenchProjectSummary(projectId: string, db = openM0Databas
 
 type SummaryAssemblyReadiness = "not_applicable" | "unverified" | "ready" | "invalid";
 
-function projectSummaryFromRow(project: Project, row: ProjectRow): WorkbenchProjectSummary {
+const BLOCKER_LABELS: Record<string, string> = {
+  STORYBOARD_APPROVAL_REQUIRED: "待审批分镜",
+  STORYBOARD_REVISION_REQUIRED: "分镜需修改",
+  STORYBOARD_IMAGE_MISSING: "缺分镜图",
+  STORYBOARD_ARTIFACT_INACTIVE: "分镜图不可用",
+  STORYBOARD_ARTIFACT_BINDING_INVALID: "分镜图绑定错误",
+  STORYBOARD_ARTIFACT_ROLE_INVALID: "分镜图角色错误",
+  STORYBOARD_ARTIFACT_INTEGRITY_INVALID: "分镜图完整性异常",
+  VIDEO_PROMPT_MISSING: "缺提示词",
+  SHOT_DURATION_INVALID: "时长无效",
+  CLIP_REVISION_REQUIRED: "片段需修改",
+  GENERATION_MANUAL_RECONCILIATION: "生成需人工核对",
+  GENERATION_FAILED: "生成失败",
+  SHOT_STATE_INCONSISTENT: "状态不一致"
+};
+
+function blockerLabel(code: string): string {
+  return BLOCKER_LABELS[code] ?? code;
+}
+
+function hasAcceptedClipIntegrityBlocker(summary: ProjectOperationalSummary): boolean {
+  return summary.blocker_codes.some((code) => code === "SHOT_STATE_INCONSISTENT" || code === "ARTIFACT_NOT_IN_SHOT_REVIEW" || code.startsWith("ACCEPTED_CLIP_"));
+}
+
+function projectSummaryFromRow(project: Project, row: ProjectRow, operational: ProjectOperationalSummary): WorkbenchProjectSummary {
   const meta = projectMetaFromRow(row);
-  const assemblyReadiness: SummaryAssemblyReadiness = row.shot_count > 0
-    && row.accepted_count === row.shot_count
+  const assemblyReadiness: SummaryAssemblyReadiness = operational.shot_count > 0
+    && operational.accepted_count === operational.shot_count
     && !project.exports.final_video_artifact_id
     ? "unverified"
     : "not_applicable";
-  const derived = deriveNextAction(project, row, assemblyReadiness);
+  const derived = deriveNextAction(project, operational, assemblyReadiness);
   const overrideValid = Boolean(
     assemblyReadiness !== "unverified"
+    && !hasAcceptedClipIntegrityBlocker(operational)
     && meta.next_action_override
     && meta.next_action_priority
     && meta.next_action_expires_at
@@ -326,42 +351,42 @@ function projectSummaryFromRow(project: Project, row: ProjectRow): WorkbenchProj
     : project.exports.final_video_artifact_id
       ? "final_review"
       : "not_ready";
-  const blockerParts: string[] = [];
-  if (row.latest_failed_count > 0) blockerParts.push(`${row.latest_failed_count} 个生成失败`);
-  if (row.missing_image_count > 0) blockerParts.push(`${row.missing_image_count} 个缺分镜图`);
-  if (row.missing_prompt_count > 0) blockerParts.push(`${row.missing_prompt_count} 个缺提示词`);
-  if (row.revision_needed_count > 0) blockerParts.push(`${row.revision_needed_count} 个需修改`);
-  const totalBlockers = row.blocker_count + row.revision_needed_count + row.latest_failed_count;
-  const risk: "blocked" | "attention" | "clear" = totalBlockers > 0
+  const blockerParts = operational.blocker_codes.map((code) => `${operational.blocker_code_counts[code] ?? 0} 个${blockerLabel(code)}`);
+  const risk: "blocked" | "attention" | "clear" = operational.blocker_count > 0
     ? "blocked"
-    : assemblyReadiness === "unverified" || row.active_run_count > 0 || row.review_pending_count > 0
+    : assemblyReadiness === "unverified" || operational.active_run_count > 0 || operational.review_pending_count > 0
       ? "attention"
       : "clear";
   return {
     project,
     meta,
-    shot_count: row.shot_count,
-    accepted_count: row.accepted_count,
-    active_run_count: row.active_run_count,
-    blocker_count: totalBlockers,
+    shot_count: operational.shot_count,
+    accepted_count: operational.accepted_count,
+    active_run_count: operational.active_run_count,
+    blocker_count: operational.blocker_count,
+    blocked_shot_count: operational.blocked_shot_count,
+    blocker_codes: operational.blocker_codes,
     blocker_reason: blockerParts.join("、"),
-    review_pending_count: row.review_pending_count,
+    review_pending_count: operational.review_pending_count,
     delivery_state: deliveryState,
     next_action: nextAction,
     risk
   };
 }
 
-function deriveNextAction(project: Project, row: ProjectRow, assemblyReadiness: SummaryAssemblyReadiness = "not_applicable"): WorkbenchNextAction["derived"] {
-  if (row.latest_failed_count > 0) return { label: "处理生成失败", reason_code: "generation_failed", priority: "urgent" };
-  if (row.shot_count === 0) return { label: "创建第一个 SHOT", reason_code: "no_shots", priority: "high" };
-  if (row.blocker_count > 0) return { label: "补齐分镜门禁", reason_code: "storyboard_blocked", priority: "urgent" };
-  if (row.revision_needed_count > 0) return { label: "处理需修改 SHOT", reason_code: "revision_required", priority: "urgent" };
+function deriveNextAction(project: Project, state: ProjectOperationalSummary, assemblyReadiness: SummaryAssemblyReadiness = "not_applicable"): WorkbenchNextAction["derived"] {
+  if (state.latest_failed_count > 0) return { label: "处理生成失败", reason_code: "generation_failed", priority: "urgent" };
+  if (state.shot_count === 0) return { label: "创建第一个 SHOT", reason_code: "no_shots", priority: "high" };
+  if (state.revision_needed_count > 0) return { label: "处理需修改 SHOT", reason_code: "revision_required", priority: "urgent" };
+  if (hasAcceptedClipIntegrityBlocker(state)) {
+    return { label: "修复无效采纳片段", reason_code: "accepted_clip_invalid", priority: "urgent" };
+  }
+  if (state.blocker_count > 0) return { label: "补齐分镜门禁", reason_code: "storyboard_blocked", priority: "urgent" };
   if (project.status === "draft") return { label: "审批分镜", reason_code: "storyboard_review", priority: "high" };
-  if (row.active_run_count > 0) return { label: "等待生成完成", reason_code: "generation_running", priority: "normal" };
-  if (row.accepted_count < row.shot_count && row.review_pending_count === 0) return { label: "生成缺失 SHOT", reason_code: "generate_shot", priority: "high" };
-  if (row.review_pending_count > 0) return { label: "审片", reason_code: "clip_review", priority: "high" };
-  if (row.accepted_count === row.shot_count && !project.exports.final_video_artifact_id) {
+  if (state.active_run_count > 0) return { label: "等待生成完成", reason_code: "generation_running", priority: "normal" };
+  if (state.accepted_count < state.shot_count && state.review_pending_count === 0) return { label: "生成缺失 SHOT", reason_code: "generate_shot", priority: "high" };
+  if (state.review_pending_count > 0) return { label: "审片", reason_code: "clip_review", priority: "high" };
+  if (state.accepted_count === state.shot_count && !project.exports.final_video_artifact_id) {
     if (assemblyReadiness === "ready") return { label: "合成交付", reason_code: "assemble", priority: "high" };
     if (assemblyReadiness === "invalid") return { label: "修复无效采纳片段", reason_code: "accepted_clip_invalid", priority: "urgent" };
     return { label: "验证合成就绪状态", reason_code: "assembly_readiness_required", priority: "high" };
@@ -647,7 +672,12 @@ export function getWorkbenchProjectWorkspace(
   if (touchLastOpened) {
     db.prepare("UPDATE workbench_project_meta SET last_opened_at = CURRENT_TIMESTAMP WHERE project_id = ?").run(projectId);
   }
-  const shots = listProjectShots(db, projectId);
+  const operationalBundle = collectProjectOperationalBundle(db, project);
+  const shots = operationalBundle.shots;
+  const shotsWithOperationalState = shots.map((shot) => ({
+    ...shot,
+    operational_state: operationalBundle.states_by_shot_id.get(shot.shot_id)
+  }));
   project.shot_ids = shots.map((shot) => shot.shot_id);
   const runRows = db.prepare(`SELECT data_json FROM generation_runs WHERE project_id = ? ORDER BY updated_at DESC LIMIT 200`).all(projectId) as Array<{ data_json: string }>;
   const runs = runRows.map((row) => parseJson<Record<string, unknown>>(row.data_json, {}));
@@ -686,21 +716,30 @@ export function getWorkbenchProjectWorkspace(
     return { ok: true, data: {
       ...base,
       metrics: {
-        shots: shots.length,
-        storyboard_approved: shots.filter((shot) => shot.status === "storyboard_approved").length,
-        generation_active: runs.filter((run) => run.status === "queued" || run.status === "running").length,
-        review_pending: shots.filter((shot) => shot.clip_versions.length > 0 && shot.review.approval_status === "pending").length,
-        accepted_clips: shots.filter((shot) => Boolean(shot.accepted_clip_artifact_id)).length
+        shots: operationalBundle.summary.shot_count,
+        storyboard_approved: operationalBundle.states.filter((state) => state.storyboard.approval_status === "approved").length,
+        generation_active: operationalBundle.summary.active_run_count,
+        review_pending: operationalBundle.summary.review_pending_count,
+        accepted_clips: operationalBundle.summary.accepted_count
       },
-      blockers: shots.filter((shot) => !shot.storyboard_image_artifact_id || !shot.video_prompt).map((shot) => ({ shot_id: shot.shot_id, order: shot.order, missing_image: !shot.storyboard_image_artifact_id, missing_prompt: !shot.video_prompt })),
+      blockers: shots.map((shot) => {
+        const state = operationalBundle.states_by_shot_id.get(shot.shot_id);
+        return {
+          shot_id: shot.shot_id,
+          order: shot.order,
+          missing_image: state?.storyboard.artifact_status === "missing",
+          missing_prompt: state?.generation.reason_codes.includes("VIDEO_PROMPT_MISSING") ?? false,
+          reason_codes: state?.blocker_codes ?? []
+        };
+      }).filter((blocker) => blocker.reason_codes.length > 0),
       recent_runs: runs.slice(0, 8)
     } };
   }
-  if (workspace === "storyboard") return { ok: true, data: { ...base, shots, packages, artifacts } };
-  if (workspace === "generation") return { ok: true, data: { ...base, shots, runs, artifacts } };
+  if (workspace === "storyboard") return { ok: true, data: { ...base, shots: shotsWithOperationalState, packages, artifacts } };
+  if (workspace === "generation") return { ok: true, data: { ...base, shots: shotsWithOperationalState, runs, artifacts } };
   if (workspace === "review") {
     const version_stacks = shots.map((shot) => ({
-      shot,
+      shot: { ...shot, operational_state: operationalBundle.states_by_shot_id.get(shot.shot_id) },
       versions: shot.clip_versions.map((version) => {
         const validated = validateActiveArtifactReference(db, {
           artifact_id: version.artifact_id, project_id: projectId, shot_id: shot.shot_id, role: "generated_clip", artifact_type: "video"
@@ -796,35 +835,28 @@ export function getWorkbenchDashboard(db = openM0Database()): Record<string, unk
 }
 
 function getDashboardTotals(db: M0Database): { pending_confirmations: number; blocked_projects: number; review_pending: number; generation_active: number; pending_delivery: number } {
-  return db.prepare(`
-    WITH daily_projects AS (
-      SELECT p.project_id, p.data_json
-      FROM projects p JOIN workbench_project_meta m ON m.project_id = p.project_id
-      WHERE m.lifecycle = 'active' AND m.classification IN ('production', 'unclassified')
-    )
+  const rows = db.prepare(`
+    SELECT p.data_json
+    FROM projects p JOIN workbench_project_meta m ON m.project_id = p.project_id
+    WHERE m.lifecycle = 'active' AND m.classification IN ('production', 'unclassified')
+  `).all() as Array<{ data_json: string }>;
+  const projects = rows.map((row) => parseJson<Project | null>(row.data_json, null)).filter((project): project is Project => Boolean(project?.project_id));
+  const bundles = collectProjectOperationalBundles(db, projects);
+  const summaries = projects.map((project) => ({ project, summary: bundles.get(project.project_id)?.summary }));
+  const pending = db.prepare(`
     SELECT
       (SELECT COUNT(*) FROM workbench_pending_actions WHERE status = 'pending')
-        + (SELECT COUNT(*) FROM workbench_drafts WHERE status IN ('pending', 'revision_needed')) AS pending_confirmations,
-      (SELECT COUNT(*) FROM daily_projects p WHERE
-        EXISTS (SELECT 1 FROM shots s WHERE s.project_id = p.project_id AND (
-          COALESCE(json_extract(s.data_json, '$.storyboard_image_artifact_id'), '') = ''
-          OR COALESCE(json_extract(s.data_json, '$.video_prompt'), '') = ''
-          OR json_extract(s.data_json, '$.status') = 'revision_needed'
-          OR json_extract(s.data_json, '$.review.approval_status') = 'revision_needed'
-        ))
-        OR EXISTS (SELECT 1 FROM generation_runs r WHERE r.project_id = p.project_id AND r.status = 'failed'
-          AND r.updated_at = (SELECT MAX(r2.updated_at) FROM generation_runs r2 WHERE r2.project_id = r.project_id AND COALESCE(r2.shot_id, '') = COALESCE(r.shot_id, '')))
-      ) AS blocked_projects,
-      (SELECT COUNT(*) FROM shots s JOIN daily_projects p ON p.project_id = s.project_id
-        WHERE COALESCE(json_array_length(json_extract(s.data_json, '$.clip_versions')), 0) > 0
-          AND json_extract(s.data_json, '$.review.approval_status') = 'pending') AS review_pending,
-      (SELECT COUNT(*) FROM generation_runs r JOIN daily_projects p ON p.project_id = r.project_id
-        WHERE r.status IN ('queued', 'running')) AS generation_active,
-      (SELECT COUNT(*) FROM daily_projects p WHERE json_extract(p.data_json, '$.status') <> 'final_approved'
-        AND (SELECT COUNT(*) FROM shots s WHERE s.project_id = p.project_id) > 0
-        AND (SELECT COUNT(*) FROM shots s WHERE s.project_id = p.project_id)
-          = (SELECT COUNT(*) FROM shots s WHERE s.project_id = p.project_id AND COALESCE(json_extract(s.data_json, '$.accepted_clip_artifact_id'), '') <> '')) AS pending_delivery
-  `).get() as { pending_confirmations: number; blocked_projects: number; review_pending: number; generation_active: number; pending_delivery: number };
+        + (SELECT COUNT(*) FROM workbench_drafts WHERE status IN ('pending', 'revision_needed')) AS count
+  `).get() as { count: number };
+  return {
+    pending_confirmations: pending.count,
+    blocked_projects: summaries.filter(({ summary }) => (summary?.blocked_shot_count ?? 0) > 0).length,
+    review_pending: summaries.reduce((count, { summary }) => count + (summary?.review_pending_count ?? 0), 0),
+    generation_active: summaries.reduce((count, { summary }) => count + (summary?.active_run_count ?? 0), 0),
+    pending_delivery: summaries.filter(({ project, summary }) => Boolean(
+      summary && summary.shot_count > 0 && summary.accepted_count === summary.shot_count && project.status !== "final_approved"
+    )).length
+  };
 }
 
 export function refreshWorkbenchImportIndex(db = openM0Database()): { indexed: number; reused: number; rescanned: number; removed: number } {

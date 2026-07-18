@@ -309,6 +309,14 @@ test("review and delivery guards reject same-project wrong-SHOT and tampered art
   let blobPath = "";
   try {
     const secondShot: Shot = { ...structuredClone(context.productionShot), shot_id: "shot_real_002", order: 2, clip_versions: [], accepted_clip_artifact_id: "" };
+    const firstStoryboard = registerMediaArtifact({ artifact_type: "image", role: "storyboard_image", source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" }, linked_objects: { project_id: context.production.project_id, shot_id: context.productionShot.shot_id } }, context.db);
+    const secondStoryboard = registerMediaArtifact({ artifact_type: "image", role: "storyboard_image", source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" }, linked_objects: { project_id: context.production.project_id, shot_id: secondShot.shot_id } }, context.db);
+    assert.equal(firstStoryboard.ok, true);
+    assert.equal(secondStoryboard.ok, true);
+    if (!firstStoryboard.ok || !secondStoryboard.ok) return;
+    context.productionShot.storyboard_image_artifact_id = firstStoryboard.artifact.artifact_id;
+    secondShot.storyboard_image_artifact_id = secondStoryboard.artifact.artifact_id;
+    saveShot(context.db, context.productionShot);
     saveShot(context.db, secondShot);
     context.production.shot_ids.push(secondShot.shot_id);
     saveProject(context.db, context.production);
@@ -413,8 +421,8 @@ test("review and delivery guards reject same-project wrong-SHOT and tampered art
     if (staleList.ok) {
       const listed = staleList.data.items.find((item) => (item.project as Project).project_id === context.production.project_id) as { summary: { delivery_state: string; next_action: { reason_code: string }; risk: string } };
       assert.equal(listed.summary.delivery_state, "not_ready");
-      assert.equal(listed.summary.next_action.reason_code, "assembly_readiness_required");
-      assert.equal(listed.summary.risk, "attention");
+      assert.equal(listed.summary.next_action.reason_code, "accepted_clip_invalid");
+      assert.equal(listed.summary.risk, "blocked");
     }
 
     context.productionShot.accepted_clip_artifact_id = first.artifact.artifact_id;
