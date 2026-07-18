@@ -24,6 +24,7 @@ import { downloadProviderOutputToArtifact } from "../src/tools/providerOutputDow
 import type { VideoProviderAdapter } from "../src/tools/videoProviderAdapters.js";
 
 function operationalFacts(overrides: Partial<ShotOperationalFacts> = {}): ShotOperationalFacts {
+  const generationVersionCount = overrides.generation_version_count ?? 0;
   return {
     shot_id: "shot_operational_001",
     project_id: "project_operational_001",
@@ -32,7 +33,10 @@ function operationalFacts(overrides: Partial<ShotOperationalFacts> = {}): ShotOp
     video_prompt_present: true,
     storyboard_artifact: { artifact_id: null, status: "missing", verification_level: "none" },
     accepted_clip_artifact: { artifact_id: null, status: "missing", verification_level: "none" },
-    generation_version_count: 0,
+    latest_version_artifact: generationVersionCount > 0
+      ? { artifact_id: "artifact_latest_version", status: "active", verification_level: "ledger_verified" }
+      : { artifact_id: null, status: "missing", verification_level: "none" },
+    generation_version_count: generationVersionCount,
     accepted_clip_in_version_stack: false,
     accepted_clip_review_status: null,
     review_approval_status: "pending",
@@ -127,6 +131,17 @@ test("shared operational state derives the generation, review, revision, and acc
   assert.equal(regeneratedPendingAfterRevision.review.selected_artifact_id, null);
   assert.equal(deriveProjectOperationalSummary([regeneratedPendingAfterRevision]).review_pending_count, 1);
   assert.equal(deriveProjectOperationalSummary([regeneratedPendingAfterRevision]).revision_needed_count, 0);
+
+  const pendingWithInvalidArtifact = deriveShotOperationalState(operationalFacts({
+    stored_workflow_status: "video_review",
+    storyboard_artifact: storyboard,
+    generation_version_count: 1,
+    latest_version_artifact: { artifact_id: "artifact_unverified", status: "integrity_invalid", verification_level: "none" },
+    latest_version_review_status: "pending"
+  }));
+  assert.equal(pendingWithInvalidArtifact.primary_stage, "state_inconsistent");
+  assert.equal(pendingWithInvalidArtifact.review.reviewable, false);
+  assert.ok(pendingWithInvalidArtifact.blocker_codes.includes("REVIEW_CLIP_INTEGRITY_INVALID"));
 
   const revision = deriveShotOperationalState(operationalFacts({
     stored_workflow_status: "revision_needed",
@@ -348,8 +363,16 @@ test("operational fact collection ignores a stale job after a newer independent 
         storyboard_image_artifact_id: "",
         video_prompt: "Stale job fixture."
       });
+      const latestArtifact = registerMediaArtifact({
+        artifact_type: "video",
+        role: "generated_clip",
+        source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+        linked_objects: { project_id: created.project_id, shot_id: shot.shot_id }
+      }, db);
+      assert.equal(latestArtifact.ok, true);
+      if (!latestArtifact.ok) throw new Error("clip artifact setup failed");
       shot.status = "video_review";
-      shot.clip_versions = [{ artifact_id: "artifact_latest_clip", run_id: "run_latest", attempt_number: 1, review_status: "pending" }];
+      shot.clip_versions = [{ artifact_id: latestArtifact.artifact.artifact_id, run_id: "run_latest", attempt_number: 1, review_status: "pending" }];
       saveShot(db, shot);
       created.project.shot_ids.push(shot.shot_id);
       saveProject(db, created.project);
@@ -382,6 +405,37 @@ test("operational fact collection ignores a stale job after a newer independent 
     }
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("operational fact collection blocks a pending version whose clip Artifact is not verified", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const created = createProject({
+      title: "Invalid review clip",
+      video_spec: { duration_seconds: 6, aspect_ratio: "9:16", resolution: "1080x1920" }
+    }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    const shot = buildStoryboardApprovedShot({
+      project_id: created.project_id,
+      order: 1,
+      duration_seconds: 6,
+      storyboard_image_artifact_id: "",
+      video_prompt: "Invalid review clip fixture."
+    });
+    shot.status = "video_review";
+    shot.clip_versions = [{ artifact_id: "artifact_missing_review_clip", run_id: "run_missing_clip", attempt_number: 1, review_status: "pending" }];
+    saveShot(db, shot);
+    created.project.shot_ids.push(shot.shot_id);
+    saveProject(db, created.project);
+
+    const state = collectProjectOperationalBundles(db, [created.project]).get(created.project_id)?.states[0];
+    assert.equal(state?.primary_stage, "state_inconsistent");
+    assert.equal(state?.review.reviewable, false);
+    assert.ok(state?.blocker_codes.includes("REVIEW_CLIP_INTEGRITY_INVALID"));
+  } finally {
+    db.close();
   }
 });
 

@@ -226,6 +226,7 @@ export function collectProjectOperationalBundles(
         video_prompt_present: typeof shot.video_prompt === "string" && shot.video_prompt.trim().length > 0,
         storyboard_artifact: artifactFact(shot.storyboard_image_artifact_id, shot.project_id, shot.shot_id, "storyboard_image", "image", artifacts),
         accepted_clip_artifact: artifactFact(shot.accepted_clip_artifact_id, shot.project_id, shot.shot_id, "generated_clip", "video", artifacts),
+        latest_version_artifact: artifactFact(latestVersion?.artifact_id ?? "", shot.project_id, shot.shot_id, "generated_clip", "video", artifacts),
         generation_version_count: shot.clip_versions.length,
         accepted_clip_in_version_stack: Boolean(shot.accepted_clip_artifact_id && shot.clip_versions.some((version) => version.artifact_id === shot.accepted_clip_artifact_id)),
         accepted_clip_review_status: acceptedVersion?.review_status ?? null,

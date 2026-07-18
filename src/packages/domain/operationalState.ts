@@ -45,6 +45,7 @@ export interface ShotOperationalFacts {
   video_prompt_present: boolean;
   storyboard_artifact: ArtifactOperationalFact;
   accepted_clip_artifact: ArtifactOperationalFact;
+  latest_version_artifact: ArtifactOperationalFact;
   generation_version_count: number;
   accepted_clip_in_version_stack: boolean;
   accepted_clip_review_status: "pending" | "approved" | "rejected" | null;
@@ -130,6 +131,14 @@ const ARTIFACT_REASON: Record<Exclude<ArtifactOperationalStatus, "active">, stri
   integrity_invalid: "STORYBOARD_ARTIFACT_INTEGRITY_INVALID"
 };
 
+const REVIEW_ARTIFACT_REASON: Record<Exclude<ArtifactOperationalStatus, "active">, string> = {
+  missing: "REVIEW_CLIP_MISSING",
+  inactive: "REVIEW_CLIP_INACTIVE",
+  binding_invalid: "REVIEW_CLIP_BINDING_INVALID",
+  role_invalid: "REVIEW_CLIP_ROLE_INVALID",
+  integrity_invalid: "REVIEW_CLIP_INTEGRITY_INVALID"
+};
+
 function unique(values: string[]): string[] {
   return [...new Set(values)];
 }
@@ -148,6 +157,10 @@ function reviewState(facts: ShotOperationalFacts): ShotOperationalState["review"
       return { stage: "inconsistent", reviewable: false, approval_status: null, selected_artifact_id: null };
     }
     return { stage: "not_started", reviewable: false, approval_status: null, selected_artifact_id: null };
+  }
+
+  if (facts.latest_version_artifact.status !== "active") {
+    return { stage: "inconsistent", reviewable: false, approval_status: null, selected_artifact_id: null };
   }
 
   if (facts.review_approval_status === "approved") {
@@ -264,6 +277,9 @@ export function deriveShotOperationalState(facts: ShotOperationalFacts): ShotOpe
       ? generationReasons.filter((code) => code !== "STORYBOARD_APPROVAL_REQUIRED")
       : []),
     ...(primaryStage === "state_inconsistent" ? ["SHOT_STATE_INCONSISTENT"] : []),
+    ...(facts.generation_version_count > 0 && facts.latest_version_artifact.status !== "active"
+      ? [REVIEW_ARTIFACT_REASON[facts.latest_version_artifact.status]]
+      : []),
     ...(primaryStage === "clip_revision_needed" ? ["CLIP_REVISION_REQUIRED"] : []),
     ...(primaryStage === "manual_reconciliation" ? ["GENERATION_MANUAL_RECONCILIATION"] : []),
     ...(primaryStage === "generation_failed" ? ["GENERATION_FAILED"] : []),
