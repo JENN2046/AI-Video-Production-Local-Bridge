@@ -200,10 +200,10 @@ export function deriveShotOperationalState(facts: ShotOperationalFacts): ShotOpe
       ? "queued"
       : activeJob === "polling" || activeJob === "downloading" || activeJob === "finalizing" || facts.latest_generation_run_status === "running"
         ? "running"
-        : facts.generation_version_count > 0
-          ? "completed"
-          : facts.latest_generation_run_status === "failed" || activeJob === "failed"
-            ? "failed"
+        : facts.latest_generation_run_status === "failed" || activeJob === "failed"
+          ? "failed"
+          : facts.generation_version_count > 0
+            ? "completed"
             : generationReady
               ? "ready"
               : "not_started";
@@ -216,15 +216,15 @@ export function deriveShotOperationalState(facts: ShotOperationalFacts): ShotOpe
         ? "generation_queued"
         : generationStage === "running"
           ? "generation_running"
+          : generationStage === "failed"
+            ? "generation_failed"
           : review.stage === "revision_needed"
             ? "clip_revision_needed"
             : review.stage === "approved" && deliveryReady
               ? "accepted"
               : review.stage === "pending"
                 ? "review_pending"
-                : generationStage === "failed"
-                  ? "generation_failed"
-                  : approval === "revision_needed"
+                : approval === "revision_needed"
                     ? "storyboard_revision_needed"
                     : generationReady
                       ? "generation_ready"

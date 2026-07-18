@@ -79,6 +79,18 @@ test("shared operational state derives the generation, review, revision, and acc
   assert.equal(legacyQueuedRun.allowed_workflow_actions.prepare_generation, false);
   assert.equal(deriveProjectOperationalSummary([legacyQueuedRun]).active_run_count, 1);
 
+  const failedRegeneration = deriveShotOperationalState(operationalFacts({
+    stored_workflow_status: "video_review",
+    storyboard_artifact: storyboard,
+    generation_version_count: 1,
+    latest_generation_run_status: "failed",
+    latest_version_review_status: "pending"
+  }));
+  assert.equal(failedRegeneration.primary_stage, "generation_failed");
+  assert.equal(failedRegeneration.generation.stage, "failed");
+  assert.equal(failedRegeneration.allowed_workflow_actions.prepare_generation, false);
+  assert.equal(deriveProjectOperationalSummary([failedRegeneration]).latest_failed_count, 1);
+
   const pending = deriveShotOperationalState(operationalFacts({
     stored_workflow_status: "video_review",
     storyboard_artifact: storyboard,
