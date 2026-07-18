@@ -29,25 +29,19 @@ import {
 const ISSUER = "https://issuer.example.test/";
 const RESOURCE = "https://aivideo.example.test/mcp";
 
-test("snapshot review count follows the shared regenerated-review semantics", () => {
+test("snapshot review count follows the projected operational review stage", () => {
   assert.equal(readonlySnapshotReviewPendingCount([
     {
-      status: "video_review",
-      clip_versions: [
-        { attempt_number: 1, review_status: "rejected" },
-        { attempt_number: 2, review_status: "pending" }
-      ],
-      review: { approval_status: "revision_needed" }
+      operational_state: { review: { stage: "pending" } }
     },
     {
-      status: "video_review",
-      clip_versions: [{ attempt_number: 1, review_status: "rejected" }],
-      review: { approval_status: "pending" }
+      operational_state: { review: { stage: "revision_needed" } }
     },
     {
-      status: "video_review",
-      clip_versions: [{ attempt_number: 1, review_status: "pending" }],
-      review: { approval_status: "pending" }
+      operational_state: { review: { stage: "pending" } }
+    },
+    {
+      operational_state: { review: { stage: "inconsistent" } }
     }
   ]), 2);
 });
@@ -686,7 +680,7 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
       ...structuredClone(generatedArtifact),
       artifact_id: "artifact_final_video",
       role: "final_video" as const,
-      linked_objects: { project_id: contradictoryFinalArtifact.projects[0]!.project_id, shot_id: "" }
+      linked_objects: { project_id: contradictoryFinalArtifact.projects[0]!.project_id, shot_id: null }
     };
     contradictoryFinalArtifact.projects[0]!.delivery.final_artifact = usableFinalArtifact;
     contradictoryFinalArtifact.projects[0]!.delivery.final_artifact_reason_code = "ARTIFACT_INACCESSIBLE";
@@ -700,53 +694,6 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     const negativeCloseoutEvidence = structuredClone(unsigned);
     negativeCloseoutEvidence.projects[0]!.closeout.evidence.webgpt_audit_events = -1;
     assert.throws(() => finalizeReadonlySnapshot(negativeCloseoutEvidence), /closeout audit event count cannot be negative/i);
-
-    const deliveryAdjustedSummary = structuredClone(unsigned);
-    const adjustedProject = deliveryAdjustedSummary.projects[0]!;
-    const assemblyRequired = {
-      source: "derived" as const,
-      label: "验证合成就绪状态",
-      reason_code: "assembly_readiness_required",
-      priority: "high" as const,
-      expires_at: null,
-      derived: { label: "验证合成就绪状态", reason_code: "assembly_readiness_required", priority: "high" as const }
-    };
-    adjustedProject.shots_full[0]!.storyboard_image_artifact_id = "artifact_storyboard_present";
-    adjustedProject.review_packages[0]!.full.shot.storyboard_image_artifact_id = "artifact_storyboard_present";
-    adjustedProject.list_item_full.summary.blocker_count = 0;
-    adjustedProject.list_item_full.summary.blocker_reason = "";
-    adjustedProject.list_item_full.summary.risk = "clear";
-    adjustedProject.list_item_compact.summary.blocker_count = 0;
-    adjustedProject.list_item_compact.summary.risk = "clear";
-    adjustedProject.list_item_full.summary.next_action = structuredClone(assemblyRequired);
-    adjustedProject.list_item_compact.summary.next_action = structuredClone(assemblyRequired);
-    for (const context of adjustedProject.contexts) {
-      context.full.summary.blocker_count = 0;
-      context.full.summary.blocker_reason = "";
-      context.full.summary.risk = "clear";
-      context.compact.summary.blocker_count = 0;
-      context.compact.summary.blocker_reason = "";
-      context.compact.summary.risk = "clear";
-      if ("shots" in context.full) context.full.shots[0]!.storyboard_image_artifact_id = "artifact_storyboard_present";
-      if (context.full.workspace === "overview") context.full.blockers = [];
-      if (context.compact.workspace === "overview") context.compact.blockers = [];
-      if (context.workspace === "delivery") {
-        const adjusted = {
-          source: "derived" as const,
-          label: "修复无效采纳片段",
-          reason_code: "accepted_clip_invalid",
-          priority: "urgent" as const,
-          expires_at: null,
-          derived: { label: "修复无效采纳片段", reason_code: "accepted_clip_invalid", priority: "urgent" as const }
-        };
-        context.full.summary.next_action = structuredClone(adjusted);
-        context.compact.summary.next_action = structuredClone(adjusted);
-      } else {
-        context.full.summary.next_action = structuredClone(assemblyRequired);
-        context.compact.summary.next_action = structuredClone(assemblyRequired);
-      }
-    }
-    assert.doesNotThrow(() => finalizeReadonlySnapshot(deliveryAdjustedSummary));
 
     const duplicateCompactShot = structuredClone(unsigned);
     const projected = duplicateCompactShot.projects[0]!;

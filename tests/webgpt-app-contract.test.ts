@@ -164,7 +164,7 @@ test("readonly workbench HTML enforces CSP-compatible local rendering and inline
   for (const required of [
     "Service Status", "Production Projects", "Project Context", "Shot Workbench", "Review Package",
     "Delivery Status", "Closeout Evidence", "window.openai?.callTool", "event.source!==window.parent",
-    "当前数据来自只读快照", "选中文本后按 Ctrl+C"
+    "当前数据来自只读快照", "选中文本后按 Ctrl+C", "No generated clip", "storyboard ", "review "
   ]) assert.equal(html.includes(required), true, required);
   const escaped = escapeReadonlyWorkbenchInlineText("</ScRiPt><script>safe</script></STYLE>\u2028\u2029");
   assert.equal(/<\/script/i.test(escaped), false);

@@ -22,6 +22,7 @@ import {
   updateProductionShotCopy
 } from "../src/webgpt-v4/domain.js";
 import { migrateLegacyWebGptV4History } from "../src/webgpt-v4/migration.js";
+import { readReviewPackage, readShotList } from "../src/webgpt-v4/contracts.js";
 import { actorFromSubject } from "../src/webgpt-v4/types.js";
 import { buildProviderCapabilityKey, buildProviderPriceCacheKey, RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY } from "../src/tools/providerCapabilities.js";
 import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
@@ -240,6 +241,146 @@ test("production project listing excludes test and unclassified projects", () =>
   }
 });
 
+test("public SHOT and empty review DTOs expose normalized operational semantics", () => {
+  const context = setup();
+  try {
+    context.productionShot.storyboard_image_artifact_id = "";
+    saveShot(context.db, context.productionShot);
+    const shots = readShotList(listProductionProjectShots({ project_id: context.production.project_id }, context.db), "compact");
+    assert.equal(shots.ok, true, JSON.stringify(shots));
+    if (!shots.ok) return;
+    const shot = (shots.data as { items: Array<Record<string, any>> }).items[0]!;
+    assert.equal(shot.storyboard_image_artifact_id, null);
+    assert.equal(shot.accepted_clip_artifact_id, null);
+    assert.equal(shot.operational_state.storyboard.approval_status, "approved");
+    assert.equal(shot.operational_state.storyboard.artifact_status, "missing");
+    assert.equal(shot.operational_state.generation.workflow_ready, false);
+    assert.deepEqual(shot.operational_state.blocker_codes, ["STORYBOARD_IMAGE_MISSING"]);
+    assert.equal(shot.operational_state.review.stage, "not_started");
+    assert.equal(shot.operational_state.review.reviewable, false);
+    assert.equal(shot.operational_state.review.approval_status, null);
+    assert.equal(shot.operational_state.review.selected_artifact_id, null);
+    assert.match(shot.updated_at, /^\d{4}-\d{2}-\d{2}T.*Z$/u);
+
+    const review = readReviewPackage(
+      getProductionReviewPackage({ project_id: context.production.project_id, shot_id: context.productionShot.shot_id }, context.db),
+      "compact",
+      context.production.project_id,
+      context.productionShot.shot_id
+    );
+    assert.equal(review.ok, true, JSON.stringify(review));
+    if (!review.ok) return;
+    const data = review.data as Record<string, any>;
+    assert.equal(data.package_state, "not_available");
+    assert.equal(data.reviewable, false);
+    assert.equal(data.reason_code, "NO_GENERATED_CLIP");
+    assert.equal(data.selected_artifact_id, null);
+    assert.deepEqual(data.versions, []);
+  } finally {
+    teardown(context);
+  }
+});
+
+test("five-stage readonly fixture keeps SHOT, review package, and project summary semantics aligned", () => {
+  const context = setup();
+  try {
+    const storyboard = (shotId: string): string => {
+      const artifact = registerMediaArtifact({
+        artifact_type: "image", role: "storyboard_image",
+        source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
+        linked_objects: { project_id: context.production.project_id, shot_id: shotId }
+      }, context.db);
+      assert.equal(artifact.ok, true);
+      if (!artifact.ok) throw new Error("storyboard fixture registration failed");
+      return artifact.artifact.artifact_id;
+    };
+    const clip = (shotId: string): string => {
+      const artifact = registerMediaArtifact({
+        artifact_type: "video", role: "generated_clip",
+        source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+        linked_objects: { project_id: context.production.project_id, shot_id: shotId }
+      }, context.db);
+      assert.equal(artifact.ok, true);
+      if (!artifact.ok) throw new Error("clip fixture registration failed");
+      return artifact.artifact.artifact_id;
+    };
+    const base = (shotId: string, order: number): Shot => ({
+      shot_id: shotId, project_id: context.production.project_id, order, status: "draft", duration_seconds: 6,
+      description: shotId, storyboard_image_artifact_id: "", video_prompt: "Fixture prompt", negative_prompt: "",
+      generation_run_ids: [], accepted_clip_artifact_id: "", clip_versions: [],
+      review: { approval_status: "pending", rejection_reasons: [], latest_revision_instruction: null }
+    });
+
+    const draft = base("shot_stage_draft", 1);
+    const ready = base("shot_stage_ready", 2);
+    ready.status = "storyboard_approved";
+    ready.storyboard_image_artifact_id = storyboard(ready.shot_id);
+    const pending = base("shot_stage_pending", 3);
+    pending.status = "video_review";
+    pending.storyboard_image_artifact_id = storyboard(pending.shot_id);
+    const pendingClip = clip(pending.shot_id);
+    pending.clip_versions = [{ artifact_id: pendingClip, run_id: "run_stage_pending", attempt_number: 1, review_status: "pending" }];
+    const rejected = base("shot_stage_rejected", 4);
+    rejected.status = "revision_needed";
+    rejected.storyboard_image_artifact_id = storyboard(rejected.shot_id);
+    const rejectedClip = clip(rejected.shot_id);
+    rejected.clip_versions = [{ artifact_id: rejectedClip, run_id: "run_stage_rejected", attempt_number: 1, review_status: "rejected" }];
+    rejected.review = { approval_status: "revision_needed", rejection_reasons: ["Pacing"], latest_revision_instruction: null };
+    const accepted = base("shot_stage_accepted", 5);
+    accepted.status = "approved";
+    accepted.storyboard_image_artifact_id = storyboard(accepted.shot_id);
+    const acceptedClip = clip(accepted.shot_id);
+    accepted.clip_versions = [{ artifact_id: acceptedClip, run_id: "run_stage_accepted", attempt_number: 1, review_status: "approved" }];
+    accepted.accepted_clip_artifact_id = acceptedClip;
+    accepted.review = { approval_status: "approved", rejection_reasons: [], latest_revision_instruction: null };
+
+    const staged = [draft, ready, pending, rejected, accepted];
+    context.db.prepare("DELETE FROM shots WHERE shot_id = ?").run(context.productionShot.shot_id);
+    for (const shot of staged) saveShot(context.db, shot);
+    context.production.shot_ids = staged.map((shot) => shot.shot_id);
+    saveProject(context.db, context.production);
+
+    const shots = readShotList(listProductionProjectShots({ project_id: context.production.project_id, limit: 20 }, context.db), "full");
+    assert.equal(shots.ok, true, JSON.stringify(shots));
+    if (!shots.ok) return;
+    const items = (shots.data as { items: Array<Record<string, any>> }).items;
+    assert.deepEqual(items.map((shot) => shot.operational_state.primary_stage), [
+      "storyboard_draft", "generation_ready", "review_pending", "clip_revision_needed", "accepted"
+    ]);
+    assert.deepEqual(items.map((shot) => shot.review.stage), ["not_started", "not_started", "pending", "revision_needed", "approved"]);
+
+    const reviewStates = staged.map((shot) => {
+      const review = readReviewPackage(
+        getProductionReviewPackage({ project_id: context.production.project_id, shot_id: shot.shot_id }, context.db),
+        "compact",
+        context.production.project_id,
+        shot.shot_id
+      );
+      assert.equal(review.ok, true, JSON.stringify(review));
+      if (!review.ok) throw new Error("review projection failed");
+      const data = review.data as Record<string, any>;
+      return [data.package_state, data.reviewable, data.reason_code, data.selected_artifact_id, data.shot.operational_state.review.selected_artifact_id];
+    });
+    assert.deepEqual(reviewStates, [
+      ["not_available", false, "NO_GENERATED_CLIP", null, null],
+      ["not_available", false, "NO_GENERATED_CLIP", null, null],
+      ["available", true, null, null, null],
+      ["available", true, null, null, null],
+      ["available", true, null, acceptedClip, acceptedClip]
+    ]);
+
+    const projects = listProductionProjects({}, context.db);
+    assert.equal(projects.ok, true, JSON.stringify(projects));
+    if (projects.ok) {
+      const summary = (projects.data.items[0] as { summary: Record<string, number> }).summary;
+      assert.equal(summary.review_pending_count, 1);
+      assert.equal(summary.accepted_count, 1);
+    }
+  } finally {
+    teardown(context);
+  }
+});
+
 test("SHOT copy writes are field-limited, optimistic, idempotent, and audited", () => {
   const context = setup();
   try {
@@ -257,10 +398,14 @@ test("SHOT copy writes are field-limited, optimistic, idempotent, and audited", 
     assert.equal(write.data.shot.description, "Updated by WebGPT");
     assert.equal(write.data.shot.status, "storyboard_approved");
     assert.equal(write.data.shot.storyboard_image_artifact_id, "artifact_storyboard_001");
+    assert.equal(write.data.shot.operational_state.storyboard.artifact_status, "integrity_invalid");
 
     const replay = updateProductionShotCopy(input, { actor, idempotency_key: "shot-copy-1" }, context.db);
     assert.equal(replay.ok, true);
-    if (replay.ok) assert.equal(replay.meta.idempotent_replay, true);
+    if (replay.ok) {
+      assert.equal(replay.meta.idempotent_replay, true);
+      assert.equal(replay.data.shot.operational_state.storyboard.artifact_status, "integrity_invalid");
+    }
 
     const conflict = updateProductionShotCopy({ ...input, description: "Different" }, { actor, idempotency_key: "shot-copy-1" }, context.db);
     assert.equal(conflict.ok, false);
