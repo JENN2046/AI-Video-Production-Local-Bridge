@@ -3,6 +3,11 @@ import { createHash } from "node:crypto";
 import { z } from "zod/v4";
 
 import {
+  hasCurrentPendingReview,
+  type StoredShotWorkflowStatus
+} from "../packages/domain/operationalState.js";
+
+import {
   WEBGPT_V4_CLOSEOUT_DATA_SCHEMA,
   WEBGPT_V4_COMPACT_PROJECT_LIST_ITEM_SCHEMA,
   WEBGPT_V4_DELIVERY_DATA_SCHEMA,
@@ -273,7 +278,7 @@ function validateProjectProjectionBindings(
   const expectedSummaryState = {
     shot_count: project.shots_full.length,
     accepted_count: project.shots_full.filter((shot) => Boolean(shot.accepted_clip_artifact_id)).length,
-    review_pending_count: project.shots_full.filter((shot) => shot.clip_versions.length > 0 && shot.review.approval_status === "pending").length,
+    review_pending_count: readonlySnapshotReviewPendingCount(project.shots_full),
     delivery_state: project.list_item_full.project.status === "final_approved"
       ? "delivered"
       : project.delivery.final_artifact || project.delivery.final_artifact_reason_code
@@ -588,6 +593,23 @@ function validateProjectProjectionBindings(
     || project.delivery.delivered !== delivered) {
     addBindingIssue(context, [...base, "delivery"], "Delivery/canonical project state mismatch.");
   }
+}
+
+export function readonlySnapshotReviewPendingCount(shots: Array<{
+  status: StoredShotWorkflowStatus;
+  clip_versions: Array<{ attempt_number: number; review_status: "pending" | "approved" | "rejected" }>;
+  review: { approval_status: "pending" | "approved" | "revision_needed" };
+}>): number {
+  return shots.filter((shot) => {
+    const latestVersion = [...shot.clip_versions]
+      .sort((left, right) => right.attempt_number - left.attempt_number)[0];
+    return hasCurrentPendingReview({
+      stored_workflow_status: shot.status,
+      generation_version_count: shot.clip_versions.length,
+      review_approval_status: shot.review.approval_status,
+      latest_version_review_status: latestVersion?.review_status ?? null
+    });
+  }).length;
 }
 
 const readonlySnapshotShape = {

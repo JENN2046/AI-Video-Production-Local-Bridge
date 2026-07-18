@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { basename, extname, isAbsolute, relative, resolve } from "node:path";
 
 import { ensureM0Directories, paths } from "../../paths.js";
-import { handleWorkbenchV2Api } from "../../packages/domain/index.js";
+import { handleWorkbenchV2Api } from "../../http/workbenchV2Routes.js";
 import { getMediaArtifact, recoverMediaActivations, validateImageFile } from "../../packages/media/index.js";
 import { generationWorkerStatus, resumeWorkbenchGenerationJobs } from "../../packages/providers/index.js";
 import { openM0Database } from "../../packages/storage/index.js";

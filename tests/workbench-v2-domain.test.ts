@@ -4,13 +4,16 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
+import { deriveProjectOperationalSummary, deriveShotOperationalState, type ShotOperationalFacts } from "../src/packages/domain/operationalState.js";
 import { databaseLogicalManifest, migrateDatabase } from "../src/storage/databaseGovernance.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import { WORKBENCH_V2_SCHEMA_VERSION } from "../src/storage/workbenchV2Schema.js";
 import { buildStoryboardApprovedShot, createProject, saveProject, saveShot } from "../src/tools/projects.js";
+import { collectProjectOperationalBundles } from "../src/tools/operationalStateFacts.js";
 import {
   createWorkbenchProject,
   getWorkbenchProjectWorkspace,
+  getWorkbenchDashboard,
   listWorkbenchProjects,
   setWorkbenchProjectLifecycle,
   updateWorkbenchProject
@@ -19,6 +22,474 @@ import { confirmWorkbenchGeneration, preflightWorkbenchGeneration, reconcileGene
 import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { downloadProviderOutputToArtifact } from "../src/tools/providerOutputDownloader.js";
 import type { VideoProviderAdapter } from "../src/tools/videoProviderAdapters.js";
+
+function operationalFacts(overrides: Partial<ShotOperationalFacts> = {}): ShotOperationalFacts {
+  const generationVersionCount = overrides.generation_version_count ?? 0;
+  return {
+    shot_id: "shot_operational_001",
+    project_id: "project_operational_001",
+    stored_workflow_status: "draft",
+    duration_seconds: 6,
+    video_prompt_present: true,
+    storyboard_artifact: { artifact_id: null, status: "missing", verification_level: "none" },
+    accepted_clip_artifact: { artifact_id: null, status: "missing", verification_level: "none" },
+    latest_version_artifact: generationVersionCount > 0
+      ? { artifact_id: "artifact_latest_version", status: "active", verification_level: "ledger_verified" }
+      : { artifact_id: null, status: "missing", verification_level: "none" },
+    generation_version_count: generationVersionCount,
+    accepted_clip_in_version_stack: false,
+    accepted_clip_review_status: null,
+    review_approval_status: "pending",
+    latest_version_review_status: null,
+    generation_job_state: null,
+    latest_generation_run_status: null,
+    ...overrides
+  };
+}
+
+test("shared operational state separates approval, artifact availability, generation, review, and delivery", () => {
+  const approvedWithoutArtifact = deriveShotOperationalState(operationalFacts({ stored_workflow_status: "storyboard_approved" }));
+  assert.equal(approvedWithoutArtifact.storyboard.approval_status, "approved");
+  assert.equal(approvedWithoutArtifact.storyboard.artifact_status, "missing");
+  assert.equal(approvedWithoutArtifact.primary_stage, "storyboard_blocked");
+  assert.equal(approvedWithoutArtifact.generation.workflow_ready, false);
+  assert.ok(approvedWithoutArtifact.blocker_codes.includes("STORYBOARD_IMAGE_MISSING"));
+
+  const noGeneratedClip = deriveShotOperationalState(operationalFacts());
+  assert.deepEqual(noGeneratedClip.review, {
+    stage: "not_started",
+    reviewable: false,
+    approval_status: null,
+    selected_artifact_id: null
+  });
+  assert.equal(deriveProjectOperationalSummary([noGeneratedClip]).review_pending_count, 0);
+});
+
+test("shared operational state derives the generation, review, revision, and accepted path consistently", () => {
+  const storyboard = { artifact_id: "artifact_storyboard", status: "active", verification_level: "ledger_verified" } as const;
+  const generated = deriveShotOperationalState(operationalFacts({
+    stored_workflow_status: "storyboard_approved",
+    storyboard_artifact: storyboard
+  }));
+  assert.equal(generated.primary_stage, "generation_ready");
+  assert.equal(generated.allowed_workflow_actions.prepare_generation, true);
+
+  const awaitingApproval = deriveShotOperationalState(operationalFacts({
+    stored_workflow_status: "draft",
+    storyboard_artifact: storyboard
+  }));
+  assert.equal(awaitingApproval.primary_stage, "storyboard_draft");
+  assert.equal(awaitingApproval.allowed_workflow_actions.approve_storyboard, true);
+  assert.ok(awaitingApproval.generation.reason_codes.includes("STORYBOARD_APPROVAL_REQUIRED"));
+  assert.deepEqual(awaitingApproval.blocker_codes, []);
+  assert.equal(deriveProjectOperationalSummary([awaitingApproval]).blocker_count, 0);
+
+  const legacyQueuedRun = deriveShotOperationalState(operationalFacts({
+    stored_workflow_status: "storyboard_approved",
+    storyboard_artifact: storyboard,
+    latest_generation_run_status: "queued"
+  }));
+  assert.equal(legacyQueuedRun.primary_stage, "generation_queued");
+  assert.equal(legacyQueuedRun.generation.stage, "queued");
+  assert.equal(legacyQueuedRun.allowed_workflow_actions.prepare_generation, false);
+  assert.equal(deriveProjectOperationalSummary([legacyQueuedRun]).active_run_count, 1);
+
+  const failedRegeneration = deriveShotOperationalState(operationalFacts({
+    stored_workflow_status: "video_review",
+    storyboard_artifact: storyboard,
+    generation_version_count: 1,
+    latest_generation_run_status: "failed",
+    latest_version_review_status: "pending"
+  }));
+  assert.equal(failedRegeneration.primary_stage, "generation_failed");
+  assert.equal(failedRegeneration.generation.stage, "failed");
+  assert.equal(failedRegeneration.allowed_workflow_actions.prepare_generation, false);
+  assert.equal(deriveProjectOperationalSummary([failedRegeneration]).latest_failed_count, 1);
+
+  const pending = deriveShotOperationalState(operationalFacts({
+    stored_workflow_status: "video_review",
+    storyboard_artifact: storyboard,
+    generation_version_count: 1,
+    latest_version_review_status: "pending"
+  }));
+  assert.equal(pending.primary_stage, "review_pending");
+  assert.equal(pending.review.approval_status, "pending");
+
+  const regeneratedPendingAfterRevision = deriveShotOperationalState(operationalFacts({
+    stored_workflow_status: "video_review",
+    storyboard_artifact: storyboard,
+    accepted_clip_artifact: { artifact_id: "artifact_previous_revision", status: "active", verification_level: "ledger_verified" },
+    generation_version_count: 2,
+    accepted_clip_in_version_stack: true,
+    accepted_clip_review_status: "rejected",
+    review_approval_status: "revision_needed",
+    latest_version_review_status: "pending"
+  }));
+  assert.equal(regeneratedPendingAfterRevision.primary_stage, "review_pending");
+  assert.equal(regeneratedPendingAfterRevision.review.stage, "pending");
+  assert.equal(regeneratedPendingAfterRevision.review.approval_status, "pending");
+  assert.equal(regeneratedPendingAfterRevision.review.selected_artifact_id, null);
+  assert.equal(deriveProjectOperationalSummary([regeneratedPendingAfterRevision]).review_pending_count, 1);
+  assert.equal(deriveProjectOperationalSummary([regeneratedPendingAfterRevision]).revision_needed_count, 0);
+
+  const pendingWithInvalidArtifact = deriveShotOperationalState(operationalFacts({
+    stored_workflow_status: "video_review",
+    storyboard_artifact: storyboard,
+    generation_version_count: 1,
+    latest_version_artifact: { artifact_id: "artifact_unverified", status: "integrity_invalid", verification_level: "none" },
+    latest_version_review_status: "pending"
+  }));
+  assert.equal(pendingWithInvalidArtifact.primary_stage, "state_inconsistent");
+  assert.equal(pendingWithInvalidArtifact.review.reviewable, false);
+  assert.ok(pendingWithInvalidArtifact.blocker_codes.includes("REVIEW_CLIP_INTEGRITY_INVALID"));
+
+  const revision = deriveShotOperationalState(operationalFacts({
+    stored_workflow_status: "revision_needed",
+    storyboard_artifact: storyboard,
+    generation_version_count: 1,
+    review_approval_status: "revision_needed",
+    latest_version_review_status: "rejected"
+  }));
+  assert.equal(revision.primary_stage, "clip_revision_needed");
+  assert.ok(revision.blocker_codes.includes("CLIP_REVISION_REQUIRED"));
+
+  const revisionAfterAcceptance = deriveShotOperationalState(operationalFacts({
+    stored_workflow_status: "revision_needed",
+    storyboard_artifact: storyboard,
+    accepted_clip_artifact: { artifact_id: "artifact_previously_accepted", status: "active", verification_level: "ledger_verified" },
+    generation_version_count: 1,
+    accepted_clip_in_version_stack: true,
+    accepted_clip_review_status: "rejected",
+    review_approval_status: "revision_needed",
+    latest_version_review_status: "rejected"
+  }));
+  assert.equal(revisionAfterAcceptance.primary_stage, "clip_revision_needed");
+  assert.equal(revisionAfterAcceptance.review.stage, "revision_needed");
+  assert.equal(revisionAfterAcceptance.review.selected_artifact_id, "artifact_previously_accepted");
+  assert.equal(revisionAfterAcceptance.delivery.ready, false);
+  assert.equal(deriveProjectOperationalSummary([revisionAfterAcceptance]).revision_needed_count, 1);
+
+  const acceptedClip = { artifact_id: "artifact_clip", status: "active", verification_level: "ledger_verified" } as const;
+  const accepted = deriveShotOperationalState(operationalFacts({
+    stored_workflow_status: "approved",
+    storyboard_artifact: storyboard,
+    accepted_clip_artifact: acceptedClip,
+    generation_version_count: 1,
+    accepted_clip_in_version_stack: true,
+    accepted_clip_review_status: "approved",
+    review_approval_status: "approved",
+    latest_version_review_status: "approved"
+  }));
+  assert.equal(accepted.primary_stage, "accepted");
+  assert.equal(accepted.delivery.ready, true);
+  assert.equal(accepted.blocker_codes.length, 0);
+});
+
+test("shared operational state fails closed on inconsistent accepted-clip and review facts", () => {
+  const state = deriveShotOperationalState(operationalFacts({
+    stored_workflow_status: "approved",
+    storyboard_artifact: { artifact_id: "artifact_storyboard", status: "active", verification_level: "ledger_verified" },
+    accepted_clip_artifact: { artifact_id: "artifact_clip", status: "active", verification_level: "ledger_verified" },
+    generation_version_count: 1,
+    accepted_clip_in_version_stack: false,
+    accepted_clip_review_status: "approved",
+    review_approval_status: "approved",
+    latest_version_review_status: "approved"
+  }));
+  assert.equal(state.primary_stage, "state_inconsistent");
+  assert.equal(state.delivery.ready, false);
+  assert.ok(state.blocker_codes.includes("SHOT_STATE_INCONSISTENT"));
+  assert.equal(deriveProjectOperationalSummary([state]).accepted_count, 1);
+
+  const impossibleApprovedStatus = deriveShotOperationalState(operationalFacts({
+    stored_workflow_status: "approved",
+    storyboard_artifact: { artifact_id: "artifact_storyboard", status: "active", verification_level: "ledger_verified" }
+  }));
+  assert.equal(impossibleApprovedStatus.primary_stage, "state_inconsistent");
+  assert.equal(impossibleApprovedStatus.review.stage, "inconsistent");
+});
+
+test("operational fact collection uses a fixed query count for a 100-SHOT project", () => {
+  const project = {
+    project_id: "project_bulk_operational",
+    title: "Bulk operational fixture",
+    project_type: "m0_video_loop",
+    status: "storyboard_approved" as const,
+    brief: {},
+    video_spec: { duration_seconds: 600, aspect_ratio: "9:16", resolution: "1080x1920" },
+    shot_ids: [],
+    active_storyboard_package_id: "",
+    generation_batch_ids: [],
+    exports: { final_video_artifact_id: "" }
+  };
+  const shots = Array.from({ length: 100 }, (_, index) => buildStoryboardApprovedShot({
+    shot_id: `shot_bulk_${String(index).padStart(3, "0")}`,
+    project_id: project.project_id,
+    order: index + 1,
+    duration_seconds: 6,
+    storyboard_image_artifact_id: "",
+    video_prompt: "Bulk fixture prompt."
+  }));
+  let queryCount = 0;
+  const db = {
+    prepare(sql: string) {
+      queryCount += 1;
+      return {
+        all() {
+          if (sql.includes("FROM shots")) return shots.map((shot) => ({ shot_id: shot.shot_id, project_id: project.project_id, data_json: JSON.stringify(shot) }));
+          return [];
+        }
+      };
+    }
+  } as unknown as Parameters<typeof collectProjectOperationalBundles>[0];
+
+  const bundle = collectProjectOperationalBundles(db, [project]).get(project.project_id);
+  assert.equal(queryCount, 4);
+  assert.equal(bundle?.states.length, 100);
+  assert.equal(bundle?.summary.blocked_shot_count, 100);
+});
+
+test("operational fact collection fails closed on structured SHOT binding drift", () => {
+  const project = {
+    project_id: "project_drift",
+    title: "Drift fixture",
+    project_type: "m0_video_loop",
+    status: "draft" as const,
+    brief: {},
+    video_spec: { duration_seconds: 6, aspect_ratio: "9:16", resolution: "1080x1920" },
+    shot_ids: [],
+    active_storyboard_package_id: "",
+    generation_batch_ids: [],
+    exports: { final_video_artifact_id: "" }
+  };
+  const drifted = buildStoryboardApprovedShot({
+    shot_id: "shot_json_id",
+    project_id: project.project_id,
+    order: 1,
+    duration_seconds: 6,
+    storyboard_image_artifact_id: "",
+    video_prompt: "Fixture."
+  });
+  const db = {
+    prepare(sql: string) {
+      return { all: () => sql.includes("FROM shots") ? [{ shot_id: "shot_row_id", project_id: project.project_id, data_json: JSON.stringify(drifted) }] : [] };
+    }
+  } as unknown as Parameters<typeof collectProjectOperationalBundles>[0];
+  assert.throws(() => collectProjectOperationalBundles(db, [project]), /SHOT_OPERATIONAL_FACT_INVALID/);
+
+  const unknownStatus = { ...drifted, shot_id: "shot_row_id", status: "unknown_after_manual_repair" };
+  const invalidStatusDb = {
+    prepare(sql: string) {
+      return { all: () => sql.includes("FROM shots") ? [{ shot_id: "shot_row_id", project_id: project.project_id, data_json: JSON.stringify(unknownStatus) }] : [] };
+    }
+  } as unknown as Parameters<typeof collectProjectOperationalBundles>[0];
+  assert.throws(() => collectProjectOperationalBundles(invalidStatusDb, [project]), /SHOT_OPERATIONAL_FACT_INVALID/);
+});
+
+test("operational fact collection uses insertion order to break same-second generation job ties", () => {
+  const root = mkdtempSync(join(tmpdir(), "operational-job-order-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    migrateDatabase(sqlitePath);
+    const db = openM0Database(sqlitePath);
+    try {
+      const created = createProject({
+        title: "Same-second job ordering",
+        video_spec: { duration_seconds: 6, aspect_ratio: "9:16", resolution: "1080x1920" }
+      }, db);
+      assert.equal(created.ok, true);
+      if (!created.ok) throw new Error("project setup failed");
+      const shot = buildStoryboardApprovedShot({
+        project_id: created.project_id,
+        order: 1,
+        duration_seconds: 6,
+        storyboard_image_artifact_id: "",
+        video_prompt: "Same-second ordering fixture."
+      });
+      saveShot(db, shot);
+      created.project.shot_ids.push(shot.shot_id);
+      saveProject(db, created.project);
+
+      const insertIntent = db.prepare(`
+        INSERT INTO generation_intents (
+          intent_id, run_id, project_id, shot_id, provider, account_label, model,
+          input_artifact_id, duration_seconds, resolution, estimated_cost_value,
+          budget_limit_value, currency, confirmed, expires_at, status, data_json,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, 'runninghub', 'personal', 'fixture-model', '', 6,
+          '1080x1920', 0, 0, 'CNY', 1, '2099-01-01T00:00:00.000Z', ?, '{}',
+          '2026-07-18 00:00:00', '2026-07-18 00:00:00')
+      `);
+      insertIntent.run("intent_old", "run_old", created.project_id, shot.shot_id, "cancelled");
+      db.prepare(`
+        INSERT INTO generation_jobs (job_id, intent_id, state, created_at, updated_at)
+        VALUES ('job_zzzz_old', 'intent_old', 'cancelled', '2026-07-18 00:00:00', '2026-07-18 00:00:00')
+      `).run();
+      insertIntent.run("intent_new", "run_new", created.project_id, shot.shot_id, "queued");
+      db.prepare(`
+        INSERT INTO generation_jobs (job_id, intent_id, state, created_at, updated_at)
+        VALUES ('job_aaaa_new', 'intent_new', 'queued', '2026-07-18 00:00:00', '2026-07-18 00:00:00')
+      `).run();
+
+      const bundle = collectProjectOperationalBundles(db, [created.project]).get(created.project_id);
+      assert.equal(bundle?.states[0]?.generation.stage, "queued");
+      assert.equal(bundle?.states[0]?.primary_stage, "generation_queued");
+      assert.equal(bundle?.summary.active_run_count, 1);
+    } finally {
+      db.close();
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("operational fact collection ignores a stale job after a newer independent run succeeds", () => {
+  const root = mkdtempSync(join(tmpdir(), "operational-stale-job-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    migrateDatabase(sqlitePath);
+    const db = openM0Database(sqlitePath);
+    try {
+      const created = createProject({
+        title: "Stale job after successful run",
+        video_spec: { duration_seconds: 6, aspect_ratio: "9:16", resolution: "1080x1920" }
+      }, db);
+      assert.equal(created.ok, true);
+      if (!created.ok) throw new Error("project setup failed");
+      const shot = buildStoryboardApprovedShot({
+        project_id: created.project_id,
+        order: 1,
+        duration_seconds: 6,
+        storyboard_image_artifact_id: "",
+        video_prompt: "Stale job fixture."
+      });
+      const latestArtifact = registerMediaArtifact({
+        artifact_type: "video",
+        role: "generated_clip",
+        source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+        linked_objects: { project_id: created.project_id, shot_id: shot.shot_id }
+      }, db);
+      assert.equal(latestArtifact.ok, true);
+      if (!latestArtifact.ok) throw new Error("clip artifact setup failed");
+      shot.status = "video_review";
+      shot.clip_versions = [{ artifact_id: latestArtifact.artifact.artifact_id, run_id: "run_latest", attempt_number: 1, review_status: "pending" }];
+      saveShot(db, shot);
+      created.project.shot_ids.push(shot.shot_id);
+      saveProject(db, created.project);
+
+      db.prepare(`
+        INSERT INTO generation_intents (
+          intent_id, run_id, project_id, shot_id, provider, account_label, model,
+          input_artifact_id, duration_seconds, resolution, estimated_cost_value,
+          budget_limit_value, currency, confirmed, expires_at, status, data_json,
+          created_at, updated_at
+        ) VALUES ('intent_stale', 'run_stale', ?, ?, 'runninghub', 'personal', 'fixture-model', '', 6,
+          '1080x1920', 0, 0, 'CNY', 1, '2099-01-01T00:00:00.000Z', 'failed', '{}',
+          '2026-07-18 00:00:00', '2026-07-18 00:00:00')
+      `).run(created.project_id, shot.shot_id);
+      db.prepare(`
+        INSERT INTO generation_jobs (job_id, intent_id, state, created_at, updated_at)
+        VALUES ('job_stale', 'intent_stale', 'failed', '2026-07-18 00:00:00', '2026-07-18 00:00:00')
+      `).run();
+      db.prepare(`
+        INSERT INTO generation_runs (run_id, batch_id, project_id, shot_id, run_type, status, data_json, created_at, updated_at)
+        VALUES ('run_latest', '', ?, ?, 'generate_shot', 'succeeded', '{}', '2026-07-18 00:01:00', '2026-07-18 00:01:00')
+      `).run(created.project_id, shot.shot_id);
+
+      const state = collectProjectOperationalBundles(db, [created.project]).get(created.project_id)?.states[0];
+      assert.equal(state?.generation.stage, "completed");
+      assert.equal(state?.review.stage, "pending");
+      assert.equal(state?.primary_stage, "review_pending");
+    } finally {
+      db.close();
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("operational fact collection blocks a pending version whose clip Artifact is not verified", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const created = createProject({
+      title: "Invalid review clip",
+      video_spec: { duration_seconds: 6, aspect_ratio: "9:16", resolution: "1080x1920" }
+    }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    const shot = buildStoryboardApprovedShot({
+      project_id: created.project_id,
+      order: 1,
+      duration_seconds: 6,
+      storyboard_image_artifact_id: "",
+      video_prompt: "Invalid review clip fixture."
+    });
+    shot.status = "video_review";
+    shot.clip_versions = [{ artifact_id: "artifact_missing_review_clip", run_id: "run_missing_clip", attempt_number: 1, review_status: "pending" }];
+    saveShot(db, shot);
+    created.project.shot_ids.push(shot.shot_id);
+    saveProject(db, created.project);
+
+    const state = collectProjectOperationalBundles(db, [created.project]).get(created.project_id)?.states[0];
+    assert.equal(state?.primary_stage, "state_inconsistent");
+    assert.equal(state?.review.reviewable, false);
+    assert.ok(state?.blocker_codes.includes("REVIEW_CLIP_INTEGRITY_INVALID"));
+  } finally {
+    db.close();
+  }
+});
+
+test("project-level generation runs contribute to operational active and failure summaries", () => {
+  const root = mkdtempSync(join(tmpdir(), "operational-project-run-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    migrateDatabase(sqlitePath);
+    const db = openM0Database(sqlitePath);
+    try {
+      const created = createWorkbenchProject({ title: "Project-level assembly run", classification: "production" }, db);
+      assert.equal(created.ok, true);
+      if (!created.ok) return;
+      const insertRun = db.prepare(`
+        INSERT INTO generation_runs (run_id, batch_id, project_id, shot_id, run_type, status, data_json, created_at, updated_at)
+        VALUES (?, '', ?, '', 'assemble_video', ?, '{}', '2026-07-18 00:00:00', '2026-07-18 00:00:00')
+      `);
+      insertRun.run("run_project_queued", created.data.project.project_id, "queued");
+      let bundle = collectProjectOperationalBundles(db, [created.data.project]).get(created.data.project.project_id);
+      assert.equal(bundle?.summary.active_run_count, 1);
+      assert.equal(bundle?.summary.latest_failed_count, 0);
+
+      insertRun.run("run_project_failed", created.data.project.project_id, "failed");
+      bundle = collectProjectOperationalBundles(db, [created.data.project]).get(created.data.project.project_id);
+      assert.equal(bundle?.summary.active_run_count, 0);
+      assert.equal(bundle?.summary.latest_failed_count, 1);
+      assert.equal(bundle?.summary.blocker_count, 1);
+      assert.deepEqual(bundle?.summary.blocker_codes, ["GENERATION_FAILED"]);
+
+      const summary = listWorkbenchProjects({ scope: "daily" }, db).items.find((item) => item.project.project_id === created.data.project.project_id);
+      assert.equal(summary?.next_action.reason_code, "generation_failed");
+      assert.equal(summary?.risk, "blocked");
+      const dashboard = getWorkbenchDashboard(db) as { totals: { blocked_projects: number; generation_active: number } };
+      assert.equal(dashboard.totals.blocked_projects, 1);
+      assert.equal(dashboard.totals.generation_active, 0);
+      const overview = getWorkbenchProjectWorkspace(created.data.project.project_id, "overview", db);
+      assert.equal(overview.ok, true);
+      if (overview.ok) {
+        assert.deepEqual(overview.data.blockers, [{
+          scope: "project",
+          shot_id: "PROJECT",
+          order: 0,
+          missing_image: false,
+          missing_prompt: false,
+          reason_codes: ["GENERATION_FAILED"]
+        }]);
+      }
+    } finally {
+      db.close();
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 async function prepareConfirmedGeneration(sqlitePath: string, title: string): Promise<{ intent_id: string; job_id: string; env: NodeJS.ProcessEnv }> {
   migrateDatabase(sqlitePath);
@@ -134,6 +605,224 @@ test("readonly workspace reads preserve the complete database logical manifest u
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Workbench read surfaces use shared operational state for approved-but-missing storyboard and unstarted review", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const created = createWorkbenchProject({ title: "Operational state projection", classification: "production" }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    const shot = buildStoryboardApprovedShot({
+      shot_id: "shot_operational_projection",
+      project_id: created.data.project.project_id,
+      order: 1,
+      duration_seconds: 6,
+      storyboard_image_artifact_id: "",
+      video_prompt: "A safe fixture prompt."
+    });
+    saveShot(db, shot);
+    created.data.project.shot_ids = [shot.shot_id];
+    created.data.project.status = "storyboard_approved";
+    saveProject(db, created.data.project);
+
+    const overview = getWorkbenchProjectWorkspace(created.data.project.project_id, "overview", db);
+    assert.equal(overview.ok, true);
+    if (!overview.ok) return;
+    const metrics = overview.data.metrics as Record<string, number>;
+    const blockers = overview.data.blockers as Array<{ shot_id: string; missing_image: boolean; reason_codes: string[] }>;
+    assert.equal(metrics.storyboard_approved, 1);
+    assert.equal(metrics.review_pending, 0);
+    assert.deepEqual(blockers, [{
+      scope: "shot",
+      shot_id: shot.shot_id,
+      order: 1,
+      missing_image: true,
+      missing_prompt: false,
+      reason_codes: ["STORYBOARD_IMAGE_MISSING"]
+    }]);
+
+    const storyboard = getWorkbenchProjectWorkspace(created.data.project.project_id, "storyboard", db);
+    assert.equal(storyboard.ok, true);
+    if (!storyboard.ok) return;
+    const projectedShot = (storyboard.data.shots as Array<{ operational_state: ReturnType<typeof deriveShotOperationalState> }>)[0];
+    assert.equal(projectedShot.operational_state.storyboard.approval_status, "approved");
+    assert.equal(projectedShot.operational_state.storyboard.artifact_status, "missing");
+    assert.equal(projectedShot.operational_state.review.stage, "not_started");
+    assert.equal(projectedShot.operational_state.review.approval_status, null);
+  } finally {
+    db.close();
+  }
+});
+
+test("Workbench project summary treats a complete draft storyboard as awaiting approval, not blocked", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const created = createWorkbenchProject({ title: "Storyboard approval queue", classification: "production" }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    const shot = buildStoryboardApprovedShot({
+      shot_id: "shot_storyboard_approval_queue",
+      project_id: created.data.project.project_id,
+      order: 1,
+      duration_seconds: 6,
+      storyboard_image_artifact_id: "",
+      video_prompt: "A complete draft awaiting human approval."
+    });
+    const registered = registerMediaArtifact({
+      artifact_type: "image",
+      role: "storyboard_image",
+      source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
+      linked_objects: { project_id: created.data.project.project_id, shot_id: shot.shot_id }
+    }, db);
+    assert.equal(registered.ok, true);
+    if (!registered.ok) return;
+    shot.status = "draft";
+    shot.storyboard_image_artifact_id = registered.artifact.artifact_id;
+    saveShot(db, shot);
+    created.data.project.shot_ids = [shot.shot_id];
+    created.data.project.status = "draft";
+    saveProject(db, created.data.project);
+
+    const listed = listWorkbenchProjects({ scope: "daily" }, db);
+    const summary = listed.items.find((item) => item.project.project_id === created.data.project.project_id);
+    assert.equal(summary?.blocker_count, 0);
+    assert.equal(summary?.risk, "clear");
+    assert.equal(summary?.next_action.reason_code, "storyboard_review");
+  } finally {
+    db.close();
+  }
+});
+
+test("Workbench project summary keeps missing storyboard inputs ahead of clip revision", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const created = createWorkbenchProject({ title: "Revision with missing storyboard", classification: "production" }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    const shot = buildStoryboardApprovedShot({
+      shot_id: "shot_revision_missing_storyboard",
+      project_id: created.data.project.project_id,
+      order: 1,
+      duration_seconds: 6,
+      storyboard_image_artifact_id: "",
+      video_prompt: "A revision fixture."
+    });
+    const generated = registerMediaArtifact({
+      artifact_type: "video",
+      role: "generated_clip",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: created.data.project.project_id, shot_id: shot.shot_id }
+    }, db);
+    assert.equal(generated.ok, true);
+    if (!generated.ok) return;
+    shot.status = "revision_needed";
+    shot.review.approval_status = "revision_needed";
+    shot.clip_versions = [{
+      artifact_id: generated.artifact.artifact_id,
+      run_id: "run_revision_missing_storyboard",
+      attempt_number: 1,
+      review_status: "rejected"
+    }];
+    saveShot(db, shot);
+    created.data.project.shot_ids = [shot.shot_id];
+    created.data.project.status = "video_review";
+    saveProject(db, created.data.project);
+
+    const summary = listWorkbenchProjects({ scope: "daily" }, db).items
+      .find((item) => item.project.project_id === created.data.project.project_id);
+    assert.ok(summary?.blocker_codes.includes("STORYBOARD_IMAGE_MISSING"));
+    assert.ok(summary?.blocker_codes.includes("CLIP_REVISION_REQUIRED"));
+    assert.equal(summary?.next_action.reason_code, "storyboard_blocked");
+  } finally {
+    db.close();
+  }
+});
+
+test("Workbench list, dashboard, and workspace fail closed on project row and JSON id drift", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const created = createWorkbenchProject({ title: "Project binding drift", classification: "production" }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    db.prepare(`UPDATE projects SET data_json = json_set(data_json, '$.project_id', 'project_wrong_binding') WHERE project_id = ?`)
+      .run(created.data.project.project_id);
+
+    const listed = listWorkbenchProjects({ scope: "daily" }, db);
+    const blocked = listed.items.find((item) => item.project.project_id === created.data.project.project_id);
+    assert.equal(blocked?.project.title, "Project data integrity error");
+    assert.equal(blocked?.risk, "blocked");
+    assert.equal(blocked?.next_action.reason_code, "operational_data_integrity");
+    assert.deepEqual(blocked?.blocker_codes, ["PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION"]);
+
+    const dashboard = getWorkbenchDashboard(db) as { totals: { blocked_projects: number } };
+    assert.equal(dashboard.totals.blocked_projects, 1);
+    const workspace = getWorkbenchProjectWorkspace(created.data.project.project_id, "overview", db);
+    assert.equal(workspace.ok, false);
+    if (!workspace.ok) assert.equal(workspace.error.code, "PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION");
+  } finally {
+    db.close();
+  }
+});
+
+test("operational facts fail closed when a referenced Artifact JSON binding drifts from its row", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const created = createWorkbenchProject({ title: "Artifact drift guard", classification: "production" }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    const shot = buildStoryboardApprovedShot({
+      shot_id: "shot_artifact_drift_target",
+      project_id: created.data.project.project_id,
+      order: 1,
+      duration_seconds: 6,
+      storyboard_image_artifact_id: "",
+      video_prompt: "Artifact drift fixture."
+    });
+    const registered = registerMediaArtifact({
+      artifact_type: "image",
+      role: "storyboard_image",
+      source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
+      linked_objects: { project_id: created.data.project.project_id, shot_id: shot.shot_id }
+    }, db);
+    assert.equal(registered.ok, true);
+    if (!registered.ok) return;
+    shot.storyboard_image_artifact_id = registered.artifact.artifact_id;
+    saveShot(db, shot);
+    created.data.project.shot_ids = [shot.shot_id];
+    saveProject(db, created.data.project);
+    db.prepare(`
+      UPDATE media_artifacts
+      SET data_json = json_set(data_json, '$.linked_objects.shot_id', 'shot_other_same_project')
+      WHERE artifact_id = ?
+    `).run(registered.artifact.artifact_id);
+
+    assert.throws(
+      () => collectProjectOperationalBundles(db, [created.data.project]),
+      /ARTIFACT_OPERATIONAL_FACT_INVALID/
+    );
+    const listed = listWorkbenchProjects({ scope: "daily" }, db);
+    const blocked = listed.items.find((item) => item.project.project_id === created.data.project.project_id);
+    assert.equal(blocked?.risk, "blocked");
+    assert.equal(blocked?.next_action.reason_code, "operational_data_integrity");
+    assert.deepEqual(blocked?.blocker_codes, ["PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION"]);
+    const workspace = getWorkbenchProjectWorkspace(created.data.project.project_id, "overview", db);
+    assert.equal(workspace.ok, false);
+    if (!workspace.ok) assert.equal(workspace.error.code, "PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION");
+
+    // The project JSON can itself have an empty/stale shot list while the
+    // structured shots table still contains the corrupt row. Dashboard totals
+    // must count the project-level integrity blocker even when blocked_shot_count
+    // therefore falls back to zero.
+    db.prepare(`UPDATE projects SET data_json = json_set(data_json, '$.shot_ids', json('[]')) WHERE project_id = ?`)
+      .run(created.data.project.project_id);
+    const dashboard = getWorkbenchDashboard(db) as { totals: { blocked_projects: number } };
+    assert.equal(dashboard.totals.blocked_projects, 1);
+    const relisted = listWorkbenchProjects({ scope: "daily" }, db).items.find((item) => item.project.project_id === created.data.project.project_id);
+    assert.equal(relisted?.next_action.reason_code, "operational_data_integrity");
+  } finally {
+    db.close();
   }
 });
 

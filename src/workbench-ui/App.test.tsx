@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
@@ -18,7 +18,6 @@ describe("Human Workbench V2 shell", () => {
   const fetchMock = vi.fn<typeof fetch>();
 
   beforeEach(() => {
-    window.history.replaceState({}, "", "/v2/dashboard");
     fetchMock.mockImplementation(async (input) => {
       const url = String(input);
       if (url === "/api/v2/shell") return new Response(JSON.stringify({ ok: true, data: shell }), { status: 200, headers: { "content-type": "application/json" } });
@@ -35,7 +34,7 @@ describe("Human Workbench V2 shell", () => {
 
   it("mounts only the active route and never requests legacy bootstrap", async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(<QueryClientProvider client={queryClient}><BrowserRouter><App /></BrowserRouter></QueryClientProvider>);
+    render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={["/v2/dashboard"]}><App /></MemoryRouter></QueryClientProvider>);
     expect(await screen.findByRole("heading", { name: "指挥台" })).toBeInTheDocument();
     expect(await screen.findByText("今日项目队列")).toBeInTheDocument();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/v2/dashboard", expect.anything()));
@@ -45,7 +44,6 @@ describe("Human Workbench V2 shell", () => {
   });
 
   it("exposes explicit readonly preflight and confirmed one-click publish without accepting paths from the browser", async () => {
-    window.history.replaceState({}, "", "/v2/system/readonly");
     const fingerprint = "a".repeat(64);
     const status = {
       operations_version: "personal-readonly-operations-v1",
@@ -77,7 +75,7 @@ describe("Human Workbench V2 shell", () => {
       return new Response(JSON.stringify({ ok: false, error: { code: "NOT_FOUND", message: url } }), { status: 404, headers: { "content-type": "application/json" } });
     });
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-    render(<QueryClientProvider client={queryClient}><BrowserRouter><App /></BrowserRouter></QueryClientProvider>);
+    render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={["/v2/system/readonly"]}><App /></MemoryRouter></QueryClientProvider>);
 
     expect(await screen.findByRole("heading", { name: "只读 MCP App 发布" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "运行预检" }));

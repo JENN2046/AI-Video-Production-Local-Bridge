@@ -56,7 +56,7 @@ function OverviewWorkspace({ data }: { data: WorkspaceData }) {
     {data.summary && <section className={s.nextActionBand}><div><span className={s.eyebrow}>当前下一步</span><h2>{data.summary.next_action.label}</h2><p>{data.summary.next_action.source === "override" ? `人工指定，自动建议：${data.summary.next_action.derived.label}` : "根据当前生产事实自动推导"}</p></div><StatusPill tone={data.summary.next_action.priority === "urgent" ? "danger" : data.summary.next_action.priority === "high" ? "warning" : "info"}>{data.summary.next_action.source === "override" ? "人工指定" : "自动建议"}</StatusPill></section>}
     <section className={s.metricStrip}>{[["SHOT", metrics.shots ?? 0], ["已过分镜", metrics.storyboard_approved ?? 0], ["生成中", metrics.generation_active ?? 0], ["待审", metrics.review_pending ?? 0], ["已采纳", metrics.accepted_clips ?? 0]].map(([label, value]) => <div className={s.metricCell} key={label}><span>{label}</span><strong>{value}</strong></div>)}</section>
     <div className={s.overviewColumns}>
-      <section className={s.tableSection}><div className={s.sectionTitle}><div><h2>当前阻断</h2><p>只显示会阻止下一步的生产事实。</p></div></div>{data.blockers?.length ? <div className={s.blockerList}>{data.blockers.map((blocker, index) => <div key={`${blocker.shot_id}-${index}`}><CircleAlert size={16} /><strong>{String(blocker.shot_id)}</strong><span>{blocker.missing_image ? "缺分镜图" : ""}{blocker.missing_image && blocker.missing_prompt ? "、" : ""}{blocker.missing_prompt ? "缺视频提示词" : ""}</span></div>)}</div> : <EmptyState title="没有结构阻断" detail="项目可以继续推进。" />}</section>
+      <section className={s.tableSection}><div className={s.sectionTitle}><div><h2>当前阻断</h2><p>只显示会阻止下一步的生产事实。</p></div></div>{data.blockers?.length ? <div className={s.blockerList}>{data.blockers.map((blocker, index) => <div key={`${blocker.shot_id}-${index}`}><CircleAlert size={16} /><strong>{String(blocker.shot_id)}</strong><span>{blockerText(blocker)}</span></div>)}</div> : <EmptyState title="没有结构阻断" detail="项目可以继续推进。" />}</section>
       <section className={s.tableSection}><div className={s.sectionTitle}><div><h2>最近生成</h2><p>同项目最近 8 个运行。</p></div></div><RunList runs={data.recent_runs ?? []} /></section>
     </div>
   </div>;
@@ -103,7 +103,7 @@ function StoryboardDetail({ shot, artifact, projectId, readOnly }: { shot: Shot;
   useEffect(() => { setDescription(shot.description); setPrompt(shot.video_prompt); setNegative(shot.negative_prompt); }, [shot]);
   const mutation = useMutation({ mutationFn: () => apiMutation(`/api/v2/projects/${encodeURIComponent(projectId)}/shots/${encodeURIComponent(shot.shot_id)}`, "PATCH", { description, video_prompt: prompt, negative_prompt: negative }), onSuccess: () => queryClient.invalidateQueries({ queryKey: ["project-workspace", projectId] }) });
   return <div className={s.objectDetail}>
-    <div className={s.detailHeader}><div><span className={s.eyebrow}>SHOT {String(shot.order).padStart(3, "0")}</span><h2>{shot.description || "未命名镜头"}</h2></div><StatusPill tone={shot.status === "storyboard_approved" ? "success" : "warning"}>{shotStatus(shot.status)}</StatusPill></div>
+    <div className={s.detailHeader}><div><span className={s.eyebrow}>SHOT {String(shot.order).padStart(3, "0")}</span><h2>{shot.description || "未命名镜头"}</h2></div><StatusPill tone={operationalTone(shot)}>{operationalLabel(shot)}</StatusPill></div>
     <div className={s.storyboardStage}><MediaPreview artifact={artifact} /></div>
     <div className={s.editorFields}><label className={s.field}><span>画面说明</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} disabled={readOnly} /></label><label className={s.field}><span>视频提示词</span><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={5} disabled={readOnly} /></label><label className={s.field}><span>负向提示词</span><textarea value={negative} onChange={(event) => setNegative(event.target.value)} rows={2} disabled={readOnly} /></label></div>
     <div className={s.detailActions}><button className={s.primaryButton} disabled={readOnly || mutation.isPending} onClick={() => mutation.mutate()}><Save size={16} /> 保存 SHOT</button>{mutation.isSuccess && <StatusPill tone="success">已保存</StatusPill>}{mutation.isError && <span className={s.inlineError}>{mutation.error.message}</span>}</div>
@@ -130,7 +130,7 @@ function GenerationWorkspace({ data }: { data: WorkspaceData }) {
   return <>
     <ThreePane
       queue={<ShotQueue shots={shots} selectedId={selected?.shot_id ?? ""} scrollKey={`${data.project.project_id}:generation`} onSelect={(shot) => setSelected(params, setParams, shot.shot_id)} />}
-      detail={selected ? <div className={s.objectDetail}><div className={s.detailHeader}><div><span className={s.eyebrow}>单 SHOT 生成</span><h2>SHOT {String(selected.order).padStart(3, "0")}</h2></div><StatusPill tone={selected.status === "video_review" || selected.status === "approved" ? "success" : "warning"}>{shotStatus(selected.status)}</StatusPill></div><div className={s.storyboardStage}><MediaPreview artifact={data.artifacts?.[selected.storyboard_image_artifact_id]} /></div><KeyValue rows={[["Provider", "RunningHub"], ["模型", "rhart-video-g/image-to-video"], ["时长", `${selected.duration_seconds}s`], ["输出", "480p · 9:16"], ["提交策略", "一次上传 / 一次提交 / 零自动重提"]]} /><div className={s.detailActions}><button className={s.primaryButton} disabled={data.meta.lifecycle === "archived" || selected.status !== "storyboard_approved"} onClick={() => setModal(true)}><Play size={16} /> 预检并生成</button></div></div> : <EmptyState title="项目尚无可生成 SHOT" />}
+      detail={selected ? <div className={s.objectDetail}><div className={s.detailHeader}><div><span className={s.eyebrow}>单 SHOT 生成</span><h2>SHOT {String(selected.order).padStart(3, "0")}</h2></div><StatusPill tone={operationalTone(selected)}>{operationalLabel(selected)}</StatusPill></div><div className={s.storyboardStage}><MediaPreview artifact={data.artifacts?.[selected.storyboard_image_artifact_id]} /></div><KeyValue rows={[["Provider", "RunningHub"], ["模型", "rhart-video-g/image-to-video"], ["时长", `${selected.duration_seconds}s`], ["输出", "480p · 9:16"], ["提交策略", "一次上传 / 一次提交 / 零自动重提"]]} /><div className={s.detailActions}><button className={s.primaryButton} disabled={data.meta.lifecycle === "archived" || selected.status !== "storyboard_approved"} onClick={() => setModal(true)}><Play size={16} /> 预检并生成</button></div></div> : <EmptyState title="项目尚无可生成 SHOT" />}
       evidence={evidence}
     />
     {modal && selected && <GenerationModal projectId={data.project.project_id} shot={selected} artifact={data.artifacts?.[selected.storyboard_image_artifact_id]} onClose={() => setModal(false)} />}
@@ -160,7 +160,7 @@ function ReviewWorkspace({ data }: { data: WorkspaceData }) {
   const selectShotVersion = (shotId: string, artifactId?: string) => { const next = new URLSearchParams(params); next.set("selected", shotId); if (artifactId) next.set("version", artifactId); else next.delete("version"); setParams(next, { replace: true }); };
   const evidence = selectedStack && selectedVersion ? <><ReviewDecision projectId={data.project.project_id} shot={selectedStack.shot} version={selectedVersion} readOnly={data.meta.lifecycle === "archived"} /><ReviewNotes notes={(data.review_notes ?? []).filter((note) => note.shot_id === selectedStack.shot.shot_id)} /></> : null;
   return <ThreePane
-    queue={<section className={s.stackQueue}><div className={s.paneTitle}><strong>SHOT 版本栈</strong><span>{stacks.length}</span></div><VirtualList items={stacks} estimate={92} scrollKey={`${data.project.project_id}:review`} renderItem={(stack) => <button className={`${s.queueItem} ${stack.shot.shot_id === selectedStack?.shot.shot_id ? s.queueItemActive : ""}`} onClick={() => selectShotVersion(stack.shot.shot_id)}><span className={s.queueIcon}><Film size={18} /></span><span><strong>SHOT {String(stack.shot.order).padStart(3, "0")}</strong><small>{stack.versions.length} 个版本 · {stack.shot.review.approval_status}</small></span><StatusPill tone={stack.shot.accepted_clip_artifact_id ? "success" : "warning"}>{stack.shot.accepted_clip_artifact_id ? "已采纳" : "待审"}</StatusPill></button>} /></section>}
+    queue={<section className={s.stackQueue}><div className={s.paneTitle}><strong>SHOT 版本栈</strong><span>{stacks.length}</span></div><VirtualList items={stacks} estimate={92} scrollKey={`${data.project.project_id}:review`} renderItem={(stack) => <button className={`${s.queueItem} ${stack.shot.shot_id === selectedStack?.shot.shot_id ? s.queueItemActive : ""}`} onClick={() => selectShotVersion(stack.shot.shot_id)}><span className={s.queueIcon}><Film size={18} /></span><span><strong>SHOT {String(stack.shot.order).padStart(3, "0")}</strong><small>{stack.versions.length} 个版本 · {stack.shot.operational_state?.review.stage ?? stack.shot.review.approval_status}</small></span><StatusPill tone={operationalTone(stack.shot)}>{operationalLabel(stack.shot)}</StatusPill></button>} /></section>}
     detail={selectedStack && selectedVersion ? <div className={s.objectDetail}><div className={s.detailHeader}><div><span className={s.eyebrow}>SHOT {String(selectedStack.shot.order).padStart(3, "0")} · 版本 {selectedVersion.attempt_number}</span><h2>{selectedStack.shot.description || selectedStack.shot.shot_id}</h2></div><StatusPill tone={selectedVersion.review_status === "approved" ? "success" : selectedVersion.review_status === "rejected" ? "danger" : "warning"}>{selectedVersion.review_status}</StatusPill></div><div className={s.reviewStage}><MediaPreview artifact={selectedVersion.artifact} /></div><div className={s.versionStrip}>{selectedStack.versions.map((version) => <button key={version.artifact_id} className={version.artifact_id === selectedVersion.artifact_id ? s.versionActive : ""} onClick={() => selectShotVersion(selectedStack.shot.shot_id, version.artifact_id)}>V{version.attempt_number}<small>{version.review_status}</small></button>)}</div></div> : <EmptyState title="没有生成片段" detail="生成完成后会按 SHOT 聚合到这里。" />}
     evidence={evidence}
   />;
@@ -192,7 +192,7 @@ function ThreePane({ queue, detail, evidence }: { queue: ReactNode; detail: Reac
 function EvidencePanel({ title, children }: { title: string; children: ReactNode }) { return <div className={s.evidencePanel}><div className={s.paneTitle}><strong>{title}</strong></div><div className={s.evidenceBody}>{children}</div></div>; }
 
 function ShotQueue({ shots, selectedId, scrollKey, onSelect }: { shots: Shot[]; selectedId: string; scrollKey: string; onSelect: (shot: Shot) => void }) {
-  return <><div className={s.paneTitle}><strong>SHOT 队列</strong><span>{shots.length}</span></div><VirtualList items={shots} estimate={88} scrollKey={scrollKey} renderItem={(shot) => <button className={`${s.queueItem} ${shot.shot_id === selectedId ? s.queueItemActive : ""}`} onClick={() => onSelect(shot)}><span className={s.shotNumber}>{String(shot.order).padStart(3, "0")}</span><span><strong>{shot.description || shot.shot_id}</strong><small>{shot.duration_seconds}s · {shot.clip_versions.length} 个片段</small></span><StatusPill tone={shot.status === "approved" || shot.status === "storyboard_approved" ? "success" : shot.status === "revision_needed" ? "danger" : "warning"}>{shotStatus(shot.status)}</StatusPill></button>} /></>;
+  return <><div className={s.paneTitle}><strong>SHOT 队列</strong><span>{shots.length}</span></div><VirtualList items={shots} estimate={88} scrollKey={scrollKey} renderItem={(shot) => <button className={`${s.queueItem} ${shot.shot_id === selectedId ? s.queueItemActive : ""}`} onClick={() => onSelect(shot)}><span className={s.shotNumber}>{String(shot.order).padStart(3, "0")}</span><span><strong>{shot.description || shot.shot_id}</strong><small>{shot.duration_seconds}s · {shot.clip_versions.length} 个片段</small></span><StatusPill tone={operationalTone(shot)}>{operationalLabel(shot)}</StatusPill></button>} /></>;
 }
 
 function RunList({ runs }: { runs: GenerationRun[] }) { return runs.length ? <div className={s.runList}>{runs.map((run) => <div key={run.run_id}><span className={`${s.runDot} ${run.status === "succeeded" ? s.runSuccess : run.status === "failed" ? s.runFailed : s.runActive}`} /><span><strong>{run.shot_id || run.run_type}</strong><small>{run.provider?.provider_name ?? "local"} · {run.provider?.provider_status || run.status}</small></span><StatusPill tone={run.status === "succeeded" ? "success" : run.status === "failed" ? "danger" : "warning"}>{run.status}</StatusPill></div>)}</div> : <EmptyState title="暂无运行记录" />; }
@@ -200,4 +200,53 @@ function RunList({ runs }: { runs: GenerationRun[] }) { return runs.length ? <di
 function selectShot(shots: Shot[], selectedId: string | null) { return shots.find((shot) => shot.shot_id === selectedId) ?? shots[0]; }
 function setSelected(params: URLSearchParams, setParams: ReturnType<typeof useSearchParams>[1], id: string) { preserveVisibleVirtualScrolls(); const next = new URLSearchParams(params); next.set("selected", id); setParams(next, { replace: true }); }
 function shotStatus(value: string) { return ({ draft: "草稿", storyboard_approved: "分镜已批", video_pending: "待生成", video_generated: "已生成", video_review: "待审", approved: "已采纳", revision_needed: "需修订" } as Record<string, string>)[value] ?? value; }
+
+function blockerText(blocker: Record<string, unknown>): string {
+  const labels: Record<string, string> = {
+    STORYBOARD_APPROVAL_REQUIRED: "待审批分镜",
+    STORYBOARD_REVISION_REQUIRED: "分镜需修改",
+    STORYBOARD_IMAGE_MISSING: "缺分镜图",
+    STORYBOARD_ARTIFACT_INACTIVE: "分镜图不可用",
+    STORYBOARD_ARTIFACT_BINDING_INVALID: "分镜图绑定错误",
+    STORYBOARD_ARTIFACT_ROLE_INVALID: "分镜图角色错误",
+    STORYBOARD_ARTIFACT_INTEGRITY_INVALID: "分镜图完整性异常",
+    VIDEO_PROMPT_MISSING: "缺视频提示词",
+    SHOT_DURATION_INVALID: "时长无效",
+    CLIP_REVISION_REQUIRED: "片段需修改",
+    GENERATION_MANUAL_RECONCILIATION: "生成需人工核对",
+    GENERATION_FAILED: "生成失败",
+    SHOT_STATE_INCONSISTENT: "状态不一致"
+  };
+  const reasons = Array.isArray(blocker.reason_codes) ? blocker.reason_codes.map((code) => labels[String(code)] ?? String(code)) : [];
+  if (reasons.length > 0) return reasons.join("、");
+  return [blocker.missing_image ? "缺分镜图" : "", blocker.missing_prompt ? "缺视频提示词" : ""].filter(Boolean).join("、");
+}
+
+function operationalLabel(shot: Shot): string {
+  const stage = shot.operational_state?.primary_stage;
+  if (!stage) return shotStatus(shot.status);
+  return ({
+    storyboard_draft: "分镜草稿",
+    storyboard_blocked: "分镜阻断",
+    storyboard_revision_needed: "分镜需修改",
+    generation_ready: "可生成",
+    generation_queued: "生成排队",
+    generation_running: "生成中",
+    manual_reconciliation: "人工核对",
+    generation_failed: "生成失败",
+    review_pending: "待审",
+    clip_revision_needed: "片段需修改",
+    accepted: "已采纳",
+    state_inconsistent: "状态异常"
+  } as Record<string, string>)[stage] ?? stage;
+}
+
+function operationalTone(shot: Shot): "success" | "warning" | "danger" | "neutral" {
+  const stage = shot.operational_state?.primary_stage;
+  if (!stage) return shot.status === "approved" || shot.status === "storyboard_approved" ? "success" : shot.status === "revision_needed" ? "danger" : "warning";
+  if (stage === "accepted" || stage === "generation_ready") return "success";
+  if (["storyboard_blocked", "storyboard_revision_needed", "clip_revision_needed", "generation_failed", "state_inconsistent"].includes(stage)) return "danger";
+  if (stage === "storyboard_draft") return "neutral";
+  return "warning";
+}
 function classificationLabel(value: string) { return ({ production: "生产项目", test: "测试项目", unclassified: "未分类项目" } as Record<string, string>)[value] ?? value; }
