@@ -347,7 +347,8 @@ const BLOCKER_LABELS: Record<string, string> = {
   CLIP_REVISION_REQUIRED: "片段需修改",
   GENERATION_MANUAL_RECONCILIATION: "生成需人工核对",
   GENERATION_FAILED: "生成失败",
-  SHOT_STATE_INCONSISTENT: "状态不一致"
+  SHOT_STATE_INCONSISTENT: "状态不一致",
+  PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION: "项目运行数据完整性异常"
 };
 
 function blockerLabel(code: string): string {
@@ -413,6 +414,9 @@ function projectSummaryFromRow(project: Project, row: ProjectRow, operational: P
 
 function deriveNextAction(project: Project, state: ProjectOperationalSummary, assemblyReadiness: SummaryAssemblyReadiness = "not_applicable"): WorkbenchNextAction["derived"] {
   if (state.latest_failed_count > 0) return { label: "处理生成失败", reason_code: "generation_failed", priority: "urgent" };
+  if (state.blocker_codes.includes("PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION")) {
+    return { label: "修复项目运行数据", reason_code: "operational_data_integrity", priority: "urgent" };
+  }
   if (state.shot_count === 0) return { label: "创建第一个 SHOT", reason_code: "no_shots", priority: "high" };
   if (state.revision_needed_count > 0) return { label: "处理需修改 SHOT", reason_code: "revision_required", priority: "urgent" };
   if (hasAcceptedClipIntegrityBlocker(state)) {

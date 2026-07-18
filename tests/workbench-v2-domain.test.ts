@@ -328,6 +328,63 @@ test("operational fact collection uses insertion order to break same-second gene
   }
 });
 
+test("operational fact collection ignores a stale job after a newer independent run succeeds", () => {
+  const root = mkdtempSync(join(tmpdir(), "operational-stale-job-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    migrateDatabase(sqlitePath);
+    const db = openM0Database(sqlitePath);
+    try {
+      const created = createProject({
+        title: "Stale job after successful run",
+        video_spec: { duration_seconds: 6, aspect_ratio: "9:16", resolution: "1080x1920" }
+      }, db);
+      assert.equal(created.ok, true);
+      if (!created.ok) throw new Error("project setup failed");
+      const shot = buildStoryboardApprovedShot({
+        project_id: created.project_id,
+        order: 1,
+        duration_seconds: 6,
+        storyboard_image_artifact_id: "",
+        video_prompt: "Stale job fixture."
+      });
+      shot.status = "video_review";
+      shot.clip_versions = [{ artifact_id: "artifact_latest_clip", run_id: "run_latest", attempt_number: 1, review_status: "pending" }];
+      saveShot(db, shot);
+      created.project.shot_ids.push(shot.shot_id);
+      saveProject(db, created.project);
+
+      db.prepare(`
+        INSERT INTO generation_intents (
+          intent_id, run_id, project_id, shot_id, provider, account_label, model,
+          input_artifact_id, duration_seconds, resolution, estimated_cost_value,
+          budget_limit_value, currency, confirmed, expires_at, status, data_json,
+          created_at, updated_at
+        ) VALUES ('intent_stale', 'run_stale', ?, ?, 'runninghub', 'personal', 'fixture-model', '', 6,
+          '1080x1920', 0, 0, 'CNY', 1, '2099-01-01T00:00:00.000Z', 'failed', '{}',
+          '2026-07-18 00:00:00', '2026-07-18 00:00:00')
+      `).run(created.project_id, shot.shot_id);
+      db.prepare(`
+        INSERT INTO generation_jobs (job_id, intent_id, state, created_at, updated_at)
+        VALUES ('job_stale', 'intent_stale', 'failed', '2026-07-18 00:00:00', '2026-07-18 00:00:00')
+      `).run();
+      db.prepare(`
+        INSERT INTO generation_runs (run_id, batch_id, project_id, shot_id, run_type, status, data_json, created_at, updated_at)
+        VALUES ('run_latest', '', ?, ?, 'generate_shot', 'succeeded', '{}', '2026-07-18 00:01:00', '2026-07-18 00:01:00')
+      `).run(created.project_id, shot.shot_id);
+
+      const state = collectProjectOperationalBundles(db, [created.project]).get(created.project_id)?.states[0];
+      assert.equal(state?.generation.stage, "completed");
+      assert.equal(state?.review.stage, "pending");
+      assert.equal(state?.primary_stage, "review_pending");
+    } finally {
+      db.close();
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("project-level generation runs contribute to operational active and failure summaries", () => {
   const root = mkdtempSync(join(tmpdir(), "operational-project-run-"));
   const sqlitePath = join(root, "app.sqlite");
@@ -610,7 +667,7 @@ test("operational facts fail closed when a referenced Artifact JSON binding drif
     const listed = listWorkbenchProjects({ scope: "daily" }, db);
     const blocked = listed.items.find((item) => item.project.project_id === created.data.project.project_id);
     assert.equal(blocked?.risk, "blocked");
-    assert.equal(blocked?.next_action.reason_code, "storyboard_blocked");
+    assert.equal(blocked?.next_action.reason_code, "operational_data_integrity");
     assert.deepEqual(blocked?.blocker_codes, ["PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION"]);
     const workspace = getWorkbenchProjectWorkspace(created.data.project.project_id, "overview", db);
     assert.equal(workspace.ok, false);
@@ -624,6 +681,8 @@ test("operational facts fail closed when a referenced Artifact JSON binding drif
       .run(created.data.project.project_id);
     const dashboard = getWorkbenchDashboard(db) as { totals: { blocked_projects: number } };
     assert.equal(dashboard.totals.blocked_projects, 1);
+    const relisted = listWorkbenchProjects({ scope: "daily" }, db).items.find((item) => item.project.project_id === created.data.project.project_id);
+    assert.equal(relisted?.next_action.reason_code, "operational_data_integrity");
   } finally {
     db.close();
   }

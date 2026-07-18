@@ -37,12 +37,14 @@ interface ArtifactLedgerRow {
 }
 
 interface RunRow {
+  run_id: string;
   project_id: string;
   shot_id: string | null;
   status: string;
 }
 
 interface JobRow {
+  run_id: string;
   project_id: string;
   shot_id: string;
   state: string;
@@ -179,12 +181,12 @@ export function collectProjectOperationalBundles(
   const artifacts = new Map(artifactRows.map((row) => [row.artifact_id, row]));
 
   const runRows = db.prepare(`
-    SELECT project_id, shot_id, status
+    SELECT run_id, project_id, shot_id, status
     FROM generation_runs
     WHERE project_id IN (${slots})
     ORDER BY updated_at DESC, rowid DESC
   `).all(...projectIds) as RunRow[];
-  const latestRunByShot = new Map<string, string>();
+  const latestRunByShot = new Map<string, { run_id: string; status: string }>();
   const latestProjectRunByProject = new Map<string, string>();
   for (const row of runRows) {
     if (!row.shot_id) {
@@ -192,11 +194,11 @@ export function collectProjectOperationalBundles(
       continue;
     }
     const key = shotKey(row.project_id, row.shot_id);
-    if (!latestRunByShot.has(key)) latestRunByShot.set(key, row.status);
+    if (!latestRunByShot.has(key)) latestRunByShot.set(key, { run_id: row.run_id, status: row.status });
   }
 
   const jobRows = db.prepare(`
-    SELECT intent.project_id, intent.shot_id, job.state
+    SELECT intent.run_id, intent.project_id, intent.shot_id, job.state
     FROM generation_jobs job
     JOIN generation_intents intent ON intent.intent_id = job.intent_id
     WHERE intent.project_id IN (${slots})
@@ -205,6 +207,8 @@ export function collectProjectOperationalBundles(
   const latestJobByShot = new Map<string, string>();
   for (const row of jobRows) {
     const key = shotKey(row.project_id, row.shot_id);
+    const latestRun = latestRunByShot.get(key);
+    if (latestRun && row.run_id !== latestRun.run_id) continue;
     if (!latestJobByShot.has(key)) latestJobByShot.set(key, row.state);
   }
 
@@ -228,7 +232,7 @@ export function collectProjectOperationalBundles(
         review_approval_status: shot.review.approval_status,
         latest_version_review_status: latestVersion?.review_status ?? null,
         generation_job_state: jobState(latestJobByShot.get(shotKey(shot.project_id, shot.shot_id))),
-        latest_generation_run_status: runStatus(latestRunByShot.get(shotKey(shot.project_id, shot.shot_id)))
+        latest_generation_run_status: runStatus(latestRunByShot.get(shotKey(shot.project_id, shot.shot_id))?.status)
       });
     });
     result.set(project.project_id, {
