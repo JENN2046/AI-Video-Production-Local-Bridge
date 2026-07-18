@@ -23,6 +23,7 @@ import {
   parseReadonlySnapshot,
   readonlySnapshotReviewPendingCount,
   readonlySnapshotStatus,
+  READONLY_SNAPSHOT_SCHEMA_VERSION,
   snapshotFingerprint,
   type ReadonlySnapshotUnsigned
 } from "../src/webgpt-cloud/snapshot.js";
@@ -284,7 +285,7 @@ test("snapshot fingerprint uses deterministic JCS input and server time remains 
   assert.throws(() => canonicalizeJcs("\ud800"), /JCS_INVALID_UNICODE/);
   const generatedAt = "2026-07-16T00:00:00.000Z";
   const unsigned: ReadonlySnapshotUnsigned = {
-    schema_version: "readonly-snapshot-v1",
+    schema_version: READONLY_SNAPSHOT_SCHEMA_VERSION,
     source_schema: "workbench-v2-5",
     source_migration: "0008",
     source_version: "webgpt-v4.3.0",
@@ -337,6 +338,27 @@ test("snapshot fingerprint uses deterministic JCS input and server time remains 
     freshness_status: "snapshot_expired",
     snapshot_fingerprint: futureSnapshot.snapshot_fingerprint
   });
+});
+
+test("readonly snapshot v2 rejects prior v1 payloads with a stable version error", () => {
+  const current = finalizeReadonlySnapshot({
+    schema_version: READONLY_SNAPSHOT_SCHEMA_VERSION,
+    source_schema: "workbench-v2-5",
+    source_migration: "0008",
+    source_version: "webgpt-v4.3.0",
+    generated_at: "2026-07-16T00:00:00.000Z",
+    expires_at: "2026-07-16T01:00:00.000Z",
+    resource_url: RESOURCE,
+    issuer_hash: "a".repeat(64),
+    authorization: { principals: [] },
+    projects: []
+  });
+  const legacy = structuredClone(current) as unknown as Record<string, unknown>;
+  legacy.schema_version = "readonly-snapshot-v1";
+  assert.throws(
+    () => parseReadonlySnapshot(legacy, new Date("2026-07-16T00:30:00.000Z")),
+    /READONLY_SNAPSHOT_VERSION_UNSUPPORTED/
+  );
 });
 
 test("SQLite readonly adapter returns a stable denial for a disabled principal", () => {

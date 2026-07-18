@@ -128,6 +128,11 @@ test("signed snapshot transport rejects tampering and atomically replaces only n
     assert.equal(store.replace(firstEnvelope).snapshot_fingerprint, first.snapshot.snapshot_fingerprint);
     assert.throws(() => { store.read()!.projects = []; }, TypeError);
 
+    const legacyEnvelope = structuredClone(firstEnvelope) as unknown as Record<string, unknown>;
+    legacyEnvelope.envelope_version = "readonly-snapshot-envelope-v1";
+    assert.throws(() => store.replace(legacyEnvelope), /READONLY_SNAPSHOT_ENVELOPE_VERSION_UNSUPPORTED/);
+    assert.equal(store.read()?.snapshot_fingerprint, first.snapshot.snapshot_fingerprint);
+
     const { snapshot_fingerprint: _wrongFingerprint, ...wrongResourceUnsigned } = structuredClone(first.snapshot);
     const wrongResourceSnapshot = finalizeReadonlySnapshot({ ...wrongResourceUnsigned, resource_url: "https://wrong.example.test/mcp" });
     assert.throws(

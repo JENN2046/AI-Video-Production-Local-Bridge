@@ -17,7 +17,7 @@ import {
   publicSummary
 } from "../webgpt-v4/contracts.js";
 
-export const READONLY_SNAPSHOT_SCHEMA_VERSION = "readonly-snapshot-v1";
+export const READONLY_SNAPSHOT_SCHEMA_VERSION = "readonly-snapshot-v2";
 export const READONLY_SNAPSHOT_REQUIRED_SCHEMA = "workbench-v2-5";
 export const READONLY_SNAPSHOT_REQUIRED_MIGRATION = "0008";
 export const READONLY_SNAPSHOT_MAX_TTL_SECONDS = 24 * 60 * 60;
@@ -728,6 +728,12 @@ export function finalizeReadonlySnapshot(input: ReadonlySnapshotUnsigned, now = 
 }
 
 export function parseReadonlySnapshot(input: unknown, now = new Date()): ReadonlySnapshot {
+  if (input && typeof input === "object" && !Array.isArray(input)) {
+    const version = (input as Record<string, unknown>).schema_version;
+    if (typeof version === "string" && version !== READONLY_SNAPSHOT_SCHEMA_VERSION) {
+      throw new Error("READONLY_SNAPSHOT_VERSION_UNSUPPORTED");
+    }
+  }
   const snapshot = READONLY_SNAPSHOT_SCHEMA.parse(input);
   assertSnapshotTimeWindow(snapshot, now);
   const { snapshot_fingerprint: claimed, ...unsigned } = snapshot;

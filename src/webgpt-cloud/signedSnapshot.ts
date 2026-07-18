@@ -10,7 +10,7 @@ import {
   type ReadonlySnapshot
 } from "./snapshot.js";
 
-export const READONLY_SIGNED_SNAPSHOT_VERSION = "readonly-snapshot-envelope-v1";
+export const READONLY_SIGNED_SNAPSHOT_VERSION = "readonly-snapshot-envelope-v2";
 export const READONLY_SIGNED_SNAPSHOT_ALGORITHM = "Ed25519";
 
 const keyIdSchema = z.string().regex(/^[A-Za-z0-9._-]{1,128}$/);
@@ -48,7 +48,7 @@ function deepFreeze<T>(value: T): T {
 }
 
 function signaturePayload(snapshot: ReadonlySnapshot): Buffer {
-  return Buffer.from(`readonly-snapshot-signature-v1\n${canonicalizeJcs(snapshot)}`, "utf8");
+  return Buffer.from(`readonly-snapshot-signature-v2\n${canonicalizeJcs(snapshot)}`, "utf8");
 }
 
 export function signReadonlySnapshot(
@@ -77,6 +77,12 @@ export function verifyReadonlySignedSnapshot(
   verificationKey: ReadonlySigningPublicKey,
   now = new Date()
 ): ReadonlySnapshot {
+  if (input && typeof input === "object" && !Array.isArray(input)) {
+    const version = (input as Record<string, unknown>).envelope_version;
+    if (typeof version === "string" && version !== READONLY_SIGNED_SNAPSHOT_VERSION) {
+      throw new Error("READONLY_SNAPSHOT_ENVELOPE_VERSION_UNSUPPORTED");
+    }
+  }
   const envelope = READONLY_SIGNED_SNAPSHOT_SCHEMA.parse(input);
   if (envelope.key_id !== expectedKeyId) throw new Error("READONLY_SNAPSHOT_SIGNING_KEY_UNKNOWN");
   const snapshot = parseReadonlySnapshot(envelope.snapshot, now);
