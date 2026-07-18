@@ -218,6 +218,63 @@ test("operational fact collection fails closed on structured SHOT binding drift"
   assert.throws(() => collectProjectOperationalBundles(db, [project]), /SHOT_OPERATIONAL_FACT_INVALID/);
 });
 
+test("operational fact collection uses insertion order to break same-second generation job ties", () => {
+  const root = mkdtempSync(join(tmpdir(), "operational-job-order-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    migrateDatabase(sqlitePath);
+    const db = openM0Database(sqlitePath);
+    try {
+      const created = createProject({
+        title: "Same-second job ordering",
+        video_spec: { duration_seconds: 6, aspect_ratio: "9:16", resolution: "1080x1920" }
+      }, db);
+      assert.equal(created.ok, true);
+      if (!created.ok) throw new Error("project setup failed");
+      const shot = buildStoryboardApprovedShot({
+        project_id: created.project_id,
+        order: 1,
+        duration_seconds: 6,
+        storyboard_image_artifact_id: "",
+        video_prompt: "Same-second ordering fixture."
+      });
+      saveShot(db, shot);
+      created.project.shot_ids.push(shot.shot_id);
+      saveProject(db, created.project);
+
+      const insertIntent = db.prepare(`
+        INSERT INTO generation_intents (
+          intent_id, run_id, project_id, shot_id, provider, account_label, model,
+          input_artifact_id, duration_seconds, resolution, estimated_cost_value,
+          budget_limit_value, currency, confirmed, expires_at, status, data_json,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, 'runninghub', 'personal', 'fixture-model', '', 6,
+          '1080x1920', 0, 0, 'CNY', 1, '2099-01-01T00:00:00.000Z', ?, '{}',
+          '2026-07-18 00:00:00', '2026-07-18 00:00:00')
+      `);
+      insertIntent.run("intent_old", "run_old", created.project_id, shot.shot_id, "cancelled");
+      db.prepare(`
+        INSERT INTO generation_jobs (job_id, intent_id, state, created_at, updated_at)
+        VALUES ('job_zzzz_old', 'intent_old', 'cancelled', '2026-07-18 00:00:00', '2026-07-18 00:00:00')
+      `).run();
+      insertIntent.run("intent_new", "run_new", created.project_id, shot.shot_id, "queued");
+      db.prepare(`
+        INSERT INTO generation_jobs (job_id, intent_id, state, created_at, updated_at)
+        VALUES ('job_aaaa_new', 'intent_new', 'queued', '2026-07-18 00:00:00', '2026-07-18 00:00:00')
+      `).run();
+
+      const bundle = collectProjectOperationalBundles(db, [created.project]).get(created.project_id);
+      assert.equal(bundle?.states[0]?.generation.stage, "queued");
+      assert.equal(bundle?.states[0]?.primary_stage, "generation_queued");
+      assert.equal(bundle?.summary.active_run_count, 1);
+    } finally {
+      db.close();
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 async function prepareConfirmedGeneration(sqlitePath: string, title: string): Promise<{ intent_id: string; job_id: string; env: NodeJS.ProcessEnv }> {
   migrateDatabase(sqlitePath);
   const db = openM0Database(sqlitePath);

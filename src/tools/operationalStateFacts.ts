@@ -148,7 +148,7 @@ export function collectProjectOperationalBundles(
     SELECT project_id, shot_id, status
     FROM generation_runs
     WHERE project_id IN (${slots}) AND COALESCE(shot_id, '') <> ''
-    ORDER BY updated_at DESC, run_id DESC
+    ORDER BY updated_at DESC, rowid DESC
   `).all(...projectIds) as RunRow[];
   const latestRunByShot = new Map<string, string>();
   for (const row of runRows) {
@@ -162,7 +162,7 @@ export function collectProjectOperationalBundles(
     FROM generation_jobs job
     JOIN generation_intents intent ON intent.intent_id = job.intent_id
     WHERE intent.project_id IN (${slots})
-    ORDER BY job.updated_at DESC, job.created_at DESC, job.job_id DESC
+    ORDER BY job.updated_at DESC, job.created_at DESC, job.rowid DESC
   `).all(...projectIds) as JobRow[];
   const latestJobByShot = new Map<string, string>();
   for (const row of jobRows) {
