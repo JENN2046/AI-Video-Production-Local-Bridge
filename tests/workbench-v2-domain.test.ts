@@ -69,6 +69,16 @@ test("shared operational state derives the generation, review, revision, and acc
   assert.equal(generated.primary_stage, "generation_ready");
   assert.equal(generated.allowed_workflow_actions.prepare_generation, true);
 
+  const awaitingApproval = deriveShotOperationalState(operationalFacts({
+    stored_workflow_status: "draft",
+    storyboard_artifact: storyboard
+  }));
+  assert.equal(awaitingApproval.primary_stage, "storyboard_draft");
+  assert.equal(awaitingApproval.allowed_workflow_actions.approve_storyboard, true);
+  assert.ok(awaitingApproval.generation.reason_codes.includes("STORYBOARD_APPROVAL_REQUIRED"));
+  assert.deepEqual(awaitingApproval.blocker_codes, []);
+  assert.equal(deriveProjectOperationalSummary([awaitingApproval]).blocker_count, 0);
+
   const legacyQueuedRun = deriveShotOperationalState(operationalFacts({
     stored_workflow_status: "storyboard_approved",
     storyboard_artifact: storyboard,
@@ -434,6 +444,45 @@ test("Workbench read surfaces use shared operational state for approved-but-miss
     assert.equal(projectedShot.operational_state.storyboard.artifact_status, "missing");
     assert.equal(projectedShot.operational_state.review.stage, "not_started");
     assert.equal(projectedShot.operational_state.review.approval_status, null);
+  } finally {
+    db.close();
+  }
+});
+
+test("Workbench project summary treats a complete draft storyboard as awaiting approval, not blocked", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const created = createWorkbenchProject({ title: "Storyboard approval queue", classification: "production" }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    const shot = buildStoryboardApprovedShot({
+      shot_id: "shot_storyboard_approval_queue",
+      project_id: created.data.project.project_id,
+      order: 1,
+      duration_seconds: 6,
+      storyboard_image_artifact_id: "",
+      video_prompt: "A complete draft awaiting human approval."
+    });
+    const registered = registerMediaArtifact({
+      artifact_type: "image",
+      role: "storyboard_image",
+      source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
+      linked_objects: { project_id: created.data.project.project_id, shot_id: shot.shot_id }
+    }, db);
+    assert.equal(registered.ok, true);
+    if (!registered.ok) return;
+    shot.status = "draft";
+    shot.storyboard_image_artifact_id = registered.artifact.artifact_id;
+    saveShot(db, shot);
+    created.data.project.shot_ids = [shot.shot_id];
+    created.data.project.status = "draft";
+    saveProject(db, created.data.project);
+
+    const listed = listWorkbenchProjects({ scope: "daily" }, db);
+    const summary = listed.items.find((item) => item.project.project_id === created.data.project.project_id);
+    assert.equal(summary?.blocker_count, 0);
+    assert.equal(summary?.risk, "clear");
+    assert.equal(summary?.next_action.reason_code, "storyboard_review");
   } finally {
     db.close();
   }

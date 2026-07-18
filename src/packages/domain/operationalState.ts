@@ -234,7 +234,7 @@ export function deriveShotOperationalState(facts: ShotOperationalFacts): ShotOpe
 
   const blockers = unique([
     ...(["storyboard_draft", "storyboard_blocked", "storyboard_revision_needed", "generation_ready", "generation_failed", "clip_revision_needed"].includes(primaryStage)
-      ? generationReasons
+      ? generationReasons.filter((code) => code !== "STORYBOARD_APPROVAL_REQUIRED")
       : []),
     ...(primaryStage === "state_inconsistent" ? ["SHOT_STATE_INCONSISTENT"] : []),
     ...(primaryStage === "clip_revision_needed" ? ["CLIP_REVISION_REQUIRED"] : []),
