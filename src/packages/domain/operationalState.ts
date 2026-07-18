@@ -156,12 +156,21 @@ function reviewState(facts: ShotOperationalFacts): ShotOperationalState["review"
     return { stage: "approved", reviewable: true, approval_status: "approved", selected_artifact_id: facts.accepted_clip_artifact.artifact_id };
   }
 
-  if (facts.accepted_clip_artifact.artifact_id) {
-    return { stage: "inconsistent", reviewable: true, approval_status: facts.review_approval_status, selected_artifact_id: facts.accepted_clip_artifact.artifact_id };
+  if (facts.review_approval_status === "revision_needed" || facts.latest_version_review_status === "rejected") {
+    if (facts.accepted_clip_artifact.artifact_id
+      && (facts.accepted_clip_artifact.status !== "active" || !facts.accepted_clip_in_version_stack)) {
+      return { stage: "inconsistent", reviewable: true, approval_status: "revision_needed", selected_artifact_id: facts.accepted_clip_artifact.artifact_id };
+    }
+    return {
+      stage: "revision_needed",
+      reviewable: true,
+      approval_status: "revision_needed",
+      selected_artifact_id: facts.accepted_clip_artifact.artifact_id
+    };
   }
 
-  if (facts.review_approval_status === "revision_needed" || facts.latest_version_review_status === "rejected") {
-    return { stage: "revision_needed", reviewable: true, approval_status: "revision_needed", selected_artifact_id: null };
+  if (facts.accepted_clip_artifact.artifact_id) {
+    return { stage: "inconsistent", reviewable: true, approval_status: facts.review_approval_status, selected_artifact_id: facts.accepted_clip_artifact.artifact_id };
   }
 
   return { stage: "pending", reviewable: true, approval_status: "pending", selected_artifact_id: null };

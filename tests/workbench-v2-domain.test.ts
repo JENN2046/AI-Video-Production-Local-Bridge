@@ -120,6 +120,22 @@ test("shared operational state derives the generation, review, revision, and acc
   assert.equal(revision.primary_stage, "clip_revision_needed");
   assert.ok(revision.blocker_codes.includes("CLIP_REVISION_REQUIRED"));
 
+  const revisionAfterAcceptance = deriveShotOperationalState(operationalFacts({
+    stored_workflow_status: "revision_needed",
+    storyboard_artifact: storyboard,
+    accepted_clip_artifact: { artifact_id: "artifact_previously_accepted", status: "active", verification_level: "ledger_verified" },
+    generation_version_count: 1,
+    accepted_clip_in_version_stack: true,
+    accepted_clip_review_status: "rejected",
+    review_approval_status: "revision_needed",
+    latest_version_review_status: "rejected"
+  }));
+  assert.equal(revisionAfterAcceptance.primary_stage, "clip_revision_needed");
+  assert.equal(revisionAfterAcceptance.review.stage, "revision_needed");
+  assert.equal(revisionAfterAcceptance.review.selected_artifact_id, "artifact_previously_accepted");
+  assert.equal(revisionAfterAcceptance.delivery.ready, false);
+  assert.equal(deriveProjectOperationalSummary([revisionAfterAcceptance]).revision_needed_count, 1);
+
   const acceptedClip = { artifact_id: "artifact_clip", status: "active", verification_level: "ledger_verified" } as const;
   const accepted = deriveShotOperationalState(operationalFacts({
     stored_workflow_status: "approved",
@@ -226,6 +242,14 @@ test("operational fact collection fails closed on structured SHOT binding drift"
     }
   } as unknown as Parameters<typeof collectProjectOperationalBundles>[0];
   assert.throws(() => collectProjectOperationalBundles(db, [project]), /SHOT_OPERATIONAL_FACT_INVALID/);
+
+  const unknownStatus = { ...drifted, shot_id: "shot_row_id", status: "unknown_after_manual_repair" };
+  const invalidStatusDb = {
+    prepare(sql: string) {
+      return { all: () => sql.includes("FROM shots") ? [{ shot_id: "shot_row_id", project_id: project.project_id, data_json: JSON.stringify(unknownStatus) }] : [] };
+    }
+  } as unknown as Parameters<typeof collectProjectOperationalBundles>[0];
+  assert.throws(() => collectProjectOperationalBundles(invalidStatusDb, [project]), /SHOT_OPERATIONAL_FACT_INVALID/);
 });
 
 test("operational fact collection uses insertion order to break same-second generation job ties", () => {

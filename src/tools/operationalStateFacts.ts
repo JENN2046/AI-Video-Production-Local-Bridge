@@ -48,6 +48,16 @@ interface JobRow {
   state: string;
 }
 
+const SHOT_OPERATIONAL_STATUSES = new Set<Shot["status"]>([
+  "draft",
+  "storyboard_approved",
+  "video_pending",
+  "video_generated",
+  "video_review",
+  "approved",
+  "revision_needed"
+]);
+
 function placeholders(count: number): string {
   return Array.from({ length: count }, () => "?").join(", ");
 }
@@ -58,6 +68,7 @@ function parseShot(value: string, expectedShotId: string, expectedProjectId: str
     if (!shot
       || shot.shot_id !== expectedShotId
       || shot.project_id !== expectedProjectId
+      || !SHOT_OPERATIONAL_STATUSES.has(shot.status)
       || !Array.isArray(shot.clip_versions)
       || !shot.review
       || !["pending", "approved", "revision_needed"].includes(shot.review.approval_status)) {
