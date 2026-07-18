@@ -146,6 +146,27 @@ function parseJson<T>(value: string, fallback: T): T {
   }
 }
 
+function integrityPlaceholderProject(projectId: string): Project {
+  return {
+    project_id: projectId,
+    title: "Project data integrity error",
+    project_type: "unknown",
+    status: "draft",
+    brief: {},
+    video_spec: { duration_seconds: 0, aspect_ratio: "", resolution: "" },
+    shot_ids: [],
+    active_storyboard_package_id: "",
+    generation_batch_ids: [],
+    exports: { final_video_artifact_id: "" }
+  };
+}
+
+function projectFromBoundRow(row: Pick<ProjectRow, "project_id" | "data_json">): { project: Project; integrity_valid: boolean } {
+  const parsed = parseJson<Project | null>(row.data_json, null);
+  if (parsed?.project_id === row.project_id) return { project: parsed, integrity_valid: true };
+  return { project: integrityPlaceholderProject(row.project_id), integrity_valid: false };
+}
+
 function projectMetaFromRow(row: ProjectRow): WorkbenchProjectMeta {
   return {
     project_id: row.project_id,
@@ -270,11 +291,10 @@ export function listWorkbenchProjects(
     LIMIT ? OFFSET ?
   `).all(...params, limit, offset) as ProjectRow[];
 
-  const parsed = rows.map((row) => ({ row, project: parseJson<Project>(row.data_json, null as unknown as Project) }))
-    .filter((item) => Boolean(item.project?.project_id));
-  const summaries = collectOperationalSummariesForList(db, parsed.map((item) => item.project));
-  return page(parsed.map(({ row, project }) => {
-    const operational = summaries.get(project.project_id) ?? {
+  const parsed = rows.map((row) => ({ row, ...projectFromBoundRow(row) }));
+  const summaries = collectOperationalSummariesForList(db, parsed.filter((item) => item.integrity_valid).map((item) => item.project));
+  return page(parsed.map(({ row, project, integrity_valid }) => {
+    const operational = integrity_valid ? summaries.get(project.project_id) ?? {
       shot_count: 0,
       accepted_count: 0,
       active_run_count: 0,
@@ -285,7 +305,7 @@ export function listWorkbenchProjects(
       review_pending_count: 0,
       revision_needed_count: 0,
       latest_failed_count: 0
-    };
+    } : integrityBlockedSummary(project);
     return projectSummaryFromRow(project, row, operational);
   }), totalRow.count, limit, offset);
 }
@@ -562,6 +582,16 @@ export function setWorkbenchProjectLifecycle(
 ): WorkbenchV2Result<{ project: Project; meta: WorkbenchProjectMeta }> {
   const project = getProject(db, projectId);
   if (!project) return projectNotFound(projectId);
+  if (project.project_id !== projectId) {
+    return {
+      ok: false,
+      error: {
+        code: "PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION",
+        message: "Project operational data failed integrity validation.",
+        field: "project_id"
+      }
+    };
+  }
   ensureProjectMeta(db, projectId);
   db.prepare(`UPDATE workbench_project_meta SET lifecycle = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ?`).run(lifecycle, projectId);
   return { ok: true, data: { project, meta: projectMeta(db, projectId) as WorkbenchProjectMeta } };
@@ -707,6 +737,16 @@ export function getWorkbenchProjectWorkspace(
 ): WorkbenchV2Result<Record<string, unknown>> {
   const project = getProject(db, projectId);
   if (!project) return projectNotFound(projectId);
+  if (project.project_id !== projectId) {
+    return {
+      ok: false,
+      error: {
+        code: "PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION",
+        message: "Project operational data failed integrity validation.",
+        field: "project_id"
+      }
+    };
+  }
   const touchLastOpened = options.touch_last_opened === true;
   const meta = projectMeta(db, projectId, touchLastOpened);
   if (!meta) return projectNotFound(projectId);
@@ -890,13 +930,16 @@ export function getWorkbenchDashboard(db = openM0Database()): Record<string, unk
 
 function getDashboardTotals(db: M0Database): { pending_confirmations: number; blocked_projects: number; review_pending: number; generation_active: number; pending_delivery: number } {
   const rows = db.prepare(`
-    SELECT p.data_json
+    SELECT p.project_id, p.data_json
     FROM projects p JOIN workbench_project_meta m ON m.project_id = p.project_id
     WHERE m.lifecycle = 'active' AND m.classification IN ('production', 'unclassified')
-  `).all() as Array<{ data_json: string }>;
-  const projects = rows.map((row) => parseJson<Project | null>(row.data_json, null)).filter((project): project is Project => Boolean(project?.project_id));
-  const operationalSummaries = collectOperationalSummariesForList(db, projects);
-  const summaries = projects.map((project) => ({ project, summary: operationalSummaries.get(project.project_id) }));
+  `).all() as Array<{ project_id: string; data_json: string }>;
+  const projects = rows.map((row) => projectFromBoundRow(row));
+  const operationalSummaries = collectOperationalSummariesForList(db, projects.filter((item) => item.integrity_valid).map((item) => item.project));
+  const summaries = projects.map(({ project, integrity_valid }) => ({
+    project,
+    summary: integrity_valid ? operationalSummaries.get(project.project_id) : integrityBlockedSummary(project)
+  }));
   const pending = db.prepare(`
     SELECT
       (SELECT COUNT(*) FROM workbench_pending_actions WHERE status = 'pending')

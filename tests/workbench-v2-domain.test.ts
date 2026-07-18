@@ -628,6 +628,32 @@ test("Workbench project summary treats a complete draft storyboard as awaiting a
   }
 });
 
+test("Workbench list, dashboard, and workspace fail closed on project row and JSON id drift", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const created = createWorkbenchProject({ title: "Project binding drift", classification: "production" }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    db.prepare(`UPDATE projects SET data_json = json_set(data_json, '$.project_id', 'project_wrong_binding') WHERE project_id = ?`)
+      .run(created.data.project.project_id);
+
+    const listed = listWorkbenchProjects({ scope: "daily" }, db);
+    const blocked = listed.items.find((item) => item.project.project_id === created.data.project.project_id);
+    assert.equal(blocked?.project.title, "Project data integrity error");
+    assert.equal(blocked?.risk, "blocked");
+    assert.equal(blocked?.next_action.reason_code, "operational_data_integrity");
+    assert.deepEqual(blocked?.blocker_codes, ["PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION"]);
+
+    const dashboard = getWorkbenchDashboard(db) as { totals: { blocked_projects: number } };
+    assert.equal(dashboard.totals.blocked_projects, 1);
+    const workspace = getWorkbenchProjectWorkspace(created.data.project.project_id, "overview", db);
+    assert.equal(workspace.ok, false);
+    if (!workspace.ok) assert.equal(workspace.error.code, "PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION");
+  } finally {
+    db.close();
+  }
+});
+
 test("operational facts fail closed when a referenced Artifact JSON binding drifts from its row", () => {
   const db = openM0Database(":memory:");
   try {
