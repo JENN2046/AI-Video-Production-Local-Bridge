@@ -118,6 +118,10 @@ export interface ProjectOperationalSummary {
   latest_failed_count: number;
 }
 
+export interface ProjectOperationalFacts {
+  latest_generation_run_status: GenerationOperationalRunStatus;
+}
+
 const ARTIFACT_REASON: Record<Exclude<ArtifactOperationalStatus, "active">, string> = {
   missing: "STORYBOARD_IMAGE_MISSING",
   inactive: "STORYBOARD_ARTIFACT_INACTIVE",
@@ -277,7 +281,10 @@ export function deriveShotOperationalState(facts: ShotOperationalFacts): ShotOpe
   };
 }
 
-export function deriveProjectOperationalSummary(states: ShotOperationalState[]): ProjectOperationalSummary {
+export function deriveProjectOperationalSummary(
+  states: ShotOperationalState[],
+  projectFacts: ProjectOperationalFacts = { latest_generation_run_status: null }
+): ProjectOperationalSummary {
   const blockerCodes = states.flatMap((state) => state.blocker_codes);
   const blockerCodeCounts = blockerCodes.reduce<Record<string, number>>((counts, code) => {
     counts[code] = (counts[code] ?? 0) + 1;
@@ -286,7 +293,8 @@ export function deriveProjectOperationalSummary(states: ShotOperationalState[]):
   return {
     shot_count: states.length,
     accepted_count: states.filter((state) => state.delivery.ready).length,
-    active_run_count: states.filter((state) => ["queued", "running", "manual_reconciliation"].includes(state.generation.stage)).length,
+    active_run_count: states.filter((state) => ["queued", "running", "manual_reconciliation"].includes(state.generation.stage)).length
+      + (["queued", "running"].includes(projectFacts.latest_generation_run_status ?? "") ? 1 : 0),
     blocked_shot_count: states.filter((state) => state.blocker_codes.length > 0).length,
     blocker_count: blockerCodes.length,
     blocker_codes: unique(blockerCodes),
@@ -294,5 +302,6 @@ export function deriveProjectOperationalSummary(states: ShotOperationalState[]):
     review_pending_count: states.filter((state) => state.review.stage === "pending").length,
     revision_needed_count: states.filter((state) => ["storyboard_revision_needed", "clip_revision_needed"].includes(state.primary_stage)).length,
     latest_failed_count: states.filter((state) => state.generation.stage === "failed").length
+      + (projectFacts.latest_generation_run_status === "failed" ? 1 : 0)
   };
 }

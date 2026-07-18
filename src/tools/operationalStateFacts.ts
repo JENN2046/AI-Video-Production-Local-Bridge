@@ -181,12 +181,16 @@ export function collectProjectOperationalBundles(
   const runRows = db.prepare(`
     SELECT project_id, shot_id, status
     FROM generation_runs
-    WHERE project_id IN (${slots}) AND COALESCE(shot_id, '') <> ''
+    WHERE project_id IN (${slots})
     ORDER BY updated_at DESC, rowid DESC
   `).all(...projectIds) as RunRow[];
   const latestRunByShot = new Map<string, string>();
+  const latestProjectRunByProject = new Map<string, string>();
   for (const row of runRows) {
-    if (!row.shot_id) continue;
+    if (!row.shot_id) {
+      if (!latestProjectRunByProject.has(row.project_id)) latestProjectRunByProject.set(row.project_id, row.status);
+      continue;
+    }
     const key = shotKey(row.project_id, row.shot_id);
     if (!latestRunByShot.has(key)) latestRunByShot.set(key, row.status);
   }
@@ -232,7 +236,9 @@ export function collectProjectOperationalBundles(
       shots,
       states,
       states_by_shot_id: new Map(states.map((state) => [state.shot_id, state])),
-      summary: deriveProjectOperationalSummary(states)
+      summary: deriveProjectOperationalSummary(states, {
+        latest_generation_run_status: runStatus(latestProjectRunByProject.get(project.project_id))
+      })
     });
   }
   return result;

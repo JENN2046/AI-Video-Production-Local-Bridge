@@ -13,6 +13,7 @@ import { collectProjectOperationalBundles } from "../src/tools/operationalStateF
 import {
   createWorkbenchProject,
   getWorkbenchProjectWorkspace,
+  getWorkbenchDashboard,
   listWorkbenchProjects,
   setWorkbenchProjectLifecycle,
   updateWorkbenchProject
@@ -301,6 +302,44 @@ test("operational fact collection uses insertion order to break same-second gene
       assert.equal(bundle?.states[0]?.generation.stage, "queued");
       assert.equal(bundle?.states[0]?.primary_stage, "generation_queued");
       assert.equal(bundle?.summary.active_run_count, 1);
+    } finally {
+      db.close();
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("project-level generation runs contribute to operational active and failure summaries", () => {
+  const root = mkdtempSync(join(tmpdir(), "operational-project-run-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    migrateDatabase(sqlitePath);
+    const db = openM0Database(sqlitePath);
+    try {
+      const created = createWorkbenchProject({ title: "Project-level assembly run", classification: "production" }, db);
+      assert.equal(created.ok, true);
+      if (!created.ok) return;
+      const insertRun = db.prepare(`
+        INSERT INTO generation_runs (run_id, batch_id, project_id, shot_id, run_type, status, data_json, created_at, updated_at)
+        VALUES (?, '', ?, '', 'assemble_video', ?, '{}', '2026-07-18 00:00:00', '2026-07-18 00:00:00')
+      `);
+      insertRun.run("run_project_queued", created.data.project.project_id, "queued");
+      let bundle = collectProjectOperationalBundles(db, [created.data.project]).get(created.data.project.project_id);
+      assert.equal(bundle?.summary.active_run_count, 1);
+      assert.equal(bundle?.summary.latest_failed_count, 0);
+
+      insertRun.run("run_project_failed", created.data.project.project_id, "failed");
+      bundle = collectProjectOperationalBundles(db, [created.data.project]).get(created.data.project.project_id);
+      assert.equal(bundle?.summary.active_run_count, 0);
+      assert.equal(bundle?.summary.latest_failed_count, 1);
+
+      const summary = listWorkbenchProjects({ scope: "daily" }, db).items.find((item) => item.project.project_id === created.data.project.project_id);
+      assert.equal(summary?.next_action.reason_code, "generation_failed");
+      assert.equal(summary?.risk, "blocked");
+      const dashboard = getWorkbenchDashboard(db) as { totals: { blocked_projects: number; generation_active: number } };
+      assert.equal(dashboard.totals.blocked_projects, 1);
+      assert.equal(dashboard.totals.generation_active, 0);
     } finally {
       db.close();
     }
