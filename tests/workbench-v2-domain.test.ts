@@ -8,15 +8,17 @@ import { deriveProjectOperationalSummary, deriveShotOperationalState, type ShotO
 import { databaseLogicalManifest, migrateDatabase } from "../src/storage/databaseGovernance.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import { WORKBENCH_V2_SCHEMA_VERSION } from "../src/storage/workbenchV2Schema.js";
-import { buildStoryboardApprovedShot, createProject, saveProject, saveShot } from "../src/tools/projects.js";
+import { buildStoryboardApprovedShot, createProject, getShot, saveProject, saveShot } from "../src/tools/projects.js";
 import { collectProjectOperationalBundles } from "../src/tools/operationalStateFacts.js";
+import { requireProjectShotWorkflowWriteAction } from "../src/tools/operationalWriteGates.js";
 import {
   createWorkbenchProject,
   getWorkbenchProjectWorkspace,
   getWorkbenchDashboard,
   listWorkbenchProjects,
   setWorkbenchProjectLifecycle,
-  updateWorkbenchProject
+  updateWorkbenchProject,
+  updateWorkbenchShot
 } from "../src/tools/workbenchV2.js";
 import { confirmWorkbenchGeneration, preflightWorkbenchGeneration, reconcileGenerationJob, resumeWorkbenchGenerationJobs, runWorkbenchGenerationOnce } from "../src/tools/workbenchGeneration.js";
 import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
@@ -80,6 +82,7 @@ test("shared operational state derives the generation, review, revision, and acc
   }));
   assert.equal(awaitingApproval.primary_stage, "storyboard_draft");
   assert.equal(awaitingApproval.allowed_workflow_actions.approve_storyboard, true);
+  assert.equal(awaitingApproval.allowed_workflow_actions.freeze_storyboard, true);
   assert.ok(awaitingApproval.generation.reason_codes.includes("STORYBOARD_APPROVAL_REQUIRED"));
   assert.deepEqual(awaitingApproval.blocker_codes, []);
   assert.equal(deriveProjectOperationalSummary([awaitingApproval]).blocker_count, 0);
@@ -114,6 +117,8 @@ test("shared operational state derives the generation, review, revision, and acc
   }));
   assert.equal(pending.primary_stage, "review_pending");
   assert.equal(pending.review.approval_status, "pending");
+  assert.equal(pending.allowed_workflow_actions.freeze_storyboard, false);
+  assert.equal(pending.allowed_workflow_actions.prepare_generation, false);
 
   const regeneratedPendingAfterRevision = deriveShotOperationalState(operationalFacts({
     stored_workflow_status: "video_review",
@@ -247,6 +252,64 @@ test("operational fact collection uses a fixed query count for a 100-SHOT projec
   assert.equal(queryCount, 4);
   assert.equal(bundle?.states.length, 100);
   assert.equal(bundle?.summary.blocked_shot_count, 100);
+});
+
+test("project workflow write gate evaluates 100 SHOTs with a fixed query count", () => {
+  const project = {
+    project_id: "project_bulk_write_gate",
+    title: "Bulk write gate fixture",
+    project_type: "m0_video_loop",
+    status: "storyboard_approved" as const,
+    brief: {},
+    video_spec: { duration_seconds: 600, aspect_ratio: "9:16", resolution: "1080x1920" },
+    shot_ids: [],
+    active_storyboard_package_id: "",
+    generation_batch_ids: [],
+    exports: { final_video_artifact_id: "" }
+  };
+  const shots = Array.from({ length: 100 }, (_, index) => buildStoryboardApprovedShot({
+    shot_id: `shot_gate_${String(index).padStart(3, "0")}`,
+    project_id: project.project_id,
+    order: index + 1,
+    duration_seconds: 6,
+    storyboard_image_artifact_id: `artifact_gate_${String(index).padStart(3, "0")}`,
+    video_prompt: "Bulk gate fixture prompt."
+  }));
+  let queryCount = 0;
+  const db = {
+    prepare(sql: string) {
+      queryCount += 1;
+      return {
+        get: () => sql.includes("workbench_project_meta") ? { lifecycle: "active" } : undefined,
+        all() {
+          if (sql.includes("FROM shots")) return shots.map((shot) => ({ shot_id: shot.shot_id, project_id: project.project_id, data_json: JSON.stringify(shot) }));
+          if (sql.includes("FROM media_artifacts")) return shots.map((shot) => ({
+            artifact_id: shot.storyboard_image_artifact_id,
+            project_id: project.project_id,
+            shot_id: shot.shot_id,
+            role: "storyboard_image",
+            artifact_type: "image",
+            status: "active",
+            data_json: JSON.stringify({
+              artifact_id: shot.storyboard_image_artifact_id,
+              blob_id: `blob_${shot.shot_id}`,
+              role: "storyboard_image",
+              artifact_type: "image",
+              status: "active",
+              linked_objects: { project_id: project.project_id, shot_id: shot.shot_id }
+            }),
+            blob_id: `blob_${shot.shot_id}`,
+            integrity_state: "verified"
+          }));
+          return [];
+        }
+      };
+    }
+  } as unknown as Parameters<typeof requireProjectShotWorkflowWriteAction>[0];
+
+  const gate = requireProjectShotWorkflowWriteAction(db, project, shots, "freeze_storyboard");
+  assert.equal(gate.ok, true);
+  assert.equal(queryCount, 5);
 });
 
 test("operational fact collection fails closed on structured SHOT binding drift", () => {
@@ -564,6 +627,54 @@ test("project lifecycle blocks writes without deleting project truth", () => {
     assert.equal(archived.meta.total, 1);
     assert.equal(setWorkbenchProjectLifecycle(created.data.project.project_id, "active", db).ok, true);
     assert.equal(updateWorkbenchProject(created.data.project.project_id, { title: "restored" }, db).ok, true);
+  } finally {
+    db.close();
+  }
+});
+
+test("Storyboard approval uses the shared candidate-state write gate", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const created = createWorkbenchProject({ title: "Storyboard write gate", classification: "production" }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    const shot = buildStoryboardApprovedShot({
+      shot_id: "shot_storyboard_write_gate",
+      project_id: created.data.project.project_id,
+      order: 1,
+      duration_seconds: 6,
+      storyboard_image_artifact_id: "",
+      video_prompt: "Candidate-state approval."
+    });
+    shot.status = "draft";
+    saveShot(db, shot);
+    created.data.project.shot_ids = [shot.shot_id];
+    created.data.project.status = "draft";
+    saveProject(db, created.data.project);
+
+    const denied = updateWorkbenchShot(created.data.project.project_id, shot.shot_id, {
+      approve_storyboard: true,
+      human_confirmation: true
+    }, db);
+    assert.equal(denied.ok, false);
+    if (!denied.ok) assert.equal(denied.error.code, "SHOT_WORKFLOW_ACTION_NOT_ALLOWED");
+    assert.equal((getShot(db, shot.shot_id) as typeof shot).status, "draft");
+
+    const artifact = registerMediaArtifact({
+      artifact_type: "image",
+      role: "storyboard_image",
+      source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
+      linked_objects: { project_id: created.data.project.project_id, shot_id: shot.shot_id }
+    }, db);
+    assert.equal(artifact.ok, true);
+    if (!artifact.ok) return;
+    const approved = updateWorkbenchShot(created.data.project.project_id, shot.shot_id, {
+      storyboard_image_artifact_id: artifact.artifact.artifact_id,
+      approve_storyboard: true,
+      human_confirmation: true
+    }, db);
+    assert.equal(approved.ok, true);
+    if (approved.ok) assert.equal(approved.data.shot.status, "storyboard_approved");
   } finally {
     db.close();
   }
@@ -934,6 +1045,13 @@ test("generation preflight enforces official estimate, balance gate, budget and 
     assert.equal(rejectedDrift.ok, false);
     if (!rejectedDrift.ok) assert.equal(rejectedDrift.error.code, "PROVIDER_CAPABILITY_CONTRACT_MISMATCH");
     db.prepare("UPDATE generation_intents SET data_json = ? WHERE intent_id = ?").run(originalIntentJson.data_json, first.data.intent.intent_id);
+    shot.video_prompt = "Changed after official preflight.";
+    saveShot(db, shot);
+    const rejectedStaleInput = confirmWorkbenchGeneration({ intent_id: first.data.intent.intent_id, budget_limit_value: 1, cost_confirmed: true, human_confirmation: true }, db);
+    assert.equal(rejectedStaleInput.ok, false);
+    if (!rejectedStaleInput.ok) assert.equal(rejectedStaleInput.error.code, "GENERATION_INTENT_INPUT_STALE");
+    shot.video_prompt = "Subtle camera move.";
+    saveShot(db, shot);
     const confirmed = confirmWorkbenchGeneration({ intent_id: first.data.intent.intent_id, budget_limit_value: 1, cost_confirmed: true, human_confirmation: true }, db);
     assert.equal(confirmed.ok, true);
     if (!confirmed.ok) return;
@@ -977,8 +1095,10 @@ test("generation preflight enforces official estimate, balance gate, budget and 
 
     db.prepare("UPDATE generation_jobs SET state = 'cancelled' WHERE job_id = ?").run(confirmed.data.job_id);
     db.prepare("UPDATE generation_intents SET status = 'cancelled' WHERE intent_id = ?").run(first.data.intent.intent_id);
-    shot.status = "revision_needed";
-    shot.review.approval_status = "revision_needed";
+    db.prepare("UPDATE generation_runs SET status = 'cancelled', data_json = json_set(data_json, '$.status', 'cancelled') WHERE run_id = ?")
+      .run(confirmed.data.run_id);
+    shot.status = "storyboard_approved";
+    shot.review.approval_status = "pending";
     saveShot(db, shot);
     projectResult.project.status = "video_review";
     saveProject(db, projectResult.project);
@@ -1010,7 +1130,7 @@ test("generation preflight enforces official estimate, balance gate, budget and 
     const restoredShot = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(shot.shot_id) as { data_json: string };
     const restoredProject = db.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(projectResult.project_id) as { data_json: string };
     const abandonedRun = db.prepare("SELECT data_json FROM generation_runs WHERE run_id = ?").get(secondConfirmed.data.run_id) as { data_json: string };
-    assert.equal((JSON.parse(restoredShot.data_json) as { status: string }).status, "revision_needed");
+    assert.equal((JSON.parse(restoredShot.data_json) as { status: string }).status, "storyboard_approved");
     assert.equal((JSON.parse(restoredProject.data_json) as { status: string }).status, "video_review");
     assert.equal((JSON.parse(abandonedRun.data_json) as { status: string }).status, "cancelled");
   } finally {

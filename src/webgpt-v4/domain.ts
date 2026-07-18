@@ -4,6 +4,7 @@ import type { M0Database } from "../storage/sqlite.js";
 import { ArtifactStructuredDriftError, validateAcceptedClipReference, validateActiveArtifactReference, type ArtifactRole, type ArtifactType, type MediaArtifact } from "../tools/mediaArtifacts.js";
 import { listProjectShots, type Project, type Shot } from "../tools/projects.js";
 import { OperationalStateIntegrityError } from "../tools/operationalStateFacts.js";
+import { requireShotWorkflowWriteAction } from "../tools/operationalWriteGates.js";
 import { getWorkbenchProjectSummary, getWorkbenchProjectWorkspace } from "../tools/workbenchV2.js";
 import { appendWorkbenchInboxEvent, getWorkbenchDraftRecord, saveWorkbenchDraftRecord, type WorkbenchDraftRecord } from "../tools/workbenchInboxStore.js";
 import { buildProviderCapabilityKey, buildProviderPriceCacheKey, providerCapabilityErrorMessage, RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY } from "../tools/providerCapabilities.js";
@@ -763,8 +764,9 @@ export function prepareProductionGenerationIntent(
     const project = parseBoundJson<Project>(row.data_json, "project_id");
     if (project.project_id !== row.project_id) dataIntegrityViolation("project_id");
     const { shot } = requireShot(db, input.project_id, input.shot_id);
-    if (shot.status !== "storyboard_approved" && shot.status !== "revision_needed") throw new WebGptV4Error("SHOT_NOT_APPROVED", "Storyboard approval is required before generation preparation.");
     const artifact = requireArtifact(db, input.project_id, shot.storyboard_image_artifact_id, true, { shot_id: shot.shot_id, role: "storyboard_image", artifact_type: "image" });
+    const workflowGate = requireShotWorkflowWriteAction(db, project, shot, "prepare_generation");
+    if (!workflowGate.ok) throw new WebGptV4Error(workflowGate.error.code, workflowGate.error.message, workflowGate.error.field);
     if (!Number.isFinite(input.budget_limit_value) || input.budget_limit_value <= 0) throw new WebGptV4Error("BUDGET_LIMIT_REQUIRED", "A positive budget limit is required.", "budget_limit_value");
     const capability = buildProviderCapabilityKey({
       provider: "runninghub",

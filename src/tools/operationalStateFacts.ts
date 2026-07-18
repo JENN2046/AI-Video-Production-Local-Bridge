@@ -149,7 +149,8 @@ function shotKey(projectId: string, shotId: string): string {
 
 export function collectProjectOperationalBundles(
   db: M0Database,
-  projects: Project[]
+  projects: Project[],
+  options: { shot_overrides?: Map<string, Shot> } = {}
 ): Map<string, ProjectOperationalBundle> {
   const uniqueProjects = [...new Map(projects.map((project) => [project.project_id, project])).values()];
   if (uniqueProjects.length === 0) return new Map();
@@ -164,7 +165,9 @@ export function collectProjectOperationalBundles(
   `).all(...projectIds) as Array<{ shot_id: string; project_id: string; data_json: string }>;
   const shotsByProject = new Map<string, Shot[]>();
   for (const row of shotRows) {
-    const shot = parseShot(row.data_json, row.shot_id, row.project_id);
+    const storedShot = parseShot(row.data_json, row.shot_id, row.project_id);
+    const override = options.shot_overrides?.get(shotKey(row.project_id, row.shot_id));
+    const shot = override ? parseShot(JSON.stringify(override), row.shot_id, row.project_id) : storedShot;
     const collection = shotsByProject.get(row.project_id) ?? [];
     collection.push(shot);
     shotsByProject.set(row.project_id, collection);

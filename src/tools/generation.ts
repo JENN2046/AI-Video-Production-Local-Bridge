@@ -4,6 +4,7 @@ import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { getMediaArtifact, registerMediaArtifact, validateActiveArtifactReference } from "./mediaArtifacts.js";
 import { getProject, getProjectStatus, getShot, listProjectShots, saveProject, saveShot, type Project, type Shot, type ToolError } from "./projects.js";
 import { getStoryboardPackage } from "./storyboardPackages.js";
+import { requireProjectShotWorkflowWriteAction } from "./operationalWriteGates.js";
 import { providerError, selectM0Provider, selectM1ProviderPort, type ProviderExecutionRequest, type ProviderPortName, type ProviderToolError } from "./provider.js";
 import { downloadProviderOutputToArtifact } from "./providerOutputDownloader.js";
 import { validateMp4File, type Mp4ValidationResult } from "./mediaValidity.js";
@@ -433,6 +434,21 @@ export async function startStoryboardVideoGeneration(
   if (!shots.length) {
     return { ok: false, error: { code: "STORYBOARD_PACKAGE_NOT_READY", message: "No shots are ready for generation." } };
   }
+
+  for (const shot of shots) {
+    const packageSnapshot = storyboardPackage.approved_shot_snapshots.find((snapshot) => snapshot.shot_id
+      ? snapshot.shot_id === shot.shot_id
+      : snapshot.order === shot.order);
+    if (!packageSnapshot
+      || packageSnapshot.storyboard_image_artifact_id !== shot.storyboard_image_artifact_id
+      || packageSnapshot.video_prompt !== shot.video_prompt
+      || (packageSnapshot.negative_prompt ?? "") !== shot.negative_prompt
+      || packageSnapshot.duration_seconds !== shot.duration_seconds) {
+      return { ok: false, error: { code: "STORYBOARD_PACKAGE_INPUT_STALE", message: `SHOT inputs differ from the frozen Storyboard Package: ${shot.shot_id}` } };
+    }
+  }
+  const workflowGate = requireProjectShotWorkflowWriteAction(db, project, shots, "prepare_generation");
+  if (!workflowGate.ok) return { ok: false, error: workflowGate.error };
 
   const batchId = `batch_${randomUUID()}`;
   const runs: GenerationRun[] = [];

@@ -324,6 +324,12 @@ test("H3 reviews generated clips and creates regeneration drafts without regener
             duration_seconds: 2,
             storyboard_image_artifact_id: storyboardArtifact.artifact.artifact_id,
             video_prompt: "Animate this shot for H3 review."
+          },
+          {
+            order: 2,
+            duration_seconds: 2,
+            storyboard_image_artifact_id: storyboardArtifact.artifact.artifact_id,
+            video_prompt: "Animate the alternate shot for H3 rejection review."
           }
         ],
         user_approval: { storyboard_approved: true }
@@ -332,13 +338,14 @@ test("H3 reviews generated clips and creates regeneration drafts without regener
     );
     assert.equal(storyboard.ok, true);
     if (!storyboard.ok) return;
-    const shotId = storyboard.shots[0].shot_id;
+    const approvedShotId = storyboard.shots[0].shot_id;
+    const rejectedShotId = storyboard.shots[1].shot_id;
 
     const firstGeneration = await createGenerationRunFromPackageShot(
       {
         project_id: project.project_id,
         storyboard_package_id: storyboard.storyboard_package_id,
-        shot_id: shotId,
+        shot_id: approvedShotId,
         confirmation: { confirmation_level: "hard_gate", user_confirmed: true }
       },
       db
@@ -349,7 +356,7 @@ test("H3 reviews generated clips and creates regeneration drafts without regener
     const summary = h3VideoReviewSummary(defaultH1WorkbenchState(), db);
     assert.equal(summary.generated_clips.some((clip) => clip.artifact_id === firstArtifactId && clip.ffprobe?.status === "PASS"), true);
 
-    const approved = approveH3GeneratedClip({ shot_id: shotId, artifact_id: firstArtifactId, write_report: false }, db);
+    const approved = approveH3GeneratedClip({ shot_id: approvedShotId, artifact_id: firstArtifactId, write_report: false }, db);
     assert.equal(approved.ok, true);
     if (!approved.ok) return;
     assert.equal(approved.value.accepted_clip_artifact_id, firstArtifactId);
@@ -358,7 +365,7 @@ test("H3 reviews generated clips and creates regeneration drafts without regener
       {
         project_id: project.project_id,
         storyboard_package_id: storyboard.storyboard_package_id,
-        shot_id: shotId,
+        shot_id: rejectedShotId,
         confirmation: { confirmation_level: "hard_gate", user_confirmed: true }
       },
       db
@@ -366,12 +373,12 @@ test("H3 reviews generated clips and creates regeneration drafts without regener
     assert.equal(secondGeneration.ok, true);
     if (!secondGeneration.ok) return;
     const secondArtifactId = secondGeneration.generated_artifact_id ?? "";
-    const runCountBeforeReject = getShot(db, shotId)?.generation_run_ids.length ?? 0;
+    const runCountBeforeReject = getShot(db, rejectedShotId)?.generation_run_ids.length ?? 0;
 
     const rejected = rejectH3GeneratedClip(
       defaultH1WorkbenchState(),
       {
-        shot_id: shotId,
+        shot_id: rejectedShotId,
         artifact_id: secondArtifactId,
         rejection_reasons: ["motion is too subtle"],
         revision_instruction: {
@@ -388,8 +395,8 @@ test("H3 reviews generated clips and creates regeneration drafts without regener
     if (!rejected.ok) return;
     assert.equal(rejected.value.draft.status, "draft");
     assert.equal(rejected.value.draft.previous_run_id, secondGeneration.run.run_id);
-    assert.equal(getShot(db, shotId)?.clip_versions.find((version) => version.artifact_id === secondArtifactId)?.review_status, "rejected");
-    assert.equal(getShot(db, shotId)?.generation_run_ids.length, runCountBeforeReject);
+    assert.equal(getShot(db, rejectedShotId)?.clip_versions.find((version) => version.artifact_id === secondArtifactId)?.review_status, "rejected");
+    assert.equal(getShot(db, rejectedShotId)?.generation_run_ids.length, runCountBeforeReject);
   } finally {
     db.close();
   }

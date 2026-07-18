@@ -4,6 +4,7 @@ import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { attachArtifactToShot, createScopedArtifactFromBlob, validateAcceptedClipReference, validateActiveArtifactReference } from "./mediaArtifacts.js";
 import { createProject, getProject, getShot, listProjectShots, saveProject, saveShot, type Project, type Shot } from "./projects.js";
 import { saveStoryboardPackage, type StoryboardPackage } from "./storyboardPackages.js";
+import { requireProjectShotWorkflowWriteAction, requireShotWorkflowWriteAction } from "./operationalWriteGates.js";
 import { decideWorkbenchClip, decideWorkbenchImport, updateWorkbenchShot, type WorkbenchPage, type WorkbenchProjectClassification, type WorkbenchV2Result } from "./workbenchV2.js";
 import {
   appendWorkbenchInboxEvent,
@@ -437,6 +438,8 @@ function executePendingAction(action: WorkbenchPendingActionRecord, requestedPro
     const project = writableProject(projectId, db);
     const shot = getShot(db, String(action.payload.shot_id ?? ""));
     if (!shot || shot.project_id !== project.project_id) throw new InboxDomainError("SHOT_NOT_FOUND", "Regeneration target SHOT was not found.", "shot_id");
+    const workflowGate = requireShotWorkflowWriteAction(db, project, shot, "regenerate");
+    if (!workflowGate.ok) throw new InboxDomainError(workflowGate.error.code, workflowGate.error.message, workflowGate.error.field);
     const artifact = validateActiveArtifactReference(db, {
       artifact_id: String(action.payload.artifact_id ?? ""), project_id: projectId, shot_id: shot.shot_id, role: "generated_clip", artifact_type: "video"
     });
@@ -466,7 +469,7 @@ function executePendingAction(action: WorkbenchPendingActionRecord, requestedPro
     return { project_id: projectId, result: { accepted: true, kind: "memory_saveback", execution_required_in_memory_workspace: true, proposal: action.payload }, effects: { app_ready_truth_changed: false } };
   }
   const project = writableProject(projectId, db);
-  const shots = validateProjectStoryboard(projectId, db);
+  const shots = validateProjectStoryboard(project, db);
   if (action.tool === "request_validate_storyboard_package") {
     return { project_id: projectId, result: { valid: true, shot_count: shots.length }, effects: { package_validated: true } };
   }
@@ -499,22 +502,11 @@ function executePendingAction(action: WorkbenchPendingActionRecord, requestedPro
   throw new InboxDomainError("TOOL_NOT_FOUND", `Unsupported pending action: ${action.tool}`);
 }
 
-function validateProjectStoryboard(projectId: string, db: M0Database): Shot[] {
-  const shots = listProjectShots(db, projectId);
+function validateProjectStoryboard(project: Project, db: M0Database): Shot[] {
+  const shots = listProjectShots(db, project.project_id);
   if (shots.length === 0) throw new InboxDomainError("PACKAGE_BLOCKED", "Project has no SHOTs.");
-  for (const shot of shots) {
-    if (!shot.storyboard_image_artifact_id || !shot.video_prompt) throw new InboxDomainError("PACKAGE_BLOCKED", `SHOT ${shot.shot_id} is missing image or prompt.`);
-    const artifact = validateActiveArtifactReference(db, {
-      artifact_id: shot.storyboard_image_artifact_id,
-      project_id: projectId,
-      shot_id: shot.shot_id,
-      role: "storyboard_image",
-      artifact_type: "image"
-    });
-    if (!artifact.ok) {
-      throw new InboxDomainError("PACKAGE_BLOCKED", `SHOT ${shot.shot_id} has an invalid storyboard image [${artifact.error.code}].`);
-    }
-  }
+  const workflowGate = requireProjectShotWorkflowWriteAction(db, project, shots, "freeze_storyboard");
+  if (!workflowGate.ok) throw new InboxDomainError(workflowGate.error.code, workflowGate.error.message, workflowGate.error.field);
   return shots;
 }
 

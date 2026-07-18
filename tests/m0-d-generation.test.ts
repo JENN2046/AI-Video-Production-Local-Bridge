@@ -6,9 +6,11 @@ import {
   createProject,
   getGenerationStatus,
   getMediaArtifact,
+  getShot,
   importStoryboardPackage,
   openM0Database,
   registerMediaArtifact,
+  saveShot,
   startStoryboardVideoGeneration
 } from "../src/index.js";
 
@@ -130,6 +132,52 @@ test("M0-D get_generation_status supports project, batch, and run queries", asyn
     assert.equal(byProject.ok, true);
     const projectRuns = byProject.ok && "runs" in byProject ? byProject.runs : undefined;
     assert.equal(projectRuns?.length, 3);
+  } finally {
+    db.close();
+  }
+});
+
+test("M0-D generation rejects stale package inputs before creating a run", async () => {
+  const db = openM0Database();
+  try {
+    const { project, storyboard } = setupThreeShotProject(db);
+    const shot = getShot(db, storyboard.shots[0].shot_id);
+    assert.ok(shot);
+    if (!shot) return;
+    shot.video_prompt = "Changed after Storyboard Package freeze.";
+    saveShot(db, shot);
+    const result = await startStoryboardVideoGeneration({
+      project_id: project.project_id,
+      selected_shot_ids: [shot.shot_id],
+      confirmation: { confirmation_level: "hard_gate", user_confirmed: true }
+    }, db);
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "STORYBOARD_PACKAGE_INPUT_STALE");
+    const runCount = db.prepare("SELECT COUNT(*) AS count FROM generation_runs WHERE project_id = ?").get(project.project_id) as { count: number };
+    assert.equal(runCount.count, 0);
+  } finally {
+    db.close();
+  }
+});
+
+test("M0-D generation cannot bypass a pending-review operational gate", async () => {
+  const db = openM0Database();
+  try {
+    const { project } = setupThreeShotProject(db);
+    const first = await startStoryboardVideoGeneration({
+      project_id: project.project_id,
+      confirmation: { confirmation_level: "hard_gate", user_confirmed: true }
+    }, db);
+    assert.equal(first.ok, true);
+    if (!first.ok) return;
+    const second = await startStoryboardVideoGeneration({
+      project_id: project.project_id,
+      confirmation: { confirmation_level: "hard_gate", user_confirmed: true }
+    }, db);
+    assert.equal(second.ok, false);
+    if (!second.ok) assert.equal(second.error.code, "SHOT_WORKFLOW_ACTION_NOT_ALLOWED");
+    const runCount = db.prepare("SELECT COUNT(*) AS count FROM generation_runs WHERE project_id = ?").get(project.project_id) as { count: number };
+    assert.equal(runCount.count, first.runs.length);
   } finally {
     db.close();
   }

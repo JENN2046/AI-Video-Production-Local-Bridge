@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { getGenerationRun, saveGenerationRun, type GenerationRun } from "./generation.js";
+import { requireShotWorkflowWriteAction } from "./operationalWriteGates.js";
 import { validateActiveArtifactReference, type MediaArtifact } from "./mediaArtifacts.js";
 import { providerError, selectM1ProviderPort, type ProviderToolError } from "./provider.js";
 import { buildProviderCapabilityKey, buildProviderPriceCacheKey, providerCapabilityErrorMessage } from "./providerCapabilities.js";
@@ -46,6 +47,7 @@ export interface WorkbenchGenerationIntent {
     video_prompt: string;
     negative_prompt: string;
     aspect_ratio: string;
+    project_resolution?: string;
     price_source: "runninghub_price_preview" | "local_verified_cache";
     balance_gate: "pass" | "not_checked";
     requires_human_preflight?: boolean;
@@ -337,9 +339,6 @@ export async function preflightWorkbenchGeneration(
   if (!writable.ok) return writable;
   const shot = getShot(db, input.shot_id);
   if (!shot || shot.project_id !== input.project_id) return { ok: false, error: { code: "SHOT_NOT_FOUND", message: "SHOT does not belong to this project.", field: "shot_id" } };
-  if (shot.status !== "storyboard_approved" && shot.status !== "revision_needed") {
-    return { ok: false, error: { code: "SHOT_NOT_APPROVED", message: "Storyboard approval is required before generation." } };
-  }
   if (!Number.isFinite(input.budget_limit_value) || input.budget_limit_value <= 0) {
     return { ok: false, error: { code: "BUDGET_LIMIT_REQUIRED", message: "A positive budget limit is required.", field: "budget_limit_value" } };
   }
@@ -349,6 +348,8 @@ export async function preflightWorkbenchGeneration(
     artifact_id: shot.storyboard_image_artifact_id, project_id: input.project_id, shot_id: shot.shot_id, role: "storyboard_image", artifact_type: "image"
   });
   if (!artifact.ok) return { ok: false, error: artifact.error };
+  const workflowGate = requireShotWorkflowWriteAction(db, writable.data.project, shot, "prepare_generation");
+  if (!workflowGate.ok) return { ok: false, error: workflowGate.error };
 
   const capability = buildProviderCapabilityKey({
     provider: "runninghub",
@@ -418,6 +419,7 @@ export async function preflightWorkbenchGeneration(
     video_prompt: shot.video_prompt,
     negative_prompt: shot.negative_prompt,
     aspect_ratio: writable.data.project.video_spec.aspect_ratio,
+    project_resolution: writable.data.project.video_spec.resolution,
     price_source: "runninghub_price_preview",
     balance_gate: "pass",
     requires_human_preflight: false,
@@ -516,6 +518,21 @@ export function confirmWorkbenchGeneration(
     if (!shot || shot.project_id !== intent.project_id) {
       db.exec("ROLLBACK");
       return { ok: false, error: { code: "SHOT_NOT_FOUND", message: "SHOT was not found in the selected project." } };
+    }
+    const workflowGate = requireShotWorkflowWriteAction(db, writable.data.project, shot, "confirm_generation");
+    if (!workflowGate.ok) {
+      db.exec("ROLLBACK");
+      return { ok: false, error: workflowGate.error };
+    }
+    if (shot.storyboard_image_artifact_id !== intent.input_artifact_id
+      || shot.video_prompt !== intent.input_snapshot.video_prompt
+      || shot.negative_prompt !== intent.input_snapshot.negative_prompt
+      || shot.duration_seconds !== intent.duration_seconds
+      || writable.data.project.video_spec.aspect_ratio !== intent.input_snapshot.aspect_ratio
+      || (intent.input_snapshot.project_resolution !== undefined
+        && writable.data.project.video_spec.resolution !== intent.input_snapshot.project_resolution)) {
+      db.exec("ROLLBACK");
+      return { ok: false, error: { code: "GENERATION_INTENT_INPUT_STALE", message: "SHOT or project inputs changed after generation preflight." } };
     }
     const runId = `run_${randomUUID()}`;
     const intentDataRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(intent.intent_id) as { data_json: string };
