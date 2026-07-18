@@ -10,6 +10,7 @@ import { bindWebGptPrincipalIssuer, bootstrapWebGptProjectOwner, registerWebGptP
 import { actorFromFederatedSubject, type WebGptV4Result } from "../src/webgpt-v4/types.js";
 import { openM0Database, openM0DatabaseConnection, type M0Database } from "../src/storage/sqlite.js";
 import { createProject, getProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
+import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
 import {
   exportReadonlySnapshotFromDatabase,
   ReadonlyProjectionError,
@@ -22,6 +23,7 @@ import {
   parseReadonlySnapshot,
   readonlySnapshotReviewPendingCount,
   readonlySnapshotStatus,
+  READONLY_SNAPSHOT_SCHEMA_VERSION,
   snapshotFingerprint,
   type ReadonlySnapshotUnsigned
 } from "../src/webgpt-cloud/snapshot.js";
@@ -29,25 +31,19 @@ import {
 const ISSUER = "https://issuer.example.test/";
 const RESOURCE = "https://aivideo.example.test/mcp";
 
-test("snapshot review count follows the shared regenerated-review semantics", () => {
+test("snapshot review count follows the projected operational review stage", () => {
   assert.equal(readonlySnapshotReviewPendingCount([
     {
-      status: "video_review",
-      clip_versions: [
-        { attempt_number: 1, review_status: "rejected" },
-        { attempt_number: 2, review_status: "pending" }
-      ],
-      review: { approval_status: "revision_needed" }
+      operational_state: { review: { stage: "pending" } }
     },
     {
-      status: "video_review",
-      clip_versions: [{ attempt_number: 1, review_status: "rejected" }],
-      review: { approval_status: "pending" }
+      operational_state: { review: { stage: "revision_needed" } }
     },
     {
-      status: "video_review",
-      clip_versions: [{ attempt_number: 1, review_status: "pending" }],
-      review: { approval_status: "pending" }
+      operational_state: { review: { stage: "pending" } }
+    },
+    {
+      operational_state: { review: { stage: "inconsistent" } }
     }
   ]), 2);
 });
@@ -196,6 +192,24 @@ test("SQLite and Snapshot readonly adapters preserve six-tool DTO parity and dat
   const root = mkdtempSync(join(tmpdir(), "readonly-projection-parity-"));
   const sqlitePath = join(root, "app.sqlite");
   const fixture = createFixture(sqlitePath);
+  const fixtureDb = openM0Database(sqlitePath);
+  try {
+    const project = getProject(fixtureDb, fixture.project_id);
+    assert.ok(project);
+    const registered = registerMediaArtifact({
+      artifact_type: "video",
+      role: "final_video",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: fixture.project_id }
+    }, fixtureDb);
+    assert.equal(registered.ok, true);
+    if (!registered.ok) throw new Error("final video projection fixture registration failed");
+    project.status = "final_approved";
+    project.exports.final_video_artifact_id = registered.artifact.artifact_id;
+    saveProject(fixtureDb, project);
+  } finally {
+    fixtureDb.close();
+  }
   const beforeDb = openM0DatabaseConnection(sqlitePath, { readOnly: true });
   const before = logicalManifest(beforeDb);
   beforeDb.close();
@@ -207,6 +221,10 @@ test("SQLite and Snapshot readonly adapters preserve six-tool DTO parity and dat
     generated_at: generatedAt,
     ttl_seconds: 3600
   });
+  const deliveryContext = snapshot.projects[0]!.contexts.find((context) => context.workspace === "delivery");
+  assert.ok(deliveryContext && "final_artifact_reason_code" in deliveryContext.compact && "final_artifact_reason_code" in deliveryContext.full);
+  assert.equal(deliveryContext.compact.final_artifact_reason_code, null);
+  assert.equal(deliveryContext.full.final_artifact_reason_code, null);
   assert.doesNotMatch(JSON.stringify(snapshot), /"(?:local_path|provider_payload|actor_hash|subject|idempotency_key)":/);
   const db = openM0DatabaseConnection(sqlitePath, { readOnly: true });
   try {
@@ -267,7 +285,7 @@ test("snapshot fingerprint uses deterministic JCS input and server time remains 
   assert.throws(() => canonicalizeJcs("\ud800"), /JCS_INVALID_UNICODE/);
   const generatedAt = "2026-07-16T00:00:00.000Z";
   const unsigned: ReadonlySnapshotUnsigned = {
-    schema_version: "readonly-snapshot-v1",
+    schema_version: READONLY_SNAPSHOT_SCHEMA_VERSION,
     source_schema: "workbench-v2-5",
     source_migration: "0008",
     source_version: "webgpt-v4.3.0",
@@ -322,6 +340,27 @@ test("snapshot fingerprint uses deterministic JCS input and server time remains 
   });
 });
 
+test("readonly snapshot v2 rejects prior v1 payloads with a stable version error", () => {
+  const current = finalizeReadonlySnapshot({
+    schema_version: READONLY_SNAPSHOT_SCHEMA_VERSION,
+    source_schema: "workbench-v2-5",
+    source_migration: "0008",
+    source_version: "webgpt-v4.3.0",
+    generated_at: "2026-07-16T00:00:00.000Z",
+    expires_at: "2026-07-16T01:00:00.000Z",
+    resource_url: RESOURCE,
+    issuer_hash: "a".repeat(64),
+    authorization: { principals: [] },
+    projects: []
+  });
+  const legacy = structuredClone(current) as unknown as Record<string, unknown>;
+  legacy.schema_version = "readonly-snapshot-v1";
+  assert.throws(
+    () => parseReadonlySnapshot(legacy, new Date("2026-07-16T00:30:00.000Z")),
+    /READONLY_SNAPSHOT_VERSION_UNSUPPORTED/
+  );
+});
+
 test("SQLite readonly adapter returns a stable denial for a disabled principal", () => {
   const root = mkdtempSync(join(tmpdir(), "readonly-projection-disabled-"));
   const sqlitePath = join(root, "app.sqlite");
@@ -366,7 +405,10 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     const mutations: Array<(candidate: ReadonlySnapshotUnsigned) => void> = [
       (candidate) => { candidate.projects[0]!.contexts[0]!.compact.project.project_id = "project_cross_binding"; },
       (candidate) => { candidate.projects[0]!.shots_full[0]!.project_id = "project_cross_binding"; },
+      (candidate) => { candidate.projects[0]!.shots_full[0]!.operational_state.shot_id = "shot_cross_binding"; },
+      (candidate) => { candidate.projects[0]!.shots_full[0]!.operational_state.project_id = "project_cross_binding"; },
       (candidate) => { candidate.projects[0]!.review_packages[0]!.full.shot.project_id = "project_cross_binding"; },
+      (candidate) => { candidate.projects[0]!.review_packages[0]!.full.shot.operational_state.shot_id = "shot_cross_binding"; },
       (candidate) => { candidate.projects[0]!.delivery.project_id = "project_cross_binding"; },
       (candidate) => { candidate.projects[0]!.closeout.project_id = "project_cross_binding"; },
       (candidate) => { candidate.projects[0]!.review_packages = []; }
@@ -376,6 +418,10 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
       mutate(candidate);
       assert.throws(() => finalizeReadonlySnapshot(candidate), /(binding mismatch|bindings differ)/i);
     }
+
+    const mismatchedOperationalStatus = structuredClone(unsigned);
+    mismatchedOperationalStatus.projects[0]!.shots_full[0]!.operational_state.stored_workflow_status = "draft";
+    assert.throws(() => finalizeReadonlySnapshot(mismatchedOperationalStatus), /operational state workflow status mismatch/i);
 
     const fullContextInCompactSlot = structuredClone(unsigned);
     (fullContextInCompactSlot.projects[0]!.contexts[0] as unknown as { compact: unknown }).compact =
@@ -686,7 +732,7 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
       ...structuredClone(generatedArtifact),
       artifact_id: "artifact_final_video",
       role: "final_video" as const,
-      linked_objects: { project_id: contradictoryFinalArtifact.projects[0]!.project_id, shot_id: "" }
+      linked_objects: { project_id: contradictoryFinalArtifact.projects[0]!.project_id, shot_id: null }
     };
     contradictoryFinalArtifact.projects[0]!.delivery.final_artifact = usableFinalArtifact;
     contradictoryFinalArtifact.projects[0]!.delivery.final_artifact_reason_code = "ARTIFACT_INACCESSIBLE";
@@ -700,53 +746,6 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     const negativeCloseoutEvidence = structuredClone(unsigned);
     negativeCloseoutEvidence.projects[0]!.closeout.evidence.webgpt_audit_events = -1;
     assert.throws(() => finalizeReadonlySnapshot(negativeCloseoutEvidence), /closeout audit event count cannot be negative/i);
-
-    const deliveryAdjustedSummary = structuredClone(unsigned);
-    const adjustedProject = deliveryAdjustedSummary.projects[0]!;
-    const assemblyRequired = {
-      source: "derived" as const,
-      label: "验证合成就绪状态",
-      reason_code: "assembly_readiness_required",
-      priority: "high" as const,
-      expires_at: null,
-      derived: { label: "验证合成就绪状态", reason_code: "assembly_readiness_required", priority: "high" as const }
-    };
-    adjustedProject.shots_full[0]!.storyboard_image_artifact_id = "artifact_storyboard_present";
-    adjustedProject.review_packages[0]!.full.shot.storyboard_image_artifact_id = "artifact_storyboard_present";
-    adjustedProject.list_item_full.summary.blocker_count = 0;
-    adjustedProject.list_item_full.summary.blocker_reason = "";
-    adjustedProject.list_item_full.summary.risk = "clear";
-    adjustedProject.list_item_compact.summary.blocker_count = 0;
-    adjustedProject.list_item_compact.summary.risk = "clear";
-    adjustedProject.list_item_full.summary.next_action = structuredClone(assemblyRequired);
-    adjustedProject.list_item_compact.summary.next_action = structuredClone(assemblyRequired);
-    for (const context of adjustedProject.contexts) {
-      context.full.summary.blocker_count = 0;
-      context.full.summary.blocker_reason = "";
-      context.full.summary.risk = "clear";
-      context.compact.summary.blocker_count = 0;
-      context.compact.summary.blocker_reason = "";
-      context.compact.summary.risk = "clear";
-      if ("shots" in context.full) context.full.shots[0]!.storyboard_image_artifact_id = "artifact_storyboard_present";
-      if (context.full.workspace === "overview") context.full.blockers = [];
-      if (context.compact.workspace === "overview") context.compact.blockers = [];
-      if (context.workspace === "delivery") {
-        const adjusted = {
-          source: "derived" as const,
-          label: "修复无效采纳片段",
-          reason_code: "accepted_clip_invalid",
-          priority: "urgent" as const,
-          expires_at: null,
-          derived: { label: "修复无效采纳片段", reason_code: "accepted_clip_invalid", priority: "urgent" as const }
-        };
-        context.full.summary.next_action = structuredClone(adjusted);
-        context.compact.summary.next_action = structuredClone(adjusted);
-      } else {
-        context.full.summary.next_action = structuredClone(assemblyRequired);
-        context.compact.summary.next_action = structuredClone(assemblyRequired);
-      }
-    }
-    assert.doesNotThrow(() => finalizeReadonlySnapshot(deliveryAdjustedSummary));
 
     const duplicateCompactShot = structuredClone(unsigned);
     const projected = duplicateCompactShot.projects[0]!;

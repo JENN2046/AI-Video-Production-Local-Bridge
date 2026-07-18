@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { M0Database } from "../storage/sqlite.js";
 import { ArtifactStructuredDriftError, validateAcceptedClipReference, validateActiveArtifactReference, type ArtifactRole, type ArtifactType, type MediaArtifact } from "../tools/mediaArtifacts.js";
 import { listProjectShots, type Project, type Shot } from "../tools/projects.js";
-import { OperationalStateIntegrityError } from "../tools/operationalStateFacts.js";
+import { collectProjectOperationalBundle, OperationalStateIntegrityError } from "../tools/operationalStateFacts.js";
 import { requireShotWorkflowWriteAction } from "../tools/operationalWriteGates.js";
 import { getWorkbenchProjectSummary, getWorkbenchProjectWorkspace } from "../tools/workbenchV2.js";
 import { appendWorkbenchInboxEvent, getWorkbenchDraftRecord, saveWorkbenchDraftRecord, type WorkbenchDraftRecord } from "../tools/workbenchInboxStore.js";
@@ -309,11 +309,22 @@ export function publicArtifact(artifact: MediaArtifact): Record<string, unknown>
   };
 }
 
+type ProjectShotOperationalState = ReturnType<typeof collectProjectOperationalBundle>["states"][number];
+
+function operationalStateForShot(db: M0Database, projectId: string, shotId: string): ProjectShotOperationalState {
+  const row = projectRow(db, projectId);
+  const project = parseBoundJson<Project>(row.data_json, "project_id");
+  const state = collectProjectOperationalBundle(db, project).states_by_shot_id.get(shotId);
+  if (!state) throw new OperationalStateIntegrityError("SHOT_OPERATIONAL_STATE_UNAVAILABLE");
+  return state;
+}
+
 function successfulReplay<T>(db: M0Database, tool: string, row: { project_id: string; object_id: string }, id: string): WebGptV4Result<T> {
   const meta = { request_id: id, source_version: WEBGPT_V4_VERSION, updated_at: new Date().toISOString(), idempotent_replay: true } as const;
   if (tool === "update_shot_copy") {
     const current = requireShot(db, row.project_id, row.object_id);
-    return { ok: true, data: { shot: current.shot, updated_at: current.updated_at } as T, meta };
+    const operationalState = operationalStateForShot(db, row.project_id, current.shot.shot_id);
+    return { ok: true, data: { shot: { ...current.shot, operational_state: operationalState }, updated_at: current.updated_at } as T, meta };
   }
   if (tool === "add_review_note") {
     const note = db.prepare("SELECT note_id, project_id, shot_id, artifact_id, note, source, created_at, updated_at FROM workbench_review_notes WHERE note_id = ? AND project_id = ?")
@@ -485,7 +496,10 @@ export function getProductionProjectContext(
 export function listProductionProjectShots(input: { project_id: string; limit?: number; offset?: number }, db: M0Database, idValue?: string): WebGptV4Result<Record<string, unknown>> {
   const id = requestId(idValue);
   try {
-    projectRow(db, input.project_id);
+    const projectRecord = projectRow(db, input.project_id);
+    const project = parseBoundJson<Project>(projectRecord.data_json, "project_id");
+    if (project.project_id !== projectRecord.project_id) dataIntegrityViolation("project_id");
+    const operational = collectProjectOperationalBundle(db, project);
     const limit = clamp(input.limit, 50, 100);
     const offset = Math.max(0, Math.trunc(input.offset ?? 0));
     const total = Number((db.prepare("SELECT COUNT(*) count FROM shots WHERE project_id = ?").get(input.project_id) as { count: number }).count);
@@ -494,7 +508,7 @@ export function listProductionProjectShots(input: { project_id: string; limit?: 
     const items = rows.map((row) => {
       const shot = parseBoundJson<Shot>(row.data_json, "shot_id");
       if (shot.shot_id !== row.shot_id || shot.project_id !== row.project_id) dataIntegrityViolation("shot_id");
-      return { ...shot, updated_at: row.updated_at };
+      return { ...shot, operational_state: operational.states_by_shot_id.get(shot.shot_id), updated_at: row.updated_at };
     });
     const hasMore = offset + items.length < total;
     return ok(id, { items, page: { limit, offset, total, has_more: hasMore, next_offset: hasMore ? offset + limit : null } });
@@ -534,8 +548,12 @@ export function listProductionProjectMedia(
 export function getProductionReviewPackage(input: { project_id: string; shot_id: string; artifact_id?: string; notes_limit?: number }, db: M0Database, idValue?: string): WebGptV4Result<Record<string, unknown>> {
   const id = requestId(idValue);
   try {
-    projectRow(db, input.project_id);
+    const projectRecord = projectRow(db, input.project_id);
+    const project = parseBoundJson<Project>(projectRecord.data_json, "project_id");
+    if (project.project_id !== projectRecord.project_id) dataIntegrityViolation("project_id");
     const { shot } = requireShot(db, input.project_id, input.shot_id);
+    const operationalState = collectProjectOperationalBundle(db, project).states_by_shot_id.get(shot.shot_id);
+    if (!operationalState) throw new OperationalStateIntegrityError("SHOT_OPERATIONAL_STATE_UNAVAILABLE");
     if (input.artifact_id) {
       if (!shot.clip_versions.some((version) => version.artifact_id === input.artifact_id)) throw new WebGptV4Error("ARTIFACT_NOT_IN_SHOT_REVIEW", "Artifact is not a version of the requested SHOT.", "artifact_id");
       requireArtifact(db, input.project_id, input.artifact_id, true, { shot_id: shot.shot_id, role: "generated_clip", artifact_type: "video" });
@@ -549,7 +567,22 @@ export function getProductionReviewPackage(input: { project_id: string; shot_id:
       if (typeof note.artifact_id === "string" && note.artifact_id) requireArtifact(db, input.project_id, note.artifact_id, true, { shot_id: shot.shot_id, role: "generated_clip", artifact_type: "video" });
     }
     const versions = shot.clip_versions.map((version) => ({ ...version, artifact: publicArtifact(requireArtifact(db, input.project_id, version.artifact_id, true, { shot_id: shot.shot_id, role: "generated_clip", artifact_type: "video" })) }));
-    return ok(id, { shot, versions, notes, notes_total: notesTotal, selected_artifact_id: input.artifact_id ?? shot.accepted_clip_artifact_id ?? "" });
+    const packageState = versions.length > 0 ? "available" : "not_available";
+    const reasonCode = versions.length === 0
+      ? "NO_GENERATED_CLIP"
+      : operationalState.review.stage === "inconsistent"
+        ? "REVIEW_STATE_INCONSISTENT"
+        : null;
+    return ok(id, {
+      package_state: packageState,
+      reviewable: operationalState.review.reviewable,
+      reason_code: reasonCode,
+      shot: { ...shot, operational_state: operationalState },
+      versions,
+      notes,
+      notes_total: notesTotal,
+      selected_artifact_id: input.artifact_id ?? operationalState.review.selected_artifact_id
+    });
   } catch (error) {
     return fail(id, domainErrorBody(error));
   }
@@ -566,7 +599,7 @@ export function getProductionDeliveryStatus(input: { project_id: string }, db: M
       if (shot.project_id !== input.project_id) dataIntegrityViolation("shot_id");
     }
     const accepted = shots.map((shot) => {
-      if (!shot.accepted_clip_artifact_id) return { artifact: null, check: { shot_id: shot.shot_id, artifact_id: "", ok: false, reason_code: "SHOT_ACCEPTED_CLIP_MISSING" } };
+      if (!shot.accepted_clip_artifact_id) return { artifact: null, check: { shot_id: shot.shot_id, artifact_id: null, ok: false, reason_code: "SHOT_ACCEPTED_CLIP_MISSING" } };
       const validated = validateAcceptedClipReference(db, shot);
       return validated.ok
         ? { artifact: validated.artifact, check: { shot_id: shot.shot_id, artifact_id: shot.accepted_clip_artifact_id, ok: true, reason_code: "SHOT_ACCEPTED_CLIP_READY" } }
@@ -584,7 +617,7 @@ export function getProductionDeliveryStatus(input: { project_id: string }, db: M
       ready_for_assembly: shots.length > 0 && accepted.every((item) => item.check.ok),
       readiness_checks: accepted.map((item) => item.check),
       final_artifact: finalArtifact,
-      final_artifact_reason_code: finalValidated && !finalValidated.ok ? finalValidated.error.code : "",
+      final_artifact_reason_code: finalValidated?.ok ? null : finalValidated ? finalValidated.error.code : "FINAL_ARTIFACT_NOT_CREATED",
       delivered: project.status === "final_approved" && Boolean(finalArtifact)
     });
   } catch (error) {
@@ -603,7 +636,7 @@ export function updateProductionShotCopy(
   input: { project_id: string; shot_id: string; expected_updated_at: string; description?: string; video_prompt?: string; negative_prompt?: string; duration_seconds?: number },
   context: MutationContext,
   db: M0Database
-): WebGptV4Result<{ shot: Shot; updated_at: string }> {
+): WebGptV4Result<{ shot: Shot & { operational_state: ProjectShotOperationalState }; updated_at: string }> {
   return mutation(db, "update_shot_copy", context, input, () => {
     projectRow(db, input.project_id, true);
     const current = requireShot(db, input.project_id, input.shot_id);
@@ -632,7 +665,8 @@ export function updateProductionShotCopy(
     const afterHash = requestHash(next);
     db.prepare("UPDATE shots SET data_json = ?, updated_at = ? WHERE shot_id = ? AND project_id = ?")
       .run(JSON.stringify(next), updatedAt, next.shot_id, next.project_id);
-    return { data: { shot: next, updated_at: updatedAt }, project_id: input.project_id, object_type: "shot", object_id: next.shot_id, changed_fields: changed, before_hash: beforeHash, after_hash: afterHash, updated_at: updatedAt };
+    const operationalState = operationalStateForShot(db, input.project_id, next.shot_id);
+    return { data: { shot: { ...next, operational_state: operationalState }, updated_at: updatedAt }, project_id: input.project_id, object_type: "shot", object_id: next.shot_id, changed_fields: changed, before_hash: beforeHash, after_hash: afterHash, updated_at: updatedAt };
   });
 }
 

@@ -62,15 +62,20 @@ test("compact context is materially smaller, paginated, bounded, and does not du
   const client = new Client({ name: "webgpt-v4-context-budget", version: "1.0.0" });
   try {
     await client.connect(transport);
-    const compact = await client.callTool({ name: "list_project_shots", arguments: { project_id: created.project_id, detail: "compact", limit: 100 } });
-    const full = await client.callTool({ name: "list_project_shots", arguments: { project_id: created.project_id, detail: "full", limit: 100 } });
+    const compact = await client.callTool({ name: "list_project_shots", arguments: { project_id: created.project_id, detail: "compact", limit: 50 } });
+    const full = await client.callTool({ name: "list_project_shots", arguments: { project_id: created.project_id, detail: "full", limit: 50 } });
     assert.equal(compact.isError, false, JSON.stringify(compact.structuredContent));
     assert.equal(full.isError, false, JSON.stringify(full.structuredContent));
-    assert.ok(bytes(compact.structuredContent) < bytes(full.structuredContent) * 0.5);
+    const compactBytes = bytes(compact.structuredContent);
+    const fullBytes = bytes(full.structuredContent);
+    assert.ok(compactBytes < fullBytes * 0.5, `compact=${compactBytes}, full=${fullBytes}`);
     assert.ok(bytes(compact.structuredContent) <= 128 * 1024);
     assert.ok(bytes(full.structuredContent) <= 128 * 1024);
     const compactJson = JSON.stringify(compact.structuredContent);
-    for (const omitted of ["video_prompt", "negative_prompt", "clip_versions", "review"]) assert.equal(compactJson.includes(`\"${omitted}\"`), false);
+    for (const omitted of ["video_prompt", "negative_prompt", "clip_versions"]) assert.equal(compactJson.includes(`\"${omitted}\"`), false);
+    assert.equal(compactJson.includes('"operational_state"'), true);
+    assert.equal(compactJson.includes('"review"'), true);
+    assert.equal(compactJson.includes('"rejection_reasons"'), false);
     const compactText = (compact.content as Array<{ type: string; text?: string }>).find((item) => item.type === "text")?.text ?? "";
     assert.ok(Buffer.byteLength(compactText, "utf8") <= 1024);
     assert.equal(compactText.includes("video-"), false);

@@ -3,11 +3,6 @@ import { createHash } from "node:crypto";
 import { z } from "zod/v4";
 
 import {
-  hasCurrentPendingReview,
-  type StoredShotWorkflowStatus
-} from "../packages/domain/operationalState.js";
-
-import {
   WEBGPT_V4_CLOSEOUT_DATA_SCHEMA,
   WEBGPT_V4_COMPACT_PROJECT_LIST_ITEM_SCHEMA,
   WEBGPT_V4_DELIVERY_DATA_SCHEMA,
@@ -22,7 +17,7 @@ import {
   publicSummary
 } from "../webgpt-v4/contracts.js";
 
-export const READONLY_SNAPSHOT_SCHEMA_VERSION = "readonly-snapshot-v1";
+export const READONLY_SNAPSHOT_SCHEMA_VERSION = "readonly-snapshot-v2";
 export const READONLY_SNAPSHOT_REQUIRED_SCHEMA = "workbench-v2-5";
 export const READONLY_SNAPSHOT_REQUIRED_MIGRATION = "0008";
 export const READONLY_SNAPSHOT_MAX_TTL_SECONDS = 24 * 60 * 60;
@@ -125,6 +120,9 @@ function compactContextFromFull(value: FullContextProjection): unknown {
 function compactReviewFromFull(value: FullReviewProjection): unknown {
   return {
     detail: "compact" as const,
+    package_state: value.package_state,
+    reviewable: value.reviewable,
+    reason_code: value.reason_code,
     shot: publicShot(value.shot, true),
     versions: value.versions.map((version) => ({
       artifact_id: version.artifact_id,
@@ -144,7 +142,9 @@ function shotParityValue<T extends { updated_at?: string }>(value: T): Omit<T, "
 
 function expectedDeliveryContextSummary(project: ReadonlyProjectProjectionShape): ReadonlyProjectProjectionShape["list_item_full"]["summary"] {
   const summary = structuredClone(project.list_item_full.summary);
-  if (project.delivery.final_artifact || project.delivery.final_artifact_reason_code) return summary;
+  if (project.delivery.final_artifact
+    || (project.delivery.final_artifact_reason_code
+      && project.delivery.final_artifact_reason_code !== "FINAL_ARTIFACT_NOT_CREATED")) return summary;
   const invalidCount = project.delivery.readiness_checks.filter((check) => Boolean(check.artifact_id) && !check.ok).length;
   const readinessDerived = project.delivery.ready_for_assembly
     ? { label: "合成交付", reason_code: "assemble", priority: "high" as const }
@@ -175,7 +175,7 @@ function addBindingIssue(context: z.core.$RefinementCtx, path: Array<string | nu
 }
 
 function validateArtifactBinding(
-  artifact: { linked_objects: { project_id: string; shot_id: string } } | null,
+  artifact: { linked_objects: { project_id: string; shot_id: string | null } } | null,
   projectId: string,
   expectedShotId: string | null,
   path: Array<string | number>,
@@ -185,13 +185,13 @@ function validateArtifactBinding(
   if (artifact.linked_objects.project_id !== projectId) {
     addBindingIssue(context, [...path, "linked_objects", "project_id"], "Artifact project binding mismatch.");
   }
-  if (expectedShotId !== null && artifact.linked_objects.shot_id !== expectedShotId) {
+  if (artifact.linked_objects.shot_id !== expectedShotId) {
     addBindingIssue(context, [...path, "linked_objects", "shot_id"], "Artifact SHOT binding mismatch.");
   }
 }
 
 function validateGeneratedClipArtifact(
-  artifact: { artifact_type: string; role: string; status: string; linked_objects: { shot_id: string } },
+  artifact: { artifact_type: string; role: string; status: string; linked_objects: { shot_id: string | null } },
   expectedShotId: string,
   path: Array<string | number>,
   context: z.core.$RefinementCtx
@@ -202,12 +202,12 @@ function validateGeneratedClipArtifact(
 }
 
 function validateFinalArtifact(
-  artifact: { artifact_type: string; role: string; status: string; linked_objects: { shot_id: string } } | null,
+  artifact: { artifact_type: string; role: string; status: string; linked_objects: { shot_id: string | null } } | null,
   path: Array<string | number>,
   context: z.core.$RefinementCtx
 ): void {
   if (!artifact) return;
-  if (artifact.artifact_type !== "video" || artifact.role !== "final_video" || artifact.status !== "active" || artifact.linked_objects.shot_id !== "") {
+  if (artifact.artifact_type !== "video" || artifact.role !== "final_video" || artifact.status !== "active" || artifact.linked_objects.shot_id !== null) {
     addBindingIssue(context, path, "Final artifact contract mismatch.");
   }
 }
@@ -262,6 +262,15 @@ function validateProjectProjectionBindings(
   }
   for (const [shotIndex, shot] of project.shots_full.entries()) {
     if (shot.project_id !== projectId) addBindingIssue(context, [...base, "shots_full", shotIndex, "project_id"], "SHOT project binding mismatch.");
+    if (shot.operational_state.shot_id !== shot.shot_id) {
+      addBindingIssue(context, [...base, "shots_full", shotIndex, "operational_state", "shot_id"], "Operational state SHOT binding mismatch.");
+    }
+    if (shot.operational_state.project_id !== shot.project_id) {
+      addBindingIssue(context, [...base, "shots_full", shotIndex, "operational_state", "project_id"], "Operational state project binding mismatch.");
+    }
+    if (shot.operational_state.stored_workflow_status !== shot.status) {
+      addBindingIssue(context, [...base, "shots_full", shotIndex, "operational_state", "stored_workflow_status"], "Operational state workflow status mismatch.");
+    }
   }
   const listedShotIds = project.list_item_full.project.shot_ids;
   if (listedShotIds.length !== shotIds.size || listedShotIds.some((shotId) => !shotIds.has(shotId))) {
@@ -281,7 +290,9 @@ function validateProjectProjectionBindings(
     review_pending_count: readonlySnapshotReviewPendingCount(project.shots_full),
     delivery_state: project.list_item_full.project.status === "final_approved"
       ? "delivered"
-      : project.delivery.final_artifact || project.delivery.final_artifact_reason_code
+      : project.delivery.final_artifact
+          || (project.delivery.final_artifact_reason_code
+            && project.delivery.final_artifact_reason_code !== "FINAL_ARTIFACT_NOT_CREATED")
         ? "final_review"
         : "not_ready"
   };
@@ -497,7 +508,7 @@ function validateProjectProjectionBindings(
             artifact_type: string;
             role: string;
             status: string;
-            linked_objects: { project_id: string; shot_id: string };
+            linked_objects: { project_id: string; shot_id: string | null };
           };
           validateArtifactBinding(
             artifact,
@@ -548,7 +559,9 @@ function validateProjectProjectionBindings(
       addBindingIssue(context, [...path, "final_artifact_reason_code"], "Usable final artifact cannot carry an error reason.");
     }
   }
-  if ((!project.final_video_artifact_id && (project.delivery.final_artifact !== null || Boolean(project.delivery.final_artifact_reason_code)))
+  if ((!project.final_video_artifact_id
+      && (project.delivery.final_artifact !== null
+        || project.delivery.final_artifact_reason_code !== "FINAL_ARTIFACT_NOT_CREATED"))
     || (project.final_video_artifact_id
       && ((project.delivery.final_artifact !== null && project.delivery.final_artifact.artifact_id !== project.final_video_artifact_id)
         || (project.delivery.final_artifact === null && !project.delivery.final_artifact_reason_code)))) {
@@ -596,20 +609,9 @@ function validateProjectProjectionBindings(
 }
 
 export function readonlySnapshotReviewPendingCount(shots: Array<{
-  status: StoredShotWorkflowStatus;
-  clip_versions: Array<{ attempt_number: number; review_status: "pending" | "approved" | "rejected" }>;
-  review: { approval_status: "pending" | "approved" | "revision_needed" };
+  operational_state: { review: { stage: "not_started" | "pending" | "approved" | "revision_needed" | "inconsistent" } };
 }>): number {
-  return shots.filter((shot) => {
-    const latestVersion = [...shot.clip_versions]
-      .sort((left, right) => right.attempt_number - left.attempt_number)[0];
-    return hasCurrentPendingReview({
-      stored_workflow_status: shot.status,
-      generation_version_count: shot.clip_versions.length,
-      review_approval_status: shot.review.approval_status,
-      latest_version_review_status: latestVersion?.review_status ?? null
-    });
-  }).length;
+  return shots.filter((shot) => shot.operational_state.review.stage === "pending").length;
 }
 
 const readonlySnapshotShape = {
@@ -735,6 +737,12 @@ export function finalizeReadonlySnapshot(input: ReadonlySnapshotUnsigned, now = 
 }
 
 export function parseReadonlySnapshot(input: unknown, now = new Date()): ReadonlySnapshot {
+  if (input && typeof input === "object" && !Array.isArray(input)) {
+    const version = (input as Record<string, unknown>).schema_version;
+    if (typeof version === "string" && version !== READONLY_SNAPSHOT_SCHEMA_VERSION) {
+      throw new Error("READONLY_SNAPSHOT_VERSION_UNSUPPORTED");
+    }
+  }
   const snapshot = READONLY_SNAPSHOT_SCHEMA.parse(input);
   assertSnapshotTimeWindow(snapshot, now);
   const { snapshot_fingerprint: claimed, ...unsigned } = snapshot;

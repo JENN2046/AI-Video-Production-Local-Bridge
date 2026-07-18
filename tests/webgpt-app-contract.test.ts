@@ -164,13 +164,59 @@ test("readonly workbench HTML enforces CSP-compatible local rendering and inline
   for (const required of [
     "Service Status", "Production Projects", "Project Context", "Shot Workbench", "Review Package",
     "Delivery Status", "Closeout Evidence", "window.openai?.callTool", "event.source!==window.parent",
-    "当前数据来自只读快照", "选中文本后按 Ctrl+C"
+    "当前数据来自只读快照", "选中文本后按 Ctrl+C", "No generated clip", "storyboard ", "review "
   ]) assert.equal(html.includes(required), true, required);
   const escaped = escapeReadonlyWorkbenchInlineText("</ScRiPt><script>safe</script></STYLE>\u2028\u2029");
   assert.equal(/<\/script/i.test(escaped), false);
   assert.equal(/<\/style/i.test(escaped), false);
   assert.equal(escaped.includes("\\u2028"), true);
   assert.equal(escaped.includes("\\u2029"), true);
+});
+
+test("readonly workbench renders compact review stage from operational state", async () => {
+  const dom = new JSDOM(readonlyWorkbenchWidgetHtml(), {
+    runScripts: "dangerously",
+    pretendToBeVisual: true,
+    beforeParse(window) {
+      Object.defineProperty(window, "openai", { value: {
+        toolOutput: shell(),
+        callTool: async (name: string, args: Record<string, unknown>) => {
+          if (name === "list_production_projects") return toolResult({
+            items: [{ project: { project_id: "project_a", title: "Project A", status: "video_review" }, lifecycle: "active", updated_at: "2026-07-17T00:00:00.000Z" }],
+            page: { next_offset: null }
+          });
+          if (name === "get_project_context") return toolResult({ project: { project_id: "project_a", title: "Project A", status: "video_review" }, workspace: "overview", summary: {} });
+          if (name === "list_project_shots") return toolResult({
+            items: [{ shot_id: "shot_1", order: 1, status: "video_review", description: "Compact review SHOT" }],
+            page: { next_offset: null }
+          });
+          if (name === "get_review_package") return toolResult({
+            shot: {
+              shot_id: String(args.shot_id),
+              description: "Compact review SHOT",
+              operational_state: { review: { stage: "pending" } }
+            },
+            package_state: "available",
+            reviewable: true,
+            reason_code: null,
+            selected_artifact_id: null,
+            versions: [],
+            notes: [],
+            notes_total: 0
+          });
+          return toolResult({ project_status: "video_review", readiness_checks: [] });
+        }
+      }, configurable: true });
+    }
+  });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const reviewText = dom.window.document.querySelector("#review")?.textContent ?? "";
+    assert.match(reviewText, /Review stagepending/);
+    assert.doesNotMatch(reviewText, /Review stageunknown/);
+  } finally {
+    dom.window.close();
+  }
 });
 
 test("readonly workbench escapes malicious business text and ignores stale cross-project responses", async () => {
