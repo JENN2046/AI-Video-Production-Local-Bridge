@@ -807,6 +807,21 @@ export function getWorkbenchProjectWorkspace(
   const base = { project, meta, summary, workspace };
 
   if (workspace === "overview") {
+    const shotBlockerCodeCounts = operationalBundle.states.flatMap((state) => state.blocker_codes)
+      .reduce<Record<string, number>>((counts, code) => {
+        counts[code] = (counts[code] ?? 0) + 1;
+        return counts;
+      }, {});
+    const projectBlockers = operationalBundle.summary.blocker_codes
+      .filter((code) => (operationalBundle.summary.blocker_code_counts[code] ?? 0) > (shotBlockerCodeCounts[code] ?? 0))
+      .map((code) => ({
+        scope: "project",
+        shot_id: "PROJECT",
+        order: 0,
+        missing_image: false,
+        missing_prompt: false,
+        reason_codes: [code]
+      }));
     return { ok: true, data: {
       ...base,
       metrics: {
@@ -816,16 +831,17 @@ export function getWorkbenchProjectWorkspace(
         review_pending: operationalBundle.summary.review_pending_count,
         accepted_clips: operationalBundle.summary.accepted_count
       },
-      blockers: shots.map((shot) => {
+      blockers: [...shots.map((shot) => {
         const state = operationalBundle.states_by_shot_id.get(shot.shot_id);
         return {
+          scope: "shot",
           shot_id: shot.shot_id,
           order: shot.order,
           missing_image: state?.storyboard.artifact_status === "missing",
           missing_prompt: state?.generation.reason_codes.includes("VIDEO_PROMPT_MISSING") ?? false,
           reason_codes: state?.blocker_codes ?? []
         };
-      }).filter((blocker) => blocker.reason_codes.length > 0),
+      }).filter((blocker) => blocker.reason_codes.length > 0), ...projectBlockers],
       recent_runs: runs.slice(0, 8)
     } };
   }

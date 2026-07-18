@@ -417,6 +417,18 @@ test("project-level generation runs contribute to operational active and failure
       const dashboard = getWorkbenchDashboard(db) as { totals: { blocked_projects: number; generation_active: number } };
       assert.equal(dashboard.totals.blocked_projects, 1);
       assert.equal(dashboard.totals.generation_active, 0);
+      const overview = getWorkbenchProjectWorkspace(created.data.project.project_id, "overview", db);
+      assert.equal(overview.ok, true);
+      if (overview.ok) {
+        assert.deepEqual(overview.data.blockers, [{
+          scope: "project",
+          shot_id: "PROJECT",
+          order: 0,
+          missing_image: false,
+          missing_prompt: false,
+          reason_codes: ["GENERATION_FAILED"]
+        }]);
+      }
     } finally {
       db.close();
     }
@@ -569,6 +581,7 @@ test("Workbench read surfaces use shared operational state for approved-but-miss
     assert.equal(metrics.storyboard_approved, 1);
     assert.equal(metrics.review_pending, 0);
     assert.deepEqual(blockers, [{
+      scope: "shot",
       shot_id: shot.shot_id,
       order: 1,
       missing_image: true,
