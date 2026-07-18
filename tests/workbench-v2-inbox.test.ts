@@ -135,6 +135,74 @@ test("pending actions require a project target and remain pending after failure"
   }
 });
 
+test("Storyboard validate and import actions reject bytes that drift after Artifact registration", () => {
+  const db = openM0Database(":memory:");
+  let artifactPath = "";
+  let originalBytes: Buffer | null = null;
+  try {
+    const created = createWorkbenchProject({ title: "Storyboard byte drift", classification: "production" }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    const shot: Shot = {
+      shot_id: "shot_storyboard_byte_drift",
+      project_id: created.data.project.project_id,
+      order: 1,
+      status: "draft",
+      duration_seconds: 3,
+      description: "Byte drift fixture",
+      storyboard_image_artifact_id: "",
+      video_prompt: "Animate safely.",
+      negative_prompt: "",
+      generation_run_ids: [],
+      accepted_clip_artifact_id: "",
+      clip_versions: [],
+      review: { approval_status: "pending", rejection_reasons: [], latest_revision_instruction: null }
+    };
+    const artifact = registerMediaArtifact({
+      artifact_type: "image",
+      role: "storyboard_image",
+      source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
+      linked_objects: { project_id: created.data.project.project_id, shot_id: shot.shot_id }
+    }, db);
+    assert.equal(artifact.ok, true);
+    if (!artifact.ok) return;
+    shot.storyboard_image_artifact_id = artifact.artifact.artifact_id;
+    saveShot(db, shot);
+    created.data.project.shot_ids = [shot.shot_id];
+    saveProject(db, created.data.project);
+    artifactPath = artifact.artifact.storage.uri;
+    originalBytes = readFileSync(artifactPath);
+    writeFileSync(artifactPath, "corrupted-after-registration");
+
+    for (const [actionId, tool] of [
+      ["action_validate_byte_drift", "request_validate_storyboard_package"],
+      ["action_import_byte_drift", "request_import_storyboard_package"]
+    ] as const) {
+      saveWorkbenchPendingActionRecord({
+        action_id: actionId,
+        tool,
+        status: "pending",
+        source: "test",
+        project_id: created.data.project.project_id,
+        payload: { project_id: created.data.project.project_id }
+      }, db);
+      const result = decideWorkbenchPendingAction(actionId, { decision: "execute" }, db);
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.equal(result.error.code, "PACKAGE_BLOCKED");
+        assert.match(result.error.message, /\[(?:IMAGE_FILE_INVALID|MEDIA_BLOB_CONTENT_DRIFT)\]/);
+      }
+      assert.equal(getWorkbenchPendingActionRecord(actionId, db)?.status, "pending");
+    }
+    const packageCount = db.prepare("SELECT COUNT(*) AS count FROM storyboard_packages WHERE project_id = ?")
+      .get(created.data.project.project_id) as { count: number };
+    assert.equal(packageCount.count, 0);
+  } finally {
+    if (artifactPath && originalBytes) writeFileSync(artifactPath, originalBytes);
+    db.close();
+  }
+});
+
 function sha256(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }

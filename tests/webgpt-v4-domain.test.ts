@@ -554,6 +554,16 @@ test("WebGPT generation intent requires local cache and cannot bypass official h
     const confirmed = confirmWorkbenchGeneration({ intent_id: String(prepared.data.intent_id), budget_limit_value: 100, cost_confirmed: true, human_confirmation: true }, context.db);
     assert.equal(confirmed.ok, false);
     if (!confirmed.ok) assert.equal(confirmed.error.code, "OFFICIAL_PREFLIGHT_REQUIRED");
+    context.productionShot.status = "video_review";
+    context.productionShot.review.approval_status = "pending";
+    saveShot(context.db, context.productionShot);
+    const blockedByWorkflow = prepareProductionGenerationIntent(
+      { project_id: context.production.project_id, shot_id: context.productionShot.shot_id, account_label: "personal", budget_limit_value: 100 },
+      { actor, idempotency_key: "intent-workflow-blocked" },
+      context.db
+    );
+    assert.equal(blockedByWorkflow.ok, false);
+    if (!blockedByWorkflow.ok) assert.equal(blockedByWorkflow.error.code, "SHOT_WORKFLOW_ACTION_NOT_ALLOWED");
   } finally {
     teardown(context);
     if (mediaPath) rmSync(mediaPath, { force: true });

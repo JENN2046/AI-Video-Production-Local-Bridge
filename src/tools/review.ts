@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { attachArtifactToShot, getMediaArtifact, registerMediaArtifact, validateActiveArtifactReference } from "./mediaArtifacts.js";
 import { getGenerationRun, saveGenerationRun, type Confirmation, type GenerationRun } from "./generation.js";
+import { requireShotWorkflowWriteAction } from "./operationalWriteGates.js";
 import { getProject, getShot, saveShot, type Shot, type ToolError } from "./projects.js";
 import { type ProviderExecutionRequest } from "./provider.js";
 import { MockVideoProviderAdapter } from "./videoProviderAdapters.js";
@@ -132,6 +133,8 @@ export async function regenerateShotVideo(
 
   const project = getProject(db, shot.project_id);
   if (!project) return { ok: false, error: { code: "PROJECT_NOT_FOUND", message: `Project not found: ${shot.project_id}` } };
+  const workflowGate = requireShotWorkflowWriteAction(db, project, shot, "regenerate");
+  if (!workflowGate.ok) return { ok: false, error: workflowGate.error };
 
   const storyboard = validateActiveArtifactReference(db, {
     artifact_id: shot.storyboard_image_artifact_id,

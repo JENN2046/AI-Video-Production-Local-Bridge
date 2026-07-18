@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { attachArtifactToShot, createScopedArtifactFromBlob, getMediaArtifact, verifyMediaArtifactBytes } from "./mediaArtifacts.js";
+import { requireProjectShotWorkflowWriteAction } from "./operationalWriteGates.js";
 import {
   buildStoryboardApprovedShot,
   getProject,
@@ -154,6 +155,8 @@ export function importStoryboardPackage(input: ImportStoryboardPackageInput, db 
       frozenSnapshots[index].shot_id = shot.shot_id;
       frozenSnapshots[index].storyboard_image_artifact_id = scoped.artifact.artifact_id;
     }
+    const workflowGate = requireProjectShotWorkflowWriteAction(db, project, shots, "freeze_storyboard");
+    if (!workflowGate.ok) throw new Error(workflowGate.error.code);
   const storyboardPackage: StoryboardPackage = {
     storyboard_package_id: input.storyboard_package_id || `storyboard_package_${randomUUID()}`,
     project_id: input.project_id,

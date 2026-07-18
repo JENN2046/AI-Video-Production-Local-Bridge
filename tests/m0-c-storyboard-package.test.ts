@@ -298,3 +298,34 @@ test("M0-C unapproved package is rejected", () => {
     db.close();
   }
 });
+
+test("M0-C archived projects cannot bypass the shared Storyboard freeze gate", () => {
+  const db = openM0Database();
+  try {
+    const created = createProject({ title: "Archived Storyboard Import" }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    const artifact = createActiveStoryboardArtifact(db);
+    db.prepare("UPDATE workbench_project_meta SET lifecycle = 'archived' WHERE project_id = ?").run(created.project_id);
+
+    const imported = importStoryboardPackage({
+      project_id: created.project_id,
+      status: "approved_for_video_generation",
+      approved_shot_snapshots: [{
+        order: 1,
+        duration_seconds: 2,
+        storyboard_image_artifact_id: artifact.artifact_id,
+        video_prompt: "This write must roll back."
+      }],
+      user_approval: { storyboard_approved: true }
+    }, db);
+    assert.equal(imported.ok, false);
+    if (!imported.ok) assert.equal(imported.error.code, "PROJECT_ARCHIVED");
+    const shotCount = db.prepare("SELECT COUNT(*) AS count FROM shots WHERE project_id = ?").get(created.project_id) as { count: number };
+    const packageCount = db.prepare("SELECT COUNT(*) AS count FROM storyboard_packages WHERE project_id = ?").get(created.project_id) as { count: number };
+    assert.equal(shotCount.count, 0);
+    assert.equal(packageCount.count, 0);
+  } finally {
+    db.close();
+  }
+});

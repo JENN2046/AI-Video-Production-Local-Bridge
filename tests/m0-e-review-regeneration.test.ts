@@ -153,3 +153,20 @@ test("legacy regeneration cannot submit to a real Provider outside the persisted
     db.close();
   }
 });
+
+test("legacy regeneration cannot bypass the shared pending-review write gate", async () => {
+  const db = openM0Database();
+  try {
+    const { shot, run } = await setupGeneratedShot(db);
+    const result = await regenerateShotVideo({
+      shot_id: shot.shot_id,
+      previous_run_id: run.run_id,
+      updated_prompt: "Do not regenerate before a revision decision",
+      confirmation: { confirmation_level: "hard_gate", user_confirmed: true }
+    }, db);
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "SHOT_WORKFLOW_ACTION_NOT_ALLOWED");
+  } finally {
+    db.close();
+  }
+});

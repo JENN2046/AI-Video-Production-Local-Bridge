@@ -18,6 +18,7 @@ import {
 import { loadMemorySavebackStore } from "./memorySaveback.js";
 import { createProject, getProject, getShot, listProjectShots, saveProject, saveShot, type Project, type Shot } from "./projects.js";
 import { collectProjectOperationalBundle, collectProjectOperationalBundles, OperationalStateIntegrityError } from "./operationalStateFacts.js";
+import { requireShotWorkflowWriteAction } from "./operationalWriteGates.js";
 import type { ProjectOperationalSummary } from "../packages/domain/operationalState.js";
 import { markShotClipReview, type RevisionInstruction } from "./review.js";
 import { listWorkbenchDraftRecords, listWorkbenchPendingActionRecords } from "./workbenchInboxStore.js";
@@ -637,9 +638,6 @@ export function updateWorkbenchShot(
   if (input.negative_prompt !== undefined) shot.negative_prompt = input.negative_prompt;
   if (input.approve_storyboard) {
     if (input.human_confirmation !== true) return { ok: false, error: { code: "HUMAN_CONFIRMATION_REQUIRED", message: "Storyboard approval requires confirmation." } };
-    if (!(input.storyboard_image_artifact_id || shot.storyboard_image_artifact_id) || !shot.video_prompt) {
-      return { ok: false, error: { code: "SHOT_BLOCKED", message: "Storyboard image and video prompt are required before approval." } };
-    }
   }
   if (input.storyboard_image_artifact_id !== undefined) {
     if (ownsTransaction) db.exec("BEGIN IMMEDIATE");
@@ -674,6 +672,11 @@ export function updateWorkbenchShot(
     if (input.negative_prompt !== undefined) shot.negative_prompt = input.negative_prompt;
   }
   if (input.approve_storyboard) {
+    const gate = requireShotWorkflowWriteAction(db, writable.data.project, shot, "approve_storyboard");
+    if (!gate.ok) {
+      if (ownsTransaction) db.exec("ROLLBACK");
+      return { ok: false, error: gate.error };
+    }
     shot.status = "storyboard_approved";
   }
   saveShot(db, shot);

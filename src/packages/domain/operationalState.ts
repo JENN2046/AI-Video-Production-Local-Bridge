@@ -98,6 +98,7 @@ export interface ShotOperationalState {
   };
   allowed_workflow_actions: {
     approve_storyboard: boolean;
+    freeze_storyboard: boolean;
     prepare_generation: boolean;
     confirm_generation: boolean;
     review_clip: boolean;
@@ -293,6 +294,15 @@ export function deriveShotOperationalState(facts: ShotOperationalFacts): ShotOpe
     ...(primaryStage === "generation_failed" ? ["GENERATION_FAILED"] : []),
     ...(primaryStage === "accepted" ? [] : deliveryReasons.filter((code) => !["SHOT_ACCEPTED_CLIP_MISSING", "SHOT_REVIEW_NOT_APPROVED"].includes(code)))
   ]);
+  const canPrepareInitialGeneration = generationReady
+    && !inconsistent
+    && ["ready", "failed"].includes(generationStage)
+    && review.stage !== "pending"
+    && review.stage !== "approved";
+  const canRegenerate = generationReady
+    && !inconsistent
+    && ["completed", "failed"].includes(generationStage)
+    && review.stage === "revision_needed";
 
   return {
     shot_id: facts.shot_id,
@@ -309,11 +319,22 @@ export function deriveShotOperationalState(facts: ShotOperationalFacts): ShotOpe
     review,
     delivery: { accepted_clip_artifact_id: facts.accepted_clip_artifact.artifact_id, ready: deliveryReady, reason_codes: unique(deliveryReasons) },
     allowed_workflow_actions: {
-      approve_storyboard: approval !== "approved" && facts.storyboard_artifact.status === "active" && facts.video_prompt_present && facts.duration_seconds > 0,
-      prepare_generation: generationReady && !inconsistent && ["ready", "failed"].includes(generationStage) && review.stage !== "pending" && review.stage !== "approved",
-      confirm_generation: generationReady && !inconsistent && ["ready", "failed"].includes(generationStage) && review.stage !== "pending" && review.stage !== "approved",
+      approve_storyboard: approval !== "approved"
+        && facts.storyboard_artifact.status === "active"
+        && facts.video_prompt_present
+        && facts.duration_seconds > 0
+        && generationStage === "not_started"
+        && review.stage === "not_started",
+      freeze_storyboard: facts.storyboard_artifact.status === "active"
+        && facts.video_prompt_present
+        && facts.duration_seconds > 0
+        && facts.generation_version_count === 0
+        && ["not_started", "ready"].includes(generationStage)
+        && review.stage === "not_started",
+      prepare_generation: canPrepareInitialGeneration || canRegenerate,
+      confirm_generation: canPrepareInitialGeneration || canRegenerate,
       review_clip: review.reviewable && ["pending", "revision_needed"].includes(review.stage),
-      regenerate: generationReady && review.stage === "revision_needed"
+      regenerate: canRegenerate
     },
     blocker_codes: blockers
   };
