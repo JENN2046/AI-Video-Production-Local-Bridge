@@ -505,6 +505,18 @@ function executePendingAction(action: WorkbenchPendingActionRecord, requestedPro
 function validateProjectStoryboard(project: Project, db: M0Database): Shot[] {
   const shots = listProjectShots(db, project.project_id);
   if (shots.length === 0) throw new InboxDomainError("PACKAGE_BLOCKED", "Project has no SHOTs.");
+  for (const shot of shots) {
+    const artifact = validateActiveArtifactReference(db, {
+      artifact_id: shot.storyboard_image_artifact_id,
+      project_id: project.project_id,
+      shot_id: shot.shot_id,
+      role: "storyboard_image",
+      artifact_type: "image"
+    });
+    if (!artifact.ok) {
+      throw new InboxDomainError("PACKAGE_BLOCKED", `SHOT ${shot.shot_id} has an invalid storyboard image [${artifact.error.code}].`);
+    }
+  }
   const workflowGate = requireProjectShotWorkflowWriteAction(db, project, shots, "freeze_storyboard");
   if (!workflowGate.ok) throw new InboxDomainError(workflowGate.error.code, workflowGate.error.message, workflowGate.error.field);
   return shots;
