@@ -111,6 +111,23 @@ test("shared operational state derives the generation, review, revision, and acc
   assert.equal(pending.primary_stage, "review_pending");
   assert.equal(pending.review.approval_status, "pending");
 
+  const regeneratedPendingAfterRevision = deriveShotOperationalState(operationalFacts({
+    stored_workflow_status: "video_review",
+    storyboard_artifact: storyboard,
+    accepted_clip_artifact: { artifact_id: "artifact_previous_revision", status: "active", verification_level: "ledger_verified" },
+    generation_version_count: 2,
+    accepted_clip_in_version_stack: true,
+    accepted_clip_review_status: "rejected",
+    review_approval_status: "revision_needed",
+    latest_version_review_status: "pending"
+  }));
+  assert.equal(regeneratedPendingAfterRevision.primary_stage, "review_pending");
+  assert.equal(regeneratedPendingAfterRevision.review.stage, "pending");
+  assert.equal(regeneratedPendingAfterRevision.review.approval_status, "pending");
+  assert.equal(regeneratedPendingAfterRevision.review.selected_artifact_id, null);
+  assert.equal(deriveProjectOperationalSummary([regeneratedPendingAfterRevision]).review_pending_count, 1);
+  assert.equal(deriveProjectOperationalSummary([regeneratedPendingAfterRevision]).revision_needed_count, 0);
+
   const revision = deriveShotOperationalState(operationalFacts({
     stored_workflow_status: "revision_needed",
     storyboard_artifact: storyboard,
@@ -593,6 +610,15 @@ test("operational facts fail closed when a referenced Artifact JSON binding drif
     assert.equal(blocked?.risk, "blocked");
     assert.equal(blocked?.next_action.reason_code, "storyboard_blocked");
     assert.deepEqual(blocked?.blocker_codes, ["PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION"]);
+
+    // The project JSON can itself have an empty/stale shot list while the
+    // structured shots table still contains the corrupt row. Dashboard totals
+    // must count the project-level integrity blocker even when blocked_shot_count
+    // therefore falls back to zero.
+    db.prepare(`UPDATE projects SET data_json = json_set(data_json, '$.shot_ids', json('[]')) WHERE project_id = ?`)
+      .run(created.data.project.project_id);
+    const dashboard = getWorkbenchDashboard(db) as { totals: { blocked_projects: number } };
+    assert.equal(dashboard.totals.blocked_projects, 1);
   } finally {
     db.close();
   }

@@ -160,6 +160,20 @@ function reviewState(facts: ShotOperationalFacts): ShotOperationalState["review"
     return { stage: "approved", reviewable: true, approval_status: "approved", selected_artifact_id: facts.accepted_clip_artifact.artifact_id };
   }
 
+  // A completed regeneration appends a new pending version and returns the SHOT
+  // to video_review, while the previous revision decision remains as history on
+  // the SHOT. The newest reviewable version is authoritative for the current
+  // review stage; the stale decision must not keep the SHOT in revision_needed.
+  if (facts.stored_workflow_status === "video_review"
+    && facts.latest_version_review_status === "pending"
+    && facts.review_approval_status === "revision_needed") {
+    if (facts.accepted_clip_artifact.artifact_id
+      && (facts.accepted_clip_artifact.status !== "active" || !facts.accepted_clip_in_version_stack)) {
+      return { stage: "inconsistent", reviewable: true, approval_status: "pending", selected_artifact_id: null };
+    }
+    return { stage: "pending", reviewable: true, approval_status: "pending", selected_artifact_id: null };
+  }
+
   if (facts.review_approval_status === "revision_needed" || facts.latest_version_review_status === "rejected") {
     if (facts.accepted_clip_artifact.artifact_id
       && (facts.accepted_clip_artifact.status !== "active" || !facts.accepted_clip_in_version_stack)) {

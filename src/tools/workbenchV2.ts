@@ -887,7 +887,7 @@ function getDashboardTotals(db: M0Database): { pending_confirmations: number; bl
   `).get() as { count: number };
   return {
     pending_confirmations: pending.count,
-    blocked_projects: summaries.filter(({ summary }) => (summary?.blocked_shot_count ?? 0) > 0 || (summary?.latest_failed_count ?? 0) > 0).length,
+    blocked_projects: summaries.filter(({ summary }) => (summary?.blocker_count ?? 0) > 0 || (summary?.latest_failed_count ?? 0) > 0).length,
     review_pending: summaries.reduce((count, { summary }) => count + (summary?.review_pending_count ?? 0), 0),
     generation_active: summaries.reduce((count, { summary }) => count + (summary?.active_run_count ?? 0), 0),
     pending_delivery: summaries.filter(({ project, summary }) => Boolean(
