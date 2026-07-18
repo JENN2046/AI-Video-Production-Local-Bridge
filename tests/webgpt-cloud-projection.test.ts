@@ -20,6 +20,7 @@ import {
   canonicalizeJcs,
   finalizeReadonlySnapshot,
   parseReadonlySnapshot,
+  readonlySnapshotReviewPendingCount,
   readonlySnapshotStatus,
   snapshotFingerprint,
   type ReadonlySnapshotUnsigned
@@ -27,6 +28,29 @@ import {
 
 const ISSUER = "https://issuer.example.test/";
 const RESOURCE = "https://aivideo.example.test/mcp";
+
+test("snapshot review count follows the shared regenerated-review semantics", () => {
+  assert.equal(readonlySnapshotReviewPendingCount([
+    {
+      status: "video_review",
+      clip_versions: [
+        { attempt_number: 1, review_status: "rejected" },
+        { attempt_number: 2, review_status: "pending" }
+      ],
+      review: { approval_status: "revision_needed" }
+    },
+    {
+      status: "video_review",
+      clip_versions: [{ attempt_number: 1, review_status: "rejected" }],
+      review: { approval_status: "pending" }
+    },
+    {
+      status: "video_review",
+      clip_versions: [{ attempt_number: 1, review_status: "pending" }],
+      review: { approval_status: "pending" }
+    }
+  ]), 2);
+});
 
 function stableValue(value: unknown): unknown {
   if (typeof value === "bigint") return value.toString();

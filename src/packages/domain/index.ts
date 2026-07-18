@@ -1,6 +1,7 @@
 export {
   deriveProjectOperationalSummary,
   deriveShotOperationalState,
+  hasCurrentPendingReview,
   type ArtifactOperationalFact,
   type ArtifactOperationalStatus,
   type ProjectOperationalSummary,

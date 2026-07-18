@@ -149,6 +149,16 @@ function storyboardApproval(facts: ShotOperationalFacts): "pending" | "approved"
   return "approved";
 }
 
+export function hasCurrentPendingReview(input: Pick<ShotOperationalFacts,
+  "stored_workflow_status" | "generation_version_count" | "review_approval_status" | "latest_version_review_status"
+>): boolean {
+  if (input.generation_version_count === 0 || input.latest_version_review_status === "rejected") return false;
+  if (input.review_approval_status === "pending") return true;
+  return input.review_approval_status === "revision_needed"
+    && input.stored_workflow_status === "video_review"
+    && input.latest_version_review_status === "pending";
+}
+
 function reviewState(facts: ShotOperationalFacts): ShotOperationalState["review"] {
   if (facts.generation_version_count === 0) {
     if (facts.review_approval_status !== "pending"
@@ -177,9 +187,7 @@ function reviewState(facts: ShotOperationalFacts): ShotOperationalState["review"
   // to video_review, while the previous revision decision remains as history on
   // the SHOT. The newest reviewable version is authoritative for the current
   // review stage; the stale decision must not keep the SHOT in revision_needed.
-  if (facts.stored_workflow_status === "video_review"
-    && facts.latest_version_review_status === "pending"
-    && facts.review_approval_status === "revision_needed") {
+  if (hasCurrentPendingReview(facts) && facts.review_approval_status === "revision_needed") {
     if (facts.accepted_clip_artifact.artifact_id
       && (facts.accepted_clip_artifact.status !== "active" || !facts.accepted_clip_in_version_stack)) {
       return { stage: "inconsistent", reviewable: true, approval_status: "pending", selected_artifact_id: null };
