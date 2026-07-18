@@ -287,7 +287,9 @@ test("remote OAuth challenges, signed publish, six readonly tools, and readiness
       for (const call of calls) {
         const result = await client.callTool(call);
         assert.equal(result.isError, false, call.name);
-        assert.equal(jsonRecord(result.structuredContent).ok, true);
+        const structured = jsonRecord(result.structuredContent);
+        assert.equal(structured.ok, true);
+        assert.equal(jsonRecord(structured.meta).snapshot_fingerprint, fixture.snapshot.snapshot_fingerprint);
         assert.equal(jsonRecord(result._meta).snapshot_fingerprint, fixture.snapshot.snapshot_fingerprint);
         assert.equal(jsonRecord(jsonRecord(result._meta).snapshot_status).freshness_status, "fresh");
       }
