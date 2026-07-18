@@ -299,7 +299,10 @@ export function deriveProjectOperationalSummary(
   states: ShotOperationalState[],
   projectFacts: ProjectOperationalFacts = { latest_generation_run_status: null }
 ): ProjectOperationalSummary {
-  const blockerCodes = states.flatMap((state) => state.blocker_codes);
+  const blockerCodes = [
+    ...states.flatMap((state) => state.blocker_codes),
+    ...(projectFacts.latest_generation_run_status === "failed" ? ["GENERATION_FAILED"] : [])
+  ];
   const blockerCodeCounts = blockerCodes.reduce<Record<string, number>>((counts, code) => {
     counts[code] = (counts[code] ?? 0) + 1;
     return counts;

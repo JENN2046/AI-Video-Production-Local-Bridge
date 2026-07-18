@@ -55,7 +55,7 @@ function sendOk(response: ServerResponse, data: unknown, meta?: unknown): void {
 
 function statusForError(error: WorkbenchV2Error): number {
   if (error.code.endsWith("_NOT_FOUND")) return 404;
-  if (["PROJECT_ARCHIVED", "SHOT_BLOCKED", "GOVERNANCE_SNAPSHOT_STALE", "INVALID_DRAFT_TRANSITION", "ACTION_NOT_PENDING"].includes(error.code)) return 409;
+  if (["PROJECT_ARCHIVED", "PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION", "SHOT_BLOCKED", "GOVERNANCE_SNAPSHOT_STALE", "INVALID_DRAFT_TRANSITION", "ACTION_NOT_PENDING"].includes(error.code)) return 409;
   if (error.code === "ACTION_NONCE_REQUIRED") return 403;
   return 400;
 }

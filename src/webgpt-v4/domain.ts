@@ -468,7 +468,12 @@ export function getProductionProjectContext(
   try {
     projectRow(db, input.project_id);
     const result = getWorkbenchProjectWorkspace(input.project_id, input.workspace ?? "overview", db, { touch_last_opened: false });
-    if (!result.ok) throw new WebGptV4Error(result.error.code, result.error.message, result.error.field);
+    if (!result.ok) {
+      if (result.error.code === "PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION") {
+        throw new WebGptV4Error("WEBGPT_V4_DATA_INTEGRITY_VIOLATION", "Stored project data failed integrity validation.");
+      }
+      throw new WebGptV4Error(result.error.code, result.error.message, result.error.field);
+    }
     assertWorkspaceBindings(result.data, input.project_id, db);
     return ok(id, sanitize(result.data) as Record<string, unknown>);
   } catch (error) {

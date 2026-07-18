@@ -709,7 +709,20 @@ export function getWorkbenchProjectWorkspace(
   if (touchLastOpened) {
     db.prepare("UPDATE workbench_project_meta SET last_opened_at = CURRENT_TIMESTAMP WHERE project_id = ?").run(projectId);
   }
-  const operationalBundle = collectProjectOperationalBundle(db, project);
+  let operationalBundle: ReturnType<typeof collectProjectOperationalBundle>;
+  try {
+    operationalBundle = collectProjectOperationalBundle(db, project);
+  } catch (error) {
+    if (!(error instanceof OperationalStateIntegrityError)) throw error;
+    return {
+      ok: false,
+      error: {
+        code: "PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION",
+        message: "Project operational data failed integrity validation.",
+        field: "project_id"
+      }
+    };
+  }
   const shots = operationalBundle.shots;
   const shotsWithOperationalState = shots.map((shot) => ({
     ...shot,

@@ -351,6 +351,8 @@ test("project-level generation runs contribute to operational active and failure
       bundle = collectProjectOperationalBundles(db, [created.data.project]).get(created.data.project.project_id);
       assert.equal(bundle?.summary.active_run_count, 0);
       assert.equal(bundle?.summary.latest_failed_count, 1);
+      assert.equal(bundle?.summary.blocker_count, 1);
+      assert.deepEqual(bundle?.summary.blocker_codes, ["GENERATION_FAILED"]);
 
       const summary = listWorkbenchProjects({ scope: "daily" }, db).items.find((item) => item.project.project_id === created.data.project.project_id);
       assert.equal(summary?.next_action.reason_code, "generation_failed");
@@ -610,6 +612,9 @@ test("operational facts fail closed when a referenced Artifact JSON binding drif
     assert.equal(blocked?.risk, "blocked");
     assert.equal(blocked?.next_action.reason_code, "storyboard_blocked");
     assert.deepEqual(blocked?.blocker_codes, ["PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION"]);
+    const workspace = getWorkbenchProjectWorkspace(created.data.project.project_id, "overview", db);
+    assert.equal(workspace.ok, false);
+    if (!workspace.ok) assert.equal(workspace.error.code, "PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION");
 
     // The project JSON can itself have an empty/stale shot list while the
     // structured shots table still contains the corrupt row. Dashboard totals
