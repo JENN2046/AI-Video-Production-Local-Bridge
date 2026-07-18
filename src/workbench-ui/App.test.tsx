@@ -93,5 +93,6 @@ describe("Human Workbench V2 shell", () => {
     expect(JSON.parse(String(init.body))).toEqual({ human_confirmation: true });
     expect(String(init.body)).not.toContain("profile");
     expect(String(init.body)).not.toContain("database");
+    expect(fetchMock.mock.calls.some(([input]) => /^\/api\/v2\/projects\//.test(String(input)))).toBe(false);
   });
 });

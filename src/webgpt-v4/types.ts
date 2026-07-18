@@ -25,6 +25,7 @@ export interface WebGptV4Meta {
   source_version: typeof WEBGPT_V4_VERSION;
   updated_at: string;
   idempotent_replay?: boolean;
+  snapshot_fingerprint?: string | null;
 }
 
 export interface WebGptV4ErrorBody {

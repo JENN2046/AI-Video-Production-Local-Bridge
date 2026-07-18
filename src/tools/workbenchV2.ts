@@ -641,8 +641,10 @@ export function getWorkbenchProjectWorkspace(
 ): WorkbenchV2Result<Record<string, unknown>> {
   const project = getProject(db, projectId);
   if (!project) return projectNotFound(projectId);
-  const meta = projectMeta(db, projectId, options.touch_last_opened !== false) as WorkbenchProjectMeta;
-  if (options.touch_last_opened !== false) {
+  const touchLastOpened = options.touch_last_opened === true;
+  const meta = projectMeta(db, projectId, touchLastOpened);
+  if (!meta) return projectNotFound(projectId);
+  if (touchLastOpened) {
     db.prepare("UPDATE workbench_project_meta SET last_opened_at = CURRENT_TIMESTAMP WHERE project_id = ?").run(projectId);
   }
   const shots = listProjectShots(db, projectId);

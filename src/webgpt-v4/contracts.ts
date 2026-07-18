@@ -11,7 +11,8 @@ const shotStatusSchema = z.enum(["draft", "storyboard_approved", "video_pending"
 const prioritySchema = z.enum(["urgent", "high", "normal"]);
 
 export const WEBGPT_V4_META_SCHEMA = z.object({
-  request_id: z.string(), source_version: z.string(), updated_at: z.string(), idempotent_replay: z.boolean().optional()
+  request_id: z.string(), source_version: z.string(), updated_at: z.string(), idempotent_replay: z.boolean().optional(),
+  snapshot_fingerprint: z.string().regex(/^[0-9a-f]{64}$/).nullable().optional()
 }).strict();
 
 export const WEBGPT_V4_ERROR_SCHEMA = z.object({

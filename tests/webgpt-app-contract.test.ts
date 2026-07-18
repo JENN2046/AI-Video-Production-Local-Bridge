@@ -55,7 +55,7 @@ function shell(appState: "ready" | "no_snapshot" = "ready") {
 
 function toolResult(data: unknown, fingerprint = FINGERPRINT): Record<string, unknown> {
   return {
-    structuredContent: { ok: true, data, meta: { request_id: "fixture", source_version: "webgpt-v4.3.0", updated_at: "2026-07-17T00:00:00.000Z" } },
+    structuredContent: { ok: true, data, meta: { request_id: "fixture", source_version: "webgpt-v4.3.0", updated_at: "2026-07-17T00:00:00.000Z", snapshot_fingerprint: fingerprint } },
     _meta: {
       snapshot_fingerprint: fingerprint,
       snapshot_status: shell().status
@@ -68,7 +68,7 @@ function toolFailure(code: string): Record<string, unknown> {
     structuredContent: {
       ok: false,
       error: { code, message: code, retryable: false },
-      meta: { request_id: "fixture", source_version: "webgpt-v4.3.0", updated_at: "2026-07-17T00:00:00.000Z" }
+      meta: { request_id: "fixture", source_version: "webgpt-v4.3.0", updated_at: "2026-07-17T00:00:00.000Z", snapshot_fingerprint: FINGERPRINT }
     },
     _meta: { snapshot_fingerprint: FINGERPRINT, snapshot_status: shell().status }
   };
