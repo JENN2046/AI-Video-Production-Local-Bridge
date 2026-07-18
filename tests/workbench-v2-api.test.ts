@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import test from "node:test";
 
 import { handleWorkbenchV2Api } from "../src/http/workbenchV2Routes.js";
+import { openM0Database } from "../src/storage/sqlite.js";
 import type { PersonalReadonlyOperationsService } from "../src/webgpt-cloud/personalReadonlyOperations.js";
 
 test("V2 API uses stable envelopes, pagination, nonce and archived write blocking", async (t) => {
@@ -36,6 +37,23 @@ test("V2 API uses stable envelopes, pagination, nonce and archived write blockin
   const created = await createdResponse.json() as { ok: boolean; data: { project: { project_id: string } } };
   assert.equal(created.ok, true);
   const projectId = created.data.project.project_id;
+
+  const beforeOpen = "2000-01-01T00:00:00.000Z";
+  const projectDb = openM0Database();
+  try {
+    projectDb.prepare("UPDATE workbench_project_meta SET last_opened_at = ? WHERE project_id = ?").run(beforeOpen, projectId);
+  } finally {
+    projectDb.close();
+  }
+  const opened = await fetch(`${base}/api/v2/projects/${encodeURIComponent(projectId)}/overview`);
+  assert.equal(opened.status, 200);
+  const verifyOpenDb = openM0Database();
+  try {
+    const meta = verifyOpenDb.prepare("SELECT last_opened_at FROM workbench_project_meta WHERE project_id = ?").get(projectId) as { last_opened_at: string };
+    assert.notEqual(meta.last_opened_at, beforeOpen);
+  } finally {
+    verifyOpenDb.close();
+  }
 
   const page = await fetch(`${base}/api/v2/projects?limit=1`).then((response) => response.json()) as { ok: boolean; data: unknown[]; meta: { limit: number; total: number } };
   assert.equal(page.ok, true);

@@ -4,12 +4,13 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
-import { migrateDatabase } from "../src/storage/databaseGovernance.js";
+import { databaseLogicalManifest, migrateDatabase } from "../src/storage/databaseGovernance.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import { WORKBENCH_V2_SCHEMA_VERSION } from "../src/storage/workbenchV2Schema.js";
 import { buildStoryboardApprovedShot, createProject, saveProject, saveShot } from "../src/tools/projects.js";
 import {
   createWorkbenchProject,
+  getWorkbenchProjectWorkspace,
   listWorkbenchProjects,
   setWorkbenchProjectLifecycle,
   updateWorkbenchProject
@@ -109,6 +110,30 @@ test("saving a project preserves V2 classification metadata", () => {
     assert.deepEqual({ classification: meta.classification, lifecycle: meta.lifecycle }, { classification: "production", lifecycle: "active" });
   } finally {
     db.close();
+  }
+});
+
+test("readonly workspace reads preserve the complete database logical manifest unless an explicit touch is requested", () => {
+  const root = mkdtempSync(join(tmpdir(), "workbench-readonly-manifest-"));
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const created = createWorkbenchProject({ title: "Readonly manifest fixture", classification: "production" }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+
+    const before = databaseLogicalManifest(sqlitePath);
+    const workspace = getWorkbenchProjectWorkspace(created.data.project.project_id, "overview", db);
+    assert.equal(workspace.ok, true);
+    assert.deepEqual(databaseLogicalManifest(sqlitePath), before);
+
+    const touched = getWorkbenchProjectWorkspace(created.data.project.project_id, "overview", db, { touch_last_opened: true });
+    assert.equal(touched.ok, true);
+    assert.notEqual(databaseLogicalManifest(sqlitePath).sha256, before.sha256);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
   }
 });
 

@@ -223,7 +223,7 @@ export async function handleWorkbenchV2Api(
       send(response, 404, { ok: false, error: { code: "PROJECT_WORKSPACE_NOT_FOUND", message: "Project workspace was not found." } });
       return true;
     }
-    sendResult(response, withDatabase((db) => getWorkbenchProjectWorkspace(projectId, workspace, db)));
+    sendResult(response, withDatabase((db) => getWorkbenchProjectWorkspace(projectId, workspace, db, { touch_last_opened: true })));
     return true;
   }
 

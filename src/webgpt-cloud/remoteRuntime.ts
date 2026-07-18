@@ -222,10 +222,14 @@ export function buildReadonlyRemoteToolResult<T>(
     ...(challenge ? { "mcp/www_authenticate": [challenge] } : {})
   };
   const serialize = (result: WebGptV4Result<unknown>): Record<string, unknown> => {
-    const message = result.ok ? "请求已完成；结构化结果位于 structuredContent。" : `${result.error.code}: ${result.error.message}`;
+    const structuredResult: WebGptV4Result<unknown> = {
+      ...result,
+      meta: { ...result.meta, snapshot_fingerprint: fingerprint }
+    };
+    const message = structuredResult.ok ? "请求已完成；结构化结果位于 structuredContent。" : `${structuredResult.error.code}: ${structuredResult.error.message}`;
     return {
-      isError: !result.ok,
-      structuredContent: result,
+      isError: !structuredResult.ok,
+      structuredContent: structuredResult,
       content: [{ type: "text", text: message.slice(0, 1024) }],
       _meta: meta
     };
