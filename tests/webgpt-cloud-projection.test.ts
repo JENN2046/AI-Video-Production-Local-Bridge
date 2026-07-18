@@ -355,7 +355,7 @@ test("SQLite and Snapshot readonly adapters preserve six-tool DTO parity and dat
   }
 });
 
-test("five-stage operational state exports through Snapshot v2 and guards derived overview parity", () => {
+test("five-stage operational state exports through Snapshot v3 with canonical blocker reasons", () => {
   const root = mkdtempSync(join(tmpdir(), "readonly-projection-five-stage-"));
   const sqlitePath = join(root, "app.sqlite");
   const fixture = createFixture(sqlitePath);
@@ -384,10 +384,11 @@ test("five-stage operational state exports through Snapshot v2 and guards derive
     assert.deepEqual(overview.full.blockers.map((blocker) => ({
       order: blocker.order,
       missing_image: blocker.missing_image,
-      missing_prompt: blocker.missing_prompt
+      missing_prompt: blocker.missing_prompt,
+      reason_codes: blocker.reason_codes
     })), [
-      { order: 1, missing_image: true, missing_prompt: false },
-      { order: 4, missing_image: false, missing_prompt: false }
+      { order: 1, missing_image: true, missing_prompt: false, reason_codes: ["STORYBOARD_IMAGE_MISSING"] },
+      { order: 4, missing_image: false, missing_prompt: false, reason_codes: ["CLIP_REVISION_REQUIRED"] }
     ]);
 
     const { snapshot_fingerprint: _fingerprint, ...unsigned } = snapshot;
@@ -470,7 +471,7 @@ test("snapshot fingerprint uses deterministic JCS input and server time remains 
   });
 });
 
-test("readonly snapshot v2 rejects prior v1 payloads with a stable version error", () => {
+test("readonly snapshot v3 rejects prior v2 payloads with a stable version error", () => {
   const current = finalizeReadonlySnapshot({
     schema_version: READONLY_SNAPSHOT_SCHEMA_VERSION,
     source_schema: "workbench-v2-5",
@@ -484,7 +485,7 @@ test("readonly snapshot v2 rejects prior v1 payloads with a stable version error
     projects: []
   });
   const legacy = structuredClone(current) as unknown as Record<string, unknown>;
-  legacy.schema_version = "readonly-snapshot-v1";
+  legacy.schema_version = "readonly-snapshot-v2";
   assert.throws(
     () => parseReadonlySnapshot(legacy, new Date("2026-07-16T00:30:00.000Z")),
     /READONLY_SNAPSHOT_VERSION_UNSUPPORTED/

@@ -17,7 +17,7 @@ import {
   publicSummary
 } from "../webgpt-v4/contracts.js";
 
-export const READONLY_SNAPSHOT_SCHEMA_VERSION = "readonly-snapshot-v2";
+export const READONLY_SNAPSHOT_SCHEMA_VERSION = "readonly-snapshot-v3";
 export const READONLY_SNAPSHOT_REQUIRED_SCHEMA = "workbench-v2-5";
 export const READONLY_SNAPSHOT_REQUIRED_MIGRATION = "0008";
 export const READONLY_SNAPSHOT_MAX_TTL_SECONDS = 24 * 60 * 60;
@@ -456,7 +456,8 @@ function validateProjectProjectionBindings(
           shot_id: shot.shot_id,
           order: shot.order,
           missing_image: shot.operational_state.storyboard.artifact_status === "missing",
-          missing_prompt: shot.operational_state.generation.reason_codes.includes("VIDEO_PROMPT_MISSING")
+          missing_prompt: shot.operational_state.generation.reason_codes.includes("VIDEO_PROMPT_MISSING"),
+          reason_codes: shot.operational_state.blocker_codes
         }));
       if (projection.full.metrics.generation_active < 0) {
         addBindingIssue(context, [...base, "contexts", contextIndex, "full", "metrics", "generation_active"], "Overview generation active count cannot be negative.");
