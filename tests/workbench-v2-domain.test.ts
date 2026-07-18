@@ -488,6 +488,47 @@ test("Workbench project summary treats a complete draft storyboard as awaiting a
   }
 });
 
+test("operational facts fail closed when a referenced Artifact JSON binding drifts from its row", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const created = createWorkbenchProject({ title: "Artifact drift guard", classification: "production" }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    const shot = buildStoryboardApprovedShot({
+      shot_id: "shot_artifact_drift_target",
+      project_id: created.data.project.project_id,
+      order: 1,
+      duration_seconds: 6,
+      storyboard_image_artifact_id: "",
+      video_prompt: "Artifact drift fixture."
+    });
+    const registered = registerMediaArtifact({
+      artifact_type: "image",
+      role: "storyboard_image",
+      source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
+      linked_objects: { project_id: created.data.project.project_id, shot_id: shot.shot_id }
+    }, db);
+    assert.equal(registered.ok, true);
+    if (!registered.ok) return;
+    shot.storyboard_image_artifact_id = registered.artifact.artifact_id;
+    saveShot(db, shot);
+    created.data.project.shot_ids = [shot.shot_id];
+    saveProject(db, created.data.project);
+    db.prepare(`
+      UPDATE media_artifacts
+      SET data_json = json_set(data_json, '$.linked_objects.shot_id', 'shot_other_same_project')
+      WHERE artifact_id = ?
+    `).run(registered.artifact.artifact_id);
+
+    assert.throws(
+      () => collectProjectOperationalBundles(db, [created.data.project]),
+      /ARTIFACT_OPERATIONAL_FACT_INVALID/
+    );
+  } finally {
+    db.close();
+  }
+});
+
 test("generation preflight rejects a storyboard Artifact bound to another SHOT", async () => {
   const db = openM0Database(":memory:");
   try {

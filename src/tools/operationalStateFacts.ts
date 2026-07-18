@@ -31,6 +31,7 @@ interface ArtifactLedgerRow {
   role: string;
   artifact_type: string;
   status: string;
+  data_json: string;
   blob_id: string | null;
   integrity_state: string | null;
 }
@@ -80,6 +81,28 @@ function artifactFact(
   if (!artifactId) return { artifact_id: null, status: "missing", verification_level: "none" };
   const row = rows.get(artifactId);
   if (!row) return { artifact_id: artifactId, status: "integrity_invalid", verification_level: "none" };
+  try {
+    const projected = JSON.parse(row.data_json) as {
+      artifact_id?: unknown;
+      blob_id?: unknown;
+      role?: unknown;
+      artifact_type?: unknown;
+      status?: unknown;
+      linked_objects?: { project_id?: unknown; shot_id?: unknown };
+    };
+    if (projected.artifact_id !== row.artifact_id
+      || projected.linked_objects?.project_id !== (row.project_id ?? "")
+      || projected.linked_objects?.shot_id !== (row.shot_id ?? "")
+      || projected.role !== row.role
+      || projected.artifact_type !== row.artifact_type
+      || projected.status !== row.status
+      || (row.blob_id !== null && projected.blob_id !== row.blob_id)) {
+      throw new OperationalStateIntegrityError("ARTIFACT_OPERATIONAL_FACT_INVALID");
+    }
+  } catch (error) {
+    if (error instanceof OperationalStateIntegrityError) throw error;
+    throw new OperationalStateIntegrityError("ARTIFACT_OPERATIONAL_FACT_INVALID");
+  }
   if ((row.project_id ?? "") !== projectId || (row.shot_id ?? "") !== shotId) {
     return { artifact_id: artifactId, status: "binding_invalid", verification_level: "none" };
   }
@@ -135,7 +158,7 @@ export function collectProjectOperationalBundles(
   }
 
   const artifactRows = db.prepare(`
-    SELECT a.artifact_id, a.project_id, a.shot_id, a.role, a.artifact_type, a.status,
+    SELECT a.artifact_id, a.project_id, a.shot_id, a.role, a.artifact_type, a.status, a.data_json,
       link.blob_id, blob.integrity_state
     FROM media_artifacts a
     LEFT JOIN media_artifact_blobs link ON link.artifact_id = a.artifact_id
