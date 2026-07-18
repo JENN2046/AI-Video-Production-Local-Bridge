@@ -1045,6 +1045,17 @@ test("generation preflight enforces official estimate, balance gate, budget and 
     assert.equal(rejectedDrift.ok, false);
     if (!rejectedDrift.ok) assert.equal(rejectedDrift.error.code, "PROVIDER_CAPABILITY_CONTRACT_MISMATCH");
     db.prepare("UPDATE generation_intents SET data_json = ? WHERE intent_id = ?").run(originalIntentJson.data_json, first.data.intent.intent_id);
+    const legacyIntent = JSON.parse(originalIntentJson.data_json) as { input_snapshot: { project_resolution?: string } };
+    delete legacyIntent.input_snapshot.project_resolution;
+    db.prepare("UPDATE generation_intents SET data_json = ? WHERE intent_id = ?").run(JSON.stringify(legacyIntent), first.data.intent.intent_id);
+    projectResult.project.video_spec.resolution = "720x1280";
+    saveProject(db, projectResult.project);
+    const rejectedMissingResolution = confirmWorkbenchGeneration({ intent_id: first.data.intent.intent_id, budget_limit_value: 1, cost_confirmed: true, human_confirmation: true }, db);
+    assert.equal(rejectedMissingResolution.ok, false);
+    if (!rejectedMissingResolution.ok) assert.equal(rejectedMissingResolution.error.code, "GENERATION_INTENT_INPUT_STALE");
+    projectResult.project.video_spec.resolution = "1080x1920";
+    saveProject(db, projectResult.project);
+    db.prepare("UPDATE generation_intents SET data_json = ? WHERE intent_id = ?").run(originalIntentJson.data_json, first.data.intent.intent_id);
     shot.video_prompt = "Changed after official preflight.";
     saveShot(db, shot);
     const rejectedStaleInput = confirmWorkbenchGeneration({ intent_id: first.data.intent.intent_id, budget_limit_value: 1, cost_confirmed: true, human_confirmation: true }, db);

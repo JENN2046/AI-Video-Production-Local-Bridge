@@ -529,8 +529,8 @@ export function confirmWorkbenchGeneration(
       || shot.negative_prompt !== intent.input_snapshot.negative_prompt
       || shot.duration_seconds !== intent.duration_seconds
       || writable.data.project.video_spec.aspect_ratio !== intent.input_snapshot.aspect_ratio
-      || (intent.input_snapshot.project_resolution !== undefined
-        && writable.data.project.video_spec.resolution !== intent.input_snapshot.project_resolution)) {
+      || intent.input_snapshot.project_resolution === undefined
+      || writable.data.project.video_spec.resolution !== intent.input_snapshot.project_resolution) {
       db.exec("ROLLBACK");
       return { ok: false, error: { code: "GENERATION_INTENT_INPUT_STALE", message: "SHOT or project inputs changed after generation preflight." } };
     }
