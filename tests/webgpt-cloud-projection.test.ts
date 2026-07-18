@@ -10,6 +10,7 @@ import { bindWebGptPrincipalIssuer, bootstrapWebGptProjectOwner, registerWebGptP
 import { actorFromFederatedSubject, type WebGptV4Result } from "../src/webgpt-v4/types.js";
 import { openM0Database, openM0DatabaseConnection, type M0Database } from "../src/storage/sqlite.js";
 import { createProject, getProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
+import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
 import {
   exportReadonlySnapshotFromDatabase,
   ReadonlyProjectionError,
@@ -190,6 +191,24 @@ test("SQLite and Snapshot readonly adapters preserve six-tool DTO parity and dat
   const root = mkdtempSync(join(tmpdir(), "readonly-projection-parity-"));
   const sqlitePath = join(root, "app.sqlite");
   const fixture = createFixture(sqlitePath);
+  const fixtureDb = openM0Database(sqlitePath);
+  try {
+    const project = getProject(fixtureDb, fixture.project_id);
+    assert.ok(project);
+    const registered = registerMediaArtifact({
+      artifact_type: "video",
+      role: "final_video",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: fixture.project_id }
+    }, fixtureDb);
+    assert.equal(registered.ok, true);
+    if (!registered.ok) throw new Error("final video projection fixture registration failed");
+    project.status = "final_approved";
+    project.exports.final_video_artifact_id = registered.artifact.artifact_id;
+    saveProject(fixtureDb, project);
+  } finally {
+    fixtureDb.close();
+  }
   const beforeDb = openM0DatabaseConnection(sqlitePath, { readOnly: true });
   const before = logicalManifest(beforeDb);
   beforeDb.close();
@@ -201,6 +220,10 @@ test("SQLite and Snapshot readonly adapters preserve six-tool DTO parity and dat
     generated_at: generatedAt,
     ttl_seconds: 3600
   });
+  const deliveryContext = snapshot.projects[0]!.contexts.find((context) => context.workspace === "delivery");
+  assert.ok(deliveryContext && "final_artifact_reason_code" in deliveryContext.compact && "final_artifact_reason_code" in deliveryContext.full);
+  assert.equal(deliveryContext.compact.final_artifact_reason_code, null);
+  assert.equal(deliveryContext.full.final_artifact_reason_code, null);
   assert.doesNotMatch(JSON.stringify(snapshot), /"(?:local_path|provider_payload|actor_hash|subject|idempotency_key)":/);
   const db = openM0DatabaseConnection(sqlitePath, { readOnly: true });
   try {

@@ -157,12 +157,12 @@ export const WEBGPT_V4_PROJECT_CONTEXT_DATA_SCHEMA = z.union([
   z.object({ ...compactContextBase, workspace: z.literal("storyboard"), shots: z.array(WEBGPT_V4_COMPACT_SHOT_SCHEMA) }).strict(),
   z.object({ ...compactContextBase, workspace: z.literal("generation"), shots: z.array(WEBGPT_V4_COMPACT_SHOT_SCHEMA) }).strict(),
   z.object({ ...compactContextBase, workspace: z.literal("review"), shots: z.array(WEBGPT_V4_COMPACT_SHOT_SCHEMA), review_notes: z.array(WEBGPT_V4_REVIEW_NOTE_SCHEMA) }).strict(),
-  z.object({ ...compactContextBase, workspace: z.literal("delivery"), ready_for_assembly: z.boolean(), readiness_checks: z.array(readinessCheckSchema), accepted_clips: z.array(z.object({ shot_id: z.string(), order: z.number(), artifact: WEBGPT_V4_COMPACT_ARTIFACT_SCHEMA.nullable() }).strict()), final_artifact: WEBGPT_V4_COMPACT_ARTIFACT_SCHEMA.nullable(), final_artifact_reason_code: z.string() }).strict(),
+  z.object({ ...compactContextBase, workspace: z.literal("delivery"), ready_for_assembly: z.boolean(), readiness_checks: z.array(readinessCheckSchema), accepted_clips: z.array(z.object({ shot_id: z.string(), order: z.number(), artifact: WEBGPT_V4_COMPACT_ARTIFACT_SCHEMA.nullable() }).strict()), final_artifact: WEBGPT_V4_COMPACT_ARTIFACT_SCHEMA.nullable(), final_artifact_reason_code: z.string().nullable() }).strict(),
   z.object({ ...fullContextBase, workspace: z.literal("overview"), metrics: metricsSchema, blockers: z.array(blockerSchema) }).strict(),
   z.object({ ...fullContextBase, workspace: z.literal("storyboard"), shots: z.array(WEBGPT_V4_SHOT_SCHEMA) }).strict(),
   z.object({ ...fullContextBase, workspace: z.literal("generation"), shots: z.array(WEBGPT_V4_SHOT_SCHEMA) }).strict(),
   z.object({ ...fullContextBase, workspace: z.literal("review"), shots: z.array(WEBGPT_V4_SHOT_SCHEMA), review_notes: z.array(WEBGPT_V4_REVIEW_NOTE_SCHEMA) }).strict(),
-  z.object({ ...fullContextBase, workspace: z.literal("delivery"), ready_for_assembly: z.boolean(), readiness_checks: z.array(readinessCheckSchema), accepted_clips: z.array(z.object({ shot_id: z.string(), order: z.number(), artifact: WEBGPT_V4_ARTIFACT_SCHEMA.nullable() }).strict()), final_artifact: WEBGPT_V4_ARTIFACT_SCHEMA.nullable(), final_artifact_reason_code: z.string() }).strict()
+  z.object({ ...fullContextBase, workspace: z.literal("delivery"), ready_for_assembly: z.boolean(), readiness_checks: z.array(readinessCheckSchema), accepted_clips: z.array(z.object({ shot_id: z.string(), order: z.number(), artifact: WEBGPT_V4_ARTIFACT_SCHEMA.nullable() }).strict()), final_artifact: WEBGPT_V4_ARTIFACT_SCHEMA.nullable(), final_artifact_reason_code: z.string().nullable() }).strict()
 ]);
 const compactVersionSchema = clipVersionSchema.pick({ artifact_id: true, attempt_number: true, review_status: true }).strict();
 export const WEBGPT_V4_REVIEW_PACKAGE_DATA_SCHEMA = z.discriminatedUnion("detail", [

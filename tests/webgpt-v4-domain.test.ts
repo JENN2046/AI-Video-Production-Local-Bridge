@@ -22,7 +22,7 @@ import {
   updateProductionShotCopy
 } from "../src/webgpt-v4/domain.js";
 import { migrateLegacyWebGptV4History } from "../src/webgpt-v4/migration.js";
-import { readReviewPackage, readShotList } from "../src/webgpt-v4/contracts.js";
+import { readProjectContext, readReviewPackage, readShotList } from "../src/webgpt-v4/contracts.js";
 import { actorFromSubject } from "../src/webgpt-v4/types.js";
 import { buildProviderCapabilityKey, buildProviderPriceCacheKey, RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY } from "../src/tools/providerCapabilities.js";
 import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
@@ -276,6 +276,37 @@ test("public SHOT and empty review DTOs expose normalized operational semantics"
     assert.equal(data.reason_code, "NO_GENERATED_CLIP");
     assert.equal(data.selected_artifact_id, null);
     assert.deepEqual(data.versions, []);
+  } finally {
+    teardown(context);
+  }
+});
+
+test("delivery project context accepts null final reason when a valid final export exists", () => {
+  const context = setup();
+  try {
+    const registered = registerMediaArtifact({
+      artifact_type: "video",
+      role: "final_video",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: context.production.project_id }
+    }, context.db);
+    assert.equal(registered.ok, true);
+    if (!registered.ok) throw new Error("final video fixture registration failed");
+    context.production.status = "final_approved";
+    context.production.exports.final_video_artifact_id = registered.artifact.artifact_id;
+    saveProject(context.db, context.production);
+
+    for (const detail of ["compact", "full"] as const) {
+      const result = readProjectContext(
+        getProductionProjectContext({ project_id: context.production.project_id, workspace: "delivery" }, context.db),
+        detail
+      );
+      assert.equal(result.ok, true, JSON.stringify(result));
+      if (!result.ok) continue;
+      const delivery = result.data as { final_artifact: { artifact_id: string } | null; final_artifact_reason_code: string | null };
+      assert.equal(delivery.final_artifact?.artifact_id, registered.artifact.artifact_id);
+      assert.equal(delivery.final_artifact_reason_code, null);
+    }
   } finally {
     teardown(context);
   }
