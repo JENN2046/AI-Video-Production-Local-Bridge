@@ -77,14 +77,25 @@ const publicShotReviewSchema = z.object({
   reviewable: z.boolean(), approval_status: z.enum(["pending", "approved", "revision_needed"]).nullable(),
   selected_artifact_id: z.string().nullable(), rejection_reasons: z.array(z.string()), latest_revision_instruction: revisionInstructionSchema.nullable()
 }).strict();
-export const WEBGPT_V4_SHOT_SCHEMA = z.object({
+const webGptV4ShotSchemaBase = z.object({
   shot_id: z.string(), project_id: z.string(), order: z.number(), status: shotStatusSchema, duration_seconds: z.number(), description: z.string(),
   storyboard_image_artifact_id: z.string().nullable(), video_prompt: z.string(), negative_prompt: z.string(), generation_run_ids: z.array(z.string()),
   accepted_clip_artifact_id: z.string().nullable(), clip_versions: z.array(clipVersionSchema), operational_state: shotOperationalStateSchema,
   review: publicShotReviewSchema,
   updated_at: isoInstantSchema.optional()
 }).strict();
-export const WEBGPT_V4_COMPACT_SHOT_SCHEMA = WEBGPT_V4_SHOT_SCHEMA.pick({
+export const WEBGPT_V4_SHOT_SCHEMA = webGptV4ShotSchemaBase.superRefine((shot, context) => {
+  if (shot.operational_state.shot_id !== shot.shot_id) {
+    context.addIssue({ code: "custom", path: ["operational_state", "shot_id"], message: "Operational state SHOT binding mismatch." });
+  }
+  if (shot.operational_state.project_id !== shot.project_id) {
+    context.addIssue({ code: "custom", path: ["operational_state", "project_id"], message: "Operational state project binding mismatch." });
+  }
+  if (shot.operational_state.stored_workflow_status !== shot.status) {
+    context.addIssue({ code: "custom", path: ["operational_state", "stored_workflow_status"], message: "Operational state workflow status mismatch." });
+  }
+});
+export const WEBGPT_V4_COMPACT_SHOT_SCHEMA = webGptV4ShotSchemaBase.pick({
   shot_id: true, project_id: true, order: true, status: true, duration_seconds: true, description: true,
   storyboard_image_artifact_id: true, accepted_clip_artifact_id: true, updated_at: true
 }).extend({ operational_state: compactShotOperationalStateSchema }).strict();

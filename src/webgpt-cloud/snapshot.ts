@@ -262,6 +262,15 @@ function validateProjectProjectionBindings(
   }
   for (const [shotIndex, shot] of project.shots_full.entries()) {
     if (shot.project_id !== projectId) addBindingIssue(context, [...base, "shots_full", shotIndex, "project_id"], "SHOT project binding mismatch.");
+    if (shot.operational_state.shot_id !== shot.shot_id) {
+      addBindingIssue(context, [...base, "shots_full", shotIndex, "operational_state", "shot_id"], "Operational state SHOT binding mismatch.");
+    }
+    if (shot.operational_state.project_id !== shot.project_id) {
+      addBindingIssue(context, [...base, "shots_full", shotIndex, "operational_state", "project_id"], "Operational state project binding mismatch.");
+    }
+    if (shot.operational_state.stored_workflow_status !== shot.status) {
+      addBindingIssue(context, [...base, "shots_full", shotIndex, "operational_state", "stored_workflow_status"], "Operational state workflow status mismatch.");
+    }
   }
   const listedShotIds = project.list_item_full.project.shot_ids;
   if (listedShotIds.length !== shotIds.size || listedShotIds.some((shotId) => !shotIds.has(shotId))) {

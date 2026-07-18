@@ -405,7 +405,10 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     const mutations: Array<(candidate: ReadonlySnapshotUnsigned) => void> = [
       (candidate) => { candidate.projects[0]!.contexts[0]!.compact.project.project_id = "project_cross_binding"; },
       (candidate) => { candidate.projects[0]!.shots_full[0]!.project_id = "project_cross_binding"; },
+      (candidate) => { candidate.projects[0]!.shots_full[0]!.operational_state.shot_id = "shot_cross_binding"; },
+      (candidate) => { candidate.projects[0]!.shots_full[0]!.operational_state.project_id = "project_cross_binding"; },
       (candidate) => { candidate.projects[0]!.review_packages[0]!.full.shot.project_id = "project_cross_binding"; },
+      (candidate) => { candidate.projects[0]!.review_packages[0]!.full.shot.operational_state.shot_id = "shot_cross_binding"; },
       (candidate) => { candidate.projects[0]!.delivery.project_id = "project_cross_binding"; },
       (candidate) => { candidate.projects[0]!.closeout.project_id = "project_cross_binding"; },
       (candidate) => { candidate.projects[0]!.review_packages = []; }
@@ -415,6 +418,10 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
       mutate(candidate);
       assert.throws(() => finalizeReadonlySnapshot(candidate), /(binding mismatch|bindings differ)/i);
     }
+
+    const mismatchedOperationalStatus = structuredClone(unsigned);
+    mismatchedOperationalStatus.projects[0]!.shots_full[0]!.operational_state.stored_workflow_status = "draft";
+    assert.throws(() => finalizeReadonlySnapshot(mismatchedOperationalStatus), /operational state workflow status mismatch/i);
 
     const fullContextInCompactSlot = structuredClone(unsigned);
     (fullContextInCompactSlot.projects[0]!.contexts[0] as unknown as { compact: unknown }).compact =
