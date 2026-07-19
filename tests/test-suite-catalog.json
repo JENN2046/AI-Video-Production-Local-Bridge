@@ -127,7 +127,10 @@
       "classification": "mandatory",
       "npm_script": "test:webgpt:media-gateway",
       "ci_step": "Readonly media gateway contract tests",
-      "paths": ["tests/webgpt-media-capability-contract.test.ts"]
+      "paths": [
+        "tests/webgpt-media-capability-contract.test.ts",
+        "tests/webgpt-media-gateway-runtime.test.ts"
+      ]
     },
     {
       "id": "webgpt-apps-smoke",
@@ -230,6 +233,34 @@
       "npm_script": "test:webgpt:media-gateway",
       "ci_step": "Readonly media gateway contract tests",
       "case_name": "readonly media capability rejects tampering, expiry, replay, and invalid key material"
+    },
+    {
+      "id": "readonly-media-gateway-bounded-integrity",
+      "path": "tests/webgpt-media-gateway-runtime.test.ts",
+      "npm_script": "test:webgpt:media-gateway",
+      "ci_step": "Readonly media gateway contract tests",
+      "case_name": "media integrity queue remains bounded and retains a timed-out slot until the underlying task settles"
+    },
+    {
+      "id": "readonly-media-gateway-streaming",
+      "path": "tests/webgpt-media-gateway-runtime.test.ts",
+      "npm_script": "test:webgpt:media-gateway",
+      "ci_step": "Readonly media gateway contract tests",
+      "case_name": "readonly media gateway verifies bytes, consumes capabilities once, streams ranges, and never writes SQLite"
+    },
+    {
+      "id": "readonly-media-gateway-revalidation",
+      "path": "tests/webgpt-media-gateway-runtime.test.ts",
+      "npm_script": "test:webgpt:media-gateway",
+      "ci_step": "Readonly media gateway contract tests",
+      "case_name": "readonly media sessions fail closed after membership revocation or file identity drift"
+    },
+    {
+      "id": "readonly-media-gateway-lifetime",
+      "path": "tests/webgpt-media-gateway-runtime.test.ts",
+      "npm_script": "test:webgpt:media-gateway",
+      "ci_step": "Readonly media gateway contract tests",
+      "case_name": "readonly media capability and session handles expire and never survive a gateway restart"
     },
     {
       "id": "readonly-media-app-only-contract",
