@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  assertReadonlyMediaCapabilityKeyring,
   createReadonlyMediaCapabilityRequest,
   createReadonlyMediaHandle,
   openReadonlyMediaCapabilityRequest,
   parseReadonlyMediaCapabilityKey,
   ReadonlyMediaCapabilityError,
   ReadonlyMediaCapabilityReplayGuard,
+  READONLY_MEDIA_CAPABILITY_MAX_REPLAY_RECORDS,
+  READONLY_MEDIA_CAPABILITY_MAX_REPLAY_RECORDS_PER_PRINCIPAL,
   READONLY_MEDIA_CAPABILITY_REPLAY_WINDOW_MS,
   READONLY_MEDIA_CAPABILITY_TTL_MS
 } from "../src/webgpt-cloud/mediaCapability.js";
@@ -107,9 +110,54 @@ test("readonly media capability rejects tampering, expiry, replay, and invalid k
   assert.equal(replay.size(new Date(Date.parse(payload.issued_at) + READONLY_MEDIA_CAPABILITY_REPLAY_WINDOW_MS - 1)), 1);
   assert.equal(replay.size(new Date(Date.parse(payload.issued_at) + READONLY_MEDIA_CAPABILITY_REPLAY_WINDOW_MS)), 0);
 
+  const perPrincipalBound = new ReadonlyMediaCapabilityReplayGuard(2, 1);
+  perPrincipalBound.accept(payload, NOW);
+  const secondPayload = openReadonlyMediaCapabilityRequest(
+    createReadonlyMediaCapabilityRequest(input, { active }, { now: () => NOW }),
+    { active },
+    { now: () => NOW }
+  );
+  assert.throws(
+    () => perPrincipalBound.accept(secondPayload, NOW),
+    (error) => error instanceof ReadonlyMediaCapabilityError && error.code === "MEDIA_CAPABILITY_REPLAY_CAPACITY_EXCEEDED"
+  );
+  const afterWindow = new Date(NOW.getTime() + READONLY_MEDIA_CAPABILITY_REPLAY_WINDOW_MS);
+  const afterWindowPayload = openReadonlyMediaCapabilityRequest(
+    createReadonlyMediaCapabilityRequest(input, { active }, { now: () => afterWindow }),
+    { active },
+    { now: () => afterWindow }
+  );
+  assert.doesNotThrow(() => perPrincipalBound.accept(afterWindowPayload, afterWindow));
+
+  const globalBound = new ReadonlyMediaCapabilityReplayGuard(2, 2);
+  globalBound.accept(payload, NOW);
+  const otherPrincipal = { ...input, principal_id: "5".repeat(64) };
+  const otherPayload = openReadonlyMediaCapabilityRequest(
+    createReadonlyMediaCapabilityRequest(otherPrincipal, { active }, { now: () => NOW }),
+    { active },
+    { now: () => NOW }
+  );
+  globalBound.accept(otherPayload, NOW);
+  const thirdPrincipal = { ...input, principal_id: "6".repeat(64) };
+  const thirdPayload = openReadonlyMediaCapabilityRequest(
+    createReadonlyMediaCapabilityRequest(thirdPrincipal, { active }, { now: () => NOW }),
+    { active },
+    { now: () => NOW }
+  );
+  assert.throws(
+    () => globalBound.accept(thirdPayload, NOW),
+    (error) => error instanceof ReadonlyMediaCapabilityError && error.code === "MEDIA_CAPABILITY_REPLAY_CAPACITY_EXCEEDED"
+  );
+  assert.equal(READONLY_MEDIA_CAPABILITY_MAX_REPLAY_RECORDS > READONLY_MEDIA_CAPABILITY_MAX_REPLAY_RECORDS_PER_PRINCIPAL, true);
+
   assert.throws(
     () => parseReadonlyMediaCapabilityKey("bad key", Buffer.alloc(32).toString("base64url")),
     (error) => error instanceof ReadonlyMediaCapabilityError && error.code === "MEDIA_CAPABILITY_KEY_INVALID"
   );
+  assert.throws(
+    () => assertReadonlyMediaCapabilityKeyring({ active: { ...active, kid: "bad key" } }),
+    (error) => error instanceof ReadonlyMediaCapabilityError && error.code === "MEDIA_CAPABILITY_KEY_INVALID"
+  );
+  assert.doesNotThrow(() => assertReadonlyMediaCapabilityKeyring({ active }));
   assert.match(createReadonlyMediaHandle(() => Buffer.alloc(32, 5)), /^[A-Za-z0-9_-]{43}$/);
 });

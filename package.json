@@ -50,7 +50,7 @@
     "test:webgpt:v4": "npm run build:server && node dist/scripts/run-isolated-tests.js dist/tests/webgpt-v4-auth.test.js dist/tests/webgpt-v4-domain.test.js dist/tests/webgpt-v4-media.test.js dist/tests/webgpt-v4-metadata.test.js dist/tests/webgpt-v4-oauth-discovery.test.js dist/tests/webgpt-v4-server.test.js dist/tests/webgpt-v4-eval.test.js dist/tests/webgpt-v4-profile.test.js dist/tests/webgpt-v4-selected-provider.test.js dist/tests/webgpt-v4-context-budget.test.js dist/tests/webgpt-v4-telemetry.test.js dist/tests/webgpt-v4-widget.test.js",
     "test:webgpt:cloud": "npm run build:server && node dist/scripts/run-isolated-tests.js dist/tests/webgpt-cloud-projection.test.js dist/tests/webgpt-cloud-remote-runtime.test.js dist/tests/webgpt-cloud-delivery.test.js",
     "test:webgpt:app": "npm run build:server && node dist/scripts/run-isolated-tests.js dist/tests/webgpt-app-contract.test.js dist/tests/webgpt-apps-smoke.test.js",
-    "test:webgpt:media-gateway": "npm run build:server && node dist/scripts/run-isolated-tests.js dist/tests/webgpt-media-capability-contract.test.js",
+    "test:webgpt:media-gateway": "npm run build:server && node dist/scripts/run-isolated-tests.js dist/tests/webgpt-media-capability-contract.test.js dist/tests/webgpt-media-gateway-runtime.test.js",
     "smoke:webgpt:app": "npm run build:server && node dist/scripts/run-isolated-tests.js dist/tests/webgpt-apps-smoke.test.js",
     "test:memory": "npm run build && node dist/scripts/run-isolated-tests.js dist/tests/memory-saveback.test.js",
     "env:check": "npm run build && node dist/scripts/env-check.js",
