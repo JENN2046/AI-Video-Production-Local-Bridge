@@ -160,6 +160,46 @@ test("media integrity queue remains bounded and retains a timed-out slot until t
   await Promise.all(waiting);
 });
 
+test("readonly media gateway starts negative-cache TTL after an expensive integrity failure", async () => {
+  const fixture = createFixture("negative-cache-clock");
+  let clock = new Date("2026-07-19T00:00:00.000Z");
+  let hashCalls = 0;
+  const corruptQueue = new class extends MediaIntegrityQueue {
+    override async run<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T> {
+      hashCalls += 1;
+      const result = await super.run(task);
+      clock = new Date(clock.getTime() + 20_000);
+      return { ...(result as Record<string, unknown>), sha256: "0".repeat(64) } as T;
+    }
+  }();
+  const gateway = await startReadonlyMediaGateway({
+    database_path: paths.sqlitePath,
+    issuer_hash: fixture.actor.issuer_hash!,
+    keyring,
+    allowed_origin: ORIGIN,
+    allowed_media_roots: [paths.imageArtifactsRoot],
+    port: 0,
+    now: () => clock,
+    integrity_queue: corruptQueue
+  });
+  const request = () => fetch(`${gateway.url}/internal/v1/capabilities`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(envelope(fixture, clock))
+  });
+  try {
+    const first = await request();
+    assert.equal(first.status, 404);
+    assert.equal((await first.json() as { error: { code: string } }).error.code, "MEDIA_INTEGRITY_FAILED");
+    const cached = await request();
+    assert.equal(cached.status, 404);
+    assert.equal((await cached.json() as { error: { code: string } }).error.code, "MEDIA_INTEGRITY_FAILED");
+    assert.equal(hashCalls, 1);
+  } finally {
+    await gateway.close();
+  }
+});
+
 test("readonly media gateway bounds pending capabilities globally and per principal", async () => {
   const fixture = createFixture("capability-capacity");
   const actors = [fixture];

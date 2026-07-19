@@ -472,11 +472,13 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
       if (facts.sha256 !== candidate.blob.sha256
         || facts.detected_mime !== candidate.blob.detected_mime
         || !sameIdentity(facts, candidate.identity)) throw new ReadonlyMediaGatewayError("MEDIA_INTEGRITY_FAILED");
-      positiveCache.set(key, current + 5 * 60 * 1000);
+      positiveCache.set(key, now().getTime() + 5 * 60 * 1000);
       return candidate;
     } catch (error) {
       const domain = stableError(error);
-      if (domain.code !== "MEDIA_INTEGRITY_BUSY" && domain.code !== "MEDIA_INTEGRITY_TIMEOUT") negativeCache.set(negativeKey, current + 10_000);
+      if (domain.code !== "MEDIA_INTEGRITY_BUSY" && domain.code !== "MEDIA_INTEGRITY_TIMEOUT") {
+        negativeCache.set(negativeKey, now().getTime() + 10_000);
+      }
       throw domain;
     }
   };
