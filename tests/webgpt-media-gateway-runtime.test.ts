@@ -252,6 +252,38 @@ test("readonly media gateway bounds pending capabilities globally and per princi
   }
 });
 
+test("readonly media gateway removes stale pending capabilities after activation validation fails", async () => {
+  const fixture = createFixture("stale-pending-capability");
+  const gateway = await startReadonlyMediaGateway({
+    database_path: paths.sqlitePath,
+    issuer_hash: fixture.actor.issuer_hash!,
+    keyring,
+    allowed_origin: ORIGIN,
+    allowed_media_roots: [paths.imageArtifactsRoot],
+    port: 0
+  });
+  const prior = statSync(fixture.blob.storage_uri);
+  try {
+    const handles: string[] = [];
+    for (let index = 0; index < READONLY_MEDIA_GATEWAY_MAX_PENDING_CAPABILITIES_PER_PRINCIPAL; index += 1) {
+      handles.push(await issue(gateway.url, fixture));
+    }
+    utimesSync(fixture.blob.storage_uri, prior.atime, new Date(prior.mtimeMs + 2_000));
+    for (const handle of handles) {
+      const invalid = await fetch(`${gateway.url}/media/v1/c/${handle}`, { headers: { origin: ORIGIN }, redirect: "manual" });
+      assert.equal(invalid.status, 404);
+      assert.equal((await invalid.json() as { error: { code: string } }).error.code, "MEDIA_SESSION_INVALID");
+    }
+    assert.equal(gateway.counts().capabilities, 0);
+    utimesSync(fixture.blob.storage_uri, prior.atime, prior.mtime);
+    const corrected = await issue(gateway.url, fixture);
+    assert.match(corrected, /^[A-Za-z0-9_-]{43}$/);
+  } finally {
+    utimesSync(fixture.blob.storage_uri, prior.atime, prior.mtime);
+    await gateway.close();
+  }
+});
+
 test("readonly media gateway bounds replay records created by failed issuances", async () => {
   const fixture = createFixture("failed-issuance-replay");
   const gateway = await startReadonlyMediaGateway({

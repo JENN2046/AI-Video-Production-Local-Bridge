@@ -610,7 +610,12 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
           if (request.headers.origin !== allowedOrigin) throw new ReadonlyMediaGatewayError("MEDIA_ORIGIN_DENIED");
           const record = capabilities.get(capabilityMatch[1]!);
           if (!record || record.expires_at_ms <= now().getTime()) throw new ReadonlyMediaGatewayError("MEDIA_CAPABILITY_INVALID");
-          validateRecord(record);
+          try {
+            validateRecord(record);
+          } catch (error) {
+            if (!record.consumed && error instanceof ReadonlyMediaGatewayError) capabilities.delete(record.handle);
+            throw error;
+          }
           if (record.consumed) throw new ReadonlyMediaGatewayError("MEDIA_CAPABILITY_REPLAYED");
           if (request.method === "HEAD") { response.statusCode = 204; mediaHeaders(response, allowedOrigin); response.end(); return; }
           const principalSessions = [...sessions.values()].filter((item) => item.principal_id === record.principal_id).length;
