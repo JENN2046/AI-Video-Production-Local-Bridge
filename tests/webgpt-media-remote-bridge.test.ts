@@ -1,12 +1,24 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import test from "node:test";
+import type { ClientRequest } from "node:http";
 
 import { openReadonlyMediaCapabilityRequest } from "../src/webgpt-cloud/mediaCapability.js";
 import {
+  armReadonlyMediaGatewayConnectTimeout,
   loadReadonlyMediaGatewayClientOptions,
   ReadonlyMediaGatewayClientError,
   requestReadonlyMediaPlayback
 } from "../src/webgpt-cloud/mediaGatewayClient.js";
+
+class FakeConnectRequest extends EventEmitter {
+  destroyed_with: Error | null = null;
+  destroy(error: Error): void { this.destroyed_with = error; }
+}
+
+class FakeConnectSocket extends EventEmitter {
+  connecting = true;
+}
 
 const keyring = { active: { kid: "remote-bridge-test", key: Buffer.alloc(32, 47) } };
 const binding = {
@@ -53,6 +65,23 @@ test("remote media bridge uses a validated pinned address and keeps identifiers 
   assert.equal(posted, 1);
   assert.equal(grant.playback_url, `https://media.skmt617.top/media/v1/c/${"h".repeat(43)}`);
   assert.equal(grant.snapshot_fingerprint, input.snapshot_fingerprint);
+});
+
+test("remote media bridge limits only connection establishment and permits slow gateway hashing", async () => {
+  const timedOut = new FakeConnectRequest();
+  armReadonlyMediaGatewayConnectTimeout(timedOut as unknown as ClientRequest, 15);
+  timedOut.emit("socket", new FakeConnectSocket());
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(timedOut.destroyed_with?.message, "MEDIA_GATEWAY_CONNECT_TIMEOUT");
+
+  const connected = new FakeConnectRequest();
+  const socket = new FakeConnectSocket();
+  armReadonlyMediaGatewayConnectTimeout(connected as unknown as ClientRequest, 15);
+  connected.emit("socket", socket);
+  socket.connecting = false;
+  socket.emit("secureConnect");
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(connected.destroyed_with, null);
 });
 
 test("remote media bridge rejects unsafe DNS, redirects, oversized responses, and malformed handles", async () => {

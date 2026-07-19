@@ -1,5 +1,6 @@
 import { request as httpsRequest } from "node:https";
 import { Readable } from "node:stream";
+import type { ClientRequest } from "node:http";
 
 import { z } from "zod/v4";
 
@@ -132,10 +133,45 @@ async function postPinnedJson(
         : Readable.toWeb(response) as ReadableStream<Uint8Array>;
       resolveResponse(new Response(responseBody, { status: response.statusCode ?? 500, headers }));
     });
-    request.setTimeout(READONLY_MEDIA_GATEWAY_CONNECT_TIMEOUT_MS, () => request.destroy(new Error("MEDIA_GATEWAY_CONNECT_TIMEOUT")));
+    armReadonlyMediaGatewayConnectTimeout(request);
     request.on("error", rejectResponse);
     request.end(body);
   });
+}
+
+interface ConnectTimeoutSocket {
+  connecting: boolean;
+  once(event: "secureConnect" | "error" | "close", listener: () => void): unknown;
+}
+
+interface ConnectTimeoutRequest {
+  on(event: "socket", listener: (socket: ConnectTimeoutSocket) => void): unknown;
+  on(event: "response" | "error" | "close", listener: () => void): unknown;
+  destroy(error: Error): void;
+}
+
+export function armReadonlyMediaGatewayConnectTimeout(
+  request: ClientRequest,
+  timeoutMs = READONLY_MEDIA_GATEWAY_CONNECT_TIMEOUT_MS
+): void {
+  const target = request as unknown as ConnectTimeoutRequest;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const clear = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+  };
+  target.on("socket", (socket) => {
+    if (!socket.connecting) return;
+    clear();
+    timer = setTimeout(() => target.destroy(new Error("MEDIA_GATEWAY_CONNECT_TIMEOUT")), timeoutMs);
+    timer.unref?.();
+    socket.once("secureConnect", clear);
+    socket.once("error", clear);
+    socket.once("close", clear);
+  });
+  target.on("response", clear);
+  target.on("error", clear);
+  target.on("close", clear);
 }
 
 function safeGatewayCode(input: unknown): string {
