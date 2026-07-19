@@ -285,8 +285,6 @@ function loadCandidate(
     const registeredRootValue = blob.provenance.media_root;
     if (typeof registeredRootValue !== "string" || !isAbsolute(registeredRootValue)) throw new ReadonlyMediaGatewayError("MEDIA_PATH_UNSAFE");
     const registeredRoot = resolve(registeredRootValue);
-    const allowedRoots = (options.allowed_media_roots ?? [paths.mediaRoot]).map((root) => resolve(root));
-    if (!allowedRoots.some((root) => samePath(root, registeredRoot))) throw new ReadonlyMediaGatewayError("MEDIA_PATH_UNSAFE");
     if (!existsSync(registeredRoot) || lstatSync(registeredRoot).isSymbolicLink() || !statSync(registeredRoot).isDirectory()) throw new ReadonlyMediaGatewayError("MEDIA_PATH_UNSAFE");
     const canonicalRoot = resolve(realpathSync(registeredRoot));
     if (!samePath(canonicalRoot, registeredRoot)) throw new ReadonlyMediaGatewayError("MEDIA_PATH_UNSAFE");
@@ -296,6 +294,10 @@ function loadCandidate(
     }
     const canonicalFile = resolve(realpathSync(localPath));
     if (!samePath(canonicalFile, localPath) || !isInside(canonicalFile, canonicalRoot)) throw new ReadonlyMediaGatewayError("MEDIA_PATH_UNSAFE");
+    const approvedRoots = (options.allowed_media_roots ?? [paths.mediaRoot]).map((root) => resolve(root));
+    if (approvedRoots.some((root) => !isSafeMediaRoot(root))) throw new ReadonlyMediaGatewayError("MEDIA_PATH_UNSAFE");
+    const canonicalApprovedRoots = approvedRoots.map((root) => resolve(realpathSync(root)));
+    if (!canonicalApprovedRoots.some((root) => isInside(canonicalFile, root))) throw new ReadonlyMediaGatewayError("MEDIA_PATH_UNSAFE");
     const identity = fileIdentity(canonicalFile);
     if (identity.size <= 0 || identity.size > READONLY_MEDIA_GATEWAY_MAX_FILE_BYTES || identity.size !== blob.size_bytes) {
       throw new ReadonlyMediaGatewayError("MEDIA_FILE_SIZE_INVALID");
@@ -474,7 +476,8 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
             const db = openM0DatabaseConnection(options.database_path, { readOnly: true });
             try { database = Boolean(db.prepare("SELECT 1 AS ok").get()); assertSchemaCurrent(db); schema = true; } finally { db.close(); }
           } catch { /* low-disclosure readiness */ }
-          const mediaRoots = (options.allowed_media_roots ?? [paths.mediaRoot]).every(isSafeMediaRoot);
+          const configuredMediaRoots = options.allowed_media_roots ?? [paths.mediaRoot];
+          const mediaRoots = configuredMediaRoots.length > 0 && configuredMediaRoots.every(isSafeMediaRoot);
           const capabilityKey = options.keyring.active.key.byteLength === 32;
           const ok = database && schema && mediaRoots && capabilityKey;
           json(response, ok ? 200 : 503, { ok, checks: { database, schema, media_roots: mediaRoots, capability_key: capabilityKey } });

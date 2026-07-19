@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { statSync, utimesSync } from "node:fs";
+import { resolve } from "node:path";
 import test from "node:test";
 
 import { paths } from "../src/paths.js";
@@ -149,10 +150,12 @@ test("readonly media gateway verifies bytes, consumes capabilities once, streams
     issuer_hash: fixture.actor.issuer_hash!,
     keyring,
     allowed_origin: ORIGIN,
-    allowed_media_roots: [paths.mediaRoot],
+    allowed_media_roots: [paths.imageArtifactsRoot],
     port: 0
   });
   try {
+    assert.notEqual(resolve(String(fixture.blob.provenance.media_root)), resolve(paths.imageArtifactsRoot));
+    assert.ok(resolve(fixture.blob.storage_uri).startsWith(resolve(paths.imageArtifactsRoot)));
     const health = await fetch(`${gateway.url}/healthz`);
     assert.equal(health.status, 200);
     assert.deepEqual(await health.json(), { ok: true, service: "readonly-media-gateway", version: "readonly-media-gateway-v1.0.0" });
@@ -200,6 +203,40 @@ test("readonly media gateway verifies bytes, consumes capabilities once, streams
     assert.equal((await capacityResponse.json() as { error: { code: string } }).error.code, "MEDIA_SESSION_CAPACITY_EXCEEDED");
   } finally {
     await gateway.close();
+  }
+  const wrongRootGateway = await startReadonlyMediaGateway({
+    database_path: paths.sqlitePath,
+    issuer_hash: fixture.actor.issuer_hash!,
+    keyring,
+    allowed_origin: ORIGIN,
+    allowed_media_roots: [paths.videoArtifactsRoot],
+    port: 0
+  });
+  try {
+    const denied = await fetch(`${wrongRootGateway.url}/internal/v1/capabilities`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(envelope(fixture))
+    });
+    assert.equal(denied.status, 404);
+    assert.equal((await denied.json() as { error: { code: string } }).error.code, "MEDIA_PATH_UNSAFE");
+  } finally {
+    await wrongRootGateway.close();
+  }
+  const emptyRootsGateway = await startReadonlyMediaGateway({
+    database_path: paths.sqlitePath,
+    issuer_hash: fixture.actor.issuer_hash!,
+    keyring,
+    allowed_origin: ORIGIN,
+    allowed_media_roots: [],
+    port: 0
+  });
+  try {
+    const notReady = await fetch(`${emptyRootsGateway.url}/readyz`);
+    assert.equal(notReady.status, 503);
+    assert.equal((await notReady.json() as { checks: { media_roots: boolean } }).checks.media_roots, false);
+  } finally {
+    await emptyRootsGateway.close();
   }
   const afterDb = openM0DatabaseConnection(paths.sqlitePath, { readOnly: true });
   const after = logicalManifest(afterDb);
