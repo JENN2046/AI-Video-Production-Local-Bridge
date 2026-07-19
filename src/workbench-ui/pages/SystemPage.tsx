@@ -64,11 +64,26 @@ function ReadonlyOperationsView() {
   if (query.isError || !query.data) return <ErrorState error={query.error} />;
   const data = query.data;
   const snapshot = data.remote.snapshot;
+  const freshness = data.freshness_operations;
   const last = data.last_publish;
   const busy = preflight.isPending || publish.isPending;
   const snapshotLabel = snapshot.freshness_status === "fresh" ? "新鲜"
     : snapshot.freshness_status === "snapshot_expired" ? "已过期"
       : snapshot.freshness_status === "no_snapshot" ? "未发布" : "未知";
+  const renewalAction = freshness.recommended_action === "preflight_and_renew";
+  const publishLabel = renewalAction ? (freshness.state === "restoration_required" ? "预检并恢复" : "预检并续期") : "预检并发布";
+  const reminderActionLabel = freshness.state === "restoration_required" ? "立即恢复" : "立即续期";
+  const freshnessMessage = freshness.reason_code === "SNAPSHOT_EXPIRING_SOON"
+    ? `Snapshot 将在 ${Math.max(0, Math.floor((snapshot.ttl_remaining_seconds ?? 0) / 60))} 分钟内过期，建议现在续期。`
+    : freshness.reason_code === "SNAPSHOT_NOT_PUBLISHED"
+      ? "远端当前没有 Snapshot，可能尚未发布或服务重启后内存快照已丢失。"
+      : freshness.reason_code === "SNAPSHOT_EXPIRED"
+        ? "远端 Snapshot 已过期，七个只读工具会保持 fail closed。"
+        : freshness.reason_code === "REMOTE_UNREACHABLE"
+          ? "远端服务当前不可达；请先检查服务状态，再决定是否续期。"
+          : freshness.reason_code === "REMOTE_NOT_READY" || freshness.reason_code === "SNAPSHOT_STATUS_UNKNOWN"
+            ? "远端状态不完整；请先刷新并检查 readiness。"
+            : null;
   return <div className={s.systemGrid}>
     <section className={s.systemBand}>
       <div className={s.systemIcon}><Cloud size={22} /></div>
@@ -76,9 +91,13 @@ function ReadonlyOperationsView() {
       <div className={s.headerActions}>
         <button className={s.secondaryButton} disabled={query.isFetching || busy} onClick={() => void query.refetch()}><RefreshCw size={15} />刷新状态</button>
         <button className={s.secondaryButton} disabled={!data.ready_to_preflight || busy} onClick={() => preflight.mutate()}><ShieldCheck size={15} />运行预检</button>
-        <button className={s.primaryButton} disabled={!data.ready_to_publish || busy} onClick={() => setConfirming(true)}><UploadCloud size={15} />预检并发布</button>
+        <button className={s.primaryButton} disabled={!data.ready_to_publish || busy} onClick={() => setConfirming(true)}><UploadCloud size={15} />{publishLabel}</button>
       </div>
     </section>
+    {freshnessMessage && <section className={`${s.freshnessNotice} ${freshness.renewal_recommended ? s.freshnessWarning : s.freshnessDanger}`}>
+      <div><strong>{freshness.renewal_recommended ? "Snapshot 需要人工处理" : "远端状态需要检查"}</strong><span>{freshnessMessage}</span><small>{freshness.reason_code} · 状态刷新不会自动发布。</small></div>
+      {freshness.renewal_recommended && <button className={s.primaryButton} disabled={!data.ready_to_publish || busy} onClick={() => setConfirming(true)}><UploadCloud size={15} />{reminderActionLabel}</button>}
+    </section>}
     <section className={s.systemPanel}><h3>本地发布条件</h3><KeyValue rows={[
       ["配置", data.configuration === "ready" ? "已就绪" : data.configuration === "missing" ? "未配置" : "配置无效"],
       ["活动数据库", statusText(data.database_available)],
@@ -107,7 +126,7 @@ function ReadonlyOperationsView() {
     {preflight.isSuccess && <div className={s.successReceipt}>预检通过：{shortFingerprint(preflight.data.snapshot_fingerprint)}，尚未替换远端 Snapshot。</div>}
     {publish.isSuccess && <div className={s.successReceipt}>发布完成：HTTP {publish.data.http_status} · {shortFingerprint(publish.data.snapshot_fingerprint)}</div>}
     {(preflight.isError || publish.isError) && <div className={s.inlineError}>{preflight.error?.message ?? publish.error?.message}</div>}
-    {confirming && <Modal title="确认发布只读 Snapshot" onClose={() => setConfirming(false)} footer={<><button className={s.secondaryButton} onClick={() => setConfirming(false)}>取消</button><button className={s.primaryButton} disabled={publish.isPending} onClick={() => publish.mutate()}><UploadCloud size={15} />确认预检并发布</button></>}>
+    {confirming && <Modal title={renewalAction ? "确认人工续期只读 Snapshot" : "确认发布只读 Snapshot"} onClose={() => setConfirming(false)} footer={<><button className={s.secondaryButton} onClick={() => setConfirming(false)}>取消</button><button className={s.primaryButton} disabled={publish.isPending} onClick={() => publish.mutate()}><UploadCloud size={15} />确认{publishLabel}</button></>}>
       <div className={s.advisoryBox}><span>本次操作</span><strong>只读导出 → DPAPI 签名 → HTTPS Snapshot 替换</strong><small>不会修改业务数据库、授权关系、媒体、Provider 或系统自动启动配置。</small></div>
     </Modal>}
   </div>;

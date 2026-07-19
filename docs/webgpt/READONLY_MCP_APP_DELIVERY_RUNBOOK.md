@@ -48,11 +48,12 @@ WEBGPT_READONLY_PUBLISHER_PROFILE_PATH=data/webgpt/publisher/profile.json
 If the variable is absent, the path above is the default. The browser never supplies or receives the profile path, database path, resource URL, key material or response body.
 
 - Status checks only profile/key/database file availability, sanitized local receipt metadata and the public remote `/healthz`/`/readyz` projection. It does not export business rows or unlock the private key.
+- The freshness projection marks a fresh Snapshot with at most two hours remaining as `renewal_due`, and maps `no_snapshot` or expiry to `restoration_required`. Remote failures produce a check-only recommendation. The 60-second UI status poll never exports or publishes.
 - `运行预检` performs the existing ledger-`0008` readonly export and DPAPI signature check without a remote write or receipt.
-- `预检并发布` requires the Workbench action nonce plus an explicit human confirmation, serializes concurrent attempts, runs the same preflight and performs one `PUT /snapshot`.
+- `预检并发布/续期/恢复` are labels for the same protected operation: Workbench action nonce plus explicit human confirmation, serialized execution, the same preflight and one `PUT /snapshot`.
 - Remote errors are reduced to stable codes and HTTP status. No remote response body, business content or local path is returned to the UI.
 
-This is still manual publishing. It does not schedule refreshes, start Windows automatically or change Render/Auth0/ChatGPT configuration.
+This is still manual publishing. It does not schedule publishes, start Windows automatically or change Render/Auth0/ChatGPT configuration.
 
 ## Render delivery contract
 

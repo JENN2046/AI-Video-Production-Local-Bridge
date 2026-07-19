@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -28,6 +28,7 @@ describe("Human Workbench V2 shell", () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.unstubAllGlobals();
     fetchMock.mockReset();
   });
@@ -46,7 +47,7 @@ describe("Human Workbench V2 shell", () => {
   it("exposes explicit readonly preflight and confirmed one-click publish without accepting paths from the browser", async () => {
     const fingerprint = "a".repeat(64);
     const status = {
-      operations_version: "personal-readonly-operations-v1",
+      operations_version: "personal-readonly-operations-v2",
       checked_at: "2026-07-17T00:00:00.000Z",
       configuration: "ready",
       stable_error_code: null,
@@ -54,6 +55,7 @@ describe("Human Workbench V2 shell", () => {
       publisher_key_available: true,
       ready_to_preflight: true,
       ready_to_publish: true,
+      freshness_operations: { state: "renewal_due", reason_code: "SNAPSHOT_EXPIRING_SOON", renewal_recommended: true, recommended_action: "preflight_and_renew", renewal_threshold_seconds: 7200 },
       remote: {
         reachable: true,
         ready: true,
@@ -61,7 +63,7 @@ describe("Human Workbench V2 shell", () => {
         readiness_http_status: 200,
         service_version: "readonly-remote-v1.0.0",
         checks: { oauth: true, publisher_key: true, snapshot_fresh: true, authorization_projection: true },
-        snapshot: { freshness_status: "fresh", generated_at: "2026-07-17T00:00:00.000Z", expires_at: "2026-07-18T00:00:00.000Z", age_seconds: 0, ttl_remaining_seconds: 86400, snapshot_fingerprint: fingerprint }
+        snapshot: { freshness_status: "fresh", generated_at: "2026-07-17T00:00:00.000Z", expires_at: "2026-07-18T00:00:00.000Z", age_seconds: 82800, ttl_remaining_seconds: 3600, snapshot_fingerprint: fingerprint }
       },
       last_publish: null,
       last_receipt_state: "none"
@@ -78,10 +80,12 @@ describe("Human Workbench V2 shell", () => {
     render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={["/v2/system/readonly"]}><App /></MemoryRouter></QueryClientProvider>);
 
     expect(await screen.findByRole("heading", { name: "只读 MCP App 发布" })).toBeInTheDocument();
+    expect(await screen.findByText(/Snapshot 将在 60 分钟内过期/)).toBeInTheDocument();
+    expect(screen.getByText(/状态刷新不会自动发布/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "运行预检" }));
     expect(await screen.findByText(/预检通过/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "预检并发布" }));
-    fireEvent.click(await screen.findByRole("button", { name: "确认预检并发布" }));
+    fireEvent.click(screen.getByRole("button", { name: "立即续期" }));
+    fireEvent.click(await screen.findByRole("button", { name: "确认预检并续期" }));
     expect(await screen.findByText(/发布完成/)).toBeInTheDocument();
 
     const publishCall = fetchMock.mock.calls.find(([input]) => String(input).endsWith("/publish"));
@@ -92,5 +96,42 @@ describe("Human Workbench V2 shell", () => {
     expect(String(init.body)).not.toContain("profile");
     expect(String(init.body)).not.toContain("database");
     expect(fetchMock.mock.calls.some(([input]) => /^\/api\/v2\/projects\//.test(String(input)))).toBe(false);
+  });
+
+  it("shows a manual recovery action when a restarted remote has no snapshot", async () => {
+    const status = {
+      operations_version: "personal-readonly-operations-v2",
+      checked_at: "2026-07-19T00:00:00.000Z",
+      configuration: "ready",
+      stable_error_code: null,
+      database_available: true,
+      publisher_key_available: true,
+      ready_to_preflight: true,
+      ready_to_publish: true,
+      freshness_operations: { state: "restoration_required", reason_code: "SNAPSHOT_NOT_PUBLISHED", renewal_recommended: true, recommended_action: "preflight_and_renew", renewal_threshold_seconds: 7200 },
+      remote: {
+        reachable: true,
+        ready: false,
+        health_http_status: 200,
+        readiness_http_status: 503,
+        service_version: "readonly-remote-v1.0.0",
+        checks: { oauth: true, publisher_key: true, snapshot_fresh: false, authorization_projection: false },
+        snapshot: { freshness_status: "no_snapshot", generated_at: null, expires_at: null, age_seconds: null, ttl_remaining_seconds: null, snapshot_fingerprint: null }
+      },
+      last_publish: null,
+      last_receipt_state: "none"
+    };
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/api/v2/shell") return new Response(JSON.stringify({ ok: true, data: shell }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url === "/api/v2/system/readonly-operations") return new Response(JSON.stringify({ ok: true, data: status }), { status: 200, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ ok: false, error: { code: "NOT_FOUND", message: url } }), { status: 404, headers: { "content-type": "application/json" } });
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={["/v2/system/readonly"]}><App /></MemoryRouter></QueryClientProvider>);
+
+    expect(await screen.findByText(/远端当前没有 Snapshot/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "立即恢复" })).toBeEnabled();
+    expect(screen.getByText(/状态刷新不会自动发布/)).toBeInTheDocument();
   });
 });

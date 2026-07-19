@@ -78,7 +78,7 @@ test("personal readonly operations API requires nonce and explicit publish confi
     status: async () => {
       calls.status += 1;
       return {
-        operations_version: "personal-readonly-operations-v1",
+        operations_version: "personal-readonly-operations-v2",
         checked_at: "2026-07-17T00:00:00.000Z",
         configuration: "ready",
         stable_error_code: null,
@@ -86,6 +86,7 @@ test("personal readonly operations API requires nonce and explicit publish confi
         publisher_key_available: true,
         ready_to_preflight: true,
         ready_to_publish: true,
+        freshness_operations: { state: "renewal_due", reason_code: "SNAPSHOT_EXPIRING_SOON", renewal_recommended: true, recommended_action: "preflight_and_renew", renewal_threshold_seconds: 7200 },
         remote: {
           reachable: true,
           ready: true,
