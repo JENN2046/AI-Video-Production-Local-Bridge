@@ -108,7 +108,7 @@ function envelope(fixture: ReturnType<typeof createFixture>, at?: Date) {
 async function issue(baseUrl: string, fixture: ReturnType<typeof createFixture>, at?: Date): Promise<string> {
   const response = await fetch(`${baseUrl}/internal/v1/capabilities`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json; charset=utf-8" },
     body: JSON.stringify(envelope(fixture, at))
   });
   assert.equal(response.status, 201);
@@ -163,6 +163,13 @@ test("readonly media gateway verifies bytes, consumes capabilities once, streams
     const wrongContentType = await fetch(`${gateway.url}/internal/v1/capabilities`, { method: "POST", body: "{}" });
     assert.equal(wrongContentType.status, 404);
     assert.equal((await wrongContentType.json() as { error: { code: string } }).error.code, "MEDIA_CAPABILITY_INVALID");
+    const disguisedContentType = await fetch(`${gateway.url}/internal/v1/capabilities`, {
+      method: "POST",
+      headers: { "content-type": "application/jsonish; charset=utf-8" },
+      body: "{}"
+    });
+    assert.equal(disguisedContentType.status, 404);
+    assert.equal((await disguisedContentType.json() as { error: { code: string } }).error.code, "MEDIA_CAPABILITY_INVALID");
     const handle = await issue(gateway.url, fixture);
     const capabilityUrl = `${gateway.url}/media/v1/c/${handle}`;
     const head = await fetch(capabilityUrl, { method: "HEAD", headers: { origin: ORIGIN }, redirect: "manual" });

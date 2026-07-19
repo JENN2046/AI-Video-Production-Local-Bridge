@@ -387,6 +387,10 @@ async function body(request: IncomingMessage): Promise<unknown> {
   }
 }
 
+function isApplicationJsonContentType(value: string | undefined): boolean {
+  return (value?.split(";", 1)[0]?.trim().toLowerCase() ?? "") === "application/json";
+}
+
 export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOptions): Promise<ReadonlyMediaGatewayRuntime> {
   if (!/^[0-9a-f]{64}$/.test(options.issuer_hash)) throw new ReadonlyMediaGatewayError("MEDIA_GATEWAY_CONFIG_INVALID");
   const allowedOrigin = options.allowed_origin ?? "https://aivideo.skmt617.top";
@@ -484,7 +488,7 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
           return;
         }
         if (request.method === "POST" && url.pathname === "/internal/v1/capabilities") {
-          if ((request.headers["content-type"] ?? "").toLowerCase() !== "application/json") {
+          if (!isApplicationJsonContentType(request.headers["content-type"])) {
             throw new ReadonlyMediaGatewayError("MEDIA_CAPABILITY_INVALID");
           }
           const payload = openReadonlyMediaCapabilityRequest(await body(request), options.keyring, { now });
