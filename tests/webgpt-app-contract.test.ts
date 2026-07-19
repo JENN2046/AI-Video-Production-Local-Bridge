@@ -108,6 +108,44 @@ test("render contract accepts only low-disclosure shell state and initial intent
   assert.equal(READONLY_WORKBENCH_RENDER_INPUT_SCHEMA.safeParse({ initial_panel: "media" }).success, false);
 });
 
+test("readonly workbench renders canonical blocker reason codes", async () => {
+  const dom = new JSDOM(readonlyWorkbenchWidgetHtml(), {
+    runScripts: "dangerously",
+    pretendToBeVisual: true,
+    beforeParse(window) {
+      Object.defineProperty(window, "openai", { value: {
+        toolOutput: shell(),
+        callTool: async (name: string) => {
+          if (name === "list_production_projects") {
+            return toolResult({ items: [{ project: { project_id: "project_a", title: "Project A", status: "video_review" } }], page: { next_offset: null } });
+          }
+          if (name === "get_project_context") {
+            return toolResult({
+              project: { project_id: "project_a", title: "Project A", status: "video_review" },
+              workspace: "overview",
+              summary: {},
+              metrics: { shots: 1, storyboard_approved: 1, generation_active: 0, review_pending: 0, accepted_clips: 0 },
+              blockers: [{
+                shot_id: "shot_a", order: 1, missing_image: false, missing_prompt: false, reason_codes: ["CLIP_REVISION_REQUIRED"]
+              }]
+            });
+          }
+          if (name === "list_project_shots") return toolResult({ items: [], page: { next_offset: null } });
+          return toolResult({ project_status: "video_review", readiness_checks: [] });
+        }
+      }, configurable: true });
+    }
+  });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    const contextText = dom.window.document.querySelector("#context")?.textContent ?? "";
+    assert.equal(contextText.includes("CLIP_REVISION_REQUIRED"), true);
+    assert.equal(contextText.includes("SHOT 1 · "), true);
+  } finally {
+    dom.window.close();
+  }
+});
+
 test("readonly App resource and render binding expose a low-disclosure authenticated shell", async () => {
   const runtime = await startReadonlyRemoteRuntime({
     port: 0,

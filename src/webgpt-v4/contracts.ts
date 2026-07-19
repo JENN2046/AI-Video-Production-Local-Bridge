@@ -159,7 +159,9 @@ const mediaListDataSchema = z.discriminatedUnion("detail", [
   z.object({ detail: z.literal("full"), items: z.array(WEBGPT_V4_ARTIFACT_SCHEMA), page: WEBGPT_V4_PAGE_SCHEMA }).strict()
 ]);
 const metricsSchema = z.object({ shots: z.number().int(), storyboard_approved: z.number().int(), generation_active: z.number().int(), review_pending: z.number().int(), accepted_clips: z.number().int() }).strict();
-const blockerSchema = z.object({ shot_id: z.string(), order: z.number(), missing_image: z.boolean(), missing_prompt: z.boolean() }).strict();
+const blockerSchema = z.object({
+  shot_id: z.string(), order: z.number(), missing_image: z.boolean(), missing_prompt: z.boolean(), reason_codes: z.array(z.string())
+}).strict();
 const readinessCheckSchema = z.object({ shot_id: z.string(), artifact_id: z.string().nullable(), ok: z.boolean(), reason_code: z.string() }).strict();
 const compactContextBase = { detail: z.literal("compact"), project: WEBGPT_V4_COMPACT_PROJECT_SCHEMA, summary: WEBGPT_V4_SUMMARY_SCHEMA };
 const fullContextBase = { detail: z.literal("full"), project: WEBGPT_V4_PROJECT_SCHEMA, meta: projectMetaSchema, summary: WEBGPT_V4_SUMMARY_SCHEMA };
@@ -389,7 +391,17 @@ export function readProjectContext(result: WebGptV4Result<unknown>, detail: WebG
   let projected: UnknownRecord;
   if (data.workspace === "overview") {
     const metrics = record(data.metrics);
-    projected = { ...base, metrics: { shots: metrics.shots, storyboard_approved: metrics.storyboard_approved, generation_active: metrics.generation_active, review_pending: metrics.review_pending, accepted_clips: metrics.accepted_clips }, blockers: records(data.blockers).map((item) => ({ shot_id: item.shot_id, order: item.order, missing_image: item.missing_image, missing_prompt: item.missing_prompt })) };
+    projected = {
+      ...base,
+      metrics: { shots: metrics.shots, storyboard_approved: metrics.storyboard_approved, generation_active: metrics.generation_active, review_pending: metrics.review_pending, accepted_clips: metrics.accepted_clips },
+      blockers: records(data.blockers).map((item) => ({
+        shot_id: item.shot_id,
+        order: item.order,
+        missing_image: item.missing_image,
+        missing_prompt: item.missing_prompt,
+        reason_codes: Array.isArray(item.reason_codes) ? item.reason_codes.filter((code): code is string => typeof code === "string") : []
+      }))
+    };
   } else if (data.workspace === "storyboard" || data.workspace === "generation") {
     projected = { ...base, shots: records(data.shots).map((item) => publicShot(item, compact)) };
   } else if (data.workspace === "review") {

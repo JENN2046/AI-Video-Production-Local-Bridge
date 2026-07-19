@@ -10,7 +10,7 @@ import {
   type ReadonlySnapshot
 } from "./snapshot.js";
 
-export const READONLY_SIGNED_SNAPSHOT_VERSION = "readonly-snapshot-envelope-v2";
+export const READONLY_SIGNED_SNAPSHOT_VERSION = "readonly-snapshot-envelope-v3";
 export const READONLY_SIGNED_SNAPSHOT_ALGORITHM = "Ed25519";
 
 const keyIdSchema = z.string().regex(/^[A-Za-z0-9._-]{1,128}$/);
@@ -48,7 +48,7 @@ function deepFreeze<T>(value: T): T {
 }
 
 function signaturePayload(snapshot: ReadonlySnapshot): Buffer {
-  return Buffer.from(`readonly-snapshot-signature-v2\n${canonicalizeJcs(snapshot)}`, "utf8");
+  return Buffer.from(`readonly-snapshot-signature-v3\n${canonicalizeJcs(snapshot)}`, "utf8");
 }
 
 export function signReadonlySnapshot(
