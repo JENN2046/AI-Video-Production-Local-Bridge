@@ -296,7 +296,7 @@ test("readonly workbench renders compact review stage from operational state", a
   }
 });
 
-test("readonly workbench loads app-only media lazily and clears the capability URL on project switch", async () => {
+test("readonly workbench preserves media across same-project refresh and clears it on project switch", async () => {
   const mediaCalls: Array<{ project_id: string; artifact_id: string }> = [];
   const playbackUrl = `https://media.skmt617.top/media/v1/c/${"p".repeat(43)}`;
   const dom = new JSDOM(readonlyWorkbenchWidgetHtml(), {
@@ -342,6 +342,14 @@ test("readonly workbench loads app-only media lazily and clears the capability U
     assert.equal(image.crossOrigin, "anonymous");
     assert.equal(image.referrerPolicy, "no-referrer");
     assert.equal(JSON.stringify(mediaCalls), JSON.stringify([{ project_id: "project_a", artifact_id: "artifact_project_a" }]));
+
+    const refresh = [...dom.window.document.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "刷新");
+    assert.ok(refresh);
+    refresh.click();
+    await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+    assert.equal(image.src, playbackUrl);
+    assert.equal(image.isConnected, true);
+    assert.equal(mediaCalls.length, 1);
 
     const secondProject = [...dom.window.document.querySelectorAll<HTMLButtonElement>(".project")].find((button) => button.dataset.projectId === "project_b");
     assert.ok(secondProject);

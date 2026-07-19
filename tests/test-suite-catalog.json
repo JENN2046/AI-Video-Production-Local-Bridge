@@ -282,7 +282,7 @@
       "path": "tests/webgpt-app-contract.test.ts",
       "npm_script": "test:webgpt:app",
       "ci_step": "WebGPT MCP App tests",
-      "case_name": "readonly workbench loads app-only media lazily and clears the capability URL on project switch"
+      "case_name": "readonly workbench preserves media across same-project refresh and clears it on project switch"
     },
     {
       "id": "readonly-projection-ledger-gate",

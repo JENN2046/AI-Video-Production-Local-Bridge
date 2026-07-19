@@ -85,7 +85,7 @@ export const REQUIRED_READONLY_APP_SUITES: ReadonlyArray<ReadonlyAppSuite> = [
   { id: "readonly-media-gateway-lifetime", path: "tests/webgpt-media-gateway-runtime.test.ts", npm_script: "test:webgpt:media-gateway", ci_step: "Readonly media gateway contract tests", case_name: "readonly media capability and session handles expire and never survive a gateway restart" },
   { id: "readonly-media-app-only-contract", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly media playback contract is app-only and keeps the capability URL out of model-visible output" },
   { id: "readonly-media-remote-pinning", path: "tests/webgpt-media-remote-bridge.test.ts", npm_script: "test:webgpt:cloud", ci_step: "WebGPT cloud projection tests", case_name: "remote media bridge uses a validated pinned address and keeps identifiers inside AES-GCM ciphertext" },
-  { id: "readonly-media-widget-lifecycle", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly workbench loads app-only media lazily and clears the capability URL on project switch" }
+  { id: "readonly-media-widget-lifecycle", path: "tests/webgpt-app-contract.test.ts", npm_script: "test:webgpt:app", ci_step: "WebGPT MCP App tests", case_name: "readonly workbench preserves media across same-project refresh and clears it on project switch" }
 ];
 
 export const REQUIRED_OAUTH_PORTABILITY_SUITES: ReadonlyArray<OAuthPortabilitySuite> = [
