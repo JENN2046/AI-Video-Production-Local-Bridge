@@ -169,6 +169,8 @@ test("readonly media gateway verifies bytes, consumes capabilities once, streams
     assert.equal(activated.status, 302);
     assert.match(activated.headers.get("location") ?? "", /^\/media\/v1\/s\/[A-Za-z0-9_-]{43}$/);
     assert.equal(activated.headers.get("cache-control"), "private, no-store, max-age=0");
+    assert.equal(activated.headers.get("access-control-allow-origin"), ORIGIN);
+    assert.equal(activated.headers.get("access-control-allow-credentials"), "true");
     const replay = await fetch(capabilityUrl, { headers: { origin: ORIGIN }, redirect: "manual" });
     assert.equal(replay.status, 409);
     assert.equal((await replay.json() as { error: { code: string } }).error.code, "MEDIA_CAPABILITY_REPLAYED");
@@ -176,12 +178,15 @@ test("readonly media gateway verifies bytes, consumes capabilities once, streams
     const range = await fetch(sessionUrl, { headers: { origin: ORIGIN, range: "bytes=0-15" } });
     assert.equal(range.status, 206);
     assert.equal(range.headers.get("content-range"), `bytes 0-15/${fixture.blob.size_bytes}`);
+    assert.equal(range.headers.get("access-control-allow-credentials"), "true");
     assert.equal((await range.arrayBuffer()).byteLength, 16);
     const invalidRange = await fetch(sessionUrl, { headers: { origin: ORIGIN, range: "bytes=0-1,4-5" } });
     assert.equal(invalidRange.status, 416);
+    assert.equal(invalidRange.headers.get("access-control-allow-credentials"), "true");
     const deniedOrigin = await fetch(sessionUrl, { headers: { origin: "https://denied.example" } });
     assert.equal(deniedOrigin.status, 403);
     assert.equal(deniedOrigin.headers.get("cache-control"), "private, no-store, max-age=0");
+    assert.equal(deniedOrigin.headers.get("access-control-allow-credentials"), null);
     assert.equal(gateway.counts().sessions, 1);
     for (let index = 0; index < 3; index += 1) {
       const additional = await issue(gateway.url, fixture);

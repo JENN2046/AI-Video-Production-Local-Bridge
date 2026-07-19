@@ -321,6 +321,7 @@ function mediaHeaders(response: ServerResponse, allowedOrigin: string): void {
   response.setHeader("content-disposition", "inline");
   response.setHeader("cross-origin-resource-policy", "cross-origin");
   response.setHeader("access-control-allow-origin", allowedOrigin);
+  response.setHeader("access-control-allow-credentials", "true");
   response.setHeader("vary", "Origin");
 }
 
