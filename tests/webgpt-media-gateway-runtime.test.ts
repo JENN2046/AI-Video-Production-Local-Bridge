@@ -126,9 +126,13 @@ test("media integrity queue remains bounded and retains a timed-out slot until t
   assert.deepEqual(queue.status, { running: 1, waiting: 0 });
   const next = queue.run(async () => "next");
   assert.deepEqual(queue.status, { running: 1, waiting: 1 });
+  await assert.rejects(next, (error) => error instanceof ReadonlyMediaGatewayError && error.code === "MEDIA_INTEGRITY_TIMEOUT");
+  assert.deepEqual(queue.status, { running: 1, waiting: 0 });
   settle();
-  assert.equal(await next, "next");
+  await blocked;
+  await new Promise<void>((resolveTick) => setImmediate(resolveTick));
   assert.deepEqual(queue.status, { running: 0, waiting: 0 });
+  assert.equal(await queue.run(async () => "recovered"), "recovered");
 
   const bounded = new MediaIntegrityQueue(1, 4, 5_000);
   let release!: () => void;
@@ -181,6 +185,9 @@ test("readonly media gateway verifies bytes, consumes capabilities once, streams
     assert.equal(activated.headers.get("cache-control"), "private, no-store, max-age=0");
     assert.equal(activated.headers.get("access-control-allow-origin"), ORIGIN);
     assert.equal(activated.headers.get("access-control-allow-credentials"), "true");
+    const consumedHead = await fetch(capabilityUrl, { method: "HEAD", headers: { origin: ORIGIN }, redirect: "manual" });
+    assert.equal(consumedHead.status, 409);
+    assert.equal(consumedHead.headers.get("access-control-allow-credentials"), "true");
     const replay = await fetch(capabilityUrl, { headers: { origin: ORIGIN }, redirect: "manual" });
     assert.equal(replay.status, 409);
     assert.equal((await replay.json() as { error: { code: string } }).error.code, "MEDIA_CAPABILITY_REPLAYED");

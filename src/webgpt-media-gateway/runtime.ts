@@ -41,7 +41,7 @@ export class ReadonlyMediaGatewayError extends Error {
 
 export class MediaIntegrityQueue {
   private running = 0;
-  private readonly waiting: Array<() => void> = [];
+  private readonly waiting: Array<{ resume: () => void }> = [];
 
   constructor(
     readonly concurrency = 1,
@@ -56,7 +56,22 @@ export class MediaIntegrityQueue {
   async run<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T> {
     if (this.running >= this.concurrency) {
       if (this.waiting.length >= this.maximumWaiting) throw new ReadonlyMediaGatewayError("MEDIA_INTEGRITY_BUSY");
-      await new Promise<void>((resolveWaiting) => this.waiting.push(resolveWaiting));
+      await new Promise<void>((resolveWaiting, rejectWaiting) => {
+        let timer: ReturnType<typeof setTimeout>;
+        const waiter = {
+          resume: (): void => {
+            clearTimeout(timer);
+            resolveWaiting();
+          }
+        };
+        timer = setTimeout(() => {
+          const index = this.waiting.indexOf(waiter);
+          if (index < 0) return;
+          this.waiting.splice(index, 1);
+          rejectWaiting(new ReadonlyMediaGatewayError("MEDIA_INTEGRITY_TIMEOUT"));
+        }, this.timeoutMs);
+        this.waiting.push(waiter);
+      });
     }
     this.running += 1;
     const controller = new AbortController();
@@ -67,7 +82,7 @@ export class MediaIntegrityQueue {
       if (released) return;
       released = true;
       this.running -= 1;
-      this.waiting.shift()?.();
+      this.waiting.shift()?.resume();
     };
     const taskPromise = Promise.resolve().then(() => task(controller.signal));
     try {
@@ -521,8 +536,8 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
           const record = capabilities.get(capabilityMatch[1]!);
           if (!record || record.expires_at_ms <= now().getTime()) throw new ReadonlyMediaGatewayError("MEDIA_CAPABILITY_INVALID");
           validateRecord(record);
-          if (request.method === "HEAD") { response.statusCode = 204; mediaHeaders(response, allowedOrigin); response.end(); return; }
           if (record.consumed) throw new ReadonlyMediaGatewayError("MEDIA_CAPABILITY_REPLAYED");
+          if (request.method === "HEAD") { response.statusCode = 204; mediaHeaders(response, allowedOrigin); response.end(); return; }
           const principalSessions = [...sessions.values()].filter((item) => item.principal_id === record.principal_id).length;
           if (sessions.size >= READONLY_MEDIA_GATEWAY_MAX_SESSIONS || principalSessions >= READONLY_MEDIA_GATEWAY_MAX_SESSIONS_PER_PRINCIPAL) {
             throw new ReadonlyMediaGatewayError("MEDIA_SESSION_CAPACITY_EXCEEDED");
