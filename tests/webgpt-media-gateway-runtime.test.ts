@@ -337,6 +337,17 @@ test("readonly media capability and session handles expire and never survive a g
     assert.equal(expiredSession.status, 404);
     assert.equal((await expiredSession.json() as { error: { code: string } }).error.code, "MEDIA_SESSION_EXPIRED");
     assert.deepEqual(gateway.counts(), { capabilities: 0, sessions: 0 });
+
+    const expiredEnvelope = envelope(fixture, clock);
+    clock = new Date(clock.getTime() + 5 * 60 * 1000 + 1_000);
+    const rejectedIssuance = await fetch(`${gateway.url}/internal/v1/capabilities`, {
+      method: "POST",
+      headers: { "content-type": "application/json; charset=utf-8" },
+      body: JSON.stringify(expiredEnvelope)
+    });
+    assert.equal(rejectedIssuance.status, 404);
+    assert.equal((await rejectedIssuance.json() as { error: { code: string } }).error.code, "MEDIA_CAPABILITY_EXPIRED");
+    assert.deepEqual(gateway.counts(), { capabilities: 0, sessions: 0 });
   } finally {
     await gateway.close();
   }

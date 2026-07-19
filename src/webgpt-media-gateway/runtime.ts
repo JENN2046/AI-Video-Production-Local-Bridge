@@ -391,6 +391,14 @@ function isApplicationJsonContentType(value: string | undefined): boolean {
   return (value?.split(";", 1)[0]?.trim().toLowerCase() ?? "") === "application/json";
 }
 
+function requireUnexpiredCapability(payload: { expires_at: string }, currentMs: number): number {
+  const expiresAtMs = Date.parse(payload.expires_at);
+  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= currentMs) {
+    throw new ReadonlyMediaGatewayError("MEDIA_CAPABILITY_EXPIRED");
+  }
+  return expiresAtMs;
+}
+
 export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOptions): Promise<ReadonlyMediaGatewayRuntime> {
   if (!/^[0-9a-f]{64}$/.test(options.issuer_hash)) throw new ReadonlyMediaGatewayError("MEDIA_GATEWAY_CONFIG_INVALID");
   const allowedOrigin = options.allowed_origin ?? "https://aivideo.skmt617.top";
@@ -492,6 +500,7 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
             throw new ReadonlyMediaGatewayError("MEDIA_CAPABILITY_INVALID");
           }
           const payload = openReadonlyMediaCapabilityRequest(await body(request), options.keyring, { now });
+          const signedExpiresAtMs = requireUnexpiredCapability(payload, now().getTime());
           replay.accept(payload, now());
           const candidate = loadCandidate(options, payload.principal_id, payload.issuer_hash, payload.project_id, payload.artifact_id, payload.artifact_sha256);
           const verified = await verifyIntegrity(candidate);
@@ -499,7 +508,9 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
           if (!sameIdentity(verified.identity, revalidated.identity)) throw new ReadonlyMediaGatewayError("MEDIA_INTEGRITY_FAILED");
           let handle = createReadonlyMediaHandle(random);
           while (capabilities.has(handle) || sessions.has(handle)) handle = createReadonlyMediaHandle(random);
-          const expiresAtMs = Math.min(Date.parse(payload.expires_at), now().getTime() + READONLY_MEDIA_GATEWAY_CAPABILITY_TTL_MS);
+          const issuanceTimeMs = now().getTime();
+          requireUnexpiredCapability(payload, issuanceTimeMs);
+          const expiresAtMs = Math.min(signedExpiresAtMs, issuanceTimeMs + READONLY_MEDIA_GATEWAY_CAPABILITY_TTL_MS);
           capabilities.set(handle, { ...revalidated, handle, principal_id: payload.principal_id, issuer_hash: payload.issuer_hash, expires_at_ms: expiresAtMs, consumed: false });
           json(response, 201, READONLY_MEDIA_CAPABILITY_RESPONSE_SCHEMA.parse({ capability_handle: handle, expires_at: new Date(expiresAtMs).toISOString() }));
           return;
