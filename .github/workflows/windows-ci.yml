@@ -89,6 +89,9 @@ jobs:
       - name: WebGPT MCP App tests
         run: npm run test:webgpt:app
 
+      - name: Readonly media gateway contract tests
+        run: npm run test:webgpt:media-gateway
+
       - name: WebGPT Apps smoke
         run: npm run smoke:webgpt:app
 

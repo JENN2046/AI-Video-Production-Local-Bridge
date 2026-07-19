@@ -129,7 +129,7 @@ test("signed snapshot transport rejects tampering and atomically replaces only n
     assert.throws(() => { store.read()!.projects = []; }, TypeError);
 
     const legacyEnvelope = structuredClone(firstEnvelope) as unknown as Record<string, unknown>;
-    legacyEnvelope.envelope_version = "readonly-snapshot-envelope-v1";
+    legacyEnvelope.envelope_version = "readonly-snapshot-envelope-v3";
     assert.throws(() => store.replace(legacyEnvelope), /READONLY_SNAPSHOT_ENVELOPE_VERSION_UNSUPPORTED/);
     assert.equal(store.read()?.snapshot_fingerprint, first.snapshot.snapshot_fingerprint);
 
