@@ -34,6 +34,8 @@ export const READONLY_MEDIA_GATEWAY_MAX_SESSIONS = 32;
 export const READONLY_MEDIA_GATEWAY_MAX_SESSIONS_PER_PRINCIPAL = 4;
 export const READONLY_MEDIA_GATEWAY_MAX_PENDING_CAPABILITIES = 32;
 export const READONLY_MEDIA_GATEWAY_MAX_PENDING_CAPABILITIES_PER_PRINCIPAL = 4;
+export const READONLY_MEDIA_GATEWAY_MAX_CAPABILITY_RECORDS = 64;
+export const READONLY_MEDIA_GATEWAY_MAX_CAPABILITY_RECORDS_PER_PRINCIPAL = 8;
 
 const allowedMimeTypes = new Set<string>(READONLY_MEDIA_MIME_TYPES);
 
@@ -486,10 +488,14 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
   };
 
   const reserveCapabilityIssuance = (principalId: string): (() => void) => {
-    const pending = [...capabilities.values()].filter((item) => !item.consumed);
+    const records = [...capabilities.values()];
+    const pending = records.filter((item) => !item.consumed);
     const principalPending = pending.filter((item) => item.principal_id === principalId).length;
+    const principalRecords = records.filter((item) => item.principal_id === principalId).length;
     const principalIssuances = capabilityIssuancesByPrincipal.get(principalId) ?? 0;
-    if (pending.length + capabilityIssuances >= READONLY_MEDIA_GATEWAY_MAX_PENDING_CAPABILITIES
+    if (records.length + capabilityIssuances >= READONLY_MEDIA_GATEWAY_MAX_CAPABILITY_RECORDS
+      || principalRecords + principalIssuances >= READONLY_MEDIA_GATEWAY_MAX_CAPABILITY_RECORDS_PER_PRINCIPAL
+      || pending.length + capabilityIssuances >= READONLY_MEDIA_GATEWAY_MAX_PENDING_CAPABILITIES
       || principalPending + principalIssuances >= READONLY_MEDIA_GATEWAY_MAX_PENDING_CAPABILITIES_PER_PRINCIPAL) {
       throw new ReadonlyMediaGatewayError("MEDIA_CAPABILITY_CAPACITY_EXCEEDED");
     }

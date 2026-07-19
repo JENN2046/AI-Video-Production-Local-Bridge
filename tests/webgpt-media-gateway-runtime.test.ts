@@ -15,6 +15,7 @@ import { bootstrapWebGptProjectOwner, revokeWebGptProjectMembership } from "../s
 import { actorFromFederatedSubject } from "../src/webgpt-v4/types.js";
 import {
   MediaIntegrityQueue,
+  READONLY_MEDIA_GATEWAY_MAX_CAPABILITY_RECORDS_PER_PRINCIPAL,
   READONLY_MEDIA_GATEWAY_MAX_PENDING_CAPABILITIES,
   READONLY_MEDIA_GATEWAY_MAX_PENDING_CAPABILITIES_PER_PRINCIPAL,
   ReadonlyMediaGatewayError,
@@ -252,7 +253,7 @@ test("readonly media gateway bounds replay records created by failed issuances",
   }
 });
 
-test("readonly media gateway releases a session after an asynchronous read-stream failure", async () => {
+test("readonly media gateway releases failed sessions and bounds consumed capability tombstones", async () => {
   const fixture = createFixture("stream-error");
   const gateway = await startReadonlyMediaGateway({
     database_path: paths.sqlitePath,
@@ -269,21 +270,27 @@ test("readonly media gateway releases a session after an asynchronous read-strea
     }
   });
   try {
-    const handle = await issue(gateway.url, fixture);
-    const activated = await fetch(`${gateway.url}/media/v1/c/${handle}`, { headers: { origin: ORIGIN }, redirect: "manual" });
-    assert.equal(activated.status, 302);
-    await assert.rejects(async () => {
-      const failed = await fetch(`${gateway.url}${activated.headers.get("location")}`, { headers: { origin: ORIGIN } });
-      await failed.arrayBuffer();
-    });
-    for (let attempt = 0; attempt < 20 && gateway.counts().sessions !== 0; attempt += 1) {
-      await new Promise<void>((resolveWait) => setTimeout(resolveWait, 5));
+    for (let cycle = 0; cycle < READONLY_MEDIA_GATEWAY_MAX_CAPABILITY_RECORDS_PER_PRINCIPAL; cycle += 1) {
+      const handle = await issue(gateway.url, fixture);
+      const activated = await fetch(`${gateway.url}/media/v1/c/${handle}`, { headers: { origin: ORIGIN }, redirect: "manual" });
+      assert.equal(activated.status, 302);
+      await assert.rejects(async () => {
+        const failed = await fetch(`${gateway.url}${activated.headers.get("location")}`, { headers: { origin: ORIGIN } });
+        await failed.arrayBuffer();
+      });
+      for (let attempt = 0; attempt < 20 && gateway.counts().sessions !== 0; attempt += 1) {
+        await new Promise<void>((resolveWait) => setTimeout(resolveWait, 5));
+      }
+      assert.equal(gateway.counts().sessions, 0);
     }
-    assert.equal(gateway.counts().sessions, 0);
-    const replacement = await issue(gateway.url, fixture);
-    const replacementActivation = await fetch(`${gateway.url}/media/v1/c/${replacement}`, { headers: { origin: ORIGIN }, redirect: "manual" });
-    assert.equal(replacementActivation.status, 302);
-    assert.equal(gateway.counts().sessions, 1);
+    assert.equal(gateway.counts().capabilities, 0);
+    const bounded = await fetch(`${gateway.url}/internal/v1/capabilities`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(envelope(fixture))
+    });
+    assert.equal(bounded.status, 429);
+    assert.equal((await bounded.json() as { error: { code: string } }).error.code, "MEDIA_CAPABILITY_CAPACITY_EXCEEDED");
   } finally {
     await gateway.close();
   }
