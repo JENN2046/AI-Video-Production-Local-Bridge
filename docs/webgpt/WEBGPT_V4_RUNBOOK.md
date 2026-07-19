@@ -37,9 +37,11 @@ Human Workbench 的“系统 → 只读 App 发布”是当前接受的 Jenn 日
 
 该路径已在 `main@932e145e201ddf5763ab5fcbdc11b88fa8c81bad`、Windows Node `22.23.1`、活动库 ledger `0008` 和 `REAL_PROVIDER_ENABLED=false` 条件下通过首次真实验收；Snapshot v3 又在 `main@d4c7d8cf52d52e3a28293180a771d3b36f6e399f` 上完成 Render restart、`no_snapshot`、Human Workbench 单次确认发布、统一 fingerprint、七工具恢复、最终 `db:check` 和优雅停止。公开脱敏证据见 [Owner-Only Operations Acceptance](../../ops/reports/2026-07-18-owner-only-operations-acceptance.md) 与 [Snapshot v3 Human Workbench Recovery Acceptance](../../ops/reports/2026-07-19-snapshot-v3-human-workbench-recovery-acceptance.md)。
 
+Snapshot Freshness Operations 还在 `main@80cd790773db04ffcf696e46e54a2f552dab703a` 上完成了真实提醒与续期验收：Render restart 后稳定进入 `SNAPSHOT_NOT_PUBLISHED` 并显示“立即恢复”；90 分钟签名 Snapshot v3 稳定进入 `SNAPSHOT_EXPIRING_SOON` 并显示“立即续期”；Jenn 通过一次 Human Workbench 人工确认恢复正常 24 小时 Snapshot。远端 readiness、Jenn OAuth、七工具、全部 Workbench 面板和统一 fingerprint 均通过，活动库完整逻辑 manifest 不变，最终 `db:check=PASS`。公开脱敏证据见 [Snapshot Freshness Operations Acceptance](../../ops/reports/2026-07-19-snapshot-freshness-operations-acceptance.md)。
+
 当前 Render Free 服务仍只保存内存 Snapshot。服务休眠、重启或 24 小时 TTL 到期后必须重新发布。`no_snapshot → Human Workbench 单次确认发布 → 七工具恢复` 已完成真实演练，证明人工恢复路径可用；它不代表自动恢复、自动同步或自动启动。每次实际重新发布仍必须由 Jenn 明确触发并通过 Human Workbench 确认边界。
 
-Human Workbench 每分钟只读取远端公开 `/healthz`/`/readyz` 投影。剩余 TTL 不超过两小时时显示人工续期提醒；`no_snapshot` 与已过期显示恢复提醒；远端不可达或 readiness 不完整时只提示检查，不会盲目发布。提醒使用服务端 `ttl_remaining_seconds`，状态刷新不会打开业务行、解锁密钥、生成 Snapshot 或写 receipt。自动发布和 Windows 自动启动不属于该能力。
+Human Workbench 每分钟只读取远端公开 `/healthz`/`/readyz` 投影。剩余 TTL 不超过两小时时显示人工续期提醒；`no_snapshot` 与已过期显示恢复提醒；远端不可达或 readiness 不完整时只提示检查，不会盲目发布。提醒使用服务端 `ttl_remaining_seconds`，状态刷新不会打开业务行、解锁密钥、生成 Snapshot 或写 receipt。`SNAPSHOT_NOT_PUBLISHED → 立即恢复` 与 `SNAPSHOT_EXPIRING_SOON → 立即续期` 已完成真实有界验收；续期仍必须通过 action nonce 和人工确认。自动发布和 Windows 自动启动不属于该能力。
 
 普通 `preflight` 和 `/readyz` 证明本地服务边界，不代表 ChatGPT 已接受外部 OAuth discovery。外部 Readonly 接线前必须另外运行 `preflight:webgpt:oauth`；这个独立命令不打开数据库，先按 RFC 8414 规则从 issuer 推导 metadata URL，不可用时再尝试 OIDC discovery。两条路径都要求匿名 `200`、精确 issuer、精确 JWKS URI、HTTPS authorize/token/JWKS、PKCE S256 与 public client token auth `none`；`cimd` 还要求 CIMD capability，`dcr` 还要求 HTTPS registration endpoint，`predefined` 把外部 Client ID 验证保留给真实连接验收。
 
