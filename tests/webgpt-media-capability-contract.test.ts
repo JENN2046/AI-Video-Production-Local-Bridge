@@ -49,6 +49,20 @@ test("readonly media capability encrypts strict five-minute claims and supports 
     accepted_until: new Date(NOW.getTime() + 10 * 60 * 1000).toISOString()
   };
   assert.equal(openReadonlyMediaCapabilityRequest(rotated, { active, previous: boundedPrevious }, { now: () => NOW }).kid, previous.kid);
+  const mintedAtSkewBoundary = createReadonlyMediaCapabilityRequest(input, { active: previous }, {
+    now: () => new Date(NOW.getTime() + 30_000)
+  });
+  assert.equal(
+    openReadonlyMediaCapabilityRequest(mintedAtSkewBoundary, { active, previous: boundedPrevious }, { now: () => new Date(NOW.getTime() + 30_000) }).kid,
+    previous.kid
+  );
+  const mintedAfterRotation = createReadonlyMediaCapabilityRequest(input, { active: previous }, {
+    now: () => new Date(NOW.getTime() + 31_000)
+  });
+  assert.throws(
+    () => openReadonlyMediaCapabilityRequest(mintedAfterRotation, { active, previous: boundedPrevious }, { now: () => new Date(NOW.getTime() + 31_000) }),
+    (error) => error instanceof ReadonlyMediaCapabilityError && error.code === "MEDIA_CAPABILITY_KEY_UNKNOWN"
+  );
   assert.throws(
     () => openReadonlyMediaCapabilityRequest(rotated, { active, previous: boundedPrevious }, { now: () => new Date(NOW.getTime() + 10 * 60 * 1000) }),
     (error) => error instanceof ReadonlyMediaCapabilityError && error.code === "MEDIA_CAPABILITY_KEY_UNKNOWN"

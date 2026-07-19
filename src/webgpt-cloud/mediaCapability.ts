@@ -162,6 +162,10 @@ export function openReadonlyMediaCapabilityRequest(
     const issuedAt = Date.parse(payload.issued_at);
     const expiresAt = Date.parse(payload.expires_at);
     const now = current.getTime();
+    if (keyring.previous?.kid === payload.kid
+      && issuedAt > Date.parse(keyring.previous.accepted_from) + READONLY_MEDIA_CAPABILITY_CLOCK_SKEW_MS) {
+      throw new ReadonlyMediaCapabilityError("MEDIA_CAPABILITY_KEY_UNKNOWN");
+    }
     if (expiresAt <= issuedAt || expiresAt - issuedAt !== READONLY_MEDIA_CAPABILITY_TTL_MS) {
       throw new ReadonlyMediaCapabilityError("MEDIA_CAPABILITY_TTL_INVALID");
     }
