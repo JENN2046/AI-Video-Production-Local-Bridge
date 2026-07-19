@@ -123,6 +123,13 @@
       "paths": ["tests/webgpt-app-contract.test.ts"]
     },
     {
+      "id": "webgpt-media-gateway",
+      "classification": "mandatory",
+      "npm_script": "test:webgpt:media-gateway",
+      "ci_step": "Readonly media gateway contract tests",
+      "paths": ["tests/webgpt-media-capability-contract.test.ts"]
+    },
+    {
       "id": "webgpt-apps-smoke",
       "classification": "mandatory",
       "npm_script": "smoke:webgpt:app",
@@ -203,6 +210,34 @@
     }
   ],
   "readonly_app_suites": [
+    {
+      "id": "readonly-media-snapshot-v4-bindings",
+      "path": "tests/webgpt-cloud-projection.test.ts",
+      "npm_script": "test:webgpt:cloud",
+      "ci_step": "WebGPT cloud projection tests",
+      "case_name": "five-stage operational state exports through Snapshot v4 with canonical media bindings and blocker reasons"
+    },
+    {
+      "id": "readonly-media-capability-crypto",
+      "path": "tests/webgpt-media-capability-contract.test.ts",
+      "npm_script": "test:webgpt:media-gateway",
+      "ci_step": "Readonly media gateway contract tests",
+      "case_name": "readonly media capability encrypts strict five-minute claims and supports bounded key rotation"
+    },
+    {
+      "id": "readonly-media-capability-fail-closed",
+      "path": "tests/webgpt-media-capability-contract.test.ts",
+      "npm_script": "test:webgpt:media-gateway",
+      "ci_step": "Readonly media gateway contract tests",
+      "case_name": "readonly media capability rejects tampering, expiry, replay, and invalid key material"
+    },
+    {
+      "id": "readonly-media-app-only-contract",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly media playback contract is app-only and keeps the capability URL out of model-visible output"
+    },
     {
       "id": "readonly-projection-ledger-gate",
       "path": "tests/webgpt-cloud-projection.test.ts",

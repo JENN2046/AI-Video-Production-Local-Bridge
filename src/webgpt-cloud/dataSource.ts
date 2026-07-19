@@ -2,7 +2,8 @@ import { z } from "zod/v4";
 
 import { assertSchemaCurrent, SchemaMigrationRequiredError } from "../storage/migrations.js";
 import { openM0DatabaseConnection, type M0Database } from "../storage/sqlite.js";
-import { getProject } from "../tools/projects.js";
+import { getProject, getShot, type Project } from "../tools/projects.js";
+import { validateActiveArtifactReference, type ArtifactReferenceRequirement } from "../tools/mediaArtifacts.js";
 import {
   readDelivery,
   readProjectContext,
@@ -34,10 +35,12 @@ import { errorBody, fail, ok, requestId, WebGptV4Error, WEBGPT_V4_VERSION, type 
 import {
   finalizeReadonlySnapshot,
   READONLY_PROJECT_PROJECTION_SCHEMA,
+  READONLY_MEDIA_MIME_TYPES,
   READONLY_SNAPSHOT_REQUIRED_MIGRATION,
   READONLY_SNAPSHOT_REQUIRED_SCHEMA,
   READONLY_SNAPSHOT_SCHEMA_VERSION,
   type ReadonlyProjectProjection,
+  type ReadonlyMediaBinding,
   type ReadonlySnapshot,
   type ReadonlySnapshotUnsigned
 } from "./snapshot.js";
@@ -154,6 +157,62 @@ function assertNoForbiddenProjectionFields(value: unknown): void {
   }
 }
 
+function readonlyMediaBindings(db: M0Database, project: Project): ReadonlyMediaBinding[] {
+  const references = new Map<string, ArtifactReferenceRequirement>();
+  const add = (reference: ArtifactReferenceRequirement): void => {
+    const existing = references.get(reference.artifact_id);
+    if (existing && JSON.stringify(existing) !== JSON.stringify(reference)) {
+      throw new ReadonlyProjectionError("READONLY_PROJECTION_MEDIA_BINDING_CONFLICT", "A media Artifact is referenced by conflicting workflow objects.");
+    }
+    references.set(reference.artifact_id, reference);
+  };
+  for (const shotId of project.shot_ids) {
+    const shot = getShot(db, shotId);
+    if (!shot || shot.project_id !== project.project_id) {
+      throw new ReadonlyProjectionError("READONLY_PROJECTION_CONTRACT_VIOLATION", "Project SHOT binding is invalid during media projection.");
+    }
+    if (shot.storyboard_image_artifact_id) add({
+      artifact_id: shot.storyboard_image_artifact_id,
+      project_id: project.project_id,
+      shot_id: shot.shot_id,
+      role: "storyboard_image",
+      artifact_type: "image"
+    });
+    for (const version of shot.clip_versions) add({
+      artifact_id: version.artifact_id,
+      project_id: project.project_id,
+      shot_id: shot.shot_id,
+      role: "generated_clip",
+      artifact_type: "video"
+    });
+  }
+  if (project.exports.final_video_artifact_id) add({
+    artifact_id: project.exports.final_video_artifact_id,
+    project_id: project.project_id,
+    shot_id: "",
+    role: "final_video",
+    artifact_type: "video"
+  });
+
+  const allowedMimeTypes = new Set<string>(READONLY_MEDIA_MIME_TYPES);
+  const bindings: ReadonlyMediaBinding[] = [];
+  for (const reference of [...references.values()].sort((left, right) => left.artifact_id.localeCompare(right.artifact_id))) {
+    const validated = validateActiveArtifactReference(db, reference);
+    if (!validated.ok || !allowedMimeTypes.has(validated.blob.detected_mime)) continue;
+    bindings.push({
+      artifact_id: validated.artifact.artifact_id,
+      project_id: validated.artifact.linked_objects.project_id,
+      shot_id: validated.artifact.linked_objects.shot_id || null,
+      artifact_type: validated.artifact.artifact_type,
+      role: validated.artifact.role,
+      mime_type: validated.blob.detected_mime as ReadonlyMediaBinding["mime_type"],
+      sha256: validated.blob.sha256,
+      status: "active"
+    });
+  }
+  return bindings;
+}
+
 function allPages<T>(load: (offset: number) => WebGptV4Result<unknown>, schema: z.ZodType<T & { items: unknown[]; page: { next_offset: number | null } }>): T {
   let currentOffset = 0;
   let first: (T & { items: unknown[]; page: { next_offset: number | null } }) | null = null;
@@ -264,7 +323,8 @@ export function exportReadonlySnapshotFromDatabase(input: ExportReadonlySnapshot
         shots_full: fullShotItems,
         review_packages: reviewPackages,
         delivery: requireSuccess(readDelivery(getProductionDeliveryStatus({ project_id: projectId }, db, "readonly_export")), WEBGPT_V4_DELIVERY_DATA_SCHEMA),
-        closeout: requireSuccess(readDelivery(getProductionCloseoutEvidence({ project_id: projectId }, db, "readonly_export"), true), WEBGPT_V4_CLOSEOUT_DATA_SCHEMA)
+        closeout: requireSuccess(readDelivery(getProductionCloseoutEvidence({ project_id: projectId }, db, "readonly_export"), true), WEBGPT_V4_CLOSEOUT_DATA_SCHEMA),
+        media_bindings: readonlyMediaBindings(db, sourceProject)
       });
     });
     assertNoForbiddenProjectionFields(projects);

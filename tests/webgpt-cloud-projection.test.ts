@@ -301,6 +301,21 @@ test("SQLite and Snapshot readonly adapters preserve six-tool DTO parity and dat
   assert.ok(deliveryContext && "final_artifact_reason_code" in deliveryContext.compact && "final_artifact_reason_code" in deliveryContext.full);
   assert.equal(deliveryContext.compact.final_artifact_reason_code, null);
   assert.equal(deliveryContext.full.final_artifact_reason_code, null);
+  assert.deepEqual(snapshot.projects[0]!.media_bindings.map((binding) => ({
+    artifact_id: binding.artifact_id,
+    project_id: binding.project_id,
+    shot_id: binding.shot_id,
+    role: binding.role,
+    mime_type: binding.mime_type,
+    status: binding.status
+  })), [{
+    artifact_id: snapshot.projects[0]!.delivery.final_artifact!.artifact_id,
+    project_id: fixture.project_id,
+    shot_id: null,
+    role: "final_video",
+    mime_type: "video/mp4",
+    status: "active"
+  }]);
   assert.doesNotMatch(JSON.stringify(snapshot), /"(?:local_path|provider_payload|actor_hash|subject|idempotency_key)":/);
   const db = openM0DatabaseConnection(sqlitePath, { readOnly: true });
   try {
@@ -355,7 +370,7 @@ test("SQLite and Snapshot readonly adapters preserve six-tool DTO parity and dat
   }
 });
 
-test("five-stage operational state exports through Snapshot v3 with canonical blocker reasons", () => {
+test("five-stage operational state exports through Snapshot v4 with canonical media bindings and blocker reasons", () => {
   const root = mkdtempSync(join(tmpdir(), "readonly-projection-five-stage-"));
   const sqlitePath = join(root, "app.sqlite");
   const fixture = createFixture(sqlitePath);
@@ -390,6 +405,11 @@ test("five-stage operational state exports through Snapshot v3 with canonical bl
       { order: 1, missing_image: true, missing_prompt: false, reason_codes: ["STORYBOARD_IMAGE_MISSING"] },
       { order: 4, missing_image: false, missing_prompt: false, reason_codes: ["CLIP_REVISION_REQUIRED"] }
     ]);
+    assert.equal(project.media_bindings.length, 7);
+    assert.deepEqual(project.media_bindings.map((binding) => binding.artifact_id), [...project.media_bindings.map((binding) => binding.artifact_id)].sort());
+    assert.equal(project.media_bindings.filter((binding) => binding.role === "storyboard_image").length, 4);
+    assert.equal(project.media_bindings.filter((binding) => binding.role === "generated_clip").length, 3);
+    assert.equal(project.media_bindings.every((binding) => binding.project_id === fixture.project_id && binding.status === "active"), true);
 
     const { snapshot_fingerprint: _fingerprint, ...unsigned } = snapshot;
     const divergentMetrics = structuredClone(unsigned);
@@ -405,6 +425,24 @@ test("five-stage operational state exports through Snapshot v3 with canonical bl
     blockersContext.full.blockers = blockersContext.full.blockers.slice(0, 1);
     blockersContext.compact.blockers = blockersContext.compact.blockers.slice(0, 1);
     assert.throws(() => finalizeReadonlySnapshot(divergentBlockers), /overview metrics or blockers canonical projection mismatch/i);
+
+    const crossShotMedia = structuredClone(unsigned);
+    crossShotMedia.projects[0]!.media_bindings[0]!.shot_id = "shot_other";
+    assert.throws(() => finalizeReadonlySnapshot(crossShotMedia), /media binding differs from its canonical project reference/i);
+
+    const fabricatedMedia = structuredClone(unsigned);
+    fabricatedMedia.projects[0]!.media_bindings.push({
+      artifact_id: "artifact_fabricated",
+      project_id: fixture.project_id,
+      shot_id: project.shots_full[0]!.shot_id,
+      artifact_type: "image",
+      role: "storyboard_image",
+      mime_type: "image/png",
+      sha256: "f".repeat(64),
+      status: "active"
+    });
+    fabricatedMedia.projects[0]!.media_bindings.sort((left, right) => left.artifact_id.localeCompare(right.artifact_id));
+    assert.throws(() => finalizeReadonlySnapshot(fabricatedMedia), /not referenced by a canonical project workflow object/i);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -471,7 +509,7 @@ test("snapshot fingerprint uses deterministic JCS input and server time remains 
   });
 });
 
-test("readonly snapshot v3 rejects prior v2 payloads with a stable version error", () => {
+test("readonly snapshot v4 rejects prior v3 payloads with a stable version error", () => {
   const current = finalizeReadonlySnapshot({
     schema_version: READONLY_SNAPSHOT_SCHEMA_VERSION,
     source_schema: "workbench-v2-5",
@@ -485,7 +523,7 @@ test("readonly snapshot v3 rejects prior v2 payloads with a stable version error
     projects: []
   });
   const legacy = structuredClone(current) as unknown as Record<string, unknown>;
-  legacy.schema_version = "readonly-snapshot-v2";
+  legacy.schema_version = "readonly-snapshot-v3";
   assert.throws(
     () => parseReadonlySnapshot(legacy, new Date("2026-07-16T00:30:00.000Z")),
     /READONLY_SNAPSHOT_VERSION_UNSUPPORTED/

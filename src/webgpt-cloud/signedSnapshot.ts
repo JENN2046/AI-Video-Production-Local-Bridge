@@ -10,7 +10,7 @@ import {
   type ReadonlySnapshot
 } from "./snapshot.js";
 
-export const READONLY_SIGNED_SNAPSHOT_VERSION = "readonly-snapshot-envelope-v3";
+export const READONLY_SIGNED_SNAPSHOT_VERSION = "readonly-snapshot-envelope-v4";
 export const READONLY_SIGNED_SNAPSHOT_ALGORITHM = "Ed25519";
 
 const keyIdSchema = z.string().regex(/^[A-Za-z0-9._-]{1,128}$/);

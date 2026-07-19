@@ -4,6 +4,7 @@ export const READONLY_WORKBENCH_RESOURCE_URI = "ui://aivideo/readonly-workbench-
 export const READONLY_WORKBENCH_RESOURCE_MIME = "text/html;profile=mcp-app";
 export const READONLY_WORKBENCH_RESOURCE_VERSION = "readonly-workbench-v1.0.0";
 export const READONLY_WORKBENCH_RENDER_TOOL = "render_ai_video_workspace_app";
+export const READONLY_WORKBENCH_MEDIA_TOOL = "get_readonly_media_playback";
 export const READONLY_WORKBENCH_DATA_TOOLS = [
   "list_production_projects",
   "get_project_context",
@@ -12,6 +13,32 @@ export const READONLY_WORKBENCH_DATA_TOOLS = [
   "get_delivery_status",
   "get_closeout_evidence"
 ] as const;
+export const READONLY_WORKBENCH_APP_ONLY_TOOLS = [READONLY_WORKBENCH_MEDIA_TOOL] as const;
+
+export const READONLY_MEDIA_PLAYBACK_INPUT_SCHEMA = z.object({
+  project_id: z.string().min(1).max(200),
+  artifact_id: z.string().min(1).max(200)
+}).strict();
+
+export const READONLY_MEDIA_PLAYBACK_OUTPUT_SCHEMA = z.object({
+  state: z.literal("ready"),
+  kind: z.enum(["image", "video"]),
+  mime_type: z.enum(["image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm"]),
+  capability_expires_at: z.string(),
+  session_max_seconds: z.literal(1800),
+  snapshot_fingerprint: z.string().regex(/^[0-9a-f]{64}$/)
+}).strict();
+
+export const READONLY_MEDIA_PLAYBACK_META_SCHEMA = z.object({
+  playback_url: z.string().url().refine((value) => {
+    const url = new URL(value);
+    return url.protocol === "https:"
+      && !url.username
+      && !url.password
+      && !url.search
+      && !url.hash;
+  }, "Playback URL must be a credential-free HTTPS URL without query or fragment.")
+}).strict();
 
 export const READONLY_WORKBENCH_RENDER_INPUT_SCHEMA = z.object({
   initial_project_id: z.string().min(1).max(200).optional(),

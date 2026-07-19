@@ -17,7 +17,7 @@ import {
   publicSummary
 } from "../webgpt-v4/contracts.js";
 
-export const READONLY_SNAPSHOT_SCHEMA_VERSION = "readonly-snapshot-v3";
+export const READONLY_SNAPSHOT_SCHEMA_VERSION = "readonly-snapshot-v4";
 export const READONLY_SNAPSHOT_REQUIRED_SCHEMA = "workbench-v2-5";
 export const READONLY_SNAPSHOT_REQUIRED_MIGRATION = "0008";
 export const READONLY_SNAPSHOT_MAX_TTL_SECONDS = 24 * 60 * 60;
@@ -71,6 +71,25 @@ const reviewProjectionSchema = z.object({
   full: fullReviewPackageDataSchema
 }).strict();
 
+export const READONLY_MEDIA_MIME_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "video/mp4",
+  "video/webm"
+] as const;
+
+export const READONLY_MEDIA_BINDING_SCHEMA = z.object({
+  artifact_id: z.string().min(1),
+  project_id: z.string().min(1),
+  shot_id: z.string().min(1).nullable(),
+  artifact_type: z.enum(["image", "video"]),
+  role: z.enum(["storyboard_image", "generated_clip", "final_video"]),
+  mime_type: z.enum(READONLY_MEDIA_MIME_TYPES),
+  sha256: sha256Schema,
+  status: z.literal("active")
+}).strict();
+
 export const READONLY_PROJECT_PROJECTION_SCHEMA = z.object({
   project_id: z.string().min(1),
   final_video_artifact_id: z.string(),
@@ -82,12 +101,19 @@ export const READONLY_PROJECT_PROJECTION_SCHEMA = z.object({
   shots_full: z.array(WEBGPT_V4_SHOT_SCHEMA),
   review_packages: z.array(reviewProjectionSchema),
   delivery: WEBGPT_V4_DELIVERY_DATA_SCHEMA,
-  closeout: WEBGPT_V4_CLOSEOUT_DATA_SCHEMA
+  closeout: WEBGPT_V4_CLOSEOUT_DATA_SCHEMA,
+  media_bindings: z.array(READONLY_MEDIA_BINDING_SCHEMA)
 }).strict();
 
 type ReadonlyProjectProjectionShape = z.infer<typeof READONLY_PROJECT_PROJECTION_SCHEMA>;
 type FullContextProjection = ReadonlyProjectProjectionShape["contexts"][number]["full"];
 type FullReviewProjection = ReadonlyProjectProjectionShape["review_packages"][number]["full"];
+
+type ExpectedMediaBinding = {
+  artifact_type: "image" | "video";
+  role: "storyboard_image" | "generated_clip" | "final_video";
+  shot_id: string | null;
+};
 
 function compactContextFromFull(value: FullContextProjection): unknown {
   const base = {
@@ -174,6 +200,66 @@ function addBindingIssue(context: z.core.$RefinementCtx, path: Array<string | nu
   context.addIssue({ code: "custom", message, path });
 }
 
+function expectedMediaBindings(project: ReadonlyProjectProjectionShape, context: z.core.$RefinementCtx, base: Array<string | number>): Map<string, ExpectedMediaBinding> {
+  const expected = new Map<string, ExpectedMediaBinding>();
+  const add = (artifactId: string | null, binding: ExpectedMediaBinding, path: Array<string | number>): void => {
+    if (!artifactId) return;
+    const existing = expected.get(artifactId);
+    if (existing && canonicalizeJcs(existing) !== canonicalizeJcs(binding)) {
+      addBindingIssue(context, path, "Media Artifact is referenced with conflicting project roles or SHOT bindings.");
+      return;
+    }
+    expected.set(artifactId, binding);
+  };
+  for (const [shotIndex, shot] of project.shots_full.entries()) {
+    add(shot.storyboard_image_artifact_id, {
+      artifact_type: "image",
+      role: "storyboard_image",
+      shot_id: shot.shot_id
+    }, [...base, "shots_full", shotIndex, "storyboard_image_artifact_id"]);
+    for (const [versionIndex, version] of shot.clip_versions.entries()) {
+      add(version.artifact_id, {
+        artifact_type: "video",
+        role: "generated_clip",
+        shot_id: shot.shot_id
+      }, [...base, "shots_full", shotIndex, "clip_versions", versionIndex, "artifact_id"]);
+    }
+  }
+  if (project.delivery.final_artifact) {
+    add(project.delivery.final_artifact.artifact_id, {
+      artifact_type: "video",
+      role: "final_video",
+      shot_id: null
+    }, [...base, "delivery", "final_artifact", "artifact_id"]);
+  }
+  return expected;
+}
+
+function validateMediaBindings(project: ReadonlyProjectProjectionShape, context: z.core.$RefinementCtx, base: Array<string | number>): void {
+  const expected = expectedMediaBindings(project, context, base);
+  let previousArtifactId = "";
+  const seen = new Set<string>();
+  for (const [bindingIndex, binding] of project.media_bindings.entries()) {
+    const path = [...base, "media_bindings", bindingIndex] as Array<string | number>;
+    if (seen.has(binding.artifact_id)) addBindingIssue(context, [...path, "artifact_id"], "Duplicate media binding.");
+    seen.add(binding.artifact_id);
+    if (binding.artifact_id <= previousArtifactId) addBindingIssue(context, [...path, "artifact_id"], "Media bindings are not in canonical artifact id order.");
+    previousArtifactId = binding.artifact_id;
+    if (binding.project_id !== project.project_id) addBindingIssue(context, [...path, "project_id"], "Media binding project mismatch.");
+    const referenced = expected.get(binding.artifact_id);
+    if (!referenced) {
+      addBindingIssue(context, [...path, "artifact_id"], "Media binding is not referenced by a canonical project workflow object.");
+      continue;
+    }
+    if (binding.artifact_type !== referenced.artifact_type || binding.role !== referenced.role || binding.shot_id !== referenced.shot_id) {
+      addBindingIssue(context, path, "Media binding differs from its canonical project reference.");
+    }
+    if ((binding.artifact_type === "image") !== binding.mime_type.startsWith("image/")) {
+      addBindingIssue(context, [...path, "mime_type"], "Media binding MIME family differs from its Artifact type.");
+    }
+  }
+}
+
 function validateArtifactBinding(
   artifact: { linked_objects: { project_id: string; shot_id: string | null } } | null,
   projectId: string,
@@ -218,6 +304,7 @@ function validateProjectProjectionBindings(
   context: z.core.$RefinementCtx
 ): void {
   const base = ["projects", projectIndex] as Array<string | number>;
+  validateMediaBindings(project, context, base);
   const projectId = project.project_id;
   const shotIds = new Set(project.shots_full.map((shot) => shot.shot_id));
   const compactShotIds = new Set(project.shots_compact.map((shot) => shot.shot_id));
@@ -671,6 +758,7 @@ export const READONLY_SNAPSHOT_SCHEMA = z.object({ ...readonlySnapshotShape,
 export type ReadonlySnapshotUnsigned = z.infer<typeof READONLY_SNAPSHOT_UNSIGNED_SCHEMA>;
 export type ReadonlySnapshot = z.infer<typeof READONLY_SNAPSHOT_SCHEMA>;
 export type ReadonlyProjectProjection = z.infer<typeof READONLY_PROJECT_PROJECTION_SCHEMA>;
+export type ReadonlyMediaBinding = z.infer<typeof READONLY_MEDIA_BINDING_SCHEMA>;
 
 function assertUnicodeScalarString(value: string): void {
   for (let index = 0; index < value.length; index += 1) {

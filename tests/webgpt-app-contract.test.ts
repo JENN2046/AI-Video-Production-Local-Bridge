@@ -6,7 +6,12 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { JSDOM } from "jsdom";
 
 import {
+  READONLY_MEDIA_PLAYBACK_INPUT_SCHEMA,
+  READONLY_MEDIA_PLAYBACK_META_SCHEMA,
+  READONLY_MEDIA_PLAYBACK_OUTPUT_SCHEMA,
+  READONLY_WORKBENCH_APP_ONLY_TOOLS,
   READONLY_WORKBENCH_DATA_TOOLS,
+  READONLY_WORKBENCH_MEDIA_TOOL,
   READONLY_WORKBENCH_RENDER_INPUT_SCHEMA,
   READONLY_WORKBENCH_RENDER_TOOL,
   READONLY_WORKBENCH_RESOURCE_MIME,
@@ -83,6 +88,27 @@ test("readonly MCP App contract freezes one render tool, six data tools, and the
   assert.equal(READONLY_WORKBENCH_RESOURCE_URI, "ui://aivideo/readonly-workbench-v1.html");
   assert.equal(READONLY_WORKBENCH_RESOURCE_MIME, "text/html;profile=mcp-app");
   assert.equal(READONLY_WORKBENCH_RESOURCE_VERSION, "readonly-workbench-v1.0.0");
+});
+
+test("readonly media playback contract is app-only and keeps the capability URL out of model-visible output", () => {
+  assert.deepEqual(READONLY_WORKBENCH_APP_ONLY_TOOLS, [READONLY_WORKBENCH_MEDIA_TOOL]);
+  assert.deepEqual(READONLY_MEDIA_PLAYBACK_INPUT_SCHEMA.parse({ project_id: "project_fixture", artifact_id: "artifact_fixture" }), {
+    project_id: "project_fixture",
+    artifact_id: "artifact_fixture"
+  });
+  const output = READONLY_MEDIA_PLAYBACK_OUTPUT_SCHEMA.parse({
+    state: "ready",
+    kind: "video",
+    mime_type: "video/mp4",
+    capability_expires_at: "2026-07-19T00:05:00.000Z",
+    session_max_seconds: 1800,
+    snapshot_fingerprint: FINGERPRINT
+  });
+  const meta = READONLY_MEDIA_PLAYBACK_META_SCHEMA.parse({ playback_url: "https://media.skmt617.top/media/v1/c/fixture" });
+  assert.equal(JSON.stringify(output).includes(meta.playback_url), false);
+  assert.throws(() => READONLY_MEDIA_PLAYBACK_META_SCHEMA.parse({ playback_url: "http://127.0.0.1/media" }));
+  assert.throws(() => READONLY_MEDIA_PLAYBACK_META_SCHEMA.parse({ playback_url: "https://user:secret@media.skmt617.top/media" }));
+  assert.throws(() => READONLY_MEDIA_PLAYBACK_META_SCHEMA.parse({ playback_url: "https://media.skmt617.top/media?artifact=hidden" }));
 });
 
 test("render contract accepts only low-disclosure shell state and initial intent", () => {
