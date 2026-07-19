@@ -194,7 +194,8 @@ test("personal readonly operations keep status read-only and run one explicit pr
     createReadonlyPublisherKey(configured, reversibleProtector);
     let exportCount = 0;
     let publishCount = 0;
-    const statusBody = JSON.stringify({
+    let healthStatus = 200;
+    let statusBody = JSON.stringify({
       ok: true,
       version: "readonly-remote-v1.0.0",
       checks: { oauth: true, publisher_key: true, snapshot_fresh: true, authorization_projection: true },
@@ -221,7 +222,7 @@ test("personal readonly operations keep status read-only and run one explicit pr
         assert.equal(init.method, "GET");
         assert.equal(init.redirect, "manual");
         return url.endsWith("/healthz")
-          ? { ok: true, status: 200, text: async () => JSON.stringify({ ok: true }) }
+          ? { ok: healthStatus === 200, status: healthStatus, text: async () => JSON.stringify({ ok: healthStatus === 200 }) }
           : { ok: true, status: 200, text: async () => statusBody };
       }
     });
@@ -230,10 +231,78 @@ test("personal readonly operations keep status read-only and run one explicit pr
     assert.equal(exportCount, 0, "status must not export or open business rows");
     assert.equal(before.ready_to_publish, true);
     assert.equal(before.remote.ready, true);
+    assert.deepEqual(before.freshness_operations, {
+      state: "renewal_due",
+      reason_code: "SNAPSHOT_EXPIRING_SOON",
+      renewal_recommended: true,
+      recommended_action: "preflight_and_renew",
+      renewal_threshold_seconds: 7200
+    });
     assert.equal(before.remote.snapshot.snapshot_fingerprint, snapshot().snapshot_fingerprint);
     assert.equal(JSON.stringify(before).includes("must-not-escape"), false);
     assert.equal(JSON.stringify(before).includes(configured.database_path), false);
     assert.equal(JSON.stringify(before).includes(configured.snapshot_url), false);
+
+    statusBody = JSON.stringify({
+      ok: false,
+      version: "readonly-remote-v1.0.0",
+      checks: { oauth: true, publisher_key: true, snapshot_fresh: false, authorization_projection: false },
+      snapshot: { freshness_status: "no_snapshot", generated_at: null, expires_at: null, age_seconds: null, ttl_remaining_seconds: null, snapshot_fingerprint: null }
+    });
+    const missing = await service.status();
+    assert.deepEqual(missing.freshness_operations, {
+      state: "restoration_required",
+      reason_code: "SNAPSHOT_NOT_PUBLISHED",
+      renewal_recommended: true,
+      recommended_action: "preflight_and_renew",
+      renewal_threshold_seconds: 7200
+    });
+    assert.equal(exportCount, 0, "status reminders must never export or renew a snapshot");
+
+    statusBody = JSON.stringify({
+      ok: false,
+      version: "readonly-remote-v1.0.0",
+      checks: { oauth: true, publisher_key: true, snapshot_fresh: false, authorization_projection: true },
+      snapshot: {
+        freshness_status: "snapshot_expired",
+        generated_at: new Date(NOW.getTime() - 25 * 3600_000).toISOString(),
+        expires_at: new Date(NOW.getTime() - 3600_000).toISOString(),
+        age_seconds: 25 * 3600,
+        ttl_remaining_seconds: 0,
+        snapshot_fingerprint: snapshot().snapshot_fingerprint
+      }
+    });
+    const expired = await service.status();
+    assert.equal(expired.freshness_operations.state, "restoration_required");
+    assert.equal(expired.freshness_operations.reason_code, "SNAPSHOT_EXPIRED");
+    assert.equal(expired.freshness_operations.renewal_recommended, true);
+
+    statusBody = JSON.stringify({
+      ok: true,
+      version: "readonly-remote-v1.0.0",
+      checks: { oauth: true, publisher_key: true, snapshot_fresh: true, authorization_projection: true },
+      snapshot: {
+        freshness_status: "fresh",
+        generated_at: NOW.toISOString(),
+        expires_at: new Date(NOW.getTime() + 3 * 3600_000).toISOString(),
+        age_seconds: 0,
+        ttl_remaining_seconds: 3 * 3600,
+        snapshot_fingerprint: snapshot().snapshot_fingerprint
+      }
+    });
+    const current = await service.status();
+    assert.equal(current.freshness_operations.state, "current");
+    assert.equal(current.freshness_operations.reason_code, "SNAPSHOT_FRESH");
+    assert.equal(current.freshness_operations.renewal_recommended, false);
+    assert.equal(exportCount, 0, "all freshness status projections must remain read-only");
+
+    healthStatus = 503;
+    const unreachable = await service.status();
+    assert.equal(unreachable.freshness_operations.state, "service_unavailable");
+    assert.equal(unreachable.freshness_operations.reason_code, "REMOTE_UNREACHABLE");
+    assert.equal(unreachable.freshness_operations.renewal_recommended, false, "an unreachable remote must not recommend a blind publish");
+    assert.equal(unreachable.freshness_operations.recommended_action, "check_remote");
+    healthStatus = 200;
 
     const prepared = await service.preflight();
     assert.equal(prepared.result, "PASS");

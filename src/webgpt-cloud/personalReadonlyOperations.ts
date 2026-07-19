@@ -13,8 +13,9 @@ import {
   type ReadonlyPublisherReceipt
 } from "./publisher.js";
 
-export const PERSONAL_READONLY_OPERATIONS_VERSION = "personal-readonly-operations-v1";
+export const PERSONAL_READONLY_OPERATIONS_VERSION = "personal-readonly-operations-v2";
 export const DEFAULT_READONLY_PUBLISHER_PROFILE_PATH = "data/webgpt/publisher/profile.json";
+export const READONLY_SNAPSHOT_RENEWAL_THRESHOLD_SECONDS = 2 * 60 * 60;
 
 export interface PersonalReadonlySnapshotStatus {
   freshness_status: "no_snapshot" | "fresh" | "snapshot_expired" | "unknown";
@@ -34,6 +35,21 @@ export interface PersonalReadonlyOperationsStatus {
   publisher_key_available: boolean;
   ready_to_preflight: boolean;
   ready_to_publish: boolean;
+  freshness_operations: {
+    state: "current" | "renewal_due" | "restoration_required" | "service_unavailable" | "unknown";
+    reason_code:
+      | "SNAPSHOT_FRESH"
+      | "SNAPSHOT_EXPIRING_SOON"
+      | "SNAPSHOT_NOT_PUBLISHED"
+      | "SNAPSHOT_EXPIRED"
+      | "REMOTE_UNREACHABLE"
+      | "REMOTE_NOT_READY"
+      | "SNAPSHOT_STATUS_UNKNOWN"
+      | "LOCAL_PUBLISHER_NOT_CONFIGURED";
+    renewal_recommended: boolean;
+    recommended_action: "none" | "preflight_and_renew" | "check_remote" | "configure_publisher";
+    renewal_threshold_seconds: number;
+  };
   remote: {
     reachable: boolean;
     ready: boolean;
@@ -105,6 +121,39 @@ const emptyRemoteStatus = (): PersonalReadonlyOperationsStatus["remote"] => ({
   service_version: null,
   checks: { oauth: null, publisher_key: null, snapshot_fresh: null, authorization_projection: null },
   snapshot: emptySnapshotStatus()
+});
+
+function deriveFreshnessOperations(
+  remote: PersonalReadonlyOperationsStatus["remote"]
+): PersonalReadonlyOperationsStatus["freshness_operations"] {
+  const base = { renewal_threshold_seconds: READONLY_SNAPSHOT_RENEWAL_THRESHOLD_SECONDS } as const;
+  if (!remote.reachable) {
+    return { ...base, state: "service_unavailable", reason_code: "REMOTE_UNREACHABLE", renewal_recommended: false, recommended_action: "check_remote" };
+  }
+  if (remote.snapshot.freshness_status === "no_snapshot") {
+    return { ...base, state: "restoration_required", reason_code: "SNAPSHOT_NOT_PUBLISHED", renewal_recommended: true, recommended_action: "preflight_and_renew" };
+  }
+  if (remote.snapshot.freshness_status === "snapshot_expired") {
+    return { ...base, state: "restoration_required", reason_code: "SNAPSHOT_EXPIRED", renewal_recommended: true, recommended_action: "preflight_and_renew" };
+  }
+  if (remote.snapshot.freshness_status !== "fresh" || remote.snapshot.ttl_remaining_seconds === null) {
+    return { ...base, state: "unknown", reason_code: "SNAPSHOT_STATUS_UNKNOWN", renewal_recommended: false, recommended_action: "check_remote" };
+  }
+  if (!remote.ready) {
+    return { ...base, state: "service_unavailable", reason_code: "REMOTE_NOT_READY", renewal_recommended: false, recommended_action: "check_remote" };
+  }
+  if (remote.snapshot.ttl_remaining_seconds <= READONLY_SNAPSHOT_RENEWAL_THRESHOLD_SECONDS) {
+    return { ...base, state: "renewal_due", reason_code: "SNAPSHOT_EXPIRING_SOON", renewal_recommended: true, recommended_action: "preflight_and_renew" };
+  }
+  return { ...base, state: "current", reason_code: "SNAPSHOT_FRESH", renewal_recommended: false, recommended_action: "none" };
+}
+
+const unconfiguredFreshnessOperations = (): PersonalReadonlyOperationsStatus["freshness_operations"] => ({
+  state: "unknown",
+  reason_code: "LOCAL_PUBLISHER_NOT_CONFIGURED",
+  renewal_recommended: false,
+  recommended_action: "configure_publisher",
+  renewal_threshold_seconds: READONLY_SNAPSHOT_RENEWAL_THRESHOLD_SECONDS
 });
 
 function isRegularFile(path: string): boolean {
@@ -271,6 +320,7 @@ export function createPersonalReadonlyOperationsService(
           publisher_key_available: false,
           ready_to_preflight: false,
           ready_to_publish: false,
+          freshness_operations: unconfiguredFreshnessOperations(),
           remote: emptyRemoteStatus(),
           last_publish: null,
           last_receipt_state: "none"
@@ -279,6 +329,7 @@ export function createPersonalReadonlyOperationsService(
       const databaseAvailable = isRegularFile(profile.database_path);
       const publisherKeyAvailable = isRegularFile(profile.protected_private_key_path) && isRegularFile(profile.public_key_path);
       const last = readLatestReceipt(profile);
+      const remote = await fetchRemoteStatus(profile, statusFetch);
       return {
         operations_version: PERSONAL_READONLY_OPERATIONS_VERSION,
         checked_at: checkedAt,
@@ -288,7 +339,8 @@ export function createPersonalReadonlyOperationsService(
         publisher_key_available: publisherKeyAvailable,
         ready_to_preflight: databaseAvailable && publisherKeyAvailable,
         ready_to_publish: databaseAvailable && publisherKeyAvailable && !operationInProgress,
-        remote: await fetchRemoteStatus(profile, statusFetch),
+        freshness_operations: deriveFreshnessOperations(remote),
+        remote,
         last_publish: last.receipt,
         last_receipt_state: last.state
       };

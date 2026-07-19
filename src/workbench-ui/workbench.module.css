@@ -196,6 +196,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .deliveryFinal > .mediaPreview { width: min(720px, calc(100% - 24px)); max-height: 55vh; margin: 12px auto; }
 .systemGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; min-height: 0; overflow: auto; }
 .systemBand { grid-column: 1 / -1; }
+.freshnessNotice { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 14px; border: 1px solid; border-radius: 7px; }
+.freshnessNotice > div { display: flex; flex-direction: column; gap: 3px; }.freshnessNotice strong { font-size: 12px; }.freshnessNotice span { font-size: 11px; }.freshnessNotice small { font-size: 9px; color: var(--muted); }
+.freshnessWarning { border-color: #e2b203; background: #fff7d6; color: #7f5f01; }.freshnessDanger { border-color: #e2483d; background: var(--red-soft); color: var(--red); }
 .systemIcon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 7px; color: #0747a6; background: var(--blue-soft); }
 .systemPanel { padding: 13px; border: 1px solid var(--line); border-radius: 7px; background: rgba(255,255,255,.72); }
 .governanceLayout { min-height: 0; overflow: auto; }

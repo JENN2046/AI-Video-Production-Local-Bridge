@@ -42,7 +42,7 @@ export interface ShellData {
 }
 
 export interface PersonalReadonlyOperationsStatus {
-  operations_version: "personal-readonly-operations-v1";
+  operations_version: "personal-readonly-operations-v2";
   checked_at: string;
   configuration: "missing" | "invalid" | "ready";
   stable_error_code: string | null;
@@ -50,6 +50,13 @@ export interface PersonalReadonlyOperationsStatus {
   publisher_key_available: boolean;
   ready_to_preflight: boolean;
   ready_to_publish: boolean;
+  freshness_operations: {
+    state: "current" | "renewal_due" | "restoration_required" | "service_unavailable" | "unknown";
+    reason_code: "SNAPSHOT_FRESH" | "SNAPSHOT_EXPIRING_SOON" | "SNAPSHOT_NOT_PUBLISHED" | "SNAPSHOT_EXPIRED" | "REMOTE_UNREACHABLE" | "REMOTE_NOT_READY" | "SNAPSHOT_STATUS_UNKNOWN" | "LOCAL_PUBLISHER_NOT_CONFIGURED";
+    renewal_recommended: boolean;
+    recommended_action: "none" | "preflight_and_renew" | "check_remote" | "configure_publisher";
+    renewal_threshold_seconds: number;
+  };
   remote: {
     reachable: boolean;
     ready: boolean;
