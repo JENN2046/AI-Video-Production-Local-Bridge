@@ -1,6 +1,6 @@
 # WebGPT V4 本地运行与外部接线手册
 
-状态：接受的运行基线为 `webgpt-v4.3.0`；provider-neutral Federated OAuth、issuer binding、Auth0 predefined public-client 与 Readonly ChatGPT MCP App 已完成 Jenn 单用户真实活动库验收。Human Workbench 的一键 preflight/publish 和七工具 owner-only 路径也已真实通过。状态为 `MANUAL_PUBLISH_OPERATIONAL_READY`；第二真实用户已由 Jenn 延期，Render Free 冷启动恢复、媒体域名、自动同步和 Windows 自动启动仍未验收。
+状态：接受的运行基线为 `webgpt-v4.3.0`；provider-neutral Federated OAuth、issuer binding、Auth0 predefined public-client 与 Readonly ChatGPT MCP App 已完成 Jenn 单用户真实活动库验收。Human Workbench 的一键 preflight/publish、Render restart 后 `no_snapshot → 单次确认发布 → 七工具恢复` 和七工具 owner-only 路径均已真实通过。状态为 `MANUAL_PUBLISH_OPERATIONAL_READY`；第二真实用户已由 Jenn 延期，媒体域名、自动同步和 Windows 自动启动仍未验收。
 
 ## 固定边界
 
@@ -35,9 +35,9 @@ Human Workbench 的“系统 → 只读 App 发布”是当前接受的 Jenn 日
 5. 在 ChatGPT Test App 运行 render tool 与六个只读数据工具。
 6. 使用完成后运行 `npm run db:check`，再通过 `windows:stop` 停止本地 Workbench。
 
-该路径已在 `main@932e145e201ddf5763ab5fcbdc11b88fa8c81bad`、Windows Node `22.23.1`、活动库 ledger `0008` 和 `REAL_PROVIDER_ENABLED=false` 条件下通过一次真实验收。公开脱敏证据见 [Owner-Only Operations Acceptance](../../ops/reports/2026-07-18-owner-only-operations-acceptance.md)。
+该路径已在 `main@932e145e201ddf5763ab5fcbdc11b88fa8c81bad`、Windows Node `22.23.1`、活动库 ledger `0008` 和 `REAL_PROVIDER_ENABLED=false` 条件下通过首次真实验收；Snapshot v3 又在 `main@d4c7d8cf52d52e3a28293180a771d3b36f6e399f` 上完成 Render restart、`no_snapshot`、Human Workbench 单次确认发布、统一 fingerprint、七工具恢复、最终 `db:check` 和优雅停止。公开脱敏证据见 [Owner-Only Operations Acceptance](../../ops/reports/2026-07-18-owner-only-operations-acceptance.md) 与 [Snapshot v3 Human Workbench Recovery Acceptance](../../ops/reports/2026-07-19-snapshot-v3-human-workbench-recovery-acceptance.md)。
 
-当前 Render Free 服务仍只保存内存 Snapshot。服务休眠、重启或 24 小时 TTL 到期后必须重新发布。`no_snapshot → 一键重新发布 → 七工具恢复` 冷启动演练尚未执行，属于需要单独授权的外部运行门禁；不得把尚未演练的恢复能力描述为自动恢复。
+当前 Render Free 服务仍只保存内存 Snapshot。服务休眠、重启或 24 小时 TTL 到期后必须重新发布。`no_snapshot → Human Workbench 单次确认发布 → 七工具恢复` 已完成真实演练，证明人工恢复路径可用；它不代表自动恢复、自动同步或自动启动。每次实际重新发布仍必须由 Jenn 明确触发并通过 Human Workbench 确认边界。
 
 普通 `preflight` 和 `/readyz` 证明本地服务边界，不代表 ChatGPT 已接受外部 OAuth discovery。外部 Readonly 接线前必须另外运行 `preflight:webgpt:oauth`；这个独立命令不打开数据库，先按 RFC 8414 规则从 issuer 推导 metadata URL，不可用时再尝试 OIDC discovery。两条路径都要求匿名 `200`、精确 issuer、精确 JWKS URI、HTTPS authorize/token/JWKS、PKCE S256 与 public client token auth `none`；`cimd` 还要求 CIMD capability，`dcr` 还要求 HTTPS registration endpoint，`predefined` 把外部 Client ID 验证保留给真实连接验收。
 
