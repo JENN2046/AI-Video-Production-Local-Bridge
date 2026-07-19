@@ -1,0 +1,21 @@
+{
+  "profile_version": "readonly-media-operations-profile-v1",
+  "database_path": "data/app.sqlite",
+  "issuer_hash": "<64 lowercase hex characters>",
+  "allowed_origin": "https://aivideo.skmt617.top",
+  "gateway_port": 2092,
+  "media_roots": [
+    "data/media"
+  ],
+  "capability_key": {
+    "kid": "jenn-readonly-media-v1",
+    "protected_path": "data/webgpt/media-gateway/capability-key.dpapi"
+  },
+  "cloudflared": {
+    "executable_path": "ops/tools/cloudflared-2026.7.2-windows-amd64/cloudflared.exe",
+    "manifest_path": "ops/manifests/cloudflared-windows-amd64.json",
+    "protected_token_path": "data/webgpt/media-gateway/tunnel-token.dpapi",
+    "public_health_url": "https://media.skmt617.top/healthz"
+  },
+  "runtime_directory": "data/webgpt/media-gateway/runtime"
+}

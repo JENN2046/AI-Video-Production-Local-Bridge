@@ -130,7 +130,8 @@
       "ci_step": "Readonly media gateway contract tests",
       "paths": [
         "tests/webgpt-media-capability-contract.test.ts",
-        "tests/webgpt-media-gateway-runtime.test.ts"
+        "tests/webgpt-media-gateway-runtime.test.ts",
+        "tests/webgpt-media-operations.test.ts"
       ]
     },
     {
@@ -283,6 +284,34 @@
       "npm_script": "test:webgpt:app",
       "ci_step": "WebGPT MCP App tests",
       "case_name": "readonly workbench preserves media across same-project refresh and clears it on project switch"
+    },
+    {
+      "id": "readonly-media-operations-safety",
+      "path": "tests/webgpt-media-operations.test.ts",
+      "npm_script": "test:webgpt:media-gateway",
+      "ci_step": "Readonly media gateway contract tests",
+      "case_name": "readonly media operations pin cloudflared and keep secrets out of command lines and status"
+    },
+    {
+      "id": "readonly-media-logon-ordering",
+      "path": "tests/webgpt-media-operations.test.ts",
+      "npm_script": "test:webgpt:media-gateway",
+      "ci_step": "Readonly media gateway contract tests",
+      "case_name": "readonly media logon task is current-user limited and starts gateway before tunnel"
+    },
+    {
+      "id": "readonly-media-dpapi-keygen",
+      "path": "tests/webgpt-media-operations.test.ts",
+      "npm_script": "test:webgpt:media-gateway",
+      "ci_step": "Readonly media gateway contract tests",
+      "case_name": "readonly media capability keygen writes only DPAPI CurrentUser ciphertext to ignored storage"
+    },
+    {
+      "id": "readonly-media-apps-smoke-selection",
+      "path": "tests/webgpt-media-operations.test.ts",
+      "npm_script": "test:webgpt:media-gateway",
+      "ci_step": "Readonly media gateway contract tests",
+      "case_name": "readonly media Apps smoke and operations are mandatory local and Windows CI gates"
     },
     {
       "id": "readonly-projection-ledger-gate",
@@ -600,6 +629,7 @@
   "required_commands": [
     { "npm_script": "test:v2:ui", "ci_step": "Workbench V2 UI tests" },
     { "npm_script": "test:windows-runtime", "ci_step": "Windows managed runtime controls" },
+    { "npm_script": "smoke:webgpt:media", "ci_step": "Readonly media Apps smoke" },
     { "npm_script": "secret:scan", "ci_step": "Secret scan" }
   ]
 }

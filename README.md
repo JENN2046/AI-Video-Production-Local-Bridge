@@ -42,6 +42,14 @@ npm run start:webgpt:cloud
 npm run webgpt:publisher:keygen -- --profile <ignored-profile.json>
 npm run preflight:webgpt:publisher -- --profile <ignored-profile.json>
 npm run publish:webgpt:snapshot -- --profile <ignored-profile.json>
+npm run media:capability-keygen
+npm run media:protect-tunnel-token
+npm run media:preflight
+npm run media:start
+npm run media:status
+npm run media:stop
+npm run media:install-logon-task
+npm run media:remove-logon-task
 npm run db:backup
 npm run db:check
 npm run db:migrate
@@ -54,7 +62,9 @@ npm run test:v2:ui
 npm run test:webgpt:v4
 npm run test:webgpt:cloud
 npm run test:webgpt:app
+npm run test:webgpt:media-gateway
 npm run smoke:webgpt:app
+npm run smoke:webgpt:media
 npm run test:webgpt:eval
 npm run eval:webgpt:replay -- --input <sanitized-result.json>
 npm run test:h1
@@ -64,6 +74,8 @@ npm run secret:scan
 ```
 
 `start:local` 以前台方式启动本地 Workbench。`windows:start`、`windows:status`、`windows:stop` 提供普通用户权限的 Windows 受管启停入口，但不会创建 Task Scheduler 或配置自动启动。`start:webgpt` 默认只启动 Readonly MCP；只有显式设置 `WEBGPT_V4_PROFILE=full` 才会同时启动媒体网关和现有有限写入工具。`preflight` 默认检查本地 Workbench profile；WebGPT 使用 `npm run preflight -- --profile=webgpt` 并按 Readonly/Full 检查对应端口和依赖，OAuth 缺失时会明确失败并保持 fail closed。外部 Readonly 接线还必须单独运行 `preflight:webgpt:oauth`；该命令不打开数据库，通过 DNS-pinned HTTPS 依次验证 RFC 8414/OIDC metadata、精确 issuer/JWKS、PKCE S256、public-client auth，并按 `predefined | cimd | dcr` 检查对应注册能力。探针不跟随 redirect，也不输出 endpoint 或响应正文。若本机代理只返回 RFC 2544 `198.18.0.0/15` Fake-IP，OAuth discovery 与 JWKS transport 会使用固定、受限的公共 DoH 恢复真实地址；普通 private/mixed DNS 结果仍立即拒绝，恢复后的地址仍必须通过同一校验并被 TLS transport 固定。
+
+Readonly Local Media Gateway 的代码与本地运维命令已进入候选实现：媒体仍留在 Jenn 本机，`media:start` 先启动 `127.0.0.1:2092` 网关并通过 readiness，再启动固定版本/校验值的 Cloudflare Tunnel；capability key 与 Tunnel token 分别使用 DPAPI CurrentUser 保护，不进入命令行或状态输出。Cloudflare route、Render secret、DNS 和当前用户登录任务尚未创建或验收，因此当前版本仍保持 beta.5，不能宣称公网媒体或自动启动已完成。完整操作和回滚边界见 [Readonly Local Media Gateway Runbook](docs/webgpt/READONLY_LOCAL_MEDIA_GATEWAY_RUNBOOK.md)。
 
 Cloud MCP App 交付命令不会自动创建或修改 Render、DNS、Auth0 或 ChatGPT 对象。Publisher profile、DPAPI 私钥材料和脱敏 receipt 必须位于 Git 忽略的 `data/webgpt/publisher/`；`preflight:webgpt:publisher` 只读验证 ledger `0008`、投影和签名，`publish:webgpt:snapshot` 才执行经单独授权的远端 Snapshot 替换。当前 Render Free 实例可能休眠或重启，远端只保存内存 Snapshot；实例重启或 24 小时 TTL 到期后必须手动重新发布。Snapshot v3 已完成精确部署、旧 v2 拒绝、单次重新发布、七工具统一 fingerprint、共享派生状态和 Human Workbench 冷启动恢复真实验收。ChatGPT developer-mode 验收时平台 CSP enforcement 开关未启用，因此 CSP 仍保留为后续平台实测限制。完整边界见 [Readonly MCP App Delivery Runbook](docs/webgpt/READONLY_MCP_APP_DELIVERY_RUNBOOK.md)、[Stage 3 Acceptance](ops/reports/2026-07-17-readonly-mcp-app-stage3-acceptance.md)、[Owner-Only Operations Acceptance](ops/reports/2026-07-18-owner-only-operations-acceptance.md)、[Snapshot v3 Derived State Acceptance](ops/reports/2026-07-19-snapshot-v3-derived-state-acceptance.md) 和 [Snapshot v3 Human Workbench Recovery Acceptance](ops/reports/2026-07-19-snapshot-v3-human-workbench-recovery-acceptance.md)。
 

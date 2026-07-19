@@ -1,0 +1,7 @@
+{
+  "manifest_version": "cloudflared-binary-v1",
+  "version": "2026.7.2",
+  "platform": "windows-amd64",
+  "download_url": "https://github.com/cloudflare/cloudflared/releases/download/2026.7.2/cloudflared-windows-amd64.exe",
+  "sha256": "8b97b5af442651e07c52caa9c79c6f60032bc10b675c2b36dd11c7690d9942e3"
+}
