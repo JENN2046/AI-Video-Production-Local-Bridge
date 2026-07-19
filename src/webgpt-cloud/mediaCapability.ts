@@ -75,14 +75,7 @@ function normalizedKey(value: ReadonlyMediaCapabilityKey): Buffer {
   return Buffer.from(value.key);
 }
 
-function capabilityAad(): Buffer {
-  return Buffer.from(`${READONLY_MEDIA_CAPABILITY_VERSION}\nPOST\n${READONLY_MEDIA_CAPABILITY_PATH}`, "utf8");
-}
-
-function keyForKid(keyring: ReadonlyMediaCapabilityKeyring, kid: string, now: Date): ReadonlyMediaCapabilityKey {
-  if (keyring.active.kid === kid) return keyring.active;
-  const previous = keyring.previous;
-  if (!previous || previous.kid !== kid) throw new ReadonlyMediaCapabilityError("MEDIA_CAPABILITY_KEY_UNKNOWN");
+function validatePreviousKeyWindow(previous: NonNullable<ReadonlyMediaCapabilityKeyring["previous"]>): { acceptedFrom: number; acceptedUntil: number } {
   const acceptedFrom = Date.parse(previous.accepted_from);
   const acceptedUntil = Date.parse(previous.accepted_until);
   if (!Number.isFinite(acceptedFrom)
@@ -93,6 +86,26 @@ function keyForKid(keyring: ReadonlyMediaCapabilityKeyring, kid: string, now: Da
     || acceptedUntil - acceptedFrom > READONLY_MEDIA_PREVIOUS_KEY_MAX_ACCEPTANCE_MS) {
     throw new ReadonlyMediaCapabilityError("MEDIA_CAPABILITY_KEY_INVALID");
   }
+  return { acceptedFrom, acceptedUntil };
+}
+
+export function assertReadonlyMediaCapabilityKeyring(keyring: ReadonlyMediaCapabilityKeyring): void {
+  normalizedKey(keyring.active);
+  if (!keyring.previous) return;
+  normalizedKey(keyring.previous);
+  if (keyring.previous.kid === keyring.active.kid) throw new ReadonlyMediaCapabilityError("MEDIA_CAPABILITY_KEY_INVALID");
+  validatePreviousKeyWindow(keyring.previous);
+}
+
+function capabilityAad(): Buffer {
+  return Buffer.from(`${READONLY_MEDIA_CAPABILITY_VERSION}\nPOST\n${READONLY_MEDIA_CAPABILITY_PATH}`, "utf8");
+}
+
+function keyForKid(keyring: ReadonlyMediaCapabilityKeyring, kid: string, now: Date): ReadonlyMediaCapabilityKey {
+  if (keyring.active.kid === kid) return keyring.active;
+  const previous = keyring.previous;
+  if (!previous || previous.kid !== kid) throw new ReadonlyMediaCapabilityError("MEDIA_CAPABILITY_KEY_UNKNOWN");
+  const { acceptedFrom, acceptedUntil } = validatePreviousKeyWindow(previous);
   if (now.getTime() < acceptedFrom || now.getTime() >= acceptedUntil) {
     throw new ReadonlyMediaCapabilityError("MEDIA_CAPABILITY_KEY_UNKNOWN");
   }

@@ -392,6 +392,25 @@ test("readonly media gateway verifies bytes, consumes capabilities once, streams
   assert.equal(after, before);
 });
 
+test("readonly media gateway readiness rejects a malformed capability key id", async () => {
+  const fixture = createFixture("invalid-key-readiness");
+  const gateway = await startReadonlyMediaGateway({
+    database_path: paths.sqlitePath,
+    issuer_hash: fixture.actor.issuer_hash!,
+    keyring: { active: { ...keyring.active, kid: "invalid key id" } },
+    allowed_origin: ORIGIN,
+    allowed_media_roots: [paths.imageArtifactsRoot],
+    port: 0
+  });
+  try {
+    const readiness = await fetch(`${gateway.url}/readyz`);
+    assert.equal(readiness.status, 503);
+    assert.equal((await readiness.json() as { checks: { capability_key: boolean } }).checks.capability_key, false);
+  } finally {
+    await gateway.close();
+  }
+});
+
 test("readonly media sessions fail closed after membership revocation or file identity drift", async () => {
   const fixture = createFixture("revocation");
   const gateway = await startReadonlyMediaGateway({

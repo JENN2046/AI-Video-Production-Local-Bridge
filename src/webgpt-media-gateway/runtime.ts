@@ -11,6 +11,7 @@ import { openM0DatabaseConnection, type M0Database } from "../storage/sqlite.js"
 import { getMediaArtifact, getMediaBlob, type ArtifactReferenceRequirement, type MediaArtifact, type MediaBlob } from "../tools/mediaArtifacts.js";
 import { getProject, getShot } from "../tools/projects.js";
 import {
+  assertReadonlyMediaCapabilityKeyring,
   createReadonlyMediaHandle,
   openReadonlyMediaCapabilityRequest,
   ReadonlyMediaCapabilityError,
@@ -557,7 +558,8 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
           } catch { /* low-disclosure readiness */ }
           const configuredMediaRoots = options.allowed_media_roots ?? [paths.mediaRoot];
           const mediaRoots = configuredMediaRoots.length > 0 && configuredMediaRoots.every(isSafeMediaRoot);
-          const capabilityKey = options.keyring.active.key.byteLength === 32;
+          let capabilityKey = false;
+          try { assertReadonlyMediaCapabilityKeyring(options.keyring); capabilityKey = true; } catch { /* low-disclosure readiness */ }
           const ok = database && schema && mediaRoots && capabilityKey;
           json(response, ok ? 200 : 503, { ok, checks: { database, schema, media_roots: mediaRoots, capability_key: capabilityKey } });
           return;
@@ -566,6 +568,7 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
           if (!isApplicationJsonContentType(request.headers["content-type"])) {
             throw new ReadonlyMediaGatewayError("MEDIA_CAPABILITY_INVALID");
           }
+          assertReadonlyMediaCapabilityKeyring(options.keyring);
           const payload = openReadonlyMediaCapabilityRequest(await body(request), options.keyring, { now });
           const signedExpiresAtMs = requireUnexpiredCapability(payload, now().getTime());
           const releaseIssuance = reserveCapabilityIssuance(payload.principal_id);

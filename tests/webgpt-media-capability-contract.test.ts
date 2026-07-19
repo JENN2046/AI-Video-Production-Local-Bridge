@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  assertReadonlyMediaCapabilityKeyring,
   createReadonlyMediaCapabilityRequest,
   createReadonlyMediaHandle,
   openReadonlyMediaCapabilityRequest,
@@ -111,5 +112,10 @@ test("readonly media capability rejects tampering, expiry, replay, and invalid k
     () => parseReadonlyMediaCapabilityKey("bad key", Buffer.alloc(32).toString("base64url")),
     (error) => error instanceof ReadonlyMediaCapabilityError && error.code === "MEDIA_CAPABILITY_KEY_INVALID"
   );
+  assert.throws(
+    () => assertReadonlyMediaCapabilityKeyring({ active: { ...active, kid: "bad key" } }),
+    (error) => error instanceof ReadonlyMediaCapabilityError && error.code === "MEDIA_CAPABILITY_KEY_INVALID"
+  );
+  assert.doesNotThrow(() => assertReadonlyMediaCapabilityKeyring({ active }));
   assert.match(createReadonlyMediaHandle(() => Buffer.alloc(32, 5)), /^[A-Za-z0-9_-]{43}$/);
 });
