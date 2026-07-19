@@ -32,12 +32,13 @@ export const READONLY_MEDIA_PLAYBACK_OUTPUT_SCHEMA = z.object({
 export const READONLY_MEDIA_PLAYBACK_META_SCHEMA = z.object({
   playback_url: z.string().url().refine((value) => {
     const url = new URL(value);
-    return url.protocol === "https:"
+    return url.origin === "https://media.skmt617.top"
       && !url.username
       && !url.password
       && !url.search
-      && !url.hash;
-  }, "Playback URL must be a credential-free HTTPS URL without query or fragment.")
+      && !url.hash
+      && /^\/media\/v1\/c\/[A-Za-z0-9_-]{43}$/.test(url.pathname);
+  }, "Playback URL must use the fixed media origin and capability path.")
 }).strict();
 
 export const READONLY_WORKBENCH_RENDER_INPUT_SCHEMA = z.object({

@@ -12,7 +12,7 @@ import { openM0Database } from "../src/storage/sqlite.js";
 import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 import { bootstrapWebGptProjectOwner } from "../src/webgpt-v4/authorizationAdmin.js";
 import { actorFromFederatedSubject, issuerHash } from "../src/webgpt-v4/types.js";
-import { READONLY_WORKBENCH_RESOURCE_MIME, READONLY_WORKBENCH_RESOURCE_URI, READONLY_WORKBENCH_RENDER_TOOL } from "../src/webgpt-cloud/appContract.js";
+import { READONLY_WORKBENCH_MEDIA_TOOL, READONLY_WORKBENCH_RESOURCE_MIME, READONLY_WORKBENCH_RESOURCE_URI, READONLY_WORKBENCH_RENDER_TOOL } from "../src/webgpt-cloud/appContract.js";
 import { exportReadonlySnapshotFromDatabase } from "../src/webgpt-cloud/dataSource.js";
 import { startReadonlyRemoteRuntime } from "../src/webgpt-cloud/remoteRuntime.js";
 import { signReadonlySnapshot } from "../src/webgpt-cloud/signedSnapshot.js";
@@ -70,7 +70,7 @@ function fixtureSnapshot(root: string) {
   }
 }
 
-test("Apps smoke discovers seven readonly tools, reads the UI resource, and renders an empty authenticated shell", async () => {
+test("Apps smoke discovers seven model-visible tools and one app-only media tool, reads the UI resource, and renders an empty authenticated shell", async () => {
   const root = mkdtempSync(join(tmpdir(), "readonly-apps-smoke-"));
   const fixture = fixtureSnapshot(root);
   const pair = generateKeyPairSync("ed25519");
@@ -90,8 +90,12 @@ test("Apps smoke discovers seven readonly tools, reads the UI resource, and rend
   try {
     await client.connect(transport);
     const tools = await client.listTools();
-    assert.equal(tools.tools.length, 7);
+    assert.equal(tools.tools.length, 8);
     assert.equal(tools.tools.some((tool) => tool.name === READONLY_WORKBENCH_RENDER_TOOL), true);
+    const appOnly = tools.tools.find((tool) => tool.name === READONLY_WORKBENCH_MEDIA_TOOL);
+    assert.ok(appOnly);
+    assert.deepEqual((appOnly._meta as Record<string, unknown>).ui, { visibility: ["app"] });
+    assert.equal(tools.tools.filter((tool) => (tool._meta as Record<string, unknown>).ui && ((tool._meta as { ui?: { visibility?: string[] } }).ui?.visibility ?? []).includes("model")).length, 7);
     const resources = await client.listResources();
     assert.equal(resources.resources.some((resource) => resource.uri === READONLY_WORKBENCH_RESOURCE_URI && resource.mimeType === READONLY_WORKBENCH_RESOURCE_MIME), true);
     const resource = await client.readResource({ uri: READONLY_WORKBENCH_RESOURCE_URI });

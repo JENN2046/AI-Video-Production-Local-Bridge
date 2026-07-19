@@ -112,7 +112,8 @@
       "paths": [
         "tests/webgpt-cloud-projection.test.ts",
         "tests/webgpt-cloud-remote-runtime.test.ts",
-        "tests/webgpt-cloud-delivery.test.ts"
+        "tests/webgpt-cloud-delivery.test.ts",
+        "tests/webgpt-media-remote-bridge.test.ts"
       ]
     },
     {
@@ -270,6 +271,20 @@
       "case_name": "readonly media playback contract is app-only and keeps the capability URL out of model-visible output"
     },
     {
+      "id": "readonly-media-remote-pinning",
+      "path": "tests/webgpt-media-remote-bridge.test.ts",
+      "npm_script": "test:webgpt:cloud",
+      "ci_step": "WebGPT cloud projection tests",
+      "case_name": "remote media bridge uses a validated pinned address and keeps identifiers inside AES-GCM ciphertext"
+    },
+    {
+      "id": "readonly-media-widget-lifecycle",
+      "path": "tests/webgpt-app-contract.test.ts",
+      "npm_script": "test:webgpt:app",
+      "ci_step": "WebGPT MCP App tests",
+      "case_name": "readonly workbench loads app-only media lazily and clears the capability URL on project switch"
+    },
+    {
       "id": "readonly-projection-ledger-gate",
       "path": "tests/webgpt-cloud-projection.test.ts",
       "npm_script": "test:webgpt:cloud",
@@ -330,7 +345,7 @@
       "path": "tests/webgpt-app-contract.test.ts",
       "npm_script": "test:webgpt:app",
       "ci_step": "WebGPT MCP App tests",
-      "case_name": "readonly MCP App contract freezes one render tool, six data tools, and the v1 resource"
+      "case_name": "readonly MCP App contract freezes one render tool, six data tools, one app-only media tool, and the v1 resource"
     },
     {
       "id": "readonly-app-shell-disclosure",
@@ -505,7 +520,7 @@
       "path": "tests/webgpt-apps-smoke.test.ts",
       "npm_script": "smoke:webgpt:app",
       "ci_step": "WebGPT Apps smoke",
-      "case_name": "Apps smoke discovers seven readonly tools, reads the UI resource, and renders an empty authenticated shell"
+      "case_name": "Apps smoke discovers seven model-visible tools and one app-only media tool, reads the UI resource, and renders an empty authenticated shell"
     }
   ],
   "remediation_suites": [

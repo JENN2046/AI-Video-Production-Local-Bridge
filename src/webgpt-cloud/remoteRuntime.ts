@@ -32,7 +32,11 @@ import {
   type WebGptV4Result
 } from "../webgpt-v4/types.js";
 import {
+  READONLY_MEDIA_PLAYBACK_INPUT_SCHEMA,
+  READONLY_MEDIA_PLAYBACK_META_SCHEMA,
+  READONLY_MEDIA_PLAYBACK_OUTPUT_SCHEMA,
   READONLY_WORKBENCH_DATA_TOOLS,
+  READONLY_WORKBENCH_MEDIA_TOOL,
   READONLY_WORKBENCH_RENDER_INPUT_SCHEMA,
   READONLY_WORKBENCH_RENDER_TOOL,
   READONLY_WORKBENCH_RESOURCE_MIME,
@@ -52,6 +56,12 @@ import type {
 import { SnapshotReadonlyDataSource } from "./snapshotDataSource.js";
 import { readonlySnapshotStatus, READONLY_SNAPSHOT_MAX_BYTES, type ReadonlySnapshot, type ReadonlySnapshotStatus } from "./snapshot.js";
 import {
+  READONLY_MEDIA_GATEWAY_ORIGIN,
+  ReadonlyMediaGatewayClientError,
+  requestReadonlyMediaPlayback,
+  type ReadonlyMediaGatewayClientOptions
+} from "./mediaGatewayClient.js";
+import {
   ReadonlySnapshotStore,
   type ReadonlySigningPublicKey
 } from "./signedSnapshot.js";
@@ -66,10 +76,10 @@ export const READONLY_REMOTE_DEFAULT_PORT = 2094;
 export const READONLY_REMOTE_PUBLISH_PATH = "/snapshot";
 export const READONLY_REMOTE_TOOL_RESULT_MAX_BYTES = 128 * 1024;
 
-type RemoteToolName = typeof READONLY_WORKBENCH_DATA_TOOLS[number] | typeof READONLY_WORKBENCH_RENDER_TOOL;
+type RemoteToolName = typeof READONLY_WORKBENCH_DATA_TOOLS[number] | typeof READONLY_WORKBENCH_RENDER_TOOL | typeof READONLY_WORKBENCH_MEDIA_TOOL;
 
 const toolScopes = Object.fromEntries(
-  [READONLY_WORKBENCH_RENDER_TOOL, ...READONLY_WORKBENCH_DATA_TOOLS].map((name) => [name, "projects.read"])
+  [READONLY_WORKBENCH_RENDER_TOOL, ...READONLY_WORKBENCH_DATA_TOOLS, READONLY_WORKBENCH_MEDIA_TOOL].map((name) => [name, "projects.read"])
 ) as Record<RemoteToolName, "projects.read">;
 
 export interface ReadonlyRemoteLogEvent {
@@ -95,6 +105,7 @@ export interface StartReadonlyRemoteRuntimeOptions {
   authenticate?: WebGptV4Authenticator;
   auth_jwks?: JWTVerifyGetKey;
   auth_transport?: PinnedHttpsRuntime;
+  media_gateway?: ReadonlyMediaGatewayClientOptions;
   publisher_key_id?: string;
   publisher_public_key?: ReadonlySigningPublicKey;
   max_mcp_body_bytes?: number;
@@ -286,7 +297,8 @@ function createReadonlyRemoteMcpApp(
   actor: WebGptV4Actor,
   snapshot: ReadonlySnapshot | null,
   authConfig: WebGptV4ReadonlyFederatedAuthConfig | null,
-  now: () => Date
+  now: () => Date,
+  mediaGateway?: ReadonlyMediaGatewayClientOptions
 ): McpServer {
   const server = new McpServer(
     { name: "ai-video-readonly-workspace", version: READONLY_REMOTE_SERVICE_VERSION },
@@ -302,10 +314,12 @@ function createReadonlyRemoteMcpApp(
   const security = (name: RemoteToolName) => ({
     annotations: name === READONLY_WORKBENCH_RENDER_TOOL
       ? { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+      : name === READONLY_WORKBENCH_MEDIA_TOOL
+        ? { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false }
       : webGptV4Tool(name).annotations,
     _meta: {
       securitySchemes: [{ type: "oauth2", scopes: ["projects.read"] }],
-      ui: { visibility: ["model", "app"] }
+      ui: { visibility: name === READONLY_WORKBENCH_MEDIA_TOOL ? ["app"] : ["model", "app"] }
     }
   });
   const invoke = <T>(idValue: string | undefined, operation: (dataSource: ReadonlyDataSource) => WebGptV4Result<T>): Record<string, unknown> => {
@@ -326,7 +340,7 @@ function createReadonlyRemoteMcpApp(
     ui: {
       prefersBorder: true,
       domain: READONLY_WORKBENCH_WIDGET_DOMAIN,
-      csp: { connectDomains: [], resourceDomains: [], frameDomains: [] }
+      csp: { connectDomains: [READONLY_MEDIA_GATEWAY_ORIGIN], resourceDomains: [READONLY_MEDIA_GATEWAY_ORIGIN], frameDomains: [] }
     }
   };
   registerAppResource(server, "Jenn AI Video Workspace Readonly Workbench", READONLY_WORKBENCH_RESOURCE_URI, {
@@ -408,6 +422,54 @@ function createReadonlyRemoteMcpApp(
     inputSchema: { project_id: z.string().min(1), request_id: z.string().max(128).optional() },
     outputSchema: WEBGPT_V4_READ_OUTPUT_SCHEMAS.get_closeout_evidence, ...security("get_closeout_evidence")
   }, async (input) => invoke(input.request_id, (dataSource) => dataSource.getCloseoutEvidence(input.project_id, input.request_id)) as never);
+
+  registerAppTool(server, READONLY_WORKBENCH_MEDIA_TOOL, {
+    title: "加载只读媒体",
+    description: "Create a short-lived, single-use playback capability for one media artifact already bound to the current signed snapshot.",
+    inputSchema: READONLY_MEDIA_PLAYBACK_INPUT_SCHEMA.shape,
+    outputSchema: READONLY_MEDIA_PLAYBACK_OUTPUT_SCHEMA.shape,
+    ...security(READONLY_WORKBENCH_MEDIA_TOOL)
+  }, async (input) => {
+    try {
+      requireScope(actor, "projects.read");
+      if (!snapshot || snapshotStatus.freshness_status !== "fresh") throw new ReadonlyMediaGatewayClientError("MEDIA_SNAPSHOT_UNAVAILABLE");
+      if (!actor.issuer_hash || actor.issuer_hash !== snapshot.issuer_hash) throw new ReadonlyMediaGatewayClientError("WEBGPT_PRINCIPAL_NOT_REGISTERED");
+      const principal = snapshot.authorization.principals.find((item) => item.principal_id === actor.principal_id);
+      if (!principal || !principal.project_ids.includes(input.project_id)) throw new ReadonlyMediaGatewayClientError("PROJECT_NOT_FOUND");
+      const project = snapshot.projects.find((item) => item.project_id === input.project_id);
+      const binding = project?.media_bindings.find((item) => item.artifact_id === input.artifact_id);
+      if (!project || !binding) throw new ReadonlyMediaGatewayClientError("MEDIA_ARTIFACT_UNAVAILABLE");
+      if (!mediaGateway) throw new ReadonlyMediaGatewayClientError("MEDIA_GATEWAY_UNAVAILABLE");
+      const grant = await requestReadonlyMediaPlayback(mediaGateway, {
+        principal_id: actor.principal_id,
+        issuer_hash: actor.issuer_hash,
+        project_id: project.project_id,
+        binding,
+        snapshot_fingerprint: snapshot.snapshot_fingerprint
+      });
+      const structuredContent = READONLY_MEDIA_PLAYBACK_OUTPUT_SCHEMA.parse({
+        state: grant.state,
+        kind: grant.kind,
+        mime_type: grant.mime_type,
+        capability_expires_at: grant.capability_expires_at,
+        session_max_seconds: grant.session_max_seconds,
+        snapshot_fingerprint: grant.snapshot_fingerprint
+      });
+      const meta = READONLY_MEDIA_PLAYBACK_META_SCHEMA.parse({ playback_url: grant.playback_url });
+      return { isError: false, structuredContent, content: [], _meta: { ...meta, snapshot_fingerprint: grant.snapshot_fingerprint } } as never;
+    } catch (error) {
+      const code = error instanceof ReadonlyMediaGatewayClientError ? error.code : errorBody(error).code;
+      return {
+        isError: true,
+        content: [{ type: "text", text: "Readonly media is unavailable." }],
+        _meta: {
+          media_error_code: code,
+          snapshot_fingerprint: fingerprint,
+          snapshot_status: snapshotStatus
+        }
+      } as never;
+    }
+  });
 
   return server;
 }
@@ -565,7 +627,7 @@ export async function startReadonlyRemoteRuntime(options: StartReadonlyRemoteRun
         let app: McpServer | null = null;
         let transport: StreamableHTTPServerTransport | null = null;
         try {
-          app = createReadonlyRemoteMcpApp(actor, snapshot, authConfig, now);
+          app = createReadonlyRemoteMcpApp(actor, snapshot, authConfig, now, options.media_gateway);
           transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
           await app.connect(withToolSecuritySchemes(transport, toolScopes));
           await transport.handleRequest(request, response, parsedBody);
