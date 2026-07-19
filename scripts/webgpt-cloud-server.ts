@@ -1,6 +1,7 @@
 import { createPublicKey } from "node:crypto";
 
 import { loadWebGptV4AuthConfig } from "../src/webgpt-v4/auth.js";
+import { loadReadonlyMediaGatewayClientOptions } from "../src/webgpt-cloud/mediaGatewayClient.js";
 import { startReadonlyRemoteRuntime } from "../src/webgpt-cloud/remoteRuntime.js";
 
 class ReadonlyRemoteConfigError extends Error {
@@ -38,6 +39,7 @@ async function main(): Promise<void> {
     host: "0.0.0.0",
     port: port(process.env.PORT),
     auth_config: authConfig,
+    media_gateway: loadReadonlyMediaGatewayClientOptions(process.env) ?? undefined,
     ...publisherConfig(process.env),
     log: (event) => console.log(JSON.stringify(event))
   });

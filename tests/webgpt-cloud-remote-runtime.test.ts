@@ -11,6 +11,7 @@ import { SignJWT } from "jose";
 
 import { openM0Database } from "../src/storage/sqlite.js";
 import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
+import { attachArtifactToShot, registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { bootstrapWebGptProjectOwner } from "../src/webgpt-v4/authorizationAdmin.js";
 import type { WebGptV4ReadonlyFederatedAuthConfig } from "../src/webgpt-v4/auth.js";
 import { actorFromFederatedSubject, issuerHash, WEBGPT_V4_VERSION } from "../src/webgpt-v4/types.js";
@@ -76,6 +77,22 @@ function fixtureSnapshot(generatedAt = new Date(Date.now() - 60_000).toISOString
   saveShot(db, shot);
   created.project.shot_ids = [shot.shot_id];
   saveProject(db, created.project);
+  const registered = registerMediaArtifact({
+    artifact_type: "image",
+    role: "storyboard_image",
+    source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
+    linked_objects: { project_id: created.project_id, shot_id: shot.shot_id }
+  }, db);
+  assert.equal(registered.ok, true);
+  if (!registered.ok) throw new Error("fixture artifact registration failed");
+  const attached = attachArtifactToShot({
+    project_id: created.project_id,
+    shot_id: shot.shot_id,
+    artifact_id: registered.artifact.artifact_id,
+    reference: "storyboard_image_artifact_id",
+    expected_current_artifact_id: ""
+  }, db);
+  assert.equal(attached.ok, true);
   bootstrapWebGptProjectOwner(db, actor.principal_id, created.project_id, "READONLY_REMOTE_FIXTURE", actor.issuer_hash!);
   db.close();
   return {
@@ -197,12 +214,28 @@ test("remote OAuth challenges, signed publish, six readonly tools, and readiness
     .setIssuer(ISSUER).setAudience(RESOURCE).setSubject("auth0|unregistered-remote-user").setIssuedAt().setExpirationTime("5m")
     .sign(jwtKeys.privateKey);
   const events: ReadonlyRemoteLogEvent[] = [];
+  const mediaKeyring = { active: { kid: "remote-media-test", key: Buffer.alloc(32, 31) } };
+  const mediaRequests: Array<{ url: string; address: string; body: string }> = [];
   const runtime = await startReadonlyRemoteRuntime({
     port: 0,
     auth_config: authConfig(),
     publisher_key_id: "publisher-v1",
     publisher_public_key: publicKey,
     auth_jwks: async () => jwtKeys.publicKey,
+    media_gateway: {
+      origin: "https://media.skmt617.top",
+      keyring: mediaKeyring,
+      runtime: {
+        resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+        post_pinned_address: async (url, _signal, address, body) => {
+          mediaRequests.push({ url: url.toString(), address: address.address, body: Buffer.from(body).toString("utf8") });
+          return new Response(JSON.stringify({ capability_handle: "m".repeat(43), expires_at: new Date(Date.now() + 5 * 60_000).toISOString() }), {
+            status: 201,
+            headers: { "content-type": "application/json" }
+          });
+        }
+      }
+    },
     log: (event) => events.push(event)
   });
   try {
@@ -275,12 +308,37 @@ test("remote OAuth challenges, signed publish, six readonly tools, and readiness
       assert.deepEqual(tools.tools.map((tool) => tool.name), [
         "render_ai_video_workspace_app",
         "list_production_projects", "get_project_context", "list_project_shots",
-        "get_review_package", "get_delivery_status", "get_closeout_evidence"
+        "get_review_package", "get_delivery_status", "get_closeout_evidence",
+        "get_readonly_media_playback"
       ]);
       for (const tool of tools.tools) {
         assert.equal(tool.annotations?.readOnlyHint, true);
         assert.deepEqual((tool._meta as Record<string, unknown>).securitySchemes, [{ type: "oauth2", scopes: ["projects.read"] }]);
       }
+      const mediaTool = tools.tools.find((tool) => tool.name === "get_readonly_media_playback")!;
+      assert.deepEqual((mediaTool._meta as Record<string, unknown>).ui, { visibility: ["app"] });
+      assert.equal(mediaTool.annotations?.idempotentHint, false);
+      const mediaBinding = fixture.snapshot.projects[0]!.media_bindings[0]!;
+      const mediaResult = await client.callTool({
+        name: "get_readonly_media_playback",
+        arguments: { project_id: fixture.project_id, artifact_id: mediaBinding.artifact_id }
+      });
+      assert.equal(mediaResult.isError, false);
+      assert.equal(JSON.stringify(mediaResult.structuredContent).includes("media.skmt617.top"), false);
+      assert.equal(JSON.stringify(mediaResult.content).includes("media.skmt617.top"), false);
+      assert.equal(jsonRecord(mediaResult._meta).playback_url, `https://media.skmt617.top/media/v1/c/${"m".repeat(43)}`);
+      assert.equal(jsonRecord(mediaResult.structuredContent).snapshot_fingerprint, fixture.snapshot.snapshot_fingerprint);
+      assert.deepEqual(mediaRequests.map(({ url, address }) => ({ url, address })), [{
+        url: "https://media.skmt617.top/internal/v1/capabilities",
+        address: "8.8.8.8"
+      }]);
+      assert.equal(mediaRequests[0]!.body.includes(fixture.project_id), false);
+      const deniedMedia = await client.callTool({
+        name: "get_readonly_media_playback",
+        arguments: { project_id: "project_not_authorized", artifact_id: mediaBinding.artifact_id }
+      });
+      assert.equal(deniedMedia.isError, true);
+      assert.equal(mediaRequests.length, 1);
       const calls = [
         { name: "list_production_projects", arguments: {} },
         { name: "get_project_context", arguments: { project_id: fixture.project_id, workspace: "overview" } },

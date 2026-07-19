@@ -20,6 +20,7 @@ import {
   READONLY_WORKBENCH_SHELL_SCHEMA
 } from "../src/webgpt-cloud/appContract.js";
 import { readonlyWorkbenchShell, startReadonlyRemoteRuntime } from "../src/webgpt-cloud/remoteRuntime.js";
+import { READONLY_MEDIA_GATEWAY_ORIGIN } from "../src/webgpt-cloud/mediaGatewayClient.js";
 import {
   READONLY_WORKBENCH_WIDGET_DOMAIN,
   escapeReadonlyWorkbenchInlineText,
@@ -79,7 +80,7 @@ function toolFailure(code: string): Record<string, unknown> {
   };
 }
 
-test("readonly MCP App contract freezes one render tool, six data tools, and the v1 resource", () => {
+test("readonly MCP App contract freezes one render tool, six data tools, one app-only media tool, and the v1 resource", () => {
   assert.equal(READONLY_WORKBENCH_RENDER_TOOL, "render_ai_video_workspace_app");
   assert.deepEqual(READONLY_WORKBENCH_DATA_TOOLS, [
     "list_production_projects", "get_project_context", "list_project_shots",
@@ -104,11 +105,13 @@ test("readonly media playback contract is app-only and keeps the capability URL 
     session_max_seconds: 1800,
     snapshot_fingerprint: FINGERPRINT
   });
-  const meta = READONLY_MEDIA_PLAYBACK_META_SCHEMA.parse({ playback_url: "https://media.skmt617.top/media/v1/c/fixture" });
+  const meta = READONLY_MEDIA_PLAYBACK_META_SCHEMA.parse({ playback_url: `https://media.skmt617.top/media/v1/c/${"m".repeat(43)}` });
   assert.equal(JSON.stringify(output).includes(meta.playback_url), false);
   assert.throws(() => READONLY_MEDIA_PLAYBACK_META_SCHEMA.parse({ playback_url: "http://127.0.0.1/media" }));
   assert.throws(() => READONLY_MEDIA_PLAYBACK_META_SCHEMA.parse({ playback_url: "https://user:secret@media.skmt617.top/media" }));
   assert.throws(() => READONLY_MEDIA_PLAYBACK_META_SCHEMA.parse({ playback_url: "https://media.skmt617.top/media?artifact=hidden" }));
+  assert.throws(() => READONLY_MEDIA_PLAYBACK_META_SCHEMA.parse({ playback_url: `https://other.example/media/v1/c/${"m".repeat(43)}` }));
+  assert.throws(() => READONLY_MEDIA_PLAYBACK_META_SCHEMA.parse({ playback_url: "https://media.skmt617.top/media/v1/c/short" }));
 });
 
 test("render contract accepts only low-disclosure shell state and initial intent", () => {
@@ -185,17 +188,21 @@ test("readonly App resource and render binding expose a low-disclosure authentic
   try {
     await client.connect(transport);
     const tools = await client.listTools();
-    assert.deepEqual(tools.tools.map((tool) => tool.name), [READONLY_WORKBENCH_RENDER_TOOL, ...READONLY_WORKBENCH_DATA_TOOLS]);
+    assert.deepEqual(tools.tools.map((tool) => tool.name), [READONLY_WORKBENCH_RENDER_TOOL, ...READONLY_WORKBENCH_DATA_TOOLS, READONLY_WORKBENCH_MEDIA_TOOL]);
     const render = tools.tools[0]!;
     const renderMeta = record(render._meta);
     assert.deepEqual(record(renderMeta.ui), { resourceUri: READONLY_WORKBENCH_RESOURCE_URI, visibility: ["model", "app"] });
     assert.equal(renderMeta["openai/outputTemplate"], READONLY_WORKBENCH_RESOURCE_URI);
-    for (const tool of tools.tools.slice(1)) {
+    for (const tool of tools.tools.slice(1, -1)) {
       const meta = record(tool._meta);
       assert.deepEqual(record(meta.ui), { visibility: ["model", "app"] }, tool.name);
       assert.equal("resourceUri" in record(meta.ui), false, tool.name);
       assert.equal("openai/outputTemplate" in meta, false, tool.name);
     }
+    const media = tools.tools.at(-1)!;
+    assert.equal(media.name, READONLY_WORKBENCH_MEDIA_TOOL);
+    assert.deepEqual(record(record(media._meta).ui), { visibility: ["app"] });
+    assert.equal(media.annotations?.idempotentHint, false);
 
     const resources = await client.listResources();
     assert.equal(resources.resources.some((resource) => resource.uri === READONLY_WORKBENCH_RESOURCE_URI), true);
@@ -205,7 +212,11 @@ test("readonly App resource and render binding expose a low-disclosure authentic
     assert.equal(resource.mimeType, READONLY_WORKBENCH_RESOURCE_MIME);
     const resourceMeta = record(resource._meta);
     assert.equal(record(resourceMeta.ui).domain, READONLY_WORKBENCH_WIDGET_DOMAIN);
-    assert.deepEqual(record(record(resourceMeta.ui).csp), { connectDomains: [], resourceDomains: [], frameDomains: [] });
+    assert.deepEqual(record(record(resourceMeta.ui).csp), {
+      connectDomains: [READONLY_MEDIA_GATEWAY_ORIGIN],
+      resourceDomains: [READONLY_MEDIA_GATEWAY_ORIGIN],
+      frameDomains: []
+    });
 
     const rendered = await client.callTool({ name: READONLY_WORKBENCH_RENDER_TOOL, arguments: { initial_project_id: "hidden-project", initial_panel: "shots" } });
     assert.equal(rendered.isError, false);
@@ -228,7 +239,9 @@ test("readonly workbench HTML enforces CSP-compatible local rendering and inline
   for (const required of [
     "Service Status", "Production Projects", "Project Context", "Shot Workbench", "Review Package",
     "Delivery Status", "Closeout Evidence", "window.openai?.callTool", "event.source!==window.parent",
-    "当前数据来自只读快照", "选中文本后按 Ctrl+C", "No generated clip", "storyboard ", "review "
+    "当前数据来自只读快照", "选中文本后按 Ctrl+C", "No generated clip", "storyboard ", "review ",
+    "get_readonly_media_playback", "crossOrigin='anonymous'", "referrerPolicy='no-referrer'", "clearMedia()",
+    "Gateway offline", "Integrity failed", "Capability expired", "Session expired", "Reload media"
   ]) assert.equal(html.includes(required), true, required);
   const escaped = escapeReadonlyWorkbenchInlineText("</ScRiPt><script>safe</script></STYLE>\u2028\u2029");
   assert.equal(/<\/script/i.test(escaped), false);
@@ -278,6 +291,83 @@ test("readonly workbench renders compact review stage from operational state", a
     const reviewText = dom.window.document.querySelector("#review")?.textContent ?? "";
     assert.match(reviewText, /Review stagepending/);
     assert.doesNotMatch(reviewText, /Review stageunknown/);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("readonly workbench preserves media across same-project refresh and clears it on project switch", async () => {
+  const mediaCalls: Array<{ project_id: string; artifact_id: string }> = [];
+  const playbackUrl = `https://media.skmt617.top/media/v1/c/${"p".repeat(43)}`;
+  const credentialedPlaybackUrl = `https://user:pass@media.skmt617.top/media/v1/c/${"q".repeat(43)}`;
+  const dom = new JSDOM(readonlyWorkbenchWidgetHtml(), {
+    runScripts: "dangerously",
+    pretendToBeVisual: true,
+    beforeParse(window) {
+      Object.defineProperty(window, "openai", { value: {
+        toolOutput: shell(),
+        callTool: async (name: string, args: Record<string, unknown>) => {
+          if (name === "list_production_projects") return toolResult({
+            items: ["project_a", "project_b"].map((project_id) => ({ project: { project_id, title: project_id, status: "storyboard_review" } })),
+            page: { next_offset: null }
+          });
+          if (name === "get_project_context") return toolResult({ project: { project_id: args.project_id, title: args.project_id }, workspace: "overview", summary: {}, metrics: {}, blockers: [] });
+          if (name === "list_project_shots") return toolResult({
+            items: [{ shot_id: `shot_${args.project_id}`, project_id: args.project_id, order: 1, description: "Storyboard", storyboard_image_artifact_id: `artifact_${args.project_id}`, operational_state: { storyboard: {}, review: {} } }],
+            page: { next_offset: null }
+          });
+          if (name === "get_review_package") return toolResult({ shot: { shot_id: args.shot_id }, versions: [], notes: [] });
+          if (name === "get_readonly_media_playback") {
+            mediaCalls.push(args as { project_id: string; artifact_id: string });
+            return {
+              isError: false,
+              structuredContent: { state: "ready", kind: "image", mime_type: "image/png", capability_expires_at: "2026-07-19T00:05:00.000Z", session_max_seconds: 1800, snapshot_fingerprint: FINGERPRINT },
+              content: [],
+              _meta: { playback_url: args.project_id === "project_b" ? credentialedPlaybackUrl : playbackUrl, snapshot_fingerprint: FINGERPRINT }
+            };
+          }
+          return toolResult({ project_status: "storyboard_review", readiness_checks: [] });
+        }
+      }, configurable: true });
+    }
+  });
+  try {
+    await new Promise((resolveWait) => setTimeout(resolveWait, 60));
+    const loadButton = [...dom.window.document.querySelectorAll<HTMLButtonElement>(".media-card button")].find((button) => button.textContent === "加载媒体");
+    assert.ok(loadButton);
+    loadButton.click();
+    await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+    const image = dom.window.document.querySelector<HTMLImageElement>(".media-card img");
+    assert.ok(image);
+    assert.equal(image.src, playbackUrl);
+    assert.equal(image.crossOrigin, "anonymous");
+    assert.equal(image.referrerPolicy, "no-referrer");
+    assert.equal(JSON.stringify(mediaCalls), JSON.stringify([{ project_id: "project_a", artifact_id: "artifact_project_a" }]));
+
+    const refresh = [...dom.window.document.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "刷新");
+    assert.ok(refresh);
+    refresh.click();
+    await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+    assert.equal(image.src, playbackUrl);
+    assert.equal(image.isConnected, true);
+    assert.equal(mediaCalls.length, 1);
+
+    const secondProject = [...dom.window.document.querySelectorAll<HTMLButtonElement>(".project")].find((button) => button.dataset.projectId === "project_b");
+    assert.ok(secondProject);
+    secondProject.click();
+    await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+    assert.equal(image.hasAttribute("src"), false);
+
+    const projectBLoad = [...dom.window.document.querySelectorAll<HTMLButtonElement>(".media-card button")].find((button) => button.textContent === "加载媒体");
+    assert.ok(projectBLoad);
+    projectBLoad.click();
+    await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+    assert.equal(dom.window.document.querySelector(".media-card img"), null);
+    assert.match(dom.window.document.querySelector(".media-status")?.textContent ?? "", /Media unavailable/);
+    assert.equal(JSON.stringify(mediaCalls), JSON.stringify([
+      { project_id: "project_a", artifact_id: "artifact_project_a" },
+      { project_id: "project_b", artifact_id: "artifact_project_b" }
+    ]));
   } finally {
     dom.window.close();
   }
