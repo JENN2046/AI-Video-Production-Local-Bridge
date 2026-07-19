@@ -299,6 +299,7 @@ test("readonly workbench renders compact review stage from operational state", a
 test("readonly workbench preserves media across same-project refresh and clears it on project switch", async () => {
   const mediaCalls: Array<{ project_id: string; artifact_id: string }> = [];
   const playbackUrl = `https://media.skmt617.top/media/v1/c/${"p".repeat(43)}`;
+  const credentialedPlaybackUrl = `https://user:pass@media.skmt617.top/media/v1/c/${"q".repeat(43)}`;
   const dom = new JSDOM(readonlyWorkbenchWidgetHtml(), {
     runScripts: "dangerously",
     pretendToBeVisual: true,
@@ -322,7 +323,7 @@ test("readonly workbench preserves media across same-project refresh and clears 
               isError: false,
               structuredContent: { state: "ready", kind: "image", mime_type: "image/png", capability_expires_at: "2026-07-19T00:05:00.000Z", session_max_seconds: 1800, snapshot_fingerprint: FINGERPRINT },
               content: [],
-              _meta: { playback_url: playbackUrl, snapshot_fingerprint: FINGERPRINT }
+              _meta: { playback_url: args.project_id === "project_b" ? credentialedPlaybackUrl : playbackUrl, snapshot_fingerprint: FINGERPRINT }
             };
           }
           return toolResult({ project_status: "storyboard_review", readiness_checks: [] });
@@ -356,6 +357,17 @@ test("readonly workbench preserves media across same-project refresh and clears 
     secondProject.click();
     await new Promise((resolveWait) => setTimeout(resolveWait, 20));
     assert.equal(image.hasAttribute("src"), false);
+
+    const projectBLoad = [...dom.window.document.querySelectorAll<HTMLButtonElement>(".media-card button")].find((button) => button.textContent === "加载媒体");
+    assert.ok(projectBLoad);
+    projectBLoad.click();
+    await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+    assert.equal(dom.window.document.querySelector(".media-card img"), null);
+    assert.match(dom.window.document.querySelector(".media-status")?.textContent ?? "", /Media unavailable/);
+    assert.equal(JSON.stringify(mediaCalls), JSON.stringify([
+      { project_id: "project_a", artifact_id: "artifact_project_a" },
+      { project_id: "project_b", artifact_id: "artifact_project_b" }
+    ]));
   } finally {
     dom.window.close();
   }
