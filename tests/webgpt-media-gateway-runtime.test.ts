@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
-import { statSync, utimesSync } from "node:fs";
+import { closeSync, openSync, statSync, utimesSync } from "node:fs";
 import { resolve } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { paths } from "../src/paths.js";
 import { openM0Database, openM0DatabaseConnection, type M0Database } from "../src/storage/sqlite.js";
@@ -219,7 +220,8 @@ test("readonly media gateway releases a session after an asynchronous read-strea
     allowed_origin: ORIGIN,
     allowed_media_roots: [paths.imageArtifactsRoot],
     port: 0,
-    create_read_stream: () => {
+    create_read_stream: (_path, options) => {
+      closeSync(options.fd);
       const stream = new PassThrough();
       setImmediate(() => stream.destroy(new Error("INJECTED_MEDIA_STREAM_FAILURE")));
       return stream;
@@ -241,6 +243,36 @@ test("readonly media gateway releases a session after an asynchronous read-strea
     const replacementActivation = await fetch(`${gateway.url}/media/v1/c/${replacement}`, { headers: { origin: ORIGIN }, redirect: "manual" });
     assert.equal(replacementActivation.status, 302);
     assert.equal(gateway.counts().sessions, 1);
+  } finally {
+    await gateway.close();
+  }
+});
+
+test("readonly media gateway rejects a file descriptor whose identity differs from the authorized path", async () => {
+  const fixture = createFixture("descriptor-drift");
+  let streamCreated = false;
+  const gateway = await startReadonlyMediaGateway({
+    database_path: paths.sqlitePath,
+    issuer_hash: fixture.actor.issuer_hash!,
+    keyring,
+    allowed_origin: ORIGIN,
+    allowed_media_roots: [paths.imageArtifactsRoot],
+    port: 0,
+    open_readonly_file: () => openSync(fileURLToPath(import.meta.url), "r"),
+    create_read_stream: () => {
+      streamCreated = true;
+      return new PassThrough();
+    }
+  });
+  try {
+    const handle = await issue(gateway.url, fixture);
+    const activated = await fetch(`${gateway.url}/media/v1/c/${handle}`, { headers: { origin: ORIGIN }, redirect: "manual" });
+    assert.equal(activated.status, 302);
+    const rejected = await fetch(`${gateway.url}${activated.headers.get("location")}`, { headers: { origin: ORIGIN } });
+    assert.equal(rejected.status, 404);
+    assert.equal((await rejected.json() as { error: { code: string } }).error.code, "MEDIA_SESSION_INVALID");
+    assert.equal(streamCreated, false);
+    assert.equal(gateway.counts().sessions, 0);
   } finally {
     await gateway.close();
   }

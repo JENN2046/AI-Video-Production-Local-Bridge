@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { createReadStream, existsSync, lstatSync, realpathSync, statSync } from "node:fs";
+import { closeSync, createReadStream, existsSync, fstatSync, lstatSync, openSync, realpathSync, statSync } from "node:fs";
 import { open } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { isAbsolute, relative, resolve } from "node:path";
@@ -151,7 +151,8 @@ export interface ReadonlyMediaGatewayOptions {
   now?: () => Date;
   random_bytes?: (size: number) => Buffer;
   integrity_queue?: MediaIntegrityQueue;
-  create_read_stream?: (path: string, options: { start: number; end: number }) => Readable;
+  open_readonly_file?: (path: string) => number;
+  create_read_stream?: (path: string, options: { start: number; end: number; fd: number; autoClose: true }) => Readable;
 }
 
 export interface ReadonlyMediaGatewayRuntime {
@@ -201,6 +202,12 @@ function fileIdentity(path: string): FileIdentity {
   const stats = statSync(path);
   if (!stats.isFile()) throw new ReadonlyMediaGatewayError("MEDIA_FILE_NOT_REGULAR");
   return { real_path: path, size: stats.size, mtime_ms: stats.mtimeMs, dev: stats.dev, ino: stats.ino };
+}
+
+function descriptorIdentity(descriptor: number, realPath: string): FileIdentity {
+  const stats = fstatSync(descriptor);
+  if (!stats.isFile()) throw new ReadonlyMediaGatewayError("MEDIA_FILE_NOT_REGULAR");
+  return { real_path: realPath, size: stats.size, mtime_ms: stats.mtimeMs, dev: stats.dev, ino: stats.ino };
 }
 
 function sameIdentity(left: FileIdentity, right: FileIdentity): boolean {
@@ -494,22 +501,37 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
   const serve = (request: IncomingMessage, response: ServerResponse, session: SessionRecord): void => {
     if (request.headers.origin !== allowedOrigin) throw new ReadonlyMediaGatewayError("MEDIA_ORIGIN_DENIED");
     const current = validateRecord(session);
-    const range = singleRange(typeof request.headers.range === "string" ? request.headers.range : undefined, current.identity.size);
-    const start = range?.start ?? 0;
-    const end = range?.end ?? current.identity.size - 1;
-    response.statusCode = range ? 206 : 200;
-    mediaHeaders(response, allowedOrigin);
-    response.setHeader("content-type", current.blob.detected_mime);
-    response.setHeader("accept-ranges", "bytes");
-    response.setHeader("content-length", String(end - start + 1));
-    if (range) response.setHeader("content-range", `bytes ${start}-${end}/${current.identity.size}`);
-    if (request.method === "HEAD") { response.end(); return; }
-    const stream = (options.create_read_stream ?? createReadStream)(current.identity.real_path, { start, end });
-    stream.once("error", () => {
-      if (sessions.get(session.handle) === session) sessions.delete(session.handle);
-      response.destroy();
-    });
-    stream.pipe(response);
+    let descriptor = -1;
+    try {
+      descriptor = (options.open_readonly_file ?? ((path) => openSync(path, "r")))(current.identity.real_path);
+      const openedIdentity = descriptorIdentity(descriptor, current.identity.real_path);
+      if (!sameIdentity(openedIdentity, current.identity)) throw new ReadonlyMediaGatewayError("MEDIA_SESSION_INVALID");
+      const range = singleRange(typeof request.headers.range === "string" ? request.headers.range : undefined, openedIdentity.size);
+      const start = range?.start ?? 0;
+      const end = range?.end ?? openedIdentity.size - 1;
+      response.statusCode = range ? 206 : 200;
+      mediaHeaders(response, allowedOrigin);
+      response.setHeader("content-type", current.blob.detected_mime);
+      response.setHeader("accept-ranges", "bytes");
+      response.setHeader("content-length", String(end - start + 1));
+      if (range) response.setHeader("content-range", `bytes ${start}-${end}/${openedIdentity.size}`);
+      if (request.method === "HEAD") {
+        closeSync(descriptor);
+        descriptor = -1;
+        response.end();
+        return;
+      }
+      const stream = (options.create_read_stream ?? createReadStream)(current.identity.real_path, { start, end, fd: descriptor, autoClose: true });
+      descriptor = -1;
+      stream.once("error", () => {
+        if (sessions.get(session.handle) === session) sessions.delete(session.handle);
+        response.destroy();
+      });
+      stream.pipe(response);
+    } catch (error) {
+      if (descriptor >= 0) closeSync(descriptor);
+      throw error;
+    }
   };
 
   const server = createServer({
