@@ -152,6 +152,7 @@ export interface ReadonlyMediaGatewayOptions {
   now?: () => Date;
   random_bytes?: (size: number) => Buffer;
   integrity_queue?: MediaIntegrityQueue;
+  replay_guard?: ReadonlyMediaCapabilityReplayGuard;
   open_readonly_file?: (path: string) => number;
   create_read_stream?: (path: string, options: { start: number; end: number; fd: number; autoClose: true }) => Readable;
 }
@@ -362,7 +363,8 @@ function json(response: ServerResponse, status: number, value: unknown): void {
 }
 
 function errorStatus(code: string): number {
-  if (code === "MEDIA_INTEGRITY_BUSY" || code === "MEDIA_SESSION_CAPACITY_EXCEEDED" || code === "MEDIA_CAPABILITY_CAPACITY_EXCEEDED") return 429;
+  if (code === "MEDIA_INTEGRITY_BUSY" || code === "MEDIA_SESSION_CAPACITY_EXCEEDED"
+    || code === "MEDIA_CAPABILITY_CAPACITY_EXCEEDED" || code === "MEDIA_CAPABILITY_REPLAY_CAPACITY_EXCEEDED") return 429;
   if (code === "MEDIA_INTEGRITY_TIMEOUT") return 503;
   if (code === "MEDIA_CAPABILITY_REPLAYED") return 409;
   if (code === "MEDIA_RANGE_INVALID") return 416;
@@ -372,7 +374,12 @@ function errorStatus(code: string): number {
 
 function stableError(error: unknown): ReadonlyMediaGatewayError {
   if (error instanceof ReadonlyMediaGatewayError) return error;
-  if (error instanceof ReadonlyMediaCapabilityError) return new ReadonlyMediaGatewayError(error.code === "MEDIA_CAPABILITY_REPLAYED" ? error.code : "MEDIA_CAPABILITY_INVALID");
+  if (error instanceof ReadonlyMediaCapabilityError) {
+    const exposed = ["MEDIA_CAPABILITY_REPLAYED", "MEDIA_CAPABILITY_REPLAY_CAPACITY_EXCEEDED"].includes(error.code)
+      ? error.code
+      : "MEDIA_CAPABILITY_INVALID";
+    return new ReadonlyMediaGatewayError(exposed);
+  }
   return new ReadonlyMediaGatewayError("MEDIA_GATEWAY_UNAVAILABLE");
 }
 
@@ -436,7 +443,7 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
   const now = options.now ?? (() => new Date());
   const random = options.random_bytes ?? randomBytes;
   const queue = options.integrity_queue ?? new MediaIntegrityQueue();
-  const replay = new ReadonlyMediaCapabilityReplayGuard();
+  const replay = options.replay_guard ?? new ReadonlyMediaCapabilityReplayGuard();
   const capabilities = new Map<string, CapabilityRecord>();
   const sessions = new Map<string, SessionRecord>();
   let capabilityIssuances = 0;

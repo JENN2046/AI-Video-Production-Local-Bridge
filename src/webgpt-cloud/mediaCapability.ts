@@ -8,6 +8,8 @@ export const READONLY_MEDIA_CAPABILITY_TTL_MS = 5 * 60 * 1000;
 export const READONLY_MEDIA_CAPABILITY_CLOCK_SKEW_MS = 30 * 1000;
 export const READONLY_MEDIA_CAPABILITY_MAX_BODY_BYTES = 4 * 1024;
 export const READONLY_MEDIA_CAPABILITY_REPLAY_WINDOW_MS = 10 * 60 * 1000;
+export const READONLY_MEDIA_CAPABILITY_MAX_REPLAY_RECORDS = 256;
+export const READONLY_MEDIA_CAPABILITY_MAX_REPLAY_RECORDS_PER_PRINCIPAL = 32;
 export const READONLY_MEDIA_PREVIOUS_KEY_MAX_ACCEPTANCE_MS = 10 * 60 * 1000;
 export const READONLY_MEDIA_SESSION_MAX_SECONDS = 30 * 60;
 
@@ -193,18 +195,40 @@ export function openReadonlyMediaCapabilityRequest(
 }
 
 export class ReadonlyMediaCapabilityReplayGuard {
-  private readonly seen = new Map<string, number>();
+  private readonly seen = new Map<string, { expires_at_ms: number; principal_id: string }>();
+
+  constructor(
+    readonly maximumRecords = READONLY_MEDIA_CAPABILITY_MAX_REPLAY_RECORDS,
+    readonly maximumRecordsPerPrincipal = READONLY_MEDIA_CAPABILITY_MAX_REPLAY_RECORDS_PER_PRINCIPAL
+  ) {
+    if (!Number.isInteger(maximumRecords) || maximumRecords <= 0
+      || !Number.isInteger(maximumRecordsPerPrincipal) || maximumRecordsPerPrincipal <= 0
+      || maximumRecordsPerPrincipal > maximumRecords) {
+      throw new ReadonlyMediaCapabilityError("MEDIA_CAPABILITY_REPLAY_GUARD_INVALID");
+    }
+  }
+
+  private sweep(current: number): void {
+    for (const [nonce, record] of this.seen) if (record.expires_at_ms <= current) this.seen.delete(nonce);
+  }
 
   accept(payload: ReadonlyMediaCapabilityPayload, now = new Date()): void {
     const current = now.getTime();
-    for (const [nonce, expiry] of this.seen) if (expiry <= current) this.seen.delete(nonce);
+    this.sweep(current);
     if (this.seen.has(payload.nonce)) throw new ReadonlyMediaCapabilityError("MEDIA_CAPABILITY_REPLAYED");
-    this.seen.set(payload.nonce, Date.parse(payload.issued_at) + READONLY_MEDIA_CAPABILITY_REPLAY_WINDOW_MS);
+    const principalRecords = [...this.seen.values()].filter((record) => record.principal_id === payload.principal_id).length;
+    if (this.seen.size >= this.maximumRecords || principalRecords >= this.maximumRecordsPerPrincipal) {
+      throw new ReadonlyMediaCapabilityError("MEDIA_CAPABILITY_REPLAY_CAPACITY_EXCEEDED");
+    }
+    this.seen.set(payload.nonce, {
+      expires_at_ms: Date.parse(payload.issued_at) + READONLY_MEDIA_CAPABILITY_REPLAY_WINDOW_MS,
+      principal_id: payload.principal_id
+    });
   }
 
   size(now = new Date()): number {
     const current = now.getTime();
-    for (const [nonce, expiry] of this.seen) if (expiry <= current) this.seen.delete(nonce);
+    this.sweep(current);
     return this.seen.size;
   }
 }

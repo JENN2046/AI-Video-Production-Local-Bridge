@@ -10,7 +10,7 @@ import { paths } from "../src/paths.js";
 import { openM0Database, openM0DatabaseConnection, type M0Database } from "../src/storage/sqlite.js";
 import { attachArtifactToShot, getMediaArtifact, getMediaBlob, registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
-import { createReadonlyMediaCapabilityRequest } from "../src/webgpt-cloud/mediaCapability.js";
+import { createReadonlyMediaCapabilityRequest, ReadonlyMediaCapabilityReplayGuard } from "../src/webgpt-cloud/mediaCapability.js";
 import { bootstrapWebGptProjectOwner, revokeWebGptProjectMembership } from "../src/webgpt-v4/authorizationAdmin.js";
 import { actorFromFederatedSubject } from "../src/webgpt-v4/types.js";
 import {
@@ -206,6 +206,47 @@ test("readonly media gateway bounds pending capabilities globally and per princi
     const replacement = await issue(gateway.url, actors[0]!);
     assert.match(replacement, /^[A-Za-z0-9_-]{43}$/);
     assert.equal(gateway.counts().capabilities, READONLY_MEDIA_GATEWAY_MAX_PENDING_CAPABILITIES);
+  } finally {
+    await gateway.close();
+  }
+});
+
+test("readonly media gateway bounds replay records created by failed issuances", async () => {
+  const fixture = createFixture("failed-issuance-replay");
+  const gateway = await startReadonlyMediaGateway({
+    database_path: paths.sqlitePath,
+    issuer_hash: fixture.actor.issuer_hash!,
+    keyring,
+    allowed_origin: ORIGIN,
+    allowed_media_roots: [paths.imageArtifactsRoot],
+    port: 0,
+    replay_guard: new ReadonlyMediaCapabilityReplayGuard(4, 2)
+  });
+  const failedEnvelope = () => createReadonlyMediaCapabilityRequest({
+    principal_id: fixture.actor.principal_id,
+    issuer_hash: fixture.actor.issuer_hash!,
+    project_id: fixture.project_id,
+    artifact_id: `missing_artifact_${randomUUID()}`,
+    artifact_sha256: fixture.blob.sha256,
+    snapshot_fingerprint: "4".repeat(64)
+  }, keyring);
+  try {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const failed = await fetch(`${gateway.url}/internal/v1/capabilities`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(failedEnvelope())
+      });
+      assert.equal(failed.status, 404);
+    }
+    const bounded = await fetch(`${gateway.url}/internal/v1/capabilities`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(failedEnvelope())
+    });
+    assert.equal(bounded.status, 429);
+    assert.equal((await bounded.json() as { error: { code: string } }).error.code, "MEDIA_CAPABILITY_REPLAY_CAPACITY_EXCEEDED");
+    assert.equal(gateway.counts().capabilities, 0);
   } finally {
     await gateway.close();
   }
