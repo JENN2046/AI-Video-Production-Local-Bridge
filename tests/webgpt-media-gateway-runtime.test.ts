@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { statSync, utimesSync } from "node:fs";
 import { resolve } from "node:path";
+import { PassThrough } from "node:stream";
 import test from "node:test";
 
 import { paths } from "../src/paths.js";
@@ -13,6 +14,8 @@ import { bootstrapWebGptProjectOwner, revokeWebGptProjectMembership } from "../s
 import { actorFromFederatedSubject } from "../src/webgpt-v4/types.js";
 import {
   MediaIntegrityQueue,
+  READONLY_MEDIA_GATEWAY_MAX_PENDING_CAPABILITIES,
+  READONLY_MEDIA_GATEWAY_MAX_PENDING_CAPABILITIES_PER_PRINCIPAL,
   ReadonlyMediaGatewayError,
   startReadonlyMediaGateway
 } from "../src/webgpt-media-gateway/runtime.js";
@@ -105,6 +108,17 @@ function envelope(fixture: ReturnType<typeof createFixture>, at?: Date) {
   }, keyring, at ? { now: () => at } : {});
 }
 
+function authorizeAdditionalActor(fixture: ReturnType<typeof createFixture>, label: string): ReturnType<typeof createFixture> {
+  const actor = actorFromFederatedSubject(ISSUER, `media-owner-${label}`, ["projects.read"]);
+  const db = openM0Database();
+  try {
+    bootstrapWebGptProjectOwner(db, actor.principal_id, fixture.project_id, "MEDIA_GATEWAY_CAPACITY_TEST", actor.issuer_hash!);
+  } finally {
+    db.close();
+  }
+  return { ...fixture, actor };
+}
+
 async function issue(baseUrl: string, fixture: ReturnType<typeof createFixture>, at?: Date): Promise<string> {
   const response = await fetch(`${baseUrl}/internal/v1/capabilities`, {
     method: "POST",
@@ -142,6 +156,94 @@ test("media integrity queue remains bounded and retains a timed-out slot until t
   release();
   await hold;
   await Promise.all(waiting);
+});
+
+test("readonly media gateway bounds pending capabilities globally and per principal", async () => {
+  const fixture = createFixture("capability-capacity");
+  const actors = [fixture];
+  for (let index = 1; index < READONLY_MEDIA_GATEWAY_MAX_PENDING_CAPABILITIES / READONLY_MEDIA_GATEWAY_MAX_PENDING_CAPABILITIES_PER_PRINCIPAL; index += 1) {
+    actors.push(authorizeAdditionalActor(fixture, `capacity-${index}`));
+  }
+  const gateway = await startReadonlyMediaGateway({
+    database_path: paths.sqlitePath,
+    issuer_hash: fixture.actor.issuer_hash!,
+    keyring,
+    allowed_origin: ORIGIN,
+    allowed_media_roots: [paths.imageArtifactsRoot],
+    port: 0
+  });
+  try {
+    const handles: string[] = [];
+    for (let index = 0; index < READONLY_MEDIA_GATEWAY_MAX_PENDING_CAPABILITIES_PER_PRINCIPAL; index += 1) {
+      handles.push(await issue(gateway.url, actors[0]!));
+    }
+    const principalCapacity = await fetch(`${gateway.url}/internal/v1/capabilities`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(envelope(actors[0]!))
+    });
+    assert.equal(principalCapacity.status, 429);
+    assert.equal((await principalCapacity.json() as { error: { code: string } }).error.code, "MEDIA_CAPABILITY_CAPACITY_EXCEEDED");
+
+    for (const actorFixture of actors.slice(1)) {
+      for (let index = 0; index < READONLY_MEDIA_GATEWAY_MAX_PENDING_CAPABILITIES_PER_PRINCIPAL; index += 1) {
+        await issue(gateway.url, actorFixture);
+      }
+    }
+    assert.equal(gateway.counts().capabilities, READONLY_MEDIA_GATEWAY_MAX_PENDING_CAPABILITIES);
+    const overflowActor = authorizeAdditionalActor(fixture, "capacity-overflow");
+    const globalCapacity = await fetch(`${gateway.url}/internal/v1/capabilities`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(envelope(overflowActor))
+    });
+    assert.equal(globalCapacity.status, 429);
+    assert.equal((await globalCapacity.json() as { error: { code: string } }).error.code, "MEDIA_CAPABILITY_CAPACITY_EXCEEDED");
+
+    const activated = await fetch(`${gateway.url}/media/v1/c/${handles[0]}`, { headers: { origin: ORIGIN }, redirect: "manual" });
+    assert.equal(activated.status, 302);
+    const replacement = await issue(gateway.url, actors[0]!);
+    assert.match(replacement, /^[A-Za-z0-9_-]{43}$/);
+    assert.equal(gateway.counts().capabilities, READONLY_MEDIA_GATEWAY_MAX_PENDING_CAPABILITIES);
+  } finally {
+    await gateway.close();
+  }
+});
+
+test("readonly media gateway releases a session after an asynchronous read-stream failure", async () => {
+  const fixture = createFixture("stream-error");
+  const gateway = await startReadonlyMediaGateway({
+    database_path: paths.sqlitePath,
+    issuer_hash: fixture.actor.issuer_hash!,
+    keyring,
+    allowed_origin: ORIGIN,
+    allowed_media_roots: [paths.imageArtifactsRoot],
+    port: 0,
+    create_read_stream: () => {
+      const stream = new PassThrough();
+      setImmediate(() => stream.destroy(new Error("INJECTED_MEDIA_STREAM_FAILURE")));
+      return stream;
+    }
+  });
+  try {
+    const handle = await issue(gateway.url, fixture);
+    const activated = await fetch(`${gateway.url}/media/v1/c/${handle}`, { headers: { origin: ORIGIN }, redirect: "manual" });
+    assert.equal(activated.status, 302);
+    await assert.rejects(async () => {
+      const failed = await fetch(`${gateway.url}${activated.headers.get("location")}`, { headers: { origin: ORIGIN } });
+      await failed.arrayBuffer();
+    });
+    for (let attempt = 0; attempt < 20 && gateway.counts().sessions !== 0; attempt += 1) {
+      await new Promise<void>((resolveWait) => setTimeout(resolveWait, 5));
+    }
+    assert.equal(gateway.counts().sessions, 0);
+    const replacement = await issue(gateway.url, fixture);
+    const replacementActivation = await fetch(`${gateway.url}/media/v1/c/${replacement}`, { headers: { origin: ORIGIN }, redirect: "manual" });
+    assert.equal(replacementActivation.status, 302);
+    assert.equal(gateway.counts().sessions, 1);
+  } finally {
+    await gateway.close();
+  }
 });
 
 test("readonly media gateway verifies bytes, consumes capabilities once, streams ranges, and never writes SQLite", async () => {

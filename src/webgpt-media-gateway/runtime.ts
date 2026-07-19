@@ -3,6 +3,7 @@ import { createReadStream, existsSync, lstatSync, realpathSync, statSync } from 
 import { open } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { isAbsolute, relative, resolve } from "node:path";
+import type { Readable } from "node:stream";
 
 import { paths } from "../paths.js";
 import { assertSchemaCurrent } from "../storage/migrations.js";
@@ -30,6 +31,8 @@ export const READONLY_MEDIA_GATEWAY_CAPABILITY_TTL_MS = 5 * 60 * 1000;
 export const READONLY_MEDIA_GATEWAY_SESSION_TTL_MS = READONLY_MEDIA_SESSION_MAX_SECONDS * 1000;
 export const READONLY_MEDIA_GATEWAY_MAX_SESSIONS = 32;
 export const READONLY_MEDIA_GATEWAY_MAX_SESSIONS_PER_PRINCIPAL = 4;
+export const READONLY_MEDIA_GATEWAY_MAX_PENDING_CAPABILITIES = 32;
+export const READONLY_MEDIA_GATEWAY_MAX_PENDING_CAPABILITIES_PER_PRINCIPAL = 4;
 
 const allowedMimeTypes = new Set<string>(READONLY_MEDIA_MIME_TYPES);
 
@@ -148,6 +151,7 @@ export interface ReadonlyMediaGatewayOptions {
   now?: () => Date;
   random_bytes?: (size: number) => Buffer;
   integrity_queue?: MediaIntegrityQueue;
+  create_read_stream?: (path: string, options: { start: number; end: number }) => Readable;
 }
 
 export interface ReadonlyMediaGatewayRuntime {
@@ -350,7 +354,7 @@ function json(response: ServerResponse, status: number, value: unknown): void {
 }
 
 function errorStatus(code: string): number {
-  if (code === "MEDIA_INTEGRITY_BUSY" || code === "MEDIA_SESSION_CAPACITY_EXCEEDED") return 429;
+  if (code === "MEDIA_INTEGRITY_BUSY" || code === "MEDIA_SESSION_CAPACITY_EXCEEDED" || code === "MEDIA_CAPABILITY_CAPACITY_EXCEEDED") return 429;
   if (code === "MEDIA_INTEGRITY_TIMEOUT") return 503;
   if (code === "MEDIA_CAPABILITY_REPLAYED") return 409;
   if (code === "MEDIA_RANGE_INVALID") return 416;
@@ -427,6 +431,8 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
   const replay = new ReadonlyMediaCapabilityReplayGuard();
   const capabilities = new Map<string, CapabilityRecord>();
   const sessions = new Map<string, SessionRecord>();
+  let capabilityIssuances = 0;
+  const capabilityIssuancesByPrincipal = new Map<string, number>();
   const positiveCache = new Map<string, number>();
   const negativeCache = new Map<string, number>();
 
@@ -464,6 +470,27 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
     return current;
   };
 
+  const reserveCapabilityIssuance = (principalId: string): (() => void) => {
+    const pending = [...capabilities.values()].filter((item) => !item.consumed);
+    const principalPending = pending.filter((item) => item.principal_id === principalId).length;
+    const principalIssuances = capabilityIssuancesByPrincipal.get(principalId) ?? 0;
+    if (pending.length + capabilityIssuances >= READONLY_MEDIA_GATEWAY_MAX_PENDING_CAPABILITIES
+      || principalPending + principalIssuances >= READONLY_MEDIA_GATEWAY_MAX_PENDING_CAPABILITIES_PER_PRINCIPAL) {
+      throw new ReadonlyMediaGatewayError("MEDIA_CAPABILITY_CAPACITY_EXCEEDED");
+    }
+    capabilityIssuances += 1;
+    capabilityIssuancesByPrincipal.set(principalId, principalIssuances + 1);
+    let released = false;
+    return (): void => {
+      if (released) return;
+      released = true;
+      capabilityIssuances -= 1;
+      const remaining = (capabilityIssuancesByPrincipal.get(principalId) ?? 1) - 1;
+      if (remaining === 0) capabilityIssuancesByPrincipal.delete(principalId);
+      else capabilityIssuancesByPrincipal.set(principalId, remaining);
+    };
+  };
+
   const serve = (request: IncomingMessage, response: ServerResponse, session: SessionRecord): void => {
     if (request.headers.origin !== allowedOrigin) throw new ReadonlyMediaGatewayError("MEDIA_ORIGIN_DENIED");
     const current = validateRecord(session);
@@ -477,8 +504,11 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
     response.setHeader("content-length", String(end - start + 1));
     if (range) response.setHeader("content-range", `bytes ${start}-${end}/${current.identity.size}`);
     if (request.method === "HEAD") { response.end(); return; }
-    const stream = createReadStream(current.identity.real_path, { start, end });
-    stream.on("error", () => response.destroy());
+    const stream = (options.create_read_stream ?? createReadStream)(current.identity.real_path, { start, end });
+    stream.once("error", () => {
+      if (sessions.get(session.handle) === session) sessions.delete(session.handle);
+      response.destroy();
+    });
     stream.pipe(response);
   };
 
@@ -516,18 +546,23 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
           }
           const payload = openReadonlyMediaCapabilityRequest(await body(request), options.keyring, { now });
           const signedExpiresAtMs = requireUnexpiredCapability(payload, now().getTime());
-          replay.accept(payload, now());
-          const candidate = loadCandidate(options, payload.principal_id, payload.issuer_hash, payload.project_id, payload.artifact_id, payload.artifact_sha256);
-          const verified = await verifyIntegrity(candidate);
-          const revalidated = loadCandidate(options, payload.principal_id, payload.issuer_hash, payload.project_id, payload.artifact_id, payload.artifact_sha256);
-          if (!sameIdentity(verified.identity, revalidated.identity)) throw new ReadonlyMediaGatewayError("MEDIA_INTEGRITY_FAILED");
-          let handle = createReadonlyMediaHandle(random);
-          while (capabilities.has(handle) || sessions.has(handle)) handle = createReadonlyMediaHandle(random);
-          const issuanceTimeMs = now().getTime();
-          requireUnexpiredCapability(payload, issuanceTimeMs);
-          const expiresAtMs = Math.min(signedExpiresAtMs, issuanceTimeMs + READONLY_MEDIA_GATEWAY_CAPABILITY_TTL_MS);
-          capabilities.set(handle, { ...revalidated, handle, principal_id: payload.principal_id, issuer_hash: payload.issuer_hash, expires_at_ms: expiresAtMs, consumed: false });
-          json(response, 201, READONLY_MEDIA_CAPABILITY_RESPONSE_SCHEMA.parse({ capability_handle: handle, expires_at: new Date(expiresAtMs).toISOString() }));
+          const releaseIssuance = reserveCapabilityIssuance(payload.principal_id);
+          try {
+            replay.accept(payload, now());
+            const candidate = loadCandidate(options, payload.principal_id, payload.issuer_hash, payload.project_id, payload.artifact_id, payload.artifact_sha256);
+            const verified = await verifyIntegrity(candidate);
+            const revalidated = loadCandidate(options, payload.principal_id, payload.issuer_hash, payload.project_id, payload.artifact_id, payload.artifact_sha256);
+            if (!sameIdentity(verified.identity, revalidated.identity)) throw new ReadonlyMediaGatewayError("MEDIA_INTEGRITY_FAILED");
+            let handle = createReadonlyMediaHandle(random);
+            while (capabilities.has(handle) || sessions.has(handle)) handle = createReadonlyMediaHandle(random);
+            const issuanceTimeMs = now().getTime();
+            requireUnexpiredCapability(payload, issuanceTimeMs);
+            const expiresAtMs = Math.min(signedExpiresAtMs, issuanceTimeMs + READONLY_MEDIA_GATEWAY_CAPABILITY_TTL_MS);
+            capabilities.set(handle, { ...revalidated, handle, principal_id: payload.principal_id, issuer_hash: payload.issuer_hash, expires_at_ms: expiresAtMs, consumed: false });
+            json(response, 201, READONLY_MEDIA_CAPABILITY_RESPONSE_SCHEMA.parse({ capability_handle: handle, expires_at: new Date(expiresAtMs).toISOString() }));
+          } finally {
+            releaseIssuance();
+          }
           return;
         }
         const capabilityMatch = /^\/media\/v1\/c\/([A-Za-z0-9_-]{43})$/.exec(url.pathname);
