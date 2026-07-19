@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import type { ClientRequest } from "node:http";
 
@@ -143,4 +144,11 @@ test("remote media bridge environment configuration is all-or-nothing and suppor
   });
   assert.equal(configured?.origin, "https://media.skmt617.top");
   assert.equal(configured?.keyring.previous?.kid, "previous");
+});
+
+test("media bridge example configuration stays disabled until key material is configured", () => {
+  const example = readFileSync(".env.example", "utf8");
+  assert.match(example, /^WEBGPT_MEDIA_GATEWAY_ORIGIN=$/m);
+  assert.match(example, /^WEBGPT_MEDIA_CAPABILITY_ACTIVE_KID=$/m);
+  assert.match(example, /^WEBGPT_MEDIA_CAPABILITY_ACTIVE_KEY_B64URL=$/m);
 });
