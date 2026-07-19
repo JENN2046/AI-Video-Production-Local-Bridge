@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
-import { closeSync, openSync, statSync, utimesSync } from "node:fs";
+import { closeSync, openSync, readFileSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
@@ -47,7 +47,7 @@ function logicalManifest(db: M0Database): string {
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }
 
-function createFixture(label: string) {
+function createFixture(label: string, uniqueMedia = false) {
   const db = openM0Database();
   try {
     const created = createProject({ title: `Media Gateway ${label}` }, db);
@@ -72,10 +72,18 @@ function createFixture(label: string) {
     saveShot(db, shot);
     created.project.shot_ids = [shot.shot_id];
     saveProject(db, created.project);
+    const fixtureBytes = uniqueMedia
+      ? Buffer.concat([
+          readFileSync(resolve(paths.workspaceRoot, "fixtures/provider-canary/m1-r0/shot_001_canary_720x1280.png")),
+          Buffer.from(`media-gateway-${label}`)
+        ])
+      : null;
     const registered = registerMediaArtifact({
       artifact_type: "image",
       role: "storyboard_image",
-      source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
+      source: fixtureBytes
+        ? { kind: "app_upload", filename: `${label}.png`, mime_type: "image/png", bytes_base64: fixtureBytes.toString("base64") }
+        : { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
       linked_objects: { project_id: created.project_id, shot_id: shot.shot_id }
     }, db);
     if (!registered.ok) throw new Error(`MEDIA_FIXTURE_REGISTRATION_FAILED:${registered.error.code}`);
@@ -394,6 +402,44 @@ test("readonly media gateway rejects a file descriptor whose identity differs fr
     assert.equal(streamCreated, false);
     assert.equal(gateway.counts().sessions, 0);
   } finally {
+    await gateway.close();
+  }
+});
+
+test("readonly media gateway rejects same-size overwrites even when mtime is restored", async () => {
+  const fixture = createFixture("ctime-drift", true);
+  const mediaPath = fixture.blob.storage_uri;
+  const original = readFileSync(mediaPath);
+  const pinnedMtime = new Date(Math.floor(Date.now() / 1_000) * 1_000 - 5_000);
+  utimesSync(mediaPath, pinnedMtime, pinnedMtime);
+  const before = statSync(mediaPath);
+  const gateway = await startReadonlyMediaGateway({
+    database_path: paths.sqlitePath,
+    issuer_hash: fixture.actor.issuer_hash!,
+    keyring,
+    allowed_origin: ORIGIN,
+    allowed_media_roots: [paths.imageArtifactsRoot],
+    port: 0
+  });
+  try {
+    const handle = await issue(gateway.url, fixture);
+    await new Promise<void>((resolveWait) => setTimeout(resolveWait, 20));
+    const changed = Buffer.from(original);
+    changed[changed.length - 1] = changed[changed.length - 1]! ^ 0xff;
+    writeFileSync(mediaPath, changed);
+    utimesSync(mediaPath, pinnedMtime, pinnedMtime);
+    const after = statSync(mediaPath);
+    assert.equal(after.size, before.size);
+    assert.equal(after.mtimeMs, before.mtimeMs);
+    assert.notEqual(after.ctimeMs, before.ctimeMs);
+
+    const rejected = await fetch(`${gateway.url}/media/v1/c/${handle}`, { headers: { origin: ORIGIN }, redirect: "manual" });
+    assert.equal(rejected.status, 404);
+    assert.equal((await rejected.json() as { error: { code: string } }).error.code, "MEDIA_SESSION_INVALID");
+    assert.equal(gateway.counts().capabilities, 0);
+  } finally {
+    writeFileSync(mediaPath, original);
+    utimesSync(mediaPath, pinnedMtime, pinnedMtime);
     await gateway.close();
   }
 });

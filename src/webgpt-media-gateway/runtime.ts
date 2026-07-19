@@ -115,6 +115,7 @@ type FileIdentity = {
   real_path: string;
   size: number;
   mtime_ms: number;
+  ctime_ms: number;
   dev: number;
   ino: number;
 };
@@ -205,19 +206,20 @@ function isSafeMediaRoot(root: string): boolean {
 function fileIdentity(path: string): FileIdentity {
   const stats = statSync(path);
   if (!stats.isFile()) throw new ReadonlyMediaGatewayError("MEDIA_FILE_NOT_REGULAR");
-  return { real_path: path, size: stats.size, mtime_ms: stats.mtimeMs, dev: stats.dev, ino: stats.ino };
+  return { real_path: path, size: stats.size, mtime_ms: stats.mtimeMs, ctime_ms: stats.ctimeMs, dev: stats.dev, ino: stats.ino };
 }
 
 function descriptorIdentity(descriptor: number, realPath: string): FileIdentity {
   const stats = fstatSync(descriptor);
   if (!stats.isFile()) throw new ReadonlyMediaGatewayError("MEDIA_FILE_NOT_REGULAR");
-  return { real_path: realPath, size: stats.size, mtime_ms: stats.mtimeMs, dev: stats.dev, ino: stats.ino };
+  return { real_path: realPath, size: stats.size, mtime_ms: stats.mtimeMs, ctime_ms: stats.ctimeMs, dev: stats.dev, ino: stats.ino };
 }
 
 function sameIdentity(left: FileIdentity, right: FileIdentity): boolean {
   return samePath(left.real_path, right.real_path)
     && left.size === right.size
     && left.mtime_ms === right.mtime_ms
+    && left.ctime_ms === right.ctime_ms
     && left.dev === right.dev
     && left.ino === right.ino;
 }
@@ -462,7 +464,7 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
   };
 
   const verifyIntegrity = async (candidate: MediaCandidate): Promise<MediaCandidate> => {
-    const key = [candidate.artifact.artifact_id, candidate.blob.sha256, candidate.identity.real_path, candidate.identity.dev, candidate.identity.ino, candidate.identity.size, candidate.identity.mtime_ms].join("|");
+    const key = [candidate.artifact.artifact_id, candidate.blob.sha256, candidate.identity.real_path, candidate.identity.dev, candidate.identity.ino, candidate.identity.size, candidate.identity.mtime_ms, candidate.identity.ctime_ms].join("|");
     const negativeKey = `${candidate.artifact.artifact_id}|${candidate.blob.sha256}`;
     const current = now().getTime();
     if ((negativeCache.get(negativeKey) ?? 0) > current) throw new ReadonlyMediaGatewayError("MEDIA_INTEGRITY_FAILED");
