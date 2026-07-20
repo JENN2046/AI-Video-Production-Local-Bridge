@@ -48,6 +48,8 @@ test("readonly media operations pin cloudflared and keep secrets out of command 
   assert.match(common, /readonly-media-runtime-state-v3/);
   assert.match(preflight, /Assert-MediaCapabilityKeyring/);
   assert.match(start, /Get-MediaGatewayHealth \$profile\.PublicHealthUrl 3 \$instanceProbe/);
+  assert.match(start, /if \(\$publicHealth\.Valid\) \{ break \}/);
+  assert.doesNotMatch(start, /\$publicHealth\.Valid\s+-or\s+\$publicHealth\.Status/);
 });
 
 test("readonly media operations reject private paths through reparse points", { skip: process.platform !== "win32" }, () => {

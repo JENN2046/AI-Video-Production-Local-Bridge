@@ -87,7 +87,7 @@ try {
 
   $deadline = [DateTime]::UtcNow.AddSeconds(60)
   $publicHealth = [pscustomobject]@{ Status = 0; Valid = $false }
-  do { if ($cloudflared.HasExited) { break }; $publicHealth = Get-MediaGatewayHealth $profile.PublicHealthUrl 3 $instanceProbe; if ($publicHealth.Valid -or $publicHealth.Status -eq 200) { break }; Start-Sleep -Seconds 1 } while ([DateTime]::UtcNow -lt $deadline)
+  do { if ($cloudflared.HasExited) { break }; $publicHealth = Get-MediaGatewayHealth $profile.PublicHealthUrl 3 $instanceProbe; if ($publicHealth.Valid) { break }; Start-Sleep -Seconds 1 } while ([DateTime]::UtcNow -lt $deadline)
   if ($cloudflared.HasExited -or -not $publicHealth.Valid) { if (-not $cloudflared.HasExited) { Stop-Process -Id $cloudflared.Id -ErrorAction SilentlyContinue }; Stop-Process -Id $gateway.Id -ErrorAction SilentlyContinue; throw "MEDIA_TUNNEL_NOT_READY" }
 
   $state = [ordered]@{
