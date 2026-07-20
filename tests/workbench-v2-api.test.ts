@@ -93,7 +93,7 @@ test("personal readonly operations API requires nonce and explicit publish confi
           health_http_status: 200,
           readiness_http_status: 200,
           service_version: "readonly-remote-v1.0.0",
-          checks: { oauth: true, publisher_key: true, snapshot_fresh: true, authorization_projection: true },
+          checks: { oauth: true, publisher_key: true, snapshot_fresh: true, authorization_projection: true, media_capability_roundtrip: true },
           snapshot: { freshness_status: "fresh", generated_at: null, expires_at: null, age_seconds: 0, ttl_remaining_seconds: 3600, snapshot_fingerprint: null }
         },
         last_publish: null,

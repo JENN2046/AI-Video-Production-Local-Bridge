@@ -63,7 +63,7 @@ export interface PersonalReadonlyOperationsStatus {
     health_http_status: number | null;
     readiness_http_status: number | null;
     service_version: string | null;
-    checks: Record<"oauth" | "publisher_key" | "snapshot_fresh" | "authorization_projection", boolean | null>;
+    checks: Record<"oauth" | "publisher_key" | "snapshot_fresh" | "authorization_projection" | "media_capability_roundtrip", boolean | null>;
     snapshot: {
       freshness_status: "no_snapshot" | "fresh" | "snapshot_expired" | "unknown";
       generated_at: string | null;

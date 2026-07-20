@@ -198,7 +198,7 @@ test("personal readonly operations keep status read-only and run one explicit pr
     let statusBody = JSON.stringify({
       ok: true,
       version: "readonly-remote-v1.0.0",
-      checks: { oauth: true, publisher_key: true, snapshot_fresh: true, authorization_projection: true },
+      checks: { oauth: true, publisher_key: true, snapshot_fresh: true, authorization_projection: true, media_capability_roundtrip: true },
       snapshot: {
         freshness_status: "fresh",
         generated_at: NOW.toISOString(),
@@ -231,6 +231,7 @@ test("personal readonly operations keep status read-only and run one explicit pr
     assert.equal(exportCount, 0, "status must not export or open business rows");
     assert.equal(before.ready_to_publish, true);
     assert.equal(before.remote.ready, true);
+    assert.equal(before.remote.checks.media_capability_roundtrip, true);
     assert.deepEqual(before.freshness_operations, {
       state: "renewal_due",
       reason_code: "SNAPSHOT_EXPIRING_SOON",
@@ -246,7 +247,7 @@ test("personal readonly operations keep status read-only and run one explicit pr
     statusBody = JSON.stringify({
       ok: false,
       version: "readonly-remote-v1.0.0",
-      checks: { oauth: true, publisher_key: true, snapshot_fresh: false, authorization_projection: false },
+      checks: { oauth: true, publisher_key: true, snapshot_fresh: false, authorization_projection: false, media_capability_roundtrip: true },
       snapshot: { freshness_status: "no_snapshot", generated_at: null, expires_at: null, age_seconds: null, ttl_remaining_seconds: null, snapshot_fingerprint: null }
     });
     const missing = await service.status();
@@ -262,7 +263,7 @@ test("personal readonly operations keep status read-only and run one explicit pr
     statusBody = JSON.stringify({
       ok: false,
       version: "readonly-remote-v1.0.0",
-      checks: { oauth: true, publisher_key: true, snapshot_fresh: false, authorization_projection: true },
+      checks: { oauth: true, publisher_key: true, snapshot_fresh: false, authorization_projection: true, media_capability_roundtrip: true },
       snapshot: {
         freshness_status: "snapshot_expired",
         generated_at: new Date(NOW.getTime() - 25 * 3600_000).toISOString(),
@@ -280,7 +281,7 @@ test("personal readonly operations keep status read-only and run one explicit pr
     statusBody = JSON.stringify({
       ok: true,
       version: "readonly-remote-v1.0.0",
-      checks: { oauth: true, publisher_key: true, snapshot_fresh: true, authorization_projection: true },
+      checks: { oauth: true, publisher_key: true, snapshot_fresh: true, authorization_projection: true, media_capability_roundtrip: true },
       snapshot: {
         freshness_status: "fresh",
         generated_at: NOW.toISOString(),

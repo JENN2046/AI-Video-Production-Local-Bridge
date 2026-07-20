@@ -62,7 +62,7 @@ describe("Human Workbench V2 shell", () => {
         health_http_status: 200,
         readiness_http_status: 200,
         service_version: "readonly-remote-v1.0.0",
-        checks: { oauth: true, publisher_key: true, snapshot_fresh: true, authorization_projection: true },
+        checks: { oauth: true, publisher_key: true, snapshot_fresh: true, authorization_projection: true, media_capability_roundtrip: true },
         snapshot: { freshness_status: "fresh", generated_at: "2026-07-17T00:00:00.000Z", expires_at: "2026-07-18T00:00:00.000Z", age_seconds: 82800, ttl_remaining_seconds: 3600, snapshot_fingerprint: fingerprint }
       },
       last_publish: null,
@@ -115,7 +115,7 @@ describe("Human Workbench V2 shell", () => {
         health_http_status: 200,
         readiness_http_status: 503,
         service_version: "readonly-remote-v1.0.0",
-        checks: { oauth: true, publisher_key: true, snapshot_fresh: false, authorization_projection: false },
+        checks: { oauth: true, publisher_key: true, snapshot_fresh: false, authorization_projection: false, media_capability_roundtrip: false },
         snapshot: { freshness_status: "no_snapshot", generated_at: null, expires_at: null, age_seconds: null, ttl_remaining_seconds: null, snapshot_fingerprint: null }
       },
       last_publish: null,
@@ -131,6 +131,7 @@ describe("Human Workbench V2 shell", () => {
     render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={["/v2/system/readonly"]}><App /></MemoryRouter></QueryClientProvider>);
 
     expect(await screen.findByText(/远端当前没有 Snapshot/)).toBeInTheDocument();
+    expect(screen.getByText("media_capability_roundtrip")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "立即恢复" })).toBeEnabled();
     expect(screen.getByText(/状态刷新不会自动发布/)).toBeInTheDocument();
   });
