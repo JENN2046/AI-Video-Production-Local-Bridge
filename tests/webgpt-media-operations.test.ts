@@ -27,6 +27,15 @@ test("readonly media operations pin cloudflared and keep secrets out of command 
   assert.match(start, /MEDIA_GATEWAY_LISTENER_IDENTITY_MISMATCH/);
   assert.match(start, /\$env:TUNNEL_TOKEN/);
   assert.doesNotMatch(start, /--token(?:-file)?\b/i);
+  assert.match(common, /Test-MediaCloudflaredEdgeConnectionEvidence/);
+  assert.match(common, /\[int64\]\$recordedPid -eq \$OwningProcessId/);
+  assert.doesNotMatch(common, /Get-NetUDPEndpoint/);
+  assert.match(start, /\$env:TUNNEL_PIDFILE = \$edgeConnectionPidFile/);
+  assert.match(start, /Test-MediaCloudflaredEdgeConnectionEvidence \$cloudflared\.Id \$edgeConnectionPidFile/);
+  assert.match(start, /\$publicTunnelReadinessTimeoutSeconds = 120/);
+  assert.match(start, /AddSeconds\(\$publicTunnelReadinessTimeoutSeconds\)/);
+  assert.match(start, /MEDIA_TUNNEL_EDGE_UNREACHABLE/);
+  assert.match(start, /MEDIA_TUNNEL_ROUTE_UNAVAILABLE/);
   assert.match(start, /--no-autoupdate/);
   assert.match(start, /--loglevel", "warn"/);
   assert.doesNotMatch(start, /--loglevel", "debug"/);
@@ -79,6 +88,35 @@ test("readonly media tunnel startup reports a stable bounded failure reason", { 
     windowsHide: true
   });
   assert.equal(result.status, 0, result.stderr);
+});
+
+test("readonly media tunnel edge detection requires cloudflared connection evidence", { skip: process.platform !== "win32" }, () => {
+  const root = mkdtempSync(join(tmpdir(), "media-cloudflared-edge-"));
+  const pidFile = join(root, "edge.pid");
+  try {
+    const command = [
+      ". $env:MEDIA_TEST_COMMON_SCRIPT",
+      "if (Test-MediaCloudflaredEdgeConnectionEvidence 41 $env:MEDIA_TEST_PID_FILE) { exit 1 }",
+      "Set-Content -LiteralPath $env:MEDIA_TEST_PID_FILE -Value '42' -NoNewline",
+      "if (Test-MediaCloudflaredEdgeConnectionEvidence 41 $env:MEDIA_TEST_PID_FILE) { exit 1 }",
+      "Set-Content -LiteralPath $env:MEDIA_TEST_PID_FILE -Value '41' -NoNewline",
+      "if (-not (Test-MediaCloudflaredEdgeConnectionEvidence 41 $env:MEDIA_TEST_PID_FILE)) { exit 1 }",
+      "exit 0"
+    ].join("\n");
+    const result = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        MEDIA_TEST_COMMON_SCRIPT: join(process.cwd(), "scripts", "windows", "media-runtime-common.ps1"),
+        MEDIA_TEST_PID_FILE: pidFile
+      },
+      encoding: "utf8",
+      windowsHide: true
+    });
+    assert.equal(result.status, 0, result.stderr);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("readonly media operations reject private paths through reparse points", { skip: process.platform !== "win32" }, () => {
@@ -216,6 +254,7 @@ test("readonly media preflight accepts only a managed gateway matching the liste
   assert.match(common, /MEDIA_GATEWAY_PORT_MULTIPLE_LISTENERS/);
   assert.match(common, /MEDIA_OPERATIONS_PROFILE_DRIFT/);
   assert.match(preflight, /Assert-MediaPreflightPortState \$profile \$node\.NodePath/);
+  assert.match(preflight, /& \$node\.NodePath --no-warnings dist\/scripts\/db-check\.js --read-only/);
 
   const start = text("scripts/windows/media-start.ps1");
   const statusScript = text("scripts/windows/media-status.ps1");
