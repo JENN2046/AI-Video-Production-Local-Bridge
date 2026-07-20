@@ -4,6 +4,10 @@ try {
   $profile = Read-MediaProfile
   $state = Read-MediaState $profile
   if ($null -eq $state) {
+    if ($null -ne (Get-MediaListenerPid $profile.GatewayPort)) {
+      Write-MediaJson ([ordered]@{ result = "NOT_READY"; gateway_process = "unknown"; gateway_health = 0; gateway_ready = 0; cloudflared_process = "unknown"; public_health = 0; active_capabilities = $null; active_sessions = $null; stable_error_code = "MEDIA_OPERATIONS_STATE_MISSING_WITH_LISTENER" })
+      exit 2
+    }
     Write-MediaJson ([ordered]@{ result = "STOPPED"; gateway_process = "stopped"; gateway_health = 0; gateway_ready = 0; cloudflared_process = "stopped"; public_health = 0; active_capabilities = 0; active_sessions = 0; stable_error_code = $null })
     exit 1
   }

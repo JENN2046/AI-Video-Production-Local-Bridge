@@ -21,7 +21,8 @@ test("readonly media operations pin cloudflared and keep secrets out of command 
   const start = text("scripts/windows/media-start.ps1");
   const status = text("scripts/windows/media-status.ps1");
   assert.match(common, /DataProtectionScope\]::CurrentUser/);
-  assert.match(common, /Get-FileHash -Algorithm SHA256/);
+  assert.match(common, /Security\.Cryptography\.SHA256\]::Create\(\)/);
+  assert.doesNotMatch(common, /Get-FileHash/);
   assert.match(common, /readonly-media-gateway-v1\.0\.0/);
   assert.match(start, /MEDIA_GATEWAY_LISTENER_IDENTITY_MISMATCH/);
   assert.match(start, /\$env:TUNNEL_TOKEN/);
@@ -182,6 +183,11 @@ test("readonly media preflight accepts only a managed gateway matching the liste
   assert.ok(ignoredBoundary >= 0 && ignoredBoundary < stateRead && ignoredBoundary < staleStateDelete);
   assert.match(statusScript, /MEDIA_OPERATIONS_RESTART_REQUIRED/);
   assert.match(statusScript, /Assert-MediaRuntimeStateIdentity \$profile \$node\.NodePath \$profileFingerprint \$state/);
+  const statusMissingState = statusScript.indexOf("if ($null -eq $state)");
+  const statusListenerCheck = statusScript.indexOf("Get-MediaListenerPid $profile.GatewayPort", statusMissingState);
+  const statusStopped = statusScript.indexOf('result = "STOPPED"', statusMissingState);
+  assert.ok(statusMissingState >= 0 && statusListenerCheck > statusMissingState && statusListenerCheck < statusStopped);
+  assert.match(statusScript, /MEDIA_OPERATIONS_STATE_MISSING_WITH_LISTENER/);
   assert.match(stopScript, /readonly-media-runtime-state-v1/);
   assert.match(stopScript, /readonly-media-runtime-state-v2/);
   assert.match(stopScript, /MEDIA_OPERATIONS_RESTART_REQUIRED/);
@@ -287,6 +293,52 @@ test("readonly media preflight accepts only a managed gateway matching the liste
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
+});
+
+test("readonly media runtime fingerprint binds the pinned cloudflared binary and manifest bytes", { skip: process.platform !== "win32" }, () => {
+  const root = join(process.cwd(), "data", "webgpt", `media-fingerprint-test-${process.pid}-${Date.now()}`);
+  const profilePath = join(root, "profile.json");
+  const capabilityPath = join(root, "capability.dpapi");
+  const tokenPath = join(root, "token.dpapi");
+  const cloudflaredPath = join(root, "cloudflared.exe");
+  const manifestPath = join(root, "manifest.json");
+  mkdirSync(root, { recursive: true });
+  try {
+    for (const [path, value] of [[profilePath, "profile"], [capabilityPath, "capability"], [tokenPath, "token"], [cloudflaredPath, "binary-v1"], [manifestPath, "manifest-v1"]] as const) writeFileSync(path, value, "utf8");
+    const command = [
+      ". $env:MEDIA_TEST_COMMON_SCRIPT",
+      "$profile = [pscustomobject]@{ ProfilePath=$env:MEDIA_TEST_PROFILE; DatabasePath=$env:MEDIA_TEST_PROFILE; IssuerHash=('a' * 64); AllowedOrigin='https://aivideo.skmt617.top'; GatewayPort=2092; MediaRoots=@($env:MEDIA_TEST_ROOT); CapabilityKid='fixture'; CapabilityKeyPath=$env:MEDIA_TEST_CAPABILITY; PreviousCapability=$null; CloudflaredPath=$env:MEDIA_TEST_BINARY; CloudflaredManifestPath=$env:MEDIA_TEST_MANIFEST; TunnelTokenPath=$env:MEDIA_TEST_TOKEN; PublicHealthUrl='https://media.skmt617.top/healthz'; RuntimeDirectory=$env:MEDIA_TEST_ROOT }",
+      "$first = Get-MediaRuntimeProfileFingerprint $profile $env:MEDIA_TEST_GATEWAY",
+      "[IO.File]::AppendAllText($env:MEDIA_TEST_BINARY, '-changed')",
+      "$second = Get-MediaRuntimeProfileFingerprint $profile $env:MEDIA_TEST_GATEWAY",
+      "[IO.File]::AppendAllText($env:MEDIA_TEST_MANIFEST, '-changed')",
+      "$third = Get-MediaRuntimeProfileFingerprint $profile $env:MEDIA_TEST_GATEWAY",
+      "[Console]::Out.WriteLine(($first, $second, $third) -join \"`n\")"
+    ].join("\n");
+    const result = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        MEDIA_TEST_COMMON_SCRIPT: join(process.cwd(), "scripts", "windows", "media-runtime-common.ps1"),
+        MEDIA_TEST_PROFILE: profilePath,
+        MEDIA_TEST_CAPABILITY: capabilityPath,
+        MEDIA_TEST_TOKEN: tokenPath,
+        MEDIA_TEST_BINARY: cloudflaredPath,
+        MEDIA_TEST_MANIFEST: manifestPath,
+        MEDIA_TEST_GATEWAY: process.execPath,
+        MEDIA_TEST_ROOT: root
+      },
+      encoding: "utf8",
+      windowsHide: true
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const fingerprints = result.stdout.trim().split(/\r?\n/);
+    assert.equal(fingerprints.length, 3);
+    assert.ok(fingerprints.every((value) => /^[0-9a-f]{64}$/.test(value)));
+    assert.equal(new Set(fingerprints).size, 3);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("readonly media capability keygen writes only DPAPI CurrentUser ciphertext to ignored storage", async (context) => {

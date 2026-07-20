@@ -60,7 +60,15 @@ function Get-MediaPrivatePaths([object]$Profile) {
 
 function Get-MediaFileSha256([string]$Path, [string]$MissingCode) {
   if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw $MissingCode }
-  return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
+  $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+  $sha = [Security.Cryptography.SHA256]::Create()
+  try {
+    $digest = $sha.ComputeHash($stream)
+    try { return ([BitConverter]::ToString($digest)).Replace('-', '').ToLowerInvariant() } finally { [Array]::Clear($digest, 0, $digest.Length) }
+  } finally {
+    $sha.Dispose()
+    $stream.Dispose()
+  }
 }
 
 function Get-MediaRuntimeProfileFingerprint([object]$Profile, [string]$GatewayExecutable) {
@@ -88,7 +96,9 @@ function Get-MediaRuntimeProfileFingerprint([object]$Profile, [string]$GatewayEx
     previous_capability = $previous
     gateway_executable = [IO.Path]::GetFullPath($GatewayExecutable)
     cloudflared_path = [IO.Path]::GetFullPath($Profile.CloudflaredPath)
+    cloudflared_sha256 = Get-MediaFileSha256 $Profile.CloudflaredPath "MEDIA_CLOUDFLARED_NOT_FOUND"
     cloudflared_manifest_path = [IO.Path]::GetFullPath($Profile.CloudflaredManifestPath)
+    cloudflared_manifest_sha256 = Get-MediaFileSha256 $Profile.CloudflaredManifestPath "MEDIA_CLOUDFLARED_MANIFEST_INVALID"
     tunnel_token_path = [IO.Path]::GetFullPath($Profile.TunnelTokenPath)
     tunnel_token_sha256 = Get-MediaFileSha256 $Profile.TunnelTokenPath "MEDIA_OPERATIONS_SECRET_NOT_FOUND"
     public_health_url = $Profile.PublicHealthUrl
@@ -311,7 +321,7 @@ function Assert-Cloudflared([object]$Profile) {
   if (-not (Test-Path -LiteralPath $Profile.CloudflaredPath -PathType Leaf)) { throw "MEDIA_CLOUDFLARED_NOT_FOUND" }
   try { $manifest = Get-Content -Raw -LiteralPath $Profile.CloudflaredManifestPath | ConvertFrom-Json } catch { throw "MEDIA_CLOUDFLARED_MANIFEST_INVALID" }
   if ([string]$manifest.manifest_version -ne "cloudflared-binary-v1" -or [string]$manifest.platform -ne "windows-amd64" -or [string]$manifest.sha256 -notmatch '^[0-9a-f]{64}$') { throw "MEDIA_CLOUDFLARED_MANIFEST_INVALID" }
-  $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $Profile.CloudflaredPath).Hash.ToLowerInvariant()
+  $actual = Get-MediaFileSha256 $Profile.CloudflaredPath "MEDIA_CLOUDFLARED_NOT_FOUND"
   if ($actual -ne [string]$manifest.sha256) { throw "MEDIA_CLOUDFLARED_CHECKSUM_MISMATCH" }
   $version = & $Profile.CloudflaredPath --version 2>$null | Out-String
   if ($LASTEXITCODE -ne 0 -or $version -notmatch [Regex]::Escape([string]$manifest.version)) { throw "MEDIA_CLOUDFLARED_VERSION_MISMATCH" }
