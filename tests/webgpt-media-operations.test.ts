@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, rmdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, rmdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { createServer } from "node:net";
 import { join } from "node:path";
@@ -352,6 +352,8 @@ test("readonly media preflight accepts only a managed gateway matching the liste
 
   await context.test("Windows drift stop tolerates missing replacement profile secrets only for v3 state", { skip: process.platform !== "win32" }, () => {
     const root = join(process.cwd(), "data", "webgpt", `media-stop-missing-secret-test-${process.pid}-${Date.now()}`);
+    const bundledNode22 = join(process.cwd(), "ops", "tools", "node-v22.23.1-win-x64", "node.exe");
+    const node22 = existsSync(bundledNode22) ? bundledNode22 : process.execPath;
     mkdirSync(root, { recursive: true });
     try {
       const command = [
@@ -368,9 +370,9 @@ test("readonly media preflight accepts only a managed gateway matching the liste
         cwd: process.cwd(),
         env: {
           ...process.env,
-          AI_VIDEO_NODE22_PATH: join(process.cwd(), "ops", "tools", "node-v22.23.1-win-x64", "node.exe"),
+          AI_VIDEO_NODE22_PATH: node22,
           MEDIA_TEST_COMMON_SCRIPT: join(process.cwd(), "scripts", "windows", "media-runtime-common.ps1"),
-          MEDIA_TEST_NODE: join(process.cwd(), "ops", "tools", "node-v22.23.1-win-x64", "node.exe"),
+          MEDIA_TEST_NODE: node22,
           MEDIA_TEST_MISSING: join(root, "missing.bin"),
           MEDIA_TEST_ROOT: root
         },
