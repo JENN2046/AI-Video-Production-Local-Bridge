@@ -1,12 +1,16 @@
 # Readonly Local Media Gateway Runbook
 
-Status: code-complete candidate; external Cloudflare, Render secret, DNS and Windows logon-task acceptance remain separate gates.
+Status: CANDIDATE. Code, Snapshot v4 media binding, Remote/Gateway key contract, Cloudflare named-tunnel/DNS setup and Windows operations have progressed through bounded stages. Instance-bound public route, real playback/Range/seek, recovery soak and Windows logon-task acceptance are not complete.
+
+Latest known boundary: gateway readiness and transport diagnostics are implemented through `main@ef5e7bee`; recent bounded Cloudflare starts did not establish verified edge/public health. Do not classify this as a token, route or protocol problem without new evidence, and do not retry without a changed hypothesis.
 
 ## Boundary
 
 The gateway keeps media bytes on Jenn's Windows machine. The remote MCP App can request one encrypted, five-minute capability for an Artifact already present in Snapshot v4. The local gateway revalidates issuer-bound membership, Artifact/Blob ownership, approved media-root containment and file SHA-256 before returning an opaque handle. A first `GET` consumes that handle and creates an in-memory playback session lasting at most 30 minutes.
 
 The gateway listens only on `127.0.0.1:2092`. Cloudflare Tunnel is the sole planned public ingress for `https://media.skmt617.top`. This route does not change `https://aivideo.skmt617.top`, does not store bytes in Cloudflare, and does not enable directory listing, analysis, writes or Provider calls.
+
+The legacy local `WEBGPT_V4_PROFILE=full` media listener uses the same port. Full and the Readonly Media Gateway are mutually exclusive; stop Full before preflight/start and never change the Gateway bind address to work around the conflict.
 
 ## Frozen local files
 
@@ -78,7 +82,7 @@ Before promoting to `0.1.0-beta.6` / `webgpt-v4.4.0` / `readonly-remote-v1.1.0`,
 5. Install and validate the current-user logon task only after separate authorization.
 6. Compare the activity-database logical manifest, run `db:check`, and complete a bounded soak.
 
-Until those checks pass, package/service versions remain at the currently accepted beta.5 baseline. The code path is present but media externalization and Windows auto-start are not claimed as accepted.
+Until those checks pass, package/service versions remain at the currently accepted beta.5 baseline. The code path and some external objects exist, but media externalization and Windows auto-start are not claimed as accepted.
 
 ## Rollback
 

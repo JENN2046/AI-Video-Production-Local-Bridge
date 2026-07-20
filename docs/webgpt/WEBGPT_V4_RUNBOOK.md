@@ -1,6 +1,6 @@
 # WebGPT V4 本地运行与外部接线手册
 
-状态：接受的运行基线为 `webgpt-v4.3.0`；provider-neutral Federated OAuth、issuer binding、Auth0 predefined public-client 与 Readonly ChatGPT MCP App 已完成 Jenn 单用户真实活动库验收。Human Workbench 的一键 preflight/publish、Render restart 后 `no_snapshot → 单次确认发布 → 七工具恢复` 和七工具 owner-only 路径均已真实通过。状态为 `MANUAL_PUBLISH_OPERATIONAL_READY`；第二真实用户已由 Jenn 延期，媒体域名、自动同步和 Windows 自动启动仍未验收。
+状态：CURRENT local/WebGPT operator reference for `webgpt-v4.3.0`。provider-neutral Federated OAuth、issuer binding、Auth0 predefined public-client 与 Readonly ChatGPT MCP App 已完成 Jenn 单用户真实活动库验收。Human Workbench 的一键 preflight/publish、Render restart 后 `no_snapshot → 单次确认发布 → 七工具恢复` 和七工具 owner-only 路径均已真实通过。状态为 `MANUAL_PUBLISH_OPERATIONAL_READY`；第二真实用户已由 Jenn 延期。Local Media Gateway 代码与部分 Cloudflare 外部对象已建立，但公网播放仍未验收；自动同步和 Windows 自动启动也未验收。日常操作优先阅读 [User Guide](../USER_GUIDE.md)，部署边界见 [Deployment Guide](../DEPLOYMENT_GUIDE.md)。
 
 ## 固定边界
 
@@ -23,6 +23,8 @@ npm run preflight:webgpt:oauth
 npm run test:webgpt:v4
 npm run start:webgpt
 ```
+
+`db:migrate` 只用于单独授权、已备份的迁移流程，不是普通启动或故障恢复命令。
 
 ## Owner-only 日常发布
 

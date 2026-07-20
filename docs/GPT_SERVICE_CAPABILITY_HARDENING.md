@@ -1,5 +1,7 @@
 # GPT Service Capability Hardening v1
 
+Status: HISTORICAL taskbook for the beta.2 hardening sequence. Current operations are indexed by `docs/README.md`.
+
 This taskbook hardens WebGPT V4 without creating WebGPT V5 or opening any external connection.
 
 ## Release sequence

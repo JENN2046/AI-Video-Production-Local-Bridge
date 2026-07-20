@@ -1,46 +1,77 @@
 # Architecture
 
-## System boundary
+Status: current architecture at `main@ef5e7bee`
+Accepted package: `0.1.0-beta.5`
+
+## System map
 
 ```mermaid
 flowchart LR
-    J["Jenn / Human Operator"] --> W["Workbench V2"]
-    G["WebGPT V4 / ChatGPT"] --> M["Authenticated MCP Boundary"]
-    M --> D["Domain Services"]
-    W --> D
-    D --> S["SQLite + Local Artifact Store"]
-    W --> P["Provider Adapters"]
-    P --> X["RunningHub / Approved Provider"]
-    D --> F["FFmpeg Media Analysis"]
-    M --> Q["Protected Media Gateway"]
-    Q --> S
+    J["Jenn"] --> W["Local Workbench V2"]
+    W --> DB["SQLite ledger 0008"]
+    W --> FS["Governed local media store"]
+    W --> PA["Manual Snapshot publisher"]
+    PA --> SS["Signed ephemeral Snapshot v4"]
+    SS --> RM["Remote Readonly MCP App"]
+    C["ChatGPT"] --> RM
+    RM --> AU["Auth0 OAuth / projects.read"]
+    RM --> UI["MCP Apps iframe Workbench"]
+    RM -. "encrypted 5-minute capability" .-> CF["Cloudflare media ingress — candidate"]
+    CF -.-> GW["Local Gateway 127.0.0.1:2092"]
+    GW -. "read-only validation" .-> DB
+    GW -. "bounded Range streaming" .-> FS
+    W --> PR["Provider adapters — explicit human gate"]
 ```
+
+Solid lines are accepted operating paths. Dashed media lines are implemented but not yet externally accepted end to end.
+
+## Sources of truth
+
+| State | Authority | Persistence |
+|---|---|---|
+| Projects, SHOTs, reviews, delivery, authorization | Local SQLite | Durable, backed up before migration |
+| Artifact bytes | Local governed media roots | Durable local files plus Blob integrity records |
+| ChatGPT view | Signed readonly Snapshot | One in-memory copy on Remote Runtime |
+| Playback capability/session | Local Gateway memory | 5-minute single-use capability / max 30-minute session |
+| OAuth identity | Auth0 | External identity only; local membership remains authorization authority |
+
+The Remote Runtime, ChatGPT Widget and Cloudflare are never authoritative business stores.
 
 ## Authority model
 
 | Surface | Allowed | Forbidden |
 |---|---|---|
-| Workbench | Human confirmation, cost acknowledgement, Provider execution, review decisions, assembly and delivery | Bypassing confirmation or secret boundaries |
-| WebGPT V4 | Production reads, limited SHOT copy edits, non-decision notes, proposals, unconfirmed intent preparation | Provider submit, cost confirmation, review adoption, delivery and deletion |
-| Provider adapters | Execute an already authorized provider operation and return sanitized state | Selecting authority or silently retrying an unknown submit |
-| Storage/media | Persist governed local truth and serve authorized artifacts | Exposing raw paths, private payloads or unscoped media |
+| Workbench | Human confirmation, cost acknowledgement, Provider execution, review adoption, assembly, delivery and manual publish | Bypassing confirmation, secret or database gates |
+| Readonly MCP App | Seven model-visible readonly tools, strict DTOs, signed Snapshot reads | Writes, Provider calls, media directory access, anonymous data |
+| Widget-only media tool | Request one project/artifact-bound capability | Returning playback URL to model content or bypassing membership |
+| Local Media Gateway | Revalidate DB/Blob/file identity and stream approved bytes | Directory listing, arbitrary paths, writes, Provider operations |
+| Provider adapters | Execute an already-authorized operation | Choosing authority or concealing uncertain submission outcome |
 
-## Stabilization target
+## Key invariants
 
-The repository remains one deployable unit. During `0.1.0-beta.1`, active code is separated under `src/apps` and `src/packages` while preserving a single package and build graph. Historical execution material moves to a non-compiled `legacy/` evidence boundary.
+1. SQLite opens read-only for projection and Gateway authorization checks.
+2. Every public project/SHOT/Artifact object is cross-bound to its containing IDs.
+3. Shared derived operational state is computed once and projected consistently into list, context, review and Snapshot DTOs.
+4. Snapshot fingerprint is JCS SHA-256; signature and version are verified before atomic replacement.
+5. OAuth identity alone grants nothing. The current issuer-bound principal needs an active local production-project membership.
+6. Media playback requires Snapshot binding, active membership, Blob ownership, approved root containment and byte digest agreement.
+7. Runtime secrets use external secret storage or DPAPI CurrentUser and never enter Git, command lines, status output or model-visible results.
+8. Readiness means required dependencies for that profile are usable; `/healthz` only means process liveness.
 
-Runtime target:
+## Runtime profiles
 
-```text
-Workbench app
-  -> V2 HTTP/API composition
-  -> domain/storage/provider/media packages
-  -> persistent SQLite generation worker
+- `Workbench`: local operator UI on `127.0.0.1:4181`.
+- `WebGPT readonly`: local MCP on `127.0.0.1:2091`, six data tools, no media listener.
+- `WebGPT full`: explicit legacy/local profile with 14 tools; not externally accepted.
+- `Remote Readonly App`: database-free OAuth MCP + Apps UI + signed Snapshot receiver.
+- `Readonly Media Gateway`: local `127.0.0.1:2092`, candidate external media path.
 
-WebGPT app
-  -> OAuth-protected MCP
-  -> scoped domain services
-  -> protected media gateway
-```
+## Deployment boundaries
 
-External Auth0, secure tunnel, public HTTPS media origin and Windows automatic startup are explicitly outside this stabilization release.
+- Local Workbench and data stay on Jenn's Windows machine.
+- Remote App currently uses Render Free characteristics: process memory can disappear after sleep/restart, no persistent business store, manual Snapshot republish required.
+- `aivideo.skmt617.top` is the MCP/App origin.
+- `media.skmt617.top` is reserved for the Cloudflare media route; it is not accepted until instance-bound health and playback pass.
+- Windows Scheduled Task installation remains a separate authorization gate.
+
+For operational procedures use [USER_GUIDE.md](USER_GUIDE.md) and [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md), not historical taskbooks.
