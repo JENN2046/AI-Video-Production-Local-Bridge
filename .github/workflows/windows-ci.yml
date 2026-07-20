@@ -92,6 +92,9 @@ jobs:
       - name: Readonly media gateway contract tests
         run: npm run test:webgpt:media-gateway
 
+      - name: Readonly media Apps smoke
+        run: npm run smoke:webgpt:media
+
       - name: WebGPT Apps smoke
         run: npm run smoke:webgpt:app
 

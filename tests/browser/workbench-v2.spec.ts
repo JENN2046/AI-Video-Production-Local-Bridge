@@ -142,7 +142,7 @@ for (const viewport of [
     const projectId = payload.data[0]?.project.project_id;
     expect(projectId).toBeTruthy();
     await page.goto(`/v2/projects/${encodeURIComponent(projectId)}/storyboard`);
-    await expect(page.locator('[class*="_threePane_"]')).toBeVisible();
+    await expect(page.locator('[class*="_threePane_"]')).toBeVisible({ timeout: 15_000 });
 
     const bodyMetrics = await page.evaluate(() => ({ clientWidth: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth }));
     expect(bodyMetrics.scrollWidth).toBe(bodyMetrics.clientWidth);

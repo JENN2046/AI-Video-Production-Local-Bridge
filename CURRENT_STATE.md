@@ -14,6 +14,8 @@ Snapshot v3 derived-state acceptance source baseline: `main@82043df7eb1d5e65bd4a
 
 Snapshot v3 Human Workbench recovery acceptance source baseline: `main@d4c7d8cf52d52e3a28293180a771d3b36f6e399f`
 
+Readonly Local Media Gateway candidate: Snapshot v4 capability/gateway/widget code is merged through PR #56–#58; PR4 operations adds pinned cloudflared, DPAPI-separated secrets, bounded start/status/stop and current-user logon-task tooling. External Cloudflare/DNS/Render-secret/logon acceptance is not yet complete, so accepted versions remain beta.5/webgpt-v4.3.0.
+
 Current accepted active-database runtime: `0.1.0-beta.5` on schema `workbench-v2-5`, migration ledger `0008`. Jenn's single-user Readonly ChatGPT MCP App has passed real activity-database acceptance with manual Snapshot publishing.
 
 ## Product state
