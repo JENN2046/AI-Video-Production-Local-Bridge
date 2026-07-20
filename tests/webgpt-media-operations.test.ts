@@ -28,6 +28,8 @@ test("readonly media operations pin cloudflared and keep secrets out of command 
   assert.match(start, /\$env:TUNNEL_TOKEN/);
   assert.doesNotMatch(start, /--token(?:-file)?\b/i);
   assert.match(start, /Get-NetTCPConnection -OwningProcess \$cloudflared\.Id -RemotePort 7844 -State Established/);
+  assert.match(start, /\$publicTunnelReadinessTimeoutSeconds = 120/);
+  assert.match(start, /AddSeconds\(\$publicTunnelReadinessTimeoutSeconds\)/);
   assert.match(start, /MEDIA_TUNNEL_EDGE_UNREACHABLE/);
   assert.match(start, /MEDIA_TUNNEL_ROUTE_UNAVAILABLE/);
   assert.match(start, /--no-autoupdate/);

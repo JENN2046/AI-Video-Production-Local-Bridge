@@ -85,7 +85,8 @@ try {
     Remove-Item Env:TUNNEL_TOKEN -ErrorAction SilentlyContinue
   }
 
-  $deadline = [DateTime]::UtcNow.AddSeconds(60)
+  $publicTunnelReadinessTimeoutSeconds = 120
+  $deadline = [DateTime]::UtcNow.AddSeconds($publicTunnelReadinessTimeoutSeconds)
   $publicHealth = [pscustomobject]@{ Status = 0; Valid = $false }
   $currentInstanceSeen = $false
   $anyHttp200 = $false
