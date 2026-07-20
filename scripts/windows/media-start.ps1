@@ -6,6 +6,7 @@ $startLock = $null
 $profile = $null
 $previousKey = $null
 $instanceProbe = $null
+$edgeConnectionPidFile = $null
 $previousEnvironmentVariables = @("READONLY_MEDIA_GATEWAY_PREVIOUS_KID", "READONLY_MEDIA_GATEWAY_PREVIOUS_KEY_B64URL", "READONLY_MEDIA_GATEWAY_PREVIOUS_ACCEPTED_FROM", "READONLY_MEDIA_GATEWAY_PREVIOUS_ACCEPTED_UNTIL")
 try {
   Remove-Item Env:TUNNEL_TOKEN -ErrorAction SilentlyContinue
@@ -41,6 +42,8 @@ try {
   $gatewayErr = Join-Path $profile.RuntimeDirectory "gateway-$stamp.stderr.log"
   $tunnelOut = Join-Path $profile.RuntimeDirectory "cloudflared-$stamp.stdout.log"
   $tunnelErr = Join-Path $profile.RuntimeDirectory "cloudflared-$stamp.stderr.log"
+  $edgeConnectionPidFile = Join-Path $profile.RuntimeDirectory "cloudflared-edge-$stamp.pid"
+  Remove-Item -LiteralPath $edgeConnectionPidFile -Force -ErrorAction SilentlyContinue
 
   $instanceProbe = New-MediaInstanceProbe
   $key = Unprotect-MediaBytes $profile.CapabilityKeyPath
@@ -79,10 +82,12 @@ try {
   $tokenBytes = Unprotect-MediaBytes $profile.TunnelTokenPath
   try {
     $env:TUNNEL_TOKEN = [Text.Encoding]::UTF8.GetString($tokenBytes)
+    $env:TUNNEL_PIDFILE = $edgeConnectionPidFile
     $cloudflared = Start-Process -FilePath $profile.CloudflaredPath -ArgumentList @("tunnel", "--no-autoupdate", "--loglevel", "warn", "run") -WorkingDirectory $script:MediaWorkspaceRoot -WindowStyle Hidden -RedirectStandardOutput $tunnelOut -RedirectStandardError $tunnelErr -PassThru
   } finally {
     [Array]::Clear($tokenBytes, 0, $tokenBytes.Length)
     Remove-Item Env:TUNNEL_TOKEN -ErrorAction SilentlyContinue
+    Remove-Item Env:TUNNEL_PIDFILE -ErrorAction SilentlyContinue
   }
 
   $publicTunnelReadinessTimeoutSeconds = 120
@@ -90,12 +95,15 @@ try {
   $publicHealth = [pscustomobject]@{ Status = 0; Valid = $false }
   $currentInstanceSeen = $false
   $anyHttp200 = $false
-  $edgeTransportConnected = $false
+  $edgeConnectionConfirmed = $false
   $consecutiveCurrentInstanceProbes = 0
   $requiredConsecutiveCurrentInstanceProbes = 10
   do {
     if ($cloudflared.HasExited) { break }
-    if (Test-MediaCloudflaredEdgeTransport $cloudflared.Id) { $edgeTransportConnected = $true }
+    if (Test-MediaCloudflaredEdgeConnectionEvidence $cloudflared.Id $edgeConnectionPidFile) {
+      $edgeConnectionConfirmed = $true
+      Remove-Item -LiteralPath $edgeConnectionPidFile -Force -ErrorAction SilentlyContinue
+    }
     $publicHealth = Get-MediaGatewayHealth $profile.PublicHealthUrl 3 $instanceProbe
     if ($publicHealth.Status -eq 200) { $anyHttp200 = $true }
     if ($publicHealth.Valid) {
@@ -109,9 +117,10 @@ try {
     }
     Start-Sleep -Seconds 1
   } while ([DateTime]::UtcNow -lt $deadline)
+  Remove-Item -LiteralPath $edgeConnectionPidFile -Force -ErrorAction SilentlyContinue
   $tunnelFailure = Resolve-MediaTunnelReadinessFailure $cloudflared.HasExited $anyHttp200 $currentInstanceSeen $consecutiveCurrentInstanceProbes $requiredConsecutiveCurrentInstanceProbes
   if ($tunnelFailure -eq "MEDIA_TUNNEL_PUBLIC_UNREACHABLE") {
-    $tunnelFailure = if ($edgeTransportConnected) { "MEDIA_TUNNEL_ROUTE_UNAVAILABLE" } else { "MEDIA_TUNNEL_EDGE_UNREACHABLE" }
+    $tunnelFailure = if ($edgeConnectionConfirmed) { "MEDIA_TUNNEL_ROUTE_UNAVAILABLE" } else { "MEDIA_TUNNEL_EDGE_UNREACHABLE" }
   }
   if ($null -ne $tunnelFailure) { if (-not $cloudflared.HasExited) { Stop-Process -Id $cloudflared.Id -ErrorAction SilentlyContinue }; Stop-Process -Id $gateway.Id -ErrorAction SilentlyContinue; throw $tunnelFailure }
 
@@ -141,6 +150,7 @@ try {
   if ($null -ne $gateway -and -not $gateway.HasExited) { Stop-Process -Id $gateway.Id -ErrorAction SilentlyContinue }
   if ($null -ne $startLock) { $startLock.Dispose() }
   if ($null -ne $profile) { Remove-Item -LiteralPath (Join-Path $profile.RuntimeDirectory "media-start.lock") -Force -ErrorAction SilentlyContinue }
+  if ($null -ne $edgeConnectionPidFile) { Remove-Item -LiteralPath $edgeConnectionPidFile -Force -ErrorAction SilentlyContinue }
   [Console]::Error.WriteLine((ConvertTo-Json ([ordered]@{ result = "FAIL"; stable_error_code = $_.Exception.Message }) -Compress))
   exit 1
 }

@@ -299,12 +299,14 @@ function Get-MediaGatewayHealth([string]$Url, [int]$TimeoutSec = 3, [string]$Exp
   }
 }
 
-function Test-MediaCloudflaredEdgeTransport([int]$OwningProcessId) {
-  if ($OwningProcessId -le 0) { return $false }
-  if (@(Get-NetTCPConnection -OwningProcess $OwningProcessId -RemotePort 7844 -State Established -ErrorAction SilentlyContinue).Count -gt 0) {
-    return $true
+function Test-MediaCloudflaredEdgeConnectionEvidence([int]$OwningProcessId, [string]$PidFilePath) {
+  if ($OwningProcessId -le 0 -or [string]::IsNullOrWhiteSpace($PidFilePath) -or -not (Test-Path -LiteralPath $PidFilePath -PathType Leaf)) { return $false }
+  try {
+    $recordedPid = (Get-Content -Raw -LiteralPath $PidFilePath -ErrorAction Stop).Trim()
+    return $recordedPid -match '^\d+$' -and [int64]$recordedPid -eq $OwningProcessId
+  } catch {
+    return $false
   }
-  return @(Get-NetUDPEndpoint -OwningProcess $OwningProcessId -ErrorAction SilentlyContinue).Count -gt 0
 }
 
 function Get-MediaListenerPid([int]$Port) {

@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, rmdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { createSocket } from "node:dgram";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -28,9 +27,11 @@ test("readonly media operations pin cloudflared and keep secrets out of command 
   assert.match(start, /MEDIA_GATEWAY_LISTENER_IDENTITY_MISMATCH/);
   assert.match(start, /\$env:TUNNEL_TOKEN/);
   assert.doesNotMatch(start, /--token(?:-file)?\b/i);
-  assert.match(common, /Get-NetTCPConnection -OwningProcess \$OwningProcessId -RemotePort 7844 -State Established/);
-  assert.match(common, /Get-NetUDPEndpoint -OwningProcess \$OwningProcessId/);
-  assert.match(start, /Test-MediaCloudflaredEdgeTransport \$cloudflared\.Id/);
+  assert.match(common, /Test-MediaCloudflaredEdgeConnectionEvidence/);
+  assert.match(common, /\[int64\]\$recordedPid -eq \$OwningProcessId/);
+  assert.doesNotMatch(common, /Get-NetUDPEndpoint/);
+  assert.match(start, /\$env:TUNNEL_PIDFILE = \$edgeConnectionPidFile/);
+  assert.match(start, /Test-MediaCloudflaredEdgeConnectionEvidence \$cloudflared\.Id \$edgeConnectionPidFile/);
   assert.match(start, /\$publicTunnelReadinessTimeoutSeconds = 120/);
   assert.match(start, /AddSeconds\(\$publicTunnelReadinessTimeoutSeconds\)/);
   assert.match(start, /MEDIA_TUNNEL_EDGE_UNREACHABLE/);
@@ -89,32 +90,32 @@ test("readonly media tunnel startup reports a stable bounded failure reason", { 
   assert.equal(result.status, 0, result.stderr);
 });
 
-test("readonly media tunnel edge detection accepts a QUIC UDP session", { skip: process.platform !== "win32" }, async () => {
-  const socket = createSocket("udp4");
-  await new Promise<void>((resolve, reject) => {
-    socket.once("error", reject);
-    socket.bind(0, "127.0.0.1", () => resolve());
-  });
+test("readonly media tunnel edge detection requires cloudflared connection evidence", { skip: process.platform !== "win32" }, () => {
+  const root = mkdtempSync(join(tmpdir(), "media-cloudflared-edge-"));
+  const pidFile = join(root, "edge.pid");
   try {
     const command = [
       ". $env:MEDIA_TEST_COMMON_SCRIPT",
-      "if (Test-MediaCloudflaredEdgeTransport ([int]$env:MEDIA_TEST_UDP_PID)) { exit 0 }",
-      "[Console]::Error.WriteLine('MEDIA_TUNNEL_QUIC_NOT_DETECTED')",
-      "exit 1"
+      "if (Test-MediaCloudflaredEdgeConnectionEvidence 41 $env:MEDIA_TEST_PID_FILE) { exit 1 }",
+      "Set-Content -LiteralPath $env:MEDIA_TEST_PID_FILE -Value '42' -NoNewline",
+      "if (Test-MediaCloudflaredEdgeConnectionEvidence 41 $env:MEDIA_TEST_PID_FILE) { exit 1 }",
+      "Set-Content -LiteralPath $env:MEDIA_TEST_PID_FILE -Value '41' -NoNewline",
+      "if (-not (Test-MediaCloudflaredEdgeConnectionEvidence 41 $env:MEDIA_TEST_PID_FILE)) { exit 1 }",
+      "exit 0"
     ].join("\n");
     const result = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], {
       cwd: process.cwd(),
       env: {
         ...process.env,
         MEDIA_TEST_COMMON_SCRIPT: join(process.cwd(), "scripts", "windows", "media-runtime-common.ps1"),
-        MEDIA_TEST_UDP_PID: String(process.pid)
+        MEDIA_TEST_PID_FILE: pidFile
       },
       encoding: "utf8",
       windowsHide: true
     });
     assert.equal(result.status, 0, result.stderr);
   } finally {
-    socket.close();
+    rmSync(root, { recursive: true, force: true });
   }
 });
 
