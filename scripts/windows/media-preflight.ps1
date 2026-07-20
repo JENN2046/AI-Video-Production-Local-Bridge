@@ -3,9 +3,7 @@
 try {
   $profile = Read-MediaProfile
   $node = Resolve-MediaNode22
-  $privatePaths = @($profile.ProfilePath, $profile.CapabilityKeyPath, $profile.TunnelTokenPath, $profile.RuntimeDirectory)
-  if ($null -ne $profile.PreviousCapability) { $privatePaths += $profile.PreviousCapability.ProtectedPath }
-  Assert-MediaGitIgnored $privatePaths
+  Assert-MediaGitIgnored (Get-MediaPrivatePaths $profile)
   if (-not (Test-Path -LiteralPath $profile.DatabasePath -PathType Leaf)) { throw "MEDIA_DATABASE_NOT_FOUND" }
   foreach ($root in $profile.MediaRoots) { if (-not (Test-Path -LiteralPath $root -PathType Container)) { throw "MEDIA_ROOT_NOT_FOUND" } }
   $cloudflaredVersion = Assert-Cloudflared $profile
@@ -17,7 +15,8 @@ try {
     $previousKey = Unprotect-MediaBytes $profile.PreviousCapability.ProtectedPath
     try { if ($previousKey.Length -ne 32) { throw "MEDIA_CAPABILITY_KEY_INVALID" } } finally { [Array]::Clear($previousKey, 0, $previousKey.Length) }
   }
-  Assert-MediaPreflightPortState $profile $node.NodePath
+  $profileFingerprint = Get-MediaRuntimeProfileFingerprint $profile $node.NodePath
+  Assert-MediaPreflightPortState $profile $node.NodePath $profileFingerprint
 
   $oldDb = [Environment]::GetEnvironmentVariable("AI_VIDEO_WORKSPACE_DB_PATH", "Process")
   try {

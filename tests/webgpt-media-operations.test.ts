@@ -64,7 +64,20 @@ test("readonly media preflight accepts only a managed gateway matching the liste
   assert.match(common, /MEDIA_OPERATIONS_STATE_INVALID/);
   assert.match(common, /MEDIA_OPERATIONS_STATE_CONFLICT/);
   assert.match(common, /MEDIA_GATEWAY_LISTENER_IDENTITY_MISMATCH/);
+  assert.match(common, /MEDIA_OPERATIONS_PROFILE_DRIFT/);
   assert.match(preflight, /Assert-MediaPreflightPortState \$profile \$node\.NodePath/);
+
+  const start = text("scripts/windows/media-start.ps1");
+  const statusScript = text("scripts/windows/media-status.ps1");
+  const stopScript = text("scripts/windows/media-stop.ps1");
+  const ignoredBoundary = start.indexOf("Assert-MediaGitIgnored (Get-MediaPrivatePaths $profile)");
+  const stateRead = start.indexOf("Read-MediaState $profile");
+  const staleStateDelete = start.indexOf("Remove-Item -LiteralPath $profile.StatePath -Force");
+  assert.ok(ignoredBoundary >= 0 && ignoredBoundary < stateRead && ignoredBoundary < staleStateDelete);
+  assert.match(statusScript, /MEDIA_OPERATIONS_RESTART_REQUIRED/);
+  assert.match(statusScript, /Assert-MediaRuntimeStateIdentity \$profile \$node\.NodePath \$profileFingerprint \$state/);
+  assert.match(stopScript, /readonly-media-runtime-state-v1/);
+  assert.match(stopScript, /readonly-media-runtime-state-v2/);
 
   await context.test("Windows listener ownership rejects stale and drifted state", { skip: process.platform !== "win32" }, async () => {
     const root = join(process.cwd(), "data", "webgpt", `media-port-state-test-${process.pid}-${Date.now()}`);
@@ -83,12 +96,14 @@ test("readonly media preflight accepts only a managed gateway matching the liste
         "$listener = Get-NetTCPConnection -LocalAddress '127.0.0.1' -LocalPort ([int]$env:MEDIA_TEST_PORT) -State Listen | Select-Object -First 1",
         "if ($env:MEDIA_TEST_MODE -eq 'valid' -or $env:MEDIA_TEST_MODE -eq 'drift') { $recordProcess = Get-Process -Id ([int]$listener.OwningProcess) } else { $recordProcess = Get-Process -Id $PID }",
         "$started = if ($env:MEDIA_TEST_MODE -eq 'drift') { '2000-01-01T00:00:00.0000000Z' } else { $recordProcess.StartTime.ToUniversalTime().ToString('o') }",
-        "$state = [ordered]@{ state_version = 'readonly-media-runtime-state-v1'; gateway_pid = $recordProcess.Id; gateway_start_time_utc = $started; gateway_executable = $recordProcess.Path; cloudflared_pid = $recordProcess.Id; cloudflared_start_time_utc = $started; cloudflared_executable = $recordProcess.Path; started_at_utc = (Get-Date).ToUniversalTime().ToString('o'); gateway_port = [int]$env:MEDIA_TEST_PORT }",
+        "$fingerprint = 'a' * 64",
+        "$stateFingerprint = if ($env:MEDIA_TEST_MODE -eq 'profile-drift') { 'b' * 64 } else { $fingerprint }",
+        "$state = [ordered]@{ state_version = 'readonly-media-runtime-state-v2'; profile_fingerprint = $stateFingerprint; gateway_pid = $recordProcess.Id; gateway_start_time_utc = $started; gateway_executable = $recordProcess.Path; cloudflared_pid = $recordProcess.Id; cloudflared_start_time_utc = $started; cloudflared_executable = $recordProcess.Path; started_at_utc = (Get-Date).ToUniversalTime().ToString('o'); gateway_port = [int]$env:MEDIA_TEST_PORT }",
         "$state | ConvertTo-Json | Set-Content -LiteralPath $env:MEDIA_TEST_STATE_PATH -Encoding UTF8",
         "$profile = [pscustomobject]@{ StatePath = $env:MEDIA_TEST_STATE_PATH; GatewayPort = [int]$env:MEDIA_TEST_PORT; CloudflaredPath = $recordProcess.Path }",
-        "try { Assert-MediaPreflightPortState $profile $recordProcess.Path; [Console]::Out.WriteLine('PASS'); exit 0 } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }"
+        "try { Assert-MediaPreflightPortState $profile $recordProcess.Path $fingerprint; [Console]::Out.WriteLine('PASS'); exit 0 } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }"
       ].join("\n");
-      const run = (mode: "unknown" | "valid" | "drift") => spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], {
+      const run = (mode: "unknown" | "valid" | "drift" | "profile-drift") => spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], {
         cwd: process.cwd(),
         env: {
           ...process.env,
@@ -110,6 +125,9 @@ test("readonly media preflight accepts only a managed gateway matching the liste
       const drift = run("drift");
       assert.equal(drift.status, 1);
       assert.match(drift.stderr, /MEDIA_OPERATIONS_STATE_CONFLICT/);
+      const profileDrift = run("profile-drift");
+      assert.equal(profileDrift.status, 1);
+      assert.match(profileDrift.stderr, /MEDIA_OPERATIONS_PROFILE_DRIFT/);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       rmSync(root, { recursive: true, force: true });

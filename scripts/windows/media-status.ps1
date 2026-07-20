@@ -7,7 +7,13 @@ try {
     Write-MediaJson ([ordered]@{ result = "STOPPED"; gateway_process = "stopped"; gateway_health = 0; gateway_ready = 0; cloudflared_process = "stopped"; public_health = 0; active_capabilities = 0; active_sessions = 0; stable_error_code = $null })
     exit 1
   }
-  if ([string]$state.state_version -ne "readonly-media-runtime-state-v1") { throw "MEDIA_OPERATIONS_STATE_INVALID" }
+  if ([string]$state.state_version -eq "readonly-media-runtime-state-v1") {
+    Write-MediaJson ([ordered]@{ result = "NOT_READY"; gateway_process = "unknown"; gateway_health = 0; gateway_ready = 0; cloudflared_process = "unknown"; public_health = 0; active_capabilities = $null; active_sessions = $null; stable_error_code = "MEDIA_OPERATIONS_RESTART_REQUIRED" })
+    exit 2
+  }
+  $node = Resolve-MediaNode22
+  $profileFingerprint = Get-MediaRuntimeProfileFingerprint $profile $node.NodePath
+  Assert-MediaRuntimeStateIdentity $profile $node.NodePath $profileFingerprint $state
   $gateway = Test-MediaProcess $state "gateway"
   $cloudflared = Test-MediaProcess $state "cloudflared"
   $healthResult = Get-MediaGatewayHealth "http://127.0.0.1:$($profile.GatewayPort)/healthz"

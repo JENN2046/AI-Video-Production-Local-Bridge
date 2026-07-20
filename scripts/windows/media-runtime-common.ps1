@@ -45,6 +45,60 @@ function Assert-MediaGitIgnored([string[]]$Paths) {
   }
 }
 
+function Get-MediaPrivatePaths([object]$Profile) {
+  $paths = @($Profile.ProfilePath, $Profile.CapabilityKeyPath, $Profile.TunnelTokenPath, $Profile.RuntimeDirectory)
+  if ($null -ne $Profile.PreviousCapability) { $paths += $Profile.PreviousCapability.ProtectedPath }
+  return $paths
+}
+
+function Get-MediaFileSha256([string]$Path, [string]$MissingCode) {
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw $MissingCode }
+  return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
+}
+
+function Get-MediaRuntimeProfileFingerprint([object]$Profile, [string]$GatewayExecutable) {
+  $previous = $null
+  if ($null -ne $Profile.PreviousCapability) {
+    $previous = [ordered]@{
+      kid = $Profile.PreviousCapability.Kid
+      protected_path = [IO.Path]::GetFullPath($Profile.PreviousCapability.ProtectedPath)
+      protected_sha256 = Get-MediaFileSha256 $Profile.PreviousCapability.ProtectedPath "MEDIA_OPERATIONS_SECRET_NOT_FOUND"
+      accepted_from = $Profile.PreviousCapability.AcceptedFrom
+      accepted_until = $Profile.PreviousCapability.AcceptedUntil
+    }
+  }
+  $identity = [ordered]@{
+    profile_version = "readonly-media-operations-profile-v1"
+    profile_path = [IO.Path]::GetFullPath($Profile.ProfilePath)
+    database_path = [IO.Path]::GetFullPath($Profile.DatabasePath)
+    issuer_hash = $Profile.IssuerHash
+    allowed_origin = $Profile.AllowedOrigin
+    gateway_port = [int]$Profile.GatewayPort
+    media_roots = @($Profile.MediaRoots | ForEach-Object { [IO.Path]::GetFullPath($_) })
+    capability_kid = $Profile.CapabilityKid
+    capability_key_path = [IO.Path]::GetFullPath($Profile.CapabilityKeyPath)
+    capability_key_sha256 = Get-MediaFileSha256 $Profile.CapabilityKeyPath "MEDIA_OPERATIONS_SECRET_NOT_FOUND"
+    previous_capability = $previous
+    gateway_executable = [IO.Path]::GetFullPath($GatewayExecutable)
+    cloudflared_path = [IO.Path]::GetFullPath($Profile.CloudflaredPath)
+    cloudflared_manifest_path = [IO.Path]::GetFullPath($Profile.CloudflaredManifestPath)
+    tunnel_token_path = [IO.Path]::GetFullPath($Profile.TunnelTokenPath)
+    tunnel_token_sha256 = Get-MediaFileSha256 $Profile.TunnelTokenPath "MEDIA_OPERATIONS_SECRET_NOT_FOUND"
+    public_health_url = $Profile.PublicHealthUrl
+    runtime_directory = [IO.Path]::GetFullPath($Profile.RuntimeDirectory)
+  }
+  $bytes = [Text.Encoding]::UTF8.GetBytes(($identity | ConvertTo-Json -Depth 8 -Compress))
+  try {
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+      $digest = $sha.ComputeHash($bytes)
+      try { return ([BitConverter]::ToString($digest)).Replace('-', '').ToLowerInvariant() } finally { [Array]::Clear($digest, 0, $digest.Length) }
+    } finally { $sha.Dispose() }
+  } finally {
+    [Array]::Clear($bytes, 0, $bytes.Length)
+  }
+}
+
 function Read-MediaProfile {
   $profilePath = Get-MediaProfilePath
   if (-not (Test-Path -LiteralPath $profilePath -PathType Leaf)) { throw "MEDIA_OPERATIONS_PROFILE_NOT_FOUND" }
@@ -181,7 +235,27 @@ function Read-MediaState([object]$Profile) {
   try { return Get-Content -Raw -LiteralPath $Profile.StatePath | ConvertFrom-Json } catch { throw "MEDIA_OPERATIONS_STATE_INVALID" }
 }
 
-function Assert-MediaPreflightPortState([object]$Profile, [string]$ExpectedGatewayExecutable) {
+function Assert-MediaRuntimeStateIdentity([object]$Profile, [string]$ExpectedGatewayExecutable, [string]$ExpectedProfileFingerprint, [object]$State) {
+  $required = @("state_version", "profile_fingerprint", "gateway_pid", "gateway_start_time_utc", "gateway_executable", "cloudflared_pid", "cloudflared_start_time_utc", "cloudflared_executable", "started_at_utc", "gateway_port")
+  $names = @($State.PSObject.Properties.Name)
+  if ($names.Count -ne $required.Count -or @($required | Where-Object { $names -notcontains $_ }).Count -gt 0 -or @($names | Where-Object { $required -notcontains $_ }).Count -gt 0) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
+  try {
+    if ([string]$State.state_version -ne "readonly-media-runtime-state-v2" -or [int]$State.gateway_port -ne [int]$Profile.GatewayPort) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
+    if ([string]$State.profile_fingerprint -notmatch '^[0-9a-f]{64}$') { throw "MEDIA_OPERATIONS_STATE_INVALID" }
+    if ([string]$State.profile_fingerprint -cne $ExpectedProfileFingerprint) { throw "MEDIA_OPERATIONS_PROFILE_DRIFT" }
+    if ([int]$State.gateway_pid -le 0 -or [int]$State.cloudflared_pid -le 0) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
+    $gatewayPath = [IO.Path]::GetFullPath([string]$State.gateway_executable)
+    $expectedGatewayPath = [IO.Path]::GetFullPath($ExpectedGatewayExecutable)
+    $cloudflaredPath = [IO.Path]::GetFullPath([string]$State.cloudflared_executable)
+    $expectedCloudflaredPath = [IO.Path]::GetFullPath([string]$Profile.CloudflaredPath)
+    if (-not $gatewayPath.Equals($expectedGatewayPath, [StringComparison]::OrdinalIgnoreCase) -or -not $cloudflaredPath.Equals($expectedCloudflaredPath, [StringComparison]::OrdinalIgnoreCase)) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
+  } catch {
+    if ($_.Exception.Message -in @("MEDIA_OPERATIONS_STATE_INVALID", "MEDIA_OPERATIONS_PROFILE_DRIFT")) { throw }
+    throw "MEDIA_OPERATIONS_STATE_INVALID"
+  }
+}
+
+function Assert-MediaPreflightPortState([object]$Profile, [string]$ExpectedGatewayExecutable, [string]$ExpectedProfileFingerprint) {
   $listener = Get-MediaListenerPid $Profile.GatewayPort
   $state = Read-MediaState $Profile
   if ($null -eq $state) {
@@ -189,21 +263,7 @@ function Assert-MediaPreflightPortState([object]$Profile, [string]$ExpectedGatew
     return
   }
 
-  $required = @("state_version", "gateway_pid", "gateway_start_time_utc", "gateway_executable", "cloudflared_pid", "cloudflared_start_time_utc", "cloudflared_executable", "started_at_utc", "gateway_port")
-  $names = @($state.PSObject.Properties.Name)
-  if ($names.Count -ne $required.Count -or @($required | Where-Object { $names -notcontains $_ }).Count -gt 0 -or @($names | Where-Object { $required -notcontains $_ }).Count -gt 0) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
-  try {
-    if ([string]$state.state_version -ne "readonly-media-runtime-state-v1" -or [int]$state.gateway_port -ne [int]$Profile.GatewayPort) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
-    if ([int]$state.gateway_pid -le 0 -or [int]$state.cloudflared_pid -le 0) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
-    $gatewayPath = [IO.Path]::GetFullPath([string]$state.gateway_executable)
-    $expectedGatewayPath = [IO.Path]::GetFullPath($ExpectedGatewayExecutable)
-    $cloudflaredPath = [IO.Path]::GetFullPath([string]$state.cloudflared_executable)
-    $expectedCloudflaredPath = [IO.Path]::GetFullPath([string]$Profile.CloudflaredPath)
-    if (-not $gatewayPath.Equals($expectedGatewayPath, [StringComparison]::OrdinalIgnoreCase) -or -not $cloudflaredPath.Equals($expectedCloudflaredPath, [StringComparison]::OrdinalIgnoreCase)) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
-  } catch {
-    if ($_.Exception.Message -eq "MEDIA_OPERATIONS_STATE_INVALID") { throw }
-    throw "MEDIA_OPERATIONS_STATE_INVALID"
-  }
+  Assert-MediaRuntimeStateIdentity $Profile $ExpectedGatewayExecutable $ExpectedProfileFingerprint $state
   if (-not (Test-MediaProcess $state "gateway") -or -not (Test-MediaProcess $state "cloudflared")) { throw "MEDIA_OPERATIONS_STATE_CONFLICT" }
   if ($null -eq $listener -or [int]$listener -ne [int]$state.gateway_pid) { throw "MEDIA_GATEWAY_LISTENER_IDENTITY_MISMATCH" }
 }

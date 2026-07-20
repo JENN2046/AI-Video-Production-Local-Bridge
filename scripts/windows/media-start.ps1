@@ -7,10 +7,13 @@ $profile = $null
 $previousKey = $null
 try {
   $profile = Read-MediaProfile
+  Assert-MediaGitIgnored (Get-MediaPrivatePaths $profile)
   $node = Resolve-MediaNode22
+  $profileFingerprint = Get-MediaRuntimeProfileFingerprint $profile $node.NodePath
   New-Item -ItemType Directory -Force -Path $profile.RuntimeDirectory | Out-Null
   $existing = Read-MediaState $profile
   if ($null -ne $existing) {
+    Assert-MediaRuntimeStateIdentity $profile $node.NodePath $profileFingerprint $existing
     $gatewayLive = Test-MediaProcess $existing "gateway"
     $tunnelLive = Test-MediaProcess $existing "cloudflared"
     if ($gatewayLive -and $tunnelLive) {
@@ -79,7 +82,8 @@ try {
   if ($cloudflared.HasExited -or -not $publicHealth.Valid) { if (-not $cloudflared.HasExited) { Stop-Process -Id $cloudflared.Id -ErrorAction SilentlyContinue }; Stop-Process -Id $gateway.Id -ErrorAction SilentlyContinue; throw "MEDIA_TUNNEL_NOT_READY" }
 
   $state = [ordered]@{
-    state_version = "readonly-media-runtime-state-v1"
+    state_version = "readonly-media-runtime-state-v2"
+    profile_fingerprint = $profileFingerprint
     gateway_pid = $gateway.Id
     gateway_start_time_utc = $gateway.StartTime.ToUniversalTime().ToString("o")
     gateway_executable = $node.NodePath
