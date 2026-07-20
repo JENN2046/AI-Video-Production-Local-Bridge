@@ -455,6 +455,7 @@ test("readonly media gateway verifies bytes, consumes capabilities once, streams
     keyring,
     allowed_origin: ORIGIN,
     allowed_media_roots: [paths.imageArtifactsRoot],
+    instance_probe: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     port: 0
   });
   try {
@@ -463,6 +464,15 @@ test("readonly media gateway verifies bytes, consumes capabilities once, streams
     const health = await fetch(`${gateway.url}/healthz`);
     assert.equal(health.status, 200);
     assert.deepEqual(await health.json(), { ok: true, service: "readonly-media-gateway", version: "readonly-media-gateway-v1.0.0" });
+    const wrongInstance = await fetch(`${gateway.url}/healthz`, { headers: { "x-readonly-media-instance-probe": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB" } });
+    assert.deepEqual(await wrongInstance.json(), { ok: true, service: "readonly-media-gateway", version: "readonly-media-gateway-v1.0.0" });
+    const matchingInstance = await fetch(`${gateway.url}/healthz`, { headers: { "x-readonly-media-instance-probe": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" } });
+    assert.deepEqual(await matchingInstance.json(), {
+      ok: true,
+      service: "readonly-media-gateway",
+      version: "readonly-media-gateway-v1.0.0",
+      instance_probe: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    });
     assert.equal((await fetch(`${gateway.url}/readyz`)).status, 200);
     const wrongContentType = await fetch(`${gateway.url}/internal/v1/capabilities`, { method: "POST", body: "{}" });
     assert.equal(wrongContentType.status, 404);

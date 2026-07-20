@@ -41,6 +41,10 @@ test("readonly media operations pin cloudflared and keep secrets out of command 
   assert.match(common, /Invoke-WebRequest -UseBasicParsing -Uri \$Url -TimeoutSec \$TimeoutSec -MaximumRedirection 0/);
   assert.match(common, /FileAttributes\]::ReparsePoint/);
   assert.match(common, /MEDIA_OPERATIONS_PATH_REPARSE_POINT/);
+  assert.match(common, /X-Readonly-Media-Instance-Probe/);
+  assert.match(common, /readonly-media-runtime-state-v3/);
+  assert.match(preflight, /Assert-MediaCapabilityKeyring/);
+  assert.match(start, /Get-MediaGatewayHealth \$profile\.PublicHealthUrl 3 \$instanceProbe/);
 });
 
 test("readonly media operations reject private paths through reparse points", { skip: process.platform !== "win32" }, () => {
@@ -71,6 +75,24 @@ test("readonly media operations reject private paths through reparse points", { 
     rmSync(root, { recursive: true, force: true });
     rmSync(target, { recursive: true, force: true });
   }
+});
+
+test("readonly media preflight rejects an active and previous capability key with the same kid", { skip: process.platform !== "win32" }, () => {
+  const command = [
+    ". $env:MEDIA_TEST_COMMON_SCRIPT",
+    "$profile = [pscustomobject]@{ CapabilityKid = 'same-kid'; PreviousCapability = [pscustomobject]@{ Kid = 'same-kid' } }",
+    "$active = New-Object byte[] 32",
+    "$previous = New-Object byte[] 32",
+    "try { Assert-MediaCapabilityKeyring $profile $active $previous; exit 0 } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }"
+  ].join("\n");
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], {
+    cwd: process.cwd(),
+    env: { ...process.env, MEDIA_TEST_COMMON_SCRIPT: join(process.cwd(), "scripts", "windows", "media-runtime-common.ps1") },
+    encoding: "utf8",
+    windowsHide: true
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /MEDIA_CAPABILITY_KEY_INVALID/);
 });
 
 test("readonly media logon task is current-user limited and starts gateway before tunnel", () => {
@@ -149,7 +171,7 @@ test("readonly media preflight accepts only a managed gateway matching the liste
         "$started = if ($env:MEDIA_TEST_MODE -eq 'drift') { '2000-01-01T00:00:00.0000000Z' } else { $recordProcess.StartTime.ToUniversalTime().ToString('o') }",
         "$fingerprint = 'a' * 64",
         "$stateFingerprint = if ($env:MEDIA_TEST_MODE -eq 'profile-drift') { 'b' * 64 } else { $fingerprint }",
-        "$state = [ordered]@{ state_version = 'readonly-media-runtime-state-v2'; profile_fingerprint = $stateFingerprint; gateway_pid = $recordProcess.Id; gateway_start_time_utc = $started; gateway_executable = $recordProcess.Path; cloudflared_pid = $recordProcess.Id; cloudflared_start_time_utc = $started; cloudflared_executable = $recordProcess.Path; started_at_utc = (Get-Date).ToUniversalTime().ToString('o'); gateway_port = [int]$env:MEDIA_TEST_PORT }",
+        "$state = [ordered]@{ state_version = 'readonly-media-runtime-state-v3'; profile_fingerprint = $stateFingerprint; instance_probe = ('A' * 43); gateway_pid = $recordProcess.Id; gateway_start_time_utc = $started; gateway_executable = $recordProcess.Path; cloudflared_pid = $recordProcess.Id; cloudflared_start_time_utc = $started; cloudflared_executable = $recordProcess.Path; started_at_utc = (Get-Date).ToUniversalTime().ToString('o'); gateway_port = [int]$env:MEDIA_TEST_PORT }",
         "$state | ConvertTo-Json | Set-Content -LiteralPath $env:MEDIA_TEST_STATE_PATH -Encoding UTF8",
         "$profile = [pscustomobject]@{ StatePath = $env:MEDIA_TEST_STATE_PATH; GatewayPort = [int]$env:MEDIA_TEST_PORT; CloudflaredPath = $recordProcess.Path }",
         "try { Assert-MediaPreflightPortState $profile $recordProcess.Path $fingerprint; [Console]::Out.WriteLine('PASS'); exit 0 } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }"

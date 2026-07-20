@@ -152,6 +152,7 @@ export interface ReadonlyMediaGatewayOptions {
   allowed_media_roots?: string[];
   host?: "127.0.0.1";
   port?: number;
+  instance_probe?: string;
   now?: () => Date;
   random_bytes?: (size: number) => Buffer;
   integrity_queue?: MediaIntegrityQueue;
@@ -438,6 +439,9 @@ function requireUnexpiredCapability(payload: { expires_at: string }, currentMs: 
 }
 
 export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOptions): Promise<ReadonlyMediaGatewayRuntime> {
+  if (options.instance_probe !== undefined && !/^[A-Za-z0-9_-]{43}$/.test(options.instance_probe)) {
+    throw new ReadonlyMediaGatewayError("MEDIA_GATEWAY_CONFIG_INVALID");
+  }
   if (!/^[0-9a-f]{64}$/.test(options.issuer_hash)) throw new ReadonlyMediaGatewayError("MEDIA_GATEWAY_CONFIG_INVALID");
   const allowedOrigin = options.allowed_origin ?? "https://aivideo.skmt617.top";
   const parsedOrigin = new URL(allowedOrigin);
@@ -563,7 +567,17 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
         sweep();
         const url = new URL(request.url ?? "/", "http://127.0.0.1");
         if (request.method === "GET" && url.pathname === "/healthz") {
-          json(response, 200, { ok: true, service: "readonly-media-gateway", version: READONLY_MEDIA_GATEWAY_VERSION });
+          const requestedProbe = request.headers["x-readonly-media-instance-probe"];
+          const instanceProbe = typeof requestedProbe === "string"
+            && requestedProbe === options.instance_probe
+            ? options.instance_probe
+            : undefined;
+          json(response, 200, {
+            ok: true,
+            service: "readonly-media-gateway",
+            version: READONLY_MEDIA_GATEWAY_VERSION,
+            ...(instanceProbe ? { instance_probe: instanceProbe } : {})
+          });
           return;
         }
         if (request.method === "GET" && url.pathname === "/readyz") {

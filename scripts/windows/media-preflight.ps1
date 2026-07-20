@@ -8,13 +8,16 @@ try {
   foreach ($root in $profile.MediaRoots) { if (-not (Test-Path -LiteralPath $root -PathType Container)) { throw "MEDIA_ROOT_NOT_FOUND" } }
   $cloudflaredVersion = Assert-Cloudflared $profile
   $key = Unprotect-MediaBytes $profile.CapabilityKeyPath
-  try { if ($key.Length -ne 32) { throw "MEDIA_CAPABILITY_KEY_INVALID" } } finally { [Array]::Clear($key, 0, $key.Length) }
+  $previousKey = $null
+  try {
+    if ($null -ne $profile.PreviousCapability) { $previousKey = Unprotect-MediaBytes $profile.PreviousCapability.ProtectedPath }
+    Assert-MediaCapabilityKeyring $profile $key $previousKey
+  } finally {
+    [Array]::Clear($key, 0, $key.Length)
+    if ($null -ne $previousKey) { [Array]::Clear($previousKey, 0, $previousKey.Length) }
+  }
   $token = Unprotect-MediaBytes $profile.TunnelTokenPath
   try { if ($token.Length -lt 16 -or $token.Length -gt 8192) { throw "MEDIA_TUNNEL_TOKEN_INVALID" } } finally { [Array]::Clear($token, 0, $token.Length) }
-  if ($null -ne $profile.PreviousCapability) {
-    $previousKey = Unprotect-MediaBytes $profile.PreviousCapability.ProtectedPath
-    try { if ($previousKey.Length -ne 32) { throw "MEDIA_CAPABILITY_KEY_INVALID" } } finally { [Array]::Clear($previousKey, 0, $previousKey.Length) }
-  }
   $profileFingerprint = Get-MediaRuntimeProfileFingerprint $profile $node.NodePath
   Assert-MediaPreflightPortState $profile $node.NodePath $profileFingerprint
 

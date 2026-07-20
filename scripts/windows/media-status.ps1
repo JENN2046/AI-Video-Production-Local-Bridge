@@ -7,7 +7,7 @@ try {
     Write-MediaJson ([ordered]@{ result = "STOPPED"; gateway_process = "stopped"; gateway_health = 0; gateway_ready = 0; cloudflared_process = "stopped"; public_health = 0; active_capabilities = 0; active_sessions = 0; stable_error_code = $null })
     exit 1
   }
-  if ([string]$state.state_version -eq "readonly-media-runtime-state-v1") {
+  if ([string]$state.state_version -in @("readonly-media-runtime-state-v1", "readonly-media-runtime-state-v2")) {
     Write-MediaJson ([ordered]@{ result = "NOT_READY"; gateway_process = "unknown"; gateway_health = 0; gateway_ready = 0; cloudflared_process = "unknown"; public_health = 0; active_capabilities = $null; active_sessions = $null; stable_error_code = "MEDIA_OPERATIONS_RESTART_REQUIRED" })
     exit 2
   }
@@ -16,10 +16,10 @@ try {
   Assert-MediaRuntimeStateIdentity $profile $node.NodePath $profileFingerprint $state
   $gateway = Test-MediaProcess $state "gateway"
   $cloudflared = Test-MediaProcess $state "cloudflared"
-  $healthResult = Get-MediaGatewayHealth "http://127.0.0.1:$($profile.GatewayPort)/healthz"
+  $healthResult = Get-MediaGatewayHealth "http://127.0.0.1:$($profile.GatewayPort)/healthz" 3 ([string]$state.instance_probe)
   $health = $healthResult.Status
   $ready = Get-MediaHttp "http://127.0.0.1:$($profile.GatewayPort)/readyz"
-  $publicResult = Get-MediaGatewayHealth $profile.PublicHealthUrl
+  $publicResult = Get-MediaGatewayHealth $profile.PublicHealthUrl 3 ([string]$state.instance_probe)
   $public = $publicResult.Status
   $counts = $null
   if (Test-Path -LiteralPath $profile.CountsPath -PathType Leaf) { try { $counts = Get-Content -Raw -LiteralPath $profile.CountsPath | ConvertFrom-Json } catch { } }

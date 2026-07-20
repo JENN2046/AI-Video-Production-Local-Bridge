@@ -219,11 +219,38 @@ function Get-MediaHttp([string]$Url, [int]$TimeoutSec = 3) {
   try { return [int](Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec $TimeoutSec).StatusCode } catch { return if ($null -ne $_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 } }
 }
 
-function Get-MediaGatewayHealth([string]$Url, [int]$TimeoutSec = 3) {
+function New-MediaInstanceProbe {
+  $bytes = New-Object byte[] 32
+  $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
   try {
-    $response = Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec $TimeoutSec -MaximumRedirection 0
+    $rng.GetBytes($bytes)
+    return [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+  } finally {
+    $rng.Dispose()
+    [Array]::Clear($bytes, 0, $bytes.Length)
+  }
+}
+
+function Assert-MediaCapabilityKeyring([object]$Profile, [byte[]]$ActiveKey, [byte[]]$PreviousKey) {
+  if ($ActiveKey.Length -ne 32) { throw "MEDIA_CAPABILITY_KEY_INVALID" }
+  if ($null -eq $Profile.PreviousCapability) {
+    if ($null -ne $PreviousKey) { throw "MEDIA_CAPABILITY_KEY_INVALID" }
+    return
+  }
+  if ($null -eq $PreviousKey -or $PreviousKey.Length -ne 32 -or $Profile.PreviousCapability.Kid -ceq $Profile.CapabilityKid) {
+    throw "MEDIA_CAPABILITY_KEY_INVALID"
+  }
+}
+
+function Get-MediaGatewayHealth([string]$Url, [int]$TimeoutSec = 3, [string]$ExpectedInstanceProbe = "") {
+  try {
+    if ($ExpectedInstanceProbe -and $ExpectedInstanceProbe -notmatch '^[A-Za-z0-9_-]{43}$') { throw "MEDIA_INSTANCE_PROBE_INVALID" }
+    $headers = @{}
+    if ($ExpectedInstanceProbe) { $headers["X-Readonly-Media-Instance-Probe"] = $ExpectedInstanceProbe }
+    $response = Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec $TimeoutSec -MaximumRedirection 0 -Headers $headers
     $body = $response.Content | ConvertFrom-Json
-    $valid = [int]$response.StatusCode -eq 200 -and [bool]$body.ok -and [string]$body.service -eq "readonly-media-gateway" -and [string]$body.version -eq "readonly-media-gateway-v1.0.0"
+    $instanceValid = -not $ExpectedInstanceProbe -or [string]$body.instance_probe -ceq $ExpectedInstanceProbe
+    $valid = [int]$response.StatusCode -eq 200 -and [bool]$body.ok -and [string]$body.service -eq "readonly-media-gateway" -and [string]$body.version -eq "readonly-media-gateway-v1.0.0" -and $instanceValid
     return [pscustomobject]@{ Status = [int]$response.StatusCode; Valid = $valid }
   } catch {
     $status = if ($null -ne $_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
@@ -245,12 +272,13 @@ function Read-MediaState([object]$Profile) {
 }
 
 function Assert-MediaRuntimeStateIdentity([object]$Profile, [string]$ExpectedGatewayExecutable, [string]$ExpectedProfileFingerprint, [object]$State) {
-  $required = @("state_version", "profile_fingerprint", "gateway_pid", "gateway_start_time_utc", "gateway_executable", "cloudflared_pid", "cloudflared_start_time_utc", "cloudflared_executable", "started_at_utc", "gateway_port")
+  $required = @("state_version", "profile_fingerprint", "instance_probe", "gateway_pid", "gateway_start_time_utc", "gateway_executable", "cloudflared_pid", "cloudflared_start_time_utc", "cloudflared_executable", "started_at_utc", "gateway_port")
   $names = @($State.PSObject.Properties.Name)
   if ($names.Count -ne $required.Count -or @($required | Where-Object { $names -notcontains $_ }).Count -gt 0 -or @($names | Where-Object { $required -notcontains $_ }).Count -gt 0) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
   try {
-    if ([string]$State.state_version -ne "readonly-media-runtime-state-v2" -or [int]$State.gateway_port -ne [int]$Profile.GatewayPort) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
+    if ([string]$State.state_version -ne "readonly-media-runtime-state-v3" -or [int]$State.gateway_port -ne [int]$Profile.GatewayPort) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
     if ([string]$State.profile_fingerprint -notmatch '^[0-9a-f]{64}$') { throw "MEDIA_OPERATIONS_STATE_INVALID" }
+    if ([string]$State.instance_probe -notmatch '^[A-Za-z0-9_-]{43}$') { throw "MEDIA_OPERATIONS_STATE_INVALID" }
     if ([string]$State.profile_fingerprint -cne $ExpectedProfileFingerprint) { throw "MEDIA_OPERATIONS_PROFILE_DRIFT" }
     if ([int]$State.gateway_pid -le 0 -or [int]$State.cloudflared_pid -le 0) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
     $gatewayPath = [IO.Path]::GetFullPath([string]$State.gateway_executable)

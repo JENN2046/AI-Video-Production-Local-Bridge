@@ -62,11 +62,13 @@ async function main(): Promise<void> {
     keyring,
     allowed_origin: required("READONLY_MEDIA_GATEWAY_ALLOWED_ORIGIN"),
     allowed_media_roots: mediaRoots(process.env.READONLY_MEDIA_GATEWAY_ALLOWED_ROOTS_JSON),
+    instance_probe: required("READONLY_MEDIA_GATEWAY_INSTANCE_PROBE"),
     port: port(process.env.READONLY_MEDIA_GATEWAY_PORT)
   });
 
   delete process.env.READONLY_MEDIA_GATEWAY_ACTIVE_KEY_B64URL;
   delete process.env.READONLY_MEDIA_GATEWAY_PREVIOUS_KEY_B64URL;
+  delete process.env.READONLY_MEDIA_GATEWAY_INSTANCE_PROBE;
 
   const countsPath = process.env.READONLY_MEDIA_GATEWAY_COUNTS_PATH?.trim();
   delete process.env.READONLY_MEDIA_GATEWAY_COUNTS_PATH;
