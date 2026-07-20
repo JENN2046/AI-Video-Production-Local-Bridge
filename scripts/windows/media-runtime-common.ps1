@@ -42,6 +42,19 @@ function Get-MediaProfilePath {
   return Resolve-MediaInsideWorkspace $configured
 }
 
+function Get-MediaTunnelProtocol {
+  $configured = [Environment]::GetEnvironmentVariable("TUNNEL_TRANSPORT_PROTOCOL", "Process")
+  if ([string]::IsNullOrWhiteSpace($configured)) { return "auto" }
+  $normalized = $configured.Trim().ToLowerInvariant()
+  if ($normalized -notin @("auto", "http2", "quic")) { throw "MEDIA_TUNNEL_PROTOCOL_INVALID" }
+  return $normalized
+}
+
+function Get-MediaCloudflaredArguments([string]$TunnelProtocol) {
+  if ($TunnelProtocol -notin @("auto", "http2", "quic")) { throw "MEDIA_TUNNEL_PROTOCOL_INVALID" }
+  return @("tunnel", "--no-autoupdate", "--loglevel", "warn", "--protocol", $TunnelProtocol, "run")
+}
+
 function Assert-MediaGitIgnored([string[]]$Paths) {
   foreach ($path in $Paths) {
     $tracked = @(& git -C $script:MediaWorkspaceRoot ls-files -- $path 2>$null)
@@ -133,7 +146,7 @@ function Get-MediaStopRuntimeIdentity([object]$Profile, [object]$State) {
       "MEDIA_NODE22_REQUIRED",
       "MEDIA_NODE22_NPM_NOT_FOUND"
     )
-    if ([string]$State.state_version -ne "readonly-media-runtime-state-v3" -or $_.Exception.Message -notin $recoverable) { throw }
+    if ([string]$State.state_version -notin @("readonly-media-runtime-state-v3", "readonly-media-runtime-state-v4") -or $_.Exception.Message -notin $recoverable) { throw }
     return [pscustomobject]@{
       CurrentProfileVerified = $false
       GatewayExecutable = [string]$State.gateway_executable
@@ -336,16 +349,18 @@ function Read-MediaState([object]$Profile) {
   try { return Get-Content -Raw -LiteralPath $Profile.StatePath | ConvertFrom-Json } catch { throw "MEDIA_OPERATIONS_STATE_INVALID" }
 }
 
-function Assert-MediaRuntimeStateIdentity([object]$Profile, [string]$ExpectedGatewayExecutable, [string]$ExpectedProfileFingerprint, [object]$State, [string]$ExpectedStateVersion = "readonly-media-runtime-state-v3", [bool]$AllowProfileDrift = $false) {
-  if ($ExpectedStateVersion -notin @("readonly-media-runtime-state-v2", "readonly-media-runtime-state-v3")) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
+function Assert-MediaRuntimeStateIdentity([object]$Profile, [string]$ExpectedGatewayExecutable, [string]$ExpectedProfileFingerprint, [object]$State, [string]$ExpectedStateVersion = "readonly-media-runtime-state-v4", [bool]$AllowProfileDrift = $false) {
+  if ($ExpectedStateVersion -notin @("readonly-media-runtime-state-v2", "readonly-media-runtime-state-v3", "readonly-media-runtime-state-v4")) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
   $required = @("state_version", "profile_fingerprint", "gateway_pid", "gateway_start_time_utc", "gateway_executable", "cloudflared_pid", "cloudflared_start_time_utc", "cloudflared_executable", "started_at_utc", "gateway_port")
-  if ($ExpectedStateVersion -eq "readonly-media-runtime-state-v3") { $required += "instance_probe" }
+  if ($ExpectedStateVersion -in @("readonly-media-runtime-state-v3", "readonly-media-runtime-state-v4")) { $required += "instance_probe" }
+  if ($ExpectedStateVersion -eq "readonly-media-runtime-state-v4") { $required += "tunnel_protocol" }
   $names = @($State.PSObject.Properties.Name)
   if ($names.Count -ne $required.Count -or @($required | Where-Object { $names -notcontains $_ }).Count -gt 0 -or @($names | Where-Object { $required -notcontains $_ }).Count -gt 0) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
   try {
     if ([string]$State.state_version -ne $ExpectedStateVersion -or [int]$State.gateway_port -ne [int]$Profile.GatewayPort) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
     if ([string]$State.profile_fingerprint -notmatch '^[0-9a-f]{64}$') { throw "MEDIA_OPERATIONS_STATE_INVALID" }
-    if ($ExpectedStateVersion -eq "readonly-media-runtime-state-v3" -and [string]$State.instance_probe -notmatch '^[A-Za-z0-9_-]{43}$') { throw "MEDIA_OPERATIONS_STATE_INVALID" }
+    if ($ExpectedStateVersion -in @("readonly-media-runtime-state-v3", "readonly-media-runtime-state-v4") -and [string]$State.instance_probe -notmatch '^[A-Za-z0-9_-]{43}$') { throw "MEDIA_OPERATIONS_STATE_INVALID" }
+    if ($ExpectedStateVersion -eq "readonly-media-runtime-state-v4" -and [string]$State.tunnel_protocol -notin @("auto", "http2", "quic")) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
     if (-not $AllowProfileDrift -and [string]$State.profile_fingerprint -cne $ExpectedProfileFingerprint) { throw "MEDIA_OPERATIONS_PROFILE_DRIFT" }
     if ([int]$State.gateway_pid -le 0 -or [int]$State.cloudflared_pid -le 0) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
     if ($AllowProfileDrift) {
@@ -384,7 +399,15 @@ function Assert-MediaPreflightPortState([object]$Profile, [string]$ExpectedGatew
     return
   }
 
+  if ([string]$state.state_version -in @(
+    "readonly-media-runtime-state-v1",
+    "readonly-media-runtime-state-v2",
+    "readonly-media-runtime-state-v3"
+  )) { throw "MEDIA_OPERATIONS_RESTART_REQUIRED" }
   Assert-MediaRuntimeStateIdentity $Profile $ExpectedGatewayExecutable $ExpectedProfileFingerprint $state
+  if ([string]$state.tunnel_protocol -cne (Get-MediaTunnelProtocol)) {
+    throw "MEDIA_TUNNEL_PROTOCOL_CHANGE_REQUIRES_RESTART"
+  }
   if (-not (Test-MediaProcess $state "gateway") -or -not (Test-MediaProcess $state "cloudflared")) { throw "MEDIA_OPERATIONS_STATE_CONFLICT" }
   if ($null -eq $listener -or [int]$listener -ne [int]$state.gateway_pid) { throw "MEDIA_GATEWAY_LISTENER_IDENTITY_MISMATCH" }
 }

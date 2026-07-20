@@ -36,9 +36,11 @@ test("readonly media operations pin cloudflared and keep secrets out of command 
   assert.match(start, /AddSeconds\(\$publicTunnelReadinessTimeoutSeconds\)/);
   assert.match(start, /MEDIA_TUNNEL_EDGE_UNREACHABLE/);
   assert.match(start, /MEDIA_TUNNEL_ROUTE_UNAVAILABLE/);
-  assert.match(start, /--no-autoupdate/);
-  assert.match(start, /--loglevel", "warn"/);
-  assert.doesNotMatch(start, /--loglevel", "debug"/);
+  assert.match(common, /--no-autoupdate/);
+  assert.match(common, /--loglevel", "warn"/);
+  assert.match(common, /"--protocol", \$TunnelProtocol/);
+  assert.match(start, /Get-MediaTunnelProtocol/);
+  assert.doesNotMatch(common, /--loglevel", "debug"/);
   const previousEnvironmentClear = start.indexOf('$previousEnvironmentVariables | ForEach-Object { Remove-Item "Env:$_"');
   const previousProfileBranch = start.indexOf('if ($null -ne $profile.PreviousCapability)');
   const gatewayProcessStart = start.indexOf("$gateway = Start-Process");
@@ -48,8 +50,12 @@ test("readonly media operations pin cloudflared and keep secrets out of command 
   assert.ok(inheritedTunnelTokenClear >= 0 && inheritedTunnelTokenClear < gatewayProcessStart && tunnelTokenInjection > gatewayProcessStart);
   assert.match(status, /active_capabilities/);
   assert.match(status, /active_sessions/);
+  assert.match(status, /tunnel_protocol/);
   assert.doesNotMatch(status, /CapabilityKeyPath|TunnelTokenPath|DatabasePath|MediaRoots|IssuerHash/);
   const preflight = text("scripts/windows/media-preflight.ps1");
+  assert.match(preflight, /Get-MediaTunnelProtocol/);
+  assert.match(common, /MEDIA_TUNNEL_PROTOCOL_CHANGE_REQUIRES_RESTART/);
+  assert.match(common, /MEDIA_OPERATIONS_RESTART_REQUIRED/);
   assert.match(preflight, /dist\/scripts\/db-check\.js --read-only/);
   assert.match(common, /Invoke-WebRequest -UseBasicParsing -Uri \$Url -TimeoutSec \$TimeoutSec -MaximumRedirection 0/);
   assert.match(common, /FileAttributes\]::ReparsePoint/);
@@ -64,6 +70,40 @@ test("readonly media operations pin cloudflared and keep secrets out of command 
   assert.match(start, /MEDIA_TUNNEL_ROUTE_NOT_EXCLUSIVE/);
   assert.match(start, /Resolve-MediaTunnelReadinessFailure/);
   assert.doesNotMatch(start, /throw "MEDIA_TUNNEL_NOT_READY"/);
+});
+
+test("readonly media operations validate and forward the selected tunnel protocol", () => {
+  if (process.platform === "win32") {
+    const run = (configured: string | undefined) => {
+      const env: NodeJS.ProcessEnv = { ...process.env, MEDIA_TEST_COMMON_SCRIPT: join(process.cwd(), "scripts", "windows", "media-runtime-common.ps1") };
+      if (configured === undefined) delete env.TUNNEL_TRANSPORT_PROTOCOL;
+      else env.TUNNEL_TRANSPORT_PROTOCOL = configured;
+      return spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ". $env:MEDIA_TEST_COMMON_SCRIPT; try { [Console]::Out.WriteLine((Get-MediaTunnelProtocol)); exit 0 } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 9 }"], {
+        cwd: process.cwd(), env, encoding: "utf8", windowsHide: true
+      });
+    };
+    for (const [configured, expected] of [[undefined, "auto"], ["http2", "http2"], ["QUIC", "quic"]] as const) {
+      const result = run(configured);
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stdout.trim(), expected);
+    }
+    const invalid = run("invalid");
+    assert.equal(invalid.status, 9);
+    assert.match(invalid.stderr, /MEDIA_TUNNEL_PROTOCOL_INVALID/);
+
+    const argumentsResult = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ". $env:MEDIA_TEST_COMMON_SCRIPT; [Console]::Out.WriteLine(((Get-MediaCloudflaredArguments 'http2') -join '|'))"], {
+      cwd: process.cwd(), env: { ...process.env, MEDIA_TEST_COMMON_SCRIPT: join(process.cwd(), "scripts", "windows", "media-runtime-common.ps1") }, encoding: "utf8", windowsHide: true
+    });
+    assert.equal(argumentsResult.status, 0, argumentsResult.stderr);
+    assert.equal(argumentsResult.stdout.trim(), "tunnel|--no-autoupdate|--loglevel|warn|--protocol|http2|run");
+  }
+
+  const start = text("scripts/windows/media-start.ps1");
+  assert.match(start, /ArgumentList \(Get-MediaCloudflaredArguments \$tunnelProtocol\)/);
+  assert.match(start, /\$env:TUNNEL_TOKEN =/);
+  assert.doesNotMatch(start, /--token(?:-file)?\b/i);
+  assert.match(start, /state_version = "readonly-media-runtime-state-v4"/);
+  assert.match(start, /tunnel_protocol = \$tunnelProtocol/);
 });
 
 test("readonly media tunnel startup reports a stable bounded failure reason", { skip: process.platform !== "win32" }, () => {
@@ -342,7 +382,7 @@ test("readonly media preflight accepts only a managed gateway matching the liste
         "$started = if ($env:MEDIA_TEST_MODE -eq 'drift') { '2000-01-01T00:00:00.0000000Z' } else { $recordProcess.StartTime.ToUniversalTime().ToString('o') }",
         "$fingerprint = 'a' * 64",
         "$stateFingerprint = if ($env:MEDIA_TEST_MODE -eq 'profile-drift') { 'b' * 64 } else { $fingerprint }",
-        "$state = [ordered]@{ state_version = 'readonly-media-runtime-state-v3'; profile_fingerprint = $stateFingerprint; instance_probe = ('A' * 43); gateway_pid = $recordProcess.Id; gateway_start_time_utc = $started; gateway_executable = $recordProcess.Path; cloudflared_pid = $recordProcess.Id; cloudflared_start_time_utc = $started; cloudflared_executable = $recordProcess.Path; started_at_utc = (Get-Date).ToUniversalTime().ToString('o'); gateway_port = [int]$env:MEDIA_TEST_PORT }",
+        "$state = [ordered]@{ state_version = 'readonly-media-runtime-state-v4'; profile_fingerprint = $stateFingerprint; instance_probe = ('A' * 43); gateway_pid = $recordProcess.Id; gateway_start_time_utc = $started; gateway_executable = $recordProcess.Path; cloudflared_pid = $recordProcess.Id; cloudflared_start_time_utc = $started; cloudflared_executable = $recordProcess.Path; started_at_utc = (Get-Date).ToUniversalTime().ToString('o'); gateway_port = [int]$env:MEDIA_TEST_PORT; tunnel_protocol = 'auto' }",
         "$state | ConvertTo-Json | Set-Content -LiteralPath $env:MEDIA_TEST_STATE_PATH -Encoding UTF8",
         "$profile = [pscustomobject]@{ StatePath = $env:MEDIA_TEST_STATE_PATH; GatewayPort = [int]$env:MEDIA_TEST_PORT; CloudflaredPath = $recordProcess.Path }",
         "try { Assert-MediaPreflightPortState $profile $recordProcess.Path $fingerprint; [Console]::Out.WriteLine('PASS'); exit 0 } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }"
