@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import type { ClientRequest } from "node:http";
 
-import { openReadonlyMediaCapabilityRequest } from "../src/webgpt-cloud/mediaCapability.js";
+import { openReadonlyMediaCapabilityRequest, openReadonlyMediaKeyReadinessRequest } from "../src/webgpt-cloud/mediaCapability.js";
 import {
   armReadonlyMediaGatewayConnectTimeout,
   loadReadonlyMediaGatewayClientOptions,
+  probeReadonlyMediaGatewayKeyring,
   ReadonlyMediaGatewayClientError,
   requestReadonlyMediaPlayback
 } from "../src/webgpt-cloud/mediaGatewayClient.js";
@@ -66,6 +68,25 @@ test("remote media bridge uses a validated pinned address and keeps identifiers 
   assert.equal(posted, 1);
   assert.equal(grant.playback_url, `https://media.skmt617.top/media/v1/c/${"h".repeat(43)}`);
   assert.equal(grant.snapshot_fingerprint, input.snapshot_fingerprint);
+});
+
+test("remote media readiness performs an encrypted roundtrip and detects a different gateway key", async () => {
+  const runtime = {
+    resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 as const }],
+    post_pinned_address: async (_url: URL, _signal: AbortSignal, _address: { address: string; family: 4 | 6 }, body: Uint8Array) => {
+      const payload = openReadonlyMediaKeyReadinessRequest(JSON.parse(Buffer.from(body).toString("utf8")), keyring);
+      return new Response(JSON.stringify({
+        ok: true,
+        challenge_sha256: createHash("sha256").update(payload.challenge, "utf8").digest("hex")
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+  };
+  assert.equal(await probeReadonlyMediaGatewayKeyring({ origin: "https://media.skmt617.top", keyring, runtime }), true);
+  assert.equal(await probeReadonlyMediaGatewayKeyring({
+    origin: "https://media.skmt617.top",
+    keyring: { active: { ...keyring.active, key: Buffer.alloc(32, 88) } },
+    runtime
+  }), false);
 });
 
 test("remote media bridge limits only connection establishment and permits slow gateway hashing", async () => {

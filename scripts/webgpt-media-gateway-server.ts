@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { renameSync, unlinkSync, writeFileSync } from "node:fs";
 
-import { assertReadonlyMediaCapabilityKeyring, parseReadonlyMediaCapabilityKey, type ReadonlyMediaCapabilityKeyring } from "../src/webgpt-cloud/mediaCapability.js";
+import { parseReadonlyMediaCapabilityKeyringConfiguration } from "../src/webgpt-cloud/mediaCapability.js";
 import { startReadonlyMediaGateway } from "../src/webgpt-media-gateway/runtime.js";
 
 class MediaGatewayBootError extends Error {
@@ -45,17 +45,14 @@ async function main(): Promise<void> {
     process.env.READONLY_MEDIA_GATEWAY_PREVIOUS_ACCEPTED_UNTIL?.trim() ?? ""
   ];
   if (previousValues.some(Boolean) && !previousValues.every(Boolean)) throw new MediaGatewayBootError("MEDIA_GATEWAY_CONFIG_INVALID");
-  const keyring: ReadonlyMediaCapabilityKeyring = {
-    active: parseReadonlyMediaCapabilityKey(activeKid, activeKey),
-    ...(previousValues.every(Boolean) ? {
-      previous: {
-        ...parseReadonlyMediaCapabilityKey(previousValues[0], previousValues[1]),
-        accepted_from: previousValues[2],
-        accepted_until: previousValues[3]
-      }
-    } : {})
-  };
-  assertReadonlyMediaCapabilityKeyring(keyring);
+  const keyring = parseReadonlyMediaCapabilityKeyringConfiguration({
+    active_kid: activeKid,
+    active_key: activeKey,
+    previous_kid: previousValues[0],
+    previous_key: previousValues[1],
+    previous_accepted_from: previousValues[2],
+    previous_accepted_until: previousValues[3]
+  });
   const runtime = await startReadonlyMediaGateway({
     database_path: resolve(required("READONLY_MEDIA_GATEWAY_DATABASE_PATH")),
     issuer_hash: required("READONLY_MEDIA_GATEWAY_ISSUER_HASH"),

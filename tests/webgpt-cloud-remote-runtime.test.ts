@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { generateKeyPairSync } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -16,6 +16,7 @@ import { bootstrapWebGptProjectOwner } from "../src/webgpt-v4/authorizationAdmin
 import type { WebGptV4ReadonlyFederatedAuthConfig } from "../src/webgpt-v4/auth.js";
 import { actorFromFederatedSubject, issuerHash, WEBGPT_V4_VERSION } from "../src/webgpt-v4/types.js";
 import { exportReadonlySnapshotFromDatabase } from "../src/webgpt-cloud/dataSource.js";
+import { openReadonlyMediaKeyReadinessRequest } from "../src/webgpt-cloud/mediaCapability.js";
 import {
   buildReadonlyRemoteToolResult,
   READONLY_REMOTE_SERVICE_VERSION,
@@ -216,6 +217,8 @@ test("remote OAuth challenges, signed publish, six readonly tools, and readiness
   const events: ReadonlyRemoteLogEvent[] = [];
   const mediaKeyring = { active: { kid: "remote-media-test", key: Buffer.alloc(32, 31) } };
   const mediaRequests: Array<{ url: string; address: string; body: string }> = [];
+  let runtimeNow = new Date();
+  let mediaProbeMatches = false;
   const runtime = await startReadonlyRemoteRuntime({
     port: 0,
     auth_config: authConfig(),
@@ -229,6 +232,15 @@ test("remote OAuth challenges, signed publish, six readonly tools, and readiness
         resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
         post_pinned_address: async (url, _signal, address, body) => {
           mediaRequests.push({ url: url.toString(), address: address.address, body: Buffer.from(body).toString("utf8") });
+          if (url.pathname === "/internal/v1/key-readiness") {
+            const payload = openReadonlyMediaKeyReadinessRequest(JSON.parse(Buffer.from(body).toString("utf8")), mediaKeyring);
+            return new Response(JSON.stringify({
+              ok: true,
+              challenge_sha256: mediaProbeMatches
+                ? createHash("sha256").update(payload.challenge, "utf8").digest("hex")
+                : "0".repeat(64)
+            }), { status: 200, headers: { "content-type": "application/json" } });
+          }
           return new Response(JSON.stringify({ capability_handle: "m".repeat(43), expires_at: new Date(Date.now() + 5 * 60_000).toISOString() }), {
             status: 201,
             headers: { "content-type": "application/json" }
@@ -236,6 +248,7 @@ test("remote OAuth challenges, signed publish, six readonly tools, and readiness
         }
       }
     },
+    now: () => runtimeNow,
     log: (event) => events.push(event)
   });
   try {
@@ -245,7 +258,10 @@ test("remote OAuth challenges, signed publish, six readonly tools, and readiness
 
     const notReady = await fetch(`${runtime.origin}/readyz`);
     assert.equal(notReady.status, 503);
-    assert.equal(jsonRecord(jsonRecord(await notReady.json()).checks).snapshot_fresh, false);
+    const notReadyBody = jsonRecord(await notReady.json());
+    assert.equal(jsonRecord(notReadyBody.checks).snapshot_fresh, false);
+    assert.equal(jsonRecord(notReadyBody.checks).media_capability_roundtrip, false);
+    assert.equal(notReadyBody.media_ready, false);
 
     const metadata = await fetch(`${runtime.origin}/.well-known/oauth-protected-resource/mcp`);
     assert.equal(metadata.status, 200);
@@ -298,6 +314,11 @@ test("remote OAuth challenges, signed publish, six readonly tools, and readiness
     });
     assert.equal(published.status, 202);
     assert.equal(jsonRecord(await published.json()).snapshot_fingerprint, fixture.snapshot.snapshot_fingerprint);
+    const mediaMismatchReady = await fetch(`${runtime.origin}/readyz`);
+    assert.equal(mediaMismatchReady.status, 503);
+    assert.equal(jsonRecord(jsonRecord(await mediaMismatchReady.json()).checks).media_capability_roundtrip, false);
+    mediaProbeMatches = true;
+    runtimeNow = new Date(runtimeNow.getTime() + 31_000);
     assert.equal((await fetch(`${runtime.origin}/readyz`)).status, 200);
 
     const transport = new StreamableHTTPClientTransport(new URL(runtime.mcp_url), { requestInit: { headers: { authorization: `Bearer ${ownerToken}` } } });
@@ -328,17 +349,18 @@ test("remote OAuth challenges, signed publish, six readonly tools, and readiness
       assert.equal(JSON.stringify(mediaResult.content).includes("media.skmt617.top"), false);
       assert.equal(jsonRecord(mediaResult._meta).playback_url, `https://media.skmt617.top/media/v1/c/${"m".repeat(43)}`);
       assert.equal(jsonRecord(mediaResult.structuredContent).snapshot_fingerprint, fixture.snapshot.snapshot_fingerprint);
-      assert.deepEqual(mediaRequests.map(({ url, address }) => ({ url, address })), [{
-        url: "https://media.skmt617.top/internal/v1/capabilities",
-        address: "8.8.8.8"
-      }]);
-      assert.equal(mediaRequests[0]!.body.includes(fixture.project_id), false);
+      assert.deepEqual(mediaRequests.map(({ url, address }) => ({ url, address })), [
+        { url: "https://media.skmt617.top/internal/v1/key-readiness", address: "8.8.8.8" },
+        { url: "https://media.skmt617.top/internal/v1/key-readiness", address: "8.8.8.8" },
+        { url: "https://media.skmt617.top/internal/v1/capabilities", address: "8.8.8.8" }
+      ]);
+      assert.equal(mediaRequests[2]!.body.includes(fixture.project_id), false);
       const deniedMedia = await client.callTool({
         name: "get_readonly_media_playback",
         arguments: { project_id: "project_not_authorized", artifact_id: mediaBinding.artifact_id }
       });
       assert.equal(deniedMedia.isError, true);
-      assert.equal(mediaRequests.length, 1);
+      assert.equal(mediaRequests.length, 3);
       const calls = [
         { name: "list_production_projects", arguments: {} },
         { name: "get_project_context", arguments: { project_id: fixture.project_id, workspace: "overview" } },

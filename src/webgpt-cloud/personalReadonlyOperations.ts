@@ -61,6 +61,7 @@ export interface PersonalReadonlyOperationsStatus {
       publisher_key: boolean | null;
       snapshot_fresh: boolean | null;
       authorization_projection: boolean | null;
+      media_capability_roundtrip: boolean | null;
     };
     snapshot: PersonalReadonlySnapshotStatus;
   };
@@ -119,7 +120,7 @@ const emptyRemoteStatus = (): PersonalReadonlyOperationsStatus["remote"] => ({
   health_http_status: null,
   readiness_http_status: null,
   service_version: null,
-  checks: { oauth: null, publisher_key: null, snapshot_fresh: null, authorization_projection: null },
+  checks: { oauth: null, publisher_key: null, snapshot_fresh: null, authorization_projection: null, media_capability_roundtrip: null },
   snapshot: emptySnapshotStatus()
 });
 
@@ -256,7 +257,8 @@ async function fetchRemoteStatus(
       oauth: booleanOrNull(checks?.oauth),
       publisher_key: booleanOrNull(checks?.publisher_key),
       snapshot_fresh: booleanOrNull(checks?.snapshot_fresh),
-      authorization_projection: booleanOrNull(checks?.authorization_projection)
+      authorization_projection: booleanOrNull(checks?.authorization_projection),
+      media_capability_roundtrip: booleanOrNull(checks?.media_capability_roundtrip)
     };
     const freshness = snapshot?.freshness_status;
     remote.snapshot = {

@@ -57,6 +57,7 @@ import { SnapshotReadonlyDataSource } from "./snapshotDataSource.js";
 import { readonlySnapshotStatus, READONLY_SNAPSHOT_MAX_BYTES, type ReadonlySnapshot, type ReadonlySnapshotStatus } from "./snapshot.js";
 import {
   READONLY_MEDIA_GATEWAY_ORIGIN,
+  probeReadonlyMediaGatewayKeyring,
   ReadonlyMediaGatewayClientError,
   requestReadonlyMediaPlayback,
   type ReadonlyMediaGatewayClientOptions
@@ -516,6 +517,20 @@ export async function startReadonlyRemoteRuntime(options: StartReadonlyRemoteRun
   const bootIdPrefix = randomUUID().replace(/-/g, "").slice(0, 8);
   const activeRequests = new Set<Promise<void>>();
   let authFailureCount = 0;
+  let mediaReadinessCache: { value: boolean; expires_at_ms: number } | null = null;
+  let mediaReadinessPending: Promise<boolean> | null = null;
+  const mediaCapabilityReadiness = async (): Promise<boolean | null> => {
+    if (!options.media_gateway) return null;
+    const current = now().getTime();
+    if (mediaReadinessCache && mediaReadinessCache.expires_at_ms > current) return mediaReadinessCache.value;
+    if (!mediaReadinessPending) {
+      mediaReadinessPending = probeReadonlyMediaGatewayKeyring(options.media_gateway).then((value) => {
+        mediaReadinessCache = { value, expires_at_ms: now().getTime() + 30_000 };
+        return value;
+      }).finally(() => { mediaReadinessPending = null; });
+    }
+    return await mediaReadinessPending;
+  };
 
   const handle = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     const startedAt = Date.now();
@@ -535,16 +550,27 @@ export async function startReadonlyRemoteRuntime(options: StartReadonlyRemoteRun
       if (request.method === "GET" && url.pathname === "/readyz") {
         eventType = "readiness";
         const snapshotStatus = readonlySnapshotStatus(snapshot, now());
-        const checks = {
+        const coreChecks = {
           oauth: Boolean(authConfig),
           publisher_key: Boolean(store),
           snapshot_fresh: snapshotStatus.freshness_status === "fresh",
           authorization_projection: Boolean(snapshot?.authorization.principals.length)
         };
-        const ok = Object.values(checks).every(Boolean);
+        const mediaCapabilityRoundtrip = await mediaCapabilityReadiness();
+        const checks = { ...coreChecks, media_capability_roundtrip: mediaCapabilityRoundtrip };
+        const ok = Object.values(coreChecks).every(Boolean) && mediaCapabilityRoundtrip !== false;
         status = ok ? 200 : 503;
         if (!ok) stableErrorCode = "READONLY_REMOTE_NOT_READY";
-        sendJson(response, status, { ok, service: "readonly-remote-mcp", version: READONLY_REMOTE_SERVICE_VERSION, checks, snapshot: snapshotStatus, database_attached: false, provider_calls_allowed: false });
+        sendJson(response, status, {
+          ok,
+          service: "readonly-remote-mcp",
+          version: READONLY_REMOTE_SERVICE_VERSION,
+          checks,
+          media_ready: mediaCapabilityRoundtrip === true,
+          snapshot: snapshotStatus,
+          database_attached: false,
+          provider_calls_allowed: false
+        });
         return;
       }
       const metadataPath = authConfig ? new URL(protectedResourceMetadataUrl(authConfig.resource_url)).pathname : "/.well-known/oauth-protected-resource/mcp";

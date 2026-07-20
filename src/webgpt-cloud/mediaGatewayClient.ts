@@ -14,12 +14,14 @@ import {
   type PinnedNetworkAddress
 } from "../net/pinnedHttpsTransport.js";
 import {
-  assertReadonlyMediaCapabilityKeyring,
+  createReadonlyMediaKeyReadinessRequest,
   createReadonlyMediaCapabilityRequest,
-  parseReadonlyMediaCapabilityKey,
+  parseReadonlyMediaCapabilityKeyringConfiguration,
   READONLY_MEDIA_CAPABILITY_MAX_BODY_BYTES,
   READONLY_MEDIA_CAPABILITY_PATH,
   READONLY_MEDIA_CAPABILITY_RESPONSE_SCHEMA,
+  READONLY_MEDIA_KEY_READINESS_PATH,
+  READONLY_MEDIA_KEY_READINESS_RESPONSE_SCHEMA,
   READONLY_MEDIA_SESSION_MAX_SECONDS,
   type ReadonlyMediaCapabilityKeyring
 } from "./mediaCapability.js";
@@ -28,6 +30,7 @@ import type { ReadonlyMediaBinding } from "./snapshot.js";
 export const READONLY_MEDIA_GATEWAY_ORIGIN = "https://media.skmt617.top";
 export const READONLY_MEDIA_GATEWAY_CONNECT_TIMEOUT_MS = 5_000;
 export const READONLY_MEDIA_GATEWAY_REQUEST_TIMEOUT_MS = 60_000;
+export const READONLY_MEDIA_GATEWAY_READINESS_TIMEOUT_MS = 5_000;
 
 const gatewayErrorSchema = z.object({
   error: z.object({ code: z.string().regex(/^[A-Z0-9_]{1,96}$/) }).strict()
@@ -59,17 +62,14 @@ export function loadReadonlyMediaGatewayClientOptions(env: NodeJS.ProcessEnv): R
   const previousValues = [previousKid, previousKey, acceptedFrom, acceptedUntil];
   if (previousValues.some(Boolean) && !previousValues.every(Boolean)) throw new ReadonlyMediaGatewayClientError("MEDIA_GATEWAY_CONFIG_INVALID");
   try {
-    const keyring: ReadonlyMediaCapabilityKeyring = {
-      active: parseReadonlyMediaCapabilityKey(activeKid, activeKey),
-      ...(previousValues.every(Boolean) ? {
-        previous: {
-          ...parseReadonlyMediaCapabilityKey(previousKid, previousKey),
-          accepted_from: acceptedFrom,
-          accepted_until: acceptedUntil
-        }
-      } : {})
-    };
-    assertReadonlyMediaCapabilityKeyring(keyring);
+    const keyring = parseReadonlyMediaCapabilityKeyringConfiguration({
+      active_kid: activeKid,
+      active_key: activeKey,
+      previous_kid: previousKid,
+      previous_key: previousKey,
+      previous_accepted_from: acceptedFrom,
+      previous_accepted_until: acceptedUntil
+    });
     return { origin: parseReadonlyMediaGatewayOrigin(origin), keyring };
   } catch {
     throw new ReadonlyMediaGatewayClientError("MEDIA_GATEWAY_CONFIG_INVALID");
@@ -90,6 +90,39 @@ export class ReadonlyMediaGatewayClientError extends Error {
   constructor(readonly code: string) {
     super(code);
     this.name = "ReadonlyMediaGatewayClientError";
+  }
+}
+
+export async function probeReadonlyMediaGatewayKeyring(
+  options: ReadonlyMediaGatewayClientOptions
+): Promise<boolean> {
+  const origin = parseReadonlyMediaGatewayOrigin(options.origin);
+  const endpoint = new URL(READONLY_MEDIA_KEY_READINESS_PATH, origin);
+  const probe = createReadonlyMediaKeyReadinessRequest(options.keyring, { now: options.now });
+  const body = Buffer.from(JSON.stringify(probe.envelope), "utf8");
+  const signal = AbortSignal.timeout(READONLY_MEDIA_GATEWAY_READINESS_TIMEOUT_MS);
+  try {
+    const addresses = await abortable(resolvePublicAddresses(endpoint.hostname, options.runtime?.resolve_hostname), signal);
+    const response = await fetchFromValidatedAddresses(
+      endpoint,
+      signal,
+      addresses,
+      (url, requestSignal, address) => (options.runtime?.post_pinned_address ?? postPinnedJson)(url, requestSignal, address, body)
+    );
+    if (response.status !== 200) {
+      try { await response.body?.cancel(); } catch { /* low-disclosure readiness */ }
+      return false;
+    }
+    const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+    if (contentType !== "application/json") {
+      try { await response.body?.cancel(); } catch { /* low-disclosure readiness */ }
+      return false;
+    }
+    const bytes = await readBoundedBytes(response, READONLY_MEDIA_CAPABILITY_MAX_BODY_BYTES);
+    const parsed = READONLY_MEDIA_KEY_READINESS_RESPONSE_SCHEMA.safeParse(JSON.parse(Buffer.from(bytes).toString("utf8")) as unknown);
+    return parsed.success && parsed.data.challenge_sha256 === probe.challenge_sha256;
+  } catch {
+    return false;
   }
 }
 

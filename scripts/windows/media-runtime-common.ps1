@@ -252,7 +252,12 @@ function Test-MediaProcess([object]$Record, [string]$Kind) {
 }
 
 function Get-MediaHttp([string]$Url, [int]$TimeoutSec = 3) {
-  try { return [int](Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec $TimeoutSec).StatusCode } catch { return if ($null -ne $_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 } }
+  try {
+    return [int](Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec $TimeoutSec).StatusCode
+  } catch {
+    if ($null -ne $_.Exception.Response) { return [int]$_.Exception.Response.StatusCode }
+    return 0
+  }
 }
 
 function New-MediaInstanceProbe {
@@ -300,6 +305,20 @@ function Get-MediaListenerPid([int]$Port) {
   $owners = @($listeners | ForEach-Object { [int]$_.OwningProcess } | Sort-Object -Unique)
   if ($owners.Count -ne 1) { throw "MEDIA_GATEWAY_PORT_MULTIPLE_LISTENERS" }
   return [int]$owners[0]
+}
+
+function Resolve-MediaTunnelReadinessFailure(
+  [bool]$ProcessExited,
+  [bool]$AnyHttp200,
+  [bool]$CurrentInstanceSeen,
+  [int]$ConsecutiveCurrentInstanceProbes,
+  [int]$RequiredConsecutiveCurrentInstanceProbes
+) {
+  if ($ProcessExited) { return "MEDIA_TUNNEL_PROCESS_EXITED" }
+  if (-not $AnyHttp200) { return "MEDIA_TUNNEL_PUBLIC_UNREACHABLE" }
+  if (-not $CurrentInstanceSeen) { return "MEDIA_TUNNEL_INSTANCE_MISMATCH" }
+  if ($ConsecutiveCurrentInstanceProbes -lt $RequiredConsecutiveCurrentInstanceProbes) { return "MEDIA_TUNNEL_INSTANCE_UNSTABLE" }
+  return $null
 }
 
 function Read-MediaState([object]$Profile) {
