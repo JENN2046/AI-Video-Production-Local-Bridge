@@ -5,6 +5,7 @@ $cloudflared = $null
 $startLock = $null
 $profile = $null
 $previousKey = $null
+$previousEnvironmentVariables = @("READONLY_MEDIA_GATEWAY_PREVIOUS_KID", "READONLY_MEDIA_GATEWAY_PREVIOUS_KEY_B64URL", "READONLY_MEDIA_GATEWAY_PREVIOUS_ACCEPTED_FROM", "READONLY_MEDIA_GATEWAY_PREVIOUS_ACCEPTED_UNTIL")
 try {
   $profile = Read-MediaProfile
   Assert-MediaGitIgnored (Get-MediaPrivatePaths $profile)
@@ -40,6 +41,7 @@ try {
 
   $key = Unprotect-MediaBytes $profile.CapabilityKeyPath
   try {
+    $previousEnvironmentVariables | ForEach-Object { Remove-Item "Env:$_" -ErrorAction SilentlyContinue }
     $env:READONLY_MEDIA_GATEWAY_DATABASE_PATH = $profile.DatabasePath
     $env:READONLY_MEDIA_GATEWAY_ISSUER_HASH = $profile.IssuerHash
     $env:READONLY_MEDIA_GATEWAY_ACTIVE_KID = $profile.CapabilityKid
@@ -59,7 +61,7 @@ try {
   } finally {
     [Array]::Clear($key, 0, $key.Length)
     if ($null -ne $previousKey) { [Array]::Clear($previousKey, 0, $previousKey.Length) }
-    @("READONLY_MEDIA_GATEWAY_DATABASE_PATH", "READONLY_MEDIA_GATEWAY_ISSUER_HASH", "READONLY_MEDIA_GATEWAY_ACTIVE_KID", "READONLY_MEDIA_GATEWAY_ACTIVE_KEY_B64URL", "READONLY_MEDIA_GATEWAY_ALLOWED_ORIGIN", "READONLY_MEDIA_GATEWAY_ALLOWED_ROOTS_JSON", "READONLY_MEDIA_GATEWAY_PORT", "READONLY_MEDIA_GATEWAY_COUNTS_PATH", "READONLY_MEDIA_GATEWAY_PREVIOUS_KID", "READONLY_MEDIA_GATEWAY_PREVIOUS_KEY_B64URL", "READONLY_MEDIA_GATEWAY_PREVIOUS_ACCEPTED_FROM", "READONLY_MEDIA_GATEWAY_PREVIOUS_ACCEPTED_UNTIL") | ForEach-Object { Remove-Item "Env:$_" -ErrorAction SilentlyContinue }
+    (@("READONLY_MEDIA_GATEWAY_DATABASE_PATH", "READONLY_MEDIA_GATEWAY_ISSUER_HASH", "READONLY_MEDIA_GATEWAY_ACTIVE_KID", "READONLY_MEDIA_GATEWAY_ACTIVE_KEY_B64URL", "READONLY_MEDIA_GATEWAY_ALLOWED_ORIGIN", "READONLY_MEDIA_GATEWAY_ALLOWED_ROOTS_JSON", "READONLY_MEDIA_GATEWAY_PORT", "READONLY_MEDIA_GATEWAY_COUNTS_PATH") + $previousEnvironmentVariables) | ForEach-Object { Remove-Item "Env:$_" -ErrorAction SilentlyContinue }
   }
   $deadline = [DateTime]::UtcNow.AddSeconds(60)
   $ready = 0

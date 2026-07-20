@@ -214,7 +214,7 @@ function Get-MediaHttp([string]$Url, [int]$TimeoutSec = 3) {
 
 function Get-MediaGatewayHealth([string]$Url, [int]$TimeoutSec = 3) {
   try {
-    $response = Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec $TimeoutSec
+    $response = Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec $TimeoutSec -MaximumRedirection 0
     $body = $response.Content | ConvertFrom-Json
     $valid = [int]$response.StatusCode -eq 200 -and [bool]$body.ok -and [string]$body.service -eq "readonly-media-gateway" -and [string]$body.version -eq "readonly-media-gateway-v1.0.0"
     return [pscustomobject]@{ Status = [int]$response.StatusCode; Valid = $valid }

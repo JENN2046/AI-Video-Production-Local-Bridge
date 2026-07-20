@@ -28,11 +28,16 @@ test("readonly media operations pin cloudflared and keep secrets out of command 
   assert.match(start, /--no-autoupdate/);
   assert.match(start, /--loglevel", "warn"/);
   assert.doesNotMatch(start, /--loglevel", "debug"/);
+  const previousEnvironmentClear = start.indexOf('$previousEnvironmentVariables | ForEach-Object { Remove-Item "Env:$_"');
+  const previousProfileBranch = start.indexOf('if ($null -ne $profile.PreviousCapability)');
+  const gatewayProcessStart = start.indexOf("$gateway = Start-Process");
+  assert.ok(previousEnvironmentClear >= 0 && previousEnvironmentClear < previousProfileBranch && previousEnvironmentClear < gatewayProcessStart);
   assert.match(status, /active_capabilities/);
   assert.match(status, /active_sessions/);
   assert.doesNotMatch(status, /CapabilityKeyPath|TunnelTokenPath|DatabasePath|MediaRoots|IssuerHash/);
   const preflight = text("scripts/windows/media-preflight.ps1");
   assert.match(preflight, /dist\/scripts\/db-check\.js --read-only/);
+  assert.match(common, /Invoke-WebRequest -UseBasicParsing -Uri \$Url -TimeoutSec \$TimeoutSec -MaximumRedirection 0/);
 });
 
 test("readonly media logon task is current-user limited and starts gateway before tunnel", () => {
