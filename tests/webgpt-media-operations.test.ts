@@ -266,6 +266,52 @@ test("readonly media preflight accepts only a managed gateway matching the liste
     }
   });
 
+  await context.test("Windows drift recovery trusts only workspace-owned saved executables", { skip: process.platform !== "win32" }, () => {
+    const root = join(process.cwd(), "data", "webgpt", `media-drift-executable-test-${process.pid}-${Date.now()}`);
+    const currentRoot = join(root, "current");
+    const savedRoot = join(root, "saved");
+    mkdirSync(currentRoot, { recursive: true });
+    mkdirSync(savedRoot, { recursive: true });
+    const currentNode = join(currentRoot, "node.exe");
+    const currentCloudflared = join(currentRoot, "cloudflared.exe");
+    const savedNode = join(savedRoot, "node.exe");
+    const savedCloudflared = join(savedRoot, "cloudflared.exe");
+    const invalidCloudflared = join(savedRoot, "helper.exe");
+    for (const path of [currentNode, currentCloudflared, savedNode, savedCloudflared, invalidCloudflared]) {
+      writeFileSync(path, "fixture", "utf8");
+    }
+
+    try {
+      const command = [
+        ". $env:MEDIA_TEST_COMMON_SCRIPT",
+        "$profile = [pscustomobject]@{ GatewayPort = 2092; CloudflaredPath = $env:MEDIA_TEST_CURRENT_CLOUDFLARED }",
+        "$state = [pscustomobject][ordered]@{ state_version = 'readonly-media-runtime-state-v3'; profile_fingerprint = ('b' * 64); instance_probe = ('A' * 43); gateway_pid = 1; gateway_start_time_utc = '2026-01-01T00:00:00.0000000Z'; gateway_executable = $env:MEDIA_TEST_SAVED_NODE; cloudflared_pid = 2; cloudflared_start_time_utc = '2026-01-01T00:00:00.0000000Z'; cloudflared_executable = $env:MEDIA_TEST_SAVED_CLOUDFLARED; started_at_utc = '2026-01-01T00:00:00.0000000Z'; gateway_port = 2092 }",
+        "Assert-MediaRuntimeStateIdentity $profile $env:MEDIA_TEST_CURRENT_NODE ('a' * 64) $state 'readonly-media-runtime-state-v3' $true",
+        "$state.cloudflared_executable = $env:MEDIA_TEST_INVALID_CLOUDFLARED",
+        "try { Assert-MediaRuntimeStateIdentity $profile $env:MEDIA_TEST_CURRENT_NODE ('a' * 64) $state 'readonly-media-runtime-state-v3' $true; exit 2 } catch { if ($_.Exception.Message -ne 'MEDIA_OPERATIONS_STATE_INVALID') { throw } }",
+        "[Console]::Out.WriteLine('PASS')"
+      ].join("\n");
+      const result = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          MEDIA_TEST_COMMON_SCRIPT: join(process.cwd(), "scripts", "windows", "media-runtime-common.ps1"),
+          MEDIA_TEST_CURRENT_NODE: currentNode,
+          MEDIA_TEST_CURRENT_CLOUDFLARED: currentCloudflared,
+          MEDIA_TEST_SAVED_NODE: savedNode,
+          MEDIA_TEST_SAVED_CLOUDFLARED: savedCloudflared,
+          MEDIA_TEST_INVALID_CLOUDFLARED: invalidCloudflared
+        },
+        encoding: "utf8",
+        windowsHide: true
+      });
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stdout.trim(), "PASS");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   await context.test("Windows listener discovery includes wildcard bindings", { skip: process.platform !== "win32" }, async () => {
     const server = createServer();
     await new Promise<void>((resolve, reject) => {

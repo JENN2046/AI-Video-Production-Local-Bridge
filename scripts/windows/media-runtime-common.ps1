@@ -293,11 +293,18 @@ function Assert-MediaRuntimeStateIdentity([object]$Profile, [string]$ExpectedGat
     if ($ExpectedStateVersion -eq "readonly-media-runtime-state-v3" -and [string]$State.instance_probe -notmatch '^[A-Za-z0-9_-]{43}$') { throw "MEDIA_OPERATIONS_STATE_INVALID" }
     if (-not $AllowProfileDrift -and [string]$State.profile_fingerprint -cne $ExpectedProfileFingerprint) { throw "MEDIA_OPERATIONS_PROFILE_DRIFT" }
     if ([int]$State.gateway_pid -le 0 -or [int]$State.cloudflared_pid -le 0) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
-    $gatewayPath = [IO.Path]::GetFullPath([string]$State.gateway_executable)
-    $expectedGatewayPath = [IO.Path]::GetFullPath($ExpectedGatewayExecutable)
-    $cloudflaredPath = [IO.Path]::GetFullPath([string]$State.cloudflared_executable)
-    $expectedCloudflaredPath = [IO.Path]::GetFullPath([string]$Profile.CloudflaredPath)
-    if (-not $gatewayPath.Equals($expectedGatewayPath, [StringComparison]::OrdinalIgnoreCase) -or -not $cloudflaredPath.Equals($expectedCloudflaredPath, [StringComparison]::OrdinalIgnoreCase)) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
+    if ($AllowProfileDrift) {
+      $gatewayPath = Resolve-MediaInsideWorkspace ([string]$State.gateway_executable)
+      $cloudflaredPath = Resolve-MediaInsideWorkspace ([string]$State.cloudflared_executable)
+      if (-not (Test-Path -LiteralPath $gatewayPath -PathType Leaf) -or -not (Test-Path -LiteralPath $cloudflaredPath -PathType Leaf)) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
+      if ([IO.Path]::GetFileName($gatewayPath) -ine "node.exe" -or [IO.Path]::GetFileName($cloudflaredPath) -ine "cloudflared.exe") { throw "MEDIA_OPERATIONS_STATE_INVALID" }
+    } else {
+      $gatewayPath = [IO.Path]::GetFullPath([string]$State.gateway_executable)
+      $expectedGatewayPath = [IO.Path]::GetFullPath($ExpectedGatewayExecutable)
+      $cloudflaredPath = [IO.Path]::GetFullPath([string]$State.cloudflared_executable)
+      $expectedCloudflaredPath = [IO.Path]::GetFullPath([string]$Profile.CloudflaredPath)
+      if (-not $gatewayPath.Equals($expectedGatewayPath, [StringComparison]::OrdinalIgnoreCase) -or -not $cloudflaredPath.Equals($expectedCloudflaredPath, [StringComparison]::OrdinalIgnoreCase)) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
+    }
   } catch {
     if ($_.Exception.Message -in @("MEDIA_OPERATIONS_STATE_INVALID", "MEDIA_OPERATIONS_PROFILE_DRIFT")) { throw }
     throw "MEDIA_OPERATIONS_STATE_INVALID"
