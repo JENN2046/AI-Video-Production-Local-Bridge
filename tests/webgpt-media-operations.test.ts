@@ -103,6 +103,21 @@ test("readonly media preflight rejects an active and previous capability key wit
   assert.match(result.stderr, /MEDIA_CAPABILITY_KEY_INVALID/);
 });
 
+test("readonly media HTTP helper returns a stable zero for an unreachable endpoint", { skip: process.platform !== "win32" }, () => {
+  const command = [
+    ". $env:MEDIA_TEST_COMMON_SCRIPT",
+    "$status = Get-MediaHttp 'http://127.0.0.1:1/healthz' 1",
+    "if ($status -ne 0) { exit 2 }"
+  ].join("\n");
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], {
+    cwd: process.cwd(),
+    env: { ...process.env, MEDIA_TEST_COMMON_SCRIPT: join(process.cwd(), "scripts", "windows", "media-runtime-common.ps1") },
+    encoding: "utf8",
+    windowsHide: true
+  });
+  assert.equal(result.status, 0, result.stderr);
+});
+
 test("readonly media profile rejects a public health URL on a non-default port", { skip: process.platform !== "win32" }, () => {
   const root = join(process.cwd(), "data", "webgpt", `media-health-origin-test-${process.pid}-${Date.now()}`);
   const profilePath = join(root, "profile.json");

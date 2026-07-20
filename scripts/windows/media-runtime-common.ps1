@@ -252,7 +252,12 @@ function Test-MediaProcess([object]$Record, [string]$Kind) {
 }
 
 function Get-MediaHttp([string]$Url, [int]$TimeoutSec = 3) {
-  try { return [int](Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec $TimeoutSec).StatusCode } catch { return if ($null -ne $_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 } }
+  try {
+    return [int](Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec $TimeoutSec).StatusCode
+  } catch {
+    if ($null -ne $_.Exception.Response) { return [int]$_.Exception.Response.StatusCode }
+    return 0
+  }
 }
 
 function New-MediaInstanceProbe {
