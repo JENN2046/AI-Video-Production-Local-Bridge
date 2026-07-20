@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, rmdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { createServer } from "node:net";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import test from "node:test";
 
 function text(path: string): string {
@@ -38,6 +39,38 @@ test("readonly media operations pin cloudflared and keep secrets out of command 
   const preflight = text("scripts/windows/media-preflight.ps1");
   assert.match(preflight, /dist\/scripts\/db-check\.js --read-only/);
   assert.match(common, /Invoke-WebRequest -UseBasicParsing -Uri \$Url -TimeoutSec \$TimeoutSec -MaximumRedirection 0/);
+  assert.match(common, /FileAttributes\]::ReparsePoint/);
+  assert.match(common, /MEDIA_OPERATIONS_PATH_REPARSE_POINT/);
+});
+
+test("readonly media operations reject private paths through reparse points", { skip: process.platform !== "win32" }, () => {
+  const root = join(process.cwd(), "data", "webgpt", `media-reparse-test-${process.pid}-${Date.now()}`);
+  const target = mkdtempSync(join(tmpdir(), "media-reparse-target-"));
+  const junction = join(root, "private-link");
+  mkdirSync(root, { recursive: true });
+  symlinkSync(target, junction, "junction");
+  try {
+    const command = [
+      ". $env:MEDIA_TEST_COMMON_SCRIPT",
+      "try { Resolve-MediaInsideWorkspace $env:MEDIA_TEST_LINKED_PATH | Out-Null; exit 0 } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }"
+    ].join("\n");
+    const result = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        MEDIA_TEST_COMMON_SCRIPT: join(process.cwd(), "scripts", "windows", "media-runtime-common.ps1"),
+        MEDIA_TEST_LINKED_PATH: join(junction, "capability-key.dpapi")
+      },
+      encoding: "utf8",
+      windowsHide: true
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /MEDIA_OPERATIONS_PATH_REPARSE_POINT/);
+  } finally {
+    rmdirSync(junction);
+    rmSync(root, { recursive: true, force: true });
+    rmSync(target, { recursive: true, force: true });
+  }
 });
 
 test("readonly media logon task is current-user limited and starts gateway before tunnel", () => {

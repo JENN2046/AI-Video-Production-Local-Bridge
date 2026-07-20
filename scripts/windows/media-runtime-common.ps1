@@ -26,12 +26,19 @@ function Resolve-MediaInsideWorkspace([string]$PathValue) {
   $candidate = if ([System.IO.Path]::IsPathRooted($PathValue)) { [System.IO.Path]::GetFullPath($PathValue) } else { [System.IO.Path]::GetFullPath((Join-Path $script:MediaWorkspaceRoot $PathValue)) }
   $prefix = $script:MediaWorkspaceRoot.TrimEnd('\') + '\'
   if (-not $candidate.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { throw "MEDIA_OPERATIONS_PATH_OUTSIDE_WORKSPACE" }
+  $current = $script:MediaWorkspaceRoot
+  foreach ($segment in @($candidate.Substring($prefix.Length) -split '[\\/]' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
+    $current = Join-Path $current $segment
+    if (-not (Test-Path -LiteralPath $current)) { break }
+    try { $attributes = [IO.File]::GetAttributes($current) } catch { throw "MEDIA_OPERATIONS_PATH_INSPECTION_FAILED" }
+    if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw "MEDIA_OPERATIONS_PATH_REPARSE_POINT" }
+  }
   return $candidate
 }
 
 function Get-MediaProfilePath {
   $configured = [Environment]::GetEnvironmentVariable("READONLY_MEDIA_OPERATIONS_PROFILE_PATH", "Process")
-  if ([string]::IsNullOrWhiteSpace($configured)) { return $script:DefaultMediaProfilePath }
+  if ([string]::IsNullOrWhiteSpace($configured)) { return Resolve-MediaInsideWorkspace $script:DefaultMediaProfilePath }
   return Resolve-MediaInsideWorkspace $configured
 }
 
