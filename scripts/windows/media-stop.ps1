@@ -2,6 +2,7 @@
 
 try {
   $profile = Read-MediaProfile
+  Assert-MediaGitIgnored (Get-MediaPrivatePaths $profile)
   $state = Read-MediaState $profile
   if ($null -eq $state) { Write-MediaJson ([ordered]@{ result = "ALREADY_STOPPED"; gateway = $false; cloudflared = $false }); exit 0 }
   if ([string]$state.state_version -notin @("readonly-media-runtime-state-v1", "readonly-media-runtime-state-v2")) { throw "MEDIA_OPERATIONS_STATE_INVALID" }

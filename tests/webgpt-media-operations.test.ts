@@ -78,6 +78,11 @@ test("readonly media preflight accepts only a managed gateway matching the liste
   assert.match(statusScript, /Assert-MediaRuntimeStateIdentity \$profile \$node\.NodePath \$profileFingerprint \$state/);
   assert.match(stopScript, /readonly-media-runtime-state-v1/);
   assert.match(stopScript, /readonly-media-runtime-state-v2/);
+  const stopIgnoredBoundary = stopScript.indexOf("Assert-MediaGitIgnored (Get-MediaPrivatePaths $profile)");
+  const stopStateRead = stopScript.indexOf("Read-MediaState $profile");
+  const stopStateDelete = stopScript.indexOf("Remove-Item -LiteralPath $profile.StatePath -Force");
+  const stopCountsDelete = stopScript.indexOf("Remove-Item -LiteralPath $profile.CountsPath -Force");
+  assert.ok(stopIgnoredBoundary >= 0 && stopIgnoredBoundary < stopStateRead && stopIgnoredBoundary < stopStateDelete && stopIgnoredBoundary < stopCountsDelete);
 
   await context.test("Windows listener ownership rejects stale and drifted state", { skip: process.platform !== "win32" }, async () => {
     const root = join(process.cwd(), "data", "webgpt", `media-port-state-test-${process.pid}-${Date.now()}`);
