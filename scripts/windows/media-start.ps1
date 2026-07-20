@@ -87,8 +87,24 @@ try {
 
   $deadline = [DateTime]::UtcNow.AddSeconds(60)
   $publicHealth = [pscustomobject]@{ Status = 0; Valid = $false }
-  do { if ($cloudflared.HasExited) { break }; $publicHealth = Get-MediaGatewayHealth $profile.PublicHealthUrl 3 $instanceProbe; if ($publicHealth.Valid) { break }; Start-Sleep -Seconds 1 } while ([DateTime]::UtcNow -lt $deadline)
-  if ($cloudflared.HasExited -or -not $publicHealth.Valid) { if (-not $cloudflared.HasExited) { Stop-Process -Id $cloudflared.Id -ErrorAction SilentlyContinue }; Stop-Process -Id $gateway.Id -ErrorAction SilentlyContinue; throw "MEDIA_TUNNEL_NOT_READY" }
+  $currentInstanceSeen = $false
+  $consecutiveCurrentInstanceProbes = 0
+  $requiredConsecutiveCurrentInstanceProbes = 10
+  do {
+    if ($cloudflared.HasExited) { break }
+    $publicHealth = Get-MediaGatewayHealth $profile.PublicHealthUrl 3 $instanceProbe
+    if ($publicHealth.Valid) {
+      $currentInstanceSeen = $true
+      $consecutiveCurrentInstanceProbes++
+      if ($consecutiveCurrentInstanceProbes -ge $requiredConsecutiveCurrentInstanceProbes) { break }
+    } elseif ($currentInstanceSeen -and $publicHealth.Status -eq 200) {
+      throw "MEDIA_TUNNEL_ROUTE_NOT_EXCLUSIVE"
+    } elseif ($currentInstanceSeen) {
+      $consecutiveCurrentInstanceProbes = 0
+    }
+    Start-Sleep -Seconds 1
+  } while ([DateTime]::UtcNow -lt $deadline)
+  if ($cloudflared.HasExited -or $consecutiveCurrentInstanceProbes -lt $requiredConsecutiveCurrentInstanceProbes) { if (-not $cloudflared.HasExited) { Stop-Process -Id $cloudflared.Id -ErrorAction SilentlyContinue }; Stop-Process -Id $gateway.Id -ErrorAction SilentlyContinue; throw "MEDIA_TUNNEL_NOT_READY" }
 
   $state = [ordered]@{
     state_version = "readonly-media-runtime-state-v3"

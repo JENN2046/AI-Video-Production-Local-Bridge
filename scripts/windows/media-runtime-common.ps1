@@ -281,7 +281,7 @@ function Read-MediaState([object]$Profile) {
   try { return Get-Content -Raw -LiteralPath $Profile.StatePath | ConvertFrom-Json } catch { throw "MEDIA_OPERATIONS_STATE_INVALID" }
 }
 
-function Assert-MediaRuntimeStateIdentity([object]$Profile, [string]$ExpectedGatewayExecutable, [string]$ExpectedProfileFingerprint, [object]$State, [string]$ExpectedStateVersion = "readonly-media-runtime-state-v3") {
+function Assert-MediaRuntimeStateIdentity([object]$Profile, [string]$ExpectedGatewayExecutable, [string]$ExpectedProfileFingerprint, [object]$State, [string]$ExpectedStateVersion = "readonly-media-runtime-state-v3", [bool]$AllowProfileDrift = $false) {
   if ($ExpectedStateVersion -notin @("readonly-media-runtime-state-v2", "readonly-media-runtime-state-v3")) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
   $required = @("state_version", "profile_fingerprint", "gateway_pid", "gateway_start_time_utc", "gateway_executable", "cloudflared_pid", "cloudflared_start_time_utc", "cloudflared_executable", "started_at_utc", "gateway_port")
   if ($ExpectedStateVersion -eq "readonly-media-runtime-state-v3") { $required += "instance_probe" }
@@ -291,7 +291,7 @@ function Assert-MediaRuntimeStateIdentity([object]$Profile, [string]$ExpectedGat
     if ([string]$State.state_version -ne $ExpectedStateVersion -or [int]$State.gateway_port -ne [int]$Profile.GatewayPort) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
     if ([string]$State.profile_fingerprint -notmatch '^[0-9a-f]{64}$') { throw "MEDIA_OPERATIONS_STATE_INVALID" }
     if ($ExpectedStateVersion -eq "readonly-media-runtime-state-v3" -and [string]$State.instance_probe -notmatch '^[A-Za-z0-9_-]{43}$') { throw "MEDIA_OPERATIONS_STATE_INVALID" }
-    if ([string]$State.profile_fingerprint -cne $ExpectedProfileFingerprint) { throw "MEDIA_OPERATIONS_PROFILE_DRIFT" }
+    if (-not $AllowProfileDrift -and [string]$State.profile_fingerprint -cne $ExpectedProfileFingerprint) { throw "MEDIA_OPERATIONS_PROFILE_DRIFT" }
     if ([int]$State.gateway_pid -le 0 -or [int]$State.cloudflared_pid -le 0) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
     $gatewayPath = [IO.Path]::GetFullPath([string]$State.gateway_executable)
     $expectedGatewayPath = [IO.Path]::GetFullPath($ExpectedGatewayExecutable)

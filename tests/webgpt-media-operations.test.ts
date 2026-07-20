@@ -49,8 +49,10 @@ test("readonly media operations pin cloudflared and keep secrets out of command 
   assert.match(common, /readonly-media-runtime-state-v3/);
   assert.match(preflight, /Assert-MediaCapabilityKeyring/);
   assert.match(start, /Get-MediaGatewayHealth \$profile\.PublicHealthUrl 3 \$instanceProbe/);
-  assert.match(start, /if \(\$publicHealth\.Valid\) \{ break \}/);
+  assert.match(start, /if \(\$publicHealth\.Valid\) \{[\s\S]*?\$consecutiveCurrentInstanceProbes\+\+/);
   assert.doesNotMatch(start, /\$publicHealth\.Valid\s+-or\s+\$publicHealth\.Status/);
+  assert.match(start, /\$requiredConsecutiveCurrentInstanceProbes = 10/);
+  assert.match(start, /MEDIA_TUNNEL_ROUTE_NOT_EXCLUSIVE/);
 });
 
 test("readonly media operations reject private paths through reparse points", { skip: process.platform !== "win32" }, () => {
@@ -195,6 +197,9 @@ test("readonly media preflight accepts only a managed gateway matching the liste
   const stopGatewayProcessCheck = stopScript.indexOf('$gateway = Test-MediaProcess $state "gateway"');
   const stopGatewayTermination = stopScript.indexOf("Stop-Process -Id ([int]$state.gateway_pid)");
   assert.ok(stopIdentityValidation >= 0 && stopIdentityValidation < stopGatewayProcessCheck && stopIdentityValidation < stopGatewayTermination);
+  const stopDriftLocalHealth = stopScript.indexOf("Get-MediaGatewayHealth", stopIdentityValidation);
+  assert.ok(stopDriftLocalHealth > stopGatewayProcessCheck && stopDriftLocalHealth < stopGatewayTermination);
+  assert.match(stopScript, /MEDIA_GATEWAY_INSTANCE_MISMATCH/);
   const stopIgnoredBoundary = stopScript.indexOf("Assert-MediaGitIgnored (Get-MediaPrivatePaths $profile)");
   const stopStateRead = stopScript.indexOf("Read-MediaState $profile");
   const stopStateDelete = stopScript.indexOf("Remove-Item -LiteralPath $profile.StatePath -Force");
