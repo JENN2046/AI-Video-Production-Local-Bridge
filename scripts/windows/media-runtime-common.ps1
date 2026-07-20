@@ -299,6 +299,14 @@ function Get-MediaGatewayHealth([string]$Url, [int]$TimeoutSec = 3, [string]$Exp
   }
 }
 
+function Test-MediaCloudflaredEdgeTransport([int]$OwningProcessId) {
+  if ($OwningProcessId -le 0) { return $false }
+  if (@(Get-NetTCPConnection -OwningProcess $OwningProcessId -RemotePort 7844 -State Established -ErrorAction SilentlyContinue).Count -gt 0) {
+    return $true
+  }
+  return @(Get-NetUDPEndpoint -OwningProcess $OwningProcessId -ErrorAction SilentlyContinue).Count -gt 0
+}
+
 function Get-MediaListenerPid([int]$Port) {
   $listeners = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
   if ($listeners.Count -eq 0) { return $null }

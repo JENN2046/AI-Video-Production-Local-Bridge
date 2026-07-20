@@ -95,7 +95,7 @@ try {
   $requiredConsecutiveCurrentInstanceProbes = 10
   do {
     if ($cloudflared.HasExited) { break }
-    if (@(Get-NetTCPConnection -OwningProcess $cloudflared.Id -RemotePort 7844 -State Established -ErrorAction SilentlyContinue).Count -gt 0) { $edgeTransportConnected = $true }
+    if (Test-MediaCloudflaredEdgeTransport $cloudflared.Id) { $edgeTransportConnected = $true }
     $publicHealth = Get-MediaGatewayHealth $profile.PublicHealthUrl 3 $instanceProbe
     if ($publicHealth.Status -eq 200) { $anyHttp200 = $true }
     if ($publicHealth.Valid) {

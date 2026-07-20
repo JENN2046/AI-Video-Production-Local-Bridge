@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, rmdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { createSocket } from "node:dgram";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -27,7 +28,9 @@ test("readonly media operations pin cloudflared and keep secrets out of command 
   assert.match(start, /MEDIA_GATEWAY_LISTENER_IDENTITY_MISMATCH/);
   assert.match(start, /\$env:TUNNEL_TOKEN/);
   assert.doesNotMatch(start, /--token(?:-file)?\b/i);
-  assert.match(start, /Get-NetTCPConnection -OwningProcess \$cloudflared\.Id -RemotePort 7844 -State Established/);
+  assert.match(common, /Get-NetTCPConnection -OwningProcess \$OwningProcessId -RemotePort 7844 -State Established/);
+  assert.match(common, /Get-NetUDPEndpoint -OwningProcess \$OwningProcessId/);
+  assert.match(start, /Test-MediaCloudflaredEdgeTransport \$cloudflared\.Id/);
   assert.match(start, /\$publicTunnelReadinessTimeoutSeconds = 120/);
   assert.match(start, /AddSeconds\(\$publicTunnelReadinessTimeoutSeconds\)/);
   assert.match(start, /MEDIA_TUNNEL_EDGE_UNREACHABLE/);
@@ -84,6 +87,35 @@ test("readonly media tunnel startup reports a stable bounded failure reason", { 
     windowsHide: true
   });
   assert.equal(result.status, 0, result.stderr);
+});
+
+test("readonly media tunnel edge detection accepts a QUIC UDP session", { skip: process.platform !== "win32" }, async () => {
+  const socket = createSocket("udp4");
+  await new Promise<void>((resolve, reject) => {
+    socket.once("error", reject);
+    socket.bind(0, "127.0.0.1", () => resolve());
+  });
+  try {
+    const command = [
+      ". $env:MEDIA_TEST_COMMON_SCRIPT",
+      "if (Test-MediaCloudflaredEdgeTransport ([int]$env:MEDIA_TEST_UDP_PID)) { exit 0 }",
+      "[Console]::Error.WriteLine('MEDIA_TUNNEL_QUIC_NOT_DETECTED')",
+      "exit 1"
+    ].join("\n");
+    const result = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        MEDIA_TEST_COMMON_SCRIPT: join(process.cwd(), "scripts", "windows", "media-runtime-common.ps1"),
+        MEDIA_TEST_UDP_PID: String(process.pid)
+      },
+      encoding: "utf8",
+      windowsHide: true
+    });
+    assert.equal(result.status, 0, result.stderr);
+  } finally {
+    socket.close();
+  }
 });
 
 test("readonly media operations reject private paths through reparse points", { skip: process.platform !== "win32" }, () => {
