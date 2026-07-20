@@ -4,7 +4,11 @@ try {
   $profile = Read-MediaProfile
   Assert-MediaGitIgnored (Get-MediaPrivatePaths $profile)
   $state = Read-MediaState $profile
-  if ($null -eq $state) { Write-MediaJson ([ordered]@{ result = "ALREADY_STOPPED"; gateway = $false; cloudflared = $false }); exit 0 }
+  if ($null -eq $state) {
+    if ($null -ne (Get-MediaListenerPid $profile.GatewayPort)) { throw "MEDIA_OPERATIONS_STATE_MISSING_WITH_LISTENER" }
+    Write-MediaJson ([ordered]@{ result = "ALREADY_STOPPED"; gateway = $false; cloudflared = $false })
+    exit 0
+  }
   if ([string]$state.state_version -notin @("readonly-media-runtime-state-v1", "readonly-media-runtime-state-v2")) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
   $gateway = Test-MediaProcess $state "gateway"
   $cloudflared = Test-MediaProcess $state "cloudflared"
