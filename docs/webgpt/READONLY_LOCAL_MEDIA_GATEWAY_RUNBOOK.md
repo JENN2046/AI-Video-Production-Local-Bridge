@@ -46,6 +46,8 @@ npm run media:remove-logon-task
 
 `media:status` reports only process state, local health/readiness, public health, active capability/session counts, and a stable error code. It never returns paths, media names, principal identifiers, key state or token material.
 
+Before external playback acceptance, create an isolated MP4 fixture with `npm run media:fixture:create -- -InputPath <mp4> -Issuer <issuer> -ResourceUrl <resource>`. The wrapper reads the Auth0 `user_id/sub` through a masked prompt, never places it on the command line, copies rather than modifies the source MP4, and creates a fresh ledger-`0008` database plus managed media under Git-ignored `data/webgpt/media-acceptance/`. It prints only a random run ID and boolean checks. Verify the result with `npm run media:fixture:verify -- --run <run_id> --issuer <issuer> --resource <resource>`; verification is read-only and emits only counts and stable checks. Neither command publishes a Snapshot or starts the Tunnel.
+
 `media:install-logon-task` creates `Jenn AI Video Readonly Media Gateway` for Jenn's current interactive user with a 30-second logon delay, `RunLevel Limited`, one instance, and at most three one-minute retries. It does not use `SYSTEM`, Administrator, or a stored Windows password. Installing or removing this task requires a separate current authorization; merging this code does not install it.
 
 ## Cloudflare external gate
