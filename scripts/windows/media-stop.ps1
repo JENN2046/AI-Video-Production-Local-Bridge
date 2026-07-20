@@ -18,14 +18,16 @@ try {
   Assert-MediaRuntimeStateIdentity $profile $node.NodePath $profileFingerprint $state ([string]$state.state_version) $allowProfileDrift
   $gateway = Test-MediaProcess $state "gateway"
   $cloudflared = Test-MediaProcess $state "cloudflared"
-  if ($profileDrift) {
-    if (-not $gateway -or -not $cloudflared) { throw "MEDIA_OPERATIONS_STATE_CONFLICT" }
-    if ((Get-MediaListenerPid $profile.GatewayPort) -ne [int]$state.gateway_pid) { throw "MEDIA_GATEWAY_LISTENER_IDENTITY_MISMATCH" }
-    $localHealth = Get-MediaGatewayHealth "http://127.0.0.1:$($profile.GatewayPort)/healthz" 3 ([string]$state.instance_probe)
-    if (-not $localHealth.Valid) { throw "MEDIA_GATEWAY_INSTANCE_MISMATCH" }
-  }
   if (-not $gateway -and (Get-Process -Id ([int]$state.gateway_pid) -ErrorAction SilentlyContinue)) { throw "MEDIA_GATEWAY_PROCESS_IDENTITY_MISMATCH" }
   if (-not $cloudflared -and (Get-Process -Id ([int]$state.cloudflared_pid) -ErrorAction SilentlyContinue)) { throw "MEDIA_TUNNEL_PROCESS_IDENTITY_MISMATCH" }
+  if ($profileDrift) {
+    $listener = Get-MediaListenerPid $profile.GatewayPort
+    $requireInstanceProbe = Assert-MediaDriftStopTopology $gateway $cloudflared $listener ([int]$state.gateway_pid)
+    if ($requireInstanceProbe) {
+      $localHealth = Get-MediaGatewayHealth "http://127.0.0.1:$($profile.GatewayPort)/healthz" 3 ([string]$state.instance_probe)
+      if (-not $localHealth.Valid) { throw "MEDIA_GATEWAY_INSTANCE_MISMATCH" }
+    }
+  }
   if ($cloudflared) { Stop-Process -Id ([int]$state.cloudflared_pid) -ErrorAction Stop }
   if ($gateway) { Stop-Process -Id ([int]$state.gateway_pid) -ErrorAction Stop }
   $deadline = [DateTime]::UtcNow.AddSeconds(15)

@@ -211,6 +211,36 @@ test("readonly media preflight accepts only a managed gateway matching the liste
   assert.ok(stopMissingState >= 0 && stopListenerCheck > stopMissingState && stopListenerCheck < stopAlreadyStopped);
   assert.match(stopScript, /MEDIA_OPERATIONS_STATE_MISSING_WITH_LISTENER/);
 
+  await context.test("Windows drift stop accepts stale and partial managed runtime topologies", { skip: process.platform !== "win32" }, () => {
+    const command = [
+      ". $env:MEDIA_TEST_COMMON_SCRIPT",
+      "$cases = @(",
+      "  [pscustomobject]@{ gateway = $false; cloudflared = $false; listener = $null; expected = $false },",
+      "  [pscustomobject]@{ gateway = $false; cloudflared = $true; listener = $null; expected = $false },",
+      "  [pscustomobject]@{ gateway = $true; cloudflared = $false; listener = $null; expected = $false },",
+      "  [pscustomobject]@{ gateway = $true; cloudflared = $true; listener = 41; expected = $true }",
+      ")",
+      "foreach ($case in $cases) {",
+      "  $actual = Assert-MediaDriftStopTopology $case.gateway $case.cloudflared $case.listener 41",
+      "  if ([bool]$actual -ne [bool]$case.expected) { exit 2 }",
+      "}",
+      "try { Assert-MediaDriftStopTopology $true $false 42 41; exit 3 } catch { if ($_.Exception.Message -ne 'MEDIA_GATEWAY_LISTENER_IDENTITY_MISMATCH') { throw } }",
+      "try { Assert-MediaDriftStopTopology $false $true 42 41; exit 4 } catch { if ($_.Exception.Message -ne 'MEDIA_GATEWAY_LISTENER_IDENTITY_MISMATCH') { throw } }",
+      "[Console]::Out.WriteLine('PASS')"
+    ].join("\n");
+    const result = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        MEDIA_TEST_COMMON_SCRIPT: join(process.cwd(), "scripts", "windows", "media-runtime-common.ps1")
+      },
+      encoding: "utf8",
+      windowsHide: true
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), "PASS");
+  });
+
   await context.test("Windows listener ownership rejects stale and drifted state", { skip: process.platform !== "win32" }, async () => {
     const root = join(process.cwd(), "data", "webgpt", `media-port-state-test-${process.pid}-${Date.now()}`);
     const statePath = join(root, "media-state.json");

@@ -311,6 +311,15 @@ function Assert-MediaRuntimeStateIdentity([object]$Profile, [string]$ExpectedGat
   }
 }
 
+function Assert-MediaDriftStopTopology([bool]$GatewayRunning, [bool]$CloudflaredRunning, [object]$ListenerPid, [int]$ExpectedGatewayPid) {
+  if ($GatewayRunning) {
+    if ($null -ne $ListenerPid -and [int]$ListenerPid -ne $ExpectedGatewayPid) { throw "MEDIA_GATEWAY_LISTENER_IDENTITY_MISMATCH" }
+    return $null -ne $ListenerPid
+  }
+  if ($null -ne $ListenerPid) { throw "MEDIA_GATEWAY_LISTENER_IDENTITY_MISMATCH" }
+  return $false
+}
+
 function Assert-MediaPreflightPortState([object]$Profile, [string]$ExpectedGatewayExecutable, [string]$ExpectedProfileFingerprint) {
   $listener = Get-MediaListenerPid $Profile.GatewayPort
   $state = Read-MediaState $Profile
