@@ -116,6 +116,32 @@ function Get-MediaRuntimeProfileFingerprint([object]$Profile, [string]$GatewayEx
   }
 }
 
+function Get-MediaStopRuntimeIdentity([object]$Profile, [object]$State) {
+  try {
+    $node = Resolve-MediaNode22
+    return [pscustomobject]@{
+      CurrentProfileVerified = $true
+      GatewayExecutable = $node.NodePath
+      ProfileFingerprint = Get-MediaRuntimeProfileFingerprint $Profile $node.NodePath
+    }
+  } catch {
+    $recoverable = @(
+      "MEDIA_OPERATIONS_SECRET_NOT_FOUND",
+      "MEDIA_CLOUDFLARED_NOT_FOUND",
+      "MEDIA_CLOUDFLARED_MANIFEST_INVALID",
+      "MEDIA_NODE22_NOT_FOUND",
+      "MEDIA_NODE22_REQUIRED",
+      "MEDIA_NODE22_NPM_NOT_FOUND"
+    )
+    if ([string]$State.state_version -ne "readonly-media-runtime-state-v3" -or $_.Exception.Message -notin $recoverable) { throw }
+    return [pscustomobject]@{
+      CurrentProfileVerified = $false
+      GatewayExecutable = [string]$State.gateway_executable
+      ProfileFingerprint = [string]$State.profile_fingerprint
+    }
+  }
+}
+
 function Read-MediaProfile {
   $profilePath = Get-MediaProfilePath
   if (-not (Test-Path -LiteralPath $profilePath -PathType Leaf)) { throw "MEDIA_OPERATIONS_PROFILE_NOT_FOUND" }
@@ -294,10 +320,11 @@ function Assert-MediaRuntimeStateIdentity([object]$Profile, [string]$ExpectedGat
     if (-not $AllowProfileDrift -and [string]$State.profile_fingerprint -cne $ExpectedProfileFingerprint) { throw "MEDIA_OPERATIONS_PROFILE_DRIFT" }
     if ([int]$State.gateway_pid -le 0 -or [int]$State.cloudflared_pid -le 0) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
     if ($AllowProfileDrift) {
-      $gatewayPath = Resolve-MediaInsideWorkspace ([string]$State.gateway_executable)
+      $gatewayPath = [IO.Path]::GetFullPath([string]$State.gateway_executable)
       $cloudflaredPath = Resolve-MediaInsideWorkspace ([string]$State.cloudflared_executable)
       if (-not (Test-Path -LiteralPath $gatewayPath -PathType Leaf) -or -not (Test-Path -LiteralPath $cloudflaredPath -PathType Leaf)) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
       if ([IO.Path]::GetFileName($gatewayPath) -ine "node.exe" -or [IO.Path]::GetFileName($cloudflaredPath) -ine "cloudflared.exe") { throw "MEDIA_OPERATIONS_STATE_INVALID" }
+      if ((([IO.File]::GetAttributes($gatewayPath)) -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
     } else {
       $gatewayPath = [IO.Path]::GetFullPath([string]$State.gateway_executable)
       $expectedGatewayPath = [IO.Path]::GetFullPath($ExpectedGatewayExecutable)

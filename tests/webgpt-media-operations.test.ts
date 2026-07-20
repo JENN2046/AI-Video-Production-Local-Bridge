@@ -193,10 +193,12 @@ test("readonly media preflight accepts only a managed gateway matching the liste
   assert.match(stopScript, /readonly-media-runtime-state-v1/);
   assert.match(stopScript, /readonly-media-runtime-state-v2/);
   assert.match(stopScript, /MEDIA_OPERATIONS_RESTART_REQUIRED/);
-  const stopIdentityValidation = stopScript.indexOf("Assert-MediaRuntimeStateIdentity $profile $node.NodePath $profileFingerprint $state");
+  const stopRuntimeIdentity = stopScript.indexOf("Get-MediaStopRuntimeIdentity $profile $state");
+  const stopIdentityValidation = stopScript.indexOf("Assert-MediaRuntimeStateIdentity $profile ([string]$runtimeIdentity.GatewayExecutable) $profileFingerprint $state");
   const stopGatewayProcessCheck = stopScript.indexOf('$gateway = Test-MediaProcess $state "gateway"');
   const stopGatewayTermination = stopScript.indexOf("Stop-Process -Id ([int]$state.gateway_pid)");
-  assert.ok(stopIdentityValidation >= 0 && stopIdentityValidation < stopGatewayProcessCheck && stopIdentityValidation < stopGatewayTermination);
+  assert.ok(stopRuntimeIdentity >= 0 && stopRuntimeIdentity < stopIdentityValidation);
+  assert.ok(stopIdentityValidation > stopRuntimeIdentity && stopIdentityValidation < stopGatewayProcessCheck && stopIdentityValidation < stopGatewayTermination);
   const stopDriftLocalHealth = stopScript.indexOf("Get-MediaGatewayHealth", stopIdentityValidation);
   assert.ok(stopDriftLocalHealth > stopGatewayProcessCheck && stopDriftLocalHealth < stopGatewayTermination);
   assert.match(stopScript, /MEDIA_GATEWAY_INSTANCE_MISMATCH/);
@@ -296,18 +298,20 @@ test("readonly media preflight accepts only a managed gateway matching the liste
     }
   });
 
-  await context.test("Windows drift recovery trusts only workspace-owned saved executables", { skip: process.platform !== "win32" }, () => {
+  await context.test("Windows drift recovery accepts an external saved Node but keeps cloudflared workspace-bound", { skip: process.platform !== "win32" }, () => {
     const root = join(process.cwd(), "data", "webgpt", `media-drift-executable-test-${process.pid}-${Date.now()}`);
+    const externalRoot = mkdtempSync(join(tmpdir(), "media-drift-node-"));
     const currentRoot = join(root, "current");
     const savedRoot = join(root, "saved");
     mkdirSync(currentRoot, { recursive: true });
     mkdirSync(savedRoot, { recursive: true });
     const currentNode = join(currentRoot, "node.exe");
     const currentCloudflared = join(currentRoot, "cloudflared.exe");
-    const savedNode = join(savedRoot, "node.exe");
+    const savedNode = join(externalRoot, "node.exe");
+    const externalCloudflared = join(externalRoot, "cloudflared.exe");
     const savedCloudflared = join(savedRoot, "cloudflared.exe");
     const invalidCloudflared = join(savedRoot, "helper.exe");
-    for (const path of [currentNode, currentCloudflared, savedNode, savedCloudflared, invalidCloudflared]) {
+    for (const path of [currentNode, currentCloudflared, savedNode, externalCloudflared, savedCloudflared, invalidCloudflared]) {
       writeFileSync(path, "fixture", "utf8");
     }
 
@@ -319,6 +323,8 @@ test("readonly media preflight accepts only a managed gateway matching the liste
         "Assert-MediaRuntimeStateIdentity $profile $env:MEDIA_TEST_CURRENT_NODE ('a' * 64) $state 'readonly-media-runtime-state-v3' $true",
         "$state.cloudflared_executable = $env:MEDIA_TEST_INVALID_CLOUDFLARED",
         "try { Assert-MediaRuntimeStateIdentity $profile $env:MEDIA_TEST_CURRENT_NODE ('a' * 64) $state 'readonly-media-runtime-state-v3' $true; exit 2 } catch { if ($_.Exception.Message -ne 'MEDIA_OPERATIONS_STATE_INVALID') { throw } }",
+        "$state.cloudflared_executable = $env:MEDIA_TEST_EXTERNAL_CLOUDFLARED",
+        "try { Assert-MediaRuntimeStateIdentity $profile $env:MEDIA_TEST_CURRENT_NODE ('a' * 64) $state 'readonly-media-runtime-state-v3' $true; exit 3 } catch { if ($_.Exception.Message -ne 'MEDIA_OPERATIONS_STATE_INVALID') { throw } }",
         "[Console]::Out.WriteLine('PASS')"
       ].join("\n");
       const result = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], {
@@ -330,7 +336,43 @@ test("readonly media preflight accepts only a managed gateway matching the liste
           MEDIA_TEST_CURRENT_CLOUDFLARED: currentCloudflared,
           MEDIA_TEST_SAVED_NODE: savedNode,
           MEDIA_TEST_SAVED_CLOUDFLARED: savedCloudflared,
+          MEDIA_TEST_EXTERNAL_CLOUDFLARED: externalCloudflared,
           MEDIA_TEST_INVALID_CLOUDFLARED: invalidCloudflared
+        },
+        encoding: "utf8",
+        windowsHide: true
+      });
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stdout.trim(), "PASS");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(externalRoot, { recursive: true, force: true });
+    }
+  });
+
+  await context.test("Windows drift stop tolerates missing replacement profile secrets only for v3 state", { skip: process.platform !== "win32" }, () => {
+    const root = join(process.cwd(), "data", "webgpt", `media-stop-missing-secret-test-${process.pid}-${Date.now()}`);
+    mkdirSync(root, { recursive: true });
+    try {
+      const command = [
+        ". $env:MEDIA_TEST_COMMON_SCRIPT",
+        "$state = [pscustomobject]@{ state_version = 'readonly-media-runtime-state-v3'; profile_fingerprint = ('b' * 64); gateway_executable = $env:MEDIA_TEST_NODE }",
+        "$profile = [pscustomobject]@{ ProfilePath = $env:MEDIA_TEST_MISSING; DatabasePath = $env:MEDIA_TEST_MISSING; IssuerHash = ('a' * 64); AllowedOrigin = 'https://aivideo.skmt617.top'; GatewayPort = 2092; MediaRoots = @($env:MEDIA_TEST_ROOT); CapabilityKid = 'next'; CapabilityKeyPath = $env:MEDIA_TEST_MISSING; PreviousCapability = $null; CloudflaredPath = $env:MEDIA_TEST_MISSING; CloudflaredManifestPath = $env:MEDIA_TEST_MISSING; TunnelTokenPath = $env:MEDIA_TEST_MISSING; PublicHealthUrl = 'https://media.skmt617.top/healthz'; RuntimeDirectory = $env:MEDIA_TEST_ROOT }",
+        "$identity = Get-MediaStopRuntimeIdentity $profile $state",
+        "if ($identity.CurrentProfileVerified -or $identity.GatewayExecutable -cne $state.gateway_executable -or $identity.ProfileFingerprint -cne $state.profile_fingerprint) { exit 2 }",
+        "$state.state_version = 'readonly-media-runtime-state-v2'",
+        "try { Get-MediaStopRuntimeIdentity $profile $state | Out-Null; exit 3 } catch { if ($_.Exception.Message -ne 'MEDIA_OPERATIONS_SECRET_NOT_FOUND') { throw } }",
+        "[Console]::Out.WriteLine('PASS')"
+      ].join("\n");
+      const result = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          AI_VIDEO_NODE22_PATH: join(process.cwd(), "ops", "tools", "node-v22.23.1-win-x64", "node.exe"),
+          MEDIA_TEST_COMMON_SCRIPT: join(process.cwd(), "scripts", "windows", "media-runtime-common.ps1"),
+          MEDIA_TEST_NODE: join(process.cwd(), "ops", "tools", "node-v22.23.1-win-x64", "node.exe"),
+          MEDIA_TEST_MISSING: join(root, "missing.bin"),
+          MEDIA_TEST_ROOT: root
         },
         encoding: "utf8",
         windowsHide: true
