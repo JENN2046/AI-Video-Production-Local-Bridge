@@ -184,6 +184,11 @@ test("readonly media preflight accepts only a managed gateway matching the liste
   assert.match(statusScript, /Assert-MediaRuntimeStateIdentity \$profile \$node\.NodePath \$profileFingerprint \$state/);
   assert.match(stopScript, /readonly-media-runtime-state-v1/);
   assert.match(stopScript, /readonly-media-runtime-state-v2/);
+  assert.match(stopScript, /MEDIA_OPERATIONS_RESTART_REQUIRED/);
+  const stopIdentityValidation = stopScript.indexOf("Assert-MediaRuntimeStateIdentity $profile $node.NodePath $profileFingerprint $state");
+  const stopGatewayProcessCheck = stopScript.indexOf('$gateway = Test-MediaProcess $state "gateway"');
+  const stopGatewayTermination = stopScript.indexOf("Stop-Process -Id ([int]$state.gateway_pid)");
+  assert.ok(stopIdentityValidation >= 0 && stopIdentityValidation < stopGatewayProcessCheck && stopIdentityValidation < stopGatewayTermination);
   const stopIgnoredBoundary = stopScript.indexOf("Assert-MediaGitIgnored (Get-MediaPrivatePaths $profile)");
   const stopStateRead = stopScript.indexOf("Read-MediaState $profile");
   const stopStateDelete = stopScript.indexOf("Remove-Item -LiteralPath $profile.StatePath -Force");

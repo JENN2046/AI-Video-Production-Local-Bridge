@@ -9,7 +9,11 @@ try {
     Write-MediaJson ([ordered]@{ result = "ALREADY_STOPPED"; gateway = $false; cloudflared = $false })
     exit 0
   }
-  if ([string]$state.state_version -notin @("readonly-media-runtime-state-v1", "readonly-media-runtime-state-v2", "readonly-media-runtime-state-v3")) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
+  if ([string]$state.state_version -eq "readonly-media-runtime-state-v1") { throw "MEDIA_OPERATIONS_RESTART_REQUIRED" }
+  if ([string]$state.state_version -notin @("readonly-media-runtime-state-v2", "readonly-media-runtime-state-v3")) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
+  $node = Resolve-MediaNode22
+  $profileFingerprint = Get-MediaRuntimeProfileFingerprint $profile $node.NodePath
+  Assert-MediaRuntimeStateIdentity $profile $node.NodePath $profileFingerprint $state ([string]$state.state_version)
   $gateway = Test-MediaProcess $state "gateway"
   $cloudflared = Test-MediaProcess $state "cloudflared"
   if (-not $gateway -and (Get-Process -Id ([int]$state.gateway_pid) -ErrorAction SilentlyContinue)) { throw "MEDIA_GATEWAY_PROCESS_IDENTITY_MISMATCH" }
