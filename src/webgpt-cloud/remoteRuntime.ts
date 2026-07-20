@@ -558,7 +558,7 @@ export async function startReadonlyRemoteRuntime(options: StartReadonlyRemoteRun
         };
         const mediaCapabilityRoundtrip = await mediaCapabilityReadiness();
         const checks = { ...coreChecks, media_capability_roundtrip: mediaCapabilityRoundtrip };
-        const ok = Object.values(coreChecks).every(Boolean);
+        const ok = Object.values(coreChecks).every(Boolean) && mediaCapabilityRoundtrip !== false;
         status = ok ? 200 : 503;
         if (!ok) stableErrorCode = "READONLY_REMOTE_NOT_READY";
         sendJson(response, status, {
