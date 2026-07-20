@@ -8,6 +8,7 @@ $previousKey = $null
 $instanceProbe = $null
 $previousEnvironmentVariables = @("READONLY_MEDIA_GATEWAY_PREVIOUS_KID", "READONLY_MEDIA_GATEWAY_PREVIOUS_KEY_B64URL", "READONLY_MEDIA_GATEWAY_PREVIOUS_ACCEPTED_FROM", "READONLY_MEDIA_GATEWAY_PREVIOUS_ACCEPTED_UNTIL")
 try {
+  Remove-Item Env:TUNNEL_TOKEN -ErrorAction SilentlyContinue
   $profile = Read-MediaProfile
   Assert-MediaGitIgnored (Get-MediaPrivatePaths $profile)
   $node = Resolve-MediaNode22

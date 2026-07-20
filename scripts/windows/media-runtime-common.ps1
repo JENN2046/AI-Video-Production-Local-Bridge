@@ -129,7 +129,7 @@ function Read-MediaProfile {
   if ($raw.media_roots -isnot [Array] -or $raw.media_roots.Count -lt 1) { throw "MEDIA_OPERATIONS_PROFILE_INVALID" }
   if ([string]$raw.capability_key.kid -notmatch '^[A-Za-z0-9._-]{1,64}$') { throw "MEDIA_OPERATIONS_PROFILE_INVALID" }
   try { $publicHealth = [Uri]([string]$raw.cloudflared.public_health_url) } catch { throw "MEDIA_OPERATIONS_PROFILE_INVALID" }
-  if ($publicHealth.Scheme -ne "https" -or $publicHealth.Host -ne "media.skmt617.top" -or $publicHealth.AbsolutePath -ne "/healthz" -or $publicHealth.Query -or $publicHealth.Fragment -or -not [string]::IsNullOrEmpty($publicHealth.UserInfo)) { throw "MEDIA_OPERATIONS_PROFILE_INVALID" }
+  if ([string]$raw.cloudflared.public_health_url -cne "https://media.skmt617.top/healthz" -or $publicHealth.Scheme -ne "https" -or $publicHealth.Host -ne "media.skmt617.top" -or $publicHealth.Port -ne 443 -or $publicHealth.AbsolutePath -ne "/healthz" -or $publicHealth.Query -or $publicHealth.Fragment -or -not [string]::IsNullOrEmpty($publicHealth.UserInfo)) { throw "MEDIA_OPERATIONS_PROFILE_INVALID" }
 
   $runtimeDirectory = Resolve-MediaInsideWorkspace ([string]$raw.runtime_directory)
   $previousCapability = $null

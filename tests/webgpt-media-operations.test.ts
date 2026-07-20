@@ -33,6 +33,9 @@ test("readonly media operations pin cloudflared and keep secrets out of command 
   const previousProfileBranch = start.indexOf('if ($null -ne $profile.PreviousCapability)');
   const gatewayProcessStart = start.indexOf("$gateway = Start-Process");
   assert.ok(previousEnvironmentClear >= 0 && previousEnvironmentClear < previousProfileBranch && previousEnvironmentClear < gatewayProcessStart);
+  const inheritedTunnelTokenClear = start.indexOf("Remove-Item Env:TUNNEL_TOKEN");
+  const tunnelTokenInjection = start.indexOf("$env:TUNNEL_TOKEN =");
+  assert.ok(inheritedTunnelTokenClear >= 0 && inheritedTunnelTokenClear < gatewayProcessStart && tunnelTokenInjection > gatewayProcessStart);
   assert.match(status, /active_capabilities/);
   assert.match(status, /active_sessions/);
   assert.doesNotMatch(status, /CapabilityKeyPath|TunnelTokenPath|DatabasePath|MediaRoots|IssuerHash/);
@@ -93,6 +96,44 @@ test("readonly media preflight rejects an active and previous capability key wit
   });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /MEDIA_CAPABILITY_KEY_INVALID/);
+});
+
+test("readonly media profile rejects a public health URL on a non-default port", { skip: process.platform !== "win32" }, () => {
+  const root = join(process.cwd(), "data", "webgpt", `media-health-origin-test-${process.pid}-${Date.now()}`);
+  const profilePath = join(root, "profile.json");
+  mkdirSync(root, { recursive: true });
+  try {
+    writeFileSync(profilePath, JSON.stringify({
+      profile_version: "readonly-media-operations-profile-v1",
+      database_path: "data/app.sqlite",
+      issuer_hash: "a".repeat(64),
+      allowed_origin: "https://aivideo.skmt617.top",
+      gateway_port: 2092,
+      media_roots: ["data/media"],
+      capability_key: { kid: "fixture-key", protected_path: "data/webgpt/media-key.dpapi" },
+      cloudflared: {
+        executable_path: "ops/tools/cloudflared.exe",
+        manifest_path: "ops/manifests/cloudflared-windows-amd64.json",
+        protected_token_path: "data/webgpt/tunnel-token.dpapi",
+        public_health_url: "https://media.skmt617.top:8443/healthz"
+      },
+      runtime_directory: "data/webgpt/media-runtime"
+    }), "utf8");
+    const result = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ". $env:MEDIA_TEST_COMMON_SCRIPT; try { Read-MediaProfile | Out-Null; exit 0 } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }"], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        MEDIA_TEST_COMMON_SCRIPT: join(process.cwd(), "scripts", "windows", "media-runtime-common.ps1"),
+        READONLY_MEDIA_OPERATIONS_PROFILE_PATH: profilePath
+      },
+      encoding: "utf8",
+      windowsHide: true
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /MEDIA_OPERATIONS_PROFILE_INVALID/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("readonly media logon task is current-user limited and starts gateway before tunnel", () => {
