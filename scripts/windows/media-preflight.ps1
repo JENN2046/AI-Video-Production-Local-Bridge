@@ -25,7 +25,7 @@ try {
   try {
     $env:AI_VIDEO_WORKSPACE_DB_PATH = $profile.DatabasePath
     Push-Location $script:MediaWorkspaceRoot
-    try { & $node.NodePath dist/scripts/db-check.js *> $null; if ($LASTEXITCODE -ne 0) { throw "MEDIA_DATABASE_CHECK_FAILED" } } finally { Pop-Location }
+    try { & $node.NodePath dist/scripts/db-check.js --read-only *> $null; if ($LASTEXITCODE -ne 0) { throw "MEDIA_DATABASE_CHECK_FAILED" } } finally { Pop-Location }
   } finally {
     if ($null -eq $oldDb) { Remove-Item Env:AI_VIDEO_WORKSPACE_DB_PATH -ErrorAction SilentlyContinue } else { $env:AI_VIDEO_WORKSPACE_DB_PATH = $oldDb }
   }

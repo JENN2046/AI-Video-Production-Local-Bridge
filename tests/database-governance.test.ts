@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -55,6 +55,59 @@ test("fresh database migrates explicitly and remains idempotent", () => {
     const second = migrateDatabase(sqlitePath);
     assert.deepEqual(second.applied, []);
     assert.equal(checkDatabase(sqlitePath).result, "PASS");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("read-only database check reports pending media activation without recovering or mutating it", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "app.sqlite");
+    const stagingPath = join(root, "staged-media.bin");
+    const pendingPath = join(root, "pending-media.bin");
+    const finalPath = join(root, "final-media.bin");
+    const bytes = Buffer.from("pending-activation-fixture", "utf8");
+    writeFileSync(stagingPath, bytes);
+    migrateDatabase(sqlitePath);
+    const db = new DatabaseSync(sqlitePath);
+    try {
+      const sha256 = "a".repeat(64);
+      const artifact = {
+        artifact_id: "artifact_pending_readonly_check",
+        artifact_type: "image",
+        role: "storyboard_image",
+        storage: { uri: finalPath, mime_type: "image/png" },
+        metadata: { sha256 },
+        source: { sha256 }
+      };
+      db.prepare(`INSERT INTO media_activation_journal
+        (activation_id, artifact_id, state, artifact_type, role, expected_sha256, expected_size_bytes,
+         detected_mime, staging_path, pending_path, final_path, artifact_json)
+        VALUES (?, ?, 'staged', 'image', 'storyboard_image', ?, ?, 'image/png', ?, ?, ?, ?)`)
+        .run("activation_pending_readonly_check", artifact.artifact_id, sha256, bytes.byteLength,
+          stagingPath, pendingPath, finalPath, JSON.stringify(artifact));
+    } finally {
+      db.close();
+    }
+
+    const before = databaseLogicalManifest(sqlitePath);
+    const beforeBytes = readFileSync(stagingPath);
+    const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
+    const after = databaseLogicalManifest(sqlitePath);
+
+    assert.equal(checked.result, "FAIL");
+    assert.equal(checked.pending_media_activations, 1);
+    assert.deepEqual(after, before);
+    assert.deepEqual(readFileSync(stagingPath), beforeBytes);
+    const verifyDb = new DatabaseSync(sqlitePath, { readOnly: true });
+    try {
+      const row = verifyDb.prepare("SELECT state FROM media_activation_journal WHERE activation_id = ?")
+        .get("activation_pending_readonly_check") as { state: string };
+      assert.equal(row.state, "staged");
+    } finally {
+      verifyDb.close();
+    }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

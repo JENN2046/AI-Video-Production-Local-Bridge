@@ -3,5 +3,5 @@
   "version": "2026.7.2",
   "platform": "windows-amd64",
   "download_url": "https://github.com/cloudflare/cloudflared/releases/download/2026.7.2/cloudflared-windows-amd64.exe",
-  "sha256": "8b97b5af442651e07c52caa9c79c6f60032bc10b675c2b36dd11c7690d9942e3"
+  "sha256": "cdb5d4432f6ae1595654a692a51308b69d2bf7af961f5578d9391837cf072df9"
 }

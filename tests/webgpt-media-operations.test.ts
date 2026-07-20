@@ -13,7 +13,7 @@ test("readonly media operations pin cloudflared and keep secrets out of command 
   assert.equal(manifest.manifest_version, "cloudflared-binary-v1");
   assert.equal(manifest.version, "2026.7.2");
   assert.match(String(manifest.download_url), /^https:\/\/github\.com\/cloudflare\/cloudflared\/releases\/download\/2026\.7\.2\//);
-  assert.match(String(manifest.sha256), /^[0-9a-f]{64}$/);
+  assert.equal(manifest.sha256, "cdb5d4432f6ae1595654a692a51308b69d2bf7af961f5578d9391837cf072df9");
 
   const common = text("scripts/windows/media-runtime-common.ps1");
   const start = text("scripts/windows/media-start.ps1");
@@ -30,6 +30,8 @@ test("readonly media operations pin cloudflared and keep secrets out of command 
   assert.match(status, /active_capabilities/);
   assert.match(status, /active_sessions/);
   assert.doesNotMatch(status, /CapabilityKeyPath|TunnelTokenPath|DatabasePath|MediaRoots|IssuerHash/);
+  const preflight = text("scripts/windows/media-preflight.ps1");
+  assert.match(preflight, /dist\/scripts\/db-check\.js --read-only/);
 });
 
 test("readonly media logon task is current-user limited and starts gateway before tunnel", () => {

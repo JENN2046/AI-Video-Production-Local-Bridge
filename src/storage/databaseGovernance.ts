@@ -28,6 +28,10 @@ export interface DatabaseLogicalManifest {
   sha256: string;
 }
 
+export interface DatabaseCheckOptions {
+  recover_media_activations?: boolean;
+}
+
 export function databaseLogicalManifest(sqlitePath = paths.sqlitePath): DatabaseLogicalManifest {
   const db = new DatabaseSync(sqlitePath, { readOnly: true });
   try {
@@ -64,18 +68,20 @@ function scalarCount(db: DatabaseSync, sql: string, errors: string[]): number {
   }
 }
 
-export function checkDatabase(sqlitePath = paths.sqlitePath): DatabaseCheckResult {
+export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCheckOptions = {}): DatabaseCheckResult {
   let recoveryErrors = 0;
-  const recoveryDb = new DatabaseSync(sqlitePath);
-  try {
-    recoveryDb.exec("PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
-    assertSchemaCurrent(recoveryDb);
-    const recovery = recoverMediaActivations(recoveryDb);
-    recoveryErrors = recovery.failed.length;
-  } catch {
-    recoveryErrors = 1;
-  } finally {
-    recoveryDb.close();
+  if (options.recover_media_activations !== false) {
+    const recoveryDb = new DatabaseSync(sqlitePath);
+    try {
+      recoveryDb.exec("PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
+      assertSchemaCurrent(recoveryDb);
+      const recovery = recoverMediaActivations(recoveryDb);
+      recoveryErrors = recovery.failed.length;
+    } catch {
+      recoveryErrors = 1;
+    } finally {
+      recoveryDb.close();
+    }
   }
   const db = new DatabaseSync(sqlitePath, { readOnly: true });
   try {
