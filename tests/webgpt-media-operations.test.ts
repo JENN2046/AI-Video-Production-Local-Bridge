@@ -27,6 +27,9 @@ test("readonly media operations pin cloudflared and keep secrets out of command 
   assert.match(start, /MEDIA_GATEWAY_LISTENER_IDENTITY_MISMATCH/);
   assert.match(start, /\$env:TUNNEL_TOKEN/);
   assert.doesNotMatch(start, /--token(?:-file)?\b/i);
+  assert.match(start, /Get-NetTCPConnection -OwningProcess \$cloudflared\.Id -RemotePort 7844 -State Established/);
+  assert.match(start, /MEDIA_TUNNEL_EDGE_UNREACHABLE/);
+  assert.match(start, /MEDIA_TUNNEL_ROUTE_UNAVAILABLE/);
   assert.match(start, /--no-autoupdate/);
   assert.match(start, /--loglevel", "warn"/);
   assert.doesNotMatch(start, /--loglevel", "debug"/);
@@ -216,6 +219,7 @@ test("readonly media preflight accepts only a managed gateway matching the liste
   assert.match(common, /MEDIA_GATEWAY_PORT_MULTIPLE_LISTENERS/);
   assert.match(common, /MEDIA_OPERATIONS_PROFILE_DRIFT/);
   assert.match(preflight, /Assert-MediaPreflightPortState \$profile \$node\.NodePath/);
+  assert.match(preflight, /& \$node\.NodePath --no-warnings dist\/scripts\/db-check\.js --read-only/);
 
   const start = text("scripts/windows/media-start.ps1");
   const statusScript = text("scripts/windows/media-status.ps1");

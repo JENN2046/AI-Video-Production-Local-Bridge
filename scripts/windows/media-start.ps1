@@ -89,10 +89,12 @@ try {
   $publicHealth = [pscustomobject]@{ Status = 0; Valid = $false }
   $currentInstanceSeen = $false
   $anyHttp200 = $false
+  $edgeTransportConnected = $false
   $consecutiveCurrentInstanceProbes = 0
   $requiredConsecutiveCurrentInstanceProbes = 10
   do {
     if ($cloudflared.HasExited) { break }
+    if (@(Get-NetTCPConnection -OwningProcess $cloudflared.Id -RemotePort 7844 -State Established -ErrorAction SilentlyContinue).Count -gt 0) { $edgeTransportConnected = $true }
     $publicHealth = Get-MediaGatewayHealth $profile.PublicHealthUrl 3 $instanceProbe
     if ($publicHealth.Status -eq 200) { $anyHttp200 = $true }
     if ($publicHealth.Valid) {
@@ -107,6 +109,9 @@ try {
     Start-Sleep -Seconds 1
   } while ([DateTime]::UtcNow -lt $deadline)
   $tunnelFailure = Resolve-MediaTunnelReadinessFailure $cloudflared.HasExited $anyHttp200 $currentInstanceSeen $consecutiveCurrentInstanceProbes $requiredConsecutiveCurrentInstanceProbes
+  if ($tunnelFailure -eq "MEDIA_TUNNEL_PUBLIC_UNREACHABLE") {
+    $tunnelFailure = if ($edgeTransportConnected) { "MEDIA_TUNNEL_ROUTE_UNAVAILABLE" } else { "MEDIA_TUNNEL_EDGE_UNREACHABLE" }
+  }
   if ($null -ne $tunnelFailure) { if (-not $cloudflared.HasExited) { Stop-Process -Id $cloudflared.Id -ErrorAction SilentlyContinue }; Stop-Process -Id $gateway.Id -ErrorAction SilentlyContinue; throw $tunnelFailure }
 
   $state = [ordered]@{
