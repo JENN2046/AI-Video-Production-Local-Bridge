@@ -64,6 +64,9 @@ test("readonly media preflight accepts only a managed gateway matching the liste
   assert.match(common, /MEDIA_OPERATIONS_STATE_INVALID/);
   assert.match(common, /MEDIA_OPERATIONS_STATE_CONFLICT/);
   assert.match(common, /MEDIA_GATEWAY_LISTENER_IDENTITY_MISMATCH/);
+  assert.match(common, /Get-NetTCPConnection -LocalPort \$Port -State Listen/);
+  assert.doesNotMatch(common, /Get-NetTCPConnection -LocalAddress "127\.0\.0\.1" -LocalPort \$Port/);
+  assert.match(common, /MEDIA_GATEWAY_PORT_MULTIPLE_LISTENERS/);
   assert.match(common, /MEDIA_OPERATIONS_PROFILE_DRIFT/);
   assert.match(preflight, /Assert-MediaPreflightPortState \$profile \$node\.NodePath/);
 
@@ -141,6 +144,39 @@ test("readonly media preflight accepts only a managed gateway matching the liste
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  await context.test("Windows listener discovery includes wildcard bindings", { skip: process.platform !== "win32" }, async () => {
+    const server = createServer();
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "0.0.0.0", () => resolve());
+    });
+    try {
+      const address = server.address();
+      assert.ok(address && typeof address === "object");
+      const command = [
+        ". $env:MEDIA_TEST_COMMON_SCRIPT",
+        "$owner = Get-MediaListenerPid ([int]$env:MEDIA_TEST_PORT)",
+        "if ($null -eq $owner) { [Console]::Error.WriteLine('LISTENER_NOT_FOUND'); exit 1 }",
+        "[Console]::Out.WriteLine($owner)",
+        "exit 0"
+      ].join("\n");
+      const result = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          MEDIA_TEST_COMMON_SCRIPT: join(process.cwd(), "scripts", "windows", "media-runtime-common.ps1"),
+          MEDIA_TEST_PORT: String(address.port)
+        },
+        encoding: "utf8",
+        windowsHide: true
+      });
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout.trim(), /^\d+$/);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
 });

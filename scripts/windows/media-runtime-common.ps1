@@ -225,9 +225,11 @@ function Get-MediaGatewayHealth([string]$Url, [int]$TimeoutSec = 3) {
 }
 
 function Get-MediaListenerPid([int]$Port) {
-  $listener = Get-NetTCPConnection -LocalAddress "127.0.0.1" -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
-  if ($null -eq $listener) { return $null }
-  return [int]$listener.OwningProcess
+  $listeners = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
+  if ($listeners.Count -eq 0) { return $null }
+  $owners = @($listeners | ForEach-Object { [int]$_.OwningProcess } | Sort-Object -Unique)
+  if ($owners.Count -ne 1) { throw "MEDIA_GATEWAY_PORT_MULTIPLE_LISTENERS" }
+  return [int]$owners[0]
 }
 
 function Read-MediaState([object]$Profile) {
