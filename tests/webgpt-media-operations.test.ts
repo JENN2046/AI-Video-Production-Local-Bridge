@@ -56,44 +56,109 @@ test("readonly media logon task is current-user limited and starts gateway befor
   assert.match(remove, /MEDIA_LOGON_TASK_IDENTITY_MISMATCH/);
 });
 
-test("readonly media capability keygen writes only DPAPI CurrentUser ciphertext to ignored storage", () => {
-  assert.equal(process.platform, "win32");
-  const root = join(process.cwd(), "data", "webgpt", `media-operations-test-${process.pid}-${Date.now()}`);
-  const profilePath = join(root, "profile.json");
-  const protectedPath = join(root, "capability-key.dpapi");
-  mkdirSync(root, { recursive: true });
-  try {
-    writeFileSync(profilePath, JSON.stringify({
-      profile_version: "readonly-media-operations-profile-v1",
-      database_path: "data/app.sqlite",
-      issuer_hash: "a".repeat(64),
-      allowed_origin: "https://aivideo.skmt617.top",
-      gateway_port: 2092,
-      media_roots: ["data/media"],
-      capability_key: { kid: "fixture-key", protected_path: protectedPath },
-      cloudflared: {
-        executable_path: "ops/tools/cloudflared-fixture/cloudflared.exe",
-        manifest_path: "ops/manifests/cloudflared-windows-amd64.json",
-        protected_token_path: join(root, "tunnel-token.dpapi"),
-        public_health_url: "https://media.skmt617.top/healthz"
-      },
-      runtime_directory: join(root, "runtime")
-    }), "utf8");
-    const result = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "RemoteSigned", "-File", "scripts/windows/media-capability-keygen.ps1"], {
-      cwd: process.cwd(),
-      env: { ...process.env, READONLY_MEDIA_OPERATIONS_PROFILE_PATH: profilePath },
-      encoding: "utf8",
-      windowsHide: true
-    });
-    assert.equal(result.status, 0, result.stderr);
-    assert.deepEqual(JSON.parse(result.stdout.trim()), { result: "CREATED", kid: "fixture-key", protected: true });
-    const protectedText = readFileSync(protectedPath, "utf8").trim();
-    assert.match(protectedText, /^[A-Za-z0-9+/]+={0,2}$/);
-    assert.ok(Buffer.from(protectedText, "base64").byteLength > 32);
-    assert.doesNotMatch(result.stdout + result.stderr, /[A-Za-z0-9_-]{43}/);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+test("readonly media capability keygen writes only DPAPI CurrentUser ciphertext to ignored storage", async (context) => {
+  const common = text("scripts/windows/media-runtime-common.ps1");
+  const keygen = text("scripts/windows/media-capability-keygen.ps1");
+  const keyImport = text("scripts/windows/media-capability-key-import.ps1");
+  assert.match(common, /DataProtectionScope\]::CurrentUser/);
+  assert.match(common, /ConvertFrom-MediaCapabilityKeyBase64Url/);
+  assert.match(keyImport, /Read-Host "Shared media capability key \(input hidden\)" -AsSecureString/);
+  assert.match(keyImport, /ZeroFreeGlobalAllocUnicode/);
+  assert.match(keyImport, /ConvertFrom-MediaCapabilityKeyBase64Url/);
+  assert.doesNotMatch(keyImport, /Write-(?:Host|Output).*\$encoded|Write-MediaJson[\s\S]*?encoded\s*=/i);
+  assert.doesNotMatch(keygen, /ToBase64String\(\$bytes\)|Write-(?:Host|Output).*\$bytes/i);
+
+  await context.test("Windows DPAPI keygen and hidden import roundtrip", { skip: process.platform !== "win32" }, () => {
+    const root = join(process.cwd(), "data", "webgpt", `media-operations-test-${process.pid}-${Date.now()}`);
+    const profilePath = join(root, "profile.json");
+    const protectedPath = join(root, "capability-key.dpapi");
+    mkdirSync(root, { recursive: true });
+    try {
+      writeFileSync(profilePath, JSON.stringify({
+        profile_version: "readonly-media-operations-profile-v1",
+        database_path: "data/app.sqlite",
+        issuer_hash: "a".repeat(64),
+        allowed_origin: "https://aivideo.skmt617.top",
+        gateway_port: 2092,
+        media_roots: ["data/media"],
+        capability_key: { kid: "fixture-key", protected_path: protectedPath },
+        cloudflared: {
+          executable_path: "ops/tools/cloudflared-fixture/cloudflared.exe",
+          manifest_path: "ops/manifests/cloudflared-windows-amd64.json",
+          protected_token_path: join(root, "tunnel-token.dpapi"),
+          public_health_url: "https://media.skmt617.top/healthz"
+        },
+        runtime_directory: join(root, "runtime")
+      }), "utf8");
+      const result = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "RemoteSigned", "-File", "scripts/windows/media-capability-keygen.ps1"], {
+        cwd: process.cwd(),
+        env: { ...process.env, READONLY_MEDIA_OPERATIONS_PROFILE_PATH: profilePath },
+        encoding: "utf8",
+        windowsHide: true
+      });
+      assert.equal(result.status, 0, result.stderr);
+      assert.deepEqual(JSON.parse(result.stdout.trim()), { result: "CREATED", kid: "fixture-key", protected: true });
+      const protectedText = readFileSync(protectedPath, "utf8").trim();
+      assert.match(protectedText, /^[A-Za-z0-9+/]+={0,2}$/);
+      assert.ok(Buffer.from(protectedText, "base64").byteLength > 32);
+      assert.doesNotMatch(result.stdout + result.stderr, /[A-Za-z0-9_-]{43}/);
+
+      rmSync(protectedPath, { force: true });
+      const sharedKey = Buffer.alloc(32, 47).toString("base64url");
+      const importScript = join(process.cwd(), "scripts", "windows", "media-capability-key-import.ps1");
+      const importCommand = [
+        "function Read-Host {",
+        "  param([string]$Prompt, [switch]$AsSecureString)",
+        "  $secure = [System.Security.SecureString]::new()",
+        "  foreach ($character in $env:MEDIA_TEST_SHARED_KEY.ToCharArray()) { $secure.AppendChar($character) }",
+        "  $secure.MakeReadOnly()",
+        "  $secure",
+        "}",
+        "& $env:MEDIA_TEST_IMPORT_SCRIPT"
+      ].join("\n");
+      const imported = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", importCommand], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          READONLY_MEDIA_OPERATIONS_PROFILE_PATH: profilePath,
+          MEDIA_TEST_IMPORT_SCRIPT: importScript,
+          MEDIA_TEST_SHARED_KEY: sharedKey
+        },
+        encoding: "utf8",
+        windowsHide: true
+      });
+      assert.equal(imported.status, 0, imported.stderr);
+      assert.deepEqual(JSON.parse(imported.stdout.trim()), { result: "IMPORTED", kid: "fixture-key", protected: true });
+      assert.equal(`${imported.stdout}${imported.stderr}`.includes(sharedKey), false);
+
+      const verifyCommand = [
+        ". $env:MEDIA_TEST_COMMON_SCRIPT",
+        "$actual = Unprotect-MediaBytes $env:MEDIA_TEST_PROTECTED_PATH",
+        "$expected = ConvertFrom-MediaCapabilityKeyBase64Url $env:MEDIA_TEST_SHARED_KEY",
+        "try {",
+        "  if ([Convert]::ToBase64String($actual) -cne [Convert]::ToBase64String($expected)) { exit 1 }",
+        "} finally {",
+        "  [Array]::Clear($actual, 0, $actual.Length)",
+        "  [Array]::Clear($expected, 0, $expected.Length)",
+        "}"
+      ].join("\n");
+      const verified = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", verifyCommand], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          MEDIA_TEST_COMMON_SCRIPT: join(process.cwd(), "scripts", "windows", "media-runtime-common.ps1"),
+          MEDIA_TEST_PROTECTED_PATH: protectedPath,
+          MEDIA_TEST_SHARED_KEY: sharedKey
+        },
+        encoding: "utf8",
+        windowsHide: true
+      });
+      assert.equal(verified.status, 0, verified.stderr);
+      assert.equal(verified.stdout.trim(), "");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 test("readonly media Apps smoke and operations are mandatory local and Windows CI gates", () => {

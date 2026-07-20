@@ -119,6 +119,22 @@ function Protect-MediaBytes([byte[]]$Bytes, [string]$Destination) {
   }
 }
 
+function ConvertFrom-MediaCapabilityKeyBase64Url([string]$Encoded) {
+  if ($Encoded -notmatch '^[A-Za-z0-9_-]{43}$') { throw "MEDIA_CAPABILITY_KEY_INVALID" }
+  $padded = $Encoded.Replace('-', '+').Replace('_', '/') + '='
+  try { $bytes = [Convert]::FromBase64String($padded) } catch { throw "MEDIA_CAPABILITY_KEY_INVALID" }
+  if ($bytes.Length -ne 32) {
+    [Array]::Clear($bytes, 0, $bytes.Length)
+    throw "MEDIA_CAPABILITY_KEY_INVALID"
+  }
+  $canonical = [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+  if ($canonical -cne $Encoded) {
+    [Array]::Clear($bytes, 0, $bytes.Length)
+    throw "MEDIA_CAPABILITY_KEY_INVALID"
+  }
+  return $bytes
+}
+
 function Unprotect-MediaBytes([string]$Path) {
   Add-Type -AssemblyName System.Security
   if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "MEDIA_OPERATIONS_SECRET_NOT_FOUND" }

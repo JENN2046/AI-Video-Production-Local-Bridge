@@ -27,6 +27,7 @@
     "preflight:webgpt:publisher": "npm run build:server && node dist/scripts/webgpt-cloud-publisher.js preflight",
     "publish:webgpt:snapshot": "npm run build:server && node dist/scripts/webgpt-cloud-publisher.js publish",
     "media:capability-keygen": "powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File scripts/windows/media-capability-keygen.ps1",
+    "media:capability-key-import": "powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File scripts/windows/media-capability-key-import.ps1",
     "media:protect-tunnel-token": "powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File scripts/windows/media-protect-tunnel-token.ps1",
     "media:preflight": "npm run build:server && powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File scripts/windows/media-preflight.ps1",
     "media:start": "npm run build:server && powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File scripts/windows/media-start.ps1",

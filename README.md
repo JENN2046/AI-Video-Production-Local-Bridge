@@ -43,6 +43,7 @@ npm run webgpt:publisher:keygen -- --profile <ignored-profile.json>
 npm run preflight:webgpt:publisher -- --profile <ignored-profile.json>
 npm run publish:webgpt:snapshot -- --profile <ignored-profile.json>
 npm run media:capability-keygen
+npm run media:capability-key-import
 npm run media:protect-tunnel-token
 npm run media:preflight
 npm run media:start

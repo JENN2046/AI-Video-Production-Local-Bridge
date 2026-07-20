@@ -26,6 +26,7 @@ The following commands only become operational after the separately authorized p
 
 ```powershell
 npm run media:capability-keygen
+npm run media:capability-key-import
 npm run media:protect-tunnel-token
 npm run media:preflight
 npm run media:start
@@ -34,6 +35,8 @@ npm run media:stop
 npm run media:install-logon-task
 npm run media:remove-logon-task
 ```
+
+`media:capability-keygen` creates a local-only random key and never exposes it. For the Remote MCP/Gateway shared deployment, first create one 32-byte Base64URL secret in the approved secret-management flow, configure that exact value as Render's `WEBGPT_MEDIA_CAPABILITY_ACTIVE_KEY_B64URL`, and run `media:capability-key-import` to enter the same value through a hidden prompt. The import command validates the canonical 43-character form, stores only DPAPI CurrentUser ciphertext, and never prints the key. There is intentionally no plaintext export command. Both commands fail if the protected destination already exists; rotation must use a new reviewed profile path/kid.
 
 `media:preflight` validates the ignored paths, ledger/schema through `db:check`, media roots, DPAPI material, port availability, and the pinned cloudflared binary. It does not start the gateway or Tunnel and does not modify the database.
 
@@ -66,7 +69,7 @@ Render must receive the same dedicated capability key as a secret only after sep
 
 Before promoting to `0.1.0-beta.6` / `webgpt-v4.4.0` / `readonly-remote-v1.1.0`, complete all external gates:
 
-1. Create the capability key and configure the matching Render secret.
+1. Create one shared capability key in the approved secret-management flow, configure the Render secret, and import that exact value locally with `media:capability-key-import`.
 2. Create the named Tunnel and exact DNS route without paid features.
 3. Deploy the accepted Snapshot v4/remote runtime commit and publish one real Snapshot v4.
 4. Validate image and MP4/WebM playback, Range/seek, expiration, replay, membership revocation, gateway offline/recovery and project switching in ChatGPT.
