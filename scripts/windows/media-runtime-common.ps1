@@ -181,6 +181,33 @@ function Read-MediaState([object]$Profile) {
   try { return Get-Content -Raw -LiteralPath $Profile.StatePath | ConvertFrom-Json } catch { throw "MEDIA_OPERATIONS_STATE_INVALID" }
 }
 
+function Assert-MediaPreflightPortState([object]$Profile, [string]$ExpectedGatewayExecutable) {
+  $listener = Get-MediaListenerPid $Profile.GatewayPort
+  $state = Read-MediaState $Profile
+  if ($null -eq $state) {
+    if ($null -ne $listener) { throw "MEDIA_GATEWAY_PORT_IN_USE" }
+    return
+  }
+
+  $required = @("state_version", "gateway_pid", "gateway_start_time_utc", "gateway_executable", "cloudflared_pid", "cloudflared_start_time_utc", "cloudflared_executable", "started_at_utc", "gateway_port")
+  $names = @($state.PSObject.Properties.Name)
+  if ($names.Count -ne $required.Count -or @($required | Where-Object { $names -notcontains $_ }).Count -gt 0 -or @($names | Where-Object { $required -notcontains $_ }).Count -gt 0) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
+  try {
+    if ([string]$state.state_version -ne "readonly-media-runtime-state-v1" -or [int]$state.gateway_port -ne [int]$Profile.GatewayPort) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
+    if ([int]$state.gateway_pid -le 0 -or [int]$state.cloudflared_pid -le 0) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
+    $gatewayPath = [IO.Path]::GetFullPath([string]$state.gateway_executable)
+    $expectedGatewayPath = [IO.Path]::GetFullPath($ExpectedGatewayExecutable)
+    $cloudflaredPath = [IO.Path]::GetFullPath([string]$state.cloudflared_executable)
+    $expectedCloudflaredPath = [IO.Path]::GetFullPath([string]$Profile.CloudflaredPath)
+    if (-not $gatewayPath.Equals($expectedGatewayPath, [StringComparison]::OrdinalIgnoreCase) -or -not $cloudflaredPath.Equals($expectedCloudflaredPath, [StringComparison]::OrdinalIgnoreCase)) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
+  } catch {
+    if ($_.Exception.Message -eq "MEDIA_OPERATIONS_STATE_INVALID") { throw }
+    throw "MEDIA_OPERATIONS_STATE_INVALID"
+  }
+  if (-not (Test-MediaProcess $state "gateway") -or -not (Test-MediaProcess $state "cloudflared")) { throw "MEDIA_OPERATIONS_STATE_CONFLICT" }
+  if ($null -eq $listener -or [int]$listener -ne [int]$state.gateway_pid) { throw "MEDIA_GATEWAY_LISTENER_IDENTITY_MISMATCH" }
+}
+
 function Assert-Cloudflared([object]$Profile) {
   if (-not (Test-Path -LiteralPath $Profile.CloudflaredPath -PathType Leaf)) { throw "MEDIA_CLOUDFLARED_NOT_FOUND" }
   try { $manifest = Get-Content -Raw -LiteralPath $Profile.CloudflaredManifestPath | ConvertFrom-Json } catch { throw "MEDIA_CLOUDFLARED_MANIFEST_INVALID" }

@@ -17,9 +17,7 @@ try {
     $previousKey = Unprotect-MediaBytes $profile.PreviousCapability.ProtectedPath
     try { if ($previousKey.Length -ne 32) { throw "MEDIA_CAPABILITY_KEY_INVALID" } } finally { [Array]::Clear($previousKey, 0, $previousKey.Length) }
   }
-  $listener = Get-MediaListenerPid $profile.GatewayPort
-  $state = Read-MediaState $profile
-  if ($null -ne $listener -and $null -eq $state) { throw "MEDIA_GATEWAY_PORT_IN_USE" }
+  Assert-MediaPreflightPortState $profile $node.NodePath
 
   $oldDb = [Environment]::GetEnvironmentVariable("AI_VIDEO_WORKSPACE_DB_PATH", "Process")
   try {

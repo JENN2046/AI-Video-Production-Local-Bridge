@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { createServer } from "node:net";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -54,6 +55,66 @@ test("readonly media logon task is current-user limited and starts gateway befor
   assert.match(start, /Stop-Process -Id \$gateway\.Id/);
   const remove = text("scripts/windows/media-remove-logon-task.ps1");
   assert.match(remove, /MEDIA_LOGON_TASK_IDENTITY_MISMATCH/);
+});
+
+test("readonly media preflight accepts only a managed gateway matching the listener", async (context) => {
+  const common = text("scripts/windows/media-runtime-common.ps1");
+  const preflight = text("scripts/windows/media-preflight.ps1");
+  assert.match(common, /function Assert-MediaPreflightPortState/);
+  assert.match(common, /MEDIA_OPERATIONS_STATE_INVALID/);
+  assert.match(common, /MEDIA_OPERATIONS_STATE_CONFLICT/);
+  assert.match(common, /MEDIA_GATEWAY_LISTENER_IDENTITY_MISMATCH/);
+  assert.match(preflight, /Assert-MediaPreflightPortState \$profile \$node\.NodePath/);
+
+  await context.test("Windows listener ownership rejects stale and drifted state", { skip: process.platform !== "win32" }, async () => {
+    const root = join(process.cwd(), "data", "webgpt", `media-port-state-test-${process.pid}-${Date.now()}`);
+    const statePath = join(root, "media-state.json");
+    mkdirSync(root, { recursive: true });
+    const server = createServer();
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => resolve());
+    });
+    try {
+      const address = server.address();
+      assert.ok(address && typeof address === "object");
+      const command = [
+        ". $env:MEDIA_TEST_COMMON_SCRIPT",
+        "$listener = Get-NetTCPConnection -LocalAddress '127.0.0.1' -LocalPort ([int]$env:MEDIA_TEST_PORT) -State Listen | Select-Object -First 1",
+        "if ($env:MEDIA_TEST_MODE -eq 'valid' -or $env:MEDIA_TEST_MODE -eq 'drift') { $recordProcess = Get-Process -Id ([int]$listener.OwningProcess) } else { $recordProcess = Get-Process -Id $PID }",
+        "$started = if ($env:MEDIA_TEST_MODE -eq 'drift') { '2000-01-01T00:00:00.0000000Z' } else { $recordProcess.StartTime.ToUniversalTime().ToString('o') }",
+        "$state = [ordered]@{ state_version = 'readonly-media-runtime-state-v1'; gateway_pid = $recordProcess.Id; gateway_start_time_utc = $started; gateway_executable = $recordProcess.Path; cloudflared_pid = $recordProcess.Id; cloudflared_start_time_utc = $started; cloudflared_executable = $recordProcess.Path; started_at_utc = (Get-Date).ToUniversalTime().ToString('o'); gateway_port = [int]$env:MEDIA_TEST_PORT }",
+        "$state | ConvertTo-Json | Set-Content -LiteralPath $env:MEDIA_TEST_STATE_PATH -Encoding UTF8",
+        "$profile = [pscustomobject]@{ StatePath = $env:MEDIA_TEST_STATE_PATH; GatewayPort = [int]$env:MEDIA_TEST_PORT; CloudflaredPath = $recordProcess.Path }",
+        "try { Assert-MediaPreflightPortState $profile $recordProcess.Path; [Console]::Out.WriteLine('PASS'); exit 0 } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }"
+      ].join("\n");
+      const run = (mode: "unknown" | "valid" | "drift") => spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          MEDIA_TEST_COMMON_SCRIPT: join(process.cwd(), "scripts", "windows", "media-runtime-common.ps1"),
+          MEDIA_TEST_STATE_PATH: statePath,
+          MEDIA_TEST_PORT: String(address.port),
+          MEDIA_TEST_MODE: mode
+        },
+        encoding: "utf8",
+        windowsHide: true
+      });
+
+      const unknown = run("unknown");
+      assert.equal(unknown.status, 1);
+      assert.match(unknown.stderr, /MEDIA_GATEWAY_LISTENER_IDENTITY_MISMATCH/);
+      const valid = run("valid");
+      assert.equal(valid.status, 0, valid.stderr);
+      assert.equal(valid.stdout.trim(), "PASS");
+      const drift = run("drift");
+      assert.equal(drift.status, 1);
+      assert.match(drift.stderr, /MEDIA_OPERATIONS_STATE_CONFLICT/);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 test("readonly media capability keygen writes only DPAPI CurrentUser ciphertext to ignored storage", async (context) => {

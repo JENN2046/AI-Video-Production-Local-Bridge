@@ -300,6 +300,13 @@
       "case_name": "readonly media logon task is current-user limited and starts gateway before tunnel"
     },
     {
+      "id": "readonly-media-preflight-port-identity",
+      "path": "tests/webgpt-media-operations.test.ts",
+      "npm_script": "test:webgpt:media-gateway",
+      "ci_step": "Readonly media gateway contract tests",
+      "case_name": "readonly media preflight accepts only a managed gateway matching the listener"
+    },
+    {
       "id": "readonly-media-dpapi-keygen",
       "path": "tests/webgpt-media-operations.test.ts",
       "npm_script": "test:webgpt:media-gateway",
