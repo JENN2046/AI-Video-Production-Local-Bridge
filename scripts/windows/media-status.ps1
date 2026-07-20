@@ -2,17 +2,18 @@
 
 try {
   $profile = Read-MediaProfile
+  $selectedProtocol = Get-MediaTunnelProtocol
   $state = Read-MediaState $profile
   if ($null -eq $state) {
     if ($null -ne (Get-MediaListenerPid $profile.GatewayPort)) {
-      Write-MediaJson ([ordered]@{ result = "NOT_READY"; gateway_process = "unknown"; gateway_health = 0; gateway_ready = 0; cloudflared_process = "unknown"; public_health = 0; active_capabilities = $null; active_sessions = $null; stable_error_code = "MEDIA_OPERATIONS_STATE_MISSING_WITH_LISTENER" })
+      Write-MediaJson ([ordered]@{ result = "NOT_READY"; gateway_process = "unknown"; gateway_health = 0; gateway_ready = 0; cloudflared_process = "unknown"; public_health = 0; active_capabilities = $null; active_sessions = $null; tunnel_protocol = $selectedProtocol; stable_error_code = "MEDIA_OPERATIONS_STATE_MISSING_WITH_LISTENER" })
       exit 2
     }
-    Write-MediaJson ([ordered]@{ result = "STOPPED"; gateway_process = "stopped"; gateway_health = 0; gateway_ready = 0; cloudflared_process = "stopped"; public_health = 0; active_capabilities = 0; active_sessions = 0; stable_error_code = $null })
+    Write-MediaJson ([ordered]@{ result = "STOPPED"; gateway_process = "stopped"; gateway_health = 0; gateway_ready = 0; cloudflared_process = "stopped"; public_health = 0; active_capabilities = 0; active_sessions = 0; tunnel_protocol = $selectedProtocol; stable_error_code = $null })
     exit 1
   }
-  if ([string]$state.state_version -in @("readonly-media-runtime-state-v1", "readonly-media-runtime-state-v2")) {
-    Write-MediaJson ([ordered]@{ result = "NOT_READY"; gateway_process = "unknown"; gateway_health = 0; gateway_ready = 0; cloudflared_process = "unknown"; public_health = 0; active_capabilities = $null; active_sessions = $null; stable_error_code = "MEDIA_OPERATIONS_RESTART_REQUIRED" })
+  if ([string]$state.state_version -in @("readonly-media-runtime-state-v1", "readonly-media-runtime-state-v2", "readonly-media-runtime-state-v3")) {
+    Write-MediaJson ([ordered]@{ result = "NOT_READY"; gateway_process = "unknown"; gateway_health = 0; gateway_ready = 0; cloudflared_process = "unknown"; public_health = 0; active_capabilities = $null; active_sessions = $null; tunnel_protocol = $selectedProtocol; stable_error_code = "MEDIA_OPERATIONS_RESTART_REQUIRED" })
     exit 2
   }
   $node = Resolve-MediaNode22
@@ -37,6 +38,7 @@ try {
     public_health = $public
     active_capabilities = if ($null -ne $counts) { [int]$counts.capabilities } else { $null }
     active_sessions = if ($null -ne $counts) { [int]$counts.sessions } else { $null }
+    tunnel_protocol = [string]$state.tunnel_protocol
     stable_error_code = if ($ok) { $null } else { "MEDIA_RUNTIME_NOT_READY" }
   })
   if ($ok) { exit 0 } else { exit 2 }

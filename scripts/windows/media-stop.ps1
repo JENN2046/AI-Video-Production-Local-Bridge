@@ -10,11 +10,11 @@ try {
     exit 0
   }
   if ([string]$state.state_version -eq "readonly-media-runtime-state-v1") { throw "MEDIA_OPERATIONS_RESTART_REQUIRED" }
-  if ([string]$state.state_version -notin @("readonly-media-runtime-state-v2", "readonly-media-runtime-state-v3")) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
+  if ([string]$state.state_version -notin @("readonly-media-runtime-state-v2", "readonly-media-runtime-state-v3", "readonly-media-runtime-state-v4")) { throw "MEDIA_OPERATIONS_STATE_INVALID" }
   $runtimeIdentity = Get-MediaStopRuntimeIdentity $profile $state
   $profileFingerprint = [string]$runtimeIdentity.ProfileFingerprint
   $profileDrift = -not [bool]$runtimeIdentity.CurrentProfileVerified -or [string]$state.profile_fingerprint -cne $profileFingerprint
-  $allowProfileDrift = [string]$state.state_version -eq "readonly-media-runtime-state-v3" -and $profileDrift
+  $allowProfileDrift = [string]$state.state_version -in @("readonly-media-runtime-state-v3", "readonly-media-runtime-state-v4") -and $profileDrift
   Assert-MediaRuntimeStateIdentity $profile ([string]$runtimeIdentity.GatewayExecutable) $profileFingerprint $state ([string]$state.state_version) $allowProfileDrift
   $gateway = Test-MediaProcess $state "gateway"
   $cloudflared = Test-MediaProcess $state "cloudflared"

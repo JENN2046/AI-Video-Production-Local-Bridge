@@ -293,6 +293,13 @@
       "case_name": "readonly media operations pin cloudflared and keep secrets out of command lines and status"
     },
     {
+      "id": "readonly-media-tunnel-protocol-forwarding",
+      "path": "tests/webgpt-media-operations.test.ts",
+      "npm_script": "test:webgpt:media-gateway",
+      "ci_step": "Readonly media gateway contract tests",
+      "case_name": "readonly media operations validate and forward the selected tunnel protocol"
+    },
+    {
       "id": "readonly-media-logon-ordering",
       "path": "tests/webgpt-media-operations.test.ts",
       "npm_script": "test:webgpt:media-gateway",

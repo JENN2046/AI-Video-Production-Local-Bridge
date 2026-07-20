@@ -11,21 +11,24 @@ $previousEnvironmentVariables = @("READONLY_MEDIA_GATEWAY_PREVIOUS_KID", "READON
 try {
   Remove-Item Env:TUNNEL_TOKEN -ErrorAction SilentlyContinue
   $profile = Read-MediaProfile
+  $tunnelProtocol = Get-MediaTunnelProtocol
   Assert-MediaGitIgnored (Get-MediaPrivatePaths $profile)
   $node = Resolve-MediaNode22
   $profileFingerprint = Get-MediaRuntimeProfileFingerprint $profile $node.NodePath
   New-Item -ItemType Directory -Force -Path $profile.RuntimeDirectory | Out-Null
   $existing = Read-MediaState $profile
   if ($null -ne $existing) {
+    if ([string]$existing.state_version -ne "readonly-media-runtime-state-v4") { throw "MEDIA_OPERATIONS_RESTART_REQUIRED" }
     Assert-MediaRuntimeStateIdentity $profile $node.NodePath $profileFingerprint $existing
     $gatewayLive = Test-MediaProcess $existing "gateway"
     $tunnelLive = Test-MediaProcess $existing "cloudflared"
     if ($gatewayLive -and $tunnelLive) {
+      if ([string]$existing.tunnel_protocol -cne $tunnelProtocol) { throw "MEDIA_TUNNEL_PROTOCOL_CHANGE_REQUIRES_RESTART" }
       $localReady = Get-MediaHttp "http://127.0.0.1:$($profile.GatewayPort)/readyz"
       $localHealth = Get-MediaGatewayHealth "http://127.0.0.1:$($profile.GatewayPort)/healthz" 3 ([string]$existing.instance_probe)
       $publicReady = Get-MediaGatewayHealth $profile.PublicHealthUrl 3 ([string]$existing.instance_probe)
       if ((Get-MediaListenerPid $profile.GatewayPort) -ne [int]$existing.gateway_pid -or $localReady -ne 200 -or -not $localHealth.Valid -or -not $publicReady.Valid) { throw "MEDIA_RUNTIME_NOT_READY" }
-      Write-MediaJson ([ordered]@{ result = "ALREADY_RUNNING"; gateway = $true; cloudflared = $true; gateway_ready = $true; public_health = $true })
+      Write-MediaJson ([ordered]@{ result = "ALREADY_RUNNING"; gateway = $true; cloudflared = $true; gateway_ready = $true; public_health = $true; tunnel_protocol = [string]$existing.tunnel_protocol })
       exit 0
     }
     if ($gatewayLive -or $tunnelLive) { throw "MEDIA_OPERATIONS_STATE_CONFLICT" }
@@ -83,7 +86,7 @@ try {
   try {
     $env:TUNNEL_TOKEN = [Text.Encoding]::UTF8.GetString($tokenBytes)
     $env:TUNNEL_PIDFILE = $edgeConnectionPidFile
-    $cloudflared = Start-Process -FilePath $profile.CloudflaredPath -ArgumentList @("tunnel", "--no-autoupdate", "--loglevel", "warn", "run") -WorkingDirectory $script:MediaWorkspaceRoot -WindowStyle Hidden -RedirectStandardOutput $tunnelOut -RedirectStandardError $tunnelErr -PassThru
+    $cloudflared = Start-Process -FilePath $profile.CloudflaredPath -ArgumentList (Get-MediaCloudflaredArguments $tunnelProtocol) -WorkingDirectory $script:MediaWorkspaceRoot -WindowStyle Hidden -RedirectStandardOutput $tunnelOut -RedirectStandardError $tunnelErr -PassThru
   } finally {
     [Array]::Clear($tokenBytes, 0, $tokenBytes.Length)
     Remove-Item Env:TUNNEL_TOKEN -ErrorAction SilentlyContinue
@@ -125,7 +128,7 @@ try {
   if ($null -ne $tunnelFailure) { if (-not $cloudflared.HasExited) { Stop-Process -Id $cloudflared.Id -ErrorAction SilentlyContinue }; Stop-Process -Id $gateway.Id -ErrorAction SilentlyContinue; throw $tunnelFailure }
 
   $state = [ordered]@{
-    state_version = "readonly-media-runtime-state-v3"
+    state_version = "readonly-media-runtime-state-v4"
     profile_fingerprint = $profileFingerprint
     instance_probe = $instanceProbe
     gateway_pid = $gateway.Id
@@ -136,6 +139,7 @@ try {
     cloudflared_executable = $profile.CloudflaredPath
     started_at_utc = (Get-Date).ToUniversalTime().ToString("o")
     gateway_port = $profile.GatewayPort
+    tunnel_protocol = $tunnelProtocol
   }
   $temporary = "$($profile.StatePath).tmp-$PID"
   $state | ConvertTo-Json | Set-Content -LiteralPath $temporary -Encoding UTF8
@@ -143,7 +147,7 @@ try {
   $startLock.Dispose()
   $startLock = $null
   Remove-Item -LiteralPath $lockPath -Force -ErrorAction SilentlyContinue
-  Write-MediaJson ([ordered]@{ result = "STARTED"; gateway = $true; gateway_ready = $true; cloudflared = $true; public_health = $true })
+  Write-MediaJson ([ordered]@{ result = "STARTED"; gateway = $true; gateway_ready = $true; cloudflared = $true; public_health = $true; tunnel_protocol = $tunnelProtocol })
   exit 0
 } catch {
   if ($null -ne $cloudflared -and -not $cloudflared.HasExited) { Stop-Process -Id $cloudflared.Id -ErrorAction SilentlyContinue }

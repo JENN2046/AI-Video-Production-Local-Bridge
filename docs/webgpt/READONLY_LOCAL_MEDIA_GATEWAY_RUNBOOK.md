@@ -42,6 +42,8 @@ npm run media:remove-logon-task
 
 `media:start` starts the gateway first, waits for local `/readyz=200`, then injects the DPAPI-decrypted token only into the cloudflared child environment. It requires public `/healthz=200` before recording managed state. Failure stops children and does not retry.
 
+`TUNNEL_TRANSPORT_PROTOCOL` accepts only `auto`, `http2`, or `quic` and defaults to `auto`. `media:preflight` rejects any other value with `MEDIA_TUNNEL_PROTOCOL_INVALID`; `media:start` passes the selected value to cloudflared as `--protocol <value>`, and `media:status` reports only that non-secret protocol selection. Changing the protocol of an already-running instance requires an explicit stop and restart.
+
 `media:status` reports only process state, local health/readiness, public health, active capability/session counts, and a stable error code. It never returns paths, media names, principal identifiers, key state or token material.
 
 `media:install-logon-task` creates `Jenn AI Video Readonly Media Gateway` for Jenn's current interactive user with a 30-second logon delay, `RunLevel Limited`, one instance, and at most three one-minute retries. It does not use `SYSTEM`, Administrator, or a stored Windows password. Installing or removing this task requires a separate current authorization; merging this code does not install it.

@@ -2,6 +2,7 @@
 
 try {
   $profile = Read-MediaProfile
+  $tunnelProtocol = Get-MediaTunnelProtocol
   $node = Resolve-MediaNode22
   Assert-MediaGitIgnored (Get-MediaPrivatePaths $profile)
   if (-not (Test-Path -LiteralPath $profile.DatabasePath -PathType Leaf)) { throw "MEDIA_DATABASE_NOT_FOUND" }
@@ -36,6 +37,7 @@ try {
     cloudflared_version = $cloudflaredVersion
     node_version = $node.Version
     gateway_port = $profile.GatewayPort
+    tunnel_protocol = $tunnelProtocol
   })
   exit 0
 } catch {
