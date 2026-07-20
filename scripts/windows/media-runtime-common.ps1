@@ -307,6 +307,20 @@ function Get-MediaListenerPid([int]$Port) {
   return [int]$owners[0]
 }
 
+function Resolve-MediaTunnelReadinessFailure(
+  [bool]$ProcessExited,
+  [bool]$AnyHttp200,
+  [bool]$CurrentInstanceSeen,
+  [int]$ConsecutiveCurrentInstanceProbes,
+  [int]$RequiredConsecutiveCurrentInstanceProbes
+) {
+  if ($ProcessExited) { return "MEDIA_TUNNEL_PROCESS_EXITED" }
+  if (-not $AnyHttp200) { return "MEDIA_TUNNEL_PUBLIC_UNREACHABLE" }
+  if (-not $CurrentInstanceSeen) { return "MEDIA_TUNNEL_INSTANCE_MISMATCH" }
+  if ($ConsecutiveCurrentInstanceProbes -lt $RequiredConsecutiveCurrentInstanceProbes) { return "MEDIA_TUNNEL_INSTANCE_UNSTABLE" }
+  return $null
+}
+
 function Read-MediaState([object]$Profile) {
   if (-not (Test-Path -LiteralPath $Profile.StatePath -PathType Leaf)) { return $null }
   try { return Get-Content -Raw -LiteralPath $Profile.StatePath | ConvertFrom-Json } catch { throw "MEDIA_OPERATIONS_STATE_INVALID" }

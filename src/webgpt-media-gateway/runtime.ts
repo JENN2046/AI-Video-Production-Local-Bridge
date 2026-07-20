@@ -13,11 +13,14 @@ import { getProject, getShot } from "../tools/projects.js";
 import {
   assertReadonlyMediaCapabilityKeyring,
   createReadonlyMediaHandle,
+  openReadonlyMediaKeyReadinessRequest,
   openReadonlyMediaCapabilityRequest,
   ReadonlyMediaCapabilityError,
   ReadonlyMediaCapabilityReplayGuard,
   READONLY_MEDIA_CAPABILITY_MAX_BODY_BYTES,
   READONLY_MEDIA_CAPABILITY_RESPONSE_SCHEMA,
+  READONLY_MEDIA_KEY_READINESS_PATH,
+  READONLY_MEDIA_KEY_READINESS_RESPONSE_SCHEMA,
   READONLY_MEDIA_SESSION_MAX_SECONDS,
   type ReadonlyMediaCapabilityKeyring
 } from "../webgpt-cloud/mediaCapability.js";
@@ -593,6 +596,18 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
           try { assertReadonlyMediaCapabilityKeyring(options.keyring); capabilityKey = true; } catch { /* low-disclosure readiness */ }
           const ok = database && schema && mediaRoots && capabilityKey;
           json(response, ok ? 200 : 503, { ok, checks: { database, schema, media_roots: mediaRoots, capability_key: capabilityKey } });
+          return;
+        }
+        if (request.method === "POST" && url.pathname === READONLY_MEDIA_KEY_READINESS_PATH) {
+          if (!isApplicationJsonContentType(request.headers["content-type"])) {
+            throw new ReadonlyMediaGatewayError("MEDIA_CAPABILITY_INVALID");
+          }
+          assertReadonlyMediaCapabilityKeyring(options.keyring);
+          const payload = openReadonlyMediaKeyReadinessRequest(await body(request), options.keyring, { now });
+          json(response, 200, READONLY_MEDIA_KEY_READINESS_RESPONSE_SCHEMA.parse({
+            ok: true,
+            challenge_sha256: createHash("sha256").update(payload.challenge, "utf8").digest("hex")
+          }));
           return;
         }
         if (request.method === "POST" && url.pathname === "/internal/v1/capabilities") {

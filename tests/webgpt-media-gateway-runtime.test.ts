@@ -10,7 +10,11 @@ import { paths } from "../src/paths.js";
 import { openM0Database, openM0DatabaseConnection, type M0Database } from "../src/storage/sqlite.js";
 import { attachArtifactToShot, getMediaArtifact, getMediaBlob, registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
-import { createReadonlyMediaCapabilityRequest, ReadonlyMediaCapabilityReplayGuard } from "../src/webgpt-cloud/mediaCapability.js";
+import {
+  createReadonlyMediaCapabilityRequest,
+  createReadonlyMediaKeyReadinessRequest,
+  ReadonlyMediaCapabilityReplayGuard
+} from "../src/webgpt-cloud/mediaCapability.js";
 import { bootstrapWebGptProjectOwner, revokeWebGptProjectMembership } from "../src/webgpt-v4/authorizationAdmin.js";
 import { actorFromFederatedSubject } from "../src/webgpt-v4/types.js";
 import {
@@ -474,6 +478,22 @@ test("readonly media gateway verifies bytes, consumes capabilities once, streams
       instance_probe: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
     });
     assert.equal((await fetch(`${gateway.url}/readyz`)).status, 200);
+    const keyProbe = createReadonlyMediaKeyReadinessRequest(keyring);
+    const keyProbeResponse = await fetch(`${gateway.url}/internal/v1/key-readiness`, {
+      method: "POST",
+      headers: { "content-type": "application/json; charset=utf-8" },
+      body: JSON.stringify(keyProbe.envelope)
+    });
+    assert.equal(keyProbeResponse.status, 200);
+    assert.deepEqual(await keyProbeResponse.json(), { ok: true, challenge_sha256: keyProbe.challenge_sha256 });
+    const wrongKeyProbe = createReadonlyMediaKeyReadinessRequest({ active: { ...keyring.active, key: Buffer.alloc(32, 99) } });
+    const wrongKeyProbeResponse = await fetch(`${gateway.url}/internal/v1/key-readiness`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(wrongKeyProbe.envelope)
+    });
+    assert.equal(wrongKeyProbeResponse.status, 404);
+    assert.equal((await wrongKeyProbeResponse.json() as { error: { code: string } }).error.code, "MEDIA_CAPABILITY_INVALID");
     const wrongContentType = await fetch(`${gateway.url}/internal/v1/capabilities`, { method: "POST", body: "{}" });
     assert.equal(wrongContentType.status, 404);
     assert.equal((await wrongContentType.json() as { error: { code: string } }).error.code, "MEDIA_CAPABILITY_INVALID");

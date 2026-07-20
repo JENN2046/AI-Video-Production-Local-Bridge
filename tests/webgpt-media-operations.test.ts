@@ -53,6 +53,32 @@ test("readonly media operations pin cloudflared and keep secrets out of command 
   assert.doesNotMatch(start, /\$publicHealth\.Valid\s+-or\s+\$publicHealth\.Status/);
   assert.match(start, /\$requiredConsecutiveCurrentInstanceProbes = 10/);
   assert.match(start, /MEDIA_TUNNEL_ROUTE_NOT_EXCLUSIVE/);
+  assert.match(start, /Resolve-MediaTunnelReadinessFailure/);
+  assert.doesNotMatch(start, /throw "MEDIA_TUNNEL_NOT_READY"/);
+});
+
+test("readonly media tunnel startup reports a stable bounded failure reason", { skip: process.platform !== "win32" }, () => {
+  const command = [
+    ". $env:MEDIA_TEST_COMMON_SCRIPT",
+    "$cases = @(",
+    "  [pscustomobject]@{ exited = $true; http200 = $false; seen = $false; consecutive = 0; expected = 'MEDIA_TUNNEL_PROCESS_EXITED' },",
+    "  [pscustomobject]@{ exited = $false; http200 = $false; seen = $false; consecutive = 0; expected = 'MEDIA_TUNNEL_PUBLIC_UNREACHABLE' },",
+    "  [pscustomobject]@{ exited = $false; http200 = $true; seen = $false; consecutive = 0; expected = 'MEDIA_TUNNEL_INSTANCE_MISMATCH' },",
+    "  [pscustomobject]@{ exited = $false; http200 = $true; seen = $true; consecutive = 3; expected = 'MEDIA_TUNNEL_INSTANCE_UNSTABLE' },",
+    "  [pscustomobject]@{ exited = $false; http200 = $true; seen = $true; consecutive = 10; expected = $null }",
+    ")",
+    "foreach ($case in $cases) {",
+    "  $actual = Resolve-MediaTunnelReadinessFailure $case.exited $case.http200 $case.seen $case.consecutive 10",
+    "  if ($actual -cne $case.expected) { [Console]::Error.WriteLine('MEDIA_TUNNEL_DIAGNOSTIC_MISMATCH'); exit 1 }",
+    "}"
+  ].join("\n");
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], {
+    cwd: process.cwd(),
+    env: { ...process.env, MEDIA_TEST_COMMON_SCRIPT: join(process.cwd(), "scripts", "windows", "media-runtime-common.ps1") },
+    encoding: "utf8",
+    windowsHide: true
+  });
+  assert.equal(result.status, 0, result.stderr);
 });
 
 test("readonly media operations reject private paths through reparse points", { skip: process.platform !== "win32" }, () => {

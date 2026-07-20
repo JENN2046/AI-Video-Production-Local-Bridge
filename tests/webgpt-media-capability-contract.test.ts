@@ -5,8 +5,11 @@ import {
   assertReadonlyMediaCapabilityKeyring,
   createReadonlyMediaCapabilityRequest,
   createReadonlyMediaHandle,
+  createReadonlyMediaKeyReadinessRequest,
   openReadonlyMediaCapabilityRequest,
+  openReadonlyMediaKeyReadinessRequest,
   parseReadonlyMediaCapabilityKey,
+  parseReadonlyMediaCapabilityKeyringConfiguration,
   ReadonlyMediaCapabilityError,
   ReadonlyMediaCapabilityReplayGuard,
   READONLY_MEDIA_CAPABILITY_MAX_REPLAY_RECORDS,
@@ -85,6 +88,26 @@ test("readonly media capability encrypts strict five-minute claims and supports 
     () => openReadonlyMediaCapabilityRequest(rotated, { active }, { now: () => NOW }),
     (error) => error instanceof ReadonlyMediaCapabilityError && error.code === "MEDIA_CAPABILITY_KEY_UNKNOWN"
   );
+});
+
+test("readonly media key readiness proves the configured AES-GCM key without business identifiers", () => {
+  const probe = createReadonlyMediaKeyReadinessRequest({ active }, {
+    now: () => NOW,
+    random_bytes: (size) => Buffer.alloc(size, size === 12 ? 4 : 5)
+  });
+  assert.equal(JSON.stringify(probe.envelope).includes(input.project_id), false);
+  const opened = openReadonlyMediaKeyReadinessRequest(probe.envelope, { active }, { now: () => NOW });
+  assert.equal(opened.kid, active.kid);
+  assert.equal(opened.challenge.length, 43);
+  assert.throws(
+    () => openReadonlyMediaKeyReadinessRequest(probe.envelope, { active: { ...active, key: Buffer.alloc(32, 8) } }, { now: () => NOW }),
+    (error) => error instanceof ReadonlyMediaCapabilityError && error.code === "MEDIA_CAPABILITY_INVALID"
+  );
+  const configured = parseReadonlyMediaCapabilityKeyringConfiguration({
+    active_kid: active.kid,
+    active_key: Buffer.from(active.key).toString("base64url")
+  });
+  assert.deepEqual(configured.active, active);
 });
 
 test("readonly media capability rejects tampering, expiry, replay, and invalid key material", () => {

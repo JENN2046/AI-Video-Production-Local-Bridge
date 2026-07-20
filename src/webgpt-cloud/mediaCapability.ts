@@ -1,9 +1,12 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 
 import { z } from "zod/v4";
 
 export const READONLY_MEDIA_CAPABILITY_VERSION = "readonly-media-capability-v1";
 export const READONLY_MEDIA_CAPABILITY_PATH = "/internal/v1/capabilities";
+export const READONLY_MEDIA_KEY_READINESS_VERSION = "readonly-media-key-readiness-v1";
+export const READONLY_MEDIA_KEY_READINESS_PATH = "/internal/v1/key-readiness";
+export const READONLY_MEDIA_KEY_READINESS_TTL_MS = 30 * 1000;
 export const READONLY_MEDIA_CAPABILITY_TTL_MS = 5 * 60 * 1000;
 export const READONLY_MEDIA_CAPABILITY_CLOCK_SKEW_MS = 30 * 1000;
 export const READONLY_MEDIA_CAPABILITY_MAX_BODY_BYTES = 4 * 1024;
@@ -47,9 +50,32 @@ export const READONLY_MEDIA_CAPABILITY_RESPONSE_SCHEMA = z.object({
   expires_at: canonicalInstantSchema
 }).strict();
 
+export const READONLY_MEDIA_KEY_READINESS_PAYLOAD_SCHEMA = z.object({
+  version: z.literal(READONLY_MEDIA_KEY_READINESS_VERSION),
+  kid: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/),
+  challenge: base64UrlSchema.length(43),
+  issued_at: canonicalInstantSchema,
+  expires_at: canonicalInstantSchema
+}).strict();
+
+export const READONLY_MEDIA_KEY_READINESS_ENVELOPE_SCHEMA = z.object({
+  version: z.literal(READONLY_MEDIA_KEY_READINESS_VERSION),
+  kid: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/),
+  iv: base64UrlSchema.length(16),
+  ciphertext: base64UrlSchema.min(1),
+  tag: base64UrlSchema.length(22)
+}).strict();
+
+export const READONLY_MEDIA_KEY_READINESS_RESPONSE_SCHEMA = z.object({
+  ok: z.literal(true),
+  challenge_sha256: sha256Schema
+}).strict();
+
 export type ReadonlyMediaCapabilityPayload = z.infer<typeof READONLY_MEDIA_CAPABILITY_PAYLOAD_SCHEMA>;
 export type ReadonlyMediaCapabilityEnvelope = z.infer<typeof READONLY_MEDIA_CAPABILITY_ENVELOPE_SCHEMA>;
 export type ReadonlyMediaCapabilityResponse = z.infer<typeof READONLY_MEDIA_CAPABILITY_RESPONSE_SCHEMA>;
+export type ReadonlyMediaKeyReadinessPayload = z.infer<typeof READONLY_MEDIA_KEY_READINESS_PAYLOAD_SCHEMA>;
+export type ReadonlyMediaKeyReadinessEnvelope = z.infer<typeof READONLY_MEDIA_KEY_READINESS_ENVELOPE_SCHEMA>;
 
 export interface ReadonlyMediaCapabilityKey {
   kid: string;
@@ -62,6 +88,15 @@ export interface ReadonlyMediaCapabilityKeyring {
     accepted_from: string;
     accepted_until: string;
   };
+}
+
+export interface ReadonlyMediaCapabilityKeyringConfiguration {
+  active_kid: string;
+  active_key: string;
+  previous_kid?: string;
+  previous_key?: string;
+  previous_accepted_from?: string;
+  previous_accepted_until?: string;
 }
 
 export class ReadonlyMediaCapabilityError extends Error {
@@ -103,6 +138,10 @@ function capabilityAad(): Buffer {
   return Buffer.from(`${READONLY_MEDIA_CAPABILITY_VERSION}\nPOST\n${READONLY_MEDIA_CAPABILITY_PATH}`, "utf8");
 }
 
+function readinessAad(): Buffer {
+  return Buffer.from(`${READONLY_MEDIA_KEY_READINESS_VERSION}\nPOST\n${READONLY_MEDIA_KEY_READINESS_PATH}`, "utf8");
+}
+
 function keyForKid(keyring: ReadonlyMediaCapabilityKeyring, kid: string, now: Date): ReadonlyMediaCapabilityKey {
   if (keyring.active.kid === kid) return keyring.active;
   const previous = keyring.previous;
@@ -119,6 +158,102 @@ export function parseReadonlyMediaCapabilityKey(kid: string, encoded: string): R
   const value = { kid, key: Buffer.from(encoded, "base64url") };
   normalizedKey(value);
   return value;
+}
+
+export function parseReadonlyMediaCapabilityKeyringConfiguration(
+  input: ReadonlyMediaCapabilityKeyringConfiguration
+): ReadonlyMediaCapabilityKeyring {
+  const previous = [
+    input.previous_kid?.trim() ?? "",
+    input.previous_key?.trim() ?? "",
+    input.previous_accepted_from?.trim() ?? "",
+    input.previous_accepted_until?.trim() ?? ""
+  ];
+  if (!input.active_kid.trim() || !input.active_key.trim() || (previous.some(Boolean) && !previous.every(Boolean))) {
+    throw new ReadonlyMediaCapabilityError("MEDIA_CAPABILITY_KEY_INVALID");
+  }
+  const keyring: ReadonlyMediaCapabilityKeyring = {
+    active: parseReadonlyMediaCapabilityKey(input.active_kid.trim(), input.active_key.trim()),
+    ...(previous.every(Boolean) ? {
+      previous: {
+        ...parseReadonlyMediaCapabilityKey(previous[0]!, previous[1]!),
+        accepted_from: previous[2]!,
+        accepted_until: previous[3]!
+      }
+    } : {})
+  };
+  assertReadonlyMediaCapabilityKeyring(keyring);
+  return keyring;
+}
+
+export function createReadonlyMediaKeyReadinessRequest(
+  keyring: ReadonlyMediaCapabilityKeyring,
+  options: { now?: () => Date; random_bytes?: (size: number) => Buffer } = {}
+): { envelope: ReadonlyMediaKeyReadinessEnvelope; challenge_sha256: string } {
+  const key = normalizedKey(keyring.active);
+  const now = options.now?.() ?? new Date();
+  const random = options.random_bytes ?? randomBytes;
+  const payload = READONLY_MEDIA_KEY_READINESS_PAYLOAD_SCHEMA.parse({
+    version: READONLY_MEDIA_KEY_READINESS_VERSION,
+    kid: keyring.active.kid,
+    challenge: random(32).toString("base64url"),
+    issued_at: now.toISOString(),
+    expires_at: new Date(now.getTime() + READONLY_MEDIA_KEY_READINESS_TTL_MS).toISOString()
+  });
+  const iv = random(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
+  cipher.setAAD(readinessAad());
+  const ciphertext = Buffer.concat([cipher.update(JSON.stringify(payload), "utf8"), cipher.final()]);
+  return {
+    envelope: READONLY_MEDIA_KEY_READINESS_ENVELOPE_SCHEMA.parse({
+      version: READONLY_MEDIA_KEY_READINESS_VERSION,
+      kid: keyring.active.kid,
+      iv: iv.toString("base64url"),
+      ciphertext: ciphertext.toString("base64url"),
+      tag: cipher.getAuthTag().toString("base64url")
+    }),
+    challenge_sha256: createHash("sha256").update(payload.challenge, "utf8").digest("hex")
+  };
+}
+
+export function openReadonlyMediaKeyReadinessRequest(
+  input: unknown,
+  keyring: ReadonlyMediaCapabilityKeyring,
+  options: { now?: () => Date } = {}
+): ReadonlyMediaKeyReadinessPayload {
+  try {
+    if (Buffer.byteLength(JSON.stringify(input), "utf8") > READONLY_MEDIA_CAPABILITY_MAX_BODY_BYTES) {
+      throw new ReadonlyMediaCapabilityError("MEDIA_CAPABILITY_INVALID");
+    }
+    const envelope = READONLY_MEDIA_KEY_READINESS_ENVELOPE_SCHEMA.parse(input);
+    const current = options.now?.() ?? new Date();
+    const selected = keyForKid(keyring, envelope.kid, current);
+    const decipher = createDecipheriv("aes-256-gcm", normalizedKey(selected), Buffer.from(envelope.iv, "base64url"), { authTagLength: 16 });
+    decipher.setAAD(readinessAad());
+    decipher.setAuthTag(Buffer.from(envelope.tag, "base64url"));
+    const plaintext = Buffer.concat([
+      decipher.update(Buffer.from(envelope.ciphertext, "base64url")),
+      decipher.final()
+    ]);
+    const payload = READONLY_MEDIA_KEY_READINESS_PAYLOAD_SCHEMA.parse(JSON.parse(plaintext.toString("utf8")) as unknown);
+    if (payload.kid !== envelope.kid) throw new ReadonlyMediaCapabilityError("MEDIA_CAPABILITY_KEY_MISMATCH");
+    const issuedAt = Date.parse(payload.issued_at);
+    const expiresAt = Date.parse(payload.expires_at);
+    const currentMs = current.getTime();
+    if (keyring.previous?.kid === payload.kid
+      && issuedAt > Date.parse(keyring.previous.accepted_from) + READONLY_MEDIA_CAPABILITY_CLOCK_SKEW_MS) {
+      throw new ReadonlyMediaCapabilityError("MEDIA_CAPABILITY_KEY_UNKNOWN");
+    }
+    if (expiresAt <= issuedAt || expiresAt - issuedAt !== READONLY_MEDIA_KEY_READINESS_TTL_MS
+      || issuedAt > currentMs + READONLY_MEDIA_CAPABILITY_CLOCK_SKEW_MS
+      || expiresAt <= currentMs - READONLY_MEDIA_CAPABILITY_CLOCK_SKEW_MS) {
+      throw new ReadonlyMediaCapabilityError("MEDIA_CAPABILITY_EXPIRED");
+    }
+    return payload;
+  } catch (error) {
+    if (error instanceof ReadonlyMediaCapabilityError) throw error;
+    throw new ReadonlyMediaCapabilityError("MEDIA_CAPABILITY_INVALID");
+  }
 }
 
 export function createReadonlyMediaCapabilityRequest(
