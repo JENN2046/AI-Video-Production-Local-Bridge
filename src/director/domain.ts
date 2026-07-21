@@ -299,6 +299,27 @@ const memorySavebackPayloadSchema = z.object({
   requires_human_confirmation: z.literal(true)
 }).strict();
 
+/**
+ * The only proposal material ChatGPT is allowed to author directly. Identity,
+ * project/target binding, hashes derived from the payload, source and creation
+ * time are assigned by the authenticated local bridge rather than trusted from
+ * model input.
+ */
+export const DIRECTOR_PROPOSAL_DRAFT_SCHEMA = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("creative_brief"), payload: creativeBriefPayloadSchema }).strict(),
+  z.object({ kind: z.literal("script"), payload: scriptPayloadSchema }).strict(),
+  z.object({ kind: z.literal("shot_plan"), payload: shotPlanPayloadSchema }).strict(),
+  z.object({ kind: z.literal("storyboard_revision"), payload: storyboardRevisionPayloadSchema }).strict(),
+  z.object({ kind: z.literal("generation_plan"), payload: generationPlanPayloadSchema }).strict(),
+  z.object({ kind: z.literal("clip_regeneration"), payload: clipRegenerationPayloadSchema }).strict(),
+  z.object({ kind: z.literal("review_assessment"), payload: reviewAssessmentPayloadSchema }).strict(),
+  z.object({ kind: z.literal("assembly_plan"), payload: assemblyPlanPayloadSchema }).strict(),
+  z.object({ kind: z.literal("delivery_plan"), payload: deliveryPlanPayloadSchema }).strict(),
+  z.object({ kind: z.literal("memory_saveback"), payload: memorySavebackPayloadSchema }).strict()
+]);
+
+export type DirectorProposalDraft = z.infer<typeof DIRECTOR_PROPOSAL_DRAFT_SCHEMA>;
+
 const directorProposalShapeSchema = z.discriminatedUnion("kind", [
   z.object({ ...proposalCommonShape, kind: z.literal("creative_brief"), payload: creativeBriefPayloadSchema }).strict(),
   z.object({ ...proposalCommonShape, kind: z.literal("script"), payload: scriptPayloadSchema }).strict(),

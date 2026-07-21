@@ -128,7 +128,10 @@
       "classification": "mandatory",
       "npm_script": "test:webgpt:director",
       "ci_step": "ChatGPT Director domain tests",
-      "paths": ["tests/director-domain-contract.test.ts"]
+      "paths": [
+        "tests/director-domain-contract.test.ts",
+        "tests/director-manual-native-tools.test.ts"
+      ]
     },
     {
       "id": "webgpt-media-gateway",
@@ -223,6 +226,27 @@
     }
   ],
   "director_suites": [
+    {
+      "id": "director-native-tool-registry",
+      "path": "tests/director-manual-native-tools.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "Director native registry exposes only the fixed advisory tool set with exact OAuth scopes"
+    },
+    {
+      "id": "director-independent-oauth-resource",
+      "path": "tests/director-manual-native-tools.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "Director OAuth resource is complete, distinct, and advertises the fixed scopes"
+    },
+    {
+      "id": "director-manual-import-boundary",
+      "path": "tests/director-manual-native-tools.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "Manual Director import remains explicit, confirmed, and untrusted"
+    },
     {
       "id": "director-base-state-hash",
       "path": "tests/director-domain-contract.test.ts",

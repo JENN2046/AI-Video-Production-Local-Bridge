@@ -43,6 +43,9 @@ export interface ReadonlyAppSuite extends OAuthPortabilitySuite {}
 export interface DirectorSuite extends OAuthPortabilitySuite {}
 
 export const REQUIRED_DIRECTOR_SUITES: ReadonlyArray<DirectorSuite> = [
+  { id: "director-native-tool-registry", path: "tests/director-manual-native-tools.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "Director native registry exposes only the fixed advisory tool set with exact OAuth scopes" },
+  { id: "director-independent-oauth-resource", path: "tests/director-manual-native-tools.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "Director OAuth resource is complete, distinct, and advertises the fixed scopes" },
+  { id: "director-manual-import-boundary", path: "tests/director-manual-native-tools.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "Manual Director import remains explicit, confirmed, and untrusted" },
   { id: "director-base-state-hash", path: "tests/director-domain-contract.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "director base-state hash uses deterministic JCS and changes with authoritative inputs" },
   { id: "director-advisory-review-contract", path: "tests/director-domain-contract.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "director proposal contract is kind-specific and review assessment remains advisory" },
   { id: "director-storyboard-v2-contract", path: "tests/director-domain-contract.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "Storyboard Package V2 is content-addressed and preserves continuity semantics" },

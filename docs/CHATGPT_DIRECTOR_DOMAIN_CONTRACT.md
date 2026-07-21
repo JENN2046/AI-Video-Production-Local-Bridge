@@ -74,4 +74,4 @@ It is selected by canonical `npm test`, Windows CI and `test-selection-gate`. Th
 
 ## Remaining gates
 
-Later PRs must still implement and separately validate the fixed Manual/Native tool registry, Director OAuth resource, authenticated outbound bridge, Human Workbench approval queue, zero-database-write frame analysis, bounded RunningHub orchestrator and replaceable memory port. None of those capabilities is claimed by PR1.
+PR2 freezes the fixed Manual/Native registry and separate Director OAuth resource in [CHATGPT_DIRECTOR_MANUAL_NATIVE_TOOLS.md](CHATGPT_DIRECTOR_MANUAL_NATIVE_TOOLS.md). Later PRs must still implement and separately validate the authenticated outbound bridge, Human Workbench approval queue, zero-database-write frame analysis, bounded RunningHub orchestrator and replaceable memory port. None of those runtime capabilities is claimed by PR1 or PR2.
