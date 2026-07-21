@@ -1,5 +1,7 @@
 # Stabilization Remediation — Implementation Baseline
 
+Status note (2026-07-21): HISTORICAL and completed through the accepted beta.5 baseline. The original planning status below is retained as evidence, not current state.
+
 Date: 2026-07-12
 Applies to: the `0.1.0-beta.2` code snapshot on `main@fbba4ce` and its closeout documentation
 Status: planned; external connection is blocked

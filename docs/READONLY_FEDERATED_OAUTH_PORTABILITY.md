@@ -2,6 +2,8 @@
 
 Status: `JENN_SINGLE_USER_MCP_APP_PASS` / `PARTIAL_MULTI_USER_GATE`
 
+Document role: CURRENT authorization contract and historical implementation record. Daily use and deployment instructions are maintained in `docs/USER_GUIDE.md` and `docs/DEPLOYMENT_GUIDE.md`.
+
 Repository implementation baseline: `main@c0239eb`
 
 Accepted local runtime: package `0.1.0-beta.5`, MCP service `webgpt-v4.3.0`, activity-database ledger `0008`

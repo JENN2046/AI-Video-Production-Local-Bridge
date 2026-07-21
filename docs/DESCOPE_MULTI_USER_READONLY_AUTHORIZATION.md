@@ -1,6 +1,6 @@
 # Descope Multi-User Readonly Authorization v1
 
-Status: implemented code boundary; external Descope/ChatGPT/Tunnel cutover not performed
+Status: HISTORICAL Descope route. Its authorization lessons and legacy records are retained, but the accepted owner-only route uses provider-neutral Federated OAuth with Auth0; see `READONLY_FEDERATED_OAUTH_PORTABILITY.md`.
 Package: `0.1.0-beta.4`
 MCP service: `webgpt-v4.2.0`
 Workspace: `jenn-ai-video-workspace`

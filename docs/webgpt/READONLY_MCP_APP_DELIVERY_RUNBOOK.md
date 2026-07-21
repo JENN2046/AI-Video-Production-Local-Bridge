@@ -1,6 +1,8 @@
 # Readonly MCP App Delivery Runbook
 
-Status: code-only PR4 runbook. It does not authorize Render, DNS, Auth0 or ChatGPT mutations.
+Status: CURRENT owner-only operations runbook. Auth0/ChatGPT/Render wiring and manual Snapshot recovery have passed Jenn single-user acceptance. It does not authorize further Render, DNS, Auth0 or ChatGPT mutations.
+
+Live boundary: the accepted service currently has Render Free behavior, not an always-on production SLA. Process restart clears the only in-memory Snapshot and requires one explicit Human Workbench republish. The tracked `render.yaml` remains configuration evidence and must not be used as proof of live plan/settings.
 
 ## Boundaries
 
@@ -57,7 +59,7 @@ This is still manual publishing. It does not schedule publishes, start Windows a
 
 ## Render delivery contract
 
-`render.yaml` freezes one `starter` instance, no disk and `autoDeployTrigger: off`. External Stage 1 must separately authorize service creation and set:
+`render.yaml` records the original one-instance/no-disk/auto-deploy-off delivery contract and still names `starter`. The accepted live route was later constrained to Render Free. Do not apply the Blueprint or change the live plan without a new external authorization. A new isolated service must separately authorize creation and set:
 
 ```text
 WEBGPT_V4_RESOURCE_URL
@@ -71,13 +73,8 @@ WEBGPT_CLOUD_PUBLISHER_PUBLIC_KEY_B64
 
 DNS must point the approved App origin to Render before Auth0 callback and ChatGPT App wiring. `resource_url` and OAuth audience must be the exact external `/mcp` URL. Render `/healthz` is liveness; `/readyz` remains `503` until OAuth, publisher verification material and a fresh Snapshot are all present.
 
-## External stages and rollback
+## Accepted owner-only stage and future rollback
 
-1. Create the isolated Render service with auto deploy disabled.
-2. Bind DNS and verify HTTPS.
-3. Configure the existing approved Auth0 public-client/API relationship without widening `projects.read`.
-4. Create a new ChatGPT test App and verify resource/MIME/render bridge.
-5. Publish a fixture Snapshot first; do not use the activity database.
-6. Stop on the first OAuth, signature, scope or App rendering failure.
+The owner-only Auth0, DNS, ChatGPT App, fixture/activity Snapshot, seven-tool and Human Workbench recovery path is accepted. Any replacement service or new App must repeat this sequence rather than inheriting that acceptance: create with auto deploy disabled, verify HTTPS, configure only `projects.read`, test a fixture Snapshot first, then stop on the first OAuth/signature/scope/render failure.
 
 Rollback disables the new ChatGPT test App and Render service. It does not delete historical Auth0 objects, DPAPI keys, receipts or authorization evidence. Activity-database migration and publishing require separate current authorization.

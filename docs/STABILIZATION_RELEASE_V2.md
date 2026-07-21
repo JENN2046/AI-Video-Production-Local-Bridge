@@ -1,5 +1,7 @@
 # Stabilization Release v2 Taskbook
 
+Status: HISTORICAL and completed. Do not use this beta.1 taskbook as the current deployment guide.
+
 Target: `0.1.0-beta.1`
 
 Audience: Jenn local Windows production

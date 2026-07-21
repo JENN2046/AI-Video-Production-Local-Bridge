@@ -1,5 +1,7 @@
 # Readonly ChatGPT MCP App Workbench v1
 
+Status: HISTORICAL implementation taskbook. The route was implemented and owner-only acceptance is recorded in `CURRENT_STATE.md`; use `docs/USER_GUIDE.md` and `docs/DEPLOYMENT_GUIDE.md` for current operations.
+
 Planning baseline: `main@e9002bd3b7fe88cf5ee2e767074293894320bb25`
 
 This taskbook defines the sequential implementation of a real Readonly ChatGPT MCP App Workbench. The local workspace remains the only source of truth. A remote service may consume only a signed, expiring, strict readonly projection.
@@ -21,7 +23,7 @@ Readonly exposes six data tools plus `render_ai_video_workspace_app`. Media byte
 
 The exporter requires schema `workbench-v2-5` with migration ledger `0008`. It opens SQLite read-only, validates the complete schema ledger before reading business tables, and never migrates automatically. A database below `0008` fails with `READONLY_PROJECTION_SCHEMA_MIGRATION_REQUIRED`.
 
-The accepted Jenn activity database remains at ledger `0007`. It must not be opened by the exporter. Any future activity-database migration requires a separate authorization, migration-before backup, `db:check`, isolated restore verification, logical-manifest comparison and rollback evidence.
+Planning-time note: the Jenn activity database was at ledger `0007`. It was later migrated and accepted at ledger `0008`; current requirements are in `CURRENT_STATE.md`. Any future activity-database migration still requires separate authorization, migration-before backup, `db:check`, isolated restore verification, logical-manifest comparison and rollback evidence.
 
 ## Delivery order
 

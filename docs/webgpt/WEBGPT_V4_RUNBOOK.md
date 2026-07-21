@@ -1,6 +1,6 @@
 # WebGPT V4 本地运行与外部接线手册
 
-状态：接受的运行基线为 `webgpt-v4.3.0`；provider-neutral Federated OAuth、issuer binding、Auth0 predefined public-client 与 Readonly ChatGPT MCP App 已完成 Jenn 单用户真实活动库验收。Human Workbench 的一键 preflight/publish、Render restart 后 `no_snapshot → 单次确认发布 → 七工具恢复` 和七工具 owner-only 路径均已真实通过。状态为 `MANUAL_PUBLISH_OPERATIONAL_READY`；第二真实用户已由 Jenn 延期，媒体域名、自动同步和 Windows 自动启动仍未验收。
+状态：CURRENT local/WebGPT operator reference for `webgpt-v4.3.0`。provider-neutral Federated OAuth、issuer binding、Auth0 predefined public-client 与 Readonly ChatGPT MCP App 已完成 Jenn 单用户真实活动库验收。Human Workbench 的一键 preflight/publish、Render restart 后 `no_snapshot → 单次确认发布 → 七工具恢复` 和七工具 owner-only 路径均已真实通过。状态为 `MANUAL_PUBLISH_OPERATIONAL_READY`；第二真实用户已由 Jenn 延期。Local Media Gateway 代码与部分 Cloudflare 外部对象已建立，但公网播放仍未验收；自动同步和 Windows 自动启动也未验收。日常操作优先阅读 [User Guide](../USER_GUIDE.md)，部署边界见 [Deployment Guide](../DEPLOYMENT_GUIDE.md)。
 
 ## 固定边界
 
@@ -24,6 +24,8 @@ npm run test:webgpt:v4
 npm run start:webgpt
 ```
 
+`db:migrate` 只用于单独授权、已备份的迁移流程，不是普通启动或故障恢复命令。
+
 ## Owner-only 日常发布
 
 Human Workbench 的“系统 → 只读 App 发布”是当前接受的 Jenn 日常入口：
@@ -33,7 +35,7 @@ Human Workbench 的“系统 → 只读 App 发布”是当前接受的 Jenn 日
 3. 选择“预检并发布”；若状态面提示临期、过期或 `no_snapshot`，选择“预检并续期/恢复”。所有路径都必须完成 action nonce 与人工确认。
 4. 等待 HTTP `202`，确认 Snapshot 状态为 fresh。
 5. 在 ChatGPT Test App 运行 render tool 与六个只读数据工具。
-6. 使用完成后运行 `npm run db:check`，再通过 `windows:stop` 停止本地 Workbench。
+6. 使用完成后运行 `npm run db:check -- --read-only`，再通过 `windows:stop` 停止本地 Workbench。默认不带参数的 `db:check` 可能恢复 staged/file-placed media activation，只能用于另行授权的恢复流程。
 
 该路径已在 `main@932e145e201ddf5763ab5fcbdc11b88fa8c81bad`、Windows Node `22.23.1`、活动库 ledger `0008` 和 `REAL_PROVIDER_ENABLED=false` 条件下通过首次真实验收；Snapshot v3 又在 `main@d4c7d8cf52d52e3a28293180a771d3b36f6e399f` 上完成 Render restart、`no_snapshot`、Human Workbench 单次确认发布、统一 fingerprint、七工具恢复、最终 `db:check` 和优雅停止。公开脱敏证据见 [Owner-Only Operations Acceptance](../../ops/reports/2026-07-18-owner-only-operations-acceptance.md) 与 [Snapshot v3 Human Workbench Recovery Acceptance](../../ops/reports/2026-07-19-snapshot-v3-human-workbench-recovery-acceptance.md)。
 
