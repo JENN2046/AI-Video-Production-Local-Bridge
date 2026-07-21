@@ -10,7 +10,9 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 import {
+  DIRECTOR_BRIDGE_FRAME_TIMEOUT_MS,
   DIRECTOR_BRIDGE_REQUEST_SCHEMA,
+  DirectorBridgeBroker,
   DirectorBridgeReplayGuard,
   DirectorLocalBridgeClient,
   signDirectorBridgeBody,
@@ -132,7 +134,7 @@ async function fixture() {
   return { root, sqlitePath, mediaRoot, ffmpeg, actor, projectId: created.project_id, shotId: shot.shot_id, artifactId: artifact.artifact_id, now };
 }
 
-test("Director bridge HMAC rejects tampering, replay, expired authentication, and invalid keyrings", () => {
+test("Director bridge HMAC rejects tampering, replay, expired authentication, and invalid keyrings", async () => {
   const schema = DIRECTOR_GET_FOCUS_OUTPUT_SCHEMA;
   const now = new Date("2026-07-22T02:00:00.000Z");
   const envelope = signDirectorBridgeBody({ state: "no_focus", focus: null }, keyring.active, now);
@@ -158,6 +160,24 @@ test("Director bridge HMAC rejects tampering, replay, expired authentication, an
     issued_at: now.toISOString(),
     expires_at: new Date(now.getTime() + 60_001).toISOString()
   }).success, false);
+  const actor = actorFromFederatedSubject(ISSUER, SUBJECT, ["projects.read", "media.read"]);
+  const broker = new DirectorBridgeBroker(keyring, () => now);
+  const pendingFrame = broker.submit(actor, "inspect_director_video_frames", {
+    focus_id: "focus_timeout_test", focus_generation: 1, artifact_id: "artifact_timeout_test",
+    sampling: "overview", max_frames: 3, request_id: "req_frame_timeout"
+  });
+  const frameEnvelope = broker.poll();
+  assert.ok(frameEnvelope);
+  const frameRequest = verifyDirectorBridgeBody(
+    frameEnvelope,
+    keyring,
+    DIRECTOR_BRIDGE_REQUEST_SCHEMA,
+    new DirectorBridgeReplayGuard(),
+    now
+  );
+  assert.equal(Date.parse(frameRequest.expires_at) - Date.parse(frameRequest.issued_at), DIRECTOR_BRIDGE_FRAME_TIMEOUT_MS);
+  broker.close();
+  await assert.rejects(pendingFrame, (error) => error instanceof Error && "code" in error && error.code === "DIRECTOR_BRIDGE_CLOSED");
   assert.throws(() => new DirectorLocalBridgeClient({
     remote_origin: "ftp://localhost/",
     client_id: "invalid-origin-test",
@@ -234,6 +254,11 @@ test("Director local service binds Focus/context and persists only an immutable 
       focus_id: "focus_director_local_001", focus_generation: 1, base_state_hash: context.base_state_hash,
       idempotency_key: "director-local-proposal-0001", parent_proposal_id: null,
       proposal: { ...proposalDraft(f.shotId, f.artifactId), payload: { ...proposalDraft(f.shotId, f.artifactId).payload, diagnosis: "Different payload." } }
+    }), (error) => error instanceof Error && "code" in error && error.code === "DIRECTOR_IDEMPOTENCY_CONFLICT");
+    await assert.rejects(() => service.submit_director_proposal({
+      focus_id: "focus_director_local_001", focus_generation: 1, base_state_hash: context.base_state_hash,
+      idempotency_key: "director-local-proposal-0001", parent_proposal_id: "director_proposal_other",
+      proposal: proposalDraft(f.shotId, f.artifactId)
     }), (error) => error instanceof Error && "code" in error && error.code === "DIRECTOR_IDEMPOTENCY_CONFLICT");
     const status = await service.get_director_proposal_status({ proposal_id: submitted.proposal_id });
     assert.deepEqual({ state: status.state, reason: status.reason_code }, { state: "pending_review", reason: "DIRECTOR_NATIVE_SUBMITTED" });

@@ -13,6 +13,7 @@ import {
 
 export const DIRECTOR_BRIDGE_PROTOCOL_VERSION = "director-local-bridge-v1";
 export const DIRECTOR_BRIDGE_DEFAULT_TIMEOUT_MS = 30_000;
+export const DIRECTOR_BRIDGE_FRAME_TIMEOUT_MS = 130_000;
 export const DIRECTOR_BRIDGE_MAX_BODY_BYTES = 24 * 1024 * 1024;
 
 const idSchema = z.string().trim().min(1).max(160);
@@ -49,7 +50,11 @@ export const DIRECTOR_BRIDGE_REQUEST_SCHEMA = z.object({
   const expiresAt = Date.parse(value.expires_at);
   if (expiresAt <= issuedAt) {
     context.addIssue({ code: "custom", message: "Bridge request must expire after issuance.", path: ["expires_at"] });
-  } else if (expiresAt - issuedAt > 60_000) {
+  }
+  const maximumLifetime = value.tool === "inspect_director_video_frames"
+    ? DIRECTOR_BRIDGE_FRAME_TIMEOUT_MS
+    : 60_000;
+  if (expiresAt > issuedAt && expiresAt - issuedAt > maximumLifetime) {
     context.addIssue({ code: "custom", message: "Bridge request lifetime exceeds the protocol limit.", path: ["expires_at"] });
   }
 });
@@ -214,6 +219,9 @@ export class DirectorBridgeBroker {
       return Promise.reject(new DirectorBridgeError("DIRECTOR_BRIDGE_BUSY", "Director bridge request capacity is full.", undefined, true));
     }
     const issued = this.now();
+    const requestTimeoutMs = tool === "inspect_director_video_frames"
+      ? DIRECTOR_BRIDGE_FRAME_TIMEOUT_MS
+      : this.timeoutMs;
     const request = DIRECTOR_BRIDGE_REQUEST_SCHEMA.parse({
       protocol_version: DIRECTOR_BRIDGE_PROTOCOL_VERSION,
       request_id: `director_bridge_${randomUUID()}`,
@@ -221,7 +229,7 @@ export class DirectorBridgeBroker {
         principal_id: actor.principal_id, actor_hash: actor.actor_hash, issuer_hash: actor.issuer_hash,
         scopes: [...actor.scopes].filter((scope): scope is "projects.read" | "media.read" | "proposals.write" => ["projects.read", "media.read", "proposals.write"].includes(scope))
       },
-      tool, input, issued_at: issued.toISOString(), expires_at: new Date(issued.getTime() + this.timeoutMs).toISOString()
+      tool, input, issued_at: issued.toISOString(), expires_at: new Date(issued.getTime() + requestTimeoutMs).toISOString()
     });
     const envelope = signDirectorBridgeBody(request, this.keyring.active, issued);
     return new Promise((resolve, reject) => {
@@ -231,7 +239,7 @@ export class DirectorBridgeBroker {
           this.pending.delete(request.request_id);
           this.removeQueued(request.request_id);
           reject(new DirectorBridgeError("DIRECTOR_BRIDGE_TIMEOUT", "Local Director bridge did not respond in time.", undefined, true));
-        }, this.timeoutMs)
+        }, requestTimeoutMs)
       };
       this.pending.set(request.request_id, item);
       this.queued.push(item);

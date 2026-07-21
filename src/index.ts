@@ -35,6 +35,7 @@ export type {
 } from "./director/domain.js";
 export {
   DIRECTOR_BRIDGE_DEFAULT_TIMEOUT_MS,
+  DIRECTOR_BRIDGE_FRAME_TIMEOUT_MS,
   DIRECTOR_BRIDGE_MAX_BODY_BYTES,
   DIRECTOR_BRIDGE_PROTOCOL_VERSION,
   DirectorBridgeBroker,
