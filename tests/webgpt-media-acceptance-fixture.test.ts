@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
@@ -138,7 +138,7 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
     assert.match(String(generatedPublisher.database_path), new RegExp(`${receipt.run_id}/app\\.sqlite$`));
     assert.match(String(generatedPublisher.receipts_directory), new RegExp(`${receipt.run_id}/publisher-receipts$`));
     assert.match(String(generatedGateway.database_path), new RegExp(`${receipt.run_id}/app\\.sqlite$`));
-    assert.deepEqual(generatedGateway.media_roots, [relative(process.cwd(), dirname(resolve(root, manifest.media_relative_path))).replaceAll("\\", "/")]);
+    assert.deepEqual(generatedGateway.media_roots, [`data/webgpt/media-acceptance/${receipt.run_id}/media`]);
     assert.match(String(generatedGateway.runtime_directory), new RegExp(`${receipt.run_id}/gateway-runtime$`));
     const repeatedProfiles = spawnSync(process.execPath, [command, "profiles", "--run", receipt.run_id, "--publisher-template", publisherTemplatePath, "--gateway-template", gatewayTemplatePath], {
       cwd: process.cwd(), encoding: "utf8", windowsHide: true, env: childEnv

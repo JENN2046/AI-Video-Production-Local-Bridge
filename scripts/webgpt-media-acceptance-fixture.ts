@@ -270,6 +270,7 @@ async function createProfiles(): Promise<void> {
   }
   const databasePath = assertSafeExistingPath(root, join(root, manifest.database_file), "file");
   const mediaPath = assertSafeExistingPath(root, resolve(root, manifest.media_relative_path), "file");
+  const mediaRoot = assertSafeExistingPath(root, join(root, "media"), "directory");
   const publisherPath = join(root, "publisher-profile.json");
   const gatewayPath = join(root, "gateway-profile.json");
   if (existsSync(publisherPath) || existsSync(gatewayPath)) throw new FixtureError("MEDIA_ACCEPTANCE_PROFILE_EXISTS");
@@ -286,7 +287,7 @@ async function createProfiles(): Promise<void> {
   const generatedGateway: GatewayProfile = {
     ...gatewayTemplate,
     database_path: workspaceRelative(databasePath),
-    media_roots: [workspaceRelative(dirname(mediaPath))],
+    media_roots: [workspaceRelative(mediaRoot)],
     runtime_directory: workspaceRelative(join(root, "gateway-runtime"))
   };
   parseGatewayProfile(generatedGateway as unknown as JsonObject, manifest);
