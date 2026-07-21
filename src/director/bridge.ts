@@ -168,6 +168,8 @@ export function verifyDirectorBridgeBody<T>(
 
 interface PendingRequest {
   request: DirectorBridgeRequest;
+  execution_timeout_ms: number;
+  dispatched: boolean;
   resolve: (value: unknown) => void;
   reject: (error: unknown) => void;
   timer: NodeJS.Timeout;
@@ -188,7 +190,10 @@ export class DirectorBridgeBroker {
   ) { assertDirectorBridgeKeyring(keyring); }
 
   connected(): boolean {
-    return this.lastPollAt > 0 && this.now().getTime() - this.lastPollAt <= 30_000;
+    const current = this.now().getTime();
+    const recentPoll = this.lastPollAt > 0 && current - this.lastPollAt <= 30_000;
+    const activeLease = [...this.pending.values()].some((item) => item.dispatched && Date.parse(item.request.expires_at) > current);
+    return recentPoll || activeLease;
   }
 
   authenticatePoll(value: unknown, replay: DirectorBridgeReplayGuard): void {
@@ -207,7 +212,19 @@ export class DirectorBridgeBroker {
     while (this.queued.length > 0) {
       const item = this.queued.shift()!;
       if (this.pending.has(item.request.request_id)) {
-        return signDirectorBridgeBody(item.request, this.keyring.active, this.now());
+        const dispatchedAt = this.now();
+        item.request = DIRECTOR_BRIDGE_REQUEST_SCHEMA.parse({
+          ...item.request,
+          issued_at: dispatchedAt.toISOString(),
+          expires_at: new Date(dispatchedAt.getTime() + item.execution_timeout_ms).toISOString()
+        });
+        item.dispatched = true;
+        clearTimeout(item.timer);
+        item.timer = setTimeout(() => {
+          this.pending.delete(item.request.request_id);
+          item.reject(new DirectorBridgeError("DIRECTOR_BRIDGE_TIMEOUT", "Local Director bridge did not respond in time.", undefined, true));
+        }, item.execution_timeout_ms);
+        return signDirectorBridgeBody(item.request, this.keyring.active, dispatchedAt);
       }
     }
     return null;
@@ -218,6 +235,9 @@ export class DirectorBridgeBroker {
     const perPrincipal = [...this.pending.values()].filter((item) => item.request.actor.principal_id === actor.principal_id).length;
     if (this.pending.size >= this.maximumPending || perPrincipal >= this.maximumPerPrincipal) {
       return Promise.reject(new DirectorBridgeError("DIRECTOR_BRIDGE_BUSY", "Director bridge request capacity is full.", undefined, true));
+    }
+    if ([...this.pending.values()].some((item) => item.request.tool === "inspect_director_video_frames")) {
+      return Promise.reject(new DirectorBridgeError("DIRECTOR_BRIDGE_BUSY", "Director bridge is processing a bounded frame inspection.", undefined, true));
     }
     const issued = this.now();
     const requestTimeoutMs = tool === "inspect_director_video_frames"
@@ -234,12 +254,12 @@ export class DirectorBridgeBroker {
     });
     return new Promise((resolve, reject) => {
       const item: PendingRequest = {
-        request, resolve, reject,
+        request, execution_timeout_ms: requestTimeoutMs, dispatched: false, resolve, reject,
         timer: setTimeout(() => {
           this.pending.delete(request.request_id);
           this.removeQueued(request.request_id);
           reject(new DirectorBridgeError("DIRECTOR_BRIDGE_TIMEOUT", "Local Director bridge did not respond in time.", undefined, true));
-        }, requestTimeoutMs)
+        }, this.timeoutMs)
       };
       this.pending.set(request.request_id, item);
       this.queued.push(item);

@@ -617,6 +617,7 @@ export class DirectorLocalService implements DirectorNativeToolHandlers {
         if (proposal.focus_id !== focus.focus_id || proposal.focus_generation !== focus.generation
           || proposal.base_state_hash !== authoritativeHash || proposal.payload_hash !== payloadHash
           || proposal.kind !== input.proposal.kind
+          || proposal.source !== "native"
           || proposal.parent_proposal_id !== (input.parent_proposal_id ?? null)) {
           throw new WebGptV4Error("DIRECTOR_IDEMPOTENCY_CONFLICT", "Idempotency key was already used for another Proposal.", "idempotency_key");
         }

@@ -167,6 +167,8 @@ test("Director bridge HMAC rejects tampering, replay, expired authentication, an
     focus_id: "focus_timeout_test", focus_generation: 1, artifact_id: "artifact_timeout_test",
     sampling: "overview", max_frames: 3, request_id: "req_frame_timeout"
   });
+  await assert.rejects(() => broker.submit(actor, "get_director_focus", { request_id: "req_behind_frame" }),
+    (error) => error instanceof Error && "code" in error && error.code === "DIRECTOR_BRIDGE_BUSY");
   bridgeNow = new Date(now.getTime() + 61_000);
   const frameEnvelope = broker.poll();
   assert.ok(frameEnvelope);
@@ -178,6 +180,8 @@ test("Director bridge HMAC rejects tampering, replay, expired authentication, an
     bridgeNow
   );
   assert.equal(Date.parse(frameRequest.expires_at) - Date.parse(frameRequest.issued_at), DIRECTOR_BRIDGE_FRAME_TIMEOUT_MS);
+  assert.equal(frameRequest.issued_at, bridgeNow.toISOString());
+  assert.equal(broker.connected(), true);
   broker.close();
   await assert.rejects(pendingFrame, (error) => error instanceof Error && "code" in error && error.code === "DIRECTOR_BRIDGE_CLOSED");
   assert.throws(() => new DirectorLocalBridgeClient({
@@ -257,6 +261,21 @@ test("Director local service binds Focus/context and persists only an immutable 
       idempotency_key: "director-local-proposal-0001", parent_proposal_id: null,
       proposal: { ...proposalDraft(f.shotId, f.artifactId), payload: { ...proposalDraft(f.shotId, f.artifactId).payload, diagnosis: "Different payload." } }
     }), (error) => error instanceof Error && "code" in error && error.code === "DIRECTOR_IDEMPOTENCY_CONFLICT");
+    const manualDb = openM0Database(f.sqlitePath);
+    try {
+      manualDb.prepare(`INSERT INTO director_proposals
+        (proposal_id, workspace_id, principal_id, project_id, target_type, target_id, focus_id, focus_generation,
+         schema_version, kind, base_state_hash, payload_json, payload_hash, parent_proposal_id, idempotency_key, source, created_at)
+        SELECT 'director_proposal_manual_collision', workspace_id, principal_id, project_id, target_type, target_id,
+          focus_id, focus_generation, schema_version, kind, base_state_hash, payload_json, payload_hash,
+          parent_proposal_id, 'director-local-manual-collision', 'untrusted_manual_import', created_at
+        FROM director_proposals WHERE proposal_id = ?`).run(submitted.proposal_id);
+    } finally { manualDb.close(); }
+    await assert.rejects(() => service.submit_director_proposal({
+      focus_id: "focus_director_local_001", focus_generation: 1, base_state_hash: context.base_state_hash,
+      idempotency_key: "director-local-manual-collision", parent_proposal_id: null,
+      proposal: proposalDraft(f.shotId, f.artifactId)
+    }), (error) => error instanceof Error && "code" in error && error.code === "DIRECTOR_IDEMPOTENCY_CONFLICT");
     await assert.rejects(() => service.submit_director_proposal({
       focus_id: "focus_director_local_001", focus_generation: 1, base_state_hash: context.base_state_hash,
       idempotency_key: "director-local-proposal-0001", parent_proposal_id: "director_proposal_other",
@@ -266,7 +285,7 @@ test("Director local service binds Focus/context and persists only an immutable 
     assert.deepEqual({ state: status.state, reason: status.reason_code }, { state: "pending_review", reason: "DIRECTOR_NATIVE_SUBMITTED" });
     const db = openM0Database(f.sqlitePath);
     try {
-      assert.equal((db.prepare("SELECT COUNT(*) count FROM director_proposals").get() as { count: number }).count, 1);
+      assert.equal((db.prepare("SELECT COUNT(*) count FROM director_proposals").get() as { count: number }).count, 2);
       assert.equal((db.prepare("SELECT COUNT(*) count FROM director_proposal_events WHERE event_type = 'submitted'").get() as { count: number }).count, 1);
       assert.equal((db.prepare("SELECT COUNT(*) count FROM generation_intents").get() as { count: number }).count, 0);
       assert.equal((db.prepare("SELECT COUNT(*) count FROM director_automation_grants").get() as { count: number }).count, 0);
