@@ -396,7 +396,7 @@ function buildContext(db: M0Database, focus: DirectorFocus, kind: ProposalKind, 
         throw new WebGptV4Error("DIRECTOR_DATA_INTEGRITY_VIOLATION", "Review Artifact binding is inconsistent.", "artifact_id");
       }
       const disposition = version?.review_status === "approved" ? "accepted" : version?.review_status === "rejected" ? "rejected" : "pending";
-      return { event_id: note.note_id, artifact_id: note.artifact_id, disposition, reason_codes: [], note: note.note, created_at: new Date(note.created_at).toISOString() };
+      return { event_id: note.note_id, artifact_id: note.artifact_id || null, disposition, reason_codes: [], note: note.note, created_at: new Date(note.created_at).toISOString() };
     })
   });
   return { targetState, discussion, project, targetShot, targetArtifact };

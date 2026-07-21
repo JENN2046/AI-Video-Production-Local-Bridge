@@ -216,6 +216,13 @@ test("Director transport publishes host-visible standard security schemes for mu
 test("Director local service binds Focus/context and persists only an immutable advisory Proposal", async () => {
   const f = await fixture();
   try {
+    const noteDb = openM0Database(f.sqlitePath);
+    try {
+      noteDb.prepare(`INSERT INTO workbench_review_notes
+        (note_id, project_id, shot_id, artifact_id, author_hash, note, source, created_at, updated_at)
+        VALUES ('note_director_unbound_001', ?, ?, '', 'fixture-author', 'General SHOT review note.', 'workbench', ?, ?)`)
+        .run(f.projectId, f.shotId, f.now.toISOString(), f.now.toISOString());
+    } finally { noteDb.close(); }
     const service = createDirectorLocalService(f.actor, { database_path: f.sqlitePath, ffmpeg_path: f.ffmpeg, now: () => f.now });
     const unregistered = createDirectorLocalService(
       actorFromFederatedSubject(ISSUER, "auth0|not-registered", ["projects.read"]),
@@ -230,6 +237,7 @@ test("Director local service binds Focus/context and persists only an immutable 
       focus_id: "focus_director_local_001", focus_generation: 1, proposal_kind: "review_assessment", detail: "full"
     });
     assert.equal(context.discussion.target_artifact?.artifact_id, f.artifactId);
+    assert.equal(context.discussion.review_history[0]?.artifact_id, null);
     assert.equal(context.target_state.target_artifact?.project_id, f.projectId);
     assert.equal(logicalManifest(f.sqlitePath), beforeReads);
 

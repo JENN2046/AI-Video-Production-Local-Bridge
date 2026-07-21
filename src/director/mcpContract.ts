@@ -85,7 +85,7 @@ const discussionArtifactSchema = z.object({
 
 const discussionReviewSchema = z.object({
   event_id: idSchema,
-  artifact_id: idSchema,
+  artifact_id: idSchema.nullable(),
   disposition: z.enum(["pending", "accepted", "rejected", "revision_needed"]),
   reason_codes: z.array(z.string().regex(/^[A-Z0-9_]{3,64}$/)).max(20),
   note: z.string().max(8_192),
