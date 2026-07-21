@@ -40,7 +40,8 @@ test("migration 0008 creates immutable issuer bindings and preserves append-only
   const db = new DatabaseSync(":memory:");
   try {
     const result = runDatabaseMigrations(db);
-    assert.equal(result.applied.at(-1), "0008");
+    assert.ok(result.applied.includes("0008"));
+    assert.equal(result.applied.at(-1), "0009");
     assertSchemaCurrent(db);
     createProductionProject(db);
     registerWebGptPrincipal(db, PRINCIPAL, "TEST_BOOTSTRAP");
@@ -104,7 +105,7 @@ test("schema validation rejects issuer-binding index, trigger, CHECK, and foreig
   } finally { tableDb.close(); }
 });
 
-test("an existing 0007 database applies only 0008 without guessing issuer bindings", () => {
+test("an existing 0007 database applies 0008 and 0009 without guessing issuer bindings", () => {
   const db = new DatabaseSync(":memory:");
   try {
     for (const migration of DATABASE_MIGRATIONS.slice(0, 7)) migration.apply(db);
@@ -117,7 +118,7 @@ test("an existing 0007 database applies only 0008 without guessing issuer bindin
       db.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES (?, ?, ?)")
         .run(migration.id, migration.name, migrationChecksum(migration));
     }
-    assert.deepEqual(runDatabaseMigrations(db).applied, ["0008"]);
+    assert.deepEqual(runDatabaseMigrations(db).applied, ["0008", "0009"]);
     assertSchemaCurrent(db);
     assert.equal((db.prepare("SELECT COUNT(*) AS count FROM webgpt_auth_principal_bindings").get() as { count: number }).count, 0);
   } finally {

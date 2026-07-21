@@ -1,7 +1,8 @@
 import type { M0Database } from "./sqlite.js";
 
 export const WORKBENCH_V2_4_SCHEMA_VERSION = "workbench-v2-4";
-export const WORKBENCH_V2_SCHEMA_VERSION = "workbench-v2-5";
+export const WORKBENCH_V2_5_SCHEMA_VERSION = "workbench-v2-5";
+export const WORKBENCH_V2_SCHEMA_VERSION = "workbench-v2-6";
 
 // Frozen implementation for migration 0002. Future schema work must add a new migration.
 export function applyWorkbenchV24Baseline(db: M0Database, options: { manage_transaction?: boolean } = {}): void {

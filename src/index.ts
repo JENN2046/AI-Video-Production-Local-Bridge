@@ -1,4 +1,40 @@
 export { getM0Paths, ensureM0Directories, paths } from "./paths.js";
+export {
+  DIRECTOR_AUTOMATION_GRANT_SCHEMA,
+  DIRECTOR_AUTOMATION_GRANT_UNSIGNED_SCHEMA,
+  DIRECTOR_DOMAIN_SCHEMA_VERSION,
+  DIRECTOR_FOCUS_SCHEMA,
+  DIRECTOR_GRANT_EVENT_TYPE_SCHEMA,
+  DIRECTOR_PROPOSAL_EVENT_TYPE_SCHEMA,
+  DIRECTOR_PROPOSAL_KIND_SCHEMA,
+  DIRECTOR_PROPOSAL_SCHEMA,
+  DIRECTOR_TARGET_STATE_V1_SCHEMA,
+  DIRECTOR_TARGET_TYPE_SCHEMA,
+  STORYBOARD_PACKAGE_V2_EVENT_TYPE_SCHEMA,
+  STORYBOARD_PACKAGE_V2_SCHEMA,
+  STORYBOARD_PACKAGE_V2_SCHEMA_VERSION,
+  STORYBOARD_PACKAGE_V2_UNSIGNED_SCHEMA,
+  directorBaseStateHash,
+  directorContentHash,
+  finalizeDirectorAutomationGrant,
+  finalizeStoryboardPackageV2,
+  validateDirectorAutomationGrant,
+  validateDirectorProposal,
+  validateDirectorProposalAgainstTargetState,
+  validateStoryboardPackageV2
+} from "./director/domain.js";
+export type {
+  DirectorAutomationGrant,
+  DirectorAutomationGrantUnsigned,
+  DirectorFocus,
+  DirectorProposal,
+  DirectorTargetStateV1,
+  StoryboardPackageV2,
+  StoryboardPackageV2Unsigned,
+  ValidatedDirectorProposalTarget
+} from "./director/domain.js";
+export { deriveDirectorOperationalState } from "./packages/domain/operationalState.js";
+export type { DirectorOperationalFacts, DirectorOperationalState } from "./packages/domain/operationalState.js";
 export { initializeM0Schema, listTables, openM0Database } from "./storage/sqlite.js";
 export {
   buildProviderCapabilityKey,

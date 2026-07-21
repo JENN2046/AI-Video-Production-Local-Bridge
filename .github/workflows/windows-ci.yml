@@ -89,6 +89,9 @@ jobs:
       - name: WebGPT MCP App tests
         run: npm run test:webgpt:app
 
+      - name: ChatGPT Director domain tests
+        run: npm run test:webgpt:director
+
       - name: Readonly media gateway contract tests
         run: npm run test:webgpt:media-gateway
 

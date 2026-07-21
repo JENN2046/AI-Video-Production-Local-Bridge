@@ -349,7 +349,7 @@ test("database migrated through 0003 keeps its historical checksums and upgrades
     assert.equal(migrationChecksum(DATABASE_MIGRATIONS[1]), "52dc1311414cd88468542159d215adce443717b087e65d73d3f60859e5727c75");
     assert.equal(migrationChecksum(DATABASE_MIGRATIONS[2]), "161aa27dec915827c0ab6d46bc768ca2734c2efdf4bc45ae2fa1b2f4b564fef8");
     const result = runDatabaseMigrations(db);
-    assert.deepEqual(result.applied, ["0004", "0005", "0006", "0007", "0008"]);
+    assert.deepEqual(result.applied, ["0004", "0005", "0006", "0007", "0008", "0009"]);
     const event = db.prepare("SELECT to_state, reason_code FROM generation_job_events WHERE job_id = 'job_intent_legacy'").get() as { to_state: string; reason_code: string };
     assert.deepEqual({ ...event }, { to_state: "polling", reason_code: "MIGRATION_BACKFILL" });
     assertSchemaCurrent(db);
@@ -398,7 +398,7 @@ test("migration 0006 backfills active legacy Artifact facts from the verified Bl
     assert.equal(migrationChecksum(DATABASE_MIGRATIONS[4]), HISTORICAL_MIGRATION_0005_CHECKSUM);
     insertLedger.run(DATABASE_MIGRATIONS[4].id, DATABASE_MIGRATIONS[4].name, HISTORICAL_MIGRATION_0005_CHECKSUM);
     const migrated = runDatabaseMigrations(db);
-    assert.deepEqual(migrated.applied, ["0006", "0007", "0008"]);
+    assert.deepEqual(migrated.applied, ["0006", "0007", "0008", "0009"]);
 
     const after = JSON.parse((db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = ?").get(artifact.artifact_id) as { data_json: string }).data_json) as typeof artifact;
     assert.equal(after.metadata.sha256, before.sha256);
@@ -423,37 +423,45 @@ test("migration 0006 backfills active legacy Artifact facts from the verified Bl
 
 test("migration accepts and canonicalizes the interim 0005 ledger checksum", () => {
   const root = tempRoot();
+  let db: DatabaseSync | null = null;
   try {
     const sqlitePath = join(root, "interim-0005.sqlite");
-    const db = new DatabaseSync(sqlitePath);
-    for (const migration of DATABASE_MIGRATIONS.slice(0, 5)) migration.apply(db);
-    db.exec(`CREATE TABLE schema_migrations (
+    const connection = new DatabaseSync(sqlitePath);
+    db = connection;
+    for (const migration of DATABASE_MIGRATIONS.slice(0, 5)) migration.apply(connection);
+    connection.exec(`CREATE TABLE schema_migrations (
       migration_id TEXT PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`);
-    const insertLedger = db.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES (?, ?, ?)");
+    const insertLedger = connection.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES (?, ?, ?)");
     for (const migration of DATABASE_MIGRATIONS.slice(0, 5)) {
       insertLedger.run(migration.id, migration.name, migration.id === "0005" ? INTERIM_MIGRATION_0005_CHECKSUM : migrationChecksum(migration));
     }
 
-    assert.throws(() => assertSchemaCurrent(db), (error) => error instanceof SchemaMigrationRequiredError && /Missing database migration 0006/.test(error.message));
-    const migrated = runDatabaseMigrations(db);
-    assert.deepEqual(migrated.applied, ["0006", "0007", "0008"]);
-    const normalized = db.prepare("SELECT checksum FROM schema_migrations WHERE migration_id = '0005'").get() as { checksum: string };
+    assert.throws(
+      () => assertSchemaCurrent(connection),
+      (error) => error instanceof SchemaMigrationRequiredError
+        && /Database schema version is workbench-v2-5|Missing database migration 0006/.test(error.message)
+    );
+    const migrated = runDatabaseMigrations(connection);
+    assert.deepEqual(migrated.applied, ["0006", "0007", "0008", "0009"]);
+    const normalized = connection.prepare("SELECT checksum FROM schema_migrations WHERE migration_id = '0005'").get() as { checksum: string };
     assert.equal(normalized.checksum, HISTORICAL_MIGRATION_0005_CHECKSUM);
-    assertSchemaCurrent(db);
+    assertSchemaCurrent(connection);
 
-    db.prepare("UPDATE schema_migrations SET checksum = ? WHERE migration_id = '0005'").run(INTERIM_MIGRATION_0005_CHECKSUM);
-    assert.doesNotThrow(() => assertSchemaCurrent(db));
-    const repaired = runDatabaseMigrations(db);
+    connection.prepare("UPDATE schema_migrations SET checksum = ? WHERE migration_id = '0005'").run(INTERIM_MIGRATION_0005_CHECKSUM);
+    assert.doesNotThrow(() => assertSchemaCurrent(connection));
+    const repaired = runDatabaseMigrations(connection);
     assert.deepEqual(repaired.applied, []);
-    const repairedChecksum = db.prepare("SELECT checksum FROM schema_migrations WHERE migration_id = '0005'").get() as { checksum: string };
+    const repairedChecksum = connection.prepare("SELECT checksum FROM schema_migrations WHERE migration_id = '0005'").get() as { checksum: string };
     assert.equal(repairedChecksum.checksum, HISTORICAL_MIGRATION_0005_CHECKSUM);
 
-    db.prepare("UPDATE schema_migrations SET checksum = 'unknown-0005-drift' WHERE migration_id = '0005'").run();
-    assert.throws(() => assertSchemaCurrent(db), (error) => error instanceof SchemaMigrationRequiredError && /checksum mismatch for 0005/.test(error.message));
-    assert.throws(() => runDatabaseMigrations(db), (error) => error instanceof SchemaMigrationRequiredError && /checksum mismatch for 0005/.test(error.message));
-    db.close();
+    connection.prepare("UPDATE schema_migrations SET checksum = 'unknown-0005-drift' WHERE migration_id = '0005'").run();
+    assert.throws(() => assertSchemaCurrent(connection), (error) => error instanceof SchemaMigrationRequiredError && /checksum mismatch for 0005/.test(error.message));
+    assert.throws(() => runDatabaseMigrations(connection), (error) => error instanceof SchemaMigrationRequiredError && /checksum mismatch for 0005/.test(error.message));
+    connection.close();
+    db = null;
   } finally {
+    try { db?.close(); } catch { /* retain the primary assertion failure */ }
     rmSync(root, { recursive: true, force: true });
   }
 });

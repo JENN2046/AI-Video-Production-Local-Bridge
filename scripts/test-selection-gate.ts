@@ -31,5 +31,5 @@ if (errors.length > 0) {
   const mandatoryFiles = catalog.groups
     .filter((group) => group.classification === "mandatory")
     .reduce((count, group) => count + group.paths.length, 0);
-  process.stdout.write(`TEST_SELECTION_GATE_PASS files=${sourceFiles.length} mandatory=${mandatoryFiles} remediation=${catalog.remediation_suites.length} oauth_portability=${catalog.oauth_portability_suites.length} readonly_app=${catalog.readonly_app_suites.length}\n`);
+  process.stdout.write(`TEST_SELECTION_GATE_PASS files=${sourceFiles.length} mandatory=${mandatoryFiles} remediation=${catalog.remediation_suites.length} oauth_portability=${catalog.oauth_portability_suites.length} director=${catalog.director_suites.length} readonly_app=${catalog.readonly_app_suites.length}\n`);
 }

@@ -7,6 +7,7 @@ import type { M0Database } from "./sqlite.js";
 import {
   applyWorkbenchV24Baseline,
   WORKBENCH_V2_4_SCHEMA_VERSION,
+  WORKBENCH_V2_5_SCHEMA_VERSION,
   WORKBENCH_V2_SCHEMA_VERSION
 } from "./workbenchV2Schema.js";
 
@@ -438,7 +439,7 @@ function applyArtifactBlobMigration(db: M0Database): void {
     const nextArtifact = { ...artifact, blob_id: blobId, status: nextStatus };
     updateArtifact.run(nextStatus, JSON.stringify(nextArtifact), row.artifact_id);
   }
-  db.prepare("UPDATE m0_meta SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = 'schema_version'").run(WORKBENCH_V2_SCHEMA_VERSION);
+  db.prepare("UPDATE m0_meta SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = 'schema_version'").run(WORKBENCH_V2_5_SCHEMA_VERSION);
 }
 
 export const WEBGPT_AUTHORIZATION_WORKSPACE_ID = "jenn-ai-video-workspace";
@@ -528,6 +529,266 @@ const WEBGPT_ISSUER_BINDINGS_SQL = `
     END;
 `;
 
+const DIRECTOR_DOMAIN_SQL = `
+  CREATE TABLE director_focuses (
+    focus_id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    principal_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    generation INTEGER NOT NULL,
+    supersedes_focus_id TEXT,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    FOREIGN KEY (workspace_id, principal_id)
+      REFERENCES webgpt_auth_principals(workspace_id, principal_id) ON DELETE RESTRICT,
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE RESTRICT,
+    UNIQUE (workspace_id, principal_id, generation),
+    UNIQUE (focus_id, workspace_id, principal_id, project_id),
+    UNIQUE (focus_id, workspace_id, principal_id, project_id, target_type, target_id, generation),
+    FOREIGN KEY (supersedes_focus_id, workspace_id, principal_id, project_id)
+      REFERENCES director_focuses(focus_id, workspace_id, principal_id, project_id) ON DELETE RESTRICT,
+    CHECK (workspace_id = 'jenn-ai-video-workspace'),
+    CHECK (length(principal_id) = 64 AND principal_id NOT GLOB '*[^0-9a-f]*'),
+    CHECK (target_type IN ('project','shot','artifact','storyboard_package','generation_run','delivery','memory')),
+    CHECK (generation > 0),
+    CHECK (expires_at > created_at)
+  );
+  CREATE TABLE director_focus_events (
+    event_id TEXT PRIMARY KEY,
+    focus_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    reason_code TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (focus_id) REFERENCES director_focuses(focus_id) ON DELETE RESTRICT,
+    CHECK (event_type IN ('created','revoked','superseded')),
+    CHECK (length(reason_code) BETWEEN 1 AND 64)
+  );
+  CREATE TABLE director_proposals (
+    proposal_id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    principal_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    focus_id TEXT NOT NULL,
+    focus_generation INTEGER NOT NULL,
+    schema_version TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    base_state_hash TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    parent_proposal_id TEXT,
+    idempotency_key TEXT NOT NULL,
+    source TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (workspace_id, principal_id)
+      REFERENCES webgpt_auth_principals(workspace_id, principal_id) ON DELETE RESTRICT,
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE RESTRICT,
+    FOREIGN KEY (focus_id, workspace_id, principal_id, project_id, target_type, target_id, focus_generation)
+      REFERENCES director_focuses(focus_id, workspace_id, principal_id, project_id, target_type, target_id, generation) ON DELETE RESTRICT,
+    FOREIGN KEY (parent_proposal_id, workspace_id, principal_id, project_id)
+      REFERENCES director_proposals(proposal_id, workspace_id, principal_id, project_id) ON DELETE RESTRICT,
+    UNIQUE (workspace_id, principal_id, idempotency_key),
+    UNIQUE (proposal_id, project_id),
+    UNIQUE (proposal_id, workspace_id, principal_id, project_id),
+    CHECK (workspace_id = 'jenn-ai-video-workspace'),
+    CHECK (length(principal_id) = 64 AND principal_id NOT GLOB '*[^0-9a-f]*'),
+    CHECK (target_type IN ('project','shot','artifact','storyboard_package','generation_run','delivery','memory')),
+    CHECK (focus_generation > 0),
+    CHECK (schema_version = 'director-domain-v1'),
+    CHECK (kind IN ('creative_brief','script','shot_plan','storyboard_revision','generation_plan','clip_regeneration','review_assessment','assembly_plan','delivery_plan','memory_saveback')),
+    CHECK (length(base_state_hash) = 64 AND base_state_hash NOT GLOB '*[^0-9a-f]*'),
+    CHECK (json_valid(payload_json) = 1),
+    CHECK (length(payload_hash) = 64 AND payload_hash NOT GLOB '*[^0-9a-f]*'),
+    CHECK (length(idempotency_key) BETWEEN 16 AND 160),
+    CHECK (source IN ('native','untrusted_manual_import'))
+  );
+  CREATE TABLE director_proposal_events (
+    event_id TEXT PRIMARY KEY,
+    proposal_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    reason_code TEXT NOT NULL,
+    receipt_type TEXT NOT NULL DEFAULT '',
+    receipt_id TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (proposal_id) REFERENCES director_proposals(proposal_id) ON DELETE RESTRICT,
+    CHECK (event_type IN ('submitted','imported','withdrawn','accepted','rejected','compiled')),
+    CHECK (length(reason_code) BETWEEN 1 AND 64)
+  );
+  CREATE TABLE director_automation_grants (
+    grant_id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    principal_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    allowed_actions_json TEXT NOT NULL,
+    currency TEXT NOT NULL,
+    max_total_minor INTEGER NOT NULL,
+    max_per_run_minor INTEGER NOT NULL,
+    max_versions_per_shot INTEGER NOT NULL,
+    max_automatic_retries INTEGER NOT NULL,
+    pricing_contract_version TEXT NOT NULL,
+    capability_contract_version TEXT NOT NULL,
+    starts_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    policy_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (workspace_id, principal_id)
+      REFERENCES webgpt_auth_principals(workspace_id, principal_id) ON DELETE RESTRICT,
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE RESTRICT,
+    CHECK (workspace_id = 'jenn-ai-video-workspace'),
+    CHECK (length(principal_id) = 64 AND principal_id NOT GLOB '*[^0-9a-f]*'),
+    CHECK (provider = 'runninghub'),
+    CHECK (json_valid(allowed_actions_json) = 1),
+    CHECK (length(currency) = 3 AND currency NOT GLOB '*[^A-Z]*'),
+    CHECK (max_total_minor > 0),
+    CHECK (max_per_run_minor > 0 AND max_per_run_minor <= max_total_minor),
+    CHECK (max_versions_per_shot BETWEEN 1 AND 20),
+    CHECK (max_automatic_retries BETWEEN 0 AND 5),
+    CHECK (expires_at > starts_at),
+    CHECK (length(policy_hash) = 64 AND policy_hash NOT GLOB '*[^0-9a-f]*')
+  );
+  CREATE TABLE director_automation_grant_events (
+    event_id TEXT PRIMARY KEY,
+    grant_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    reservation_id TEXT NOT NULL DEFAULT '',
+    amount_minor INTEGER NOT NULL DEFAULT 0,
+    currency TEXT NOT NULL,
+    intent_id TEXT NOT NULL DEFAULT '',
+    run_id TEXT NOT NULL DEFAULT '',
+    reason_code TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (grant_id) REFERENCES director_automation_grants(grant_id) ON DELETE RESTRICT,
+    CHECK (event_type IN ('reserve','release','consume','revoke','expire')),
+    CHECK (amount_minor >= 0),
+    CHECK (length(currency) = 3 AND currency NOT GLOB '*[^A-Z]*'),
+    CHECK (length(reason_code) BETWEEN 1 AND 64)
+  );
+  CREATE TABLE storyboard_package_versions (
+    package_version_id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    supersedes_package_version_id TEXT,
+    schema_version TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    created_from_proposal_id TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE RESTRICT,
+    FOREIGN KEY (supersedes_package_version_id, project_id)
+      REFERENCES storyboard_package_versions(package_version_id, project_id) ON DELETE RESTRICT,
+    FOREIGN KEY (created_from_proposal_id, project_id)
+      REFERENCES director_proposals(proposal_id, project_id) ON DELETE RESTRICT,
+    UNIQUE (project_id, version),
+    UNIQUE (package_version_id, project_id),
+    CHECK (version > 0),
+    CHECK (schema_version = 'storyboard-package-v2'),
+    CHECK (json_valid(payload_json) = 1),
+    CHECK (length(content_hash) = 64 AND content_hash NOT GLOB '*[^0-9a-f]*')
+  );
+  CREATE TABLE storyboard_package_version_events (
+    event_id TEXT PRIMARY KEY,
+    package_version_id TEXT NOT NULL,
+    workspace_id TEXT NOT NULL,
+    principal_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    reason_code TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (package_version_id) REFERENCES storyboard_package_versions(package_version_id) ON DELETE RESTRICT,
+    FOREIGN KEY (workspace_id, principal_id)
+      REFERENCES webgpt_auth_principals(workspace_id, principal_id) ON DELETE RESTRICT,
+    CHECK (workspace_id = 'jenn-ai-video-workspace'),
+    CHECK (length(principal_id) = 64 AND principal_id NOT GLOB '*[^0-9a-f]*'),
+    CHECK (event_type IN ('created','frozen','superseded')),
+    CHECK (length(reason_code) BETWEEN 1 AND 64)
+  );
+
+  CREATE INDEX idx_director_focus_principal_generation
+    ON director_focuses(workspace_id, principal_id, generation DESC);
+  CREATE INDEX idx_director_focus_project_expiry
+    ON director_focuses(project_id, expires_at);
+  CREATE INDEX idx_director_focus_events_focus
+    ON director_focus_events(focus_id, created_at);
+  CREATE INDEX idx_director_proposals_project
+    ON director_proposals(project_id, created_at DESC, proposal_id DESC);
+  CREATE INDEX idx_director_proposal_events_proposal
+    ON director_proposal_events(proposal_id, created_at);
+  CREATE INDEX idx_director_grants_project_expiry
+    ON director_automation_grants(project_id, expires_at);
+  CREATE INDEX idx_director_grant_events_grant
+    ON director_automation_grant_events(grant_id, created_at);
+  CREATE INDEX idx_storyboard_package_versions_project
+    ON storyboard_package_versions(project_id, version DESC);
+  CREATE INDEX idx_storyboard_package_version_events_package
+    ON storyboard_package_version_events(package_version_id, created_at);
+
+  CREATE TRIGGER director_focuses_no_update BEFORE UPDATE ON director_focuses BEGIN
+    SELECT RAISE(ABORT, 'DIRECTOR_FOCUS_IMMUTABLE');
+  END;
+  CREATE TRIGGER director_focuses_no_delete BEFORE DELETE ON director_focuses BEGIN
+    SELECT RAISE(ABORT, 'DIRECTOR_FOCUS_IMMUTABLE');
+  END;
+  CREATE TRIGGER director_focus_events_no_update BEFORE UPDATE ON director_focus_events BEGIN
+    SELECT RAISE(ABORT, 'DIRECTOR_FOCUS_EVENTS_APPEND_ONLY');
+  END;
+  CREATE TRIGGER director_focus_events_no_delete BEFORE DELETE ON director_focus_events BEGIN
+    SELECT RAISE(ABORT, 'DIRECTOR_FOCUS_EVENTS_APPEND_ONLY');
+  END;
+  CREATE TRIGGER director_proposals_no_update BEFORE UPDATE ON director_proposals BEGIN
+    SELECT RAISE(ABORT, 'DIRECTOR_PROPOSAL_IMMUTABLE');
+  END;
+  CREATE TRIGGER director_proposals_no_delete BEFORE DELETE ON director_proposals BEGIN
+    SELECT RAISE(ABORT, 'DIRECTOR_PROPOSAL_IMMUTABLE');
+  END;
+  CREATE TRIGGER director_proposal_events_no_update BEFORE UPDATE ON director_proposal_events BEGIN
+    SELECT RAISE(ABORT, 'DIRECTOR_PROPOSAL_EVENTS_APPEND_ONLY');
+  END;
+  CREATE TRIGGER director_proposal_events_no_delete BEFORE DELETE ON director_proposal_events BEGIN
+    SELECT RAISE(ABORT, 'DIRECTOR_PROPOSAL_EVENTS_APPEND_ONLY');
+  END;
+  CREATE TRIGGER director_automation_grants_no_update BEFORE UPDATE ON director_automation_grants BEGIN
+    SELECT RAISE(ABORT, 'DIRECTOR_AUTOMATION_GRANT_IMMUTABLE');
+  END;
+  CREATE TRIGGER director_automation_grants_validate_actions BEFORE INSERT ON director_automation_grants
+  WHEN json_type(NEW.allowed_actions_json) <> 'array'
+    OR json_array_length(NEW.allowed_actions_json) NOT BETWEEN 1 AND 4
+    OR EXISTS (
+      SELECT 1 FROM json_each(NEW.allowed_actions_json)
+      WHERE type <> 'text' OR value NOT IN ('generation.submit','generation.retry','generation.download','artifact.activate')
+    )
+    OR (SELECT COUNT(*) FROM json_each(NEW.allowed_actions_json))
+      <> (SELECT COUNT(DISTINCT value) FROM json_each(NEW.allowed_actions_json))
+  BEGIN
+    SELECT RAISE(ABORT, 'DIRECTOR_AUTOMATION_GRANT_ACTIONS_INVALID');
+  END;
+  CREATE TRIGGER director_automation_grants_no_delete BEFORE DELETE ON director_automation_grants BEGIN
+    SELECT RAISE(ABORT, 'DIRECTOR_AUTOMATION_GRANT_IMMUTABLE');
+  END;
+  CREATE TRIGGER director_automation_grant_events_no_update BEFORE UPDATE ON director_automation_grant_events BEGIN
+    SELECT RAISE(ABORT, 'DIRECTOR_AUTOMATION_GRANT_EVENTS_APPEND_ONLY');
+  END;
+  CREATE TRIGGER director_automation_grant_events_no_delete BEFORE DELETE ON director_automation_grant_events BEGIN
+    SELECT RAISE(ABORT, 'DIRECTOR_AUTOMATION_GRANT_EVENTS_APPEND_ONLY');
+  END;
+  CREATE TRIGGER storyboard_package_versions_no_update BEFORE UPDATE ON storyboard_package_versions BEGIN
+    SELECT RAISE(ABORT, 'STORYBOARD_PACKAGE_V2_IMMUTABLE');
+  END;
+  CREATE TRIGGER storyboard_package_versions_no_delete BEFORE DELETE ON storyboard_package_versions BEGIN
+    SELECT RAISE(ABORT, 'STORYBOARD_PACKAGE_V2_IMMUTABLE');
+  END;
+  CREATE TRIGGER storyboard_package_version_events_no_update BEFORE UPDATE ON storyboard_package_version_events BEGIN
+    SELECT RAISE(ABORT, 'STORYBOARD_PACKAGE_V2_EVENTS_APPEND_ONLY');
+  END;
+  CREATE TRIGGER storyboard_package_version_events_no_delete BEFORE DELETE ON storyboard_package_version_events BEGIN
+    SELECT RAISE(ABORT, 'STORYBOARD_PACKAGE_V2_EVENTS_APPEND_ONLY');
+  END;
+
+  UPDATE m0_meta SET value = 'workbench-v2-6', updated_at = CURRENT_TIMESTAMP WHERE key = 'schema_version';
+`;
+
 export const DATABASE_MIGRATIONS: readonly Migration[] = [
   {
     id: "0001",
@@ -559,13 +820,13 @@ export const DATABASE_MIGRATIONS: readonly Migration[] = [
   {
     id: "0005",
     name: "immutable_media_blobs",
-    canonical: `${ARTIFACT_BLOBS_SQL}\nBACKFILL verified_local_bytes_v1\nPRECONDITION artifact_structured_drift_v1\nSCHEMA ${WORKBENCH_V2_SCHEMA_VERSION}`,
+    canonical: `${ARTIFACT_BLOBS_SQL}\nBACKFILL verified_local_bytes_v1\nPRECONDITION artifact_structured_drift_v1\nSCHEMA ${WORKBENCH_V2_5_SCHEMA_VERSION}`,
     apply: applyArtifactBlobMigration
   },
   {
     id: "0006",
     name: "media_activation_journal",
-    canonical: `${MEDIA_ACTIVATION_JOURNAL_SQL}\nBACKFILL active_artifact_blob_facts_and_roots_v2\nRECOVERY deterministic_file_activation_v1\nSCHEMA ${WORKBENCH_V2_SCHEMA_VERSION}`,
+    canonical: `${MEDIA_ACTIVATION_JOURNAL_SQL}\nBACKFILL active_artifact_blob_facts_and_roots_v2\nRECOVERY deterministic_file_activation_v1\nSCHEMA ${WORKBENCH_V2_5_SCHEMA_VERSION}`,
     apply: applyMediaActivationMigration
   },
   {
@@ -579,6 +840,12 @@ export const DATABASE_MIGRATIONS: readonly Migration[] = [
     name: "webgpt_issuer_bound_principals",
     canonical: WEBGPT_ISSUER_BINDINGS_SQL,
     apply: (db) => db.exec(WEBGPT_ISSUER_BINDINGS_SQL)
+  },
+  {
+    id: "0009",
+    name: "chatgpt_director_domain",
+    canonical: DIRECTOR_DOMAIN_SQL,
+    apply: (db) => db.exec(DIRECTOR_DOMAIN_SQL)
   }
 ];
 
@@ -735,6 +1002,7 @@ function expectedSchemaDefinitions(includeJobs: boolean, expectedColumns: Record
       reference.exec(MEDIA_ACTIVATION_JOURNAL_SQL);
       reference.exec(WEBGPT_MULTI_USER_AUTHORIZATION_SQL);
       reference.exec(WEBGPT_ISSUER_BINDINGS_SQL);
+      reference.exec(DIRECTOR_DOMAIN_SQL);
     }
     const columns = new Map<string, Map<string, string>>();
     const checks = new Map<string, string[]>();
@@ -773,7 +1041,15 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     webgpt_auth_principals: ["workspace_id", "principal_id", "status", "created_at", "updated_at"],
     webgpt_auth_principal_bindings: ["workspace_id", "principal_id", "issuer_hash", "created_at"],
     webgpt_project_memberships: ["workspace_id", "project_id", "principal_id", "role", "status", "created_at", "updated_at"],
-    webgpt_auth_events: ["event_id", "workspace_id", "principal_id", "project_id", "event_type", "role", "reason_code", "created_at"]
+    webgpt_auth_events: ["event_id", "workspace_id", "principal_id", "project_id", "event_type", "role", "reason_code", "created_at"],
+    director_focuses: ["focus_id", "workspace_id", "principal_id", "project_id", "target_type", "target_id", "generation", "supersedes_focus_id", "created_at", "expires_at"],
+    director_focus_events: ["event_id", "focus_id", "event_type", "reason_code", "created_at"],
+    director_proposals: ["proposal_id", "workspace_id", "principal_id", "project_id", "target_type", "target_id", "focus_id", "focus_generation", "schema_version", "kind", "base_state_hash", "payload_json", "payload_hash", "parent_proposal_id", "idempotency_key", "source", "created_at"],
+    director_proposal_events: ["event_id", "proposal_id", "event_type", "reason_code", "receipt_type", "receipt_id", "created_at"],
+    director_automation_grants: ["grant_id", "workspace_id", "principal_id", "project_id", "provider", "allowed_actions_json", "currency", "max_total_minor", "max_per_run_minor", "max_versions_per_shot", "max_automatic_retries", "pricing_contract_version", "capability_contract_version", "starts_at", "expires_at", "policy_hash", "created_at"],
+    director_automation_grant_events: ["event_id", "grant_id", "event_type", "reservation_id", "amount_minor", "currency", "intent_id", "run_id", "reason_code", "created_at"],
+    storyboard_package_versions: ["package_version_id", "project_id", "version", "supersedes_package_version_id", "schema_version", "payload_json", "content_hash", "created_from_proposal_id", "created_at"],
+    storyboard_package_version_events: ["event_id", "package_version_id", "workspace_id", "principal_id", "event_type", "reason_code", "created_at"]
   } : V24_EXPECTED_COLUMNS;
   const expectedIndexes = includeJobs ? [
     ...V24_EXPECTED_INDEXES,
@@ -786,7 +1062,16 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     "idx_media_activation_journal_active_artifact",
     "idx_webgpt_memberships_principal",
     "idx_webgpt_auth_bindings_issuer",
-    "idx_webgpt_auth_events_principal"
+    "idx_webgpt_auth_events_principal",
+    "idx_director_focus_principal_generation",
+    "idx_director_focus_project_expiry",
+    "idx_director_focus_events_focus",
+    "idx_director_proposals_project",
+    "idx_director_proposal_events_proposal",
+    "idx_director_grants_project_expiry",
+    "idx_director_grant_events_grant",
+    "idx_storyboard_package_versions_project",
+    "idx_storyboard_package_version_events_package"
   ] : [...V24_EXPECTED_INDEXES];
   const expectedTriggers = includeJobs
     ? [
@@ -802,7 +1087,24 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "webgpt_auth_events_no_update",
         "webgpt_auth_events_no_delete",
         "webgpt_auth_principal_bindings_no_update",
-        "webgpt_auth_principal_bindings_no_delete"
+        "webgpt_auth_principal_bindings_no_delete",
+        "director_focuses_no_update",
+        "director_focuses_no_delete",
+        "director_focus_events_no_update",
+        "director_focus_events_no_delete",
+        "director_proposals_no_update",
+        "director_proposals_no_delete",
+        "director_proposal_events_no_update",
+        "director_proposal_events_no_delete",
+        "director_automation_grants_validate_actions",
+        "director_automation_grants_no_update",
+        "director_automation_grants_no_delete",
+        "director_automation_grant_events_no_update",
+        "director_automation_grant_events_no_delete",
+        "storyboard_package_versions_no_update",
+        "storyboard_package_versions_no_delete",
+        "storyboard_package_version_events_no_update",
+        "storyboard_package_version_events_no_delete"
       ]
     : ["trg_workbench_project_meta_after_insert"];
   const definitions = expectedSchemaDefinitions(includeJobs, expectedColumns, [...expectedIndexes, ...expectedTriggers]);
