@@ -161,11 +161,13 @@ test("Director bridge HMAC rejects tampering, replay, expired authentication, an
     expires_at: new Date(now.getTime() + 60_001).toISOString()
   }).success, false);
   const actor = actorFromFederatedSubject(ISSUER, SUBJECT, ["projects.read", "media.read"]);
-  const broker = new DirectorBridgeBroker(keyring, () => now);
+  let bridgeNow = now;
+  const broker = new DirectorBridgeBroker(keyring, () => bridgeNow);
   const pendingFrame = broker.submit(actor, "inspect_director_video_frames", {
     focus_id: "focus_timeout_test", focus_generation: 1, artifact_id: "artifact_timeout_test",
     sampling: "overview", max_frames: 3, request_id: "req_frame_timeout"
   });
+  bridgeNow = new Date(now.getTime() + 61_000);
   const frameEnvelope = broker.poll();
   assert.ok(frameEnvelope);
   const frameRequest = verifyDirectorBridgeBody(
@@ -173,7 +175,7 @@ test("Director bridge HMAC rejects tampering, replay, expired authentication, an
     keyring,
     DIRECTOR_BRIDGE_REQUEST_SCHEMA,
     new DirectorBridgeReplayGuard(),
-    now
+    bridgeNow
   );
   assert.equal(Date.parse(frameRequest.expires_at) - Date.parse(frameRequest.issued_at), DIRECTOR_BRIDGE_FRAME_TIMEOUT_MS);
   broker.close();

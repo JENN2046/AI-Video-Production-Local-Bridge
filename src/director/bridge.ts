@@ -168,7 +168,6 @@ export function verifyDirectorBridgeBody<T>(
 
 interface PendingRequest {
   request: DirectorBridgeRequest;
-  envelope: DirectorBridgeSignedEnvelope;
   resolve: (value: unknown) => void;
   reject: (error: unknown) => void;
   timer: NodeJS.Timeout;
@@ -207,7 +206,9 @@ export class DirectorBridgeBroker {
     this.lastPollAt = this.now().getTime();
     while (this.queued.length > 0) {
       const item = this.queued.shift()!;
-      if (this.pending.has(item.request.request_id)) return item.envelope;
+      if (this.pending.has(item.request.request_id)) {
+        return signDirectorBridgeBody(item.request, this.keyring.active, this.now());
+      }
     }
     return null;
   }
@@ -231,10 +232,9 @@ export class DirectorBridgeBroker {
       },
       tool, input, issued_at: issued.toISOString(), expires_at: new Date(issued.getTime() + requestTimeoutMs).toISOString()
     });
-    const envelope = signDirectorBridgeBody(request, this.keyring.active, issued);
     return new Promise((resolve, reject) => {
       const item: PendingRequest = {
-        request, envelope, resolve, reject,
+        request, resolve, reject,
         timer: setTimeout(() => {
           this.pending.delete(request.request_id);
           this.removeQueued(request.request_id);

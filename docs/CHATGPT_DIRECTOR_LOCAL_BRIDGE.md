@@ -35,7 +35,7 @@ POST /director/bridge/v1/complete
 
 `/director/mcp` requires the separate Director OAuth audience and the exact per-tool scopes defined in the fixed five-tool catalog. PRMD, the host-visible standard `securitySchemes`, the compatibility `_meta.securitySchemes`, and runtime `WWW-Authenticate` challenges are generated from the same catalog.
 
-The two bridge routes do not accept OAuth bearer tokens. They accept only short-lived HMAC-SHA256 envelopes signed with a dedicated 32-byte bridge key. Each message binds protocol version, key id, random nonce, issue time and a JCS-canonical body. Invalid signatures, stale messages, replays, malformed keyrings, queue overflow and timeouts fail closed with stable low-disclosure errors. Ordinary tools retain a 30-second bridge budget; `inspect_director_video_frames` receives a distinct 130-second bridge budget so its bounded 120-second local analysis can complete without weakening the other tools.
+The two bridge routes do not accept OAuth bearer tokens. They accept only short-lived HMAC-SHA256 envelopes signed with a dedicated 32-byte bridge key. Each message binds protocol version, key id, random nonce, issue time and a JCS-canonical body. Invalid signatures, stale messages, replays, malformed keyrings, queue overflow and timeouts fail closed with stable low-disclosure errors. Queued requests receive their transport signature only when the local bridge polls them, while their original request deadline remains unchanged. Ordinary tools retain a 30-second bridge budget; `inspect_director_video_frames` receives a distinct 130-second bridge budget so its bounded 120-second local analysis can complete without weakening the other tools.
 
 Readiness is strict:
 
