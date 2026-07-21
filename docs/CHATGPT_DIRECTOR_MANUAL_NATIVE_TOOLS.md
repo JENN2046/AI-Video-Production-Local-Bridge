@@ -35,6 +35,8 @@ The Director resource registers exactly five tools:
 
 All five tools are model-visible and have no Widget output template. The four read/compute tools use `readOnlyHint=true`. Proposal submission is non-destructive, bounded, idempotent and uses `readOnlyHint=false`.
 
+Every successful structured result is bounded to 128 KiB. A valid result that exceeds the budget fails closed with `RESPONSE_BUDGET_EXCEEDED`; it is never silently truncated. Missing per-tool scopes return an MCP tool error with `_meta["mcp/www_authenticate"]`, so ChatGPT can request the exact missing `media.read` or `proposals.write` authorization instead of receiving a generic failure.
+
 The registry never exposes approval, Provider submission, clip adoption, delivery confirmation, memory commit, Artifact deletion or Storyboard Package overwrite tools. Existing WebGPT Full tools are not inherited by the Director resource.
 
 ## Input authority

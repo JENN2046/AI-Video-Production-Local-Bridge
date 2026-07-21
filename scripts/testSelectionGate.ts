@@ -44,6 +44,8 @@ export interface DirectorSuite extends OAuthPortabilitySuite {}
 
 export const REQUIRED_DIRECTOR_SUITES: ReadonlyArray<DirectorSuite> = [
   { id: "director-native-tool-registry", path: "tests/director-manual-native-tools.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "Director native registry exposes only the fixed advisory tool set with exact OAuth scopes" },
+  { id: "director-tool-scope-challenge", path: "tests/director-manual-native-tools.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "Director registry enforces media and proposal scopes independently from projects.read" },
+  { id: "director-result-budget", path: "tests/director-manual-native-tools.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "Director tool results fail closed above the 128 KiB structured response budget" },
   { id: "director-independent-oauth-resource", path: "tests/director-manual-native-tools.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "Director OAuth resource is complete, distinct, and advertises the fixed scopes" },
   { id: "director-manual-import-boundary", path: "tests/director-manual-native-tools.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "Manual Director import remains explicit, confirmed, and untrusted" },
   { id: "director-base-state-hash", path: "tests/director-domain-contract.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "director base-state hash uses deterministic JCS and changes with authoritative inputs" },

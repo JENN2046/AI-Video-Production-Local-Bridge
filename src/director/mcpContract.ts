@@ -7,10 +7,12 @@ import {
   DIRECTOR_TARGET_STATE_V1_SCHEMA,
   validateDirectorProposal
 } from "./domain.js";
-import { requireScope, type WebGptV4Actor, type WebGptV4Scope } from "../webgpt-v4/types.js";
+import { wwwAuthenticate, type WebGptV4AuthConfig } from "../webgpt-v4/auth.js";
+import { errorBody, requireScope, type WebGptV4Actor, type WebGptV4Scope } from "../webgpt-v4/types.js";
 
 export const DIRECTOR_MCP_SERVICE_VERSION = "director-mcp-v1.0.0";
 export const DIRECTOR_CONTEXT_VERSION = "director-context-v1";
+export const DIRECTOR_TOOL_RESULT_MAX_BYTES = 128 * 1024;
 
 export const DIRECTOR_NATIVE_TOOL_NAMES = [
   "get_director_focus",
@@ -249,14 +251,30 @@ const descriptions: Record<DirectorNativeToolName, string> = {
 };
 
 function toolResult<T>(schema: z.ZodType<T>, value: unknown, summary: string): never {
-  return {
+  const structuredContent = schema.parse(value);
+  const result = {
     isError: false,
-    structuredContent: schema.parse(value),
+    structuredContent,
     content: [{ type: "text", text: summary }]
-  } as never;
+  };
+  if (Buffer.byteLength(JSON.stringify(result), "utf8") > DIRECTOR_TOOL_RESULT_MAX_BYTES) {
+    return {
+      isError: true,
+      content: [{ type: "text", text: "RESPONSE_BUDGET_EXCEEDED: Director tool result exceeds the 128 KiB response budget." }]
+    } as never;
+  }
+  return result as never;
 }
 
-export function createDirectorNativeMcpServer(actor: WebGptV4Actor, handlers: DirectorNativeToolHandlers): McpServer {
+export interface CreateDirectorNativeMcpServerOptions {
+  auth_config?: WebGptV4AuthConfig | null;
+}
+
+export function createDirectorNativeMcpServer(
+  actor: WebGptV4Actor,
+  handlers: DirectorNativeToolHandlers,
+  options: CreateDirectorNativeMcpServerOptions = {}
+): McpServer {
   const server = new McpServer(
     { name: "jenn-ai-video-director", version: DIRECTOR_MCP_SERVICE_VERSION },
     { instructions: "ChatGPT Director may read bound context and submit immutable advisory proposals. It cannot approve, execute, spend, deliver, delete, overwrite, or commit memory." }
@@ -281,13 +299,29 @@ export function createDirectorNativeMcpServer(actor: WebGptV4Actor, handlers: Di
       }
     };
     const invoke = async (input: unknown): Promise<never> => {
-      for (const scope of entry.scope) requireScope(actor, scope);
-      const parsed = entry.input.parse(input);
-      const value = await handlers[entry.name](parsed as never);
-      const summary = entry.name === "submit_director_proposal"
-        ? "Director 提议已提交到 Human Workbench 等待人工审查；尚未执行任何生产动作。"
-        : "已返回与当前 Director Focus 绑定的只读结果。";
-      return toolResult(entry.output as z.ZodType<unknown>, value, summary);
+      try {
+        for (const scope of entry.scope) requireScope(actor, scope);
+        const parsed = entry.input.parse(input);
+        const value = await handlers[entry.name](parsed as never);
+        const summary = entry.name === "submit_director_proposal"
+          ? "Director 提议已提交到 Human Workbench 等待人工审查；尚未执行任何生产动作。"
+          : "已返回与当前 Director Focus 绑定的只读结果。";
+        return toolResult(entry.output as z.ZodType<unknown>, value, summary);
+      } catch (error) {
+        const safe = errorBody(error);
+        const challenge = safe.code === "INSUFFICIENT_SCOPE"
+          ? wwwAuthenticate(options.auth_config ?? null, "insufficient_scope", {
+            scope: entry.scope.join(" "),
+            error_description: safe.message,
+            ...(options.auth_config ? {} : { resource_metadata_url: "/.well-known/oauth-protected-resource/director/mcp" })
+          })
+          : null;
+        return {
+          isError: true,
+          content: [{ type: "text", text: `${safe.code}: ${safe.message}`.slice(0, 1_024) }],
+          ...(challenge ? { _meta: { "mcp/www_authenticate": [challenge] } } : {})
+        } as never;
+      }
     };
     server.registerTool(entry.name, descriptor, invoke);
   }

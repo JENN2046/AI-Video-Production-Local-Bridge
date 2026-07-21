@@ -12,6 +12,7 @@ import {
   DIRECTOR_FORBIDDEN_TOOL_NAMES,
   DIRECTOR_MANUAL_IMPORT_SCHEMA,
   DIRECTOR_NATIVE_TOOL_NAMES,
+  DIRECTOR_TOOL_RESULT_MAX_BYTES,
   type DirectorNativeToolHandlers
 } from "../src/director/mcpContract.js";
 import {
@@ -258,7 +259,14 @@ test("Director native registry exposes only the fixed advisory tool set with exa
 
 test("Director registry enforces media and proposal scopes independently from projects.read", async () => {
   const actor = { principal_id: hash, actor_hash: hash, issuer_hash: "b".repeat(64), scopes: new Set(["projects.read"]) };
-  const server = createDirectorNativeMcpServer(actor, handlers());
+  const authConfig = loadDirectorOAuthConfig({
+    WEBGPT_DIRECTOR_RESOURCE_URL: "https://aivideo.example.test/director/mcp",
+    WEBGPT_DIRECTOR_OAUTH_ISSUER: "https://tenant.example.test/",
+    WEBGPT_DIRECTOR_OAUTH_AUDIENCE: "https://aivideo.example.test/director/mcp",
+    WEBGPT_DIRECTOR_OAUTH_JWKS_URI: "https://tenant.example.test/.well-known/jwks.json",
+    WEBGPT_DIRECTOR_OAUTH_CLIENT_REGISTRATION: "predefined"
+  } as NodeJS.ProcessEnv)!;
+  const server = createDirectorNativeMcpServer(actor, handlers(), { auth_config: authConfig });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "director-scope-test", version: "1.0.0" });
   await server.connect(serverTransport);
@@ -272,6 +280,8 @@ test("Director registry enforces media and proposal scopes independently from pr
     });
     assert.equal(deniedFrames.isError, true);
     assert.match(JSON.stringify(deniedFrames.content), /Required scope is missing: media\.read/);
+    assert.match(JSON.stringify(deniedFrames._meta), /mcp\/www_authenticate/);
+    assert.match(JSON.stringify(deniedFrames._meta), /media\.read/);
     const deniedProposal = await client.callTool({
       name: "submit_director_proposal",
       arguments: {
@@ -296,6 +306,54 @@ test("Director registry enforces media and proposal scopes independently from pr
     });
     assert.equal(deniedProposal.isError, true);
     assert.match(JSON.stringify(deniedProposal.content), /Required scope is missing: proposals\.write/);
+    assert.match(JSON.stringify(deniedProposal._meta), /mcp\/www_authenticate/);
+    assert.match(JSON.stringify(deniedProposal._meta), /proposals\.write/);
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
+
+test("Director tool results fail closed above the 128 KiB structured response budget", async () => {
+  const actor = {
+    principal_id: hash,
+    actor_hash: hash,
+    issuer_hash: "b".repeat(64),
+    scopes: new Set(["projects.read", "media.read", "proposals.write"])
+  };
+  const largeHandlers = handlers();
+  const baseGetContext = largeHandlers.get_director_context;
+  largeHandlers.get_director_context = async (input) => {
+    const result = await baseGetContext(input);
+    return {
+      ...result,
+      discussion: {
+        ...result.discussion,
+        review_history: Array.from({ length: 20 }, (_, index) => ({
+          event_id: `review_event_${index}`,
+          artifact_id: "artifact_clip_001",
+          disposition: "revision_needed" as const,
+          reason_codes: ["MOTION_TOO_ABRUPT"],
+          note: "x".repeat(8_000),
+          created_at: now
+        }))
+      }
+    };
+  };
+  const server = createDirectorNativeMcpServer(actor, largeHandlers);
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "director-budget-test", version: "1.0.0" });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  try {
+    const result = await client.callTool({
+      name: "get_director_context",
+      arguments: { focus_id: focus.focus_id, focus_generation: focus.generation, detail: "full" }
+    });
+    assert.equal(result.isError, true);
+    assert.equal(result.structuredContent, undefined);
+    assert.match(JSON.stringify(result.content), /RESPONSE_BUDGET_EXCEEDED/);
+    assert.equal(Buffer.byteLength(JSON.stringify(result), "utf8") < DIRECTOR_TOOL_RESULT_MAX_BYTES, true);
   } finally {
     await client.close();
     await server.close();
