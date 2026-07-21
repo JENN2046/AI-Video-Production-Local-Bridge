@@ -33,6 +33,38 @@ export type {
   StoryboardPackageV2Unsigned,
   ValidatedDirectorProposalTarget
 } from "./director/domain.js";
+export {
+  DIRECTOR_BRIDGE_DEFAULT_TIMEOUT_MS,
+  DIRECTOR_BRIDGE_FRAME_TIMEOUT_MS,
+  DIRECTOR_BRIDGE_MAX_BODY_BYTES,
+  DIRECTOR_BRIDGE_PROTOCOL_VERSION,
+  DirectorBridgeBroker,
+  DirectorBridgeError,
+  DirectorBridgeReplayGuard,
+  DirectorLocalBridgeClient,
+  assertDirectorBridgeKeyring,
+  signDirectorBridgeBody,
+  verifyDirectorBridgeBody
+} from "./director/bridge.js";
+export type {
+  DirectorBridgeCompletion,
+  DirectorBridgeKey,
+  DirectorBridgeKeyring,
+  DirectorBridgeRequest,
+  DirectorBridgeSignedEnvelope,
+  DirectorLocalBridgeClientOptions
+} from "./director/bridge.js";
+export { DIRECTOR_BRIDGE_ENV_KEYS, loadDirectorBridgeKeyring } from "./director/bridgeConfig.js";
+export { DirectorLocalService, createDirectorLocalService } from "./director/localService.js";
+export type { DirectorLocalServiceOptions } from "./director/localService.js";
+export {
+  DIRECTOR_BRIDGE_COMPLETE_PATH,
+  DIRECTOR_BRIDGE_POLL_PATH,
+  DIRECTOR_REMOTE_MCP_PATH,
+  DIRECTOR_REMOTE_SERVICE_VERSION,
+  startDirectorRemoteRuntime
+} from "./director/remoteRuntime.js";
+export type { DirectorRemoteRuntime, StartDirectorRemoteRuntimeOptions } from "./director/remoteRuntime.js";
 export { deriveDirectorOperationalState } from "./packages/domain/operationalState.js";
 export type { DirectorOperationalFacts, DirectorOperationalState } from "./packages/domain/operationalState.js";
 export { initializeM0Schema, listTables, openM0Database } from "./storage/sqlite.js";

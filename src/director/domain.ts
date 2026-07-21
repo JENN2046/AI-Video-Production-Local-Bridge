@@ -358,7 +358,8 @@ function validateProposalTarget(value: z.infer<typeof directorProposalShapeSchem
       else requireTarget("shot", value.payload.shot_id);
       break;
     case "review_assessment":
-      requireTarget("artifact", value.payload.artifact_id);
+      if (value.target_type === "artifact") requireTarget("artifact", value.payload.artifact_id);
+      else requireTarget("shot", value.payload.shot_id);
       break;
     case "delivery_plan":
       requireTarget("delivery", value.project_id);

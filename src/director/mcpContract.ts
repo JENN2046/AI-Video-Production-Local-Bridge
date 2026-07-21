@@ -1,7 +1,10 @@
+import { createHash } from "node:crypto";
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import {
+  DIRECTOR_PROPOSAL_KIND_SCHEMA,
   DIRECTOR_PROPOSAL_DRAFT_SCHEMA,
   DIRECTOR_PROPOSAL_SCHEMA,
   DIRECTOR_TARGET_STATE_V1_SCHEMA,
@@ -13,6 +16,7 @@ import { errorBody, requireScope, type WebGptV4Actor, type WebGptV4Scope } from 
 export const DIRECTOR_MCP_SERVICE_VERSION = "director-mcp-v1.0.0";
 export const DIRECTOR_CONTEXT_VERSION = "director-context-v1";
 export const DIRECTOR_TOOL_RESULT_MAX_BYTES = 128 * 1024;
+export const DIRECTOR_MODEL_IMAGE_MAX_BYTES = 12 * 1024 * 1024;
 
 export const DIRECTOR_NATIVE_TOOL_NAMES = [
   "get_director_focus",
@@ -81,7 +85,7 @@ const discussionArtifactSchema = z.object({
 
 const discussionReviewSchema = z.object({
   event_id: idSchema,
-  artifact_id: idSchema,
+  artifact_id: idSchema.nullable(),
   disposition: z.enum(["pending", "accepted", "rejected", "revision_needed"]),
   reason_codes: z.array(z.string().regex(/^[A-Z0-9_]{3,64}$/)).max(20),
   note: z.string().max(8_192),
@@ -121,6 +125,7 @@ export const DIRECTOR_GET_FOCUS_OUTPUT_SCHEMA = z.object({
 export const DIRECTOR_GET_CONTEXT_INPUT_SCHEMA = z.object({
   focus_id: idSchema,
   focus_generation: z.number().int().positive(),
+  proposal_kind: DIRECTOR_PROPOSAL_KIND_SCHEMA,
   detail: z.enum(["compact", "full"]).default("compact"),
   request_id: requestIdSchema
 }).strict();
@@ -159,6 +164,35 @@ export const DIRECTOR_INSPECT_VIDEO_FRAMES_OUTPUT_SCHEMA = z.object({
   }).strict()).min(1).max(40),
   truncated: z.boolean()
 }).strict();
+
+const directorModelImageSchema = z.object({
+  data: z.string().min(4).max(16 * 1024 * 1024).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
+  mime_type: z.literal("image/jpeg")
+}).strict();
+
+export const DIRECTOR_VIDEO_FRAME_TOOL_OUTPUT_SCHEMA = z.object({
+  structured_content: DIRECTOR_INSPECT_VIDEO_FRAMES_OUTPUT_SCHEMA,
+  model_images: z.array(directorModelImageSchema).min(1).max(40)
+}).strict().superRefine((value, context) => {
+  if (value.model_images.length !== value.structured_content.frames.length) {
+    context.addIssue({ code: "custom", message: "Frame metadata and model images must have the same length.", path: ["model_images"] });
+    return;
+  }
+  let total = 0;
+  value.model_images.forEach((image, index) => {
+    const bytes = Buffer.from(image.data, "base64");
+    total += bytes.byteLength;
+    if (bytes.toString("base64") !== image.data) {
+      context.addIssue({ code: "custom", message: "Model image must use canonical base64.", path: ["model_images", index, "data"] });
+    }
+    if (createHash("sha256").update(bytes).digest("hex") !== value.structured_content.frames[index]?.sha256) {
+      context.addIssue({ code: "custom", message: "Model image digest does not match its frame metadata.", path: ["model_images", index, "data"] });
+    }
+  });
+  if (total > DIRECTOR_MODEL_IMAGE_MAX_BYTES) {
+    context.addIssue({ code: "custom", message: "Model image content exceeds the Director frame budget.", path: ["model_images"] });
+  }
+});
 
 export const DIRECTOR_SUBMIT_PROPOSAL_INPUT_SCHEMA = z.object({
   focus_id: idSchema,
@@ -221,10 +255,13 @@ type OutputOf<T extends z.ZodType> = z.infer<T>;
 export interface DirectorNativeToolHandlers {
   get_director_focus(input: InputOf<typeof DIRECTOR_GET_FOCUS_INPUT_SCHEMA>): Promise<OutputOf<typeof DIRECTOR_GET_FOCUS_OUTPUT_SCHEMA>>;
   get_director_context(input: InputOf<typeof DIRECTOR_GET_CONTEXT_INPUT_SCHEMA>): Promise<OutputOf<typeof DIRECTOR_GET_CONTEXT_OUTPUT_SCHEMA>>;
-  inspect_director_video_frames(input: InputOf<typeof DIRECTOR_INSPECT_VIDEO_FRAMES_INPUT_SCHEMA>): Promise<OutputOf<typeof DIRECTOR_INSPECT_VIDEO_FRAMES_OUTPUT_SCHEMA>>;
+  inspect_director_video_frames(input: InputOf<typeof DIRECTOR_INSPECT_VIDEO_FRAMES_INPUT_SCHEMA>): Promise<DirectorVideoFrameToolOutput | OutputOf<typeof DIRECTOR_INSPECT_VIDEO_FRAMES_OUTPUT_SCHEMA>>;
   submit_director_proposal(input: InputOf<typeof DIRECTOR_SUBMIT_PROPOSAL_INPUT_SCHEMA>): Promise<OutputOf<typeof DIRECTOR_SUBMIT_PROPOSAL_OUTPUT_SCHEMA>>;
   get_director_proposal_status(input: InputOf<typeof DIRECTOR_GET_PROPOSAL_STATUS_INPUT_SCHEMA>): Promise<OutputOf<typeof DIRECTOR_GET_PROPOSAL_STATUS_OUTPUT_SCHEMA>>;
 }
+
+export type DirectorModelImage = z.infer<typeof directorModelImageSchema>;
+export type DirectorVideoFrameToolOutput = z.infer<typeof DIRECTOR_VIDEO_FRAME_TOOL_OUTPUT_SCHEMA>;
 
 export const DIRECTOR_NATIVE_TOOL_CATALOG = [
   { name: "get_director_focus", scope: ["projects.read"], risk: "read", input: DIRECTOR_GET_FOCUS_INPUT_SCHEMA, output: DIRECTOR_GET_FOCUS_OUTPUT_SCHEMA },
@@ -302,11 +339,24 @@ export function createDirectorNativeMcpServer(
       try {
         for (const scope of entry.scope) requireScope(actor, scope);
         const parsed = entry.input.parse(input);
-        const value = await handlers[entry.name](parsed as never);
+        const handled = await handlers[entry.name](parsed as never);
+        const frameResult = entry.name === "inspect_director_video_frames"
+          && handled && typeof handled === "object" && "structured_content" in handled
+          ? DIRECTOR_VIDEO_FRAME_TOOL_OUTPUT_SCHEMA.parse(handled)
+          : null;
+        const value = frameResult?.structured_content ?? handled;
         const summary = entry.name === "submit_director_proposal"
           ? "Director 提议已提交到 Human Workbench 等待人工审查；尚未执行任何生产动作。"
           : "已返回与当前 Director Focus 绑定的只读结果。";
-        return toolResult(entry.output as z.ZodType<unknown>, value, summary);
+        const result = toolResult(entry.output as z.ZodType<unknown>, value, summary) as unknown as Record<string, unknown>;
+        if (entry.name === "inspect_director_video_frames" && result.isError !== true) {
+          const images = frameResult?.model_images ?? [];
+          result.content = [
+            { type: "text", text: summary },
+            ...images.map((image) => ({ type: "image", data: image.data, mimeType: image.mime_type }))
+          ];
+        }
+        return result as never;
       } catch (error) {
         const safe = errorBody(error);
         const challenge = safe.code === "INSUFFICIENT_SCOPE"
