@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { appendFileSync, readFileSync, rmSync, statSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 
@@ -68,4 +69,26 @@ test("MP4 acceptance fixture is isolated, snapshot-v4 bound, source-preserving, 
   }
   const after = { sha256: sha(source), size: statSync(source).size, mtimeMs: statSync(source).mtimeMs };
   assert.deepEqual(after, before);
+});
+
+test("MP4 acceptance fixture rejects a symlinked acceptance root", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "media-acceptance-workspace-"));
+  const external = mkdtempSync(join(tmpdir(), "media-acceptance-external-"));
+  const dataRoot = join(workspace, "data", "webgpt");
+  mkdirSync(dataRoot, { recursive: true });
+  writeFileSync(join(workspace, ".gitignore"), "data/\n", "utf8");
+  symlinkSync(external, join(dataRoot, "media-acceptance"), process.platform === "win32" ? "junction" : "dir");
+  try {
+    const command = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
+    const source = resolve("fixtures/video/mock_clip.mp4");
+    const result = spawnSync(process.execPath, [command, "create", "--input", source, "--issuer", ISSUER, "--resource", RESOURCE], {
+      cwd: workspace, input: `${SUBJECT}\n`, encoding: "utf8", windowsHide: true, env: childEnv
+    });
+    assert.equal(result.status, 1);
+    assert.deepEqual(lowDisclosureError(result.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_ROOT_UNSAFE" });
+    assert.deepEqual(readdirSync(external), []);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+    rmSync(external, { recursive: true, force: true });
+  }
 });

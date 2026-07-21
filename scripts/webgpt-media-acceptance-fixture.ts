@@ -57,6 +57,7 @@ function acceptanceRoot(): string {
   const root = resolve(workspace, "data", "webgpt", "media-acceptance");
   const rel = relative(workspace, root);
   if (!rel || rel.startsWith("..") || isAbsolute(rel)) throw new FixtureError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+  if (existsSync(root) && lstatSync(root).isSymbolicLink()) throw new FixtureError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
   const workspaceReal = realpathSync(workspace);
   let cursor = dirname(root);
   while (!existsSync(cursor)) cursor = dirname(cursor);
@@ -66,7 +67,7 @@ function acceptanceRoot(): string {
     throw new FixtureError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
   }
   let component = workspace;
-  for (const part of rel.split(/[\\/]+/).slice(0, -1)) {
+  for (const part of rel.split(/[\\/]+/)) {
     component = join(component, part);
     if (existsSync(component) && lstatSync(component).isSymbolicLink()) throw new FixtureError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
   }
