@@ -24,10 +24,14 @@ const childEnv = { ...process.env, NODE_NO_WARNINGS: "1" };
 
 test("MP4 acceptance fixture is isolated, snapshot-v4 bound, source-preserving, and low disclosure", () => {
   const wrapper = readFileSync(resolve("scripts/windows/media-create-acceptance-fixture.ps1"), "utf8");
+  const runbook = readFileSync(resolve("docs/webgpt/READONLY_LOCAL_MEDIA_GATEWAY_RUNBOOK.md"), "utf8");
   assert.match(wrapper, /Read-Host "Auth0 user_id\/sub \(input hidden\)" -AsSecureString/);
   assert.doesNotMatch(wrapper, /-MaskInput/);
   assert.match(wrapper, /SecureStringToBSTR\(\$secureSubject\)/);
   assert.match(wrapper, /ZeroFreeBSTR\(\$bstr\)/);
+  assert.match(runbook, /npm --silent run media:fixture:create --/);
+  assert.match(runbook, /npm --silent run media:fixture:verify --/);
+  assert.doesNotMatch(runbook, /`npm run media:fixture:(?:create|verify)/);
 
   const source = resolve("fixtures/video/mock_clip.mp4");
   const command = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
