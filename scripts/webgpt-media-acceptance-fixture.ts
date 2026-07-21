@@ -81,7 +81,32 @@ function runRoot(runId: string): string {
   const root = acceptanceRoot();
   const target = resolve(root, runId);
   if (relative(root, target).startsWith("..")) throw new FixtureError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+  if (existsSync(target)) assertSafeExistingPath(root, target, "directory");
   return target;
+}
+
+function assertSafeExistingPath(root: string, target: string, kind: "directory" | "file"): string {
+  const resolvedRoot = resolve(root);
+  const resolvedTarget = resolve(target);
+  const rel = relative(resolvedRoot, resolvedTarget);
+  if ((rel && rel.startsWith("..")) || isAbsolute(rel) || !existsSync(resolvedRoot) || !existsSync(resolvedTarget)) {
+    throw new FixtureError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+  }
+  let cursor = resolvedRoot;
+  const components = rel ? rel.split(/[\\/]+/) : [];
+  for (const part of ["", ...components]) {
+    if (part) cursor = join(cursor, part);
+    if (lstatSync(cursor).isSymbolicLink()) throw new FixtureError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+  }
+  const rootReal = realpathSync(resolvedRoot);
+  const targetReal = realpathSync(resolvedTarget);
+  const realRel = relative(rootReal, targetReal);
+  if ((realRel && realRel.startsWith("..")) || isAbsolute(realRel)) throw new FixtureError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+  const targetStat = lstatSync(resolvedTarget);
+  if ((kind === "directory" && !targetStat.isDirectory()) || (kind === "file" && !targetStat.isFile())) {
+    throw new FixtureError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+  }
+  return resolvedTarget;
 }
 
 function logicalManifest(db: import("../src/storage/sqlite.js").M0Database): string {
@@ -229,7 +254,8 @@ async function verifyFixture(): Promise<void> {
   const root = runRoot(runId);
   const manifestPath = join(root, "fixture.json");
   if (!existsSync(manifestPath)) throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_NOT_FOUND");
-  const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Manifest;
+  const safeManifestPath = assertSafeExistingPath(root, manifestPath, "file");
+  const manifest = JSON.parse(readFileSync(safeManifestPath, "utf8")) as Manifest;
   const expectedKeys = ["artifact_id", "blob_id", "database_file", "database_manifest", "fixture_version", "issuer_hash", "media_relative_path", "media_sha256", "project_id", "resource_url", "run_id", "shot_id"];
   if (JSON.stringify(Object.keys(manifest).sort()) !== JSON.stringify(expectedKeys) || manifest.fixture_version !== FIXTURE_VERSION || manifest.run_id !== runId || manifest.resource_url !== resourceUrl) {
     throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
@@ -237,20 +263,21 @@ async function verifyFixture(): Promise<void> {
   const databasePath = resolve(root, manifest.database_file);
   const mediaPath = resolve(root, manifest.media_relative_path);
   if (!existsSync(databasePath) || !existsSync(mediaPath)) throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
-  if (relative(root, databasePath).startsWith("..") || relative(root, mediaPath).startsWith("..") || lstatSync(mediaPath).isSymbolicLink()) throw new FixtureError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+  const safeDatabasePath = assertSafeExistingPath(root, databasePath, "file");
+  const safeMediaPath = assertSafeExistingPath(root, mediaPath, "file");
   process.env.AI_VIDEO_WORKSPACE_DATA_ROOT = root;
-  process.env.AI_VIDEO_WORKSPACE_DB_PATH = databasePath;
+  process.env.AI_VIDEO_WORKSPACE_DB_PATH = safeDatabasePath;
   const [{ openM0DatabaseConnection }, migrations, projection, authTypes] = await Promise.all([
     import("../src/storage/sqlite.js"), import("../src/storage/migrations.js"), import("../src/webgpt-cloud/dataSource.js"), import("../src/webgpt-v4/types.js")
   ]);
   const issuerHash = authTypes.issuerHash(issuer);
-  if (issuerHash !== manifest.issuer_hash || await sha256File(mediaPath) !== manifest.media_sha256) throw new FixtureError("MEDIA_ACCEPTANCE_INTEGRITY_FAILED");
-  const db = openM0DatabaseConnection(databasePath, { readOnly: true });
+  if (issuerHash !== manifest.issuer_hash || await sha256File(safeMediaPath) !== manifest.media_sha256) throw new FixtureError("MEDIA_ACCEPTANCE_INTEGRITY_FAILED");
+  const db = openM0DatabaseConnection(safeDatabasePath, { readOnly: true });
   try {
     migrations.assertSchemaCurrent(db);
     if (logicalManifest(db) !== manifest.database_manifest) throw new FixtureError("MEDIA_ACCEPTANCE_DATABASE_DRIFT");
   } finally { db.close(); }
-  const snapshot = projection.exportReadonlySnapshotFromDatabase({ database_path: databasePath, issuer_hash: issuerHash, resource_url: resourceUrl });
+  const snapshot = projection.exportReadonlySnapshotFromDatabase({ database_path: safeDatabasePath, issuer_hash: issuerHash, resource_url: resourceUrl });
   const binding = snapshot.projects[0]?.media_bindings.find((item) => item.artifact_id === manifest.artifact_id);
   if (snapshot.projects.length !== 1 || snapshot.authorization.principals.length !== 1 || snapshot.schema_version !== "readonly-snapshot-v4" || snapshot.projects[0]?.media_bindings.length !== 2 || binding?.artifact_id !== manifest.artifact_id || binding.sha256 !== manifest.media_sha256) {
     throw new FixtureError("MEDIA_ACCEPTANCE_SNAPSHOT_INVALID");

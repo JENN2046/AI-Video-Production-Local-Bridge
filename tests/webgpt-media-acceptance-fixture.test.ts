@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
@@ -87,6 +87,55 @@ test("MP4 acceptance fixture rejects a symlinked acceptance root", () => {
     assert.equal(result.status, 1);
     assert.deepEqual(lowDisclosureError(result.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_ROOT_UNSAFE" });
     assert.deepEqual(readdirSync(external), []);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+    rmSync(external, { recursive: true, force: true });
+  }
+});
+
+test("MP4 acceptance fixture verify rejects symlinked run and nested paths", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "media-acceptance-verify-workspace-"));
+  const external = mkdtempSync(join(tmpdir(), "media-acceptance-verify-external-"));
+  const acceptanceRoot = join(workspace, "data", "webgpt", "media-acceptance");
+  mkdirSync(acceptanceRoot, { recursive: true });
+  writeFileSync(join(workspace, ".gitignore"), "data/\n", "utf8");
+  spawnSync("git", ["init", "--quiet"], { cwd: workspace, windowsHide: true });
+  const command = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
+  const runId = "run_00000000000000000000000000000000";
+  const runPath = join(acceptanceRoot, runId);
+  try {
+    symlinkSync(external, runPath, process.platform === "win32" ? "junction" : "dir");
+    const linkedRun = spawnSync(process.execPath, [command, "verify", "--run", runId, "--issuer", ISSUER, "--resource", RESOURCE], {
+      cwd: workspace, encoding: "utf8", windowsHide: true, env: childEnv
+    });
+    assert.equal(linkedRun.status, 1);
+    assert.deepEqual(lowDisclosureError(linkedRun.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_ROOT_UNSAFE" });
+    unlinkSync(runPath);
+
+    mkdirSync(runPath, { recursive: true });
+    const linkedData = join(runPath, "linked-data");
+    writeFileSync(join(external, "app.sqlite"), "not-a-database", "utf8");
+    writeFileSync(join(external, "fixture.mp4"), "not-a-video", "utf8");
+    symlinkSync(external, linkedData, process.platform === "win32" ? "junction" : "dir");
+    writeFileSync(join(runPath, "fixture.json"), JSON.stringify({
+      fixture_version: "readonly-media-acceptance-fixture-v1",
+      run_id: runId,
+      database_file: "linked-data/app.sqlite",
+      project_id: "project_fixture",
+      shot_id: "shot_fixture",
+      artifact_id: "artifact_fixture",
+      blob_id: "blob_fixture",
+      issuer_hash: "0".repeat(64),
+      resource_url: RESOURCE,
+      media_relative_path: "linked-data/fixture.mp4",
+      media_sha256: "0".repeat(64),
+      database_manifest: "0".repeat(64)
+    }), "utf8");
+    const linkedNested = spawnSync(process.execPath, [command, "verify", "--run", runId, "--issuer", ISSUER, "--resource", RESOURCE], {
+      cwd: workspace, encoding: "utf8", windowsHide: true, env: childEnv
+    });
+    assert.equal(linkedNested.status, 1);
+    assert.deepEqual(lowDisclosureError(linkedNested.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_ROOT_UNSAFE" });
   } finally {
     rmSync(workspace, { recursive: true, force: true });
     rmSync(external, { recursive: true, force: true });
