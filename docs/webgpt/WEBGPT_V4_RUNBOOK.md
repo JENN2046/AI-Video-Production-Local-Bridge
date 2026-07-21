@@ -35,7 +35,7 @@ Human Workbench 的“系统 → 只读 App 发布”是当前接受的 Jenn 日
 3. 选择“预检并发布”；若状态面提示临期、过期或 `no_snapshot`，选择“预检并续期/恢复”。所有路径都必须完成 action nonce 与人工确认。
 4. 等待 HTTP `202`，确认 Snapshot 状态为 fresh。
 5. 在 ChatGPT Test App 运行 render tool 与六个只读数据工具。
-6. 使用完成后运行 `npm run db:check`，再通过 `windows:stop` 停止本地 Workbench。
+6. 使用完成后运行 `npm run db:check -- --read-only`，再通过 `windows:stop` 停止本地 Workbench。默认不带参数的 `db:check` 可能恢复 staged/file-placed media activation，只能用于另行授权的恢复流程。
 
 该路径已在 `main@932e145e201ddf5763ab5fcbdc11b88fa8c81bad`、Windows Node `22.23.1`、活动库 ledger `0008` 和 `REAL_PROVIDER_ENABLED=false` 条件下通过首次真实验收；Snapshot v3 又在 `main@d4c7d8cf52d52e3a28293180a771d3b36f6e399f` 上完成 Render restart、`no_snapshot`、Human Workbench 单次确认发布、统一 fingerprint、七工具恢复、最终 `db:check` 和优雅停止。公开脱敏证据见 [Owner-Only Operations Acceptance](../../ops/reports/2026-07-18-owner-only-operations-acceptance.md) 与 [Snapshot v3 Human Workbench Recovery Acceptance](../../ops/reports/2026-07-19-snapshot-v3-human-workbench-recovery-acceptance.md)。
 

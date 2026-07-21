@@ -29,9 +29,11 @@ Install and validate:
 npm ci
 npm run typecheck
 npm run build
-npm run db:check
+npm run db:check -- --read-only
 npm run preflight
 ```
+
+Run these commands only from the verified Git root that owns the accepted activity database; do not hard-code or infer a workspace path from a similarly named clone. `db:check -- --read-only` disables media-activation recovery. The default writable `db:check` belongs only to a separately authorized recovery procedure.
 
 Start through `npm run windows:start`. The process must bind only `127.0.0.1:4181`, return `200` for `/healthz` and `/readyz`, and keep real Provider flags false unless a separate canary is authorized.
 

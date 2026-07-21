@@ -11,11 +11,15 @@ The Workbench is the human production surface for projects, SHOTs, Storyboard, G
 Start it:
 
 ```powershell
-Set-Location A:\AI-Video-Production-Local-Bridge
-npm run db:check
+Set-Location "<verified repository root that owns the accepted data\app.sqlite>"
+git rev-parse --show-toplevel
+Test-Path .\data\app.sqlite
+npm run db:check -- --read-only
 npm run windows:start
 npm run windows:status
 ```
+
+The exact local root is deliberately not hard-coded: similarly named clones and archive directories may contain an empty or different `data/`. Continue only when the resolved Git root and accepted activity-database location match Jenn's runtime profile.
 
 Open `http://127.0.0.1:4181`.
 
@@ -97,10 +101,10 @@ The legacy Full WebGPT media listener and the new Readonly Media Gateway both us
 ```powershell
 npm run windows:status
 npm run preflight
-npm run db:check
+npm run db:check -- --read-only
 ```
 
-Do not run `db:migrate` as a generic repair. Migration is an explicit, backed-up activity-database operation.
+The default writable `npm run db:check` may recover staged media activations and move files. Use it only in an explicitly authorized recovery workflow. Do not run `db:migrate` as a generic repair; migration is an explicit, backed-up activity-database operation.
 
 ### ChatGPT says no Snapshot
 

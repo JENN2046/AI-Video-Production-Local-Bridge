@@ -26,7 +26,7 @@ AI Video Production Workspace 是 Jenn 的 Windows 本地 AI 视频生产与 Cha
 
 ```powershell
 npm ci
-npm run db:check
+npm run db:check -- --read-only
 npm run windows:start
 npm run windows:status
 ```
@@ -37,7 +37,7 @@ npm run windows:status
 npm run windows:stop
 ```
 
-`windows:*` 不安装自动启动，不启用真实 Provider，并拒绝接管未知 PID 或端口监听。
+这些命令必须在“拥有已验收 `data/app.sqlite` 的 Git 工作区根目录”运行；不要根据相似目录名猜测，也不要在空克隆中启动。先用 `git rev-parse --show-toplevel` 和 `Test-Path .\data\app.sqlite` 核对。`windows:*` 不安装自动启动，不启用真实 Provider，并拒绝接管未知 PID 或端口监听。
 
 ### 2. ChatGPT Readonly MCP App
 
