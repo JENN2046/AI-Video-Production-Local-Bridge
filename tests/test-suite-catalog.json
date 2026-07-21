@@ -130,7 +130,8 @@
       "ci_step": "ChatGPT Director domain tests",
       "paths": [
         "tests/director-domain-contract.test.ts",
-        "tests/director-manual-native-tools.test.ts"
+        "tests/director-manual-native-tools.test.ts",
+        "tests/director-local-bridge.test.ts"
       ]
     },
     {
@@ -309,6 +310,41 @@
       "npm_script": "test:webgpt:director",
       "ci_step": "ChatGPT Director domain tests",
       "case_name": "migration 0009 failure rolls back without partial Director tables or ledger evidence"
+    },
+    {
+      "id": "director-bridge-authentication",
+      "path": "tests/director-local-bridge.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "Director bridge HMAC rejects tampering, replay, expired authentication, and invalid keyrings"
+    },
+    {
+      "id": "director-standard-security-schemes",
+      "path": "tests/director-local-bridge.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "Director transport publishes host-visible standard security schemes for multi-scope tools"
+    },
+    {
+      "id": "director-local-service-boundary",
+      "path": "tests/director-local-bridge.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "Director local service binds Focus/context and persists only an immutable advisory Proposal"
+    },
+    {
+      "id": "director-outbound-bridge-runtime",
+      "path": "tests/director-local-bridge.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "Director remote runtime exposes five OAuth tools through the authenticated outbound local bridge"
+    },
+    {
+      "id": "director-remote-runtime-detachment",
+      "path": "tests/director-local-bridge.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "Director remote runtime module graph remains detached from SQLite and local media paths"
     }
   ],
   "readonly_app_suites": [

@@ -348,7 +348,7 @@ test("Director tool results fail closed above the 128 KiB structured response bu
   try {
     const result = await client.callTool({
       name: "get_director_context",
-      arguments: { focus_id: focus.focus_id, focus_generation: focus.generation, detail: "full" }
+      arguments: { focus_id: focus.focus_id, focus_generation: focus.generation, proposal_kind: "review_assessment", detail: "full" }
     });
     assert.equal(result.isError, true);
     assert.equal(result.structuredContent, undefined);

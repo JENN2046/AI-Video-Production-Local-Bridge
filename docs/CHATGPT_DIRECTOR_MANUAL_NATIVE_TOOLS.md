@@ -1,6 +1,6 @@
 # ChatGPT Director Manual/Native Tool Contract
 
-Status: `CANDIDATE` — PR2 contract only. No public Director endpoint, local bridge, Provider call or activity-database write is enabled by this document.
+Status: `CANDIDATE` — PR2 contract plus PR3 isolated runtime implementation. No Director endpoint is deployed, no Provider call is enabled, and Jenn's activity database is not migrated by this document.
 
 ## Purpose
 
@@ -49,7 +49,9 @@ The native Proposal input contains only:
 - an optional parent Proposal identifier;
 - the strict kind-specific Proposal draft.
 
-The authenticated local bridge—not ChatGPT—must assign principal, workspace, project, target, source, proposal identifier, payload hash and creation time. PR3 must rebuild current authoritative target state and reject Focus or base-state drift before persistence.
+The authenticated local bridge—not ChatGPT—assigns principal, workspace, project, target, source, proposal identifier, payload hash and creation time. PR3 rebuilds current authoritative target state and rejects Focus or base-state drift before persistence.
+
+`get_director_context` requires an explicit `proposal_kind`. The proposal kind is part of the authoritative target state and its hash, so one Focus cannot silently reuse a context hash for a different advisory Proposal kind.
 
 Manual imports must be explicitly confirmed and must retain `source=untrusted_manual_import`. A manual document can never be promoted to native evidence by changing a label.
 
@@ -75,15 +77,15 @@ media.read
 proposals.write
 ```
 
-The fixed catalog carries each tool's exact narrower scope list and the current MCP SDK serializes it through the compatibility `_meta.securitySchemes` field used by the accepted App runtime. Before external activation, PR3 must also verify the host-visible standard `securitySchemes` representation supported by the then-current MCP SDK. Runtime challenge URLs are derived from the Director resource path. Per the current Apps SDK authentication contract, deployment must provide PRMD, per-tool security schemes and runtime `WWW-Authenticate`/`mcp/www_authenticate` together.
+The fixed catalog carries each tool's exact narrower scope list. PR3 serializes it through both the host-visible standard `securitySchemes` field and the compatibility `_meta.securitySchemes` field used by the accepted App runtime. Runtime challenge URLs are derived from the Director resource path. Per the current Apps SDK authentication contract, deployment must provide PRMD, per-tool security schemes and runtime `WWW-Authenticate`/`mcp/www_authenticate` together.
 
-## Deferred to PR3+
+## PR3 implementation
 
-- a public Director HTTP runtime;
-- authenticated outbound bridge connectivity to Jenn's local Workbench;
-- Focus/context lookup and Proposal persistence;
-- FFmpeg frame extraction and model-visible image content;
+PR3 adds a public Director HTTP runtime, an authenticated outbound-only local bridge, issuer-bound Focus/context lookup, bounded FFmpeg frame extraction with model-visible images, and immutable native Proposal persistence. The complete boundary and operator contract is documented in [ChatGPT Director Local Bridge](CHATGPT_DIRECTOR_LOCAL_BRIDGE.md).
+
+## Deferred to PR4+
+
 - Human Workbench approval queue;
 - compilation, Automation Grant execution, Provider submission and memory adapters.
 
-Until those gates pass, the PR2 registry is an implementation contract and test fixture, not an externally usable Director App.
+Until external configuration and the later Human/Orchestrator gates pass, the registry and runtime remain an implementation candidate, not an externally usable Director App.

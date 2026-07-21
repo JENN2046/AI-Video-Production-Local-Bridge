@@ -3,7 +3,7 @@ import type { Transport, TransportSendOptions } from "@modelcontextprotocol/sdk/
 
 import type { WebGptV4Scope } from "./types.js";
 
-type ToolScopes = Readonly<Record<string, WebGptV4Scope>>;
+type ToolScopes = Readonly<Record<string, WebGptV4Scope | readonly WebGptV4Scope[]>>;
 
 function decorateToolList(message: JSONRPCMessage, toolScopes: ToolScopes): JSONRPCMessage {
   if (!("result" in message) || !message.result || typeof message.result !== "object") return message;
@@ -17,7 +17,7 @@ function decorateToolList(message: JSONRPCMessage, toolScopes: ToolScopes): JSON
         if (!value || typeof value !== "object" || Array.isArray(value)) return value;
         const tool = value as Record<string, unknown>;
         const scope = typeof tool.name === "string" ? toolScopes[tool.name] : undefined;
-        return scope ? { ...tool, securitySchemes: [{ type: "oauth2", scopes: [scope] }] } : tool;
+        return scope ? { ...tool, securitySchemes: [{ type: "oauth2", scopes: Array.isArray(scope) ? [...scope] : [scope] }] } : tool;
       })
     }
   } as JSONRPCMessage;
