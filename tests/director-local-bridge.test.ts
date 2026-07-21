@@ -20,7 +20,7 @@ import {
   type DirectorBridgeKeyring
 } from "../src/director/bridge.js";
 import { loadDirectorBridgeKeyring } from "../src/director/bridgeConfig.js";
-import { createDirectorLocalService } from "../src/director/localService.js";
+import { createDirectorLocalService, selectDirectorFramePlan } from "../src/director/localService.js";
 import {
   DIRECTOR_GET_FOCUS_OUTPUT_SCHEMA,
   DIRECTOR_NATIVE_TOOL_NAMES,
@@ -190,6 +190,18 @@ test("Director bridge HMAC rejects tampering, replay, expired authentication, an
     keyring,
     handlers: () => ({}) as never
   }), (error) => error instanceof Error && "code" in error && error.code === "DIRECTOR_BRIDGE_ORIGIN_INVALID");
+});
+
+test("Director frame plans downsample across the whole clip", () => {
+  const plan = selectDirectorFramePlan(30, 12);
+  assert.equal(plan.length, 12);
+  assert.equal(plan[0]?.timestamp_seconds, 0);
+  assert.equal(plan.at(-1)?.timestamp_seconds, 30);
+  assert.equal(plan.some((item) => item.timestamp_seconds >= 15 && item.timestamp_seconds < 30), true);
+  assert.deepEqual(
+    selectDirectorFramePlan(30, 1).map((item) => item.timestamp_seconds),
+    [15]
+  );
 });
 
 test("Director transport publishes host-visible standard security schemes for multi-scope tools", async () => {

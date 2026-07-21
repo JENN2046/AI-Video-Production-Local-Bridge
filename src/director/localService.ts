@@ -447,7 +447,7 @@ async function extractFrames(
       throw new WebGptV4Error("DIRECTOR_MEDIA_INVALID", "Focused video has no valid video stream.");
     }
     const count = Math.min(requestedMax, sampling === "overview" ? 12 : 24);
-    const plan = coverageFramePlan(duration).slice(0, count);
+    const plan = selectDirectorFramePlan(duration, count);
     const frames: Array<{ timestamp: number; width: number; height: number; bytes: Buffer }> = [];
     let total = 0;
     for (const [index, item] of plan.entries()) {
@@ -473,6 +473,19 @@ async function extractFrames(
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+}
+
+export function selectDirectorFramePlan(
+  durationSeconds: number,
+  count: number
+): Array<{ timestamp_seconds: number; reason: "coverage" | "scene_change" }> {
+  const plan = coverageFramePlan(durationSeconds);
+  if (plan.length <= count) return plan;
+  if (count <= 1) return [plan[Math.floor((plan.length - 1) / 2)]!];
+  return Array.from({ length: count }, (_, index) => {
+    const planIndex = Math.round((index * (plan.length - 1)) / (count - 1));
+    return plan[planIndex]!;
+  });
 }
 
 export class DirectorLocalService implements DirectorNativeToolHandlers {
