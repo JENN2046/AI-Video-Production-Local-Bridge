@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 
 import { z } from "zod/v4";
 
+import { canonicalizeJcs } from "../packages/domain/jcs.js";
+
 import {
   WEBGPT_V4_CLOSEOUT_DATA_SCHEMA,
   WEBGPT_V4_COMPACT_PROJECT_LIST_ITEM_SCHEMA,
@@ -18,8 +20,10 @@ import {
 } from "../webgpt-v4/contracts.js";
 
 export const READONLY_SNAPSHOT_SCHEMA_VERSION = "readonly-snapshot-v4";
-export const READONLY_SNAPSHOT_REQUIRED_SCHEMA = "workbench-v2-5";
-export const READONLY_SNAPSHOT_REQUIRED_MIGRATION = "0008";
+export const READONLY_SNAPSHOT_REQUIRED_SCHEMA = "workbench-v2-6";
+export const READONLY_SNAPSHOT_REQUIRED_MIGRATION = "0009";
+export const READONLY_SNAPSHOT_LEGACY_SOURCE_SCHEMA = "workbench-v2-5";
+export const READONLY_SNAPSHOT_LEGACY_SOURCE_MIGRATION = "0008";
 export const READONLY_SNAPSHOT_MAX_TTL_SECONDS = 24 * 60 * 60;
 export const READONLY_SNAPSHOT_MAX_BYTES = 8 * 1024 * 1024;
 
@@ -704,8 +708,8 @@ export function readonlySnapshotReviewPendingCount(shots: Array<{
 
 const readonlySnapshotShape = {
   schema_version: z.literal(READONLY_SNAPSHOT_SCHEMA_VERSION),
-  source_schema: z.literal(READONLY_SNAPSHOT_REQUIRED_SCHEMA),
-  source_migration: z.literal(READONLY_SNAPSHOT_REQUIRED_MIGRATION),
+  source_schema: z.enum([READONLY_SNAPSHOT_LEGACY_SOURCE_SCHEMA, READONLY_SNAPSHOT_REQUIRED_SCHEMA]),
+  source_migration: z.enum([READONLY_SNAPSHOT_LEGACY_SOURCE_MIGRATION, READONLY_SNAPSHOT_REQUIRED_MIGRATION]),
   source_version: z.string().min(1).max(100),
   generated_at: isoInstantSchema,
   expires_at: isoInstantSchema,
@@ -716,9 +720,18 @@ const readonlySnapshotShape = {
 } as const;
 
 function validateSnapshotBindings(value: {
+  source_schema: string;
+  source_migration: string;
   authorization: { principals: Array<{ principal_id: string; project_ids: string[] }> };
   projects: ReadonlyProjectProjectionShape[];
 }, context: z.core.$RefinementCtx): void {
+  const sourcePairIsCurrent = value.source_schema === READONLY_SNAPSHOT_REQUIRED_SCHEMA
+    && value.source_migration === READONLY_SNAPSHOT_REQUIRED_MIGRATION;
+  const sourcePairIsLegacy = value.source_schema === READONLY_SNAPSHOT_LEGACY_SOURCE_SCHEMA
+    && value.source_migration === READONLY_SNAPSHOT_LEGACY_SOURCE_MIGRATION;
+  if (!sourcePairIsCurrent && !sourcePairIsLegacy) {
+    context.addIssue({ code: "custom", message: "Snapshot source schema and migration do not form a supported pair.", path: ["source_schema"] });
+  }
   const projectIds = new Set<string>();
   for (const [projectIndex, project] of value.projects.entries()) {
     if (projectIds.has(project.project_id)) context.addIssue({ code: "custom", message: "Duplicate projected project id.", path: ["projects"] });
@@ -760,45 +773,7 @@ export type ReadonlySnapshot = z.infer<typeof READONLY_SNAPSHOT_SCHEMA>;
 export type ReadonlyProjectProjection = z.infer<typeof READONLY_PROJECT_PROJECTION_SCHEMA>;
 export type ReadonlyMediaBinding = z.infer<typeof READONLY_MEDIA_BINDING_SCHEMA>;
 
-function assertUnicodeScalarString(value: string): void {
-  for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index);
-    if (code >= 0xd800 && code <= 0xdbff) {
-      const next = value.charCodeAt(index + 1);
-      if (!(next >= 0xdc00 && next <= 0xdfff)) throw new Error("JCS_INVALID_UNICODE");
-      index += 1;
-    } else if (code >= 0xdc00 && code <= 0xdfff) {
-      throw new Error("JCS_INVALID_UNICODE");
-    }
-  }
-}
-
-/** RFC 8785/JCS canonical JSON for JSON-compatible values. */
-export function canonicalizeJcs(value: unknown): string {
-  if (value === null) return "null";
-  if (typeof value === "boolean") return value ? "true" : "false";
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) throw new Error("JCS_NON_FINITE_NUMBER");
-    return JSON.stringify(value);
-  }
-  if (typeof value === "string") {
-    assertUnicodeScalarString(value);
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) return `[${value.map(canonicalizeJcs).join(",")}]`;
-  if (value && typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>);
-    for (const [key, item] of entries) {
-      assertUnicodeScalarString(key);
-      if (item === undefined || typeof item === "bigint" || typeof item === "function" || typeof item === "symbol") {
-        throw new Error("JCS_UNSUPPORTED_VALUE");
-      }
-    }
-    entries.sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0);
-    return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${canonicalizeJcs(item)}`).join(",")}}`;
-  }
-  throw new Error("JCS_UNSUPPORTED_VALUE");
-}
+export { canonicalizeJcs } from "../packages/domain/jcs.js";
 
 export function snapshotFingerprint(snapshot: ReadonlySnapshotUnsigned): string {
   const validated = READONLY_SNAPSHOT_UNSIGNED_SCHEMA.parse(snapshot);

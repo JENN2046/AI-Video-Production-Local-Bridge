@@ -21,6 +21,10 @@ This index separates current operating truth from historical implementation evid
 
 Current runbooks describe commands and boundaries. They do not grant authorization for database writes, secrets, external configuration, deployment, Scheduled Tasks or paid Provider calls.
 
+## Candidate implementation contracts
+
+- [ChatGPT Director domain contract](CHATGPT_DIRECTOR_DOMAIN_CONTRACT.md) — PR1 domain and migration contract; it does not change the accepted activity database or expose Director tools.
+
 ## Accepted evidence
 
 - [SR6 disposable database](../ops/reports/2026-07-13-sr6-disposable-acceptance.md)

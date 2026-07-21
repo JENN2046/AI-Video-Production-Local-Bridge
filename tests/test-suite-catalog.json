@@ -124,6 +124,13 @@
       "paths": ["tests/webgpt-app-contract.test.ts"]
     },
     {
+      "id": "webgpt-director",
+      "classification": "mandatory",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "paths": ["tests/director-domain-contract.test.ts"]
+    },
+    {
       "id": "webgpt-media-gateway",
       "classification": "mandatory",
       "npm_script": "test:webgpt:media-gateway",
@@ -213,6 +220,57 @@
       "npm_script": "test:webgpt:v4",
       "ci_step": "WebGPT V4 integration tests",
       "case_name": "server authentication carries benchmark fake-IP recovery through remote JWKS pinning"
+    }
+  ],
+  "director_suites": [
+    {
+      "id": "director-base-state-hash",
+      "path": "tests/director-domain-contract.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "director base-state hash uses deterministic JCS and changes with authoritative inputs"
+    },
+    {
+      "id": "director-advisory-review-contract",
+      "path": "tests/director-domain-contract.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "director proposal contract is kind-specific and review assessment remains advisory"
+    },
+    {
+      "id": "director-storyboard-v2-contract",
+      "path": "tests/director-domain-contract.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "Storyboard Package V2 is content-addressed and preserves continuity semantics"
+    },
+    {
+      "id": "director-automation-grant-contract",
+      "path": "tests/director-domain-contract.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "Automation Grant is content-addressed, bounded, and immutable by replacement"
+    },
+    {
+      "id": "director-migration-immutability",
+      "path": "tests/director-domain-contract.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "migration 0009 upgrades a real 0008 shape and makes Director evidence immutable"
+    },
+    {
+      "id": "director-db-check-integrity",
+      "path": "tests/director-domain-contract.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "db check detects Director payload hash drift without repairing evidence"
+    },
+    {
+      "id": "director-migration-rollback",
+      "path": "tests/director-domain-contract.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "migration 0009 failure rolls back without partial Director tables or ledger evidence"
     }
   ],
   "readonly_app_suites": [
@@ -340,7 +398,7 @@
       "path": "tests/webgpt-cloud-projection.test.ts",
       "npm_script": "test:webgpt:cloud",
       "ci_step": "WebGPT cloud projection tests",
-      "case_name": "readonly projection requires migration 0008 and never upgrades an older database"
+      "case_name": "readonly projection requires migration 0009 and never upgrades an older database"
     },
     {
       "id": "readonly-projection-dto-parity",

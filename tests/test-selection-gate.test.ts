@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { auditTestSelection, type OAuthPortabilitySuite, type ReadonlyAppSuite, type RemediationSuite, type TestSelectionAuditInput, type TestSuiteCatalog } from "../scripts/testSelectionGate.js";
+import { auditTestSelection, type DirectorSuite, type OAuthPortabilitySuite, type ReadonlyAppSuite, type RemediationSuite, type TestSelectionAuditInput, type TestSuiteCatalog } from "../scripts/testSelectionGate.js";
 
 const baseRequiredRemediation: RemediationSuite[] = [
   { id: "sr1-provider", stage: "SR1", kind: "fault_injection", path: "tests/provider.test.ts", npm_script: "test:provider", ci_step: "Provider tests", case_name: "provider remediation case" },
@@ -18,6 +18,7 @@ const baseCatalog: TestSuiteCatalog = {
   ],
   remediation_suites: structuredClone(baseRequiredRemediation),
   oauth_portability_suites: [],
+  director_suites: [],
   readonly_app_suites: []
 };
 
@@ -42,6 +43,7 @@ function fixture(overrides: Partial<TestSelectionAuditInput> = {}): TestSelectio
     ].join("\n"),
     required_remediation_suites: structuredClone(baseRequiredRemediation),
     required_oauth_portability_suites: [],
+    required_director_suites: [],
     required_readonly_app_suites: [],
     ...overrides
   };
@@ -124,6 +126,35 @@ test("selection catalog rejects missing and non-array readonly App suite catalog
   const malformed = fixture();
   (malformed.catalog as unknown as { readonly_app_suites: unknown }).readonly_app_suites = {};
   assert.deepEqual(auditTestSelection(malformed), ["CATALOG_READONLY_APP_SUITES_INVALID"]);
+});
+
+test("selection catalog requires declared Director security cases in their exact local and CI lane", () => {
+  const suite: DirectorSuite = {
+    id: "director-case",
+    path: "tests/provider.test.ts",
+    npm_script: "test:provider",
+    ci_step: "Provider tests",
+    case_name: "provider remediation case"
+  };
+  const valid = fixture({
+    catalog: { ...structuredClone(baseCatalog), director_suites: [structuredClone(suite)] },
+    required_director_suites: [suite]
+  });
+  assert.deepEqual(auditTestSelection(valid), []);
+  valid.catalog.director_suites[0].case_name = "missing Director case";
+  const errors = auditTestSelection(valid);
+  assert.ok(errors.includes("DIRECTOR_SUITE_SIGNATURE_MISMATCH: director-case"));
+  assert.ok(errors.includes("DIRECTOR_CASE_MISSING: director-case -> missing Director case"));
+});
+
+test("selection catalog rejects missing and non-array Director suite catalogs with a stable diagnostic", () => {
+  const missing = fixture();
+  delete (missing.catalog as unknown as { director_suites?: DirectorSuite[] }).director_suites;
+  assert.deepEqual(auditTestSelection(missing), ["CATALOG_DIRECTOR_SUITES_INVALID"]);
+
+  const malformed = fixture();
+  (malformed.catalog as unknown as { director_suites: unknown }).director_suites = {};
+  assert.deepEqual(auditTestSelection(malformed), ["CATALOG_DIRECTOR_SUITES_INVALID"]);
 });
 
 test("selection catalog rejects unclassified, duplicate, and missing files", () => {

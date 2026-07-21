@@ -124,6 +124,74 @@ export interface ProjectOperationalFacts {
   latest_generation_run_status: GenerationOperationalRunStatus;
 }
 
+export interface DirectorOperationalFacts {
+  pending_proposal_count: number;
+  accepted_uncompiled_proposal_count: number;
+  active_grant_count: number;
+  automation_running_count: number;
+  director_input_required_count: number;
+  exception_count: number;
+}
+
+export interface DirectorOperationalState extends DirectorOperationalFacts {
+  director_phase:
+    | "idle"
+    | "proposal_pending"
+    | "human_approval_required"
+    | "automation_ready"
+    | "automation_running"
+    | "director_input_required"
+    | "exception";
+  next_human_gate:
+    | "none"
+    | "proposal_review"
+    | "budget_authorization"
+    | "director_input"
+    | "exception_resolution";
+}
+
+function nonNegativeInteger(value: number, field: keyof DirectorOperationalFacts): number {
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`DIRECTOR_OPERATIONAL_FACT_INVALID:${field}`);
+  return value;
+}
+
+/**
+ * Projects Director state from proposal/grant/job facts without introducing a
+ * second stored project state machine. Callers remain responsible for deriving
+ * the input counts from authoritative tables and append-only event ledgers.
+ */
+export function deriveDirectorOperationalState(facts: DirectorOperationalFacts): DirectorOperationalState {
+  const normalized: DirectorOperationalFacts = {
+    pending_proposal_count: nonNegativeInteger(facts.pending_proposal_count, "pending_proposal_count"),
+    accepted_uncompiled_proposal_count: nonNegativeInteger(facts.accepted_uncompiled_proposal_count, "accepted_uncompiled_proposal_count"),
+    active_grant_count: nonNegativeInteger(facts.active_grant_count, "active_grant_count"),
+    automation_running_count: nonNegativeInteger(facts.automation_running_count, "automation_running_count"),
+    director_input_required_count: nonNegativeInteger(facts.director_input_required_count, "director_input_required_count"),
+    exception_count: nonNegativeInteger(facts.exception_count, "exception_count")
+  };
+
+  if (normalized.exception_count > 0) {
+    return { ...normalized, director_phase: "exception", next_human_gate: "exception_resolution" };
+  }
+  if (normalized.director_input_required_count > 0) {
+    return { ...normalized, director_phase: "director_input_required", next_human_gate: "director_input" };
+  }
+  if (normalized.automation_running_count > 0) {
+    return { ...normalized, director_phase: "automation_running", next_human_gate: "none" };
+  }
+  if (normalized.accepted_uncompiled_proposal_count > 0) {
+    return {
+      ...normalized,
+      director_phase: normalized.active_grant_count > 0 ? "automation_ready" : "human_approval_required",
+      next_human_gate: normalized.active_grant_count > 0 ? "none" : "budget_authorization"
+    };
+  }
+  if (normalized.pending_proposal_count > 0) {
+    return { ...normalized, director_phase: "proposal_pending", next_human_gate: "proposal_review" };
+  }
+  return { ...normalized, director_phase: "idle", next_human_gate: "none" };
+}
+
 const ARTIFACT_REASON: Record<Exclude<ArtifactOperationalStatus, "active">, string> = {
   missing: "STORYBOARD_IMAGE_MISSING",
   inactive: "STORYBOARD_ARTIFACT_INACTIVE",

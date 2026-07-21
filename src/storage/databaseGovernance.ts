@@ -4,6 +4,12 @@ import { basename, dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { paths } from "../paths.js";
+import {
+  DIRECTOR_FOCUS_SCHEMA,
+  validateDirectorAutomationGrant,
+  validateDirectorProposal,
+  validateStoryboardPackageV2
+} from "../director/domain.js";
 import { assertSchemaCurrent, runDatabaseMigrations } from "./migrations.js";
 import { getMediaArtifact, recoverMediaActivations, verifyMediaArtifactBytes } from "../tools/mediaArtifacts.js";
 
@@ -68,6 +74,57 @@ function scalarCount(db: DatabaseSync, sql: string, errors: string[]): number {
   }
 }
 
+function directorContractDriftRows(db: DatabaseSync, errors: string[]): number {
+  let drift = 0;
+  try {
+    const focuses = db.prepare(`SELECT focus_id, workspace_id, principal_id, project_id, target_type, target_id,
+      generation, supersedes_focus_id, created_at, expires_at FROM director_focuses`).all() as Array<Record<string, unknown>>;
+    for (const focus of focuses) if (!DIRECTOR_FOCUS_SCHEMA.safeParse(focus).success) drift += 1;
+
+    const proposals = db.prepare(`SELECT proposal_id, schema_version, workspace_id, principal_id, project_id,
+      target_type, target_id, focus_id, focus_generation, base_state_hash, payload_json, payload_hash,
+      parent_proposal_id, idempotency_key, source, created_at, kind FROM director_proposals`).all() as Array<Record<string, unknown>>;
+    for (const row of proposals) {
+      try {
+        const { payload_json: payloadJson, ...proposal } = row;
+        validateDirectorProposal({ ...proposal, payload: JSON.parse(String(payloadJson)) });
+      } catch { drift += 1; }
+    }
+
+    const grants = db.prepare(`SELECT grant_id, workspace_id, principal_id, project_id, provider,
+      allowed_actions_json, currency, max_total_minor, max_per_run_minor, max_versions_per_shot,
+      max_automatic_retries, pricing_contract_version, capability_contract_version, starts_at, expires_at,
+      policy_hash, created_at FROM director_automation_grants`).all() as Array<Record<string, unknown>>;
+    for (const row of grants) {
+      try {
+        const { allowed_actions_json: actionsJson, ...grant } = row;
+        validateDirectorAutomationGrant({ ...grant, allowed_actions: JSON.parse(String(actionsJson)) });
+      } catch { drift += 1; }
+    }
+
+    const packageVersions = db.prepare(`SELECT package_version_id, project_id, version,
+      supersedes_package_version_id, schema_version, payload_json, content_hash,
+      created_from_proposal_id, created_at FROM storyboard_package_versions`).all() as Array<Record<string, unknown>>;
+    for (const row of packageVersions) {
+      try {
+        const payload = JSON.parse(String(row.payload_json)) as Record<string, unknown>;
+        const parsed = validateStoryboardPackageV2(payload);
+        if (parsed.package_version_id !== row.package_version_id
+          || parsed.project_id !== row.project_id
+          || parsed.version !== row.version
+          || parsed.supersedes_package_version_id !== row.supersedes_package_version_id
+          || parsed.schema_version !== row.schema_version
+          || parsed.content_hash !== row.content_hash
+          || parsed.created_from_proposal_id !== row.created_from_proposal_id
+          || parsed.created_at !== row.created_at) drift += 1;
+      } catch { drift += 1; }
+    }
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : "DIRECTOR_CONTRACT_CHECK_FAILED");
+  }
+  return drift;
+}
+
 export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCheckOptions = {}): DatabaseCheckResult {
   let recoveryErrors = 0;
   if (options.recover_media_activations !== false) {
@@ -98,7 +155,8 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
       ["workbench_drafts", "data_json"], ["workbench_pending_actions", "data_json"], ["workbench_pending_actions", "result_json"],
       ["workbench_inbox_events", "data_json"], ["workbench_governance_runs", "rule_groups_json"],
       ["webgpt_audit_events", "changed_fields_json"], ["webgpt_audit_events", "result_json"], ["generation_job_events", "data_json"],
-      ["media_blobs", "provenance_json"], ["media_activation_journal", "artifact_json"]
+      ["media_blobs", "provenance_json"], ["media_activation_journal", "artifact_json"],
+      ["director_proposals", "payload_json"], ["director_automation_grants", "allowed_actions_json"], ["storyboard_package_versions", "payload_json"]
     ] as const;
     const invalidJsonRows = jsonColumns.reduce((sum, [table, column]) => sum + scalarCount(db, `SELECT COUNT(*) AS count FROM ${table} WHERE json_valid(${column}) = 0`, errors), 0);
     const structuredDriftRows = scalarCount(db, "SELECT COUNT(*) AS count FROM projects WHERE json_valid(data_json) = 1 AND json_extract(data_json, '$.project_id') IS NOT project_id", errors)
@@ -126,7 +184,8 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
             OR json_extract(artifact_json, '$.storage.mime_type') IS NOT detected_mime
             OR json_extract(artifact_json, '$.metadata.sha256') IS NOT expected_sha256
             OR json_extract(artifact_json, '$.source.sha256') IS NOT expected_sha256
-          )`, errors);
+          )`, errors)
+      + directorContractDriftRows(db, errors);
     const orphanQueries = [
       "SELECT COUNT(*) AS count FROM shots s LEFT JOIN projects p ON p.project_id = s.project_id WHERE p.project_id IS NULL",
       "SELECT COUNT(*) AS count FROM generation_runs r LEFT JOIN projects p ON p.project_id = r.project_id WHERE p.project_id IS NULL",
@@ -152,20 +211,51 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
       "SELECT COUNT(*) AS count FROM webgpt_media_grants g LEFT JOIN projects p ON p.project_id = g.project_id WHERE p.project_id IS NULL",
       "SELECT COUNT(*) AS count FROM webgpt_media_grants g LEFT JOIN media_artifacts a ON a.artifact_id = g.artifact_id WHERE a.artifact_id IS NULL",
       "SELECT COUNT(*) AS count FROM generation_jobs j LEFT JOIN generation_intents i ON i.intent_id = j.intent_id WHERE i.intent_id IS NULL",
-      "SELECT COUNT(*) AS count FROM generation_job_events e LEFT JOIN generation_jobs j ON j.job_id = e.job_id WHERE j.job_id IS NULL"
-      ,"SELECT COUNT(*) AS count FROM media_artifacts a LEFT JOIN media_artifact_blobs m ON m.artifact_id = a.artifact_id WHERE m.artifact_id IS NULL"
-      ,"SELECT COUNT(*) AS count FROM media_artifact_blobs m LEFT JOIN media_artifacts a ON a.artifact_id = m.artifact_id WHERE a.artifact_id IS NULL"
-      ,"SELECT COUNT(*) AS count FROM media_artifact_blobs m LEFT JOIN media_blobs b ON b.blob_id = m.blob_id WHERE b.blob_id IS NULL"
-      ,`SELECT COUNT(*) AS count FROM media_artifacts a
+      "SELECT COUNT(*) AS count FROM generation_job_events e LEFT JOIN generation_jobs j ON j.job_id = e.job_id WHERE j.job_id IS NULL",
+      "SELECT COUNT(*) AS count FROM media_artifacts a LEFT JOIN media_artifact_blobs m ON m.artifact_id = a.artifact_id WHERE m.artifact_id IS NULL",
+      "SELECT COUNT(*) AS count FROM media_artifact_blobs m LEFT JOIN media_artifacts a ON a.artifact_id = m.artifact_id WHERE a.artifact_id IS NULL",
+      "SELECT COUNT(*) AS count FROM media_artifact_blobs m LEFT JOIN media_blobs b ON b.blob_id = m.blob_id WHERE b.blob_id IS NULL",
+      `SELECT COUNT(*) AS count FROM media_artifacts a
         JOIN media_artifact_blobs m ON m.artifact_id = a.artifact_id
         JOIN media_blobs b ON b.blob_id = m.blob_id
-        WHERE a.status = 'active' AND b.integrity_state <> 'verified'`
-      ,"SELECT COUNT(*) AS count FROM media_activation_journal j LEFT JOIN media_artifacts a ON a.artifact_id = j.artifact_id WHERE j.state = 'committed' AND a.artifact_id IS NULL"
-      ,"SELECT COUNT(*) AS count FROM webgpt_project_memberships m LEFT JOIN webgpt_auth_principals p ON p.workspace_id = m.workspace_id AND p.principal_id = m.principal_id WHERE p.principal_id IS NULL"
-      ,"SELECT COUNT(*) AS count FROM webgpt_auth_principal_bindings b LEFT JOIN webgpt_auth_principals p ON p.workspace_id = b.workspace_id AND p.principal_id = b.principal_id WHERE p.principal_id IS NULL"
-      ,"SELECT COUNT(*) AS count FROM webgpt_project_memberships m LEFT JOIN projects p ON p.project_id = m.project_id WHERE p.project_id IS NULL"
-      ,"SELECT COUNT(*) AS count FROM webgpt_auth_events e LEFT JOIN webgpt_auth_principals p ON p.workspace_id = e.workspace_id AND p.principal_id = e.principal_id WHERE p.principal_id IS NULL"
-      ,"SELECT COUNT(*) AS count FROM webgpt_auth_events e LEFT JOIN projects p ON p.project_id = e.project_id WHERE e.project_id IS NOT NULL AND p.project_id IS NULL"
+        WHERE a.status = 'active' AND b.integrity_state <> 'verified'`,
+      "SELECT COUNT(*) AS count FROM media_activation_journal j LEFT JOIN media_artifacts a ON a.artifact_id = j.artifact_id WHERE j.state = 'committed' AND a.artifact_id IS NULL",
+      "SELECT COUNT(*) AS count FROM webgpt_project_memberships m LEFT JOIN webgpt_auth_principals p ON p.workspace_id = m.workspace_id AND p.principal_id = m.principal_id WHERE p.principal_id IS NULL",
+      "SELECT COUNT(*) AS count FROM webgpt_auth_principal_bindings b LEFT JOIN webgpt_auth_principals p ON p.workspace_id = b.workspace_id AND p.principal_id = b.principal_id WHERE p.principal_id IS NULL",
+      "SELECT COUNT(*) AS count FROM webgpt_project_memberships m LEFT JOIN projects p ON p.project_id = m.project_id WHERE p.project_id IS NULL",
+      "SELECT COUNT(*) AS count FROM webgpt_auth_events e LEFT JOIN webgpt_auth_principals p ON p.workspace_id = e.workspace_id AND p.principal_id = e.principal_id WHERE p.principal_id IS NULL",
+      "SELECT COUNT(*) AS count FROM webgpt_auth_events e LEFT JOIN projects p ON p.project_id = e.project_id WHERE e.project_id IS NOT NULL AND p.project_id IS NULL",
+      `SELECT COUNT(*) AS count FROM director_focuses f LEFT JOIN shots s ON f.target_type = 'shot' AND s.shot_id = f.target_id AND s.project_id = f.project_id
+        WHERE f.target_type = 'shot' AND s.shot_id IS NULL`,
+      `SELECT COUNT(*) AS count FROM director_focuses f LEFT JOIN media_artifacts a ON f.target_type = 'artifact' AND a.artifact_id = f.target_id AND a.project_id = f.project_id
+        WHERE f.target_type = 'artifact' AND a.artifact_id IS NULL`,
+      `SELECT COUNT(*) AS count FROM director_focuses f
+        LEFT JOIN storyboard_packages p ON f.target_type = 'storyboard_package' AND p.storyboard_package_id = f.target_id AND p.project_id = f.project_id
+        LEFT JOIN storyboard_package_versions v ON f.target_type = 'storyboard_package' AND v.package_version_id = f.target_id AND v.project_id = f.project_id
+        WHERE f.target_type = 'storyboard_package' AND p.storyboard_package_id IS NULL AND v.package_version_id IS NULL`,
+      `SELECT COUNT(*) AS count FROM director_focuses f LEFT JOIN generation_runs r ON f.target_type = 'generation_run' AND r.run_id = f.target_id AND r.project_id = f.project_id
+        WHERE f.target_type = 'generation_run' AND r.run_id IS NULL`,
+      "SELECT COUNT(*) AS count FROM director_focuses WHERE target_type IN ('project','delivery','memory') AND target_id IS NOT project_id",
+      `SELECT COUNT(*) AS count FROM director_focuses f
+        LEFT JOIN director_focuses parent ON parent.focus_id = f.supersedes_focus_id
+          AND parent.workspace_id = f.workspace_id AND parent.principal_id = f.principal_id AND parent.project_id = f.project_id
+        WHERE f.supersedes_focus_id IS NOT NULL AND parent.focus_id IS NULL`,
+      `SELECT COUNT(*) AS count FROM director_proposals p
+        LEFT JOIN director_focuses f ON f.focus_id = p.focus_id AND f.workspace_id = p.workspace_id
+          AND f.principal_id = p.principal_id AND f.project_id = p.project_id AND f.target_type = p.target_type
+          AND f.target_id = p.target_id AND f.generation = p.focus_generation
+        WHERE f.focus_id IS NULL`,
+      `SELECT COUNT(*) AS count FROM director_proposals p
+        LEFT JOIN director_proposals parent ON parent.proposal_id = p.parent_proposal_id
+          AND parent.workspace_id = p.workspace_id AND parent.principal_id = p.principal_id AND parent.project_id = p.project_id
+        WHERE p.parent_proposal_id IS NOT NULL AND parent.proposal_id IS NULL`,
+      `SELECT COUNT(*) AS count FROM storyboard_package_versions v
+        LEFT JOIN storyboard_package_versions parent ON parent.package_version_id = v.supersedes_package_version_id
+          AND parent.project_id = v.project_id
+        WHERE v.supersedes_package_version_id IS NOT NULL AND parent.package_version_id IS NULL`,
+      `SELECT COUNT(*) AS count FROM storyboard_package_versions v
+        LEFT JOIN director_proposals p ON p.proposal_id = v.created_from_proposal_id AND p.project_id = v.project_id
+        WHERE v.created_from_proposal_id IS NOT NULL AND p.proposal_id IS NULL`
     ];
     const orphanRows = orphanQueries.reduce((sum, sql) => sum + scalarCount(db, sql, errors), 0);
     let mediaRows: Array<{ data_json: string }> = [];
