@@ -1,0 +1,42 @@
+param(
+  [Parameter(Mandatory = $true)][string]$InputPath,
+  [Parameter(Mandatory = $true)][string]$Issuer,
+  [Parameter(Mandatory = $true)][string]$ResourceUrl
+)
+
+$secureSubject = $null
+$subject = $null
+$bstr = [IntPtr]::Zero
+$previousOutputEncoding = $OutputEncoding
+$resultCode = 1
+try {
+  $nodePath = $env:npm_node_execpath
+  if ([string]::IsNullOrWhiteSpace($nodePath) -or -not (Test-Path -LiteralPath $nodePath -PathType Leaf)) {
+    $nodeCommand = Get-Command node -ErrorAction SilentlyContinue
+    if ($null -eq $nodeCommand) { throw "MEDIA_NODE22_REQUIRED" }
+    $nodePath = $nodeCommand.Source
+  }
+  $nodeVersion = (& $nodePath --version 2>$null)
+  if ($LASTEXITCODE -ne 0 -or $nodeVersion -notmatch '^v22\.') { throw "MEDIA_NODE22_REQUIRED" }
+  $secureSubject = Read-Host "Auth0 user_id/sub (input hidden)" -AsSecureString
+  $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureSubject)
+  $subject = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+  if ([string]::IsNullOrWhiteSpace($subject)) { throw "MEDIA_ACCEPTANCE_SUBJECT_INVALID" }
+  $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+  $subject | & $nodePath `
+    (Join-Path $PSScriptRoot "..\..\dist\scripts\webgpt-media-acceptance-fixture.js") create `
+    --input $InputPath --issuer $Issuer --resource $ResourceUrl
+  $resultCode = $LASTEXITCODE
+} catch {
+  $candidate = [string]$_.Exception.Message
+  $stableCode = if ($candidate -match '^MEDIA_[A-Z0-9_]+$') { $candidate } else { "MEDIA_ACCEPTANCE_WRAPPER_FAILED" }
+  Write-Output (@{ result = "FAIL"; stable_error_code = $stableCode } | ConvertTo-Json -Compress)
+} finally {
+  $OutputEncoding = $previousOutputEncoding
+  $subject = $null
+  $secureSubject = $null
+  if ($bstr -ne [IntPtr]::Zero) {
+    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+  }
+}
+exit $resultCode

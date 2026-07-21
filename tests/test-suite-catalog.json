@@ -131,7 +131,8 @@
       "paths": [
         "tests/webgpt-media-capability-contract.test.ts",
         "tests/webgpt-media-gateway-runtime.test.ts",
-        "tests/webgpt-media-operations.test.ts"
+        "tests/webgpt-media-operations.test.ts",
+        "tests/webgpt-media-acceptance-fixture.test.ts"
       ]
     },
     {
@@ -298,6 +299,13 @@
       "npm_script": "test:webgpt:media-gateway",
       "ci_step": "Readonly media gateway contract tests",
       "case_name": "readonly media operations validate and forward the selected tunnel protocol"
+    },
+    {
+      "id": "readonly-media-mp4-acceptance-fixture",
+      "path": "tests/webgpt-media-acceptance-fixture.test.ts",
+      "npm_script": "test:webgpt:media-gateway",
+      "ci_step": "Readonly media gateway contract tests",
+      "case_name": "MP4 acceptance fixture is isolated, snapshot-v4 bound, source-preserving, and low disclosure"
     },
     {
       "id": "readonly-media-logon-ordering",
