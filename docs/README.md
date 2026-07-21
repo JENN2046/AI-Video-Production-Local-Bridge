@@ -24,6 +24,7 @@ Current runbooks describe commands and boundaries. They do not grant authorizati
 ## Candidate implementation contracts
 
 - [ChatGPT Director domain contract](CHATGPT_DIRECTOR_DOMAIN_CONTRACT.md) — PR1 domain and migration contract; it does not change the accepted activity database or expose Director tools.
+- [ChatGPT Director Manual/Native tools](CHATGPT_DIRECTOR_MANUAL_NATIVE_TOOLS.md) — PR2 fixed advisory tool registry, manual-import boundary, and separate OAuth resource contract.
 
 ## Accepted evidence
 

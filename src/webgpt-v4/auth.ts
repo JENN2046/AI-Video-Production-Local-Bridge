@@ -210,6 +210,7 @@ function cookieValue(request: IncomingMessage, name: string): string {
 export interface WebGptV4AuthenticatorOptions {
   jwks?: JWTVerifyGetKey;
   jwks_transport?: PinnedHttpsRuntime;
+  required_scopes?: readonly [WebGptV4Scope, ...WebGptV4Scope[]];
 }
 
 function createTokenAuthenticator(config: WebGptV4AuthConfig, options: WebGptV4AuthenticatorOptions = {}): (token: string) => Promise<WebGptV4Actor> {
@@ -244,7 +245,9 @@ function createTokenAuthenticator(config: WebGptV4AuthConfig, options: WebGptV4A
         throw new WebGptV4Error("AUTH_SCOPE_CLAIM_CONFLICT", "OAuth scope and scp claims disagree.");
       }
       const scopes = scopePresent ? scopeSet : scpSet;
-      if (!scopes.has("projects.read")) throw new WebGptV4Error("INSUFFICIENT_SCOPE", "Required scope is missing: projects.read");
+      for (const requiredScope of options.required_scopes ?? ["projects.read"]) {
+        if (!scopes.has(requiredScope)) throw new WebGptV4Error("INSUFFICIENT_SCOPE", `Required scope is missing: ${requiredScope}`);
+      }
       return actorFromFederatedSubject(config.issuer, subject, scopes);
     }
     const scopeClaim = payload.scope ?? payload.scopes;
@@ -286,10 +289,14 @@ export function unavailableAuthenticator(): WebGptV4Authenticator {
   return async () => { throw new WebGptV4Error("AUTH_NOT_CONFIGURED", "WebGPT V4 OAuth is not configured."); };
 }
 
-export function protectedResourceMetadata(config: WebGptV4AuthConfig | null, scopes: readonly WebGptV4Scope[] = WEBGPT_V4_SCOPES): Record<string, unknown> {
+export function protectedResourceMetadata(
+  config: WebGptV4AuthConfig | null,
+  scopes: readonly WebGptV4Scope[] = WEBGPT_V4_SCOPES,
+  options: { resource_name?: string } = {}
+): Record<string, unknown> {
   return {
     resource: config?.resource_url ?? "",
-    resource_name: "AI Video Production Assistant",
+    resource_name: options.resource_name ?? "AI Video Production Assistant",
     authorization_servers: config
       ? [config.provider === "federated" && config.configuration_source === "legacy_descope"
           ? config.legacy_authorization_server_url ?? config.issuer
@@ -315,11 +322,11 @@ function challengeValue(value: string): string {
 export function wwwAuthenticate(
   config: WebGptV4AuthConfig | null,
   error = "invalid_token",
-  options: { scope?: string; error_description?: string } = {}
+  options: { scope?: string; error_description?: string; resource_metadata_url?: string } = {}
 ): string {
-  const metadataUrl = config
+  const metadataUrl = options.resource_metadata_url ?? (config
     ? protectedResourceMetadataUrl(config.resource_url)
-    : "/.well-known/oauth-protected-resource/mcp";
+    : "/.well-known/oauth-protected-resource/mcp");
   const parts = [`Bearer resource_metadata="${challengeValue(metadataUrl)}"`, `error="${challengeValue(error)}"`];
   if (options.error_description) parts.push(`error_description="${challengeValue(options.error_description)}"`);
   if (options.scope) parts.push(`scope="${challengeValue(options.scope)}"`);
