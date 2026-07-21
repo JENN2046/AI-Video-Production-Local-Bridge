@@ -134,6 +134,175 @@ type Manifest = {
   database_manifest: string;
 };
 
+type JsonObject = Record<string, unknown>;
+
+type GatewayProfile = {
+  profile_version: "readonly-media-operations-profile-v1";
+  database_path: string;
+  issuer_hash: string;
+  allowed_origin: string;
+  gateway_port: 2092;
+  media_roots: string[];
+  capability_key: {
+    kid: string;
+    protected_path: string;
+    previous?: {
+      kid: string;
+      protected_path: string;
+      accepted_from: string;
+      accepted_until: string;
+    } | null;
+  };
+  cloudflared: {
+    executable_path: string;
+    manifest_path: string;
+    protected_token_path: string;
+    public_health_url: "https://media.skmt617.top/healthz";
+  };
+  runtime_directory: string;
+};
+
+function isObject(value: unknown): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasExactKeys(value: JsonObject, expected: readonly string[]): boolean {
+  const actual = Object.keys(value).sort();
+  return JSON.stringify(actual) === JSON.stringify([...expected].sort());
+}
+
+function workspaceRelative(path: string): string {
+  const value = relative(resolve(process.cwd()), resolve(path));
+  if (!value || value.startsWith("..") || isAbsolute(value)) throw new FixtureError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+  return value.replaceAll("\\", "/");
+}
+
+function readJsonObject(path: string, code: string): JsonObject {
+  try {
+    const value: unknown = JSON.parse(readFileSync(path, "utf8"));
+    if (!isObject(value)) throw new Error("not an object");
+    return value;
+  } catch {
+    throw new FixtureError(code);
+  }
+}
+
+function readManifest(root: string, runId: string): Manifest {
+  const manifestPath = join(root, "fixture.json");
+  if (!existsSync(manifestPath)) throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_NOT_FOUND");
+  const value = readJsonObject(assertSafeExistingPath(root, manifestPath, "file"), "MEDIA_ACCEPTANCE_MANIFEST_INVALID");
+  const expectedKeys = ["artifact_id", "blob_id", "database_file", "database_manifest", "fixture_version", "issuer_hash", "media_relative_path", "media_sha256", "project_id", "resource_url", "run_id", "shot_id"];
+  if (!hasExactKeys(value, expectedKeys) || value.fixture_version !== FIXTURE_VERSION || value.run_id !== runId || value.database_file !== "app.sqlite") {
+    throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
+  }
+  for (const key of ["project_id", "shot_id", "artifact_id", "blob_id", "media_relative_path"] as const) {
+    if (typeof value[key] !== "string" || value[key].length < 1) throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
+  }
+  for (const key of ["issuer_hash", "media_sha256", "database_manifest"] as const) {
+    if (typeof value[key] !== "string" || !/^[0-9a-f]{64}$/.test(value[key])) throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
+  }
+  if (typeof value.resource_url !== "string") throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
+  safeHttps(value.resource_url, "/mcp");
+  return value as Manifest;
+}
+
+function parseGatewayProfile(value: JsonObject, manifest: Manifest): GatewayProfile {
+  const rootKeys = ["profile_version", "database_path", "issuer_hash", "allowed_origin", "gateway_port", "media_roots", "capability_key", "cloudflared", "runtime_directory"];
+  if (!hasExactKeys(value, rootKeys) || value.profile_version !== "readonly-media-operations-profile-v1" || value.gateway_port !== 2092 || value.issuer_hash !== manifest.issuer_hash) {
+    throw new FixtureError("MEDIA_ACCEPTANCE_GATEWAY_TEMPLATE_INVALID");
+  }
+  if (typeof value.allowed_origin !== "string" || value.allowed_origin !== new URL(manifest.resource_url).origin || typeof value.database_path !== "string" || typeof value.runtime_directory !== "string") {
+    throw new FixtureError("MEDIA_ACCEPTANCE_GATEWAY_TEMPLATE_INVALID");
+  }
+  if (!Array.isArray(value.media_roots) || value.media_roots.length < 1 || value.media_roots.some((item) => typeof item !== "string" || !item)) {
+    throw new FixtureError("MEDIA_ACCEPTANCE_GATEWAY_TEMPLATE_INVALID");
+  }
+  if (!isObject(value.capability_key) || !isObject(value.cloudflared)) throw new FixtureError("MEDIA_ACCEPTANCE_GATEWAY_TEMPLATE_INVALID");
+  const capabilityKeys = value.capability_key.previous === undefined ? ["kid", "protected_path"] : ["kid", "protected_path", "previous"];
+  if (!hasExactKeys(value.capability_key, capabilityKeys) || typeof value.capability_key.kid !== "string" || !/^[A-Za-z0-9._-]{1,64}$/.test(value.capability_key.kid) || typeof value.capability_key.protected_path !== "string" || !value.capability_key.protected_path) {
+    throw new FixtureError("MEDIA_ACCEPTANCE_GATEWAY_TEMPLATE_INVALID");
+  }
+  if (value.capability_key.previous !== undefined && value.capability_key.previous !== null) {
+    if (!isObject(value.capability_key.previous) || !hasExactKeys(value.capability_key.previous, ["kid", "protected_path", "accepted_from", "accepted_until"])) {
+      throw new FixtureError("MEDIA_ACCEPTANCE_GATEWAY_TEMPLATE_INVALID");
+    }
+    const previous = value.capability_key.previous;
+    if (typeof previous.kid !== "string" || !/^[A-Za-z0-9._-]{1,64}$/.test(previous.kid) || previous.kid === value.capability_key.kid || typeof previous.protected_path !== "string" || !previous.protected_path || typeof previous.accepted_from !== "string" || typeof previous.accepted_until !== "string") {
+      throw new FixtureError("MEDIA_ACCEPTANCE_GATEWAY_TEMPLATE_INVALID");
+    }
+    const from = new Date(previous.accepted_from);
+    const until = new Date(previous.accepted_until);
+    if (!Number.isFinite(from.valueOf()) || !Number.isFinite(until.valueOf()) || from.toISOString() !== previous.accepted_from || until.toISOString() !== previous.accepted_until || until <= from || until.valueOf() - from.valueOf() > 10 * 60_000) {
+      throw new FixtureError("MEDIA_ACCEPTANCE_GATEWAY_TEMPLATE_INVALID");
+    }
+  }
+  if (!hasExactKeys(value.cloudflared, ["executable_path", "manifest_path", "protected_token_path", "public_health_url"]) || value.cloudflared.public_health_url !== "https://media.skmt617.top/healthz") {
+    throw new FixtureError("MEDIA_ACCEPTANCE_GATEWAY_TEMPLATE_INVALID");
+  }
+  for (const key of ["executable_path", "manifest_path", "protected_token_path"] as const) {
+    if (typeof value.cloudflared[key] !== "string" || !value.cloudflared[key]) throw new FixtureError("MEDIA_ACCEPTANCE_GATEWAY_TEMPLATE_INVALID");
+  }
+  return value as GatewayProfile;
+}
+
+async function createProfiles(): Promise<void> {
+  const runId = arg("--run");
+  const root = runRoot(runId);
+  if (!existsSync(root)) throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_NOT_FOUND");
+  const manifest = readManifest(root, runId);
+  const workspace = resolve(process.cwd());
+  const publisherTemplatePath = assertSafeExistingPath(workspace, resolve(arg("--publisher-template")), "file");
+  const gatewayTemplatePath = assertSafeExistingPath(workspace, resolve(arg("--gateway-template")), "file");
+  const publisherTemplate = readJsonObject(publisherTemplatePath, "MEDIA_ACCEPTANCE_PUBLISHER_TEMPLATE_INVALID");
+  const gatewayTemplate = parseGatewayProfile(readJsonObject(gatewayTemplatePath, "MEDIA_ACCEPTANCE_GATEWAY_TEMPLATE_INVALID"), manifest);
+  const [{ parseReadonlyPublisherProfile }, { issuerHash }] = await Promise.all([
+    import("../src/webgpt-cloud/publisher.js"),
+    import("../src/webgpt-v4/types.js")
+  ]);
+  let publisher: ReturnType<typeof parseReadonlyPublisherProfile>;
+  try {
+    publisher = parseReadonlyPublisherProfile(publisherTemplate);
+  } catch {
+    throw new FixtureError("MEDIA_ACCEPTANCE_PUBLISHER_TEMPLATE_INVALID");
+  }
+  if (publisher.resource_url !== manifest.resource_url || issuerHash(publisher.issuer) !== manifest.issuer_hash) {
+    throw new FixtureError("MEDIA_ACCEPTANCE_PUBLISHER_TEMPLATE_INVALID");
+  }
+  const databasePath = assertSafeExistingPath(root, join(root, manifest.database_file), "file");
+  const mediaPath = assertSafeExistingPath(root, resolve(root, manifest.media_relative_path), "file");
+  const mediaRoot = assertSafeExistingPath(root, join(root, "media"), "directory");
+  const publisherPath = join(root, "publisher-profile.json");
+  const gatewayPath = join(root, "gateway-profile.json");
+  if (existsSync(publisherPath) || existsSync(gatewayPath)) throw new FixtureError("MEDIA_ACCEPTANCE_PROFILE_EXISTS");
+  const generatedPublisher = {
+    ...publisher,
+    database_path: workspaceRelative(databasePath),
+    receipts_directory: workspaceRelative(join(root, "publisher-receipts"))
+  };
+  try {
+    parseReadonlyPublisherProfile(generatedPublisher);
+  } catch {
+    throw new FixtureError("MEDIA_ACCEPTANCE_PUBLISHER_TEMPLATE_INVALID");
+  }
+  const generatedGateway: GatewayProfile = {
+    ...gatewayTemplate,
+    database_path: workspaceRelative(databasePath),
+    media_roots: [workspaceRelative(mediaRoot)],
+    runtime_directory: workspaceRelative(join(root, "gateway-runtime"))
+  };
+  parseGatewayProfile(generatedGateway as unknown as JsonObject, manifest);
+  let publisherWritten = false;
+  try {
+    writeFileSync(publisherPath, `${JSON.stringify(generatedPublisher, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+    publisherWritten = true;
+    writeFileSync(gatewayPath, `${JSON.stringify(generatedGateway, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+  } catch {
+    if (publisherWritten) rmSync(publisherPath, { force: true });
+    throw new FixtureError("MEDIA_ACCEPTANCE_PROFILE_WRITE_FAILED");
+  }
+  console.log(JSON.stringify({ result: "PASS", action: "profiles", run_id: runId, checks: { publisher_profile: true, gateway_profile: true, git_ignored: true, secret_values_copied: false } }));
+}
+
 async function createFixture(): Promise<void> {
   const sourcePath = resolve(arg("--input"));
   const issuer = safeHttps(arg("--issuer"));
@@ -252,14 +421,8 @@ async function verifyFixture(): Promise<void> {
   const issuer = safeHttps(arg("--issuer"));
   const resourceUrl = safeHttps(arg("--resource"), "/mcp");
   const root = runRoot(runId);
-  const manifestPath = join(root, "fixture.json");
-  if (!existsSync(manifestPath)) throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_NOT_FOUND");
-  const safeManifestPath = assertSafeExistingPath(root, manifestPath, "file");
-  const manifest = JSON.parse(readFileSync(safeManifestPath, "utf8")) as Manifest;
-  const expectedKeys = ["artifact_id", "blob_id", "database_file", "database_manifest", "fixture_version", "issuer_hash", "media_relative_path", "media_sha256", "project_id", "resource_url", "run_id", "shot_id"];
-  if (JSON.stringify(Object.keys(manifest).sort()) !== JSON.stringify(expectedKeys) || manifest.fixture_version !== FIXTURE_VERSION || manifest.run_id !== runId || manifest.resource_url !== resourceUrl) {
-    throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
-  }
+  const manifest = readManifest(root, runId);
+  if (manifest.resource_url !== resourceUrl) throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
   const databasePath = resolve(root, manifest.database_file);
   const mediaPath = resolve(root, manifest.media_relative_path);
   if (!existsSync(databasePath) || !existsSync(mediaPath)) throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
@@ -289,6 +452,7 @@ async function main(): Promise<void> {
   const action = process.argv[2];
   if (action === "create") return createFixture();
   if (action === "verify") return verifyFixture();
+  if (action === "profiles") return createProfiles();
   throw new FixtureError("MEDIA_ACCEPTANCE_ACTION_INVALID");
 }
 

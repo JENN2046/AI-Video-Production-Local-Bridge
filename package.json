@@ -37,6 +37,7 @@
     "media:remove-logon-task": "powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File scripts/windows/media-remove-logon-task.ps1",
     "media:fixture:create": "npm run build:server && powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File scripts/windows/media-create-acceptance-fixture.ps1",
     "media:fixture:verify": "npm run build:server && node dist/scripts/webgpt-media-acceptance-fixture.js verify",
+    "media:fixture:profiles": "npm run build:server && node dist/scripts/webgpt-media-acceptance-fixture.js profiles",
     "db:backup": "npm run build:server && node dist/scripts/db-backup.js",
     "db:check": "npm run build:server && node dist/scripts/db-check.js",
     "db:migrate": "npm run build:server && node dist/scripts/db-migrate.js",

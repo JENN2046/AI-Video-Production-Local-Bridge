@@ -50,7 +50,17 @@ npm run media:remove-logon-task
 
 `media:status` reports only process state, local health/readiness, public health, active capability/session counts, and a stable error code. It never returns paths, media names, principal identifiers, key state or token material.
 
-Before external playback acceptance, create an isolated MP4 fixture with `npm --silent run media:fixture:create -- -InputPath <mp4> -Issuer <issuer> -ResourceUrl <resource>`. The wrapper reads the Auth0 `user_id/sub` through a masked prompt, never places it on the command line, copies rather than modifies the source MP4, and creates a fresh ledger-`0008` database plus managed media under Git-ignored `data/webgpt/media-acceptance/`. With the required `--silent` npm invocation, command output contains only a random run ID and boolean checks. Verify the result with `npm --silent run media:fixture:verify -- --run <run_id> --issuer <issuer> --resource <resource>`; verification is read-only and emits only counts and stable checks. Do not capture fixture evidence with ordinary `npm run`: npm echoes the expanded arguments, including the source path and endpoint identifiers, before the wrapper starts. Neither command publishes a Snapshot or starts the Tunnel.
+Before external playback acceptance, create an isolated MP4 fixture with `npm --silent run media:fixture:create -- -InputPath <mp4> -Issuer <issuer> -ResourceUrl <resource>`. The wrapper reads the Auth0 `user_id/sub` through a masked prompt, never places it on the command line, copies rather than modifies the source MP4, and creates a fresh ledger-`0008` database plus managed media under Git-ignored `data/webgpt/media-acceptance/`. With the required `--silent` npm invocation, command output contains only a random run ID and boolean checks. Verify the result with `npm --silent run media:fixture:verify -- --run <run_id> --issuer <issuer> --resource <resource>`; verification is read-only and emits only counts and stable checks.
+
+Generate the two temporary runtime profiles from already validated, non-secret templates instead of copying JSON fields manually:
+
+```text
+npm --silent run media:fixture:profiles -- --run <run_id> --publisher-template <publisher-profile> --gateway-template <gateway-profile>
+```
+
+The generator strictly validates both templates, inherits only configuration and secret *locators*, and replaces only the database, media-root, receipt, and runtime paths with paths inside the isolated fixture. It never opens the referenced DPAPI ciphertext, starts a service, or publishes a Snapshot. It creates `publisher-profile.json` and `gateway-profile.json` under the fixture run with exclusive-create semantics; rerunning against existing outputs fails closed. Run the ordinary publisher and media preflights against those generated profiles before any temporary switch.
+
+Do not capture fixture evidence with ordinary `npm run`: npm echoes the expanded arguments, including source paths and endpoint identifiers, before the wrapper starts. These commands do not publish a Snapshot or start the Tunnel.
 
 `media:install-logon-task` creates `Jenn AI Video Readonly Media Gateway` for Jenn's current interactive user with a 30-second logon delay, `RunLevel Limited`, one instance, and at most three one-minute retries. It does not use `SYSTEM`, Administrator, or a stored Windows password. Installing or removing this task requires a separate current authorization; merging this code does not install it.
 
