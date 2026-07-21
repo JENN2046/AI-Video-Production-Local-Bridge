@@ -320,6 +320,48 @@ test("Director local service binds Focus/context and persists only an immutable 
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });
 
+test("Director SHOT Focus resolves its latest generated clip for review and frame evidence", async () => {
+  const f = await fixture();
+  try {
+    const db = openM0Database(f.sqlitePath);
+    try {
+      const createdAt = new Date(f.now.getTime() + 1_000).toISOString();
+      const expiresAt = new Date(f.now.getTime() + 60 * 60_000).toISOString();
+      db.prepare(`INSERT INTO director_focuses
+        (focus_id, workspace_id, principal_id, project_id, target_type, target_id, generation, supersedes_focus_id, created_at, expires_at)
+        VALUES ('focus_director_shot_002', 'jenn-ai-video-workspace', ?, ?, 'shot', ?, 2,
+          'focus_director_local_001', ?, ?)`)
+        .run(f.actor.principal_id, f.projectId, f.shotId, createdAt, expiresAt);
+      db.prepare(`INSERT INTO director_focus_events (event_id, focus_id, event_type, reason_code, created_at)
+        VALUES ('focus_event_director_shot_002', 'focus_director_shot_002', 'created', 'WORKBENCH_SELECTION', ?)`)
+        .run(createdAt);
+    } finally { db.close(); }
+    const service = createDirectorLocalService(f.actor, { database_path: f.sqlitePath, ffmpeg_path: f.ffmpeg, now: () => f.now });
+    const context = await service.get_director_context({
+      focus_id: "focus_director_shot_002", focus_generation: 2, proposal_kind: "review_assessment", detail: "compact"
+    });
+    assert.equal(context.focus.target_type, "shot");
+    assert.equal(context.discussion.target_artifact?.artifact_id, f.artifactId);
+    const frames = await service.inspect_director_video_frames({
+      focus_id: "focus_director_shot_002", focus_generation: 2,
+      artifact_id: f.artifactId, sampling: "overview", max_frames: 1
+    });
+    assert.equal(frames.structured_content.frames.length, 1);
+    const submitted = await service.submit_director_proposal({
+      focus_id: "focus_director_shot_002", focus_generation: 2,
+      base_state_hash: context.base_state_hash, idempotency_key: "director-shot-review-0001",
+      parent_proposal_id: null, proposal: proposalDraft(f.shotId, f.artifactId)
+    });
+    const verifyDb = openM0DatabaseConnection(f.sqlitePath, { readOnly: true });
+    try {
+      const row = verifyDb.prepare("SELECT target_type, target_id FROM director_proposals WHERE proposal_id = ?")
+        .get(submitted.proposal_id) as { target_type: string; target_id: string };
+      assert.equal(row.target_type, "shot");
+      assert.equal(row.target_id, f.shotId);
+    } finally { verifyDb.close(); }
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
 test("Director remote runtime exposes five OAuth tools through the authenticated outbound local bridge", async () => {
   const f = await fixture();
   let stopping = false;

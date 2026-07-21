@@ -189,7 +189,7 @@ function proposalKindMatchesFocus(kind: ProposalKind, focus: DirectorFocus): voi
   const allowed: Record<ProposalKind, readonly DirectorFocus["target_type"][]> = {
     creative_brief: ["project"], script: ["project"], shot_plan: ["project"],
     storyboard_revision: ["shot"], generation_plan: ["shot"],
-    clip_regeneration: ["shot", "artifact"], review_assessment: ["artifact"],
+    clip_regeneration: ["shot", "artifact"], review_assessment: ["shot", "artifact"],
     assembly_plan: ["project"], delivery_plan: ["delivery"], memory_saveback: ["memory"]
   };
   if (!allowed[kind].includes(focus.target_type)) {
@@ -201,7 +201,12 @@ function artifactForFocus(db: M0Database, focus: DirectorFocus, project: Project
   let artifactId = "";
   if (focus.target_type === "artifact") artifactId = focus.target_id;
   else if (kind === "storyboard_revision" || kind === "generation_plan") artifactId = targetShot?.storyboard_image_artifact_id ?? "";
-  else if (kind === "clip_regeneration") artifactId = targetShot?.clip_versions.at(-1)?.artifact_id ?? targetShot?.accepted_clip_artifact_id ?? "";
+  else if (kind === "clip_regeneration" || kind === "review_assessment") {
+    artifactId = targetShot
+      ? [...targetShot.clip_versions].sort((left, right) => right.attempt_number - left.attempt_number)[0]?.artifact_id
+        ?? targetShot.accepted_clip_artifact_id
+      : "";
+  }
   else if (kind === "delivery_plan") artifactId = project.exports.final_video_artifact_id;
   if (!artifactId) return null;
   const artifact = getMediaArtifact(db, artifactId);
@@ -540,12 +545,12 @@ export class DirectorLocalService implements DirectorNativeToolHandlers {
   async inspect_director_video_frames(input: Parameters<DirectorNativeToolHandlers["inspect_director_video_frames"]>[0]): Promise<DirectorVideoFrameToolOutput> {
     const prepared = this.read((db) => {
       const focus = requireFocus(db, this.actor, input.focus_id, input.focus_generation, this.now());
-      if (focus.target_type !== "artifact" || focus.target_id !== input.artifact_id) {
-        throw new WebGptV4Error("DIRECTOR_MEDIA_NOT_FOCUS_BOUND", "Video Artifact is not the active Focus target.", "artifact_id");
-      }
       const built = buildContext(db, focus, "review_assessment", "full");
       const artifact = built.targetArtifact;
-      if (!artifact || artifact.artifact_type !== "video" || !["video/mp4", "video/webm"].includes(artifact.storage.mime_type)) {
+      if (!artifact || artifact.artifact_id !== input.artifact_id) {
+        throw new WebGptV4Error("DIRECTOR_MEDIA_NOT_FOCUS_BOUND", "Video Artifact is not bound to the active Focus target.", "artifact_id");
+      }
+      if (artifact.artifact_type !== "video" || !["video/mp4", "video/webm"].includes(artifact.storage.mime_type)) {
         throw new WebGptV4Error("DIRECTOR_MEDIA_INVALID", "Focused Artifact is not a supported video.", "artifact_id");
       }
       const checked = validateActiveArtifactReference(db, {
