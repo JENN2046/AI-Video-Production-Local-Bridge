@@ -4,7 +4,8 @@ import { z } from "zod";
 import {
   DIRECTOR_PROPOSAL_DRAFT_SCHEMA,
   DIRECTOR_PROPOSAL_SCHEMA,
-  DIRECTOR_TARGET_STATE_V1_SCHEMA
+  DIRECTOR_TARGET_STATE_V1_SCHEMA,
+  validateDirectorProposal
 } from "./domain.js";
 import { requireScope, type WebGptV4Actor, type WebGptV4Scope } from "../webgpt-v4/types.js";
 
@@ -200,6 +201,15 @@ export const DIRECTOR_MANUAL_IMPORT_SCHEMA = z.object({
 }).strict().superRefine((value, context) => {
   if (value.proposal.source !== "untrusted_manual_import") {
     context.addIssue({ code: "custom", message: "Manual imports must remain explicitly untrusted.", path: ["proposal", "source"] });
+  }
+  try {
+    validateDirectorProposal(value.proposal);
+  } catch {
+    context.addIssue({
+      code: "custom",
+      message: "Manual Proposal failed immutable content and target validation.",
+      path: ["proposal"]
+    });
   }
 });
 

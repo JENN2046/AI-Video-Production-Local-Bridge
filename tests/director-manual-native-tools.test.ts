@@ -409,4 +409,10 @@ test("Manual Director import remains explicit, confirmed, and untrusted", () => 
     proposal: { ...proposal, source: "native" },
     imported_at: now
   }));
+  assert.throws(() => DIRECTOR_MANUAL_IMPORT_SCHEMA.parse({
+    mode: "manual",
+    confirmed_by_user: true,
+    proposal: { ...proposal, payload_hash: "b".repeat(64) },
+    imported_at: now
+  }));
 });
