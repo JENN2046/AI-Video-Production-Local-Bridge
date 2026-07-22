@@ -6,7 +6,9 @@ import {
   type PersonalReadonlyOperationsService
 } from "../webgpt-cloud/personalReadonlyOperations.js";
 import { h2CanaryWorkbenchSummary } from "../tools/h1Workbench.js";
+import { startDirectorBoundedGeneration } from "../director/boundedOrchestrator.js";
 import {
+  compileDirectorProposalToAutomationGrant,
   createDirectorWorkbenchFocus,
   decideDirectorProposal,
   getDirectorApprovalTower,
@@ -221,6 +223,42 @@ export async function handleWorkbenchV2Api(
         reason_code: optionalText(body.reason_code),
         human_confirmation: body.human_confirmation === true
       }, db)));
+    });
+    return true;
+  }
+  const directorProposalCompileMatch = url.pathname.match(/^\/api\/v2\/director\/proposals\/([^/]+)\/compile$/);
+  if (request.method === "POST" && directorProposalCompileMatch) {
+    const proposalId = decodeSegment(directorProposalCompileMatch[1]);
+    await mutation(request, response, actionNonce, (body) => sendResult(response, withDatabase((db) => compileDirectorProposalToAutomationGrant({
+      proposal_id: proposalId,
+      max_total_minor: Number(body.max_total_minor),
+      max_per_run_minor: Number(body.max_per_run_minor),
+      max_versions_per_shot: Number(body.max_versions_per_shot),
+      max_automatic_retries: Number(body.max_automatic_retries),
+      expires_at: text(body.expires_at),
+      human_confirmation: body.human_confirmation === true
+    }, db))));
+    return true;
+  }
+  const directorGrantStartMatch = url.pathname.match(/^\/api\/v2\/director\/grants\/([^/]+)\/start$/);
+  if (request.method === "POST" && directorGrantStartMatch) {
+    const grantId = decodeSegment(directorGrantStartMatch[1]);
+    await mutation(request, response, actionNonce, async (body) => {
+      if (body.human_confirmation !== true) {
+        send(response, 400, { ok: false, error: { code: "DIRECTOR_AUTOMATION_START_CONFIRMATION_REQUIRED", message: "Human confirmation is required to start a bounded generation." } });
+        return;
+      }
+      const db = openM0Database();
+      try {
+        sendResult(response, await startDirectorBoundedGeneration({
+          grant_id: grantId,
+          proposal_id: text(body.proposal_id),
+          policy_hash: text(body.policy_hash),
+          account_label: body.account_label === "team" ? "team" : "personal"
+        }, db));
+      } finally {
+        db.close();
+      }
     });
     return true;
   }

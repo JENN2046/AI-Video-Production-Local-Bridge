@@ -488,7 +488,7 @@ const directorAutomationGrantShape = {
 } as const;
 
 function validateAutomationGrantLimits(
-  value: { allowed_actions: string[]; max_per_run_minor: number; max_total_minor: number; starts_at: string; expires_at: string },
+  value: { allowed_actions: string[]; max_per_run_minor: number; max_total_minor: number; max_automatic_retries: number; starts_at: string; expires_at: string },
   context: z.core.$RefinementCtx
 ): void {
   if (new Set(value.allowed_actions).size !== value.allowed_actions.length) {
@@ -499,6 +499,10 @@ function validateAutomationGrantLimits(
   }
   if (Date.parse(value.expires_at) <= Date.parse(value.starts_at)) {
     context.addIssue({ code: "custom", message: "Automation Grant must expire after it starts.", path: ["expires_at"] });
+  }
+  const retryAllowed = value.allowed_actions.includes("generation.retry");
+  if ((value.max_automatic_retries > 0) !== retryAllowed) {
+    context.addIssue({ code: "custom", message: "Automation Grant retry action must exactly match its retry limit.", path: ["allowed_actions"] });
   }
 }
 

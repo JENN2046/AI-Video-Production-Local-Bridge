@@ -45,7 +45,7 @@ describe("Human Workbench V2 shell", () => {
     expect(screen.queryByRole("link", { name: "Legacy" })).not.toBeInTheDocument();
   });
 
-  it("renders Director approval controls without treating a proposal as Provider execution", async () => {
+  it("renders Director approval controls without treating a proposal or Grant as Provider execution", async () => {
     const projectId = "project_director_ui";
     fetchMock.mockImplementation(async (input) => {
       const url = String(input);
@@ -59,8 +59,8 @@ describe("Human Workbench V2 shell", () => {
     render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={["/v2/director"]}><App /></MemoryRouter></QueryClientProvider>);
     expect(await screen.findByRole("heading", { name: "Director 审批台" })).toBeInTheDocument();
     expect(screen.getByText(/此处的接受仅记录人工审批/)).toBeInTheDocument();
-    expect(await screen.findByText("执行权限")).toBeInTheDocument();
-    expect(screen.getByText("未开放")).toBeInTheDocument();
+    expect(await screen.findByText("自动执行")).toBeInTheDocument();
+    expect(screen.getByText("需 Grant")).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([input, init]) => String(input).includes("/director/") && (init as RequestInit | undefined)?.method === "POST")).toBe(false);
   });
 

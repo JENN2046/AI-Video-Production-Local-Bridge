@@ -226,7 +226,7 @@ test("Automation Grant is content-addressed, bounded, and immutable by replaceme
     principal_id: principalId,
     project_id: "project_director",
     provider: "runninghub" as const,
-    allowed_actions: ["generation.submit", "generation.download"],
+    allowed_actions: ["generation.submit", "generation.retry", "generation.download"],
     currency: "CNY",
     max_total_minor: 10_000,
     max_per_run_minor: 1_000,
@@ -242,6 +242,8 @@ test("Automation Grant is content-addressed, bounded, and immutable by replaceme
   assert.deepEqual(validateDirectorAutomationGrant(grant), grant);
   assert.throws(() => validateDirectorAutomationGrant({ ...grant, max_total_minor: 20_000 }), /POLICY_HASH_MISMATCH/);
   assert.throws(() => finalizeDirectorAutomationGrant({ ...unsigned, allowed_actions: ["generation.submit", "generation.submit"] }), /must be unique/);
+  assert.throws(() => finalizeDirectorAutomationGrant({ ...unsigned, allowed_actions: ["generation.submit"], max_automatic_retries: 1 }), /retry action must exactly match/);
+  assert.throws(() => finalizeDirectorAutomationGrant({ ...unsigned, max_automatic_retries: 0 }), /retry action must exactly match/);
 });
 
 test("director operational state is derived with exception and human gates taking priority", () => {
@@ -301,7 +303,7 @@ test("migration 0009 upgrades a real 0008 shape and makes Director evidence immu
       (grant_id, workspace_id, principal_id, project_id, provider, allowed_actions_json, currency,
        max_total_minor, max_per_run_minor, max_versions_per_shot, max_automatic_retries,
        pricing_contract_version, capability_contract_version, starts_at, expires_at, policy_hash, created_at)
-      VALUES ('grant_director_001', 'jenn-ai-video-workspace', ?, 'project_director', 'runninghub', '["generation.submit"]', 'CNY',
+      VALUES ('grant_director_001', 'jenn-ai-video-workspace', ?, 'project_director', 'runninghub', '["generation.submit","generation.retry"]', 'CNY',
         10000, 1000, 3, 1, 'pricing-v1', 'capability-v1', '2026-07-22T00:00:00.000Z',
         '2026-07-23T00:00:00.000Z', ?, '2026-07-22T00:00:00.000Z')`).run(principalId, hash("policy"));
     assert.throws(() => db.prepare("UPDATE director_automation_grants SET max_total_minor = 20000 WHERE grant_id = 'grant_director_001'").run(), /DIRECTOR_AUTOMATION_GRANT_IMMUTABLE/);

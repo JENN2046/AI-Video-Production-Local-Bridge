@@ -390,6 +390,34 @@
       "case_name": "owner demotion or owner ambiguity blocks a pending Director decision without appending a terminal event"
     },
     {
+      "id": "director-automation-grant-compilation",
+      "path": "tests/director-workbench-approval.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "an accepted current generation Proposal compiles exactly one immutable Automation Grant without an Intent, job, or Provider side effect"
+    },
+    {
+      "id": "director-automation-official-price-minor",
+      "path": "tests/director-workbench-approval.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "a bounded Director start reserves the official decimal price in minor units without submitting a Provider task"
+    },
+    {
+      "id": "director-automation-malformed-intent",
+      "path": "tests/director-workbench-approval.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "a malformed Director-prepared intent fails closed before provider selection"
+    },
+    {
+      "id": "director-automation-known-no-submit-retry",
+      "path": "tests/director-workbench-approval.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "a Director Grant retries only known no-submit failures and stops exactly at its retry limit"
+    },
+    {
       "id": "director-focus-project-reset",
       "path": "src/workbench-ui/App.test.tsx",
       "npm_script": "test:v2:ui",
