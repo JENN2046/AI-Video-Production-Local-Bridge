@@ -1,6 +1,6 @@
 # Architecture
 
-Status: current-main architecture with a `0010` activity-database compatibility hold
+Status: current-main architecture; active database migrated to `0010`, runtime re-acceptance pending
 Accepted package: `0.1.0-beta.5`
 
 ## System map
@@ -8,7 +8,7 @@ Accepted package: `0.1.0-beta.5`
 ```mermaid
 flowchart LR
     J["Jenn"] --> W["Local Workbench V2"]
-    W --> DB["SQLite current-main requirement: ledger 0010\naccepted activity database: ledger 0008 (hold)"]
+    W --> DB["SQLite active database: workbench-v2-6\nledger 0010 (migration acceptance PASS)"]
     W --> FS["Governed local media store"]
     W --> PA["Manual Snapshot publisher"]
     PA --> SS["Signed ephemeral Snapshot v4"]
@@ -23,7 +23,7 @@ flowchart LR
     W --> PR["Provider adapters — explicit human gate"]
 ```
 
-Solid lines describe the intended operating paths. The `0008` activity database has accepted historical evidence, but current-main Workbench and Snapshot export are held until an authorized `0010` migration completes. Dashed media lines are implemented but not yet externally accepted end to end.
+Solid lines describe the intended operating paths. The active database completed the authorized `0010` migration with backup, manifest, `db:check` and restore evidence; renewed runtime and Snapshot publish acceptance remain separate gates. Dashed media lines are implemented but not yet externally accepted end to end.
 
 ## Sources of truth
 

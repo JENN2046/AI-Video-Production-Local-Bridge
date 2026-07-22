@@ -1,6 +1,6 @@
 # ChatGPT Director Human Approval
 
-Status: `CANDIDATE` — PR4 local Workbench implementation. It requires the current `workbench-v2-6` / ledger `0010` schema, but does not migrate the accepted activity database, deploy a Director runtime, configure OAuth or call a Provider.
+Status: `CANDIDATE` — PR4 local Workbench implementation. It requires the current `workbench-v2-6` / ledger `0010` schema, which the activity database separately reached on 2026-07-22. This does not deploy a Director runtime, configure OAuth or call a Provider.
 
 ## Purpose
 
@@ -79,4 +79,4 @@ npm run test:v2:ui
 npm run test:selection-gate
 ```
 
-Canonical `npm test` and Windows CI must select the Director lane. External acceptance, activity-database migration, Director OAuth registration and Provider execution remain separate later gates.
+Canonical `npm test` and Windows CI must select the Director lane. External runtime acceptance, Director OAuth registration and Provider execution remain separate later gates; the activity-database migration gate is recorded separately as PASS.

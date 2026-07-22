@@ -1,7 +1,7 @@
 # Current State
 
 Date (Asia/Shanghai, UTC+08:00): 2026-07-22
-Repository baseline: `main@95c017adfd59543df3e111b56781268f3a6a6e78`
+Repository baseline: `main@4a94cf2d62f3e98923b3166411f13181143d1cbc`
 
 ## Accepted historical operations baseline
 
@@ -25,22 +25,22 @@ PARTIAL_MULTI_USER_GATE
 
 These states record Jenn's owner-only ChatGPT MCP App and manual Snapshot evidence. They do not accept multi-user production, automatic publishing, Windows auto-start, public media playback or real Provider canary.
 
-## Current-main compatibility hold
+## Current-main database compatibility
 
-`main@95c017a` now requires `workbench-v2-6` / migration ledger `0010` for normal Workbench database opens and new Snapshot exports. Jenn's accepted activity database remains `workbench-v2-5` / ledger `0008`. Therefore the historical baseline above is not a current-main daily-startup or manual-publish authorization.
+The active database completed the authorized `workbench-v2-5` / ledger `0008` to `workbench-v2-6` / ledger `0010` migration on 2026-07-22. The gate included a coherent pre-migration backup, isolated migration, read-only `db:check`, normalized core-manifest comparison, post-migration backup and isolated restore rehearsal. All recorded checks passed.
 
-Do not run `windows:start`, a normal publisher preflight/publish, or Director runtime commands against `data/app.sqlite` on current `main`. Runtime startup never migrates the database automatically. A separate authorized migration gate—backup, isolated `0010` migration, `db:check`, restore drill, normalized-manifest comparison and explicit activity-database authorization—must close first.
+This closes only the database-schema compatibility hold. It does not itself accept a renewed local runtime, Snapshot publish/recovery, Director transport, OAuth configuration, memory integration, Provider execution or any external service change. Runtime startup still never migrates the database automatically.
 
 ## Capability matrix
 
 | Capability | Code | Real acceptance | Current decision |
 |---|---:|---:|---|
-| Workbench V2 local production UI | Current code requires `0010` | Historical `0008` acceptance | Held pending migration |
-| Database ledger `0008` and `db:check` | Accepted historical database | PASS on accepted baseline | Not current-main runtime compatible |
+| Workbench V2 local production UI | Current code requires `0010` | Activity database migrated and integrity-checked | Runtime re-acceptance pending |
+| Database ledger `0010` and `db:check` | Active database migrated 2026-07-22 | PASS: migration, manifests and restore rehearsal | Current-main compatible |
 | Persistent generation/review/delivery boundaries | PASS | Fixture/local acceptance | Provider remains off by default |
 | Auth0 owner-only Readonly MCP App | PASS | PASS | Accepted |
 | Seven readonly App tools and Workbench panels | PASS | PASS | Accepted |
-| Manual Snapshot publish/recovery/freshness | Current exporter requires `0010` | Historical `0008` acceptance | Held pending migration |
+| Manual Snapshot publish/recovery/freshness | Current exporter requires `0010` | Historical `0008` acceptance; schema hold closed | Renewed publish/recovery acceptance pending |
 | Snapshot v4 media bindings | PASS | Not fully external-accepted | Candidate |
 | Local Media Gateway runtime | PASS | Local/fixture tests PASS | Candidate |
 | Cloudflare media ingress | Configured in part | FAIL/BLOCKED at edge/route startup | Not accepted |
@@ -49,7 +49,7 @@ Do not run `windows:start`, a normal publisher preflight/publish, or Director ru
 | Second real user and revoke path | PASS | Deferred by Jenn | `PARTIAL_MULTI_USER_GATE` |
 | Automatic Snapshot synchronization | Not implemented | Not accepted | Future gate |
 | Real Provider canary | Boundary exists | Not authorized | Frozen |
-| ChatGPT Director PR1–PR6 | Merged local candidate | No runtime, OAuth, bridge, database or plugin acceptance | `DIRECTOR_EXTERNAL_GATE_PENDING` |
+| ChatGPT Director PR1–PR6 | Merged local candidate | Database gate PASS; runtime/OAuth/bridge/plugin still unaccepted | `DIRECTOR_EXTERNAL_GATE_PENDING` |
 
 ## Accepted evidence
 
@@ -61,6 +61,7 @@ Do not run `windows:start`, a normal publisher preflight/publish, or Director ru
 - [Snapshot v3 Derived State Acceptance](ops/reports/2026-07-19-snapshot-v3-derived-state-acceptance.md)
 - [Snapshot v3 Human Workbench Recovery Acceptance](ops/reports/2026-07-19-snapshot-v3-human-workbench-recovery-acceptance.md)
 - [Snapshot Freshness Operations Acceptance](ops/reports/2026-07-19-snapshot-freshness-operations-acceptance.md)
+- [Director Active Database Migration Acceptance](ops/reports/2026-07-22-director-active-database-migration-acceptance.md)
 
 Acceptance reports record the commit and boundary that was actually tested. Later code must not silently inherit an older report's PASS.
 
@@ -68,11 +69,11 @@ Acceptance reports record the commit and boundary that was actually tested. Late
 
 ### Daily local work
 
-**Held on current `main`.** The accepted `data/app.sqlite` is ledger `0008`, while the current Workbench requires `0010`. Do not use `npm run windows:start` as a normal daily action and do not migrate automatically. `REAL_PROVIDER_ENABLED=false` remains the safe default when a separately accepted runtime is eventually started.
+The schema gate is closed: the active `data/app.sqlite` is now ledger `0010`. `REAL_PROVIDER_ENABLED=false` remains the safe default. A separate bounded runtime smoke is still required before treating `npm run windows:start` as reaccepted daily operation; do not use schema compatibility as an authorization for Provider work.
 
 ### Daily ChatGPT App work
 
-The remote service is memory-only. Existing accepted Snapshot evidence remains historical, but current-main recovery or renewal publishing is held by the same `0010` migration gate. Do not use Human Workbench `系统 → 只读 App 发布` to work around the schema hold. The UI never auto-publishes.
+The remote service is memory-only. The schema hold no longer blocks a renewed publish/recovery acceptance, but no Snapshot was published as part of the database migration. Do not treat the migration as a Human Workbench publish, and do not infer automatic publishing; the UI never auto-publishes.
 
 ### Media gateway work
 
@@ -80,9 +81,9 @@ PR #56–#62 implemented Snapshot v4 media bindings, encrypted capabilities, loc
 
 ### ChatGPT Director candidate
 
-PR #69–#72 merged the local Director candidate: immutable advisory Proposals, Human Workbench approval, bounded Automation Grants, an isolated local bridge and a disabled-by-default Memory Recall Port. This does **not** alter the accepted Readonly MCP App, the current `workbench-v2-5` / ledger `0008` activity database, or the safe default `REAL_PROVIDER_ENABLED=false`.
+PR #69–#72 merged the local Director candidate: immutable advisory Proposals, Human Workbench approval, bounded Automation Grants, an isolated local bridge and a disabled-by-default Memory Recall Port. The active database now satisfies its `workbench-v2-6` / ledger `0010` prerequisite; this does **not** alter the accepted Readonly MCP App or the safe default `REAL_PROVIDER_ENABLED=false`.
 
-Director startup requires a separately accepted `workbench-v2-6` / ledger `0010` database and explicit non-secret runtime configuration. Do not run `start:director:remote` or `start:director:bridge` against the accepted activity database. The Memory Port has no configured plugin, endpoint, credential or automatic Saveback dispatch. See [Director Local Candidate Closeout](docs/CHATGPT_DIRECTOR_LOCAL_CANDIDATE_CLOSEOUT.md).
+Director startup requires explicit non-secret runtime configuration and its separate transport acceptance; database readiness alone is insufficient. Do not run `start:director:remote` or `start:director:bridge` as a normal operation yet. The Memory Port has no configured plugin, endpoint, credential or automatic Saveback dispatch. See [Director Local Candidate Closeout](docs/CHATGPT_DIRECTOR_LOCAL_CANDIDATE_CLOSEOUT.md).
 
 ## Active blockers and next gates
 
@@ -97,7 +98,7 @@ Separate, non-blocking future gates are the second real user, automatic Snapshot
 
 Director has its own ordered external gates and does not inherit acceptance from the Readonly App or media gateway:
 
-1. separately authorize active-database migration from ledger `0008` to `0010`, with backup, manifest, `db:check`, isolated restore and rollback evidence;
+1. **PASS:** active-database migration from ledger `0008` to `0010`, with backup, manifest, read-only `db:check`, isolated restore and core-record preservation evidence;
 2. separately authorize an isolated Director OAuth/remote/bridge wiring acceptance with `REAL_PROVIDER_ENABLED=false`;
 3. prove the owner-only Proposal and approval path against the migrated activity database without Provider execution;
 4. select a stable memory plugin and separately accept recall-only, project/issuer-bound integration before any Saveback dispatch;
