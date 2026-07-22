@@ -7,6 +7,7 @@ import { join } from "node:path";
 
 import {
   DIRECTOR_DOMAIN_SCHEMA_VERSION,
+  DIRECTOR_PROPOSAL_DRAFT_SCHEMA,
   directorBaseStateHash,
   directorContentHash,
   finalizeDirectorAutomationGrant,
@@ -18,6 +19,7 @@ import {
   type DirectorAutomationGrantUnsigned,
   type DirectorTargetStateV1
 } from "../src/director/domain.js";
+import { directorMinorToProviderAmount, directorProviderAmountToMinor } from "../src/director/currency.js";
 import { deriveDirectorOperationalState } from "../src/packages/domain/operationalState.js";
 import { checkDatabase } from "../src/storage/databaseGovernance.js";
 import { assertSchemaCurrent, DATABASE_MIGRATIONS, migrationChecksum, runDatabaseMigrations } from "../src/storage/migrations.js";
@@ -25,6 +27,7 @@ import { WORKBENCH_V2_SCHEMA_VERSION } from "../src/storage/workbenchV2Schema.js
 
 const principalId = "a".repeat(64);
 const hash = (value: string): string => directorContentHash(value);
+const HISTORICAL_MIGRATION_0009_CHECKSUM = "7ccfa5f3302bbb3a35d6c9a21846bcaf2f1cf904dcb6ad1344d8f03999e1d0d7";
 
 function targetState(): DirectorTargetStateV1 {
   return {
@@ -226,7 +229,7 @@ test("Automation Grant is content-addressed, bounded, and immutable by replaceme
     principal_id: principalId,
     project_id: "project_director",
     provider: "runninghub" as const,
-    allowed_actions: ["generation.submit", "generation.download"],
+    allowed_actions: ["generation.submit", "generation.retry", "generation.download"],
     currency: "CNY",
     max_total_minor: 10_000,
     max_per_run_minor: 1_000,
@@ -242,6 +245,36 @@ test("Automation Grant is content-addressed, bounded, and immutable by replaceme
   assert.deepEqual(validateDirectorAutomationGrant(grant), grant);
   assert.throws(() => validateDirectorAutomationGrant({ ...grant, max_total_minor: 20_000 }), /POLICY_HASH_MISMATCH/);
   assert.throws(() => finalizeDirectorAutomationGrant({ ...unsigned, allowed_actions: ["generation.submit", "generation.submit"] }), /must be unique/);
+  assert.throws(() => finalizeDirectorAutomationGrant({ ...unsigned, allowed_actions: ["generation.submit"], max_automatic_retries: 1 }), /retry action must exactly match/);
+  assert.throws(() => finalizeDirectorAutomationGrant({ ...unsigned, max_automatic_retries: 0 }), /retry action must exactly match/);
+  const coinsGrant = finalizeDirectorAutomationGrant({ ...unsigned, currency: "RH_COINS" });
+  assert.equal(coinsGrant.currency, "RH_COINS");
+  assert.equal(directorProviderAmountToMinor(12, "RH_COINS"), 12);
+  assert.equal(directorMinorToProviderAmount(12, "RH_COINS"), 12);
+  assert.throws(() => finalizeDirectorAutomationGrant({ ...unsigned, currency: "USD" } as unknown as DirectorAutomationGrantUnsigned), /Invalid option/);
+  const coinsPlan = {
+    kind: "generation_plan",
+    payload: {
+      shot_id: "shot_002",
+      provider: "runninghub",
+      model: "rhart-video-g/image-to-video",
+      duration_seconds: 5,
+      resolution: "1080x1920",
+      video_prompt: "Keep the product stable.",
+      negative_prompt: "No deformation.",
+      continuity_constraints: [],
+      estimated_cost_minor: 12,
+      currency: "RH_COINS"
+    }
+  } as const;
+  const parsedCoinsPlan = DIRECTOR_PROPOSAL_DRAFT_SCHEMA.parse(coinsPlan);
+  assert.equal(parsedCoinsPlan.kind, "generation_plan");
+  if (parsedCoinsPlan.kind !== "generation_plan") throw new Error("Expected a generation plan.");
+  assert.equal(parsedCoinsPlan.payload.currency, "RH_COINS");
+  assert.throws(() => DIRECTOR_PROPOSAL_DRAFT_SCHEMA.parse({
+    ...coinsPlan,
+    payload: { ...coinsPlan.payload, currency: "USD" }
+  }), /Invalid option/);
 });
 
 test("director operational state is derived with exception and human gates taking priority", () => {
@@ -269,7 +302,7 @@ test("director operational state is derived with exception and human gates takin
   assert.throws(() => deriveDirectorOperationalState({ ...idle, pending_proposal_count: -1 }), /DIRECTOR_OPERATIONAL_FACT_INVALID/);
 });
 
-test("migration 0009 upgrades a real 0008 shape and makes Director evidence immutable", () => {
+test("migrations 0009 and 0010 upgrade a real 0008 shape and make Director evidence immutable", () => {
   const db = new DatabaseSync(":memory:");
   try {
     db.exec("PRAGMA foreign_keys = ON");
@@ -285,7 +318,7 @@ test("migration 0009 upgrades a real 0008 shape and makes Director evidence immu
       insertMigration.run(migration.id, migration.name, migrationChecksum(migration));
     }
 
-    assert.deepEqual(runDatabaseMigrations(db).applied, ["0009"]);
+    assert.deepEqual(runDatabaseMigrations(db).applied, ["0009", "0010"]);
     assert.equal((db.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string }).value, WORKBENCH_V2_SCHEMA_VERSION);
 
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)").run("project_director", JSON.stringify({ project_id: "project_director" }));
@@ -301,7 +334,7 @@ test("migration 0009 upgrades a real 0008 shape and makes Director evidence immu
       (grant_id, workspace_id, principal_id, project_id, provider, allowed_actions_json, currency,
        max_total_minor, max_per_run_minor, max_versions_per_shot, max_automatic_retries,
        pricing_contract_version, capability_contract_version, starts_at, expires_at, policy_hash, created_at)
-      VALUES ('grant_director_001', 'jenn-ai-video-workspace', ?, 'project_director', 'runninghub', '["generation.submit"]', 'CNY',
+      VALUES ('grant_director_001', 'jenn-ai-video-workspace', ?, 'project_director', 'runninghub', '["generation.submit","generation.retry"]', 'RH_COINS',
         10000, 1000, 3, 1, 'pricing-v1', 'capability-v1', '2026-07-22T00:00:00.000Z',
         '2026-07-23T00:00:00.000Z', ?, '2026-07-22T00:00:00.000Z')`).run(principalId, hash("policy"));
     assert.throws(() => db.prepare("UPDATE director_automation_grants SET max_total_minor = 20000 WHERE grant_id = 'grant_director_001'").run(), /DIRECTOR_AUTOMATION_GRANT_IMMUTABLE/);
@@ -316,8 +349,11 @@ test("migration 0009 upgrades a real 0008 shape and makes Director evidence immu
 
     db.prepare(`INSERT INTO director_automation_grant_events
       (event_id, grant_id, event_type, reservation_id, amount_minor, currency, reason_code, created_at)
-      VALUES ('grant_event_001', 'grant_director_001', 'reserve', 'reservation_001', 500, 'CNY', 'GENERATION_APPROVED', '2026-07-22T00:01:00.000Z')`).run();
+      VALUES ('grant_event_001', 'grant_director_001', 'reserve', 'reservation_001', 500, 'RH_COINS', 'GENERATION_APPROVED', '2026-07-22T00:01:00.000Z')`).run();
     assert.throws(() => db.prepare("DELETE FROM director_automation_grant_events WHERE event_id = 'grant_event_001'").run(), /DIRECTOR_AUTOMATION_GRANT_EVENTS_APPEND_ONLY/);
+    assert.throws(() => db.prepare(`INSERT INTO director_automation_grant_events
+      (event_id, grant_id, event_type, reservation_id, amount_minor, currency, reason_code, created_at)
+      VALUES ('grant_event_unsupported_currency', 'grant_director_001', 'reserve', 'reservation_unsupported', 1, 'USD', 'GENERATION_APPROVED', '2026-07-22T00:01:00.000Z')`).run(), /CHECK constraint failed/);
 
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)").run("project_other", JSON.stringify({ project_id: "project_other" }));
     assert.throws(() => db.prepare(`INSERT INTO director_proposals
@@ -329,6 +365,81 @@ test("migration 0009 upgrades a real 0008 shape and makes Director evidence immu
 
     db.exec("DROP TRIGGER director_proposal_events_no_delete");
     assert.throws(() => assertSchemaCurrent(db), /missing_trigger:director_proposal_events_no_delete/);
+  } finally {
+    db.close();
+  }
+});
+
+test("migration 0010 upgrades an already-ledgered 0009 Grant database without checksum drift", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    db.exec("PRAGMA foreign_keys = ON");
+    for (const migration of DATABASE_MIGRATIONS.slice(0, 9)) migration.apply(db);
+    db.exec(`CREATE TABLE schema_migrations (
+      migration_id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      checksum TEXT NOT NULL,
+      applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`);
+    const insertMigration = db.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES (?, ?, ?)");
+    for (const migration of DATABASE_MIGRATIONS.slice(0, 9)) {
+      insertMigration.run(migration.id, migration.name, migration.id === "0009" ? HISTORICAL_MIGRATION_0009_CHECKSUM : migrationChecksum(migration));
+    }
+    db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)").run("project_director_0010", JSON.stringify({ project_id: "project_director_0010" }));
+    db.prepare("INSERT INTO webgpt_auth_principals (workspace_id, principal_id) VALUES ('jenn-ai-video-workspace', ?)").run(principalId);
+    db.prepare(`INSERT INTO director_automation_grants
+      (grant_id, workspace_id, principal_id, project_id, provider, allowed_actions_json, currency,
+       max_total_minor, max_per_run_minor, max_versions_per_shot, max_automatic_retries,
+       pricing_contract_version, capability_contract_version, starts_at, expires_at, policy_hash, created_at)
+      VALUES ('grant_director_0009', 'jenn-ai-video-workspace', ?, 'project_director_0010', 'runninghub', '["generation.submit"]', 'CNY',
+        10000, 1000, 3, 0, 'pricing-v1', 'capability-v1', '2026-07-22T00:00:00.000Z',
+        '2026-07-23T00:00:00.000Z', ?, '2026-07-22T00:00:00.000Z')`).run(principalId, hash("policy-0009"));
+    db.prepare(`INSERT INTO director_automation_grant_events
+      (event_id, grant_id, event_type, reservation_id, amount_minor, currency, reason_code, created_at)
+      VALUES ('grant_event_0009', 'grant_director_0009', 'reserve', 'reservation_0009', 500, 'CNY', 'GENERATION_APPROVED', '2026-07-22T00:01:00.000Z')`).run();
+
+    assert.deepEqual(runDatabaseMigrations(db).applied, ["0010"]);
+    assert.doesNotThrow(() => assertSchemaCurrent(db));
+    assert.equal(migrationChecksum(DATABASE_MIGRATIONS[8]), HISTORICAL_MIGRATION_0009_CHECKSUM);
+    assert.equal((db.prepare("SELECT checksum FROM schema_migrations WHERE migration_id = '0009'").get() as { checksum: string }).checksum, HISTORICAL_MIGRATION_0009_CHECKSUM);
+    assert.equal((db.prepare("SELECT currency FROM director_automation_grants WHERE grant_id = 'grant_director_0009'").get() as { currency: string }).currency, "CNY");
+    db.prepare(`INSERT INTO director_automation_grant_events
+      (event_id, grant_id, event_type, reservation_id, amount_minor, currency, reason_code, created_at)
+      VALUES ('grant_event_rh_coins', 'grant_director_0009', 'reserve', 'reservation_rh_coins', 1, 'RH_COINS', 'GENERATION_APPROVED', '2026-07-22T00:02:00.000Z')`).run();
+  } finally {
+    db.close();
+  }
+});
+
+test("migration 0010 fails closed without partial schema changes for unsupported legacy Grant currency", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    db.exec("PRAGMA foreign_keys = ON");
+    for (const migration of DATABASE_MIGRATIONS.slice(0, 9)) migration.apply(db);
+    db.exec(`CREATE TABLE schema_migrations (
+      migration_id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      checksum TEXT NOT NULL,
+      applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`);
+    const insertMigration = db.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES (?, ?, ?)");
+    for (const migration of DATABASE_MIGRATIONS.slice(0, 9)) {
+      insertMigration.run(migration.id, migration.name, migrationChecksum(migration));
+    }
+    db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)").run("project_director_legacy_currency", JSON.stringify({ project_id: "project_director_legacy_currency" }));
+    db.prepare("INSERT INTO webgpt_auth_principals (workspace_id, principal_id) VALUES ('jenn-ai-video-workspace', ?)").run(principalId);
+    db.prepare(`INSERT INTO director_automation_grants
+      (grant_id, workspace_id, principal_id, project_id, provider, allowed_actions_json, currency,
+       max_total_minor, max_per_run_minor, max_versions_per_shot, max_automatic_retries,
+       pricing_contract_version, capability_contract_version, starts_at, expires_at, policy_hash, created_at)
+      VALUES ('grant_director_legacy_currency', 'jenn-ai-video-workspace', ?, 'project_director_legacy_currency', 'runninghub', '["generation.submit"]', 'USD',
+        10000, 1000, 3, 0, 'pricing-v1', 'capability-v1', '2026-07-22T00:00:00.000Z',
+        '2026-07-23T00:00:00.000Z', ?, '2026-07-22T00:00:00.000Z')`).run(principalId, hash("policy-legacy-currency"));
+
+    assert.throws(() => runDatabaseMigrations(db), /unsupported value and requires manual remediation/);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE migration_id = '0010'").get() as { count: number }).count, 0);
+    assert.equal((db.prepare("SELECT currency FROM director_automation_grants WHERE grant_id = 'grant_director_legacy_currency'").get() as { currency: string }).currency, "USD");
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM sqlite_schema WHERE name IN ('director_automation_grants_0009', 'director_automation_grant_events_0009')").get() as { count: number }).count, 0);
   } finally {
     db.close();
   }

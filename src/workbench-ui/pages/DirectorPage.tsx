@@ -39,6 +39,18 @@ interface DirectorProposal {
   updated_at: string;
   action_allowed: boolean;
   action_blocked_code: string | null;
+  automation_grant: {
+    grant_id: string;
+    provider: "runninghub";
+    allowed_actions: string[];
+    currency: string;
+    max_total_minor: number;
+    max_per_run_minor: number;
+    max_versions_per_shot: number;
+    max_automatic_retries: number;
+    expires_at: string;
+    policy_hash: string;
+  } | null;
 }
 
 interface DirectorTower {
@@ -61,6 +73,19 @@ const proposalLabels: Record<string, string> = {
   generation_plan: "生成方案", clip_regeneration: "片段重生成", review_assessment: "审片建议",
   assembly_plan: "合成方案", delivery_plan: "交付方案", memory_saveback: "Memory 回存建议"
 };
+
+function twoDigits(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+/**
+ * `datetime-local` deliberately has no timezone.  Build its default from
+ * local date parts instead of slicing an ISO/UTC string, because the browser
+ * parses the submitted value back as local time.
+ */
+export function directorLocalDateTimeInputValue(date: Date): string {
+  return `${date.getFullYear()}-${twoDigits(date.getMonth() + 1)}-${twoDigits(date.getDate())}T${twoDigits(date.getHours())}:${twoDigits(date.getMinutes())}`;
+}
 
 export function DirectorPage() {
   const queryClient = useQueryClient();
@@ -126,7 +151,7 @@ function DirectorTowerView({ tower, workspace, onChanged }: { tower: DirectorTow
       <Metric label="本地事实源" value="Workbench" tone="success" />
       <Metric label="当前 Focus" value={tower.focus.state === "active" ? "已建立" : tower.focus.state === "focus_expired" ? "已过期" : "未建立"} tone={tower.focus.state === "active" ? "success" : "warning"} />
       <Metric label="待审批提议" value={String(tower.proposals.filter((item) => item.status === "pending_review").length)} tone="warning" />
-      <Metric label="执行权限" value="未开放" tone="neutral" />
+      <Metric label="自动执行" value="需 Grant" tone="neutral" />
     </section>
     {!principalReady && <div className={s.inlineError}><ShieldAlert size={16} />{tower.principal_state === "no_active_owner" ? "未找到可用于 ChatGPT Director 的活跃 issuer-bound owner；不会创建无归属 Focus。" : "检测到多个活跃 owner；为避免把 ChatGPT 指向错误身份，当前 Focus 控制已锁定。"}</div>}
     <section className={s.masterDetail}>
@@ -145,7 +170,7 @@ function DirectorTowerView({ tower, workspace, onChanged }: { tower: DirectorTow
       <aside className={s.evidencePane}><div className={s.evidencePanel}><div className={s.paneTitle}><strong>不可绕过的边界</strong></div><div className={s.evidenceBody}><div className={s.gateList}><div className={s.gateGood}><Check size={15} />提议版本不可改写</div><div className={s.gateGood}><Check size={15} />接受前重验当前事实状态</div><div className={s.gateBad}><CircleAlert size={15} />不创建 Intent / Grant / Provider 调用</div></div></div></div></aside>
     </section>
     <section className={s.tableSection}>
-      <div className={s.sectionTitle}><div><h2>ChatGPT Director 提议</h2><p>接受只追加人工事件。下一阶段才会编译为有界 Automation Grant，任何付费生成仍需独立审批。</p></div></div>
+      <div className={s.sectionTitle}><div><h2>ChatGPT Director 提议</h2><p>接受只追加人工事件。仅接受的生成提议可经第二次确认编译为不可变、限额的 Automation Grant；编译本身不创建 Intent、任务或 Provider 调用。</p></div></div>
       {tower.proposals.length === 0 ? <EmptyState title="还没有 Director 提议" detail="在 ChatGPT 中围绕当前 Focus 讨论后，模型只能提交建议，不能直接执行。" /> : <div className={s.runList}>{tower.proposals.map((proposal) => <ProposalCard key={proposal.proposal_id} proposal={proposal} onChanged={onChanged} />)}</div>}
     </section>
   </>;
@@ -153,17 +178,43 @@ function DirectorTowerView({ tower, workspace, onChanged }: { tower: DirectorTow
 
 function ProposalCard({ proposal, onChanged }: { proposal: DirectorProposal; onChanged: () => void }) {
   const [confirmed, setConfirmed] = useState(false);
+  const [grantConfirmed, setGrantConfirmed] = useState(false);
+  const [maxTotalMinor, setMaxTotalMinor] = useState(1_000);
+  const [maxPerRunMinor, setMaxPerRunMinor] = useState(500);
+  const [maxVersionsPerShot, setMaxVersionsPerShot] = useState(2);
+  const [maxAutomaticRetries, setMaxAutomaticRetries] = useState(0);
+  const [grantExpiry, setGrantExpiry] = useState(() => directorLocalDateTimeInputValue(new Date(Date.now() + 60 * 60_000)));
+  const [startConfirmed, setStartConfirmed] = useState(false);
   const [reasonCode, setReasonCode] = useState("DIRECTOR_HUMAN_REJECTED");
   const decision = useMutation({
     mutationFn: (value: ProposalDecision) => apiMutation(`/api/v2/director/proposals/${encodeURIComponent(proposal.proposal_id)}/decision`, "POST", { decision: value, reason_code: value === "reject" ? reasonCode : undefined, human_confirmation: confirmed }),
     onSuccess: () => { setConfirmed(false); onChanged(); }
   });
+  const compile = useMutation({
+    mutationFn: () => apiMutation(`/api/v2/director/proposals/${encodeURIComponent(proposal.proposal_id)}/compile`, "POST", {
+      max_total_minor: maxTotalMinor, max_per_run_minor: maxPerRunMinor, max_versions_per_shot: maxVersionsPerShot,
+      max_automatic_retries: maxAutomaticRetries, expires_at: new Date(grantExpiry).toISOString(), human_confirmation: grantConfirmed
+    }),
+    onSuccess: () => { setGrantConfirmed(false); onChanged(); }
+  });
+  const start = useMutation({
+    mutationFn: () => apiMutation(`/api/v2/director/grants/${encodeURIComponent(proposal.automation_grant!.grant_id)}/start`, "POST", {
+      proposal_id: proposal.proposal_id, policy_hash: proposal.automation_grant!.policy_hash, account_label: "personal", human_confirmation: startConfirmed
+    }),
+    onSuccess: () => { setStartConfirmed(false); onChanged(); }
+  });
   const pending = proposal.status === "pending_review" && proposal.action_allowed;
+  const compilable = proposal.status === "accepted" && proposal.automation_grant === null && (proposal.kind === "generation_plan" || proposal.kind === "clip_regeneration");
+  const proposalCurrency = typeof proposal.payload.currency === "string" ? proposal.payload.currency : "";
+  const budgetUnitLabel = proposalCurrency === "CNY" ? "CNY 分（100 分 = 1 元）" : proposalCurrency === "RH_COINS" ? "RH_COINS" : "minor units";
   return <article className={s.evidencePanel}>
     <div className={s.detailHeader}><div><span className={s.eyebrow}>{proposalLabels[proposal.kind] ?? proposal.kind}</span><h3>{proposalSummary(proposal)}</h3></div><StatusPill tone={proposalTone(proposal.status)}>{proposalStatusLabel(proposal.status)}</StatusPill></div>
     <KeyValue rows={[["来源", proposal.source === "native" ? "ChatGPT Native" : "手动导入（不可信）"], ["目标", `${proposal.target_type} · ${proposal.target_id}`], ["Focus", `#${proposal.focus_generation}`], ["创建", formatTime(proposal.created_at)], ["状态原因", proposal.reason_code ?? "-" ]]} />
     <details className={s.rawDetails}><summary>查看结构化提议（本地人类审批可见）</summary><pre>{JSON.stringify(proposal.payload, null, 2)}</pre></details>
-    {pending ? <div className={s.actionPanel}><label className={s.checkboxRow}><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>我已核对当前状态和影响。接受只记录审批，不会执行 Provider、采纳视频或交付。</span></label><label className={s.field}><span>拒绝原因代码</span><select value={reasonCode} onChange={(event) => setReasonCode(event.target.value)}><option value="DIRECTOR_HUMAN_REJECTED">不采纳此建议</option><option value="DIRECTOR_SCOPE_NEEDS_REVISION">需要修改范围</option><option value="DIRECTOR_CREATIVE_DIRECTION_REJECTED">创意方向不符合</option><option value="DIRECTOR_BUDGET_NOT_APPROVED">预算未批准</option></select></label><div className={s.buttonRow}><button className={s.dangerButton} disabled={!confirmed || decision.isPending} onClick={() => decision.mutate("reject")}><X size={16} /> 拒绝提议</button><button className={s.primaryButton} disabled={!confirmed || decision.isPending} onClick={() => decision.mutate("accept")}><Check size={16} /> 接受提议</button></div>{decision.isError && <div className={s.inlineError}>{decision.error.message}</div>}</div> : <div className={s.inlineNotice}>{proposal.status === "stale" ? `该提议的 Focus 或事实状态已变化（${proposal.action_blocked_code ?? "DIRECTOR_FOCUS_STALE"}），不能被采纳。` : "该提议已进入不可逆的事件历史，不能再次决定。"}</div>}
+    {pending ? <div className={s.actionPanel}><label className={s.checkboxRow}><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>我已核对当前状态和影响。接受只记录审批，不会执行 Provider、采纳视频或交付。</span></label><label className={s.field}><span>拒绝原因代码</span><select value={reasonCode} onChange={(event) => setReasonCode(event.target.value)}><option value="DIRECTOR_HUMAN_REJECTED">不采纳此建议</option><option value="DIRECTOR_SCOPE_NEEDS_REVISION">需要修改范围</option><option value="DIRECTOR_CREATIVE_DIRECTION_REJECTED">创意方向不符合</option><option value="DIRECTOR_BUDGET_NOT_APPROVED">预算未批准</option></select></label><div className={s.buttonRow}><button className={s.dangerButton} disabled={!confirmed || decision.isPending} onClick={() => decision.mutate("reject")}><X size={16} /> 拒绝提议</button><button className={s.primaryButton} disabled={!confirmed || decision.isPending} onClick={() => decision.mutate("accept")}><Check size={16} /> 接受提议</button></div>{decision.isError && <div className={s.inlineError}>{decision.error.message}</div>}</div>
+      : compilable ? <div className={s.actionPanel}><p>第二次确认才会创建不可变 Grant。它只授权 RunningHub 的受限后续编排；当前动作不会发起任何 Provider 请求。</p><div className={s.formGrid}><label className={s.field}><span>总上限（{budgetUnitLabel}）</span><input type="number" min="1" value={maxTotalMinor} onChange={(event) => setMaxTotalMinor(Number(event.target.value))} /></label><label className={s.field}><span>单次上限（{budgetUnitLabel}）</span><input type="number" min="1" value={maxPerRunMinor} onChange={(event) => setMaxPerRunMinor(Number(event.target.value))} /></label><label className={s.field}><span>每 SHOT 最大版本</span><input type="number" min="1" max="20" value={maxVersionsPerShot} onChange={(event) => setMaxVersionsPerShot(Number(event.target.value))} /></label><label className={s.field}><span>自动重试次数</span><input type="number" min="0" max="5" value={maxAutomaticRetries} onChange={(event) => setMaxAutomaticRetries(Number(event.target.value))} /></label><label className={s.field}><span>Grant 到期</span><input type="datetime-local" value={grantExpiry} onChange={(event) => setGrantExpiry(event.target.value)} /></label></div><label className={s.checkboxRow}><input type="checkbox" checked={grantConfirmed} onChange={(event) => setGrantConfirmed(event.target.checked)} /><span>我确认此限额、版本和有效期；我知道编译会写入不可变授权证据，但不会提交 Provider。</span></label><div className={s.buttonRow}><button className={s.primaryButton} disabled={!grantConfirmed || compile.isPending} onClick={() => compile.mutate()}><ShieldAlert size={16} /> 编译有界 Automation Grant</button></div>{compile.isError && <div className={s.inlineError}>{compile.error.message}</div>}</div>
+        : proposal.automation_grant ? <div className={s.actionPanel}><div className={s.inlineNotice}>已编译 Grant · {proposal.automation_grant.provider} · {proposal.automation_grant.currency} {proposal.automation_grant.max_total_minor} · 到期 {formatTime(proposal.automation_grant.expires_at)}。它不会绕过 Provider、预算、成员资格或事实状态门禁。</div><label className={s.checkboxRow}><input type="checkbox" checked={startConfirmed} onChange={(event) => setStartConfirmed(event.target.checked)} /><span>我确认启动这次已编译、受限的生成。系统仍会先重验官方价格、余额、能力和当前事实状态；默认 Provider 关闭时会 fail closed。</span></label><div className={s.buttonRow}><button className={s.primaryButton} disabled={!startConfirmed || start.isPending} onClick={() => start.mutate()}><Sparkles size={16} /> 启动有界生成</button></div>{start.isError && <div className={s.inlineError}>{start.error.message}</div>}</div>
+          : <div className={s.inlineNotice}>{proposal.status === "stale" ? `该提议的 Focus 或事实状态已变化（${proposal.action_blocked_code ?? "DIRECTOR_FOCUS_STALE"}），不能被采纳。` : "该提议已进入不可逆的事件历史，不能再次决定。"}</div>}
   </article>;
 }
 

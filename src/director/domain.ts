@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 
 import { canonicalizeJcs } from "../packages/domain/jcs.js";
+import { DIRECTOR_SUPPORTED_CURRENCIES } from "./currency.js";
 
 export const DIRECTOR_DOMAIN_SCHEMA_VERSION = "director-domain-v1";
 export const STORYBOARD_PACKAGE_V2_SCHEMA_VERSION = "storyboard-package-v2";
@@ -252,7 +253,7 @@ const generationPlanPayloadSchema = z.object({
   negative_prompt: z.string().max(16_384),
   continuity_constraints: z.array(shortTextSchema).max(30),
   estimated_cost_minor: z.number().int().nonnegative(),
-  currency: z.string().regex(/^[A-Z]{3}$/)
+  currency: z.enum(DIRECTOR_SUPPORTED_CURRENCIES)
 }).strict();
 
 const clipRegenerationPayloadSchema = generationPlanPayloadSchema.extend({
@@ -475,7 +476,7 @@ const directorAutomationGrantShape = {
   project_id: idSchema,
   provider: z.literal("runninghub"),
   allowed_actions: z.array(z.enum(["generation.submit", "generation.retry", "generation.download", "artifact.activate"])).min(1).max(4),
-  currency: z.string().regex(/^[A-Z]{3}$/),
+  currency: z.enum(DIRECTOR_SUPPORTED_CURRENCIES),
   max_total_minor: z.number().int().positive(),
   max_per_run_minor: z.number().int().positive(),
   max_versions_per_shot: z.number().int().positive().max(20),
@@ -488,7 +489,7 @@ const directorAutomationGrantShape = {
 } as const;
 
 function validateAutomationGrantLimits(
-  value: { allowed_actions: string[]; max_per_run_minor: number; max_total_minor: number; starts_at: string; expires_at: string },
+  value: { allowed_actions: string[]; max_per_run_minor: number; max_total_minor: number; max_automatic_retries: number; starts_at: string; expires_at: string },
   context: z.core.$RefinementCtx
 ): void {
   if (new Set(value.allowed_actions).size !== value.allowed_actions.length) {
@@ -499,6 +500,10 @@ function validateAutomationGrantLimits(
   }
   if (Date.parse(value.expires_at) <= Date.parse(value.starts_at)) {
     context.addIssue({ code: "custom", message: "Automation Grant must expire after it starts.", path: ["expires_at"] });
+  }
+  const retryAllowed = value.allowed_actions.includes("generation.retry");
+  if ((value.max_automatic_retries > 0) !== retryAllowed) {
+    context.addIssue({ code: "custom", message: "Automation Grant retry action must exactly match its retry limit.", path: ["allowed_actions"] });
   }
 }
 

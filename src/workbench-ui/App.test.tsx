@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
+import { directorLocalDateTimeInputValue } from "./pages/DirectorPage";
 
 const shell = {
   version: "human-workbench-v2",
@@ -33,6 +34,18 @@ describe("Human Workbench V2 shell", () => {
     fetchMock.mockReset();
   });
 
+  it("formats Director datetime-local defaults from local clock fields", () => {
+    const localClock = {
+      getFullYear: () => 2026,
+      getMonth: () => 6,
+      getDate: () => 22,
+      getHours: () => 11,
+      getMinutes: () => 7,
+      toISOString: () => "2026-07-22T03:07:00.000Z"
+    } as unknown as Date;
+    expect(directorLocalDateTimeInputValue(localClock)).toBe("2026-07-22T11:07");
+  });
+
   it("mounts only the active route and never requests legacy bootstrap", async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={["/v2/dashboard"]}><App /></MemoryRouter></QueryClientProvider>);
@@ -45,7 +58,7 @@ describe("Human Workbench V2 shell", () => {
     expect(screen.queryByRole("link", { name: "Legacy" })).not.toBeInTheDocument();
   });
 
-  it("renders Director approval controls without treating a proposal as Provider execution", async () => {
+  it("renders Director approval controls without treating a proposal or Grant as Provider execution", async () => {
     const projectId = "project_director_ui";
     fetchMock.mockImplementation(async (input) => {
       const url = String(input);
@@ -59,8 +72,8 @@ describe("Human Workbench V2 shell", () => {
     render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={["/v2/director"]}><App /></MemoryRouter></QueryClientProvider>);
     expect(await screen.findByRole("heading", { name: "Director 审批台" })).toBeInTheDocument();
     expect(screen.getByText(/此处的接受仅记录人工审批/)).toBeInTheDocument();
-    expect(await screen.findByText("执行权限")).toBeInTheDocument();
-    expect(screen.getByText("未开放")).toBeInTheDocument();
+    expect(await screen.findByText("自动执行")).toBeInTheDocument();
+    expect(screen.getByText("需 Grant")).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([input, init]) => String(input).includes("/director/") && (init as RequestInit | undefined)?.method === "POST")).toBe(false);
   });
 

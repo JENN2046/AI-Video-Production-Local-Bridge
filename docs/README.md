@@ -27,6 +27,7 @@ Current runbooks describe commands and boundaries. They do not grant authorizati
 - [ChatGPT Director Manual/Native tools](CHATGPT_DIRECTOR_MANUAL_NATIVE_TOOLS.md) — PR2 fixed advisory tool registry, manual-import boundary, and separate OAuth resource contract.
 - [ChatGPT Director Local Bridge](CHATGPT_DIRECTOR_LOCAL_BRIDGE.md) — PR3 public runtime, authenticated outbound bridge, Focus/context, frame analysis and immutable Proposal candidate boundary.
 - [ChatGPT Director Human Approval](CHATGPT_DIRECTOR_HUMAN_APPROVAL.md) — PR4 local Workbench approval-tower candidate; a recorded decision is not orchestration or Provider execution.
+- [ChatGPT Director Bounded Orchestrator](CHATGPT_DIRECTOR_BOUNDED_ORCHESTRATOR.md) — PR5 local immutable Grant, bounded reservation and RunningHub-only candidate; it defaults to a disabled Provider boundary.
 
 ## Accepted evidence
 

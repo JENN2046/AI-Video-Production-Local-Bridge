@@ -32,7 +32,7 @@ Repository-required schema after PR1:
 
 ```text
 schema: workbench-v2-6
-ledger: 0009
+ledger: 0010
 ```
 
 Migration `0009` creates immutable rows plus append-only event ledgers for:
@@ -41,6 +41,8 @@ Migration `0009` creates immutable rows plus append-only event ledgers for:
 - Director Proposal;
 - Automation Grant;
 - Storyboard Package V2.
+
+Migration `0010` preserves the historical `0009` canonical SQL and checksum, then rebuilds only the Director Grant and Grant-event tables with the closed `CNY | RH_COINS` currency contract. A `0009` database with an unsupported historical currency fails closed before any `0010` DDL or ledger entry is committed; it requires explicit manual remediation rather than a silent reinterpretation of evidence.
 
 Composite foreign keys bind every Proposal to the same Focus principal, project, target and generation. Parent proposals, superseded focuses and superseded Storyboard packages cannot cross project or principal boundaries. Update/delete triggers protect immutable evidence.
 
@@ -60,7 +62,7 @@ Runtime startup still never migrates a persistent database. Jenn's accepted acti
 
 ## Readonly compatibility
 
-New Snapshot v4 exports require the current `workbench-v2-6` / `0009` pair. The Snapshot v4 parser continues to accept already-signed `workbench-v2-5` / `0008` snapshots so a code deployment does not invalidate an in-memory accepted snapshot before republish. Crossed schema/migration pairs fail closed.
+New Snapshot v4 exports require the current `workbench-v2-6` / `0010` pair. The Snapshot v4 parser continues to accept already-signed `workbench-v2-5` / `0008` snapshots so a code deployment does not invalidate an in-memory accepted snapshot before republish. A `workbench-v2-6` / `0009` Snapshot is deliberately rejected until the local database receives `0010` and a new Snapshot is published. Crossed schema/migration pairs fail closed.
 
 ## Test lane
 
@@ -70,8 +72,8 @@ The mandatory lane is:
 npm run test:webgpt:director
 ```
 
-It is selected by canonical `npm test`, Windows CI and `test-selection-gate`. The lane covers deterministic base-state hashing, advisory proposal semantics, Storyboard Package V2, Automation Grant bounds, derived Director state, migration `0009` immutability/FK enforcement and `db:check` drift detection.
+It is selected by canonical `npm test`, Windows CI and `test-selection-gate`. The lane covers deterministic base-state hashing, advisory proposal semantics, Storyboard Package V2, Automation Grant bounds, derived Director state, the `0009`/`0010` immutable-ledger and checksum-compatibility path, and `db:check` drift detection.
 
 ## Remaining gates
 
-PR2 freezes the fixed Manual/Native registry and separate Director OAuth resource in [CHATGPT_DIRECTOR_MANUAL_NATIVE_TOOLS.md](CHATGPT_DIRECTOR_MANUAL_NATIVE_TOOLS.md). PR3 implements the isolated authenticated outbound bridge, local authority checks, zero-database-write frame analysis and immutable native Proposal handoff described in [CHATGPT_DIRECTOR_LOCAL_BRIDGE.md](CHATGPT_DIRECTOR_LOCAL_BRIDGE.md). PR4 adds the local approval-tower candidate described in [CHATGPT_DIRECTOR_HUMAN_APPROVAL.md](CHATGPT_DIRECTOR_HUMAN_APPROVAL.md): it records a confirmed acceptance or rejection but does not compile or execute a Proposal. Bounded RunningHub orchestration and the replaceable memory port remain later gates. None of those runtime capabilities is claimed as externally operational before its explicit external gate.
+PR2 freezes the fixed Manual/Native registry and separate Director OAuth resource in [CHATGPT_DIRECTOR_MANUAL_NATIVE_TOOLS.md](CHATGPT_DIRECTOR_MANUAL_NATIVE_TOOLS.md). PR3 implements the isolated authenticated outbound bridge, local authority checks, zero-database-write frame analysis and immutable native Proposal handoff described in [CHATGPT_DIRECTOR_LOCAL_BRIDGE.md](CHATGPT_DIRECTOR_LOCAL_BRIDGE.md). PR4 adds the local approval-tower candidate described in [CHATGPT_DIRECTOR_HUMAN_APPROVAL.md](CHATGPT_DIRECTOR_HUMAN_APPROVAL.md). PR5 adds the local Grant compiler and bounded RunningHub candidate in [CHATGPT_DIRECTOR_BOUNDED_ORCHESTRATOR.md](CHATGPT_DIRECTOR_BOUNDED_ORCHESTRATOR.md). The replaceable memory port and all external acceptance remain later gates. None of these runtime capabilities is claimed as externally operational before its explicit external gate.

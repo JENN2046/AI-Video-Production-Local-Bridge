@@ -322,7 +322,8 @@ function packageBinding(db: M0Database, project: Project): { id: string | null; 
 function generationState(db: M0Database, shot: Shot | null): DirectorTargetStateV1["generation"] {
   if (!shot) return null;
   const intent = db.prepare(`SELECT intent_id, run_id, data_json FROM generation_intents
-    WHERE project_id = ? AND shot_id = ? ORDER BY created_at DESC, intent_id DESC LIMIT 1`)
+    WHERE project_id = ? AND shot_id = ? AND status IN ('prepared','queued','running')
+    ORDER BY created_at DESC, intent_id DESC LIMIT 1`)
     .get(shot.project_id, shot.shot_id) as { intent_id: string; run_id: string | null; data_json: string } | undefined;
   const latestRunId = shot.generation_run_ids.at(-1) ?? intent?.run_id ?? null;
   const run = latestRunId ? getGenerationRun(db, latestRunId) : null;

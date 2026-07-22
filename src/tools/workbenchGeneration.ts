@@ -1,5 +1,13 @@
 import { randomUUID } from "node:crypto";
 
+import {
+  consumeDirectorGrantReservation,
+  loadDirectorGrantAuthorization,
+  releaseDirectorGrantReservation,
+  reserveDirectorGrant,
+  type DirectorAutomationLink
+} from "../director/grantRuntime.js";
+import { directorMinorToProviderAmount, directorProviderAmountToMinor } from "../director/currency.js";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { getGenerationRun, saveGenerationRun, type GenerationRun } from "./generation.js";
 import { requireShotWorkflowWriteAction } from "./operationalWriteGates.js";
@@ -51,11 +59,18 @@ export interface WorkbenchGenerationIntent {
     price_source: "runninghub_price_preview" | "local_verified_cache";
     balance_gate: "pass" | "not_checked";
     requires_human_preflight?: boolean;
-    prepared_by?: "human_workbench" | "webgpt_v4";
+    prepared_by?: "human_workbench" | "webgpt_v4" | "director_automation";
     capability_key?: string;
+    director_automation?: DirectorAutomationPreflightAuthorization & { reservation_id?: string; amount_minor?: number };
   };
   created_at: string;
   updated_at: string;
+}
+
+export interface DirectorAutomationPreflightAuthorization {
+  grant_id: string;
+  proposal_id: string;
+  policy_hash: string;
 }
 
 interface GenerationIntentRow {
@@ -286,6 +301,21 @@ function getIntent(db: M0Database, intentId: string): WorkbenchGenerationIntent 
   return row ? intentFromRow(row) : null;
 }
 
+function directorAutomationLink(intent: WorkbenchGenerationIntent): DirectorAutomationLink | null {
+  const candidate = intent.input_snapshot.director_automation;
+  if (!candidate || !candidate.reservation_id) return null;
+  const amountMinor = candidate.amount_minor;
+  if (![candidate.grant_id, candidate.reservation_id, candidate.proposal_id, candidate.policy_hash].every((value) => typeof value === "string" && value.length > 0)
+    || typeof amountMinor !== "number" || !Number.isSafeInteger(amountMinor) || amountMinor <= 0) return null;
+  return {
+    grant_id: candidate.grant_id,
+    reservation_id: candidate.reservation_id,
+    proposal_id: candidate.proposal_id,
+    policy_hash: candidate.policy_hash,
+    amount_minor: amountMinor
+  };
+}
+
 function sanitizedError(error: ProviderToolError | { code: string; message: string; retryable?: boolean }): Record<string, unknown> {
   return {
     code: error.code,
@@ -331,7 +361,13 @@ function numericField(record: Record<string, unknown>, field: string): number | 
 }
 
 export async function preflightWorkbenchGeneration(
-  input: { project_id: string; shot_id: string; account_label: "personal" | "team"; budget_limit_value: number },
+  input: {
+    project_id: string;
+    shot_id: string;
+    account_label: "personal" | "team";
+    budget_limit_value: number;
+    director_automation?: DirectorAutomationPreflightAuthorization;
+  },
   db = openM0Database(),
   dependencies: WorkbenchGenerationDependencies = {}
 ): Promise<WorkbenchV2Result<{ intent: WorkbenchGenerationIntent }>> {
@@ -350,6 +386,24 @@ export async function preflightWorkbenchGeneration(
   if (!artifact.ok) return { ok: false, error: artifact.error };
   const workflowGate = requireShotWorkflowWriteAction(db, writable.data.project, shot, "prepare_generation");
   if (!workflowGate.ok) return { ok: false, error: workflowGate.error };
+
+  let directorAuthorization: ReturnType<typeof loadDirectorGrantAuthorization> | null = null;
+  if (input.director_automation) {
+    try {
+      directorAuthorization = loadDirectorGrantAuthorization(db, input.director_automation, "generation.submit", dateNow(dependencies));
+    } catch (caught) {
+      const code = caught instanceof Error && "code" in caught ? String(caught.code) : "DIRECTOR_AUTOMATION_AUTHORIZATION_FAILED";
+      return { ok: false, error: { code, message: "Director Automation Grant cannot authorize generation preflight." } };
+    }
+    if (directorAuthorization.grant.project_id !== input.project_id || directorAuthorization.shot.shot_id !== shot.shot_id
+      || directorAuthorization.proposal.payload.model !== RUNNINGHUB_MODEL_ROUTE
+      || directorAuthorization.proposal.payload.duration_seconds !== shot.duration_seconds
+      || directorAuthorization.proposal.payload.resolution !== writable.data.project.video_spec.resolution
+      || directorAuthorization.proposal.payload.video_prompt !== shot.video_prompt
+      || directorAuthorization.proposal.payload.negative_prompt !== shot.negative_prompt) {
+      return { ok: false, error: { code: "DIRECTOR_AUTOMATION_INPUT_MISMATCH", message: "Director Proposal does not exactly match the current generation inputs." } };
+    }
+  }
 
   const capability = buildProviderCapabilityKey({
     provider: "runninghub",
@@ -389,6 +443,14 @@ export async function preflightWorkbenchGeneration(
   if (errorCode || estimatedPrice === null || !currency) {
     return { ok: false, error: { code: "PRICE_ESTIMATE_UNAVAILABLE", message: "Official RunningHub price estimate was unavailable." } };
   }
+  if (directorAuthorization) {
+    const allowedProviderAmount = directorMinorToProviderAmount(directorAuthorization.grant.max_per_run_minor, currency);
+    const officialMinor = directorProviderAmountToMinor(estimatedPrice, currency);
+    if (currency !== directorAuthorization.grant.currency || allowedProviderAmount === null || officialMinor === null
+      || input.budget_limit_value > allowedProviderAmount || officialMinor > directorAuthorization.grant.max_per_run_minor) {
+      return { ok: false, error: { code: "DIRECTOR_AUTOMATION_BUDGET_DENIED", message: "Official generation estimate is outside the Automation Grant budget." } };
+    }
+  }
   if (estimatedPrice > input.budget_limit_value) {
     return { ok: false, error: { code: "BUDGET_LIMIT_EXCEEDED", message: `Estimated cost ${estimatedPrice} ${currency} exceeds the budget limit.` } };
   }
@@ -423,8 +485,9 @@ export async function preflightWorkbenchGeneration(
     price_source: "runninghub_price_preview",
     balance_gate: "pass",
     requires_human_preflight: false,
-    prepared_by: "human_workbench",
-    capability_key: capability.key.serialized
+    prepared_by: input.director_automation ? "director_automation" : "human_workbench",
+    capability_key: capability.key.serialized,
+    ...(input.director_automation ? { director_automation: input.director_automation } : {})
   };
   db.prepare(`
     INSERT INTO webgpt_provider_price_cache (
@@ -462,12 +525,59 @@ export async function preflightWorkbenchGeneration(
   return { ok: true, data: { intent: getIntent(db, intentId) as WorkbenchGenerationIntent } };
 }
 
+/**
+ * A Director preflight is only a short-lived staging record until the normal
+ * confirmation transaction commits.  If that confirmation rejects it, mark
+ * precisely that unconfirmed, unreserved staging record terminal so it cannot
+ * become false authoritative drift for the same immutable Grant.
+ */
+export function discardDirectorPreparedGenerationIntent(
+  input: { intent_id: string; director_automation: DirectorAutomationPreflightAuthorization },
+  db = openM0Database()
+): WorkbenchV2Result<{ intent: WorkbenchGenerationIntent }> {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const intent = getIntent(db, input.intent_id);
+    const binding = intent?.input_snapshot.director_automation;
+    if (!intent || intent.status !== "prepared" || intent.confirmed || intent.run_id
+      || intent.input_snapshot.prepared_by !== "director_automation"
+      || !binding
+      || binding.grant_id !== input.director_automation.grant_id
+      || binding.proposal_id !== input.director_automation.proposal_id
+      || binding.policy_hash !== input.director_automation.policy_hash
+      || binding.reservation_id !== undefined
+      || binding.amount_minor !== undefined) {
+      db.exec("ROLLBACK");
+      return { ok: false, error: { code: "DIRECTOR_AUTOMATION_PREPARED_INTENT_NOT_CANCELLABLE", message: "Director preflight staging record is no longer safe to discard." } };
+    }
+    const result = db.prepare(`UPDATE generation_intents
+      SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+      WHERE intent_id = ? AND status = 'prepared' AND confirmed = 0 AND (run_id IS NULL OR run_id = '')`)
+      .run(intent.intent_id) as { changes: number | bigint };
+    if (Number(result.changes) !== 1) {
+      db.exec("ROLLBACK");
+      return { ok: false, error: { code: "DIRECTOR_AUTOMATION_PREPARED_INTENT_NOT_CANCELLABLE", message: "Director preflight staging record changed before it could be discarded." } };
+    }
+    db.exec("COMMIT");
+    return { ok: true, data: { intent: getIntent(db, intent.intent_id) as WorkbenchGenerationIntent } };
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 export function confirmWorkbenchGeneration(
-  input: { intent_id: string; budget_limit_value: number; cost_confirmed: boolean; human_confirmation: boolean },
+  input: {
+    intent_id: string;
+    budget_limit_value: number;
+    cost_confirmed: boolean;
+    human_confirmation: boolean;
+    director_automation?: DirectorAutomationPreflightAuthorization;
+  },
   db = openM0Database(),
   dependencies: WorkbenchGenerationDependencies = {}
 ): WorkbenchV2Result<{ intent: WorkbenchGenerationIntent; run_id: string; job_id: string; status: "queued" }> {
-  if (input.cost_confirmed !== true || input.human_confirmation !== true) {
+  if (!input.director_automation && (input.cost_confirmed !== true || input.human_confirmation !== true)) {
     return { ok: false, error: { code: "GENERATION_CONFIRMATION_REQUIRED", message: "Cost and generation confirmation are required." } };
   }
   db.exec("BEGIN IMMEDIATE");
@@ -480,6 +590,18 @@ export function confirmWorkbenchGeneration(
     if (intent.status !== "prepared") {
       db.exec("ROLLBACK");
       return { ok: false, error: { code: "GENERATION_INTENT_NOT_PREPARED", message: "Generation intent is not prepared." } };
+    }
+    const snapshotAutomation = intent.input_snapshot.director_automation;
+    if (snapshotAutomation && !input.director_automation) {
+      db.exec("ROLLBACK");
+      return { ok: false, error: { code: "DIRECTOR_AUTOMATION_CONFIRMATION_REQUIRED", message: "Director-prepared generation must be confirmed through its bound Automation Grant." } };
+    }
+    if (input.director_automation && (!snapshotAutomation
+      || snapshotAutomation.grant_id !== input.director_automation.grant_id
+      || snapshotAutomation.proposal_id !== input.director_automation.proposal_id
+      || snapshotAutomation.policy_hash !== input.director_automation.policy_hash)) {
+      db.exec("ROLLBACK");
+      return { ok: false, error: { code: "DIRECTOR_AUTOMATION_BINDING_MISMATCH", message: "Director Automation Grant does not match this prepared intent." } };
     }
     if (intent.input_snapshot.requires_human_preflight === true || intent.input_snapshot.balance_gate !== "pass") {
       db.exec("ROLLBACK");
@@ -534,10 +656,61 @@ export function confirmWorkbenchGeneration(
       db.exec("ROLLBACK");
       return { ok: false, error: { code: "GENERATION_INTENT_INPUT_STALE", message: "SHOT or project inputs changed after generation preflight." } };
     }
+    let directorReservation: DirectorAutomationLink | null = null;
+    let directorReservationAmount: number | null = null;
+    if (input.director_automation) {
+      let authorization: ReturnType<typeof loadDirectorGrantAuthorization>;
+      try {
+        // Preflight has just recorded this same intent as prepared. Rechecking its
+        // generation projection would mistake our own non-submitting preflight
+        // evidence for external drift; all other current bindings are checked here.
+        authorization = loadDirectorGrantAuthorization(db, input.director_automation, "generation.submit", dateNow(dependencies), { verify_target_state: false });
+      } catch (caught) {
+        db.exec("ROLLBACK");
+        const code = caught instanceof Error && "code" in caught ? String(caught.code) : "DIRECTOR_AUTOMATION_AUTHORIZATION_FAILED";
+        return { ok: false, error: { code, message: "Director Automation Grant cannot confirm this generation." } };
+      }
+      const officialMinor = directorProviderAmountToMinor(intent.estimated_cost_value, intent.currency);
+      const allowedProviderAmount = directorMinorToProviderAmount(authorization.grant.max_per_run_minor, intent.currency);
+      if (officialMinor === null || intent.currency !== authorization.grant.currency || allowedProviderAmount === null
+        || input.budget_limit_value > allowedProviderAmount || officialMinor > authorization.grant.max_per_run_minor) {
+        db.exec("ROLLBACK");
+        return { ok: false, error: { code: "DIRECTOR_AUTOMATION_BUDGET_DENIED", message: "Official generation estimate is outside the Automation Grant budget." } };
+      }
+      directorReservationAmount = officialMinor;
+    }
     const runId = `run_${randomUUID()}`;
     const intentDataRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(intent.intent_id) as { data_json: string };
     const intentData = parseRecord(intentDataRow.data_json);
     intentData.reconciliation_restore = { shot_status: shot.status, project_status: writable.data.project.status };
+    if (input.director_automation) {
+      try {
+        const authorization = loadDirectorGrantAuthorization(db, input.director_automation, "generation.submit", dateNow(dependencies), { verify_target_state: false });
+        if (directorReservationAmount === null) {
+          db.exec("ROLLBACK");
+          return { ok: false, error: { code: "DIRECTOR_AUTOMATION_BUDGET_DENIED", message: "Official generation estimate cannot be represented by the Automation Grant currency contract." } };
+        }
+        directorReservation = {
+          ...reserveDirectorGrant(db, authorization, {
+          amount_minor: directorReservationAmount,
+          currency: intent.currency,
+          intent_id: intent.intent_id,
+          run_id: runId,
+          now: dateNow(dependencies)
+          }),
+          amount_minor: directorReservationAmount
+        };
+      } catch (caught) {
+        db.exec("ROLLBACK");
+        const code = caught instanceof Error && "code" in caught ? String(caught.code) : "DIRECTOR_AUTOMATION_RESERVATION_FAILED";
+        return { ok: false, error: { code, message: "Automation Grant budget could not be reserved." } };
+      }
+      const rawSnapshot = intentData.input_snapshot && typeof intentData.input_snapshot === "object" && !Array.isArray(intentData.input_snapshot)
+        ? intentData.input_snapshot as Record<string, unknown>
+        : {};
+      rawSnapshot.director_automation = directorReservation;
+      intentData.input_snapshot = rawSnapshot;
+    }
     const run: GenerationRun = {
       run_id: runId,
       batch_id: "",
@@ -572,7 +745,7 @@ export function confirmWorkbenchGeneration(
     `).run(runId, input.budget_limit_value, JSON.stringify(intentData), intent.intent_id);
     const jobId = `job_${randomUUID()}`;
     db.prepare("INSERT INTO generation_jobs (job_id, intent_id, state) VALUES (?, ?, 'queued')").run(jobId, intent.intent_id);
-    appendJobEvent(db, jobId, "", "queued", "HUMAN_CONFIRMED");
+    appendJobEvent(db, jobId, "", "queued", input.director_automation ? "DIRECTOR_GRANT_CONFIRMED" : "HUMAN_CONFIRMED");
     db.exec("COMMIT");
     return { ok: true, data: { intent: getIntent(db, intent.intent_id) as WorkbenchGenerationIntent, run_id: runId, job_id: jobId, status: "queued" } };
   } catch (error) {
@@ -585,6 +758,16 @@ function failIntent(db: M0Database, intent: WorkbenchGenerationIntent, status: "
   const safe = sanitizedError(error);
   db.exec("BEGIN IMMEDIATE");
   try {
+    const automation = directorAutomationLink(intent);
+    if (automation && intent.run_id) {
+      releaseDirectorGrantReservation(db, automation, {
+        amount_minor: automation.amount_minor!,
+        currency: intent.currency,
+        intent_id: intent.intent_id,
+        run_id: intent.run_id,
+        reason_code: "DIRECTOR_AUTOMATION_PRE_SUBMIT_FAILED"
+      });
+    }
     db.prepare("UPDATE generation_intents SET status = ?, sanitized_error_json = ?, updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?")
       .run(status, JSON.stringify(safe), intent.intent_id);
     if (intent.run_id) {
@@ -602,6 +785,59 @@ function failIntent(db: M0Database, intent: WorkbenchGenerationIntent, status: "
   } catch (failure) {
     db.exec("ROLLBACK");
     throw failure;
+  }
+}
+
+/**
+ * A Director Grant may retry only a provider response that explicitly says it
+ * is retryable *and* has already established that no remote task exists.  It
+ * deliberately does not retry ambiguous submission outcomes: those require
+ * human reconciliation because another request could create a duplicate paid
+ * task.
+ */
+function queueDirectorKnownNoSubmitRetry(
+  db: M0Database,
+  intent: WorkbenchGenerationIntent,
+  job: GenerationJob,
+  automation: DirectorAutomationLink | null,
+  leaseToken: string,
+  dependencies: WorkbenchGenerationDependencies
+): { queued: true } | { queued: false; error?: ProviderToolError } {
+  if (!automation) return { queued: false };
+  const priorRetries = db.prepare(`SELECT COUNT(*) AS count FROM generation_job_events
+    WHERE job_id = ? AND reason_code = 'DIRECTOR_AUTOMATION_SUBMIT_RETRY'`).get(job.job_id) as { count: number };
+  let authorization: ReturnType<typeof loadDirectorGrantAuthorization>;
+  try {
+    authorization = loadDirectorGrantAuthorization(
+      db,
+      automation,
+      "generation.submit",
+      dateNow(dependencies),
+      { verify_target_state: false }
+    );
+  } catch (caught) {
+    const code = caught instanceof Error && "code" in caught ? String(caught.code) : "DIRECTOR_AUTOMATION_AUTHORIZATION_FAILED";
+    return { queued: false, error: providerError(code, "Director Automation Grant no longer authorizes a retry.") };
+  }
+  if (Number(priorRetries.count) >= authorization.grant.max_automatic_retries) return { queued: false };
+  if (!authorization.grant.allowed_actions.includes("generation.retry")) {
+    return { queued: false, error: providerError("DIRECTOR_AUTOMATION_ACTION_DENIED", "Director Automation Grant does not allow automatic retry.") };
+  }
+  const retryOrdinal = Number(priorRetries.count) + 1;
+  // The normal default is five seconds, then bounded exponential backoff. A
+  // shorter injected poll interval is a deterministic test seam only.
+  const delayMs = Math.min(60_000, Math.max(10, dependencies.poll_interval_ms ?? 5_000) * (2 ** (retryOrdinal - 1)));
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    assertJobLease(db, job.job_id, leaseToken);
+    setJobState(db, job, "queued", "DIRECTOR_AUTOMATION_SUBMIT_RETRY", { lease_token: leaseToken, in_transaction: true });
+    db.prepare(`UPDATE generation_jobs SET next_attempt_at = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE job_id = ? AND lease_token = ?`).run(new Date(Date.now() + delayMs).toISOString(), job.job_id, leaseToken);
+    db.exec("COMMIT");
+    return { queued: true };
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
   }
 }
 
@@ -653,7 +889,24 @@ function markKnownProviderTaskForReconciliation(
   reasonCode: string
 ): GenerationJob {
   const safe = sanitizedError(error);
+  const automation = directorAutomationLink(intent);
+  const recordPaidDirectorSubmission = (): void => {
+    if (!automation || !intent.run_id) return;
+    // The Provider task is already known to exist.  This must be durably
+    // consumed even when the preceding normal persistence transaction rolled
+    // back, otherwise a paid task would remain only reserved in the Grant
+    // ledger.  consumeDirectorGrantReservation is deliberately idempotent for
+    // the exact reservation so later reconciliation paths cannot double spend.
+    consumeDirectorGrantReservation(db, automation, {
+      amount_minor: automation.amount_minor!,
+      currency: intent.currency,
+      intent_id: intent.intent_id,
+      run_id: intent.run_id,
+      reason_code: "DIRECTOR_AUTOMATION_SUBMITTED_RECONCILED"
+    });
+  };
   const persist = (withEvent: boolean): GenerationJob => {
+    recordPaidDirectorSubmission();
     db.prepare("UPDATE generation_intents SET provider_task_id = ?, status = 'running', sanitized_error_json = ?, updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?")
       .run(taskId, JSON.stringify(safe), intent.intent_id);
     const run = getGenerationRun(db, intent.run_id);
@@ -767,6 +1020,35 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       failOrReconcileKnownTask(intent, job, error, "PROVIDER_CAPABILITY_REQUIRES_RECONCILIATION");
       return;
     }
+    const automation = directorAutomationLink(intent);
+    if (intent.input_snapshot.prepared_by === "director_automation" && !automation) {
+      failIntent(
+        db,
+        intent,
+        "failed",
+        providerError("DIRECTOR_AUTOMATION_BINDING_MISMATCH", "Director-prepared generation is missing its executable Grant reservation."),
+        leaseToken
+      );
+      return;
+    }
+    if (automation) {
+      const requiredAction = knownTaskId ? "generation.download" : "generation.submit";
+      try {
+        // A queued Director intent must not retain authority after its owner, membership,
+        // grant window, or immutable policy binding has changed. Target-state validation is
+        // deliberately skipped here because the queued/run state is this worker's own work.
+        loadDirectorGrantAuthorization(db, automation, requiredAction, dateNow(dependencies), { verify_target_state: false });
+      } catch (caught) {
+        const code = caught instanceof Error && "code" in caught ? String(caught.code) : "DIRECTOR_AUTOMATION_AUTHORIZATION_FAILED";
+        failOrReconcileKnownTask(
+          intent,
+          job,
+          providerError(code, "Director Automation Grant no longer authorizes this generation action."),
+          "DIRECTOR_AUTOMATION_REQUIRES_RECONCILIATION"
+        );
+        return;
+      }
+    }
     const selection = selectM1ProviderPort({ provider: "real", provider_name: "runninghub", model_name: capability.key.model, cost_acknowledged: true }, dependencies.env ?? process.env);
     if (!selection.ok || selection.selected.provider_name !== "runninghub" || !selection.selected.credential) {
       failOrReconcileKnownTask(intent, job, selection.ok ? providerError("PROVIDER_SELECTION_MISMATCH", "RunningHub provider selection changed after confirmation.") : selection.error, "PROVIDER_SELECTION_REQUIRES_RECONCILIATION");
@@ -807,6 +1089,14 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
           job = markUnknownSubmission(db, intent, job, submit.error, leaseToken);
           return;
         }
+        if (submit.error.retryable === true) {
+          const retried = queueDirectorKnownNoSubmitRetry(db, intent, job, automation, leaseToken, dependencies);
+          if (retried.queued) return;
+          if (retried.error) {
+            failIntent(db, intent, "failed", retried.error, leaseToken);
+            return;
+          }
+        }
         failIntent(db, intent, "failed", submit.error, leaseToken);
         return;
       }
@@ -815,6 +1105,14 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       knownTaskId = taskId;
       db.exec("BEGIN IMMEDIATE");
       try {
+        if (automation) {
+          consumeDirectorGrantReservation(db, automation, {
+            amount_minor: automation.amount_minor!,
+            currency: intent.currency,
+            intent_id: intent.intent_id,
+            run_id: intent.run_id
+          });
+        }
         db.prepare(`UPDATE generation_intents SET provider_task_id = ?, status = 'running', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?`).run(taskId, intent.intent_id);
         const run = getGenerationRun(db, intent.run_id);
         if (run) {
@@ -910,6 +1208,23 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
     if (!shot || !project || !run) {
       job = markKnownProviderTaskForReconciliation(db, intent, job, taskId, providerError("LOCAL_FINALIZATION_STATE_MISSING", "Local project state was missing after provider completion."), leaseToken, "LOCAL_FINALIZATION_REQUIRES_RECONCILIATION");
       return;
+    }
+    if (automation) {
+      try {
+        loadDirectorGrantAuthorization(db, automation, "artifact.activate", dateNow(dependencies), { verify_target_state: false });
+      } catch (caught) {
+        const code = caught instanceof Error && "code" in caught ? String(caught.code) : "DIRECTOR_AUTOMATION_AUTHORIZATION_FAILED";
+        job = markKnownProviderTaskForReconciliation(
+          db,
+          intent,
+          job,
+          taskId,
+          providerError(code, "Director Automation Grant no longer authorizes artifact activation."),
+          leaseToken,
+          "DIRECTOR_AUTOMATION_REQUIRES_RECONCILIATION"
+        );
+        return;
+      }
     }
     job = setJobState(db, job, "finalizing", "", { lease_token: leaseToken });
     assertJobLease(db, job.job_id, leaseToken);
@@ -1083,6 +1398,11 @@ export function reconcileGenerationJob(
     if (!intent) { db.exec("ROLLBACK"); return { ok: false, error: { code: "GENERATION_INTENT_NOT_FOUND", message: "Generation intent was not found." } }; }
     const writable = assertWorkbenchProjectWritable(db, intent.project_id);
     if (!writable.ok) { db.exec("ROLLBACK"); return writable; }
+    const automation = directorAutomationLink(intent);
+    if (intent.input_snapshot.prepared_by === "director_automation" && (!automation || !intent.run_id)) {
+      db.exec("ROLLBACK");
+      return { ok: false, error: { code: "DIRECTOR_AUTOMATION_BINDING_MISMATCH", message: "Director automation reconciliation is missing its immutable Grant reservation." } };
+    }
     let job: GenerationJob;
     if (input.decision === "attach_existing_task") {
       const taskId = input.provider_task_id?.trim() ?? "";
@@ -1099,6 +1419,18 @@ export function reconcileGenerationJob(
       }
       const run = getGenerationRun(db, intent.run_id);
       if (!run) { db.exec("ROLLBACK"); return { ok: false, error: { code: "GENERATION_RUN_NOT_FOUND", message: "Generation run was not found." } }; }
+      // A human-confirmed existing task may be the successful outcome of an
+      // ambiguous submission. It therefore settles the exact reservation as
+      // spend before polling, even though no worker submit response was saved.
+      if (automation && intent.run_id) {
+        consumeDirectorGrantReservation(db, automation, {
+          amount_minor: automation.amount_minor!,
+          currency: intent.currency,
+          intent_id: intent.intent_id,
+          run_id: intent.run_id,
+          reason_code: "DIRECTOR_AUTOMATION_SUBMITTED_RECONCILED"
+        });
+      }
       db.prepare("UPDATE generation_intents SET provider_task_id = ?, status = 'running', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(taskId, intent.intent_id);
       run.status = "running";
       run.provider.provider_job_id = taskId;
@@ -1107,6 +1439,17 @@ export function reconcileGenerationJob(
       saveGenerationRun(db, run);
       job = setJobState(db, row, "polling", "HUMAN_ATTACHED_EXISTING_TASK", { in_transaction: true });
     } else {
+      // Abandon is the human assertion that no Provider task exists. Release
+      // only an active reservation; a previously consumed Grant remains spent.
+      if (automation && intent.run_id) {
+        releaseDirectorGrantReservation(db, automation, {
+          amount_minor: automation.amount_minor!,
+          currency: intent.currency,
+          intent_id: intent.intent_id,
+          run_id: intent.run_id,
+          reason_code: "DIRECTOR_AUTOMATION_HUMAN_ABANDONED"
+        });
+      }
       db.prepare("UPDATE generation_intents SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(intent.intent_id);
       const run = getGenerationRun(db, intent.run_id);
       if (run) { run.status = "cancelled"; saveGenerationRun(db, run); }

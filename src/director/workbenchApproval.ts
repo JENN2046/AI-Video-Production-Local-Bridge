@@ -2,8 +2,10 @@ import { randomUUID } from "node:crypto";
 
 import {
   DIRECTOR_FOCUS_SCHEMA,
+  finalizeDirectorAutomationGrant,
   DIRECTOR_PROPOSAL_SCHEMA,
   validateDirectorProposalAgainstTargetState,
+  type DirectorAutomationGrant,
   type DirectorFocus,
   type DirectorProposal,
   type DirectorProposalDraft
@@ -17,6 +19,10 @@ import type { M0Database } from "../storage/sqlite.js";
 const WORKSPACE_ID = "jenn-ai-video-workspace";
 const MAX_FOCUS_TTL_SECONDS = 2 * 60 * 60;
 const DEFAULT_FOCUS_TTL_SECONDS = 30 * 60;
+const MIN_GRANT_TTL_SECONDS = 60;
+const MAX_GRANT_TTL_SECONDS = 24 * 60 * 60;
+const RUNNINGHUB_PRICING_CONTRACT_VERSION = "runninghub-price-preview-v1";
+const RUNNINGHUB_CAPABILITY_CONTRACT_VERSION = "runninghub-capability-v1";
 
 export type DirectorApprovalDecision = "accept" | "reject";
 export type DirectorFocusTargetType = DirectorFocus["target_type"];
@@ -63,6 +69,26 @@ interface StoredFocusRow {
   expires_at: string;
 }
 
+interface StoredGrantRow {
+  grant_id: string;
+  workspace_id: string;
+  principal_id: string;
+  project_id: string;
+  provider: "runninghub";
+  allowed_actions_json: string;
+  currency: string;
+  max_total_minor: number;
+  max_per_run_minor: number;
+  max_versions_per_shot: number;
+  max_automatic_retries: number;
+  pricing_contract_version: string;
+  capability_contract_version: string;
+  starts_at: string;
+  expires_at: string;
+  policy_hash: string;
+  created_at: string;
+}
+
 export interface DirectorProposalQueueItem {
   proposal_id: string;
   project_id: string;
@@ -81,6 +107,34 @@ export interface DirectorProposalQueueItem {
   updated_at: string;
   action_allowed: boolean;
   action_blocked_code: string | null;
+  automation_grant: DirectorAutomationGrantView | null;
+}
+
+/** Low-disclosure projection for the local approval surface. */
+export interface DirectorAutomationGrantView {
+  grant_id: string;
+  project_id: string;
+  provider: "runninghub";
+  allowed_actions: DirectorAutomationGrant["allowed_actions"];
+  currency: string;
+  max_total_minor: number;
+  max_per_run_minor: number;
+  max_versions_per_shot: number;
+  max_automatic_retries: number;
+  starts_at: string;
+  expires_at: string;
+  policy_hash: string;
+  created_at: string;
+}
+
+export interface DirectorProposalCompileInput {
+  proposal_id: string;
+  max_total_minor: number;
+  max_per_run_minor: number;
+  max_versions_per_shot: number;
+  max_automatic_retries: number;
+  expires_at: string;
+  human_confirmation: boolean;
 }
 
 export interface DirectorApprovalTower {
@@ -136,14 +190,58 @@ function latestFocus(db: M0Database, principalId: string): DirectorFocus | null 
   return row ? storedFocus(row) : null;
 }
 
-function latestProposalEvent(db: M0Database, proposalId: string): { event_type: string; reason_code: string; created_at: string } | null {
-  return db.prepare(`SELECT event_type, reason_code, created_at FROM director_proposal_events
-    WHERE proposal_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(proposalId) as { event_type: string; reason_code: string; created_at: string } | undefined ?? null;
+function latestProposalEvent(db: M0Database, proposalId: string): { event_type: string; reason_code: string; receipt_type: string; receipt_id: string; created_at: string } | null {
+  return db.prepare(`SELECT event_type, reason_code, receipt_type, receipt_id, created_at FROM director_proposal_events
+    WHERE proposal_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(proposalId) as { event_type: string; reason_code: string; receipt_type: string; receipt_id: string; created_at: string } | undefined ?? null;
 }
 
 function publicFocus(focus: DirectorFocus): Omit<DirectorFocus, "workspace_id" | "principal_id"> {
   const { workspace_id: _workspace, principal_id: _principal, ...publicValue } = focus;
   return publicValue;
+}
+
+function storedGrant(row: StoredGrantRow): DirectorAutomationGrant {
+  let allowedActions: unknown;
+  try { allowedActions = JSON.parse(row.allowed_actions_json); }
+  catch { throw new Error("DIRECTOR_AUTOMATION_GRANT_ACTIONS_INVALID"); }
+  const grant = finalizeDirectorAutomationGrant({
+    grant_id: row.grant_id,
+    workspace_id: row.workspace_id as "jenn-ai-video-workspace",
+    principal_id: row.principal_id,
+    project_id: row.project_id,
+    provider: row.provider,
+    allowed_actions: allowedActions as DirectorAutomationGrant["allowed_actions"],
+    // The stored value is untrusted input; finalizeDirectorAutomationGrant
+    // immediately revalidates it against the closed supported-currency set.
+    currency: row.currency as DirectorAutomationGrant["currency"],
+    max_total_minor: Number(row.max_total_minor),
+    max_per_run_minor: Number(row.max_per_run_minor),
+    max_versions_per_shot: Number(row.max_versions_per_shot),
+    max_automatic_retries: Number(row.max_automatic_retries),
+    pricing_contract_version: row.pricing_contract_version,
+    capability_contract_version: row.capability_contract_version,
+    starts_at: row.starts_at,
+    expires_at: row.expires_at,
+    created_at: row.created_at
+  });
+  if (grant.policy_hash !== row.policy_hash) throw new Error("DIRECTOR_AUTOMATION_GRANT_POLICY_HASH_MISMATCH");
+  return grant;
+}
+
+function publicGrant(grant: DirectorAutomationGrant): DirectorAutomationGrantView {
+  const { principal_id: _principal, workspace_id: _workspace, pricing_contract_version: _pricing, capability_contract_version: _capability, ...view } = grant;
+  return view;
+}
+
+function grantForProposal(db: M0Database, proposalId: string): DirectorAutomationGrantView | null {
+  const row = db.prepare(`SELECT g.grant_id, g.workspace_id, g.principal_id, g.project_id, g.provider, g.allowed_actions_json,
+      g.currency, g.max_total_minor, g.max_per_run_minor, g.max_versions_per_shot, g.max_automatic_retries,
+      g.pricing_contract_version, g.capability_contract_version, g.starts_at, g.expires_at, g.policy_hash, g.created_at
+    FROM director_proposal_events e
+    JOIN director_automation_grants g ON g.grant_id = e.receipt_id
+    WHERE e.proposal_id = ? AND e.event_type = 'compiled' AND e.receipt_type = 'director_automation_grant'
+    ORDER BY e.created_at DESC, e.rowid DESC LIMIT 1`).get(proposalId) as StoredGrantRow | undefined;
+  return row ? publicGrant(storedGrant(row)) : null;
 }
 
 function ownerPrincipals(db: M0Database, projectId: string): string[] {
@@ -270,7 +368,8 @@ function queueItem(db: M0Database, row: StoredProposalRow, now: Date): DirectorP
     base_state_hash: proposal.base_state_hash,
     payload_hash: proposal.payload_hash,
     payload: proposal.payload,
-    ...proposalStatus(db, proposal, now)
+    ...proposalStatus(db, proposal, now),
+    automation_grant: grantForProposal(db, proposal.proposal_id)
   };
 }
 
@@ -430,5 +529,143 @@ export function decideDirectorProposal(
       return { ok: false, error: caught.approvalError };
     }
     return error("DIRECTOR_PROPOSAL_DECISION_FAILED", "Director Proposal decision could not be recorded.");
+  }
+}
+
+/**
+ * Turn one already-accepted generation Proposal into an immutable local
+ * authorization envelope. Compilation deliberately has no Provider, intent,
+ * job, media, or scheduler side effect: those remain a later, separately
+ * bounded orchestration step.
+ */
+export function compileDirectorProposalToAutomationGrant(
+  input: DirectorProposalCompileInput,
+  db: M0Database,
+  now = () => new Date()
+): DirectorApprovalResult<{ proposal: DirectorProposalQueueItem; grant: DirectorAutomationGrantView }> {
+  if (input.human_confirmation !== true) {
+    return error("DIRECTOR_GRANT_CONFIRMATION_REQUIRED", "Human confirmation is required to compile an Automation Grant.");
+  }
+  let transactionOpen = false;
+  try {
+    db.exec("BEGIN IMMEDIATE");
+    transactionOpen = true;
+    const row = db.prepare(`SELECT proposal_id, workspace_id, principal_id, project_id, target_type, target_id, focus_id,
+        focus_generation, schema_version, kind, base_state_hash, payload_json, payload_hash, parent_proposal_id,
+        idempotency_key, source, created_at FROM director_proposals WHERE proposal_id = ?`).get(input.proposal_id) as StoredProposalRow | undefined;
+    if (!row) abortDecision("DIRECTOR_PROPOSAL_NOT_FOUND", "Director Proposal was not found.", "proposal_id");
+    let proposal: DirectorProposal;
+    try { proposal = storedProposal(row); }
+    catch { abortDecision("DIRECTOR_APPROVAL_DATA_INTEGRITY_VIOLATION", "Director Proposal is malformed."); }
+    if (proposal.kind !== "generation_plan" && proposal.kind !== "clip_regeneration") {
+      abortDecision("DIRECTOR_PROPOSAL_KIND_NOT_AUTOMATABLE", "Only an accepted generation Proposal can be compiled into an Automation Grant.");
+    }
+    const latest = latestProposalEvent(db, proposal.proposal_id);
+    if (!latest || latest.event_type !== "accepted") {
+      abortDecision(latest?.event_type === "compiled" ? "DIRECTOR_PROPOSAL_ALREADY_COMPILED" : "DIRECTOR_PROPOSAL_NOT_ACCEPTED", "Director Proposal must be accepted before compilation.");
+    }
+    if (grantForProposal(db, proposal.proposal_id)) {
+      abortDecision("DIRECTOR_PROPOSAL_ALREADY_COMPILED", "Director Proposal already has an Automation Grant receipt.");
+    }
+    if (!projectIsWritableDirectorProject(db, proposal.project_id)) {
+      abortDecision("DIRECTOR_PROJECT_NOT_AVAILABLE", "Director controls require an active production project.", "project_id");
+    }
+    if (!proposalPrincipalHasActiveMembership(db, proposal)) {
+      abortDecision("DIRECTOR_PROPOSAL_PRINCIPAL_INACTIVE", "Director Proposal principal is no longer active for this project.");
+    }
+    if (!proposalPrincipalIsCurrentSingleOwner(db, proposal)) {
+      abortDecision("DIRECTOR_PROPOSAL_OWNER_REQUIRED", "The original active single owner is required to compile this Proposal.");
+    }
+    const focusRow = db.prepare(`SELECT focus_id, workspace_id, principal_id, project_id, target_type, target_id,
+        generation, supersedes_focus_id, created_at, expires_at FROM director_focuses WHERE focus_id = ?`).get(proposal.focus_id) as StoredFocusRow | undefined;
+    if (!focusRow) abortDecision("DIRECTOR_FOCUS_STALE", "Director Focus is no longer available.");
+    let focus: DirectorFocus;
+    try { focus = storedFocus(focusRow); }
+    catch { abortDecision("DIRECTOR_APPROVAL_DATA_INTEGRITY_VIOLATION", "Director Focus is malformed."); }
+    const observedAt = now();
+    const currentFocus = latestFocus(db, proposal.principal_id);
+    if (focusTerminal(db, focus.focus_id) || Date.parse(focus.expires_at) <= observedAt.getTime()
+      || currentFocus?.focus_id !== focus.focus_id || currentFocus.generation !== focus.generation) {
+      abortDecision("DIRECTOR_FOCUS_STALE", "Director Focus is no longer current.");
+    }
+    let targetState: ReturnType<typeof buildDirectorContext>["targetState"];
+    try {
+      const current = buildDirectorContext(db, focus, proposal.kind, "full");
+      validateDirectorProposalAgainstTargetState(proposal, current.targetState);
+      targetState = current.targetState;
+    } catch {
+      abortDecision("DIRECTOR_PROPOSAL_STALE", "Director Proposal no longer matches the authoritative project state.");
+    }
+
+    const expiry = Date.parse(input.expires_at);
+    const ttlSeconds = (expiry - observedAt.getTime()) / 1_000;
+    if (!Number.isFinite(expiry) || ttlSeconds < MIN_GRANT_TTL_SECONDS || ttlSeconds > MAX_GRANT_TTL_SECONDS) {
+      abortDecision("DIRECTOR_GRANT_EXPIRY_INVALID", "Automation Grant expiry must be between one minute and twenty-four hours from compilation.", "expires_at");
+    }
+    if (!Number.isSafeInteger(input.max_total_minor) || input.max_total_minor <= 0
+      || !Number.isSafeInteger(input.max_per_run_minor) || input.max_per_run_minor <= 0
+      || input.max_per_run_minor > input.max_total_minor) {
+      abortDecision("DIRECTOR_GRANT_BUDGET_INVALID", "Automation Grant budget bounds are invalid.");
+    }
+    if (!Number.isSafeInteger(input.max_versions_per_shot) || input.max_versions_per_shot < 1 || input.max_versions_per_shot > 20
+      || !Number.isSafeInteger(input.max_automatic_retries) || input.max_automatic_retries < 0 || input.max_automatic_retries > 5) {
+      abortDecision("DIRECTOR_GRANT_LIMIT_INVALID", "Automation Grant version or retry bounds are invalid.");
+    }
+    const requiredEstimate = Math.max(1, proposal.payload.estimated_cost_minor);
+    if (input.max_per_run_minor < requiredEstimate || input.max_total_minor < requiredEstimate) {
+      abortDecision("DIRECTOR_GRANT_BUDGET_BELOW_PROPOSAL", "Automation Grant budget is below the Proposal estimate.", "max_per_run_minor");
+    }
+    const targetShot = targetState.target_shot;
+    const storedShot = targetShot ? getShot(db, targetShot.shot_id) : null;
+    if (!targetShot || !storedShot || storedShot.project_id !== proposal.project_id) {
+      abortDecision("DIRECTOR_PROPOSAL_STALE", "Director Proposal no longer has a bound SHOT.");
+    }
+    if (input.max_versions_per_shot <= storedShot.clip_versions.length) {
+      abortDecision("DIRECTOR_GRANT_VERSION_LIMIT_REACHED", "Automation Grant version bound cannot create a new SHOT version.", "max_versions_per_shot");
+    }
+    const allowedActions: DirectorAutomationGrant["allowed_actions"] = input.max_automatic_retries > 0
+      ? ["generation.submit", "generation.retry", "generation.download", "artifact.activate"]
+      : ["generation.submit", "generation.download", "artifact.activate"];
+    const grant = finalizeDirectorAutomationGrant({
+      grant_id: `director_grant_${randomUUID()}`,
+      workspace_id: WORKSPACE_ID,
+      principal_id: proposal.principal_id,
+      project_id: proposal.project_id,
+      provider: "runninghub",
+      allowed_actions: allowedActions,
+      currency: proposal.payload.currency,
+      max_total_minor: input.max_total_minor,
+      max_per_run_minor: input.max_per_run_minor,
+      max_versions_per_shot: input.max_versions_per_shot,
+      max_automatic_retries: input.max_automatic_retries,
+      pricing_contract_version: RUNNINGHUB_PRICING_CONTRACT_VERSION,
+      capability_contract_version: RUNNINGHUB_CAPABILITY_CONTRACT_VERSION,
+      starts_at: observedAt.toISOString(),
+      expires_at: new Date(expiry).toISOString(),
+      created_at: observedAt.toISOString()
+    });
+    db.prepare(`INSERT INTO director_automation_grants
+      (grant_id, workspace_id, principal_id, project_id, provider, allowed_actions_json, currency,
+       max_total_minor, max_per_run_minor, max_versions_per_shot, max_automatic_retries,
+       pricing_contract_version, capability_contract_version, starts_at, expires_at, policy_hash, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(grant.grant_id, grant.workspace_id, grant.principal_id, grant.project_id, grant.provider,
+        JSON.stringify(grant.allowed_actions), grant.currency, grant.max_total_minor, grant.max_per_run_minor,
+        grant.max_versions_per_shot, grant.max_automatic_retries, grant.pricing_contract_version,
+        grant.capability_contract_version, grant.starts_at, grant.expires_at, grant.policy_hash, grant.created_at);
+    db.prepare(`INSERT INTO director_proposal_events
+      (event_id, proposal_id, event_type, reason_code, receipt_type, receipt_id, created_at)
+      VALUES (?, ?, 'compiled', 'DIRECTOR_HUMAN_GRANT_COMPILED', 'director_automation_grant', ?, ?)`)
+      .run(`director_proposal_event_${randomUUID()}`, proposal.proposal_id, grant.grant_id, grant.created_at);
+    const compiled = queueItem(db, row, observedAt);
+    db.exec("COMMIT");
+    transactionOpen = false;
+    return { ok: true, data: { proposal: compiled, grant: publicGrant(grant) } };
+  } catch (caught) {
+    if (transactionOpen) {
+      try { db.exec("ROLLBACK"); } catch { /* transaction already closed */ }
+    }
+    if (caught instanceof DirectorApprovalAbort) return { ok: false, error: caught.approvalError };
+    return error("DIRECTOR_GRANT_COMPILE_FAILED", "Automation Grant could not be compiled.");
   }
 }

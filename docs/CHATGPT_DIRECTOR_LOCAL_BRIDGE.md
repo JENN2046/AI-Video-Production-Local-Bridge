@@ -96,7 +96,7 @@ WEBGPT_DIRECTOR_REMOTE_ORIGIN=
 AI_VIDEO_WORKSPACE_DB_PATH=
 ```
 
-The remote origin must be an exact credential-free HTTPS origin. The database must already be at `workbench-v2-6` / migration ledger `0009`; the bridge never migrates it.
+The remote origin must be an exact credential-free HTTPS origin. The database must already be at `workbench-v2-6` / migration ledger `0010`; the bridge never migrates it.
 
 Public commands:
 
@@ -117,9 +117,12 @@ Implemented in the local PR4 candidate, but not yet externally accepted:
 
 - Human Workbench Focus controls, Proposal approval queue and authoritative state-drift checks, described in [CHATGPT_DIRECTOR_HUMAN_APPROVAL.md](CHATGPT_DIRECTOR_HUMAN_APPROVAL.md). A recorded acceptance is deliberately not compilation or execution.
 
+Implemented in the local PR5 candidate, but not yet externally accepted:
+
+- Approved Proposal compilation, immutable Automation Grant and bounded RunningHub-only local orchestration, described in [CHATGPT_DIRECTOR_BOUNDED_ORCHESTRATOR.md](CHATGPT_DIRECTOR_BOUNDED_ORCHESTRATOR.md). Real Provider execution remains disabled by default and requires its external gate.
+
 Still deferred:
 
-- PR5 approved Proposal compilation, immutable Automation Grant and bounded RunningHub-only local orchestration;
 - PR6 replaceable memory port, operations, external acceptance and version closeout;
 - any deployment, OAuth registration, activity-database migration or real Provider call.
 
