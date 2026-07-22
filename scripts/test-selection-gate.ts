@@ -10,7 +10,7 @@ function discoverTests(directory: string): string[] {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) files.push(...discoverTests(path));
-    else if (entry.isFile() && (entry.name.endsWith(".test.ts") || entry.name.endsWith(".spec.ts"))) {
+    else if (entry.isFile() && /\.(?:test|spec)\.tsx?$/.test(entry.name)) {
       files.push(relative(workspaceRoot, path).replaceAll("\\", "/"));
     }
   }
@@ -20,9 +20,15 @@ function discoverTests(directory: string): string[] {
 const catalog = JSON.parse(readFileSync(join(workspaceRoot, "tests", "test-suite-catalog.json"), "utf8")) as TestSuiteCatalog;
 const packageJson = JSON.parse(readFileSync(join(workspaceRoot, "package.json"), "utf8")) as { scripts?: Record<string, string> };
 const workflowText = readFileSync(join(workspaceRoot, ".github", "workflows", "windows-ci.yml"), "utf8");
-const sourceFiles = discoverTests(join(workspaceRoot, "tests"));
+const sourceFiles = [
+  ...discoverTests(join(workspaceRoot, "tests")),
+  ...discoverTests(join(workspaceRoot, "src", "workbench-ui"))
+].sort();
 const sourceTexts = Object.fromEntries(sourceFiles.map((path) => [path, readFileSync(join(workspaceRoot, path), "utf8")]));
-const errors = auditTestSelection({ catalog, source_files: sourceFiles, source_texts: sourceTexts, package_scripts: packageJson.scripts ?? {}, workflow_text: workflowText });
+const runnerConfigTexts = {
+  "vitest.config.ts": readFileSync(join(workspaceRoot, "vitest.config.ts"), "utf8")
+};
+const errors = auditTestSelection({ catalog, source_files: sourceFiles, source_texts: sourceTexts, runner_config_texts: runnerConfigTexts, package_scripts: packageJson.scripts ?? {}, workflow_text: workflowText });
 
 if (errors.length > 0) {
   for (const error of errors) process.stderr.write(`${error}\n`);

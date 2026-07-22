@@ -184,6 +184,49 @@ test("revoked proposal membership blocks a pending Director decision without cre
   } finally { db.close(); }
 });
 
+test("owner demotion or owner ambiguity blocks a pending Director decision without appending a terminal event", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const demoted = createWorkbenchProject({ title: "Director owner demotion fixture", classification: "production" }, db);
+    assert.equal(demoted.ok, true);
+    if (!demoted.ok) return;
+    const demotedProjectId = demoted.data.project.project_id;
+    bootstrapWebGptProjectOwner(db, principalId, demotedProjectId, "DIRECTOR_WORKBENCH_OWNER_DEMOTION", issuerHash);
+    const demotedFocus = createDirectorWorkbenchFocus({ project_id: demotedProjectId, target_type: "project", target_id: demotedProjectId, human_confirmation: true }, db, () => firstNow);
+    assert.equal(demotedFocus.ok, true);
+    if (!demotedFocus.ok) return;
+    const demotedProposal = insertCreativeBriefProposal(db, {
+      project_id: demotedProjectId, focus_id: demotedFocus.data.focus.focus_id, generation: demotedFocus.data.focus.generation,
+      proposal_id: "director_proposal_owner_demoted", idempotency_key: "director-workbench-proposal-owner-0001", now: firstNow
+    });
+    db.prepare(`UPDATE webgpt_project_memberships SET role = 'viewer'
+      WHERE workspace_id = ? AND principal_id = ? AND project_id = ?`)
+      .run("jenn-ai-video-workspace", principalId, demotedProjectId);
+    const demotionBlocked = decideDirectorProposal({ proposal_id: demotedProposal.proposal_id, decision: "accept", human_confirmation: true }, db, () => new Date(firstNow.getTime() + 1_000));
+    assert.equal(demotionBlocked.ok, false);
+    if (!demotionBlocked.ok) assert.equal(demotionBlocked.error.code, "DIRECTOR_PROPOSAL_OWNER_REQUIRED");
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM director_proposal_events WHERE proposal_id = ?").get(demotedProposal.proposal_id) as { count: number }).count, 1);
+
+    const ambiguous = createWorkbenchProject({ title: "Director owner ambiguity fixture", classification: "production" }, db);
+    assert.equal(ambiguous.ok, true);
+    if (!ambiguous.ok) return;
+    const ambiguousProjectId = ambiguous.data.project.project_id;
+    bootstrapWebGptProjectOwner(db, principalId, ambiguousProjectId, "DIRECTOR_WORKBENCH_OWNER_AMBIGUITY", issuerHash);
+    const ambiguousFocus = createDirectorWorkbenchFocus({ project_id: ambiguousProjectId, target_type: "project", target_id: ambiguousProjectId, human_confirmation: true }, db, () => firstNow);
+    assert.equal(ambiguousFocus.ok, true);
+    if (!ambiguousFocus.ok) return;
+    const ambiguousProposal = insertCreativeBriefProposal(db, {
+      project_id: ambiguousProjectId, focus_id: ambiguousFocus.data.focus.focus_id, generation: ambiguousFocus.data.focus.generation,
+      proposal_id: "director_proposal_owner_ambiguous", idempotency_key: "director-workbench-proposal-owner-0002", now: firstNow
+    });
+    bootstrapWebGptProjectOwner(db, "f".repeat(64), ambiguousProjectId, "DIRECTOR_WORKBENCH_SECOND_OWNER", "c".repeat(64));
+    const ambiguityBlocked = decideDirectorProposal({ proposal_id: ambiguousProposal.proposal_id, decision: "reject", human_confirmation: true }, db, () => new Date(firstNow.getTime() + 1_000));
+    assert.equal(ambiguityBlocked.ok, false);
+    if (!ambiguityBlocked.ok) assert.equal(ambiguityBlocked.error.code, "DIRECTOR_PROPOSAL_OWNER_REQUIRED");
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM director_proposal_events WHERE proposal_id = ?").get(ambiguousProposal.proposal_id) as { count: number }).count, 1);
+  } finally { db.close(); }
+});
+
 test("archived projects reject a pending Director decision after the approval page was opened", () => {
   const db = openM0Database(":memory:");
   try {

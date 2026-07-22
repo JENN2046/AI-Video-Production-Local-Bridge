@@ -64,6 +64,36 @@ describe("Human Workbench V2 shell", () => {
     expect(fetchMock.mock.calls.some(([input, init]) => String(input).includes("/director/") && (init as RequestInit | undefined)?.method === "POST")).toBe(false);
   });
 
+  it("resets the default Focus target when the selected Director project changes", async () => {
+    const projectA = "project_director_ui_a";
+    const projectB = "project_director_ui_b";
+    const projectSummary = (projectId: string, title: string) => ({ project: { project_id: projectId, title, status: "draft", brief: {}, video_spec: { duration_seconds: 15, aspect_ratio: "9:16", resolution: "1080x1920" }, shot_ids: [], active_storyboard_package_id: "", generation_batch_ids: [], exports: { final_video_artifact_id: "" } }, meta: {}, shot_count: 0, accepted_count: 0, active_run_count: 0, blocker_count: 0, blocked_shot_count: 0, blocker_codes: [], blocker_reason: "", review_pending_count: 0, delivery_state: "not_ready", next_action: {} });
+    const workspace = (projectId: string, title: string) => ({ project: { project_id: projectId, title }, shots: [], artifacts: {} });
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/v2/shell") return new Response(JSON.stringify({ ok: true, data: shell }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url.startsWith("/api/v2/projects?")) return new Response(JSON.stringify({ ok: true, data: [projectSummary(projectA, "Director A"), projectSummary(projectB, "Director B")], meta: { limit: 100, offset: 0, total: 2, has_more: false } }), { status: 200, headers: { "content-type": "application/json" } });
+      for (const [projectId, title] of [[projectA, "Director A"], [projectB, "Director B"]] as const) {
+        if (url === `/api/v2/director/projects/${projectId}`) return new Response(JSON.stringify({ ok: true, data: { project_id: projectId, principal_state: "single_owner_ready", focus: { state: "no_focus", focus: null }, proposals: [] } }), { status: 200, headers: { "content-type": "application/json" } });
+        if (url === `/api/v2/projects/${projectId}/overview`) return new Response(JSON.stringify({ ok: true, data: workspace(projectId, title) }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (url === "/api/v2/director/focus" && init?.method === "POST") return new Response(JSON.stringify({ ok: true, data: { focus: {} } }), { status: 200, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ ok: false, error: { code: "NOT_FOUND", message: url } }), { status: 404, headers: { "content-type": "application/json" } });
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={["/v2/director"]}><App /></MemoryRouter></QueryClientProvider>);
+    const projectSelect = await screen.findByLabelText("生产项目");
+    fireEvent.change(projectSelect, { target: { value: projectB } });
+    await waitFor(() => expect(screen.getByLabelText("当前对象")).toHaveValue(projectB));
+    fireEvent.click(screen.getByRole("checkbox", { name: /我确认将此对象设为 ChatGPT 当前讨论目标/ }));
+    fireEvent.click(screen.getByRole("button", { name: "设为当前讨论对象" }));
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([input, init]) => String(input) === "/api/v2/director/focus" && (init as RequestInit | undefined)?.method === "POST");
+      expect(call).toBeTruthy();
+      expect(JSON.parse(String((call?.[1] as RequestInit).body))).toMatchObject({ project_id: projectB, target_type: "project", target_id: projectB, human_confirmation: true });
+    });
+  });
+
   it("exposes explicit readonly preflight and confirmed one-click publish without accepting paths from the browser", async () => {
     const fingerprint = "a".repeat(64);
     const status = {
