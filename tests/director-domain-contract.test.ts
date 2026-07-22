@@ -7,6 +7,7 @@ import { join } from "node:path";
 
 import {
   DIRECTOR_DOMAIN_SCHEMA_VERSION,
+  DIRECTOR_PROPOSAL_DRAFT_SCHEMA,
   directorBaseStateHash,
   directorContentHash,
   finalizeDirectorAutomationGrant,
@@ -18,6 +19,7 @@ import {
   type DirectorAutomationGrantUnsigned,
   type DirectorTargetStateV1
 } from "../src/director/domain.js";
+import { directorMinorToProviderAmount, directorProviderAmountToMinor } from "../src/director/currency.js";
 import { deriveDirectorOperationalState } from "../src/packages/domain/operationalState.js";
 import { checkDatabase } from "../src/storage/databaseGovernance.js";
 import { assertSchemaCurrent, DATABASE_MIGRATIONS, migrationChecksum, runDatabaseMigrations } from "../src/storage/migrations.js";
@@ -244,6 +246,34 @@ test("Automation Grant is content-addressed, bounded, and immutable by replaceme
   assert.throws(() => finalizeDirectorAutomationGrant({ ...unsigned, allowed_actions: ["generation.submit", "generation.submit"] }), /must be unique/);
   assert.throws(() => finalizeDirectorAutomationGrant({ ...unsigned, allowed_actions: ["generation.submit"], max_automatic_retries: 1 }), /retry action must exactly match/);
   assert.throws(() => finalizeDirectorAutomationGrant({ ...unsigned, max_automatic_retries: 0 }), /retry action must exactly match/);
+  const coinsGrant = finalizeDirectorAutomationGrant({ ...unsigned, currency: "RH_COINS" });
+  assert.equal(coinsGrant.currency, "RH_COINS");
+  assert.equal(directorProviderAmountToMinor(12, "RH_COINS"), 12);
+  assert.equal(directorMinorToProviderAmount(12, "RH_COINS"), 12);
+  assert.throws(() => finalizeDirectorAutomationGrant({ ...unsigned, currency: "USD" } as unknown as DirectorAutomationGrantUnsigned), /Invalid option/);
+  const coinsPlan = {
+    kind: "generation_plan",
+    payload: {
+      shot_id: "shot_002",
+      provider: "runninghub",
+      model: "rhart-video-g/image-to-video",
+      duration_seconds: 5,
+      resolution: "1080x1920",
+      video_prompt: "Keep the product stable.",
+      negative_prompt: "No deformation.",
+      continuity_constraints: [],
+      estimated_cost_minor: 12,
+      currency: "RH_COINS"
+    }
+  } as const;
+  const parsedCoinsPlan = DIRECTOR_PROPOSAL_DRAFT_SCHEMA.parse(coinsPlan);
+  assert.equal(parsedCoinsPlan.kind, "generation_plan");
+  if (parsedCoinsPlan.kind !== "generation_plan") throw new Error("Expected a generation plan.");
+  assert.equal(parsedCoinsPlan.payload.currency, "RH_COINS");
+  assert.throws(() => DIRECTOR_PROPOSAL_DRAFT_SCHEMA.parse({
+    ...coinsPlan,
+    payload: { ...coinsPlan.payload, currency: "USD" }
+  }), /Invalid option/);
 });
 
 test("director operational state is derived with exception and human gates taking priority", () => {
@@ -303,7 +333,7 @@ test("migration 0009 upgrades a real 0008 shape and makes Director evidence immu
       (grant_id, workspace_id, principal_id, project_id, provider, allowed_actions_json, currency,
        max_total_minor, max_per_run_minor, max_versions_per_shot, max_automatic_retries,
        pricing_contract_version, capability_contract_version, starts_at, expires_at, policy_hash, created_at)
-      VALUES ('grant_director_001', 'jenn-ai-video-workspace', ?, 'project_director', 'runninghub', '["generation.submit","generation.retry"]', 'CNY',
+      VALUES ('grant_director_001', 'jenn-ai-video-workspace', ?, 'project_director', 'runninghub', '["generation.submit","generation.retry"]', 'RH_COINS',
         10000, 1000, 3, 1, 'pricing-v1', 'capability-v1', '2026-07-22T00:00:00.000Z',
         '2026-07-23T00:00:00.000Z', ?, '2026-07-22T00:00:00.000Z')`).run(principalId, hash("policy"));
     assert.throws(() => db.prepare("UPDATE director_automation_grants SET max_total_minor = 20000 WHERE grant_id = 'grant_director_001'").run(), /DIRECTOR_AUTOMATION_GRANT_IMMUTABLE/);
@@ -318,8 +348,11 @@ test("migration 0009 upgrades a real 0008 shape and makes Director evidence immu
 
     db.prepare(`INSERT INTO director_automation_grant_events
       (event_id, grant_id, event_type, reservation_id, amount_minor, currency, reason_code, created_at)
-      VALUES ('grant_event_001', 'grant_director_001', 'reserve', 'reservation_001', 500, 'CNY', 'GENERATION_APPROVED', '2026-07-22T00:01:00.000Z')`).run();
+      VALUES ('grant_event_001', 'grant_director_001', 'reserve', 'reservation_001', 500, 'RH_COINS', 'GENERATION_APPROVED', '2026-07-22T00:01:00.000Z')`).run();
     assert.throws(() => db.prepare("DELETE FROM director_automation_grant_events WHERE event_id = 'grant_event_001'").run(), /DIRECTOR_AUTOMATION_GRANT_EVENTS_APPEND_ONLY/);
+    assert.throws(() => db.prepare(`INSERT INTO director_automation_grant_events
+      (event_id, grant_id, event_type, reservation_id, amount_minor, currency, reason_code, created_at)
+      VALUES ('grant_event_unsupported_currency', 'grant_director_001', 'reserve', 'reservation_unsupported', 1, 'USD', 'GENERATION_APPROVED', '2026-07-22T00:01:00.000Z')`).run(), /CHECK constraint failed/);
 
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)").run("project_other", JSON.stringify({ project_id: "project_other" }));
     assert.throws(() => db.prepare(`INSERT INTO director_proposals

@@ -211,7 +211,9 @@ function storedGrant(row: StoredGrantRow): DirectorAutomationGrant {
     project_id: row.project_id,
     provider: row.provider,
     allowed_actions: allowedActions as DirectorAutomationGrant["allowed_actions"],
-    currency: row.currency,
+    // The stored value is untrusted input; finalizeDirectorAutomationGrant
+    // immediately revalidates it against the closed supported-currency set.
+    currency: row.currency as DirectorAutomationGrant["currency"],
     max_total_minor: Number(row.max_total_minor),
     max_per_run_minor: Number(row.max_per_run_minor),
     max_versions_per_shot: Number(row.max_versions_per_shot),

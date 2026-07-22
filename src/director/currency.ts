@@ -4,13 +4,19 @@
  * display unit. Keep the conversion deliberately small and closed: adding a
  * currency needs an explicit precision decision and test.
  */
-const MINOR_UNIT_SCALE: Readonly<Record<string, number>> = Object.freeze({
+export const DIRECTOR_SUPPORTED_CURRENCIES = ["CNY", "RH_COINS"] as const;
+
+export type DirectorSupportedCurrency = (typeof DIRECTOR_SUPPORTED_CURRENCIES)[number];
+
+const MINOR_UNIT_SCALE: Readonly<Record<DirectorSupportedCurrency, number>> = Object.freeze({
   CNY: 100,
   RH_COINS: 1
 });
 
 function scaleFor(currency: string): number | null {
-  return MINOR_UNIT_SCALE[currency.trim().toUpperCase()] ?? null;
+  const normalized = currency.trim().toUpperCase();
+  if (!DIRECTOR_SUPPORTED_CURRENCIES.includes(normalized as DirectorSupportedCurrency)) return null;
+  return MINOR_UNIT_SCALE[normalized as DirectorSupportedCurrency];
 }
 
 export function directorProviderAmountToMinor(amount: number, currency: string): number | null {

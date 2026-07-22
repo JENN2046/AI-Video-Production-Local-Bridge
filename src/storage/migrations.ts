@@ -642,7 +642,7 @@ const DIRECTOR_DOMAIN_SQL = `
     CHECK (length(principal_id) = 64 AND principal_id NOT GLOB '*[^0-9a-f]*'),
     CHECK (provider = 'runninghub'),
     CHECK (json_valid(allowed_actions_json) = 1),
-    CHECK (length(currency) = 3 AND currency NOT GLOB '*[^A-Z]*'),
+    CHECK (currency IN ('CNY','RH_COINS')),
     CHECK (max_total_minor > 0),
     CHECK (max_per_run_minor > 0 AND max_per_run_minor <= max_total_minor),
     CHECK (max_versions_per_shot BETWEEN 1 AND 20),
@@ -664,7 +664,7 @@ const DIRECTOR_DOMAIN_SQL = `
     FOREIGN KEY (grant_id) REFERENCES director_automation_grants(grant_id) ON DELETE RESTRICT,
     CHECK (event_type IN ('reserve','release','consume','revoke','expire')),
     CHECK (amount_minor >= 0),
-    CHECK (length(currency) = 3 AND currency NOT GLOB '*[^A-Z]*'),
+    CHECK (currency IN ('CNY','RH_COINS')),
     CHECK (length(reason_code) BETWEEN 1 AND 64)
   );
   CREATE TABLE storyboard_package_versions (
