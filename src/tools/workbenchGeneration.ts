@@ -1357,6 +1357,11 @@ export function reconcileGenerationJob(
     if (!intent) { db.exec("ROLLBACK"); return { ok: false, error: { code: "GENERATION_INTENT_NOT_FOUND", message: "Generation intent was not found." } }; }
     const writable = assertWorkbenchProjectWritable(db, intent.project_id);
     if (!writable.ok) { db.exec("ROLLBACK"); return writable; }
+    const automation = directorAutomationLink(intent);
+    if (intent.input_snapshot.prepared_by === "director_automation" && (!automation || !intent.run_id)) {
+      db.exec("ROLLBACK");
+      return { ok: false, error: { code: "DIRECTOR_AUTOMATION_BINDING_MISMATCH", message: "Director automation reconciliation is missing its immutable Grant reservation." } };
+    }
     let job: GenerationJob;
     if (input.decision === "attach_existing_task") {
       const taskId = input.provider_task_id?.trim() ?? "";
@@ -1373,6 +1378,18 @@ export function reconcileGenerationJob(
       }
       const run = getGenerationRun(db, intent.run_id);
       if (!run) { db.exec("ROLLBACK"); return { ok: false, error: { code: "GENERATION_RUN_NOT_FOUND", message: "Generation run was not found." } }; }
+      // A human-confirmed existing task may be the successful outcome of an
+      // ambiguous submission. It therefore settles the exact reservation as
+      // spend before polling, even though no worker submit response was saved.
+      if (automation && intent.run_id) {
+        consumeDirectorGrantReservation(db, automation, {
+          amount_minor: automation.amount_minor!,
+          currency: intent.currency,
+          intent_id: intent.intent_id,
+          run_id: intent.run_id,
+          reason_code: "DIRECTOR_AUTOMATION_SUBMITTED_RECONCILED"
+        });
+      }
       db.prepare("UPDATE generation_intents SET provider_task_id = ?, status = 'running', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(taskId, intent.intent_id);
       run.status = "running";
       run.provider.provider_job_id = taskId;
@@ -1381,6 +1398,17 @@ export function reconcileGenerationJob(
       saveGenerationRun(db, run);
       job = setJobState(db, row, "polling", "HUMAN_ATTACHED_EXISTING_TASK", { in_transaction: true });
     } else {
+      // Abandon is the human assertion that no Provider task exists. Release
+      // only an active reservation; a previously consumed Grant remains spent.
+      if (automation && intent.run_id) {
+        releaseDirectorGrantReservation(db, automation, {
+          amount_minor: automation.amount_minor!,
+          currency: intent.currency,
+          intent_id: intent.intent_id,
+          run_id: intent.run_id,
+          reason_code: "DIRECTOR_AUTOMATION_HUMAN_ABANDONED"
+        });
+      }
       db.prepare("UPDATE generation_intents SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(intent.intent_id);
       const run = getGenerationRun(db, intent.run_id);
       if (run) { run.status = "cancelled"; saveGenerationRun(db, run); }

@@ -18,7 +18,7 @@ import {
 import { openM0Database } from "../src/storage/sqlite.js";
 import { saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 import { createWorkbenchProject } from "../src/tools/workbenchV2.js";
-import { runWorkbenchGenerationOnce } from "../src/tools/workbenchGeneration.js";
+import { reconcileGenerationJob, runWorkbenchGenerationOnce } from "../src/tools/workbenchGeneration.js";
 import { bootstrapWebGptProjectOwner } from "../src/webgpt-v4/authorizationAdmin.js";
 import { handleWorkbenchV2Api } from "../src/http/workbenchV2Routes.js";
 
@@ -247,6 +247,70 @@ function prepareRunnableDirectorGenerationFixture(db: ReturnType<typeof openM0Da
     VALUES ('director_proposal_event_execution_001', ?, 'submitted', 'DIRECTOR_NATIVE_SUBMITTED', ?)`)
     .run(proposal.proposal_id, firstNow.toISOString());
   return { projectId, proposal };
+}
+
+async function startBoundedDirectorFixture(db: ReturnType<typeof openM0Database>) {
+  const fixture = prepareRunnableDirectorGenerationFixture(db);
+  const accepted = decideDirectorProposal({ proposal_id: fixture.proposal.proposal_id, decision: "accept", human_confirmation: true }, db, () => firstNow);
+  assert.equal(accepted.ok, true, accepted.ok ? "" : accepted.error.code);
+  if (!accepted.ok) throw new Error("Director fixture acceptance failed");
+  const compiled = compileDirectorProposalToAutomationGrant({
+    proposal_id: fixture.proposal.proposal_id,
+    max_total_minor: 500,
+    max_per_run_minor: 500,
+    max_versions_per_shot: 2,
+    max_automatic_retries: 0,
+    expires_at: new Date(firstNow.getTime() + 60 * 60_000).toISOString(),
+    human_confirmation: true
+  }, db, () => firstNow);
+  assert.equal(compiled.ok, true, compiled.ok ? "" : compiled.error.code);
+  if (!compiled.ok) throw new Error("Director fixture Grant compilation failed");
+  const env: NodeJS.ProcessEnv = {
+    REAL_PROVIDER_ENABLED: "true",
+    M1_REAL_PROVIDER: "runninghub",
+    M1_REAL_PROVIDER_EXECUTION_ALLOWED: "true",
+    M1_REAL_PROVIDER_COST_ACK: "true",
+    RUNNINGHUB_API_KEY: "synthetic-test-key"
+  };
+  const fetchImpl: typeof fetch = async (input) => String(input).includes("price-preview")
+    ? new Response(JSON.stringify({ errorCode: "", estimatedPrice: 0.08, currency: "CNY" }), { status: 200 })
+    : new Response(JSON.stringify({ code: 0, data: { remainMoney: "10", currency: "CNY" } }), { status: 200 });
+  const execution = await startDirectorBoundedGeneration({
+    grant_id: compiled.data.grant.grant_id,
+    proposal_id: fixture.proposal.proposal_id,
+    policy_hash: compiled.data.grant.policy_hash,
+    account_label: "personal",
+    start_worker: false
+  }, db, { now: () => firstNow, env, fetch_impl: fetchImpl });
+  assert.equal(execution.ok, true, execution.ok ? "" : execution.error.code);
+  if (!execution.ok) throw new Error("Director fixture execution preparation failed");
+  return { compiled: compiled.data, execution: execution.data, env, fetchImpl };
+}
+
+async function moveDirectorFixtureToUnknownSubmission(
+  db: ReturnType<typeof openM0Database>,
+  input: Awaited<ReturnType<typeof startBoundedDirectorFixture>>
+): Promise<void> {
+  const adapter = {
+    provider_name: "runninghub" as const,
+    model_name: "rhart-video-g/image-to-video",
+    submitGeneration: async () => ({ ok: false as const, error: { code: "PROVIDER_TIMEOUT", message: "Synthetic ambiguous submit.", submission_outcome_unknown: true } }),
+    pollStatus: async () => { throw new Error("poll must not run before human reconciliation"); },
+    fetchOutput: async () => { throw new Error("output must not run before human reconciliation"); }
+  };
+  const workerDatabase = new Proxy(db, {
+    get(target, property) {
+      if (property === "close") return () => undefined;
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    }
+  }) as ReturnType<typeof openM0Database>;
+  await runWorkbenchGenerationOnce(input.execution.intent.intent_id, {
+    allow_submit: true,
+    dependencies: { open_database: () => workerDatabase, env: input.env, fetch_impl: input.fetchImpl, adapter_factory: () => adapter, now: () => firstNow }
+  });
+  const job = db.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?").get(input.execution.job_id) as { state: string; reconciliation_reason: string };
+  assert.deepEqual({ ...job }, { state: "manual_reconciliation", reconciliation_reason: "PROVIDER_SUBMIT_OUTCOME_UNKNOWN" });
 }
 
 test("Human Workbench creates a single-owner Focus and records acceptance without compiling or executing", () => {
@@ -658,6 +722,47 @@ test("a paid Director Provider task is consumed when local persistence falls bac
     const consume = db.prepare(`SELECT event_type, amount_minor, currency, reason_code FROM director_automation_grant_events
       WHERE grant_id = ? AND event_type = 'consume'`).all(compiled.data.grant.grant_id) as Array<{ event_type: string; amount_minor: number; currency: string; reason_code: string }>;
     assert.deepEqual(consume.map((event) => ({ ...event })), [{ event_type: "consume", amount_minor: 8, currency: "CNY", reason_code: "DIRECTOR_AUTOMATION_SUBMITTED_RECONCILED" }]);
+  } finally { db.close(); }
+});
+
+test("human attachment of an existing ambiguous Director task consumes its Grant reservation", async () => {
+  const db = openM0Database(":memory:");
+  try {
+    const prepared = await startBoundedDirectorFixture(db);
+    await moveDirectorFixtureToUnknownSubmission(db, prepared);
+    const attached = reconcileGenerationJob(prepared.execution.job_id, {
+      decision: "attach_existing_task",
+      provider_task_id: "task-director-human-attached",
+      human_confirmation: true
+    }, db);
+    assert.equal(attached.ok, true, attached.ok ? "" : attached.error.code);
+    if (!attached.ok) return;
+    assert.equal(attached.data.job.state, "polling");
+    const consume = db.prepare(`SELECT amount_minor, currency, reason_code FROM director_automation_grant_events
+      WHERE grant_id = ? AND event_type = 'consume'`).all(prepared.compiled.grant.grant_id) as Array<{ amount_minor: number; currency: string; reason_code: string }>;
+    assert.deepEqual(consume.map((event) => ({ ...event })), [{ amount_minor: 8, currency: "CNY", reason_code: "DIRECTOR_AUTOMATION_SUBMITTED_RECONCILED" }]);
+  } finally { db.close(); }
+});
+
+test("human abandonment of an ambiguous Director task releases its still-reserved Grant budget", async () => {
+  const db = openM0Database(":memory:");
+  try {
+    const prepared = await startBoundedDirectorFixture(db);
+    await moveDirectorFixtureToUnknownSubmission(db, prepared);
+    const abandoned = reconcileGenerationJob(prepared.execution.job_id, {
+      decision: "abandon",
+      reason: "Human verified no Provider task exists.",
+      human_confirmation: true
+    }, db);
+    assert.equal(abandoned.ok, true, abandoned.ok ? "" : abandoned.error.code);
+    if (!abandoned.ok) return;
+    assert.equal(abandoned.data.job.state, "cancelled");
+    const events = db.prepare(`SELECT event_type, amount_minor, currency, reason_code FROM director_automation_grant_events
+      WHERE grant_id = ? ORDER BY rowid`).all(prepared.compiled.grant.grant_id) as Array<{ event_type: string; amount_minor: number; currency: string; reason_code: string }>;
+    assert.deepEqual(events.map((event) => ({ ...event })), [
+      { event_type: "reserve", amount_minor: 8, currency: "CNY", reason_code: "DIRECTOR_AUTOMATION_RESERVED" },
+      { event_type: "release", amount_minor: 8, currency: "CNY", reason_code: "DIRECTOR_AUTOMATION_HUMAN_ABANDONED" }
+    ]);
   } finally { db.close(); }
 });
 
