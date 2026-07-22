@@ -1,7 +1,7 @@
 # Current State
 
-Date (Asia/Shanghai, UTC+08:00): 2026-07-21
-Repository baseline: `main@ef5e7bee103e404b1aa4ee0cae291e32e02c3976`
+Date (Asia/Shanghai, UTC+08:00): 2026-07-22
+Repository baseline: `main@95c017adfd59543df3e111b56781268f3a6a6e78`
 
 ## Accepted baseline
 
@@ -43,6 +43,7 @@ These states accept Jenn's owner-only ChatGPT MCP App and manual Snapshot operat
 | Second real user and revoke path | PASS | Deferred by Jenn | `PARTIAL_MULTI_USER_GATE` |
 | Automatic Snapshot synchronization | Not implemented | Not accepted | Future gate |
 | Real Provider canary | Boundary exists | Not authorized | Frozen |
+| ChatGPT Director PR1–PR6 | Merged local candidate | No runtime, OAuth, bridge, database or plugin acceptance | `DIRECTOR_EXTERNAL_GATE_PENDING` |
 
 ## Accepted evidence
 
@@ -71,6 +72,12 @@ The remote service is memory-only. Render Free sleep/restart or Snapshot TTL exp
 
 PR #56–#62 implemented Snapshot v4 media bindings, encrypted capabilities, local streaming, Widget media UI, Windows operations, Cloudflare diagnostics and selectable `auto|http2|quic` transport. The latest bounded starts still did not establish a verified public media route. Keep Gateway stopped unless performing a separately authorized test. Do not install the current-user logon task yet.
 
+### ChatGPT Director candidate
+
+PR #69–#72 merged the local Director candidate: immutable advisory Proposals, Human Workbench approval, bounded Automation Grants, an isolated local bridge and a disabled-by-default Memory Recall Port. This does **not** alter the accepted Readonly MCP App, the current `workbench-v2-5` / ledger `0008` activity database, or the safe default `REAL_PROVIDER_ENABLED=false`.
+
+Director startup requires a separately accepted `workbench-v2-6` / ledger `0010` database and explicit non-secret runtime configuration. Do not run `start:director:remote` or `start:director:bridge` against the accepted activity database. The Memory Port has no configured plugin, endpoint, credential or automatic Saveback dispatch. See [Director Local Candidate Closeout](docs/CHATGPT_DIRECTOR_LOCAL_CANDIDATE_CLOSEOUT.md).
+
 ## Active blockers and next gates
 
 1. Merge and validate the isolated MP4 acceptance fixture tooling currently under review.
@@ -80,6 +87,14 @@ PR #56–#62 implemented Snapshot v4 media bindings, encrypted capabilities, loc
 5. Only after the above PASS: write a media closeout report and consider `0.1.0-beta.6` version closeout.
 
 Separate, non-blocking future gates are the second real user, automatic Snapshot publishing, Windows automatic startup, Full profile externalization and real Provider canary.
+
+Director has its own ordered external gates and does not inherit acceptance from the Readonly App or media gateway:
+
+1. separately authorize active-database migration from ledger `0008` to `0010`, with backup, manifest, `db:check`, isolated restore and rollback evidence;
+2. separately authorize an isolated Director OAuth/remote/bridge wiring acceptance with `REAL_PROVIDER_ENABLED=false`;
+3. prove the owner-only Proposal and approval path against the migrated activity database without Provider execution;
+4. select a stable memory plugin and separately accept recall-only, project/issuer-bound integration before any Saveback dispatch;
+5. only then consider a bounded Provider execution canary under a separately approved Automation Grant and budget.
 
 ## Non-claims
 

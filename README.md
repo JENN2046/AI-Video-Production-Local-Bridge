@@ -12,11 +12,14 @@ AI Video Production Workspace 是 Jenn 的 Windows 本地 AI 视频生产与 Cha
 | Media Gateway code | `readonly-media-gateway-v1.0.0`（外部验收未完成） |
 | Snapshot contract | `readonly-snapshot-v4`（代码已合入，不能据此宣称公网媒体已可用） |
 | Database | `workbench-v2-5` / ledger `0008` |
+| ChatGPT Director | PR1–PR6 本地候选已合入；要求 `workbench-v2-6` / ledger `0010`，尚未外部接线或迁移 |
 | Product status | `JENN_SINGLE_USER_MCP_APP_PASS` |
 | Operations status | `MANUAL_PUBLISH_OPERATIONAL_READY` |
 | Multi-user status | `PARTIAL_MULTI_USER_GATE` |
 
 当前 `main` 已包含 Workbench V2、WebGPT V4、Auth0 Federated Readonly、签名 Snapshot、ChatGPT MCP App、共享派生状态、Human Workbench 人工发布，以及 Local Media Gateway 的代码和 Windows 运维入口。Cloudflare 媒体链路尚未完成端到端播放验收；Windows 登录任务、自动 Snapshot 发布、真实 Provider canary 和多用户黄金路径仍是独立 gate。
+
+`ChatGPT Director` 是另一条候选路线：ChatGPT 只能读取有界讨论上下文并提出不可变 Proposal，Workbench 保留人类批准，Local Orchestrator 只在未来获授权的 Grant 内执行。它当前尚未接入活动库，也未配置 OAuth/bridge/Memory 插件或调用 Provider；不得把其合并状态误作可运行服务。
 
 完整状态见 [CURRENT_STATE.md](CURRENT_STATE.md)，文档入口见 [docs/README.md](docs/README.md)。
 
