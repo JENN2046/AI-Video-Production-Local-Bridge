@@ -42,7 +42,7 @@ ready        one to twelve verified, bound advisory items
 unavailable  malformed, mismatched or failed port; no items disclosed
 ```
 
-Malformed input, a thrown or stalled port (two-second recall budget), incorrect principal/issuer/project echo, a cross-project item, or an invalid shape becomes data-free `unavailable`. It never falls back to another project, an unscoped query, local filesystem search, SQLite history scan or a generic ChatGPT memory feature.
+Malformed input, a thrown or stalled port (two-second recall budget), incorrect principal/issuer/project/proposal-kind echo, a cross-project item, or an invalid shape becomes data-free `unavailable`. It never falls back to another project, an unscoped query, local filesystem search, SQLite history scan or a generic ChatGPT memory feature.
 
 ## Saveback boundary
 

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { DIRECTOR_PROPOSAL_KIND_SCHEMA } from "./domain.js";
+
 /**
  * This port is deliberately an advisory-only seam.  ChatGPT may use recalled
  * experience while preparing a proposal, but neither the port nor the local
@@ -41,7 +43,7 @@ export interface DirectorMemoryRecallRequest {
   principal_id: string;
   issuer_hash: string;
   project_id: string;
-  proposal_kind: string;
+  proposal_kind: z.infer<typeof DIRECTOR_PROPOSAL_KIND_SCHEMA>;
 }
 
 const portResponseItemSchema = memoryItemSchema.extend({
@@ -60,6 +62,7 @@ const portResponseSchema = z.object({
   principal_id: hashSchema,
   issuer_hash: hashSchema,
   project_id: idSchema,
+  proposal_kind: DIRECTOR_PROPOSAL_KIND_SCHEMA,
   items: z.array(portResponseItemSchema).max(12)
 }).strict().superRefine((value, context) => {
   if (value.state === "ready" && value.items.length === 0) {
@@ -91,6 +94,7 @@ export const DISABLED_DIRECTOR_MEMORY_PORT: DirectorMemoryPort = {
       principal_id: request.principal_id,
       issuer_hash: request.issuer_hash,
       project_id: request.project_id,
+      proposal_kind: request.proposal_kind,
       items: []
     };
   }
@@ -132,7 +136,8 @@ export async function recallDirectorMemory(
     if (response.workspace_id !== request.workspace_id
       || response.principal_id !== request.principal_id
       || response.issuer_hash !== request.issuer_hash
-      || response.project_id !== request.project_id) {
+      || response.project_id !== request.project_id
+      || response.proposal_kind !== request.proposal_kind) {
       return unavailableDirectorMemoryRecall();
     }
     return DIRECTOR_MEMORY_RECALL_CONTEXT_SCHEMA.parse({

@@ -13,7 +13,7 @@ const request = {
   principal_id: "a".repeat(64),
   issuer_hash: "b".repeat(64),
   project_id: "project_memory_fixture",
-  proposal_kind: "review_assessment"
+  proposal_kind: "review_assessment" as const
 };
 
 function readyResponse() {
@@ -24,6 +24,7 @@ function readyResponse() {
     principal_id: request.principal_id,
     issuer_hash: request.issuer_hash,
     project_id: request.project_id,
+    proposal_kind: request.proposal_kind,
     items: [
       {
         category: "failure_pattern" as const,
@@ -76,6 +77,11 @@ test("Director memory port binds advisory recall to the exact project and fails 
     async recall() { return { ...readyResponse(), project_id: "project_other" }; }
   }, request);
   assert.deepEqual(wrongProject, { state: "unavailable", items: [] });
+
+  const wrongKind = await recallDirectorMemory({
+    async recall() { return { ...readyResponse(), proposal_kind: "generation_plan" as const }; }
+  }, request);
+  assert.deepEqual(wrongKind, { state: "unavailable", items: [] });
 
   const crossProjectItem = await recallDirectorMemory({
     async recall() {
