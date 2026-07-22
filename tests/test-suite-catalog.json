@@ -303,7 +303,21 @@
       "path": "tests/director-domain-contract.test.ts",
       "npm_script": "test:webgpt:director",
       "ci_step": "ChatGPT Director domain tests",
-      "case_name": "migration 0009 upgrades a real 0008 shape and makes Director evidence immutable"
+      "case_name": "migrations 0009 and 0010 upgrade a real 0008 shape and make Director evidence immutable"
+    },
+    {
+      "id": "director-currency-migration-compatibility",
+      "path": "tests/director-domain-contract.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "migration 0010 upgrades an already-ledgered 0009 Grant database without checksum drift"
+    },
+    {
+      "id": "director-currency-migration-fail-closed",
+      "path": "tests/director-domain-contract.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "migration 0010 fails closed without partial schema changes for unsupported legacy Grant currency"
     },
     {
       "id": "director-db-check-integrity",
@@ -557,7 +571,7 @@
       "path": "tests/webgpt-cloud-projection.test.ts",
       "npm_script": "test:webgpt:cloud",
       "ci_step": "WebGPT cloud projection tests",
-      "case_name": "readonly projection requires migration 0009 and never upgrades an older database"
+      "case_name": "readonly projection requires migration 0010 and never upgrades an older database"
     },
     {
       "id": "readonly-projection-dto-parity",

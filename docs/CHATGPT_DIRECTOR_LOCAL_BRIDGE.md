@@ -96,7 +96,7 @@ WEBGPT_DIRECTOR_REMOTE_ORIGIN=
 AI_VIDEO_WORKSPACE_DB_PATH=
 ```
 
-The remote origin must be an exact credential-free HTTPS origin. The database must already be at `workbench-v2-6` / migration ledger `0009`; the bridge never migrates it.
+The remote origin must be an exact credential-free HTTPS origin. The database must already be at `workbench-v2-6` / migration ledger `0010`; the bridge never migrates it.
 
 Public commands:
 

@@ -642,7 +642,7 @@ const DIRECTOR_DOMAIN_SQL = `
     CHECK (length(principal_id) = 64 AND principal_id NOT GLOB '*[^0-9a-f]*'),
     CHECK (provider = 'runninghub'),
     CHECK (json_valid(allowed_actions_json) = 1),
-    CHECK (currency IN ('CNY','RH_COINS')),
+    CHECK (length(currency) = 3 AND currency NOT GLOB '*[^A-Z]*'),
     CHECK (max_total_minor > 0),
     CHECK (max_per_run_minor > 0 AND max_per_run_minor <= max_total_minor),
     CHECK (max_versions_per_shot BETWEEN 1 AND 20),
@@ -664,7 +664,7 @@ const DIRECTOR_DOMAIN_SQL = `
     FOREIGN KEY (grant_id) REFERENCES director_automation_grants(grant_id) ON DELETE RESTRICT,
     CHECK (event_type IN ('reserve','release','consume','revoke','expire')),
     CHECK (amount_minor >= 0),
-    CHECK (currency IN ('CNY','RH_COINS')),
+    CHECK (length(currency) = 3 AND currency NOT GLOB '*[^A-Z]*'),
     CHECK (length(reason_code) BETWEEN 1 AND 64)
   );
   CREATE TABLE storyboard_package_versions (
@@ -789,6 +789,131 @@ const DIRECTOR_DOMAIN_SQL = `
   UPDATE m0_meta SET value = 'workbench-v2-6', updated_at = CURRENT_TIMESTAMP WHERE key = 'schema_version';
 `;
 
+/**
+ * Migration 0009 shipped with a three-character uppercase currency constraint.
+ * Preserve that immutable migration verbatim; this follow-on rebuild widens
+ * the two Director ledger tables to the closed set already used by the public
+ * Proposal and Grant schemas.
+ */
+const DIRECTOR_CURRENCY_CONTRACT_SQL = `
+  DROP TRIGGER IF EXISTS director_automation_grant_events_no_delete;
+  DROP TRIGGER IF EXISTS director_automation_grant_events_no_update;
+  DROP TRIGGER IF EXISTS director_automation_grants_no_delete;
+  DROP TRIGGER IF EXISTS director_automation_grants_validate_actions;
+  DROP TRIGGER IF EXISTS director_automation_grants_no_update;
+  DROP INDEX IF EXISTS idx_director_grant_events_grant;
+  DROP INDEX IF EXISTS idx_director_grants_project_expiry;
+
+  ALTER TABLE director_automation_grant_events RENAME TO director_automation_grant_events_0009;
+  ALTER TABLE director_automation_grants RENAME TO director_automation_grants_0009;
+
+  CREATE TABLE director_automation_grants (
+    grant_id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    principal_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    allowed_actions_json TEXT NOT NULL,
+    currency TEXT NOT NULL,
+    max_total_minor INTEGER NOT NULL,
+    max_per_run_minor INTEGER NOT NULL,
+    max_versions_per_shot INTEGER NOT NULL,
+    max_automatic_retries INTEGER NOT NULL,
+    pricing_contract_version TEXT NOT NULL,
+    capability_contract_version TEXT NOT NULL,
+    starts_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    policy_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (workspace_id, principal_id)
+      REFERENCES webgpt_auth_principals(workspace_id, principal_id) ON DELETE RESTRICT,
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE RESTRICT,
+    CHECK (workspace_id = 'jenn-ai-video-workspace'),
+    CHECK (length(principal_id) = 64 AND principal_id NOT GLOB '*[^0-9a-f]*'),
+    CHECK (provider = 'runninghub'),
+    CHECK (json_valid(allowed_actions_json) = 1),
+    CHECK (currency IN ('CNY','RH_COINS')),
+    CHECK (max_total_minor > 0),
+    CHECK (max_per_run_minor > 0 AND max_per_run_minor <= max_total_minor),
+    CHECK (max_versions_per_shot BETWEEN 1 AND 20),
+    CHECK (max_automatic_retries BETWEEN 0 AND 5),
+    CHECK (expires_at > starts_at),
+    CHECK (length(policy_hash) = 64 AND policy_hash NOT GLOB '*[^0-9a-f]*')
+  );
+  CREATE TABLE director_automation_grant_events (
+    event_id TEXT PRIMARY KEY,
+    grant_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    reservation_id TEXT NOT NULL DEFAULT '',
+    amount_minor INTEGER NOT NULL DEFAULT 0,
+    currency TEXT NOT NULL,
+    intent_id TEXT NOT NULL DEFAULT '',
+    run_id TEXT NOT NULL DEFAULT '',
+    reason_code TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (grant_id) REFERENCES director_automation_grants(grant_id) ON DELETE RESTRICT,
+    CHECK (event_type IN ('reserve','release','consume','revoke','expire')),
+    CHECK (amount_minor >= 0),
+    CHECK (currency IN ('CNY','RH_COINS')),
+    CHECK (length(reason_code) BETWEEN 1 AND 64)
+  );
+
+  INSERT INTO director_automation_grants (
+    grant_id, workspace_id, principal_id, project_id, provider, allowed_actions_json, currency,
+    max_total_minor, max_per_run_minor, max_versions_per_shot, max_automatic_retries,
+    pricing_contract_version, capability_contract_version, starts_at, expires_at, policy_hash, created_at
+  ) SELECT
+    grant_id, workspace_id, principal_id, project_id, provider, allowed_actions_json, currency,
+    max_total_minor, max_per_run_minor, max_versions_per_shot, max_automatic_retries,
+    pricing_contract_version, capability_contract_version, starts_at, expires_at, policy_hash, created_at
+    FROM director_automation_grants_0009;
+  INSERT INTO director_automation_grant_events (
+    event_id, grant_id, event_type, reservation_id, amount_minor, currency, intent_id, run_id, reason_code, created_at
+  ) SELECT
+    event_id, grant_id, event_type, reservation_id, amount_minor, currency, intent_id, run_id, reason_code, created_at
+    FROM director_automation_grant_events_0009;
+
+  DROP TABLE director_automation_grant_events_0009;
+  DROP TABLE director_automation_grants_0009;
+
+  CREATE INDEX idx_director_grants_project_expiry
+    ON director_automation_grants(project_id, expires_at);
+  CREATE INDEX idx_director_grant_events_grant
+    ON director_automation_grant_events(grant_id, created_at);
+
+  CREATE TRIGGER director_automation_grants_no_update BEFORE UPDATE ON director_automation_grants BEGIN
+    SELECT RAISE(ABORT, 'DIRECTOR_AUTOMATION_GRANT_IMMUTABLE');
+  END;
+  CREATE TRIGGER director_automation_grants_validate_actions BEFORE INSERT ON director_automation_grants
+  WHEN json_type(NEW.allowed_actions_json) <> 'array'
+    OR json_array_length(NEW.allowed_actions_json) NOT BETWEEN 1 AND 4
+    OR EXISTS (
+      SELECT 1 FROM json_each(NEW.allowed_actions_json)
+      WHERE type <> 'text' OR value NOT IN ('generation.submit','generation.retry','generation.download','artifact.activate')
+    )
+    OR (SELECT COUNT(*) FROM json_each(NEW.allowed_actions_json))
+      <> (SELECT COUNT(DISTINCT value) FROM json_each(NEW.allowed_actions_json))
+  BEGIN
+    SELECT RAISE(ABORT, 'DIRECTOR_AUTOMATION_GRANT_ACTIONS_INVALID');
+  END;
+  CREATE TRIGGER director_automation_grants_no_delete BEFORE DELETE ON director_automation_grants BEGIN
+    SELECT RAISE(ABORT, 'DIRECTOR_AUTOMATION_GRANT_IMMUTABLE');
+  END;
+  CREATE TRIGGER director_automation_grant_events_no_update BEFORE UPDATE ON director_automation_grant_events BEGIN
+    SELECT RAISE(ABORT, 'DIRECTOR_AUTOMATION_GRANT_EVENTS_APPEND_ONLY');
+  END;
+  CREATE TRIGGER director_automation_grant_events_no_delete BEFORE DELETE ON director_automation_grant_events BEGIN
+    SELECT RAISE(ABORT, 'DIRECTOR_AUTOMATION_GRANT_EVENTS_APPEND_ONLY');
+  END;
+`;
+
+function applyDirectorCurrencyContractMigration(db: M0Database): void {
+  const unsupported = db.prepare(`SELECT 1 FROM director_automation_grants WHERE currency NOT IN ('CNY','RH_COINS')
+    UNION ALL SELECT 1 FROM director_automation_grant_events WHERE currency NOT IN ('CNY','RH_COINS') LIMIT 1`).get();
+  if (unsupported) throw new SchemaMigrationRequiredError("Director currency ledger contains an unsupported value and requires manual remediation.");
+  db.exec(DIRECTOR_CURRENCY_CONTRACT_SQL);
+}
+
 export const DATABASE_MIGRATIONS: readonly Migration[] = [
   {
     id: "0001",
@@ -846,6 +971,12 @@ export const DATABASE_MIGRATIONS: readonly Migration[] = [
     name: "chatgpt_director_domain",
     canonical: DIRECTOR_DOMAIN_SQL,
     apply: (db) => db.exec(DIRECTOR_DOMAIN_SQL)
+  },
+  {
+    id: "0010",
+    name: "director_currency_contract",
+    canonical: `${DIRECTOR_CURRENCY_CONTRACT_SQL}\nPRECONDITION director_currency_contract_v1`,
+    apply: applyDirectorCurrencyContractMigration
   }
 ];
 
@@ -1003,6 +1134,7 @@ function expectedSchemaDefinitions(includeJobs: boolean, expectedColumns: Record
       reference.exec(WEBGPT_MULTI_USER_AUTHORIZATION_SQL);
       reference.exec(WEBGPT_ISSUER_BINDINGS_SQL);
       reference.exec(DIRECTOR_DOMAIN_SQL);
+      applyDirectorCurrencyContractMigration(reference);
     }
     const columns = new Map<string, Map<string, string>>();
     const checks = new Map<string, string[]>();

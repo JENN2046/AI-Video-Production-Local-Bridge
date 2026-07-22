@@ -234,13 +234,13 @@ function stripMeta(result: ReturnType<SqliteReadonlyDataSource["listProductionPr
   return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error };
 }
 
-test("readonly projection requires migration 0009 and never upgrades an older database", () => {
+test("readonly projection requires migration 0010 and never upgrades an older database", () => {
   const root = mkdtempSync(join(tmpdir(), "readonly-projection-ledger-"));
   const sqlitePath = join(root, "app.sqlite");
   const db = openM0Database(sqlitePath);
   db.exec(`
     DROP TABLE director_focuses;
-    DELETE FROM schema_migrations WHERE migration_id = '0009';
+    DELETE FROM schema_migrations WHERE migration_id = '0010';
   `);
   db.close();
   try {
@@ -254,8 +254,8 @@ test("readonly projection requires migration 0009 and never upgrades an older da
     );
     const verify = openM0DatabaseConnection(sqlitePath, { readOnly: true });
     try {
-      assert.equal((verify.prepare("SELECT COUNT(*) count FROM schema_migrations WHERE migration_id = '0009'").get() as { count: number }).count, 0);
-      assert.equal((verify.prepare("SELECT COUNT(*) count FROM sqlite_schema WHERE type = 'table' AND name = 'director_focuses'").get() as { count: number }).count, 0);
+      assert.equal((verify.prepare("SELECT COUNT(*) count FROM schema_migrations WHERE migration_id = '0010'").get() as { count: number }).count, 0);
+      assert.equal((verify.prepare("SELECT COUNT(*) count FROM sqlite_schema WHERE type = 'table' AND name = 'director_automation_grants'").get() as { count: number }).count, 1);
     } finally {
       verify.close();
     }
@@ -488,7 +488,7 @@ test("snapshot fingerprint uses deterministic JCS input and server time remains 
 
   const currentSource = structuredClone(unsigned);
   currentSource.source_schema = "workbench-v2-6";
-  currentSource.source_migration = "0009";
+  currentSource.source_migration = "0010";
   assert.doesNotThrow(() => finalizeReadonlySnapshot(currentSource));
   const crossedSource = structuredClone(currentSource);
   crossedSource.source_migration = "0008";
