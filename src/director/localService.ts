@@ -45,7 +45,7 @@ const WORKSPACE_ID = "jenn-ai-video-workspace";
 const FRAME_TIMEOUT_MS = 120_000;
 const MAX_SOURCE_VIDEO_BYTES = 2 * 1024 * 1024 * 1024;
 
-type ProposalKind = DirectorProposalDraft["kind"];
+export type DirectorProposalKind = DirectorProposalDraft["kind"];
 
 export interface DirectorLocalServiceOptions {
   database_path: string;
@@ -69,7 +69,7 @@ interface StoredProposalRow {
   focus_id: string;
   focus_generation: number;
   schema_version: "director-domain-v1";
-  kind: ProposalKind;
+  kind: DirectorProposalKind;
   base_state_hash: string;
   payload_json: string;
   payload_hash: string;
@@ -185,8 +185,8 @@ function requireFocus(
   return focus;
 }
 
-function proposalKindMatchesFocus(kind: ProposalKind, focus: DirectorFocus): void {
-  const allowed: Record<ProposalKind, readonly DirectorFocus["target_type"][]> = {
+function proposalKindMatchesFocus(kind: DirectorProposalKind, focus: DirectorFocus): void {
+  const allowed: Record<DirectorProposalKind, readonly DirectorFocus["target_type"][]> = {
     creative_brief: ["project"], script: ["project"], shot_plan: ["project"],
     storyboard_revision: ["shot"], generation_plan: ["shot"],
     clip_regeneration: ["shot", "artifact"], review_assessment: ["shot", "artifact"],
@@ -197,7 +197,7 @@ function proposalKindMatchesFocus(kind: ProposalKind, focus: DirectorFocus): voi
   }
 }
 
-function artifactForFocus(db: M0Database, focus: DirectorFocus, project: Project, targetShot: Shot | null, kind: ProposalKind): MediaArtifact | null {
+function artifactForFocus(db: M0Database, focus: DirectorFocus, project: Project, targetShot: Shot | null, kind: DirectorProposalKind): MediaArtifact | null {
   let artifactId = "";
   if (focus.target_type === "artifact") artifactId = focus.target_id;
   else if (kind === "storyboard_revision" || kind === "generation_plan") artifactId = targetShot?.storyboard_image_artifact_id ?? "";
@@ -349,7 +349,13 @@ function discussionShot(shot: Shot): Record<string, unknown> {
   };
 }
 
-function buildContext(db: M0Database, focus: DirectorFocus, kind: ProposalKind, detail: "compact" | "full") {
+/**
+ * Rebuild the authoritative context used to bind a Director Proposal.  This is
+ * deliberately shared with the Human Workbench approval boundary: accepting a
+ * proposal must use the exact same target-state construction as native
+ * proposal ingestion, rather than trusting the hash supplied by ChatGPT.
+ */
+export function buildDirectorContext(db: M0Database, focus: DirectorFocus, kind: DirectorProposalKind, detail: "compact" | "full") {
   proposalKindMatchesFocus(kind, focus);
   const { project, lifecycle } = projectRow(db, focus.project_id);
   const shots = boundProjectShots(db, project.project_id);
@@ -534,7 +540,7 @@ export class DirectorLocalService implements DirectorNativeToolHandlers {
   async get_director_context(input: Parameters<DirectorNativeToolHandlers["get_director_context"]>[0]) {
     return this.read((db) => {
       const focus = requireFocus(db, this.actor, input.focus_id, input.focus_generation, this.now());
-      const built = buildContext(db, focus, input.proposal_kind, input.detail);
+      const built = buildDirectorContext(db, focus, input.proposal_kind, input.detail);
       return DIRECTOR_GET_CONTEXT_OUTPUT_SCHEMA.parse({
         state: "ready", context_version: "director-context-v1", focus: publicFocus(focus),
         base_state_hash: directorBaseStateHash(built.targetState), target_state: built.targetState, discussion: built.discussion
@@ -545,7 +551,7 @@ export class DirectorLocalService implements DirectorNativeToolHandlers {
   async inspect_director_video_frames(input: Parameters<DirectorNativeToolHandlers["inspect_director_video_frames"]>[0]): Promise<DirectorVideoFrameToolOutput> {
     const prepared = this.read((db) => {
       const focus = requireFocus(db, this.actor, input.focus_id, input.focus_generation, this.now());
-      const built = buildContext(db, focus, "review_assessment", "full");
+      const built = buildDirectorContext(db, focus, "review_assessment", "full");
       const artifact = built.targetArtifact;
       if (!artifact || artifact.artifact_id !== input.artifact_id) {
         throw new WebGptV4Error("DIRECTOR_MEDIA_NOT_FOCUS_BOUND", "Video Artifact is not bound to the active Focus target.", "artifact_id");
@@ -621,7 +627,7 @@ export class DirectorLocalService implements DirectorNativeToolHandlers {
       db.exec("BEGIN IMMEDIATE");
       transactionOpen = true;
       const focus = requireFocus(db, this.actor, input.focus_id, input.focus_generation, this.now());
-      const built = buildContext(db, focus, input.proposal.kind, "full");
+      const built = buildDirectorContext(db, focus, input.proposal.kind, "full");
       const authoritativeHash = directorBaseStateHash(built.targetState);
       if (input.base_state_hash !== authoritativeHash) {
         throw new WebGptV4Error("DIRECTOR_BASE_STATE_DRIFT", "Director Proposal was prepared from stale authoritative state.", "base_state_hash");

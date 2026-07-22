@@ -43,11 +43,12 @@ test("素材隔离的可见项选择和筛选往返不会跳顶", async ({ page 
   expect(await queue.evaluate((element) => element.scrollTop)).toBe(before);
 });
 
-test("五区导航可达且 URL 可恢复", async ({ page }) => {
+test("六区导航可达且 URL 可恢复", async ({ page }) => {
   await page.goto("/");
   await expect(page).toHaveURL(/\/v2\/dashboard$/);
   for (const [label, path] of [
     ["收件箱", "/v2/inbox/pending"],
+    ["Director 审批", "/v2/director"],
     ["项目", "/v2/projects"],
     ["资产库", "/v2/assets/media"],
     ["系统", "/v2/system/runninghub"],

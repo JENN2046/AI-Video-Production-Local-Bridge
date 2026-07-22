@@ -113,9 +113,12 @@ The PR3 local bridge refuses to start when `REAL_PROVIDER_ENABLED=true`; Provide
 
 The mandatory Director lane covers signed-envelope tampering/replay/expiry, exact tool scopes, remote-to-local end-to-end MCP calls, issuer/project/Focus binding, zero-write frame analysis, immutable Proposal persistence, idempotency conflict, and remote module-graph detachment from SQLite/local media paths. It is selected by canonical `npm test`, Windows CI and `test-selection-gate`.
 
+Implemented in the local PR4 candidate, but not yet externally accepted:
+
+- Human Workbench Focus controls, Proposal approval queue and authoritative state-drift checks, described in [CHATGPT_DIRECTOR_HUMAN_APPROVAL.md](CHATGPT_DIRECTOR_HUMAN_APPROVAL.md). A recorded acceptance is deliberately not compilation or execution.
+
 Still deferred:
 
-- PR4 Human Workbench Focus controls, Proposal approval queue and state projection;
 - PR5 approved Proposal compilation, immutable Automation Grant and bounded RunningHub-only local orchestration;
 - PR6 replaceable memory port, operations, external acceptance and version closeout;
 - any deployment, OAuth registration, activity-database migration or real Provider call.

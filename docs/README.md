@@ -26,6 +26,7 @@ Current runbooks describe commands and boundaries. They do not grant authorizati
 - [ChatGPT Director domain contract](CHATGPT_DIRECTOR_DOMAIN_CONTRACT.md) — PR1 domain and migration contract; it does not change the accepted activity database or expose Director tools.
 - [ChatGPT Director Manual/Native tools](CHATGPT_DIRECTOR_MANUAL_NATIVE_TOOLS.md) — PR2 fixed advisory tool registry, manual-import boundary, and separate OAuth resource contract.
 - [ChatGPT Director Local Bridge](CHATGPT_DIRECTOR_LOCAL_BRIDGE.md) — PR3 public runtime, authenticated outbound bridge, Focus/context, frame analysis and immutable Proposal candidate boundary.
+- [ChatGPT Director Human Approval](CHATGPT_DIRECTOR_HUMAN_APPROVAL.md) — PR4 local Workbench approval-tower candidate; a recorded decision is not orchestration or Provider execution.
 
 ## Accepted evidence
 

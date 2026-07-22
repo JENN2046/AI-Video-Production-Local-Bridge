@@ -9,7 +9,7 @@ const shell = {
   version: "human-workbench-v2",
   operator: "Jenn",
   action_nonce: "test-nonce",
-  navigation: { dashboard: 2, inbox: 3, projects: 0, assets: 0, system: 0 },
+  navigation: { dashboard: 2, inbox: 3, director: 0, projects: 0, assets: 0, system: 0 },
   actionable: { pending_confirmations: 1, gpt_drafts: 1, quarantined_imports: 1, review_pending: 2, running_jobs: 0 },
   capabilities: { legacy_available: false, real_generation_requires_preflight: true, max_real_generation_jobs: 1, automatic_retry: false }
 };
@@ -41,7 +41,27 @@ describe("Human Workbench V2 shell", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/v2/dashboard", expect.anything()));
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/bootstrap"))).toBe(false);
     expect(screen.getByRole("link", { name: /收件箱/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Director 审批/ })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Legacy" })).not.toBeInTheDocument();
+  });
+
+  it("renders Director approval controls without treating a proposal as Provider execution", async () => {
+    const projectId = "project_director_ui";
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/api/v2/shell") return new Response(JSON.stringify({ ok: true, data: shell }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url.startsWith("/api/v2/projects?")) return new Response(JSON.stringify({ ok: true, data: [{ project: { project_id: projectId, title: "Director UI", status: "draft", brief: {}, video_spec: { duration_seconds: 15, aspect_ratio: "9:16", resolution: "1080x1920" }, shot_ids: [], active_storyboard_package_id: "", generation_batch_ids: [], exports: { final_video_artifact_id: "" } }, meta: {}, shot_count: 0, accepted_count: 0, active_run_count: 0, blocker_count: 0, blocked_shot_count: 0, blocker_codes: [], blocker_reason: "", review_pending_count: 0, delivery_state: "not_ready", next_action: {} }], meta: { limit: 100, offset: 0, total: 1, has_more: false } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url === `/api/v2/director/projects/${projectId}`) return new Response(JSON.stringify({ ok: true, data: { project_id: projectId, principal_state: "single_owner_ready", focus: { state: "no_focus", focus: null }, proposals: [] } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url === `/api/v2/projects/${projectId}/overview`) return new Response(JSON.stringify({ ok: true, data: { project: { project_id: projectId, title: "Director UI" }, shots: [], artifacts: {} } }), { status: 200, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ ok: false, error: { code: "NOT_FOUND", message: url } }), { status: 404, headers: { "content-type": "application/json" } });
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={["/v2/director"]}><App /></MemoryRouter></QueryClientProvider>);
+    expect(await screen.findByRole("heading", { name: "Director 审批台" })).toBeInTheDocument();
+    expect(screen.getByText(/此处的接受仅记录人工审批/)).toBeInTheDocument();
+    expect(await screen.findByText("执行权限")).toBeInTheDocument();
+    expect(screen.getByText("未开放")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([input, init]) => String(input).includes("/director/") && (init as RequestInit | undefined)?.method === "POST")).toBe(false);
   });
 
   it("exposes explicit readonly preflight and confirmed one-click publish without accepting paths from the browser", async () => {
