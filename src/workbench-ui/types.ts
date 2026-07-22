@@ -24,7 +24,7 @@ export interface ShellData {
   version: string;
   operator: string;
   action_nonce: string;
-  navigation: Record<"dashboard" | "inbox" | "projects" | "assets" | "system", number>;
+  navigation: Record<"dashboard" | "inbox" | "director" | "projects" | "assets" | "system", number>;
   actionable: {
     pending_confirmations: number;
     gpt_drafts: number;

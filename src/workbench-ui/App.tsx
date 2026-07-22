@@ -9,6 +9,7 @@ import s from "./workbench.module.css";
 
 const AssetsPage = lazy(() => import("./pages/AssetsPage").then((module) => ({ default: module.AssetsPage })));
 const DashboardPage = lazy(() => import("./pages/DashboardPage").then((module) => ({ default: module.DashboardPage })));
+const DirectorPage = lazy(() => import("./pages/DirectorPage").then((module) => ({ default: module.DirectorPage })));
 const InboxPage = lazy(() => import("./pages/InboxPage").then((module) => ({ default: module.InboxPage })));
 const ProjectWorkspacePage = lazy(() => import("./pages/ProjectWorkspacePage").then((module) => ({ default: module.ProjectWorkspacePage })));
 const ProjectsPage = lazy(() => import("./pages/ProjectsPage").then((module) => ({ default: module.ProjectsPage })));
@@ -20,6 +21,7 @@ function deferred(element: ReactElement) {
 
 const nav = [
   { id: "dashboard", label: "指挥台", to: "/v2/dashboard", icon: LayoutDashboard },
+  { id: "director", label: "Director 审批", to: "/v2/director", icon: Sparkles },
   { id: "inbox", label: "收件箱", to: "/v2/inbox/pending", icon: Inbox },
   { id: "projects", label: "项目", to: "/v2/projects", icon: FolderKanban },
   { id: "assets", label: "资产库", to: "/v2/assets/media", icon: Library },
@@ -66,6 +68,7 @@ export function App() {
     <Route path="/v2" element={<AppShell />}>
       <Route index element={<Navigate to="dashboard" replace />} />
       <Route path="dashboard" element={deferred(<DashboardPage />)} />
+      <Route path="director" element={deferred(<DirectorPage />)} />
       <Route path="inbox/:tab" element={deferred(<InboxPage />)} />
       <Route path="projects" element={deferred(<ProjectsPage />)} />
       <Route path="projects/:id/:workspace" element={deferred(<ProjectWorkspacePage />)} />

@@ -131,7 +131,8 @@
       "paths": [
         "tests/director-domain-contract.test.ts",
         "tests/director-manual-native-tools.test.ts",
-        "tests/director-local-bridge.test.ts"
+        "tests/director-local-bridge.test.ts",
+        "tests/director-workbench-approval.test.ts"
       ]
     },
     {
@@ -345,6 +346,41 @@
       "npm_script": "test:webgpt:director",
       "ci_step": "ChatGPT Director domain tests",
       "case_name": "Director remote runtime module graph remains detached from SQLite and local media paths"
+    },
+    {
+      "id": "director-human-approval-boundary",
+      "path": "tests/director-workbench-approval.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "Human Workbench creates a single-owner Focus and records acceptance without compiling or executing"
+    },
+    {
+      "id": "director-human-approval-drift",
+      "path": "tests/director-workbench-approval.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "superseded Focus and authoritative drift block human acceptance without rewriting proposal history"
+    },
+    {
+      "id": "director-human-approval-api",
+      "path": "tests/director-workbench-approval.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "Human Workbench Director endpoints require the local mutation nonce and confirmation"
+    },
+    {
+      "id": "director-human-approval-revocation",
+      "path": "tests/director-workbench-approval.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "revoked proposal membership blocks a pending Director decision without creating a terminal event"
+    },
+    {
+      "id": "director-human-approval-archive",
+      "path": "tests/director-workbench-approval.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "archived projects reject a pending Director decision after the approval page was opened"
     }
   ],
   "readonly_app_suites": [

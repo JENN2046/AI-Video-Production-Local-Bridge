@@ -922,12 +922,18 @@ export function getWorkbenchShell(db = openM0Database()): Record<string, unknown
   `).get() as { quarantined_imports: number; unassigned_assets: number };
   const pendingConfirmations = pending.filter((item) => item.status === "pending").length;
   const activeDrafts = drafts.filter((item) => item.status === "pending" || item.status === "revision_needed").length;
+  const directorPending = db.prepare(`SELECT COUNT(*) AS count FROM director_proposals p
+    WHERE NOT EXISTS (
+      SELECT 1 FROM director_proposal_events e
+      WHERE e.proposal_id = p.proposal_id AND e.event_type IN ('accepted', 'rejected', 'withdrawn', 'compiled')
+    )`).get() as { count: number };
   return {
     version: "human-workbench-v2.1",
     operator: "Jenn",
     navigation: {
       dashboard: dashboard.blocked_projects + dashboard.review_pending + dashboard.pending_delivery,
       inbox: pendingConfirmations + activeDrafts + counts.quarantined_imports,
+      director: directorPending.count,
       projects: 0,
       assets: 0,
       system: 0

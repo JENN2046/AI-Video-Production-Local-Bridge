@@ -6,6 +6,12 @@ import {
   type PersonalReadonlyOperationsService
 } from "../webgpt-cloud/personalReadonlyOperations.js";
 import { h2CanaryWorkbenchSummary } from "../tools/h1Workbench.js";
+import {
+  createDirectorWorkbenchFocus,
+  decideDirectorProposal,
+  getDirectorApprovalTower,
+  type DirectorFocusTargetType
+} from "../director/workbenchApproval.js";
 import { applyWorkbenchGovernance, getWorkbenchGovernancePreview } from "../tools/workbenchGovernance.js";
 import { decideWorkbenchPendingAction, listWorkbenchInboxV21, transitionWorkbenchDraft } from "../tools/workbenchInbox.js";
 import {
@@ -55,7 +61,7 @@ function sendOk(response: ServerResponse, data: unknown, meta?: unknown): void {
 
 function statusForError(error: WorkbenchV2Error): number {
   if (error.code.endsWith("_NOT_FOUND")) return 404;
-  if (["PROJECT_ARCHIVED", "PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION", "SHOT_BLOCKED", "GOVERNANCE_SNAPSHOT_STALE", "INVALID_DRAFT_TRANSITION", "ACTION_NOT_PENDING"].includes(error.code)) return 409;
+  if (["PROJECT_ARCHIVED", "PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION", "SHOT_BLOCKED", "GOVERNANCE_SNAPSHOT_STALE", "INVALID_DRAFT_TRANSITION", "ACTION_NOT_PENDING", "DIRECTOR_PROPOSAL_STALE", "DIRECTOR_PROPOSAL_NOT_PENDING", "DIRECTOR_PROPOSAL_PRINCIPAL_INACTIVE", "DIRECTOR_FOCUS_STALE", "DIRECTOR_FOCUS_TARGET_INVALID", "DIRECTOR_PRINCIPAL_SELECTION_REQUIRED"].includes(error.code)) return 409;
   if (error.code === "ACTION_NONCE_REQUIRED") return 403;
   return 400;
 }
@@ -181,6 +187,41 @@ export async function handleWorkbenchV2Api(
   }
   if (request.method === "GET" && url.pathname === "/api/v2/dashboard") {
     sendOk(response, withDatabase((db) => getWorkbenchDashboard(db)));
+    return true;
+  }
+
+  const directorTowerMatch = url.pathname.match(/^\/api\/v2\/director\/projects\/([^/]+)$/);
+  if (request.method === "GET" && directorTowerMatch) {
+    const projectId = decodeSegment(directorTowerMatch[1]);
+    sendResult(response, withDatabase((db) => getDirectorApprovalTower(projectId, db)));
+    return true;
+  }
+  if (request.method === "POST" && url.pathname === "/api/v2/director/focus") {
+    await mutation(request, response, actionNonce, (body) => sendResult(response, withDatabase((db) => createDirectorWorkbenchFocus({
+      project_id: text(body.project_id),
+      target_type: text(body.target_type) as DirectorFocusTargetType,
+      target_id: text(body.target_id),
+      ttl_seconds: body.ttl_seconds === undefined ? undefined : Number(body.ttl_seconds),
+      human_confirmation: body.human_confirmation === true
+    }, db))));
+    return true;
+  }
+  const directorProposalDecisionMatch = url.pathname.match(/^\/api\/v2\/director\/proposals\/([^/]+)\/decision$/);
+  if (request.method === "POST" && directorProposalDecisionMatch) {
+    const proposalId = decodeSegment(directorProposalDecisionMatch[1]);
+    await mutation(request, response, actionNonce, (body) => {
+      const decision = text(body.decision);
+      if (decision !== "accept" && decision !== "reject") {
+        send(response, 400, { ok: false, error: { code: "DIRECTOR_PROPOSAL_DECISION_INVALID", message: "Director Proposal decision must be accept or reject." } });
+        return;
+      }
+      sendResult(response, withDatabase((db) => decideDirectorProposal({
+        proposal_id: proposalId,
+        decision,
+        reason_code: optionalText(body.reason_code),
+        human_confirmation: body.human_confirmation === true
+      }, db)));
+    });
     return true;
   }
 
