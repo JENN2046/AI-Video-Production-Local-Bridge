@@ -3,7 +3,7 @@
 Date (Asia/Shanghai, UTC+08:00): 2026-07-22
 Repository baseline: `main@95c017adfd59543df3e111b56781268f3a6a6e78`
 
-## Accepted baseline
+## Accepted historical operations baseline
 
 ```text
 Package:                  0.1.0-beta.5
@@ -15,7 +15,7 @@ Snapshot code contract:   readonly-snapshot-v4
 Media Gateway code:       readonly-media-gateway-v1.0.0
 ```
 
-Accepted product states:
+Accepted product states, recorded before the current-main compatibility hold:
 
 ```text
 JENN_SINGLE_USER_MCP_APP_PASS
@@ -23,18 +23,24 @@ MANUAL_PUBLISH_OPERATIONAL_READY
 PARTIAL_MULTI_USER_GATE
 ```
 
-These states accept Jenn's owner-only ChatGPT MCP App and manual Snapshot operations. They do not accept multi-user production, automatic publishing, Windows auto-start, public media playback or real Provider canary.
+These states record Jenn's owner-only ChatGPT MCP App and manual Snapshot evidence. They do not accept multi-user production, automatic publishing, Windows auto-start, public media playback or real Provider canary.
+
+## Current-main compatibility hold
+
+`main@95c017a` now requires `workbench-v2-6` / migration ledger `0010` for normal Workbench database opens and new Snapshot exports. Jenn's accepted activity database remains `workbench-v2-5` / ledger `0008`. Therefore the historical baseline above is not a current-main daily-startup or manual-publish authorization.
+
+Do not run `windows:start`, a normal publisher preflight/publish, or Director runtime commands against `data/app.sqlite` on current `main`. Runtime startup never migrates the database automatically. A separate authorized migration gate—backup, isolated `0010` migration, `db:check`, restore drill, normalized-manifest comparison and explicit activity-database authorization—must close first.
 
 ## Capability matrix
 
 | Capability | Code | Real acceptance | Current decision |
 |---|---:|---:|---|
-| Workbench V2 local production UI | PASS | PASS | Accepted local baseline |
-| Database ledger `0008` and `db:check` | PASS | PASS | Accepted activity database |
+| Workbench V2 local production UI | Current code requires `0010` | Historical `0008` acceptance | Held pending migration |
+| Database ledger `0008` and `db:check` | Accepted historical database | PASS on accepted baseline | Not current-main runtime compatible |
 | Persistent generation/review/delivery boundaries | PASS | Fixture/local acceptance | Provider remains off by default |
 | Auth0 owner-only Readonly MCP App | PASS | PASS | Accepted |
 | Seven readonly App tools and Workbench panels | PASS | PASS | Accepted |
-| Manual Snapshot publish/recovery/freshness | PASS | PASS | Accepted, 24-hour manual operation |
+| Manual Snapshot publish/recovery/freshness | Current exporter requires `0010` | Historical `0008` acceptance | Held pending migration |
 | Snapshot v4 media bindings | PASS | Not fully external-accepted | Candidate |
 | Local Media Gateway runtime | PASS | Local/fixture tests PASS | Candidate |
 | Cloudflare media ingress | Configured in part | FAIL/BLOCKED at edge/route startup | Not accepted |
@@ -62,11 +68,11 @@ Acceptance reports record the commit and boundary that was actually tested. Late
 
 ### Daily local work
 
-Use `npm run windows:start|status|stop`. The accepted database is `data/app.sqlite` at ledger `0008`. `REAL_PROVIDER_ENABLED=false` remains the safe default.
+**Held on current `main`.** The accepted `data/app.sqlite` is ledger `0008`, while the current Workbench requires `0010`. Do not use `npm run windows:start` as a normal daily action and do not migrate automatically. `REAL_PROVIDER_ENABLED=false` remains the safe default when a separately accepted runtime is eventually started.
 
 ### Daily ChatGPT App work
 
-The remote service is memory-only. Render Free sleep/restart or Snapshot TTL expiry produces `no_snapshot`; use Human Workbench `系统 → 只读 App 发布` for one explicit preflight/publish. The UI never auto-publishes.
+The remote service is memory-only. Existing accepted Snapshot evidence remains historical, but current-main recovery or renewal publishing is held by the same `0010` migration gate. Do not use Human Workbench `系统 → 只读 App 发布` to work around the schema hold. The UI never auto-publishes.
 
 ### Media gateway work
 

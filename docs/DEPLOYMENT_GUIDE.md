@@ -1,27 +1,31 @@
 # Deployment Guide
 
-Status: CURRENT deployment and rollback guide. It is descriptive; it does not authorize external changes.
+Status: `HOLD` for current-main local startup/publish. It is descriptive; it does not authorize external changes.
+
+## Current-main compatibility hold
+
+The accepted activity database is `workbench-v2-5` / ledger `0008`, but current `main` requires `workbench-v2-6` / ledger `0010` for the Workbench and new Snapshot exports. Do not start the local Workbench or publish a new Snapshot from current `main` against the accepted activity database. A separate authorization must first cover backup, isolated migration, `db:check`, restore rehearsal, logical-manifest comparison and the active-database migration itself.
 
 ## Deployment layers
 
 Deploy each layer independently. A PASS in one layer does not promote the next.
 
 ```text
-Layer 1  Local Workbench + ledger 0008
+Layer 1  Local Workbench + ledger 0010 (held; accepted activity database remains 0008)
 Layer 2  Remote Readonly MCP App + Auth0 + signed Snapshot
 Layer 3  Local Media Gateway + Cloudflare ingress (candidate)
 Layer 4  Windows automatic startup (frozen)
 Layer 5  Real Provider canary (frozen)
 ```
 
-## Layer 1 — local Workbench
+## Layer 1 — local Workbench (historical until the hold closes)
 
 Prerequisites:
 
 - Windows 10/11;
 - Node 22;
 - FFmpeg/FFprobe 8.1.2;
-- activity database at schema `workbench-v2-5`, ledger `0008`.
+- activity database at schema `workbench-v2-6`, ledger `0010`.
 
 Install and validate:
 
@@ -35,11 +39,13 @@ npm run preflight
 
 Run these commands only from the verified Git root that owns the accepted activity database; do not hard-code or infer a workspace path from a similarly named clone. `db:check -- --read-only` disables media-activation recovery. The default writable `db:check` belongs only to a separately authorized recovery procedure.
 
-Start through `npm run windows:start`. The process must bind only `127.0.0.1:4181`, return `200` for `/healthz` and `/readyz`, and keep real Provider flags false unless a separate canary is authorized.
+After the hold closes, start through `npm run windows:start`. The process must bind only `127.0.0.1:4181`, return `200` for `/healthz` and `/readyz`, and keep real Provider flags false unless a separate canary is authorized.
 
-Database upgrade is not part of normal startup. If the ledger is below `0008`, stop and prepare a separate migration preflight: service stop, backup, logical manifest, isolated migration, `db:check`, restore rehearsal and explicit activity-database authorization.
+Database upgrade is not part of normal startup. The current accepted database is below the current-main `0010` requirement, so the migration preflight is an active gate: service stop, backup, logical manifest, isolated migration, `db:check`, restore rehearsal and explicit activity-database authorization.
 
 ## Layer 2 — Remote Readonly MCP App
+
+The accepted Auth0/ChatGPT/Render wiring is retained as historical external evidence. A new Snapshot export, renewal or recovery from current `main` remains held until the Layer 1 `0010` migration gate closes.
 
 The accepted topology is:
 

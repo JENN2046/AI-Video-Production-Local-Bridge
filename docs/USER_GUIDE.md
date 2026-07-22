@@ -1,6 +1,10 @@
 # User Guide
 
-Status: CURRENT for package `0.1.0-beta.5` at `main@ef5e7bee`.
+Status: `HOLD` on current `main`. The owner-only `0.1.0-beta.5` / ledger `0008` workflow below is accepted historical evidence, not a current-main startup instruction.
+
+## Current-main compatibility hold
+
+Current `main` requires `workbench-v2-6` / ledger `0010`, while Jenn's accepted activity database remains `workbench-v2-5` / ledger `0008`. Do not run `windows:start`, manual Snapshot publish/recovery or Director startup against that activity database. Runtime startup never migrates it. Resume this guide only after a separately authorized `0010` migration has completed backup, isolated migration, `db:check`, restore drill and manifest comparison.
 
 ## What Jenn can do today
 
@@ -8,7 +12,7 @@ Status: CURRENT for package `0.1.0-beta.5` at `main@ef5e7bee`.
 
 The Workbench is the human production surface for projects, SHOTs, Storyboard, Generation, Review, Delivery and system operations. It is also the only surface allowed to confirm paid Provider work or adopt production decisions.
 
-Start it:
+The following is the historical accepted startup sequence. Do not execute it on current `main` until the compatibility hold is closed:
 
 ```powershell
 Set-Location "<verified repository root that owns the accepted data\app.sqlite>"
@@ -45,7 +49,9 @@ The banner “当前数据来自只读快照” is intentional. ChatGPT reads th
 
 Allowed actions are view, refresh, select project, expand SHOT, switch detail and copy a sanitized summary. Project edits, review adoption, Provider calls and Snapshot publishing are not App actions.
 
-## Snapshot operations
+## Snapshot operations (historical until the hold closes)
+
+The states and UI flow below explain the accepted ledger-`0008` evidence. On current `main`, do not invoke a publish, renewal or recovery action while the activity database remains at `0008`.
 
 Snapshot status has four useful states:
 
