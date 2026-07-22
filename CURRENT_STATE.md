@@ -80,11 +80,12 @@ Director startup requires a separately accepted `workbench-v2-6` / ledger `0010`
 
 ## Active blockers and next gates
 
-1. Merge and validate the isolated MP4 acceptance fixture tooling currently under review.
-2. Diagnose local network reachability to Cloudflare edge on UDP/TCP 7844 without weakening route or instance binding.
-3. Once edge connectivity is proven, run one bounded fixture Snapshot playback acceptance: image, MP4, Range/seek, expiration and recovery.
-4. Restore a fresh real activity Snapshot after fixture acceptance and prove database manifest unchanged.
-5. Only after the above PASS: write a media closeout report and consider `0.1.0-beta.6` version closeout.
+The isolated MP4 fixture and profile tooling is merged. It is an acceptance input, not a remaining merge gate.
+
+1. Diagnose local network reachability to Cloudflare edge on UDP/TCP 7844 without weakening route or instance binding.
+2. Once edge connectivity is proven, use the merged isolated fixture to run one bounded Snapshot playback acceptance: image, MP4, Range/seek, expiration and recovery.
+3. Restore a fresh real activity Snapshot after fixture acceptance and prove database manifest unchanged.
+4. Only after the above PASS: write a media closeout report and consider `0.1.0-beta.6` version closeout.
 
 Separate, non-blocking future gates are the second real user, automatic Snapshot publishing, Windows automatic startup, Full profile externalization and real Provider canary.
 
