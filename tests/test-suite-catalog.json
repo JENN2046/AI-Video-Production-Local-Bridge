@@ -139,7 +139,8 @@
         "tests/director-domain-contract.test.ts",
         "tests/director-manual-native-tools.test.ts",
         "tests/director-local-bridge.test.ts",
-        "tests/director-workbench-approval.test.ts"
+        "tests/director-workbench-approval.test.ts",
+        "tests/director-memory-port.test.ts"
       ]
     },
     {
@@ -444,6 +445,20 @@
       "npm_script": "test:webgpt:director",
       "ci_step": "ChatGPT Director domain tests",
       "case_name": "archived projects reject a pending Director decision after the approval page was opened"
+    },
+    {
+      "id": "director-memory-port-binding",
+      "path": "tests/director-memory-port.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "Director memory port binds advisory recall to the exact project and fails closed on port drift"
+    },
+    {
+      "id": "director-memory-saveback-envelope",
+      "path": "tests/director-memory-port.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "Director memory saveback envelope stays non-dispatched until a separate external confirmation"
     }
   ],
   "readonly_app_suites": [

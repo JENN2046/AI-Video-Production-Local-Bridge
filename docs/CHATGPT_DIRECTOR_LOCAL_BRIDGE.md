@@ -121,9 +121,13 @@ Implemented in the local PR5 candidate, but not yet externally accepted:
 
 - Approved Proposal compilation, immutable Automation Grant and bounded RunningHub-only local orchestration, described in [CHATGPT_DIRECTOR_BOUNDED_ORCHESTRATOR.md](CHATGPT_DIRECTOR_BOUNDED_ORCHESTRATOR.md). Real Provider execution remains disabled by default and requires its external gate.
 
+Implemented in the local PR6 candidate, but not externally accepted:
+
+- a replaceable, project-bound advisory memory Recall Port and a non-dispatched Saveback envelope, described in [CHATGPT_DIRECTOR_MEMORY_PORT.md](CHATGPT_DIRECTOR_MEMORY_PORT.md). The default port is disabled; it does not connect a memory plugin or commit memory.
+
 Still deferred:
 
-- PR6 replaceable memory port, operations, external acceptance and version closeout;
+- PR6 operations, external memory-port acceptance and version closeout;
 - any deployment, OAuth registration, activity-database migration or real Provider call.
 
 Until those gates pass, this is a reviewable implementation candidate, not a production Director service.

@@ -125,7 +125,8 @@ function handlers(): DirectorNativeToolHandlers {
             mime_type: "video/mp4",
             sha256: hash
           },
-          review_history: []
+          review_history: [],
+          memory_recall: { state: "disabled", items: [] }
         }
       };
     },

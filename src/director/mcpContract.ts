@@ -10,6 +10,7 @@ import {
   DIRECTOR_TARGET_STATE_V1_SCHEMA,
   validateDirectorProposal
 } from "./domain.js";
+import { DIRECTOR_MEMORY_RECALL_CONTEXT_SCHEMA } from "./memoryPort.js";
 import { wwwAuthenticate, type WebGptV4AuthConfig } from "../webgpt-v4/auth.js";
 import { errorBody, requireScope, type WebGptV4Actor, type WebGptV4Scope } from "../webgpt-v4/types.js";
 
@@ -109,7 +110,9 @@ export const DIRECTOR_DISCUSSION_CONTEXT_SCHEMA = z.object({
   target_shot: discussionShotSchema.nullable(),
   adjacent_shots: z.array(discussionShotSchema).max(2),
   target_artifact: discussionArtifactSchema.nullable(),
-  review_history: z.array(discussionReviewSchema).max(50)
+  review_history: z.array(discussionReviewSchema).max(50),
+  /** Advisory-only, project-bound long-term experience from an injected port. */
+  memory_recall: DIRECTOR_MEMORY_RECALL_CONTEXT_SCHEMA
 }).strict();
 
 export const DIRECTOR_GET_FOCUS_INPUT_SCHEMA = z.object({ request_id: requestIdSchema }).strict();
