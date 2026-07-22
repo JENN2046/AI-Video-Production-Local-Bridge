@@ -525,6 +525,47 @@ export async function preflightWorkbenchGeneration(
   return { ok: true, data: { intent: getIntent(db, intentId) as WorkbenchGenerationIntent } };
 }
 
+/**
+ * A Director preflight is only a short-lived staging record until the normal
+ * confirmation transaction commits.  If that confirmation rejects it, mark
+ * precisely that unconfirmed, unreserved staging record terminal so it cannot
+ * become false authoritative drift for the same immutable Grant.
+ */
+export function discardDirectorPreparedGenerationIntent(
+  input: { intent_id: string; director_automation: DirectorAutomationPreflightAuthorization },
+  db = openM0Database()
+): WorkbenchV2Result<{ intent: WorkbenchGenerationIntent }> {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const intent = getIntent(db, input.intent_id);
+    const binding = intent?.input_snapshot.director_automation;
+    if (!intent || intent.status !== "prepared" || intent.confirmed || intent.run_id
+      || intent.input_snapshot.prepared_by !== "director_automation"
+      || !binding
+      || binding.grant_id !== input.director_automation.grant_id
+      || binding.proposal_id !== input.director_automation.proposal_id
+      || binding.policy_hash !== input.director_automation.policy_hash
+      || binding.reservation_id !== undefined
+      || binding.amount_minor !== undefined) {
+      db.exec("ROLLBACK");
+      return { ok: false, error: { code: "DIRECTOR_AUTOMATION_PREPARED_INTENT_NOT_CANCELLABLE", message: "Director preflight staging record is no longer safe to discard." } };
+    }
+    const result = db.prepare(`UPDATE generation_intents
+      SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+      WHERE intent_id = ? AND status = 'prepared' AND confirmed = 0 AND (run_id IS NULL OR run_id = '')`)
+      .run(intent.intent_id) as { changes: number | bigint };
+    if (Number(result.changes) !== 1) {
+      db.exec("ROLLBACK");
+      return { ok: false, error: { code: "DIRECTOR_AUTOMATION_PREPARED_INTENT_NOT_CANCELLABLE", message: "Director preflight staging record changed before it could be discarded." } };
+    }
+    db.exec("COMMIT");
+    return { ok: true, data: { intent: getIntent(db, intent.intent_id) as WorkbenchGenerationIntent } };
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 export function confirmWorkbenchGeneration(
   input: {
     intent_id: string;

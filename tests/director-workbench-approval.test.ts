@@ -499,6 +499,60 @@ test("a bounded Director start reserves the official decimal price in minor unit
   } finally { db.close(); }
 });
 
+test("a failed Director confirmation discards only its preflight staging intent so the Grant can retry", async () => {
+  const db = openM0Database(":memory:");
+  try {
+    const fixture = prepareRunnableDirectorGenerationFixture(db);
+    const accepted = decideDirectorProposal({ proposal_id: fixture.proposal.proposal_id, decision: "accept", human_confirmation: true }, db, () => firstNow);
+    assert.equal(accepted.ok, true, accepted.ok ? "" : accepted.error.code);
+    const compiled = compileDirectorProposalToAutomationGrant({
+      proposal_id: fixture.proposal.proposal_id,
+      max_total_minor: 500,
+      max_per_run_minor: 500,
+      max_versions_per_shot: 2,
+      max_automatic_retries: 0,
+      expires_at: new Date(firstNow.getTime() + 60 * 60_000).toISOString(),
+      human_confirmation: true
+    }, db, () => firstNow);
+    assert.equal(compiled.ok, true, compiled.ok ? "" : compiled.error.code);
+    if (!compiled.ok) return;
+    const grantInput = {
+      grant_id: compiled.data.grant.grant_id,
+      proposal_id: fixture.proposal.proposal_id,
+      policy_hash: compiled.data.grant.policy_hash,
+      account_label: "personal" as const,
+      start_worker: false
+    };
+    const env: NodeJS.ProcessEnv = {
+      REAL_PROVIDER_ENABLED: "true",
+      M1_REAL_PROVIDER: "runninghub",
+      M1_REAL_PROVIDER_EXECUTION_ALLOWED: "true",
+      M1_REAL_PROVIDER_COST_ACK: "true",
+      RUNNINGHUB_API_KEY: "synthetic-test-key"
+    };
+    const fetchImpl: typeof fetch = async (input) => String(input).includes("price-preview")
+      ? new Response(JSON.stringify({ errorCode: "", estimatedPrice: 0.08, currency: "CNY" }), { status: 200 })
+      : new Response(JSON.stringify({ code: 0, data: { remainMoney: "10", currency: "CNY" } }), { status: 200 });
+    let nowCall = 0;
+    const expired = await startDirectorBoundedGeneration(grantInput, db, {
+      env,
+      fetch_impl: fetchImpl,
+      now: () => {
+        nowCall += 1;
+        return nowCall >= 4 ? new Date(firstNow.getTime() + 10 * 60_000) : firstNow;
+      }
+    });
+    assert.equal(expired.ok, false);
+    if (!expired.ok) assert.equal(expired.error.code, "GENERATION_INTENT_EXPIRED");
+    const staged = db.prepare("SELECT status, confirmed, run_id FROM generation_intents ORDER BY created_at DESC, intent_id DESC LIMIT 1")
+      .get() as { status: string; confirmed: number; run_id: string | null };
+    assert.deepEqual({ ...staged }, { status: "cancelled", confirmed: 0, run_id: null });
+    const retry = await startDirectorBoundedGeneration(grantInput, db, { now: () => firstNow, env, fetch_impl: fetchImpl });
+    assert.equal(retry.ok, true, retry.ok ? "" : retry.error.code);
+    if (retry.ok) assert.equal(retry.data.intent.status, "queued");
+  } finally { db.close(); }
+});
+
 test("a malformed Director-prepared intent fails closed before provider selection", async () => {
   const db = openM0Database(":memory:");
   try {

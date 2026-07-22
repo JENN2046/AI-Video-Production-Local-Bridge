@@ -3,6 +3,7 @@ import { directorMinorToProviderAmount } from "./currency.js";
 import type { M0Database } from "../storage/sqlite.js";
 import {
   confirmWorkbenchGeneration,
+  discardDirectorPreparedGenerationIntent,
   preflightWorkbenchGeneration,
   startWorkbenchGeneration,
   type DirectorAutomationPreflightAuthorization,
@@ -65,7 +66,21 @@ export async function startDirectorBoundedGeneration(
     human_confirmation: false,
     director_automation: input
   }, db, dependencies);
-  if (!confirmed.ok) return confirmed;
+  if (!confirmed.ok) {
+    let discarded: ReturnType<typeof discardDirectorPreparedGenerationIntent>;
+    try {
+      discarded = discardDirectorPreparedGenerationIntent({
+        intent_id: preflight.data.intent.intent_id,
+        director_automation: input
+      }, db);
+    } catch {
+      return { ok: false, error: { code: "DIRECTOR_AUTOMATION_PREPARED_INTENT_CLEANUP_FAILED", message: "Director preflight confirmation failed and its staging record could not be safely discarded." } };
+    }
+    if (!discarded.ok) {
+      return { ok: false, error: { code: "DIRECTOR_AUTOMATION_PREPARED_INTENT_CLEANUP_FAILED", message: "Director preflight confirmation failed and its staging record could not be safely discarded." } };
+    }
+    return confirmed;
+  }
   if (input.start_worker !== false) {
     startWorkbenchGeneration(confirmed.data.intent.intent_id, { allow_submit: true, dependencies });
   }
