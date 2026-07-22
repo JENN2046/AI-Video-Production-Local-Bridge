@@ -20,6 +20,12 @@ import {
   type DirectorTargetStateV1
 } from "./domain.js";
 import {
+  DISABLED_DIRECTOR_MEMORY_PORT,
+  disabledDirectorMemoryRecall,
+  recallDirectorMemory,
+  type DirectorMemoryPort
+} from "./memoryPort.js";
+import {
   DIRECTOR_DISCUSSION_CONTEXT_SCHEMA,
   DIRECTOR_GET_CONTEXT_INPUT_SCHEMA,
   DIRECTOR_GET_CONTEXT_OUTPUT_SCHEMA,
@@ -51,6 +57,8 @@ export interface DirectorLocalServiceOptions {
   database_path: string;
   ffmpeg_path?: string;
   now?: () => Date;
+  /** Injected only by a future, separately accepted memory integration. */
+  memory_port?: DirectorMemoryPort;
 }
 
 interface ProjectRow {
@@ -409,7 +417,8 @@ export function buildDirectorContext(db: M0Database, focus: DirectorFocus, kind:
       }
       const disposition = version?.review_status === "approved" ? "accepted" : version?.review_status === "rejected" ? "rejected" : "pending";
       return { event_id: note.note_id, artifact_id: note.artifact_id || null, disposition, reason_codes: [], note: note.note, created_at: new Date(note.created_at).toISOString() };
-    })
+    }),
+    memory_recall: disabledDirectorMemoryRecall()
   });
   return { targetState, discussion, project, targetShot, targetArtifact };
 }
@@ -502,9 +511,11 @@ export function selectDirectorFramePlan(
 
 export class DirectorLocalService implements DirectorNativeToolHandlers {
   private readonly now: () => Date;
+  private readonly memoryPort: DirectorMemoryPort;
 
   constructor(private readonly actor: WebGptV4Actor, private readonly options: DirectorLocalServiceOptions) {
     this.now = options.now ?? (() => new Date());
+    this.memoryPort = options.memory_port ?? DISABLED_DIRECTOR_MEMORY_PORT;
   }
 
   private read<T>(operation: (db: M0Database) => T): T {
@@ -539,13 +550,23 @@ export class DirectorLocalService implements DirectorNativeToolHandlers {
   }
 
   async get_director_context(input: Parameters<DirectorNativeToolHandlers["get_director_context"]>[0]) {
-    return this.read((db) => {
+    const issuerHash = requireIssuer(this.actor);
+    const prepared = this.read((db) => {
       const focus = requireFocus(db, this.actor, input.focus_id, input.focus_generation, this.now());
       const built = buildDirectorContext(db, focus, input.proposal_kind, input.detail);
-      return DIRECTOR_GET_CONTEXT_OUTPUT_SCHEMA.parse({
-        state: "ready", context_version: "director-context-v1", focus: publicFocus(focus),
-        base_state_hash: directorBaseStateHash(built.targetState), target_state: built.targetState, discussion: built.discussion
-      });
+      return { focus, built };
+    });
+    const memoryRecall = await recallDirectorMemory(this.memoryPort, {
+      workspace_id: WORKSPACE_ID,
+      principal_id: this.actor.principal_id,
+      issuer_hash: issuerHash,
+      project_id: prepared.focus.project_id,
+      proposal_kind: input.proposal_kind
+    });
+    return DIRECTOR_GET_CONTEXT_OUTPUT_SCHEMA.parse({
+      state: "ready", context_version: "director-context-v1", focus: publicFocus(prepared.focus),
+      base_state_hash: directorBaseStateHash(prepared.built.targetState), target_state: prepared.built.targetState,
+      discussion: { ...prepared.built.discussion, memory_recall: memoryRecall }
     });
   }
 

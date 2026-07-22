@@ -72,7 +72,9 @@ export const REQUIRED_DIRECTOR_SUITES: ReadonlyArray<DirectorSuite> = [
   { id: "director-automation-malformed-intent", path: "tests/director-workbench-approval.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "a malformed Director-prepared intent fails closed before provider selection" },
   { id: "director-automation-known-no-submit-retry", path: "tests/director-workbench-approval.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "a Director Grant retries only known no-submit failures and stops exactly at its retry limit" },
   { id: "director-focus-project-reset", path: "src/workbench-ui/App.test.tsx", npm_script: "test:v2:ui", ci_step: "Workbench V2 UI tests", case_name: "resets the default Focus target when the selected Director project changes" },
-  { id: "director-human-approval-archive", path: "tests/director-workbench-approval.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "archived projects reject a pending Director decision after the approval page was opened" }
+  { id: "director-human-approval-archive", path: "tests/director-workbench-approval.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "archived projects reject a pending Director decision after the approval page was opened" },
+  { id: "director-memory-port-binding", path: "tests/director-memory-port.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "Director memory port binds advisory recall to the exact project and fails closed on port drift" },
+  { id: "director-memory-saveback-envelope", path: "tests/director-memory-port.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "Director memory saveback envelope stays non-dispatched until a separate external confirmation" }
 ];
 
 export const REQUIRED_READONLY_APP_SUITES: ReadonlyArray<ReadonlyAppSuite> = [

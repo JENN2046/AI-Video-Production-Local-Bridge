@@ -250,6 +250,7 @@ test("Director local service binds Focus/context and persists only an immutable 
     });
     assert.equal(context.discussion.target_artifact?.artifact_id, f.artifactId);
     assert.equal(context.discussion.review_history[0]?.artifact_id, null);
+    assert.deepEqual(context.discussion.memory_recall, { state: "disabled", items: [] });
     assert.equal(context.target_state.target_artifact?.project_id, f.projectId);
     assert.equal(logicalManifest(f.sqlitePath), beforeReads);
 
