@@ -71,6 +71,78 @@ test("selection catalog accepts a compiled test glob that selects the registered
   assert.deepEqual(auditTestSelection(input), []);
 });
 
+test("selection catalog accepts a Vitest configuration that selects a registered UI suite", () => {
+  const input = fixture({
+    source_files: ["tests/test-selection-gate.test.ts", "tests/provider.test.ts", "src/workbench-ui/App.test.tsx"],
+    source_texts: {
+      "tests/test-selection-gate.test.ts": 'test("selection gate case", () => {})',
+      "tests/provider.test.ts": 'test("provider remediation case", () => {})',
+      "src/workbench-ui/App.test.tsx": 'test("UI case", () => {})'
+    },
+    runner_config_texts: {
+      "vitest.config.ts": 'export default { test: { include: ["src/workbench-ui/**/*.test.{ts,tsx}"] } }'
+    },
+    package_scripts: {
+      "test:selection-gate": "node dist/tests/test-selection-gate.test.js",
+      "test:provider": "node dist/tests/provider.test.js",
+      "test:ui": "vitest run --config vitest.config.ts",
+      test: "npm run test:selection-gate && npm run test:provider && npm run test:ui"
+    },
+    workflow_text: [
+      "- name: Test selection gate",
+      "  run: npm run test:selection-gate",
+      "- name: Provider tests",
+      "  run: npm run test:provider",
+      "- name: UI tests",
+      "  run: npm run test:ui"
+    ].join("\n")
+  });
+  input.catalog.groups.push({
+    id: "ui",
+    classification: "mandatory",
+    paths: ["src/workbench-ui/App.test.tsx"],
+    npm_script: "test:ui",
+    ci_step: "UI tests"
+  });
+  assert.deepEqual(auditTestSelection(input), []);
+});
+
+test("selection catalog rejects a Vitest configuration that omits a registered UI suite", () => {
+  const input = fixture({
+    source_files: ["tests/test-selection-gate.test.ts", "tests/provider.test.ts", "src/workbench-ui/App.test.tsx"],
+    source_texts: {
+      "tests/test-selection-gate.test.ts": 'test("selection gate case", () => {})',
+      "tests/provider.test.ts": 'test("provider remediation case", () => {})',
+      "src/workbench-ui/App.test.tsx": 'test("UI case", () => {})'
+    },
+    runner_config_texts: {
+      "vitest.config.ts": 'export default { test: { include: ["src/other/**/*.test.ts"] } }'
+    },
+    package_scripts: {
+      "test:selection-gate": "node dist/tests/test-selection-gate.test.js",
+      "test:provider": "node dist/tests/provider.test.js",
+      "test:ui": "vitest run --config vitest.config.ts",
+      test: "npm run test:selection-gate && npm run test:provider && npm run test:ui"
+    },
+    workflow_text: [
+      "- name: Test selection gate",
+      "  run: npm run test:selection-gate",
+      "- name: Provider tests",
+      "  run: npm run test:provider",
+      "- name: UI tests",
+      "  run: npm run test:ui"
+    ].join("\n")
+  });
+  input.catalog.groups.push({
+    id: "ui",
+    classification: "mandatory",
+    paths: ["src/workbench-ui/App.test.tsx"],
+    npm_script: "test:ui",
+    ci_step: "UI tests"
+  });
+  assert.ok(auditTestSelection(input).includes("PACKAGE_SUITE_PATH_MISSING: test:ui -> src/workbench-ui/App.test.tsx"));
+});
+
 test("selection catalog does not accept a test path that is only echoed", () => {
   const input = fixture();
   input.package_scripts["test:provider"] = "echo dist/tests/provider.test.js";

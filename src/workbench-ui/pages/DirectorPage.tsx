@@ -99,7 +99,7 @@ export function DirectorPage() {
     {!projectId ? <EmptyState title="暂无可用生产项目" detail="创建并分类一个 production 项目后，才能建立 ChatGPT Director Focus。" />
       : tower.isLoading || workspace.isLoading ? <LoadingState label="正在读取 Director 审批边界" />
         : tower.isError || workspace.isError || !tower.data || !workspace.data ? <ErrorState error={tower.error ?? workspace.error} />
-          : <DirectorTowerView tower={tower.data} workspace={workspace.data} onChanged={() => {
+          : <DirectorTowerView key={workspace.data.project.project_id} tower={tower.data} workspace={workspace.data} onChanged={() => {
             void tower.refetch();
             void queryClient.invalidateQueries({ queryKey: ["shell"] });
             void queryClient.invalidateQueries({ queryKey: ["dashboard"] });

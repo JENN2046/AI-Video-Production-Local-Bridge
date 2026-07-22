@@ -163,7 +163,7 @@ function ownerState(db: M0Database, projectId: string): { state: DirectorApprova
   return { state: "single_owner_ready", principal_id: principals[0]! };
 }
 
-function proposalPrincipalIsActiveMember(db: M0Database, proposal: DirectorProposal): boolean {
+function proposalPrincipalHasActiveMembership(db: M0Database, proposal: DirectorProposal): boolean {
   return Boolean(db.prepare(`SELECT 1
     FROM webgpt_project_memberships m
     JOIN webgpt_auth_principals p ON p.workspace_id = m.workspace_id AND p.principal_id = m.principal_id
@@ -171,6 +171,17 @@ function proposalPrincipalIsActiveMember(db: M0Database, proposal: DirectorPropo
     WHERE m.workspace_id = ? AND m.project_id = ? AND m.principal_id = ?
       AND m.status = 'active' AND p.status = 'active'
     LIMIT 1`).get(WORKSPACE_ID, proposal.project_id, proposal.principal_id));
+}
+
+/**
+ * A Proposal is authored under the single-owner Focus boundary, not merely a
+ * read membership. Re-evaluate that exact boundary immediately before either
+ * terminal decision so an owner demotion or a newly-added owner cannot turn a
+ * stale page into an approval/rejection authority.
+ */
+function proposalPrincipalIsCurrentSingleOwner(db: M0Database, proposal: DirectorProposal): boolean {
+  const owner = ownerState(db, proposal.project_id);
+  return owner.state === "single_owner_ready" && owner.principal_id === proposal.principal_id;
 }
 
 function projectIsWritableDirectorProject(db: M0Database, projectId: string): Project | null {
@@ -225,8 +236,11 @@ function proposalStatus(db: M0Database, proposal: DirectorProposal, now: Date): 
   if (base !== "pending_review") {
     return { status: base, reason_code: event?.reason_code ?? null, updated_at: event?.created_at ?? proposal.created_at, action_allowed: false, action_blocked_code: "DIRECTOR_PROPOSAL_NOT_PENDING" };
   }
-  if (!proposalPrincipalIsActiveMember(db, proposal)) {
+  if (!proposalPrincipalHasActiveMembership(db, proposal)) {
     return { status: "stale", reason_code: "DIRECTOR_PROPOSAL_PRINCIPAL_INACTIVE", updated_at: event?.created_at ?? proposal.created_at, action_allowed: false, action_blocked_code: "DIRECTOR_PROPOSAL_PRINCIPAL_INACTIVE" };
+  }
+  if (!proposalPrincipalIsCurrentSingleOwner(db, proposal)) {
+    return { status: "stale", reason_code: "DIRECTOR_PROPOSAL_OWNER_REQUIRED", updated_at: event?.created_at ?? proposal.created_at, action_allowed: false, action_blocked_code: "DIRECTOR_PROPOSAL_OWNER_REQUIRED" };
   }
   const focus = db.prepare(`SELECT focus_id, workspace_id, principal_id, project_id, target_type, target_id,
       generation, supersedes_focus_id, created_at, expires_at FROM director_focuses WHERE focus_id = ?`)

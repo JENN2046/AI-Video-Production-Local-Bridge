@@ -65,6 +65,13 @@
       ]
     },
     {
+      "id": "workbench-v2-ui",
+      "classification": "mandatory",
+      "npm_script": "test:v2:ui",
+      "ci_step": "Workbench V2 UI tests",
+      "paths": ["src/workbench-ui/App.test.tsx"]
+    },
+    {
       "id": "h1-workbench",
       "classification": "mandatory",
       "npm_script": "test:h1",
@@ -374,6 +381,20 @@
       "npm_script": "test:webgpt:director",
       "ci_step": "ChatGPT Director domain tests",
       "case_name": "revoked proposal membership blocks a pending Director decision without creating a terminal event"
+    },
+    {
+      "id": "director-human-approval-owner-boundary",
+      "path": "tests/director-workbench-approval.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "owner demotion or owner ambiguity blocks a pending Director decision without appending a terminal event"
+    },
+    {
+      "id": "director-focus-project-reset",
+      "path": "src/workbench-ui/App.test.tsx",
+      "npm_script": "test:v2:ui",
+      "ci_step": "Workbench V2 UI tests",
+      "case_name": "resets the default Focus target when the selected Director project changes"
     },
     {
       "id": "director-human-approval-archive",

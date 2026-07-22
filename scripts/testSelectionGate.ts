@@ -64,6 +64,8 @@ export const REQUIRED_DIRECTOR_SUITES: ReadonlyArray<DirectorSuite> = [
   { id: "director-human-approval-drift", path: "tests/director-workbench-approval.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "superseded Focus and authoritative drift block human acceptance without rewriting proposal history" },
   { id: "director-human-approval-api", path: "tests/director-workbench-approval.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "Human Workbench Director endpoints require the local mutation nonce and confirmation" },
   { id: "director-human-approval-revocation", path: "tests/director-workbench-approval.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "revoked proposal membership blocks a pending Director decision without creating a terminal event" },
+  { id: "director-human-approval-owner-boundary", path: "tests/director-workbench-approval.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "owner demotion or owner ambiguity blocks a pending Director decision without appending a terminal event" },
+  { id: "director-focus-project-reset", path: "src/workbench-ui/App.test.tsx", npm_script: "test:v2:ui", ci_step: "Workbench V2 UI tests", case_name: "resets the default Focus target when the selected Director project changes" },
   { id: "director-human-approval-archive", path: "tests/director-workbench-approval.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "archived projects reject a pending Director decision after the approval page was opened" }
 ];
 
@@ -155,6 +157,7 @@ export interface TestSelectionAuditInput {
   catalog: TestSuiteCatalog;
   source_files: string[];
   source_texts: Record<string, string>;
+  runner_config_texts?: Record<string, string>;
   package_scripts: Record<string, string>;
   workflow_text: string;
   required_remediation_suites?: ReadonlyArray<RemediationSuite>;
@@ -197,15 +200,33 @@ function workflowNpmSteps(workflow: string): Map<string, Set<string>> {
 function expectedRunnerPath(sourcePath: string): string {
   const normalized = normalizePath(sourcePath);
   if (normalized.startsWith("tests/browser/")) return normalized;
-  return `dist/${normalized.replace(/\.ts$/, ".js")}`;
+  return `dist/${normalized.replace(/\.tsx?$/, ".js")}`;
 }
 
 function globMatches(pattern: string, value: string): boolean {
-  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replaceAll("*", ".*");
+  const escaped = pattern
+    .replaceAll("**/", "\u0000")
+    .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+    .replaceAll("*", "[^/]*")
+    .replaceAll("\u0000", "(?:.*/)?");
   return new RegExp(`^${escaped}$`).test(value);
 }
 
-function packageScriptSelectsPath(command: string, sourcePath: string): boolean {
+function expandGlobBraces(pattern: string): string[] {
+  const match = pattern.match(/\{([^{}]+)\}/);
+  if (!match || match.index === undefined) return [pattern];
+  const before = pattern.slice(0, match.index);
+  const after = pattern.slice(match.index + match[0].length);
+  return match[1].split(",").flatMap((option) => expandGlobBraces(`${before}${option}${after}`));
+}
+
+function vitestConfigSelectsPath(configText: string, sourcePath: string): boolean {
+  const normalizedPath = normalizePath(sourcePath);
+  const patterns = [...configText.matchAll(/["']([^"']+)["']/g)].map((match) => match[1]);
+  return patterns.some((pattern) => expandGlobBraces(pattern).some((expanded) => globMatches(normalizePath(expanded), normalizedPath)));
+}
+
+function packageScriptSelectsPath(command: string, sourcePath: string, runnerConfigTexts: Record<string, string>): boolean {
   const unsupportedControlOperators = command.replaceAll("&&", "");
   if (/[;|&\r\n]/.test(unsupportedControlOperators)) return false;
   const expected = expectedRunnerPath(sourcePath);
@@ -215,6 +236,13 @@ function packageScriptSelectsPath(command: string, sourcePath: string): boolean 
       .split(/\s+/)
       .map((token) => token.replace(/^["']|["',]$/g, ""))
       .filter(Boolean);
+    const configIndex = tokens.findIndex((token) => token === "--config");
+    const configPath = configIndex >= 0 ? normalizePath(tokens[configIndex + 1] ?? "") : "";
+    const isVitestRunner = tokens[0] === "vitest"
+      && tokens[1] === "run"
+      && configPath.length > 0
+      && vitestConfigSelectsPath(runnerConfigTexts[configPath] ?? "", sourcePath);
+    if (isVitestRunner) return true;
     const pathIndex = tokens.findIndex((token) => globMatches(normalizePath(token), expected));
     if (pathIndex < 0) return false;
     const isDirectNodeRunner = tokens[0] === "node" && pathIndex === 1;
@@ -479,7 +507,7 @@ export function auditTestSelection(input: TestSelectionAuditInput): string[] {
   for (const group of input.catalog.groups.filter((item) => item.classification === "mandatory")) {
     const command = input.package_scripts[group.npm_script ?? ""] ?? "";
     for (const path of group.paths) {
-      if (!packageScriptSelectsPath(command, path)) {
+      if (!packageScriptSelectsPath(command, path, input.runner_config_texts ?? {})) {
         errors.push(`PACKAGE_SUITE_PATH_MISSING: ${group.npm_script} -> ${normalizePath(path)}`);
       }
     }
