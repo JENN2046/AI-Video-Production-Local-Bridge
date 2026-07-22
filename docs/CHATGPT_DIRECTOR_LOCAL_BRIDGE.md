@@ -1,6 +1,6 @@
 # ChatGPT Director Local Bridge
 
-Status: `CANDIDATE` — PR3 code and isolated-fixture contract. No Director endpoint is deployed and no external OAuth object is changed by this document. The activity database separately completed the `0010` migration on 2026-07-22; transport remains unaccepted.
+Status: `CANDIDATE` — PR3 code and isolated-fixture contract. No Director endpoint is deployed, no activity database is migrated, and no external OAuth object is changed by this document.
 
 ## Purpose
 
@@ -128,6 +128,6 @@ Implemented in the local PR6 candidate, but not externally accepted:
 Still deferred:
 
 - PR6 operations, external memory-port acceptance and version closeout;
-- any deployment, OAuth registration or real Provider call.
+- any deployment, OAuth registration, activity-database migration or real Provider call.
 
 Until those gates pass, this is a reviewable implementation candidate, not a production Director service.

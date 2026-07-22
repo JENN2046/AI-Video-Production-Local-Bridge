@@ -1,6 +1,6 @@
 # ChatGPT Director Manual/Native Tool Contract
 
-Status: `CANDIDATE` — PR2 contract plus PR3 isolated runtime implementation. No Director endpoint is deployed and no Provider call is enabled. The activity database separately completed the `0010` migration on 2026-07-22; that does not accept this Director surface externally.
+Status: `CANDIDATE` — PR2 contract plus PR3 isolated runtime implementation. No Director endpoint is deployed, no Provider call is enabled, and Jenn's activity database is not migrated by this document.
 
 ## Purpose
 

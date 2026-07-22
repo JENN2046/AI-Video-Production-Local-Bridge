@@ -1,6 +1,6 @@
 # WebGPT V4 本地运行与外部接线手册
 
-状态：`SCHEMA_GATE_PASS` on current `main`。provider-neutral Federated OAuth、issuer binding、Auth0 predefined public-client 与 Readonly ChatGPT MCP App 的 owner-only 路径曾在活动库 ledger `0008` 上通过真实验收，`MANUAL_PUBLISH_OPERATIONAL_READY` 是那一历史证据的状态。活动库已于 2026-07-22 完成单独授权的 `workbench-v2-6` / ledger `0010` 迁移、只读 `db:check`、恢复演练和 manifest 比较。该迁移只恢复 schema compatibility；Workbench startup 与 publish/recovery 仍需重新做有界验收。第二真实用户已由 Jenn 延期。Local Media Gateway 代码与部分 Cloudflare 外部对象已建立，但公网播放仍未验收；自动同步和 Windows 自动启动也未验收。日常操作优先阅读 [User Guide](../USER_GUIDE.md)，部署边界见 [Deployment Guide](../DEPLOYMENT_GUIDE.md)。
+状态：`HOLD` on current `main`。provider-neutral Federated OAuth、issuer binding、Auth0 predefined public-client 与 Readonly ChatGPT MCP App 的 owner-only 路径曾在活动库 ledger `0008` 上通过真实验收，`MANUAL_PUBLISH_OPERATIONAL_READY` 是那一历史证据的状态。当前 main 的 Workbench 和新 Snapshot export 均要求 `workbench-v2-6` / ledger `0010`；不得对仍为 `0008` 的活动库启动 Workbench 或执行 publish/recovery。只有单独授权的迁移、`db:check`、恢复演练和 manifest 比较全部通过后，才可重新验证该操作路径。第二真实用户已由 Jenn 延期。Local Media Gateway 代码与部分 Cloudflare 外部对象已建立，但公网播放仍未验收；自动同步和 Windows 自动启动也未验收。日常操作优先阅读 [User Guide](../USER_GUIDE.md)，部署边界见 [Deployment Guide](../DEPLOYMENT_GUIDE.md)。
 
 ## 固定边界
 

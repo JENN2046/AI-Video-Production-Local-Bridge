@@ -11,31 +11,31 @@ AI Video Production Workspace 是 Jenn 的 Windows 本地 AI 视频生产与 Cha
 | Remote App service | `readonly-remote-v1.0.0` |
 | Media Gateway code | `readonly-media-gateway-v1.0.0`（外部验收未完成） |
 | Snapshot contract | `readonly-snapshot-v4`（代码已合入，不能据此宣称公网媒体已可用） |
-| Database | Active activity database: `workbench-v2-6` / ledger `0010`; 2026-07-22 migration, manifest and restore acceptance PASS |
-| ChatGPT Director | PR1–PR6 本地候选已合入；数据库前置条件已满足，尚未外部接线或启动 |
+| Database | Accepted activity database: `workbench-v2-5` / ledger `0008`; current `main` requires `workbench-v2-6` / ledger `0010` |
+| ChatGPT Director | PR1–PR6 本地候选已合入；要求 `workbench-v2-6` / ledger `0010`，尚未外部接线或迁移 |
 | Product status | `JENN_SINGLE_USER_MCP_APP_PASS` |
-| Operations status | Historical `MANUAL_PUBLISH_OPERATIONAL_READY`; renewed startup/publish acceptance is pending after the `0010` migration |
+| Operations status | Historical `MANUAL_PUBLISH_OPERATIONAL_READY`; current-main startup/publish is held pending `0010` migration |
 | Multi-user status | `PARTIAL_MULTI_USER_GATE` |
 
 当前 `main` 已包含 Workbench V2、WebGPT V4、Auth0 Federated Readonly、签名 Snapshot、ChatGPT MCP App、共享派生状态、Human Workbench 人工发布，以及 Local Media Gateway 的代码和 Windows 运维入口。Cloudflare 媒体链路尚未完成端到端播放验收；Windows 登录任务、自动 Snapshot 发布、真实 Provider canary 和多用户黄金路径仍是独立 gate。
 
-`ChatGPT Director` 是另一条候选路线：ChatGPT 只能读取有界讨论上下文并提出不可变 Proposal，Workbench 保留人类批准，Local Orchestrator 只在未来获授权的 Grant 内执行。活动库现已满足其 `0010` 前置条件，但尚未配置 Director OAuth/bridge/Memory 插件或调用 Provider；不得把其合并状态误作可运行服务。
+`ChatGPT Director` 是另一条候选路线：ChatGPT 只能读取有界讨论上下文并提出不可变 Proposal，Workbench 保留人类批准，Local Orchestrator 只在未来获授权的 Grant 内执行。它当前尚未接入活动库，也未配置 OAuth/bridge/Memory 插件或调用 Provider；不得把其合并状态误作可运行服务。
 
-## 当前 main 数据库兼容性
+## 当前 main 运行兼容性停留点
 
-当前 `main` 的 Workbench 与 Snapshot exporter 要求 `workbench-v2-6` / ledger `0010`。活动库已于 2026-07-22 在单独授权下完成备份、隔离迁移、只读 `db:check`、恢复演练、逻辑 manifest 比较和正式迁移，当前满足这一前置条件。该事实不等同于重新接受日常 Workbench 启动、Snapshot publish/recovery 或 Director runtime；这些仍需要各自的有界运行验收。
+当前 `main` 的 Workbench 与新的 Snapshot exporter 要求 `workbench-v2-6` / ledger `0010`，而 Jenn 已接受的活动库仍为 `0008`。因此不要在当前 `main` 上对 `data/app.sqlite` 运行 `windows:start`、人工 Snapshot publish/recovery 或 Director 启动命令；仓库不会自动迁移。必须先完成单独授权的备份、隔离迁移、`db:check`、恢复演练、逻辑 manifest 比较和活动库迁移验收。
 
 完整状态见 [CURRENT_STATE.md](CURRENT_STATE.md)，文档入口见 [docs/README.md](docs/README.md)。
 
 ## 三个日常入口
 
-### 1. 本地 Workbench（待重新运行验收）
+### 1. 本地 Workbench（当前 main 暂停）
 
-当前 `main` 已与活动库的 ledger `0010` 兼容。下一步是保持 `REAL_PROVIDER_ENABLED=false` 的一次有界 `windows:start|status|stop` 重新验收；在此之前不把日常启动、恢复或发布命令重新描述为已接受操作。仓库仍不会自动迁移或回退数据库。
+当前 `main` 不兼容已接受的 `data/app.sqlite` ledger `0008`。日常启动、恢复或发布命令必须暂停，不能通过自动迁移、回退或修改数据库绕过。只有单独授权的 `0010` 迁移验收完成后，才会恢复并重新验证 `windows:start|status|stop` 的操作说明。
 
 ### 2. ChatGPT Readonly MCP App
 
-日常查看不需要启动本地 MCP。远端 App 只读取内存中的签名 Snapshot；已接受的 Snapshot/恢复证据仍可作为历史证据阅读。活动库迁移不自动发布或更新远端内存 Snapshot；下一次 publish/recovery 需要自己的有界验收。详细边界见 [使用说明](docs/USER_GUIDE.md) 和 [Readonly MCP App Delivery Runbook](docs/webgpt/READONLY_MCP_APP_DELIVERY_RUNBOOK.md)。
+日常查看不需要启动本地 MCP。远端 App 只读取内存中的签名 Snapshot；已接受的 Snapshot/恢复证据仍可作为历史证据阅读。由于当前 main 不能使用 `0008` 活动库重新导出，Snapshot 缺失、过期或 Render 重启后的人工 publish/recovery 同样暂停，直到 `0010` 迁移验收完成。详细边界见 [使用说明](docs/USER_GUIDE.md) 和 [Readonly MCP App Delivery Runbook](docs/webgpt/READONLY_MCP_APP_DELIVERY_RUNBOOK.md)。
 
 ### 3. Local Media Gateway（候选，尚未验收完成）
 

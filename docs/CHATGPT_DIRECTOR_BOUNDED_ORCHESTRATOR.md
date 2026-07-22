@@ -1,6 +1,6 @@
 # ChatGPT Director Bounded Orchestrator
 
-Status: `CANDIDATE` — PR5 local implementation. It requires `workbench-v2-6` / ledger `0010`, which the activity database separately reached on 2026-07-22; it does not enable a real Provider, deploy a Director runtime or alter external OAuth configuration.
+Status: `CANDIDATE` — PR5 local implementation. It requires `workbench-v2-6` / ledger `0010`; it does not migrate Jenn's accepted activity database, enable a real Provider, deploy a Director runtime, or alter external OAuth configuration.
 
 ## Purpose
 
@@ -55,7 +55,7 @@ An automatic retry is intentionally narrower than a new creative regeneration: i
 
 ## Current operational status
 
-The implementation remains a local candidate. The default is `REAL_PROVIDER_ENABLED=false`; local and CI fixtures validate the disabled boundary and immutable Grant/event behavior only. Any real RunningHub call, deployment or external Director/OAuth acceptance requires its separate explicit gate and evidence. The activity-database migration gate is separately recorded as PASS, not as execution acceptance.
+The implementation remains a local candidate. The default is `REAL_PROVIDER_ENABLED=false`; local and CI fixtures validate the disabled boundary and immutable Grant/event behavior only. Any real RunningHub call, activity-database migration, deployment, or external Director/OAuth acceptance requires its separate explicit gate and evidence.
 
 ## Validation
 
