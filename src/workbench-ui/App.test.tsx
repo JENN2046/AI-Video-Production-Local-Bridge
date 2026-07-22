@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
+import { directorLocalDateTimeInputValue } from "./pages/DirectorPage";
 
 const shell = {
   version: "human-workbench-v2",
@@ -31,6 +32,18 @@ describe("Human Workbench V2 shell", () => {
     cleanup();
     vi.unstubAllGlobals();
     fetchMock.mockReset();
+  });
+
+  it("formats Director datetime-local defaults from local clock fields", () => {
+    const localClock = {
+      getFullYear: () => 2026,
+      getMonth: () => 6,
+      getDate: () => 22,
+      getHours: () => 11,
+      getMinutes: () => 7,
+      toISOString: () => "2026-07-22T03:07:00.000Z"
+    } as unknown as Date;
+    expect(directorLocalDateTimeInputValue(localClock)).toBe("2026-07-22T11:07");
   });
 
   it("mounts only the active route and never requests legacy bootstrap", async () => {

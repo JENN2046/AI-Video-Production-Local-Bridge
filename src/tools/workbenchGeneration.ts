@@ -848,7 +848,24 @@ function markKnownProviderTaskForReconciliation(
   reasonCode: string
 ): GenerationJob {
   const safe = sanitizedError(error);
+  const automation = directorAutomationLink(intent);
+  const recordPaidDirectorSubmission = (): void => {
+    if (!automation || !intent.run_id) return;
+    // The Provider task is already known to exist.  This must be durably
+    // consumed even when the preceding normal persistence transaction rolled
+    // back, otherwise a paid task would remain only reserved in the Grant
+    // ledger.  consumeDirectorGrantReservation is deliberately idempotent for
+    // the exact reservation so later reconciliation paths cannot double spend.
+    consumeDirectorGrantReservation(db, automation, {
+      amount_minor: automation.amount_minor!,
+      currency: intent.currency,
+      intent_id: intent.intent_id,
+      run_id: intent.run_id,
+      reason_code: "DIRECTOR_AUTOMATION_SUBMITTED_RECONCILED"
+    });
+  };
   const persist = (withEvent: boolean): GenerationJob => {
+    recordPaidDirectorSubmission();
     db.prepare("UPDATE generation_intents SET provider_task_id = ?, status = 'running', sanitized_error_json = ?, updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?")
       .run(taskId, JSON.stringify(safe), intent.intent_id);
     const run = getGenerationRun(db, intent.run_id);

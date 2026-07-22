@@ -349,6 +349,9 @@ test("an accepted current generation Proposal compiles exactly one immutable Aut
     consumeDirectorGrantReservation(db, reservation, {
       amount_minor: 500, currency: "CNY", intent_id: "intent_director_reservation_001", run_id: "run_director_reservation_001", now: new Date(firstNow.getTime() + 2 * 60 * 60_000)
     });
+    consumeDirectorGrantReservation(db, reservation, {
+      amount_minor: 500, currency: "CNY", intent_id: "intent_director_reservation_001", run_id: "run_director_reservation_001", now: new Date(firstNow.getTime() + 2 * 60 * 60_000)
+    });
     assert.equal((db.prepare("SELECT COUNT(*) AS count FROM director_automation_grant_events WHERE grant_id = ? AND event_type = 'consume'")
       .get(compiled.data.grant.grant_id) as { count: number }).count, 1);
     const disabled = await startDirectorBoundedGeneration({
@@ -584,6 +587,77 @@ test("a Director Grant retries only known no-submit failures and stops exactly a
       WHERE grant_id = ? AND event_type = 'consume'`).get(compiled.data.grant.grant_id) as { count: number }).count, 0);
     assert.equal((db.prepare(`SELECT COUNT(*) AS count FROM director_automation_grant_events
       WHERE grant_id = ? AND event_type = 'release'`).get(compiled.data.grant.grant_id) as { count: number }).count, 1);
+  } finally { db.close(); }
+});
+
+test("a paid Director Provider task is consumed when local persistence falls back to reconciliation", async () => {
+  const db = openM0Database(":memory:");
+  try {
+    const fixture = prepareRunnableDirectorGenerationFixture(db);
+    const accepted = decideDirectorProposal({ proposal_id: fixture.proposal.proposal_id, decision: "accept", human_confirmation: true }, db, () => firstNow);
+    assert.equal(accepted.ok, true, accepted.ok ? "" : accepted.error.code);
+    const compiled = compileDirectorProposalToAutomationGrant({
+      proposal_id: fixture.proposal.proposal_id,
+      max_total_minor: 500,
+      max_per_run_minor: 500,
+      max_versions_per_shot: 2,
+      max_automatic_retries: 0,
+      expires_at: new Date(firstNow.getTime() + 60 * 60_000).toISOString(),
+      human_confirmation: true
+    }, db, () => firstNow);
+    assert.equal(compiled.ok, true, compiled.ok ? "" : compiled.error.code);
+    if (!compiled.ok) return;
+
+    const env: NodeJS.ProcessEnv = {
+      REAL_PROVIDER_ENABLED: "true",
+      M1_REAL_PROVIDER: "runninghub",
+      M1_REAL_PROVIDER_EXECUTION_ALLOWED: "true",
+      M1_REAL_PROVIDER_COST_ACK: "true",
+      RUNNINGHUB_API_KEY: "synthetic-test-key"
+    };
+    const fetchImpl: typeof fetch = async (input) => String(input).includes("price-preview")
+      ? new Response(JSON.stringify({ errorCode: "", estimatedPrice: 0.08, currency: "CNY" }), { status: 200 })
+      : new Response(JSON.stringify({ code: 0, data: { remainMoney: "10", currency: "CNY" } }), { status: 200 });
+    const execution = await startDirectorBoundedGeneration({
+      grant_id: compiled.data.grant.grant_id,
+      proposal_id: fixture.proposal.proposal_id,
+      policy_hash: compiled.data.grant.policy_hash,
+      account_label: "personal",
+      start_worker: false
+    }, db, { now: () => firstNow, env, fetch_impl: fetchImpl });
+    assert.equal(execution.ok, true, execution.ok ? "" : execution.error.code);
+    if (!execution.ok) return;
+
+    // The Provider submission will succeed, then the normal local persistence
+    // transaction fails while changing the job to polling. Reconciliation must
+    // persist exactly one Grant consume rather than leave the paid action only
+    // reserved after the transaction rollback.
+    db.exec(`CREATE TRIGGER inject_director_polling_event_failure BEFORE INSERT ON generation_job_events
+      WHEN NEW.to_state = 'polling' BEGIN SELECT RAISE(ABORT, 'INJECTED_DIRECTOR_POLLING_EVENT_FAILURE'); END`);
+    const adapter = {
+      provider_name: "runninghub" as const,
+      model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => ({ ok: true as const, provider_job_id: "task-director-persistence-fault", provider_status: "PENDING", sanitized_request: {} }),
+      pollStatus: async () => { throw new Error("poll must not run after persistence fault"); },
+      fetchOutput: async () => { throw new Error("output must not run after persistence fault"); }
+    };
+    const workerDatabase = new Proxy(db, {
+      get(target, property) {
+        if (property === "close") return () => undefined;
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      }
+    }) as ReturnType<typeof openM0Database>;
+    await runWorkbenchGenerationOnce(execution.data.intent.intent_id, {
+      allow_submit: true,
+      dependencies: { open_database: () => workerDatabase, env, fetch_impl: fetchImpl, adapter_factory: () => adapter, now: () => firstNow }
+    });
+
+    const job = db.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?").get(execution.data.job_id) as { state: string; reconciliation_reason: string };
+    assert.deepEqual({ ...job }, { state: "manual_reconciliation", reconciliation_reason: "PROVIDER_TASK_PERSISTENCE_UNKNOWN" });
+    const consume = db.prepare(`SELECT event_type, amount_minor, currency, reason_code FROM director_automation_grant_events
+      WHERE grant_id = ? AND event_type = 'consume'`).all(compiled.data.grant.grant_id) as Array<{ event_type: string; amount_minor: number; currency: string; reason_code: string }>;
+    assert.deepEqual(consume.map((event) => ({ ...event })), [{ event_type: "consume", amount_minor: 8, currency: "CNY", reason_code: "DIRECTOR_AUTOMATION_SUBMITTED_RECONCILED" }]);
   } finally { db.close(); }
 });
 

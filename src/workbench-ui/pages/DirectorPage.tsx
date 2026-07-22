@@ -74,6 +74,19 @@ const proposalLabels: Record<string, string> = {
   assembly_plan: "合成方案", delivery_plan: "交付方案", memory_saveback: "Memory 回存建议"
 };
 
+function twoDigits(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+/**
+ * `datetime-local` deliberately has no timezone.  Build its default from
+ * local date parts instead of slicing an ISO/UTC string, because the browser
+ * parses the submitted value back as local time.
+ */
+export function directorLocalDateTimeInputValue(date: Date): string {
+  return `${date.getFullYear()}-${twoDigits(date.getMonth() + 1)}-${twoDigits(date.getDate())}T${twoDigits(date.getHours())}:${twoDigits(date.getMinutes())}`;
+}
+
 export function DirectorPage() {
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
@@ -170,7 +183,7 @@ function ProposalCard({ proposal, onChanged }: { proposal: DirectorProposal; onC
   const [maxPerRunMinor, setMaxPerRunMinor] = useState(500);
   const [maxVersionsPerShot, setMaxVersionsPerShot] = useState(2);
   const [maxAutomaticRetries, setMaxAutomaticRetries] = useState(0);
-  const [grantExpiry, setGrantExpiry] = useState(() => new Date(Date.now() + 60 * 60_000).toISOString().slice(0, 16));
+  const [grantExpiry, setGrantExpiry] = useState(() => directorLocalDateTimeInputValue(new Date(Date.now() + 60 * 60_000)));
   const [startConfirmed, setStartConfirmed] = useState(false);
   const [reasonCode, setReasonCode] = useState("DIRECTOR_HUMAN_REJECTED");
   const decision = useMutation({

@@ -251,7 +251,18 @@ export function reserveDirectorGrant(
   return { grant_id: authorization.grant.grant_id, reservation_id: reservationId, proposal_id: authorization.proposal.proposal_id, policy_hash: authorization.grant.policy_hash };
 }
 
-export function consumeDirectorGrantReservation(db: M0Database, link: DirectorAutomationLink, input: { amount_minor: number; currency: string; intent_id: string; run_id: string; now?: Date }): void {
+export function consumeDirectorGrantReservation(
+  db: M0Database,
+  link: DirectorAutomationLink,
+  input: {
+    amount_minor: number;
+    currency: string;
+    intent_id: string;
+    run_id: string;
+    now?: Date;
+    reason_code?: "DIRECTOR_AUTOMATION_SUBMITTED" | "DIRECTOR_AUTOMATION_SUBMITTED_RECONCILED";
+  }
+): void {
   // This records a Provider submission that has already succeeded. Do not
   // re-run live owner/expiry checks here: a grant may legitimately expire in
   // flight, but its earlier immutable reservation must still become spend.
@@ -262,14 +273,23 @@ export function consumeDirectorGrantReservation(db: M0Database, link: DirectorAu
   }
   const active = db.prepare(`SELECT event_type, amount_minor, currency, intent_id, run_id FROM director_automation_grant_events
     WHERE grant_id = ? AND reservation_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(link.grant_id, link.reservation_id) as { event_type: string; amount_minor: number; currency: string; intent_id: string; run_id: string } | undefined;
-  if (!active || active.event_type !== "reserve" || Number(active.amount_minor) !== input.amount_minor || active.currency !== input.currency
+  if (!active || Number(active.amount_minor) !== input.amount_minor || active.currency !== input.currency
     || active.intent_id !== input.intent_id || active.run_id !== input.run_id) {
+    throw new DirectorGrantRuntimeError("DIRECTOR_AUTOMATION_RESERVATION_INVALID", "Automation Grant reservation is not active for this execution.");
+  }
+  // Reconciliation may resume after the Provider accepted the task but a
+  // subsequent local transaction rolled back.  A matching consume is already
+  // the durable audit record, so retrying the reconciliation must not double
+  // account for that paid task.
+  if (active.event_type === "consume") return;
+  if (active.event_type !== "reserve") {
     throw new DirectorGrantRuntimeError("DIRECTOR_AUTOMATION_RESERVATION_INVALID", "Automation Grant reservation is not active for this execution.");
   }
   db.prepare(`INSERT INTO director_automation_grant_events
     (event_id, grant_id, event_type, reservation_id, amount_minor, currency, intent_id, run_id, reason_code, created_at)
-    VALUES (?, ?, 'consume', ?, ?, ?, ?, ?, 'DIRECTOR_AUTOMATION_SUBMITTED', ?)`)
-    .run(`director_grant_event_${randomUUID()}`, link.grant_id, link.reservation_id, input.amount_minor, input.currency, input.intent_id, input.run_id, (input.now ?? new Date()).toISOString());
+    VALUES (?, ?, 'consume', ?, ?, ?, ?, ?, ?, ?)`)
+    .run(`director_grant_event_${randomUUID()}`, link.grant_id, link.reservation_id, input.amount_minor, input.currency, input.intent_id, input.run_id,
+      input.reason_code ?? "DIRECTOR_AUTOMATION_SUBMITTED", (input.now ?? new Date()).toISOString());
 }
 
 export function releaseDirectorGrantReservation(db: M0Database, link: DirectorAutomationLink, input: { amount_minor: number; currency: string; intent_id: string; run_id: string; reason_code: string; now?: Date }): void {
