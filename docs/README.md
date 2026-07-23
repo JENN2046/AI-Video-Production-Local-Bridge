@@ -31,6 +31,7 @@ Current runbooks describe commands and boundaries. They do not grant authorizati
 - [ChatGPT Director Provider Capability & Quote Contract](CHATGPT_DIRECTOR_PROVIDER_QUOTE_CONTRACT.md) — verified-only capability selection and local quote gate; Runway remains a non-executable candidate until its separate canary.
 - [ChatGPT Director Memory Port](CHATGPT_DIRECTOR_MEMORY_PORT.md) — PR6 replaceable, project-bound advisory recall and non-dispatched Saveback contract; the default port is disabled and no memory plugin is connected.
 - [ChatGPT Director Local Candidate Closeout](CHATGPT_DIRECTOR_LOCAL_CANDIDATE_CLOSEOUT.md) — merged PR1–PR6 scope, current activity-database incompatibility and the exact external gates that remain.
+- [Unified ChatGPT Workspace MCP Contract](UNIFIED_CHATGPT_WORKSPACE_MCP.md) — candidate single-connector contract with independent Readonly Snapshot and Director Bridge chains.
 
 ## Accepted evidence
 

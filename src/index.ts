@@ -55,6 +55,24 @@ export type {
   DirectorLocalBridgeClientOptions
 } from "./director/bridge.js";
 export { DIRECTOR_BRIDGE_ENV_KEYS, loadDirectorBridgeKeyring } from "./director/bridgeConfig.js";
+export {
+  UNIFIED_WORKSPACE_MCP_PATH,
+  UNIFIED_WORKSPACE_OAUTH_ENV_KEYS,
+  createUnifiedWorkspaceOAuthAuthenticator,
+  loadUnifiedWorkspaceOAuthConfig,
+  unifiedWorkspaceProtectedResourceMetadata,
+  unifiedWorkspaceProtectedResourceMetadataUrl,
+  unifiedWorkspaceWwwAuthenticate
+} from "./unified-workspace/oauth.js";
+export type { UnifiedWorkspaceOAuthConfig } from "./unified-workspace/oauth.js";
+export {
+  UNIFIED_WORKSPACE_APP_ONLY_TOOL_CATALOG,
+  UNIFIED_WORKSPACE_MODEL_TOOL_CATALOG,
+  UNIFIED_WORKSPACE_OAUTH_SCOPES,
+  assertUnifiedWorkspaceToolCatalog,
+  unifiedWorkspaceToolScopes
+} from "./unified-workspace/toolCatalog.js";
+export type { UnifiedWorkspaceToolCatalogEntry, UnifiedWorkspaceToolChain, UnifiedWorkspaceToolVisibility } from "./unified-workspace/toolCatalog.js";
 export { DirectorLocalService, createDirectorLocalService } from "./director/localService.js";
 export type { DirectorLocalServiceOptions } from "./director/localService.js";
 export {
