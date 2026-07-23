@@ -151,7 +151,8 @@
       "npm_script": "test:webgpt:workspace",
       "ci_step": "Unified ChatGPT Workspace MCP contract tests",
       "paths": [
-        "tests/unified-workspace-mcp-contract.test.ts"
+        "tests/unified-workspace-mcp-contract.test.ts",
+        "tests/unified-workspace-remote-runtime.test.ts"
       ]
     },
     {

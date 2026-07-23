@@ -317,17 +317,19 @@ function toolResult<T>(schema: z.ZodType<T>, value: unknown, summary: string): n
 
 export interface CreateDirectorNativeMcpServerOptions {
   auth_config?: WebGptV4AuthConfig | null;
+  /**
+   * A unified route has its own PRMD path.  The legacy Director route keeps
+   * its existing default so it remains a standalone rollback surface.
+   */
+  resource_metadata_url?: string;
 }
 
-export function createDirectorNativeMcpServer(
+export function registerDirectorNativeTools(
+  server: McpServer,
   actor: WebGptV4Actor,
   handlers: DirectorNativeToolHandlers,
   options: CreateDirectorNativeMcpServerOptions = {}
-): McpServer {
-  const server = new McpServer(
-    { name: "jenn-ai-video-director", version: DIRECTOR_MCP_SERVICE_VERSION },
-    { instructions: "ChatGPT Director may read bound context and submit immutable advisory proposals. It cannot approve, execute, spend, deliver, delete, overwrite, or commit memory." }
-  );
+): void {
 
   for (const entry of DIRECTOR_NATIVE_TOOL_CATALOG) {
     const readOnly = entry.risk !== "proposal_write";
@@ -375,7 +377,7 @@ export function createDirectorNativeMcpServer(
           ? wwwAuthenticate(options.auth_config ?? null, "insufficient_scope", {
             scope: entry.scope.join(" "),
             error_description: safe.message,
-            ...(options.auth_config ? {} : { resource_metadata_url: "/.well-known/oauth-protected-resource/director/mcp" })
+            ...(options.auth_config ? {} : { resource_metadata_url: options.resource_metadata_url ?? "/.well-known/oauth-protected-resource/director/mcp" })
           })
           : null;
         return {
@@ -387,5 +389,17 @@ export function createDirectorNativeMcpServer(
     };
     server.registerTool(entry.name, descriptor, invoke);
   }
+}
+
+export function createDirectorNativeMcpServer(
+  actor: WebGptV4Actor,
+  handlers: DirectorNativeToolHandlers,
+  options: CreateDirectorNativeMcpServerOptions = {}
+): McpServer {
+  const server = new McpServer(
+    { name: "jenn-ai-video-director", version: DIRECTOR_MCP_SERVICE_VERSION },
+    { instructions: "ChatGPT Director may read bound context and submit immutable advisory proposals. It cannot approve, execute, spend, deliver, delete, overwrite, or commit memory." }
+  );
+  registerDirectorNativeTools(server, actor, handlers, options);
   return server;
 }
