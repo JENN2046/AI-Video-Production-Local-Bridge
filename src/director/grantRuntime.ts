@@ -10,6 +10,7 @@ import {
   type DirectorProposal
 } from "./domain.js";
 import { buildDirectorContext } from "./localService.js";
+import { assertDirectorGrantCapability } from "./providerCapability.js";
 import type { M0Database } from "../storage/sqlite.js";
 import { getShot, type Shot } from "../tools/projects.js";
 
@@ -63,7 +64,7 @@ interface GrantRow {
   workspace_id: string;
   principal_id: string;
   project_id: string;
-  provider: "runninghub";
+  provider: DirectorAutomationGrant["provider"];
   allowed_actions_json: string;
   currency: string;
   max_total_minor: number;
@@ -172,7 +173,7 @@ export function loadDirectorGrantAuthorization(
   if (!row) throw new DirectorGrantRuntimeError("DIRECTOR_AUTOMATION_GRANT_NOT_FOUND", "Automation Grant is not bound to the requested Proposal.");
   const grant = grantFromRow({
     grant_id: String(row.grant_id), workspace_id: String(row.grant_workspace_id), principal_id: String(row.grant_principal_id),
-    project_id: String(row.grant_project_id), provider: row.provider as "runninghub", allowed_actions_json: String(row.allowed_actions_json),
+    project_id: String(row.grant_project_id), provider: row.provider as DirectorAutomationGrant["provider"], allowed_actions_json: String(row.allowed_actions_json),
     currency: String(row.currency), max_total_minor: Number(row.max_total_minor), max_per_run_minor: Number(row.max_per_run_minor),
     max_versions_per_shot: Number(row.max_versions_per_shot), max_automatic_retries: Number(row.max_automatic_retries),
     pricing_contract_version: String(row.pricing_contract_version), capability_contract_version: String(row.capability_contract_version),
@@ -191,6 +192,17 @@ export function loadDirectorGrantAuthorization(
   }
   if (proposal.kind !== "generation_plan" && proposal.kind !== "clip_regeneration") {
     throw new DirectorGrantRuntimeError("DIRECTOR_PROPOSAL_KIND_NOT_AUTOMATABLE", "Proposal kind cannot be executed by the bounded orchestrator.");
+  }
+  let capability;
+  try {
+    capability = assertDirectorGrantCapability(grant.provider, grant.capability_contract_version);
+  } catch (caught) {
+    const code = caught instanceof Error ? caught.message : "DIRECTOR_PROVIDER_CAPABILITY_UNAVAILABLE";
+    throw new DirectorGrantRuntimeError(code, "Automation Grant Provider Capability is unavailable or drifted.");
+  }
+  if (capability && (!grant.allowed_actions.every((item) => capability.allowed_actions.includes(item))
+    || grant.max_automatic_retries > capability.retry.max_automatic_retries)) {
+    throw new DirectorGrantRuntimeError("DIRECTOR_PROVIDER_CAPABILITY_DRIFT", "Automation Grant exceeds its verified Provider Capability.");
   }
   if (!grant.allowed_actions.includes(action)) throw new DirectorGrantRuntimeError("DIRECTOR_AUTOMATION_ACTION_DENIED", "Automation Grant does not allow this action.");
   if (Date.parse(grant.starts_at) > now.getTime() || Date.parse(grant.expires_at) <= now.getTime()) {

@@ -8,6 +8,7 @@ import {
   type DirectorAutomationLink
 } from "../director/grantRuntime.js";
 import { directorMinorToProviderAmount, directorProviderAmountToMinor } from "../director/currency.js";
+import { legacyProposalMatchesDirectorCapability, selectVerifiedDirectorCapability } from "../director/providerCapability.js";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { getGenerationRun, saveGenerationRun, type GenerationRun } from "./generation.js";
 import { requireShotWorkflowWriteAction } from "./operationalWriteGates.js";
@@ -395,10 +396,15 @@ export async function preflightWorkbenchGeneration(
       const code = caught instanceof Error && "code" in caught ? String(caught.code) : "DIRECTOR_AUTOMATION_AUTHORIZATION_FAILED";
       return { ok: false, error: { code, message: "Director Automation Grant cannot authorize generation preflight." } };
     }
-    if (directorAuthorization.grant.project_id !== input.project_id || directorAuthorization.shot.shot_id !== shot.shot_id
-      || directorAuthorization.proposal.payload.model !== RUNNINGHUB_MODEL_ROUTE
-      || directorAuthorization.proposal.payload.duration_seconds !== shot.duration_seconds
-      || directorAuthorization.proposal.payload.resolution !== writable.data.project.video_spec.resolution
+    const directorCapability = selectVerifiedDirectorCapability({
+      duration_seconds: shot.duration_seconds,
+      resolution: writable.data.project.video_spec.resolution,
+      aspect_ratio: writable.data.project.video_spec.aspect_ratio
+    });
+    if (!directorCapability || directorAuthorization.grant.project_id !== input.project_id || directorAuthorization.shot.shot_id !== shot.shot_id
+      || directorAuthorization.grant.provider !== directorCapability.key.provider
+      || directorAuthorization.grant.capability_contract_version !== directorCapability.capability.reference
+      || !legacyProposalMatchesDirectorCapability(directorAuthorization.proposal.payload as Record<string, unknown>, directorCapability)
       || directorAuthorization.proposal.payload.video_prompt !== shot.video_prompt
       || directorAuthorization.proposal.payload.negative_prompt !== shot.negative_prompt) {
       return { ok: false, error: { code: "DIRECTOR_AUTOMATION_INPUT_MISMATCH", message: "Director Proposal does not exactly match the current generation inputs." } };

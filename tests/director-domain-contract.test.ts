@@ -256,25 +256,19 @@ test("Automation Grant is content-addressed, bounded, and immutable by replaceme
     kind: "generation_plan",
     payload: {
       shot_id: "shot_002",
-      provider: "runninghub",
-      model: "rhart-video-g/image-to-video",
-      duration_seconds: 5,
-      resolution: "1080x1920",
       video_prompt: "Keep the product stable.",
       negative_prompt: "No deformation.",
-      continuity_constraints: [],
-      estimated_cost_minor: 12,
-      currency: "RH_COINS"
+      continuity_constraints: []
     }
   } as const;
   const parsedCoinsPlan = DIRECTOR_PROPOSAL_DRAFT_SCHEMA.parse(coinsPlan);
   assert.equal(parsedCoinsPlan.kind, "generation_plan");
   if (parsedCoinsPlan.kind !== "generation_plan") throw new Error("Expected a generation plan.");
-  assert.equal(parsedCoinsPlan.payload.currency, "RH_COINS");
+  assert.equal("currency" in parsedCoinsPlan.payload, false);
   assert.throws(() => DIRECTOR_PROPOSAL_DRAFT_SCHEMA.parse({
     ...coinsPlan,
-    payload: { ...coinsPlan.payload, currency: "USD" }
-  }), /Invalid option/);
+    payload: { ...coinsPlan.payload, currency: "RH_COINS" }
+  }), /Unrecognized key/);
 });
 
 test("director operational state is derived with exception and human gates taking priority", () => {

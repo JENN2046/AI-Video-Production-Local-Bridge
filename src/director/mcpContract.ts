@@ -93,6 +93,13 @@ const discussionReviewSchema = z.object({
   created_at: timestampSchema
 }).strict();
 
+const directorQuoteSchema = z.object({
+  quote_state: z.enum(["not_applicable", "ready", "missing", "expired", "stale", "capability_drift", "capability_unavailable"]),
+  expires_at: timestampSchema.nullable(),
+  currency: z.enum(["CNY", "RH_COINS"]).nullable(),
+  requires_human_refresh: z.boolean()
+}).strict();
+
 export const DIRECTOR_DISCUSSION_CONTEXT_SCHEMA = z.object({
   project: z.object({
     project_id: idSchema,
@@ -111,6 +118,8 @@ export const DIRECTOR_DISCUSSION_CONTEXT_SCHEMA = z.object({
   adjacent_shots: z.array(discussionShotSchema).max(2),
   target_artifact: discussionArtifactSchema.nullable(),
   review_history: z.array(discussionReviewSchema).max(50),
+  /** Never includes a numeric estimate: only the local Workbench may quote. */
+  quote: directorQuoteSchema,
   /** Advisory-only, project-bound long-term experience from an injected port. */
   memory_recall: DIRECTOR_MEMORY_RECALL_CONTEXT_SCHEMA
 }).strict();
