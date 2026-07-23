@@ -114,6 +114,21 @@ export function DirectorPage() {
     queryFn: () => apiGet<WorkspaceData>(`/api/v2/projects/${encodeURIComponent(projectId)}/overview`),
     enabled: Boolean(projectId)
   });
+  // `overview` intentionally contains only the project summary.  Director
+  // targets and artifact-import receipts need their own bounded local reads:
+  // the storyboard workspace supplies SHOTs, while the Assets API supplies
+  // every already-registered active Artifact for this project (not only ones
+  // already referenced by a package or clip version).
+  const targetWorkspace = useQuery({
+    queryKey: ["director-target-workspace", projectId],
+    queryFn: () => apiGet<WorkspaceData>(`/api/v2/projects/${encodeURIComponent(projectId)}/storyboard`),
+    enabled: Boolean(projectId)
+  });
+  const artifacts = useQuery({
+    queryKey: ["director-artifacts", projectId],
+    queryFn: () => apiPage<MediaArtifact>(`/api/v2/assets/media?scope=all&project_id=${encodeURIComponent(projectId)}&status=active&limit=200`),
+    enabled: Boolean(projectId)
+  });
   const selectProject = (nextProjectId: string) => {
     const next = new URLSearchParams(params);
     if (nextProjectId) next.set("project", nextProjectId); else next.delete("project");
@@ -128,12 +143,16 @@ export function DirectorPage() {
       <label className={s.field}><span>生产项目</span><select value={projectId} onChange={(event) => selectProject(event.target.value)}>
         {projects.data.items.length === 0 ? <option value="">暂无活动生产项目</option> : projects.data.items.map((item) => <option key={item.project.project_id} value={item.project.project_id}>{item.project.title}</option>)}
       </select></label>
-      <button className={s.secondaryButton} onClick={() => { void tower.refetch(); void workspace.refetch(); }} disabled={!projectId || tower.isFetching}><RefreshCw size={16} /> 刷新审批状态</button>
+      <button className={s.secondaryButton} onClick={() => { void tower.refetch(); void workspace.refetch(); void targetWorkspace.refetch(); void artifacts.refetch(); }} disabled={!projectId || tower.isFetching}><RefreshCw size={16} /> 刷新审批状态</button>
     </section>
     {!projectId ? <EmptyState title="暂无可用生产项目" detail="创建并分类一个 production 项目后，才能建立 ChatGPT Director Focus。" />
-      : tower.isLoading || workspace.isLoading ? <LoadingState label="正在读取 Director 审批边界" />
-        : tower.isError || workspace.isError || !tower.data || !workspace.data ? <ErrorState error={tower.error ?? workspace.error} />
-          : <DirectorTowerView key={workspace.data.project.project_id} tower={tower.data} workspace={workspace.data} onChanged={() => {
+      : tower.isLoading || workspace.isLoading || targetWorkspace.isLoading || artifacts.isLoading ? <LoadingState label="正在读取 Director 审批边界" />
+        : tower.isError || workspace.isError || targetWorkspace.isError || artifacts.isError || !tower.data || !workspace.data || !targetWorkspace.data || !artifacts.data ? <ErrorState error={tower.error ?? workspace.error ?? targetWorkspace.error ?? artifacts.error} />
+          : <DirectorTowerView key={workspace.data.project.project_id} tower={tower.data} workspace={{
+            ...workspace.data,
+            shots: targetWorkspace.data.shots ?? [],
+            artifacts: Object.fromEntries(artifacts.data.items.map((artifact) => [artifact.artifact_id, artifact]))
+          }} onChanged={() => {
             void tower.refetch();
             void queryClient.invalidateQueries({ queryKey: ["shell"] });
             void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
@@ -244,7 +263,7 @@ function ProposalCard({ proposal, workspace, onChanged }: { proposal: DirectorPr
 function focusTargets(workspace: WorkspaceData, type: FocusTargetType): Array<{ id: string; label: string }> {
   if (type === "project" || type === "delivery" || type === "memory") return [{ id: workspace.project.project_id, label: workspace.project.title }];
   if (type === "shot") return (workspace.shots ?? []).map((shot) => ({ id: shot.shot_id, label: `SHOT ${String(shot.order).padStart(3, "0")} · ${shot.description || shot.shot_id}` }));
-  return Object.values(workspace.artifacts ?? {}).filter((artifact) => artifact.status === "active").map((artifact) => ({ id: artifact.artifact_id, label: `${artifact.role} · ${artifact.artifact_id}` }));
+  return Object.values(workspace.artifacts ?? {}).filter((artifact) => artifact.status === "active" && artifact.linked_objects.project_id === workspace.project.project_id).map((artifact) => ({ id: artifact.artifact_id, label: `${artifact.role} · ${artifact.artifact_id}` }));
 }
 
 function matchingArtifactImportCandidates(proposal: DirectorProposal, workspace: WorkspaceData): MediaArtifact[] {
