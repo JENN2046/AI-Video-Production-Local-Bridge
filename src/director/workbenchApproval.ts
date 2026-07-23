@@ -11,6 +11,12 @@ import {
   type DirectorProposalDraft
 } from "./domain.js";
 import { buildDirectorContext } from "./localService.js";
+import {
+  directorQuoteFailureCode,
+  legacyProposalMatchesDirectorCapability,
+  readDirectorQuote,
+  selectVerifiedDirectorCapability
+} from "./providerCapability.js";
 import { getMediaArtifact } from "../tools/mediaArtifacts.js";
 import { getGenerationRun } from "../tools/generation.js";
 import { getProject, getShot, type Project } from "../tools/projects.js";
@@ -21,8 +27,6 @@ const MAX_FOCUS_TTL_SECONDS = 2 * 60 * 60;
 const DEFAULT_FOCUS_TTL_SECONDS = 30 * 60;
 const MIN_GRANT_TTL_SECONDS = 60;
 const MAX_GRANT_TTL_SECONDS = 24 * 60 * 60;
-const RUNNINGHUB_PRICING_CONTRACT_VERSION = "runninghub-price-preview-v1";
-const RUNNINGHUB_CAPABILITY_CONTRACT_VERSION = "runninghub-capability-v1";
 
 export type DirectorApprovalDecision = "accept" | "reject";
 export type DirectorFocusTargetType = DirectorFocus["target_type"];
@@ -74,7 +78,7 @@ interface StoredGrantRow {
   workspace_id: string;
   principal_id: string;
   project_id: string;
-  provider: "runninghub";
+  provider: DirectorAutomationGrant["provider"];
   allowed_actions_json: string;
   currency: string;
   max_total_minor: number;
@@ -114,7 +118,7 @@ export interface DirectorProposalQueueItem {
 export interface DirectorAutomationGrantView {
   grant_id: string;
   project_id: string;
-  provider: "runninghub";
+  provider: DirectorAutomationGrant["provider"];
   allowed_actions: DirectorAutomationGrant["allowed_actions"];
   currency: string;
   max_total_minor: number;
@@ -590,7 +594,7 @@ export function compileDirectorProposalToAutomationGrant(
     }
     let targetState: ReturnType<typeof buildDirectorContext>["targetState"];
     try {
-      const current = buildDirectorContext(db, focus, proposal.kind, "full");
+      const current = buildDirectorContext(db, focus, proposal.kind, "full", observedAt);
       validateDirectorProposalAgainstTargetState(proposal, current.targetState);
       targetState = current.targetState;
     } catch {
@@ -611,10 +615,6 @@ export function compileDirectorProposalToAutomationGrant(
       || !Number.isSafeInteger(input.max_automatic_retries) || input.max_automatic_retries < 0 || input.max_automatic_retries > 5) {
       abortDecision("DIRECTOR_GRANT_LIMIT_INVALID", "Automation Grant version or retry bounds are invalid.");
     }
-    const requiredEstimate = Math.max(1, proposal.payload.estimated_cost_minor);
-    if (input.max_per_run_minor < requiredEstimate || input.max_total_minor < requiredEstimate) {
-      abortDecision("DIRECTOR_GRANT_BUDGET_BELOW_PROPOSAL", "Automation Grant budget is below the Proposal estimate.", "max_per_run_minor");
-    }
     const targetShot = targetState.target_shot;
     const storedShot = targetShot ? getShot(db, targetShot.shot_id) : null;
     if (!targetShot || !storedShot || storedShot.project_id !== proposal.project_id) {
@@ -623,23 +623,42 @@ export function compileDirectorProposalToAutomationGrant(
     if (input.max_versions_per_shot <= storedShot.clip_versions.length) {
       abortDecision("DIRECTOR_GRANT_VERSION_LIMIT_REACHED", "Automation Grant version bound cannot create a new SHOT version.", "max_versions_per_shot");
     }
-    const allowedActions: DirectorAutomationGrant["allowed_actions"] = input.max_automatic_retries > 0
-      ? ["generation.submit", "generation.retry", "generation.download", "artifact.activate"]
-      : ["generation.submit", "generation.download", "artifact.activate"];
+    const capability = selectVerifiedDirectorCapability({
+      duration_seconds: storedShot.duration_seconds,
+      resolution: targetState.project.video_spec.resolution,
+      aspect_ratio: targetState.project.video_spec.aspect_ratio
+    });
+    if (!capability) {
+      abortDecision("DIRECTOR_PROVIDER_CAPABILITY_UNAVAILABLE", "No verified Provider Capability supports the current SHOT.");
+    }
+    if (!legacyProposalMatchesDirectorCapability(proposal.payload as Record<string, unknown>, capability)) {
+      abortDecision("DIRECTOR_PROVIDER_CAPABILITY_DRIFT", "Director Proposal no longer matches the verified Provider Capability.");
+    }
+    const quote = readDirectorQuote(db, capability, observedAt);
+    if (quote.quote_state !== "ready") {
+      abortDecision(directorQuoteFailureCode(quote), "A current auditable local Provider quote and balance preflight are required.");
+    }
+    if (input.max_per_run_minor < quote.amount_minor || input.max_total_minor < quote.amount_minor) {
+      abortDecision("DIRECTOR_GRANT_BUDGET_BELOW_QUOTE", "Automation Grant budget is below the current local Provider quote.", "max_per_run_minor");
+    }
+    if (input.max_automatic_retries > capability.capability.retry.max_automatic_retries) {
+      abortDecision("DIRECTOR_GRANT_RETRY_LIMIT_CAPABILITY", "Automation Grant retry limit exceeds the verified Provider Capability.", "max_automatic_retries");
+    }
+    const allowedActions = capability.capability.allowed_actions.filter((action) => action !== "generation.retry" || input.max_automatic_retries > 0);
     const grant = finalizeDirectorAutomationGrant({
       grant_id: `director_grant_${randomUUID()}`,
       workspace_id: WORKSPACE_ID,
       principal_id: proposal.principal_id,
       project_id: proposal.project_id,
-      provider: "runninghub",
+      provider: capability.key.provider,
       allowed_actions: allowedActions,
-      currency: proposal.payload.currency,
+      currency: quote.currency,
       max_total_minor: input.max_total_minor,
       max_per_run_minor: input.max_per_run_minor,
       max_versions_per_shot: input.max_versions_per_shot,
       max_automatic_retries: input.max_automatic_retries,
-      pricing_contract_version: RUNNINGHUB_PRICING_CONTRACT_VERSION,
-      capability_contract_version: RUNNINGHUB_CAPABILITY_CONTRACT_VERSION,
+      pricing_contract_version: quote.reference,
+      capability_contract_version: capability.capability.reference,
       starts_at: observedAt.toISOString(),
       expires_at: new Date(expiry).toISOString(),
       created_at: observedAt.toISOString()

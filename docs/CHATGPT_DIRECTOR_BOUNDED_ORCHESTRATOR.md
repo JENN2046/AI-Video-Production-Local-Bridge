@@ -31,7 +31,7 @@ Under one SQLite writer transaction it rechecks:
 
 It then writes exactly one immutable `director_automation_grants` row and one `compiled` Proposal event carrying the grant receipt. It does **not** create a Generation Intent, job, run, media Artifact, provider request, or scheduler work.
 
-The fixed Grant contains only RunningHub actions: `generation.submit`, optional `generation.retry`, `generation.download`, and `artifact.activate`. Its policy is JCS/SHA-256 content addressed and bounds total/per-run cost, versions per SHOT, retry count, and a one-minute to twenty-four-hour validity window. A positive retry limit requires `generation.retry`; a zero limit forbids it.
+The Grant takes its Provider, model, allowed actions, retry semantics and pricing contract from a current verified [Provider Capability and Quote contract](CHATGPT_DIRECTOR_PROVIDER_QUOTE_CONTRACT.md). It remains JCS/SHA-256 content addressed and bounds total/per-run cost, versions per SHOT, retry count, and a one-minute to twenty-four-hour validity window. A positive retry limit requires `generation.retry`; a zero limit forbids it.
 
 ## Execution boundary
 
@@ -44,14 +44,14 @@ Before the existing Workbench provider preflight is allowed to run, the bounded 
 - the exact sole owner, active principal binding and active project membership;
 - active production project and bound SHOT;
 - unchanged authoritative Proposal target state;
-- a proposal whose model, duration, resolution and prompts exactly match the current generation inputs;
-- existing RunningHub capability, official price/balance and Workbench workflow gates.
+- a Proposal whose prompts and legacy capability declaration (if one exists) exactly match current authoritative inputs;
+- a current verified Provider Capability, its local official quote/balance preflight and Workbench workflow gates.
 
-The ordinary human confirmation route cannot confirm a Director-prepared intent. The internal Grant path converts the official RunningHub display-unit estimate through the frozen `CNY=100` / `RH_COINS=1` minor-unit table, then reserves that integer amount inside the same transaction that creates the Generation Run and Job. Before the worker submits, it rechecks Grant authority; a successful submission consumes the already-reserved amount even if the Grant expires during the in-flight request, while a pre-submit terminal failure releases it. Reservation and spend events are append-only.
+The ordinary human confirmation route cannot confirm a Director-prepared intent. The internal Grant path converts the current verified Provider quote through the frozen `CNY=100` / `RH_COINS=1` minor-unit table, then reserves that integer amount inside the same transaction that creates the Generation Run and Job. Before the worker submits, it rechecks Grant authority; a successful submission consumes the already-reserved amount even if the Grant expires during the in-flight request, while a pre-submit terminal failure releases it. Reservation and spend events are append-only.
 
 No new generic execution path bypasses the existing Provider capability, price, balance, media-byte, project workflow, budget, lease, reconciliation, or audit boundaries.
 
-An automatic retry is intentionally narrower than a new creative regeneration: it applies only when RunningHub explicitly marks the submission response as retryable **and** confirms no Provider task may exist. The worker revalidates the live Grant before every retry, records one append-only `DIRECTOR_AUTOMATION_SUBMIT_RETRY` job event, uses bounded exponential backoff, and stops at the immutable Grant limit. Any ambiguous submission outcome, known Provider task, authority change, expiry, or retry-limit exhaustion never creates a second paid task automatically; it remains in the existing reconciliation or terminal-failure path.
+An automatic retry is intentionally narrower than a new creative regeneration: it applies only when the selected verified capability permits it, the execution adapter explicitly marks the submission response as retryable **and** confirms no Provider task may exist. The worker revalidates the live Grant before every retry, records one append-only `DIRECTOR_AUTOMATION_SUBMIT_RETRY` job event, uses bounded exponential backoff, and stops at the immutable Grant limit. Any ambiguous submission outcome, known Provider task, authority change, expiry, or retry-limit exhaustion never creates a second paid task automatically; it remains in the existing reconciliation or terminal-failure path.
 
 ## Current operational status
 

@@ -27,7 +27,8 @@ Current runbooks describe commands and boundaries. They do not grant authorizati
 - [ChatGPT Director Manual/Native tools](CHATGPT_DIRECTOR_MANUAL_NATIVE_TOOLS.md) — PR2 fixed advisory tool registry, manual-import boundary, and separate OAuth resource contract.
 - [ChatGPT Director Local Bridge](CHATGPT_DIRECTOR_LOCAL_BRIDGE.md) — PR3 public runtime, authenticated outbound bridge, Focus/context, frame analysis and immutable Proposal candidate boundary.
 - [ChatGPT Director Human Approval](CHATGPT_DIRECTOR_HUMAN_APPROVAL.md) — PR4 local Workbench approval-tower candidate; a recorded decision is not orchestration or Provider execution.
-- [ChatGPT Director Bounded Orchestrator](CHATGPT_DIRECTOR_BOUNDED_ORCHESTRATOR.md) — PR5 local immutable Grant, bounded reservation and RunningHub-only candidate; it defaults to a disabled Provider boundary.
+- [ChatGPT Director Bounded Orchestrator](CHATGPT_DIRECTOR_BOUNDED_ORCHESTRATOR.md) — local immutable Grant and bounded reservation; it depends on a verified capability and defaults to a disabled Provider boundary.
+- [ChatGPT Director Provider Capability & Quote Contract](CHATGPT_DIRECTOR_PROVIDER_QUOTE_CONTRACT.md) — verified-only capability selection and local quote gate; Runway remains a non-executable candidate until its separate canary.
 - [ChatGPT Director Memory Port](CHATGPT_DIRECTOR_MEMORY_PORT.md) — PR6 replaceable, project-bound advisory recall and non-dispatched Saveback contract; the default port is disabled and no memory plugin is connected.
 - [ChatGPT Director Local Candidate Closeout](CHATGPT_DIRECTOR_LOCAL_CANDIDATE_CLOSEOUT.md) — merged PR1–PR6 scope, current activity-database incompatibility and the exact external gates that remain.
 

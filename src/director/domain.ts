@@ -243,20 +243,40 @@ const storyboardRevisionPayloadSchema = z.object({
   continuity_constraints: z.array(shortTextSchema).max(30)
 }).strict();
 
+/**
+ * Model-authored generation proposals intentionally exclude provider, model,
+ * cost and currency. The Human Workbench later resolves those from the
+ * verified Director capability registry and an auditable local quote.
+ */
 const generationPlanPayloadSchema = z.object({
   shot_id: idSchema,
-  provider: z.literal("runninghub"),
+  video_prompt: nonEmptyTextSchema,
+  negative_prompt: z.string().max(16_384),
+  continuity_constraints: z.array(shortTextSchema).max(30)
+}).strict();
+
+const clipRegenerationPayloadSchema = generationPlanPayloadSchema.extend({
+  current_artifact_id: idSchema,
+  reason_codes: z.array(z.string().regex(/^[A-Z0-9_]{3,64}$/)).min(1).max(20),
+  prompt_delta: nonEmptyTextSchema,
+  negative_delta: z.string().max(8_192)
+}).strict();
+
+/**
+ * Historical records stored the old provider/quote vocabulary inside the
+ * immutable Proposal payload. Keep this adapter only for compatibility reads;
+ * the public ChatGPT draft input above never accepts these fields.
+ */
+const legacyGenerationPlanPayloadSchema = generationPlanPayloadSchema.extend({
+  provider: z.enum(["runninghub", "runway"]),
   model: shortTextSchema,
   duration_seconds: z.number().int().positive().max(120),
   resolution: shortTextSchema,
-  video_prompt: nonEmptyTextSchema,
-  negative_prompt: z.string().max(16_384),
-  continuity_constraints: z.array(shortTextSchema).max(30),
   estimated_cost_minor: z.number().int().nonnegative(),
   currency: z.enum(DIRECTOR_SUPPORTED_CURRENCIES)
 }).strict();
 
-const clipRegenerationPayloadSchema = generationPlanPayloadSchema.extend({
+const legacyClipRegenerationPayloadSchema = legacyGenerationPlanPayloadSchema.extend({
   current_artifact_id: idSchema,
   reason_codes: z.array(z.string().regex(/^[A-Z0-9_]{3,64}$/)).min(1).max(20),
   prompt_delta: nonEmptyTextSchema,
@@ -326,8 +346,8 @@ const directorProposalShapeSchema = z.discriminatedUnion("kind", [
   z.object({ ...proposalCommonShape, kind: z.literal("script"), payload: scriptPayloadSchema }).strict(),
   z.object({ ...proposalCommonShape, kind: z.literal("shot_plan"), payload: shotPlanPayloadSchema }).strict(),
   z.object({ ...proposalCommonShape, kind: z.literal("storyboard_revision"), payload: storyboardRevisionPayloadSchema }).strict(),
-  z.object({ ...proposalCommonShape, kind: z.literal("generation_plan"), payload: generationPlanPayloadSchema }).strict(),
-  z.object({ ...proposalCommonShape, kind: z.literal("clip_regeneration"), payload: clipRegenerationPayloadSchema }).strict(),
+  z.object({ ...proposalCommonShape, kind: z.literal("generation_plan"), payload: z.union([generationPlanPayloadSchema, legacyGenerationPlanPayloadSchema]) }).strict(),
+  z.object({ ...proposalCommonShape, kind: z.literal("clip_regeneration"), payload: z.union([clipRegenerationPayloadSchema, legacyClipRegenerationPayloadSchema]) }).strict(),
   z.object({ ...proposalCommonShape, kind: z.literal("review_assessment"), payload: reviewAssessmentPayloadSchema }).strict(),
   z.object({ ...proposalCommonShape, kind: z.literal("assembly_plan"), payload: assemblyPlanPayloadSchema }).strict(),
   z.object({ ...proposalCommonShape, kind: z.literal("delivery_plan"), payload: deliveryPlanPayloadSchema }).strict(),
@@ -474,7 +494,7 @@ const directorAutomationGrantShape = {
   workspace_id: z.literal("jenn-ai-video-workspace"),
   principal_id: hashSchema,
   project_id: idSchema,
-  provider: z.literal("runninghub"),
+  provider: z.enum(["runninghub", "runway"]),
   allowed_actions: z.array(z.enum(["generation.submit", "generation.retry", "generation.download", "artifact.activate"])).min(1).max(4),
   currency: z.enum(DIRECTOR_SUPPORTED_CURRENCIES),
   max_total_minor: z.number().int().positive(),

@@ -119,7 +119,7 @@ Implemented in the local PR4 candidate, but not yet externally accepted:
 
 Implemented in the local PR5 candidate, but not yet externally accepted:
 
-- Approved Proposal compilation, immutable Automation Grant and bounded RunningHub-only local orchestration, described in [CHATGPT_DIRECTOR_BOUNDED_ORCHESTRATOR.md](CHATGPT_DIRECTOR_BOUNDED_ORCHESTRATOR.md). Real Provider execution remains disabled by default and requires its external gate.
+- Approved Proposal compilation, immutable Automation Grant and bounded verified-capability local orchestration, described in [CHATGPT_DIRECTOR_BOUNDED_ORCHESTRATOR.md](CHATGPT_DIRECTOR_BOUNDED_ORCHESTRATOR.md). Real Provider execution remains disabled by default and requires its external gate.
 
 Implemented in the local PR6 candidate, but not externally accepted:
 
