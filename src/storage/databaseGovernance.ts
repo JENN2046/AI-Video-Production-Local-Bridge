@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import { paths } from "../paths.js";
 import {
+  validateDirectorArtifactImportReceipt,
   DIRECTOR_FOCUS_SCHEMA,
   validateDirectorAutomationGrant,
   validateDirectorProposal,
@@ -117,6 +118,44 @@ function directorContractDriftRows(db: DatabaseSync, errors: string[]): number {
           || parsed.content_hash !== row.content_hash
           || parsed.created_from_proposal_id !== row.created_from_proposal_id
           || parsed.created_at !== row.created_at) drift += 1;
+      } catch { drift += 1; }
+    }
+
+    const importReceipts = db.prepare(`SELECT receipt_id, proposal_id, project_id, shot_id, artifact_id,
+      blob_sha256, role, mime_type, created_at FROM director_artifact_import_receipts`).all() as Array<Record<string, unknown>>;
+    for (const receipt of importReceipts) {
+      try {
+        validateDirectorArtifactImportReceipt(receipt);
+        const bound = db.prepare(`SELECT 1
+          FROM director_proposals p
+          JOIN media_artifacts a ON a.artifact_id = ?
+          JOIN media_artifact_blobs link ON link.artifact_id = a.artifact_id
+          JOIN media_blobs b ON b.blob_id = link.blob_id
+          WHERE p.proposal_id = ? AND p.project_id = ?
+            AND p.kind = 'artifact_import' AND p.target_type = 'shot' AND p.target_id = ?
+            AND json_valid(p.payload_json) = 1
+            AND json_extract(p.payload_json, '$.shot_id') = ?
+            AND json_extract(p.payload_json, '$.target_role') = ?
+            AND json_extract(p.payload_json, '$.expected_mime_type') = ?
+            AND a.project_id = ? AND a.shot_id = ? AND a.role = ?
+            AND a.artifact_type = CASE WHEN ? = 'storyboard_image' THEN 'image' ELSE 'video' END
+            AND json_valid(a.data_json) = 1
+            AND json_extract(a.data_json, '$.artifact_id') = a.artifact_id
+            AND json_extract(a.data_json, '$.linked_objects.project_id') = a.project_id
+            AND json_extract(a.data_json, '$.linked_objects.shot_id') = a.shot_id
+            AND json_extract(a.data_json, '$.role') = a.role
+            AND json_extract(a.data_json, '$.artifact_type') = a.artifact_type
+            AND json_extract(a.data_json, '$.blob_id') = b.blob_id
+            AND json_extract(a.data_json, '$.storage.mime_type') = ?
+            AND json_extract(a.data_json, '$.metadata.sha256') = ?
+            AND json_extract(a.data_json, '$.source.sha256') = ?
+            AND b.sha256 = ? AND b.detected_mime = ?`).get(
+          receipt.artifact_id, receipt.proposal_id, receipt.project_id, receipt.shot_id,
+          receipt.shot_id, receipt.role, receipt.mime_type, receipt.project_id, receipt.shot_id,
+          receipt.role, receipt.role, receipt.mime_type, receipt.blob_sha256,
+          receipt.blob_sha256, receipt.blob_sha256, receipt.mime_type
+        );
+        if (!bound) drift += 1;
       } catch { drift += 1; }
     }
   } catch (error) {
@@ -255,7 +294,14 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
         WHERE v.supersedes_package_version_id IS NOT NULL AND parent.package_version_id IS NULL`,
       `SELECT COUNT(*) AS count FROM storyboard_package_versions v
         LEFT JOIN director_proposals p ON p.proposal_id = v.created_from_proposal_id AND p.project_id = v.project_id
-        WHERE v.created_from_proposal_id IS NOT NULL AND p.proposal_id IS NULL`
+        WHERE v.created_from_proposal_id IS NOT NULL AND p.proposal_id IS NULL`,
+      `SELECT COUNT(*) AS count FROM director_artifact_import_receipts r
+        LEFT JOIN director_proposals p ON p.proposal_id = r.proposal_id AND p.project_id = r.project_id
+        LEFT JOIN projects project ON project.project_id = r.project_id
+        LEFT JOIN shots shot ON shot.shot_id = r.shot_id AND shot.project_id = r.project_id
+        LEFT JOIN media_artifacts artifact ON artifact.artifact_id = r.artifact_id
+          AND artifact.project_id = r.project_id AND artifact.shot_id = r.shot_id
+        WHERE p.proposal_id IS NULL OR project.project_id IS NULL OR shot.shot_id IS NULL OR artifact.artifact_id IS NULL`
     ];
     const orphanRows = orphanQueries.reduce((sum, sql) => sum + scalarCount(db, sql, errors), 0);
     let mediaRows: Array<{ data_json: string }> = [];

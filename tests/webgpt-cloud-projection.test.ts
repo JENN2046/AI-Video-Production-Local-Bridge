@@ -234,13 +234,13 @@ function stripMeta(result: ReturnType<SqliteReadonlyDataSource["listProductionPr
   return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error };
 }
 
-test("readonly projection requires migration 0010 and never upgrades an older database", () => {
+test("readonly projection requires migration 0011 and never upgrades an older database", () => {
   const root = mkdtempSync(join(tmpdir(), "readonly-projection-ledger-"));
   const sqlitePath = join(root, "app.sqlite");
   const db = openM0Database(sqlitePath);
   db.exec(`
-    DROP TABLE director_focuses;
-    DELETE FROM schema_migrations WHERE migration_id = '0010';
+    DROP TABLE director_artifact_import_receipts;
+    DELETE FROM schema_migrations WHERE migration_id = '0011';
   `);
   db.close();
   try {
@@ -254,8 +254,9 @@ test("readonly projection requires migration 0010 and never upgrades an older da
     );
     const verify = openM0DatabaseConnection(sqlitePath, { readOnly: true });
     try {
-      assert.equal((verify.prepare("SELECT COUNT(*) count FROM schema_migrations WHERE migration_id = '0010'").get() as { count: number }).count, 0);
+      assert.equal((verify.prepare("SELECT COUNT(*) count FROM schema_migrations WHERE migration_id = '0011'").get() as { count: number }).count, 0);
       assert.equal((verify.prepare("SELECT COUNT(*) count FROM sqlite_schema WHERE type = 'table' AND name = 'director_automation_grants'").get() as { count: number }).count, 1);
+      assert.equal((verify.prepare("SELECT COUNT(*) count FROM sqlite_schema WHERE type = 'table' AND name = 'director_artifact_import_receipts'").get() as { count: number }).count, 0);
     } finally {
       verify.close();
     }
@@ -488,8 +489,11 @@ test("snapshot fingerprint uses deterministic JCS input and server time remains 
 
   const currentSource = structuredClone(unsigned);
   currentSource.source_schema = "workbench-v2-6";
-  currentSource.source_migration = "0010";
+  currentSource.source_migration = "0011";
   assert.doesNotThrow(() => finalizeReadonlySnapshot(currentSource));
+  const previousSource = structuredClone(currentSource);
+  previousSource.source_migration = "0010";
+  assert.doesNotThrow(() => finalizeReadonlySnapshot(previousSource));
   const crossedSource = structuredClone(currentSource);
   crossedSource.source_migration = "0008";
   assert.throws(() => finalizeReadonlySnapshot(crossedSource), /supported pair/i);

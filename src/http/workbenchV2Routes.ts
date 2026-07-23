@@ -12,6 +12,7 @@ import {
   createDirectorWorkbenchFocus,
   decideDirectorProposal,
   getDirectorApprovalTower,
+  recordDirectorArtifactImportReceipt,
   type DirectorFocusTargetType
 } from "../director/workbenchApproval.js";
 import { applyWorkbenchGovernance, getWorkbenchGovernancePreview } from "../tools/workbenchGovernance.js";
@@ -240,6 +241,16 @@ export async function handleWorkbenchV2Api(
     }, db))));
     return true;
   }
+  const directorArtifactImportReceiptMatch = url.pathname.match(/^\/api\/v2\/director\/proposals\/([^/]+)\/artifact-import-receipt$/);
+  if (request.method === "POST" && directorArtifactImportReceiptMatch) {
+    const proposalId = decodeSegment(directorArtifactImportReceiptMatch[1]);
+    await mutation(request, response, actionNonce, (body) => sendResult(response, withDatabase((db) => recordDirectorArtifactImportReceipt({
+      proposal_id: proposalId,
+      artifact_id: text(body.artifact_id),
+      human_confirmation: body.human_confirmation === true
+    }, db))));
+    return true;
+  }
   const directorGrantStartMatch = url.pathname.match(/^\/api\/v2\/director\/grants\/([^/]+)\/start$/);
   if (request.method === "POST" && directorGrantStartMatch) {
     const grantId = decodeSegment(directorGrantStartMatch[1]);
@@ -315,9 +326,11 @@ export async function handleWorkbenchV2Api(
     }
     const result = withDatabase((db) => listWorkbenchAssets(tab as "media" | "memory" | "reference" | "recall", {
       project_id: url.searchParams.get("project_id") ?? undefined,
+      shot_id: url.searchParams.get("shot_id") ?? undefined,
       scope: (url.searchParams.get("scope") ?? "daily") as "daily" | "unassigned" | "all",
       type: url.searchParams.get("type") ?? undefined,
       role: url.searchParams.get("role") ?? undefined,
+      mime_type: url.searchParams.get("mime_type") ?? undefined,
       status: url.searchParams.get("status") ?? undefined,
       limit: numberParam(url.searchParams.get("limit")),
       offset: numberParam(url.searchParams.get("offset"))
@@ -566,6 +579,7 @@ export async function handleWorkbenchV2Api(
     await mutation(request, response, actionNonce, (body) => sendResult(response, withDatabase((db) => decideWorkbenchImport(importDecisionMatch[1].toLowerCase(), {
       decision: body.decision === "registered" || body.decision === "excluded" ? body.decision : "quarantined",
       target_project_id: optionalText(body.target_project_id),
+      target_shot_id: optionalText(body.target_shot_id),
       reason: optionalText(body.reason)
     }, db))));
     return true;

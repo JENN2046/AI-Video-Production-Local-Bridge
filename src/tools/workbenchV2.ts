@@ -1078,7 +1078,7 @@ export function listWorkbenchInbox(
 
 export function decideWorkbenchImport(
   checksum: string,
-  input: { decision: "quarantined" | "excluded" | "registered"; target_project_id?: string; reason?: string },
+  input: { decision: "quarantined" | "excluded" | "registered"; target_project_id?: string; target_shot_id?: string; reason?: string },
   db = openM0Database()
 ): WorkbenchV2Result<Record<string, unknown>> {
   const row = db.prepare("SELECT filename, metadata_json FROM import_index WHERE checksum = ?").get(checksum) as { filename: string; metadata_json: string } | undefined;
@@ -1088,6 +1088,12 @@ export function decideWorkbenchImport(
     if (!input.target_project_id) return { ok: false, error: { code: "MISSING_REQUIRED_FIELD", message: "Target project is required.", field: "target_project_id" } };
     const writable = assertWorkbenchProjectWritable(db, input.target_project_id);
     if (!writable.ok) return writable;
+    if (input.target_shot_id) {
+      const targetShot = getShot(db, input.target_shot_id);
+      if (!targetShot || targetShot.project_id !== input.target_project_id) {
+        return { ok: false, error: { code: "SHOT_NOT_FOUND", message: "Target SHOT does not belong to the selected project.", field: "target_shot_id" } };
+      }
+    }
     const metadata = parseJson<{ blockers?: string[] }>(row.metadata_json, {});
     if ((metadata.blockers ?? []).length > 0) return { ok: false, error: { code: "IMPORT_BLOCKED", message: `Import is blocked: ${(metadata.blockers ?? []).join(", ")}` } };
     const prior = db.prepare(`
@@ -1097,7 +1103,7 @@ export function decideWorkbenchImport(
     const priorValidated = prior ? validateActiveArtifactReference(db, {
       artifact_id: prior.artifact_id,
       project_id: input.target_project_id,
-      shot_id: "",
+      shot_id: input.target_shot_id ?? "",
       role: "storyboard_image",
       artifact_type: "image"
     }) : null;
@@ -1122,7 +1128,7 @@ export function decideWorkbenchImport(
       if (!registered.ok) return registered;
         sourceArtifactId = registered.value.artifact.artifact_id;
       }
-      const scoped = createScopedArtifactFromBlob({ source_artifact_id: sourceArtifactId, project_id: input.target_project_id }, db);
+      const scoped = createScopedArtifactFromBlob({ source_artifact_id: sourceArtifactId, project_id: input.target_project_id, shot_id: input.target_shot_id }, db);
       if (!scoped.ok) return { ok: false, error: scoped.error };
       artifactId = scoped.artifact.artifact_id;
     }
@@ -1138,12 +1144,12 @@ export function decideWorkbenchImport(
       reason = excluded.reason,
       updated_at = CURRENT_TIMESTAMP
   `).run(checksum, row.filename, input.decision, input.target_project_id ?? null, artifactId || null, input.reason ?? "");
-  return { ok: true, data: { checksum, filename: row.filename, decision: input.decision, target_project_id: input.target_project_id ?? "", artifact_id: artifactId } };
+  return { ok: true, data: { checksum, filename: row.filename, decision: input.decision, target_project_id: input.target_project_id ?? "", target_shot_id: input.target_shot_id ?? "", artifact_id: artifactId } };
 }
 
 export function listWorkbenchAssets(
   tab: "media" | "memory" | "reference" | "recall",
-  input: { scope?: "daily" | "unassigned" | "all"; project_id?: string; type?: string; role?: string; status?: string; limit?: number; offset?: number } = {},
+  input: { scope?: "daily" | "unassigned" | "all"; project_id?: string; shot_id?: string; type?: string; role?: string; mime_type?: string; status?: string; limit?: number; offset?: number } = {},
   db = openM0Database()
 ): WorkbenchPage<Record<string, unknown>> {
   const limit = clampLimit(input.limit);
@@ -1168,8 +1174,10 @@ export function listWorkbenchAssets(
   if (scope === "daily") clauses.push("EXISTS (SELECT 1 FROM workbench_project_meta m WHERE m.project_id = a.project_id AND m.lifecycle = 'active' AND m.classification IN ('production', 'unclassified'))");
   if (scope === "unassigned") clauses.push("(a.project_id IS NULL OR a.project_id = '' OR NOT EXISTS (SELECT 1 FROM workbench_project_meta m WHERE m.project_id = a.project_id))");
   if (input.project_id) { clauses.push("a.project_id = ?"); params.push(input.project_id); }
+  if (input.shot_id) { clauses.push("a.shot_id = ?"); params.push(input.shot_id); }
   if (input.type) { clauses.push("a.artifact_type = ?"); params.push(input.type); }
   if (input.role) { clauses.push("a.role = ?"); params.push(input.role); }
+  if (input.mime_type) { clauses.push("json_extract(a.data_json, '$.storage.mime_type') = ?"); params.push(input.mime_type); }
   if (input.status) { clauses.push("a.status = ?"); params.push(input.status); }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
   const countRow = db.prepare(`SELECT COUNT(*) AS count FROM media_artifacts a ${where}`).get(...params) as { count: number };

@@ -28,11 +28,11 @@ PR1 does not register a Director MCP tool, expose a public OAuth resource, call 
 
 ## Schema and migration
 
-Repository-required schema after PR1:
+Repository-required schema after the controlled Artifact import-receipt candidate:
 
 ```text
 schema: workbench-v2-6
-ledger: 0010
+ledger: 0011
 ```
 
 Migration `0009` creates immutable rows plus append-only event ledgers for:
@@ -44,9 +44,11 @@ Migration `0009` creates immutable rows plus append-only event ledgers for:
 
 Migration `0010` preserves the historical `0009` canonical SQL and checksum, then rebuilds only the Director Grant and Grant-event tables with the closed `CNY | RH_COINS` currency contract. A `0009` database with an unsupported historical currency fails closed before any `0010` DDL or ledger entry is committed; it requires explicit manual remediation rather than a silent reinterpretation of evidence.
 
+Migration `0011` preserves all `0010` Proposal, Proposal-event and Storyboard Package evidence, adds immutable `director_artifact_import_receipts`, and extends the Proposal kind contract with `artifact_import`. An import Proposal contains only the target Project/SHOT, role, expected MIME and advisory explanation. The local Workbench may record one receipt only after a human-selected, already registered Artifact passes its existing byte, Blob, role, project and SHOT validation and still matches the Proposal's current Focus-bound base state. The current receipt boundary accepts only `image/jpeg`, `image/png` and `video/mp4`; the wider Media Gateway playback allowlist does not imply import-validator support. Neither the Proposal nor the receipt stores a source path, external URL, Provider payload or media bytes.
+
 Composite foreign keys bind every Proposal to the same Focus principal, project, target and generation. Parent proposals, superseded focuses and superseded Storyboard packages cannot cross project or principal boundaries. Update/delete triggers protect immutable evidence.
 
-Runtime startup still never migrates a persistent database. Jenn's accepted activity database remains `workbench-v2-5` / `0008` until a separately authorized backup, migration, `db:check`, restore drill and manifest comparison succeeds.
+Runtime startup still never migrates a persistent database. Jenn's activity database remains at separately accepted `workbench-v2-6` / `0010`; it requires a new explicit backup, isolated `0011` migration, read-only `db:check`, restore drill and manifest comparison before this candidate may be run against it.
 
 ## Contract validation
 
@@ -62,7 +64,7 @@ Runtime startup still never migrates a persistent database. Jenn's accepted acti
 
 ## Readonly compatibility
 
-New Snapshot v4 exports require the current `workbench-v2-6` / `0010` pair. The Snapshot v4 parser continues to accept already-signed `workbench-v2-5` / `0008` snapshots so a code deployment does not invalidate an in-memory accepted snapshot before republish. A `workbench-v2-6` / `0009` Snapshot is deliberately rejected until the local database receives `0010` and a new Snapshot is published. Crossed schema/migration pairs fail closed.
+New Snapshot v4 exports require the current `workbench-v2-6` / `0011` pair. The Snapshot v4 parser continues to accept already-signed `workbench-v2-5` / `0008` and `workbench-v2-6` / `0010` snapshots so a code deployment does not invalidate an accepted in-memory Snapshot before republish. Other crossed schema/migration pairs fail closed.
 
 ## Test lane
 
@@ -72,7 +74,7 @@ The mandatory lane is:
 npm run test:webgpt:director
 ```
 
-It is selected by canonical `npm test`, Windows CI and `test-selection-gate`. The lane covers deterministic base-state hashing, advisory proposal semantics, Storyboard Package V2, Automation Grant bounds, derived Director state, the `0009`/`0010` immutable-ledger and checksum-compatibility path, and `db:check` drift detection.
+It is selected by canonical `npm test`, Windows CI and `test-selection-gate`. The lane covers deterministic base-state hashing, advisory proposal semantics, Storyboard Package V2, Automation Grant bounds, derived Director state, the `0009`/`0010`/`0011` immutable-ledger and checksum-compatibility path, controlled Artifact import receipts, and `db:check` drift detection.
 
 ## Remaining gates
 

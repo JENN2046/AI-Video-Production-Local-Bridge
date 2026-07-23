@@ -5,7 +5,7 @@ import { useSearchParams } from "react-router-dom";
 
 import { apiGet, apiMutation, apiPage } from "../api";
 import { EmptyState, ErrorState, KeyValue, LoadingState, PageHeader, StatusPill } from "../components";
-import type { ProjectSummary, WorkspaceData } from "../types";
+import type { MediaArtifact, ProjectSummary, WorkspaceData } from "../types";
 import s from "../workbench.module.css";
 
 type FocusTargetType = "project" | "shot" | "artifact" | "delivery" | "memory";
@@ -39,6 +39,14 @@ interface DirectorProposal {
   updated_at: string;
   action_allowed: boolean;
   action_blocked_code: string | null;
+  artifact_import_receipt: {
+    receipt_id: string;
+    artifact_id: string;
+    blob_sha256: string;
+    role: "storyboard_image" | "generated_clip";
+    mime_type: string;
+    created_at: string;
+  } | null;
   automation_grant: {
     grant_id: string;
     provider: "runninghub";
@@ -70,9 +78,12 @@ const targetLabels: Record<FocusTargetType, string> = {
 
 const proposalLabels: Record<string, string> = {
   creative_brief: "创意 Brief", script: "脚本", shot_plan: "SHOT 方案", storyboard_revision: "分镜修订",
+  artifact_import: "受控素材导入",
   generation_plan: "生成方案", clip_regeneration: "片段重生成", review_assessment: "审片建议",
   assembly_plan: "合成方案", delivery_plan: "交付方案", memory_saveback: "Memory 回存建议"
 };
+
+const DIRECTOR_ARTIFACT_PAGE_SIZE = 200;
 
 function twoDigits(value: number): string {
   return String(value).padStart(2, "0");
@@ -85,6 +96,52 @@ function twoDigits(value: number): string {
  */
 export function directorLocalDateTimeInputValue(date: Date): string {
   return `${date.getFullYear()}-${twoDigits(date.getMonth() + 1)}-${twoDigits(date.getDate())}T${twoDigits(date.getHours())}:${twoDigits(date.getMinutes())}`;
+}
+
+/**
+ * Artifact Focuses must not silently disappear behind the Assets endpoint's
+ * 200-item page limit.  Read every stable page before offering the target
+ * list, and fail closed if a concurrent or malformed page would make that
+ * list incomplete or cross-project.
+ */
+async function loadDirectorArtifactPages(
+  basePath: string,
+  projectId: string,
+  matchesExpectedArtifact: (artifact: MediaArtifact) => boolean
+): Promise<MediaArtifact[]> {
+  const artifacts = new Map<string, MediaArtifact>();
+  let offset = 0;
+  let expectedTotal: number | null = null;
+  for (;;) {
+    const page = await apiPage<MediaArtifact>(`${basePath}&offset=${offset}`);
+    if (
+      page.meta.offset !== offset
+      || page.meta.limit < 1
+      || page.meta.total < 0
+      || (expectedTotal !== null && page.meta.total !== expectedTotal)
+    ) {
+      throw new Error("DIRECTOR_ARTIFACT_PAGE_INVALID");
+    }
+    expectedTotal ??= page.meta.total;
+    for (const artifact of page.items) {
+      if (!matchesExpectedArtifact(artifact) || artifact.linked_objects.project_id !== projectId || artifacts.has(artifact.artifact_id)) {
+        throw new Error("DIRECTOR_ARTIFACT_PAGE_INVALID");
+      }
+      artifacts.set(artifact.artifact_id, artifact);
+    }
+    if (!page.meta.has_more) {
+      if (artifacts.size !== expectedTotal) throw new Error("DIRECTOR_ARTIFACT_PAGE_INVALID");
+      return [...artifacts.values()];
+    }
+    const nextOffset = offset + page.items.length;
+    if (nextOffset <= offset || nextOffset >= expectedTotal) throw new Error("DIRECTOR_ARTIFACT_PAGE_INVALID");
+    offset = nextOffset;
+  }
+}
+
+export async function loadDirectorActiveArtifacts(projectId: string): Promise<MediaArtifact[]> {
+  const basePath = `/api/v2/assets/media?scope=all&project_id=${encodeURIComponent(projectId)}&status=active&limit=${DIRECTOR_ARTIFACT_PAGE_SIZE}`;
+  return loadDirectorArtifactPages(basePath, projectId, (artifact) => artifact.status === "active");
 }
 
 export function DirectorPage() {
@@ -105,6 +162,21 @@ export function DirectorPage() {
     queryFn: () => apiGet<WorkspaceData>(`/api/v2/projects/${encodeURIComponent(projectId)}/overview`),
     enabled: Boolean(projectId)
   });
+  // `overview` intentionally contains only the project summary.  Director
+  // targets and artifact-import receipts need their own bounded local reads:
+  // the storyboard workspace supplies SHOTs, while the Assets API supplies
+  // every already-registered active Artifact for this project (not only ones
+  // already referenced by a package or clip version).
+  const targetWorkspace = useQuery({
+    queryKey: ["director-target-workspace", projectId],
+    queryFn: () => apiGet<WorkspaceData>(`/api/v2/projects/${encodeURIComponent(projectId)}/storyboard`),
+    enabled: Boolean(projectId)
+  });
+  const artifacts = useQuery({
+    queryKey: ["director-artifacts", projectId],
+    queryFn: () => loadDirectorActiveArtifacts(projectId),
+    enabled: Boolean(projectId)
+  });
   const selectProject = (nextProjectId: string) => {
     const next = new URLSearchParams(params);
     if (nextProjectId) next.set("project", nextProjectId); else next.delete("project");
@@ -119,12 +191,16 @@ export function DirectorPage() {
       <label className={s.field}><span>生产项目</span><select value={projectId} onChange={(event) => selectProject(event.target.value)}>
         {projects.data.items.length === 0 ? <option value="">暂无活动生产项目</option> : projects.data.items.map((item) => <option key={item.project.project_id} value={item.project.project_id}>{item.project.title}</option>)}
       </select></label>
-      <button className={s.secondaryButton} onClick={() => { void tower.refetch(); void workspace.refetch(); }} disabled={!projectId || tower.isFetching}><RefreshCw size={16} /> 刷新审批状态</button>
+      <button className={s.secondaryButton} onClick={() => { void tower.refetch(); void workspace.refetch(); void targetWorkspace.refetch(); void artifacts.refetch(); }} disabled={!projectId || tower.isFetching}><RefreshCw size={16} /> 刷新审批状态</button>
     </section>
     {!projectId ? <EmptyState title="暂无可用生产项目" detail="创建并分类一个 production 项目后，才能建立 ChatGPT Director Focus。" />
-      : tower.isLoading || workspace.isLoading ? <LoadingState label="正在读取 Director 审批边界" />
-        : tower.isError || workspace.isError || !tower.data || !workspace.data ? <ErrorState error={tower.error ?? workspace.error} />
-          : <DirectorTowerView key={workspace.data.project.project_id} tower={tower.data} workspace={workspace.data} onChanged={() => {
+      : tower.isLoading || workspace.isLoading || targetWorkspace.isLoading || artifacts.isLoading ? <LoadingState label="正在读取 Director 审批边界" />
+        : tower.isError || workspace.isError || targetWorkspace.isError || artifacts.isError || !tower.data || !workspace.data || !targetWorkspace.data || !artifacts.data ? <ErrorState error={tower.error ?? workspace.error ?? targetWorkspace.error ?? artifacts.error} />
+          : <DirectorTowerView key={workspace.data.project.project_id} tower={tower.data} workspace={{
+            ...workspace.data,
+            shots: targetWorkspace.data.shots ?? [],
+            artifacts: Object.fromEntries(artifacts.data.map((artifact) => [artifact.artifact_id, artifact]))
+          }} onChanged={() => {
             void tower.refetch();
             void queryClient.invalidateQueries({ queryKey: ["shell"] });
             void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
@@ -185,6 +261,8 @@ function ProposalCard({ proposal, onChanged }: { proposal: DirectorProposal; onC
   const [maxAutomaticRetries, setMaxAutomaticRetries] = useState(0);
   const [grantExpiry, setGrantExpiry] = useState(() => directorLocalDateTimeInputValue(new Date(Date.now() + 60 * 60_000)));
   const [startConfirmed, setStartConfirmed] = useState(false);
+  const [importConfirmed, setImportConfirmed] = useState(false);
+  const [selectedArtifactId, setSelectedArtifactId] = useState("");
   const [reasonCode, setReasonCode] = useState("DIRECTOR_HUMAN_REJECTED");
   const decision = useMutation({
     mutationFn: (value: ProposalDecision) => apiMutation(`/api/v2/director/proposals/${encodeURIComponent(proposal.proposal_id)}/decision`, "POST", { decision: value, reason_code: value === "reject" ? reasonCode : undefined, human_confirmation: confirmed }),
@@ -203,8 +281,24 @@ function ProposalCard({ proposal, onChanged }: { proposal: DirectorProposal; onC
     }),
     onSuccess: () => { setStartConfirmed(false); onChanged(); }
   });
+  const importReceipt = useMutation({
+    mutationFn: (artifactId: string) => apiMutation(`/api/v2/director/proposals/${encodeURIComponent(proposal.proposal_id)}/artifact-import-receipt`, "POST", {
+      artifact_id: artifactId,
+      human_confirmation: importConfirmed
+    }),
+    onSuccess: () => { setImportConfirmed(false); onChanged(); }
+  });
   const pending = proposal.status === "pending_review" && proposal.action_allowed;
   const compilable = proposal.status === "accepted" && proposal.automation_grant === null && (proposal.kind === "generation_plan" || proposal.kind === "clip_regeneration");
+  const importReceiptable = proposal.status === "accepted" && proposal.kind === "artifact_import" && proposal.artifact_import_receipt === null;
+  const importCandidatePath = artifactImportCandidatePath(proposal);
+  const importCandidates = useQuery({
+    queryKey: ["director-artifact-import-candidates", importCandidatePath],
+    queryFn: () => loadDirectorArtifactImportCandidates(proposal),
+    enabled: importReceiptable && importCandidatePath !== null
+  });
+  const matchingImportCandidates = importCandidates.data ?? [];
+  const resolvedArtifactId = selectedArtifactId || matchingImportCandidates[0]?.artifact_id || "";
   const proposalCurrency = typeof proposal.payload.currency === "string" ? proposal.payload.currency : "";
   const budgetUnitLabel = proposalCurrency === "CNY" ? "CNY 分（100 分 = 1 元）" : proposalCurrency === "RH_COINS" ? "RH_COINS" : "minor units";
   return <article className={s.evidencePanel}>
@@ -212,6 +306,8 @@ function ProposalCard({ proposal, onChanged }: { proposal: DirectorProposal; onC
     <KeyValue rows={[["来源", proposal.source === "native" ? "ChatGPT Native" : "手动导入（不可信）"], ["目标", `${proposal.target_type} · ${proposal.target_id}`], ["Focus", `#${proposal.focus_generation}`], ["创建", formatTime(proposal.created_at)], ["状态原因", proposal.reason_code ?? "-" ]]} />
     <details className={s.rawDetails}><summary>查看结构化提议（本地人类审批可见）</summary><pre>{JSON.stringify(proposal.payload, null, 2)}</pre></details>
     {pending ? <div className={s.actionPanel}><label className={s.checkboxRow}><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>我已核对当前状态和影响。接受只记录审批，不会执行 Provider、采纳视频或交付。</span></label><label className={s.field}><span>拒绝原因代码</span><select value={reasonCode} onChange={(event) => setReasonCode(event.target.value)}><option value="DIRECTOR_HUMAN_REJECTED">不采纳此建议</option><option value="DIRECTOR_SCOPE_NEEDS_REVISION">需要修改范围</option><option value="DIRECTOR_CREATIVE_DIRECTION_REJECTED">创意方向不符合</option><option value="DIRECTOR_BUDGET_NOT_APPROVED">预算未批准</option></select></label><div className={s.buttonRow}><button className={s.dangerButton} disabled={!confirmed || decision.isPending} onClick={() => decision.mutate("reject")}><X size={16} /> 拒绝提议</button><button className={s.primaryButton} disabled={!confirmed || decision.isPending} onClick={() => decision.mutate("accept")}><Check size={16} /> 接受提议</button></div>{decision.isError && <div className={s.inlineError}>{decision.error.message}</div>}</div>
+      : importReceiptable ? <div className={s.actionPanel}><p>先在收件箱的“素材隔离”中由 Jenn 选择本地文件的目标项目和目标 SHOT，完成既有 Artifact/Blob 校验；此处仅把一个已注册、同项目同 SHOT 的 Artifact 记入不可变回执。操作不接受或保存路径、URL、文件字节；记录前会重新读取已注册本地 Artifact 的字节，以核验 Blob digest 与 MIME，不会启动生成。</p>{importCandidates.isLoading ? <p>正在读取与此提议精确匹配的已注册 Artifact。</p> : importCandidates.isError || importCandidatePath === null ? <div className={s.inlineError}>无法读取与此提议相符的已注册 Artifact；不会记录回执。</div> : matchingImportCandidates.length === 0 ? <div className={s.inlineError}>没有与此提议的角色、MIME 和 SHOT 相符的已注册 Artifact。</div> : <><label className={s.field}><span>已验证的本地 Artifact</span><select value={resolvedArtifactId} onChange={(event) => setSelectedArtifactId(event.target.value)}>{matchingImportCandidates.map((artifact) => <option key={artifact.artifact_id} value={artifact.artifact_id}>{artifact.role} · {artifact.artifact_id} · {artifact.storage.mime_type}</option>)}</select></label><label className={s.checkboxRow}><input type="checkbox" checked={importConfirmed} onChange={(event) => setImportConfirmed(event.target.checked)} /><span>我确认该 Artifact 已由本地导入流程校验，且应作为本提议的一次性受控导入回执。</span></label><div className={s.buttonRow}><button className={s.primaryButton} disabled={!resolvedArtifactId || !importConfirmed || importReceipt.isPending} onClick={() => importReceipt.mutate(resolvedArtifactId)}><Check size={16} /> 记录不可变导入回执</button></div>{importReceipt.isError && <div className={s.inlineError}>{importReceipt.error.message}</div>}</>}</div>
+      : proposal.artifact_import_receipt ? <div className={s.inlineNotice}>已记录不可变导入回执 · {proposal.artifact_import_receipt.role} · {proposal.artifact_import_receipt.mime_type} · {proposal.artifact_import_receipt.artifact_id}。该回执不保存源路径、URL 或文件内容。</div>
       : compilable ? <div className={s.actionPanel}><p>第二次确认才会创建不可变 Grant。它只授权 RunningHub 的受限后续编排；当前动作不会发起任何 Provider 请求。</p><div className={s.formGrid}><label className={s.field}><span>总上限（{budgetUnitLabel}）</span><input type="number" min="1" value={maxTotalMinor} onChange={(event) => setMaxTotalMinor(Number(event.target.value))} /></label><label className={s.field}><span>单次上限（{budgetUnitLabel}）</span><input type="number" min="1" value={maxPerRunMinor} onChange={(event) => setMaxPerRunMinor(Number(event.target.value))} /></label><label className={s.field}><span>每 SHOT 最大版本</span><input type="number" min="1" max="20" value={maxVersionsPerShot} onChange={(event) => setMaxVersionsPerShot(Number(event.target.value))} /></label><label className={s.field}><span>自动重试次数</span><input type="number" min="0" max="5" value={maxAutomaticRetries} onChange={(event) => setMaxAutomaticRetries(Number(event.target.value))} /></label><label className={s.field}><span>Grant 到期</span><input type="datetime-local" value={grantExpiry} onChange={(event) => setGrantExpiry(event.target.value)} /></label></div><label className={s.checkboxRow}><input type="checkbox" checked={grantConfirmed} onChange={(event) => setGrantConfirmed(event.target.checked)} /><span>我确认此限额、版本和有效期；我知道编译会写入不可变授权证据，但不会提交 Provider。</span></label><div className={s.buttonRow}><button className={s.primaryButton} disabled={!grantConfirmed || compile.isPending} onClick={() => compile.mutate()}><ShieldAlert size={16} /> 编译有界 Automation Grant</button></div>{compile.isError && <div className={s.inlineError}>{compile.error.message}</div>}</div>
         : proposal.automation_grant ? <div className={s.actionPanel}><div className={s.inlineNotice}>已编译 Grant · {proposal.automation_grant.provider} · {proposal.automation_grant.currency} {proposal.automation_grant.max_total_minor} · 到期 {formatTime(proposal.automation_grant.expires_at)}。它不会绕过 Provider、预算、成员资格或事实状态门禁。</div><label className={s.checkboxRow}><input type="checkbox" checked={startConfirmed} onChange={(event) => setStartConfirmed(event.target.checked)} /><span>我确认启动这次已编译、受限的生成。系统仍会先重验官方价格、余额、能力和当前事实状态；默认 Provider 关闭时会 fail closed。</span></label><div className={s.buttonRow}><button className={s.primaryButton} disabled={!startConfirmed || start.isPending} onClick={() => start.mutate()}><Sparkles size={16} /> 启动有界生成</button></div>{start.isError && <div className={s.inlineError}>{start.error.message}</div>}</div>
           : <div className={s.inlineNotice}>{proposal.status === "stale" ? `该提议的 Focus 或事实状态已变化（${proposal.action_blocked_code ?? "DIRECTOR_FOCUS_STALE"}），不能被采纳。` : "该提议已进入不可逆的事件历史，不能再次决定。"}</div>}
@@ -221,7 +317,32 @@ function ProposalCard({ proposal, onChanged }: { proposal: DirectorProposal; onC
 function focusTargets(workspace: WorkspaceData, type: FocusTargetType): Array<{ id: string; label: string }> {
   if (type === "project" || type === "delivery" || type === "memory") return [{ id: workspace.project.project_id, label: workspace.project.title }];
   if (type === "shot") return (workspace.shots ?? []).map((shot) => ({ id: shot.shot_id, label: `SHOT ${String(shot.order).padStart(3, "0")} · ${shot.description || shot.shot_id}` }));
-  return Object.values(workspace.artifacts ?? {}).filter((artifact) => artifact.status === "active").map((artifact) => ({ id: artifact.artifact_id, label: `${artifact.role} · ${artifact.artifact_id}` }));
+  return Object.values(workspace.artifacts ?? {}).filter((artifact) => artifact.status === "active" && artifact.linked_objects.project_id === workspace.project.project_id).map((artifact) => ({ id: artifact.artifact_id, label: `${artifact.role} · ${artifact.artifact_id}` }));
+}
+
+function artifactImportCandidatePath(proposal: DirectorProposal): string | null {
+  if (proposal.kind !== "artifact_import") return null;
+  const shotId = typeof proposal.payload.shot_id === "string" ? proposal.payload.shot_id : "";
+  const role = proposal.payload.target_role === "storyboard_image" || proposal.payload.target_role === "generated_clip" ? proposal.payload.target_role : "";
+  const mimeType = typeof proposal.payload.expected_mime_type === "string" ? proposal.payload.expected_mime_type : "";
+  if (!proposal.project_id || !shotId || !role || !mimeType) return null;
+  return `/api/v2/assets/media?scope=all&project_id=${encodeURIComponent(proposal.project_id)}&shot_id=${encodeURIComponent(shotId)}&role=${encodeURIComponent(role)}&mime_type=${encodeURIComponent(mimeType)}&status=active&limit=200`;
+}
+
+async function loadDirectorArtifactImportCandidates(proposal: DirectorProposal): Promise<MediaArtifact[]> {
+  const basePath = artifactImportCandidatePath(proposal);
+  const shotId = typeof proposal.payload.shot_id === "string" ? proposal.payload.shot_id : "";
+  const role = proposal.payload.target_role === "storyboard_image" || proposal.payload.target_role === "generated_clip" ? proposal.payload.target_role : "";
+  const mimeType = typeof proposal.payload.expected_mime_type === "string" ? proposal.payload.expected_mime_type : "";
+  if (basePath === null || !proposal.project_id || !shotId || !role || !mimeType) {
+    throw new Error("DIRECTOR_ARTIFACT_IMPORT_CANDIDATE_INVALID");
+  }
+  return loadDirectorArtifactPages(basePath, proposal.project_id, (artifact) => (
+    artifact.status === "active"
+    && artifact.linked_objects.shot_id === shotId
+    && artifact.role === role
+    && artifact.storage.mime_type === mimeType
+  ));
 }
 
 function Metric({ label, value, tone }: { label: string; value: string; tone: "success" | "warning" | "neutral" }) { return <div className={s.metricCell}><span>{label}</span><strong>{value}</strong><StatusPill tone={tone}>{tone === "success" ? "OK" : tone === "warning" ? "WAIT" : "LOCKED"}</StatusPill></div>; }

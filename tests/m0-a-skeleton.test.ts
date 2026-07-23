@@ -18,7 +18,7 @@ test("beta.5 MCP App closeout reports consistent package, service, schema, and m
   assert.equal(packageLock.packages[""].version, packageJson.version);
   assert.equal(WEBGPT_V4_VERSION, "webgpt-v4.3.0");
   assert.equal(WORKBENCH_V2_SCHEMA_VERSION, "workbench-v2-6");
-  assert.equal(DATABASE_MIGRATIONS.at(-1)?.id, "0010");
+  assert.equal(DATABASE_MIGRATIONS.at(-1)?.id, "0011");
   for (const document of [readme, currentState]) {
     assert.match(document, /0\.1\.0-beta\.5/);
     assert.match(document, /webgpt-v4\.3\.0/);

@@ -296,7 +296,7 @@ test("director operational state is derived with exception and human gates takin
   assert.throws(() => deriveDirectorOperationalState({ ...idle, pending_proposal_count: -1 }), /DIRECTOR_OPERATIONAL_FACT_INVALID/);
 });
 
-test("migrations 0009 and 0010 upgrade a real 0008 shape and make Director evidence immutable", () => {
+test("migrations 0009 through 0011 upgrade a real 0008 shape and make Director evidence immutable", () => {
   const db = new DatabaseSync(":memory:");
   try {
     db.exec("PRAGMA foreign_keys = ON");
@@ -312,7 +312,7 @@ test("migrations 0009 and 0010 upgrade a real 0008 shape and make Director evide
       insertMigration.run(migration.id, migration.name, migrationChecksum(migration));
     }
 
-    assert.deepEqual(runDatabaseMigrations(db).applied, ["0009", "0010"]);
+    assert.deepEqual(runDatabaseMigrations(db).applied, ["0009", "0010", "0011"]);
     assert.equal((db.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string }).value, WORKBENCH_V2_SCHEMA_VERSION);
 
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)").run("project_director", JSON.stringify({ project_id: "project_director" }));
@@ -364,7 +364,7 @@ test("migrations 0009 and 0010 upgrade a real 0008 shape and make Director evide
   }
 });
 
-test("migration 0010 upgrades an already-ledgered 0009 Grant database without checksum drift", () => {
+test("migrations 0010 and 0011 upgrade an already-ledgered 0009 Grant database without checksum drift", () => {
   const db = new DatabaseSync(":memory:");
   try {
     db.exec("PRAGMA foreign_keys = ON");
@@ -392,7 +392,7 @@ test("migration 0010 upgrades an already-ledgered 0009 Grant database without ch
       (event_id, grant_id, event_type, reservation_id, amount_minor, currency, reason_code, created_at)
       VALUES ('grant_event_0009', 'grant_director_0009', 'reserve', 'reservation_0009', 500, 'CNY', 'GENERATION_APPROVED', '2026-07-22T00:01:00.000Z')`).run();
 
-    assert.deepEqual(runDatabaseMigrations(db).applied, ["0010"]);
+    assert.deepEqual(runDatabaseMigrations(db).applied, ["0010", "0011"]);
     assert.doesNotThrow(() => assertSchemaCurrent(db));
     assert.equal(migrationChecksum(DATABASE_MIGRATIONS[8]), HISTORICAL_MIGRATION_0009_CHECKSUM);
     assert.equal((db.prepare("SELECT checksum FROM schema_migrations WHERE migration_id = '0009'").get() as { checksum: string }).checksum, HISTORICAL_MIGRATION_0009_CHECKSUM);

@@ -1,17 +1,17 @@
 # Deployment Guide
 
-Status: `SCHEMA_GATE_PASS`; current-main local startup/publish re-acceptance is pending. It is descriptive; it does not authorize external changes.
+Status: `SCHEMA_GATE_PENDING`; current-code migration, local startup and publish re-acceptance are pending. It is descriptive; it does not authorize external changes.
 
 ## Current-main database compatibility
 
-The active activity database is `workbench-v2-6` / ledger `0010`. Its 2026-07-22 migration passed the separately authorized backup, isolated migration, read-only `db:check`, restore rehearsal and logical-manifest comparison gate. This removes only the schema hold; starting a local runtime or publishing a Snapshot still needs its own bounded acceptance and must not enable a Provider.
+The active activity database is `workbench-v2-6` / ledger `0010`. Its 2026-07-22 migration passed the separately authorized backup, isolated migration, read-only `db:check`, restore rehearsal and logical-manifest comparison gate. Current code candidates require ledger `0011` for the controlled Artifact import-receipt schema, so the prior acceptance is historical and does not permit startup or Snapshot publishing. A new independently authorized migration gate is required; it must not enable a Provider.
 
 ## Deployment layers
 
 Deploy each layer independently. A PASS in one layer does not promote the next.
 
 ```text
-Layer 1  Local Workbench + ledger 0010 (database-compatible; runtime re-acceptance pending)
+Layer 1  Local Workbench + ledger 0011 (migration required; runtime re-acceptance pending)
 Layer 2  Remote Readonly MCP App + Auth0 + signed Snapshot
 Layer 3  Local Media Gateway + Cloudflare ingress (candidate)
 Layer 4  Windows automatic startup (frozen)
@@ -25,7 +25,7 @@ Prerequisites:
 - Windows 10/11;
 - Node 22;
 - FFmpeg/FFprobe 8.1.2;
-- activity database at schema `workbench-v2-6`, ledger `0010`.
+- activity database at schema `workbench-v2-6`, ledger `0011`.
 
 Install and validate:
 
@@ -41,11 +41,11 @@ Run these commands only from the verified Git root that owns the accepted activi
 
 Only when a bounded runtime acceptance is separately authorized, start through `npm run windows:start`. The process must bind only `127.0.0.1:4181`, return `200` for `/healthz` and `/readyz`, and keep real Provider flags false unless a separate canary is authorized.
 
-Database upgrade is not part of normal startup. The current accepted database is below the current-main `0010` requirement, so the migration preflight is an active gate: service stop, backup, logical manifest, isolated migration, `db:check`, restore rehearsal and explicit activity-database authorization.
+Database upgrade is not part of normal startup. The active database is below the current-code `0011` requirement, so the migration preflight is an active gate: service stop, backup, logical manifest, isolated migration, `db:check`, restore rehearsal and explicit activity-database authorization.
 
 ## Layer 2 — Remote Readonly MCP App
 
-The accepted Auth0/ChatGPT/Render wiring is retained as historical external evidence. The Layer 1 `0010` migration gate is closed, but a new Snapshot export, renewal or recovery from current `main` still needs its own bounded acceptance.
+The accepted Auth0/ChatGPT/Render wiring is retained as historical external evidence. The Layer 1 `0010` migration gate is historical, while `0011` remains pending; a new Snapshot export, renewal or recovery from current code needs both the separate migration and its own bounded acceptance.
 
 The accepted topology is:
 

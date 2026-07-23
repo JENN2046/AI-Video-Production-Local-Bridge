@@ -21,7 +21,12 @@ import {
 
 export const READONLY_SNAPSHOT_SCHEMA_VERSION = "readonly-snapshot-v4";
 export const READONLY_SNAPSHOT_REQUIRED_SCHEMA = "workbench-v2-6";
-export const READONLY_SNAPSHOT_REQUIRED_MIGRATION = "0010";
+export const READONLY_SNAPSHOT_REQUIRED_MIGRATION = "0011";
+// Snapshot v4's public projection did not change in migration 0011. Retain
+// the immediately preceding source ledger as a verification-only input so a
+// remote can keep serving an already signed v4 snapshot while its publisher
+// is upgraded. New exports always require the current ledger above.
+export const READONLY_SNAPSHOT_PREVIOUS_SOURCE_MIGRATION = "0010";
 export const READONLY_SNAPSHOT_LEGACY_SOURCE_SCHEMA = "workbench-v2-5";
 export const READONLY_SNAPSHOT_LEGACY_SOURCE_MIGRATION = "0008";
 export const READONLY_SNAPSHOT_MAX_TTL_SECONDS = 24 * 60 * 60;
@@ -709,7 +714,11 @@ export function readonlySnapshotReviewPendingCount(shots: Array<{
 const readonlySnapshotShape = {
   schema_version: z.literal(READONLY_SNAPSHOT_SCHEMA_VERSION),
   source_schema: z.enum([READONLY_SNAPSHOT_LEGACY_SOURCE_SCHEMA, READONLY_SNAPSHOT_REQUIRED_SCHEMA]),
-  source_migration: z.enum([READONLY_SNAPSHOT_LEGACY_SOURCE_MIGRATION, READONLY_SNAPSHOT_REQUIRED_MIGRATION]),
+  source_migration: z.enum([
+    READONLY_SNAPSHOT_LEGACY_SOURCE_MIGRATION,
+    READONLY_SNAPSHOT_PREVIOUS_SOURCE_MIGRATION,
+    READONLY_SNAPSHOT_REQUIRED_MIGRATION
+  ]),
   source_version: z.string().min(1).max(100),
   generated_at: isoInstantSchema,
   expires_at: isoInstantSchema,
@@ -727,9 +736,11 @@ function validateSnapshotBindings(value: {
 }, context: z.core.$RefinementCtx): void {
   const sourcePairIsCurrent = value.source_schema === READONLY_SNAPSHOT_REQUIRED_SCHEMA
     && value.source_migration === READONLY_SNAPSHOT_REQUIRED_MIGRATION;
+  const sourcePairIsPrevious = value.source_schema === READONLY_SNAPSHOT_REQUIRED_SCHEMA
+    && value.source_migration === READONLY_SNAPSHOT_PREVIOUS_SOURCE_MIGRATION;
   const sourcePairIsLegacy = value.source_schema === READONLY_SNAPSHOT_LEGACY_SOURCE_SCHEMA
     && value.source_migration === READONLY_SNAPSHOT_LEGACY_SOURCE_MIGRATION;
-  if (!sourcePairIsCurrent && !sourcePairIsLegacy) {
+  if (!sourcePairIsCurrent && !sourcePairIsPrevious && !sourcePairIsLegacy) {
     context.addIssue({ code: "custom", message: "Snapshot source schema and migration do not form a supported pair.", path: ["source_schema"] });
   }
   const projectIds = new Set<string>();
@@ -774,6 +785,17 @@ export type ReadonlyProjectProjection = z.infer<typeof READONLY_PROJECT_PROJECTI
 export type ReadonlyMediaBinding = z.infer<typeof READONLY_MEDIA_BINDING_SCHEMA>;
 
 export { canonicalizeJcs } from "../packages/domain/jcs.js";
+
+/**
+ * A remote replacement must only admit a snapshot produced from the current
+ * exporter ledger.  The parser continues to recognize the immediately prior
+ * source pair so an already-held, signed snapshot can be read until expiry
+ * during an upgrade; it is not a publish admission rule.
+ */
+export function readonlySnapshotHasCurrentSource(snapshot: Pick<ReadonlySnapshot, "source_schema" | "source_migration">): boolean {
+  return snapshot.source_schema === READONLY_SNAPSHOT_REQUIRED_SCHEMA
+    && snapshot.source_migration === READONLY_SNAPSHOT_REQUIRED_MIGRATION;
+}
 
 export function snapshotFingerprint(snapshot: ReadonlySnapshotUnsigned): string {
   const validated = READONLY_SNAPSHOT_UNSIGNED_SCHEMA.parse(snapshot);

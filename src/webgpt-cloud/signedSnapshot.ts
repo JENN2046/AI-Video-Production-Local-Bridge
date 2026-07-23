@@ -5,6 +5,7 @@ import { z } from "zod/v4";
 import {
   canonicalizeJcs,
   parseReadonlySnapshot,
+  readonlySnapshotHasCurrentSource,
   readonlySnapshotStatus,
   READONLY_SNAPSHOT_SCHEMA,
   type ReadonlySnapshot
@@ -116,6 +117,9 @@ export class ReadonlySnapshotStore {
 
   replace(input: unknown): ReadonlySnapshot {
     const next = verifyReadonlySignedSnapshot(input, this.key_id, this.verification_key, this.now());
+    if (!readonlySnapshotHasCurrentSource(next)) {
+      throw new Error("READONLY_SNAPSHOT_PUBLISH_SOURCE_MIGRATION_REQUIRED");
+    }
     if (this.expected && next.resource_url !== this.expected.resource_url) throw new Error("READONLY_SNAPSHOT_RESOURCE_MISMATCH");
     if (this.expected && next.issuer_hash !== this.expected.issuer_hash) throw new Error("READONLY_SNAPSHOT_ISSUER_MISMATCH");
     if (this.current?.snapshot_fingerprint === next.snapshot_fingerprint) return this.current;

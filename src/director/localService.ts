@@ -197,7 +197,7 @@ function requireFocus(
 function proposalKindMatchesFocus(kind: DirectorProposalKind, focus: DirectorFocus): void {
   const allowed: Record<DirectorProposalKind, readonly DirectorFocus["target_type"][]> = {
     creative_brief: ["project"], script: ["project"], shot_plan: ["project"],
-    storyboard_revision: ["shot"], generation_plan: ["shot"],
+    storyboard_revision: ["shot"], artifact_import: ["shot"], generation_plan: ["shot"],
     clip_regeneration: ["shot", "artifact"], review_assessment: ["shot", "artifact"],
     assembly_plan: ["project"], delivery_plan: ["delivery"], memory_saveback: ["memory"]
   };
