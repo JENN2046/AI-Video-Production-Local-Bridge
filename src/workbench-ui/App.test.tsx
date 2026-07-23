@@ -67,7 +67,7 @@ describe("Human Workbench V2 shell", () => {
       if (url === `/api/v2/director/projects/${projectId}`) return new Response(JSON.stringify({ ok: true, data: { project_id: projectId, principal_state: "single_owner_ready", focus: { state: "no_focus", focus: null }, proposals: [] } }), { status: 200, headers: { "content-type": "application/json" } });
       if (url === `/api/v2/projects/${projectId}/overview`) return new Response(JSON.stringify({ ok: true, data: { project: { project_id: projectId, title: "Director UI" } } }), { status: 200, headers: { "content-type": "application/json" } });
       if (url === `/api/v2/projects/${projectId}/storyboard`) return new Response(JSON.stringify({ ok: true, data: { project: { project_id: projectId, title: "Director UI" }, shots: [] } }), { status: 200, headers: { "content-type": "application/json" } });
-      if (url === `/api/v2/assets/media?scope=all&project_id=${projectId}&status=active&limit=200`) return new Response(JSON.stringify({ ok: true, data: [], meta: { limit: 200, offset: 0, total: 0, has_more: false } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url === `/api/v2/assets/media?scope=all&project_id=${projectId}&status=active&limit=200&offset=0`) return new Response(JSON.stringify({ ok: true, data: [], meta: { limit: 200, offset: 0, total: 0, has_more: false } }), { status: 200, headers: { "content-type": "application/json" } });
       return new Response(JSON.stringify({ ok: false, error: { code: "NOT_FOUND", message: url } }), { status: 404, headers: { "content-type": "application/json" } });
     });
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -92,7 +92,7 @@ describe("Human Workbench V2 shell", () => {
         if (url === `/api/v2/director/projects/${projectId}`) return new Response(JSON.stringify({ ok: true, data: { project_id: projectId, principal_state: "single_owner_ready", focus: { state: "no_focus", focus: null }, proposals: [] } }), { status: 200, headers: { "content-type": "application/json" } });
         if (url === `/api/v2/projects/${projectId}/overview`) return new Response(JSON.stringify({ ok: true, data: workspace(projectId, title) }), { status: 200, headers: { "content-type": "application/json" } });
         if (url === `/api/v2/projects/${projectId}/storyboard`) return new Response(JSON.stringify({ ok: true, data: workspace(projectId, title) }), { status: 200, headers: { "content-type": "application/json" } });
-        if (url === `/api/v2/assets/media?scope=all&project_id=${projectId}&status=active&limit=200`) return new Response(JSON.stringify({ ok: true, data: [], meta: { limit: 200, offset: 0, total: 0, has_more: false } }), { status: 200, headers: { "content-type": "application/json" } });
+        if (url === `/api/v2/assets/media?scope=all&project_id=${projectId}&status=active&limit=200&offset=0`) return new Response(JSON.stringify({ ok: true, data: [], meta: { limit: 200, offset: 0, total: 0, has_more: false } }), { status: 200, headers: { "content-type": "application/json" } });
       }
       if (url === "/api/v2/director/focus" && init?.method === "POST") return new Response(JSON.stringify({ ok: true, data: { focus: {} } }), { status: 200, headers: { "content-type": "application/json" } });
       return new Response(JSON.stringify({ ok: false, error: { code: "NOT_FOUND", message: url } }), { status: 404, headers: { "content-type": "application/json" } });
@@ -111,6 +111,39 @@ describe("Human Workbench V2 shell", () => {
     });
   });
 
+  it("pages every active Artifact before offering older entries as Director Focus targets", async () => {
+    const projectId = "project_director_artifact_paging";
+    const olderArtifactId = "artifact_director_older_active";
+    const projectSummary = { project: { project_id: projectId, title: "Director artifact paging", status: "draft", brief: {}, video_spec: { duration_seconds: 15, aspect_ratio: "9:16", resolution: "1080x1920" }, shot_ids: [], active_storyboard_package_id: "", generation_batch_ids: [], exports: { final_video_artifact_id: "" } }, meta: {}, shot_count: 0, accepted_count: 0, active_run_count: 0, blocker_count: 0, blocked_shot_count: 0, blocker_codes: [], blocker_reason: "", review_pending_count: 0, delivery_state: "not_ready", next_action: {} };
+    const artifact = (artifactId: string) => ({ artifact_id: artifactId, artifact_type: "video", role: "generated_clip", status: "active", storage: { uri: "", mime_type: "video/mp4", filename: "" }, metadata: { width: 720, height: 1280, duration_seconds: 5, aspect_ratio: "9:16", sha256: "d".repeat(64) }, linked_objects: { project_id: projectId, shot_id: "shot_artifact_paging" }, source: { kind: "fixture", provider: "", provider_job_id: "", sha256: "d".repeat(64), external_url_host: "" } });
+    const newestPage = Array.from({ length: 200 }, (_, index) => artifact(`artifact_director_new_${String(index).padStart(3, "0")}`));
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/v2/shell") return new Response(JSON.stringify({ ok: true, data: shell }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url.startsWith("/api/v2/projects?")) return new Response(JSON.stringify({ ok: true, data: [projectSummary], meta: { limit: 100, offset: 0, total: 1, has_more: false } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url === `/api/v2/director/projects/${projectId}`) return new Response(JSON.stringify({ ok: true, data: { project_id: projectId, principal_state: "single_owner_ready", focus: { state: "no_focus", focus: null }, proposals: [] } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url === `/api/v2/projects/${projectId}/overview` || url === `/api/v2/projects/${projectId}/storyboard`) return new Response(JSON.stringify({ ok: true, data: { project: { project_id: projectId, title: "Director artifact paging" }, shots: [] } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url === `/api/v2/assets/media?scope=all&project_id=${projectId}&status=active&limit=200&offset=0`) return new Response(JSON.stringify({ ok: true, data: newestPage, meta: { limit: 200, offset: 0, total: 201, has_more: true } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url === `/api/v2/assets/media?scope=all&project_id=${projectId}&status=active&limit=200&offset=200`) return new Response(JSON.stringify({ ok: true, data: [artifact(olderArtifactId)], meta: { limit: 200, offset: 200, total: 201, has_more: false } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url === "/api/v2/director/focus" && init?.method === "POST") return new Response(JSON.stringify({ ok: true, data: { focus: {} } }), { status: 200, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ ok: false, error: { code: "NOT_FOUND", message: url } }), { status: 404, headers: { "content-type": "application/json" } });
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={["/v2/director"]}><App /></MemoryRouter></QueryClientProvider>);
+    expect(await screen.findByRole("heading", { name: "Director 审批台" })).toBeInTheDocument();
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input) === `/api/v2/assets/media?scope=all&project_id=${projectId}&status=active&limit=200&offset=200`)).toBe(true));
+    fireEvent.change(screen.getByLabelText("讨论层级"), { target: { value: "artifact" } });
+    await waitFor(() => expect(screen.getByRole("option", { name: `generated_clip · ${olderArtifactId}` })).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText("当前对象"), { target: { value: olderArtifactId } });
+    fireEvent.click(screen.getByRole("checkbox", { name: /我确认将此对象设为 ChatGPT 当前讨论目标/ }));
+    fireEvent.click(screen.getByRole("button", { name: "设为当前讨论对象" }));
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([input, init]) => String(input) === "/api/v2/director/focus" && (init as RequestInit | undefined)?.method === "POST");
+      expect(call).toBeTruthy();
+      expect(JSON.parse(String((call?.[1] as RequestInit).body))).toMatchObject({ project_id: projectId, target_type: "artifact", target_id: olderArtifactId, human_confirmation: true });
+    });
+  });
+
   it("records an artifact_import receipt with only an already-registered Artifact identifier", async () => {
     const projectId = "project_director_import";
     const proposalId = "proposal_director_import";
@@ -122,7 +155,7 @@ describe("Human Workbench V2 shell", () => {
       if (url === `/api/v2/director/projects/${projectId}`) return new Response(JSON.stringify({ ok: true, data: { project_id: projectId, principal_state: "single_owner_ready", focus: { state: "active", focus: { focus_id: "focus_import", project_id: projectId, target_type: "shot", target_id: "shot_import", generation: 1, created_at: "2026-07-23T00:00:00.000Z", expires_at: "2026-07-23T01:00:00.000Z" } }, proposals: [{ proposal_id: proposalId, project_id: projectId, target_type: "shot", target_id: "shot_import", focus_id: "focus_import", focus_generation: 1, kind: "artifact_import", source: "native", created_at: "2026-07-23T00:00:00.000Z", base_state_hash: "a".repeat(64), payload_hash: "b".repeat(64), payload: { shot_id: "shot_import", target_role: "storyboard_image", expected_mime_type: "image/png", summary: "Import the approved storyboard reference.", rationale: "Local receipt only." }, status: "accepted", reason_code: "DIRECTOR_HUMAN_ACCEPTED", updated_at: "2026-07-23T00:01:00.000Z", action_allowed: false, action_blocked_code: "DIRECTOR_PROPOSAL_NOT_PENDING", automation_grant: null, artifact_import_receipt: null }] } }), { status: 200, headers: { "content-type": "application/json" } });
       if (url === `/api/v2/projects/${projectId}/overview`) return new Response(JSON.stringify({ ok: true, data: { project: { project_id: projectId, title: "Director import" } } }), { status: 200, headers: { "content-type": "application/json" } });
       if (url === `/api/v2/projects/${projectId}/storyboard`) return new Response(JSON.stringify({ ok: true, data: { project: { project_id: projectId, title: "Director import" }, shots: [{ shot_id: "shot_import", order: 1, description: "Import fixture" }] } }), { status: 200, headers: { "content-type": "application/json" } });
-      if (url === `/api/v2/assets/media?scope=all&project_id=${projectId}&status=active&limit=200`) return new Response(JSON.stringify({ ok: true, data: [], meta: { limit: 200, offset: 0, total: 0, has_more: false } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url === `/api/v2/assets/media?scope=all&project_id=${projectId}&status=active&limit=200&offset=0`) return new Response(JSON.stringify({ ok: true, data: [], meta: { limit: 200, offset: 0, total: 0, has_more: false } }), { status: 200, headers: { "content-type": "application/json" } });
       if (url === `/api/v2/assets/media?scope=all&project_id=${projectId}&shot_id=shot_import&role=storyboard_image&mime_type=image%2Fpng&status=active&limit=200`) return new Response(JSON.stringify({ ok: true, data: [{ artifact_id: artifactId, artifact_type: "image", role: "storyboard_image", status: "active", storage: { uri: "C:/private/fixture.png", mime_type: "image/png", filename: "fixture.png" }, metadata: { width: 720, height: 1280, duration_seconds: null, aspect_ratio: "9:16", sha256: "c".repeat(64) }, linked_objects: { project_id: projectId, shot_id: "shot_import" }, source: { kind: "fixture", provider: "", provider_job_id: "", sha256: "c".repeat(64), external_url_host: "" } }], meta: { limit: 200, offset: 0, total: 1, has_more: false } }), { status: 200, headers: { "content-type": "application/json" } });
       if (url === `/api/v2/director/proposals/${proposalId}/artifact-import-receipt` && init?.method === "POST") return new Response(JSON.stringify({ ok: true, data: { receipt: {} } }), { status: 200, headers: { "content-type": "application/json" } });
       return new Response(JSON.stringify({ ok: false, error: { code: "NOT_FOUND", message: url } }), { status: 404, headers: { "content-type": "application/json" } });

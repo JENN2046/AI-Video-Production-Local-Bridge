@@ -83,6 +83,8 @@ const proposalLabels: Record<string, string> = {
   assembly_plan: "合成方案", delivery_plan: "交付方案", memory_saveback: "Memory 回存建议"
 };
 
+const DIRECTOR_ARTIFACT_PAGE_SIZE = 200;
+
 function twoDigits(value: number): string {
   return String(value).padStart(2, "0");
 }
@@ -94,6 +96,44 @@ function twoDigits(value: number): string {
  */
 export function directorLocalDateTimeInputValue(date: Date): string {
   return `${date.getFullYear()}-${twoDigits(date.getMonth() + 1)}-${twoDigits(date.getDate())}T${twoDigits(date.getHours())}:${twoDigits(date.getMinutes())}`;
+}
+
+/**
+ * Artifact Focuses must not silently disappear behind the Assets endpoint's
+ * 200-item page limit.  Read every stable page before offering the target
+ * list, and fail closed if a concurrent or malformed page would make that
+ * list incomplete or cross-project.
+ */
+export async function loadDirectorActiveArtifacts(projectId: string): Promise<MediaArtifact[]> {
+  const basePath = `/api/v2/assets/media?scope=all&project_id=${encodeURIComponent(projectId)}&status=active&limit=${DIRECTOR_ARTIFACT_PAGE_SIZE}`;
+  const artifacts = new Map<string, MediaArtifact>();
+  let offset = 0;
+  let expectedTotal: number | null = null;
+  for (;;) {
+    const page = await apiPage<MediaArtifact>(`${basePath}&offset=${offset}`);
+    if (
+      page.meta.offset !== offset
+      || page.meta.limit < 1
+      || page.meta.total < 0
+      || (expectedTotal !== null && page.meta.total !== expectedTotal)
+    ) {
+      throw new Error("DIRECTOR_ARTIFACT_PAGE_INVALID");
+    }
+    expectedTotal ??= page.meta.total;
+    for (const artifact of page.items) {
+      if (artifact.status !== "active" || artifact.linked_objects.project_id !== projectId || artifacts.has(artifact.artifact_id)) {
+        throw new Error("DIRECTOR_ARTIFACT_PAGE_INVALID");
+      }
+      artifacts.set(artifact.artifact_id, artifact);
+    }
+    if (!page.meta.has_more) {
+      if (artifacts.size !== expectedTotal) throw new Error("DIRECTOR_ARTIFACT_PAGE_INVALID");
+      return [...artifacts.values()];
+    }
+    const nextOffset = offset + page.items.length;
+    if (nextOffset <= offset || nextOffset >= expectedTotal) throw new Error("DIRECTOR_ARTIFACT_PAGE_INVALID");
+    offset = nextOffset;
+  }
 }
 
 export function DirectorPage() {
@@ -126,7 +166,7 @@ export function DirectorPage() {
   });
   const artifacts = useQuery({
     queryKey: ["director-artifacts", projectId],
-    queryFn: () => apiPage<MediaArtifact>(`/api/v2/assets/media?scope=all&project_id=${encodeURIComponent(projectId)}&status=active&limit=200`),
+    queryFn: () => loadDirectorActiveArtifacts(projectId),
     enabled: Boolean(projectId)
   });
   const selectProject = (nextProjectId: string) => {
@@ -151,7 +191,7 @@ export function DirectorPage() {
           : <DirectorTowerView key={workspace.data.project.project_id} tower={tower.data} workspace={{
             ...workspace.data,
             shots: targetWorkspace.data.shots ?? [],
-            artifacts: Object.fromEntries(artifacts.data.items.map((artifact) => [artifact.artifact_id, artifact]))
+            artifacts: Object.fromEntries(artifacts.data.map((artifact) => [artifact.artifact_id, artifact]))
           }} onChanged={() => {
             void tower.refetch();
             void queryClient.invalidateQueries({ queryKey: ["shell"] });
