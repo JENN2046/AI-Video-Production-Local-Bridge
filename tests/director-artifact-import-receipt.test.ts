@@ -176,7 +176,9 @@ test("artifact_import proposals reject source locations and enforce SHOT role an
     `Parenthesized bytes: (${base64Blob})`,
     "Markdown Windows path: `C:\\Users\\51529\\Downloads\\storyboard.png`",
     "Markdown POSIX path: `/private/storyboard.png`",
-    "Markdown relative path: `assets/private.png`"
+    "Markdown relative path: `assets/private.png`",
+    "MIME-segment path: assets/image/png/storyboard.png",
+    "MIME-segment path: /tmp/video/mp4"
   ]) {
     assert.equal(DIRECTOR_PROPOSAL_DRAFT_SCHEMA.safeParse({
       ...valid, payload: { ...valid.payload, summary: prohibitedText }

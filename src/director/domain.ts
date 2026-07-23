@@ -29,7 +29,10 @@ function artifactImportTextHasSourceLocator(value: string): boolean {
   if (/\bdata:/iu.test(value)) {
     return true;
   }
-  return artifactImportSourceLocatorPattern.test(value.replace(artifactImportSafeMimeReferencePattern, ""));
+  // Preserve the surrounding token structure while exempting standalone MIME
+  // prose. Deleting `image/png` would turn `assets/image/png/storyboard.png`
+  // into `assets//storyboard.png` and could hide the filesystem locator.
+  return artifactImportSourceLocatorPattern.test(value.replace(artifactImportSafeMimeReferencePattern, "mime"));
 }
 
 /**
