@@ -21,7 +21,7 @@ import {
 import { DATABASE_MIGRATIONS, assertSchemaCurrent, migrationChecksum, runDatabaseMigrations } from "../src/storage/migrations.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import { saveProject, saveShot, type Shot } from "../src/tools/projects.js";
-import { createWorkbenchProject } from "../src/tools/workbenchV2.js";
+import { createWorkbenchProject, listWorkbenchAssets } from "../src/tools/workbenchV2.js";
 import { bootstrapWebGptProjectOwner } from "../src/webgpt-v4/authorizationAdmin.js";
 
 const principalId = "a".repeat(64);
@@ -166,6 +166,42 @@ test("artifact_import proposals reject source locations and enforce SHOT role an
   assert.equal(DIRECTOR_PROPOSAL_DRAFT_SCHEMA.safeParse({
     ...valid, payload: { ...valid.payload, target_role: "generated_clip", expected_mime_type: "video/webm" }
   }).success, false);
+});
+
+test("narrow Artifact filters keep an import receipt candidate reachable beyond the general asset page", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const primary = createProjectShot(db, "Director import candidate paging", "paging");
+    const artifactId = "artifact_import_paging_target";
+    insertVerifiedStoryboardArtifact(db, { project_id: primary.project.project_id, shot_id: primary.shot.shot_id, artifact_id: artifactId });
+    const insertDistractor = db.prepare(`INSERT INTO media_artifacts
+      (artifact_id, project_id, shot_id, role, artifact_type, status, data_json, updated_at)
+      VALUES (?, ?, ?, 'generated_clip', 'video', 'active', ?, '2030-01-01T00:00:00.000Z')`);
+    for (let index = 0; index < 201; index += 1) {
+      const distractorId = `zz_director_import_distractor_${String(index).padStart(3, "0")}`;
+      insertDistractor.run(distractorId, primary.project.project_id, primary.shot.shot_id, JSON.stringify({
+        artifact_id: distractorId,
+        artifact_type: "video",
+        role: "generated_clip",
+        status: "active",
+        storage: { uri: "", mime_type: "video/mp4", filename: "" },
+        metadata: { width: 0, height: 0, duration_seconds: 5, aspect_ratio: "9:16", sha256: "d".repeat(64) },
+        linked_objects: { project_id: primary.project.project_id, shot_id: primary.shot.shot_id },
+        source: { kind: "fixture", provider: "", provider_job_id: "", sha256: "d".repeat(64), external_url_host: "" }
+      }));
+    }
+    const broadPage = listWorkbenchAssets("media", {
+      scope: "all", project_id: primary.project.project_id, status: "active", limit: 200
+    }, db);
+    assert.equal(broadPage.items.some((item) => item.artifact_id === artifactId), false);
+    const exactCandidates = listWorkbenchAssets("media", {
+      scope: "all", project_id: primary.project.project_id, shot_id: primary.shot.shot_id,
+      role: "storyboard_image", mime_type: "image/png", status: "active", limit: 200
+    }, db);
+    assert.deepEqual(exactCandidates.items.map((item) => item.artifact_id), [artifactId]);
+  } finally {
+    db.close();
+  }
 });
 
 test("accepted artifact_import records exactly one immutable, path-free receipt after local byte validation", () => {

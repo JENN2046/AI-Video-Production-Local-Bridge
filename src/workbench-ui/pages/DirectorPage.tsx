@@ -199,12 +199,12 @@ function DirectorTowerView({ tower, workspace, onChanged }: { tower: DirectorTow
     </section>
     <section className={s.tableSection}>
       <div className={s.sectionTitle}><div><h2>ChatGPT Director 提议</h2><p>接受只追加人工事件。仅接受的生成提议可经第二次确认编译为不可变、限额的 Automation Grant；编译本身不创建 Intent、任务或 Provider 调用。</p></div></div>
-      {tower.proposals.length === 0 ? <EmptyState title="还没有 Director 提议" detail="在 ChatGPT 中围绕当前 Focus 讨论后，模型只能提交建议，不能直接执行。" /> : <div className={s.runList}>{tower.proposals.map((proposal) => <ProposalCard key={proposal.proposal_id} proposal={proposal} workspace={workspace} onChanged={onChanged} />)}</div>}
+      {tower.proposals.length === 0 ? <EmptyState title="还没有 Director 提议" detail="在 ChatGPT 中围绕当前 Focus 讨论后，模型只能提交建议，不能直接执行。" /> : <div className={s.runList}>{tower.proposals.map((proposal) => <ProposalCard key={proposal.proposal_id} proposal={proposal} onChanged={onChanged} />)}</div>}
     </section>
   </>;
 }
 
-function ProposalCard({ proposal, workspace, onChanged }: { proposal: DirectorProposal; workspace: WorkspaceData; onChanged: () => void }) {
+function ProposalCard({ proposal, onChanged }: { proposal: DirectorProposal; onChanged: () => void }) {
   const [confirmed, setConfirmed] = useState(false);
   const [grantConfirmed, setGrantConfirmed] = useState(false);
   const [maxTotalMinor, setMaxTotalMinor] = useState(1_000);
@@ -242,9 +242,15 @@ function ProposalCard({ proposal, workspace, onChanged }: { proposal: DirectorPr
   });
   const pending = proposal.status === "pending_review" && proposal.action_allowed;
   const compilable = proposal.status === "accepted" && proposal.automation_grant === null && (proposal.kind === "generation_plan" || proposal.kind === "clip_regeneration");
-  const importCandidates = useMemo(() => matchingArtifactImportCandidates(proposal, workspace), [proposal, workspace]);
-  const resolvedArtifactId = selectedArtifactId || importCandidates[0]?.artifact_id || "";
   const importReceiptable = proposal.status === "accepted" && proposal.kind === "artifact_import" && proposal.artifact_import_receipt === null;
+  const importCandidatePath = artifactImportCandidatePath(proposal);
+  const importCandidates = useQuery({
+    queryKey: ["director-artifact-import-candidates", importCandidatePath],
+    queryFn: () => apiPage<MediaArtifact>(importCandidatePath ?? ""),
+    enabled: importReceiptable && importCandidatePath !== null
+  });
+  const matchingImportCandidates = importCandidates.data?.items ?? [];
+  const resolvedArtifactId = selectedArtifactId || matchingImportCandidates[0]?.artifact_id || "";
   const proposalCurrency = typeof proposal.payload.currency === "string" ? proposal.payload.currency : "";
   const budgetUnitLabel = proposalCurrency === "CNY" ? "CNY 分（100 分 = 1 元）" : proposalCurrency === "RH_COINS" ? "RH_COINS" : "minor units";
   return <article className={s.evidencePanel}>
@@ -252,7 +258,7 @@ function ProposalCard({ proposal, workspace, onChanged }: { proposal: DirectorPr
     <KeyValue rows={[["来源", proposal.source === "native" ? "ChatGPT Native" : "手动导入（不可信）"], ["目标", `${proposal.target_type} · ${proposal.target_id}`], ["Focus", `#${proposal.focus_generation}`], ["创建", formatTime(proposal.created_at)], ["状态原因", proposal.reason_code ?? "-" ]]} />
     <details className={s.rawDetails}><summary>查看结构化提议（本地人类审批可见）</summary><pre>{JSON.stringify(proposal.payload, null, 2)}</pre></details>
     {pending ? <div className={s.actionPanel}><label className={s.checkboxRow}><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>我已核对当前状态和影响。接受只记录审批，不会执行 Provider、采纳视频或交付。</span></label><label className={s.field}><span>拒绝原因代码</span><select value={reasonCode} onChange={(event) => setReasonCode(event.target.value)}><option value="DIRECTOR_HUMAN_REJECTED">不采纳此建议</option><option value="DIRECTOR_SCOPE_NEEDS_REVISION">需要修改范围</option><option value="DIRECTOR_CREATIVE_DIRECTION_REJECTED">创意方向不符合</option><option value="DIRECTOR_BUDGET_NOT_APPROVED">预算未批准</option></select></label><div className={s.buttonRow}><button className={s.dangerButton} disabled={!confirmed || decision.isPending} onClick={() => decision.mutate("reject")}><X size={16} /> 拒绝提议</button><button className={s.primaryButton} disabled={!confirmed || decision.isPending} onClick={() => decision.mutate("accept")}><Check size={16} /> 接受提议</button></div>{decision.isError && <div className={s.inlineError}>{decision.error.message}</div>}</div>
-      : importReceiptable ? <div className={s.actionPanel}><p>先在 Assets 中由 Jenn 选择本地文件并完成既有 Artifact/Blob 校验；此处仅把一个已注册、同项目同 SHOT 的 Artifact 记入不可变回执。不会读取路径、URL 或文件字节，也不会启动生成。</p>{importCandidates.length === 0 ? <div className={s.inlineError}>没有与此提议的角色、MIME 和 SHOT 相符的已注册 Artifact。</div> : <><label className={s.field}><span>已验证的本地 Artifact</span><select value={resolvedArtifactId} onChange={(event) => setSelectedArtifactId(event.target.value)}>{importCandidates.map((artifact) => <option key={artifact.artifact_id} value={artifact.artifact_id}>{artifact.role} · {artifact.artifact_id} · {artifact.storage.mime_type}</option>)}</select></label><label className={s.checkboxRow}><input type="checkbox" checked={importConfirmed} onChange={(event) => setImportConfirmed(event.target.checked)} /><span>我确认该 Artifact 已由本地导入流程校验，且应作为本提议的一次性受控导入回执。</span></label><div className={s.buttonRow}><button className={s.primaryButton} disabled={!resolvedArtifactId || !importConfirmed || importReceipt.isPending} onClick={() => importReceipt.mutate(resolvedArtifactId)}><Check size={16} /> 记录不可变导入回执</button></div>{importReceipt.isError && <div className={s.inlineError}>{importReceipt.error.message}</div>}</>}</div>
+      : importReceiptable ? <div className={s.actionPanel}><p>先在 Assets 中由 Jenn 选择本地文件并完成既有 Artifact/Blob 校验；此处仅把一个已注册、同项目同 SHOT 的 Artifact 记入不可变回执。操作不接受或保存路径、URL、文件字节；记录前会重新读取已注册本地 Artifact 的字节，以核验 Blob digest 与 MIME，不会启动生成。</p>{importCandidates.isLoading ? <p>正在读取与此提议精确匹配的已注册 Artifact。</p> : importCandidates.isError || importCandidatePath === null ? <div className={s.inlineError}>无法读取与此提议相符的已注册 Artifact；不会记录回执。</div> : matchingImportCandidates.length === 0 ? <div className={s.inlineError}>没有与此提议的角色、MIME 和 SHOT 相符的已注册 Artifact。</div> : <><label className={s.field}><span>已验证的本地 Artifact</span><select value={resolvedArtifactId} onChange={(event) => setSelectedArtifactId(event.target.value)}>{matchingImportCandidates.map((artifact) => <option key={artifact.artifact_id} value={artifact.artifact_id}>{artifact.role} · {artifact.artifact_id} · {artifact.storage.mime_type}</option>)}</select></label><label className={s.checkboxRow}><input type="checkbox" checked={importConfirmed} onChange={(event) => setImportConfirmed(event.target.checked)} /><span>我确认该 Artifact 已由本地导入流程校验，且应作为本提议的一次性受控导入回执。</span></label><div className={s.buttonRow}><button className={s.primaryButton} disabled={!resolvedArtifactId || !importConfirmed || importReceipt.isPending} onClick={() => importReceipt.mutate(resolvedArtifactId)}><Check size={16} /> 记录不可变导入回执</button></div>{importReceipt.isError && <div className={s.inlineError}>{importReceipt.error.message}</div>}</>}</div>
       : proposal.artifact_import_receipt ? <div className={s.inlineNotice}>已记录不可变导入回执 · {proposal.artifact_import_receipt.role} · {proposal.artifact_import_receipt.mime_type} · {proposal.artifact_import_receipt.artifact_id}。该回执不保存源路径、URL 或文件内容。</div>
       : compilable ? <div className={s.actionPanel}><p>第二次确认才会创建不可变 Grant。它只授权 RunningHub 的受限后续编排；当前动作不会发起任何 Provider 请求。</p><div className={s.formGrid}><label className={s.field}><span>总上限（{budgetUnitLabel}）</span><input type="number" min="1" value={maxTotalMinor} onChange={(event) => setMaxTotalMinor(Number(event.target.value))} /></label><label className={s.field}><span>单次上限（{budgetUnitLabel}）</span><input type="number" min="1" value={maxPerRunMinor} onChange={(event) => setMaxPerRunMinor(Number(event.target.value))} /></label><label className={s.field}><span>每 SHOT 最大版本</span><input type="number" min="1" max="20" value={maxVersionsPerShot} onChange={(event) => setMaxVersionsPerShot(Number(event.target.value))} /></label><label className={s.field}><span>自动重试次数</span><input type="number" min="0" max="5" value={maxAutomaticRetries} onChange={(event) => setMaxAutomaticRetries(Number(event.target.value))} /></label><label className={s.field}><span>Grant 到期</span><input type="datetime-local" value={grantExpiry} onChange={(event) => setGrantExpiry(event.target.value)} /></label></div><label className={s.checkboxRow}><input type="checkbox" checked={grantConfirmed} onChange={(event) => setGrantConfirmed(event.target.checked)} /><span>我确认此限额、版本和有效期；我知道编译会写入不可变授权证据，但不会提交 Provider。</span></label><div className={s.buttonRow}><button className={s.primaryButton} disabled={!grantConfirmed || compile.isPending} onClick={() => compile.mutate()}><ShieldAlert size={16} /> 编译有界 Automation Grant</button></div>{compile.isError && <div className={s.inlineError}>{compile.error.message}</div>}</div>
         : proposal.automation_grant ? <div className={s.actionPanel}><div className={s.inlineNotice}>已编译 Grant · {proposal.automation_grant.provider} · {proposal.automation_grant.currency} {proposal.automation_grant.max_total_minor} · 到期 {formatTime(proposal.automation_grant.expires_at)}。它不会绕过 Provider、预算、成员资格或事实状态门禁。</div><label className={s.checkboxRow}><input type="checkbox" checked={startConfirmed} onChange={(event) => setStartConfirmed(event.target.checked)} /><span>我确认启动这次已编译、受限的生成。系统仍会先重验官方价格、余额、能力和当前事实状态；默认 Provider 关闭时会 fail closed。</span></label><div className={s.buttonRow}><button className={s.primaryButton} disabled={!startConfirmed || start.isPending} onClick={() => start.mutate()}><Sparkles size={16} /> 启动有界生成</button></div>{start.isError && <div className={s.inlineError}>{start.error.message}</div>}</div>
@@ -266,16 +272,13 @@ function focusTargets(workspace: WorkspaceData, type: FocusTargetType): Array<{ 
   return Object.values(workspace.artifacts ?? {}).filter((artifact) => artifact.status === "active" && artifact.linked_objects.project_id === workspace.project.project_id).map((artifact) => ({ id: artifact.artifact_id, label: `${artifact.role} · ${artifact.artifact_id}` }));
 }
 
-function matchingArtifactImportCandidates(proposal: DirectorProposal, workspace: WorkspaceData): MediaArtifact[] {
-  if (proposal.kind !== "artifact_import") return [];
+function artifactImportCandidatePath(proposal: DirectorProposal): string | null {
+  if (proposal.kind !== "artifact_import") return null;
   const shotId = typeof proposal.payload.shot_id === "string" ? proposal.payload.shot_id : "";
   const role = proposal.payload.target_role === "storyboard_image" || proposal.payload.target_role === "generated_clip" ? proposal.payload.target_role : "";
   const mimeType = typeof proposal.payload.expected_mime_type === "string" ? proposal.payload.expected_mime_type : "";
-  return Object.values(workspace.artifacts ?? {}).filter((artifact) => artifact.status === "active"
-    && artifact.linked_objects.project_id === proposal.project_id
-    && artifact.linked_objects.shot_id === shotId
-    && artifact.role === role
-    && artifact.storage.mime_type === mimeType);
+  if (!proposal.project_id || !shotId || !role || !mimeType) return null;
+  return `/api/v2/assets/media?scope=all&project_id=${encodeURIComponent(proposal.project_id)}&shot_id=${encodeURIComponent(shotId)}&role=${encodeURIComponent(role)}&mime_type=${encodeURIComponent(mimeType)}&status=active&limit=200`;
 }
 
 function Metric({ label, value, tone }: { label: string; value: string; tone: "success" | "warning" | "neutral" }) { return <div className={s.metricCell}><span>{label}</span><strong>{value}</strong><StatusPill tone={tone}>{tone === "success" ? "OK" : tone === "warning" ? "WAIT" : "LOCKED"}</StatusPill></div>; }

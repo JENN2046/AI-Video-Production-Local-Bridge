@@ -1143,7 +1143,7 @@ export function decideWorkbenchImport(
 
 export function listWorkbenchAssets(
   tab: "media" | "memory" | "reference" | "recall",
-  input: { scope?: "daily" | "unassigned" | "all"; project_id?: string; type?: string; role?: string; status?: string; limit?: number; offset?: number } = {},
+  input: { scope?: "daily" | "unassigned" | "all"; project_id?: string; shot_id?: string; type?: string; role?: string; mime_type?: string; status?: string; limit?: number; offset?: number } = {},
   db = openM0Database()
 ): WorkbenchPage<Record<string, unknown>> {
   const limit = clampLimit(input.limit);
@@ -1168,8 +1168,10 @@ export function listWorkbenchAssets(
   if (scope === "daily") clauses.push("EXISTS (SELECT 1 FROM workbench_project_meta m WHERE m.project_id = a.project_id AND m.lifecycle = 'active' AND m.classification IN ('production', 'unclassified'))");
   if (scope === "unassigned") clauses.push("(a.project_id IS NULL OR a.project_id = '' OR NOT EXISTS (SELECT 1 FROM workbench_project_meta m WHERE m.project_id = a.project_id))");
   if (input.project_id) { clauses.push("a.project_id = ?"); params.push(input.project_id); }
+  if (input.shot_id) { clauses.push("a.shot_id = ?"); params.push(input.shot_id); }
   if (input.type) { clauses.push("a.artifact_type = ?"); params.push(input.type); }
   if (input.role) { clauses.push("a.role = ?"); params.push(input.role); }
+  if (input.mime_type) { clauses.push("json_extract(a.data_json, '$.storage.mime_type') = ?"); params.push(input.mime_type); }
   if (input.status) { clauses.push("a.status = ?"); params.push(input.status); }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
   const countRow = db.prepare(`SELECT COUNT(*) AS count FROM media_artifacts a ${where}`).get(...params) as { count: number };

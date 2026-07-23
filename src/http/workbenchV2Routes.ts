@@ -326,9 +326,11 @@ export async function handleWorkbenchV2Api(
     }
     const result = withDatabase((db) => listWorkbenchAssets(tab as "media" | "memory" | "reference" | "recall", {
       project_id: url.searchParams.get("project_id") ?? undefined,
+      shot_id: url.searchParams.get("shot_id") ?? undefined,
       scope: (url.searchParams.get("scope") ?? "daily") as "daily" | "unassigned" | "all",
       type: url.searchParams.get("type") ?? undefined,
       role: url.searchParams.get("role") ?? undefined,
+      mime_type: url.searchParams.get("mime_type") ?? undefined,
       status: url.searchParams.get("status") ?? undefined,
       limit: numberParam(url.searchParams.get("limit")),
       offset: numberParam(url.searchParams.get("offset"))
