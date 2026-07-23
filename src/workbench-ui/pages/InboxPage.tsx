@@ -113,9 +113,15 @@ function DraftDetail({ item }: { item: Record<string, unknown> }) {
 function QuarantineDetail({ item }: { item: Record<string, unknown> }) {
   const queryClient = useQueryClient();
   const [targetProject, setTargetProject] = useState("");
+  const [targetShot, setTargetShot] = useState("");
   const [reason, setReason] = useState("");
+  const shots = useQuery({
+    queryKey: ["quarantine-target-shots", targetProject],
+    queryFn: () => apiGet<WorkspaceData>(`/api/v2/projects/${encodeURIComponent(targetProject)}/storyboard`),
+    enabled: Boolean(targetProject)
+  });
   const mutation = useMutation({
-    mutationFn: (decision: "excluded" | "registered") => apiMutation(`/api/v2/imports/${item.checksum}/decision`, "POST", { decision, target_project_id: targetProject, reason }),
+    mutationFn: (decision: "excluded" | "registered") => apiMutation(`/api/v2/imports/${item.checksum}/decision`, "POST", { decision, target_project_id: targetProject, target_shot_id: targetShot, reason }),
     onSuccess: () => invalidateInbox(queryClient)
   });
   const blockers = Array.isArray(item.blockers) ? item.blockers : [];
@@ -125,7 +131,7 @@ function QuarantineDetail({ item }: { item: Record<string, unknown> }) {
     <div className={s.detailHeader}><div><span className={s.eyebrow}>隔离素材</span><h2>{String(item.filename ?? "未命名")}</h2></div><StatusPill tone={statusTone(workflowStatus)}>{statusLabel(workflowStatus)}</StatusPill></div>
     <div className={s.imageStage}>{item.filename ? <img src={`/imports/${encodeURIComponent(String(item.filename))}`} alt={String(item.filename)} /> : <MediaPreview artifact={artifact} />}</div>
     <KeyValue rows={[["尺寸", `${item.width ?? 0} × ${item.height ?? 0}`], ["画幅", String(item.aspect_ratio ?? "未知")], ["大小", formatBytes(Number(item.size_bytes ?? 0))], ["校验结果", blockers.length ? blockers.join("、") : "可注册"]]} />
-    {(workflowStatus === "registerable" || workflowStatus === "blocked") && <div className={s.actionPanel}><h3>处理素材</h3><label className={s.field}><span>目标项目</span><ProjectPicker value={targetProject} onChange={setTargetProject} /></label><label className={s.field}><span>说明</span><input maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label><div className={s.buttonRow}><button className={s.dangerButton} onClick={() => mutation.mutate("excluded")}><Ban size={16} /> 排除素材</button><button className={s.primaryButton} disabled={workflowStatus !== "registerable" || !targetProject || mutation.isPending} onClick={() => mutation.mutate("registered")}><Check size={16} /> 注册到项目</button></div>{workflowStatus === "blocked" && <div className={s.inlineNotice}>媒体校验未通过，不能注册；可以排除并保留记录。</div>}{mutation.isError && <div className={s.inlineError}>{mutation.error.message}</div>}</div>}
+    {(workflowStatus === "registerable" || workflowStatus === "blocked") && <div className={s.actionPanel}><h3>处理素材</h3><label className={s.field}><span>目标项目</span><ProjectPicker value={targetProject} onChange={(value) => { setTargetProject(value); setTargetShot(""); }} /></label><label className={s.field}><span>目标 SHOT</span><select value={targetShot} onChange={(event) => setTargetShot(event.target.value)} disabled={!targetProject || shots.isLoading}><option value="">请选择</option>{(shots.data?.shots ?? []).map((shot) => <option key={shot.shot_id} value={shot.shot_id}>SHOT {String(shot.order).padStart(3, "0")} · {shot.description || shot.shot_id}</option>)}</select></label><label className={s.field}><span>说明</span><input maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label><div className={s.buttonRow}><button className={s.dangerButton} onClick={() => mutation.mutate("excluded")}> <Ban size={16} /> 排除素材</button><button className={s.primaryButton} disabled={workflowStatus !== "registerable" || !targetProject || !targetShot || mutation.isPending} onClick={() => mutation.mutate("registered")}><Check size={16} /> 注册到目标 SHOT</button></div>{workflowStatus === "blocked" && <div className={s.inlineNotice}>媒体校验未通过，不能注册；可以排除并保留记录。</div>}{mutation.isError && <div className={s.inlineError}>{mutation.error.message}</div>}</div>}
   </div>;
 }
 

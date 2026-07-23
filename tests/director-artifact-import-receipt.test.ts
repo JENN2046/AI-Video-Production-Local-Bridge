@@ -21,7 +21,8 @@ import {
 import { DATABASE_MIGRATIONS, assertSchemaCurrent, migrationChecksum, runDatabaseMigrations } from "../src/storage/migrations.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import { saveProject, saveShot, type Shot } from "../src/tools/projects.js";
-import { createWorkbenchProject, listWorkbenchAssets } from "../src/tools/workbenchV2.js";
+import { createWorkbenchProject, decideWorkbenchImport, listWorkbenchAssets } from "../src/tools/workbenchV2.js";
+import { getMediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { bootstrapWebGptProjectOwner } from "../src/webgpt-v4/authorizationAdmin.js";
 
 const principalId = "a".repeat(64);
@@ -223,6 +224,46 @@ test("narrow Artifact filters keep an import receipt candidate reachable beyond 
       role: "storyboard_image", mime_type: "image/png", status: "active", limit: 200
     }, db);
     assert.deepEqual(exactCandidates.items.map((item) => item.artifact_id), [artifactId]);
+  } finally {
+    db.close();
+  }
+});
+
+test("SHOT-scoped Inbox registration creates a matching artifact_import receipt candidate", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const primary = createProjectShot(db, "Director SHOT-scoped import", "inbox_scope");
+    const sourceArtifactId = "artifact_import_project_scoped_source";
+    insertVerifiedStoryboardArtifact(db, { project_id: primary.project.project_id, shot_id: "", artifact_id: sourceArtifactId });
+    const checksum = createHash("sha256").update(readFileSync(fixturePath)).digest("hex");
+    db.prepare(`INSERT INTO import_index (relative_path, filename, size_bytes, mtime_ms, checksum, metadata_json)
+      VALUES (?, ?, ?, ?, ?, ?)`)
+      .run("director/import-source.png", "import-source.png", statSync(fixturePath).size, 0, checksum, "{}");
+
+    const wrongShot = decideWorkbenchImport(checksum, {
+      decision: "registered", target_project_id: primary.project.project_id, target_shot_id: "shot_missing"
+    }, db);
+    assert.equal(wrongShot.ok, false);
+    if (!wrongShot.ok) assert.equal(wrongShot.error.code, "SHOT_NOT_FOUND");
+
+    const registered = decideWorkbenchImport(checksum, {
+      decision: "registered", target_project_id: primary.project.project_id, target_shot_id: primary.shot.shot_id
+    }, db);
+    assert.equal(registered.ok, true);
+    if (!registered.ok) throw new Error("SCOPED_IMPORT_FAILED");
+    const scopedArtifactId = String(registered.data.artifact_id);
+    const scoped = getMediaArtifact(db, scopedArtifactId);
+    assert.ok(scoped);
+    assert.equal(scoped?.linked_objects.project_id, primary.project.project_id);
+    assert.equal(scoped?.linked_objects.shot_id, primary.shot.shot_id);
+    assert.equal(scoped?.role, "storyboard_image");
+    assert.equal(scoped?.storage.mime_type, "image/png");
+
+    const candidates = listWorkbenchAssets("media", {
+      scope: "all", project_id: primary.project.project_id, shot_id: primary.shot.shot_id,
+      role: "storyboard_image", mime_type: "image/png", status: "active", limit: 200
+    }, db);
+    assert.deepEqual(candidates.items.map((item) => item.artifact_id), [scopedArtifactId]);
   } finally {
     db.close();
   }

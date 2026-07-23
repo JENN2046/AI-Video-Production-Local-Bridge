@@ -182,6 +182,39 @@ describe("Human Workbench V2 shell", () => {
     });
   });
 
+  it("registers a quarantined local Artifact directly into a selected SHOT", async () => {
+    const checksum = "f".repeat(64);
+    const projectId = "project_quarantine_shot_scope";
+    const shotId = "shot_quarantine_scope";
+    const project = { project: { project_id: projectId, title: "Quarantine target", status: "draft", brief: {}, video_spec: { duration_seconds: 5, aspect_ratio: "9:16", resolution: "1080x1920" }, shot_ids: [shotId], active_storyboard_package_id: "", generation_batch_ids: [], exports: { final_video_artifact_id: "" } }, meta: {}, shot_count: 1, accepted_count: 0, active_run_count: 0, blocker_count: 0, blocked_shot_count: 0, blocker_codes: [], blocker_reason: "", review_pending_count: 0, delivery_state: "not_ready", next_action: {} };
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/v2/shell") return new Response(JSON.stringify({ ok: true, data: shell }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url === "/api/v2/inbox/quarantine?status=registerable&limit=100") return new Response(JSON.stringify({ ok: true, data: [{ checksum, filename: "storyboard.png", workflow_status: "registerable", width: 720, height: 1280, aspect_ratio: "9:16", size_bytes: 1234, blockers: [] }], meta: { limit: 100, offset: 0, total: 1, has_more: false } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url === "/api/v2/projects?scope=daily&lifecycle=all&classification=all&query=&limit=20") return new Response(JSON.stringify({ ok: true, data: [project], meta: { limit: 20, offset: 0, total: 1, has_more: false } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url === `/api/v2/projects/${projectId}/storyboard`) return new Response(JSON.stringify({ ok: true, data: { project: project.project, shots: [{ shot_id: shotId, order: 1, description: "Import target" }] } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url === `/api/v2/imports/${checksum}/decision` && init?.method === "POST") return new Response(JSON.stringify({ ok: true, data: { artifact_id: "artifact_scoped" } }), { status: 200, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ ok: false, error: { code: "NOT_FOUND", message: url } }), { status: 404, headers: { "content-type": "application/json" } });
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={["/v2/inbox/quarantine"]}><App /></MemoryRouter></QueryClientProvider>);
+    expect(await screen.findByRole("heading", { name: "收件箱" })).toBeInTheDocument();
+    expect(await screen.findByText("storyboard.png")).toBeInTheDocument();
+    const projectSearch = screen.getByLabelText("搜索项目名称或 ID");
+    fireEvent.focus(projectSearch);
+    fireEvent.click(await screen.findByRole("option", { name: /Quarantine target/ }));
+    const shotSelect = await screen.findByLabelText("目标 SHOT");
+    await waitFor(() => expect(shotSelect).toBeEnabled());
+    expect(screen.getByRole("button", { name: "注册到目标 SHOT" })).toBeDisabled();
+    fireEvent.change(shotSelect, { target: { value: shotId } });
+    fireEvent.click(screen.getByRole("button", { name: "注册到目标 SHOT" }));
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/v2/imports/${checksum}/decision` && (init as RequestInit | undefined)?.method === "POST");
+      expect(call).toBeTruthy();
+      expect(JSON.parse(String((call?.[1] as RequestInit).body))).toEqual({ decision: "registered", target_project_id: projectId, target_shot_id: shotId, reason: "" });
+    });
+  });
+
   it("exposes explicit readonly preflight and confirmed one-click publish without accepting paths from the browser", async () => {
     const fingerprint = "a".repeat(64);
     const status = {

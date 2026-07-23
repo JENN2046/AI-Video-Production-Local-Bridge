@@ -579,6 +579,7 @@ export async function handleWorkbenchV2Api(
     await mutation(request, response, actionNonce, (body) => sendResult(response, withDatabase((db) => decideWorkbenchImport(importDecisionMatch[1].toLowerCase(), {
       decision: body.decision === "registered" || body.decision === "excluded" ? body.decision : "quarantined",
       target_project_id: optionalText(body.target_project_id),
+      target_shot_id: optionalText(body.target_shot_id),
       reason: optionalText(body.reason)
     }, db))));
     return true;
