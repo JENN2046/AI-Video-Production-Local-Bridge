@@ -23,6 +23,12 @@ function artifactImportTextHasSourceLocator(value: string): boolean {
   // MIME names are already constrained by expected_mime_type and may be used
   // as explanatory prose.  Every other filesystem-style slash token is a
   // locator, not an import instruction, and is forbidden from the ledger.
+  // Check a data URL before stripping that same MIME spelling from the prose:
+  // otherwise `data:image/png;base64,AA==` would become `data:;base64,AA==`
+  // and evade both the data-URL and short-payload guards.
+  if (/\bdata:/iu.test(value)) {
+    return true;
+  }
   return artifactImportSourceLocatorPattern.test(value.replace(artifactImportSafeMimeReferencePattern, ""));
 }
 

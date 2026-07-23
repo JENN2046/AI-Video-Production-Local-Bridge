@@ -168,6 +168,7 @@ test("artifact_import proposals reject source locations and enforce SHOT role an
     "Select assets/private.png.",
     "Select ~/Downloads/storyboard.png.",
     "Import https://example.invalid/storyboard.png.",
+    "data:image/png;base64,AA==",
     "data:image/png;base64,QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=",
     `Embedded bytes: ${base64Blob}`,
     `Quoted bytes: "${base64Blob}".`,
