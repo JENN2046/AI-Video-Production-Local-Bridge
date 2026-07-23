@@ -16,7 +16,15 @@ const nullableHashSchema = hashSchema.nullable();
 const nonEmptyTextSchema = z.string().trim().min(1).max(16_384);
 const shortTextSchema = z.string().trim().min(1).max(1_024);
 
-const artifactImportSourceLocatorPattern = /(?:\b[a-z][a-z0-9+.-]*:\/\/|(?:^|[\s"'(])(?:[a-z]:[\\/]|\\\\|\/(?:[^/\s]+\/)+[^/\s]+)|\bdata:[^\s,;]+;base64,|(?:^|[^A-Za-z0-9+/=])[A-Za-z0-9+/]{64,}={0,2}(?=$|[^A-Za-z0-9+/=]))/iu;
+const artifactImportSafeMimeReferencePattern = /\b(?:image\/(?:jpeg|png)|video\/mp4)\b/giu;
+const artifactImportSourceLocatorPattern = /(?:\b[a-z][a-z0-9+.-]*:\/\/|(?:^|[\s"'(])(?:[a-z]:[\\/]|\\\\|\/(?:[^/\s]+\/)+[^/\s]+|(?:~|\.{1,2}|[A-Za-z0-9_.-]+)[\\/](?:[^\\/\s]+[\\/])*[^\\/\s]+)|\bdata:[^\s,;]+;base64,|(?:^|[^A-Za-z0-9+/=])[A-Za-z0-9+/]{64,}={0,2}(?=$|[^A-Za-z0-9+/=]))/iu;
+
+function artifactImportTextHasSourceLocator(value: string): boolean {
+  // MIME names are already constrained by expected_mime_type and may be used
+  // as explanatory prose.  Every other filesystem-style slash token is a
+  // locator, not an import instruction, and is forbidden from the ledger.
+  return artifactImportSourceLocatorPattern.test(value.replace(artifactImportSafeMimeReferencePattern, ""));
+}
 
 /**
  * Artifact-import prose may explain the requested role and evidence, but it
@@ -25,7 +33,7 @@ const artifactImportSourceLocatorPattern = /(?:\b[a-z][a-z0-9+.-]*:\/\/|(?:^|[\s
  * Workbench's controlled file picker and Artifact validator.
  */
 const artifactImportTextSchema = nonEmptyTextSchema.refine(
-  (value) => !artifactImportSourceLocatorPattern.test(value),
+  (value) => !artifactImportTextHasSourceLocator(value),
   "DIRECTOR_ARTIFACT_IMPORT_SOURCE_LOCATOR_FORBIDDEN"
 );
 

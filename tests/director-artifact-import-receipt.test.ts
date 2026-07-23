@@ -149,6 +149,9 @@ test("artifact_import proposals reject source locations and enforce SHOT role an
   };
   assert.equal(DIRECTOR_PROPOSAL_DRAFT_SCHEMA.parse(valid).kind, "artifact_import");
   assert.equal(DIRECTOR_PROPOSAL_DRAFT_SCHEMA.safeParse({
+    ...valid, payload: { ...valid.payload, summary: "Import a verified image/png storyboard reference." }
+  }).success, true);
+  assert.equal(DIRECTOR_PROPOSAL_DRAFT_SCHEMA.safeParse({
     ...valid, payload: { ...valid.payload, source_path: "C:/sensitive/video.mp4" }
   }).success, false);
   assert.equal(DIRECTOR_PROPOSAL_DRAFT_SCHEMA.safeParse({
@@ -161,6 +164,9 @@ test("artifact_import proposals reject source locations and enforce SHOT role an
   for (const prohibitedText of [
     "Select C:\\Users\\Jenn\\Downloads\\storyboard.png.",
     "Select /private/staging/storyboard.png.",
+    "Select ../state-private/token.json.",
+    "Select assets/private.png.",
+    "Select ~/Downloads/storyboard.png.",
     "Import https://example.invalid/storyboard.png.",
     "data:image/png;base64,QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=",
     `Embedded bytes: ${base64Blob}`,
