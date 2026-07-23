@@ -1,6 +1,6 @@
 # ChatGPT Director Local Bridge
 
-Status: `CANDIDATE` — PR3 code and isolated-fixture contract. No Director endpoint is deployed and no external OAuth object is changed by this document. The activity database separately completed the `0010` migration on 2026-07-22; transport remains unaccepted.
+Status: `CANDIDATE` — PR3 code and isolated-fixture contract. No Director endpoint is deployed and no external OAuth object is changed by this document. The activity database separately completed `0010` on 2026-07-22, while the later controlled Artifact import-receipt candidate requires `0011`; transport remains unaccepted.
 
 ## Purpose
 
@@ -96,7 +96,7 @@ WEBGPT_DIRECTOR_REMOTE_ORIGIN=
 AI_VIDEO_WORKSPACE_DB_PATH=
 ```
 
-The remote origin must be an exact credential-free HTTPS origin. The database must already be at `workbench-v2-6` / migration ledger `0010`; the bridge never migrates it.
+The remote origin must be an exact credential-free HTTPS origin. The database must already be at `workbench-v2-6` / migration ledger `0011`; the bridge never migrates it.
 
 Public commands:
 

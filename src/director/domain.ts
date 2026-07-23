@@ -21,6 +21,7 @@ export const DIRECTOR_PROPOSAL_KIND_SCHEMA = z.enum([
   "script",
   "shot_plan",
   "storyboard_revision",
+  "artifact_import",
   "generation_plan",
   "clip_regeneration",
   "review_assessment",
@@ -243,6 +244,30 @@ const storyboardRevisionPayloadSchema = z.object({
   continuity_constraints: z.array(shortTextSchema).max(30)
 }).strict();
 
+/**
+ * A model can request that a human import a local asset for one SHOT, but it
+ * never supplies a pathname, URL, bytes, or an instruction to inspect an
+ * arbitrary local file.  The Workbench owns the subsequent file-selection and
+ * existing Artifact/Blob validation boundary.
+ */
+export const DIRECTOR_ARTIFACT_IMPORT_PAYLOAD_SCHEMA = z.object({
+  shot_id: idSchema,
+  target_role: z.enum(["storyboard_image", "generated_clip"]),
+  expected_mime_type: z.enum(["image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm"]),
+  summary: nonEmptyTextSchema,
+  rationale: nonEmptyTextSchema
+}).strict().superRefine((value, context) => {
+  const imageRole = value.target_role === "storyboard_image";
+  const imageMime = value.expected_mime_type.startsWith("image/");
+  if (imageRole !== imageMime) {
+    context.addIssue({
+      code: "custom",
+      message: "Storyboard imports require an image MIME type and clip imports require a video MIME type.",
+      path: ["expected_mime_type"]
+    });
+  }
+});
+
 const generationPlanPayloadSchema = z.object({
   shot_id: idSchema,
   provider: z.literal("runninghub"),
@@ -311,6 +336,7 @@ export const DIRECTOR_PROPOSAL_DRAFT_SCHEMA = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("script"), payload: scriptPayloadSchema }).strict(),
   z.object({ kind: z.literal("shot_plan"), payload: shotPlanPayloadSchema }).strict(),
   z.object({ kind: z.literal("storyboard_revision"), payload: storyboardRevisionPayloadSchema }).strict(),
+  z.object({ kind: z.literal("artifact_import"), payload: DIRECTOR_ARTIFACT_IMPORT_PAYLOAD_SCHEMA }).strict(),
   z.object({ kind: z.literal("generation_plan"), payload: generationPlanPayloadSchema }).strict(),
   z.object({ kind: z.literal("clip_regeneration"), payload: clipRegenerationPayloadSchema }).strict(),
   z.object({ kind: z.literal("review_assessment"), payload: reviewAssessmentPayloadSchema }).strict(),
@@ -326,6 +352,7 @@ const directorProposalShapeSchema = z.discriminatedUnion("kind", [
   z.object({ ...proposalCommonShape, kind: z.literal("script"), payload: scriptPayloadSchema }).strict(),
   z.object({ ...proposalCommonShape, kind: z.literal("shot_plan"), payload: shotPlanPayloadSchema }).strict(),
   z.object({ ...proposalCommonShape, kind: z.literal("storyboard_revision"), payload: storyboardRevisionPayloadSchema }).strict(),
+  z.object({ ...proposalCommonShape, kind: z.literal("artifact_import"), payload: DIRECTOR_ARTIFACT_IMPORT_PAYLOAD_SCHEMA }).strict(),
   z.object({ ...proposalCommonShape, kind: z.literal("generation_plan"), payload: generationPlanPayloadSchema }).strict(),
   z.object({ ...proposalCommonShape, kind: z.literal("clip_regeneration"), payload: clipRegenerationPayloadSchema }).strict(),
   z.object({ ...proposalCommonShape, kind: z.literal("review_assessment"), payload: reviewAssessmentPayloadSchema }).strict(),
@@ -351,6 +378,7 @@ function validateProposalTarget(value: z.infer<typeof directorProposalShapeSchem
       requireTarget("project", value.project_id);
       break;
     case "storyboard_revision":
+    case "artifact_import":
     case "generation_plan":
       requireTarget("shot", value.payload.shot_id);
       break;
@@ -426,6 +454,7 @@ export function validateDirectorProposalAgainstTargetState(
 
   switch (proposal.kind) {
     case "storyboard_revision":
+    case "artifact_import":
     case "generation_plan":
       if (proposal.payload.shot_id !== targetShotId) throw new Error("DIRECTOR_PROPOSAL_SHOT_STATE_MISMATCH");
       break;
@@ -448,6 +477,34 @@ export function validateDirectorProposalAgainstTargetState(
       break;
   }
   return { proposal, target_state: targetState };
+}
+
+export const DIRECTOR_ARTIFACT_IMPORT_RECEIPT_SCHEMA = z.object({
+  receipt_id: idSchema,
+  proposal_id: idSchema,
+  project_id: idSchema,
+  shot_id: idSchema,
+  artifact_id: idSchema,
+  blob_sha256: hashSchema,
+  role: z.enum(["storyboard_image", "generated_clip"]),
+  mime_type: z.enum(["image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm"]),
+  created_at: timestampSchema
+}).strict().superRefine((value, context) => {
+  const imageRole = value.role === "storyboard_image";
+  const imageMime = value.mime_type.startsWith("image/");
+  if (imageRole !== imageMime) {
+    context.addIssue({
+      code: "custom",
+      message: "Artifact import receipt role and MIME type are inconsistent.",
+      path: ["mime_type"]
+    });
+  }
+});
+
+export type DirectorArtifactImportReceipt = z.infer<typeof DIRECTOR_ARTIFACT_IMPORT_RECEIPT_SCHEMA>;
+
+export function validateDirectorArtifactImportReceipt(value: unknown): DirectorArtifactImportReceipt {
+  return DIRECTOR_ARTIFACT_IMPORT_RECEIPT_SCHEMA.parse(value);
 }
 
 export const DIRECTOR_FOCUS_SCHEMA = z.object({

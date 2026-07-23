@@ -1,10 +1,10 @@
 # User Guide
 
-Status: `SCHEMA_GATE_PASS`. The owner-only `0.1.0-beta.5` / ledger `0008` workflow below remains historical evidence; the active database separately completed its `0010` migration on 2026-07-22. A renewed runtime/publish acceptance is still required before treating the commands below as daily operation.
+Status: `SCHEMA_GATE_PENDING`. The owner-only `0.1.0-beta.5` / ledger `0008` workflow below remains historical evidence; the active database separately completed `0010` on 2026-07-22, while the controlled Artifact import-receipt code candidate requires `0011`. A renewed migration and runtime/publish acceptance are required before treating the commands below as daily operation.
 
 ## Current-main database compatibility
 
-Current `main` requires `workbench-v2-6` / ledger `0010`, and the active database now meets that requirement. Runtime startup never migrates a database automatically. The completed migration does not itself authorize a normal `windows:start`, manual Snapshot publish/recovery or Director startup; resume each pathway only after its own bounded runtime acceptance with `REAL_PROVIDER_ENABLED=false`.
+Current code candidate requires `workbench-v2-6` / ledger `0011`, while the active database remains at `0010`. Runtime startup never migrates a database automatically. The completed historical migration does not authorize a normal `windows:start`, manual Snapshot publish/recovery or Director startup; first complete a separately authorized `0011` migration, then resume each pathway only after its own bounded runtime acceptance with `REAL_PROVIDER_ENABLED=false`.
 
 ## What Jenn can do today
 
@@ -51,7 +51,7 @@ Allowed actions are view, refresh, select project, expand SHOT, switch detail an
 
 ## Snapshot operations (historical; renewed acceptance pending)
 
-The states and UI flow below explain the accepted ledger-`0008` evidence. The activity database now meets ledger `0010`, but do not invoke a publish, renewal or recovery action on current `main` until that operation receives its own bounded acceptance.
+The states and UI flow below explain the accepted ledger-`0008` evidence. The activity database remains at ledger `0010`, below the current-code `0011` requirement; do not invoke a publish, renewal or recovery action until a separately authorized migration and that operation's own bounded acceptance both pass.
 
 Snapshot status has four useful states:
 

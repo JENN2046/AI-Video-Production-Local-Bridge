@@ -12,6 +12,7 @@ import {
   createDirectorWorkbenchFocus,
   decideDirectorProposal,
   getDirectorApprovalTower,
+  recordDirectorArtifactImportReceipt,
   type DirectorFocusTargetType
 } from "../director/workbenchApproval.js";
 import { applyWorkbenchGovernance, getWorkbenchGovernancePreview } from "../tools/workbenchGovernance.js";
@@ -236,6 +237,16 @@ export async function handleWorkbenchV2Api(
       max_versions_per_shot: Number(body.max_versions_per_shot),
       max_automatic_retries: Number(body.max_automatic_retries),
       expires_at: text(body.expires_at),
+      human_confirmation: body.human_confirmation === true
+    }, db))));
+    return true;
+  }
+  const directorArtifactImportReceiptMatch = url.pathname.match(/^\/api\/v2\/director\/proposals\/([^/]+)\/artifact-import-receipt$/);
+  if (request.method === "POST" && directorArtifactImportReceiptMatch) {
+    const proposalId = decodeSegment(directorArtifactImportReceiptMatch[1]);
+    await mutation(request, response, actionNonce, (body) => sendResult(response, withDatabase((db) => recordDirectorArtifactImportReceipt({
+      proposal_id: proposalId,
+      artifact_id: text(body.artifact_id),
       human_confirmation: body.human_confirmation === true
     }, db))));
     return true;

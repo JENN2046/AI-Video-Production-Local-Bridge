@@ -311,7 +311,7 @@ test("v2-4 migration derives Blob facts from local bytes and fails closed on str
         .run(candidate.artifact_id, candidate.role, candidate.artifact_type, candidate.status, JSON.stringify(candidate));
     }
     const result = runDatabaseMigrations(db);
-    assert.deepEqual(result.applied, ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010"]);
+    assert.deepEqual(result.applied, ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011"]);
     const migrated = getMediaArtifact(db, artifact.artifact_id);
     assert.equal(migrated?.status, "active");
     const blob = migrated ? getMediaBlob(db, migrated.blob_id) : null;

@@ -107,6 +107,35 @@ describe("Human Workbench V2 shell", () => {
     });
   });
 
+  it("records an artifact_import receipt with only an already-registered Artifact identifier", async () => {
+    const projectId = "project_director_import";
+    const proposalId = "proposal_director_import";
+    const artifactId = "artifact_director_import";
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/v2/shell") return new Response(JSON.stringify({ ok: true, data: shell }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url.startsWith("/api/v2/projects?")) return new Response(JSON.stringify({ ok: true, data: [{ project: { project_id: projectId, title: "Director import", status: "draft", brief: {}, video_spec: { duration_seconds: 5, aspect_ratio: "9:16", resolution: "1080x1920" }, shot_ids: ["shot_import"], active_storyboard_package_id: "", generation_batch_ids: [], exports: { final_video_artifact_id: "" } }, meta: {}, shot_count: 1, accepted_count: 0, active_run_count: 0, blocker_count: 0, blocked_shot_count: 0, blocker_codes: [], blocker_reason: "", review_pending_count: 0, delivery_state: "not_ready", next_action: {} }], meta: { limit: 100, offset: 0, total: 1, has_more: false } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url === `/api/v2/director/projects/${projectId}`) return new Response(JSON.stringify({ ok: true, data: { project_id: projectId, principal_state: "single_owner_ready", focus: { state: "active", focus: { focus_id: "focus_import", project_id: projectId, target_type: "shot", target_id: "shot_import", generation: 1, created_at: "2026-07-23T00:00:00.000Z", expires_at: "2026-07-23T01:00:00.000Z" } }, proposals: [{ proposal_id: proposalId, project_id: projectId, target_type: "shot", target_id: "shot_import", focus_id: "focus_import", focus_generation: 1, kind: "artifact_import", source: "native", created_at: "2026-07-23T00:00:00.000Z", base_state_hash: "a".repeat(64), payload_hash: "b".repeat(64), payload: { shot_id: "shot_import", target_role: "storyboard_image", expected_mime_type: "image/png", summary: "Import the approved storyboard reference.", rationale: "Local receipt only." }, status: "accepted", reason_code: "DIRECTOR_HUMAN_ACCEPTED", updated_at: "2026-07-23T00:01:00.000Z", action_allowed: false, action_blocked_code: "DIRECTOR_PROPOSAL_NOT_PENDING", automation_grant: null, artifact_import_receipt: null }] } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url === `/api/v2/projects/${projectId}/overview`) return new Response(JSON.stringify({ ok: true, data: { project: { project_id: projectId, title: "Director import" }, shots: [{ shot_id: "shot_import", order: 1, description: "Import fixture" }], artifacts: { [artifactId]: { artifact_id: artifactId, artifact_type: "image", role: "storyboard_image", status: "active", storage: { uri: "C:/private/fixture.png", mime_type: "image/png", filename: "fixture.png" }, metadata: { width: 720, height: 1280, duration_seconds: null, aspect_ratio: "9:16", sha256: "c".repeat(64) }, linked_objects: { project_id: projectId, shot_id: "shot_import" }, source: { kind: "fixture", provider: "", provider_job_id: "", sha256: "c".repeat(64), external_url_host: "" } } } } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url === `/api/v2/director/proposals/${proposalId}/artifact-import-receipt` && init?.method === "POST") return new Response(JSON.stringify({ ok: true, data: { receipt: {} } }), { status: 200, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ ok: false, error: { code: "NOT_FOUND", message: url } }), { status: 404, headers: { "content-type": "application/json" } });
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={["/v2/director"]}><App /></MemoryRouter></QueryClientProvider>);
+    expect(await screen.findByText("受控素材导入")).toBeInTheDocument();
+    expect(screen.queryByText("C:/private/fixture.png")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: /我确认该 Artifact 已由本地导入流程校验/ }));
+    fireEvent.click(screen.getByRole("button", { name: "记录不可变导入回执" }));
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/v2/director/proposals/${proposalId}/artifact-import-receipt` && (init as RequestInit | undefined)?.method === "POST");
+      expect(call).toBeTruthy();
+      const body = String((call?.[1] as RequestInit).body);
+      expect(JSON.parse(body)).toEqual({ artifact_id: artifactId, human_confirmation: true });
+      expect(body).not.toContain("storage");
+      expect(body).not.toContain("private");
+    });
+  });
+
   it("exposes explicit readonly preflight and confirmed one-click publish without accepting paths from the browser", async () => {
     const fingerprint = "a".repeat(64);
     const status = {

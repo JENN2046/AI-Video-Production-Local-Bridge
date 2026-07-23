@@ -211,7 +211,7 @@ export const DIRECTOR_SUBMIT_PROPOSAL_OUTPUT_SCHEMA = z.object({
   proposal_id: idSchema,
   kind: z.enum([
     "creative_brief", "script", "shot_plan", "storyboard_revision", "generation_plan",
-    "clip_regeneration", "review_assessment", "assembly_plan", "delivery_plan", "memory_saveback"
+    "artifact_import", "clip_regeneration", "review_assessment", "assembly_plan", "delivery_plan", "memory_saveback"
   ]),
   focus_id: idSchema,
   focus_generation: z.number().int().positive(),

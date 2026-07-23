@@ -2,6 +2,8 @@ export { getM0Paths, ensureM0Directories, paths } from "./paths.js";
 export {
   DIRECTOR_AUTOMATION_GRANT_SCHEMA,
   DIRECTOR_AUTOMATION_GRANT_UNSIGNED_SCHEMA,
+  DIRECTOR_ARTIFACT_IMPORT_PAYLOAD_SCHEMA,
+  DIRECTOR_ARTIFACT_IMPORT_RECEIPT_SCHEMA,
   DIRECTOR_DOMAIN_SCHEMA_VERSION,
   DIRECTOR_FOCUS_SCHEMA,
   DIRECTOR_GRANT_EVENT_TYPE_SCHEMA,
@@ -19,6 +21,7 @@ export {
   finalizeDirectorAutomationGrant,
   finalizeStoryboardPackageV2,
   validateDirectorAutomationGrant,
+  validateDirectorArtifactImportReceipt,
   validateDirectorProposal,
   validateDirectorProposalAgainstTargetState,
   validateStoryboardPackageV2
@@ -26,6 +29,7 @@ export {
 export type {
   DirectorAutomationGrant,
   DirectorAutomationGrantUnsigned,
+  DirectorArtifactImportReceipt,
   DirectorFocus,
   DirectorProposal,
   DirectorTargetStateV1,

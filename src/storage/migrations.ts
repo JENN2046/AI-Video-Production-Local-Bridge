@@ -914,6 +914,272 @@ function applyDirectorCurrencyContractMigration(db: M0Database): void {
   db.exec(DIRECTOR_CURRENCY_CONTRACT_SQL);
 }
 
+/**
+ * `artifact_import` is a new, deliberately narrow Proposal kind. SQLite cannot
+ * widen a CHECK constraint in place, so this migration rebuilds only the
+ * Proposal lineage tables that directly reference `director_proposals`, then
+ * adds a separate immutable receipt ledger. The transaction remains atomic and
+ * the old tables are retained until every dependent row has been copied.
+ */
+const DIRECTOR_ARTIFACT_IMPORT_RECEIPT_SQL = `
+  PRAGMA defer_foreign_keys = ON;
+
+  DROP TRIGGER IF EXISTS storyboard_package_version_events_no_delete;
+  DROP TRIGGER IF EXISTS storyboard_package_version_events_no_update;
+  DROP TRIGGER IF EXISTS storyboard_package_versions_no_delete;
+  DROP TRIGGER IF EXISTS storyboard_package_versions_no_update;
+  DROP TRIGGER IF EXISTS director_proposal_events_no_delete;
+  DROP TRIGGER IF EXISTS director_proposal_events_no_update;
+  DROP TRIGGER IF EXISTS director_proposals_no_delete;
+  DROP TRIGGER IF EXISTS director_proposals_no_update;
+  DROP INDEX IF EXISTS idx_storyboard_package_version_events_package;
+  DROP INDEX IF EXISTS idx_storyboard_package_versions_project;
+  DROP INDEX IF EXISTS idx_director_proposal_events_proposal;
+  DROP INDEX IF EXISTS idx_director_proposals_project;
+
+  ALTER TABLE storyboard_package_version_events RENAME TO storyboard_package_version_events_0010;
+  ALTER TABLE storyboard_package_versions RENAME TO storyboard_package_versions_0010;
+  ALTER TABLE director_proposal_events RENAME TO director_proposal_events_0010;
+  ALTER TABLE director_proposals RENAME TO director_proposals_0010;
+
+  CREATE TABLE director_proposals (
+    proposal_id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    principal_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    focus_id TEXT NOT NULL,
+    focus_generation INTEGER NOT NULL,
+    schema_version TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    base_state_hash TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    parent_proposal_id TEXT,
+    idempotency_key TEXT NOT NULL,
+    source TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (workspace_id, principal_id)
+      REFERENCES webgpt_auth_principals(workspace_id, principal_id) ON DELETE RESTRICT,
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE RESTRICT,
+    FOREIGN KEY (focus_id, workspace_id, principal_id, project_id, target_type, target_id, focus_generation)
+      REFERENCES director_focuses(focus_id, workspace_id, principal_id, project_id, target_type, target_id, generation) ON DELETE RESTRICT,
+    FOREIGN KEY (parent_proposal_id, workspace_id, principal_id, project_id)
+      REFERENCES director_proposals(proposal_id, workspace_id, principal_id, project_id) ON DELETE RESTRICT,
+    UNIQUE (workspace_id, principal_id, idempotency_key),
+    UNIQUE (proposal_id, project_id),
+    UNIQUE (proposal_id, workspace_id, principal_id, project_id),
+    CHECK (workspace_id = 'jenn-ai-video-workspace'),
+    CHECK (length(principal_id) = 64 AND principal_id NOT GLOB '*[^0-9a-f]*'),
+    CHECK (target_type IN ('project','shot','artifact','storyboard_package','generation_run','delivery','memory')),
+    CHECK (focus_generation > 0),
+    CHECK (schema_version = 'director-domain-v1'),
+    CHECK (kind IN ('creative_brief','script','shot_plan','storyboard_revision','artifact_import','generation_plan','clip_regeneration','review_assessment','assembly_plan','delivery_plan','memory_saveback')),
+    CHECK (length(base_state_hash) = 64 AND base_state_hash NOT GLOB '*[^0-9a-f]*'),
+    CHECK (json_valid(payload_json) = 1),
+    CHECK (length(payload_hash) = 64 AND payload_hash NOT GLOB '*[^0-9a-f]*'),
+    CHECK (length(idempotency_key) BETWEEN 16 AND 160),
+    CHECK (source IN ('native','untrusted_manual_import'))
+  );
+  INSERT INTO director_proposals (
+    proposal_id, workspace_id, principal_id, project_id, target_type, target_id, focus_id, focus_generation,
+    schema_version, kind, base_state_hash, payload_json, payload_hash, parent_proposal_id, idempotency_key, source, created_at
+  ) SELECT
+    proposal_id, workspace_id, principal_id, project_id, target_type, target_id, focus_id, focus_generation,
+    schema_version, kind, base_state_hash, payload_json, payload_hash, parent_proposal_id, idempotency_key, source, created_at
+    FROM director_proposals_0010;
+
+  CREATE TABLE director_proposal_events (
+    event_id TEXT PRIMARY KEY,
+    proposal_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    reason_code TEXT NOT NULL,
+    receipt_type TEXT NOT NULL DEFAULT '',
+    receipt_id TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (proposal_id) REFERENCES director_proposals(proposal_id) ON DELETE RESTRICT,
+    CHECK (event_type IN ('submitted','imported','withdrawn','accepted','rejected','compiled')),
+    CHECK (length(reason_code) BETWEEN 1 AND 64)
+  );
+  INSERT INTO director_proposal_events (event_id, proposal_id, event_type, reason_code, receipt_type, receipt_id, created_at)
+    SELECT event_id, proposal_id, event_type, reason_code, receipt_type, receipt_id, created_at
+    FROM director_proposal_events_0010;
+
+  CREATE TABLE storyboard_package_versions (
+    package_version_id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    supersedes_package_version_id TEXT,
+    schema_version TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    created_from_proposal_id TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE RESTRICT,
+    FOREIGN KEY (supersedes_package_version_id, project_id)
+      REFERENCES storyboard_package_versions(package_version_id, project_id) ON DELETE RESTRICT,
+    FOREIGN KEY (created_from_proposal_id, project_id)
+      REFERENCES director_proposals(proposal_id, project_id) ON DELETE RESTRICT,
+    UNIQUE (project_id, version),
+    UNIQUE (package_version_id, project_id),
+    CHECK (version > 0),
+    CHECK (schema_version = 'storyboard-package-v2'),
+    CHECK (json_valid(payload_json) = 1),
+    CHECK (length(content_hash) = 64 AND content_hash NOT GLOB '*[^0-9a-f]*')
+  );
+  INSERT INTO storyboard_package_versions (
+    package_version_id, project_id, version, supersedes_package_version_id, schema_version,
+    payload_json, content_hash, created_from_proposal_id, created_at
+  ) SELECT
+    package_version_id, project_id, version, supersedes_package_version_id, schema_version,
+    payload_json, content_hash, created_from_proposal_id, created_at
+    FROM storyboard_package_versions_0010;
+
+  CREATE TABLE storyboard_package_version_events (
+    event_id TEXT PRIMARY KEY,
+    package_version_id TEXT NOT NULL,
+    workspace_id TEXT NOT NULL,
+    principal_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    reason_code TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (package_version_id) REFERENCES storyboard_package_versions(package_version_id) ON DELETE RESTRICT,
+    FOREIGN KEY (workspace_id, principal_id)
+      REFERENCES webgpt_auth_principals(workspace_id, principal_id) ON DELETE RESTRICT,
+    CHECK (workspace_id = 'jenn-ai-video-workspace'),
+    CHECK (length(principal_id) = 64 AND principal_id NOT GLOB '*[^0-9a-f]*'),
+    CHECK (event_type IN ('created','frozen','superseded')),
+    CHECK (length(reason_code) BETWEEN 1 AND 64)
+  );
+  INSERT INTO storyboard_package_version_events (
+    event_id, package_version_id, workspace_id, principal_id, event_type, reason_code, created_at
+  ) SELECT
+    event_id, package_version_id, workspace_id, principal_id, event_type, reason_code, created_at
+    FROM storyboard_package_version_events_0010;
+
+  CREATE TABLE director_artifact_import_receipts (
+    receipt_id TEXT PRIMARY KEY,
+    proposal_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    shot_id TEXT NOT NULL,
+    artifact_id TEXT NOT NULL,
+    blob_sha256 TEXT NOT NULL,
+    role TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (proposal_id, project_id)
+      REFERENCES director_proposals(proposal_id, project_id) ON DELETE RESTRICT,
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE RESTRICT,
+    FOREIGN KEY (shot_id) REFERENCES shots(shot_id) ON DELETE RESTRICT,
+    FOREIGN KEY (artifact_id) REFERENCES media_artifacts(artifact_id) ON DELETE RESTRICT,
+    UNIQUE (proposal_id),
+    CHECK (length(blob_sha256) = 64 AND blob_sha256 NOT GLOB '*[^0-9a-f]*'),
+    CHECK (role IN ('storyboard_image','generated_clip')),
+    CHECK (mime_type IN ('image/jpeg','image/png','image/webp','video/mp4','video/webm'))
+  );
+
+  DROP TABLE storyboard_package_version_events_0010;
+  DROP TABLE storyboard_package_versions_0010;
+  DROP TABLE director_proposal_events_0010;
+  DROP TABLE director_proposals_0010;
+
+  CREATE INDEX idx_director_proposals_project
+    ON director_proposals(project_id, created_at DESC, proposal_id DESC);
+  CREATE INDEX idx_director_proposal_events_proposal
+    ON director_proposal_events(proposal_id, created_at);
+  CREATE INDEX idx_storyboard_package_versions_project
+    ON storyboard_package_versions(project_id, version DESC);
+  CREATE INDEX idx_storyboard_package_version_events_package
+    ON storyboard_package_version_events(package_version_id, created_at);
+  CREATE INDEX idx_director_artifact_import_receipts_project_shot
+    ON director_artifact_import_receipts(project_id, shot_id, created_at DESC, receipt_id DESC);
+
+  CREATE TRIGGER director_proposals_no_update BEFORE UPDATE ON director_proposals BEGIN
+    SELECT RAISE(ABORT, 'DIRECTOR_PROPOSAL_IMMUTABLE');
+  END;
+  CREATE TRIGGER director_proposals_no_delete BEFORE DELETE ON director_proposals BEGIN
+    SELECT RAISE(ABORT, 'DIRECTOR_PROPOSAL_IMMUTABLE');
+  END;
+  CREATE TRIGGER director_proposal_events_no_update BEFORE UPDATE ON director_proposal_events BEGIN
+    SELECT RAISE(ABORT, 'DIRECTOR_PROPOSAL_EVENTS_APPEND_ONLY');
+  END;
+  CREATE TRIGGER director_proposal_events_no_delete BEFORE DELETE ON director_proposal_events BEGIN
+    SELECT RAISE(ABORT, 'DIRECTOR_PROPOSAL_EVENTS_APPEND_ONLY');
+  END;
+  CREATE TRIGGER storyboard_package_versions_no_update BEFORE UPDATE ON storyboard_package_versions BEGIN
+    SELECT RAISE(ABORT, 'STORYBOARD_PACKAGE_V2_IMMUTABLE');
+  END;
+  CREATE TRIGGER storyboard_package_versions_no_delete BEFORE DELETE ON storyboard_package_versions BEGIN
+    SELECT RAISE(ABORT, 'STORYBOARD_PACKAGE_V2_IMMUTABLE');
+  END;
+  CREATE TRIGGER storyboard_package_version_events_no_update BEFORE UPDATE ON storyboard_package_version_events BEGIN
+    SELECT RAISE(ABORT, 'STORYBOARD_PACKAGE_V2_EVENTS_APPEND_ONLY');
+  END;
+  CREATE TRIGGER storyboard_package_version_events_no_delete BEFORE DELETE ON storyboard_package_version_events BEGIN
+    SELECT RAISE(ABORT, 'STORYBOARD_PACKAGE_V2_EVENTS_APPEND_ONLY');
+  END;
+  CREATE TRIGGER director_artifact_import_receipts_validate_insert
+    BEFORE INSERT ON director_artifact_import_receipts
+    WHEN NOT EXISTS (
+      SELECT 1 FROM director_proposals p
+      WHERE p.proposal_id = NEW.proposal_id
+        AND p.project_id = NEW.project_id
+        AND p.kind = 'artifact_import'
+        AND p.target_type = 'shot'
+        AND p.target_id = NEW.shot_id
+        AND json_extract(p.payload_json, '$.shot_id') = NEW.shot_id
+        AND json_extract(p.payload_json, '$.target_role') = NEW.role
+        AND json_extract(p.payload_json, '$.expected_mime_type') = NEW.mime_type
+    )
+    OR COALESCE((
+      SELECT e.event_type FROM director_proposal_events e
+      WHERE e.proposal_id = NEW.proposal_id
+      ORDER BY e.created_at DESC, e.rowid DESC LIMIT 1
+    ), '') <> 'accepted'
+    OR NOT EXISTS (
+      SELECT 1
+      FROM media_artifacts a
+      JOIN media_artifact_blobs link ON link.artifact_id = a.artifact_id
+      JOIN media_blobs b ON b.blob_id = link.blob_id
+      WHERE a.artifact_id = NEW.artifact_id
+        AND a.project_id = NEW.project_id
+        AND a.shot_id = NEW.shot_id
+        AND a.role = NEW.role
+        AND a.artifact_type = CASE WHEN NEW.role = 'storyboard_image' THEN 'image' ELSE 'video' END
+        AND a.status = 'active'
+        AND json_valid(a.data_json) = 1
+        AND json_extract(a.data_json, '$.artifact_id') = a.artifact_id
+        AND json_extract(a.data_json, '$.linked_objects.project_id') = a.project_id
+        AND json_extract(a.data_json, '$.linked_objects.shot_id') = a.shot_id
+        AND json_extract(a.data_json, '$.role') = a.role
+        AND json_extract(a.data_json, '$.artifact_type') = a.artifact_type
+        AND json_extract(a.data_json, '$.status') = a.status
+        AND json_extract(a.data_json, '$.blob_id') = b.blob_id
+        AND json_extract(a.data_json, '$.storage.mime_type') = NEW.mime_type
+        AND json_extract(a.data_json, '$.metadata.sha256') = NEW.blob_sha256
+        AND json_extract(a.data_json, '$.source.sha256') = NEW.blob_sha256
+        AND b.sha256 = NEW.blob_sha256
+        AND b.detected_mime = NEW.mime_type
+        AND b.integrity_state = 'verified'
+    )
+  BEGIN
+    SELECT RAISE(ABORT, 'DIRECTOR_ARTIFACT_IMPORT_RECEIPT_INVALID');
+  END;
+  CREATE TRIGGER director_artifact_import_receipts_no_update
+    BEFORE UPDATE ON director_artifact_import_receipts BEGIN
+      SELECT RAISE(ABORT, 'DIRECTOR_ARTIFACT_IMPORT_RECEIPTS_IMMUTABLE');
+    END;
+  CREATE TRIGGER director_artifact_import_receipts_no_delete
+    BEFORE DELETE ON director_artifact_import_receipts BEGIN
+      SELECT RAISE(ABORT, 'DIRECTOR_ARTIFACT_IMPORT_RECEIPTS_IMMUTABLE');
+    END;
+`;
+
+function applyDirectorArtifactImportReceiptMigration(db: M0Database): void {
+  db.exec(DIRECTOR_ARTIFACT_IMPORT_RECEIPT_SQL);
+}
+
 export const DATABASE_MIGRATIONS: readonly Migration[] = [
   {
     id: "0001",
@@ -977,6 +1243,12 @@ export const DATABASE_MIGRATIONS: readonly Migration[] = [
     name: "director_currency_contract",
     canonical: `${DIRECTOR_CURRENCY_CONTRACT_SQL}\nPRECONDITION director_currency_contract_v1`,
     apply: applyDirectorCurrencyContractMigration
+  },
+  {
+    id: "0011",
+    name: "director_artifact_import_receipts",
+    canonical: `${DIRECTOR_ARTIFACT_IMPORT_RECEIPT_SQL}\nPRECONDITION director_proposal_lineage_rebuild_v1\nRECEIPT immutable_artifact_import_v1`,
+    apply: applyDirectorArtifactImportReceiptMigration
   }
 ];
 
@@ -1135,6 +1407,7 @@ function expectedSchemaDefinitions(includeJobs: boolean, expectedColumns: Record
       reference.exec(WEBGPT_ISSUER_BINDINGS_SQL);
       reference.exec(DIRECTOR_DOMAIN_SQL);
       applyDirectorCurrencyContractMigration(reference);
+      applyDirectorArtifactImportReceiptMigration(reference);
     }
     const columns = new Map<string, Map<string, string>>();
     const checks = new Map<string, string[]>();
@@ -1178,6 +1451,7 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     director_focus_events: ["event_id", "focus_id", "event_type", "reason_code", "created_at"],
     director_proposals: ["proposal_id", "workspace_id", "principal_id", "project_id", "target_type", "target_id", "focus_id", "focus_generation", "schema_version", "kind", "base_state_hash", "payload_json", "payload_hash", "parent_proposal_id", "idempotency_key", "source", "created_at"],
     director_proposal_events: ["event_id", "proposal_id", "event_type", "reason_code", "receipt_type", "receipt_id", "created_at"],
+    director_artifact_import_receipts: ["receipt_id", "proposal_id", "project_id", "shot_id", "artifact_id", "blob_sha256", "role", "mime_type", "created_at"],
     director_automation_grants: ["grant_id", "workspace_id", "principal_id", "project_id", "provider", "allowed_actions_json", "currency", "max_total_minor", "max_per_run_minor", "max_versions_per_shot", "max_automatic_retries", "pricing_contract_version", "capability_contract_version", "starts_at", "expires_at", "policy_hash", "created_at"],
     director_automation_grant_events: ["event_id", "grant_id", "event_type", "reservation_id", "amount_minor", "currency", "intent_id", "run_id", "reason_code", "created_at"],
     storyboard_package_versions: ["package_version_id", "project_id", "version", "supersedes_package_version_id", "schema_version", "payload_json", "content_hash", "created_from_proposal_id", "created_at"],
@@ -1200,6 +1474,7 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     "idx_director_focus_events_focus",
     "idx_director_proposals_project",
     "idx_director_proposal_events_proposal",
+    "idx_director_artifact_import_receipts_project_shot",
     "idx_director_grants_project_expiry",
     "idx_director_grant_events_grant",
     "idx_storyboard_package_versions_project",
@@ -1228,6 +1503,9 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "director_proposals_no_delete",
         "director_proposal_events_no_update",
         "director_proposal_events_no_delete",
+        "director_artifact_import_receipts_validate_insert",
+        "director_artifact_import_receipts_no_update",
+        "director_artifact_import_receipts_no_delete",
         "director_automation_grants_validate_actions",
         "director_automation_grants_no_update",
         "director_automation_grants_no_delete",

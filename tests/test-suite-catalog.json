@@ -140,7 +140,8 @@
         "tests/director-manual-native-tools.test.ts",
         "tests/director-local-bridge.test.ts",
         "tests/director-workbench-approval.test.ts",
-        "tests/director-memory-port.test.ts"
+        "tests/director-memory-port.test.ts",
+        "tests/director-artifact-import-receipt.test.ts"
       ]
     },
     {
@@ -304,14 +305,14 @@
       "path": "tests/director-domain-contract.test.ts",
       "npm_script": "test:webgpt:director",
       "ci_step": "ChatGPT Director domain tests",
-      "case_name": "migrations 0009 and 0010 upgrade a real 0008 shape and make Director evidence immutable"
+      "case_name": "migrations 0009 through 0011 upgrade a real 0008 shape and make Director evidence immutable"
     },
     {
       "id": "director-currency-migration-compatibility",
       "path": "tests/director-domain-contract.test.ts",
       "npm_script": "test:webgpt:director",
       "ci_step": "ChatGPT Director domain tests",
-      "case_name": "migration 0010 upgrades an already-ledgered 0009 Grant database without checksum drift"
+      "case_name": "migrations 0010 and 0011 upgrade an already-ledgered 0009 Grant database without checksum drift"
     },
     {
       "id": "director-currency-migration-fail-closed",
@@ -440,6 +441,13 @@
       "case_name": "resets the default Focus target when the selected Director project changes"
     },
     {
+      "id": "director-artifact-import-ui-boundary",
+      "path": "src/workbench-ui/App.test.tsx",
+      "npm_script": "test:v2:ui",
+      "ci_step": "Workbench V2 UI tests",
+      "case_name": "records an artifact_import receipt with only an already-registered Artifact identifier"
+    },
+    {
       "id": "director-human-approval-archive",
       "path": "tests/director-workbench-approval.test.ts",
       "npm_script": "test:webgpt:director",
@@ -459,6 +467,27 @@
       "npm_script": "test:webgpt:director",
       "ci_step": "ChatGPT Director domain tests",
       "case_name": "Director memory saveback envelope stays non-dispatched until a separate external confirmation"
+    },
+    {
+      "id": "director-artifact-import-contract",
+      "path": "tests/director-artifact-import-receipt.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "artifact_import proposals reject source locations and enforce SHOT role and MIME semantics"
+    },
+    {
+      "id": "director-artifact-import-receipt-boundary",
+      "path": "tests/director-artifact-import-receipt.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "accepted artifact_import records exactly one immutable, path-free receipt after local byte validation"
+    },
+    {
+      "id": "director-artifact-import-migration",
+      "path": "tests/director-artifact-import-receipt.test.ts",
+      "npm_script": "test:webgpt:director",
+      "ci_step": "ChatGPT Director domain tests",
+      "case_name": "migration 0011 preserves 0010 proposal evidence and adds the immutable import receipt ledger"
     }
   ],
   "readonly_app_suites": [
@@ -586,7 +615,7 @@
       "path": "tests/webgpt-cloud-projection.test.ts",
       "npm_script": "test:webgpt:cloud",
       "ci_step": "WebGPT cloud projection tests",
-      "case_name": "readonly projection requires migration 0010 and never upgrades an older database"
+      "case_name": "readonly projection requires migration 0011 and never upgrades an older database"
     },
     {
       "id": "readonly-projection-dto-parity",

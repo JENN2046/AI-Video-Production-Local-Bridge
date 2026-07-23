@@ -1,17 +1,20 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  DIRECTOR_ARTIFACT_IMPORT_RECEIPT_SCHEMA,
   DIRECTOR_FOCUS_SCHEMA,
   finalizeDirectorAutomationGrant,
   DIRECTOR_PROPOSAL_SCHEMA,
+  validateDirectorArtifactImportReceipt,
   validateDirectorProposalAgainstTargetState,
   type DirectorAutomationGrant,
+  type DirectorArtifactImportReceipt,
   type DirectorFocus,
   type DirectorProposal,
   type DirectorProposalDraft
 } from "./domain.js";
 import { buildDirectorContext } from "./localService.js";
-import { getMediaArtifact } from "../tools/mediaArtifacts.js";
+import { getMediaArtifact, validateActiveArtifactReference } from "../tools/mediaArtifacts.js";
 import { getGenerationRun } from "../tools/generation.js";
 import { getProject, getShot, type Project } from "../tools/projects.js";
 import type { M0Database } from "../storage/sqlite.js";
@@ -108,6 +111,7 @@ export interface DirectorProposalQueueItem {
   action_allowed: boolean;
   action_blocked_code: string | null;
   automation_grant: DirectorAutomationGrantView | null;
+  artifact_import_receipt: DirectorArtifactImportReceiptView | null;
 }
 
 /** Low-disclosure projection for the local approval surface. */
@@ -137,6 +141,17 @@ export interface DirectorProposalCompileInput {
   human_confirmation: boolean;
 }
 
+/**
+ * This input intentionally accepts only an already-registered local Artifact
+ * identifier. The prior Workbench import owns file selection and all source
+ * path handling; the Director receipt path never sees a path, URI, or bytes.
+ */
+export interface DirectorArtifactImportReceiptInput {
+  proposal_id: string;
+  artifact_id: string;
+  human_confirmation: boolean;
+}
+
 export interface DirectorApprovalTower {
   project_id: string;
   principal_state: "single_owner_ready" | "no_active_owner" | "ambiguous_active_owner";
@@ -146,6 +161,8 @@ export interface DirectorApprovalTower {
   };
   proposals: DirectorProposalQueueItem[];
 }
+
+export type DirectorArtifactImportReceiptView = DirectorArtifactImportReceipt;
 
 function error(code: string, message: string, field?: string): DirectorApprovalResult<never> {
   return { ok: false, error: { code, message, field } };
@@ -242,6 +259,12 @@ function grantForProposal(db: M0Database, proposalId: string): DirectorAutomatio
     WHERE e.proposal_id = ? AND e.event_type = 'compiled' AND e.receipt_type = 'director_automation_grant'
     ORDER BY e.created_at DESC, e.rowid DESC LIMIT 1`).get(proposalId) as StoredGrantRow | undefined;
   return row ? publicGrant(storedGrant(row)) : null;
+}
+
+function artifactImportReceiptForProposal(db: M0Database, proposalId: string): DirectorArtifactImportReceiptView | null {
+  const row = db.prepare(`SELECT receipt_id, proposal_id, project_id, shot_id, artifact_id, blob_sha256, role, mime_type, created_at
+    FROM director_artifact_import_receipts WHERE proposal_id = ?`).get(proposalId) as Record<string, unknown> | undefined;
+  return row ? validateDirectorArtifactImportReceipt(row) : null;
 }
 
 function ownerPrincipals(db: M0Database, projectId: string): string[] {
@@ -369,7 +392,8 @@ function queueItem(db: M0Database, row: StoredProposalRow, now: Date): DirectorP
     payload_hash: proposal.payload_hash,
     payload: proposal.payload,
     ...proposalStatus(db, proposal, now),
-    automation_grant: grantForProposal(db, proposal.proposal_id)
+    automation_grant: grantForProposal(db, proposal.proposal_id),
+    artifact_import_receipt: artifactImportReceiptForProposal(db, proposal.proposal_id)
   };
 }
 
@@ -529,6 +553,106 @@ export function decideDirectorProposal(
       return { ok: false, error: caught.approvalError };
     }
     return error("DIRECTOR_PROPOSAL_DECISION_FAILED", "Director Proposal decision could not be recorded.");
+  }
+}
+
+/**
+ * Bind one human-approved advisory `artifact_import` Proposal to exactly one
+ * existing, locally validated Artifact. This is a receipt-only operation: it
+ * never selects a file, creates an Artifact, calls a Provider, or changes a
+ * SHOT reference.
+ */
+export function recordDirectorArtifactImportReceipt(
+  input: DirectorArtifactImportReceiptInput,
+  db: M0Database,
+  now = () => new Date()
+): DirectorApprovalResult<{ receipt: DirectorArtifactImportReceiptView }> {
+  if (input.human_confirmation !== true) {
+    return error("DIRECTOR_ARTIFACT_IMPORT_CONFIRMATION_REQUIRED", "Human confirmation is required to record an Artifact import receipt.");
+  }
+  let transactionOpen = false;
+  try {
+    db.exec("BEGIN IMMEDIATE");
+    transactionOpen = true;
+    const row = db.prepare(`SELECT proposal_id, workspace_id, principal_id, project_id, target_type, target_id, focus_id,
+        focus_generation, schema_version, kind, base_state_hash, payload_json, payload_hash, parent_proposal_id,
+        idempotency_key, source, created_at FROM director_proposals WHERE proposal_id = ?`).get(input.proposal_id) as StoredProposalRow | undefined;
+    if (!row) abortDecision("DIRECTOR_PROPOSAL_NOT_FOUND", "Director Proposal was not found.", "proposal_id");
+    let proposal: DirectorProposal;
+    try { proposal = storedProposal(row); }
+    catch { abortDecision("DIRECTOR_APPROVAL_DATA_INTEGRITY_VIOLATION", "Director Proposal is malformed."); }
+    if (proposal.kind !== "artifact_import") {
+      abortDecision("DIRECTOR_PROPOSAL_KIND_NOT_IMPORTABLE", "Only an accepted Artifact import Proposal can receive an import receipt.", "proposal_id");
+    }
+    const latest = latestProposalEvent(db, proposal.proposal_id);
+    if (!latest || latest.event_type !== "accepted") {
+      abortDecision("DIRECTOR_PROPOSAL_NOT_ACCEPTED", "Artifact import Proposal must be accepted before a local receipt is recorded.");
+    }
+    if (!projectIsWritableDirectorProject(db, proposal.project_id)) {
+      abortDecision("DIRECTOR_PROJECT_NOT_AVAILABLE", "Director controls require an active production project.", "project_id");
+    }
+    if (!proposalPrincipalIsCurrentSingleOwner(db, proposal)) {
+      abortDecision("DIRECTOR_PROPOSAL_OWNER_REQUIRED", "The active single owner is required to record this import receipt.");
+    }
+    const existing = db.prepare(`SELECT receipt_id, proposal_id, project_id, shot_id, artifact_id, blob_sha256, role, mime_type, created_at
+      FROM director_artifact_import_receipts WHERE proposal_id = ?`).get(proposal.proposal_id) as DirectorArtifactImportReceipt | undefined;
+    if (existing) {
+      const receipt = DIRECTOR_ARTIFACT_IMPORT_RECEIPT_SCHEMA.parse(existing);
+      if (receipt.artifact_id !== input.artifact_id) {
+        abortDecision("DIRECTOR_ARTIFACT_IMPORT_RECEIPT_EXISTS", "This Proposal already has an immutable Artifact import receipt.");
+      }
+      db.exec("COMMIT");
+      transactionOpen = false;
+      return { ok: true, data: { receipt } };
+    }
+    const shot = getShot(db, proposal.payload.shot_id);
+    if (!shot || shot.project_id !== proposal.project_id || proposal.target_type !== "shot" || proposal.target_id !== shot.shot_id) {
+      abortDecision("DIRECTOR_ARTIFACT_IMPORT_TARGET_INVALID", "Artifact import Proposal is no longer bound to an active project SHOT.");
+    }
+    const artifactType = proposal.payload.target_role === "storyboard_image" ? "image" : "video";
+    const checked = validateActiveArtifactReference(db, {
+      artifact_id: input.artifact_id,
+      project_id: proposal.project_id,
+      shot_id: shot.shot_id,
+      role: proposal.payload.target_role,
+      artifact_type: artifactType
+    });
+    if (!checked.ok) {
+      abortDecision("DIRECTOR_ARTIFACT_IMPORT_ARTIFACT_INVALID", "Selected local Artifact does not satisfy the approved import binding.", "artifact_id");
+    }
+    if (checked.artifact.storage.mime_type !== proposal.payload.expected_mime_type
+      || checked.blob.detected_mime !== proposal.payload.expected_mime_type) {
+      abortDecision("DIRECTOR_ARTIFACT_IMPORT_MIME_MISMATCH", "Selected local Artifact MIME type does not match the approved import Proposal.", "artifact_id");
+    }
+    const receipt = DIRECTOR_ARTIFACT_IMPORT_RECEIPT_SCHEMA.parse({
+      receipt_id: `director_artifact_import_receipt_${randomUUID()}`,
+      proposal_id: proposal.proposal_id,
+      project_id: proposal.project_id,
+      shot_id: shot.shot_id,
+      artifact_id: checked.artifact.artifact_id,
+      blob_sha256: checked.blob.sha256,
+      role: proposal.payload.target_role,
+      mime_type: proposal.payload.expected_mime_type,
+      created_at: isoNow(now)
+    });
+    try {
+      db.prepare(`INSERT INTO director_artifact_import_receipts
+        (receipt_id, proposal_id, project_id, shot_id, artifact_id, blob_sha256, role, mime_type, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(receipt.receipt_id, receipt.proposal_id, receipt.project_id, receipt.shot_id,
+          receipt.artifact_id, receipt.blob_sha256, receipt.role, receipt.mime_type, receipt.created_at);
+    } catch {
+      abortDecision("DIRECTOR_ARTIFACT_IMPORT_RECEIPT_INVALID", "Artifact import receipt could not be bound to the current local evidence.");
+    }
+    db.exec("COMMIT");
+    transactionOpen = false;
+    return { ok: true, data: { receipt } };
+  } catch (caught) {
+    if (transactionOpen) {
+      try { db.exec("ROLLBACK"); } catch { /* transaction already closed */ }
+    }
+    if (caught instanceof DirectorApprovalAbort) return { ok: false, error: caught.approvalError };
+    return error("DIRECTOR_ARTIFACT_IMPORT_RECEIPT_FAILED", "Artifact import receipt could not be recorded.");
   }
 }
 
