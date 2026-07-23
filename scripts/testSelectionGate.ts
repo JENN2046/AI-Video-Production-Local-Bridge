@@ -43,6 +43,8 @@ export interface ReadonlyAppSuite extends OAuthPortabilitySuite {}
 export interface DirectorSuite extends OAuthPortabilitySuite {}
 
 export const REQUIRED_DIRECTOR_SUITES: ReadonlyArray<DirectorSuite> = [
+  { id: "director-provider-capability-quote", path: "tests/director-provider-quote-contract.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "Director quote resolver requires a current matching local preflight and redacts cost from discussion projection" },
+  { id: "director-quote-compilation-gate", path: "tests/director-workbench-approval.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "Automation Grant compilation requires a current verified quote and enforces its budget without a Provider call" },
   { id: "director-native-tool-registry", path: "tests/director-manual-native-tools.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "Director native registry exposes only the fixed advisory tool set with exact OAuth scopes" },
   { id: "director-tool-scope-challenge", path: "tests/director-manual-native-tools.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "Director registry enforces media and proposal scopes independently from projects.read" },
   { id: "director-result-budget", path: "tests/director-manual-native-tools.test.ts", npm_script: "test:webgpt:director", ci_step: "ChatGPT Director domain tests", case_name: "Director tool results fail closed above the 128 KiB structured response budget" },

@@ -16,6 +16,7 @@ import {
   getDirectorApprovalTower
 } from "../src/director/workbenchApproval.js";
 import { openM0Database } from "../src/storage/sqlite.js";
+import { buildProviderCapabilityKey, buildProviderPriceCacheKey } from "../src/tools/providerCapabilities.js";
 import { saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 import { createWorkbenchProject } from "../src/tools/workbenchV2.js";
 import { reconcileGenerationJob, runWorkbenchGenerationOnce } from "../src/tools/workbenchGeneration.js";
@@ -25,6 +26,33 @@ import { handleWorkbenchV2Api } from "../src/http/workbenchV2Routes.js";
 const principalId = "d".repeat(64);
 const issuerHash = "e".repeat(64);
 const firstNow = new Date("2026-07-22T08:00:00.000Z");
+
+/** A local, auditable stand-in for a human Workbench preflight; it never calls a Provider. */
+function seedVerifiedRunningHubQuote(
+  db: ReturnType<typeof openM0Database>,
+  input: { duration_seconds: number; resolution: string; aspect_ratio: string; now?: Date; estimated_cost_value?: number }
+): void {
+  const capability = buildProviderCapabilityKey({
+    provider: "runninghub",
+    model: "rhart-video-g/image-to-video",
+    duration_seconds: input.duration_seconds,
+    resolution: input.resolution,
+    aspect_ratio: input.aspect_ratio
+  });
+  assert.equal(capability.ok, true, capability.ok ? "" : capability.code);
+  if (!capability.ok) throw new Error("Fixture capability selection failed.");
+  const priceKey = buildProviderPriceCacheKey(capability.key, capability.capability);
+  const now = input.now ?? firstNow;
+  db.prepare(`INSERT INTO webgpt_provider_price_cache (
+    provider, model, duration_seconds, resolution, estimated_cost_value, currency, source, fetched_at, expires_at
+  ) VALUES (?, ?, ?, ?, ?, 'CNY', ?, ?, ?)
+  ON CONFLICT(provider, model, duration_seconds, resolution) DO UPDATE SET
+    estimated_cost_value = excluded.estimated_cost_value, currency = excluded.currency, source = excluded.source,
+    fetched_at = excluded.fetched_at, expires_at = excluded.expires_at`).run(
+    priceKey.provider, priceKey.model, priceKey.duration_seconds, priceKey.storage_resolution,
+    input.estimated_cost_value ?? 5, priceKey.source, now.toISOString(), new Date(now.getTime() + 60 * 60_000).toISOString()
+  );
+}
 
 function insertCreativeBriefProposal(
   db: ReturnType<typeof openM0Database>,
@@ -91,7 +119,7 @@ function insertGenerationPlanProposal(
   project.shot_ids = [shotId];
   saveProject(db, project as never);
   const shot: Shot = {
-    shot_id: shotId, project_id: input.project_id, order: 1, status: "storyboard_approved", duration_seconds: 5,
+    shot_id: shotId, project_id: input.project_id, order: 1, status: "storyboard_approved", duration_seconds: 6,
     description: "A verified storyboard for bounded automation.", storyboard_image_artifact_id: storyboardArtifactId,
     video_prompt: "Move slowly toward the product.", negative_prompt: "No deformation.", generation_run_ids: [],
     accepted_clip_artifact_id: "", clip_versions: [],
@@ -107,11 +135,17 @@ function insertGenerationPlanProposal(
     linked_objects: { project_id: input.project_id, shot_id: shotId },
     source: { kind: "fixture", provider: "mock", provider_job_id: "", sha256, external_url_host: "" }
   }));
+  seedVerifiedRunningHubQuote(db, {
+    duration_seconds: shot.duration_seconds,
+    resolution: project.video_spec.resolution,
+    aspect_ratio: project.video_spec.aspect_ratio,
+    now: input.now
+  });
   const focusRow = db.prepare(`SELECT focus_id, workspace_id, principal_id, project_id, target_type, target_id,
     generation, supersedes_focus_id, created_at, expires_at FROM director_focuses WHERE focus_id = ?`).get(input.focus_id) as Record<string, unknown>;
   const context = buildDirectorContext(db, DIRECTOR_FOCUS_SCHEMA.parse(focusRow), "generation_plan", "full");
   const payload = {
-    shot_id: shotId, provider: "runninghub" as const, model: "kling-v1", duration_seconds: 5, resolution: "1080x1920",
+    shot_id: shotId, provider: "runninghub" as const, model: "rhart-video-g/image-to-video", duration_seconds: 6, resolution: "1080x1920",
     video_prompt: shot.video_prompt, negative_prompt: shot.negative_prompt, continuity_constraints: [], estimated_cost_minor: 500, currency: "CNY"
   };
   const proposal = DIRECTOR_PROPOSAL_SCHEMA.parse({
@@ -174,6 +208,11 @@ function prepareRunnableDirectorGenerationFixture(db: ReturnType<typeof openM0Da
     review: { approval_status: "pending", rejection_reasons: [], latest_revision_instruction: null }
   };
   saveShot(db, shot);
+  seedVerifiedRunningHubQuote(db, {
+    duration_seconds: shot.duration_seconds,
+    resolution: project.video_spec.resolution,
+    aspect_ratio: project.video_spec.aspect_ratio
+  });
   db.prepare(`INSERT INTO media_blobs
     (blob_id, sha256, size_bytes, detected_mime, storage_uri, integrity_state, provenance_json)
     VALUES (?, ?, ?, 'image/png', ?, 'verified', ?)`)
@@ -440,6 +479,49 @@ test("an accepted current generation Proposal compiles exactly one immutable Aut
     }, db, () => firstNow);
     assert.equal(replay.ok, false);
     if (!replay.ok) assert.equal(replay.error.code, "DIRECTOR_PROPOSAL_ALREADY_COMPILED");
+  } finally { db.close(); }
+});
+
+test("Automation Grant compilation requires a current verified quote and enforces its budget without a Provider call", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const created = createWorkbenchProject({ title: "Director quote gate fixture", classification: "production" }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    const projectId = created.data.project.project_id;
+    bootstrapWebGptProjectOwner(db, principalId, projectId, "DIRECTOR_QUOTE_GATE_FIXTURE", issuerHash);
+    const focusId = "director_focus_quote_gate_001";
+    db.prepare(`INSERT INTO director_focuses
+      (focus_id, workspace_id, principal_id, project_id, target_type, target_id, generation, created_at, expires_at)
+      VALUES (?, 'jenn-ai-video-workspace', ?, ?, 'shot', 'shot_director_automation_001', 1, ?, ?)`)
+      .run(focusId, principalId, projectId, firstNow.toISOString(), new Date(firstNow.getTime() + 60 * 60_000).toISOString());
+    db.prepare(`INSERT INTO director_focus_events (event_id, focus_id, event_type, reason_code, created_at)
+      VALUES ('director_focus_event_quote_gate_001', ?, 'created', 'DIRECTOR_HUMAN_FOCUS_CREATED', ?)`)
+      .run(focusId, firstNow.toISOString());
+    const proposal = insertGenerationPlanProposal(db, {
+      project_id: projectId, focus_id: focusId, generation: 1, proposal_id: "director_proposal_quote_gate_001",
+      idempotency_key: "director-quote-gate-proposal-0001", now: firstNow
+    });
+    const accepted = decideDirectorProposal({ proposal_id: proposal.proposal_id, decision: "accept", human_confirmation: true }, db, () => firstNow);
+    assert.equal(accepted.ok, true, accepted.ok ? "" : accepted.error.code);
+
+    db.exec("DELETE FROM webgpt_provider_price_cache");
+    const missing = compileDirectorProposalToAutomationGrant({
+      proposal_id: proposal.proposal_id, max_total_minor: 500, max_per_run_minor: 500, max_versions_per_shot: 2,
+      max_automatic_retries: 0, expires_at: new Date(firstNow.getTime() + 60 * 60_000).toISOString(), human_confirmation: true
+    }, db, () => firstNow);
+    assert.equal(missing.ok, false);
+    if (!missing.ok) assert.equal(missing.error.code, "DIRECTOR_QUOTE_REQUIRED");
+
+    seedVerifiedRunningHubQuote(db, { duration_seconds: 6, resolution: created.data.project.video_spec.resolution, aspect_ratio: created.data.project.video_spec.aspect_ratio, now: firstNow });
+    const belowQuote = compileDirectorProposalToAutomationGrant({
+      proposal_id: proposal.proposal_id, max_total_minor: 7, max_per_run_minor: 7, max_versions_per_shot: 2,
+      max_automatic_retries: 0, expires_at: new Date(firstNow.getTime() + 60 * 60_000).toISOString(), human_confirmation: true
+    }, db, () => firstNow);
+    assert.equal(belowQuote.ok, false);
+    if (!belowQuote.ok) assert.equal(belowQuote.error.code, "DIRECTOR_GRANT_BUDGET_BELOW_QUOTE");
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM director_automation_grants").get() as { count: number }).count, 0);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM generation_intents").get() as { count: number }).count, 0);
   } finally { db.close(); }
 });
 

@@ -126,6 +126,7 @@ function handlers(): DirectorNativeToolHandlers {
             sha256: hash
           },
           review_history: [],
+          quote: { quote_state: "not_applicable", expires_at: null, currency: null, requires_human_refresh: false },
           memory_recall: { state: "disabled", items: [] }
         }
       };

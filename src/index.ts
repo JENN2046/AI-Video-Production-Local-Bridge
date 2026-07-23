@@ -106,6 +106,26 @@ export type {
   ProviderRequestProjection
 } from "./tools/providerCapabilities.js";
 export {
+  DIRECTOR_PROVIDER_CAPABILITIES,
+  DIRECTOR_PROVIDER_CAPABILITY_REGISTRY_VERSION,
+  DIRECTOR_QUOTE_CONTRACT_VERSION,
+  RUNNINGHUB_DIRECTOR_CAPABILITY,
+  RUNWAY_DIRECTOR_CAPABILITY_CANDIDATE,
+  assertDirectorGrantCapability,
+  publicDirectorQuote,
+  readDirectorQuote,
+  selectVerifiedDirectorCapability
+} from "./director/providerCapability.js";
+export type {
+  DirectorCapabilitySelection,
+  DirectorCapabilityVerification,
+  DirectorGenerationAction,
+  DirectorProviderCapability,
+  DirectorQuotePublic,
+  DirectorQuoteState,
+  DirectorVerifiedQuote
+} from "./director/providerCapability.js";
+export {
   activatePendingMediaArtifact,
   activateLocalMediaArtifact,
   attachArtifactToShot,

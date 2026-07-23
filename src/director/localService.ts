@@ -25,6 +25,7 @@ import {
   recallDirectorMemory,
   type DirectorMemoryPort
 } from "./memoryPort.js";
+import { publicDirectorQuote, readDirectorQuote, selectVerifiedDirectorCapability } from "./providerCapability.js";
 import {
   DIRECTOR_DISCUSSION_CONTEXT_SCHEMA,
   DIRECTOR_GET_CONTEXT_INPUT_SCHEMA,
@@ -364,7 +365,13 @@ function discussionShot(shot: Shot): Record<string, unknown> {
  * proposal must use the exact same target-state construction as native
  * proposal ingestion, rather than trusting the hash supplied by ChatGPT.
  */
-export function buildDirectorContext(db: M0Database, focus: DirectorFocus, kind: DirectorProposalKind, detail: "compact" | "full") {
+export function buildDirectorContext(
+  db: M0Database,
+  focus: DirectorFocus,
+  kind: DirectorProposalKind,
+  detail: "compact" | "full",
+  now = new Date()
+) {
   proposalKindMatchesFocus(kind, focus);
   const { project, lifecycle } = projectRow(db, focus.project_id);
   const shots = boundProjectShots(db, project.project_id);
@@ -393,6 +400,13 @@ export function buildDirectorContext(db: M0Database, focus: DirectorFocus, kind:
   const notes = targetShot ? db.prepare(`SELECT note_id, artifact_id, note, created_at FROM workbench_review_notes
     WHERE project_id = ? AND shot_id = ? ORDER BY created_at DESC, note_id DESC LIMIT ?`)
     .all(project.project_id, targetShot.shot_id, detail === "full" ? 50 : 10) as Array<{ note_id: string; artifact_id: string; note: string; created_at: string }> : [];
+  const rawQuote = (targetShot && (kind === "generation_plan" || kind === "clip_regeneration"))
+    ? readDirectorQuote(db, selectVerifiedDirectorCapability({
+      duration_seconds: targetShot.duration_seconds,
+      resolution: project.video_spec.resolution,
+      aspect_ratio: project.video_spec.aspect_ratio
+    }), now)
+    : { quote_state: "not_applicable" as const, capability_reference: null, expires_at: null, currency: null, requires_human_refresh: false };
   const discussion = DIRECTOR_DISCUSSION_CONTEXT_SCHEMA.parse({
     project: {
       project_id: project.project_id, title: project.title, status: project.status, lifecycle_state: lifecycle,
@@ -418,6 +432,7 @@ export function buildDirectorContext(db: M0Database, focus: DirectorFocus, kind:
       const disposition = version?.review_status === "approved" ? "accepted" : version?.review_status === "rejected" ? "rejected" : "pending";
       return { event_id: note.note_id, artifact_id: note.artifact_id || null, disposition, reason_codes: [], note: note.note, created_at: new Date(note.created_at).toISOString() };
     }),
+    quote: publicDirectorQuote(rawQuote),
     memory_recall: disabledDirectorMemoryRecall()
   });
   return { targetState, discussion, project, targetShot, targetArtifact };
@@ -553,7 +568,7 @@ export class DirectorLocalService implements DirectorNativeToolHandlers {
     const issuerHash = requireIssuer(this.actor);
     const prepared = this.read((db) => {
       const focus = requireFocus(db, this.actor, input.focus_id, input.focus_generation, this.now());
-      const built = buildDirectorContext(db, focus, input.proposal_kind, input.detail);
+      const built = buildDirectorContext(db, focus, input.proposal_kind, input.detail, this.now());
       return { focus, built };
     });
     const memoryRecall = await recallDirectorMemory(this.memoryPort, {
