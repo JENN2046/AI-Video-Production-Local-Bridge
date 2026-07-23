@@ -16,6 +16,19 @@ const nullableHashSchema = hashSchema.nullable();
 const nonEmptyTextSchema = z.string().trim().min(1).max(16_384);
 const shortTextSchema = z.string().trim().min(1).max(1_024);
 
+const artifactImportSourceLocatorPattern = /(?:\b[a-z][a-z0-9+.-]*:\/\/|(?:^|[\s"'(])(?:[a-z]:[\\/]|\\\\|\/(?:[^/\s]+\/)+[^/\s]+)|\bdata:[^\s,;]+;base64,|(?:^|[\s:=])[A-Za-z0-9+/]{64,}={0,2}(?=$|[\s,;]))/iu;
+
+/**
+ * Artifact-import prose may explain the requested role and evidence, but it
+ * must never smuggle a filesystem locator, external URL, data URL, or bytes
+ * into immutable proposal storage.  Actual selection stays in the local
+ * Workbench's controlled file picker and Artifact validator.
+ */
+const artifactImportTextSchema = nonEmptyTextSchema.refine(
+  (value) => !artifactImportSourceLocatorPattern.test(value),
+  "DIRECTOR_ARTIFACT_IMPORT_SOURCE_LOCATOR_FORBIDDEN"
+);
+
 export const DIRECTOR_PROPOSAL_KIND_SCHEMA = z.enum([
   "creative_brief",
   "script",
@@ -262,8 +275,8 @@ export const DIRECTOR_ARTIFACT_IMPORT_PAYLOAD_SCHEMA = z.object({
   shot_id: idSchema,
   target_role: z.enum(["storyboard_image", "generated_clip"]),
   expected_mime_type: z.enum(DIRECTOR_ARTIFACT_IMPORT_SUPPORTED_MIME_TYPES),
-  summary: nonEmptyTextSchema,
-  rationale: nonEmptyTextSchema
+  summary: artifactImportTextSchema,
+  rationale: artifactImportTextSchema
 }).strict().superRefine((value, context) => {
   const imageRole = value.target_role === "storyboard_image";
   const imageMime = value.expected_mime_type.startsWith("image/");

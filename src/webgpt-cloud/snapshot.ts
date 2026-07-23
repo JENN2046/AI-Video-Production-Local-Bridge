@@ -786,6 +786,17 @@ export type ReadonlyMediaBinding = z.infer<typeof READONLY_MEDIA_BINDING_SCHEMA>
 
 export { canonicalizeJcs } from "../packages/domain/jcs.js";
 
+/**
+ * A remote replacement must only admit a snapshot produced from the current
+ * exporter ledger.  The parser continues to recognize the immediately prior
+ * source pair so an already-held, signed snapshot can be read until expiry
+ * during an upgrade; it is not a publish admission rule.
+ */
+export function readonlySnapshotHasCurrentSource(snapshot: Pick<ReadonlySnapshot, "source_schema" | "source_migration">): boolean {
+  return snapshot.source_schema === READONLY_SNAPSHOT_REQUIRED_SCHEMA
+    && snapshot.source_migration === READONLY_SNAPSHOT_REQUIRED_MIGRATION;
+}
+
 export function snapshotFingerprint(snapshot: ReadonlySnapshotUnsigned): string {
   const validated = READONLY_SNAPSHOT_UNSIGNED_SCHEMA.parse(snapshot);
   return createHash("sha256").update(canonicalizeJcs(validated), "utf8").digest("hex");

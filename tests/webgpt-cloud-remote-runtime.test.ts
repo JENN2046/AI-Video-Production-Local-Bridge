@@ -24,8 +24,12 @@ import {
   startReadonlyRemoteRuntime,
   type ReadonlyRemoteLogEvent
 } from "../src/webgpt-cloud/remoteRuntime.js";
-import { ReadonlySnapshotStore, signReadonlySnapshot } from "../src/webgpt-cloud/signedSnapshot.js";
-import { finalizeReadonlySnapshot, type ReadonlySnapshot } from "../src/webgpt-cloud/snapshot.js";
+import { ReadonlySnapshotStore, signReadonlySnapshot, verifyReadonlySignedSnapshot } from "../src/webgpt-cloud/signedSnapshot.js";
+import {
+  finalizeReadonlySnapshot,
+  READONLY_SNAPSHOT_PREVIOUS_SOURCE_MIGRATION,
+  type ReadonlySnapshot
+} from "../src/webgpt-cloud/snapshot.js";
 
 const ISSUER = "https://issuer.example.test/";
 const RESOURCE = "https://aivideo.skmt617.top/mcp";
@@ -175,6 +179,23 @@ test("signed snapshot transport rejects tampering and atomically replaces only n
     assert.throws(() => store.replace(tampered), /READONLY_SNAPSHOT_SIGNATURE_INVALID/);
     assert.equal(store.read()?.snapshot_fingerprint, first.snapshot.snapshot_fingerprint);
 
+    const { snapshot_fingerprint: _previousFingerprint, ...previousUnsigned } = structuredClone(second.snapshot);
+    const previousSnapshot = finalizeReadonlySnapshot({
+      ...previousUnsigned,
+      source_migration: READONLY_SNAPSHOT_PREVIOUS_SOURCE_MIGRATION
+    });
+    const previousEnvelope = signReadonlySnapshot(previousSnapshot, "publisher-v1", privateKey);
+    assert.equal(
+      verifyReadonlySignedSnapshot(previousEnvelope, "publisher-v1", publicKey).source_migration,
+      READONLY_SNAPSHOT_PREVIOUS_SOURCE_MIGRATION,
+      "an already-signed prior-ledger snapshot remains verification-compatible until expiry"
+    );
+    assert.throws(
+      () => store.replace(previousEnvelope),
+      /READONLY_SNAPSHOT_PUBLISH_SOURCE_MIGRATION_REQUIRED/
+    );
+    assert.equal(store.read()?.snapshot_fingerprint, first.snapshot.snapshot_fingerprint);
+
     const secondEnvelope = signReadonlySnapshot(second.snapshot, "publisher-v1", privateKey);
     assert.equal(store.replace(secondEnvelope).snapshot_fingerprint, second.snapshot.snapshot_fingerprint);
     assert.throws(() => store.replace(firstEnvelope), /READONLY_SNAPSHOT_NOT_NEWER/);
@@ -314,6 +335,23 @@ test("remote OAuth challenges, signed publish, six readonly tools, and readiness
     });
     assert.equal(published.status, 202);
     assert.equal(jsonRecord(await published.json()).snapshot_fingerprint, fixture.snapshot.snapshot_fingerprint);
+
+    const { snapshot_fingerprint: _previousFingerprint, ...previousUnsigned } = structuredClone(fixture.snapshot);
+    const previousEnvelope = signReadonlySnapshot(finalizeReadonlySnapshot({
+      ...previousUnsigned,
+      source_migration: READONLY_SNAPSHOT_PREVIOUS_SOURCE_MIGRATION
+    }), "publisher-v1", privateKey);
+    const rejectedPrevious = await fetch(runtime.snapshot_url, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(previousEnvelope)
+    });
+    assert.equal(rejectedPrevious.status, 400);
+    assert.equal(
+      jsonRecord(jsonRecord(await rejectedPrevious.json()).error).code,
+      "READONLY_SNAPSHOT_PUBLISH_SOURCE_MIGRATION_REQUIRED"
+    );
+    assert.equal(runtime.snapshot_status().snapshot_fingerprint, fixture.snapshot.snapshot_fingerprint);
     const mediaMismatchReady = await fetch(`${runtime.origin}/readyz`);
     assert.equal(mediaMismatchReady.status, 503);
     assert.equal(jsonRecord(jsonRecord(await mediaMismatchReady.json()).checks).media_capability_roundtrip, false);
