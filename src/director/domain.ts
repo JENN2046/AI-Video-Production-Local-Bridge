@@ -17,7 +17,7 @@ const nonEmptyTextSchema = z.string().trim().min(1).max(16_384);
 const shortTextSchema = z.string().trim().min(1).max(1_024);
 
 const artifactImportSafeMimeReferencePattern = /\b(?:image\/(?:jpeg|png)|video\/mp4)\b/giu;
-const artifactImportSourceLocatorPattern = /(?:\b[a-z][a-z0-9+.-]*:\/\/|(?:^|[\s"'(])(?:[a-z]:[\\/]|\\\\|\/(?:[^/\s]+\/)+[^/\s]+|(?:~|\.{1,2}|[A-Za-z0-9_.-]+)[\\/](?:[^\\/\s]+[\\/])*[^\\/\s]+)|\bdata:[^\s,;]+;base64,|(?:^|[^A-Za-z0-9+/=])[A-Za-z0-9+/]{64,}={0,2}(?=$|[^A-Za-z0-9+/=]))/iu;
+const artifactImportSourceLocatorPattern = /(?:\b[a-z][a-z0-9+.-]*:\/\/|(?:^|[\s"'(\[`])(?:[a-z]:[\\/]|\\\\|\/(?:[^/\s]+\/)+[^/\s]+|(?:~|\.{1,2}|[A-Za-z0-9_.-]+)[\\/](?:[^\\/\s]+[\\/])*[^\\/\s]+)|\bdata:[^\s,;]+;base64,|(?:^|[^A-Za-z0-9+/=])[A-Za-z0-9+/]{64,}={0,2}(?=$|[^A-Za-z0-9+/=]))/iu;
 
 function artifactImportTextHasSourceLocator(value: string): boolean {
   // MIME names are already constrained by expected_mime_type and may be used

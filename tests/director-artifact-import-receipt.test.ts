@@ -173,7 +173,10 @@ test("artifact_import proposals reject source locations and enforce SHOT role an
     "data:image/png;base64,QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=",
     `Embedded bytes: ${base64Blob}`,
     `Quoted bytes: "${base64Blob}".`,
-    `Parenthesized bytes: (${base64Blob})`
+    `Parenthesized bytes: (${base64Blob})`,
+    "Markdown Windows path: `C:\\Users\\51529\\Downloads\\storyboard.png`",
+    "Markdown POSIX path: `/private/storyboard.png`",
+    "Markdown relative path: `assets/private.png`"
   ]) {
     assert.equal(DIRECTOR_PROPOSAL_DRAFT_SCHEMA.safeParse({
       ...valid, payload: { ...valid.payload, summary: prohibitedText }
