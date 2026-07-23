@@ -1,6 +1,6 @@
 # Architecture
 
-Status: current-main architecture; active database migrated to `0010`, runtime re-acceptance pending
+Status: `SCHEMA_GATE_PENDING`; current code requires ledger `0011`, while the active database remains at the historically accepted ledger `0010`
 Accepted package: `0.1.0-beta.5`
 
 ## System map
@@ -8,9 +8,9 @@ Accepted package: `0.1.0-beta.5`
 ```mermaid
 flowchart LR
     J["Jenn"] --> W["Local Workbench V2"]
-    W --> DB["SQLite active database: workbench-v2-6\nledger 0010 (migration acceptance PASS)"]
+    W --> DB["SQLite active database: workbench-v2-6\nledger 0010 (historical acceptance PASS; current gate 0011)"]
     W --> FS["Governed local media store"]
-    W --> PA["Manual Snapshot publisher"]
+    W --> PA["Manual Snapshot publisher\nblocked pending ledger 0011 acceptance"]
     PA --> SS["Signed ephemeral Snapshot v4"]
     SS --> RM["Remote Readonly MCP App"]
     C["ChatGPT"] --> RM
@@ -23,7 +23,7 @@ flowchart LR
     W --> PR["Provider adapters — explicit human gate"]
 ```
 
-Solid lines describe the intended operating paths. The active database completed the authorized `0010` migration with backup, manifest, `db:check` and restore evidence; renewed runtime and Snapshot publish acceptance remain separate gates. Dashed media lines are implemented but not yet externally accepted end to end.
+Solid lines describe the intended operating paths, not currently authorized runtime actions. The active database completed the authorized `0010` migration with backup, manifest, `db:check` and restore evidence, but current code adds the controlled Artifact import-receipt schema and requires `0011`. Therefore `0010` is historical evidence only: startup, Snapshot publish, renewal and recovery remain blocked until a separately authorized `0011` migration and bounded runtime/publish re-acceptance pass. Dashed media lines are implemented but not yet externally accepted end to end.
 
 ## Sources of truth
 
@@ -69,7 +69,7 @@ The Remote Runtime, ChatGPT Widget and Cloudflare are never authoritative busine
 ## Deployment boundaries
 
 - Local Workbench and data stay on Jenn's Windows machine.
-- Remote App currently uses Render Free characteristics: process memory can disappear after sleep/restart, no persistent business store, manual Snapshot republish required.
+- Remote App currently uses Render Free characteristics: process memory can disappear after sleep/restart and has no persistent business store. The former manual Snapshot republish path is historical evidence; current-code republish remains blocked pending the `0011` gate.
 - `aivideo.skmt617.top` is the MCP/App origin.
 - `media.skmt617.top` is reserved for the Cloudflare media route; it is not accepted until instance-bound health and playback pass.
 - Windows Scheduled Task installation remains a separate authorization gate.
