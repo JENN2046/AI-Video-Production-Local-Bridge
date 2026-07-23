@@ -92,6 +92,9 @@ jobs:
       - name: ChatGPT Director domain tests
         run: npm run test:webgpt:director
 
+      - name: Unified ChatGPT Workspace MCP contract tests
+        run: npm run test:webgpt:workspace
+
       - name: Readonly media gateway contract tests
         run: npm run test:webgpt:media-gateway
 
