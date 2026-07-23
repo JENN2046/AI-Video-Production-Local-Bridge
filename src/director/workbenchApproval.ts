@@ -605,6 +605,24 @@ export function recordDirectorArtifactImportReceipt(
       transactionOpen = false;
       return { ok: true, data: { receipt } };
     }
+    const focusRow = db.prepare(`SELECT focus_id, workspace_id, principal_id, project_id, target_type, target_id,
+        generation, supersedes_focus_id, created_at, expires_at FROM director_focuses WHERE focus_id = ?`).get(proposal.focus_id) as StoredFocusRow | undefined;
+    if (!focusRow) abortDecision("DIRECTOR_FOCUS_STALE", "Director Focus is no longer available.");
+    let focus: DirectorFocus;
+    try { focus = storedFocus(focusRow); }
+    catch { abortDecision("DIRECTOR_APPROVAL_DATA_INTEGRITY_VIOLATION", "Director Focus is malformed."); }
+    const observedAt = now();
+    const currentFocus = latestFocus(db, proposal.principal_id);
+    if (focusTerminal(db, focus.focus_id) || Date.parse(focus.expires_at) <= observedAt.getTime()
+      || currentFocus?.focus_id !== focus.focus_id || currentFocus.generation !== focus.generation) {
+      abortDecision("DIRECTOR_FOCUS_STALE", "Director Focus is no longer current.");
+    }
+    try {
+      const current = buildDirectorContext(db, focus, proposal.kind, "full");
+      validateDirectorProposalAgainstTargetState(proposal, current.targetState);
+    } catch {
+      abortDecision("DIRECTOR_PROPOSAL_STALE", "Director Proposal no longer matches the authoritative project state.");
+    }
     const shot = getShot(db, proposal.payload.shot_id);
     if (!shot || shot.project_id !== proposal.project_id || proposal.target_type !== "shot" || proposal.target_id !== shot.shot_id) {
       abortDecision("DIRECTOR_ARTIFACT_IMPORT_TARGET_INVALID", "Artifact import Proposal is no longer bound to an active project SHOT.");

@@ -250,10 +250,18 @@ const storyboardRevisionPayloadSchema = z.object({
  * arbitrary local file.  The Workbench owns the subsequent file-selection and
  * existing Artifact/Blob validation boundary.
  */
+/**
+ * These types deliberately match the existing local Artifact/Blob byte
+ * validators.  The media gateway supports a wider playback allowlist, but a
+ * Director import receipt is an authoritative local-evidence operation and
+ * must not accept a proposal that the current import boundary cannot verify.
+ */
+export const DIRECTOR_ARTIFACT_IMPORT_SUPPORTED_MIME_TYPES = ["image/jpeg", "image/png", "video/mp4"] as const;
+
 export const DIRECTOR_ARTIFACT_IMPORT_PAYLOAD_SCHEMA = z.object({
   shot_id: idSchema,
   target_role: z.enum(["storyboard_image", "generated_clip"]),
-  expected_mime_type: z.enum(["image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm"]),
+  expected_mime_type: z.enum(DIRECTOR_ARTIFACT_IMPORT_SUPPORTED_MIME_TYPES),
   summary: nonEmptyTextSchema,
   rationale: nonEmptyTextSchema
 }).strict().superRefine((value, context) => {
@@ -487,7 +495,7 @@ export const DIRECTOR_ARTIFACT_IMPORT_RECEIPT_SCHEMA = z.object({
   artifact_id: idSchema,
   blob_sha256: hashSchema,
   role: z.enum(["storyboard_image", "generated_clip"]),
-  mime_type: z.enum(["image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm"]),
+  mime_type: z.enum(DIRECTOR_ARTIFACT_IMPORT_SUPPORTED_MIME_TYPES),
   created_at: timestampSchema
 }).strict().superRefine((value, context) => {
   const imageRole = value.role === "storyboard_image";

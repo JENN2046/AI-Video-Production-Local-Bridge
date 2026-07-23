@@ -142,7 +142,7 @@ test("artifact_import proposals reject source locations and enforce SHOT role an
     payload: {
       shot_id: "shot_contract_001",
       target_role: "storyboard_image",
-      expected_mime_type: "image/webp",
+      expected_mime_type: "image/png",
       summary: "Import one local storyboard image.",
       rationale: "Human-selected evidence is required."
     }
@@ -159,6 +159,12 @@ test("artifact_import proposals reject source locations and enforce SHOT role an
   }).success, false);
   assert.equal(DIRECTOR_PROPOSAL_DRAFT_SCHEMA.safeParse({
     ...valid, payload: { ...valid.payload, target_role: "generated_clip", expected_mime_type: "image/png" }
+  }).success, false);
+  assert.equal(DIRECTOR_PROPOSAL_DRAFT_SCHEMA.safeParse({
+    ...valid, payload: { ...valid.payload, expected_mime_type: "image/webp" }
+  }).success, false);
+  assert.equal(DIRECTOR_PROPOSAL_DRAFT_SCHEMA.safeParse({
+    ...valid, payload: { ...valid.payload, target_role: "generated_clip", expected_mime_type: "video/webm" }
   }).success, false);
 });
 
@@ -214,6 +220,12 @@ test("accepted artifact_import records exactly one immutable, path-free receipt 
     assert.equal(secondAccepted.ok, true, secondAccepted.ok ? "" : secondAccepted.error.code);
     const crossProject = recordDirectorArtifactImportReceipt({ proposal_id: secondProposal.proposal_id, artifact_id: foreignArtifactId, human_confirmation: true }, db, () => now);
     assert.equal(crossProject.ok ? null : crossProject.error.code, "DIRECTOR_ARTIFACT_IMPORT_ARTIFACT_INVALID");
+    const staleShot = { ...primary.shot, video_prompt: "Changed after approval so the advisory state is stale." };
+    db.prepare("UPDATE shots SET data_json = ? WHERE shot_id = ?")
+      .run(JSON.stringify(staleShot), primary.shot.shot_id);
+    const stale = recordDirectorArtifactImportReceipt({ proposal_id: secondProposal.proposal_id, artifact_id: artifactId, human_confirmation: true }, db, () => now);
+    assert.equal(stale.ok ? null : stale.error.code, "DIRECTOR_PROPOSAL_STALE");
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM director_artifact_import_receipts WHERE proposal_id = ?").get(secondProposal.proposal_id) as { count: number }).count, 0);
   } finally {
     db.close();
   }

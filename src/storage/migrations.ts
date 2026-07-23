@@ -1076,7 +1076,7 @@ const DIRECTOR_ARTIFACT_IMPORT_RECEIPT_SQL = `
     UNIQUE (proposal_id),
     CHECK (length(blob_sha256) = 64 AND blob_sha256 NOT GLOB '*[^0-9a-f]*'),
     CHECK (role IN ('storyboard_image','generated_clip')),
-    CHECK (mime_type IN ('image/jpeg','image/png','image/webp','video/mp4','video/webm'))
+    CHECK (mime_type IN ('image/jpeg','image/png','video/mp4'))
   );
 
   DROP TABLE storyboard_package_version_events_0010;
