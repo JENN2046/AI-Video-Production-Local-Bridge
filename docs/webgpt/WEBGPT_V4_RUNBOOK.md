@@ -1,6 +1,6 @@
 # WebGPT V4 本地运行与外部接线手册
 
-状态：`SCHEMA_GATE_PASS` on current `main`。provider-neutral Federated OAuth、issuer binding、Auth0 predefined public-client 与 Readonly ChatGPT MCP App 的 owner-only 路径曾在活动库 ledger `0008` 上通过真实验收，`MANUAL_PUBLISH_OPERATIONAL_READY` 是那一历史证据的状态。活动库已于 2026-07-22 完成单独授权的 `workbench-v2-6` / ledger `0010` 迁移、只读 `db:check`、恢复演练和 manifest 比较。该迁移只恢复 schema compatibility；Workbench startup 与 publish/recovery 仍需重新做有界验收。第二真实用户已由 Jenn 延期。Local Media Gateway 代码与部分 Cloudflare 外部对象已建立，但公网播放仍未验收；自动同步和 Windows 自动启动也未验收。日常操作优先阅读 [User Guide](../USER_GUIDE.md)，部署边界见 [Deployment Guide](../DEPLOYMENT_GUIDE.md)。
+状态：`SCHEMA_GATE_PENDING` on current `main`。provider-neutral Federated OAuth、issuer binding、Auth0 predefined public-client 与 Readonly ChatGPT MCP App 的 owner-only 路径曾在活动库 ledger `0008` 上通过真实验收，`MANUAL_PUBLISH_OPERATIONAL_READY` 是那一历史证据的状态。活动库已于 2026-07-22 完成单独授权的 `workbench-v2-6` / ledger `0010` 迁移、只读 `db:check`、恢复演练和 manifest 比较；当前代码则要求 controlled Artifact import-receipt 的 ledger `0011`。因此该 `0010` 验收只保留历史证据，不能启动 current-main Workbench 或执行 Snapshot publish/recovery；需先取得独立 `0011` migration 与有界 runtime/publish 重新验收。第二真实用户已由 Jenn 延期。Local Media Gateway 代码与部分 Cloudflare 外部对象已建立，但公网播放仍未验收；自动同步和 Windows 自动启动也未验收。日常操作优先阅读 [User Guide](../USER_GUIDE.md)，部署边界见 [Deployment Guide](../DEPLOYMENT_GUIDE.md)。
 
 ## 固定边界
 
@@ -28,7 +28,7 @@ npm run start:webgpt
 
 ## Owner-only 日常发布（历史流程；当前 main 暂停）
 
-Human Workbench 的“系统 → 只读 App 发布”曾是接受的 Jenn 日常入口。以下步骤在当前 `main` 暂停，不能被用来绕过 `0010` 迁移门禁：
+Human Workbench 的“系统 → 只读 App 发布”曾是接受的 Jenn 日常入口。以下步骤在当前 `main` 暂停，不能被用来绕过 current-code ledger `0011` 门禁：
 
 1. 使用 `windows:start` 启动 Workbench，并确认 `windows:status` 为 ready。
 2. 打开“系统 → 只读 App 发布”，先读取低披露状态。
@@ -83,7 +83,7 @@ GET http://127.0.0.1:2092/healthz
 - 通用配置使用 `WEBGPT_V4_READONLY_OAUTH_ISSUER`、`WEBGPT_V4_READONLY_OAUTH_AUDIENCE`、`WEBGPT_V4_READONLY_OAUTH_JWKS_URI` 和显式 `WEBGPT_V4_READONLY_OAUTH_CLIENT_REGISTRATION`
 - issuer 同时是 PRMD authorization server 与 JWT `iss`；audience 必须与 `WEBGPT_V4_RESOURCE_URL` 完全相同
 - IdP 只认证身份；本地 issuer-bound principal/membership 始终是 production-project 授权权威
-- Auth0 Stage 0 标准能力探针已通过；External Stage 3 又完成专用 API、predefined public client、精确 ChatGPT redirect、真实 token audience/scope、Jenn issuer-bound owner、七工具与 Workbench 验收。当前状态为 `JENN_SINGLE_USER_MCP_APP_PASS` 和 `MANUAL_PUBLISH_OPERATIONAL_READY`
+- Auth0 Stage 0 标准能力探针已通过；External Stage 3 又完成专用 API、predefined public client、精确 ChatGPT redirect、真实 token audience/scope、Jenn issuer-bound owner、七工具与 Workbench 验收。`JENN_SINGLE_USER_MCP_APP_PASS` 和 `MANUAL_PUBLISH_OPERATIONAL_READY` 仅为 ledger `0008`/`0010` 的历史 owner-only 证据；current-main 仍因 `0011` schema gate 而暂停发布与恢复。
 - 第二真实用户的 viewer grant、跨项目拒绝和即时 revoke 验收已由 Jenn 延期；状态保持 `PARTIAL_MULTI_USER_GATE`，不否定 beta.5 单用户与 owner-only 手动发布基线
 - 运行时保持 provider-neutral，不允许根据 Stytch/Descope 品牌绕过 issuer、audience、JWKS、scope 或 membership
 
@@ -93,7 +93,7 @@ GET http://127.0.0.1:2092/healthz
 - 旧 Descope 配置固定为 `cimd` legacy adapter；vendor-specific metadata 只能提供诊断，不能声明 portability-compatible
 - ChatGPT connector 只申请 `projects.read`
 - principal 由 issuer 与 subject 派生为不可逆 SHA-256；不保存原始 subject 或邮箱
-- 活动库已验收至 migration `0008`；历史 Descope principal、issuer binding、membership 与 append-only events 保留，但不参与当前 Auth0 issuer readiness
+- 活动库目前停在已验收的 migration `0010`；历史 Descope principal、issuer binding、membership 与 append-only events 保留，但不参与当前 Auth0 issuer readiness。current-main 仍要求新的 `0011` migration gate。
 - 回滚：停止 connector/Tunnel，撤销 membership 或禁用 principal；不删除 authorization event
 
 ### Full/Auth0（独立后续 gate）
