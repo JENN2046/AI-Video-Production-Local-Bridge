@@ -104,8 +104,11 @@ export function directorLocalDateTimeInputValue(date: Date): string {
  * list, and fail closed if a concurrent or malformed page would make that
  * list incomplete or cross-project.
  */
-export async function loadDirectorActiveArtifacts(projectId: string): Promise<MediaArtifact[]> {
-  const basePath = `/api/v2/assets/media?scope=all&project_id=${encodeURIComponent(projectId)}&status=active&limit=${DIRECTOR_ARTIFACT_PAGE_SIZE}`;
+async function loadDirectorArtifactPages(
+  basePath: string,
+  projectId: string,
+  matchesExpectedArtifact: (artifact: MediaArtifact) => boolean
+): Promise<MediaArtifact[]> {
   const artifacts = new Map<string, MediaArtifact>();
   let offset = 0;
   let expectedTotal: number | null = null;
@@ -121,7 +124,7 @@ export async function loadDirectorActiveArtifacts(projectId: string): Promise<Me
     }
     expectedTotal ??= page.meta.total;
     for (const artifact of page.items) {
-      if (artifact.status !== "active" || artifact.linked_objects.project_id !== projectId || artifacts.has(artifact.artifact_id)) {
+      if (!matchesExpectedArtifact(artifact) || artifact.linked_objects.project_id !== projectId || artifacts.has(artifact.artifact_id)) {
         throw new Error("DIRECTOR_ARTIFACT_PAGE_INVALID");
       }
       artifacts.set(artifact.artifact_id, artifact);
@@ -134,6 +137,11 @@ export async function loadDirectorActiveArtifacts(projectId: string): Promise<Me
     if (nextOffset <= offset || nextOffset >= expectedTotal) throw new Error("DIRECTOR_ARTIFACT_PAGE_INVALID");
     offset = nextOffset;
   }
+}
+
+export async function loadDirectorActiveArtifacts(projectId: string): Promise<MediaArtifact[]> {
+  const basePath = `/api/v2/assets/media?scope=all&project_id=${encodeURIComponent(projectId)}&status=active&limit=${DIRECTOR_ARTIFACT_PAGE_SIZE}`;
+  return loadDirectorArtifactPages(basePath, projectId, (artifact) => artifact.status === "active");
 }
 
 export function DirectorPage() {
@@ -286,10 +294,10 @@ function ProposalCard({ proposal, onChanged }: { proposal: DirectorProposal; onC
   const importCandidatePath = artifactImportCandidatePath(proposal);
   const importCandidates = useQuery({
     queryKey: ["director-artifact-import-candidates", importCandidatePath],
-    queryFn: () => apiPage<MediaArtifact>(importCandidatePath ?? ""),
+    queryFn: () => loadDirectorArtifactImportCandidates(proposal),
     enabled: importReceiptable && importCandidatePath !== null
   });
-  const matchingImportCandidates = importCandidates.data?.items ?? [];
+  const matchingImportCandidates = importCandidates.data ?? [];
   const resolvedArtifactId = selectedArtifactId || matchingImportCandidates[0]?.artifact_id || "";
   const proposalCurrency = typeof proposal.payload.currency === "string" ? proposal.payload.currency : "";
   const budgetUnitLabel = proposalCurrency === "CNY" ? "CNY 分（100 分 = 1 元）" : proposalCurrency === "RH_COINS" ? "RH_COINS" : "minor units";
@@ -319,6 +327,22 @@ function artifactImportCandidatePath(proposal: DirectorProposal): string | null 
   const mimeType = typeof proposal.payload.expected_mime_type === "string" ? proposal.payload.expected_mime_type : "";
   if (!proposal.project_id || !shotId || !role || !mimeType) return null;
   return `/api/v2/assets/media?scope=all&project_id=${encodeURIComponent(proposal.project_id)}&shot_id=${encodeURIComponent(shotId)}&role=${encodeURIComponent(role)}&mime_type=${encodeURIComponent(mimeType)}&status=active&limit=200`;
+}
+
+async function loadDirectorArtifactImportCandidates(proposal: DirectorProposal): Promise<MediaArtifact[]> {
+  const basePath = artifactImportCandidatePath(proposal);
+  const shotId = typeof proposal.payload.shot_id === "string" ? proposal.payload.shot_id : "";
+  const role = proposal.payload.target_role === "storyboard_image" || proposal.payload.target_role === "generated_clip" ? proposal.payload.target_role : "";
+  const mimeType = typeof proposal.payload.expected_mime_type === "string" ? proposal.payload.expected_mime_type : "";
+  if (basePath === null || !proposal.project_id || !shotId || !role || !mimeType) {
+    throw new Error("DIRECTOR_ARTIFACT_IMPORT_CANDIDATE_INVALID");
+  }
+  return loadDirectorArtifactPages(basePath, proposal.project_id, (artifact) => (
+    artifact.status === "active"
+    && artifact.linked_objects.shot_id === shotId
+    && artifact.role === role
+    && artifact.storage.mime_type === mimeType
+  ));
 }
 
 function Metric({ label, value, tone }: { label: string; value: string; tone: "success" | "warning" | "neutral" }) { return <div className={s.metricCell}><span>{label}</span><strong>{value}</strong><StatusPill tone={tone}>{tone === "success" ? "OK" : tone === "warning" ? "WAIT" : "LOCKED"}</StatusPill></div>; }

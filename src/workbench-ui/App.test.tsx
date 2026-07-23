@@ -147,7 +147,9 @@ describe("Human Workbench V2 shell", () => {
   it("records an artifact_import receipt with only an already-registered Artifact identifier", async () => {
     const projectId = "project_director_import";
     const proposalId = "proposal_director_import";
-    const artifactId = "artifact_director_import";
+    const artifactId = "artifact_director_import_older";
+    const candidateArtifact = (candidateId: string) => ({ artifact_id: candidateId, artifact_type: "image", role: "storyboard_image", status: "active", storage: { uri: "C:/private/fixture.png", mime_type: "image/png", filename: "fixture.png" }, metadata: { width: 720, height: 1280, duration_seconds: null, aspect_ratio: "9:16", sha256: "c".repeat(64) }, linked_objects: { project_id: projectId, shot_id: "shot_import" }, source: { kind: "fixture", provider: "", provider_job_id: "", sha256: "c".repeat(64), external_url_host: "" } });
+    const newestImportCandidates = Array.from({ length: 200 }, (_, index) => candidateArtifact(`artifact_director_import_new_${String(index).padStart(3, "0")}`));
     fetchMock.mockImplementation(async (input, init) => {
       const url = String(input);
       if (url === "/api/v2/shell") return new Response(JSON.stringify({ ok: true, data: shell }), { status: 200, headers: { "content-type": "application/json" } });
@@ -156,16 +158,18 @@ describe("Human Workbench V2 shell", () => {
       if (url === `/api/v2/projects/${projectId}/overview`) return new Response(JSON.stringify({ ok: true, data: { project: { project_id: projectId, title: "Director import" } } }), { status: 200, headers: { "content-type": "application/json" } });
       if (url === `/api/v2/projects/${projectId}/storyboard`) return new Response(JSON.stringify({ ok: true, data: { project: { project_id: projectId, title: "Director import" }, shots: [{ shot_id: "shot_import", order: 1, description: "Import fixture" }] } }), { status: 200, headers: { "content-type": "application/json" } });
       if (url === `/api/v2/assets/media?scope=all&project_id=${projectId}&status=active&limit=200&offset=0`) return new Response(JSON.stringify({ ok: true, data: [], meta: { limit: 200, offset: 0, total: 0, has_more: false } }), { status: 200, headers: { "content-type": "application/json" } });
-      if (url === `/api/v2/assets/media?scope=all&project_id=${projectId}&shot_id=shot_import&role=storyboard_image&mime_type=image%2Fpng&status=active&limit=200`) return new Response(JSON.stringify({ ok: true, data: [{ artifact_id: artifactId, artifact_type: "image", role: "storyboard_image", status: "active", storage: { uri: "C:/private/fixture.png", mime_type: "image/png", filename: "fixture.png" }, metadata: { width: 720, height: 1280, duration_seconds: null, aspect_ratio: "9:16", sha256: "c".repeat(64) }, linked_objects: { project_id: projectId, shot_id: "shot_import" }, source: { kind: "fixture", provider: "", provider_job_id: "", sha256: "c".repeat(64), external_url_host: "" } }], meta: { limit: 200, offset: 0, total: 1, has_more: false } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url === `/api/v2/assets/media?scope=all&project_id=${projectId}&shot_id=shot_import&role=storyboard_image&mime_type=image%2Fpng&status=active&limit=200&offset=0`) return new Response(JSON.stringify({ ok: true, data: newestImportCandidates, meta: { limit: 200, offset: 0, total: 201, has_more: true } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url === `/api/v2/assets/media?scope=all&project_id=${projectId}&shot_id=shot_import&role=storyboard_image&mime_type=image%2Fpng&status=active&limit=200&offset=200`) return new Response(JSON.stringify({ ok: true, data: [candidateArtifact(artifactId)], meta: { limit: 200, offset: 200, total: 201, has_more: false } }), { status: 200, headers: { "content-type": "application/json" } });
       if (url === `/api/v2/director/proposals/${proposalId}/artifact-import-receipt` && init?.method === "POST") return new Response(JSON.stringify({ ok: true, data: { receipt: {} } }), { status: 200, headers: { "content-type": "application/json" } });
       return new Response(JSON.stringify({ ok: false, error: { code: "NOT_FOUND", message: url } }), { status: 404, headers: { "content-type": "application/json" } });
     });
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
     render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={["/v2/director"]}><App /></MemoryRouter></QueryClientProvider>);
     expect(await screen.findByText("受控素材导入")).toBeInTheDocument();
-    expect(fetchMock.mock.calls.some(([input]) => String(input) === `/api/v2/assets/media?scope=all&project_id=${projectId}&shot_id=shot_import&role=storyboard_image&mime_type=image%2Fpng&status=active&limit=200`)).toBe(true);
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input) === `/api/v2/assets/media?scope=all&project_id=${projectId}&shot_id=shot_import&role=storyboard_image&mime_type=image%2Fpng&status=active&limit=200&offset=200`)).toBe(true));
     expect(screen.queryByText("C:/private/fixture.png")).not.toBeInTheDocument();
     expect(screen.getByText(/会重新读取已注册本地 Artifact 的字节/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("已验证的本地 Artifact"), { target: { value: artifactId } });
     fireEvent.click(await screen.findByRole("checkbox", { name: /我确认该 Artifact 已由本地导入流程校验/ }));
     fireEvent.click(screen.getByRole("button", { name: "记录不可变导入回执" }));
     await waitFor(() => {
