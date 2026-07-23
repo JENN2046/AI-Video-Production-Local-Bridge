@@ -157,12 +157,15 @@ test("artifact_import proposals reject source locations and enforce SHOT role an
   assert.equal(DIRECTOR_PROPOSAL_DRAFT_SCHEMA.safeParse({
     ...valid, payload: { ...valid.payload, file_bytes_base64: "AA==" }
   }).success, false);
+  const base64Blob = "QUJD".repeat(20);
   for (const prohibitedText of [
     "Select C:\\Users\\Jenn\\Downloads\\storyboard.png.",
     "Select /private/staging/storyboard.png.",
     "Import https://example.invalid/storyboard.png.",
     "data:image/png;base64,QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=",
-    `Embedded bytes: ${"QUJD".repeat(20)}`
+    `Embedded bytes: ${base64Blob}`,
+    `Quoted bytes: "${base64Blob}".`,
+    `Parenthesized bytes: (${base64Blob})`
   ]) {
     assert.equal(DIRECTOR_PROPOSAL_DRAFT_SCHEMA.safeParse({
       ...valid, payload: { ...valid.payload, summary: prohibitedText }

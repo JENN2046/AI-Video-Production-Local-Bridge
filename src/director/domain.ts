@@ -16,7 +16,7 @@ const nullableHashSchema = hashSchema.nullable();
 const nonEmptyTextSchema = z.string().trim().min(1).max(16_384);
 const shortTextSchema = z.string().trim().min(1).max(1_024);
 
-const artifactImportSourceLocatorPattern = /(?:\b[a-z][a-z0-9+.-]*:\/\/|(?:^|[\s"'(])(?:[a-z]:[\\/]|\\\\|\/(?:[^/\s]+\/)+[^/\s]+)|\bdata:[^\s,;]+;base64,|(?:^|[\s:=])[A-Za-z0-9+/]{64,}={0,2}(?=$|[\s,;]))/iu;
+const artifactImportSourceLocatorPattern = /(?:\b[a-z][a-z0-9+.-]*:\/\/|(?:^|[\s"'(])(?:[a-z]:[\\/]|\\\\|\/(?:[^/\s]+\/)+[^/\s]+)|\bdata:[^\s,;]+;base64,|(?:^|[^A-Za-z0-9+/=])[A-Za-z0-9+/]{64,}={0,2}(?=$|[^A-Za-z0-9+/=]))/iu;
 
 /**
  * Artifact-import prose may explain the requested role and evidence, but it
