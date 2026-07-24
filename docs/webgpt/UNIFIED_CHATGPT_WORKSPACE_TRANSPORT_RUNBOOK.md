@@ -75,11 +75,12 @@ WEBGPT_WORKSPACE_PUBLISHER_KEY_ID
 WEBGPT_WORKSPACE_PUBLISHER_PUBLIC_KEY_B64
 WEBGPT_DIRECTOR_BRIDGE_KEY_ID
 WEBGPT_DIRECTOR_REMOTE_ORIGIN
+AI_VIDEO_WORKSPACE_DB_PATH
 ```
 
 The dedicated `WEBGPT_DIRECTOR_BRIDGE_KEY_B64` is a secret, not ordinary runtime configuration: retain it only as a local DPAPI-protected value and a Render secret. Never place its value in a preflight, receipt, status command, log, process arguments, or repository file.
 
-All-or-nothing configuration is intentional. A partial OAuth, publisher or bridge group fails closed. `WEBGPT_DIRECTOR_REMOTE_ORIGIN` is the exact unified public HTTPS origin for the outbound local bridge, not a filesystem path or local listener.
+All-or-nothing configuration is intentional. A partial OAuth, publisher or bridge group fails closed. `WEBGPT_DIRECTOR_REMOTE_ORIGIN` is the exact unified public HTTPS origin for the outbound local bridge, not a filesystem path or local listener. `AI_VIDEO_WORKSPACE_DB_PATH` is injected only into the local Bridge process; it must refer to the authorized isolated or activity database already at `workbench-v2-6` / ledger `0011`. Do not place its value in receipts, logs, process arguments, or repository files.
 
 ## Stage 1 smoke acceptance
 
@@ -110,10 +111,9 @@ If the Widget reports the bridge as unavailable, preserve the low-disclosure sta
 
 ## Stage 2 — isolated owner golden path
 
-Use an isolated database already at ledger `0011`. Start the local bridge only for this bounded test:
+Use an isolated database already at ledger `0011`. The Stage 1 deployed HTTPS Unified Remote must remain available at the exact configured `WEBGPT_DIRECTOR_REMOTE_ORIGIN`; do not start `npm run start:webgpt:workspace` locally for this step, because that local test host is HTTP and is not a valid Bridge origin. Start the local Bridge only for this bounded test:
 
 ```powershell
-npm run start:webgpt:workspace
 npm run start:director:bridge
 ```
 
