@@ -169,6 +169,28 @@ test("unified workbench shell reports bridge state and reads Focus only after a 
   }
 });
 
+test("unified workbench treats Director Focus tool errors as unavailable", async () => {
+  const dom = new JSDOM(readonlyWorkbenchWidgetHtml(), {
+    runScripts: "dangerously",
+    pretendToBeVisual: true,
+    beforeParse(window) {
+      Object.defineProperty(window, "openai", { value: {
+        toolOutput: { ...shell(), director: { state: "available", bridge_connected: true } },
+        callTool: async (name: string) => {
+          if (name === "get_director_focus") return { isError: true, content: [], _meta: {} };
+          return toolResult({ items: [], page: { next_offset: null } });
+        }
+      }, configurable: true });
+    }
+  });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.equal(dom.window.document.querySelector("#director-status")?.textContent, "Bridge unavailable");
+  } finally {
+    dom.window.close();
+  }
+});
+
 test("readonly workbench renders canonical blocker reason codes", async () => {
   const dom = new JSDOM(readonlyWorkbenchWidgetHtml(), {
     runScripts: "dangerously",
