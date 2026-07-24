@@ -82,6 +82,26 @@ for the independent unified Snapshot store. The corresponding private key stays
 in the existing DPAPI-protected publisher profile; no key material is loaded
 from this repository or written by the remote runtime.
 
+The checked-in publisher accepts only two exact resource/publish route pairs:
+
+```text
+legacy Readonly: /mcp            -> /snapshot
+Unified Workspace: /workspace/mcp -> /workspace/snapshot
+```
+
+For the Unified route, copy
+`docs/webgpt/unified-workspace-publisher-profile.example.json` to an authorized
+Git-ignored profile, then use the existing bounded publisher commands. The
+profile only names the local database, public origin and DPAPI-protected key
+locations; it contains no key material. Current-code exporter schema/ledger
+gates still apply, and no publish or deployment is implied by this document.
+
+```powershell
+npm run webgpt:publisher:keygen -- --profile data/webgpt/publisher/unified-workspace-profile.json
+npm run preflight:webgpt:publisher -- --profile data/webgpt/publisher/unified-workspace-profile.json
+npm run publish:webgpt:snapshot -- --profile data/webgpt/publisher/unified-workspace-profile.json
+```
+
 ## Tool visibility and authorization
 
 The future connector exposes exactly twelve model-visible tools:
