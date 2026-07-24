@@ -148,6 +148,30 @@ test("Unified Workspace dispatches a Director read through the authenticated out
   }
 });
 
+test("Unified Workspace refuses signed Snapshot publish until its OAuth contract is configured", async () => {
+  const root = mkdtempSync(join(tmpdir(), "unified-workspace-publish-auth-"));
+  const source = fixture(root);
+  const pair = generateKeyPairSync("ed25519");
+  const runtime = await startUnifiedWorkspaceRemoteRuntime({
+    port: 0,
+    publisher_key_id: "unified-workspace-publisher-v1",
+    publisher_public_key: pair.publicKey
+  });
+  try {
+    const response = await fetch(runtime.snapshot_url, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(signReadonlySnapshot(source.snapshotFor(WORKSPACE_RESOURCE), "unified-workspace-publisher-v1", pair.privateKey))
+    });
+    assert.equal(response.status, 503);
+    assert.equal(record(record(await response.json()).error).code, "READONLY_SNAPSHOT_PUBLISH_AUTH_NOT_CONFIGURED");
+    assert.equal(runtime.snapshot_status().freshness_status, "no_snapshot");
+  } finally {
+    await runtime.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("Unified Workspace route exposes the fixed directory, isolates an unavailable Director bridge, and preserves legacy /mcp", async () => {
   const root = mkdtempSync(join(tmpdir(), "unified-workspace-runtime-"));
   const source = fixture(root);

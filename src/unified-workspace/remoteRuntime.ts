@@ -111,6 +111,7 @@ interface McpRoute {
   path: string;
   metadata_path: string;
   metadata: () => Record<string, unknown>;
+  auth_config: WebGptV4ReadonlyFederatedAuthConfig | null;
   authenticate: WebGptV4Authenticator;
   challenge: (error: ReturnType<typeof errorBody>) => string;
   store: ReadonlySnapshotStore | null;
@@ -264,6 +265,7 @@ export async function startUnifiedWorkspaceRemoteRuntime(options: StartUnifiedWo
     path: UNIFIED_WORKSPACE_MCP_PATH,
     metadata_path: authConfig ? new URL(unifiedWorkspaceProtectedResourceMetadataUrl(authConfig)).pathname : `/.well-known/oauth-protected-resource${UNIFIED_WORKSPACE_MCP_PATH}`,
     metadata: () => unifiedWorkspaceProtectedResourceMetadata(authConfig),
+    auth_config: authConfig,
     authenticate,
     challenge: (error) => unifiedWorkspaceWwwAuthenticate(authConfig, error.code === "INSUFFICIENT_SCOPE" ? "insufficient_scope" : error.code === "AUTH_REQUIRED" ? "invalid_request" : "invalid_token", error.code === "INSUFFICIENT_SCOPE" ? { scope: "projects.read", error_description: error.message } : {}),
     store: workspaceStore,
@@ -298,6 +300,7 @@ export async function startUnifiedWorkspaceRemoteRuntime(options: StartUnifiedWo
     path: "/mcp",
     metadata_path: legacyAuthConfig ? `/.well-known/oauth-protected-resource${new URL(legacyAuthConfig.resource_url).pathname}` : "/.well-known/oauth-protected-resource/mcp",
     metadata: () => protectedResourceMetadata(legacyAuthConfig, ["projects.read"]),
+    auth_config: legacyAuthConfig,
     authenticate: legacyAuthenticate,
     challenge: (error) => wwwAuthenticate(
       legacyAuthConfig,
@@ -317,6 +320,10 @@ export async function startUnifiedWorkspaceRemoteRuntime(options: StartUnifiedWo
   const handlePublish = async (request: IncomingMessage, response: ServerResponse, route: McpRoute): Promise<void> => {
     if (!contentTypeIsJson(request)) {
       sendJson(response, 415, { ok: false, error: { code: "READONLY_SNAPSHOT_PUBLISH_CONTENT_TYPE_REQUIRED", message: "Snapshot publish requires application/json." } });
+      return;
+    }
+    if (!route.auth_config) {
+      sendJson(response, 503, { ok: false, error: { code: "READONLY_SNAPSHOT_PUBLISH_AUTH_NOT_CONFIGURED", message: "Readonly OAuth is not configured." } });
       return;
     }
     if (!route.store) {
