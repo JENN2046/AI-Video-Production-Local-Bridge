@@ -140,6 +140,8 @@ test("render contract accepts only low-disclosure shell state and initial intent
 });
 
 test("unified workbench shell reports bridge state and reads Focus only after a ready shell", async () => {
+  const focusControl: { release: ((value: { structuredContent: { state: string; focus: { focus_id: string } } }) => void) | null } = { release: null };
+  const delayedFocus = new Promise<{ structuredContent: { state: string; focus: { focus_id: string } } }>((resolve) => { focusControl.release = resolve; });
   const dom = new JSDOM(readonlyWorkbenchWidgetHtml(), {
     runScripts: "dangerously",
     pretendToBeVisual: true,
@@ -147,7 +149,7 @@ test("unified workbench shell reports bridge state and reads Focus only after a 
       Object.defineProperty(window, "openai", { value: {
         toolOutput: { ...shell(), director: { state: "available", bridge_connected: true } },
         callTool: async (name: string) => {
-          if (name === "get_director_focus") return { structuredContent: { state: "active", focus: { focus_id: "not-rendered" } } };
+          if (name === "get_director_focus") return delayedFocus;
           if (name === "list_production_projects") return toolResult({ items: [], page: { next_offset: null } });
           return toolResult({ items: [], page: { next_offset: null } });
         }
@@ -155,6 +157,10 @@ test("unified workbench shell reports bridge state and reads Focus only after a 
     }
   });
   try {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const releaseFocus = focusControl.release;
+    assert.ok(releaseFocus);
+    releaseFocus({ structuredContent: { state: "active", focus: { focus_id: "not-rendered" } } });
     await new Promise((resolve) => setTimeout(resolve, 40));
     assert.equal(dom.window.document.querySelector("#director-status")?.textContent, "Bridge online · Focus active");
     assert.equal(dom.window.document.documentElement.innerHTML.includes("not-rendered"), false);
