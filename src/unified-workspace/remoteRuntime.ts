@@ -410,14 +410,22 @@ export async function startUnifiedWorkspaceRemoteRuntime(options: StartUnifiedWo
     let transport: StreamableHTTPServerTransport | null = null;
     let parsed: unknown;
     try {
-      parsed = await jsonBody(request, maxMcpBody);
+      try {
+        parsed = await jsonBody(request, maxMcpBody);
+      } catch (error) {
+        const code = error instanceof Error && error.message === "BODY_TOO_LARGE" ? "BODY_TOO_LARGE" : "INVALID_JSON_BODY";
+        if (!response.headersSent) sendJson(response, code === "BODY_TOO_LARGE" ? 413 : 400, {
+          jsonrpc: "2.0", id: null, error: { code: -32700, message: code, data: { code } }
+        });
+        return;
+      }
       app = route.app(actor, route.store?.read() ?? null);
       transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       await app.connect(withToolSecuritySchemes(transport, route.tool_scopes));
       await transport.handleRequest(request, response, parsed);
     } catch (error) {
-      const code = error instanceof Error && error.message === "BODY_TOO_LARGE" ? "BODY_TOO_LARGE" : "UNIFIED_WORKSPACE_MCP_ERROR";
-      if (!response.headersSent) sendJson(response, code === "BODY_TOO_LARGE" ? 413 : 500, {
+      const code = "UNIFIED_WORKSPACE_MCP_ERROR";
+      if (!response.headersSent) sendJson(response, 500, {
         jsonrpc: "2.0", id: safeRpcId((parsed as Record<string, unknown> | undefined)?.id), error: { code: -32603, message: code, data: { code } }
       });
     } finally {

@@ -172,6 +172,34 @@ test("Unified Workspace refuses signed Snapshot publish until its OAuth contract
   }
 });
 
+test("Unified and legacy MCP routes classify malformed and oversized authenticated bodies as client errors", async () => {
+  const runtime = await startUnifiedWorkspaceRemoteRuntime({
+    port: 0,
+    auth_config: authConfig(WORKSPACE_RESOURCE),
+    authenticate: async () => ACTOR,
+    max_mcp_body_bytes: 4,
+    legacy_readonly: {
+      auth_config: authConfig(LEGACY_RESOURCE),
+      authenticate: async () => ACTOR
+    }
+  });
+  const assertClientBodyError = async (url: string, body: string, expectedStatus: number, expectedCode: string): Promise<void> => {
+    const response = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body });
+    assert.equal(response.status, expectedStatus);
+    const error = record(record(await response.json()).error);
+    assert.equal(error.code, -32700);
+    assert.equal(record(error.data).code, expectedCode);
+  };
+  try {
+    for (const url of [runtime.mcp_url, runtime.legacy_mcp_url!]) {
+      await assertClientBodyError(url, "{", 400, "INVALID_JSON_BODY");
+      await assertClientBodyError(url, "{\"a\":1}", 413, "BODY_TOO_LARGE");
+    }
+  } finally {
+    await runtime.close();
+  }
+});
+
 test("Unified Workspace route exposes the fixed directory, isolates an unavailable Director bridge, and preserves legacy /mcp", async () => {
   const root = mkdtempSync(join(tmpdir(), "unified-workspace-runtime-"));
   const source = fixture(root);
