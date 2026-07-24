@@ -318,6 +318,11 @@ function toolResult<T>(schema: z.ZodType<T>, value: unknown, summary: string): n
 export interface CreateDirectorNativeMcpServerOptions {
   auth_config?: WebGptV4AuthConfig | null;
   /**
+   * The unified Workbench may read its low-disclosure Focus status through
+   * the Apps bridge. All other Director tools remain model-only.
+   */
+  app_visible_tools?: readonly DirectorNativeToolName[];
+  /**
    * A unified route has its own PRMD path.  The legacy Director route keeps
    * its existing default so it remains a standalone rollback surface.
    */
@@ -330,6 +335,7 @@ export function registerDirectorNativeTools(
   handlers: DirectorNativeToolHandlers,
   options: CreateDirectorNativeMcpServerOptions = {}
 ): void {
+  const appVisibleTools = new Set(options.app_visible_tools ?? []);
 
   for (const entry of DIRECTOR_NATIVE_TOOL_CATALOG) {
     const readOnly = entry.risk !== "proposal_write";
@@ -346,7 +352,7 @@ export function registerDirectorNativeTools(
       },
       _meta: {
         securitySchemes: [{ type: "oauth2" as const, scopes: [...entry.scope] }],
-        ui: { visibility: ["model"] }
+        ui: { visibility: appVisibleTools.has(entry.name) ? ["model", "app"] : ["model"] }
       }
     };
     const invoke = async (input: unknown): Promise<never> => {

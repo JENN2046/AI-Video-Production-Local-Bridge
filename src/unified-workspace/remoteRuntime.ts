@@ -291,7 +291,8 @@ export async function startUnifiedWorkspaceRemoteRuntime(options: StartUnifiedWo
       registerReadonlyRemoteMcpApp(app, actor, snapshot, authConfig, now, options.media_gateway, readonlyOptions);
       registerDirectorNativeTools(app, actor, directorHandlersFor(actor), {
         auth_config: authConfig,
-        resource_metadata_url: `/.well-known/oauth-protected-resource${UNIFIED_WORKSPACE_MCP_PATH}`
+        resource_metadata_url: `/.well-known/oauth-protected-resource${UNIFIED_WORKSPACE_MCP_PATH}`,
+        app_visible_tools: ["get_director_focus"]
       });
       return app;
     }

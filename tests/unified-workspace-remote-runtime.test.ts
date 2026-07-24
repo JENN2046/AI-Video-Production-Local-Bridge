@@ -307,6 +307,8 @@ test("Unified Workspace route exposes the fixed directory, isolates an unavailab
     assert.equal(tools.tools.length, 13);
     assert.equal(tools.tools.filter((tool) => ((tool._meta as { ui?: { visibility?: string[] } } | undefined)?.ui?.visibility ?? []).includes("model")).length, 12);
     assert.deepEqual((tools.tools.find((tool) => tool.name === "get_readonly_media_playback")?._meta as { ui?: { visibility?: string[] } }).ui?.visibility, ["app"]);
+    assert.deepEqual((tools.tools.find((tool) => tool.name === "get_director_focus")?._meta as { ui?: { visibility?: string[] } }).ui?.visibility, ["model", "app"]);
+    assert.deepEqual((tools.tools.find((tool) => tool.name === "get_director_context")?._meta as { ui?: { visibility?: string[] } }).ui?.visibility, ["model"]);
     for (const tool of tools.tools) {
       const scopes = (tool._meta as { securitySchemes?: Array<{ scopes?: string[] }> } | undefined)?.securitySchemes?.[0]?.scopes;
       const expected = tool.name === "inspect_director_video_frames"
