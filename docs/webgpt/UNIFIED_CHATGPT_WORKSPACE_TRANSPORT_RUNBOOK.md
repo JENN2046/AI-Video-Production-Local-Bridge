@@ -56,7 +56,7 @@ Any mismatch is a stop condition. Do not reuse the legacy resource, broaden call
 
 This stage needs a separate current authorization. Make only these bounded changes, in order:
 
-1. Create one Auth0 API named `Jenn AI Video Workspace Unified` with the exact `/workspace/mcp` identifier and only the three fixed scopes.
+1. Create one Auth0 API named `Jenn AI Video Workspace Unified` with the exact HTTPS identifier `https://aivideo.skmt617.top/workspace/mcp` and only the three fixed scopes.
 2. Add only that API's user-delegated grant to the existing Native/public application. Do not create a new application, client secret or M2M grant.
 3. Generate the independent Bridge key. Store its local copy with DPAPI `CurrentUser` and its remote copy as a Render secret; do not print either.
 4. Create a local DPAPI publisher profile from `unified-workspace-publisher-profile.example.json`; configure only the matching public verification key remotely. The Remote accepts SPKI public PEM only, never a private PEM.
@@ -74,9 +74,10 @@ WEBGPT_WORKSPACE_OAUTH_CLIENT_REGISTRATION
 WEBGPT_WORKSPACE_PUBLISHER_KEY_ID
 WEBGPT_WORKSPACE_PUBLISHER_PUBLIC_KEY_B64
 WEBGPT_DIRECTOR_BRIDGE_KEY_ID
-WEBGPT_DIRECTOR_BRIDGE_KEY_B64
 WEBGPT_DIRECTOR_REMOTE_ORIGIN
 ```
+
+The dedicated `WEBGPT_DIRECTOR_BRIDGE_KEY_B64` is a secret, not ordinary runtime configuration: retain it only as a local DPAPI-protected value and a Render secret. Never place its value in a preflight, receipt, status command, log, process arguments, or repository file.
 
 All-or-nothing configuration is intentional. A partial OAuth, publisher or bridge group fails closed. `WEBGPT_DIRECTOR_REMOTE_ORIGIN` is the exact unified public HTTPS origin for the outbound local bridge, not a filesystem path or local listener.
 
