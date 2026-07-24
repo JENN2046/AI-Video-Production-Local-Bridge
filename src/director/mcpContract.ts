@@ -317,17 +317,25 @@ function toolResult<T>(schema: z.ZodType<T>, value: unknown, summary: string): n
 
 export interface CreateDirectorNativeMcpServerOptions {
   auth_config?: WebGptV4AuthConfig | null;
+  /**
+   * The unified Workbench may read its low-disclosure Focus status through
+   * the Apps bridge. All other Director tools remain model-only.
+   */
+  app_visible_tools?: readonly DirectorNativeToolName[];
+  /**
+   * A unified route has its own PRMD path.  The legacy Director route keeps
+   * its existing default so it remains a standalone rollback surface.
+   */
+  resource_metadata_url?: string;
 }
 
-export function createDirectorNativeMcpServer(
+export function registerDirectorNativeTools(
+  server: McpServer,
   actor: WebGptV4Actor,
   handlers: DirectorNativeToolHandlers,
   options: CreateDirectorNativeMcpServerOptions = {}
-): McpServer {
-  const server = new McpServer(
-    { name: "jenn-ai-video-director", version: DIRECTOR_MCP_SERVICE_VERSION },
-    { instructions: "ChatGPT Director may read bound context and submit immutable advisory proposals. It cannot approve, execute, spend, deliver, delete, overwrite, or commit memory." }
-  );
+): void {
+  const appVisibleTools = new Set(options.app_visible_tools ?? []);
 
   for (const entry of DIRECTOR_NATIVE_TOOL_CATALOG) {
     const readOnly = entry.risk !== "proposal_write";
@@ -344,7 +352,7 @@ export function createDirectorNativeMcpServer(
       },
       _meta: {
         securitySchemes: [{ type: "oauth2" as const, scopes: [...entry.scope] }],
-        ui: { visibility: ["model"] }
+        ui: { visibility: appVisibleTools.has(entry.name) ? ["model", "app"] : ["model"] }
       }
     };
     const invoke = async (input: unknown): Promise<never> => {
@@ -375,7 +383,7 @@ export function createDirectorNativeMcpServer(
           ? wwwAuthenticate(options.auth_config ?? null, "insufficient_scope", {
             scope: entry.scope.join(" "),
             error_description: safe.message,
-            ...(options.auth_config ? {} : { resource_metadata_url: "/.well-known/oauth-protected-resource/director/mcp" })
+            ...(options.auth_config ? {} : { resource_metadata_url: options.resource_metadata_url ?? "/.well-known/oauth-protected-resource/director/mcp" })
           })
           : null;
         return {
@@ -387,5 +395,17 @@ export function createDirectorNativeMcpServer(
     };
     server.registerTool(entry.name, descriptor, invoke);
   }
+}
+
+export function createDirectorNativeMcpServer(
+  actor: WebGptV4Actor,
+  handlers: DirectorNativeToolHandlers,
+  options: CreateDirectorNativeMcpServerOptions = {}
+): McpServer {
+  const server = new McpServer(
+    { name: "jenn-ai-video-director", version: DIRECTOR_MCP_SERVICE_VERSION },
+    { instructions: "ChatGPT Director may read bound context and submit immutable advisory proposals. It cannot approve, execute, spend, deliver, delete, overwrite, or commit memory." }
+  );
+  registerDirectorNativeTools(server, actor, handlers, options);
   return server;
 }

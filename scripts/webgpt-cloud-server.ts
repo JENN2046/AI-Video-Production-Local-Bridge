@@ -8,6 +8,8 @@ class ReadonlyRemoteConfigError extends Error {
   constructor(readonly code: string) { super(code); }
 }
 
+const SPKI_PUBLIC_PEM = /^-----BEGIN PUBLIC KEY-----\r?\n(?:[A-Za-z0-9+/=]+\r?\n)+-----END PUBLIC KEY-----\r?\n?$/;
+
 function port(value: string | undefined): number {
   const parsed = Number(value ?? "10000");
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) throw new ReadonlyRemoteConfigError("READONLY_REMOTE_PORT_INVALID");
@@ -22,6 +24,9 @@ function publisherConfig(env: NodeJS.ProcessEnv): { publisher_key_id?: string; p
   try {
     if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) throw new Error("invalid base64");
     const pem = Buffer.from(encoded, "base64").toString("utf8");
+    // `createPublicKey()` can derive a public key from PKCS#8 private input.
+    // The remote process must retain only an explicitly encoded SPKI public key.
+    if (!SPKI_PUBLIC_PEM.test(pem)) throw new Error("public SPKI PEM required");
     const key = createPublicKey(pem);
     if (key.asymmetricKeyType !== "ed25519") throw new Error("invalid key");
     return { publisher_key_id: keyId, publisher_public_key: pem };

@@ -1,6 +1,6 @@
 # Unified ChatGPT Workspace MCP Contract
 
-Status: `CANDIDATE — PR1 contract only`
+Status: `CANDIDATE — PR3 local runtime complete; external wiring remains gated`
 
 The intended primary ChatGPT connector is a single `AI Video Production Workspace` App at:
 
@@ -20,6 +20,34 @@ The accepted Readonly route at `/mcp` remains a rollback surface. This document
 does not authorize creation of an Auth0 API, a ChatGPT App, a Render deployment,
 or any runtime configuration change.
 
+## Local runtime routes
+
+`npm run start:webgpt:workspace` starts the candidate host process. It has no
+SQLite connection, local-path access, Provider execution path, or persistent
+remote storage. Its routes are:
+
+```text
+GET   /healthz
+GET   /readyz
+GET   /.well-known/oauth-protected-resource/workspace/mcp
+POST  /workspace/mcp
+PUT   /workspace/snapshot
+POST  /director/bridge/v1/poll
+POST  /director/bridge/v1/complete
+```
+
+When the legacy Readonly configuration and its separate publisher verification
+material are also present, the same process additionally serves its existing
+`/mcp`, PRMD, and `/snapshot` routes. The two routes keep separate OAuth
+audiences and separate in-memory Snapshot stores, so a signed Snapshot cannot
+be replayed across the Connector boundary.
+
+The unified route remains discoverable when exactly one internal chain is
+available. Snapshot-dependent tools fail closed when the unified Snapshot is
+missing or expired; Director tools return `DIRECTOR_BRIDGE_UNAVAILABLE` until
+the authenticated local Bridge has a current poll lease. The render tool may
+still return its low-disclosure empty shell in either condition.
+
 ## OAuth configuration contract
 
 The unified route has an independent, all-or-nothing configuration group:
@@ -30,6 +58,8 @@ WEBGPT_WORKSPACE_OAUTH_ISSUER=
 WEBGPT_WORKSPACE_OAUTH_AUDIENCE=
 WEBGPT_WORKSPACE_OAUTH_JWKS_URI=
 WEBGPT_WORKSPACE_OAUTH_CLIENT_REGISTRATION=
+WEBGPT_WORKSPACE_PUBLISHER_KEY_ID=
+WEBGPT_WORKSPACE_PUBLISHER_PUBLIC_KEY_B64=
 ```
 
 All identifiers must be credential-free HTTPS URLs. `RESOURCE_URL` and
@@ -46,6 +76,31 @@ proposals.write
 
 The same catalog is the source for protected-resource metadata, tool security
 descriptors, and runtime OAuth challenges in the later remote-runtime PR.
+
+`WEBGPT_WORKSPACE_PUBLISHER_PUBLIC_KEY_B64` is Ed25519 verification material
+for the independent unified Snapshot store. The corresponding private key stays
+in the existing DPAPI-protected publisher profile; no key material is loaded
+from this repository or written by the remote runtime.
+
+The checked-in publisher accepts only two exact resource/publish route pairs:
+
+```text
+legacy Readonly: /mcp            -> /snapshot
+Unified Workspace: /workspace/mcp -> /workspace/snapshot
+```
+
+For the Unified route, copy
+`docs/webgpt/unified-workspace-publisher-profile.example.json` to an authorized
+Git-ignored profile, then use the existing bounded publisher commands. The
+profile only names the local database, public origin and DPAPI-protected key
+locations; it contains no key material. Current-code exporter schema/ledger
+gates still apply, and no publish or deployment is implied by this document.
+
+```powershell
+npm run webgpt:publisher:keygen -- --profile data/webgpt/publisher/unified-workspace-profile.json
+npm run preflight:webgpt:publisher -- --profile data/webgpt/publisher/unified-workspace-profile.json
+npm run publish:webgpt:snapshot -- --profile data/webgpt/publisher/unified-workspace-profile.json
+```
 
 ## Tool visibility and authorization
 
@@ -75,3 +130,12 @@ The following remain separate, explicitly authorized external work:
 4. Isolated and then activity-database acceptance.
 
 Until those gates pass, this repository contract is a testable candidate only.
+
+## Local verification
+
+The mandatory `test:webgpt:workspace` lane now includes the isolated unified
+runtime test. It proves the exact 12 model-visible tools plus the App-only
+media tool, path-aware PRMD, no-Snapshot shell, independent Director bridge
+failure, signed unified Snapshot delivery, and legacy `/mcp` rollback route.
+`test-selection-gate`, canonical `npm test`, and the named Windows CI step all
+select the lane.

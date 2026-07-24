@@ -56,11 +56,22 @@ export const READONLY_WORKBENCH_SNAPSHOT_STATUS_SCHEMA = z.object({
   snapshot_fingerprint: z.string().regex(/^[0-9a-f]{64}$/).nullable()
 }).strict();
 
+/**
+ * Optional capability state used only by the unified Workspace connector.
+ * It deliberately exposes no Focus, project, principal, or bridge detail;
+ * the Widget must call the ordinary Director tools after mounting.
+ */
+export const READONLY_WORKBENCH_DIRECTOR_STATUS_SCHEMA = z.object({
+  state: z.enum(["available", "unavailable"]),
+  bridge_connected: z.boolean()
+}).strict();
+
 export const READONLY_WORKBENCH_SHELL_SCHEMA = z.object({
   app_state: z.enum(["ready", "no_snapshot", "snapshot_expired", "service_unavailable", "no_authorized_projects"]),
   service_version: z.string().min(1),
   resource_version: z.literal(READONLY_WORKBENCH_RESOURCE_VERSION),
   status: READONLY_WORKBENCH_SNAPSHOT_STATUS_SCHEMA,
+  director: READONLY_WORKBENCH_DIRECTOR_STATUS_SCHEMA.optional(),
   initial_intent: z.object({
     project_id: z.string().min(1).max(200).nullable(),
     panel: z.enum(["projects", "context", "shots", "review", "delivery", "closeout"])
@@ -69,3 +80,4 @@ export const READONLY_WORKBENCH_SHELL_SCHEMA = z.object({
 
 export type ReadonlyWorkbenchRenderInput = z.infer<typeof READONLY_WORKBENCH_RENDER_INPUT_SCHEMA>;
 export type ReadonlyWorkbenchShell = z.infer<typeof READONLY_WORKBENCH_SHELL_SCHEMA>;
+export type ReadonlyWorkbenchDirectorStatus = z.infer<typeof READONLY_WORKBENCH_DIRECTOR_STATUS_SCHEMA>;

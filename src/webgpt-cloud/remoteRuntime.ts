@@ -44,6 +44,7 @@ import {
   READONLY_WORKBENCH_RESOURCE_VERSION,
   READONLY_WORKBENCH_SHELL_SCHEMA,
   type ReadonlyWorkbenchRenderInput,
+  type ReadonlyWorkbenchDirectorStatus,
   type ReadonlyWorkbenchShell
 } from "./appContract.js";
 import type {
@@ -265,7 +266,8 @@ export function readonlyWorkbenchShell(
   actor: WebGptV4Actor,
   snapshot: ReadonlySnapshot | null,
   input: ReadonlyWorkbenchRenderInput,
-  now = new Date()
+  now = new Date(),
+  serviceVersion = READONLY_REMOTE_SERVICE_VERSION
 ): ReadonlyWorkbenchShell {
   const status = readonlySnapshotStatus(snapshot, now);
   const authorizedProjects = snapshot && actor.issuer_hash === snapshot.issuer_hash
@@ -284,7 +286,7 @@ export function readonlyWorkbenchShell(
     : null;
   return READONLY_WORKBENCH_SHELL_SCHEMA.parse({
     app_state: appState,
-    service_version: READONLY_REMOTE_SERVICE_VERSION,
+    service_version: serviceVersion,
     resource_version: READONLY_WORKBENCH_RESOURCE_VERSION,
     status,
     initial_intent: {
@@ -294,17 +296,28 @@ export function readonlyWorkbenchShell(
   });
 }
 
-function createReadonlyRemoteMcpApp(
+export interface ReadonlyRemoteMcpAppOptions {
+  service_name?: string;
+  service_version?: string;
+  instructions?: string;
+  resource_name?: string;
+  resource_description?: string;
+  widget_description?: string;
+  render_title?: string;
+  render_description?: string;
+  render_summary?: string;
+  director_status?: () => ReadonlyWorkbenchDirectorStatus;
+}
+
+export function registerReadonlyRemoteMcpApp(
+  server: McpServer,
   actor: WebGptV4Actor,
   snapshot: ReadonlySnapshot | null,
   authConfig: WebGptV4ReadonlyFederatedAuthConfig | null,
   now: () => Date,
-  mediaGateway?: ReadonlyMediaGatewayClientOptions
-): McpServer {
-  const server = new McpServer(
-    { name: "ai-video-readonly-workspace", version: READONLY_REMOTE_SERVICE_VERSION },
-    { instructions: "Readonly production workspace. Never write, fetch media, call a Provider, or disclose data outside the signed project projection." }
-  );
+  mediaGateway?: ReadonlyMediaGatewayClientOptions,
+  options: ReadonlyRemoteMcpAppOptions = {}
+): void {
   const source = snapshot && actor.issuer_hash
     ? new SnapshotReadonlyDataSource(snapshot, actor.principal_id, actor.issuer_hash, now)
     : snapshot
@@ -337,15 +350,15 @@ function createReadonlyRemoteMcpApp(
   };
 
   const resourceMeta = {
-    "openai/widgetDescription": "Open Jenn's signed-snapshot readonly production workbench.",
+    "openai/widgetDescription": options.widget_description ?? "Open Jenn's signed-snapshot readonly production workbench.",
     ui: {
       prefersBorder: true,
       domain: READONLY_WORKBENCH_WIDGET_DOMAIN,
       csp: { connectDomains: [READONLY_MEDIA_GATEWAY_ORIGIN], resourceDomains: [READONLY_MEDIA_GATEWAY_ORIGIN], frameDomains: [] }
     }
   };
-  registerAppResource(server, "Jenn AI Video Workspace Readonly Workbench", READONLY_WORKBENCH_RESOURCE_URI, {
-    description: "Readonly project, SHOT, review, delivery, and closeout workbench.",
+  registerAppResource(server, options.resource_name ?? "Jenn AI Video Workspace Readonly Workbench", READONLY_WORKBENCH_RESOURCE_URI, {
+    description: options.resource_description ?? "Readonly project, SHOT, review, delivery, and closeout workbench.",
     _meta: resourceMeta
   }, async () => ({
     contents: [{
@@ -357,8 +370,8 @@ function createReadonlyRemoteMcpApp(
   }));
 
   registerAppTool(server, READONLY_WORKBENCH_RENDER_TOOL, {
-    title: "打开只读 AI 视频生产工作台",
-    description: "Open the readonly ChatGPT MCP App shell. Project data is loaded only through the six projects.read data tools.",
+    title: options.render_title ?? "打开只读 AI 视频生产工作台",
+    description: options.render_description ?? "Open the readonly ChatGPT MCP App shell. Project data is loaded only through the six projects.read data tools.",
     inputSchema: READONLY_WORKBENCH_RENDER_INPUT_SCHEMA.shape,
     outputSchema: READONLY_WORKBENCH_SHELL_SCHEMA.shape,
     ...security(READONLY_WORKBENCH_RENDER_TOOL),
@@ -372,11 +385,15 @@ function createReadonlyRemoteMcpApp(
   }, async (input) => {
     try {
       requireScope(actor, "projects.read");
-      const shell = readonlyWorkbenchShell(actor, snapshot, input, now());
+      const baseShell = readonlyWorkbenchShell(actor, snapshot, input, now(), options.service_version ?? READONLY_REMOTE_SERVICE_VERSION);
+      const shell = READONLY_WORKBENCH_SHELL_SCHEMA.parse({
+        ...baseShell,
+        ...(options.director_status ? { director: options.director_status() } : {})
+      });
       return {
         isError: false,
         structuredContent: shell,
-        content: [{ type: "text", text: "只读 AI 视频生产工作台已打开；项目数据由 Widget 按需读取。" }],
+        content: [{ type: "text", text: options.render_summary ?? "只读 AI 视频生产工作台已打开；项目数据由 Widget 按需读取。" }],
         _meta: { snapshot_fingerprint: shell.status.snapshot_fingerprint }
       } as never;
     } catch (error) {
@@ -472,6 +489,20 @@ function createReadonlyRemoteMcpApp(
     }
   });
 
+}
+
+export function createReadonlyRemoteMcpApp(
+  actor: WebGptV4Actor,
+  snapshot: ReadonlySnapshot | null,
+  authConfig: WebGptV4ReadonlyFederatedAuthConfig | null,
+  now: () => Date,
+  mediaGateway?: ReadonlyMediaGatewayClientOptions
+): McpServer {
+  const server = new McpServer(
+    { name: "ai-video-readonly-workspace", version: READONLY_REMOTE_SERVICE_VERSION },
+    { instructions: "Readonly production workspace. Never write, fetch media, call a Provider, or disclose data outside the signed project projection." }
+  );
+  registerReadonlyRemoteMcpApp(server, actor, snapshot, authConfig, now, mediaGateway);
   return server;
 }
 

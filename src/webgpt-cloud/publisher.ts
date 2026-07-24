@@ -19,6 +19,11 @@ const httpsUrl = z.string().refine((value) => {
   }
 }, "Expected a credential-free HTTPS URL.");
 
+const SIGNED_SNAPSHOT_PUBLISH_TARGETS = [
+  { resource_path: "/mcp", snapshot_path: "/snapshot" },
+  { resource_path: "/workspace/mcp", snapshot_path: "/workspace/snapshot" }
+] as const;
+
 export const READONLY_PUBLISHER_PROFILE_SCHEMA = z.object({
   profile_version: z.literal("readonly-publisher-profile-v1"),
   database_path: z.string().min(1),
@@ -33,11 +38,12 @@ export const READONLY_PUBLISHER_PROFILE_SCHEMA = z.object({
 }).strict().superRefine((value, context) => {
   const resource = new URL(value.resource_url);
   const snapshot = new URL(value.snapshot_url);
-  if (resource.pathname !== "/mcp") {
-    context.addIssue({ code: "custom", path: ["resource_url"], message: "Resource URL must use the exact /mcp path." });
+  const target = SIGNED_SNAPSHOT_PUBLISH_TARGETS.find((item) => item.resource_path === resource.pathname);
+  if (!target) {
+    context.addIssue({ code: "custom", path: ["resource_url"], message: "Resource URL must use an exact supported MCP path." });
   }
-  if (resource.origin !== snapshot.origin || snapshot.pathname !== "/snapshot") {
-    context.addIssue({ code: "custom", path: ["snapshot_url"], message: "Snapshot URL must be /snapshot on the MCP resource origin." });
+  if (resource.origin !== snapshot.origin || !target || snapshot.pathname !== target.snapshot_path) {
+    context.addIssue({ code: "custom", path: ["snapshot_url"], message: "Snapshot URL must be the exact paired publish path on the MCP resource origin." });
   }
 });
 

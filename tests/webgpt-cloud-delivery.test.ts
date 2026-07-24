@@ -51,7 +51,7 @@ function profile(root: string): ReadonlyPublisherProfile {
   });
 }
 
-function snapshot() {
+function snapshot(resourceUrl = RESOURCE) {
   return finalizeReadonlySnapshot({
     schema_version: READONLY_SNAPSHOT_SCHEMA_VERSION,
     source_schema: READONLY_SNAPSHOT_REQUIRED_SCHEMA,
@@ -59,14 +59,21 @@ function snapshot() {
     source_version: WEBGPT_V4_VERSION,
     generated_at: NOW.toISOString(),
     expires_at: new Date(NOW.getTime() + 3600_000).toISOString(),
-    resource_url: RESOURCE,
+    resource_url: resourceUrl,
     issuer_hash: issuerHash(ISSUER),
     authorization: { principals: [] },
     projects: []
   });
 }
 
-test("publisher profile pins one HTTPS resource origin and rejects unsafe snapshot targets", () => {
+test("publisher profile accepts only exact legacy or unified Snapshot publish target pairs", () => {
+  const unified = parseReadonlyPublisherProfile({
+    ...profile(join(tmpdir(), "safe-profile")),
+    resource_url: "https://aivideo.example.test/workspace/mcp",
+    snapshot_url: "https://aivideo.example.test/workspace/snapshot"
+  });
+  assert.equal(unified.resource_url, "https://aivideo.example.test/workspace/mcp");
+  assert.equal(unified.snapshot_url, "https://aivideo.example.test/workspace/snapshot");
   assert.throws(() => parseReadonlyPublisherProfile({
     ...profile(join(tmpdir(), "safe-profile")),
     resource_url: "https://aivideo.example.test/not-mcp"
@@ -78,6 +85,15 @@ test("publisher profile pins one HTTPS resource origin and rejects unsafe snapsh
   assert.throws(() => parseReadonlyPublisherProfile({
     ...profile(join(tmpdir(), "safe-profile")),
     snapshot_url: "http://aivideo.example.test/snapshot"
+  }));
+  assert.throws(() => parseReadonlyPublisherProfile({
+    ...profile(join(tmpdir(), "safe-profile")),
+    resource_url: "https://aivideo.example.test/workspace/mcp",
+    snapshot_url: "https://aivideo.example.test/snapshot"
+  }));
+  assert.throws(() => parseReadonlyPublisherProfile({
+    ...profile(join(tmpdir(), "safe-profile")),
+    snapshot_url: "https://aivideo.example.test/workspace/snapshot"
   }));
 });
 
@@ -158,6 +174,40 @@ test("publisher signs a strict projection, sends only the envelope, and writes a
     for (const forbidden of [configured.database_path, configured.protected_private_key_path, configured.snapshot_url, "subject", "token", "projects"]) {
       assert.equal(serialized.includes(forbidden), false);
     }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("publisher signs and publishes a unified Workspace Snapshot through its exact paired route", async () => {
+  const root = await mkdtemp(join(tmpdir(), "unified-workspace-publisher-"));
+  try {
+    const configured = parseReadonlyPublisherProfile({
+      ...profile(root),
+      resource_url: "https://aivideo.example.test/workspace/mcp",
+      snapshot_url: "https://aivideo.example.test/workspace/snapshot",
+      key_id: "unified-workspace-publisher-v1"
+    });
+    createReadonlyPublisherKey(configured, reversibleProtector);
+    let exportedResourceUrl: string | null = null;
+    let publishedUrl: string | null = null;
+    const result = await publishReadonlySnapshot(configured, {
+      dpapi: reversibleProtector,
+      now: () => NOW,
+      export_snapshot: (input) => {
+        exportedResourceUrl = input.resource_url;
+        return snapshot(input.resource_url);
+      },
+      fetch_impl: async (url, init) => {
+        publishedUrl = url;
+        assert.equal(init.method, "PUT");
+        assert.equal(init.redirect, "manual");
+        return { ok: true, status: 202 };
+      }
+    });
+    assert.equal(exportedResourceUrl, configured.resource_url);
+    assert.equal(publishedUrl, configured.snapshot_url);
+    assert.equal(result.receipt.result, "PASS");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

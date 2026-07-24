@@ -79,6 +79,8 @@ npm run test:db
 npm run test:webgpt:v4
 npm run test:webgpt:cloud
 npm run test:webgpt:app
+npm run test:webgpt:director
+npm run test:webgpt:workspace
 npm run test:webgpt:media-gateway
 npm run test:v2:browser
 npm run secret:scan
