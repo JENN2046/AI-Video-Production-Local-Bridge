@@ -1,7 +1,7 @@
 # Current State
 
-Date (Asia/Shanghai, UTC+08:00): 2026-07-22
-Repository baseline: `main@4a94cf2d62f3e98923b3166411f13181143d1cbc`
+Date (Asia/Shanghai, UTC+08:00): 2026-07-24
+Repository baseline: `main@e87be21232ac3772735516c071ffb808fe38830b`
 
 ## Accepted historical operations baseline
 
@@ -50,6 +50,7 @@ The controlled Artifact import-receipt code candidate adds migration `0011`. The
 | Automatic Snapshot synchronization | Not implemented | Not accepted | Future gate |
 | Real Provider canary | Boundary exists | Not authorized | Frozen |
 | ChatGPT Director PR1–PR6 + controlled import receipt | Local code candidate | `0011` migration, runtime/OAuth/bridge/plugin unaccepted | `DIRECTOR_EXTERNAL_GATE_PENDING` |
+| Unified ChatGPT Workspace Remote | Local runtime and contract merged | OAuth resource, Bridge key, Render path, ChatGPT App and owner acceptance unexecuted | `UNIFIED_TRANSPORT_EXTERNAL_GATE_PENDING` |
 
 ## Accepted evidence
 
@@ -85,6 +86,10 @@ PR #69–#72 merged the local Director candidate, and the controlled Artifact im
 
 Director startup requires explicit non-secret runtime configuration and its separate transport acceptance; database readiness alone is insufficient. Do not run `start:director:remote` or `start:director:bridge` as a normal operation yet. The Memory Port has no configured plugin, endpoint, credential or automatic Saveback dispatch. See [Director Local Candidate Closeout](docs/CHATGPT_DIRECTOR_LOCAL_CANDIDATE_CLOSEOUT.md).
 
+### Unified ChatGPT Workspace candidate
+
+PR #78 merged the single-Connector local runtime at `/workspace/mcp`. It joins the independently fail-closed Readonly signed-Snapshot chain and the Director outbound local-Bridge chain, while preserving `/mcp` as an accepted rollback surface. No unified Auth0 API, public client grant, Bridge key, Render path deployment, ChatGPT App or Snapshot has been created or published. The active database remains at ledger `0010`, below the current ledger `0011` gate. See [Unified Workspace Transport Runbook](docs/webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md).
+
 ## Active blockers and next gates
 
 The isolated MP4 fixture and profile tooling is merged. It is an acceptance input, not a remaining merge gate.
@@ -104,6 +109,14 @@ Director has its own ordered external gates and does not inherit acceptance from
 4. prove the owner-only Proposal and approval path against the migrated activity database without Provider execution;
 5. select a stable memory plugin and separately accept recall-only, project/issuer-bound integration before any Saveback dispatch;
 6. only then consider a bounded Provider execution canary under a separately approved Automation Grant and budget.
+
+The unified Connector has an ordered, independent transport gate:
+
+1. read-only Auth0/Render/legacy-Readonly/ChatGPT capability preflight;
+2. separately authorize one unified OAuth API and its minimal user-delegated grant, one dedicated Bridge key, a path deployment and one test App;
+3. accept the isolated owner Focus → context → advisory Proposal path with `REAL_PROVIDER_ENABLED=false`;
+4. after the separately authorized `0011` migration, accept the single-owner activity-database Proposal/decision/import-receipt path;
+5. only then evaluate stable Memory recall/saveback and a bounded Provider canary as separate gates.
 
 ## Non-claims
 
