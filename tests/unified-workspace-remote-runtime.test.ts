@@ -121,6 +121,21 @@ test("Unified Workspace remote module graph remains detached from SQLite, local 
   visit(entry);
 });
 
+test("Unified Workspace rejects a legacy rollback route that collides with its OAuth resource", async () => {
+  await assert.rejects(
+    () => startUnifiedWorkspaceRemoteRuntime({
+      port: 0,
+      auth_config: authConfig(WORKSPACE_RESOURCE),
+      legacy_readonly: {
+        // Legacy Descope normalization trims the presentation-only trailing slash.
+        auth_config: authConfig(`${WORKSPACE_RESOURCE}/`)
+      }
+    }),
+    (error: unknown) => error instanceof WebGptV4Error
+      && error.code === "AMBIGUOUS_UNIFIED_WORKSPACE_LEGACY_RESOURCE"
+  );
+});
+
 test("Unified Workspace dispatches a Director read through the authenticated outbound bridge without a Snapshot", async () => {
   const keyring = { active: { kid: "unified-bridge-fixture", key: Buffer.alloc(32, 21) } };
   const runtime = await startUnifiedWorkspaceRemoteRuntime({

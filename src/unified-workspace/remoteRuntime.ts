@@ -25,7 +25,7 @@ import {
   type WebGptV4ReadonlyFederatedAuthConfig
 } from "../webgpt-v4/auth.js";
 import { withToolSecuritySchemes } from "../webgpt-v4/securityTransport.js";
-import { errorBody, requireScope, type WebGptV4Actor, type WebGptV4Scope } from "../webgpt-v4/types.js";
+import { errorBody, requireScope, WebGptV4Error, type WebGptV4Actor, type WebGptV4Scope } from "../webgpt-v4/types.js";
 import {
   READONLY_REMOTE_PUBLISH_PATH,
   createReadonlyRemoteMcpApp,
@@ -220,6 +220,17 @@ function readonlyToolScopes(): Record<string, readonly WebGptV4Scope[]> {
 }
 
 /**
+ * Snapshot authorization is bound to a resource URL.  Treat a trailing slash
+ * as presentation-only so a legacy compatibility loader cannot accidentally
+ * make `/mcp` share the unified Workspace audience.
+ */
+function resourceIdentity(resourceUrl: string): string {
+  const parsed = new URL(resourceUrl);
+  const pathname = parsed.pathname.replace(/\/+$/, "") || "/";
+  return `${parsed.protocol}//${parsed.host.toLowerCase()}${pathname}`;
+}
+
+/**
  * Hosts the future `/workspace/mcp` connector and, when legacy options are
  * supplied, the accepted `/mcp` rollback surface in the same process.  The
  * two routes deliberately own independent snapshot stores and OAuth
@@ -230,13 +241,20 @@ export async function startUnifiedWorkspaceRemoteRuntime(options: StartUnifiedWo
   const now = options.now ?? (() => new Date());
   const authConfig = options.auth_config ?? null;
   if (authConfig) assertWebGptV4AuthConfig(authConfig);
+  const legacy = options.legacy_readonly;
+  const legacyAuthConfig = legacy?.auth_config ?? null;
+  if (legacyAuthConfig) assertWebGptV4AuthConfig(legacyAuthConfig);
+  if (authConfig && legacyAuthConfig && resourceIdentity(authConfig.resource_url) === resourceIdentity(legacyAuthConfig.resource_url)) {
+    throw new WebGptV4Error(
+      "AMBIGUOUS_UNIFIED_WORKSPACE_LEGACY_RESOURCE",
+      "Unified Workspace and legacy Readonly OAuth resources must remain distinct.",
+      "WEBGPT_V4_RESOURCE_URL"
+    );
+  }
   const authenticate = options.authenticate ?? (authConfig
     ? createUnifiedWorkspaceOAuthAuthenticator(authConfig, { jwks: options.auth_jwks, jwks_transport: options.auth_transport })
     : unavailableAuthenticator());
   const workspaceStore = buildSnapshotStore(options.publisher_key_id, options.publisher_public_key, now, authConfig);
-  const legacy = options.legacy_readonly;
-  const legacyAuthConfig = legacy?.auth_config ?? null;
-  if (legacyAuthConfig) assertWebGptV4AuthConfig(legacyAuthConfig);
   const legacyAuthenticate = legacy?.authenticate ?? (legacyAuthConfig
     ? createOAuthAuthenticator(legacyAuthConfig, { jwks: legacy?.auth_jwks, jwks_transport: legacy?.auth_transport })
     : unavailableAuthenticator());

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { generateKeyPairSync } from "node:crypto";
 import { resolve } from "node:path";
 import test from "node:test";
 
@@ -135,6 +136,34 @@ test("Unified Workspace startup preserves stable OAuth and Bridge configuration 
     assert.equal(result.status, 1);
     const bootFailure = JSON.parse(result.stderr.trim()) as Record<string, unknown>;
     assert.deepEqual(bootFailure.event_type, "boot_failure");
+    assert.equal(bootFailure.stable_error_code, expected);
+  }
+});
+
+test("remote startup rejects private publisher material instead of deriving a public key", () => {
+  const privatePem = generateKeyPairSync("ed25519").privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const encoded = Buffer.from(privatePem, "utf8").toString("base64");
+  for (const [command, overrides, expected] of [
+    [
+      "dist/scripts/unified-workspace-remote-server.js",
+      { WEBGPT_WORKSPACE_PUBLISHER_KEY_ID: "workspace-publisher-test", WEBGPT_WORKSPACE_PUBLISHER_PUBLIC_KEY_B64: encoded },
+      "UNIFIED_WORKSPACE_PUBLISHER_CONFIG_INVALID"
+    ],
+    [
+      "dist/scripts/webgpt-cloud-server.js",
+      { WEBGPT_CLOUD_PUBLISHER_KEY_ID: "readonly-publisher-test", WEBGPT_CLOUD_PUBLISHER_PUBLIC_KEY_B64: encoded },
+      "READONLY_REMOTE_PUBLISHER_CONFIG_INVALID"
+    ]
+  ] as const) {
+    const result = spawnSync(process.execPath, [resolve(command)], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 10_000,
+      env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, NODE_NO_WARNINGS: "1", ...overrides }
+    });
+    assert.equal(result.status, 1);
+    const bootFailure = JSON.parse(result.stderr.trim()) as Record<string, unknown>;
     assert.equal(bootFailure.stable_error_code, expected);
   }
 });

@@ -10,6 +10,8 @@ class UnifiedWorkspaceRemoteConfigError extends Error {
   constructor(readonly code: string) { super(code); }
 }
 
+const SPKI_PUBLIC_PEM = /^-----BEGIN PUBLIC KEY-----\r?\n(?:[A-Za-z0-9+/=]+\r?\n)+-----END PUBLIC KEY-----\r?\n?$/;
+
 function stableBootFailureCode(error: unknown): string {
   if (error instanceof UnifiedWorkspaceRemoteConfigError) return error.code;
   if (error && typeof error === "object" && "code" in error && typeof error.code === "string" && /^[A-Z][A-Z0-9_]+$/.test(error.code)) {
@@ -32,6 +34,9 @@ function publisherConfig(env: NodeJS.ProcessEnv, prefix: "WEBGPT_WORKSPACE" | "W
   try {
     if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) throw new Error("invalid base64");
     const pem = Buffer.from(encoded, "base64").toString("utf8");
+    // `createPublicKey()` can derive a public key from PKCS#8 private input.
+    // The remote process must retain only an explicitly encoded SPKI public key.
+    if (!SPKI_PUBLIC_PEM.test(pem)) throw new Error("public SPKI PEM required");
     if (createPublicKey(pem).asymmetricKeyType !== "ed25519") throw new Error("invalid key");
     return { publisher_key_id: keyId, publisher_public_key: pem };
   } catch {
