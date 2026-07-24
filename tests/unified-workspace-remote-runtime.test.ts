@@ -152,10 +152,12 @@ test("Unified Workspace refuses signed Snapshot publish until its OAuth contract
   const root = mkdtempSync(join(tmpdir(), "unified-workspace-publish-auth-"));
   const source = fixture(root);
   const pair = generateKeyPairSync("ed25519");
+  const logs: Array<{ event_type: string; stable_error_code?: string }> = [];
   const runtime = await startUnifiedWorkspaceRemoteRuntime({
     port: 0,
     publisher_key_id: "unified-workspace-publisher-v1",
-    publisher_public_key: pair.publicKey
+    publisher_public_key: pair.publicKey,
+    log: (event) => logs.push(event)
   });
   try {
     const response = await fetch(runtime.snapshot_url, {
@@ -165,6 +167,8 @@ test("Unified Workspace refuses signed Snapshot publish until its OAuth contract
     });
     assert.equal(response.status, 503);
     assert.equal(record(record(await response.json()).error).code, "READONLY_SNAPSHOT_PUBLISH_AUTH_NOT_CONFIGURED");
+    assert.equal(logs.at(-1)?.event_type, "snapshot_publish");
+    assert.equal(logs.at(-1)?.stable_error_code, "READONLY_SNAPSHOT_PUBLISH_AUTH_NOT_CONFIGURED");
     assert.equal(runtime.snapshot_status().freshness_status, "no_snapshot");
   } finally {
     await runtime.close();

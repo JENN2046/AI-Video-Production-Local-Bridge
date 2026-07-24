@@ -317,30 +317,38 @@ export async function startUnifiedWorkspaceRemoteRuntime(options: StartUnifiedWo
 
   const statusFor = (store: ReadonlySnapshotStore | null): ReadonlySnapshotStatus => readonlySnapshotStatus(store?.read() ?? null, now());
 
-  const handlePublish = async (request: IncomingMessage, response: ServerResponse, route: McpRoute): Promise<void> => {
+  const handlePublish = async (request: IncomingMessage, response: ServerResponse, route: McpRoute): Promise<string | undefined> => {
     if (!contentTypeIsJson(request)) {
-      sendJson(response, 415, { ok: false, error: { code: "READONLY_SNAPSHOT_PUBLISH_CONTENT_TYPE_REQUIRED", message: "Snapshot publish requires application/json." } });
-      return;
+      const code = "READONLY_SNAPSHOT_PUBLISH_CONTENT_TYPE_REQUIRED";
+      sendJson(response, 415, { ok: false, error: { code, message: "Snapshot publish requires application/json." } });
+      return code;
     }
     if (!route.auth_config) {
-      sendJson(response, 503, { ok: false, error: { code: "READONLY_SNAPSHOT_PUBLISH_AUTH_NOT_CONFIGURED", message: "Readonly OAuth is not configured." } });
-      return;
+      const code = "READONLY_SNAPSHOT_PUBLISH_AUTH_NOT_CONFIGURED";
+      sendJson(response, 503, { ok: false, error: { code, message: "Readonly OAuth is not configured." } });
+      return code;
     }
     if (!route.store) {
-      sendJson(response, 503, { ok: false, error: { code: "READONLY_SNAPSHOT_PUBLISH_NOT_CONFIGURED", message: "Snapshot verification is not configured." } });
-      return;
+      const code = "READONLY_SNAPSHOT_PUBLISH_NOT_CONFIGURED";
+      sendJson(response, 503, { ok: false, error: { code, message: "Snapshot verification is not configured." } });
+      return code;
     }
     if (!route.publish_limiter.allow(request.socket.remoteAddress ?? "unknown")) {
-      sendJson(response, 429, { ok: false, error: { code: "READONLY_SNAPSHOT_PUBLISH_RATE_LIMITED", message: "Snapshot publish capacity is busy." } }, { "retry-after": "60" });
-      return;
+      const code = "READONLY_SNAPSHOT_PUBLISH_RATE_LIMITED";
+      sendJson(response, 429, { ok: false, error: { code, message: "Snapshot publish capacity is busy." } }, { "retry-after": "60" });
+      return code;
     }
     try {
       const published = route.store.replace(await jsonBody(request, maxPublishBody));
       sendJson(response, 202, { ok: true, snapshot_fingerprint: published.snapshot_fingerprint, generated_at: published.generated_at, expires_at: published.expires_at });
+      return undefined;
     } catch (error) {
       const message = error instanceof Error ? error.message : "READONLY_SNAPSHOT_PUBLISH_INVALID";
-      const code = /^READONLY_|^JCS_/.test(message) ? message : "READONLY_SNAPSHOT_PUBLISH_INVALID";
+      const code = message === "BODY_TOO_LARGE"
+        ? "READONLY_SNAPSHOT_PUBLISH_BODY_TOO_LARGE"
+        : /^READONLY_|^JCS_/.test(message) ? message : "READONLY_SNAPSHOT_PUBLISH_INVALID";
       sendJson(response, message === "BODY_TOO_LARGE" ? 413 : 400, { ok: false, error: { code, message: "Signed readonly snapshot was rejected." } });
+      return code;
     }
   };
 
@@ -471,9 +479,8 @@ export async function startUnifiedWorkspaceRemoteRuntime(options: StartUnifiedWo
           eventType = "oauth_metadata"; status = 200; sendJson(response, status, route.metadata()); return;
         }
         if (request.method === "PUT" && url.pathname === route.publish_path) {
-          eventType = "snapshot_publish"; await handlePublish(request, response, route); status = response.statusCode;
+          eventType = "snapshot_publish"; stableErrorCode = await handlePublish(request, response, route); status = response.statusCode;
           rateLimitEvent = status === 429;
-          if (rateLimitEvent) stableErrorCode = "READONLY_SNAPSHOT_PUBLISH_RATE_LIMITED";
           return;
         }
         if (url.pathname === route.path) {
