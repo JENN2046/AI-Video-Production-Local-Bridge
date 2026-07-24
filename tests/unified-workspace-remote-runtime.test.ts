@@ -8,13 +8,13 @@ import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
-import { startUnifiedWorkspaceRemoteRuntime } from "../src/unified-workspace/remoteRuntime.js";
+import { startUnifiedWorkspaceRemoteRuntime, UNIFIED_WORKSPACE_BRIDGE_POLL_PATH } from "../src/unified-workspace/remoteRuntime.js";
 import { DirectorLocalBridgeClient } from "../src/director/bridge.js";
 import type { DirectorNativeToolHandlers } from "../src/director/mcpContract.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 import { bootstrapWebGptProjectOwner } from "../src/webgpt-v4/authorizationAdmin.js";
-import { actorFromFederatedSubject, issuerHash } from "../src/webgpt-v4/types.js";
+import { actorFromFederatedSubject, issuerHash, WebGptV4Error } from "../src/webgpt-v4/types.js";
 import { exportReadonlySnapshotFromDatabase } from "../src/webgpt-cloud/dataSource.js";
 import { signReadonlySnapshot } from "../src/webgpt-cloud/signedSnapshot.js";
 
@@ -173,6 +173,39 @@ test("Unified Workspace refuses signed Snapshot publish until its OAuth contract
   } finally {
     await runtime.close();
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Unified Workspace logs MCP authentication failures and classifies malformed Bridge JSON", async () => {
+  const logs: Array<{ event_type: string; stable_error_code?: string }> = [];
+  const runtime = await startUnifiedWorkspaceRemoteRuntime({
+    port: 0,
+    auth_config: authConfig(WORKSPACE_RESOURCE),
+    authenticate: async () => { throw new WebGptV4Error("AUTH_REQUIRED", "Authentication is required."); },
+    bridge_keyring: { active: { kid: "unified-bridge-fixture", key: Buffer.alloc(32, 28) } },
+    log: (event) => logs.push(event)
+  });
+  try {
+    const denied = await fetch(runtime.mcp_url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} })
+    });
+    assert.equal(denied.status, 401);
+    assert.equal(logs.at(-1)?.event_type, "auth_failure");
+    assert.equal(logs.at(-1)?.stable_error_code, "AUTH_REQUIRED");
+
+    const malformed = await fetch(new URL(UNIFIED_WORKSPACE_BRIDGE_POLL_PATH, runtime.origin), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{"
+    });
+    assert.equal(malformed.status, 400);
+    assert.equal(record(record(await malformed.json()).error).code, "DIRECTOR_BRIDGE_INVALID_JSON_BODY");
+    assert.equal(logs.at(-1)?.event_type, "bridge");
+    assert.equal(logs.at(-1)?.stable_error_code, "DIRECTOR_BRIDGE_INVALID_JSON_BODY");
+  } finally {
+    await runtime.close();
   }
 });
 

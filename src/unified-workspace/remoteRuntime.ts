@@ -352,18 +352,21 @@ export async function startUnifiedWorkspaceRemoteRuntime(options: StartUnifiedWo
     }
   };
 
-  const handleBridge = async (request: IncomingMessage, response: ServerResponse, path: string): Promise<void> => {
+  const handleBridge = async (request: IncomingMessage, response: ServerResponse, path: string): Promise<string | undefined> => {
     if (!broker) {
-      sendJson(response, 503, { ok: false, error: { code: "DIRECTOR_BRIDGE_UNAVAILABLE", message: "Local Director bridge is unavailable." } });
-      return;
+      const code = "DIRECTOR_BRIDGE_UNAVAILABLE";
+      sendJson(response, 503, { ok: false, error: { code, message: "Local Director bridge is unavailable." } });
+      return code;
     }
     if (!contentTypeIsJson(request)) {
-      sendJson(response, 415, { ok: false, error: { code: "DIRECTOR_BRIDGE_CONTENT_TYPE_REQUIRED", message: "Director bridge requires application/json." } });
-      return;
+      const code = "DIRECTOR_BRIDGE_CONTENT_TYPE_REQUIRED";
+      sendJson(response, 415, { ok: false, error: { code, message: "Director bridge requires application/json." } });
+      return code;
     }
     if (activeBridge >= 2) {
-      sendJson(response, 429, { ok: false, error: { code: "DIRECTOR_BRIDGE_BUSY", message: "Director bridge request capacity is full." } }, { "retry-after": "1" });
-      return;
+      const code = "DIRECTOR_BRIDGE_BUSY";
+      sendJson(response, 429, { ok: false, error: { code, message: "Director bridge request capacity is full." } }, { "retry-after": "1" });
+      return code;
     }
     activeBridge += 1;
     try {
@@ -371,29 +374,35 @@ export async function startUnifiedWorkspaceRemoteRuntime(options: StartUnifiedWo
       if (path === UNIFIED_WORKSPACE_BRIDGE_POLL_PATH) {
         broker.authenticatePoll(body, pollReplay);
         const next = broker.poll();
-        if (!next) { response.writeHead(204, { "cache-control": "no-store" }); response.end(); return; }
+        if (!next) { response.writeHead(204, { "cache-control": "no-store" }); response.end(); return undefined; }
         sendJson(response, 200, next);
-        return;
+        return undefined;
       }
       broker.complete(body);
       sendJson(response, 202, { ok: true });
+      return undefined;
     } catch (error) {
       const safe = errorBody(error);
       const tooLarge = error instanceof Error && error.message === "BODY_TOO_LARGE";
-      sendJson(response, tooLarge ? 413 : 401, { ok: false, error: { code: tooLarge ? "DIRECTOR_BRIDGE_BODY_TOO_LARGE" : safe.code, message: "Director bridge request was rejected." } });
+      const invalidJson = error instanceof Error && error.message === "INVALID_JSON_BODY";
+      const code = tooLarge ? "DIRECTOR_BRIDGE_BODY_TOO_LARGE" : invalidJson ? "DIRECTOR_BRIDGE_INVALID_JSON_BODY" : safe.code;
+      sendJson(response, tooLarge ? 413 : invalidJson ? 400 : 401, { ok: false, error: { code, message: "Director bridge request was rejected." } });
+      return code;
     } finally {
       activeBridge -= 1;
     }
   };
 
-  const handleMcp = async (request: IncomingMessage, response: ServerResponse, route: McpRoute): Promise<void> => {
+  const handleMcp = async (request: IncomingMessage, response: ServerResponse, route: McpRoute): Promise<{ stable_error_code?: string; auth_failure: boolean }> => {
     if (request.method !== "POST") {
-      sendJson(response, 405, { ok: false, error: { code: "METHOD_NOT_ALLOWED", message: "MCP accepts POST requests only." } }, { allow: "POST" });
-      return;
+      const code = "METHOD_NOT_ALLOWED";
+      sendJson(response, 405, { ok: false, error: { code, message: "MCP accepts POST requests only." } }, { allow: "POST" });
+      return { stable_error_code: code, auth_failure: false };
     }
     if (!contentTypeIsJson(request)) {
-      sendJson(response, 415, { ok: false, error: { code: "CONTENT_TYPE_REQUIRED", message: "MCP requires application/json." } });
-      return;
+      const code = "CONTENT_TYPE_REQUIRED";
+      sendJson(response, 415, { ok: false, error: { code, message: "MCP requires application/json." } });
+      return { stable_error_code: code, auth_failure: false };
     }
     let actor: WebGptV4Actor;
     try {
@@ -405,12 +414,12 @@ export async function startUnifiedWorkspaceRemoteRuntime(options: StartUnifiedWo
       sendJson(response, safe.code === "INSUFFICIENT_SCOPE" ? 403 : 401, {
         jsonrpc: "2.0", id: null, error: { code: -32001, message: safe.message, data: { ...safe, _meta: { "mcp/www_authenticate": [challenge] } } }
       }, { "www-authenticate": challenge });
-      return;
+      return { stable_error_code: safe.code, auth_failure: true };
     }
     const activeForActor = actorCounts.get(actor.principal_id) ?? 0;
     if (activeMcp >= 8 || activeForActor >= 4) {
       sendJson(response, 429, { jsonrpc: "2.0", id: null, error: { code: -32004, message: "Workspace request capacity is busy.", data: { code: "UNIFIED_WORKSPACE_REMOTE_BUSY", retryable: true } } }, { "retry-after": "1" });
-      return;
+      return { stable_error_code: "UNIFIED_WORKSPACE_REMOTE_BUSY", auth_failure: false };
     }
     activeMcp += 1;
     actorCounts.set(actor.principal_id, activeForActor + 1);
@@ -425,7 +434,7 @@ export async function startUnifiedWorkspaceRemoteRuntime(options: StartUnifiedWo
         if (!response.headersSent) sendJson(response, code === "BODY_TOO_LARGE" ? 413 : 400, {
           jsonrpc: "2.0", id: null, error: { code: -32700, message: code, data: { code } }
         });
-        return;
+        return { stable_error_code: code, auth_failure: false };
       }
       app = route.app(actor, route.store?.read() ?? null);
       transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
@@ -436,12 +445,14 @@ export async function startUnifiedWorkspaceRemoteRuntime(options: StartUnifiedWo
       if (!response.headersSent) sendJson(response, 500, {
         jsonrpc: "2.0", id: safeRpcId((parsed as Record<string, unknown> | undefined)?.id), error: { code: -32603, message: code, data: { code } }
       });
+      return { stable_error_code: code, auth_failure: false };
     } finally {
       await Promise.allSettled([...(transport ? [transport.close()] : []), ...(app ? [app.close()] : [])]);
       activeMcp -= 1;
       const remaining = (actorCounts.get(actor.principal_id) ?? 1) - 1;
       if (remaining <= 0) actorCounts.delete(actor.principal_id); else actorCounts.set(actor.principal_id, remaining);
     }
+    return { auth_failure: false };
   };
 
   const handle = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
@@ -484,16 +495,17 @@ export async function startUnifiedWorkspaceRemoteRuntime(options: StartUnifiedWo
           return;
         }
         if (url.pathname === route.path) {
-          eventType = "mcp"; await handleMcp(request, response, route); status = response.statusCode;
+          const outcome = await handleMcp(request, response, route);
+          eventType = outcome.auth_failure ? "auth_failure" : "mcp";
+          stableErrorCode = outcome.stable_error_code;
+          status = response.statusCode;
           rateLimitEvent = status === 429;
-          if (rateLimitEvent) stableErrorCode = "UNIFIED_WORKSPACE_REMOTE_BUSY";
           return;
         }
       }
       if (request.method === "POST" && (url.pathname === UNIFIED_WORKSPACE_BRIDGE_POLL_PATH || url.pathname === UNIFIED_WORKSPACE_BRIDGE_COMPLETE_PATH)) {
-        eventType = "bridge"; await handleBridge(request, response, url.pathname); status = response.statusCode;
+        eventType = "bridge"; stableErrorCode = await handleBridge(request, response, url.pathname); status = response.statusCode;
         rateLimitEvent = status === 429;
-        if (rateLimitEvent) stableErrorCode = "DIRECTOR_BRIDGE_BUSY";
         return;
       }
       status = 404; stableErrorCode = "NOT_FOUND";
