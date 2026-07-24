@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { resolve } from "node:path";
 import test from "node:test";
 
 import {
@@ -109,6 +111,31 @@ test("Unified Workspace OAuth rejects partial, unsafe, and legacy-resource-colli
       (error) => error instanceof WebGptV4Error
         && ["INVALID_UNIFIED_WORKSPACE_OAUTH_CONFIG", "AMBIGUOUS_UNIFIED_WORKSPACE_OAUTH_RESOURCE"].includes(error.code)
     );
+  }
+});
+
+test("Unified Workspace startup preserves stable OAuth and Bridge configuration error codes", () => {
+  const command = resolve("dist/scripts/unified-workspace-remote-server.js");
+  const base = {
+    PATH: process.env.PATH,
+    SystemRoot: process.env.SystemRoot,
+    NODE_NO_WARNINGS: "1"
+  };
+  for (const [overrides, expected] of [
+    [{ WEBGPT_WORKSPACE_OAUTH_ISSUER: issuer }, "INVALID_UNIFIED_WORKSPACE_OAUTH_CONFIG"],
+    [{ WEBGPT_DIRECTOR_BRIDGE_KEY_ID: "partial" }, "DIRECTOR_BRIDGE_KEY_INVALID"]
+  ] as const) {
+    const result = spawnSync(process.execPath, [command], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 10_000,
+      env: { ...base, ...overrides }
+    });
+    assert.equal(result.status, 1);
+    const bootFailure = JSON.parse(result.stderr.trim()) as Record<string, unknown>;
+    assert.deepEqual(bootFailure.event_type, "boot_failure");
+    assert.equal(bootFailure.stable_error_code, expected);
   }
 });
 
