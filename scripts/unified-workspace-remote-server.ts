@@ -44,15 +44,17 @@ async function main(): Promise<void> {
   if (legacy && (legacy.provider !== "federated" || legacy.access_model !== "project_membership")) {
     throw new UnifiedWorkspaceRemoteConfigError("UNIFIED_WORKSPACE_LEGACY_AUTH_CONFIG_INVALID");
   }
+  const mediaGateway = loadReadonlyMediaGatewayClientOptions(process.env) ?? undefined;
   const runtime = await startUnifiedWorkspaceRemoteRuntime({
     host: "0.0.0.0",
     port: port(process.env.PORT),
     auth_config: loadUnifiedWorkspaceOAuthConfig(process.env),
     bridge_keyring: loadDirectorBridgeKeyring(process.env),
+    media_gateway: mediaGateway,
     ...publisherConfig(process.env, "WEBGPT_WORKSPACE", "UNIFIED_WORKSPACE_PUBLISHER_CONFIG_INVALID"),
     legacy_readonly: legacy ? {
       auth_config: legacy,
-      media_gateway: loadReadonlyMediaGatewayClientOptions(process.env) ?? undefined,
+      media_gateway: mediaGateway,
       ...publisherConfig(process.env, "WEBGPT_CLOUD", "UNIFIED_WORKSPACE_LEGACY_PUBLISHER_CONFIG_INVALID")
     } : undefined,
     log: (event) => console.log(JSON.stringify(event))

@@ -86,6 +86,7 @@ export interface StartUnifiedWorkspaceRemoteRuntimeOptions {
   publisher_key_id?: string;
   publisher_public_key?: ReadonlySigningPublicKey;
   bridge_keyring?: DirectorBridgeKeyring | null;
+  media_gateway?: ReadonlyMediaGatewayClientOptions;
   legacy_readonly?: UnifiedWorkspaceLegacyReadonlyOptions;
   max_mcp_body_bytes?: number;
   max_publish_body_bytes?: number;
@@ -287,7 +288,7 @@ export async function startUnifiedWorkspaceRemoteRuntime(options: StartUnifiedWo
         render_summary: "AI 视频生产工作台已打开；数据与 Director 状态由 Widget 按需读取。",
         director_status: () => ({ state: broker?.connected() ? "available" : "unavailable", bridge_connected: broker?.connected() ?? false })
       };
-      registerReadonlyRemoteMcpApp(app, actor, snapshot, authConfig, now, undefined, readonlyOptions);
+      registerReadonlyRemoteMcpApp(app, actor, snapshot, authConfig, now, options.media_gateway, readonlyOptions);
       registerDirectorNativeTools(app, actor, directorHandlersFor(actor), {
         auth_config: authConfig,
         resource_metadata_url: `/.well-known/oauth-protected-resource${UNIFIED_WORKSPACE_MCP_PATH}`

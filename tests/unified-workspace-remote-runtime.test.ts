@@ -13,6 +13,7 @@ import { DirectorLocalBridgeClient } from "../src/director/bridge.js";
 import type { DirectorNativeToolHandlers } from "../src/director/mcpContract.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
+import { attachArtifactToShot, registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { bootstrapWebGptProjectOwner } from "../src/webgpt-v4/authorizationAdmin.js";
 import { actorFromFederatedSubject, issuerHash, WebGptV4Error } from "../src/webgpt-v4/types.js";
 import { exportReadonlySnapshotFromDatabase } from "../src/webgpt-cloud/dataSource.js";
@@ -55,9 +56,26 @@ function fixture(root: string) {
     saveShot(db, shot);
     created.project.shot_ids = [shot.shot_id];
     saveProject(db, created.project);
+    const registered = registerMediaArtifact({
+      artifact_type: "image",
+      role: "storyboard_image",
+      source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
+      linked_objects: { project_id: created.project_id, shot_id: shot.shot_id }
+    }, db);
+    assert.equal(registered.ok, true);
+    if (!registered.ok) throw new Error("fixture artifact registration failed");
+    const attached = attachArtifactToShot({
+      project_id: created.project_id,
+      shot_id: shot.shot_id,
+      artifact_id: registered.artifact.artifact_id,
+      reference: "storyboard_image_artifact_id",
+      expected_current_artifact_id: ""
+    }, db);
+    assert.equal(attached.ok, true);
     bootstrapWebGptProjectOwner(db, ACTOR.principal_id, created.project_id, "UNIFIED_WORKSPACE_RUNTIME", ACTOR.issuer_hash!);
     return {
       project_id: created.project_id,
+      artifact_id: registered.artifact.artifact_id,
       snapshotFor: (resource_url: string) => exportReadonlySnapshotFromDatabase({
         database_path: sqlitePath,
         issuer_hash: ACTOR.issuer_hash!,
@@ -242,6 +260,7 @@ test("Unified Workspace route exposes the fixed directory, isolates an unavailab
   const source = fixture(root);
   const pair = generateKeyPairSync("ed25519");
   let activeActor = ACTOR;
+  let mediaRequests = 0;
   const runtime = await startUnifiedWorkspaceRemoteRuntime({
     port: 0,
     auth_config: authConfig(WORKSPACE_RESOURCE),
@@ -249,6 +268,20 @@ test("Unified Workspace route exposes the fixed directory, isolates an unavailab
     publisher_key_id: "unified-workspace-publisher-v1",
     publisher_public_key: pair.publicKey,
     publish_requests_per_minute: 1,
+    media_gateway: {
+      origin: "https://media.skmt617.top",
+      keyring: { active: { kid: "unified-media-fixture", key: Buffer.alloc(32, 9) } },
+      runtime: {
+        resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+        post_pinned_address: async () => {
+          mediaRequests += 1;
+          return new Response(JSON.stringify({
+            capability_handle: "m".repeat(43),
+            expires_at: new Date(Date.now() + 5 * 60_000).toISOString()
+          }), { status: 201, headers: { "content-type": "application/json" } });
+        }
+      }
+    },
     legacy_readonly: {
       auth_config: authConfig(LEGACY_RESOURCE),
       authenticate: async () => activeActor,
@@ -308,6 +341,14 @@ test("Unified Workspace route exposes the fixed directory, isolates an unavailab
     assert.equal(record(shell.director).state, "unavailable");
     const projects = await client.callTool({ name: "list_production_projects", arguments: { detail: "compact" } });
     assert.equal(record(projects.structuredContent).ok, true);
+    const media = await client.callTool({ name: "get_readonly_media_playback", arguments: {
+      project_id: source.project_id,
+      artifact_id: source.artifact_id
+    } });
+    assert.equal(media.isError, false, String(record(media._meta).media_error_code ?? ""));
+    assert.equal(record(media._meta).playback_url, `https://media.skmt617.top/media/v1/c/${"m".repeat(43)}`);
+    assert.equal(JSON.stringify(media.structuredContent).includes("media.skmt617.top"), false);
+    assert.equal(mediaRequests, 1);
     const director = await client.callTool({ name: "get_director_focus", arguments: {} });
     assert.equal(director.isError, true);
     const directorContent = director.content as Array<{ text?: string }> | undefined;
