@@ -106,6 +106,19 @@ Historical taskbooks explain decisions; current runbooks operate the system. A d
 
 When an external path fails, prefer a bounded canary that can answer one question: discovery vs callback, key mismatch vs network, edge transport vs public route, fixture projection vs activity data. Stop after the first failure and keep rollback evidence. Repeated retries without a changed hypothesis add risk, not knowledge.
 
+## 16. One ChatGPT Connector can still have separate trust chains
+
+One user-facing `AI Video Production Workspace` App is simpler than asking an
+operator to choose between several similar Connectors. It must not collapse
+authorization or execution boundaries behind that convenience.
+
+Keep the signed Readonly Snapshot chain and the outbound Director Bridge chain
+independently fail-closed. Give the unified resource its own exact audience,
+publisher verification material and Bridge key; do not let a legacy rollback
+route share any of them. A missing Snapshot may show a low-disclosure shell,
+and a missing Bridge may deny Director work, but neither condition can grant
+access to the other chain.
+
 ## Decision checklist for future work
 
 Before promoting a capability, answer:

@@ -1,6 +1,6 @@
 # Unified ChatGPT Workspace MCP Contract
 
-Status: `CANDIDATE — PR3 local runtime complete; external wiring remains gated`
+Status: `CANDIDATE — PR3 local runtime and PR4 transport operations documents complete; external wiring remains gated`
 
 The intended primary ChatGPT connector is a single `AI Video Production Workspace` App at:
 
@@ -19,6 +19,8 @@ Unified Workspace Remote
 The accepted Readonly route at `/mcp` remains a rollback surface. This document
 does not authorize creation of an Auth0 API, a ChatGPT App, a Render deployment,
 or any runtime configuration change.
+
+For staged external preflight, wiring, local-bridge recovery, acceptance and rollback boundaries, use the [Unified ChatGPT Workspace Transport Runbook](webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md).
 
 ## Local runtime routes
 

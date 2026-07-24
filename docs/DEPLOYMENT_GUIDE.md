@@ -43,7 +43,7 @@ Only when a bounded runtime acceptance is separately authorized, start through `
 
 Database upgrade is not part of normal startup. The active database is below the current-code `0011` requirement, so the migration preflight is an active gate: service stop, backup, logical manifest, isolated migration, `db:check`, restore rehearsal and explicit activity-database authorization.
 
-## Layer 2 — Remote Readonly MCP App
+## Layer 2A — historical Remote Readonly MCP App
 
 The accepted Auth0/ChatGPT/Render wiring is retained as historical external evidence. The Layer 1 `0010` migration gate is historical, while `0011` remains pending; a new Snapshot export, renewal or recovery from current code needs both the separate migration and its own bounded acceptance.
 
@@ -84,6 +84,20 @@ Deployment acceptance requires:
 4. anonymous tool calls succeed zero times;
 5. seven readonly tools use one fingerprint;
 6. activity-database manifest is unchanged.
+
+## Layer 2B — Unified ChatGPT Workspace candidate
+
+Current `main` also contains the local `Unified Workspace Remote` candidate:
+
+```text
+ChatGPT App -> /workspace/mcp
+             -> signed Snapshot chain
+             -> outbound local Director bridge chain
+```
+
+It uses a **new** exact OAuth resource with `projects.read`, `media.read` and `proposals.write`, while preserving old `/mcp` as a rollback surface. The routes must never share a resource URL, audience, publisher key or in-memory Snapshot store. The Remote has no SQLite, local path or Provider execution path.
+
+This layer remains external-gated: activity database ledger `0011`, Auth0 API capacity/preflight, one user-delegated grant on the existing Native/public client, a dedicated bridge key, Render path deployment and one test ChatGPT App all need their own bounded authorization. Do not treat code merge as OAuth or deployment acceptance. The exact staged procedure and rollback contract are in [webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md](webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md).
 
 ## Layer 3 — Local Media Gateway candidate
 
