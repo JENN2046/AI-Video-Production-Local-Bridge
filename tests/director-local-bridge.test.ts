@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -451,7 +451,9 @@ test("Director bridge keygen writes only DPAPI CurrentUser ciphertext to ignored
   assert.match(keygen, /DataProtectionScope\]::CurrentUser/);
   assert.match(keygen, /New-Object byte\[\] 32/);
   assert.match(keygen, /DIRECTOR_BRIDGE_KEY_PATH_REPARSE_POINT/);
+  assert.match(keygen, /DIRECTOR_BRIDGE_KEY_OPERATION_FAILED/);
   assert.doesNotMatch(keygen, /ToBase64String\(\$bytes\)|Write-(?:Host|Output).*\$bytes/i);
+  assert.doesNotMatch(keygen, /stable_error_code\s*=\s*\$_.Exception\.Message/);
 
   await context.test("Windows DPAPI keygen is ignored, non-overwriting and low-disclosure", { skip: process.platform !== "win32" }, () => {
     const relativeRoot = join("data", "webgpt", `director-keygen-test-${process.pid}-${Date.now()}`);
@@ -474,6 +476,15 @@ test("Director bridge keygen writes only DPAPI CurrentUser ciphertext to ignored
       assert.equal(second.status, 1);
       assert.deepEqual(JSON.parse(second.stderr.trim()), { result: "FAIL", stable_error_code: "DIRECTOR_BRIDGE_KEY_ALREADY_EXISTS" });
       assert.equal(`${first.stdout}${first.stderr}${second.stdout}${second.stderr}`.includes(protectedText), false);
+
+      const blockedParent = join(root, "not-a-directory");
+      writeFileSync(blockedParent, "fixture", "utf8");
+      const unexpected = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "RemoteSigned", "-File", "scripts/windows/director-bridge-keygen.ps1", "-Destination", join(relativeRoot, "not-a-directory", "bridge-key.dpapi"), "-Kid", "director-bridge-fixture"], {
+        cwd: resolve("."), encoding: "utf8", windowsHide: true
+      });
+      assert.equal(unexpected.status, 1);
+      assert.deepEqual(JSON.parse(unexpected.stderr.trim()), { result: "FAIL", stable_error_code: "DIRECTOR_BRIDGE_KEY_OPERATION_FAILED" });
+      assert.equal(unexpected.stderr.includes(root), false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

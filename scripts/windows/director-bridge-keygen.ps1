@@ -12,6 +12,23 @@ function Write-DirectorBridgeJson([object]$Value) {
   [Console]::Out.WriteLine(($Value | ConvertTo-Json -Depth 4 -Compress))
 }
 
+function Get-DirectorBridgeStableErrorCode([System.Management.Automation.ErrorRecord]$ErrorRecord) {
+  $knownCodes = @(
+    "DIRECTOR_BRIDGE_KEY_PATH_INVALID",
+    "DIRECTOR_BRIDGE_KEY_PATH_OUTSIDE_WORKSPACE",
+    "DIRECTOR_BRIDGE_KEY_PATH_INSPECTION_FAILED",
+    "DIRECTOR_BRIDGE_KEY_PATH_REPARSE_POINT",
+    "DIRECTOR_BRIDGE_KEY_GIT_CHECK_FAILED",
+    "DIRECTOR_BRIDGE_KEY_PATH_TRACKED",
+    "DIRECTOR_BRIDGE_KEY_PATH_NOT_IGNORED",
+    "DIRECTOR_BRIDGE_KEY_INVALID",
+    "DIRECTOR_BRIDGE_KEY_ALREADY_EXISTS"
+  )
+  $message = if ($null -ne $ErrorRecord.Exception) { [string]$ErrorRecord.Exception.Message } else { "" }
+  if ($knownCodes -contains $message) { return $message }
+  return "DIRECTOR_BRIDGE_KEY_OPERATION_FAILED"
+}
+
 function Resolve-DirectorBridgeWorkspacePath([string]$PathValue) {
   if ([string]::IsNullOrWhiteSpace($PathValue)) { throw "DIRECTOR_BRIDGE_KEY_PATH_INVALID" }
   $candidate = if ([IO.Path]::IsPathRooted($PathValue)) {
@@ -71,6 +88,6 @@ try {
   Write-DirectorBridgeJson ([ordered]@{ result = "CREATED"; kid = $Kid; protected = $true })
   exit 0
 } catch {
-  [Console]::Error.WriteLine((ConvertTo-Json ([ordered]@{ result = "FAIL"; stable_error_code = $_.Exception.Message }) -Compress))
+  [Console]::Error.WriteLine((ConvertTo-Json ([ordered]@{ result = "FAIL"; stable_error_code = Get-DirectorBridgeStableErrorCode $_ }) -Compress))
   exit 1
 }
