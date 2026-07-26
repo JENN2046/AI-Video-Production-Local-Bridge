@@ -54,7 +54,7 @@ async function main(): Promise<void> {
     host: "0.0.0.0",
     port: port(process.env.PORT),
     auth_config: loadUnifiedWorkspaceOAuthConfig(process.env),
-    bridge_keyring: loadDirectorBridgeKeyring(process.env),
+    bridge_keyring: loadDirectorBridgeKeyring(process.env, "remote_environment"),
     media_gateway: mediaGateway,
     ...publisherConfig(process.env, "WEBGPT_WORKSPACE", "UNIFIED_WORKSPACE_PUBLISHER_CONFIG_INVALID"),
     legacy_readonly: legacy ? {

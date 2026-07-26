@@ -84,10 +84,11 @@ The following bridge variables are blank-or-complete:
 
 ```text
 WEBGPT_DIRECTOR_BRIDGE_KEY_ID=
-WEBGPT_DIRECTOR_BRIDGE_KEY_B64=
+WEBGPT_DIRECTOR_BRIDGE_KEY_B64=        # Remote only: Render secret
+WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH= # Local Bridge only: ignored DPAPI ciphertext
 ```
 
-The key must decode to exactly 32 bytes. It is a dedicated bridge credential and must not be committed, printed, copied into docs or reused as a Snapshot/media key.
+The key must decode to exactly 32 bytes. The Remote runtime explicitly accepts only `WEBGPT_DIRECTOR_BRIDGE_KEY_B64` from its secret store; the local Bridge explicitly accepts only and decrypts the ignored `WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH` under DPAPI `CurrentUser`. A plaintext key in the local process, a DPAPI pointer in the Remote, or incomplete/mixed configuration fails closed. It is a dedicated bridge credential and must not be committed, printed, copied into docs or reused as a Snapshot/media key.
 
 The local process additionally requires:
 
@@ -103,10 +104,12 @@ Public commands:
 ```text
 npm run start:director:remote
 npm run start:director:bridge
+npm run director:bridge:key-import
 npm run test:webgpt:director
 ```
 
 Runtime secrets continue to come from explicit process environment or a separately authorized Git-ignored profile. The repository does not auto-load `.env`.
+For future authorized Remote wiring, create and store the shared 32-byte Base64 key in the approved Remote secret-management flow as Render's `WEBGPT_DIRECTOR_BRIDGE_KEY_B64`. Then run `npm run director:bridge:key-import` and enter that exact key directly from the approved secret source through its hidden prompt to create local DPAPI `CurrentUser` ciphertext. The repository deliberately has no plaintext export or clipboard-transfer command: clipboard history and cloud synchronization cannot be cleared reliably. Configure only the non-secret local pointer `WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH` for `start:director:bridge`.
 The PR3 local bridge refuses to start when `REAL_PROVIDER_ENABLED=true`; Provider execution belongs to the later bounded-orchestrator gate.
 
 ## Current evidence and remaining gates

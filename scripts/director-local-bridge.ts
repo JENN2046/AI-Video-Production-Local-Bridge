@@ -15,7 +15,7 @@ async function main(): Promise<void> {
   if (process.env.REAL_PROVIDER_ENABLED?.trim().toLowerCase() === "true") {
     throw new Error("DIRECTOR_PROVIDER_MUST_BE_DISABLED");
   }
-  const keyring = loadDirectorBridgeKeyring();
+  const keyring = loadDirectorBridgeKeyring(process.env, "local_dpapi");
   if (!keyring) throw new Error("DIRECTOR_BRIDGE_KEY_REQUIRED");
   const databasePath = process.env.AI_VIDEO_WORKSPACE_DB_PATH?.trim() ?? "";
   if (!databasePath) throw new Error("DIRECTOR_DATABASE_PATH_REQUIRED");
@@ -42,7 +42,12 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  const code = error instanceof Error && /^[A-Z][A-Z0-9_]+$/.test(error.message) ? error.message : "DIRECTOR_LOCAL_BRIDGE_START_FAILED";
+  const errorCode = error && typeof error === "object" && "code" in error ? (error as { code?: unknown }).code : undefined;
+  const code = typeof errorCode === "string" && /^[A-Z][A-Z0-9_]+$/.test(errorCode)
+    ? errorCode
+    : error instanceof Error && /^[A-Z][A-Z0-9_]+$/.test(error.message)
+      ? error.message
+      : "DIRECTOR_LOCAL_BRIDGE_START_FAILED";
   process.stderr.write(`${JSON.stringify({ timestamp: new Date().toISOString(), event_type: "boot_failure", stable_error_code: code })}\n`);
   process.exit(1);
 });

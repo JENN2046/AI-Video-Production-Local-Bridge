@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -41,6 +41,25 @@ const ISSUER = "https://issuer.director.example.test/";
 const RESOURCE = "https://aivideo.example.test/director/mcp";
 const SUBJECT = "auth0|director-local-owner";
 const keyring: DirectorBridgeKeyring = { active: { kid: "director-bridge-test", key: Buffer.alloc(32, 71) } };
+
+function isolatedDirectorStartupEnvironment(overrides: Record<string, string>): NodeJS.ProcessEnv {
+  // DPAPI's PowerShell child needs the runner's complete Windows environment
+  // (including its executable and user-profile discovery variables). Remove
+  // all application inputs before adding the exact fixture configuration.
+  const environment: NodeJS.ProcessEnv = { ...process.env };
+  for (const name of [
+    "REAL_PROVIDER_ENABLED",
+    "WEBGPT_DIRECTOR_BRIDGE_KEY_ID",
+    "WEBGPT_DIRECTOR_BRIDGE_KEY_B64",
+    "WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH",
+    "WEBGPT_DIRECTOR_REMOTE_ORIGIN",
+    "AI_VIDEO_WORKSPACE_DB_PATH",
+    "FFMPEG_PATH"
+  ]) {
+    delete environment[name];
+  }
+  return { ...environment, ...overrides };
+}
 
 function oauthConfig(): DirectorOAuthConfig {
   return {
@@ -147,10 +166,15 @@ test("Director bridge HMAC rejects tampering, replay, expired authentication, an
   assert.throws(() => signDirectorBridgeBody({}, { kid: "bad kid", key: randomBytes(32) }), (error) => error instanceof Error && "code" in error && error.code === "DIRECTOR_BRIDGE_KEY_INVALID");
   assert.equal(loadDirectorBridgeKeyring({}), null);
   assert.throws(() => loadDirectorBridgeKeyring({ WEBGPT_DIRECTOR_BRIDGE_KEY_ID: "partial" }), (error) => error instanceof Error && "code" in error && error.code === "DIRECTOR_BRIDGE_KEY_INVALID");
-  assert.equal(loadDirectorBridgeKeyring({
+  const remoteKeyEnvironment = {
     WEBGPT_DIRECTOR_BRIDGE_KEY_ID: "director-bridge-test",
     WEBGPT_DIRECTOR_BRIDGE_KEY_B64: Buffer.alloc(32, 71).toString("base64")
-  })?.active.key.byteLength, 32);
+  };
+  assert.equal(loadDirectorBridgeKeyring(remoteKeyEnvironment, "remote_environment")?.active.key.byteLength, 32);
+  assert.throws(() => loadDirectorBridgeKeyring(remoteKeyEnvironment, "local_dpapi"),
+    (error) => error instanceof Error && "code" in error && error.code === "DIRECTOR_BRIDGE_KEY_SOURCE_FORBIDDEN");
+  assert.throws(() => loadDirectorBridgeKeyring(remoteKeyEnvironment, "unsupported" as never),
+    (error) => error instanceof Error && "code" in error && error.code === "DIRECTOR_BRIDGE_KEY_INVALID");
   assert.equal(DIRECTOR_BRIDGE_REQUEST_SCHEMA.safeParse({
     protocol_version: "director-local-bridge-v1",
     request_id: "director_bridge_too_long",
@@ -444,4 +468,174 @@ test("Director remote runtime module graph remains detached from SQLite and loca
   assert.equal(disabled.status, 1);
   assert.match(disabled.stderr, /DIRECTOR_PROVIDER_MUST_BE_DISABLED/);
   assert.equal(disabled.stderr.includes("must-not-be-printed"), false);
+});
+
+test("Director bridge hidden import writes only DPAPI CurrentUser ciphertext to ignored storage", async (context) => {
+  const keyImport = readFileSync(resolve("scripts/windows/director-bridge-key-import.ps1"), "utf8");
+  const localBridgeStarter = readFileSync(resolve("scripts/director-local-bridge.ts"), "utf8");
+  const packageScripts = (JSON.parse(readFileSync(resolve("package.json"), "utf8")) as { scripts: Record<string, string> }).scripts;
+  assert.match(keyImport, /DataProtectionScope\]::CurrentUser/);
+  assert.match(keyImport, /Read-Host "Shared Director bridge key \(input hidden\)" -AsSecureString/);
+  assert.match(keyImport, /SecureStringToGlobalAllocUnicode/);
+  assert.match(keyImport, /ZeroFreeGlobalAllocUnicode/);
+  assert.match(keyImport, /DIRECTOR_BRIDGE_KEY_PATH_REPARSE_POINT/);
+  assert.match(keyImport, /DIRECTOR_BRIDGE_KEY_OPERATION_FAILED/);
+  assert.doesNotMatch(keyImport, /Set-Clipboard|clipboard/i);
+  assert.doesNotMatch(keyImport, /Write-(?:Host|Output).*\$(?:encoded|keyBytes)/i);
+  assert.doesNotMatch(keyImport, /stable_error_code\s*=\s*\$_.Exception\.Message/);
+  assert.equal(packageScripts["director:bridge:key-import"], "powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File scripts/windows/director-bridge-key-import.ps1");
+  assert.equal(packageScripts["director:bridge:keygen"], undefined);
+  assert.equal(packageScripts["director:bridge:copy-render-secret"], undefined);
+  assert.match(localBridgeStarter, /loadDirectorBridgeKeyring\(process\.env, "local_dpapi"\)/);
+
+  await context.test("Windows DPAPI hidden import is ignored, non-overwriting and low-disclosure", { skip: process.platform !== "win32" }, () => {
+    const relativeRoot = join("data", "webgpt", `director-key-import-test-${process.pid}-${Date.now()}`);
+    const root = resolve(relativeRoot);
+    const protectedPath = join(root, "bridge-key.dpapi");
+    const relativeProtectedPath = join(relativeRoot, "bridge-key.dpapi");
+    const sharedKey = Buffer.alloc(32, 47).toString("base64");
+    const importScript = join(resolve("."), "scripts", "windows", "director-bridge-key-import.ps1");
+    const importCommand = [
+      "function Read-Host {",
+      "  param([string]$Prompt, [switch]$AsSecureString)",
+      "  $secure = [System.Security.SecureString]::new()",
+      "  foreach ($character in $env:DIRECTOR_TEST_SHARED_KEY.ToCharArray()) { $secure.AppendChar($character) }",
+      "  $secure.MakeReadOnly()",
+      "  $secure",
+      "}",
+      "& $env:DIRECTOR_TEST_IMPORT_SCRIPT -Destination $env:DIRECTOR_TEST_DESTINATION -Kid 'director-bridge-fixture'"
+    ].join("\n");
+    try {
+      const first = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", importCommand], {
+        cwd: resolve("."),
+        env: {
+          ...process.env,
+          DIRECTOR_TEST_IMPORT_SCRIPT: importScript,
+          DIRECTOR_TEST_DESTINATION: relativeProtectedPath,
+          DIRECTOR_TEST_SHARED_KEY: sharedKey
+        },
+        encoding: "utf8",
+        windowsHide: true
+      });
+      assert.equal(first.status, 0, first.stderr);
+      assert.deepEqual(JSON.parse(first.stdout.trim()), { result: "IMPORTED", kid: "director-bridge-fixture", protected: true });
+      const protectedText = readFileSync(protectedPath, "utf8").trim();
+      assert.match(protectedText, /^[A-Za-z0-9+/]+={0,2}$/);
+      assert.ok(Buffer.from(protectedText, "base64").byteLength > 32);
+      assert.equal(`${first.stdout}${first.stderr}`.includes(sharedKey), false);
+      const dpapiKeyring = loadDirectorBridgeKeyring({
+        WEBGPT_DIRECTOR_BRIDGE_KEY_ID: "director-bridge-fixture",
+        WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH: protectedPath
+      }, "local_dpapi");
+      assert.equal(dpapiKeyring?.active.kid, "director-bridge-fixture");
+      assert.equal(dpapiKeyring?.active.key.byteLength, 32);
+      assert.equal(dpapiKeyring?.active.key.toString("base64"), sharedKey);
+      assert.throws(() => loadDirectorBridgeKeyring({
+        WEBGPT_DIRECTOR_BRIDGE_KEY_ID: "director-bridge-fixture",
+        WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH: protectedPath
+      }, "remote_environment"), (error) => error instanceof Error && "code" in error && error.code === "DIRECTOR_BRIDGE_KEY_SOURCE_FORBIDDEN");
+      assert.throws(() => loadDirectorBridgeKeyring({
+        WEBGPT_DIRECTOR_BRIDGE_KEY_ID: "director-bridge-fixture",
+        WEBGPT_DIRECTOR_BRIDGE_KEY_B64: Buffer.alloc(32, 72).toString("base64"),
+        WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH: protectedPath
+      }, "local_dpapi"), (error) => error instanceof Error && "code" in error && error.code === "DIRECTOR_BRIDGE_KEY_INVALID");
+      const dpapiStartup = spawnSync(process.execPath, [resolve("dist/scripts/director-local-bridge.js")], {
+        cwd: resolve("."),
+        env: isolatedDirectorStartupEnvironment({
+          REAL_PROVIDER_ENABLED: "false",
+          WEBGPT_DIRECTOR_BRIDGE_KEY_ID: "director-bridge-fixture",
+          WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH: protectedPath,
+          WEBGPT_DIRECTOR_REMOTE_ORIGIN: "https://director.example.invalid"
+        }),
+        encoding: "utf8",
+        windowsHide: true,
+        timeout: 10_000
+      });
+      assert.equal(dpapiStartup.status, 1);
+      assert.match(dpapiStartup.stderr, /DIRECTOR_DATABASE_PATH_REQUIRED/);
+      assert.equal(dpapiStartup.stderr.includes("DIRECTOR_BRIDGE_KEY_REQUIRED"), false);
+      assert.equal(dpapiStartup.stderr.includes(protectedText), false);
+      assert.equal(dpapiStartup.stderr.includes(root), false);
+
+      const plaintextLocalStartup = spawnSync(process.execPath, [resolve("dist/scripts/director-local-bridge.js")], {
+        cwd: resolve("."),
+        env: isolatedDirectorStartupEnvironment({
+          REAL_PROVIDER_ENABLED: "false",
+          WEBGPT_DIRECTOR_BRIDGE_KEY_ID: "director-bridge-fixture",
+          WEBGPT_DIRECTOR_BRIDGE_KEY_B64: sharedKey,
+          WEBGPT_DIRECTOR_REMOTE_ORIGIN: "https://director.example.invalid"
+        }),
+        encoding: "utf8",
+        windowsHide: true,
+        timeout: 10_000
+      });
+      assert.equal(plaintextLocalStartup.status, 1);
+      assert.match(plaintextLocalStartup.stderr, /DIRECTOR_BRIDGE_KEY_SOURCE_FORBIDDEN/);
+      assert.equal(plaintextLocalStartup.stderr.includes(sharedKey), false);
+
+      const dpapiRemoteStartup = spawnSync(process.execPath, [resolve("dist/scripts/director-remote-server.js")], {
+        cwd: resolve("."),
+        env: isolatedDirectorStartupEnvironment({
+          WEBGPT_DIRECTOR_BRIDGE_KEY_ID: "director-bridge-fixture",
+          WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH: protectedPath
+        }),
+        encoding: "utf8",
+        windowsHide: true,
+        timeout: 10_000
+      });
+      assert.equal(dpapiRemoteStartup.status, 1);
+      assert.match(dpapiRemoteStartup.stderr, /DIRECTOR_BRIDGE_KEY_SOURCE_FORBIDDEN/);
+      assert.equal(dpapiRemoteStartup.stderr.includes(protectedPath), false);
+
+      const missingDpapiStartup = spawnSync(process.execPath, [resolve("dist/scripts/director-local-bridge.js")], {
+        cwd: resolve("."),
+        env: isolatedDirectorStartupEnvironment({
+          REAL_PROVIDER_ENABLED: "false",
+          WEBGPT_DIRECTOR_BRIDGE_KEY_ID: "director-bridge-fixture",
+          WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH: join(root, "missing.dpapi"),
+          WEBGPT_DIRECTOR_REMOTE_ORIGIN: "https://director.example.invalid"
+        }),
+        encoding: "utf8",
+        windowsHide: true,
+        timeout: 10_000
+      });
+      assert.equal(missingDpapiStartup.status, 1);
+      assert.match(missingDpapiStartup.stderr, /DIRECTOR_BRIDGE_KEY_DPAPI_FAILED/);
+      assert.equal(missingDpapiStartup.stderr.includes(root), false);
+
+      const second = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", importCommand], {
+        cwd: resolve("."),
+        env: {
+          ...process.env,
+          DIRECTOR_TEST_IMPORT_SCRIPT: importScript,
+          DIRECTOR_TEST_DESTINATION: relativeProtectedPath,
+          DIRECTOR_TEST_SHARED_KEY: sharedKey
+        },
+        encoding: "utf8",
+        windowsHide: true
+      });
+      assert.equal(second.status, 1);
+      assert.deepEqual(JSON.parse(second.stderr.trim()), { result: "FAIL", stable_error_code: "DIRECTOR_BRIDGE_KEY_ALREADY_EXISTS" });
+      assert.equal(`${first.stdout}${first.stderr}${second.stdout}${second.stderr}`.includes(protectedText), false);
+
+      const blockedParent = join(root, "not-a-directory");
+      writeFileSync(blockedParent, "fixture", "utf8");
+      const unexpected = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", importCommand], {
+        cwd: resolve("."),
+        env: {
+          ...process.env,
+          DIRECTOR_TEST_IMPORT_SCRIPT: importScript,
+          DIRECTOR_TEST_DESTINATION: join(relativeRoot, "not-a-directory", "bridge-key.dpapi"),
+          DIRECTOR_TEST_SHARED_KEY: sharedKey
+        },
+        encoding: "utf8",
+        windowsHide: true
+      });
+      assert.equal(unexpected.status, 1);
+      assert.deepEqual(JSON.parse(unexpected.stderr.trim()), { result: "FAIL", stable_error_code: "DIRECTOR_BRIDGE_KEY_OPERATION_FAILED" });
+      assert.equal(unexpected.stderr.includes(root), false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
