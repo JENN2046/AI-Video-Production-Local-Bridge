@@ -456,6 +456,17 @@ export async function startUnifiedWorkspaceRemoteRuntime(options: StartUnifiedWo
         });
         return { stable_error_code: code, auth_failure: false };
       }
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const message = parsed as Record<string, unknown>;
+        const params = message.params;
+        if (message.method === "tools/call" && params && typeof params === "object" && !Array.isArray(params)
+          && (params as Record<string, unknown>).name === "get_director_focus") {
+          // Focus derives every authoritative selector from the authenticated
+          // principal. Normalize the tool's no-input wire shape before the MCP
+          // SDK validates `params.arguments` as a record.
+          parsed = { ...message, params: { name: "get_director_focus", arguments: {} } };
+        }
+      }
       app = route.app(actor, route.store?.read() ?? null);
       transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       await app.connect(withToolSecuritySchemes(transport, route.tool_scopes));
