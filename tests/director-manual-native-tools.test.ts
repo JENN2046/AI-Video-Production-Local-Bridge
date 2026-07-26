@@ -195,14 +195,29 @@ test("Director native registry exposes only the fixed advisory tool set with exa
       assert.equal(tool.annotations?.openWorldHint, false);
       assert.equal(tool.annotations?.readOnlyHint, tool.name !== "submit_director_proposal");
     }
+    const focusDescriptor = listed.tools.find((tool) => tool.name === "get_director_focus");
+    assert.ok(focusDescriptor);
+    const focusInputSchema = focusDescriptor.inputSchema as {
+      type?: unknown;
+      properties?: Record<string, unknown>;
+      required?: unknown;
+    };
+    assert.equal(focusInputSchema.type, "object");
+    assert.equal("request_id" in (focusInputSchema.properties ?? {}), true);
+    assert.equal(Array.isArray(focusInputSchema.required) && focusInputSchema.required.includes("request_id"), false);
     const focusResult = await client.callTool({ name: "get_director_focus", arguments: {} });
     assert.equal(focusResult.isError, false);
     assert.equal((focusResult.structuredContent as { state: string }).state, "active");
-    assert.equal(JSON.stringify(focusResult).includes("principal_id"), false);
-    assert.equal(JSON.stringify(focusResult).includes("workspace_id"), false);
     const focusWithoutArguments = await client.callTool({ name: "get_director_focus" } as never);
     assert.equal(focusWithoutArguments.isError, false);
     assert.equal((focusWithoutArguments.structuredContent as { state: string }).state, "active");
+    for (const argumentsValue of [null, "   "]) {
+      const focusWithLegacyNoOpArguments = await client.callTool({ name: "get_director_focus", arguments: argumentsValue } as never);
+      assert.equal(focusWithLegacyNoOpArguments.isError, false);
+      assert.equal((focusWithLegacyNoOpArguments.structuredContent as { state: string }).state, "active");
+    }
+    assert.equal(JSON.stringify(focusResult).includes("principal_id"), false);
+    assert.equal(JSON.stringify(focusResult).includes("workspace_id"), false);
     for (const argumentsValue of [{ request_id: "" }, { request_id: null }, { project_id: "project_injected" }]) {
       const focusWithNoopArguments = await client.callTool({ name: "get_director_focus", arguments: argumentsValue } as never);
       assert.equal(focusWithNoopArguments.isError, false);
