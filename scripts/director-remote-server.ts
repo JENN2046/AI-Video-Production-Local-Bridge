@@ -20,7 +20,12 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  const code = error instanceof Error && /^[A-Z][A-Z0-9_]+$/.test(error.message) ? error.message : "DIRECTOR_REMOTE_START_FAILED";
+  const errorCode = error && typeof error === "object" && "code" in error ? (error as { code?: unknown }).code : undefined;
+  const code = typeof errorCode === "string" && /^[A-Z][A-Z0-9_]+$/.test(errorCode)
+    ? errorCode
+    : error instanceof Error && /^[A-Z][A-Z0-9_]+$/.test(error.message)
+      ? error.message
+      : "DIRECTOR_REMOTE_START_FAILED";
   process.stderr.write(`${JSON.stringify({ timestamp: new Date().toISOString(), event_type: "boot_failure", stable_error_code: code })}\n`);
   process.exit(1);
 });

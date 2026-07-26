@@ -554,6 +554,20 @@ test("Director bridge hidden import writes only DPAPI CurrentUser ciphertext to 
       assert.match(plaintextLocalStartup.stderr, /DIRECTOR_BRIDGE_KEY_SOURCE_FORBIDDEN/);
       assert.equal(plaintextLocalStartup.stderr.includes(sharedKey), false);
 
+      const dpapiRemoteStartup = spawnSync(process.execPath, [resolve("dist/scripts/director-remote-server.js")], {
+        cwd: resolve("."),
+        env: {
+          WEBGPT_DIRECTOR_BRIDGE_KEY_ID: "director-bridge-fixture",
+          WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH: protectedPath
+        },
+        encoding: "utf8",
+        windowsHide: true,
+        timeout: 10_000
+      });
+      assert.equal(dpapiRemoteStartup.status, 1);
+      assert.match(dpapiRemoteStartup.stderr, /DIRECTOR_BRIDGE_KEY_SOURCE_FORBIDDEN/);
+      assert.equal(dpapiRemoteStartup.stderr.includes(protectedPath), false);
+
       const missingDpapiStartup = spawnSync(process.execPath, [resolve("dist/scripts/director-local-bridge.js")], {
         cwd: resolve("."),
         env: {
