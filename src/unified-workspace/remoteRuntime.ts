@@ -462,9 +462,14 @@ export async function startUnifiedWorkspaceRemoteRuntime(options: StartUnifiedWo
         if (message.method === "tools/call" && params && typeof params === "object" && !Array.isArray(params)
           && (params as Record<string, unknown>).name === "get_director_focus") {
           // Focus derives every authoritative selector from the authenticated
-          // principal. Normalize the tool's no-input wire shape before the MCP
-          // SDK validates `params.arguments` as a record.
-          parsed = { ...message, params: { name: "get_director_focus", arguments: {} } };
+          // principal. Normalize only a missing or non-record no-input wire
+          // shape before the MCP SDK validates `params.arguments` as a record.
+          // A record is preserved for DIRECTOR_GET_FOCUS_INPUT_SCHEMA to
+          // validate, including the optional correlation hint.
+          const argumentsValue = (params as Record<string, unknown>).arguments;
+          if (!argumentsValue || typeof argumentsValue !== "object" || Array.isArray(argumentsValue)) {
+            parsed = { ...message, params: { ...(params as Record<string, unknown>), arguments: {} } };
+          }
         }
       }
       app = route.app(actor, route.store?.read() ?? null);

@@ -173,7 +173,13 @@ test("Unified Workspace dispatches a Director read through the authenticated out
     const result = await client.callTool({ name: "get_director_focus", arguments: {} });
     assert.equal(result.isError, false);
     assert.equal(record(result.structuredContent).state, "no_focus");
-    for (const argumentsValue of [null, [], "unexpected transport scalar"] as const) {
+    const correlated = await client.callTool({ name: "get_director_focus", arguments: { request_id: "focus-123" } });
+    assert.equal(correlated.isError, false);
+    assert.equal(record(correlated.structuredContent).state, "no_focus");
+    const invalidCorrelation = await client.callTool({ name: "get_director_focus", arguments: { request_id: 1 } } as never);
+    assert.equal(invalidCorrelation.isError, true);
+    assert.equal(invalidCorrelation.structuredContent, undefined);
+    for (const argumentsValue of [undefined, null, [], "unexpected transport scalar"] as const) {
       const direct = await fetch(runtime.mcp_url, {
         method: "POST",
         headers: {
