@@ -448,12 +448,18 @@ test("Director remote runtime module graph remains detached from SQLite and loca
 
 test("Director bridge keygen writes only DPAPI CurrentUser ciphertext to ignored storage", async (context) => {
   const keygen = readFileSync(resolve("scripts/windows/director-bridge-keygen.ps1"), "utf8");
+  const renderSecretHandoff = readFileSync(resolve("scripts/windows/director-bridge-copy-render-secret.ps1"), "utf8");
   assert.match(keygen, /DataProtectionScope\]::CurrentUser/);
   assert.match(keygen, /New-Object byte\[\] 32/);
   assert.match(keygen, /DIRECTOR_BRIDGE_KEY_PATH_REPARSE_POINT/);
   assert.match(keygen, /DIRECTOR_BRIDGE_KEY_OPERATION_FAILED/);
   assert.doesNotMatch(keygen, /ToBase64String\(\$bytes\)|Write-(?:Host|Output).*\$bytes/i);
   assert.doesNotMatch(keygen, /stable_error_code\s*=\s*\$_.Exception\.Message/);
+  assert.match(renderSecretHandoff, /ProtectedData\]::Unprotect/);
+  assert.match(renderSecretHandoff, /Set-Clipboard -Value \$encoded/);
+  assert.match(renderSecretHandoff, /Set-Clipboard -Value " "/);
+  assert.doesNotMatch(renderSecretHandoff, /Write-(?:Host|Output).*\$encoded/i);
+  assert.equal((JSON.parse(readFileSync(resolve("package.json"), "utf8")) as { scripts: Record<string, string> }).scripts["director:bridge:copy-render-secret"], "powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File scripts/windows/director-bridge-copy-render-secret.ps1");
 
   await context.test("Windows DPAPI keygen is ignored, non-overwriting and low-disclosure", { skip: process.platform !== "win32" }, () => {
     const relativeRoot = join("data", "webgpt", `director-keygen-test-${process.pid}-${Date.now()}`);
@@ -469,6 +475,41 @@ test("Director bridge keygen writes only DPAPI CurrentUser ciphertext to ignored
       const protectedText = readFileSync(protectedPath, "utf8").trim();
       assert.match(protectedText, /^[A-Za-z0-9+/]+={0,2}$/);
       assert.ok(Buffer.from(protectedText, "base64").byteLength > 32);
+      const dpapiKeyring = loadDirectorBridgeKeyring({
+        WEBGPT_DIRECTOR_BRIDGE_KEY_ID: "director-bridge-fixture",
+        WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH: protectedPath
+      });
+      assert.equal(dpapiKeyring?.active.kid, "director-bridge-fixture");
+      assert.equal(dpapiKeyring?.active.key.byteLength, 32);
+      assert.throws(() => loadDirectorBridgeKeyring({
+        WEBGPT_DIRECTOR_BRIDGE_KEY_ID: "director-bridge-fixture",
+        WEBGPT_DIRECTOR_BRIDGE_KEY_B64: Buffer.alloc(32, 72).toString("base64"),
+        WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH: protectedPath
+      }), (error) => error instanceof Error && "code" in error && error.code === "DIRECTOR_BRIDGE_KEY_INVALID");
+      const dpapiStartup = spawnSync(process.execPath, [resolve("dist/scripts/director-local-bridge.js")], {
+        cwd: resolve("."),
+        env: {
+          REAL_PROVIDER_ENABLED: "false",
+          WEBGPT_DIRECTOR_BRIDGE_KEY_ID: "director-bridge-fixture",
+          WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH: protectedPath,
+          WEBGPT_DIRECTOR_REMOTE_ORIGIN: "https://director.example.invalid"
+        },
+        encoding: "utf8",
+        windowsHide: true,
+        timeout: 10_000
+      });
+      assert.equal(dpapiStartup.status, 1);
+      assert.match(dpapiStartup.stderr, /DIRECTOR_DATABASE_PATH_REQUIRED/);
+      assert.equal(dpapiStartup.stderr.includes("DIRECTOR_BRIDGE_KEY_REQUIRED"), false);
+      assert.equal(dpapiStartup.stderr.includes(protectedText), false);
+      assert.equal(dpapiStartup.stderr.includes(root), false);
+
+      const missingHandoff = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "RemoteSigned", "-File", "scripts/windows/director-bridge-copy-render-secret.ps1", "-Source", join(relativeRoot, "missing.dpapi"), "-Kid", "director-bridge-fixture"], {
+        cwd: resolve("."), encoding: "utf8", windowsHide: true
+      });
+      assert.equal(missingHandoff.status, 1);
+      assert.deepEqual(JSON.parse(missingHandoff.stderr.trim()), { result: "FAIL", stable_error_code: "DIRECTOR_BRIDGE_KEY_DPAPI_NOT_FOUND" });
+      assert.equal(missingHandoff.stderr.includes(root), false);
 
       const second = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "RemoteSigned", "-File", "scripts/windows/director-bridge-keygen.ps1", "-Destination", relativeProtectedPath, "-Kid", "director-bridge-fixture"], {
         cwd: resolve("."), encoding: "utf8", windowsHide: true

@@ -58,7 +58,7 @@ This stage needs a separate current authorization. Make only these bounded chang
 
 1. Create one Auth0 API named `Jenn AI Video Workspace Unified` with the exact HTTPS identifier `https://aivideo.skmt617.top/workspace/mcp` and only the three fixed scopes.
 2. Add only that API's user-delegated grant to the existing Native/public application. Do not create a new application, client secret or M2M grant.
-3. Generate the independent Bridge key. Store its local copy with DPAPI `CurrentUser` and its remote copy as a Render secret; do not print either.
+3. Generate the independent Bridge key with `npm run director:bridge:keygen`. The key is stored only as local DPAPI `CurrentUser` ciphertext. Under the same explicit authorization, run `npm run director:bridge:copy-render-secret`, paste the transient clipboard value into Render's `WEBGPT_DIRECTOR_BRIDGE_KEY_B64` secret field, save it, then press Enter so the helper replaces the clipboard contents. Configure the local Bridge only with the non-secret `WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH` pointer. The helper never prints the key and never performs the Render write itself.
 4. Create a local DPAPI publisher profile from `unified-workspace-publisher-profile.example.json`; configure only the matching public verification key remotely. The Remote accepts SPKI public PEM only, never a private PEM.
 5. Deploy the unified runtime to the existing public origin while retaining legacy `/mcp` and `/snapshot` as rollback surfaces.
 6. Create one ChatGPT test App. Add only its generated exact callback to the existing application if necessary.
@@ -78,7 +78,7 @@ WEBGPT_DIRECTOR_REMOTE_ORIGIN
 AI_VIDEO_WORKSPACE_DB_PATH
 ```
 
-The dedicated `WEBGPT_DIRECTOR_BRIDGE_KEY_B64` is a secret, not ordinary runtime configuration: retain it only as a local DPAPI-protected value and a Render secret. Never place its value in a preflight, receipt, status command, log, process arguments, or repository file.
+The dedicated `WEBGPT_DIRECTOR_BRIDGE_KEY_B64` is a secret, not ordinary runtime configuration: retain it only as a local DPAPI-protected value and a Render secret. The Remote receives the Base64 value as a Render secret; the local Bridge receives only `WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH` and decrypts it under DPAPI `CurrentUser`. Never place the Base64 value in a preflight, receipt, status command, log, process arguments, or repository file.
 
 All-or-nothing configuration is intentional. A partial OAuth, publisher or bridge group fails closed. `WEBGPT_DIRECTOR_REMOTE_ORIGIN` is the exact unified public HTTPS origin for the outbound local bridge, not a filesystem path or local listener. `AI_VIDEO_WORKSPACE_DB_PATH` is injected only into the local Bridge process; it must refer to the authorized isolated or activity database already at `workbench-v2-6` / ledger `0011`. Do not place its value in receipts, logs, process arguments, or repository files.
 

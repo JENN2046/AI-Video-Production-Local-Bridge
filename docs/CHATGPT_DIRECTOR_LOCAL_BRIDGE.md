@@ -84,10 +84,11 @@ The following bridge variables are blank-or-complete:
 
 ```text
 WEBGPT_DIRECTOR_BRIDGE_KEY_ID=
-WEBGPT_DIRECTOR_BRIDGE_KEY_B64=
+WEBGPT_DIRECTOR_BRIDGE_KEY_B64=        # Remote only: Render secret
+WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH= # Local Bridge only: ignored DPAPI ciphertext
 ```
 
-The key must decode to exactly 32 bytes. It is a dedicated bridge credential and must not be committed, printed, copied into docs or reused as a Snapshot/media key.
+The key must decode to exactly 32 bytes. The Remote receives `WEBGPT_DIRECTOR_BRIDGE_KEY_B64` only from its secret store; the local Bridge instead reads and decrypts the ignored `WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH` under DPAPI `CurrentUser`. The two local key sources are mutually exclusive and incomplete/mixed configuration fails closed. It is a dedicated bridge credential and must not be committed, printed, copied into docs or reused as a Snapshot/media key.
 
 The local process additionally requires:
 
@@ -103,10 +104,13 @@ Public commands:
 ```text
 npm run start:director:remote
 npm run start:director:bridge
+npm run director:bridge:keygen
+npm run director:bridge:copy-render-secret
 npm run test:webgpt:director
 ```
 
 Runtime secrets continue to come from explicit process environment or a separately authorized Git-ignored profile. The repository does not auto-load `.env`.
+For the future authorized Remote wiring, generate the local DPAPI key once, use the explicit clipboard handoff command to paste that exact secret into Render's `WEBGPT_DIRECTOR_BRIDGE_KEY_B64` field, then press Enter so the helper replaces the clipboard contents. The helper never writes or prints plaintext; it does not perform the Render change itself. Configure only the non-secret local pointer `WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH` for `start:director:bridge`.
 The PR3 local bridge refuses to start when `REAL_PROVIDER_ENABLED=true`; Provider execution belongs to the later bounded-orchestrator gate.
 
 ## Current evidence and remaining gates
