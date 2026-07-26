@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
 import {
@@ -61,6 +63,31 @@ export function normalizeDirectorFocusInput(value: unknown): unknown {
   const requestId = (value as Record<string, unknown>).request_id;
   if (requestId === undefined || requestId === null || (typeof requestId === "string" && requestId.trim() === "")) return {};
   return { request_id: requestId };
+}
+
+function normalizeDirectorFocusMcpRequest(message: JSONRPCMessage): JSONRPCMessage {
+  if (typeof message !== "object" || message === null || Array.isArray(message)) return message;
+  const request = message as Record<string, unknown>;
+  if (request.method !== "tools/call" || typeof request.params !== "object" || request.params === null || Array.isArray(request.params)) return message;
+  const params = request.params as Record<string, unknown>;
+  if (params.name !== "get_director_focus" || params.arguments !== undefined) return message;
+  return { ...request, params: { ...params, arguments: {} } } as unknown as JSONRPCMessage;
+}
+
+/**
+ * The public Focus input descriptor remains a plain object, but some MCP
+ * clients omit optional `params.arguments` altogether.  The SDK validates a
+ * tool input before the registered callback can normalize it, so adapt only
+ * that missing wire field immediately after the SDK installs its transport
+ * handler.  Explicit non-object arguments still reach normal SDK validation.
+ */
+class DirectorNativeMcpServer extends McpServer {
+  override async connect(transport: Transport): Promise<void> {
+    await super.connect(transport);
+    const handler = transport.onmessage;
+    if (!handler) throw new Error("DIRECTOR_MCP_TRANSPORT_HANDLER_MISSING");
+    transport.onmessage = ((message, extra) => handler(normalizeDirectorFocusMcpRequest(message), extra)) as typeof transport.onmessage;
+  }
 }
 
 export const DIRECTOR_PUBLIC_FOCUS_SCHEMA = z.object({
@@ -425,7 +452,7 @@ export function createDirectorNativeMcpServer(
   handlers: DirectorNativeToolHandlers,
   options: CreateDirectorNativeMcpServerOptions = {}
 ): McpServer {
-  const server = new McpServer(
+  const server = new DirectorNativeMcpServer(
     { name: "jenn-ai-video-director", version: DIRECTOR_MCP_SERVICE_VERSION },
     { instructions: "ChatGPT Director may read bound context and submit immutable advisory proposals. It cannot approve, execute, spend, deliver, delete, overwrite, or commit memory." }
   );

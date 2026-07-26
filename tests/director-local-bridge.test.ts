@@ -398,6 +398,9 @@ test("Director remote runtime exposes five OAuth tools through the authenticated
     }
     const focus = await client.callTool({ name: "get_director_focus", arguments: {} });
     assert.equal(focus.isError, false);
+    const focusWithoutArguments = await client.callTool({ name: "get_director_focus" } as never);
+    assert.equal(focusWithoutArguments.isError, false);
+    assert.equal((focusWithoutArguments.structuredContent as { state: string }).state, "active");
     const context = await client.callTool({
       name: "get_director_context",
       arguments: { focus_id: "focus_director_local_001", focus_generation: 1, proposal_kind: "review_assessment", detail: "compact" }
