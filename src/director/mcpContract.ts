@@ -70,7 +70,9 @@ function normalizeDirectorFocusMcpRequest(message: JSONRPCMessage): JSONRPCMessa
   const request = message as Record<string, unknown>;
   if (request.method !== "tools/call" || typeof request.params !== "object" || request.params === null || Array.isArray(request.params)) return message;
   const params = request.params as Record<string, unknown>;
-  if (params.name !== "get_director_focus" || params.arguments !== undefined) return message;
+  const argumentsValue = params.arguments;
+  const noOpArguments = argumentsValue === undefined || argumentsValue === null || (typeof argumentsValue === "string" && argumentsValue.trim() === "");
+  if (params.name !== "get_director_focus" || !noOpArguments) return message;
   return { ...request, params: { ...params, arguments: {} } } as unknown as JSONRPCMessage;
 }
 
@@ -79,7 +81,8 @@ function normalizeDirectorFocusMcpRequest(message: JSONRPCMessage): JSONRPCMessa
  * clients omit optional `params.arguments` altogether.  The SDK validates a
  * tool input before the registered callback can normalize it, so adapt only
  * that missing wire field immediately after the SDK installs its transport
- * handler.  Explicit non-object arguments still reach normal SDK validation.
+ * handler.  Only the legacy absent/null/blank no-op forms are adapted;
+ * explicit non-object arguments still reach normal SDK validation.
  */
 class DirectorNativeMcpServer extends McpServer {
   override async connect(transport: Transport): Promise<void> {

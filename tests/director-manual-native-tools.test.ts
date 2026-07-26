@@ -211,6 +211,11 @@ test("Director native registry exposes only the fixed advisory tool set with exa
     const focusWithoutArguments = await client.callTool({ name: "get_director_focus" } as never);
     assert.equal(focusWithoutArguments.isError, false);
     assert.equal((focusWithoutArguments.structuredContent as { state: string }).state, "active");
+    for (const argumentsValue of [null, "   "]) {
+      const focusWithLegacyNoOpArguments = await client.callTool({ name: "get_director_focus", arguments: argumentsValue } as never);
+      assert.equal(focusWithLegacyNoOpArguments.isError, false);
+      assert.equal((focusWithLegacyNoOpArguments.structuredContent as { state: string }).state, "active");
+    }
     assert.equal(JSON.stringify(focusResult).includes("principal_id"), false);
     assert.equal(JSON.stringify(focusResult).includes("workspace_id"), false);
     for (const argumentsValue of [{ request_id: "" }, { request_id: null }, { project_id: "project_injected" }]) {
