@@ -42,6 +42,23 @@ const RESOURCE = "https://aivideo.example.test/director/mcp";
 const SUBJECT = "auth0|director-local-owner";
 const keyring: DirectorBridgeKeyring = { active: { kid: "director-bridge-test", key: Buffer.alloc(32, 71) } };
 
+function isolatedDirectorStartupEnvironment(overrides: Record<string, string>): NodeJS.ProcessEnv {
+  // Keep only the Windows process-discovery/profile variables required by the
+  // DPAPI child process. Do not inherit any application configuration.
+  return {
+    PATH: process.env.PATH ?? process.env.Path,
+    SystemRoot: process.env.SystemRoot ?? process.env.SYSTEMROOT,
+    ComSpec: process.env.ComSpec ?? process.env.COMSPEC,
+    PATHEXT: process.env.PATHEXT,
+    USERPROFILE: process.env.USERPROFILE,
+    APPDATA: process.env.APPDATA,
+    LOCALAPPDATA: process.env.LOCALAPPDATA,
+    TEMP: process.env.TEMP,
+    TMP: process.env.TMP,
+    ...overrides
+  };
+}
+
 function oauthConfig(): DirectorOAuthConfig {
   return {
     provider: "federated", access_model: "project_membership", issuer: ISSUER, issuer_hash: issuerHash(ISSUER),
@@ -522,12 +539,12 @@ test("Director bridge hidden import writes only DPAPI CurrentUser ciphertext to 
       }, "local_dpapi"), (error) => error instanceof Error && "code" in error && error.code === "DIRECTOR_BRIDGE_KEY_INVALID");
       const dpapiStartup = spawnSync(process.execPath, [resolve("dist/scripts/director-local-bridge.js")], {
         cwd: resolve("."),
-        env: {
+        env: isolatedDirectorStartupEnvironment({
           REAL_PROVIDER_ENABLED: "false",
           WEBGPT_DIRECTOR_BRIDGE_KEY_ID: "director-bridge-fixture",
           WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH: protectedPath,
           WEBGPT_DIRECTOR_REMOTE_ORIGIN: "https://director.example.invalid"
-        },
+        }),
         encoding: "utf8",
         windowsHide: true,
         timeout: 10_000
@@ -540,12 +557,12 @@ test("Director bridge hidden import writes only DPAPI CurrentUser ciphertext to 
 
       const plaintextLocalStartup = spawnSync(process.execPath, [resolve("dist/scripts/director-local-bridge.js")], {
         cwd: resolve("."),
-        env: {
+        env: isolatedDirectorStartupEnvironment({
           REAL_PROVIDER_ENABLED: "false",
           WEBGPT_DIRECTOR_BRIDGE_KEY_ID: "director-bridge-fixture",
           WEBGPT_DIRECTOR_BRIDGE_KEY_B64: sharedKey,
           WEBGPT_DIRECTOR_REMOTE_ORIGIN: "https://director.example.invalid"
-        },
+        }),
         encoding: "utf8",
         windowsHide: true,
         timeout: 10_000
@@ -556,10 +573,10 @@ test("Director bridge hidden import writes only DPAPI CurrentUser ciphertext to 
 
       const dpapiRemoteStartup = spawnSync(process.execPath, [resolve("dist/scripts/director-remote-server.js")], {
         cwd: resolve("."),
-        env: {
+        env: isolatedDirectorStartupEnvironment({
           WEBGPT_DIRECTOR_BRIDGE_KEY_ID: "director-bridge-fixture",
           WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH: protectedPath
-        },
+        }),
         encoding: "utf8",
         windowsHide: true,
         timeout: 10_000
@@ -570,12 +587,12 @@ test("Director bridge hidden import writes only DPAPI CurrentUser ciphertext to 
 
       const missingDpapiStartup = spawnSync(process.execPath, [resolve("dist/scripts/director-local-bridge.js")], {
         cwd: resolve("."),
-        env: {
+        env: isolatedDirectorStartupEnvironment({
           REAL_PROVIDER_ENABLED: "false",
           WEBGPT_DIRECTOR_BRIDGE_KEY_ID: "director-bridge-fixture",
           WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH: join(root, "missing.dpapi"),
           WEBGPT_DIRECTOR_REMOTE_ORIGIN: "https://director.example.invalid"
-        },
+        }),
         encoding: "utf8",
         windowsHide: true,
         timeout: 10_000
