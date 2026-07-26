@@ -43,20 +43,22 @@ const SUBJECT = "auth0|director-local-owner";
 const keyring: DirectorBridgeKeyring = { active: { kid: "director-bridge-test", key: Buffer.alloc(32, 71) } };
 
 function isolatedDirectorStartupEnvironment(overrides: Record<string, string>): NodeJS.ProcessEnv {
-  // Keep only the Windows process-discovery/profile variables required by the
-  // DPAPI child process. Do not inherit any application configuration.
-  return {
-    PATH: process.env.PATH ?? process.env.Path,
-    SystemRoot: process.env.SystemRoot ?? process.env.SYSTEMROOT,
-    ComSpec: process.env.ComSpec ?? process.env.COMSPEC,
-    PATHEXT: process.env.PATHEXT,
-    USERPROFILE: process.env.USERPROFILE,
-    APPDATA: process.env.APPDATA,
-    LOCALAPPDATA: process.env.LOCALAPPDATA,
-    TEMP: process.env.TEMP,
-    TMP: process.env.TMP,
-    ...overrides
-  };
+  // DPAPI's PowerShell child needs the runner's complete Windows environment
+  // (including its executable and user-profile discovery variables). Remove
+  // all application inputs before adding the exact fixture configuration.
+  const environment: NodeJS.ProcessEnv = { ...process.env };
+  for (const name of [
+    "REAL_PROVIDER_ENABLED",
+    "WEBGPT_DIRECTOR_BRIDGE_KEY_ID",
+    "WEBGPT_DIRECTOR_BRIDGE_KEY_B64",
+    "WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH",
+    "WEBGPT_DIRECTOR_REMOTE_ORIGIN",
+    "AI_VIDEO_WORKSPACE_DB_PATH",
+    "FFMPEG_PATH"
+  ]) {
+    delete environment[name];
+  }
+  return { ...environment, ...overrides };
 }
 
 function oauthConfig(): DirectorOAuthConfig {
