@@ -445,3 +445,37 @@ test("Director remote runtime module graph remains detached from SQLite and loca
   assert.match(disabled.stderr, /DIRECTOR_PROVIDER_MUST_BE_DISABLED/);
   assert.equal(disabled.stderr.includes("must-not-be-printed"), false);
 });
+
+test("Director bridge keygen writes only DPAPI CurrentUser ciphertext to ignored storage", async (context) => {
+  const keygen = readFileSync(resolve("scripts/windows/director-bridge-keygen.ps1"), "utf8");
+  assert.match(keygen, /DataProtectionScope\]::CurrentUser/);
+  assert.match(keygen, /New-Object byte\[\] 32/);
+  assert.match(keygen, /DIRECTOR_BRIDGE_KEY_PATH_REPARSE_POINT/);
+  assert.doesNotMatch(keygen, /ToBase64String\(\$bytes\)|Write-(?:Host|Output).*\$bytes/i);
+
+  await context.test("Windows DPAPI keygen is ignored, non-overwriting and low-disclosure", { skip: process.platform !== "win32" }, () => {
+    const relativeRoot = join("data", "webgpt", `director-keygen-test-${process.pid}-${Date.now()}`);
+    const root = resolve(relativeRoot);
+    const protectedPath = join(root, "bridge-key.dpapi");
+    const relativeProtectedPath = join(relativeRoot, "bridge-key.dpapi");
+    try {
+      const first = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "RemoteSigned", "-File", "scripts/windows/director-bridge-keygen.ps1", "-Destination", relativeProtectedPath, "-Kid", "director-bridge-fixture"], {
+        cwd: resolve("."), encoding: "utf8", windowsHide: true
+      });
+      assert.equal(first.status, 0, first.stderr);
+      assert.deepEqual(JSON.parse(first.stdout.trim()), { result: "CREATED", kid: "director-bridge-fixture", protected: true });
+      const protectedText = readFileSync(protectedPath, "utf8").trim();
+      assert.match(protectedText, /^[A-Za-z0-9+/]+={0,2}$/);
+      assert.ok(Buffer.from(protectedText, "base64").byteLength > 32);
+
+      const second = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "RemoteSigned", "-File", "scripts/windows/director-bridge-keygen.ps1", "-Destination", relativeProtectedPath, "-Kid", "director-bridge-fixture"], {
+        cwd: resolve("."), encoding: "utf8", windowsHide: true
+      });
+      assert.equal(second.status, 1);
+      assert.deepEqual(JSON.parse(second.stderr.trim()), { result: "FAIL", stable_error_code: "DIRECTOR_BRIDGE_KEY_ALREADY_EXISTS" });
+      assert.equal(`${first.stdout}${first.stderr}${second.stdout}${second.stderr}`.includes(protectedText), false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

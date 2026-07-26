@@ -26,6 +26,7 @@
     "start:webgpt:workspace": "npm run build:server && node dist/scripts/unified-workspace-remote-server.js",
     "start:director:remote": "npm run build:server && node dist/scripts/director-remote-server.js",
     "start:director:bridge": "npm run build:server && node dist/scripts/director-local-bridge.js",
+    "director:bridge:keygen": "powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File scripts/windows/director-bridge-keygen.ps1",
     "webgpt:publisher:keygen": "npm run build:server && node dist/scripts/webgpt-cloud-publisher.js keygen",
     "preflight:webgpt:publisher": "npm run build:server && node dist/scripts/webgpt-cloud-publisher.js preflight",
     "publish:webgpt:snapshot": "npm run build:server && node dist/scripts/webgpt-cloud-publisher.js publish",
