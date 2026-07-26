@@ -47,8 +47,15 @@ const idSchema = z.string().trim().min(1).max(160);
 const hashSchema = z.string().regex(/^[0-9a-f]{64}$/);
 const timestampSchema = z.iso.datetime();
 const requestIdSchema = z.string().trim().min(1).max(128).optional();
+// Keep the model-facing wire schema a plain object. ChatGPT validates this
+// descriptor before a tools/call reaches the runtime, while Zod preprocess /
+// default wrappers serialize as an opaque empty-object descriptor and hide the
+// optional correlation field.
+// Empty and null correlation values are accepted as no-ops, then normalized
+// away below; a non-string correlation value remains a schema error.
+const focusRequestIdWireSchema = z.string().trim().max(128).nullable().optional();
 
-function normalizeDirectorFocusInput(value: unknown): unknown {
+export function normalizeDirectorFocusInput(value: unknown): unknown {
   if (value === undefined || value === null || (typeof value === "string" && value.trim() === "")) return {};
   if (typeof value !== "object" || Array.isArray(value)) return value;
   const requestId = (value as Record<string, unknown>).request_id;
@@ -132,13 +139,13 @@ export const DIRECTOR_DISCUSSION_CONTEXT_SCHEMA = z.object({
   memory_recall: DIRECTOR_MEMORY_RECALL_CONTEXT_SCHEMA
 }).strict();
 
-// Focus is fully derived from the OAuth-bound principal.  ChatGPT sends
-// several equivalent no-input forms, so normalize only no-op values and
-// discard any untrusted object fields rather than treating them as authority.
-export const DIRECTOR_GET_FOCUS_INPUT_SCHEMA = z.preprocess(
-  normalizeDirectorFocusInput,
-  z.object({ request_id: requestIdSchema }).strict()
-).default({});
+// Focus is fully derived from the OAuth-bound principal.  The catalog schema
+// is deliberately a plain object so ChatGPT's empty arguments object is valid
+// in its tool validator. Invocation still normalizes no-op shapes and
+// strips untrusted object fields before the handler observes them.
+export const DIRECTOR_GET_FOCUS_INPUT_SCHEMA = z.object({
+  request_id: focusRequestIdWireSchema
+}).passthrough();
 export const DIRECTOR_GET_FOCUS_OUTPUT_SCHEMA = z.object({
   state: z.enum(["active", "no_focus", "focus_expired"]),
   focus: DIRECTOR_PUBLIC_FOCUS_SCHEMA.nullable()
@@ -372,7 +379,9 @@ export function registerDirectorNativeTools(
     const invoke = async (input: unknown): Promise<never> => {
       try {
         for (const scope of entry.scope) requireScope(actor, scope);
-        const parsed = entry.input.parse(input);
+        const parsed = entry.input.parse(
+          entry.name === "get_director_focus" ? normalizeDirectorFocusInput(input) : input
+        );
         const handled = await handlers[entry.name](parsed as never);
         const frameResult = entry.name === "inspect_director_video_frames"
           && handled && typeof handled === "object" && "structured_content" in handled

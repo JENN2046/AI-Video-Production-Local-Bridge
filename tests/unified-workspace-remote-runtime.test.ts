@@ -145,8 +145,12 @@ test("Unified Workspace dispatches a Director read through the authenticated out
     bridge_keyring: keyring
   });
   let stopping = false;
+  const focusInputs: unknown[] = [];
   const handlers = (): DirectorNativeToolHandlers => ({
-    get_director_focus: async () => ({ state: "no_focus", focus: null }),
+    get_director_focus: async (input) => {
+      focusInputs.push(input);
+      return { state: "no_focus", focus: null };
+    },
     get_director_context: async () => { throw new Error("not invoked"); },
     inspect_director_video_frames: async () => { throw new Error("not invoked"); },
     submit_director_proposal: async () => { throw new Error("not invoked"); },
@@ -170,12 +174,21 @@ test("Unified Workspace dispatches a Director read through the authenticated out
     await new Promise((resolveTick) => setTimeout(resolveTick, 30));
     assert.equal((await fetch(new URL("/readyz", runtime.origin))).status, 200);
     await client.connect(transport);
+    const listed = await client.listTools();
+    const focusTool = listed.tools.find((tool) => tool.name === "get_director_focus");
+    assert.ok(focusTool);
+    const focusInputSchema = record(focusTool.inputSchema);
+    assert.equal(focusInputSchema.type, "object");
+    assert.equal("request_id" in record(focusInputSchema.properties), true);
+    assert.equal(Array.isArray(focusInputSchema.required) && focusInputSchema.required.includes("request_id"), false);
     const result = await client.callTool({ name: "get_director_focus", arguments: {} });
     assert.equal(result.isError, false);
     assert.equal(record(result.structuredContent).state, "no_focus");
+    assert.deepEqual(focusInputs.at(-1), {});
     const correlated = await client.callTool({ name: "get_director_focus", arguments: { request_id: "focus-123" } });
     assert.equal(correlated.isError, false);
     assert.equal(record(correlated.structuredContent).state, "no_focus");
+    assert.deepEqual(focusInputs.at(-1), { request_id: "focus-123" });
     const invalidCorrelation = await client.callTool({ name: "get_director_focus", arguments: { request_id: 1 } } as never);
     assert.equal(invalidCorrelation.isError, true);
     assert.equal(invalidCorrelation.structuredContent, undefined);
