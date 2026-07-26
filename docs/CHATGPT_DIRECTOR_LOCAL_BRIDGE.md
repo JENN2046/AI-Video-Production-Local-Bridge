@@ -88,7 +88,7 @@ WEBGPT_DIRECTOR_BRIDGE_KEY_B64=        # Remote only: Render secret
 WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH= # Local Bridge only: ignored DPAPI ciphertext
 ```
 
-The key must decode to exactly 32 bytes. The Remote receives `WEBGPT_DIRECTOR_BRIDGE_KEY_B64` only from its secret store; the local Bridge instead reads and decrypts the ignored `WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH` under DPAPI `CurrentUser`. The two local key sources are mutually exclusive and incomplete/mixed configuration fails closed. It is a dedicated bridge credential and must not be committed, printed, copied into docs or reused as a Snapshot/media key.
+The key must decode to exactly 32 bytes. The Remote runtime explicitly accepts only `WEBGPT_DIRECTOR_BRIDGE_KEY_B64` from its secret store; the local Bridge explicitly accepts only and decrypts the ignored `WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH` under DPAPI `CurrentUser`. A plaintext key in the local process, a DPAPI pointer in the Remote, or incomplete/mixed configuration fails closed. It is a dedicated bridge credential and must not be committed, printed, copied into docs or reused as a Snapshot/media key.
 
 The local process additionally requires:
 

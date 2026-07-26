@@ -9,7 +9,7 @@ function port(value: string | undefined): number {
 }
 
 async function main(): Promise<void> {
-  const keyring = loadDirectorBridgeKeyring();
+  const keyring = loadDirectorBridgeKeyring(process.env, "remote_environment");
   if (!keyring) throw new Error("DIRECTOR_BRIDGE_KEY_REQUIRED");
   const runtime = await startDirectorRemoteRuntime({
     host: "0.0.0.0", port: port(process.env.PORT), auth_config: loadDirectorOAuthConfig(), bridge_keyring: keyring

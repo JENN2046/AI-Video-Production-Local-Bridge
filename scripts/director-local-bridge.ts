@@ -15,7 +15,7 @@ async function main(): Promise<void> {
   if (process.env.REAL_PROVIDER_ENABLED?.trim().toLowerCase() === "true") {
     throw new Error("DIRECTOR_PROVIDER_MUST_BE_DISABLED");
   }
-  const keyring = loadDirectorBridgeKeyring();
+  const keyring = loadDirectorBridgeKeyring(process.env, "local_dpapi");
   if (!keyring) throw new Error("DIRECTOR_BRIDGE_KEY_REQUIRED");
   const databasePath = process.env.AI_VIDEO_WORKSPACE_DB_PATH?.trim() ?? "";
   if (!databasePath) throw new Error("DIRECTOR_DATABASE_PATH_REQUIRED");

@@ -78,7 +78,7 @@ WEBGPT_DIRECTOR_REMOTE_ORIGIN
 AI_VIDEO_WORKSPACE_DB_PATH
 ```
 
-The dedicated `WEBGPT_DIRECTOR_BRIDGE_KEY_B64` is a secret, not ordinary runtime configuration: retain it only as a local DPAPI-protected value and a Render secret. The Remote receives the Base64 value as a Render secret; the local Bridge receives only `WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH` and decrypts it under DPAPI `CurrentUser`. Never place the Base64 value in a preflight, receipt, status command, log, process arguments, or repository file.
+The dedicated `WEBGPT_DIRECTOR_BRIDGE_KEY_B64` is a secret, not ordinary runtime configuration: retain it only as a local DPAPI-protected value and a Render secret. The Remote runtime rejects a DPAPI pointer and receives the Base64 value only as a Render secret; the local Bridge rejects the Base64 value and receives only `WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH` to decrypt under DPAPI `CurrentUser`. Never place the Base64 value in a preflight, receipt, status command, log, process arguments, or repository file.
 
 All-or-nothing configuration is intentional. A partial OAuth, publisher or bridge group fails closed. `WEBGPT_DIRECTOR_REMOTE_ORIGIN` is the exact unified public HTTPS origin for the outbound local bridge, not a filesystem path or local listener. `AI_VIDEO_WORKSPACE_DB_PATH` is injected only into the local Bridge process; it must refer to the authorized isolated or activity database already at `workbench-v2-6` / ledger `0011`. Do not place its value in receipts, logs, process arguments, or repository files.
 
