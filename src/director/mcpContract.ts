@@ -348,7 +348,7 @@ const descriptions: Record<DirectorNativeToolName, string> = {
   inspect_director_video_frames: "Return bounded timestamped image frames for the video Artifact already bound to the current Focus.",
   submit_director_proposal: [
     "Submit an immutable advisory Proposal for Human Workbench review. This never approves, compiles, or executes production work.",
-    "First call get_director_focus and get_director_context; copy their current focus_id, focus_generation, and base_state_hash. Use a new idempotency_key of 16-160 characters for each distinct proposal.",
+    "First call get_director_focus and get_director_context. Copy focus.focus_id, map focus.generation to this tool's required focus_generation, and copy base_state_hash from get_director_context. Use a new idempotency_key of 16-160 characters for each distinct proposal.",
     "For kind storyboard_revision, proposal.payload must contain exactly: shot_id, diagnosis, keep (string array), change (non-empty string array), storyboard_prompt, negative_prompt, composition_notes, continuity_constraints (string array). It proposes a new Storyboard version; it never overwrites the existing one.",
     "For kind clip_regeneration, proposal.payload must contain exactly: shot_id, video_prompt, negative_prompt, continuity_constraints (string array), current_artifact_id, reason_codes (one or more uppercase underscore codes such as MOTION_PACING or PRODUCT_STABILITY), prompt_delta, negative_delta. It preserves the current Storyboard and proposes a new Clip version.",
     "Do not include Provider/model choices, prices, local paths, URLs, media bytes, credentials, approvals, or delivery decisions. The Human Workbench handles approval and any later bounded execution."
