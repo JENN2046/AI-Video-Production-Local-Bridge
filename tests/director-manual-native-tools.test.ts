@@ -199,6 +199,8 @@ test("Director native registry exposes only the fixed advisory tool set with exa
     assert.ok(focusDescriptor);
     const proposalDescriptor = listed.tools.find((tool) => tool.name === "submit_director_proposal");
     assert.ok(proposalDescriptor);
+    assert.match(proposalDescriptor.description ?? "", /top-level object with focus_id, focus_generation, base_state_hash, idempotency_key, and proposal/);
+    assert.match(proposalDescriptor.description ?? "", /Put kind and payload inside proposal as \{ kind, payload \}/);
     assert.match(proposalDescriptor.description ?? "", /storyboard_revision/);
     assert.match(proposalDescriptor.description ?? "", /artifact_import/);
     assert.match(proposalDescriptor.description ?? "", /target_role \(storyboard_image or generated_clip\)/);
