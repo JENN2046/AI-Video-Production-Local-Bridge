@@ -197,6 +197,12 @@ test("Director native registry exposes only the fixed advisory tool set with exa
     }
     const focusDescriptor = listed.tools.find((tool) => tool.name === "get_director_focus");
     assert.ok(focusDescriptor);
+    const proposalDescriptor = listed.tools.find((tool) => tool.name === "submit_director_proposal");
+    assert.ok(proposalDescriptor);
+    assert.match(proposalDescriptor.description ?? "", /storyboard_revision/);
+    assert.match(proposalDescriptor.description ?? "", /clip_regeneration/);
+    assert.match(proposalDescriptor.description ?? "", /reason_codes/);
+    assert.match(proposalDescriptor.description ?? "", /local paths, URLs, media bytes/);
     const focusInputSchema = focusDescriptor.inputSchema as {
       type?: unknown;
       properties?: Record<string, unknown>;
