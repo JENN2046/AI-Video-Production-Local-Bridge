@@ -48,6 +48,14 @@ const hashSchema = z.string().regex(/^[0-9a-f]{64}$/);
 const timestampSchema = z.iso.datetime();
 const requestIdSchema = z.string().trim().min(1).max(128).optional();
 
+function normalizeDirectorFocusInput(value: unknown): unknown {
+  if (value === undefined || value === null || (typeof value === "string" && value.trim() === "")) return {};
+  if (typeof value !== "object" || Array.isArray(value)) return value;
+  const requestId = (value as Record<string, unknown>).request_id;
+  if (requestId === undefined || requestId === null || (typeof requestId === "string" && requestId.trim() === "")) return {};
+  return { request_id: requestId };
+}
+
 export const DIRECTOR_PUBLIC_FOCUS_SCHEMA = z.object({
   focus_id: idSchema,
   project_id: idSchema,
@@ -124,10 +132,13 @@ export const DIRECTOR_DISCUSSION_CONTEXT_SCHEMA = z.object({
   memory_recall: DIRECTOR_MEMORY_RECALL_CONTEXT_SCHEMA
 }).strict();
 
-// MCP permits callers to omit `arguments` for a no-input tool.  Keep the
-// public schema object-shaped while normalizing only that absence to `{}`.
-// Other Director tools remain project-bound and require their inputs.
-export const DIRECTOR_GET_FOCUS_INPUT_SCHEMA = z.object({ request_id: requestIdSchema }).strict().default({});
+// Focus is fully derived from the OAuth-bound principal.  ChatGPT sends
+// several equivalent no-input forms, so normalize only no-op values and
+// discard any untrusted object fields rather than treating them as authority.
+export const DIRECTOR_GET_FOCUS_INPUT_SCHEMA = z.preprocess(
+  normalizeDirectorFocusInput,
+  z.object({ request_id: requestIdSchema }).strict()
+).default({});
 export const DIRECTOR_GET_FOCUS_OUTPUT_SCHEMA = z.object({
   state: z.enum(["active", "no_focus", "focus_expired"]),
   focus: DIRECTOR_PUBLIC_FOCUS_SCHEMA.nullable()
