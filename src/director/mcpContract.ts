@@ -124,7 +124,10 @@ export const DIRECTOR_DISCUSSION_CONTEXT_SCHEMA = z.object({
   memory_recall: DIRECTOR_MEMORY_RECALL_CONTEXT_SCHEMA
 }).strict();
 
-export const DIRECTOR_GET_FOCUS_INPUT_SCHEMA = z.object({ request_id: requestIdSchema }).strict();
+// MCP permits callers to omit `arguments` for a no-input tool.  Keep the
+// public schema object-shaped while normalizing only that absence to `{}`.
+// Other Director tools remain project-bound and require their inputs.
+export const DIRECTOR_GET_FOCUS_INPUT_SCHEMA = z.object({ request_id: requestIdSchema }).strict().default({});
 export const DIRECTOR_GET_FOCUS_OUTPUT_SCHEMA = z.object({
   state: z.enum(["active", "no_focus", "focus_expired"]),
   focus: DIRECTOR_PUBLIC_FOCUS_SCHEMA.nullable()
