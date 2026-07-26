@@ -173,6 +173,31 @@ test("Unified Workspace dispatches a Director read through the authenticated out
     const result = await client.callTool({ name: "get_director_focus", arguments: {} });
     assert.equal(result.isError, false);
     assert.equal(record(result.structuredContent).state, "no_focus");
+    const correlated = await client.callTool({ name: "get_director_focus", arguments: { request_id: "focus-123" } });
+    assert.equal(correlated.isError, false);
+    assert.equal(record(correlated.structuredContent).state, "no_focus");
+    const invalidCorrelation = await client.callTool({ name: "get_director_focus", arguments: { request_id: 1 } } as never);
+    assert.equal(invalidCorrelation.isError, true);
+    assert.equal(invalidCorrelation.structuredContent, undefined);
+    for (const argumentsValue of [undefined, null, [], "unexpected transport scalar"] as const) {
+      const direct = await fetch(runtime.mcp_url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream"
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: `focus-non-record-${String(argumentsValue)}`,
+          method: "tools/call",
+          params: { name: "get_director_focus", arguments: argumentsValue }
+        })
+      });
+      assert.equal(direct.status, 200);
+      const directBody = await direct.text();
+      assert.equal(directBody.includes('"state":"no_focus"'), true);
+      assert.equal(directBody.includes("INVALID_ARGUMENT"), false);
+    }
   } finally {
     await transport.close().catch(() => undefined);
     stopping = true;

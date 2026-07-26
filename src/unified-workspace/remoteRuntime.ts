@@ -456,6 +456,22 @@ export async function startUnifiedWorkspaceRemoteRuntime(options: StartUnifiedWo
         });
         return { stable_error_code: code, auth_failure: false };
       }
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const message = parsed as Record<string, unknown>;
+        const params = message.params;
+        if (message.method === "tools/call" && params && typeof params === "object" && !Array.isArray(params)
+          && (params as Record<string, unknown>).name === "get_director_focus") {
+          // Focus derives every authoritative selector from the authenticated
+          // principal. Normalize only a missing or non-record no-input wire
+          // shape before the MCP SDK validates `params.arguments` as a record.
+          // A record is preserved for DIRECTOR_GET_FOCUS_INPUT_SCHEMA to
+          // validate, including the optional correlation hint.
+          const argumentsValue = (params as Record<string, unknown>).arguments;
+          if (!argumentsValue || typeof argumentsValue !== "object" || Array.isArray(argumentsValue)) {
+            parsed = { ...message, params: { ...(params as Record<string, unknown>), arguments: {} } };
+          }
+        }
+      }
       app = route.app(actor, route.store?.read() ?? null);
       transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       await app.connect(withToolSecuritySchemes(transport, route.tool_scopes));
