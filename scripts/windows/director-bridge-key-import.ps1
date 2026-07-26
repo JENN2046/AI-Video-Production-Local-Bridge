@@ -60,34 +60,41 @@ function Assert-DirectorBridgeGitIgnored([string]$PathValue) {
   if ($LASTEXITCODE -ne 0) { throw "DIRECTOR_BRIDGE_KEY_PATH_NOT_IGNORED" }
 }
 
+$secure = $null
+$pointer = [IntPtr]::Zero
+$keyBytes = $null
+$protected = $null
+$temporary = $null
 try {
   if ($Kid -notmatch '^[A-Za-z0-9._-]{1,64}$') { throw "DIRECTOR_BRIDGE_KEY_INVALID" }
   $destinationPath = Resolve-DirectorBridgeWorkspacePath $Destination
   Assert-DirectorBridgeGitIgnored $destinationPath
   if (Test-Path -LiteralPath $destinationPath) { throw "DIRECTOR_BRIDGE_KEY_ALREADY_EXISTS" }
-  [IO.Directory]::CreateDirectory((Split-Path -Parent $destinationPath)) | Out-Null
 
+  $secure = Read-Host "Shared Director bridge key (input hidden)" -AsSecureString
+  $pointer = [Runtime.InteropServices.Marshal]::SecureStringToGlobalAllocUnicode($secure)
+  $encoded = [Runtime.InteropServices.Marshal]::PtrToStringUni($pointer)
+  try { $keyBytes = [Convert]::FromBase64String($encoded) } catch { throw "DIRECTOR_BRIDGE_KEY_INVALID" }
+  if ($keyBytes.Length -ne 32 -or [Convert]::ToBase64String($keyBytes) -cne $encoded) { throw "DIRECTOR_BRIDGE_KEY_INVALID" }
+
+  [IO.Directory]::CreateDirectory((Split-Path -Parent $destinationPath)) | Out-Null
   Add-Type -AssemblyName System.Security
-  $bytes = New-Object byte[] 32
-  $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
-  try {
-    $rng.GetBytes($bytes)
-    $protected = [Security.Cryptography.ProtectedData]::Protect($bytes, $null, [Security.Cryptography.DataProtectionScope]::CurrentUser)
-    $temporary = "$destinationPath.tmp-$PID"
-    try {
-      [IO.File]::WriteAllText($temporary, [Convert]::ToBase64String($protected), [Text.UTF8Encoding]::new($false))
-      Move-Item -LiteralPath $temporary -Destination $destinationPath -ErrorAction Stop
-    } finally {
-      Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
-      [Array]::Clear($protected, 0, $protected.Length)
-    }
-  } finally {
-    $rng.Dispose()
-    [Array]::Clear($bytes, 0, $bytes.Length)
-  }
-  Write-DirectorBridgeJson ([ordered]@{ result = "CREATED"; kid = $Kid; protected = $true })
+  $protected = [Security.Cryptography.ProtectedData]::Protect($keyBytes, $null, [Security.Cryptography.DataProtectionScope]::CurrentUser)
+  $temporary = "$destinationPath.tmp-$PID"
+  [IO.File]::WriteAllText($temporary, [Convert]::ToBase64String($protected), [Text.UTF8Encoding]::new($false))
+  Move-Item -LiteralPath $temporary -Destination $destinationPath -ErrorAction Stop
+  $temporary = $null
+
+  Write-DirectorBridgeJson ([ordered]@{ result = "IMPORTED"; kid = $Kid; protected = $true })
   exit 0
 } catch {
   [Console]::Error.WriteLine((ConvertTo-Json ([ordered]@{ result = "FAIL"; stable_error_code = Get-DirectorBridgeStableErrorCode $_ }) -Compress))
   exit 1
+} finally {
+  if ($null -ne $temporary) { Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue }
+  if ($null -ne $protected) { [Array]::Clear($protected, 0, $protected.Length) }
+  if ($null -ne $keyBytes) { [Array]::Clear($keyBytes, 0, $keyBytes.Length) }
+  if ($pointer -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeGlobalAllocUnicode($pointer) }
+  if ($null -ne $secure) { $secure.Dispose() }
+  Remove-Variable encoded -ErrorAction SilentlyContinue
 }

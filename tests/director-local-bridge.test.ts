@@ -446,41 +446,64 @@ test("Director remote runtime module graph remains detached from SQLite and loca
   assert.equal(disabled.stderr.includes("must-not-be-printed"), false);
 });
 
-test("Director bridge keygen writes only DPAPI CurrentUser ciphertext to ignored storage", async (context) => {
-  const keygen = readFileSync(resolve("scripts/windows/director-bridge-keygen.ps1"), "utf8");
-  const renderSecretHandoff = readFileSync(resolve("scripts/windows/director-bridge-copy-render-secret.ps1"), "utf8");
-  assert.match(keygen, /DataProtectionScope\]::CurrentUser/);
-  assert.match(keygen, /New-Object byte\[\] 32/);
-  assert.match(keygen, /DIRECTOR_BRIDGE_KEY_PATH_REPARSE_POINT/);
-  assert.match(keygen, /DIRECTOR_BRIDGE_KEY_OPERATION_FAILED/);
-  assert.doesNotMatch(keygen, /ToBase64String\(\$bytes\)|Write-(?:Host|Output).*\$bytes/i);
-  assert.doesNotMatch(keygen, /stable_error_code\s*=\s*\$_.Exception\.Message/);
-  assert.match(renderSecretHandoff, /ProtectedData\]::Unprotect/);
-  assert.match(renderSecretHandoff, /Set-Clipboard -Value \$encoded/);
-  assert.match(renderSecretHandoff, /Set-Clipboard -Value " "/);
-  assert.doesNotMatch(renderSecretHandoff, /Write-(?:Host|Output).*\$encoded/i);
-  assert.equal((JSON.parse(readFileSync(resolve("package.json"), "utf8")) as { scripts: Record<string, string> }).scripts["director:bridge:copy-render-secret"], "powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File scripts/windows/director-bridge-copy-render-secret.ps1");
+test("Director bridge hidden import writes only DPAPI CurrentUser ciphertext to ignored storage", async (context) => {
+  const keyImport = readFileSync(resolve("scripts/windows/director-bridge-key-import.ps1"), "utf8");
+  const packageScripts = (JSON.parse(readFileSync(resolve("package.json"), "utf8")) as { scripts: Record<string, string> }).scripts;
+  assert.match(keyImport, /DataProtectionScope\]::CurrentUser/);
+  assert.match(keyImport, /Read-Host "Shared Director bridge key \(input hidden\)" -AsSecureString/);
+  assert.match(keyImport, /SecureStringToGlobalAllocUnicode/);
+  assert.match(keyImport, /ZeroFreeGlobalAllocUnicode/);
+  assert.match(keyImport, /DIRECTOR_BRIDGE_KEY_PATH_REPARSE_POINT/);
+  assert.match(keyImport, /DIRECTOR_BRIDGE_KEY_OPERATION_FAILED/);
+  assert.doesNotMatch(keyImport, /Set-Clipboard|clipboard/i);
+  assert.doesNotMatch(keyImport, /Write-(?:Host|Output).*\$(?:encoded|keyBytes)/i);
+  assert.doesNotMatch(keyImport, /stable_error_code\s*=\s*\$_.Exception\.Message/);
+  assert.equal(packageScripts["director:bridge:key-import"], "powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File scripts/windows/director-bridge-key-import.ps1");
+  assert.equal(packageScripts["director:bridge:keygen"], undefined);
+  assert.equal(packageScripts["director:bridge:copy-render-secret"], undefined);
 
-  await context.test("Windows DPAPI keygen is ignored, non-overwriting and low-disclosure", { skip: process.platform !== "win32" }, () => {
-    const relativeRoot = join("data", "webgpt", `director-keygen-test-${process.pid}-${Date.now()}`);
+  await context.test("Windows DPAPI hidden import is ignored, non-overwriting and low-disclosure", { skip: process.platform !== "win32" }, () => {
+    const relativeRoot = join("data", "webgpt", `director-key-import-test-${process.pid}-${Date.now()}`);
     const root = resolve(relativeRoot);
     const protectedPath = join(root, "bridge-key.dpapi");
     const relativeProtectedPath = join(relativeRoot, "bridge-key.dpapi");
+    const sharedKey = Buffer.alloc(32, 47).toString("base64");
+    const importScript = join(resolve("."), "scripts", "windows", "director-bridge-key-import.ps1");
+    const importCommand = [
+      "function Read-Host {",
+      "  param([string]$Prompt, [switch]$AsSecureString)",
+      "  $secure = [System.Security.SecureString]::new()",
+      "  foreach ($character in $env:DIRECTOR_TEST_SHARED_KEY.ToCharArray()) { $secure.AppendChar($character) }",
+      "  $secure.MakeReadOnly()",
+      "  $secure",
+      "}",
+      "& $env:DIRECTOR_TEST_IMPORT_SCRIPT -Destination $env:DIRECTOR_TEST_DESTINATION -Kid 'director-bridge-fixture'"
+    ].join("\n");
     try {
-      const first = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "RemoteSigned", "-File", "scripts/windows/director-bridge-keygen.ps1", "-Destination", relativeProtectedPath, "-Kid", "director-bridge-fixture"], {
-        cwd: resolve("."), encoding: "utf8", windowsHide: true
+      const first = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", importCommand], {
+        cwd: resolve("."),
+        env: {
+          ...process.env,
+          DIRECTOR_TEST_IMPORT_SCRIPT: importScript,
+          DIRECTOR_TEST_DESTINATION: relativeProtectedPath,
+          DIRECTOR_TEST_SHARED_KEY: sharedKey
+        },
+        encoding: "utf8",
+        windowsHide: true
       });
       assert.equal(first.status, 0, first.stderr);
-      assert.deepEqual(JSON.parse(first.stdout.trim()), { result: "CREATED", kid: "director-bridge-fixture", protected: true });
+      assert.deepEqual(JSON.parse(first.stdout.trim()), { result: "IMPORTED", kid: "director-bridge-fixture", protected: true });
       const protectedText = readFileSync(protectedPath, "utf8").trim();
       assert.match(protectedText, /^[A-Za-z0-9+/]+={0,2}$/);
       assert.ok(Buffer.from(protectedText, "base64").byteLength > 32);
+      assert.equal(`${first.stdout}${first.stderr}`.includes(sharedKey), false);
       const dpapiKeyring = loadDirectorBridgeKeyring({
         WEBGPT_DIRECTOR_BRIDGE_KEY_ID: "director-bridge-fixture",
         WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH: protectedPath
       });
       assert.equal(dpapiKeyring?.active.kid, "director-bridge-fixture");
       assert.equal(dpapiKeyring?.active.key.byteLength, 32);
+      assert.equal(dpapiKeyring?.active.key.toString("base64"), sharedKey);
       assert.throws(() => loadDirectorBridgeKeyring({
         WEBGPT_DIRECTOR_BRIDGE_KEY_ID: "director-bridge-fixture",
         WEBGPT_DIRECTOR_BRIDGE_KEY_B64: Buffer.alloc(32, 72).toString("base64"),
@@ -504,15 +527,32 @@ test("Director bridge keygen writes only DPAPI CurrentUser ciphertext to ignored
       assert.equal(dpapiStartup.stderr.includes(protectedText), false);
       assert.equal(dpapiStartup.stderr.includes(root), false);
 
-      const missingHandoff = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "RemoteSigned", "-File", "scripts/windows/director-bridge-copy-render-secret.ps1", "-Source", join(relativeRoot, "missing.dpapi"), "-Kid", "director-bridge-fixture"], {
-        cwd: resolve("."), encoding: "utf8", windowsHide: true
+      const missingDpapiStartup = spawnSync(process.execPath, [resolve("dist/scripts/director-local-bridge.js")], {
+        cwd: resolve("."),
+        env: {
+          REAL_PROVIDER_ENABLED: "false",
+          WEBGPT_DIRECTOR_BRIDGE_KEY_ID: "director-bridge-fixture",
+          WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH: join(root, "missing.dpapi"),
+          WEBGPT_DIRECTOR_REMOTE_ORIGIN: "https://director.example.invalid"
+        },
+        encoding: "utf8",
+        windowsHide: true,
+        timeout: 10_000
       });
-      assert.equal(missingHandoff.status, 1);
-      assert.deepEqual(JSON.parse(missingHandoff.stderr.trim()), { result: "FAIL", stable_error_code: "DIRECTOR_BRIDGE_KEY_DPAPI_NOT_FOUND" });
-      assert.equal(missingHandoff.stderr.includes(root), false);
+      assert.equal(missingDpapiStartup.status, 1);
+      assert.match(missingDpapiStartup.stderr, /DIRECTOR_BRIDGE_KEY_DPAPI_FAILED/);
+      assert.equal(missingDpapiStartup.stderr.includes(root), false);
 
-      const second = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "RemoteSigned", "-File", "scripts/windows/director-bridge-keygen.ps1", "-Destination", relativeProtectedPath, "-Kid", "director-bridge-fixture"], {
-        cwd: resolve("."), encoding: "utf8", windowsHide: true
+      const second = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", importCommand], {
+        cwd: resolve("."),
+        env: {
+          ...process.env,
+          DIRECTOR_TEST_IMPORT_SCRIPT: importScript,
+          DIRECTOR_TEST_DESTINATION: relativeProtectedPath,
+          DIRECTOR_TEST_SHARED_KEY: sharedKey
+        },
+        encoding: "utf8",
+        windowsHide: true
       });
       assert.equal(second.status, 1);
       assert.deepEqual(JSON.parse(second.stderr.trim()), { result: "FAIL", stable_error_code: "DIRECTOR_BRIDGE_KEY_ALREADY_EXISTS" });
@@ -520,8 +560,16 @@ test("Director bridge keygen writes only DPAPI CurrentUser ciphertext to ignored
 
       const blockedParent = join(root, "not-a-directory");
       writeFileSync(blockedParent, "fixture", "utf8");
-      const unexpected = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "RemoteSigned", "-File", "scripts/windows/director-bridge-keygen.ps1", "-Destination", join(relativeRoot, "not-a-directory", "bridge-key.dpapi"), "-Kid", "director-bridge-fixture"], {
-        cwd: resolve("."), encoding: "utf8", windowsHide: true
+      const unexpected = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", importCommand], {
+        cwd: resolve("."),
+        env: {
+          ...process.env,
+          DIRECTOR_TEST_IMPORT_SCRIPT: importScript,
+          DIRECTOR_TEST_DESTINATION: join(relativeRoot, "not-a-directory", "bridge-key.dpapi"),
+          DIRECTOR_TEST_SHARED_KEY: sharedKey
+        },
+        encoding: "utf8",
+        windowsHide: true
       });
       assert.equal(unexpected.status, 1);
       assert.deepEqual(JSON.parse(unexpected.stderr.trim()), { result: "FAIL", stable_error_code: "DIRECTOR_BRIDGE_KEY_OPERATION_FAILED" });
