@@ -1,6 +1,6 @@
 # User Guide
 
-Status: `UNIFIED_TRANSPORT_AND_SCHEMA_PASS`. The owner-only `0.1.0-beta.5` / ledger `0008` workflow remains historical evidence; the active database has now completed `0011`, and the bounded Unified Director owner path has passed. Provider, Memory, Media and multi-user gates remain separate.
+Status: `UNIFIED_TRANSPORT_AND_SCHEMA_PASS`. The owner-only `0.1.0-beta.5` / ledger `0008` workflow remains historical evidence; the active database has now completed `0011`, and the bounded Unified Director owner path has passed. An isolated Media Gateway MP4 fixture playback path has also passed; byte-range plus broader Media, Provider, Memory and multi-user gates remain separate.
 
 ## Current-main database compatibility
 
@@ -39,7 +39,7 @@ If `windows:start` reports an unknown listener or stale identity, do not kill pr
 
 Open the installed Jenn AI Video Workspace App in ChatGPT. The App shows:
 
-- service and Snapshot freshness;
+- service and Snapshot availability/fingerprint consistency, not a remote freshness or renewal estimate;
 - authorized production projects;
 - project context and next action;
 - SHOT operational state;
@@ -49,35 +49,23 @@ The banner “当前数据来自只读快照” is intentional. ChatGPT reads th
 
 Allowed actions are view, refresh, select project, expand SHOT, switch detail and copy a sanitized summary. Project edits, review adoption, Provider calls and Snapshot publishing are not App actions.
 
-## Snapshot operations (manual; renewed run still requires confirmation)
+## Snapshot operations (Unified profile only; manual confirmation required)
 
-The states and UI flow below include historical ledger-`0008` evidence and the accepted current-schema Unified flow. The remote has no persistent Snapshot storage: do not invoke a publish, renewal or recovery action without the separate human confirmation required for that one operation.
+The accepted current-schema flow uses the dedicated Unified publisher profile and Unified Snapshot store. The remote has no persistent Snapshot storage: do not invoke a Unified publish, renewal or recovery action without the separate human confirmation required for that one operation. The default `系统 → 只读 App 发布` Workbench surface and its `data/webgpt/publisher/profile.json` are legacy `/mcp` to `/snapshot` controls; they remain unavailable on the active database pending their own ledger-`0011` acceptance.
 
-Snapshot status has four useful states:
+Unified currently has no low-disclosure remote freshness or `renewal_due` status command/UI. Do not reuse the legacy `fresh`, `renewal_due`, `no_snapshot`, `snapshot_expired` or `service_unavailable` labels for Unified decisions, and do not infer the existing remote Snapshot's lifetime from a local preflight result.
 
-| State | Meaning | Action |
-|---|---|---|
-| `fresh` | Current Snapshot is usable | No action |
-| `renewal_due` | Less than two hours remain | Publish once when convenient |
-| `no_snapshot` / `snapshot_expired` | Remote memory is empty or expired | Run one explicit recovery publish |
-| `service_unavailable` | Remote health cannot be confirmed | Stop; do not repeatedly publish |
+Accepted Unified flow:
 
-Preferred UI flow:
+1. Follow the dedicated Unified profile procedure in [UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md](webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md#snapshot-operations).
+2. If the Unified ChatGPT App visibly reports no Snapshot or renders no project data, treat that as a recovery request. If it renders the intended current Snapshot, do nothing unless Jenn explicitly confirms one bounded manual refresh.
+3. Run one Unified preflight. Record only its `snapshot_fingerprint`, `generated_at`, `expires_at` and counts; these describe the newly prepared candidate, not the current remote Snapshot.
+4. If preflight passes and the one recovery/manual-refresh operation is explicitly confirmed, publish once.
+5. Reopen or refresh the ChatGPT App and confirm the readonly tools share the candidate fingerprint. If they do not, stop with the stable error code; do not retry indefinitely.
 
-1. Open Workbench `系统 → 只读 App 发布`.
-2. Read the low-disclosure status.
-3. Choose `运行预检`.
-4. If it passes, choose the single confirmed publish/renew/recover action.
-5. Reopen or refresh the ChatGPT App and confirm all seven readonly tools share one fingerprint.
+Do not use the legacy Workbench control or legacy default-profile CLI commands as a fallback. Their separate ledger-`0011` preflight/publish/recovery acceptance is still pending.
 
-CLI fallback:
-
-```powershell
-npm run preflight:webgpt:publisher -- --profile data/webgpt/publisher/profile.json
-npm run publish:webgpt:snapshot -- --profile data/webgpt/publisher/profile.json
-```
-
-Never loop publish attempts. On failure, keep the receipt and stable error code; do not print the response body or DPAPI material.
+Never loop Unified publish attempts. On failure, keep the receipt and stable error code; do not print the response body or DPAPI material.
 
 ## Readonly data interpretation
 
@@ -89,16 +77,16 @@ Never loop publish attempts. On failure, keep the receipt and stable error code;
 
 ## Media preview status
 
-The media UI and Local Gateway code exist, but the public Cloudflare playback path has not passed real end-to-end acceptance. Today:
+The media UI and Local Gateway code exist. One isolated MP4 fixture has passed the Unified Workspace Remote public Cloudflare route and ChatGPT Widget playback. A forward seek was playable, but no actual `206`/`Content-Range` response was recorded, so byte-range remains pending. This is not normal-production media readiness. Today:
 
-- do not expect media preview to be available in normal ChatGPT use;
+- do not treat the accepted fixture path as a general normal-ChatGPT media-preview guarantee;
 - do not install the Gateway login task;
 - do not weaken Origin, capability, digest or membership checks to make playback work;
 - use `npm run media:status` only during an authorized media test.
 
-When the route is accepted, playback remains readonly and on-demand: opening a media card requests a five-minute single-use capability and creates at most a 30-minute in-memory session. It never grants directory access.
+In the accepted fixture path, playback remains readonly and on-demand: opening a media card requests a five-minute single-use capability and creates at most a 30-minute in-memory session. It never grants directory access. An actual byte-range response, expiration/replay, revocation, project switching, recovery and the fixture/restore logical-manifest comparison remain separate gates.
 
-The legacy Full WebGPT media listener and the new Readonly Media Gateway both use local port 2092. Never run them together; the accepted ChatGPT App route uses the Remote Readonly App plus Local Gateway, not local Full profile.
+The legacy Full WebGPT media listener and the new Readonly Media Gateway both use local port 2092. Never run them together. The accepted fixture route is Unified Workspace Remote plus Local Gateway, not local Full profile. The legacy Remote Readonly App `/mcp` route is a rollback surface and was not covered by this Unified fixture acceptance.
 
 ## Common recovery
 
@@ -114,7 +102,7 @@ The default writable `npm run db:check` may recover staged media activations and
 
 ### ChatGPT says no Snapshot
 
-Run one Human Workbench preflight/publish. This is expected after Render Free sleep/restart or after 24 hours.
+For the accepted Unified App, follow one explicitly confirmed Unified-profile preflight/publish from [UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md](webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md#snapshot-operations). This is expected after Render Free sleep/restart or after 24 hours. Do not use the legacy `系统 → 只读 App 发布` recovery control on the active database; its separate re-acceptance remains pending.
 
 ### OAuth reconnects automatically to the wrong user
 

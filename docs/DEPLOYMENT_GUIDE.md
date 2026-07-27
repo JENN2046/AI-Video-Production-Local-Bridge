@@ -1,24 +1,24 @@
 # Deployment Guide
 
-Status: `SCHEMA_GATE_PENDING`; current-code migration, local startup and publish re-acceptance are pending. It is descriptive; it does not authorize external changes.
+Status: `UNIFIED_TRANSPORT_AND_SCHEMA_PASS`; the active database is current at ledger `0011`, and the bounded Unified activity path (local start, manual Snapshot publish, Focus/Proposal/decision/receipt) plus Unified transport acceptance have passed. This is not a continuous-runtime or automatic-publication claim. It is descriptive; it does not authorize external changes.
 
 ## Current-main database compatibility
 
-The active activity database is `workbench-v2-6` / ledger `0010`. Its 2026-07-22 migration passed the separately authorized backup, isolated migration, read-only `db:check`, restore rehearsal and logical-manifest comparison gate. Current code candidates require ledger `0011` for the controlled Artifact import-receipt schema, so the prior acceptance is historical and does not permit startup or Snapshot publishing. A new independently authorized migration gate is required; it must not enable a Provider.
+The active activity database is `workbench-v2-6` / ledger `0011`. Its separately authorized migrations included backup, isolated migration, read-only `db:check`, restore rehearsal and logical-manifest comparison. Current code requires `0011` for the controlled Artifact import-receipt schema; runtime still never migrates or rolls back the database automatically, and no migration gate enables a Provider.
 
 ## Deployment layers
 
 Deploy each layer independently. A PASS in one layer does not promote the next.
 
 ```text
-Layer 1  Local Workbench + ledger 0011 (migration required; runtime re-acceptance pending)
-Layer 2  Remote Readonly MCP App + Auth0 + signed Snapshot
-Layer 3  Local Media Gateway + Cloudflare ingress (candidate)
+Layer 1  Local Workbench + ledger 0011 (accepted bounded activity path; no automatic migration)
+Layer 2  Remote Readonly MCP App + Auth0 + signed Snapshot (manual publish/recovery boundary)
+Layer 3  Local Media Gateway + Cloudflare ingress (candidate; isolated MP4 fixture playback PASS, byte-range pending)
 Layer 4  Windows automatic startup (frozen)
 Layer 5  Real Provider canary (frozen)
 ```
 
-## Layer 1 — local Workbench (runtime re-acceptance pending)
+## Layer 1 — local Workbench (bounded Unified activity path accepted)
 
 Prerequisites:
 
@@ -39,13 +39,13 @@ npm run preflight
 
 Run these commands only from the verified Git root that owns the accepted activity database; do not hard-code or infer a workspace path from a similarly named clone. `db:check -- --read-only` disables media-activation recovery. The default writable `db:check` belongs only to a separately authorized recovery procedure.
 
-Only when a bounded runtime acceptance is separately authorized, start through `npm run windows:start`. The process must bind only `127.0.0.1:4181`, return `200` for `/healthz` and `/readyz`, and keep real Provider flags false unless a separate canary is authorized.
+The accepted Unified activity evidence includes a bounded local start through `npm run windows:start`, manual Snapshot publishing, and the single-Owner Director path. For every new start, preserve the same boundary: bind only `127.0.0.1:4181`, verify `/healthz` and `/readyz`, and keep real Provider flags false unless a separate canary is authorized. A prior bounded PASS does not authorize a persistent runtime, automatic publish, or a new external change.
 
-Database upgrade is not part of normal startup. The active database is below the current-code `0011` requirement, so the migration preflight is an active gate: service stop, backup, logical manifest, isolated migration, `db:check`, restore rehearsal and explicit activity-database authorization.
+Database upgrade is not part of normal startup. The active database already meets the current-code `0011` requirement. Any future migration still requires service stop, backup, logical manifest, isolated migration, `db:check`, restore rehearsal and explicit activity-database authorization.
 
 ## Layer 2A — historical Remote Readonly MCP App
 
-The accepted Auth0/ChatGPT/Render wiring is retained as historical external evidence. The Layer 1 `0010` migration gate is historical, while `0011` remains pending; a new Snapshot export, renewal or recovery from current code needs both the separate migration and its own bounded acceptance.
+The accepted Auth0/ChatGPT/Render wiring is retained as historical legacy-Readonly evidence. The Layer 1 `0010` migration gate is historical and the active database is now at `0011`; a new legacy Snapshot export, renewal or recovery still needs its own bounded acceptance and must not weaken the Unified rollback boundary.
 
 The accepted topology is:
 
@@ -97,7 +97,7 @@ ChatGPT App -> /workspace/mcp
 
 It uses a **new** exact OAuth resource with `projects.read`, `media.read` and `proposals.write`, while preserving old `/mcp` as a rollback surface. The routes must never share a resource URL, audience, publisher key or in-memory Snapshot store. The Remote has no SQLite, local path or Provider execution path.
 
-This layer remains external-gated: activity database ledger `0011`, Auth0 API capacity/preflight, one user-delegated grant on the existing Native/public client, a dedicated bridge key, Render path deployment and one test ChatGPT App all need their own bounded authorization. Do not treat code merge as OAuth or deployment acceptance. The exact staged procedure and rollback contract are in [webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md](webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md).
+This layer has completed its bounded external gate: activity database ledger `0011`, Auth0 preflight and one user-delegated grant on the existing Native/public client, a dedicated Bridge key, Render deployment and one ChatGPT App were accepted. Do not treat that result as authorization for a new external change, Provider execution or removal of the legacy rollback route. The exact staged procedure and rollback contract are in [webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md](webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md).
 
 ## Layer 3 — Local Media Gateway candidate
 
@@ -115,7 +115,7 @@ Remote Widget
 
 Implemented controls include Snapshot v4 media bindings, AES-256-GCM capability envelopes, DPAPI CurrentUser secret protection, pinned `cloudflared`, instance-bound public health, bounded hashing, single-use handles, Range streaming and project/membership revalidation.
 
-Current external status is CANDIDATE: named tunnel/DNS/key material have been prepared in bounded stages, but recent `auto`/`http2` starts did not prove an instance-bound public route. Real MP4 playback, Range/seek and recovery remain unaccepted.
+Current external status is CANDIDATE: named tunnel/DNS/key material and one isolated MP4 fixture have passed instance-bound public routing and ChatGPT Widget playback. The selected protocol was `auto`, but no final QUIC/UDP or HTTP2/TCP classification and no actual `206`/`Content-Range` response were captured; transport attribution and byte-range remain unaccepted along with image/WebM coverage, expiry/replay, revocation, project switching, offline/recovery, Windows startup, soak, and the fixture/restore activity-database before/after logical-manifest comparison.
 
 Port 2092 is mutually exclusive with the legacy local `WEBGPT_V4_PROFILE=full` media listener. Preflight must confirm Full is stopped; do not solve a bind conflict by moving the Gateway to a public interface or weakening listener identity checks.
 
