@@ -91,7 +91,7 @@ The following bounded gate has passed: an isolated signed Unified Snapshot was p
 
 Before promoting to `0.1.0-beta.6` / `webgpt-v4.4.0` / `readonly-remote-v1.1.0`, complete all remaining external gates:
 
-1. Capture an actual byte-range `206`/`Content-Range`, then validate image and WebM where supported, capability expiration/replay, membership revocation, gateway offline/recovery and project switching in ChatGPT. The MP4 fixture playback portion is already accepted.
+1. Record the selected protocol plus the final QUIC/UDP or HTTP2/TCP edge classification, capture an actual byte-range `206`/`Content-Range`, then validate image and WebM where supported, capability expiration/replay, membership revocation, gateway offline/recovery and project switching in ChatGPT. The MP4 fixture playback portion is already accepted.
 2. Install and validate the current-user logon task only after separate authorization.
 3. Capture a before/after activity-database logical-manifest comparison for the fixture/restore path, then complete a bounded restart/recovery soak and verify the real Snapshot still follows the manual publication/recovery contract.
 

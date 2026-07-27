@@ -18,6 +18,21 @@ The deployed Remote and the local Gateway used this same source identity for
 the bounded fixture run. Later commits do not inherit this PASS without their
 own acceptance evidence.
 
+## Tunnel transport evidence
+
+```text
+Selected TUNNEL_TRANSPORT_PROTOCOL: auto
+Final edge transport:              not captured
+Transport attribution:             not accepted
+```
+
+The managed fixture status recorded the non-secret selected protocol as `auto`.
+It did not retain a low-disclosure observation that the connected edge session
+was QUIC/UDP or HTTP2/TCP. Public instance health therefore proves only this
+fixture's route and local-instance binding; it does not attribute success to a
+particular transport. A future transport acceptance must record the selected
+protocol and an actual final QUIC or TCP connection classification.
+
 ## Result
 
 ```text
@@ -40,8 +55,9 @@ isolated signed Unified Snapshot
 
 - The fixture used a copied MP4 and Git-ignored generated profiles, keeping its
   test data separate from the activity database and preserving the source media.
-- The public route was accepted only after local readiness, edge evidence and
-  instance-bound public health succeeded.
+- The public route was accepted only after local readiness and instance-bound
+  public health succeeded. Its selected `auto` protocol is recorded above; the
+  final QUIC/TCP classification is intentionally not inferred from health.
 - The ChatGPT Widget reached playable video state and a forward seek remained
   playable, exercising the capability/session path end to end. No new
   `206`/`Content-Range` response was captured, so this is not byte-range
@@ -64,6 +80,8 @@ isolated signed Unified Snapshot
 - This did not test an actual byte-range `206`/`Content-Range` response, image
   or WebM playback, capability expiry/replay, membership revocation, project
   switching, or Gateway-offline recovery.
+- This did not establish whether the accepted route used QUIC/UDP or HTTP2/TCP
+  at the Cloudflare edge.
 - It did not validate a Windows logon task, restart persistence or a bounded
   recovery soak.
 - No before/after activity-database logical-manifest comparison was captured

@@ -115,7 +115,7 @@ Remote Widget
 
 Implemented controls include Snapshot v4 media bindings, AES-256-GCM capability envelopes, DPAPI CurrentUser secret protection, pinned `cloudflared`, instance-bound public health, bounded hashing, single-use handles, Range streaming and project/membership revalidation.
 
-Current external status is CANDIDATE: named tunnel/DNS/key material and one isolated MP4 fixture have passed instance-bound public routing and ChatGPT Widget playback. A forward seek was playable, but no actual `206`/`Content-Range` response was captured; byte-range remains unaccepted along with image/WebM coverage, expiry/replay, revocation, project switching, offline/recovery, Windows startup, soak, and the fixture/restore activity-database before/after logical-manifest comparison.
+Current external status is CANDIDATE: named tunnel/DNS/key material and one isolated MP4 fixture have passed instance-bound public routing and ChatGPT Widget playback. The selected protocol was `auto`, but no final QUIC/UDP or HTTP2/TCP classification and no actual `206`/`Content-Range` response were captured; transport attribution and byte-range remain unaccepted along with image/WebM coverage, expiry/replay, revocation, project switching, offline/recovery, Windows startup, soak, and the fixture/restore activity-database before/after logical-manifest comparison.
 
 Port 2092 is mutually exclusive with the legacy local `WEBGPT_V4_PROFILE=full` media listener. Preflight must confirm Full is stopped; do not solve a bind conflict by moving the Gateway to a public interface or weakening listener identity checks.
 

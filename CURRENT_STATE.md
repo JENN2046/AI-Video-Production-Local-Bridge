@@ -99,7 +99,7 @@ The single-Connector runtime at `/workspace/mcp` now joins the independently fai
 
 The isolated MP4 fixture and profile tooling is merged. Its bounded public playback acceptance is recorded; it is not a full Media Gateway promotion.
 
-1. Capture an actual byte-range `206`/`Content-Range`, then run the remaining Media Gateway behavioral cases: image and WebM where supported, capability expiration/replay, membership revocation, project switching, and offline/recovery.
+1. Record the selected protocol plus the final QUIC/UDP or HTTP2/TCP edge classification, capture an actual byte-range `206`/`Content-Range`, then run the remaining Media Gateway behavioral cases: image and WebM where supported, capability expiration/replay, membership revocation, project switching, and offline/recovery.
 2. Separately authorize and validate the current-user Windows logon task.
 3. Capture a before/after activity-database logical-manifest comparison for the fixture/restore path, then complete a bounded restart/recovery soak while preserving the manual Snapshot boundary.
 4. Only after all Media Gateway gates pass: consider `0.1.0-beta.6` version closeout.
