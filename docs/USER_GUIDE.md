@@ -49,11 +49,11 @@ The banner “当前数据来自只读快照” is intentional. ChatGPT reads th
 
 Allowed actions are view, refresh, select project, expand SHOT, switch detail and copy a sanitized summary. Project edits, review adoption, Provider calls and Snapshot publishing are not App actions.
 
-## Snapshot operations (manual; renewed run still requires confirmation)
+## Snapshot operations (Unified profile only; manual confirmation required)
 
-The states and UI flow below include historical ledger-`0008` evidence and the accepted current-schema Unified flow. The remote has no persistent Snapshot storage: do not invoke a publish, renewal or recovery action without the separate human confirmation required for that one operation.
+The accepted current-schema flow uses the dedicated Unified publisher profile and Unified Snapshot store. The remote has no persistent Snapshot storage: do not invoke a Unified publish, renewal or recovery action without the separate human confirmation required for that one operation. The default `系统 → 只读 App 发布` Workbench surface and its `data/webgpt/publisher/profile.json` are legacy `/mcp` to `/snapshot` controls; they remain unavailable on the active database pending their own ledger-`0011` acceptance.
 
-Snapshot status has four useful states:
+The Unified Snapshot status has four useful states:
 
 | State | Meaning | Action |
 |---|---|---|
@@ -62,22 +62,16 @@ Snapshot status has four useful states:
 | `no_snapshot` / `snapshot_expired` | Remote memory is empty or expired | Run one explicit recovery publish |
 | `service_unavailable` | Remote health cannot be confirmed | Stop; do not repeatedly publish |
 
-Preferred UI flow:
+Accepted Unified flow:
 
-1. Open Workbench `系统 → 只读 App 发布`.
-2. Read the low-disclosure status.
-3. Choose `运行预检`.
-4. If it passes, choose the single confirmed publish/renew/recover action.
-5. Reopen or refresh the ChatGPT App and confirm all seven readonly tools share one fingerprint.
+1. Follow the dedicated Unified profile procedure in [UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md](webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md#snapshot-operations).
+2. Read the low-disclosure status and run its one preflight.
+3. If it passes and the current operation is explicitly confirmed, perform one publish, renewal or recovery action.
+4. Reopen or refresh the ChatGPT App and confirm the readonly tools share one fingerprint.
 
-CLI fallback:
+Do not use the legacy Workbench control or legacy default-profile CLI commands as a fallback. Their separate ledger-`0011` preflight/publish/recovery acceptance is still pending.
 
-```powershell
-npm run preflight:webgpt:publisher -- --profile data/webgpt/publisher/profile.json
-npm run publish:webgpt:snapshot -- --profile data/webgpt/publisher/profile.json
-```
-
-Never loop publish attempts. On failure, keep the receipt and stable error code; do not print the response body or DPAPI material.
+Never loop Unified publish attempts. On failure, keep the receipt and stable error code; do not print the response body or DPAPI material.
 
 ## Readonly data interpretation
 
@@ -114,7 +108,7 @@ The default writable `npm run db:check` may recover staged media activations and
 
 ### ChatGPT says no Snapshot
 
-Run one Human Workbench preflight/publish. This is expected after Render Free sleep/restart or after 24 hours.
+For the accepted Unified App, follow one explicitly confirmed Unified-profile preflight/publish from [UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md](webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md#snapshot-operations). This is expected after Render Free sleep/restart or after 24 hours. Do not use the legacy `系统 → 只读 App 发布` recovery control on the active database; its separate re-acceptance remains pending.
 
 ### OAuth reconnects automatically to the wrong user
 
