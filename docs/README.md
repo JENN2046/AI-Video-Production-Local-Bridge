@@ -44,6 +44,7 @@ Current runbooks describe commands and boundaries. They do not grant authorizati
 - [Snapshot v3 derived state](../ops/reports/2026-07-19-snapshot-v3-derived-state-acceptance.md)
 - [Snapshot v3 recovery](../ops/reports/2026-07-19-snapshot-v3-human-workbench-recovery-acceptance.md)
 - [Snapshot freshness operations](../ops/reports/2026-07-19-snapshot-freshness-operations-acceptance.md)
+- [Readonly Media Gateway MP4 fixture](../ops/reports/2026-07-27-readonly-media-gateway-mp4-fixture-acceptance.md)
 
 Reports are immutable evidence for their named commit and test boundary. They are not automatically current after later merges.
 

@@ -18,9 +18,11 @@ Unified Workspace Remote
 
 The accepted Readonly route at `/mcp` remains a rollback surface. Unified OAuth,
 the minimal user-delegated grant, the independent Bridge key, Render path
-deployment and one ChatGPT App were accepted in a bounded external stage. This
-does not authorize Provider execution, Memory saveback, media playback or
-removal of the legacy rollback route.
+deployment and one ChatGPT App were accepted in a bounded external stage. A
+separate isolated-fixture Media Gateway stage has also accepted ChatGPT Widget
+MP4 playback and Range/seek. Neither result authorizes Provider execution,
+Memory saveback, broad Media Gateway promotion or removal of the legacy
+rollback route.
 
 For staged external preflight, wiring, local-bridge recovery, acceptance and rollback boundaries, use the [Unified ChatGPT Workspace Transport Runbook](webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md).
 
@@ -117,9 +119,10 @@ The future connector exposes exactly twelve model-visible tools:
 | Director frames | `inspect_director_video_frames` | `projects.read media.read` |
 | Director proposal | `submit_director_proposal` | `projects.read proposals.write` |
 
-`get_readonly_media_playback` is Widget-only. It is deliberately excluded from
-the model-visible directory and remains unavailable until the separate Media
-Gateway external gate passes.
+`get_readonly_media_playback` is Widget-only and deliberately excluded from the
+model-visible directory. It remains fail-closed when its separate Media Gateway
+configuration is absent or invalid. An isolated MP4 fixture has passed Widget
+playback and Range/seek, but the broader Media Gateway gate remains pending.
 
 No tool in this contract approves a Proposal, compiles or submits a Provider
 job, overwrites an Artifact, delivers media, or commits memory.
@@ -140,8 +143,8 @@ The following bounded stages have passed with `REAL_PROVIDER_ENABLED=false`:
 
 The following remain separate, explicitly authorized future work: stable
 project-bound Memory recall/saveback, a bounded real Provider canary, a second
-real user with revoke coverage, real public MP4 playback and the later audit of
-the legacy connector.
+real user with revoke coverage, the remaining Media Gateway recovery/revocation
+cases and the later audit of the legacy connector.
 
 ## Local verification
 

@@ -1,7 +1,7 @@
 # Current State
 
 Date (Asia/Shanghai, UTC+08:00): 2026-07-27
-Repository baseline: `main@c91d1d0`
+Repository baseline: `main@2b84f44`
 
 ## Accepted historical operations baseline
 
@@ -9,8 +9,8 @@ Repository baseline: `main@c91d1d0`
 Package:                  0.1.0-beta.5
 MCP service:              webgpt-v4.3.0
 Remote App service:       readonly-remote-v1.0.0
-Database schema:          workbench-v2-5
-Migration ledger:         0008
+Database schema:          workbench-v2-6
+Migration ledger:         0011
 Snapshot code contract:   readonly-snapshot-v4
 Media Gateway code:       readonly-media-gateway-v1.0.0
 ```
@@ -21,9 +21,10 @@ Accepted product states, recorded before the current-main compatibility hold:
 JENN_SINGLE_USER_MCP_APP_PASS
 MANUAL_PUBLISH_OPERATIONAL_READY
 PARTIAL_MULTI_USER_GATE
+READONLY_MEDIA_GATEWAY_FIXTURE_MP4_PLAYBACK_RANGE_SEEK_PASS
 ```
 
-These states record Jenn's owner-only ChatGPT MCP App and manual Snapshot evidence. They do not accept multi-user production, automatic publishing, Windows auto-start, public media playback or real Provider canary.
+These states record Jenn's owner-only ChatGPT MCP App, manual Snapshot evidence and one isolated-fixture public MP4 playback/Range/seek path. They do not accept multi-user production, automatic publishing, Windows auto-start, broad Media Gateway readiness or a real Provider canary.
 
 ## Current-code database compatibility
 
@@ -42,10 +43,10 @@ The controlled Artifact import-receipt migration `0011` has since completed its 
 | Auth0 owner-only Readonly MCP App | PASS | PASS | Accepted |
 | Seven readonly App tools and Workbench panels | PASS | PASS | Accepted |
 | Manual Snapshot publish/recovery/freshness | Current exporter requires `0011` | Unified bounded publish accepted; remote remains memory-only | Manual, not automatic |
-| Snapshot v4 media bindings | PASS | Not fully external-accepted | Candidate |
-| Local Media Gateway runtime | PASS | Local/fixture tests PASS | Candidate |
-| Cloudflare media ingress | Configured in part | FAIL/BLOCKED at edge/route startup | Not accepted |
-| Real MP4 playback, Range and seek | Prepared | Not yet run successfully | Not accepted |
+| Snapshot v4 media bindings | PASS | Signed fixture Snapshot accepted during bounded external test | Candidate |
+| Local Media Gateway runtime | PASS | Local/fixture tests plus bounded public fixture run PASS | Candidate |
+| Cloudflare media ingress | Configured | Bounded fixture route and instance health PASS | Candidate; broad recovery gate remains |
+| Real MP4 playback, Range and seek | PASS | ChatGPT Widget fixture playback and forward seek PASS | `READONLY_MEDIA_GATEWAY_FIXTURE_MP4_PLAYBACK_RANGE_SEEK_PASS` |
 | Windows media logon task | PASS | Not installed/accepted | Frozen |
 | Second real user and revoke path | PASS | Deferred by Jenn | `PARTIAL_MULTI_USER_GATE` |
 | Automatic Snapshot synchronization | Not implemented | Not accepted | Future gate |
@@ -65,6 +66,7 @@ The controlled Artifact import-receipt migration `0011` has since completed its 
 - [Snapshot Freshness Operations Acceptance](ops/reports/2026-07-19-snapshot-freshness-operations-acceptance.md)
 - [Director Active Database Migration Acceptance](ops/reports/2026-07-22-director-active-database-migration-acceptance.md)
 - [Unified Director Activity Acceptance](ops/reports/2026-07-27-unified-director-activity-acceptance.md)
+- [Readonly Media Gateway MP4 Fixture Acceptance](ops/reports/2026-07-27-readonly-media-gateway-mp4-fixture-acceptance.md)
 
 Acceptance reports record the commit and boundary that was actually tested. Later code must not silently inherit an older report's PASS.
 
@@ -80,7 +82,7 @@ The remote service is memory-only. A Unified signed Snapshot was published durin
 
 ### Media gateway work
 
-PR #56–#62 implemented Snapshot v4 media bindings, encrypted capabilities, local streaming, Widget media UI, Windows operations, Cloudflare diagnostics and selectable `auto|http2|quic` transport. The latest bounded starts still did not establish a verified public media route. Keep Gateway stopped unless performing a separately authorized test. Do not install the current-user logon task yet.
+PR #56–#62 implemented Snapshot v4 media bindings, encrypted capabilities, local streaming, Widget media UI, Windows operations, Cloudflare diagnostics and selectable `auto|http2|quic` transport. PR #91 added the exact ChatGPT Workspace sandbox-origin allowlist required for Widget media requests. A bounded isolated fixture acceptance has now established the public route, signed Snapshot delivery, ChatGPT MP4 playback and forward Range/seek; the managed default runtime and a fresh real Snapshot were restored afterward. This is not a persistence, revocation, recovery-soak or multi-user acceptance. Do not install the current-user logon task without separate authorization.
 
 ### ChatGPT Director candidate
 
@@ -94,12 +96,12 @@ The single-Connector runtime at `/workspace/mcp` now joins the independently fai
 
 ## Active blockers and next gates
 
-The isolated MP4 fixture and profile tooling is merged. It is an acceptance input, not a remaining merge gate.
+The isolated MP4 fixture and profile tooling is merged. Its bounded public playback acceptance is recorded; it is not a full Media Gateway promotion.
 
-1. Diagnose local network reachability to Cloudflare edge on UDP/TCP 7844 without weakening route or instance binding.
-2. Once edge connectivity is proven, use the merged isolated fixture to run one bounded Snapshot playback acceptance: image, MP4, Range/seek, expiration and recovery.
-3. Restore a fresh real activity Snapshot after fixture acceptance and prove database manifest unchanged.
-4. Only after the above PASS: write a media closeout report and consider `0.1.0-beta.6` version closeout.
+1. Run the remaining Media Gateway behavioral cases: image and WebM where supported, capability expiration/replay, membership revocation, project switching, and offline/recovery.
+2. Separately authorize and validate the current-user Windows logon task.
+3. Complete a bounded restart/recovery soak while preserving the manual Snapshot boundary.
+4. Only after all Media Gateway gates pass: consider `0.1.0-beta.6` version closeout.
 
 Separate, non-blocking future gates are the second real user, automatic Snapshot publishing, Windows automatic startup, Full profile externalization and real Provider canary.
 
@@ -116,7 +118,7 @@ The unified Connector transport gate has passed while retaining legacy `/mcp` as
 - No npm package, tag or public release has been published.
 - `render.yaml` is tracked configuration evidence; it is not proof that the live Render service matches every field.
 - Snapshot v4 code does not prove that the currently running remote process holds a v4 Snapshot.
-- A created Cloudflare tunnel/DNS record does not prove edge connectivity or media playback.
+- A created Cloudflare tunnel/DNS record alone does not prove edge connectivity or media playback; the bounded MP4 fixture report is the only accepted public-playback evidence.
 - Passing fixture tests does not authorize reading the activity database or source media.
 
 See [docs/README.md](docs/README.md) for the current-document index and [docs/PROJECT_LESSONS.md](docs/PROJECT_LESSONS.md) for construction lessons.

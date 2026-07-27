@@ -1,8 +1,8 @@
 # Readonly Local Media Gateway Runbook
 
-Status: CANDIDATE. Code, Snapshot v4 media binding, Remote/Gateway key contract, Cloudflare named-tunnel/DNS setup and Windows operations have progressed through bounded stages. Instance-bound public route, real playback/Range/seek, recovery soak and Windows logon-task acceptance are not complete.
+Status: CANDIDATE. Code, Snapshot v4 media binding, Remote/Gateway key contract, Cloudflare named-tunnel/DNS setup and Windows operations have progressed through bounded stages. One isolated MP4 fixture has passed instance-bound public routing, ChatGPT Widget playback and Range/seek. Recovery soak, revocation/project-switch cases and Windows logon-task acceptance remain incomplete.
 
-Latest known boundary: gateway readiness and transport diagnostics are implemented through `main@ef5e7bee`; recent bounded Cloudflare starts did not establish verified edge/public health. Do not classify this as a token, route or protocol problem without new evidence, and do not retry without a changed hypothesis.
+Latest known boundary: `main@2b84f44` completed a bounded isolated-fixture public route and ChatGPT MP4 playback/Range/seek acceptance. The Gateway remains manually operated: this result does not establish restart persistence, revocation behavior, broad media-format coverage or a Windows logon-task acceptance.
 
 ## Boundary
 
@@ -87,14 +87,13 @@ Render must receive the same dedicated capability key as a secret only after sep
 
 ## Acceptance and closeout
 
-Before promoting to `0.1.0-beta.6` / `webgpt-v4.4.0` / `readonly-remote-v1.1.0`, complete all external gates:
+The following bounded gate has passed: an isolated signed Unified Snapshot was published, an MP4 fixture played in the ChatGPT Widget, a forward Range/seek succeeded, the fixture runtime was stopped, and the managed default runtime plus a fresh real Snapshot were restored. The exact evidence and non-claims are in [Readonly Media Gateway MP4 Fixture Acceptance](../../ops/reports/2026-07-27-readonly-media-gateway-mp4-fixture-acceptance.md).
 
-1. Create one shared capability key in the approved secret-management flow, configure the Render secret, and import that exact value locally with `media:capability-key-import`.
-2. Create the named Tunnel and exact DNS route without paid features.
-3. Deploy the accepted Snapshot v4/remote runtime commit and publish one real Snapshot v4.
-4. Validate image and MP4/WebM playback, Range/seek, expiration, replay, membership revocation, gateway offline/recovery and project switching in ChatGPT.
-5. Install and validate the current-user logon task only after separate authorization.
-6. Compare the activity-database logical manifest, run `db:check`, and complete a bounded soak.
+Before promoting to `0.1.0-beta.6` / `webgpt-v4.4.0` / `readonly-remote-v1.1.0`, complete all remaining external gates:
+
+1. Validate image and WebM where supported, capability expiration/replay, membership revocation, gateway offline/recovery and project switching in ChatGPT. The MP4 fixture playback and forward Range/seek portion is already accepted.
+2. Install and validate the current-user logon task only after separate authorization.
+3. Complete a bounded restart/recovery soak and verify the real Snapshot still follows the manual publication/recovery contract.
 
 Until those checks pass, package/service versions remain at the currently accepted beta.5 baseline. The code path and some external objects exist, but media externalization and Windows auto-start are not claimed as accepted.
 
