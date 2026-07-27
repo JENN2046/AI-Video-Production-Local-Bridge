@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 const ISSUER = "https://issuer.acceptance.test/";
-const RESOURCE = "https://aivideo.skmt617.top/mcp";
+const RESOURCE = "https://aivideo.skmt617.top/workspace/mcp";
 const SUBJECT = "auth0|media-acceptance-test-subject";
 
 function sha(path: string): string {
@@ -44,7 +44,7 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
   const receipt = JSON.parse(created.stdout) as { result: string; run_id: string; checks: Record<string, boolean> };
   assert.equal(receipt.result, "PASS");
   assert.match(receipt.run_id, /^run_[0-9a-f]{32}$/);
-  assert.deepEqual(receipt.checks, { source_unchanged: true, ledger_0008: true, mp4_valid: true, snapshot_v4: true, media_binding: true });
+  assert.deepEqual(receipt.checks, { source_unchanged: true, ledger_0011: true, mp4_valid: true, snapshot_v4: true, media_binding: true });
   assert.equal(created.stdout.includes(SUBJECT), false);
   assert.equal(created.stdout.includes(source), false);
   assert.doesNotMatch(created.stdout, /[0-9a-f]{64}/);
@@ -72,7 +72,7 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
       database_path: "data/app.sqlite",
       issuer: ISSUER,
       resource_url: RESOURCE,
-      snapshot_url: "https://aivideo.skmt617.top/snapshot",
+      snapshot_url: "https://aivideo.skmt617.top/workspace/snapshot",
       key_id: "acceptance-publisher-v1",
       protected_private_key_path: "data/webgpt/publisher/key.dpapi",
       public_key_path: "data/webgpt/publisher/public.pem",
@@ -157,6 +157,16 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
   }
   const after = { sha256: sha(source), size: statSync(source).size, mtimeMs: statSync(source).mtimeMs };
   assert.deepEqual(after, before);
+});
+
+test("MP4 acceptance fixture accepts only the legacy or Unified MCP resource paths", () => {
+  const source = resolve("fixtures/video/mock_clip.mp4");
+  const command = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
+  const rejected = spawnSync(process.execPath, [command, "create", "--input", source, "--issuer", ISSUER, "--resource", "https://aivideo.skmt617.top/other/mcp"], {
+    cwd: process.cwd(), input: `${SUBJECT}\n`, encoding: "utf8", windowsHide: true, env: childEnv
+  });
+  assert.equal(rejected.status, 1);
+  assert.deepEqual(lowDisclosureError(rejected.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_URL_INVALID" });
 });
 
 test("MP4 acceptance fixture rejects a symlinked acceptance root", () => {
