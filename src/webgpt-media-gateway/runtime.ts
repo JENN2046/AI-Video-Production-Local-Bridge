@@ -39,6 +39,10 @@ export const READONLY_MEDIA_GATEWAY_MAX_PENDING_CAPABILITIES = 32;
 export const READONLY_MEDIA_GATEWAY_MAX_PENDING_CAPABILITIES_PER_PRINCIPAL = 4;
 export const READONLY_MEDIA_GATEWAY_MAX_CAPABILITY_RECORDS = 64;
 export const READONLY_MEDIA_GATEWAY_MAX_CAPABILITY_RECORDS_PER_PRINCIPAL = 8;
+// ChatGPT renders this fixed Workspace App inside its sandbox origin. It is an
+// exact, app-specific origin rather than a wildcard and is only added for the
+// production Workspace origin below.
+export const READONLY_MEDIA_CHATGPT_SANDBOX_ORIGIN = "https://aivideo-skmt617-top.web-sandbox.oaiusercontent.com";
 
 const allowedMimeTypes = new Set<string>(READONLY_MEDIA_MIME_TYPES);
 
@@ -449,6 +453,12 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
   const allowedOrigin = options.allowed_origin ?? "https://aivideo.skmt617.top";
   const parsedOrigin = new URL(allowedOrigin);
   if (parsedOrigin.origin !== allowedOrigin || parsedOrigin.protocol !== "https:") throw new ReadonlyMediaGatewayError("MEDIA_GATEWAY_CONFIG_INVALID");
+  const allowedOrigins = new Set([allowedOrigin]);
+  if (allowedOrigin === "https://aivideo.skmt617.top") allowedOrigins.add(READONLY_MEDIA_CHATGPT_SANDBOX_ORIGIN);
+  const requestOrigin = (request: IncomingMessage): string | null => {
+    const origin = request.headers.origin;
+    return typeof origin === "string" && allowedOrigins.has(origin) ? origin : null;
+  };
   const host = options.host ?? "127.0.0.1";
   if (host !== "127.0.0.1") throw new ReadonlyMediaGatewayError("MEDIA_GATEWAY_CONFIG_INVALID");
   const now = options.now ?? (() => new Date());
@@ -524,7 +534,8 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
   };
 
   const serve = (request: IncomingMessage, response: ServerResponse, session: SessionRecord): void => {
-    if (request.headers.origin !== allowedOrigin) throw new ReadonlyMediaGatewayError("MEDIA_ORIGIN_DENIED");
+    const origin = requestOrigin(request);
+    if (!origin) throw new ReadonlyMediaGatewayError("MEDIA_ORIGIN_DENIED");
     const current = validateRecord(session);
     let descriptor = -1;
     try {
@@ -535,7 +546,7 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
       const start = range?.start ?? 0;
       const end = range?.end ?? openedIdentity.size - 1;
       response.statusCode = range ? 206 : 200;
-      mediaHeaders(response, allowedOrigin);
+      mediaHeaders(response, origin);
       response.setHeader("content-type", current.blob.detected_mime);
       response.setHeader("accept-ranges", "bytes");
       response.setHeader("content-length", String(end - start + 1));
@@ -638,7 +649,8 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
         }
         const capabilityMatch = /^\/media\/v1\/c\/([A-Za-z0-9_-]{43})$/.exec(url.pathname);
         if (capabilityMatch && (request.method === "GET" || request.method === "HEAD")) {
-          if (request.headers.origin !== allowedOrigin) throw new ReadonlyMediaGatewayError("MEDIA_ORIGIN_DENIED");
+          const origin = requestOrigin(request);
+          if (!origin) throw new ReadonlyMediaGatewayError("MEDIA_ORIGIN_DENIED");
           const record = capabilities.get(capabilityMatch[1]!);
           if (!record || record.expires_at_ms <= now().getTime()) throw new ReadonlyMediaGatewayError("MEDIA_CAPABILITY_INVALID");
           try {
@@ -648,7 +660,7 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
             throw error;
           }
           if (record.consumed) throw new ReadonlyMediaGatewayError("MEDIA_CAPABILITY_REPLAYED");
-          if (request.method === "HEAD") { response.statusCode = 204; mediaHeaders(response, allowedOrigin); response.end(); return; }
+          if (request.method === "HEAD") { response.statusCode = 204; mediaHeaders(response, origin); response.end(); return; }
           const principalSessions = [...sessions.values()].filter((item) => item.principal_id === record.principal_id).length;
           if (sessions.size >= READONLY_MEDIA_GATEWAY_MAX_SESSIONS || principalSessions >= READONLY_MEDIA_GATEWAY_MAX_SESSIONS_PER_PRINCIPAL) {
             throw new ReadonlyMediaGatewayError("MEDIA_SESSION_CAPACITY_EXCEEDED");
@@ -658,7 +670,7 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
           while (capabilities.has(sessionHandle) || sessions.has(sessionHandle)) sessionHandle = createReadonlyMediaHandle(random);
           sessions.set(sessionHandle, { ...record, handle: sessionHandle, expires_at_ms: now().getTime() + READONLY_MEDIA_GATEWAY_SESSION_TTL_MS });
           response.statusCode = 302;
-          mediaHeaders(response, allowedOrigin);
+          mediaHeaders(response, origin);
           response.setHeader("location", `/media/v1/s/${sessionHandle}`);
           response.end();
           return;
@@ -685,7 +697,8 @@ export async function startReadonlyMediaGateway(options: ReadonlyMediaGatewayOpt
           const requestPath = (() => {
             try { return new URL(request.url ?? "/", "http://127.0.0.1").pathname; } catch { return ""; }
           })();
-          if (request.headers.origin === allowedOrigin && /^\/media\/v1\/[cs]\//.test(requestPath)) mediaHeaders(response, allowedOrigin);
+          const origin = requestOrigin(request);
+          if (origin && /^\/media\/v1\/[cs]\//.test(requestPath)) mediaHeaders(response, origin);
           json(response, errorStatus(domain.code), { ok: false, error: { code: domain.code } });
         }
         else response.destroy();

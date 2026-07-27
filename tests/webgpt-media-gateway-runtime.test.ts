@@ -19,6 +19,7 @@ import { bootstrapWebGptProjectOwner, revokeWebGptProjectMembership } from "../s
 import { actorFromFederatedSubject } from "../src/webgpt-v4/types.js";
 import {
   MediaIntegrityQueue,
+  READONLY_MEDIA_CHATGPT_SANDBOX_ORIGIN,
   READONLY_MEDIA_GATEWAY_MAX_CAPABILITY_RECORDS_PER_PRINCIPAL,
   READONLY_MEDIA_GATEWAY_MAX_PENDING_CAPABILITIES,
   READONLY_MEDIA_GATEWAY_MAX_PENDING_CAPABILITIES_PER_PRINCIPAL,
@@ -586,6 +587,66 @@ test("readonly media gateway verifies bytes, consumes capabilities once, streams
   const after = logicalManifest(afterDb);
   afterDb.close();
   assert.equal(after, before);
+});
+
+test("readonly media gateway admits the exact ChatGPT Workspace sandbox origin without widening CORS", async () => {
+  const fixture = createFixture("chatgpt-workspace-sandbox-origin");
+  const gateway = await startReadonlyMediaGateway({
+    database_path: paths.sqlitePath,
+    issuer_hash: fixture.actor.issuer_hash!,
+    keyring,
+    allowed_origin: ORIGIN,
+    allowed_media_roots: [paths.imageArtifactsRoot],
+    port: 0
+  });
+  try {
+    const sandboxCapability = await issue(gateway.url, fixture);
+    const activated = await fetch(`${gateway.url}/media/v1/c/${sandboxCapability}`, {
+      headers: { origin: READONLY_MEDIA_CHATGPT_SANDBOX_ORIGIN },
+      redirect: "manual"
+    });
+    assert.equal(activated.status, 302);
+    assert.equal(activated.headers.get("access-control-allow-origin"), READONLY_MEDIA_CHATGPT_SANDBOX_ORIGIN);
+    assert.equal(activated.headers.get("access-control-allow-credentials"), "true");
+    const session = await fetch(`${gateway.url}${activated.headers.get("location")}`, {
+      headers: { origin: READONLY_MEDIA_CHATGPT_SANDBOX_ORIGIN, range: "bytes=0-15" }
+    });
+    assert.equal(session.status, 206);
+    assert.equal(session.headers.get("access-control-allow-origin"), READONLY_MEDIA_CHATGPT_SANDBOX_ORIGIN);
+    assert.equal((await session.arrayBuffer()).byteLength, 16);
+
+    const deniedCapability = await issue(gateway.url, fixture);
+    const denied = await fetch(`${gateway.url}/media/v1/c/${deniedCapability}`, {
+      headers: { origin: "https://denied.example" },
+      redirect: "manual"
+    });
+    assert.equal(denied.status, 403);
+    assert.equal(denied.headers.get("access-control-allow-origin"), null);
+    assert.equal(gateway.counts().sessions, 1);
+  } finally {
+    await gateway.close();
+  }
+
+  const customOrigin = "https://custom-workbench.example";
+  const customGateway = await startReadonlyMediaGateway({
+    database_path: paths.sqlitePath,
+    issuer_hash: fixture.actor.issuer_hash!,
+    keyring,
+    allowed_origin: customOrigin,
+    allowed_media_roots: [paths.imageArtifactsRoot],
+    port: 0
+  });
+  try {
+    const customCapability = await issue(customGateway.url, fixture);
+    const sandboxDenied = await fetch(`${customGateway.url}/media/v1/c/${customCapability}`, {
+      headers: { origin: READONLY_MEDIA_CHATGPT_SANDBOX_ORIGIN },
+      redirect: "manual"
+    });
+    assert.equal(sandboxDenied.status, 403);
+    assert.equal(sandboxDenied.headers.get("access-control-allow-origin"), null);
+  } finally {
+    await customGateway.close();
+  }
 });
 
 test("readonly media gateway readiness rejects a malformed capability key id", async () => {
