@@ -89,7 +89,7 @@ Never loop publish attempts. On failure, keep the receipt and stable error code;
 
 ## Media preview status
 
-The media UI and Local Gateway code exist. One isolated MP4 fixture has passed the public Cloudflare route and ChatGPT Widget playback. A forward seek was playable, but no actual `206`/`Content-Range` response was recorded, so byte-range remains pending. This is not normal-production media readiness. Today:
+The media UI and Local Gateway code exist. One isolated MP4 fixture has passed the Unified Workspace Remote public Cloudflare route and ChatGPT Widget playback. A forward seek was playable, but no actual `206`/`Content-Range` response was recorded, so byte-range remains pending. This is not normal-production media readiness. Today:
 
 - do not treat the accepted fixture path as a general normal-ChatGPT media-preview guarantee;
 - do not install the Gateway login task;
@@ -98,7 +98,7 @@ The media UI and Local Gateway code exist. One isolated MP4 fixture has passed t
 
 In the accepted fixture path, playback remains readonly and on-demand: opening a media card requests a five-minute single-use capability and creates at most a 30-minute in-memory session. It never grants directory access. An actual byte-range response, expiration/replay, revocation, project switching, recovery and the fixture/restore logical-manifest comparison remain separate gates.
 
-The legacy Full WebGPT media listener and the new Readonly Media Gateway both use local port 2092. Never run them together; the accepted ChatGPT App route uses the Remote Readonly App plus Local Gateway, not local Full profile.
+The legacy Full WebGPT media listener and the new Readonly Media Gateway both use local port 2092. Never run them together. The accepted fixture route is Unified Workspace Remote plus Local Gateway, not local Full profile. The legacy Remote Readonly App `/mcp` route is a rollback surface and was not covered by this Unified fixture acceptance.
 
 ## Common recovery
 
