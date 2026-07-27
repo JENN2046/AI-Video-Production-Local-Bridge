@@ -1,6 +1,6 @@
 # User Guide
 
-Status: `UNIFIED_TRANSPORT_AND_SCHEMA_PASS`. The owner-only `0.1.0-beta.5` / ledger `0008` workflow remains historical evidence; the active database has now completed `0011`, and the bounded Unified Director owner path has passed. Provider, Memory, Media and multi-user gates remain separate.
+Status: `UNIFIED_TRANSPORT_AND_SCHEMA_PASS`. The owner-only `0.1.0-beta.5` / ledger `0008` workflow remains historical evidence; the active database has now completed `0011`, and the bounded Unified Director owner path has passed. An isolated Media Gateway MP4 fixture playback/Range path has also passed; broader Media, Provider, Memory and multi-user gates remain separate.
 
 ## Current-main database compatibility
 
@@ -89,14 +89,14 @@ Never loop publish attempts. On failure, keep the receipt and stable error code;
 
 ## Media preview status
 
-The media UI and Local Gateway code exist, but the public Cloudflare playback path has not passed real end-to-end acceptance. Today:
+The media UI and Local Gateway code exist. One isolated MP4 fixture has passed the public Cloudflare route, ChatGPT Widget playback and forward Range/seek. This is not normal-production media readiness. Today:
 
-- do not expect media preview to be available in normal ChatGPT use;
+- do not treat the accepted fixture path as a general normal-ChatGPT media-preview guarantee;
 - do not install the Gateway login task;
 - do not weaken Origin, capability, digest or membership checks to make playback work;
 - use `npm run media:status` only during an authorized media test.
 
-When the route is accepted, playback remains readonly and on-demand: opening a media card requests a five-minute single-use capability and creates at most a 30-minute in-memory session. It never grants directory access.
+In the accepted fixture path, playback remains readonly and on-demand: opening a media card requests a five-minute single-use capability and creates at most a 30-minute in-memory session. It never grants directory access. Expiration/replay, revocation, project switching, recovery and the fixture/restore logical-manifest comparison remain separate gates.
 
 The legacy Full WebGPT media listener and the new Readonly Media Gateway both use local port 2092. Never run them together; the accepted ChatGPT App route uses the Remote Readonly App plus Local Gateway, not local Full profile.
 

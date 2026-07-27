@@ -82,7 +82,7 @@ The remote service is memory-only. A Unified signed Snapshot was published durin
 
 ### Media gateway work
 
-PR #56–#62 implemented Snapshot v4 media bindings, encrypted capabilities, local streaming, Widget media UI, Windows operations, Cloudflare diagnostics and selectable `auto|http2|quic` transport. PR #91 added the exact ChatGPT Workspace sandbox-origin allowlist required for Widget media requests. A bounded isolated fixture acceptance has now established the public route, signed Snapshot delivery, ChatGPT MP4 playback and forward Range/seek; the managed default runtime and a fresh real Snapshot were restored afterward. This is not a persistence, revocation, recovery-soak or multi-user acceptance. Do not install the current-user logon task without separate authorization.
+PR #56–#62 implemented Snapshot v4 media bindings, encrypted capabilities, local streaming, Widget media UI, Windows operations, Cloudflare diagnostics and selectable `auto|http2|quic` transport. PR #91 added the exact ChatGPT Workspace sandbox-origin allowlist required for Widget media requests. A bounded isolated fixture acceptance has now established the public route, signed Snapshot delivery, ChatGPT MP4 playback and forward Range/seek; the managed default runtime and a fresh real Snapshot were restored afterward. This is not a persistence, revocation, recovery-soak, activity-data-unchanged or multi-user acceptance: that fixture sequence recorded only a post-restore read-only `db:check`, not a before/after logical-manifest comparison. Do not install the current-user logon task without separate authorization.
 
 ### ChatGPT Director candidate
 
@@ -100,7 +100,7 @@ The isolated MP4 fixture and profile tooling is merged. Its bounded public playb
 
 1. Run the remaining Media Gateway behavioral cases: image and WebM where supported, capability expiration/replay, membership revocation, project switching, and offline/recovery.
 2. Separately authorize and validate the current-user Windows logon task.
-3. Complete a bounded restart/recovery soak while preserving the manual Snapshot boundary.
+3. Capture a before/after activity-database logical-manifest comparison for the fixture/restore path, then complete a bounded restart/recovery soak while preserving the manual Snapshot boundary.
 4. Only after all Media Gateway gates pass: consider `0.1.0-beta.6` version closeout.
 
 Separate, non-blocking future gates are the second real user, automatic Snapshot publishing, Windows automatic startup, Full profile externalization and real Provider canary.

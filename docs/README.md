@@ -17,7 +17,7 @@ This index separates current operating truth from historical implementation evid
 - [Readonly MCP App Delivery](webgpt/READONLY_MCP_APP_DELIVERY_RUNBOOK.md)
 - [Unified ChatGPT Workspace Transport](webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md) — candidate single-Connector preflight, wiring and rollback boundary
 - [Readonly Local Media Gateway](webgpt/READONLY_LOCAL_MEDIA_GATEWAY_RUNBOOK.md)
-- [WebGPT V4 local operator runbook](webgpt/WEBGPT_V4_RUNBOOK.md)
+- [WebGPT V4 legacy rollback reference](webgpt/WEBGPT_V4_RUNBOOK.md)
 - [Federated OAuth portability](READONLY_FEDERATED_OAUTH_PORTABILITY.md)
 
 Current runbooks describe commands and boundaries. They do not grant authorization for database writes, secrets, external configuration, deployment, Scheduled Tasks or paid Provider calls.

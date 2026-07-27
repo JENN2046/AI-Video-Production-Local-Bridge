@@ -38,8 +38,8 @@ isolated signed Unified Snapshot
 
 ## Verified boundaries
 
-- The fixture used a copied MP4 and Git-ignored generated profiles; it did not
-  overwrite the source media or the activity database.
+- The fixture used a copied MP4 and Git-ignored generated profiles, keeping its
+  test data separate from the activity database and preserving the source media.
 - The public route was accepted only after local readiness, edge evidence and
   instance-bound public health succeeded.
 - The ChatGPT Widget reached playable video state and the forward seek remained
@@ -48,7 +48,9 @@ isolated signed Unified Snapshot
   production-origin allowlist; no wildcard origin was enabled.
 - The fixture Gateway/Tunnel was stopped after the test. The managed default
   Gateway/Tunnel and a fresh real activity Snapshot were restored.
-- A read-only activity-database check passed after restoration.
+- A read-only activity-database check passed after restoration. That check
+  verifies schema and integrity constraints only; it is not a business-data
+  unchanged assertion.
 - Provider calls, Artifact writes, delivery actions, Auth0/DNS changes,
   automatic publishing and Windows Scheduled Task installation were all zero.
 
@@ -58,6 +60,9 @@ isolated signed Unified Snapshot
   membership revocation, project switching, or Gateway-offline recovery.
 - It did not validate a Windows logon task, restart persistence or a bounded
   recovery soak.
+- No before/after activity-database logical-manifest comparison was captured
+  for this fixture/restore sequence. This report therefore does not claim that
+  its activity business data was unchanged.
 - The real activity Snapshot was restored, but its media bytes were not used as
   a substitute for the isolated fixture in this acceptance.
 - The Media Gateway remains a manual, separately authorized operation. No

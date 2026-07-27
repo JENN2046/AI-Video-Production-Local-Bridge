@@ -1,6 +1,6 @@
 # Architecture
 
-Status: `UNIFIED_TRANSPORT_AND_SCHEMA_PASS`; active database is at ledger `0011`, and the bounded Unified Director owner path is accepted. Provider, Memory, Media and multi-user gates remain separate.
+Status: `UNIFIED_TRANSPORT_AND_SCHEMA_PASS`; active database is at ledger `0011`, the bounded Unified Director owner path is accepted, and an isolated Media Gateway MP4 fixture playback/Range path has passed. Broader Provider, Memory, Media and multi-user gates remain separate.
 Accepted package: `0.1.0-beta.5`
 
 ## System map
@@ -20,14 +20,14 @@ flowchart LR
     SS --> UW
     UW --> DBR["Local Director Bridge"]
     DBR -. "issuer/project/Focus checks" .-> DB
-    RM -. "encrypted 5-minute capability" .-> CF["Cloudflare media ingress — candidate"]
+    RM -. "encrypted 5-minute capability" .-> CF["Cloudflare media ingress — candidate; fixture MP4 PASS"]
     CF -.-> GW["Local Gateway 127.0.0.1:2092"]
     GW -. "read-only validation" .-> DB
     GW -. "bounded Range streaming" .-> FS
     W --> PR["Provider adapters — explicit human gate"]
 ```
 
-The Unified Connector's solid lines describe one accepted, bounded single-Owner path. The active database completed its authorized `0011` migration with backup, manifest, `db:check` and restore evidence; Unified Snapshot publishing remains manual and memory-only. Dashed media lines are implemented but not yet externally accepted end to end.
+The Unified Connector's solid lines describe one accepted, bounded single-Owner path. The active database completed its authorized `0011` migration with backup, manifest, `db:check` and restore evidence; Unified Snapshot publishing remains manual and memory-only. Dashed media lines have one accepted isolated MP4 fixture playback/Range path, while broader external recovery, revocation and persistence cases remain unaccepted.
 
 ## Sources of truth
 
@@ -71,15 +71,15 @@ The Remote Runtime, ChatGPT Widget and Cloudflare are never authoritative busine
 - `Remote Readonly App`: database-free OAuth MCP + Apps UI + signed Snapshot receiver.
 - `Unified Workspace Remote`: accepted database-free `/workspace/mcp` connector; independent Readonly Snapshot and Director Bridge chains, with legacy `/mcp` retained for rollback.
 - `Director Local Bridge`: accepted outbound-only process for the bounded owner path; it validates issuer/principal/project/Focus locally and writes only immutable advisory Proposals.
-- `Readonly Media Gateway`: local `127.0.0.1:2092`, candidate external media path.
+- `Readonly Media Gateway`: local `127.0.0.1:2092`, candidate external media path with one accepted isolated MP4 fixture playback/Range path.
 
 ## Deployment boundaries
 
 - Local Workbench and data stay on Jenn's Windows machine.
 - Remote App currently uses Render Free characteristics: process memory can disappear after sleep/restart and has no persistent business store. Manual Unified Snapshot publishing was accepted once, but any restart or expiry still requires a separately confirmed republish.
 - `aivideo.skmt617.top` is the MCP/App origin.
-- The accepted `/mcp` route remains the rollback surface while candidate `/workspace/mcp` awaits its own OAuth, Bridge, Render and ChatGPT App acceptance. The two routes must not share an OAuth resource/audience or Snapshot store.
-- `media.skmt617.top` is reserved for the Cloudflare media route; it is not accepted until instance-bound health and playback pass.
+- The accepted `/mcp` route remains the rollback surface while accepted `/workspace/mcp` uses its independent OAuth, Bridge, Render and ChatGPT App transport. The two routes must not share an OAuth resource/audience or Snapshot store.
+- `media.skmt617.top` serves the Cloudflare media route. An isolated fixture passed instance-bound health and MP4 playback/Range; broader recovery, revocation and persistence acceptance remains separate.
 - Windows Scheduled Task installation remains a separate authorization gate.
 
 For operational procedures use [USER_GUIDE.md](USER_GUIDE.md) and [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md), not historical taskbooks.

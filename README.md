@@ -47,7 +47,7 @@ npm run media:status
 npm run media:stop
 ```
 
-Gateway 只监听 `127.0.0.1:2092`；媒体字节留在本机。Cloudflare named tunnel、DNS、共享 capability key 和 DPAPI token 已完成有界外部接线；隔离 MP4 fixture 已通过公网 route/edge、ChatGPT Widget 播放与 forward Range/seek。它不是完整 production-ready 声明：撤权、项目切换、离线恢复、格式覆盖、Windows 登录任务和 soak 仍未验收。详见 [Local Media Gateway Runbook](docs/webgpt/READONLY_LOCAL_MEDIA_GATEWAY_RUNBOOK.md) 与 [MP4 Fixture Acceptance](ops/reports/2026-07-27-readonly-media-gateway-mp4-fixture-acceptance.md)。
+Gateway 只监听 `127.0.0.1:2092`；媒体字节留在本机。Cloudflare named tunnel、DNS、共享 capability key 和 DPAPI token 已完成有界外部接线；隔离 MP4 fixture 已通过公网 route/edge、ChatGPT Widget 播放与 forward Range/seek。它不是完整 production-ready 声明：撤权、项目切换、离线恢复、格式覆盖、Windows 登录任务、soak，以及该 fixture/restore 路径的活动库前后 logical-manifest 比较仍未验收。详见 [Local Media Gateway Runbook](docs/webgpt/READONLY_LOCAL_MEDIA_GATEWAY_RUNBOOK.md) 与 [MP4 Fixture Acceptance](ops/reports/2026-07-27-readonly-media-gateway-mp4-fixture-acceptance.md)。
 
 Legacy `WEBGPT_V4_PROFILE=full` 也占用 2092；它与 Readonly Media Gateway 互斥。启动 Gateway 前必须确认 Full profile 已停止。
 
