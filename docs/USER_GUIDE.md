@@ -39,7 +39,7 @@ If `windows:start` reports an unknown listener or stale identity, do not kill pr
 
 Open the installed Jenn AI Video Workspace App in ChatGPT. The App shows:
 
-- service and Snapshot freshness;
+- service and Snapshot availability/fingerprint consistency, not a remote freshness or renewal estimate;
 - authorized production projects;
 - project context and next action;
 - SHOT operational state;
@@ -53,21 +53,15 @@ Allowed actions are view, refresh, select project, expand SHOT, switch detail an
 
 The accepted current-schema flow uses the dedicated Unified publisher profile and Unified Snapshot store. The remote has no persistent Snapshot storage: do not invoke a Unified publish, renewal or recovery action without the separate human confirmation required for that one operation. The default `系统 → 只读 App 发布` Workbench surface and its `data/webgpt/publisher/profile.json` are legacy `/mcp` to `/snapshot` controls; they remain unavailable on the active database pending their own ledger-`0011` acceptance.
 
-The Unified Snapshot status has four useful states:
-
-| State | Meaning | Action |
-|---|---|---|
-| `fresh` | Current Snapshot is usable | No action |
-| `renewal_due` | Less than two hours remain | Publish once when convenient |
-| `no_snapshot` / `snapshot_expired` | Remote memory is empty or expired | Run one explicit recovery publish |
-| `service_unavailable` | Remote health cannot be confirmed | Stop; do not repeatedly publish |
+Unified currently has no low-disclosure remote freshness or `renewal_due` status command/UI. Do not reuse the legacy `fresh`, `renewal_due`, `no_snapshot`, `snapshot_expired` or `service_unavailable` labels for Unified decisions, and do not infer the existing remote Snapshot's lifetime from a local preflight result.
 
 Accepted Unified flow:
 
 1. Follow the dedicated Unified profile procedure in [UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md](webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md#snapshot-operations).
-2. Read the low-disclosure status and run its one preflight.
-3. If it passes and the current operation is explicitly confirmed, perform one publish, renewal or recovery action.
-4. Reopen or refresh the ChatGPT App and confirm the readonly tools share one fingerprint.
+2. If the Unified ChatGPT App visibly reports no Snapshot or renders no project data, treat that as a recovery request. If it renders the intended current Snapshot, do nothing unless Jenn explicitly confirms one bounded manual refresh.
+3. Run one Unified preflight. Record only its `snapshot_fingerprint`, `generated_at`, `expires_at` and counts; these describe the newly prepared candidate, not the current remote Snapshot.
+4. If preflight passes and the one recovery/manual-refresh operation is explicitly confirmed, publish once.
+5. Reopen or refresh the ChatGPT App and confirm the readonly tools share the candidate fingerprint. If they do not, stop with the stable error code; do not retry indefinitely.
 
 Do not use the legacy Workbench control or legacy default-profile CLI commands as a fallback. Their separate ledger-`0011` preflight/publish/recovery acceptance is still pending.
 
