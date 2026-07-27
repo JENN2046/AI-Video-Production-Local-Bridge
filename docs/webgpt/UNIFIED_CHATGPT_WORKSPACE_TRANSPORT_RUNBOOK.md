@@ -1,8 +1,8 @@
 # Unified ChatGPT Workspace Transport Runbook
 
-Status: `CANDIDATE — local transport code merged; no unified external wiring or activity-database acceptance has occurred.`
+Status: `EXTERNAL_TRANSPORT_AND_ACTIVITY_GOLDEN_PATH_PASS — retain this runbook for recovery and future gates; Provider, Memory, Media and multi-user acceptance remain separate.`
 
-This is the operational companion to the [Unified Workspace contract](../UNIFIED_CHATGPT_WORKSPACE_MCP.md). It describes the preflight, staged acceptance and rollback boundary for one future `AI Video Production Workspace` ChatGPT App. It does **not** authorize an Auth0, Render, ChatGPT, DNS, database or Provider change.
+This is the operational companion to the [Unified Workspace contract](../UNIFIED_CHATGPT_WORKSPACE_MCP.md). The bounded Auth0, Render, ChatGPT App, Bridge and activity-database stages described here have passed once. It remains the recovery and revalidation boundary; it does **not** authorize a new Auth0, Render, ChatGPT, DNS, database or Provider change.
 
 ## Target and rollback topology
 
@@ -139,6 +139,16 @@ Focus -> advisory Proposal -> human decision -> controlled Artifact receipt
 ```
 
 The receipt may revalidate already-registered local Artifact bytes and digest, but never accepts, stores or exposes a source path, external URL or file bytes from ChatGPT. Core historical records and Artifacts must not be rewritten.
+
+### Recorded Stage 3 result
+
+The authorized activity-database run completed the `0010` → `0011` migration
+gate and then a single-Owner Focus → Context → advisory Proposal → Human
+Workbench decision → controlled Artifact receipt path. The receipt was matched
+to an already registered active Artifact and revalidated its digest; no source
+path, URL or byte payload was accepted or retained. The run created no Grant,
+Provider request, generation job, Artifact overwrite, delivery action or Memory
+write.
 
 ## Snapshot operations
 

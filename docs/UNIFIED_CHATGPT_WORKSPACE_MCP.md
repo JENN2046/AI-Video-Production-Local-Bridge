@@ -1,8 +1,8 @@
 # Unified ChatGPT Workspace MCP Contract
 
-Status: `CANDIDATE — PR3 local runtime and PR4 transport operations documents complete; external wiring remains gated`
+Status: `EXTERNAL_TRANSPORT_PASS — one Unified Connector and the activity-database single-Owner Director golden path are accepted; separate Provider, Memory, Media and multi-user gates remain pending`
 
-The intended primary ChatGPT connector is a single `AI Video Production Workspace` App at:
+The primary ChatGPT connector is a single `AI Video Production Workspace` App at:
 
 ```text
 https://aivideo.skmt617.top/workspace/mcp
@@ -16,9 +16,11 @@ Unified Workspace Remote
 └─ Director: authenticated outbound Local Workbench Bridge
 ```
 
-The accepted Readonly route at `/mcp` remains a rollback surface. This document
-does not authorize creation of an Auth0 API, a ChatGPT App, a Render deployment,
-or any runtime configuration change.
+The accepted Readonly route at `/mcp` remains a rollback surface. Unified OAuth,
+the minimal user-delegated grant, the independent Bridge key, Render path
+deployment and one ChatGPT App were accepted in a bounded external stage. This
+does not authorize Provider execution, Memory saveback, media playback or
+removal of the legacy rollback route.
 
 For staged external preflight, wiring, local-bridge recovery, acceptance and rollback boundaries, use the [Unified ChatGPT Workspace Transport Runbook](webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md).
 
@@ -122,16 +124,24 @@ Gateway external gate passes.
 No tool in this contract approves a Proposal, compiles or submits a Provider
 job, overwrites an Artifact, delivers media, or commits memory.
 
-## External gates
+## Accepted external transport and remaining gates
 
-The following remain separate, explicitly authorized external work:
+The following bounded stages have passed with `REAL_PROVIDER_ENABLED=false`:
 
-1. Auth0 API/resource and user-delegated grant creation.
-2. Independent Bridge-key provision through DPAPI and Render secret storage.
-3. Render deployment and the unified ChatGPT test App.
-4. Isolated and then activity-database acceptance.
+1. One unified Auth0 resource and the existing Native/public client's minimal
+   user-delegated grant, with no M2M capability.
+2. Independent Bridge-key provision through local DPAPI and Render secret
+   storage, without a plaintext repository value.
+3. Render deployment, one Unified ChatGPT App, signed Unified Snapshot and
+   outbound local Bridge connectivity.
+4. An activity-database single-Owner path: Focus → Context → immutable advisory
+   Proposal → Human Workbench decision → one digest-revalidated, path-free
+   controlled import receipt.
 
-Until those gates pass, this repository contract is a testable candidate only.
+The following remain separate, explicitly authorized future work: stable
+project-bound Memory recall/saveback, a bounded real Provider canary, a second
+real user with revoke coverage, real public MP4 playback and the later audit of
+the legacy connector.
 
 ## Local verification
 
