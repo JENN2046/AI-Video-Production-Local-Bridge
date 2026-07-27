@@ -1,6 +1,6 @@
 # Architecture
 
-Status: `SCHEMA_GATE_PENDING`; current code requires ledger `0011`, while the active database remains at the historically accepted ledger `0010`
+Status: `UNIFIED_TRANSPORT_AND_SCHEMA_PASS`; active database is at ledger `0011`, and the bounded Unified Director owner path is accepted. Provider, Memory, Media and multi-user gates remain separate.
 Accepted package: `0.1.0-beta.5`
 
 ## System map
@@ -8,17 +8,17 @@ Accepted package: `0.1.0-beta.5`
 ```mermaid
 flowchart LR
     J["Jenn"] --> W["Local Workbench V2"]
-    W --> DB["SQLite active database: workbench-v2-6\nledger 0010 (historical acceptance PASS; current gate 0011)"]
+    W --> DB["SQLite active database: workbench-v2-6\nledger 0011 (current-code compatible)"]
     W --> FS["Governed local media store"]
-    W --> PA["Manual Snapshot publisher\nblocked pending ledger 0011 acceptance"]
+    W --> PA["Manual Snapshot publisher\naccepted; never automatic"]
     PA --> SS["Signed ephemeral Snapshot v4"]
     SS --> RM["Remote Readonly MCP App"]
     C["ChatGPT"] --> RM
     RM --> AU["Auth0 OAuth / projects.read"]
     RM --> UI["MCP Apps iframe Workbench"]
-    C -. "candidate single Connector" .-> UW["Unified Workspace Remote\n/workspace/mcp"]
-    SS -. "candidate readonly chain" .-> UW
-    UW -. "HMAC outbound poll" .-> DBR["Local Director Bridge — candidate"]
+    C --> UW["Unified Workspace Remote\n/workspace/mcp"]
+    SS --> UW
+    UW --> DBR["Local Director Bridge"]
     DBR -. "issuer/project/Focus checks" .-> DB
     RM -. "encrypted 5-minute capability" .-> CF["Cloudflare media ingress — candidate"]
     CF -.-> GW["Local Gateway 127.0.0.1:2092"]
@@ -27,7 +27,7 @@ flowchart LR
     W --> PR["Provider adapters — explicit human gate"]
 ```
 
-Solid lines describe the intended operating paths, not currently authorized runtime actions. The active database completed the authorized `0010` migration with backup, manifest, `db:check` and restore evidence, but current code adds the controlled Artifact import-receipt schema and requires `0011`. Therefore `0010` is historical evidence only: startup, Snapshot publish, renewal and recovery remain blocked until a separately authorized `0011` migration and bounded runtime/publish re-acceptance pass. Dashed media lines are implemented but not yet externally accepted end to end.
+The Unified Connector's solid lines describe one accepted, bounded single-Owner path. The active database completed its authorized `0011` migration with backup, manifest, `db:check` and restore evidence; Unified Snapshot publishing remains manual and memory-only. Dashed media lines are implemented but not yet externally accepted end to end.
 
 ## Sources of truth
 
@@ -47,7 +47,7 @@ The Remote Runtime, ChatGPT Widget and Cloudflare are never authoritative busine
 |---|---|---|
 | Workbench | Human confirmation, cost acknowledgement, Provider execution, review adoption, assembly, delivery and manual publish | Bypassing confirmation, secret or database gates |
 | Readonly MCP App | Seven model-visible readonly tools, strict DTOs, signed Snapshot reads | Writes, Provider calls, media directory access, anonymous data |
-| Unified Workspace candidate | Snapshot reads plus bounded Director Focus/context/frame analysis and immutable advisory Proposal submission through the local bridge | Approval, Grant compilation, Provider calls, Clip adoption, delivery, memory commit, direct SQLite access |
+| Unified Workspace | Snapshot reads plus bounded Director Focus/context/frame analysis and immutable advisory Proposal submission through the local bridge | Approval, Grant compilation, Provider calls, Clip adoption, delivery, memory commit, direct SQLite access |
 | Widget-only media tool | Request one project/artifact-bound capability | Returning playback URL to model content or bypassing membership |
 | Local Media Gateway | Revalidate DB/Blob/file identity and stream approved bytes | Directory listing, arbitrary paths, writes, Provider operations |
 | Provider adapters | Execute an already-authorized operation | Choosing authority or concealing uncertain submission outcome |
@@ -69,14 +69,14 @@ The Remote Runtime, ChatGPT Widget and Cloudflare are never authoritative busine
 - `WebGPT readonly`: local MCP on `127.0.0.1:2091`, six data tools, no media listener.
 - `WebGPT full`: explicit legacy/local profile with 14 tools; not externally accepted.
 - `Remote Readonly App`: database-free OAuth MCP + Apps UI + signed Snapshot receiver.
-- `Unified Workspace Remote`: candidate database-free `/workspace/mcp` connector; independent Readonly Snapshot and Director Bridge chains, with legacy `/mcp` retained for rollback.
-- `Director Local Bridge`: candidate outbound-only process; it validates issuer/principal/project/Focus locally and writes only immutable advisory Proposals.
+- `Unified Workspace Remote`: accepted database-free `/workspace/mcp` connector; independent Readonly Snapshot and Director Bridge chains, with legacy `/mcp` retained for rollback.
+- `Director Local Bridge`: accepted outbound-only process for the bounded owner path; it validates issuer/principal/project/Focus locally and writes only immutable advisory Proposals.
 - `Readonly Media Gateway`: local `127.0.0.1:2092`, candidate external media path.
 
 ## Deployment boundaries
 
 - Local Workbench and data stay on Jenn's Windows machine.
-- Remote App currently uses Render Free characteristics: process memory can disappear after sleep/restart and has no persistent business store. The former manual Snapshot republish path is historical evidence; current-code republish remains blocked pending the `0011` gate.
+- Remote App currently uses Render Free characteristics: process memory can disappear after sleep/restart and has no persistent business store. Manual Unified Snapshot publishing was accepted once, but any restart or expiry still requires a separately confirmed republish.
 - `aivideo.skmt617.top` is the MCP/App origin.
 - The accepted `/mcp` route remains the rollback surface while candidate `/workspace/mcp` awaits its own OAuth, Bridge, Render and ChatGPT App acceptance. The two routes must not share an OAuth resource/audience or Snapshot store.
 - `media.skmt617.top` is reserved for the Cloudflare media route; it is not accepted until instance-bound health and playback pass.

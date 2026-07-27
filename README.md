@@ -11,20 +11,20 @@ AI Video Production Workspace 是 Jenn 的 Windows 本地 AI 视频生产与 Cha
 | Remote App service | `readonly-remote-v1.0.0` |
 | Media Gateway code | `readonly-media-gateway-v1.0.0`（外部验收未完成） |
 | Snapshot contract | `readonly-snapshot-v4`（代码已合入，不能据此宣称公网媒体已可用） |
-| Database | Active activity database: `workbench-v2-6` / ledger `0010`; its 2026-07-22 migration, manifest and restore acceptance remains PASS. Current code candidate requires ledger `0011`; no activity migration has occurred. |
-| ChatGPT Director | PR1–PR6 plus controlled import-receipt candidate are local-only; `0011` migration, external wiring and startup remain unaccepted |
-| Unified ChatGPT Workspace | PR3 Runtime 已合入；PR4 transport runbook 是候选文档，统一 OAuth/Bridge/ChatGPT App 外部接线尚未执行 |
+| Database | Active activity database: `workbench-v2-6` / ledger `0011`; `0010`→`0011` 已完成有界迁移、只读 `db:check`、恢复演练和逻辑 manifest 比较。运行时仍不自动迁移或回退。 |
+| ChatGPT Director | 单 Owner Focus → Context → advisory Proposal → Human Workbench 决定 → controlled import receipt 已在活动库通过；Provider、Grant 启动与 Memory 写入仍关闭。 |
+| Unified ChatGPT Workspace | 单一 `/workspace/mcp` Connector 已完成独立 OAuth、Bridge、Render 与活动库黄金路径验收；旧 `/mcp` 仍保留为回滚面。 |
 | Product status | `JENN_SINGLE_USER_MCP_APP_PASS` |
 | Operations status | Historical `MANUAL_PUBLISH_OPERATIONAL_READY`; renewed startup/publish acceptance is blocked pending separately authorized `0011` migration |
 | Multi-user status | `PARTIAL_MULTI_USER_GATE` |
 
-当前 `main` 已包含 Workbench V2、WebGPT V4、Auth0 Federated Readonly、签名 Snapshot、ChatGPT MCP App、共享派生状态、Human Workbench 人工发布、Unified Workspace Remote 候选，以及 Local Media Gateway 的代码和 Windows 运维入口。Unified Workspace 保留旧 `/mcp` 为回滚面，尚未创建新的 OAuth resource、Bridge key 或 ChatGPT App。Cloudflare 媒体链路尚未完成端到端播放验收；Windows 登录任务、自动 Snapshot 发布、真实 Provider canary 和多用户黄金路径仍是独立 gate。
+当前 `main` 已包含 Workbench V2、WebGPT V4、Auth0 Federated Readonly、签名 Snapshot、ChatGPT MCP App、共享派生状态、Human Workbench 人工发布、已接线的 Unified Workspace Remote，以及 Local Media Gateway 的代码和 Windows 运维入口。Unified Workspace 保留旧 `/mcp` 为回滚面。Cloudflare 媒体链路尚未完成端到端播放验收；Windows 登录任务、自动 Snapshot 发布、真实 Provider canary、稳定 Memory 插件和多用户黄金路径仍是独立 gate。
 
-`ChatGPT Director` 是另一条候选路线：ChatGPT 只能读取有界讨论上下文并提出不可变 Proposal，Workbench 保留人类批准，Local Orchestrator 只在未来获授权的 Grant 内执行。当前代码候选要求 `0011` 的 controlled import-receipt schema；活动库仍停在已验收的 `0010`，尚未配置 Director OAuth/bridge/Memory 插件或调用 Provider；不得把其合并状态误作可运行服务。
+`ChatGPT Director` 现已完成单 Owner 的活动库受控验收：ChatGPT Connector 只能读取有界讨论上下文并提出不可变 Proposal，Workbench 保留人类批准与一次性 receipt 记录。Local Orchestrator 只在未来获授权的 Grant 内执行；`REAL_PROVIDER_ENABLED=false`、Memory 插件未接线，且不得把该验收扩大为自动生成、自动采纳、自动交付或自动 Memory 写入。
 
 ## 当前 main 数据库兼容性
 
-当前代码候选的 Workbench、Snapshot exporter 与 Director receipt path 要求 `workbench-v2-6` / ledger `0011`。活动库已于 2026-07-22 在单独授权下完成至 `0010` 的备份、隔离迁移、只读 `db:check`、恢复演练和逻辑 manifest 比较；该历史验收不等同于 `0011` 兼容。`0011` 必须经过新的独立迁移授权，且不自动迁移、回退或重新接受日常启动、Snapshot publish/recovery 或 Director runtime。
+当前代码的 Workbench、Snapshot exporter 与 Director receipt path 要求 `workbench-v2-6` / ledger `0011`。活动库已在单独授权下完成 `0010`→`0011` 的备份、隔离迁移、只读 `db:check`、恢复演练和逻辑 manifest 比较，并完成一次活动库 Director 黄金路径。该结果不改变运行时不自动迁移、不自动回退、不自动发布 Snapshot 的边界。
 
 完整状态见 [CURRENT_STATE.md](CURRENT_STATE.md)，文档入口见 [docs/README.md](docs/README.md)。
 
@@ -32,7 +32,7 @@ AI Video Production Workspace 是 Jenn 的 Windows 本地 AI 视频生产与 Cha
 
 ### 1. 本地 Workbench（待重新运行验收）
 
-活动库的 ledger `0010` 不能启动要求 `0011` 的当前代码候选。先完成独立的 `0011` 迁移门禁；在此之前不运行日常启动、恢复或发布命令。仓库不会自动迁移或回退数据库。
+活动库已满足当前 `0011` schema gate；日常启动仍须遵循最小配置、只读检查与人工发布边界。仓库不会自动迁移、回退、发布 Snapshot 或启动 Provider。
 
 ### 2. ChatGPT Readonly MCP App
 

@@ -1,7 +1,7 @@
 # Current State
 
-Date (Asia/Shanghai, UTC+08:00): 2026-07-24
-Repository baseline: `main@e87be21232ac3772735516c071ffb808fe38830b`
+Date (Asia/Shanghai, UTC+08:00): 2026-07-27
+Repository baseline: `main@c91d1d0`
 
 ## Accepted historical operations baseline
 
@@ -29,18 +29,19 @@ These states record Jenn's owner-only ChatGPT MCP App and manual Snapshot eviden
 
 The active database completed the authorized `workbench-v2-5` / ledger `0008` to `workbench-v2-6` / ledger `0010` migration on 2026-07-22. The gate included a coherent pre-migration backup, isolated migration, read-only `db:check`, normalized core-manifest comparison, post-migration backup and isolated restore rehearsal. All recorded checks passed.
 
-The controlled Artifact import-receipt code candidate adds migration `0011`. Therefore the active `0010` database is historical evidence, not current-code compatible. It does not accept a renewed local runtime, Snapshot publish/recovery, Director transport, OAuth configuration, memory integration, Provider execution or any external service change. Runtime startup still never migrates the database automatically.
+The controlled Artifact import-receipt migration `0011` has since completed its separately authorized activity-database gate: coherent backup, isolated migration, read-only `db:check`, restore rehearsal and logical-manifest comparison. The active database is now current-code compatible at `workbench-v2-6` / ledger `0011`. Runtime startup still never migrates or rolls back the database automatically.
 
 ## Capability matrix
 
 | Capability | Code | Real acceptance | Current decision |
 |---|---:|---:|---|
-| Workbench V2 local production UI | Current code candidate requires `0011` | Activity database remains at `0010` | Separate migration required |
-| Database ledger `0010` and `db:check` | Active database migrated 2026-07-22 | PASS: migration, manifests and restore rehearsal | Historical evidence only |
+| Workbench V2 local production UI | Current code requires `0011` | Activity database compatible at `0011` | PASS within accepted human boundaries |
+| Database ledger `0010` and `db:check` | Historical migration evidence | PASS: migration, manifests and restore rehearsal | Historical evidence retained |
+| Database ledger `0011` and `db:check` | Current code schema | PASS: authorized migration, manifests and restore rehearsal | Current activity database gate passed |
 | Persistent generation/review/delivery boundaries | PASS | Fixture/local acceptance | Provider remains off by default |
 | Auth0 owner-only Readonly MCP App | PASS | PASS | Accepted |
 | Seven readonly App tools and Workbench panels | PASS | PASS | Accepted |
-| Manual Snapshot publish/recovery/freshness | Current exporter requires `0011` | Historical `0008`/`0010` evidence | Blocked pending separate `0011` migration |
+| Manual Snapshot publish/recovery/freshness | Current exporter requires `0011` | Unified bounded publish accepted; remote remains memory-only | Manual, not automatic |
 | Snapshot v4 media bindings | PASS | Not fully external-accepted | Candidate |
 | Local Media Gateway runtime | PASS | Local/fixture tests PASS | Candidate |
 | Cloudflare media ingress | Configured in part | FAIL/BLOCKED at edge/route startup | Not accepted |
@@ -49,8 +50,8 @@ The controlled Artifact import-receipt code candidate adds migration `0011`. The
 | Second real user and revoke path | PASS | Deferred by Jenn | `PARTIAL_MULTI_USER_GATE` |
 | Automatic Snapshot synchronization | Not implemented | Not accepted | Future gate |
 | Real Provider canary | Boundary exists | Not authorized | Frozen |
-| ChatGPT Director PR1–PR6 + controlled import receipt | Local code candidate | `0011` migration, runtime/OAuth/bridge/plugin unaccepted | `DIRECTOR_EXTERNAL_GATE_PENDING` |
-| Unified ChatGPT Workspace Remote | Local runtime and contract merged | OAuth resource, Bridge key, Render path, ChatGPT App and owner acceptance unexecuted | `UNIFIED_TRANSPORT_EXTERNAL_GATE_PENDING` |
+| ChatGPT Director PR1–PR6 + controlled import receipt | Current code | Single-Owner Focus → Context → advisory Proposal → Human Workbench decision → receipt PASS | `DIRECTOR_OWNER_PROPOSAL_PASS` |
+| Unified ChatGPT Workspace Remote | Current runtime and contract | Unified OAuth, Bridge, Render, ChatGPT App and activity-database path PASS | `UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_PASS` |
 
 ## Accepted evidence
 
@@ -63,6 +64,7 @@ The controlled Artifact import-receipt code candidate adds migration `0011`. The
 - [Snapshot v3 Human Workbench Recovery Acceptance](ops/reports/2026-07-19-snapshot-v3-human-workbench-recovery-acceptance.md)
 - [Snapshot Freshness Operations Acceptance](ops/reports/2026-07-19-snapshot-freshness-operations-acceptance.md)
 - [Director Active Database Migration Acceptance](ops/reports/2026-07-22-director-active-database-migration-acceptance.md)
+- [Unified Director Activity Acceptance](ops/reports/2026-07-27-unified-director-activity-acceptance.md)
 
 Acceptance reports record the commit and boundary that was actually tested. Later code must not silently inherit an older report's PASS.
 
@@ -70,11 +72,11 @@ Acceptance reports record the commit and boundary that was actually tested. Late
 
 ### Daily local work
 
-The active `data/app.sqlite` is ledger `0010`; the current code candidate requires `0011`. `REAL_PROVIDER_ENABLED=false` remains the safe default. Do not run `npm run windows:start` or use schema compatibility as an authorization for Provider work before a separately authorized `0011` migration and runtime smoke.
+The active database is ledger `0011` and current-code compatible. `REAL_PROVIDER_ENABLED=false` remains the safe default. Schema compatibility and the accepted Director path do not authorize Provider work, automatic Snapshot publishing or production delivery.
 
 ### Daily ChatGPT App work
 
-The remote service is memory-only. Current export requires `0011`, while the activity database remains at `0010`; no Snapshot was published as part of the earlier migration. Do not treat either migration as a Human Workbench publish, and do not infer automatic publishing; the UI never auto-publishes.
+The remote service is memory-only. A Unified signed Snapshot was published during bounded acceptance, but restart or expiry still requires a separately confirmed manual republish. Do not infer automatic publishing from migration or transport acceptance.
 
 ### Media gateway work
 
@@ -82,13 +84,13 @@ PR #56–#62 implemented Snapshot v4 media bindings, encrypted capabilities, loc
 
 ### ChatGPT Director candidate
 
-PR #69–#72 merged the local Director candidate, and the controlled Artifact import-receipt candidate adds immutable `0011` evidence. The active database remains at `workbench-v2-6` / ledger `0010`; it must not run the new receipt path until separately migrated. This does **not** alter the accepted Readonly MCP App or the safe default `REAL_PROVIDER_ENABLED=false`.
+PR #69–#72 and the controlled Artifact import-receipt work are now accepted through an activity-database single-Owner golden path. The observed path was Focus → Context → advisory Proposal → Human Workbench decision → one immutable, digest-revalidated receipt. This does **not** alter the accepted Readonly MCP App or the safe default `REAL_PROVIDER_ENABLED=false`.
 
-Director startup requires explicit non-secret runtime configuration and its separate transport acceptance; database readiness alone is insufficient. Do not run `start:director:remote` or `start:director:bridge` as a normal operation yet. The Memory Port has no configured plugin, endpoint, credential or automatic Saveback dispatch. See [Director Local Candidate Closeout](docs/CHATGPT_DIRECTOR_LOCAL_CANDIDATE_CLOSEOUT.md).
+Director startup requires explicit non-secret runtime configuration and its accepted transport configuration; database readiness alone still is not a general authorization. The Memory Port has no configured stable plugin, endpoint or automatic Saveback dispatch. See [Director Local Candidate Closeout](docs/CHATGPT_DIRECTOR_LOCAL_CANDIDATE_CLOSEOUT.md).
 
 ### Unified ChatGPT Workspace candidate
 
-PR #78 merged the single-Connector local runtime at `/workspace/mcp`. It joins the independently fail-closed Readonly signed-Snapshot chain and the Director outbound local-Bridge chain, while preserving `/mcp` as an accepted rollback surface. No unified Auth0 API, public client grant, Bridge key, Render path deployment, ChatGPT App or Snapshot has been created or published. The active database remains at ledger `0010`, below the current ledger `0011` gate. See [Unified Workspace Transport Runbook](docs/webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md).
+The single-Connector runtime at `/workspace/mcp` now joins the independently fail-closed Readonly signed-Snapshot chain and Director outbound local-Bridge chain in an accepted bounded deployment. One unified Auth0 resource, minimal user-delegated grant, independent Bridge key, Render path, ChatGPT App, signed Unified Snapshot and activity-database owner path were accepted. `/mcp` remains an accepted rollback surface. See [Unified Workspace Transport Runbook](docs/webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md).
 
 ## Active blockers and next gates
 
@@ -101,22 +103,13 @@ The isolated MP4 fixture and profile tooling is merged. It is an acceptance inpu
 
 Separate, non-blocking future gates are the second real user, automatic Snapshot publishing, Windows automatic startup, Full profile externalization and real Provider canary.
 
-Director has its own ordered external gates and does not inherit acceptance from the Readonly App or media gateway:
+Director has completed its migration, transport and single-Owner Proposal/receipt gates without Provider execution. Its remaining ordered external gates are:
 
-1. **PASS (historical):** active-database migration from ledger `0008` to `0010`, with backup, manifest, read-only `db:check`, isolated restore and core-record preservation evidence;
-2. separately authorize `0010` to `0011` migration with the same backup, manifest, read-only `db:check` and restore boundary;
-3. separately authorize an isolated Director OAuth/remote/bridge wiring acceptance with `REAL_PROVIDER_ENABLED=false`;
-4. prove the owner-only Proposal and approval path against the migrated activity database without Provider execution;
-5. select a stable memory plugin and separately accept recall-only, project/issuer-bound integration before any Saveback dispatch;
-6. only then consider a bounded Provider execution canary under a separately approved Automation Grant and budget.
+1. select and accept a stable Memory plugin with project/issuer-bound recall-only behavior before any Saveback dispatch;
+2. separately authorize a bounded Provider execution canary under an Automation Grant and budget;
+3. accept a second real user and revoke path before claiming multi-user readiness.
 
-The unified Connector has an ordered, independent transport gate:
-
-1. read-only Auth0/Render/legacy-Readonly/ChatGPT capability preflight;
-2. separately authorize one unified OAuth API and its minimal user-delegated grant, one dedicated Bridge key, a path deployment and one test App;
-3. accept the isolated owner Focus → context → advisory Proposal path with `REAL_PROVIDER_ENABLED=false`;
-4. after the separately authorized `0011` migration, accept the single-owner activity-database Proposal/decision/import-receipt path;
-5. only then evaluate stable Memory recall/saveback and a bounded Provider canary as separate gates.
+The unified Connector transport gate has passed while retaining legacy `/mcp` as rollback. Its remaining work is the same separately authorized stable Memory, bounded Provider, multi-user and Media Gateway gates; the legacy connector may be audited for removal only after a distinct authorization.
 
 ## Non-claims
 

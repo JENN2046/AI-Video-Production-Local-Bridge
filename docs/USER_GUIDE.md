@@ -1,10 +1,10 @@
 # User Guide
 
-Status: `SCHEMA_GATE_PENDING`. The owner-only `0.1.0-beta.5` / ledger `0008` workflow below remains historical evidence; the active database separately completed `0010` on 2026-07-22, while the controlled Artifact import-receipt code candidate requires `0011`. A renewed migration and runtime/publish acceptance are required before treating the commands below as daily operation.
+Status: `UNIFIED_TRANSPORT_AND_SCHEMA_PASS`. The owner-only `0.1.0-beta.5` / ledger `0008` workflow remains historical evidence; the active database has now completed `0011`, and the bounded Unified Director owner path has passed. Provider, Memory, Media and multi-user gates remain separate.
 
 ## Current-main database compatibility
 
-Current code candidate requires `workbench-v2-6` / ledger `0011`, while the active database remains at `0010`. Runtime startup never migrates a database automatically. The completed historical migration does not authorize a normal `windows:start`, manual Snapshot publish/recovery or Director startup; first complete a separately authorized `0011` migration, then resume each pathway only after its own bounded runtime acceptance with `REAL_PROVIDER_ENABLED=false`.
+Current code requires `workbench-v2-6` / ledger `0011`, and the active database has passed that migration and bounded runtime acceptance. Runtime startup still never migrates a database automatically. The accepted path does not authorize Provider execution, automatic Snapshot publishing, Memory saveback or production delivery.
 
 ## What Jenn can do today
 
@@ -12,7 +12,7 @@ Current code candidate requires `workbench-v2-6` / ledger `0011`, while the acti
 
 The Workbench is the human production surface for projects, SHOTs, Storyboard, Generation, Review, Delivery and system operations. It is also the only surface allowed to confirm paid Provider work or adopt production decisions.
 
-The following is the historical accepted startup sequence. The schema gate is closed, but do not execute it on current `main` until a bounded runtime re-acceptance is authorized:
+The following is the accepted local startup sequence. Use it only with the verified activity database and keep `REAL_PROVIDER_ENABLED=false` unless a separate Provider authorization exists:
 
 ```powershell
 Set-Location "<verified repository root that owns the accepted data\app.sqlite>"
@@ -49,9 +49,9 @@ The banner “当前数据来自只读快照” is intentional. ChatGPT reads th
 
 Allowed actions are view, refresh, select project, expand SHOT, switch detail and copy a sanitized summary. Project edits, review adoption, Provider calls and Snapshot publishing are not App actions.
 
-## Snapshot operations (historical; renewed acceptance pending)
+## Snapshot operations (manual; renewed run still requires confirmation)
 
-The states and UI flow below explain the accepted ledger-`0008` evidence. The activity database remains at ledger `0010`, below the current-code `0011` requirement; do not invoke a publish, renewal or recovery action until a separately authorized migration and that operation's own bounded acceptance both pass.
+The states and UI flow below include historical ledger-`0008` evidence and the accepted current-schema Unified flow. The remote has no persistent Snapshot storage: do not invoke a publish, renewal or recovery action without the separate human confirmation required for that one operation.
 
 Snapshot status has four useful states:
 
