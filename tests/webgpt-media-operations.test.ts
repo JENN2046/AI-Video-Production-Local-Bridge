@@ -57,7 +57,13 @@ test("readonly media operations pin cloudflared and keep secrets out of command 
   assert.match(common, /MEDIA_TUNNEL_PROTOCOL_CHANGE_REQUIRES_RESTART/);
   assert.match(common, /MEDIA_OPERATIONS_RESTART_REQUIRED/);
   assert.match(preflight, /dist\/scripts\/db-check\.js --read-only/);
-  assert.match(common, /Invoke-WebRequest -UseBasicParsing -Uri \$Url -TimeoutSec \$TimeoutSec -MaximumRedirection 0/);
+  assert.match(common, /System\.Net\.Http\.HttpClientHandler/);
+  assert.match(common, /Add-Type -AssemblyName System\.Net\.Http -ErrorAction Stop/);
+  assert.match(common, /\$handler\.AllowAutoRedirect = \$false/);
+  assert.match(common, /System\.Threading\.CancellationTokenSource/);
+  assert.match(common, /HttpCompletionOption\]::ResponseHeadersRead/);
+  assert.match(common, /\$responseTask\.Wait\(\$remainingMilliseconds\)/);
+  assert.match(common, /\$bodyTask\.Wait\(\$remainingMilliseconds\)/);
   assert.match(common, /FileAttributes\]::ReparsePoint/);
   assert.match(common, /MEDIA_OPERATIONS_PATH_REPARSE_POINT/);
   assert.match(common, /X-Readonly-Media-Instance-Probe/);
@@ -70,6 +76,84 @@ test("readonly media operations pin cloudflared and keep secrets out of command 
   assert.match(start, /MEDIA_TUNNEL_ROUTE_NOT_EXCLUSIVE/);
   assert.match(start, /Resolve-MediaTunnelReadinessFailure/);
   assert.doesNotMatch(start, /throw "MEDIA_TUNNEL_NOT_READY"/);
+});
+
+test("readonly media public health probe enforces a wall-clock timeout", { skip: process.platform !== "win32" }, async () => {
+  const sockets: Array<{ destroy(): void }> = [];
+  const server = createServer((socket) => {
+    sockets.push(socket);
+    socket.on("error", () => undefined);
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    const command = [
+      ". $env:MEDIA_TEST_COMMON_SCRIPT",
+      "$result = Get-MediaGatewayHealth ('http://127.0.0.1:' + $env:MEDIA_TEST_PORT + '/') 1 ('A' * 43)",
+      "[Console]::Out.WriteLine(('{0}|{1}' -f $result.Status, $result.Valid))"
+    ].join("\n");
+    const startedAt = Date.now();
+    const result = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        MEDIA_TEST_COMMON_SCRIPT: join(process.cwd(), "scripts", "windows", "media-runtime-common.ps1"),
+        MEDIA_TEST_PORT: String(address.port)
+      },
+      encoding: "utf8",
+      timeout: 5_000,
+      windowsHide: true
+    });
+    const elapsedMilliseconds = Date.now() - startedAt;
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), "0|False");
+    assert.ok(elapsedMilliseconds < 5_000, `health probe exceeded wall-clock bound: ${elapsedMilliseconds}ms`);
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test("readonly media public health probe accepts a validated response in powershell.exe", { skip: process.platform !== "win32" }, () => {
+  const serverProgram = [
+    "$port = [int]$env:MEDIA_TEST_PORT",
+    "$server = New-Object System.Net.HttpListener",
+    "$server.Prefixes.Add('http://127.0.0.1:' + $port + '/')",
+    "$server.Start()",
+    "try {",
+    "  $context = $server.GetContext()",
+    "  $bytes = [Text.Encoding]::UTF8.GetBytes('{\"ok\":true,\"service\":\"readonly-media-gateway\",\"version\":\"readonly-media-gateway-v1.0.0\"}')",
+    "  $context.Response.StatusCode = 200",
+    "  $context.Response.ContentType = 'application/json'",
+    "  $context.Response.ContentLength64 = $bytes.Length",
+    "  $context.Response.OutputStream.Write($bytes, 0, $bytes.Length)",
+    "  $context.Response.Close()",
+    "} finally { $server.Stop(); $server.Close() }"
+  ].join("\n");
+  const encodedServer = Buffer.from(serverProgram, "utf16le").toString("base64");
+  const command = [
+    ". $env:MEDIA_TEST_COMMON_SCRIPT",
+    "$reservation = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, 0); $reservation.Start(); $port = ([System.Net.IPEndPoint]$reservation.LocalEndpoint).Port; $reservation.Stop()",
+    "$env:MEDIA_TEST_PORT = [string]$port",
+    `$server = Start-Process -FilePath powershell.exe -ArgumentList @('-NoProfile', '-EncodedCommand', '${encodedServer}') -WindowStyle Hidden -PassThru`,
+    "try { $deadline = [DateTime]::UtcNow.AddSeconds(5); do { $ready = @(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue).Count -gt 0; if ($ready) { break }; Start-Sleep -Milliseconds 50 } while ([DateTime]::UtcNow -lt $deadline); if (-not $ready) { throw 'MEDIA_TEST_LISTENER_NOT_READY' }; $result = Get-MediaGatewayHealth ('http://127.0.0.1:' + $port + '/') 3 ''; [Console]::Out.WriteLine(('{0}|{1}' -f $result.Status, $result.Valid)) } finally { if (-not $server.HasExited) { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue } }"
+  ].join("\n");
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      MEDIA_TEST_COMMON_SCRIPT: join(process.cwd(), "scripts", "windows", "media-runtime-common.ps1")
+    },
+    encoding: "utf8",
+    timeout: 10_000,
+    windowsHide: true
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), "200|True");
 });
 
 test("readonly media operations validate and forward the selected tunnel protocol", () => {
