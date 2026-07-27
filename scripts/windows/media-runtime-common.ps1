@@ -297,18 +297,47 @@ function Assert-MediaCapabilityKeyring([object]$Profile, [byte[]]$ActiveKey, [by
 }
 
 function Get-MediaGatewayHealth([string]$Url, [int]$TimeoutSec = 3, [string]$ExpectedInstanceProbe = "") {
+  $handler = $null
+  $client = $null
+  $request = $null
+  $response = $null
+  $cancellation = $null
   try {
     if ($ExpectedInstanceProbe -and $ExpectedInstanceProbe -notmatch '^[A-Za-z0-9_-]{43}$') { throw "MEDIA_INSTANCE_PROBE_INVALID" }
-    $headers = @{}
-    if ($ExpectedInstanceProbe) { $headers["X-Readonly-Media-Instance-Probe"] = $ExpectedInstanceProbe }
-    $response = Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec $TimeoutSec -MaximumRedirection 0 -Headers $headers
-    $body = $response.Content | ConvertFrom-Json
+    Add-Type -AssemblyName System.Net.Http -ErrorAction Stop
+    $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(1, $TimeoutSec))
+    $handler = New-Object System.Net.Http.HttpClientHandler
+    $handler.AllowAutoRedirect = $false
+    $client = New-Object System.Net.Http.HttpClient -ArgumentList $handler
+    $cancellation = New-Object System.Threading.CancellationTokenSource
+    $request = New-Object System.Net.Http.HttpRequestMessage -ArgumentList @([System.Net.Http.HttpMethod]::Get, [Uri]$Url)
+    if ($ExpectedInstanceProbe) { [void]$request.Headers.Add("X-Readonly-Media-Instance-Probe", $ExpectedInstanceProbe) }
+    $responseTask = $client.SendAsync($request, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead, $cancellation.Token)
+    $remainingMilliseconds = [int][Math]::Ceiling(($deadline - [DateTime]::UtcNow).TotalMilliseconds)
+    if ($remainingMilliseconds -le 0 -or -not $responseTask.Wait($remainingMilliseconds)) {
+      $cancellation.Cancel()
+      return [pscustomobject]@{ Status = 0; Valid = $false }
+    }
+    $response = $responseTask.GetAwaiter().GetResult()
+    $bodyTask = $response.Content.ReadAsStringAsync()
+    $remainingMilliseconds = [int][Math]::Ceiling(($deadline - [DateTime]::UtcNow).TotalMilliseconds)
+    if ($remainingMilliseconds -le 0 -or -not $bodyTask.Wait($remainingMilliseconds)) {
+      $cancellation.Cancel()
+      return [pscustomobject]@{ Status = 0; Valid = $false }
+    }
+    $body = $bodyTask.GetAwaiter().GetResult() | ConvertFrom-Json
     $instanceValid = -not $ExpectedInstanceProbe -or [string]$body.instance_probe -ceq $ExpectedInstanceProbe
     $valid = [int]$response.StatusCode -eq 200 -and [bool]$body.ok -and [string]$body.service -eq "readonly-media-gateway" -and [string]$body.version -eq "readonly-media-gateway-v1.0.0" -and $instanceValid
     return [pscustomobject]@{ Status = [int]$response.StatusCode; Valid = $valid }
   } catch {
-    $status = if ($null -ne $_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
+    $status = if ($null -ne $response) { [int]$response.StatusCode } else { 0 }
     return [pscustomobject]@{ Status = $status; Valid = $false }
+  } finally {
+    if ($null -ne $cancellation) { $cancellation.Dispose() }
+    if ($null -ne $response) { $response.Dispose() }
+    if ($null -ne $request) { $request.Dispose() }
+    if ($null -ne $client) { $client.Dispose() }
+    elseif ($null -ne $handler) { $handler.Dispose() }
   }
 }
 
