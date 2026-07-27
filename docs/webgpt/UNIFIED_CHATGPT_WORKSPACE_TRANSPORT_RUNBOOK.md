@@ -1,6 +1,6 @@
 # Unified ChatGPT Workspace Transport Runbook
 
-Status: `EXTERNAL_TRANSPORT_AND_ACTIVITY_GOLDEN_PATH_PASS — retain this runbook for recovery and future gates; Provider, Memory, Media and multi-user acceptance remain separate.`
+Status: `EXTERNAL_TRANSPORT_AND_ACTIVITY_GOLDEN_PATH_PASS — retain this runbook for recovery and future gates; an isolated Media Gateway MP4 fixture playback/Range gate has passed, while broader Media, Provider, Memory and multi-user acceptance remain separate.`
 
 This is the operational companion to the [Unified Workspace contract](../UNIFIED_CHATGPT_WORKSPACE_MCP.md). The bounded Auth0, Render, ChatGPT App, Bridge and activity-database stages described here have passed once. It remains the recovery and revalidation boundary; it does **not** authorize a new Auth0, Render, ChatGPT, DNS, database or Provider change.
 
@@ -37,7 +37,7 @@ Do not remove, repoint or reconfigure legacy `/mcp` while accepting the unified 
 | Bridge credential | Separate 32-byte HMAC key; never reuse Snapshot or Media capability material |
 | Provider | `REAL_PROVIDER_ENABLED=false` throughout all transport acceptance |
 
-The public directory has 12 model-visible tools. Widget-only `get_readonly_media_playback` is excluded from the model directory and remains unavailable until the separate Media Gateway external gate passes. The Widget can read only low-disclosure Director Focus status; it cannot approve a Proposal, compile a Grant, submit a Provider job, adopt a Clip, deliver media or commit memory.
+The public directory has 12 model-visible tools. Widget-only `get_readonly_media_playback` is excluded from the model directory and fails closed when its separate Media Gateway configuration is absent or invalid. A bounded isolated MP4 fixture has passed Widget playback and Range/seek; remaining Media Gateway recovery/revocation gates are separate. The Widget can read only low-disclosure Director Focus status; it cannot approve a Proposal, compile a Grant, submit a Provider job, adopt a Clip, deliver media or commit memory.
 
 ## Stage 0 — read-only external preflight
 
@@ -48,7 +48,7 @@ Complete this stage before creating anything. Record only a sanitized result; ne
 3. Confirm legacy `/mcp` health, PRMD, challenge and Readonly login are unchanged.
 4. Confirm Render can host the additional path without replacing the legacy runtime during the acceptance window.
 5. Confirm ChatGPT can install one test App and that any callback it generates can be added as exactly one allowlist entry.
-6. Confirm the activity database remains ledger `0010`; it must not be treated as satisfying the current-code ledger `0011` exporter or receipt gate.
+6. Historical precondition: the activity database was ledger `0010` before its separately authorized `0011` migration. The current activity database is now at ledger `0011`; do not rerun, downgrade or treat the historical precondition as a current readiness check.
 
 Any mismatch is a stop condition. Do not reuse the legacy resource, broaden callbacks, enable M2M, share a key or change database schema to make preflight pass.
 
@@ -130,7 +130,7 @@ Verify immutable Proposal/Grant events, project/issuer/Focus/base-state binding 
 
 ## Stage 3 — activity database acceptance
 
-This stage is separately authorized and starts with the `0010` → `0011` migration gate: stop relevant processes, backup, logical manifest, isolated migration, `npm run db:check -- --read-only`, restore rehearsal, manifest comparison and only then the authorized activity migration. No automatic down migration is allowed.
+This historical stage was separately authorized and started with the `0010` → `0011` migration gate: stop relevant processes, backup, logical manifest, isolated migration, `npm run db:check -- --read-only`, restore rehearsal, manifest comparison and only then the authorized activity migration. The current activity database already completed this gate; do not rerun it, and no automatic down migration is allowed.
 
 After migration, run one single-owner golden path:
 

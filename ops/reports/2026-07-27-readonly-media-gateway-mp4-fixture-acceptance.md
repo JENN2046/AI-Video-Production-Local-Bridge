@@ -5,6 +5,19 @@ Scope: one bounded, isolated MP4 fixture acceptance through the Unified
 ChatGPT Workspace Widget. This report is evidence for this exact test boundary;
 it is not a general Media Gateway production-readiness claim.
 
+## Tested identity
+
+```text
+Repository commit:        main@2b84f447c1d85eaf5f96c4da6cf0d81080332131
+Media Gateway contract:   readonly-media-gateway-v1.0.0
+Snapshot contract:        readonly-snapshot-v4
+Remote deployment source: main@2b84f447c1d85eaf5f96c4da6cf0d81080332131
+```
+
+The deployed Remote and the local Gateway used this same source identity for
+the bounded fixture run. Later commits do not inherit this PASS without their
+own acceptance evidence.
+
 ## Result
 
 ```text
