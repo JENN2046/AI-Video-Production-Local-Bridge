@@ -30,9 +30,9 @@ AI Video Production Workspace 是 Jenn 的 Windows 本地 AI 视频生产与 Cha
 
 ## 三个日常入口
 
-### 1. 本地 Workbench（待重新运行验收）
+### 1. 本地 Workbench（Unified activity path 已通过有界验收）
 
-活动库已满足当前 `0011` schema gate；日常启动仍须遵循最小配置、只读检查与人工发布边界。仓库不会自动迁移、回退、发布 Snapshot 或启动 Provider。
+活动库已满足当前 `0011` schema gate；一次有界 Unified activity path 已验证本地启动、Focus/Proposal/人工决定与受控 receipt。它是可复用的验收基线，不是持续运行或自动发布声明；每次日常启动仍须遵循最小配置、只读检查与人工发布边界。仓库不会自动迁移、回退、发布 Snapshot 或启动 Provider。
 
 ### 2. ChatGPT Readonly MCP App
 

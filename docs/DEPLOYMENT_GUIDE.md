@@ -1,6 +1,6 @@
 # Deployment Guide
 
-Status: `UNIFIED_TRANSPORT_AND_SCHEMA_PASS`; the active database is current at ledger `0011`, and bounded local startup/publish plus Unified transport acceptance have passed. It is descriptive; it does not authorize external changes.
+Status: `UNIFIED_TRANSPORT_AND_SCHEMA_PASS`; the active database is current at ledger `0011`, and the bounded Unified activity path (local start, manual Snapshot publish, Focus/Proposal/decision/receipt) plus Unified transport acceptance have passed. This is not a continuous-runtime or automatic-publication claim. It is descriptive; it does not authorize external changes.
 
 ## Current-main database compatibility
 
@@ -18,7 +18,7 @@ Layer 4  Windows automatic startup (frozen)
 Layer 5  Real Provider canary (frozen)
 ```
 
-## Layer 1 — local Workbench (runtime re-acceptance pending)
+## Layer 1 — local Workbench (bounded Unified activity path accepted)
 
 Prerequisites:
 
@@ -39,7 +39,7 @@ npm run preflight
 
 Run these commands only from the verified Git root that owns the accepted activity database; do not hard-code or infer a workspace path from a similarly named clone. `db:check -- --read-only` disables media-activation recovery. The default writable `db:check` belongs only to a separately authorized recovery procedure.
 
-Only when a bounded runtime acceptance is separately authorized, start through `npm run windows:start`. The process must bind only `127.0.0.1:4181`, return `200` for `/healthz` and `/readyz`, and keep real Provider flags false unless a separate canary is authorized.
+The accepted Unified activity evidence includes a bounded local start through `npm run windows:start`, manual Snapshot publishing, and the single-Owner Director path. For every new start, preserve the same boundary: bind only `127.0.0.1:4181`, verify `/healthz` and `/readyz`, and keep real Provider flags false unless a separate canary is authorized. A prior bounded PASS does not authorize a persistent runtime, automatic publish, or a new external change.
 
 Database upgrade is not part of normal startup. The active database already meets the current-code `0011` requirement. Any future migration still requires service stop, backup, logical manifest, isolated migration, `db:check`, restore rehearsal and explicit activity-database authorization.
 
