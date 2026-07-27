@@ -1,6 +1,6 @@
 # WebGPT V4 本地运行与外部接线手册
 
-状态：`LEGACY_ROLLBACK_REFERENCE`。provider-neutral Federated OAuth、issuer binding、Auth0 predefined public-client 与 Readonly ChatGPT MCP App 的 owner-only 路径在 ledger `0008`/`0010` 上的验收保留为历史证据，`MANUAL_PUBLISH_OPERATIONAL_READY` 是其中一项。活动库现已完成单独授权的 `workbench-v2-6` / ledger `0011` 迁移、只读 `db:check`、恢复演练和 manifest 比较；current-main 的 Unified Workspace transport 与单 Owner Director path 已另行通过有界验收。Local Media Gateway 的隔离 MP4 fixture 也已通过公网 route/edge、ChatGPT Widget 播放与 Range/seek，但恢复、撤权、格式覆盖、Windows 自动启动和自动同步仍未验收。本文件是 legacy `/mcp` 回滚参考，不是当前 Unified 日常操作入口；日常操作优先阅读 [User Guide](../USER_GUIDE.md)，部署边界见 [Deployment Guide](../DEPLOYMENT_GUIDE.md)。
+状态：`LEGACY_ROLLBACK_REFERENCE`。provider-neutral Federated OAuth、issuer binding、Auth0 predefined public-client 与 Readonly ChatGPT MCP App 的 owner-only 路径在 ledger `0008`/`0010` 上的验收保留为历史证据，`MANUAL_PUBLISH_OPERATIONAL_READY` 是其中一项。活动库现已完成单独授权的 `workbench-v2-6` / ledger `0011` 迁移、只读 `db:check`、恢复演练和 manifest 比较；current-main 的 Unified Workspace transport 与单 Owner Director path 已另行通过有界验收。Local Media Gateway 的隔离 MP4 fixture 也已通过公网 route/edge 与 ChatGPT Widget 播放，但实际 byte-range、恢复、撤权、格式覆盖、Windows 自动启动和自动同步仍未验收。本文件是 legacy `/mcp` 回滚参考，不是当前 Unified 日常操作入口；日常操作优先阅读 [User Guide](../USER_GUIDE.md)，部署边界见 [Deployment Guide](../DEPLOYMENT_GUIDE.md)。
 
 ## 固定边界
 

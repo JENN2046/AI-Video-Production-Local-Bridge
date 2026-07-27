@@ -20,7 +20,7 @@ The accepted Readonly route at `/mcp` remains a rollback surface. Unified OAuth,
 the minimal user-delegated grant, the independent Bridge key, Render path
 deployment and one ChatGPT App were accepted in a bounded external stage. A
 separate isolated-fixture Media Gateway stage has also accepted ChatGPT Widget
-MP4 playback and Range/seek. Neither result authorizes Provider execution,
+MP4 playback. It did not capture an actual byte-range response. Neither result authorizes Provider execution,
 Memory saveback, broad Media Gateway promotion or removal of the legacy
 rollback route.
 
@@ -122,7 +122,7 @@ The future connector exposes exactly twelve model-visible tools:
 `get_readonly_media_playback` is Widget-only and deliberately excluded from the
 model-visible directory. It remains fail-closed when its separate Media Gateway
 configuration is absent or invalid. An isolated MP4 fixture has passed Widget
-playback and Range/seek, but the broader Media Gateway gate remains pending.
+playback, but byte-range and the broader Media Gateway gate remain pending.
 
 No tool in this contract approves a Proposal, compiles or submits a Provider
 job, overwrites an Artifact, delivers media, or commits memory.

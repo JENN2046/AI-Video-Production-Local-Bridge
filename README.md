@@ -9,7 +9,7 @@ AI Video Production Workspace 是 Jenn 的 Windows 本地 AI 视频生产与 Cha
 | Package | `0.1.0-beta.5` |
 | MCP service | `webgpt-v4.3.0` |
 | Remote App service | `readonly-remote-v1.0.0` |
-| Media Gateway code | `readonly-media-gateway-v1.0.0`（隔离 MP4 fixture 的公网播放/Range 已通过；广泛外部门禁仍未完成） |
+| Media Gateway code | `readonly-media-gateway-v1.0.0`（隔离 MP4 fixture 的公网播放已通过；byte-range 与广泛外部门禁仍未完成） |
 | Snapshot contract | `readonly-snapshot-v4`（已支持上述有界 fixture 验收；不得据此宣称完整公网媒体可用） |
 | Database | Active activity database: `workbench-v2-6` / ledger `0011`; `0010`→`0011` 已完成有界迁移、只读 `db:check`、恢复演练和逻辑 manifest 比较。运行时仍不自动迁移或回退。 |
 | ChatGPT Director | 单 Owner Focus → Context → advisory Proposal → Human Workbench 决定 → controlled import receipt 已在活动库通过；Provider、Grant 启动与 Memory 写入仍关闭。 |
@@ -18,7 +18,7 @@ AI Video Production Workspace 是 Jenn 的 Windows 本地 AI 视频生产与 Cha
 | Operations status | `MANUAL_PUBLISH_OPERATIONAL_READY`; 活动库已在 `0011`，仍需每次有界人工发布/恢复 |
 | Multi-user status | `PARTIAL_MULTI_USER_GATE` |
 
-当前 `main` 已包含 Workbench V2、WebGPT V4、Auth0 Federated Readonly、签名 Snapshot、ChatGPT MCP App、共享派生状态、Human Workbench 人工发布、已接线的 Unified Workspace Remote，以及 Local Media Gateway 的代码和 Windows 运维入口。Unified Workspace 保留旧 `/mcp` 为回滚面。Cloudflare 媒体链路已通过一次隔离 MP4 fixture 的端到端 Widget 播放与 Range/seek 验收；Windows 登录任务、自动 Snapshot 发布、剩余媒体恢复/撤权案例、真实 Provider canary、稳定 Memory 插件和多用户黄金路径仍是独立 gate。
+当前 `main` 已包含 Workbench V2、WebGPT V4、Auth0 Federated Readonly、签名 Snapshot、ChatGPT MCP App、共享派生状态、Human Workbench 人工发布、已接线的 Unified Workspace Remote，以及 Local Media Gateway 的代码和 Windows 运维入口。Unified Workspace 保留旧 `/mcp` 为回滚面。Cloudflare 媒体链路已通过一次隔离 MP4 fixture 的端到端 Widget 播放；实际 byte-range 响应、Windows 登录任务、自动 Snapshot 发布、剩余媒体恢复/撤权案例、真实 Provider canary、稳定 Memory 插件和多用户黄金路径仍是独立 gate。
 
 `ChatGPT Director` 现已完成单 Owner 的活动库受控验收：ChatGPT Connector 只能读取有界讨论上下文并提出不可变 Proposal，Workbench 保留人类批准与一次性 receipt 记录。Local Orchestrator 只在未来获授权的 Grant 内执行；`REAL_PROVIDER_ENABLED=false`、Memory 插件未接线，且不得把该验收扩大为自动生成、自动采纳、自动交付或自动 Memory 写入。
 
@@ -38,7 +38,7 @@ AI Video Production Workspace 是 Jenn 的 Windows 本地 AI 视频生产与 Cha
 
 日常查看不需要启动本地 MCP。远端 App 只读取内存中的签名 Snapshot；已接受的 Snapshot/恢复证据仍可作为历史证据阅读。活动库迁移不自动发布或更新远端内存 Snapshot；下一次 publish/recovery 需要自己的有界验收。详细边界见 [使用说明](docs/USER_GUIDE.md) 和 [Readonly MCP App Delivery Runbook](docs/webgpt/READONLY_MCP_APP_DELIVERY_RUNBOOK.md)。
 
-### 3. Local Media Gateway（候选；隔离 MP4 fixture 已通过）
+### 3. Local Media Gateway（候选；隔离 MP4 fixture 播放已通过）
 
 ```powershell
 npm run media:preflight
@@ -47,7 +47,7 @@ npm run media:status
 npm run media:stop
 ```
 
-Gateway 只监听 `127.0.0.1:2092`；媒体字节留在本机。Cloudflare named tunnel、DNS、共享 capability key 和 DPAPI token 已完成有界外部接线；隔离 MP4 fixture 已通过公网 route/edge、ChatGPT Widget 播放与 forward Range/seek。它不是完整 production-ready 声明：撤权、项目切换、离线恢复、格式覆盖、Windows 登录任务、soak，以及该 fixture/restore 路径的活动库前后 logical-manifest 比较仍未验收。详见 [Local Media Gateway Runbook](docs/webgpt/READONLY_LOCAL_MEDIA_GATEWAY_RUNBOOK.md) 与 [MP4 Fixture Acceptance](ops/reports/2026-07-27-readonly-media-gateway-mp4-fixture-acceptance.md)。
+Gateway 只监听 `127.0.0.1:2092`；媒体字节留在本机。Cloudflare named tunnel、DNS、共享 capability key 和 DPAPI token 已完成有界外部接线；隔离 MP4 fixture 已通过公网 route/edge 与 ChatGPT Widget 播放。一次 forward seek 可用，但未记录实际 `206`/`Content-Range`，因此 byte-range 仍待验收。它不是完整 production-ready 声明：撤权、项目切换、离线恢复、格式覆盖、Windows 登录任务、soak，以及该 fixture/restore 路径的活动库前后 logical-manifest 比较仍未验收。详见 [Local Media Gateway Runbook](docs/webgpt/READONLY_LOCAL_MEDIA_GATEWAY_RUNBOOK.md) 与 [MP4 Fixture Acceptance](ops/reports/2026-07-27-readonly-media-gateway-mp4-fixture-acceptance.md)。
 
 Legacy `WEBGPT_V4_PROFILE=full` 也占用 2092；它与 Readonly Media Gateway 互斥。启动 Gateway 前必须确认 Full profile 已停止。
 
