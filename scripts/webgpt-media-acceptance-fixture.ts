@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 
 const FIXTURE_VERSION = "readonly-media-acceptance-fixture-v1";
 const RUN_ID = /^run_[0-9a-f]{32}$/;
+const ACCEPTED_RESOURCE_PATHS = new Set(["/mcp", "/workspace/mcp"]);
 
 class FixtureError extends Error {
   constructor(readonly code: string) { super(code); }
@@ -24,6 +25,14 @@ function safeHttps(value: string, expectedPath?: string): string {
     throw new FixtureError("MEDIA_ACCEPTANCE_URL_INVALID");
   }
   return url.toString();
+}
+
+function safeResourceUrl(value: string): string {
+  const normalized = safeHttps(value);
+  if (!ACCEPTED_RESOURCE_PATHS.has(new URL(normalized).pathname)) {
+    throw new FixtureError("MEDIA_ACCEPTANCE_URL_INVALID");
+  }
+  return normalized;
 }
 
 async function sha256File(path: string): Promise<string> {
@@ -202,7 +211,7 @@ function readManifest(root: string, runId: string): Manifest {
     if (typeof value[key] !== "string" || !/^[0-9a-f]{64}$/.test(value[key])) throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
   }
   if (typeof value.resource_url !== "string") throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
-  safeHttps(value.resource_url, "/mcp");
+  safeResourceUrl(value.resource_url);
   return value as Manifest;
 }
 
@@ -306,7 +315,7 @@ async function createProfiles(): Promise<void> {
 async function createFixture(): Promise<void> {
   const sourcePath = resolve(arg("--input"));
   const issuer = safeHttps(arg("--issuer"));
-  const resourceUrl = safeHttps(arg("--resource"), "/mcp");
+  const resourceUrl = safeResourceUrl(arg("--resource"));
   const subject = readFileSync(0, "utf8").trim();
   if (!subject || subject.length > 1024) throw new FixtureError("MEDIA_ACCEPTANCE_SUBJECT_INVALID");
   const sourceBefore = await assertRegularSource(sourcePath);
@@ -319,7 +328,7 @@ async function createFixture(): Promise<void> {
   let complete = false;
   let phase = "INITIALIZE";
   try {
-    const [{ openM0DatabaseConnection }, { runDatabaseMigrations }, projects, artifacts, authorization, authTypes, projection, validity, pathModule] = await Promise.all([
+    const [{ openM0DatabaseConnection }, { assertSchemaCurrent, runDatabaseMigrations }, projects, artifacts, authorization, authTypes, projection, validity, pathModule] = await Promise.all([
       import("../src/storage/sqlite.js"), import("../src/storage/migrations.js"), import("../src/tools/projects.js"),
       import("../src/tools/mediaArtifacts.js"), import("../src/webgpt-v4/authorizationAdmin.js"), import("../src/webgpt-v4/types.js"),
       import("../src/webgpt-cloud/dataSource.js"), import("../src/tools/mediaValidity.js"), import("../src/paths.js")
@@ -338,6 +347,7 @@ async function createFixture(): Promise<void> {
     try {
       phase = "MIGRATION";
       runDatabaseMigrations(db);
+      assertSchemaCurrent(db);
       phase = "PROJECT";
       const created = projects.createProject({
         title: "Readonly media acceptance fixture",
@@ -405,7 +415,7 @@ async function createFixture(): Promise<void> {
     writeFileSync(join(root, "fixture.json"), JSON.stringify(manifest), { flag: "wx", mode: 0o600 });
     await assertSourceUnchanged(sourcePath, sourceBefore);
     complete = true;
-    console.log(JSON.stringify({ result: "PASS", action: "create", run_id: runId, checks: { source_unchanged: true, ledger_0008: true, mp4_valid: true, snapshot_v4: true, media_binding: true } }));
+    console.log(JSON.stringify({ result: "PASS", action: "create", run_id: runId, checks: { source_unchanged: true, ledger_0011: true, mp4_valid: true, snapshot_v4: true, media_binding: true } }));
   } catch (error) {
     if (error instanceof FixtureError) throw error;
     const stableCode = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
@@ -419,7 +429,7 @@ async function createFixture(): Promise<void> {
 async function verifyFixture(): Promise<void> {
   const runId = arg("--run");
   const issuer = safeHttps(arg("--issuer"));
-  const resourceUrl = safeHttps(arg("--resource"), "/mcp");
+  const resourceUrl = safeResourceUrl(arg("--resource"));
   const root = runRoot(runId);
   const manifest = readManifest(root, runId);
   if (manifest.resource_url !== resourceUrl) throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
