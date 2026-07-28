@@ -97,6 +97,7 @@
       "npm_script": "test:webgpt:v4",
       "ci_step": "WebGPT V4 integration tests",
       "paths": [
+        "tests/direct-oauth-canary.test.ts",
         "tests/webgpt-v4-auth.test.ts",
         "tests/webgpt-v4-context-budget.test.ts",
         "tests/webgpt-v4-domain.test.ts",
