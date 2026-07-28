@@ -2631,7 +2631,7 @@ Prepare the final local authorization gate for a future RunningHub 4-shot live r
 
 ## R3-9D_RUNNINGHUB_4_SHOT_SINGLE_PASS_LIVE_EXECUTION - RunningHub 4-Shot Single-Pass Live Execution
 
-status: FOLLOW_UP
+status: DONE
 priority: P0
 lane: Provider Live Execution
 project: AI Video Production Workspace Three Route Plan
@@ -2643,7 +2643,19 @@ report_path: data/reports/r3_9d_runninghub_4_shot_single_pass_live_execution_res
 allowed_delivery: live_provider_execution_after_exact_authorization,provider_upload,provider_submit,provider_query,provider_output_download,ffprobe_validation,media_artifact_registration,result_report,task_board_update,local_commit
 blocked_delivery: live_execution_without_exact_current_authorization,credentials_read_without_exact_authorization,runway_call,retry,second_submit,regeneration,batch_expansion,source_overwrite,secret_value_output,raw_provider_payload_recording,signed_url_recording,push,tag,release,deploy,production_credentials_change
 created_at: 2026-07-08T14:21:57+08:00
-updated_at: 2026-07-08T14:49:31+08:00
+updated_at: 2026-07-28T17:16:17+08:00
+status_corrected_at: 2026-07-28T17:16:17+08:00
+status_correction_reason: completion evidence and the dependent completed R3-9E task confirm this authorized execution is historical, not a pending follow-up
+claimed_by: Codex R3-9D RunningHub live executor
+claim_run_id: codex-20260708-143236-r3-9d
+claimed_at: 2026-07-08T14:32:36+08:00
+completed_by: Codex R3-9D RunningHub live executor
+completed_at: 2026-07-08T14:49:31+08:00
+result: PASS_LIVE_4_SHOT_SINGLE_PASS_COMPLETED
+validation: env_check=PASS,provider_preflight=PASS,r3_9d_live=PASS,report_json_parse=PASS,typecheck=PASS,test_m1=PASS,secret_scan=PASS,diff_check=PASS_WITH_CRLF_WARNINGS_ONLY
+evidence: data/reports/r3_9d_runninghub_4_shot_single_pass_live_execution_result.json,data/reports/provider_env_check_result.json,data/reports/provider_preflight_result.json,data/reports/secret_scan_result.json
+commit: b9e8991
+delivery: local_commit_on_master_no_push_no_pr
 
 ### Goal
 
