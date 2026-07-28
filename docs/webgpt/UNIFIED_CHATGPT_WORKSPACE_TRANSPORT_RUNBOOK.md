@@ -122,11 +122,24 @@ npm run director:bridge:stop
 It polls the exact `WEBGPT_DIRECTOR_REMOTE_ORIGIN` at the unified Bridge paths.
 A current authenticated poll makes the Remote Director chain transport-ready;
 it does not prove database, Focus or business readiness and does not change the
-Readonly Snapshot's freshness. `start` and `status` require the same non-secret
-launch configuration so the manager can recompute its digest; missing or
-changed values produce `RESTART_REQUIRED` rather than proving runtime identity.
-`stop` uses the selected runtime root and persisted managed identity; it does
-not read the Bridge key or database.
+Readonly Snapshot's freshness. A fresh managed `start` requires the complete
+non-secret launch configuration. Once a managed Bridge is already healthy, an
+operator may run `status` or repeat `start` from a new terminal that has none
+of the four non-secret launch variables. In that case the manager still checks
+process identity, source, emitted build, Node executable, argv and heartbeat;
+it reports `configuration_identity=not_rechecked` rather than pretending that
+the launch-configuration digest was recomputed. A healthy `status` therefore
+returns `RUNNING`, and a repeat `start` returns `ALREADY_RUNNING` without a
+rebuild, key operation or second child process.
+
+`configuration_identity=verified` means all four variables were supplied and
+the low-disclosure configuration digest matched the managed state. Supplying
+only part of that tuple fails closed with
+`DIRECTOR_BRIDGE_LAUNCH_CONFIGURATION_INCOMPLETE`; it is not a health result.
+When the complete tuple is present, any digest mismatch, including an
+allowlisted startup-environment drift such as `TEMP`, still produces
+`RESTART_REQUIRED`. `stop` uses the selected runtime root and persisted
+managed identity; it does not read the Bridge key or database.
 End a bounded stage with `npm run director:bridge:stop`. Only that stop command
 returning `result=STOPPED`, `graceful=true` and `final_receipt=true` in the
 same response is graceful-stop evidence. A later standalone `status` result of
