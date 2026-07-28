@@ -61,6 +61,9 @@ try {
       throw "DIRECTOR_BRIDGE_RUNTIME_RECEIPTS_UNBOUND"
     }
     Remove-Item -LiteralPath $script:DirectorBridgeActivationPath -Force -ErrorAction SilentlyContinue
+    if ($script:DirectorBridgeFixtureMode) {
+      Remove-Item -LiteralPath $script:DirectorBridgeFixtureFailureReceiptPath -Force -ErrorAction SilentlyContinue
+    }
   }
 
   $runtime = Resolve-DirectorBridgeNode22
@@ -152,7 +155,7 @@ try {
     Start-Sleep -Milliseconds 100
   }
   $startedProcess.Refresh()
-  if ($startedProcess.HasExited) { throw "DIRECTOR_BRIDGE_RUNTIME_CHILD_EXITED" }
+  if ($startedProcess.HasExited) { Throw-DirectorBridgeChildExit }
   if (-not $activationCandidate) { throw "DIRECTOR_BRIDGE_RUNTIME_ACTIVATION_TIMEOUT" }
   Write-DirectorBridgeActivation ([pscustomobject]$state)
 
@@ -167,7 +170,7 @@ try {
     Start-Sleep -Milliseconds 250
   }
   $startedProcess.Refresh()
-  if ($startedProcess.HasExited) { throw "DIRECTOR_BRIDGE_RUNTIME_CHILD_EXITED" }
+  if ($startedProcess.HasExited) { Throw-DirectorBridgeChildExit }
   if ($null -eq $assessment -or $assessment.Result -ne "RUNNING") {
     throw "DIRECTOR_BRIDGE_RUNTIME_HEARTBEAT_TIMEOUT"
   }

@@ -567,6 +567,7 @@ test("Director Bridge Windows lifecycle manager scripts do not read Bridge key o
   const status = text("scripts/windows/director-bridge-status.ps1");
   const stop = text("scripts/windows/director-bridge-stop.ps1");
   const smoke = text("scripts/windows/director-bridge-runtime-smoke.ps1");
+  const fixture = text("scripts/windows/fixtures/director-bridge-fake-runtime.cjs");
   const runtime = text("scripts/director-local-bridge.ts");
   const runtimeControl = text("src/director/runtimeControl.ts");
 
@@ -604,6 +605,12 @@ test("Director Bridge Windows lifecycle manager scripts do not read Bridge key o
   assert.match(smoke, /process_start_time_utc/);
   assert.match(smoke, /\$startMatches/);
   assert.doesNotMatch(smoke, /DIRECTOR_BRIDGE_RUNTIME_SMOKE_CLEANUP_IDENTITY_FAILED/);
+  assert.match(common, /Get-DirectorBridgeFixtureFailureCode/);
+  assert.match(common, /director-bridge-fixture-failure-v1/);
+  assert.match(start, /Throw-DirectorBridgeChildExit/);
+  assert.match(smoke, /DIRECTOR_BRIDGE_FIXTURE_DIAGNOSTIC_FAILURE/);
+  assert.match(fixture, /director-bridge-fixture-failure-v1/);
+  assert.doesNotMatch(fixture, /console\.(?:log|error|warn)/);
   assert.doesNotMatch(`${common}\n${start}\n${status}\n${stop}`, /AI_VIDEO_DIRECTOR_BRIDGE_RUNTIME_TEST_MODE/);
   assert.doesNotMatch(common, /Get-Content[^\r\n]*(?:WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH|AI_VIDEO_WORKSPACE_DB_PATH)/i);
   assert.doesNotMatch(common, /\[IO\.File\]::ReadAll(?:Text|Bytes)\([^\r\n]*(?:dpapi|database)/i);

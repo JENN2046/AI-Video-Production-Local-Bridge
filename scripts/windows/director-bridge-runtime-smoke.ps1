@@ -202,6 +202,17 @@ try {
     $heldLock.Dispose()
   }
 
+  $env:AI_VIDEO_DIRECTOR_BRIDGE_FIXTURE_MODE = "diagnostic-failure"
+  $fixtureDiagnostic = Invoke-DirectorBridgeSmokeScript "director-bridge-start.ps1"
+  if ($fixtureDiagnostic.ExitCode -ne 1 -or
+      $null -eq $fixtureDiagnostic.Json -or
+      [string]$fixtureDiagnostic.Json.result -cne "FAIL" -or
+      [string]$fixtureDiagnostic.Json.stable_error_code -cne "DIRECTOR_BRIDGE_FIXTURE_DIAGNOSTIC_FAILURE" -or
+      (Test-Path -LiteralPath (Join-Path $smokeRoot "director-bridge-fixture-failure.json"))) {
+    throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_FIXTURE_DIAGNOSTIC_FAILED"
+  }
+  $env:AI_VIDEO_DIRECTOR_BRIDGE_FIXTURE_MODE = "ready"
+
   $started = Invoke-DirectorBridgeSmokeScript "director-bridge-start.ps1"
   if ($started.ExitCode -ne 0 -or
       $null -eq $started.Json -or
@@ -541,6 +552,7 @@ if ($null -ne $script:failureCode) {
   graceful_stop = $true
   final_stop_receipt = $true
   forced_stop = $false
+  fixture_failure_receipt = $true
   provider_enabled = $false
   plaintext_key_inheritance = $false
   node_startup_environment_rejected = $true
