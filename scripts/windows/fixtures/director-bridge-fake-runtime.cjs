@@ -15,8 +15,31 @@ const runtimeRoot = process.env.AI_VIDEO_DIRECTOR_BRIDGE_RUNTIME_ROOT;
 const workspaceRoot = process.env.AI_VIDEO_DIRECTOR_BRIDGE_WORKSPACE_ROOT;
 const mode = process.env.AI_VIDEO_DIRECTOR_BRIDGE_FIXTURE_MODE;
 const notReadyRequestPath = path.join(runtimeRoot || ".", "director-bridge-fixture-not-ready.request");
+const fixtureFailureReceiptName = "director-bridge-fixture-failure.json";
 
-function fail() {
+function failureReceiptPath() {
+  if (!runtimeRoot || !workspaceRoot || !path.isAbsolute(runtimeRoot) || !path.isAbsolute(workspaceRoot)) {
+    return null;
+  }
+  const normalizedWorkspace = path.resolve(workspaceRoot).replaceAll("\\", "/").replace(/\/+$/u, "").toLowerCase();
+  const normalizedRoot = path.resolve(runtimeRoot).replaceAll("\\", "/").replace(/\/+$/u, "").toLowerCase();
+  const allowedPrefix = `${normalizedWorkspace}/ops/tools/director-bridge-runtime-smoke-`;
+  if (!normalizedRoot.startsWith(allowedPrefix)) return null;
+  return path.join(runtimeRoot, fixtureFailureReceiptName);
+}
+
+function fail(stableErrorCode) {
+  const receiptPath = failureReceiptPath();
+  if (receiptPath) {
+    try {
+      fs.writeFileSync(receiptPath, `${JSON.stringify({
+        fixture_failure_version: "director-bridge-fixture-failure-v1",
+        stable_error_code: stableErrorCode
+      })}\n`, { encoding: "utf8", mode: 0o600 });
+    } catch {
+      // The parent reports only a validated receipt; never emit raw failure detail.
+    }
+  }
   process.exit(1);
 }
 
@@ -25,12 +48,12 @@ function sha256Text(value) {
 }
 
 function canonicalWindowsPath(value) {
-  if (!value || !value.trim()) fail();
+  if (!value || !value.trim()) fail("DIRECTOR_BRIDGE_FIXTURE_PATH_INVALID");
   return path.resolve(value).replaceAll("\\", "/").replace(/\/+$/u, "").toLowerCase();
 }
 
 function actualLaunchArgvSha256() {
-  if (!process.argv[1]) fail();
+  if (!process.argv[1]) fail("DIRECTOR_BRIDGE_FIXTURE_LAUNCH_ARGV_INVALID");
   return sha256Text([
     "director-bridge-launch-argv-v1",
     `node=${canonicalWindowsPath(process.execPath)}`,
@@ -73,21 +96,21 @@ function actualLaunchConfigSha256() {
   try {
     origin = new URL(process.env.WEBGPT_DIRECTOR_REMOTE_ORIGIN || "");
   } catch {
-    fail();
+    fail("DIRECTOR_BRIDGE_FIXTURE_LAUNCH_CONFIG_INVALID");
   }
   if (origin.protocol !== "https:"
     || origin.username
     || origin.password
     || origin.search
     || origin.hash
-    || origin.pathname !== "/") fail();
+    || origin.pathname !== "/") fail("DIRECTOR_BRIDGE_FIXTURE_LAUNCH_CONFIG_INVALID");
   const keyId = (process.env.WEBGPT_DIRECTOR_BRIDGE_KEY_ID || "").trim();
-  if (!/^[A-Za-z0-9._-]{1,64}$/u.test(keyId)) fail();
-  if ((process.env.WEBGPT_DIRECTOR_BRIDGE_KEY_B64 || "").trim()) fail();
+  if (!/^[A-Za-z0-9._-]{1,64}$/u.test(keyId)) fail("DIRECTOR_BRIDGE_FIXTURE_LAUNCH_CONFIG_INVALID");
+  if ((process.env.WEBGPT_DIRECTOR_BRIDGE_KEY_B64 || "").trim()) fail("DIRECTOR_BRIDGE_FIXTURE_LAUNCH_CONFIG_INVALID");
   if (process.env.REAL_PROVIDER_ENABLED !== "false"
     || process.env.M1_REAL_PROVIDER_EXECUTION_ALLOWED !== "false"
-    || process.env.M1_REAL_PROVIDER_COST_ACK !== "false") fail();
-  if (Object.keys(process.env).some((name) => name.toUpperCase().startsWith("NODE_"))) fail();
+    || process.env.M1_REAL_PROVIDER_COST_ACK !== "false") fail("DIRECTOR_BRIDGE_FIXTURE_LAUNCH_CONFIG_INVALID");
+  if (Object.keys(process.env).some((name) => name.toUpperCase().startsWith("NODE_"))) fail("DIRECTOR_BRIDGE_FIXTURE_LAUNCH_CONFIG_INVALID");
   return sha256Text([
     "director-bridge-launch-config-v2",
     `remote_origin=${origin.origin.toLowerCase()}`,
@@ -114,9 +137,12 @@ const required = [
   runtimeRoot,
   workspaceRoot
 ];
-if (required.some((value) => !value) || mode !== "ready") fail();
+if (required.some((value) => !value) || !["ready", "diagnostic-failure"].includes(mode)) {
+  fail("DIRECTOR_BRIDGE_FIXTURE_REQUIRED_INPUT_INVALID");
+}
+if (mode === "diagnostic-failure") fail("DIRECTOR_BRIDGE_FIXTURE_DIAGNOSTIC_FAILURE");
 if (actualLaunchConfigSha256() !== expectedLaunchConfigSha256
-  || actualLaunchArgvSha256() !== expectedLaunchArgvSha256) fail();
+  || actualLaunchArgvSha256() !== expectedLaunchArgvSha256) fail("DIRECTOR_BRIDGE_FIXTURE_LAUNCH_FINGERPRINT_MISMATCH");
 
 function atomicWrite(target, value) {
   const temporary = `${target}.tmp-${process.pid}-${crypto.randomUUID()}`;

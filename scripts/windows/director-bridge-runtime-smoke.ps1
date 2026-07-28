@@ -13,7 +13,7 @@ $fixtureSource = Join-Path $PSScriptRoot "fixtures\director-bridge-fake-runtime.
 $fixtureEntrypoint = Join-Path $smokeRoot "director-bridge-fake-runtime.cjs"
 $canary = "directorcanary$([Guid]::NewGuid().ToString('N'))"
 $script:smokeInvocation = 0
-$script:knownFixturePids = @()
+$script:knownFixtureProcesses = @()
 $script:runtimeTexts = @()
 $script:failureCode = $null
 $script:cleanupForced = $false
@@ -91,7 +91,16 @@ function Get-DirectorBridgeFixtureProcessCount {
 
 function Remember-DirectorBridgeFixturePid([object]$State) {
   $pidValue = [int]$State.pid
-  if ($script:knownFixturePids -notcontains $pidValue) { $script:knownFixturePids += $pidValue }
+  $startTimeUtc = ([DateTimeOffset]::Parse([string]$State.process_start_time_utc)).ToUniversalTime()
+  if (@($script:knownFixtureProcesses | Where-Object {
+    [int]$_.pid -eq $pidValue -and
+    ([DateTimeOffset]$_.process_start_time_utc).UtcDateTime.Ticks -eq $startTimeUtc.UtcDateTime.Ticks
+  }).Count -eq 0) {
+    $script:knownFixtureProcesses += [pscustomobject]@{
+      pid = $pidValue
+      process_start_time_utc = $startTimeUtc
+    }
+  }
 }
 
 try {
@@ -193,6 +202,17 @@ try {
   } finally {
     $heldLock.Dispose()
   }
+
+  $env:AI_VIDEO_DIRECTOR_BRIDGE_FIXTURE_MODE = "diagnostic-failure"
+  $fixtureDiagnostic = Invoke-DirectorBridgeSmokeScript "director-bridge-start.ps1"
+  if ($fixtureDiagnostic.ExitCode -ne 1 -or
+      $null -eq $fixtureDiagnostic.Json -or
+      [string]$fixtureDiagnostic.Json.result -cne "FAIL" -or
+      [string]$fixtureDiagnostic.Json.stable_error_code -cne "DIRECTOR_BRIDGE_FIXTURE_DIAGNOSTIC_FAILURE" -or
+      (Test-Path -LiteralPath (Join-Path $smokeRoot "director-bridge-fixture-failure.json"))) {
+    throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_FIXTURE_DIAGNOSTIC_FAILED"
+  }
+  $env:AI_VIDEO_DIRECTOR_BRIDGE_FIXTURE_MODE = "ready"
 
   $started = Invoke-DirectorBridgeSmokeScript "director-bridge-start.ps1"
   if ($started.ExitCode -ne 0 -or
@@ -471,21 +491,29 @@ try {
       $script:failureCode = "DIRECTOR_BRIDGE_RUNTIME_SMOKE_CLEANUP_FAILED"
     }
   }
-  foreach ($fixturePid in $script:knownFixturePids) {
+  foreach ($fixtureProcess in $script:knownFixtureProcesses) {
+    $fixturePid = [int]$fixtureProcess.pid
     $live = Get-Process -Id $fixturePid -ErrorAction SilentlyContinue
     if ($null -ne $live) {
       try {
         $candidate = Get-CimInstance Win32_Process -Filter "ProcessId = $fixturePid" -ErrorAction Stop
+        $expectedStartTimeUtc = ([DateTimeOffset]$fixtureProcess.process_start_time_utc).ToUniversalTime()
+        $actualStartTimeUtc = [DateTimeOffset]::new($live.StartTime.ToUniversalTime())
+        $startMatches = $actualStartTimeUtc.UtcDateTime.Ticks -eq $expectedStartTimeUtc.UtcDateTime.Ticks
         if ($null -eq $candidate -or
+            -not $startMatches -or
             ([string]$candidate.CommandLine).IndexOf($fixtureEntrypoint, [StringComparison]::OrdinalIgnoreCase) -lt 0) {
-          $script:failureCode = "DIRECTOR_BRIDGE_RUNTIME_SMOKE_CLEANUP_IDENTITY_FAILED"
           continue
         }
         Stop-Process -Id $fixturePid -Force -ErrorAction Stop
         $script:cleanupForced = $true
-        $script:failureCode = "DIRECTOR_BRIDGE_RUNTIME_SMOKE_CLEANUP_FORCED"
+        if ($null -eq $script:failureCode) {
+          $script:failureCode = "DIRECTOR_BRIDGE_RUNTIME_SMOKE_CLEANUP_FORCED"
+        }
       } catch {
-        $script:failureCode = "DIRECTOR_BRIDGE_RUNTIME_SMOKE_CLEANUP_FAILED"
+        if ($null -eq $script:failureCode) {
+          $script:failureCode = "DIRECTOR_BRIDGE_RUNTIME_SMOKE_CLEANUP_FAILED"
+        }
       }
     }
   }
@@ -498,7 +526,7 @@ try {
       (Test-Path -LiteralPath $resolved) -and
       (([IO.File]::GetAttributes($resolved) -band [IO.FileAttributes]::ReparsePoint) -eq 0)) {
     Remove-Item -LiteralPath $resolved -Recurse -Force
-  } elseif ($remainingFixtureProcesses -gt 0) {
+  } elseif ($remainingFixtureProcesses -gt 0 -and $null -eq $script:failureCode) {
     $script:failureCode = "DIRECTOR_BRIDGE_RUNTIME_SMOKE_CLEANUP_FAILED"
   }
 }
@@ -527,6 +555,7 @@ if ($null -ne $script:failureCode) {
   graceful_stop = $true
   final_stop_receipt = $true
   forced_stop = $false
+  fixture_failure_receipt = $true
   provider_enabled = $false
   plaintext_key_inheritance = $false
   node_startup_environment_rejected = $true

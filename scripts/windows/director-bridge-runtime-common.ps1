@@ -61,9 +61,11 @@ if ($script:DirectorBridgeFixtureMode) {
     throw "DIRECTOR_BRIDGE_ENTRYPOINT_INVALID"
   }
   $script:DirectorBridgeRuntimeMode = "fixture"
+  $script:DirectorBridgeFixtureFailureReceiptPath = Join-Path $script:DirectorBridgeRuntimeRoot "director-bridge-fixture-failure.json"
 } else {
   $script:DirectorBridgeEntrypointPath = Resolve-DirectorBridgeInsideWorkspace "dist\scripts\director-local-bridge.js" "DIRECTOR_BRIDGE_ENTRYPOINT_INVALID"
   $script:DirectorBridgeRuntimeMode = "live"
+  $script:DirectorBridgeFixtureFailureReceiptPath = $null
 }
 $script:DirectorBridgeEntrypointRelativePath = (Get-DirectorBridgeWorkspaceRelativePath $script:DirectorBridgeEntrypointPath).Replace('\', '/')
 $script:DirectorBridgeStatePath = Join-Path $script:DirectorBridgeRuntimeRoot "director-bridge-state.json"
@@ -87,6 +89,41 @@ function Write-DirectorBridgeFailure([object]$ErrorRecord) {
     result = "FAIL"
     stable_error_code = Get-DirectorBridgeStableErrorCode $ErrorRecord
   }) -Compress))
+}
+
+function Get-DirectorBridgeFixtureFailureCode {
+  if (-not $script:DirectorBridgeFixtureMode -or
+      [string]::IsNullOrWhiteSpace($script:DirectorBridgeFixtureFailureReceiptPath) -or
+      -not (Test-Path -LiteralPath $script:DirectorBridgeFixtureFailureReceiptPath -PathType Leaf)) {
+    return $null
+  }
+  try {
+    $item = Get-Item -LiteralPath $script:DirectorBridgeFixtureFailureReceiptPath -Force -ErrorAction Stop
+    if ($item.Length -gt 256 -or
+        (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
+      return $null
+    }
+    $receipt = ([IO.File]::ReadAllText($item.FullName, [Text.Encoding]::UTF8) | ConvertFrom-Json)
+    $names = @($receipt.PSObject.Properties.Name)
+    $code = [string]$receipt.stable_error_code
+    if ($names.Count -eq 2 -and
+        @(@("fixture_failure_version", "stable_error_code") | Where-Object { $names -notcontains $_ }).Count -eq 0 -and
+        [string]$receipt.fixture_failure_version -ceq "director-bridge-fixture-failure-v1" -and
+        $code -match '^DIRECTOR_BRIDGE_FIXTURE_[A-Z0-9_]{3,70}$') {
+      return $code
+    }
+  } catch {
+    return $null
+  } finally {
+    Remove-Item -LiteralPath $script:DirectorBridgeFixtureFailureReceiptPath -Force -ErrorAction SilentlyContinue
+  }
+  return $null
+}
+
+function Throw-DirectorBridgeChildExit {
+  $fixtureFailureCode = Get-DirectorBridgeFixtureFailureCode
+  if (-not [string]::IsNullOrWhiteSpace($fixtureFailureCode)) { throw $fixtureFailureCode }
+  throw "DIRECTOR_BRIDGE_RUNTIME_CHILD_EXITED"
 }
 
 function Assert-DirectorBridgePrivateRuntime {
@@ -261,8 +298,8 @@ function Get-DirectorBridgeLaunchEnvironment {
   Add-DirectorBridgeCurrentEnvironmentValue $environment "FFMPEG_PATH"
   if ($script:DirectorBridgeFixtureMode) {
     $fixtureMode = [Environment]::GetEnvironmentVariable("AI_VIDEO_DIRECTOR_BRIDGE_FIXTURE_MODE", "Process")
-    if ($fixtureMode -cne "ready") { throw "DIRECTOR_BRIDGE_FIXTURE_MODE_INVALID" }
-    $environment["AI_VIDEO_DIRECTOR_BRIDGE_FIXTURE_MODE"] = "ready"
+    if ($fixtureMode -notin @("ready", "diagnostic-failure")) { throw "DIRECTOR_BRIDGE_FIXTURE_MODE_INVALID" }
+    $environment["AI_VIDEO_DIRECTOR_BRIDGE_FIXTURE_MODE"] = $fixtureMode
   }
   return $environment
 }
@@ -789,6 +826,9 @@ function Remove-DirectorBridgeRuntimeReceipts {
     $script:DirectorBridgeActivationPath
   )) {
     Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+  }
+  if ($script:DirectorBridgeFixtureMode) {
+    Remove-Item -LiteralPath $script:DirectorBridgeFixtureFailureReceiptPath -Force -ErrorAction SilentlyContinue
   }
 }
 
