@@ -185,7 +185,7 @@ export function DirectorPage() {
 
   if (projects.isLoading) return <LoadingState />;
   if (projects.isError || !projects.data) return <ErrorState error={projects.error} />;
-  return <div className={s.page}>
+  return <div className={`${s.page} ${s.directorPage}`}>
     <PageHeader eyebrow="ChatGPT 只负责建议" title="Director 审批台" description="先选择讨论对象，再由 ChatGPT 提交不可变提议。此处的接受仅记录人工审批，不会调用 Provider、创建生成任务或覆盖历史版本。" />
     <section className={s.filterRows}>
       <label className={s.field}><span>生产项目</span><select value={projectId} onChange={(event) => selectProject(event.target.value)}>
@@ -230,7 +230,7 @@ function DirectorTowerView({ tower, workspace, onChanged }: { tower: DirectorTow
       <Metric label="自动执行" value="需 Grant" tone="neutral" />
     </section>
     {!principalReady && <div className={s.inlineError}><ShieldAlert size={16} />{tower.principal_state === "no_active_owner" ? "未找到可用于 ChatGPT Director 的活跃 issuer-bound owner；不会创建无归属 Focus。" : "检测到多个活跃 owner；为避免把 ChatGPT 指向错误身份，当前 Focus 控制已锁定。"}</div>}
-    <section className={s.masterDetail}>
+    <section className={`${s.masterDetail} ${s.directorFocusPanel}`}>
       <div className={s.detailPane}>
         <div className={s.objectDetail}>
           <div className={s.detailHeader}><div><span className={s.eyebrow}>第一步</span><h2>设定 ChatGPT 讨论对象</h2></div><StatusPill tone={tower.focus.state === "active" ? "success" : "warning"}>{tower.focus.state === "active" ? "ACTIVE" : "NO FOCUS"}</StatusPill></div>
@@ -245,7 +245,7 @@ function DirectorTowerView({ tower, workspace, onChanged }: { tower: DirectorTow
       </div>
       <aside className={s.evidencePane}><div className={s.evidencePanel}><div className={s.paneTitle}><strong>不可绕过的边界</strong></div><div className={s.evidenceBody}><div className={s.gateList}><div className={s.gateGood}><Check size={15} />提议版本不可改写</div><div className={s.gateGood}><Check size={15} />接受前重验当前事实状态</div><div className={s.gateBad}><CircleAlert size={15} />不创建 Intent / Grant / Provider 调用</div></div></div></div></aside>
     </section>
-    <section className={s.tableSection}>
+    <section className={`${s.tableSection} ${s.directorProposalPanel}`}>
       <div className={s.sectionTitle}><div><h2>ChatGPT Director 提议</h2><p>接受只追加人工事件。仅接受的生成提议可经第二次确认编译为不可变、限额的 Automation Grant；编译本身不创建 Intent、任务或 Provider 调用。</p></div></div>
       {tower.proposals.length === 0 ? <EmptyState title="还没有 Director 提议" detail="在 ChatGPT 中围绕当前 Focus 讨论后，模型只能提交建议，不能直接执行。" /> : <div className={s.runList}>{tower.proposals.map((proposal) => <ProposalCard key={proposal.proposal_id} proposal={proposal} onChanged={onChanged} />)}</div>}
     </section>
