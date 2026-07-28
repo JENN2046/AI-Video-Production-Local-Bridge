@@ -185,7 +185,7 @@ export function DirectorPage() {
 
   if (projects.isLoading) return <LoadingState />;
   if (projects.isError || !projects.data) return <ErrorState error={projects.error} />;
-  return <div className={s.page}>
+  return <div className={`${s.page} ${s.directorPage}`}>
     <PageHeader eyebrow="ChatGPT 只负责建议" title="Director 审批台" description="先选择讨论对象，再由 ChatGPT 提交不可变提议。此处的接受仅记录人工审批，不会调用 Provider、创建生成任务或覆盖历史版本。" />
     <section className={s.filterRows}>
       <label className={s.field}><span>生产项目</span><select value={projectId} onChange={(event) => selectProject(event.target.value)}>

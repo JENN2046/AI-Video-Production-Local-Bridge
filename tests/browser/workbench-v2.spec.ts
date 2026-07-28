@@ -59,6 +59,20 @@ test("六区导航可达且 URL 可恢复", async ({ page }) => {
   }
 });
 
+test("低高度 Director 审批台可滚动到完整提议区", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 620 });
+  await page.goto("/v2/director");
+
+  const directorPage = page.locator('[class*="_directorPage_"]');
+  const proposalTitle = page.getByRole("heading", { name: "ChatGPT Director 提议" });
+  await expect(proposalTitle).toBeAttached();
+  expect(await directorPage.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+
+  await proposalTitle.scrollIntoViewIfNeeded();
+  await expect(proposalTitle).toBeVisible();
+  await expect(page.getByText("还没有 Director 提议", { exact: true })).toBeVisible();
+});
+
 test("项目分类平铺、创建分类必选并保留全部生命周期筛选", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto("/v2/projects");
