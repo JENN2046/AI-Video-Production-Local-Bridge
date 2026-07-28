@@ -110,7 +110,41 @@ function actualLaunchArgvSha256(): string {
   ].join("\n"));
 }
 
+const launchEnvironmentNames = [
+  "ComSpec",
+  "Path",
+  "PATHEXT",
+  "SystemDrive",
+  "SystemRoot",
+  "TEMP",
+  "TMP",
+  "WINDIR",
+  "REAL_PROVIDER_ENABLED",
+  "M1_REAL_PROVIDER_EXECUTION_ALLOWED",
+  "M1_REAL_PROVIDER_COST_ACK",
+  "WEBGPT_DIRECTOR_REMOTE_ORIGIN",
+  "WEBGPT_DIRECTOR_BRIDGE_KEY_ID",
+  "WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH",
+  "AI_VIDEO_WORKSPACE_DB_PATH",
+  "FFMPEG_PATH",
+  "AI_VIDEO_DIRECTOR_BRIDGE_FIXTURE_MODE"
+] as const;
+
+function actualLaunchEnvironmentSha256(environment: NodeJS.ProcessEnv): string {
+  const canonical = ["director-bridge-launch-environment-v1"];
+  for (const name of launchEnvironmentNames) {
+    const value = environment[name];
+    if (value === undefined || value.trim() === "") continue;
+    canonical.push(`name=${name.toUpperCase()}`);
+    canonical.push(`value_sha256=${sha256Text(value)}`);
+  }
+  return sha256Text(canonical.join("\n"));
+}
+
 function actualLaunchConfigSha256(environment: NodeJS.ProcessEnv): string {
+  if (Object.keys(environment).some((name) => name.toUpperCase().startsWith("NODE_"))) {
+    throw new Error("DIRECTOR_BRIDGE_RUNTIME_LAUNCH_IDENTITY_INVALID");
+  }
   const originValue = environment.WEBGPT_DIRECTOR_REMOTE_ORIGIN?.trim() ?? "";
   let origin: URL;
   try {
@@ -142,14 +176,15 @@ function actualLaunchConfigSha256(environment: NodeJS.ProcessEnv): string {
     throw new Error("DIRECTOR_PROVIDER_MUST_BE_DISABLED");
   }
   return sha256Text([
-    "director-bridge-launch-config-v1",
+    "director-bridge-launch-config-v2",
     `remote_origin=${origin.origin.toLowerCase()}`,
     `database_path=${canonicalWindowsPath(environment.AI_VIDEO_WORKSPACE_DB_PATH ?? "")}`,
     `dpapi_path=${canonicalWindowsPath(environment.WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH ?? "")}`,
     `key_id=${keyId}`,
     "provider_enabled=false",
     "provider_execution_allowed=false",
-    "provider_cost_acknowledged=false"
+    "provider_cost_acknowledged=false",
+    `startup_environment_sha256=${actualLaunchEnvironmentSha256(environment)}`
   ].join("\n"));
 }
 

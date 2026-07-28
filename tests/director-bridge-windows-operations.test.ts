@@ -35,6 +35,37 @@ function canonicalRuntimePath(value: string): string {
   return resolve(value).replaceAll("\\", "/").replace(/\/+$/u, "").toLowerCase();
 }
 
+const managedLaunchEnvironmentNames = [
+  "ComSpec",
+  "Path",
+  "PATHEXT",
+  "SystemDrive",
+  "SystemRoot",
+  "TEMP",
+  "TMP",
+  "WINDIR",
+  "REAL_PROVIDER_ENABLED",
+  "M1_REAL_PROVIDER_EXECUTION_ALLOWED",
+  "M1_REAL_PROVIDER_COST_ACK",
+  "WEBGPT_DIRECTOR_REMOTE_ORIGIN",
+  "WEBGPT_DIRECTOR_BRIDGE_KEY_ID",
+  "WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH",
+  "AI_VIDEO_WORKSPACE_DB_PATH",
+  "FFMPEG_PATH",
+  "AI_VIDEO_DIRECTOR_BRIDGE_FIXTURE_MODE"
+] as const;
+
+function managedLaunchEnvironmentSha256(environment: NodeJS.ProcessEnv): string {
+  const canonical = ["director-bridge-launch-environment-v1"];
+  for (const name of managedLaunchEnvironmentNames) {
+    const value = environment[name];
+    if (value === undefined || value.trim() === "") continue;
+    canonical.push(`name=${name.toUpperCase()}`);
+    canonical.push(`value_sha256=${sha256Text(value)}`);
+  }
+  return sha256Text(canonical.join("\n"));
+}
+
 function managedRuntimeEnvironment(options: {
   workspace: string;
   root: string;
@@ -48,15 +79,29 @@ function managedRuntimeEnvironment(options: {
   key_id: string;
   origin: string;
 }): NodeJS.ProcessEnv {
+  const environment: NodeJS.ProcessEnv = {};
+  for (const name of managedLaunchEnvironmentNames.slice(0, 8)) {
+    const value = process.env[name];
+    if (value !== undefined && value.trim() !== "") environment[name] = value;
+  }
+  environment.REAL_PROVIDER_ENABLED = "false";
+  environment.M1_REAL_PROVIDER_EXECUTION_ALLOWED = "false";
+  environment.M1_REAL_PROVIDER_COST_ACK = "false";
+  environment.WEBGPT_DIRECTOR_BRIDGE_KEY_ID = options.key_id;
+  environment.WEBGPT_DIRECTOR_BRIDGE_KEY_B64 = undefined;
+  environment.WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH = options.dpapi_path;
+  environment.WEBGPT_DIRECTOR_REMOTE_ORIGIN = options.origin;
+  environment.AI_VIDEO_WORKSPACE_DB_PATH = options.database_path;
   const launchConfigSha = sha256Text([
-    "director-bridge-launch-config-v1",
+    "director-bridge-launch-config-v2",
     `remote_origin=${options.origin}`,
     `database_path=${canonicalRuntimePath(options.database_path)}`,
     `dpapi_path=${canonicalRuntimePath(options.dpapi_path)}`,
     `key_id=${options.key_id}`,
     "provider_enabled=false",
     "provider_execution_allowed=false",
-    "provider_cost_acknowledged=false"
+    "provider_cost_acknowledged=false",
+    `startup_environment_sha256=${managedLaunchEnvironmentSha256(environment)}`
   ].join("\n"));
   const launchArgvSha = sha256Text([
     "director-bridge-launch-argv-v1",
@@ -64,16 +109,7 @@ function managedRuntimeEnvironment(options: {
     `entrypoint=${canonicalRuntimePath(options.entrypoint)}`
   ].join("\n"));
   return {
-    ...process.env,
-    NODE_NO_WARNINGS: "1",
-    REAL_PROVIDER_ENABLED: "false",
-    M1_REAL_PROVIDER_EXECUTION_ALLOWED: "false",
-    M1_REAL_PROVIDER_COST_ACK: "false",
-    WEBGPT_DIRECTOR_BRIDGE_KEY_ID: options.key_id,
-    WEBGPT_DIRECTOR_BRIDGE_KEY_B64: undefined,
-    WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH: options.dpapi_path,
-    WEBGPT_DIRECTOR_REMOTE_ORIGIN: options.origin,
-    AI_VIDEO_WORKSPACE_DB_PATH: options.database_path,
+    ...environment,
     AI_VIDEO_DIRECTOR_BRIDGE_HEARTBEAT_PATH: options.heartbeat_path,
     AI_VIDEO_DIRECTOR_BRIDGE_STOP_REQUEST_PATH: options.stop_path,
     AI_VIDEO_DIRECTOR_BRIDGE_ACTIVATION_PATH: options.activation_path,
@@ -225,6 +261,10 @@ test("Director Bridge managed runtime rejects a workspace root that differs from
       origin: "https://director-workspace-mismatch.example.test"
     });
     assert.throws(
+      () => DirectorBridgeRuntimeControl.fromEnvironment({ ...environment, NODE_OPTIONS: "--require=untrusted-preload.cjs" }),
+      /DIRECTOR_BRIDGE_RUNTIME_LAUNCH_IDENTITY_INVALID/
+    );
+    assert.throws(
       () => DirectorBridgeRuntimeControl.fromEnvironment(environment),
       /DIRECTOR_BRIDGE_RUNTIME_(?:CONTROL|LAUNCH_IDENTITY|WORKSPACE)_INVALID/
     );
@@ -267,12 +307,13 @@ test("Director Bridge real entrypoint remains pre-activation and stops without l
   let stderr = "";
   child.stderr.setEncoding("utf8");
   child.stderr.on("data", (chunk: string) => { stderr += chunk; });
+  const childClosed = once(child, "close");
   try {
     await waitForFile(heartbeatPath);
     const starting = DIRECTOR_BRIDGE_HEARTBEAT_SCHEMA.parse(JSON.parse(readFileSync(heartbeatPath, "utf8")) as unknown);
     assert.equal(starting.phase, "starting");
     assert.equal(starting.last_authenticated_poll_at_utc, null);
-    assert.equal(stderr, "");
+    assert.doesNotMatch(stderr, /DIRECTOR_|must-not-be-read/);
     writeFileSync(stopPath, JSON.stringify({
       control_version: DIRECTOR_BRIDGE_CONTROL_VERSION,
       instance_id: instanceId,
@@ -285,9 +326,10 @@ test("Director Bridge real entrypoint remains pre-activation and stops without l
     assert.equal(stopped.phase, "stopped");
     assert.equal(stopped.stop_requested, true);
     assert.equal(stopped.completion_pending, false);
-    assert.equal(stderr, "");
+    assert.doesNotMatch(stderr, /DIRECTOR_|must-not-be-read/);
   } finally {
     if (child.exitCode === null) child.kill();
+    await childClosed;
     rmSync(workspace, { recursive: true, force: true });
   }
 });
@@ -525,6 +567,7 @@ test("Director Bridge Windows lifecycle manager scripts do not read Bridge key o
   const status = text("scripts/windows/director-bridge-status.ps1");
   const stop = text("scripts/windows/director-bridge-stop.ps1");
   const runtime = text("scripts/director-local-bridge.ts");
+  const runtimeControl = text("src/director/runtimeControl.ts");
 
   assert.match(common, /DIRECTOR_BRIDGE_RUNTIME_PATH_REPARSE_POINT/);
   assert.match(common, /DIRECTOR_BRIDGE_RUNTIME_PRIVATE_PATH_TRACKED/);
@@ -550,6 +593,9 @@ test("Director Bridge Windows lifecycle manager scripts do not read Bridge key o
   assert.match(common, /AI_VIDEO_DIRECTOR_BRIDGE_HEARTBEAT_PATH/);
   assert.match(common, /AI_VIDEO_DIRECTOR_BRIDGE_STOP_REQUEST_PATH/);
   assert.match(runtime, /DirectorBridgeRuntimeControl\.fromEnvironment/);
+  assert.match(runtimeControl, /director-bridge-launch-config-v2/);
+  assert.match(runtimeControl, /startup_environment_sha256/);
+  assert.match(runtimeControl, /name\.toUpperCase\(\)\.startsWith\("NODE_"\)/);
   assert.match(runtime, /managedRuntime\?\.stopRequested\(\)/);
   assert.doesNotMatch(`${common}\n${start}\n${status}\n${stop}`, /AI_VIDEO_DIRECTOR_BRIDGE_RUNTIME_TEST_MODE/);
   assert.doesNotMatch(common, /Get-Content[^\r\n]*(?:WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH|AI_VIDEO_WORKSPACE_DB_PATH)/i);
