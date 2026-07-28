@@ -29,21 +29,24 @@ try {
       throw "DIRECTOR_BRIDGE_SOURCE_COMMIT_MISMATCH"
     }
     $assessment = Get-DirectorBridgeRuntimeAssessment $existing
-    if ($assessment.Result -eq "RUNNING") {
+    if ($assessment.ProcessIdentity -eq "match") {
+      $result = if ($assessment.Result -eq "RUNNING") { "ALREADY_RUNNING" } else { [string]$assessment.Result }
       Write-DirectorBridgeJson ([ordered]@{
-        result = "ALREADY_RUNNING"
-        running = $true
+        result = $result
+        running = [bool]$assessment.Running
         managed = $true
         runtime_mode = $script:DirectorBridgeRuntimeMode
         exact_build = [bool]$assessment.ExactBuild
         transport_ready = [bool]$assessment.TransportReady
         source_commit = [string]$existing.source_commit
+        process_identity = [string]$assessment.ProcessIdentity
         heartbeat = [string]$assessment.Heartbeat
         remote_contact = [string]$assessment.RemoteContact
+        phase = $assessment.Phase
         provider_enabled = $false
         started_at_utc = [string]$existing.started_at_utc
       })
-      exit 0
+      exit ([int]$assessment.ExitCode)
     }
     if ($assessment.ProcessIdentity -ne "missing") {
       throw "DIRECTOR_BRIDGE_RUNTIME_STATE_CONFLICT"

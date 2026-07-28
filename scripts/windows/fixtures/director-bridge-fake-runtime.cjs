@@ -14,6 +14,7 @@ const expectedLaunchArgvSha256 = process.env.AI_VIDEO_DIRECTOR_BRIDGE_LAUNCH_ARG
 const runtimeRoot = process.env.AI_VIDEO_DIRECTOR_BRIDGE_RUNTIME_ROOT;
 const workspaceRoot = process.env.AI_VIDEO_DIRECTOR_BRIDGE_WORKSPACE_ROOT;
 const mode = process.env.AI_VIDEO_DIRECTOR_BRIDGE_FIXTURE_MODE;
+const notReadyRequestPath = path.join(runtimeRoot || ".", "director-bridge-fixture-not-ready.request");
 
 function fail() {
   process.exit(1);
@@ -125,8 +126,13 @@ function atomicWrite(target, value) {
 
 let activated = false;
 
+function notReadyRequested() {
+  return fs.existsSync(notReadyRequestPath);
+}
+
 function heartbeat(phase, stopRequested = false) {
   const now = new Date().toISOString();
+  const backoff = !stopRequested && activated && notReadyRequested();
   atomicWrite(heartbeatPath, {
     heartbeat_version: "director-bridge-heartbeat-v1",
     instance_id: instanceId,
@@ -136,13 +142,13 @@ function heartbeat(phase, stopRequested = false) {
     entrypoint_sha256: entrypointSha256,
     launch_config_sha256: expectedLaunchConfigSha256,
     launch_argv_sha256: expectedLaunchArgvSha256,
-    phase,
+    phase: backoff ? "backoff" : phase,
     heartbeat_at_utc: now,
     last_authenticated_poll_at_utc: activated ? now : null,
     last_request_completed_at_utc: null,
-    consecutive_failures: 0,
-    next_retry_at_utc: null,
-    stable_error_code: null,
+    consecutive_failures: backoff ? 1 : 0,
+    next_retry_at_utc: backoff ? now : null,
+    stable_error_code: backoff ? "DIRECTOR_BRIDGE_REMOTE_POLL_FAILED" : null,
     stop_requested: stopRequested,
     completion_pending: false,
     provider_enabled: false

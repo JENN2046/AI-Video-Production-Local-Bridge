@@ -161,6 +161,10 @@ Node, derived-argv or launch-configuration fingerprint drift,
 `STATE_CONFLICT` on PID/start/path/exact-command process-identity mismatch,
 and `NOT_READY` for stale/unhealthy transport state. `RUNNING` means
 transport-ready only; it is not database, Focus or business readiness.
+When a repeat `start:director:bridge` finds an identity-matching managed
+process that is temporarily `NOT_READY`, it returns that state with exit code
+`2` and does not spawn a second child or report a process conflict. A
+`STATE_CONFLICT` remains reserved for an actual process-identity mismatch.
 
 Stop remains outbound-only. The manager writes an instance-bound sentinel; the
 Bridge checks for stop immediately before handler invocation and returns

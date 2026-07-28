@@ -590,6 +590,8 @@ test("Director Bridge Windows lifecycle manager scripts do not read Bridge key o
   assert.match(start, /Assert-DirectorBridgeNoNodeStartupEnvironment/);
   assert.match(start, /Add-DirectorBridgeRuntimeEnvironment/);
   assert.match(start, /Start-DirectorBridgeNodeProcess/);
+  assert.match(start, /if \(\$assessment\.ProcessIdentity -eq "match"\)/);
+  assert.match(start, /result = \$result/);
   assert.match(common, /AI_VIDEO_DIRECTOR_BRIDGE_HEARTBEAT_PATH/);
   assert.match(common, /AI_VIDEO_DIRECTOR_BRIDGE_STOP_REQUEST_PATH/);
   assert.match(runtime, /DirectorBridgeRuntimeControl\.fromEnvironment/);

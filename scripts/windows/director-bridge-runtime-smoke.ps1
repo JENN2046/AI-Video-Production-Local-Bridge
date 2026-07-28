@@ -8,6 +8,7 @@ $allowedPrefix = [IO.Path]::GetFullPath((Join-Path $workspaceRoot "ops\tools\dir
 $statePath = Join-Path $smokeRoot "director-bridge-state.json"
 $heartbeatPath = Join-Path $smokeRoot "director-bridge-heartbeat.json"
 $stopRequestPath = Join-Path $smokeRoot "director-bridge-stop-request.json"
+$notReadyRequestPath = Join-Path $smokeRoot "director-bridge-fixture-not-ready.request"
 $fixtureSource = Join-Path $PSScriptRoot "fixtures\director-bridge-fake-runtime.cjs"
 $fixtureEntrypoint = Join-Path $smokeRoot "director-bridge-fake-runtime.cjs"
 $canary = "directorcanary$([Guid]::NewGuid().ToString('N'))"
@@ -251,6 +252,35 @@ try {
       $null -eq $environmentRestoredStatus.Json -or
       [string]$environmentRestoredStatus.Json.result -cne "RUNNING") {
     throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_ENVIRONMENT_RESTORE_FAILED"
+  }
+  [IO.File]::WriteAllText($notReadyRequestPath, "1`n", [Text.UTF8Encoding]::new($false))
+  Start-Sleep -Milliseconds 500
+  $notReadyStatus = Invoke-DirectorBridgeSmokeScript "director-bridge-status.ps1"
+  if ($notReadyStatus.ExitCode -ne 2 -or
+      $null -eq $notReadyStatus.Json -or
+      [string]$notReadyStatus.Json.result -cne "NOT_READY" -or
+      -not [bool]$notReadyStatus.Json.running -or
+      [string]$notReadyStatus.Json.process_identity -cne "match") {
+    throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_BACKOFF_FIXTURE_FAILED"
+  }
+  $notReadyStart = Invoke-DirectorBridgeSmokeScript "director-bridge-start.ps1"
+  if ($notReadyStart.ExitCode -ne 2 -or
+      $null -eq $notReadyStart.Json -or
+      [string]$notReadyStart.Json.result -cne "NOT_READY" -or
+      -not [bool]$notReadyStart.Json.running -or
+      [bool]$notReadyStart.Json.transport_ready -or
+      [string]$notReadyStart.Json.process_identity -cne "match" -or
+      (Get-Content -Raw -LiteralPath $statePath) -cne $originalStateText -or
+      (Get-DirectorBridgeFixtureProcessCount) -ne 1) {
+    throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_NOT_READY_REPEAT_START_FAILED"
+  }
+  Remove-Item -LiteralPath $notReadyRequestPath -Force
+  Start-Sleep -Milliseconds 500
+  $recoveredStatus = Invoke-DirectorBridgeSmokeScript "director-bridge-status.ps1"
+  if ($recoveredStatus.ExitCode -ne 0 -or
+      $null -eq $recoveredStatus.Json -or
+      [string]$recoveredStatus.Json.result -cne "RUNNING") {
+    throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_BACKOFF_STATUS_RECOVERY_FAILED"
   }
   $secondStart = Invoke-DirectorBridgeSmokeScript "director-bridge-start.ps1"
   if ($secondStart.ExitCode -ne 0 -or
@@ -501,4 +531,5 @@ if ($null -ne $script:failureCode) {
   plaintext_key_inheritance = $false
   node_startup_environment_rejected = $true
   startup_environment_binding = $true
+  not_ready_repeat_start = $true
 } | ConvertTo-Json
