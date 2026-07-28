@@ -3,10 +3,12 @@
 Date (Asia/Shanghai, UTC+08:00): 2026-07-28
 Repository baseline: `main@a71c1a9`
 
-## Post-baseline main changes
+## Changes since the last accepted Unified Director deployment
 
-The following merged changes have passed the `main` Windows CI. They are
-current code facts, not new external acceptance or deployment claims:
+The current source baseline is `main@a71c1a9`. The following merged changes
+are later than the exact `479fdb8` Unified Director deployment acceptance.
+They have passed the `main` Windows CI and are current code facts, not new
+external acceptance or deployment claims:
 
 - PR #94 keeps Director Focus controls visible in the Workbench UI.
 - PR #97 adds the managed Windows Director Bridge runtime candidate. Its
