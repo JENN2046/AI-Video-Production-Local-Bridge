@@ -1,7 +1,13 @@
 # Unified Director Handoff — 2026-07-28
 
-Status: `CURRENT` handoff note as of its named repository baseline. Re-check
-the linked CI run before taking the next external action.
+Status: `PASS` — the exact target commit is live, the Unified App was
+reconnected, and one locally prepared, Context-bound `storyboard_revision`
+Proposal is advisory and `pending_review`.
+
+See the low-disclosure
+[acceptance report](../ops/reports/2026-07-28-unified-director-wire-contract-acceptance.md)
+for the deployment evidence, local preparation, bounded acceptance and
+side-effect accounting.
 
 ## Handoff identity
 
@@ -10,7 +16,7 @@ the linked CI run before taking the next external action.
 | Repository baseline | `main@479fdb832498f0195e14c093b778552198a1a19a` |
 | Change just merged | PR #95 — model-friendly Director Proposal wire contract |
 | PR CI at merge | Browser smoke and Quality and integration passed after a transient Windows runner dependency-source retry |
-| Main CI at handoff | In progress for `main@479fdb8`; use the [GitHub Actions run](https://github.com/JENN2046/AI-Video-Production-Local-Bridge/actions/runs/30321849987) as the current source of truth |
+| Main CI at handoff | [GitHub Actions run 30321849987](https://github.com/JENN2046/AI-Video-Production-Local-Bridge/actions/runs/30321849987) completed successfully for the exact baseline; Browser smoke and Quality and integration passed |
 | Local checkout | `main` equals `origin/main` at `479fdb8` |
 
 ## What PR #95 changes
@@ -27,36 +33,63 @@ still validate the proposal with the existing exact discriminated contract.
   Proposal, compile a Grant, call a Provider, deliver an Artifact, or change
   database schema.
 
-## Verified versus still required
+## External acceptance result
 
-Already verified on the PR branch:
+Verified:
 
 - `npm run typecheck`
 - `npm run test:webgpt:director` — 49 passing
 - `npm run test:webgpt:workspace` — 14 passing
 - PR #95 Windows CI: Browser smoke and Quality and integration passed
+- `main@479fdb8` Windows CI: Browser smoke and Quality and integration passed
+- Render: exact commit
+  `479fdb832498f0195e14c093b778552198a1a19a` deployed with **Deploy a
+  specific commit** and observed live
+- Public service probes: `/healthz` healthy; `/readyz` ready with OAuth and
+  Director Bridge checks passing
+- ChatGPT App: existing `AI Video Production Workspace — Unified` connection
+  reconnected successfully
+- Refreshed Proposal tool: model-friendly wire envelope visible
+- Local preparation: Workbench health/readiness passed, the current Focus was
+  one active SHOT at generation `7`, and the pending count was zero
+- Current-baseline local validation: typecheck passed, Director 49/49 and
+  Unified Workspace 14/14
+- Context: `ready` and bound to the same Focus and generation
+- Proposal: exactly one `storyboard_revision`, accepted for human review with
+  source `native`
+- Status: `pending_review` with `DIRECTOR_NATIVE_SUBMITTED`
+- Human Workbench: one matching `ChatGPT Native`, Focus `#7`, `待审批` card
+- Forbidden side effects: zero approvals/rejections, Grants, Provider calls,
+  Snapshot publications, Memory writes, Artifact deliveries or configuration
+  changes
 
-Still required before claiming the new Proposal wire contract is externally
-accepted:
+The first post-reconnection Focus read had returned:
 
-1. Wait for the `main@479fdb8` Windows CI run to complete successfully.
-2. Obtain a current, explicit authorization to deploy that exact main baseline
-   to Render. A merge and a passing CI run do not authorize deployment.
-3. Reconnect the single `AI Video Production Workspace — Unified` ChatGPT App
-   and exercise this bounded path against the deployed service:
+```text
+get_director_focus
+→ state=focus_expired
+→ focus=null
+```
 
-   ```text
-   get_director_focus
-   → get_director_context
-   → submit_director_proposal
-   → get_director_proposal_status
-   ```
+That attempt stopped before Context or Proposal work. Jenn then explicitly
+requested a Focus retry and required local preparation before testing. The
+Workbench state was refreshed, the new current active SHOT Focus was checked
+locally, and only then was the bounded path resumed.
 
-4. Confirm in the local Workbench that the resulting Proposal is advisory and
-   pending human action. Do not approve it, compile an Automation Grant, or
-   invoke a Provider during this recheck.
-5. Record an acceptance report with the exact deployed commit and only
-   low-disclosure evidence.
+The deployed positive wire path is externally accepted. The resulting
+Proposal deliberately remains pending human action.
+
+Runtime note:
+
+- The Workbench manager's recorded PID is stale, while the actual local
+  listener, expected entrypoint, UI and HTTP readiness are healthy. It was not
+  restarted.
+- The continuously running Bridge process predates PR #95. Exact target
+  source was rebuilt and the isolated Bridge/Unified tests passed, but a live
+  Bridge restart was blocked before execution by local command policy. The
+  existing compatible Bridge carried the valid positive path end to end.
+  Live negative-path acceptance of the new local malformed-input error
+  mapping is not claimed.
 
 ## Do not cross these boundaries during the next step
 
@@ -86,12 +119,13 @@ accepted:
 User-owned untracked local material exists in the checkout. Preserve it and
 use precise staging; do not use bulk clean, reset, or blanket add commands.
 
-## Resumption checklist
+## Closeout boundary
 
-1. Verify `main`, `origin/main`, and the deployed commit are the same intended
-   baseline.
-2. Verify main CI is green.
-3. Confirm a current deployment authorization.
-4. Deploy once; wait for readiness without inspecting secrets or raw logs.
-5. Run the bounded ChatGPT Proposal path above.
-6. Stop after the advisory Proposal/status observation and report the result.
+- Do not redeploy or reconnect again for this acceptance.
+- Leave the new Proposal in `pending_review`.
+- Any approval, rejection, Grant compilation, Provider execution, Snapshot
+  publication, Memory write or Artifact delivery requires a separate current
+  instruction.
+- A future live negative-path check should first establish a safely managed
+  exact-baseline Bridge runtime. It must not inspect or expose the Bridge
+  credential or active database contents.
