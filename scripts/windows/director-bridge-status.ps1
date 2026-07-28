@@ -18,6 +18,7 @@ try {
       exact_build = $false
       transport_ready = $false
       process_identity = if ($targets.Count -gt 0) { "unmanaged" } else { "missing" }
+      configuration_identity = "unknown"
       heartbeat = "missing"
       remote_contact = "missing"
       provider_enabled = $false
@@ -36,6 +37,7 @@ try {
     transport_ready = [bool]$assessment.TransportReady
     source_commit = [string]$state.source_commit
     process_identity = [string]$assessment.ProcessIdentity
+    configuration_identity = [string]$assessment.ConfigurationIdentity
     heartbeat = [string]$assessment.Heartbeat
     remote_contact = [string]$assessment.RemoteContact
     phase = $assessment.Phase
