@@ -1,7 +1,24 @@
 # Current State
 
 Date (Asia/Shanghai, UTC+08:00): 2026-07-28
-Repository baseline: `main@b189c24`
+Repository baseline: `main@a71c1a9`
+
+## Post-baseline main changes
+
+The following merged changes have passed the `main` Windows CI. They are
+current code facts, not new external acceptance or deployment claims:
+
+- PR #94 keeps Director Focus controls visible in the Workbench UI.
+- PR #97 adds the managed Windows Director Bridge runtime candidate. Its
+  local/fixture coverage passed, but the active Bridge has not been restarted
+  under that manager.
+- PR #98 adds a local-only Direct OAuth compatibility canary. It is not a
+  public HTTPS interoperability experiment and does not change Auth0, Render,
+  DNS, environment configuration, or the live Connector.
+
+The last bounded Unified Director deployment acceptance remains the exact
+`479fdb8` target recorded in the Unified Director handoff. No deployment or
+reconnection has been performed for the later main commits.
 
 ## Accepted historical operations baseline
 
@@ -54,7 +71,8 @@ The controlled Artifact import-receipt migration `0011` has since completed its 
 | Real Provider canary | Boundary exists | Not authorized | Frozen |
 | ChatGPT Director PR1–PR6 + controlled import receipt | Current code | Single-Owner Focus → Context → advisory Proposal → Human Workbench decision → receipt PASS | `DIRECTOR_OWNER_PROPOSAL_PASS` |
 | Unified ChatGPT Workspace Remote | Current runtime and contract | Unified OAuth, Bridge, Render, ChatGPT App and activity-database path PASS | `UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_PASS` |
-| Director Bridge managed Windows runtime | Candidate branch | Implementation and isolated fake-runtime coverage; no durable live acceptance receipt, current live Bridge not restarted | Awaiting code review/merge and a separately controlled live restart |
+| Director Bridge managed Windows runtime | Current `main` | Implementation and isolated fake-runtime coverage passed; no durable live acceptance receipt, current live Bridge not restarted | Merge complete; awaiting a separately controlled live restart |
+| Direct OAuth compatibility canary | Current `main`, local-contract only | Windows CI and local contract coverage passed; no public endpoint experiment | Keep local-only; any public interoperability test needs separate authorization |
 
 ## Accepted evidence
 
@@ -110,7 +128,7 @@ Separate, non-blocking future gates are the second real user, automatic Snapshot
 
 Director has completed its migration, transport and single-Owner Proposal/receipt gates without Provider execution. Its remaining ordered external gates are:
 
-1. review and merge the managed Bridge runtime candidate, then perform one controlled local restart at the intended source commit and emitted-`dist` fingerprint before claiming live managed-process identity or the malformed-Proposal negative path;
+1. perform one separately authorized controlled local restart of the merged managed Bridge runtime at the intended source commit and emitted-`dist` fingerprint before claiming live managed-process identity or the malformed-Proposal negative path;
 2. select and accept a stable Memory plugin with project/issuer-bound recall-only behavior before any Saveback dispatch;
 3. separately authorize a bounded Provider execution canary under an Automation Grant and budget;
 4. accept a second real user and revoke path before claiming multi-user readiness.
