@@ -604,6 +604,9 @@ test("Director Bridge Windows lifecycle manager scripts do not read Bridge key o
   assert.match(smoke, /\$script:knownFixtureProcesses/);
   assert.match(smoke, /process_start_time_utc/);
   assert.match(smoke, /\$startMatches/);
+  assert.match(smoke, /\[DateTimeOffset\]::Parse\(\[string\]\$State\.process_start_time_utc\)/);
+  assert.match(smoke, /\$actualStartTimeUtc\.UtcDateTime\.Ticks -eq \$expectedStartTimeUtc\.UtcDateTime\.Ticks/);
+  assert.doesNotMatch(smoke, /\$live\.StartTime\.ToUniversalTime\(\)\.ToString\("o"\) -ceq/);
   assert.doesNotMatch(smoke, /DIRECTOR_BRIDGE_RUNTIME_SMOKE_CLEANUP_IDENTITY_FAILED/);
   assert.match(common, /Get-DirectorBridgeFixtureFailureCode/);
   assert.match(common, /director-bridge-fixture-failure-v1/);

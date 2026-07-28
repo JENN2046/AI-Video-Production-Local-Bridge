@@ -91,9 +91,10 @@ function Get-DirectorBridgeFixtureProcessCount {
 
 function Remember-DirectorBridgeFixturePid([object]$State) {
   $pidValue = [int]$State.pid
-  $startTimeUtc = ([DateTimeOffset]::Parse([string]$State.process_start_time_utc)).ToUniversalTime().ToString("o")
+  $startTimeUtc = ([DateTimeOffset]::Parse([string]$State.process_start_time_utc)).ToUniversalTime()
   if (@($script:knownFixtureProcesses | Where-Object {
-    [int]$_.pid -eq $pidValue -and [string]$_.process_start_time_utc -ceq $startTimeUtc
+    [int]$_.pid -eq $pidValue -and
+    ([DateTimeOffset]$_.process_start_time_utc).UtcDateTime.Ticks -eq $startTimeUtc.UtcDateTime.Ticks
   }).Count -eq 0) {
     $script:knownFixtureProcesses += [pscustomobject]@{
       pid = $pidValue
@@ -496,7 +497,9 @@ try {
     if ($null -ne $live) {
       try {
         $candidate = Get-CimInstance Win32_Process -Filter "ProcessId = $fixturePid" -ErrorAction Stop
-        $startMatches = $live.StartTime.ToUniversalTime().ToString("o") -ceq [string]$fixtureProcess.process_start_time_utc
+        $expectedStartTimeUtc = ([DateTimeOffset]$fixtureProcess.process_start_time_utc).ToUniversalTime()
+        $actualStartTimeUtc = [DateTimeOffset]::new($live.StartTime.ToUniversalTime())
+        $startMatches = $actualStartTimeUtc.UtcDateTime.Ticks -eq $expectedStartTimeUtc.UtcDateTime.Ticks
         if ($null -eq $candidate -or
             -not $startMatches -or
             ([string]$candidate.CommandLine).IndexOf($fixtureEntrypoint, [StringComparison]::OrdinalIgnoreCase) -lt 0) {
