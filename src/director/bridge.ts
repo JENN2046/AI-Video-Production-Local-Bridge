@@ -16,6 +16,8 @@ export const DIRECTOR_BRIDGE_PROTOCOL_VERSION = "director-local-bridge-v1";
 export const DIRECTOR_BRIDGE_DEFAULT_TIMEOUT_MS = 30_000;
 export const DIRECTOR_BRIDGE_FRAME_TIMEOUT_MS = 130_000;
 export const DIRECTOR_BRIDGE_MAX_BODY_BYTES = 24 * 1024 * 1024;
+export const DIRECTOR_BRIDGE_ACCEPTED_COMPLETION_TTL_MS = 5 * 60_000;
+const DIRECTOR_BRIDGE_MAX_ACCEPTED_COMPLETIONS = 2_048;
 
 const idSchema = z.string().trim().min(1).max(160);
 const hashSchema = z.string().regex(/^[0-9a-f]{64}$/);
@@ -95,6 +97,12 @@ export const DIRECTOR_BRIDGE_SIGNED_ENVELOPE_SCHEMA = z.object({
 export type DirectorBridgeSignedEnvelope = z.infer<typeof DIRECTOR_BRIDGE_SIGNED_ENVELOPE_SCHEMA>;
 
 export class DirectorBridgeError extends WebGptV4Error {}
+
+function exactSameSignature(left: string, right: string): boolean {
+  const leftBytes = Buffer.from(left, "utf8");
+  const rightBytes = Buffer.from(right, "utf8");
+  return leftBytes.byteLength === rightBytes.byteLength && timingSafeEqual(leftBytes, rightBytes);
+}
 
 function assertKey(key: DirectorBridgeKey): void {
   if (!/^[A-Za-z0-9._-]{1,64}$/.test(key.kid) || key.key.byteLength !== 32) {
@@ -180,6 +188,7 @@ export class DirectorBridgeBroker {
   private readonly queued: PendingRequest[] = [];
   private readonly pending = new Map<string, PendingRequest>();
   private readonly completionReplay = new DirectorBridgeReplayGuard();
+  private readonly acceptedCompletions = new Map<string, { fingerprint: string; expires_at: number }>();
   private lastPollAt = 0;
 
   constructor(
@@ -269,10 +278,29 @@ export class DirectorBridgeBroker {
 
   complete(value: unknown): void {
     const completion = verifyDirectorBridgeBody(value, this.keyring, DIRECTOR_BRIDGE_COMPLETION_SCHEMA, this.completionReplay, this.now());
+    const now = this.now().getTime();
+    for (const [requestId, accepted] of this.acceptedCompletions) {
+      if (accepted.expires_at <= now) this.acceptedCompletions.delete(requestId);
+    }
+    const fingerprint = createHmac("sha256", this.keyring.active.key)
+      .update(canonicalizeJcs(completion))
+      .digest("base64url");
+    const accepted = this.acceptedCompletions.get(completion.request_id);
+    if (accepted) {
+      if (exactSameSignature(accepted.fingerprint, fingerprint)) return;
+      throw new DirectorBridgeError("DIRECTOR_BRIDGE_COMPLETION_CONFLICT", "Director bridge completion conflicts with an accepted result.");
+    }
     const pending = this.pending.get(completion.request_id);
     if (!pending) throw new DirectorBridgeError("DIRECTOR_BRIDGE_REQUEST_NOT_FOUND", "Director bridge request is no longer pending.");
+    if (this.acceptedCompletions.size >= DIRECTOR_BRIDGE_MAX_ACCEPTED_COMPLETIONS) {
+      throw new DirectorBridgeError("DIRECTOR_BRIDGE_BUSY", "Director bridge completion acceptance capacity is full.", undefined, true);
+    }
     clearTimeout(pending.timer);
     this.pending.delete(completion.request_id);
+    this.acceptedCompletions.set(completion.request_id, {
+      fingerprint,
+      expires_at: now + DIRECTOR_BRIDGE_ACCEPTED_COMPLETION_TTL_MS
+    });
     if (completion.ok) pending.resolve(completion.result);
     else pending.reject(new DirectorBridgeError(completion.error!.code, completion.error!.message));
   }
@@ -294,6 +322,8 @@ export interface DirectorLocalBridgeClientOptions {
   handlers: (actor: WebGptV4Actor) => DirectorNativeToolHandlers;
   fetch?: typeof fetch;
   now?: () => Date;
+  on_phase?: (phase: "polling" | "idle" | "handling" | "completing") => void;
+  should_stop?: () => boolean;
 }
 
 async function boundedResponseText(response: Response, maximum: number): Promise<string> {
@@ -339,6 +369,7 @@ export class DirectorLocalBridgeClient {
   private readonly requestReplay = new DirectorBridgeReplayGuard();
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => Date;
+  private pendingCompletion: DirectorBridgeCompletion | null = null;
 
   constructor(private readonly options: DirectorLocalBridgeClientOptions) {
     assertDirectorBridgeKeyring(options.keyring);
@@ -355,7 +386,29 @@ export class DirectorLocalBridgeClient {
     this.now = options.now ?? (() => new Date());
   }
 
+  hasPendingCompletion(): boolean {
+    return this.pendingCompletion !== null;
+  }
+
+  private async submitPendingCompletion(): Promise<void> {
+    if (!this.pendingCompletion) return;
+    this.options.on_phase?.("completing");
+    const completed = signDirectorBridgeBody(this.pendingCompletion, this.options.keyring.active, this.now());
+    const completedResponse = await boundedNetworkOperation((signal) => this.fetchImpl(
+      new URL("/director/bridge/v1/complete", this.options.remote_origin),
+      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(completed), redirect: "manual", signal }
+    ));
+    if (completedResponse.status !== 202) throw new DirectorBridgeError("DIRECTOR_BRIDGE_COMPLETE_FAILED", "Director bridge completion was not accepted.", undefined, true);
+    this.pendingCompletion = null;
+    this.options.on_phase?.("idle");
+  }
+
   async runOnce(): Promise<boolean> {
+    if (this.pendingCompletion) {
+      await this.submitPendingCompletion();
+      return true;
+    }
+    this.options.on_phase?.("polling");
     const poll = signDirectorBridgeBody({ operation: "poll", client_id: this.options.client_id, issued_at: this.now().toISOString() }, this.options.keyring.active, this.now());
     const { response, encoded } = await boundedNetworkOperation(async (signal) => {
       const response = await this.fetchImpl(new URL("/director/bridge/v1/poll", this.options.remote_origin), {
@@ -364,7 +417,10 @@ export class DirectorLocalBridgeClient {
       const encoded = response.status === 200 ? await boundedResponseText(response, DIRECTOR_BRIDGE_MAX_BODY_BYTES) : "";
       return { response, encoded };
     });
-    if (response.status === 204) return false;
+    if (response.status === 204) {
+      this.options.on_phase?.("idle");
+      return false;
+    }
     if (response.status !== 200) throw new DirectorBridgeError("DIRECTOR_BRIDGE_POLL_FAILED", "Director bridge poll failed.", undefined, true);
     let decoded: unknown;
     try { decoded = JSON.parse(encoded) as unknown; }
@@ -372,6 +428,23 @@ export class DirectorLocalBridgeClient {
     const request = verifyDirectorBridgeBody(decoded, this.options.keyring, DIRECTOR_BRIDGE_REQUEST_SCHEMA, this.requestReplay, this.now());
     let completion: DirectorBridgeCompletion;
     try {
+      if (this.options.should_stop?.()) {
+        throw new DirectorBridgeError(
+          "DIRECTOR_BRIDGE_STOPPING",
+          "Director bridge is stopping and did not invoke the local handler.",
+          undefined,
+          true
+        );
+      }
+      this.options.on_phase?.("handling");
+      if (this.options.should_stop?.()) {
+        throw new DirectorBridgeError(
+          "DIRECTOR_BRIDGE_STOPPING",
+          "Director bridge is stopping and did not invoke the local handler.",
+          undefined,
+          true
+        );
+      }
       if (Date.parse(request.expires_at) <= this.now().getTime()) throw new DirectorBridgeError("DIRECTOR_BRIDGE_REQUEST_EXPIRED", "Director bridge request expired.");
       const actor: WebGptV4Actor = {
         principal_id: request.actor.principal_id, actor_hash: request.actor.actor_hash,
@@ -392,12 +465,8 @@ export class DirectorLocalBridgeClient {
         ok: false, error: { code: safe.code, message: safe.message }, completed_at: this.now().toISOString()
       });
     }
-    const completed = signDirectorBridgeBody(completion, this.options.keyring.active, this.now());
-    const completedResponse = await boundedNetworkOperation((signal) => this.fetchImpl(
-      new URL("/director/bridge/v1/complete", this.options.remote_origin),
-      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(completed), redirect: "manual", signal }
-    ));
-    if (completedResponse.status !== 202) throw new DirectorBridgeError("DIRECTOR_BRIDGE_COMPLETE_FAILED", "Director bridge completion was not accepted.", undefined, true);
+    this.pendingCompletion = completion;
+    await this.submitPendingCompletion();
     return true;
   }
 }
