@@ -111,6 +111,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .virtualCanvas { position: relative; width: 100%; }
 .virtualRow { position: absolute; top: 0; left: 0; width: 100%; }
 .masterDetail { display: grid; grid-template-columns: 340px minmax(0, 1fr); flex: 1; min-height: 0; border: 1px solid var(--line); border-radius: 7px; background: rgba(255,255,255,.74); overflow: hidden; }
+.directorFocusPanel { flex: 0 0 310px; min-height: 310px; }
+.directorProposalPanel { display: flex; flex: 1 1 0; flex-direction: column; min-height: 0; margin-top: 12px; }
+.directorProposalPanel .runList { min-height: 0; overflow: auto; }
 .queuePane { min-width: 0; min-height: 0; overflow: hidden; border-right: 1px solid var(--line); background: rgba(244,247,251,.62); }
 .masterDetail > .queuePane { display: grid; grid-template-rows: 42px minmax(0,1fr); }
 .paneTitle { display: flex; align-items: center; justify-content: space-between; height: 42px; padding: 0 11px; border-bottom: 1px solid var(--line); font-size: 12px; }
@@ -278,6 +281,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .tableRow > span:nth-child(n+3):not(:last-child), .projectRow > span:nth-child(n+3):not(:last-child) { display: none; }
   .projectList { min-height: 68vh; grid-template-rows: minmax(0, 1fr) 30px; }.projectListHead { grid-row: 1; }
   .masterDetail, .threePane { display: block; border: 0; overflow: visible; }
+  .directorFocusPanel { flex-basis: auto; min-height: 0; }
   .queuePane, .threePane > .queuePane { height: 250px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 10px; }
   .detailPane { overflow: visible; border: 1px solid var(--line); border-radius: 6px; }
   .overviewColumns, .systemGrid { grid-template-columns: 1fr; }.systemBand { grid-column: 1; }
