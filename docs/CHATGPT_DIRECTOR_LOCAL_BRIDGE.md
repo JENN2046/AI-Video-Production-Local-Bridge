@@ -126,6 +126,12 @@ or launching it:
 - fails closed if any of the three Provider execution flags is `true`, forces
   all three to `false` for the child, and rejects any inherited plaintext local
   Bridge key before build or launch;
+- rejects non-empty Node variables that can preload code, alter module
+  resolution, read external startup material or create startup side effects
+  before it invokes Node, then starts the child from a cleared, minimal
+  Windows/Bridge environment with no `NODE_*` variables. The allowlisted
+  environment is represented only by a SHA-256 component of the
+  launch-configuration identity; it is never copied into state or a receipt;
 - refuses a new launch when it discovers the configured Bridge entrypoint as
   either the absolute managed two-argument Node command or the strict
   historical relative two-argument form without consistent managed state;
@@ -139,7 +145,7 @@ or launching it:
   deterministic manifest of `dist/src` plus `dist/scripts`;
 - binds the exact Node/entrypoint argv and a low-disclosure digest of the
   canonical Remote origin, database path, DPAPI pointer, key ID and disabled
-  Provider gates;
+  Provider gates plus the allowlisted child startup environment;
 - starts in `starting`, writes managed state, verifies the child identity, and
   only then sends an instance-bound activation receipt. The real child cannot
   load its DPAPI key/database or poll the Remote before that activation.
@@ -183,9 +189,10 @@ all three Provider flags, plaintext-key rejection, an actual copied-entrypoint
 fingerprint change, stale-PID start recovery and final-heartbeat non-forced
 stop. Synthetic key/database/origin strings are used only to verify
 low-disclosure receipts; the fake child does not load a DPAPI key/database,
-contact a Remote or call a Provider. A separate real-entrypoint unit test stops
-the child before activation and confirms that key/database inputs were not
-loaded.
+contact a Remote or call a Provider. It also proves a poisoned `NODE_OPTIONS`
+is rejected before a Node invocation and that a change in an allowlisted
+startup value requires restart. A separate real-entrypoint unit test stops the
+child before activation and confirms that key/database inputs were not loaded.
 
 ## Current evidence and remaining gates
 

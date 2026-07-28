@@ -9,28 +9,18 @@ $lifecycleLock = $null
 $startedProcess = $null
 $state = $null
 $instanceId = ""
-$injectedNames = @(
-  "AI_VIDEO_DIRECTOR_BRIDGE_HEARTBEAT_PATH",
-  "AI_VIDEO_DIRECTOR_BRIDGE_STOP_REQUEST_PATH",
-  "AI_VIDEO_DIRECTOR_BRIDGE_ACTIVATION_PATH",
-  "AI_VIDEO_DIRECTOR_BRIDGE_INSTANCE_ID",
-  "AI_VIDEO_DIRECTOR_BRIDGE_SOURCE_COMMIT",
-  "AI_VIDEO_DIRECTOR_BRIDGE_BUILD_MANIFEST_SHA256",
-  "AI_VIDEO_DIRECTOR_BRIDGE_ENTRYPOINT_SHA256",
-  "AI_VIDEO_DIRECTOR_BRIDGE_LAUNCH_CONFIG_SHA256",
-  "AI_VIDEO_DIRECTOR_BRIDGE_LAUNCH_ARGV_SHA256",
-  "AI_VIDEO_DIRECTOR_BRIDGE_RUNTIME_ROOT",
-  "AI_VIDEO_DIRECTOR_BRIDGE_WORKSPACE_ROOT"
-)
+$launchEnvironment = $null
 
 try {
+  Assert-DirectorBridgeNoNodeStartupEnvironment
   Assert-DirectorBridgeProviderDisabled
   Assert-DirectorBridgeNoPlaintextKey
   Assert-DirectorBridgeExpectedCommit $ExpectedCommit
   Assert-DirectorBridgePrivateRuntime
   New-Item -ItemType Directory -Force -Path $script:DirectorBridgeRuntimeRoot | Out-Null
   $lifecycleLock = Enter-DirectorBridgeLifecycleLock
-  $launchConfigSha = Get-DirectorBridgeLaunchConfigSha256
+  $launchEnvironment = Get-DirectorBridgeLaunchEnvironment
+  $launchConfigSha = Get-DirectorBridgeLaunchConfigSha256 $launchEnvironment
 
   $existing = Read-DirectorBridgeState
   if ($null -ne $existing) {
@@ -93,7 +83,8 @@ try {
   $buildManifestSha = Get-DirectorBridgeBuildManifestSha256
   $nodeSha = Get-DirectorBridgeFileSha256 $runtime.NodePath "DIRECTOR_BRIDGE_NODE22_INVALID"
   $launchArgvSha = Get-DirectorBridgeLaunchArgvSha256 $runtime.NodePath $script:DirectorBridgeEntrypointPath
-  $launchConfigSha = Get-DirectorBridgeLaunchConfigSha256
+  $launchEnvironment = Get-DirectorBridgeLaunchEnvironment
+  $launchConfigSha = Get-DirectorBridgeLaunchConfigSha256 $launchEnvironment
   $instanceId = New-DirectorBridgeInstanceId
   foreach ($path in @(
     $script:DirectorBridgeHeartbeatPath,
@@ -103,32 +94,24 @@ try {
     Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
   }
 
-  $env:REAL_PROVIDER_ENABLED = "false"
-  $env:M1_REAL_PROVIDER_EXECUTION_ALLOWED = "false"
-  $env:M1_REAL_PROVIDER_COST_ACK = "false"
-  $env:AI_VIDEO_DIRECTOR_BRIDGE_HEARTBEAT_PATH = $script:DirectorBridgeHeartbeatPath
-  $env:AI_VIDEO_DIRECTOR_BRIDGE_STOP_REQUEST_PATH = $script:DirectorBridgeStopRequestPath
-  $env:AI_VIDEO_DIRECTOR_BRIDGE_ACTIVATION_PATH = $script:DirectorBridgeActivationPath
-  $env:AI_VIDEO_DIRECTOR_BRIDGE_INSTANCE_ID = $instanceId
-  $env:AI_VIDEO_DIRECTOR_BRIDGE_SOURCE_COMMIT = $sourceCommit
-  $env:AI_VIDEO_DIRECTOR_BRIDGE_BUILD_MANIFEST_SHA256 = $buildManifestSha
-  $env:AI_VIDEO_DIRECTOR_BRIDGE_ENTRYPOINT_SHA256 = $entrypointSha
-  $env:AI_VIDEO_DIRECTOR_BRIDGE_LAUNCH_CONFIG_SHA256 = $launchConfigSha
-  $env:AI_VIDEO_DIRECTOR_BRIDGE_LAUNCH_ARGV_SHA256 = $launchArgvSha
-  $env:AI_VIDEO_DIRECTOR_BRIDGE_RUNTIME_ROOT = $script:DirectorBridgeRuntimeRoot
-  $env:AI_VIDEO_DIRECTOR_BRIDGE_WORKSPACE_ROOT = $script:DirectorBridgeWorkspaceRoot
+  Add-DirectorBridgeRuntimeEnvironment `
+    -Environment $launchEnvironment `
+    -InstanceId $instanceId `
+    -SourceCommit $sourceCommit `
+    -BuildManifestSha $buildManifestSha `
+    -EntrypointSha $entrypointSha `
+    -LaunchConfigSha $launchConfigSha `
+    -LaunchArgvSha $launchArgvSha
 
   $stamp = [DateTime]::UtcNow.ToString("yyyyMMdd-HHmmss")
   $stdoutPath = Join-Path $script:DirectorBridgeRuntimeRoot "director-bridge-$stamp.stdout.log"
   $stderrPath = Join-Path $script:DirectorBridgeRuntimeRoot "director-bridge-$stamp.stderr.log"
-  $launchArguments = @("`"$script:DirectorBridgeEntrypointPath`"")
-  $startedProcess = Start-Process -FilePath $runtime.NodePath `
-    -ArgumentList $launchArguments `
-    -WorkingDirectory $script:DirectorBridgeWorkspaceRoot `
-    -WindowStyle Hidden `
-    -RedirectStandardOutput $stdoutPath `
-    -RedirectStandardError $stderrPath `
-    -PassThru
+  $startedProcess = Start-DirectorBridgeNodeProcess `
+    -NodePath $runtime.NodePath `
+    -EntrypointPath $script:DirectorBridgeEntrypointPath `
+    -LaunchEnvironment $launchEnvironment `
+    -StdoutPath $stdoutPath `
+    -StderrPath $stderrPath
   $startedProcess.Handle | Out-Null
   $startedProcess.Refresh()
 
@@ -224,8 +207,5 @@ try {
   }
   exit 1
 } finally {
-  foreach ($name in $injectedNames) {
-    [Environment]::SetEnvironmentVariable($name, $null, "Process")
-  }
   if ($null -ne $lifecycleLock) { Exit-DirectorBridgeLifecycleLock $lifecycleLock }
 }

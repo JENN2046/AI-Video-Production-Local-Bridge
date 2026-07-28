@@ -113,6 +113,22 @@ function Assert-DirectorBridgeNoPlaintextKey {
   }
 }
 
+function Assert-DirectorBridgeNoNodeStartupEnvironment {
+  $startupNames = @(
+    "NODE_OPTIONS", "NODE_PATH", "NODE_EXTRA_CA_CERTS", "NODE_ICU_DATA",
+    "NODE_V8_COVERAGE", "NODE_COMPILE_CACHE", "NODE_DISABLE_COMPILE_CACHE",
+    "NODE_REDIRECT_WARNINGS", "NODE_TLS_REJECT_UNAUTHORIZED", "NODE_USE_ENV_PROXY",
+    "NODE_USE_SYSTEM_CA", "NODE_PRESERVE_SYMLINKS", "NODE_PRESERVE_SYMLINKS_MAIN",
+    "NODE_SKIP_PLATFORM_CHECK", "NODE_DEBUG", "NODE_DEBUG_NATIVE"
+  )
+  $configured = @()
+  foreach ($name in $startupNames) {
+    $value = [Environment]::GetEnvironmentVariable($name, "Process")
+    if (-not [string]::IsNullOrWhiteSpace($value)) { $configured += $name }
+  }
+  if ($configured.Count -gt 0) { throw "DIRECTOR_BRIDGE_NODE_STARTUP_ENV_FORBIDDEN" }
+}
+
 function Resolve-DirectorBridgeNode22 {
   $candidate = [Environment]::GetEnvironmentVariable("AI_VIDEO_NODE22_PATH", "Process")
   if ([string]::IsNullOrWhiteSpace($candidate)) {
@@ -205,9 +221,22 @@ function Get-DirectorBridgeExactOrigin {
   return "$($uri.Scheme.ToLowerInvariant())://$($uri.Authority.ToLowerInvariant())"
 }
 
-function Get-DirectorBridgeLaunchConfigSha256 {
+function Add-DirectorBridgeCurrentEnvironmentValue([System.Collections.IDictionary]$Environment, [string]$Name) {
+  $value = [Environment]::GetEnvironmentVariable($Name, "Process")
+  if (-not [string]::IsNullOrWhiteSpace($value)) { $Environment[$Name] = $value }
+}
+
+function Get-DirectorBridgeLaunchEnvironment {
+  Assert-DirectorBridgeNoNodeStartupEnvironment
   Assert-DirectorBridgeProviderDisabled
   Assert-DirectorBridgeNoPlaintextKey
+  $environment = [ordered]@{}
+  # The child needs only a small Windows execution baseline. It is cleared and
+  # rebuilt immediately before Start-Process, so no ambient NODE_* option can
+  # preload code before the activation gate.
+  foreach ($name in @("ComSpec", "Path", "PATHEXT", "SystemDrive", "SystemRoot", "TEMP", "TMP", "WINDIR")) {
+    Add-DirectorBridgeCurrentEnvironmentValue $environment $name
+  }
   $keyId = [Environment]::GetEnvironmentVariable("WEBGPT_DIRECTOR_BRIDGE_KEY_ID", "Process")
   if ([string]::IsNullOrWhiteSpace($keyId) -or $keyId.Trim() -notmatch '^[A-Za-z0-9._-]{1,64}$') {
     throw "DIRECTOR_BRIDGE_KEY_ID_INVALID"
@@ -222,17 +251,92 @@ function Get-DirectorBridgeLaunchConfigSha256 {
     if (-not (Test-Path -LiteralPath $databasePath -PathType Leaf)) { throw "DIRECTOR_DATABASE_PATH_REQUIRED" }
     if (-not (Test-Path -LiteralPath $dpapiPath -PathType Leaf)) { throw "DIRECTOR_BRIDGE_KEY_POINTER_REQUIRED" }
   }
+  $environment["REAL_PROVIDER_ENABLED"] = "false"
+  $environment["M1_REAL_PROVIDER_EXECUTION_ALLOWED"] = "false"
+  $environment["M1_REAL_PROVIDER_COST_ACK"] = "false"
+  $environment["WEBGPT_DIRECTOR_REMOTE_ORIGIN"] = Get-DirectorBridgeExactOrigin
+  $environment["WEBGPT_DIRECTOR_BRIDGE_KEY_ID"] = $keyId.Trim()
+  $environment["WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH"] = $dpapiPath
+  $environment["AI_VIDEO_WORKSPACE_DB_PATH"] = $databasePath
+  Add-DirectorBridgeCurrentEnvironmentValue $environment "FFMPEG_PATH"
+  if ($script:DirectorBridgeFixtureMode) {
+    $fixtureMode = [Environment]::GetEnvironmentVariable("AI_VIDEO_DIRECTOR_BRIDGE_FIXTURE_MODE", "Process")
+    if ($fixtureMode -cne "ready") { throw "DIRECTOR_BRIDGE_FIXTURE_MODE_INVALID" }
+    $environment["AI_VIDEO_DIRECTOR_BRIDGE_FIXTURE_MODE"] = "ready"
+  }
+  return $environment
+}
+
+function Get-DirectorBridgeLaunchEnvironmentSha256([System.Collections.IDictionary]$Environment) {
+  if ($null -eq $Environment) { throw "DIRECTOR_BRIDGE_RUNTIME_ENVIRONMENT_INVALID" }
+  $allowedNames = @(
+    "ComSpec", "Path", "PATHEXT", "SystemDrive", "SystemRoot", "TEMP", "TMP", "WINDIR",
+    "REAL_PROVIDER_ENABLED", "M1_REAL_PROVIDER_EXECUTION_ALLOWED", "M1_REAL_PROVIDER_COST_ACK",
+    "WEBGPT_DIRECTOR_REMOTE_ORIGIN", "WEBGPT_DIRECTOR_BRIDGE_KEY_ID",
+    "WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH", "AI_VIDEO_WORKSPACE_DB_PATH", "FFMPEG_PATH",
+    "AI_VIDEO_DIRECTOR_BRIDGE_FIXTURE_MODE"
+  )
+  if (@($Environment.Keys | Where-Object { $allowedNames -notcontains [string]$_ }).Count -gt 0) {
+    throw "DIRECTOR_BRIDGE_RUNTIME_ENVIRONMENT_INVALID"
+  }
+  $canonical = @("director-bridge-launch-environment-v1")
+  foreach ($name in $allowedNames) {
+    if (-not $Environment.Contains($name)) { continue }
+    $canonical += "name=$($name.ToUpperInvariant())"
+    $canonical += "value_sha256=$(Get-DirectorBridgeTextSha256 ([string]$Environment[$name]))"
+  }
+  return Get-DirectorBridgeTextSha256 ($canonical -join "`n")
+}
+
+function Get-DirectorBridgeLaunchConfigSha256([System.Collections.IDictionary]$LaunchEnvironment = $null) {
+  if ($null -eq $LaunchEnvironment) { $LaunchEnvironment = Get-DirectorBridgeLaunchEnvironment }
+  $remoteOrigin = [string]$LaunchEnvironment["WEBGPT_DIRECTOR_REMOTE_ORIGIN"]
+  $databasePath = [string]$LaunchEnvironment["AI_VIDEO_WORKSPACE_DB_PATH"]
+  $dpapiPath = [string]$LaunchEnvironment["WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH"]
+  $keyId = [string]$LaunchEnvironment["WEBGPT_DIRECTOR_BRIDGE_KEY_ID"]
+  if ([string]::IsNullOrWhiteSpace($remoteOrigin) -or
+      [string]::IsNullOrWhiteSpace($databasePath) -or
+      [string]::IsNullOrWhiteSpace($dpapiPath) -or
+      [string]::IsNullOrWhiteSpace($keyId) -or
+      [string]$LaunchEnvironment["REAL_PROVIDER_ENABLED"] -cne "false" -or
+      [string]$LaunchEnvironment["M1_REAL_PROVIDER_EXECUTION_ALLOWED"] -cne "false" -or
+      [string]$LaunchEnvironment["M1_REAL_PROVIDER_COST_ACK"] -cne "false") {
+    throw "DIRECTOR_BRIDGE_RUNTIME_ENVIRONMENT_INVALID"
+  }
   $canonical = @(
-    "director-bridge-launch-config-v1",
-    "remote_origin=$(Get-DirectorBridgeExactOrigin)",
+    "director-bridge-launch-config-v2",
+    "remote_origin=$remoteOrigin",
     "database_path=$($databasePath.TrimEnd('\').Replace('\', '/').ToLowerInvariant())",
     "dpapi_path=$($dpapiPath.TrimEnd('\').Replace('\', '/').ToLowerInvariant())",
-    "key_id=$($keyId.Trim())",
+    "key_id=$keyId",
     "provider_enabled=false",
     "provider_execution_allowed=false",
-    "provider_cost_acknowledged=false"
+    "provider_cost_acknowledged=false",
+    "startup_environment_sha256=$(Get-DirectorBridgeLaunchEnvironmentSha256 $LaunchEnvironment)"
   ) -join "`n"
   return Get-DirectorBridgeTextSha256 $canonical
+}
+
+function Add-DirectorBridgeRuntimeEnvironment(
+  [System.Collections.IDictionary]$Environment,
+  [string]$InstanceId,
+  [string]$SourceCommit,
+  [string]$BuildManifestSha,
+  [string]$EntrypointSha,
+  [string]$LaunchConfigSha,
+  [string]$LaunchArgvSha
+) {
+  $Environment["AI_VIDEO_DIRECTOR_BRIDGE_HEARTBEAT_PATH"] = $script:DirectorBridgeHeartbeatPath
+  $Environment["AI_VIDEO_DIRECTOR_BRIDGE_STOP_REQUEST_PATH"] = $script:DirectorBridgeStopRequestPath
+  $Environment["AI_VIDEO_DIRECTOR_BRIDGE_ACTIVATION_PATH"] = $script:DirectorBridgeActivationPath
+  $Environment["AI_VIDEO_DIRECTOR_BRIDGE_INSTANCE_ID"] = $InstanceId
+  $Environment["AI_VIDEO_DIRECTOR_BRIDGE_SOURCE_COMMIT"] = $SourceCommit
+  $Environment["AI_VIDEO_DIRECTOR_BRIDGE_BUILD_MANIFEST_SHA256"] = $BuildManifestSha
+  $Environment["AI_VIDEO_DIRECTOR_BRIDGE_ENTRYPOINT_SHA256"] = $EntrypointSha
+  $Environment["AI_VIDEO_DIRECTOR_BRIDGE_LAUNCH_CONFIG_SHA256"] = $LaunchConfigSha
+  $Environment["AI_VIDEO_DIRECTOR_BRIDGE_LAUNCH_ARGV_SHA256"] = $LaunchArgvSha
+  $Environment["AI_VIDEO_DIRECTOR_BRIDGE_RUNTIME_ROOT"] = $script:DirectorBridgeRuntimeRoot
+  $Environment["AI_VIDEO_DIRECTOR_BRIDGE_WORKSPACE_ROOT"] = $script:DirectorBridgeWorkspaceRoot
 }
 
 function Get-DirectorBridgeBuildManifestSha256 {
@@ -307,6 +411,49 @@ function Write-DirectorBridgeAtomicJson([string]$PathValue, [object]$Value) {
     Move-Item -LiteralPath $temporary -Destination $PathValue -Force
   } finally {
     Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
+  }
+}
+
+function Start-DirectorBridgeNodeProcess(
+  [string]$NodePath,
+  [string]$EntrypointPath,
+  [System.Collections.IDictionary]$LaunchEnvironment,
+  [string]$StdoutPath,
+  [string]$StderrPath
+) {
+  if ($null -eq $LaunchEnvironment -or $LaunchEnvironment.Count -eq 0) {
+    throw "DIRECTOR_BRIDGE_RUNTIME_ENVIRONMENT_INVALID"
+  }
+  $priorEnvironment = @{}
+  foreach ($name in @([Environment]::GetEnvironmentVariables("Process").Keys)) {
+    $priorEnvironment[[string]$name] = [Environment]::GetEnvironmentVariable([string]$name, "Process")
+  }
+  try {
+    # Windows PowerShell's Start-Process has no per-child environment argument.
+    # Replace this launcher process's environment only for the synchronous spawn,
+    # then immediately restore it. The child therefore receives this exact
+    # allowlist, while its stdout/stderr retain normal file redirection.
+    foreach ($name in @([Environment]::GetEnvironmentVariables("Process").Keys)) {
+      [Environment]::SetEnvironmentVariable([string]$name, $null, "Process")
+    }
+    foreach ($name in $LaunchEnvironment.Keys) {
+      if ([string]$name -match '^(?i:NODE_)') { throw "DIRECTOR_BRIDGE_RUNTIME_ENVIRONMENT_INVALID" }
+      [Environment]::SetEnvironmentVariable([string]$name, [string]$LaunchEnvironment[$name], "Process")
+    }
+    return Start-Process -FilePath $NodePath `
+      -ArgumentList @("`"$EntrypointPath`"") `
+      -WorkingDirectory $script:DirectorBridgeWorkspaceRoot `
+      -WindowStyle Hidden `
+      -RedirectStandardOutput $StdoutPath `
+      -RedirectStandardError $StderrPath `
+      -PassThru
+  } finally {
+    foreach ($name in @([Environment]::GetEnvironmentVariables("Process").Keys)) {
+      [Environment]::SetEnvironmentVariable([string]$name, $null, "Process")
+    }
+    foreach ($name in $priorEnvironment.Keys) {
+      [Environment]::SetEnvironmentVariable([string]$name, [string]$priorEnvironment[$name], "Process")
+    }
   }
 }
 

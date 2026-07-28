@@ -16,6 +16,7 @@ $script:knownFixturePids = @()
 $script:runtimeTexts = @()
 $script:failureCode = $null
 $script:cleanupForced = $false
+$script:priorNodeEnvironment = @{}
 
 if (-not $smokeRoot.StartsWith($allowedPrefix, [StringComparison]::OrdinalIgnoreCase)) {
   throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_ROOT_INVALID"
@@ -93,6 +94,12 @@ function Remember-DirectorBridgeFixturePid([object]$State) {
 }
 
 try {
+  foreach ($name in @([Environment]::GetEnvironmentVariables("Process").Keys)) {
+    if ([string]$name -match '^(?i:NODE_)') {
+      $script:priorNodeEnvironment[[string]$name] = [Environment]::GetEnvironmentVariable([string]$name, "Process")
+      [Environment]::SetEnvironmentVariable([string]$name, $null, "Process")
+    }
+  }
   New-Item -ItemType Directory -Force -Path $smokeRoot | Out-Null
   $attributes = [IO.File]::GetAttributes($smokeRoot)
   if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
@@ -167,6 +174,11 @@ try {
   $env:M1_REAL_PROVIDER_EXECUTION_ALLOWED = "false"
   $env:M1_REAL_PROVIDER_COST_ACK = "false"
 
+  $env:NODE_OPTIONS = "--require=$fixtureEntrypoint"
+  $nodeStartupBlocked = Invoke-DirectorBridgeSmokeScript "director-bridge-start.ps1"
+  Assert-DirectorBridgeStableFailure $nodeStartupBlocked "DIRECTOR_BRIDGE_NODE_STARTUP_ENV_FORBIDDEN" "DIRECTOR_BRIDGE_RUNTIME_SMOKE_NODE_STARTUP_ENV_GATE_FAILED"
+  [Environment]::SetEnvironmentVariable("NODE_OPTIONS", $null, "Process")
+
   $env:WEBGPT_DIRECTOR_BRIDGE_KEY_B64 = $canary
   $plaintextBlocked = Invoke-DirectorBridgeSmokeScript "director-bridge-start.ps1"
   Assert-DirectorBridgeStableFailure $plaintextBlocked "DIRECTOR_BRIDGE_PLAINTEXT_KEY_FORBIDDEN" "DIRECTOR_BRIDGE_RUNTIME_SMOKE_PLAINTEXT_GATE_FAILED"
@@ -221,6 +233,24 @@ try {
       [bool]$status.Json.exact_build -or
       -not [bool]$status.Json.transport_ready) {
     throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_STATUS_FAILED"
+  }
+  $priorTemp = [Environment]::GetEnvironmentVariable("TEMP", "Process")
+  [Environment]::SetEnvironmentVariable("TEMP", (Join-Path $smokeRoot "bound-environment-drift"), "Process")
+  try {
+    $environmentDriftStatus = Invoke-DirectorBridgeSmokeScript "director-bridge-status.ps1"
+    if ($environmentDriftStatus.ExitCode -ne 2 -or
+        $null -eq $environmentDriftStatus.Json -or
+        [string]$environmentDriftStatus.Json.result -cne "RESTART_REQUIRED") {
+      throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_ENVIRONMENT_BINDING_FAILED"
+    }
+  } finally {
+    [Environment]::SetEnvironmentVariable("TEMP", $priorTemp, "Process")
+  }
+  $environmentRestoredStatus = Invoke-DirectorBridgeSmokeScript "director-bridge-status.ps1"
+  if ($environmentRestoredStatus.ExitCode -ne 0 -or
+      $null -eq $environmentRestoredStatus.Json -or
+      [string]$environmentRestoredStatus.Json.result -cne "RUNNING") {
+    throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_ENVIRONMENT_RESTORE_FAILED"
   }
   $secondStart = Invoke-DirectorBridgeSmokeScript "director-bridge-start.ps1"
   if ($secondStart.ExitCode -ne 0 -or
@@ -395,6 +425,14 @@ try {
     "DIRECTOR_BRIDGE_RUNTIME_SMOKE_FAILED"
   }
 } finally {
+  foreach ($name in @([Environment]::GetEnvironmentVariables("Process").Keys)) {
+    if ([string]$name -match '^(?i:NODE_)') {
+      [Environment]::SetEnvironmentVariable([string]$name, $null, "Process")
+    }
+  }
+  foreach ($name in $script:priorNodeEnvironment.Keys) {
+    [Environment]::SetEnvironmentVariable([string]$name, [string]$script:priorNodeEnvironment[$name], "Process")
+  }
   if (Test-Path -LiteralPath $statePath -PathType Leaf) {
     try {
       $cleanupStop = Invoke-DirectorBridgeSmokeScript "director-bridge-stop.ps1"
@@ -461,4 +499,6 @@ if ($null -ne $script:failureCode) {
   forced_stop = $false
   provider_enabled = $false
   plaintext_key_inheritance = $false
+  node_startup_environment_rejected = $true
+  startup_environment_binding = $true
 } | ConvertTo-Json

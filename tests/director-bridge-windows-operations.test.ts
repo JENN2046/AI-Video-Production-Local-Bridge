@@ -540,9 +540,15 @@ test("Director Bridge Windows lifecycle manager scripts do not read Bridge key o
   assert.match(common, /\[IO\.FileShare\]::None/);
   assert.match(common, /DIRECTOR_PROVIDER_MUST_BE_DISABLED/);
   assert.match(common, /DIRECTOR_BRIDGE_PLAINTEXT_KEY_FORBIDDEN/);
-  assert.match(start, /\$env:REAL_PROVIDER_ENABLED = "false"/);
-  assert.match(start, /AI_VIDEO_DIRECTOR_BRIDGE_HEARTBEAT_PATH/);
-  assert.match(start, /AI_VIDEO_DIRECTOR_BRIDGE_STOP_REQUEST_PATH/);
+  assert.match(common, /DIRECTOR_BRIDGE_NODE_STARTUP_ENV_FORBIDDEN/);
+  assert.match(common, /Get-DirectorBridgeLaunchEnvironmentSha256/);
+  assert.match(common, /Start-DirectorBridgeNodeProcess/);
+  assert.match(common, /SetEnvironmentVariable\(\[string\]\$name, \$null, "Process"\)/);
+  assert.match(start, /Assert-DirectorBridgeNoNodeStartupEnvironment/);
+  assert.match(start, /Add-DirectorBridgeRuntimeEnvironment/);
+  assert.match(start, /Start-DirectorBridgeNodeProcess/);
+  assert.match(common, /AI_VIDEO_DIRECTOR_BRIDGE_HEARTBEAT_PATH/);
+  assert.match(common, /AI_VIDEO_DIRECTOR_BRIDGE_STOP_REQUEST_PATH/);
   assert.match(runtime, /DirectorBridgeRuntimeControl\.fromEnvironment/);
   assert.match(runtime, /managedRuntime\?\.stopRequested\(\)/);
   assert.doesNotMatch(`${common}\n${start}\n${status}\n${stop}`, /AI_VIDEO_DIRECTOR_BRIDGE_RUNTIME_TEST_MODE/);

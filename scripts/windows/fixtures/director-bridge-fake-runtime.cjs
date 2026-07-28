@@ -37,6 +37,36 @@ function actualLaunchArgvSha256() {
   ].join("\n"));
 }
 
+function launchEnvironmentSha256() {
+  const names = [
+    "ComSpec",
+    "Path",
+    "PATHEXT",
+    "SystemDrive",
+    "SystemRoot",
+    "TEMP",
+    "TMP",
+    "WINDIR",
+    "REAL_PROVIDER_ENABLED",
+    "M1_REAL_PROVIDER_EXECUTION_ALLOWED",
+    "M1_REAL_PROVIDER_COST_ACK",
+    "WEBGPT_DIRECTOR_REMOTE_ORIGIN",
+    "WEBGPT_DIRECTOR_BRIDGE_KEY_ID",
+    "WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH",
+    "AI_VIDEO_WORKSPACE_DB_PATH",
+    "FFMPEG_PATH",
+    "AI_VIDEO_DIRECTOR_BRIDGE_FIXTURE_MODE"
+  ];
+  const canonical = ["director-bridge-launch-environment-v1"];
+  for (const name of names) {
+    const value = process.env[name];
+    if (value === undefined || value.trim() === "") continue;
+    canonical.push(`name=${name.toUpperCase()}`);
+    canonical.push(`value_sha256=${sha256Text(value)}`);
+  }
+  return sha256Text(canonical.join("\n"));
+}
+
 function actualLaunchConfigSha256() {
   let origin;
   try {
@@ -56,15 +86,17 @@ function actualLaunchConfigSha256() {
   if (process.env.REAL_PROVIDER_ENABLED !== "false"
     || process.env.M1_REAL_PROVIDER_EXECUTION_ALLOWED !== "false"
     || process.env.M1_REAL_PROVIDER_COST_ACK !== "false") fail();
+  if (Object.keys(process.env).some((name) => name.toUpperCase().startsWith("NODE_"))) fail();
   return sha256Text([
-    "director-bridge-launch-config-v1",
+    "director-bridge-launch-config-v2",
     `remote_origin=${origin.origin.toLowerCase()}`,
     `database_path=${canonicalWindowsPath(process.env.AI_VIDEO_WORKSPACE_DB_PATH || "")}`,
     `dpapi_path=${canonicalWindowsPath(process.env.WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH || "")}`,
     `key_id=${keyId}`,
     "provider_enabled=false",
     "provider_execution_allowed=false",
-    "provider_cost_acknowledged=false"
+    "provider_cost_acknowledged=false",
+    `startup_environment_sha256=${launchEnvironmentSha256()}`
   ].join("\n"));
 }
 
