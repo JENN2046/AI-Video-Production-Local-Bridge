@@ -13,7 +13,7 @@ $fixtureSource = Join-Path $PSScriptRoot "fixtures\director-bridge-fake-runtime.
 $fixtureEntrypoint = Join-Path $smokeRoot "director-bridge-fake-runtime.cjs"
 $canary = "directorcanary$([Guid]::NewGuid().ToString('N'))"
 $script:smokeInvocation = 0
-$script:knownFixturePids = @()
+$script:knownFixtureProcesses = @()
 $script:runtimeTexts = @()
 $script:failureCode = $null
 $script:cleanupForced = $false
@@ -91,7 +91,15 @@ function Get-DirectorBridgeFixtureProcessCount {
 
 function Remember-DirectorBridgeFixturePid([object]$State) {
   $pidValue = [int]$State.pid
-  if ($script:knownFixturePids -notcontains $pidValue) { $script:knownFixturePids += $pidValue }
+  $startTimeUtc = ([DateTimeOffset]::Parse([string]$State.process_start_time_utc)).ToUniversalTime().ToString("o")
+  if (@($script:knownFixtureProcesses | Where-Object {
+    [int]$_.pid -eq $pidValue -and [string]$_.process_start_time_utc -ceq $startTimeUtc
+  }).Count -eq 0) {
+    $script:knownFixtureProcesses += [pscustomobject]@{
+      pid = $pidValue
+      process_start_time_utc = $startTimeUtc
+    }
+  }
 }
 
 try {
@@ -471,21 +479,27 @@ try {
       $script:failureCode = "DIRECTOR_BRIDGE_RUNTIME_SMOKE_CLEANUP_FAILED"
     }
   }
-  foreach ($fixturePid in $script:knownFixturePids) {
+  foreach ($fixtureProcess in $script:knownFixtureProcesses) {
+    $fixturePid = [int]$fixtureProcess.pid
     $live = Get-Process -Id $fixturePid -ErrorAction SilentlyContinue
     if ($null -ne $live) {
       try {
         $candidate = Get-CimInstance Win32_Process -Filter "ProcessId = $fixturePid" -ErrorAction Stop
+        $startMatches = $live.StartTime.ToUniversalTime().ToString("o") -ceq [string]$fixtureProcess.process_start_time_utc
         if ($null -eq $candidate -or
+            -not $startMatches -or
             ([string]$candidate.CommandLine).IndexOf($fixtureEntrypoint, [StringComparison]::OrdinalIgnoreCase) -lt 0) {
-          $script:failureCode = "DIRECTOR_BRIDGE_RUNTIME_SMOKE_CLEANUP_IDENTITY_FAILED"
           continue
         }
         Stop-Process -Id $fixturePid -Force -ErrorAction Stop
         $script:cleanupForced = $true
-        $script:failureCode = "DIRECTOR_BRIDGE_RUNTIME_SMOKE_CLEANUP_FORCED"
+        if ($null -eq $script:failureCode) {
+          $script:failureCode = "DIRECTOR_BRIDGE_RUNTIME_SMOKE_CLEANUP_FORCED"
+        }
       } catch {
-        $script:failureCode = "DIRECTOR_BRIDGE_RUNTIME_SMOKE_CLEANUP_FAILED"
+        if ($null -eq $script:failureCode) {
+          $script:failureCode = "DIRECTOR_BRIDGE_RUNTIME_SMOKE_CLEANUP_FAILED"
+        }
       }
     }
   }
@@ -498,7 +512,7 @@ try {
       (Test-Path -LiteralPath $resolved) -and
       (([IO.File]::GetAttributes($resolved) -band [IO.FileAttributes]::ReparsePoint) -eq 0)) {
     Remove-Item -LiteralPath $resolved -Recurse -Force
-  } elseif ($remainingFixtureProcesses -gt 0) {
+  } elseif ($remainingFixtureProcesses -gt 0 -and $null -eq $script:failureCode) {
     $script:failureCode = "DIRECTOR_BRIDGE_RUNTIME_SMOKE_CLEANUP_FAILED"
   }
 }
