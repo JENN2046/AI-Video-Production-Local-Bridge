@@ -49,6 +49,8 @@ function isolatedDirectorStartupEnvironment(overrides: Record<string, string>): 
   const environment: NodeJS.ProcessEnv = { ...process.env };
   for (const name of [
     "REAL_PROVIDER_ENABLED",
+    "M1_REAL_PROVIDER_EXECUTION_ALLOWED",
+    "M1_REAL_PROVIDER_COST_ACK",
     "WEBGPT_DIRECTOR_BRIDGE_KEY_ID",
     "WEBGPT_DIRECTOR_BRIDGE_KEY_B64",
     "WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH",
@@ -466,16 +468,25 @@ test("Director remote runtime module graph remains detached from SQLite and loca
     }
   };
   visit(entry);
-  const disabled = spawnSync(process.execPath, [resolve("dist/scripts/director-local-bridge.js")], {
-    cwd: resolve("."),
-    env: { ...process.env, REAL_PROVIDER_ENABLED: "true", WEBGPT_DIRECTOR_BRIDGE_KEY_B64: "must-not-be-printed" },
-    encoding: "utf8",
-    windowsHide: true,
-    timeout: 10_000
-  });
-  assert.equal(disabled.status, 1);
-  assert.match(disabled.stderr, /DIRECTOR_PROVIDER_MUST_BE_DISABLED/);
-  assert.equal(disabled.stderr.includes("must-not-be-printed"), false);
+  for (const providerFlag of [
+    "REAL_PROVIDER_ENABLED",
+    "M1_REAL_PROVIDER_EXECUTION_ALLOWED",
+    "M1_REAL_PROVIDER_COST_ACK"
+  ]) {
+    const disabled = spawnSync(process.execPath, [resolve("dist/scripts/director-local-bridge.js")], {
+      cwd: resolve("."),
+      env: isolatedDirectorStartupEnvironment({
+        [providerFlag]: "true",
+        WEBGPT_DIRECTOR_BRIDGE_KEY_B64: "must-not-be-printed"
+      }),
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 10_000
+    });
+    assert.equal(disabled.status, 1);
+    assert.match(disabled.stderr, /DIRECTOR_PROVIDER_MUST_BE_DISABLED/);
+    assert.equal(disabled.stderr.includes("must-not-be-printed"), false);
+  }
 });
 
 test("Director bridge hidden import writes only DPAPI CurrentUser ciphertext to ignored storage", async (context) => {

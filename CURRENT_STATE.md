@@ -1,7 +1,7 @@
 # Current State
 
-Date (Asia/Shanghai, UTC+08:00): 2026-07-27
-Repository baseline: `main@2b84f44`
+Date (Asia/Shanghai, UTC+08:00): 2026-07-28
+Repository baseline: `main@b189c24`
 
 ## Accepted historical operations baseline
 
@@ -54,6 +54,7 @@ The controlled Artifact import-receipt migration `0011` has since completed its 
 | Real Provider canary | Boundary exists | Not authorized | Frozen |
 | ChatGPT Director PR1–PR6 + controlled import receipt | Current code | Single-Owner Focus → Context → advisory Proposal → Human Workbench decision → receipt PASS | `DIRECTOR_OWNER_PROPOSAL_PASS` |
 | Unified ChatGPT Workspace Remote | Current runtime and contract | Unified OAuth, Bridge, Render, ChatGPT App and activity-database path PASS | `UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_PASS` |
+| Director Bridge managed Windows runtime | Candidate branch | Implementation and isolated fake-runtime coverage; no durable live acceptance receipt, current live Bridge not restarted | Awaiting code review/merge and a separately controlled live restart |
 
 ## Accepted evidence
 
@@ -68,6 +69,7 @@ The controlled Artifact import-receipt migration `0011` has since completed its 
 - [Director Active Database Migration Acceptance](ops/reports/2026-07-22-director-active-database-migration-acceptance.md)
 - [Unified Director Activity Acceptance](ops/reports/2026-07-27-unified-director-activity-acceptance.md)
 - [Readonly Media Gateway MP4 Fixture Acceptance](ops/reports/2026-07-27-readonly-media-gateway-mp4-fixture-acceptance.md)
+- [Unified Director Wire Contract Acceptance](ops/reports/2026-07-28-unified-director-wire-contract-acceptance.md)
 
 Acceptance reports record the commit and boundary that was actually tested. Later code must not silently inherit an older report's PASS.
 
@@ -89,7 +91,7 @@ PR #56–#62 implemented Snapshot v4 media bindings, encrypted capabilities, loc
 
 PR #69–#72 and the controlled Artifact import-receipt work are now accepted through an activity-database single-Owner golden path. The observed path was Focus → Context → advisory Proposal → Human Workbench decision → one immutable, digest-revalidated receipt. This does **not** alter the accepted Readonly MCP App or the safe default `REAL_PROVIDER_ENABLED=false`.
 
-Director startup requires explicit non-secret runtime configuration and its accepted transport configuration; database readiness alone still is not a general authorization. The Memory Port has no configured stable plugin, endpoint or automatic Saveback dispatch. See [Director Local Candidate Closeout](docs/CHATGPT_DIRECTOR_LOCAL_CANDIDATE_CLOSEOUT.md).
+Director startup requires explicit non-secret runtime configuration and its accepted transport configuration; database readiness alone still is not a general authorization. A managed Windows runtime candidate now records the tracked-source commit, emitted `dist` fingerprints, Node executable fingerprint, exact two-argument process identity and a low-disclosure launch-configuration digest. A two-phase activation gate prevents key/database loading before manager adoption; instance-bound heartbeat and completion state support a final `stopped` receipt, while identical completion retries are deduplicated within the Remote broker's bounded five-minute in-memory acceptance window. Expiry or Remote restart makes a later retry unconfirmed again. The default stop path never force-kills. This is not dependency-tree attestation or business-readiness proof, and validation remains local/fixture-only: the currently running Bridge predates this manager and was not restarted. The Memory Port has no configured stable plugin, endpoint or automatic Saveback dispatch. See [Director Local Bridge](docs/CHATGPT_DIRECTOR_LOCAL_BRIDGE.md) and [Director Local Candidate Closeout](docs/CHATGPT_DIRECTOR_LOCAL_CANDIDATE_CLOSEOUT.md).
 
 ### Unified ChatGPT Workspace candidate
 
@@ -108,9 +110,10 @@ Separate, non-blocking future gates are the second real user, automatic Snapshot
 
 Director has completed its migration, transport and single-Owner Proposal/receipt gates without Provider execution. Its remaining ordered external gates are:
 
-1. select and accept a stable Memory plugin with project/issuer-bound recall-only behavior before any Saveback dispatch;
-2. separately authorize a bounded Provider execution canary under an Automation Grant and budget;
-3. accept a second real user and revoke path before claiming multi-user readiness.
+1. review and merge the managed Bridge runtime candidate, then perform one controlled local restart at the intended source commit and emitted-`dist` fingerprint before claiming live managed-process identity or the malformed-Proposal negative path;
+2. select and accept a stable Memory plugin with project/issuer-bound recall-only behavior before any Saveback dispatch;
+3. separately authorize a bounded Provider execution canary under an Automation Grant and budget;
+4. accept a second real user and revoke path before claiming multi-user readiness.
 
 The unified Connector transport gate has passed while retaining legacy `/mcp` as rollback. Its remaining work is the same separately authorized stable Memory, bounded Provider, multi-user and Media Gateway gates; the legacy connector may be audited for removal only after a distinct authorization.
 

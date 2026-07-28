@@ -99,13 +99,39 @@ The unified route may return an empty Readonly shell without a Snapshot and `DIR
 
 ## Local bridge lifecycle and recovery
 
-The Bridge is outbound-only and has no inbound local port or Scheduled Task. Start it only for an accepted isolated or activity-database stage:
+The Bridge is outbound-only and has no inbound local port or Scheduled Task.
+The commands below become the operator path only after this managed-runtime
+candidate is merged and a separately authorized controlled restart has adopted
+the live Bridge. The currently running Bridge predates the manager.
+
+Before that first managed start, independently identify the legacy Bridge by
+PID, start time and command line, stop it gracefully through the previously
+accepted operation, and confirm no absolute or relative
+`dist/scripts/director-local-bridge.js` Node process remains. Do not rely only
+on the new manager to prove that the legacy poller is absent.
+
+Start the managed Bridge only for an accepted isolated or activity-database
+stage:
 
 ```powershell
 npm run start:director:bridge
+npm run director:bridge:status
+npm run director:bridge:stop
 ```
 
-It polls the exact `WEBGPT_DIRECTOR_REMOTE_ORIGIN` at the unified Bridge paths. A current poll lease makes the Remote Director chain available; it does not change the Readonly Snapshot's freshness. Stop the process with its normal console signal when the bounded stage ends.
+It polls the exact `WEBGPT_DIRECTOR_REMOTE_ORIGIN` at the unified Bridge paths.
+A current authenticated poll makes the Remote Director chain transport-ready;
+it does not prove database, Focus or business readiness and does not change the
+Readonly Snapshot's freshness. `start` and `status` require the same non-secret
+launch configuration so the manager can recompute its digest; missing or
+changed values produce `RESTART_REQUIRED` rather than proving runtime identity.
+`stop` uses the selected runtime root and persisted managed identity; it does
+not read the Bridge key or database.
+End a bounded stage with `npm run director:bridge:stop`. Only that stop command
+returning `result=STOPPED`, `graceful=true` and `final_receipt=true` in the
+same response is graceful-stop evidence. A later standalone `status` result of
+`STOPPED` is not equivalent. Timeout or unconfirmed completion preserves
+receipts and must not be reclassified as a clean stop.
 
 If the Widget reports the bridge as unavailable, preserve the low-disclosure stable error code, stop the bounded test and check only the configured origin, current ledger, exact keyring completeness and Remote readiness under the authorized stage. Do not retry indefinitely, fall back to the old Director endpoint, publish a Snapshot to compensate, add an inbound listener or enable a Provider.
 

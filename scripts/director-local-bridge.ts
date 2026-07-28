@@ -1,6 +1,10 @@
 import { DirectorLocalBridgeClient } from "../src/director/bridge.js";
 import { loadDirectorBridgeKeyring } from "../src/director/bridgeConfig.js";
 import { createDirectorLocalService } from "../src/director/localService.js";
+import {
+  DirectorBridgeRuntimeControl,
+  directorBridgeStableErrorCode
+} from "../src/director/runtimeControl.js";
 
 function exactOrigin(value: string | undefined): string {
   const raw = value?.trim() ?? "";
@@ -11,9 +15,58 @@ function exactOrigin(value: string | undefined): string {
   return parsed.toString();
 }
 
+let managedRuntime: DirectorBridgeRuntimeControl | null = null;
+
+function environmentTrue(name: string): boolean {
+  return process.env[name]?.trim().toLowerCase() === "true";
+}
+
+async function waitForNextPoll(milliseconds: number, stopping: () => boolean): Promise<void> {
+  const deadline = Date.now() + milliseconds;
+  while (!stopping() && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, Math.min(250, deadline - Date.now())));
+  }
+}
+
+function assertManagedRuntimeHealthy(): void {
+  const code = managedRuntime?.fatalErrorCode();
+  if (code) throw new Error(code);
+}
+
 async function main(): Promise<void> {
-  if (process.env.REAL_PROVIDER_ENABLED?.trim().toLowerCase() === "true") {
+  if ([
+    "REAL_PROVIDER_ENABLED",
+    "M1_REAL_PROVIDER_EXECUTION_ALLOWED",
+    "M1_REAL_PROVIDER_COST_ACK"
+  ].some(environmentTrue)) {
     throw new Error("DIRECTOR_PROVIDER_MUST_BE_DISABLED");
+  }
+  managedRuntime = DirectorBridgeRuntimeControl.fromEnvironment(process.env);
+  managedRuntime?.start();
+  let stopping = false;
+  const requestSignalStop = (): void => {
+    stopping = true;
+    managedRuntime?.requestStop();
+  };
+  process.once("SIGINT", requestSignalStop);
+  process.once("SIGTERM", requestSignalStop);
+  if (managedRuntime) {
+    try {
+      await managedRuntime.waitForActivation(60_000, () => stopping);
+    } catch (error) {
+      const fatalRuntimeCode = managedRuntime.fatalErrorCode();
+      if (fatalRuntimeCode) throw new Error(fatalRuntimeCode);
+      if (managedRuntime.stopRequested()) {
+        managedRuntime.markStopped();
+        return;
+      }
+      throw error;
+    }
+    assertManagedRuntimeHealthy();
+    if (managedRuntime.stopRequested()) {
+      managedRuntime.markStopped();
+      return;
+    }
   }
   const keyring = loadDirectorBridgeKeyring(process.env, "local_dpapi");
   if (!keyring) throw new Error("DIRECTOR_BRIDGE_KEY_REQUIRED");
@@ -23,31 +76,46 @@ async function main(): Promise<void> {
     remote_origin: exactOrigin(process.env.WEBGPT_DIRECTOR_REMOTE_ORIGIN),
     client_id: "jenn-local-director",
     keyring,
-    handlers: (actor) => createDirectorLocalService(actor, { database_path: databasePath, ffmpeg_path: process.env.FFMPEG_PATH })
+    handlers: (actor) => createDirectorLocalService(actor, { database_path: databasePath, ffmpeg_path: process.env.FFMPEG_PATH }),
+    on_phase: (phase) => managedRuntime?.setPhase(phase),
+    should_stop: () => stopping || (managedRuntime?.stopRequested() ?? false)
   });
-  let stopping = false;
-  process.once("SIGINT", () => { stopping = true; });
-  process.once("SIGTERM", () => { stopping = true; });
+  const assertManagedRuntimeHealthyUnlessDraining = (): void => {
+    if (!client.hasPendingCompletion()) assertManagedRuntimeHealthy();
+  };
   let failures = 0;
-  while (!stopping) {
+  while (true) {
+    assertManagedRuntimeHealthyUnlessDraining();
+    const stopRequested = stopping || (managedRuntime?.stopRequested() ?? false);
+    if (stopRequested && !client.hasPendingCompletion()) break;
     try {
       const handled = await client.runOnce();
       failures = 0;
-      await new Promise((resolve) => setTimeout(resolve, handled ? 0 : 1_000));
-    } catch {
+      managedRuntime?.recordRemoteSuccess(handled);
+      assertManagedRuntimeHealthyUnlessDraining();
+      await waitForNextPoll(handled ? 0 : 1_000, () =>
+        !client.hasPendingCompletion() && (stopping || (managedRuntime?.stopRequested() ?? false))
+      );
+      assertManagedRuntimeHealthyUnlessDraining();
+    } catch (error) {
+      assertManagedRuntimeHealthyUnlessDraining();
       failures = Math.min(6, failures + 1);
-      await new Promise((resolve) => setTimeout(resolve, Math.min(30_000, 1_000 * 2 ** failures)));
+      const backoff = Math.min(30_000, 1_000 * 2 ** failures);
+      managedRuntime?.recordBackoff(error, failures, new Date(Date.now() + backoff));
+      await waitForNextPoll(backoff, () =>
+        !client.hasPendingCompletion() && (stopping || (managedRuntime?.stopRequested() ?? false))
+      );
+      assertManagedRuntimeHealthyUnlessDraining();
     }
   }
+  assertManagedRuntimeHealthy();
+  managedRuntime?.setPhase("stopping");
+  managedRuntime?.markStopped();
 }
 
 main().catch((error: unknown) => {
-  const errorCode = error && typeof error === "object" && "code" in error ? (error as { code?: unknown }).code : undefined;
-  const code = typeof errorCode === "string" && /^[A-Z][A-Z0-9_]+$/.test(errorCode)
-    ? errorCode
-    : error instanceof Error && /^[A-Z][A-Z0-9_]+$/.test(error.message)
-      ? error.message
-      : "DIRECTOR_LOCAL_BRIDGE_START_FAILED";
+  try { managedRuntime?.markFailed(error); } catch { /* The stable boot receipt below remains the final fallback. */ }
+  const code = directorBridgeStableErrorCode(error);
   process.stderr.write(`${JSON.stringify({ timestamp: new Date().toISOString(), event_type: "boot_failure", stable_error_code: code })}\n`);
   process.exit(1);
 });
