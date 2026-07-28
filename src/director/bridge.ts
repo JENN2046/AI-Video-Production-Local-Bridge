@@ -6,7 +6,7 @@ import { canonicalizeJcs } from "../packages/domain/jcs.js";
 import { errorBody, requireScope, WebGptV4Error, type WebGptV4Actor } from "../webgpt-v4/types.js";
 import {
   DIRECTOR_NATIVE_TOOL_CATALOG,
-  normalizeDirectorFocusInput,
+  parseDirectorNativeToolInput,
   DIRECTOR_NATIVE_TOOL_NAMES,
   type DirectorNativeToolHandlers,
   type DirectorNativeToolName
@@ -379,9 +379,7 @@ export class DirectorLocalBridgeClient {
       };
       const catalog = DIRECTOR_NATIVE_TOOL_CATALOG.find((entry) => entry.name === request.tool)!;
       for (const scope of catalog.scope) requireScope(actor, scope);
-      const input = catalog.input.parse(
-        request.tool === "get_director_focus" ? normalizeDirectorFocusInput(request.input) : request.input
-      );
+      const input = parseDirectorNativeToolInput(request.tool, request.input);
       const result = await this.options.handlers(actor)[request.tool](input as never);
       completion = DIRECTOR_BRIDGE_COMPLETION_SCHEMA.parse({
         protocol_version: DIRECTOR_BRIDGE_PROTOCOL_VERSION, request_id: request.request_id,
