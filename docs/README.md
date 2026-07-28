@@ -7,6 +7,7 @@ This index separates current operating truth from historical implementation evid
 | Need | Document |
 |---|---|
 | Understand current status and open gates | [Current State](../CURRENT_STATE.md) |
+| Resume the latest Unified Director work safely | [2026-07-28 Unified Director handoff](HANDOFF_2026-07-28_UNIFIED_DIRECTOR.md) |
 | Use the local Workbench and ChatGPT App | [User Guide](USER_GUIDE.md) |
 | Install, configure or recover a runtime | [Deployment Guide](DEPLOYMENT_GUIDE.md) |
 | Understand trust and data boundaries | [Architecture](ARCHITECTURE.md) |
