@@ -73,7 +73,7 @@ The controlled Artifact import-receipt migration `0011` has since completed its 
 | Real Provider canary | Boundary exists | Not authorized | Frozen |
 | ChatGPT Director PR1–PR6 + controlled import receipt | Current code | Single-Owner Focus → Context → advisory Proposal → Human Workbench decision → receipt PASS | `DIRECTOR_OWNER_PROPOSAL_PASS` |
 | Unified ChatGPT Workspace Remote | Current runtime and contract | Unified OAuth, Bridge, Render, ChatGPT App and activity-database path PASS | `UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_PASS` |
-| Director Bridge managed Windows runtime | Current `main` | Implementation and isolated fake-runtime coverage passed; no durable live acceptance receipt, current live Bridge not restarted | Merge complete; awaiting a separately controlled live restart |
+| Director Bridge managed Windows runtime | Managed runtime accepted at `fbf6540`; cross-terminal configuration-identity repair under review | PASS: controlled restart at `fbf6540`, durable receipt, matched process identity and fresh heartbeat/Remote contact | Managed restart gate complete; after the repair merges, a separately authorized later restart is required only to activate and accept the cross-terminal behavior |
 | Direct OAuth compatibility canary | Current `main`, local-contract only | Windows CI and local contract coverage passed; no public endpoint experiment | Keep local-only; any public interoperability test needs separate authorization |
 
 ## Accepted evidence
@@ -90,6 +90,7 @@ The controlled Artifact import-receipt migration `0011` has since completed its 
 - [Unified Director Activity Acceptance](ops/reports/2026-07-27-unified-director-activity-acceptance.md)
 - [Readonly Media Gateway MP4 Fixture Acceptance](ops/reports/2026-07-27-readonly-media-gateway-mp4-fixture-acceptance.md)
 - [Unified Director Wire Contract Acceptance](ops/reports/2026-07-28-unified-director-wire-contract-acceptance.md)
+- [Managed Director Bridge Restart Acceptance](ops/reports/2026-07-29-managed-director-bridge-restart-acceptance.md)
 
 Acceptance reports record the commit and boundary that was actually tested. Later code must not silently inherit an older report's PASS.
 
