@@ -1,10 +1,5 @@
 # ChatGPT Director Local Candidate Closeout
 
-> Historical closeout snapshot. The database, transport and single-owner
-> acceptance statuses below were superseded by `CURRENT_STATE.md` and the
-> dated Unified Director handoff. Do not use this document as the current
-> startup, migration or external-authorization runbook.
-
 Status: `CANDIDATE` — local implementation evidence plus historical `0010` activity-database migration evidence. Current controlled import-receipt code requires a separately authorized `0010` → `0011` migration. This document does not accept a running Director service, deploy a remote runtime, configure OAuth or a Memory plugin, call a Provider, or create a production release.
 
 Planning/merge baseline:
@@ -51,11 +46,7 @@ Neither ChatGPT nor a future memory system may silently approve a Proposal, subm
 - No actual user or project facts were sent to a memory plugin; no Saveback was dispatched.
 - The package remains `0.1.0-beta.5`; this closeout does not create a tag, package publication or release claim.
 
-At the time of this historical snapshot, `start:director:remote` and
-`start:director:bridge` were code-entry commands rather than day-to-day
-operator commands. Current managed Bridge operations are documented in
-`CHATGPT_DIRECTOR_LOCAL_BRIDGE.md` and
-`webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md`.
+`start:director:remote` and `start:director:bridge` are code-entry commands, not day-to-day operator commands. They must remain stopped until the remaining transport and external acceptance gates below have passed.
 
 ## Required external acceptance order
 

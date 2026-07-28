@@ -108,16 +108,6 @@ Runtime note:
 - PR #94, the Director Focus-panel layout hotfix, remains an independent Draft
   PR. It is not part of PR #95 and must be reviewed and merged separately if
   its UI improvement is desired.
-- A follow-up local code branch adds a managed Windows Bridge runtime:
-  tracked-source/emitted-`dist`/Node/entrypoint fingerprints, exact
-  two-argument command identity, hashed launch configuration, a two-phase
-  activation gate, instance-bound heartbeat, repeat-start detection and
-  final-heartbeat non-forced stop. Its isolated tests use a copied fake child
-  plus a pre-activation real-entrypoint check; they do not read the active
-  database or Bridge credential, contact the Remote, or call a Provider. This
-  is local code/fixture evidence only; the current live Bridge has not been
-  restarted under the new manager, and dependency-tree identity is not
-  attested.
 - Media Gateway remains bounded-fixture accepted for public MP4 playback, but
   byte-range `206` / `Content-Range`, recovery-soak, and other gates remain as
   listed in `CURRENT_STATE.md`.
@@ -137,13 +127,5 @@ use precise staging; do not use bulk clean, reset, or blanket add commands.
   publication, Memory write or Artifact delivery requires a separate current
   instruction.
 - A future live negative-path check should first establish a safely managed
-  runtime at the intended source commit and emitted-`dist`/Node fingerprints.
-  It must not inspect or expose the Bridge credential or active database
-  contents.
-- The managed stop path never performs a default `Stop-Process`. It checks the
-  stop sentinel immediately before handler invocation, lets an already-running
-  handler finish, retries an unacknowledged completion before polling again,
-  and requires a matching final heartbeat with `completion_pending=false`
-  before reporting graceful stop. If Remote `202` cannot be confirmed, it
-  does not delete receipts, report graceful, or force-kill a still-running
-  child.
+  exact-baseline Bridge runtime. It must not inspect or expose the Bridge
+  credential or active database contents.

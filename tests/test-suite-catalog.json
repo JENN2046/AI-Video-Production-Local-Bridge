@@ -140,7 +140,6 @@
         "tests/director-provider-quote-contract.test.ts",
         "tests/director-manual-native-tools.test.ts",
         "tests/director-local-bridge.test.ts",
-        "tests/director-bridge-windows-operations.test.ts",
         "tests/director-workbench-approval.test.ts",
         "tests/director-memory-port.test.ts",
         "tests/director-artifact-import-receipt.test.ts"
@@ -514,48 +513,6 @@
       "npm_script": "test:webgpt:director",
       "ci_step": "ChatGPT Director domain tests",
       "case_name": "migration 0011 preserves 0010 proposal evidence and adds the immutable import receipt ledger"
-    },
-    {
-      "id": "director-managed-heartbeat",
-      "path": "tests/director-bridge-windows-operations.test.ts",
-      "npm_script": "test:webgpt:director",
-      "ci_step": "ChatGPT Director domain tests",
-      "case_name": "Director Bridge heartbeat schema carries instance, PID and source fingerprints while excluding business-data fields"
-    },
-    {
-      "id": "director-preactivation-gate",
-      "path": "tests/director-bridge-windows-operations.test.ts",
-      "npm_script": "test:webgpt:director",
-      "ci_step": "ChatGPT Director domain tests",
-      "case_name": "Director Bridge real entrypoint remains pre-activation and stops without loading key or database inputs"
-    },
-    {
-      "id": "director-completion-retry",
-      "path": "tests/director-bridge-windows-operations.test.ts",
-      "npm_script": "test:webgpt:director",
-      "ci_step": "ChatGPT Director domain tests",
-      "case_name": "Director Bridge retries one pending completion before polling or re-invoking its handler"
-    },
-    {
-      "id": "director-completion-dedup",
-      "path": "tests/director-bridge-windows-operations.test.ts",
-      "npm_script": "test:webgpt:director",
-      "ci_step": "ChatGPT Director domain tests",
-      "case_name": "Director Bridge broker accepts an identical completion retry but rejects a conflict"
-    },
-    {
-      "id": "director-windows-lifecycle-boundary",
-      "path": "tests/director-bridge-windows-operations.test.ts",
-      "npm_script": "test:webgpt:director",
-      "ci_step": "ChatGPT Director domain tests",
-      "case_name": "Director Bridge Windows lifecycle manager scripts do not read Bridge key or database file contents"
-    },
-    {
-      "id": "director-windows-runtime-gate",
-      "path": "tests/director-bridge-windows-operations.test.ts",
-      "npm_script": "test:webgpt:director",
-      "ci_step": "ChatGPT Director domain tests",
-      "case_name": "Director Bridge fake-runtime smoke command is wired into canonical local and Windows CI scripts"
     }
   ],
   "readonly_app_suites": [
