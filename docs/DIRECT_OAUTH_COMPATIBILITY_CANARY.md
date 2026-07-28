@@ -8,7 +8,10 @@ DNS, routes, secrets, or ChatGPT configuration.
 
 The canary isolates direct Streamable HTTP OAuth compatibility from the
 Workbench, SQLite, Snapshots, media gateway, and Providers. It exposes exactly
-one read-only `projects.read` smoke tool and returns no production data.
+one read-only `projects.read` smoke tool and returns no production data. A
+successful result is always marked `local_contract`; it is not evidence of
+public reachability, HTTPS, reverse-proxy behavior, or a completed direct OAuth
+connection.
 
 ## Local contract
 
@@ -28,7 +31,9 @@ non-loopback listener is refused unless
 `DIRECT_OAUTH_CANARY_ALLOWED_ORIGINS` supplies a comma-separated allowlist of
 absolute Origins. `DIRECT_OAUTH_CANARY_HOST` and
 `DIRECT_OAUTH_CANARY_PORT` are explicit process settings; this runtime never
-loads a `.env` file.
+loads a `.env` file. The CLI entrypoint alone loads the Readonly OAuth
+configuration from its process environment and injects it into the runtime;
+embedded callers must supply `auth_config` explicitly.
 
 Every request carrying an `Origin` header is checked before health, protected
 resource metadata, authentication, or MCP processing. Requests without an

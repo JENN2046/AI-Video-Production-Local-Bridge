@@ -7,7 +7,6 @@ import { z } from "zod/v4";
 import {
   assertWebGptV4AuthConfig,
   createOAuthAuthenticator,
-  loadWebGptV4AuthConfig,
   protectedResourceMetadata,
   protectedResourceMetadataUrl,
   wwwAuthenticate,
@@ -18,9 +17,10 @@ import {
 import { withToolSecuritySchemes } from "../webgpt-v4/securityTransport.js";
 import { errorBody, requireScope, WebGptV4Error } from "../webgpt-v4/types.js";
 
-export const DIRECT_OAUTH_CANARY_VERSION = "direct-oauth-canary-v2.0.0";
+export const DIRECT_OAUTH_CANARY_VERSION = "direct-oauth-canary-v2.1.0";
 export const DIRECT_OAUTH_CANARY_TOOL = "get_direct_oauth_smoke_status";
 export const DIRECT_OAUTH_CANARY_SCOPE = "projects.read" as const;
+export const DIRECT_OAUTH_CANARY_MODE = "local_contract" as const;
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 10000;
@@ -30,7 +30,7 @@ export interface DirectOAuthCanaryOptions {
   host?: string;
   port?: number;
   allowed_origins?: readonly string[];
-  auth_config?: WebGptV4AuthConfig;
+  auth_config: WebGptV4AuthConfig;
   authenticate?: WebGptV4Authenticator;
   authenticator_options?: WebGptV4AuthenticatorOptions;
 }
@@ -114,10 +114,10 @@ function createCanaryMcpServer(): McpServer {
   );
   server.registerTool(DIRECT_OAUTH_CANARY_TOOL, {
     title: "Direct OAuth smoke status",
-    description: "Confirms that the direct public MCP endpoint authenticated a projects.read request. Returns no project or production data.",
+    description: "Confirms that the local MCP canary authenticated a projects.read request. Returns no project or production data.",
     inputSchema: {},
     outputSchema: {
-      mode: z.literal("direct_public_https"),
+      mode: z.literal(DIRECT_OAUTH_CANARY_MODE),
       oauth_authenticated: z.literal(true),
       required_scope: z.literal(DIRECT_OAUTH_CANARY_SCOPE),
       database_connected: z.literal(false),
@@ -135,7 +135,7 @@ function createCanaryMcpServer(): McpServer {
     _meta: { securitySchemes: [{ type: "oauth2", scopes: [DIRECT_OAUTH_CANARY_SCOPE] }] }
   }, async () => {
     const status = {
-      mode: "direct_public_https" as const,
+      mode: DIRECT_OAUTH_CANARY_MODE,
       oauth_authenticated: true as const,
       required_scope: DIRECT_OAUTH_CANARY_SCOPE,
       database_connected: false as const,
@@ -169,12 +169,11 @@ function close(server: Server): Promise<void> {
   return new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
 }
 
-export async function startDirectOAuthCanary(options: DirectOAuthCanaryOptions = {}): Promise<DirectOAuthCanaryRuntime> {
+export async function startDirectOAuthCanary(options: DirectOAuthCanaryOptions): Promise<DirectOAuthCanaryRuntime> {
   const host = options.host ?? DEFAULT_HOST;
   const allowedOrigins = normalizeAllowedOrigins(options.allowed_origins);
   requireSafeListener(host, allowedOrigins);
-  const authConfig = options.auth_config ?? loadWebGptV4AuthConfig("readonly");
-  if (!authConfig) throw new WebGptV4Error("INVALID_WEBGPT_AUTH_CONFIG", "Direct OAuth canary requires explicit Readonly OAuth configuration.");
+  const authConfig = options.auth_config;
   assertWebGptV4AuthConfig(authConfig);
   if (authConfig.provider !== "federated" || authConfig.access_model !== "project_membership") {
     throw new WebGptV4Error("INVALID_WEBGPT_AUTH_CONFIG", "Direct OAuth canary accepts only the Readonly Federated OAuth contract.");

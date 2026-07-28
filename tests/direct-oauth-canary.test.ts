@@ -10,6 +10,7 @@ import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
 import {
   DIRECT_OAUTH_CANARY_SCOPE,
   DIRECT_OAUTH_CANARY_TOOL,
+  DIRECT_OAUTH_CANARY_MODE,
   startDirectOAuthCanary
 } from "../src/webgpt-canary/directOAuthCanary.js";
 import { actorFromFederatedSubject, issuerHash, WebGptV4Error } from "../src/webgpt-v4/types.js";
@@ -57,7 +58,7 @@ test("direct OAuth canary defaults to loopback, validates Origin, and reports no
 
     const health = await fetch(`${origin}/healthz`, { headers: { origin: CHATGPT_ORIGIN } });
     assert.equal(health.status, 200);
-    assert.deepEqual(await health.json(), { ok: true, service: "direct-oauth-canary", version: "direct-oauth-canary-v2.0.0" });
+    assert.deepEqual(await health.json(), { ok: true, service: "direct-oauth-canary", version: "direct-oauth-canary-v2.1.0" });
 
     const metadata = await fetch(`${origin}/.well-known/oauth-protected-resource/mcp`, { headers: { origin: CHATGPT_ORIGIN } });
     assert.equal(metadata.status, 200);
@@ -107,7 +108,7 @@ test("direct OAuth canary exposes one scoped read-only tool without production d
     const called = await client.callTool({ name: DIRECT_OAUTH_CANARY_TOOL, arguments: {} });
     assert.notEqual(called.isError, true);
     assert.deepEqual(called.structuredContent, {
-      mode: "direct_public_https",
+      mode: DIRECT_OAUTH_CANARY_MODE,
       oauth_authenticated: true,
       required_scope: "projects.read",
       database_connected: false,
@@ -167,4 +168,5 @@ test("direct OAuth canary keeps database, Snapshot, media, Provider, and Workben
   }
   assert.equal(source.includes("openM0Database"), false);
   assert.equal(source.includes("createWebGptV4McpApp"), false);
+  assert.equal(source.includes("loadWebGptV4AuthConfig"), false);
 });
