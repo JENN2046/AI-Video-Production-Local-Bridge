@@ -268,6 +268,54 @@ test("Director native registry exposes only the fixed advisory tool set with exa
     assert.equal(acceptedProposal.isError, false);
     assert.equal((acceptedProposal.structuredContent as { state: string }).state, "accepted_for_human_review");
     assert.match(JSON.stringify(acceptedProposal.content), /尚未执行任何生产动作/);
+    const acceptedStoryboardRevision = await client.callTool({
+      name: "submit_director_proposal",
+      arguments: {
+        focus_id: focus.focus_id,
+        focus_generation: focus.generation,
+        base_state_hash: directorBaseStateHash(targetState),
+        idempotency_key: "director-native-storyboard-001",
+        proposal: {
+          kind: "storyboard_revision",
+          payload: {
+            shot_id: focus.target_id,
+            diagnosis: "The focal hierarchy needs to be clearer.",
+            keep: ["Preserve the existing story goal."],
+            change: ["Clarify the primary subject and pacing."],
+            storyboard_prompt: "A clear foreground subject with layered depth.",
+            negative_prompt: "",
+            composition_notes: "Foreground, middle ground, and background remain distinct.",
+            continuity_constraints: ["Keep the established continuity constraints."]
+          }
+        }
+      }
+    });
+    assert.equal(acceptedStoryboardRevision.isError, false);
+    const malformedStoryboardRevision = await client.callTool({
+      name: "submit_director_proposal",
+      arguments: {
+        focus_id: focus.focus_id,
+        focus_generation: focus.generation,
+        base_state_hash: directorBaseStateHash(targetState),
+        idempotency_key: "director-native-storyboard-invalid-001",
+        proposal: {
+          kind: "storyboard_revision",
+          payload: {
+            shot_id: focus.target_id,
+            diagnosis: "The focal hierarchy needs to be clearer.",
+            keep: ["Preserve the existing story goal."],
+            change: ["Clarify the primary subject and pacing."],
+            storyboard_prompt: "A clear foreground subject with layered depth.",
+            negative_prompt: "",
+            composition_notes: "Foreground, middle ground, and background remain distinct.",
+            continuity_constraints: ["Keep the established continuity constraints."],
+            unsupported_model_field: true
+          }
+        }
+      }
+    });
+    assert.equal(malformedStoryboardRevision.isError, true);
+    assert.match(JSON.stringify(malformedStoryboardRevision.content), /DIRECTOR_PROPOSAL_INPUT_INVALID/);
     const injectedAuthority = await client.callTool({
       name: "submit_director_proposal",
       arguments: {

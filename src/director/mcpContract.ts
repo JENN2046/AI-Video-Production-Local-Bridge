@@ -14,7 +14,7 @@ import {
 } from "./domain.js";
 import { DIRECTOR_MEMORY_RECALL_CONTEXT_SCHEMA } from "./memoryPort.js";
 import { wwwAuthenticate, type WebGptV4AuthConfig } from "../webgpt-v4/auth.js";
-import { errorBody, requireScope, type WebGptV4Actor, type WebGptV4Scope } from "../webgpt-v4/types.js";
+import { errorBody, requireScope, WebGptV4Error, type WebGptV4Actor, type WebGptV4Scope } from "../webgpt-v4/types.js";
 
 export const DIRECTOR_MCP_SERVICE_VERSION = "director-mcp-v1.0.0";
 export const DIRECTOR_CONTEXT_VERSION = "director-context-v1";
@@ -266,6 +266,27 @@ export const DIRECTOR_SUBMIT_PROPOSAL_INPUT_SCHEMA = z.object({
   proposal: DIRECTOR_PROPOSAL_DRAFT_SCHEMA,
   request_id: requestIdSchema
 }).strict();
+/**
+ * ChatGPT validates the published tool schema before it calls the runtime.
+ * A discriminated union with exact per-kind payloads is correct for the
+ * authority boundary, but it prevents the model from receiving the runtime's
+ * actionable schema feedback when its first draft has one extra or missing
+ * payload field.  Publish this permissive wire envelope instead; the handler
+ * still re-parses every request with DIRECTOR_SUBMIT_PROPOSAL_INPUT_SCHEMA
+ * before a Proposal can be persisted.
+ */
+export const DIRECTOR_SUBMIT_PROPOSAL_WIRE_SCHEMA = z.object({
+  focus_id: idSchema,
+  focus_generation: z.number().int().positive(),
+  base_state_hash: hashSchema,
+  idempotency_key: z.string().trim().min(16).max(160),
+  parent_proposal_id: idSchema.nullable().optional(),
+  proposal: z.object({
+    kind: DIRECTOR_PROPOSAL_KIND_SCHEMA,
+    payload: z.record(z.string(), z.unknown())
+  }).strict(),
+  request_id: requestIdSchema
+}).strict();
 export const DIRECTOR_SUBMIT_PROPOSAL_OUTPUT_SCHEMA = z.object({
   state: z.literal("accepted_for_human_review"),
   proposal_id: idSchema,
@@ -330,9 +351,26 @@ export const DIRECTOR_NATIVE_TOOL_CATALOG = [
   { name: "get_director_focus", scope: ["projects.read"], risk: "read", input: DIRECTOR_GET_FOCUS_INPUT_SCHEMA, output: DIRECTOR_GET_FOCUS_OUTPUT_SCHEMA },
   { name: "get_director_context", scope: ["projects.read"], risk: "read", input: DIRECTOR_GET_CONTEXT_INPUT_SCHEMA, output: DIRECTOR_GET_CONTEXT_OUTPUT_SCHEMA },
   { name: "inspect_director_video_frames", scope: ["projects.read", "media.read"], risk: "media_read", input: DIRECTOR_INSPECT_VIDEO_FRAMES_INPUT_SCHEMA, output: DIRECTOR_INSPECT_VIDEO_FRAMES_OUTPUT_SCHEMA },
-  { name: "submit_director_proposal", scope: ["projects.read", "proposals.write"], risk: "proposal_write", input: DIRECTOR_SUBMIT_PROPOSAL_INPUT_SCHEMA, output: DIRECTOR_SUBMIT_PROPOSAL_OUTPUT_SCHEMA },
+  { name: "submit_director_proposal", scope: ["projects.read", "proposals.write"], risk: "proposal_write", input: DIRECTOR_SUBMIT_PROPOSAL_INPUT_SCHEMA, wire_input: DIRECTOR_SUBMIT_PROPOSAL_WIRE_SCHEMA, output: DIRECTOR_SUBMIT_PROPOSAL_OUTPUT_SCHEMA },
   { name: "get_director_proposal_status", scope: ["projects.read"], risk: "read", input: DIRECTOR_GET_PROPOSAL_STATUS_INPUT_SCHEMA, output: DIRECTOR_GET_PROPOSAL_STATUS_OUTPUT_SCHEMA }
 ] as const;
+
+export function parseDirectorNativeToolInput(name: DirectorNativeToolName, input: unknown): unknown {
+  const entry = DIRECTOR_NATIVE_TOOL_CATALOG.find((candidate) => candidate.name === name);
+  if (!entry) throw new WebGptV4Error("DIRECTOR_TOOL_UNKNOWN", "Director tool is not available.");
+  try {
+    return entry.input.parse(name === "get_director_focus" ? normalizeDirectorFocusInput(input) : input);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      const proposalMessage = "Director Proposal must use the exact fields documented for its selected kind; no Proposal was created.";
+      throw new WebGptV4Error(
+        name === "submit_director_proposal" ? "DIRECTOR_PROPOSAL_INPUT_INVALID" : "DIRECTOR_TOOL_INPUT_INVALID",
+        name === "submit_director_proposal" ? proposalMessage : "Director tool input is invalid."
+      );
+    }
+    throw error;
+  }
+}
 
 const titles: Record<DirectorNativeToolName, string> = {
   get_director_focus: "读取当前讨论对象",
@@ -400,7 +438,7 @@ export function registerDirectorNativeTools(
     const descriptor = {
       title: titles[entry.name],
       description: descriptions[entry.name],
-      inputSchema: entry.input,
+      inputSchema: "wire_input" in entry ? entry.wire_input : entry.input,
       outputSchema: entry.output,
       annotations: {
         readOnlyHint: readOnly,
@@ -416,9 +454,7 @@ export function registerDirectorNativeTools(
     const invoke = async (input: unknown): Promise<never> => {
       try {
         for (const scope of entry.scope) requireScope(actor, scope);
-        const parsed = entry.input.parse(
-          entry.name === "get_director_focus" ? normalizeDirectorFocusInput(input) : input
-        );
+        const parsed = parseDirectorNativeToolInput(entry.name, input);
         const handled = await handlers[entry.name](parsed as never);
         const frameResult = entry.name === "inspect_director_video_frames"
           && handled && typeof handled === "object" && "structured_content" in handled
