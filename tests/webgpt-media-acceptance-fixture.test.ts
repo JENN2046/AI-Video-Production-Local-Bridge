@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { appendFileSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn, spawnSync } from "node:child_process";
@@ -9,6 +9,8 @@ import test from "node:test";
 
 import { READONLY_MEDIA_ACCEPTANCE_MAX_SOURCE_BYTES, READONLY_MEDIA_ACCEPTANCE_VARIANT_TRAILER, isReadonlyMediaAcceptanceSourceSizeAllowed } from "../src/webgpt-media-gateway/acceptanceFixtureBudget.js";
 import { READONLY_MEDIA_CHATGPT_SANDBOX_ORIGIN, READONLY_MEDIA_GATEWAY_MAX_FILE_BYTES, startReadonlyMediaGateway } from "../src/webgpt-media-gateway/runtime.js";
+import { exportReadonlySnapshotFromDatabase } from "../src/webgpt-cloud/dataSource.js";
+import { openM0DatabaseConnection } from "../src/storage/sqlite.js";
 
 const ISSUER = "https://issuer.acceptance.test/";
 const RESOURCE = "https://aivideo.skmt617.top/workspace/mcp";
@@ -188,6 +190,29 @@ function closeServer(server: ReturnType<typeof createServer>): Promise<void> {
   return new Promise((resolveClose, reject) => server.close((error) => error ? reject(error) : resolveClose()));
 }
 
+test("SQLite path guards run before readonly export queries and writable connection pragmas", () => {
+  const root = mkdtempSync(join(tmpdir(), "media-acceptance-database-guard-"));
+  const databasePath = join(root, "app.sqlite");
+  writeFileSync(databasePath, "");
+  try {
+    const readonlyGuard = new Error("READONLY_GUARD");
+    assert.throws(() => exportReadonlySnapshotFromDatabase({
+      database_path: databasePath,
+      issuer_hash: "0".repeat(64),
+      resource_url: RESOURCE
+    }, {
+      assertDatabaseCurrent: () => { throw readonlyGuard; }
+    }), (error) => error === readonlyGuard);
+
+    const writableGuard = new Error("WRITABLE_GUARD");
+    assert.throws(() => openM0DatabaseConnection(databasePath, {
+      assertPathCurrent: () => { throw writableGuard; }
+    }), (error) => error === writableGuard);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("MP4 acceptance fixture and generated profiles are isolated, contract-valid, source-preserving, and low disclosure", () => {
   const wrapper = readFileSync(resolve("scripts/windows/media-create-acceptance-fixture.ps1"), "utf8");
   const matrixWrapper = readFileSync(resolve("scripts/windows/media-run-acceptance-matrix.ps1"), "utf8");
@@ -225,6 +250,10 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
   assert.match(matrixSource, /relative\(realpathSync\(root\), manifestReal\)/);
   assert.doesNotMatch(matrixSource, /openSync\(manifestReal/);
   assert.doesNotMatch(matrixSource, /readFileSync\(manifestReal/);
+  assert.match(matrixSource, /openDatabaseLease\(root, databasePath\)/);
+  assert.match(matrixSource, /assertDatabaseLeaseCurrent\(databaseLease\)/);
+  assert.match(matrixSource, /\{ assertDatabaseCurrent \}/);
+  assert.match(matrixSource, /\{ assertPathCurrent: assertDatabaseCurrent \}/);
   assert.match(matrixSource, /MATRIX_CAPABILITY_REQUESTS = DISTINCT_MEDIA_VALIDATIONS \+ 3/);
   assert.match(matrixSource, /MATRIX_ORDINARY_REQUESTS = 2 \+ DISTINCT_MEDIA_VALIDATIONS \* 3 \+ 4/);
   assert.match(matrixSource, /MATRIX_CAPABILITY_REQUESTS \* CAPABILITY_REQUEST_TIMEOUT_MS/);
@@ -753,6 +782,40 @@ test("media acceptance matrix rejects a manifest hard-linked from outside the fi
     ], { cwd: process.cwd(), input: `${Buffer.alloc(32).toString("base64url")}\n`, encoding: "utf8", windowsHide: true, env: childEnv });
     assert.equal(result.status, 1);
     assert.deepEqual(lowDisclosureError(result.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_ROOT_UNSAFE" });
+    assert.doesNotMatch(`${result.stdout}${result.stderr}`, /https?:\/\//);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(external, { recursive: true, force: true });
+  }
+});
+
+test("media acceptance matrix rejects an acceptance database hard-linked from outside the fixture root", () => {
+  const source = resolve("fixtures/video/mock_clip.mp4");
+  const fixtureCommand = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
+  const created = spawnSync(process.execPath, [fixtureCommand, "create", "--input", source, "--issuer", ISSUER, "--resource", RESOURCE], {
+    cwd: process.cwd(), input: `${SUBJECT}\n`, encoding: "utf8", windowsHide: true, env: childEnv
+  });
+  assert.equal(created.status, 0, created.stderr);
+  const receipt = JSON.parse(created.stdout) as { run_id: string };
+  const root = resolve("data/webgpt/media-acceptance", receipt.run_id);
+  const external = mkdtempSync(join(resolve(root, ".."), "external-database-hardlink-"));
+  const databasePath = join(root, "app.sqlite");
+  const externalDatabase = join(external, "private.sqlite");
+  try {
+    copyFileSync(databasePath, externalDatabase);
+    const externalBefore = sha(externalDatabase);
+    unlinkSync(databasePath);
+    linkSync(externalDatabase, databasePath);
+    assert.equal(statSync(databasePath).nlink, 2);
+    const result = spawnSync(process.execPath, [
+      resolve("dist/scripts/webgpt-media-acceptance-matrix.js"),
+      "--run", receipt.run_id,
+      "--origin", "http://127.0.0.1:2092/",
+      "--kid", "acceptance-matrix-v1"
+    ], { cwd: process.cwd(), input: `${Buffer.alloc(32).toString("base64url")}\n`, encoding: "utf8", windowsHide: true, env: childEnv });
+    assert.equal(result.status, 1);
+    assert.deepEqual(lowDisclosureError(result.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_ROOT_UNSAFE" });
+    assert.equal(sha(externalDatabase), externalBefore);
     assert.doesNotMatch(`${result.stdout}${result.stderr}`, /https?:\/\//);
   } finally {
     rmSync(root, { recursive: true, force: true });

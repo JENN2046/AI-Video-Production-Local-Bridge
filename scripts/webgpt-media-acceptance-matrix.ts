@@ -182,6 +182,59 @@ function readManifest(root: string, runId: string): Manifest {
   return manifest as Manifest;
 }
 
+type DatabaseLease = {
+  descriptor: number;
+  path: string;
+  root: string;
+  device: bigint;
+  inode: bigint;
+};
+
+function assertDatabaseLeaseCurrent(lease: DatabaseLease): void {
+  try {
+    const descriptorStats = fstatSync(lease.descriptor, { bigint: true });
+    const pathStats = lstatSync(lease.path, { bigint: true });
+    const databaseReal = realpathSync(lease.path);
+    const databaseRel = relative(lease.root, databaseReal);
+    if (!descriptorStats.isFile() || !pathStats.isFile()
+      || descriptorStats.dev !== lease.device || descriptorStats.ino !== lease.inode
+      || pathStats.dev !== lease.device || pathStats.ino !== lease.inode
+      || descriptorStats.nlink !== 1n || pathStats.nlink !== 1n
+      || descriptorStats.size < 1n
+      || !databaseRel || databaseRel.startsWith("..") || isAbsolute(databaseRel)) {
+      throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+    }
+  } catch (error) {
+    if (error instanceof MatrixError) throw error;
+    throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+  }
+}
+
+function openDatabaseLease(root: string, databasePath: string): DatabaseLease {
+  let descriptor: number;
+  try {
+    descriptor = openSync(databasePath, constants.O_RDONLY | MANIFEST_NOFOLLOW_FLAG);
+  } catch {
+    throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+  }
+  try {
+    const stats = fstatSync(descriptor, { bigint: true });
+    const lease = {
+      descriptor,
+      path: databasePath,
+      root: realpathSync(root),
+      device: stats.dev,
+      inode: stats.ino
+    };
+    assertDatabaseLeaseCurrent(lease);
+    return lease;
+  } catch (error) {
+    closeSync(descriptor);
+    if (error instanceof MatrixError) throw error;
+    throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+  }
+}
+
 function expectedMediaFile(root: string, media: ManifestMedia): { path: string; size: number } {
   const path = resolve(root, media.media_relative_path);
   const rel = relative(realpathSync(root), path);
@@ -373,14 +426,18 @@ async function main(): Promise<void> {
   const root = fixtureRoot(runId);
   const manifest = readManifest(root, runId);
   const databasePath = resolve(root, manifest.database_file);
-  if (!existsSync(databasePath) || lstatSync(databasePath).isSymbolicLink()) throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+  const databaseLease = openDatabaseLease(root, databasePath);
+  try {
+  const assertDatabaseCurrent = (): void => assertDatabaseLeaseCurrent(databaseLease);
   const encodedKey = await stdinKey();
   const keyring = { active: parseReadonlyMediaCapabilityKey(kid, encodedKey) };
+  assertDatabaseCurrent();
   const snapshot = exportReadonlySnapshotFromDatabase({
     database_path: databasePath,
     issuer_hash: manifest.issuer_hash,
     resource_url: manifest.resource_url
-  });
+  }, { assertDatabaseCurrent });
+  assertDatabaseCurrent();
   const principal = snapshot.authorization.principals.find((item) =>
     manifest.projects.every((project) => item.project_ids.includes(project.project_id))
   );
@@ -512,12 +569,16 @@ async function main(): Promise<void> {
 
   const revokedProject = manifest.projects[1]!;
   if (!revocationSession) throw new MatrixError("MEDIA_ACCEPTANCE_REVOCATION_FAILED");
-  const db = openM0DatabaseConnection(databasePath);
+  assertDatabaseCurrent();
+  const db = openM0DatabaseConnection(databasePath, { assertPathCurrent: assertDatabaseCurrent });
   try {
+    assertDatabaseCurrent();
     if (!revokeWebGptProjectMembership(db, principal.principal_id, revokedProject.project_id, "MEDIA_ACCEPTANCE_REVOCATION").changed) {
       throw new MatrixError("MEDIA_ACCEPTANCE_REVOCATION_FAILED");
     }
+    assertDatabaseCurrent();
   } finally { db.close(); }
+  assertDatabaseCurrent();
   const revoked = await request(matrixController.signal, revocationSession, { headers: { origin: WIDGET_ORIGIN } }, "json");
   assertWidgetCors(revoked.response);
   if (revoked.response.status !== 404 || stableErrorCode(revoked.json!) !== "MEDIA_AUTHORIZATION_DENIED") {
@@ -555,6 +616,9 @@ async function main(): Promise<void> {
       webm_support: false
     }
   }));
+  } finally {
+    closeSync(databaseLease.descriptor);
+  }
   } finally {
     clearTimeout(matrixTimer);
   }

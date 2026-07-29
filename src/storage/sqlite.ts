@@ -7,19 +7,30 @@ import { assertSchemaCurrent, runDatabaseMigrations } from "./migrations.js";
 
 export type M0Database = DatabaseSync;
 
+export type OpenM0DatabaseConnectionOptions = {
+  readOnly?: boolean;
+  assertPathCurrent?: () => void;
+};
+
 function isEphemeralTestDatabase(sqlitePath: string): boolean {
   if (process.env.AI_VIDEO_TEST_AUTO_MIGRATE !== "true") return false;
   const rel = relative(resolve(tmpdir()), resolve(sqlitePath));
   return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
 }
 
-export function openM0DatabaseConnection(sqlitePath = paths.sqlitePath, options: { readOnly?: boolean } = {}): M0Database {
+export function openM0DatabaseConnection(sqlitePath = paths.sqlitePath, options: OpenM0DatabaseConnectionOptions = {}): M0Database {
   const readOnly = options.readOnly === true;
   if (!readOnly) ensureM0Directories();
   const db = new DatabaseSync(sqlitePath, { readOnly });
-  db.exec("PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;");
-  if (readOnly) db.exec("PRAGMA query_only = ON;");
-  return db;
+  try {
+    options.assertPathCurrent?.();
+    db.exec("PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;");
+    if (readOnly) db.exec("PRAGMA query_only = ON;");
+    return db;
+  } catch (error) {
+    db.close();
+    throw error;
+  }
 }
 
 export function openM0Database(sqlitePath = paths.sqlitePath): M0Database {
