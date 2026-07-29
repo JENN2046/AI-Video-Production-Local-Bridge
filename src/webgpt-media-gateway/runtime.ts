@@ -26,6 +26,7 @@ import {
 } from "../webgpt-cloud/mediaCapability.js";
 import { READONLY_MEDIA_MIME_TYPES } from "../webgpt-cloud/snapshot.js";
 import { requireWebGptProjectReadAccess } from "../webgpt-v4/projectAuthorization.js";
+import { WebGptV4Error } from "../webgpt-v4/types.js";
 
 export const READONLY_MEDIA_GATEWAY_VERSION = "readonly-media-gateway-v1.0.0";
 export const READONLY_MEDIA_GATEWAY_DEFAULT_PORT = 2092;
@@ -345,6 +346,13 @@ function loadCandidate(
     return { requirement, artifact, blob, identity };
   } catch (error) {
     if (error instanceof ReadonlyMediaGatewayError) throw error;
+    if (error instanceof WebGptV4Error && [
+      "PROJECT_NOT_FOUND",
+      "WEBGPT_PRINCIPAL_NOT_REGISTERED",
+      "WEBGPT_PRINCIPAL_DISABLED"
+    ].includes(error.code)) {
+      throw new ReadonlyMediaGatewayError("MEDIA_AUTHORIZATION_DENIED");
+    }
     throw new ReadonlyMediaGatewayError("MEDIA_ARTIFACT_UNAVAILABLE");
   } finally {
     db.close();

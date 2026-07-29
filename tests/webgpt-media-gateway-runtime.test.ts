@@ -690,6 +690,7 @@ test("readonly media sessions fail closed after membership revocation or file id
     }
     const revoked = await fetch(sessionUrl, { headers: { origin: ORIGIN, range: "bytes=0-7" } });
     assert.equal(revoked.status, 404);
+    assert.equal((await revoked.json() as { error: { code: string } }).error.code, "MEDIA_AUTHORIZATION_DENIED");
     assert.equal(gateway.counts().sessions, 0);
 
     const driftFixture = createFixture("drift");

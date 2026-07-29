@@ -280,7 +280,9 @@ async function main(): Promise<void> {
     }
   } finally { db.close(); }
   const revoked = await request(matrixController.signal, revocationSession, { headers: { origin: ALLOWED_ORIGIN } }, "json");
-  if (revoked.response.status !== 404) throw new MatrixError("MEDIA_ACCEPTANCE_REVOCATION_FAILED");
+  if (revoked.response.status !== 404 || stableErrorCode(revoked.json!) !== "MEDIA_AUTHORIZATION_DENIED") {
+    throw new MatrixError("MEDIA_ACCEPTANCE_REVOCATION_FAILED");
+  }
 
   const retainedProject = manifest.projects[0]!;
   const retainedMedia = retainedProject.media.find((media) => media.mime_type === "video/mp4")!;
