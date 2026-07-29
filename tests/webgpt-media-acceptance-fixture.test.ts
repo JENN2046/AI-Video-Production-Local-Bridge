@@ -3,8 +3,10 @@ import { createHash } from "node:crypto";
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import test from "node:test";
+
+import { startReadonlyMediaGateway } from "../src/webgpt-media-gateway/runtime.js";
 
 const ISSUER = "https://issuer.acceptance.test/";
 const RESOURCE = "https://aivideo.skmt617.top/workspace/mcp";
@@ -22,8 +24,24 @@ function lowDisclosureError(stderr: string): unknown {
 
 const childEnv = { ...process.env, NODE_NO_WARNINGS: "1" };
 
-test("MP4 acceptance fixture and generated profiles are isolated, contract-valid, source-preserving, and low disclosure", () => {
+function runChild(command: string, args: string[], input: string): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolveChild, reject) => {
+    const child = spawn(command, args, { cwd: process.cwd(), windowsHide: true, env: childEnv, stdio: ["pipe", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => { stdout += chunk; });
+    child.stderr.on("data", (chunk: string) => { stderr += chunk; });
+    child.once("error", reject);
+    child.once("close", (status) => resolveChild({ status, stdout, stderr }));
+    child.stdin.end(input);
+  });
+}
+
+test("multi-project media acceptance fixture and generated profiles are isolated, contract-valid, source-preserving, and low disclosure", () => {
   const wrapper = readFileSync(resolve("scripts/windows/media-create-acceptance-fixture.ps1"), "utf8");
+  const matrixWrapper = readFileSync(resolve("scripts/windows/media-run-acceptance-matrix.ps1"), "utf8");
   const runbook = readFileSync(resolve("docs/webgpt/READONLY_LOCAL_MEDIA_GATEWAY_RUNBOOK.md"), "utf8");
   assert.match(wrapper, /Read-Host "Auth0 user_id\/sub \(input hidden\)" -AsSecureString/);
   assert.doesNotMatch(wrapper, /-MaskInput/);
@@ -32,7 +50,11 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
   assert.match(runbook, /npm --silent run media:fixture:create --/);
   assert.match(runbook, /npm --silent run media:fixture:verify --/);
   assert.match(runbook, /npm --silent run media:fixture:profiles --/);
-  assert.doesNotMatch(runbook, /`npm run media:fixture:(?:create|verify|profiles)/);
+  assert.match(runbook, /npm --silent run media:fixture:matrix --/);
+  assert.doesNotMatch(runbook, /`npm run media:fixture:(?:create|verify|profiles|matrix)/);
+  assert.match(matrixWrapper, /Unprotect-MediaBytes \$profile\.CapabilityKeyPath/);
+  assert.match(matrixWrapper, /\$encodedKey \| & \$node\.NodePath/);
+  assert.doesNotMatch(matrixWrapper, /--key|Write-MediaJson.*encodedKey/);
 
   const source = resolve("fixtures/video/mock_clip.mp4");
   const command = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
@@ -44,7 +66,16 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
   const receipt = JSON.parse(created.stdout) as { result: string; run_id: string; checks: Record<string, boolean> };
   assert.equal(receipt.result, "PASS");
   assert.match(receipt.run_id, /^run_[0-9a-f]{32}$/);
-  assert.deepEqual(receipt.checks, { source_unchanged: true, ledger_0011: true, mp4_valid: true, snapshot_v4: true, media_binding: true });
+  assert.deepEqual(receipt.checks, {
+    source_unchanged: true,
+    ledger_0011: true,
+    mp4_valid: true,
+    snapshot_v4: true,
+    media_binding: true,
+    project_switch_fixture: true,
+    image_fixture: true,
+    webm_support: false
+  });
   assert.equal(created.stdout.includes(SUBJECT), false);
   assert.equal(created.stdout.includes(source), false);
   assert.doesNotMatch(created.stdout, /[0-9a-f]{64}/);
@@ -56,13 +87,25 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
     assert.equal(verified.status, 0, verified.stderr);
     const verification = JSON.parse(verified.stdout) as { result: string; checks: Record<string, boolean>; project_count: number; media_binding_count: number };
     assert.equal(verification.result, "PASS");
-    assert.deepEqual(verification.checks, { schema: true, database_manifest: true, media_digest: true, snapshot_v4: true, media_binding: true });
-    assert.equal(verification.project_count, 1);
-    assert.equal(verification.media_binding_count, 2);
+    assert.deepEqual(verification.checks, {
+      schema: true,
+      database_manifest: true,
+      media_digest: true,
+      snapshot_v4: true,
+      media_binding: true,
+      project_switch_fixture: true,
+      image_fixture: true,
+      webm_support: false
+    });
+    assert.equal(verification.project_count, 2);
+    assert.equal(verification.media_binding_count, 4);
     assert.equal(verified.stdout.includes(SUBJECT), false);
     assert.doesNotMatch(verified.stdout, /[0-9a-f]{64}/);
 
-    const manifest = JSON.parse(readFileSync(join(root, "fixture.json"), "utf8")) as { issuer_hash: string; media_relative_path: string };
+    const manifest = JSON.parse(readFileSync(join(root, "fixture.json"), "utf8")) as {
+      issuer_hash: string;
+      projects: Array<{ media: Array<{ media_relative_path: string }> }>;
+    };
     const publisherTemplatePath = join(root, "publisher-template.json");
     const gatewayTemplatePath = join(root, "gateway-template.json");
     const invalidPublisherTemplatePath = join(root, "publisher-template-invalid.json");
@@ -146,7 +189,7 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
     assert.equal(repeatedProfiles.status, 1);
     assert.deepEqual(lowDisclosureError(repeatedProfiles.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_PROFILE_EXISTS" });
 
-    appendFileSync(resolve(root, manifest.media_relative_path), Buffer.from([0]));
+    appendFileSync(resolve(root, manifest.projects[0]!.media[1]!.media_relative_path), Buffer.from([0]));
     const drifted = spawnSync(process.execPath, [command, "verify", "--run", receipt.run_id, "--issuer", ISSUER, "--resource", RESOURCE], {
       cwd: process.cwd(), encoding: "utf8", windowsHide: true, env: childEnv
     });
@@ -167,6 +210,57 @@ test("MP4 acceptance fixture accepts only the legacy or Unified MCP resource pat
   });
   assert.equal(rejected.status, 1);
   assert.deepEqual(lowDisclosureError(rejected.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_URL_INVALID" });
+});
+
+test("media acceptance matrix proves image, byte-range, replay, expiry, project switching, and revocation with low disclosure", async () => {
+  const source = resolve("fixtures/video/mock_clip.mp4");
+  const fixtureCommand = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
+  const created = spawnSync(process.execPath, [fixtureCommand, "create", "--input", source, "--issuer", ISSUER, "--resource", RESOURCE], {
+    cwd: process.cwd(), input: `${SUBJECT}\n`, encoding: "utf8", windowsHide: true, env: childEnv
+  });
+  assert.equal(created.status, 0, created.stderr);
+  const createReceipt = JSON.parse(created.stdout) as { run_id: string };
+  const root = resolve("data/webgpt/media-acceptance", createReceipt.run_id);
+  const manifest = JSON.parse(readFileSync(join(root, "fixture.json"), "utf8")) as { issuer_hash: string };
+  const key = Buffer.alloc(32, 37);
+  const gateway = await startReadonlyMediaGateway({
+    database_path: join(root, "app.sqlite"),
+    issuer_hash: manifest.issuer_hash,
+    keyring: { active: { kid: "acceptance-matrix-v1", key } },
+    allowed_origin: "https://aivideo.skmt617.top",
+    allowed_media_roots: [join(root, "media")],
+    port: 0
+  });
+  try {
+    const result = await runChild(process.execPath, [
+      resolve("dist/scripts/webgpt-media-acceptance-matrix.js"),
+      "--run", createReceipt.run_id,
+      "--origin", `${gateway.url}/`,
+      "--kid", "acceptance-matrix-v1"
+    ], `${key.toString("base64url")}\n`);
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      result: "PASS",
+      action: "matrix",
+      run_id: createReceipt.run_id,
+      checks: {
+        gateway_ready: true,
+        image_200: true,
+        mp4_range_206: true,
+        project_switch: true,
+        capability_replay: true,
+        capability_expiry: true,
+        membership_revocation: true,
+        unaffected_project_retained: true,
+        webm_support: false
+      }
+    });
+    assert.doesNotMatch(result.stdout, /[0-9a-f]{64}|https?:\/\/|media\/v1\/[cs]\//);
+  } finally {
+    await gateway.close();
+    key.fill(0);
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("MP4 acceptance fixture rejects a symlinked acceptance root", () => {

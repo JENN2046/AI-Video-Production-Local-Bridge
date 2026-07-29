@@ -1,6 +1,6 @@
 # Readonly Local Media Gateway Runbook
 
-Status: CANDIDATE. Code, Snapshot v4 media binding, Remote/Gateway key contract, Cloudflare named-tunnel/DNS setup and Windows operations have progressed through bounded stages. One isolated MP4 fixture has passed instance-bound public routing and ChatGPT Widget playback. Actual byte-range, recovery soak, revocation/project-switch cases, the fixture/restore activity-database logical-manifest comparison and Windows logon-task acceptance remain incomplete.
+Status: CANDIDATE. Code, Snapshot v4 media binding, Remote/Gateway key contract, Cloudflare named-tunnel/DNS setup and Windows operations have progressed through bounded stages. One isolated MP4 fixture has passed instance-bound public routing and ChatGPT Widget playback. The repository now includes a two-project Image/MP4 fixture and a low-disclosure acceptance matrix, but its public maintenance-window run, recovery soak, fixture/restore activity-database logical-manifest comparison and Windows logon-task acceptance remain incomplete.
 
 Latest known boundary: `main@2b84f44` completed a bounded isolated-fixture public route and ChatGPT MP4 playback acceptance. A playable forward seek was observed, but no actual `206`/`Content-Range` response was recorded, so byte-range remains pending. The Gateway remains manually operated: this result does not establish restart persistence, revocation behavior, broad media-format coverage, unchanged activity business data across the fixture/restore sequence, or a Windows logon-task acceptance.
 
@@ -52,7 +52,9 @@ npm run media:remove-logon-task
 
 For the fixed production Workspace origin, the Gateway additionally accepts the exact ChatGPT Workspace sandbox origin required for Widget image/video requests. This is a code-owned, app-specific CORS allowlist entry: it is not a wildcard, does not permit arbitrary `*.oaiusercontent.com` origins, and is not added to custom `allowed_origin` deployments. Continue to keep the profile origin exactly `https://aivideo.skmt617.top`.
 
-Before external playback acceptance, create an isolated MP4 fixture with `npm --silent run media:fixture:create -- -InputPath <mp4> -Issuer <issuer> -ResourceUrl https://aivideo.skmt617.top/workspace/mcp`. The wrapper reads the Auth0 `user_id/sub` through a masked prompt, never places it on the command line, copies rather than modifies the source MP4, and creates a fresh current ledger-`0011` / `workbench-v2-6` database plus managed media under Git-ignored `data/webgpt/media-acceptance/`. With the required `--silent` npm invocation, command output contains only a random run ID and boolean checks. Verify the result with `npm --silent run media:fixture:verify -- --run <run_id> --issuer <issuer> --resource https://aivideo.skmt617.top/workspace/mcp`; verification is read-only and emits only counts and stable checks. The generated Unified publisher profile must pair this resource exactly with `https://aivideo.skmt617.top/workspace/snapshot`; legacy `/mcp` → `/snapshot` remains rollback-only.
+Before external playback acceptance, create an isolated two-project Image/MP4 fixture with `npm --silent run media:fixture:create -- -InputPath <mp4> -Issuer <issuer> -ResourceUrl https://aivideo.skmt617.top/workspace/mcp`. The wrapper reads the Auth0 `user_id/sub` through a masked prompt, never places it on the command line, copies rather than modifies the source MP4, and creates a fresh current ledger-`0011` / `workbench-v2-6` database plus managed media under Git-ignored `data/webgpt/media-acceptance/`. Each project has a distinct storyboard image and distinct valid MP4 Artifact, so project switching exercises the authoritative Artifact/Blob ownership boundary rather than aliasing one Blob across projects. With the required `--silent` npm invocation, command output contains only a random run ID and boolean checks. Verify the result with `npm --silent run media:fixture:verify -- --run <run_id> --issuer <issuer> --resource https://aivideo.skmt617.top/workspace/mcp`; verification is read-only and emits only counts and stable checks. The generated Unified publisher profile must pair this resource exactly with `https://aivideo.skmt617.top/workspace/snapshot`; legacy `/mcp` → `/snapshot` remains rollback-only.
+
+WebM is not supported by the current authoritative Artifact activation path: video activation requires a validated `video/mp4` Blob. Do not insert a WebM row directly into SQLite or widen the production contract merely to satisfy this acceptance matrix. Record WebM as `NOT_SUPPORTED_BY_ARTIFACT_ACTIVATION` until a separately reviewed product change adds it.
 
 Generate the two temporary runtime profiles from already validated, non-secret templates instead of copying JSON fields manually:
 
@@ -61,6 +63,16 @@ npm --silent run media:fixture:profiles -- --run <run_id> --publisher-template <
 ```
 
 The generator strictly validates both templates, inherits only configuration and secret *locators*, and replaces only the database, media-root, receipt, and runtime paths with paths inside the isolated fixture. It never opens the referenced DPAPI ciphertext, starts a service, or publishes a Snapshot. It creates `publisher-profile.json` and `gateway-profile.json` under the fixture run with exclusive-create semantics; rerunning against existing outputs fails closed. Run the ordinary publisher and media preflights against those generated profiles before any temporary switch.
+
+After the fixture Snapshot and generated gateway profile are active in the authorized maintenance window, run:
+
+```text
+npm --silent run media:fixture:matrix -- -RunId <run_id>
+```
+
+The wrapper decrypts the existing DPAPI capability key only in memory and supplies it to the matrix process over stdin; the key is never placed in command arguments or output. The matrix checks public `/healthz` and `/readyz`, Image `200`, an actual MP4 `Range: bytes=0-15` response with `206`/`Content-Range`, both fixture projects, replay rejection, expired-capability rejection, membership revocation, and continued access to the unaffected project. Membership revocation is deliberately last and writes only the isolated fixture database. Output contains the run ID, booleans, and a stable error code on failure—never capability/session handles, URLs, principal IDs, hashes, paths, headers, response bodies, or secret material.
+
+Gateway offline/recovery remains an operator-controlled subgate because it changes managed process state. While the fixture runtime is active, load one media session in the existing Unified App, stop the managed fixture Gateway, confirm the existing media fails closed and the UI reports Gateway offline without retaining old media, restart the same fixture profile, confirm `/readyz` and `/healthz`, and request a fresh capability. An old capability or session must not survive the restart. Do not persist its URL or handle as evidence.
 
 Do not capture fixture evidence with ordinary `npm run`: npm echoes the expanded arguments, including source paths and endpoint identifiers, before the wrapper starts. These commands do not publish a Snapshot or start the Tunnel.
 
@@ -91,7 +103,7 @@ The following bounded gate has passed: an isolated signed Unified Snapshot was p
 
 Before promoting to `0.1.0-beta.6` / `webgpt-v4.4.0` / `readonly-remote-v1.1.0`, complete all remaining external gates:
 
-1. Record the selected protocol plus the final QUIC/UDP or HTTP2/TCP edge classification, capture an actual byte-range `206`/`Content-Range`, then validate image and WebM where supported, capability expiration/replay, membership revocation, gateway offline/recovery and project switching in ChatGPT. The MP4 fixture playback portion is already accepted.
+1. Run the new two-project matrix through the public route, then validate gateway offline/recovery and project switching in the existing Unified App. Record the selected protocol plus the final QUIC/UDP or HTTP2/TCP edge classification. WebM is currently `NOT_SUPPORTED_BY_ARTIFACT_ACTIVATION`; it is not a missing acceptance result for this baseline.
 2. Install and validate the current-user logon task only after separate authorization.
 3. Capture a before/after activity-database logical-manifest comparison for the fixture/restore path, then complete a bounded restart/recovery soak and verify the real Snapshot still follows the manual publication/recovery contract.
 
