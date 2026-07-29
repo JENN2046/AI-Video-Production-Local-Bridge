@@ -100,15 +100,26 @@ The unified route may return an empty Readonly shell without a Snapshot and `DIR
 ## Local bridge lifecycle and recovery
 
 The Bridge is outbound-only and has no inbound local port or Scheduled Task.
-The commands below become the operator path only after this managed-runtime
-candidate is merged and a separately authorized controlled restart has adopted
-the live Bridge. The currently running Bridge predates the manager.
+The commands below are the current operator path. A separately authorized
+controlled restart adopted the managed Bridge at `fbf6540` on 2026-07-29; see
+the
+[managed restart acceptance](../../ops/reports/2026-07-29-managed-director-bridge-restart-acceptance.md).
+Do not classify that managed process as a legacy poller or repeat the first
+adoption procedure.
 
-Before that first managed start, independently identify the legacy Bridge by
-PID, start time and command line, stop it gracefully through the previously
-accepted operation, and confirm no absolute or relative
-`dist/scripts/director-local-bridge.js` Node process remains. Do not rely only
-on the new manager to prove that the legacy poller is absent.
+Historical first-adoption note: before the completed first managed start, the
+operator independently identified the legacy Bridge by PID, start time and
+command line, stopped it gracefully through the previously accepted operation,
+and confirmed no absolute or relative
+`dist/scripts/director-local-bridge.js` Node process remained. This paragraph
+is retained only as migration evidence. Reuse it only if independent evidence
+shows a genuinely unmanaged legacy process; do not apply it to the accepted
+managed `fbf6540` process.
+
+The next restart gate is limited to activating and accepting the
+cross-terminal configuration-identity repair after that repair merges. It
+still requires separate authorization and exact merged source/build
+verification.
 
 Start the managed Bridge only for an accepted isolated or activity-database
 stage:

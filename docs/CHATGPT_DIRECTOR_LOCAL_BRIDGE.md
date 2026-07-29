@@ -2,8 +2,12 @@
 
 Status: `PARTIALLY ACCEPTED` — the Unified Director transport, ledger `0011`
 activity database and one bounded owner Proposal path are accepted. The managed
-Windows Bridge lifecycle described below is an isolated-fixture candidate; the
-currently running local Bridge has not yet been restarted under it.
+Windows Bridge was adopted through a controlled restart at `fbf6540` on
+2026-07-29, as recorded in the
+[managed restart acceptance](../ops/reports/2026-07-29-managed-director-bridge-restart-acceptance.md).
+The cross-terminal configuration-identity repair described below is validated
+in fixtures but is not live until it merges and a later restart is separately
+authorized.
 
 ## Purpose
 
@@ -238,12 +242,14 @@ Implemented in the local PR6 candidate, but not externally accepted:
 
 Still deferred:
 
-- live restart of the current Bridge under the manager at the intended source
-  commit and emitted-`dist` fingerprint, plus live malformed-Proposal
-  negative-path acceptance;
+- after the cross-terminal configuration-identity repair merges, one
+  separately authorized managed restart at the merged source/build
+  fingerprint to activate and accept `verified` and `not_rechecked` behavior;
+- live malformed-Proposal negative-path acceptance;
 - external memory-port acceptance and any Saveback dispatch;
 - any further deployment/OAuth/configuration change or real Provider call.
 
 The accepted positive transport path must not be widened into a claim that the
-current local process is already managed, that Memory is connected, or that
-Provider execution is authorized.
+cross-terminal repair is already live, that Memory is connected, or that
+Provider execution is authorized. The first managed adoption itself is
+complete at `fbf6540`; do not schedule it again as a pending migration.
