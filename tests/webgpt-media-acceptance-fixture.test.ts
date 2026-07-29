@@ -213,6 +213,9 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
   assert.match(matrixSource, /READONLY_MEDIA_CAPABILITY_TTL_MS/);
   assert.match(matrixSource, /MEDIA_ACCEPTANCE_RESPONSE_TOO_LARGE/);
   assert.match(matrixSource, /JSON_RESPONSE_MAX_BYTES/);
+  assert.match(matrixSource, /MANIFEST_MAX_BYTES = 16 \* 1024/);
+  assert.match(matrixSource, /fstatSync\(descriptor\)/);
+  assert.doesNotMatch(matrixSource, /readFileSync\(manifestReal/);
   assert.match(matrixSource, /MATRIX_CAPABILITY_REQUESTS = DISTINCT_MEDIA_VALIDATIONS \+ 3/);
   assert.match(matrixSource, /MATRIX_ORDINARY_REQUESTS = 2 \+ DISTINCT_MEDIA_VALIDATIONS \* 3 \+ 4/);
   assert.match(matrixSource, /MATRIX_CAPABILITY_REQUESTS \* CAPABILITY_REQUEST_TIMEOUT_MS/);
@@ -657,6 +660,32 @@ test("media acceptance matrix rejects a linked manifest before reading it", () =
   } finally {
     rmSync(root, { recursive: true, force: true });
     rmSync(external, { recursive: true, force: true });
+  }
+});
+
+test("media acceptance matrix rejects an oversized manifest before reading it", () => {
+  const source = resolve("fixtures/video/mock_clip.mp4");
+  const fixtureCommand = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
+  const created = spawnSync(process.execPath, [fixtureCommand, "create", "--input", source, "--issuer", ISSUER, "--resource", RESOURCE], {
+    cwd: process.cwd(), input: `${SUBJECT}\n`, encoding: "utf8", windowsHide: true, env: childEnv
+  });
+  assert.equal(created.status, 0, created.stderr);
+  const receipt = JSON.parse(created.stdout) as { run_id: string };
+  const root = resolve("data/webgpt/media-acceptance", receipt.run_id);
+  const manifestPath = join(root, "fixture.json");
+  try {
+    writeFileSync(manifestPath, Buffer.alloc(16 * 1024 + 1, 0x20));
+    const result = spawnSync(process.execPath, [
+      resolve("dist/scripts/webgpt-media-acceptance-matrix.js"),
+      "--run", receipt.run_id,
+      "--origin", "http://127.0.0.1:2092/",
+      "--kid", "acceptance-matrix-v1"
+    ], { cwd: process.cwd(), input: `${Buffer.alloc(32).toString("base64url")}\n`, encoding: "utf8", windowsHide: true, env: childEnv });
+    assert.equal(result.status, 1);
+    assert.deepEqual(lowDisclosureError(result.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_MANIFEST_TOO_LARGE" });
+    assert.doesNotMatch(`${result.stdout}${result.stderr}`, /https?:\/\//);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
 
