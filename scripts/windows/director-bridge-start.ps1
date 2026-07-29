@@ -50,6 +50,7 @@ try {
     if ($assessment.ProcessIdentity -ne "missing") {
       throw "DIRECTOR_BRIDGE_RUNTIME_STATE_CONFLICT"
     }
+    $launchEnvironment = Get-DirectorBridgeLaunchEnvironment
     Resolve-DirectorBridgeMissingProcessReceipts $existing
   } else {
     if (@(Get-DirectorBridgeTargetProcesses).Count -gt 0) {
@@ -65,7 +66,9 @@ try {
     }
   }
 
-  $launchEnvironment = Get-DirectorBridgeLaunchEnvironment
+  if ($null -eq $launchEnvironment) {
+    $launchEnvironment = Get-DirectorBridgeLaunchEnvironment
+  }
   $launchConfigSha = Get-DirectorBridgeLaunchConfigSha256 $launchEnvironment
   $runtime = Resolve-DirectorBridgeNode22
   $sourceCommit = Assert-DirectorBridgeSourceBaseline $ExpectedCommit

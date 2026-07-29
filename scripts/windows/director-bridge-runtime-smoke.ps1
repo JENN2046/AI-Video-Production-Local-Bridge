@@ -492,6 +492,39 @@ try {
       [string]$staleStatus.Json.result -cne "STALE_STATE") {
     throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_STALE_STATE_FAILED"
   }
+  $staleStateBytes = [Convert]::ToBase64String([IO.File]::ReadAllBytes($statePath))
+  $failedHeartbeatBytes = [Convert]::ToBase64String([IO.File]::ReadAllBytes($heartbeatPath))
+  foreach ($name in $launchConfigurationNames) {
+    [Environment]::SetEnvironmentVariable($name, $null, "Process")
+  }
+  try {
+    $unconfiguredStaleRestart = Invoke-DirectorBridgeSmokeScript "director-bridge-start.ps1"
+    if ($unconfiguredStaleRestart.ExitCode -ne 1 -or
+        $null -eq $unconfiguredStaleRestart.Json -or
+        [string]$unconfiguredStaleRestart.Json.result -cne "FAIL" -or
+        [string]$unconfiguredStaleRestart.Json.stable_error_code -cne "DIRECTOR_BRIDGE_KEY_ID_INVALID" -or
+        [Convert]::ToBase64String([IO.File]::ReadAllBytes($statePath)) -cne $staleStateBytes -or
+        [Convert]::ToBase64String([IO.File]::ReadAllBytes($heartbeatPath)) -cne $failedHeartbeatBytes -or
+        (Test-Path -LiteralPath $stopRequestPath) -or
+        (Get-DirectorBridgeFixtureProcessCount) -ne 0) {
+      throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_STALE_CONFIGURATION_GATE_FAILED"
+    }
+    $preservedStaleStatus = Invoke-DirectorBridgeSmokeScript "director-bridge-status.ps1"
+    if ($preservedStaleStatus.ExitCode -ne 2 -or
+        $null -eq $preservedStaleStatus.Json -or
+        [string]$preservedStaleStatus.Json.result -cne "STALE_STATE") {
+      throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_STALE_CONFIGURATION_RECEIPT_FAILED"
+    }
+  } finally {
+    foreach ($name in $launchConfigurationNames) {
+      $priorValue = $priorLaunchConfiguration[$name]
+      if ($null -eq $priorValue) {
+        [Environment]::SetEnvironmentVariable($name, $null, "Process")
+      } else {
+        [Environment]::SetEnvironmentVariable($name, [string]$priorValue, "Process")
+      }
+    }
+  }
   $restarted = Invoke-DirectorBridgeSmokeScript "director-bridge-start.ps1"
   if ($restarted.ExitCode -ne 0 -or
       $null -eq $restarted.Json -or
@@ -614,6 +647,7 @@ if ($null -ne $script:failureCode) {
   pending_completion_receipt_preserved = $true
   invalid_heartbeat_receipt_preserved = $true
   in_flight_phase_receipt_preserved = $true
+  stale_state_configuration_gate = $true
   stale_state_start_recovery = $true
   graceful_stop = $true
   final_stop_receipt = $true
