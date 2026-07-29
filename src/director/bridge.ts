@@ -365,6 +365,18 @@ async function boundedNetworkOperation<T>(operation: (signal: AbortSignal) => Pr
   }
 }
 
+function directorBridgePollFailureCode(status: number): string {
+  if (status === 401 || status === 403) return "DIRECTOR_BRIDGE_POLL_AUTH_REJECTED";
+  if (status === 404) return "DIRECTOR_BRIDGE_POLL_ROUTE_NOT_FOUND";
+  if (status === 413) return "DIRECTOR_BRIDGE_POLL_BODY_REJECTED";
+  if (status === 415) return "DIRECTOR_BRIDGE_POLL_CONTENT_TYPE_REJECTED";
+  if (status === 429) return "DIRECTOR_BRIDGE_POLL_BUSY";
+  if (status >= 300 && status < 400) return "DIRECTOR_BRIDGE_POLL_REDIRECT_REJECTED";
+  if (status >= 400 && status < 500) return "DIRECTOR_BRIDGE_POLL_CLIENT_REJECTED";
+  if (status >= 500 && status < 600) return "DIRECTOR_BRIDGE_POLL_REMOTE_FAILED";
+  return "DIRECTOR_BRIDGE_POLL_FAILED";
+}
+
 export class DirectorLocalBridgeClient {
   private readonly requestReplay = new DirectorBridgeReplayGuard();
   private readonly fetchImpl: typeof fetch;
@@ -421,7 +433,14 @@ export class DirectorLocalBridgeClient {
       this.options.on_phase?.("idle");
       return false;
     }
-    if (response.status !== 200) throw new DirectorBridgeError("DIRECTOR_BRIDGE_POLL_FAILED", "Director bridge poll failed.", undefined, true);
+    if (response.status !== 200) {
+      throw new DirectorBridgeError(
+        directorBridgePollFailureCode(response.status),
+        "Director bridge poll failed.",
+        undefined,
+        true
+      );
+    }
     let decoded: unknown;
     try { decoded = JSON.parse(encoded) as unknown; }
     catch { throw new DirectorBridgeError("DIRECTOR_BRIDGE_RESPONSE_INVALID", "Director bridge response was malformed."); }

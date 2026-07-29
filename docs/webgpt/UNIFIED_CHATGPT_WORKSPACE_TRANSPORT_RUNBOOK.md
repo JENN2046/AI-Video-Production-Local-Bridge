@@ -161,6 +161,10 @@ An optional `child_error_code` contains only a validated, instance-bound
 an origin, credential identifier, path, payload or provider response. The
 manager-level `stable_error_code` remains the controlling result; omission of
 `child_error_code` means no safe child diagnostic was available.
+Poll rejection diagnostics remain enum-only: authentication, route, request
+body, content type, busy, redirect, other client rejection and Remote failure
+are distinguished without reading or returning the response body or numeric
+HTTP status.
 End a bounded stage with `npm run director:bridge:stop`. Only that stop command
 returning `result=STOPPED`, `graceful=true` and `final_receipt=true` in the
 same response is graceful-stop evidence. A later standalone `status` result of
