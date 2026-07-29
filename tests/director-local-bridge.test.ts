@@ -10,6 +10,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 import {
+  DIRECTOR_BRIDGE_AUTH_CLASS_HEADER,
   DIRECTOR_BRIDGE_FRAME_TIMEOUT_MS,
   DIRECTOR_BRIDGE_REQUEST_SCHEMA,
   DirectorBridgeBroker,
@@ -164,6 +165,7 @@ test("Director bridge HMAC rejects tampering, replay, expired authentication, an
   verifyDirectorBridgeBody(envelope, keyring, schema, replay, now);
   assert.throws(() => verifyDirectorBridgeBody(envelope, keyring, schema, replay, now), (error) => error instanceof Error && "code" in error && error.code === "DIRECTOR_BRIDGE_REPLAYED");
   assert.throws(() => verifyDirectorBridgeBody({ ...envelope, body: { state: "focus_expired", focus: null } }, keyring, schema, new DirectorBridgeReplayGuard(), now), (error) => error instanceof Error && "code" in error && error.code === "DIRECTOR_BRIDGE_AUTH_INVALID");
+  assert.throws(() => verifyDirectorBridgeBody({ ...envelope, issued_at: new Date(now.getTime() - 61_000).toISOString() }, keyring, schema, new DirectorBridgeReplayGuard(), now), (error) => error instanceof Error && "code" in error && error.code === "DIRECTOR_BRIDGE_AUTH_INVALID");
   assert.throws(() => verifyDirectorBridgeBody(envelope, keyring, schema, new DirectorBridgeReplayGuard(), new Date(now.getTime() + 61_000)), (error) => error instanceof Error && "code" in error && error.code === "DIRECTOR_BRIDGE_AUTH_EXPIRED");
   assert.throws(() => signDirectorBridgeBody({}, { kid: "bad kid", key: randomBytes(32) }), (error) => error instanceof Error && "code" in error && error.code === "DIRECTOR_BRIDGE_KEY_INVALID");
   assert.equal(loadDirectorBridgeKeyring({}), null);
@@ -387,6 +389,41 @@ test("Director SHOT Focus resolves its latest generated clip for review and fram
       assert.equal(row.target_id, f.shotId);
     } finally { verifyDb.close(); }
   } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test("Dedicated Director Remote projects only verified allowlisted Bridge authentication classes", async () => {
+  const now = new Date("2026-07-29T05:00:00.000Z");
+  const active = { kid: "director-remote-auth-class", key: Buffer.alloc(32, 28) };
+  const runtime = await startDirectorRemoteRuntime({
+    port: 0,
+    bridge_keyring: { active },
+    now: () => now
+  });
+  const postPoll = (body: unknown) => fetch(`${runtime.origin}/director/bridge/v1/poll`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  try {
+    const invalid = await postPoll(signDirectorBridgeBody(
+      { operation: "poll", client_id: "invalid-auth-class", issued_at: now.toISOString() },
+      { ...active, key: Buffer.alloc(32, 29) },
+      now
+    ));
+    assert.equal(invalid.status, 401);
+    assert.equal(invalid.headers.get(DIRECTOR_BRIDGE_AUTH_CLASS_HEADER), "DIRECTOR_BRIDGE_AUTH_INVALID");
+
+    const expiredAt = new Date(now.getTime() - 61_000);
+    const expired = await postPoll(signDirectorBridgeBody(
+      { operation: "poll", client_id: "expired-auth-class", issued_at: expiredAt.toISOString() },
+      active,
+      expiredAt
+    ));
+    assert.equal(expired.status, 401);
+    assert.equal(expired.headers.get(DIRECTOR_BRIDGE_AUTH_CLASS_HEADER), "DIRECTOR_BRIDGE_AUTH_EXPIRED");
+  } finally {
+    await runtime.close();
+  }
 });
 
 test("Director remote runtime exposes five OAuth tools through the authenticated outbound local bridge", async () => {

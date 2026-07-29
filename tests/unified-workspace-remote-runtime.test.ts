@@ -308,6 +308,14 @@ test("Unified Workspace projects only allowlisted Bridge authentication classes"
     assert.equal(invalid.headers.get(DIRECTOR_BRIDGE_AUTH_CLASS_HEADER), "DIRECTOR_BRIDGE_AUTH_INVALID");
 
     const expiredAt = new Date(now.getTime() - 61_000);
+    const forgedExpired = await postPoll(signDirectorBridgeBody(
+      { operation: "poll", client_id: "forged-expired-auth-class", issued_at: expiredAt.toISOString() },
+      { ...active, key: Buffer.alloc(32, 29) },
+      expiredAt
+    ));
+    assert.equal(forgedExpired.status, 401);
+    assert.equal(forgedExpired.headers.get(DIRECTOR_BRIDGE_AUTH_CLASS_HEADER), "DIRECTOR_BRIDGE_AUTH_INVALID");
+
     const expired = await postPoll(signDirectorBridgeBody(
       { operation: "poll", client_id: "expired-auth-class", issued_at: expiredAt.toISOString() },
       active,

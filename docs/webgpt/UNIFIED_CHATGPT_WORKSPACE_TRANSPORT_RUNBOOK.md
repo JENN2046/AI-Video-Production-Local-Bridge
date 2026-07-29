@@ -146,10 +146,12 @@ the launch-configuration digest was recomputed. A healthy `status` therefore
 returns `RUNNING`, and a repeat `start` returns `ALREADY_RUNNING` without a
 rebuild, key operation or second child process.
 
-For a rejected poll, the Remote projects only the allowlisted authentication
-classes `DIRECTOR_BRIDGE_AUTH_INVALID` and `DIRECTOR_BRIDGE_AUTH_EXPIRED` in the
-low-disclosure `x-director-bridge-auth-class` response header. The local Bridge
-maps them to `DIRECTOR_BRIDGE_POLL_AUTH_INVALID` and
+For a rejected poll, both the Unified Workspace Remote and the dedicated
+Director Remote project only the allowlisted authentication classes
+`DIRECTOR_BRIDGE_AUTH_INVALID` and `DIRECTOR_BRIDGE_AUTH_EXPIRED` in the
+low-disclosure `x-director-bridge-auth-class` response header. A signature is
+verified before an expired class can be projected. The local Bridge maps the
+two classes to `DIRECTOR_BRIDGE_POLL_AUTH_INVALID` and
 `DIRECTOR_BRIDGE_POLL_AUTH_EXPIRED`. A missing, unknown or malformed header
 remains `DIRECTOR_BRIDGE_POLL_AUTH_REJECTED`; the client does not consume or
 report the response body.

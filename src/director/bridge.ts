@@ -20,6 +20,13 @@ export const DIRECTOR_BRIDGE_ACCEPTED_COMPLETION_TTL_MS = 5 * 60_000;
 export const DIRECTOR_BRIDGE_AUTH_CLASS_HEADER = "x-director-bridge-auth-class";
 const DIRECTOR_BRIDGE_MAX_ACCEPTED_COMPLETIONS = 2_048;
 
+export function directorBridgeAuthClassHeaders(code: string): Record<string, string> {
+  if (code === "DIRECTOR_BRIDGE_AUTH_INVALID" || code === "DIRECTOR_BRIDGE_AUTH_EXPIRED") {
+    return { [DIRECTOR_BRIDGE_AUTH_CLASS_HEADER]: code };
+  }
+  return {};
+}
+
 const idSchema = z.string().trim().min(1).max(160);
 const hashSchema = z.string().regex(/^[0-9a-f]{64}$/);
 const timestampSchema = z.iso.datetime();
@@ -158,10 +165,6 @@ export function verifyDirectorBridgeBody<T>(
   const envelope = parsedEnvelope.data;
   const key = envelope.kid === keyring.active.kid ? keyring.active : null;
   if (!key) throw new DirectorBridgeError("DIRECTOR_BRIDGE_AUTH_INVALID", "Director bridge authentication failed.");
-  const issuedAt = Date.parse(envelope.issued_at);
-  if (!Number.isFinite(issuedAt) || Math.abs(now.getTime() - issuedAt) > 60_000) {
-    throw new DirectorBridgeError("DIRECTOR_BRIDGE_AUTH_EXPIRED", "Director bridge authentication expired.");
-  }
   const expected = createHmac("sha256", key.key).update(signatureInput({
     protocol_version: envelope.protocol_version, kid: envelope.kid, nonce: envelope.nonce,
     issued_at: envelope.issued_at, body: envelope.body
@@ -169,6 +172,10 @@ export function verifyDirectorBridgeBody<T>(
   const actual = Buffer.from(envelope.signature, "base64url");
   if (actual.byteLength !== expected.byteLength || !timingSafeEqual(actual, expected)) {
     throw new DirectorBridgeError("DIRECTOR_BRIDGE_AUTH_INVALID", "Director bridge authentication failed.");
+  }
+  const issuedAt = Date.parse(envelope.issued_at);
+  if (!Number.isFinite(issuedAt) || Math.abs(now.getTime() - issuedAt) > 60_000) {
+    throw new DirectorBridgeError("DIRECTOR_BRIDGE_AUTH_EXPIRED", "Director bridge authentication expired.");
   }
   const parsedBody = bodySchema.safeParse(envelope.body);
   if (!parsedBody.success) throw new DirectorBridgeError("DIRECTOR_BRIDGE_BODY_INVALID", "Director bridge message body is invalid.");
