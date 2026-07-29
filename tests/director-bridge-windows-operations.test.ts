@@ -240,6 +240,40 @@ test("Director Bridge client reports authenticated poll phases without payload d
   assert.deepEqual(phases, ["polling", "idle"]);
 });
 
+test("Director Bridge client maps poll HTTP failures to low-disclosure stable codes", async () => {
+  const cases = [
+    [301, "DIRECTOR_BRIDGE_POLL_REDIRECT_REJECTED"],
+    [401, "DIRECTOR_BRIDGE_POLL_AUTH_REJECTED"],
+    [403, "DIRECTOR_BRIDGE_POLL_AUTH_REJECTED"],
+    [404, "DIRECTOR_BRIDGE_POLL_ROUTE_NOT_FOUND"],
+    [413, "DIRECTOR_BRIDGE_POLL_BODY_REJECTED"],
+    [415, "DIRECTOR_BRIDGE_POLL_CONTENT_TYPE_REJECTED"],
+    [418, "DIRECTOR_BRIDGE_POLL_CLIENT_REJECTED"],
+    [429, "DIRECTOR_BRIDGE_POLL_BUSY"],
+    [503, "DIRECTOR_BRIDGE_POLL_REMOTE_FAILED"]
+  ] as const;
+
+  for (const [status, expectedCode] of cases) {
+    let responseBodyUsed = () => true;
+    const client = new DirectorLocalBridgeClient({
+      remote_origin: "https://director.example.test/",
+      client_id: "director-runtime-poll-status-test",
+      keyring: { active: { kid: "director-runtime-poll-status-test", key: Buffer.alloc(32, 41) } },
+      handlers: () => ({}) as never,
+      fetch: async () => {
+        const response = new Response("private-response-body", { status });
+        responseBodyUsed = () => response.bodyUsed;
+        return response;
+      }
+    });
+    await assert.rejects(
+      () => client.runOnce(),
+      (error) => error instanceof Error && "code" in error && error.code === expectedCode
+    );
+    assert.equal(responseBodyUsed(), false);
+  }
+});
+
 test("Director Bridge managed runtime rejects a workspace root that differs from the canonical cwd", () => {
   const workspace = mkdtempSync(join(tmpdir(), "director-bridge-workspace-mismatch-"));
   const root = join(workspace, "runtime");
