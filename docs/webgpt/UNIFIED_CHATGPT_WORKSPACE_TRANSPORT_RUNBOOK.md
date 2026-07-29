@@ -100,15 +100,26 @@ The unified route may return an empty Readonly shell without a Snapshot and `DIR
 ## Local bridge lifecycle and recovery
 
 The Bridge is outbound-only and has no inbound local port or Scheduled Task.
-The commands below become the operator path only after this managed-runtime
-candidate is merged and a separately authorized controlled restart has adopted
-the live Bridge. The currently running Bridge predates the manager.
+The commands below are the current operator path. A separately authorized
+controlled restart adopted the managed Bridge at `fbf6540` on 2026-07-29; see
+the
+[managed restart acceptance](../../ops/reports/2026-07-29-managed-director-bridge-restart-acceptance.md).
+Do not classify that managed process as a legacy poller or repeat the first
+adoption procedure.
 
-Before that first managed start, independently identify the legacy Bridge by
-PID, start time and command line, stop it gracefully through the previously
-accepted operation, and confirm no absolute or relative
-`dist/scripts/director-local-bridge.js` Node process remains. Do not rely only
-on the new manager to prove that the legacy poller is absent.
+Historical first-adoption note: before the completed first managed start, the
+operator independently identified the legacy Bridge by PID, start time and
+command line, stopped it gracefully through the previously accepted operation,
+and confirmed no absolute or relative
+`dist/scripts/director-local-bridge.js` Node process remained. This paragraph
+is retained only as migration evidence. Reuse it only if independent evidence
+shows a genuinely unmanaged legacy process; do not apply it to the accepted
+managed `fbf6540` process.
+
+The next restart gate is limited to activating and accepting the
+cross-terminal configuration-identity repair after that repair merges. It
+still requires separate authorization and exact merged source/build
+verification.
 
 Start the managed Bridge only for an accepted isolated or activity-database
 stage:
@@ -122,11 +133,24 @@ npm run director:bridge:stop
 It polls the exact `WEBGPT_DIRECTOR_REMOTE_ORIGIN` at the unified Bridge paths.
 A current authenticated poll makes the Remote Director chain transport-ready;
 it does not prove database, Focus or business readiness and does not change the
-Readonly Snapshot's freshness. `start` and `status` require the same non-secret
-launch configuration so the manager can recompute its digest; missing or
-changed values produce `RESTART_REQUIRED` rather than proving runtime identity.
-`stop` uses the selected runtime root and persisted managed identity; it does
-not read the Bridge key or database.
+Readonly Snapshot's freshness. A fresh managed `start` requires the complete
+non-secret launch configuration. Once a managed Bridge is already healthy, an
+operator may run `status` or repeat `start` from a new terminal that has none
+of the four non-secret launch variables. In that case the manager still checks
+process identity, source, emitted build, Node executable, argv and heartbeat;
+it reports `configuration_identity=not_rechecked` rather than pretending that
+the launch-configuration digest was recomputed. A healthy `status` therefore
+returns `RUNNING`, and a repeat `start` returns `ALREADY_RUNNING` without a
+rebuild, key operation or second child process.
+
+`configuration_identity=verified` means all four variables were supplied and
+the low-disclosure configuration digest matched the managed state. Supplying
+only part of that tuple fails closed with
+`DIRECTOR_BRIDGE_LAUNCH_CONFIGURATION_INCOMPLETE`; it is not a health result.
+When the complete tuple is present, any digest mismatch, including an
+allowlisted startup-environment drift such as `TEMP`, still produces
+`RESTART_REQUIRED`. `stop` uses the selected runtime root and persisted
+managed identity; it does not read the Bridge key or database.
 End a bounded stage with `npm run director:bridge:stop`. Only that stop command
 returning `result=STOPPED`, `graceful=true` and `final_receipt=true` in the
 same response is graceful-stop evidence. A later standalone `status` result of

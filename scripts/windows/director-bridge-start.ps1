@@ -19,8 +19,6 @@ try {
   Assert-DirectorBridgePrivateRuntime
   New-Item -ItemType Directory -Force -Path $script:DirectorBridgeRuntimeRoot | Out-Null
   $lifecycleLock = Enter-DirectorBridgeLifecycleLock
-  $launchEnvironment = Get-DirectorBridgeLaunchEnvironment
-  $launchConfigSha = Get-DirectorBridgeLaunchConfigSha256 $launchEnvironment
 
   $existing = Read-DirectorBridgeState
   if ($null -ne $existing) {
@@ -40,6 +38,7 @@ try {
         transport_ready = [bool]$assessment.TransportReady
         source_commit = [string]$existing.source_commit
         process_identity = [string]$assessment.ProcessIdentity
+        configuration_identity = [string]$assessment.ConfigurationIdentity
         heartbeat = [string]$assessment.Heartbeat
         remote_contact = [string]$assessment.RemoteContact
         phase = $assessment.Phase
@@ -51,6 +50,7 @@ try {
     if ($assessment.ProcessIdentity -ne "missing") {
       throw "DIRECTOR_BRIDGE_RUNTIME_STATE_CONFLICT"
     }
+    $launchEnvironment = Get-DirectorBridgeLaunchEnvironment
     Resolve-DirectorBridgeMissingProcessReceipts $existing
   } else {
     if (@(Get-DirectorBridgeTargetProcesses).Count -gt 0) {
@@ -66,6 +66,10 @@ try {
     }
   }
 
+  if ($null -eq $launchEnvironment) {
+    $launchEnvironment = Get-DirectorBridgeLaunchEnvironment
+  }
+  $launchConfigSha = Get-DirectorBridgeLaunchConfigSha256 $launchEnvironment
   $runtime = Resolve-DirectorBridgeNode22
   $sourceCommit = Assert-DirectorBridgeSourceBaseline $ExpectedCommit
 
@@ -183,6 +187,7 @@ try {
     exact_build = [bool]$assessment.ExactBuild
     transport_ready = [bool]$assessment.TransportReady
     source_commit = $sourceCommit
+    configuration_identity = [string]$assessment.ConfigurationIdentity
     heartbeat = [string]$assessment.Heartbeat
     remote_contact = [string]$assessment.RemoteContact
     provider_enabled = $false

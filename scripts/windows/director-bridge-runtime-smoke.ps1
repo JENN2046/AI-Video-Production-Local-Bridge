@@ -58,12 +58,17 @@ function Invoke-DirectorBridgeSmokeScript([string]$ScriptName, [string[]]$Additi
   return [pscustomobject]@{ ExitCode = $process.ExitCode; Text = $text; Json = $json }
 }
 
-function Assert-DirectorBridgeStableFailure([object]$Invocation, [string]$ExpectedCode, [string]$FailureCode) {
+function Assert-DirectorBridgeStableFailure(
+  [object]$Invocation,
+  [string]$ExpectedCode,
+  [string]$FailureCode,
+  [switch]$AllowExistingState
+) {
   if ($Invocation.ExitCode -ne 1 -or
       $null -eq $Invocation.Json -or
       [string]$Invocation.Json.result -cne "FAIL" -or
       [string]$Invocation.Json.stable_error_code -cne $ExpectedCode -or
-      (Test-Path -LiteralPath $statePath)) {
+      ((-not $AllowExistingState) -and (Test-Path -LiteralPath $statePath))) {
     throw $FailureCode
   }
 }
@@ -251,9 +256,66 @@ try {
   if ($status.ExitCode -ne 0 -or
       $null -eq $status.Json -or
       [string]$status.Json.result -cne "RUNNING" -or
+      [string]$status.Json.configuration_identity -cne "verified" -or
       [bool]$status.Json.exact_build -or
       -not [bool]$status.Json.transport_ready) {
     throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_STATUS_FAILED"
+  }
+  $launchConfigurationNames = @(
+    "WEBGPT_DIRECTOR_REMOTE_ORIGIN",
+    "WEBGPT_DIRECTOR_BRIDGE_KEY_ID",
+    "WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH",
+    "AI_VIDEO_WORKSPACE_DB_PATH"
+  )
+  $priorLaunchConfiguration = [ordered]@{}
+  foreach ($name in $launchConfigurationNames) {
+    $priorLaunchConfiguration[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
+    [Environment]::SetEnvironmentVariable($name, $null, "Process")
+  }
+  try {
+    $unconfiguredStatus = Invoke-DirectorBridgeSmokeScript "director-bridge-status.ps1"
+    if ($unconfiguredStatus.ExitCode -ne 0 -or
+        $null -eq $unconfiguredStatus.Json -or
+        [string]$unconfiguredStatus.Json.result -cne "RUNNING" -or
+        [string]$unconfiguredStatus.Json.configuration_identity -cne "not_rechecked" -or
+        [bool]$unconfiguredStatus.Json.exact_build -or
+        -not [bool]$unconfiguredStatus.Json.transport_ready) {
+      throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_UNCONFIGURED_STATUS_FAILED"
+    }
+    $unconfiguredStart = Invoke-DirectorBridgeSmokeScript "director-bridge-start.ps1"
+    if ($unconfiguredStart.ExitCode -ne 0 -or
+        $null -eq $unconfiguredStart.Json -or
+        [string]$unconfiguredStart.Json.result -cne "ALREADY_RUNNING" -or
+        [string]$unconfiguredStart.Json.configuration_identity -cne "not_rechecked" -or
+        (Get-Content -Raw -LiteralPath $statePath) -cne $originalStateText -or
+        (Get-DirectorBridgeFixtureProcessCount) -ne 1) {
+      throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_UNCONFIGURED_IDEMPOTENT_START_FAILED"
+    }
+    $env:WEBGPT_DIRECTOR_BRIDGE_KEY_ID = $canary.Substring(0, [Math]::Min(64, $canary.Length))
+    $partialStatus = Invoke-DirectorBridgeSmokeScript "director-bridge-status.ps1"
+    Assert-DirectorBridgeStableFailure $partialStatus "DIRECTOR_BRIDGE_LAUNCH_CONFIGURATION_INCOMPLETE" "DIRECTOR_BRIDGE_RUNTIME_SMOKE_PARTIAL_CONFIGURATION_STATUS_FAILED" -AllowExistingState
+    $partialStart = Invoke-DirectorBridgeSmokeScript "director-bridge-start.ps1"
+    Assert-DirectorBridgeStableFailure $partialStart "DIRECTOR_BRIDGE_LAUNCH_CONFIGURATION_INCOMPLETE" "DIRECTOR_BRIDGE_RUNTIME_SMOKE_PARTIAL_CONFIGURATION_START_FAILED" -AllowExistingState
+    if ((Get-Content -Raw -LiteralPath $statePath) -cne $originalStateText -or
+        (Get-DirectorBridgeFixtureProcessCount) -ne 1) {
+      throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_PARTIAL_CONFIGURATION_IDENTITY_FAILED"
+    }
+  } finally {
+    foreach ($name in $launchConfigurationNames) {
+      $priorValue = $priorLaunchConfiguration[$name]
+      if ($null -eq $priorValue) {
+        [Environment]::SetEnvironmentVariable($name, $null, "Process")
+      } else {
+        [Environment]::SetEnvironmentVariable($name, [string]$priorValue, "Process")
+      }
+    }
+  }
+  $configurationRestoredStatus = Invoke-DirectorBridgeSmokeScript "director-bridge-status.ps1"
+  if ($configurationRestoredStatus.ExitCode -ne 0 -or
+      $null -eq $configurationRestoredStatus.Json -or
+      [string]$configurationRestoredStatus.Json.result -cne "RUNNING" -or
+      [string]$configurationRestoredStatus.Json.configuration_identity -cne "verified") {
+    throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_CONFIGURATION_RESTORE_FAILED"
   }
   $priorTemp = [Environment]::GetEnvironmentVariable("TEMP", "Process")
   [Environment]::SetEnvironmentVariable("TEMP", (Join-Path $smokeRoot "bound-environment-drift"), "Process")
@@ -261,7 +323,8 @@ try {
     $environmentDriftStatus = Invoke-DirectorBridgeSmokeScript "director-bridge-status.ps1"
     if ($environmentDriftStatus.ExitCode -ne 2 -or
         $null -eq $environmentDriftStatus.Json -or
-        [string]$environmentDriftStatus.Json.result -cne "RESTART_REQUIRED") {
+        [string]$environmentDriftStatus.Json.result -cne "RESTART_REQUIRED" -or
+        [string]$environmentDriftStatus.Json.configuration_identity -cne "mismatch") {
       throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_ENVIRONMENT_BINDING_FAILED"
     }
   } finally {
@@ -429,6 +492,39 @@ try {
       [string]$staleStatus.Json.result -cne "STALE_STATE") {
     throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_STALE_STATE_FAILED"
   }
+  $staleStateBytes = [Convert]::ToBase64String([IO.File]::ReadAllBytes($statePath))
+  $failedHeartbeatBytes = [Convert]::ToBase64String([IO.File]::ReadAllBytes($heartbeatPath))
+  foreach ($name in $launchConfigurationNames) {
+    [Environment]::SetEnvironmentVariable($name, $null, "Process")
+  }
+  try {
+    $unconfiguredStaleRestart = Invoke-DirectorBridgeSmokeScript "director-bridge-start.ps1"
+    if ($unconfiguredStaleRestart.ExitCode -ne 1 -or
+        $null -eq $unconfiguredStaleRestart.Json -or
+        [string]$unconfiguredStaleRestart.Json.result -cne "FAIL" -or
+        [string]$unconfiguredStaleRestart.Json.stable_error_code -cne "DIRECTOR_BRIDGE_KEY_ID_INVALID" -or
+        [Convert]::ToBase64String([IO.File]::ReadAllBytes($statePath)) -cne $staleStateBytes -or
+        [Convert]::ToBase64String([IO.File]::ReadAllBytes($heartbeatPath)) -cne $failedHeartbeatBytes -or
+        (Test-Path -LiteralPath $stopRequestPath) -or
+        (Get-DirectorBridgeFixtureProcessCount) -ne 0) {
+      throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_STALE_CONFIGURATION_GATE_FAILED"
+    }
+    $preservedStaleStatus = Invoke-DirectorBridgeSmokeScript "director-bridge-status.ps1"
+    if ($preservedStaleStatus.ExitCode -ne 2 -or
+        $null -eq $preservedStaleStatus.Json -or
+        [string]$preservedStaleStatus.Json.result -cne "STALE_STATE") {
+      throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_STALE_CONFIGURATION_RECEIPT_FAILED"
+    }
+  } finally {
+    foreach ($name in $launchConfigurationNames) {
+      $priorValue = $priorLaunchConfiguration[$name]
+      if ($null -eq $priorValue) {
+        [Environment]::SetEnvironmentVariable($name, $null, "Process")
+      } else {
+        [Environment]::SetEnvironmentVariable($name, [string]$priorValue, "Process")
+      }
+    }
+  }
   $restarted = Invoke-DirectorBridgeSmokeScript "director-bridge-start.ps1"
   if ($restarted.ExitCode -ne 0 -or
       $null -eq $restarted.Json -or
@@ -551,6 +647,7 @@ if ($null -ne $script:failureCode) {
   pending_completion_receipt_preserved = $true
   invalid_heartbeat_receipt_preserved = $true
   in_flight_phase_receipt_preserved = $true
+  stale_state_configuration_gate = $true
   stale_state_start_recovery = $true
   graceful_stop = $true
   final_stop_receipt = $true

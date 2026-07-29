@@ -688,7 +688,7 @@ function Read-DirectorBridgeHeartbeat([object]$State) {
   return $heartbeat
 }
 
-function Test-DirectorBridgeLaunchIdentityCurrent([object]$State) {
+function Test-DirectorBridgeCoreLaunchIdentityCurrent([object]$State) {
   try {
     $entrypointSha = Get-DirectorBridgeFileSha256 $script:DirectorBridgeEntrypointPath "DIRECTOR_BRIDGE_ENTRYPOINT_INVALID"
     $buildSha = Get-DirectorBridgeBuildManifestSha256
@@ -696,22 +696,42 @@ function Test-DirectorBridgeLaunchIdentityCurrent([object]$State) {
     $sourceClean = Test-DirectorBridgeTrackedSourceClean
     $nodeSha = Get-DirectorBridgeFileSha256 ([string]$State.node_executable) "DIRECTOR_BRIDGE_NODE22_INVALID"
     $argvSha = Get-DirectorBridgeLaunchArgvSha256 ([string]$State.node_executable) $script:DirectorBridgeEntrypointPath
-    $configSha = Get-DirectorBridgeLaunchConfigSha256
     return $entrypointSha -ceq [string]$State.entrypoint_sha256 -and
       $buildSha -ceq [string]$State.build_manifest_sha256 -and
       $sourceCommit -ceq [string]$State.source_commit -and
       $nodeSha -ceq [string]$State.node_executable_sha256 -and
       $argvSha -ceq [string]$State.launch_argv_sha256 -and
-      $configSha -ceq [string]$State.launch_config_sha256 -and
       $sourceClean
   } catch {
     return $false
   }
 }
 
+function Get-DirectorBridgeConfigurationIdentity([object]$State) {
+  Assert-DirectorBridgeNoNodeStartupEnvironment
+  Assert-DirectorBridgeProviderDisabled
+  Assert-DirectorBridgeNoPlaintextKey
+  $requiredNames = @(
+    "WEBGPT_DIRECTOR_REMOTE_ORIGIN",
+    "WEBGPT_DIRECTOR_BRIDGE_KEY_ID",
+    "WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH",
+    "AI_VIDEO_WORKSPACE_DB_PATH"
+  )
+  $presentNames = @($requiredNames | Where-Object {
+    -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_, "Process"))
+  })
+  if ($presentNames.Count -eq 0) { return "not_rechecked" }
+  if ($presentNames.Count -ne $requiredNames.Count) { throw "DIRECTOR_BRIDGE_LAUNCH_CONFIGURATION_INCOMPLETE" }
+  $configSha = Get-DirectorBridgeLaunchConfigSha256
+  if ($configSha -ceq [string]$State.launch_config_sha256) { return "verified" }
+  return "mismatch"
+}
+
 function Test-DirectorBridgeActivationCandidate([object]$State) {
   Assert-DirectorBridgeState $State
-  if ((Get-DirectorBridgeProcessIdentity $State) -ne "match" -or -not (Test-DirectorBridgeLaunchIdentityCurrent $State)) {
+  if ((Get-DirectorBridgeProcessIdentity $State) -ne "match" -or
+      -not (Test-DirectorBridgeCoreLaunchIdentityCurrent $State) -or
+      (Get-DirectorBridgeConfigurationIdentity $State) -cne "verified") {
     return $false
   }
   try { $heartbeat = Read-DirectorBridgeHeartbeat $State } catch { return $false }
@@ -730,19 +750,23 @@ function Get-DirectorBridgeRuntimeAssessment([object]$State) {
   Assert-DirectorBridgeState $State
   $processIdentity = Get-DirectorBridgeProcessIdentity $State
   if ($processIdentity -eq "missing") {
-    return [pscustomobject]@{ Result = "STALE_STATE"; ExitCode = 2; Running = $false; ProcessIdentity = "missing"; Heartbeat = "missing"; RemoteContact = "missing"; Phase = $null; ExactBuild = $false; TransportReady = $false; LastHeartbeat = $null }
+    return [pscustomobject]@{ Result = "STALE_STATE"; ExitCode = 2; Running = $false; ProcessIdentity = "missing"; ConfigurationIdentity = "unknown"; Heartbeat = "missing"; RemoteContact = "missing"; Phase = $null; ExactBuild = $false; TransportReady = $false; LastHeartbeat = $null }
   }
   if ($processIdentity -ne "match") {
-    return [pscustomobject]@{ Result = "STATE_CONFLICT"; ExitCode = 2; Running = $false; ProcessIdentity = "mismatch"; Heartbeat = "unknown"; RemoteContact = "unknown"; Phase = $null; ExactBuild = $false; TransportReady = $false; LastHeartbeat = $null }
+    return [pscustomobject]@{ Result = "STATE_CONFLICT"; ExitCode = 2; Running = $false; ProcessIdentity = "mismatch"; ConfigurationIdentity = "unknown"; Heartbeat = "unknown"; RemoteContact = "unknown"; Phase = $null; ExactBuild = $false; TransportReady = $false; LastHeartbeat = $null }
   }
-  if (-not (Test-DirectorBridgeLaunchIdentityCurrent $State)) {
-    return [pscustomobject]@{ Result = "RESTART_REQUIRED"; ExitCode = 2; Running = $true; ProcessIdentity = "match"; Heartbeat = "unknown"; RemoteContact = "unknown"; Phase = $null; ExactBuild = $false; TransportReady = $false; LastHeartbeat = $null }
+  if (-not (Test-DirectorBridgeCoreLaunchIdentityCurrent $State)) {
+    return [pscustomobject]@{ Result = "RESTART_REQUIRED"; ExitCode = 2; Running = $true; ProcessIdentity = "match"; ConfigurationIdentity = "unknown"; Heartbeat = "unknown"; RemoteContact = "unknown"; Phase = $null; ExactBuild = $false; TransportReady = $false; LastHeartbeat = $null }
+  }
+  $configurationIdentity = Get-DirectorBridgeConfigurationIdentity $State
+  if ($configurationIdentity -eq "mismatch") {
+    return [pscustomobject]@{ Result = "RESTART_REQUIRED"; ExitCode = 2; Running = $true; ProcessIdentity = "match"; ConfigurationIdentity = "mismatch"; Heartbeat = "unknown"; RemoteContact = "unknown"; Phase = $null; ExactBuild = $false; TransportReady = $false; LastHeartbeat = $null }
   }
   try { $heartbeat = Read-DirectorBridgeHeartbeat $State } catch {
-    return [pscustomobject]@{ Result = "NOT_READY"; ExitCode = 2; Running = $true; ProcessIdentity = "match"; Heartbeat = "invalid"; RemoteContact = "unknown"; Phase = $null; ExactBuild = [bool]$State.exact_baseline; TransportReady = $false; LastHeartbeat = $null }
+    return [pscustomobject]@{ Result = "NOT_READY"; ExitCode = 2; Running = $true; ProcessIdentity = "match"; ConfigurationIdentity = $configurationIdentity; Heartbeat = "invalid"; RemoteContact = "unknown"; Phase = $null; ExactBuild = [bool]$State.exact_baseline; TransportReady = $false; LastHeartbeat = $null }
   }
   if ($null -eq $heartbeat) {
-    return [pscustomobject]@{ Result = "NOT_READY"; ExitCode = 2; Running = $true; ProcessIdentity = "match"; Heartbeat = "missing"; RemoteContact = "missing"; Phase = $null; ExactBuild = [bool]$State.exact_baseline; TransportReady = $false; LastHeartbeat = $null }
+    return [pscustomobject]@{ Result = "NOT_READY"; ExitCode = 2; Running = $true; ProcessIdentity = "match"; ConfigurationIdentity = $configurationIdentity; Heartbeat = "missing"; RemoteContact = "missing"; Phase = $null; ExactBuild = [bool]$State.exact_baseline; TransportReady = $false; LastHeartbeat = $null }
   }
   $now = [DateTimeOffset]::UtcNow
   $heartbeatAt = [DateTimeOffset]::Parse([string]$heartbeat.heartbeat_at_utc)
@@ -766,6 +790,7 @@ function Get-DirectorBridgeRuntimeAssessment([object]$State) {
     ExitCode = if ($ready) { 0 } else { 2 }
     Running = $true
     ProcessIdentity = "match"
+    ConfigurationIdentity = $configurationIdentity
     Heartbeat = $heartbeatState
     RemoteContact = $remoteState
     Phase = [string]$heartbeat.phase
