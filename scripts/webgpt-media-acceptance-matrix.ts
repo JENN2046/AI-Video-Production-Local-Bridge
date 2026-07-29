@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
+import { closeSync, existsSync, lstatSync, openSync, readFileSync, readSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
 import { createReadonlyMediaCapabilityRequest, parseReadonlyMediaCapabilityKey } from "../src/webgpt-cloud/mediaCapability.js";
@@ -26,6 +26,7 @@ class MatrixError extends Error {
 
 type ManifestMedia = {
   artifact_id: string;
+  media_relative_path: string;
   media_sha256: string;
   mime_type: "image/png" | "image/jpeg" | "video/mp4";
   role: "storyboard_image" | "generated_clip";
@@ -90,6 +91,7 @@ function readManifest(root: string, runId: string): Manifest {
     || !Array.isArray(manifest.projects) || manifest.projects.length !== 2
     || manifest.projects.some((project) => !project || typeof project.project_id !== "string" || !Array.isArray(project.media)
       || project.media.length !== 2 || project.media.some((media) => !media || typeof media.artifact_id !== "string"
+        || typeof media.media_relative_path !== "string" || !media.media_relative_path
         || !/^[0-9a-f]{64}$/.test(media.media_sha256 ?? "") || !["image/png", "image/jpeg", "video/mp4"].includes(media.mime_type)
         || !["storyboard_image", "generated_clip"].includes(media.role))
       || project.media.filter((media) => media.role === "storyboard_image" && ["image/png", "image/jpeg"].includes(media.mime_type)).length !== 1
@@ -101,6 +103,34 @@ function readManifest(root: string, runId: string): Manifest {
     throw new MatrixError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
   }
   return manifest as Manifest;
+}
+
+function expectedVideoSuffix(root: string, media: ManifestMedia): { byte_length: number; sha256: string; start: number; end: number; total: number } {
+  const path = resolve(root, media.media_relative_path);
+  const rel = relative(realpathSync(root), path);
+  if (!rel || rel.startsWith("..") || isAbsolute(rel) || !existsSync(path) || lstatSync(path).isSymbolicLink() || !lstatSync(path).isFile()) {
+    throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+  }
+  const real = realpathSync(path);
+  const realRel = relative(realpathSync(root), real);
+  if (!realRel || realRel.startsWith("..") || isAbsolute(realRel)) throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+  const total = statSync(real).size;
+  const byteLength = Math.min(16, total);
+  if (byteLength < 1) throw new MatrixError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
+  const bytes = Buffer.alloc(byteLength);
+  const descriptor = openSync(real, "r");
+  try {
+    if (readSync(descriptor, bytes, 0, byteLength, total - byteLength) !== byteLength) throw new MatrixError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
+  } finally {
+    closeSync(descriptor);
+  }
+  return {
+    byte_length: byteLength,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+    start: total - byteLength,
+    end: total - 1,
+    total
+  };
 }
 
 function gatewayOrigin(value: string): string {
@@ -246,17 +276,20 @@ async function main(): Promise<void> {
     for (const media of project.media) {
       const activated = await activate(await issue(project, media));
       if (projectIndex === 1 && revocationSession === null) revocationSession = activated.sessionUrl;
+      const videoSuffix = media.mime_type === "video/mp4" ? expectedVideoSuffix(root, media) : null;
       const result = await request(matrixController.signal, activated.sessionUrl, {
         headers: media.mime_type === "video/mp4"
-          ? { origin: ALLOWED_ORIGIN, range: "bytes=0-15" }
+          ? { origin: ALLOWED_ORIGIN, range: `bytes=-${videoSuffix!.byte_length}` }
           : { origin: ALLOWED_ORIGIN }
-      }, media.mime_type === "video/mp4" ? "bytes" : "digest");
+      }, "digest");
       const response = result.response;
       if (media.mime_type === "video/mp4") {
+        const expectedRange = `bytes ${videoSuffix!.start}-${videoSuffix!.end}/${videoSuffix!.total}`;
         if (response.status !== 206 || response.headers.get("accept-ranges") !== "bytes"
-          || !/^bytes 0-15\/\d+$/.test(response.headers.get("content-range") ?? "")
+          || response.headers.get("content-range") !== expectedRange
           || response.headers.get("content-type") !== "video/mp4"
-          || result.byte_length !== 16) {
+          || result.byte_length !== videoSuffix!.byte_length
+          || result.body_sha256 !== videoSuffix!.sha256) {
           throw new MatrixError("MEDIA_ACCEPTANCE_RANGE_FAILED");
         }
       } else if (response.status !== 200 || response.headers.get("content-type") !== media.mime_type
@@ -295,9 +328,16 @@ async function main(): Promise<void> {
 
   const retainedProject = manifest.projects[0]!;
   const retainedMedia = retainedProject.media.find((media) => media.mime_type === "video/mp4")!;
+  const retainedSuffix = expectedVideoSuffix(root, retainedMedia);
   const retainedSession = await activate(await issue(retainedProject, retainedMedia));
-  const retained = await request(matrixController.signal, retainedSession.sessionUrl, { headers: { origin: ALLOWED_ORIGIN, range: "bytes=0-15" } }, "bytes");
-  if (retained.response.status !== 206 || retained.byte_length !== 16) throw new MatrixError("MEDIA_ACCEPTANCE_PROJECT_ISOLATION_FAILED");
+  const retained = await request(matrixController.signal, retainedSession.sessionUrl, {
+    headers: { origin: ALLOWED_ORIGIN, range: `bytes=-${retainedSuffix.byte_length}` }
+  }, "digest");
+  if (retained.response.status !== 206 || retained.byte_length !== retainedSuffix.byte_length
+    || retained.body_sha256 !== retainedSuffix.sha256
+    || retained.response.headers.get("content-range") !== `bytes ${retainedSuffix.start}-${retainedSuffix.end}/${retainedSuffix.total}`) {
+    throw new MatrixError("MEDIA_ACCEPTANCE_PROJECT_ISOLATION_FAILED");
+  }
 
   console.log(JSON.stringify({
     result: "PASS",
