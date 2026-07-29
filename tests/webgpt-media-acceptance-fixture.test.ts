@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn, spawnSync } from "node:child_process";
@@ -219,6 +219,9 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
   assert.match(matrixSource, /fstatSync\(descriptor, \{ bigint: true \}\)/);
   assert.match(matrixSource, /descriptorStats\.dev !== pathStats\.dev/);
   assert.match(matrixSource, /descriptorStats\.ino !== pathStats\.ino/);
+  assert.match(matrixSource, /descriptorStats\.nlink !== 1n/);
+  assert.match(matrixSource, /pathStats\.nlink !== 1n/);
+  assert.match(matrixSource, /finalStats\.nlink !== 1n/);
   assert.match(matrixSource, /relative\(realpathSync\(root\), manifestReal\)/);
   assert.doesNotMatch(matrixSource, /openSync\(manifestReal/);
   assert.doesNotMatch(matrixSource, /readFileSync\(manifestReal/);
@@ -716,6 +719,38 @@ syncBuiltinESMExports();
         MEDIA_ACCEPTANCE_TEST_EXTERNAL_MANIFEST: externalManifest
       }
     });
+    assert.equal(result.status, 1);
+    assert.deepEqual(lowDisclosureError(result.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_ROOT_UNSAFE" });
+    assert.doesNotMatch(`${result.stdout}${result.stderr}`, /https?:\/\//);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(external, { recursive: true, force: true });
+  }
+});
+
+test("media acceptance matrix rejects a manifest hard-linked from outside the fixture root", () => {
+  const source = resolve("fixtures/video/mock_clip.mp4");
+  const fixtureCommand = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
+  const created = spawnSync(process.execPath, [fixtureCommand, "create", "--input", source, "--issuer", ISSUER, "--resource", RESOURCE], {
+    cwd: process.cwd(), input: `${SUBJECT}\n`, encoding: "utf8", windowsHide: true, env: childEnv
+  });
+  assert.equal(created.status, 0, created.stderr);
+  const receipt = JSON.parse(created.stdout) as { run_id: string };
+  const root = resolve("data/webgpt/media-acceptance", receipt.run_id);
+  const external = mkdtempSync(join(resolve(root, ".."), "external-hardlink-"));
+  const manifestPath = join(root, "fixture.json");
+  const externalManifest = join(external, "private.json");
+  try {
+    writeFileSync(externalManifest, readFileSync(manifestPath));
+    unlinkSync(manifestPath);
+    linkSync(externalManifest, manifestPath);
+    assert.equal(statSync(manifestPath).nlink, 2);
+    const result = spawnSync(process.execPath, [
+      resolve("dist/scripts/webgpt-media-acceptance-matrix.js"),
+      "--run", receipt.run_id,
+      "--origin", "http://127.0.0.1:2092/",
+      "--kid", "acceptance-matrix-v1"
+    ], { cwd: process.cwd(), input: `${Buffer.alloc(32).toString("base64url")}\n`, encoding: "utf8", windowsHide: true, env: childEnv });
     assert.equal(result.status, 1);
     assert.deepEqual(lowDisclosureError(result.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_ROOT_UNSAFE" });
     assert.doesNotMatch(`${result.stdout}${result.stderr}`, /https?:\/\//);

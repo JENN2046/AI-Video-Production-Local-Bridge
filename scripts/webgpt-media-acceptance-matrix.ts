@@ -122,7 +122,8 @@ function readManifest(root: string, runId: string): Manifest {
       const descriptorStats = fstatSync(descriptor, { bigint: true });
       const pathStats = lstatSync(manifestPath, { bigint: true });
       if (!descriptorStats.isFile() || !pathStats.isFile()
-        || descriptorStats.dev !== pathStats.dev || descriptorStats.ino !== pathStats.ino) {
+        || descriptorStats.dev !== pathStats.dev || descriptorStats.ino !== pathStats.ino
+        || descriptorStats.nlink !== 1n || pathStats.nlink !== 1n) {
         throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
       }
       const manifestReal = realpathSync(manifestPath);
@@ -147,7 +148,7 @@ function readManifest(root: string, runId: string): Manifest {
         throw new MatrixError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
       }
       const finalStats = fstatSync(descriptor, { bigint: true });
-      if (finalStats.dev !== openedDevice || finalStats.ino !== openedInode) {
+      if (finalStats.dev !== openedDevice || finalStats.ino !== openedInode || finalStats.nlink !== 1n) {
         throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
       }
       if (finalStats.size > BigInt(MANIFEST_MAX_BYTES)) throw new MatrixError("MEDIA_ACCEPTANCE_MANIFEST_TOO_LARGE");
