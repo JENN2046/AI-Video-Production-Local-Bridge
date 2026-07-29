@@ -1,19 +1,22 @@
 # Current State
 
-Date (Asia/Shanghai, UTC+08:00): 2026-07-28
-Repository baseline: `main@a71c1a9`
+Date (Asia/Shanghai, UTC+08:00): 2026-07-29
+Repository baseline: `main@2b43f558`
 
 ## Changes since the last accepted Unified Director deployment
 
-The current source baseline is `main@a71c1a9`. The following merged changes
+The current source baseline is `main@2b43f558`. The following merged changes
 are later than the exact `479fdb8` Unified Director deployment acceptance.
 They have passed the `main` Windows CI and are current code facts, not new
 external acceptance or deployment claims:
 
 - PR #94 keeps Director Focus controls visible in the Workbench UI.
-- PR #97 adds the managed Windows Director Bridge runtime candidate. Its
-  local/fixture coverage passed, but the active Bridge has not been restarted
-  under that manager.
+- PR #97 added the managed Windows Director Bridge runtime candidate; its first
+  managed adoption passed at `fbf6540`.
+- PR #100 hardened fixture cleanup identity and diagnostics.
+- PR #101 merged the cross-terminal configuration-identity repair at
+  `2b43f558`. Its authorized activation attempt did not establish authenticated
+  Remote contact, and the manager cleaned up the child.
 - PR #98 adds a local-only Direct OAuth compatibility canary. It is not a
   public HTTPS interoperability experiment and does not change Auth0, Render,
   DNS, environment configuration, or the live Connector.
@@ -73,7 +76,7 @@ The controlled Artifact import-receipt migration `0011` has since completed its 
 | Real Provider canary | Boundary exists | Not authorized | Frozen |
 | ChatGPT Director PR1–PR6 + controlled import receipt | Current code | Single-Owner Focus → Context → advisory Proposal → Human Workbench decision → receipt PASS | `DIRECTOR_OWNER_PROPOSAL_PASS` |
 | Unified ChatGPT Workspace Remote | Current runtime and contract | Unified OAuth, Bridge, Render, ChatGPT App and activity-database path PASS | `UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_PASS` |
-| Director Bridge managed Windows runtime | Managed runtime accepted at `fbf6540`; cross-terminal configuration-identity repair under review | PASS: controlled restart at `fbf6540`, durable receipt, matched process identity and fresh heartbeat/Remote contact | Managed restart gate complete; after the repair merges, a separately authorized later restart is required only to activate and accept the cross-terminal behavior |
+| Director Bridge managed Windows runtime | Historical managed acceptance at `fbf6540`; current Bridge stopped after the `2b43f558` activation timeout | Historical PASS remains bounded to `fbf6540`; the later attempt had matched local identity and heartbeat but no authenticated Remote contact | Merge the low-disclosure startup diagnostic repair, pass CI, then separately authorize one managed recovery/acceptance restart |
 | Direct OAuth compatibility canary | Current `main`, local-contract only | Windows CI and local contract coverage passed; no public endpoint experiment | Keep local-only; any public interoperability test needs separate authorization |
 
 ## Accepted evidence
@@ -102,7 +105,7 @@ The active database is ledger `0011` and current-code compatible. `REAL_PROVIDER
 
 ### Daily ChatGPT App work
 
-The remote service is memory-only. A Unified signed Snapshot was published during bounded acceptance, but restart or expiry still requires a separately confirmed manual republish. Do not infer automatic publishing from migration or transport acceptance.
+The remote service is memory-only. A Unified signed Snapshot was published during bounded acceptance, but restart or expiry still requires a separately confirmed manual republish. Do not infer automatic publishing from migration or transport acceptance. The Director Bridge is currently stopped after the bounded `2b43f558` activation attempt; see [Director Bridge Restart Diagnostic Gap](ops/reports/2026-07-29-director-bridge-restart-diagnostic-gap.md).
 
 ### Media gateway work
 
@@ -112,7 +115,7 @@ PR #56–#62 implemented Snapshot v4 media bindings, encrypted capabilities, loc
 
 PR #69–#72 and the controlled Artifact import-receipt work are now accepted through an activity-database single-Owner golden path. The observed path was Focus → Context → advisory Proposal → Human Workbench decision → one immutable, digest-revalidated receipt. This does **not** alter the accepted Readonly MCP App or the safe default `REAL_PROVIDER_ENABLED=false`.
 
-Director startup requires explicit non-secret runtime configuration and its accepted transport configuration; database readiness alone still is not a general authorization. A managed Windows runtime candidate now records the tracked-source commit, emitted `dist` fingerprints, Node executable fingerprint, exact two-argument process identity and a low-disclosure launch-configuration digest. A two-phase activation gate prevents key/database loading before manager adoption; instance-bound heartbeat and completion state support a final `stopped` receipt, while identical completion retries are deduplicated within the Remote broker's bounded five-minute in-memory acceptance window. Expiry or Remote restart makes a later retry unconfirmed again. The default stop path never force-kills. A separately authorized controlled restart on 2026-07-29 adopted the managed Bridge at `fbf6540`; that source baseline was also observed live on Render. The local read-only database check and manager assessment reported `RUNNING`, matched process identity, fresh heartbeat and fresh Remote contact, with Provider execution disabled. See [Managed Director Bridge Restart Acceptance](ops/reports/2026-07-29-managed-director-bridge-restart-acceptance.md). The cross-terminal configuration-identity repair is not live yet: it remains subject to merge and a separately authorized later restart. This is not dependency-tree attestation or business-readiness proof. The Memory Port has no configured stable plugin, endpoint or automatic Saveback dispatch. See [Director Local Bridge](docs/CHATGPT_DIRECTOR_LOCAL_BRIDGE.md) and [Director Local Candidate Closeout](docs/CHATGPT_DIRECTOR_LOCAL_CANDIDATE_CLOSEOUT.md).
+Director startup requires explicit non-secret runtime configuration and its accepted transport configuration; database readiness alone still is not a general authorization. A managed Windows runtime candidate now records the tracked-source commit, emitted `dist` fingerprints, Node executable fingerprint, exact two-argument process identity and a low-disclosure launch-configuration digest. A two-phase activation gate prevents key/database loading before manager adoption; instance-bound heartbeat and completion state support a final `stopped` receipt, while identical completion retries are deduplicated within the Remote broker's bounded five-minute in-memory acceptance window. Expiry or Remote restart makes a later retry unconfirmed again. The default stop path never force-kills. A separately authorized controlled restart on 2026-07-29 adopted the managed Bridge at `fbf6540`; that source baseline was also observed live on Render. The local read-only database check and manager assessment reported `RUNNING`, matched process identity, fresh heartbeat and fresh Remote contact, with Provider execution disabled. See [Managed Director Bridge Restart Acceptance](ops/reports/2026-07-29-managed-director-bridge-restart-acceptance.md). PR #101 later merged the cross-terminal repair at `2b43f558`, but its authorized activation attempt remained in local `backoff` without authenticated Remote contact until the manager cleaned up the child. The Bridge is currently stopped, and the cross-terminal behavior has no live acceptance. The current diagnostic repair preserves a validated child `DIRECTOR_*` code before cleanup; it is not live until merged and activated through another separately authorized restart. This is not dependency-tree attestation or business-readiness proof. The Memory Port has no configured stable plugin, endpoint or automatic Saveback dispatch. See [Director Local Bridge](docs/CHATGPT_DIRECTOR_LOCAL_BRIDGE.md), [Director Bridge Restart Diagnostic Gap](ops/reports/2026-07-29-director-bridge-restart-diagnostic-gap.md) and [Director Local Candidate Closeout](docs/CHATGPT_DIRECTOR_LOCAL_CANDIDATE_CLOSEOUT.md).
 
 ### Unified ChatGPT Workspace candidate
 
@@ -131,7 +134,7 @@ Separate, non-blocking future gates are the second real user, automatic Snapshot
 
 Director has completed its migration, transport and single-Owner Proposal/receipt gates without Provider execution. Its remaining ordered external gates are:
 
-1. merge the cross-terminal configuration-identity repair, then separately authorize a controlled restart and verify both managed-launcher (`verified`) and independent-terminal (`not_rechecked`) status behavior at the merged source commit;
+1. merge the low-disclosure startup diagnostic repair, pass CI, then separately authorize a controlled recovery restart; use the projected child error enum if Remote contact still fails, otherwise verify both managed-launcher (`verified`) and independent-terminal (`not_rechecked`) status behavior at the merged source commit;
 2. select and accept a stable Memory plugin with project/issuer-bound recall-only behavior before any Saveback dispatch;
 3. separately authorize a bounded Provider execution canary under an Automation Grant and budget;
 4. accept a second real user and revoke path before claiming multi-user readiness.

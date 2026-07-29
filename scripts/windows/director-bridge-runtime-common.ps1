@@ -84,11 +84,18 @@ function Get-DirectorBridgeStableErrorCode([object]$ErrorRecord) {
   return "DIRECTOR_BRIDGE_RUNTIME_FAILED"
 }
 
-function Write-DirectorBridgeFailure([object]$ErrorRecord) {
-  [Console]::Error.WriteLine((ConvertTo-Json ([ordered]@{
+function Write-DirectorBridgeFailure(
+  [object]$ErrorRecord,
+  [string]$ChildErrorCode = ""
+) {
+  $receipt = [ordered]@{
     result = "FAIL"
     stable_error_code = Get-DirectorBridgeStableErrorCode $ErrorRecord
-  }) -Compress))
+  }
+  if ($ChildErrorCode -match '^DIRECTOR_[A-Z0-9_]{3,86}$') {
+    $receipt["child_error_code"] = $ChildErrorCode
+  }
+  [Console]::Error.WriteLine((ConvertTo-Json $receipt -Compress))
 }
 
 function Get-DirectorBridgeFixtureFailureCode {
@@ -686,6 +693,14 @@ function Read-DirectorBridgeHeartbeat([object]$State) {
     throw "DIRECTOR_BRIDGE_HEARTBEAT_INVALID"
   }
   return $heartbeat
+}
+
+function Get-DirectorBridgeChildErrorCode([object]$State) {
+  try { $heartbeat = Read-DirectorBridgeHeartbeat $State } catch { return $null }
+  if ($null -eq $heartbeat -or $null -eq $heartbeat.stable_error_code) { return $null }
+  $code = [string]$heartbeat.stable_error_code
+  if ($code -match '^DIRECTOR_[A-Z0-9_]{3,86}$') { return $code }
+  return $null
 }
 
 function Test-DirectorBridgeCoreLaunchIdentityCurrent([object]$State) {
