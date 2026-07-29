@@ -7,6 +7,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import type { JWTVerifyGetKey } from "jose";
 
 import {
+  DIRECTOR_BRIDGE_AUTH_CLASS_HEADER,
   DIRECTOR_BRIDGE_MAX_BODY_BYTES,
   DirectorBridgeBroker,
   DirectorBridgeError,
@@ -406,7 +407,16 @@ export async function startUnifiedWorkspaceRemoteRuntime(options: StartUnifiedWo
       const tooLarge = error instanceof Error && error.message === "BODY_TOO_LARGE";
       const invalidJson = error instanceof Error && error.message === "INVALID_JSON_BODY";
       const code = tooLarge ? "DIRECTOR_BRIDGE_BODY_TOO_LARGE" : invalidJson ? "DIRECTOR_BRIDGE_INVALID_JSON_BODY" : safe.code;
-      sendJson(response, tooLarge ? 413 : invalidJson ? 400 : 401, { ok: false, error: { code, message: "Director bridge request was rejected." } });
+      const authClass = path === UNIFIED_WORKSPACE_BRIDGE_POLL_PATH
+        && (code === "DIRECTOR_BRIDGE_AUTH_INVALID" || code === "DIRECTOR_BRIDGE_AUTH_EXPIRED")
+        ? code
+        : null;
+      sendJson(
+        response,
+        tooLarge ? 413 : invalidJson ? 400 : 401,
+        { ok: false, error: { code, message: "Director bridge request was rejected." } },
+        authClass ? { [DIRECTOR_BRIDGE_AUTH_CLASS_HEADER]: authClass } : {}
+      );
       return code;
     } finally {
       activeBridge -= 1;

@@ -14,6 +14,7 @@ import {
   DirectorBridgeRuntimeControl
 } from "../src/director/runtimeControl.js";
 import {
+  DIRECTOR_BRIDGE_AUTH_CLASS_HEADER,
   DIRECTOR_BRIDGE_COMPLETION_SCHEMA,
   DIRECTOR_BRIDGE_REQUEST_SCHEMA,
   DirectorBridgeBroker,
@@ -242,18 +243,20 @@ test("Director Bridge client reports authenticated poll phases without payload d
 
 test("Director Bridge client maps poll HTTP failures to low-disclosure stable codes", async () => {
   const cases = [
-    [301, "DIRECTOR_BRIDGE_POLL_REDIRECT_REJECTED"],
-    [401, "DIRECTOR_BRIDGE_POLL_AUTH_REJECTED"],
-    [403, "DIRECTOR_BRIDGE_POLL_AUTH_REJECTED"],
-    [404, "DIRECTOR_BRIDGE_POLL_ROUTE_NOT_FOUND"],
-    [413, "DIRECTOR_BRIDGE_POLL_BODY_REJECTED"],
-    [415, "DIRECTOR_BRIDGE_POLL_CONTENT_TYPE_REJECTED"],
-    [418, "DIRECTOR_BRIDGE_POLL_CLIENT_REJECTED"],
-    [429, "DIRECTOR_BRIDGE_POLL_BUSY"],
-    [503, "DIRECTOR_BRIDGE_POLL_REMOTE_FAILED"]
+    [301, "DIRECTOR_BRIDGE_POLL_REDIRECT_REJECTED", {}],
+    [401, "DIRECTOR_BRIDGE_POLL_AUTH_INVALID", { [DIRECTOR_BRIDGE_AUTH_CLASS_HEADER]: "DIRECTOR_BRIDGE_AUTH_INVALID" }],
+    [401, "DIRECTOR_BRIDGE_POLL_AUTH_EXPIRED", { [DIRECTOR_BRIDGE_AUTH_CLASS_HEADER]: "DIRECTOR_BRIDGE_AUTH_EXPIRED" }],
+    [401, "DIRECTOR_BRIDGE_POLL_AUTH_REJECTED", { [DIRECTOR_BRIDGE_AUTH_CLASS_HEADER]: "DIRECTOR_BRIDGE_AUTH_UNKNOWN" }],
+    [403, "DIRECTOR_BRIDGE_POLL_AUTH_REJECTED", {}],
+    [404, "DIRECTOR_BRIDGE_POLL_ROUTE_NOT_FOUND", {}],
+    [413, "DIRECTOR_BRIDGE_POLL_BODY_REJECTED", {}],
+    [415, "DIRECTOR_BRIDGE_POLL_CONTENT_TYPE_REJECTED", {}],
+    [418, "DIRECTOR_BRIDGE_POLL_CLIENT_REJECTED", {}],
+    [429, "DIRECTOR_BRIDGE_POLL_BUSY", {}],
+    [503, "DIRECTOR_BRIDGE_POLL_REMOTE_FAILED", {}]
   ] as const;
 
-  for (const [status, expectedCode] of cases) {
+  for (const [status, expectedCode, headers] of cases) {
     let responseBodyUsed = () => true;
     const client = new DirectorLocalBridgeClient({
       remote_origin: "https://director.example.test/",
@@ -261,7 +264,7 @@ test("Director Bridge client maps poll HTTP failures to low-disclosure stable co
       keyring: { active: { kid: "director-runtime-poll-status-test", key: Buffer.alloc(32, 41) } },
       handlers: () => ({}) as never,
       fetch: async () => {
-        const response = new Response("private-response-body", { status });
+        const response = new Response("private-response-body", { status, headers });
         responseBodyUsed = () => response.bodyUsed;
         return response;
       }

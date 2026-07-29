@@ -9,7 +9,11 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 import { startUnifiedWorkspaceRemoteRuntime, UNIFIED_WORKSPACE_BRIDGE_POLL_PATH } from "../src/unified-workspace/remoteRuntime.js";
-import { DirectorLocalBridgeClient } from "../src/director/bridge.js";
+import {
+  DIRECTOR_BRIDGE_AUTH_CLASS_HEADER,
+  DirectorLocalBridgeClient,
+  signDirectorBridgeBody
+} from "../src/director/bridge.js";
 import type { DirectorNativeToolHandlers } from "../src/director/mcpContract.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
@@ -272,9 +276,45 @@ test("Unified Workspace logs MCP authentication failures and classifies malforme
       body: "{"
     });
     assert.equal(malformed.status, 400);
+    assert.equal(malformed.headers.get(DIRECTOR_BRIDGE_AUTH_CLASS_HEADER), null);
     assert.equal(record(record(await malformed.json()).error).code, "DIRECTOR_BRIDGE_INVALID_JSON_BODY");
     assert.equal(logs.at(-1)?.event_type, "bridge");
     assert.equal(logs.at(-1)?.stable_error_code, "DIRECTOR_BRIDGE_INVALID_JSON_BODY");
+  } finally {
+    await runtime.close();
+  }
+});
+
+test("Unified Workspace projects only allowlisted Bridge authentication classes", async () => {
+  const now = new Date("2026-07-29T05:00:00.000Z");
+  const active = { kid: "unified-bridge-auth-class", key: Buffer.alloc(32, 28) };
+  const runtime = await startUnifiedWorkspaceRemoteRuntime({
+    port: 0,
+    bridge_keyring: { active },
+    now: () => now
+  });
+  const postPoll = (body: unknown) => fetch(new URL(UNIFIED_WORKSPACE_BRIDGE_POLL_PATH, runtime.origin), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  try {
+    const invalid = await postPoll(signDirectorBridgeBody(
+      { operation: "poll", client_id: "invalid-auth-class", issued_at: now.toISOString() },
+      { ...active, key: Buffer.alloc(32, 29) },
+      now
+    ));
+    assert.equal(invalid.status, 401);
+    assert.equal(invalid.headers.get(DIRECTOR_BRIDGE_AUTH_CLASS_HEADER), "DIRECTOR_BRIDGE_AUTH_INVALID");
+
+    const expiredAt = new Date(now.getTime() - 61_000);
+    const expired = await postPoll(signDirectorBridgeBody(
+      { operation: "poll", client_id: "expired-auth-class", issued_at: expiredAt.toISOString() },
+      active,
+      expiredAt
+    ));
+    assert.equal(expired.status, 401);
+    assert.equal(expired.headers.get(DIRECTOR_BRIDGE_AUTH_CLASS_HEADER), "DIRECTOR_BRIDGE_AUTH_EXPIRED");
   } finally {
     await runtime.close();
   }
