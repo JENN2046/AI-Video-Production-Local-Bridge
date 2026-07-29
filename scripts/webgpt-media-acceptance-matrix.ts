@@ -10,6 +10,14 @@ const RUN_ID = /^run_[0-9a-f]{32}$/;
 const HANDLE = /^[A-Za-z0-9_-]{43}$/;
 const FIXTURE_VERSION = "readonly-media-acceptance-fixture-v2";
 const ALLOWED_ORIGIN = "https://aivideo.skmt617.top";
+function testTimeout(name: string, fallback: number): number {
+  if (process.env.NODE_ENV !== "test") return fallback;
+  const value = Number(process.env[name]);
+  return Number.isInteger(value) && value >= 50 && value <= 5_000 ? value : fallback;
+}
+
+const REQUEST_TIMEOUT_MS = testTimeout("MEDIA_ACCEPTANCE_TEST_REQUEST_TIMEOUT_MS", 15_000);
+const MATRIX_TIMEOUT_MS = testTimeout("MEDIA_ACCEPTANCE_TEST_MATRIX_TIMEOUT_MS", 2 * 60_000);
 
 class MatrixError extends Error {
   constructor(readonly code: string) { super(code); }
@@ -63,8 +71,15 @@ function fixtureRoot(runId: string): string {
 }
 
 function readManifest(root: string, runId: string): Manifest {
+  const manifestPath = resolve(root, "fixture.json");
+  if (!existsSync(manifestPath) || lstatSync(manifestPath).isSymbolicLink() || !lstatSync(manifestPath).isFile()) {
+    throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+  }
+  const manifestReal = realpathSync(manifestPath);
+  const manifestRel = relative(realpathSync(root), manifestReal);
+  if (!manifestRel || manifestRel.startsWith("..") || isAbsolute(manifestRel)) throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
   let value: unknown;
-  try { value = JSON.parse(readFileSync(resolve(root, "fixture.json"), "utf8")); } catch {
+  try { value = JSON.parse(readFileSync(manifestReal, "utf8")); } catch {
     throw new MatrixError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
   }
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new MatrixError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
@@ -113,13 +128,39 @@ async function stdinKey(): Promise<string> {
   return value;
 }
 
-async function json(response: Response): Promise<Record<string, unknown>> {
+type BoundedResponse = {
+  response: Response;
+  json?: Record<string, unknown>;
+  byte_length?: number;
+};
+
+async function request(
+  overallSignal: AbortSignal,
+  input: string,
+  init: RequestInit = {},
+  bodyMode: "none" | "json" | "bytes" = "none"
+): Promise<BoundedResponse> {
+  const requestSignal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
   try {
-    const value: unknown = await response.json();
-    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid");
-    return value as Record<string, unknown>;
-  } catch {
-    throw new MatrixError("MEDIA_ACCEPTANCE_RESPONSE_INVALID");
+    const response = await fetch(input, { ...init, signal: AbortSignal.any([overallSignal, requestSignal]) });
+    if (bodyMode === "json") {
+      let value: unknown;
+      try {
+        value = await response.json();
+      } catch (error) {
+        if (overallSignal.aborted || requestSignal.aborted) throw error;
+        throw new MatrixError("MEDIA_ACCEPTANCE_RESPONSE_INVALID");
+      }
+      if (!value || typeof value !== "object" || Array.isArray(value)) throw new MatrixError("MEDIA_ACCEPTANCE_RESPONSE_INVALID");
+      return { response, json: value as Record<string, unknown> };
+    }
+    if (bodyMode === "bytes") return { response, byte_length: (await response.arrayBuffer()).byteLength };
+    return { response };
+  } catch (error) {
+    if (overallSignal.aborted) throw new MatrixError("MEDIA_ACCEPTANCE_MATRIX_TIMEOUT");
+    if (requestSignal.aborted) throw new MatrixError("MEDIA_ACCEPTANCE_REQUEST_TIMEOUT");
+    if (error instanceof MatrixError) throw error;
+    throw new MatrixError("MEDIA_ACCEPTANCE_REQUEST_FAILED");
   }
 }
 
@@ -130,6 +171,9 @@ function stableErrorCode(value: Record<string, unknown>): string | null {
 }
 
 async function main(): Promise<void> {
+  const matrixController = new AbortController();
+  const matrixTimer = setTimeout(() => matrixController.abort(), MATRIX_TIMEOUT_MS);
+  try {
   const runId = arg("--run");
   const origin = gatewayOrigin(arg("--origin"));
   const kid = arg("--kid");
@@ -160,20 +204,21 @@ async function main(): Promise<void> {
     }, keyring, now ? { now: () => now } : {});
 
   const issue = async (project: ManifestProject, media: ManifestMedia, now?: Date): Promise<string> => {
-    const response = await fetch(`${origin}/internal/v1/capabilities`, {
+    const result = await request(matrixController.signal, `${origin}/internal/v1/capabilities`, {
       method: "POST",
       headers: { "content-type": "application/json; charset=utf-8" },
       body: JSON.stringify(requestEnvelope(project, media, now))
-    });
+    }, "json");
+    const response = result.response;
     if (response.status !== 201) throw new MatrixError("MEDIA_ACCEPTANCE_CAPABILITY_FAILED");
-    const handle = (await json(response)).capability_handle;
+    const handle = result.json?.capability_handle;
     if (typeof handle !== "string" || !HANDLE.test(handle)) throw new MatrixError("MEDIA_ACCEPTANCE_RESPONSE_INVALID");
     return handle;
   };
 
   const activate = async (handle: string): Promise<{ capabilityUrl: string; sessionUrl: string }> => {
     const capabilityUrl = `${origin}/media/v1/c/${handle}`;
-    const response = await fetch(capabilityUrl, { headers: { origin: ALLOWED_ORIGIN }, redirect: "manual" });
+    const response = (await request(matrixController.signal, capabilityUrl, { headers: { origin: ALLOWED_ORIGIN }, redirect: "manual" })).response;
     const location = response.headers.get("location");
     if (response.status === 403) throw new MatrixError("MEDIA_ACCEPTANCE_ORIGIN_DENIED");
     if (response.status === 404) throw new MatrixError("MEDIA_ACCEPTANCE_CAPABILITY_REJECTED");
@@ -183,8 +228,8 @@ async function main(): Promise<void> {
     return { capabilityUrl, sessionUrl: `${origin}${location}` };
   };
 
-  const health = await fetch(`${origin}/healthz`);
-  const ready = await fetch(`${origin}/readyz`);
+  const health = (await request(matrixController.signal, `${origin}/healthz`)).response;
+  const ready = (await request(matrixController.signal, `${origin}/readyz`)).response;
   if (health.status !== 200 || ready.status !== 200) throw new MatrixError("MEDIA_ACCEPTANCE_GATEWAY_UNAVAILABLE");
 
   let revocationSession: string | null = null;
@@ -192,36 +237,37 @@ async function main(): Promise<void> {
     for (const media of project.media) {
       const activated = await activate(await issue(project, media));
       if (projectIndex === 1 && revocationSession === null) revocationSession = activated.sessionUrl;
-      const response = await fetch(activated.sessionUrl, {
+      const result = await request(matrixController.signal, activated.sessionUrl, {
         headers: media.mime_type === "video/mp4"
           ? { origin: ALLOWED_ORIGIN, range: "bytes=0-15" }
           : { origin: ALLOWED_ORIGIN }
-      });
+      }, "bytes");
+      const response = result.response;
       if (media.mime_type === "video/mp4") {
         if (response.status !== 206 || response.headers.get("accept-ranges") !== "bytes"
           || !/^bytes 0-15\/\d+$/.test(response.headers.get("content-range") ?? "")
           || response.headers.get("content-type") !== "video/mp4"
-          || (await response.arrayBuffer()).byteLength !== 16) {
+          || result.byte_length !== 16) {
           throw new MatrixError("MEDIA_ACCEPTANCE_RANGE_FAILED");
         }
       } else if (response.status !== 200 || response.headers.get("content-type") !== media.mime_type
-        || (await response.arrayBuffer()).byteLength < 1) {
+        || (result.byte_length ?? 0) < 1) {
         throw new MatrixError("MEDIA_ACCEPTANCE_IMAGE_FAILED");
       }
-      const replay = await fetch(activated.capabilityUrl, { headers: { origin: ALLOWED_ORIGIN }, redirect: "manual" });
-      if (replay.status !== 409 || stableErrorCode(await json(replay)) !== "MEDIA_CAPABILITY_REPLAYED") {
+      const replay = await request(matrixController.signal, activated.capabilityUrl, { headers: { origin: ALLOWED_ORIGIN }, redirect: "manual" }, "json");
+      if (replay.response.status !== 409 || stableErrorCode(replay.json!) !== "MEDIA_CAPABILITY_REPLAYED") {
         throw new MatrixError("MEDIA_ACCEPTANCE_REPLAY_FAILED");
       }
     }
   }
 
   const expiredAt = new Date(Date.now() - 10 * 60 * 1000);
-  const expired = await fetch(`${origin}/internal/v1/capabilities`, {
+  const expired = await request(matrixController.signal, `${origin}/internal/v1/capabilities`, {
     method: "POST",
     headers: { "content-type": "application/json; charset=utf-8" },
     body: JSON.stringify(requestEnvelope(manifest.projects[0]!, manifest.projects[0]!.media[0]!, expiredAt))
-  });
-  if (expired.status !== 404 || stableErrorCode(await json(expired)) !== "MEDIA_CAPABILITY_INVALID") {
+  }, "json");
+  if (expired.response.status !== 404 || stableErrorCode(expired.json!) !== "MEDIA_CAPABILITY_INVALID") {
     throw new MatrixError("MEDIA_ACCEPTANCE_EXPIRY_FAILED");
   }
 
@@ -233,15 +279,14 @@ async function main(): Promise<void> {
       throw new MatrixError("MEDIA_ACCEPTANCE_REVOCATION_FAILED");
     }
   } finally { db.close(); }
-  const revoked = await fetch(revocationSession, { headers: { origin: ALLOWED_ORIGIN } });
-  if (revoked.status !== 404) throw new MatrixError("MEDIA_ACCEPTANCE_REVOCATION_FAILED");
+  const revoked = await request(matrixController.signal, revocationSession, { headers: { origin: ALLOWED_ORIGIN } }, "json");
+  if (revoked.response.status !== 404) throw new MatrixError("MEDIA_ACCEPTANCE_REVOCATION_FAILED");
 
   const retainedProject = manifest.projects[0]!;
   const retainedMedia = retainedProject.media.find((media) => media.mime_type === "video/mp4")!;
   const retainedSession = await activate(await issue(retainedProject, retainedMedia));
-  const retained = await fetch(retainedSession.sessionUrl, { headers: { origin: ALLOWED_ORIGIN, range: "bytes=0-15" } });
-  if (retained.status !== 206) throw new MatrixError("MEDIA_ACCEPTANCE_PROJECT_ISOLATION_FAILED");
-  await retained.arrayBuffer();
+  const retained = await request(matrixController.signal, retainedSession.sessionUrl, { headers: { origin: ALLOWED_ORIGIN, range: "bytes=0-15" } }, "bytes");
+  if (retained.response.status !== 206 || retained.byte_length !== 16) throw new MatrixError("MEDIA_ACCEPTANCE_PROJECT_ISOLATION_FAILED");
 
   console.log(JSON.stringify({
     result: "PASS",
@@ -259,6 +304,9 @@ async function main(): Promise<void> {
       webm_support: false
     }
   }));
+  } finally {
+    clearTimeout(matrixTimer);
+  }
 }
 
 main().catch((error) => {

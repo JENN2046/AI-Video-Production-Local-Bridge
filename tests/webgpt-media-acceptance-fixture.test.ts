@@ -4,6 +4,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSy
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn, spawnSync } from "node:child_process";
+import { createServer } from "node:http";
 import test from "node:test";
 
 import { startReadonlyMediaGateway } from "../src/webgpt-media-gateway/runtime.js";
@@ -22,11 +23,11 @@ function lowDisclosureError(stderr: string): unknown {
   return JSON.parse(line);
 }
 
-const childEnv = { ...process.env, NODE_NO_WARNINGS: "1" };
+const childEnv: NodeJS.ProcessEnv = { ...process.env, NODE_NO_WARNINGS: "1" };
 
-function runChild(command: string, args: string[], input: string): Promise<{ status: number | null; stdout: string; stderr: string }> {
+function runChild(command: string, args: string[], input: string, env = childEnv): Promise<{ status: number | null; stdout: string; stderr: string }> {
   return new Promise((resolveChild, reject) => {
-    const child = spawn(command, args, { cwd: process.cwd(), windowsHide: true, env: childEnv, stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(command, args, { cwd: process.cwd(), windowsHide: true, env, stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8");
@@ -259,6 +260,83 @@ test("media acceptance matrix proves image, byte-range, replay, expiry, project 
   } finally {
     await gateway.close();
     key.fill(0);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("media acceptance matrix rejects a linked manifest before reading it", () => {
+  const source = resolve("fixtures/video/mock_clip.mp4");
+  const fixtureCommand = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
+  const created = spawnSync(process.execPath, [fixtureCommand, "create", "--input", source, "--issuer", ISSUER, "--resource", RESOURCE], {
+    cwd: process.cwd(), input: `${SUBJECT}\n`, encoding: "utf8", windowsHide: true, env: childEnv
+  });
+  assert.equal(created.status, 0, created.stderr);
+  const receipt = JSON.parse(created.stdout) as { run_id: string };
+  const root = resolve("data/webgpt/media-acceptance", receipt.run_id);
+  const external = mkdtempSync(join(tmpdir(), "media-acceptance-manifest-"));
+  const manifestPath = join(root, "fixture.json");
+  const externalManifest = join(external, "fixture.json");
+  try {
+    writeFileSync(externalManifest, readFileSync(manifestPath));
+    unlinkSync(manifestPath);
+    symlinkSync(externalManifest, manifestPath, "file");
+    const result = spawnSync(process.execPath, [
+      resolve("dist/scripts/webgpt-media-acceptance-matrix.js"),
+      "--run", receipt.run_id,
+      "--origin", "http://127.0.0.1:2092/",
+      "--kid", "acceptance-matrix-v1"
+    ], { cwd: process.cwd(), input: `${Buffer.alloc(32).toString("base64url")}\n`, encoding: "utf8", windowsHide: true, env: childEnv });
+    assert.equal(result.status, 1);
+    assert.deepEqual(lowDisclosureError(result.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_ROOT_UNSAFE" });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(external, { recursive: true, force: true });
+  }
+});
+
+test("media acceptance matrix maps request and overall stalls to stable bounded failures", async () => {
+  const source = resolve("fixtures/video/mock_clip.mp4");
+  const fixtureCommand = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
+  const created = spawnSync(process.execPath, [fixtureCommand, "create", "--input", source, "--issuer", ISSUER, "--resource", RESOURCE], {
+    cwd: process.cwd(), input: `${SUBJECT}\n`, encoding: "utf8", windowsHide: true, env: childEnv
+  });
+  assert.equal(created.status, 0, created.stderr);
+  const receipt = JSON.parse(created.stdout) as { run_id: string };
+  const root = resolve("data/webgpt/media-acceptance", receipt.run_id);
+  const server = createServer(() => { /* Deliberately hold response headers open. */ });
+  await new Promise<void>((resolveListen, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => resolveListen());
+  });
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const args = [
+    resolve("dist/scripts/webgpt-media-acceptance-matrix.js"),
+    "--run", receipt.run_id,
+    "--origin", `http://127.0.0.1:${address.port}/`,
+    "--kid", "acceptance-matrix-v1"
+  ];
+  const keyInput = `${Buffer.alloc(32).toString("base64url")}\n`;
+  try {
+    const requestTimeout = await runChild(process.execPath, args, keyInput, {
+      ...childEnv,
+      NODE_ENV: "test",
+      MEDIA_ACCEPTANCE_TEST_REQUEST_TIMEOUT_MS: "100",
+      MEDIA_ACCEPTANCE_TEST_MATRIX_TIMEOUT_MS: "5000"
+    });
+    assert.equal(requestTimeout.status, 1);
+    assert.deepEqual(lowDisclosureError(requestTimeout.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_REQUEST_TIMEOUT" });
+
+    const matrixTimeout = await runChild(process.execPath, args, keyInput, {
+      ...childEnv,
+      NODE_ENV: "test",
+      MEDIA_ACCEPTANCE_TEST_REQUEST_TIMEOUT_MS: "1000",
+      MEDIA_ACCEPTANCE_TEST_MATRIX_TIMEOUT_MS: "100"
+    });
+    assert.equal(matrixTimeout.status, 1);
+    assert.deepEqual(lowDisclosureError(matrixTimeout.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_MATRIX_TIMEOUT" });
+  } finally {
+    await new Promise<void>((resolveClose, reject) => server.close((error) => error ? reject(error) : resolveClose()));
     rmSync(root, { recursive: true, force: true });
   }
 });
