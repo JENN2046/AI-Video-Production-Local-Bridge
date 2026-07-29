@@ -249,6 +249,15 @@ async function readBoundedResponseBody(response: Response, maximumBytes: number,
   };
 }
 
+async function discardResponseBody(response: Response): Promise<void> {
+  if (!response.body) return;
+  try {
+    await response.body.cancel();
+  } catch {
+    throw new MatrixError("MEDIA_ACCEPTANCE_RESPONSE_INVALID");
+  }
+}
+
 async function request(
   overallSignal: AbortSignal,
   input: string,
@@ -281,6 +290,7 @@ async function request(
         ...body
       };
     }
+    await discardResponseBody(response);
     return { response };
   } catch (error) {
     if (overallSignal.aborted) throw new MatrixError("MEDIA_ACCEPTANCE_MATRIX_TIMEOUT");

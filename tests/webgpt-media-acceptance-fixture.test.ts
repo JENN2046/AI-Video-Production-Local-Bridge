@@ -31,17 +31,33 @@ const matrixExpiryTestEnv: NodeJS.ProcessEnv = {
   MEDIA_ACCEPTANCE_TEST_HANDLE_EXPIRY_LEAD_MS: "3000"
 };
 
-function runChild(command: string, args: string[], input: string, env = childEnv): Promise<{ status: number | null; stdout: string; stderr: string }> {
+function runChild(command: string, args: string[], input: string, env = childEnv, timeoutMs?: number): Promise<{
+  status: number | null;
+  stdout: string;
+  stderr: string;
+  timed_out: boolean;
+}> {
   return new Promise((resolveChild, reject) => {
     const child = spawn(command, args, { cwd: process.cwd(), windowsHide: true, env, stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
+    const timer = timeoutMs === undefined ? undefined : setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, timeoutMs);
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => { stdout += chunk; });
     child.stderr.on("data", (chunk: string) => { stderr += chunk; });
-    child.once("error", reject);
-    child.once("close", (status) => resolveChild({ status, stdout, stderr }));
+    child.once("error", (error) => {
+      if (timer) clearTimeout(timer);
+      reject(error);
+    });
+    child.once("close", (status) => {
+      if (timer) clearTimeout(timer);
+      resolveChild({ status, stdout, stderr, timed_out: timedOut });
+    });
     child.stdin.end(input);
   });
 }
@@ -147,6 +163,27 @@ async function startOversizeCapabilityJsonProxy(targetOrigin: string): Promise<G
   return { ...proxy, capabilityRequests: () => capabilityRequests };
 }
 
+async function startUnterminatedHealthProxy(targetOrigin: string): Promise<GatewayProxy & { healthRequests: () => number; closedHealthBodies: () => number }> {
+  let healthRequests = 0;
+  let closedHealthBodies = 0;
+  const proxy = await startGatewayProxy(targetOrigin, (incoming, upstream, outgoing) => {
+    if (upstream.statusCode !== 200 || incoming.url !== "/healthz") return false;
+    healthRequests += 1;
+    upstream.resume();
+    outgoing.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+    const bodyTimer = setInterval(() => {
+      if (!outgoing.destroyed && !outgoing.writableEnded) outgoing.write(".");
+    }, 25);
+    outgoing.once("close", () => {
+      clearInterval(bodyTimer);
+      closedHealthBodies += 1;
+    });
+    outgoing.write("ok");
+    return true;
+  });
+  return { ...proxy, healthRequests: () => healthRequests, closedHealthBodies: () => closedHealthBodies };
+}
+
 function closeServer(server: ReturnType<typeof createServer>): Promise<void> {
   return new Promise((resolveClose, reject) => server.close((error) => error ? reject(error) : resolveClose()));
 }
@@ -183,6 +220,8 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
   assert.match(matrixSource, /MATRIX_EXPIRY_WAIT_ALLOWANCE_MS/);
   assert.match(matrixSource, /MATRIX_LOCAL_SETUP_ALLOWANCE_MS/);
   assert.match(matrixSource, /clearTimeout\(requestTimer\)/);
+  assert.match(matrixSource, /async function discardResponseBody/);
+  assert.match(matrixSource, /await discardResponseBody\(response\)/);
   assert.doesNotMatch(matrixSource, /AbortSignal\.timeout\(/);
   assert.doesNotMatch(matrixSource, /process\.exit\(/);
   assert.doesNotMatch(matrixSource, /response\.arrayBuffer\(\)/);
@@ -369,13 +408,15 @@ test("media acceptance matrix proves image, byte-range, replay, expiry, project 
     allowed_media_roots: [join(root, "media")],
     port: 0
   });
+  const proxy = await startUnterminatedHealthProxy(gateway.url);
   try {
     const result = await runChild(process.execPath, [
       resolve("dist/scripts/webgpt-media-acceptance-matrix.js"),
       "--run", createReceipt.run_id,
-      "--origin", `${gateway.url}/`,
+      "--origin", `${proxy.origin}/`,
       "--kid", "acceptance-matrix-v1"
-    ], `${key.toString("base64url")}\n`, matrixExpiryTestEnv);
+    ], `${key.toString("base64url")}\n`, matrixExpiryTestEnv, 20_000);
+    assert.equal(result.timed_out, false, result.stderr);
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(JSON.parse(result.stdout), {
       result: "PASS",
@@ -394,8 +435,11 @@ test("media acceptance matrix proves image, byte-range, replay, expiry, project 
         webm_support: false
       }
     });
+    assert.equal(proxy.healthRequests(), 1);
+    assert.equal(proxy.closedHealthBodies(), 1);
     assert.doesNotMatch(result.stdout, /[0-9a-f]{64}|https?:\/\/|media\/v1\/[cs]\//);
   } finally {
+    await closeServer(proxy.server);
     await gateway.close();
     key.fill(0);
     rmSync(root, { recursive: true, force: true });
