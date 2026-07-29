@@ -6,12 +6,15 @@ import { createReadonlyMediaCapabilityRequest, parseReadonlyMediaCapabilityKey }
 import { exportReadonlySnapshotFromDatabase } from "../src/webgpt-cloud/dataSource.js";
 import { openM0DatabaseConnection } from "../src/storage/sqlite.js";
 import { revokeWebGptProjectMembership } from "../src/webgpt-v4/authorizationAdmin.js";
-import { READONLY_MEDIA_GATEWAY_HASH_TIMEOUT_MS } from "../src/webgpt-media-gateway/runtime.js";
+import {
+  READONLY_MEDIA_CHATGPT_SANDBOX_ORIGIN,
+  READONLY_MEDIA_GATEWAY_HASH_TIMEOUT_MS
+} from "../src/webgpt-media-gateway/runtime.js";
 
 const RUN_ID = /^run_[0-9a-f]{32}$/;
 const HANDLE = /^[A-Za-z0-9_-]{43}$/;
 const FIXTURE_VERSION = "readonly-media-acceptance-fixture-v2";
-const ALLOWED_ORIGIN = "https://aivideo.skmt617.top";
+const WIDGET_ORIGIN = READONLY_MEDIA_CHATGPT_SANDBOX_ORIGIN;
 function testTimeout(name: string, fallback: number): number {
   if (process.env.NODE_ENV !== "test") return fallback;
   const value = Number(process.env[name]);
@@ -219,6 +222,13 @@ function stableErrorCode(value: Record<string, unknown>): string | null {
   return typeof (error as Record<string, unknown>).code === "string" ? String((error as Record<string, unknown>).code) : null;
 }
 
+function assertWidgetCors(response: Response): void {
+  if (response.headers.get("access-control-allow-origin") !== WIDGET_ORIGIN
+    || response.headers.get("access-control-allow-credentials") !== "true") {
+    throw new MatrixError("MEDIA_ACCEPTANCE_CORS_FAILED");
+  }
+}
+
 async function main(): Promise<void> {
   const matrixController = new AbortController();
   const matrixTimer = setTimeout(() => matrixController.abort(), MATRIX_TIMEOUT_MS);
@@ -267,12 +277,13 @@ async function main(): Promise<void> {
 
   const activate = async (handle: string): Promise<{ capabilityUrl: string; sessionUrl: string }> => {
     const capabilityUrl = `${origin}/media/v1/c/${handle}`;
-    const response = (await request(matrixController.signal, capabilityUrl, { headers: { origin: ALLOWED_ORIGIN }, redirect: "manual" })).response;
+    const response = (await request(matrixController.signal, capabilityUrl, { headers: { origin: WIDGET_ORIGIN }, redirect: "manual" })).response;
     const location = response.headers.get("location");
     if (response.status === 403) throw new MatrixError("MEDIA_ACCEPTANCE_ORIGIN_DENIED");
     if (response.status === 404) throw new MatrixError("MEDIA_ACCEPTANCE_CAPABILITY_REJECTED");
     if (response.status === 429) throw new MatrixError("MEDIA_ACCEPTANCE_CAPACITY_EXCEEDED");
     if (response.status !== 302) throw new MatrixError("MEDIA_ACCEPTANCE_ACTIVATION_FAILED");
+    assertWidgetCors(response);
     if (!location || !/^\/media\/v1\/s\/[A-Za-z0-9_-]{43}$/.test(location)) throw new MatrixError("MEDIA_ACCEPTANCE_REDIRECT_INVALID");
     return { capabilityUrl, sessionUrl: `${origin}${location}` };
   };
@@ -289,10 +300,11 @@ async function main(): Promise<void> {
       const videoSuffix = media.mime_type === "video/mp4" ? expectedVideoSuffix(root, media) : null;
       const result = await request(matrixController.signal, activated.sessionUrl, {
         headers: media.mime_type === "video/mp4"
-          ? { origin: ALLOWED_ORIGIN, range: `bytes=-${videoSuffix!.byte_length}` }
-          : { origin: ALLOWED_ORIGIN }
+          ? { origin: WIDGET_ORIGIN, range: `bytes=-${videoSuffix!.byte_length}` }
+          : { origin: WIDGET_ORIGIN }
       }, "digest");
       const response = result.response;
+      assertWidgetCors(response);
       if (media.mime_type === "video/mp4") {
         const expectedRange = `bytes ${videoSuffix!.start}-${videoSuffix!.end}/${videoSuffix!.total}`;
         if (response.status !== 206 || response.headers.get("accept-ranges") !== "bytes"
@@ -306,7 +318,8 @@ async function main(): Promise<void> {
         || (result.byte_length ?? 0) < 1 || result.body_sha256 !== media.media_sha256) {
         throw new MatrixError("MEDIA_ACCEPTANCE_IMAGE_FAILED");
       }
-      const replay = await request(matrixController.signal, activated.capabilityUrl, { headers: { origin: ALLOWED_ORIGIN }, redirect: "manual" }, "json");
+      const replay = await request(matrixController.signal, activated.capabilityUrl, { headers: { origin: WIDGET_ORIGIN }, redirect: "manual" }, "json");
+      assertWidgetCors(replay.response);
       if (replay.response.status !== 409 || stableErrorCode(replay.json!) !== "MEDIA_CAPABILITY_REPLAYED") {
         throw new MatrixError("MEDIA_ACCEPTANCE_REPLAY_FAILED");
       }
@@ -331,7 +344,8 @@ async function main(): Promise<void> {
       throw new MatrixError("MEDIA_ACCEPTANCE_REVOCATION_FAILED");
     }
   } finally { db.close(); }
-  const revoked = await request(matrixController.signal, revocationSession, { headers: { origin: ALLOWED_ORIGIN } }, "json");
+  const revoked = await request(matrixController.signal, revocationSession, { headers: { origin: WIDGET_ORIGIN } }, "json");
+  assertWidgetCors(revoked.response);
   if (revoked.response.status !== 404 || stableErrorCode(revoked.json!) !== "MEDIA_AUTHORIZATION_DENIED") {
     throw new MatrixError("MEDIA_ACCEPTANCE_REVOCATION_FAILED");
   }
@@ -341,8 +355,9 @@ async function main(): Promise<void> {
   const retainedSuffix = expectedVideoSuffix(root, retainedMedia);
   const retainedSession = await activate(await issue(retainedProject, retainedMedia));
   const retained = await request(matrixController.signal, retainedSession.sessionUrl, {
-    headers: { origin: ALLOWED_ORIGIN, range: `bytes=-${retainedSuffix.byte_length}` }
+    headers: { origin: WIDGET_ORIGIN, range: `bytes=-${retainedSuffix.byte_length}` }
   }, "digest");
+  assertWidgetCors(retained.response);
   if (retained.response.status !== 206 || retained.byte_length !== retainedSuffix.byte_length
     || retained.body_sha256 !== retainedSuffix.sha256
     || retained.response.headers.get("content-range") !== `bytes ${retainedSuffix.start}-${retainedSuffix.end}/${retainedSuffix.total}`) {
@@ -355,6 +370,7 @@ async function main(): Promise<void> {
     run_id: runId,
     checks: {
       gateway_ready: true,
+      widget_cors: true,
       image_200: true,
       mp4_range_206: true,
       project_switch: true,

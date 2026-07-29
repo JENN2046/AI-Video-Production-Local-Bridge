@@ -25,7 +25,9 @@ try {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   } finally { Pop-Location }
 } catch {
-  [Console]::Error.WriteLine((ConvertTo-Json ([ordered]@{ result = "FAIL"; stable_error_code = $_.Exception.Message }) -Compress))
+  $candidate = [string]$_.Exception.Message
+  $stableCode = if ($candidate -match '^MEDIA_[A-Z0-9_]+$') { $candidate } else { "MEDIA_ACCEPTANCE_WRAPPER_FAILED" }
+  [Console]::Error.WriteLine((ConvertTo-Json ([ordered]@{ result = "FAIL"; stable_error_code = $stableCode }) -Compress))
   exit 1
 } finally {
   if ($null -ne $keyBytes) { [Array]::Clear($keyBytes, 0, $keyBytes.Length) }

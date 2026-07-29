@@ -4,10 +4,10 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSy
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn, spawnSync } from "node:child_process";
-import { createServer } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
 import test from "node:test";
 
-import { startReadonlyMediaGateway } from "../src/webgpt-media-gateway/runtime.js";
+import { READONLY_MEDIA_CHATGPT_SANDBOX_ORIGIN, startReadonlyMediaGateway } from "../src/webgpt-media-gateway/runtime.js";
 
 const ISSUER = "https://issuer.acceptance.test/";
 const RESOURCE = "https://aivideo.skmt617.top/workspace/mcp";
@@ -40,6 +40,46 @@ function runChild(command: string, args: string[], input: string, env = childEnv
   });
 }
 
+async function startCorsStrippingProxy(targetOrigin: string, strippedHeader: "access-control-allow-origin" | "access-control-allow-credentials"): Promise<{
+  server: ReturnType<typeof createServer>;
+  origin: string;
+  seenOrigins: Set<string>;
+}> {
+  const seenOrigins = new Set<string>();
+  const server = createServer((incoming, outgoing) => {
+    if (typeof incoming.headers.origin === "string") seenOrigins.add(incoming.headers.origin);
+    const upstream = httpRequest(new URL(incoming.url ?? "/", targetOrigin), {
+      method: incoming.method,
+      headers: incoming.headers
+    }, (upstreamResponse) => {
+      outgoing.statusCode = upstreamResponse.statusCode ?? 502;
+      for (const [name, value] of Object.entries(upstreamResponse.headers)) {
+        if (name.toLowerCase() !== strippedHeader && value !== undefined) outgoing.setHeader(name, value);
+      }
+      upstreamResponse.pipe(outgoing);
+    });
+    upstream.once("error", () => {
+      if (outgoing.headersSent) outgoing.destroy();
+      else { outgoing.statusCode = 502; outgoing.end(); }
+    });
+    incoming.pipe(upstream);
+  });
+  await new Promise<void>((resolveListen, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolveListen();
+    });
+  });
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  return { server, origin: `http://127.0.0.1:${address.port}`, seenOrigins };
+}
+
+function closeServer(server: ReturnType<typeof createServer>): Promise<void> {
+  return new Promise((resolveClose, reject) => server.close((error) => error ? reject(error) : resolveClose()));
+}
+
 test("MP4 acceptance fixture and generated profiles are isolated, contract-valid, source-preserving, and low disclosure", () => {
   const wrapper = readFileSync(resolve("scripts/windows/media-create-acceptance-fixture.ps1"), "utf8");
   const matrixWrapper = readFileSync(resolve("scripts/windows/media-run-acceptance-matrix.ps1"), "utf8");
@@ -57,6 +97,10 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
   assert.match(matrixWrapper, /Unprotect-MediaBytes \$profile\.CapabilityKeyPath/);
   assert.match(matrixWrapper, /\$encodedKey \| & \$node\.NodePath/);
   assert.doesNotMatch(matrixWrapper, /--key|Write-MediaJson.*encodedKey/);
+  assert.match(matrixWrapper, /\$candidate = \[string\]\$_\.Exception\.Message/);
+  assert.match(matrixWrapper, /MEDIA_ACCEPTANCE_WRAPPER_FAILED/);
+  assert.doesNotMatch(matrixWrapper, /stable_error_code\s*=\s*\$_\.Exception\.Message/);
+  assert.match(matrixSource, /READONLY_MEDIA_CHATGPT_SANDBOX_ORIGIN/);
   assert.match(matrixSource, /READONLY_MEDIA_GATEWAY_HASH_TIMEOUT_MS \+ 15_000/);
   assert.match(matrixSource, /DISTINCT_MEDIA_VALIDATIONS \* CAPABILITY_REQUEST_TIMEOUT_MS \+ 2 \* 60_000/);
 
@@ -249,6 +293,7 @@ test("media acceptance matrix proves image, byte-range, replay, expiry, project 
       run_id: createReceipt.run_id,
       checks: {
         gateway_ready: true,
+        widget_cors: true,
         image_200: true,
         mp4_range_206: true,
         project_switch: true,
@@ -263,6 +308,73 @@ test("media acceptance matrix proves image, byte-range, replay, expiry, project 
   } finally {
     await gateway.close();
     key.fill(0);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("media acceptance matrix uses the Widget sandbox Origin and rejects missing CORS response headers", async () => {
+  const source = resolve("fixtures/video/mock_clip.mp4");
+  const fixtureCommand = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
+  const created = spawnSync(process.execPath, [fixtureCommand, "create", "--input", source, "--issuer", ISSUER, "--resource", RESOURCE], {
+    cwd: process.cwd(), input: `${SUBJECT}\n`, encoding: "utf8", windowsHide: true, env: childEnv
+  });
+  assert.equal(created.status, 0, created.stderr);
+  const receipt = JSON.parse(created.stdout) as { run_id: string };
+  const root = resolve("data/webgpt/media-acceptance", receipt.run_id);
+  const manifest = JSON.parse(readFileSync(join(root, "fixture.json"), "utf8")) as { issuer_hash: string };
+  const key = Buffer.alloc(32, 93);
+  const gateway = await startReadonlyMediaGateway({
+    database_path: join(root, "app.sqlite"),
+    issuer_hash: manifest.issuer_hash,
+    keyring: { active: { kid: "acceptance-matrix-cors-v1", key } },
+    allowed_origin: "https://aivideo.skmt617.top",
+    allowed_media_roots: [join(root, "media")],
+    port: 0
+  });
+  try {
+    for (const strippedHeader of ["access-control-allow-origin", "access-control-allow-credentials"] as const) {
+      const proxy = await startCorsStrippingProxy(gateway.url, strippedHeader);
+      try {
+        const result = await runChild(process.execPath, [
+          resolve("dist/scripts/webgpt-media-acceptance-matrix.js"),
+          "--run", receipt.run_id,
+          "--origin", `${proxy.origin}/`,
+          "--kid", "acceptance-matrix-cors-v1"
+        ], `${key.toString("base64url")}\n`);
+        assert.equal(result.status, 1);
+        assert.deepEqual(lowDisclosureError(result.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_CORS_FAILED" });
+        assert.equal(proxy.seenOrigins.has(READONLY_MEDIA_CHATGPT_SANDBOX_ORIGIN), true);
+        assert.doesNotMatch(`${result.stdout}${result.stderr}`, /https?:\/\//);
+      } finally {
+        await closeServer(proxy.server);
+      }
+    }
+  } finally {
+    await gateway.close();
+    key.fill(0);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("media acceptance matrix wrapper normalizes ordinary PowerShell exceptions", { skip: process.platform !== "win32" }, () => {
+  const root = mkdtempSync(join(tmpdir(), "media-acceptance-wrapper-"));
+  const wrapperPath = resolve("scripts/windows/media-run-acceptance-matrix.ps1");
+  const commonPath = resolve("scripts/windows/media-runtime-common.ps1").replace(/'/g, "''");
+  const privateMarker = "C:\\private\\matrix-wrapper-test";
+  const wrapper = readFileSync(wrapperPath, "utf8")
+    .replace('. (Join-Path $PSScriptRoot "media-runtime-common.ps1")', `. '${commonPath}'`)
+    .replace('$runRoot = Resolve-MediaInsideWorkspace (Join-Path "data\\webgpt\\media-acceptance" $RunId)', `throw '${privateMarker}'`);
+  assert.notEqual(wrapper, readFileSync(wrapperPath, "utf8"));
+  const injectedPath = join(root, "media-run-acceptance-matrix.ps1");
+  try {
+    writeFileSync(injectedPath, wrapper, "utf8");
+    const result = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", injectedPath, "-RunId", "run_00000000000000000000000000000000"], {
+      cwd: process.cwd(), encoding: "utf8", windowsHide: true, timeout: 10_000, env: childEnv
+    });
+    assert.equal(result.status, 1);
+    assert.deepEqual(lowDisclosureError(result.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_WRAPPER_FAILED" });
+    assert.equal(`${result.stdout}${result.stderr}`.includes(privateMarker), false);
+  } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
