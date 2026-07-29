@@ -298,6 +298,63 @@ function manifestMedia(manifest: Manifest): ManifestMedia[] {
   return manifest.projects.flatMap((project) => project.media);
 }
 
+function manifestProjectEntries(manifest: Manifest): ManifestProject[] {
+  if (manifest.fixture_version === FIXTURE_VERSION_V1) {
+    return [{
+      project_id: manifest.project_id,
+      shot_id: manifest.shot_id,
+      media: manifestMedia(manifest)
+    }];
+  }
+  return manifest.projects;
+}
+
+function expectedArtifactType(media: ManifestMedia): "image" | "video" {
+  return media.role === "storyboard_image" ? "image" : "video";
+}
+
+function matchesSnapshotMediaBinding(
+  binding: import("../src/webgpt-cloud/snapshot.js").ReadonlyMediaBinding,
+  project: ManifestProject,
+  media: ManifestMedia
+): boolean {
+  return binding.artifact_id === media.artifact_id
+    && binding.project_id === project.project_id
+    && binding.shot_id === project.shot_id
+    && binding.artifact_type === expectedArtifactType(media)
+    && binding.role === media.role
+    && binding.mime_type === media.mime_type
+    && binding.sha256 === media.media_sha256
+    && binding.status === "active";
+}
+
+function matchesDatabaseMediaBindings(
+  db: import("../src/storage/sqlite.js").M0Database,
+  artifacts: typeof import("../src/tools/mediaArtifacts.js"),
+  projects: ManifestProject[]
+): boolean {
+  try {
+    return projects.every((project) => project.media.every((media) => {
+      const artifact = artifacts.getMediaArtifact(db, media.artifact_id);
+      const blob = artifacts.getMediaBlob(db, media.blob_id);
+      return artifact !== null
+        && blob !== null
+        && artifact.blob_id === media.blob_id
+        && artifact.linked_objects.project_id === project.project_id
+        && artifact.linked_objects.shot_id === project.shot_id
+        && artifact.artifact_type === expectedArtifactType(media)
+        && artifact.role === media.role
+        && artifact.status === "active"
+        && blob.blob_id === media.blob_id
+        && blob.sha256 === media.media_sha256
+        && blob.detected_mime === media.mime_type
+        && blob.integrity_state === "verified";
+    }));
+  } catch {
+    return false;
+  }
+}
+
 function parseGatewayProfile(value: JsonObject, manifest: Manifest): GatewayProfile {
   const rootKeys = ["profile_version", "database_path", "issuer_hash", "allowed_origin", "gateway_port", "media_roots", "capability_key", "cloudflared", "runtime_directory"];
   if (!hasExactKeys(value, rootKeys) || value.profile_version !== "readonly-media-operations-profile-v1" || value.gateway_port !== 2092 || value.issuer_hash !== manifest.issuer_hash) {
@@ -523,7 +580,9 @@ async function createFixture(): Promise<void> {
       const snapshotBindingsValid = manifestProjects.every((project) => {
         const projected = snapshot.projects.find((item) => item.project_id === project.project_id);
         return projected?.media_bindings.length === 2
-          && project.media.every((media) => projected.media_bindings.some((binding) => binding.artifact_id === media.artifact_id && binding.sha256 === media.media_sha256));
+          && project.media.every((media) => projected.media_bindings.some((binding) =>
+            matchesSnapshotMediaBinding(binding, project, media)
+          ));
       });
       if (snapshot.projects.length !== 2 || snapshot.schema_version !== "readonly-snapshot-v4" || !snapshotBindingsValid) {
         throw new FixtureError("MEDIA_ACCEPTANCE_SNAPSHOT_INVALID");
@@ -569,33 +628,35 @@ async function verifyFixture(): Promise<void> {
   const safeMediaPaths = mediaPaths.map((path) => assertSafeExistingPath(root, path, "file"));
   process.env.AI_VIDEO_WORKSPACE_DATA_ROOT = root;
   process.env.AI_VIDEO_WORKSPACE_DB_PATH = safeDatabasePath;
-  const [{ openM0DatabaseConnection }, migrations, projection, authTypes] = await Promise.all([
-    import("../src/storage/sqlite.js"), import("../src/storage/migrations.js"), import("../src/webgpt-cloud/dataSource.js"), import("../src/webgpt-v4/types.js")
+  const [{ openM0DatabaseConnection }, migrations, projection, authTypes, artifacts] = await Promise.all([
+    import("../src/storage/sqlite.js"), import("../src/storage/migrations.js"), import("../src/webgpt-cloud/dataSource.js"), import("../src/webgpt-v4/types.js"),
+    import("../src/tools/mediaArtifacts.js")
   ]);
   const issuerHash = authTypes.issuerHash(issuer);
   if (issuerHash !== manifest.issuer_hash) throw new FixtureError("MEDIA_ACCEPTANCE_INTEGRITY_FAILED");
   for (const [index, media] of mediaEntries.entries()) {
     if (await sha256File(safeMediaPaths[index]!) !== media.media_sha256) throw new FixtureError("MEDIA_ACCEPTANCE_INTEGRITY_FAILED");
   }
+  const expectedProjects = manifestProjectEntries(manifest);
+  let databaseBindingsValid = false;
   const db = openM0DatabaseConnection(safeDatabasePath, { readOnly: true });
   try {
     migrations.assertSchemaCurrent(db);
     if (logicalManifest(db) !== manifest.database_manifest) throw new FixtureError("MEDIA_ACCEPTANCE_DATABASE_DRIFT");
+    databaseBindingsValid = matchesDatabaseMediaBindings(db, artifacts, expectedProjects);
   } finally { db.close(); }
   const snapshot = projection.exportReadonlySnapshotFromDatabase({ database_path: safeDatabasePath, issuer_hash: issuerHash, resource_url: resourceUrl });
   const expectedProjectCount = manifest.fixture_version === FIXTURE_VERSION_V1 ? 1 : 2;
   const expectedBindingCount = manifest.fixture_version === FIXTURE_VERSION_V1 ? 2 : 4;
-  const bindingsValid = manifest.fixture_version === FIXTURE_VERSION_V1
-    ? snapshot.projects[0]?.media_bindings.some((binding) => binding.artifact_id === manifest.artifact_id && binding.sha256 === manifest.media_sha256) === true
-    : manifest.projects.every((manifestProject) => {
-        const snapshotProject = snapshot.projects.find((project) => project.project_id === manifestProject.project_id);
-        return snapshotProject?.media_bindings.length === 2
-          && manifestProject.media.every((media) => snapshotProject.media_bindings.some((binding) =>
-            binding.artifact_id === media.artifact_id && binding.sha256 === media.media_sha256
-          ));
-      });
+  const bindingsValid = expectedProjects.every((manifestProject) => {
+    const snapshotProject = snapshot.projects.find((project) => project.project_id === manifestProject.project_id);
+    return snapshotProject !== undefined
+      && manifestProject.media.every((media) => snapshotProject.media_bindings.some((binding) =>
+        matchesSnapshotMediaBinding(binding, manifestProject, media)
+      ));
+  });
   const perProjectBindingsValid = snapshot.projects.every((project) => project.media_bindings.length === 2);
-  if (snapshot.projects.length !== expectedProjectCount || snapshot.authorization.principals.length !== 1 || snapshot.schema_version !== "readonly-snapshot-v4" || !perProjectBindingsValid || !bindingsValid) {
+  if (snapshot.projects.length !== expectedProjectCount || snapshot.authorization.principals.length !== 1 || snapshot.schema_version !== "readonly-snapshot-v4" || !perProjectBindingsValid || !databaseBindingsValid || !bindingsValid) {
     throw new FixtureError("MEDIA_ACCEPTANCE_SNAPSHOT_INVALID");
   }
   const checks = {

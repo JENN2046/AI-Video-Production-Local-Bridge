@@ -689,6 +689,87 @@ test("media acceptance matrix rejects an oversized manifest before reading it", 
   }
 });
 
+test("media acceptance fixture verify rejects manifest metadata that differs from database and Snapshot bindings", () => {
+  const source = resolve("fixtures/video/mock_clip.mp4");
+  const command = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
+  const created = spawnSync(process.execPath, [command, "create", "--input", source, "--issuer", ISSUER, "--resource", RESOURCE], {
+    cwd: process.cwd(), input: `${SUBJECT}\n`, encoding: "utf8", windowsHide: true, env: childEnv
+  });
+  assert.equal(created.status, 0, created.stderr);
+  const receipt = JSON.parse(created.stdout) as { run_id: string };
+  const root = resolve("data/webgpt/media-acceptance", receipt.run_id);
+  const manifestPath = join(root, "fixture.json");
+  type FixtureManifest = {
+    projects: Array<{
+      project_id: string;
+      shot_id: string;
+      media: Array<{
+        artifact_id: string;
+        blob_id: string;
+        mime_type: "image/png" | "image/jpeg" | "video/mp4";
+        role: "storyboard_image" | "generated_clip";
+      }>;
+    }>;
+  };
+  try {
+    const original = JSON.parse(readFileSync(manifestPath, "utf8")) as FixtureManifest;
+    const cases: Array<{ name: string; mutate: (manifest: FixtureManifest) => void }> = [
+      {
+        name: "mime type",
+        mutate: (manifest) => {
+          const image = manifest.projects[0]!.media.find((media) => media.role === "storyboard_image");
+          assert.ok(image);
+          image.mime_type = image.mime_type === "image/png" ? "image/jpeg" : "image/png";
+        }
+      },
+      {
+        name: "artifact role and media kind",
+        mutate: (manifest) => {
+          const image = manifest.projects[0]!.media.find((media) => media.role === "storyboard_image");
+          const video = manifest.projects[0]!.media.find((media) => media.role === "generated_clip");
+          assert.ok(image && video);
+          [image.role, video.role] = [video.role, image.role];
+          [image.mime_type, video.mime_type] = [video.mime_type, image.mime_type];
+        }
+      },
+      {
+        name: "shot id",
+        mutate: (manifest) => {
+          [manifest.projects[0]!.shot_id, manifest.projects[1]!.shot_id] = [
+            manifest.projects[1]!.shot_id,
+            manifest.projects[0]!.shot_id
+          ];
+        }
+      },
+      {
+        name: "blob id",
+        mutate: (manifest) => {
+          const firstImage = manifest.projects[0]!.media.find((media) => media.role === "storyboard_image");
+          const secondImage = manifest.projects[1]!.media.find((media) => media.role === "storyboard_image");
+          assert.ok(firstImage && secondImage);
+          [firstImage.blob_id, secondImage.blob_id] = [secondImage.blob_id, firstImage.blob_id];
+        }
+      }
+    ];
+    for (const testCase of cases) {
+      const altered = structuredClone(original);
+      testCase.mutate(altered);
+      writeFileSync(manifestPath, JSON.stringify(altered), "utf8");
+      const result = spawnSync(process.execPath, [command, "verify", "--run", receipt.run_id, "--issuer", ISSUER, "--resource", RESOURCE], {
+        cwd: process.cwd(), encoding: "utf8", windowsHide: true, env: childEnv
+      });
+      assert.equal(result.status, 1, `${testCase.name}: ${result.stderr}`);
+      assert.deepEqual(
+        lowDisclosureError(result.stderr),
+        { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_SNAPSHOT_INVALID" },
+        testCase.name
+      );
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("media acceptance fixture verify rejects media bindings swapped between projects", () => {
   const source = resolve("fixtures/video/mock_clip.mp4");
   const command = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
