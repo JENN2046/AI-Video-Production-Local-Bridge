@@ -27,11 +27,13 @@ import {
 import { READONLY_MEDIA_MIME_TYPES } from "../webgpt-cloud/snapshot.js";
 import { requireWebGptProjectReadAccess } from "../webgpt-v4/projectAuthorization.js";
 import { WebGptV4Error } from "../webgpt-v4/types.js";
+import { READONLY_MEDIA_GATEWAY_MAX_FILE_BYTES } from "./limits.js";
+
+export { READONLY_MEDIA_GATEWAY_MAX_FILE_BYTES } from "./limits.js";
 
 export const READONLY_MEDIA_GATEWAY_VERSION = "readonly-media-gateway-v1.0.0";
 export const READONLY_MEDIA_GATEWAY_DEFAULT_PORT = 2092;
 export const READONLY_MEDIA_GATEWAY_HASH_TIMEOUT_MS = 45_000;
-export const READONLY_MEDIA_GATEWAY_MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024;
 export const READONLY_MEDIA_GATEWAY_CAPABILITY_TTL_MS = 5 * 60 * 1000;
 export const READONLY_MEDIA_GATEWAY_SESSION_TTL_MS = READONLY_MEDIA_SESSION_MAX_SECONDS * 1000;
 export const READONLY_MEDIA_GATEWAY_MAX_SESSIONS = 32;

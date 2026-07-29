@@ -7,7 +7,8 @@ import { spawn, spawnSync } from "node:child_process";
 import { createServer, request as httpRequest } from "node:http";
 import test from "node:test";
 
-import { READONLY_MEDIA_CHATGPT_SANDBOX_ORIGIN, startReadonlyMediaGateway } from "../src/webgpt-media-gateway/runtime.js";
+import { READONLY_MEDIA_ACCEPTANCE_MAX_SOURCE_BYTES, READONLY_MEDIA_ACCEPTANCE_VARIANT_TRAILER, isReadonlyMediaAcceptanceSourceSizeAllowed } from "../src/webgpt-media-gateway/acceptanceFixtureBudget.js";
+import { READONLY_MEDIA_CHATGPT_SANDBOX_ORIGIN, READONLY_MEDIA_GATEWAY_MAX_FILE_BYTES, startReadonlyMediaGateway } from "../src/webgpt-media-gateway/runtime.js";
 
 const ISSUER = "https://issuer.acceptance.test/";
 const RESOURCE = "https://aivideo.skmt617.top/workspace/mcp";
@@ -258,6 +259,12 @@ test("MP4 acceptance fixture accepts only the legacy or Unified MCP resource pat
   });
   assert.equal(rejected.status, 1);
   assert.deepEqual(lowDisclosureError(rejected.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_URL_INVALID" });
+});
+
+test("MP4 acceptance fixture reserves the fixed tail variant within the Gateway file-size limit", () => {
+  assert.equal(READONLY_MEDIA_ACCEPTANCE_MAX_SOURCE_BYTES + READONLY_MEDIA_ACCEPTANCE_VARIANT_TRAILER.byteLength, READONLY_MEDIA_GATEWAY_MAX_FILE_BYTES);
+  assert.equal(isReadonlyMediaAcceptanceSourceSizeAllowed(READONLY_MEDIA_ACCEPTANCE_MAX_SOURCE_BYTES), true);
+  assert.equal(isReadonlyMediaAcceptanceSourceSizeAllowed(READONLY_MEDIA_ACCEPTANCE_MAX_SOURCE_BYTES + 1), false);
 });
 
 test("media acceptance matrix proves image, byte-range, replay, expiry, project switching, and revocation with low disclosure", async () => {

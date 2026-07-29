@@ -3,6 +3,11 @@ import { appendFileSync, constants, copyFileSync, createReadStream, existsSync, 
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
+import {
+  isReadonlyMediaAcceptanceSourceSizeAllowed,
+  READONLY_MEDIA_ACCEPTANCE_VARIANT_TRAILER
+} from "../src/webgpt-media-gateway/acceptanceFixtureBudget.js";
+
 const FIXTURE_VERSION_V1 = "readonly-media-acceptance-fixture-v1";
 const FIXTURE_VERSION = "readonly-media-acceptance-fixture-v2";
 const RUN_ID = /^run_[0-9a-f]{32}$/;
@@ -45,7 +50,7 @@ async function sha256File(path: string): Promise<string> {
 async function assertRegularSource(path: string): Promise<{ sha256: string; size: number; mtimeMs: number }> {
   if (!existsSync(path) || lstatSync(path).isSymbolicLink()) throw new FixtureError("MEDIA_ACCEPTANCE_SOURCE_UNSAFE");
   const before = statSync(path);
-  if (!before.isFile() || before.size <= 0 || before.size > 2 * 1024 * 1024 * 1024) throw new FixtureError("MEDIA_ACCEPTANCE_SOURCE_INVALID");
+  if (!before.isFile() || !isReadonlyMediaAcceptanceSourceSizeAllowed(before.size)) throw new FixtureError("MEDIA_ACCEPTANCE_SOURCE_INVALID");
   if (!path.toLowerCase().endsWith(".mp4")) throw new FixtureError("MEDIA_ACCEPTANCE_SOURCE_INVALID");
   const sha256 = await sha256File(path);
   const after = statSync(path);
@@ -421,7 +426,7 @@ async function createFixture(): Promise<void> {
     const incomingVariant = join(incomingDir, "fixture-b.mp4");
     copyFileSync(sourcePath, incoming, constants.COPYFILE_EXCL);
     copyFileSync(sourcePath, incomingVariant, constants.COPYFILE_EXCL);
-    appendFileSync(incomingVariant, Buffer.from([0x00, 0x00, 0x00, 0x08, 0x66, 0x72, 0x65, 0x65]));
+    appendFileSync(incomingVariant, READONLY_MEDIA_ACCEPTANCE_VARIANT_TRAILER);
     phase = "MP4_VALIDATION";
     const validation = validity.validateMp4File(incoming);
     const variantValidation = validity.validateMp4File(incomingVariant);
