@@ -43,6 +43,7 @@ function runChild(command: string, args: string[], input: string, env = childEnv
 test("MP4 acceptance fixture and generated profiles are isolated, contract-valid, source-preserving, and low disclosure", () => {
   const wrapper = readFileSync(resolve("scripts/windows/media-create-acceptance-fixture.ps1"), "utf8");
   const matrixWrapper = readFileSync(resolve("scripts/windows/media-run-acceptance-matrix.ps1"), "utf8");
+  const matrixSource = readFileSync(resolve("scripts/webgpt-media-acceptance-matrix.ts"), "utf8");
   const runbook = readFileSync(resolve("docs/webgpt/READONLY_LOCAL_MEDIA_GATEWAY_RUNBOOK.md"), "utf8");
   assert.match(wrapper, /Read-Host "Auth0 user_id\/sub \(input hidden\)" -AsSecureString/);
   assert.doesNotMatch(wrapper, /-MaskInput/);
@@ -56,6 +57,8 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
   assert.match(matrixWrapper, /Unprotect-MediaBytes \$profile\.CapabilityKeyPath/);
   assert.match(matrixWrapper, /\$encodedKey \| & \$node\.NodePath/);
   assert.doesNotMatch(matrixWrapper, /--key|Write-MediaJson.*encodedKey/);
+  assert.match(matrixSource, /READONLY_MEDIA_GATEWAY_HASH_TIMEOUT_MS \+ 15_000/);
+  assert.match(matrixSource, /DISTINCT_MEDIA_VALIDATIONS \* CAPABILITY_REQUEST_TIMEOUT_MS \+ 2 \* 60_000/);
 
   const source = resolve("fixtures/video/mock_clip.mp4");
   const command = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");

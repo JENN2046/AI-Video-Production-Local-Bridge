@@ -6,6 +6,7 @@ import { createReadonlyMediaCapabilityRequest, parseReadonlyMediaCapabilityKey }
 import { exportReadonlySnapshotFromDatabase } from "../src/webgpt-cloud/dataSource.js";
 import { openM0DatabaseConnection } from "../src/storage/sqlite.js";
 import { revokeWebGptProjectMembership } from "../src/webgpt-v4/authorizationAdmin.js";
+import { READONLY_MEDIA_GATEWAY_HASH_TIMEOUT_MS } from "../src/webgpt-media-gateway/runtime.js";
 
 const RUN_ID = /^run_[0-9a-f]{32}$/;
 const HANDLE = /^[A-Za-z0-9_-]{43}$/;
@@ -18,7 +19,15 @@ function testTimeout(name: string, fallback: number): number {
 }
 
 const REQUEST_TIMEOUT_MS = testTimeout("MEDIA_ACCEPTANCE_TEST_REQUEST_TIMEOUT_MS", 15_000);
-const MATRIX_TIMEOUT_MS = testTimeout("MEDIA_ACCEPTANCE_TEST_MATRIX_TIMEOUT_MS", 2 * 60_000);
+const CAPABILITY_REQUEST_TIMEOUT_MS = testTimeout(
+  "MEDIA_ACCEPTANCE_TEST_CAPABILITY_TIMEOUT_MS",
+  READONLY_MEDIA_GATEWAY_HASH_TIMEOUT_MS + 15_000
+);
+const DISTINCT_MEDIA_VALIDATIONS = 4;
+const MATRIX_TIMEOUT_MS = testTimeout(
+  "MEDIA_ACCEPTANCE_TEST_MATRIX_TIMEOUT_MS",
+  DISTINCT_MEDIA_VALIDATIONS * CAPABILITY_REQUEST_TIMEOUT_MS + 2 * 60_000
+);
 
 class MatrixError extends Error {
   constructor(readonly code: string) { super(code); }
@@ -170,9 +179,10 @@ async function request(
   overallSignal: AbortSignal,
   input: string,
   init: RequestInit = {},
-  bodyMode: "none" | "json" | "bytes" | "digest" = "none"
+  bodyMode: "none" | "json" | "bytes" | "digest" = "none",
+  timeoutMs = REQUEST_TIMEOUT_MS
 ): Promise<BoundedResponse> {
-  const requestSignal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+  const requestSignal = AbortSignal.timeout(timeoutMs);
   try {
     const response = await fetch(input, { ...init, signal: AbortSignal.any([overallSignal, requestSignal]) });
     if (bodyMode === "json") {
@@ -247,7 +257,7 @@ async function main(): Promise<void> {
       method: "POST",
       headers: { "content-type": "application/json; charset=utf-8" },
       body: JSON.stringify(requestEnvelope(project, media, now))
-    }, "json");
+    }, "json", CAPABILITY_REQUEST_TIMEOUT_MS);
     const response = result.response;
     if (response.status !== 201) throw new MatrixError("MEDIA_ACCEPTANCE_CAPABILITY_FAILED");
     const handle = result.json?.capability_handle;
@@ -308,7 +318,7 @@ async function main(): Promise<void> {
     method: "POST",
     headers: { "content-type": "application/json; charset=utf-8" },
     body: JSON.stringify(requestEnvelope(manifest.projects[0]!, manifest.projects[0]!.media[0]!, expiredAt))
-  }, "json");
+  }, "json", CAPABILITY_REQUEST_TIMEOUT_MS);
   if (expired.response.status !== 404 || stableErrorCode(expired.json!) !== "MEDIA_CAPABILITY_INVALID") {
     throw new MatrixError("MEDIA_ACCEPTANCE_EXPIRY_FAILED");
   }
