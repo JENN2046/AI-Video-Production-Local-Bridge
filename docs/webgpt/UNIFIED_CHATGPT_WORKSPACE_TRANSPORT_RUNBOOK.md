@@ -104,8 +104,11 @@ The commands below are the current operator path. A separately authorized
 controlled restart adopted the managed Bridge at `fbf6540` on 2026-07-29; see
 the
 [managed restart acceptance](../../ops/reports/2026-07-29-managed-director-bridge-restart-acceptance.md).
-Do not classify that managed process as a legacy poller or repeat the first
-adoption procedure.
+That accepted process was later stopped for an authorized `2b43f558`
+activation attempt. The new child did not establish authenticated Remote
+contact and was cleaned up by the manager, so the Bridge is currently stopped.
+Do not repeat the first-adoption procedure; use the normal managed recovery
+path after the diagnostic repair passes CI.
 
 Historical first-adoption note: before the completed first managed start, the
 operator independently identified the legacy Bridge by PID, start time and
@@ -116,10 +119,10 @@ is retained only as migration evidence. Reuse it only if independent evidence
 shows a genuinely unmanaged legacy process; do not apply it to the accepted
 managed `fbf6540` process.
 
-The next restart gate is limited to activating and accepting the
-cross-terminal configuration-identity repair after that repair merges. It
-still requires separate authorization and exact merged source/build
-verification.
+The next restart gate is limited to diagnosing or recovering Remote contact
+with the low-disclosure startup receipt, then accepting the merged
+cross-terminal configuration-identity behavior. It still requires separate
+authorization and exact merged source/build verification.
 
 Start the managed Bridge only for an accepted isolated or activity-database
 stage:
@@ -151,6 +154,13 @@ When the complete tuple is present, any digest mismatch, including an
 allowlisted startup-environment drift such as `TEMP`, still produces
 `RESTART_REQUIRED`. `stop` uses the selected runtime root and persisted
 managed identity; it does not read the Bridge key or database.
+If a fresh start reaches
+`DIRECTOR_BRIDGE_RUNTIME_HEARTBEAT_TIMEOUT`, preserve the complete JSON result.
+An optional `child_error_code` contains only a validated, instance-bound
+`DIRECTOR_*` enum captured before cleanup. It does not contain raw error text,
+an origin, credential identifier, path, payload or provider response. The
+manager-level `stable_error_code` remains the controlling result; omission of
+`child_error_code` means no safe child diagnostic was available.
 End a bounded stage with `npm run director:bridge:stop`. Only that stop command
 returning `result=STOPPED`, `graceful=true` and `final_receipt=true` in the
 same response is graceful-stop evidence. A later standalone `status` result of

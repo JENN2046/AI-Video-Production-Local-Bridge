@@ -5,9 +5,12 @@ activity database and one bounded owner Proposal path are accepted. The managed
 Windows Bridge was adopted through a controlled restart at `fbf6540` on
 2026-07-29, as recorded in the
 [managed restart acceptance](../ops/reports/2026-07-29-managed-director-bridge-restart-acceptance.md).
-The cross-terminal configuration-identity repair described below is validated
-in fixtures but is not live until it merges and a later restart is separately
-authorized.
+The cross-terminal configuration-identity repair merged at `2b43f558`, but its
+authorized activation attempt did not establish authenticated Remote contact
+and the manager cleaned up the child. The Bridge is currently stopped; see the
+[restart diagnostic gap](../ops/reports/2026-07-29-director-bridge-restart-diagnostic-gap.md).
+A later retry remains separately authorized work after the diagnostic receipt
+repair below merges and passes CI.
 
 ## Purpose
 
@@ -180,6 +183,14 @@ When a repeat `start:director:bridge` finds an identity-matching managed
 process that is temporarily `NOT_READY`, it returns that state with exit code
 `2` and does not spawn a second child or report a process conflict. A
 `STATE_CONFLICT` remains reserved for an actual process-identity mismatch.
+When a fresh start exhausts its transport-readiness deadline, the manager keeps
+`DIRECTOR_BRIDGE_RUNTIME_HEARTBEAT_TIMEOUT` as the controlling
+`stable_error_code`. Before requesting cleanup it may also project the
+instance-bound heartbeat's validated `DIRECTOR_*` value as `child_error_code`.
+That optional field is a low-disclosure diagnostic enum, not an error message:
+it never contains an origin, credential identifier, path, payload or raw
+response. If the heartbeat is missing, invalid or has no allowlisted code, the
+field is omitted.
 
 Stop remains outbound-only. The manager writes an instance-bound sentinel; the
 Bridge checks for stop immediately before handler invocation and returns
@@ -242,14 +253,17 @@ Implemented in the local PR6 candidate, but not externally accepted:
 
 Still deferred:
 
-- after the cross-terminal configuration-identity repair merges, one
-  separately authorized managed restart at the merged source/build
-  fingerprint to activate and accept `verified` and `not_rechecked` behavior;
+- after the diagnostic receipt repair merges and passes CI, one separately
+  authorized managed restart at the merged source/build fingerprint to
+  diagnose or recover Remote contact and accept `verified` and
+  `not_rechecked` behavior;
 - live malformed-Proposal negative-path acceptance;
 - external memory-port acceptance and any Saveback dispatch;
 - any further deployment/OAuth/configuration change or real Provider call.
 
 The accepted positive transport path must not be widened into a claim that the
-cross-terminal repair is already live, that Memory is connected, or that
-Provider execution is authorized. The first managed adoption itself is
-complete at `fbf6540`; do not schedule it again as a pending migration.
+cross-terminal repair is currently live, that Memory is connected, or that
+Provider execution is authorized. The first managed adoption itself remains
+historically complete at `fbf6540`, but the Bridge is now stopped after the
+failed `2b43f558` activation attempt; do not confuse recovery with first
+adoption.

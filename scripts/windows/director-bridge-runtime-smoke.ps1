@@ -219,6 +219,18 @@ try {
   }
   $env:AI_VIDEO_DIRECTOR_BRIDGE_FIXTURE_MODE = "ready"
 
+  [IO.File]::WriteAllText($notReadyRequestPath, "1`n", [Text.UTF8Encoding]::new($false))
+  $startupTimeout = Invoke-DirectorBridgeSmokeScript "director-bridge-start.ps1"
+  if ($startupTimeout.ExitCode -ne 1 -or
+      $null -eq $startupTimeout.Json -or
+      [string]$startupTimeout.Json.result -cne "FAIL" -or
+      [string]$startupTimeout.Json.stable_error_code -cne "DIRECTOR_BRIDGE_RUNTIME_HEARTBEAT_TIMEOUT" -or
+      [string]$startupTimeout.Json.child_error_code -cne "DIRECTOR_BRIDGE_REMOTE_POLL_FAILED" -or
+      (Get-DirectorBridgeFixtureProcessCount) -ne 0) {
+    throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_STARTUP_DIAGNOSTIC_FAILED"
+  }
+  Remove-Item -LiteralPath $notReadyRequestPath -Force
+
   $started = Invoke-DirectorBridgeSmokeScript "director-bridge-start.ps1"
   if ($started.ExitCode -ne 0 -or
       $null -eq $started.Json -or
@@ -653,6 +665,7 @@ if ($null -ne $script:failureCode) {
   final_stop_receipt = $true
   forced_stop = $false
   fixture_failure_receipt = $true
+  startup_failure_child_error = $true
   provider_enabled = $false
   plaintext_key_inheritance = $false
   node_startup_environment_rejected = $true

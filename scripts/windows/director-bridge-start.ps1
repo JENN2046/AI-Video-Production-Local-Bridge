@@ -10,6 +10,7 @@ $startedProcess = $null
 $state = $null
 $instanceId = ""
 $launchEnvironment = $null
+$childErrorCode = $null
 
 try {
   Assert-DirectorBridgeNoNodeStartupEnvironment
@@ -176,6 +177,7 @@ try {
   $startedProcess.Refresh()
   if ($startedProcess.HasExited) { Throw-DirectorBridgeChildExit }
   if ($null -eq $assessment -or $assessment.Result -ne "RUNNING") {
+    $childErrorCode = Get-DirectorBridgeChildErrorCode ([pscustomobject]$state)
     throw "DIRECTOR_BRIDGE_RUNTIME_HEARTBEAT_TIMEOUT"
   }
 
@@ -209,12 +211,16 @@ try {
     }
   }
   if ($cleanupTimedOut) {
-    [Console]::Error.WriteLine((ConvertTo-Json ([ordered]@{
+    $cleanupFailure = [ordered]@{
       result = "FAIL"
       stable_error_code = "DIRECTOR_BRIDGE_RUNTIME_CLEANUP_TIMEOUT"
-    }) -Compress))
+    }
+    if ([string]$childErrorCode -match '^DIRECTOR_[A-Z0-9_]{3,86}$') {
+      $cleanupFailure["child_error_code"] = [string]$childErrorCode
+    }
+    [Console]::Error.WriteLine((ConvertTo-Json $cleanupFailure -Compress))
   } else {
-    Write-DirectorBridgeFailure $failure
+    Write-DirectorBridgeFailure $failure $childErrorCode
   }
   exit 1
 } finally {
