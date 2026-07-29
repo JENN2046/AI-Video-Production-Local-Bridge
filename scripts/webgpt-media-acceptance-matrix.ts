@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, fstatSync, lstatSync, openSync, readSync, realpathSync, statSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
 import { createReadonlyMediaCapabilityRequest, parseReadonlyMediaCapabilityKey, READONLY_MEDIA_CAPABILITY_TTL_MS } from "../src/webgpt-cloud/mediaCapability.js";
@@ -32,6 +32,7 @@ const CAPABILITY_HANDLE_EXPIRY_LEAD_MS = testTimeout(
 );
 const JSON_RESPONSE_MAX_BYTES = 16 * 1024;
 const MANIFEST_MAX_BYTES = 16 * 1024;
+const MANIFEST_NOFOLLOW_FLAG = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
 const DISTINCT_MEDIA_VALIDATIONS = 4;
 // One issuance per media validation, plus stale-envelope, expiring-handle, and retained-project issuances.
 const MATRIX_CAPABILITY_REQUESTS = DISTINCT_MEDIA_VALIDATIONS + 3;
@@ -104,39 +105,53 @@ function fixtureRoot(runId: string): string {
 
 function readManifest(root: string, runId: string): Manifest {
   const manifestPath = resolve(root, "fixture.json");
-  if (!existsSync(manifestPath) || lstatSync(manifestPath).isSymbolicLink() || !lstatSync(manifestPath).isFile()) {
-    throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
-  }
-  const manifestReal = realpathSync(manifestPath);
-  const manifestRel = relative(realpathSync(root), manifestReal);
-  if (!manifestRel || manifestRel.startsWith("..") || isAbsolute(manifestRel)) throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
   let value: unknown;
   let descriptor: number;
   try {
-    descriptor = openSync(manifestReal, "r");
-  } catch {
+    descriptor = openSync(manifestPath, constants.O_RDONLY | MANIFEST_NOFOLLOW_FLAG);
+  } catch (error) {
+    const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
+    if (code === "ELOOP" || code === "EMLINK") throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
     throw new MatrixError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
   }
   try {
     let size: number;
+    let openedDevice: bigint;
+    let openedInode: bigint;
     try {
-      const stats = fstatSync(descriptor);
-      if (!stats.isFile()) throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
-      size = stats.size;
+      const descriptorStats = fstatSync(descriptor, { bigint: true });
+      const pathStats = lstatSync(manifestPath, { bigint: true });
+      if (!descriptorStats.isFile() || !pathStats.isFile()
+        || descriptorStats.dev !== pathStats.dev || descriptorStats.ino !== pathStats.ino) {
+        throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+      }
+      const manifestReal = realpathSync(manifestPath);
+      const manifestRel = relative(realpathSync(root), manifestReal);
+      if (!manifestRel || manifestRel.startsWith("..") || isAbsolute(manifestRel)) {
+        throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+      }
+      if (descriptorStats.size > BigInt(MANIFEST_MAX_BYTES)) throw new MatrixError("MEDIA_ACCEPTANCE_MANIFEST_TOO_LARGE");
+      if (descriptorStats.size < 1n || descriptorStats.size > BigInt(Number.MAX_SAFE_INTEGER)) {
+        throw new MatrixError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
+      }
+      openedDevice = descriptorStats.dev;
+      openedInode = descriptorStats.ino;
+      size = Number(descriptorStats.size);
     } catch (error) {
       if (error instanceof MatrixError) throw error;
-      throw new MatrixError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
+      throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
     }
-    if (!Number.isSafeInteger(size) || size < 1) throw new MatrixError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
-    if (size > MANIFEST_MAX_BYTES) throw new MatrixError("MEDIA_ACCEPTANCE_MANIFEST_TOO_LARGE");
     const bytes = Buffer.alloc(size);
     try {
       if (readSync(descriptor, bytes, 0, size, 0) !== size) {
         throw new MatrixError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
       }
-      const finalSize = fstatSync(descriptor).size;
-      if (finalSize > MANIFEST_MAX_BYTES) throw new MatrixError("MEDIA_ACCEPTANCE_MANIFEST_TOO_LARGE");
-      if (finalSize !== size) throw new MatrixError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
+      const finalStats = fstatSync(descriptor, { bigint: true });
+      if (finalStats.dev !== openedDevice || finalStats.ino !== openedInode) {
+        throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+      }
+      if (finalStats.size > BigInt(MANIFEST_MAX_BYTES)) throw new MatrixError("MEDIA_ACCEPTANCE_MANIFEST_TOO_LARGE");
+      if (finalStats.size !== BigInt(size)) throw new MatrixError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
       value = JSON.parse(bytes.toString("utf8"));
     } catch (error) {
       if (error instanceof MatrixError) throw error;

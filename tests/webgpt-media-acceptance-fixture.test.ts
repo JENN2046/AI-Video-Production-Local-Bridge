@@ -214,7 +214,13 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
   assert.match(matrixSource, /MEDIA_ACCEPTANCE_RESPONSE_TOO_LARGE/);
   assert.match(matrixSource, /JSON_RESPONSE_MAX_BYTES/);
   assert.match(matrixSource, /MANIFEST_MAX_BYTES = 16 \* 1024/);
-  assert.match(matrixSource, /fstatSync\(descriptor\)/);
+  assert.match(matrixSource, /MANIFEST_NOFOLLOW_FLAG/);
+  assert.match(matrixSource, /openSync\(manifestPath, constants\.O_RDONLY \| MANIFEST_NOFOLLOW_FLAG\)/);
+  assert.match(matrixSource, /fstatSync\(descriptor, \{ bigint: true \}\)/);
+  assert.match(matrixSource, /descriptorStats\.dev !== pathStats\.dev/);
+  assert.match(matrixSource, /descriptorStats\.ino !== pathStats\.ino/);
+  assert.match(matrixSource, /relative\(realpathSync\(root\), manifestReal\)/);
+  assert.doesNotMatch(matrixSource, /openSync\(manifestReal/);
   assert.doesNotMatch(matrixSource, /readFileSync\(manifestReal/);
   assert.match(matrixSource, /MATRIX_CAPABILITY_REQUESTS = DISTINCT_MEDIA_VALIDATIONS \+ 3/);
   assert.match(matrixSource, /MATRIX_ORDINARY_REQUESTS = 2 \+ DISTINCT_MEDIA_VALIDATIONS \* 3 \+ 4/);
@@ -657,6 +663,62 @@ test("media acceptance matrix rejects a linked manifest before reading it", () =
     ], { cwd: process.cwd(), input: `${Buffer.alloc(32).toString("base64url")}\n`, encoding: "utf8", windowsHide: true, env: childEnv });
     assert.equal(result.status, 1);
     assert.deepEqual(lowDisclosureError(result.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_ROOT_UNSAFE" });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(external, { recursive: true, force: true });
+  }
+});
+
+test("media acceptance matrix rejects a manifest replaced by a link during open", () => {
+  const source = resolve("fixtures/video/mock_clip.mp4");
+  const fixtureCommand = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
+  const created = spawnSync(process.execPath, [fixtureCommand, "create", "--input", source, "--issuer", ISSUER, "--resource", RESOURCE], {
+    cwd: process.cwd(), input: `${SUBJECT}\n`, encoding: "utf8", windowsHide: true, env: childEnv
+  });
+  assert.equal(created.status, 0, created.stderr);
+  const receipt = JSON.parse(created.stdout) as { run_id: string };
+  const root = resolve("data/webgpt/media-acceptance", receipt.run_id);
+  const external = mkdtempSync(join(tmpdir(), "media-acceptance-manifest-race-"));
+  const manifestPath = join(root, "fixture.json");
+  const externalManifest = join(external, "fixture.json");
+  const preloadPath = join(external, "swap-before-open.cjs");
+  try {
+    writeFileSync(externalManifest, readFileSync(manifestPath));
+    writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const { syncBuiltinESMExports } = require("node:module");
+const originalOpenSync = fs.openSync;
+let swapped = false;
+fs.openSync = function(path, ...args) {
+  if (!swapped && typeof path === "string" && path === process.env.MEDIA_ACCEPTANCE_TEST_MANIFEST_PATH) {
+    swapped = true;
+    fs.unlinkSync(path);
+    fs.symlinkSync(process.env.MEDIA_ACCEPTANCE_TEST_EXTERNAL_MANIFEST, path, "file");
+  }
+  return originalOpenSync.call(this, path, ...args);
+};
+syncBuiltinESMExports();
+`, "utf8");
+    const result = spawnSync(process.execPath, [
+      "--require", preloadPath,
+      resolve("dist/scripts/webgpt-media-acceptance-matrix.js"),
+      "--run", receipt.run_id,
+      "--origin", "http://127.0.0.1:2092/",
+      "--kid", "acceptance-matrix-v1"
+    ], {
+      cwd: process.cwd(),
+      input: `${Buffer.alloc(32).toString("base64url")}\n`,
+      encoding: "utf8",
+      windowsHide: true,
+      env: {
+        ...childEnv,
+        MEDIA_ACCEPTANCE_TEST_MANIFEST_PATH: manifestPath,
+        MEDIA_ACCEPTANCE_TEST_EXTERNAL_MANIFEST: externalManifest
+      }
+    });
+    assert.equal(result.status, 1);
+    assert.deepEqual(lowDisclosureError(result.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_ROOT_UNSAFE" });
+    assert.doesNotMatch(`${result.stdout}${result.stderr}`, /https?:\/\//);
   } finally {
     rmSync(root, { recursive: true, force: true });
     rmSync(external, { recursive: true, force: true });
