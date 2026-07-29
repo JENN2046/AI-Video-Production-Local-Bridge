@@ -39,7 +39,7 @@ function runChild(command: string, args: string[], input: string): Promise<{ sta
   });
 }
 
-test("multi-project media acceptance fixture and generated profiles are isolated, contract-valid, source-preserving, and low disclosure", () => {
+test("MP4 acceptance fixture and generated profiles are isolated, contract-valid, source-preserving, and low disclosure", () => {
   const wrapper = readFileSync(resolve("scripts/windows/media-create-acceptance-fixture.ps1"), "utf8");
   const matrixWrapper = readFileSync(resolve("scripts/windows/media-run-acceptance-matrix.ps1"), "utf8");
   const runbook = readFileSync(resolve("docs/webgpt/READONLY_LOCAL_MEDIA_GATEWAY_RUNBOOK.md"), "utf8");
