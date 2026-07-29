@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { closeSync, existsSync, lstatSync, openSync, readFileSync, readSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
-import { createReadonlyMediaCapabilityRequest, parseReadonlyMediaCapabilityKey } from "../src/webgpt-cloud/mediaCapability.js";
+import { createReadonlyMediaCapabilityRequest, parseReadonlyMediaCapabilityKey, READONLY_MEDIA_CAPABILITY_TTL_MS } from "../src/webgpt-cloud/mediaCapability.js";
 import { exportReadonlySnapshotFromDatabase } from "../src/webgpt-cloud/dataSource.js";
 import { openM0DatabaseConnection } from "../src/storage/sqlite.js";
 import { revokeWebGptProjectMembership } from "../src/webgpt-v4/authorizationAdmin.js";
@@ -26,10 +26,14 @@ const CAPABILITY_REQUEST_TIMEOUT_MS = testTimeout(
   "MEDIA_ACCEPTANCE_TEST_CAPABILITY_TIMEOUT_MS",
   READONLY_MEDIA_GATEWAY_HASH_TIMEOUT_MS + 15_000
 );
+const CAPABILITY_HANDLE_EXPIRY_LEAD_MS = testTimeout(
+  "MEDIA_ACCEPTANCE_TEST_HANDLE_EXPIRY_LEAD_MS",
+  CAPABILITY_REQUEST_TIMEOUT_MS
+);
 const DISTINCT_MEDIA_VALIDATIONS = 4;
 const MATRIX_TIMEOUT_MS = testTimeout(
   "MEDIA_ACCEPTANCE_TEST_MATRIX_TIMEOUT_MS",
-  DISTINCT_MEDIA_VALIDATIONS * CAPABILITY_REQUEST_TIMEOUT_MS + 2 * 60_000
+  DISTINCT_MEDIA_VALIDATIONS * CAPABILITY_REQUEST_TIMEOUT_MS + CAPABILITY_HANDLE_EXPIRY_LEAD_MS + 2 * 60_000
 );
 
 class MatrixError extends Error {
@@ -117,7 +121,7 @@ function readManifest(root: string, runId: string): Manifest {
   return manifest as Manifest;
 }
 
-function expectedVideoSuffix(root: string, media: ManifestMedia): { byte_length: number; sha256: string; start: number; end: number; total: number } {
+function expectedMediaFile(root: string, media: ManifestMedia): { path: string; size: number } {
   const path = resolve(root, media.media_relative_path);
   const rel = relative(realpathSync(root), path);
   if (!rel || rel.startsWith("..") || isAbsolute(rel) || !existsSync(path) || lstatSync(path).isSymbolicLink() || !lstatSync(path).isFile()) {
@@ -126,11 +130,16 @@ function expectedVideoSuffix(root: string, media: ManifestMedia): { byte_length:
   const real = realpathSync(path);
   const realRel = relative(realpathSync(root), real);
   if (!realRel || realRel.startsWith("..") || isAbsolute(realRel)) throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
-  const total = statSync(real).size;
+  const size = statSync(real).size;
+  if (!Number.isSafeInteger(size) || size < 1) throw new MatrixError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
+  return { path: real, size };
+}
+
+function expectedVideoSuffix(root: string, media: ManifestMedia): { byte_length: number; sha256: string; start: number; end: number; total: number } {
+  const { path, size: total } = expectedMediaFile(root, media);
   const byteLength = Math.min(16, total);
-  if (byteLength < 1) throw new MatrixError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
   const bytes = Buffer.alloc(byteLength);
-  const descriptor = openSync(real, "r");
+  const descriptor = openSync(path, "r");
   try {
     if (readSync(descriptor, bytes, 0, byteLength, total - byteLength) !== byteLength) throw new MatrixError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
   } finally {
@@ -178,12 +187,49 @@ type BoundedResponse = {
   body_sha256?: string;
 };
 
+async function readBoundedResponseBody(response: Response, maximumBytes: number, digest: boolean): Promise<{
+  byte_length: number;
+  body_sha256?: string;
+}> {
+  if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 1) throw new MatrixError("MEDIA_ACCEPTANCE_RESPONSE_INVALID");
+  const contentLength = response.headers.get("content-length");
+  if (contentLength !== null) {
+    if (!/^(?:0|[1-9][0-9]*)$/.test(contentLength)) throw new MatrixError("MEDIA_ACCEPTANCE_RESPONSE_INVALID");
+    const advertisedBytes = Number(contentLength);
+    if (!Number.isSafeInteger(advertisedBytes)) throw new MatrixError("MEDIA_ACCEPTANCE_RESPONSE_INVALID");
+    if (advertisedBytes > maximumBytes) {
+      try { await response.body?.cancel(); } catch { /* the bounded result remains controlling */ }
+      throw new MatrixError("MEDIA_ACCEPTANCE_RESPONSE_TOO_LARGE");
+    }
+  }
+  if (!response.body) return { byte_length: 0, ...(digest ? { body_sha256: createHash("sha256").digest("hex") } : {}) };
+  const reader = response.body.getReader();
+  const hash = digest ? createHash("sha256") : null;
+  let byteLength = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      byteLength += value.byteLength;
+      if (byteLength > maximumBytes) {
+        try { await reader.cancel(); } catch { /* the bounded result remains controlling */ }
+        throw new MatrixError("MEDIA_ACCEPTANCE_RESPONSE_TOO_LARGE");
+      }
+      hash?.update(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return { byte_length: byteLength, ...(hash ? { body_sha256: hash.digest("hex") } : {}) };
+}
+
 async function request(
   overallSignal: AbortSignal,
   input: string,
   init: RequestInit = {},
   bodyMode: "none" | "json" | "bytes" | "digest" = "none",
-  timeoutMs = REQUEST_TIMEOUT_MS
+  timeoutMs = REQUEST_TIMEOUT_MS,
+  maximumBodyBytes?: number
 ): Promise<BoundedResponse> {
   const requestSignal = AbortSignal.timeout(timeoutMs);
   try {
@@ -200,11 +246,10 @@ async function request(
       return { response, json: value as Record<string, unknown> };
     }
     if (bodyMode === "bytes" || bodyMode === "digest") {
-      const bytes = Buffer.from(await response.arrayBuffer());
+      const body = await readBoundedResponseBody(response, maximumBodyBytes ?? 0, bodyMode === "digest");
       return {
         response,
-        byte_length: bytes.byteLength,
-        ...(bodyMode === "digest" ? { body_sha256: createHash("sha256").update(bytes).digest("hex") } : {})
+        ...body
       };
     }
     return { response };
@@ -262,7 +307,7 @@ async function main(): Promise<void> {
       snapshot_fingerprint: snapshot.snapshot_fingerprint
     }, keyring, now ? { now: () => now } : {});
 
-  const issue = async (project: ManifestProject, media: ManifestMedia, now?: Date): Promise<string> => {
+  const issue = async (project: ManifestProject, media: ManifestMedia, now?: Date): Promise<{ handle: string; expires_at_ms: number }> => {
     const result = await request(matrixController.signal, `${origin}/internal/v1/capabilities`, {
       method: "POST",
       headers: { "content-type": "application/json; charset=utf-8" },
@@ -271,8 +316,11 @@ async function main(): Promise<void> {
     const response = result.response;
     if (response.status !== 201) throw new MatrixError("MEDIA_ACCEPTANCE_CAPABILITY_FAILED");
     const handle = result.json?.capability_handle;
-    if (typeof handle !== "string" || !HANDLE.test(handle)) throw new MatrixError("MEDIA_ACCEPTANCE_RESPONSE_INVALID");
-    return handle;
+    const expiresAt = result.json?.expires_at;
+    const expiresAtMs = typeof expiresAt === "string" ? Date.parse(expiresAt) : Number.NaN;
+    if (typeof handle !== "string" || !HANDLE.test(handle) || !Number.isFinite(expiresAtMs)
+      || new Date(expiresAtMs).toISOString() !== expiresAt) throw new MatrixError("MEDIA_ACCEPTANCE_RESPONSE_INVALID");
+    return { handle, expires_at_ms: expiresAtMs };
   };
 
   const activate = async (handle: string): Promise<{ capabilityUrl: string; sessionUrl: string }> => {
@@ -292,17 +340,38 @@ async function main(): Promise<void> {
   const ready = (await request(matrixController.signal, `${origin}/readyz`)).response;
   if (health.status !== 200 || ready.status !== 200) throw new MatrixError("MEDIA_ACCEPTANCE_GATEWAY_UNAVAILABLE");
 
+  const waitForCapabilityExpiry = async (expiresAtMs: number): Promise<void> => {
+    const remainingMs = expiresAtMs - Date.now();
+    if (remainingMs <= 0 || remainingMs > CAPABILITY_HANDLE_EXPIRY_LEAD_MS + 5_000) {
+      throw new MatrixError("MEDIA_ACCEPTANCE_EXPIRY_FAILED");
+    }
+    if (matrixController.signal.aborted) throw new MatrixError("MEDIA_ACCEPTANCE_MATRIX_TIMEOUT");
+    await new Promise<void>((resolveWait, rejectWait) => {
+      const timer = setTimeout(done, remainingMs + 25);
+      const abort = () => {
+        clearTimeout(timer);
+        rejectWait(new MatrixError("MEDIA_ACCEPTANCE_MATRIX_TIMEOUT"));
+      };
+      function done(): void {
+        matrixController.signal.removeEventListener("abort", abort);
+        resolveWait();
+      }
+      matrixController.signal.addEventListener("abort", abort, { once: true });
+    });
+  };
+
   let revocationSession: string | null = null;
   for (const [projectIndex, project] of manifest.projects.entries()) {
     for (const media of project.media) {
-      const activated = await activate(await issue(project, media));
+      const activated = await activate((await issue(project, media)).handle);
       if (projectIndex === 1 && revocationSession === null) revocationSession = activated.sessionUrl;
       const videoSuffix = media.mime_type === "video/mp4" ? expectedVideoSuffix(root, media) : null;
+      const maximumBodyBytes = videoSuffix?.byte_length ?? expectedMediaFile(root, media).size;
       const result = await request(matrixController.signal, activated.sessionUrl, {
         headers: media.mime_type === "video/mp4"
           ? { origin: WIDGET_ORIGIN, range: `bytes=-${videoSuffix!.byte_length}` }
           : { origin: WIDGET_ORIGIN }
-      }, "digest");
+      }, "digest", REQUEST_TIMEOUT_MS, maximumBodyBytes);
       const response = result.response;
       assertWidgetCors(response);
       if (media.mime_type === "video/mp4") {
@@ -326,13 +395,29 @@ async function main(): Promise<void> {
     }
   }
 
-  const expiredAt = new Date(Date.now() - 10 * 60 * 1000);
-  const expired = await request(matrixController.signal, `${origin}/internal/v1/capabilities`, {
+  const staleEnvelopeAt = new Date(Date.now() - 10 * 60 * 1000);
+  const staleEnvelope = await request(matrixController.signal, `${origin}/internal/v1/capabilities`, {
     method: "POST",
     headers: { "content-type": "application/json; charset=utf-8" },
-    body: JSON.stringify(requestEnvelope(manifest.projects[0]!, manifest.projects[0]!.media[0]!, expiredAt))
+    body: JSON.stringify(requestEnvelope(manifest.projects[0]!, manifest.projects[0]!.media[0]!, staleEnvelopeAt))
   }, "json", CAPABILITY_REQUEST_TIMEOUT_MS);
-  if (expired.response.status !== 404 || stableErrorCode(expired.json!) !== "MEDIA_CAPABILITY_INVALID") {
+  if (staleEnvelope.response.status !== 404 || stableErrorCode(staleEnvelope.json!) !== "MEDIA_CAPABILITY_INVALID") {
+    throw new MatrixError("MEDIA_ACCEPTANCE_EXPIRY_FAILED");
+  }
+
+  const expiringProject = manifest.projects[0]!;
+  const expiringMedia = expiringProject.media[0]!;
+  const expiringCapability = await issue(
+    expiringProject,
+    expiringMedia,
+    new Date(Date.now() - READONLY_MEDIA_CAPABILITY_TTL_MS + CAPABILITY_HANDLE_EXPIRY_LEAD_MS)
+  );
+  await waitForCapabilityExpiry(expiringCapability.expires_at_ms);
+  const expiredHandle = await request(matrixController.signal, `${origin}/media/v1/c/${expiringCapability.handle}`, {
+    headers: { origin: WIDGET_ORIGIN }, redirect: "manual"
+  }, "json");
+  assertWidgetCors(expiredHandle.response);
+  if (expiredHandle.response.status !== 404 || stableErrorCode(expiredHandle.json!) !== "MEDIA_CAPABILITY_INVALID") {
     throw new MatrixError("MEDIA_ACCEPTANCE_EXPIRY_FAILED");
   }
 
@@ -353,10 +438,10 @@ async function main(): Promise<void> {
   const retainedProject = manifest.projects[0]!;
   const retainedMedia = retainedProject.media.find((media) => media.mime_type === "video/mp4")!;
   const retainedSuffix = expectedVideoSuffix(root, retainedMedia);
-  const retainedSession = await activate(await issue(retainedProject, retainedMedia));
+  const retainedSession = await activate((await issue(retainedProject, retainedMedia)).handle);
   const retained = await request(matrixController.signal, retainedSession.sessionUrl, {
     headers: { origin: WIDGET_ORIGIN, range: `bytes=-${retainedSuffix.byte_length}` }
-  }, "digest");
+  }, "digest", REQUEST_TIMEOUT_MS, retainedSuffix.byte_length);
   assertWidgetCors(retained.response);
   if (retained.response.status !== 206 || retained.byte_length !== retainedSuffix.byte_length
     || retained.body_sha256 !== retainedSuffix.sha256

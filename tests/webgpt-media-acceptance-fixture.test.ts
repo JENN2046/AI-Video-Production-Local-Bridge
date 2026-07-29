@@ -4,7 +4,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSy
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn, spawnSync } from "node:child_process";
-import { createServer, request as httpRequest } from "node:http";
+import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
 import test from "node:test";
 
 import { READONLY_MEDIA_ACCEPTANCE_MAX_SOURCE_BYTES, READONLY_MEDIA_ACCEPTANCE_VARIANT_TRAILER, isReadonlyMediaAcceptanceSourceSizeAllowed } from "../src/webgpt-media-gateway/acceptanceFixtureBudget.js";
@@ -25,6 +25,11 @@ function lowDisclosureError(stderr: string): unknown {
 }
 
 const childEnv: NodeJS.ProcessEnv = { ...process.env, NODE_NO_WARNINGS: "1" };
+const matrixExpiryTestEnv: NodeJS.ProcessEnv = {
+  ...childEnv,
+  NODE_ENV: "test",
+  MEDIA_ACCEPTANCE_TEST_HANDLE_EXPIRY_LEAD_MS: "3000"
+};
 
 function runChild(command: string, args: string[], input: string, env = childEnv): Promise<{ status: number | null; stdout: string; stderr: string }> {
   return new Promise((resolveChild, reject) => {
@@ -41,11 +46,15 @@ function runChild(command: string, args: string[], input: string, env = childEnv
   });
 }
 
-async function startCorsStrippingProxy(targetOrigin: string, strippedHeader: "access-control-allow-origin" | "access-control-allow-credentials"): Promise<{
+type GatewayProxy = {
   server: ReturnType<typeof createServer>;
   origin: string;
   seenOrigins: Set<string>;
-}> {
+};
+
+type GatewayProxyTransform = (incoming: IncomingMessage, upstream: IncomingMessage, outgoing: ServerResponse) => boolean;
+
+async function startGatewayProxy(targetOrigin: string, transform?: GatewayProxyTransform): Promise<GatewayProxy> {
   const seenOrigins = new Set<string>();
   const server = createServer((incoming, outgoing) => {
     if (typeof incoming.headers.origin === "string") seenOrigins.add(incoming.headers.origin);
@@ -53,10 +62,9 @@ async function startCorsStrippingProxy(targetOrigin: string, strippedHeader: "ac
       method: incoming.method,
       headers: incoming.headers
     }, (upstreamResponse) => {
+      if (transform?.(incoming, upstreamResponse, outgoing)) return;
       outgoing.statusCode = upstreamResponse.statusCode ?? 502;
-      for (const [name, value] of Object.entries(upstreamResponse.headers)) {
-        if (name.toLowerCase() !== strippedHeader && value !== undefined) outgoing.setHeader(name, value);
-      }
+      for (const [name, value] of Object.entries(upstreamResponse.headers)) if (value !== undefined) outgoing.setHeader(name, value);
       upstreamResponse.pipe(outgoing);
     });
     upstream.once("error", () => {
@@ -75,6 +83,54 @@ async function startCorsStrippingProxy(targetOrigin: string, strippedHeader: "ac
   const address = server.address();
   assert.ok(address && typeof address !== "string");
   return { server, origin: `http://127.0.0.1:${address.port}`, seenOrigins };
+}
+
+async function startCorsStrippingProxy(targetOrigin: string, strippedHeader: "access-control-allow-origin" | "access-control-allow-credentials"): Promise<GatewayProxy> {
+  return startGatewayProxy(targetOrigin, (_incoming, upstream, outgoing) => {
+    outgoing.statusCode = upstream.statusCode ?? 502;
+    for (const [name, value] of Object.entries(upstream.headers)) {
+      if (name.toLowerCase() !== strippedHeader && value !== undefined) outgoing.setHeader(name, value);
+    }
+    upstream.pipe(outgoing);
+    return true;
+  });
+}
+
+async function startCapabilityExpiryBypassProxy(targetOrigin: string): Promise<GatewayProxy & { expiredHandleRequests: () => number }> {
+  let expiredHandleRequests = 0;
+  const proxy = await startGatewayProxy(targetOrigin, (incoming, upstream, outgoing) => {
+    if (upstream.statusCode !== 404 || !/^\/media\/v1\/c\/[A-Za-z0-9_-]{43}$/.test(incoming.url ?? "")) return false;
+    expiredHandleRequests += 1;
+    upstream.resume();
+    const payload = JSON.stringify({ ok: true });
+    outgoing.writeHead(302, {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": String(Buffer.byteLength(payload)),
+      "access-control-allow-origin": READONLY_MEDIA_CHATGPT_SANDBOX_ORIGIN,
+      "access-control-allow-credentials": "true"
+    });
+    outgoing.end(payload);
+    return true;
+  });
+  return { ...proxy, expiredHandleRequests: () => expiredHandleRequests };
+}
+
+async function startOversizeRangeProxy(targetOrigin: string): Promise<GatewayProxy & { rangeRequests: () => number }> {
+  let rangeRequests = 0;
+  const proxy = await startGatewayProxy(targetOrigin, (incoming, upstream, outgoing) => {
+    if (upstream.statusCode !== 206 || typeof incoming.headers.range !== "string" || !/^\/media\/v1\/s\/[A-Za-z0-9_-]{43}$/.test(incoming.url ?? "")) return false;
+    rangeRequests += 1;
+    upstream.resume();
+    outgoing.writeHead(200, {
+      "content-type": "video/mp4",
+      "access-control-allow-origin": READONLY_MEDIA_CHATGPT_SANDBOX_ORIGIN,
+      "access-control-allow-credentials": "true"
+    });
+    outgoing.write(Buffer.alloc(17));
+    setImmediate(() => { if (!outgoing.destroyed) outgoing.end(Buffer.alloc(17)); });
+    return true;
+  });
+  return { ...proxy, rangeRequests: () => rangeRequests };
 }
 
 function closeServer(server: ReturnType<typeof createServer>): Promise<void> {
@@ -103,7 +159,10 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
   assert.doesNotMatch(matrixWrapper, /stable_error_code\s*=\s*\$_\.Exception\.Message/);
   assert.match(matrixSource, /READONLY_MEDIA_CHATGPT_SANDBOX_ORIGIN/);
   assert.match(matrixSource, /READONLY_MEDIA_GATEWAY_HASH_TIMEOUT_MS \+ 15_000/);
-  assert.match(matrixSource, /DISTINCT_MEDIA_VALIDATIONS \* CAPABILITY_REQUEST_TIMEOUT_MS \+ 2 \* 60_000/);
+  assert.match(matrixSource, /READONLY_MEDIA_CAPABILITY_TTL_MS/);
+  assert.match(matrixSource, /MEDIA_ACCEPTANCE_RESPONSE_TOO_LARGE/);
+  assert.match(matrixSource, /DISTINCT_MEDIA_VALIDATIONS \* CAPABILITY_REQUEST_TIMEOUT_MS \+ CAPABILITY_HANDLE_EXPIRY_LEAD_MS \+ 2 \* 60_000/);
+  assert.doesNotMatch(matrixSource, /response\.arrayBuffer\(\)/);
 
   const source = resolve("fixtures/video/mock_clip.mp4");
   const command = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
@@ -292,7 +351,7 @@ test("media acceptance matrix proves image, byte-range, replay, expiry, project 
       "--run", createReceipt.run_id,
       "--origin", `${gateway.url}/`,
       "--kid", "acceptance-matrix-v1"
-    ], `${key.toString("base64url")}\n`);
+    ], `${key.toString("base64url")}\n`, matrixExpiryTestEnv);
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(JSON.parse(result.stdout), {
       result: "PASS",
@@ -357,6 +416,84 @@ test("media acceptance matrix uses the Widget sandbox Origin and rejects missing
       }
     }
   } finally {
+    await gateway.close();
+    key.fill(0);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("media acceptance matrix proves an issued capability handle expires before accepting its expiry check", async () => {
+  const source = resolve("fixtures/video/mock_clip.mp4");
+  const fixtureCommand = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
+  const created = spawnSync(process.execPath, [fixtureCommand, "create", "--input", source, "--issuer", ISSUER, "--resource", RESOURCE], {
+    cwd: process.cwd(), input: `${SUBJECT}\n`, encoding: "utf8", windowsHide: true, env: childEnv
+  });
+  assert.equal(created.status, 0, created.stderr);
+  const receipt = JSON.parse(created.stdout) as { run_id: string };
+  const root = resolve("data/webgpt/media-acceptance", receipt.run_id);
+  const manifest = JSON.parse(readFileSync(join(root, "fixture.json"), "utf8")) as { issuer_hash: string };
+  const key = Buffer.alloc(32, 121);
+  const gateway = await startReadonlyMediaGateway({
+    database_path: join(root, "app.sqlite"),
+    issuer_hash: manifest.issuer_hash,
+    keyring: { active: { kid: "acceptance-matrix-expiry-v1", key } },
+    allowed_origin: "https://aivideo.skmt617.top",
+    allowed_media_roots: [join(root, "media")],
+    port: 0
+  });
+  const proxy = await startCapabilityExpiryBypassProxy(gateway.url);
+  try {
+    const result = await runChild(process.execPath, [
+      resolve("dist/scripts/webgpt-media-acceptance-matrix.js"),
+      "--run", receipt.run_id,
+      "--origin", `${proxy.origin}/`,
+      "--kid", "acceptance-matrix-expiry-v1"
+    ], `${key.toString("base64url")}\n`, matrixExpiryTestEnv);
+    assert.equal(result.status, 1);
+    assert.deepEqual(lowDisclosureError(result.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_EXPIRY_FAILED" });
+    assert.equal(proxy.expiredHandleRequests(), 1);
+    assert.doesNotMatch(`${result.stdout}${result.stderr}`, /https?:\/\//);
+  } finally {
+    await closeServer(proxy.server);
+    await gateway.close();
+    key.fill(0);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("media acceptance matrix bounds a streamed response that ignores the requested video range", async () => {
+  const source = resolve("fixtures/video/mock_clip.mp4");
+  const fixtureCommand = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
+  const created = spawnSync(process.execPath, [fixtureCommand, "create", "--input", source, "--issuer", ISSUER, "--resource", RESOURCE], {
+    cwd: process.cwd(), input: `${SUBJECT}\n`, encoding: "utf8", windowsHide: true, env: childEnv
+  });
+  assert.equal(created.status, 0, created.stderr);
+  const receipt = JSON.parse(created.stdout) as { run_id: string };
+  const root = resolve("data/webgpt/media-acceptance", receipt.run_id);
+  const manifest = JSON.parse(readFileSync(join(root, "fixture.json"), "utf8")) as { issuer_hash: string };
+  const key = Buffer.alloc(32, 122);
+  const gateway = await startReadonlyMediaGateway({
+    database_path: join(root, "app.sqlite"),
+    issuer_hash: manifest.issuer_hash,
+    keyring: { active: { kid: "acceptance-matrix-range-v1", key } },
+    allowed_origin: "https://aivideo.skmt617.top",
+    allowed_media_roots: [join(root, "media")],
+    port: 0
+  });
+  const proxy = await startOversizeRangeProxy(gateway.url);
+  try {
+    const result = await runChild(process.execPath, [
+      resolve("dist/scripts/webgpt-media-acceptance-matrix.js"),
+      "--run", receipt.run_id,
+      "--origin", `${proxy.origin}/`,
+      "--kid", "acceptance-matrix-range-v1"
+    ], `${key.toString("base64url")}\n`);
+    assert.equal(result.status, 1);
+    assert.deepEqual(lowDisclosureError(result.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_RESPONSE_TOO_LARGE" });
+    assert.equal(proxy.rangeRequests(), 1);
+    assert.doesNotMatch(`${result.stdout}${result.stderr}`, /https?:\/\//);
+  } finally {
+    await closeServer(proxy.server);
     await gateway.close();
     key.fill(0);
     rmSync(root, { recursive: true, force: true });
