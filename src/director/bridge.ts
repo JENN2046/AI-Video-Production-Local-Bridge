@@ -17,7 +17,15 @@ export const DIRECTOR_BRIDGE_DEFAULT_TIMEOUT_MS = 30_000;
 export const DIRECTOR_BRIDGE_FRAME_TIMEOUT_MS = 130_000;
 export const DIRECTOR_BRIDGE_MAX_BODY_BYTES = 24 * 1024 * 1024;
 export const DIRECTOR_BRIDGE_ACCEPTED_COMPLETION_TTL_MS = 5 * 60_000;
+export const DIRECTOR_BRIDGE_AUTH_CLASS_HEADER = "x-director-bridge-auth-class";
 const DIRECTOR_BRIDGE_MAX_ACCEPTED_COMPLETIONS = 2_048;
+
+export function directorBridgeAuthClassHeaders(code: string): Record<string, string> {
+  if (code === "DIRECTOR_BRIDGE_AUTH_INVALID" || code === "DIRECTOR_BRIDGE_AUTH_EXPIRED") {
+    return { [DIRECTOR_BRIDGE_AUTH_CLASS_HEADER]: code };
+  }
+  return {};
+}
 
 const idSchema = z.string().trim().min(1).max(160);
 const hashSchema = z.string().regex(/^[0-9a-f]{64}$/);
@@ -157,10 +165,6 @@ export function verifyDirectorBridgeBody<T>(
   const envelope = parsedEnvelope.data;
   const key = envelope.kid === keyring.active.kid ? keyring.active : null;
   if (!key) throw new DirectorBridgeError("DIRECTOR_BRIDGE_AUTH_INVALID", "Director bridge authentication failed.");
-  const issuedAt = Date.parse(envelope.issued_at);
-  if (!Number.isFinite(issuedAt) || Math.abs(now.getTime() - issuedAt) > 60_000) {
-    throw new DirectorBridgeError("DIRECTOR_BRIDGE_AUTH_EXPIRED", "Director bridge authentication expired.");
-  }
   const expected = createHmac("sha256", key.key).update(signatureInput({
     protocol_version: envelope.protocol_version, kid: envelope.kid, nonce: envelope.nonce,
     issued_at: envelope.issued_at, body: envelope.body
@@ -168,6 +172,10 @@ export function verifyDirectorBridgeBody<T>(
   const actual = Buffer.from(envelope.signature, "base64url");
   if (actual.byteLength !== expected.byteLength || !timingSafeEqual(actual, expected)) {
     throw new DirectorBridgeError("DIRECTOR_BRIDGE_AUTH_INVALID", "Director bridge authentication failed.");
+  }
+  const issuedAt = Date.parse(envelope.issued_at);
+  if (!Number.isFinite(issuedAt) || Math.abs(now.getTime() - issuedAt) > 60_000) {
+    throw new DirectorBridgeError("DIRECTOR_BRIDGE_AUTH_EXPIRED", "Director bridge authentication expired.");
   }
   const parsedBody = bodySchema.safeParse(envelope.body);
   if (!parsedBody.success) throw new DirectorBridgeError("DIRECTOR_BRIDGE_BODY_INVALID", "Director bridge message body is invalid.");
@@ -365,8 +373,14 @@ async function boundedNetworkOperation<T>(operation: (signal: AbortSignal) => Pr
   }
 }
 
-function directorBridgePollFailureCode(status: number): string {
-  if (status === 401 || status === 403) return "DIRECTOR_BRIDGE_POLL_AUTH_REJECTED";
+function directorBridgePollFailureCode(response: Response): string {
+  const status = response.status;
+  if (status === 401 || status === 403) {
+    const authClass = response.headers.get(DIRECTOR_BRIDGE_AUTH_CLASS_HEADER);
+    if (authClass === "DIRECTOR_BRIDGE_AUTH_INVALID") return "DIRECTOR_BRIDGE_POLL_AUTH_INVALID";
+    if (authClass === "DIRECTOR_BRIDGE_AUTH_EXPIRED") return "DIRECTOR_BRIDGE_POLL_AUTH_EXPIRED";
+    return "DIRECTOR_BRIDGE_POLL_AUTH_REJECTED";
+  }
   if (status === 404) return "DIRECTOR_BRIDGE_POLL_ROUTE_NOT_FOUND";
   if (status === 413) return "DIRECTOR_BRIDGE_POLL_BODY_REJECTED";
   if (status === 415) return "DIRECTOR_BRIDGE_POLL_CONTENT_TYPE_REJECTED";
@@ -435,7 +449,7 @@ export class DirectorLocalBridgeClient {
     }
     if (response.status !== 200) {
       throw new DirectorBridgeError(
-        directorBridgePollFailureCode(response.status),
+        directorBridgePollFailureCode(response),
         "Director bridge poll failed.",
         undefined,
         true

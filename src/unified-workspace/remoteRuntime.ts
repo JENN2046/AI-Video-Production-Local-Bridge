@@ -11,6 +11,7 @@ import {
   DirectorBridgeBroker,
   DirectorBridgeError,
   DirectorBridgeReplayGuard,
+  directorBridgeAuthClassHeaders,
   type DirectorBridgeKeyring
 } from "../director/bridge.js";
 import { registerDirectorNativeTools, DIRECTOR_NATIVE_TOOL_CATALOG, type DirectorNativeToolHandlers } from "../director/mcpContract.js";
@@ -406,7 +407,12 @@ export async function startUnifiedWorkspaceRemoteRuntime(options: StartUnifiedWo
       const tooLarge = error instanceof Error && error.message === "BODY_TOO_LARGE";
       const invalidJson = error instanceof Error && error.message === "INVALID_JSON_BODY";
       const code = tooLarge ? "DIRECTOR_BRIDGE_BODY_TOO_LARGE" : invalidJson ? "DIRECTOR_BRIDGE_INVALID_JSON_BODY" : safe.code;
-      sendJson(response, tooLarge ? 413 : invalidJson ? 400 : 401, { ok: false, error: { code, message: "Director bridge request was rejected." } });
+      sendJson(
+        response,
+        tooLarge ? 413 : invalidJson ? 400 : 401,
+        { ok: false, error: { code, message: "Director bridge request was rejected." } },
+        path === UNIFIED_WORKSPACE_BRIDGE_POLL_PATH ? directorBridgeAuthClassHeaders(code) : {}
+      );
       return code;
     } finally {
       activeBridge -= 1;

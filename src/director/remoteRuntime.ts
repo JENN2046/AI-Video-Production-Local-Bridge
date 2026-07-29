@@ -8,6 +8,7 @@ import {
   DIRECTOR_BRIDGE_MAX_BODY_BYTES,
   DirectorBridgeBroker,
   DirectorBridgeReplayGuard,
+  directorBridgeAuthClassHeaders,
   type DirectorBridgeKeyring
 } from "./bridge.js";
 import { createDirectorNativeMcpServer, DIRECTOR_NATIVE_TOOL_CATALOG, type DirectorNativeToolHandlers } from "./mcpContract.js";
@@ -151,7 +152,13 @@ export async function startDirectorRemoteRuntime(options: StartDirectorRemoteRun
       } catch (error) {
         const safe = errorBody(error);
         const tooLarge = error instanceof Error && error.message === "BODY_TOO_LARGE";
-        sendJson(response, tooLarge ? 413 : 401, { ok: false, error: { code: tooLarge ? "DIRECTOR_BRIDGE_BODY_TOO_LARGE" : safe.code, message: "Director bridge request was rejected." } });
+        const code = tooLarge ? "DIRECTOR_BRIDGE_BODY_TOO_LARGE" : safe.code;
+        sendJson(
+          response,
+          tooLarge ? 413 : 401,
+          { ok: false, error: { code, message: "Director bridge request was rejected." } },
+          url.pathname === DIRECTOR_BRIDGE_POLL_PATH ? directorBridgeAuthClassHeaders(code) : {}
+        );
       } finally {
         activeBridgeRequests -= 1;
       }
