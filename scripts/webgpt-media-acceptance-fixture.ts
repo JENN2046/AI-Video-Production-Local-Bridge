@@ -580,12 +580,16 @@ async function verifyFixture(): Promise<void> {
   const snapshot = projection.exportReadonlySnapshotFromDatabase({ database_path: safeDatabasePath, issuer_hash: issuerHash, resource_url: resourceUrl });
   const expectedProjectCount = manifest.fixture_version === FIXTURE_VERSION_V1 ? 1 : 2;
   const expectedBindingCount = manifest.fixture_version === FIXTURE_VERSION_V1 ? 2 : 4;
-  const bindingsValid = mediaEntries.every((media) => snapshot.projects.some((project) =>
-    project.media_bindings.some((binding) => binding.artifact_id === media.artifact_id && binding.sha256 === media.media_sha256)
-  ));
-  const perProjectBindingsValid = manifest.fixture_version === FIXTURE_VERSION_V1
-    ? snapshot.projects[0]?.media_bindings.length === 2
-    : snapshot.projects.every((project) => project.media_bindings.length === 2);
+  const bindingsValid = manifest.fixture_version === FIXTURE_VERSION_V1
+    ? snapshot.projects[0]?.media_bindings.some((binding) => binding.artifact_id === manifest.artifact_id && binding.sha256 === manifest.media_sha256) === true
+    : manifest.projects.every((manifestProject) => {
+        const snapshotProject = snapshot.projects.find((project) => project.project_id === manifestProject.project_id);
+        return snapshotProject?.media_bindings.length === 2
+          && manifestProject.media.every((media) => snapshotProject.media_bindings.some((binding) =>
+            binding.artifact_id === media.artifact_id && binding.sha256 === media.media_sha256
+          ));
+      });
+  const perProjectBindingsValid = snapshot.projects.every((project) => project.media_bindings.length === 2);
   if (snapshot.projects.length !== expectedProjectCount || snapshot.authorization.principals.length !== 1 || snapshot.schema_version !== "readonly-snapshot-v4" || !perProjectBindingsValid || !bindingsValid) {
     throw new FixtureError("MEDIA_ACCEPTANCE_SNAPSHOT_INVALID");
   }

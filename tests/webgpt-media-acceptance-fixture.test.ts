@@ -294,6 +294,34 @@ test("media acceptance matrix rejects a linked manifest before reading it", () =
   }
 });
 
+test("media acceptance fixture verify rejects media bindings swapped between projects", () => {
+  const source = resolve("fixtures/video/mock_clip.mp4");
+  const command = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
+  const created = spawnSync(process.execPath, [command, "create", "--input", source, "--issuer", ISSUER, "--resource", RESOURCE], {
+    cwd: process.cwd(), input: `${SUBJECT}\n`, encoding: "utf8", windowsHide: true, env: childEnv
+  });
+  assert.equal(created.status, 0, created.stderr);
+  const receipt = JSON.parse(created.stdout) as { run_id: string };
+  const root = resolve("data/webgpt/media-acceptance", receipt.run_id);
+  const manifestPath = join(root, "fixture.json");
+  try {
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+      projects: Array<{ media: unknown[] }>;
+    };
+    const firstMedia = manifest.projects[0]!.media;
+    manifest.projects[0]!.media = manifest.projects[1]!.media;
+    manifest.projects[1]!.media = firstMedia;
+    writeFileSync(manifestPath, JSON.stringify(manifest), "utf8");
+    const result = spawnSync(process.execPath, [command, "verify", "--run", receipt.run_id, "--issuer", ISSUER, "--resource", RESOURCE], {
+      cwd: process.cwd(), encoding: "utf8", windowsHide: true, env: childEnv
+    });
+    assert.equal(result.status, 1);
+    assert.deepEqual(lowDisclosureError(result.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_SNAPSHOT_INVALID" });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("media acceptance matrix maps request and overall stalls to stable bounded failures", async () => {
   const source = resolve("fixtures/video/mock_clip.mp4");
   const fixtureCommand = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
