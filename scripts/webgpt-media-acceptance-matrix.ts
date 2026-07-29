@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
@@ -132,13 +133,14 @@ type BoundedResponse = {
   response: Response;
   json?: Record<string, unknown>;
   byte_length?: number;
+  body_sha256?: string;
 };
 
 async function request(
   overallSignal: AbortSignal,
   input: string,
   init: RequestInit = {},
-  bodyMode: "none" | "json" | "bytes" = "none"
+  bodyMode: "none" | "json" | "bytes" | "digest" = "none"
 ): Promise<BoundedResponse> {
   const requestSignal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
   try {
@@ -154,7 +156,14 @@ async function request(
       if (!value || typeof value !== "object" || Array.isArray(value)) throw new MatrixError("MEDIA_ACCEPTANCE_RESPONSE_INVALID");
       return { response, json: value as Record<string, unknown> };
     }
-    if (bodyMode === "bytes") return { response, byte_length: (await response.arrayBuffer()).byteLength };
+    if (bodyMode === "bytes" || bodyMode === "digest") {
+      const bytes = Buffer.from(await response.arrayBuffer());
+      return {
+        response,
+        byte_length: bytes.byteLength,
+        ...(bodyMode === "digest" ? { body_sha256: createHash("sha256").update(bytes).digest("hex") } : {})
+      };
+    }
     return { response };
   } catch (error) {
     if (overallSignal.aborted) throw new MatrixError("MEDIA_ACCEPTANCE_MATRIX_TIMEOUT");
@@ -241,7 +250,7 @@ async function main(): Promise<void> {
         headers: media.mime_type === "video/mp4"
           ? { origin: ALLOWED_ORIGIN, range: "bytes=0-15" }
           : { origin: ALLOWED_ORIGIN }
-      }, "bytes");
+      }, media.mime_type === "video/mp4" ? "bytes" : "digest");
       const response = result.response;
       if (media.mime_type === "video/mp4") {
         if (response.status !== 206 || response.headers.get("accept-ranges") !== "bytes"
@@ -251,7 +260,7 @@ async function main(): Promise<void> {
           throw new MatrixError("MEDIA_ACCEPTANCE_RANGE_FAILED");
         }
       } else if (response.status !== 200 || response.headers.get("content-type") !== media.mime_type
-        || (result.byte_length ?? 0) < 1) {
+        || (result.byte_length ?? 0) < 1 || result.body_sha256 !== media.media_sha256) {
         throw new MatrixError("MEDIA_ACCEPTANCE_IMAGE_FAILED");
       }
       const replay = await request(matrixController.signal, activated.capabilityUrl, { headers: { origin: ALLOWED_ORIGIN }, redirect: "manual" }, "json");
