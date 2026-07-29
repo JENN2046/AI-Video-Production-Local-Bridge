@@ -176,7 +176,15 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
   assert.match(matrixSource, /READONLY_MEDIA_CAPABILITY_TTL_MS/);
   assert.match(matrixSource, /MEDIA_ACCEPTANCE_RESPONSE_TOO_LARGE/);
   assert.match(matrixSource, /JSON_RESPONSE_MAX_BYTES/);
-  assert.match(matrixSource, /DISTINCT_MEDIA_VALIDATIONS \* CAPABILITY_REQUEST_TIMEOUT_MS \+ CAPABILITY_HANDLE_EXPIRY_LEAD_MS \+ 2 \* 60_000/);
+  assert.match(matrixSource, /MATRIX_CAPABILITY_REQUESTS = DISTINCT_MEDIA_VALIDATIONS \+ 3/);
+  assert.match(matrixSource, /MATRIX_ORDINARY_REQUESTS = 2 \+ DISTINCT_MEDIA_VALIDATIONS \* 3 \+ 4/);
+  assert.match(matrixSource, /MATRIX_CAPABILITY_REQUESTS \* CAPABILITY_REQUEST_TIMEOUT_MS/);
+  assert.match(matrixSource, /MATRIX_ORDINARY_REQUESTS \* REQUEST_TIMEOUT_MS/);
+  assert.match(matrixSource, /MATRIX_EXPIRY_WAIT_ALLOWANCE_MS/);
+  assert.match(matrixSource, /MATRIX_LOCAL_SETUP_ALLOWANCE_MS/);
+  assert.match(matrixSource, /clearTimeout\(requestTimer\)/);
+  assert.doesNotMatch(matrixSource, /AbortSignal\.timeout\(/);
+  assert.doesNotMatch(matrixSource, /process\.exit\(/);
   assert.doesNotMatch(matrixSource, /response\.arrayBuffer\(\)/);
   assert.doesNotMatch(matrixSource, /response\.json\(\)/);
 

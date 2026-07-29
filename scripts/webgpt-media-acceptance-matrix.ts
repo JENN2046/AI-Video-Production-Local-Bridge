@@ -32,9 +32,21 @@ const CAPABILITY_HANDLE_EXPIRY_LEAD_MS = testTimeout(
 );
 const JSON_RESPONSE_MAX_BYTES = 16 * 1024;
 const DISTINCT_MEDIA_VALIDATIONS = 4;
+// One issuance per media validation, plus stale-envelope, expiring-handle, and retained-project issuances.
+const MATRIX_CAPABILITY_REQUESTS = DISTINCT_MEDIA_VALIDATIONS + 3;
+// health/ready, activation/media/replay per media, then expired, revoked, and retained activation/media requests.
+const MATRIX_ORDINARY_REQUESTS = 2 + DISTINCT_MEDIA_VALIDATIONS * 3 + 4;
+// The expiry probe permits up to five seconds of timestamp drift and waits an additional 25ms after expiry.
+const MATRIX_EXPIRY_WAIT_ALLOWANCE_MS = 5_025;
+// Covers bounded local fixture validation, Snapshot export, revocation, and event-loop scheduling outside HTTP deadlines.
+const MATRIX_LOCAL_SETUP_ALLOWANCE_MS = 2 * 60_000;
 const MATRIX_TIMEOUT_MS = testTimeout(
   "MEDIA_ACCEPTANCE_TEST_MATRIX_TIMEOUT_MS",
-  DISTINCT_MEDIA_VALIDATIONS * CAPABILITY_REQUEST_TIMEOUT_MS + CAPABILITY_HANDLE_EXPIRY_LEAD_MS + 2 * 60_000
+  MATRIX_CAPABILITY_REQUESTS * CAPABILITY_REQUEST_TIMEOUT_MS
+    + MATRIX_ORDINARY_REQUESTS * REQUEST_TIMEOUT_MS
+    + CAPABILITY_HANDLE_EXPIRY_LEAD_MS
+    + MATRIX_EXPIRY_WAIT_ALLOWANCE_MS
+    + MATRIX_LOCAL_SETUP_ALLOWANCE_MS
 );
 
 class MatrixError extends Error {
@@ -245,9 +257,10 @@ async function request(
   timeoutMs = REQUEST_TIMEOUT_MS,
   maximumBodyBytes?: number
 ): Promise<BoundedResponse> {
-  const requestSignal = AbortSignal.timeout(timeoutMs);
+  const requestController = new AbortController();
+  const requestTimer = setTimeout(() => requestController.abort(), timeoutMs);
   try {
-    const response = await fetch(input, { ...init, signal: AbortSignal.any([overallSignal, requestSignal]) });
+    const response = await fetch(input, { ...init, signal: AbortSignal.any([overallSignal, requestController.signal]) });
     if (bodyMode === "json") {
       let value: unknown;
       try {
@@ -255,7 +268,7 @@ async function request(
         value = JSON.parse(body.body_bytes!.toString("utf8"));
       } catch (error) {
         if (error instanceof MatrixError) throw error;
-        if (overallSignal.aborted || requestSignal.aborted) throw error;
+        if (overallSignal.aborted || requestController.signal.aborted) throw error;
         throw new MatrixError("MEDIA_ACCEPTANCE_RESPONSE_INVALID");
       }
       if (!value || typeof value !== "object" || Array.isArray(value)) throw new MatrixError("MEDIA_ACCEPTANCE_RESPONSE_INVALID");
@@ -271,9 +284,11 @@ async function request(
     return { response };
   } catch (error) {
     if (overallSignal.aborted) throw new MatrixError("MEDIA_ACCEPTANCE_MATRIX_TIMEOUT");
-    if (requestSignal.aborted) throw new MatrixError("MEDIA_ACCEPTANCE_REQUEST_TIMEOUT");
+    if (requestController.signal.aborted) throw new MatrixError("MEDIA_ACCEPTANCE_REQUEST_TIMEOUT");
     if (error instanceof MatrixError) throw error;
     throw new MatrixError("MEDIA_ACCEPTANCE_REQUEST_FAILED");
+  } finally {
+    clearTimeout(requestTimer);
   }
 }
 
@@ -490,5 +505,5 @@ async function main(): Promise<void> {
 main().catch((error) => {
   const code = error instanceof MatrixError ? error.code : "MEDIA_ACCEPTANCE_MATRIX_FAILED";
   console.error(JSON.stringify({ result: "FAIL", stable_error_code: code }));
-  process.exit(1);
+  process.exitCode = 1;
 });
