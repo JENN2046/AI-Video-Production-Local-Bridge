@@ -133,6 +133,20 @@ async function startOversizeRangeProxy(targetOrigin: string): Promise<GatewayPro
   return { ...proxy, rangeRequests: () => rangeRequests };
 }
 
+async function startOversizeCapabilityJsonProxy(targetOrigin: string): Promise<GatewayProxy & { capabilityRequests: () => number }> {
+  let capabilityRequests = 0;
+  const proxy = await startGatewayProxy(targetOrigin, (incoming, upstream, outgoing) => {
+    if (upstream.statusCode !== 201 || incoming.method !== "POST" || incoming.url !== "/internal/v1/capabilities") return false;
+    capabilityRequests += 1;
+    upstream.resume();
+    outgoing.writeHead(201, { "content-type": "application/json; charset=utf-8" });
+    outgoing.write(Buffer.alloc(8 * 1024, 0x20));
+    setImmediate(() => { if (!outgoing.destroyed) outgoing.end(Buffer.alloc(9 * 1024, 0x20)); });
+    return true;
+  });
+  return { ...proxy, capabilityRequests: () => capabilityRequests };
+}
+
 function closeServer(server: ReturnType<typeof createServer>): Promise<void> {
   return new Promise((resolveClose, reject) => server.close((error) => error ? reject(error) : resolveClose()));
 }
@@ -161,8 +175,10 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
   assert.match(matrixSource, /READONLY_MEDIA_GATEWAY_HASH_TIMEOUT_MS \+ 15_000/);
   assert.match(matrixSource, /READONLY_MEDIA_CAPABILITY_TTL_MS/);
   assert.match(matrixSource, /MEDIA_ACCEPTANCE_RESPONSE_TOO_LARGE/);
+  assert.match(matrixSource, /JSON_RESPONSE_MAX_BYTES/);
   assert.match(matrixSource, /DISTINCT_MEDIA_VALIDATIONS \* CAPABILITY_REQUEST_TIMEOUT_MS \+ CAPABILITY_HANDLE_EXPIRY_LEAD_MS \+ 2 \* 60_000/);
   assert.doesNotMatch(matrixSource, /response\.arrayBuffer\(\)/);
+  assert.doesNotMatch(matrixSource, /response\.json\(\)/);
 
   const source = resolve("fixtures/video/mock_clip.mp4");
   const command = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
@@ -491,6 +507,45 @@ test("media acceptance matrix bounds a streamed response that ignores the reques
     assert.equal(result.status, 1);
     assert.deepEqual(lowDisclosureError(result.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_RESPONSE_TOO_LARGE" });
     assert.equal(proxy.rangeRequests(), 1);
+    assert.doesNotMatch(`${result.stdout}${result.stderr}`, /https?:\/\//);
+  } finally {
+    await closeServer(proxy.server);
+    await gateway.close();
+    key.fill(0);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("media acceptance matrix bounds a chunked JSON response before parsing it", async () => {
+  const source = resolve("fixtures/video/mock_clip.mp4");
+  const fixtureCommand = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
+  const created = spawnSync(process.execPath, [fixtureCommand, "create", "--input", source, "--issuer", ISSUER, "--resource", RESOURCE], {
+    cwd: process.cwd(), input: `${SUBJECT}\n`, encoding: "utf8", windowsHide: true, env: childEnv
+  });
+  assert.equal(created.status, 0, created.stderr);
+  const receipt = JSON.parse(created.stdout) as { run_id: string };
+  const root = resolve("data/webgpt/media-acceptance", receipt.run_id);
+  const manifest = JSON.parse(readFileSync(join(root, "fixture.json"), "utf8")) as { issuer_hash: string };
+  const key = Buffer.alloc(32, 123);
+  const gateway = await startReadonlyMediaGateway({
+    database_path: join(root, "app.sqlite"),
+    issuer_hash: manifest.issuer_hash,
+    keyring: { active: { kid: "acceptance-matrix-json-v1", key } },
+    allowed_origin: "https://aivideo.skmt617.top",
+    allowed_media_roots: [join(root, "media")],
+    port: 0
+  });
+  const proxy = await startOversizeCapabilityJsonProxy(gateway.url);
+  try {
+    const result = await runChild(process.execPath, [
+      resolve("dist/scripts/webgpt-media-acceptance-matrix.js"),
+      "--run", receipt.run_id,
+      "--origin", `${proxy.origin}/`,
+      "--kid", "acceptance-matrix-json-v1"
+    ], `${key.toString("base64url")}\n`);
+    assert.equal(result.status, 1, result.stderr);
+    assert.deepEqual(lowDisclosureError(result.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_RESPONSE_TOO_LARGE" });
+    assert.equal(proxy.capabilityRequests(), 1);
     assert.doesNotMatch(`${result.stdout}${result.stderr}`, /https?:\/\//);
   } finally {
     await closeServer(proxy.server);

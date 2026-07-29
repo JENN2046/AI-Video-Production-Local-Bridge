@@ -30,6 +30,7 @@ const CAPABILITY_HANDLE_EXPIRY_LEAD_MS = testTimeout(
   "MEDIA_ACCEPTANCE_TEST_HANDLE_EXPIRY_LEAD_MS",
   CAPABILITY_REQUEST_TIMEOUT_MS
 );
+const JSON_RESPONSE_MAX_BYTES = 16 * 1024;
 const DISTINCT_MEDIA_VALIDATIONS = 4;
 const MATRIX_TIMEOUT_MS = testTimeout(
   "MEDIA_ACCEPTANCE_TEST_MATRIX_TIMEOUT_MS",
@@ -187,9 +188,10 @@ type BoundedResponse = {
   body_sha256?: string;
 };
 
-async function readBoundedResponseBody(response: Response, maximumBytes: number, digest: boolean): Promise<{
+async function readBoundedResponseBody(response: Response, maximumBytes: number, digest: boolean, captureBytes = false): Promise<{
   byte_length: number;
   body_sha256?: string;
+  body_bytes?: Buffer;
 }> {
   if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 1) throw new MatrixError("MEDIA_ACCEPTANCE_RESPONSE_INVALID");
   const contentLength = response.headers.get("content-length");
@@ -202,9 +204,16 @@ async function readBoundedResponseBody(response: Response, maximumBytes: number,
       throw new MatrixError("MEDIA_ACCEPTANCE_RESPONSE_TOO_LARGE");
     }
   }
-  if (!response.body) return { byte_length: 0, ...(digest ? { body_sha256: createHash("sha256").digest("hex") } : {}) };
+  if (!response.body) {
+    return {
+      byte_length: 0,
+      ...(digest ? { body_sha256: createHash("sha256").digest("hex") } : {}),
+      ...(captureBytes ? { body_bytes: Buffer.alloc(0) } : {})
+    };
+  }
   const reader = response.body.getReader();
   const hash = digest ? createHash("sha256") : null;
+  const chunks: Buffer[] | undefined = captureBytes ? [] : undefined;
   let byteLength = 0;
   try {
     for (;;) {
@@ -216,11 +225,16 @@ async function readBoundedResponseBody(response: Response, maximumBytes: number,
         throw new MatrixError("MEDIA_ACCEPTANCE_RESPONSE_TOO_LARGE");
       }
       hash?.update(value);
+      chunks?.push(Buffer.from(value));
     }
   } finally {
     reader.releaseLock();
   }
-  return { byte_length: byteLength, ...(hash ? { body_sha256: hash.digest("hex") } : {}) };
+  return {
+    byte_length: byteLength,
+    ...(hash ? { body_sha256: hash.digest("hex") } : {}),
+    ...(chunks ? { body_bytes: Buffer.concat(chunks, byteLength) } : {})
+  };
 }
 
 async function request(
@@ -237,8 +251,10 @@ async function request(
     if (bodyMode === "json") {
       let value: unknown;
       try {
-        value = await response.json();
+        const body = await readBoundedResponseBody(response, JSON_RESPONSE_MAX_BYTES, false, true);
+        value = JSON.parse(body.body_bytes!.toString("utf8"));
       } catch (error) {
+        if (error instanceof MatrixError) throw error;
         if (overallSignal.aborted || requestSignal.aborted) throw error;
         throw new MatrixError("MEDIA_ACCEPTANCE_RESPONSE_INVALID");
       }
