@@ -1778,6 +1778,79 @@ test("expired polling deadline does not block resumed local completion after Pro
   }
 });
 
+test("local completion recovery rejects an inactive existing output Artifact", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-invalid-output-recovery-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Reject invalid local output");
+    const taskId = "task-invalid-output-recovery";
+    const wallMs = Date.now();
+    persistKnownProviderTask(sqlitePath, prepared.intent_id, prepared.job_id, taskId, MIN_PROVIDER_TASK_POLL_TIMEOUT_MS);
+
+    let db = openM0Database(sqlitePath);
+    const intentRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const intentData = JSON.parse(intentRow.data_json) as Record<string, unknown>;
+    intentData.provider_poll_started_at = new Date(wallMs - MIN_PROVIDER_TASK_POLL_TIMEOUT_MS - 1_000).toISOString();
+    intentData.provider_poll_timeout_ms = MIN_PROVIDER_TASK_POLL_TIMEOUT_MS;
+    intentData.provider_poll_deadline_at = new Date(wallMs - 1_000).toISOString();
+    db.prepare("UPDATE generation_intents SET data_json = ? WHERE intent_id = ?")
+      .run(JSON.stringify(intentData), prepared.intent_id);
+    db.prepare("UPDATE generation_jobs SET state = 'finalizing' WHERE job_id = ?")
+      .run(prepared.job_id);
+    const existingOutput = registerMediaArtifact({
+      artifact_type: "video",
+      role: "generated_clip",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: prepared.project_id, shot_id: prepared.shot_id },
+      provenance: { provider: "runninghub", provider_job_id: taskId }
+    }, db);
+    assert.equal(existingOutput.ok, true);
+    if (!existingOutput.ok) throw new Error("output fixture registration failed");
+    db.prepare("UPDATE media_artifacts SET status = 'archived', data_json = json_set(data_json, '$.status', 'archived') WHERE artifact_id = ?")
+      .run(existingOutput.artifact.artifact_id);
+    db.close();
+
+    let pollCalls = 0;
+    const adapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => { throw new Error("submit must not run"); },
+      pollStatus: async () => {
+        pollCalls += 1;
+        throw new Error("poll must not run for a persisted local output");
+      },
+      fetchOutput: async () => { throw new Error("output fetch must not run"); }
+    } as unknown as VideoProviderAdapter;
+    await runWorkbenchGenerationOnce(prepared.intent_id, {
+      allow_submit: false,
+      dependencies: {
+        sqlite_path: sqlitePath,
+        env: prepared.env,
+        adapter_factory: () => adapter,
+        now: () => new Date(wallMs),
+        monotonic_now_ms: () => 10_000
+      }
+    });
+
+    db = openM0Database(sqlitePath);
+    const reconciledIntent = db.prepare("SELECT status, output_artifact_id, sanitized_error_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { status: string; output_artifact_id: string; sanitized_error_json: string };
+    const reconciledJob = db.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    db.close();
+    assert.equal(pollCalls, 0);
+    assert.equal(reconciledIntent.status, "running");
+    assert.equal(reconciledIntent.output_artifact_id, "");
+    assert.equal((JSON.parse(reconciledIntent.sanitized_error_json) as { code: string }).code, "ARTIFACT_REFERENCE_INACTIVE");
+    assert.deepEqual({ ...reconciledJob }, {
+      state: "manual_reconciliation",
+      reconciliation_reason: "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION"
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("regeneration poll timeout restores review workflow without losing the rejected clip", async () => {
   const root = mkdtempSync(join(tmpdir(), "generation-regeneration-poll-timeout-"));
   const sqlitePath = join(root, "app.sqlite");

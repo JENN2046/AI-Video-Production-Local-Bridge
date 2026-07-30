@@ -2707,3 +2707,39 @@ secret_reads: 0
 service_starts: 0
 remaining_test_processes: 0
 ```
+
+### PR108 final-review Artifact validation remediation
+
+```yaml
+task: PR107-CLEAN-RESTACK
+validated_at: 2026-07-31T05:19:34+08:00
+replacement_pr: 108
+finding: INVALID_LOCAL_OUTPUT_ARTIFACT_COULD_BE_REUSED
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - npm run test:v2
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_59
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  active_artifact_reference_validation: true
+  generated_clip_video_binding_validation: true
+  blob_integrity_validation: true
+  inactive_artifact_enters_manual_reconciliation: true
+  provider_poll_for_invalid_local_artifact: 0
+  automatic_submit_retry: 0
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+```

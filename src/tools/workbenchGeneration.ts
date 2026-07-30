@@ -1145,12 +1145,39 @@ function cancelIntent(db: M0Database, intent: WorkbenchGenerationIntent, reason:
   }
 }
 
-function existingOutputArtifact(db: M0Database, providerTaskId: string, projectId: string, shotId: string): MediaArtifact | null {
-  const row = db.prepare(`SELECT data_json FROM media_artifacts
-    WHERE json_extract(data_json, '$.source.provider') = 'runninghub'
-      AND json_extract(data_json, '$.source.provider_job_id') = ?
-      AND project_id = ? AND shot_id = ? LIMIT 1`).get(providerTaskId, projectId, shotId) as { data_json: string } | undefined;
-  return row ? JSON.parse(row.data_json) as MediaArtifact : null;
+function existingOutputArtifact(
+  db: M0Database,
+  providerTaskId: string,
+  projectId: string,
+  shotId: string
+): { ok: true; artifact: MediaArtifact | null } | { ok: false; error: ProviderToolError } {
+  let row: { artifact_id: string } | undefined;
+  try {
+    row = db.prepare(`SELECT artifact_id FROM media_artifacts
+      WHERE json_extract(data_json, '$.source.provider') = 'runninghub'
+        AND json_extract(data_json, '$.source.provider_job_id') = ?
+        AND project_id = ? AND shot_id = ? LIMIT 1`).get(providerTaskId, projectId, shotId) as { artifact_id: string } | undefined;
+  } catch {
+    return {
+      ok: false,
+      error: providerError("ARTIFACT_REFERENCE_CHECK_FAILED", "Existing Provider output Artifact lookup could not be verified.")
+    };
+  }
+  if (!row) return { ok: true, artifact: null };
+  const validated = validateActiveArtifactReference(db, {
+    artifact_id: row.artifact_id,
+    project_id: projectId,
+    shot_id: shotId,
+    role: "generated_clip",
+    artifact_type: "video"
+  });
+  if (!validated.ok) {
+    return {
+      ok: false,
+      error: providerError(validated.error.code, "Existing Provider output Artifact failed active media validation.")
+    };
+  }
+  return { ok: true, artifact: validated.artifact };
 }
 
 async function executeIntent(intentId: string, allowSubmit: boolean, dependencies: WorkbenchGenerationDependencies): Promise<void> {
@@ -1390,7 +1417,20 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       return;
     }
 
-    let output = existingOutputArtifact(db, taskId, intent.project_id, intent.shot_id);
+    const existingOutput = existingOutputArtifact(db, taskId, intent.project_id, intent.shot_id);
+    if (!existingOutput.ok) {
+      job = markKnownProviderTaskForReconciliation(
+        db,
+        intent,
+        job,
+        taskId,
+        existingOutput.error,
+        leaseToken,
+        "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION"
+      );
+      return;
+    }
+    let output = existingOutput.artifact;
     let outputUrl = "";
     if (!output) {
       if (job.state === "finalizing") {
