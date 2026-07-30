@@ -2819,3 +2819,39 @@ secret_reads: 0
 service_starts: 0
 remaining_test_processes: 0
 ```
+
+### PR108 clock rollback whole-job fail-closed hardening
+
+```yaml
+task: PR107-CLEAN-RESTACK
+validated_at: 2026-07-31T06:48:22+08:00
+replacement_pr: 108
+self_review_finding: PER_EXECUTION_CAP_COULD_RESET_ACROSS_REPEATED_WORKER_CLAIMS
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - npm run test:v2
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_61
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  wall_clock_before_persisted_poll_start: FAIL_CLOSED
+  stable_reconciliation_reason: PROVIDER_POLL_TIMEOUT
+  provider_task_id_preserved: true
+  provider_poll_before_failure: 0
+  automatic_submit_retry: 0
+remaining_review_finding: INVALID_VERIFIED_BLOB_HAS_NO_AUTHORIZED_RECOVERY_PATH
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+```

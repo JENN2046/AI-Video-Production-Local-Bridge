@@ -1708,7 +1708,7 @@ test("provider polling uses one persisted absolute deadline and never resubmits 
   }
 });
 
-test("provider polling caps a restarted worker budget when wall time moves backward", async () => {
+test("provider polling fails closed after restart when wall time moves before the persisted start", async () => {
   const root = mkdtempSync(join(tmpdir(), "generation-poll-clock-rollback-"));
   const sqlitePath = join(root, "app.sqlite");
   try {
@@ -1729,7 +1729,7 @@ test("provider polling caps a restarted worker budget when wall time moves backw
     };
     db.close();
 
-    const pollRequestTimeouts: number[] = [];
+    let pollCalls = 0;
     let submitCalls = 0;
     const adapter = {
       provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
@@ -1737,15 +1737,9 @@ test("provider polling caps a restarted worker budget when wall time moves backw
         submitCalls += 1;
         throw new Error("known Provider task must not be resubmitted");
       },
-      pollStatus: async (_taskId: string, options?: ProviderPollOptions) => {
-        pollRequestTimeouts.push(options?.timeout_ms ?? -1);
-        return {
-          ok: true as const,
-          provider_job_id: "task-clock-rollback",
-          status: "running" as const,
-          provider_status: "RUNNING",
-          retryable: true
-        };
+      pollStatus: async () => {
+        pollCalls += 1;
+        throw new Error("clock rollback must fail closed before Provider polling");
       },
       fetchOutput: async () => { throw new Error("output must not run"); }
     } as unknown as VideoProviderAdapter;
@@ -1765,11 +1759,25 @@ test("provider polling caps a restarted worker budget when wall time moves backw
     const checked = openM0Database(sqlitePath);
     const job = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
       .get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    const intent = checked.prepare("SELECT status, provider_task_id, sanitized_error_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { status: string; provider_task_id: string; sanitized_error_json: string };
     checked.close();
     assert.equal(persisted.provider_poll_timeout_ms, MIN_PROVIDER_TASK_POLL_TIMEOUT_MS);
-    assert.deepEqual(pollRequestTimeouts, [MIN_PROVIDER_TASK_POLL_TIMEOUT_MS]);
+    assert.equal(pollCalls, 0);
     assert.equal(submitCalls, 0);
-    assert.deepEqual({ ...job }, { state: "polling", reconciliation_reason: "" });
+    assert.deepEqual({ ...job }, {
+      state: "manual_reconciliation",
+      reconciliation_reason: "PROVIDER_POLL_TIMEOUT"
+    });
+    assert.deepEqual({
+      status: intent.status,
+      provider_task_id: intent.provider_task_id,
+      error_code: (JSON.parse(intent.sanitized_error_json) as { code: string }).code
+    }, {
+      status: "running",
+      provider_task_id: "task-clock-rollback",
+      error_code: "PROVIDER_POLL_TIMEOUT"
+    });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

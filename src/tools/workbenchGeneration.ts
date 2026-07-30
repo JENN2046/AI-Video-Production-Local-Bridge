@@ -401,15 +401,16 @@ function restartProviderPollDeadlineAfterHumanAttachment(
 }
 
 function createRemainingPollBudget(
-  deadlineMs: number,
-  maximumBudgetMs: number,
+  window: ProviderPollWindow,
   dependencies: WorkbenchGenerationDependencies
 ): () => number {
   const wallStartMs = dateNow(dependencies).getTime();
   const monotonicStartMs = monotonicNowMs(dependencies);
-  const initialRemainingMs = Math.max(0, Math.min(maximumBudgetMs, deadlineMs - wallStartMs));
+  const initialRemainingMs = wallStartMs < window.started_at_ms
+    ? 0
+    : Math.max(0, Math.min(window.timeout_ms, window.deadline_ms - wallStartMs));
   return () => {
-    const wallRemainingMs = deadlineMs - dateNow(dependencies).getTime();
+    const wallRemainingMs = window.deadline_ms - dateNow(dependencies).getTime();
     const monotonicRemainingMs = initialRemainingMs - Math.max(0, monotonicNowMs(dependencies) - monotonicStartMs);
     return Math.max(0, Math.floor(Math.min(wallRemainingMs, monotonicRemainingMs)));
   };
@@ -1414,11 +1415,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         if (knownTaskId) {
           if (persistedWindow === null) throw new ProviderPollTimeoutConfigurationError();
           pollDeadlineMs = persistedWindow.deadline_ms;
-          remainingPollBudget = createRemainingPollBudget(
-            pollDeadlineMs,
-            persistedWindow.timeout_ms,
-            dependencies
-          );
+          remainingPollBudget = createRemainingPollBudget(persistedWindow, dependencies);
         } else if (persistedWindow !== null) {
           throw new ProviderPollTimeoutConfigurationError();
         }
@@ -1573,11 +1570,11 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         return;
       }
       intent = getIntent(db, intent.intent_id) as WorkbenchGenerationIntent;
-      remainingPollBudget = createRemainingPollBudget(
-        pollDeadlineMs as number,
-        providerPollTimeoutMs,
-        dependencies
-      );
+      remainingPollBudget = createRemainingPollBudget({
+        started_at_ms: (pollDeadlineMs as number) - providerPollTimeoutMs,
+        timeout_ms: providerPollTimeoutMs,
+        deadline_ms: pollDeadlineMs as number
+      }, dependencies);
       submittedNow = true;
     }
 

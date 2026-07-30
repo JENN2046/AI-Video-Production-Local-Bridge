@@ -4761,3 +4761,41 @@ s4_status: BLOCKED
 s4_authorization_granted: false
 delivery: PR_108_DRAFT_REVIEW_BLOCKED
 ```
+
+## 2026-07-31 — PR108 clock rollback whole-job fail-closed hardening
+
+```yaml
+task: PR107-CLEAN-RESTACK
+status: LOCAL_FIX_VALIDATED_REMAINING_REVIEW_FINDING_BLOCKED_BY_ALLOWLIST
+recorded_by: Codex
+recorded_at: 2026-07-31T06:48:22+08:00
+replacement_pr: 108
+self_review_finding: PER_EXECUTION_CAP_COULD_RESET_ACROSS_REPEATED_WORKER_CLAIMS
+resolution:
+  wall_clock_before_persisted_poll_start: FAIL_CLOSED
+  stable_reconciliation_reason: PROVIDER_POLL_TIMEOUT
+  provider_task_id_preserved: true
+  provider_poll_before_failure: 0
+  automatic_submit_retry: 0
+changed_files:
+  - src/tools/workbenchGeneration.ts
+  - tests/workbench-v2-domain.test.ts
+  - .agent_board/TASK_LEDGER.md
+  - .agent_board/VALIDATION_LOG.md
+local_validation:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_61
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+remaining_review_finding: INVALID_VERIFIED_BLOB_HAS_NO_AUTHORIZED_RECOVERY_PATH
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+s4_status: BLOCKED
+s4_authorization_granted: false
+delivery: PR_108_DRAFT_REVIEW_BLOCKED
+```
