@@ -1192,7 +1192,9 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         failIntent(db, currentIntent, "failed", error, leaseToken);
       }
     };
-    let providerPollTimeoutMs: number;
+    const recoveringLocalCompletion = knownTaskId !== ""
+      && (job.state === "downloading" || job.state === "finalizing");
+    let providerPollTimeoutMs: number | null = null;
     let pollDeadlineMs: number | null = null;
     let remainingPollBudget: (() => number) | null = null;
     const markProviderPollTimeout = (): void => {
@@ -1204,14 +1206,16 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       );
     };
     try {
-      providerPollTimeoutMs = parseProviderTaskPollTimeoutMs(dependencies.env ?? process.env);
-      const persistedDeadline = providerPollDeadlineFromIntent(db, intent.intent_id);
-      if (knownTaskId) {
-        if (persistedDeadline === null) throw new ProviderPollTimeoutConfigurationError();
-        pollDeadlineMs = persistedDeadline;
-        remainingPollBudget = createRemainingPollBudget(pollDeadlineMs, dependencies);
-      } else if (persistedDeadline !== null) {
-        throw new ProviderPollTimeoutConfigurationError();
+      if (!recoveringLocalCompletion) {
+        providerPollTimeoutMs = parseProviderTaskPollTimeoutMs(dependencies.env ?? process.env);
+        const persistedDeadline = providerPollDeadlineFromIntent(db, intent.intent_id);
+        if (knownTaskId) {
+          if (persistedDeadline === null) throw new ProviderPollTimeoutConfigurationError();
+          pollDeadlineMs = persistedDeadline;
+          remainingPollBudget = createRemainingPollBudget(pollDeadlineMs, dependencies);
+        } else if (persistedDeadline !== null) {
+          throw new ProviderPollTimeoutConfigurationError();
+        }
       }
     } catch (caught) {
       if (!(caught instanceof ProviderPollTimeoutConfigurationError)) throw caught;
@@ -1223,7 +1227,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       );
       return;
     }
-    if (knownTaskId && remainingPollBudget?.() === 0) {
+    if (job.state === "polling" && remainingPollBudget?.() === 0) {
       markProviderPollTimeout();
       return;
     }
@@ -1282,6 +1286,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
     let taskId = knownTaskId;
     let submittedNow = false;
     if (!taskId) {
+      if (providerPollTimeoutMs === null) throw new ProviderPollTimeoutConfigurationError();
       const artifact = validateActiveArtifactReference(db, {
         artifact_id: intent.input_artifact_id, project_id: intent.project_id, shot_id: intent.shot_id, role: "storyboard_image", artifact_type: "image"
       });
@@ -1385,54 +1390,83 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       return;
     }
 
-    const pollRequestTimeoutMs = remainingPollBudget?.() ?? 0;
-    if (pollRequestTimeoutMs <= 0) {
-      markProviderPollTimeout();
-      return;
-    }
-    const polled = await adapter.pollStatus(taskId, { timeout_ms: pollRequestTimeoutMs });
-    assertJobLease(db, job.job_id, leaseToken);
-    if ((remainingPollBudget?.() ?? 0) <= 0) {
-      markProviderPollTimeout();
-      return;
-    }
-    if (!polled.ok) {
-      if (polled.error.retryable) {
-        deferPolling();
+    let output = existingOutputArtifact(db, taskId, intent.project_id, intent.shot_id);
+    let outputUrl = "";
+    if (!output) {
+      if (job.state === "finalizing") {
+        job = markKnownProviderTaskForReconciliation(
+          db,
+          intent,
+          job,
+          taskId,
+          providerError("LOCAL_FINALIZATION_STATE_MISSING", "The downloaded Artifact was missing during local finalization recovery."),
+          leaseToken,
+          "LOCAL_FINALIZATION_REQUIRES_RECONCILIATION"
+        );
         return;
       }
-      job = markKnownProviderTaskForReconciliation(db, intent, job, taskId, polled.error, leaseToken, "PROVIDER_POLL_REQUIRES_RECONCILIATION");
-      return;
-    }
-    db.exec("BEGIN IMMEDIATE");
-    try {
-      assertJobLease(db, job.job_id, leaseToken);
-      const run = getGenerationRun(db, intent.run_id);
-      if (run) {
-        run.provider.provider_status = polled.provider_status;
-        saveGenerationRun(db, run);
+      const deadlineApplies = job.state === "polling";
+      const pollRequestTimeoutMs = deadlineApplies ? remainingPollBudget?.() ?? 0 : null;
+      if (deadlineApplies && (pollRequestTimeoutMs ?? 0) <= 0) {
+        markProviderPollTimeout();
+        return;
       }
-      db.exec("COMMIT");
-    } catch (error) {
-      db.exec("ROLLBACK");
-      throw error;
-    }
-    if (polled.status === "failed" || polled.status === "cancelled") {
-      if (polled.status === "cancelled") cancelIntent(db, intent, "PROVIDER_CANCELLED", leaseToken);
-      else failIntent(db, intent, "failed", providerError("PROVIDER_REQUEST_FAILED", `RunningHub task ended with ${polled.provider_status}.`), leaseToken);
-      return;
-    }
-    if (polled.status !== "succeeded") {
-      deferPolling();
-      return;
-    }
-    const outputUrl = polled.output_url ?? "";
-    if (!outputUrl) {
-      job = markKnownProviderTaskForReconciliation(db, intent, job, taskId, providerError("PROVIDER_OUTPUT_MISSING", "Provider reported success without an output URL."), leaseToken, "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION");
-      return;
-    }
-    let output = existingOutputArtifact(db, taskId, intent.project_id, intent.shot_id);
-    if (!output) {
+      const polled = await adapter.pollStatus(
+        taskId,
+        deadlineApplies ? { timeout_ms: pollRequestTimeoutMs as number } : undefined
+      );
+      assertJobLease(db, job.job_id, leaseToken);
+      if (deadlineApplies && (remainingPollBudget?.() ?? 0) <= 0) {
+        markProviderPollTimeout();
+        return;
+      }
+      if (!polled.ok) {
+        if (deadlineApplies && polled.error.retryable) {
+          deferPolling();
+          return;
+        }
+        job = markKnownProviderTaskForReconciliation(db, intent, job, taskId, polled.error, leaseToken, "PROVIDER_POLL_REQUIRES_RECONCILIATION");
+        return;
+      }
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        assertJobLease(db, job.job_id, leaseToken);
+        const run = getGenerationRun(db, intent.run_id);
+        if (run) {
+          run.provider.provider_status = polled.provider_status;
+          saveGenerationRun(db, run);
+        }
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+      if (polled.status === "failed" || polled.status === "cancelled") {
+        if (polled.status === "cancelled") cancelIntent(db, intent, "PROVIDER_CANCELLED", leaseToken);
+        else failIntent(db, intent, "failed", providerError("PROVIDER_REQUEST_FAILED", `RunningHub task ended with ${polled.provider_status}.`), leaseToken);
+        return;
+      }
+      if (polled.status !== "succeeded") {
+        if (deadlineApplies) {
+          deferPolling();
+        } else {
+          job = markKnownProviderTaskForReconciliation(
+            db,
+            intent,
+            job,
+            taskId,
+            providerError("PROVIDER_STATUS_REQUIRES_RECONCILIATION", "Provider terminal success could not be reconfirmed during local completion recovery."),
+            leaseToken,
+            "PROVIDER_POLL_REQUIRES_RECONCILIATION"
+          );
+        }
+        return;
+      }
+      outputUrl = polled.output_url ?? "";
+      if (!outputUrl) {
+        job = markKnownProviderTaskForReconciliation(db, intent, job, taskId, providerError("PROVIDER_OUTPUT_MISSING", "Provider reported success without an output URL."), leaseToken, "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION");
+        return;
+      }
       job = setJobState(db, job, "downloading", "", { lease_token: leaseToken });
       assertJobLease(db, job.job_id, leaseToken);
       const downloaded = await downloadProviderOutputToArtifact({

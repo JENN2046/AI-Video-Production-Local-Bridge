@@ -2672,3 +2672,38 @@ secret_reads: 0
 service_starts: 0
 remaining_test_processes: 0
 ```
+
+### PR108 final-review P2 remediation
+
+```yaml
+task: PR107-CLEAN-RESTACK
+validated_at: 2026-07-31T04:19:20+08:00
+replacement_pr: 108
+finding: LOCAL_COMPLETION_RECOVERY_REUSED_EXPIRED_POLL_DEADLINE
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - npm run test:v2
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_58
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  polling_deadline_applies_only_while_polling: true
+  downloading_with_existing_artifact_resumes_locally: true
+  finalizing_with_existing_artifact_resumes_locally: true
+  provider_poll_for_existing_artifact: 0
+  automatic_submit_retry: 0
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+```

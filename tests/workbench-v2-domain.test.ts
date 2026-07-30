@@ -1708,6 +1708,76 @@ test("provider polling uses one persisted absolute deadline and never resubmits 
   }
 });
 
+test("expired polling deadline does not block resumed local completion after Provider success", async () => {
+  const roots: string[] = [];
+  try {
+    for (const recoveryState of ["downloading", "finalizing"] as const) {
+      const root = mkdtempSync(join(tmpdir(), `generation-${recoveryState}-recovery-`));
+      roots.push(root);
+      const sqlitePath = join(root, "app.sqlite");
+      const prepared = await prepareConfirmedGeneration(sqlitePath, `Resume ${recoveryState}`);
+      const taskId = `task-${recoveryState}-recovery`;
+      const wallMs = Date.now();
+      persistKnownProviderTask(sqlitePath, prepared.intent_id, prepared.job_id, taskId, MIN_PROVIDER_TASK_POLL_TIMEOUT_MS);
+
+      let db = openM0Database(sqlitePath);
+      const intentRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+        .get(prepared.intent_id) as { data_json: string };
+      const intentData = JSON.parse(intentRow.data_json) as Record<string, unknown>;
+      intentData.provider_poll_started_at = new Date(wallMs - MIN_PROVIDER_TASK_POLL_TIMEOUT_MS - 1_000).toISOString();
+      intentData.provider_poll_timeout_ms = MIN_PROVIDER_TASK_POLL_TIMEOUT_MS;
+      intentData.provider_poll_deadline_at = new Date(wallMs - 1_000).toISOString();
+      db.prepare("UPDATE generation_intents SET data_json = ? WHERE intent_id = ?")
+        .run(JSON.stringify(intentData), prepared.intent_id);
+      db.prepare("UPDATE generation_jobs SET state = ? WHERE job_id = ?")
+        .run(recoveryState, prepared.job_id);
+      const existingOutput = registerMediaArtifact({
+        artifact_type: "video",
+        role: "generated_clip",
+        source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+        linked_objects: { project_id: prepared.project_id, shot_id: prepared.shot_id },
+        provenance: { provider: "runninghub", provider_job_id: taskId }
+      }, db);
+      assert.equal(existingOutput.ok, true, recoveryState);
+      db.close();
+
+      let pollCalls = 0;
+      const adapter = {
+        provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+        submitGeneration: async () => { throw new Error("submit must not run"); },
+        pollStatus: async () => {
+          pollCalls += 1;
+          throw new Error("poll must not run after Provider success was persisted locally");
+        },
+        fetchOutput: async () => { throw new Error("output fetch must not run for an existing Artifact"); }
+      } as unknown as VideoProviderAdapter;
+      await runWorkbenchGenerationOnce(prepared.intent_id, {
+        allow_submit: false,
+        dependencies: {
+          sqlite_path: sqlitePath,
+          env: prepared.env,
+          adapter_factory: () => adapter,
+          now: () => new Date(wallMs),
+          monotonic_now_ms: () => 10_000
+        }
+      });
+
+      db = openM0Database(sqlitePath);
+      const completedIntent = db.prepare("SELECT status, output_artifact_id FROM generation_intents WHERE intent_id = ?")
+        .get(prepared.intent_id) as { status: string; output_artifact_id: string };
+      const completedJob = db.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+        .get(prepared.job_id) as { state: string; reconciliation_reason: string };
+      db.close();
+      assert.equal(pollCalls, 0, recoveryState);
+      assert.equal(completedIntent.status, "succeeded", recoveryState);
+      assert.equal(completedIntent.output_artifact_id, existingOutput.ok ? existingOutput.artifact.artifact_id : "", recoveryState);
+      assert.deepEqual({ ...completedJob }, { state: "succeeded", reconciliation_reason: "" }, recoveryState);
+    }
+  } finally {
+    for (const root of roots) rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("regeneration poll timeout restores review workflow without losing the rejected clip", async () => {
   const root = mkdtempSync(join(tmpdir(), "generation-regeneration-poll-timeout-"));
   const sqlitePath = join(root, "app.sqlite");
