@@ -185,7 +185,7 @@ function readManifest(root: string, runId: string): Manifest {
   return manifest as Manifest;
 }
 
-type DatabaseLease = {
+type DatabaseFileLease = {
   descriptor: number;
   path: string;
   root: string;
@@ -193,7 +193,11 @@ type DatabaseLease = {
   inode: bigint;
 };
 
-function assertDatabaseLeaseCurrent(lease: DatabaseLease): void {
+type DatabaseLease = DatabaseFileLease & {
+  sidecars: DatabaseFileLease[];
+};
+
+function assertDatabaseFileLeaseCurrent(lease: DatabaseFileLease, requireNonempty: boolean): void {
   try {
     const descriptorStats = fstatSync(lease.descriptor, { bigint: true });
     const pathStats = lstatSync(lease.path, { bigint: true });
@@ -203,7 +207,7 @@ function assertDatabaseLeaseCurrent(lease: DatabaseLease): void {
       || descriptorStats.dev !== lease.device || descriptorStats.ino !== lease.inode
       || pathStats.dev !== lease.device || pathStats.ino !== lease.inode
       || descriptorStats.nlink !== 1n || pathStats.nlink !== 1n
-      || descriptorStats.size < 1n
+      || (requireNonempty && descriptorStats.size < 1n)
       || !databaseRel || databaseRel.startsWith("..") || isAbsolute(databaseRel)) {
       throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
     }
@@ -213,10 +217,15 @@ function assertDatabaseLeaseCurrent(lease: DatabaseLease): void {
   }
 }
 
-function openDatabaseLease(root: string, databasePath: string): DatabaseLease {
+function assertDatabaseLeaseCurrent(lease: DatabaseLease): void {
+  assertDatabaseFileLeaseCurrent(lease, true);
+  for (const sidecar of lease.sidecars) assertDatabaseFileLeaseCurrent(sidecar, false);
+}
+
+function openDatabaseFileLease(root: string, path: string, flags: number, requireNonempty: boolean): DatabaseFileLease {
   let descriptor: number;
   try {
-    descriptor = openSync(databasePath, constants.O_RDONLY | MANIFEST_NOFOLLOW_FLAG);
+    descriptor = openSync(path, flags | MANIFEST_NOFOLLOW_FLAG, 0o600);
   } catch {
     throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
   }
@@ -224,12 +233,12 @@ function openDatabaseLease(root: string, databasePath: string): DatabaseLease {
     const stats = fstatSync(descriptor, { bigint: true });
     const lease = {
       descriptor,
-      path: databasePath,
-      root: realpathSync(root),
+      path,
+      root,
       device: stats.dev,
       inode: stats.ino
     };
-    assertDatabaseLeaseCurrent(lease);
+    assertDatabaseFileLeaseCurrent(lease, requireNonempty);
     return lease;
   } catch (error) {
     closeSync(descriptor);
@@ -238,23 +247,48 @@ function openDatabaseLease(root: string, databasePath: string): DatabaseLease {
   }
 }
 
-function assertDatabaseSidecarsCurrent(root: string, databasePath: string): void {
+function openDatabaseLease(root: string, databasePath: string): DatabaseLease {
+  const realRoot = realpathSync(root);
+  const main = openDatabaseFileLease(realRoot, databasePath, constants.O_RDONLY, true);
+  const sidecars: DatabaseFileLease[] = [];
   try {
-    const realRoot = realpathSync(root);
     for (const suffix of DATABASE_SIDECAR_SUFFIXES) {
-      const sidecarPath = `${databasePath}${suffix}`;
-      const sidecarStats = lstatSync(sidecarPath, { bigint: true });
-      const sidecarReal = realpathSync(sidecarPath);
-      const sidecarRel = relative(realRoot, sidecarReal);
-      if (!sidecarStats.isFile() || sidecarStats.isSymbolicLink() || sidecarStats.nlink !== 1n
-        || !sidecarRel || sidecarRel.startsWith("..") || isAbsolute(sidecarRel)) {
-        throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
-      }
+      sidecars.push(openDatabaseFileLease(
+        realRoot,
+        `${databasePath}${suffix}`,
+        constants.O_RDWR | constants.O_CREAT,
+        false
+      ));
     }
+    const lease: DatabaseLease = { ...main, sidecars };
+    assertDatabaseLeaseCurrent(lease);
+    return lease;
   } catch (error) {
+    let cleanupFailed = false;
+    for (const file of [...sidecars].reverse().concat(main)) {
+      try { closeSync(file.descriptor); } catch { cleanupFailed = true; }
+    }
+    if (cleanupFailed) throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
     if (error instanceof MatrixError) throw error;
     throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
   }
+}
+
+function databaseGuardIdentity(lease: DatabaseFileLease): string {
+  const device = lease.device.toString(16).toUpperCase().padStart(8, "0");
+  const inode = lease.inode.toString(16).toUpperCase().padStart(16, "0");
+  if (!/^[0-9A-F]{8}$/.test(device) || !/^[0-9A-F]{16}$/.test(inode)) {
+    throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+  }
+  return `${device}:${inode}`;
+}
+
+function closeDatabaseLease(lease: DatabaseLease): void {
+  let failed = false;
+  for (const file of [...lease.sidecars].reverse().concat(lease)) {
+    try { closeSync(file.descriptor); } catch { failed = true; }
+  }
+  if (failed) throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
 }
 
 type DatabasePathGuard = {
@@ -262,7 +296,9 @@ type DatabasePathGuard = {
   release: () => Promise<void>;
 };
 
-async function acquireDatabasePathGuard(databasePath: string): Promise<DatabasePathGuard> {
+async function acquireDatabasePathGuard(databaseLease: DatabaseLease): Promise<DatabasePathGuard> {
+  const databasePath = databaseLease.path;
+  const expectedIdentities = [databaseLease, ...databaseLease.sidecars].map(databaseGuardIdentity).join(",");
   const guardScript = resolve(process.cwd(), "scripts", "windows", "media-database-path-guard.ps1");
   if (process.platform !== "win32" || /[\r\n]/.test(databasePath) || !existsSync(guardScript)) {
     throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
@@ -317,7 +353,7 @@ async function acquireDatabasePathGuard(databasePath: string): Promise<DatabaseP
     child.once("exit", fail);
     child.stdout.on("data", receive);
     child.stdin.once("error", fail);
-    child.stdin.write(`${databasePath}\n`);
+    child.stdin.write(`${databasePath}\n${expectedIdentities}\n`);
   });
   child.once("exit", () => { holding = false; });
   child.stdin.on("error", () => { holding = false; });
@@ -615,12 +651,11 @@ async function main(): Promise<void> {
   const databasePath = resolve(root, manifest.database_file);
   const databaseLease = openDatabaseLease(root, databasePath);
   try {
-  const databasePathGuard = await acquireDatabasePathGuard(databasePath);
+  const databasePathGuard = await acquireDatabasePathGuard(databaseLease);
   try {
   const assertDatabaseCurrent = (): void => {
     databasePathGuard.assertHolding();
     assertDatabaseLeaseCurrent(databaseLease);
-    assertDatabaseSidecarsCurrent(databaseLease.root, databasePath);
   };
   assertDatabaseCurrent();
   const encodedKey = await stdinKey();
@@ -827,7 +862,7 @@ async function main(): Promise<void> {
     await databasePathGuard.release();
   }
   } finally {
-    closeSync(databaseLease.descriptor);
+    closeDatabaseLease(databaseLease);
   }
   } finally {
     clearTimeout(matrixTimer);

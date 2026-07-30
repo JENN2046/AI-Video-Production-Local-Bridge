@@ -313,6 +313,29 @@ test("SQLite path guards run before readonly export queries and writable connect
   }
 });
 
+test("media database path guard rejects a lease identity mismatch before reporting LOCKED", { skip: process.platform !== "win32" }, async () => {
+  const root = mkdtempSync(join(tmpdir(), "media-database-identity-guard-"));
+  const databasePath = join(root, "app.sqlite");
+  writeFileSync(databasePath, "database", "utf8");
+  writeFileSync(`${databasePath}-wal`, "");
+  writeFileSync(`${databasePath}-shm`, "");
+  try {
+    const invalidIdentity = "00000000:0000000000000000";
+    const result = await runChild("powershell.exe", [
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy", "RemoteSigned",
+      "-File", resolve("scripts/windows/media-database-path-guard.ps1")
+    ], `${databasePath}\n${[invalidIdentity, invalidIdentity, invalidIdentity].join(",")}\n`, childEnv, 10_000);
+    assert.equal(result.timed_out, false);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+    assert.equal(result.stderr, "");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("MP4 acceptance fixture and generated profiles are isolated, contract-valid, source-preserving, and low disclosure", () => {
   const wrapper = readFileSync(resolve("scripts/windows/media-create-acceptance-fixture.ps1"), "utf8");
   const matrixWrapper = readFileSync(resolve("scripts/windows/media-run-acceptance-matrix.ps1"), "utf8");
@@ -341,6 +364,10 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
   assert.doesNotMatch(databaseGuard, /FileShareDelete/);
   assert.match(databaseGuard, /FileFlagOpenReparsePoint/);
   assert.match(databaseGuard, /information\.NumberOfLinks != 1/);
+  assert.match(databaseGuard, /information\.VolumeSerialNumber\.ToString\("X8"\)/);
+  assert.match(databaseGuard, /fileIndex\.ToString\("X16"\)/);
+  assert.match(databaseGuard, /expectedIdentities\.Count -ne 3/);
+  assert.match(databaseGuard, /Identity\(\$handle\) -cne/);
   assert.match(databaseGuard, /"\$databasePath-wal"/);
   assert.match(databaseGuard, /"\$databasePath-shm"/);
   assert.match(databaseGuard, /WriteLine\("LOCKED"\)/);
@@ -365,13 +392,14 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
   assert.doesNotMatch(matrixSource, /openSync\(manifestReal/);
   assert.doesNotMatch(matrixSource, /readFileSync\(manifestReal/);
   assert.match(matrixSource, /openDatabaseLease\(root, databasePath\)/);
-  assert.match(matrixSource, /acquireDatabasePathGuard\(databasePath\)/);
+  assert.match(matrixSource, /acquireDatabasePathGuard\(databaseLease\)/);
   assert.match(matrixSource, /databasePathGuard\.assertHolding\(\)/);
   assert.match(matrixSource, /await databasePathGuard\.release\(\)/);
-  assert.match(matrixSource, /await databasePathGuard\.release\(\);[\s\S]*closeSync\(databaseLease\.descriptor\);[\s\S]*console\.log\(JSON\.stringify\(passReceipt\)\)/);
+  assert.match(matrixSource, /await databasePathGuard\.release\(\);[\s\S]*closeDatabaseLease\(databaseLease\);[\s\S]*console\.log\(JSON\.stringify\(passReceipt\)\)/);
   assert.doesNotMatch(matrixSource, /console\.log\(JSON\.stringify\(\{\s*result: "PASS"/);
   assert.match(matrixSource, /assertDatabaseLeaseCurrent\(databaseLease\)/);
-  assert.match(matrixSource, /assertDatabaseSidecarsCurrent\(databaseLease\.root, databasePath\)/);
+  assert.match(matrixSource, /databaseLease\.sidecars/);
+  assert.match(matrixSource, /databaseGuardIdentity/);
   assert.match(matrixSource, /\{ assertDatabaseCurrent \}/);
   assert.match(matrixSource, /\{ assertPathCurrent: assertDatabaseCurrent \}/);
   assert.match(matrixSource, /openExpectedMediaFile\(root, media\)/);

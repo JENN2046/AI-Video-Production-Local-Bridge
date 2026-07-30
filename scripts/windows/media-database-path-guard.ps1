@@ -38,7 +38,6 @@ namespace MediaDatabasePathGuard
         private const uint FileShareRead = 0x00000001;
         private const uint FileShareWrite = 0x00000002;
         private const uint OpenExisting = 3;
-        private const uint OpenAlways = 4;
         private const uint FileAttributeDirectory = 0x00000010;
         private const uint FileAttributeNormal = 0x00000080;
         private const uint FileAttributeReparsePoint = 0x00000400;
@@ -59,14 +58,14 @@ namespace MediaDatabasePathGuard
             SafeFileHandle file,
             out ByHandleFileInformation information);
 
-        public static SafeFileHandle OpenProtected(string path, bool createIfMissing)
+        public static SafeFileHandle OpenProtected(string path)
         {
             SafeFileHandle handle = CreateFileW(
                 path,
                 GenericRead | GenericWrite,
                 FileShareRead | FileShareWrite,
                 IntPtr.Zero,
-                createIfMissing ? OpenAlways : OpenExisting,
+                OpenExisting,
                 FileAttributeNormal | FileFlagOpenReparsePoint,
                 IntPtr.Zero);
             if (handle.IsInvalid)
@@ -101,6 +100,23 @@ namespace MediaDatabasePathGuard
                 throw new InvalidOperationException();
             }
         }
+
+        public static string Identity(SafeFileHandle handle)
+        {
+            ByHandleFileInformation information;
+            if (handle == null || handle.IsInvalid || handle.IsClosed
+                || !GetFileInformationByHandle(handle, out information))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+            if ((information.FileAttributes & (FileAttributeDirectory | FileAttributeReparsePoint)) != 0
+                || information.NumberOfLinks != 1)
+            {
+                throw new InvalidOperationException();
+            }
+            ulong fileIndex = ((ulong)information.FileIndexHigh << 32) | information.FileIndexLow;
+            return information.VolumeSerialNumber.ToString("X8") + ":" + fileIndex.ToString("X16");
+        }
     }
 }
 '@
@@ -109,18 +125,24 @@ namespace MediaDatabasePathGuard
     if ([string]::IsNullOrWhiteSpace($databasePath)) {
         exit 1
     }
+    $expectedIdentityText = [Console]::In.ReadLine()
+    $expectedIdentities = @($expectedIdentityText -split ",")
+    if ($expectedIdentities.Count -ne 3 -or
+        @($expectedIdentities | Where-Object { [string]$_ -cnotmatch "^[0-9A-F]{8}:[0-9A-F]{16}$" }).Count -ne 0) {
+        exit 1
+    }
 
     $protectedPaths = @(
-        [pscustomobject]@{ Path = $databasePath; CreateIfMissing = $false },
-        [pscustomobject]@{ Path = "$databasePath-wal"; CreateIfMissing = $true },
-        [pscustomobject]@{ Path = "$databasePath-shm"; CreateIfMissing = $true }
+        $databasePath,
+        "$databasePath-wal",
+        "$databasePath-shm"
     )
-    foreach ($protectedPath in $protectedPaths) {
-        $handle = [MediaDatabasePathGuard.NativeMethods]::OpenProtected(
-            [string]$protectedPath.Path,
-            [bool]$protectedPath.CreateIfMissing
-        )
+    for ($index = 0; $index -lt $protectedPaths.Count; $index += 1) {
+        $handle = [MediaDatabasePathGuard.NativeMethods]::OpenProtected([string]$protectedPaths[$index])
         $handles.Add($handle)
+        if ([MediaDatabasePathGuard.NativeMethods]::Identity($handle) -cne [string]$expectedIdentities[$index]) {
+            throw [System.InvalidOperationException]::new()
+        }
     }
     foreach ($handle in $handles) {
         [MediaDatabasePathGuard.NativeMethods]::Validate($handle)
