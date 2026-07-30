@@ -23,6 +23,7 @@ import {
 import {
   confirmWorkbenchGeneration,
   DEFAULT_PROVIDER_TASK_POLL_TIMEOUT_MS,
+  generationWorkerStatus,
   MAX_PROVIDER_TASK_POLL_TIMEOUT_MS,
   MIN_PROVIDER_TASK_POLL_TIMEOUT_MS,
   parseProviderTaskPollTimeoutMs,
@@ -106,6 +107,26 @@ test("shared operational state derives the generation, review, revision, and acc
   assert.equal(legacyQueuedRun.generation.stage, "queued");
   assert.equal(legacyQueuedRun.allowed_workflow_actions.prepare_generation, false);
   assert.equal(deriveProjectOperationalSummary([legacyQueuedRun]).active_run_count, 1);
+
+  const manualReconciliation = deriveShotOperationalState(operationalFacts({
+    stored_workflow_status: "storyboard_approved",
+    storyboard_artifact: storyboard,
+    generation_job_state: "manual_reconciliation",
+    latest_generation_run_status: "running"
+  }));
+  assert.equal(manualReconciliation.primary_stage, "manual_reconciliation");
+  assert.ok(manualReconciliation.blocker_codes.includes("GENERATION_MANUAL_RECONCILIATION"));
+  assert.equal(manualReconciliation.allowed_workflow_actions.prepare_generation, false);
+  assert.equal(deriveProjectOperationalSummary([manualReconciliation]).active_run_count, 0);
+
+  const otherRunningShot = deriveShotOperationalState(operationalFacts({
+    shot_id: "shot_operational_002",
+    stored_workflow_status: "video_pending",
+    storyboard_artifact: storyboard,
+    generation_job_state: "polling",
+    latest_generation_run_status: "running"
+  }));
+  assert.equal(deriveProjectOperationalSummary([manualReconciliation, otherRunningShot]).active_run_count, 1);
 
   const failedRegeneration = deriveShotOperationalState(operationalFacts({
     stored_workflow_status: "video_review",
@@ -564,7 +585,11 @@ test("project-level generation runs contribute to operational active and failure
   }
 });
 
-async function prepareConfirmedGeneration(sqlitePath: string, title: string): Promise<{ intent_id: string; job_id: string; env: NodeJS.ProcessEnv }> {
+async function prepareConfirmedGeneration(
+  sqlitePath: string,
+  title: string,
+  options: { regeneration?: boolean } = {}
+): Promise<{ intent_id: string; job_id: string; run_id: string; project_id: string; shot_id: string; env: NodeJS.ProcessEnv }> {
   migrateDatabase(sqlitePath);
   const db = openM0Database(sqlitePath);
   try {
@@ -580,9 +605,27 @@ async function prepareConfirmedGeneration(sqlitePath: string, title: string): Pr
     assert.equal(artifact.ok, true);
     if (!artifact.ok) throw new Error("artifact setup failed");
     shot.storyboard_image_artifact_id = artifact.artifact.artifact_id;
+    if (options.regeneration) {
+      const previous = registerMediaArtifact({
+        artifact_type: "video", role: "generated_clip",
+        source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+        linked_objects: { project_id: project.project_id, shot_id: shot.shot_id }
+      }, db);
+      assert.equal(previous.ok, true);
+      if (!previous.ok) throw new Error("previous clip setup failed");
+      shot.status = "revision_needed";
+      shot.review.approval_status = "revision_needed";
+      shot.review.rejection_reasons = ["motion_drift"];
+      shot.clip_versions = [{
+        artifact_id: previous.artifact.artifact_id,
+        run_id: "run_previous_rejected",
+        attempt_number: 1,
+        review_status: "rejected"
+      }];
+    }
     saveShot(db, shot);
     project.project.shot_ids.push(shot.shot_id);
-    project.project.status = "storyboard_approved";
+    project.project.status = options.regeneration ? "video_review" : "storyboard_approved";
     saveProject(db, project.project);
     const env = { REAL_PROVIDER_ENABLED: "true", M1_REAL_PROVIDER: "runninghub", M1_REAL_PROVIDER_EXECUTION_ALLOWED: "true", M1_REAL_PROVIDER_COST_ACK: "true", RUNNINGHUB_API_KEY: "synthetic-test-key" } as NodeJS.ProcessEnv;
     const fetchImpl: typeof fetch = async (input) => String(input).includes("price-preview")
@@ -594,7 +637,14 @@ async function prepareConfirmedGeneration(sqlitePath: string, title: string): Pr
     const confirmed = confirmWorkbenchGeneration({ intent_id: prepared.data.intent.intent_id, budget_limit_value: 1, cost_confirmed: true, human_confirmation: true }, db);
     assert.equal(confirmed.ok, true);
     if (!confirmed.ok) throw new Error("generation confirmation failed");
-    return { intent_id: prepared.data.intent.intent_id, job_id: confirmed.data.job_id, env };
+    return {
+      intent_id: prepared.data.intent.intent_id,
+      job_id: confirmed.data.job_id,
+      run_id: confirmed.data.run_id,
+      project_id: project.project_id,
+      shot_id: shot.shot_id,
+      env
+    };
   } finally {
     db.close();
   }
@@ -1193,14 +1243,109 @@ test("generation preflight enforces official estimate, balance gate, budget and 
   }
 });
 
+test("explicit task attachment alone resumes bounded polling and generation workflow state", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-explicit-attach-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Explicit reconciliation attach");
+    let submitCalls = 0;
+    let pollCalls = 0;
+    const adapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => {
+        submitCalls += 1;
+        return {
+          ok: false as const,
+          error: { code: "PROVIDER_TIMEOUT", message: "Synthetic unknown outcome.", retryable: true, submission_outcome_unknown: true }
+        };
+      },
+      pollStatus: async () => {
+        pollCalls += 1;
+        return {
+          ok: true as const,
+          provider_job_id: "task-human-attached",
+          status: "running" as const,
+          provider_status: "RUNNING",
+          retryable: true
+        };
+      },
+      fetchOutput: async () => { throw new Error("output must not run"); }
+    } as unknown as VideoProviderAdapter;
+    const dependencies = {
+      sqlite_path: sqlitePath,
+      env: prepared.env,
+      adapter_factory: () => adapter,
+      now: () => new Date("2026-07-30T00:00:00.000Z"),
+      monotonic_now_ms: () => 5_000,
+      poll_interval_ms: 100
+    };
+
+    await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: true, dependencies });
+    let db = openM0Database(sqlitePath);
+    let summary = listWorkbenchProjects({ scope: "all" }, db).items
+      .find((item) => item.project.project_id === prepared.project_id);
+    assert.equal(summary?.active_run_count, 0);
+    assert.ok(summary?.blocker_codes.includes("GENERATION_MANUAL_RECONCILIATION"));
+
+    const attached = reconcileGenerationJob(prepared.job_id, {
+      decision: "attach_existing_task",
+      provider_task_id: "task-human-attached",
+      human_confirmation: true
+    }, db, { env: prepared.env, now: dependencies.now });
+    assert.equal(attached.ok, true);
+    if (!attached.ok) throw new Error("explicit task attachment failed");
+    const attachedDataRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const attachedData = JSON.parse(attachedDataRow.data_json) as { provider_poll_deadline_at: string };
+    const originalDeadline = attachedData.provider_poll_deadline_at;
+    const project = db.prepare("SELECT data_json FROM projects WHERE project_id = ?")
+      .get(prepared.project_id) as { data_json: string };
+    const shot = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?")
+      .get(prepared.shot_id) as { data_json: string };
+    summary = listWorkbenchProjects({ scope: "all" }, db).items
+      .find((item) => item.project.project_id === prepared.project_id);
+    assert.equal(attached.data.job.state, "polling");
+    assert.equal(attached.data.intent.provider_task_id, "task-human-attached");
+    assert.equal((JSON.parse(project.data_json) as { status: string }).status, "video_generation_in_progress");
+    assert.equal((JSON.parse(shot.data_json) as { status: string }).status, "video_pending");
+    assert.equal(summary?.active_run_count, 1);
+    assert.equal(summary?.blocker_codes.includes("GENERATION_MANUAL_RECONCILIATION"), false);
+    const duplicateAttach = reconcileGenerationJob(prepared.job_id, {
+      decision: "attach_existing_task",
+      provider_task_id: "task-human-attached",
+      human_confirmation: true
+    }, db, { env: prepared.env, now: dependencies.now });
+    assert.equal(duplicateAttach.ok, false);
+    if (!duplicateAttach.ok) assert.equal(duplicateAttach.error.code, "GENERATION_JOB_NOT_RECONCILABLE");
+    db.close();
+
+    await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: false, dependencies });
+    db = openM0Database(sqlitePath);
+    const afterPoll = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const afterPollData = JSON.parse(afterPoll.data_json) as { provider_poll_deadline_at: string };
+    const afterPollJob = db.prepare("SELECT state FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string };
+    db.close();
+
+    assert.equal(submitCalls, 1);
+    assert.equal(pollCalls, 1);
+    assert.equal(afterPollJob.state, "polling");
+    assert.equal(afterPollData.provider_poll_deadline_at, originalDeadline);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("provider task persistence failure enters manual reconciliation without losing the paid task ID", async () => {
   const root = mkdtempSync(join(tmpdir(), "generation-persist-fault-"));
   const sqlitePath = join(root, "app.sqlite");
   try {
     const prepared = await prepareConfirmedGeneration(sqlitePath, "Persistence fault");
     const db = openM0Database(sqlitePath);
-    db.exec(`CREATE TRIGGER inject_polling_event_failure BEFORE INSERT ON generation_job_events
-      WHEN NEW.to_state = 'polling' BEGIN SELECT RAISE(ABORT, 'INJECTED_POLLING_EVENT_FAILURE'); END`);
+    db.exec(`CREATE TRIGGER inject_reconciliation_event_failure BEFORE INSERT ON generation_job_events
+      WHEN NEW.to_state IN ('polling', 'manual_reconciliation')
+      BEGIN SELECT RAISE(ABORT, 'INJECTED_RECONCILIATION_EVENT_FAILURE'); END`);
     db.close();
     const adapter = {
       provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
@@ -1211,9 +1356,29 @@ test("provider task persistence failure enters manual reconciliation without los
     await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: true, dependencies: { sqlite_path: sqlitePath, env: prepared.env, adapter_factory: () => adapter } });
     const checked = openM0Database(sqlitePath);
     const intent = checked.prepare("SELECT status, provider_task_id FROM generation_intents WHERE intent_id = ?").get(prepared.intent_id) as { status: string; provider_task_id: string };
-    const job = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?").get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    const job = checked.prepare(`SELECT state, reconciliation_reason, lease_owner, lease_token, lease_expires_at
+      FROM generation_jobs WHERE job_id = ?`).get(prepared.job_id) as {
+        state: string; reconciliation_reason: string; lease_owner: string; lease_token: string; lease_expires_at: string | null;
+      };
+    const project = checked.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(prepared.project_id) as { data_json: string };
+    const shot = checked.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(prepared.shot_id) as { data_json: string };
+    const manualEventCount = (checked.prepare(`SELECT COUNT(*) AS count FROM generation_job_events
+      WHERE job_id = ? AND to_state = 'manual_reconciliation'`).get(prepared.job_id) as { count: number }).count;
+    const summary = listWorkbenchProjects({ scope: "all" }, checked).items
+      .find((item) => item.project.project_id === prepared.project_id);
     assert.deepEqual({ ...intent }, { status: "running", provider_task_id: "task-persisted-after-fault" });
-    assert.deepEqual({ ...job }, { state: "manual_reconciliation", reconciliation_reason: "PROVIDER_TASK_PERSISTENCE_UNKNOWN" });
+    assert.deepEqual({ ...job }, {
+      state: "manual_reconciliation",
+      reconciliation_reason: "PROVIDER_TASK_PERSISTENCE_UNKNOWN",
+      lease_owner: "",
+      lease_token: "",
+      lease_expires_at: null
+    });
+    assert.equal((JSON.parse(project.data_json) as { status: string }).status, "storyboard_approved");
+    assert.equal((JSON.parse(shot.data_json) as { status: string }).status, "storyboard_approved");
+    assert.equal(manualEventCount, 0);
+    assert.equal(summary?.active_run_count, 0);
+    assert.ok(summary?.blocker_codes.includes("GENERATION_MANUAL_RECONCILIATION"));
     checked.close();
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -1441,8 +1606,16 @@ test("provider polling uses one persisted absolute deadline and never resubmits 
     const timedOutIntent = checked.prepare("SELECT status, provider_task_id, submit_attempts, sanitized_error_json, run_id FROM generation_intents WHERE intent_id = ?").get(prepared.intent_id) as {
       status: string; provider_task_id: string; submit_attempts: number; sanitized_error_json: string; run_id: string;
     };
-    const timedOutJob = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?").get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    const timedOutJob = checked.prepare(`SELECT state, reconciliation_reason, lease_owner, lease_token, lease_expires_at
+      FROM generation_jobs WHERE job_id = ?`).get(prepared.job_id) as {
+        state: string; reconciliation_reason: string; lease_owner: string; lease_token: string; lease_expires_at: string | null;
+      };
     const timedOutRun = checked.prepare("SELECT data_json FROM generation_runs WHERE run_id = ?").get(timedOutIntent.run_id) as { data_json: string };
+    const timedOutProject = checked.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(prepared.project_id) as { data_json: string };
+    const timedOutShot = checked.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(prepared.shot_id) as { data_json: string };
+    const timedOutSummary = listWorkbenchProjects({ scope: "all" }, checked).items
+      .find((item) => item.project.project_id === prepared.project_id);
+    const timedOutWorker = generationWorkerStatus(checked);
     const artifactCountAfter = (checked.prepare("SELECT COUNT(*) AS count FROM media_artifacts").get() as { count: number }).count;
     checked.close();
     const runData = JSON.parse(timedOutRun.data_json) as { status: string; provider: { provider_job_id: string; provider_status: string }; error: { code: string; retryable: boolean } };
@@ -1454,7 +1627,13 @@ test("provider polling uses one persisted absolute deadline and never resubmits 
     });
     assert.equal(timedOutIntent.submit_attempts, 1);
     assert.equal((JSON.parse(timedOutIntent.sanitized_error_json) as { code: string }).code, "PROVIDER_POLL_TIMEOUT");
-    assert.deepEqual({ ...timedOutJob }, { state: "manual_reconciliation", reconciliation_reason: "PROVIDER_POLL_TIMEOUT" });
+    assert.deepEqual({ ...timedOutJob }, {
+      state: "manual_reconciliation",
+      reconciliation_reason: "PROVIDER_POLL_TIMEOUT",
+      lease_owner: "",
+      lease_token: "",
+      lease_expires_at: null
+    });
     assert.equal(runData.status, "running");
     assert.equal(runData.provider.provider_job_id, "task-absolute-deadline");
     assert.equal(runData.provider.provider_status, "PROVIDER_POLL_TIMEOUT");
@@ -1463,7 +1642,107 @@ test("provider polling uses one persisted absolute deadline and never resubmits 
       message: "Provider task requires human reconciliation.",
       retryable: false
     });
+    assert.equal((JSON.parse(timedOutProject.data_json) as { status: string }).status, "storyboard_approved");
+    assert.equal((JSON.parse(timedOutShot.data_json) as { status: string }).status, "storyboard_approved");
+    assert.equal(timedOutSummary?.active_run_count, 0);
+    assert.ok(timedOutSummary?.blocker_codes.includes("GENERATION_MANUAL_RECONCILIATION"));
+    assert.notEqual(timedOutSummary?.next_action.reason_code, "generation_running");
+    assert.notEqual(timedOutSummary?.next_action.reason_code, "generate_shot");
+    assert.deepEqual({
+      ready: timedOutWorker.ready,
+      active: timedOutWorker.active,
+      unowned_runnable: timedOutWorker.unowned_runnable,
+      runnable: timedOutWorker.runnable
+    }, { ready: true, active: 0, unowned_runnable: 0, runnable: 0 });
     assert.equal(artifactCountAfter, artifactCountBefore);
+
+    assert.deepEqual(
+      resumeWorkbenchGenerationJobs({ sqlite_path: sqlitePath, env: prepared.env }),
+      { resumed: [], reconciled: [prepared.intent_id] }
+    );
+    await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: false, dependencies });
+    assert.equal(submitCalls, 1);
+    assert.equal(pollCalls, 2);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("regeneration poll timeout restores review workflow without losing the rejected clip", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-regeneration-poll-timeout-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Regeneration polling deadline", { regeneration: true });
+    const baseWallMs = Date.now();
+    let wallMs = baseWallMs;
+    let monotonicMs = 20_000;
+    let submitCalls = 0;
+    let pollCalls = 0;
+    const adapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => {
+        submitCalls += 1;
+        return { ok: true as const, provider_job_id: "task-regeneration-timeout", provider_status: "PENDING" };
+      },
+      pollStatus: async () => {
+        pollCalls += 1;
+        return {
+          ok: true as const,
+          provider_job_id: "task-regeneration-timeout",
+          status: "running" as const,
+          provider_status: "RUNNING",
+          retryable: true
+        };
+      },
+      fetchOutput: async () => { throw new Error("output must not run"); }
+    } as unknown as VideoProviderAdapter;
+    const dependencies = {
+      sqlite_path: sqlitePath,
+      env: { ...prepared.env, PROVIDER_TASK_POLL_TIMEOUT_MS: "1000" },
+      adapter_factory: () => adapter,
+      now: () => new Date(wallMs),
+      monotonic_now_ms: () => monotonicMs,
+      poll_interval_ms: 100
+    };
+
+    await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: true, dependencies });
+    wallMs += 1_000;
+    monotonicMs += 1_000;
+    await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: false, dependencies });
+
+    const checked = openM0Database(sqlitePath);
+    const intent = checked.prepare("SELECT status, provider_task_id FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { status: string; provider_task_id: string };
+    const run = checked.prepare("SELECT data_json FROM generation_runs WHERE run_id = ?")
+      .get(prepared.run_id) as { data_json: string };
+    const job = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    const project = checked.prepare("SELECT data_json FROM projects WHERE project_id = ?")
+      .get(prepared.project_id) as { data_json: string };
+    const shot = checked.prepare("SELECT data_json FROM shots WHERE shot_id = ?")
+      .get(prepared.shot_id) as { data_json: string };
+    const summary = listWorkbenchProjects({ scope: "all" }, checked).items
+      .find((item) => item.project.project_id === prepared.project_id);
+    checked.close();
+
+    const runData = JSON.parse(run.data_json) as { status: string };
+    const shotData = JSON.parse(shot.data_json) as {
+      status: string;
+      clip_versions: Array<{ artifact_id: string; review_status: string }>;
+      review: { approval_status: string; rejection_reasons: string[] };
+    };
+    assert.equal(submitCalls, 1);
+    assert.equal(pollCalls, 0);
+    assert.deepEqual({ ...intent }, { status: "running", provider_task_id: "task-regeneration-timeout" });
+    assert.equal(runData.status, "running");
+    assert.deepEqual({ ...job }, { state: "manual_reconciliation", reconciliation_reason: "PROVIDER_POLL_TIMEOUT" });
+    assert.equal((JSON.parse(project.data_json) as { status: string }).status, "video_review");
+    assert.equal(shotData.status, "revision_needed");
+    assert.equal(shotData.clip_versions.length, 1);
+    assert.equal(shotData.clip_versions[0]?.review_status, "rejected");
+    assert.deepEqual(shotData.review.rejection_reasons, ["motion_drift"]);
+    assert.equal(summary?.active_run_count, 0);
+    assert.ok(summary?.blocker_codes.includes("GENERATION_MANUAL_RECONCILIATION"));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -1641,22 +1920,37 @@ test("poll timeout remains distinct from submit rejection, unknown submit, task 
     roots.push(unknownRoot);
     const unknownPath = join(unknownRoot, "app.sqlite");
     const unknown = await prepareConfirmedGeneration(unknownPath, "Unknown submit outcome");
+    let unknownSubmitCalls = 0;
     const unknownAdapter = {
       provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
-      submitGeneration: async () => ({
-        ok: false as const,
-        error: { code: "PROVIDER_TIMEOUT", message: "Synthetic unknown outcome.", retryable: true, submission_outcome_unknown: true }
-      }),
+      submitGeneration: async () => {
+        unknownSubmitCalls += 1;
+        return {
+          ok: false as const,
+          error: { code: "PROVIDER_TIMEOUT", message: "Synthetic unknown outcome.", retryable: true, submission_outcome_unknown: true }
+        };
+      },
       pollStatus: async () => { throw new Error("poll must not run"); },
       fetchOutput: async () => { throw new Error("output must not run"); }
     } as unknown as VideoProviderAdapter;
-    await runWorkbenchGenerationOnce(unknown.intent_id, { allow_submit: true, dependencies: { sqlite_path: unknownPath, env: unknown.env, adapter_factory: () => unknownAdapter } });
+    const unknownDependencies = { sqlite_path: unknownPath, env: unknown.env, adapter_factory: () => unknownAdapter };
+    await runWorkbenchGenerationOnce(unknown.intent_id, { allow_submit: true, dependencies: unknownDependencies });
+    await runWorkbenchGenerationOnce(unknown.intent_id, { allow_submit: true, dependencies: unknownDependencies });
     checked = openM0Database(unknownPath);
     const unknownIntent = checked.prepare("SELECT status, provider_task_id FROM generation_intents WHERE intent_id = ?").get(unknown.intent_id) as { status: string; provider_task_id: string };
     const unknownJob = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?").get(unknown.job_id) as { state: string; reconciliation_reason: string };
+    const unknownProject = checked.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(unknown.project_id) as { data_json: string };
+    const unknownShot = checked.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(unknown.shot_id) as { data_json: string };
+    const unknownSummary = listWorkbenchProjects({ scope: "all" }, checked).items
+      .find((item) => item.project.project_id === unknown.project_id);
     checked.close();
+    assert.equal(unknownSubmitCalls, 1);
     assert.deepEqual({ ...unknownIntent }, { status: "running", provider_task_id: "" });
     assert.deepEqual({ ...unknownJob }, { state: "manual_reconciliation", reconciliation_reason: "PROVIDER_SUBMIT_OUTCOME_UNKNOWN" });
+    assert.equal((JSON.parse(unknownProject.data_json) as { status: string }).status, "storyboard_approved");
+    assert.equal((JSON.parse(unknownShot.data_json) as { status: string }).status, "storyboard_approved");
+    assert.equal(unknownSummary?.active_run_count, 0);
+    assert.ok(unknownSummary?.blocker_codes.includes("GENERATION_MANUAL_RECONCILIATION"));
 
     const failedRoot = mkdtempSync(join(tmpdir(), "generation-task-failed-"));
     roots.push(failedRoot);
