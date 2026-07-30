@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { appendFileSync, copyFileSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn, spawnSync } from "node:child_process";
@@ -271,9 +271,12 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
   assert.match(matrixWrapper, /\$candidate = \[string\]\$_\.Exception\.Message/);
   assert.match(matrixWrapper, /MEDIA_ACCEPTANCE_WRAPPER_FAILED/);
   assert.doesNotMatch(matrixWrapper, /stable_error_code\s*=\s*\$_\.Exception\.Message/);
-  assert.match(databaseGuard, /\[System\.IO\.FileAccess\]::ReadWrite/);
-  assert.match(databaseGuard, /\[System\.IO\.FileShare\]::ReadWrite/);
-  assert.doesNotMatch(databaseGuard, /\[System\.IO\.FileShare\]::Delete/);
+  assert.match(databaseGuard, /FileShareRead \| FileShareWrite/);
+  assert.doesNotMatch(databaseGuard, /FileShareDelete/);
+  assert.match(databaseGuard, /FileFlagOpenReparsePoint/);
+  assert.match(databaseGuard, /information\.NumberOfLinks != 1/);
+  assert.match(databaseGuard, /"\$databasePath-wal"/);
+  assert.match(databaseGuard, /"\$databasePath-shm"/);
   assert.match(databaseGuard, /WriteLine\("LOCKED"\)/);
   assert.doesNotMatch(databaseGuard, /Write-(?:Host|Output|Verbose|Debug|Error)/);
   assert.match(matrixSource, /READONLY_MEDIA_CHATGPT_SANDBOX_ORIGIN/);
@@ -302,6 +305,7 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
   assert.match(matrixSource, /await databasePathGuard\.release\(\);[\s\S]*closeSync\(databaseLease\.descriptor\);[\s\S]*console\.log\(JSON\.stringify\(passReceipt\)\)/);
   assert.doesNotMatch(matrixSource, /console\.log\(JSON\.stringify\(\{\s*result: "PASS"/);
   assert.match(matrixSource, /assertDatabaseLeaseCurrent\(databaseLease\)/);
+  assert.match(matrixSource, /assertDatabaseSidecarsCurrent\(databaseLease\.root, databasePath\)/);
   assert.match(matrixSource, /\{ assertDatabaseCurrent \}/);
   assert.match(matrixSource, /\{ assertPathCurrent: assertDatabaseCurrent \}/);
   assert.match(matrixSource, /openExpectedMediaFile\(root, media\)/);
@@ -701,6 +705,50 @@ syncBuiltinESMExports();
     key.fill(0);
     rmSync(root, { recursive: true, force: true });
     rmSync(external, { recursive: true, force: true });
+  }
+});
+
+test("media acceptance matrix rejects hard-linked SQLite sidecars before opening the database", { skip: process.platform !== "win32" }, async () => {
+  for (const [index, suffix] of ["-wal", "-shm"].entries()) {
+    const source = resolve("fixtures/video/mock_clip.mp4");
+    const fixtureCommand = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
+    const created = spawnSync(process.execPath, [fixtureCommand, "create", "--input", source, "--issuer", ISSUER, "--resource", RESOURCE], {
+      cwd: process.cwd(), input: `${SUBJECT}\n`, encoding: "utf8", windowsHide: true, env: childEnv
+    });
+    assert.equal(created.status, 0, created.stderr);
+    const receipt = JSON.parse(created.stdout) as { run_id: string };
+    const root = resolve("data/webgpt/media-acceptance", receipt.run_id);
+    const databasePath = join(root, "app.sqlite");
+    const sidecarPath = `${databasePath}${suffix}`;
+    const external = mkdtempSync(join(resolve(root, ".."), "external-database-sidecar-"));
+    const externalSidecar = join(external, `private.sqlite${suffix}`);
+    writeFileSync(externalSidecar, "private-sidecar", "utf8");
+    const externalBefore = sha(externalSidecar);
+    if (existsSync(sidecarPath)) unlinkSync(sidecarPath);
+    linkSync(externalSidecar, sidecarPath);
+    const key = Buffer.alloc(32, 41 + index);
+    try {
+      const result = await runChild(process.execPath, [
+        resolve("dist/scripts/webgpt-media-acceptance-matrix.js"),
+        "--run", receipt.run_id,
+        "--origin", "http://127.0.0.1:9/",
+        "--kid", `acceptance-matrix-sidecar-guard-${index + 1}`
+      ], `${key.toString("base64url")}\n`, matrixExpiryTestEnv, 10_000);
+      assert.equal(result.timed_out, false, result.stderr);
+      assert.equal(result.status, 1);
+      assert.equal(result.stdout, "");
+      assert.deepEqual(lowDisclosureError(result.stderr), {
+        result: "FAIL",
+        stable_error_code: "MEDIA_ACCEPTANCE_ROOT_UNSAFE"
+      });
+      assert.equal(statSync(sidecarPath).nlink, 2);
+      assert.equal(sha(externalSidecar), externalBefore);
+      assert.doesNotMatch(result.stderr, /private-sidecar|https?:\/\/|media\/v1\/[cs]\//);
+    } finally {
+      key.fill(0);
+      rmSync(root, { recursive: true, force: true });
+      rmSync(external, { recursive: true, force: true });
+    }
   }
 });
 

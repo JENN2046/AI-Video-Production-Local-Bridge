@@ -34,6 +34,7 @@ const CAPABILITY_HANDLE_EXPIRY_LEAD_MS = testTimeout(
 const JSON_RESPONSE_MAX_BYTES = 16 * 1024;
 const MANIFEST_MAX_BYTES = 16 * 1024;
 const MANIFEST_NOFOLLOW_FLAG = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
+const DATABASE_SIDECAR_SUFFIXES = ["-wal", "-shm"] as const;
 const DATABASE_PATH_GUARD_TIMEOUT_MS = 5_000;
 const DISTINCT_MEDIA_VALIDATIONS = 4;
 // One issuance per media validation, plus stale-envelope, expiring-handle, and retained-project issuances.
@@ -232,6 +233,25 @@ function openDatabaseLease(root: string, databasePath: string): DatabaseLease {
     return lease;
   } catch (error) {
     closeSync(descriptor);
+    if (error instanceof MatrixError) throw error;
+    throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+  }
+}
+
+function assertDatabaseSidecarsCurrent(root: string, databasePath: string): void {
+  try {
+    const realRoot = realpathSync(root);
+    for (const suffix of DATABASE_SIDECAR_SUFFIXES) {
+      const sidecarPath = `${databasePath}${suffix}`;
+      const sidecarStats = lstatSync(sidecarPath, { bigint: true });
+      const sidecarReal = realpathSync(sidecarPath);
+      const sidecarRel = relative(realRoot, sidecarReal);
+      if (!sidecarStats.isFile() || sidecarStats.isSymbolicLink() || sidecarStats.nlink !== 1n
+        || !sidecarRel || sidecarRel.startsWith("..") || isAbsolute(sidecarRel)) {
+        throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+      }
+    }
+  } catch (error) {
     if (error instanceof MatrixError) throw error;
     throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
   }
@@ -600,7 +620,9 @@ async function main(): Promise<void> {
   const assertDatabaseCurrent = (): void => {
     databasePathGuard.assertHolding();
     assertDatabaseLeaseCurrent(databaseLease);
+    assertDatabaseSidecarsCurrent(databaseLease.root, databasePath);
   };
+  assertDatabaseCurrent();
   const encodedKey = await stdinKey();
   const keyring = { active: parseReadonlyMediaCapabilityKey(kid, encodedKey) };
   assertDatabaseCurrent();
