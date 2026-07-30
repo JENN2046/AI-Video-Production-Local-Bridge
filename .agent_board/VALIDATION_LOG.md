@@ -2577,24 +2577,32 @@ activity_data_access: none
 No isolated test group was run for S2; static evidence was sufficient for that
 read-only proof.
 
-### S3 public build and isolated-test subset
+### S3 combined readiness validation
 
 ```yaml
 task: S3-T1_CURRENT_WORKBENCH_CANARY_READINESS
 commit_or_pr: f570d145e4832d2b2237123a40d5e8e0b503fcf1
 commands_or_lanes:
   - current emitted build
+  - authorized read-only activity database integrity lane using SQLite query_only
+  - schema, ledger and aggregate governed-media integrity checks
+  - aggregate candidate eligibility scan with no object identifiers retained
+  - low-disclosure Provider readiness gate-presence check
   - Provider environment safety and capability contract (11 tests)
   - Generation Intent, cost acknowledgement and worker safety (32 tests)
   - Provider output, bounded download and FFprobe (27 tests)
   - Generation, Blob/Artifact identity and media activation integrity (37 tests)
-result: PASS
+result: PASS_WITH_TERMINAL_FINDINGS
 external_operations: none
-activity_data_access: none
+activity_data_access: read_only
+activity_data_write: none
+activity_object_identifiers_retained: false
+isolated_test_activity_data_access: none
 ```
 
-The S3 entry is deliberately limited to public repository build and isolated
-test lanes. The tests used temporary databases and fixture transports with
-Provider execution disabled. It does not restate or publish the separately
-authorized read-only activity observation and does not claim current external
-acceptance.
+The read-only activity lane used query-only access and retained aggregate
+results only. It performed no activity write and published no object
+identifier, local path, prompt or business content. The isolated tests used
+temporary databases and fixture transports with Provider execution disabled.
+The combined result records successful validation together with the three S3
+findings; it does not claim current external acceptance or authorize S4.

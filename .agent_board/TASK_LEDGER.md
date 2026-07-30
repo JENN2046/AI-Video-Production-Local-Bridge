@@ -4342,6 +4342,100 @@ Risks:
 Next:
 - Use `npm run r2g:l:serve-read-only -- --port 2091` only as part of a future exact-authorized live connector smoke.
 
+## 2026-07-30 — S0 repository truth reconciliation
+
+```yaml
+task: S0-T1_RECONCILE_CURRENT_TRUTH
+status: DONE
+claimed_by: Codex
+claim_run_id: reconstructed-codex-s0-truth-reconciliation
+claimed_at: 2026-07-30T13:23:12+08:00
+completed_by: Codex
+completed_at: 2026-07-30T14:53:18+08:00
+result: PASS_REPOSITORY_TRUTH_RECONCILIATION
+validation_result: PASS
+validation: Changed-file allowlist, Markdown links, task-board structure and git diff checks passed.
+commit: 12cf2931884c08b85730507fa23ceeaa59916296
+delivery:
+  original: LOCAL_COMMIT_ONLY_NO_PUSH
+  current: PR_106_AWAITING_REVIEW
+evidence:
+  - CURRENT_STATE.md
+  - docs/README.md
+  - .agent_board/NEXT_TASK.json
+  - .agent_board/HANDOFF.md
+provider_calls: 0
+activity_data_access: none
+activity_writes: 0
+claim_metadata_reconstructed: true
+claim_metadata_source: local branch-creation record and terminal commit metadata
+```
+
+The original S0 slot did not preserve claim metadata. The reconstructed fields
+make that limitation explicit rather than presenting them as original queue
+receipts.
+
+## 2026-07-30 — S1 scope freeze
+
+```yaml
+task: S1-T1_FREEZE_PERIPHERAL_EXPANSION
+status: DONE
+claimed_by: Codex
+claim_run_id: reconstructed-codex-s1-scope-freeze
+claimed_at: 2026-07-30T14:53:18+08:00
+completed_by: Codex
+completed_at: 2026-07-30T15:07:17+08:00
+result: PASS_SCOPE_FREEZE
+validation_result: PASS
+validation: JSON, unique-READY, classification, Markdown-link, allowlist and git diff checks passed.
+commit: d1b1a10365da46a4b3307fb41c2cbbaa89c8d7ea
+delivery:
+  original: LOCAL_COMMIT_ONLY_NO_PUSH
+  current: PR_106_AWAITING_REVIEW
+evidence:
+  - docs/PRODUCT_SCOPE_FREEZE.md
+  - CURRENT_STATE.md
+  - docs/README.md
+  - .agent_board/NEXT_TASK.json
+  - .agent_board/HANDOFF.md
+provider_calls: 0
+activity_data_access: none
+activity_writes: 0
+claim_metadata_reconstructed: true
+claim_metadata_source: local branch-creation record and terminal commit metadata
+```
+
+The original S1 terminal transition preserved the completed task and evidence
+but not its claim metadata. The reconstruction boundary is retained here.
+
+## 2026-07-30 — S2 current core-loop gap proof
+
+```yaml
+task: S2-T1_CURRENT_CORE_LOOP_GAP_PROOF
+status: DONE
+claimed_by: Codex
+claim_run_id: codex-20260730-154956-s2-gap-proof
+claimed_at: 2026-07-30T15:49:56+08:00
+completed_by: Codex
+completed_at: 2026-07-30T16:03:06+08:00
+result: PASS_CURRENT_CORE_LOOP_GAP_PROOF
+validation_result: PASS
+validation: Static trace plus document, JSON, relative-link, allowlist and git diff validation passed; no local test group was required.
+commit: f4a15f565865c045325274251a91d2e11c633e41
+delivery:
+  original: LOCAL_COMMIT_ONLY_NO_PUSH
+  current: PR_106_AWAITING_REVIEW
+evidence:
+  - docs/CORE_PRODUCTION_LOOP_GAP_AUDIT.md
+  - docs/README.md
+  - .agent_board/NEXT_TASK.json
+  - .agent_board/HANDOFF.md
+provider_calls: 0
+activity_data_access: none
+activity_writes: 0
+claim_metadata_reconstructed: false
+```
+
 ## 2026-07-30 — S3 terminal readiness finding
 
 ```yaml
