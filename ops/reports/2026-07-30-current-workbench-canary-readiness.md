@@ -50,13 +50,19 @@ code_baseline: main@bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7
 audit_sequence_base: f4a15f565865c045325274251a91d2e11c633e41
 branch: codex/s3-workbench-canary-readiness
 node:
-  version: 24.14.0
-  accepted: true
+  detected_version: 24.14.0
+  engine_compatible: true
+  accepted_paid_canary_baseline: false
+  required_S4_node: 22.23.1
 current_emitted_build: PASS
 ffmpeg: PASS
 ffprobe: PASS
 service_started: false
 ```
+
+Node 24.14.0 satisfies the package engine range and was used for this static
+inspection and the isolated tests. It does not replace the project's accepted
+Node 22.23.1 local baseline for a real paid canary.
 
 The build contains the current Workbench generation UI, API routes, Intent
 logic, RunningHub adapter boundary, bounded download, FFprobe and governed
