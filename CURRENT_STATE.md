@@ -19,6 +19,20 @@ The exact accepted external operation recorded by each historical report
 remains bounded to that report's commit, inputs and authorization. A later
 commit never inherits an older external PASS automatically.
 
+The retained package and closeout identities remain:
+
+| Identity | Current value |
+|---|---|
+| Package | `0.1.0-beta.5` |
+| MCP service contract | `webgpt-v4.3.0` |
+| Single-user product closeout | `JENN_SINGLE_USER_MCP_APP_PASS` |
+| Manual Snapshot publishing boundary | `MANUAL_PUBLISH_OPERATIONAL_READY` |
+| Multi-user boundary | `PARTIAL_MULTI_USER_GATE` |
+
+These identifiers preserve the current package, schema and closeout contract.
+They do not imply a fresh external acceptance for this branch or expand the
+scope frozen below.
+
 ## Current product truth
 
 The stable product authority remains:
