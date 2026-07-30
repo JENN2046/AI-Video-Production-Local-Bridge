@@ -208,6 +208,47 @@ function setJobState(
   }
 }
 
+function enterManualReconciliationJob(
+  db: M0Database,
+  job: GenerationJob,
+  reasonCode: string,
+  options: { lease_token?: string; record_event: boolean }
+): GenerationJob {
+  let updated: GenerationJob;
+  if (options.record_event) {
+    updated = setJobState(db, job, "manual_reconciliation", reasonCode, {
+      ...(options.lease_token ? { lease_token: options.lease_token } : {}),
+      in_transaction: true
+    });
+    const cleared = db.prepare(`UPDATE generation_jobs
+      SET lease_owner = '', lease_token = '', lease_expires_at = NULL,
+        next_attempt_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE job_id = ? AND state = 'manual_reconciliation'`).run(job.job_id) as { changes: number | bigint };
+    if (Number(cleared.changes) !== 1) throw new Error("GENERATION_JOB_NOT_FOUND");
+  } else {
+    const result = options.lease_token
+      ? db.prepare(`UPDATE generation_jobs
+          SET state = 'manual_reconciliation', reconciliation_reason = ?,
+            lease_owner = '', lease_token = '', lease_expires_at = NULL,
+            next_attempt_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+          WHERE job_id = ? AND lease_token = ? AND lease_expires_at IS NOT NULL
+            AND datetime(lease_expires_at) > CURRENT_TIMESTAMP`)
+        .run(reasonCode, job.job_id, options.lease_token) as { changes: number | bigint }
+      : db.prepare(`UPDATE generation_jobs
+          SET state = 'manual_reconciliation', reconciliation_reason = ?,
+            lease_owner = '', lease_token = '', lease_expires_at = NULL,
+            next_attempt_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+          WHERE job_id = ?`)
+        .run(reasonCode, job.job_id) as { changes: number | bigint };
+    if (Number(result.changes) !== 1) {
+      if (options.lease_token) throw new GenerationJobLeaseLostError();
+      throw new Error("GENERATION_JOB_NOT_FOUND");
+    }
+    updated = { ...job, state: "manual_reconciliation", reconciliation_reason: reasonCode };
+  }
+  return { ...updated, lease_expires_at: null };
+}
+
 function reconciliationRestoreState(db: M0Database, intentId: string): { shot_status: ShotStatus; project_status: ProjectStatus } {
   const row = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(intentId) as { data_json: string } | undefined;
   const data = parseRecord(row?.data_json ?? "");
@@ -876,7 +917,7 @@ function failIntent(db: M0Database, intent: WorkbenchGenerationIntent, status: "
         saveGenerationRun(db, run);
       }
     }
-    restoreProjectAfterTerminalGeneration(db, intent);
+    restoreProjectAfterGenerationAutomationStops(db, intent);
     const job = jobForIntent(db, intent.intent_id);
     if (job) setJobState(db, job, "failed", String(safe.code ?? "PROVIDER_REQUEST_FAILED"), { lease_token: leaseToken, in_transaction: true });
     db.exec("COMMIT");
@@ -939,7 +980,7 @@ function queueDirectorKnownNoSubmitRetry(
   }
 }
 
-function restoreProjectAfterTerminalGeneration(db: M0Database, intent: WorkbenchGenerationIntent): void {
+function restoreProjectAfterGenerationAutomationStops(db: M0Database, intent: WorkbenchGenerationIntent): void {
   const shot = getShot(db, intent.shot_id);
   const project = getProject(db, intent.project_id);
   if (!shot || !project) return;
@@ -955,10 +996,25 @@ function restoreProjectAfterTerminalGeneration(db: M0Database, intent: Workbench
   saveProject(db, project);
 }
 
-function markUnknownSubmission(db: M0Database, intent: WorkbenchGenerationIntent, job: GenerationJob, error: ProviderToolError, leaseToken: string): GenerationJob {
+function markProjectAndShotGenerationActive(db: M0Database, intent: WorkbenchGenerationIntent): void {
+  const shot = getShot(db, intent.shot_id);
+  const project = getProject(db, intent.project_id);
+  if (!shot || !project) throw new Error("GENERATION_WORKFLOW_STATE_MISSING");
+  shot.status = "video_pending";
+  saveShot(db, shot);
+  project.status = "video_generation_in_progress";
+  saveProject(db, project);
+}
+
+function markUnknownSubmission(
+  db: M0Database,
+  intent: WorkbenchGenerationIntent,
+  job: GenerationJob,
+  error: ProviderToolError,
+  leaseToken?: string
+): GenerationJob {
   const safe = sanitizedError(error);
-  db.exec("BEGIN IMMEDIATE");
-  try {
+  const persist = (recordEvent: boolean): GenerationJob => {
     db.prepare("UPDATE generation_intents SET status = 'running', sanitized_error_json = ?, updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?")
       .run(JSON.stringify(safe), intent.intent_id);
     const run = getGenerationRun(db, intent.run_id);
@@ -968,12 +1024,29 @@ function markUnknownSubmission(db: M0Database, intent: WorkbenchGenerationIntent
       run.error = { code: String(safe.code ?? "PROVIDER_REQUEST_FAILED"), message: "Provider submission outcome requires human reconciliation.", retryable: false };
       saveGenerationRun(db, run);
     }
-    const updated = setJobState(db, job, "manual_reconciliation", "PROVIDER_SUBMIT_OUTCOME_UNKNOWN", { lease_token: leaseToken, in_transaction: true });
+    restoreProjectAfterGenerationAutomationStops(db, intent);
+    return enterManualReconciliationJob(db, job, "PROVIDER_SUBMIT_OUTCOME_UNKNOWN", {
+      ...(leaseToken ? { lease_token: leaseToken } : {}),
+      record_event: recordEvent
+    });
+  };
+
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const updated = persist(true);
     db.exec("COMMIT");
     return updated;
   } catch (failure) {
     db.exec("ROLLBACK");
-    throw failure;
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      const updated = persist(false);
+      db.exec("COMMIT");
+      return updated;
+    } catch (fallbackError) {
+      db.exec("ROLLBACK");
+      throw fallbackError;
+    }
   }
 }
 
@@ -1015,12 +1088,8 @@ function markKnownProviderTaskForReconciliation(
       run.error = { code: String(safe.code ?? reasonCode), message: "Provider task requires human reconciliation.", retryable: false };
       saveGenerationRun(db, run);
     }
-    if (withEvent) return setJobState(db, job, "manual_reconciliation", reasonCode, { lease_token: leaseToken, in_transaction: true });
-    const result = db.prepare(`UPDATE generation_jobs SET state = 'manual_reconciliation', reconciliation_reason = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE job_id = ? AND lease_token = ? AND lease_expires_at IS NOT NULL AND datetime(lease_expires_at) > CURRENT_TIMESTAMP`)
-      .run(reasonCode, job.job_id, leaseToken) as { changes: number | bigint };
-    if (Number(result.changes) !== 1) throw new GenerationJobLeaseLostError();
-    return { ...job, state: "manual_reconciliation", reconciliation_reason: reasonCode };
+    restoreProjectAfterGenerationAutomationStops(db, intent);
+    return enterManualReconciliationJob(db, job, reasonCode, { lease_token: leaseToken, record_event: withEvent });
   };
 
   db.exec("BEGIN IMMEDIATE");
@@ -1049,7 +1118,7 @@ function cancelIntent(db: M0Database, intent: WorkbenchGenerationIntent, reason:
     db.prepare("UPDATE generation_intents SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(intent.intent_id);
     const run = getGenerationRun(db, intent.run_id);
     if (run) { run.status = "cancelled"; saveGenerationRun(db, run); }
-    restoreProjectAfterTerminalGeneration(db, intent);
+    restoreProjectAfterGenerationAutomationStops(db, intent);
     const job = jobForIntent(db, intent.intent_id);
     if (job) setJobState(db, job, "cancelled", reason, { lease_token: leaseToken, in_transaction: true });
     db.exec("COMMIT");
@@ -1204,7 +1273,13 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         return;
       }
       if (!allowSubmit) {
-        job = setJobState(db, job, "manual_reconciliation", "PROVIDER_SUBMIT_OUTCOME_UNKNOWN", { lease_token: leaseToken });
+        job = markUnknownSubmission(
+          db,
+          intent,
+          job,
+          providerError("PROVIDER_REQUEST_FAILED", "Provider submission outcome requires human reconciliation."),
+          leaseToken
+        );
         return;
       }
       job = setJobState(db, job, "submitting", "", { lease_token: leaseToken });
@@ -1506,17 +1581,15 @@ export function resumeWorkbenchGenerationJobs(dependencies: WorkbenchGenerationD
       } else if (row.provider_task_id || row.state === "queued") {
         resumed.push(row.intent_id);
       } else {
+        const intent = getIntent(db, row.intent_id);
         const job = jobForIntent(db, row.intent_id);
-        if (job) {
-          db.exec("BEGIN IMMEDIATE");
-          try {
-            setJobState(db, job, "manual_reconciliation", "PROVIDER_SUBMIT_OUTCOME_UNKNOWN", { in_transaction: true });
-            db.prepare("UPDATE generation_jobs SET lease_owner = '', lease_token = '', lease_expires_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE job_id = ?").run(job.job_id);
-            db.exec("COMMIT");
-          } catch (error) {
-            db.exec("ROLLBACK");
-            throw error;
-          }
+        if (intent && job) {
+          markUnknownSubmission(
+            db,
+            intent,
+            job,
+            providerError("PROVIDER_REQUEST_FAILED", "Provider submission outcome requires human reconciliation.")
+          );
         }
         reconciled.push(row.intent_id);
       }
@@ -1597,13 +1670,14 @@ export function reconcileGenerationJob(
           reason_code: "DIRECTOR_AUTOMATION_SUBMITTED_RECONCILED"
         });
       }
-      db.prepare("UPDATE generation_intents SET provider_task_id = ?, status = 'running', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(taskId, intent.intent_id);
+      db.prepare("UPDATE generation_intents SET provider_task_id = ?, status = 'running', sanitized_error_json = '{}', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(taskId, intent.intent_id);
       ensureProviderPollDeadline(db, intent.intent_id, pollTimeoutMs, dateNow(dependencies).getTime());
       run.status = "running";
       run.provider.provider_job_id = taskId;
       run.provider.provider_status = "HUMAN_ATTACHED_EXISTING_TASK";
       run.error = { code: "", message: "", retryable: false };
       saveGenerationRun(db, run);
+      markProjectAndShotGenerationActive(db, intent);
       job = setJobState(db, row, "polling", "HUMAN_ATTACHED_EXISTING_TASK", { in_transaction: true });
     } else {
       // Abandon is the human assertion that no Provider task exists. Release
@@ -1620,7 +1694,7 @@ export function reconcileGenerationJob(
       db.prepare("UPDATE generation_intents SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(intent.intent_id);
       const run = getGenerationRun(db, intent.run_id);
       if (run) { run.status = "cancelled"; saveGenerationRun(db, run); }
-      restoreProjectAfterTerminalGeneration(db, intent);
+      restoreProjectAfterGenerationAutomationStops(db, intent);
       job = setJobState(db, row, "cancelled", input.reason?.trim() || "HUMAN_ABANDONED", { in_transaction: true });
     }
     db.exec("COMMIT");
