@@ -274,3 +274,23 @@ S4 remains `BLOCKED_BY_S3_FINDING`. One core blocker task should:
 4. rerun the bounded S3 checks before producing a new S4 authorization packet.
 
 S3 did not execute any of those approval-required actions.
+
+## S3B-1 bounded polling addendum
+
+The local `codex/s3b-bound-provider-polling` branch closes only the polling
+implementation finding. It consumes `PROVIDER_TASK_POLL_TIMEOUT_MS` with a
+600000 ms default and fail-closed 1000–3600000 ms bounds, persists one absolute
+deadline after a Provider task ID is known, and limits each request and
+scheduled wakeup to the remaining time. Expiry enters
+`PROVIDER_POLL_TIMEOUT` manual reconciliation while retaining the task ID,
+Intent, Run and prior Artifacts with zero automatic resubmits.
+
+Injected-clock and fixture-adapter tests passed without Provider network,
+activity database/media or secret access. The detected Node `24.14.0` is
+engine-compatible for this local validation but is not an accepted paid-canary
+baseline; the later S3 rerun and S4 require the existing Node `22.23.1` path.
+
+This addendum is local, unmerged code/test evidence. It does not make the
+original S4 packet executable. An eligible Shot, local RunningHub credential
+action, merged S3B-1 baseline and a separately authorized S3 readiness rerun
+remain required.

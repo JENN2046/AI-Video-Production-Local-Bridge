@@ -1,14 +1,44 @@
 # HANDOFF.md
 
-Current mode: S3 local readiness complete; automatic continuation disabled
-Last run: codex-20260730-192955-s3-readiness
-Last result: S3 code and local safety checks passed, but S4 has three local blockers
+Current mode: S3B-1 bounded Provider polling complete; automatic continuation disabled
+Last run: codex-20260730-195717-s3b-polling
+Last result: local polling deadline implementation and isolated tests passed; S4 remains blocked
 
 ## Current state
 
-Current task: `S3B-T1_CLOSE_SINGLE_SHOT_CANARY_READINESS_GATES`
-Current status: `BLOCKED`
+Current task: `S3B-T1_BOUND_PROVIDER_POLLING`
+Current status: `DONE`
 Current owner: none
+
+## S3B-T1 Bound Provider Polling
+
+- Created `codex/s3b-bound-provider-polling` directly from local S3 commit
+  `f570d145e4832d2b2237123a40d5e8e0b503fcf1`; remote `main` remained
+  `bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7`.
+- The current worker now consumes only `PROVIDER_TASK_POLL_TIMEOUT_MS`, using
+  the existing 600000 ms default and a fail-closed 1000–3600000 ms range.
+- The first known Provider task ID establishes one persisted absolute
+  deadline. Later worker claims and process recovery reuse it rather than
+  creating a new polling window.
+- Each poll request is capped by remaining time. Persisted wakeups cannot cross
+  the deadline, and the worker rechecks the deadline after every response.
+- Expiry records `PROVIDER_POLL_TIMEOUT`, retains the Intent, Run and Provider
+  task ID, enters `manual_reconciliation`, preserves existing Artifacts and
+  never submits again.
+- Explicit submit rejection, unknown submit, definite task failure, successful
+  task completion and local poll timeout remain distinct outcomes.
+- Workbench V2 isolated tests passed, including injected-clock deadline,
+  invalid-configuration, remaining-request, no-resubmit and outcome-separation
+  coverage. The existing `test:v2` npm lane and Windows CI step select both
+  changed test files.
+- Detected Node `24.14.0` is engine-compatible for local validation but is not
+  the accepted paid-canary baseline. S4 still requires the existing Node
+  `22.23.1` path.
+- No Provider network, activity database/media, secret, service, Bridge,
+  Snapshot, deployment or external configuration operation occurred.
+- This branch is local-only and unmerged. S3B-2 awaits Jenn authorization,
+  S3B-3 awaits Jenn local action, S3B-4 is blocked by those gates and merged
+  S3B-1, and S4 remains blocked.
 
 ## S3-T1 Current Workbench Canary Readiness
 
