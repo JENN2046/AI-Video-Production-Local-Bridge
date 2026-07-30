@@ -4482,3 +4482,42 @@ activity_writes: 0
 These are candidate results on a Draft stacked PR, not project-baseline
 completion. T2 and T3 remain outside this entry and require their separate
 human gates.
+
+## 2026-07-30 — S3B-T4 readiness rerun gate
+
+```yaml
+task: S3B-T4_RERUN_CANARY_READINESS
+status: BLOCKED
+claim_status: NOT_CLAIMED_DEPENDENCY_BLOCKED
+recorded_by: Codex
+blocked_by:
+  - S3B-T2_PREPARE_ELIGIBLE_SHOT
+  - S3B-T3_CONFIGURE_RUNNINGHUB_CREDENTIAL
+  - S3B-T1_AND_T1A_AWAITING_REPOSITORY_REVIEW
+blocked_at: 2026-07-30T22:59:14+08:00
+result: BLOCKED_BY_UNMET_S3B_GATES
+validation_result: NOT_RUN_DEPENDENCY_BLOCKED
+boundary_or_safety_stop: T4 cannot rerun until the eligible-Shot, local-credential and reviewed-code gates are all complete.
+blocked_reason: T2 awaits Jenn authorization, T3 awaits Jenn local action, and the T1/T1A candidates remain unmerged in Draft PR 107.
+safe_actions_completed:
+  - recorded the terminal S3 findings
+  - recorded local PASS evidence for the T1/T1A candidates
+  - kept the real execution gates closed
+unsafe_action_not_performed:
+  - activity database or media write
+  - credential configuration
+  - Provider operation
+  - S4 execution
+options_for_jenn:
+  - separately authorize S3B-T2
+  - complete S3B-T3 locally without disclosure
+  - review the stacked T1/T1A candidate only after PR 106 integration
+evidence:
+  - .agent_board/NEXT_TASK.json
+  - .agent_board/NEXT_TASK.md
+  - .agent_board/HANDOFF.md
+  - ops/reports/2026-07-30-current-workbench-canary-readiness.md
+provider_calls: 0
+activity_writes: 0
+delivery: PR_106_AWAITING_REVIEW
+```

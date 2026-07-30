@@ -10,11 +10,27 @@ Evidence:
 code_baseline: main@bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7
 evidence_snapshot_commit: e0e08cd77d0923f25a3472510248b8f9e954c9a0
 publication_pr: 106
-durable_receipt_digest:
-  algorithm: sha256
-  canonicalization: UTF-8_NO_BOM_AND_LF
-  digest_input: ENTIRE_RECEIPT_WITH_DIGEST_VALUE_SET_TO_DIGEST_EXCLUDED
-  digest: 6f73106c7839b8bba2481b87eaf88e20ad57ff3bf570ee5fb319f0ac75fda08f
+durable_evidence_snapshot:
+  object_format: git-sha1
+  tree_oid: 47657a7903159342bb2f1f7dcc074fbf1196093d
+  manifest_algorithm: sha256
+  manifest_canonicalization: SORTED_UTF8_LF_PATH_TAB_BLOB_OID
+  manifest_sha256: f73e06223f36d7858ab17ef76f221349594c9167a380dbe2468dbdbb3e8f906d
+  manifest:
+    - path: .agent_board/HANDOFF.md
+      blob_oid: ae0cd76acb8966642086008971880088b88e9cec
+    - path: .agent_board/NEXT_TASK.json
+      blob_oid: 1ffd346e7e76fae065a8f365d37b02883202838c
+    - path: .agent_board/NEXT_TASK.md
+      blob_oid: fce6866b59119ce0586399406104373b721d0a16
+    - path: .agent_board/TASK_LEDGER.md
+      blob_oid: 9515764a1613575729505809d69a444784d793cf
+    - path: .agent_board/VALIDATION_LOG.md
+      blob_oid: 6386c4ce9c8b090598e2080d7047a3cb2a657361
+    - path: docs/README.md
+      blob_oid: 6a46ec09badc7a6e9a66f94b38fef48e696a81bf
+    - path: ops/reports/2026-07-30-current-workbench-canary-readiness.md
+      blob_oid: d19adc0b515290eedb1f456c01de6988cc21eeba
 ```
 
 Date: 2026-07-30
@@ -23,12 +39,14 @@ This is a low-disclosure local readiness receipt. It is not a Provider
 preflight, paid generation authorization, Provider acceptance or S4 execution
 receipt.
 
-The durable receipt digest is self-verifying after a squash merge or branch
-deletion: replace its `digest` value with the literal `DIGEST_EXCLUDED`,
-normalize CRLF or CR to LF, encode as UTF-8 without a BOM and calculate
-SHA-256 over the entire file. The original pushed snapshot commit remains
-recorded for provenance but is not claimed to become an ancestor of a future
-squash commit.
+The durable evidence snapshot commits independently to Commit A's complete Git
+tree and to the seven evidence blobs changed by that snapshot. To verify the
+manifest, sort entries by repository-relative path, encode each as
+`path<TAB>blob_oid<LF>` in UTF-8 without a BOM and calculate SHA-256. These
+content-addressed identifiers remain recorded in a future squash receipt even
+if the PR branch is deleted. They fingerprint the original evidence objects;
+they do not claim that the original commit becomes an ancestor of the squash
+commit or that Git object retention is permanent.
 
 ## Result
 
