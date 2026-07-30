@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readSync, realpathSync, statSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
 import { createReadonlyMediaCapabilityRequest, parseReadonlyMediaCapabilityKey, READONLY_MEDIA_CAPABILITY_TTL_MS } from "../src/webgpt-cloud/mediaCapability.js";
@@ -235,37 +235,95 @@ function openDatabaseLease(root: string, databasePath: string): DatabaseLease {
   }
 }
 
-function expectedMediaFile(root: string, media: ManifestMedia): { path: string; size: number } {
-  const path = resolve(root, media.media_relative_path);
-  const rel = relative(realpathSync(root), path);
-  if (!rel || rel.startsWith("..") || isAbsolute(rel) || !existsSync(path) || lstatSync(path).isSymbolicLink() || !lstatSync(path).isFile()) {
+type MediaFileLease = {
+  descriptor: number;
+  path: string;
+  root: string;
+  device: bigint;
+  inode: bigint;
+  size: bigint;
+};
+
+function assertMediaFileLeaseCurrent(lease: MediaFileLease): void {
+  try {
+    const descriptorStats = fstatSync(lease.descriptor, { bigint: true });
+    const pathStats = lstatSync(lease.path, { bigint: true });
+    const mediaReal = realpathSync(lease.path);
+    const mediaRel = relative(lease.root, mediaReal);
+    if (!descriptorStats.isFile() || !pathStats.isFile()
+      || descriptorStats.dev !== lease.device || descriptorStats.ino !== lease.inode
+      || pathStats.dev !== lease.device || pathStats.ino !== lease.inode
+      || descriptorStats.nlink !== 1n || pathStats.nlink !== 1n
+      || descriptorStats.size !== lease.size || pathStats.size !== lease.size
+      || lease.size < 1n || lease.size > BigInt(Number.MAX_SAFE_INTEGER)
+      || !mediaRel || mediaRel.startsWith("..") || isAbsolute(mediaRel)) {
+      throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+    }
+  } catch (error) {
+    if (error instanceof MatrixError) throw error;
     throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
   }
-  const real = realpathSync(path);
-  const realRel = relative(realpathSync(root), real);
-  if (!realRel || realRel.startsWith("..") || isAbsolute(realRel)) throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
-  const size = statSync(real).size;
-  if (!Number.isSafeInteger(size) || size < 1) throw new MatrixError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
-  return { path: real, size };
+}
+
+function openExpectedMediaFile(root: string, media: ManifestMedia): MediaFileLease {
+  const realRoot = realpathSync(root);
+  const path = resolve(realRoot, media.media_relative_path);
+  const rel = relative(realRoot, path);
+  if (!rel || rel.startsWith("..") || isAbsolute(rel)) throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+  let descriptor: number;
+  try {
+    descriptor = openSync(path, constants.O_RDONLY | MANIFEST_NOFOLLOW_FLAG);
+  } catch {
+    throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+  }
+  try {
+    const stats = fstatSync(descriptor, { bigint: true });
+    const lease = {
+      descriptor,
+      path,
+      root: realRoot,
+      device: stats.dev,
+      inode: stats.ino,
+      size: stats.size
+    };
+    assertMediaFileLeaseCurrent(lease);
+    return lease;
+  } catch (error) {
+    closeSync(descriptor);
+    if (error instanceof MatrixError) throw error;
+    throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+  }
+}
+
+function expectedMediaFileSize(root: string, media: ManifestMedia): number {
+  const lease = openExpectedMediaFile(root, media);
+  try {
+    return Number(lease.size);
+  } finally {
+    closeSync(lease.descriptor);
+  }
 }
 
 function expectedVideoSuffix(root: string, media: ManifestMedia): { byte_length: number; sha256: string; start: number; end: number; total: number } {
-  const { path, size: total } = expectedMediaFile(root, media);
-  const byteLength = Math.min(16, total);
-  const bytes = Buffer.alloc(byteLength);
-  const descriptor = openSync(path, "r");
+  const lease = openExpectedMediaFile(root, media);
   try {
-    if (readSync(descriptor, bytes, 0, byteLength, total - byteLength) !== byteLength) throw new MatrixError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
+    const total = Number(lease.size);
+    const byteLength = Math.min(16, total);
+    const bytes = Buffer.alloc(byteLength);
+    if (readSync(lease.descriptor, bytes, 0, byteLength, total - byteLength) !== byteLength) {
+      throw new MatrixError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
+    }
+    assertMediaFileLeaseCurrent(lease);
+    return {
+      byte_length: byteLength,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+      start: total - byteLength,
+      end: total - 1,
+      total
+    };
   } finally {
-    closeSync(descriptor);
+    closeSync(lease.descriptor);
   }
-  return {
-    byte_length: byteLength,
-    sha256: createHash("sha256").update(bytes).digest("hex"),
-    start: total - byteLength,
-    end: total - 1,
-    total
-  };
 }
 
 function gatewayOrigin(value: string): string {
@@ -512,7 +570,7 @@ async function main(): Promise<void> {
       const activated = await activate((await issue(project, media)).handle);
       if (projectIndex === 1 && revocationSession === null) revocationSession = activated.sessionUrl;
       const videoSuffix = media.mime_type === "video/mp4" ? expectedVideoSuffix(root, media) : null;
-      const maximumBodyBytes = videoSuffix?.byte_length ?? expectedMediaFile(root, media).size;
+      const maximumBodyBytes = videoSuffix?.byte_length ?? expectedMediaFileSize(root, media);
       const result = await request(matrixController.signal, activated.sessionUrl, {
         headers: media.mime_type === "video/mp4"
           ? { origin: WIDGET_ORIGIN, range: `bytes=-${videoSuffix!.byte_length}` }

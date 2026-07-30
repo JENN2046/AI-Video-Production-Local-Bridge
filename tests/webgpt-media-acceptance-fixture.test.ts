@@ -254,6 +254,11 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
   assert.match(matrixSource, /assertDatabaseLeaseCurrent\(databaseLease\)/);
   assert.match(matrixSource, /\{ assertDatabaseCurrent \}/);
   assert.match(matrixSource, /\{ assertPathCurrent: assertDatabaseCurrent \}/);
+  assert.match(matrixSource, /openExpectedMediaFile\(root, media\)/);
+  assert.match(matrixSource, /openSync\(path, constants\.O_RDONLY \| MANIFEST_NOFOLLOW_FLAG\)/);
+  assert.match(matrixSource, /assertMediaFileLeaseCurrent\(lease\)/);
+  assert.match(matrixSource, /readSync\(lease\.descriptor/);
+  assert.doesNotMatch(matrixSource, /openSync\(path, "r"\)/);
   assert.match(matrixSource, /MATRIX_CAPABILITY_REQUESTS = DISTINCT_MEDIA_VALIDATIONS \+ 3/);
   assert.match(matrixSource, /MATRIX_ORDINARY_REQUESTS = 2 \+ DISTINCT_MEDIA_VALIDATIONS \* 3 \+ 4/);
   assert.match(matrixSource, /MATRIX_CAPABILITY_REQUESTS \* CAPABILITY_REQUEST_TIMEOUT_MS/);
@@ -484,6 +489,76 @@ test("media acceptance matrix proves image, byte-range, replay, expiry, project 
     await gateway.close();
     key.fill(0);
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("media acceptance matrix rejects a video hard-linked outside the fixture root during its atomic open", async () => {
+  const source = resolve("fixtures/video/mock_clip.mp4");
+  const fixtureCommand = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
+  const created = spawnSync(process.execPath, [fixtureCommand, "create", "--input", source, "--issuer", ISSUER, "--resource", RESOURCE], {
+    cwd: process.cwd(), input: `${SUBJECT}\n`, encoding: "utf8", windowsHide: true, env: childEnv
+  });
+  assert.equal(created.status, 0, created.stderr);
+  const receipt = JSON.parse(created.stdout) as { run_id: string };
+  const root = resolve("data/webgpt/media-acceptance", receipt.run_id);
+  const manifest = JSON.parse(readFileSync(join(root, "fixture.json"), "utf8")) as {
+    issuer_hash: string;
+    projects: Array<{ media: Array<{ media_relative_path: string; mime_type: string }> }>;
+  };
+  const video = manifest.projects[0]!.media.find((media) => media.mime_type === "video/mp4");
+  assert.ok(video);
+  const videoPath = resolve(root, video.media_relative_path);
+  const external = mkdtempSync(join(resolve(root, ".."), "external-video-hardlink-race-"));
+  const externalVideo = join(external, "private.mp4");
+  const preloadPath = join(external, "swap-video-before-open.cjs");
+  copyFileSync(videoPath, externalVideo);
+  const externalBefore = sha(externalVideo);
+  writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const { syncBuiltinESMExports } = require("node:module");
+const originalOpenSync = fs.openSync;
+let swapped = false;
+fs.openSync = function(path, ...args) {
+  if (!swapped && typeof path === "string" && path === process.env.MEDIA_ACCEPTANCE_TEST_VIDEO_PATH) {
+    swapped = true;
+    fs.unlinkSync(path);
+    fs.linkSync(process.env.MEDIA_ACCEPTANCE_TEST_EXTERNAL_VIDEO, path);
+  }
+  return originalOpenSync.call(this, path, ...args);
+};
+syncBuiltinESMExports();
+`, "utf8");
+  const key = Buffer.alloc(32, 38);
+  const gateway = await startReadonlyMediaGateway({
+    database_path: join(root, "app.sqlite"),
+    issuer_hash: manifest.issuer_hash,
+    keyring: { active: { kid: "acceptance-matrix-media-lease-v1", key } },
+    allowed_origin: "https://aivideo.skmt617.top",
+    allowed_media_roots: [join(root, "media")],
+    port: 0
+  });
+  try {
+    const result = await runChild(process.execPath, [
+      "--require", preloadPath,
+      resolve("dist/scripts/webgpt-media-acceptance-matrix.js"),
+      "--run", receipt.run_id,
+      "--origin", `${gateway.url}/`,
+      "--kid", "acceptance-matrix-media-lease-v1"
+    ], `${key.toString("base64url")}\n`, {
+      ...matrixExpiryTestEnv,
+      MEDIA_ACCEPTANCE_TEST_VIDEO_PATH: videoPath,
+      MEDIA_ACCEPTANCE_TEST_EXTERNAL_VIDEO: externalVideo
+    });
+    assert.equal(result.status, 1);
+    assert.deepEqual(lowDisclosureError(result.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_ROOT_UNSAFE" });
+    assert.equal(statSync(videoPath).nlink, 2);
+    assert.equal(sha(externalVideo), externalBefore);
+    assert.doesNotMatch(`${result.stdout}${result.stderr}`, /https?:\/\//);
+  } finally {
+    await gateway.close();
+    key.fill(0);
+    rmSync(root, { recursive: true, force: true });
+    rmSync(external, { recursive: true, force: true });
   }
 });
 
