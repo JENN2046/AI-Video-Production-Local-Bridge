@@ -4341,11 +4341,21 @@ Risks:
 
 Next:
 - Use `npm run r2g:l:serve-read-only -- --port 2091` only as part of a future exact-authorized live connector smoke.
+
 ## 2026-07-30 — S3 terminal readiness finding
 
 ```yaml
 task: S3-T1_CURRENT_WORKBENCH_CANARY_READINESS
-terminal_status: BLOCKED_BY_S3_FINDING
+status: DONE
+terminal_result: BLOCKED_BY_S3_FINDING
+claimed_by: Codex
+claim_run_id: codex-20260730-192955-s3-readiness
+claimed_at: 2026-07-30T19:29:55+08:00
+completed_by: Codex
+completed_at: 2026-07-30T19:41:08+08:00
+result: BLOCKED_BY_S3_FINDING
+validation_result: PASS
+validation: Current build and four isolated safety lanes passed; findings prevented S4 readiness.
 findings:
   - no eligible Shot
   - RunningHub credential absent
