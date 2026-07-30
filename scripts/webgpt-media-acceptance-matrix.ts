@@ -648,10 +648,12 @@ async function main(): Promise<void> {
     }, keyring, now ? { now: () => now } : {});
 
   const issue = async (project: ManifestProject, media: ManifestMedia, now?: Date): Promise<{ handle: string; expires_at_ms: number }> => {
+    const issuedAt = now ?? new Date();
+    const expectedExpiresAtMs = issuedAt.getTime() + READONLY_MEDIA_CAPABILITY_TTL_MS;
     const result = await request(matrixController.signal, `${origin}/internal/v1/capabilities`, {
       method: "POST",
       headers: { "content-type": "application/json; charset=utf-8" },
-      body: JSON.stringify(requestEnvelope(project, media, now))
+      body: JSON.stringify(requestEnvelope(project, media, issuedAt))
     }, "json", CAPABILITY_REQUEST_TIMEOUT_MS);
     const response = result.response;
     if (response.status !== 201) throw new MatrixError("MEDIA_ACCEPTANCE_CAPABILITY_FAILED");
@@ -659,7 +661,9 @@ async function main(): Promise<void> {
     const expiresAt = result.json?.expires_at;
     const expiresAtMs = typeof expiresAt === "string" ? Date.parse(expiresAt) : Number.NaN;
     if (typeof handle !== "string" || !HANDLE.test(handle) || !Number.isFinite(expiresAtMs)
-      || new Date(expiresAtMs).toISOString() !== expiresAt) throw new MatrixError("MEDIA_ACCEPTANCE_RESPONSE_INVALID");
+      || new Date(expiresAtMs).toISOString() !== expiresAt || expiresAtMs !== expectedExpiresAtMs) {
+      throw new MatrixError("MEDIA_ACCEPTANCE_RESPONSE_INVALID");
+    }
     return { handle, expires_at_ms: expiresAtMs };
   };
 
