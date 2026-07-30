@@ -133,6 +133,44 @@ async function startCapabilityExpiryBypassProxy(targetOrigin: string): Promise<G
   return { ...proxy, expiredHandleRequests: () => expiredHandleRequests };
 }
 
+async function startRevokedIssuanceBypassProxy(targetOrigin: string): Promise<GatewayProxy & { rewrittenIssuances: () => number }> {
+  let rewrittenIssuances = 0;
+  const proxy = await startGatewayProxy(targetOrigin, (incoming, upstream, outgoing) => {
+    if (upstream.statusCode !== 404 || incoming.method !== "POST" || incoming.url !== "/internal/v1/capabilities") {
+      return false;
+    }
+    const chunks: Buffer[] = [];
+    upstream.on("data", (chunk: Buffer) => { chunks.push(chunk); });
+    upstream.on("end", () => {
+      const body = Buffer.concat(chunks);
+      let code = "";
+      try {
+        code = String((JSON.parse(body.toString("utf8")) as { error?: { code?: string } }).error?.code ?? "");
+      } catch {
+        // Forward malformed upstream failures unchanged so the matrix retains control of response validation.
+      }
+      if (code !== "MEDIA_AUTHORIZATION_DENIED") {
+        outgoing.statusCode = upstream.statusCode ?? 502;
+        for (const [name, value] of Object.entries(upstream.headers)) if (value !== undefined) outgoing.setHeader(name, value);
+        outgoing.end(body);
+        return;
+      }
+      rewrittenIssuances += 1;
+      const payload = JSON.stringify({
+        capability_handle: "A".repeat(43),
+        expires_at: new Date(Date.now() + 60_000).toISOString()
+      });
+      outgoing.writeHead(201, {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": String(Buffer.byteLength(payload))
+      });
+      outgoing.end(payload);
+    });
+    return true;
+  });
+  return { ...proxy, rewrittenIssuances: () => rewrittenIssuances };
+}
+
 async function startOversizeRangeProxy(targetOrigin: string): Promise<GatewayProxy & { rangeRequests: () => number }> {
   let rangeRequests = 0;
   const proxy = await startGatewayProxy(targetOrigin, (incoming, upstream, outgoing) => {
@@ -313,7 +351,7 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
   assert.match(matrixSource, /assertMediaFileLeaseCurrent\(lease\)/);
   assert.match(matrixSource, /readSync\(lease\.descriptor/);
   assert.doesNotMatch(matrixSource, /openSync\(path, "r"\)/);
-  assert.match(matrixSource, /MATRIX_CAPABILITY_REQUESTS = DISTINCT_MEDIA_VALIDATIONS \+ 3/);
+  assert.match(matrixSource, /MATRIX_CAPABILITY_REQUESTS = DISTINCT_MEDIA_VALIDATIONS \+ 4/);
   assert.match(matrixSource, /MATRIX_ORDINARY_REQUESTS = 2 \+ DISTINCT_MEDIA_VALIDATIONS \* 3 \+ 4/);
   assert.match(matrixSource, /MATRIX_CAPABILITY_REQUESTS \* CAPABILITY_REQUEST_TIMEOUT_MS/);
   assert.match(matrixSource, /MATRIX_ORDINARY_REQUESTS \* REQUEST_TIMEOUT_MS/);
@@ -898,6 +936,48 @@ test("media acceptance matrix proves an issued capability handle expires before 
     assert.deepEqual(lowDisclosureError(result.stderr), { result: "FAIL", stable_error_code: "MEDIA_ACCEPTANCE_EXPIRY_FAILED" });
     assert.equal(proxy.expiredHandleRequests(), 1);
     assert.doesNotMatch(`${result.stdout}${result.stderr}`, /https?:\/\//);
+  } finally {
+    await closeServer(proxy.server);
+    await gateway.close();
+    key.fill(0);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("media acceptance matrix rejects capability issuance that succeeds after membership revocation", async () => {
+  const source = resolve("fixtures/video/mock_clip.mp4");
+  const fixtureCommand = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
+  const created = spawnSync(process.execPath, [fixtureCommand, "create", "--input", source, "--issuer", ISSUER, "--resource", RESOURCE], {
+    cwd: process.cwd(), input: `${SUBJECT}\n`, encoding: "utf8", windowsHide: true, env: childEnv
+  });
+  assert.equal(created.status, 0, created.stderr);
+  const receipt = JSON.parse(created.stdout) as { run_id: string };
+  const root = resolve("data/webgpt/media-acceptance", receipt.run_id);
+  const manifest = JSON.parse(readFileSync(join(root, "fixture.json"), "utf8")) as { issuer_hash: string };
+  const key = Buffer.alloc(32, 43);
+  const gateway = await startReadonlyMediaGateway({
+    database_path: join(root, "app.sqlite"),
+    issuer_hash: manifest.issuer_hash,
+    keyring: { active: { kid: "acceptance-matrix-revoked-issuance-v1", key } },
+    allowed_origin: "https://aivideo.skmt617.top",
+    allowed_media_roots: [join(root, "media")],
+    port: 0
+  });
+  const proxy = await startRevokedIssuanceBypassProxy(gateway.url);
+  try {
+    const result = await runChild(process.execPath, [
+      resolve("dist/scripts/webgpt-media-acceptance-matrix.js"),
+      "--run", receipt.run_id,
+      "--origin", `${proxy.origin}/`,
+      "--kid", "acceptance-matrix-revoked-issuance-v1"
+    ], `${key.toString("base64url")}\n`, matrixExpiryTestEnv);
+    assert.equal(result.status, 1);
+    assert.deepEqual(lowDisclosureError(result.stderr), {
+      result: "FAIL",
+      stable_error_code: "MEDIA_ACCEPTANCE_REVOCATION_FAILED"
+    });
+    assert.equal(proxy.rewrittenIssuances(), 1);
+    assert.doesNotMatch(`${result.stdout}${result.stderr}`, /[0-9a-f]{64}|https?:\/\/|media\/v1\/[cs]\//);
   } finally {
     await closeServer(proxy.server);
     await gateway.close();

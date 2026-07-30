@@ -37,8 +37,8 @@ const MANIFEST_NOFOLLOW_FLAG = typeof constants.O_NOFOLLOW === "number" ? consta
 const DATABASE_SIDECAR_SUFFIXES = ["-wal", "-shm"] as const;
 const DATABASE_PATH_GUARD_TIMEOUT_MS = 5_000;
 const DISTINCT_MEDIA_VALIDATIONS = 4;
-// One issuance per media validation, plus stale-envelope, expiring-handle, and retained-project issuances.
-const MATRIX_CAPABILITY_REQUESTS = DISTINCT_MEDIA_VALIDATIONS + 3;
+// One issuance per media validation, plus stale-envelope, expiring-handle, revoked-project, and retained-project issuances.
+const MATRIX_CAPABILITY_REQUESTS = DISTINCT_MEDIA_VALIDATIONS + 4;
 // health/ready, activation/media/replay per media, then expired, revoked, and retained activation/media requests.
 const MATRIX_ORDINARY_REQUESTS = 2 + DISTINCT_MEDIA_VALIDATIONS * 3 + 4;
 // The expiry probe permits up to five seconds of timestamp drift and waits an additional 25ms after expiry.
@@ -776,6 +776,15 @@ async function main(): Promise<void> {
   const revoked = await request(matrixController.signal, revocationSession, { headers: { origin: WIDGET_ORIGIN } }, "json");
   assertWidgetCors(revoked.response);
   if (revoked.response.status !== 404 || stableErrorCode(revoked.json!) !== "MEDIA_AUTHORIZATION_DENIED") {
+    throw new MatrixError("MEDIA_ACCEPTANCE_REVOCATION_FAILED");
+  }
+  const rejectedRevokedIssuance = await request(matrixController.signal, `${origin}/internal/v1/capabilities`, {
+    method: "POST",
+    headers: { "content-type": "application/json; charset=utf-8" },
+    body: JSON.stringify(requestEnvelope(revokedProject, revokedProject.media[0]!))
+  }, "json", CAPABILITY_REQUEST_TIMEOUT_MS);
+  if (rejectedRevokedIssuance.response.status !== 404
+    || stableErrorCode(rejectedRevokedIssuance.json!) !== "MEDIA_AUTHORIZATION_DENIED") {
     throw new MatrixError("MEDIA_ACCEPTANCE_REVOCATION_FAILED");
   }
 
