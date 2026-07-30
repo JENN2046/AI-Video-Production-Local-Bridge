@@ -2640,3 +2640,35 @@ remaining_test_processes: 0
 The implementation tests used isolated fixtures and temporary databases.
 They did not access activity data, perform a Provider operation, configure a
 credential, start a service, rerun S3 readiness or authorize S4.
+
+### PR108 final-review P1 remediation
+
+```yaml
+task: PR107-CLEAN-RESTACK
+validated_at: 2026-07-31T03:21:01+08:00
+replacement_pr: 108
+finding: EXPLICIT_TASK_REATTACH_REUSED_EXPIRED_POLL_DEADLINE
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - npm run test:v2
+  - npm run test:selection-gate
+  - npm run secret:scan
+results:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_57
+  selection_gate: PASS_23
+  secret_scan: PASS
+verified_behavior:
+  explicit_human_attach_restarts_bounded_deadline: true
+  deadline_persists_across_resumed_poll: true
+  submit_count_after_reattach: 1
+  automatic_poll_before_human_action: false
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+```

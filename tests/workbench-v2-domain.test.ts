@@ -1663,6 +1663,46 @@ test("provider polling uses one persisted absolute deadline and never resubmits 
     await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: false, dependencies });
     assert.equal(submitCalls, 1);
     assert.equal(pollCalls, 2);
+
+    wallMs = persistedDeadline + 60_000;
+    monotonicMs += 60_000;
+    checked = openM0Database(sqlitePath);
+    const reattached = reconcileGenerationJob(prepared.job_id, {
+      decision: "attach_existing_task",
+      provider_task_id: "task-absolute-deadline",
+      human_confirmation: true
+    }, checked, { env: prepared.env, now: () => new Date(wallMs) });
+    assert.equal(reattached.ok, true);
+    if (!reattached.ok) throw new Error("explicit task reattachment failed");
+    const reattachedIntent = checked.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const reattachedJob = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    checked.close();
+    const reattachedDeadline = Date.parse(
+      (JSON.parse(reattachedIntent.data_json) as { provider_poll_deadline_at: string }).provider_poll_deadline_at
+    );
+    assert.equal(reattachedDeadline, wallMs + DEFAULT_PROVIDER_TASK_POLL_TIMEOUT_MS);
+    assert.notEqual(reattachedDeadline, persistedDeadline);
+    assert.deepEqual({ ...reattachedJob }, {
+      state: "polling",
+      reconciliation_reason: "HUMAN_ATTACHED_EXISTING_TASK"
+    });
+
+    await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: false, dependencies });
+    checked = openM0Database(sqlitePath);
+    const afterReattachedPoll = checked.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const afterReattachedJob = checked.prepare("SELECT state FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string };
+    checked.close();
+    assert.equal(submitCalls, 1);
+    assert.equal(pollCalls, 3);
+    assert.equal(afterReattachedJob.state, "polling");
+    assert.equal(
+      Date.parse((JSON.parse(afterReattachedPoll.data_json) as { provider_poll_deadline_at: string }).provider_poll_deadline_at),
+      reattachedDeadline
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

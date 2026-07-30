@@ -4569,3 +4569,37 @@ s4_authorization_granted: false
 ready_task_count: 0
 delivery: PR_108_DRAFT_AWAITING_REVIEW
 ```
+
+## 2026-07-31 — PR108 final-review P1 remediation
+
+```yaml
+task: PR107-CLEAN-RESTACK
+status: LOCAL_FIX_VALIDATED_AWAITING_CI_AND_REREVIEW
+recorded_by: Codex
+recorded_at: 2026-07-31T03:21:01+08:00
+replacement_pr: 108
+finding: EXPLICIT_TASK_REATTACH_REUSED_EXPIRED_POLL_DEADLINE
+resolution:
+  explicit_human_attach_restarts_bounded_deadline: true
+  worker_claim_resets_deadline: false
+  ordinary_poll_resets_deadline: false
+  process_restart_resets_deadline: false
+  automatic_submit_retry: 0
+changed_files:
+  - src/tools/workbenchGeneration.ts
+  - tests/workbench-v2-domain.test.ts
+local_validation:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_57
+  selection_gate: PASS_23
+  secret_scan: PASS
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+s4_status: BLOCKED
+s4_authorization_granted: false
+delivery: PR_108_DRAFT_AWAITING_CI_AND_REREVIEW
+```

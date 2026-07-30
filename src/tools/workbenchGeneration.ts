@@ -347,14 +347,12 @@ function providerPollDeadlineFromIntent(db: M0Database, intentId: string): numbe
   return persisted;
 }
 
-function ensureProviderPollDeadline(
+function persistProviderPollDeadline(
   db: M0Database,
   intentId: string,
   timeoutMs: number,
   nowMs: number
 ): number {
-  const existing = providerPollDeadlineFromIntent(db, intentId);
-  if (existing !== null) return existing;
   const row = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(intentId) as { data_json: string };
   const data = parseRecord(row.data_json);
   const deadline = nowMs + timeoutMs;
@@ -365,6 +363,25 @@ function ensureProviderPollDeadline(
   db.prepare("UPDATE generation_intents SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?")
     .run(JSON.stringify(data), intentId);
   return deadline;
+}
+
+function ensureProviderPollDeadline(
+  db: M0Database,
+  intentId: string,
+  timeoutMs: number,
+  nowMs: number
+): number {
+  const existing = providerPollDeadlineFromIntent(db, intentId);
+  return existing ?? persistProviderPollDeadline(db, intentId, timeoutMs, nowMs);
+}
+
+function restartProviderPollDeadlineAfterHumanAttachment(
+  db: M0Database,
+  intentId: string,
+  timeoutMs: number,
+  nowMs: number
+): number {
+  return persistProviderPollDeadline(db, intentId, timeoutMs, nowMs);
 }
 
 function createRemainingPollBudget(
@@ -1671,7 +1688,12 @@ export function reconcileGenerationJob(
         });
       }
       db.prepare("UPDATE generation_intents SET provider_task_id = ?, status = 'running', sanitized_error_json = '{}', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(taskId, intent.intent_id);
-      ensureProviderPollDeadline(db, intent.intent_id, pollTimeoutMs, dateNow(dependencies).getTime());
+      restartProviderPollDeadlineAfterHumanAttachment(
+        db,
+        intent.intent_id,
+        pollTimeoutMs,
+        dateNow(dependencies).getTime()
+      );
       run.status = "running";
       run.provider.provider_job_id = taskId;
       run.provider.provider_status = "HUMAN_ATTACHED_EXISTING_TASK";
