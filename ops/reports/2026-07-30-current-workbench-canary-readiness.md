@@ -4,7 +4,13 @@ Status: `BLOCKED_BY_S3_FINDING`
 
 Task: `S3-T1_CURRENT_WORKBENCH_CANARY_READINESS`
 
-Baseline: `f4a15f565865c045325274251a91d2e11c633e41`
+Evidence:
+
+```yaml
+code_baseline: main@bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7
+evidence_snapshot_commit: PENDING_CONTENT_FIX_PUSH
+publication_pr: 106
+```
 
 Date: 2026-07-30
 
@@ -40,7 +46,8 @@ Three current local findings prevent S4:
 ```yaml
 repository: JENN2046/AI-Video-Production-Local-Bridge
 remote_main: bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7
-source_commit: f4a15f565865c045325274251a91d2e11c633e41
+code_baseline: main@bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7
+audit_sequence_base: f4a15f565865c045325274251a91d2e11c633e41
 branch: codex/s3-workbench-canary-readiness
 node:
   version: 24.14.0
@@ -116,56 +123,37 @@ read into a receipt.
 
 ## Candidate and input
 
-Candidate selection result:
-
 ```yaml
-selection_status: S3_NO_ELIGIBLE_SHOT
-active_production_projects: 2
-evaluated_shots: 1
-eligible_candidate_count: 0
+candidate_scan:
+  eligible_candidate_count: 0
+  result: S3_NO_ELIGIBLE_SHOT
+  identifiers_published: false
 ```
 
-The nearest observed production Shot is recorded only to make the remediation
-boundary concrete:
+The authorized read-only scan established only the aggregate result above.
+This receipt retains no activity-database object identifier, local path, full
+prompt or business content. It also retains no alias-to-value mapping. If a
+future receipt needs to describe a relationship, it may use only the
+non-reversible aliases `CANDIDATE_PROJECT`, `CANDIDATE_SHOT` and
+`CANDIDATE_STORYBOARD_ARTIFACT`, without preserving a mapping to real values.
+
+Static code inspection produced the following authorization assessment:
 
 ```yaml
-project_id: project_b45b26f5-2c24-4921-89a8-8298736bab11
-shot_id: shot_director_activity_63845a20-95d4-455f-9aa2-6c317af14fb8
-storyboard_package_id: ""
-storyboard_artifact_id: artifact_67458ac9-a0cb-4e82-961e-9f34490413d7
-project_status: draft
-shot_status: draft
-storyboard_package_approved: false
-video_prompt_present: true
-nonterminal_generation_intent_conflict: false
-runninghub_capability:
-  result: FAIL
-  error_code: PROVIDER_CAPABILITY_DURATION_UNSUPPORTED
-  duration_seconds: 5
-  required_minimum_seconds: 6
+identifier_exposure_assessment:
+  identifiers_are_bearer_credentials: false
+  identifiers_alone_grant_database_access: false
+  identifiers_alone_grant_media_access: false
+  identifiers_alone_grant_provider_access: false
+  revocation_required: false
+  history_fully_purged_claimed: false
 ```
 
-The observed Artifact itself passed the allowed read-only media checks:
-
-```yaml
-artifact_reference_ready: true
-artifact_blob_identity: PASS
-project_shot_ownership: PASS
-file_exists: true
-regular_file: true
-approved_root_containment: true
-nonzero_file: true
-supported_image_mime: true
-valid_dimensions: true
-aspect_ratio_compatible: true
-artifact_digest_verified: true
-input_readiness: PASS_FOR_OBSERVED_ARTIFACT_ONLY
-```
-
-This does not make the Shot eligible: it is still draft, lacks an approved
-Storyboard Package and requests a duration below the RunningHub capability
-minimum. S3 did not alter those facts or guess a different business target.
-
+The identifiers select records only after an independently authorized database
+or service boundary has already been established. Media playback uses a
+separately issued capability handle, and Provider execution still requires its
+configured adapter, credential and human execution gates. Current-tree cleanup
+does not erase the earlier PR commits from GitHub object history.
 ## Current Workbench path
 
 ```yaml
@@ -219,58 +207,39 @@ No full test suite, Browser Smoke, Media Gateway, Snapshot, Director Bridge,
 Memory, multi-user or legacy script was run. No isolated-test process remained
 after completion.
 
-## S4 authorization request
-
-This packet is deliberately incomplete and not executable because its target,
-credential and polling bound have not passed S3.
+## S4 authorization status
 
 ```yaml
-S4_AUTHORIZATION_REQUEST:
-  status: NOT_AUTHORIZED_BLOCKED_BY_S3_FINDING
-  source_commit: f4a15f565865c045325274251a91d2e11c633e41
-  database_ledger: "0011"
-  provider: RunningHub
-  provider_model_or_route: rhart-video-g/image-to-video
-  project_id: UNAVAILABLE_S3_NO_ELIGIBLE_SHOT
-  shot_id: UNAVAILABLE_S3_NO_ELIGIBLE_SHOT
-  storyboard_package_id: UNAVAILABLE_S3_NO_ELIGIBLE_SHOT
-  storyboard_artifact_id: UNAVAILABLE_S3_NO_ELIGIBLE_SHOT
-  input_digest_verified: false
-  duration_seconds: UNAVAILABLE_S3_NO_ELIGIBLE_SHOT
-  aspect_ratio: UNAVAILABLE_S3_NO_ELIGIBLE_SHOT
-  resolution: UNAVAILABLE_S3_NO_ELIGIBLE_SHOT
-  single_submit_limit: 1
-  automatic_submit_retry: 0
-  provider_poll_timeout: NO_ENFORCED_WHOLE_JOB_BOUND
-  provider_download_timeout: 30000_ms
-  budget_currency: BUDGET_REQUIRES_JENN_DECISION
-  maximum_budget: BUDGET_REQUIRES_JENN_DECISION
-  cost_estimate_source: RUNNINGHUB_OFFICIAL_PRICE_PREVIEW_REQUIRED_IN_S4
-  live_provider_check_required: true
-  paid_submit_requires_jenn_confirmation: true
-  stop_conditions:
-    - source commit, database identity or ledger drift
-    - no exact eligible Project and Shot
-    - Storyboard Package, Artifact, Blob, digest or capability mismatch
-    - RunningHub credential absence
-    - missing exact Jenn budget and paid-submit confirmation
-    - no enforced whole-job Provider poll timeout
-    - official price, balance or budget failure
-    - more than one submit attempt
-    - unknown submit outcome, which must enter manual reconciliation
-    - any unexpected Provider, network, download or Artifact result
+s4:
+  task: S4-T1_REAL_SINGLE_SHOT_CURRENT_PATH
+  status: BLOCKED
+  authorization_granted: false
+  executable: false
+  candidate_identifiers_published: false
 ```
 
+No target object is named in this receipt. No Provider preflight, submit,
+polling, download or paid action was authorized or attempted.
 ## Required next boundary
 
-S4 remains `BLOCKED_BY_S3_FINDING`. One core blocker task should:
+S3 is terminal `DONE` with `BLOCKED_BY_S3_FINDING`; it is not `READY`.
+The bounded-polling and manual-reconciliation candidate fixes have local
+`PASS` evidence in Draft PR #107 and remain `AWAITING_PR_REVIEW`, not part of
+the current `main` baseline.
 
-1. obtain Jenn's exact business choice and separately authorized Workbench
-   writes for one approved Storyboard Package and a RunningHub-supported Shot;
-2. establish the RunningHub credential through a separately authorized secure
-   configuration step while keeping all real execution gates false;
-3. define and enforce one whole-job polling timeout consumed by the current
-   Workbench path;
-4. rerun the bounded S3 checks before producing a new S4 authorization packet.
+The remaining sequence is:
 
-S3 did not execute any of those approval-required actions.
+1. review PR #106; any future merge requires separate authorization and must
+   use squash merge;
+2. keep PR #107 Draft and unchanged until PR #106 is integrated;
+3. obtain Jenn's separate authorization for `S3B-T2_PREPARE_ELIGIBLE_SHOT`;
+4. wait for Jenn's local action for
+   `S3B-T3_CONFIGURE_RUNNINGHUB_CREDENTIAL`;
+5. keep `S3B-T4_RERUN_CANARY_READINESS` blocked until T2, T3 and the reviewed
+   polling candidate are available;
+6. keep S4 blocked and unauthorized until a new bounded readiness receipt
+   supports an exact authorization request.
+
+There is currently no `READY` execution task. No action in this receipt
+authorizes business-state writes, credential changes, Provider operations or
+S4 execution.

@@ -4341,3 +4341,40 @@ Risks:
 
 Next:
 - Use `npm run r2g:l:serve-read-only -- --port 2091` only as part of a future exact-authorized live connector smoke.
+## 2026-07-30 — S3 terminal readiness finding
+
+```yaml
+task: S3-T1_CURRENT_WORKBENCH_CANARY_READINESS
+terminal_status: BLOCKED_BY_S3_FINDING
+findings:
+  - no eligible Shot
+  - RunningHub credential absent
+  - Provider poll timeout was unbounded
+provider_calls: 0
+activity_writes: 0
+commit: f570d145e4832d2b2237123a40d5e8e0b503fcf1
+delivery: PR_106_AWAITING_REVIEW
+evidence:
+  - ops/reports/2026-07-30-current-workbench-canary-readiness.md
+```
+
+The entry is terminal history for S3. It does not make S3 `READY`, authorize
+S4, or inherit later candidate-code results into `main`.
+
+## 2026-07-30 — S3B candidate review state
+
+```yaml
+task:
+  - S3B-T1_BOUND_PROVIDER_POLLING
+  - S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE
+local_result: PASS
+repository_result: AWAITING_PR_REVIEW
+candidate_pr: 107
+merged_to_main: false
+provider_calls: 0
+activity_writes: 0
+```
+
+These are candidate results on a Draft stacked PR, not project-baseline
+completion. T2 and T3 remain outside this entry and require their separate
+human gates.

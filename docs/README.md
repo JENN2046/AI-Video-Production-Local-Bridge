@@ -20,8 +20,12 @@ S1 is now complete. [Product Scope Freeze](PRODUCT_SCOPE_FREEZE.md) is the
 single current statement of component classification, stage dependencies,
 Provider MVP boundaries, route ownership and future removal conditions.
 [Current Core Production Loop Gap Audit](CORE_PRODUCTION_LOOP_GAP_AUDIT.md)
-records the S2 implementation/acceptance split and the first hard break. S3
-current Workbench canary readiness is the only next `READY` task.
+records the S2 implementation/acceptance split and the first hard break.
+[Current Workbench Canary Readiness](../ops/reports/2026-07-30-current-workbench-canary-readiness.md)
+records the completed S3 readiness check and its three terminal blockers.
+Polling and manual-reconciliation consistency candidate fixes are in Draft PR
+#107 awaiting review. There is currently no `READY` execution task, and S4 is
+blocked and unauthorized.
 
 ## Start here
 
@@ -30,6 +34,7 @@ current Workbench canary readiness is the only next `READY` task.
 | Understand current status and open gates | [Current State](../CURRENT_STATE.md) |
 | Understand the active product scope and frozen surfaces | [Product Scope Freeze](PRODUCT_SCOPE_FREEZE.md) |
 | See the current Workbench core-loop gaps and S3 boundary | [Current Core Production Loop Gap Audit](CORE_PRODUCTION_LOOP_GAP_AUDIT.md) |
+| See the completed S3 readiness findings and exact follow-up gates | [Current Workbench Canary Readiness](../ops/reports/2026-07-30-current-workbench-canary-readiness.md) |
 | Resume the latest Unified Director work safely | [2026-07-28 Unified Director handoff](HANDOFF_2026-07-28_UNIFIED_DIRECTOR.md) |
 | Use the local Workbench and ChatGPT App | [User Guide](USER_GUIDE.md) |
 | Install, configure or recover a runtime | [Deployment Guide](DEPLOYMENT_GUIDE.md) |

@@ -1,54 +1,40 @@
 # HANDOFF.md
 
-Current mode: S3 local readiness complete; automatic continuation disabled
-Last run: codex-20260730-192955-s3-readiness
-Last result: S3 code and local safety checks passed, but S4 has three local blockers
+Current mode: PR #106 review remediation; no executable task is `READY`
+Last run: PR106-T1_REMEDIATE_REVIEW_FINDINGS
+Last result: S3 is terminal; S3B code candidates await review and real-operation gates remain closed
 
 ## Current state
 
-Current task: `S3B-T1_CLOSE_SINGLE_SHOT_CANARY_READINESS_GATES`
-Current status: `BLOCKED`
+Current task: none
+Current status: `AWAITING_PR_REVIEW`
 Current owner: none
+Ready task count: 0
 
-## S3-T1 Current Workbench Canary Readiness
+## Current S3 and S3B state
 
-- Published [Current Workbench Canary Readiness](../ops/reports/2026-07-30-current-workbench-canary-readiness.md).
-- Verified remote `main` remains
-  `bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7`; S3 branch is based directly on
-  S2 commit `f4a15f565865c045325274251a91d2e11c633e41`.
-- Built the current server and Workbench UI without starting a service.
-  Node, FFmpeg and FFprobe passed.
-- Opened the current repository activity database read-only with
-  `PRAGMA query_only = ON`; ledger `0011`, `workbench-v2-6`, `quick_check`,
-  governed roots and all low-disclosure `db:check` counts passed.
-- Confirmed the current Workbench route still targets RunningHub and retains
-  cost acknowledgement, one Intent, zero ordinary automatic resubmits,
-  manual reconciliation for unknown submit, bounded download, FFprobe and
-  governed Run/Blob/Artifact registration.
-- Confirmed the three process-level real Provider gates remained false and no
-  Provider network call occurred.
-- Found no eligible S4 Shot. The only evaluated production Shot is draft,
-  lacks an approved Storyboard Package and requests 5 seconds, below the
-  RunningHub 6-second minimum. Its existing Storyboard Artifact itself passed
-  read-only binding, file, MIME, dimensions, root and digest checks.
-- Confirmed the RunningHub target credential is absent without reading or
-  exposing any credential value.
-- Confirmed each Provider request and download is bounded, but the current
-  Workbench does not enforce a whole-job polling timeout and does not consume
-  the configurable timeout fields for that bound.
-- Four authorized isolated test groups passed: 11, 32, 27 and 37 tests. They
-  used temporary databases and fixture transports; no service or real Provider
-  was used.
-- Marked S3 `DONE` with `BLOCKED_BY_S3_FINDING`; S4 remains
-  `BLOCKED_BY_S3_FINDING`. No task is `READY`.
-- Created one minimal blocker task covering the exact eligible Shot, secure
-  RunningHub credential and enforced polling-bound prerequisites. It cannot be
-  executed without separate Jenn authorizations for business-state writes,
-  secret configuration and any source fix.
-- No source/test code, schema, activity data, media, service, Bridge, Snapshot,
-  deployment, external configuration, secret value or remote state was
-  modified. S4 was not executed and no branch was pushed.
-
+- S3 is `DONE` with terminal result `BLOCKED_BY_S3_FINDING`.
+- The S3 receipt publishes only an aggregate candidate scan:
+  `eligible_candidate_count: 0`, `S3_NO_ELIGIBLE_SHOT` and
+  `identifiers_published: false`.
+- PR #106 is the current publication/remediation PR and remains unmerged.
+- `S3B-T1_BOUND_PROVIDER_POLLING` has local `PASS` evidence and repository
+  status `AWAITING_PR_REVIEW` in Draft PR #107.
+- `S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE` has local `PASS` evidence
+  and repository status `AWAITING_PR_REVIEW` in Draft PR #107.
+- PR #107 remains Draft, stacked on the PR #106 branch and unchanged by the
+  PR #106 remediation.
+- `S3B-T2_PREPARE_ELIGIBLE_SHOT` is
+  `AWAITING_JENN_AUTHORIZATION`.
+- `S3B-T3_CONFIGURE_RUNNINGHUB_CREDENTIAL` is
+  `AWAITING_JENN_LOCAL_ACTION`.
+- `S3B-T4_RERUN_CANARY_READINESS` is `BLOCKED`.
+- `S4-T1_REAL_SINGLE_SHOT_CURRENT_PATH` is `BLOCKED` and unauthorized.
+- Media Gateway and Director Bridge do not block this stage. Memory,
+  multi-user and automatic Snapshot remain frozen.
+- No activity database/media access, Provider operation, credential change,
+  service/deployment operation, source/test modification, PR merge or PR #107
+  update occurred during this remediation.
 ## S2-T1 Current Core Loop Gap Proof
 
 - Audited the fixed current-schema scenario from an existing Project and
