@@ -64,7 +64,7 @@
       "ready_for_review_authorized": false
     },
     "pull_request_108": {
-      "status": "DRAFT_AWAITING_REVIEW",
+      "status": "DRAFT_REVIEW_BLOCKED",
       "base": "main",
       "head": "codex/s3b-provider-polling-restack",
       "merged_to_main": false,
@@ -76,14 +76,14 @@
     {
       "task_id": "S3B-T1_BOUND_PROVIDER_POLLING",
       "local_status": "PASS",
-      "repository_status": "AWAITING_REPLACEMENT_PR_REVIEW",
+      "repository_status": "BLOCKED_BY_REPLACEMENT_PR_REVIEW_FINDING",
       "pull_request": 108,
       "merged_to_main": false
     },
     {
       "task_id": "S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE",
       "local_status": "PASS",
-      "repository_status": "AWAITING_REPLACEMENT_PR_REVIEW",
+      "repository_status": "BLOCKED_BY_REPLACEMENT_PR_REVIEW_FINDING",
       "pull_request": 108,
       "merged_to_main": false
     },
@@ -165,8 +165,8 @@
     ".agent_board/HANDOFF.md"
   ],
   "commit": "f570d145e4832d2b2237123a40d5e8e0b503fcf1",
-  "delivery": "PR_106_MERGED_PR_108_DRAFT_AWAITING_REVIEW",
-  "updated_at": "2026-07-31T02:45:12+08:00",
+  "delivery": "PR_106_MERGED_PR_108_DRAFT_REVIEW_BLOCKED",
+  "updated_at": "2026-07-31T06:41:36+08:00",
   "safe_state": {
     "provider_calls": 0,
     "activity_writes": 0,

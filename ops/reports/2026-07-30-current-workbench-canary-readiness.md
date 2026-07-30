@@ -269,14 +269,14 @@ old_pr107:
   merge_authorized: false
 replacement_pr:
   number: 108
-  status: DRAFT_AWAITING_REVIEW
+  status: DRAFT_REVIEW_BLOCKED
   merged_to_main: false
 S3B-T1:
   local_status: PASS
-  repository_status: AWAITING_REPLACEMENT_PR_REVIEW
+  repository_status: BLOCKED_BY_REPLACEMENT_PR_REVIEW_FINDING
 S3B-T1A:
   local_status: PASS
-  repository_status: AWAITING_REPLACEMENT_PR_REVIEW
+  repository_status: BLOCKED_BY_REPLACEMENT_PR_REVIEW_FINDING
 S3B-T2:
   status: AWAITING_JENN_AUTHORIZATION
 S3B-T3:
@@ -290,12 +290,16 @@ ready_task_count: 0
 ```
 
 The bounded-polling and manual-reconciliation candidate fixes remain outside
-the current `main` baseline until a separately authorized merge.
+the current `main` baseline. The exact-head review found two P2 issues: the
+restart clock-rollback budget inflation is locally remediated, while recovery
+of an immutable verified Blob with missing or drifted registered bytes needs a
+separately authorized media persistence/downloader scope.
 
 The remaining sequence is:
 
-1. require Draft PR #108 to pass its clean-diff, Windows CI and final Codex
-   review gates;
+1. authorize and implement the smallest safe verified-Blob recovery boundary,
+   then require Draft PR #108 to pass its clean-diff, Windows CI and final
+   exact-head Codex review gates;
 2. close superseded PR #107 without merge only after those replacement gates
    pass, while retaining its branch;
 3. obtain Jenn's separate authorization for `S3B-T2_PREPARE_ELIGIBLE_SHOT`;

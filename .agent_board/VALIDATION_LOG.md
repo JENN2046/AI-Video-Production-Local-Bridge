@@ -2782,3 +2782,40 @@ secret_reads: 0
 service_starts: 0
 remaining_test_processes: 0
 ```
+
+### PR108 final-review clock rollback remediation and scope stop
+
+```yaml
+task: PR107-CLEAN-RESTACK
+validated_at: 2026-07-31T06:41:36+08:00
+replacement_pr: 108
+reviewed_commit: eef466c4c43d0c489da407e17dd328d274388252
+findings:
+  - CLOCK_ROLLBACK_COULD_INFLATE_PERSISTED_POLL_BUDGET
+  - INVALID_VERIFIED_BLOB_HAS_NO_AUTHORIZED_RECOVERY_PATH
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - npm run test:v2
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_61
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  restart_budget_capped_by_persisted_timeout: true
+  monotonic_budget_not_inflated_by_wall_clock_rollback: true
+  automatic_submit_retry: 0
+  invalid_verified_blob_recovery: NOT_VERIFIED_SCOPE_EXPANSION_REQUIRED
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+```

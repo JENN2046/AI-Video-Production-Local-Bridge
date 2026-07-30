@@ -1,13 +1,13 @@
 # HANDOFF.md
 
-Current mode: PR #107 clean restack; no executable task is `READY`
+Current mode: PR #107 clean restack review remediation; no executable task is `READY`
 Last run: PR107-CLEAN-RESTACK
-Last result: replacement Draft PR #108 awaits CI and final review; real-operation gates remain closed
+Last result: one final-review P2 is locally fixed; Blob recovery needs a separately authorized media-boundary scope
 
 ## Current state
 
 Current task: none
-Current status: `DRAFT_AWAITING_REVIEW`
+Current status: `DRAFT_REVIEW_BLOCKED`
 Current owner: none
 Ready task count: 0
 
@@ -20,13 +20,21 @@ Ready task count: 0
 - PR #106 was squash-merged as
   `b3a108abc8728e89259d0d953e1c638b9ca482ea`, the current `main` baseline.
 - `S3B-T1_BOUND_PROVIDER_POLLING` has local `PASS` evidence and repository
-  status `AWAITING_REPLACEMENT_PR_REVIEW` in Draft PR #108.
+  status `BLOCKED_BY_REPLACEMENT_PR_REVIEW_FINDING` in Draft PR #108.
 - `S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE` has local `PASS` evidence
-  and repository status `AWAITING_REPLACEMENT_PR_REVIEW` in Draft PR #108.
+  and repository status `BLOCKED_BY_REPLACEMENT_PR_REVIEW_FINDING` in Draft
+  PR #108.
+- The exact-head review of `eef466c4c43d0c489da407e17dd328d274388252`
+  found two P2 issues. The restart clock-rollback budget inflation is locally
+  fixed and has a 61st V2 regression case. Recovery of an immutable verified
+  Blob whose registered bytes are missing or drifted remains unresolved
+  because the required media persistence/downloader boundary files are outside
+  the current implementation allowlist.
 - PR #107 is superseded but remains open and unmerged until PR #108 completes
   its clean-diff, CI and final-review gates. Its branch remains retained.
 - PR #108 is Draft on `main`; it is not authorized for merge or
-  ready-for-review.
+  ready-for-review. It remains review-blocked and old PR #107 must not yet be
+  closed.
 - `S3B-T2_PREPARE_ELIGIBLE_SHOT` is
   `AWAITING_JENN_AUTHORIZATION`.
 - `S3B-T3_CONFIGURE_RUNNINGHUB_CREDENTIAL` is

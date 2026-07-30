@@ -61,7 +61,7 @@ database. `REAL_PROVIDER_ENABLED=false` remains the safe default.
 |---|---|---|---|
 | Workbench V2 local UI | Storyboard, generation preflight, version review and delivery-readiness views exist | Activity database compatibility accepted at ledger `0011` | Core |
 | SQLite and governed media | Migration, Artifact/Blob digest and FFprobe boundaries exist | Ledger `0011` migration/restore evidence remains commit-scoped | Core |
-| Current Provider path | Intent, budget, confirmation and adapter boundaries exist; Provider defaults off | S3 local checks passed; the bounded-polling and manual-reconciliation candidates are in Draft PR #108, not current `main`; S4 is still blocked by the remaining gates | Core blocker before S4 |
+| Current Provider path | Intent, budget, confirmation and adapter boundaries exist; Provider defaults off | S3 local checks passed; Draft PR #108 remains review-blocked by an unresolved Blob recovery boundary and is not current `main`; S4 is still blocked by the remaining gates | Core blocker before S4 |
 | Historical R3 Provider path | Execution scripts now reside under `legacy/` | RunningHub real canary, four-shot generation and regeneration completed historically | Feasibility evidence only |
 | Review and accepted clips | Version stacks, rejection reasons and human accepted-clip selection exist | Historical R3 review evidence exists | Core; current-path acceptance remains |
 | Active assembly/export | Active assembly still contains `placeholder_copy` / mock-fixture behavior; Workbench has no production assembly/export action | No current-main production-path PASS | S6 core gap |
@@ -196,8 +196,10 @@ Current stage queue:
 
 The S3B-T1 and S3B-T1A implementation candidates have local `PASS` evidence
 and are cleanly restacked in Draft PR #108 with repository status
-`AWAITING_REPLACEMENT_PR_REVIEW`. Old PR #107 is superseded and remains
-unmerged; neither candidate is part of current `main`.
+`BLOCKED_BY_REPLACEMENT_PR_REVIEW_FINDING`. The clock-rollback poll-budget
+finding is locally remediated, but verified-Blob recovery requires a separately
+authorized media-boundary scope. Old PR #107 is superseded and remains open
+and unmerged; neither candidate is part of current `main`.
 
 The complete Media Gateway promotion, Memory plugin, second real user,
 automatic Snapshot, Windows logon task, WebM/broad formats and new OAuth

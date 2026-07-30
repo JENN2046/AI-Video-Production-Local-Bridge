@@ -321,7 +321,13 @@ export function parseProviderTaskPollTimeoutMs(env: NodeJS.ProcessEnv = process.
   return parsed;
 }
 
-function providerPollDeadlineFromIntent(db: M0Database, intentId: string): number | null {
+interface ProviderPollWindow {
+  started_at_ms: number;
+  timeout_ms: number;
+  deadline_ms: number;
+}
+
+function providerPollWindowFromIntent(db: M0Database, intentId: string): ProviderPollWindow | null {
   const row = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(intentId) as { data_json: string } | undefined;
   if (!row) throw new ProviderPollTimeoutConfigurationError();
   const data = parseRecord(row.data_json);
@@ -346,7 +352,15 @@ function providerPollDeadlineFromIntent(db: M0Database, intentId: string): numbe
     || persisted - started !== data.provider_poll_timeout_ms) {
     throw new ProviderPollTimeoutConfigurationError();
   }
-  return persisted;
+  return {
+    started_at_ms: started,
+    timeout_ms: data.provider_poll_timeout_ms,
+    deadline_ms: persisted
+  };
+}
+
+function providerPollDeadlineFromIntent(db: M0Database, intentId: string): number | null {
+  return providerPollWindowFromIntent(db, intentId)?.deadline_ms ?? null;
 }
 
 function persistProviderPollDeadline(
@@ -388,11 +402,12 @@ function restartProviderPollDeadlineAfterHumanAttachment(
 
 function createRemainingPollBudget(
   deadlineMs: number,
+  maximumBudgetMs: number,
   dependencies: WorkbenchGenerationDependencies
 ): () => number {
   const wallStartMs = dateNow(dependencies).getTime();
   const monotonicStartMs = monotonicNowMs(dependencies);
-  const initialRemainingMs = Math.max(0, deadlineMs - wallStartMs);
+  const initialRemainingMs = Math.max(0, Math.min(maximumBudgetMs, deadlineMs - wallStartMs));
   return () => {
     const wallRemainingMs = deadlineMs - dateNow(dependencies).getTime();
     const monotonicRemainingMs = initialRemainingMs - Math.max(0, monotonicNowMs(dependencies) - monotonicStartMs);
@@ -1395,12 +1410,16 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
     try {
       if (!recoveringLocalCompletion) {
         providerPollTimeoutMs = parseProviderTaskPollTimeoutMs(dependencies.env ?? process.env);
-        const persistedDeadline = providerPollDeadlineFromIntent(db, intent.intent_id);
+        const persistedWindow = providerPollWindowFromIntent(db, intent.intent_id);
         if (knownTaskId) {
-          if (persistedDeadline === null) throw new ProviderPollTimeoutConfigurationError();
-          pollDeadlineMs = persistedDeadline;
-          remainingPollBudget = createRemainingPollBudget(pollDeadlineMs, dependencies);
-        } else if (persistedDeadline !== null) {
+          if (persistedWindow === null) throw new ProviderPollTimeoutConfigurationError();
+          pollDeadlineMs = persistedWindow.deadline_ms;
+          remainingPollBudget = createRemainingPollBudget(
+            pollDeadlineMs,
+            persistedWindow.timeout_ms,
+            dependencies
+          );
+        } else if (persistedWindow !== null) {
           throw new ProviderPollTimeoutConfigurationError();
         }
       }
@@ -1554,7 +1573,11 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         return;
       }
       intent = getIntent(db, intent.intent_id) as WorkbenchGenerationIntent;
-      remainingPollBudget = createRemainingPollBudget(pollDeadlineMs as number, dependencies);
+      remainingPollBudget = createRemainingPollBudget(
+        pollDeadlineMs as number,
+        providerPollTimeoutMs,
+        dependencies
+      );
       submittedNow = true;
     }
 

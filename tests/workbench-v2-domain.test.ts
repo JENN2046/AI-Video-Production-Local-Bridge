@@ -1708,6 +1708,73 @@ test("provider polling uses one persisted absolute deadline and never resubmits 
   }
 });
 
+test("provider polling caps a restarted worker budget when wall time moves backward", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-poll-clock-rollback-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Clock rollback polling budget");
+    persistKnownProviderTask(
+      sqlitePath,
+      prepared.intent_id,
+      prepared.job_id,
+      "task-clock-rollback",
+      MIN_PROVIDER_TASK_POLL_TIMEOUT_MS
+    );
+    const db = openM0Database(sqlitePath);
+    const intentRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const persisted = JSON.parse(intentRow.data_json) as {
+      provider_poll_started_at: string;
+      provider_poll_timeout_ms: number;
+    };
+    db.close();
+
+    const pollRequestTimeouts: number[] = [];
+    let submitCalls = 0;
+    const adapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => {
+        submitCalls += 1;
+        throw new Error("known Provider task must not be resubmitted");
+      },
+      pollStatus: async (_taskId: string, options?: ProviderPollOptions) => {
+        pollRequestTimeouts.push(options?.timeout_ms ?? -1);
+        return {
+          ok: true as const,
+          provider_job_id: "task-clock-rollback",
+          status: "running" as const,
+          provider_status: "RUNNING",
+          retryable: true
+        };
+      },
+      fetchOutput: async () => { throw new Error("output must not run"); }
+    } as unknown as VideoProviderAdapter;
+    const rolledBackWallMs = Date.parse(persisted.provider_poll_started_at) - 6 * 60 * 60_000;
+    await runWorkbenchGenerationOnce(prepared.intent_id, {
+      allow_submit: false,
+      dependencies: {
+        sqlite_path: sqlitePath,
+        env: { ...prepared.env, PROVIDER_TASK_POLL_TIMEOUT_MS: String(MAX_PROVIDER_TASK_POLL_TIMEOUT_MS) },
+        adapter_factory: () => adapter,
+        poll_interval_ms: MIN_PROVIDER_TASK_POLL_TIMEOUT_MS,
+        now: () => new Date(rolledBackWallMs),
+        monotonic_now_ms: () => 50_000
+      }
+    });
+
+    const checked = openM0Database(sqlitePath);
+    const job = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    checked.close();
+    assert.equal(persisted.provider_poll_timeout_ms, MIN_PROVIDER_TASK_POLL_TIMEOUT_MS);
+    assert.deepEqual(pollRequestTimeouts, [MIN_PROVIDER_TASK_POLL_TIMEOUT_MS]);
+    assert.equal(submitCalls, 0);
+    assert.deepEqual({ ...job }, { state: "polling", reconciliation_reason: "" });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("expired polling deadline does not block resumed local completion after Provider success", async () => {
   const roots: string[] = [];
   try {

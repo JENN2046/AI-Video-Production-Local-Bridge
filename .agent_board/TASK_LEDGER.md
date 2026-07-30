@@ -4713,3 +4713,51 @@ s4_status: BLOCKED
 s4_authorization_granted: false
 delivery: PR_108_DRAFT_AWAITING_CI_AND_REREVIEW
 ```
+
+## 2026-07-31 — PR108 final-review clock rollback remediation and scope stop
+
+```yaml
+task: PR107-CLEAN-RESTACK
+status: LOCAL_FIX_VALIDATED_REMAINING_REVIEW_FINDING_BLOCKED_BY_ALLOWLIST
+recorded_by: Codex
+recorded_at: 2026-07-31T06:41:36+08:00
+replacement_pr: 108
+reviewed_commit: eef466c4c43d0c489da407e17dd328d274388252
+findings:
+  - CLOCK_ROLLBACK_COULD_INFLATE_PERSISTED_POLL_BUDGET
+  - INVALID_VERIFIED_BLOB_HAS_NO_AUTHORIZED_RECOVERY_PATH
+resolution:
+  persisted_poll_timeout_caps_restart_budget: true
+  monotonic_runtime_budget_preserved: true
+  clock_rollback_regression_added: true
+  invalid_blob_recovery_resolved: false
+scope_boundary:
+  current_implementation_allowlist_exhausted: true
+  additional_media_boundary_authorization_required: true
+  old_pr107_closed: false
+changed_files:
+  - src/tools/workbenchGeneration.ts
+  - tests/workbench-v2-domain.test.ts
+  - CURRENT_STATE.md
+  - ops/reports/2026-07-30-current-workbench-canary-readiness.md
+  - .agent_board/HANDOFF.md
+  - .agent_board/NEXT_TASK.json
+  - .agent_board/NEXT_TASK.md
+  - .agent_board/TASK_LEDGER.md
+  - .agent_board/VALIDATION_LOG.md
+local_validation:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_61
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+s4_status: BLOCKED
+s4_authorization_granted: false
+delivery: PR_108_DRAFT_REVIEW_BLOCKED
+```
