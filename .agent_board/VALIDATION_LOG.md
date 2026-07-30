@@ -2743,3 +2743,42 @@ secret_reads: 0
 service_starts: 0
 remaining_test_processes: 0
 ```
+
+### PR108 final-review output recovery and atomic success remediation
+
+```yaml
+task: PR107-CLEAN-RESTACK
+validated_at: 2026-07-31T06:09:32+08:00
+replacement_pr: 108
+findings:
+  - INVALID_LOCAL_OUTPUT_REATTACHMENT_LOOP
+  - PROVIDER_SUCCESS_AND_DOWNLOADING_STATE_TORN_WRITE
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - npm run test:v2
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_60
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  human_reattachment_creates_recoverable_output_replacement: true
+  prior_invalid_artifact_preserved: true
+  canonical_provider_task_binding_count_after_recovery: 1
+  local_recovery_binding_count_after_recovery: 0
+  automatic_submit_retry: 0
+  provider_success_and_downloading_transaction_atomic: true
+  download_before_atomic_commit: false
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+```

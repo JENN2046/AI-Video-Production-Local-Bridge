@@ -4674,3 +4674,42 @@ s4_status: BLOCKED
 s4_authorization_granted: false
 delivery: PR_108_DRAFT_AWAITING_CI_AND_REREVIEW
 ```
+
+## 2026-07-31 — PR108 final-review output recovery and atomic success remediation
+
+```yaml
+task: PR107-CLEAN-RESTACK
+status: LOCAL_FIX_VALIDATED_AWAITING_CI_AND_REREVIEW
+recorded_by: Codex
+recorded_at: 2026-07-31T06:09:32+08:00
+replacement_pr: 108
+findings:
+  - INVALID_LOCAL_OUTPUT_REATTACHMENT_LOOP
+  - PROVIDER_SUCCESS_AND_DOWNLOADING_STATE_TORN_WRITE
+resolution:
+  explicit_human_reattachment_required: true
+  invalid_artifact_deleted_or_overwritten: false
+  replacement_artifact_registered_separately: true
+  provider_task_binding_rebound_atomically: true
+  original_artifact_replacement_audit_preserved: true
+  provider_success_and_downloading_same_transaction: true
+  automatic_submit_retry: 0
+changed_files:
+  - src/tools/workbenchGeneration.ts
+  - tests/workbench-v2-domain.test.ts
+local_validation:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_60
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+s4_status: BLOCKED
+s4_authorization_granted: false
+delivery: PR_108_DRAFT_AWAITING_CI_AND_REREVIEW
+```
