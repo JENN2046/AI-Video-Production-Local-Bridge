@@ -10,6 +10,11 @@ Evidence:
 code_baseline: main@bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7
 evidence_snapshot_commit: e0e08cd77d0923f25a3472510248b8f9e954c9a0
 publication_pr: 106
+durable_receipt_digest:
+  algorithm: sha256
+  canonicalization: UTF-8_NO_BOM_AND_LF
+  digest_input: ENTIRE_RECEIPT_WITH_DIGEST_VALUE_SET_TO_DIGEST_EXCLUDED
+  digest: 6f73106c7839b8bba2481b87eaf88e20ad57ff3bf570ee5fb319f0ac75fda08f
 ```
 
 Date: 2026-07-30
@@ -17,6 +22,13 @@ Date: 2026-07-30
 This is a low-disclosure local readiness receipt. It is not a Provider
 preflight, paid generation authorization, Provider acceptance or S4 execution
 receipt.
+
+The durable receipt digest is self-verifying after a squash merge or branch
+deletion: replace its `digest` value with the literal `DIGEST_EXCLUDED`,
+normalize CRLF or CR to LF, encode as UTF-8 without a BOM and calculate
+SHA-256 over the entire file. The original pushed snapshot commit remains
+recorded for provenance but is not claimed to become an ancestor of a future
+squash commit.
 
 ## Result
 
