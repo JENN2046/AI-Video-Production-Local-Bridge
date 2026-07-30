@@ -193,11 +193,12 @@ Current stage queue:
 1. `S1 Scope Freeze` — `DONE`
 2. `S2 Core Loop Gap Audit` — `DONE`
 3. `S3 Provider Canary Readiness` — `DONE` with local readiness findings
-4. `S3B-1 Bound Provider Polling` — local implementation `DONE`, not merged
+4. `S3B-1 Bound Provider Polling` — local `PASS`, repository
+   `AWAITING_PR_REVIEW` in Draft PR #107, not merged
 5. `S3B-T1A Manual Reconciliation State Coherence` — local implementation
-   `DONE`, not merged
-6. `S3B Integration` — `READY_FOR_REVIEW`; separate push/PR authorization
-   required
+   `PASS`, repository `AWAITING_PR_REVIEW` in Draft PR #107, not merged
+6. `S3B Integration` — PR #106 is open for review and PR #107 remains Draft;
+   no merge is authorized
 7. `S3B-2 Prepare Eligible Shot` — `AWAITING_JENN_AUTHORIZATION`
 8. `S3B-3 Configure RunningHub Credential` — `AWAITING_JENN_LOCAL_ACTION`
 9. `S3B-4 Rerun Canary Readiness` — `BLOCKED`

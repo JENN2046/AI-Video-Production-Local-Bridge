@@ -1,14 +1,32 @@
 # HANDOFF.md
 
-Current mode: S3B-T1A state coherence complete; automatic continuation disabled
-Last run: codex-20260730-211744-s3b-state-coherence
-Last result: local manual reconciliation workflow restoration passed; integration is ready for separate review authorization and S4 remains blocked
+Current mode: S3B stacked PRs awaiting review; automatic continuation disabled
+Last run: codex-20260730-s3b-stacked-pr-integration
+Last result: PR #106 is open for review and PR #107 is a Draft stacked PR; no merge occurred and S4 remains blocked
 
 ## Current state
 
 Current task: `S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE`
 Current status: `DONE`
 Current owner: none
+
+## S3B Stacked PR Integration
+
+- PR #106, `docs: freeze scope and record core production readiness`, is open
+  for review against `main`.
+- PR #107, `fix: bound Provider polling and reconcile manual state`, is a
+  Draft PR stacked on `codex/s3-workbench-canary-readiness`.
+- `S3B-T1_BOUND_PROVIDER_POLLING` and
+  `S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE` remain local `PASS` with
+  repository status `AWAITING_PR_REVIEW`.
+- No merge, auto-merge, rebase, force push, Provider operation, activity
+  database/media access, secret operation, service lifecycle change,
+  deployment or external configuration change occurred.
+- PR #106 must be reviewed first. Changing PR #107 to base `main`, rerunning
+  its CI, marking it ready and merging it all remain separately authorized
+  future actions.
+- S3B-2 still awaits Jenn authorization, S3B-3 still awaits Jenn local action,
+  S3B-4 remains blocked and S4 remains blocked.
 
 ## S3B-T1A Manual Reconciliation State Coherence
 
@@ -32,9 +50,9 @@ Current owner: none
   and does not submit again.
 - Targeted reconciliation coverage, Workbench V2 57/57, selection gate 23/23,
   typecheck and build passed using temporary databases and fixture adapters.
-- S3B integration is `READY_FOR_REVIEW` but this branch remains local-only.
-  S3B-2 and S3B-3 retain their approval boundaries, S3B-4 remains blocked, and
-  S4 was not executed.
+- S3B integration is `AWAITING_PR_REVIEW` in Draft PR #107 and remains
+  unmerged. S3B-2 and S3B-3 retain their approval boundaries, S3B-4 remains
+  blocked, and S4 was not executed.
 - No Provider network, activity database/media, secret, service, Bridge,
   Snapshot, deployment or external configuration operation occurred.
 
@@ -66,9 +84,9 @@ Current owner: none
   `22.23.1` path.
 - No Provider network, activity database/media, secret, service, Bridge,
   Snapshot, deployment or external configuration operation occurred.
-- This branch is local-only and unmerged. S3B-2 awaits Jenn authorization,
-  S3B-3 awaits Jenn local action, S3B-4 is blocked by those gates and merged
-  S3B-1, and S4 remains blocked.
+- This branch is pushed in Draft PR #107 and remains unmerged. S3B-2 awaits
+  Jenn authorization, S3B-3 awaits Jenn local action, S3B-4 is blocked by
+  those gates and the still-unmerged S3B work, and S4 remains blocked.
 
 ## S3-T1 Current Workbench Canary Readiness
 
