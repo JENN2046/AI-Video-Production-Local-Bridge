@@ -8,7 +8,7 @@ Evidence:
 
 ```yaml
 code_baseline: main@bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7
-evidence_snapshot_commit: PENDING_CONTENT_FIX_PUSH
+evidence_snapshot_commit: e0e08cd77d0923f25a3472510248b8f9e954c9a0
 publication_pr: 106
 ```
 
