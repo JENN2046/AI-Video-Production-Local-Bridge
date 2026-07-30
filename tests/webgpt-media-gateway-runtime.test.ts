@@ -690,6 +690,7 @@ test("readonly media sessions fail closed after membership revocation or file id
     }
     const revoked = await fetch(sessionUrl, { headers: { origin: ORIGIN, range: "bytes=0-7" } });
     assert.equal(revoked.status, 404);
+    assert.equal((await revoked.json() as { error: { code: string } }).error.code, "MEDIA_AUTHORIZATION_DENIED");
     assert.equal(gateway.counts().sessions, 0);
 
     const driftFixture = createFixture("drift");
@@ -734,12 +735,19 @@ test("readonly media capability and session handles expire and never survive a g
   };
   const firstGateway = await startReadonlyMediaGateway(options);
   const oldHandle = await issue(firstGateway.url, fixture, clock);
+  const oldSessionCapability = await issue(firstGateway.url, fixture, clock);
+  const oldSessionActivation = await fetch(`${firstGateway.url}/media/v1/c/${oldSessionCapability}`, { headers: { origin: ORIGIN }, redirect: "manual" });
+  assert.equal(oldSessionActivation.status, 302);
+  const oldSessionLocation = oldSessionActivation.headers.get("location");
+  assert.match(oldSessionLocation ?? "", /^\/media\/v1\/s\/[A-Za-z0-9_-]{43}$/);
   await firstGateway.close();
 
   const gateway = await startReadonlyMediaGateway(options);
   try {
     const lostOnRestart = await fetch(`${gateway.url}/media/v1/c/${oldHandle}`, { method: "HEAD", headers: { origin: ORIGIN } });
     assert.equal(lostOnRestart.status, 404);
+    const lostSessionOnRestart = await fetch(`${gateway.url}${oldSessionLocation}`, { method: "HEAD", headers: { origin: ORIGIN } });
+    assert.equal(lostSessionOnRestart.status, 404);
     const expiringCapability = await issue(gateway.url, fixture, clock);
     clock = new Date(clock.getTime() + 5 * 60 * 1000);
     const expiredCapability = await fetch(`${gateway.url}/media/v1/c/${expiringCapability}`, { method: "HEAD", headers: { origin: ORIGIN } });

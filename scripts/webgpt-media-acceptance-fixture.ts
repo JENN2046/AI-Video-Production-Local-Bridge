@@ -1,9 +1,15 @@
 import { createHash, randomUUID } from "node:crypto";
-import { constants, copyFileSync, createReadStream, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, constants, copyFileSync, createReadStream, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
-const FIXTURE_VERSION = "readonly-media-acceptance-fixture-v1";
+import {
+  isReadonlyMediaAcceptanceSourceSizeAllowed,
+  READONLY_MEDIA_ACCEPTANCE_VARIANT_TRAILER
+} from "../src/webgpt-media-gateway/acceptanceFixtureBudget.js";
+
+const FIXTURE_VERSION_V1 = "readonly-media-acceptance-fixture-v1";
+const FIXTURE_VERSION = "readonly-media-acceptance-fixture-v2";
 const RUN_ID = /^run_[0-9a-f]{32}$/;
 const ACCEPTED_RESOURCE_PATHS = new Set(["/mcp", "/workspace/mcp"]);
 
@@ -44,7 +50,7 @@ async function sha256File(path: string): Promise<string> {
 async function assertRegularSource(path: string): Promise<{ sha256: string; size: number; mtimeMs: number }> {
   if (!existsSync(path) || lstatSync(path).isSymbolicLink()) throw new FixtureError("MEDIA_ACCEPTANCE_SOURCE_UNSAFE");
   const before = statSync(path);
-  if (!before.isFile() || before.size <= 0 || before.size > 2 * 1024 * 1024 * 1024) throw new FixtureError("MEDIA_ACCEPTANCE_SOURCE_INVALID");
+  if (!before.isFile() || !isReadonlyMediaAcceptanceSourceSizeAllowed(before.size)) throw new FixtureError("MEDIA_ACCEPTANCE_SOURCE_INVALID");
   if (!path.toLowerCase().endsWith(".mp4")) throw new FixtureError("MEDIA_ACCEPTANCE_SOURCE_INVALID");
   const sha256 = await sha256File(path);
   const after = statSync(path);
@@ -128,8 +134,8 @@ function logicalManifest(db: import("../src/storage/sqlite.js").M0Database): str
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }
 
-type Manifest = {
-  fixture_version: typeof FIXTURE_VERSION;
+type ManifestV1 = {
+  fixture_version: typeof FIXTURE_VERSION_V1;
   run_id: string;
   database_file: "app.sqlite";
   project_id: string;
@@ -142,6 +148,33 @@ type Manifest = {
   media_sha256: string;
   database_manifest: string;
 };
+
+type ManifestMedia = {
+  artifact_id: string;
+  blob_id: string;
+  media_relative_path: string;
+  media_sha256: string;
+  mime_type: "image/png" | "image/jpeg" | "video/mp4";
+  role: "storyboard_image" | "generated_clip";
+};
+
+type ManifestProject = {
+  project_id: string;
+  shot_id: string;
+  media: ManifestMedia[];
+};
+
+type ManifestV2 = {
+  fixture_version: typeof FIXTURE_VERSION;
+  run_id: string;
+  database_file: "app.sqlite";
+  issuer_hash: string;
+  resource_url: string;
+  database_manifest: string;
+  projects: ManifestProject[];
+};
+
+type Manifest = ManifestV1 | ManifestV2;
 
 type JsonObject = Record<string, unknown>;
 
@@ -200,19 +233,126 @@ function readManifest(root: string, runId: string): Manifest {
   const manifestPath = join(root, "fixture.json");
   if (!existsSync(manifestPath)) throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_NOT_FOUND");
   const value = readJsonObject(assertSafeExistingPath(root, manifestPath, "file"), "MEDIA_ACCEPTANCE_MANIFEST_INVALID");
-  const expectedKeys = ["artifact_id", "blob_id", "database_file", "database_manifest", "fixture_version", "issuer_hash", "media_relative_path", "media_sha256", "project_id", "resource_url", "run_id", "shot_id"];
-  if (!hasExactKeys(value, expectedKeys) || value.fixture_version !== FIXTURE_VERSION || value.run_id !== runId || value.database_file !== "app.sqlite") {
+  if (value.run_id !== runId || value.database_file !== "app.sqlite") {
     throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
   }
-  for (const key of ["project_id", "shot_id", "artifact_id", "blob_id", "media_relative_path"] as const) {
-    if (typeof value[key] !== "string" || value[key].length < 1) throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
-  }
-  for (const key of ["issuer_hash", "media_sha256", "database_manifest"] as const) {
+  for (const key of ["issuer_hash", "database_manifest"] as const) {
     if (typeof value[key] !== "string" || !/^[0-9a-f]{64}$/.test(value[key])) throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
   }
   if (typeof value.resource_url !== "string") throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
   safeResourceUrl(value.resource_url);
-  return value as Manifest;
+  if (value.fixture_version === FIXTURE_VERSION_V1) {
+    const expectedKeys = ["artifact_id", "blob_id", "database_file", "database_manifest", "fixture_version", "issuer_hash", "media_relative_path", "media_sha256", "project_id", "resource_url", "run_id", "shot_id"];
+    if (!hasExactKeys(value, expectedKeys)) throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
+    for (const key of ["project_id", "shot_id", "artifact_id", "blob_id", "media_relative_path"] as const) {
+      if (typeof value[key] !== "string" || value[key].length < 1) throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
+    }
+    if (typeof value.media_sha256 !== "string" || !/^[0-9a-f]{64}$/.test(value.media_sha256)) throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
+    return value as ManifestV1;
+  }
+  if (value.fixture_version !== FIXTURE_VERSION || !hasExactKeys(value, ["database_file", "database_manifest", "fixture_version", "issuer_hash", "projects", "resource_url", "run_id"]) || !Array.isArray(value.projects) || value.projects.length !== 2) {
+    throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
+  }
+  for (const project of value.projects) {
+    if (!isObject(project) || !hasExactKeys(project, ["media", "project_id", "shot_id"])
+      || typeof project.project_id !== "string" || !project.project_id
+      || typeof project.shot_id !== "string" || !project.shot_id
+      || !Array.isArray(project.media) || project.media.length !== 2) {
+      throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
+    }
+    for (const media of project.media) {
+      if (!isObject(media) || !hasExactKeys(media, ["artifact_id", "blob_id", "media_relative_path", "media_sha256", "mime_type", "role"])
+        || typeof media.artifact_id !== "string" || !media.artifact_id
+        || typeof media.blob_id !== "string" || !media.blob_id
+        || typeof media.media_relative_path !== "string" || !media.media_relative_path
+        || typeof media.media_sha256 !== "string" || !/^[0-9a-f]{64}$/.test(media.media_sha256)
+        || !["image/png", "image/jpeg", "video/mp4"].includes(String(media.mime_type))
+        || !["storyboard_image", "generated_clip"].includes(String(media.role))) {
+        throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
+      }
+    }
+    const imageCount = project.media.filter((media) => media.role === "storyboard_image" && ["image/png", "image/jpeg"].includes(String(media.mime_type))).length;
+    const videoCount = project.media.filter((media) => media.role === "generated_clip" && media.mime_type === "video/mp4").length;
+    if (imageCount !== 1 || videoCount !== 1) throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
+  }
+  const allMedia = value.projects.flatMap((project) => project.media);
+  if (new Set(allMedia.map((media) => media.artifact_id)).size !== 4
+    || new Set(allMedia.map((media) => media.blob_id)).size !== 4
+    || new Set(allMedia.map((media) => media.media_sha256)).size !== 4) {
+    throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
+  }
+  return value as ManifestV2;
+}
+
+function manifestMedia(manifest: Manifest): ManifestMedia[] {
+  if (manifest.fixture_version === FIXTURE_VERSION_V1) {
+    return [{
+      artifact_id: manifest.artifact_id,
+      blob_id: manifest.blob_id,
+      media_relative_path: manifest.media_relative_path,
+      media_sha256: manifest.media_sha256,
+      mime_type: "video/mp4",
+      role: "generated_clip"
+    }];
+  }
+  return manifest.projects.flatMap((project) => project.media);
+}
+
+function manifestProjectEntries(manifest: Manifest): ManifestProject[] {
+  if (manifest.fixture_version === FIXTURE_VERSION_V1) {
+    return [{
+      project_id: manifest.project_id,
+      shot_id: manifest.shot_id,
+      media: manifestMedia(manifest)
+    }];
+  }
+  return manifest.projects;
+}
+
+function expectedArtifactType(media: ManifestMedia): "image" | "video" {
+  return media.role === "storyboard_image" ? "image" : "video";
+}
+
+function matchesSnapshotMediaBinding(
+  binding: import("../src/webgpt-cloud/snapshot.js").ReadonlyMediaBinding,
+  project: ManifestProject,
+  media: ManifestMedia
+): boolean {
+  return binding.artifact_id === media.artifact_id
+    && binding.project_id === project.project_id
+    && binding.shot_id === project.shot_id
+    && binding.artifact_type === expectedArtifactType(media)
+    && binding.role === media.role
+    && binding.mime_type === media.mime_type
+    && binding.sha256 === media.media_sha256
+    && binding.status === "active";
+}
+
+function matchesDatabaseMediaBindings(
+  db: import("../src/storage/sqlite.js").M0Database,
+  artifacts: typeof import("../src/tools/mediaArtifacts.js"),
+  projects: ManifestProject[]
+): boolean {
+  try {
+    return projects.every((project) => project.media.every((media) => {
+      const artifact = artifacts.getMediaArtifact(db, media.artifact_id);
+      const blob = artifacts.getMediaBlob(db, media.blob_id);
+      return artifact !== null
+        && blob !== null
+        && artifact.blob_id === media.blob_id
+        && artifact.linked_objects.project_id === project.project_id
+        && artifact.linked_objects.shot_id === project.shot_id
+        && artifact.artifact_type === expectedArtifactType(media)
+        && artifact.role === media.role
+        && artifact.status === "active"
+        && blob.blob_id === media.blob_id
+        && blob.sha256 === media.media_sha256
+        && blob.detected_mime === media.mime_type
+        && blob.integrity_state === "verified";
+    }));
+  } catch {
+    return false;
+  }
 }
 
 function parseGatewayProfile(value: JsonObject, manifest: Manifest): GatewayProfile {
@@ -278,7 +418,9 @@ async function createProfiles(): Promise<void> {
     throw new FixtureError("MEDIA_ACCEPTANCE_PUBLISHER_TEMPLATE_INVALID");
   }
   const databasePath = assertSafeExistingPath(root, join(root, manifest.database_file), "file");
-  const mediaPath = assertSafeExistingPath(root, resolve(root, manifest.media_relative_path), "file");
+  for (const media of manifestMedia(manifest)) {
+    assertSafeExistingPath(root, resolve(root, media.media_relative_path), "file");
+  }
   const mediaRoot = assertSafeExistingPath(root, join(root, "media"), "directory");
   const publisherPath = join(root, "publisher-profile.json");
   const gatewayPath = join(root, "gateway-profile.json");
@@ -337,77 +479,122 @@ async function createFixture(): Promise<void> {
     pathModule.ensureM0Directories();
     const incomingDir = join(pathModule.paths.mediaRoot, "acceptance-input");
     mkdirSync(incomingDir, { recursive: true });
-    const incoming = join(incomingDir, "fixture.mp4");
+    const incoming = join(incomingDir, "fixture-a.mp4");
+    const incomingVariant = join(incomingDir, "fixture-b.mp4");
     copyFileSync(sourcePath, incoming, constants.COPYFILE_EXCL);
+    copyFileSync(sourcePath, incomingVariant, constants.COPYFILE_EXCL);
+    appendFileSync(incomingVariant, READONLY_MEDIA_ACCEPTANCE_VARIANT_TRAILER);
     phase = "MP4_VALIDATION";
     const validation = validity.validateMp4File(incoming);
-    if (validation.status !== "PASS" || !validation.has_video_stream) throw new FixtureError("MEDIA_ACCEPTANCE_MP4_INVALID");
+    const variantValidation = validity.validateMp4File(incomingVariant);
+    if (validation.status !== "PASS" || !validation.has_video_stream || variantValidation.status !== "PASS" || !variantValidation.has_video_stream) {
+      throw new FixtureError("MEDIA_ACCEPTANCE_MP4_INVALID");
+    }
     const db = openM0DatabaseConnection(process.env.AI_VIDEO_WORKSPACE_DB_PATH);
     let manifest: Manifest;
     try {
       phase = "MIGRATION";
       runDatabaseMigrations(db);
       assertSchemaCurrent(db);
-      phase = "PROJECT";
-      const created = projects.createProject({
-        title: "Readonly media acceptance fixture",
-        project_type: "acceptance_fixture",
-        brief: { purpose: "readonly_media_acceptance" },
-        video_spec: { duration_seconds: Math.max(1, Math.round(validation.duration_seconds ?? 1)), aspect_ratio: "16:9", resolution: "fixture" }
-      }, db);
-      if (!created.ok) throw new FixtureError("MEDIA_ACCEPTANCE_PROJECT_FAILED");
-      db.prepare("UPDATE workbench_project_meta SET classification = 'production' WHERE project_id = ?").run(created.project_id);
-      const shotId = `shot_${randomUUID()}`;
-      const shot: import("../src/tools/projects.js").Shot = {
-        shot_id: shotId, project_id: created.project_id, order: 1, status: "video_generated",
-        duration_seconds: Math.max(1, Math.round(validation.duration_seconds ?? 1)), description: "Readonly media playback acceptance",
-        storyboard_image_artifact_id: "", video_prompt: "Fixture only", negative_prompt: "", generation_run_ids: [], accepted_clip_artifact_id: "",
-        clip_versions: [], review: { approval_status: "pending", rejection_reasons: [], latest_revision_instruction: null }
-      };
-      projects.saveShot(db, shot);
-      created.project.shot_ids = [shotId];
-      created.project.status = "video_review";
-      projects.saveProject(db, created.project);
-      const storyboard = artifacts.registerMediaArtifact({
-        artifact_type: "image", role: "storyboard_image",
-        source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
-        linked_objects: { project_id: created.project_id, shot_id: shotId }
-      }, db);
-      if (!storyboard.ok) throw new FixtureError(storyboard.error.code);
-      const storyboardAttached = artifacts.attachArtifactToShot({
-        project_id: created.project_id, shot_id: shotId, artifact_id: storyboard.artifact.artifact_id,
-        reference: "storyboard_image_artifact_id", expected_current_artifact_id: ""
-      }, db);
-      if (!storyboardAttached.ok) throw new FixtureError(storyboardAttached.error.code);
-      phase = "ARTIFACT";
-      const registered = artifacts.registerMediaArtifact({
-        artifact_type: "video", role: "generated_clip", source: { kind: "provider_output_file", path: incoming, mime_type: "video/mp4" },
-        linked_objects: { project_id: created.project_id, shot_id: shotId },
-        metadata: { duration_seconds: validation.duration_seconds }
-      }, db);
-      if (!registered.ok) throw new FixtureError(registered.error.code);
-      phase = "SHOT_BINDING";
-      const attached = artifacts.attachArtifactToShot({ project_id: created.project_id, shot_id: shotId, artifact_id: registered.artifact.artifact_id, reference: "accepted_clip_artifact_id", expected_current_artifact_id: "" }, db);
-      if (!attached.ok) throw new FixtureError(attached.error.code);
-      attached.shot.status = "approved";
-      attached.shot.clip_versions = [{ artifact_id: registered.artifact.artifact_id, run_id: "run_acceptance_fixture", attempt_number: 1, review_status: "approved" }];
-      attached.shot.review = { approval_status: "approved", rejection_reasons: [], latest_revision_instruction: null };
-      projects.saveShot(db, attached.shot);
-      phase = "AUTHORIZATION";
       const actor = authTypes.actorFromFederatedSubject(issuer, subject, ["projects.read"]);
-      authorization.bootstrapWebGptProjectOwner(db, actor.principal_id, created.project_id, "MEDIA_ACCEPTANCE_FIXTURE", actor.issuer_hash!);
+      const createProjectFixture = (index: number): ManifestProject => {
+        phase = `PROJECT_${index}`;
+        const created = projects.createProject({
+          title: `Readonly media acceptance fixture ${index === 1 ? "A" : "B"}`,
+          project_type: "acceptance_fixture",
+          brief: { purpose: "readonly_media_acceptance", matrix_slot: index },
+          video_spec: { duration_seconds: Math.max(1, Math.round(validation.duration_seconds ?? 1)), aspect_ratio: "16:9", resolution: "fixture" }
+        }, db);
+        if (!created.ok) throw new FixtureError("MEDIA_ACCEPTANCE_PROJECT_FAILED");
+        db.prepare("UPDATE workbench_project_meta SET classification = 'production' WHERE project_id = ?").run(created.project_id);
+        const shotId = `shot_${randomUUID()}`;
+        const shot: import("../src/tools/projects.js").Shot = {
+          shot_id: shotId, project_id: created.project_id, order: 1, status: "video_generated",
+          duration_seconds: Math.max(1, Math.round(validation.duration_seconds ?? 1)), description: `Readonly media playback acceptance ${index}`,
+          storyboard_image_artifact_id: "", video_prompt: "Fixture only", negative_prompt: "", generation_run_ids: [], accepted_clip_artifact_id: "",
+          clip_versions: [], review: { approval_status: "pending", rejection_reasons: [], latest_revision_instruction: null }
+        };
+        projects.saveShot(db, shot);
+        created.project.shot_ids = [shotId];
+        created.project.status = "video_review";
+        projects.saveProject(db, created.project);
+        const storyboard = artifacts.registerMediaArtifact({
+          artifact_type: "image", role: "storyboard_image",
+          source: { kind: "fixture_path", path: index === 1 ? "storyboard/shot_001.png" : "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
+          linked_objects: { project_id: created.project_id, shot_id: shotId }
+        }, db);
+        if (!storyboard.ok) throw new FixtureError(storyboard.error.code);
+        const storyboardAttached = artifacts.attachArtifactToShot({
+          project_id: created.project_id, shot_id: shotId, artifact_id: storyboard.artifact.artifact_id,
+          reference: "storyboard_image_artifact_id", expected_current_artifact_id: ""
+        }, db);
+        if (!storyboardAttached.ok) throw new FixtureError(storyboardAttached.error.code);
+        phase = `ARTIFACT_${index}`;
+        const registered = artifacts.registerMediaArtifact({
+          artifact_type: "video", role: "generated_clip", source: { kind: "provider_output_file", path: index === 1 ? incoming : incomingVariant, mime_type: "video/mp4" },
+          linked_objects: { project_id: created.project_id, shot_id: shotId },
+          metadata: { duration_seconds: validation.duration_seconds }
+        }, db);
+        if (!registered.ok) throw new FixtureError(registered.error.code);
+        phase = `SHOT_BINDING_${index}`;
+        const attached = artifacts.attachArtifactToShot({ project_id: created.project_id, shot_id: shotId, artifact_id: registered.artifact.artifact_id, reference: "accepted_clip_artifact_id", expected_current_artifact_id: "" }, db);
+        if (!attached.ok) throw new FixtureError(attached.error.code);
+        attached.shot.status = "approved";
+        attached.shot.clip_versions = [{ artifact_id: registered.artifact.artifact_id, run_id: `run_acceptance_fixture_${index}`, attempt_number: 1, review_status: "approved" }];
+        attached.shot.review = { approval_status: "approved", rejection_reasons: [], latest_revision_instruction: null };
+        projects.saveShot(db, attached.shot);
+        phase = `AUTHORIZATION_${index}`;
+        authorization.bootstrapWebGptProjectOwner(db, actor.principal_id, created.project_id, "MEDIA_ACCEPTANCE_FIXTURE", actor.issuer_hash!);
+        const storyboardBlob = artifacts.getMediaBlob(db, storyboard.artifact.blob_id);
+        const videoBlob = artifacts.getMediaBlob(db, registered.artifact.blob_id);
+        if (!storyboardBlob || storyboardBlob.integrity_state !== "verified" || !["image/png", "image/jpeg"].includes(storyboardBlob.detected_mime)
+          || !videoBlob || videoBlob.integrity_state !== "verified" || videoBlob.detected_mime !== "video/mp4") {
+          throw new FixtureError("MEDIA_ACCEPTANCE_BLOB_INVALID");
+        }
+        return {
+          project_id: created.project_id,
+          shot_id: shotId,
+          media: [
+            {
+              artifact_id: storyboard.artifact.artifact_id,
+              blob_id: storyboardBlob.blob_id,
+              media_relative_path: relative(root, storyboardBlob.storage_uri),
+              media_sha256: storyboardBlob.sha256,
+              mime_type: storyboardBlob.detected_mime as "image/png" | "image/jpeg",
+              role: "storyboard_image"
+            },
+            {
+              artifact_id: registered.artifact.artifact_id,
+              blob_id: videoBlob.blob_id,
+              media_relative_path: relative(root, videoBlob.storage_uri),
+              media_sha256: videoBlob.sha256,
+              mime_type: "video/mp4",
+              role: "generated_clip"
+            }
+          ]
+        };
+      };
+      const manifestProjects = [createProjectFixture(1), createProjectFixture(2)];
       phase = "SNAPSHOT";
       const snapshot = projection.exportReadonlySnapshotFromDatabase({ database_path: process.env.AI_VIDEO_WORKSPACE_DB_PATH, issuer_hash: actor.issuer_hash!, resource_url: resourceUrl });
-      const binding = snapshot.projects[0]?.media_bindings.find((item) => item.artifact_id === registered.artifact.artifact_id);
-      if (snapshot.projects.length !== 1 || snapshot.schema_version !== "readonly-snapshot-v4" || snapshot.projects[0]?.media_bindings.length !== 2 || !binding) {
+      const snapshotBindingsValid = manifestProjects.every((project) => {
+        const projected = snapshot.projects.find((item) => item.project_id === project.project_id);
+        return projected?.media_bindings.length === 2
+          && project.media.every((media) => projected.media_bindings.some((binding) =>
+            matchesSnapshotMediaBinding(binding, project, media)
+          ));
+      });
+      if (snapshot.projects.length !== 2 || snapshot.schema_version !== "readonly-snapshot-v4" || !snapshotBindingsValid) {
         throw new FixtureError("MEDIA_ACCEPTANCE_SNAPSHOT_INVALID");
       }
-      const blob = artifacts.getMediaBlob(db, registered.artifact.blob_id);
-      if (!blob || blob.integrity_state !== "verified" || blob.detected_mime !== "video/mp4") throw new FixtureError("MEDIA_ACCEPTANCE_BLOB_INVALID");
       manifest = {
-        fixture_version: FIXTURE_VERSION, run_id: runId, database_file: "app.sqlite", project_id: created.project_id, shot_id: shotId,
-        artifact_id: registered.artifact.artifact_id, blob_id: blob.blob_id, issuer_hash: actor.issuer_hash!, resource_url: resourceUrl,
-        media_relative_path: relative(root, blob.storage_uri), media_sha256: blob.sha256, database_manifest: logicalManifest(db)
+        fixture_version: FIXTURE_VERSION,
+        run_id: runId,
+        database_file: "app.sqlite",
+        issuer_hash: actor.issuer_hash!,
+        resource_url: resourceUrl,
+        database_manifest: logicalManifest(db),
+        projects: manifestProjects
       };
     } finally { db.close(); }
     rmSync(incomingDir, { recursive: true, force: true });
@@ -415,7 +602,7 @@ async function createFixture(): Promise<void> {
     writeFileSync(join(root, "fixture.json"), JSON.stringify(manifest), { flag: "wx", mode: 0o600 });
     await assertSourceUnchanged(sourcePath, sourceBefore);
     complete = true;
-    console.log(JSON.stringify({ result: "PASS", action: "create", run_id: runId, checks: { source_unchanged: true, ledger_0011: true, mp4_valid: true, snapshot_v4: true, media_binding: true } }));
+    console.log(JSON.stringify({ result: "PASS", action: "create", run_id: runId, checks: { source_unchanged: true, ledger_0011: true, mp4_valid: true, snapshot_v4: true, media_binding: true, project_switch_fixture: true, image_fixture: true, webm_support: false } }));
   } catch (error) {
     if (error instanceof FixtureError) throw error;
     const stableCode = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
@@ -434,28 +621,64 @@ async function verifyFixture(): Promise<void> {
   const manifest = readManifest(root, runId);
   if (manifest.resource_url !== resourceUrl) throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
   const databasePath = resolve(root, manifest.database_file);
-  const mediaPath = resolve(root, manifest.media_relative_path);
-  if (!existsSync(databasePath) || !existsSync(mediaPath)) throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
+  const mediaEntries = manifestMedia(manifest);
+  const mediaPaths = mediaEntries.map((media) => resolve(root, media.media_relative_path));
+  if (!existsSync(databasePath) || mediaPaths.some((path) => !existsSync(path))) throw new FixtureError("MEDIA_ACCEPTANCE_MANIFEST_INVALID");
   const safeDatabasePath = assertSafeExistingPath(root, databasePath, "file");
-  const safeMediaPath = assertSafeExistingPath(root, mediaPath, "file");
+  const safeMediaPaths = mediaPaths.map((path) => assertSafeExistingPath(root, path, "file"));
   process.env.AI_VIDEO_WORKSPACE_DATA_ROOT = root;
   process.env.AI_VIDEO_WORKSPACE_DB_PATH = safeDatabasePath;
-  const [{ openM0DatabaseConnection }, migrations, projection, authTypes] = await Promise.all([
-    import("../src/storage/sqlite.js"), import("../src/storage/migrations.js"), import("../src/webgpt-cloud/dataSource.js"), import("../src/webgpt-v4/types.js")
+  const [{ openM0DatabaseConnection }, migrations, projection, authTypes, artifacts] = await Promise.all([
+    import("../src/storage/sqlite.js"), import("../src/storage/migrations.js"), import("../src/webgpt-cloud/dataSource.js"), import("../src/webgpt-v4/types.js"),
+    import("../src/tools/mediaArtifacts.js")
   ]);
   const issuerHash = authTypes.issuerHash(issuer);
-  if (issuerHash !== manifest.issuer_hash || await sha256File(safeMediaPath) !== manifest.media_sha256) throw new FixtureError("MEDIA_ACCEPTANCE_INTEGRITY_FAILED");
+  if (issuerHash !== manifest.issuer_hash) throw new FixtureError("MEDIA_ACCEPTANCE_INTEGRITY_FAILED");
+  for (const [index, media] of mediaEntries.entries()) {
+    if (await sha256File(safeMediaPaths[index]!) !== media.media_sha256) throw new FixtureError("MEDIA_ACCEPTANCE_INTEGRITY_FAILED");
+  }
+  const expectedProjects = manifestProjectEntries(manifest);
+  let databaseBindingsValid = false;
   const db = openM0DatabaseConnection(safeDatabasePath, { readOnly: true });
   try {
     migrations.assertSchemaCurrent(db);
     if (logicalManifest(db) !== manifest.database_manifest) throw new FixtureError("MEDIA_ACCEPTANCE_DATABASE_DRIFT");
+    databaseBindingsValid = matchesDatabaseMediaBindings(db, artifacts, expectedProjects);
   } finally { db.close(); }
   const snapshot = projection.exportReadonlySnapshotFromDatabase({ database_path: safeDatabasePath, issuer_hash: issuerHash, resource_url: resourceUrl });
-  const binding = snapshot.projects[0]?.media_bindings.find((item) => item.artifact_id === manifest.artifact_id);
-  if (snapshot.projects.length !== 1 || snapshot.authorization.principals.length !== 1 || snapshot.schema_version !== "readonly-snapshot-v4" || snapshot.projects[0]?.media_bindings.length !== 2 || binding?.artifact_id !== manifest.artifact_id || binding.sha256 !== manifest.media_sha256) {
+  const expectedProjectCount = manifest.fixture_version === FIXTURE_VERSION_V1 ? 1 : 2;
+  const expectedBindingCount = manifest.fixture_version === FIXTURE_VERSION_V1 ? 2 : 4;
+  const bindingsValid = expectedProjects.every((manifestProject) => {
+    const snapshotProject = snapshot.projects.find((project) => project.project_id === manifestProject.project_id);
+    return snapshotProject !== undefined
+      && manifestProject.media.every((media) => snapshotProject.media_bindings.some((binding) =>
+        matchesSnapshotMediaBinding(binding, manifestProject, media)
+      ));
+  });
+  const perProjectBindingsValid = snapshot.projects.every((project) => project.media_bindings.length === 2);
+  if (snapshot.projects.length !== expectedProjectCount || snapshot.authorization.principals.length !== 1 || snapshot.schema_version !== "readonly-snapshot-v4" || !perProjectBindingsValid || !databaseBindingsValid || !bindingsValid) {
     throw new FixtureError("MEDIA_ACCEPTANCE_SNAPSHOT_INVALID");
   }
-  console.log(JSON.stringify({ result: "PASS", action: "verify", run_id: runId, checks: { schema: true, database_manifest: true, media_digest: true, snapshot_v4: true, media_binding: true }, project_count: 1, media_binding_count: 2 }));
+  const checks = {
+    schema: true,
+    database_manifest: true,
+    media_digest: true,
+    snapshot_v4: true,
+    media_binding: true,
+    ...(manifest.fixture_version === FIXTURE_VERSION ? {
+      project_switch_fixture: true,
+      image_fixture: true,
+      webm_support: false
+    } : {})
+  };
+  console.log(JSON.stringify({
+    result: "PASS",
+    action: "verify",
+    run_id: runId,
+    checks,
+    project_count: expectedProjectCount,
+    media_binding_count: expectedBindingCount
+  }));
 }
 
 async function main(): Promise<void> {

@@ -236,8 +236,18 @@ export type ExportReadonlySnapshotInput = {
   ttl_seconds?: number;
 };
 
-export function exportReadonlySnapshotFromDatabase(input: ExportReadonlySnapshotInput): ReadonlySnapshot {
-  const db = openM0DatabaseConnection(input.database_path, { readOnly: true });
+export type ExportReadonlySnapshotOptions = {
+  assertDatabaseCurrent?: () => void;
+};
+
+export function exportReadonlySnapshotFromDatabase(
+  input: ExportReadonlySnapshotInput,
+  options: ExportReadonlySnapshotOptions = {}
+): ReadonlySnapshot {
+  const db = openM0DatabaseConnection(input.database_path, {
+    readOnly: true,
+    assertPathCurrent: options.assertDatabaseCurrent
+  });
   let transactionOpen = false;
   try {
     db.exec("BEGIN;");
