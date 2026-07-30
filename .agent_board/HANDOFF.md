@@ -15,6 +15,8 @@ Current owner: none
 - Created `codex/s3b-bound-provider-polling` directly from local S3 commit
   `f570d145e4832d2b2237123a40d5e8e0b503fcf1`; remote `main` remained
   `bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7`.
+- Implementation and validation evidence is recorded in local commit
+  `1c83188b41decf50b577a30b0db0a6eeb34e4727`.
 - The current worker now consumes only `PROVIDER_TASK_POLL_TIMEOUT_MS`, using
   the existing 600000 ms default and a fail-closed 1000–3600000 ms range.
 - The first known Provider task ID establishes one persisted absolute
