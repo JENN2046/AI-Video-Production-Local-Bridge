@@ -1,14 +1,42 @@
 # HANDOFF.md
 
-Current mode: S3B-1 bounded Provider polling complete; automatic continuation disabled
-Last run: codex-20260730-195717-s3b-polling
-Last result: local polling deadline implementation and isolated tests passed; S4 remains blocked
+Current mode: S3B-T1A state coherence complete; automatic continuation disabled
+Last run: codex-20260730-211744-s3b-state-coherence
+Last result: local manual reconciliation workflow restoration passed; integration is ready for separate review authorization and S4 remains blocked
 
 ## Current state
 
-Current task: `S3B-T1_BOUND_PROVIDER_POLLING`
+Current task: `S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE`
 Current status: `DONE`
 Current owner: none
+
+## S3B-T1A Manual Reconciliation State Coherence
+
+- Added local implementation commit `19e42eb` on
+  `codex/s3b-bound-provider-polling`; remote `main` remains
+  `bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7`.
+- Every normal or audit-fallback transition to `manual_reconciliation` now
+  restores Project and Shot workflow state in the same transaction, clears the
+  worker lease and leaves the Job outside the automatic scheduler.
+- Initial generation returns to its recorded pre-generation state.
+  Regeneration returns to `revision_needed` / `video_review` while preserving
+  prior clip versions and rejection evidence.
+- Intent and Run remain `running`, and a known Provider task ID remains
+  preserved. This continues to mean unresolved Provider lifecycle, not active
+  local automation, definite failure or permission to resubmit.
+- `manual_reconciliation` remains the primary operational stage with
+  `GENERATION_MANUAL_RECONCILIATION`, but it no longer contributes to ordinary
+  `active_run_count`. Other queued or running Shots remain counted.
+- Only explicit human task attachment restores polling and the stored
+  generation workflow state. It preserves or establishes one bounded deadline
+  and does not submit again.
+- Targeted reconciliation coverage, Workbench V2 57/57, selection gate 23/23,
+  typecheck and build passed using temporary databases and fixture adapters.
+- S3B integration is `READY_FOR_REVIEW` but this branch remains local-only.
+  S3B-2 and S3B-3 retain their approval boundaries, S3B-4 remains blocked, and
+  S4 was not executed.
+- No Provider network, activity database/media, secret, service, Bridge,
+  Snapshot, deployment or external configuration operation occurred.
 
 ## S3B-T1 Bound Provider Polling
 

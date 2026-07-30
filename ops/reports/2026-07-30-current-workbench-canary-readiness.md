@@ -294,3 +294,34 @@ This addendum is local, unmerged code/test evidence. It does not make the
 original S4 packet executable. An eligible Shot, local RunningHub credential
 action, merged S3B-1 baseline and a separately authorized S3 readiness rerun
 remain required.
+
+## S3B-T1A manual reconciliation state coherence addendum
+
+The local follow-up commit `19e42eb` corrects the workflow projection around
+S3B-1 without changing the unresolved Provider lifecycle. An Intent and Run
+remain `running`, and a known Provider task ID remains attached, because
+manual reconciliation is neither definite Provider failure nor permission to
+resubmit. The local worker nevertheless stops: the Job is not claimable, has
+no active lease, receives no automatic poll or submit, and is excluded from
+ordinary `active_run_count`.
+
+The same transaction that records `manual_reconciliation` now restores the
+stored workflow state through the existing `reconciliation_restore` rules.
+Initial generation returns to its prior non-running Shot and Project state.
+Regeneration retains the rejected clip, review reasons and version stack while
+restoring `revision_needed` and `video_review`. The normal event path and the
+audit-event fallback perform the same restoration. The derived
+`GENERATION_MANUAL_RECONCILIATION` blocker remains present, and a different
+Shot that is actually queued or running is still counted.
+
+Only an explicit human `attach_existing_task` decision can return the Job to
+polling and restore `video_pending` / `video_generation_in_progress`. That
+operation preserves an existing deadline or creates one bounded deadline and
+does not call Provider submit.
+
+Targeted reconciliation tests and the full Workbench V2 lane passed with
+temporary databases and fixture adapters. `test:v2` selected 57 tests and
+`test:selection-gate` selected 23 tests; typecheck and the full build also
+passed. This remains local, unmerged code/test evidence. No Provider network,
+activity database/media, secret, service, deployment or external
+configuration operation occurred, and S4 remains blocked.

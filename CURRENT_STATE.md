@@ -45,7 +45,7 @@ database. `REAL_PROVIDER_ENABLED=false` remains the safe default.
 |---|---|---|---|
 | Workbench V2 local UI | Storyboard, generation preflight, version review and delivery-readiness views exist | Activity database compatibility accepted at ledger `0011` | Core |
 | SQLite and governed media | Migration, Artifact/Blob digest and FFprobe boundaries exist | Ledger `0011` migration/restore evidence remains commit-scoped | Core |
-| Current Provider path | Intent, budget, confirmation, reconciliation and adapter boundaries exist; Provider defaults off; S3B-1 locally implements an absolute polling deadline | No current external acceptance; S4 remains blocked by no eligible Shot, absent RunningHub credential, unmerged S3B-1 and required readiness rerun | Core blocker before S4 |
+| Current Provider path | Intent, budget, confirmation, reconciliation and adapter boundaries exist; Provider defaults off; S3B-1 locally implements an absolute polling deadline and S3B-T1A restores non-running workflow state during manual reconciliation | No current external acceptance; S4 remains blocked by no eligible Shot, absent RunningHub credential, unmerged S3B work and required readiness rerun | Core blocker before S4 |
 | Historical R3 Provider path | Execution scripts now reside under `legacy/` | RunningHub real canary, four-shot generation and regeneration completed historically | Feasibility evidence only |
 | Review and accepted clips | Version stacks, rejection reasons and human accepted-clip selection exist | Historical R3 review evidence exists | Core; current-path acceptance remains |
 | Active assembly/export | Active assembly still contains `placeholder_copy` / mock-fixture behavior; Workbench has no production assembly/export action | No current-main production-path PASS | S6 core gap |
@@ -68,6 +68,17 @@ the Provider task ID becomes known, bounds each poll request and scheduled
 wakeup to the remaining time, and enters `PROVIDER_POLL_TIMEOUT` manual
 reconciliation without another submit. This is local code/test evidence only;
 it is not merged into remote `main` and is not a Provider acceptance.
+
+S3B-T1A makes `manual_reconciliation` a blocking, non-automatic state across
+the same local branch. The transition retains the unresolved Intent, Run and
+known Provider task identity while atomically restoring the Shot and Project
+workflow state, clearing the worker lease and excluding the Shot from ordinary
+`active_run_count`. Initial generation returns to its pre-generation state;
+regeneration returns to `revision_needed` / `video_review` without changing
+prior clips or review reasons. Only an explicit human task attachment restores
+polling and the generating workflow state, and it reuses an existing deadline
+or creates one bounded deadline without submitting again. The blocker
+`GENERATION_MANUAL_RECONCILIATION` remains visible.
 
 Node `24.14.0` was detected and is engine-compatible for local S3/S3B
 validation. It is not the accepted paid-canary baseline. A later authorized
@@ -183,14 +194,18 @@ Current stage queue:
 2. `S2 Core Loop Gap Audit` — `DONE`
 3. `S3 Provider Canary Readiness` — `DONE` with local readiness findings
 4. `S3B-1 Bound Provider Polling` — local implementation `DONE`, not merged
-5. `S3B-2 Prepare Eligible Shot` — `AWAITING_JENN_AUTHORIZATION`
-6. `S3B-3 Configure RunningHub Credential` — `AWAITING_JENN_LOCAL_ACTION`
-7. `S3B-4 Rerun Canary Readiness` — `BLOCKED_BY_T2_T3_AND_MERGED_T1`
-8. `S4 Real Single-Shot Canary` — `BLOCKED`
-9. `S5 Review and Regeneration` — not loaded
-10. `S6 Assembly, Export and Closeout` — not loaded
-11. `S7 Three Real Project Evaluation` — not loaded
-12. `S8 Legacy Route Cleanup Decision` — not loaded
+5. `S3B-T1A Manual Reconciliation State Coherence` — local implementation
+   `DONE`, not merged
+6. `S3B Integration` — `READY_FOR_REVIEW`; separate push/PR authorization
+   required
+7. `S3B-2 Prepare Eligible Shot` — `AWAITING_JENN_AUTHORIZATION`
+8. `S3B-3 Configure RunningHub Credential` — `AWAITING_JENN_LOCAL_ACTION`
+9. `S3B-4 Rerun Canary Readiness` — `BLOCKED`
+10. `S4 Real Single-Shot Canary` — `BLOCKED`
+11. `S5 Review and Regeneration` — not loaded
+12. `S6 Assembly, Export and Closeout` — not loaded
+13. `S7 Three Real Project Evaluation` — not loaded
+14. `S8 Legacy Route Cleanup Decision` — not loaded
 
 The complete Media Gateway promotion, Memory plugin, second real user,
 automatic Snapshot, Windows logon task, WebM/broad formats and new OAuth

@@ -2,27 +2,27 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "S3B-T1_BOUND_PROVIDER_POLLING",
+  "task_id": "S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE",
   "status": "DONE",
   "priority": "P0",
   "current_p0": "CURRENT_MAIN_REPEATABLE_PRODUCTION_LOOP",
   "lane": "Core Production Loop",
   "project": "AI Video Production Local Bridge",
-  "title": "Bound Provider Polling",
+  "title": "Manual Reconciliation State Coherence",
   "scope_policy_source": "docs/PRODUCT_SCOPE_FREEZE.md",
   "scope": [
-    "enforce one absolute Provider polling deadline using PROVIDER_TASK_POLL_TIMEOUT_MS",
-    "fail closed before Provider execution when the timeout configuration is invalid",
-    "preserve the known Provider task identity and local reconciliation state after polling timeout",
-    "prove with isolated tests that polling timeout never triggers automatic resubmission"
+    "restore Project and Shot workflow state when a Generation Job enters manual_reconciliation",
+    "exclude manual reconciliation from ordinary active-run counts without hiding other running Shots",
+    "preserve unresolved Intent, Run and Provider task identity semantics",
+    "allow only explicit human task attachment to restore bounded polling and generating workflow state"
   ],
-  "goal": "Bound the current real Provider worker polling loop without accessing Provider, activity data, media or secrets.",
+  "goal": "Make manual reconciliation a coherent blocking state without accessing Provider, activity data, media or secrets.",
   "acceptance": [
-    "The poll loop uses one monotonic absolute deadline and cannot reset it.",
-    "Poll request and sleep duration never exceed the remaining deadline.",
-    "Invalid timeout configuration fails closed before Provider execution.",
-    "Polling timeout preserves the task ID and enters low-disclosure manual reconciliation without a second submit.",
-    "Targeted isolated tests and required selection gates pass without external access."
+    "Initial generation and regeneration restore their prior non-running workflow state in the manual transition transaction.",
+    "Manual reconciliation remains visible as a blocker but does not count as an ordinary active run.",
+    "Known Provider task identity and unresolved running Intent and Run states remain preserved.",
+    "Normal and audit-event fallback paths restore the same workflow state and clear the worker lease.",
+    "Only explicit human attachment restores polling, the generating workflow state and a bounded deadline without a submit."
   ],
   "stage_dependency_rules": {
     "S2_CORE_LOOP_GAP_AUDIT": {
@@ -116,7 +116,7 @@
     "reason_not_to_defer"
   ],
   "allowed_delivery": [
-    "minimal_provider_polling_source_fix",
+    "minimal_manual_reconciliation_state_fix",
     "targeted_isolated_tests",
     "task_board_update",
     "current_state_documentation",
@@ -139,23 +139,28 @@
     "release"
   ],
   "depends_on": [
-    "S3-T1_CURRENT_WORKBENCH_CANARY_READINESS"
+    "S3B-T1_BOUND_PROVIDER_POLLING"
   ],
   "prior_completed_task": {
-    "task_id": "S3-T1_CURRENT_WORKBENCH_CANARY_READINESS",
+    "task_id": "S3B-T1_BOUND_PROVIDER_POLLING",
     "status": "DONE",
     "evidence": [
+      "src/tools/workbenchGeneration.ts",
+      "src/tools/videoProviderAdapters.ts",
+      "tests/workbench-v2-domain.test.ts",
+      "tests/workbench-v2-runninghub.test.ts",
       "ops/reports/2026-07-30-current-workbench-canary-readiness.md",
       "CURRENT_STATE.md",
       ".agent_board/HANDOFF.md"
     ],
     "claimed_by": "Codex",
-    "claim_run_id": "codex-20260730-192955-s3-readiness",
-    "claimed_at": "2026-07-30T19:29:55+08:00",
+    "claim_run_id": "codex-20260730-195717-s3b-polling",
+    "claimed_at": "2026-07-30T19:57:17+08:00",
     "completed_by": "Codex",
-    "completed_at": "2026-07-30T19:41:08+08:00",
-    "result": "BLOCKED_BY_S3_FINDING",
-    "validation": "Current build, Node, FFmpeg, FFprobe, readonly ledger 0011 db:check, governed media, RunningHub safe fields, candidate input, current path and four isolated test groups.",
+    "completed_at": "2026-07-30T20:24:18+08:00",
+    "result": "PASS_BOUND_PROVIDER_POLLING",
+    "validation": "Workbench V2 55/55, test-selection gate 23/23, typecheck, build, secret scan and diff validation.",
+    "commit": "1c83188b41decf50b577a30b0db0a6eeb34e4727",
     "delivery": "LOCAL_COMMIT_ONLY_NO_PUSH"
   },
   "s4_gate": {
@@ -174,36 +179,42 @@
     },
     {
       "task_id": "S3B-T4_RERUN_CANARY_READINESS",
-      "status": "BLOCKED_BY_T2_T3_AND_MERGED_T1"
+      "status": "BLOCKED"
     }
   ],
+  "s3b_integration": {
+    "task_id": "S3B_INTEGRATION",
+    "status": "READY_FOR_REVIEW",
+    "push_authorized": false,
+    "pull_request_authorized": false,
+    "merge_authorized": false
+  },
   "node_baseline": {
     "detected_node": "24.14.0",
     "engine_compatible": true,
     "accepted_paid_canary_baseline": false,
     "required_S4_node": "22.23.1"
   },
-  "created_at": "2026-07-30T19:57:17+08:00",
-  "updated_at": "2026-07-30T20:24:18+08:00",
+  "created_at": "2026-07-30T21:17:44+08:00",
+  "updated_at": "2026-07-30T21:20:57+08:00",
   "claimed_by": "Codex",
-  "claim_run_id": "codex-20260730-195717-s3b-polling",
-  "claimed_at": "2026-07-30T19:57:17+08:00",
+  "claim_run_id": "codex-20260730-211744-s3b-state-coherence",
+  "claimed_at": "2026-07-30T21:17:44+08:00",
   "completed_by": "Codex",
-  "completed_at": "2026-07-30T20:24:18+08:00",
-  "result": "PASS_BOUND_PROVIDER_POLLING",
+  "completed_at": "2026-07-30T21:20:57+08:00",
+  "result": "PASS_MANUAL_RECONCILIATION_STATE_COHERENCE",
   "validation_result": "PASS",
-  "validation": "Workbench V2 55/55, test-selection gate 23/23, typecheck, build, secret scan and diff validation.",
+  "validation": "Targeted reconciliation tests, Workbench V2 57/57, test-selection gate 23/23, typecheck, build, secret scan and diff validation.",
   "evidence": [
     "src/tools/workbenchGeneration.ts",
-    "src/tools/videoProviderAdapters.ts",
+    "src/packages/domain/operationalState.ts",
     "tests/workbench-v2-domain.test.ts",
-    "tests/workbench-v2-runninghub.test.ts",
     "ops/reports/2026-07-30-current-workbench-canary-readiness.md",
     "CURRENT_STATE.md",
     ".agent_board/HANDOFF.md"
   ],
-  "commit": "1c83188b41decf50b577a30b0db0a6eeb34e4727",
+  "commit": "19e42eb",
   "delivery": "LOCAL_COMMIT_ONLY_NO_PUSH",
-  "authorization_required": "S3B-1 source and isolated-test work is authorized; Shot preparation, credential configuration, S3 rerun and S4 remain unauthorized.",
+  "authorization_required": "S3B integration requires a new Jenn push/PR authorization; Shot preparation, credential configuration, S3 rerun and S4 remain unauthorized.",
   "boundary_or_safety_stop": "No Provider network, activity database/media access, secret access, service lifecycle operation or external configuration is allowed."
 }
