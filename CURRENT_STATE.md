@@ -151,16 +151,30 @@ current-path Provider readiness and real single-shot canary.
 
 ## Current priority
 
-The repository priority is now:
+The product-scope source of truth is
+[Product Scope Freeze](docs/PRODUCT_SCOPE_FREEZE.md). S1 established one
+current classification per component, froze peripheral expansion and retained
+legacy routes only for rollback. It did not remove routes or change runtime
+behavior.
 
-1. `S1 Scope Freeze`
-2. `S2 Core Loop Gap Audit`
-3. `S3 Provider Canary Readiness`
-4. `S4 Real Single-Shot Canary`
-5. `S5 Review and Regeneration`
-6. `S6 Assembly, Export and Closeout`
-7. `S7 Three Real Project Evaluation`
-8. `S8 Legacy Route Cleanup Decision`
+The only P0 is `CURRENT_MAIN_REPEATABLE_PRODUCTION_LOOP`:
+
+```text
+Current Project -> Approved Storyboard Package -> Provider Generation
+  -> Governed Media Artifact -> Workbench Review -> Regeneration
+  -> Accepted Clips -> Real Assembly -> Export -> Closeout
+```
+
+Current stage queue:
+
+1. `S1 Scope Freeze` — `DONE`
+2. `S2 Core Loop Gap Audit` — `READY`
+3. `S3 Provider Canary Readiness` — not loaded
+4. `S4 Real Single-Shot Canary` — not loaded
+5. `S5 Review and Regeneration` — not loaded
+6. `S6 Assembly, Export and Closeout` — not loaded
+7. `S7 Three Real Project Evaluation` — not loaded
+8. `S8 Legacy Route Cleanup Decision` — not loaded
 
 The complete Media Gateway promotion, Memory plugin, second real user,
 automatic Snapshot, Windows logon task, WebM/broad formats and new OAuth

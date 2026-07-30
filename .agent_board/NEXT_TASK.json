@@ -2,62 +2,67 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "S1-T1_FREEZE_PERIPHERAL_EXPANSION",
+  "task_id": "S2-T1_CURRENT_CORE_LOOP_GAP_PROOF",
   "status": "READY",
   "priority": "P0",
-  "lane": "Project Scope Reduction",
+  "current_p0": "CURRENT_MAIN_REPEATABLE_PRODUCTION_LOOP",
+  "lane": "Core Production Loop",
   "project": "AI Video Production Local Bridge",
-  "title": "S1 Scope Freeze and Topology Classification",
+  "title": "S2 Core Loop Gap Audit",
+  "scope_policy_source": "docs/PRODUCT_SCOPE_FREEZE.md",
   "scope": [
-    "classify current components as KEEP_CORE, KEEP_OPTIONAL, FREEZE, ROLLBACK_ONLY, REMOVE_LATER or UNDECIDED",
-    "remove optional infrastructure from the S3 and S4 dependency chain",
-    "record rollback windows and deletion preconditions without deleting code or changing external configuration"
+    "trace the current-main product path from Project and approved Storyboard Package through Provider generation, governed Artifact, review, regeneration, accepted clips, real assembly, export and closeout",
+    "identify which current UI, API, SQLite and media boundaries implement each stage",
+    "separate active product capabilities from fixture, legacy and historical feasibility evidence",
+    "produce a bounded gap proof without implementing S3 or later work"
   ],
-  "goal": "Freeze peripheral expansion so subsequent work advances the current-main real video production loop.",
+  "goal": "Produce the smallest evidence-backed gap list needed to make the current-main production loop repeatable.",
   "acceptance": [
-    "Every major current component has one explicit current classification.",
-    "S3 and S4 do not depend on Director Bridge, Snapshot, Media Gateway, Memory or multi-user.",
-    "No peripheral promotion task is READY.",
-    "Legacy /mcp and the Dedicated Director route remain rollback-only and are not removed.",
-    "No S2 or later task is executed as part of S1."
+    "Every core-loop stage maps to its current UI, API, SQLite records, media evidence and tests.",
+    "Historical Provider and R3-9O evidence is separated from current-main product acceptance.",
+    "The active placeholder assembly/export gap is explicitly proven.",
+    "Every gap is routed to S3, S4, S5 or S6 without implementing it.",
+    "No optional or rollback-only surface becomes a prerequisite."
   ],
-  "phase_dependency_rules": {
-    "S3": {
-      "requires_director_bridge": false,
-      "requires_snapshot": false,
-      "requires_media_gateway": false,
-      "requires_memory": false,
-      "requires_multi_user": false
+  "stage_dependency_rules": {
+    "S2_CORE_LOOP_GAP_AUDIT": {
+      "director_bridge_required": false,
+      "snapshot_required": false,
+      "media_gateway_required": false,
+      "memory_required": false,
+      "multi_user_required": false
     },
-    "S4": {
-      "requires_director_bridge": false,
-      "requires_snapshot": false,
-      "requires_media_gateway": false,
-      "requires_memory": false,
-      "requires_multi_user": false
+    "S3_PROVIDER_CANARY_READINESS": {
+      "unified_workspace_required": false,
+      "director_bridge_required": false,
+      "snapshot_required": false,
+      "media_gateway_required": false,
+      "memory_required": false,
+      "multi_user_required": false
     },
-    "S5": {
-      "requires_director_bridge": "true_only_when_using_chatgpt_frame_review"
+    "S4_REAL_SINGLE_SHOT_CANARY": {
+      "unified_workspace_required": false,
+      "director_bridge_required": false,
+      "snapshot_required": false,
+      "media_gateway_required": false,
+      "memory_required": false,
+      "multi_user_required": false
+    },
+    "S5_CHATGPT_FRAME_REVIEW": {
+      "director_bridge_required": true,
+      "snapshot_required": false,
+      "media_gateway_required": false
+    },
+    "S6_ASSEMBLY_EXPORT_CLOSEOUT": {
+      "director_bridge_required": false,
+      "snapshot_required": false,
+      "media_gateway_required": false,
+      "memory_required": false
     }
   },
-  "frozen_scope": [
-    "media_gateway_promotion_and_expansion",
-    "memory_plugin_and_automatic_saveback",
-    "multi_user_and_second_real_user",
-    "automatic_snapshot",
-    "windows_logon_startup",
-    "webm_and_broad_media_formats",
-    "new_oauth_compatibility_experiments",
-    "full_webgpt_externalization",
-    "legacy_route_new_features"
-  ],
-  "rollback_only_scope": [
-    "legacy_/mcp",
-    "dedicated_director_route"
-  ],
   "task_classifications": [
     {
-      "task_id": "OPTIONAL_MEDIA_GATEWAY_PROMOTION",
+      "task_id": "MEDIA_GATEWAY_PROMOTION_AND_EXPANSION",
       "status": "FROZEN"
     },
     {
@@ -65,23 +70,31 @@
       "status": "FROZEN"
     },
     {
-      "task_id": "MULTI_USER_AND_SECOND_REAL_USER",
+      "task_id": "MULTI_USER_AND_SECOND_USER_PATH",
       "status": "FROZEN"
     },
     {
-      "task_id": "AUTOMATIC_SNAPSHOT_SYNCHRONIZATION",
+      "task_id": "AUTOMATIC_SNAPSHOT",
       "status": "FROZEN"
     },
     {
-      "task_id": "WINDOWS_LOGON_AUTOSTART",
+      "task_id": "WINDOWS_AUTOMATIC_STARTUP",
       "status": "FROZEN"
     },
     {
-      "task_id": "WEBM_AND_BROAD_MEDIA_FORMATS",
+      "task_id": "WEBM_AND_BROAD_FORMATS",
       "status": "FROZEN"
     },
     {
       "task_id": "NEW_OAUTH_COMPATIBILITY_EXPERIMENTS",
+      "status": "FROZEN"
+    },
+    {
+      "task_id": "FULL_WEBGPT_EXTERNALIZATION",
+      "status": "FROZEN"
+    },
+    {
+      "task_id": "PROVIDER_PLATFORM_EXPANSION",
       "status": "FROZEN"
     },
     {
@@ -93,43 +106,58 @@
       "status": "ROLLBACK_ONLY"
     }
   ],
+  "new_task_admission_fields": [
+    "observed_real_problem",
+    "core_loop_stage",
+    "user_action_reduced",
+    "production_risk_reduced",
+    "maintenance_cost_added",
+    "simpler_alternative",
+    "reason_not_to_defer"
+  ],
   "allowed_delivery": [
-    "current_scope_documentation",
-    "topology_classification",
+    "current_core_loop_gap_report",
     "task_board_update",
-    "rollback_window_definition",
+    "current_state_documentation",
     "local_commit"
   ],
   "blocked_delivery": [
     "source_code_change",
+    "test_code_change",
     "database_change",
     "media_change",
     "service_start_stop_restart",
     "provider_operation",
-    "snapshot_publish",
+    "snapshot_operation",
     "deployment",
     "external_configuration_change",
     "secret_operation",
     "route_removal",
+    "S3_execution",
+    "S4_execution",
     "push",
     "merge",
     "release"
   ],
   "depends_on": [
-    "S0-T1_RECONCILE_CURRENT_TRUTH"
+    "S1-T1_FREEZE_PERIPHERAL_EXPANSION"
   ],
-  "created_at": "2026-07-30T14:49:50+08:00",
-  "updated_at": "2026-07-30T14:49:50+08:00",
+  "prior_completed_task": {
+    "task_id": "S1-T1_FREEZE_PERIPHERAL_EXPANSION",
+    "status": "DONE",
+    "evidence": [
+      "docs/PRODUCT_SCOPE_FREEZE.md",
+      "CURRENT_STATE.md",
+      ".agent_board/HANDOFF.md"
+    ]
+  },
+  "created_at": "2026-07-30T15:03:14+08:00",
+  "updated_at": "2026-07-30T15:03:14+08:00",
   "claimed_by": null,
   "claim_run_id": null,
   "claimed_at": null,
   "result": null,
   "validation_result": null,
-  "evidence": [
-    "CURRENT_STATE.md",
-    "docs/README.md",
-    ".agent_board/HANDOFF.md"
-  ],
-  "authorization_required": "Jenn must separately authorize execution of S1.",
-  "boundary_or_safety_stop": "This S0 run only prepared S1 as READY. It did not execute S1 or any later stage."
+  "authorization_required": "Jenn must separately authorize execution of S2.",
+  "boundary_or_safety_stop": "S1 only prepared S2 as READY. S2 was not claimed or executed."
 }

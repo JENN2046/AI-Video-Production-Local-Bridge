@@ -16,11 +16,17 @@ startup and new OAuth experiments are not S3/S4 blockers. Use
 [Current State](../CURRENT_STATE.md) for the exact Bridge, Provider, assembly
 and commit-scoped acceptance boundaries.
 
+S1 is now complete. [Product Scope Freeze](PRODUCT_SCOPE_FREEZE.md) is the
+single current statement of component classification, stage dependencies,
+Provider MVP boundaries, route ownership and future removal conditions. S2
+core-loop gap proof is the only next `READY` task.
+
 ## Start here
 
 | Need | Document |
 |---|---|
 | Understand current status and open gates | [Current State](../CURRENT_STATE.md) |
+| Understand the active product scope and frozen surfaces | [Product Scope Freeze](PRODUCT_SCOPE_FREEZE.md) |
 | Resume the latest Unified Director work safely | [2026-07-28 Unified Director handoff](HANDOFF_2026-07-28_UNIFIED_DIRECTOR.md) |
 | Use the local Workbench and ChatGPT App | [User Guide](USER_GUIDE.md) |
 | Install, configure or recover a runtime | [Deployment Guide](DEPLOYMENT_GUIDE.md) |

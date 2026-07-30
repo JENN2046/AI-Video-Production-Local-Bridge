@@ -1,14 +1,43 @@
 # HANDOFF.md
 
-Current mode: S0 repository truth reconciliation complete; automatic continuation disabled
-Last run: codex-20260730-144950-s0-truth
-Last result: S0-T1 repository truth reconciled on `main@bc3fa5a0`
+Current mode: S1 scope freeze complete; automatic continuation disabled
+Last run: codex-20260730-150314-s1-freeze
+Last result: S1-T1 product scope frozen on top of S0 commit `12cf293`
 
 ## Current state
 
-Current task: `S1-T1_FREEZE_PERIPHERAL_EXPANSION`
+Current task: `S2-T1_CURRENT_CORE_LOOP_GAP_PROOF`
 Current status: `READY`
 Current owner: none
+
+## S1-T1 Scope Freeze and Topology Classification
+
+- Established [Product Scope Freeze](../docs/PRODUCT_SCOPE_FREEZE.md) as the
+  single current product-scope source.
+- Set `CURRENT_MAIN_REPEATABLE_PRODUCTION_LOOP` as the only P0.
+- Assigned exactly one primary classification to each current component.
+- Kept optional playback, Snapshot and Remote Readonly surfaces non-blocking.
+- Froze Media Gateway expansion, Memory/automatic Saveback, multi-user,
+  automatic Snapshot, Windows automatic startup, WebM/broad formats, new OAuth
+  experiments, Full WebGPT externalization and Provider-platform expansion.
+- Retained legacy `/mcp`, Dedicated Director and their legacy auth/state
+  surfaces as `ROLLBACK_ONLY`; no route or configuration was removed.
+- Defined S2-S6 dependencies so Bridge, Snapshot, Media Gateway, Memory and
+  multi-user cannot block S2-S4.
+- Limited Provider Connections to a small status/preflight/budget MVP.
+- Defined route authority and evidence-based exit criteria without adding
+  telemetry.
+- Marked `S1-T1_FREEZE_PERIPHERAL_EXPANSION` `DONE`.
+- Prepared `S2-T1_CURRENT_CORE_LOOP_GAP_PROOF` as the only `READY` task. S2
+  was not claimed or executed.
+- Validation passed: `NEXT_TASK.json` parse, S2 unique-READY check, nine
+  `FROZEN` and two `ROLLBACK_ONLY` task classifications, historical backlog
+  READY count zero, component coverage inspection, four changed Markdown files
+  with zero broken relative links, changed-file allowlist and
+  `git diff --check`.
+- No source/test code, database, media, runtime, Provider, Snapshot, deployment,
+  external configuration, secret or route-removal operation occurred. No
+  branch was pushed.
 
 ## S0-T1 Repository Truth Reconciliation
 
