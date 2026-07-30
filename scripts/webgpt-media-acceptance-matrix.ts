@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readSync, realpathSync } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import { createReadonlyMediaCapabilityRequest, parseReadonlyMediaCapabilityKey, READONLY_MEDIA_CAPABILITY_TTL_MS } from "../src/webgpt-cloud/mediaCapability.js";
 import { exportReadonlySnapshotFromDatabase } from "../src/webgpt-cloud/dataSource.js";
@@ -194,9 +194,27 @@ type DatabaseFileLease = {
   inode: bigint;
 };
 
+type DatabaseDirectoryLease = Omit<DatabaseFileLease, "root">;
+
 type DatabaseLease = DatabaseFileLease & {
+  directories: DatabaseDirectoryLease[];
   sidecars: DatabaseFileLease[];
 };
+
+function assertDatabaseDirectoryLeaseCurrent(lease: DatabaseDirectoryLease): void {
+  try {
+    const descriptorStats = fstatSync(lease.descriptor, { bigint: true });
+    const pathStats = lstatSync(lease.path, { bigint: true });
+    if (!descriptorStats.isDirectory() || !pathStats.isDirectory()
+      || descriptorStats.dev !== lease.device || descriptorStats.ino !== lease.inode
+      || pathStats.dev !== lease.device || pathStats.ino !== lease.inode) {
+      throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+    }
+  } catch (error) {
+    if (error instanceof MatrixError) throw error;
+    throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+  }
+}
 
 function assertDatabaseFileLeaseCurrent(lease: DatabaseFileLease, requireNonempty: boolean): void {
   try {
@@ -219,8 +237,45 @@ function assertDatabaseFileLeaseCurrent(lease: DatabaseFileLease, requireNonempt
 }
 
 function assertDatabaseLeaseCurrent(lease: DatabaseLease): void {
+  for (const directory of lease.directories) assertDatabaseDirectoryLeaseCurrent(directory);
   assertDatabaseFileLeaseCurrent(lease, true);
   for (const sidecar of lease.sidecars) assertDatabaseFileLeaseCurrent(sidecar, false);
+}
+
+function databaseDirectoryPaths(databasePath: string): string[] {
+  const paths: string[] = [];
+  let current = dirname(resolve(databasePath));
+  for (;;) {
+    paths.push(current);
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return paths.reverse();
+}
+
+function openDatabaseDirectoryLease(path: string): DatabaseDirectoryLease {
+  let descriptor: number;
+  try {
+    descriptor = openSync(path, constants.O_RDONLY | MANIFEST_NOFOLLOW_FLAG);
+  } catch {
+    throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+  }
+  try {
+    const stats = fstatSync(descriptor, { bigint: true });
+    const lease = {
+      descriptor,
+      path,
+      device: stats.dev,
+      inode: stats.ino
+    };
+    assertDatabaseDirectoryLeaseCurrent(lease);
+    return lease;
+  } catch (error) {
+    closeSync(descriptor);
+    if (error instanceof MatrixError) throw error;
+    throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+  }
 }
 
 function openDatabaseFileLease(root: string, path: string, flags: number, requireNonempty: boolean): DatabaseFileLease {
@@ -250,9 +305,14 @@ function openDatabaseFileLease(root: string, path: string, flags: number, requir
 
 function openDatabaseLease(root: string, databasePath: string): DatabaseLease {
   const realRoot = realpathSync(root);
-  const main = openDatabaseFileLease(realRoot, databasePath, constants.O_RDONLY, true);
+  const directories: DatabaseDirectoryLease[] = [];
   const sidecars: DatabaseFileLease[] = [];
+  let main: DatabaseFileLease | undefined;
   try {
+    for (const path of databaseDirectoryPaths(databasePath)) {
+      directories.push(openDatabaseDirectoryLease(path));
+    }
+    main = openDatabaseFileLease(realRoot, databasePath, constants.O_RDONLY, true);
     for (const suffix of DATABASE_SIDECAR_SUFFIXES) {
       sidecars.push(openDatabaseFileLease(
         realRoot,
@@ -261,13 +321,18 @@ function openDatabaseLease(root: string, databasePath: string): DatabaseLease {
         false
       ));
     }
-    const lease: DatabaseLease = { ...main, sidecars };
+    const lease: DatabaseLease = { ...main, directories, sidecars };
     assertDatabaseLeaseCurrent(lease);
     return lease;
   } catch (error) {
     let cleanupFailed = false;
-    for (const file of [...sidecars].reverse().concat(main)) {
+    const files = [...sidecars].reverse();
+    if (main) files.push(main);
+    for (const file of files) {
       try { closeSync(file.descriptor); } catch { cleanupFailed = true; }
+    }
+    for (const directory of [...directories].reverse()) {
+      try { closeSync(directory.descriptor); } catch { cleanupFailed = true; }
     }
     if (cleanupFailed) throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
     if (error instanceof MatrixError) throw error;
@@ -275,7 +340,7 @@ function openDatabaseLease(root: string, databasePath: string): DatabaseLease {
   }
 }
 
-function databaseGuardIdentity(lease: DatabaseFileLease): string {
+function databaseGuardIdentity(lease: DatabaseFileLease | DatabaseDirectoryLease): string {
   const device = lease.device.toString(16).toUpperCase().padStart(8, "0");
   const inode = lease.inode.toString(16).toUpperCase().padStart(16, "0");
   if (!/^[0-9A-F]{8}$/.test(device) || !/^[0-9A-F]{16}$/.test(inode)) {
@@ -289,6 +354,9 @@ function closeDatabaseLease(lease: DatabaseLease): void {
   for (const file of [...lease.sidecars].reverse().concat(lease)) {
     try { closeSync(file.descriptor); } catch { failed = true; }
   }
+  for (const directory of [...lease.directories].reverse()) {
+    try { closeSync(directory.descriptor); } catch { failed = true; }
+  }
   if (failed) throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
 }
 
@@ -299,7 +367,8 @@ type DatabasePathGuard = {
 
 async function acquireDatabasePathGuard(databaseLease: DatabaseLease): Promise<DatabasePathGuard> {
   const databasePath = databaseLease.path;
-  const expectedIdentities = [databaseLease, ...databaseLease.sidecars].map(databaseGuardIdentity).join(",");
+  const expectedFileIdentities = [databaseLease, ...databaseLease.sidecars].map(databaseGuardIdentity).join(",");
+  const expectedDirectoryIdentities = databaseLease.directories.map(databaseGuardIdentity).join(",");
   const guardScript = resolve(process.cwd(), "scripts", "windows", "media-database-path-guard.ps1");
   if (process.platform !== "win32" || /[\r\n]/.test(databasePath) || !existsSync(guardScript)) {
     throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
@@ -354,7 +423,7 @@ async function acquireDatabasePathGuard(databaseLease: DatabaseLease): Promise<D
     child.once("exit", fail);
     child.stdout.on("data", receive);
     child.stdin.once("error", fail);
-    child.stdin.write(`${databasePath}\n${expectedIdentities}\n`);
+    child.stdin.write(`${databasePath}\n${expectedFileIdentities}\n${expectedDirectoryIdentities}\n`);
   });
   child.once("exit", () => { holding = false; });
   child.stdin.on("error", () => { holding = false; });

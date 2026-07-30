@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { appendFileSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { appendFileSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn, spawnSync } from "node:child_process";
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
@@ -18,6 +18,23 @@ const SUBJECT = "auth0|media-acceptance-test-subject";
 
 function sha(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function windowsPathIdentity(path: string): string {
+  const stats = statSync(path, { bigint: true });
+  return `${stats.dev.toString(16).toUpperCase().padStart(8, "0")}:${stats.ino.toString(16).toUpperCase().padStart(16, "0")}`;
+}
+
+function databaseDirectoryPaths(databasePath: string): string[] {
+  const paths: string[] = [];
+  let current = dirname(resolve(databasePath));
+  for (;;) {
+    paths.push(current);
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return paths.reverse();
 }
 
 function lowDisclosureError(stderr: string): unknown {
@@ -321,18 +338,92 @@ test("media database path guard rejects a lease identity mismatch before reporti
   writeFileSync(`${databasePath}-shm`, "");
   try {
     const invalidIdentity = "00000000:0000000000000000";
+    const directoryIdentities = databaseDirectoryPaths(databasePath).map(windowsPathIdentity);
     const result = await runChild("powershell.exe", [
       "-NoProfile",
       "-NonInteractive",
       "-ExecutionPolicy", "RemoteSigned",
       "-File", resolve("scripts/windows/media-database-path-guard.ps1")
-    ], `${databasePath}\n${[invalidIdentity, invalidIdentity, invalidIdentity].join(",")}\n`, childEnv, 45_000);
+    ], `${databasePath}\n${[invalidIdentity, invalidIdentity, invalidIdentity].join(",")}\n${directoryIdentities.join(",")}\n`, childEnv, 45_000);
     assert.equal(result.timed_out, false);
     assert.equal(result.status, 1);
     assert.equal(result.stdout, "");
     assert.equal(result.stderr, "");
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("media database path guard prevents an ancestor directory rebind while LOCKED", { skip: process.platform !== "win32" }, async () => {
+  const outerRoot = mkdtempSync(join(tmpdir(), "media-database-ancestor-guard-"));
+  const acceptanceRoot = join(outerRoot, "acceptance");
+  const runRoot = join(acceptanceRoot, "run");
+  const movedAcceptanceRoot = join(outerRoot, "acceptance-moved");
+  mkdirSync(runRoot, { recursive: true });
+  const databasePath = join(runRoot, "app.sqlite");
+  const protectedPaths = [databasePath, `${databasePath}-wal`, `${databasePath}-shm`];
+  writeFileSync(databasePath, "database", "utf8");
+  writeFileSync(`${databasePath}-wal`, "");
+  writeFileSync(`${databasePath}-shm`, "");
+  const fileIdentities = protectedPaths.map(windowsPathIdentity);
+  const directoryIdentities = databaseDirectoryPaths(databasePath).map(windowsPathIdentity);
+  const child = spawn("powershell.exe", [
+    "-NoProfile",
+    "-NonInteractive",
+    "-ExecutionPolicy", "RemoteSigned",
+    "-File", resolve("scripts/windows/media-database-path-guard.ps1")
+  ], { cwd: process.cwd(), windowsHide: true, env: childEnv, stdio: ["pipe", "pipe", "pipe"] });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk: string) => { stdout += chunk; });
+  child.stderr.on("data", (chunk: string) => { stderr += chunk; });
+  const closed = new Promise<number | null>((resolveClose, rejectClose) => {
+    child.once("error", rejectClose);
+    child.once("close", resolveClose);
+  });
+  const locked = new Promise<void>((resolveLock, rejectLock) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill();
+      rejectLock(new Error("DATABASE_GUARD_LOCK_TIMEOUT"));
+    }, 45_000);
+    child.stdout.on("data", () => {
+      if (settled || !stdout.includes("\n")) return;
+      settled = true;
+      clearTimeout(timer);
+      if (/^LOCKED\r?\n$/.test(stdout)) resolveLock();
+      else rejectLock(new Error("DATABASE_GUARD_LOCK_INVALID"));
+    });
+    child.once("close", () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      rejectLock(new Error("DATABASE_GUARD_LOCK_FAILED"));
+    });
+  });
+  child.stdin.write(`${databasePath}\n${fileIdentities.join(",")}\n${directoryIdentities.join(",")}\n`);
+  try {
+    await locked;
+    assert.throws(() => renameSync(acceptanceRoot, movedAcceptanceRoot), (error: unknown) => {
+      const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
+      return ["EACCES", "EBUSY", "EPERM"].includes(code);
+    });
+    child.stdin.end("RELEASE\n");
+    assert.equal(await closed, 0);
+    assert.match(stdout, /^LOCKED\r?\n$/);
+    assert.equal(stderr, "");
+    renameSync(acceptanceRoot, movedAcceptanceRoot);
+    renameSync(movedAcceptanceRoot, acceptanceRoot);
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill();
+      await closed.catch(() => undefined);
+    }
+    rmSync(outerRoot, { recursive: true, force: true });
   }
 });
 
@@ -366,7 +457,10 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
   assert.match(databaseGuard, /information\.NumberOfLinks != 1/);
   assert.match(databaseGuard, /information\.VolumeSerialNumber\.ToString\("X8"\)/);
   assert.match(databaseGuard, /fileIndex\.ToString\("X16"\)/);
-  assert.match(databaseGuard, /expectedIdentities\.Count -ne 3/);
+  assert.match(databaseGuard, /expectedFileIdentities\.Count -ne 3/);
+  assert.match(databaseGuard, /expectedDirectoryIdentities\.Count -lt 1/);
+  assert.match(databaseGuard, /OpenProtectedDirectory/);
+  assert.match(databaseGuard, /DirectoryIdentity\(\$handle\) -cne/);
   assert.match(databaseGuard, /Identity\(\$handle\) -cne/);
   assert.match(databaseGuard, /"\$databasePath-wal"/);
   assert.match(databaseGuard, /"\$databasePath-shm"/);
