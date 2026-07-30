@@ -1,14 +1,53 @@
 # HANDOFF.md
 
-Current mode: S2 core-loop gap proof complete; automatic continuation disabled
-Last run: codex-20260730-154956-s2-gap-proof
-Last result: S2-T1 found C12 as the first hard break and bounded S3 readiness
+Current mode: S3 local readiness complete; automatic continuation disabled
+Last run: codex-20260730-192955-s3-readiness
+Last result: S3 code and local safety checks passed, but S4 has three local blockers
 
 ## Current state
 
-Current task: `S3-T1_CURRENT_WORKBENCH_CANARY_READINESS`
-Current status: `READY`
+Current task: `S3B-T1_CLOSE_SINGLE_SHOT_CANARY_READINESS_GATES`
+Current status: `BLOCKED`
 Current owner: none
+
+## S3-T1 Current Workbench Canary Readiness
+
+- Published [Current Workbench Canary Readiness](../ops/reports/2026-07-30-current-workbench-canary-readiness.md).
+- Verified remote `main` remains
+  `bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7`; S3 branch is based directly on
+  S2 commit `f4a15f565865c045325274251a91d2e11c633e41`.
+- Built the current server and Workbench UI without starting a service.
+  Node, FFmpeg and FFprobe passed.
+- Opened the current repository activity database read-only with
+  `PRAGMA query_only = ON`; ledger `0011`, `workbench-v2-6`, `quick_check`,
+  governed roots and all low-disclosure `db:check` counts passed.
+- Confirmed the current Workbench route still targets RunningHub and retains
+  cost acknowledgement, one Intent, zero ordinary automatic resubmits,
+  manual reconciliation for unknown submit, bounded download, FFprobe and
+  governed Run/Blob/Artifact registration.
+- Confirmed the three process-level real Provider gates remained false and no
+  Provider network call occurred.
+- Found no eligible S4 Shot. The only evaluated production Shot is draft,
+  lacks an approved Storyboard Package and requests 5 seconds, below the
+  RunningHub 6-second minimum. Its existing Storyboard Artifact itself passed
+  read-only binding, file, MIME, dimensions, root and digest checks.
+- Confirmed the RunningHub target credential is absent without reading or
+  exposing any credential value.
+- Confirmed each Provider request and download is bounded, but the current
+  Workbench does not enforce a whole-job polling timeout and does not consume
+  the configurable timeout fields for that bound.
+- Four authorized isolated test groups passed: 11, 32, 27 and 37 tests. They
+  used temporary databases and fixture transports; no service or real Provider
+  was used.
+- Marked S3 `DONE` with `BLOCKED_BY_S3_FINDING`; S4 remains
+  `BLOCKED_BY_S3_FINDING`. No task is `READY`.
+- Created one minimal blocker task covering the exact eligible Shot, secure
+  RunningHub credential and enforced polling-bound prerequisites. It cannot be
+  executed without separate Jenn authorizations for business-state writes,
+  secret configuration and any source fix.
+- No source/test code, schema, activity data, media, service, Bridge, Snapshot,
+  deployment, external configuration, secret value or remote state was
+  modified. S4 was not executed and no branch was pushed.
 
 ## S2-T1 Current Core Loop Gap Proof
 

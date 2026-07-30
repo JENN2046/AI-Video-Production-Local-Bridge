@@ -2,27 +2,27 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "S3-T1_CURRENT_WORKBENCH_CANARY_READINESS",
-  "status": "READY",
+  "task_id": "S3B-T1_CLOSE_SINGLE_SHOT_CANARY_READINESS_GATES",
+  "status": "BLOCKED",
   "priority": "P0",
   "current_p0": "CURRENT_MAIN_REPEATABLE_PRODUCTION_LOOP",
   "lane": "Core Production Loop",
   "project": "AI Video Production Local Bridge",
-  "title": "S3 Current Workbench Canary Readiness",
+  "title": "Close Single-Shot Canary Readiness Gates",
   "scope_policy_source": "docs/PRODUCT_SCOPE_FREEZE.md",
   "scope": [
-    "verify the exact current-main initial single-Shot Workbench generation prerequisites using isolated evidence",
-    "bound the later S4 paid canary to one Project, one Shot, one budget, one Intent and one Provider submit",
-    "confirm current Provider capability, no-blind-retry, download, FFprobe, Run and Artifact safety gates",
-    "produce a readiness result without performing a Provider call or any S4 operation"
+    "obtain Jenn's exact target and separately authorized Workbench writes for one approved Storyboard Package and a RunningHub-supported Shot",
+    "establish RunningHub credential presence through a separately authorized secure configuration step while all execution gates remain false",
+    "define and enforce one whole-job Provider polling timeout consumed by the current Workbench path",
+    "rerun bounded local readiness before creating a replacement S4 authorization request"
   ],
-  "goal": "Prove whether the current Workbench is ready for a separately authorized one-shot Provider canary without expanding the product scope.",
+  "goal": "Close only the three proven local readiness findings that prevent an exact single-Shot RunningHub canary authorization.",
   "acceptance": [
-    "The exact initial single-Shot path is covered by existing isolated tests with Provider execution disabled.",
-    "Current Provider capability, budget and human-confirmation requirements are explicit.",
-    "Unknown paid-submit outcomes remain manual reconciliation and never become blind retry.",
-    "The later S4 action and stop conditions are bounded without executing it.",
-    "Director Bridge, Snapshot, Media Gateway, Memory, multi-user and later assembly work remain non-prerequisites."
+    "Exactly one Jenn-selected active production Shot has an approved Storyboard Package, verified input Artifact and supported RunningHub capability.",
+    "RunningHub credential presence is confirmed without disclosure while all three real execution gates remain false.",
+    "The current Workbench enforces and reports a whole-job Provider polling timeout.",
+    "Bounded S3 checks are rerun and a complete S4 request remains behind exact Jenn authorization.",
+    "No optional or rollback-only surface enters the task."
   ],
   "stage_dependency_rules": {
     "S2_CORE_LOOP_GAP_AUDIT": {
@@ -116,7 +116,7 @@
     "reason_not_to_defer"
   ],
   "allowed_delivery": [
-    "current_workbench_canary_readiness_report",
+    "single_shot_canary_prerequisite_plan",
     "task_board_update",
     "current_state_documentation",
     "local_commit"
@@ -140,32 +140,60 @@
     "release"
   ],
   "depends_on": [
-    "S2-T1_CURRENT_CORE_LOOP_GAP_PROOF"
+    "S3-T1_CURRENT_WORKBENCH_CANARY_READINESS"
   ],
   "prior_completed_task": {
-    "task_id": "S2-T1_CURRENT_CORE_LOOP_GAP_PROOF",
+    "task_id": "S3-T1_CURRENT_WORKBENCH_CANARY_READINESS",
     "status": "DONE",
     "evidence": [
-      "docs/CORE_PRODUCTION_LOOP_GAP_AUDIT.md",
-      "docs/README.md",
+      "ops/reports/2026-07-30-current-workbench-canary-readiness.md",
+      "CURRENT_STATE.md",
       ".agent_board/HANDOFF.md"
     ],
     "claimed_by": "Codex",
-    "claim_run_id": "codex-20260730-154956-s2-gap-proof",
-    "claimed_at": "2026-07-30T15:49:56+08:00",
+    "claim_run_id": "codex-20260730-192955-s3-readiness",
+    "claimed_at": "2026-07-30T19:29:55+08:00",
     "completed_by": "Codex",
-    "completed_at": "2026-07-30T16:03:06+08:00",
-    "result": "PASS_CURRENT_CORE_LOOP_GAP_PROOF",
-    "validation": "Static trace plus document, JSON, relative-link, allowlist and diff validation; no local test group required.",
+    "completed_at": "2026-07-30T19:41:08+08:00",
+    "result": "BLOCKED_BY_S3_FINDING",
+    "validation": "Current build, Node, FFmpeg, FFprobe, readonly ledger 0011 db:check, governed media, RunningHub safe fields, candidate input, current path and four isolated test groups.",
     "delivery": "LOCAL_COMMIT_ONLY_NO_PUSH"
   },
-  "created_at": "2026-07-30T15:03:14+08:00",
-  "updated_at": "2026-07-30T16:03:06+08:00",
+  "s4_gate": {
+    "task_id": "S4-T1_REAL_SINGLE_SHOT_CURRENT_PATH",
+    "status": "BLOCKED_BY_S3_FINDING",
+    "authorization_granted": false
+  },
+  "created_at": "2026-07-30T19:41:08+08:00",
+  "updated_at": "2026-07-30T19:41:08+08:00",
   "claimed_by": null,
   "claim_run_id": null,
   "claimed_at": null,
   "result": null,
   "validation_result": null,
-  "authorization_required": "S3 execution requires a separate current authorization; S4 paid Provider execution requires an additional exact authorization.",
-  "boundary_or_safety_stop": "This READY task authorizes no Provider call, service lifecycle operation, Bridge operation, deployment, external configuration or S4 execution."
+  "blocked_by": "S3_CURRENT_WORKBENCH_CANARY_READINESS_FINDINGS",
+  "blocked_at": "2026-07-30T19:41:08+08:00",
+  "authorization_required": "Jenn must separately authorize business-state writes, secure RunningHub credential configuration and any source fix before this blocker task can execute.",
+  "boundary_or_safety_stop": "S4 cannot be authorized while there is no eligible Shot, no RunningHub credential and no enforced whole-job Provider polling timeout.",
+  "blocked_reason": "The exact current-path S4 target and bounded execution prerequisites are incomplete.",
+  "safe_actions_completed": [
+    "read-only activity database and media validation",
+    "low-disclosure RunningHub configuration inspection",
+    "current build and Generation path verification",
+    "four isolated test groups",
+    "unexecuted S4 authorization packet"
+  ],
+  "unsafe_action_not_performed": [
+    "activity database or media write",
+    "credential creation or modification",
+    "source or test code change",
+    "Provider network call or paid submit",
+    "S4 execution"
+  ],
+  "options_for_jenn": [
+    "select and authorize preparation of one eligible Storyboard Package and Shot",
+    "separately authorize secure RunningHub credential configuration",
+    "separately authorize a minimal whole-job polling-timeout fix",
+    "keep S4 blocked"
+  ]
 }

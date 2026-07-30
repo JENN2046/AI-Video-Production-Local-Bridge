@@ -45,7 +45,7 @@ database. `REAL_PROVIDER_ENABLED=false` remains the safe default.
 |---|---|---|---|
 | Workbench V2 local UI | Storyboard, generation preflight, version review and delivery-readiness views exist | Activity database compatibility accepted at ledger `0011` | Core |
 | SQLite and governed media | Migration, Artifact/Blob digest and FFprobe boundaries exist | Ledger `0011` migration/restore evidence remains commit-scoped | Core |
-| Current Provider path | Intent, budget, confirmation, reconciliation and adapter boundaries exist; Provider defaults off | Current `main` product path has not been reaccepted with a live Provider | S3/S4 core work |
+| Current Provider path | Intent, budget, confirmation, reconciliation and adapter boundaries exist; Provider defaults off | S3 local checks passed, but S4 is blocked by no eligible Shot, absent RunningHub credential and no enforced whole-job poll timeout | Core blocker before S4 |
 | Historical R3 Provider path | Execution scripts now reside under `legacy/` | RunningHub real canary, four-shot generation and regeneration completed historically | Feasibility evidence only |
 | Review and accepted clips | Version stacks, rejection reasons and human accepted-clip selection exist | Historical R3 review evidence exists | Core; current-path acceptance remains |
 | Active assembly/export | Active assembly still contains `placeholder_copy` / mock-fixture behavior; Workbench has no production assembly/export action | No current-main production-path PASS | S6 core gap |
@@ -169,12 +169,13 @@ Current stage queue:
 
 1. `S1 Scope Freeze` — `DONE`
 2. `S2 Core Loop Gap Audit` — `DONE`
-3. `S3 Provider Canary Readiness` — `READY`
-4. `S4 Real Single-Shot Canary` — not loaded
-5. `S5 Review and Regeneration` — not loaded
-6. `S6 Assembly, Export and Closeout` — not loaded
-7. `S7 Three Real Project Evaluation` — not loaded
-8. `S8 Legacy Route Cleanup Decision` — not loaded
+3. `S3 Provider Canary Readiness` — `DONE` with local readiness findings
+4. `S3B Single-Shot Canary Prerequisites` — `BLOCKED`
+5. `S4 Real Single-Shot Canary` — `BLOCKED_BY_S3_FINDING`
+6. `S5 Review and Regeneration` — not loaded
+7. `S6 Assembly, Export and Closeout` — not loaded
+8. `S7 Three Real Project Evaluation` — not loaded
+9. `S8 Legacy Route Cleanup Decision` — not loaded
 
 The complete Media Gateway promotion, Memory plugin, second real user,
 automatic Snapshot, Windows logon task, WebM/broad formats and new OAuth
