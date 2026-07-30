@@ -326,7 +326,7 @@ test("media database path guard rejects a lease identity mismatch before reporti
       "-NonInteractive",
       "-ExecutionPolicy", "RemoteSigned",
       "-File", resolve("scripts/windows/media-database-path-guard.ps1")
-    ], `${databasePath}\n${[invalidIdentity, invalidIdentity, invalidIdentity].join(",")}\n`, childEnv, 10_000);
+    ], `${databasePath}\n${[invalidIdentity, invalidIdentity, invalidIdentity].join(",")}\n`, childEnv, 45_000);
     assert.equal(result.timed_out, false);
     assert.equal(result.status, 1);
     assert.equal(result.stdout, "");

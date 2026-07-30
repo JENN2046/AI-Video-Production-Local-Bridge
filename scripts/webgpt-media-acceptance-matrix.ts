@@ -35,7 +35,8 @@ const JSON_RESPONSE_MAX_BYTES = 16 * 1024;
 const MANIFEST_MAX_BYTES = 16 * 1024;
 const MANIFEST_NOFOLLOW_FLAG = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
 const DATABASE_SIDECAR_SUFFIXES = ["-wal", "-shm"] as const;
-const DATABASE_PATH_GUARD_TIMEOUT_MS = 5_000;
+const DATABASE_PATH_GUARD_ACQUIRE_TIMEOUT_MS = 30_000;
+const DATABASE_PATH_GUARD_RELEASE_TIMEOUT_MS = 5_000;
 const DISTINCT_MEDIA_VALIDATIONS = 4;
 // One issuance per media validation, plus stale-envelope, expiring-handle, revoked-project, and retained-project issuances.
 const MATRIX_CAPABILITY_REQUESTS = DISTINCT_MEDIA_VALIDATIONS + 4;
@@ -317,7 +318,7 @@ async function acquireDatabasePathGuard(databaseLease: DatabaseLease): Promise<D
   await new Promise<void>((resolveLock, rejectLock) => {
     let settled = false;
     let stdout = "";
-    const timer = setTimeout(fail, DATABASE_PATH_GUARD_TIMEOUT_MS);
+    const timer = setTimeout(fail, DATABASE_PATH_GUARD_ACQUIRE_TIMEOUT_MS);
     const cleanup = (): void => {
       clearTimeout(timer);
       child.off("error", fail);
@@ -376,7 +377,7 @@ async function acquireDatabasePathGuard(databaseLease: DatabaseLease): Promise<D
           settled = true;
           try { child.kill(); } catch { /* the stable guard failure remains controlling */ }
           rejectRelease(new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE"));
-        }, DATABASE_PATH_GUARD_TIMEOUT_MS);
+        }, DATABASE_PATH_GUARD_RELEASE_TIMEOUT_MS);
         child.once("exit", (code) => {
           if (settled) return;
           settled = true;
