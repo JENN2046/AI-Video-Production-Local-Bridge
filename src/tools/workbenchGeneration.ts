@@ -109,6 +109,7 @@ export interface WorkbenchGenerationDependencies {
   scheduler_retry_ms?: number;
   on_scheduler_error?: (error: unknown) => void;
   now?: () => Date;
+  monotonic_now_ms?: () => number;
   poll_interval_ms?: number;
   timeout_ms?: number;
   sqlite_path?: string;
@@ -127,6 +128,18 @@ export interface GenerationJob {
 const activeExecutions = new Map<string, Promise<void>>();
 const scheduledWakeups = new Map<string, NodeJS.Timeout>();
 const DUE_GENERATION_JOB_SQL = "datetime(next_attempt_at) <= CURRENT_TIMESTAMP";
+export const DEFAULT_PROVIDER_TASK_POLL_TIMEOUT_MS = 600_000;
+export const MIN_PROVIDER_TASK_POLL_TIMEOUT_MS = 1_000;
+export const MAX_PROVIDER_TASK_POLL_TIMEOUT_MS = 3_600_000;
+
+class ProviderPollTimeoutConfigurationError extends Error {
+  readonly code = "PROVIDER_POLL_TIMEOUT_CONFIG_INVALID";
+
+  constructor() {
+    super("Provider poll timeout configuration is invalid.");
+    this.name = "ProviderPollTimeoutConfigurationError";
+  }
+}
 
 function schedulerKey(dependencies: WorkbenchGenerationDependencies): string {
   return dependencies.sqlite_path ?? "__default_workbench_database__";
@@ -246,6 +259,85 @@ function assertJobLease(db: M0Database, jobId: string, token: string): void {
 
 function dateNow(dependencies: WorkbenchGenerationDependencies): Date {
   return dependencies.now?.() ?? new Date();
+}
+
+function monotonicNowMs(dependencies: WorkbenchGenerationDependencies): number {
+  return dependencies.monotonic_now_ms?.() ?? performance.now();
+}
+
+export function parseProviderTaskPollTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.PROVIDER_TASK_POLL_TIMEOUT_MS;
+  if (raw === undefined) return DEFAULT_PROVIDER_TASK_POLL_TIMEOUT_MS;
+  if (!/^[0-9]+$/.test(raw)) throw new ProviderPollTimeoutConfigurationError();
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed)
+    || parsed < MIN_PROVIDER_TASK_POLL_TIMEOUT_MS
+    || parsed > MAX_PROVIDER_TASK_POLL_TIMEOUT_MS) {
+    throw new ProviderPollTimeoutConfigurationError();
+  }
+  return parsed;
+}
+
+function providerPollDeadlineFromIntent(db: M0Database, intentId: string): number | null {
+  const row = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(intentId) as { data_json: string } | undefined;
+  if (!row) throw new ProviderPollTimeoutConfigurationError();
+  const data = parseRecord(row.data_json);
+  const fields = [
+    data.provider_poll_started_at,
+    data.provider_poll_timeout_ms,
+    data.provider_poll_deadline_at
+  ];
+  if (fields.every((value) => value === undefined)) return null;
+  if (typeof data.provider_poll_started_at !== "string"
+    || typeof data.provider_poll_timeout_ms !== "number"
+    || !Number.isSafeInteger(data.provider_poll_timeout_ms)
+    || data.provider_poll_timeout_ms < MIN_PROVIDER_TASK_POLL_TIMEOUT_MS
+    || data.provider_poll_timeout_ms > MAX_PROVIDER_TASK_POLL_TIMEOUT_MS
+    || typeof data.provider_poll_deadline_at !== "string") {
+    throw new ProviderPollTimeoutConfigurationError();
+  }
+  const started = Date.parse(data.provider_poll_started_at);
+  const persisted = Date.parse(data.provider_poll_deadline_at);
+  if (!Number.isFinite(started)
+    || !Number.isFinite(persisted)
+    || persisted - started !== data.provider_poll_timeout_ms) {
+    throw new ProviderPollTimeoutConfigurationError();
+  }
+  return persisted;
+}
+
+function ensureProviderPollDeadline(
+  db: M0Database,
+  intentId: string,
+  timeoutMs: number,
+  nowMs: number
+): number {
+  const existing = providerPollDeadlineFromIntent(db, intentId);
+  if (existing !== null) return existing;
+  const row = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(intentId) as { data_json: string };
+  const data = parseRecord(row.data_json);
+  const deadline = nowMs + timeoutMs;
+  if (!Number.isSafeInteger(deadline)) throw new ProviderPollTimeoutConfigurationError();
+  data.provider_poll_started_at = new Date(nowMs).toISOString();
+  data.provider_poll_timeout_ms = timeoutMs;
+  data.provider_poll_deadline_at = new Date(deadline).toISOString();
+  db.prepare("UPDATE generation_intents SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?")
+    .run(JSON.stringify(data), intentId);
+  return deadline;
+}
+
+function createRemainingPollBudget(
+  deadlineMs: number,
+  dependencies: WorkbenchGenerationDependencies
+): () => number {
+  const wallStartMs = dateNow(dependencies).getTime();
+  const monotonicStartMs = monotonicNowMs(dependencies);
+  const initialRemainingMs = Math.max(0, deadlineMs - wallStartMs);
+  return () => {
+    const wallRemainingMs = deadlineMs - dateNow(dependencies).getTime();
+    const monotonicRemainingMs = initialRemainingMs - Math.max(0, monotonicNowMs(dependencies) - monotonicStartMs);
+    return Math.max(0, Math.floor(Math.min(wallRemainingMs, monotonicRemainingMs)));
+  };
 }
 
 function parseRecord(value: string): Record<string, unknown> {
@@ -1014,6 +1106,41 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         failIntent(db, currentIntent, "failed", error, leaseToken);
       }
     };
+    let providerPollTimeoutMs: number;
+    let pollDeadlineMs: number | null = null;
+    let remainingPollBudget: (() => number) | null = null;
+    const markProviderPollTimeout = (): void => {
+      failOrReconcileKnownTask(
+        intent as WorkbenchGenerationIntent,
+        job as GenerationJob,
+        providerError("PROVIDER_POLL_TIMEOUT", "Provider task polling reached the local deadline."),
+        "PROVIDER_POLL_TIMEOUT"
+      );
+    };
+    try {
+      providerPollTimeoutMs = parseProviderTaskPollTimeoutMs(dependencies.env ?? process.env);
+      const persistedDeadline = providerPollDeadlineFromIntent(db, intent.intent_id);
+      if (knownTaskId) {
+        if (persistedDeadline === null) throw new ProviderPollTimeoutConfigurationError();
+        pollDeadlineMs = persistedDeadline;
+        remainingPollBudget = createRemainingPollBudget(pollDeadlineMs, dependencies);
+      } else if (persistedDeadline !== null) {
+        throw new ProviderPollTimeoutConfigurationError();
+      }
+    } catch (caught) {
+      if (!(caught instanceof ProviderPollTimeoutConfigurationError)) throw caught;
+      failOrReconcileKnownTask(
+        intent,
+        job,
+        providerError(caught.code, "Provider poll timeout configuration is invalid."),
+        caught.code
+      );
+      return;
+    }
+    if (knownTaskId && remainingPollBudget?.() === 0) {
+      markProviderPollTimeout();
+      return;
+    }
     const capability = buildProviderCapabilityKey({
       provider: "runninghub",
       model: intent.model,
@@ -1120,6 +1247,12 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
           });
         }
         db.prepare(`UPDATE generation_intents SET provider_task_id = ?, status = 'running', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?`).run(taskId, intent.intent_id);
+        pollDeadlineMs = ensureProviderPollDeadline(
+          db,
+          intent.intent_id,
+          providerPollTimeoutMs,
+          dateNow(dependencies).getTime()
+        );
         const run = getGenerationRun(db, intent.run_id);
         if (run) {
           run.status = "running";
@@ -1137,22 +1270,40 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         return;
       }
       intent = getIntent(db, intent.intent_id) as WorkbenchGenerationIntent;
+      remainingPollBudget = createRemainingPollBudget(pollDeadlineMs as number, dependencies);
       submittedNow = true;
     }
 
     const interval = Math.max(10, dependencies.poll_interval_ms ?? 5_000);
-    const deferPolling = (): void => {
+    const deferPolling = (): boolean => {
+      const remainingMs = remainingPollBudget?.() ?? 0;
+      if (remainingMs <= 0 || pollDeadlineMs === null) {
+        markProviderPollTimeout();
+        return false;
+      }
+      const wallNowMs = dateNow(dependencies).getTime();
+      const nextAttemptMs = Math.min(pollDeadlineMs, wallNowMs + Math.min(interval, remainingMs));
       assertJobLease(db, claimedJobId, leaseToken);
       db.prepare(`UPDATE generation_jobs SET next_attempt_at = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE job_id = ? AND lease_token = ?`).run(new Date(Date.now() + interval).toISOString(), claimedJobId, leaseToken);
+        WHERE job_id = ? AND lease_token = ?`).run(new Date(nextAttemptMs).toISOString(), claimedJobId, leaseToken);
+      return true;
     };
     if (submittedNow) {
       deferPolling();
       return;
     }
 
-    const polled = await adapter.pollStatus(taskId);
+    const pollRequestTimeoutMs = remainingPollBudget?.() ?? 0;
+    if (pollRequestTimeoutMs <= 0) {
+      markProviderPollTimeout();
+      return;
+    }
+    const polled = await adapter.pollStatus(taskId, { timeout_ms: pollRequestTimeoutMs });
     assertJobLease(db, job.job_id, leaseToken);
+    if ((remainingPollBudget?.() ?? 0) <= 0) {
+      markProviderPollTimeout();
+      return;
+    }
     if (!polled.ok) {
       if (polled.error.retryable) {
         deferPolling();
@@ -1389,7 +1540,8 @@ export async function runWorkbenchGenerationOnce(intentId: string, input: { allo
 export function reconcileGenerationJob(
   jobId: string,
   input: { decision: string; provider_task_id?: string; reason?: string; human_confirmation: boolean },
-  db = openM0Database()
+  db = openM0Database(),
+  dependencies: Pick<WorkbenchGenerationDependencies, "env" | "now"> = {}
 ): WorkbenchV2Result<{ job: GenerationJob; intent: WorkbenchGenerationIntent }> {
   if (input.human_confirmation !== true) return { ok: false, error: { code: "GENERATION_CONFIRMATION_REQUIRED", message: "Human confirmation is required." } };
   if (input.decision !== "attach_existing_task" && input.decision !== "abandon") {
@@ -1411,6 +1563,14 @@ export function reconcileGenerationJob(
     }
     let job: GenerationJob;
     if (input.decision === "attach_existing_task") {
+      let pollTimeoutMs: number;
+      try {
+        pollTimeoutMs = parseProviderTaskPollTimeoutMs(dependencies.env ?? process.env);
+      } catch (caught) {
+        if (!(caught instanceof ProviderPollTimeoutConfigurationError)) throw caught;
+        db.exec("ROLLBACK");
+        return { ok: false, error: { code: caught.code, message: "Provider poll timeout configuration is invalid." } };
+      }
       const taskId = input.provider_task_id?.trim() ?? "";
       if (!/^[A-Za-z0-9._:-]{3,200}$/.test(taskId)) { db.exec("ROLLBACK"); return { ok: false, error: { code: "INVALID_PROVIDER_TASK_ID", message: "Provider task ID is invalid." } }; }
       const owningIntent = db.prepare("SELECT intent_id FROM generation_intents WHERE provider_task_id = ? AND intent_id <> ? LIMIT 1")
@@ -1438,6 +1598,7 @@ export function reconcileGenerationJob(
         });
       }
       db.prepare("UPDATE generation_intents SET provider_task_id = ?, status = 'running', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(taskId, intent.intent_id);
+      ensureProviderPollDeadline(db, intent.intent_id, pollTimeoutMs, dateNow(dependencies).getTime());
       run.status = "running";
       run.provider.provider_job_id = taskId;
       run.provider.provider_status = "HUMAN_ATTACHED_EXISTING_TASK";
