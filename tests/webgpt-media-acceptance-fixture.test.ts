@@ -223,18 +223,28 @@ test("SQLite path guards run before readonly export queries and writable connect
   writeFileSync(databasePath, "");
   try {
     const readonlyGuard = new Error("READONLY_GUARD");
+    let readonlyGuardCalls = 0;
     assert.throws(() => exportReadonlySnapshotFromDatabase({
       database_path: databasePath,
       issuer_hash: "0".repeat(64),
       resource_url: RESOURCE
     }, {
-      assertDatabaseCurrent: () => { throw readonlyGuard; }
+      assertDatabaseCurrent: () => {
+        readonlyGuardCalls += 1;
+        throw readonlyGuard;
+      }
     }), (error) => error === readonlyGuard);
+    assert.equal(readonlyGuardCalls, 1);
 
     const writableGuard = new Error("WRITABLE_GUARD");
+    let writableGuardCalls = 0;
     assert.throws(() => openM0DatabaseConnection(databasePath, {
-      assertPathCurrent: () => { throw writableGuard; }
+      assertPathCurrent: () => {
+        writableGuardCalls += 1;
+        throw writableGuard;
+      }
     }), (error) => error === writableGuard);
+    assert.equal(writableGuardCalls, 1);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -243,6 +253,7 @@ test("SQLite path guards run before readonly export queries and writable connect
 test("MP4 acceptance fixture and generated profiles are isolated, contract-valid, source-preserving, and low disclosure", () => {
   const wrapper = readFileSync(resolve("scripts/windows/media-create-acceptance-fixture.ps1"), "utf8");
   const matrixWrapper = readFileSync(resolve("scripts/windows/media-run-acceptance-matrix.ps1"), "utf8");
+  const databaseGuard = readFileSync(resolve("scripts/windows/media-database-path-guard.ps1"), "utf8");
   const matrixSource = readFileSync(resolve("scripts/webgpt-media-acceptance-matrix.ts"), "utf8");
   const runbook = readFileSync(resolve("docs/webgpt/READONLY_LOCAL_MEDIA_GATEWAY_RUNBOOK.md"), "utf8");
   assert.match(wrapper, /Read-Host "Auth0 user_id\/sub \(input hidden\)" -AsSecureString/);
@@ -260,6 +271,11 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
   assert.match(matrixWrapper, /\$candidate = \[string\]\$_\.Exception\.Message/);
   assert.match(matrixWrapper, /MEDIA_ACCEPTANCE_WRAPPER_FAILED/);
   assert.doesNotMatch(matrixWrapper, /stable_error_code\s*=\s*\$_\.Exception\.Message/);
+  assert.match(databaseGuard, /\[System\.IO\.FileAccess\]::ReadWrite/);
+  assert.match(databaseGuard, /\[System\.IO\.FileShare\]::ReadWrite/);
+  assert.doesNotMatch(databaseGuard, /\[System\.IO\.FileShare\]::Delete/);
+  assert.match(databaseGuard, /WriteLine\("LOCKED"\)/);
+  assert.doesNotMatch(databaseGuard, /Write-(?:Host|Output|Verbose|Debug|Error)/);
   assert.match(matrixSource, /READONLY_MEDIA_CHATGPT_SANDBOX_ORIGIN/);
   assert.match(matrixSource, /READONLY_MEDIA_GATEWAY_HASH_TIMEOUT_MS \+ 15_000/);
   assert.match(matrixSource, /READONLY_MEDIA_CAPABILITY_TTL_MS/);
@@ -280,6 +296,9 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
   assert.doesNotMatch(matrixSource, /openSync\(manifestReal/);
   assert.doesNotMatch(matrixSource, /readFileSync\(manifestReal/);
   assert.match(matrixSource, /openDatabaseLease\(root, databasePath\)/);
+  assert.match(matrixSource, /acquireDatabasePathGuard\(databasePath\)/);
+  assert.match(matrixSource, /databasePathGuard\.assertHolding\(\)/);
+  assert.match(matrixSource, /await databasePathGuard\.release\(\)/);
   assert.match(matrixSource, /assertDatabaseLeaseCurrent\(databaseLease\)/);
   assert.match(matrixSource, /\{ assertDatabaseCurrent \}/);
   assert.match(matrixSource, /\{ assertPathCurrent: assertDatabaseCurrent \}/);
@@ -583,6 +602,98 @@ syncBuiltinESMExports();
     assert.equal(statSync(videoPath).nlink, 2);
     assert.equal(sha(externalVideo), externalBefore);
     assert.doesNotMatch(`${result.stdout}${result.stderr}`, /https?:\/\//);
+  } finally {
+    await gateway.close();
+    key.fill(0);
+    rmSync(root, { recursive: true, force: true });
+    rmSync(external, { recursive: true, force: true });
+  }
+});
+
+test("media acceptance matrix prevents a path swap from rebinding the writable SQLite connection", { skip: process.platform !== "win32" }, async () => {
+  const source = resolve("fixtures/video/mock_clip.mp4");
+  const fixtureCommand = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
+  const created = spawnSync(process.execPath, [fixtureCommand, "create", "--input", source, "--issuer", ISSUER, "--resource", RESOURCE], {
+    cwd: process.cwd(), input: `${SUBJECT}\n`, encoding: "utf8", windowsHide: true, env: childEnv
+  });
+  assert.equal(created.status, 0, created.stderr);
+  const receipt = JSON.parse(created.stdout) as { run_id: string };
+  const root = resolve("data/webgpt/media-acceptance", receipt.run_id);
+  const databasePath = join(root, "app.sqlite");
+  const manifest = JSON.parse(readFileSync(join(root, "fixture.json"), "utf8")) as { issuer_hash: string };
+  const external = mkdtempSync(join(resolve(root, ".."), "external-database-swap-race-"));
+  const externalDatabase = join(external, "private.sqlite");
+  const parkedDatabase = join(external, "parked.sqlite");
+  const markerPath = join(external, "attack-result.txt");
+  const preloadPath = join(external, "swap-sqlite-during-open.cjs");
+  copyFileSync(databasePath, externalDatabase);
+  const externalBefore = sha(externalDatabase);
+  writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const sqlite = require("node:sqlite");
+const { syncBuiltinESMExports } = require("node:module");
+const OriginalDatabaseSync = sqlite.DatabaseSync;
+let databaseOpens = 0;
+sqlite.DatabaseSync = new Proxy(OriginalDatabaseSync, {
+  construct(target, args, newTarget) {
+    if (args[0] !== process.env.MEDIA_ACCEPTANCE_TEST_DATABASE_PATH) {
+      return Reflect.construct(target, args, newTarget);
+    }
+    databaseOpens += 1;
+    if (databaseOpens !== 2) return Reflect.construct(target, args, newTarget);
+    let moved = false;
+    let linked = false;
+    try {
+      fs.renameSync(args[0], process.env.MEDIA_ACCEPTANCE_TEST_PARKED_DATABASE);
+      moved = true;
+      fs.linkSync(process.env.MEDIA_ACCEPTANCE_TEST_EXTERNAL_DATABASE, args[0]);
+      linked = true;
+      const database = Reflect.construct(target, args, newTarget);
+      fs.unlinkSync(args[0]);
+      linked = false;
+      fs.renameSync(process.env.MEDIA_ACCEPTANCE_TEST_PARKED_DATABASE, args[0]);
+      moved = false;
+      fs.writeFileSync(process.env.MEDIA_ACCEPTANCE_TEST_ATTACK_MARKER, "SWAPPED", "utf8");
+      return database;
+    } catch (error) {
+      if (linked) fs.unlinkSync(args[0]);
+      if (moved) fs.renameSync(process.env.MEDIA_ACCEPTANCE_TEST_PARKED_DATABASE, args[0]);
+      if (!error || !["EACCES", "EBUSY", "EPERM"].includes(error.code)) throw error;
+      fs.writeFileSync(process.env.MEDIA_ACCEPTANCE_TEST_ATTACK_MARKER, "BLOCKED", "utf8");
+      return Reflect.construct(target, args, newTarget);
+    }
+  }
+});
+syncBuiltinESMExports();
+`, "utf8");
+  const key = Buffer.alloc(32, 39);
+  const gateway = await startReadonlyMediaGateway({
+    database_path: databasePath,
+    issuer_hash: manifest.issuer_hash,
+    keyring: { active: { kid: "acceptance-matrix-database-guard-v1", key } },
+    allowed_origin: "https://aivideo.skmt617.top",
+    allowed_media_roots: [join(root, "media")],
+    port: 0
+  });
+  try {
+    const result = await runChild(process.execPath, [
+      "--require", preloadPath,
+      resolve("dist/scripts/webgpt-media-acceptance-matrix.js"),
+      "--run", receipt.run_id,
+      "--origin", `${gateway.url}/`,
+      "--kid", "acceptance-matrix-database-guard-v1"
+    ], `${key.toString("base64url")}\n`, {
+      ...matrixExpiryTestEnv,
+      MEDIA_ACCEPTANCE_TEST_DATABASE_PATH: databasePath,
+      MEDIA_ACCEPTANCE_TEST_EXTERNAL_DATABASE: externalDatabase,
+      MEDIA_ACCEPTANCE_TEST_PARKED_DATABASE: parkedDatabase,
+      MEDIA_ACCEPTANCE_TEST_ATTACK_MARKER: markerPath
+    }, 25_000);
+    assert.equal(result.timed_out, false, result.stderr);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readFileSync(markerPath, "utf8"), "BLOCKED");
+    assert.equal(sha(externalDatabase), externalBefore);
+    assert.doesNotMatch(result.stdout, /[0-9a-f]{64}|https?:\/\/|media\/v1\/[cs]\//);
   } finally {
     await gateway.close();
     key.fill(0);

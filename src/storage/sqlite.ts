@@ -21,6 +21,7 @@ function isEphemeralTestDatabase(sqlitePath: string): boolean {
 export function openM0DatabaseConnection(sqlitePath = paths.sqlitePath, options: OpenM0DatabaseConnectionOptions = {}): M0Database {
   const readOnly = options.readOnly === true;
   if (!readOnly) ensureM0Directories();
+  options.assertPathCurrent?.();
   const db = new DatabaseSync(sqlitePath, { readOnly });
   try {
     options.assertPathCurrent?.();

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { spawn } from "node:child_process";
 import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
@@ -33,6 +34,7 @@ const CAPABILITY_HANDLE_EXPIRY_LEAD_MS = testTimeout(
 const JSON_RESPONSE_MAX_BYTES = 16 * 1024;
 const MANIFEST_MAX_BYTES = 16 * 1024;
 const MANIFEST_NOFOLLOW_FLAG = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
+const DATABASE_PATH_GUARD_TIMEOUT_MS = 5_000;
 const DISTINCT_MEDIA_VALIDATIONS = 4;
 // One issuance per media validation, plus stale-envelope, expiring-handle, and retained-project issuances.
 const MATRIX_CAPABILITY_REQUESTS = DISTINCT_MEDIA_VALIDATIONS + 3;
@@ -233,6 +235,104 @@ function openDatabaseLease(root: string, databasePath: string): DatabaseLease {
     if (error instanceof MatrixError) throw error;
     throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
   }
+}
+
+type DatabasePathGuard = {
+  assertHolding: () => void;
+  release: () => Promise<void>;
+};
+
+async function acquireDatabasePathGuard(databasePath: string): Promise<DatabasePathGuard> {
+  const guardScript = resolve(process.cwd(), "scripts", "windows", "media-database-path-guard.ps1");
+  if (process.platform !== "win32" || /[\r\n]/.test(databasePath) || !existsSync(guardScript)) {
+    throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+  }
+  const child = spawn("powershell.exe", [
+    "-NoProfile",
+    "-NonInteractive",
+    "-ExecutionPolicy", "RemoteSigned",
+    "-File", guardScript
+  ], {
+    windowsHide: true,
+    stdio: ["pipe", "pipe", "ignore"]
+  });
+  let holding = false;
+  let released = false;
+  await new Promise<void>((resolveLock, rejectLock) => {
+    let settled = false;
+    let stdout = "";
+    const timer = setTimeout(fail, DATABASE_PATH_GUARD_TIMEOUT_MS);
+    const cleanup = (): void => {
+      clearTimeout(timer);
+      child.off("error", fail);
+      child.off("exit", fail);
+      child.stdout.off("data", receive);
+      child.stdin.off("error", fail);
+    };
+    function fail(): void {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      try { child.kill(); } catch { /* the stable guard failure remains controlling */ }
+      rejectLock(new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE"));
+    }
+    function receive(chunk: Buffer): void {
+      if (settled) return;
+      stdout += chunk.toString("utf8");
+      if (stdout.length > 16 || (!"LOCKED\n".startsWith(stdout) && !"LOCKED\r\n".startsWith(stdout))) {
+        fail();
+        return;
+      }
+      if (!stdout.includes("\n")) return;
+      if (!/^LOCKED\r?\n$/.test(stdout)) {
+        fail();
+        return;
+      }
+      settled = true;
+      holding = true;
+      cleanup();
+      resolveLock();
+    }
+    child.once("error", fail);
+    child.once("exit", fail);
+    child.stdout.on("data", receive);
+    child.stdin.once("error", fail);
+    child.stdin.write(`${databasePath}\n`);
+  });
+  child.once("exit", () => { holding = false; });
+  child.stdin.on("error", () => { holding = false; });
+  return {
+    assertHolding: () => {
+      if (!holding || released || child.exitCode !== null || child.killed) {
+        throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+      }
+    },
+    release: async () => {
+      if (released) return;
+      released = true;
+      if (!holding || child.exitCode !== null || child.killed) {
+        throw new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE");
+      }
+      await new Promise<void>((resolveRelease, rejectRelease) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          try { child.kill(); } catch { /* the stable guard failure remains controlling */ }
+          rejectRelease(new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE"));
+        }, DATABASE_PATH_GUARD_TIMEOUT_MS);
+        child.once("exit", (code) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          holding = false;
+          if (code === 0) resolveRelease();
+          else rejectRelease(new MatrixError("MEDIA_ACCEPTANCE_ROOT_UNSAFE"));
+        });
+        child.stdin.end("RELEASE\n");
+      });
+    }
+  };
 }
 
 type MediaFileLease = {
@@ -494,7 +594,12 @@ async function main(): Promise<void> {
   const databasePath = resolve(root, manifest.database_file);
   const databaseLease = openDatabaseLease(root, databasePath);
   try {
-  const assertDatabaseCurrent = (): void => assertDatabaseLeaseCurrent(databaseLease);
+  const databasePathGuard = await acquireDatabasePathGuard(databasePath);
+  try {
+  const assertDatabaseCurrent = (): void => {
+    databasePathGuard.assertHolding();
+    assertDatabaseLeaseCurrent(databaseLease);
+  };
   const encodedKey = await stdinKey();
   const keyring = { active: parseReadonlyMediaCapabilityKey(kid, encodedKey) };
   assertDatabaseCurrent();
@@ -682,6 +787,9 @@ async function main(): Promise<void> {
       webm_support: false
     }
   }));
+  } finally {
+    await databasePathGuard.release();
+  }
   } finally {
     closeSync(databaseLease.descriptor);
   }
