@@ -165,6 +165,33 @@ async function startOversizeCapabilityJsonProxy(targetOrigin: string): Promise<G
   return { ...proxy, capabilityRequests: () => capabilityRequests };
 }
 
+async function startWrongJsonContentTypeProxy(
+  targetOrigin: string,
+  target: "capability" | "replay"
+): Promise<GatewayProxy & { rewrittenResponses: () => number }> {
+  let rewrittenResponses = 0;
+  const proxy = await startGatewayProxy(targetOrigin, (incoming, upstream, outgoing) => {
+    const capabilityResponse = target === "capability"
+      && incoming.method === "POST"
+      && incoming.url === "/internal/v1/capabilities"
+      && upstream.statusCode === 201;
+    const replayResponse = target === "replay"
+      && incoming.method === "GET"
+      && /^\/media\/v1\/c\/[A-Za-z0-9_-]{43}$/.test(incoming.url ?? "")
+      && upstream.statusCode === 409;
+    if (!capabilityResponse && !replayResponse) return false;
+    rewrittenResponses += 1;
+    outgoing.statusCode = upstream.statusCode ?? 502;
+    for (const [name, value] of Object.entries(upstream.headers)) {
+      if (name.toLowerCase() !== "content-type" && value !== undefined) outgoing.setHeader(name, value);
+    }
+    outgoing.setHeader("content-type", "text/plain; charset=utf-8");
+    upstream.pipe(outgoing);
+    return true;
+  });
+  return { ...proxy, rewrittenResponses: () => rewrittenResponses };
+}
+
 async function startUnterminatedHealthProxy(targetOrigin: string): Promise<GatewayProxy & { healthRequests: () => number; closedHealthBodies: () => number }> {
   let healthRequests = 0;
   let closedHealthBodies = 0;
@@ -238,6 +265,8 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
   assert.match(matrixSource, /READONLY_MEDIA_CAPABILITY_TTL_MS/);
   assert.match(matrixSource, /MEDIA_ACCEPTANCE_RESPONSE_TOO_LARGE/);
   assert.match(matrixSource, /JSON_RESPONSE_MAX_BYTES/);
+  assert.match(matrixSource, /isApplicationJsonResponse\(response\)/);
+  assert.match(matrixSource, /split\(";", 1\)\[0\]\?\.trim\(\)\.toLowerCase\(\) === "application\/json"/);
   assert.match(matrixSource, /MANIFEST_MAX_BYTES = 16 \* 1024/);
   assert.match(matrixSource, /MANIFEST_NOFOLLOW_FLAG/);
   assert.match(matrixSource, /openSync\(manifestPath, constants\.O_RDONLY \| MANIFEST_NOFOLLOW_FLAG\)/);
@@ -717,6 +746,53 @@ test("media acceptance matrix bounds a chunked JSON response before parsing it",
     assert.doesNotMatch(`${result.stdout}${result.stderr}`, /https?:\/\//);
   } finally {
     await closeServer(proxy.server);
+    await gateway.close();
+    key.fill(0);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("media acceptance matrix rejects non-JSON Content-Type on capability and other JSON control responses", async () => {
+  const source = resolve("fixtures/video/mock_clip.mp4");
+  const fixtureCommand = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
+  const created = spawnSync(process.execPath, [fixtureCommand, "create", "--input", source, "--issuer", ISSUER, "--resource", RESOURCE], {
+    cwd: process.cwd(), input: `${SUBJECT}\n`, encoding: "utf8", windowsHide: true, env: childEnv
+  });
+  assert.equal(created.status, 0, created.stderr);
+  const receipt = JSON.parse(created.stdout) as { run_id: string };
+  const root = resolve("data/webgpt/media-acceptance", receipt.run_id);
+  const manifest = JSON.parse(readFileSync(join(root, "fixture.json"), "utf8")) as { issuer_hash: string };
+  const key = Buffer.alloc(32, 124);
+  const gateway = await startReadonlyMediaGateway({
+    database_path: join(root, "app.sqlite"),
+    issuer_hash: manifest.issuer_hash,
+    keyring: { active: { kid: "acceptance-matrix-json-content-type-v1", key } },
+    allowed_origin: "https://aivideo.skmt617.top",
+    allowed_media_roots: [join(root, "media")],
+    port: 0
+  });
+  try {
+    for (const target of ["capability", "replay"] as const) {
+      const proxy = await startWrongJsonContentTypeProxy(gateway.url, target);
+      try {
+        const result = await runChild(process.execPath, [
+          resolve("dist/scripts/webgpt-media-acceptance-matrix.js"),
+          "--run", receipt.run_id,
+          "--origin", `${proxy.origin}/`,
+          "--kid", "acceptance-matrix-json-content-type-v1"
+        ], `${key.toString("base64url")}\n`, matrixExpiryTestEnv);
+        assert.equal(result.status, 1, result.stderr);
+        assert.deepEqual(lowDisclosureError(result.stderr), {
+          result: "FAIL",
+          stable_error_code: "MEDIA_ACCEPTANCE_RESPONSE_INVALID"
+        });
+        assert.equal(proxy.rewrittenResponses(), 1);
+        assert.doesNotMatch(`${result.stdout}${result.stderr}`, /https?:\/\//);
+      } finally {
+        await closeServer(proxy.server);
+      }
+    }
+  } finally {
     await gateway.close();
     key.fill(0);
     rmSync(root, { recursive: true, force: true });

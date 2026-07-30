@@ -417,6 +417,10 @@ async function discardResponseBody(response: Response): Promise<void> {
   }
 }
 
+function isApplicationJsonResponse(response: Response): boolean {
+  return response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() === "application/json";
+}
+
 async function request(
   overallSignal: AbortSignal,
   input: string,
@@ -430,6 +434,10 @@ async function request(
   try {
     const response = await fetch(input, { ...init, signal: AbortSignal.any([overallSignal, requestController.signal]) });
     if (bodyMode === "json") {
+      if (!isApplicationJsonResponse(response)) {
+        try { await response.body?.cancel(); } catch { /* preserve the response contract failure */ }
+        throw new MatrixError("MEDIA_ACCEPTANCE_RESPONSE_INVALID");
+      }
       let value: unknown;
       try {
         const body = await readBoundedResponseBody(response, JSON_RESPONSE_MAX_BYTES, false, true);
