@@ -4521,3 +4521,51 @@ provider_calls: 0
 activity_writes: 0
 delivery: PR_106_AWAITING_REVIEW
 ```
+
+## 2026-07-31 — PR107 clean restack candidate publication
+
+```yaml
+task: PR107-CLEAN-RESTACK
+status: IN_PROGRESS_AWAITING_CI_AND_REVIEW
+recorded_by: Codex
+recorded_at: 2026-07-31T02:45:12+08:00
+main_baseline: b3a108abc8728e89259d0d953e1c638b9ca482ea
+old_pr107:
+  status: SUPERSEDED
+  merge_authorized: false
+  branch_retained: true
+replacement_pr:
+  number: 108
+  status: DRAFT_AWAITING_REVIEW
+  merged_to_main: false
+  merge_authorized: false
+  ready_for_review_authorized: false
+source_implementation_commits:
+  - 1c83188b41decf50b577a30b0db0a6eeb34e4727
+  - 19e42eb868132c73d1fa0bcc53950718710c4d9a
+restacked_implementation_commits:
+  - 99ecc4199adccff6f8638d809b4428e159e60757
+  - ffbf67f7de393704c9c6c134d59bdd11199f0464
+local_validation:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_57
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+s3b_t1_repository_status: AWAITING_REPLACEMENT_PR_REVIEW
+s3b_t1a_repository_status: AWAITING_REPLACEMENT_PR_REVIEW
+s3b_t2_status: AWAITING_JENN_AUTHORIZATION
+s3b_t3_status: AWAITING_JENN_LOCAL_ACTION
+s3b_t4_status: BLOCKED
+s4_status: BLOCKED
+s4_authorization_granted: false
+ready_task_count: 0
+delivery: PR_108_DRAFT_AWAITING_REVIEW
+```

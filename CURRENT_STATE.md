@@ -1,7 +1,7 @@
 # Current State
 
-Date (Asia/Shanghai, UTC+08:00): 2026-07-30
-Repository baseline: `main@bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7`
+Date (Asia/Shanghai, UTC+08:00): 2026-07-31
+Repository baseline: `main@b3a108abc8728e89259d0d953e1c638b9ca482ea`
 
 ## Repository and CI truth
 
@@ -9,8 +9,10 @@ Repository baseline: `main@bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7`
   `3a142bb1aeaf34a506f84b2fa2598a5819203d45`.
 - PR #105, `test: add readonly media acceptance matrix`, merged as
   `bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7`.
-- The Windows CI run for `main@bc3fa5a0` completed successfully. Both
-  `Quality and integration` and `Browser smoke` passed.
+- PR #106, `docs: freeze scope and record core production readiness`, was
+  squash-merged as `b3a108abc8728e89259d0d953e1c638b9ca482ea`.
+- The final PR #106 head passed both `Quality and integration` and
+  `Browser smoke`; the squash commit has the same tree as that reviewed head.
 - Code and CI PASS establish repository facts only. They do not create a new
   deployment, public maintenance-window, Provider, database, Bridge, Snapshot,
   Memory or production acceptance.
@@ -59,7 +61,7 @@ database. `REAL_PROVIDER_ENABLED=false` remains the safe default.
 |---|---|---|---|
 | Workbench V2 local UI | Storyboard, generation preflight, version review and delivery-readiness views exist | Activity database compatibility accepted at ledger `0011` | Core |
 | SQLite and governed media | Migration, Artifact/Blob digest and FFprobe boundaries exist | Ledger `0011` migration/restore evidence remains commit-scoped | Core |
-| Current Provider path | Intent, budget, confirmation, reconciliation and adapter boundaries exist; Provider defaults off | S3 local checks passed, but S4 is blocked by no eligible Shot, absent RunningHub credential and no enforced whole-job poll timeout | Core blocker before S4 |
+| Current Provider path | Intent, budget, confirmation and adapter boundaries exist; Provider defaults off | S3 local checks passed; the bounded-polling and manual-reconciliation candidates are in Draft PR #108, not current `main`; S4 is still blocked by the remaining gates | Core blocker before S4 |
 | Historical R3 Provider path | Execution scripts now reside under `legacy/` | RunningHub real canary, four-shot generation and regeneration completed historically | Feasibility evidence only |
 | Review and accepted clips | Version stacks, rejection reasons and human accepted-clip selection exist | Historical R3 review evidence exists | Core; current-path acceptance remains |
 | Active assembly/export | Active assembly still contains `placeholder_copy` / mock-fixture behavior; Workbench has no production assembly/export action | No current-main production-path PASS | S6 core gap |
@@ -67,7 +69,7 @@ database. `REAL_PROVIDER_ENABLED=false` remains the safe default.
 | Unified `/workspace/mcp` | Unified Remote and Director tool contracts exist | Earlier bounded transport/activity path passed | Core ChatGPT route; later commits do not inherit that PASS |
 | Legacy `/mcp` | Still present | Earlier Readonly acceptance exists | `ROLLBACK_ONLY` |
 | Dedicated Director route | Still present beside Unified Director tools | Earlier bounded evidence exists | `ROLLBACK_ONLY` |
-| Director Bridge | A managed process was detected with source commit `3a142bb` | Relative to `main@bc3fa5a0`, manager status is `RESTART_REQUIRED`; current-main acceptance is absent | Do not place before S3/S4 |
+| Director Bridge | A managed process was detected with source commit `3a142bb` | The recorded process source predates `main@b3a108a`; no current-main configuration, heartbeat or authenticated-contact acceptance was performed | Do not place before S3/S4 |
 | Manual Snapshot | Publisher and signed Snapshot contract exist | Earlier bounded publish/recovery evidence exists | Optional; not an S3/S4 dependency |
 | Media Gateway | PR #105 two-project Image/MP4 matrix is in main and CI passed | No corresponding current-main public maintenance-window acceptance | Optional human Widget playback |
 | Memory Port | Advisory recall seam and non-dispatched Saveback envelope exist | No stable production plugin or automatic Saveback | Frozen |
@@ -110,11 +112,12 @@ A low-disclosure manager status check detected a managed Director Bridge
 process whose recorded source commit is
 `3a142bb1aeaf34a506f84b2fa2598a5819203d45`.
 
-Relative to current `main@bc3fa5a0`, the manager returned
-`RESTART_REQUIRED`. This reconciliation did not start, stop or restart the
-Bridge. It did not revalidate configuration identity, heartbeat or
-authenticated Remote contact. Therefore the repository must not claim that the
-Bridge is stopped, healthy, Remote-connected or accepted on current main.
+The recorded manager check returned `RESTART_REQUIRED` on the earlier
+repository baseline, and its source commit still predates current
+`main@b3a108a`. This restack did not start, stop or restart the Bridge. It did
+not revalidate configuration identity, heartbeat or authenticated Remote
+contact. Therefore the repository must not claim that the Bridge is stopped,
+healthy, Remote-connected or accepted on current main.
 
 The accepted `fbf6540` restart report and the later `2b43f558` diagnostic-gap
 report remain historical, commit-scoped evidence.
@@ -190,6 +193,11 @@ Current stage queue:
 7. `S6 Assembly, Export and Closeout` — not loaded
 8. `S7 Three Real Project Evaluation` — not loaded
 9. `S8 Legacy Route Cleanup Decision` — not loaded
+
+The S3B-T1 and S3B-T1A implementation candidates have local `PASS` evidence
+and are cleanly restacked in Draft PR #108 with repository status
+`AWAITING_REPLACEMENT_PR_REVIEW`. Old PR #107 is superseded and remains
+unmerged; neither candidate is part of current `main`.
 
 The complete Media Gateway promotion, Memory plugin, second real user,
 automatic Snapshot, Windows logon task, WebM/broad formats and new OAuth

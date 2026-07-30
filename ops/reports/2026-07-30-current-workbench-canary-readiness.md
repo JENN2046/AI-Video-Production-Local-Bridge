@@ -259,15 +259,45 @@ polling, download or paid action was authorized or attempted.
 ## Required next boundary
 
 S3 is terminal `DONE` with `BLOCKED_BY_S3_FINDING`; it is not `READY`.
-The bounded-polling and manual-reconciliation candidate fixes have local
-`PASS` evidence in Draft PR #107 and remain `AWAITING_PR_REVIEW`, not part of
-the current `main` baseline.
+PR #106 was squash-merged as
+`main@b3a108abc8728e89259d0d953e1c638b9ca482ea`. This publication state does
+not change the S3 evidence baseline recorded at the top of this receipt.
+
+```yaml
+old_pr107:
+  status: SUPERSEDED
+  merge_authorized: false
+replacement_pr:
+  number: 108
+  status: DRAFT_AWAITING_REVIEW
+  merged_to_main: false
+S3B-T1:
+  local_status: PASS
+  repository_status: AWAITING_REPLACEMENT_PR_REVIEW
+S3B-T1A:
+  local_status: PASS
+  repository_status: AWAITING_REPLACEMENT_PR_REVIEW
+S3B-T2:
+  status: AWAITING_JENN_AUTHORIZATION
+S3B-T3:
+  status: AWAITING_JENN_LOCAL_ACTION
+S3B-T4:
+  status: BLOCKED
+S4:
+  status: BLOCKED
+  authorization_granted: false
+ready_task_count: 0
+```
+
+The bounded-polling and manual-reconciliation candidate fixes remain outside
+the current `main` baseline until a separately authorized merge.
 
 The remaining sequence is:
 
-1. review PR #106; any future merge requires separate authorization and must
-   use squash merge;
-2. keep PR #107 Draft and unchanged until PR #106 is integrated;
+1. require Draft PR #108 to pass its clean-diff, Windows CI and final Codex
+   review gates;
+2. close superseded PR #107 without merge only after those replacement gates
+   pass, while retaining its branch;
 3. obtain Jenn's separate authorization for `S3B-T2_PREPARE_ELIGIBLE_SHOT`;
 4. wait for Jenn's local action for
    `S3B-T3_CONFIGURE_RUNNINGHUB_CREDENTIAL`;

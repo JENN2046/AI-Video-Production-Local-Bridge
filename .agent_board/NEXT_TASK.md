@@ -16,17 +16,20 @@ automatically.
 
 ## Publication state
 
-- PR #106: `AWAITING_PR_REVIEW`; unmerged; any future authorized merge must
-  use squash merge.
-- PR #107: `DRAFT`; base `codex/s3-workbench-canary-readiness`; unchanged by
-  the PR #106 remediation; not authorized for merge or ready-for-review.
+- PR #106: `MERGED` by squash as
+  `b3a108abc8728e89259d0d953e1c638b9ca482ea`.
+- PR #107: `SUPERSEDED`; still unmerged and retained until the verified
+  replacement closes it without merge.
+- PR #108: `DRAFT_AWAITING_REVIEW`; base `main`, head
+  `codex/s3b-provider-polling-restack`; not authorized for merge or
+  ready-for-review.
 
 ## S3B follow-ups
 
 | Task | Local status | Repository/current status | Gate |
 |---|---|---|---|
-| `S3B-T1_BOUND_PROVIDER_POLLING` | `PASS` | `AWAITING_PR_REVIEW` in Draft PR #107 | Not merged to `main` |
-| `S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE` | `PASS` | `AWAITING_PR_REVIEW` in Draft PR #107 | Not merged to `main` |
+| `S3B-T1_BOUND_PROVIDER_POLLING` | `PASS` | `AWAITING_REPLACEMENT_PR_REVIEW` in Draft PR #108 | Not merged to `main` |
+| `S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE` | `PASS` | `AWAITING_REPLACEMENT_PR_REVIEW` in Draft PR #108 | Not merged to `main` |
 | `S3B-T2_PREPARE_ELIGIBLE_SHOT` | — | `AWAITING_JENN_AUTHORIZATION` | Business-state write not authorized |
 | `S3B-T3_CONFIGURE_RUNNINGHUB_CREDENTIAL` | — | `AWAITING_JENN_LOCAL_ACTION` | Secret operation not authorized |
 | `S3B-T4_RERUN_CANARY_READINESS` | — | `BLOCKED` | Waits for T2, T3 and reviewed candidate code |

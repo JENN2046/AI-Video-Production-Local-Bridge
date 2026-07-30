@@ -51,14 +51,23 @@
   },
   "publication": {
     "pull_request_106": {
-      "status": "AWAITING_PR_REVIEW",
+      "status": "MERGED",
+      "squash_commit": "b3a108abc8728e89259d0d953e1c638b9ca482ea",
       "merge_authorized": false,
-      "required_future_merge_method": "SQUASH"
+      "merge_method": "SQUASH"
     },
     "pull_request_107": {
-      "status": "DRAFT",
+      "status": "SUPERSEDED",
       "base": "codex/s3-workbench-canary-readiness",
       "changes_allowed_in_current_task": false,
+      "merge_authorized": false,
+      "ready_for_review_authorized": false
+    },
+    "pull_request_108": {
+      "status": "DRAFT_AWAITING_REVIEW",
+      "base": "main",
+      "head": "codex/s3b-provider-polling-restack",
+      "merged_to_main": false,
       "merge_authorized": false,
       "ready_for_review_authorized": false
     }
@@ -67,15 +76,15 @@
     {
       "task_id": "S3B-T1_BOUND_PROVIDER_POLLING",
       "local_status": "PASS",
-      "repository_status": "AWAITING_PR_REVIEW",
-      "pull_request": 107,
+      "repository_status": "AWAITING_REPLACEMENT_PR_REVIEW",
+      "pull_request": 108,
       "merged_to_main": false
     },
     {
       "task_id": "S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE",
       "local_status": "PASS",
-      "repository_status": "AWAITING_PR_REVIEW",
-      "pull_request": 107,
+      "repository_status": "AWAITING_REPLACEMENT_PR_REVIEW",
+      "pull_request": 108,
       "merged_to_main": false
     },
     {
@@ -156,12 +165,14 @@
     ".agent_board/HANDOFF.md"
   ],
   "commit": "f570d145e4832d2b2237123a40d5e8e0b503fcf1",
-  "delivery": "PR_106_AWAITING_REVIEW",
-  "updated_at": "2026-07-30T22:59:14+08:00",
+  "delivery": "PR_106_MERGED_PR_108_DRAFT_AWAITING_REVIEW",
+  "updated_at": "2026-07-31T02:45:12+08:00",
   "safe_state": {
     "provider_calls": 0,
     "activity_writes": 0,
-    "source_code_changes_in_remediation": 0,
-    "test_code_changes_in_remediation": 0
+    "restack_source_files": 4,
+    "restack_test_files": 2,
+    "restack_provider_network_calls": 0,
+    "restack_activity_data_access": 0
   }
 }

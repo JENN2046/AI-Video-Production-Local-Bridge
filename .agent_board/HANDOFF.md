@@ -1,13 +1,13 @@
 # HANDOFF.md
 
-Current mode: PR #106 review remediation; no executable task is `READY`
-Last run: PR106-T1_REMEDIATE_REVIEW_FINDINGS
-Last result: S3 is terminal; S3B code candidates await review and real-operation gates remain closed
+Current mode: PR #107 clean restack; no executable task is `READY`
+Last run: PR107-CLEAN-RESTACK
+Last result: replacement Draft PR #108 awaits CI and final review; real-operation gates remain closed
 
 ## Current state
 
 Current task: none
-Current status: `AWAITING_PR_REVIEW`
+Current status: `DRAFT_AWAITING_REVIEW`
 Current owner: none
 Ready task count: 0
 
@@ -17,13 +17,16 @@ Ready task count: 0
 - The S3 receipt publishes only an aggregate candidate scan:
   `eligible_candidate_count: 0`, `S3_NO_ELIGIBLE_SHOT` and
   `identifiers_published: false`.
-- PR #106 is the current publication/remediation PR and remains unmerged.
+- PR #106 was squash-merged as
+  `b3a108abc8728e89259d0d953e1c638b9ca482ea`, the current `main` baseline.
 - `S3B-T1_BOUND_PROVIDER_POLLING` has local `PASS` evidence and repository
-  status `AWAITING_PR_REVIEW` in Draft PR #107.
+  status `AWAITING_REPLACEMENT_PR_REVIEW` in Draft PR #108.
 - `S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE` has local `PASS` evidence
-  and repository status `AWAITING_PR_REVIEW` in Draft PR #107.
-- PR #107 remains Draft, stacked on the PR #106 branch and unchanged by the
-  PR #106 remediation.
+  and repository status `AWAITING_REPLACEMENT_PR_REVIEW` in Draft PR #108.
+- PR #107 is superseded but remains open and unmerged until PR #108 completes
+  its clean-diff, CI and final-review gates. Its branch remains retained.
+- PR #108 is Draft on `main`; it is not authorized for merge or
+  ready-for-review.
 - `S3B-T2_PREPARE_ELIGIBLE_SHOT` is
   `AWAITING_JENN_AUTHORIZATION`.
 - `S3B-T3_CONFIGURE_RUNNINGHUB_CREDENTIAL` is
@@ -32,9 +35,9 @@ Ready task count: 0
 - `S4-T1_REAL_SINGLE_SHOT_CURRENT_PATH` is `BLOCKED` and unauthorized.
 - Media Gateway and Director Bridge do not block this stage. Memory,
   multi-user and automatic Snapshot remain frozen.
-- No activity database/media access, Provider operation, credential change,
-  service/deployment operation, source/test modification, PR merge or PR #107
-  update occurred during this remediation.
+- The restack changes four source files and two tests only. No activity
+  database/media access, Provider operation, credential change,
+  service/deployment operation, S3 readiness rerun or S4 execution occurred.
 ## S2-T1 Current Core Loop Gap Proof
 
 - Audited the fixed current-schema scenario from an existing Project and
