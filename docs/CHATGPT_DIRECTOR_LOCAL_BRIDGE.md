@@ -1,16 +1,18 @@
 # ChatGPT Director Local Bridge
 
-Status: `PARTIALLY ACCEPTED` — the Unified Director transport, ledger `0011`
-activity database and one bounded owner Proposal path are accepted. The managed
-Windows Bridge was adopted through a controlled restart at `fbf6540` on
-2026-07-29, as recorded in the
-[managed restart acceptance](../ops/reports/2026-07-29-managed-director-bridge-restart-acceptance.md).
-The cross-terminal configuration-identity repair merged at `2b43f558`, but its
-authorized activation attempt did not establish authenticated Remote contact
-and the manager cleaned up the child. The Bridge is currently stopped; see the
-[restart diagnostic gap](../ops/reports/2026-07-29-director-bridge-restart-diagnostic-gap.md).
-A later retry remains separately authorized work after the diagnostic receipt
-repair below merges and passes CI.
+Status: `PARTIALLY ACCEPTED / CURRENT-MAIN RESTART REQUIRED` — the Unified
+Director transport, ledger `0011` activity database and one bounded owner
+Proposal path have commit-scoped acceptance. A low-disclosure status check on
+2026-07-30 detected a managed Bridge process whose recorded source is
+`3a142bb`; relative to `main@bc3fa5a0` it reports `RESTART_REQUIRED`. The check
+did not revalidate configuration identity, heartbeat or authenticated Remote
+contact, so this is neither a healthy/current-main acceptance nor a stopped
+state. No Bridge lifecycle action occurred during S0.
+
+The `fbf6540` managed restart and `2b43f558` diagnostic-gap passages below are
+historical evidence for those exact baselines. Where their present-tense
+wording conflicts with [Current State](../CURRENT_STATE.md), Current State
+governs. Bridge recovery is not an S3/S4 Provider-canary prerequisite.
 
 ## Purpose
 

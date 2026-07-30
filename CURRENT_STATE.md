@@ -1,152 +1,212 @@
 # Current State
 
-Date (Asia/Shanghai, UTC+08:00): 2026-07-29
-Repository baseline: `main@2b43f558`
+Date (Asia/Shanghai, UTC+08:00): 2026-07-30
+Repository baseline: `main@bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7`
 
-## Changes since the last accepted Unified Director deployment
+## Repository and CI truth
 
-The current source baseline is `main@2b43f558`. The following merged changes
-are later than the exact `479fdb8` Unified Director deployment acceptance.
-They have passed the `main` Windows CI and are current code facts, not new
-external acceptance or deployment claims:
+- PR #104, `fix: classify Director Bridge authentication failures`, merged as
+  `3a142bb1aeaf34a506f84b2fa2598a5819203d45`.
+- PR #105, `test: add readonly media acceptance matrix`, merged as
+  `bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7`.
+- The Windows CI run for `main@bc3fa5a0` completed successfully. Both
+  `Quality and integration` and `Browser smoke` passed.
+- Code and CI PASS establish repository facts only. They do not create a new
+  deployment, public maintenance-window, Provider, database, Bridge, Snapshot,
+  Memory or production acceptance.
 
-- PR #94 keeps Director Focus controls visible in the Workbench UI.
-- PR #97 added the managed Windows Director Bridge runtime candidate; its first
-  managed adoption passed at `fbf6540`.
-- PR #100 hardened fixture cleanup identity and diagnostics.
-- PR #101 merged the cross-terminal configuration-identity repair at
-  `2b43f558`. Its authorized activation attempt did not establish authenticated
-  Remote contact, and the manager cleaned up the child.
-- PR #98 adds a local-only Direct OAuth compatibility canary. It is not a
-  public HTTPS interoperability experiment and does not change Auth0, Render,
-  DNS, environment configuration, or the live Connector.
+The exact accepted external operation recorded by each historical report
+remains bounded to that report's commit, inputs and authorization. A later
+commit never inherits an older external PASS automatically.
 
-The last bounded Unified Director deployment acceptance remains the exact
-`479fdb8` target recorded in the Unified Director handoff. No deployment or
-reconnection has been performed for the later main commits.
+## Current product truth
 
-## Accepted historical operations baseline
+The stable product authority remains:
 
 ```text
-Package:                  0.1.0-beta.5
-MCP service:              webgpt-v4.3.0
-Remote App service:       readonly-remote-v1.0.0
-Database schema:          workbench-v2-6
-Migration ledger:         0011
-Snapshot code contract:   readonly-snapshot-v4
-Media Gateway code:       readonly-media-gateway-v1.0.0
+Local Workbench
+  -> SQLite ledger 0011
+  -> Governed Media Store
+  -> Provider Adapter
+  -> Generation / Review / Assembly / Delivery
 ```
 
-Accepted product states, recorded before the current-main compatibility hold:
+SQLite is the business fact source. ChatGPT may inspect bounded context and
+submit advisory Proposals, but it is not a second fact source and cannot
+approve, adopt or deliver production work.
 
-```text
-JENN_SINGLE_USER_MCP_APP_PASS
-MANUAL_PUBLISH_OPERATIONAL_READY
-PARTIAL_MULTI_USER_GATE
-READONLY_MEDIA_GATEWAY_FIXTURE_MP4_PLAYBACK_PASS
-```
-
-These states record Jenn's owner-only ChatGPT MCP App, manual Snapshot evidence and one isolated-fixture public MP4 playback path. They do not accept byte-range responses, multi-user production, automatic publishing, Windows auto-start, broad Media Gateway readiness or a real Provider canary.
-
-## Current-code database compatibility
-
-The active database completed the authorized `workbench-v2-5` / ledger `0008` to `workbench-v2-6` / ledger `0010` migration on 2026-07-22. The gate included a coherent pre-migration backup, isolated migration, read-only `db:check`, normalized core-manifest comparison, post-migration backup and isolated restore rehearsal. All recorded checks passed.
-
-The controlled Artifact import-receipt migration `0011` has since completed its separately authorized activity-database gate: coherent backup, isolated migration, read-only `db:check`, restore rehearsal and logical-manifest comparison. The active database is now current-code compatible at `workbench-v2-6` / ledger `0011`. Runtime startup still never migrates or rolls back the database automatically.
+The active database is current-code compatible at `workbench-v2-6` / migration
+ledger `0011`. Runtime startup does not automatically migrate or roll back the
+database. `REAL_PROVIDER_ENABLED=false` remains the safe default.
 
 ## Capability matrix
 
-| Capability | Code | Real acceptance | Current decision |
-|---|---:|---:|---|
-| Workbench V2 local production UI | Current code requires `0011` | Activity database compatible at `0011` | PASS within accepted human boundaries |
-| Database ledger `0010` and `db:check` | Historical migration evidence | PASS: migration, manifests and restore rehearsal | Historical evidence retained |
-| Database ledger `0011` and `db:check` | Current code schema | PASS: authorized migration, manifests and restore rehearsal | Current activity database gate passed |
-| Persistent generation/review/delivery boundaries | PASS | Fixture/local acceptance | Provider remains off by default |
-| Auth0 owner-only Readonly MCP App | PASS | PASS | Accepted |
-| Seven readonly App tools and Workbench panels | PASS | PASS | Accepted |
-| Manual Snapshot publish/recovery/freshness | Current exporter requires `0011` | Unified bounded publish accepted; remote remains memory-only | Manual, not automatic |
-| Snapshot v4 media bindings | PASS | Signed fixture Snapshot accepted during bounded external test | Candidate |
-| Local Media Gateway runtime | PASS | Local/fixture tests plus bounded public fixture run PASS | Candidate |
-| Cloudflare media ingress | Configured | Bounded fixture route and instance health PASS | Candidate; broad recovery gate remains |
-| Real MP4 playback | PASS | ChatGPT Widget fixture playback PASS | `READONLY_MEDIA_GATEWAY_FIXTURE_MP4_PLAYBACK_PASS` |
-| Byte-range response / Range seek | Runtime support exists | No `206`/`Content-Range` evidence captured | Not accepted |
-| Windows media logon task | PASS | Not installed/accepted | Frozen |
-| Second real user and revoke path | PASS | Deferred by Jenn | `PARTIAL_MULTI_USER_GATE` |
-| Automatic Snapshot synchronization | Not implemented | Not accepted | Future gate |
-| Real Provider canary | Boundary exists | Not authorized | Frozen |
-| ChatGPT Director PR1–PR6 + controlled import receipt | Current code | Single-Owner Focus → Context → advisory Proposal → Human Workbench decision → receipt PASS | `DIRECTOR_OWNER_PROPOSAL_PASS` |
-| Unified ChatGPT Workspace Remote | Current runtime and contract | Unified OAuth, Bridge, Render, ChatGPT App and activity-database path PASS | `UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_PASS` |
-| Director Bridge managed Windows runtime | Historical managed acceptance at `fbf6540`; current Bridge stopped after the `2b43f558` activation timeout | Historical PASS remains bounded to `fbf6540`; the later attempt had matched local identity and heartbeat but no authenticated Remote contact | Merge the low-disclosure startup diagnostic repair, pass CI, then separately authorize one managed recovery/acceptance restart |
-| Direct OAuth compatibility canary | Current `main`, local-contract only | Windows CI and local contract coverage passed; no public endpoint experiment | Keep local-only; any public interoperability test needs separate authorization |
+| Capability | Current code fact | External or real acceptance | Current decision |
+|---|---|---|---|
+| Workbench V2 local UI | Storyboard, generation preflight, version review and delivery-readiness views exist | Activity database compatibility accepted at ledger `0011` | Core |
+| SQLite and governed media | Migration, Artifact/Blob digest and FFprobe boundaries exist | Ledger `0011` migration/restore evidence remains commit-scoped | Core |
+| Current Provider path | Intent, budget, confirmation, reconciliation and adapter boundaries exist; Provider defaults off | Current `main` product path has not been reaccepted with a live Provider | S3/S4 core work |
+| Historical R3 Provider path | Execution scripts now reside under `legacy/` | RunningHub real canary, four-shot generation and regeneration completed historically | Feasibility evidence only |
+| Review and accepted clips | Version stacks, rejection reasons and human accepted-clip selection exist | Historical R3 review evidence exists | Core; current-path acceptance remains |
+| Active assembly/export | Active assembly still contains `placeholder_copy` / mock-fixture behavior; Workbench has no production assembly/export action | No current-main production-path PASS | S6 core gap |
+| Historical R3-9O assembly | Historical script used FFmpeg concat and registered a final Artifact | Historical real assembly and closeout passed at their recorded commits | Feasibility evidence only |
+| Unified `/workspace/mcp` | Unified Remote and Director tool contracts exist | Earlier bounded transport/activity path passed | Core ChatGPT route; later commits do not inherit that PASS |
+| Legacy `/mcp` | Still present | Earlier Readonly acceptance exists | `ROLLBACK_ONLY` |
+| Dedicated Director route | Still present beside Unified Director tools | Earlier bounded evidence exists | `ROLLBACK_ONLY` |
+| Director Bridge | A managed process was detected with source commit `3a142bb` | Relative to `main@bc3fa5a0`, manager status is `RESTART_REQUIRED`; current-main acceptance is absent | Do not place before S3/S4 |
+| Manual Snapshot | Publisher and signed Snapshot contract exist | Earlier bounded publish/recovery evidence exists | Optional; not an S3/S4 dependency |
+| Media Gateway | PR #105 two-project Image/MP4 matrix is in main and CI passed | No corresponding current-main public maintenance-window acceptance | Optional human Widget playback |
+| Memory Port | Advisory recall seam and non-dispatched Saveback envelope exist | No stable production plugin or automatic Saveback | Frozen |
+| Multi-user | Code-level membership boundaries exist | Second real user path is not accepted | Frozen |
+| Windows logon task | Installation code exists | No matching task was detected or accepted | Frozen |
+| Automatic Snapshot | Not implemented | Not accepted | Frozen |
 
-## Accepted evidence
+## Provider history correction
 
-- [SR6 Disposable Database Acceptance](ops/reports/2026-07-13-sr6-disposable-acceptance.md)
-- [SR6 Active Database Acceptance](ops/reports/2026-07-13-sr6-active-database-acceptance.md)
-- [Beta 4 Active Database Acceptance](ops/reports/2026-07-14-beta4-active-database-acceptance.md)
-- [Readonly MCP App Stage 3 Acceptance](ops/reports/2026-07-17-readonly-mcp-app-stage3-acceptance.md)
-- [Owner-Only Operations Acceptance](ops/reports/2026-07-18-owner-only-operations-acceptance.md)
-- [Snapshot v3 Derived State Acceptance](ops/reports/2026-07-19-snapshot-v3-derived-state-acceptance.md)
-- [Snapshot v3 Human Workbench Recovery Acceptance](ops/reports/2026-07-19-snapshot-v3-human-workbench-recovery-acceptance.md)
-- [Snapshot Freshness Operations Acceptance](ops/reports/2026-07-19-snapshot-freshness-operations-acceptance.md)
+The repository must not claim that a real Provider canary has never occurred.
+The historical R3 route recorded:
+
+- a successful RunningHub real single-submit canary;
+- a successful four-shot real generation run;
+- a successful four-shot regeneration run;
+- local FFmpeg final assembly;
+- human final approval and closeout.
+
+Those execution scripts were later moved into `legacy/`. The historical
+results prove engineering feasibility, but they do not prove that current
+`main`, the current Workbench UI/API, or the ledger `0011` product path has
+completed a fresh live acceptance. S3 prepares that current path offline; S4
+is the separately authorized real single-shot acceptance.
+
+## Assembly and export status
+
+The active product path has not completed real assembly/export productization
+or acceptance. The active assembly implementation still registers mock fixture
+behavior through `placeholder_copy`. The Workbench Delivery view reports
+readiness but does not provide a production assembly, export and closeout
+action.
+
+Historical R3-9O FFmpeg concat evidence is retained as design and feasibility
+evidence. Fixture assembly must not be described as a current production
+assembly PASS.
+
+## Director Bridge status
+
+A low-disclosure manager status check detected a managed Director Bridge
+process whose recorded source commit is
+`3a142bb1aeaf34a506f84b2fa2598a5819203d45`.
+
+Relative to current `main@bc3fa5a0`, the manager returned
+`RESTART_REQUIRED`. This reconciliation did not start, stop or restart the
+Bridge. It did not revalidate configuration identity, heartbeat or
+authenticated Remote contact. Therefore the repository must not claim that the
+Bridge is stopped, healthy, Remote-connected or accepted on current main.
+
+The accepted `fbf6540` restart report and the later `2b43f558` diagnostic-gap
+report remain historical, commit-scoped evidence.
+
+## Media Gateway status and role
+
+PR #105 added the two-project Image/MP4 acceptance fixture and low-disclosure
+matrix to `main`; its code and CI passed. That merge did not itself run or
+accept a corresponding public maintenance window.
+
+The older public MP4 fixture PASS remains limited to
+`main@2b84f447c1d85eaf5f96c4da6cf0d81080332131` and the exact boundary recorded
+in its report. It does not transfer to PR #105 or current main.
+
+```yaml
+media_gateway:
+  role: optional_human_widget_playback
+  blocks_provider_canary: false
+  blocks_core_beta: false
+```
+
+Model video understanding uses the local
+`inspect_director_video_frames` FFmpeg frame-extraction path. Media Gateway
+promotion, WebM, broad-format coverage, automatic startup and long recovery
+soak are not core production prerequisites.
+
+## Core phase dependencies
+
+```yaml
+S3:
+  requires_director_bridge: false
+  requires_snapshot: false
+  requires_media_gateway: false
+  requires_memory: false
+  requires_multi_user: false
+S4:
+  requires_director_bridge: false
+  requires_snapshot: false
+  requires_media_gateway: false
+  requires_memory: false
+  requires_multi_user: false
+S5:
+  requires_director_bridge: true_only_when_using_chatgpt_frame_review
+```
+
+Bridge, Snapshot or Media Gateway recovery must not be inserted ahead of the
+current-path Provider readiness and real single-shot canary.
+
+## Current priority
+
+The repository priority is now:
+
+1. `S1 Scope Freeze`
+2. `S2 Core Loop Gap Audit`
+3. `S3 Provider Canary Readiness`
+4. `S4 Real Single-Shot Canary`
+5. `S5 Review and Regeneration`
+6. `S6 Assembly, Export and Closeout`
+7. `S7 Three Real Project Evaluation`
+8. `S8 Legacy Route Cleanup Decision`
+
+The complete Media Gateway promotion, Memory plugin, second real user,
+automatic Snapshot, Windows logon task, WebM/broad formats and new OAuth
+compatibility experiments are removed from the S3/S4 blocker chain.
+
+Current frozen work:
+
+- Media Gateway expansion or automatic startup;
+- stable Memory plugin and automatic Saveback;
+- multi-user expansion and second-user golden path;
+- automatic Snapshot synchronization;
+- Windows logon startup;
+- WebM and broad-format coverage;
+- new OAuth compatibility experiments;
+- Full WebGPT externalization and legacy-route features.
+
+Current rollback-only surfaces:
+
+- legacy `/mcp`;
+- Dedicated Director route.
+
+No rollback surface is authorized for removal by this state correction.
+
+## Accepted evidence index
+
 - [Director Active Database Migration Acceptance](ops/reports/2026-07-22-director-active-database-migration-acceptance.md)
 - [Unified Director Activity Acceptance](ops/reports/2026-07-27-unified-director-activity-acceptance.md)
 - [Readonly Media Gateway MP4 Fixture Acceptance](ops/reports/2026-07-27-readonly-media-gateway-mp4-fixture-acceptance.md)
 - [Unified Director Wire Contract Acceptance](ops/reports/2026-07-28-unified-director-wire-contract-acceptance.md)
 - [Managed Director Bridge Restart Acceptance](ops/reports/2026-07-29-managed-director-bridge-restart-acceptance.md)
+- [Director Bridge Restart Diagnostic Gap](ops/reports/2026-07-29-director-bridge-restart-diagnostic-gap.md)
 
-Acceptance reports record the commit and boundary that was actually tested. Later code must not silently inherit an older report's PASS.
-
-## Current operations
-
-### Daily local work
-
-The active database is ledger `0011` and current-code compatible. `REAL_PROVIDER_ENABLED=false` remains the safe default. Schema compatibility and the accepted Director path do not authorize Provider work, automatic Snapshot publishing or production delivery.
-
-### Daily ChatGPT App work
-
-The remote service is memory-only. A Unified signed Snapshot was published during bounded acceptance, but restart or expiry still requires a separately confirmed manual republish. Do not infer automatic publishing from migration or transport acceptance. The Director Bridge is currently stopped after the bounded `2b43f558` activation attempt; see [Director Bridge Restart Diagnostic Gap](ops/reports/2026-07-29-director-bridge-restart-diagnostic-gap.md).
-
-### Media gateway work
-
-PR #56–#62 implemented Snapshot v4 media bindings, encrypted capabilities, local streaming, Widget media UI, Windows operations, Cloudflare diagnostics and selectable `auto|http2|quic` transport. PR #91 added the exact ChatGPT Workspace sandbox-origin allowlist required for Widget media requests. A bounded isolated fixture acceptance has now established the public route, signed Snapshot delivery and ChatGPT MP4 playback; the managed default runtime and a fresh real Snapshot were restored afterward. A forward seek remained playable, but no `206`/`Content-Range` was captured, so byte-range is still pending. This is also not a persistence, revocation, recovery-soak, activity-data-unchanged or multi-user acceptance: that fixture sequence recorded only a post-restore read-only `db:check`, not a before/after logical-manifest comparison. Do not install the current-user logon task without separate authorization.
-
-### ChatGPT Director candidate
-
-PR #69–#72 and the controlled Artifact import-receipt work are now accepted through an activity-database single-Owner golden path. The observed path was Focus → Context → advisory Proposal → Human Workbench decision → one immutable, digest-revalidated receipt. This does **not** alter the accepted Readonly MCP App or the safe default `REAL_PROVIDER_ENABLED=false`.
-
-Director startup requires explicit non-secret runtime configuration and its accepted transport configuration; database readiness alone still is not a general authorization. A managed Windows runtime candidate now records the tracked-source commit, emitted `dist` fingerprints, Node executable fingerprint, exact two-argument process identity and a low-disclosure launch-configuration digest. A two-phase activation gate prevents key/database loading before manager adoption; instance-bound heartbeat and completion state support a final `stopped` receipt, while identical completion retries are deduplicated within the Remote broker's bounded five-minute in-memory acceptance window. Expiry or Remote restart makes a later retry unconfirmed again. The default stop path never force-kills. A separately authorized controlled restart on 2026-07-29 adopted the managed Bridge at `fbf6540`; that source baseline was also observed live on Render. The local read-only database check and manager assessment reported `RUNNING`, matched process identity, fresh heartbeat and fresh Remote contact, with Provider execution disabled. See [Managed Director Bridge Restart Acceptance](ops/reports/2026-07-29-managed-director-bridge-restart-acceptance.md). PR #101 later merged the cross-terminal repair at `2b43f558`, but its authorized activation attempt remained in local `backoff` without authenticated Remote contact until the manager cleaned up the child. The Bridge is currently stopped, and the cross-terminal behavior has no live acceptance. The current diagnostic repair preserves a validated child `DIRECTOR_*` code before cleanup; it is not live until merged and activated through another separately authorized restart. This is not dependency-tree attestation or business-readiness proof. The Memory Port has no configured stable plugin, endpoint or automatic Saveback dispatch. See [Director Local Bridge](docs/CHATGPT_DIRECTOR_LOCAL_BRIDGE.md), [Director Bridge Restart Diagnostic Gap](ops/reports/2026-07-29-director-bridge-restart-diagnostic-gap.md) and [Director Local Candidate Closeout](docs/CHATGPT_DIRECTOR_LOCAL_CANDIDATE_CLOSEOUT.md).
-
-### Unified ChatGPT Workspace candidate
-
-The single-Connector runtime at `/workspace/mcp` now joins the independently fail-closed Readonly signed-Snapshot chain and Director outbound local-Bridge chain in an accepted bounded deployment. One unified Auth0 resource, minimal user-delegated grant, independent Bridge key, Render path, ChatGPT App, signed Unified Snapshot and activity-database owner path were accepted. `/mcp` remains an accepted rollback surface. See [Unified Workspace Transport Runbook](docs/webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md).
-
-## Active blockers and next gates
-
-The isolated MP4 fixture and profile tooling is merged. Its bounded public playback acceptance is recorded; it is not a full Media Gateway promotion.
-
-1. Record the selected protocol plus the final QUIC/UDP or HTTP2/TCP edge classification, capture an actual byte-range `206`/`Content-Range`, then run the remaining Media Gateway behavioral cases: image and WebM where supported, capability expiration/replay, membership revocation, project switching, and offline/recovery.
-2. Separately authorize and validate the current-user Windows logon task.
-3. Capture a before/after activity-database logical-manifest comparison for the fixture/restore path, then complete a bounded restart/recovery soak while preserving the manual Snapshot boundary.
-4. Only after all Media Gateway gates pass: consider `0.1.0-beta.6` version closeout.
-
-Separate, non-blocking future gates are the second real user, automatic Snapshot publishing, Windows automatic startup, Full profile externalization and real Provider canary.
-
-Director has completed its migration, transport and single-Owner Proposal/receipt gates without Provider execution. Its remaining ordered external gates are:
-
-1. merge the low-disclosure startup diagnostic repair, pass CI, then separately authorize a controlled recovery restart; use the projected child error enum if Remote contact still fails, otherwise verify both managed-launcher (`verified`) and independent-terminal (`not_rechecked`) status behavior at the merged source commit;
-2. select and accept a stable Memory plugin with project/issuer-bound recall-only behavior before any Saveback dispatch;
-3. separately authorize a bounded Provider execution canary under an Automation Grant and budget;
-4. accept a second real user and revoke path before claiming multi-user readiness.
-
-The unified Connector transport gate has passed while retaining legacy `/mcp` as rollback. Its remaining work is the same separately authorized stable Memory, bounded Provider, multi-user and Media Gateway gates; the legacy connector may be audited for removal only after a distinct authorization.
+Historical R3 Provider, regeneration, assembly and closeout evidence remains
+under `data/reports/` and `.agent_board/TASK_LEDGER.md`. Those reports are not
+current-main acceptance receipts.
 
 ## Non-claims
 
-- No npm package, tag or public release has been published.
-- `render.yaml` is tracked configuration evidence; it is not proof that the live Render service matches every field.
-- Snapshot v4 code does not prove that the currently running remote process holds a v4 Snapshot.
-- A created Cloudflare tunnel/DNS record alone does not prove edge connectivity or media playback; the bounded MP4 fixture report is the only accepted public-playback evidence.
-- Passing fixture tests does not authorize reading the activity database or source media.
+- No code, database, media, runtime, secret or external configuration was
+  changed by S0.
+- No Provider was called and no Snapshot was published.
+- No Bridge, Gateway, Tunnel or other service was started, stopped or
+  restarted.
+- No npm package, tag, release, deployment or remote branch update occurred.
+- Passing CI does not prove a live Render, Auth0, Cloudflare, Bridge, Snapshot,
+  Media Gateway or Provider configuration.
 
-See [docs/README.md](docs/README.md) for the current-document index and [docs/PROJECT_LESSONS.md](docs/PROJECT_LESSONS.md) for construction lessons.
+See [docs/README.md](docs/README.md) for the current-document index and
+[docs/PROJECT_LESSONS.md](docs/PROJECT_LESSONS.md) for construction lessons.

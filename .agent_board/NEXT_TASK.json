@@ -2,119 +2,134 @@
   "machine": "AI_VIDEO_PRODUCTION_SINGLE_SLOT_TASK_STATE",
   "version": "0.1.0",
   "slot": "current",
-  "task_id": "R2G-L_CHATGPT_CONNECTOR_READ_ONLY_LIVE_SMOKE_LOCAL_ENTRY_PREP",
-  "status": "DONE",
+  "task_id": "S1-T1_FREEZE_PERIPHERAL_EXPANSION",
+  "status": "READY",
   "priority": "P0",
-  "lane": "ChatGPT MCP Bridge",
-  "project": "AI Video Production Workspace GPT Bridge Line",
-  "title": "ChatGPT Connector Read-Only Live Smoke Local Entry Prep",
+  "lane": "Project Scope Reduction",
+  "project": "AI Video Production Local Bridge",
+  "title": "S1 Scope Freeze and Topology Classification",
   "scope": [
-    "prepare a local-only read-only MCP HTTP entry for a future ChatGPT connector live smoke",
-    "restrict the live smoke entry to read-only tools only",
-    "prove forbidden provider, generation, draft, and human-confirmed write tools fail closed",
-    "generate a local-only R2G-L readiness report"
+    "classify current components as KEEP_CORE, KEEP_OPTIONAL, FREEZE, ROLLBACK_ONLY, REMOVE_LATER or UNDECIDED",
+    "remove optional infrastructure from the S3 and S4 dependency chain",
+    "record rollback windows and deletion preconditions without deleting code or changing external configuration"
   ],
-  "goal": "Prepare the local read-only live smoke MCP entry without starting a public tunnel, creating a ChatGPT connector, reading credentials, calling providers/APIs, or deploying.",
+  "goal": "Freeze peripheral expansion so subsequent work advances the current-main real video production loop.",
   "acceptance": [
-    "A local read-only live smoke MCP entry exists and can be exercised over localhost.",
-    "Only READ_ONLY tools are listed or callable through the live smoke entry.",
-    "Draft, human-confirmed write, provider, generation, shell, secret, and unknown tools fail closed.",
-    "A local readiness report is generated at data/reports/r2g_l_chatgpt_connector_read_only_live_smoke_local_entry_prep_result.json.",
-    "Report confirms public_tunnel_started=false, chatgpt_connector_created=false, env_files_read=false, credentials_read=false, provider_api_called=false, deploy_performed=false, push_performed=false, tag_created=false, release_or_deploy_performed=false, and publish_performed=false."
+    "Every major current component has one explicit current classification.",
+    "S3 and S4 do not depend on Director Bridge, Snapshot, Media Gateway, Memory or multi-user.",
+    "No peripheral promotion task is READY.",
+    "Legacy /mcp and the Dedicated Director route remain rollback-only and are not removed.",
+    "No S2 or later task is executed as part of S1."
   ],
-  "validation": [
-    "npm run r2g:l:read-only-entry-prep",
-    "JSON parse for data/reports/r2g_l_chatgpt_connector_read_only_live_smoke_local_entry_prep_result.json",
-    "npm run typecheck",
-    "npm run test:r2g:mcp",
-    "npm run secret:scan",
-    "git diff --check"
+  "phase_dependency_rules": {
+    "S3": {
+      "requires_director_bridge": false,
+      "requires_snapshot": false,
+      "requires_media_gateway": false,
+      "requires_memory": false,
+      "requires_multi_user": false
+    },
+    "S4": {
+      "requires_director_bridge": false,
+      "requires_snapshot": false,
+      "requires_media_gateway": false,
+      "requires_memory": false,
+      "requires_multi_user": false
+    },
+    "S5": {
+      "requires_director_bridge": "true_only_when_using_chatgpt_frame_review"
+    }
+  },
+  "frozen_scope": [
+    "media_gateway_promotion_and_expansion",
+    "memory_plugin_and_automatic_saveback",
+    "multi_user_and_second_real_user",
+    "automatic_snapshot",
+    "windows_logon_startup",
+    "webm_and_broad_media_formats",
+    "new_oauth_compatibility_experiments",
+    "full_webgpt_externalization",
+    "legacy_route_new_features"
+  ],
+  "rollback_only_scope": [
+    "legacy_/mcp",
+    "dedicated_director_route"
+  ],
+  "task_classifications": [
+    {
+      "task_id": "OPTIONAL_MEDIA_GATEWAY_PROMOTION",
+      "status": "FROZEN"
+    },
+    {
+      "task_id": "MEMORY_PLUGIN_AND_AUTOMATIC_SAVEBACK",
+      "status": "FROZEN"
+    },
+    {
+      "task_id": "MULTI_USER_AND_SECOND_REAL_USER",
+      "status": "FROZEN"
+    },
+    {
+      "task_id": "AUTOMATIC_SNAPSHOT_SYNCHRONIZATION",
+      "status": "FROZEN"
+    },
+    {
+      "task_id": "WINDOWS_LOGON_AUTOSTART",
+      "status": "FROZEN"
+    },
+    {
+      "task_id": "WEBM_AND_BROAD_MEDIA_FORMATS",
+      "status": "FROZEN"
+    },
+    {
+      "task_id": "NEW_OAUTH_COMPATIBILITY_EXPERIMENTS",
+      "status": "FROZEN"
+    },
+    {
+      "task_id": "LEGACY_MCP_ROUTE",
+      "status": "ROLLBACK_ONLY"
+    },
+    {
+      "task_id": "DEDICATED_DIRECTOR_ROUTE",
+      "status": "ROLLBACK_ONLY"
+    }
   ],
   "allowed_delivery": [
-    "local_read_only_mcp_entry",
-    "local_report",
-    "tests",
+    "current_scope_documentation",
+    "topology_classification",
     "task_board_update",
+    "rollback_window_definition",
     "local_commit"
   ],
   "blocked_delivery": [
-    "public_tunnel",
-    "public_mcp_endpoint",
-    "chatgpt_connector_creation",
-    "deploy",
-    "provider_call",
-    "env_file_read",
-    "credential_read",
-    "secret_value_output",
-    "source_overwrite",
+    "source_code_change",
+    "database_change",
+    "media_change",
+    "service_start_stop_restart",
+    "provider_operation",
+    "snapshot_publish",
+    "deployment",
+    "external_configuration_change",
+    "secret_operation",
+    "route_removal",
     "push",
-    "tag",
-    "release",
-    "publish",
-    "production_configuration_change"
+    "merge",
+    "release"
   ],
   "depends_on": [
-    "R2G-K_CHATGPT_CONNECTOR_LIVE_AUTHORIZATION_FINAL_PREP"
+    "S0-T1_RECONCILE_CURRENT_TRUTH"
   ],
-  "source_authorization_final_prep_report": "data/reports/r2g_k_chatgpt_connector_live_authorization_final_prep_result.json",
-  "report_path": "data/reports/r2g_l_chatgpt_connector_read_only_live_smoke_local_entry_prep_result.json",
-  "created_at": "2026-07-09T15:56:33+08:00",
-  "updated_at": "2026-07-09T16:07:30+08:00",
-  "claimed_by": "Codex R2G-L read-only live smoke local entry prep",
-  "claim_run_id": "codex-20260709-155633-r2g-l",
-  "claimed_at": "2026-07-09T15:56:33+08:00",
-  "completed_by": "Codex R2G-L read-only live smoke local entry prep",
-  "completed_at": "2026-07-09T16:07:30+08:00",
-  "result": "PASS_READ_ONLY_LIVE_SMOKE_LOCAL_ENTRY_PREP",
-  "validation_result": "PASS",
+  "created_at": "2026-07-30T14:49:50+08:00",
+  "updated_at": "2026-07-30T14:49:50+08:00",
+  "claimed_by": null,
+  "claim_run_id": null,
+  "claimed_at": null,
+  "result": null,
+  "validation_result": null,
   "evidence": [
-    "data/reports/r2g_l_chatgpt_connector_read_only_live_smoke_local_entry_prep_result.json",
-    "src/tools/chatGptMcpHttpTransport.ts",
-    "src/tools/chatGptMcpBridge.ts",
-    "scripts/r2g-l-chatgpt-read-only-live-smoke-local-entry-prep.ts",
-    "scripts/r2g-l-chatgpt-read-only-live-smoke-local-entry-server.ts",
-    "tests/chatgpt-mcp-bridge.test.ts",
-    "package.json"
+    "CURRENT_STATE.md",
+    "docs/README.md",
+    ".agent_board/HANDOFF.md"
   ],
-  "commit": "bc0fc3c",
-  "delivery": "local_read_only_entry_prep_only",
-  "boundary_or_safety_stop": "local-only preparation; no public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, env or credential read, provider/API call, push, tag, release, deploy, publish, or production configuration change",
-  "blocked_reason": null,
-  "failure_reason": null,
-  "safe_actions_completed": [
-    "claimed R2G-L from explicit Jenn instruction",
-    "implemented a local-only read-only live smoke MCP entry bound to 127.0.0.1",
-    "restricted R2G-L tool listing and calls to READ_ONLY tools",
-    "added a future local serve command for exact-authorized live smoke",
-    "generated data/reports/r2g_l_chatgpt_connector_read_only_live_smoke_local_entry_prep_result.json",
-    "validated report JSON, typecheck, R2G MCP tests, secret scan, and diff check"
-  ],
-  "unsafe_action_not_performed": [
-    "public_tunnel",
-    "public_mcp_endpoint",
-    "chatgpt_connector_creation",
-    "deploy",
-    "provider_call",
-    "env_file_read",
-    "credential_read",
-    "secret_value_output",
-    "source_overwrite",
-    "push",
-    "tag",
-    "release",
-    "publish",
-    "production_configuration_change"
-  ],
-  "do_not_touch": [
-    "scripts/h1-workbench.ts",
-    "docs/three_routes/human_workbench_frosted_glass_design_plan.md",
-    "drag_drop_cards_to_planner.gif",
-    "howtouseinbox.gif",
-    "ops/previews/"
-  ],
-  "next_safe_option": [
-    "Review the R2G-L report and read-only local server command.",
-    "If Jenn wants to proceed to real ChatGPT connector setup, provide a separate exact authorization phrase with endpoint mode and concrete tunnel or hosted HTTPS /mcp URL.",
-    "Stop before any public tunnel or ChatGPT connector action until separately authorized."
-  ]
+  "authorization_required": "Jenn must separately authorize execution of S1.",
+  "boundary_or_safety_stop": "This S0 run only prepared S1 as READY. It did not execute S1 or any later stage."
 }

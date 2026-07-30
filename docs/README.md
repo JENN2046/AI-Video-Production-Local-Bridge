@@ -2,6 +2,20 @@
 
 This index separates current operating truth from historical implementation evidence.
 
+## Current reconciliation
+
+The current repository baseline is
+`main@bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7`. PR #104 and PR #105 are
+merged, and both Windows CI jobs passed on that main commit. This is a code/CI
+fact, not a new external acceptance.
+
+The current production priority is S1 scope freeze followed by the real
+Workbench generation, review, regeneration, assembly, export and closeout
+path. Media Gateway, Memory, multi-user, automatic Snapshot, Windows logon
+startup and new OAuth experiments are not S3/S4 blockers. Use
+[Current State](../CURRENT_STATE.md) for the exact Bridge, Provider, assembly
+and commit-scoped acceptance boundaries.
+
 ## Start here
 
 | Need | Document |

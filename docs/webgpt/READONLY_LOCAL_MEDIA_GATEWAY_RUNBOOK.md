@@ -1,8 +1,18 @@
 # Readonly Local Media Gateway Runbook
 
-Status: CANDIDATE. Code, Snapshot v4 media binding, Remote/Gateway key contract, Cloudflare named-tunnel/DNS setup and Windows operations have progressed through bounded stages. One isolated MP4 fixture has passed instance-bound public routing and ChatGPT Widget playback. The repository now includes a two-project Image/MP4 fixture and a low-disclosure acceptance matrix, but its public maintenance-window run, recovery soak, fixture/restore activity-database logical-manifest comparison and Windows logon-task acceptance remain incomplete.
+Status: `KEEP_OPTIONAL / CODE_AND_CI_PASS`. PR #105's two-project Image/MP4
+fixture and low-disclosure acceptance matrix are present in
+`main@bc3fa5a0`, and current-main Windows CI passed. That code/CI result is not
+a corresponding public maintenance-window acceptance. Media Gateway provides
+optional human Widget playback; it does not block the Provider canary or core
+Beta.
 
-Latest known boundary: `main@2b84f44` completed a bounded isolated-fixture public route and ChatGPT MP4 playback acceptance. A playable forward seek was observed, but no actual `206`/`Content-Range` response was recorded, so byte-range remains pending. The Gateway remains manually operated: this result does not establish restart persistence, revocation behavior, broad media-format coverage, unchanged activity business data across the fixture/restore sequence, or a Windows logon-task acceptance.
+Latest public boundary: `main@2b84f44` completed a bounded isolated-fixture
+public route and ChatGPT MP4 playback acceptance. That exact-commit PASS does
+not transfer to PR #105 or current main. A playable forward seek was observed,
+but no actual `206`/`Content-Range` response was recorded. The Gateway remains
+manually operated; WebM, broad-format expansion, automatic startup, long soak
+and multi-user expansion are frozen optional work.
 
 ## Boundary
 

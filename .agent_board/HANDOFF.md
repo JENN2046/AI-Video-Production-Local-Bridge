@@ -1,14 +1,49 @@
 # HANDOFF.md
 
-Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260709-155633-r2g-l
-Last result: R2G-L read-only live smoke local entry prep completed
+Current mode: S0 repository truth reconciliation complete; automatic continuation disabled
+Last run: codex-20260730-144950-s0-truth
+Last result: S0-T1 repository truth reconciled on `main@bc3fa5a0`
 
 ## Current state
 
-Current task: none
-Current status: EMPTY
+Current task: `S1-T1_FREEZE_PERIPHERAL_EXPANSION`
+Current status: `READY`
 Current owner: none
+
+## S0-T1 Repository Truth Reconciliation
+
+- Verified remote `main` at
+  `bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7`.
+- Verified PR #104 and PR #105 are merged.
+- Verified `Quality and integration` and `Browser smoke` both passed for the
+  current main commit.
+- Corrected the repository baseline and separated code/CI PASS from external
+  acceptance.
+- Recorded the historical RunningHub single-submit, four-shot generation,
+  regeneration, FFmpeg assembly and closeout as feasibility evidence only.
+  The related execution scripts now live under `legacy/`; current-main product
+  acceptance remains separate.
+- Recorded the active assembly path as not productized: it still contains
+  `placeholder_copy` / mock-fixture behavior and has no current-main production
+  assembly/export PASS.
+- Recorded the low-disclosure Director Bridge observation: a managed process
+  was detected at source commit `3a142bb`; relative to current main it is
+  `RESTART_REQUIRED`. S0 did not revalidate configuration identity, heartbeat
+  or authenticated Remote contact, and did not start, stop or restart it.
+- Recorded PR #105 as code/CI PASS without claiming a new public
+  maintenance-window Media Gateway acceptance.
+- Removed Media Gateway, Memory, multi-user, automatic Snapshot, Windows logon
+  startup, WebM/broad formats and new OAuth experiments from the S3/S4 blocker
+  chain.
+- Prepared `S1-T1_FREEZE_PERIPHERAL_EXPANSION` as the only current `READY`
+  task. S1 was not claimed or executed.
+- Frozen scope is recorded in `.agent_board/NEXT_TASK.json`.
+- Legacy `/mcp` and the Dedicated Director route are `ROLLBACK_ONLY`.
+- Validation passed: `NEXT_TASK.json` parse and classification checks, changed
+  file allowlist, six changed Markdown files with zero broken relative links,
+  required HANDOFF fields and `git diff --check`.
+- No source, database, media, runtime, secret, Provider, Snapshot, deployment
+  or external configuration operation occurred. No branch was pushed.
 
 ## R2G-L Closeout
 
