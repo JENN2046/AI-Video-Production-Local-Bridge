@@ -4341,3 +4341,183 @@ Risks:
 
 Next:
 - Use `npm run r2g:l:serve-read-only -- --port 2091` only as part of a future exact-authorized live connector smoke.
+
+## 2026-07-30 — S0 repository truth reconciliation
+
+```yaml
+task: S0-T1_RECONCILE_CURRENT_TRUTH
+status: DONE
+claimed_by: Codex
+claim_run_id: reconstructed-codex-s0-truth-reconciliation
+claimed_at: 2026-07-30T13:23:12+08:00
+completed_by: Codex
+completed_at: 2026-07-30T14:53:18+08:00
+result: PASS_REPOSITORY_TRUTH_RECONCILIATION
+validation_result: PASS
+validation: Changed-file allowlist, Markdown links, task-board structure and git diff checks passed.
+commit: 12cf2931884c08b85730507fa23ceeaa59916296
+delivery:
+  original: LOCAL_COMMIT_ONLY_NO_PUSH
+  current: PR_106_AWAITING_REVIEW
+evidence:
+  - CURRENT_STATE.md
+  - docs/README.md
+  - .agent_board/NEXT_TASK.json
+  - .agent_board/HANDOFF.md
+provider_calls: 0
+activity_data_access: none
+activity_writes: 0
+claim_metadata_reconstructed: true
+claim_metadata_source: local branch-creation record and terminal commit metadata
+```
+
+The original S0 slot did not preserve claim metadata. The reconstructed fields
+make that limitation explicit rather than presenting them as original queue
+receipts.
+
+## 2026-07-30 — S1 scope freeze
+
+```yaml
+task: S1-T1_FREEZE_PERIPHERAL_EXPANSION
+status: DONE
+claimed_by: Codex
+claim_run_id: reconstructed-codex-s1-scope-freeze
+claimed_at: 2026-07-30T14:53:18+08:00
+completed_by: Codex
+completed_at: 2026-07-30T15:07:17+08:00
+result: PASS_SCOPE_FREEZE
+validation_result: PASS
+validation: JSON, unique-READY, classification, Markdown-link, allowlist and git diff checks passed.
+commit: d1b1a10365da46a4b3307fb41c2cbbaa89c8d7ea
+delivery:
+  original: LOCAL_COMMIT_ONLY_NO_PUSH
+  current: PR_106_AWAITING_REVIEW
+evidence:
+  - docs/PRODUCT_SCOPE_FREEZE.md
+  - CURRENT_STATE.md
+  - docs/README.md
+  - .agent_board/NEXT_TASK.json
+  - .agent_board/HANDOFF.md
+provider_calls: 0
+activity_data_access: none
+activity_writes: 0
+claim_metadata_reconstructed: true
+claim_metadata_source: local branch-creation record and terminal commit metadata
+```
+
+The original S1 terminal transition preserved the completed task and evidence
+but not its claim metadata. The reconstruction boundary is retained here.
+
+## 2026-07-30 — S2 current core-loop gap proof
+
+```yaml
+task: S2-T1_CURRENT_CORE_LOOP_GAP_PROOF
+status: DONE
+claimed_by: Codex
+claim_run_id: codex-20260730-154956-s2-gap-proof
+claimed_at: 2026-07-30T15:49:56+08:00
+completed_by: Codex
+completed_at: 2026-07-30T16:03:06+08:00
+result: PASS_CURRENT_CORE_LOOP_GAP_PROOF
+validation_result: PASS
+validation: Static trace plus document, JSON, relative-link, allowlist and git diff validation passed; no local test group was required.
+commit: f4a15f565865c045325274251a91d2e11c633e41
+delivery:
+  original: LOCAL_COMMIT_ONLY_NO_PUSH
+  current: PR_106_AWAITING_REVIEW
+evidence:
+  - docs/CORE_PRODUCTION_LOOP_GAP_AUDIT.md
+  - docs/README.md
+  - .agent_board/NEXT_TASK.json
+  - .agent_board/HANDOFF.md
+provider_calls: 0
+activity_data_access: none
+activity_writes: 0
+claim_metadata_reconstructed: false
+```
+
+## 2026-07-30 — S3 terminal readiness finding
+
+```yaml
+task: S3-T1_CURRENT_WORKBENCH_CANARY_READINESS
+status: DONE
+terminal_result: BLOCKED_BY_S3_FINDING
+claimed_by: Codex
+claim_run_id: codex-20260730-192955-s3-readiness
+claimed_at: 2026-07-30T19:29:55+08:00
+completed_by: Codex
+completed_at: 2026-07-30T19:41:08+08:00
+result: BLOCKED_BY_S3_FINDING
+validation_result: PASS
+validation: Current build and four isolated safety lanes passed; findings prevented S4 readiness.
+findings:
+  - no eligible Shot
+  - RunningHub credential absent
+  - Provider poll timeout was unbounded
+provider_calls: 0
+activity_writes: 0
+commit: f570d145e4832d2b2237123a40d5e8e0b503fcf1
+delivery: PR_106_AWAITING_REVIEW
+evidence:
+  - ops/reports/2026-07-30-current-workbench-canary-readiness.md
+```
+
+The entry is terminal history for S3. It does not make S3 `READY`, authorize
+S4, or inherit later candidate-code results into `main`.
+
+## 2026-07-30 — S3B candidate review state
+
+```yaml
+task:
+  - S3B-T1_BOUND_PROVIDER_POLLING
+  - S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE
+local_result: PASS
+repository_result: AWAITING_PR_REVIEW
+candidate_pr: 107
+merged_to_main: false
+provider_calls: 0
+activity_writes: 0
+```
+
+These are candidate results on a Draft stacked PR, not project-baseline
+completion. T2 and T3 remain outside this entry and require their separate
+human gates.
+
+## 2026-07-30 — S3B-T4 readiness rerun gate
+
+```yaml
+task: S3B-T4_RERUN_CANARY_READINESS
+status: BLOCKED
+claim_status: NOT_CLAIMED_DEPENDENCY_BLOCKED
+recorded_by: Codex
+blocked_by:
+  - S3B-T2_PREPARE_ELIGIBLE_SHOT
+  - S3B-T3_CONFIGURE_RUNNINGHUB_CREDENTIAL
+  - S3B-T1_AND_T1A_AWAITING_REPOSITORY_REVIEW
+blocked_at: 2026-07-30T22:59:14+08:00
+result: BLOCKED_BY_UNMET_S3B_GATES
+validation_result: NOT_RUN_DEPENDENCY_BLOCKED
+boundary_or_safety_stop: T4 cannot rerun until the eligible-Shot, local-credential and reviewed-code gates are all complete.
+blocked_reason: T2 awaits Jenn authorization, T3 awaits Jenn local action, and the T1/T1A candidates remain unmerged in Draft PR 107.
+safe_actions_completed:
+  - recorded the terminal S3 findings
+  - recorded local PASS evidence for the T1/T1A candidates
+  - kept the real execution gates closed
+unsafe_action_not_performed:
+  - activity database or media write
+  - credential configuration
+  - Provider operation
+  - S4 execution
+options_for_jenn:
+  - separately authorize S3B-T2
+  - complete S3B-T3 locally without disclosure
+  - review the stacked T1/T1A candidate only after PR 106 integration
+evidence:
+  - .agent_board/NEXT_TASK.json
+  - .agent_board/NEXT_TASK.md
+  - .agent_board/HANDOFF.md
+  - ops/reports/2026-07-30-current-workbench-canary-readiness.md
+provider_calls: 0
+activity_writes: 0
+delivery: PR_106_AWAITING_REVIEW
+```

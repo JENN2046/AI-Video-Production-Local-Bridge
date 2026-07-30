@@ -4,6 +4,15 @@ Status: `EXTERNAL_TRANSPORT_AND_ACTIVITY_GOLDEN_PATH_PASS — retain this runboo
 
 This is the operational companion to the [Unified Workspace contract](../UNIFIED_CHATGPT_WORKSPACE_MCP.md). The bounded Auth0, Render, ChatGPT App, Bridge and activity-database stages described here have passed once. It remains the recovery and revalidation boundary; it does **not** authorize a new Auth0, Render, ChatGPT, DNS, database or Provider change.
 
+Current-state override: repository code and CI are green at
+`main@bc3fa5a0`, but earlier external PASS results remain bounded to their
+recorded commits. A managed Bridge process was detected at source `3a142bb` and
+is `RESTART_REQUIRED` relative to current main; configuration identity,
+heartbeat and authenticated Remote contact were not revalidated. The Bridge
+lifecycle narrative below is historical and must not be read as current
+runtime status. S3/S4 do not require Bridge, Snapshot, Media Gateway, Memory or
+multi-user. S5 requires Bridge only when ChatGPT frame review is selected.
+
 ## Target and rollback topology
 
 ```text

@@ -2520,3 +2520,89 @@ Notes:
 - `npm run test:r2g:mcp`: PASS, 18 tests.
 - `git diff --check`: PASS with CRLF warnings only.
 - No public tunnel, public MCP endpoint, ChatGPT connector creation, deploy, `.env` or credential read, provider/API call, source overwrite, secret output, push, tag, release, deploy, publish, or production configuration change occurred.
+## 2026-07-30 — Public S0-S3 validation summary
+
+Only validations that actually ran and are safe to publish are summarized
+below. No object identifiers, absolute local paths, secret locators, Provider
+payloads or business content are retained.
+
+### S0 repository truth reconciliation
+
+```yaml
+task: S0-T1_RECONCILE_CURRENT_TRUTH
+commit_or_pr: 12cf2931884c08b85730507fa23ceeaa59916296
+commands_or_lanes:
+  - changed-file allowlist
+  - Markdown relative-link validation
+  - NEXT_TASK JSON and HANDOFF structure checks
+  - git diff --check
+result: PASS
+external_operations: none
+activity_data_access: none
+```
+
+### S1 scope freeze
+
+```yaml
+task: S1-T1_FREEZE_PERIPHERAL_EXPANSION
+commit_or_pr: d1b1a10365da46a4b3307fb41c2cbbaa89c8d7ea
+commands_or_lanes:
+  - NEXT_TASK JSON parse and unique-READY check
+  - component classification coverage inspection
+  - Markdown relative-link validation
+  - changed-file allowlist
+  - git diff --check
+result: PASS
+external_operations: none
+activity_data_access: none
+```
+
+### S2 current core-loop gap proof
+
+```yaml
+task: S2-T1_CURRENT_CORE_LOOP_GAP_PROOF
+commit_or_pr: f4a15f565865c045325274251a91d2e11c633e41
+commands_or_lanes:
+  - static repository evidence with rg and git history inspection
+  - C01-C16 implementation and acceptance classification
+  - assembly file-operation trace
+  - Markdown relative-link validation
+  - task-board consistency checks
+  - git diff --check
+result: PASS
+external_operations: none
+activity_data_access: none
+```
+
+No isolated test group was run for S2; static evidence was sufficient for that
+read-only proof.
+
+### S3 combined readiness validation
+
+```yaml
+task: S3-T1_CURRENT_WORKBENCH_CANARY_READINESS
+commit_or_pr: f570d145e4832d2b2237123a40d5e8e0b503fcf1
+commands_or_lanes:
+  - current emitted build
+  - authorized read-only activity database integrity lane using SQLite query_only
+  - schema, ledger and aggregate governed-media integrity checks
+  - aggregate candidate eligibility scan with no object identifiers retained
+  - low-disclosure Provider readiness gate-presence check
+  - Provider environment safety and capability contract (11 tests)
+  - Generation Intent, cost acknowledgement and worker safety (32 tests)
+  - Provider output, bounded download and FFprobe (27 tests)
+  - Generation, Blob/Artifact identity and media activation integrity (37 tests)
+result: PASS_WITH_TERMINAL_FINDINGS
+external_operations: none
+activity_data_access: read_only
+activity_data_write: none
+activity_object_identifiers_retained: false
+isolated_test_activity_data_access: none
+```
+
+The read-only activity lane used query-only access and retained aggregate
+results only. It performed no activity write and published no object
+identifier, local path, prompt or business content. The isolated tests used
+temporary databases and fixture transports with Provider execution disabled.
+The combined result records successful validation together with the three S3
+findings; it does not claim current external acceptance or authorize S4.

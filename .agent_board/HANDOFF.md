@@ -1,14 +1,136 @@
 # HANDOFF.md
 
-Current mode: Sustained Task Queue Mode v0.1.0 for AI Video Production Workspace
-Last run: codex-20260709-155633-r2g-l
-Last result: R2G-L read-only live smoke local entry prep completed
+Current mode: PR #106 review remediation; no executable task is `READY`
+Last run: PR106-T1_REMEDIATE_REVIEW_FINDINGS
+Last result: S3 is terminal; S3B code candidates await review and real-operation gates remain closed
 
 ## Current state
 
 Current task: none
-Current status: EMPTY
+Current status: `AWAITING_PR_REVIEW`
 Current owner: none
+Ready task count: 0
+
+## Current S3 and S3B state
+
+- S3 is `DONE` with terminal result `BLOCKED_BY_S3_FINDING`.
+- The S3 receipt publishes only an aggregate candidate scan:
+  `eligible_candidate_count: 0`, `S3_NO_ELIGIBLE_SHOT` and
+  `identifiers_published: false`.
+- PR #106 is the current publication/remediation PR and remains unmerged.
+- `S3B-T1_BOUND_PROVIDER_POLLING` has local `PASS` evidence and repository
+  status `AWAITING_PR_REVIEW` in Draft PR #107.
+- `S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE` has local `PASS` evidence
+  and repository status `AWAITING_PR_REVIEW` in Draft PR #107.
+- PR #107 remains Draft, stacked on the PR #106 branch and unchanged by the
+  PR #106 remediation.
+- `S3B-T2_PREPARE_ELIGIBLE_SHOT` is
+  `AWAITING_JENN_AUTHORIZATION`.
+- `S3B-T3_CONFIGURE_RUNNINGHUB_CREDENTIAL` is
+  `AWAITING_JENN_LOCAL_ACTION`.
+- `S3B-T4_RERUN_CANARY_READINESS` is `BLOCKED`.
+- `S4-T1_REAL_SINGLE_SHOT_CURRENT_PATH` is `BLOCKED` and unauthorized.
+- Media Gateway and Director Bridge do not block this stage. Memory,
+  multi-user and automatic Snapshot remain frozen.
+- No activity database/media access, Provider operation, credential change,
+  service/deployment operation, source/test modification, PR merge or PR #107
+  update occurred during this remediation.
+## S2-T1 Current Core Loop Gap Proof
+
+- Audited the fixed current-schema scenario from an existing Project and
+  approved Storyboard Artifact through Closeout without reading activity data
+  or running a live service.
+- Published [Current Core Production Loop Gap Audit](../docs/CORE_PRODUCTION_LOOP_GAP_AUDIT.md)
+  with separate implementation and acceptance states for C01-C16.
+- Confirmed the initial single-Shot Workbench generation path is wired through
+  explicit preflight, cost acknowledgement, Intent, Provider adapter, safe
+  submit, poll/download/FFprobe, governed Run/Artifact and human review.
+- Did not claim current external acceptance. R3-8O/R3-9D/R3-9J remain
+  historical external evidence on their exact commits.
+- Found the current regeneration backend/API path and version preservation,
+  but not the Workbench follow-through action after `revision_needed`.
+- Confirmed Workbench human approval is the accepted-clip authority.
+- Recorded C12 Assembly plan as the first hard break. The active assembly path
+  uses `mock_clip.mp4` and `placeholder_copy`, does not run FFmpeg or create a
+  new assembled file, and has no Workbench execution entry.
+- Confirmed current real final Artifact, export and closeout are unavailable;
+  R3-9O/R3-9R remain historical feasibility evidence only.
+- Kept Director frame inspection optional. The Bridge remains
+  `RESTART_REQUIRED` relative to current main and does not block S3/S4.
+- Promoted `S3-T1_CURRENT_WORKBENCH_CANARY_READINESS` as the only `READY`
+  task because the Intent, budget/human confirmation, Provider boundary,
+  no-blind-retry behavior, download/FFprobe and Run/Artifact path all exist and
+  the remaining readiness scope is bounded.
+- No test group was run: static evidence and exact-current-main CI were
+  sufficient for this read-only proof. This does not convert CI into external
+  acceptance.
+- No source/test code, database, media, runtime, Provider, Bridge, Snapshot,
+  deployment, external configuration, secret or remote operation occurred.
+  No branch was pushed. S3 was not executed.
+
+## S1-T1 Scope Freeze and Topology Classification
+
+- Established [Product Scope Freeze](../docs/PRODUCT_SCOPE_FREEZE.md) as the
+  single current product-scope source.
+- Set `CURRENT_MAIN_REPEATABLE_PRODUCTION_LOOP` as the only P0.
+- Assigned exactly one primary classification to each current component.
+- Kept optional playback, Snapshot and Remote Readonly surfaces non-blocking.
+- Froze Media Gateway expansion, Memory/automatic Saveback, multi-user,
+  automatic Snapshot, Windows automatic startup, WebM/broad formats, new OAuth
+  experiments, Full WebGPT externalization and Provider-platform expansion.
+- Retained legacy `/mcp`, Dedicated Director and their legacy auth/state
+  surfaces as `ROLLBACK_ONLY`; no route or configuration was removed.
+- Defined S2-S6 dependencies so Bridge, Snapshot, Media Gateway, Memory and
+  multi-user cannot block S2-S4.
+- Limited Provider Connections to a small status/preflight/budget MVP.
+- Defined route authority and evidence-based exit criteria without adding
+  telemetry.
+- Marked `S1-T1_FREEZE_PERIPHERAL_EXPANSION` `DONE`.
+- Prepared `S2-T1_CURRENT_CORE_LOOP_GAP_PROOF` as the only `READY` task. S2
+  was not claimed or executed.
+- Validation passed: `NEXT_TASK.json` parse, S2 unique-READY check, nine
+  `FROZEN` and two `ROLLBACK_ONLY` task classifications, historical backlog
+  READY count zero, component coverage inspection, four changed Markdown files
+  with zero broken relative links, changed-file allowlist and
+  `git diff --check`.
+- No source/test code, database, media, runtime, Provider, Snapshot, deployment,
+  external configuration, secret or route-removal operation occurred. No
+  branch was pushed.
+
+## S0-T1 Repository Truth Reconciliation
+
+- Verified remote `main` at
+  `bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7`.
+- Verified PR #104 and PR #105 are merged.
+- Verified `Quality and integration` and `Browser smoke` both passed for the
+  current main commit.
+- Corrected the repository baseline and separated code/CI PASS from external
+  acceptance.
+- Recorded the historical RunningHub single-submit, four-shot generation,
+  regeneration, FFmpeg assembly and closeout as feasibility evidence only.
+  The related execution scripts now live under `legacy/`; current-main product
+  acceptance remains separate.
+- Recorded the active assembly path as not productized: it still contains
+  `placeholder_copy` / mock-fixture behavior and has no current-main production
+  assembly/export PASS.
+- Recorded the low-disclosure Director Bridge observation: a managed process
+  was detected at source commit `3a142bb`; relative to current main it is
+  `RESTART_REQUIRED`. S0 did not revalidate configuration identity, heartbeat
+  or authenticated Remote contact, and did not start, stop or restart it.
+- Recorded PR #105 as code/CI PASS without claiming a new public
+  maintenance-window Media Gateway acceptance.
+- Removed Media Gateway, Memory, multi-user, automatic Snapshot, Windows logon
+  startup, WebM/broad formats and new OAuth experiments from the S3/S4 blocker
+  chain.
+- Prepared `S1-T1_FREEZE_PERIPHERAL_EXPANSION` as the only current `READY`
+  task. S1 was not claimed or executed.
+- Frozen scope is recorded in `.agent_board/NEXT_TASK.json`.
+- Legacy `/mcp` and the Dedicated Director route are `ROLLBACK_ONLY`.
+- Validation passed: `NEXT_TASK.json` parse and classification checks, changed
+  file allowlist, six changed Markdown files with zero broken relative links,
+  required HANDOFF fields and `git diff --check`.
+- No source, database, media, runtime, secret, Provider, Snapshot, deployment
+  or external configuration operation occurred. No branch was pushed.
 
 ## R2G-L Closeout
 
