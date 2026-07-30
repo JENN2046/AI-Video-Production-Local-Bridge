@@ -168,8 +168,8 @@ Current Project -> Approved Storyboard Package -> Provider Generation
 Current stage queue:
 
 1. `S1 Scope Freeze` — `DONE`
-2. `S2 Core Loop Gap Audit` — `READY`
-3. `S3 Provider Canary Readiness` — not loaded
+2. `S2 Core Loop Gap Audit` — `DONE`
+3. `S3 Provider Canary Readiness` — `READY`
 4. `S4 Real Single-Shot Canary` — not loaded
 5. `S5 Review and Regeneration` — not loaded
 6. `S6 Assembly, Export and Closeout` — not loaded

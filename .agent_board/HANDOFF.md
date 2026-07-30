@@ -1,14 +1,47 @@
 # HANDOFF.md
 
-Current mode: S1 scope freeze complete; automatic continuation disabled
-Last run: codex-20260730-150314-s1-freeze
-Last result: S1-T1 product scope frozen on top of S0 commit `12cf293`
+Current mode: S2 core-loop gap proof complete; automatic continuation disabled
+Last run: codex-20260730-154956-s2-gap-proof
+Last result: S2-T1 found C12 as the first hard break and bounded S3 readiness
 
 ## Current state
 
-Current task: `S2-T1_CURRENT_CORE_LOOP_GAP_PROOF`
+Current task: `S3-T1_CURRENT_WORKBENCH_CANARY_READINESS`
 Current status: `READY`
 Current owner: none
+
+## S2-T1 Current Core Loop Gap Proof
+
+- Audited the fixed current-schema scenario from an existing Project and
+  approved Storyboard Artifact through Closeout without reading activity data
+  or running a live service.
+- Published [Current Core Production Loop Gap Audit](../docs/CORE_PRODUCTION_LOOP_GAP_AUDIT.md)
+  with separate implementation and acceptance states for C01-C16.
+- Confirmed the initial single-Shot Workbench generation path is wired through
+  explicit preflight, cost acknowledgement, Intent, Provider adapter, safe
+  submit, poll/download/FFprobe, governed Run/Artifact and human review.
+- Did not claim current external acceptance. R3-8O/R3-9D/R3-9J remain
+  historical external evidence on their exact commits.
+- Found the current regeneration backend/API path and version preservation,
+  but not the Workbench follow-through action after `revision_needed`.
+- Confirmed Workbench human approval is the accepted-clip authority.
+- Recorded C12 Assembly plan as the first hard break. The active assembly path
+  uses `mock_clip.mp4` and `placeholder_copy`, does not run FFmpeg or create a
+  new assembled file, and has no Workbench execution entry.
+- Confirmed current real final Artifact, export and closeout are unavailable;
+  R3-9O/R3-9R remain historical feasibility evidence only.
+- Kept Director frame inspection optional. The Bridge remains
+  `RESTART_REQUIRED` relative to current main and does not block S3/S4.
+- Promoted `S3-T1_CURRENT_WORKBENCH_CANARY_READINESS` as the only `READY`
+  task because the Intent, budget/human confirmation, Provider boundary,
+  no-blind-retry behavior, download/FFprobe and Run/Artifact path all exist and
+  the remaining readiness scope is bounded.
+- No test group was run: static evidence and exact-current-main CI were
+  sufficient for this read-only proof. This does not convert CI into external
+  acceptance.
+- No source/test code, database, media, runtime, Provider, Bridge, Snapshot,
+  deployment, external configuration, secret or remote operation occurred.
+  No branch was pushed. S3 was not executed.
 
 ## S1-T1 Scope Freeze and Topology Classification
 
