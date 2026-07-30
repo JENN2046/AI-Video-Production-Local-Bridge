@@ -299,6 +299,8 @@ test("MP4 acceptance fixture and generated profiles are isolated, contract-valid
   assert.match(matrixSource, /acquireDatabasePathGuard\(databasePath\)/);
   assert.match(matrixSource, /databasePathGuard\.assertHolding\(\)/);
   assert.match(matrixSource, /await databasePathGuard\.release\(\)/);
+  assert.match(matrixSource, /await databasePathGuard\.release\(\);[\s\S]*closeSync\(databaseLease\.descriptor\);[\s\S]*console\.log\(JSON\.stringify\(passReceipt\)\)/);
+  assert.doesNotMatch(matrixSource, /console\.log\(JSON\.stringify\(\{\s*result: "PASS"/);
   assert.match(matrixSource, /assertDatabaseLeaseCurrent\(databaseLease\)/);
   assert.match(matrixSource, /\{ assertDatabaseCurrent \}/);
   assert.match(matrixSource, /\{ assertPathCurrent: assertDatabaseCurrent \}/);
@@ -694,6 +696,77 @@ syncBuiltinESMExports();
     assert.equal(readFileSync(markerPath, "utf8"), "BLOCKED");
     assert.equal(sha(externalDatabase), externalBefore);
     assert.doesNotMatch(result.stdout, /[0-9a-f]{64}|https?:\/\/|media\/v1\/[cs]\//);
+  } finally {
+    await gateway.close();
+    key.fill(0);
+    rmSync(root, { recursive: true, force: true });
+    rmSync(external, { recursive: true, force: true });
+  }
+});
+
+test("media acceptance matrix emits no PASS when the database guard refuses release", { skip: process.platform !== "win32" }, async () => {
+  const source = resolve("fixtures/video/mock_clip.mp4");
+  const fixtureCommand = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
+  const created = spawnSync(process.execPath, [fixtureCommand, "create", "--input", source, "--issuer", ISSUER, "--resource", RESOURCE], {
+    cwd: process.cwd(), input: `${SUBJECT}\n`, encoding: "utf8", windowsHide: true, env: childEnv
+  });
+  assert.equal(created.status, 0, created.stderr);
+  const receipt = JSON.parse(created.stdout) as { run_id: string };
+  const root = resolve("data/webgpt/media-acceptance", receipt.run_id);
+  const manifest = JSON.parse(readFileSync(join(root, "fixture.json"), "utf8")) as { issuer_hash: string };
+  const external = mkdtempSync(join(resolve(root, ".."), "database-guard-release-refusal-"));
+  const markerPath = join(external, "release-result.txt");
+  const preloadPath = join(external, "refuse-database-guard-release.cjs");
+  writeFileSync(preloadPath, `
+const childProcess = require("node:child_process");
+const fs = require("node:fs");
+const { syncBuiltinESMExports } = require("node:module");
+const originalSpawn = childProcess.spawn;
+childProcess.spawn = function(command, args, options) {
+  const child = originalSpawn.call(this, command, args, options);
+  if (Array.isArray(args) && args.some((value) => typeof value === "string" && value.endsWith("media-database-path-guard.ps1"))) {
+    const originalEnd = child.stdin.end.bind(child.stdin);
+    child.stdin.end = function(chunk, ...rest) {
+      if (String(chunk) === "RELEASE\\n") {
+        fs.writeFileSync(process.env.MEDIA_ACCEPTANCE_TEST_RELEASE_MARKER, "REFUSED", "utf8");
+        return originalEnd("REFUSE\\n", ...rest);
+      }
+      return originalEnd(chunk, ...rest);
+    };
+  }
+  return child;
+};
+syncBuiltinESMExports();
+`, "utf8");
+  const key = Buffer.alloc(32, 40);
+  const gateway = await startReadonlyMediaGateway({
+    database_path: join(root, "app.sqlite"),
+    issuer_hash: manifest.issuer_hash,
+    keyring: { active: { kid: "acceptance-matrix-guard-release-v1", key } },
+    allowed_origin: "https://aivideo.skmt617.top",
+    allowed_media_roots: [join(root, "media")],
+    port: 0
+  });
+  try {
+    const result = await runChild(process.execPath, [
+      "--require", preloadPath,
+      resolve("dist/scripts/webgpt-media-acceptance-matrix.js"),
+      "--run", receipt.run_id,
+      "--origin", `${gateway.url}/`,
+      "--kid", "acceptance-matrix-guard-release-v1"
+    ], `${key.toString("base64url")}\n`, {
+      ...matrixExpiryTestEnv,
+      MEDIA_ACCEPTANCE_TEST_RELEASE_MARKER: markerPath
+    }, 25_000);
+    assert.equal(result.timed_out, false, result.stderr);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+    assert.equal(readFileSync(markerPath, "utf8"), "REFUSED");
+    assert.deepEqual(lowDisclosureError(result.stderr), {
+      result: "FAIL",
+      stable_error_code: "MEDIA_ACCEPTANCE_ROOT_UNSAFE"
+    });
+    assert.doesNotMatch(result.stderr, /[0-9a-f]{64}|https?:\/\/|media\/v1\/[cs]\//);
   } finally {
     await gateway.close();
     key.fill(0);

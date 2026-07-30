@@ -583,6 +583,7 @@ function assertWidgetCors(response: Response): void {
 }
 
 async function main(): Promise<void> {
+  let passReceipt: Record<string, unknown> | null = null;
   const matrixController = new AbortController();
   const matrixTimer = setTimeout(() => matrixController.abort(), MATRIX_TIMEOUT_MS);
   try {
@@ -770,7 +771,7 @@ async function main(): Promise<void> {
     throw new MatrixError("MEDIA_ACCEPTANCE_PROJECT_ISOLATION_FAILED");
   }
 
-  console.log(JSON.stringify({
+  passReceipt = {
     result: "PASS",
     action: "matrix",
     run_id: runId,
@@ -786,7 +787,7 @@ async function main(): Promise<void> {
       unaffected_project_retained: true,
       webm_support: false
     }
-  }));
+  };
   } finally {
     await databasePathGuard.release();
   }
@@ -796,6 +797,8 @@ async function main(): Promise<void> {
   } finally {
     clearTimeout(matrixTimer);
   }
+  if (passReceipt === null) throw new MatrixError("MEDIA_ACCEPTANCE_MATRIX_FAILED");
+  console.log(JSON.stringify(passReceipt));
 }
 
 main().catch((error) => {
