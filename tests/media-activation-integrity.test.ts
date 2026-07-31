@@ -1686,6 +1686,8 @@ test("verified Blob recovery narrows legacy random staging cleanup to safe gener
     const targetDirectory = dirname(fixture.artifact.storage.uri);
     const legacyPath = join(targetDirectory, `blob-recovery-${randomUUID()}.staged`);
     const unmatchedPath = join(targetDirectory, "blob-recovery-not-a-uuid.staged");
+    const nonCanonicalPath = join(targetDirectory, `blob-recovery-${"a".repeat(36)}.staged`);
+    const mismatchedPath = join(targetDirectory, `blob-recovery-${randomUUID()}.staged`);
     rmSync(fixture.artifact.storage.uri);
     linkSync(fixture.source_path, legacyPath);
 
@@ -1700,6 +1702,20 @@ test("verified Blob recovery narrows legacy random staging cleanup to safe gener
     assert.equal(existsSync(legacyPath), true);
 
     rmSync(legacyPath);
+    writeFileSync(nonCanonicalPath, "preserve-noncanonical", "utf8");
+    writeFileSync(mismatchedPath, "preserve-mismatched", "utf8");
+    const mismatched = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(mismatched.ok, false);
+    if (!mismatched.ok) assert.equal(mismatched.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    assert.equal(readFileSync(mismatchedPath, "utf8"), "preserve-mismatched");
+    assert.equal(readFileSync(nonCanonicalPath, "utf8"), "preserve-noncanonical");
+
+    rmSync(mismatchedPath);
     copyFileSync(fixture.source_path, legacyPath);
     writeFileSync(unmatchedPath, "preserve", "utf8");
     const recovered = recoverVerifiedBlobStorage({
@@ -1711,6 +1727,7 @@ test("verified Blob recovery narrows legacy random staging cleanup to safe gener
     assert.equal(recovered.ok, true, recovered.ok ? undefined : recovered.error.code);
     assert.equal(existsSync(legacyPath), false);
     assert.equal(readFileSync(unmatchedPath, "utf8"), "preserve");
+    assert.equal(readFileSync(nonCanonicalPath, "utf8"), "preserve-noncanonical");
     assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
     assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
   } finally {

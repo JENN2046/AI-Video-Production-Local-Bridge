@@ -810,7 +810,7 @@ const VERIFIED_BLOB_RECOVERY_ERROR_MESSAGES: Readonly<Record<string, string>> = 
 };
 
 const DETERMINISTIC_BLOB_RECOVERY_STAGING_NAME = /^blob-recovery-[a-f0-9]{64}\.staged$/i;
-const LEGACY_BLOB_RECOVERY_STAGING_NAME = /^blob-recovery-[0-9a-f-]{36}\.staged$/i;
+const LEGACY_BLOB_RECOVERY_STAGING_NAME = /^blob-recovery-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.staged$/i;
 
 function verifiedBlobRecoveryError(error: unknown): ToolError {
   const candidate = error instanceof Error ? error.message : "";
@@ -905,7 +905,9 @@ function reconcileLegacyVerifiedBlobRecoveryStaging(
   targetDirectory: string,
   targetPath: string,
   registeredRoot: string,
-  canonicalRoot: string
+  canonicalRoot: string,
+  artifact: MediaArtifact,
+  blob: MediaBlob
 ): void {
   for (const entry of readdirSync(targetDirectory, { withFileTypes: true })) {
     if (!LEGACY_BLOB_RECOVERY_STAGING_NAME.test(entry.name)) continue;
@@ -924,6 +926,17 @@ function reconcileLegacyVerifiedBlobRecoveryStaging(
     const canonicalCandidate = resolve(realpathSync(candidatePath));
     if (!isPathInside(canonicalCandidate, canonicalRoot)
       || !sameResolvedPath(dirname(canonicalCandidate), resolve(realpathSync(targetDirectory)))) {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    let candidateFacts: LocalMediaFacts;
+    try {
+      candidateFacts = localMediaFacts(candidatePath, artifact);
+    } catch {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    if (candidateFacts.sha256 !== blob.sha256
+      || candidateFacts.size_bytes !== blob.size_bytes
+      || candidateFacts.detected_mime !== blob.detected_mime) {
       throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
     }
     rmSync(candidatePath);
@@ -989,7 +1002,7 @@ function normalizeInterruptedVerifiedBlobPlacement(
   }
 
   const legacyCandidates = readdirSync(targetDirectory)
-    .filter((name) => /^blob-recovery-[0-9a-f-]{36}\.staged$/i.test(name))
+    .filter((name) => LEGACY_BLOB_RECOVERY_STAGING_NAME.test(name))
     .map((name) => resolve(targetDirectory, name));
   const stagedCandidates = [deterministicStagedPath, ...legacyCandidates]
     .filter((candidatePath, index, candidates) => candidates.indexOf(candidatePath) === index)
@@ -1182,7 +1195,9 @@ export function recoverVerifiedBlobStorage(
       recoveryPaths.targetDirectory,
       targetPath,
       registeredRoot,
-      recoveryPaths.canonicalRoot
+      recoveryPaths.canonicalRoot,
+      artifact,
+      blob
     );
 
     if (existsSync(targetPath)) {
