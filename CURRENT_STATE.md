@@ -61,7 +61,7 @@ database. `REAL_PROVIDER_ENABLED=false` remains the safe default.
 |---|---|---|---|
 | Workbench V2 local UI | Storyboard, generation preflight, version review and delivery-readiness views exist | Activity database compatibility accepted at ledger `0011` | Core |
 | SQLite and governed media | Migration, Artifact/Blob digest and FFprobe boundaries exist | Ledger `0011` migration/restore evidence remains commit-scoped | Core |
-| Current Provider path | Intent, budget, confirmation and adapter boundaries exist; Provider defaults off | S3 local checks passed; Draft PR #108 contains the bounded polling, manual reconciliation and verified-Blob recovery candidate and is awaiting PR review or merge; it is not current `main`, and S4 remains blocked | Core blocker before S4 |
+| Current Provider path | Intent, budget, confirmation and adapter boundaries exist; Provider defaults off | S3 local checks passed; Draft PR #108 contains the bounded polling, manual reconciliation and verified-Blob recovery candidate but is blocked pending new exact-head CI and review; it is not current `main`, and S4 remains blocked | Core blocker before S4 |
 | Historical R3 Provider path | Execution scripts now reside under `legacy/` | RunningHub real canary, four-shot generation and regeneration completed historically | Feasibility evidence only |
 | Review and accepted clips | Version stacks, rejection reasons and human accepted-clip selection exist | Historical R3 review evidence exists | Core; current-path acceptance remains |
 | Active assembly/export | Active assembly still contains `placeholder_copy` / mock-fixture behavior; Workbench has no production assembly/export action | No current-main production-path PASS | S6 core gap |
@@ -196,31 +196,28 @@ Current stage queue:
 
 The S3B-T1 and S3B-T1A implementation candidates have local `PASS` evidence
 and are cleanly restacked in Draft PR #108 with repository status
-`AWAITING_PR108_REVIEW_OR_MERGE`. The candidate now includes the separately
-authorized narrow recovery of missing or drifted physical bytes for an
-immutable verified Blob: it requires explicit human reattachment and exact
-Artifact/Blob, SHA, size and MIME agreement, preserves the Blob row and link,
-and does not resubmit. The replacement rebind also archives the old Artifact in
-the same transaction. Restart recovery prefers a replacement already committed
-under its persisted local recovery identity, so a repaired old Artifact cannot
-skip the rebind. It also preserves that recovery across repeated human
-attachment and makes startup scheduling immediately execute the existing
-clock-rollback fail-closed path instead of waiting for a future
-`next_attempt_at`. Implementation head `277d651` passed Windows CI run
-`30598512506`; pre-remediation head `6d9319f` passed run `30602578941` on
-attempt 2. Review `4825473276` supplied the two latest findings, which are
-locally fixed in `4e244592b96881d1ea1088dcbeba940262e4c155`; final exact-head
-CI and review remain mandatory for any later PR publication decision. Old PR
-#107 is superseded and unmerged with its branch retained; none of these
-candidates is part of current `main`.
+`BLOCKED_BY_PR108_REVIEW_FINDING` until a new exact-head CI run and Codex review
+pass. The candidate includes the separately authorized narrow recovery of
+missing or drifted physical bytes for an immutable verified Blob: it requires
+explicit human reattachment and exact Artifact/Blob, SHA, size and MIME
+agreement, preserves the Blob row and link, and does not resubmit. Replacement
+rebind archives the old Artifact, restart recovery prefers a committed local
+replacement, repeated attachment preserves the same-task recovery, and startup
+scheduling handles clock rollback without waiting for a future attempt or a
+future lease inherited from a crashed process.
 
-Pre-remediation head `65a6c3d` passed Windows CI run `30604891810`; exact-head
-review `4825605253` then found that an inherited future lease could still defer
-clock-rollback recovery. The locally validated follow-up
-`96b75581fc3c47a9933452144c72f45619937932` allows takeover only for a polling
-job whose persisted poll start is verifiably later than the current database
-clock, so ordinary live leases remain protected. This follow-up still requires
-new final exact-head CI and review evidence.
+Head `2cb245e` passed Windows CI run `30606273467` on attempt 1. Exact-head
+review `4825747733` then found that an old persisted recovery prevented a human
+from attaching a different unused Provider task. The locally validated
+implementation `19f026f8f40f82203a3967a7f449152b272743cf` now verifies and
+atomically archives the old invalid Artifact and any committed replacement
+before clearing recovery and attaching the new task. Same-task recovery stays
+preserved; the internal local recovery identity cannot be attached as a
+Provider task; unsafe retirement rolls back with a stable error. Blob rows,
+physical bytes and Artifact-Blob links are unchanged. The prior CI is not
+transferable, so final exact-head CI and review remain mandatory. Old PR #107
+remains open Draft, superseded and unmerged with its branch retained; none of
+these candidates is part of current `main`.
 
 The complete Media Gateway promotion, Memory plugin, second real user,
 automatic Snapshot, Windows logon task, WebM/broad formats and new OAuth

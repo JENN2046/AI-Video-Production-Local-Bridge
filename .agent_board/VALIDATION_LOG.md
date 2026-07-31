@@ -3026,3 +3026,64 @@ service_starts: 0
 remaining_test_processes: 0
 final_exact_head_ci_and_review: REQUIRED_AFTER_STATE_SYNC
 ```
+
+### PR108 Provider recovery task-switch remediation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+validated_at: 2026-07-31T13:53:23+08:00
+replacement_pr: 108
+review:
+  review_id: 4825747733
+  reviewed_commit: 2cb245e1db8d9ffe8f1ef658e9ac5917d62d99bf
+finding: PERSISTED_RECOVERY_BLOCKED_NEW_PROVIDER_TASK_ATTACHMENT
+implementation_commit: 19f026f8f40f82203a3967a7f449152b272743cf
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - node dist/scripts/run-isolated-tests.js dist/tests/workbench-v2-domain.test.js
+  - npm run test:v2
+  - npm run test:foundation-boundaries
+  - npm run test:provider-boundaries
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  isolated_workbench_domain: PASS_45
+  workbench_v2: PASS_65
+  foundation_boundaries: PASS_93
+  provider_boundaries: PASS_52
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  same_task_recovery_preserved: true
+  local_recovery_identity_rejected_as_provider_task: true
+  prior_invalid_artifact_archived_on_task_switch: true
+  committed_replacement_archived_on_task_switch: true
+  unsafe_retirement_rolls_back: true
+  unsafe_retirement_error: ARTIFACT_RECOVERY_RETIRE_FAILED
+  provider_task_switch_enters_polling: true
+  provider_output_recovery_cleared_after_safe_retirement: true
+  blob_rows_changed: 0
+  blob_bytes_changed: 0
+  artifact_blob_links_changed: 0
+  provider_calls_in_regression: 0
+  automatic_submit_retry: 0
+prior_head_ci:
+  run_id: 30606273467
+  attempt: 1
+  reviewed_head: 2cb245e1db8d9ffe8f1ef658e9ac5917d62d99bf
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+  transferable_to_new_head: false
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+final_exact_head_ci_and_review: REQUIRED_AFTER_STATE_SYNC
+```

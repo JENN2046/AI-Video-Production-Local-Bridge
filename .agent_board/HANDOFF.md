@@ -2,12 +2,12 @@
 
 Current mode: PR #108 verified-Blob recovery remediation; no executable task is `READY`
 Last run: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
-Last result: recovery and all current review fixes are locally validated; Draft PR #108 awaits exact-head review or merge
+Last result: task-switch recovery fix is locally validated; Draft PR #108 awaits new exact-head CI and review
 
 ## Current state
 
 Current task: none
-Current status: `DRAFT_AWAITING_REVIEW_OR_MERGE`
+Current status: `DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW`
 Current owner: none
 Ready task count: 0
 
@@ -20,9 +20,9 @@ Ready task count: 0
 - PR #106 was squash-merged as
   `b3a108abc8728e89259d0d953e1c638b9ca482ea`, the current `main` baseline.
 - `S3B-T1_BOUND_PROVIDER_POLLING` has local `PASS` evidence and repository
-  status `AWAITING_PR108_REVIEW_OR_MERGE` in Draft PR #108.
+  status `BLOCKED_BY_PR108_REVIEW_FINDING` in Draft PR #108.
 - `S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE` has local `PASS` evidence
-  and repository status `AWAITING_PR108_REVIEW_OR_MERGE` in Draft
+  and repository status `BLOCKED_BY_PR108_REVIEW_FINDING` in Draft
   PR #108.
 - The exact-head recovery implementation `277d651c4698ae00b9e0fa170b35c39754daa84f`
   passed Windows CI run `30598512506`. It repairs only missing or drifted
@@ -62,10 +62,22 @@ Ready task count: 0
   regression now includes the inherited future lease and still performs zero
   Provider calls. Final exact-head CI and Codex review must be repeated after
   this state sync.
-- PR #107 is superseded and unmerged. Its branch remains retained.
+- Head `2cb245e1db8d9ffe8f1ef658e9ac5917d62d99bf` passed Windows CI
+  run `30606273467` on attempt 1. Exact-head review `4825747733` then found
+  that a persisted recovery for the old Provider task prevented a human from
+  attaching a different unused task. Commit
+  `19f026f8f40f82203a3967a7f449152b272743cf` now preserves same-task recovery,
+  rejects the internal local recovery identity as a Provider task, and, on a
+  real task switch, verifies and atomically archives the old invalid Artifact
+  plus any committed replacement before clearing recovery. Blob rows, bytes
+  and Artifact-Blob links remain unchanged; unsafe retirement rolls back with
+  `ARTIFACT_RECOVERY_RETIRE_FAILED`. Local validation passed with zero Provider
+  calls. Run `30606273467` is not transferable to the new head.
+- PR #107 remains open Draft, superseded and unmerged. Its branch remains
+  retained.
 - PR #108 is Draft on `main`; it is not authorized for merge or
-  ready-for-review. Exact-head CI/review evidence is required before any later
-  Jenn merge or readiness decision.
+  ready-for-review. New exact-head CI/review evidence is required before any
+  later Jenn merge or readiness decision.
 - `S3B-T2_PREPARE_ELIGIBLE_SHOT` is
   `AWAITING_JENN_AUTHORIZATION`.
 - `S3B-T3_CONFIGURE_RUNNINGHUB_CREDENTIAL` is

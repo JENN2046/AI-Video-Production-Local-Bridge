@@ -57,17 +57,17 @@
       "merge_method": "SQUASH"
     },
     "pull_request_107": {
-      "status": "SUPERSEDED",
+      "status": "OPEN_DRAFT_SUPERSEDED",
       "base": "codex/s3-workbench-canary-readiness",
       "changes_allowed_in_current_task": false,
       "merge_authorized": false,
       "ready_for_review_authorized": false
     },
     "pull_request_108": {
-      "status": "DRAFT_AWAITING_REVIEW_OR_MERGE",
+      "status": "DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW",
       "base": "main",
       "head": "codex/s3b-provider-polling-restack",
-      "candidate_commit": "96b75581fc3c47a9933452144c72f45619937932",
+      "candidate_commit": "19f026f8f40f82203a3967a7f449152b272743cf",
       "exact_head_ci_and_review_required": true,
       "merged_to_main": false,
       "merge_authorized": false,
@@ -78,14 +78,14 @@
     {
       "task_id": "S3B-T1_BOUND_PROVIDER_POLLING",
       "local_status": "PASS",
-      "repository_status": "AWAITING_PR108_REVIEW_OR_MERGE",
+      "repository_status": "BLOCKED_BY_PR108_REVIEW_FINDING",
       "pull_request": 108,
       "merged_to_main": false
     },
     {
       "task_id": "S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE",
       "local_status": "PASS",
-      "repository_status": "AWAITING_PR108_REVIEW_OR_MERGE",
+      "repository_status": "BLOCKED_BY_PR108_REVIEW_FINDING",
       "pull_request": 108,
       "merged_to_main": false
     },
@@ -159,7 +159,7 @@
   "completed_by": "Codex",
   "completed_at": "2026-07-30T19:41:08+08:00",
   "result": "BLOCKED_BY_S3_FINDING",
-  "validation": "Current build and four isolated safety lanes passed; the latest PR108 review remediations are locally validated and still require exact-head CI/review. No Provider network call occurred. The S3 terminal findings are recorded without activity-object identifiers.",
+  "validation": "Current build and four isolated safety lanes passed. Review 4825747733 found that an existing recovery blocked a valid switch to a new Provider task; implementation 19f026f retires the old recovery Artifacts atomically and is locally validated. The prior exact-head CI is not transferable, so PR108 remains blocked pending new exact-head CI and review. No Provider network call occurred.",
   "evidence": [
     "ops/reports/2026-07-30-current-workbench-canary-readiness.md",
     ".agent_board/TASK_LEDGER.md",
@@ -167,13 +167,13 @@
     ".agent_board/HANDOFF.md"
   ],
   "commit": "f570d145e4832d2b2237123a40d5e8e0b503fcf1",
-  "delivery": "PR_106_MERGED_PR_108_DRAFT_REVIEW_BLOCKED",
-  "updated_at": "2026-07-31T13:12:11+08:00",
+  "delivery": "PR_106_MERGED_PR_108_DRAFT_FINAL_GATES_PENDING",
+  "updated_at": "2026-07-31T13:53:23+08:00",
   "safe_state": {
     "provider_calls": 0,
     "activity_writes": 0,
-    "restack_source_files": 4,
-    "restack_test_files": 2,
+    "restack_source_files": 6,
+    "restack_test_files": 4,
     "restack_provider_network_calls": 0,
     "restack_activity_data_access": 0
   }

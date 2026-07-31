@@ -265,18 +265,18 @@ not change the S3 evidence baseline recorded at the top of this receipt.
 
 ```yaml
 old_pr107:
-  status: SUPERSEDED
+  status: OPEN_DRAFT_SUPERSEDED
   merge_authorized: false
 replacement_pr:
   number: 108
-  status: DRAFT_AWAITING_REVIEW_OR_MERGE
+  status: DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
   merged_to_main: false
 S3B-T1:
   local_status: PASS
-  repository_status: AWAITING_PR108_REVIEW_OR_MERGE
+  repository_status: BLOCKED_BY_PR108_REVIEW_FINDING
 S3B-T1A:
   local_status: PASS
-  repository_status: AWAITING_PR108_REVIEW_OR_MERGE
+  repository_status: BLOCKED_BY_PR108_REVIEW_FINDING
 S3B-T2:
   status: AWAITING_JENN_AUTHORIZATION
 S3B-T3:
@@ -303,7 +303,7 @@ the verified recovery identity, and startup scheduling immediately runs the
 clock-rollback fail-closed path even when `next_attempt_at` is still in the
 future. Implementation head `277d651` passed Windows CI run `30598512506`;
 pre-remediation head `6d9319f` passed run `30602578941` on attempt 2. Exact-head
-review `4825473276` produced the latest two findings; their locally validated
+review `4825473276` produced two restart findings; their locally validated
 implementation fix is `4e244592b96881d1ea1088dcbeba940262e4c155`. PR #108
 still requires final exact-head CI and review evidence for any later
 publication decision.
@@ -314,8 +314,19 @@ could still defer the clock-rollback path. Follow-up implementation
 `96b75581fc3c47a9933452144c72f45619937932` allows lease takeover only when a
 polling job's persisted poll start is verifiably later than the current
 database clock. The inherited-lease regression performs zero Provider calls
-and ordinary live leases remain protected. Final exact-head CI and review must
-be repeated after the state sync.
+and ordinary live leases remain protected.
+
+Head `2cb245e` then passed Windows CI run `30606273467` on attempt 1. Exact-head
+review `4825747733` found that a persisted recovery for the prior Provider task
+blocked a valid human switch to a different unused task. Follow-up
+`19f026f8f40f82203a3967a7f449152b272743cf` preserves recovery for the same
+task but, for a real task switch, strictly verifies and atomically archives the
+old invalid Artifact and any committed local replacement before clearing the
+recovery. It rejects the internal local recovery identity, preserves Blob rows,
+bytes and links, and rolls back unsafe retirement with a stable error. The
+45-case Workbench domain lane and the broader local gates passed with zero
+Provider calls. Run `30606273467` is not transferable; new final exact-head CI
+and review are required.
 
 The remaining sequence is:
 
