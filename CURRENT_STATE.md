@@ -214,6 +214,14 @@ CI and review remain mandatory for any later PR publication decision. Old PR
 #107 is superseded and unmerged with its branch retained; none of these
 candidates is part of current `main`.
 
+Pre-remediation head `65a6c3d` passed Windows CI run `30604891810`; exact-head
+review `4825605253` then found that an inherited future lease could still defer
+clock-rollback recovery. The locally validated follow-up
+`96b75581fc3c47a9933452144c72f45619937932` allows takeover only for a polling
+job whose persisted poll start is verifiably later than the current database
+clock, so ordinary live leases remain protected. This follow-up still requires
+new final exact-head CI and review evidence.
+
 The complete Media Gateway promotion, Memory plugin, second real user,
 automatic Snapshot, Windows logon task, WebM/broad formats and new OAuth
 compatibility experiments are removed from the S3/S4 blocker chain.

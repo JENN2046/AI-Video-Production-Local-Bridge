@@ -23,10 +23,10 @@ automatically.
   `codex/s3b-provider-polling-restack`; not authorized for merge or
   ready-for-review. The narrow verified-Blob recovery and the follow-up
   archival, state-truth, committed-replacement restart, startup clock-rollback
-  scheduling and repeated-attachment recovery-state fixes are in the
-  candidate. Implementation commit
-  `4e244592b96881d1ea1088dcbeba940262e4c155` is locally validated; only
-  final exact-head CI/review evidence may support a later Jenn decision.
+  scheduling, inherited-lease takeover and repeated-attachment recovery-state
+  fixes are in the candidate. Latest implementation commit
+  `96b75581fc3c47a9933452144c72f45619937932` is locally validated; only final
+  exact-head CI/review evidence may support a later Jenn decision.
 
 ## S3B follow-ups
 

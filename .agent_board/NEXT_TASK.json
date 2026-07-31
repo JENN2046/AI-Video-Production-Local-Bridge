@@ -67,7 +67,7 @@
       "status": "DRAFT_AWAITING_REVIEW_OR_MERGE",
       "base": "main",
       "head": "codex/s3b-provider-polling-restack",
-      "candidate_commit": "4e244592b96881d1ea1088dcbeba940262e4c155",
+      "candidate_commit": "96b75581fc3c47a9933452144c72f45619937932",
       "exact_head_ci_and_review_required": true,
       "merged_to_main": false,
       "merge_authorized": false,
@@ -168,7 +168,7 @@
   ],
   "commit": "f570d145e4832d2b2237123a40d5e8e0b503fcf1",
   "delivery": "PR_106_MERGED_PR_108_DRAFT_REVIEW_BLOCKED",
-  "updated_at": "2026-07-31T12:41:05+08:00",
+  "updated_at": "2026-07-31T13:12:11+08:00",
   "safe_state": {
     "provider_calls": 0,
     "activity_writes": 0,

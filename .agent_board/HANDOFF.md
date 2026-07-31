@@ -52,6 +52,16 @@ Ready task count: 0
   repeated attachment. The new regressions perform zero Provider calls and
   pass in the 64-case Workbench V2 lane. Final exact-head CI and Codex review
   are still required after this state sync.
+- Head `65a6c3d56fefa4b11d3c6b3da683261fc148cadc` then passed Windows
+  CI run `30604891810`, but exact-head review `4825605253` found that a
+  clock-rollback job could still be delayed by a future lease inherited from
+  the crashed process. Commit
+  `96b75581fc3c47a9933452144c72f45619937932` permits lease takeover only for a
+  polling job whose persisted poll start is verifiably later than
+  `CURRENT_TIMESTAMP`; ordinary live leases remain protected. The startup
+  regression now includes the inherited future lease and still performs zero
+  Provider calls. Final exact-head CI and Codex review must be repeated after
+  this state sync.
 - PR #107 is superseded and unmerged. Its branch remains retained.
 - PR #108 is Draft on `main`; it is not authorized for merge or
   ready-for-review. Exact-head CI/review evidence is required before any later

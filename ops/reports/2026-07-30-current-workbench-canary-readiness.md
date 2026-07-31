@@ -308,6 +308,15 @@ implementation fix is `4e244592b96881d1ea1088dcbeba940262e4c155`. PR #108
 still requires final exact-head CI and review evidence for any later
 publication decision.
 
+Head `65a6c3d` passed Windows CI run `30604891810`; exact-head review
+`4825605253` then found that a future lease inherited from a crashed process
+could still defer the clock-rollback path. Follow-up implementation
+`96b75581fc3c47a9933452144c72f45619937932` allows lease takeover only when a
+polling job's persisted poll start is verifiably later than the current
+database clock. The inherited-lease regression performs zero Provider calls
+and ordinary live leases remain protected. Final exact-head CI and review must
+be repeated after the state sync.
+
 The remaining sequence is:
 
 1. require Draft PR #108 to retain clean-diff, Windows CI and exact-head Codex

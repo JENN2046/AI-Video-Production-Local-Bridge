@@ -2978,3 +2978,51 @@ service_starts: 0
 remaining_test_processes: 0
 final_exact_head_ci_and_review: REQUIRED_AFTER_STATE_SYNC
 ```
+
+### PR108 clock-rollback inherited-lease remediation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+validated_at: 2026-07-31T13:12:11+08:00
+replacement_pr: 108
+review:
+  review_id: 4825605253
+  reviewed_commit: 65a6c3d56fefa4b11d3c6b3da683261fc148cadc
+finding: CLOCK_ROLLBACK_RECOVERY_BLOCKED_BY_INHERITED_LEASE
+implementation_commit: 96b75581fc3c47a9933452144c72f45619937932
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - node dist/scripts/run-isolated-tests.js dist/tests/workbench-v2-domain.test.js
+  - npm run test:v2
+  - npm run test:foundation-boundaries
+  - npm run test:provider-boundaries
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  isolated_workbench_domain: PASS_44
+  workbench_v2: PASS_64
+  foundation_boundaries: PASS_93
+  provider_boundaries: PASS_52
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  rollback_polling_job_bypasses_inherited_future_lease: true
+  takeover_requires_verified_clock_rollback: true
+  ordinary_live_lease_preserved: true
+  stable_reconciliation_reason: PROVIDER_POLL_TIMEOUT
+  provider_task_id_preserved: true
+  provider_calls_in_regression: 0
+  automatic_submit_retry: 0
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+final_exact_head_ci_and_review: REQUIRED_AFTER_STATE_SYNC
+```
