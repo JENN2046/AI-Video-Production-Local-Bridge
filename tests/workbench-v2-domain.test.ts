@@ -2550,6 +2550,175 @@ test("switching Provider tasks retires the prior recovery artifacts without chan
   }
 });
 
+test("abandoning Provider recovery retires its artifacts atomically without changing Blob bindings", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-recovery-abandon-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const mediaRoot = join(root, "media");
+  const videoFixture = resolve("fixtures/video/mock_clip.mp4");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Retire recovery before human abandon");
+    const taskId = "task-recovery-abandon";
+    const localIdentity = "local_recovery_33333333-3333-4333-8333-333333333333";
+    const wallMs = Date.now();
+    persistKnownProviderTask(
+      sqlitePath,
+      prepared.intent_id,
+      prepared.job_id,
+      taskId,
+      MIN_PROVIDER_TASK_POLL_TIMEOUT_MS
+    );
+
+    const db = openM0Database(sqlitePath);
+    const activateRecoveryArtifact = (artifactId: string, providerJobId: string) => activateLocalMediaArtifact({
+      artifact: {
+        artifact_id: artifactId,
+        blob_id: "",
+        artifact_type: "video",
+        role: "generated_clip",
+        status: "active",
+        storage: {
+          uri: join(mediaRoot, "artifacts", "videos", `${artifactId}.mp4`),
+          mime_type: "video/mp4",
+          filename: `${artifactId}.mp4`
+        },
+        metadata: {
+          width: 1080,
+          height: 1920,
+          duration_seconds: 6,
+          aspect_ratio: "9:16",
+          sha256: ""
+        },
+        linked_objects: { project_id: prepared.project_id, shot_id: prepared.shot_id },
+        source: {
+          kind: "provider_output_file",
+          provider: "runninghub",
+          provider_job_id: providerJobId,
+          sha256: "",
+          external_url_host: "fixture.invalid"
+        }
+      },
+      source_path: videoFixture,
+      media_root: mediaRoot
+    }, db);
+    const invalidArtifact = activateRecoveryArtifact("artifact_recovery_abandon_invalid", taskId);
+    const replacementArtifact = activateRecoveryArtifact("artifact_recovery_abandon_replacement", localIdentity);
+    assert.equal(invalidArtifact.ok, true);
+    assert.equal(replacementArtifact.ok, true);
+    if (!invalidArtifact.ok || !replacementArtifact.ok) throw new Error("recovery abandon fixture activation failed");
+
+    const intentRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const intentData = JSON.parse(intentRow.data_json) as Record<string, unknown>;
+    intentData.provider_output_recovery = {
+      version: 1,
+      provider_task_id: taskId,
+      invalid_artifact_id: invalidArtifact.artifact.artifact_id,
+      local_identity: localIdentity,
+      requested_at: new Date(wallMs).toISOString()
+    };
+    db.prepare("UPDATE generation_intents SET data_json = ? WHERE intent_id = ?")
+      .run(JSON.stringify(intentData), prepared.intent_id);
+    db.prepare(`UPDATE generation_jobs
+      SET state = 'manual_reconciliation',
+          reconciliation_reason = 'PROVIDER_OUTPUT_REQUIRES_RECONCILIATION',
+          lease_owner = '',
+          lease_token = '',
+          lease_expires_at = NULL
+      WHERE job_id = ?`).run(prepared.job_id);
+
+    const blobBindingsBefore = db.prepare(`SELECT artifact_id, blob_id FROM media_artifact_blobs
+      WHERE artifact_id IN (?, ?) ORDER BY artifact_id`).all(
+      invalidArtifact.artifact.artifact_id,
+      replacementArtifact.artifact.artifact_id
+    ) as Array<{ artifact_id: string; blob_id: string }>;
+    db.prepare("UPDATE media_artifacts SET status = 'inaccessible' WHERE artifact_id = ?")
+      .run(replacementArtifact.artifact.artifact_id);
+    const rejectedUnsafeAbandon = reconcileGenerationJob(prepared.job_id, {
+      decision: "abandon",
+      reason: "Reject unsafe recovery retirement.",
+      human_confirmation: true
+    }, db, { env: prepared.env, now: () => new Date(wallMs + 500) });
+    assert.equal(rejectedUnsafeAbandon.ok, false);
+    if (!rejectedUnsafeAbandon.ok) {
+      assert.equal(rejectedUnsafeAbandon.error.code, "ARTIFACT_RECOVERY_RETIRE_FAILED");
+    }
+    const stateAfterRejectedAbandon = db.prepare(`SELECT
+        (SELECT status FROM generation_intents WHERE intent_id = ?) AS intent_status,
+        (SELECT data_json FROM generation_intents WHERE intent_id = ?) AS intent_data_json,
+        (SELECT state FROM generation_jobs WHERE job_id = ?) AS job_state,
+        (SELECT status FROM media_artifacts WHERE artifact_id = ?) AS invalid_status,
+        (SELECT status FROM media_artifacts WHERE artifact_id = ?) AS replacement_status`)
+      .get(
+        prepared.intent_id,
+        prepared.intent_id,
+        prepared.job_id,
+        invalidArtifact.artifact.artifact_id,
+        replacementArtifact.artifact.artifact_id
+      ) as {
+        intent_status: string;
+        intent_data_json: string;
+        job_state: string;
+        invalid_status: string;
+        replacement_status: string;
+      };
+    assert.equal(stateAfterRejectedAbandon.intent_status, "running");
+    assert.equal("provider_output_recovery" in JSON.parse(stateAfterRejectedAbandon.intent_data_json), true);
+    assert.equal(stateAfterRejectedAbandon.job_state, "manual_reconciliation");
+    assert.equal(stateAfterRejectedAbandon.invalid_status, "active");
+    assert.equal(stateAfterRejectedAbandon.replacement_status, "inaccessible");
+    db.prepare("UPDATE media_artifacts SET status = 'active' WHERE artifact_id = ?")
+      .run(replacementArtifact.artifact.artifact_id);
+
+    const abandoned = reconcileGenerationJob(prepared.job_id, {
+      decision: "abandon",
+      reason: "Human abandoned the recovered Provider output.",
+      human_confirmation: true
+    }, db, { env: prepared.env, now: () => new Date(wallMs + 1_000) });
+    assert.equal(abandoned.ok, true);
+    if (!abandoned.ok) throw new Error("Provider recovery abandon failed");
+
+    const abandonedIntent = db.prepare("SELECT provider_task_id, status, data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { provider_task_id: string; status: string; data_json: string };
+    const abandonedJob = db.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    const abandonedRun = db.prepare("SELECT data_json FROM generation_runs WHERE run_id = ?")
+      .get(prepared.run_id) as { data_json: string };
+    const retiredArtifacts = db.prepare(`SELECT artifact_id, status, data_json FROM media_artifacts
+      WHERE artifact_id IN (?, ?) ORDER BY artifact_id`).all(
+      invalidArtifact.artifact.artifact_id,
+      replacementArtifact.artifact.artifact_id
+    ) as Array<{ artifact_id: string; status: string; data_json: string }>;
+    const blobBindingsAfter = db.prepare(`SELECT artifact_id, blob_id FROM media_artifact_blobs
+      WHERE artifact_id IN (?, ?) ORDER BY artifact_id`).all(
+      invalidArtifact.artifact.artifact_id,
+      replacementArtifact.artifact.artifact_id
+    ) as Array<{ artifact_id: string; blob_id: string }>;
+    const activeGeneratedClips = db.prepare(`SELECT COUNT(*) AS count FROM media_artifacts
+      WHERE project_id = ? AND shot_id = ? AND role = 'generated_clip'
+        AND artifact_type = 'video' AND status = 'active'`)
+      .get(prepared.project_id, prepared.shot_id) as { count: number };
+    db.close();
+
+    assert.equal(abandonedIntent.provider_task_id, taskId);
+    assert.equal(abandonedIntent.status, "cancelled");
+    assert.equal("provider_output_recovery" in JSON.parse(abandonedIntent.data_json), false);
+    assert.deepEqual({ ...abandonedJob }, {
+      state: "cancelled",
+      reconciliation_reason: "Human abandoned the recovered Provider output."
+    });
+    assert.equal((JSON.parse(abandonedRun.data_json) as { status: string }).status, "cancelled");
+    assert.equal(retiredArtifacts.length, 2);
+    for (const artifact of retiredArtifacts) {
+      assert.equal(artifact.status, "archived");
+      assert.equal((JSON.parse(artifact.data_json) as { status: string }).status, "archived");
+    }
+    assert.deepEqual(blobBindingsAfter, blobBindingsBefore);
+    assert.equal(activeGeneratedClips.count, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("a local recovery identity is reserved across intents before any replacement Artifact exists", async () => {
   const root = mkdtempSync(join(tmpdir(), "generation-recovery-identity-reserved-"));
   const sqlitePath = join(root, "app.sqlite");

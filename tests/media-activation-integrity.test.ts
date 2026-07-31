@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 
 import { checkDatabase, migrateDatabase } from "../src/storage/databaseGovernance.js";
@@ -979,6 +979,61 @@ test("verified Blob recovery restores missing bytes without changing immutable r
       () => db.prepare("DELETE FROM media_blobs WHERE blob_id = ?").run(fixture.artifact.blob_id),
       /MEDIA_BLOB_IMMUTABLE/
     );
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("verified Blob recovery closes only its interrupted exclusive-placement hard-link pair", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-linked-placement-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const before = immutableBlobSnapshot(db, fixture.artifact.artifact_id);
+    const targetPath = fixture.artifact.storage.uri;
+    const stagedPath = join(
+      dirname(targetPath),
+      `blob-recovery-${randomUUID()}.staged`
+    );
+    rmSync(targetPath);
+    copyFileSync(fixture.source_path, stagedPath);
+    linkSync(stagedPath, targetPath);
+    assert.equal(lstatSync(stagedPath).nlink, 2);
+    assert.equal(lstatSync(targetPath).nlink, 2);
+
+    const recovered = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(recovered.ok, true, recovered.ok ? undefined : recovered.error.code);
+    if (!recovered.ok) return;
+    assert.equal(recovered.outcome, "ALREADY_REUSABLE");
+    assert.equal(existsSync(stagedPath), false);
+    assert.equal(lstatSync(targetPath).nlink, 1);
+    assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
+    assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
+
+    const unrelatedLink = join(root, "unrelated-hard-link.mp4");
+    linkSync(targetPath, unrelatedLink);
+    const rejectedUnownedLink = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(rejectedUnownedLink.ok, false);
+    if (!rejectedUnownedLink.ok) {
+      assert.equal(rejectedUnownedLink.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    assert.equal(existsSync(unrelatedLink), true);
+    assert.equal(lstatSync(targetPath).nlink, 2);
+    assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });

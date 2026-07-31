@@ -1289,7 +1289,7 @@ interface ProviderOutputRecoveryArtifactRow {
   data_json: string;
 }
 
-function retireProviderOutputRecoveryForTaskSwitch(
+function retireProviderOutputRecoveryArtifacts(
   db: M0Database,
   intent: WorkbenchGenerationIntent,
   recovery: ProviderOutputRecovery
@@ -2199,7 +2199,7 @@ export function reconcileGenerationJob(
       }
       let outputRecovery = persistedRecovery.recovery;
       if (outputRecovery && taskId !== outputRecovery.provider_task_id) {
-        const retired = retireProviderOutputRecoveryForTaskSwitch(db, intent, outputRecovery);
+        const retired = retireProviderOutputRecoveryArtifacts(db, intent, outputRecovery);
         if (!retired.ok) {
           db.exec("ROLLBACK");
           return { ok: false, error: { code: retired.error.code, message: "Previous Provider output recovery state could not be retired safely." } };
@@ -2252,8 +2252,21 @@ export function reconcileGenerationJob(
       markProjectAndShotGenerationActive(db, intent);
       job = setJobState(db, row, "polling", "HUMAN_ATTACHED_EXISTING_TASK", { in_transaction: true });
     } else {
-      // Abandon is the human assertion that no Provider task exists. Release
-      // only an active reservation; a previously consumed Grant remains spent.
+      // Abandon ends this generation attempt. Retire any explicitly tracked
+      // recovery Artifacts first; a previously consumed Grant remains spent.
+      const persistedRecovery = providerOutputRecoveryFromIntent(db, intent.intent_id, intent.provider_task_id);
+      if (!persistedRecovery.ok) {
+        db.exec("ROLLBACK");
+        return { ok: false, error: { code: persistedRecovery.error.code, message: "Existing Provider output recovery state could not be abandoned safely." } };
+      }
+      if (persistedRecovery.recovery) {
+        const retired = retireProviderOutputRecoveryArtifacts(db, intent, persistedRecovery.recovery);
+        if (!retired.ok) {
+          db.exec("ROLLBACK");
+          return { ok: false, error: { code: retired.error.code, message: "Provider output recovery artifacts could not be abandoned safely." } };
+        }
+        persistProviderOutputRecovery(db, intent.intent_id, null);
+      }
       if (automation && intent.run_id) {
         releaseDirectorGrantReservation(db, automation, {
           amount_minor: automation.amount_minor!,

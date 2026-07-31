@@ -834,6 +834,56 @@ function assertRecoveryRegularFile(filePath: string, registeredRoot: string, can
   }
 }
 
+function normalizeInterruptedVerifiedBlobPlacement(
+  targetPath: string,
+  targetDirectory: string,
+  registeredRoot: string,
+  canonicalRoot: string
+): void {
+  const targetEntry = lstatSync(targetPath);
+  if (targetEntry.isSymbolicLink() || !targetEntry.isFile()) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  if (targetEntry.nlink === 1) return;
+  if (targetEntry.nlink !== 2 || targetEntry.ino === 0) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+
+  const stagedCandidates = readdirSync(targetDirectory)
+    .filter((name) => /^blob-recovery-[0-9a-f-]{36}\.staged$/i.test(name))
+    .map((name) => resolve(targetDirectory, name))
+    .filter((candidatePath) => {
+      if (!isPathInside(candidatePath, registeredRoot)
+        || hasExistingSymlinkAncestor(candidatePath, registeredRoot)
+        || !existsSync(candidatePath)) {
+        return false;
+      }
+      const candidateEntry = lstatSync(candidatePath);
+      if (candidateEntry.isSymbolicLink()
+        || !candidateEntry.isFile()
+        || candidateEntry.nlink !== 2
+        || candidateEntry.dev !== targetEntry.dev
+        || candidateEntry.ino !== targetEntry.ino) {
+        return false;
+      }
+      const canonicalCandidate = resolve(realpathSync(candidatePath));
+      return isPathInside(canonicalCandidate, canonicalRoot);
+    });
+  if (stagedCandidates.length !== 1) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+
+  rmSync(stagedCandidates[0]);
+  const normalizedTarget = lstatSync(targetPath);
+  if (normalizedTarget.isSymbolicLink()
+    || !normalizedTarget.isFile()
+    || normalizedTarget.nlink !== 1
+    || normalizedTarget.dev !== targetEntry.dev
+    || normalizedTarget.ino !== targetEntry.ino) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+}
+
 function recoveryRootAndTarget(blob: MediaBlob): {
   registeredRoot: string;
   canonicalRoot: string;
@@ -962,6 +1012,12 @@ export function recoverVerifiedBlobStorage(
     }
 
     if (existsSync(targetPath)) {
+      normalizeInterruptedVerifiedBlobPlacement(
+        targetPath,
+        recoveryPaths.targetDirectory,
+        registeredRoot,
+        recoveryPaths.canonicalRoot
+      );
       assertRecoveryRegularFile(targetPath, registeredRoot, recoveryPaths.canonicalRoot);
       const currentFacts = hashLocalFile(targetPath);
       originalCondition = currentFacts.sha256 === blob.sha256
