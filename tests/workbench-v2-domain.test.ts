@@ -1783,7 +1783,7 @@ test("provider polling fails closed after restart when wall time moves before th
   }
 });
 
-test("startup scheduler immediately fails closed when a clock rollback leaves next attempt in the future", async () => {
+test("startup scheduler immediately fails closed after clock rollback despite a future inherited lease", async () => {
   const root = mkdtempSync(join(tmpdir(), "generation-scheduler-clock-rollback-"));
   const sqlitePath = join(root, "app.sqlite");
   try {
@@ -1808,8 +1808,16 @@ test("startup scheduler immediately fails closed when a clock rollback leaves ne
     intentData.provider_poll_deadline_at = new Date(futureDeadlineMs).toISOString();
     db.prepare("UPDATE generation_intents SET data_json = ? WHERE intent_id = ?")
       .run(JSON.stringify(intentData), prepared.intent_id);
-    db.prepare("UPDATE generation_jobs SET next_attempt_at = ? WHERE job_id = ?")
-      .run(new Date(futureDeadlineMs).toISOString(), prepared.job_id);
+    db.prepare(`UPDATE generation_jobs
+      SET next_attempt_at = ?,
+          lease_owner = 'crashed_worker',
+          lease_token = 'inherited_clock_rollback_lease',
+          lease_expires_at = ?
+      WHERE job_id = ?`).run(
+      new Date(futureDeadlineMs).toISOString(),
+      new Date(futureStartedAtMs + 5 * 60_000).toISOString(),
+      prepared.job_id
+    );
     db.close();
 
     let providerCalls = 0;
