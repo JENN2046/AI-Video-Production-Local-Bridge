@@ -2637,6 +2637,70 @@ service_starts: 0
 remaining_test_processes: 0
 ```
 
+### PR108 verified Blob recovery and exact-head review remediation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+validated_at: 2026-07-31T10:52:47+08:00
+replacement_pr: 108
+implementation_commit: 277d651c4698ae00b9e0fa170b35c39754daa84f
+review_remediation_commit: 762076cb991e3ecf4333ca5d2872e7de3df14aeb
+implementation_ci:
+  run_id: 30598512506
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+review:
+  review_id: 4824970083
+  reviewed_commit: 277d651c4698ae00b9e0fa170b35c39754daa84f
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - node dist/scripts/run-isolated-tests.js dist/tests/media-activation-integrity.test.js
+  - node dist/scripts/run-isolated-tests.js dist/tests/m1-provider-boundary.test.js
+  - node dist/scripts/run-isolated-tests.js dist/tests/workbench-v2-domain.test.js
+  - npm run test:foundation-boundaries
+  - npm run test:provider-boundaries
+  - npm run test:v2
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  isolated_media_activation_integrity: PASS_31
+  isolated_provider_boundary: PASS_30
+  isolated_workbench_domain: PASS_42
+  foundation_boundaries: PASS_93
+  provider_boundaries: PASS_52
+  test_m1_script: NOT_PRESENT_USED_PROVIDER_BOUNDARIES
+  workbench_v2: PASS_62
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  recovery_triggered_only_by_explicit_recovery_field: true
+  same_blob_id_and_storage_uri_preserved: true
+  immutable_blob_row_and_links_unchanged: true
+  exact_sha_size_mime_verified: true
+  outside_symlink_and_special_paths_rejected: true
+  corrupt_bytes_quarantined: true
+  healthy_blob_recovery_no_op: true
+  concurrent_repairs_serialized: true
+  four_fault_seams_fail_without_false_success: true
+  explicit_retry_after_failure_succeeds: true
+  replacement_artifact_reuses_original_blob: true
+  canonical_provider_task_rebound: true
+  replaced_active_artifact_archived_atomically: true
+  recovery_failure_stays_manual: true
+  automatic_submit_retry: 0
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+```
+
 The implementation tests used isolated fixtures and temporary databases.
 They did not access activity data, perform a Provider operation, configure a
 credential, start a service, rerun S3 readiness or authorize S4.

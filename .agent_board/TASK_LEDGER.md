@@ -4762,6 +4762,76 @@ s4_authorization_granted: false
 delivery: PR_108_DRAFT_REVIEW_BLOCKED
 ```
 
+## 2026-07-31 — PR108 verified Blob recovery and exact-head review remediation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+status: LOCAL_PASS_AWAITING_PR108_REVIEW_OR_MERGE
+recorded_by: Codex
+recorded_at: 2026-07-31T10:52:47+08:00
+replacement_pr: 108
+implementation_commit: 277d651c4698ae00b9e0fa170b35c39754daa84f
+review_remediation_commit: 762076cb991e3ecf4333ca5d2872e7de3df14aeb
+implementation_ci:
+  run_id: 30598512506
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+exact_head_review:
+  review_id: 4824970083
+  reviewed_commit: 277d651c4698ae00b9e0fa170b35c39754daa84f
+  findings:
+    - ARCHIVE_REPLACED_ACTIVE_ARTIFACT
+    - UPDATE_CURRENT_STATE_AFTER_BLOB_RECOVERY
+resolution:
+  explicit_human_reattachment_required: true
+  repairable_conditions:
+    - MISSING_BYTES
+    - CONTENT_DRIFT
+  immutable_blob_row_changed: false
+  artifact_blob_links_changed_by_repair: false
+  exact_sha_size_mime_required: true
+  drifted_bytes_quarantined: true
+  concurrent_repairs_serialized: true
+  interruption_retryable: true
+  old_artifact_archived_in_rebind_transaction: true
+  automatic_submit_retry: 0
+changed_files:
+  source_and_tests:
+    - src/tools/mediaArtifacts.ts
+    - src/tools/providerOutputDownloader.ts
+    - src/tools/workbenchGeneration.ts
+    - tests/media-activation-integrity.test.ts
+    - tests/m1-provider-boundary.test.ts
+    - tests/workbench-v2-domain.test.ts
+  current_state_and_evidence:
+    - CURRENT_STATE.md
+    - ops/reports/2026-07-30-current-workbench-canary-readiness.md
+    - .agent_board/HANDOFF.md
+    - .agent_board/NEXT_TASK.json
+    - .agent_board/NEXT_TASK.md
+    - .agent_board/TASK_LEDGER.md
+    - .agent_board/VALIDATION_LOG.md
+local_validation:
+  typecheck: PASS
+  build: PASS
+  foundation_boundaries: PASS_93
+  provider_boundaries: PASS_52
+  test_m1_script: NOT_PRESENT_USED_PROVIDER_BOUNDARIES
+  workbench_v2: PASS_62
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+deployment_changes: 0
+s4_status: BLOCKED_UNAUTHORIZED
+s4_authorization_granted: false
+delivery: PR_108_DRAFT_AWAITING_REVIEW_OR_MERGE
+```
+
 ## 2026-07-31 — PR108 clock rollback whole-job fail-closed hardening
 
 ```yaml

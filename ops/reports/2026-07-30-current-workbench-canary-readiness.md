@@ -269,14 +269,14 @@ old_pr107:
   merge_authorized: false
 replacement_pr:
   number: 108
-  status: DRAFT_REVIEW_BLOCKED
+  status: DRAFT_AWAITING_REVIEW_OR_MERGE
   merged_to_main: false
 S3B-T1:
   local_status: PASS
-  repository_status: BLOCKED_BY_REPLACEMENT_PR_REVIEW_FINDING
+  repository_status: AWAITING_PR108_REVIEW_OR_MERGE
 S3B-T1A:
   local_status: PASS
-  repository_status: BLOCKED_BY_REPLACEMENT_PR_REVIEW_FINDING
+  repository_status: AWAITING_PR108_REVIEW_OR_MERGE
 S3B-T2:
   status: AWAITING_JENN_AUTHORIZATION
 S3B-T3:
@@ -284,24 +284,27 @@ S3B-T3:
 S3B-T4:
   status: BLOCKED
 S4:
-  status: BLOCKED
+  status: BLOCKED_UNAUTHORIZED
   authorization_granted: false
 ready_task_count: 0
 ```
 
 The bounded-polling and manual-reconciliation candidate fixes remain outside
-the current `main` baseline. The exact-head review found two P2 issues: the
-restart clock-rollback budget inflation is locally remediated, while recovery
-of an immutable verified Blob with missing or drifted registered bytes needs a
-separately authorized media persistence/downloader scope.
+the current `main` baseline. The separately authorized recovery candidate now
+repairs only missing or drifted physical bytes for the exact immutable verified
+Blob after explicit human reattachment. It requires exact Artifact/Blob
+binding plus SHA, size and MIME agreement, preserves the Blob row, storage URI
+and links, serializes repairs, quarantines drifted bytes and does not resubmit.
+Replacement rebind archives the old Artifact in the same transaction so it
+does not remain an active duplicate. Implementation head `277d651` passed
+Windows CI run `30598512506`; PR #108 still requires exact-head evidence for
+any later publication decision.
 
 The remaining sequence is:
 
-1. authorize and implement the smallest safe verified-Blob recovery boundary,
-   then require Draft PR #108 to pass its clean-diff, Windows CI and final
-   exact-head Codex review gates;
-2. close superseded PR #107 without merge only after those replacement gates
-   pass, while retaining its branch;
+1. require Draft PR #108 to retain clean-diff, Windows CI and exact-head Codex
+   review evidence before any merge/readiness decision;
+2. keep superseded PR #107 unmerged and retain its branch;
 3. obtain Jenn's separate authorization for `S3B-T2_PREPARE_ELIGIBLE_SHOT`;
 4. wait for Jenn's local action for
    `S3B-T3_CONFIGURE_RUNNINGHUB_CREDENTIAL`;

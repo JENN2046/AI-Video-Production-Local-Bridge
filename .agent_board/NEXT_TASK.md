@@ -18,24 +18,24 @@ automatically.
 
 - PR #106: `MERGED` by squash as
   `b3a108abc8728e89259d0d953e1c638b9ca482ea`.
-- PR #107: `SUPERSEDED`; still unmerged and retained until the verified
-  replacement closes it without merge.
-- PR #108: `DRAFT_REVIEW_BLOCKED`; base `main`, head
+- PR #107: `SUPERSEDED` and unmerged; its branch remains retained.
+- PR #108: `DRAFT_AWAITING_REVIEW_OR_MERGE`; base `main`, head
   `codex/s3b-provider-polling-restack`; not authorized for merge or
-  ready-for-review. One final-review P2 requires a separately authorized
-  media-boundary scope, so old PR #107 remains open.
+  ready-for-review. The narrow verified-Blob recovery and the follow-up
+  archival/state-truth review fixes are in the candidate; only exact-head
+  CI/review evidence may support a later Jenn decision.
 
 ## S3B follow-ups
 
 | Task | Local status | Repository/current status | Gate |
 |---|---|---|---|
-| `S3B-T1_BOUND_PROVIDER_POLLING` | `PASS` | `BLOCKED_BY_REPLACEMENT_PR_REVIEW_FINDING` in Draft PR #108 | Not merged to `main` |
-| `S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE` | `PASS` | `BLOCKED_BY_REPLACEMENT_PR_REVIEW_FINDING` in Draft PR #108 | Not merged to `main` |
+| `S3B-T1_BOUND_PROVIDER_POLLING` | `PASS` | `AWAITING_PR108_REVIEW_OR_MERGE` in Draft PR #108 | Not merged to `main` |
+| `S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE` | `PASS` | `AWAITING_PR108_REVIEW_OR_MERGE` in Draft PR #108 | Not merged to `main` |
 | `S3B-T2_PREPARE_ELIGIBLE_SHOT` | — | `AWAITING_JENN_AUTHORIZATION` | Business-state write not authorized |
 | `S3B-T3_CONFIGURE_RUNNINGHUB_CREDENTIAL` | — | `AWAITING_JENN_LOCAL_ACTION` | Secret operation not authorized |
 | `S3B-T4_RERUN_CANARY_READINESS` | — | `BLOCKED` | Waits for T2, T3 and reviewed candidate code |
 
-`S4-T1_REAL_SINGLE_SHOT_CURRENT_PATH` is `BLOCKED` and unauthorized.
+`S4-T1_REAL_SINGLE_SHOT_CURRENT_PATH` is `BLOCKED_UNAUTHORIZED`.
 
 ## Frozen and rollback-only surfaces
 

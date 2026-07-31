@@ -1,13 +1,13 @@
 # HANDOFF.md
 
-Current mode: PR #107 clean restack review remediation; no executable task is `READY`
-Last run: PR107-CLEAN-RESTACK
-Last result: one final-review P2 is locally fixed; Blob recovery needs a separately authorized media-boundary scope
+Current mode: PR #108 verified-Blob recovery remediation; no executable task is `READY`
+Last run: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+Last result: recovery and follow-up review fixes are locally validated; Draft PR #108 awaits exact-head review or merge
 
 ## Current state
 
 Current task: none
-Current status: `DRAFT_REVIEW_BLOCKED`
+Current status: `DRAFT_AWAITING_REVIEW_OR_MERGE`
 Current owner: none
 Ready task count: 0
 
@@ -20,30 +20,35 @@ Ready task count: 0
 - PR #106 was squash-merged as
   `b3a108abc8728e89259d0d953e1c638b9ca482ea`, the current `main` baseline.
 - `S3B-T1_BOUND_PROVIDER_POLLING` has local `PASS` evidence and repository
-  status `BLOCKED_BY_REPLACEMENT_PR_REVIEW_FINDING` in Draft PR #108.
+  status `AWAITING_PR108_REVIEW_OR_MERGE` in Draft PR #108.
 - `S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE` has local `PASS` evidence
-  and repository status `BLOCKED_BY_REPLACEMENT_PR_REVIEW_FINDING` in Draft
+  and repository status `AWAITING_PR108_REVIEW_OR_MERGE` in Draft
   PR #108.
-- The exact-head review of `eef466c4c43d0c489da407e17dd328d274388252`
-  found two P2 issues. The restart clock-rollback budget inflation is locally
-  fixed and has a 61st V2 regression case. Recovery of an immutable verified
-  Blob whose registered bytes are missing or drifted remains unresolved
-  because the required media persistence/downloader boundary files are outside
-  the current implementation allowlist.
-- PR #107 is superseded but remains open and unmerged until PR #108 completes
-  its clean-diff, CI and final-review gates. Its branch remains retained.
+- The exact-head recovery implementation `277d651c4698ae00b9e0fa170b35c39754daa84f`
+  passed Windows CI run `30598512506`. It repairs only missing or drifted
+  physical bytes after an explicit human reattachment, requires exact
+  SHA/size/MIME and Artifact/Blob binding, preserves the immutable Blob row and
+  link, serializes repairs, quarantines drifted bytes and never resubmits.
+- Review `4824970083` of that implementation head found that an active replaced
+  Artifact also had to be archived and that the current-state documents still
+  described Blob recovery as unresolved. Both findings are fixed in the
+  candidate: rebind archives the old relational/JSON status in the same
+  transaction, and the seven existing state/evidence files now use the current
+  bounded truth.
+- PR #107 is superseded and unmerged. Its branch remains retained.
 - PR #108 is Draft on `main`; it is not authorized for merge or
-  ready-for-review. It remains review-blocked and old PR #107 must not yet be
-  closed.
+  ready-for-review. Exact-head CI/review evidence is required before any later
+  Jenn merge or readiness decision.
 - `S3B-T2_PREPARE_ELIGIBLE_SHOT` is
   `AWAITING_JENN_AUTHORIZATION`.
 - `S3B-T3_CONFIGURE_RUNNINGHUB_CREDENTIAL` is
   `AWAITING_JENN_LOCAL_ACTION`.
 - `S3B-T4_RERUN_CANARY_READINESS` is `BLOCKED`.
-- `S4-T1_REAL_SINGLE_SHOT_CURRENT_PATH` is `BLOCKED` and unauthorized.
+- `S4-T1_REAL_SINGLE_SHOT_CURRENT_PATH` is `BLOCKED_UNAUTHORIZED`.
 - Media Gateway and Director Bridge do not block this stage. Memory,
   multi-user and automatic Snapshot remain frozen.
-- The restack changes four source files and two tests only. No activity
+- The restack changes six source files, four tests and the same seven
+  state/evidence files. No activity
   database/media access, Provider operation, credential change,
   service/deployment operation, S3 readiness rerun or S4 execution occurred.
 ## S2-T1 Current Core Loop Gap Proof
