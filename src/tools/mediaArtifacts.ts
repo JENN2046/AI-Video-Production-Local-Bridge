@@ -249,6 +249,37 @@ function databaseIsInTransaction(db: M0Database): boolean {
   return Boolean((db as unknown as { isTransaction?: boolean }).isTransaction);
 }
 
+function databaseOwnsGlobalMediaRecoveryCleanup(db: M0Database): boolean {
+  try {
+    const main = (db.prepare("PRAGMA database_list").all() as Array<{
+      name: string;
+      file: string;
+    }>).find((row) => row.name === "main");
+    if (!main || !main.file || main.file === ":memory:" || !isAbsolute(main.file)) return false;
+
+    const actualMainFile = resolve(main.file);
+    const configuredDatabase = paths.sqlitePath;
+    if (!isAbsolute(configuredDatabase)) return false;
+    const resolvedConfiguredDatabase = resolve(configuredDatabase);
+    if (!sameResolvedPath(actualMainFile, resolvedConfiguredDatabase)) return false;
+
+    for (const databasePath of [actualMainFile, resolvedConfiguredDatabase]) {
+      if (!existsSync(databasePath)) return false;
+      const entry = lstatSync(databasePath);
+      if (entry.isSymbolicLink() || !entry.isFile()) return false;
+      const canonicalPath = resolve(realpathSync(databasePath));
+      if (!sameResolvedPath(canonicalPath, databasePath)) return false;
+    }
+
+    const canonicalActual = resolve(realpathSync(actualMainFile));
+    const canonicalConfigured = resolve(realpathSync(resolvedConfiguredDatabase));
+    return sameResolvedPath(canonicalActual, canonicalConfigured)
+      && sameResolvedPath(canonicalConfigured, resolvedConfiguredDatabase);
+  } catch {
+    return false;
+  }
+}
+
 function buildBlobForArtifact(artifact: MediaArtifact, mediaRoot = paths.mediaRoot): MediaBlob {
   const uri = artifact.storage.uri;
   if (uri && !/^https?:\/\//i.test(uri) && existsSync(uri) && !lstatSync(uri).isSymbolicLink() && statSync(uri).isFile()) {
@@ -1872,7 +1903,9 @@ export function recoverMediaActivations(db = openM0Database()): MediaActivationR
   const manageMarkerTransaction = !databaseIsInTransaction(db);
   if (manageMarkerTransaction) db.exec("BEGIN IMMEDIATE");
   try {
-    reconcileOrphanedVerifiedBlobRecoveryStaging(db, result);
+    if (databaseOwnsGlobalMediaRecoveryCleanup(db)) {
+      reconcileOrphanedVerifiedBlobRecoveryStaging(db, result);
+    }
     reconcileUnrecordedActivationMarkers(db, result);
     if (manageMarkerTransaction) db.exec("COMMIT");
   } catch (error) {
