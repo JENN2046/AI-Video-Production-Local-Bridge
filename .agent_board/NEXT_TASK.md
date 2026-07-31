@@ -16,10 +16,26 @@ automatically.
 
 ## Publication state
 
+- PR #108: `MERGED_WITH_LATE_P2_FOLLOWUP` by squash as
+  `808d9334a49def7ce858f7c6138af75fed392c5b`.
+- PR #109: `DRAFT_PR_AWAITING_REVIEW`; base `main`, head
+  `codex/blob-recovery-staging-reconciliation`, implementation commit
+  `528aee4020d4be15a5fc5278de2f8c8abb20c637`.
+- PR #109 is not authorized for Ready or merge. Exact-head Windows CI and
+  Codex review are required.
+- PR #108's late P2 thread remains unresolved until the remediation is merged
+  and verified.
+
+## Superseded PR #108 preparation detail
+
+The following records the pre-merge review sequence and is not current
+operational state.
+
 - PR #106: `MERGED` by squash as
   `b3a108abc8728e89259d0d953e1c638b9ca482ea`.
-- PR #107: `OPEN_DRAFT_SUPERSEDED` and unmerged; its branch remains retained.
-- PR #108: `DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW`; base `main`, head
+- PR #107: `CLOSED_SUPERSEDED_UNMERGED`; its branch remains retained.
+- Before merge, PR #108 was `DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW`;
+  base `main`, head
   `codex/s3b-provider-polling-restack`; not authorized for merge or
   ready-for-review. The narrow verified-Blob recovery and the follow-up
   archival, state-truth, committed-replacement restart, startup clock-rollback
@@ -63,8 +79,10 @@ automatically.
 
 | Task | Local status | Repository/current status | Gate |
 |---|---|---|---|
-| `S3B-T1_BOUND_PROVIDER_POLLING` | `PASS` | `BLOCKED_BY_PR108_REVIEW_FINDING` in Draft PR #108 | New exact-head CI/review required |
-| `S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE` | `PASS` | `BLOCKED_BY_PR108_REVIEW_FINDING` in Draft PR #108 | New exact-head CI/review required |
+| `S3B-T1_BOUND_PROVIDER_POLLING` | `PASS` | `DONE_IN_MAIN` via PR #108 | None for repository publication |
+| `S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE` | `PASS` | `DONE_IN_MAIN` via PR #108 | None for repository publication |
+| `S3B_VERIFIED_BLOB_STORAGE_RECOVERY` | `PASS` | `DONE_IN_MAIN_WITH_REMEDIATION_PENDING` | Wait for PR #109 review/merge decision |
+| `S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING` | `PASS_LOCAL` | `DRAFT_PR_AWAITING_REVIEW` in PR #109 | Exact-head CI and Codex review |
 | `S3B-T2_PREPARE_ELIGIBLE_SHOT` | — | `AWAITING_JENN_AUTHORIZATION` | Business-state write not authorized |
 | `S3B-T3_CONFIGURE_RUNNINGHUB_CREDENTIAL` | — | `AWAITING_JENN_LOCAL_ACTION` | Secret operation not authorized |
 | `S3B-T4_RERUN_CANARY_READINESS` | — | `BLOCKED` | Waits for T2, T3 and reviewed candidate code |

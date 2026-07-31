@@ -57,17 +57,25 @@
       "merge_method": "SQUASH"
     },
     "pull_request_107": {
-      "status": "OPEN_DRAFT_SUPERSEDED",
+      "status": "CLOSED_SUPERSEDED_UNMERGED",
       "base": "codex/s3-workbench-canary-readiness",
       "changes_allowed_in_current_task": false,
       "merge_authorized": false,
       "ready_for_review_authorized": false
     },
     "pull_request_108": {
-      "status": "DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW",
+      "status": "MERGED_WITH_LATE_P2_FOLLOWUP",
       "base": "main",
       "head": "codex/s3b-provider-polling-restack",
-      "candidate_commit": "2cce0f8af8063228c89237a946553ea62e8503d2",
+      "squash_commit": "808d9334a49def7ce858f7c6138af75fed392c5b",
+      "merged_to_main": true,
+      "late_p2_followup": "S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING"
+    },
+    "pull_request_109": {
+      "status": "DRAFT_PR_AWAITING_REVIEW",
+      "base": "main",
+      "head": "codex/blob-recovery-staging-reconciliation",
+      "implementation_commit": "528aee4020d4be15a5fc5278de2f8c8abb20c637",
       "exact_head_ci_and_review_required": true,
       "merged_to_main": false,
       "merge_authorized": false,
@@ -78,16 +86,28 @@
     {
       "task_id": "S3B-T1_BOUND_PROVIDER_POLLING",
       "local_status": "PASS",
-      "repository_status": "BLOCKED_BY_PR108_REVIEW_FINDING",
+      "repository_status": "DONE_IN_MAIN",
       "pull_request": 108,
-      "merged_to_main": false
+      "merged_to_main": true
     },
     {
       "task_id": "S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE",
       "local_status": "PASS",
-      "repository_status": "BLOCKED_BY_PR108_REVIEW_FINDING",
+      "repository_status": "DONE_IN_MAIN",
       "pull_request": 108,
-      "merged_to_main": false
+      "merged_to_main": true
+    },
+    {
+      "task_id": "S3B_VERIFIED_BLOB_STORAGE_RECOVERY",
+      "status": "DONE_IN_MAIN_WITH_REMEDIATION_PENDING",
+      "pull_request": 108,
+      "remediation_pull_request": 109
+    },
+    {
+      "task_id": "S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING",
+      "status": "DRAFT_PR_AWAITING_REVIEW",
+      "pull_request": 109,
+      "implementation_commit": "528aee4020d4be15a5fc5278de2f8c8abb20c637"
     },
     {
       "task_id": "S3B-T2_PREPARE_ELIGIBLE_SHOT",
@@ -159,7 +179,7 @@
   "completed_by": "Codex",
   "completed_at": "2026-07-30T19:41:08+08:00",
   "result": "BLOCKED_BY_S3_FINDING",
-  "validation": "Head 1f49bc3 passed Windows CI run 30615172450, but exact-head review 4826803376 found that a due persisted poll deadline could still wait behind a crashed worker lease after wall time caught up and that the 900 ms rollback regression depended on real scheduling speed. Implementation 2cce0f8 makes a validated due deadline override scheduler and lease eligibility, wakes at that deadline, and binds scheduler comparisons to the injected wall clock. Fixed-clock rollback and already-due-deadline regressions both reach PROVIDER_POLL_TIMEOUT with zero Provider calls. Typecheck, build, Workbench V2 68/68, Foundation 94/94, Provider 52/52, selection 23/23, secret scan and diff checks pass locally. The prior CI and review are non-transferable, so PR108 remains blocked pending new exact-head CI and review. No Provider network call occurred.",
+  "validation": "PR #108 was squash-merged as main@808d933 and main CI passed, but a late P2 found unbounded orphan recovery staging after a hard exit. Draft PR #109 implementation 528aee4 uses one deterministic stage per Blob/target pair, safely reconciles startup/retry orphans, retains unsafe entries fail-closed, and narrowly cleans the legacy UUID format. A real child-process crash repeated five times retains at most one stage. Typecheck, build, Foundation, Provider, Workbench V2, selection, secret scan and diff checks pass locally. Exact-head PR #109 CI and review remain required. No Provider network call or activity-data access occurred.",
   "evidence": [
     "ops/reports/2026-07-30-current-workbench-canary-readiness.md",
     ".agent_board/TASK_LEDGER.md",
@@ -167,8 +187,8 @@
     ".agent_board/HANDOFF.md"
   ],
   "commit": "f570d145e4832d2b2237123a40d5e8e0b503fcf1",
-  "delivery": "PR_106_MERGED_PR_108_DRAFT_FINAL_GATES_PENDING",
-  "updated_at": "2026-07-31T16:42:22+08:00",
+  "delivery": "PR_106_AND_PR_108_MERGED_PR_109_DRAFT_AWAITING_CI_AND_REVIEW",
+  "updated_at": "2026-07-31T20:42:46+08:00",
   "safe_state": {
     "provider_calls": 0,
     "activity_writes": 0,

@@ -61,7 +61,7 @@ database. `REAL_PROVIDER_ENABLED=false` remains the safe default.
 |---|---|---|---|
 | Workbench V2 local UI | Storyboard, generation preflight, version review and delivery-readiness views exist | Activity database compatibility accepted at ledger `0011` | Core |
 | SQLite and governed media | Migration, Artifact/Blob digest and FFprobe boundaries exist | Ledger `0011` migration/restore evidence remains commit-scoped | Core |
-| Current Provider path | Intent, budget, confirmation and adapter boundaries exist; Provider defaults off | S3 local checks passed; Draft PR #108 contains the bounded polling, manual reconciliation and verified-Blob recovery candidate but is blocked pending new exact-head CI and review; it is not current `main`, and S4 remains blocked | Core blocker before S4 |
+| Current Provider path | Intent, budget, confirmation, bounded polling, manual reconciliation and verified-Blob recovery boundaries exist in `main@808d933` | PR #108 merged with green main CI, but a late P2 found an orphaned recovery-staging crash window; Draft PR #109 is the bounded remediation and still requires exact-head CI/review; no real Provider or S4 acceptance occurred | Core blocker before S4 |
 | Historical R3 Provider path | Execution scripts now reside under `legacy/` | RunningHub real canary, four-shot generation and regeneration completed historically | Feasibility evidence only |
 | Review and accepted clips | Version stacks, rejection reasons and human accepted-clip selection exist | Historical R3 review evidence exists | Core; current-path acceptance remains |
 | Active assembly/export | Active assembly still contains `placeholder_copy` / mock-fixture behavior; Workbench has no production assembly/export action | No current-main production-path PASS | S6 core gap |
@@ -194,75 +194,30 @@ Current stage queue:
 8. `S7 Three Real Project Evaluation` — not loaded
 9. `S8 Legacy Route Cleanup Decision` — not loaded
 
-The S3B-T1 and S3B-T1A implementation candidates have local `PASS` evidence
-and are cleanly restacked in Draft PR #108 with repository status
-`BLOCKED_BY_PR108_REVIEW_FINDING` until a new exact-head CI run and Codex review
-pass. The candidate includes the separately authorized narrow recovery of
-missing or drifted physical bytes for an immutable verified Blob: it requires
-explicit human reattachment and exact Artifact/Blob, SHA, size and MIME
-agreement, preserves the Blob row and link, and does not resubmit. Replacement
-rebind archives the old Artifact, restart recovery prefers a committed local
-replacement, repeated attachment preserves the same-task recovery, and startup
-scheduling handles clock rollback without waiting for a future attempt or a
-future lease inherited from a crashed process.
+PR #108 was squash-merged into `main` as
+`808d9334a49def7ce858f7c6138af75fed392c5b`. S3B-T1 bounded Provider polling,
+S3B-T1A manual-reconciliation state coherence and the verified-Blob storage
+recovery path are therefore in current `main`; the merge and green main CI do
+not constitute a real Provider or S4 acceptance.
 
-Head `2cb245e` passed Windows CI run `30606273467` on attempt 1. Exact-head
-review `4825747733` then found that an old persisted recovery prevented a human
-from attaching a different unused Provider task. The locally validated
-implementation `19f026f8f40f82203a3967a7f449152b272743cf` now verifies and
-atomically archives the old invalid Artifact and any committed replacement
-before clearing recovery and attaching the new task. Same-task recovery stays
-preserved; the internal local recovery identity cannot be attached as a
-Provider task; unsafe retirement rolls back with a stable error. Blob rows,
-physical bytes and Artifact-Blob links are unchanged. The prior CI is not
-transferable.
+A P2 review finding arrived after the PR #108 merge: a hard process exit after
+copying recovery staging bytes but before exclusive placement could leave an
+unbounded random `blob-recovery-*.staged` file. Draft PR #109 contains the
+narrow T1B remediation. It assigns each Blob/target pair one deterministic
+slot under `.activation/staging`, reuses or safely replaces app-owned staged
+bytes, reconciles safe startup orphans under the database recovery lock, and
+narrowly removes legacy UUID stages. Unsafe symlinks, directories and unowned
+hard links remain fail-closed and are not deleted. Blob rows, content facts,
+storage URIs and Artifact-Blob links remain unchanged.
 
-Head `b8060e1` passed Windows CI run `30608433511`; exact-head review
-`4825989650` then found that a different Intent could attach a reserved
-`local_recovery_*` identity before the owner created a replacement Artifact.
-The locally validated follow-up
-`2847a34e8ee638ff1ca46824bc938f19acd870ff` reserves this internal namespace
-globally at manual task attachment and covers the cross-Intent, no-replacement
-case. That CI is also non-transferable, so new final exact-head CI and review
-remain mandatory. Old PR #107 remains open Draft, superseded and unmerged with
-its branch retained; none of these candidates is part of current `main`.
-
-Head `528f33a` passed Windows CI run `30610318191`. A retained finding from
-review `4826019679` showed that recovery abandon could leave both repaired and
-replacement Artifacts active, while exact-head review `4826282464` found that
-an interrupted exclusive Blob placement could leave a permanently rejected
-two-link target. The locally validated implementation
-`aa9b8912d18dc11b6718e5bfed00e1d9c6ee35f9` now retires recovery Artifacts
-atomically before abandon and normalizes only the unique generated
-staged/target hard-link pair with matching file identity. Unowned hard links
-remain rejected; Blob rows and Artifact-Blob links remain unchanged. Typecheck,
-build, Workbench V2 67/67, Foundation 94/94, Provider 52/52, selection 23/23,
-secret scan and diff checks pass locally. The prior CI and review are not
-transferable, so a new exact-head CI/review cycle remains mandatory.
-
-Head `e5cb5d8` passed Windows CI run `30613190531`, but exact-head review
-`4826557538` found that the poll-start rollback predicates still truncated both
-timestamps to whole seconds. The locally validated implementation
-`357b08718e2226a613b7613ede234e4c3cc337b7` now uses fractional
-`julianday` comparisons in scheduler selection and lease claim. Its startup
-regression proves a same-second 900 ms rollback despite a future inherited
-lease, reaches stable `PROVIDER_POLL_TIMEOUT`, and performs zero Provider
-calls. All required local gates pass. The prior CI and review are not
-transferable, so another exact-head CI/review cycle remains mandatory.
-
-Head `1f49bc3` passed Windows CI run `30615172450`, but exact-head review
-`4826803376` found that a due persisted poll deadline could still wait behind
-a crashed worker's five-minute lease after wall time caught up with the stored
-start, and that the 900 ms regression depended on real scheduler speed. The
-locally validated implementation
-`2cce0f8af8063228c89237a946553ea62e8503d2` now makes a validated due
-deadline an explicit scheduler and lease-claim override, schedules wakeup at
-the earlier deadline, and binds scheduler comparisons to the injectable wall
-clock. Fixed-clock rollback and already-due-deadline regressions both reach
-stable `PROVIDER_POLL_TIMEOUT` with zero Provider calls; the latter retains a
-`2099` next attempt and lease. Workbench V2 passes 68/68 and all broader local
-gates pass. The prior CI and review are not transferable, so another exact-head
-CI/review cycle remains mandatory.
+Exact implementation commit `528aee4020d4be15a5fc5278de2f8c8abb20c637`
+passed typecheck, build, Foundation, selection-gate, Provider-boundary,
+Workbench V2, secret-scan and diff validation locally. A real child-process
+test exits after staged copy; five repeated crashes retain at most one stage,
+and a later retry completes without changing immutable Blob facts. Draft PR
+#109 still requires Windows CI and an exact-final-head Codex review. PR #108's
+late thread remains unresolved until the remediation is reviewed, merged and
+verified.
 
 The complete Media Gateway promotion, Memory plugin, second real user,
 automatic Snapshot, Windows logon task, WebM/broad formats and new OAuth

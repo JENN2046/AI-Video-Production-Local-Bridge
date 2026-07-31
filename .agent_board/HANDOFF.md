@@ -1,17 +1,44 @@
 # HANDOFF.md
 
-Current mode: PR #108 verified-Blob recovery remediation; no executable task is `READY`
-Last run: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
-Last result: poll-deadline lease preemption and deterministic scheduler time are locally validated; Draft PR #108 awaits new exact-head CI and review
+Current mode: PR #109 orphaned Blob recovery staging remediation; no executable task is `READY`
+Last run: S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING
+Last result: exact implementation commit is locally validated; Draft PR #109 awaits exact-head CI and Codex review
 
 ## Current state
 
 Current task: none
-Current status: `DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW`
+Current status: `DRAFT_PR_AWAITING_REVIEW`
 Current owner: none
 Ready task count: 0
 
 ## Current S3 and S3B state
+
+- S3 remains terminal `DONE` with result `BLOCKED_BY_S3_FINDING`; it is not
+  `READY`.
+- PR #108 was squash-merged as
+  `808d9334a49def7ce858f7c6138af75fed392c5b`. Its bounded polling, manual
+  reconciliation and verified-Blob recovery changes are in current `main`.
+- PR #108 has one late unresolved P2 thread: a hard exit after staged-copy
+  completion could leave a new random full-file stage on every retry.
+- `S3B-T1_BOUND_PROVIDER_POLLING` and
+  `S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE` are `DONE_IN_MAIN`.
+- `S3B_VERIFIED_BLOB_STORAGE_RECOVERY` is
+  `DONE_IN_MAIN_WITH_REMEDIATION_PENDING`.
+- Draft PR #109 at implementation commit
+  `528aee4020d4be15a5fc5278de2f8c8abb20c637` implements one deterministic
+  stage per Blob/target pair, safe startup/retry reconciliation and legacy
+  UUID-stage cleanup. All authorized local lanes passed; exact-head Windows CI
+  and Codex review remain required.
+- `S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING` is
+  `DRAFT_PR_AWAITING_REVIEW` in PR #109.
+- PR #108's late thread remains unresolved until PR #109 is reviewed, merged
+  into `main` and verified.
+- T2, T3, T4 and S4 retain their existing human gates; ready task count is 0.
+
+## Superseded PR #108 preparation history
+
+The following bullets preserve the pre-merge review sequence only; they are
+not the current operational state.
 
 - S3 is `DONE` with terminal result `BLOCKED_BY_S3_FINDING`.
 - The S3 receipt publishes only an aggregate candidate scan:

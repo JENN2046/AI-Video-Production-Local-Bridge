@@ -265,18 +265,28 @@ not change the S3 evidence baseline recorded at the top of this receipt.
 
 ```yaml
 old_pr107:
-  status: OPEN_DRAFT_SUPERSEDED
+  status: CLOSED_SUPERSEDED_UNMERGED
   merge_authorized: false
-replacement_pr:
+pr108:
   number: 108
-  status: DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
+  status: MERGED_WITH_LATE_P2_FOLLOWUP
+  squash_commit: 808d9334a49def7ce858f7c6138af75fed392c5b
+remediation_pr:
+  number: 109
+  status: DRAFT_PR_AWAITING_REVIEW
+  implementation_commit: 528aee4020d4be15a5fc5278de2f8c8abb20c637
   merged_to_main: false
 S3B-T1:
   local_status: PASS
-  repository_status: BLOCKED_BY_PR108_REVIEW_FINDING
+  repository_status: DONE_IN_MAIN
 S3B-T1A:
   local_status: PASS
-  repository_status: BLOCKED_BY_PR108_REVIEW_FINDING
+  repository_status: DONE_IN_MAIN
+S3B_VERIFIED_BLOB_STORAGE_RECOVERY:
+  status: DONE_IN_MAIN_WITH_REMEDIATION_PENDING
+S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING:
+  status: DRAFT_PR_AWAITING_REVIEW
+  pull_request: 109
 S3B-T2:
   status: AWAITING_JENN_AUTHORIZATION
 S3B-T3:
@@ -289,106 +299,37 @@ S4:
 ready_task_count: 0
 ```
 
-The bounded-polling and manual-reconciliation candidate fixes remain outside
-the current `main` baseline. The separately authorized recovery candidate now
-repairs only missing or drifted physical bytes for the exact immutable verified
-Blob after explicit human reattachment. It requires exact Artifact/Blob
-binding plus SHA, size and MIME agreement, preserves the Blob row, storage URI
-and links, serializes repairs, quarantines drifted bytes and does not resubmit.
-Replacement rebind archives the old Artifact in the same transaction so it
-does not remain an active duplicate. A persisted recovery also prefers and
-rebinds an already committed `local_recovery_*` replacement before the repaired
-old Artifact can be adopted after restart. Repeated human attachment preserves
-the verified recovery identity, and startup scheduling immediately runs the
-clock-rollback fail-closed path even when `next_attempt_at` is still in the
-future. Implementation head `277d651` passed Windows CI run `30598512506`;
-pre-remediation head `6d9319f` passed run `30602578941` on attempt 2. Exact-head
-review `4825473276` produced two restart findings; their locally validated
-implementation fix is `4e244592b96881d1ea1088dcbeba940262e4c155`. PR #108
-still requires final exact-head CI and review evidence for any later
-publication decision.
+PR #108 is now in current `main`. Its bounded polling, manual reconciliation
+and verified-Blob recovery code passed PR and main CI, but this does not prove a
+real Provider or S4 acceptance. A P2 review finding arrived after merge: a hard
+exit after staged-copy completion could leave a new random full-file stage on
+every retry.
 
-Head `65a6c3d` passed Windows CI run `30604891810`; exact-head review
-`4825605253` then found that a future lease inherited from a crashed process
-could still defer the clock-rollback path. Follow-up implementation
-`96b75581fc3c47a9933452144c72f45619937932` allows lease takeover only when a
-polling job's persisted poll start is verifiably later than the current
-database clock. The inherited-lease regression performs zero Provider calls
-and ordinary live leases remain protected.
+Draft PR #109 is the bounded remediation. It gives each Blob/target pair one
+deterministic slot under the app-controlled activation staging root, reuses a
+complete matching stage, safely recopies a partial app-owned stage, reconciles
+safe startup orphans under the database recovery lock, and narrowly cleans the
+legacy UUID format in the exact target directory. Unsafe entries are retained
+and reported as `MEDIA_BLOB_RECOVERY_PATH_UNSAFE`. No Blob row, Blob identity,
+digest, storage URI or Artifact-Blob link changes.
 
-Head `2cb245e` then passed Windows CI run `30606273467` on attempt 1. Exact-head
-review `4825747733` found that a persisted recovery for the prior Provider task
-blocked a valid human switch to a different unused task. Follow-up
-`19f026f8f40f82203a3967a7f449152b272743cf` preserves recovery for the same
-task but, for a real task switch, strictly verifies and atomically archives the
-old invalid Artifact and any committed local replacement before clearing the
-recovery. It rejects the internal local recovery identity, preserves Blob rows,
-bytes and links, and rolls back unsafe retirement with a stable error. The
-45-case Workbench domain lane and the broader local gates passed with zero
-Provider calls. Run `30606273467` is not transferable; new final exact-head CI
-and review are required.
-
-Head `b8060e1` passed Windows CI run `30608433511`; exact-head review
-`4825989650` then found that a different Intent could attach the reserved
-`local_recovery_*` identity before the owner had committed a replacement
-Artifact. Follow-up `2847a34e8ee638ff1ca46824bc938f19acd870ff`
-globally rejects that internal namespace at manual task attachment. Its
-cross-Intent regression has no replacement Artifact or owning-Artifact signal,
-returns `INVALID_PROVIDER_TASK_ID`, and preserves both Intents and Jobs. The
-46-case Workbench domain lane and all broader local gates passed with zero
-Provider calls. Run `30608433511` is not transferable; another exact-head CI
-and review cycle is required.
-
-Head `528f33a` then passed Windows CI run `30610318191`. Thread audit retained
-the valid recovery-abandon finding from review `4826019679`, and exact-head
-review `4826282464` found that a crash between exclusive hard-link placement
-and staged-link removal could leave the Blob target permanently rejected at
-`nlink=2`. Follow-up
-`aa9b8912d18dc11b6718e5bfed00e1d9c6ee35f9` strictly verifies and atomically
-archives both recovery Artifacts before abandon, clears recovery in the same
-transaction, and normalizes only a unique generated staged/target hard-link
-pair with matching file identity. Unowned hard links remain rejected. The
-67-case Workbench V2 lane, 94-case Foundation lane, 52-case Provider lane,
-23-case selection gate, typecheck, build, secret scan and diff checks pass with
-no Blob-row, Artifact-Blob-link or Provider-call change. Run `30610318191` and
-review `4826282464` are not transferable; another exact-head CI/review cycle
-remains required.
-
-Head `e5cb5d8` passed Windows CI run `30613190531`; exact-head review
-`4826557538` then found that the persisted poll-start comparison used
-whole-second `datetime`/`CURRENT_TIMESTAMP` values. Follow-up
-`357b08718e2226a613b7613ede234e4c3cc337b7` uses fractional `julianday`
-comparisons for scheduler selection and lease claim. The startup regression
-now proves a same-second 900 ms rollback with a future inherited lease, stable
-`PROVIDER_POLL_TIMEOUT` and zero Provider calls. All required local gates pass.
-Run `30613190531` and review `4826557538` are not transferable; another
-exact-head CI/review cycle remains required.
-
-Head `1f49bc3` passed Windows CI run `30615172450`; exact-head review
-`4826803376` then found that, after wall time caught up with the stored poll
-start, an already-due persisted deadline could still wait behind a crashed
-worker's five-minute lease. It also found that the 900 ms rollback regression
-depended on completing inside a real-time scheduling window. Follow-up
-`2cce0f8af8063228c89237a946553ea62e8503d2` makes a validated due deadline
-override scheduler and lease eligibility, adds the deadline as an independent
-wakeup candidate, and binds scheduler comparisons to the injected wall clock.
-The rollback regression now uses a fixed clock, while a separate regression
-retains both a `2099` next attempt and inherited lease behind an already-due
-deadline. Both reach stable `PROVIDER_POLL_TIMEOUT` with zero Provider calls.
-The 68-case Workbench V2 lane and all broader local gates pass. Run
-`30615172450` and review `4826803376` are not transferable; another exact-head
-CI/review cycle remains required.
+Exact implementation commit `528aee4020d4be15a5fc5278de2f8c8abb20c637`
+passed all authorized local lanes. The crash regression uses a real child
+process exit after staged copy; five repeated exits retain no more than one
+staged file, and successful retry removes it while preserving immutable Blob
+facts. PR #109 remains Draft pending exact-head Windows CI and Codex review.
 
 The remaining sequence is:
 
-1. require Draft PR #108 to retain clean-diff, Windows CI and exact-head Codex
-   review evidence before any merge/readiness decision;
-2. keep superseded PR #107 unmerged and retain its branch;
+1. require Draft PR #109 to pass Windows CI and exact-final-head Codex review
+   before any Ready or merge decision;
+2. keep PR #108's late P2 thread unresolved until remediation is merged and
+   verified; retain the PR #107 and PR #108 branches;
 3. obtain Jenn's separate authorization for `S3B-T2_PREPARE_ELIGIBLE_SHOT`;
 4. wait for Jenn's local action for
    `S3B-T3_CONFIGURE_RUNNINGHUB_CREDENTIAL`;
 5. keep `S3B-T4_RERUN_CANARY_READINESS` blocked until T2, T3 and the reviewed
-   polling candidate are available;
+   current-main remediation are available;
 6. keep S4 blocked and unauthorized until a new bounded readiness receipt
    supports an exact authorization request.
 

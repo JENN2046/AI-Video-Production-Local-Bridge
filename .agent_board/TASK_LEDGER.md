@@ -5236,3 +5236,53 @@ s4_status: BLOCKED_UNAUTHORIZED
 s4_authorization_granted: false
 delivery: PR_108_DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
 ```
+
+## 2026-07-31 — Orphaned Blob recovery staging reconciliation
+
+```yaml
+task: S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING
+status: DRAFT_PR_AWAITING_REVIEW
+recorded_by: Codex
+recorded_at: 2026-07-31T20:46:35+08:00
+source_finding:
+  pull_request: 108
+  thread: PRRT_kwDOTTDtUM6VZ0Ew
+  severity: P2
+  arrived_after_merge: true
+remediation_pull_request: 109
+implementation_commit: 528aee4020d4be15a5fc5278de2f8c8abb20c637
+resolution:
+  deterministic_staging_slot: true
+  activation_staging_root: true
+  startup_reconciliation: true
+  retry_reconciliation: true
+  legacy_uuid_cleanup: true
+  unsafe_entries_fail_closed: true
+  repeated_crash_file_bound: 1
+  hard_process_exit_attempts: 5
+blob_immutability:
+  row_updated: false
+  blob_id_changed: false
+  sha_changed: false
+  storage_uri_changed: false
+  links_changed: false
+local_validation:
+  typecheck: PASS
+  build: PASS
+  media_activation_integrity: PASS_40
+  foundation_boundaries: PASS_102
+  provider_boundaries: PASS_52
+  workbench_v2: PASS_68
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+deployment_changes: 0
+s4_status: BLOCKED_UNAUTHORIZED
+s4_authorization_granted: false
+delivery: PR_109_DRAFT_AWAITING_EXACT_HEAD_CI_AND_REVIEW
+```

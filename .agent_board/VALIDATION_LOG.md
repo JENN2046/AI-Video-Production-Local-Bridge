@@ -3315,3 +3315,51 @@ service_starts: 0
 remaining_test_processes: 0
 final_exact_head_ci_and_review: REQUIRED_AFTER_STATE_SYNC
 ```
+
+### S3B-T1B orphaned Blob recovery staging reconciliation
+
+```yaml
+task: S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING
+validated_at: 2026-07-31T20:46:35+08:00
+source_pull_request: 108
+remediation_pull_request: 109
+implementation_commit: 528aee4020d4be15a5fc5278de2f8c8abb20c637
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - npm run test:foundation-boundaries
+  - npm run test:selection-gate
+  - npm run test:provider-boundaries
+  - npm run test:v2
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  media_activation_integrity: PASS_40
+  foundation_boundaries: PASS_102
+  provider_boundaries: PASS_52
+  workbench_v2: PASS_68
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  real_child_process_exit_after_staged_copy: true
+  repeated_hard_crash_attempts: 5
+  maximum_staged_files_per_blob: 1
+  successful_retry_clears_stage: true
+  partial_stage_not_activated: true
+  startup_safe_orphan_removed: true
+  startup_unsafe_orphan_preserved_and_reported: true
+  deterministic_and_legacy_two_link_windows_recovered: true
+  legacy_uuid_cleanup_narrow: true
+  unsafe_symlink_directory_hardlink_and_redirect_rejected: true
+  blob_row_or_links_changed: false
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+exact_head_ci_and_review: REQUIRED_FOR_PR_109
+```
