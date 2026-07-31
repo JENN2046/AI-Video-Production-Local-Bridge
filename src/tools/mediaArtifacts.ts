@@ -593,6 +593,7 @@ function ensureSafeActivationRoots(mediaRoot: string, create: boolean): ReturnTy
   }
   if (lstatSync(root).isSymbolicLink() || !statSync(root).isDirectory()) throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
   const canonicalRoot = resolve(realpathSync(root));
+  if (!sameResolvedPath(canonicalRoot, root)) throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
   const roots = activationRoots(root);
   for (const directory of [roots.activation, roots.staging, roots.pending, roots.quarantine, roots.journal]) {
     if (create && !existsSync(directory)) mkdirSync(directory);

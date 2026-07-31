@@ -1527,6 +1527,39 @@ test("startup activation recovery reconciles safe Blob stages and reports unsafe
   }
 });
 
+test("startup Blob staging recovery rejects a media root redirected through an ancestor junction", (context) => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-startup-root-swap-"));
+  const registeredParent = join(root, "registered");
+  const outsideParent = join(root, "outside-registered");
+  const mediaRoot = join(registeredParent, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const blob = getMediaBlob(db, fixture.artifact.blob_id);
+    assert.ok(blob);
+    const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
+    copyFileSync(fixture.source_path, stagedPath);
+
+    renameSync(registeredParent, outsideParent);
+    try { symlinkSync(outsideParent, registeredParent, "junction"); }
+    catch (error) {
+      context.skip(`Directory symlinks are unavailable: ${error instanceof Error ? error.message : "SYMLINK_UNAVAILABLE"}`);
+      return;
+    }
+    const externalStage = stagedPath.replace(resolve(registeredParent), resolve(outsideParent));
+
+    const recovered = recoverMediaActivations(db);
+    assert.equal(recovered.failed.some((entry) => entry.code === "MEDIA_BLOB_RECOVERY_PATH_UNSAFE"), true);
+    assert.equal(existsSync(externalStage), true);
+  } finally {
+    db.close();
+    if (existsSync(registeredParent)) rmSync(registeredParent, { force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("verified Blob recovery rejects deterministic staging directories and unowned hard links", () => {
   for (const scenario of ["directory", "hard-link"] as const) {
     const root = mkdtempSync(join(tmpdir(), `verified-blob-recovery-unsafe-stage-${scenario}-`));
