@@ -1290,12 +1290,12 @@ function rebindRecoveredProviderOutput(
       return { ok: false, error: providerError(replacement.error.code, "Recovered Provider output Artifact failed active media validation.") };
     }
 
-    const invalidRow = db.prepare(`SELECT data_json FROM media_artifacts
+    const invalidRow = db.prepare(`SELECT status, data_json FROM media_artifacts
       WHERE artifact_id = ? AND project_id = ? AND shot_id = ?`).get(
       recovery.invalid_artifact_id,
       intent.project_id,
       intent.shot_id
-    ) as { data_json: string } | undefined;
+    ) as { status: string; data_json: string } | undefined;
     const replacementRow = db.prepare(`SELECT data_json FROM media_artifacts
       WHERE artifact_id = ? AND project_id = ? AND shot_id = ?`).get(
       replacementArtifactId,
@@ -1306,6 +1306,10 @@ function rebindRecoveredProviderOutput(
 
     const invalidData = parseRecord(invalidRow.data_json);
     const replacementData = parseRecord(replacementRow.data_json);
+    if (invalidData.status !== invalidRow.status
+      || !["active", "inaccessible", "expired", "archived"].includes(invalidRow.status)) {
+      throw new Error("ARTIFACT_RECOVERY_BINDING_MISMATCH");
+    }
     const invalidSource = invalidData.source && typeof invalidData.source === "object" && !Array.isArray(invalidData.source)
       ? { ...(invalidData.source as Record<string, unknown>) }
       : null;
@@ -1325,11 +1329,12 @@ function rebindRecoveredProviderOutput(
     invalidSource.original_provider_job_id = providerTaskId;
     invalidSource.replaced_by_artifact_id = replacementArtifactId;
     invalidData.source = invalidSource;
+    invalidData.status = "archived";
     replacementSource.provider_job_id = providerTaskId;
     replacementSource.local_recovery_identity = recovery.local_identity;
     replacementData.source = replacementSource;
 
-    const detached = db.prepare("UPDATE media_artifacts SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE artifact_id = ?")
+    const detached = db.prepare("UPDATE media_artifacts SET status = 'archived', data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE artifact_id = ?")
       .run(JSON.stringify(invalidData), recovery.invalid_artifact_id) as { changes: number | bigint };
     if (Number(detached.changes) !== 1) throw new Error("ARTIFACT_RECOVERY_DETACH_FAILED");
     const rebound = db.prepare("UPDATE media_artifacts SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE artifact_id = ?")

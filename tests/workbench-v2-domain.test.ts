@@ -2022,8 +2022,8 @@ test("human reattachment redownloads, repairs verified Blob bytes, and rebinds w
       .get(prepared.intent_id) as { status: string; output_artifact_id: string; data_json: string };
     const completedJob = db.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
       .get(prepared.job_id) as { state: string; reconciliation_reason: string };
-    const archivedArtifactRow = db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = ?")
-      .get(existingOutput.artifact.artifact_id) as { data_json: string };
+    const archivedArtifactRow = db.prepare("SELECT status, data_json FROM media_artifacts WHERE artifact_id = ?")
+      .get(existingOutput.artifact.artifact_id) as { status: string; data_json: string };
     const replacementArtifactRow = db.prepare("SELECT status, data_json FROM media_artifacts WHERE artifact_id = ?")
       .get(completedIntentRow.output_artifact_id) as { status: string; data_json: string };
     const originalBlob = db.prepare("SELECT blob_id FROM media_artifact_blobs WHERE artifact_id = ?")
@@ -2051,6 +2051,8 @@ test("human reattachment redownloads, repairs verified Blob bytes, and rebinds w
     assert.notEqual(completedIntentRow.output_artifact_id, existingOutput.artifact.artifact_id);
     assert.equal("provider_output_recovery" in JSON.parse(completedIntentRow.data_json), false);
     assert.deepEqual({ ...completedJob }, { state: "succeeded", reconciliation_reason: "" });
+    assert.equal(archivedArtifactRow.status, "archived");
+    assert.equal((JSON.parse(archivedArtifactRow.data_json) as { status: string }).status, "archived");
     assert.equal(archivedArtifactData.source.provider_job_id, "");
     assert.equal(archivedArtifactData.source.original_provider_job_id, taskId);
     assert.equal(archivedArtifactData.source.replaced_by_artifact_id, completedIntentRow.output_artifact_id);
