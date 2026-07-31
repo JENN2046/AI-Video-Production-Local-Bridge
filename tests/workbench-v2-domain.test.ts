@@ -1796,12 +1796,8 @@ test("startup scheduler immediately fails closed after clock rollback despite a 
       taskId,
       MIN_PROVIDER_TASK_POLL_TIMEOUT_MS
     );
-    let wallMs = Date.now();
-    while (wallMs % 1_000 > 25) {
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, 5));
-      wallMs = Date.now();
-    }
-    const futureStartedAtMs = wallMs + 900;
+    const wallMs = Date.parse("2035-01-02T03:04:05.100Z");
+    const futureStartedAtMs = wallMs + 500;
     assert.equal(Math.floor(futureStartedAtMs / 1_000), Math.floor(wallMs / 1_000));
     assert.ok(futureStartedAtMs - wallMs < 1_000);
     const futureDeadlineMs = futureStartedAtMs + MIN_PROVIDER_TASK_POLL_TIMEOUT_MS;
@@ -1821,7 +1817,7 @@ test("startup scheduler immediately fails closed after clock rollback despite a 
           lease_expires_at = ?
       WHERE job_id = ?`).run(
       new Date(futureDeadlineMs).toISOString(),
-      new Date(futureStartedAtMs + 5 * 60_000).toISOString(),
+      "2099-01-01T00:00:00.000Z",
       prepared.job_id
     );
     db.close();
@@ -3487,6 +3483,97 @@ test("startup recovery resumes a confirmed queued job before any provider submit
     assert.equal(finalState, "cancelled");
     await new Promise((resolveTurn) => setImmediate(resolveTurn));
     await new Promise((resolveTurn) => setImmediate(resolveTurn));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("startup scheduler fails closed at the persisted poll deadline before a crashed worker lease expires", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-scheduler-expired-deadline-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Schedule expired deadline reconciliation");
+    const taskId = "task-scheduler-expired-deadline";
+    persistKnownProviderTask(
+      sqlitePath,
+      prepared.intent_id,
+      prepared.job_id,
+      taskId,
+      MIN_PROVIDER_TASK_POLL_TIMEOUT_MS
+    );
+    const wallMs = Date.parse("2035-01-02T03:04:05.600Z");
+    const startedAtMs = wallMs - MIN_PROVIDER_TASK_POLL_TIMEOUT_MS;
+    const db = openM0Database(sqlitePath);
+    const intentRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const intentData = JSON.parse(intentRow.data_json) as Record<string, unknown>;
+    intentData.provider_poll_started_at = new Date(startedAtMs).toISOString();
+    intentData.provider_poll_timeout_ms = MIN_PROVIDER_TASK_POLL_TIMEOUT_MS;
+    intentData.provider_poll_deadline_at = new Date(wallMs).toISOString();
+    db.prepare("UPDATE generation_intents SET data_json = ? WHERE intent_id = ?")
+      .run(JSON.stringify(intentData), prepared.intent_id);
+    db.prepare(`UPDATE generation_jobs
+      SET next_attempt_at = '2099-01-01T00:00:00.000Z',
+          lease_owner = 'crashed_worker',
+          lease_token = 'inherited_expired_deadline_lease',
+          lease_expires_at = '2099-01-01T00:00:00.000Z'
+      WHERE job_id = ?`).run(prepared.job_id);
+    db.close();
+
+    let providerCalls = 0;
+    const adapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => {
+        providerCalls += 1;
+        throw new Error("known Provider task must not be resubmitted");
+      },
+      pollStatus: async () => {
+        providerCalls += 1;
+        throw new Error("expired polling deadline must fail closed before Provider polling");
+      },
+      fetchOutput: async () => {
+        providerCalls += 1;
+        throw new Error("output must not run");
+      }
+    } as unknown as VideoProviderAdapter;
+    const resumed = resumeWorkbenchGenerationJobs({
+      sqlite_path: sqlitePath,
+      env: { ...prepared.env, PROVIDER_TASK_POLL_TIMEOUT_MS: String(MIN_PROVIDER_TASK_POLL_TIMEOUT_MS) },
+      adapter_factory: () => adapter,
+      now: () => new Date(wallMs),
+      monotonic_now_ms: () => 50_000
+    });
+    assert.deepEqual(resumed, { resumed: [prepared.intent_id], reconciled: [] });
+
+    let observedJob = { state: "", reconciliation_reason: "", lease_token: "" };
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const checked = openM0Database(sqlitePath);
+      observedJob = checked.prepare("SELECT state, reconciliation_reason, lease_token FROM generation_jobs WHERE job_id = ?")
+        .get(prepared.job_id) as typeof observedJob;
+      checked.close();
+      if (observedJob.state === "manual_reconciliation" && observedJob.lease_token === "") break;
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
+    }
+    const checked = openM0Database(sqlitePath);
+    const intent = checked.prepare("SELECT status, provider_task_id, sanitized_error_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { status: string; provider_task_id: string; sanitized_error_json: string };
+    checked.close();
+
+    assert.equal(providerCalls, 0);
+    assert.deepEqual({ ...observedJob }, {
+      state: "manual_reconciliation",
+      reconciliation_reason: "PROVIDER_POLL_TIMEOUT",
+      lease_token: ""
+    });
+    assert.deepEqual({
+      status: intent.status,
+      provider_task_id: intent.provider_task_id,
+      error_code: (JSON.parse(intent.sanitized_error_json) as { code: string }).code
+    }, {
+      status: "running",
+      provider_task_id: taskId,
+      error_code: "PROVIDER_POLL_TIMEOUT"
+    });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -266,7 +266,32 @@ function reconciliationRestoreState(db: M0Database, intentId: string): { shot_st
   return { shot_status: shotStatus, project_status: projectStatus };
 }
 
-function claimJob(db: M0Database, intentId: string, owner: string, token: string): GenerationJob | null {
+function pollingLeaseRecoveryRequired(db: M0Database, intentId: string, now: Date): boolean {
+  const nowIso = now.toISOString();
+  return Boolean(db.prepare(`SELECT 1 AS required
+    FROM generation_intents
+    WHERE intent_id = ?
+      AND (
+        julianday(CASE
+          WHEN json_valid(data_json) = 1
+            THEN json_extract(data_json, '$.provider_poll_started_at')
+          ELSE NULL
+        END) > julianday(?)
+        OR julianday(CASE
+          WHEN json_valid(data_json) = 1
+            THEN json_extract(data_json, '$.provider_poll_deadline_at')
+          ELSE NULL
+        END) <= julianday(?)
+      )`).get(intentId, nowIso, nowIso));
+}
+
+function claimJob(
+  db: M0Database,
+  intentId: string,
+  owner: string,
+  token: string,
+  recoveryNow: Date
+): GenerationJob | null {
   const expiresAt = new Date(Date.now() + 5 * 60_000).toISOString();
   db.exec("BEGIN IMMEDIATE");
   try {
@@ -275,21 +300,15 @@ function claimJob(db: M0Database, intentId: string, owner: string, token: string
       db.exec("ROLLBACK");
       return null;
     }
-    const clockRollback = job.state === "polling" && Boolean(db.prepare(`SELECT 1 AS detected
-      FROM generation_intents
-      WHERE intent_id = ?
-        AND julianday(CASE
-          WHEN json_valid(data_json) = 1
-            THEN json_extract(data_json, '$.provider_poll_started_at')
-          ELSE NULL
-        END) > julianday('now')`).get(intentId));
+    const pollingRecovery = job.state === "polling"
+      && pollingLeaseRecoveryRequired(db, intentId, recoveryNow);
     const result = db.prepare(`UPDATE generation_jobs SET lease_owner = ?, lease_token = ?, lease_expires_at = ?, attempt_count = attempt_count + 1, updated_at = CURRENT_TIMESTAMP
       WHERE job_id = ? AND (
         lease_token = ''
         OR lease_expires_at IS NULL
         OR datetime(lease_expires_at) <= CURRENT_TIMESTAMP
         OR ? = 1
-      )`).run(owner, token, expiresAt, job.job_id, clockRollback ? 1 : 0) as { changes: number | bigint };
+      )`).run(owner, token, expiresAt, job.job_id, pollingRecovery ? 1 : 0) as { changes: number | bigint };
     if (Number(result.changes) !== 1) {
       db.exec("ROLLBACK");
       return null;
@@ -1465,7 +1484,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
   const leaseToken = randomUUID();
   let job: GenerationJob | null;
   try {
-    job = claimJob(db, intentId, leaseOwner, leaseToken);
+    job = claimJob(db, intentId, leaseOwner, leaseToken, dateNow(dependencies));
   } catch (error) {
     db.close();
     throw error;
@@ -2050,51 +2069,85 @@ function startNextPersistedGeneration(dependencies: WorkbenchGenerationDependenc
   if (activeExecutions.size >= 1) return;
   const db = (dependencies.open_database ?? openM0Database)(dependencies.sqlite_path);
   try {
+    const now = dateNow(dependencies);
+    const nowIso = now.toISOString();
     const row = db.prepare(`SELECT i.intent_id, i.provider_task_id, j.state FROM generation_intents i
       JOIN generation_jobs j ON j.intent_id = i.intent_id
       WHERE i.status IN ('queued','running')
         AND (i.provider_task_id <> '' OR (i.provider_task_id = '' AND j.state = 'queued'))
         AND j.state IN ('queued','polling','downloading','finalizing')
         AND (
-          datetime(j.next_attempt_at) <= CURRENT_TIMESTAMP
+          julianday(j.next_attempt_at) <= julianday(?)
           OR (
             j.state = 'polling'
-            AND julianday(CASE
-              WHEN json_valid(i.data_json) = 1
-                THEN json_extract(i.data_json, '$.provider_poll_started_at')
-              ELSE NULL
-            END) > julianday('now')
+            AND (
+              julianday(CASE
+                WHEN json_valid(i.data_json) = 1
+                  THEN json_extract(i.data_json, '$.provider_poll_started_at')
+                ELSE NULL
+              END) > julianday(?)
+              OR julianday(CASE
+                WHEN json_valid(i.data_json) = 1
+                  THEN json_extract(i.data_json, '$.provider_poll_deadline_at')
+                ELSE NULL
+              END) <= julianday(?)
+            )
           )
         )
         AND (
           j.lease_token = ''
           OR j.lease_expires_at IS NULL
-          OR datetime(j.lease_expires_at) <= CURRENT_TIMESTAMP
+          OR julianday(j.lease_expires_at) <= julianday(?)
           OR (
             j.state = 'polling'
-            AND julianday(CASE
-              WHEN json_valid(i.data_json) = 1
-                THEN json_extract(i.data_json, '$.provider_poll_started_at')
-              ELSE NULL
-            END) > julianday('now')
+            AND (
+              julianday(CASE
+                WHEN json_valid(i.data_json) = 1
+                  THEN json_extract(i.data_json, '$.provider_poll_started_at')
+                ELSE NULL
+              END) > julianday(?)
+              OR julianday(CASE
+                WHEN json_valid(i.data_json) = 1
+                  THEN json_extract(i.data_json, '$.provider_poll_deadline_at')
+                ELSE NULL
+              END) <= julianday(?)
+            )
           )
         )
-      ORDER BY j.created_at LIMIT 1`).get() as { intent_id: string; provider_task_id: string; state: GenerationJobState } | undefined;
+      ORDER BY j.created_at LIMIT 1`)
+      .get(nowIso, nowIso, nowIso, nowIso, nowIso, nowIso) as { intent_id: string; provider_task_id: string; state: GenerationJobState } | undefined;
     if (row) {
       startWorkbenchGeneration(row.intent_id, { allow_submit: row.state === "queued" && row.provider_task_id === "", dependencies });
       return;
     }
-    const wakeup = db.prepare(`SELECT MIN(CASE
-        WHEN j.lease_token <> '' AND j.lease_expires_at IS NOT NULL AND datetime(j.lease_expires_at) > CURRENT_TIMESTAMP
-          THEN j.lease_expires_at
-        ELSE j.next_attempt_at END) AS wake_at FROM generation_intents i
-      JOIN generation_jobs j ON j.intent_id = i.intent_id
-      WHERE i.status IN ('queued','running')
-        AND (i.provider_task_id <> '' OR (i.provider_task_id = '' AND j.state = 'queued'))
-        AND j.state IN ('queued','polling','downloading','finalizing')
-        AND (datetime(j.next_attempt_at) > CURRENT_TIMESTAMP
-          OR (j.lease_token <> '' AND j.lease_expires_at IS NOT NULL AND datetime(j.lease_expires_at) > CURRENT_TIMESTAMP))`).get() as { wake_at: string | null };
-    if (wakeup.wake_at) scheduleNextPersistedGeneration(dependencies, Math.max(50, Date.parse(wakeup.wake_at) - Date.now() + 50));
+    const wakeup = db.prepare(`SELECT MIN(wake_jd) AS wake_jd FROM (
+        SELECT CASE
+          WHEN j.lease_token <> '' AND j.lease_expires_at IS NOT NULL
+            AND julianday(j.lease_expires_at) > julianday(?)
+            THEN julianday(j.lease_expires_at)
+          ELSE julianday(j.next_attempt_at)
+        END AS wake_jd
+        FROM generation_intents i
+        JOIN generation_jobs j ON j.intent_id = i.intent_id
+        WHERE i.status IN ('queued','running')
+          AND (i.provider_task_id <> '' OR (i.provider_task_id = '' AND j.state = 'queued'))
+          AND j.state IN ('queued','polling','downloading','finalizing')
+        UNION ALL
+        SELECT julianday(CASE
+          WHEN json_valid(i.data_json) = 1
+            THEN json_extract(i.data_json, '$.provider_poll_deadline_at')
+          ELSE NULL
+        END) AS wake_jd
+        FROM generation_intents i
+        JOIN generation_jobs j ON j.intent_id = i.intent_id
+        WHERE i.status IN ('queued','running')
+          AND i.provider_task_id <> ''
+          AND j.state = 'polling'
+      ) WHERE wake_jd > julianday(?)`).get(nowIso, nowIso) as { wake_jd: number | null };
+    if (wakeup.wake_jd !== null) {
+      const wakeAtMs = (wakeup.wake_jd - 2_440_587.5) * 86_400_000;
+      scheduleNextPersistedGeneration(dependencies, Math.max(50, wakeAtMs - now.getTime() + 50));
+    }
   } finally { db.close(); }
 }
 
