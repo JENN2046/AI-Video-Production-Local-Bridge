@@ -1619,9 +1619,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
     const existingOutput = existingOutputArtifact(db, taskId, intent.project_id, intent.shot_id);
     let output: MediaArtifact | null = null;
     let recoveryNeedsDownload = false;
-    if (existingOutput.ok) {
-      output = existingOutput.artifact;
-    } else if (recovery && existingOutput.invalid_artifact_id === recovery.invalid_artifact_id) {
+    if (recovery) {
       const replacement = providerOutputArtifactByIdentity(
         db,
         recovery.local_identity,
@@ -1663,9 +1661,39 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
           return;
         }
         output = rebound.artifact;
-      } else {
+      } else if (existingOutput.ok) {
+        if (existingOutput.artifact?.artifact_id !== recovery.invalid_artifact_id) {
+          job = markKnownProviderTaskForReconciliation(
+            db,
+            intent,
+            job,
+            taskId,
+            providerError("ARTIFACT_RECOVERY_STATE_INVALID", "Provider output recovery state could not be verified."),
+            leaseToken,
+            "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION"
+          );
+          return;
+        }
+        // Blob repair can make the old Artifact healthy before replacement
+        // activation commits. A persisted recovery request must still finish
+        // through the replacement identity instead of adopting the old row.
         recoveryNeedsDownload = true;
+      } else if (existingOutput.invalid_artifact_id === recovery.invalid_artifact_id) {
+        recoveryNeedsDownload = true;
+      } else {
+        job = markKnownProviderTaskForReconciliation(
+          db,
+          intent,
+          job,
+          taskId,
+          existingOutput.error,
+          leaseToken,
+          "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION"
+        );
+        return;
       }
+    } else if (existingOutput.ok) {
+      output = existingOutput.artifact;
     } else {
       job = markKnownProviderTaskForReconciliation(
         db,
