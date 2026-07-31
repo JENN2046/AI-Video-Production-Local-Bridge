@@ -1957,7 +1957,17 @@ function startNextPersistedGeneration(dependencies: WorkbenchGenerationDependenc
       WHERE i.status IN ('queued','running')
         AND (i.provider_task_id <> '' OR (i.provider_task_id = '' AND j.state = 'queued'))
         AND j.state IN ('queued','polling','downloading','finalizing')
-        AND datetime(j.next_attempt_at) <= CURRENT_TIMESTAMP
+        AND (
+          datetime(j.next_attempt_at) <= CURRENT_TIMESTAMP
+          OR (
+            j.state = 'polling'
+            AND datetime(CASE
+              WHEN json_valid(i.data_json) = 1
+                THEN json_extract(i.data_json, '$.provider_poll_started_at')
+              ELSE NULL
+            END) > CURRENT_TIMESTAMP
+          )
+        )
         AND (j.lease_token = '' OR j.lease_expires_at IS NULL OR datetime(j.lease_expires_at) <= CURRENT_TIMESTAMP)
       ORDER BY j.created_at LIMIT 1`).get() as { intent_id: string; provider_task_id: string; state: GenerationJobState } | undefined;
     if (row) {
@@ -2069,8 +2079,14 @@ export function reconcileGenerationJob(
       }
       const run = getGenerationRun(db, intent.run_id);
       if (!run) { db.exec("ROLLBACK"); return { ok: false, error: { code: "GENERATION_RUN_NOT_FOUND", message: "Generation run was not found." } }; }
-      let outputRecovery: ProviderOutputRecovery | null = null;
-      if (row.reconciliation_reason === "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION"
+      const persistedRecovery = providerOutputRecoveryFromIntent(db, intent.intent_id, taskId);
+      if (!persistedRecovery.ok) {
+        db.exec("ROLLBACK");
+        return { ok: false, error: { code: persistedRecovery.error.code, message: "Existing Provider output recovery state could not be preserved safely." } };
+      }
+      let outputRecovery = persistedRecovery.recovery;
+      if (!outputRecovery
+        && row.reconciliation_reason === "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION"
         && taskId === intent.provider_task_id) {
         const existingOutput = existingOutputArtifact(db, taskId, intent.project_id, intent.shot_id);
         if (!existingOutput.ok) {
