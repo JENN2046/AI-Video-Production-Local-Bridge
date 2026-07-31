@@ -1279,6 +1279,91 @@ function persistProviderOutputRecovery(
     .run(JSON.stringify(data), intentId);
 }
 
+interface ProviderOutputRecoveryArtifactRow {
+  artifact_id: string;
+  project_id: string | null;
+  shot_id: string | null;
+  role: string;
+  artifact_type: string;
+  status: string;
+  data_json: string;
+}
+
+function retireProviderOutputRecoveryForTaskSwitch(
+  db: M0Database,
+  intent: WorkbenchGenerationIntent,
+  recovery: ProviderOutputRecovery
+): { ok: true } | { ok: false; error: ProviderToolError } {
+  try {
+    const invalidArtifact = db.prepare(`SELECT artifact_id, project_id, shot_id, role, artifact_type, status, data_json
+      FROM media_artifacts
+      WHERE artifact_id = ?`).get(recovery.invalid_artifact_id) as ProviderOutputRecoveryArtifactRow | undefined;
+    if (!invalidArtifact) throw new Error("ARTIFACT_RECOVERY_RETIRE_BINDING_MISSING");
+
+    const replacementArtifacts = db.prepare(`SELECT artifact_id, project_id, shot_id, role, artifact_type, status, data_json
+      FROM media_artifacts
+      WHERE json_valid(data_json) = 1
+        AND json_extract(data_json, '$.source.provider_job_id') = ?
+      LIMIT 2`).all(recovery.local_identity) as ProviderOutputRecoveryArtifactRow[];
+    if (replacementArtifacts.length > 1
+      || replacementArtifacts[0]?.artifact_id === invalidArtifact.artifact_id) {
+      throw new Error("ARTIFACT_RECOVERY_RETIRE_BINDING_AMBIGUOUS");
+    }
+
+    const targets = [
+      { row: invalidArtifact, expectedProviderJobId: recovery.provider_task_id },
+      ...replacementArtifacts.map((row) => ({ row, expectedProviderJobId: recovery.local_identity }))
+    ];
+    const archivedTargets = targets.map(({ row, expectedProviderJobId }) => {
+      const data = parseRecord(row.data_json);
+      const linkedObjects = data.linked_objects && typeof data.linked_objects === "object" && !Array.isArray(data.linked_objects)
+        ? data.linked_objects as Record<string, unknown>
+        : null;
+      const source = data.source && typeof data.source === "object" && !Array.isArray(data.source)
+        ? data.source as Record<string, unknown>
+        : null;
+      if (row.project_id !== intent.project_id
+        || row.shot_id !== intent.shot_id
+        || row.role !== "generated_clip"
+        || row.artifact_type !== "video"
+        || !["active", "inaccessible", "expired", "archived"].includes(row.status)
+        || data.artifact_id !== row.artifact_id
+        || data.role !== row.role
+        || data.artifact_type !== row.artifact_type
+        || data.status !== row.status
+        || linkedObjects?.project_id !== intent.project_id
+        || linkedObjects?.shot_id !== intent.shot_id
+        || source?.provider !== intent.provider
+        || source.provider_job_id !== expectedProviderJobId) {
+        throw new Error("ARTIFACT_RECOVERY_RETIRE_BINDING_MISMATCH");
+      }
+      data.status = "archived";
+      return { row, data_json: JSON.stringify(data) };
+    });
+
+    for (const target of archivedTargets) {
+      const archived = db.prepare(`UPDATE media_artifacts
+        SET status = 'archived', data_json = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE artifact_id = ? AND project_id = ? AND shot_id = ? AND status = ? AND data_json = ?`)
+        .run(
+          target.data_json,
+          target.row.artifact_id,
+          intent.project_id,
+          intent.shot_id,
+          target.row.status,
+          target.row.data_json
+        ) as { changes: number | bigint };
+      if (Number(archived.changes) !== 1) throw new Error("ARTIFACT_RECOVERY_RETIRE_UPDATE_FAILED");
+    }
+    return { ok: true };
+  } catch {
+    return {
+      ok: false,
+      error: providerError("ARTIFACT_RECOVERY_RETIRE_FAILED", "Previous Provider output recovery state could not be retired safely.")
+    };
+  }
+}
+
 function rebindRecoveredProviderOutput(
   db: M0Database,
   intent: WorkbenchGenerationIntent,
@@ -2104,12 +2189,24 @@ export function reconcileGenerationJob(
       }
       const run = getGenerationRun(db, intent.run_id);
       if (!run) { db.exec("ROLLBACK"); return { ok: false, error: { code: "GENERATION_RUN_NOT_FOUND", message: "Generation run was not found." } }; }
-      const persistedRecovery = providerOutputRecoveryFromIntent(db, intent.intent_id, taskId);
+      const persistedRecovery = providerOutputRecoveryFromIntent(db, intent.intent_id, intent.provider_task_id);
       if (!persistedRecovery.ok) {
         db.exec("ROLLBACK");
         return { ok: false, error: { code: persistedRecovery.error.code, message: "Existing Provider output recovery state could not be preserved safely." } };
       }
       let outputRecovery = persistedRecovery.recovery;
+      if (outputRecovery && taskId === outputRecovery.local_identity) {
+        db.exec("ROLLBACK");
+        return { ok: false, error: { code: "PROVIDER_TASK_ALREADY_OWNED", message: "Provider task ID is reserved by local recovery state." } };
+      }
+      if (outputRecovery && taskId !== outputRecovery.provider_task_id) {
+        const retired = retireProviderOutputRecoveryForTaskSwitch(db, intent, outputRecovery);
+        if (!retired.ok) {
+          db.exec("ROLLBACK");
+          return { ok: false, error: { code: retired.error.code, message: "Previous Provider output recovery state could not be retired safely." } };
+        }
+        outputRecovery = null;
+      }
       if (!outputRecovery
         && row.reconciliation_reason === "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION"
         && taskId === intent.provider_task_id) {
