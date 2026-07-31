@@ -72,16 +72,20 @@
       "late_p2_followup": "S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING"
     },
     "pull_request_109": {
-      "status": "DRAFT_PR_AWAITING_REVIEW",
+      "status": "OPEN_READY",
       "base": "main",
       "head": "codex/blob-recovery-staging-reconciliation",
       "implementation_commit": "528aee4020d4be15a5fc5278de2f8c8abb20c637",
       "review_remediation_commit": "e5c42113c73ba35a2c307eb0890dcd7d3be1216f",
       "root_identity_review_remediation_commit": "193b1077d67dd8872831e8fe7646d8879d4947f7",
+      "deterministic_stage_whitelist_commit": "0ff40f085368658887d3a77315d1eb7f51124c3f",
+      "post_promotion_finding_thread": "PRRT_kwDOTTDtUM6VdGmY",
+      "post_promotion_finding_status": "REMEDIATION_IN_PROGRESS",
+      "candidate_fix_present": true,
       "exact_head_ci_and_review_required": true,
       "merged_to_main": false,
       "merge_authorized": false,
-      "ready_for_review_authorized": false
+      "ready_for_review_authorized": true
     }
   },
   "s3b_followups": [
@@ -107,11 +111,15 @@
     },
     {
       "task_id": "S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING",
-      "status": "DRAFT_PR_AWAITING_REVIEW",
+      "status": "BLOCKED_BY_PR109_POST_PROMOTION_FINDING",
       "pull_request": 109,
       "implementation_commit": "528aee4020d4be15a5fc5278de2f8c8abb20c637",
       "review_remediation_commit": "e5c42113c73ba35a2c307eb0890dcd7d3be1216f",
-      "root_identity_review_remediation_commit": "193b1077d67dd8872831e8fe7646d8879d4947f7"
+      "root_identity_review_remediation_commit": "193b1077d67dd8872831e8fe7646d8879d4947f7",
+      "deterministic_stage_whitelist_commit": "0ff40f085368658887d3a77315d1eb7f51124c3f",
+      "candidate_fix_present": true,
+      "exact_head_ci_required": true,
+      "exact_head_post_promotion_review_required": true
     },
     {
       "task_id": "S3B-T2_PREPARE_ELIGIBLE_SHOT",
@@ -183,7 +191,7 @@
   "completed_by": "Codex",
   "completed_at": "2026-07-30T19:41:08+08:00",
   "result": "BLOCKED_BY_S3_FINDING",
-  "validation": "PR #108 was squash-merged as main@808d933 and main CI passed, but a late P2 found unbounded orphan recovery staging after a hard exit. Draft PR #109 implementation 528aee4 uses one deterministic stage per Blob/target pair and safely reconciles startup/retry orphans. Review remediation e5c4211 restricts legacy cleanup to canonical UUID-v4 names and verifies SHA-256, size and MIME before deletion. A second exact-head review found startup root redirection was not rejected; remediation 193b107 now requires canonical root identity before cleanup and preserves an external stage in the ancestor-junction regression. A real child-process crash repeated five times retains at most one stage. Typecheck, build, Foundation, Provider, Workbench V2, selection, secret scan and diff checks pass locally. New exact-head PR #109 CI and review remain required. No Provider network call or activity-data access occurred.",
+  "validation": "PR #108 was squash-merged as main@808d933 and main CI passed, but a late P2 found unbounded orphan recovery staging after a hard exit. Open Ready PR #109 contains the bounded reconciliation. Post-promotion finding PRRT_kwDOTTDtUM6VdGmY showed that valid-looking deterministic stage names were still treated as owned without a verified Blob mapping. Candidate 0ff40f0 derives an exact expected-stage whitelist from verified blob_id, storage_uri and media-root identity through the shared recovery path helper; unmatched valid-looking and same-content stages are preserved and reported unsafe. Typecheck, build, media activation 47/47, Foundation 109/109, Provider 52/52, Workbench V2 68/68, selection 23/23, secret scan and diff checks pass locally. New exact-head PR #109 CI and post-promotion review remain required. No Provider network call or activity-data access occurred.",
   "evidence": [
     "ops/reports/2026-07-30-current-workbench-canary-readiness.md",
     ".agent_board/TASK_LEDGER.md",
@@ -191,8 +199,8 @@
     ".agent_board/HANDOFF.md"
   ],
   "commit": "f570d145e4832d2b2237123a40d5e8e0b503fcf1",
-  "delivery": "PR_106_AND_PR_108_MERGED_PR_109_DRAFT_AWAITING_CI_AND_REVIEW",
-  "updated_at": "2026-07-31T21:54:54+08:00",
+  "delivery": "PR_106_AND_PR_108_MERGED_PR_109_OPEN_READY_REMEDIATION_AWAITING_EXACT_HEAD_EVIDENCE",
+  "updated_at": "2026-07-31T23:33:06+08:00",
   "safe_state": {
     "provider_calls": 0,
     "activity_writes": 0,

@@ -61,7 +61,7 @@ database. `REAL_PROVIDER_ENABLED=false` remains the safe default.
 |---|---|---|---|
 | Workbench V2 local UI | Storyboard, generation preflight, version review and delivery-readiness views exist | Activity database compatibility accepted at ledger `0011` | Core |
 | SQLite and governed media | Migration, Artifact/Blob digest and FFprobe boundaries exist | Ledger `0011` migration/restore evidence remains commit-scoped | Core |
-| Current Provider path | Intent, budget, confirmation, bounded polling, manual reconciliation and verified-Blob recovery boundaries exist in `main@808d933` | PR #108 merged with green main CI, but a late P2 found an orphaned recovery-staging crash window; Draft PR #109 is the bounded remediation and still requires exact-head CI/review; no real Provider or S4 acceptance occurred | Core blocker before S4 |
+| Current Provider path | Intent, budget, confirmation, bounded polling, manual reconciliation and verified-Blob recovery boundaries exist in `main@808d933` | PR #108 merged with green main CI, but a post-promotion P2 found that startup cleanup inferred ownership from a valid-looking stage name; open Ready PR #109 contains a candidate exact verified-Blob whitelist fix and still requires exact-head CI/review; no real Provider or S4 acceptance occurred | Core blocker before S4 |
 | Historical R3 Provider path | Execution scripts now reside under `legacy/` | RunningHub real canary, four-shot generation and regeneration completed historically | Feasibility evidence only |
 | Review and accepted clips | Version stacks, rejection reasons and human accepted-clip selection exist | Historical R3 review evidence exists | Core; current-path acceptance remains |
 | Active assembly/export | Active assembly still contains `placeholder_copy` / mock-fixture behavior; Workbench has no production assembly/export action | No current-main production-path PASS | S6 core gap |
@@ -202,7 +202,7 @@ not constitute a real Provider or S4 acceptance.
 
 A P2 review finding arrived after the PR #108 merge: a hard process exit after
 copying recovery staging bytes but before exclusive placement could leave an
-unbounded random `blob-recovery-*.staged` file. Draft PR #109 contains the
+unbounded random `blob-recovery-*.staged` file. Open Ready PR #109 contains the
 narrow T1B remediation. It assigns each Blob/target pair one deterministic
 slot under `.activation/staging`, reuses or safely replaces app-owned staged
 bytes, reconciles safe startup orphans under the database recovery lock, and
@@ -222,9 +222,19 @@ not reject a registered media root redirected through a replaced ancestor.
 Commit `193b1077d67dd8872831e8fe7646d8879d4947f7` now requires the canonical root
 to equal the registered root before any activation cleanup; a junction
 regression proves the external stage is retained and reported unsafe. The full
-local gate set passes after this second fix. Draft PR #109 still requires new
-exact-final-head Windows CI and Codex review. PR #108's late thread remains
-unresolved until the remediation is reviewed, merged and verified.
+local gate set passed after this second fix. A post-promotion P2 then found that
+startup cleanup treated every valid-looking 64-hex deterministic stage name as
+app-owned even when no verified Blob identity mapped to it. Candidate commit
+`0ff40f085368658887d3a77315d1eb7f51124c3f` now derives an exact expected-stage
+whitelist from verified `blob_id`, `storage_uri` and registered media-root
+identity through the same path helper used by normal recovery. Only an exact,
+safe whitelist match may be deleted. Unmatched valid-looking stages, including
+same-content files, are preserved and reported unsafe; content is not ownership
+proof. The full local gate set passes with media activation 47/47, Foundation
+109/109, Provider 52/52, Workbench V2 68/68 and selection 23/23. PR #109 remains
+open and unmerged; its candidate fix awaits new exact-final-head Windows CI and
+Codex review. Integration awaits Jenn's merge decision and exact-head evidence
+recorded on the PR.
 
 The complete Media Gateway promotion, Memory plugin, second real user,
 automatic Snapshot, Windows logon task, WebM/broad formats and new OAuth

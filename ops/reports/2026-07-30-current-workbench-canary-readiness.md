@@ -273,10 +273,12 @@ pr108:
   squash_commit: 808d9334a49def7ce858f7c6138af75fed392c5b
 remediation_pr:
   number: 109
-  status: DRAFT_PR_AWAITING_REVIEW
+  status: OPEN_READY
   implementation_commit: 528aee4020d4be15a5fc5278de2f8c8abb20c637
   review_remediation_commit: e5c42113c73ba35a2c307eb0890dcd7d3be1216f
   root_identity_review_remediation_commit: 193b1077d67dd8872831e8fe7646d8879d4947f7
+  deterministic_stage_whitelist_commit: 0ff40f085368658887d3a77315d1eb7f51124c3f
+  post_promotion_finding_status: REMEDIATION_IN_PROGRESS
   merged_to_main: false
 S3B-T1:
   local_status: PASS
@@ -287,7 +289,7 @@ S3B-T1A:
 S3B_VERIFIED_BLOB_STORAGE_RECOVERY:
   status: DONE_IN_MAIN_WITH_REMEDIATION_PENDING
 S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING:
-  status: DRAFT_PR_AWAITING_REVIEW
+  status: BLOCKED_BY_PR109_POST_PROMOTION_FINDING
   pull_request: 109
 S3B-T2:
   status: AWAITING_JENN_AUTHORIZATION
@@ -307,7 +309,7 @@ real Provider or S4 acceptance. A P2 review finding arrived after merge: a hard
 exit after staged-copy completion could leave a new random full-file stage on
 every retry.
 
-Draft PR #109 is the bounded remediation. It gives each Blob/target pair one
+Open Ready PR #109 is the bounded remediation. It gives each Blob/target pair one
 deterministic slot under the app-controlled activation staging root, reuses a
 complete matching stage, safely recopies a partial app-owned stage, reconciles
 safe startup orphans under the database recovery lock, and narrowly cleans the
@@ -329,15 +331,23 @@ cleanup did not reject a registered media root redirected through a replaced
 ancestor. Commit `193b1077d67dd8872831e8fe7646d8879d4947f7` now requires
 canonical-root identity before any activation cleanup. Its junction regression
 confirms the redirected external stage remains untouched and an unsafe failure
-is reported. All local lanes pass after this second fix. PR #109 remains Draft
-pending new exact-head Windows CI and Codex review.
+is reported. A post-promotion P2 then showed that startup cleanup still inferred
+ownership from any valid-looking 64-hex deterministic stage name. Candidate
+`0ff40f085368658887d3a77315d1eb7f51124c3f` derives the exact expected-stage
+whitelist from verified `blob_id`, `storage_uri` and media-root identity through
+the shared normal-recovery path helper. Only exact safe matches can be deleted;
+unmatched valid-looking and same-content files are preserved and reported
+unsafe, because content is not ownership proof. Local validation passes with
+media activation 47/47, Foundation 109/109, Provider 52/52, Workbench V2 68/68
+and selection 23/23. PR #109 remains open and unmerged; integration awaits
+Jenn's merge decision and exact-head evidence recorded on the PR.
 
 The remaining sequence is:
 
-1. require Draft PR #109 to pass Windows CI and exact-final-head Codex review
-   before any Ready or merge decision;
-2. keep PR #108's late P2 thread unresolved until remediation is merged and
-   verified; retain the PR #107 and PR #108 branches;
+1. require open Ready PR #109 to pass Windows CI and a fresh exact-final-head
+   post-promotion Codex review before any merge decision;
+2. resolve PR #109's post-promotion finding only after that exact-head evidence;
+   retain the PR #107 and PR #108 branches;
 3. obtain Jenn's separate authorization for `S3B-T2_PREPARE_ELIGIBLE_SHOT`;
 4. wait for Jenn's local action for
    `S3B-T3_CONFIGURE_RUNNINGHUB_CREDENTIAL`;

@@ -3370,3 +3370,53 @@ service_starts: 0
 remaining_test_processes: 0
 exact_head_ci_and_review: REQUIRED_AGAIN_AFTER_REVIEW_REMEDIATION
 ```
+
+### PR109 deterministic stage Blob whitelist remediation
+
+```yaml
+task: PR109-T1_DETERMINISTIC_STAGE_BLOB_WHITELIST
+validated_at: 2026-07-31T23:33:06+08:00
+pull_request: 109
+implementation_commit: 0ff40f085368658887d3a77315d1eb7f51124c3f
+post_promotion_finding_thread: PRRT_kwDOTTDtUM6VdGmY
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - npm run test:foundation-boundaries
+  - npm run test:selection-gate
+  - npm run test:provider-boundaries
+  - npm run test:v2
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  media_activation_integrity: PASS_47
+  foundation_boundaries: PASS_109
+  provider_boundaries: PASS_52
+  workbench_v2: PASS_68
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  whitelist_derived_from_verified_blob_identity: true
+  identity_fields: blob_id_storage_uri_media_root
+  normal_and_startup_path_derivation_shared: true
+  exact_expected_stage_cleaned: true
+  unknown_valid_digest_stage_preserved_and_reported_unsafe: true
+  same_content_unknown_digest_preserved_and_reported_unsafe: true
+  multiple_blob_paths_distinct_and_cleaned: true
+  malformed_or_out_of_root_blob_row_authorizes_nothing: true
+  unsafe_expected_entries_preserved_and_reported_unsafe: true
+  repeated_startup_idempotent: true
+  normal_recovery_ignores_unrelated_deterministic_stage: true
+  legacy_rules_unchanged: true
+  blob_row_or_links_changed: false
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
+```

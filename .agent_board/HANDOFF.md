@@ -2,12 +2,12 @@
 
 Current mode: PR #109 orphaned Blob recovery staging remediation; no executable task is `READY`
 Last run: S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING
-Last result: two exact-head review P2 findings are fixed and locally validated; Draft PR #109 awaits new exact-head CI and Codex review
+Last result: the post-promotion stage-ownership P2 has a locally validated candidate fix; open Ready PR #109 awaits exact-head CI and a fresh Codex review
 
 ## Current state
 
 Current task: none
-Current status: `DRAFT_PR_AWAITING_REVIEW`
+Current status: `BLOCKED_BY_PR109_POST_PROMOTION_FINDING`
 Current owner: none
 Ready task count: 0
 
@@ -24,7 +24,7 @@ Ready task count: 0
   `S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE` are `DONE_IN_MAIN`.
 - `S3B_VERIFIED_BLOB_STORAGE_RECOVERY` is
   `DONE_IN_MAIN_WITH_REMEDIATION_PENDING`.
-- Draft PR #109 at implementation commit
+- Open Ready PR #109 at implementation commit
   `528aee4020d4be15a5fc5278de2f8c8abb20c637` implements one deterministic
   stage per Blob/target pair, safe startup/retry reconciliation and legacy
   UUID-stage cleanup. Review remediation commit
@@ -33,12 +33,20 @@ Ready task count: 0
   Exact-head review `4829032568` then found a startup-cleanup media-root
   redirection gap. Commit `193b1077d67dd8872831e8fe7646d8879d4947f7`
   rejects canonical-root drift before cleanup, with an ancestor-junction
-  regression. All authorized local lanes passed again; new exact-head Windows
-  CI and Codex review remain required.
+  regression. Post-promotion finding `PRRT_kwDOTTDtUM6VdGmY` then showed that
+  any valid-looking 64-hex stage name was still treated as app-owned without an
+  exact verified Blob mapping. Candidate
+  `0ff40f085368658887d3a77315d1eb7f51124c3f` derives the cleanup whitelist
+  from verified `blob_id`, `storage_uri` and media-root identity through the
+  normal recovery path helper. Unmatched stages are preserved and reported
+  unsafe; content is not ownership proof. All authorized local lanes pass with
+  media activation 47/47, Foundation 109/109, Provider 52/52, Workbench V2
+  68/68 and selection 23/23. New exact-head Windows CI and a fresh Codex review
+  remain required.
 - `S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING` is
-  `DRAFT_PR_AWAITING_REVIEW` in PR #109.
-- PR #108's late thread remains unresolved until PR #109 is reviewed, merged
-  into `main` and verified.
+  `BLOCKED_BY_PR109_POST_PROMOTION_FINDING` in PR #109.
+- PR #109 remains open and unmerged; integration awaits Jenn's merge decision
+  and exact-head evidence recorded on the PR.
 - T2, T3, T4 and S4 retain their existing human gates; ready task count is 0.
 
 ## Superseded PR #108 preparation history

@@ -5241,7 +5241,7 @@ delivery: PR_108_DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
 
 ```yaml
 task: S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING
-status: DRAFT_PR_AWAITING_REVIEW
+status: BLOCKED_BY_PR109_POST_PROMOTION_FINDING
 recorded_by: Codex
 recorded_at: 2026-07-31T20:46:35+08:00
 source_finding:
@@ -5253,6 +5253,7 @@ remediation_pull_request: 109
 implementation_commit: 528aee4020d4be15a5fc5278de2f8c8abb20c637
 review_remediation_commit: e5c42113c73ba35a2c307eb0890dcd7d3be1216f
 root_identity_review_remediation_commit: 193b1077d67dd8872831e8fe7646d8879d4947f7
+deterministic_stage_whitelist_commit: 0ff40f085368658887d3a77315d1eb7f51124c3f
 review_remediation:
   finding: LEGACY_STAGE_OWNERSHIP_NOT_VERIFIED
   canonical_uuid_v4_required: true
@@ -5293,5 +5294,54 @@ service_starts: 0
 deployment_changes: 0
 s4_status: BLOCKED_UNAUTHORIZED
 s4_authorization_granted: false
-delivery: PR_109_DRAFT_AWAITING_NEW_EXACT_HEAD_CI_AND_REVIEW
+delivery: PR_109_OPEN_READY_AWAITING_EXACT_HEAD_CI_AND_POST_PROMOTION_REVIEW
+```
+
+## 2026-07-31 — PR109 deterministic stage Blob whitelist remediation
+
+```yaml
+task: PR109-T1_DETERMINISTIC_STAGE_BLOB_WHITELIST
+status: BLOCKED_BY_EXACT_HEAD_EVIDENCE
+recorded_by: Codex
+recorded_at: 2026-07-31T23:33:06+08:00
+pull_request: 109
+post_promotion_finding:
+  thread: PRRT_kwDOTTDtUM6VdGmY
+  severity: P2
+  status: REMEDIATION_IN_PROGRESS
+implementation_commit: 0ff40f085368658887d3a77315d1eb7f51124c3f
+resolution:
+  whitelist_source: verified_blob_id_storage_uri_and_media_root
+  shared_path_derivation: true
+  exact_expected_stage_only: true
+  unmatched_valid_stage_preserved: true
+  same_content_not_ownership_proof: true
+  unmatched_stage_reported_unsafe: true
+  legacy_cleanup_rules_changed: false
+blob_immutability:
+  row_updated: false
+  blob_id_changed: false
+  sha_changed: false
+  storage_uri_changed: false
+  links_changed: false
+  schema_changed: false
+local_validation:
+  typecheck: PASS
+  build: PASS
+  media_activation_integrity: PASS_47
+  foundation_boundaries: PASS_109
+  provider_boundaries: PASS_52
+  workbench_v2: PASS_68
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+deployment_changes: 0
+ready_task_count: 0
+merge_authorized: false
+delivery: PR_109_OPEN_READY_AWAITING_EXACT_HEAD_CI_AND_POST_PROMOTION_REVIEW
 ```
