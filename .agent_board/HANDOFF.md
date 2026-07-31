@@ -28,7 +28,7 @@ Ready task count: 0
   `528aee4020d4be15a5fc5278de2f8c8abb20c637` implements one deterministic
   stage per Blob/target pair, safe startup/retry reconciliation and legacy
   UUID-stage cleanup. Review remediation commit
-  `e5c4211c11d5bad1f06e7f5422f1b1aa678a5b7f` restricts legacy ownership to
+  `e5c42113c73ba35a2c307eb0890dcd7d3be1216f` restricts legacy ownership to
   canonical UUID-v4 names and verifies SHA-256, size and MIME before deletion.
   Exact-head review `4829032568` then found a startup-cleanup media-root
   redirection gap. Commit `193b1077d67dd8872831e8fe7646d8879d4947f7`

@@ -214,7 +214,7 @@ Implementation commit `528aee4020d4be15a5fc5278de2f8c8abb20c637`
 passed the authorized local gates. Exact-head review of the first published
 state then found that legacy cleanup accepted an over-broad filename pattern
 without proving that the file matched the current Blob. Follow-up commit
-`e5c4211c11d5bad1f06e7f5422f1b1aa678a5b7f` restricts legacy ownership to the
+`e5c42113c73ba35a2c307eb0890dcd7d3be1216f` restricts legacy ownership to the
 historical canonical UUID-v4 form and verifies SHA-256, size and MIME before
 deletion; mismatches remain preserved and fail closed. The full local gate set
 passed again. Exact-head review `4829032568` then found that startup cleanup did
