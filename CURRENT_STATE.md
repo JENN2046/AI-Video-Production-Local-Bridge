@@ -250,6 +250,20 @@ lease, reaches stable `PROVIDER_POLL_TIMEOUT`, and performs zero Provider
 calls. All required local gates pass. The prior CI and review are not
 transferable, so another exact-head CI/review cycle remains mandatory.
 
+Head `1f49bc3` passed Windows CI run `30615172450`, but exact-head review
+`4826803376` found that a due persisted poll deadline could still wait behind
+a crashed worker's five-minute lease after wall time caught up with the stored
+start, and that the 900 ms regression depended on real scheduler speed. The
+locally validated implementation
+`2cce0f8af8063228c89237a946553ea62e8503d2` now makes a validated due
+deadline an explicit scheduler and lease-claim override, schedules wakeup at
+the earlier deadline, and binds scheduler comparisons to the injectable wall
+clock. Fixed-clock rollback and already-due-deadline regressions both reach
+stable `PROVIDER_POLL_TIMEOUT` with zero Provider calls; the latter retains a
+`2099` next attempt and lease. Workbench V2 passes 68/68 and all broader local
+gates pass. The prior CI and review are not transferable, so another exact-head
+CI/review cycle remains mandatory.
+
 The complete Media Gateway promotion, Memory plugin, second real user,
 automatic Snapshot, Windows logon task, WebM/broad formats and new OAuth
 compatibility experiments are removed from the S3/S4 blocker chain.

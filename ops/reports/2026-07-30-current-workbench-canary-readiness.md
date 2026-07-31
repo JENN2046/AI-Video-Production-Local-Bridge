@@ -364,6 +364,21 @@ now proves a same-second 900 ms rollback with a future inherited lease, stable
 Run `30613190531` and review `4826557538` are not transferable; another
 exact-head CI/review cycle remains required.
 
+Head `1f49bc3` passed Windows CI run `30615172450`; exact-head review
+`4826803376` then found that, after wall time caught up with the stored poll
+start, an already-due persisted deadline could still wait behind a crashed
+worker's five-minute lease. It also found that the 900 ms rollback regression
+depended on completing inside a real-time scheduling window. Follow-up
+`2cce0f8af8063228c89237a946553ea62e8503d2` makes a validated due deadline
+override scheduler and lease eligibility, adds the deadline as an independent
+wakeup candidate, and binds scheduler comparisons to the injected wall clock.
+The rollback regression now uses a fixed clock, while a separate regression
+retains both a `2099` next attempt and inherited lease behind an already-due
+deadline. Both reach stable `PROVIDER_POLL_TIMEOUT` with zero Provider calls.
+The 68-case Workbench V2 lane and all broader local gates pass. Run
+`30615172450` and review `4826803376` are not transferable; another exact-head
+CI/review cycle remains required.
+
 The remaining sequence is:
 
 1. require Draft PR #108 to retain clean-diff, Windows CI and exact-head Codex

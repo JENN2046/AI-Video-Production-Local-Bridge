@@ -3257,3 +3257,61 @@ service_starts: 0
 remaining_test_processes: 0
 final_exact_head_ci_and_review: REQUIRED_AFTER_STATE_SYNC
 ```
+
+### PR108 deadline-preemption and deterministic-clock remediation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+validated_at: 2026-07-31T16:42:22+08:00
+replacement_pr: 108
+review:
+  review_id: 4826803376
+  reviewed_commit: 1f49bc32164d8efee82ce12ebb2cc1e88c2b6df6
+findings:
+  - EXPIRED_POLL_DEADLINE_BLOCKED_BY_INHERITED_LEASE
+  - SUBSECOND_ROLLBACK_REGRESSION_USED_REALTIME_WINDOW
+implementation_commit: 2cce0f8af8063228c89237a946553ea62e8503d2
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - npm run test:v2
+  - npm run test:foundation-boundaries
+  - npm run test:provider-boundaries
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_68
+  foundation_boundaries: PASS_94
+  provider_boundaries: PASS_52
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  due_deadline_overrides_scheduler_attempt_gate: true
+  due_deadline_overrides_inherited_lease: true
+  scheduler_wakes_at_persisted_deadline: true
+  scheduler_clock_injected: true
+  rollback_regression_clock: FIXED
+  expired_deadline_regression_next_attempt: "2099-01-01T00:00:00.000Z"
+  expired_deadline_regression_lease: "2099-01-01T00:00:00.000Z"
+  stable_reconciliation_reason: PROVIDER_POLL_TIMEOUT
+  provider_task_id_preserved: true
+  provider_calls_in_regressions: 0
+  automatic_submit_retry: 0
+prior_head_ci:
+  run_id: 30615172450
+  reviewed_head: 1f49bc32164d8efee82ce12ebb2cc1e88c2b6df6
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+  transferable_to_new_head: false
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+final_exact_head_ci_and_review: REQUIRED_AFTER_STATE_SYNC
+```

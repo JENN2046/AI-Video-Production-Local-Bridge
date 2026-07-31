@@ -67,7 +67,7 @@
       "status": "DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW",
       "base": "main",
       "head": "codex/s3b-provider-polling-restack",
-      "candidate_commit": "357b08718e2226a613b7613ede234e4c3cc337b7",
+      "candidate_commit": "2cce0f8af8063228c89237a946553ea62e8503d2",
       "exact_head_ci_and_review_required": true,
       "merged_to_main": false,
       "merge_authorized": false,
@@ -159,7 +159,7 @@
   "completed_by": "Codex",
   "completed_at": "2026-07-30T19:41:08+08:00",
   "result": "BLOCKED_BY_S3_FINDING",
-  "validation": "Exact-head review 4826557538 found that datetime/CURRENT_TIMESTAMP truncated the Provider poll-start rollback comparison to whole seconds. Implementation 357b087 uses fractional julianday comparisons in scheduler selection and lease claim; the startup regression now proves a same-second 900 ms rollback with a future inherited lease and zero Provider calls. Typecheck, build, Workbench V2 67/67, Foundation 94/94, Provider 52/52, selection 23/23, secret scan and diff checks pass locally. CI run 30613190531 and review 4826557538 apply only to the prior head, so PR108 remains blocked pending new exact-head CI and review. No Provider network call occurred.",
+  "validation": "Head 1f49bc3 passed Windows CI run 30615172450, but exact-head review 4826803376 found that a due persisted poll deadline could still wait behind a crashed worker lease after wall time caught up and that the 900 ms rollback regression depended on real scheduling speed. Implementation 2cce0f8 makes a validated due deadline override scheduler and lease eligibility, wakes at that deadline, and binds scheduler comparisons to the injected wall clock. Fixed-clock rollback and already-due-deadline regressions both reach PROVIDER_POLL_TIMEOUT with zero Provider calls. Typecheck, build, Workbench V2 68/68, Foundation 94/94, Provider 52/52, selection 23/23, secret scan and diff checks pass locally. The prior CI and review are non-transferable, so PR108 remains blocked pending new exact-head CI and review. No Provider network call occurred.",
   "evidence": [
     "ops/reports/2026-07-30-current-workbench-canary-readiness.md",
     ".agent_board/TASK_LEDGER.md",
@@ -168,7 +168,7 @@
   ],
   "commit": "f570d145e4832d2b2237123a40d5e8e0b503fcf1",
   "delivery": "PR_106_MERGED_PR_108_DRAFT_FINAL_GATES_PENDING",
-  "updated_at": "2026-07-31T16:04:09+08:00",
+  "updated_at": "2026-07-31T16:42:22+08:00",
   "safe_state": {
     "provider_calls": 0,
     "activity_writes": 0,

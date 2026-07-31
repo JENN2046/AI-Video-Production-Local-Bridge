@@ -46,8 +46,18 @@ automatically.
   now uses fractional `julianday` comparisons in scheduler selection and lease
   claim. Its startup regression proves a same-second 900 ms rollback with a
   future inherited lease and zero Provider calls. All required local gates
-  pass. The prior CI/review is non-transferable; only new final exact-head
-  CI/review evidence may support a later Jenn decision.
+  pass. Head `1f49bc32164d8efee82ce12ebb2cc1e88c2b6df6` then passed CI run
+  `30615172450`, but exact-head review `4826803376` found that a due persisted
+  deadline could still wait for a crashed worker's five-minute lease after
+  wall time caught up, and that the 900 ms regression depended on real
+  scheduling speed. Candidate
+  `2cce0f8af8063228c89237a946553ea62e8503d2` now lets a validated due
+  deadline preempt the inherited lease, wakes at the deadline, and uses the
+  injected scheduler clock. Fixed-clock rollback and expired-deadline
+  regressions both reach `PROVIDER_POLL_TIMEOUT` with zero Provider calls.
+  Workbench V2 is 68/68 and all broader local gates pass. The prior CI/review
+  is non-transferable; only new final exact-head CI/review evidence may
+  support a later Jenn decision.
 
 ## S3B follow-ups
 

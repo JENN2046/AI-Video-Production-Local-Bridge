@@ -2,7 +2,7 @@
 
 Current mode: PR #108 verified-Blob recovery remediation; no executable task is `READY`
 Last run: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
-Last result: subsecond clock-rollback detection is locally validated; Draft PR #108 awaits new exact-head CI and review
+Last result: poll-deadline lease preemption and deterministic scheduler time are locally validated; Draft PR #108 awaits new exact-head CI and review
 
 ## Current state
 
@@ -108,6 +108,23 @@ Ready task count: 0
   reaches `PROVIDER_POLL_TIMEOUT` and performs zero Provider calls. All required
   local gates pass; run `30613190531` and review `4826557538` are not
   transferable to the new head.
+- Head `1f49bc32164d8efee82ce12ebb2cc1e88c2b6df6` passed Windows CI run
+  `30615172450`. Exact-head review `4826803376` then found that a persisted
+  poll deadline could still be delayed behind a crashed worker's five-minute
+  lease after wall time caught up with the stored poll start, and that the
+  same-second rollback regression depended on completing inside a real 900 ms
+  window. Commit `2cce0f8af8063228c89237a946553ea62e8503d2`
+  makes both scheduler selection and lease claim preemptible when the
+  validated persisted deadline is due, schedules the next wakeup at that
+  deadline instead of the later lease, and binds scheduler comparisons to the
+  injectable wall clock. The rollback regression now uses a fixed clock, and
+  a second regression proves an already-due deadline wins over both a
+  `2099` next attempt and inherited lease. Both reach
+  `PROVIDER_POLL_TIMEOUT` with zero Provider calls. Typecheck, build,
+  Workbench V2 68/68, Foundation 94/94, Provider 52/52, selection 23/23,
+  secret scan and diff checks pass locally. Run `30615172450` and review
+  `4826803376` apply only to the prior head, so a new exact-head CI/review cycle
+  remains required.
 - PR #107 remains open Draft, superseded and unmerged. Its branch remains
   retained.
 - PR #108 is Draft on `main`; it is not authorized for merge or
