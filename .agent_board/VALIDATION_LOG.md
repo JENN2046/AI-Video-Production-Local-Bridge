@@ -3325,6 +3325,7 @@ source_pull_request: 108
 remediation_pull_request: 109
 implementation_commit: 528aee4020d4be15a5fc5278de2f8c8abb20c637
 review_remediation_commit: e5c4211c11d5bad1f06e7f5422f1b1aa678a5b7f
+root_identity_review_remediation_commit: 193b1077d67dd8872831e8fe7646d8879d4947f7
 commands_or_lanes:
   - npm run typecheck
   - npm run build
@@ -3337,8 +3338,8 @@ commands_or_lanes:
 results:
   typecheck: PASS
   build: PASS
-  media_activation_integrity: PASS_40
-  foundation_boundaries: PASS_102
+  media_activation_integrity: PASS_41
+  foundation_boundaries: PASS_103
   provider_boundaries: PASS_52
   workbench_v2: PASS_68
   selection_gate: PASS_23
@@ -3357,6 +3358,8 @@ verified_behavior:
   legacy_uuid_v4_name_required: true
   legacy_candidate_content_verified_before_delete: true
   mismatched_legacy_candidate_preserved_fail_closed: true
+  redirected_registered_root_rejected_before_cleanup: true
+  redirected_external_stage_preserved: true
   unsafe_symlink_directory_hardlink_and_redirect_rejected: true
   blob_row_or_links_changed: false
 provider_network_calls: 0

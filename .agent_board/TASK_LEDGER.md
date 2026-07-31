@@ -5252,11 +5252,14 @@ source_finding:
 remediation_pull_request: 109
 implementation_commit: 528aee4020d4be15a5fc5278de2f8c8abb20c637
 review_remediation_commit: e5c4211c11d5bad1f06e7f5422f1b1aa678a5b7f
+root_identity_review_remediation_commit: 193b1077d67dd8872831e8fe7646d8879d4947f7
 review_remediation:
   finding: LEGACY_STAGE_OWNERSHIP_NOT_VERIFIED
   canonical_uuid_v4_required: true
   sha_size_mime_verified_before_delete: true
   mismatched_candidate_preserved_fail_closed: true
+  redirected_registered_root_rejected: true
+  redirected_external_stage_preserved: true
 resolution:
   deterministic_staging_slot: true
   activation_staging_root: true
@@ -5275,8 +5278,8 @@ blob_immutability:
 local_validation:
   typecheck: PASS
   build: PASS
-  media_activation_integrity: PASS_40
-  foundation_boundaries: PASS_102
+  media_activation_integrity: PASS_41
+  foundation_boundaries: PASS_103
   provider_boundaries: PASS_52
   workbench_v2: PASS_68
   selection_gate: PASS_23

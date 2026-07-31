@@ -21,7 +21,8 @@ automatically.
 - PR #109: `DRAFT_PR_AWAITING_REVIEW`; base `main`, head
   `codex/blob-recovery-staging-reconciliation`, implementation commit
   `528aee4020d4be15a5fc5278de2f8c8abb20c637`, review remediation commit
-  `e5c4211c11d5bad1f06e7f5422f1b1aa678a5b7f`.
+  `e5c4211c11d5bad1f06e7f5422f1b1aa678a5b7f`, and root-identity remediation
+  `193b1077d67dd8872831e8fe7646d8879d4947f7`.
 - PR #109 is not authorized for Ready or merge. Exact-head Windows CI and
   Codex review must be repeated after the review remediation.
 - PR #108's late P2 thread remains unresolved until the remediation is merged

@@ -276,6 +276,7 @@ remediation_pr:
   status: DRAFT_PR_AWAITING_REVIEW
   implementation_commit: 528aee4020d4be15a5fc5278de2f8c8abb20c637
   review_remediation_commit: e5c4211c11d5bad1f06e7f5422f1b1aa678a5b7f
+  root_identity_review_remediation_commit: 193b1077d67dd8872831e8fe7646d8879d4947f7
   merged_to_main: false
 S3B-T1:
   local_status: PASS
@@ -323,7 +324,13 @@ filename pattern without proving Blob ownership. Remediation commit
 `e5c4211c11d5bad1f06e7f5422f1b1aa678a5b7f` now requires the historical
 canonical UUID-v4 name and matching SHA-256, size and MIME before deletion;
 mismatches are preserved fail-closed. All local lanes pass again. PR #109
-remains Draft pending new exact-head Windows CI and Codex review.
+then passed exact-head CI, but exact-head review `4829032568` found that startup
+cleanup did not reject a registered media root redirected through a replaced
+ancestor. Commit `193b1077d67dd8872831e8fe7646d8879d4947f7` now requires
+canonical-root identity before any activation cleanup. Its junction regression
+confirms the redirected external stage remains untouched and an unsafe failure
+is reported. All local lanes pass after this second fix. PR #109 remains Draft
+pending new exact-head Windows CI and Codex review.
 
 The remaining sequence is:
 

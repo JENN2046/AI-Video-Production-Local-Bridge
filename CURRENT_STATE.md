@@ -217,9 +217,14 @@ without proving that the file matched the current Blob. Follow-up commit
 `e5c4211c11d5bad1f06e7f5422f1b1aa678a5b7f` restricts legacy ownership to the
 historical canonical UUID-v4 form and verifies SHA-256, size and MIME before
 deletion; mismatches remain preserved and fail closed. The full local gate set
-passes again. Draft PR #109 still requires new exact-final-head Windows CI and
-Codex review. PR #108's late thread remains unresolved until the remediation
-is reviewed, merged and verified.
+passed again. Exact-head review `4829032568` then found that startup cleanup did
+not reject a registered media root redirected through a replaced ancestor.
+Commit `193b1077d67dd8872831e8fe7646d8879d4947f7` now requires the canonical root
+to equal the registered root before any activation cleanup; a junction
+regression proves the external stage is retained and reported unsafe. The full
+local gate set passes after this second fix. Draft PR #109 still requires new
+exact-final-head Windows CI and Codex review. PR #108's late thread remains
+unresolved until the remediation is reviewed, merged and verified.
 
 The complete Media Gateway promotion, Memory plugin, second real user,
 automatic Snapshot, Windows logon task, WebM/broad formats and new OAuth
