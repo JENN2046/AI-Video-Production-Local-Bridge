@@ -1796,8 +1796,14 @@ test("startup scheduler immediately fails closed after clock rollback despite a 
       taskId,
       MIN_PROVIDER_TASK_POLL_TIMEOUT_MS
     );
-    const wallMs = Date.now();
-    const futureStartedAtMs = wallMs + 6 * 60 * 60_000;
+    let wallMs = Date.now();
+    while (wallMs % 1_000 > 25) {
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 5));
+      wallMs = Date.now();
+    }
+    const futureStartedAtMs = wallMs + 900;
+    assert.equal(Math.floor(futureStartedAtMs / 1_000), Math.floor(wallMs / 1_000));
+    assert.ok(futureStartedAtMs - wallMs < 1_000);
     const futureDeadlineMs = futureStartedAtMs + MIN_PROVIDER_TASK_POLL_TIMEOUT_MS;
     const db = openM0Database(sqlitePath);
     const intentRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")

@@ -278,11 +278,11 @@ function claimJob(db: M0Database, intentId: string, owner: string, token: string
     const clockRollback = job.state === "polling" && Boolean(db.prepare(`SELECT 1 AS detected
       FROM generation_intents
       WHERE intent_id = ?
-        AND datetime(CASE
+        AND julianday(CASE
           WHEN json_valid(data_json) = 1
             THEN json_extract(data_json, '$.provider_poll_started_at')
           ELSE NULL
-        END) > CURRENT_TIMESTAMP`).get(intentId));
+        END) > julianday('now')`).get(intentId));
     const result = db.prepare(`UPDATE generation_jobs SET lease_owner = ?, lease_token = ?, lease_expires_at = ?, attempt_count = attempt_count + 1, updated_at = CURRENT_TIMESTAMP
       WHERE job_id = ? AND (
         lease_token = ''
@@ -2059,11 +2059,11 @@ function startNextPersistedGeneration(dependencies: WorkbenchGenerationDependenc
           datetime(j.next_attempt_at) <= CURRENT_TIMESTAMP
           OR (
             j.state = 'polling'
-            AND datetime(CASE
+            AND julianday(CASE
               WHEN json_valid(i.data_json) = 1
                 THEN json_extract(i.data_json, '$.provider_poll_started_at')
               ELSE NULL
-            END) > CURRENT_TIMESTAMP
+            END) > julianday('now')
           )
         )
         AND (
@@ -2072,11 +2072,11 @@ function startNextPersistedGeneration(dependencies: WorkbenchGenerationDependenc
           OR datetime(j.lease_expires_at) <= CURRENT_TIMESTAMP
           OR (
             j.state = 'polling'
-            AND datetime(CASE
+            AND julianday(CASE
               WHEN json_valid(i.data_json) = 1
                 THEN json_extract(i.data_json, '$.provider_poll_started_at')
               ELSE NULL
-            END) > CURRENT_TIMESTAMP
+            END) > julianday('now')
           )
         )
       ORDER BY j.created_at LIMIT 1`).get() as { intent_id: string; provider_task_id: string; state: GenerationJobState } | undefined;
