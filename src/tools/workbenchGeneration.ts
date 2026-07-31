@@ -2176,7 +2176,10 @@ export function reconcileGenerationJob(
         return { ok: false, error: { code: caught.code, message: "Provider poll timeout configuration is invalid." } };
       }
       const taskId = input.provider_task_id?.trim() ?? "";
-      if (!/^[A-Za-z0-9._:-]{3,200}$/.test(taskId)) { db.exec("ROLLBACK"); return { ok: false, error: { code: "INVALID_PROVIDER_TASK_ID", message: "Provider task ID is invalid." } }; }
+      if (!/^[A-Za-z0-9._:-]{3,200}$/.test(taskId) || /^local_recovery_/i.test(taskId)) {
+        db.exec("ROLLBACK");
+        return { ok: false, error: { code: "INVALID_PROVIDER_TASK_ID", message: "Provider task ID is invalid." } };
+      }
       const owningIntent = db.prepare("SELECT intent_id FROM generation_intents WHERE provider_task_id = ? AND intent_id <> ? LIMIT 1")
         .get(taskId, intent.intent_id) as { intent_id: string } | undefined;
       const owningArtifact = db.prepare(`SELECT artifact_id, project_id, shot_id, json_extract(data_json, '$.source.provider') AS provider FROM media_artifacts
@@ -2195,10 +2198,6 @@ export function reconcileGenerationJob(
         return { ok: false, error: { code: persistedRecovery.error.code, message: "Existing Provider output recovery state could not be preserved safely." } };
       }
       let outputRecovery = persistedRecovery.recovery;
-      if (outputRecovery && taskId === outputRecovery.local_identity) {
-        db.exec("ROLLBACK");
-        return { ok: false, error: { code: "PROVIDER_TASK_ALREADY_OWNED", message: "Provider task ID is reserved by local recovery state." } };
-      }
       if (outputRecovery && taskId !== outputRecovery.provider_task_id) {
         const retired = retireProviderOutputRecoveryForTaskSwitch(db, intent, outputRecovery);
         if (!retired.ok) {

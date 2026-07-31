@@ -2465,7 +2465,7 @@ test("switching Provider tasks retires the prior recovery artifacts without chan
     }, db, { env: prepared.env, now: () => new Date(wallMs + 500) });
     assert.equal(localIdentityAttachment.ok, false);
     if (!localIdentityAttachment.ok) {
-      assert.equal(localIdentityAttachment.error.code, "PROVIDER_TASK_ALREADY_OWNED");
+      assert.equal(localIdentityAttachment.error.code, "INVALID_PROVIDER_TASK_ID");
     }
     const recoveryAfterRejectedIdentity = JSON.parse((db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
       .get(prepared.intent_id) as { data_json: string }).data_json) as {
@@ -2545,6 +2545,88 @@ test("switching Provider tasks retires the prior recovery artifacts without chan
     }
     assert.deepEqual(blobBindingsAfter, blobBindingsBefore);
     assert.equal(activeGeneratedClips.count, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a local recovery identity is reserved across intents before any replacement Artifact exists", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-recovery-identity-reserved-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    const recoveryOwner = await prepareConfirmedGeneration(sqlitePath, "Reserve local recovery identity");
+    const previousTaskId = "task-reserved-identity-owner";
+    const localIdentity = "local_recovery_22222222-2222-4222-8222-222222222222";
+    const setupDb = openM0Database(sqlitePath);
+    setupDb.prepare("UPDATE generation_intents SET status = 'cancelled' WHERE intent_id = ?")
+      .run(recoveryOwner.intent_id);
+    setupDb.prepare("UPDATE generation_jobs SET state = 'cancelled' WHERE job_id = ?")
+      .run(recoveryOwner.job_id);
+    setupDb.close();
+    const otherGeneration = await prepareConfirmedGeneration(sqlitePath, "Reject another Intent using recovery identity");
+    persistKnownProviderTask(
+      sqlitePath,
+      recoveryOwner.intent_id,
+      recoveryOwner.job_id,
+      previousTaskId,
+      MIN_PROVIDER_TASK_POLL_TIMEOUT_MS
+    );
+
+    const db = openM0Database(sqlitePath);
+    const ownerRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(recoveryOwner.intent_id) as { data_json: string };
+    const ownerData = JSON.parse(ownerRow.data_json) as Record<string, unknown>;
+    ownerData.provider_output_recovery = {
+      version: 1,
+      provider_task_id: previousTaskId,
+      invalid_artifact_id: "artifact_reserved_identity_fixture",
+      local_identity: localIdentity,
+      requested_at: new Date().toISOString()
+    };
+    db.prepare("UPDATE generation_intents SET data_json = ? WHERE intent_id = ?")
+      .run(JSON.stringify(ownerData), recoveryOwner.intent_id);
+    db.prepare("UPDATE generation_intents SET status = 'running' WHERE intent_id = ?")
+      .run(otherGeneration.intent_id);
+    db.prepare(`UPDATE generation_jobs
+      SET state = 'manual_reconciliation',
+          reconciliation_reason = 'PROVIDER_SUBMIT_OUTCOME_UNKNOWN',
+          lease_owner = '',
+          lease_token = '',
+          lease_expires_at = NULL
+      WHERE job_id = ?`).run(otherGeneration.job_id);
+
+    const attemptedAttachment = reconcileGenerationJob(otherGeneration.job_id, {
+      decision: "attach_existing_task",
+      provider_task_id: localIdentity,
+      human_confirmation: true
+    }, db, { env: otherGeneration.env });
+    assert.equal(attemptedAttachment.ok, false);
+    if (!attemptedAttachment.ok) {
+      assert.equal(attemptedAttachment.error.code, "INVALID_PROVIDER_TASK_ID");
+    }
+
+    const ownerAfter = JSON.parse((db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(recoveryOwner.intent_id) as { data_json: string }).data_json) as {
+      provider_output_recovery: { provider_task_id: string; local_identity: string };
+    };
+    const otherIntentAfter = db.prepare("SELECT provider_task_id, status FROM generation_intents WHERE intent_id = ?")
+      .get(otherGeneration.intent_id) as { provider_task_id: string; status: string };
+    const otherJobAfter = db.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+      .get(otherGeneration.job_id) as { state: string; reconciliation_reason: string };
+    const replacementCount = db.prepare(`SELECT COUNT(*) AS count FROM media_artifacts
+      WHERE json_valid(data_json) = 1
+        AND json_extract(data_json, '$.source.provider_job_id') = ?`)
+      .get(localIdentity) as { count: number };
+    db.close();
+
+    assert.equal(ownerAfter.provider_output_recovery.provider_task_id, previousTaskId);
+    assert.equal(ownerAfter.provider_output_recovery.local_identity, localIdentity);
+    assert.deepEqual({ ...otherIntentAfter }, { provider_task_id: "", status: "running" });
+    assert.deepEqual({ ...otherJobAfter }, {
+      state: "manual_reconciliation",
+      reconciliation_reason: "PROVIDER_SUBMIT_OUTCOME_UNKNOWN"
+    });
+    assert.equal(replacementCount.count, 0);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
