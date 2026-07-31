@@ -275,6 +275,7 @@ remediation_pr:
   number: 109
   status: DRAFT_PR_AWAITING_REVIEW
   implementation_commit: 528aee4020d4be15a5fc5278de2f8c8abb20c637
+  review_remediation_commit: e5c4211c11d5bad1f06e7f5422f1b1aa678a5b7f
   merged_to_main: false
 S3B-T1:
   local_status: PASS
@@ -313,11 +314,16 @@ legacy UUID format in the exact target directory. Unsafe entries are retained
 and reported as `MEDIA_BLOB_RECOVERY_PATH_UNSAFE`. No Blob row, Blob identity,
 digest, storage URI or Artifact-Blob link changes.
 
-Exact implementation commit `528aee4020d4be15a5fc5278de2f8c8abb20c637`
+Implementation commit `528aee4020d4be15a5fc5278de2f8c8abb20c637`
 passed all authorized local lanes. The crash regression uses a real child
 process exit after staged copy; five repeated exits retain no more than one
 staged file, and successful retry removes it while preserving immutable Blob
-facts. PR #109 remains Draft pending exact-head Windows CI and Codex review.
+facts. First exact-head review found that legacy cleanup accepted an over-broad
+filename pattern without proving Blob ownership. Remediation commit
+`e5c4211c11d5bad1f06e7f5422f1b1aa678a5b7f` now requires the historical
+canonical UUID-v4 name and matching SHA-256, size and MIME before deletion;
+mismatches are preserved fail-closed. All local lanes pass again. PR #109
+remains Draft pending new exact-head Windows CI and Codex review.
 
 The remaining sequence is:
 

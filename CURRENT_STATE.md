@@ -210,14 +210,16 @@ narrowly removes legacy UUID stages. Unsafe symlinks, directories and unowned
 hard links remain fail-closed and are not deleted. Blob rows, content facts,
 storage URIs and Artifact-Blob links remain unchanged.
 
-Exact implementation commit `528aee4020d4be15a5fc5278de2f8c8abb20c637`
-passed typecheck, build, Foundation, selection-gate, Provider-boundary,
-Workbench V2, secret-scan and diff validation locally. A real child-process
-test exits after staged copy; five repeated crashes retain at most one stage,
-and a later retry completes without changing immutable Blob facts. Draft PR
-#109 still requires Windows CI and an exact-final-head Codex review. PR #108's
-late thread remains unresolved until the remediation is reviewed, merged and
-verified.
+Implementation commit `528aee4020d4be15a5fc5278de2f8c8abb20c637`
+passed the authorized local gates. Exact-head review of the first published
+state then found that legacy cleanup accepted an over-broad filename pattern
+without proving that the file matched the current Blob. Follow-up commit
+`e5c4211c11d5bad1f06e7f5422f1b1aa678a5b7f` restricts legacy ownership to the
+historical canonical UUID-v4 form and verifies SHA-256, size and MIME before
+deletion; mismatches remain preserved and fail closed. The full local gate set
+passes again. Draft PR #109 still requires new exact-final-head Windows CI and
+Codex review. PR #108's late thread remains unresolved until the remediation
+is reviewed, merged and verified.
 
 The complete Media Gateway promotion, Memory plugin, second real user,
 automatic Snapshot, Windows logon task, WebM/broad formats and new OAuth

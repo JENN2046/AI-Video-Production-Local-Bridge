@@ -3324,6 +3324,7 @@ validated_at: 2026-07-31T20:46:35+08:00
 source_pull_request: 108
 remediation_pull_request: 109
 implementation_commit: 528aee4020d4be15a5fc5278de2f8c8abb20c637
+review_remediation_commit: e5c4211c11d5bad1f06e7f5422f1b1aa678a5b7f
 commands_or_lanes:
   - npm run typecheck
   - npm run build
@@ -3353,6 +3354,9 @@ verified_behavior:
   startup_unsafe_orphan_preserved_and_reported: true
   deterministic_and_legacy_two_link_windows_recovered: true
   legacy_uuid_cleanup_narrow: true
+  legacy_uuid_v4_name_required: true
+  legacy_candidate_content_verified_before_delete: true
+  mismatched_legacy_candidate_preserved_fail_closed: true
   unsafe_symlink_directory_hardlink_and_redirect_rejected: true
   blob_row_or_links_changed: false
 provider_network_calls: 0
@@ -3361,5 +3365,5 @@ activity_media_access: none
 secret_reads: 0
 service_starts: 0
 remaining_test_processes: 0
-exact_head_ci_and_review: REQUIRED_FOR_PR_109
+exact_head_ci_and_review: REQUIRED_AGAIN_AFTER_REVIEW_REMEDIATION
 ```

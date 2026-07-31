@@ -76,6 +76,7 @@
       "base": "main",
       "head": "codex/blob-recovery-staging-reconciliation",
       "implementation_commit": "528aee4020d4be15a5fc5278de2f8c8abb20c637",
+      "review_remediation_commit": "e5c4211c11d5bad1f06e7f5422f1b1aa678a5b7f",
       "exact_head_ci_and_review_required": true,
       "merged_to_main": false,
       "merge_authorized": false,
@@ -107,7 +108,8 @@
       "task_id": "S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING",
       "status": "DRAFT_PR_AWAITING_REVIEW",
       "pull_request": 109,
-      "implementation_commit": "528aee4020d4be15a5fc5278de2f8c8abb20c637"
+      "implementation_commit": "528aee4020d4be15a5fc5278de2f8c8abb20c637",
+      "review_remediation_commit": "e5c4211c11d5bad1f06e7f5422f1b1aa678a5b7f"
     },
     {
       "task_id": "S3B-T2_PREPARE_ELIGIBLE_SHOT",
@@ -179,7 +181,7 @@
   "completed_by": "Codex",
   "completed_at": "2026-07-30T19:41:08+08:00",
   "result": "BLOCKED_BY_S3_FINDING",
-  "validation": "PR #108 was squash-merged as main@808d933 and main CI passed, but a late P2 found unbounded orphan recovery staging after a hard exit. Draft PR #109 implementation 528aee4 uses one deterministic stage per Blob/target pair, safely reconciles startup/retry orphans, retains unsafe entries fail-closed, and narrowly cleans the legacy UUID format. A real child-process crash repeated five times retains at most one stage. Typecheck, build, Foundation, Provider, Workbench V2, selection, secret scan and diff checks pass locally. Exact-head PR #109 CI and review remain required. No Provider network call or activity-data access occurred.",
+  "validation": "PR #108 was squash-merged as main@808d933 and main CI passed, but a late P2 found unbounded orphan recovery staging after a hard exit. Draft PR #109 implementation 528aee4 uses one deterministic stage per Blob/target pair and safely reconciles startup/retry orphans. First exact-head review found legacy cleanup ownership was over-broad; remediation e5c4211 restricts it to canonical UUID-v4 names and verifies SHA-256, size and MIME before deletion, preserving mismatches fail-closed. A real child-process crash repeated five times retains at most one stage. Typecheck, build, Foundation, Provider, Workbench V2, selection, secret scan and diff checks pass locally. New exact-head PR #109 CI and review remain required. No Provider network call or activity-data access occurred.",
   "evidence": [
     "ops/reports/2026-07-30-current-workbench-canary-readiness.md",
     ".agent_board/TASK_LEDGER.md",
@@ -188,7 +190,7 @@
   ],
   "commit": "f570d145e4832d2b2237123a40d5e8e0b503fcf1",
   "delivery": "PR_106_AND_PR_108_MERGED_PR_109_DRAFT_AWAITING_CI_AND_REVIEW",
-  "updated_at": "2026-07-31T20:42:46+08:00",
+  "updated_at": "2026-07-31T21:22:31+08:00",
   "safe_state": {
     "provider_calls": 0,
     "activity_writes": 0,

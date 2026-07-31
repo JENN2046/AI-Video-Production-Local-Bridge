@@ -2,7 +2,7 @@
 
 Current mode: PR #109 orphaned Blob recovery staging remediation; no executable task is `READY`
 Last run: S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING
-Last result: exact implementation commit is locally validated; Draft PR #109 awaits exact-head CI and Codex review
+Last result: the first exact-head review P2 is fixed and locally validated; Draft PR #109 awaits new exact-head CI and Codex review
 
 ## Current state
 
@@ -27,8 +27,11 @@ Ready task count: 0
 - Draft PR #109 at implementation commit
   `528aee4020d4be15a5fc5278de2f8c8abb20c637` implements one deterministic
   stage per Blob/target pair, safe startup/retry reconciliation and legacy
-  UUID-stage cleanup. All authorized local lanes passed; exact-head Windows CI
-  and Codex review remain required.
+  UUID-stage cleanup. Review remediation commit
+  `e5c4211c11d5bad1f06e7f5422f1b1aa678a5b7f` restricts legacy ownership to
+  canonical UUID-v4 names and verifies SHA-256, size and MIME before deletion.
+  All authorized local lanes passed again; new exact-head Windows CI and Codex
+  review remain required.
 - `S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING` is
   `DRAFT_PR_AWAITING_REVIEW` in PR #109.
 - PR #108's late thread remains unresolved until PR #109 is reviewed, merged

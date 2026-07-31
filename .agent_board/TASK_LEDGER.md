@@ -5251,6 +5251,12 @@ source_finding:
   arrived_after_merge: true
 remediation_pull_request: 109
 implementation_commit: 528aee4020d4be15a5fc5278de2f8c8abb20c637
+review_remediation_commit: e5c4211c11d5bad1f06e7f5422f1b1aa678a5b7f
+review_remediation:
+  finding: LEGACY_STAGE_OWNERSHIP_NOT_VERIFIED
+  canonical_uuid_v4_required: true
+  sha_size_mime_verified_before_delete: true
+  mismatched_candidate_preserved_fail_closed: true
 resolution:
   deterministic_staging_slot: true
   activation_staging_root: true
@@ -5284,5 +5290,5 @@ service_starts: 0
 deployment_changes: 0
 s4_status: BLOCKED_UNAUTHORIZED
 s4_authorization_granted: false
-delivery: PR_109_DRAFT_AWAITING_EXACT_HEAD_CI_AND_REVIEW
+delivery: PR_109_DRAFT_AWAITING_NEW_EXACT_HEAD_CI_AND_REVIEW
 ```
