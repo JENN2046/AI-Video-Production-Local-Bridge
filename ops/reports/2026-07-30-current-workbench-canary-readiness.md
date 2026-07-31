@@ -328,6 +328,17 @@ bytes and links, and rolls back unsafe retirement with a stable error. The
 Provider calls. Run `30606273467` is not transferable; new final exact-head CI
 and review are required.
 
+Head `b8060e1` passed Windows CI run `30608433511`; exact-head review
+`4825989650` then found that a different Intent could attach the reserved
+`local_recovery_*` identity before the owner had committed a replacement
+Artifact. Follow-up `2847a34e8ee638ff1ca46824bc938f19acd870ff`
+globally rejects that internal namespace at manual task attachment. Its
+cross-Intent regression has no replacement Artifact or owning-Artifact signal,
+returns `INVALID_PROVIDER_TASK_ID`, and preserves both Intents and Jobs. The
+46-case Workbench domain lane and all broader local gates passed with zero
+Provider calls. Run `30608433511` is not transferable; another exact-head CI
+and review cycle is required.
+
 The remaining sequence is:
 
 1. require Draft PR #108 to retain clean-diff, Windows CI and exact-head Codex

@@ -28,9 +28,13 @@ automatically.
   old recovery blocked a valid switch to a new Provider task. Implementation
   `19f026f8f40f82203a3967a7f449152b272743cf` now validates and atomically
   archives the old recovery Artifacts before clearing the recovery and
-  attaching the new task; same-task recovery remains preserved. Local
-  validation passed, but prior CI is non-transferable. Only new final
-  exact-head CI/review evidence may support a later Jenn decision.
+  attaching the new task; same-task recovery remains preserved. Exact-head CI
+  then passed, but review `4825989650` found that a different Intent could use
+  the reserved local recovery identity before a replacement Artifact existed.
+  Candidate `2847a34e8ee638ff1ca46824bc938f19acd870ff` globally rejects the
+  `local_recovery_*` namespace at manual task attachment and has a cross-Intent
+  regression. Local validation passed, but prior CI is non-transferable. Only
+  new final exact-head CI/review evidence may support a later Jenn decision.
 
 ## S3B follow-ups
 

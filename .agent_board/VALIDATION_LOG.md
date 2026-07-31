@@ -3087,3 +3087,59 @@ service_starts: 0
 remaining_test_processes: 0
 final_exact_head_ci_and_review: REQUIRED_AFTER_STATE_SYNC
 ```
+
+### PR108 global local-recovery identity reservation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+validated_at: 2026-07-31T14:36:40+08:00
+replacement_pr: 108
+review:
+  review_id: 4825989650
+  reviewed_commit: b8060e1561be33b4d1803909325f8a3f2c9e998f
+finding: LOCAL_RECOVERY_IDENTITY_NOT_GLOBALLY_RESERVED
+implementation_commit: 2847a34e8ee638ff1ca46824bc938f19acd870ff
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - npm run test:v2
+  - npm run test:foundation-boundaries
+  - npm run test:provider-boundaries
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  isolated_workbench_domain: PASS_46
+  workbench_v2: PASS_66
+  foundation_boundaries: PASS_93
+  provider_boundaries: PASS_52
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  reserved_namespace: local_recovery_*
+  rejection_scope: ALL_MANUAL_PROVIDER_TASK_ATTACHMENTS
+  stable_error: INVALID_PROVIDER_TASK_ID
+  cross_intent_without_replacement_covered: true
+  owner_recovery_preserved: true
+  other_intent_provider_task_id_unchanged: true
+  other_job_state_unchanged: true
+  replacement_artifact_count: 0
+  provider_calls_in_regression: 0
+  automatic_submit_retry: 0
+prior_head_ci:
+  run_id: 30608433511
+  reviewed_head: b8060e1561be33b4d1803909325f8a3f2c9e998f
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+  transferable_to_new_head: false
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+final_exact_head_ci_and_review: REQUIRED_AFTER_STATE_SYNC
+```

@@ -215,9 +215,17 @@ before clearing recovery and attaching the new task. Same-task recovery stays
 preserved; the internal local recovery identity cannot be attached as a
 Provider task; unsafe retirement rolls back with a stable error. Blob rows,
 physical bytes and Artifact-Blob links are unchanged. The prior CI is not
-transferable, so final exact-head CI and review remain mandatory. Old PR #107
-remains open Draft, superseded and unmerged with its branch retained; none of
-these candidates is part of current `main`.
+transferable.
+
+Head `b8060e1` passed Windows CI run `30608433511`; exact-head review
+`4825989650` then found that a different Intent could attach a reserved
+`local_recovery_*` identity before the owner created a replacement Artifact.
+The locally validated follow-up
+`2847a34e8ee638ff1ca46824bc938f19acd870ff` reserves this internal namespace
+globally at manual task attachment and covers the cross-Intent, no-replacement
+case. That CI is also non-transferable, so new final exact-head CI and review
+remain mandatory. Old PR #107 remains open Draft, superseded and unmerged with
+its branch retained; none of these candidates is part of current `main`.
 
 The complete Media Gateway promotion, Memory plugin, second real user,
 automatic Snapshot, Windows logon task, WebM/broad formats and new OAuth

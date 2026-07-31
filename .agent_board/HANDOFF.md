@@ -2,7 +2,7 @@
 
 Current mode: PR #108 verified-Blob recovery remediation; no executable task is `READY`
 Last run: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
-Last result: task-switch recovery fix is locally validated; Draft PR #108 awaits new exact-head CI and review
+Last result: global local-recovery identity reservation is locally validated; Draft PR #108 awaits new exact-head CI and review
 
 ## Current state
 
@@ -73,6 +73,15 @@ Ready task count: 0
   and Artifact-Blob links remain unchanged; unsafe retirement rolls back with
   `ARTIFACT_RECOVERY_RETIRE_FAILED`. Local validation passed with zero Provider
   calls. Run `30606273467` is not transferable to the new head.
+- Head `b8060e1561be33b4d1803909325f8a3f2c9e998f` passed Windows CI
+  run `30608433511`. Exact-head review `4825989650` then found that a different
+  Intent could attach another Intent's reserved `local_recovery_*` identity
+  before any replacement Artifact existed. Commit
+  `2847a34e8ee638ff1ca46824bc938f19acd870ff` reserves that internal namespace
+  globally at manual attachment. Its cross-Intent regression has no replacement
+  Artifact or owning-Artifact signal, rejects with `INVALID_PROVIDER_TASK_ID`,
+  and preserves both jobs' prior state. Local gates pass with zero Provider
+  calls; run `30608433511` is not transferable to the new head.
 - PR #107 remains open Draft, superseded and unmerged. Its branch remains
   retained.
 - PR #108 is Draft on `main`; it is not authorized for merge or
