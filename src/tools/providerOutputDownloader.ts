@@ -4,7 +4,14 @@ import { basename, extname, isAbsolute, relative, resolve } from "node:path";
 
 import { paths } from "../paths.js";
 import { abortable, fetchFromValidatedAddresses, isUnsafeNetworkHost, pinnedHttpsFetch, PinnedHttpsError, resolvePublicAddresses } from "../net/pinnedHttpsTransport.js";
-import { activateLocalMediaArtifact, recoverMediaActivations, verifyMediaArtifactBytes, type MediaArtifact } from "./mediaArtifacts.js";
+import {
+  activateLocalMediaArtifact,
+  recoverMediaActivations,
+  recoverVerifiedBlobStorage,
+  verifyMediaArtifactBytes,
+  type MediaArtifact,
+  type VerifiedBlobStorageRecoveryFaults
+} from "./mediaArtifacts.js";
 import { validateMp4File, type Mp4ValidationResult } from "./mediaValidity.js";
 import { providerError, type ProviderToolError } from "./provider.js";
 import type { M0Database } from "../storage/sqlite.js";
@@ -24,6 +31,9 @@ export interface ProviderOutputDownloadInput {
   duration_seconds: number;
   aspect_ratio: string;
   storage_directory?: string;
+  verified_blob_recovery?: {
+    invalid_artifact_id: string;
+  };
   /** @deprecated Provider output transports must use runtime.fetch_pinned_address so validated DNS addresses cannot be ignored. */
   fetch_impl?: typeof fetch;
   safety?: Partial<ProviderOutputDownloadSafety>;
@@ -36,6 +46,7 @@ export type ProviderOutputDownloadResult =
 export interface ProviderOutputDownloadRuntime {
   storage_root?: string;
   fault_injection_after_file_commit?: (path: string) => void;
+  verified_blob_recovery_faults?: VerifiedBlobStorageRecoveryFaults;
   resolve_hostname?: (hostname: string) => Promise<Array<{ address: string; family: 4 | 6 }>>;
   fetch_pinned_address?: (url: URL, signal: AbortSignal, address: { address: string; family: 4 | 6 }) => Promise<Response>;
 }
@@ -274,6 +285,18 @@ export async function downloadProviderOutputToArtifact(
     const ffprobe = validateMp4File(tempPath);
     if (ffprobe.status !== "PASS") {
       return { ok: false, error: providerError("PROVIDER_OUTPUT_INVALID", ffprobe.error || "Provider output is not ffprobe-valid.") };
+    }
+
+    if (input.verified_blob_recovery) {
+      const recovered = recoverVerifiedBlobStorage({
+        invalid_artifact_id: input.verified_blob_recovery.invalid_artifact_id,
+        project_id: input.project_id,
+        shot_id: input.shot_id,
+        source_path: tempPath
+      }, db, runtime.verified_blob_recovery_faults);
+      if (!recovered.ok) {
+        return { ok: false, error: providerError(recovered.error.code, recovered.error.message) };
+      }
     }
 
     const identity = createHash("sha256").update(`${input.provider_name}\0${input.provider_job_id}`).digest("hex");

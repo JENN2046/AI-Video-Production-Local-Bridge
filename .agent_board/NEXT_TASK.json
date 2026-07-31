@@ -51,14 +51,25 @@
   },
   "publication": {
     "pull_request_106": {
-      "status": "AWAITING_PR_REVIEW",
+      "status": "MERGED",
+      "squash_commit": "b3a108abc8728e89259d0d953e1c638b9ca482ea",
       "merge_authorized": false,
-      "required_future_merge_method": "SQUASH"
+      "merge_method": "SQUASH"
     },
     "pull_request_107": {
-      "status": "DRAFT",
+      "status": "OPEN_DRAFT_SUPERSEDED",
       "base": "codex/s3-workbench-canary-readiness",
       "changes_allowed_in_current_task": false,
+      "merge_authorized": false,
+      "ready_for_review_authorized": false
+    },
+    "pull_request_108": {
+      "status": "DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW",
+      "base": "main",
+      "head": "codex/s3b-provider-polling-restack",
+      "candidate_commit": "2cce0f8af8063228c89237a946553ea62e8503d2",
+      "exact_head_ci_and_review_required": true,
+      "merged_to_main": false,
       "merge_authorized": false,
       "ready_for_review_authorized": false
     }
@@ -67,15 +78,15 @@
     {
       "task_id": "S3B-T1_BOUND_PROVIDER_POLLING",
       "local_status": "PASS",
-      "repository_status": "AWAITING_PR_REVIEW",
-      "pull_request": 107,
+      "repository_status": "BLOCKED_BY_PR108_REVIEW_FINDING",
+      "pull_request": 108,
       "merged_to_main": false
     },
     {
       "task_id": "S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE",
       "local_status": "PASS",
-      "repository_status": "AWAITING_PR_REVIEW",
-      "pull_request": 107,
+      "repository_status": "BLOCKED_BY_PR108_REVIEW_FINDING",
+      "pull_request": 108,
       "merged_to_main": false
     },
     {
@@ -93,7 +104,7 @@
   ],
   "s4_gate": {
     "task_id": "S4-T1_REAL_SINGLE_SHOT_CURRENT_PATH",
-    "status": "BLOCKED",
+    "status": "BLOCKED_UNAUTHORIZED",
     "authorization_granted": false
   },
   "task_classifications": [
@@ -148,7 +159,7 @@
   "completed_by": "Codex",
   "completed_at": "2026-07-30T19:41:08+08:00",
   "result": "BLOCKED_BY_S3_FINDING",
-  "validation": "Current build and four isolated safety lanes passed; no Provider network call occurred. The S3 terminal findings are recorded without activity-object identifiers.",
+  "validation": "Head 1f49bc3 passed Windows CI run 30615172450, but exact-head review 4826803376 found that a due persisted poll deadline could still wait behind a crashed worker lease after wall time caught up and that the 900 ms rollback regression depended on real scheduling speed. Implementation 2cce0f8 makes a validated due deadline override scheduler and lease eligibility, wakes at that deadline, and binds scheduler comparisons to the injected wall clock. Fixed-clock rollback and already-due-deadline regressions both reach PROVIDER_POLL_TIMEOUT with zero Provider calls. Typecheck, build, Workbench V2 68/68, Foundation 94/94, Provider 52/52, selection 23/23, secret scan and diff checks pass locally. The prior CI and review are non-transferable, so PR108 remains blocked pending new exact-head CI and review. No Provider network call occurred.",
   "evidence": [
     "ops/reports/2026-07-30-current-workbench-canary-readiness.md",
     ".agent_board/TASK_LEDGER.md",
@@ -156,12 +167,14 @@
     ".agent_board/HANDOFF.md"
   ],
   "commit": "f570d145e4832d2b2237123a40d5e8e0b503fcf1",
-  "delivery": "PR_106_AWAITING_REVIEW",
-  "updated_at": "2026-07-30T22:59:14+08:00",
+  "delivery": "PR_106_MERGED_PR_108_DRAFT_FINAL_GATES_PENDING",
+  "updated_at": "2026-07-31T16:42:22+08:00",
   "safe_state": {
     "provider_calls": 0,
     "activity_writes": 0,
-    "source_code_changes_in_remediation": 0,
-    "test_code_changes_in_remediation": 0
+    "restack_source_files": 6,
+    "restack_test_files": 4,
+    "restack_provider_network_calls": 0,
+    "restack_activity_data_access": 0
   }
 }

@@ -60,6 +60,10 @@ export type ProviderOutputResult =
   | { ok: true; provider_job_id: string; output_url: string; provider_status: string }
   | { ok: false; error: ProviderToolError };
 
+export interface ProviderPollOptions {
+  timeout_ms?: number;
+}
+
 export type RunwayImageToVideoRequestBuildResult =
   | {
       ok: true;
@@ -308,7 +312,7 @@ export interface VideoProviderAdapter {
   provider_name: RealProviderName | "mock";
   model_name: string;
   submitGeneration(input: ProviderGenerationInput): Promise<ProviderSubmitResult>;
-  pollStatus(providerJobId: string): Promise<ProviderStatusResult>;
+  pollStatus(providerJobId: string, options?: ProviderPollOptions): Promise<ProviderStatusResult>;
   fetchOutput(providerJobId: string): Promise<ProviderOutputResult>;
 }
 
@@ -1146,10 +1150,13 @@ export class RunningHubVideoProviderAdapter implements VideoProviderAdapter {
     this.timeoutMs = Math.max(1000, input.timeout_ms ?? 60_000);
   }
 
-  private async request(url: string, init: RequestInit, operation: string): Promise<{ response: Response; payload: Record<string, unknown> } | { error: ProviderToolError }> {
+  private async request(url: string, init: RequestInit, operation: string, timeoutMs = this.timeoutMs): Promise<{ response: Response; payload: Record<string, unknown> } | { error: ProviderToolError }> {
     if (!this.credential) return { error: providerError("PROVIDER_CREDENTIAL_MISSING", "RunningHub credential is missing.") };
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    const boundedTimeoutMs = Number.isFinite(timeoutMs)
+      ? Math.max(1, Math.min(this.timeoutMs, Math.floor(timeoutMs)))
+      : this.timeoutMs;
+    const timeout = setTimeout(() => controller.abort(), boundedTimeoutMs);
     try {
       const response = await this.fetchImpl(url, { ...init, signal: controller.signal });
       return { response, payload: await safeJson(response) };
@@ -1202,14 +1209,14 @@ export class RunningHubVideoProviderAdapter implements VideoProviderAdapter {
     return { ok: false, error: { ...parsed.error, submission_outcome_unknown: true } };
   }
 
-  async pollStatus(providerJobId: string): Promise<ProviderStatusResult> {
+  async pollStatus(providerJobId: string, options: ProviderPollOptions = {}): Promise<ProviderStatusResult> {
     const query = buildRunningHubQueryRequest(providerJobId);
     if (!query.ok) return query;
     const result = await this.request(`${this.apiBase}${query.endpoint}`, {
       method: query.method,
       headers: { Authorization: `Bearer ${this.credential}`, "Content-Type": "application/json" },
       body: JSON.stringify(query.body)
-    }, "query");
+    }, "query", options.timeout_ms);
     if ("error" in result) return { ok: false, error: result.error };
     if (!result.response.ok) {
       return { ok: false, error: mapRunningHubProviderError({ http_status: result.response.status, payload: result.payload, secrets: [this.credential] }) };

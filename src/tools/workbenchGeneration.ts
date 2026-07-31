@@ -105,10 +105,13 @@ export interface WorkbenchGenerationDependencies {
   env?: NodeJS.ProcessEnv;
   fetch_impl?: typeof fetch;
   adapter_factory?: (credential: string) => VideoProviderAdapter;
+  download_provider_output?: typeof downloadProviderOutputToArtifact;
   open_database?: (sqlitePath?: string) => M0Database;
   scheduler_retry_ms?: number;
   on_scheduler_error?: (error: unknown) => void;
+  fault_injection_after_provider_success_run_write?: () => void;
   now?: () => Date;
+  monotonic_now_ms?: () => number;
   poll_interval_ms?: number;
   timeout_ms?: number;
   sqlite_path?: string;
@@ -127,6 +130,18 @@ export interface GenerationJob {
 const activeExecutions = new Map<string, Promise<void>>();
 const scheduledWakeups = new Map<string, NodeJS.Timeout>();
 const DUE_GENERATION_JOB_SQL = "datetime(next_attempt_at) <= CURRENT_TIMESTAMP";
+export const DEFAULT_PROVIDER_TASK_POLL_TIMEOUT_MS = 600_000;
+export const MIN_PROVIDER_TASK_POLL_TIMEOUT_MS = 1_000;
+export const MAX_PROVIDER_TASK_POLL_TIMEOUT_MS = 3_600_000;
+
+class ProviderPollTimeoutConfigurationError extends Error {
+  readonly code = "PROVIDER_POLL_TIMEOUT_CONFIG_INVALID";
+
+  constructor() {
+    super("Provider poll timeout configuration is invalid.");
+    this.name = "ProviderPollTimeoutConfigurationError";
+  }
+}
 
 function schedulerKey(dependencies: WorkbenchGenerationDependencies): string {
   return dependencies.sqlite_path ?? "__default_workbench_database__";
@@ -195,6 +210,47 @@ function setJobState(
   }
 }
 
+function enterManualReconciliationJob(
+  db: M0Database,
+  job: GenerationJob,
+  reasonCode: string,
+  options: { lease_token?: string; record_event: boolean }
+): GenerationJob {
+  let updated: GenerationJob;
+  if (options.record_event) {
+    updated = setJobState(db, job, "manual_reconciliation", reasonCode, {
+      ...(options.lease_token ? { lease_token: options.lease_token } : {}),
+      in_transaction: true
+    });
+    const cleared = db.prepare(`UPDATE generation_jobs
+      SET lease_owner = '', lease_token = '', lease_expires_at = NULL,
+        next_attempt_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE job_id = ? AND state = 'manual_reconciliation'`).run(job.job_id) as { changes: number | bigint };
+    if (Number(cleared.changes) !== 1) throw new Error("GENERATION_JOB_NOT_FOUND");
+  } else {
+    const result = options.lease_token
+      ? db.prepare(`UPDATE generation_jobs
+          SET state = 'manual_reconciliation', reconciliation_reason = ?,
+            lease_owner = '', lease_token = '', lease_expires_at = NULL,
+            next_attempt_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+          WHERE job_id = ? AND lease_token = ? AND lease_expires_at IS NOT NULL
+            AND datetime(lease_expires_at) > CURRENT_TIMESTAMP`)
+        .run(reasonCode, job.job_id, options.lease_token) as { changes: number | bigint }
+      : db.prepare(`UPDATE generation_jobs
+          SET state = 'manual_reconciliation', reconciliation_reason = ?,
+            lease_owner = '', lease_token = '', lease_expires_at = NULL,
+            next_attempt_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+          WHERE job_id = ?`)
+        .run(reasonCode, job.job_id) as { changes: number | bigint };
+    if (Number(result.changes) !== 1) {
+      if (options.lease_token) throw new GenerationJobLeaseLostError();
+      throw new Error("GENERATION_JOB_NOT_FOUND");
+    }
+    updated = { ...job, state: "manual_reconciliation", reconciliation_reason: reasonCode };
+  }
+  return { ...updated, lease_expires_at: null };
+}
+
 function reconciliationRestoreState(db: M0Database, intentId: string): { shot_status: ShotStatus; project_status: ProjectStatus } {
   const row = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(intentId) as { data_json: string } | undefined;
   const data = parseRecord(row?.data_json ?? "");
@@ -210,7 +266,32 @@ function reconciliationRestoreState(db: M0Database, intentId: string): { shot_st
   return { shot_status: shotStatus, project_status: projectStatus };
 }
 
-function claimJob(db: M0Database, intentId: string, owner: string, token: string): GenerationJob | null {
+function pollingLeaseRecoveryRequired(db: M0Database, intentId: string, now: Date): boolean {
+  const nowIso = now.toISOString();
+  return Boolean(db.prepare(`SELECT 1 AS required
+    FROM generation_intents
+    WHERE intent_id = ?
+      AND (
+        julianday(CASE
+          WHEN json_valid(data_json) = 1
+            THEN json_extract(data_json, '$.provider_poll_started_at')
+          ELSE NULL
+        END) > julianday(?)
+        OR julianday(CASE
+          WHEN json_valid(data_json) = 1
+            THEN json_extract(data_json, '$.provider_poll_deadline_at')
+          ELSE NULL
+        END) <= julianday(?)
+      )`).get(intentId, nowIso, nowIso));
+}
+
+function claimJob(
+  db: M0Database,
+  intentId: string,
+  owner: string,
+  token: string,
+  recoveryNow: Date
+): GenerationJob | null {
   const expiresAt = new Date(Date.now() + 5 * 60_000).toISOString();
   db.exec("BEGIN IMMEDIATE");
   try {
@@ -219,8 +300,15 @@ function claimJob(db: M0Database, intentId: string, owner: string, token: string
       db.exec("ROLLBACK");
       return null;
     }
+    const pollingRecovery = job.state === "polling"
+      && pollingLeaseRecoveryRequired(db, intentId, recoveryNow);
     const result = db.prepare(`UPDATE generation_jobs SET lease_owner = ?, lease_token = ?, lease_expires_at = ?, attempt_count = attempt_count + 1, updated_at = CURRENT_TIMESTAMP
-      WHERE job_id = ? AND (lease_token = '' OR lease_expires_at IS NULL OR datetime(lease_expires_at) <= CURRENT_TIMESTAMP)`).run(owner, token, expiresAt, job.job_id) as { changes: number | bigint };
+      WHERE job_id = ? AND (
+        lease_token = ''
+        OR lease_expires_at IS NULL
+        OR datetime(lease_expires_at) <= CURRENT_TIMESTAMP
+        OR ? = 1
+      )`).run(owner, token, expiresAt, job.job_id, pollingRecovery ? 1 : 0) as { changes: number | bigint };
     if (Number(result.changes) !== 1) {
       db.exec("ROLLBACK");
       return null;
@@ -246,6 +334,118 @@ function assertJobLease(db: M0Database, jobId: string, token: string): void {
 
 function dateNow(dependencies: WorkbenchGenerationDependencies): Date {
   return dependencies.now?.() ?? new Date();
+}
+
+function monotonicNowMs(dependencies: WorkbenchGenerationDependencies): number {
+  return dependencies.monotonic_now_ms?.() ?? performance.now();
+}
+
+export function parseProviderTaskPollTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.PROVIDER_TASK_POLL_TIMEOUT_MS;
+  if (raw === undefined) return DEFAULT_PROVIDER_TASK_POLL_TIMEOUT_MS;
+  if (!/^[0-9]+$/.test(raw)) throw new ProviderPollTimeoutConfigurationError();
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed)
+    || parsed < MIN_PROVIDER_TASK_POLL_TIMEOUT_MS
+    || parsed > MAX_PROVIDER_TASK_POLL_TIMEOUT_MS) {
+    throw new ProviderPollTimeoutConfigurationError();
+  }
+  return parsed;
+}
+
+interface ProviderPollWindow {
+  started_at_ms: number;
+  timeout_ms: number;
+  deadline_ms: number;
+}
+
+function providerPollWindowFromIntent(db: M0Database, intentId: string): ProviderPollWindow | null {
+  const row = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(intentId) as { data_json: string } | undefined;
+  if (!row) throw new ProviderPollTimeoutConfigurationError();
+  const data = parseRecord(row.data_json);
+  const fields = [
+    data.provider_poll_started_at,
+    data.provider_poll_timeout_ms,
+    data.provider_poll_deadline_at
+  ];
+  if (fields.every((value) => value === undefined)) return null;
+  if (typeof data.provider_poll_started_at !== "string"
+    || typeof data.provider_poll_timeout_ms !== "number"
+    || !Number.isSafeInteger(data.provider_poll_timeout_ms)
+    || data.provider_poll_timeout_ms < MIN_PROVIDER_TASK_POLL_TIMEOUT_MS
+    || data.provider_poll_timeout_ms > MAX_PROVIDER_TASK_POLL_TIMEOUT_MS
+    || typeof data.provider_poll_deadline_at !== "string") {
+    throw new ProviderPollTimeoutConfigurationError();
+  }
+  const started = Date.parse(data.provider_poll_started_at);
+  const persisted = Date.parse(data.provider_poll_deadline_at);
+  if (!Number.isFinite(started)
+    || !Number.isFinite(persisted)
+    || persisted - started !== data.provider_poll_timeout_ms) {
+    throw new ProviderPollTimeoutConfigurationError();
+  }
+  return {
+    started_at_ms: started,
+    timeout_ms: data.provider_poll_timeout_ms,
+    deadline_ms: persisted
+  };
+}
+
+function providerPollDeadlineFromIntent(db: M0Database, intentId: string): number | null {
+  return providerPollWindowFromIntent(db, intentId)?.deadline_ms ?? null;
+}
+
+function persistProviderPollDeadline(
+  db: M0Database,
+  intentId: string,
+  timeoutMs: number,
+  nowMs: number
+): number {
+  const row = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(intentId) as { data_json: string };
+  const data = parseRecord(row.data_json);
+  const deadline = nowMs + timeoutMs;
+  if (!Number.isSafeInteger(deadline)) throw new ProviderPollTimeoutConfigurationError();
+  data.provider_poll_started_at = new Date(nowMs).toISOString();
+  data.provider_poll_timeout_ms = timeoutMs;
+  data.provider_poll_deadline_at = new Date(deadline).toISOString();
+  db.prepare("UPDATE generation_intents SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?")
+    .run(JSON.stringify(data), intentId);
+  return deadline;
+}
+
+function ensureProviderPollDeadline(
+  db: M0Database,
+  intentId: string,
+  timeoutMs: number,
+  nowMs: number
+): number {
+  const existing = providerPollDeadlineFromIntent(db, intentId);
+  return existing ?? persistProviderPollDeadline(db, intentId, timeoutMs, nowMs);
+}
+
+function restartProviderPollDeadlineAfterHumanAttachment(
+  db: M0Database,
+  intentId: string,
+  timeoutMs: number,
+  nowMs: number
+): number {
+  return persistProviderPollDeadline(db, intentId, timeoutMs, nowMs);
+}
+
+function createRemainingPollBudget(
+  window: ProviderPollWindow,
+  dependencies: WorkbenchGenerationDependencies
+): () => number {
+  const wallStartMs = dateNow(dependencies).getTime();
+  const monotonicStartMs = monotonicNowMs(dependencies);
+  const initialRemainingMs = wallStartMs < window.started_at_ms
+    ? 0
+    : Math.max(0, Math.min(window.timeout_ms, window.deadline_ms - wallStartMs));
+  return () => {
+    const wallRemainingMs = window.deadline_ms - dateNow(dependencies).getTime();
+    const monotonicRemainingMs = initialRemainingMs - Math.max(0, monotonicNowMs(dependencies) - monotonicStartMs);
+    return Math.max(0, Math.floor(Math.min(wallRemainingMs, monotonicRemainingMs)));
+  };
 }
 
 function parseRecord(value: string): Record<string, unknown> {
@@ -784,7 +984,7 @@ function failIntent(db: M0Database, intent: WorkbenchGenerationIntent, status: "
         saveGenerationRun(db, run);
       }
     }
-    restoreProjectAfterTerminalGeneration(db, intent);
+    restoreProjectAfterGenerationAutomationStops(db, intent);
     const job = jobForIntent(db, intent.intent_id);
     if (job) setJobState(db, job, "failed", String(safe.code ?? "PROVIDER_REQUEST_FAILED"), { lease_token: leaseToken, in_transaction: true });
     db.exec("COMMIT");
@@ -847,7 +1047,7 @@ function queueDirectorKnownNoSubmitRetry(
   }
 }
 
-function restoreProjectAfterTerminalGeneration(db: M0Database, intent: WorkbenchGenerationIntent): void {
+function restoreProjectAfterGenerationAutomationStops(db: M0Database, intent: WorkbenchGenerationIntent): void {
   const shot = getShot(db, intent.shot_id);
   const project = getProject(db, intent.project_id);
   if (!shot || !project) return;
@@ -863,10 +1063,25 @@ function restoreProjectAfterTerminalGeneration(db: M0Database, intent: Workbench
   saveProject(db, project);
 }
 
-function markUnknownSubmission(db: M0Database, intent: WorkbenchGenerationIntent, job: GenerationJob, error: ProviderToolError, leaseToken: string): GenerationJob {
+function markProjectAndShotGenerationActive(db: M0Database, intent: WorkbenchGenerationIntent): void {
+  const shot = getShot(db, intent.shot_id);
+  const project = getProject(db, intent.project_id);
+  if (!shot || !project) throw new Error("GENERATION_WORKFLOW_STATE_MISSING");
+  shot.status = "video_pending";
+  saveShot(db, shot);
+  project.status = "video_generation_in_progress";
+  saveProject(db, project);
+}
+
+function markUnknownSubmission(
+  db: M0Database,
+  intent: WorkbenchGenerationIntent,
+  job: GenerationJob,
+  error: ProviderToolError,
+  leaseToken?: string
+): GenerationJob {
   const safe = sanitizedError(error);
-  db.exec("BEGIN IMMEDIATE");
-  try {
+  const persist = (recordEvent: boolean): GenerationJob => {
     db.prepare("UPDATE generation_intents SET status = 'running', sanitized_error_json = ?, updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?")
       .run(JSON.stringify(safe), intent.intent_id);
     const run = getGenerationRun(db, intent.run_id);
@@ -876,12 +1091,29 @@ function markUnknownSubmission(db: M0Database, intent: WorkbenchGenerationIntent
       run.error = { code: String(safe.code ?? "PROVIDER_REQUEST_FAILED"), message: "Provider submission outcome requires human reconciliation.", retryable: false };
       saveGenerationRun(db, run);
     }
-    const updated = setJobState(db, job, "manual_reconciliation", "PROVIDER_SUBMIT_OUTCOME_UNKNOWN", { lease_token: leaseToken, in_transaction: true });
+    restoreProjectAfterGenerationAutomationStops(db, intent);
+    return enterManualReconciliationJob(db, job, "PROVIDER_SUBMIT_OUTCOME_UNKNOWN", {
+      ...(leaseToken ? { lease_token: leaseToken } : {}),
+      record_event: recordEvent
+    });
+  };
+
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const updated = persist(true);
     db.exec("COMMIT");
     return updated;
   } catch (failure) {
     db.exec("ROLLBACK");
-    throw failure;
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      const updated = persist(false);
+      db.exec("COMMIT");
+      return updated;
+    } catch (fallbackError) {
+      db.exec("ROLLBACK");
+      throw fallbackError;
+    }
   }
 }
 
@@ -923,12 +1155,8 @@ function markKnownProviderTaskForReconciliation(
       run.error = { code: String(safe.code ?? reasonCode), message: "Provider task requires human reconciliation.", retryable: false };
       saveGenerationRun(db, run);
     }
-    if (withEvent) return setJobState(db, job, "manual_reconciliation", reasonCode, { lease_token: leaseToken, in_transaction: true });
-    const result = db.prepare(`UPDATE generation_jobs SET state = 'manual_reconciliation', reconciliation_reason = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE job_id = ? AND lease_token = ? AND lease_expires_at IS NOT NULL AND datetime(lease_expires_at) > CURRENT_TIMESTAMP`)
-      .run(reasonCode, job.job_id, leaseToken) as { changes: number | bigint };
-    if (Number(result.changes) !== 1) throw new GenerationJobLeaseLostError();
-    return { ...job, state: "manual_reconciliation", reconciliation_reason: reasonCode };
+    restoreProjectAfterGenerationAutomationStops(db, intent);
+    return enterManualReconciliationJob(db, job, reasonCode, { lease_token: leaseToken, record_event: withEvent });
   };
 
   db.exec("BEGIN IMMEDIATE");
@@ -957,7 +1185,7 @@ function cancelIntent(db: M0Database, intent: WorkbenchGenerationIntent, reason:
     db.prepare("UPDATE generation_intents SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(intent.intent_id);
     const run = getGenerationRun(db, intent.run_id);
     if (run) { run.status = "cancelled"; saveGenerationRun(db, run); }
-    restoreProjectAfterTerminalGeneration(db, intent);
+    restoreProjectAfterGenerationAutomationStops(db, intent);
     const job = jobForIntent(db, intent.intent_id);
     if (job) setJobState(db, job, "cancelled", reason, { lease_token: leaseToken, in_transaction: true });
     db.exec("COMMIT");
@@ -967,12 +1195,287 @@ function cancelIntent(db: M0Database, intent: WorkbenchGenerationIntent, reason:
   }
 }
 
-function existingOutputArtifact(db: M0Database, providerTaskId: string, projectId: string, shotId: string): MediaArtifact | null {
-  const row = db.prepare(`SELECT data_json FROM media_artifacts
-    WHERE json_extract(data_json, '$.source.provider') = 'runninghub'
-      AND json_extract(data_json, '$.source.provider_job_id') = ?
-      AND project_id = ? AND shot_id = ? LIMIT 1`).get(providerTaskId, projectId, shotId) as { data_json: string } | undefined;
-  return row ? JSON.parse(row.data_json) as MediaArtifact : null;
+interface ProviderOutputRecovery {
+  version: 1;
+  provider_task_id: string;
+  invalid_artifact_id: string;
+  local_identity: string;
+  requested_at: string;
+}
+
+type ExistingOutputArtifactResult =
+  | { ok: true; artifact: MediaArtifact | null }
+  | { ok: false; error: ProviderToolError; invalid_artifact_id?: string };
+
+function providerOutputArtifactByIdentity(
+  db: M0Database,
+  providerOutputIdentity: string,
+  projectId: string,
+  shotId: string
+): ExistingOutputArtifactResult {
+  let row: { artifact_id: string } | undefined;
+  try {
+    row = db.prepare(`SELECT artifact_id FROM media_artifacts
+      WHERE json_valid(data_json) = 1
+        AND json_extract(data_json, '$.source.provider') = 'runninghub'
+        AND json_extract(data_json, '$.source.provider_job_id') = ?
+        AND project_id = ? AND shot_id = ? LIMIT 1`).get(providerOutputIdentity, projectId, shotId) as { artifact_id: string } | undefined;
+  } catch {
+    return {
+      ok: false,
+      error: providerError("ARTIFACT_REFERENCE_CHECK_FAILED", "Existing Provider output Artifact lookup could not be verified.")
+    };
+  }
+  if (!row) return { ok: true, artifact: null };
+  const validated = validateActiveArtifactReference(db, {
+    artifact_id: row.artifact_id,
+    project_id: projectId,
+    shot_id: shotId,
+    role: "generated_clip",
+    artifact_type: "video"
+  });
+  if (!validated.ok) {
+    return {
+      ok: false,
+      error: providerError(validated.error.code, "Existing Provider output Artifact failed active media validation."),
+      invalid_artifact_id: row.artifact_id
+    };
+  }
+  return { ok: true, artifact: validated.artifact };
+}
+
+function existingOutputArtifact(
+  db: M0Database,
+  providerTaskId: string,
+  projectId: string,
+  shotId: string
+): ExistingOutputArtifactResult {
+  return providerOutputArtifactByIdentity(db, providerTaskId, projectId, shotId);
+}
+
+function providerOutputRecoveryFromIntent(
+  db: M0Database,
+  intentId: string,
+  providerTaskId: string
+): { ok: true; recovery: ProviderOutputRecovery | null } | { ok: false; error: ProviderToolError } {
+  const row = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(intentId) as { data_json: string } | undefined;
+  if (!row) {
+    return { ok: false, error: providerError("ARTIFACT_RECOVERY_STATE_INVALID", "Provider output recovery state could not be verified.") };
+  }
+  const data = parseRecord(row.data_json);
+  if (data.provider_output_recovery === undefined) return { ok: true, recovery: null };
+  if (!data.provider_output_recovery
+    || typeof data.provider_output_recovery !== "object"
+    || Array.isArray(data.provider_output_recovery)) {
+    return { ok: false, error: providerError("ARTIFACT_RECOVERY_STATE_INVALID", "Provider output recovery state could not be verified.") };
+  }
+  const recovery = data.provider_output_recovery as Record<string, unknown>;
+  if (recovery.version !== 1
+    || recovery.provider_task_id !== providerTaskId
+    || typeof recovery.invalid_artifact_id !== "string"
+    || recovery.invalid_artifact_id.length < 3
+    || recovery.invalid_artifact_id.length > 300
+    || typeof recovery.local_identity !== "string"
+    || !/^local_recovery_[0-9a-f-]{36}$/i.test(recovery.local_identity)
+    || typeof recovery.requested_at !== "string"
+    || !Number.isFinite(Date.parse(recovery.requested_at))) {
+    return { ok: false, error: providerError("ARTIFACT_RECOVERY_STATE_INVALID", "Provider output recovery state could not be verified.") };
+  }
+  return { ok: true, recovery: recovery as unknown as ProviderOutputRecovery };
+}
+
+function persistProviderOutputRecovery(
+  db: M0Database,
+  intentId: string,
+  recovery: ProviderOutputRecovery | null
+): void {
+  const row = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(intentId) as { data_json: string } | undefined;
+  if (!row) throw new Error("GENERATION_INTENT_NOT_FOUND");
+  const data = parseRecord(row.data_json);
+  if (recovery) data.provider_output_recovery = recovery;
+  else delete data.provider_output_recovery;
+  db.prepare("UPDATE generation_intents SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?")
+    .run(JSON.stringify(data), intentId);
+}
+
+interface ProviderOutputRecoveryArtifactRow {
+  artifact_id: string;
+  project_id: string | null;
+  shot_id: string | null;
+  role: string;
+  artifact_type: string;
+  status: string;
+  data_json: string;
+}
+
+function retireProviderOutputRecoveryArtifacts(
+  db: M0Database,
+  intent: WorkbenchGenerationIntent,
+  recovery: ProviderOutputRecovery
+): { ok: true } | { ok: false; error: ProviderToolError } {
+  try {
+    const invalidArtifact = db.prepare(`SELECT artifact_id, project_id, shot_id, role, artifact_type, status, data_json
+      FROM media_artifacts
+      WHERE artifact_id = ?`).get(recovery.invalid_artifact_id) as ProviderOutputRecoveryArtifactRow | undefined;
+    if (!invalidArtifact) throw new Error("ARTIFACT_RECOVERY_RETIRE_BINDING_MISSING");
+
+    const replacementArtifacts = db.prepare(`SELECT artifact_id, project_id, shot_id, role, artifact_type, status, data_json
+      FROM media_artifacts
+      WHERE json_valid(data_json) = 1
+        AND json_extract(data_json, '$.source.provider_job_id') = ?
+      LIMIT 2`).all(recovery.local_identity) as ProviderOutputRecoveryArtifactRow[];
+    if (replacementArtifacts.length > 1
+      || replacementArtifacts[0]?.artifact_id === invalidArtifact.artifact_id) {
+      throw new Error("ARTIFACT_RECOVERY_RETIRE_BINDING_AMBIGUOUS");
+    }
+
+    const targets = [
+      { row: invalidArtifact, expectedProviderJobId: recovery.provider_task_id },
+      ...replacementArtifacts.map((row) => ({ row, expectedProviderJobId: recovery.local_identity }))
+    ];
+    const archivedTargets = targets.map(({ row, expectedProviderJobId }) => {
+      const data = parseRecord(row.data_json);
+      const linkedObjects = data.linked_objects && typeof data.linked_objects === "object" && !Array.isArray(data.linked_objects)
+        ? data.linked_objects as Record<string, unknown>
+        : null;
+      const source = data.source && typeof data.source === "object" && !Array.isArray(data.source)
+        ? data.source as Record<string, unknown>
+        : null;
+      if (row.project_id !== intent.project_id
+        || row.shot_id !== intent.shot_id
+        || row.role !== "generated_clip"
+        || row.artifact_type !== "video"
+        || !["active", "inaccessible", "expired", "archived"].includes(row.status)
+        || data.artifact_id !== row.artifact_id
+        || data.role !== row.role
+        || data.artifact_type !== row.artifact_type
+        || data.status !== row.status
+        || linkedObjects?.project_id !== intent.project_id
+        || linkedObjects?.shot_id !== intent.shot_id
+        || source?.provider !== intent.provider
+        || source.provider_job_id !== expectedProviderJobId) {
+        throw new Error("ARTIFACT_RECOVERY_RETIRE_BINDING_MISMATCH");
+      }
+      data.status = "archived";
+      return { row, data_json: JSON.stringify(data) };
+    });
+
+    for (const target of archivedTargets) {
+      const archived = db.prepare(`UPDATE media_artifacts
+        SET status = 'archived', data_json = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE artifact_id = ? AND project_id = ? AND shot_id = ? AND status = ? AND data_json = ?`)
+        .run(
+          target.data_json,
+          target.row.artifact_id,
+          intent.project_id,
+          intent.shot_id,
+          target.row.status,
+          target.row.data_json
+        ) as { changes: number | bigint };
+      if (Number(archived.changes) !== 1) throw new Error("ARTIFACT_RECOVERY_RETIRE_UPDATE_FAILED");
+    }
+    return { ok: true };
+  } catch {
+    return {
+      ok: false,
+      error: providerError("ARTIFACT_RECOVERY_RETIRE_FAILED", "Previous Provider output recovery state could not be retired safely.")
+    };
+  }
+}
+
+function rebindRecoveredProviderOutput(
+  db: M0Database,
+  intent: WorkbenchGenerationIntent,
+  job: GenerationJob,
+  leaseToken: string,
+  providerTaskId: string,
+  recovery: ProviderOutputRecovery,
+  replacementArtifactId: string
+): { ok: true; artifact: MediaArtifact } | { ok: false; error: ProviderToolError } {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    assertJobLease(db, job.job_id, leaseToken);
+    const replacement = validateActiveArtifactReference(db, {
+      artifact_id: replacementArtifactId,
+      project_id: intent.project_id,
+      shot_id: intent.shot_id,
+      role: "generated_clip",
+      artifact_type: "video"
+    });
+    if (!replacement.ok) {
+      db.exec("ROLLBACK");
+      return { ok: false, error: providerError(replacement.error.code, "Recovered Provider output Artifact failed active media validation.") };
+    }
+
+    const invalidRow = db.prepare(`SELECT status, data_json FROM media_artifacts
+      WHERE artifact_id = ? AND project_id = ? AND shot_id = ?`).get(
+      recovery.invalid_artifact_id,
+      intent.project_id,
+      intent.shot_id
+    ) as { status: string; data_json: string } | undefined;
+    const replacementRow = db.prepare(`SELECT data_json FROM media_artifacts
+      WHERE artifact_id = ? AND project_id = ? AND shot_id = ?`).get(
+      replacementArtifactId,
+      intent.project_id,
+      intent.shot_id
+    ) as { data_json: string } | undefined;
+    if (!invalidRow || !replacementRow) throw new Error("ARTIFACT_RECOVERY_BINDING_MISSING");
+
+    const invalidData = parseRecord(invalidRow.data_json);
+    const replacementData = parseRecord(replacementRow.data_json);
+    if (invalidData.status !== invalidRow.status
+      || !["active", "inaccessible", "expired", "archived"].includes(invalidRow.status)) {
+      throw new Error("ARTIFACT_RECOVERY_BINDING_MISMATCH");
+    }
+    const invalidSource = invalidData.source && typeof invalidData.source === "object" && !Array.isArray(invalidData.source)
+      ? { ...(invalidData.source as Record<string, unknown>) }
+      : null;
+    const replacementSource = replacementData.source && typeof replacementData.source === "object" && !Array.isArray(replacementData.source)
+      ? { ...(replacementData.source as Record<string, unknown>) }
+      : null;
+    if (!invalidSource
+      || invalidSource.provider !== "runninghub"
+      || invalidSource.provider_job_id !== providerTaskId
+      || !replacementSource
+      || replacementSource.provider !== "runninghub"
+      || replacementSource.provider_job_id !== recovery.local_identity) {
+      throw new Error("ARTIFACT_RECOVERY_BINDING_MISMATCH");
+    }
+
+    invalidSource.provider_job_id = "";
+    invalidSource.original_provider_job_id = providerTaskId;
+    invalidSource.replaced_by_artifact_id = replacementArtifactId;
+    invalidData.source = invalidSource;
+    invalidData.status = "archived";
+    replacementSource.provider_job_id = providerTaskId;
+    replacementSource.local_recovery_identity = recovery.local_identity;
+    replacementData.source = replacementSource;
+
+    const detached = db.prepare("UPDATE media_artifacts SET status = 'archived', data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE artifact_id = ?")
+      .run(JSON.stringify(invalidData), recovery.invalid_artifact_id) as { changes: number | bigint };
+    if (Number(detached.changes) !== 1) throw new Error("ARTIFACT_RECOVERY_DETACH_FAILED");
+    const rebound = db.prepare("UPDATE media_artifacts SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE artifact_id = ?")
+      .run(JSON.stringify(replacementData), replacementArtifactId) as { changes: number | bigint };
+    if (Number(rebound.changes) !== 1) throw new Error("ARTIFACT_RECOVERY_REBIND_FAILED");
+    persistProviderOutputRecovery(db, intent.intent_id, null);
+    db.exec("COMMIT");
+
+    const validated = validateActiveArtifactReference(db, {
+      artifact_id: replacementArtifactId,
+      project_id: intent.project_id,
+      shot_id: intent.shot_id,
+      role: "generated_clip",
+      artifact_type: "video"
+    });
+    if (!validated.ok) {
+      return { ok: false, error: providerError(validated.error.code, "Recovered Provider output Artifact failed active media validation.") };
+    }
+    return { ok: true, artifact: validated.artifact };
+  } catch (error) {
+    try { db.exec("ROLLBACK"); } catch { /* the transaction may already have been rolled back */ }
+    if (error instanceof GenerationJobLeaseLostError) throw error;
+    return { ok: false, error: providerError("ARTIFACT_RECOVERY_REBIND_FAILED", "Recovered Provider output Artifact could not be rebound safely.") };
+  }
 }
 
 async function executeIntent(intentId: string, allowSubmit: boolean, dependencies: WorkbenchGenerationDependencies): Promise<void> {
@@ -981,7 +1484,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
   const leaseToken = randomUUID();
   let job: GenerationJob | null;
   try {
-    job = claimJob(db, intentId, leaseOwner, leaseToken);
+    job = claimJob(db, intentId, leaseOwner, leaseToken, dateNow(dependencies));
   } catch (error) {
     db.close();
     throw error;
@@ -1014,6 +1517,45 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         failIntent(db, currentIntent, "failed", error, leaseToken);
       }
     };
+    const recoveringLocalCompletion = knownTaskId !== ""
+      && (job.state === "downloading" || job.state === "finalizing");
+    let providerPollTimeoutMs: number | null = null;
+    let pollDeadlineMs: number | null = null;
+    let remainingPollBudget: (() => number) | null = null;
+    const markProviderPollTimeout = (): void => {
+      failOrReconcileKnownTask(
+        intent as WorkbenchGenerationIntent,
+        job as GenerationJob,
+        providerError("PROVIDER_POLL_TIMEOUT", "Provider task polling reached the local deadline."),
+        "PROVIDER_POLL_TIMEOUT"
+      );
+    };
+    try {
+      if (!recoveringLocalCompletion) {
+        providerPollTimeoutMs = parseProviderTaskPollTimeoutMs(dependencies.env ?? process.env);
+        const persistedWindow = providerPollWindowFromIntent(db, intent.intent_id);
+        if (knownTaskId) {
+          if (persistedWindow === null) throw new ProviderPollTimeoutConfigurationError();
+          pollDeadlineMs = persistedWindow.deadline_ms;
+          remainingPollBudget = createRemainingPollBudget(persistedWindow, dependencies);
+        } else if (persistedWindow !== null) {
+          throw new ProviderPollTimeoutConfigurationError();
+        }
+      }
+    } catch (caught) {
+      if (!(caught instanceof ProviderPollTimeoutConfigurationError)) throw caught;
+      failOrReconcileKnownTask(
+        intent,
+        job,
+        providerError(caught.code, "Provider poll timeout configuration is invalid."),
+        caught.code
+      );
+      return;
+    }
+    if (job.state === "polling" && remainingPollBudget?.() === 0) {
+      markProviderPollTimeout();
+      return;
+    }
     const capability = buildProviderCapabilityKey({
       provider: "runninghub",
       model: intent.model,
@@ -1069,6 +1611,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
     let taskId = knownTaskId;
     let submittedNow = false;
     if (!taskId) {
+      if (providerPollTimeoutMs === null) throw new ProviderPollTimeoutConfigurationError();
       const artifact = validateActiveArtifactReference(db, {
         artifact_id: intent.input_artifact_id, project_id: intent.project_id, shot_id: intent.shot_id, role: "storyboard_image", artifact_type: "image"
       });
@@ -1077,7 +1620,13 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         return;
       }
       if (!allowSubmit) {
-        job = setJobState(db, job, "manual_reconciliation", "PROVIDER_SUBMIT_OUTCOME_UNKNOWN", { lease_token: leaseToken });
+        job = markUnknownSubmission(
+          db,
+          intent,
+          job,
+          providerError("PROVIDER_REQUEST_FAILED", "Provider submission outcome requires human reconciliation."),
+          leaseToken
+        );
         return;
       }
       job = setJobState(db, job, "submitting", "", { lease_token: leaseToken });
@@ -1120,6 +1669,12 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
           });
         }
         db.prepare(`UPDATE generation_intents SET provider_task_id = ?, status = 'running', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?`).run(taskId, intent.intent_id);
+        pollDeadlineMs = ensureProviderPollDeadline(
+          db,
+          intent.intent_id,
+          providerPollTimeoutMs,
+          dateNow(dependencies).getTime()
+        );
         const run = getGenerationRun(db, intent.run_id);
         if (run) {
           run.status = "running";
@@ -1137,76 +1692,274 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         return;
       }
       intent = getIntent(db, intent.intent_id) as WorkbenchGenerationIntent;
+      remainingPollBudget = createRemainingPollBudget({
+        started_at_ms: (pollDeadlineMs as number) - providerPollTimeoutMs,
+        timeout_ms: providerPollTimeoutMs,
+        deadline_ms: pollDeadlineMs as number
+      }, dependencies);
       submittedNow = true;
     }
 
     const interval = Math.max(10, dependencies.poll_interval_ms ?? 5_000);
-    const deferPolling = (): void => {
+    const deferPolling = (): boolean => {
+      const remainingMs = remainingPollBudget?.() ?? 0;
+      if (remainingMs <= 0 || pollDeadlineMs === null) {
+        markProviderPollTimeout();
+        return false;
+      }
+      const wallNowMs = dateNow(dependencies).getTime();
+      const nextAttemptMs = Math.min(pollDeadlineMs, wallNowMs + Math.min(interval, remainingMs));
       assertJobLease(db, claimedJobId, leaseToken);
       db.prepare(`UPDATE generation_jobs SET next_attempt_at = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE job_id = ? AND lease_token = ?`).run(new Date(Date.now() + interval).toISOString(), claimedJobId, leaseToken);
+        WHERE job_id = ? AND lease_token = ?`).run(new Date(nextAttemptMs).toISOString(), claimedJobId, leaseToken);
+      return true;
     };
     if (submittedNow) {
       deferPolling();
       return;
     }
 
-    const polled = await adapter.pollStatus(taskId);
-    assertJobLease(db, job.job_id, leaseToken);
-    if (!polled.ok) {
-      if (polled.error.retryable) {
-        deferPolling();
+    const recoveryState = providerOutputRecoveryFromIntent(db, intent.intent_id, taskId);
+    if (!recoveryState.ok) {
+      job = markKnownProviderTaskForReconciliation(
+        db,
+        intent,
+        job,
+        taskId,
+        recoveryState.error,
+        leaseToken,
+        "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION"
+      );
+      return;
+    }
+    const recovery = recoveryState.recovery;
+    const existingOutput = existingOutputArtifact(db, taskId, intent.project_id, intent.shot_id);
+    let output: MediaArtifact | null = null;
+    let recoveryNeedsDownload = false;
+    if (recovery) {
+      const replacement = providerOutputArtifactByIdentity(
+        db,
+        recovery.local_identity,
+        intent.project_id,
+        intent.shot_id
+      );
+      if (!replacement.ok) {
+        job = markKnownProviderTaskForReconciliation(
+          db,
+          intent,
+          job,
+          taskId,
+          replacement.error,
+          leaseToken,
+          "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION"
+        );
         return;
       }
-      job = markKnownProviderTaskForReconciliation(db, intent, job, taskId, polled.error, leaseToken, "PROVIDER_POLL_REQUIRES_RECONCILIATION");
-      return;
-    }
-    db.exec("BEGIN IMMEDIATE");
-    try {
-      assertJobLease(db, job.job_id, leaseToken);
-      const run = getGenerationRun(db, intent.run_id);
-      if (run) {
-        run.provider.provider_status = polled.provider_status;
-        saveGenerationRun(db, run);
+      if (replacement.artifact) {
+        const rebound = rebindRecoveredProviderOutput(
+          db,
+          intent,
+          job,
+          leaseToken,
+          taskId,
+          recovery,
+          replacement.artifact.artifact_id
+        );
+        if (!rebound.ok) {
+          job = markKnownProviderTaskForReconciliation(
+            db,
+            intent,
+            job,
+            taskId,
+            rebound.error,
+            leaseToken,
+            "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION"
+          );
+          return;
+        }
+        output = rebound.artifact;
+      } else if (existingOutput.ok) {
+        if (existingOutput.artifact?.artifact_id !== recovery.invalid_artifact_id) {
+          job = markKnownProviderTaskForReconciliation(
+            db,
+            intent,
+            job,
+            taskId,
+            providerError("ARTIFACT_RECOVERY_STATE_INVALID", "Provider output recovery state could not be verified."),
+            leaseToken,
+            "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION"
+          );
+          return;
+        }
+        // Blob repair can make the old Artifact healthy before replacement
+        // activation commits. A persisted recovery request must still finish
+        // through the replacement identity instead of adopting the old row.
+        recoveryNeedsDownload = true;
+      } else if (existingOutput.invalid_artifact_id === recovery.invalid_artifact_id) {
+        recoveryNeedsDownload = true;
+      } else {
+        job = markKnownProviderTaskForReconciliation(
+          db,
+          intent,
+          job,
+          taskId,
+          existingOutput.error,
+          leaseToken,
+          "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION"
+        );
+        return;
       }
-      db.exec("COMMIT");
-    } catch (error) {
-      db.exec("ROLLBACK");
-      throw error;
-    }
-    if (polled.status === "failed" || polled.status === "cancelled") {
-      if (polled.status === "cancelled") cancelIntent(db, intent, "PROVIDER_CANCELLED", leaseToken);
-      else failIntent(db, intent, "failed", providerError("PROVIDER_REQUEST_FAILED", `RunningHub task ended with ${polled.provider_status}.`), leaseToken);
+    } else if (existingOutput.ok) {
+      output = existingOutput.artifact;
+    } else {
+      job = markKnownProviderTaskForReconciliation(
+        db,
+        intent,
+        job,
+        taskId,
+        existingOutput.error,
+        leaseToken,
+        "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION"
+      );
       return;
     }
-    if (polled.status !== "succeeded") {
-      deferPolling();
-      return;
-    }
-    const outputUrl = polled.output_url ?? "";
-    if (!outputUrl) {
-      job = markKnownProviderTaskForReconciliation(db, intent, job, taskId, providerError("PROVIDER_OUTPUT_MISSING", "Provider reported success without an output URL."), leaseToken, "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION");
-      return;
-    }
-    let output = existingOutputArtifact(db, taskId, intent.project_id, intent.shot_id);
+    let outputUrl = "";
     if (!output) {
-      job = setJobState(db, job, "downloading", "", { lease_token: leaseToken });
+      if (job.state === "finalizing" && !recoveryNeedsDownload) {
+        job = markKnownProviderTaskForReconciliation(
+          db,
+          intent,
+          job,
+          taskId,
+          providerError("LOCAL_FINALIZATION_STATE_MISSING", "The downloaded Artifact was missing during local finalization recovery."),
+          leaseToken,
+          "LOCAL_FINALIZATION_REQUIRES_RECONCILIATION"
+        );
+        return;
+      }
+      const deadlineApplies = job.state === "polling";
+      const pollRequestTimeoutMs = deadlineApplies ? remainingPollBudget?.() ?? 0 : null;
+      if (deadlineApplies && (pollRequestTimeoutMs ?? 0) <= 0) {
+        markProviderPollTimeout();
+        return;
+      }
+      const polled = await adapter.pollStatus(
+        taskId,
+        deadlineApplies ? { timeout_ms: pollRequestTimeoutMs as number } : undefined
+      );
       assertJobLease(db, job.job_id, leaseToken);
-      const downloaded = await downloadProviderOutputToArtifact({
+      if (deadlineApplies && (remainingPollBudget?.() ?? 0) <= 0) {
+        markProviderPollTimeout();
+        return;
+      }
+      if (!polled.ok) {
+        if (deadlineApplies && polled.error.retryable) {
+          deferPolling();
+          return;
+        }
+        job = markKnownProviderTaskForReconciliation(db, intent, job, taskId, polled.error, leaseToken, "PROVIDER_POLL_REQUIRES_RECONCILIATION");
+        return;
+      }
+      if (polled.status !== "succeeded") {
+        db.exec("BEGIN IMMEDIATE");
+        try {
+          assertJobLease(db, job.job_id, leaseToken);
+          const run = getGenerationRun(db, intent.run_id);
+          if (run) {
+            run.provider.provider_status = polled.provider_status;
+            saveGenerationRun(db, run);
+          }
+          db.exec("COMMIT");
+        } catch (error) {
+          db.exec("ROLLBACK");
+          throw error;
+        }
+      }
+      if (polled.status === "failed" || polled.status === "cancelled") {
+        if (polled.status === "cancelled") cancelIntent(db, intent, "PROVIDER_CANCELLED", leaseToken);
+        else failIntent(db, intent, "failed", providerError("PROVIDER_REQUEST_FAILED", `RunningHub task ended with ${polled.provider_status}.`), leaseToken);
+        return;
+      }
+      if (polled.status !== "succeeded") {
+        if (deadlineApplies) {
+          deferPolling();
+        } else {
+          job = markKnownProviderTaskForReconciliation(
+            db,
+            intent,
+            job,
+            taskId,
+            providerError("PROVIDER_STATUS_REQUIRES_RECONCILIATION", "Provider terminal success could not be reconfirmed during local completion recovery."),
+            leaseToken,
+            "PROVIDER_POLL_REQUIRES_RECONCILIATION"
+          );
+        }
+        return;
+      }
+      outputUrl = polled.output_url ?? "";
+      if (!outputUrl) {
+        job = markKnownProviderTaskForReconciliation(db, intent, job, taskId, providerError("PROVIDER_OUTPUT_MISSING", "Provider reported success without an output URL."), leaseToken, "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION");
+        return;
+      }
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        assertJobLease(db, job.job_id, leaseToken);
+        const run = getGenerationRun(db, intent.run_id);
+        if (run) {
+          run.provider.provider_status = polled.provider_status;
+          saveGenerationRun(db, run);
+        }
+        dependencies.fault_injection_after_provider_success_run_write?.();
+        job = setJobState(db, job, "downloading", "", { lease_token: leaseToken, in_transaction: true });
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+      assertJobLease(db, job.job_id, leaseToken);
+      const downloaded = await (dependencies.download_provider_output ?? downloadProviderOutputToArtifact)({
         url: outputUrl,
         provider_name: "runninghub",
-        provider_job_id: taskId,
+        provider_job_id: recoveryNeedsDownload && recovery ? recovery.local_identity : taskId,
         project_id: intent.project_id,
         shot_id: intent.shot_id,
         duration_seconds: intent.duration_seconds,
-        aspect_ratio: intent.input_snapshot.aspect_ratio
+        aspect_ratio: intent.input_snapshot.aspect_ratio,
+        ...(recoveryNeedsDownload && recovery
+          ? { verified_blob_recovery: { invalid_artifact_id: recovery.invalid_artifact_id } }
+          : {})
       }, db);
       assertJobLease(db, job.job_id, leaseToken);
       if (!downloaded.ok) {
         job = markKnownProviderTaskForReconciliation(db, intent, job, taskId, downloaded.error, leaseToken, "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION");
         return;
       }
-      output = downloaded.artifact;
+      if (recoveryNeedsDownload && recovery) {
+        const rebound = rebindRecoveredProviderOutput(
+          db,
+          intent,
+          job,
+          leaseToken,
+          taskId,
+          recovery,
+          downloaded.artifact.artifact_id
+        );
+        if (!rebound.ok) {
+          job = markKnownProviderTaskForReconciliation(
+            db,
+            intent,
+            job,
+            taskId,
+            rebound.error,
+            leaseToken,
+            "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION"
+          );
+          return;
+        }
+        output = rebound.artifact;
+      } else {
+        output = downloaded.artifact;
+      }
     }
     const shot = getShot(db, intent.shot_id);
     const project = getProject(db, intent.project_id);
@@ -1251,6 +2004,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       saveGenerationRun(db, run);
       db.prepare(`UPDATE generation_intents SET status = 'succeeded', output_artifact_id = ?, sanitized_error_json = '{}', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?`)
         .run(output.artifact_id, intent.intent_id);
+      persistProviderOutputRecovery(db, intent.intent_id, null);
       job = setJobState(db, job, "succeeded", "", { lease_token: leaseToken, in_transaction: true });
       db.exec("COMMIT");
     } catch (error) {
@@ -1315,29 +2069,85 @@ function startNextPersistedGeneration(dependencies: WorkbenchGenerationDependenc
   if (activeExecutions.size >= 1) return;
   const db = (dependencies.open_database ?? openM0Database)(dependencies.sqlite_path);
   try {
+    const now = dateNow(dependencies);
+    const nowIso = now.toISOString();
     const row = db.prepare(`SELECT i.intent_id, i.provider_task_id, j.state FROM generation_intents i
       JOIN generation_jobs j ON j.intent_id = i.intent_id
       WHERE i.status IN ('queued','running')
         AND (i.provider_task_id <> '' OR (i.provider_task_id = '' AND j.state = 'queued'))
         AND j.state IN ('queued','polling','downloading','finalizing')
-        AND datetime(j.next_attempt_at) <= CURRENT_TIMESTAMP
-        AND (j.lease_token = '' OR j.lease_expires_at IS NULL OR datetime(j.lease_expires_at) <= CURRENT_TIMESTAMP)
-      ORDER BY j.created_at LIMIT 1`).get() as { intent_id: string; provider_task_id: string; state: GenerationJobState } | undefined;
+        AND (
+          julianday(j.next_attempt_at) <= julianday(?)
+          OR (
+            j.state = 'polling'
+            AND (
+              julianday(CASE
+                WHEN json_valid(i.data_json) = 1
+                  THEN json_extract(i.data_json, '$.provider_poll_started_at')
+                ELSE NULL
+              END) > julianday(?)
+              OR julianday(CASE
+                WHEN json_valid(i.data_json) = 1
+                  THEN json_extract(i.data_json, '$.provider_poll_deadline_at')
+                ELSE NULL
+              END) <= julianday(?)
+            )
+          )
+        )
+        AND (
+          j.lease_token = ''
+          OR j.lease_expires_at IS NULL
+          OR julianday(j.lease_expires_at) <= julianday(?)
+          OR (
+            j.state = 'polling'
+            AND (
+              julianday(CASE
+                WHEN json_valid(i.data_json) = 1
+                  THEN json_extract(i.data_json, '$.provider_poll_started_at')
+                ELSE NULL
+              END) > julianday(?)
+              OR julianday(CASE
+                WHEN json_valid(i.data_json) = 1
+                  THEN json_extract(i.data_json, '$.provider_poll_deadline_at')
+                ELSE NULL
+              END) <= julianday(?)
+            )
+          )
+        )
+      ORDER BY j.created_at LIMIT 1`)
+      .get(nowIso, nowIso, nowIso, nowIso, nowIso, nowIso) as { intent_id: string; provider_task_id: string; state: GenerationJobState } | undefined;
     if (row) {
       startWorkbenchGeneration(row.intent_id, { allow_submit: row.state === "queued" && row.provider_task_id === "", dependencies });
       return;
     }
-    const wakeup = db.prepare(`SELECT MIN(CASE
-        WHEN j.lease_token <> '' AND j.lease_expires_at IS NOT NULL AND datetime(j.lease_expires_at) > CURRENT_TIMESTAMP
-          THEN j.lease_expires_at
-        ELSE j.next_attempt_at END) AS wake_at FROM generation_intents i
-      JOIN generation_jobs j ON j.intent_id = i.intent_id
-      WHERE i.status IN ('queued','running')
-        AND (i.provider_task_id <> '' OR (i.provider_task_id = '' AND j.state = 'queued'))
-        AND j.state IN ('queued','polling','downloading','finalizing')
-        AND (datetime(j.next_attempt_at) > CURRENT_TIMESTAMP
-          OR (j.lease_token <> '' AND j.lease_expires_at IS NOT NULL AND datetime(j.lease_expires_at) > CURRENT_TIMESTAMP))`).get() as { wake_at: string | null };
-    if (wakeup.wake_at) scheduleNextPersistedGeneration(dependencies, Math.max(50, Date.parse(wakeup.wake_at) - Date.now() + 50));
+    const wakeup = db.prepare(`SELECT MIN(wake_jd) AS wake_jd FROM (
+        SELECT CASE
+          WHEN j.lease_token <> '' AND j.lease_expires_at IS NOT NULL
+            AND julianday(j.lease_expires_at) > julianday(?)
+            THEN julianday(j.lease_expires_at)
+          ELSE julianday(j.next_attempt_at)
+        END AS wake_jd
+        FROM generation_intents i
+        JOIN generation_jobs j ON j.intent_id = i.intent_id
+        WHERE i.status IN ('queued','running')
+          AND (i.provider_task_id <> '' OR (i.provider_task_id = '' AND j.state = 'queued'))
+          AND j.state IN ('queued','polling','downloading','finalizing')
+        UNION ALL
+        SELECT julianday(CASE
+          WHEN json_valid(i.data_json) = 1
+            THEN json_extract(i.data_json, '$.provider_poll_deadline_at')
+          ELSE NULL
+        END) AS wake_jd
+        FROM generation_intents i
+        JOIN generation_jobs j ON j.intent_id = i.intent_id
+        WHERE i.status IN ('queued','running')
+          AND i.provider_task_id <> ''
+          AND j.state = 'polling'
+      ) WHERE wake_jd > julianday(?)`).get(nowIso, nowIso) as { wake_jd: number | null };
+    if (wakeup.wake_jd !== null) {
+      const wakeAtMs = (wakeup.wake_jd - 2_440_587.5) * 86_400_000;
+      scheduleNextPersistedGeneration(dependencies, Math.max(50, wakeAtMs - now.getTime() + 50));
+    }
   } finally { db.close(); }
 }
 
@@ -1355,17 +2165,15 @@ export function resumeWorkbenchGenerationJobs(dependencies: WorkbenchGenerationD
       } else if (row.provider_task_id || row.state === "queued") {
         resumed.push(row.intent_id);
       } else {
+        const intent = getIntent(db, row.intent_id);
         const job = jobForIntent(db, row.intent_id);
-        if (job) {
-          db.exec("BEGIN IMMEDIATE");
-          try {
-            setJobState(db, job, "manual_reconciliation", "PROVIDER_SUBMIT_OUTCOME_UNKNOWN", { in_transaction: true });
-            db.prepare("UPDATE generation_jobs SET lease_owner = '', lease_token = '', lease_expires_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE job_id = ?").run(job.job_id);
-            db.exec("COMMIT");
-          } catch (error) {
-            db.exec("ROLLBACK");
-            throw error;
-          }
+        if (intent && job) {
+          markUnknownSubmission(
+            db,
+            intent,
+            job,
+            providerError("PROVIDER_REQUEST_FAILED", "Provider submission outcome requires human reconciliation.")
+          );
         }
         reconciled.push(row.intent_id);
       }
@@ -1389,7 +2197,8 @@ export async function runWorkbenchGenerationOnce(intentId: string, input: { allo
 export function reconcileGenerationJob(
   jobId: string,
   input: { decision: string; provider_task_id?: string; reason?: string; human_confirmation: boolean },
-  db = openM0Database()
+  db = openM0Database(),
+  dependencies: Pick<WorkbenchGenerationDependencies, "env" | "now"> = {}
 ): WorkbenchV2Result<{ job: GenerationJob; intent: WorkbenchGenerationIntent }> {
   if (input.human_confirmation !== true) return { ok: false, error: { code: "GENERATION_CONFIRMATION_REQUIRED", message: "Human confirmation is required." } };
   if (input.decision !== "attach_existing_task" && input.decision !== "abandon") {
@@ -1411,8 +2220,19 @@ export function reconcileGenerationJob(
     }
     let job: GenerationJob;
     if (input.decision === "attach_existing_task") {
+      let pollTimeoutMs: number;
+      try {
+        pollTimeoutMs = parseProviderTaskPollTimeoutMs(dependencies.env ?? process.env);
+      } catch (caught) {
+        if (!(caught instanceof ProviderPollTimeoutConfigurationError)) throw caught;
+        db.exec("ROLLBACK");
+        return { ok: false, error: { code: caught.code, message: "Provider poll timeout configuration is invalid." } };
+      }
       const taskId = input.provider_task_id?.trim() ?? "";
-      if (!/^[A-Za-z0-9._:-]{3,200}$/.test(taskId)) { db.exec("ROLLBACK"); return { ok: false, error: { code: "INVALID_PROVIDER_TASK_ID", message: "Provider task ID is invalid." } }; }
+      if (!/^[A-Za-z0-9._:-]{3,200}$/.test(taskId) || /^local_recovery_/i.test(taskId)) {
+        db.exec("ROLLBACK");
+        return { ok: false, error: { code: "INVALID_PROVIDER_TASK_ID", message: "Provider task ID is invalid." } };
+      }
       const owningIntent = db.prepare("SELECT intent_id FROM generation_intents WHERE provider_task_id = ? AND intent_id <> ? LIMIT 1")
         .get(taskId, intent.intent_id) as { intent_id: string } | undefined;
       const owningArtifact = db.prepare(`SELECT artifact_id, project_id, shot_id, json_extract(data_json, '$.source.provider') AS provider FROM media_artifacts
@@ -1425,6 +2245,38 @@ export function reconcileGenerationJob(
       }
       const run = getGenerationRun(db, intent.run_id);
       if (!run) { db.exec("ROLLBACK"); return { ok: false, error: { code: "GENERATION_RUN_NOT_FOUND", message: "Generation run was not found." } }; }
+      const persistedRecovery = providerOutputRecoveryFromIntent(db, intent.intent_id, intent.provider_task_id);
+      if (!persistedRecovery.ok) {
+        db.exec("ROLLBACK");
+        return { ok: false, error: { code: persistedRecovery.error.code, message: "Existing Provider output recovery state could not be preserved safely." } };
+      }
+      let outputRecovery = persistedRecovery.recovery;
+      if (outputRecovery && taskId !== outputRecovery.provider_task_id) {
+        const retired = retireProviderOutputRecoveryArtifacts(db, intent, outputRecovery);
+        if (!retired.ok) {
+          db.exec("ROLLBACK");
+          return { ok: false, error: { code: retired.error.code, message: "Previous Provider output recovery state could not be retired safely." } };
+        }
+        outputRecovery = null;
+      }
+      if (!outputRecovery
+        && row.reconciliation_reason === "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION"
+        && taskId === intent.provider_task_id) {
+        const existingOutput = existingOutputArtifact(db, taskId, intent.project_id, intent.shot_id);
+        if (!existingOutput.ok) {
+          if (!existingOutput.invalid_artifact_id) {
+            db.exec("ROLLBACK");
+            return { ok: false, error: { code: existingOutput.error.code, message: "Existing Provider output Artifact could not be prepared for replacement." } };
+          }
+          outputRecovery = {
+            version: 1,
+            provider_task_id: taskId,
+            invalid_artifact_id: existingOutput.invalid_artifact_id,
+            local_identity: `local_recovery_${randomUUID()}`,
+            requested_at: dateNow(dependencies).toISOString()
+          };
+        }
+      }
       // A human-confirmed existing task may be the successful outcome of an
       // ambiguous submission. It therefore settles the exact reservation as
       // spend before polling, even though no worker submit response was saved.
@@ -1437,16 +2289,37 @@ export function reconcileGenerationJob(
           reason_code: "DIRECTOR_AUTOMATION_SUBMITTED_RECONCILED"
         });
       }
-      db.prepare("UPDATE generation_intents SET provider_task_id = ?, status = 'running', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(taskId, intent.intent_id);
+      db.prepare("UPDATE generation_intents SET provider_task_id = ?, status = 'running', sanitized_error_json = '{}', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(taskId, intent.intent_id);
+      persistProviderOutputRecovery(db, intent.intent_id, outputRecovery);
+      restartProviderPollDeadlineAfterHumanAttachment(
+        db,
+        intent.intent_id,
+        pollTimeoutMs,
+        dateNow(dependencies).getTime()
+      );
       run.status = "running";
       run.provider.provider_job_id = taskId;
       run.provider.provider_status = "HUMAN_ATTACHED_EXISTING_TASK";
       run.error = { code: "", message: "", retryable: false };
       saveGenerationRun(db, run);
+      markProjectAndShotGenerationActive(db, intent);
       job = setJobState(db, row, "polling", "HUMAN_ATTACHED_EXISTING_TASK", { in_transaction: true });
     } else {
-      // Abandon is the human assertion that no Provider task exists. Release
-      // only an active reservation; a previously consumed Grant remains spent.
+      // Abandon ends this generation attempt. Retire any explicitly tracked
+      // recovery Artifacts first; a previously consumed Grant remains spent.
+      const persistedRecovery = providerOutputRecoveryFromIntent(db, intent.intent_id, intent.provider_task_id);
+      if (!persistedRecovery.ok) {
+        db.exec("ROLLBACK");
+        return { ok: false, error: { code: persistedRecovery.error.code, message: "Existing Provider output recovery state could not be abandoned safely." } };
+      }
+      if (persistedRecovery.recovery) {
+        const retired = retireProviderOutputRecoveryArtifacts(db, intent, persistedRecovery.recovery);
+        if (!retired.ok) {
+          db.exec("ROLLBACK");
+          return { ok: false, error: { code: retired.error.code, message: "Provider output recovery artifacts could not be abandoned safely." } };
+        }
+        persistProviderOutputRecovery(db, intent.intent_id, null);
+      }
       if (automation && intent.run_id) {
         releaseDirectorGrantReservation(db, automation, {
           amount_minor: automation.amount_minor!,
@@ -1459,7 +2332,7 @@ export function reconcileGenerationJob(
       db.prepare("UPDATE generation_intents SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?").run(intent.intent_id);
       const run = getGenerationRun(db, intent.run_id);
       if (run) { run.status = "cancelled"; saveGenerationRun(db, run); }
-      restoreProjectAfterTerminalGeneration(db, intent);
+      restoreProjectAfterGenerationAutomationStops(db, intent);
       job = setJobState(db, row, "cancelled", input.reason?.trim() || "HUMAN_ABANDONED", { in_transaction: true });
     }
     db.exec("COMMIT");

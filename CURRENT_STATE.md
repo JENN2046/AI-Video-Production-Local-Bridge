@@ -1,7 +1,7 @@
 # Current State
 
-Date (Asia/Shanghai, UTC+08:00): 2026-07-30
-Repository baseline: `main@bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7`
+Date (Asia/Shanghai, UTC+08:00): 2026-07-31
+Repository baseline: `main@b3a108abc8728e89259d0d953e1c638b9ca482ea`
 
 ## Repository and CI truth
 
@@ -9,8 +9,10 @@ Repository baseline: `main@bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7`
   `3a142bb1aeaf34a506f84b2fa2598a5819203d45`.
 - PR #105, `test: add readonly media acceptance matrix`, merged as
   `bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7`.
-- The Windows CI run for `main@bc3fa5a0` completed successfully. Both
-  `Quality and integration` and `Browser smoke` passed.
+- PR #106, `docs: freeze scope and record core production readiness`, was
+  squash-merged as `b3a108abc8728e89259d0d953e1c638b9ca482ea`.
+- The final PR #106 head passed both `Quality and integration` and
+  `Browser smoke`; the squash commit has the same tree as that reviewed head.
 - Code and CI PASS establish repository facts only. They do not create a new
   deployment, public maintenance-window, Provider, database, Bridge, Snapshot,
   Memory or production acceptance.
@@ -59,7 +61,7 @@ database. `REAL_PROVIDER_ENABLED=false` remains the safe default.
 |---|---|---|---|
 | Workbench V2 local UI | Storyboard, generation preflight, version review and delivery-readiness views exist | Activity database compatibility accepted at ledger `0011` | Core |
 | SQLite and governed media | Migration, Artifact/Blob digest and FFprobe boundaries exist | Ledger `0011` migration/restore evidence remains commit-scoped | Core |
-| Current Provider path | Intent, budget, confirmation, reconciliation and adapter boundaries exist; Provider defaults off | S3 local checks passed, but S4 is blocked by no eligible Shot, absent RunningHub credential and no enforced whole-job poll timeout | Core blocker before S4 |
+| Current Provider path | Intent, budget, confirmation and adapter boundaries exist; Provider defaults off | S3 local checks passed; Draft PR #108 contains the bounded polling, manual reconciliation and verified-Blob recovery candidate but is blocked pending new exact-head CI and review; it is not current `main`, and S4 remains blocked | Core blocker before S4 |
 | Historical R3 Provider path | Execution scripts now reside under `legacy/` | RunningHub real canary, four-shot generation and regeneration completed historically | Feasibility evidence only |
 | Review and accepted clips | Version stacks, rejection reasons and human accepted-clip selection exist | Historical R3 review evidence exists | Core; current-path acceptance remains |
 | Active assembly/export | Active assembly still contains `placeholder_copy` / mock-fixture behavior; Workbench has no production assembly/export action | No current-main production-path PASS | S6 core gap |
@@ -67,7 +69,7 @@ database. `REAL_PROVIDER_ENABLED=false` remains the safe default.
 | Unified `/workspace/mcp` | Unified Remote and Director tool contracts exist | Earlier bounded transport/activity path passed | Core ChatGPT route; later commits do not inherit that PASS |
 | Legacy `/mcp` | Still present | Earlier Readonly acceptance exists | `ROLLBACK_ONLY` |
 | Dedicated Director route | Still present beside Unified Director tools | Earlier bounded evidence exists | `ROLLBACK_ONLY` |
-| Director Bridge | A managed process was detected with source commit `3a142bb` | Relative to `main@bc3fa5a0`, manager status is `RESTART_REQUIRED`; current-main acceptance is absent | Do not place before S3/S4 |
+| Director Bridge | A managed process was detected with source commit `3a142bb` | The recorded process source predates `main@b3a108a`; no current-main configuration, heartbeat or authenticated-contact acceptance was performed | Do not place before S3/S4 |
 | Manual Snapshot | Publisher and signed Snapshot contract exist | Earlier bounded publish/recovery evidence exists | Optional; not an S3/S4 dependency |
 | Media Gateway | PR #105 two-project Image/MP4 matrix is in main and CI passed | No corresponding current-main public maintenance-window acceptance | Optional human Widget playback |
 | Memory Port | Advisory recall seam and non-dispatched Saveback envelope exist | No stable production plugin or automatic Saveback | Frozen |
@@ -110,11 +112,12 @@ A low-disclosure manager status check detected a managed Director Bridge
 process whose recorded source commit is
 `3a142bb1aeaf34a506f84b2fa2598a5819203d45`.
 
-Relative to current `main@bc3fa5a0`, the manager returned
-`RESTART_REQUIRED`. This reconciliation did not start, stop or restart the
-Bridge. It did not revalidate configuration identity, heartbeat or
-authenticated Remote contact. Therefore the repository must not claim that the
-Bridge is stopped, healthy, Remote-connected or accepted on current main.
+The recorded manager check returned `RESTART_REQUIRED` on the earlier
+repository baseline, and its source commit still predates current
+`main@b3a108a`. This restack did not start, stop or restart the Bridge. It did
+not revalidate configuration identity, heartbeat or authenticated Remote
+contact. Therefore the repository must not claim that the Bridge is stopped,
+healthy, Remote-connected or accepted on current main.
 
 The accepted `fbf6540` restart report and the later `2b43f558` diagnostic-gap
 report remain historical, commit-scoped evidence.
@@ -190,6 +193,76 @@ Current stage queue:
 7. `S6 Assembly, Export and Closeout` — not loaded
 8. `S7 Three Real Project Evaluation` — not loaded
 9. `S8 Legacy Route Cleanup Decision` — not loaded
+
+The S3B-T1 and S3B-T1A implementation candidates have local `PASS` evidence
+and are cleanly restacked in Draft PR #108 with repository status
+`BLOCKED_BY_PR108_REVIEW_FINDING` until a new exact-head CI run and Codex review
+pass. The candidate includes the separately authorized narrow recovery of
+missing or drifted physical bytes for an immutable verified Blob: it requires
+explicit human reattachment and exact Artifact/Blob, SHA, size and MIME
+agreement, preserves the Blob row and link, and does not resubmit. Replacement
+rebind archives the old Artifact, restart recovery prefers a committed local
+replacement, repeated attachment preserves the same-task recovery, and startup
+scheduling handles clock rollback without waiting for a future attempt or a
+future lease inherited from a crashed process.
+
+Head `2cb245e` passed Windows CI run `30606273467` on attempt 1. Exact-head
+review `4825747733` then found that an old persisted recovery prevented a human
+from attaching a different unused Provider task. The locally validated
+implementation `19f026f8f40f82203a3967a7f449152b272743cf` now verifies and
+atomically archives the old invalid Artifact and any committed replacement
+before clearing recovery and attaching the new task. Same-task recovery stays
+preserved; the internal local recovery identity cannot be attached as a
+Provider task; unsafe retirement rolls back with a stable error. Blob rows,
+physical bytes and Artifact-Blob links are unchanged. The prior CI is not
+transferable.
+
+Head `b8060e1` passed Windows CI run `30608433511`; exact-head review
+`4825989650` then found that a different Intent could attach a reserved
+`local_recovery_*` identity before the owner created a replacement Artifact.
+The locally validated follow-up
+`2847a34e8ee638ff1ca46824bc938f19acd870ff` reserves this internal namespace
+globally at manual task attachment and covers the cross-Intent, no-replacement
+case. That CI is also non-transferable, so new final exact-head CI and review
+remain mandatory. Old PR #107 remains open Draft, superseded and unmerged with
+its branch retained; none of these candidates is part of current `main`.
+
+Head `528f33a` passed Windows CI run `30610318191`. A retained finding from
+review `4826019679` showed that recovery abandon could leave both repaired and
+replacement Artifacts active, while exact-head review `4826282464` found that
+an interrupted exclusive Blob placement could leave a permanently rejected
+two-link target. The locally validated implementation
+`aa9b8912d18dc11b6718e5bfed00e1d9c6ee35f9` now retires recovery Artifacts
+atomically before abandon and normalizes only the unique generated
+staged/target hard-link pair with matching file identity. Unowned hard links
+remain rejected; Blob rows and Artifact-Blob links remain unchanged. Typecheck,
+build, Workbench V2 67/67, Foundation 94/94, Provider 52/52, selection 23/23,
+secret scan and diff checks pass locally. The prior CI and review are not
+transferable, so a new exact-head CI/review cycle remains mandatory.
+
+Head `e5cb5d8` passed Windows CI run `30613190531`, but exact-head review
+`4826557538` found that the poll-start rollback predicates still truncated both
+timestamps to whole seconds. The locally validated implementation
+`357b08718e2226a613b7613ede234e4c3cc337b7` now uses fractional
+`julianday` comparisons in scheduler selection and lease claim. Its startup
+regression proves a same-second 900 ms rollback despite a future inherited
+lease, reaches stable `PROVIDER_POLL_TIMEOUT`, and performs zero Provider
+calls. All required local gates pass. The prior CI and review are not
+transferable, so another exact-head CI/review cycle remains mandatory.
+
+Head `1f49bc3` passed Windows CI run `30615172450`, but exact-head review
+`4826803376` found that a due persisted poll deadline could still wait behind
+a crashed worker's five-minute lease after wall time caught up with the stored
+start, and that the 900 ms regression depended on real scheduler speed. The
+locally validated implementation
+`2cce0f8af8063228c89237a946553ea62e8503d2` now makes a validated due
+deadline an explicit scheduler and lease-claim override, schedules wakeup at
+the earlier deadline, and binds scheduler comparisons to the injectable wall
+clock. Fixed-clock rollback and already-due-deadline regressions both reach
+stable `PROVIDER_POLL_TIMEOUT` with zero Provider calls; the latter retains a
+`2099` next attempt and lease. Workbench V2 passes 68/68 and all broader local
+gates pass. The prior CI and review are not transferable, so another exact-head
+CI/review cycle remains mandatory.
 
 The complete Media Gateway promotion, Memory plugin, second real user,
 automatic Snapshot, Windows logon task, WebM/broad formats and new OAuth

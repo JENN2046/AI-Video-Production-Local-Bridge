@@ -1,25 +1,30 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { copyFileSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 
 import { checkDatabase, migrateDatabase } from "../src/storage/databaseGovernance.js";
-import { openM0Database } from "../src/storage/sqlite.js";
+import { openM0Database, type M0Database } from "../src/storage/sqlite.js";
 import { paths } from "../src/paths.js";
 import {
   activateLocalMediaArtifact,
   discardMediaActivationMarkers,
   getMediaArtifact,
+  getMediaBlob,
   recoverMediaActivations,
+  recoverVerifiedBlobStorage,
   registerMediaArtifact,
   verifyMediaArtifactBytes,
-  type MediaArtifact
+  type MediaArtifact,
+  type VerifiedBlobStorageRecoveryFaults
 } from "../src/tools/mediaArtifacts.js";
+import { buildStoryboardApprovedShot, createProject, saveShot } from "../src/tools/projects.js";
 import { buildRunningHubMediaUploadRequest } from "../src/tools/videoProviderAdapters.js";
 
 const IMAGE_FIXTURE = resolve(paths.workspaceRoot, "fixtures", "provider-canary", "m1-r0", "shot_001_canary_720x1280.png");
+const VIDEO_FIXTURE = resolve(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4");
 
 function preparedArtifact(artifactId = `artifact_${randomUUID()}`): MediaArtifact {
   return {
@@ -33,6 +38,130 @@ function preparedArtifact(artifactId = `artifact_${randomUUID()}`): MediaArtifac
     linked_objects: { project_id: "", shot_id: "" },
     source: { kind: "synthetic_fixture", provider: "", provider_job_id: "", sha256: "", external_url_host: "" }
   };
+}
+
+function createRecoveryProjectShot(db: M0Database): { project_id: string; shot_id: string } {
+  const created = createProject({ title: `Blob recovery ${randomUUID()}` }, db);
+  assert.equal(created.ok, true);
+  if (!created.ok) throw new Error("RECOVERY_PROJECT_SETUP_FAILED");
+  const shot = buildStoryboardApprovedShot({
+    project_id: created.project_id,
+    order: 1,
+    duration_seconds: 6,
+    storyboard_image_artifact_id: "",
+    video_prompt: "Recovery fixture"
+  });
+  saveShot(db, shot);
+  return { project_id: created.project_id, shot_id: shot.shot_id };
+}
+
+function createRecoverableVideo(
+  db: M0Database,
+  mediaRoot: string
+): { artifact: MediaArtifact; source_path: string; project_id: string; shot_id: string } {
+  const scope = createRecoveryProjectShot(db);
+  const artifactId = `artifact_${randomUUID()}`;
+  const artifact: MediaArtifact = {
+    artifact_id: artifactId,
+    blob_id: "",
+    artifact_type: "video",
+    role: "generated_clip",
+    status: "active",
+    storage: {
+      uri: resolve(mediaRoot, "artifacts", "videos", `${artifactId}.mp4`),
+      mime_type: "video/mp4",
+      filename: `${artifactId}.mp4`
+    },
+    metadata: {
+      width: 1080,
+      height: 1920,
+      duration_seconds: 6,
+      aspect_ratio: "9:16",
+      sha256: ""
+    },
+    linked_objects: scope,
+    source: {
+      kind: "provider_output_file",
+      provider: "runninghub",
+      provider_job_id: `task_${randomUUID()}`,
+      sha256: "",
+      external_url_host: "fixture.invalid"
+    }
+  };
+  const activated = activateLocalMediaArtifact({
+    artifact,
+    source_path: VIDEO_FIXTURE,
+    media_root: mediaRoot
+  }, db);
+  assert.equal(activated.ok, true, activated.ok ? undefined : activated.error.code);
+  if (!activated.ok) throw new Error("RECOVERY_ARTIFACT_SETUP_FAILED");
+  const sourcePath = resolve(mediaRoot, "downloads", `download-${randomUUID()}.mp4`);
+  mkdirSync(resolve(sourcePath, ".."), { recursive: true });
+  copyFileSync(VIDEO_FIXTURE, sourcePath);
+  return { artifact: activated.artifact, source_path: sourcePath, ...scope };
+}
+
+function immutableBlobSnapshot(db: M0Database, artifactId: string): {
+  blob: Record<string, unknown>;
+  links: Array<Record<string, unknown>>;
+} {
+  const blob = db.prepare(`SELECT blob_id, sha256, size_bytes, detected_mime, storage_uri, integrity_state, provenance_json
+    FROM media_blobs WHERE blob_id = (SELECT blob_id FROM media_artifact_blobs WHERE artifact_id = ?)`)
+    .get(artifactId) as Record<string, unknown>;
+  const links = db.prepare("SELECT artifact_id, blob_id FROM media_artifact_blobs WHERE blob_id = ? ORDER BY artifact_id")
+    .all(String(blob.blob_id)) as Array<Record<string, unknown>>;
+  return { blob: { ...blob }, links: links.map((row) => ({ ...row })) };
+}
+
+function insertUnsafeRecoveryFixture(
+  db: M0Database,
+  registeredRoot: string,
+  targetPath: string,
+  sourcePath: string
+): { artifact: MediaArtifact; source_path: string } {
+  const scope = createRecoveryProjectShot(db);
+  const bytes = readFileSync(VIDEO_FIXTURE);
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  const artifactId = `artifact_${randomUUID()}`;
+  const blobId = `blob_recovery_${randomUUID()}`;
+  const artifact: MediaArtifact = {
+    artifact_id: artifactId,
+    blob_id: blobId,
+    artifact_type: "video",
+    role: "generated_clip",
+    status: "active",
+    storage: { uri: resolve(targetPath), mime_type: "video/mp4", filename: "unsafe.mp4" },
+    metadata: {
+      width: 1080,
+      height: 1920,
+      duration_seconds: 6,
+      aspect_ratio: "9:16",
+      sha256
+    },
+    linked_objects: scope,
+    source: {
+      kind: "provider_output_file",
+      provider: "runninghub",
+      provider_job_id: `task_${randomUUID()}`,
+      sha256,
+      external_url_host: "fixture.invalid"
+    }
+  };
+  db.prepare(`INSERT INTO media_blobs
+    (blob_id, sha256, size_bytes, detected_mime, storage_uri, integrity_state, provenance_json)
+    VALUES (?, ?, ?, 'video/mp4', ?, 'verified', ?)`)
+    .run(blobId, sha256, bytes.length, resolve(targetPath), JSON.stringify({
+      source: "provider_output_file",
+      immutable: true,
+      media_root: resolve(registeredRoot)
+    }));
+  db.prepare(`INSERT INTO media_artifacts
+    (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
+    VALUES (?, ?, ?, 'generated_clip', 'video', 'active', ?)`)
+    .run(artifactId, scope.project_id, scope.shot_id, JSON.stringify(artifact));
+  db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)")
+    .run(artifactId, blobId);
+  return { artifact, source_path: sourcePath };
 }
 
 test("media activation commits a decoded image through the persistent journal", () => {
@@ -795,6 +924,401 @@ test("db:check rejects a symlink substituted for active media", (context) => {
     assert.equal(checked.media_integrity_errors, 1);
   } finally {
     if (finalPath) rmSync(finalPath, { force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("verified Blob recovery restores missing bytes without changing immutable rows or shared links", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-missing-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const sharedArtifact: MediaArtifact = {
+      ...structuredClone(fixture.artifact),
+      artifact_id: `artifact_${randomUUID()}`,
+      source: {
+        ...fixture.artifact.source,
+        kind: "scoped_blob_reference",
+        provider_job_id: ""
+      }
+    };
+    db.prepare(`INSERT INTO media_artifacts
+      (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
+      VALUES (?, ?, ?, 'generated_clip', 'video', 'active', ?)`)
+      .run(sharedArtifact.artifact_id, fixture.project_id, fixture.shot_id, JSON.stringify(sharedArtifact));
+    db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)")
+      .run(sharedArtifact.artifact_id, sharedArtifact.blob_id);
+    const before = immutableBlobSnapshot(db, fixture.artifact.artifact_id);
+    const blobCountBefore = (db.prepare("SELECT COUNT(*) AS count FROM media_blobs").get() as { count: number }).count;
+
+    rmSync(fixture.artifact.storage.uri);
+    const recovered = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+
+    assert.equal(recovered.ok, true, recovered.ok ? undefined : recovered.error.code);
+    if (!recovered.ok) return;
+    assert.equal(recovered.outcome, "MISSING_BYTES");
+    assert.equal(recovered.corrupt_bytes_quarantined, false);
+    assert.equal(readFileSync(fixture.artifact.storage.uri).equals(readFileSync(VIDEO_FIXTURE)), true);
+    assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
+    assert.equal(verifyMediaArtifactBytes(db, sharedArtifact).ok, true);
+    assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM media_blobs").get() as { count: number }).count, blobCountBefore);
+    assert.throws(
+      () => db.prepare("UPDATE media_blobs SET storage_uri = storage_uri WHERE blob_id = ?").run(fixture.artifact.blob_id),
+      /MEDIA_BLOB_IMMUTABLE/
+    );
+    assert.throws(
+      () => db.prepare("DELETE FROM media_blobs WHERE blob_id = ?").run(fixture.artifact.blob_id),
+      /MEDIA_BLOB_IMMUTABLE/
+    );
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("verified Blob recovery closes only its interrupted exclusive-placement hard-link pair", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-linked-placement-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const before = immutableBlobSnapshot(db, fixture.artifact.artifact_id);
+    const targetPath = fixture.artifact.storage.uri;
+    const stagedPath = join(
+      dirname(targetPath),
+      `blob-recovery-${randomUUID()}.staged`
+    );
+    rmSync(targetPath);
+    copyFileSync(fixture.source_path, stagedPath);
+    linkSync(stagedPath, targetPath);
+    assert.equal(lstatSync(stagedPath).nlink, 2);
+    assert.equal(lstatSync(targetPath).nlink, 2);
+
+    const recovered = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(recovered.ok, true, recovered.ok ? undefined : recovered.error.code);
+    if (!recovered.ok) return;
+    assert.equal(recovered.outcome, "ALREADY_REUSABLE");
+    assert.equal(existsSync(stagedPath), false);
+    assert.equal(lstatSync(targetPath).nlink, 1);
+    assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
+    assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
+
+    const unrelatedLink = join(root, "unrelated-hard-link.mp4");
+    linkSync(targetPath, unrelatedLink);
+    const rejectedUnownedLink = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(rejectedUnownedLink.ok, false);
+    if (!rejectedUnownedLink.ok) {
+      assert.equal(rejectedUnownedLink.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    assert.equal(existsSync(unrelatedLink), true);
+    assert.equal(lstatSync(targetPath).nlink, 2);
+    assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("verified Blob recovery quarantines drifted bytes and treats a reusable target as a no-op", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-drift-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const before = immutableBlobSnapshot(db, fixture.artifact.artifact_id);
+    const corruptBytes = Buffer.from("drifted-provider-output", "utf8");
+    writeFileSync(fixture.artifact.storage.uri, corruptBytes);
+
+    const recovered = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(recovered.ok, true, recovered.ok ? undefined : recovered.error.code);
+    if (!recovered.ok) return;
+    assert.equal(recovered.outcome, "CONTENT_DRIFT");
+    assert.equal(recovered.corrupt_bytes_quarantined, true);
+    assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
+    assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
+
+    const quarantineDirectory = join(mediaRoot, ".activation", "quarantine");
+    const quarantineFiles = readdirSync(quarantineDirectory).filter((name) => name.endsWith(".corrupt"));
+    assert.equal(quarantineFiles.length, 1);
+    assert.match(quarantineFiles[0], /^blob-recovery-[0-9a-f-]+\.corrupt$/i);
+    assert.equal(readFileSync(join(quarantineDirectory, quarantineFiles[0])).equals(corruptBytes), true);
+    assert.equal(quarantineFiles[0].includes(fixture.artifact.artifact_id), false);
+    assert.equal(quarantineFiles[0].includes(fixture.artifact.blob_id), false);
+
+    let replacementAttempted = false;
+    const noOp = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db, {
+      after_staged_copy: () => {
+        replacementAttempted = true;
+        throw new Error("NO_OP_MUST_NOT_STAGE");
+      }
+    });
+    assert.equal(noOp.ok, true, noOp.ok ? undefined : noOp.error.code);
+    if (noOp.ok) assert.equal(noOp.outcome, "ALREADY_REUSABLE");
+    assert.equal(replacementAttempted, false);
+    assert.equal(readdirSync(quarantineDirectory).filter((name) => name.endsWith(".corrupt")).length, 1);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("verified Blob recovery rejects SHA, size, and MIME mismatches without changing ledger facts", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-mismatch-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const before = immutableBlobSnapshot(db, fixture.artifact.artifact_id);
+    const original = readFileSync(VIDEO_FIXTURE);
+    writeFileSync(fixture.artifact.storage.uri, Buffer.from("existing-content-drift", "utf8"));
+
+    const sameSizeDifferentSha = Buffer.from(original);
+    sameSizeDifferentSha[sameSizeDifferentSha.length - 1] ^= 0x01;
+    const shaMismatchPath = join(mediaRoot, "downloads", "sha-mismatch.mp4");
+    writeFileSync(shaMismatchPath, sameSizeDifferentSha);
+    assert.equal(sameSizeDifferentSha.length, original.length);
+
+    const sizeMismatchPath = join(mediaRoot, "downloads", "size-mismatch.mp4");
+    writeFileSync(sizeMismatchPath, Buffer.concat([original, Buffer.from("size-drift", "utf8")]));
+    const mimeMismatchPath = join(mediaRoot, "downloads", "mime-mismatch.png");
+    copyFileSync(IMAGE_FIXTURE, mimeMismatchPath);
+
+    for (const sourcePath of [shaMismatchPath, sizeMismatchPath, mimeMismatchPath]) {
+      const result = recoverVerifiedBlobStorage({
+        invalid_artifact_id: fixture.artifact.artifact_id,
+        project_id: fixture.project_id,
+        shot_id: fixture.shot_id,
+        source_path: sourcePath
+      }, db);
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.equal(result.error.code, "MEDIA_BLOB_RECOVERY_CONTENT_MISMATCH");
+      assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
+      assert.equal(readFileSync(fixture.artifact.storage.uri).toString("utf8"), "existing-content-drift");
+    }
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("verified Blob recovery rejects paths outside the registered root and directory targets", () => {
+  for (const scenario of ["outside", "directory"] as const) {
+    const root = mkdtempSync(join(tmpdir(), `verified-blob-recovery-${scenario}-`));
+    const mediaRoot = join(root, "media");
+    const sqlitePath = join(root, "app.sqlite");
+    migrateDatabase(sqlitePath);
+    const db = openM0Database(sqlitePath);
+    try {
+      mkdirSync(mediaRoot, { recursive: true });
+      const sourcePath = join(mediaRoot, "source.mp4");
+      copyFileSync(VIDEO_FIXTURE, sourcePath);
+      const targetPath = scenario === "outside"
+        ? join(root, "outside.mp4")
+        : join(mediaRoot, "directory-target");
+      if (scenario === "outside") writeFileSync(targetPath, "drifted", "utf8");
+      else mkdirSync(targetPath);
+      const fixture = insertUnsafeRecoveryFixture(db, mediaRoot, targetPath, sourcePath);
+      const result = recoverVerifiedBlobStorage({
+        invalid_artifact_id: fixture.artifact.artifact_id,
+        project_id: fixture.artifact.linked_objects.project_id,
+        shot_id: fixture.artifact.linked_objects.shot_id,
+        source_path: fixture.source_path
+      }, db);
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.equal(result.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    } finally {
+      db.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test("verified Blob recovery rejects symlink roots, ancestors, and targets", (context) => {
+  for (const scenario of ["root", "ancestor", "target"] as const) {
+    const root = mkdtempSync(join(tmpdir(), `verified-blob-recovery-symlink-${scenario}-`));
+    const sqlitePath = join(root, "app.sqlite");
+    migrateDatabase(sqlitePath);
+    const db = openM0Database(sqlitePath);
+    try {
+      const mediaRoot = join(root, "media");
+      const actualRoot = scenario === "root" ? join(root, "actual-media") : mediaRoot;
+      mkdirSync(actualRoot, { recursive: true });
+      if (scenario === "root") {
+        try { symlinkSync(actualRoot, mediaRoot, "junction"); }
+        catch (error) {
+          context.skip(`Directory symlinks are unavailable: ${error instanceof Error ? error.message : "SYMLINK_UNAVAILABLE"}`);
+          return;
+        }
+      }
+      const sourcePath = join(actualRoot, "source.mp4");
+      copyFileSync(VIDEO_FIXTURE, sourcePath);
+      let targetPath = join(mediaRoot, "target.mp4");
+      if (scenario === "ancestor") {
+        const actualDirectory = join(root, "actual-videos");
+        const linkedDirectory = join(mediaRoot, "videos");
+        mkdirSync(actualDirectory);
+        try { symlinkSync(actualDirectory, linkedDirectory, "junction"); }
+        catch (error) {
+          context.skip(`Directory symlinks are unavailable: ${error instanceof Error ? error.message : "SYMLINK_UNAVAILABLE"}`);
+          return;
+        }
+        targetPath = join(linkedDirectory, "target.mp4");
+        writeFileSync(join(actualDirectory, "target.mp4"), "drifted", "utf8");
+      } else if (scenario === "target") {
+        const actualTarget = join(mediaRoot, "actual-target.mp4");
+        writeFileSync(actualTarget, "drifted", "utf8");
+        try { symlinkSync(actualTarget, targetPath, "file"); }
+        catch (error) {
+          context.skip(`File symlinks are unavailable: ${error instanceof Error ? error.message : "SYMLINK_UNAVAILABLE"}`);
+          return;
+        }
+      } else {
+        writeFileSync(join(actualRoot, "target.mp4"), "drifted", "utf8");
+      }
+      const fixture = insertUnsafeRecoveryFixture(db, mediaRoot, targetPath, sourcePath);
+      const result = recoverVerifiedBlobStorage({
+        invalid_artifact_id: fixture.artifact.artifact_id,
+        project_id: fixture.artifact.linked_objects.project_id,
+        shot_id: fixture.artifact.linked_objects.shot_id,
+        source_path: fixture.source_path
+      }, db);
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.equal(result.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    } finally {
+      db.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test("verified Blob recovery fault seams never report success and remain explicitly retryable", () => {
+  const seams: Array<keyof VerifiedBlobStorageRecoveryFaults> = [
+    "after_staged_copy",
+    "after_corrupt_quarantined",
+    "after_replacement_placed",
+    "before_final_verification"
+  ];
+  for (const seam of seams) {
+    const root = mkdtempSync(join(tmpdir(), `verified-blob-recovery-fault-${seam}-`));
+    const mediaRoot = join(root, "media");
+    const sqlitePath = join(root, "app.sqlite");
+    migrateDatabase(sqlitePath);
+    const db = openM0Database(sqlitePath);
+    try {
+      const fixture = createRecoverableVideo(db, mediaRoot);
+      const before = immutableBlobSnapshot(db, fixture.artifact.artifact_id);
+      writeFileSync(fixture.artifact.storage.uri, `drift-${seam}`, "utf8");
+      const faults = {
+        [seam]: () => {
+          throw new Error(`INJECTED_${seam.toUpperCase()}`);
+        }
+      } as VerifiedBlobStorageRecoveryFaults;
+      const failed = recoverVerifiedBlobStorage({
+        invalid_artifact_id: fixture.artifact.artifact_id,
+        project_id: fixture.project_id,
+        shot_id: fixture.shot_id,
+        source_path: fixture.source_path
+      }, db, faults);
+      assert.equal(failed.ok, false, seam);
+      if (!failed.ok) assert.equal(failed.error.code, "MEDIA_BLOB_RECOVERY_FAILED", seam);
+      assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, false, seam);
+      assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before, seam);
+
+      const retried = recoverVerifiedBlobStorage({
+        invalid_artifact_id: fixture.artifact.artifact_id,
+        project_id: fixture.project_id,
+        shot_id: fixture.shot_id,
+        source_path: fixture.source_path
+      }, db);
+      assert.equal(retried.ok, true, retried.ok ? seam : retried.error.code);
+      assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true, seam);
+      assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before, seam);
+    } finally {
+      db.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test("verified Blob recovery serializes competing repairs with BEGIN IMMEDIATE", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-serialized-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  const contenderDb = openM0Database(sqlitePath);
+  contenderDb.exec("PRAGMA busy_timeout = 1");
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    writeFileSync(fixture.artifact.storage.uri, "serialized-drift", "utf8");
+    const contenderResults: Array<ReturnType<typeof recoverVerifiedBlobStorage>> = [];
+    const first = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db, {
+      after_staged_copy: () => {
+        contenderResults.push(recoverVerifiedBlobStorage({
+          invalid_artifact_id: fixture.artifact.artifact_id,
+          project_id: fixture.project_id,
+          shot_id: fixture.shot_id,
+          source_path: fixture.source_path
+        }, contenderDb));
+      }
+    });
+    assert.equal(first.ok, true, first.ok ? undefined : first.error.code);
+    assert.equal(contenderResults.length, 1);
+    const contender = contenderResults[0];
+    assert.equal(contender.ok, false);
+    if (!contender.ok) assert.equal(contender.error.code, "MEDIA_BLOB_RECOVERY_FAILED");
+
+    const retry = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, contenderDb);
+    assert.equal(retry.ok, true, retry.ok ? undefined : retry.error.code);
+    if (retry.ok) assert.equal(retry.outcome, "ALREADY_REUSABLE");
+  } finally {
+    contenderDb.close();
+    db.close();
     rmSync(root, { recursive: true, force: true });
   }
 });

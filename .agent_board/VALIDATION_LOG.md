@@ -2606,3 +2606,712 @@ identifier, local path, prompt or business content. The isolated tests used
 temporary databases and fixture transports with Provider execution disabled.
 The combined result records successful validation together with the three S3
 findings; it does not claim current external acceptance or authorize S4.
+
+### PR107 clean restack local validation
+
+```yaml
+task: PR107-CLEAN-RESTACK
+validated_at: 2026-07-31T02:45:12+08:00
+base: b3a108abc8728e89259d0d953e1c638b9ca482ea
+replacement_pr: 108
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - npm run test:v2
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_57
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+implementation_diff_files: 6
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+```
+
+### PR108 verified Blob recovery and exact-head review remediation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+validated_at: 2026-07-31T11:49:18+08:00
+replacement_pr: 108
+implementation_commit: 277d651c4698ae00b9e0fa170b35c39754daa84f
+review_remediation_commit: 762076cb991e3ecf4333ca5d2872e7de3df14aeb
+restart_rebind_remediation_commit: a4e0152379b9d7e4f66b683090c7c0dc7fa045b5
+implementation_ci:
+  run_id: 30598512506
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+review:
+  review_id: 4824970083
+  reviewed_commit: 277d651c4698ae00b9e0fa170b35c39754daa84f
+later_candidate_review:
+  review_id: 4825255029
+  reviewed_commit: 598e56ca7e656e9aeeec6469b4286b600e293f89
+  finding: REBIND_COMMITTED_RECOVERY_REPLACEMENT_FIRST
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - node dist/scripts/run-isolated-tests.js dist/tests/media-activation-integrity.test.js
+  - node dist/scripts/run-isolated-tests.js dist/tests/m1-provider-boundary.test.js
+  - node dist/scripts/run-isolated-tests.js dist/tests/workbench-v2-domain.test.js
+  - npm run test:foundation-boundaries
+  - npm run test:provider-boundaries
+  - npm run test:v2
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  isolated_media_activation_integrity: PASS_31
+  isolated_provider_boundary: PASS_30
+  isolated_workbench_domain: PASS_43
+  foundation_boundaries: PASS_93
+  provider_boundaries: PASS_52
+  test_m1_script: NOT_PRESENT_USED_PROVIDER_BOUNDARIES
+  workbench_v2: PASS_63
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  recovery_triggered_only_by_explicit_recovery_field: true
+  same_blob_id_and_storage_uri_preserved: true
+  immutable_blob_row_and_links_unchanged: true
+  exact_sha_size_mime_verified: true
+  outside_symlink_and_special_paths_rejected: true
+  corrupt_bytes_quarantined: true
+  healthy_blob_recovery_no_op: true
+  concurrent_repairs_serialized: true
+  four_fault_seams_fail_without_false_success: true
+  explicit_retry_after_failure_succeeds: true
+  replacement_artifact_reuses_original_blob: true
+  canonical_provider_task_rebound: true
+  replaced_active_artifact_archived_atomically: true
+  committed_replacement_preferred_after_restart: true
+  restart_poll_download_submit_calls: 0
+  recovery_failure_stays_manual: true
+  automatic_submit_retry: 0
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+```
+
+The implementation tests used isolated fixtures and temporary databases.
+They did not access activity data, perform a Provider operation, configure a
+credential, start a service, rerun S3 readiness or authorize S4.
+
+### PR108 final-review P1 remediation
+
+```yaml
+task: PR107-CLEAN-RESTACK
+validated_at: 2026-07-31T03:21:01+08:00
+replacement_pr: 108
+finding: EXPLICIT_TASK_REATTACH_REUSED_EXPIRED_POLL_DEADLINE
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - npm run test:v2
+  - npm run test:selection-gate
+  - npm run secret:scan
+results:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_57
+  selection_gate: PASS_23
+  secret_scan: PASS
+verified_behavior:
+  explicit_human_attach_restarts_bounded_deadline: true
+  deadline_persists_across_resumed_poll: true
+  submit_count_after_reattach: 1
+  automatic_poll_before_human_action: false
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+```
+
+### PR108 final-review P2 remediation
+
+```yaml
+task: PR107-CLEAN-RESTACK
+validated_at: 2026-07-31T04:19:20+08:00
+replacement_pr: 108
+finding: LOCAL_COMPLETION_RECOVERY_REUSED_EXPIRED_POLL_DEADLINE
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - npm run test:v2
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_58
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  polling_deadline_applies_only_while_polling: true
+  downloading_with_existing_artifact_resumes_locally: true
+  finalizing_with_existing_artifact_resumes_locally: true
+  provider_poll_for_existing_artifact: 0
+  automatic_submit_retry: 0
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+```
+
+### PR108 final-review Artifact validation remediation
+
+```yaml
+task: PR107-CLEAN-RESTACK
+validated_at: 2026-07-31T05:19:34+08:00
+replacement_pr: 108
+finding: INVALID_LOCAL_OUTPUT_ARTIFACT_COULD_BE_REUSED
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - npm run test:v2
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_59
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  active_artifact_reference_validation: true
+  generated_clip_video_binding_validation: true
+  blob_integrity_validation: true
+  inactive_artifact_enters_manual_reconciliation: true
+  provider_poll_for_invalid_local_artifact: 0
+  automatic_submit_retry: 0
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+```
+
+### PR108 final-review output recovery and atomic success remediation
+
+```yaml
+task: PR107-CLEAN-RESTACK
+validated_at: 2026-07-31T06:09:32+08:00
+replacement_pr: 108
+findings:
+  - INVALID_LOCAL_OUTPUT_REATTACHMENT_LOOP
+  - PROVIDER_SUCCESS_AND_DOWNLOADING_STATE_TORN_WRITE
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - npm run test:v2
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_60
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  human_reattachment_creates_recoverable_output_replacement: true
+  prior_invalid_artifact_preserved: true
+  canonical_provider_task_binding_count_after_recovery: 1
+  local_recovery_binding_count_after_recovery: 0
+  automatic_submit_retry: 0
+  provider_success_and_downloading_transaction_atomic: true
+  download_before_atomic_commit: false
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+```
+
+### PR108 final-review clock rollback remediation and scope stop
+
+```yaml
+task: PR107-CLEAN-RESTACK
+validated_at: 2026-07-31T06:41:36+08:00
+replacement_pr: 108
+reviewed_commit: eef466c4c43d0c489da407e17dd328d274388252
+findings:
+  - CLOCK_ROLLBACK_COULD_INFLATE_PERSISTED_POLL_BUDGET
+  - INVALID_VERIFIED_BLOB_HAS_NO_AUTHORIZED_RECOVERY_PATH
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - npm run test:v2
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_61
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  restart_budget_capped_by_persisted_timeout: true
+  monotonic_budget_not_inflated_by_wall_clock_rollback: true
+  automatic_submit_retry: 0
+  invalid_verified_blob_recovery: NOT_VERIFIED_SCOPE_EXPANSION_REQUIRED
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+```
+
+### PR108 clock rollback whole-job fail-closed hardening
+
+```yaml
+task: PR107-CLEAN-RESTACK
+validated_at: 2026-07-31T06:48:22+08:00
+replacement_pr: 108
+self_review_finding: PER_EXECUTION_CAP_COULD_RESET_ACROSS_REPEATED_WORKER_CLAIMS
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - npm run test:v2
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_61
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  wall_clock_before_persisted_poll_start: FAIL_CLOSED
+  stable_reconciliation_reason: PROVIDER_POLL_TIMEOUT
+  provider_task_id_preserved: true
+  provider_poll_before_failure: 0
+  automatic_submit_retry: 0
+remaining_review_finding: INVALID_VERIFIED_BLOB_HAS_NO_AUTHORIZED_RECOVERY_PATH
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+```
+
+### PR108 exact-head scheduler and recovery-state remediation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+validated_at: 2026-07-31T12:41:05+08:00
+replacement_pr: 108
+review:
+  review_id: 4825473276
+  reviewed_commit: 6d9319fbcbfece0b14f0320876ce27223af9582f
+findings:
+  - STARTUP_SCHEDULER_DEFERRED_CLOCK_ROLLBACK_FAIL_CLOSED
+  - REPEATED_ATTACHMENT_CLEARED_PERSISTED_RECOVERY
+implementation_commit: 4e244592b96881d1ea1088dcbeba940262e4c155
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - node dist/scripts/run-isolated-tests.js dist/tests/workbench-v2-domain.test.js
+  - npm run test:v2
+  - npm run test:foundation-boundaries
+  - npm run test:provider-boundaries
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  isolated_workbench_domain: PASS_44
+  workbench_v2: PASS_64
+  foundation_boundaries: PASS_93
+  provider_boundaries: PASS_52
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  startup_scheduler_runs_clock_rollback_fail_closed_immediately: true
+  stable_reconciliation_reason: PROVIDER_POLL_TIMEOUT
+  provider_task_id_preserved: true
+  persisted_recovery_identity_preserved_on_repeat_attachment: true
+  committed_replacement_rebound: true
+  old_artifact_archived: true
+  active_generated_clip_count_after_rebind: 1
+  provider_calls_in_new_regressions: 0
+  automatic_submit_retry: 0
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+final_exact_head_ci_and_review: REQUIRED_AFTER_STATE_SYNC
+```
+
+### PR108 clock-rollback inherited-lease remediation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+validated_at: 2026-07-31T13:12:11+08:00
+replacement_pr: 108
+review:
+  review_id: 4825605253
+  reviewed_commit: 65a6c3d56fefa4b11d3c6b3da683261fc148cadc
+finding: CLOCK_ROLLBACK_RECOVERY_BLOCKED_BY_INHERITED_LEASE
+implementation_commit: 96b75581fc3c47a9933452144c72f45619937932
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - node dist/scripts/run-isolated-tests.js dist/tests/workbench-v2-domain.test.js
+  - npm run test:v2
+  - npm run test:foundation-boundaries
+  - npm run test:provider-boundaries
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  isolated_workbench_domain: PASS_44
+  workbench_v2: PASS_64
+  foundation_boundaries: PASS_93
+  provider_boundaries: PASS_52
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  rollback_polling_job_bypasses_inherited_future_lease: true
+  takeover_requires_verified_clock_rollback: true
+  ordinary_live_lease_preserved: true
+  stable_reconciliation_reason: PROVIDER_POLL_TIMEOUT
+  provider_task_id_preserved: true
+  provider_calls_in_regression: 0
+  automatic_submit_retry: 0
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+final_exact_head_ci_and_review: REQUIRED_AFTER_STATE_SYNC
+```
+
+### PR108 Provider recovery task-switch remediation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+validated_at: 2026-07-31T13:53:23+08:00
+replacement_pr: 108
+review:
+  review_id: 4825747733
+  reviewed_commit: 2cb245e1db8d9ffe8f1ef658e9ac5917d62d99bf
+finding: PERSISTED_RECOVERY_BLOCKED_NEW_PROVIDER_TASK_ATTACHMENT
+implementation_commit: 19f026f8f40f82203a3967a7f449152b272743cf
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - node dist/scripts/run-isolated-tests.js dist/tests/workbench-v2-domain.test.js
+  - npm run test:v2
+  - npm run test:foundation-boundaries
+  - npm run test:provider-boundaries
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  isolated_workbench_domain: PASS_45
+  workbench_v2: PASS_65
+  foundation_boundaries: PASS_93
+  provider_boundaries: PASS_52
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  same_task_recovery_preserved: true
+  local_recovery_identity_rejected_as_provider_task: true
+  prior_invalid_artifact_archived_on_task_switch: true
+  committed_replacement_archived_on_task_switch: true
+  unsafe_retirement_rolls_back: true
+  unsafe_retirement_error: ARTIFACT_RECOVERY_RETIRE_FAILED
+  provider_task_switch_enters_polling: true
+  provider_output_recovery_cleared_after_safe_retirement: true
+  blob_rows_changed: 0
+  blob_bytes_changed: 0
+  artifact_blob_links_changed: 0
+  provider_calls_in_regression: 0
+  automatic_submit_retry: 0
+prior_head_ci:
+  run_id: 30606273467
+  attempt: 1
+  reviewed_head: 2cb245e1db8d9ffe8f1ef658e9ac5917d62d99bf
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+  transferable_to_new_head: false
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+final_exact_head_ci_and_review: REQUIRED_AFTER_STATE_SYNC
+```
+
+### PR108 global local-recovery identity reservation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+validated_at: 2026-07-31T14:36:40+08:00
+replacement_pr: 108
+review:
+  review_id: 4825989650
+  reviewed_commit: b8060e1561be33b4d1803909325f8a3f2c9e998f
+finding: LOCAL_RECOVERY_IDENTITY_NOT_GLOBALLY_RESERVED
+implementation_commit: 2847a34e8ee638ff1ca46824bc938f19acd870ff
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - npm run test:v2
+  - npm run test:foundation-boundaries
+  - npm run test:provider-boundaries
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  isolated_workbench_domain: PASS_46
+  workbench_v2: PASS_66
+  foundation_boundaries: PASS_93
+  provider_boundaries: PASS_52
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  reserved_namespace: local_recovery_*
+  rejection_scope: ALL_MANUAL_PROVIDER_TASK_ATTACHMENTS
+  stable_error: INVALID_PROVIDER_TASK_ID
+  cross_intent_without_replacement_covered: true
+  owner_recovery_preserved: true
+  other_intent_provider_task_id_unchanged: true
+  other_job_state_unchanged: true
+  replacement_artifact_count: 0
+  provider_calls_in_regression: 0
+  automatic_submit_retry: 0
+prior_head_ci:
+  run_id: 30608433511
+  reviewed_head: b8060e1561be33b4d1803909325f8a3f2c9e998f
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+  transferable_to_new_head: false
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+final_exact_head_ci_and_review: REQUIRED_AFTER_STATE_SYNC
+```
+
+### PR108 recovery terminal-state and placement-crash remediation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+validated_at: 2026-07-31T15:26:58+08:00
+replacement_pr: 108
+reviews:
+  - review_id: 4826019679
+    reviewed_commit: b8060e1561be33b4d1803909325f8a3f2c9e998f
+    finding: RECOVERY_ABANDON_LEFT_ACTIVE_ARTIFACTS
+  - review_id: 4826282464
+    reviewed_commit: 528f33a4efc4024b49c2974374563f52ffe9195d
+    finding: VERIFIED_BLOB_PLACEMENT_TWO_LINK_CRASH_WINDOW
+implementation_commit: aa9b8912d18dc11b6718e5bfed00e1d9c6ee35f9
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - npm run test:v2
+  - npm run test:foundation-boundaries
+  - npm run test:provider-boundaries
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_67
+  foundation_boundaries: PASS_94
+  provider_boundaries: PASS_52
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  abandon_recovery_binding_verified: true
+  recovery_artifacts_archived_before_cancel: true
+  provider_output_recovery_cleared_in_same_transaction: true
+  unsafe_abandon_rolls_back: true
+  unsafe_abandon_error: ARTIFACT_RECOVERY_RETIRE_FAILED
+  interrupted_generated_two_link_pair_normalized: true
+  normal_target_link_count_after_retry: 1
+  unowned_hard_link_rejected: true
+  unowned_hard_link_error: MEDIA_BLOB_RECOVERY_PATH_UNSAFE
+  blob_rows_changed: 0
+  artifact_blob_links_changed: 0
+  provider_calls_in_regressions: 0
+  automatic_submit_retry: 0
+prior_head_ci:
+  run_id: 30610318191
+  reviewed_head: 528f33a4efc4024b49c2974374563f52ffe9195d
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+  transferable_to_new_head: false
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+final_exact_head_ci_and_review: REQUIRED_AFTER_STATE_SYNC
+```
+
+### PR108 subsecond clock-rollback remediation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+validated_at: 2026-07-31T16:04:09+08:00
+replacement_pr: 108
+review:
+  review_id: 4826557538
+  reviewed_commit: e5cb5d8320f44f59a51b453167b7eb1732a528e2
+finding: CLOCK_ROLLBACK_COMPARISON_LOST_SUBSECOND_PRECISION
+implementation_commit: 357b08718e2226a613b7613ede234e4c3cc337b7
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - npm run test:v2
+  - npm run test:foundation-boundaries
+  - npm run test:provider-boundaries
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_67
+  foundation_boundaries: PASS_94
+  provider_boundaries: PASS_52
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  scheduler_poll_start_comparison_preserves_fractional_seconds: true
+  lease_claim_poll_start_comparison_preserves_fractional_seconds: true
+  same_second_rollback_ms: 900
+  future_inherited_lease_bypassed: true
+  stable_reconciliation_reason: PROVIDER_POLL_TIMEOUT
+  provider_task_id_preserved: true
+  provider_calls_in_regression: 0
+  automatic_submit_retry: 0
+prior_head_ci:
+  run_id: 30613190531
+  reviewed_head: e5cb5d8320f44f59a51b453167b7eb1732a528e2
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+  transferable_to_new_head: false
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+final_exact_head_ci_and_review: REQUIRED_AFTER_STATE_SYNC
+```
+
+### PR108 deadline-preemption and deterministic-clock remediation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+validated_at: 2026-07-31T16:42:22+08:00
+replacement_pr: 108
+review:
+  review_id: 4826803376
+  reviewed_commit: 1f49bc32164d8efee82ce12ebb2cc1e88c2b6df6
+findings:
+  - EXPIRED_POLL_DEADLINE_BLOCKED_BY_INHERITED_LEASE
+  - SUBSECOND_ROLLBACK_REGRESSION_USED_REALTIME_WINDOW
+implementation_commit: 2cce0f8af8063228c89237a946553ea62e8503d2
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - npm run test:v2
+  - npm run test:foundation-boundaries
+  - npm run test:provider-boundaries
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_68
+  foundation_boundaries: PASS_94
+  provider_boundaries: PASS_52
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  due_deadline_overrides_scheduler_attempt_gate: true
+  due_deadline_overrides_inherited_lease: true
+  scheduler_wakes_at_persisted_deadline: true
+  scheduler_clock_injected: true
+  rollback_regression_clock: FIXED
+  expired_deadline_regression_next_attempt: "2099-01-01T00:00:00.000Z"
+  expired_deadline_regression_lease: "2099-01-01T00:00:00.000Z"
+  stable_reconciliation_reason: PROVIDER_POLL_TIMEOUT
+  provider_task_id_preserved: true
+  provider_calls_in_regressions: 0
+  automatic_submit_retry: 0
+prior_head_ci:
+  run_id: 30615172450
+  reviewed_head: 1f49bc32164d8efee82ce12ebb2cc1e88c2b6df6
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+  transferable_to_new_head: false
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+final_exact_head_ci_and_review: REQUIRED_AFTER_STATE_SYNC
+```

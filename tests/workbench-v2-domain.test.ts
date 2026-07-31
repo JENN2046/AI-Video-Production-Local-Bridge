@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -20,10 +20,21 @@ import {
   updateWorkbenchProject,
   updateWorkbenchShot
 } from "../src/tools/workbenchV2.js";
-import { confirmWorkbenchGeneration, preflightWorkbenchGeneration, reconcileGenerationJob, resumeWorkbenchGenerationJobs, runWorkbenchGenerationOnce } from "../src/tools/workbenchGeneration.js";
-import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
+import {
+  confirmWorkbenchGeneration,
+  DEFAULT_PROVIDER_TASK_POLL_TIMEOUT_MS,
+  generationWorkerStatus,
+  MAX_PROVIDER_TASK_POLL_TIMEOUT_MS,
+  MIN_PROVIDER_TASK_POLL_TIMEOUT_MS,
+  parseProviderTaskPollTimeoutMs,
+  preflightWorkbenchGeneration,
+  reconcileGenerationJob,
+  resumeWorkbenchGenerationJobs,
+  runWorkbenchGenerationOnce
+} from "../src/tools/workbenchGeneration.js";
+import { activateLocalMediaArtifact, registerMediaArtifact, type MediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { downloadProviderOutputToArtifact } from "../src/tools/providerOutputDownloader.js";
-import type { VideoProviderAdapter } from "../src/tools/videoProviderAdapters.js";
+import type { ProviderPollOptions, VideoProviderAdapter } from "../src/tools/videoProviderAdapters.js";
 
 function operationalFacts(overrides: Partial<ShotOperationalFacts> = {}): ShotOperationalFacts {
   const generationVersionCount = overrides.generation_version_count ?? 0;
@@ -96,6 +107,26 @@ test("shared operational state derives the generation, review, revision, and acc
   assert.equal(legacyQueuedRun.generation.stage, "queued");
   assert.equal(legacyQueuedRun.allowed_workflow_actions.prepare_generation, false);
   assert.equal(deriveProjectOperationalSummary([legacyQueuedRun]).active_run_count, 1);
+
+  const manualReconciliation = deriveShotOperationalState(operationalFacts({
+    stored_workflow_status: "storyboard_approved",
+    storyboard_artifact: storyboard,
+    generation_job_state: "manual_reconciliation",
+    latest_generation_run_status: "running"
+  }));
+  assert.equal(manualReconciliation.primary_stage, "manual_reconciliation");
+  assert.ok(manualReconciliation.blocker_codes.includes("GENERATION_MANUAL_RECONCILIATION"));
+  assert.equal(manualReconciliation.allowed_workflow_actions.prepare_generation, false);
+  assert.equal(deriveProjectOperationalSummary([manualReconciliation]).active_run_count, 0);
+
+  const otherRunningShot = deriveShotOperationalState(operationalFacts({
+    shot_id: "shot_operational_002",
+    stored_workflow_status: "video_pending",
+    storyboard_artifact: storyboard,
+    generation_job_state: "polling",
+    latest_generation_run_status: "running"
+  }));
+  assert.equal(deriveProjectOperationalSummary([manualReconciliation, otherRunningShot]).active_run_count, 1);
 
   const failedRegeneration = deriveShotOperationalState(operationalFacts({
     stored_workflow_status: "video_review",
@@ -554,7 +585,11 @@ test("project-level generation runs contribute to operational active and failure
   }
 });
 
-async function prepareConfirmedGeneration(sqlitePath: string, title: string): Promise<{ intent_id: string; job_id: string; env: NodeJS.ProcessEnv }> {
+async function prepareConfirmedGeneration(
+  sqlitePath: string,
+  title: string,
+  options: { regeneration?: boolean } = {}
+): Promise<{ intent_id: string; job_id: string; run_id: string; project_id: string; shot_id: string; env: NodeJS.ProcessEnv }> {
   migrateDatabase(sqlitePath);
   const db = openM0Database(sqlitePath);
   try {
@@ -570,9 +605,27 @@ async function prepareConfirmedGeneration(sqlitePath: string, title: string): Pr
     assert.equal(artifact.ok, true);
     if (!artifact.ok) throw new Error("artifact setup failed");
     shot.storyboard_image_artifact_id = artifact.artifact.artifact_id;
+    if (options.regeneration) {
+      const previous = registerMediaArtifact({
+        artifact_type: "video", role: "generated_clip",
+        source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+        linked_objects: { project_id: project.project_id, shot_id: shot.shot_id }
+      }, db);
+      assert.equal(previous.ok, true);
+      if (!previous.ok) throw new Error("previous clip setup failed");
+      shot.status = "revision_needed";
+      shot.review.approval_status = "revision_needed";
+      shot.review.rejection_reasons = ["motion_drift"];
+      shot.clip_versions = [{
+        artifact_id: previous.artifact.artifact_id,
+        run_id: "run_previous_rejected",
+        attempt_number: 1,
+        review_status: "rejected"
+      }];
+    }
     saveShot(db, shot);
     project.project.shot_ids.push(shot.shot_id);
-    project.project.status = "storyboard_approved";
+    project.project.status = options.regeneration ? "video_review" : "storyboard_approved";
     saveProject(db, project.project);
     const env = { REAL_PROVIDER_ENABLED: "true", M1_REAL_PROVIDER: "runninghub", M1_REAL_PROVIDER_EXECUTION_ALLOWED: "true", M1_REAL_PROVIDER_COST_ACK: "true", RUNNINGHUB_API_KEY: "synthetic-test-key" } as NodeJS.ProcessEnv;
     const fetchImpl: typeof fetch = async (input) => String(input).includes("price-preview")
@@ -584,7 +637,37 @@ async function prepareConfirmedGeneration(sqlitePath: string, title: string): Pr
     const confirmed = confirmWorkbenchGeneration({ intent_id: prepared.data.intent.intent_id, budget_limit_value: 1, cost_confirmed: true, human_confirmation: true }, db);
     assert.equal(confirmed.ok, true);
     if (!confirmed.ok) throw new Error("generation confirmation failed");
-    return { intent_id: prepared.data.intent.intent_id, job_id: confirmed.data.job_id, env };
+    return {
+      intent_id: prepared.data.intent.intent_id,
+      job_id: confirmed.data.job_id,
+      run_id: confirmed.data.run_id,
+      project_id: project.project_id,
+      shot_id: shot.shot_id,
+      env
+    };
+  } finally {
+    db.close();
+  }
+}
+
+function persistKnownProviderTask(
+  sqlitePath: string,
+  intentId: string,
+  jobId: string,
+  taskId: string,
+  timeoutMs = DEFAULT_PROVIDER_TASK_POLL_TIMEOUT_MS
+): void {
+  const db = openM0Database(sqlitePath);
+  try {
+    const row = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(intentId) as { data_json: string };
+    const data = JSON.parse(row.data_json) as Record<string, unknown>;
+    const startedAt = Date.now();
+    data.provider_poll_started_at = new Date(startedAt).toISOString();
+    data.provider_poll_timeout_ms = timeoutMs;
+    data.provider_poll_deadline_at = new Date(startedAt + timeoutMs).toISOString();
+    db.prepare("UPDATE generation_intents SET provider_task_id = ?, status = 'running', data_json = ? WHERE intent_id = ?")
+      .run(taskId, JSON.stringify(data), intentId);
+    db.prepare("UPDATE generation_jobs SET state = 'polling' WHERE job_id = ?").run(jobId);
   } finally {
     db.close();
   }
@@ -1094,6 +1177,17 @@ test("generation preflight enforces official estimate, balance gate, budget and 
       assert.equal(attached.data.job.state, "polling");
       assert.equal(attached.data.intent.provider_task_id, "existing-task-123");
     }
+    const attachedIntentDataRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(first.data.intent.intent_id) as { data_json: string };
+    const attachedIntentData = JSON.parse(attachedIntentDataRow.data_json) as {
+      provider_poll_started_at: string;
+      provider_poll_timeout_ms: number;
+      provider_poll_deadline_at: string;
+    };
+    assert.equal(attachedIntentData.provider_poll_timeout_ms, DEFAULT_PROVIDER_TASK_POLL_TIMEOUT_MS);
+    assert.equal(
+      Date.parse(attachedIntentData.provider_poll_deadline_at) - Date.parse(attachedIntentData.provider_poll_started_at),
+      DEFAULT_PROVIDER_TASK_POLL_TIMEOUT_MS
+    );
     const attachedRun = db.prepare("SELECT data_json FROM generation_runs WHERE run_id = ?").get(confirmed.data.run_id) as { data_json: string };
     const attachedRunData = JSON.parse(attachedRun.data_json) as { status: string; provider: { provider_job_id: string; provider_status: string } };
     assert.equal(attachedRunData.status, "running");
@@ -1149,14 +1243,109 @@ test("generation preflight enforces official estimate, balance gate, budget and 
   }
 });
 
+test("explicit task attachment alone resumes bounded polling and generation workflow state", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-explicit-attach-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Explicit reconciliation attach");
+    let submitCalls = 0;
+    let pollCalls = 0;
+    const adapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => {
+        submitCalls += 1;
+        return {
+          ok: false as const,
+          error: { code: "PROVIDER_TIMEOUT", message: "Synthetic unknown outcome.", retryable: true, submission_outcome_unknown: true }
+        };
+      },
+      pollStatus: async () => {
+        pollCalls += 1;
+        return {
+          ok: true as const,
+          provider_job_id: "task-human-attached",
+          status: "running" as const,
+          provider_status: "RUNNING",
+          retryable: true
+        };
+      },
+      fetchOutput: async () => { throw new Error("output must not run"); }
+    } as unknown as VideoProviderAdapter;
+    const dependencies = {
+      sqlite_path: sqlitePath,
+      env: prepared.env,
+      adapter_factory: () => adapter,
+      now: () => new Date("2026-07-30T00:00:00.000Z"),
+      monotonic_now_ms: () => 5_000,
+      poll_interval_ms: 100
+    };
+
+    await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: true, dependencies });
+    let db = openM0Database(sqlitePath);
+    let summary = listWorkbenchProjects({ scope: "all" }, db).items
+      .find((item) => item.project.project_id === prepared.project_id);
+    assert.equal(summary?.active_run_count, 0);
+    assert.ok(summary?.blocker_codes.includes("GENERATION_MANUAL_RECONCILIATION"));
+
+    const attached = reconcileGenerationJob(prepared.job_id, {
+      decision: "attach_existing_task",
+      provider_task_id: "task-human-attached",
+      human_confirmation: true
+    }, db, { env: prepared.env, now: dependencies.now });
+    assert.equal(attached.ok, true);
+    if (!attached.ok) throw new Error("explicit task attachment failed");
+    const attachedDataRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const attachedData = JSON.parse(attachedDataRow.data_json) as { provider_poll_deadline_at: string };
+    const originalDeadline = attachedData.provider_poll_deadline_at;
+    const project = db.prepare("SELECT data_json FROM projects WHERE project_id = ?")
+      .get(prepared.project_id) as { data_json: string };
+    const shot = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?")
+      .get(prepared.shot_id) as { data_json: string };
+    summary = listWorkbenchProjects({ scope: "all" }, db).items
+      .find((item) => item.project.project_id === prepared.project_id);
+    assert.equal(attached.data.job.state, "polling");
+    assert.equal(attached.data.intent.provider_task_id, "task-human-attached");
+    assert.equal((JSON.parse(project.data_json) as { status: string }).status, "video_generation_in_progress");
+    assert.equal((JSON.parse(shot.data_json) as { status: string }).status, "video_pending");
+    assert.equal(summary?.active_run_count, 1);
+    assert.equal(summary?.blocker_codes.includes("GENERATION_MANUAL_RECONCILIATION"), false);
+    const duplicateAttach = reconcileGenerationJob(prepared.job_id, {
+      decision: "attach_existing_task",
+      provider_task_id: "task-human-attached",
+      human_confirmation: true
+    }, db, { env: prepared.env, now: dependencies.now });
+    assert.equal(duplicateAttach.ok, false);
+    if (!duplicateAttach.ok) assert.equal(duplicateAttach.error.code, "GENERATION_JOB_NOT_RECONCILABLE");
+    db.close();
+
+    await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: false, dependencies });
+    db = openM0Database(sqlitePath);
+    const afterPoll = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const afterPollData = JSON.parse(afterPoll.data_json) as { provider_poll_deadline_at: string };
+    const afterPollJob = db.prepare("SELECT state FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string };
+    db.close();
+
+    assert.equal(submitCalls, 1);
+    assert.equal(pollCalls, 1);
+    assert.equal(afterPollJob.state, "polling");
+    assert.equal(afterPollData.provider_poll_deadline_at, originalDeadline);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("provider task persistence failure enters manual reconciliation without losing the paid task ID", async () => {
   const root = mkdtempSync(join(tmpdir(), "generation-persist-fault-"));
   const sqlitePath = join(root, "app.sqlite");
   try {
     const prepared = await prepareConfirmedGeneration(sqlitePath, "Persistence fault");
     const db = openM0Database(sqlitePath);
-    db.exec(`CREATE TRIGGER inject_polling_event_failure BEFORE INSERT ON generation_job_events
-      WHEN NEW.to_state = 'polling' BEGIN SELECT RAISE(ABORT, 'INJECTED_POLLING_EVENT_FAILURE'); END`);
+    db.exec(`CREATE TRIGGER inject_reconciliation_event_failure BEFORE INSERT ON generation_job_events
+      WHEN NEW.to_state IN ('polling', 'manual_reconciliation')
+      BEGIN SELECT RAISE(ABORT, 'INJECTED_RECONCILIATION_EVENT_FAILURE'); END`);
     db.close();
     const adapter = {
       provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
@@ -1167,9 +1356,29 @@ test("provider task persistence failure enters manual reconciliation without los
     await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: true, dependencies: { sqlite_path: sqlitePath, env: prepared.env, adapter_factory: () => adapter } });
     const checked = openM0Database(sqlitePath);
     const intent = checked.prepare("SELECT status, provider_task_id FROM generation_intents WHERE intent_id = ?").get(prepared.intent_id) as { status: string; provider_task_id: string };
-    const job = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?").get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    const job = checked.prepare(`SELECT state, reconciliation_reason, lease_owner, lease_token, lease_expires_at
+      FROM generation_jobs WHERE job_id = ?`).get(prepared.job_id) as {
+        state: string; reconciliation_reason: string; lease_owner: string; lease_token: string; lease_expires_at: string | null;
+      };
+    const project = checked.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(prepared.project_id) as { data_json: string };
+    const shot = checked.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(prepared.shot_id) as { data_json: string };
+    const manualEventCount = (checked.prepare(`SELECT COUNT(*) AS count FROM generation_job_events
+      WHERE job_id = ? AND to_state = 'manual_reconciliation'`).get(prepared.job_id) as { count: number }).count;
+    const summary = listWorkbenchProjects({ scope: "all" }, checked).items
+      .find((item) => item.project.project_id === prepared.project_id);
     assert.deepEqual({ ...intent }, { status: "running", provider_task_id: "task-persisted-after-fault" });
-    assert.deepEqual({ ...job }, { state: "manual_reconciliation", reconciliation_reason: "PROVIDER_TASK_PERSISTENCE_UNKNOWN" });
+    assert.deepEqual({ ...job }, {
+      state: "manual_reconciliation",
+      reconciliation_reason: "PROVIDER_TASK_PERSISTENCE_UNKNOWN",
+      lease_owner: "",
+      lease_token: "",
+      lease_expires_at: null
+    });
+    assert.equal((JSON.parse(project.data_json) as { status: string }).status, "storyboard_approved");
+    assert.equal((JSON.parse(shot.data_json) as { status: string }).status, "storyboard_approved");
+    assert.equal(manualEventCount, 0);
+    assert.equal(summary?.active_run_count, 0);
+    assert.ok(summary?.blocker_codes.includes("GENERATION_MANUAL_RECONCILIATION"));
     checked.close();
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -1208,9 +1417,9 @@ test("worker preserves a known paid task when a resumed capability drifts", asyn
   const sqlitePath = join(root, "app.sqlite");
   try {
     const prepared = await prepareConfirmedGeneration(sqlitePath, "Known task capability drift");
+    persistKnownProviderTask(sqlitePath, prepared.intent_id, prepared.job_id, "paid-task-known");
     const db = openM0Database(sqlitePath);
-    db.prepare("UPDATE generation_intents SET model = 'stale-model', provider_task_id = 'paid-task-known', status = 'running' WHERE intent_id = ?").run(prepared.intent_id);
-    db.prepare("UPDATE generation_jobs SET state = 'polling' WHERE job_id = ?").run(prepared.job_id);
+    db.prepare("UPDATE generation_intents SET model = 'stale-model' WHERE intent_id = ?").run(prepared.intent_id);
     db.close();
 
     await runWorkbenchGenerationOnce(prepared.intent_id, {
@@ -1240,10 +1449,7 @@ test("worker preserves a known paid task when the adapter contract drifts", asyn
   const sqlitePath = join(root, "app.sqlite");
   try {
     const prepared = await prepareConfirmedGeneration(sqlitePath, "Known task adapter drift");
-    const db = openM0Database(sqlitePath);
-    db.prepare("UPDATE generation_intents SET provider_task_id = 'paid-task-adapter', status = 'running' WHERE intent_id = ?").run(prepared.intent_id);
-    db.prepare("UPDATE generation_jobs SET state = 'polling' WHERE job_id = ?").run(prepared.job_id);
-    db.close();
+    persistKnownProviderTask(sqlitePath, prepared.intent_id, prepared.job_id, "paid-task-adapter");
     let providerCalls = 0;
     const adapter = {
       provider_name: "runninghub",
@@ -1313,31 +1519,1890 @@ test("persisted generation wakeup catches database failures and retries", async 
   }
 });
 
-test("each worker claim performs one provider step and defers a still-running task", async () => {
+test("provider polling uses one persisted absolute deadline and never resubmits after timeout", async () => {
   const root = mkdtempSync(join(tmpdir(), "generation-poll-timeout-"));
   const sqlitePath = join(root, "app.sqlite");
   try {
-    const prepared = await prepareConfirmedGeneration(sqlitePath, "Polling timeout");
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Absolute polling deadline");
+    const baseWallMs = Date.now();
+    let wallMs = baseWallMs;
+    let monotonicMs = 10_000;
+    let submitCalls = 0;
+    let pollCalls = 0;
+    const pollRequestTimeouts: number[] = [];
     const adapter = {
       provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
-      submitGeneration: async () => ({ ok: true as const, provider_job_id: "task-still-running", provider_status: "PENDING", sanitized_request: {} }),
-      pollStatus: async () => ({ ok: true as const, status: "running" as const, provider_status: "RUNNING" }),
+      submitGeneration: async () => {
+        submitCalls += 1;
+        return { ok: true as const, provider_job_id: "task-absolute-deadline", provider_status: "PENDING", sanitized_request: {} };
+      },
+      pollStatus: async (_taskId: string, options?: ProviderPollOptions) => {
+        pollCalls += 1;
+        pollRequestTimeouts.push(options?.timeout_ms ?? -1);
+        if (pollCalls === 1) {
+          return { ok: false as const, error: { code: "PROVIDER_TIMEOUT", message: "Synthetic retryable poll failure.", retryable: true } };
+        }
+        return {
+          ok: true as const,
+          provider_job_id: "task-absolute-deadline",
+          status: "running" as const,
+          provider_status: "RUNNING",
+          retryable: true
+        };
+      },
       fetchOutput: async () => { throw new Error("output must not run"); }
     } as unknown as VideoProviderAdapter;
-    const dependencies = { sqlite_path: sqlitePath, env: prepared.env, adapter_factory: () => adapter, poll_interval_ms: 10 };
+    const dependencies = {
+      sqlite_path: sqlitePath,
+      env: { ...prepared.env },
+      adapter_factory: () => adapter,
+      poll_interval_ms: DEFAULT_PROVIDER_TASK_POLL_TIMEOUT_MS * 2,
+      now: () => new Date(wallMs),
+      monotonic_now_ms: () => monotonicMs
+    };
+    const before = openM0Database(sqlitePath);
+    const artifactCountBefore = (before.prepare("SELECT COUNT(*) AS count FROM media_artifacts").get() as { count: number }).count;
+    before.close();
+
     await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: true, dependencies });
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 15));
-    await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: false, dependencies });
-    const checked = openM0Database(sqlitePath);
-    const intent = checked.prepare("SELECT status, provider_task_id FROM generation_intents WHERE intent_id = ?").get(prepared.intent_id) as { status: string; provider_task_id: string };
-    const job = checked.prepare("SELECT state, reconciliation_reason, next_attempt_at FROM generation_jobs WHERE job_id = ?").get(prepared.job_id) as { state: string; reconciliation_reason: string; next_attempt_at: string };
-    assert.deepEqual({ ...intent }, { status: "running", provider_task_id: "task-still-running" });
-    assert.equal(job.state, "polling");
-    assert.equal(job.reconciliation_reason, "");
-    assert.equal(Date.parse(job.next_attempt_at) > Date.now() - 1_000, true);
+    let checked = openM0Database(sqlitePath);
+    const submittedIntent = checked.prepare("SELECT provider_task_id, data_json FROM generation_intents WHERE intent_id = ?").get(prepared.intent_id) as { provider_task_id: string; data_json: string };
+    const persistedDeadline = Date.parse((JSON.parse(submittedIntent.data_json) as { provider_poll_deadline_at: string }).provider_poll_deadline_at);
+    const submittedJob = checked.prepare("SELECT next_attempt_at FROM generation_jobs WHERE job_id = ?").get(prepared.job_id) as { next_attempt_at: string };
     checked.close();
+    assert.equal(submitCalls, 1);
+    assert.equal(pollCalls, 0);
+    assert.equal(submittedIntent.provider_task_id, "task-absolute-deadline");
+    assert.equal(persistedDeadline, baseWallMs + DEFAULT_PROVIDER_TASK_POLL_TIMEOUT_MS);
+    assert.equal(Date.parse(submittedJob.next_attempt_at), persistedDeadline);
+
+    wallMs += 100_000;
+    monotonicMs += 100_000;
+    await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: false, dependencies });
+    checked = openM0Database(sqlitePath);
+    const afterTransient = checked.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(prepared.intent_id) as { data_json: string };
+    const transientJob = checked.prepare("SELECT state, reconciliation_reason, next_attempt_at FROM generation_jobs WHERE job_id = ?").get(prepared.job_id) as { state: string; reconciliation_reason: string; next_attempt_at: string };
+    checked.close();
+    assert.equal(Date.parse((JSON.parse(afterTransient.data_json) as { provider_poll_deadline_at: string }).provider_poll_deadline_at), persistedDeadline);
+    assert.deepEqual({ state: transientJob.state, reconciliation_reason: transientJob.reconciliation_reason }, { state: "polling", reconciliation_reason: "" });
+    assert.equal(Date.parse(transientJob.next_attempt_at), persistedDeadline);
+
+    wallMs += 100_000;
+    monotonicMs += 100_000;
+    await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: false, dependencies });
+    checked = openM0Database(sqlitePath);
+    const afterRunning = checked.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(prepared.intent_id) as { data_json: string };
+    checked.close();
+    assert.equal(Date.parse((JSON.parse(afterRunning.data_json) as { provider_poll_deadline_at: string }).provider_poll_deadline_at), persistedDeadline);
+    assert.deepEqual(pollRequestTimeouts, [
+      DEFAULT_PROVIDER_TASK_POLL_TIMEOUT_MS - 100_000,
+      DEFAULT_PROVIDER_TASK_POLL_TIMEOUT_MS - 200_000
+    ]);
+
+    wallMs = persistedDeadline;
+    monotonicMs += DEFAULT_PROVIDER_TASK_POLL_TIMEOUT_MS - 200_000;
+    await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: false, dependencies });
+    checked = openM0Database(sqlitePath);
+    const timedOutIntent = checked.prepare("SELECT status, provider_task_id, submit_attempts, sanitized_error_json, run_id FROM generation_intents WHERE intent_id = ?").get(prepared.intent_id) as {
+      status: string; provider_task_id: string; submit_attempts: number; sanitized_error_json: string; run_id: string;
+    };
+    const timedOutJob = checked.prepare(`SELECT state, reconciliation_reason, lease_owner, lease_token, lease_expires_at
+      FROM generation_jobs WHERE job_id = ?`).get(prepared.job_id) as {
+        state: string; reconciliation_reason: string; lease_owner: string; lease_token: string; lease_expires_at: string | null;
+      };
+    const timedOutRun = checked.prepare("SELECT data_json FROM generation_runs WHERE run_id = ?").get(timedOutIntent.run_id) as { data_json: string };
+    const timedOutProject = checked.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(prepared.project_id) as { data_json: string };
+    const timedOutShot = checked.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(prepared.shot_id) as { data_json: string };
+    const timedOutSummary = listWorkbenchProjects({ scope: "all" }, checked).items
+      .find((item) => item.project.project_id === prepared.project_id);
+    const timedOutWorker = generationWorkerStatus(checked);
+    const artifactCountAfter = (checked.prepare("SELECT COUNT(*) AS count FROM media_artifacts").get() as { count: number }).count;
+    checked.close();
+    const runData = JSON.parse(timedOutRun.data_json) as { status: string; provider: { provider_job_id: string; provider_status: string }; error: { code: string; retryable: boolean } };
+    assert.equal(submitCalls, 1);
+    assert.equal(pollCalls, 2);
+    assert.deepEqual({ status: timedOutIntent.status, provider_task_id: timedOutIntent.provider_task_id }, {
+      status: "running",
+      provider_task_id: "task-absolute-deadline"
+    });
+    assert.equal(timedOutIntent.submit_attempts, 1);
+    assert.equal((JSON.parse(timedOutIntent.sanitized_error_json) as { code: string }).code, "PROVIDER_POLL_TIMEOUT");
+    assert.deepEqual({ ...timedOutJob }, {
+      state: "manual_reconciliation",
+      reconciliation_reason: "PROVIDER_POLL_TIMEOUT",
+      lease_owner: "",
+      lease_token: "",
+      lease_expires_at: null
+    });
+    assert.equal(runData.status, "running");
+    assert.equal(runData.provider.provider_job_id, "task-absolute-deadline");
+    assert.equal(runData.provider.provider_status, "PROVIDER_POLL_TIMEOUT");
+    assert.deepEqual(runData.error, {
+      code: "PROVIDER_POLL_TIMEOUT",
+      message: "Provider task requires human reconciliation.",
+      retryable: false
+    });
+    assert.equal((JSON.parse(timedOutProject.data_json) as { status: string }).status, "storyboard_approved");
+    assert.equal((JSON.parse(timedOutShot.data_json) as { status: string }).status, "storyboard_approved");
+    assert.equal(timedOutSummary?.active_run_count, 0);
+    assert.ok(timedOutSummary?.blocker_codes.includes("GENERATION_MANUAL_RECONCILIATION"));
+    assert.notEqual(timedOutSummary?.next_action.reason_code, "generation_running");
+    assert.notEqual(timedOutSummary?.next_action.reason_code, "generate_shot");
+    assert.deepEqual({
+      ready: timedOutWorker.ready,
+      active: timedOutWorker.active,
+      unowned_runnable: timedOutWorker.unowned_runnable,
+      runnable: timedOutWorker.runnable
+    }, { ready: true, active: 0, unowned_runnable: 0, runnable: 0 });
+    assert.equal(artifactCountAfter, artifactCountBefore);
+
+    assert.deepEqual(
+      resumeWorkbenchGenerationJobs({ sqlite_path: sqlitePath, env: prepared.env }),
+      { resumed: [], reconciled: [prepared.intent_id] }
+    );
+    await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: false, dependencies });
+    assert.equal(submitCalls, 1);
+    assert.equal(pollCalls, 2);
+
+    wallMs = persistedDeadline + 60_000;
+    monotonicMs += 60_000;
+    checked = openM0Database(sqlitePath);
+    const reattached = reconcileGenerationJob(prepared.job_id, {
+      decision: "attach_existing_task",
+      provider_task_id: "task-absolute-deadline",
+      human_confirmation: true
+    }, checked, { env: prepared.env, now: () => new Date(wallMs) });
+    assert.equal(reattached.ok, true);
+    if (!reattached.ok) throw new Error("explicit task reattachment failed");
+    const reattachedIntent = checked.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const reattachedJob = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    checked.close();
+    const reattachedDeadline = Date.parse(
+      (JSON.parse(reattachedIntent.data_json) as { provider_poll_deadline_at: string }).provider_poll_deadline_at
+    );
+    assert.equal(reattachedDeadline, wallMs + DEFAULT_PROVIDER_TASK_POLL_TIMEOUT_MS);
+    assert.notEqual(reattachedDeadline, persistedDeadline);
+    assert.deepEqual({ ...reattachedJob }, {
+      state: "polling",
+      reconciliation_reason: "HUMAN_ATTACHED_EXISTING_TASK"
+    });
+
+    await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: false, dependencies });
+    checked = openM0Database(sqlitePath);
+    const afterReattachedPoll = checked.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const afterReattachedJob = checked.prepare("SELECT state FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string };
+    checked.close();
+    assert.equal(submitCalls, 1);
+    assert.equal(pollCalls, 3);
+    assert.equal(afterReattachedJob.state, "polling");
+    assert.equal(
+      Date.parse((JSON.parse(afterReattachedPoll.data_json) as { provider_poll_deadline_at: string }).provider_poll_deadline_at),
+      reattachedDeadline
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("provider polling fails closed after restart when wall time moves before the persisted start", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-poll-clock-rollback-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Clock rollback polling budget");
+    persistKnownProviderTask(
+      sqlitePath,
+      prepared.intent_id,
+      prepared.job_id,
+      "task-clock-rollback",
+      MIN_PROVIDER_TASK_POLL_TIMEOUT_MS
+    );
+    const db = openM0Database(sqlitePath);
+    const intentRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const persisted = JSON.parse(intentRow.data_json) as {
+      provider_poll_started_at: string;
+      provider_poll_timeout_ms: number;
+    };
+    db.close();
+
+    let pollCalls = 0;
+    let submitCalls = 0;
+    const adapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => {
+        submitCalls += 1;
+        throw new Error("known Provider task must not be resubmitted");
+      },
+      pollStatus: async () => {
+        pollCalls += 1;
+        throw new Error("clock rollback must fail closed before Provider polling");
+      },
+      fetchOutput: async () => { throw new Error("output must not run"); }
+    } as unknown as VideoProviderAdapter;
+    const rolledBackWallMs = Date.parse(persisted.provider_poll_started_at) - 6 * 60 * 60_000;
+    await runWorkbenchGenerationOnce(prepared.intent_id, {
+      allow_submit: false,
+      dependencies: {
+        sqlite_path: sqlitePath,
+        env: { ...prepared.env, PROVIDER_TASK_POLL_TIMEOUT_MS: String(MAX_PROVIDER_TASK_POLL_TIMEOUT_MS) },
+        adapter_factory: () => adapter,
+        poll_interval_ms: MIN_PROVIDER_TASK_POLL_TIMEOUT_MS,
+        now: () => new Date(rolledBackWallMs),
+        monotonic_now_ms: () => 50_000
+      }
+    });
+
+    const checked = openM0Database(sqlitePath);
+    const job = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    const intent = checked.prepare("SELECT status, provider_task_id, sanitized_error_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { status: string; provider_task_id: string; sanitized_error_json: string };
+    checked.close();
+    assert.equal(persisted.provider_poll_timeout_ms, MIN_PROVIDER_TASK_POLL_TIMEOUT_MS);
+    assert.equal(pollCalls, 0);
+    assert.equal(submitCalls, 0);
+    assert.deepEqual({ ...job }, {
+      state: "manual_reconciliation",
+      reconciliation_reason: "PROVIDER_POLL_TIMEOUT"
+    });
+    assert.deepEqual({
+      status: intent.status,
+      provider_task_id: intent.provider_task_id,
+      error_code: (JSON.parse(intent.sanitized_error_json) as { code: string }).code
+    }, {
+      status: "running",
+      provider_task_id: "task-clock-rollback",
+      error_code: "PROVIDER_POLL_TIMEOUT"
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("startup scheduler immediately fails closed after clock rollback despite a future inherited lease", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-scheduler-clock-rollback-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Schedule clock rollback reconciliation");
+    const taskId = "task-scheduler-clock-rollback";
+    persistKnownProviderTask(
+      sqlitePath,
+      prepared.intent_id,
+      prepared.job_id,
+      taskId,
+      MIN_PROVIDER_TASK_POLL_TIMEOUT_MS
+    );
+    const wallMs = Date.parse("2035-01-02T03:04:05.100Z");
+    const futureStartedAtMs = wallMs + 500;
+    assert.equal(Math.floor(futureStartedAtMs / 1_000), Math.floor(wallMs / 1_000));
+    assert.ok(futureStartedAtMs - wallMs < 1_000);
+    const futureDeadlineMs = futureStartedAtMs + MIN_PROVIDER_TASK_POLL_TIMEOUT_MS;
+    const db = openM0Database(sqlitePath);
+    const intentRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const intentData = JSON.parse(intentRow.data_json) as Record<string, unknown>;
+    intentData.provider_poll_started_at = new Date(futureStartedAtMs).toISOString();
+    intentData.provider_poll_timeout_ms = MIN_PROVIDER_TASK_POLL_TIMEOUT_MS;
+    intentData.provider_poll_deadline_at = new Date(futureDeadlineMs).toISOString();
+    db.prepare("UPDATE generation_intents SET data_json = ? WHERE intent_id = ?")
+      .run(JSON.stringify(intentData), prepared.intent_id);
+    db.prepare(`UPDATE generation_jobs
+      SET next_attempt_at = ?,
+          lease_owner = 'crashed_worker',
+          lease_token = 'inherited_clock_rollback_lease',
+          lease_expires_at = ?
+      WHERE job_id = ?`).run(
+      new Date(futureDeadlineMs).toISOString(),
+      "2099-01-01T00:00:00.000Z",
+      prepared.job_id
+    );
+    db.close();
+
+    let providerCalls = 0;
+    const adapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => {
+        providerCalls += 1;
+        throw new Error("known Provider task must not be resubmitted");
+      },
+      pollStatus: async () => {
+        providerCalls += 1;
+        throw new Error("clock rollback must fail closed before Provider polling");
+      },
+      fetchOutput: async () => {
+        providerCalls += 1;
+        throw new Error("output must not run");
+      }
+    } as unknown as VideoProviderAdapter;
+    const resumed = resumeWorkbenchGenerationJobs({
+      sqlite_path: sqlitePath,
+      env: { ...prepared.env, PROVIDER_TASK_POLL_TIMEOUT_MS: String(MIN_PROVIDER_TASK_POLL_TIMEOUT_MS) },
+      adapter_factory: () => adapter,
+      now: () => new Date(wallMs),
+      monotonic_now_ms: () => 50_000
+    });
+    assert.deepEqual(resumed, { resumed: [prepared.intent_id], reconciled: [] });
+
+    let observedJob = { state: "", reconciliation_reason: "", lease_token: "" };
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const checked = openM0Database(sqlitePath);
+      observedJob = checked.prepare("SELECT state, reconciliation_reason, lease_token FROM generation_jobs WHERE job_id = ?")
+        .get(prepared.job_id) as typeof observedJob;
+      checked.close();
+      if (observedJob.state === "manual_reconciliation" && observedJob.lease_token === "") break;
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
+    }
+    const checked = openM0Database(sqlitePath);
+    const intent = checked.prepare("SELECT status, provider_task_id, sanitized_error_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { status: string; provider_task_id: string; sanitized_error_json: string };
+    checked.close();
+
+    assert.equal(providerCalls, 0);
+    assert.deepEqual({ ...observedJob }, {
+      state: "manual_reconciliation",
+      reconciliation_reason: "PROVIDER_POLL_TIMEOUT",
+      lease_token: ""
+    });
+    assert.deepEqual({
+      status: intent.status,
+      provider_task_id: intent.provider_task_id,
+      error_code: (JSON.parse(intent.sanitized_error_json) as { code: string }).code
+    }, {
+      status: "running",
+      provider_task_id: taskId,
+      error_code: "PROVIDER_POLL_TIMEOUT"
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("expired polling deadline does not block resumed local completion after Provider success", async () => {
+  const roots: string[] = [];
+  try {
+    for (const recoveryState of ["downloading", "finalizing"] as const) {
+      const root = mkdtempSync(join(tmpdir(), `generation-${recoveryState}-recovery-`));
+      roots.push(root);
+      const sqlitePath = join(root, "app.sqlite");
+      const prepared = await prepareConfirmedGeneration(sqlitePath, `Resume ${recoveryState}`);
+      const taskId = `task-${recoveryState}-recovery`;
+      const wallMs = Date.now();
+      persistKnownProviderTask(sqlitePath, prepared.intent_id, prepared.job_id, taskId, MIN_PROVIDER_TASK_POLL_TIMEOUT_MS);
+
+      let db = openM0Database(sqlitePath);
+      const intentRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+        .get(prepared.intent_id) as { data_json: string };
+      const intentData = JSON.parse(intentRow.data_json) as Record<string, unknown>;
+      intentData.provider_poll_started_at = new Date(wallMs - MIN_PROVIDER_TASK_POLL_TIMEOUT_MS - 1_000).toISOString();
+      intentData.provider_poll_timeout_ms = MIN_PROVIDER_TASK_POLL_TIMEOUT_MS;
+      intentData.provider_poll_deadline_at = new Date(wallMs - 1_000).toISOString();
+      db.prepare("UPDATE generation_intents SET data_json = ? WHERE intent_id = ?")
+        .run(JSON.stringify(intentData), prepared.intent_id);
+      db.prepare("UPDATE generation_jobs SET state = ? WHERE job_id = ?")
+        .run(recoveryState, prepared.job_id);
+      const existingOutput = registerMediaArtifact({
+        artifact_type: "video",
+        role: "generated_clip",
+        source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+        linked_objects: { project_id: prepared.project_id, shot_id: prepared.shot_id },
+        provenance: { provider: "runninghub", provider_job_id: taskId }
+      }, db);
+      assert.equal(existingOutput.ok, true, recoveryState);
+      db.close();
+
+      let pollCalls = 0;
+      const adapter = {
+        provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+        submitGeneration: async () => { throw new Error("submit must not run"); },
+        pollStatus: async () => {
+          pollCalls += 1;
+          throw new Error("poll must not run after Provider success was persisted locally");
+        },
+        fetchOutput: async () => { throw new Error("output fetch must not run for an existing Artifact"); }
+      } as unknown as VideoProviderAdapter;
+      await runWorkbenchGenerationOnce(prepared.intent_id, {
+        allow_submit: false,
+        dependencies: {
+          sqlite_path: sqlitePath,
+          env: prepared.env,
+          adapter_factory: () => adapter,
+          now: () => new Date(wallMs),
+          monotonic_now_ms: () => 10_000
+        }
+      });
+
+      db = openM0Database(sqlitePath);
+      const completedIntent = db.prepare("SELECT status, output_artifact_id FROM generation_intents WHERE intent_id = ?")
+        .get(prepared.intent_id) as { status: string; output_artifact_id: string };
+      const completedJob = db.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+        .get(prepared.job_id) as { state: string; reconciliation_reason: string };
+      db.close();
+      assert.equal(pollCalls, 0, recoveryState);
+      assert.equal(completedIntent.status, "succeeded", recoveryState);
+      assert.equal(completedIntent.output_artifact_id, existingOutput.ok ? existingOutput.artifact.artifact_id : "", recoveryState);
+      assert.deepEqual({ ...completedJob }, { state: "succeeded", reconciliation_reason: "" }, recoveryState);
+    }
+  } finally {
+    for (const root of roots) rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("human reattachment redownloads, repairs verified Blob bytes, and rebinds without another Provider submit", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-invalid-output-recovery-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const mediaRoot = join(root, "media");
+  const videoFixture = resolve("fixtures/video/mock_clip.mp4");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Reject invalid local output");
+    const taskId = "task-invalid-output-recovery";
+    const wallMs = Date.now();
+    persistKnownProviderTask(sqlitePath, prepared.intent_id, prepared.job_id, taskId, MIN_PROVIDER_TASK_POLL_TIMEOUT_MS);
+
+    let db = openM0Database(sqlitePath);
+    const intentRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const intentData = JSON.parse(intentRow.data_json) as Record<string, unknown>;
+    intentData.provider_poll_started_at = new Date(wallMs - MIN_PROVIDER_TASK_POLL_TIMEOUT_MS - 1_000).toISOString();
+    intentData.provider_poll_timeout_ms = MIN_PROVIDER_TASK_POLL_TIMEOUT_MS;
+    intentData.provider_poll_deadline_at = new Date(wallMs - 1_000).toISOString();
+    db.prepare("UPDATE generation_intents SET data_json = ? WHERE intent_id = ?")
+      .run(JSON.stringify(intentData), prepared.intent_id);
+    db.prepare("UPDATE generation_jobs SET state = 'finalizing' WHERE job_id = ?")
+      .run(prepared.job_id);
+    const existingPrepared: MediaArtifact = {
+      artifact_id: "artifact_invalid_output_recovery",
+      blob_id: "",
+      artifact_type: "video",
+      role: "generated_clip",
+      status: "active",
+      storage: {
+        uri: join(mediaRoot, "artifacts", "videos", "existing-output.mp4"),
+        mime_type: "video/mp4",
+        filename: "existing-output.mp4"
+      },
+      metadata: {
+        width: 1080,
+        height: 1920,
+        duration_seconds: 6,
+        aspect_ratio: "9:16",
+        sha256: ""
+      },
+      linked_objects: { project_id: prepared.project_id, shot_id: prepared.shot_id },
+      source: {
+        kind: "provider_output_file",
+        provider: "runninghub",
+        provider_job_id: taskId,
+        sha256: "",
+        external_url_host: "fixture.invalid"
+      }
+    };
+    const existingOutput = activateLocalMediaArtifact({
+      artifact: existingPrepared,
+      source_path: videoFixture,
+      media_root: mediaRoot
+    }, db);
+    assert.equal(existingOutput.ok, true);
+    if (!existingOutput.ok) throw new Error("output fixture registration failed");
+    writeFileSync(existingOutput.artifact.storage.uri, "corrupt-paid-provider-output", "utf8");
+    db.close();
+
+    let pollCalls = 0;
+    const adapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => { throw new Error("submit must not run"); },
+      pollStatus: async () => {
+        pollCalls += 1;
+        throw new Error("poll must not run for a persisted local output");
+      },
+      fetchOutput: async () => { throw new Error("output fetch must not run"); }
+    } as unknown as VideoProviderAdapter;
+    await runWorkbenchGenerationOnce(prepared.intent_id, {
+      allow_submit: false,
+      dependencies: {
+        sqlite_path: sqlitePath,
+        env: prepared.env,
+        adapter_factory: () => adapter,
+        now: () => new Date(wallMs),
+        monotonic_now_ms: () => 10_000
+      }
+    });
+
+    db = openM0Database(sqlitePath);
+    const reconciledIntent = db.prepare("SELECT status, output_artifact_id, sanitized_error_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { status: string; output_artifact_id: string; sanitized_error_json: string };
+    const reconciledJob = db.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    db.close();
+    assert.equal(pollCalls, 0);
+    assert.equal(reconciledIntent.status, "running");
+    assert.equal(reconciledIntent.output_artifact_id, "");
+    assert.equal((JSON.parse(reconciledIntent.sanitized_error_json) as { code: string }).code, "VIDEO_FILE_INVALID");
+    assert.deepEqual({ ...reconciledJob }, {
+      state: "manual_reconciliation",
+      reconciliation_reason: "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION"
+    });
+
+    db = openM0Database(sqlitePath);
+    const attached = reconcileGenerationJob(prepared.job_id, {
+      decision: "attach_existing_task",
+      provider_task_id: taskId,
+      human_confirmation: true
+    }, db, { env: prepared.env, now: () => new Date(wallMs) });
+    assert.equal(attached.ok, true);
+    if (!attached.ok) throw new Error("output recovery attachment failed");
+    const recoveryIntentRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const recoveryIntentData = JSON.parse(recoveryIntentRow.data_json) as {
+      provider_output_recovery: {
+        provider_task_id: string;
+        invalid_artifact_id: string;
+        local_identity: string;
+      };
+    };
+    assert.equal(recoveryIntentData.provider_output_recovery.provider_task_id, taskId);
+    assert.equal(recoveryIntentData.provider_output_recovery.invalid_artifact_id, existingOutput.artifact.artifact_id);
+    assert.match(recoveryIntentData.provider_output_recovery.local_identity, /^local_recovery_[0-9a-f-]{36}$/i);
+    db.close();
+
+    let downloadCalls = 0;
+    const recoveryAdapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => { throw new Error("submit must not run during output recovery"); },
+      pollStatus: async () => {
+        pollCalls += 1;
+        return {
+          ok: true as const,
+          provider_job_id: taskId,
+          status: "succeeded" as const,
+          provider_status: "SUCCESS",
+          retryable: false,
+          output_url: "https://example.invalid/recovered.mp4"
+        };
+      },
+      fetchOutput: async () => { throw new Error("adapter output fetch must not run"); }
+    } as unknown as VideoProviderAdapter;
+    await runWorkbenchGenerationOnce(prepared.intent_id, {
+      allow_submit: false,
+      dependencies: {
+        sqlite_path: sqlitePath,
+        env: prepared.env,
+        adapter_factory: () => recoveryAdapter,
+        now: () => new Date(wallMs),
+        monotonic_now_ms: () => 10_000,
+        download_provider_output: (async (input, targetDb) => {
+          downloadCalls += 1;
+          assert.equal(input.provider_name, "runninghub");
+          assert.equal(input.provider_job_id, recoveryIntentData.provider_output_recovery.local_identity);
+          assert.deepEqual(input.verified_blob_recovery, {
+            invalid_artifact_id: recoveryIntentData.provider_output_recovery.invalid_artifact_id
+          });
+          return downloadProviderOutputToArtifact({
+            ...input,
+            storage_directory: mediaRoot
+          }, targetDb, {
+            storage_root: mediaRoot,
+            resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+            fetch_pinned_address: async () => new Response(readFileSync(videoFixture), {
+              status: 200,
+              headers: { "content-type": "video/mp4" }
+            })
+          });
+        }) as typeof downloadProviderOutputToArtifact
+      }
+    });
+
+    db = openM0Database(sqlitePath);
+    const completedIntentRow = db.prepare("SELECT status, output_artifact_id, data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { status: string; output_artifact_id: string; data_json: string };
+    const completedJob = db.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    const archivedArtifactRow = db.prepare("SELECT status, data_json FROM media_artifacts WHERE artifact_id = ?")
+      .get(existingOutput.artifact.artifact_id) as { status: string; data_json: string };
+    const replacementArtifactRow = db.prepare("SELECT status, data_json FROM media_artifacts WHERE artifact_id = ?")
+      .get(completedIntentRow.output_artifact_id) as { status: string; data_json: string };
+    const originalBlob = db.prepare("SELECT blob_id FROM media_artifact_blobs WHERE artifact_id = ?")
+      .get(existingOutput.artifact.artifact_id) as { blob_id: string };
+    const replacementBlob = db.prepare("SELECT blob_id FROM media_artifact_blobs WHERE artifact_id = ?")
+      .get(completedIntentRow.output_artifact_id) as { blob_id: string };
+    const canonicalBindingCount = db.prepare(`SELECT COUNT(*) AS count FROM media_artifacts
+      WHERE json_valid(data_json) = 1
+        AND json_extract(data_json, '$.source.provider') = 'runninghub'
+        AND json_extract(data_json, '$.source.provider_job_id') = ?`).get(taskId) as { count: number };
+    const localRecoveryBindingCount = db.prepare(`SELECT COUNT(*) AS count FROM media_artifacts
+      WHERE json_valid(data_json) = 1
+        AND json_extract(data_json, '$.source.provider_job_id') = ?`)
+      .get(recoveryIntentData.provider_output_recovery.local_identity) as { count: number };
+    db.close();
+    const archivedArtifactData = JSON.parse(archivedArtifactRow.data_json) as {
+      source: { provider_job_id: string; original_provider_job_id: string; replaced_by_artifact_id: string };
+    };
+    const replacementArtifactData = JSON.parse(replacementArtifactRow.data_json) as {
+      source: { provider_job_id: string; local_recovery_identity: string };
+    };
+    assert.equal(pollCalls, 1);
+    assert.equal(downloadCalls, 1);
+    assert.equal(completedIntentRow.status, "succeeded");
+    assert.notEqual(completedIntentRow.output_artifact_id, existingOutput.artifact.artifact_id);
+    assert.equal("provider_output_recovery" in JSON.parse(completedIntentRow.data_json), false);
+    assert.deepEqual({ ...completedJob }, { state: "succeeded", reconciliation_reason: "" });
+    assert.equal(archivedArtifactRow.status, "archived");
+    assert.equal((JSON.parse(archivedArtifactRow.data_json) as { status: string }).status, "archived");
+    assert.equal(archivedArtifactData.source.provider_job_id, "");
+    assert.equal(archivedArtifactData.source.original_provider_job_id, taskId);
+    assert.equal(archivedArtifactData.source.replaced_by_artifact_id, completedIntentRow.output_artifact_id);
+    assert.equal(replacementArtifactRow.status, "active");
+    assert.equal(replacementBlob.blob_id, originalBlob.blob_id);
+    assert.equal(replacementArtifactData.source.provider_job_id, taskId);
+    assert.equal(replacementArtifactData.source.local_recovery_identity, recoveryIntentData.provider_output_recovery.local_identity);
+    assert.equal(canonicalBindingCount.count, 1);
+    assert.equal(localRecoveryBindingCount.count, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("repeated attachment preserves and rebinds a committed recovery replacement", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-recovery-rebind-restart-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const mediaRoot = join(root, "media");
+  const videoFixture = resolve("fixtures/video/mock_clip.mp4");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Resume committed recovery replacement");
+    const taskId = "task-recovery-rebind-restart";
+    const wallMs = Date.now();
+    persistKnownProviderTask(sqlitePath, prepared.intent_id, prepared.job_id, taskId, MIN_PROVIDER_TASK_POLL_TIMEOUT_MS);
+
+    let db = openM0Database(sqlitePath);
+    const intentRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const intentData = JSON.parse(intentRow.data_json) as Record<string, unknown>;
+    intentData.provider_poll_started_at = new Date(wallMs - MIN_PROVIDER_TASK_POLL_TIMEOUT_MS - 1_000).toISOString();
+    intentData.provider_poll_timeout_ms = MIN_PROVIDER_TASK_POLL_TIMEOUT_MS;
+    intentData.provider_poll_deadline_at = new Date(wallMs - 1_000).toISOString();
+    db.prepare("UPDATE generation_intents SET data_json = ? WHERE intent_id = ?")
+      .run(JSON.stringify(intentData), prepared.intent_id);
+    db.prepare("UPDATE generation_jobs SET state = 'finalizing' WHERE job_id = ?")
+      .run(prepared.job_id);
+    const existingOutput = activateLocalMediaArtifact({
+      artifact: {
+        artifact_id: "artifact_recovery_rebind_restart",
+        blob_id: "",
+        artifact_type: "video",
+        role: "generated_clip",
+        status: "active",
+        storage: {
+          uri: join(mediaRoot, "artifacts", "videos", "existing-output.mp4"),
+          mime_type: "video/mp4",
+          filename: "existing-output.mp4"
+        },
+        metadata: {
+          width: 1080,
+          height: 1920,
+          duration_seconds: 6,
+          aspect_ratio: "9:16",
+          sha256: ""
+        },
+        linked_objects: { project_id: prepared.project_id, shot_id: prepared.shot_id },
+        source: {
+          kind: "provider_output_file",
+          provider: "runninghub",
+          provider_job_id: taskId,
+          sha256: "",
+          external_url_host: "fixture.invalid"
+        }
+      },
+      source_path: videoFixture,
+      media_root: mediaRoot
+    }, db);
+    assert.equal(existingOutput.ok, true);
+    if (!existingOutput.ok) throw new Error("output fixture registration failed");
+    writeFileSync(existingOutput.artifact.storage.uri, "corrupt-paid-provider-output", "utf8");
+    db.close();
+
+    let submitCalls = 0;
+    let pollCalls = 0;
+    let downloadCalls = 0;
+    const noProviderAdapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => {
+        submitCalls += 1;
+        throw new Error("submit must not run");
+      },
+      pollStatus: async () => {
+        pollCalls += 1;
+        throw new Error("poll must not run");
+      },
+      fetchOutput: async () => { throw new Error("output fetch must not run"); }
+    } as unknown as VideoProviderAdapter;
+    await runWorkbenchGenerationOnce(prepared.intent_id, {
+      allow_submit: false,
+      dependencies: {
+        sqlite_path: sqlitePath,
+        env: prepared.env,
+        adapter_factory: () => noProviderAdapter,
+        now: () => new Date(wallMs),
+        monotonic_now_ms: () => 10_000
+      }
+    });
+
+    db = openM0Database(sqlitePath);
+    const attached = reconcileGenerationJob(prepared.job_id, {
+      decision: "attach_existing_task",
+      provider_task_id: taskId,
+      human_confirmation: true
+    }, db, { env: prepared.env, now: () => new Date(wallMs) });
+    assert.equal(attached.ok, true);
+    if (!attached.ok) throw new Error("output recovery attachment failed");
+    const recoveryIntentRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const recovery = (JSON.parse(recoveryIntentRow.data_json) as {
+      provider_output_recovery: {
+        provider_task_id: string;
+        invalid_artifact_id: string;
+        local_identity: string;
+        requested_at: string;
+      };
+    }).provider_output_recovery;
+    db.prepare("UPDATE generation_jobs SET state = 'downloading' WHERE job_id = ?")
+      .run(prepared.job_id);
+
+    // Simulate a process exit after downloader commit: Blob bytes and the
+    // replacement Artifact exist, but the Workbench rebind has not run.
+    const downloaded = await downloadProviderOutputToArtifact({
+      url: "https://example.invalid/recovered.mp4",
+      provider_name: "runninghub",
+      provider_job_id: recovery.local_identity,
+      project_id: prepared.project_id,
+      shot_id: prepared.shot_id,
+      duration_seconds: 6,
+      aspect_ratio: "9:16",
+      storage_directory: mediaRoot,
+      verified_blob_recovery: {
+        invalid_artifact_id: recovery.invalid_artifact_id
+      }
+    }, db, {
+      storage_root: mediaRoot,
+      resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+      fetch_pinned_address: async () => new Response(readFileSync(videoFixture), {
+        status: 200,
+        headers: { "content-type": "video/mp4" }
+      })
+    });
+    if (!downloaded.ok) {
+      const errorCode = downloaded.error.code;
+      db.close();
+      assert.fail(`recovery download fixture failed: ${errorCode}`);
+    }
+    const replacementArtifactId = downloaded.artifact.artifact_id;
+    const activeBeforeRestart = db.prepare(`SELECT COUNT(*) AS count FROM media_artifacts
+      WHERE status = 'active' AND role = 'generated_clip' AND artifact_type = 'video'
+        AND project_id = ? AND shot_id = ?`)
+      .get(prepared.project_id, prepared.shot_id) as { count: number };
+    db.prepare(`UPDATE generation_jobs
+      SET state = 'manual_reconciliation',
+          reconciliation_reason = 'PROVIDER_OUTPUT_REQUIRES_RECONCILIATION',
+          lease_owner = '',
+          lease_token = '',
+          lease_expires_at = NULL
+      WHERE job_id = ?`).run(prepared.job_id);
+    const repeatedAttachment = reconcileGenerationJob(prepared.job_id, {
+      decision: "attach_existing_task",
+      provider_task_id: taskId,
+      human_confirmation: true
+    }, db, { env: prepared.env, now: () => new Date(wallMs + 1_000) });
+    assert.equal(repeatedAttachment.ok, true);
+    if (!repeatedAttachment.ok) throw new Error("repeated output recovery attachment failed");
+    const repeatedRecoveryRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const repeatedRecovery = (JSON.parse(repeatedRecoveryRow.data_json) as {
+      provider_output_recovery: typeof recovery;
+    }).provider_output_recovery;
+    const reattachedJob = db.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    db.close();
+    assert.equal(activeBeforeRestart.count, 2);
+    assert.deepEqual(repeatedRecovery, recovery);
+    assert.deepEqual({ ...reattachedJob }, {
+      state: "polling",
+      reconciliation_reason: "HUMAN_ATTACHED_EXISTING_TASK"
+    });
+
+    await runWorkbenchGenerationOnce(prepared.intent_id, {
+      allow_submit: false,
+      dependencies: {
+        sqlite_path: sqlitePath,
+        env: prepared.env,
+        adapter_factory: () => noProviderAdapter,
+        now: () => new Date(wallMs + 1_000),
+        monotonic_now_ms: () => 11_000,
+        download_provider_output: (async () => {
+          downloadCalls += 1;
+          throw new Error("committed replacement must be rebound before another download");
+        }) as typeof downloadProviderOutputToArtifact
+      }
+    });
+
+    db = openM0Database(sqlitePath);
+    const completedIntent = db.prepare("SELECT status, output_artifact_id, data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { status: string; output_artifact_id: string; data_json: string };
+    const completedJob = db.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    const oldArtifact = db.prepare("SELECT status, data_json FROM media_artifacts WHERE artifact_id = ?")
+      .get(existingOutput.artifact.artifact_id) as { status: string; data_json: string };
+    const replacementArtifact = db.prepare("SELECT status, data_json FROM media_artifacts WHERE artifact_id = ?")
+      .get(replacementArtifactId) as { status: string; data_json: string };
+    const activeAfterRestart = db.prepare(`SELECT COUNT(*) AS count FROM media_artifacts
+      WHERE status = 'active' AND role = 'generated_clip' AND artifact_type = 'video'
+        AND project_id = ? AND shot_id = ?`)
+      .get(prepared.project_id, prepared.shot_id) as { count: number };
+    db.close();
+
+    assert.equal(submitCalls, 0);
+    assert.equal(pollCalls, 0);
+    assert.equal(downloadCalls, 0);
+    assert.equal(completedIntent.status, "succeeded");
+    assert.equal(completedIntent.output_artifact_id, replacementArtifactId);
+    assert.equal("provider_output_recovery" in JSON.parse(completedIntent.data_json), false);
+    assert.deepEqual({ ...completedJob }, { state: "succeeded", reconciliation_reason: "" });
+    assert.equal(oldArtifact.status, "archived");
+    assert.equal((JSON.parse(oldArtifact.data_json) as { status: string }).status, "archived");
+    assert.equal(replacementArtifact.status, "active");
+    assert.equal((JSON.parse(replacementArtifact.data_json) as { source: { provider_job_id: string } }).source.provider_job_id, taskId);
+    assert.equal(activeAfterRestart.count, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("switching Provider tasks retires the prior recovery artifacts without changing Blob bindings", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-recovery-task-switch-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const mediaRoot = join(root, "media");
+  const videoFixture = resolve("fixtures/video/mock_clip.mp4");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Retire recovery before Provider task switch");
+    const previousTaskId = "task-recovery-switch-previous";
+    const nextTaskId = "task-recovery-switch-next";
+    const localIdentity = "local_recovery_11111111-1111-4111-8111-111111111111";
+    const wallMs = Date.now();
+    persistKnownProviderTask(
+      sqlitePath,
+      prepared.intent_id,
+      prepared.job_id,
+      previousTaskId,
+      MIN_PROVIDER_TASK_POLL_TIMEOUT_MS
+    );
+
+    const db = openM0Database(sqlitePath);
+    const activateRecoveryArtifact = (artifactId: string, providerJobId: string) => activateLocalMediaArtifact({
+      artifact: {
+        artifact_id: artifactId,
+        blob_id: "",
+        artifact_type: "video",
+        role: "generated_clip",
+        status: "active",
+        storage: {
+          uri: join(mediaRoot, "artifacts", "videos", `${artifactId}.mp4`),
+          mime_type: "video/mp4",
+          filename: `${artifactId}.mp4`
+        },
+        metadata: {
+          width: 1080,
+          height: 1920,
+          duration_seconds: 6,
+          aspect_ratio: "9:16",
+          sha256: ""
+        },
+        linked_objects: { project_id: prepared.project_id, shot_id: prepared.shot_id },
+        source: {
+          kind: "provider_output_file",
+          provider: "runninghub",
+          provider_job_id: providerJobId,
+          sha256: "",
+          external_url_host: "fixture.invalid"
+        }
+      },
+      source_path: videoFixture,
+      media_root: mediaRoot
+    }, db);
+    const invalidArtifact = activateRecoveryArtifact("artifact_recovery_switch_invalid", previousTaskId);
+    const replacementArtifact = activateRecoveryArtifact("artifact_recovery_switch_replacement", localIdentity);
+    assert.equal(invalidArtifact.ok, true);
+    assert.equal(replacementArtifact.ok, true);
+    if (!invalidArtifact.ok || !replacementArtifact.ok) throw new Error("recovery task-switch fixture activation failed");
+
+    const intentRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const intentData = JSON.parse(intentRow.data_json) as Record<string, unknown>;
+    intentData.provider_output_recovery = {
+      version: 1,
+      provider_task_id: previousTaskId,
+      invalid_artifact_id: invalidArtifact.artifact.artifact_id,
+      local_identity: localIdentity,
+      requested_at: new Date(wallMs).toISOString()
+    };
+    db.prepare("UPDATE generation_intents SET data_json = ? WHERE intent_id = ?")
+      .run(JSON.stringify(intentData), prepared.intent_id);
+    db.prepare(`UPDATE generation_jobs
+      SET state = 'manual_reconciliation',
+          reconciliation_reason = 'PROVIDER_OUTPUT_REQUIRES_RECONCILIATION',
+          lease_owner = '',
+          lease_token = '',
+          lease_expires_at = NULL
+      WHERE job_id = ?`).run(prepared.job_id);
+
+    const blobBindingsBefore = db.prepare(`SELECT artifact_id, blob_id FROM media_artifact_blobs
+      WHERE artifact_id IN (?, ?) ORDER BY artifact_id`).all(
+      invalidArtifact.artifact.artifact_id,
+      replacementArtifact.artifact.artifact_id
+    ) as Array<{ artifact_id: string; blob_id: string }>;
+    const localIdentityAttachment = reconcileGenerationJob(prepared.job_id, {
+      decision: "attach_existing_task",
+      provider_task_id: localIdentity,
+      human_confirmation: true
+    }, db, { env: prepared.env, now: () => new Date(wallMs + 500) });
+    assert.equal(localIdentityAttachment.ok, false);
+    if (!localIdentityAttachment.ok) {
+      assert.equal(localIdentityAttachment.error.code, "INVALID_PROVIDER_TASK_ID");
+    }
+    const recoveryAfterRejectedIdentity = JSON.parse((db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string }).data_json) as {
+      provider_output_recovery: { provider_task_id: string; local_identity: string };
+    };
+    assert.equal(recoveryAfterRejectedIdentity.provider_output_recovery.provider_task_id, previousTaskId);
+    assert.equal(recoveryAfterRejectedIdentity.provider_output_recovery.local_identity, localIdentity);
+
+    db.prepare("UPDATE media_artifacts SET status = 'inaccessible' WHERE artifact_id = ?")
+      .run(replacementArtifact.artifact.artifact_id);
+    const rejectedUnsafeRetirement = reconcileGenerationJob(prepared.job_id, {
+      decision: "attach_existing_task",
+      provider_task_id: nextTaskId,
+      human_confirmation: true
+    }, db, { env: prepared.env, now: () => new Date(wallMs + 750) });
+    assert.equal(rejectedUnsafeRetirement.ok, false);
+    if (!rejectedUnsafeRetirement.ok) {
+      assert.equal(rejectedUnsafeRetirement.error.code, "ARTIFACT_RECOVERY_RETIRE_FAILED");
+    }
+    const stateAfterRejectedRetirement = db.prepare(`SELECT
+        (SELECT provider_task_id FROM generation_intents WHERE intent_id = ?) AS provider_task_id,
+        (SELECT data_json FROM generation_intents WHERE intent_id = ?) AS intent_data_json,
+        (SELECT status FROM media_artifacts WHERE artifact_id = ?) AS invalid_status,
+        (SELECT status FROM media_artifacts WHERE artifact_id = ?) AS replacement_status`)
+      .get(
+        prepared.intent_id,
+        prepared.intent_id,
+        invalidArtifact.artifact.artifact_id,
+        replacementArtifact.artifact.artifact_id
+      ) as { provider_task_id: string; intent_data_json: string; invalid_status: string; replacement_status: string };
+    assert.equal(stateAfterRejectedRetirement.provider_task_id, previousTaskId);
+    assert.equal("provider_output_recovery" in JSON.parse(stateAfterRejectedRetirement.intent_data_json), true);
+    assert.equal(stateAfterRejectedRetirement.invalid_status, "active");
+    assert.equal(stateAfterRejectedRetirement.replacement_status, "inaccessible");
+    db.prepare("UPDATE media_artifacts SET status = 'active' WHERE artifact_id = ?")
+      .run(replacementArtifact.artifact.artifact_id);
+
+    const switched = reconcileGenerationJob(prepared.job_id, {
+      decision: "attach_existing_task",
+      provider_task_id: nextTaskId,
+      human_confirmation: true
+    }, db, { env: prepared.env, now: () => new Date(wallMs + 1_000) });
+    assert.equal(switched.ok, true);
+    if (!switched.ok) throw new Error("Provider recovery task switch failed");
+
+    const reconciledIntent = db.prepare("SELECT provider_task_id, status, data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { provider_task_id: string; status: string; data_json: string };
+    const reconciledJob = db.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    const retiredArtifacts = db.prepare(`SELECT artifact_id, status, data_json FROM media_artifacts
+      WHERE artifact_id IN (?, ?) ORDER BY artifact_id`).all(
+      invalidArtifact.artifact.artifact_id,
+      replacementArtifact.artifact.artifact_id
+    ) as Array<{ artifact_id: string; status: string; data_json: string }>;
+    const blobBindingsAfter = db.prepare(`SELECT artifact_id, blob_id FROM media_artifact_blobs
+      WHERE artifact_id IN (?, ?) ORDER BY artifact_id`).all(
+      invalidArtifact.artifact.artifact_id,
+      replacementArtifact.artifact.artifact_id
+    ) as Array<{ artifact_id: string; blob_id: string }>;
+    const activeGeneratedClips = db.prepare(`SELECT COUNT(*) AS count FROM media_artifacts
+      WHERE project_id = ? AND shot_id = ? AND role = 'generated_clip'
+        AND artifact_type = 'video' AND status = 'active'`)
+      .get(prepared.project_id, prepared.shot_id) as { count: number };
+    db.close();
+
+    assert.equal(reconciledIntent.provider_task_id, nextTaskId);
+    assert.equal(reconciledIntent.status, "running");
+    assert.equal("provider_output_recovery" in JSON.parse(reconciledIntent.data_json), false);
+    assert.deepEqual({ ...reconciledJob }, {
+      state: "polling",
+      reconciliation_reason: "HUMAN_ATTACHED_EXISTING_TASK"
+    });
+    assert.equal(retiredArtifacts.length, 2);
+    for (const artifact of retiredArtifacts) {
+      assert.equal(artifact.status, "archived");
+      assert.equal((JSON.parse(artifact.data_json) as { status: string }).status, "archived");
+    }
+    assert.deepEqual(blobBindingsAfter, blobBindingsBefore);
+    assert.equal(activeGeneratedClips.count, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("abandoning Provider recovery retires its artifacts atomically without changing Blob bindings", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-recovery-abandon-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const mediaRoot = join(root, "media");
+  const videoFixture = resolve("fixtures/video/mock_clip.mp4");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Retire recovery before human abandon");
+    const taskId = "task-recovery-abandon";
+    const localIdentity = "local_recovery_33333333-3333-4333-8333-333333333333";
+    const wallMs = Date.now();
+    persistKnownProviderTask(
+      sqlitePath,
+      prepared.intent_id,
+      prepared.job_id,
+      taskId,
+      MIN_PROVIDER_TASK_POLL_TIMEOUT_MS
+    );
+
+    const db = openM0Database(sqlitePath);
+    const activateRecoveryArtifact = (artifactId: string, providerJobId: string) => activateLocalMediaArtifact({
+      artifact: {
+        artifact_id: artifactId,
+        blob_id: "",
+        artifact_type: "video",
+        role: "generated_clip",
+        status: "active",
+        storage: {
+          uri: join(mediaRoot, "artifacts", "videos", `${artifactId}.mp4`),
+          mime_type: "video/mp4",
+          filename: `${artifactId}.mp4`
+        },
+        metadata: {
+          width: 1080,
+          height: 1920,
+          duration_seconds: 6,
+          aspect_ratio: "9:16",
+          sha256: ""
+        },
+        linked_objects: { project_id: prepared.project_id, shot_id: prepared.shot_id },
+        source: {
+          kind: "provider_output_file",
+          provider: "runninghub",
+          provider_job_id: providerJobId,
+          sha256: "",
+          external_url_host: "fixture.invalid"
+        }
+      },
+      source_path: videoFixture,
+      media_root: mediaRoot
+    }, db);
+    const invalidArtifact = activateRecoveryArtifact("artifact_recovery_abandon_invalid", taskId);
+    const replacementArtifact = activateRecoveryArtifact("artifact_recovery_abandon_replacement", localIdentity);
+    assert.equal(invalidArtifact.ok, true);
+    assert.equal(replacementArtifact.ok, true);
+    if (!invalidArtifact.ok || !replacementArtifact.ok) throw new Error("recovery abandon fixture activation failed");
+
+    const intentRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const intentData = JSON.parse(intentRow.data_json) as Record<string, unknown>;
+    intentData.provider_output_recovery = {
+      version: 1,
+      provider_task_id: taskId,
+      invalid_artifact_id: invalidArtifact.artifact.artifact_id,
+      local_identity: localIdentity,
+      requested_at: new Date(wallMs).toISOString()
+    };
+    db.prepare("UPDATE generation_intents SET data_json = ? WHERE intent_id = ?")
+      .run(JSON.stringify(intentData), prepared.intent_id);
+    db.prepare(`UPDATE generation_jobs
+      SET state = 'manual_reconciliation',
+          reconciliation_reason = 'PROVIDER_OUTPUT_REQUIRES_RECONCILIATION',
+          lease_owner = '',
+          lease_token = '',
+          lease_expires_at = NULL
+      WHERE job_id = ?`).run(prepared.job_id);
+
+    const blobBindingsBefore = db.prepare(`SELECT artifact_id, blob_id FROM media_artifact_blobs
+      WHERE artifact_id IN (?, ?) ORDER BY artifact_id`).all(
+      invalidArtifact.artifact.artifact_id,
+      replacementArtifact.artifact.artifact_id
+    ) as Array<{ artifact_id: string; blob_id: string }>;
+    db.prepare("UPDATE media_artifacts SET status = 'inaccessible' WHERE artifact_id = ?")
+      .run(replacementArtifact.artifact.artifact_id);
+    const rejectedUnsafeAbandon = reconcileGenerationJob(prepared.job_id, {
+      decision: "abandon",
+      reason: "Reject unsafe recovery retirement.",
+      human_confirmation: true
+    }, db, { env: prepared.env, now: () => new Date(wallMs + 500) });
+    assert.equal(rejectedUnsafeAbandon.ok, false);
+    if (!rejectedUnsafeAbandon.ok) {
+      assert.equal(rejectedUnsafeAbandon.error.code, "ARTIFACT_RECOVERY_RETIRE_FAILED");
+    }
+    const stateAfterRejectedAbandon = db.prepare(`SELECT
+        (SELECT status FROM generation_intents WHERE intent_id = ?) AS intent_status,
+        (SELECT data_json FROM generation_intents WHERE intent_id = ?) AS intent_data_json,
+        (SELECT state FROM generation_jobs WHERE job_id = ?) AS job_state,
+        (SELECT status FROM media_artifacts WHERE artifact_id = ?) AS invalid_status,
+        (SELECT status FROM media_artifacts WHERE artifact_id = ?) AS replacement_status`)
+      .get(
+        prepared.intent_id,
+        prepared.intent_id,
+        prepared.job_id,
+        invalidArtifact.artifact.artifact_id,
+        replacementArtifact.artifact.artifact_id
+      ) as {
+        intent_status: string;
+        intent_data_json: string;
+        job_state: string;
+        invalid_status: string;
+        replacement_status: string;
+      };
+    assert.equal(stateAfterRejectedAbandon.intent_status, "running");
+    assert.equal("provider_output_recovery" in JSON.parse(stateAfterRejectedAbandon.intent_data_json), true);
+    assert.equal(stateAfterRejectedAbandon.job_state, "manual_reconciliation");
+    assert.equal(stateAfterRejectedAbandon.invalid_status, "active");
+    assert.equal(stateAfterRejectedAbandon.replacement_status, "inaccessible");
+    db.prepare("UPDATE media_artifacts SET status = 'active' WHERE artifact_id = ?")
+      .run(replacementArtifact.artifact.artifact_id);
+
+    const abandoned = reconcileGenerationJob(prepared.job_id, {
+      decision: "abandon",
+      reason: "Human abandoned the recovered Provider output.",
+      human_confirmation: true
+    }, db, { env: prepared.env, now: () => new Date(wallMs + 1_000) });
+    assert.equal(abandoned.ok, true);
+    if (!abandoned.ok) throw new Error("Provider recovery abandon failed");
+
+    const abandonedIntent = db.prepare("SELECT provider_task_id, status, data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { provider_task_id: string; status: string; data_json: string };
+    const abandonedJob = db.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    const abandonedRun = db.prepare("SELECT data_json FROM generation_runs WHERE run_id = ?")
+      .get(prepared.run_id) as { data_json: string };
+    const retiredArtifacts = db.prepare(`SELECT artifact_id, status, data_json FROM media_artifacts
+      WHERE artifact_id IN (?, ?) ORDER BY artifact_id`).all(
+      invalidArtifact.artifact.artifact_id,
+      replacementArtifact.artifact.artifact_id
+    ) as Array<{ artifact_id: string; status: string; data_json: string }>;
+    const blobBindingsAfter = db.prepare(`SELECT artifact_id, blob_id FROM media_artifact_blobs
+      WHERE artifact_id IN (?, ?) ORDER BY artifact_id`).all(
+      invalidArtifact.artifact.artifact_id,
+      replacementArtifact.artifact.artifact_id
+    ) as Array<{ artifact_id: string; blob_id: string }>;
+    const activeGeneratedClips = db.prepare(`SELECT COUNT(*) AS count FROM media_artifacts
+      WHERE project_id = ? AND shot_id = ? AND role = 'generated_clip'
+        AND artifact_type = 'video' AND status = 'active'`)
+      .get(prepared.project_id, prepared.shot_id) as { count: number };
+    db.close();
+
+    assert.equal(abandonedIntent.provider_task_id, taskId);
+    assert.equal(abandonedIntent.status, "cancelled");
+    assert.equal("provider_output_recovery" in JSON.parse(abandonedIntent.data_json), false);
+    assert.deepEqual({ ...abandonedJob }, {
+      state: "cancelled",
+      reconciliation_reason: "Human abandoned the recovered Provider output."
+    });
+    assert.equal((JSON.parse(abandonedRun.data_json) as { status: string }).status, "cancelled");
+    assert.equal(retiredArtifacts.length, 2);
+    for (const artifact of retiredArtifacts) {
+      assert.equal(artifact.status, "archived");
+      assert.equal((JSON.parse(artifact.data_json) as { status: string }).status, "archived");
+    }
+    assert.deepEqual(blobBindingsAfter, blobBindingsBefore);
+    assert.equal(activeGeneratedClips.count, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a local recovery identity is reserved across intents before any replacement Artifact exists", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-recovery-identity-reserved-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    const recoveryOwner = await prepareConfirmedGeneration(sqlitePath, "Reserve local recovery identity");
+    const previousTaskId = "task-reserved-identity-owner";
+    const localIdentity = "local_recovery_22222222-2222-4222-8222-222222222222";
+    const setupDb = openM0Database(sqlitePath);
+    setupDb.prepare("UPDATE generation_intents SET status = 'cancelled' WHERE intent_id = ?")
+      .run(recoveryOwner.intent_id);
+    setupDb.prepare("UPDATE generation_jobs SET state = 'cancelled' WHERE job_id = ?")
+      .run(recoveryOwner.job_id);
+    setupDb.close();
+    const otherGeneration = await prepareConfirmedGeneration(sqlitePath, "Reject another Intent using recovery identity");
+    persistKnownProviderTask(
+      sqlitePath,
+      recoveryOwner.intent_id,
+      recoveryOwner.job_id,
+      previousTaskId,
+      MIN_PROVIDER_TASK_POLL_TIMEOUT_MS
+    );
+
+    const db = openM0Database(sqlitePath);
+    const ownerRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(recoveryOwner.intent_id) as { data_json: string };
+    const ownerData = JSON.parse(ownerRow.data_json) as Record<string, unknown>;
+    ownerData.provider_output_recovery = {
+      version: 1,
+      provider_task_id: previousTaskId,
+      invalid_artifact_id: "artifact_reserved_identity_fixture",
+      local_identity: localIdentity,
+      requested_at: new Date().toISOString()
+    };
+    db.prepare("UPDATE generation_intents SET data_json = ? WHERE intent_id = ?")
+      .run(JSON.stringify(ownerData), recoveryOwner.intent_id);
+    db.prepare("UPDATE generation_intents SET status = 'running' WHERE intent_id = ?")
+      .run(otherGeneration.intent_id);
+    db.prepare(`UPDATE generation_jobs
+      SET state = 'manual_reconciliation',
+          reconciliation_reason = 'PROVIDER_SUBMIT_OUTCOME_UNKNOWN',
+          lease_owner = '',
+          lease_token = '',
+          lease_expires_at = NULL
+      WHERE job_id = ?`).run(otherGeneration.job_id);
+
+    const attemptedAttachment = reconcileGenerationJob(otherGeneration.job_id, {
+      decision: "attach_existing_task",
+      provider_task_id: localIdentity,
+      human_confirmation: true
+    }, db, { env: otherGeneration.env });
+    assert.equal(attemptedAttachment.ok, false);
+    if (!attemptedAttachment.ok) {
+      assert.equal(attemptedAttachment.error.code, "INVALID_PROVIDER_TASK_ID");
+    }
+
+    const ownerAfter = JSON.parse((db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(recoveryOwner.intent_id) as { data_json: string }).data_json) as {
+      provider_output_recovery: { provider_task_id: string; local_identity: string };
+    };
+    const otherIntentAfter = db.prepare("SELECT provider_task_id, status FROM generation_intents WHERE intent_id = ?")
+      .get(otherGeneration.intent_id) as { provider_task_id: string; status: string };
+    const otherJobAfter = db.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+      .get(otherGeneration.job_id) as { state: string; reconciliation_reason: string };
+    const replacementCount = db.prepare(`SELECT COUNT(*) AS count FROM media_artifacts
+      WHERE json_valid(data_json) = 1
+        AND json_extract(data_json, '$.source.provider_job_id') = ?`)
+      .get(localIdentity) as { count: number };
+    db.close();
+
+    assert.equal(ownerAfter.provider_output_recovery.provider_task_id, previousTaskId);
+    assert.equal(ownerAfter.provider_output_recovery.local_identity, localIdentity);
+    assert.deepEqual({ ...otherIntentAfter }, { provider_task_id: "", status: "running" });
+    assert.deepEqual({ ...otherJobAfter }, {
+      state: "manual_reconciliation",
+      reconciliation_reason: "PROVIDER_SUBMIT_OUTCOME_UNKNOWN"
+    });
+    assert.equal(replacementCount.count, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("failed verified Blob recovery stays in manual reconciliation without polling or resubmitting", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-blob-recovery-failure-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const mediaRoot = join(root, "media");
+  const videoFixture = resolve("fixtures/video/mock_clip.mp4");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Keep failed Blob recovery manual");
+    const taskId = "task-blob-recovery-failure";
+    const wallMs = Date.now();
+    persistKnownProviderTask(sqlitePath, prepared.intent_id, prepared.job_id, taskId, MIN_PROVIDER_TASK_POLL_TIMEOUT_MS);
+
+    let db = openM0Database(sqlitePath);
+    const intentRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const intentData = JSON.parse(intentRow.data_json) as Record<string, unknown>;
+    intentData.provider_poll_started_at = new Date(wallMs - MIN_PROVIDER_TASK_POLL_TIMEOUT_MS - 1_000).toISOString();
+    intentData.provider_poll_timeout_ms = MIN_PROVIDER_TASK_POLL_TIMEOUT_MS;
+    intentData.provider_poll_deadline_at = new Date(wallMs - 1_000).toISOString();
+    db.prepare("UPDATE generation_intents SET data_json = ? WHERE intent_id = ?")
+      .run(JSON.stringify(intentData), prepared.intent_id);
+    db.prepare("UPDATE generation_jobs SET state = 'finalizing' WHERE job_id = ?")
+      .run(prepared.job_id);
+
+    const invalidPrepared: MediaArtifact = {
+      artifact_id: "artifact_blob_recovery_failure",
+      blob_id: "",
+      artifact_type: "video",
+      role: "generated_clip",
+      status: "active",
+      storage: {
+        uri: join(mediaRoot, "artifacts", "videos", "invalid-output.mp4"),
+        mime_type: "video/mp4",
+        filename: "invalid-output.mp4"
+      },
+      metadata: {
+        width: 1080,
+        height: 1920,
+        duration_seconds: 6,
+        aspect_ratio: "9:16",
+        sha256: ""
+      },
+      linked_objects: { project_id: prepared.project_id, shot_id: prepared.shot_id },
+      source: {
+        kind: "provider_output_file",
+        provider: "runninghub",
+        provider_job_id: taskId,
+        sha256: "",
+        external_url_host: "fixture.invalid"
+      }
+    };
+    const invalidOutput = activateLocalMediaArtifact({
+      artifact: invalidPrepared,
+      source_path: videoFixture,
+      media_root: mediaRoot
+    }, db);
+    assert.equal(invalidOutput.ok, true, invalidOutput.ok ? undefined : invalidOutput.error.code);
+    if (!invalidOutput.ok) throw new Error("invalid output fixture registration failed");
+    writeFileSync(invalidOutput.artifact.storage.uri, "corrupt-paid-provider-output", "utf8");
+    db.close();
+
+    let submitCalls = 0;
+    let pollCalls = 0;
+    let downloadCalls = 0;
+    const adapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => {
+        submitCalls += 1;
+        throw new Error("submit must not run during Blob recovery");
+      },
+      pollStatus: async () => {
+        pollCalls += 1;
+        return {
+          ok: true as const,
+          provider_job_id: taskId,
+          status: "succeeded" as const,
+          provider_status: "SUCCESS",
+          retryable: false,
+          output_url: "https://example.invalid/recovery-mismatch.mp4"
+        };
+      },
+      fetchOutput: async () => { throw new Error("adapter output fetch must not run"); }
+    } as unknown as VideoProviderAdapter;
+
+    await runWorkbenchGenerationOnce(prepared.intent_id, {
+      allow_submit: false,
+      dependencies: {
+        sqlite_path: sqlitePath,
+        env: prepared.env,
+        adapter_factory: () => adapter,
+        now: () => new Date(wallMs),
+        monotonic_now_ms: () => 10_000
+      }
+    });
+    assert.equal(pollCalls, 0);
+
+    db = openM0Database(sqlitePath);
+    const attached = reconcileGenerationJob(prepared.job_id, {
+      decision: "attach_existing_task",
+      provider_task_id: taskId,
+      human_confirmation: true
+    }, db, { env: prepared.env, now: () => new Date(wallMs) });
+    assert.equal(attached.ok, true, attached.ok ? undefined : attached.error.code);
+    const recoveryRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const recovery = (JSON.parse(recoveryRow.data_json) as {
+      provider_output_recovery: { invalid_artifact_id: string };
+    }).provider_output_recovery;
+    db.close();
+
+    const differentBytes = Buffer.concat([
+      readFileSync(videoFixture),
+      Buffer.from("different-provider-output", "utf8")
+    ]);
+    const download = (async (input, targetDb) => {
+      downloadCalls += 1;
+      assert.deepEqual(input.verified_blob_recovery, {
+        invalid_artifact_id: recovery.invalid_artifact_id
+      });
+      return downloadProviderOutputToArtifact({
+        ...input,
+        storage_directory: mediaRoot
+      }, targetDb, {
+        storage_root: mediaRoot,
+        resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+        fetch_pinned_address: async () => new Response(differentBytes, {
+          status: 200,
+          headers: { "content-type": "video/mp4" }
+        })
+      });
+    }) as typeof downloadProviderOutputToArtifact;
+
+    await runWorkbenchGenerationOnce(prepared.intent_id, {
+      allow_submit: false,
+      dependencies: {
+        sqlite_path: sqlitePath,
+        env: prepared.env,
+        adapter_factory: () => adapter,
+        now: () => new Date(wallMs),
+        monotonic_now_ms: () => 10_000,
+        download_provider_output: download
+      }
+    });
+
+    db = openM0Database(sqlitePath);
+    const failedIntent = db.prepare("SELECT status, output_artifact_id, sanitized_error_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { status: string; output_artifact_id: string; sanitized_error_json: string };
+    const failedJob = db.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    db.close();
+    assert.equal(submitCalls, 0);
+    assert.equal(pollCalls, 1);
+    assert.equal(downloadCalls, 1);
+    assert.equal(failedIntent.status, "running");
+    assert.equal(failedIntent.output_artifact_id, "");
+    assert.equal((JSON.parse(failedIntent.sanitized_error_json) as { code: string }).code, "MEDIA_BLOB_RECOVERY_CONTENT_MISMATCH");
+    assert.deepEqual({ ...failedJob }, {
+      state: "manual_reconciliation",
+      reconciliation_reason: "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION"
+    });
+
+    await runWorkbenchGenerationOnce(prepared.intent_id, {
+      allow_submit: false,
+      dependencies: {
+        sqlite_path: sqlitePath,
+        env: prepared.env,
+        adapter_factory: () => adapter,
+        now: () => new Date(wallMs + 1_000),
+        monotonic_now_ms: () => 11_000,
+        download_provider_output: download
+      }
+    });
+    assert.equal(submitCalls, 0);
+    assert.equal(pollCalls, 1);
+    assert.equal(downloadCalls, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Provider success and downloading state roll back together across the crash window", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-success-state-atomic-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Atomic Provider success state");
+    const taskId = "task-success-state-atomic";
+    persistKnownProviderTask(sqlitePath, prepared.intent_id, prepared.job_id, taskId);
+    let downloadCalls = 0;
+    const adapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => { throw new Error("submit must not run"); },
+      pollStatus: async () => ({
+        ok: true as const,
+        provider_job_id: taskId,
+        status: "succeeded" as const,
+        provider_status: "SUCCESS",
+        retryable: false,
+        output_url: "https://example.invalid/atomic.mp4"
+      }),
+      fetchOutput: async () => { throw new Error("output fetch must not run"); }
+    } as unknown as VideoProviderAdapter;
+
+    await runWorkbenchGenerationOnce(prepared.intent_id, {
+      allow_submit: false,
+      dependencies: {
+        sqlite_path: sqlitePath,
+        env: prepared.env,
+        adapter_factory: () => adapter,
+        download_provider_output: (async () => {
+          downloadCalls += 1;
+          throw new Error("download must not start before the atomic state transition commits");
+        }) as typeof downloadProviderOutputToArtifact,
+        fault_injection_after_provider_success_run_write: () => {
+          throw new Error("INJECTED_PROVIDER_SUCCESS_STATE_CRASH");
+        }
+      }
+    });
+
+    const db = openM0Database(sqlitePath);
+    const intent = db.prepare("SELECT status, provider_task_id FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { status: string; provider_task_id: string };
+    const job = db.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    const runRow = db.prepare("SELECT data_json FROM generation_runs WHERE run_id = ?")
+      .get(prepared.run_id) as { data_json: string };
+    db.close();
+    const run = JSON.parse(runRow.data_json) as {
+      status: string;
+      provider: { provider_job_id: string; provider_status: string };
+      error: { code: string };
+    };
+    assert.equal(downloadCalls, 0);
+    assert.deepEqual({ ...intent }, { status: "running", provider_task_id: taskId });
+    assert.deepEqual({ ...job }, {
+      state: "manual_reconciliation",
+      reconciliation_reason: "LOCAL_WORKER_REQUIRES_RECONCILIATION"
+    });
+    assert.equal(run.status, "running");
+    assert.equal(run.provider.provider_job_id, taskId);
+    assert.equal(run.provider.provider_status, "LOCAL_WORKER_REQUIRES_RECONCILIATION");
+    assert.equal(run.error.code, "LOCAL_WORKER_STATE_UNKNOWN");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("regeneration poll timeout restores review workflow without losing the rejected clip", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-regeneration-poll-timeout-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Regeneration polling deadline", { regeneration: true });
+    const baseWallMs = Date.now();
+    let wallMs = baseWallMs;
+    let monotonicMs = 20_000;
+    let submitCalls = 0;
+    let pollCalls = 0;
+    const adapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => {
+        submitCalls += 1;
+        return { ok: true as const, provider_job_id: "task-regeneration-timeout", provider_status: "PENDING" };
+      },
+      pollStatus: async () => {
+        pollCalls += 1;
+        return {
+          ok: true as const,
+          provider_job_id: "task-regeneration-timeout",
+          status: "running" as const,
+          provider_status: "RUNNING",
+          retryable: true
+        };
+      },
+      fetchOutput: async () => { throw new Error("output must not run"); }
+    } as unknown as VideoProviderAdapter;
+    const dependencies = {
+      sqlite_path: sqlitePath,
+      env: { ...prepared.env, PROVIDER_TASK_POLL_TIMEOUT_MS: "1000" },
+      adapter_factory: () => adapter,
+      now: () => new Date(wallMs),
+      monotonic_now_ms: () => monotonicMs,
+      poll_interval_ms: 100
+    };
+
+    await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: true, dependencies });
+    wallMs += 1_000;
+    monotonicMs += 1_000;
+    await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: false, dependencies });
+
+    const checked = openM0Database(sqlitePath);
+    const intent = checked.prepare("SELECT status, provider_task_id FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { status: string; provider_task_id: string };
+    const run = checked.prepare("SELECT data_json FROM generation_runs WHERE run_id = ?")
+      .get(prepared.run_id) as { data_json: string };
+    const job = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    const project = checked.prepare("SELECT data_json FROM projects WHERE project_id = ?")
+      .get(prepared.project_id) as { data_json: string };
+    const shot = checked.prepare("SELECT data_json FROM shots WHERE shot_id = ?")
+      .get(prepared.shot_id) as { data_json: string };
+    const summary = listWorkbenchProjects({ scope: "all" }, checked).items
+      .find((item) => item.project.project_id === prepared.project_id);
+    checked.close();
+
+    const runData = JSON.parse(run.data_json) as { status: string };
+    const shotData = JSON.parse(shot.data_json) as {
+      status: string;
+      clip_versions: Array<{ artifact_id: string; review_status: string }>;
+      review: { approval_status: string; rejection_reasons: string[] };
+    };
+    assert.equal(submitCalls, 1);
+    assert.equal(pollCalls, 0);
+    assert.deepEqual({ ...intent }, { status: "running", provider_task_id: "task-regeneration-timeout" });
+    assert.equal(runData.status, "running");
+    assert.deepEqual({ ...job }, { state: "manual_reconciliation", reconciliation_reason: "PROVIDER_POLL_TIMEOUT" });
+    assert.equal((JSON.parse(project.data_json) as { status: string }).status, "video_review");
+    assert.equal(shotData.status, "revision_needed");
+    assert.equal(shotData.clip_versions.length, 1);
+    assert.equal(shotData.clip_versions[0]?.review_status, "rejected");
+    assert.deepEqual(shotData.review.rejection_reasons, ["motion_drift"]);
+    assert.equal(summary?.active_run_count, 0);
+    assert.ok(summary?.blocker_codes.includes("GENERATION_MANUAL_RECONCILIATION"));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("custom provider polling deadline is enforced after a poll response returns", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-custom-poll-timeout-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Custom polling deadline");
+    const baseWallMs = Date.now();
+    let wallMs = baseWallMs;
+    let monotonicMs = 50_000;
+    let submitCalls = 0;
+    let pollCalls = 0;
+    let observedRequestTimeout = -1;
+    const adapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => {
+        submitCalls += 1;
+        return { ok: true as const, provider_job_id: "task-custom-deadline", provider_status: "PENDING" };
+      },
+      pollStatus: async (_taskId: string, options?: ProviderPollOptions) => {
+        pollCalls += 1;
+        observedRequestTimeout = options?.timeout_ms ?? -1;
+        wallMs += 1_000;
+        monotonicMs += 1_000;
+        return {
+          ok: true as const,
+          provider_job_id: "task-custom-deadline",
+          status: "running" as const,
+          provider_status: "RUNNING",
+          retryable: true
+        };
+      },
+      fetchOutput: async () => { throw new Error("output must not run"); }
+    } as unknown as VideoProviderAdapter;
+    const dependencies = {
+      sqlite_path: sqlitePath,
+      env: { ...prepared.env, PROVIDER_TASK_POLL_TIMEOUT_MS: "1200" },
+      adapter_factory: () => adapter,
+      poll_interval_ms: 100,
+      now: () => new Date(wallMs),
+      monotonic_now_ms: () => monotonicMs
+    };
+
+    await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: true, dependencies });
+    wallMs += 200;
+    monotonicMs += 200;
+    await runWorkbenchGenerationOnce(prepared.intent_id, { allow_submit: false, dependencies });
+
+    const checked = openM0Database(sqlitePath);
+    const intent = checked.prepare("SELECT provider_task_id, data_json FROM generation_intents WHERE intent_id = ?").get(prepared.intent_id) as { provider_task_id: string; data_json: string };
+    const job = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?").get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    checked.close();
+    assert.equal(Date.parse((JSON.parse(intent.data_json) as { provider_poll_deadline_at: string }).provider_poll_deadline_at), baseWallMs + 1_200);
+    assert.equal(observedRequestTimeout, 1_000);
+    assert.equal(submitCalls, 1);
+    assert.equal(pollCalls, 1);
+    assert.equal(intent.provider_task_id, "task-custom-deadline");
+    assert.deepEqual({ ...job }, { state: "manual_reconciliation", reconciliation_reason: "PROVIDER_POLL_TIMEOUT" });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("provider polling timeout configuration is bounded and fails closed before provider execution", async () => {
+  assert.equal(parseProviderTaskPollTimeoutMs({}), DEFAULT_PROVIDER_TASK_POLL_TIMEOUT_MS);
+  assert.equal(parseProviderTaskPollTimeoutMs({ PROVIDER_TASK_POLL_TIMEOUT_MS: String(MIN_PROVIDER_TASK_POLL_TIMEOUT_MS) }), MIN_PROVIDER_TASK_POLL_TIMEOUT_MS);
+  assert.equal(parseProviderTaskPollTimeoutMs({ PROVIDER_TASK_POLL_TIMEOUT_MS: String(MAX_PROVIDER_TASK_POLL_TIMEOUT_MS) }), MAX_PROVIDER_TASK_POLL_TIMEOUT_MS);
+  for (const value of ["", " ", "not-a-number", "-1", "0", "1.5", "Infinity", "999", String(MAX_PROVIDER_TASK_POLL_TIMEOUT_MS + 1), "9007199254740992"]) {
+    assert.throws(
+      () => parseProviderTaskPollTimeoutMs({ PROVIDER_TASK_POLL_TIMEOUT_MS: value }),
+      /Provider poll timeout configuration is invalid/
+    );
+  }
+
+  const root = mkdtempSync(join(tmpdir(), "generation-invalid-poll-timeout-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Invalid polling timeout");
+    let providerCalls = 0;
+    const adapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => { providerCalls += 1; throw new Error("submit must not run"); },
+      pollStatus: async () => { providerCalls += 1; throw new Error("poll must not run"); },
+      fetchOutput: async () => { providerCalls += 1; throw new Error("output must not run"); }
+    } as unknown as VideoProviderAdapter;
+    await runWorkbenchGenerationOnce(prepared.intent_id, {
+      allow_submit: true,
+      dependencies: {
+        sqlite_path: sqlitePath,
+        env: { ...prepared.env, PROVIDER_TASK_POLL_TIMEOUT_MS: "0" },
+        adapter_factory: () => adapter
+      }
+    });
+    const checked = openM0Database(sqlitePath);
+    const intent = checked.prepare("SELECT status, provider_task_id, sanitized_error_json FROM generation_intents WHERE intent_id = ?").get(prepared.intent_id) as { status: string; provider_task_id: string; sanitized_error_json: string };
+    const job = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?").get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    checked.close();
+    assert.equal(providerCalls, 0);
+    assert.deepEqual({ status: intent.status, provider_task_id: intent.provider_task_id }, { status: "failed", provider_task_id: "" });
+    assert.equal((JSON.parse(intent.sanitized_error_json) as { code: string }).code, "PROVIDER_POLL_TIMEOUT_CONFIG_INVALID");
+    assert.deepEqual({ ...job }, { state: "failed", reconciliation_reason: "PROVIDER_POLL_TIMEOUT_CONFIG_INVALID" });
+
+    const missingPath = join(root, "missing.sqlite");
+    const missing = await prepareConfirmedGeneration(missingPath, "Missing persisted polling deadline");
+    const missingDb = openM0Database(missingPath);
+    missingDb.prepare("UPDATE generation_intents SET provider_task_id = 'task-missing-deadline', status = 'running' WHERE intent_id = ?").run(missing.intent_id);
+    missingDb.prepare("UPDATE generation_jobs SET state = 'polling' WHERE job_id = ?").run(missing.job_id);
+    missingDb.close();
+    await runWorkbenchGenerationOnce(missing.intent_id, {
+      allow_submit: false,
+      dependencies: { sqlite_path: missingPath, env: missing.env, adapter_factory: () => adapter }
+    });
+    const missingChecked = openM0Database(missingPath);
+    const missingIntent = missingChecked.prepare("SELECT status, provider_task_id FROM generation_intents WHERE intent_id = ?").get(missing.intent_id) as { status: string; provider_task_id: string };
+    const missingJob = missingChecked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?").get(missing.job_id) as { state: string; reconciliation_reason: string };
+    missingChecked.close();
+    assert.equal(providerCalls, 0);
+    assert.deepEqual({ ...missingIntent }, { status: "running", provider_task_id: "task-missing-deadline" });
+    assert.deepEqual({ ...missingJob }, { state: "manual_reconciliation", reconciliation_reason: "PROVIDER_POLL_TIMEOUT_CONFIG_INVALID" });
+
+    const persistedPath = join(root, "persisted.sqlite");
+    const persisted = await prepareConfirmedGeneration(persistedPath, "Invalid persisted polling deadline");
+    const persistedDb = openM0Database(persistedPath);
+    const persistedDataRow = persistedDb.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(persisted.intent_id) as { data_json: string };
+    const persistedData = JSON.parse(persistedDataRow.data_json) as Record<string, unknown>;
+    const startedAt = Date.now();
+    persistedData.provider_poll_started_at = new Date(startedAt).toISOString();
+    persistedData.provider_poll_timeout_ms = MIN_PROVIDER_TASK_POLL_TIMEOUT_MS;
+    persistedData.provider_poll_deadline_at = new Date(startedAt + MIN_PROVIDER_TASK_POLL_TIMEOUT_MS + 1).toISOString();
+    persistedDb.prepare("UPDATE generation_intents SET provider_task_id = 'task-invalid-deadline', status = 'running', data_json = ? WHERE intent_id = ?")
+      .run(JSON.stringify(persistedData), persisted.intent_id);
+    persistedDb.prepare("UPDATE generation_jobs SET state = 'polling' WHERE job_id = ?").run(persisted.job_id);
+    persistedDb.close();
+    await runWorkbenchGenerationOnce(persisted.intent_id, {
+      allow_submit: false,
+      dependencies: { sqlite_path: persistedPath, env: persisted.env, adapter_factory: () => adapter }
+    });
+    const persistedChecked = openM0Database(persistedPath);
+    const persistedIntent = persistedChecked.prepare("SELECT status, provider_task_id FROM generation_intents WHERE intent_id = ?").get(persisted.intent_id) as { status: string; provider_task_id: string };
+    const persistedJob = persistedChecked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?").get(persisted.job_id) as { state: string; reconciliation_reason: string };
+    persistedChecked.close();
+    assert.equal(providerCalls, 0);
+    assert.deepEqual({ ...persistedIntent }, { status: "running", provider_task_id: "task-invalid-deadline" });
+    assert.deepEqual({ ...persistedJob }, { state: "manual_reconciliation", reconciliation_reason: "PROVIDER_POLL_TIMEOUT_CONFIG_INVALID" });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("poll timeout remains distinct from submit rejection, unknown submit, task failure, and task success", async () => {
+  const roots: string[] = [];
+  try {
+    const rejectedRoot = mkdtempSync(join(tmpdir(), "generation-submit-rejected-"));
+    roots.push(rejectedRoot);
+    const rejectedPath = join(rejectedRoot, "app.sqlite");
+    const rejected = await prepareConfirmedGeneration(rejectedPath, "Definite submit rejection");
+    const rejectedAdapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => ({ ok: false as const, error: { code: "PROVIDER_AUTH_FAILED", message: "Synthetic rejection.", retryable: false } }),
+      pollStatus: async () => { throw new Error("poll must not run"); },
+      fetchOutput: async () => { throw new Error("output must not run"); }
+    } as unknown as VideoProviderAdapter;
+    await runWorkbenchGenerationOnce(rejected.intent_id, { allow_submit: true, dependencies: { sqlite_path: rejectedPath, env: rejected.env, adapter_factory: () => rejectedAdapter } });
+    let checked = openM0Database(rejectedPath);
+    const rejectedIntent = checked.prepare("SELECT status, provider_task_id FROM generation_intents WHERE intent_id = ?").get(rejected.intent_id) as { status: string; provider_task_id: string };
+    const rejectedJob = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?").get(rejected.job_id) as { state: string; reconciliation_reason: string };
+    checked.close();
+    assert.deepEqual({ ...rejectedIntent }, { status: "failed", provider_task_id: "" });
+    assert.deepEqual({ ...rejectedJob }, { state: "failed", reconciliation_reason: "PROVIDER_AUTH_FAILED" });
+
+    const unknownRoot = mkdtempSync(join(tmpdir(), "generation-submit-unknown-"));
+    roots.push(unknownRoot);
+    const unknownPath = join(unknownRoot, "app.sqlite");
+    const unknown = await prepareConfirmedGeneration(unknownPath, "Unknown submit outcome");
+    let unknownSubmitCalls = 0;
+    const unknownAdapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => {
+        unknownSubmitCalls += 1;
+        return {
+          ok: false as const,
+          error: { code: "PROVIDER_TIMEOUT", message: "Synthetic unknown outcome.", retryable: true, submission_outcome_unknown: true }
+        };
+      },
+      pollStatus: async () => { throw new Error("poll must not run"); },
+      fetchOutput: async () => { throw new Error("output must not run"); }
+    } as unknown as VideoProviderAdapter;
+    const unknownDependencies = { sqlite_path: unknownPath, env: unknown.env, adapter_factory: () => unknownAdapter };
+    await runWorkbenchGenerationOnce(unknown.intent_id, { allow_submit: true, dependencies: unknownDependencies });
+    await runWorkbenchGenerationOnce(unknown.intent_id, { allow_submit: true, dependencies: unknownDependencies });
+    checked = openM0Database(unknownPath);
+    const unknownIntent = checked.prepare("SELECT status, provider_task_id FROM generation_intents WHERE intent_id = ?").get(unknown.intent_id) as { status: string; provider_task_id: string };
+    const unknownJob = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?").get(unknown.job_id) as { state: string; reconciliation_reason: string };
+    const unknownProject = checked.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(unknown.project_id) as { data_json: string };
+    const unknownShot = checked.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(unknown.shot_id) as { data_json: string };
+    const unknownSummary = listWorkbenchProjects({ scope: "all" }, checked).items
+      .find((item) => item.project.project_id === unknown.project_id);
+    checked.close();
+    assert.equal(unknownSubmitCalls, 1);
+    assert.deepEqual({ ...unknownIntent }, { status: "running", provider_task_id: "" });
+    assert.deepEqual({ ...unknownJob }, { state: "manual_reconciliation", reconciliation_reason: "PROVIDER_SUBMIT_OUTCOME_UNKNOWN" });
+    assert.equal((JSON.parse(unknownProject.data_json) as { status: string }).status, "storyboard_approved");
+    assert.equal((JSON.parse(unknownShot.data_json) as { status: string }).status, "storyboard_approved");
+    assert.equal(unknownSummary?.active_run_count, 0);
+    assert.ok(unknownSummary?.blocker_codes.includes("GENERATION_MANUAL_RECONCILIATION"));
+
+    const failedRoot = mkdtempSync(join(tmpdir(), "generation-task-failed-"));
+    roots.push(failedRoot);
+    const failedPath = join(failedRoot, "app.sqlite");
+    const failed = await prepareConfirmedGeneration(failedPath, "Definite task failure");
+    let failedPollCalls = 0;
+    persistKnownProviderTask(failedPath, failed.intent_id, failed.job_id, "task-definite-failure");
+    const failedAdapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => { throw new Error("submit must not run"); },
+      pollStatus: async () => {
+        failedPollCalls += 1;
+        return {
+          ok: true as const,
+          provider_job_id: "task-definite-failure",
+          status: "failed" as const,
+          provider_status: "FAILED",
+          retryable: false
+        };
+      },
+      fetchOutput: async () => { throw new Error("output must not run"); }
+    } as unknown as VideoProviderAdapter;
+    await runWorkbenchGenerationOnce(failed.intent_id, { allow_submit: false, dependencies: { sqlite_path: failedPath, env: failed.env, adapter_factory: () => failedAdapter } });
+    checked = openM0Database(failedPath);
+    const failedIntent = checked.prepare("SELECT status, provider_task_id, sanitized_error_json FROM generation_intents WHERE intent_id = ?").get(failed.intent_id) as { status: string; provider_task_id: string; sanitized_error_json: string };
+    const failedJob = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?").get(failed.job_id) as { state: string; reconciliation_reason: string };
+    checked.close();
+    assert.equal(failedPollCalls, 1);
+    assert.deepEqual({ status: failedIntent.status, provider_task_id: failedIntent.provider_task_id }, { status: "failed", provider_task_id: "task-definite-failure" });
+    assert.equal((JSON.parse(failedIntent.sanitized_error_json) as { code: string }).code, "PROVIDER_REQUEST_FAILED");
+    assert.deepEqual({ ...failedJob }, { state: "failed", reconciliation_reason: "PROVIDER_REQUEST_FAILED" });
+
+    const succeededRoot = mkdtempSync(join(tmpdir(), "generation-task-succeeded-"));
+    roots.push(succeededRoot);
+    const succeededPath = join(succeededRoot, "app.sqlite");
+    const succeeded = await prepareConfirmedGeneration(succeededPath, "Successful task result");
+    persistKnownProviderTask(succeededPath, succeeded.intent_id, succeeded.job_id, "task-definite-success");
+    checked = openM0Database(succeededPath);
+    const succeededIntentRow = checked.prepare("SELECT project_id, shot_id FROM generation_intents WHERE intent_id = ?").get(succeeded.intent_id) as { project_id: string; shot_id: string };
+    const existingOutput = registerMediaArtifact({
+      artifact_type: "video",
+      role: "generated_clip",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: succeededIntentRow.project_id, shot_id: succeededIntentRow.shot_id },
+      provenance: { provider: "runninghub", provider_job_id: "task-definite-success" }
+    }, checked);
+    assert.equal(existingOutput.ok, true);
+    checked.close();
+    const succeededAdapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => { throw new Error("submit must not run"); },
+      pollStatus: async () => ({
+        ok: true as const,
+        provider_job_id: "task-definite-success",
+        status: "succeeded" as const,
+        provider_status: "SUCCESS",
+        retryable: false,
+        output_url: "https://example.invalid/already-registered.mp4"
+      }),
+      fetchOutput: async () => { throw new Error("output fetch must not run for an existing Artifact"); }
+    } as unknown as VideoProviderAdapter;
+    await runWorkbenchGenerationOnce(succeeded.intent_id, { allow_submit: false, dependencies: { sqlite_path: succeededPath, env: succeeded.env, adapter_factory: () => succeededAdapter } });
+    checked = openM0Database(succeededPath);
+    const succeededIntent = checked.prepare("SELECT status, provider_task_id, output_artifact_id FROM generation_intents WHERE intent_id = ?").get(succeeded.intent_id) as { status: string; provider_task_id: string; output_artifact_id: string };
+    const succeededJob = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?").get(succeeded.job_id) as { state: string; reconciliation_reason: string };
+    checked.close();
+    assert.equal(succeededIntent.status, "succeeded");
+    assert.equal(succeededIntent.provider_task_id, "task-definite-success");
+    assert.equal(succeededIntent.output_artifact_id, existingOutput.ok ? existingOutput.artifact.artifact_id : "");
+    assert.deepEqual({ ...succeededJob }, { state: "succeeded", reconciliation_reason: "" });
+  } finally {
+    for (const root of roots) rmSync(root, { recursive: true, force: true });
   }
 });
 
@@ -1418,6 +3483,97 @@ test("startup recovery resumes a confirmed queued job before any provider submit
     assert.equal(finalState, "cancelled");
     await new Promise((resolveTurn) => setImmediate(resolveTurn));
     await new Promise((resolveTurn) => setImmediate(resolveTurn));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("startup scheduler fails closed at the persisted poll deadline before a crashed worker lease expires", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-scheduler-expired-deadline-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Schedule expired deadline reconciliation");
+    const taskId = "task-scheduler-expired-deadline";
+    persistKnownProviderTask(
+      sqlitePath,
+      prepared.intent_id,
+      prepared.job_id,
+      taskId,
+      MIN_PROVIDER_TASK_POLL_TIMEOUT_MS
+    );
+    const wallMs = Date.parse("2035-01-02T03:04:05.600Z");
+    const startedAtMs = wallMs - MIN_PROVIDER_TASK_POLL_TIMEOUT_MS;
+    const db = openM0Database(sqlitePath);
+    const intentRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const intentData = JSON.parse(intentRow.data_json) as Record<string, unknown>;
+    intentData.provider_poll_started_at = new Date(startedAtMs).toISOString();
+    intentData.provider_poll_timeout_ms = MIN_PROVIDER_TASK_POLL_TIMEOUT_MS;
+    intentData.provider_poll_deadline_at = new Date(wallMs).toISOString();
+    db.prepare("UPDATE generation_intents SET data_json = ? WHERE intent_id = ?")
+      .run(JSON.stringify(intentData), prepared.intent_id);
+    db.prepare(`UPDATE generation_jobs
+      SET next_attempt_at = '2099-01-01T00:00:00.000Z',
+          lease_owner = 'crashed_worker',
+          lease_token = 'inherited_expired_deadline_lease',
+          lease_expires_at = '2099-01-01T00:00:00.000Z'
+      WHERE job_id = ?`).run(prepared.job_id);
+    db.close();
+
+    let providerCalls = 0;
+    const adapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => {
+        providerCalls += 1;
+        throw new Error("known Provider task must not be resubmitted");
+      },
+      pollStatus: async () => {
+        providerCalls += 1;
+        throw new Error("expired polling deadline must fail closed before Provider polling");
+      },
+      fetchOutput: async () => {
+        providerCalls += 1;
+        throw new Error("output must not run");
+      }
+    } as unknown as VideoProviderAdapter;
+    const resumed = resumeWorkbenchGenerationJobs({
+      sqlite_path: sqlitePath,
+      env: { ...prepared.env, PROVIDER_TASK_POLL_TIMEOUT_MS: String(MIN_PROVIDER_TASK_POLL_TIMEOUT_MS) },
+      adapter_factory: () => adapter,
+      now: () => new Date(wallMs),
+      monotonic_now_ms: () => 50_000
+    });
+    assert.deepEqual(resumed, { resumed: [prepared.intent_id], reconciled: [] });
+
+    let observedJob = { state: "", reconciliation_reason: "", lease_token: "" };
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const checked = openM0Database(sqlitePath);
+      observedJob = checked.prepare("SELECT state, reconciliation_reason, lease_token FROM generation_jobs WHERE job_id = ?")
+        .get(prepared.job_id) as typeof observedJob;
+      checked.close();
+      if (observedJob.state === "manual_reconciliation" && observedJob.lease_token === "") break;
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
+    }
+    const checked = openM0Database(sqlitePath);
+    const intent = checked.prepare("SELECT status, provider_task_id, sanitized_error_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { status: string; provider_task_id: string; sanitized_error_json: string };
+    checked.close();
+
+    assert.equal(providerCalls, 0);
+    assert.deepEqual({ ...observedJob }, {
+      state: "manual_reconciliation",
+      reconciliation_reason: "PROVIDER_POLL_TIMEOUT",
+      lease_token: ""
+    });
+    assert.deepEqual({
+      status: intent.status,
+      provider_task_id: intent.provider_task_id,
+      error_code: (JSON.parse(intent.sanitized_error_json) as { code: string }).code
+    }, {
+      status: "running",
+      provider_task_id: taskId,
+      error_code: "PROVIDER_POLL_TIMEOUT"
+    });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

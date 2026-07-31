@@ -69,6 +69,34 @@ test("RunningHub adapter rejects a mismatched taskId and never resubmits", async
   assert.equal(queryCalls, 1);
 });
 
+test("RunningHub poll request honors the worker remaining-time cap", async () => {
+  let abortObserved = false;
+  const adapter = new RunningHubVideoProviderAdapter({
+    credential: "synthetic-test-key",
+    api_base: "https://runninghub.test",
+    timeout_ms: 60_000,
+    fetch_impl: async (_input, init) => new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      assert.ok(signal);
+      const rejectAbort = () => {
+        abortObserved = true;
+        const error = new Error("synthetic abort");
+        error.name = "AbortError";
+        reject(error);
+      };
+      if (signal.aborted) rejectAbort();
+      else signal.addEventListener("abort", rejectAbort, { once: true });
+    })
+  });
+  const result = await adapter.pollStatus("task_request_bound", { timeout_ms: 10 });
+  assert.equal(abortObserved, true);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.code, "PROVIDER_TIMEOUT");
+    assert.equal(result.error.retryable, true);
+  }
+});
+
 test("RunningHub adapter marks a lost submit response as outcome unknown", async () => {
   const adapter = new RunningHubVideoProviderAdapter({ credential: "synthetic-test-key", api_base: "https://runninghub.test", fetch_impl: async (input) => {
     if (String(input).endsWith("/media/upload/binary")) {

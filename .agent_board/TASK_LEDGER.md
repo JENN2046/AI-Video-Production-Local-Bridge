@@ -4521,3 +4521,718 @@ provider_calls: 0
 activity_writes: 0
 delivery: PR_106_AWAITING_REVIEW
 ```
+
+## 2026-07-31 — PR107 clean restack candidate publication
+
+```yaml
+task: PR107-CLEAN-RESTACK
+status: IN_PROGRESS_AWAITING_CI_AND_REVIEW
+recorded_by: Codex
+recorded_at: 2026-07-31T02:45:12+08:00
+main_baseline: b3a108abc8728e89259d0d953e1c638b9ca482ea
+old_pr107:
+  status: SUPERSEDED
+  merge_authorized: false
+  branch_retained: true
+replacement_pr:
+  number: 108
+  status: DRAFT_AWAITING_REVIEW
+  merged_to_main: false
+  merge_authorized: false
+  ready_for_review_authorized: false
+source_implementation_commits:
+  - 1c83188b41decf50b577a30b0db0a6eeb34e4727
+  - 19e42eb868132c73d1fa0bcc53950718710c4d9a
+restacked_implementation_commits:
+  - 99ecc4199adccff6f8638d809b4428e159e60757
+  - ffbf67f7de393704c9c6c134d59bdd11199f0464
+local_validation:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_57
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+s3b_t1_repository_status: AWAITING_REPLACEMENT_PR_REVIEW
+s3b_t1a_repository_status: AWAITING_REPLACEMENT_PR_REVIEW
+s3b_t2_status: AWAITING_JENN_AUTHORIZATION
+s3b_t3_status: AWAITING_JENN_LOCAL_ACTION
+s3b_t4_status: BLOCKED
+s4_status: BLOCKED
+s4_authorization_granted: false
+ready_task_count: 0
+delivery: PR_108_DRAFT_AWAITING_REVIEW
+```
+
+## 2026-07-31 — PR108 final-review P1 remediation
+
+```yaml
+task: PR107-CLEAN-RESTACK
+status: LOCAL_FIX_VALIDATED_AWAITING_CI_AND_REREVIEW
+recorded_by: Codex
+recorded_at: 2026-07-31T03:21:01+08:00
+replacement_pr: 108
+finding: EXPLICIT_TASK_REATTACH_REUSED_EXPIRED_POLL_DEADLINE
+resolution:
+  explicit_human_attach_restarts_bounded_deadline: true
+  worker_claim_resets_deadline: false
+  ordinary_poll_resets_deadline: false
+  process_restart_resets_deadline: false
+  automatic_submit_retry: 0
+changed_files:
+  - src/tools/workbenchGeneration.ts
+  - tests/workbench-v2-domain.test.ts
+local_validation:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_57
+  selection_gate: PASS_23
+  secret_scan: PASS
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+s4_status: BLOCKED
+s4_authorization_granted: false
+delivery: PR_108_DRAFT_AWAITING_CI_AND_REREVIEW
+```
+
+## 2026-07-31 — PR108 final-review P2 remediation
+
+```yaml
+task: PR107-CLEAN-RESTACK
+status: LOCAL_FIX_VALIDATED_AWAITING_CI_AND_REREVIEW
+recorded_by: Codex
+recorded_at: 2026-07-31T04:19:20+08:00
+replacement_pr: 108
+finding: LOCAL_COMPLETION_RECOVERY_REUSED_EXPIRED_POLL_DEADLINE
+resolution:
+  polling_deadline_applies_only_while_polling: true
+  downloading_with_existing_artifact_resumes_locally: true
+  finalizing_with_existing_artifact_resumes_locally: true
+  provider_poll_for_existing_artifact: 0
+  automatic_submit_retry: 0
+changed_files:
+  - src/tools/workbenchGeneration.ts
+  - tests/workbench-v2-domain.test.ts
+local_validation:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_58
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+s4_status: BLOCKED
+s4_authorization_granted: false
+delivery: PR_108_DRAFT_AWAITING_CI_AND_REREVIEW
+```
+
+## 2026-07-31 — PR108 final-review Artifact validation remediation
+
+```yaml
+task: PR107-CLEAN-RESTACK
+status: LOCAL_FIX_VALIDATED_AWAITING_CI_AND_REREVIEW
+recorded_by: Codex
+recorded_at: 2026-07-31T05:19:34+08:00
+replacement_pr: 108
+finding: INVALID_LOCAL_OUTPUT_ARTIFACT_COULD_BE_REUSED
+resolution:
+  active_artifact_reference_validation: required
+  generated_clip_video_binding: required
+  blob_integrity_validation: required
+  invalid_artifact_enters_manual_reconciliation: true
+  provider_poll_for_invalid_local_artifact: 0
+  automatic_submit_retry: 0
+changed_files:
+  - src/tools/workbenchGeneration.ts
+  - tests/workbench-v2-domain.test.ts
+local_validation:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_59
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+s4_status: BLOCKED
+s4_authorization_granted: false
+delivery: PR_108_DRAFT_AWAITING_CI_AND_REREVIEW
+```
+
+## 2026-07-31 — PR108 final-review output recovery and atomic success remediation
+
+```yaml
+task: PR107-CLEAN-RESTACK
+status: LOCAL_FIX_VALIDATED_AWAITING_CI_AND_REREVIEW
+recorded_by: Codex
+recorded_at: 2026-07-31T06:09:32+08:00
+replacement_pr: 108
+findings:
+  - INVALID_LOCAL_OUTPUT_REATTACHMENT_LOOP
+  - PROVIDER_SUCCESS_AND_DOWNLOADING_STATE_TORN_WRITE
+resolution:
+  explicit_human_reattachment_required: true
+  invalid_artifact_deleted_or_overwritten: false
+  replacement_artifact_registered_separately: true
+  provider_task_binding_rebound_atomically: true
+  original_artifact_replacement_audit_preserved: true
+  provider_success_and_downloading_same_transaction: true
+  automatic_submit_retry: 0
+changed_files:
+  - src/tools/workbenchGeneration.ts
+  - tests/workbench-v2-domain.test.ts
+local_validation:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_60
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+s4_status: BLOCKED
+s4_authorization_granted: false
+delivery: PR_108_DRAFT_AWAITING_CI_AND_REREVIEW
+```
+
+## 2026-07-31 — PR108 final-review clock rollback remediation and scope stop
+
+```yaml
+task: PR107-CLEAN-RESTACK
+status: LOCAL_FIX_VALIDATED_REMAINING_REVIEW_FINDING_BLOCKED_BY_ALLOWLIST
+recorded_by: Codex
+recorded_at: 2026-07-31T06:41:36+08:00
+replacement_pr: 108
+reviewed_commit: eef466c4c43d0c489da407e17dd328d274388252
+findings:
+  - CLOCK_ROLLBACK_COULD_INFLATE_PERSISTED_POLL_BUDGET
+  - INVALID_VERIFIED_BLOB_HAS_NO_AUTHORIZED_RECOVERY_PATH
+resolution:
+  persisted_poll_timeout_caps_restart_budget: true
+  monotonic_runtime_budget_preserved: true
+  clock_rollback_regression_added: true
+  invalid_blob_recovery_resolved: false
+scope_boundary:
+  current_implementation_allowlist_exhausted: true
+  additional_media_boundary_authorization_required: true
+  old_pr107_closed: false
+changed_files:
+  - src/tools/workbenchGeneration.ts
+  - tests/workbench-v2-domain.test.ts
+  - CURRENT_STATE.md
+  - ops/reports/2026-07-30-current-workbench-canary-readiness.md
+  - .agent_board/HANDOFF.md
+  - .agent_board/NEXT_TASK.json
+  - .agent_board/NEXT_TASK.md
+  - .agent_board/TASK_LEDGER.md
+  - .agent_board/VALIDATION_LOG.md
+local_validation:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_61
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+s4_status: BLOCKED
+s4_authorization_granted: false
+delivery: PR_108_DRAFT_REVIEW_BLOCKED
+```
+
+## 2026-07-31 — PR108 verified Blob recovery and exact-head review remediation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+status: LOCAL_PASS_AWAITING_PR108_REVIEW_OR_MERGE
+recorded_by: Codex
+recorded_at: 2026-07-31T11:49:18+08:00
+replacement_pr: 108
+implementation_commit: 277d651c4698ae00b9e0fa170b35c39754daa84f
+review_remediation_commit: 762076cb991e3ecf4333ca5d2872e7de3df14aeb
+restart_rebind_remediation_commit: a4e0152379b9d7e4f66b683090c7c0dc7fa045b5
+implementation_ci:
+  run_id: 30598512506
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+implementation_review:
+  review_id: 4824970083
+  reviewed_commit: 277d651c4698ae00b9e0fa170b35c39754daa84f
+  findings:
+    - ARCHIVE_REPLACED_ACTIVE_ARTIFACT
+    - UPDATE_CURRENT_STATE_AFTER_BLOB_RECOVERY
+later_candidate_review:
+  review_id: 4825255029
+  reviewed_commit: 598e56ca7e656e9aeeec6469b4286b600e293f89
+  finding: REBIND_COMMITTED_RECOVERY_REPLACEMENT_FIRST
+resolution:
+  explicit_human_reattachment_required: true
+  repairable_conditions:
+    - MISSING_BYTES
+    - CONTENT_DRIFT
+  immutable_blob_row_changed: false
+  artifact_blob_links_changed_by_repair: false
+  exact_sha_size_mime_required: true
+  drifted_bytes_quarantined: true
+  concurrent_repairs_serialized: true
+  interruption_retryable: true
+  old_artifact_archived_in_rebind_transaction: true
+  committed_replacement_preferred_after_restart: true
+  restart_poll_download_submit_calls: 0
+  automatic_submit_retry: 0
+changed_files:
+  source_and_tests:
+    - src/tools/mediaArtifacts.ts
+    - src/tools/providerOutputDownloader.ts
+    - src/tools/workbenchGeneration.ts
+    - tests/media-activation-integrity.test.ts
+    - tests/m1-provider-boundary.test.ts
+    - tests/workbench-v2-domain.test.ts
+  current_state_and_evidence:
+    - CURRENT_STATE.md
+    - ops/reports/2026-07-30-current-workbench-canary-readiness.md
+    - .agent_board/HANDOFF.md
+    - .agent_board/NEXT_TASK.json
+    - .agent_board/NEXT_TASK.md
+    - .agent_board/TASK_LEDGER.md
+    - .agent_board/VALIDATION_LOG.md
+local_validation:
+  typecheck: PASS
+  build: PASS
+  foundation_boundaries: PASS_93
+  provider_boundaries: PASS_52
+  test_m1_script: NOT_PRESENT_USED_PROVIDER_BOUNDARIES
+  workbench_v2: PASS_63
+  isolated_workbench_domain: PASS_43
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+deployment_changes: 0
+s4_status: BLOCKED_UNAUTHORIZED
+s4_authorization_granted: false
+delivery: PR_108_DRAFT_AWAITING_REVIEW_OR_MERGE
+```
+
+## 2026-07-31 — PR108 clock rollback whole-job fail-closed hardening
+
+```yaml
+task: PR107-CLEAN-RESTACK
+status: LOCAL_FIX_VALIDATED_REMAINING_REVIEW_FINDING_BLOCKED_BY_ALLOWLIST
+recorded_by: Codex
+recorded_at: 2026-07-31T06:48:22+08:00
+replacement_pr: 108
+self_review_finding: PER_EXECUTION_CAP_COULD_RESET_ACROSS_REPEATED_WORKER_CLAIMS
+resolution:
+  wall_clock_before_persisted_poll_start: FAIL_CLOSED
+  stable_reconciliation_reason: PROVIDER_POLL_TIMEOUT
+  provider_task_id_preserved: true
+  provider_poll_before_failure: 0
+  automatic_submit_retry: 0
+changed_files:
+  - src/tools/workbenchGeneration.ts
+  - tests/workbench-v2-domain.test.ts
+  - .agent_board/TASK_LEDGER.md
+  - .agent_board/VALIDATION_LOG.md
+local_validation:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_61
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+remaining_review_finding: INVALID_VERIFIED_BLOB_HAS_NO_AUTHORIZED_RECOVERY_PATH
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+s4_status: BLOCKED
+s4_authorization_granted: false
+delivery: PR_108_DRAFT_REVIEW_BLOCKED
+```
+
+## 2026-07-31 — PR108 exact-head scheduler and recovery-state remediation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+status: LOCAL_PASS_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
+recorded_by: Codex
+recorded_at: 2026-07-31T12:41:05+08:00
+replacement_pr: 108
+review:
+  review_id: 4825473276
+  reviewed_commit: 6d9319fbcbfece0b14f0320876ce27223af9582f
+  findings:
+    - STARTUP_SCHEDULER_DEFERRED_CLOCK_ROLLBACK_FAIL_CLOSED
+    - REPEATED_ATTACHMENT_CLEARED_PERSISTED_RECOVERY
+implementation_commit: 4e244592b96881d1ea1088dcbeba940262e4c155
+resolution:
+  rollback_affected_polling_job_immediately_runnable: true
+  stable_reconciliation_reason: PROVIDER_POLL_TIMEOUT
+  persisted_recovery_preserved_on_repeat_attachment: true
+  committed_replacement_rebound: true
+  active_generated_clip_count_after_rebind: 1
+  provider_calls_in_new_regressions: 0
+  automatic_submit_retry: 0
+local_validation:
+  typecheck: PASS
+  build: PASS
+  isolated_workbench_domain: PASS_44
+  workbench_v2: PASS_64
+  foundation_boundaries: PASS_93
+  provider_boundaries: PASS_52
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+prior_head_ci:
+  run_id: 30602578941
+  attempt: 2
+  reviewed_head: 6d9319fbcbfece0b14f0320876ce27223af9582f
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+  transferable_to_new_head: false
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+deployment_changes: 0
+s4_status: BLOCKED_UNAUTHORIZED
+s4_authorization_granted: false
+delivery: PR_108_DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
+```
+
+## 2026-07-31 — PR108 clock-rollback inherited-lease remediation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+status: LOCAL_PASS_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
+recorded_by: Codex
+recorded_at: 2026-07-31T13:12:11+08:00
+replacement_pr: 108
+review:
+  review_id: 4825605253
+  reviewed_commit: 65a6c3d56fefa4b11d3c6b3da683261fc148cadc
+  finding: CLOCK_ROLLBACK_RECOVERY_BLOCKED_BY_INHERITED_LEASE
+implementation_commit: 96b75581fc3c47a9933452144c72f45619937932
+resolution:
+  takeover_requires_polling_state: true
+  takeover_requires_persisted_start_after_current_clock: true
+  ordinary_live_lease_preserved: true
+  stable_reconciliation_reason: PROVIDER_POLL_TIMEOUT
+  inherited_lease_cleared: true
+  provider_calls_in_regression: 0
+  automatic_submit_retry: 0
+local_validation:
+  typecheck: PASS
+  build: PASS
+  isolated_workbench_domain: PASS_44
+  workbench_v2: PASS_64
+  foundation_boundaries: PASS_93
+  provider_boundaries: PASS_52
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+prior_head_ci:
+  run_id: 30604891810
+  reviewed_head: 65a6c3d56fefa4b11d3c6b3da683261fc148cadc
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+  transferable_to_new_head: false
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+deployment_changes: 0
+s4_status: BLOCKED_UNAUTHORIZED
+s4_authorization_granted: false
+delivery: PR_108_DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
+```
+
+## 2026-07-31 — PR108 Provider recovery task-switch remediation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+status: LOCAL_PASS_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
+recorded_by: Codex
+recorded_at: 2026-07-31T13:53:23+08:00
+replacement_pr: 108
+review:
+  review_id: 4825747733
+  reviewed_commit: 2cb245e1db8d9ffe8f1ef658e9ac5917d62d99bf
+  finding: PERSISTED_RECOVERY_BLOCKED_NEW_PROVIDER_TASK_ATTACHMENT
+implementation_commit: 19f026f8f40f82203a3967a7f449152b272743cf
+resolution:
+  same_task_recovery_preserved: true
+  local_recovery_identity_rejected_as_provider_task: true
+  prior_invalid_artifact_archived: true
+  committed_replacement_archived_when_present: true
+  retirement_atomic: true
+  unsafe_retirement_error: ARTIFACT_RECOVERY_RETIRE_FAILED
+  provider_task_switch_continues_to_polling: true
+  blob_rows_changed: 0
+  blob_bytes_changed: 0
+  artifact_blob_links_changed: 0
+  provider_calls_in_regression: 0
+  automatic_submit_retry: 0
+local_validation:
+  typecheck: PASS
+  build: PASS
+  isolated_workbench_domain: PASS_45
+  workbench_v2: PASS_65
+  foundation_boundaries: PASS_93
+  provider_boundaries: PASS_52
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+prior_head_ci:
+  run_id: 30606273467
+  attempt: 1
+  reviewed_head: 2cb245e1db8d9ffe8f1ef658e9ac5917d62d99bf
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+  transferable_to_new_head: false
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+deployment_changes: 0
+s4_status: BLOCKED_UNAUTHORIZED
+s4_authorization_granted: false
+delivery: PR_108_DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
+```
+
+## 2026-07-31 — PR108 global local-recovery identity reservation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+status: LOCAL_PASS_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
+recorded_by: Codex
+recorded_at: 2026-07-31T14:36:40+08:00
+replacement_pr: 108
+review:
+  review_id: 4825989650
+  reviewed_commit: b8060e1561be33b4d1803909325f8a3f2c9e998f
+  finding: LOCAL_RECOVERY_IDENTITY_NOT_GLOBALLY_RESERVED
+implementation_commit: 2847a34e8ee638ff1ca46824bc938f19acd870ff
+resolution:
+  reserved_namespace: local_recovery_*
+  rejection_scope: ALL_MANUAL_PROVIDER_TASK_ATTACHMENTS
+  stable_error: INVALID_PROVIDER_TASK_ID
+  cross_intent_without_replacement_covered: true
+  owner_recovery_preserved: true
+  other_intent_binding_changed: false
+  provider_calls_in_regression: 0
+  automatic_submit_retry: 0
+local_validation:
+  typecheck: PASS
+  build: PASS
+  isolated_workbench_domain: PASS_46
+  workbench_v2: PASS_66
+  foundation_boundaries: PASS_93
+  provider_boundaries: PASS_52
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+prior_head_ci:
+  run_id: 30608433511
+  reviewed_head: b8060e1561be33b4d1803909325f8a3f2c9e998f
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+  transferable_to_new_head: false
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+deployment_changes: 0
+s4_status: BLOCKED_UNAUTHORIZED
+s4_authorization_granted: false
+delivery: PR_108_DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
+```
+
+## 2026-07-31 — PR108 recovery terminal-state and placement-crash remediation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+status: LOCAL_PASS_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
+recorded_by: Codex
+recorded_at: 2026-07-31T15:26:58+08:00
+replacement_pr: 108
+reviews:
+  - review_id: 4826019679
+    reviewed_commit: b8060e1561be33b4d1803909325f8a3f2c9e998f
+    finding: RECOVERY_ABANDON_LEFT_ACTIVE_ARTIFACTS
+  - review_id: 4826282464
+    reviewed_commit: 528f33a4efc4024b49c2974374563f52ffe9195d
+    finding: VERIFIED_BLOB_PLACEMENT_TWO_LINK_CRASH_WINDOW
+implementation_commit: aa9b8912d18dc11b6718e5bfed00e1d9c6ee35f9
+resolution:
+  abandon_recovery_binding_verified: true
+  invalid_artifact_archived_on_abandon: true
+  committed_replacement_archived_on_abandon: true
+  provider_output_recovery_cleared_atomically: true
+  unsafe_abandon_rolls_back: true
+  unsafe_abandon_error: ARTIFACT_RECOVERY_RETIRE_FAILED
+  owned_two_link_pair_normalized_on_retry: true
+  unowned_hard_link_rejected: true
+  hard_link_rejection_error: MEDIA_BLOB_RECOVERY_PATH_UNSAFE
+  blob_rows_changed: 0
+  artifact_blob_links_changed: 0
+  provider_calls_in_regressions: 0
+  automatic_submit_retry: 0
+local_validation:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_67
+  foundation_boundaries: PASS_94
+  provider_boundaries: PASS_52
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+prior_head_ci:
+  run_id: 30610318191
+  reviewed_head: 528f33a4efc4024b49c2974374563f52ffe9195d
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+  transferable_to_new_head: false
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+deployment_changes: 0
+s4_status: BLOCKED_UNAUTHORIZED
+s4_authorization_granted: false
+delivery: PR_108_DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
+```
+
+## 2026-07-31 — PR108 subsecond clock-rollback remediation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+status: LOCAL_PASS_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
+recorded_by: Codex
+recorded_at: 2026-07-31T16:04:09+08:00
+replacement_pr: 108
+review:
+  review_id: 4826557538
+  reviewed_commit: e5cb5d8320f44f59a51b453167b7eb1732a528e2
+  finding: CLOCK_ROLLBACK_COMPARISON_LOST_SUBSECOND_PRECISION
+implementation_commit: 357b08718e2226a613b7613ede234e4c3cc337b7
+resolution:
+  scheduler_poll_start_comparison: JULIANDAY_FRACTIONAL
+  lease_claim_poll_start_comparison: JULIANDAY_FRACTIONAL
+  same_second_rollback_ms: 900
+  future_inherited_lease_retained_in_regression: true
+  stable_reconciliation_reason: PROVIDER_POLL_TIMEOUT
+  provider_task_id_preserved: true
+  provider_calls_in_regression: 0
+  automatic_submit_retry: 0
+local_validation:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_67
+  foundation_boundaries: PASS_94
+  provider_boundaries: PASS_52
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+prior_head_ci:
+  run_id: 30613190531
+  reviewed_head: e5cb5d8320f44f59a51b453167b7eb1732a528e2
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+  transferable_to_new_head: false
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+deployment_changes: 0
+s4_status: BLOCKED_UNAUTHORIZED
+s4_authorization_granted: false
+delivery: PR_108_DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
+```
+
+## 2026-07-31 — PR108 deadline-preemption and deterministic-clock remediation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+status: LOCAL_PASS_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
+recorded_by: Codex
+recorded_at: 2026-07-31T16:42:22+08:00
+replacement_pr: 108
+review:
+  review_id: 4826803376
+  reviewed_commit: 1f49bc32164d8efee82ce12ebb2cc1e88c2b6df6
+  findings:
+    - EXPIRED_POLL_DEADLINE_BLOCKED_BY_INHERITED_LEASE
+    - SUBSECOND_ROLLBACK_REGRESSION_USED_REALTIME_WINDOW
+implementation_commit: 2cce0f8af8063228c89237a946553ea62e8503d2
+resolution:
+  due_deadline_overrides_scheduler_attempt_gate: true
+  due_deadline_overrides_inherited_lease: true
+  scheduler_wakes_at_persisted_deadline: true
+  scheduler_clock_injected: true
+  rollback_regression_clock: FIXED
+  expired_deadline_regression_next_attempt: "2099-01-01T00:00:00.000Z"
+  expired_deadline_regression_lease: "2099-01-01T00:00:00.000Z"
+  stable_reconciliation_reason: PROVIDER_POLL_TIMEOUT
+  provider_task_id_preserved: true
+  provider_calls_in_regressions: 0
+  automatic_submit_retry: 0
+local_validation:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_68
+  foundation_boundaries: PASS_94
+  provider_boundaries: PASS_52
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+prior_head_ci:
+  run_id: 30615172450
+  reviewed_head: 1f49bc32164d8efee82ce12ebb2cc1e88c2b6df6
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+  transferable_to_new_head: false
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+deployment_changes: 0
+s4_status: BLOCKED_UNAUTHORIZED
+s4_authorization_granted: false
+delivery: PR_108_DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
+```

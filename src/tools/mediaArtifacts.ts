@@ -81,6 +81,29 @@ export interface ToolError {
   message: string;
 }
 
+export interface VerifiedBlobStorageRecoveryInput {
+  invalid_artifact_id: string;
+  project_id: string;
+  shot_id: string;
+  source_path: string;
+}
+
+export interface VerifiedBlobStorageRecoveryFaults {
+  after_staged_copy?: () => void;
+  after_corrupt_quarantined?: () => void;
+  after_replacement_placed?: () => void;
+  before_final_verification?: () => void;
+}
+
+export type VerifiedBlobStorageRecoveryResult =
+  | {
+    ok: true;
+    blob: MediaBlob;
+    outcome: "MISSING_BYTES" | "CONTENT_DRIFT" | "ALREADY_REUSABLE";
+    corrupt_bytes_quarantined: boolean;
+  }
+  | { ok: false; error: ToolError };
+
 export type RegisterMediaArtifactResult =
   | { ok: true; artifact: MediaArtifact }
   | { ok: false; error: ToolError };
@@ -777,6 +800,346 @@ function applyLocalMediaFacts(artifact: MediaArtifact, facts: LocalMediaFacts): 
   };
   artifact.source.sha256 = facts.sha256;
   artifact.storage.mime_type = facts.detected_mime;
+}
+
+const VERIFIED_BLOB_RECOVERY_ERROR_MESSAGES: Readonly<Record<string, string>> = {
+  MEDIA_BLOB_RECOVERY_BINDING_MISMATCH: "The requested Artifact and immutable MediaBlob binding could not be verified.",
+  MEDIA_BLOB_RECOVERY_CONTENT_MISMATCH: "Downloaded media bytes do not match the immutable MediaBlob facts.",
+  MEDIA_BLOB_RECOVERY_PATH_UNSAFE: "MediaBlob recovery paths are not app-controlled regular-file paths.",
+  MEDIA_BLOB_RECOVERY_FAILED: "MediaBlob bytes could not be recovered safely."
+};
+
+function verifiedBlobRecoveryError(error: unknown): ToolError {
+  const candidate = error instanceof Error ? error.message : "";
+  const code = Object.hasOwn(VERIFIED_BLOB_RECOVERY_ERROR_MESSAGES, candidate)
+    ? candidate
+    : "MEDIA_BLOB_RECOVERY_FAILED";
+  return { code, message: VERIFIED_BLOB_RECOVERY_ERROR_MESSAGES[code] };
+}
+
+function assertRecoveryRegularFile(filePath: string, registeredRoot: string, canonicalRoot: string): void {
+  const resolvedPath = resolve(filePath);
+  if (!isPathInside(resolvedPath, registeredRoot)
+    || hasExistingSymlinkAncestor(resolvedPath, registeredRoot)
+    || !existsSync(resolvedPath)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  const entry = lstatSync(resolvedPath);
+  if (entry.isSymbolicLink() || !entry.isFile() || entry.nlink !== 1) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  const canonicalPath = resolve(realpathSync(resolvedPath));
+  if (!isPathInside(canonicalPath, canonicalRoot)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+}
+
+function normalizeInterruptedVerifiedBlobPlacement(
+  targetPath: string,
+  targetDirectory: string,
+  registeredRoot: string,
+  canonicalRoot: string
+): void {
+  const targetEntry = lstatSync(targetPath);
+  if (targetEntry.isSymbolicLink() || !targetEntry.isFile()) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  if (targetEntry.nlink === 1) return;
+  if (targetEntry.nlink !== 2 || targetEntry.ino === 0) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+
+  const stagedCandidates = readdirSync(targetDirectory)
+    .filter((name) => /^blob-recovery-[0-9a-f-]{36}\.staged$/i.test(name))
+    .map((name) => resolve(targetDirectory, name))
+    .filter((candidatePath) => {
+      if (!isPathInside(candidatePath, registeredRoot)
+        || hasExistingSymlinkAncestor(candidatePath, registeredRoot)
+        || !existsSync(candidatePath)) {
+        return false;
+      }
+      const candidateEntry = lstatSync(candidatePath);
+      if (candidateEntry.isSymbolicLink()
+        || !candidateEntry.isFile()
+        || candidateEntry.nlink !== 2
+        || candidateEntry.dev !== targetEntry.dev
+        || candidateEntry.ino !== targetEntry.ino) {
+        return false;
+      }
+      const canonicalCandidate = resolve(realpathSync(candidatePath));
+      return isPathInside(canonicalCandidate, canonicalRoot);
+    });
+  if (stagedCandidates.length !== 1) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+
+  rmSync(stagedCandidates[0]);
+  const normalizedTarget = lstatSync(targetPath);
+  if (normalizedTarget.isSymbolicLink()
+    || !normalizedTarget.isFile()
+    || normalizedTarget.nlink !== 1
+    || normalizedTarget.dev !== targetEntry.dev
+    || normalizedTarget.ino !== targetEntry.ino) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+}
+
+function recoveryRootAndTarget(blob: MediaBlob): {
+  registeredRoot: string;
+  canonicalRoot: string;
+  targetPath: string;
+  targetDirectory: string;
+} {
+  const rootValue = blob.provenance.media_root;
+  if (typeof rootValue !== "string"
+    || !isAbsolute(rootValue)
+    || !isAbsolute(blob.storage_uri)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  const registeredRoot = resolve(rootValue);
+  if (!existsSync(registeredRoot)) throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  const rootEntry = lstatSync(registeredRoot);
+  if (rootEntry.isSymbolicLink() || !rootEntry.isDirectory()) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  const canonicalRoot = resolve(realpathSync(registeredRoot));
+  if (!sameResolvedPath(canonicalRoot, registeredRoot)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  const targetPath = resolve(blob.storage_uri);
+  const targetDirectory = dirname(targetPath);
+  if (!isPathInside(targetPath, registeredRoot)
+    || !existsSync(targetDirectory)
+    || hasExistingSymlinkAncestor(targetDirectory, registeredRoot)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  const directoryEntry = lstatSync(targetDirectory);
+  if (directoryEntry.isSymbolicLink() || !directoryEntry.isDirectory()) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  const canonicalDirectory = resolve(realpathSync(targetDirectory));
+  if (!isPathInside(canonicalDirectory, canonicalRoot)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  return { registeredRoot, canonicalRoot, targetPath, targetDirectory };
+}
+
+function removeGeneratedRecoveryFile(filePath: string): void {
+  if (!existsSync(filePath)) return;
+  const entry = lstatSync(filePath);
+  if (entry.isSymbolicLink() || !entry.isFile() || entry.nlink !== 1) return;
+  rmSync(filePath, { force: true });
+}
+
+/**
+ * Repairs only the physical bytes represented by an existing immutable verified
+ * MediaBlob. The caller must be the explicit Workbench provider-output recovery
+ * branch; ordinary registration and download paths never call this function.
+ */
+export function recoverVerifiedBlobStorage(
+  input: VerifiedBlobStorageRecoveryInput,
+  db: M0Database,
+  faults: VerifiedBlobStorageRecoveryFaults = {}
+): VerifiedBlobStorageRecoveryResult {
+  if (databaseIsInTransaction(db)) {
+    return { ok: false, error: verifiedBlobRecoveryError("MEDIA_BLOB_RECOVERY_FAILED") };
+  }
+
+  let transactionOpen = false;
+  let registeredRoot = "";
+  let targetPath = "";
+  let stagedPath = "";
+  let quarantinePath = "";
+  let replacementPlaced = false;
+  let originalQuarantined = false;
+  let originalCondition: "MISSING_BYTES" | "CONTENT_DRIFT" | "ALREADY_REUSABLE" = "MISSING_BYTES";
+
+  try {
+    db.exec("BEGIN IMMEDIATE");
+    transactionOpen = true;
+
+    let artifact: MediaArtifact | null;
+    try {
+      artifact = getMediaArtifact(db, input.invalid_artifact_id);
+    } catch {
+      throw new Error("MEDIA_BLOB_RECOVERY_BINDING_MISMATCH");
+    }
+    if (!artifact
+      || artifact.linked_objects.project_id !== input.project_id
+      || artifact.linked_objects.shot_id !== input.shot_id
+      || artifact.role !== "generated_clip"
+      || artifact.artifact_type !== "video") {
+      throw new Error("MEDIA_BLOB_RECOVERY_BINDING_MISMATCH");
+    }
+
+    const links = db.prepare(
+      "SELECT blob_id FROM media_artifact_blobs WHERE artifact_id = ? ORDER BY blob_id"
+    ).all(input.invalid_artifact_id) as Array<{ blob_id: string }>;
+    if (links.length !== 1 || links[0].blob_id !== artifact.blob_id) {
+      throw new Error("MEDIA_BLOB_RECOVERY_BINDING_MISMATCH");
+    }
+    const blob = getMediaBlob(db, links[0].blob_id);
+    if (!blob
+      || blob.integrity_state !== "verified"
+      || !isAbsolute(artifact.storage.uri)
+      || !sameResolvedPath(artifact.storage.uri, blob.storage_uri)
+      || artifact.metadata.sha256 !== blob.sha256
+      || artifact.source.sha256 !== blob.sha256
+      || artifact.storage.mime_type !== blob.detected_mime) {
+      throw new Error("MEDIA_BLOB_RECOVERY_BINDING_MISMATCH");
+    }
+
+    const recoveryPaths = recoveryRootAndTarget(blob);
+    registeredRoot = recoveryPaths.registeredRoot;
+    targetPath = recoveryPaths.targetPath;
+    const sourcePath = resolve(input.source_path);
+    if (sameResolvedPath(sourcePath, targetPath)) {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    assertRecoveryRegularFile(sourcePath, registeredRoot, recoveryPaths.canonicalRoot);
+
+    let sourceFacts: LocalMediaFacts;
+    try {
+      sourceFacts = localMediaFacts(sourcePath, artifact);
+    } catch {
+      throw new Error("MEDIA_BLOB_RECOVERY_CONTENT_MISMATCH");
+    }
+    if (sourceFacts.sha256 !== blob.sha256
+      || sourceFacts.size_bytes !== blob.size_bytes
+      || sourceFacts.detected_mime !== blob.detected_mime
+      || sourceFacts.detected_mime !== "video/mp4") {
+      throw new Error("MEDIA_BLOB_RECOVERY_CONTENT_MISMATCH");
+    }
+
+    if (existsSync(targetPath)) {
+      normalizeInterruptedVerifiedBlobPlacement(
+        targetPath,
+        recoveryPaths.targetDirectory,
+        registeredRoot,
+        recoveryPaths.canonicalRoot
+      );
+      assertRecoveryRegularFile(targetPath, registeredRoot, recoveryPaths.canonicalRoot);
+      const currentFacts = hashLocalFile(targetPath);
+      originalCondition = currentFacts.sha256 === blob.sha256
+        && currentFacts.size_bytes === blob.size_bytes
+        && detectMimeFromBytes(currentFacts.header) === blob.detected_mime
+        ? "ALREADY_REUSABLE"
+        : "CONTENT_DRIFT";
+    } else {
+      originalCondition = "MISSING_BYTES";
+    }
+
+    if (originalCondition === "ALREADY_REUSABLE") {
+      if (!verifiedBlobStorageIsReusable(blob)) throw new Error("MEDIA_BLOB_RECOVERY_FAILED");
+      db.exec("COMMIT");
+      transactionOpen = false;
+      return {
+        ok: true,
+        blob,
+        outcome: "ALREADY_REUSABLE",
+        corrupt_bytes_quarantined: false
+      };
+    }
+
+    const activation = ensureSafeActivationRoots(registeredRoot, true);
+    stagedPath = resolve(recoveryPaths.targetDirectory, `blob-recovery-${randomUUID()}.staged`);
+    quarantinePath = resolve(activation.quarantine, `blob-recovery-${randomUUID()}.corrupt`);
+    if (!isPathInside(stagedPath, recoveryPaths.targetDirectory)
+      || !isPathInside(quarantinePath, activation.quarantine)
+      || hasExistingSymlinkAncestor(stagedPath, registeredRoot)
+      || hasExistingSymlinkAncestor(quarantinePath, registeredRoot)) {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    copyFileSync(sourcePath, stagedPath, constants.COPYFILE_EXCL);
+    assertRecoveryRegularFile(stagedPath, registeredRoot, recoveryPaths.canonicalRoot);
+    let stagedFacts: LocalMediaFacts;
+    try {
+      stagedFacts = localMediaFacts(stagedPath, artifact);
+    } catch {
+      throw new Error("MEDIA_BLOB_RECOVERY_CONTENT_MISMATCH");
+    }
+    if (stagedFacts.sha256 !== blob.sha256
+      || stagedFacts.size_bytes !== blob.size_bytes
+      || stagedFacts.detected_mime !== blob.detected_mime) {
+      throw new Error("MEDIA_BLOB_RECOVERY_CONTENT_MISMATCH");
+    }
+    faults.after_staged_copy?.();
+
+    if (originalCondition === "CONTENT_DRIFT") {
+      assertRecoveryRegularFile(targetPath, registeredRoot, recoveryPaths.canonicalRoot);
+      if (existsSync(quarantinePath)) throw new Error("MEDIA_BLOB_RECOVERY_FAILED");
+      renameSync(targetPath, quarantinePath);
+      originalQuarantined = true;
+      faults.after_corrupt_quarantined?.();
+    } else if (existsSync(targetPath)) {
+      throw new Error("MEDIA_BLOB_RECOVERY_FAILED");
+    }
+
+    moveActivationFileExclusively(stagedPath, targetPath);
+    stagedPath = "";
+    replacementPlaced = true;
+    faults.after_replacement_placed?.();
+    faults.before_final_verification?.();
+
+    assertRecoveryRegularFile(targetPath, registeredRoot, recoveryPaths.canonicalRoot);
+    const finalFacts = localMediaFacts(targetPath, artifact);
+    if (finalFacts.sha256 !== blob.sha256
+      || finalFacts.size_bytes !== blob.size_bytes
+      || finalFacts.detected_mime !== blob.detected_mime
+      || !verifiedBlobStorageIsReusable(blob)) {
+      throw new Error("MEDIA_BLOB_RECOVERY_FAILED");
+    }
+
+    db.exec("COMMIT");
+    transactionOpen = false;
+    return {
+      ok: true,
+      blob,
+      outcome: originalCondition,
+      corrupt_bytes_quarantined: originalQuarantined
+    };
+  } catch (error) {
+    const rollbackDiscardPath = targetPath
+      ? resolve(dirname(targetPath), `blob-recovery-${randomUUID()}.rollback`)
+      : "";
+    let replacementMovedAside = false;
+    if (replacementPlaced && targetPath && registeredRoot && existsSync(targetPath)) {
+      try {
+        const rootCanonical = resolve(realpathSync(registeredRoot));
+        assertRecoveryRegularFile(targetPath, registeredRoot, rootCanonical);
+        renameSync(targetPath, rollbackDiscardPath);
+        replacementMovedAside = true;
+        replacementPlaced = false;
+      } catch {
+        // Leave the verified replacement in place rather than delete or overwrite an unverified path.
+      }
+    }
+    if (originalQuarantined && quarantinePath && targetPath && !existsSync(targetPath) && existsSync(quarantinePath)) {
+      try {
+        renameSync(quarantinePath, targetPath);
+        originalQuarantined = false;
+      } catch {
+        if (replacementMovedAside && rollbackDiscardPath && !existsSync(targetPath) && existsSync(rollbackDiscardPath)) {
+          try {
+            renameSync(rollbackDiscardPath, targetPath);
+            replacementMovedAside = false;
+          } catch {
+            // A subsequent explicit recovery will fail closed until the exact target can be repaired.
+          }
+        }
+      }
+    }
+    if (replacementMovedAside && rollbackDiscardPath) {
+      try { removeGeneratedRecoveryFile(rollbackDiscardPath); } catch { /* generated cleanup is retryable */ }
+    }
+    if (stagedPath) {
+      try { removeGeneratedRecoveryFile(stagedPath); } catch { /* generated cleanup is retryable */ }
+    }
+    if (transactionOpen) {
+      try { db.exec("ROLLBACK"); } catch { /* preserve the original stable recovery failure */ }
+    }
+    return { ok: false, error: verifiedBlobRecoveryError(error) };
+  }
 }
 
 function quarantineActivationFile(artifact: MediaArtifact, candidates: string[], mediaRoot = paths.mediaRoot): void {

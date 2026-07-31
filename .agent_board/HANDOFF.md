@@ -1,13 +1,13 @@
 # HANDOFF.md
 
-Current mode: PR #106 review remediation; no executable task is `READY`
-Last run: PR106-T1_REMEDIATE_REVIEW_FINDINGS
-Last result: S3 is terminal; S3B code candidates await review and real-operation gates remain closed
+Current mode: PR #108 verified-Blob recovery remediation; no executable task is `READY`
+Last run: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+Last result: poll-deadline lease preemption and deterministic scheduler time are locally validated; Draft PR #108 awaits new exact-head CI and review
 
 ## Current state
 
 Current task: none
-Current status: `AWAITING_PR_REVIEW`
+Current status: `DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW`
 Current owner: none
 Ready task count: 0
 
@@ -17,24 +17,131 @@ Ready task count: 0
 - The S3 receipt publishes only an aggregate candidate scan:
   `eligible_candidate_count: 0`, `S3_NO_ELIGIBLE_SHOT` and
   `identifiers_published: false`.
-- PR #106 is the current publication/remediation PR and remains unmerged.
+- PR #106 was squash-merged as
+  `b3a108abc8728e89259d0d953e1c638b9ca482ea`, the current `main` baseline.
 - `S3B-T1_BOUND_PROVIDER_POLLING` has local `PASS` evidence and repository
-  status `AWAITING_PR_REVIEW` in Draft PR #107.
+  status `BLOCKED_BY_PR108_REVIEW_FINDING` in Draft PR #108.
 - `S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE` has local `PASS` evidence
-  and repository status `AWAITING_PR_REVIEW` in Draft PR #107.
-- PR #107 remains Draft, stacked on the PR #106 branch and unchanged by the
-  PR #106 remediation.
+  and repository status `BLOCKED_BY_PR108_REVIEW_FINDING` in Draft
+  PR #108.
+- The exact-head recovery implementation `277d651c4698ae00b9e0fa170b35c39754daa84f`
+  passed Windows CI run `30598512506`. It repairs only missing or drifted
+  physical bytes after an explicit human reattachment, requires exact
+  SHA/size/MIME and Artifact/Blob binding, preserves the immutable Blob row and
+  link, serializes repairs, quarantines drifted bytes and never resubmits.
+- Review `4824970083` of that implementation head found that an active replaced
+  Artifact also had to be archived and that the current-state documents still
+  described Blob recovery as unresolved. Both findings are fixed in the
+  candidate: rebind archives the old relational/JSON status in the same
+  transaction, and the seven existing state/evidence files now use the current
+  bounded truth.
+- Exact-head review `4825255029` then found the crash window after replacement
+  activation but before rebind. Commit
+  `a4e0152379b9d7e4f66b683090c7c0dc7fa045b5` makes a persisted recovery prefer
+  and rebind the committed `local_recovery_*` replacement before considering
+  the repaired old Artifact; its restart regression performs zero poll,
+  download or submit calls and leaves one active generated clip.
+- Pre-remediation head `6d9319fbcbfece0b14f0320876ce27223af9582f`
+  passed Windows CI run `30602578941` on attempt 2. Exact-head review
+  `4825473276` then found two remaining restart paths: startup scheduling could
+  defer clock-rollback fail-closed handling behind a future
+  `next_attempt_at`, and repeated human attachment could clear an unfinished
+  recovery. Follow-up implementation
+  `4e244592b96881d1ea1088dcbeba940262e4c155` makes rollback-affected polling
+  jobs immediately runnable and preserves a verified recovery identity across
+  repeated attachment. The new regressions perform zero Provider calls and
+  pass in the 64-case Workbench V2 lane. Final exact-head CI and Codex review
+  are still required after this state sync.
+- Head `65a6c3d56fefa4b11d3c6b3da683261fc148cadc` then passed Windows
+  CI run `30604891810`, but exact-head review `4825605253` found that a
+  clock-rollback job could still be delayed by a future lease inherited from
+  the crashed process. Commit
+  `96b75581fc3c47a9933452144c72f45619937932` permits lease takeover only for a
+  polling job whose persisted poll start is verifiably later than
+  `CURRENT_TIMESTAMP`; ordinary live leases remain protected. The startup
+  regression now includes the inherited future lease and still performs zero
+  Provider calls. Final exact-head CI and Codex review must be repeated after
+  this state sync.
+- Head `2cb245e1db8d9ffe8f1ef658e9ac5917d62d99bf` passed Windows CI
+  run `30606273467` on attempt 1. Exact-head review `4825747733` then found
+  that a persisted recovery for the old Provider task prevented a human from
+  attaching a different unused task. Commit
+  `19f026f8f40f82203a3967a7f449152b272743cf` now preserves same-task recovery,
+  rejects the internal local recovery identity as a Provider task, and, on a
+  real task switch, verifies and atomically archives the old invalid Artifact
+  plus any committed replacement before clearing recovery. Blob rows, bytes
+  and Artifact-Blob links remain unchanged; unsafe retirement rolls back with
+  `ARTIFACT_RECOVERY_RETIRE_FAILED`. Local validation passed with zero Provider
+  calls. Run `30606273467` is not transferable to the new head.
+- Head `b8060e1561be33b4d1803909325f8a3f2c9e998f` passed Windows CI
+  run `30608433511`. Exact-head review `4825989650` then found that a different
+  Intent could attach another Intent's reserved `local_recovery_*` identity
+  before any replacement Artifact existed. Commit
+  `2847a34e8ee638ff1ca46824bc938f19acd870ff` reserves that internal namespace
+  globally at manual attachment. Its cross-Intent regression has no replacement
+  Artifact or owning-Artifact signal, rejects with `INVALID_PROVIDER_TASK_ID`,
+  and preserves both jobs' prior state. Local gates pass with zero Provider
+  calls; run `30608433511` is not transferable to the new head.
+- Head `528f33a4efc4024b49c2974374563f52ffe9195d` passed Windows CI run
+  `30610318191`. Thread audit retained a valid finding from review
+  `4826019679`: abandoning a recovery after replacement commit could leave both
+  the repaired original and replacement active. Exact-head review `4826282464`
+  also found that a crash between exclusive hard-link placement and staged-link
+  removal could leave the immutable Blob target permanently rejected at
+  `nlink=2`. Commit `aa9b8912d18dc11b6718e5bfed00e1d9c6ee35f9`
+  resolves both: abandon now strictly verifies and atomically archives the
+  recovery Artifacts before clearing recovery and cancellation; verified-Blob
+  retry normalizes only the unique generated staged/target pair with matching
+  file identity, while ordinary hard links remain fail-closed. Blob rows and
+  Artifact-Blob links remain unchanged. Typecheck, build, Workbench V2 67/67,
+  Foundation 94/94, Provider 52/52, selection 23/23, secret scan and diff
+  checks pass locally with zero Provider calls. Run `30610318191` and review
+  `4826282464` are not transferable to the new head.
+- Head `e5cb5d8320f44f59a51b453167b7eb1732a528e2` passed Windows CI run
+  `30613190531`. Exact-head review `4826557538` then found that
+  `datetime(...) > CURRENT_TIMESTAMP` truncated both sides to whole seconds, so
+  a subsecond clock rollback could remain blocked by the crashed process's
+  future lease. Commit `357b08718e2226a613b7613ede234e4c3cc337b7`
+  changes all persisted poll-start rollback predicates in scheduler selection
+  and lease claim to fractional `julianday` comparisons. The startup regression
+  now uses a same-second 900 ms rollback, retains the future inherited lease,
+  reaches `PROVIDER_POLL_TIMEOUT` and performs zero Provider calls. All required
+  local gates pass; run `30613190531` and review `4826557538` are not
+  transferable to the new head.
+- Head `1f49bc32164d8efee82ce12ebb2cc1e88c2b6df6` passed Windows CI run
+  `30615172450`. Exact-head review `4826803376` then found that a persisted
+  poll deadline could still be delayed behind a crashed worker's five-minute
+  lease after wall time caught up with the stored poll start, and that the
+  same-second rollback regression depended on completing inside a real 900 ms
+  window. Commit `2cce0f8af8063228c89237a946553ea62e8503d2`
+  makes both scheduler selection and lease claim preemptible when the
+  validated persisted deadline is due, schedules the next wakeup at that
+  deadline instead of the later lease, and binds scheduler comparisons to the
+  injectable wall clock. The rollback regression now uses a fixed clock, and
+  a second regression proves an already-due deadline wins over both a
+  `2099` next attempt and inherited lease. Both reach
+  `PROVIDER_POLL_TIMEOUT` with zero Provider calls. Typecheck, build,
+  Workbench V2 68/68, Foundation 94/94, Provider 52/52, selection 23/23,
+  secret scan and diff checks pass locally. Run `30615172450` and review
+  `4826803376` apply only to the prior head, so a new exact-head CI/review cycle
+  remains required.
+- PR #107 remains open Draft, superseded and unmerged. Its branch remains
+  retained.
+- PR #108 is Draft on `main`; it is not authorized for merge or
+  ready-for-review. New exact-head CI/review evidence is required before any
+  later Jenn merge or readiness decision.
 - `S3B-T2_PREPARE_ELIGIBLE_SHOT` is
   `AWAITING_JENN_AUTHORIZATION`.
 - `S3B-T3_CONFIGURE_RUNNINGHUB_CREDENTIAL` is
   `AWAITING_JENN_LOCAL_ACTION`.
 - `S3B-T4_RERUN_CANARY_READINESS` is `BLOCKED`.
-- `S4-T1_REAL_SINGLE_SHOT_CURRENT_PATH` is `BLOCKED` and unauthorized.
+- `S4-T1_REAL_SINGLE_SHOT_CURRENT_PATH` is `BLOCKED_UNAUTHORIZED`.
 - Media Gateway and Director Bridge do not block this stage. Memory,
   multi-user and automatic Snapshot remain frozen.
-- No activity database/media access, Provider operation, credential change,
-  service/deployment operation, source/test modification, PR merge or PR #107
-  update occurred during this remediation.
+- The restack changes six source files, four tests and the same seven
+  state/evidence files. No activity
+  database/media access, Provider operation, credential change,
+  service/deployment operation, S3 readiness rerun or S4 execution occurred.
 ## S2-T1 Current Core Loop Gap Proof
 
 - Audited the fixed current-schema scenario from an existing Project and
