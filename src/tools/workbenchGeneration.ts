@@ -1774,7 +1774,10 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         project_id: intent.project_id,
         shot_id: intent.shot_id,
         duration_seconds: intent.duration_seconds,
-        aspect_ratio: intent.input_snapshot.aspect_ratio
+        aspect_ratio: intent.input_snapshot.aspect_ratio,
+        ...(recoveryNeedsDownload && recovery
+          ? { verified_blob_recovery: { invalid_artifact_id: recovery.invalid_artifact_id } }
+          : {})
       }, db);
       assertJobLease(db, job.job_id, leaseToken);
       if (!downloaded.ok) {

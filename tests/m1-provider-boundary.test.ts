@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import {
+  activateLocalMediaArtifact,
+  buildStoryboardApprovedShot,
   buildRunwayCanaryDryRunReport,
   buildRunwayImageToVideoRequest,
   buildRunningHubImageToVideoDryRunPlan,
@@ -39,9 +41,11 @@ import {
   RUNWAY_API_VERSION,
   RUNWAY_IMAGE_TO_VIDEO_ENDPOINT,
   RunwayVideoProviderAdapter,
+  saveShot,
   selectM1ProviderPort,
   startStoryboardVideoGeneration,
-  validateProviderOutputUrl
+  validateProviderOutputUrl,
+  verifyMediaArtifactBytes
 } from "../src/index.js";
 import type { MediaArtifact } from "../src/index.js";
 
@@ -124,6 +128,59 @@ function fakeStoryboardArtifact(): MediaArtifact {
     linked_objects: { project_id: "", shot_id: "" },
     source: { kind: "fixture_path", provider: "", provider_job_id: "", sha256, external_url_host: "" }
   } as MediaArtifact;
+}
+
+function setupProviderBlobRecovery(
+  db: ReturnType<typeof openM0Database>,
+  mediaRoot: string
+): { artifact: MediaArtifact; project_id: string; shot_id: string } {
+  const created = createProject({ title: `Provider Blob recovery ${Date.now()}` }, db);
+  assert.equal(created.ok, true);
+  if (!created.ok) throw new Error("PROVIDER_RECOVERY_PROJECT_SETUP_FAILED");
+  const shot = buildStoryboardApprovedShot({
+    project_id: created.project_id,
+    order: 1,
+    duration_seconds: 6,
+    storyboard_image_artifact_id: "",
+    video_prompt: "Provider recovery fixture"
+  });
+  saveShot(db, shot);
+  const artifactId = `artifact_provider_recovery_${createHash("sha256").update(mediaRoot).digest("hex").slice(0, 16)}`;
+  const prepared: MediaArtifact = {
+    artifact_id: artifactId,
+    blob_id: "",
+    artifact_type: "video",
+    role: "generated_clip",
+    status: "active",
+    storage: {
+      uri: join(mediaRoot, "artifacts", "videos", `${artifactId}.mp4`),
+      mime_type: "video/mp4",
+      filename: `${artifactId}.mp4`
+    },
+    metadata: {
+      width: 1080,
+      height: 1920,
+      duration_seconds: 6,
+      aspect_ratio: "9:16",
+      sha256: ""
+    },
+    linked_objects: { project_id: created.project_id, shot_id: shot.shot_id },
+    source: {
+      kind: "provider_output_file",
+      provider: "runninghub",
+      provider_job_id: "paid-task-requiring-human-recovery",
+      sha256: "",
+      external_url_host: "fixture.invalid"
+    }
+  };
+  const activated = activateLocalMediaArtifact({
+    artifact: prepared,
+    source_path: join(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4"),
+    media_root: mediaRoot
+  }, db);
+  assert.equal(activated.ok, true, activated.ok ? undefined : activated.error.code);
+  if (!activated.ok) throw new Error("PROVIDER_RECOVERY_ARTIFACT_SETUP_FAILED");
+  return { artifact: activated.artifact, project_id: created.project_id, shot_id: shot.shot_id };
 }
 
 test("M1 provider registry keeps mock default and exposes two real ports", () => {
@@ -1034,6 +1091,187 @@ test("M1 provider output downloader saves ffprobe-valid local artifact without p
     if (!retry.ok) assert.equal(new Set(["MEDIA_BLOB_CONTENT_DRIFT", "VIDEO_FILE_INVALID"]).has(retry.error.code), true);
   } finally {
     db.close();
+  }
+});
+
+test("ordinary Provider download cannot repair an invalid verified Blob", async () => {
+  const root = mkdtempSync(join(tmpdir(), "provider-output-no-implicit-recovery-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  const db = openM0Database(sqlitePath);
+  const fixtureBytes = readFileSync(join(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4"));
+  try {
+    const fixture = setupProviderBlobRecovery(db, mediaRoot);
+    const ordinaryInput = {
+      url: "https://cdn.example.test/generated/output.mp4",
+      provider_name: "runninghub",
+      provider_job_id: "ordinary-download-must-not-repair",
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      duration_seconds: 6,
+      aspect_ratio: "9:16",
+      storage_directory: mediaRoot
+    } as const;
+    assert.equal("verified_blob_recovery" in ordinaryInput, false);
+    const blobBefore = getMediaBlob(db, fixture.artifact.blob_id);
+    writeFileSync(fixture.artifact.storage.uri, "invalid-verified-blob", "utf8");
+
+    const result = await downloadProviderOutputToArtifact(ordinaryInput, db, {
+      storage_root: mediaRoot,
+      resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+      fetch_pinned_address: async () => new Response(fixtureBytes, {
+        status: 200,
+        headers: { "content-type": "video/mp4", "content-length": String(fixtureBytes.length) }
+      })
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "MEDIA_BLOB_EXISTING_BYTES_INVALID");
+    assert.equal(readFileSync(fixture.artifact.storage.uri).toString("utf8"), "invalid-verified-blob");
+    assert.deepEqual(getMediaBlob(db, fixture.artifact.blob_id), blobBefore);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM media_artifacts").get() as { count: number }).count, 1);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM media_blobs").get() as { count: number }).count, 1);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("explicit Provider recovery restores the same Blob and activates a replacement Artifact", async () => {
+  const root = mkdtempSync(join(tmpdir(), "provider-output-explicit-recovery-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  const db = openM0Database(sqlitePath);
+  const fixtureBytes = readFileSync(join(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4"));
+  try {
+    const fixture = setupProviderBlobRecovery(db, mediaRoot);
+    const blobBefore = getMediaBlob(db, fixture.artifact.blob_id);
+    assert.ok(blobBefore);
+    writeFileSync(fixture.artifact.storage.uri, "corrupt-paid-output", "utf8");
+
+    const result = await downloadProviderOutputToArtifact({
+      url: "https://cdn.example.test/generated/recovered.mp4",
+      provider_name: "runninghub",
+      provider_job_id: "local_recovery_00000000-0000-4000-8000-000000000001",
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      duration_seconds: 6,
+      aspect_ratio: "9:16",
+      storage_directory: mediaRoot,
+      verified_blob_recovery: {
+        invalid_artifact_id: fixture.artifact.artifact_id
+      }
+    }, db, {
+      storage_root: mediaRoot,
+      resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+      fetch_pinned_address: async () => new Response(fixtureBytes, {
+        status: 200,
+        headers: { "content-type": "video/mp4", "content-length": String(fixtureBytes.length) }
+      })
+    });
+
+    assert.equal(result.ok, true, result.ok ? undefined : result.error.code);
+    if (!result.ok || !blobBefore) return;
+    assert.notEqual(result.artifact.artifact_id, fixture.artifact.artifact_id);
+    assert.equal(result.artifact.blob_id, blobBefore.blob_id);
+    assert.equal(result.artifact.storage.uri, blobBefore.storage_uri);
+    assert.deepEqual(getMediaBlob(db, blobBefore.blob_id), blobBefore);
+    assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
+    assert.equal(verifyMediaArtifactBytes(db, result.artifact).ok, true);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM media_blobs").get() as { count: number }).count, 1);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM media_artifact_blobs WHERE blob_id = ?").get(blobBefore.blob_id) as { count: number }).count, 2);
+    const quarantine = readdirSync(join(mediaRoot, ".activation", "quarantine"))
+      .filter((name) => /^blob-recovery-[0-9a-f-]+\.corrupt$/i.test(name));
+    assert.equal(quarantine.length, 1);
+    assert.equal(readFileSync(join(mediaRoot, ".activation", "quarantine", quarantine[0])).toString("utf8"), "corrupt-paid-output");
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("explicit Provider recovery rejects different bytes and arbitrary Artifact bindings", async () => {
+  const root = mkdtempSync(join(tmpdir(), "provider-output-recovery-binding-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  const db = openM0Database(sqlitePath);
+  const fixtureBytes = readFileSync(join(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4"));
+  const runtime = {
+    storage_root: mediaRoot,
+    resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 as const }],
+    fetch_pinned_address: async () => new Response(fixtureBytes, {
+      status: 200,
+      headers: { "content-type": "video/mp4", "content-length": String(fixtureBytes.length) }
+    })
+  };
+  try {
+    const fixture = setupProviderBlobRecovery(db, mediaRoot);
+    writeFileSync(fixture.artifact.storage.uri, "corrupt-binding-target", "utf8");
+    const base = {
+      url: "https://cdn.example.test/generated/recovery.mp4",
+      provider_name: "runninghub",
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      duration_seconds: 6,
+      aspect_ratio: "9:16",
+      storage_directory: mediaRoot
+    } as const;
+
+    const differentBytes = Buffer.concat([fixtureBytes, Buffer.from("different-provider-bytes", "utf8")]);
+    const mismatch = await downloadProviderOutputToArtifact({
+      ...base,
+      provider_job_id: "local_recovery_content_mismatch",
+      verified_blob_recovery: { invalid_artifact_id: fixture.artifact.artifact_id }
+    }, db, {
+      ...runtime,
+      fetch_pinned_address: async () => new Response(differentBytes, {
+        status: 200,
+        headers: { "content-type": "video/mp4", "content-length": String(differentBytes.length) }
+      })
+    });
+    assert.equal(mismatch.ok, false);
+    if (!mismatch.ok) assert.equal(mismatch.error.code, "MEDIA_BLOB_RECOVERY_CONTENT_MISMATCH");
+
+    for (const [providerJobId, projectId, shotId] of [
+      ["local_recovery_wrong_project", "project_not_bound", fixture.shot_id],
+      ["local_recovery_wrong_shot", fixture.project_id, "shot_not_bound"]
+    ] as const) {
+      const binding = await downloadProviderOutputToArtifact({
+        ...base,
+        provider_job_id: providerJobId,
+        project_id: projectId,
+        shot_id: shotId,
+        verified_blob_recovery: { invalid_artifact_id: fixture.artifact.artifact_id }
+      }, db, runtime);
+      assert.equal(binding.ok, false);
+      if (!binding.ok) assert.equal(binding.error.code, "MEDIA_BLOB_RECOVERY_BINDING_MISMATCH");
+    }
+
+    const arbitraryArtifact: MediaArtifact = {
+      ...structuredClone(fixture.artifact),
+      artifact_id: "artifact_arbitrary_recovery_target",
+      blob_id: "",
+      artifact_type: "image",
+      role: "storyboard_image",
+      storage: { uri: "", mime_type: "image/png", filename: "" },
+      metadata: { ...fixture.artifact.metadata, duration_seconds: null, sha256: "" },
+      source: { ...fixture.artifact.source, provider_job_id: "", sha256: "" }
+    };
+    db.prepare(`INSERT INTO media_artifacts
+      (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
+      VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)`)
+      .run(arbitraryArtifact.artifact_id, fixture.project_id, fixture.shot_id, JSON.stringify(arbitraryArtifact));
+    const arbitrary = await downloadProviderOutputToArtifact({
+      ...base,
+      provider_job_id: "local_recovery_arbitrary_artifact",
+      verified_blob_recovery: { invalid_artifact_id: arbitraryArtifact.artifact_id }
+    }, db, runtime);
+    assert.equal(arbitrary.ok, false);
+    if (!arbitrary.ok) assert.equal(arbitrary.error.code, "MEDIA_BLOB_RECOVERY_BINDING_MISMATCH");
+    assert.equal(readFileSync(fixture.artifact.storage.uri).toString("utf8"), "corrupt-binding-target");
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM media_blobs").get() as { count: number }).count, 1);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
   }
 });
 

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -32,7 +32,7 @@ import {
   resumeWorkbenchGenerationJobs,
   runWorkbenchGenerationOnce
 } from "../src/tools/workbenchGeneration.js";
-import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
+import { activateLocalMediaArtifact, registerMediaArtifact, type MediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { downloadProviderOutputToArtifact } from "../src/tools/providerOutputDownloader.js";
 import type { ProviderPollOptions, VideoProviderAdapter } from "../src/tools/videoProviderAdapters.js";
 
@@ -1853,9 +1853,11 @@ test("expired polling deadline does not block resumed local completion after Pro
   }
 });
 
-test("human reattachment replaces an inactive existing output Artifact without another Provider submit", async () => {
+test("human reattachment redownloads, repairs verified Blob bytes, and rebinds without another Provider submit", async () => {
   const root = mkdtempSync(join(tmpdir(), "generation-invalid-output-recovery-"));
   const sqlitePath = join(root, "app.sqlite");
+  const mediaRoot = join(root, "media");
+  const videoFixture = resolve("fixtures/video/mock_clip.mp4");
   try {
     const prepared = await prepareConfirmedGeneration(sqlitePath, "Reject invalid local output");
     const taskId = "task-invalid-output-recovery";
@@ -1873,17 +1875,41 @@ test("human reattachment replaces an inactive existing output Artifact without a
       .run(JSON.stringify(intentData), prepared.intent_id);
     db.prepare("UPDATE generation_jobs SET state = 'finalizing' WHERE job_id = ?")
       .run(prepared.job_id);
-    const existingOutput = registerMediaArtifact({
+    const existingPrepared: MediaArtifact = {
+      artifact_id: "artifact_invalid_output_recovery",
+      blob_id: "",
       artifact_type: "video",
       role: "generated_clip",
-      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      status: "active",
+      storage: {
+        uri: join(mediaRoot, "artifacts", "videos", "existing-output.mp4"),
+        mime_type: "video/mp4",
+        filename: "existing-output.mp4"
+      },
+      metadata: {
+        width: 1080,
+        height: 1920,
+        duration_seconds: 6,
+        aspect_ratio: "9:16",
+        sha256: ""
+      },
       linked_objects: { project_id: prepared.project_id, shot_id: prepared.shot_id },
-      provenance: { provider: "runninghub", provider_job_id: taskId }
+      source: {
+        kind: "provider_output_file",
+        provider: "runninghub",
+        provider_job_id: taskId,
+        sha256: "",
+        external_url_host: "fixture.invalid"
+      }
+    };
+    const existingOutput = activateLocalMediaArtifact({
+      artifact: existingPrepared,
+      source_path: videoFixture,
+      media_root: mediaRoot
     }, db);
     assert.equal(existingOutput.ok, true);
     if (!existingOutput.ok) throw new Error("output fixture registration failed");
-    db.prepare("UPDATE media_artifacts SET status = 'archived', data_json = json_set(data_json, '$.status', 'archived') WHERE artifact_id = ?")
-      .run(existingOutput.artifact.artifact_id);
+    writeFileSync(existingOutput.artifact.storage.uri, "corrupt-paid-provider-output", "utf8");
     db.close();
 
     let pollCalls = 0;
@@ -1916,7 +1942,7 @@ test("human reattachment replaces an inactive existing output Artifact without a
     assert.equal(pollCalls, 0);
     assert.equal(reconciledIntent.status, "running");
     assert.equal(reconciledIntent.output_artifact_id, "");
-    assert.equal((JSON.parse(reconciledIntent.sanitized_error_json) as { code: string }).code, "ARTIFACT_REFERENCE_INACTIVE");
+    assert.equal((JSON.parse(reconciledIntent.sanitized_error_json) as { code: string }).code, "VIDEO_FILE_INVALID");
     assert.deepEqual({ ...reconciledJob }, {
       state: "manual_reconciliation",
       reconciliation_reason: "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION"
@@ -1973,22 +1999,20 @@ test("human reattachment replaces an inactive existing output Artifact without a
           downloadCalls += 1;
           assert.equal(input.provider_name, "runninghub");
           assert.equal(input.provider_job_id, recoveryIntentData.provider_output_recovery.local_identity);
-          const replacement = registerMediaArtifact({
-            artifact_type: "video",
-            role: "generated_clip",
-            source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
-            linked_objects: { project_id: prepared.project_id, shot_id: prepared.shot_id },
-            provenance: { provider: "runninghub", provider_job_id: input.provider_job_id }
-          }, targetDb);
-          if (!replacement.ok) {
-            return { ok: false, error: { ...replacement.error, retryable: false } };
-          }
-          return {
-            ok: true,
-            artifact: replacement.artifact,
-            ffprobe: { status: "PASS" },
-            output_url_hostname: "example.invalid"
-          };
+          assert.deepEqual(input.verified_blob_recovery, {
+            invalid_artifact_id: recoveryIntentData.provider_output_recovery.invalid_artifact_id
+          });
+          return downloadProviderOutputToArtifact({
+            ...input,
+            storage_directory: mediaRoot
+          }, targetDb, {
+            storage_root: mediaRoot,
+            resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+            fetch_pinned_address: async () => new Response(readFileSync(videoFixture), {
+              status: 200,
+              headers: { "content-type": "video/mp4" }
+            })
+          });
         }) as typeof downloadProviderOutputToArtifact
       }
     });
@@ -2002,6 +2026,10 @@ test("human reattachment replaces an inactive existing output Artifact without a
       .get(existingOutput.artifact.artifact_id) as { data_json: string };
     const replacementArtifactRow = db.prepare("SELECT status, data_json FROM media_artifacts WHERE artifact_id = ?")
       .get(completedIntentRow.output_artifact_id) as { status: string; data_json: string };
+    const originalBlob = db.prepare("SELECT blob_id FROM media_artifact_blobs WHERE artifact_id = ?")
+      .get(existingOutput.artifact.artifact_id) as { blob_id: string };
+    const replacementBlob = db.prepare("SELECT blob_id FROM media_artifact_blobs WHERE artifact_id = ?")
+      .get(completedIntentRow.output_artifact_id) as { blob_id: string };
     const canonicalBindingCount = db.prepare(`SELECT COUNT(*) AS count FROM media_artifacts
       WHERE json_valid(data_json) = 1
         AND json_extract(data_json, '$.source.provider') = 'runninghub'
@@ -2027,10 +2055,190 @@ test("human reattachment replaces an inactive existing output Artifact without a
     assert.equal(archivedArtifactData.source.original_provider_job_id, taskId);
     assert.equal(archivedArtifactData.source.replaced_by_artifact_id, completedIntentRow.output_artifact_id);
     assert.equal(replacementArtifactRow.status, "active");
+    assert.equal(replacementBlob.blob_id, originalBlob.blob_id);
     assert.equal(replacementArtifactData.source.provider_job_id, taskId);
     assert.equal(replacementArtifactData.source.local_recovery_identity, recoveryIntentData.provider_output_recovery.local_identity);
     assert.equal(canonicalBindingCount.count, 1);
     assert.equal(localRecoveryBindingCount.count, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("failed verified Blob recovery stays in manual reconciliation without polling or resubmitting", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-blob-recovery-failure-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const mediaRoot = join(root, "media");
+  const videoFixture = resolve("fixtures/video/mock_clip.mp4");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Keep failed Blob recovery manual");
+    const taskId = "task-blob-recovery-failure";
+    const wallMs = Date.now();
+    persistKnownProviderTask(sqlitePath, prepared.intent_id, prepared.job_id, taskId, MIN_PROVIDER_TASK_POLL_TIMEOUT_MS);
+
+    let db = openM0Database(sqlitePath);
+    const intentRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const intentData = JSON.parse(intentRow.data_json) as Record<string, unknown>;
+    intentData.provider_poll_started_at = new Date(wallMs - MIN_PROVIDER_TASK_POLL_TIMEOUT_MS - 1_000).toISOString();
+    intentData.provider_poll_timeout_ms = MIN_PROVIDER_TASK_POLL_TIMEOUT_MS;
+    intentData.provider_poll_deadline_at = new Date(wallMs - 1_000).toISOString();
+    db.prepare("UPDATE generation_intents SET data_json = ? WHERE intent_id = ?")
+      .run(JSON.stringify(intentData), prepared.intent_id);
+    db.prepare("UPDATE generation_jobs SET state = 'finalizing' WHERE job_id = ?")
+      .run(prepared.job_id);
+
+    const invalidPrepared: MediaArtifact = {
+      artifact_id: "artifact_blob_recovery_failure",
+      blob_id: "",
+      artifact_type: "video",
+      role: "generated_clip",
+      status: "active",
+      storage: {
+        uri: join(mediaRoot, "artifacts", "videos", "invalid-output.mp4"),
+        mime_type: "video/mp4",
+        filename: "invalid-output.mp4"
+      },
+      metadata: {
+        width: 1080,
+        height: 1920,
+        duration_seconds: 6,
+        aspect_ratio: "9:16",
+        sha256: ""
+      },
+      linked_objects: { project_id: prepared.project_id, shot_id: prepared.shot_id },
+      source: {
+        kind: "provider_output_file",
+        provider: "runninghub",
+        provider_job_id: taskId,
+        sha256: "",
+        external_url_host: "fixture.invalid"
+      }
+    };
+    const invalidOutput = activateLocalMediaArtifact({
+      artifact: invalidPrepared,
+      source_path: videoFixture,
+      media_root: mediaRoot
+    }, db);
+    assert.equal(invalidOutput.ok, true, invalidOutput.ok ? undefined : invalidOutput.error.code);
+    if (!invalidOutput.ok) throw new Error("invalid output fixture registration failed");
+    writeFileSync(invalidOutput.artifact.storage.uri, "corrupt-paid-provider-output", "utf8");
+    db.close();
+
+    let submitCalls = 0;
+    let pollCalls = 0;
+    let downloadCalls = 0;
+    const adapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => {
+        submitCalls += 1;
+        throw new Error("submit must not run during Blob recovery");
+      },
+      pollStatus: async () => {
+        pollCalls += 1;
+        return {
+          ok: true as const,
+          provider_job_id: taskId,
+          status: "succeeded" as const,
+          provider_status: "SUCCESS",
+          retryable: false,
+          output_url: "https://example.invalid/recovery-mismatch.mp4"
+        };
+      },
+      fetchOutput: async () => { throw new Error("adapter output fetch must not run"); }
+    } as unknown as VideoProviderAdapter;
+
+    await runWorkbenchGenerationOnce(prepared.intent_id, {
+      allow_submit: false,
+      dependencies: {
+        sqlite_path: sqlitePath,
+        env: prepared.env,
+        adapter_factory: () => adapter,
+        now: () => new Date(wallMs),
+        monotonic_now_ms: () => 10_000
+      }
+    });
+    assert.equal(pollCalls, 0);
+
+    db = openM0Database(sqlitePath);
+    const attached = reconcileGenerationJob(prepared.job_id, {
+      decision: "attach_existing_task",
+      provider_task_id: taskId,
+      human_confirmation: true
+    }, db, { env: prepared.env, now: () => new Date(wallMs) });
+    assert.equal(attached.ok, true, attached.ok ? undefined : attached.error.code);
+    const recoveryRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { data_json: string };
+    const recovery = (JSON.parse(recoveryRow.data_json) as {
+      provider_output_recovery: { invalid_artifact_id: string };
+    }).provider_output_recovery;
+    db.close();
+
+    const differentBytes = Buffer.concat([
+      readFileSync(videoFixture),
+      Buffer.from("different-provider-output", "utf8")
+    ]);
+    const download = (async (input, targetDb) => {
+      downloadCalls += 1;
+      assert.deepEqual(input.verified_blob_recovery, {
+        invalid_artifact_id: recovery.invalid_artifact_id
+      });
+      return downloadProviderOutputToArtifact({
+        ...input,
+        storage_directory: mediaRoot
+      }, targetDb, {
+        storage_root: mediaRoot,
+        resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+        fetch_pinned_address: async () => new Response(differentBytes, {
+          status: 200,
+          headers: { "content-type": "video/mp4" }
+        })
+      });
+    }) as typeof downloadProviderOutputToArtifact;
+
+    await runWorkbenchGenerationOnce(prepared.intent_id, {
+      allow_submit: false,
+      dependencies: {
+        sqlite_path: sqlitePath,
+        env: prepared.env,
+        adapter_factory: () => adapter,
+        now: () => new Date(wallMs),
+        monotonic_now_ms: () => 10_000,
+        download_provider_output: download
+      }
+    });
+
+    db = openM0Database(sqlitePath);
+    const failedIntent = db.prepare("SELECT status, output_artifact_id, sanitized_error_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { status: string; output_artifact_id: string; sanitized_error_json: string };
+    const failedJob = db.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    db.close();
+    assert.equal(submitCalls, 0);
+    assert.equal(pollCalls, 1);
+    assert.equal(downloadCalls, 1);
+    assert.equal(failedIntent.status, "running");
+    assert.equal(failedIntent.output_artifact_id, "");
+    assert.equal((JSON.parse(failedIntent.sanitized_error_json) as { code: string }).code, "MEDIA_BLOB_RECOVERY_CONTENT_MISMATCH");
+    assert.deepEqual({ ...failedJob }, {
+      state: "manual_reconciliation",
+      reconciliation_reason: "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION"
+    });
+
+    await runWorkbenchGenerationOnce(prepared.intent_id, {
+      allow_submit: false,
+      dependencies: {
+        sqlite_path: sqlitePath,
+        env: prepared.env,
+        adapter_factory: () => adapter,
+        now: () => new Date(wallMs + 1_000),
+        monotonic_now_ms: () => 11_000,
+        download_provider_output: download
+      }
+    });
+    assert.equal(submitCalls, 0);
+    assert.equal(pollCalls, 1);
+    assert.equal(downloadCalls, 1);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
