@@ -4877,3 +4877,54 @@ s4_status: BLOCKED
 s4_authorization_granted: false
 delivery: PR_108_DRAFT_REVIEW_BLOCKED
 ```
+
+## 2026-07-31 — PR108 exact-head scheduler and recovery-state remediation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+status: LOCAL_PASS_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
+recorded_by: Codex
+recorded_at: 2026-07-31T12:41:05+08:00
+replacement_pr: 108
+review:
+  review_id: 4825473276
+  reviewed_commit: 6d9319fbcbfece0b14f0320876ce27223af9582f
+  findings:
+    - STARTUP_SCHEDULER_DEFERRED_CLOCK_ROLLBACK_FAIL_CLOSED
+    - REPEATED_ATTACHMENT_CLEARED_PERSISTED_RECOVERY
+implementation_commit: 4e244592b96881d1ea1088dcbeba940262e4c155
+resolution:
+  rollback_affected_polling_job_immediately_runnable: true
+  stable_reconciliation_reason: PROVIDER_POLL_TIMEOUT
+  persisted_recovery_preserved_on_repeat_attachment: true
+  committed_replacement_rebound: true
+  active_generated_clip_count_after_rebind: 1
+  provider_calls_in_new_regressions: 0
+  automatic_submit_retry: 0
+local_validation:
+  typecheck: PASS
+  build: PASS
+  isolated_workbench_domain: PASS_44
+  workbench_v2: PASS_64
+  foundation_boundaries: PASS_93
+  provider_boundaries: PASS_52
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+prior_head_ci:
+  run_id: 30602578941
+  attempt: 2
+  reviewed_head: 6d9319fbcbfece0b14f0320876ce27223af9582f
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+  transferable_to_new_head: false
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+deployment_changes: 0
+s4_status: BLOCKED_UNAUTHORIZED
+s4_authorization_granted: false
+delivery: PR_108_DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
+```

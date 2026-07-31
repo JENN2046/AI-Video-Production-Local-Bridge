@@ -203,12 +203,16 @@ Artifact/Blob, SHA, size and MIME agreement, preserves the Blob row and link,
 and does not resubmit. The replacement rebind also archives the old Artifact in
 the same transaction. Restart recovery prefers a replacement already committed
 under its persisted local recovery identity, so a repaired old Artifact cannot
-skip the rebind. Implementation head `277d651` passed Windows CI run
-`30598512506`; the later crash-window remediation is
-`a4e0152379b9d7e4f66b683090c7c0dc7fa045b5`, and exact-head evidence remains
-mandatory for any later PR publication decision. Old PR #107 is superseded and
-unmerged with its branch retained; none of these candidates is part of current
-`main`.
+skip the rebind. It also preserves that recovery across repeated human
+attachment and makes startup scheduling immediately execute the existing
+clock-rollback fail-closed path instead of waiting for a future
+`next_attempt_at`. Implementation head `277d651` passed Windows CI run
+`30598512506`; pre-remediation head `6d9319f` passed run `30602578941` on
+attempt 2. Review `4825473276` supplied the two latest findings, which are
+locally fixed in `4e244592b96881d1ea1088dcbeba940262e4c155`; final exact-head
+CI and review remain mandatory for any later PR publication decision. Old PR
+#107 is superseded and unmerged with its branch retained; none of these
+candidates is part of current `main`.
 
 The complete Media Gateway promotion, Memory plugin, second real user,
 automatic Snapshot, Windows logon task, WebM/broad formats and new OAuth

@@ -67,6 +67,8 @@
       "status": "DRAFT_AWAITING_REVIEW_OR_MERGE",
       "base": "main",
       "head": "codex/s3b-provider-polling-restack",
+      "candidate_commit": "4e244592b96881d1ea1088dcbeba940262e4c155",
+      "exact_head_ci_and_review_required": true,
       "merged_to_main": false,
       "merge_authorized": false,
       "ready_for_review_authorized": false
@@ -157,7 +159,7 @@
   "completed_by": "Codex",
   "completed_at": "2026-07-30T19:41:08+08:00",
   "result": "BLOCKED_BY_S3_FINDING",
-  "validation": "Current build and four isolated safety lanes passed; no Provider network call occurred. The S3 terminal findings are recorded without activity-object identifiers.",
+  "validation": "Current build and four isolated safety lanes passed; the latest PR108 review remediations are locally validated and still require exact-head CI/review. No Provider network call occurred. The S3 terminal findings are recorded without activity-object identifiers.",
   "evidence": [
     "ops/reports/2026-07-30-current-workbench-canary-readiness.md",
     ".agent_board/TASK_LEDGER.md",
@@ -166,7 +168,7 @@
   ],
   "commit": "f570d145e4832d2b2237123a40d5e8e0b503fcf1",
   "delivery": "PR_106_MERGED_PR_108_DRAFT_REVIEW_BLOCKED",
-  "updated_at": "2026-07-31T06:41:36+08:00",
+  "updated_at": "2026-07-31T12:41:05+08:00",
   "safe_state": {
     "provider_calls": 0,
     "activity_writes": 0,

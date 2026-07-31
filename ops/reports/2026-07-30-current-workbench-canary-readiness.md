@@ -298,10 +298,15 @@ and links, serializes repairs, quarantines drifted bytes and does not resubmit.
 Replacement rebind archives the old Artifact in the same transaction so it
 does not remain an active duplicate. A persisted recovery also prefers and
 rebinds an already committed `local_recovery_*` replacement before the repaired
-old Artifact can be adopted after restart. Implementation head `277d651`
-passed Windows CI run `30598512506`; crash-window remediation
-`a4e0152379b9d7e4f66b683090c7c0dc7fa045b5` is locally validated, and PR #108
-still requires exact-head evidence for any later publication decision.
+old Artifact can be adopted after restart. Repeated human attachment preserves
+the verified recovery identity, and startup scheduling immediately runs the
+clock-rollback fail-closed path even when `next_attempt_at` is still in the
+future. Implementation head `277d651` passed Windows CI run `30598512506`;
+pre-remediation head `6d9319f` passed run `30602578941` on attempt 2. Exact-head
+review `4825473276` produced the latest two findings; their locally validated
+implementation fix is `4e244592b96881d1ea1088dcbeba940262e4c155`. PR #108
+still requires final exact-head CI and review evidence for any later
+publication decision.
 
 The remaining sequence is:
 

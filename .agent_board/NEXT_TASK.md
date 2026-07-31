@@ -22,9 +22,11 @@ automatically.
 - PR #108: `DRAFT_AWAITING_REVIEW_OR_MERGE`; base `main`, head
   `codex/s3b-provider-polling-restack`; not authorized for merge or
   ready-for-review. The narrow verified-Blob recovery and the follow-up
-  archival, state-truth and committed-replacement restart fixes are in the
-  candidate; only exact-head CI/review evidence may support a later Jenn
-  decision.
+  archival, state-truth, committed-replacement restart, startup clock-rollback
+  scheduling and repeated-attachment recovery-state fixes are in the
+  candidate. Implementation commit
+  `4e244592b96881d1ea1088dcbeba940262e4c155` is locally validated; only
+  final exact-head CI/review evidence may support a later Jenn decision.
 
 ## S3B follow-ups
 

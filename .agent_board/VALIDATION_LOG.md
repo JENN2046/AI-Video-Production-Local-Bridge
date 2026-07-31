@@ -2926,3 +2926,55 @@ secret_reads: 0
 service_starts: 0
 remaining_test_processes: 0
 ```
+
+### PR108 exact-head scheduler and recovery-state remediation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+validated_at: 2026-07-31T12:41:05+08:00
+replacement_pr: 108
+review:
+  review_id: 4825473276
+  reviewed_commit: 6d9319fbcbfece0b14f0320876ce27223af9582f
+findings:
+  - STARTUP_SCHEDULER_DEFERRED_CLOCK_ROLLBACK_FAIL_CLOSED
+  - REPEATED_ATTACHMENT_CLEARED_PERSISTED_RECOVERY
+implementation_commit: 4e244592b96881d1ea1088dcbeba940262e4c155
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - node dist/scripts/run-isolated-tests.js dist/tests/workbench-v2-domain.test.js
+  - npm run test:v2
+  - npm run test:foundation-boundaries
+  - npm run test:provider-boundaries
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  isolated_workbench_domain: PASS_44
+  workbench_v2: PASS_64
+  foundation_boundaries: PASS_93
+  provider_boundaries: PASS_52
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  startup_scheduler_runs_clock_rollback_fail_closed_immediately: true
+  stable_reconciliation_reason: PROVIDER_POLL_TIMEOUT
+  provider_task_id_preserved: true
+  persisted_recovery_identity_preserved_on_repeat_attachment: true
+  committed_replacement_rebound: true
+  old_artifact_archived: true
+  active_generated_clip_count_after_rebind: 1
+  provider_calls_in_new_regressions: 0
+  automatic_submit_retry: 0
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+final_exact_head_ci_and_review: REQUIRED_AFTER_STATE_SYNC
+```

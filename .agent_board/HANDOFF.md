@@ -41,6 +41,17 @@ Ready task count: 0
   and rebind the committed `local_recovery_*` replacement before considering
   the repaired old Artifact; its restart regression performs zero poll,
   download or submit calls and leaves one active generated clip.
+- Pre-remediation head `6d9319fbcbfece0b14f0320876ce27223af9582f`
+  passed Windows CI run `30602578941` on attempt 2. Exact-head review
+  `4825473276` then found two remaining restart paths: startup scheduling could
+  defer clock-rollback fail-closed handling behind a future
+  `next_attempt_at`, and repeated human attachment could clear an unfinished
+  recovery. Follow-up implementation
+  `4e244592b96881d1ea1088dcbeba940262e4c155` makes rollback-affected polling
+  jobs immediately runnable and preserves a verified recovery identity across
+  repeated attachment. The new regressions perform zero Provider calls and
+  pass in the 64-case Workbench V2 lane. Final exact-head CI and Codex review
+  are still required after this state sync.
 - PR #107 is superseded and unmerged. Its branch remains retained.
 - PR #108 is Draft on `main`; it is not authorized for merge or
   ready-for-review. Exact-head CI/review evidence is required before any later
