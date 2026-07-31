@@ -838,34 +838,44 @@ function assertRecoveryRegularFile(filePath: string, registeredRoot: string, can
   }
 }
 
-function verifiedBlobRecoveryStagingPath(
-  blob: MediaBlob,
+function verifiedBlobRecoveryStagingPathForIdentity(
+  blobId: string,
+  storageUri: string,
   roots: ReturnType<typeof activationRoots>,
   registeredRoot: string
 ): string {
+  if (!blobId || !isAbsolute(storageUri)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  const resolvedStorageUri = resolve(storageUri);
+  if (!isPathInside(resolvedStorageUri, registeredRoot)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
   const digest = createHash("sha256")
-    .update(blob.blob_id)
+    .update(blobId)
     .update("\0")
-    .update(resolve(blob.storage_uri))
+    .update(resolvedStorageUri)
     .digest("hex");
   const stagedPath = resolve(roots.staging, `blob-recovery-${digest}.staged`);
   if (!isPathInside(stagedPath, roots.staging)
     || !isPathInside(stagedPath, registeredRoot)
-    || sameResolvedPath(stagedPath, blob.storage_uri)
+    || sameResolvedPath(stagedPath, resolvedStorageUri)
     || hasExistingSymlinkAncestor(stagedPath, roots.activation)) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
   return stagedPath;
 }
 
-function assertOwnedRecoveryStagingFile(
+function assertExpectedRecoveryStagingFile(
   stagedPath: string,
+  expectedStagedPath: string,
   roots: ReturnType<typeof activationRoots>,
   registeredRoot: string,
   canonicalRoot: string
 ): void {
   const resolvedPath = resolve(stagedPath);
-  if (!DETERMINISTIC_BLOB_RECOVERY_STAGING_NAME.test(basename(resolvedPath))
+  if (!sameResolvedPath(resolvedPath, expectedStagedPath)
+    || !DETERMINISTIC_BLOB_RECOVERY_STAGING_NAME.test(basename(resolvedPath))
     || !sameResolvedPath(dirname(resolvedPath), roots.staging)
     || !isPathInside(resolvedPath, registeredRoot)
     || hasExistingSymlinkAncestor(resolvedPath, roots.activation)
@@ -882,24 +892,6 @@ function assertOwnedRecoveryStagingFile(
     || !sameResolvedPath(dirname(canonicalPath), canonicalStaging)) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
-}
-
-function deterministicRecoveryStagingEntries(
-  roots: ReturnType<typeof activationRoots>,
-  registeredRoot: string,
-  canonicalRoot: string
-): string[] {
-  if (!existsSync(roots.staging)) return [];
-  if (lstatSync(roots.staging).isSymbolicLink() || !statSync(roots.staging).isDirectory()) {
-    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
-  }
-  const entries = readdirSync(roots.staging, { withFileTypes: true })
-    .filter((entry) => DETERMINISTIC_BLOB_RECOVERY_STAGING_NAME.test(entry.name))
-    .map((entry) => resolve(roots.staging, entry.name));
-  for (const stagedPath of entries) {
-    assertOwnedRecoveryStagingFile(stagedPath, roots, registeredRoot, canonicalRoot);
-  }
-  return entries;
 }
 
 function reconcileLegacyVerifiedBlobRecoveryStaging(
@@ -954,7 +946,7 @@ function prepareVerifiedBlobRecoveryStaging(
   canonicalRoot: string
 ): void {
   if (existsSync(stagedPath)) {
-    assertOwnedRecoveryStagingFile(stagedPath, roots, registeredRoot, canonicalRoot);
+    assertExpectedRecoveryStagingFile(stagedPath, stagedPath, roots, registeredRoot, canonicalRoot);
     let stagedFacts: LocalMediaFacts | null = null;
     try { stagedFacts = localMediaFacts(stagedPath, artifact); }
     catch { /* a safe app-owned partial stage can be discarded and recopied */ }
@@ -974,7 +966,7 @@ function prepareVerifiedBlobRecoveryStaging(
     }
     throw error;
   }
-  assertOwnedRecoveryStagingFile(stagedPath, roots, registeredRoot, canonicalRoot);
+  assertExpectedRecoveryStagingFile(stagedPath, stagedPath, roots, registeredRoot, canonicalRoot);
   let stagedFacts: LocalMediaFacts;
   try { stagedFacts = localMediaFacts(stagedPath, artifact); }
   catch { throw new Error("MEDIA_BLOB_RECOVERY_CONTENT_MISMATCH"); }
@@ -1179,7 +1171,12 @@ export function recoverVerifiedBlobStorage(
     try { activation = ensureSafeActivationRoots(registeredRoot, true); }
     catch { throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE"); }
     recoveryStagingRoot = activation.staging;
-    stagedPath = verifiedBlobRecoveryStagingPath(blob, activation, registeredRoot);
+    stagedPath = verifiedBlobRecoveryStagingPathForIdentity(
+      blob.blob_id,
+      blob.storage_uri,
+      activation,
+      registeredRoot
+    );
 
     if (existsSync(targetPath)) {
       normalizeInterruptedVerifiedBlobPlacement(
@@ -1191,7 +1188,6 @@ export function recoverVerifiedBlobStorage(
         recoveryPaths.canonicalRoot
       );
     }
-    deterministicRecoveryStagingEntries(activation, registeredRoot, recoveryPaths.canonicalRoot);
     reconcileLegacyVerifiedBlobRecoveryStaging(
       recoveryPaths.targetDirectory,
       targetPath,
@@ -1215,7 +1211,13 @@ export function recoverVerifiedBlobStorage(
 
     if (originalCondition === "ALREADY_REUSABLE") {
       if (existsSync(stagedPath)) {
-        assertOwnedRecoveryStagingFile(stagedPath, activation, registeredRoot, recoveryPaths.canonicalRoot);
+        assertExpectedRecoveryStagingFile(
+          stagedPath,
+          stagedPath,
+          activation,
+          registeredRoot,
+          recoveryPaths.canonicalRoot
+        );
         rmSync(stagedPath);
       }
       if (!verifiedBlobStorageIsReusable(blob)) throw new Error("MEDIA_BLOB_RECOVERY_FAILED");
@@ -1732,27 +1734,41 @@ export interface MediaActivationRecoveryResult {
   failed: Array<{ activation_id: string; code: string }>;
 }
 
-function verifiedBlobRecoveryMediaRoots(db: M0Database): string[] {
-  const roots = new Set<string>();
-  const rows = db.prepare(`SELECT storage_uri, provenance_json
+interface VerifiedBlobRecoveryStageIdentity {
+  blob_id: string;
+  storage_uri: string;
+  media_root: string;
+}
+
+interface VerifiedBlobRecoveryStageWhitelist {
+  registeredRoot: string;
+  canonicalRoot: string;
+  roots: ReturnType<typeof activationRoots>;
+  expectedPaths: Set<string>;
+}
+
+function verifiedBlobRecoveryStageIdentities(db: M0Database): VerifiedBlobRecoveryStageIdentity[] {
+  const identities: VerifiedBlobRecoveryStageIdentity[] = [];
+  const rows = db.prepare(`SELECT blob_id, storage_uri, provenance_json
     FROM media_blobs WHERE integrity_state = 'verified'`).all() as Array<{
+      blob_id: string;
       storage_uri: string;
       provenance_json: string;
     }>;
   for (const row of rows) {
     try {
       const provenance = JSON.parse(row.provenance_json) as Record<string, unknown>;
-      if (typeof provenance.media_root !== "string"
-        || !isAbsolute(provenance.media_root)
-        || !isAbsolute(row.storage_uri)) continue;
-      const mediaRoot = resolve(provenance.media_root);
-      if (!isPathInside(resolve(row.storage_uri), mediaRoot)) continue;
-      roots.add(mediaRoot);
+      if (typeof provenance.media_root !== "string") continue;
+      identities.push({
+        blob_id: row.blob_id,
+        storage_uri: row.storage_uri,
+        media_root: provenance.media_root
+      });
     } catch {
       // Database governance reports malformed provenance; startup cleanup stays diagnostic-only.
     }
   }
-  return [...roots];
+  return identities;
 }
 
 function recoveryStagingFailureId(value: string): string {
@@ -1763,38 +1779,83 @@ function reconcileOrphanedVerifiedBlobRecoveryStaging(
   db: M0Database,
   result: MediaActivationRecoveryResult
 ): void {
-  for (const mediaRoot of verifiedBlobRecoveryMediaRoots(db)) {
-    let roots: ReturnType<typeof activationRoots>;
-    let canonicalRoot: string;
-    try {
-      if (!existsSync(mediaRoot)) continue;
-      roots = ensureSafeActivationRoots(mediaRoot, false);
-      if (!existsSync(roots.staging)) continue;
-      canonicalRoot = resolve(realpathSync(mediaRoot));
-    } catch {
-      result.failed.push({
-        activation_id: recoveryStagingFailureId(mediaRoot),
-        code: "MEDIA_BLOB_RECOVERY_PATH_UNSAFE"
-      });
+  const whitelists = new Map<string, VerifiedBlobRecoveryStageWhitelist>();
+  const rejectedRoots = new Set<string>();
+  for (const identity of verifiedBlobRecoveryStageIdentities(db)) {
+    if (!isAbsolute(identity.media_root)) continue;
+    const registeredRoot = resolve(identity.media_root);
+    const rootKey = process.platform === "win32" ? registeredRoot.toLowerCase() : registeredRoot;
+    if (rejectedRoots.has(rootKey)) continue;
+    let whitelist = whitelists.get(rootKey);
+    if (!whitelist) {
+      if (!existsSync(registeredRoot)) continue;
+      try {
+        const roots = ensureSafeActivationRoots(registeredRoot, false);
+        const canonicalRoot = resolve(realpathSync(registeredRoot));
+        whitelist = { registeredRoot, canonicalRoot, roots, expectedPaths: new Set<string>() };
+        whitelists.set(rootKey, whitelist);
+      } catch {
+        rejectedRoots.add(rootKey);
+        result.failed.push({
+          activation_id: recoveryStagingFailureId(registeredRoot),
+          code: "MEDIA_BLOB_RECOVERY_PATH_UNSAFE"
+        });
+        continue;
+      }
+    }
+    if (!identity.blob_id
+      || !isAbsolute(identity.storage_uri)
+      || !isPathInside(resolve(identity.storage_uri), registeredRoot)) {
       continue;
     }
-
-    let candidates: string[];
     try {
-      candidates = readdirSync(roots.staging, { withFileTypes: true })
-        .filter((entry) => DETERMINISTIC_BLOB_RECOVERY_STAGING_NAME.test(entry.name))
-        .map((entry) => resolve(roots.staging, entry.name));
+      whitelist.expectedPaths.add(verifiedBlobRecoveryStagingPathForIdentity(
+        identity.blob_id,
+        identity.storage_uri,
+        whitelist.roots,
+        registeredRoot
+      ));
     } catch {
       result.failed.push({
-        activation_id: recoveryStagingFailureId(roots.staging),
+        activation_id: recoveryStagingFailureId(registeredRoot),
+        code: "MEDIA_BLOB_RECOVERY_PATH_UNSAFE"
+      });
+    }
+  }
+
+  for (const whitelist of whitelists.values()) {
+    if (!existsSync(whitelist.roots.staging)) continue;
+    let candidates: string[];
+    try {
+      candidates = readdirSync(whitelist.roots.staging, { withFileTypes: true })
+        .filter((entry) => DETERMINISTIC_BLOB_RECOVERY_STAGING_NAME.test(entry.name))
+        .map((entry) => resolve(whitelist.roots.staging, entry.name));
+    } catch {
+      result.failed.push({
+        activation_id: recoveryStagingFailureId(whitelist.roots.staging),
         code: "MEDIA_BLOB_RECOVERY_PATH_UNSAFE"
       });
       continue;
     }
 
     for (const stagedPath of candidates) {
+      const expectedStagedPath = [...whitelist.expectedPaths]
+        .find((expectedPath) => sameResolvedPath(expectedPath, stagedPath));
+      if (!expectedStagedPath) {
+        result.failed.push({
+          activation_id: recoveryStagingFailureId(stagedPath),
+          code: "MEDIA_BLOB_RECOVERY_PATH_UNSAFE"
+        });
+        continue;
+      }
       try {
-        assertOwnedRecoveryStagingFile(stagedPath, roots, mediaRoot, canonicalRoot);
+        assertExpectedRecoveryStagingFile(
+          stagedPath,
+          expectedStagedPath,
+          whitelist.roots,
+          whitelist.registeredRoot,
+          whitelist.canonicalRoot
+        );
         rmSync(stagedPath);
       } catch {
         result.failed.push({
