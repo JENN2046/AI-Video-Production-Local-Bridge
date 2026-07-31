@@ -5135,3 +5135,51 @@ s4_status: BLOCKED_UNAUTHORIZED
 s4_authorization_granted: false
 delivery: PR_108_DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
 ```
+
+## 2026-07-31 — PR108 subsecond clock-rollback remediation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+status: LOCAL_PASS_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
+recorded_by: Codex
+recorded_at: 2026-07-31T16:04:09+08:00
+replacement_pr: 108
+review:
+  review_id: 4826557538
+  reviewed_commit: e5cb5d8320f44f59a51b453167b7eb1732a528e2
+  finding: CLOCK_ROLLBACK_COMPARISON_LOST_SUBSECOND_PRECISION
+implementation_commit: 357b08718e2226a613b7613ede234e4c3cc337b7
+resolution:
+  scheduler_poll_start_comparison: JULIANDAY_FRACTIONAL
+  lease_claim_poll_start_comparison: JULIANDAY_FRACTIONAL
+  same_second_rollback_ms: 900
+  future_inherited_lease_retained_in_regression: true
+  stable_reconciliation_reason: PROVIDER_POLL_TIMEOUT
+  provider_task_id_preserved: true
+  provider_calls_in_regression: 0
+  automatic_submit_retry: 0
+local_validation:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_67
+  foundation_boundaries: PASS_94
+  provider_boundaries: PASS_52
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+prior_head_ci:
+  run_id: 30613190531
+  reviewed_head: e5cb5d8320f44f59a51b453167b7eb1732a528e2
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+  transferable_to_new_head: false
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+deployment_changes: 0
+s4_status: BLOCKED_UNAUTHORIZED
+s4_authorization_granted: false
+delivery: PR_108_DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
+```

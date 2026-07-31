@@ -354,6 +354,16 @@ no Blob-row, Artifact-Blob-link or Provider-call change. Run `30610318191` and
 review `4826282464` are not transferable; another exact-head CI/review cycle
 remains required.
 
+Head `e5cb5d8` passed Windows CI run `30613190531`; exact-head review
+`4826557538` then found that the persisted poll-start comparison used
+whole-second `datetime`/`CURRENT_TIMESTAMP` values. Follow-up
+`357b08718e2226a613b7613ede234e4c3cc337b7` uses fractional `julianday`
+comparisons for scheduler selection and lease claim. The startup regression
+now proves a same-second 900 ms rollback with a future inherited lease, stable
+`PROVIDER_POLL_TIMEOUT` and zero Provider calls. All required local gates pass.
+Run `30613190531` and review `4826557538` are not transferable; another
+exact-head CI/review cycle remains required.
+
 The remaining sequence is:
 
 1. require Draft PR #108 to retain clean-diff, Windows CI and exact-head Codex

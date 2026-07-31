@@ -39,11 +39,15 @@ automatically.
   unrecoverable two-link crash window in Blob placement. Implementation
   `aa9b8912d18dc11b6718e5bfed00e1d9c6ee35f9` now atomically retires recovery
   Artifacts before abandon and normalizes only the provably owned generated
-  staged/target hard-link pair; unowned hard links remain rejected. Typecheck,
-  build, Workbench V2 67/67, Foundation 94/94, Provider 52/52, selection 23/23,
-  secret scan and diff checks pass locally. Prior CI/review evidence is
-  non-transferable; only new final exact-head CI/review evidence may support a
-  later Jenn decision.
+  staged/target hard-link pair; unowned hard links remain rejected. Head
+  `e5cb5d8320f44f59a51b453167b7eb1732a528e2` passed CI run `30613190531`,
+  but exact-head review `4826557538` found that rollback detection still lost
+  fractional seconds. Candidate `357b08718e2226a613b7613ede234e4c3cc337b7`
+  now uses fractional `julianday` comparisons in scheduler selection and lease
+  claim. Its startup regression proves a same-second 900 ms rollback with a
+  future inherited lease and zero Provider calls. All required local gates
+  pass. The prior CI/review is non-transferable; only new final exact-head
+  CI/review evidence may support a later Jenn decision.
 
 ## S3B follow-ups
 

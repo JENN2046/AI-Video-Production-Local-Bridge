@@ -2,7 +2,7 @@
 
 Current mode: PR #108 verified-Blob recovery remediation; no executable task is `READY`
 Last run: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
-Last result: recovery abandon and interrupted Blob placement fixes are locally validated; Draft PR #108 awaits complete gates, new exact-head CI and review
+Last result: subsecond clock-rollback detection is locally validated; Draft PR #108 awaits new exact-head CI and review
 
 ## Current state
 
@@ -97,6 +97,17 @@ Ready task count: 0
   Foundation 94/94, Provider 52/52, selection 23/23, secret scan and diff
   checks pass locally with zero Provider calls. Run `30610318191` and review
   `4826282464` are not transferable to the new head.
+- Head `e5cb5d8320f44f59a51b453167b7eb1732a528e2` passed Windows CI run
+  `30613190531`. Exact-head review `4826557538` then found that
+  `datetime(...) > CURRENT_TIMESTAMP` truncated both sides to whole seconds, so
+  a subsecond clock rollback could remain blocked by the crashed process's
+  future lease. Commit `357b08718e2226a613b7613ede234e4c3cc337b7`
+  changes all persisted poll-start rollback predicates in scheduler selection
+  and lease claim to fractional `julianday` comparisons. The startup regression
+  now uses a same-second 900 ms rollback, retains the future inherited lease,
+  reaches `PROVIDER_POLL_TIMEOUT` and performs zero Provider calls. All required
+  local gates pass; run `30613190531` and review `4826557538` are not
+  transferable to the new head.
 - PR #107 remains open Draft, superseded and unmerged. Its branch remains
   retained.
 - PR #108 is Draft on `main`; it is not authorized for merge or

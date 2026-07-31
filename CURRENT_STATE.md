@@ -240,6 +240,16 @@ build, Workbench V2 67/67, Foundation 94/94, Provider 52/52, selection 23/23,
 secret scan and diff checks pass locally. The prior CI and review are not
 transferable, so a new exact-head CI/review cycle remains mandatory.
 
+Head `e5cb5d8` passed Windows CI run `30613190531`, but exact-head review
+`4826557538` found that the poll-start rollback predicates still truncated both
+timestamps to whole seconds. The locally validated implementation
+`357b08718e2226a613b7613ede234e4c3cc337b7` now uses fractional
+`julianday` comparisons in scheduler selection and lease claim. Its startup
+regression proves a same-second 900 ms rollback despite a future inherited
+lease, reaches stable `PROVIDER_POLL_TIMEOUT`, and performs zero Provider
+calls. All required local gates pass. The prior CI and review are not
+transferable, so another exact-head CI/review cycle remains mandatory.
+
 The complete Media Gateway promotion, Memory plugin, second real user,
 automatic Snapshot, Windows logon task, WebM/broad formats and new OAuth
 compatibility experiments are removed from the S3/S4 blocker chain.
