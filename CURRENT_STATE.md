@@ -201,10 +201,14 @@ authorized narrow recovery of missing or drifted physical bytes for an
 immutable verified Blob: it requires explicit human reattachment and exact
 Artifact/Blob, SHA, size and MIME agreement, preserves the Blob row and link,
 and does not resubmit. The replacement rebind also archives the old Artifact in
-the same transaction. Implementation head `277d651` passed Windows CI run
-`30598512506`; exact-head evidence remains mandatory for any later PR
-publication decision. Old PR #107 is superseded and unmerged with its branch
-retained; none of these candidates is part of current `main`.
+the same transaction. Restart recovery prefers a replacement already committed
+under its persisted local recovery identity, so a repaired old Artifact cannot
+skip the rebind. Implementation head `277d651` passed Windows CI run
+`30598512506`; the later crash-window remediation is
+`a4e0152379b9d7e4f66b683090c7c0dc7fa045b5`, and exact-head evidence remains
+mandatory for any later PR publication decision. Old PR #107 is superseded and
+unmerged with its branch retained; none of these candidates is part of current
+`main`.
 
 The complete Media Gateway promotion, Memory plugin, second real user,
 automatic Snapshot, Windows logon task, WebM/broad formats and new OAuth

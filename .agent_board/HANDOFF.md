@@ -2,7 +2,7 @@
 
 Current mode: PR #108 verified-Blob recovery remediation; no executable task is `READY`
 Last run: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
-Last result: recovery and follow-up review fixes are locally validated; Draft PR #108 awaits exact-head review or merge
+Last result: recovery and all current review fixes are locally validated; Draft PR #108 awaits exact-head review or merge
 
 ## Current state
 
@@ -35,6 +35,12 @@ Ready task count: 0
   candidate: rebind archives the old relational/JSON status in the same
   transaction, and the seven existing state/evidence files now use the current
   bounded truth.
+- Exact-head review `4825255029` then found the crash window after replacement
+  activation but before rebind. Commit
+  `a4e0152379b9d7e4f66b683090c7c0dc7fa045b5` makes a persisted recovery prefer
+  and rebind the committed `local_recovery_*` replacement before considering
+  the repaired old Artifact; its restart regression performs zero poll,
+  download or submit calls and leaves one active generated clip.
 - PR #107 is superseded and unmerged. Its branch remains retained.
 - PR #108 is Draft on `main`; it is not authorized for merge or
   ready-for-review. Exact-head CI/review evidence is required before any later

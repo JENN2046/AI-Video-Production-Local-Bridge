@@ -2641,10 +2641,11 @@ remaining_test_processes: 0
 
 ```yaml
 task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
-validated_at: 2026-07-31T10:52:47+08:00
+validated_at: 2026-07-31T11:49:18+08:00
 replacement_pr: 108
 implementation_commit: 277d651c4698ae00b9e0fa170b35c39754daa84f
 review_remediation_commit: 762076cb991e3ecf4333ca5d2872e7de3df14aeb
+restart_rebind_remediation_commit: a4e0152379b9d7e4f66b683090c7c0dc7fa045b5
 implementation_ci:
   run_id: 30598512506
   Quality_and_integration: PASS
@@ -2652,6 +2653,10 @@ implementation_ci:
 review:
   review_id: 4824970083
   reviewed_commit: 277d651c4698ae00b9e0fa170b35c39754daa84f
+later_candidate_review:
+  review_id: 4825255029
+  reviewed_commit: 598e56ca7e656e9aeeec6469b4286b600e293f89
+  finding: REBIND_COMMITTED_RECOVERY_REPLACEMENT_FIRST
 commands_or_lanes:
   - npm run typecheck
   - npm run build
@@ -2669,11 +2674,11 @@ results:
   build: PASS
   isolated_media_activation_integrity: PASS_31
   isolated_provider_boundary: PASS_30
-  isolated_workbench_domain: PASS_42
+  isolated_workbench_domain: PASS_43
   foundation_boundaries: PASS_93
   provider_boundaries: PASS_52
   test_m1_script: NOT_PRESENT_USED_PROVIDER_BOUNDARIES
-  workbench_v2: PASS_62
+  workbench_v2: PASS_63
   selection_gate: PASS_23
   secret_scan: PASS
   git_diff_check: PASS
@@ -2691,6 +2696,8 @@ verified_behavior:
   replacement_artifact_reuses_original_blob: true
   canonical_provider_task_rebound: true
   replaced_active_artifact_archived_atomically: true
+  committed_replacement_preferred_after_restart: true
+  restart_poll_download_submit_calls: 0
   recovery_failure_stays_manual: true
   automatic_submit_retry: 0
 provider_network_calls: 0

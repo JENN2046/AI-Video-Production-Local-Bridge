@@ -296,9 +296,12 @@ Blob after explicit human reattachment. It requires exact Artifact/Blob
 binding plus SHA, size and MIME agreement, preserves the Blob row, storage URI
 and links, serializes repairs, quarantines drifted bytes and does not resubmit.
 Replacement rebind archives the old Artifact in the same transaction so it
-does not remain an active duplicate. Implementation head `277d651` passed
-Windows CI run `30598512506`; PR #108 still requires exact-head evidence for
-any later publication decision.
+does not remain an active duplicate. A persisted recovery also prefers and
+rebinds an already committed `local_recovery_*` replacement before the repaired
+old Artifact can be adopted after restart. Implementation head `277d651`
+passed Windows CI run `30598512506`; crash-window remediation
+`a4e0152379b9d7e4f66b683090c7c0dc7fa045b5` is locally validated, and PR #108
+still requires exact-head evidence for any later publication decision.
 
 The remaining sequence is:
 
