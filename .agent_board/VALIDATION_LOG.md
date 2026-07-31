@@ -3143,3 +3143,64 @@ service_starts: 0
 remaining_test_processes: 0
 final_exact_head_ci_and_review: REQUIRED_AFTER_STATE_SYNC
 ```
+
+### PR108 recovery terminal-state and placement-crash remediation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+validated_at: 2026-07-31T15:26:58+08:00
+replacement_pr: 108
+reviews:
+  - review_id: 4826019679
+    reviewed_commit: b8060e1561be33b4d1803909325f8a3f2c9e998f
+    finding: RECOVERY_ABANDON_LEFT_ACTIVE_ARTIFACTS
+  - review_id: 4826282464
+    reviewed_commit: 528f33a4efc4024b49c2974374563f52ffe9195d
+    finding: VERIFIED_BLOB_PLACEMENT_TWO_LINK_CRASH_WINDOW
+implementation_commit: aa9b8912d18dc11b6718e5bfed00e1d9c6ee35f9
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - npm run test:v2
+  - npm run test:foundation-boundaries
+  - npm run test:provider-boundaries
+  - npm run test:selection-gate
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_67
+  foundation_boundaries: PASS_94
+  provider_boundaries: PASS_52
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  abandon_recovery_binding_verified: true
+  recovery_artifacts_archived_before_cancel: true
+  provider_output_recovery_cleared_in_same_transaction: true
+  unsafe_abandon_rolls_back: true
+  unsafe_abandon_error: ARTIFACT_RECOVERY_RETIRE_FAILED
+  interrupted_generated_two_link_pair_normalized: true
+  normal_target_link_count_after_retry: 1
+  unowned_hard_link_rejected: true
+  unowned_hard_link_error: MEDIA_BLOB_RECOVERY_PATH_UNSAFE
+  blob_rows_changed: 0
+  artifact_blob_links_changed: 0
+  provider_calls_in_regressions: 0
+  automatic_submit_retry: 0
+prior_head_ci:
+  run_id: 30610318191
+  reviewed_head: 528f33a4efc4024b49c2974374563f52ffe9195d
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+  transferable_to_new_head: false
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+remaining_test_processes: 0
+final_exact_head_ci_and_review: REQUIRED_AFTER_STATE_SYNC
+```

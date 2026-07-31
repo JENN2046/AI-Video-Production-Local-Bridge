@@ -67,7 +67,7 @@
       "status": "DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW",
       "base": "main",
       "head": "codex/s3b-provider-polling-restack",
-      "candidate_commit": "2847a34e8ee638ff1ca46824bc938f19acd870ff",
+      "candidate_commit": "aa9b8912d18dc11b6718e5bfed00e1d9c6ee35f9",
       "exact_head_ci_and_review_required": true,
       "merged_to_main": false,
       "merge_authorized": false,
@@ -159,7 +159,7 @@
   "completed_by": "Codex",
   "completed_at": "2026-07-30T19:41:08+08:00",
   "result": "BLOCKED_BY_S3_FINDING",
-  "validation": "Current build and four isolated safety lanes passed. Review 4825989650 found that another Intent could attach a reserved local_recovery identity before a replacement Artifact existed; implementation 2847a34 globally rejects the internal namespace and is locally validated. The prior exact-head CI is not transferable, so PR108 remains blocked pending new exact-head CI and review. No Provider network call occurred.",
+  "validation": "Review 4826019679 found that abandoning a persisted recovery could leave duplicate active Artifacts, and exact-head review 4826282464 found that an interrupted exclusive Blob placement could leave an unrecoverable two-link target. Implementation aa9b891 atomically retires recovery Artifacts before abandon and closes only the provably owned staged/target hard-link pair while rejecting unowned links. Typecheck, build, Workbench V2 67/67, Foundation 94/94, Provider 52/52, selection 23/23, secret scan and diff checks pass locally. Prior exact-head CI/review evidence is not transferable, so PR108 remains blocked pending new exact-head CI and review. No Provider network call occurred.",
   "evidence": [
     "ops/reports/2026-07-30-current-workbench-canary-readiness.md",
     ".agent_board/TASK_LEDGER.md",
@@ -168,7 +168,7 @@
   ],
   "commit": "f570d145e4832d2b2237123a40d5e8e0b503fcf1",
   "delivery": "PR_106_MERGED_PR_108_DRAFT_FINAL_GATES_PENDING",
-  "updated_at": "2026-07-31T14:36:40+08:00",
+  "updated_at": "2026-07-31T15:23:37+08:00",
   "safe_state": {
     "provider_calls": 0,
     "activity_writes": 0,

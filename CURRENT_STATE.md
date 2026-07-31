@@ -227,6 +227,19 @@ case. That CI is also non-transferable, so new final exact-head CI and review
 remain mandatory. Old PR #107 remains open Draft, superseded and unmerged with
 its branch retained; none of these candidates is part of current `main`.
 
+Head `528f33a` passed Windows CI run `30610318191`. A retained finding from
+review `4826019679` showed that recovery abandon could leave both repaired and
+replacement Artifacts active, while exact-head review `4826282464` found that
+an interrupted exclusive Blob placement could leave a permanently rejected
+two-link target. The locally validated implementation
+`aa9b8912d18dc11b6718e5bfed00e1d9c6ee35f9` now retires recovery Artifacts
+atomically before abandon and normalizes only the unique generated
+staged/target hard-link pair with matching file identity. Unowned hard links
+remain rejected; Blob rows and Artifact-Blob links remain unchanged. Typecheck,
+build, Workbench V2 67/67, Foundation 94/94, Provider 52/52, selection 23/23,
+secret scan and diff checks pass locally. The prior CI and review are not
+transferable, so a new exact-head CI/review cycle remains mandatory.
+
 The complete Media Gateway promotion, Memory plugin, second real user,
 automatic Snapshot, Windows logon task, WebM/broad formats and new OAuth
 compatibility experiments are removed from the S3/S4 blocker chain.

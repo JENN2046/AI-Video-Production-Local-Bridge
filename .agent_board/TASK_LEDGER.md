@@ -5079,3 +5079,59 @@ s4_status: BLOCKED_UNAUTHORIZED
 s4_authorization_granted: false
 delivery: PR_108_DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
 ```
+
+## 2026-07-31 — PR108 recovery terminal-state and placement-crash remediation
+
+```yaml
+task: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
+status: LOCAL_PASS_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
+recorded_by: Codex
+recorded_at: 2026-07-31T15:26:58+08:00
+replacement_pr: 108
+reviews:
+  - review_id: 4826019679
+    reviewed_commit: b8060e1561be33b4d1803909325f8a3f2c9e998f
+    finding: RECOVERY_ABANDON_LEFT_ACTIVE_ARTIFACTS
+  - review_id: 4826282464
+    reviewed_commit: 528f33a4efc4024b49c2974374563f52ffe9195d
+    finding: VERIFIED_BLOB_PLACEMENT_TWO_LINK_CRASH_WINDOW
+implementation_commit: aa9b8912d18dc11b6718e5bfed00e1d9c6ee35f9
+resolution:
+  abandon_recovery_binding_verified: true
+  invalid_artifact_archived_on_abandon: true
+  committed_replacement_archived_on_abandon: true
+  provider_output_recovery_cleared_atomically: true
+  unsafe_abandon_rolls_back: true
+  unsafe_abandon_error: ARTIFACT_RECOVERY_RETIRE_FAILED
+  owned_two_link_pair_normalized_on_retry: true
+  unowned_hard_link_rejected: true
+  hard_link_rejection_error: MEDIA_BLOB_RECOVERY_PATH_UNSAFE
+  blob_rows_changed: 0
+  artifact_blob_links_changed: 0
+  provider_calls_in_regressions: 0
+  automatic_submit_retry: 0
+local_validation:
+  typecheck: PASS
+  build: PASS
+  workbench_v2: PASS_67
+  foundation_boundaries: PASS_94
+  provider_boundaries: PASS_52
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+prior_head_ci:
+  run_id: 30610318191
+  reviewed_head: 528f33a4efc4024b49c2974374563f52ffe9195d
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+  transferable_to_new_head: false
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+deployment_changes: 0
+s4_status: BLOCKED_UNAUTHORIZED
+s4_authorization_granted: false
+delivery: PR_108_DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
+```

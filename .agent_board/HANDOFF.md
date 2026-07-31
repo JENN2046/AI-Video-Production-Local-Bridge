@@ -2,7 +2,7 @@
 
 Current mode: PR #108 verified-Blob recovery remediation; no executable task is `READY`
 Last run: PR108-T1_VERIFIED_BLOB_STORAGE_RECOVERY
-Last result: global local-recovery identity reservation is locally validated; Draft PR #108 awaits new exact-head CI and review
+Last result: recovery abandon and interrupted Blob placement fixes are locally validated; Draft PR #108 awaits complete gates, new exact-head CI and review
 
 ## Current state
 
@@ -82,6 +82,21 @@ Ready task count: 0
   Artifact or owning-Artifact signal, rejects with `INVALID_PROVIDER_TASK_ID`,
   and preserves both jobs' prior state. Local gates pass with zero Provider
   calls; run `30608433511` is not transferable to the new head.
+- Head `528f33a4efc4024b49c2974374563f52ffe9195d` passed Windows CI run
+  `30610318191`. Thread audit retained a valid finding from review
+  `4826019679`: abandoning a recovery after replacement commit could leave both
+  the repaired original and replacement active. Exact-head review `4826282464`
+  also found that a crash between exclusive hard-link placement and staged-link
+  removal could leave the immutable Blob target permanently rejected at
+  `nlink=2`. Commit `aa9b8912d18dc11b6718e5bfed00e1d9c6ee35f9`
+  resolves both: abandon now strictly verifies and atomically archives the
+  recovery Artifacts before clearing recovery and cancellation; verified-Blob
+  retry normalizes only the unique generated staged/target pair with matching
+  file identity, while ordinary hard links remain fail-closed. Blob rows and
+  Artifact-Blob links remain unchanged. Typecheck, build, Workbench V2 67/67,
+  Foundation 94/94, Provider 52/52, selection 23/23, secret scan and diff
+  checks pass locally with zero Provider calls. Run `30610318191` and review
+  `4826282464` are not transferable to the new head.
 - PR #107 remains open Draft, superseded and unmerged. Its branch remains
   retained.
 - PR #108 is Draft on `main`; it is not authorized for merge or

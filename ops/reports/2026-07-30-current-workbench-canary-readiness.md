@@ -339,6 +339,21 @@ returns `INVALID_PROVIDER_TASK_ID`, and preserves both Intents and Jobs. The
 Provider calls. Run `30608433511` is not transferable; another exact-head CI
 and review cycle is required.
 
+Head `528f33a` then passed Windows CI run `30610318191`. Thread audit retained
+the valid recovery-abandon finding from review `4826019679`, and exact-head
+review `4826282464` found that a crash between exclusive hard-link placement
+and staged-link removal could leave the Blob target permanently rejected at
+`nlink=2`. Follow-up
+`aa9b8912d18dc11b6718e5bfed00e1d9c6ee35f9` strictly verifies and atomically
+archives both recovery Artifacts before abandon, clears recovery in the same
+transaction, and normalizes only a unique generated staged/target hard-link
+pair with matching file identity. Unowned hard links remain rejected. The
+67-case Workbench V2 lane, 94-case Foundation lane, 52-case Provider lane,
+23-case selection gate, typecheck, build, secret scan and diff checks pass with
+no Blob-row, Artifact-Blob-link or Provider-call change. Run `30610318191` and
+review `4826282464` are not transferable; another exact-head CI/review cycle
+remains required.
+
 The remaining sequence is:
 
 1. require Draft PR #108 to retain clean-diff, Windows CI and exact-head Codex
