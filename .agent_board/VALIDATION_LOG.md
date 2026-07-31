@@ -3420,3 +3420,57 @@ service_starts: 0
 remaining_test_processes: 0
 exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
 ```
+
+### PR109 canonical database orphan-sweep authority
+
+```yaml
+task: PR109-T2_CANONICAL_DATABASE_OWNS_ORPHAN_SWEEP
+validated_at: 2026-08-01T00:17:51+08:00
+pull_request: 109
+implementation_commit: 27058e32f5339359d15b876dc25375046075eb18
+post_promotion_finding_thread: PRRT_kwDOTTDtUM6Vdmly
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - npm run test:foundation-boundaries
+  - npm run test:selection-gate
+  - npm run test:provider-boundaries
+  - npm run test:v2
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  media_activation_integrity: PASS_56
+  foundation_boundaries: PASS_118
+  provider_boundaries: PASS_52
+  workbench_v2: PASS_68
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  actual_main_identity_from_pragma_database_list: true
+  configured_canonical_path_from_paths_sqlitePath: true
+  configured_nondefault_path_allowed: true
+  database_copy_global_sweep_skipped: true
+  database_copy_local_journal_recovery_continues: true
+  memory_database_global_sweep_skipped: true
+  hardlink_alias_global_sweep_skipped: true
+  symlink_database_global_sweep_skipped: true
+  junction_redirected_database_global_sweep_skipped: true
+  active_canonical_stage_preserved_from_copy: true
+  same_database_begin_immediate_serialization: true
+  hard_crash_copy_preserves_orphan: true
+  hard_crash_canonical_removes_orphan: true
+  explicit_retry_after_cleanup_succeeds: true
+  whitelist_unchanged: true
+  legacy_cleanup_unchanged: true
+  blob_row_or_links_changed: false
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_operations: 0
+remaining_test_processes: 0
+exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
+```

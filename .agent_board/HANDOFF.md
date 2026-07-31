@@ -2,7 +2,7 @@
 
 Current mode: PR #109 orphaned Blob recovery staging remediation; no executable task is `READY`
 Last run: S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING
-Last result: the post-promotion stage-ownership P2 has a locally validated candidate fix; open Ready PR #109 awaits exact-head CI and a fresh Codex review
+Last result: the canonical-database sweep-authority P2 has a locally validated candidate fix; open Ready PR #109 awaits exact-head CI and a fresh Codex review
 
 ## Current state
 
@@ -40,13 +40,22 @@ Ready task count: 0
   from verified `blob_id`, `storage_uri` and media-root identity through the
   normal recovery path helper. Unmatched stages are preserved and reported
   unsafe; content is not ownership proof. All authorized local lanes pass with
-  media activation 47/47, Foundation 109/109, Provider 52/52, Workbench V2
-  68/68 and selection 23/23. New exact-head Windows CI and a fresh Codex review
-  remain required.
+  media activation 47/47 and Foundation 109/109. That whitelist thread is now
+  resolved. The only unresolved thread at state sync is
+  `PRRT_kwDOTTDtUM6Vdmly`: a database copy sharing the same media root could
+  sweep an active canonical stage under an unrelated SQLite lock. Candidate
+  `27058e32f5339359d15b876dc25375046075eb18` grants global sweep authority
+  only to the actual non-redirected regular `main` file configured by
+  `paths.sqlitePath`; copy, memory and aliased databases skip that sweep while
+  DB-local recovery continues. Same-canonical-database processes remain
+  serialized by `BEGIN IMMEDIATE`. All authorized local lanes pass with media
+  activation 56/56, Foundation 118/118, Provider 52/52, Workbench V2 68/68 and
+  selection 23/23. New exact-head Windows CI and a fresh Codex review remain
+  required.
 - `S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING` is
   `BLOCKED_BY_PR109_POST_PROMOTION_FINDING` in PR #109.
-- PR #109 remains open and unmerged; integration awaits Jenn's merge decision
-  and exact-head evidence recorded on the PR.
+- PR #109 remains open and unmerged; merge remains a separate Jenn decision,
+  and the PR is authoritative for current exact-head integration evidence.
 - T2, T3, T4 and S4 retain their existing human gates; ready task count is 0.
 
 ## Superseded PR #108 preparation history

@@ -5297,6 +5297,62 @@ s4_authorization_granted: false
 delivery: PR_109_OPEN_READY_AWAITING_EXACT_HEAD_CI_AND_POST_PROMOTION_REVIEW
 ```
 
+## 2026-08-01 — PR109 canonical database orphan-sweep authority
+
+```yaml
+task: PR109-T2_CANONICAL_DATABASE_OWNS_ORPHAN_SWEEP
+status: BLOCKED_BY_EXACT_HEAD_EVIDENCE
+recorded_by: Codex
+recorded_at: 2026-08-01T00:17:51+08:00
+pull_request: 109
+implementation_commit: 27058e32f5339359d15b876dc25375046075eb18
+thread_truth_at_state_sync:
+  resolved_prior_threads:
+    - PRRT_kwDOTTDtUM6VdGmY
+  current_unresolved_thread:
+    - PRRT_kwDOTTDtUM6Vdmly
+  current_status: REMEDIATION_IN_PROGRESS
+cleanup_authority:
+  actual_identity_source: PRAGMA_database_list_main
+  configured_path_source: paths_sqlitePath
+  canonical_database_allowed: true
+  copied_database_allowed: false
+  memory_database_allowed: false
+  redirected_database_allowed: false
+  public_bypass_added: false
+recovery_behavior:
+  noncanonical_global_sweep: skipped
+  noncanonical_local_journal_recovery: continues
+  same_database_serialization: BEGIN_IMMEDIATE
+  media_root_lock_added: false
+blob_immutability:
+  row_updated: false
+  blob_id_changed: false
+  sha_changed: false
+  storage_uri_changed: false
+  links_changed: false
+  schema_changed: false
+local_validation:
+  typecheck: PASS
+  build: PASS
+  media_activation_integrity: PASS_56
+  foundation_boundaries: PASS_118
+  provider_boundaries: PASS_52
+  workbench_v2: PASS_68
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_operations: 0
+deployment_changes: 0
+ready_task_count: 0
+merge_authorized: false
+delivery: PR_109_OPEN_READY_AWAITING_EXACT_HEAD_CI_AND_POST_PROMOTION_REVIEW
+```
+
 ## 2026-07-31 — PR109 deterministic stage Blob whitelist remediation
 
 ```yaml

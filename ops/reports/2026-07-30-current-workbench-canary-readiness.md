@@ -278,7 +278,13 @@ remediation_pr:
   review_remediation_commit: e5c42113c73ba35a2c307eb0890dcd7d3be1216f
   root_identity_review_remediation_commit: 193b1077d67dd8872831e8fe7646d8879d4947f7
   deterministic_stage_whitelist_commit: 0ff40f085368658887d3a77315d1eb7f51124c3f
-  post_promotion_finding_status: REMEDIATION_IN_PROGRESS
+  canonical_database_sweep_commit: 27058e32f5339359d15b876dc25375046075eb18
+  current_head: STATE_SYNC_COMMIT_CONTAINING_THIS_RECORD
+  resolved_prior_threads:
+    - PRRT_kwDOTTDtUM6VdGmY
+  current_unresolved_thread_at_state_sync:
+    - PRRT_kwDOTTDtUM6Vdmly
+  post_promotion_finding_status: REMEDIATION_IN_PROGRESS_AT_STATE_SYNC
   merged_to_main: false
 S3B-T1:
   local_status: PASS
@@ -337,10 +343,20 @@ ownership from any valid-looking 64-hex deterministic stage name. Candidate
 whitelist from verified `blob_id`, `storage_uri` and media-root identity through
 the shared normal-recovery path helper. Only exact safe matches can be deleted;
 unmatched valid-looking and same-content files are preserved and reported
-unsafe, because content is not ownership proof. Local validation passes with
-media activation 47/47, Foundation 109/109, Provider 52/52, Workbench V2 68/68
-and selection 23/23. PR #109 remains open and unmerged; integration awaits
-Jenn's merge decision and exact-head evidence recorded on the PR.
+unsafe, because content is not ownership proof. The whitelist thread is now
+resolved. A later post-promotion review found that a database copy sharing the
+same absolute media root could sweep an active canonical stage under its own,
+unrelated SQLite lock. Candidate
+`27058e32f5339359d15b876dc25375046075eb18` now grants global sweep authority
+only when `PRAGMA database_list` identifies the same non-redirected regular
+`main` file configured by `paths.sqlitePath`. Copy, memory, hard-link alias,
+symlink and junction-redirected databases skip the global sweep while their
+database-local journal recovery continues. Two canonical processes remain
+serialized by `BEGIN IMMEDIATE`. Local validation passes with media activation
+56/56, Foundation 118/118, Provider 52/52, Workbench V2 68/68 and selection
+23/23. PR #109 remains open and unmerged; merge remains a separate Jenn
+decision, and the PR is authoritative for current exact-head integration
+evidence.
 
 The remaining sequence is:
 

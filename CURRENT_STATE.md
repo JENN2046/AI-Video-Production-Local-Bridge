@@ -61,7 +61,7 @@ database. `REAL_PROVIDER_ENABLED=false` remains the safe default.
 |---|---|---|---|
 | Workbench V2 local UI | Storyboard, generation preflight, version review and delivery-readiness views exist | Activity database compatibility accepted at ledger `0011` | Core |
 | SQLite and governed media | Migration, Artifact/Blob digest and FFprobe boundaries exist | Ledger `0011` migration/restore evidence remains commit-scoped | Core |
-| Current Provider path | Intent, budget, confirmation, bounded polling, manual reconciliation and verified-Blob recovery boundaries exist in `main@808d933` | PR #108 merged with green main CI, but a post-promotion P2 found that startup cleanup inferred ownership from a valid-looking stage name; open Ready PR #109 contains a candidate exact verified-Blob whitelist fix and still requires exact-head CI/review; no real Provider or S4 acceptance occurred | Core blocker before S4 |
+| Current Provider path | Intent, budget, confirmation, bounded polling, manual reconciliation and verified-Blob recovery boundaries exist in `main@808d933` | PR #108 merged with green main CI; open Ready PR #109 now contains verified-Blob whitelist and canonical-database ownership candidates, but still requires exact-head CI/review; no real Provider or S4 acceptance occurred | Core blocker before S4 |
 | Historical R3 Provider path | Execution scripts now reside under `legacy/` | RunningHub real canary, four-shot generation and regeneration completed historically | Feasibility evidence only |
 | Review and accepted clips | Version stacks, rejection reasons and human accepted-clip selection exist | Historical R3 review evidence exists | Core; current-path acceptance remains |
 | Active assembly/export | Active assembly still contains `placeholder_copy` / mock-fixture behavior; Workbench has no production assembly/export action | No current-main production-path PASS | S6 core gap |
@@ -230,11 +230,21 @@ whitelist from verified `blob_id`, `storage_uri` and registered media-root
 identity through the same path helper used by normal recovery. Only an exact,
 safe whitelist match may be deleted. Unmatched valid-looking stages, including
 same-content files, are preserved and reported unsafe; content is not ownership
-proof. The full local gate set passes with media activation 47/47, Foundation
-109/109, Provider 52/52, Workbench V2 68/68 and selection 23/23. PR #109 remains
-open and unmerged; its candidate fix awaits new exact-final-head Windows CI and
-Codex review. Integration awaits Jenn's merge decision and exact-head evidence
-recorded on the PR.
+proof. The prior whitelist thread `PRRT_kwDOTTDtUM6VdGmY` is resolved.
+
+Exact-head review then found that a database copy sharing the same absolute
+media root could run the global sweep under a lock belonging only to the copy.
+Candidate `27058e32f5339359d15b876dc25375046075eb18` now derives cleanup authority
+from the actual `main` file reported by `PRAGMA database_list` and grants it only
+when that file is the non-redirected regular file configured by
+`paths.sqlitePath`. Copies, memory databases, hard-link aliases, symlink paths
+and junction-redirected paths skip the global sweep while continuing their own
+database-local activation recovery. Two processes using the same canonical
+database remain serialized by `BEGIN IMMEDIATE`. Local validation passes with
+media activation 56/56, Foundation 118/118, Provider 52/52, Workbench V2 68/68
+and selection 23/23. PR #109 remains open and unmerged; merge remains a separate
+Jenn decision, and the PR is authoritative for current exact-head integration
+evidence.
 
 The complete Media Gateway promotion, Memory plugin, second real user,
 automatic Snapshot, Windows logon task, WebM/broad formats and new OAuth

@@ -23,12 +23,13 @@ automatically.
   `528aee4020d4be15a5fc5278de2f8c8abb20c637`, review remediation commit
   `e5c42113c73ba35a2c307eb0890dcd7d3be1216f`, and root-identity remediation
   `193b1077d67dd8872831e8fe7646d8879d4947f7`, and deterministic-stage
-  whitelist candidate `0ff40f085368658887d3a77315d1eb7f51124c3f`.
-- Post-promotion finding `PRRT_kwDOTTDtUM6VdGmY` is
-  `REMEDIATION_IN_PROGRESS`: startup cleanup must derive an exact whitelist
-  from verified Blob identities, preserve unmatched stages and report them
-  unsafe. Exact-head Windows CI and a fresh post-promotion Codex review remain
-  required; merge is not authorized.
+  whitelist candidate `0ff40f085368658887d3a77315d1eb7f51124c3f`, and canonical-database
+  ownership candidate `27058e32f5339359d15b876dc25375046075eb18`.
+- Prior whitelist thread `PRRT_kwDOTTDtUM6VdGmY` is resolved. At state sync the
+  only unresolved thread is `PRRT_kwDOTTDtUM6Vdmly`, with remediation in
+  progress: only the actual non-redirected `main` file configured by
+  `paths.sqlitePath` may run the global orphan sweep. Exact-head Windows CI and
+  a fresh post-promotion Codex review remain required; merge is not authorized.
 
 ## Superseded PR #108 preparation detail
 
@@ -86,7 +87,7 @@ operational state.
 | `S3B-T1_BOUND_PROVIDER_POLLING` | `PASS` | `DONE_IN_MAIN` via PR #108 | None for repository publication |
 | `S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE` | `PASS` | `DONE_IN_MAIN` via PR #108 | None for repository publication |
 | `S3B_VERIFIED_BLOB_STORAGE_RECOVERY` | `PASS` | `DONE_IN_MAIN_WITH_REMEDIATION_PENDING` | Wait for PR #109 review/merge decision |
-| `S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING` | `PASS_LOCAL_AFTER_WHITELIST_FIX` | `BLOCKED_BY_PR109_POST_PROMOTION_FINDING` in open Ready PR #109 | New exact-head CI and post-promotion Codex review |
+| `S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING` | `PASS_LOCAL_AFTER_CANONICAL_DB_FIX` | `BLOCKED_BY_PR109_POST_PROMOTION_FINDING` in open Ready PR #109 | New exact-head CI and post-promotion Codex review |
 | `S3B-T2_PREPARE_ELIGIBLE_SHOT` | — | `AWAITING_JENN_AUTHORIZATION` | Business-state write not authorized |
 | `S3B-T3_CONFIGURE_RUNNINGHUB_CREDENTIAL` | — | `AWAITING_JENN_LOCAL_ACTION` | Secret operation not authorized |
 | `S3B-T4_RERUN_CANARY_READINESS` | — | `BLOCKED` | Waits for T2, T3 and reviewed candidate code |
