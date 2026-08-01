@@ -166,9 +166,7 @@ function windowsShortPath(filePath: string): string | null {
     { encoding: "utf8", windowsHide: true }
   );
   const output = result.status === 0 ? result.stdout.trim() : "";
-  const candidate = output.startsWith('"') && output.endsWith('"')
-    ? output.slice(1, -1)
-    : output;
+  const candidate = output.match(/[A-Za-z]:\\[^"\r\n]+/)?.[0] ?? "";
   return candidate
     && candidate.includes("~")
     && resolve(candidate).toLowerCase() !== resolve(filePath).toLowerCase()
