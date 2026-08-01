@@ -73,6 +73,9 @@ automatically.
    Closeout fixes `a14c15e` and `0baf31c` preserve the current recovery source
    during cleanup reconciliation and reject DOS-alias content drift before
    publishing target authority. They add no feature or external capability.
+   Final safety contraction `6b6e238` preserves any lone cleanup entry whose
+   application ownership cannot be proven; it intentionally adds no owner
+   registry or new recovery capability.
 - At state sync the unresolved threads are `PRRT_kwDOTTDtUM6VkSwY`,
   `PRRT_kwDOTTDtUM6VkqqS`, `PRRT_kwDOTTDtUM6VkzTz`,
   `PRRT_kwDOTTDtUM6Vk38a`, `PRRT_kwDOTTDtUM6Vk38b`,
@@ -84,8 +87,8 @@ automatically.
   `PRRT_kwDOTTDtUM6VnfBZ`, `PRRT_kwDOTTDtUM6VnlsB`,
   `PRRT_kwDOTTDtUM6Vnvkt`, `PRRT_kwDOTTDtUM6Vnvkv`,
   `PRRT_kwDOTTDtUM6Vn2uJ`, `PRRT_kwDOTTDtUM6VoV-d` and
-  `PRRT_kwDOTTDtUM6VoV-e`, `PRRT_kwDOTTDtUM6VomGc` and
-  `PRRT_kwDOTTDtUM6VorLf` (23 total).
+  `PRRT_kwDOTTDtUM6VoV-e`, `PRRT_kwDOTTDtUM6VomGc`,
+  `PRRT_kwDOTTDtUM6VorLf` and `PRRT_kwDOTTDtUM6Vox11` (24 total).
   Generic startup preserves the bounded stage; explicit recovery is serialized
   by exact target across database files. Exact-head Windows CI and a fresh
   post-promotion Codex review remain required; merge is not authorized.

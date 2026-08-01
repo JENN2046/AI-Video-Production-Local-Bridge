@@ -1265,3 +1265,13 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
   `132 PASS / 1 SKIP`; typecheck and diff checks pass.
 - At state sync, 23 PR #109 threads remain unresolved pending new exact-head CI
   and one final frozen-scope review. No feature or capability was added.
+
+## PR #109 final cleanup safety contraction
+
+- Candidate commit: `6b6e238`.
+- A lone cleanup entry without an ownership companion is preserved and returns
+  `MEDIA_BLOB_RECOVERY_PATH_UNSAFE`; no owner registry or new recovery protocol
+  was added.
+- Focused media activation `70 PASS / 1 SKIP`; typecheck and diff checks pass.
+- At state sync, 24 PR #109 threads remain unresolved pending exact-head CI and
+  one final frozen-scope review. PR #109 remains open and unmerged.
