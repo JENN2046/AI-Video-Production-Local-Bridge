@@ -2,7 +2,7 @@
 
 Current mode: PR #109 orphaned Blob recovery staging remediation; no executable task is `READY`
 Last run: S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING
-Last result: exact stage ownership, descriptor-bound mutex initialization and legacy-source preservation pass locally at follow-up `f2c31c5`; open Ready PR #109 awaits new exact-final-head CI and review
+Last result: authority and mutex temp hard links are removed only after descriptor-bound ownership validation at follow-up `1710c41`; open Ready PR #109 awaits new exact-final-head CI and review
 
 ## Current state
 
@@ -119,9 +119,13 @@ Ready task count: 0
   held exclusive descriptor, and excludes the current source from legacy cleanup.
   Local validation is now media activation 65 PASS / 0 FAIL / 1 platform skip,
   Foundation 127 PASS / 0 FAIL / 1 platform skip, Provider 52/52, Workbench V2
-  68/68, selection 23/23, typecheck/build/secret scan/diff PASS. The 17 unresolved
+  68/68, selection 23/23, typecheck/build/secret scan/diff PASS. Exact-head review
+  then found that unowned authority/mutex temp hard links could be removed before
+  final content authentication. Follow-up `1710c41` validates the opened final
+  descriptor and complete ownership content before same-inode temp cleanup. The 19 unresolved
   threads additionally include `PRRT_kwDOTTDtUM6VnW8t`,
-  `PRRT_kwDOTTDtUM6VnW8u` and `PRRT_kwDOTTDtUM6VnZrR`; all remain open pending
+  `PRRT_kwDOTTDtUM6VnW8u`, `PRRT_kwDOTTDtUM6VnZrR`,
+  `PRRT_kwDOTTDtUM6VnfBZ` and `PRRT_kwDOTTDtUM6VnlsB`; all remain open pending
   exact-head CI and a fresh complete review.
 - `S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING` is
   `BLOCKED_BY_PR109_POST_PROMOTION_FINDING` in PR #109.

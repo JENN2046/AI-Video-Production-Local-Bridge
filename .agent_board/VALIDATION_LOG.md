@@ -3926,3 +3926,45 @@ service_operations: 0
 remaining_test_processes: 0
 exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
 ```
+### PR109 ownership-before-cleanup remediation
+
+```yaml
+task: PR109-T4_CROSS_DATABASE_BLOB_TARGET_MUTEX
+validated_at: 2026-08-01T18:55:40+08:00
+pull_request: 109
+implementation_commit: 1710c41
+findings:
+  - PRRT_kwDOTTDtUM6VnfBZ
+  - PRRT_kwDOTTDtUM6VnlsB
+verified_behavior:
+  authority_content_verified_before_temp_cleanup: true
+  mutex_header_verified_before_temp_cleanup: true
+  same_inode_temp_required: true
+  malformed_unowned_final_and_temp_preserved: true
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - node dist/scripts/run-isolated-tests.js dist/tests/media-activation-integrity.test.js
+  - npm run test:foundation-boundaries
+  - npm run test:selection-gate
+  - npm run test:provider-boundaries
+  - npm run test:v2
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  media_activation_integrity: PASS_65_SKIP_1
+  foundation_boundaries: PASS_127_SKIP_1
+  selection_gate: PASS_23
+  provider_boundaries: PASS_52
+  workbench_v2: PASS_68
+  secret_scan: PASS
+  git_diff_check: PASS
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_operations: 0
+exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
+```

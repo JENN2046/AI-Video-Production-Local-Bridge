@@ -293,6 +293,7 @@ remediation_pr:
   pre_authority_and_mutex_ownership_commit: 15b3bed
   concurrent_activation_root_commit: d8c6768
   stage_owner_and_mutex_descriptor_commit: f2c31c5
+  ownership_before_cleanup_commit: 1710c41
   remediation_strategy: CROSS_DATABASE_TARGET_SQLITE_MUTEX
   current_head: STATE_SYNC_COMMIT_CONTAINING_THIS_RECORD
   resolved_prior_threads:
@@ -445,6 +446,13 @@ hard-link owner, writes the empty SQLite mutex through the continuously held
 exclusive descriptor before publication, and excludes the current source from
 legacy cleanup.
 
+Exact-head review then found two cleanup-order gaps: an unowned authority or
+mutex final path hard-linked to a deterministic temp could lose that temp before
+the final content was authenticated. Follow-up `1710c41` validates the opened
+final descriptor, identity and complete authority/mutex ownership content first;
+only the proven same-inode temp hard link is then removed. Malformed unowned
+final/temp pairs are preserved and fail closed.
+
 The regression set covers independently configured database A/B/C processes
 sharing one media root, an active explicit repair paused after staged copy,
 `:memory:`, five hard crashes with repeated startup, explicit retry, partial and
@@ -462,8 +470,9 @@ typecheck, build, secret scan and diff checks pass. Threads
 `PRRT_kwDOTTDtUM6VmCNv`, `PRRT_kwDOTTDtUM6VmCNw`,
 `PRRT_kwDOTTDtUM6VmGY5`, `PRRT_kwDOTTDtUM6VmMCl`,
 `PRRT_kwDOTTDtUM6VmU9i`, `PRRT_kwDOTTDtUM6VnQiz`,
-`PRRT_kwDOTTDtUM6VnW8t`, `PRRT_kwDOTTDtUM6VnW8u` and
-`PRRT_kwDOTTDtUM6VnZrR` remain unresolved at state
+`PRRT_kwDOTTDtUM6VnW8t`, `PRRT_kwDOTTDtUM6VnW8u`,
+`PRRT_kwDOTTDtUM6VnZrR`, `PRRT_kwDOTTDtUM6VnfBZ` and
+`PRRT_kwDOTTDtUM6VnlsB` remain unresolved at state
 sync pending new exact-head CI and review. PR #109 remains open and unmerged.
 Cross-database explicit recovery is serialized by an exact-target SQLite mutex,
 and merge remains a separate Jenn decision.

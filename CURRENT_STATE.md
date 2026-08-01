@@ -56,7 +56,12 @@ Repository baseline: `main@808d9334a49def7ce858f7c6138af75fed392c5b`
   `f2c31c5` binds each app-created deterministic stage to an exact companion
   hard-link owner, initializes the empty mutex database through the continuously
   held exclusive descriptor, and excludes the current source from legacy cleanup.
-  New exact-head CI and review are required.
+  Exact-head review then found two cleanup-order gaps: an unowned authority or
+  mutex final path hard-linked to a deterministic temp could lose that temp
+  before its content was authenticated. Follow-up `1710c41` now validates the
+  opened final descriptor and complete authority/mutex ownership content before
+  removing only the same-inode temp hard link. New exact-head CI and review are
+  required.
 - The final PR #106 head passed both `Quality and integration` and
   `Browser smoke`; the squash commit has the same tree as that reviewed head.
 - Code and CI PASS establish repository facts only. They do not create a new
@@ -299,9 +304,10 @@ are `PRRT_kwDOTTDtUM6VkSwY`, `PRRT_kwDOTTDtUM6VkqqS`,
 `PRRT_kwDOTTDtUM6VmGY5`, `PRRT_kwDOTTDtUM6VmMCl`,
 `PRRT_kwDOTTDtUM6VmU9i`, `PRRT_kwDOTTDtUM6VnQiz`,
 `PRRT_kwDOTTDtUM6VnW8t`, `PRRT_kwDOTTDtUM6VnW8u` and
-`PRRT_kwDOTTDtUM6VnZrR`. Follow-up `f2c31c5` adds the stage-owner, descriptor-
-bound mutex initialization and source-preservation regressions; all 17 threads remain
-unresolved pending new exact-head CI and a fresh complete review. PR #109
+`PRRT_kwDOTTDtUM6VnZrR`, `PRRT_kwDOTTDtUM6VnfBZ` and
+`PRRT_kwDOTTDtUM6VnlsB`. Follow-up `1710c41` adds the authority/mutex
+ownership-before-cleanup regressions; all 19 threads remain unresolved pending
+new exact-head CI and a fresh complete review. PR #109
 remains open and unmerged.
 Cross-database explicit recovery is serialized by an exact-target SQLite mutex,
 and merge remains a separate Jenn decision.
