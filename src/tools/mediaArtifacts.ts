@@ -601,7 +601,15 @@ function ensureSafeActivationRoots(mediaRoot: string, create: boolean): ReturnTy
   if (!sameResolvedPath(canonicalRoot, root)) throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
   const roots = activationRoots(root);
   for (const directory of [roots.activation, roots.staging, roots.pending, roots.quarantine, roots.journal]) {
-    if (create && !existsSync(directory)) mkdirSync(directory);
+    if (create) {
+      try { mkdirSync(directory); }
+      catch (error) {
+        // Another process may have created the same app-controlled directory
+        // after this recovery validated its parent. The entry is accepted only
+        // after the ordinary no-symlink, directory and canonical-root checks.
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
+    }
     if (!existsSync(directory)) continue;
     if (lstatSync(directory).isSymbolicLink() || !statSync(directory).isDirectory()) throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
     const canonicalDirectory = resolve(realpathSync(directory));

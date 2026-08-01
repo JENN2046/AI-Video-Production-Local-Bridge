@@ -2227,7 +2227,7 @@ test("target mutex busy timeout is bounded and does not disturb the active recov
   }
 });
 
-test("different storage targets under one media root acquire mutexes concurrently", async () => {
+test("different storage targets concurrently initialize activation roots and acquire mutexes", async () => {
   const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-parallel-targets-"));
   const mediaRoot = join(root, "media");
   const databaseA = join(root, "database-a.sqlite");
@@ -2250,6 +2250,8 @@ test("different storage targets under one media root acquire mutexes concurrentl
     dbB.close();
     rmSync(fixtureA.artifact.storage.uri);
     rmSync(fixtureB.artifact.storage.uri);
+    rmSync(join(mediaRoot, ".activation"), { recursive: true, force: true });
+    assert.equal(existsSync(join(mediaRoot, ".activation")), false);
     processA = startPausedVerifiedBlobRecovery({
       cwd: root,
       sqlite_path: databaseA,
@@ -2278,6 +2280,9 @@ test("different storage targets under one media root acquire mutexes concurrentl
     const [completedA, completedB] = await Promise.all([waitForChild(processA), waitForChild(processB)]);
     assert.equal(completedA.code, 0, completedA.stderr);
     assert.equal(completedB.code, 0, completedB.stderr);
+    for (const directory of ["staging", "pending", "quarantine", "journal"]) {
+      assert.equal(statSync(join(mediaRoot, ".activation", directory)).isDirectory(), true);
+    }
   } finally {
     if (processA?.exitCode === null) processA.kill();
     if (processB?.exitCode === null) processB.kill();
