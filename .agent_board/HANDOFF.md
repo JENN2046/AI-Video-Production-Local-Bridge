@@ -45,11 +45,17 @@ Ready task count: 0
   hash to different mutex files. Follow-up `20f029e` lowercases canonical root
   and target only for the Windows mutex identity and extends the different-Blob
   same-target multiprocess test with an uppercase path variant.
+- Follow-up `95d8b29` also normalizes deterministic-stage identity, rejects
+  divergent registered roots and conflicting immutable Blob facts through one
+  persistent target authority record, and prevents SQLite rollback sidecars by
+  using memory-journal mode after rejecting existing sidecar entries.
 - At state sync these PR #109 threads remain unresolved pending exact-head CI
   and a fresh review: `PRRT_kwDOTTDtUM6Vdmly`, `PRRT_kwDOTTDtUM6VeTXd`,
   `PRRT_kwDOTTDtUM6VekUB`, `PRRT_kwDOTTDtUM6VkSwY` and
-  `PRRT_kwDOTTDtUM6VkqqS`. Local validation passes
-  with media activation 56/56, Foundation 118/118, Provider 52/52, Workbench V2
+  `PRRT_kwDOTTDtUM6VkqqS`, `PRRT_kwDOTTDtUM6VkzTx`,
+  `PRRT_kwDOTTDtUM6VkzTz`, `PRRT_kwDOTTDtUM6Vk38a` and
+  `PRRT_kwDOTTDtUM6Vk38b`. Local validation passes
+  with media activation 60/60, Foundation 122/122, Provider 52/52, Workbench V2
   68/68 and selection 23/23; typecheck, build, secret scan and diff checks pass.
 - `S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING` is
   `BLOCKED_BY_PR109_POST_PROMOTION_FINDING` in PR #109.

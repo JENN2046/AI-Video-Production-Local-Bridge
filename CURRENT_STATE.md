@@ -218,7 +218,11 @@ before any recovery filesystem mutation. Different targets remain independent,
 and process exit releases the SQLite lock without a PID lease or stale cleanup.
 Follow-up `20f029e` normalizes both mutex identity paths to lowercase on Windows,
 matching `sameResolvedPath`; casing variants of the same physical target
-therefore cannot split into separate locks.
+therefore cannot split into separate locks. Follow-up `95d8b29` applies the same
+identity to the deterministic stage, uses an app-controlled persistent target
+authority record to reject divergent registered roots and conflicting immutable
+Blob facts, and runs the SQLite mutex in memory-journal mode while rejecting any
+pre-existing `-journal`, `-wal` or `-shm` entry.
 
 Only `recoverVerifiedBlobStorage` may converge the exact slot for the Blob it is
 explicitly repairing. It reuses a complete matching stage, safely discards and
@@ -232,14 +236,14 @@ staging-owner and `media_activation_journal` recovery.
 Independent database A/B/C startup processes, `:memory:`, five hard crashes,
 same-target and different-target recovery, bounded busy, unsafe-lock,
 partial-stage, already-reusable, unknown-stage and explicit retry regressions
-pass. Local validation passes with media activation 56/56, Foundation 118/118,
+pass. Local validation passes with media activation 60/60, Foundation 122/122,
 Provider 52/52, Workbench V2 68/68 and selection 23/23; typecheck, build, secret
 scan and diff checks also pass. At state sync threads
-`PRRT_kwDOTTDtUM6Vdmly`, `PRRT_kwDOTTDtUM6VeTXd`,
-`PRRT_kwDOTTDtUM6VekUB` and `PRRT_kwDOTTDtUM6VkSwY` remain unresolved pending
-new exact-head CI and a fresh review. Exact-head review additionally opened
-`PRRT_kwDOTTDtUM6VkqqS`; its Windows path-identity fix is present in `20f029e`
-but the thread remains unresolved pending new evidence. PR #109 remains open and unmerged.
+`PRRT_kwDOTTDtUM6Vdmly`, `PRRT_kwDOTTDtUM6VeTXd`, `PRRT_kwDOTTDtUM6VekUB`,
+`PRRT_kwDOTTDtUM6VkSwY`, `PRRT_kwDOTTDtUM6VkqqS`, `PRRT_kwDOTTDtUM6VkzTx`,
+`PRRT_kwDOTTDtUM6VkzTz`, `PRRT_kwDOTTDtUM6Vk38a` and
+`PRRT_kwDOTTDtUM6Vk38b` remain unresolved pending new exact-head CI and a fresh
+review. PR #109 remains open and unmerged.
 Cross-database explicit recovery is serialized by an exact-target SQLite mutex,
 and merge remains a separate Jenn decision.
 

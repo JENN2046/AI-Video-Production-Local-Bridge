@@ -5307,6 +5307,7 @@ recorded_at: 2026-08-01T09:40:00+08:00
 pull_request: 109
 implementation_commit: e3704cb
 windows_mutex_identity_commit: 20f029e
+target_authority_commit: 95d8b29
 remediation_strategy: CROSS_DATABASE_TARGET_SQLITE_MUTEX
 unresolved_threads_at_state_sync:
   - PRRT_kwDOTTDtUM6Vdmly
@@ -5314,6 +5315,10 @@ unresolved_threads_at_state_sync:
   - PRRT_kwDOTTDtUM6VekUB
   - PRRT_kwDOTTDtUM6VkSwY
   - PRRT_kwDOTTDtUM6VkqqS
+  - PRRT_kwDOTTDtUM6VkzTx
+  - PRRT_kwDOTTDtUM6VkzTz
+  - PRRT_kwDOTTDtUM6Vk38a
+  - PRRT_kwDOTTDtUM6Vk38b
 mutex:
   scope: exact_resolved_blob_storage_target
   key: canonical_media_root_nul_resolved_storage_uri
@@ -5330,6 +5335,11 @@ verified_behavior:
   same_blob_same_target_serialized: true
   different_blob_same_target_serialized: true
   windows_case_variants_share_target_mutex: true
+  windows_case_variants_share_deterministic_stage: true
+  divergent_registered_roots_rejected: true
+  conflicting_blob_digest_rejected: true
+  sqlite_sidecars_rejected_and_preserved: true
+  mutex_journal_mode: memory
   different_targets_parallel: true
   busy_has_zero_recovery_media_mutation: true
   crash_then_other_database_recovers: true
@@ -5342,8 +5352,8 @@ verified_behavior:
 local_validation:
   typecheck: PASS
   build: PASS
-  media_activation_integrity: PASS_56
-  foundation_boundaries: PASS_118
+  media_activation_integrity: PASS_60
+  foundation_boundaries: PASS_122
   provider_boundaries: PASS_52
   workbench_v2: PASS_68
   selection_gate: PASS_23

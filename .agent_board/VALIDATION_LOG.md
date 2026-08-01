@@ -3429,6 +3429,7 @@ validated_at: 2026-08-01T09:40:00+08:00
 pull_request: 109
 implementation_commit: e3704cb
 windows_mutex_identity_commit: 20f029e
+target_authority_commit: 95d8b29
 commands_or_lanes:
   - npm run typecheck
   - npm run build
@@ -3441,8 +3442,8 @@ commands_or_lanes:
 results:
   typecheck: PASS
   build: PASS
-  media_activation_integrity: PASS_56
-  foundation_boundaries: PASS_118
+  media_activation_integrity: PASS_60
+  foundation_boundaries: PASS_122
   provider_boundaries: PASS_52
   workbench_v2: PASS_68
   selection_gate: PASS_23
@@ -3453,6 +3454,11 @@ verified_behavior:
   same_target_cross_database_serialization: true
   different_blob_ids_same_target_serialization: true
   windows_case_variant_target_serialization: true
+  windows_case_variant_stage_serialization: true
+  divergent_registered_root_rejected: true
+  conflicting_blob_digest_rejected: true
+  sqlite_mutex_sidecars_rejected_and_preserved: true
+  sqlite_mutex_journal_mode: memory
   different_target_parallel_barrier: true
   bounded_busy_zero_media_mutation: true
   hard_crash_os_lock_release: true
