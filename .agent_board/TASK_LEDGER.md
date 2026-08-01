@@ -5314,6 +5314,7 @@ windows_short_path_test_fix_commit: 94bd81b
 windows_short_path_absolute_parse_commit: 43e5519
 validated_authority_and_target_filesystem_stage_commit: 22c9e24
 windows_dos_short_filename_guard_commit: 0982c61
+windows_sfn_character_set_commit: d7fbb21
 exact_head_ci_before_final_thread_audit:
   run_id: 30685017849
   Quality_and_integration: PASS
@@ -5331,6 +5332,13 @@ later_exact_head_evidence:
   Browser_smoke: PASS
   review_finding: PRRT_kwDOTTDtUM6Vl-G_
   remediation: 0982c61
+final_review_follow_up:
+  head: e0ad45d88d8507fa4df8f4213a6373a7af417685
+  windows_ci_run: 30687572904
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+  review_finding: PRRT_kwDOTTDtUM6VmMCl
+  remediation: d7fbb21
 superseded_failed_ci:
   run_id: 30684275229
   failure_class: TEST_PROBE_QUOTED_SHORT_PATH

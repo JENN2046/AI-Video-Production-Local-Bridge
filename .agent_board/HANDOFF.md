@@ -76,10 +76,14 @@ Ready task count: 0
   `PRRT_kwDOTTDtUM6Vk38b`, `PRRT_kwDOTTDtUM6VlUo8`,
   `PRRT_kwDOTTDtUM6VlUo-`, `PRRT_kwDOTTDtUM6VlmiI`,
   `PRRT_kwDOTTDtUM6VlmiJ`, `PRRT_kwDOTTDtUM6VlsfV` and
-  `PRRT_kwDOTTDtUM6Vl-G_`; all await new exact-head CI and review. Run
+  `PRRT_kwDOTTDtUM6Vl-G_`, plus final-review thread
+  `PRRT_kwDOTTDtUM6VmMCl`; all await new exact-head CI and review. Run
   `30686707590` passed both jobs at `7194add`, but automatic review added the
   last thread because any `~` was treated as a DOS alias. Follow-up `0982c61`
-  narrows rejection to an 8.3-shaped filename and covers `final~edited.mp4`.
+  narrowed rejection to an 8.3-shaped filename and covered `final~edited.mp4`.
+  Run `30687572904` passed both jobs at `e0ad45d`; its final review found the
+  SFN set still admitted `+`, `,`, `;`, `=`, `[` and `]`. Follow-up `d7fbb21`
+  uses the real SFN character set and covers all six ordinary long-name cases.
   Local validation passes with media activation
   63 PASS / 0 FAIL / 1 platform-capability skip, Foundation 125 PASS / 0 FAIL /
   1 platform-capability skip, Provider 52/52, Workbench V2

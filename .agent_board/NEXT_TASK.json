@@ -90,6 +90,7 @@
       "windows_short_path_absolute_parse_commit": "43e5519",
       "validated_authority_and_target_filesystem_stage_commit": "22c9e24",
       "windows_dos_short_filename_guard_commit": "0982c61",
+      "windows_sfn_character_set_commit": "d7fbb21",
       "remediation_strategy": "CROSS_DATABASE_TARGET_SQLITE_MUTEX",
       "current_head": "STATE_SYNC_COMMIT_CONTAINING_THIS_RECORD",
       "resolved_prior_threads": [
@@ -106,7 +107,8 @@
         "PRRT_kwDOTTDtUM6VlmiI",
         "PRRT_kwDOTTDtUM6VlmiJ",
         "PRRT_kwDOTTDtUM6VlsfV",
-        "PRRT_kwDOTTDtUM6Vl-G_"
+        "PRRT_kwDOTTDtUM6Vl-G_",
+        "PRRT_kwDOTTDtUM6VmMCl"
       ],
       "post_promotion_finding_threads": [
         "PRRT_kwDOTTDtUM6Vdmly",
@@ -125,7 +127,8 @@
         "PRRT_kwDOTTDtUM6VlmiI",
         "PRRT_kwDOTTDtUM6VlmiJ",
         "PRRT_kwDOTTDtUM6VlsfV",
-        "PRRT_kwDOTTDtUM6Vl-G_"
+        "PRRT_kwDOTTDtUM6Vl-G_",
+        "PRRT_kwDOTTDtUM6VmMCl"
       ],
       "post_promotion_finding_status": "REMEDIATION_IN_PROGRESS_AT_STATE_SYNC",
       "candidate_fix_present": true,

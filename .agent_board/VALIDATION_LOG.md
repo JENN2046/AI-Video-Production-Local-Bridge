@@ -3476,6 +3476,32 @@ local_validation:
 exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
 ```
 
+### PR109 Windows SFN character-set classification
+
+```yaml
+task: PR109-T4_CROSS_DATABASE_BLOB_TARGET_MUTEX
+recorded_at: 2026-08-01T14:55:00+08:00
+reviewed_head: e0ad45d88d8507fa4df8f4213a6373a7af417685
+exact_head_ci_run: 30687572904
+exact_head_ci: PASS_BOTH_JOBS
+review_thread: PRRT_kwDOTTDtUM6VmMCl
+implementation_commit: d7fbb21
+implementation:
+  dos_short_name_charset: REAL_SFN_SET
+  ordinary_long_name_punctuation: PLUS_COMMA_SEMICOLON_EQUALS_BRACKETS_ALLOWED
+local_validation:
+  typecheck: PASS
+  media_activation_integrity: PASS_63_FAIL_0_PLATFORM_SKIP_1
+  foundation_boundaries: PASS_125_FAIL_0_PLATFORM_SKIP_1
+  provider_boundaries: PASS_52
+  workbench_v2: PASS_68
+  selection_gate: PASS_23
+  build: PASS
+  secret_scan: PASS
+  git_diff_check: PASS
+exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
+```
+
 ### PR109 Windows DOS-short filename classification
 
 ```yaml
