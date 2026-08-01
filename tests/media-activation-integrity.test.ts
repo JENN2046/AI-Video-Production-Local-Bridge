@@ -1344,7 +1344,7 @@ test("verified Blob recovery restores missing bytes without changing immutable r
   }
 });
 
-test("verified Blob recovery closes only its interrupted exclusive-placement hard-link pair", () => {
+test("verified Blob recovery preserves target hard links without a stage ownership companion", () => {
   const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-linked-placement-"));
   const mediaRoot = join(root, "media");
   const sqlitePath = join(root, "app.sqlite");
@@ -1377,13 +1377,13 @@ test("verified Blob recovery closes only its interrupted exclusive-placement har
       shot_id: fixture.shot_id,
       source_path: fixture.source_path
     }, db);
-    assert.equal(recovered.ok, true, recovered.ok ? undefined : recovered.error.code);
-    if (!recovered.ok) return;
-    assert.equal(recovered.outcome, "ALREADY_REUSABLE");
-    assert.equal(existsSync(stagedPath), false);
-    assert.equal(lstatSync(targetPath).nlink, 1);
+    assert.equal(recovered.ok, false);
+    if (!recovered.ok) assert.equal(recovered.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    assert.equal(existsSync(stagedPath), true);
+    assert.equal(lstatSync(targetPath).nlink, 2);
     assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
     assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
+    rmSync(stagedPath);
 
     const blob = getMediaBlob(db, fixture.artifact.blob_id);
     assert.ok(blob);
@@ -1399,11 +1399,15 @@ test("verified Blob recovery closes only its interrupted exclusive-placement har
       shot_id: fixture.shot_id,
       source_path: fixture.source_path
     }, db);
-    assert.equal(deterministicRecovered.ok, true, deterministicRecovered.ok ? undefined : deterministicRecovered.error.code);
-    assert.equal(existsSync(deterministicStagedPath), false);
-    assert.equal(lstatSync(targetPath).nlink, 1);
+    assert.equal(deterministicRecovered.ok, false);
+    if (!deterministicRecovered.ok) {
+      assert.equal(deterministicRecovered.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    assert.equal(existsSync(deterministicStagedPath), true);
+    assert.equal(lstatSync(targetPath).nlink, 2);
     assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
     assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
+    rmSync(deterministicStagedPath);
 
     const unrelatedLink = join(root, "unrelated-hard-link.mp4");
     linkSync(targetPath, unrelatedLink);

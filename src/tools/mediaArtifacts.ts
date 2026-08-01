@@ -1171,7 +1171,7 @@ function prepareVerifiedBlobRecoveryStaging(
 
 function inspectInterruptedVerifiedBlobPlacement(
   targetPath: string,
-  targetDirectory: string,
+  _targetDirectory: string,
   deterministicStagedPath: string,
   deterministicOwnerPath: string,
   _roots: ReturnType<typeof activationRoots>,
@@ -1183,67 +1183,19 @@ function inspectInterruptedVerifiedBlobPlacement(
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
   if (targetEntry.nlink === 1) return null;
-  if ((targetEntry.nlink !== 2 && targetEntry.nlink !== 3) || targetEntry.ino === 0) {
+  if (targetEntry.nlink !== 3 || targetEntry.ino === 0
+    || !existsSync(deterministicStagedPath) || !existsSync(deterministicOwnerPath)) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
 
-  if (existsSync(deterministicOwnerPath)) {
-    const ownerEntry = lstatSync(deterministicOwnerPath);
-    const stageExists = existsSync(deterministicStagedPath);
-    const expectedLinks = stageExists ? 3 : 2;
-    if (ownerEntry.isSymbolicLink() || !ownerEntry.isFile()
-      || ownerEntry.nlink !== expectedLinks
-      || ownerEntry.dev !== targetEntry.dev || ownerEntry.ino !== targetEntry.ino
-      || targetEntry.nlink !== expectedLinks) {
-      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
-    }
-    if (stageExists) {
-      assertOwnedRecoveryStagingFile(
-        deterministicStagedPath,
-        deterministicOwnerPath,
-        registeredRoot,
-        canonicalRoot,
-        3
-      );
-    }
-    return {
-      candidatePaths: stageExists
-        ? [deterministicStagedPath, deterministicOwnerPath]
-        : [deterministicOwnerPath],
-      targetEntry
-    };
-  }
-
-  const legacyCandidates = readdirSync(targetDirectory)
-    .filter((name) => LEGACY_BLOB_RECOVERY_STAGING_NAME.test(name))
-    .map((name) => resolve(targetDirectory, name));
-  const stagedCandidates = [deterministicStagedPath, ...legacyCandidates]
-    .filter((candidatePath, index, candidates) => candidates.indexOf(candidatePath) === index)
-    .filter((candidatePath) => {
-      const deterministicCandidate = sameResolvedPath(candidatePath, deterministicStagedPath);
-      const candidateBoundary = registeredRoot;
-      const expectedDirectory = targetDirectory;
-      if (!sameResolvedPath(dirname(candidatePath), expectedDirectory)
-        || !isPathInside(candidatePath, registeredRoot)
-        || hasExistingSymlinkAncestor(candidatePath, candidateBoundary)
-        || !existsSync(candidatePath)) {
-        return false;
-      }
-      const candidateEntry = lstatSync(candidatePath);
-      if (candidateEntry.isSymbolicLink()
-        || !candidateEntry.isFile()
-        || candidateEntry.nlink !== 2
-        || candidateEntry.dev !== targetEntry.dev
-        || candidateEntry.ino !== targetEntry.ino) {
-        return false;
-      }
-      const canonicalCandidate = resolve(realpathSync(candidatePath));
-      return isPathInside(canonicalCandidate, canonicalRoot);
-    });
-  if (stagedCandidates.length !== 1) {
-    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
-  }
-  return { candidatePaths: [stagedCandidates[0]], targetEntry };
+  assertOwnedRecoveryStagingFile(
+    deterministicStagedPath,
+    deterministicOwnerPath,
+    registeredRoot,
+    canonicalRoot,
+    3
+  );
+  return { candidatePaths: [deterministicStagedPath, deterministicOwnerPath], targetEntry };
 }
 
 function normalizeInterruptedVerifiedBlobPlacement(
