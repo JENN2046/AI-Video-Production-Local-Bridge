@@ -1188,13 +1188,16 @@ function inspectInterruptedVerifiedBlobPlacement(
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
 
-  assertOwnedRecoveryStagingFile(
+  const owned = assertOwnedRecoveryStagingFile(
     deterministicStagedPath,
     deterministicOwnerPath,
     registeredRoot,
     canonicalRoot,
     3
   );
+  if (!owned || owned.dev !== targetEntry.dev || owned.ino !== targetEntry.ino) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
   return { candidatePaths: [deterministicStagedPath, deterministicOwnerPath], targetEntry };
 }
 

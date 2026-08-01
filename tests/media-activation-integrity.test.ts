@@ -1424,6 +1424,32 @@ test("verified Blob recovery preserves target hard links without a stage ownersh
     assert.equal(existsSync(unrelatedLink), true);
     assert.equal(lstatSync(targetPath).nlink, 2);
     assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
+    rmSync(unrelatedLink);
+
+    const targetLinkA = join(root, "target-link-a.mp4");
+    const targetLinkB = join(root, "target-link-b.mp4");
+    linkSync(targetPath, targetLinkA);
+    linkSync(targetPath, targetLinkB);
+    copyFileSync(fixture.source_path, deterministicStagedPath);
+    const deterministicOwnerPath = verifiedBlobRecoveryStageOwnerPath(deterministicStagedPath);
+    const unrelatedStageLink = join(root, "unrelated-stage-link.mp4");
+    linkSync(deterministicStagedPath, deterministicOwnerPath);
+    linkSync(deterministicStagedPath, unrelatedStageLink);
+    const rejectedDifferentTriple = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(rejectedDifferentTriple.ok, false);
+    if (!rejectedDifferentTriple.ok) {
+      assert.equal(rejectedDifferentTriple.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    for (const preserved of [targetPath, targetLinkA, targetLinkB, deterministicStagedPath, deterministicOwnerPath, unrelatedStageLink]) {
+      assert.equal(existsSync(preserved), true);
+      assert.equal(lstatSync(preserved).nlink, 3);
+    }
+    assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });
