@@ -127,21 +127,6 @@ function verifiedBlobRecoveryStagePath(
   return resolve(mediaRoot, ".activation", "staging", `blob-recovery-${digest}.staged`);
 }
 
-function insertVerifiedBlobIdentity(
-  db: M0Database,
-  identity: { blob_id: string; storage_uri: string; media_root: string }
-): void {
-  const sha256 = createHash("sha256").update(identity.blob_id).digest("hex");
-  db.prepare(`INSERT INTO media_blobs
-    (blob_id, sha256, size_bytes, detected_mime, storage_uri, integrity_state, provenance_json)
-    VALUES (?, ?, 1, 'video/mp4', ?, 'verified', ?)`)
-    .run(identity.blob_id, sha256, resolve(identity.storage_uri), JSON.stringify({
-      source: "provider_output_file",
-      immutable: true,
-      media_root: identity.media_root
-    }));
-}
-
 function hardCrashVerifiedBlobRecovery(input: {
   sqlite_path: string;
   artifact_id: string;
@@ -193,8 +178,7 @@ const RECOVERY_MEDIA_MODULE = pathToFileURL(resolve(paths.workspaceRoot, "dist",
 
 function recoveryChildEnvironment(input: {
   configured_path: string;
-  open_path: string;
-  identity?: { blob_id: string; storage_uri: string; media_root: string };
+  in_memory?: boolean;
   started_signal?: string;
 }): NodeJS.ProcessEnv {
   return {
@@ -203,35 +187,22 @@ function recoveryChildEnvironment(input: {
     AI_VIDEO_WORKSPACE_DB_PATH: input.configured_path,
     RECOVERY_SQLITE_MODULE,
     RECOVERY_MEDIA_MODULE,
-    RECOVERY_OPEN_SQLITE_PATH: input.open_path,
-    RECOVERY_IDENTITY_JSON: input.identity ? JSON.stringify(input.identity) : "",
+    RECOVERY_IN_MEMORY: input.in_memory ? "true" : "false",
     RECOVERY_STARTED_SIGNAL: input.started_signal ?? ""
   };
 }
 
 const STARTUP_RECOVERY_CHILD_SCRIPT = `
   const { writeFileSync } = await import("node:fs");
-  const { createHash } = await import("node:crypto");
-  const { resolve } = await import("node:path");
   const { openM0Database } = await import(process.env.RECOVERY_SQLITE_MODULE);
   const { recoverMediaActivations } = await import(process.env.RECOVERY_MEDIA_MODULE);
   if (process.env.RECOVERY_STARTED_SIGNAL) {
     writeFileSync(process.env.RECOVERY_STARTED_SIGNAL, "started", "utf8");
   }
-  const db = openM0Database(process.env.RECOVERY_OPEN_SQLITE_PATH);
+  const db = process.env.RECOVERY_IN_MEMORY === "true"
+    ? openM0Database(":memory:")
+    : openM0Database();
   try {
-    if (process.env.RECOVERY_IDENTITY_JSON) {
-      const identity = JSON.parse(process.env.RECOVERY_IDENTITY_JSON);
-      const sha256 = createHash("sha256").update(identity.blob_id).digest("hex");
-      db.prepare(\`INSERT INTO media_blobs
-        (blob_id, sha256, size_bytes, detected_mime, storage_uri, integrity_state, provenance_json)
-        VALUES (?, ?, 1, 'video/mp4', ?, 'verified', ?)\`)
-        .run(identity.blob_id, sha256, resolve(identity.storage_uri), JSON.stringify({
-          source: "provider_output_file",
-          immutable: true,
-          media_root: identity.media_root
-        }));
-    }
     const result = recoverMediaActivations(db);
     process.stdout.write(JSON.stringify(result));
   } finally {
@@ -242,15 +213,13 @@ const STARTUP_RECOVERY_CHILD_SCRIPT = `
 function runStartupRecoveryChild(input: {
   cwd: string;
   configured_path: string;
-  open_path?: string;
-  identity?: { blob_id: string; storage_uri: string; media_root: string };
+  in_memory?: boolean;
 }): ChildRecoveryResult {
   const child = spawnSync(process.execPath, ["--input-type=module", "--eval", STARTUP_RECOVERY_CHILD_SCRIPT], {
     cwd: input.cwd,
     env: recoveryChildEnvironment({
       configured_path: input.configured_path,
-      open_path: input.open_path ?? input.configured_path,
-      identity: input.identity
+      in_memory: input.in_memory
     }),
     encoding: "utf8",
     windowsHide: true,
@@ -264,14 +233,12 @@ function runStartupRecoveryChild(input: {
 function startStartupRecoveryChild(input: {
   cwd: string;
   configured_path: string;
-  open_path?: string;
   started_signal: string;
 }): ChildProcess {
   return spawn(process.execPath, ["--input-type=module", "--eval", STARTUP_RECOVERY_CHILD_SCRIPT], {
     cwd: input.cwd,
     env: recoveryChildEnvironment({
       configured_path: input.configured_path,
-      open_path: input.open_path ?? input.configured_path,
       started_signal: input.started_signal
     }),
     windowsHide: true,
@@ -1598,6 +1565,8 @@ test("verified Blob recovery bounds deterministic staging across repeated hard p
   const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-hard-crash-"));
   const mediaRoot = join(root, "media");
   const sqlitePath = join(root, "app.sqlite");
+  const copyPath = join(root, "recovery-copy.sqlite");
+  const backupPath = join(root, "backup.sqlite");
   migrateDatabase(sqlitePath);
   let db = openM0Database(sqlitePath);
   try {
@@ -1610,6 +1579,8 @@ test("verified Blob recovery bounds deterministic staging across repeated hard p
     const sourceSize = statSync(fixture.source_path).size;
     rmSync(fixture.artifact.storage.uri);
     db.close();
+    copyFileSync(sqlitePath, copyPath);
+    copyFileSync(sqlitePath, backupPath);
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
       hardCrashVerifiedBlobRecovery({
@@ -1623,6 +1594,18 @@ test("verified Blob recovery bounds deterministic staging across repeated hard p
         .filter((name) => /^blob-recovery-[a-f0-9]{64}\.staged$/i.test(name));
       assert.deepEqual(stagedFiles, [basename(stagedPath)]);
       assert.equal(statSync(stagedPath).size, sourceSize);
+      const stagedBytes = readFileSync(stagedPath);
+      for (const independentlyConfiguredPath of [sqlitePath, copyPath, backupPath]) {
+        const startup = runStartupRecoveryChild({
+          cwd: root,
+          configured_path: independentlyConfiguredPath
+        });
+        assert.deepEqual(startup.failed, []);
+        assert.deepEqual(readFileSync(stagedPath), stagedBytes);
+      }
+      const stagesAfterStartup = readdirSync(stagingRoot)
+        .filter((name) => /^blob-recovery-[a-f0-9]{64}\.staged$/i.test(name));
+      assert.deepEqual(stagesAfterStartup, [basename(stagedPath)]);
     }
 
     db = openM0Database(sqlitePath);
@@ -1656,6 +1639,9 @@ test("verified Blob recovery removes a stale deterministic stage for reusable ta
     const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
 
     copyFileSync(fixture.source_path, stagedPath);
+    const startupWithReusableTarget = runStartupRecoveryChild({ cwd: root, configured_path: sqlitePath });
+    assert.deepEqual(startupWithReusableTarget.failed, []);
+    assert.equal(existsSync(stagedPath), true);
     const noOp = recoverVerifiedBlobStorage({
       invalid_artifact_id: fixture.artifact.artifact_id,
       project_id: fixture.project_id,
@@ -1667,7 +1653,11 @@ test("verified Blob recovery removes a stale deterministic stage for reusable ta
     assert.equal(existsSync(stagedPath), false);
 
     rmSync(fixture.artifact.storage.uri);
-    writeFileSync(stagedPath, readFileSync(fixture.source_path).subarray(0, 32));
+    const partialBytes = readFileSync(fixture.source_path).subarray(0, 32);
+    writeFileSync(stagedPath, partialBytes);
+    const startupWithPartialStage = runStartupRecoveryChild({ cwd: root, configured_path: sqlitePath });
+    assert.deepEqual(startupWithPartialStage.failed, []);
+    assert.deepEqual(readFileSync(stagedPath), partialBytes);
     const recovered = recoverVerifiedBlobStorage({
       invalid_artifact_id: fixture.artifact.artifact_id,
       project_id: fixture.project_id,
@@ -1684,8 +1674,48 @@ test("verified Blob recovery removes a stale deterministic stage for reusable ta
   }
 });
 
-test("startup activation recovery reconciles safe Blob stages and reports unsafe stages without deleting them", () => {
-  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-startup-"));
+test("generic startup preserves deterministic stages and explicit recovery converges only the exact Blob stage", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-unknown-stage-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const blob = getMediaBlob(db, fixture.artifact.blob_id);
+    assert.ok(blob);
+    const expectedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
+    const unknownPath = resolve(mediaRoot, ".activation", "staging", `blob-recovery-${"a".repeat(64)}.staged`);
+    assert.notEqual(unknownPath, expectedPath);
+    copyFileSync(fixture.source_path, expectedPath);
+    copyFileSync(fixture.source_path, unknownPath);
+    const expectedBytes = readFileSync(expectedPath);
+    const unknownBytes = readFileSync(unknownPath);
+
+    const recovered = runStartupRecoveryChild({ cwd: root, configured_path: sqlitePath });
+    assert.deepEqual(recovered.failed, []);
+    assert.deepEqual(readFileSync(expectedPath), expectedBytes);
+    assert.deepEqual(readFileSync(unknownPath), unknownBytes);
+
+    const explicit = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(explicit.ok, true, explicit.ok ? undefined : explicit.error.code);
+    if (explicit.ok) assert.equal(explicit.outcome, "ALREADY_REUSABLE");
+    assert.equal(existsSync(expectedPath), false);
+    assert.equal(existsSync(unknownPath), true);
+    assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("generic startup preserves an unsafe exact stage for explicit recovery to reject", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-startup-unsafe-"));
   const mediaRoot = join(root, "media");
   const sqlitePath = join(root, "app.sqlite");
   migrateDatabase(sqlitePath);
@@ -1696,20 +1726,10 @@ test("startup activation recovery reconciles safe Blob stages and reports unsafe
     const blob = getMediaBlob(db, fixture.artifact.blob_id);
     assert.ok(blob);
     const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
-
-    copyFileSync(fixture.source_path, stagedPath);
-    const reconciled = runStartupRecoveryChild({ cwd: root, configured_path: sqlitePath });
-    assert.equal(reconciled.failed.some((entry) => entry.code === "MEDIA_BLOB_RECOVERY_PATH_UNSAFE"), false);
-    assert.equal(existsSync(stagedPath), false);
-    assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
-    assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
-
-    const repeated = runStartupRecoveryChild({ cwd: root, configured_path: sqlitePath });
-    assert.equal(repeated.failed.some((entry) => entry.code === "MEDIA_BLOB_RECOVERY_PATH_UNSAFE"), false);
-
     mkdirSync(stagedPath);
-    const diagnosed = runStartupRecoveryChild({ cwd: root, configured_path: sqlitePath });
-    assert.equal(diagnosed.failed.some((entry) => entry.code === "MEDIA_BLOB_RECOVERY_PATH_UNSAFE"), true);
+
+    const recovered = runStartupRecoveryChild({ cwd: root, configured_path: sqlitePath });
+    assert.deepEqual(recovered.failed, []);
     assert.equal(lstatSync(stagedPath).isDirectory(), true);
     const blocked = recoverVerifiedBlobStorage({
       invalid_artifact_id: fixture.artifact.artifact_id,
@@ -1727,262 +1747,44 @@ test("startup activation recovery reconciles safe Blob stages and reports unsafe
   }
 });
 
-test("startup Blob recovery preserves well-formed stages absent from the verified identity whitelist", () => {
-  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-unknown-stage-"));
+test("multiple independently configured databases preserve the same deterministic Blob stage", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-independent-databases-"));
   const mediaRoot = join(root, "media");
-  const sqlitePath = join(root, "app.sqlite");
-  migrateDatabase(sqlitePath);
-  const db = openM0Database(sqlitePath);
-  try {
-    const fixture = createRecoverableVideo(db, mediaRoot);
-    const blob = getMediaBlob(db, fixture.artifact.blob_id);
-    assert.ok(blob);
-    const expectedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
-    const unknownPath = resolve(mediaRoot, ".activation", "staging", `blob-recovery-${"a".repeat(64)}.staged`);
-    const sameContentUnknownPath = resolve(mediaRoot, ".activation", "staging", `blob-recovery-${"b".repeat(64)}.staged`);
-    assert.notEqual(unknownPath, expectedPath);
-    assert.notEqual(sameContentUnknownPath, expectedPath);
-    writeFileSync(unknownPath, "unowned-stage", "utf8");
-    copyFileSync(fixture.source_path, sameContentUnknownPath);
-
-    const recovered = runStartupRecoveryChild({ cwd: root, configured_path: sqlitePath });
-    assert.equal(recovered.failed.filter((entry) => entry.code === "MEDIA_BLOB_RECOVERY_PATH_UNSAFE").length >= 2, true);
-    assert.equal(readFileSync(unknownPath, "utf8"), "unowned-stage");
-    assert.deepEqual(readFileSync(sameContentUnknownPath), readFileSync(fixture.source_path));
-  } finally {
-    db.close();
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("startup Blob recovery cleans distinct expected stages for multiple verified Blob identities", () => {
-  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-multiple-identities-"));
-  const mediaRoot = join(root, "media");
-  const sqlitePath = join(root, "app.sqlite");
-  migrateDatabase(sqlitePath);
-  const db = openM0Database(sqlitePath);
-  try {
-    const fixture = createRecoverableVideo(db, mediaRoot);
-    const firstBlob = getMediaBlob(db, fixture.artifact.blob_id);
-    assert.ok(firstBlob);
-    const secondIdentity = {
-      blob_id: `blob_recovery_${randomUUID()}`,
-      storage_uri: resolve(mediaRoot, "artifacts", "videos", `second-${randomUUID()}.mp4`),
-      media_root: resolve(mediaRoot)
-    };
-    insertVerifiedBlobIdentity(db, secondIdentity);
-    const firstStage = verifiedBlobRecoveryStagePath(mediaRoot, firstBlob);
-    const secondStage = verifiedBlobRecoveryStagePath(mediaRoot, secondIdentity);
-    assert.notEqual(firstStage, secondStage);
-    copyFileSync(fixture.source_path, firstStage);
-    copyFileSync(fixture.source_path, secondStage);
-
-    const recovered = runStartupRecoveryChild({ cwd: root, configured_path: sqlitePath });
-    assert.equal(recovered.failed.some((entry) => entry.code === "MEDIA_BLOB_RECOVERY_PATH_UNSAFE"), false);
-    assert.equal(existsSync(firstStage), false);
-    assert.equal(existsSync(secondStage), false);
-  } finally {
-    db.close();
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("startup Blob recovery excludes malformed verified identities from the stage whitelist", () => {
-  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-malformed-identity-"));
-  const mediaRoot = join(root, "media");
-  const sqlitePath = join(root, "app.sqlite");
-  migrateDatabase(sqlitePath);
-  const db = openM0Database(sqlitePath);
-  try {
-    const fixture = createRecoverableVideo(db, mediaRoot);
-    const malformedIdentity = {
-      blob_id: `blob_recovery_${randomUUID()}`,
-      storage_uri: resolve(root, "outside", "malformed.mp4"),
-      media_root: resolve(mediaRoot)
-    };
-    insertVerifiedBlobIdentity(db, malformedIdentity);
-    const before = db.prepare("SELECT * FROM media_blobs WHERE blob_id = ?").get(malformedIdentity.blob_id);
-    const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, malformedIdentity);
-    copyFileSync(fixture.source_path, stagedPath);
-
-    const recovered = runStartupRecoveryChild({ cwd: root, configured_path: sqlitePath });
-    assert.equal(recovered.failed.some((entry) => entry.code === "MEDIA_BLOB_RECOVERY_PATH_UNSAFE"), true);
-    assert.equal(existsSync(stagedPath), true);
-    assert.deepEqual(db.prepare("SELECT * FROM media_blobs WHERE blob_id = ?").get(malformedIdentity.blob_id), before);
-  } finally {
-    db.close();
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("startup Blob whitelist preserves expected directories and unowned hard links", () => {
-  for (const scenario of ["directory", "hard-link"] as const) {
-    const root = mkdtempSync(join(tmpdir(), `verified-blob-recovery-startup-unsafe-${scenario}-`));
-    const mediaRoot = join(root, "media");
-    const sqlitePath = join(root, "app.sqlite");
-    migrateDatabase(sqlitePath);
-    const db = openM0Database(sqlitePath);
-    try {
-      const fixture = createRecoverableVideo(db, mediaRoot);
-      const blob = getMediaBlob(db, fixture.artifact.blob_id);
-      assert.ok(blob);
-      const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
-      if (scenario === "directory") {
-        mkdirSync(stagedPath);
-      } else {
-        const unownedPath = resolve(mediaRoot, "unowned-startup-stage.mp4");
-        copyFileSync(fixture.source_path, unownedPath);
-        linkSync(unownedPath, stagedPath);
-      }
-
-      const recovered = runStartupRecoveryChild({ cwd: root, configured_path: sqlitePath });
-      assert.equal(recovered.failed.some((entry) => entry.code === "MEDIA_BLOB_RECOVERY_PATH_UNSAFE"), true);
-      assert.equal(existsSync(stagedPath), true);
-    } finally {
-      db.close();
-      rmSync(root, { recursive: true, force: true });
-    }
-  }
-});
-
-test("startup Blob whitelist preserves an expected symlink entry", (context) => {
-  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-startup-symlink-"));
-  const mediaRoot = join(root, "media");
-  const sqlitePath = join(root, "app.sqlite");
-  migrateDatabase(sqlitePath);
-  const db = openM0Database(sqlitePath);
-  try {
-    const fixture = createRecoverableVideo(db, mediaRoot);
-    const blob = getMediaBlob(db, fixture.artifact.blob_id);
-    assert.ok(blob);
-    const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
-    const targetPath = resolve(mediaRoot, "unowned-startup-symlink-target.mp4");
-    copyFileSync(fixture.source_path, targetPath);
-    try { symlinkSync(targetPath, stagedPath, "file"); }
-    catch (error) {
-      context.skip(`File symlinks are unavailable: ${error instanceof Error ? error.message : "SYMLINK_UNAVAILABLE"}`);
-      return;
-    }
-
-    const recovered = runStartupRecoveryChild({ cwd: root, configured_path: sqlitePath });
-    assert.equal(recovered.failed.some((entry) => entry.code === "MEDIA_BLOB_RECOVERY_PATH_UNSAFE"), true);
-    assert.equal(lstatSync(stagedPath).isSymbolicLink(), true);
-    assert.equal(existsSync(targetPath), true);
-  } finally {
-    db.close();
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("single-Blob recovery ignores unrelated deterministic stages", () => {
-  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-ignore-unknown-stage-"));
-  const mediaRoot = join(root, "media");
-  const sqlitePath = join(root, "app.sqlite");
-  migrateDatabase(sqlitePath);
-  const db = openM0Database(sqlitePath);
-  try {
-    const fixture = createRecoverableVideo(db, mediaRoot);
-    const unknownPath = resolve(mediaRoot, ".activation", "staging", `blob-recovery-${"c".repeat(64)}.staged`);
-    copyFileSync(fixture.source_path, unknownPath);
-    rmSync(fixture.artifact.storage.uri);
-
-    const recovered = recoverVerifiedBlobStorage({
-      invalid_artifact_id: fixture.artifact.artifact_id,
-      project_id: fixture.project_id,
-      shot_id: fixture.shot_id,
-      source_path: fixture.source_path
-    }, db);
-    assert.equal(recovered.ok, true, recovered.ok ? undefined : recovered.error.code);
-    assert.equal(existsSync(unknownPath), true);
-    assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
-  } finally {
-    db.close();
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("startup Blob staging recovery rejects a media root redirected through an ancestor junction", (context) => {
-  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-startup-root-swap-"));
-  const registeredParent = join(root, "registered");
-  const outsideParent = join(root, "outside-registered");
-  const mediaRoot = join(registeredParent, "media");
-  const sqlitePath = join(root, "app.sqlite");
-  migrateDatabase(sqlitePath);
-  const db = openM0Database(sqlitePath);
-  try {
-    const fixture = createRecoverableVideo(db, mediaRoot);
-    const blob = getMediaBlob(db, fixture.artifact.blob_id);
-    assert.ok(blob);
-    const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
-    copyFileSync(fixture.source_path, stagedPath);
-
-    renameSync(registeredParent, outsideParent);
-    try { symlinkSync(outsideParent, registeredParent, "junction"); }
-    catch (error) {
-      context.skip(`Directory symlinks are unavailable: ${error instanceof Error ? error.message : "SYMLINK_UNAVAILABLE"}`);
-      return;
-    }
-    const externalStage = stagedPath.replace(resolve(registeredParent), resolve(outsideParent));
-
-    const recovered = runStartupRecoveryChild({ cwd: root, configured_path: sqlitePath });
-    assert.equal(recovered.failed.some((entry) => entry.code === "MEDIA_BLOB_RECOVERY_PATH_UNSAFE"), true);
-    assert.equal(existsSync(externalStage), true);
-  } finally {
-    db.close();
-    if (existsSync(registeredParent)) rmSync(registeredParent, { force: true });
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("only the configured canonical database sweeps deterministic Blob stages", () => {
-  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-canonical-db-"));
-  const mediaRoot = join(root, "media");
-  const canonicalPath = join(root, "configured", "canonical.sqlite");
-  const copyPath = join(root, "recovery-copy.sqlite");
-  const defaultPath = join(root, "data", "app.sqlite");
-  mkdirSync(dirname(canonicalPath), { recursive: true });
-  mkdirSync(dirname(defaultPath), { recursive: true });
-  migrateDatabase(canonicalPath);
-  let db = openM0Database(canonicalPath);
+  const databaseA = join(root, "database-a.sqlite");
+  const databaseB = join(root, "database-b.sqlite");
+  const databaseC = join(root, "database-c.sqlite");
+  migrateDatabase(databaseA);
+  const db = openM0Database(databaseA);
   try {
     const fixture = createRecoverableVideo(db, mediaRoot);
     const blob = getMediaBlob(db, fixture.artifact.blob_id);
     assert.ok(blob);
     const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
     db.close();
-    copyFileSync(canonicalPath, copyPath);
-    copyFileSync(canonicalPath, defaultPath);
+    copyFileSync(databaseA, databaseB);
+    copyFileSync(databaseA, databaseC);
     copyFileSync(fixture.source_path, stagedPath);
+    const stagedBytes = readFileSync(stagedPath);
+    const stagingRoot = dirname(stagedPath);
 
-    const copied = runStartupRecoveryChild({
-      cwd: root,
-      configured_path: canonicalPath,
-      open_path: copyPath
-    });
-    assert.deepEqual(copied.failed, []);
-    assert.equal(existsSync(stagedPath), true);
-
-    const defaultDatabase = runStartupRecoveryChild({
-      cwd: root,
-      configured_path: canonicalPath,
-      open_path: defaultPath
-    });
-    assert.deepEqual(defaultDatabase.failed, []);
-    assert.equal(existsSync(stagedPath), true);
-
-    const canonical = runStartupRecoveryChild({ cwd: root, configured_path: canonicalPath });
-    assert.equal(canonical.failed.some((entry) => entry.code === "MEDIA_BLOB_RECOVERY_PATH_UNSAFE"), false);
-    assert.equal(existsSync(stagedPath), false);
-
-    db = openM0Database(canonicalPath);
-    assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
+    for (const independentlyConfiguredPath of [databaseA, databaseB, databaseC]) {
+      const recovered = runStartupRecoveryChild({
+        cwd: root,
+        configured_path: independentlyConfiguredPath
+      });
+      assert.deepEqual(recovered.failed, []);
+      assert.deepEqual(readFileSync(stagedPath), stagedBytes);
+      const deterministicStages = readdirSync(stagingRoot)
+        .filter((name) => /^blob-recovery-[a-f0-9]{64}\.staged$/i.test(name));
+      assert.deepEqual(deterministicStages, [basename(stagedPath)]);
+    }
   } finally {
-    try { db.close(); } catch { /* already closed before the child-process checks */ }
+    try { db.close(); } catch { /* already closed before the independent child processes */ }
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test("noncanonical database recovery continues its local activation journal", () => {
+test("an independently configured database continues its local activation journal recovery", () => {
   const root = mkdtempSync(join(tmpdir(), "media-recovery-copy-local-journal-"));
   const mediaRoot = join(root, "media");
   const canonicalPath = join(root, "canonical.sqlite");
@@ -2009,8 +1811,7 @@ test("noncanonical database recovery continues its local activation journal", ()
 
     const recovered = runStartupRecoveryChild({
       cwd: root,
-      configured_path: canonicalPath,
-      open_path: copyPath
+      configured_path: copyPath
     });
     assert.equal(recovered.committed.includes(activationId), true);
     assert.equal(existsSync(artifact.storage.uri), true);
@@ -2020,25 +1821,22 @@ test("noncanonical database recovery continues its local activation journal", ()
   }
 });
 
-test("in-memory databases cannot sweep deterministic Blob stages", () => {
+test("in-memory startup recovery preserves deterministic Blob stages", () => {
   const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-memory-db-"));
   const mediaRoot = join(root, "media");
-  const canonicalPath = join(root, "canonical.sqlite");
   const identity = {
     blob_id: `blob_recovery_${randomUUID()}`,
     storage_uri: join(mediaRoot, "artifacts", "videos", "memory.mp4"),
     media_root: mediaRoot
   };
   try {
-    migrateDatabase(canonicalPath);
     mkdirSync(join(mediaRoot, ".activation", "staging"), { recursive: true });
     const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, identity);
     writeFileSync(stagedPath, "preserve-memory-stage", "utf8");
     const recovered = runStartupRecoveryChild({
       cwd: root,
-      configured_path: canonicalPath,
-      open_path: ":memory:",
-      identity
+      configured_path: join(root, "unused-configured.sqlite"),
+      in_memory: true
     });
     assert.deepEqual(recovered.failed, []);
     assert.equal(readFileSync(stagedPath, "utf8"), "preserve-memory-stage");
@@ -2047,99 +1845,7 @@ test("in-memory databases cannot sweep deterministic Blob stages", () => {
   }
 });
 
-test("hard-linked database aliases cannot obtain canonical cleanup authority", (context) => {
-  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-hardlink-db-"));
-  const mediaRoot = join(root, "media");
-  const canonicalPath = join(root, "canonical.sqlite");
-  const aliasPath = join(root, "hardlink-alias.sqlite");
-  migrateDatabase(canonicalPath);
-  const db = openM0Database(canonicalPath);
-  try {
-    const fixture = createRecoverableVideo(db, mediaRoot);
-    const blob = getMediaBlob(db, fixture.artifact.blob_id);
-    assert.ok(blob);
-    const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
-    db.close();
-    try { linkSync(canonicalPath, aliasPath); }
-    catch (error) {
-      context.skip(`Database hard links are unavailable: ${error instanceof Error ? error.message : "HARDLINK_UNAVAILABLE"}`);
-      return;
-    }
-    copyFileSync(fixture.source_path, stagedPath);
-    const recovered = runStartupRecoveryChild({
-      cwd: root,
-      configured_path: canonicalPath,
-      open_path: aliasPath
-    });
-    assert.deepEqual(recovered.failed, []);
-    assert.equal(existsSync(stagedPath), true);
-  } finally {
-    try { db.close(); } catch { /* already closed before alias creation */ }
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("symlinked database paths cannot obtain canonical cleanup authority", (context) => {
-  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-symlink-db-"));
-  const mediaRoot = join(root, "media");
-  const canonicalPath = join(root, "canonical.sqlite");
-  const aliasPath = join(root, "symlink-alias.sqlite");
-  migrateDatabase(canonicalPath);
-  const db = openM0Database(canonicalPath);
-  try {
-    const fixture = createRecoverableVideo(db, mediaRoot);
-    const blob = getMediaBlob(db, fixture.artifact.blob_id);
-    assert.ok(blob);
-    const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
-    db.close();
-    try { symlinkSync(canonicalPath, aliasPath, "file"); }
-    catch (error) {
-      context.skip(`Database symlinks are unavailable: ${error instanceof Error ? error.message : "SYMLINK_UNAVAILABLE"}`);
-      return;
-    }
-    copyFileSync(fixture.source_path, stagedPath);
-    const recovered = runStartupRecoveryChild({ cwd: root, configured_path: aliasPath });
-    assert.deepEqual(recovered.failed, []);
-    assert.equal(existsSync(stagedPath), true);
-  } finally {
-    try { db.close(); } catch { /* already closed before alias creation */ }
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("database paths redirected through an ancestor junction cannot sweep stages", (context) => {
-  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-junction-db-"));
-  const mediaRoot = join(root, "media");
-  const registeredParent = join(root, "registered");
-  const outsideParent = join(root, "outside");
-  const canonicalPath = join(outsideParent, "app.sqlite");
-  const redirectedPath = join(registeredParent, "app.sqlite");
-  mkdirSync(outsideParent, { recursive: true });
-  migrateDatabase(canonicalPath);
-  const db = openM0Database(canonicalPath);
-  try {
-    const fixture = createRecoverableVideo(db, mediaRoot);
-    const blob = getMediaBlob(db, fixture.artifact.blob_id);
-    assert.ok(blob);
-    const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
-    db.close();
-    try { symlinkSync(outsideParent, registeredParent, "junction"); }
-    catch (error) {
-      context.skip(`Directory junctions are unavailable: ${error instanceof Error ? error.message : "JUNCTION_UNAVAILABLE"}`);
-      return;
-    }
-    copyFileSync(fixture.source_path, stagedPath);
-    const recovered = runStartupRecoveryChild({ cwd: root, configured_path: redirectedPath });
-    assert.deepEqual(recovered.failed, []);
-    assert.equal(existsSync(stagedPath), true);
-  } finally {
-    try { db.close(); } catch { /* already closed before junction creation */ }
-    if (existsSync(registeredParent)) rmSync(registeredParent, { force: true });
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("a recovery database copy cannot delete an active canonical recovery stage", async () => {
+test("an independently configured database startup cannot delete an active recovery stage", async () => {
   const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-active-vs-copy-"));
   const mediaRoot = join(root, "media");
   const canonicalPath = join(root, "canonical.sqlite");
@@ -2171,14 +1877,14 @@ test("a recovery database copy cannot delete an active canonical recovery stage"
     const processAResult = waitForChild(processA, 35_000);
     await waitForSignal(readySignal);
     assert.equal(existsSync(stagedPath), true);
+    const stagedBytes = readFileSync(stagedPath);
 
     const copied = runStartupRecoveryChild({
       cwd: root,
-      configured_path: canonicalPath,
-      open_path: copyPath
+      configured_path: copyPath
     });
     assert.deepEqual(copied.failed, []);
-    assert.equal(existsSync(stagedPath), true);
+    assert.deepEqual(readFileSync(stagedPath), stagedBytes);
 
     writeFileSync(releaseSignal, "release", "utf8");
     const completed = await processAResult;
@@ -2194,7 +1900,7 @@ test("a recovery database copy cannot delete an active canonical recovery stage"
   }
 });
 
-test("two processes opening the same canonical database serialize stage recovery", async () => {
+test("two processes opening the same database serialize recovery transactions", async () => {
   const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-same-db-lock-"));
   const mediaRoot = join(root, "media");
   const canonicalPath = join(root, "canonical.sqlite");
@@ -2252,8 +1958,8 @@ test("two processes opening the same canonical database serialize stage recovery
   }
 });
 
-test("after a hard crash only the canonical database can collect the orphan stage", () => {
-  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-crash-db-authority-"));
+test("a hard-crash stage survives generic startup and converges on explicit retry", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-crash-explicit-retry-"));
   const mediaRoot = join(root, "media");
   const canonicalPath = join(root, "canonical.sqlite");
   const copyPath = join(root, "recovery-copy.sqlite");
@@ -2280,15 +1986,14 @@ test("after a hard crash only the canonical database can collect the orphan stag
 
     const copied = runStartupRecoveryChild({
       cwd: root,
-      configured_path: canonicalPath,
-      open_path: copyPath
+      configured_path: copyPath
     });
     assert.deepEqual(copied.failed, []);
     assert.equal(existsSync(stagedPath), true);
 
     const canonical = runStartupRecoveryChild({ cwd: root, configured_path: canonicalPath });
     assert.deepEqual(canonical.failed, []);
-    assert.equal(existsSync(stagedPath), false);
+    assert.equal(existsSync(stagedPath), true);
 
     db = openM0Database(canonicalPath);
     const retried = recoverVerifiedBlobStorage({
@@ -2298,6 +2003,8 @@ test("after a hard crash only the canonical database can collect the orphan stag
       source_path: fixture.source_path
     }, db);
     assert.equal(retried.ok, true, retried.ok ? undefined : retried.error.code);
+    assert.equal(existsSync(stagedPath), false);
+    assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
     assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
   } finally {
     try { db.close(); } catch { /* already closed before child processes */ }
