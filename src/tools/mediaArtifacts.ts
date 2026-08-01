@@ -1513,15 +1513,16 @@ function assertVerifiedBlobRecoveryTargetAuthorityFile(
     const guarded = fstatSync(descriptor);
     const current = statSync(authorityPath);
     const canonicalPath = resolve(realpathSync(authorityPath));
-    const expectedLinkCount = linkedCandidatePath ? 2 : 1;
+    const safeLinkCount = guarded.nlink === 1 || guarded.nlink === 2;
     if (!guarded.isFile()
-      || guarded.nlink !== expectedLinkCount
+      || !safeLinkCount
       || guarded.size <= 0
       || guarded.size > 1024
       || guarded.dev !== entry.dev
       || guarded.ino !== entry.ino
       || guarded.dev !== current.dev
       || guarded.ino !== current.ino
+      || (!linkedCandidatePath && guarded.nlink !== 1)
       || !sameResolvedPath(canonicalPath, authorityPath)) {
       throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
     }
@@ -1552,22 +1553,17 @@ function assertVerifiedBlobRecoveryTargetAuthorityFile(
       throw new Error("MEDIA_BLOB_RECOVERY_BINDING_MISMATCH");
     }
     if (linkedCandidatePath) {
-      const candidate = lstatSync(linkedCandidatePath);
-      if (candidate.isSymbolicLink() || !candidate.isFile()
-        || candidate.nlink !== 2
-        || candidate.dev !== guarded.dev
-        || candidate.ino !== guarded.ino) {
-        throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
-      }
-      rmSync(linkedCandidatePath);
-      const normalizedGuard = fstatSync(descriptor);
-      const normalizedPath = lstatSync(authorityPath);
-      if (!normalizedGuard.isFile() || normalizedGuard.nlink !== 1
-        || normalizedGuard.dev !== guarded.dev || normalizedGuard.ino !== guarded.ino
-        || normalizedPath.isSymbolicLink() || !normalizedPath.isFile()
-        || normalizedPath.nlink !== 1
-        || normalizedPath.dev !== guarded.dev || normalizedPath.ino !== guarded.ino) {
-        throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+      try {
+        const candidate = lstatSync(linkedCandidatePath);
+        if (guarded.nlink !== 2
+          || candidate.isSymbolicLink() || !candidate.isFile()
+          || candidate.nlink !== 2
+          || candidate.dev !== guarded.dev
+          || candidate.ino !== guarded.ino) {
+          throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT" || guarded.nlink !== 1) throw error;
       }
     }
   } finally {
@@ -1905,29 +1901,25 @@ function assertVerifiedBlobRecoveryTargetMutexFile(
   if (guardDescriptor !== undefined) {
     const guarded = fstatSync(guardDescriptor);
     const current = statSync(lockPath);
-    const expectedLinkCount = linkedCandidatePath ? 2 : 1;
-    if (!guarded.isFile() || guarded.nlink !== expectedLinkCount
+    if (!guarded.isFile() || (guarded.nlink !== 1 && guarded.nlink !== 2)
       || guarded.dev !== current.dev || guarded.ino !== current.ino
-      || guarded.dev !== entry.dev || guarded.ino !== entry.ino) {
+      || guarded.dev !== entry.dev || guarded.ino !== entry.ino
+      || (!linkedCandidatePath && guarded.nlink !== 1)) {
       throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
     }
-    assertVerifiedBlobRecoveryTargetMutexHeader(guardDescriptor, lockPath, expectedLinkCount);
+    assertVerifiedBlobRecoveryTargetMutexHeader(guardDescriptor, lockPath, guarded.nlink);
     if (linkedCandidatePath) {
-      const candidate = lstatSync(linkedCandidatePath);
-      if (candidate.isSymbolicLink() || !candidate.isFile()
-        || candidate.nlink !== 2
-        || candidate.dev !== guarded.dev
-        || candidate.ino !== guarded.ino) {
-        throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
-      }
-      rmSync(linkedCandidatePath);
-      const normalizedGuard = fstatSync(guardDescriptor);
-      entry = lstatSync(lockPath);
-      if (!normalizedGuard.isFile() || normalizedGuard.nlink !== 1
-        || normalizedGuard.dev !== guarded.dev || normalizedGuard.ino !== guarded.ino
-        || entry.isSymbolicLink() || !entry.isFile() || entry.nlink !== 1
-        || entry.dev !== guarded.dev || entry.ino !== guarded.ino) {
-        throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+      try {
+        const candidate = lstatSync(linkedCandidatePath);
+        if (guarded.nlink !== 2
+          || candidate.isSymbolicLink() || !candidate.isFile()
+          || candidate.nlink !== 2
+          || candidate.dev !== guarded.dev
+          || candidate.ino !== guarded.ino) {
+          throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT" || guarded.nlink !== 1) throw error;
       }
     }
   }
