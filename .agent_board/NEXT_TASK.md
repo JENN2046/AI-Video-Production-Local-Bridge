@@ -63,10 +63,13 @@ automatically.
    same-inode temp hard link. Follow-ups `568473c` and `e6f1d4b` then close the
    stage-owner-first crash, target-specific SQLite connection identity,
    DOS-short quarantine and validator publication-race findings. Follow-ups
-   `82e6ca2` and `ebb9b07` isolate the verified stage-owner pair into the
-   app-controlled journal before deletion, preserve a target-directory entry
+   `82e6ca2` and `ebb9b07` isolate the verified stage-owner pair before
+   deletion, preserve a target-directory entry
    replaced after validation, make interrupted journal cleanup retryable, and
    preserve every legacy random stage without a persistent ownership record.
+   Final closeout follow-up `112921e` keeps the isolation directory beside the
+   physical target so rename never crosses filesystems and converges the split
+   state left by a hard exit between the two isolation renames.
 - At state sync the unresolved threads are `PRRT_kwDOTTDtUM6VkSwY`,
   `PRRT_kwDOTTDtUM6VkqqS`, `PRRT_kwDOTTDtUM6VkzTz`,
   `PRRT_kwDOTTDtUM6Vk38a`, `PRRT_kwDOTTDtUM6Vk38b`,
@@ -80,7 +83,8 @@ automatically.
   `PRRT_kwDOTTDtUM6Vn2uJ`, `PRRT_kwDOTTDtUM6Vn_4Z` and
   `PRRT_kwDOTTDtUM6Vn_4b`, `PRRT_kwDOTTDtUM6VoG2V`,
   `PRRT_kwDOTTDtUM6VoG2X`, `PRRT_kwDOTTDtUM6VoL5q` and
-  `PRRT_kwDOTTDtUM6VoL5r`.
+  `PRRT_kwDOTTDtUM6VoL5r`, `PRRT_kwDOTTDtUM6VoV-d` and
+  `PRRT_kwDOTTDtUM6VoV-e`.
   Generic startup preserves the bounded stage; explicit recovery is serialized
   by exact target across database files. Exact-head Windows CI and a fresh
   post-promotion Codex review remain required; merge is not authorized.

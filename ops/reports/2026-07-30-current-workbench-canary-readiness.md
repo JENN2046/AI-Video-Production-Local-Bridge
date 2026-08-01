@@ -523,3 +523,16 @@ typecheck, build, secret scan and diff checks. At state sync, 25 PR #109 threads
 remain unresolved pending new exact-head CI and complete review. PR #109 remains
 open, Ready and unmerged. This update does not authorize merge, Provider calls,
 activity-state access, secrets, service operations, deployment or S4.
+
+### PR #109 final closeout correction
+
+Commit `112921e` keeps the verified stage-owner isolation directory on the
+physical target filesystem and recognizes the split state left by a hard exit
+between the two isolation renames. This is a correctness-only closeout fix; it
+adds no product feature, external interface or capability.
+
+Local validation passes with media activation `70 PASS / 1 SKIP`, foundation
+`132 PASS / 1 SKIP`, Provider `52/52`, Workbench V2 `68/68`, selection `23/23`,
+typecheck, build, secret scan and diff checks. At state sync, 27 PR #109 threads
+remain unresolved pending final exact-head CI and closeout review. PR #109 stays
+open, Ready and unmerged.

@@ -300,13 +300,15 @@ exists, initializes the mutex without a path-reopen window, and never treats the
 current validated source as legacy cleanup material. Follow-ups `568473c` and
 `e6f1d4b` close the later stage-owner crash, mutex-connection identity,
 DOS-short quarantine and publication-normalization findings. Follow-ups
-`82e6ca2` and `ebb9b07` move only the verified stage-owner inode pair into the
-app-controlled journal before cleanup, preserve an entry replaced after
+`82e6ca2` and `ebb9b07` isolate only the verified stage-owner inode pair before
+cleanup, preserve an entry replaced after
 validation, and make a hard exit between cleanup entries converge on retry.
-Local validation passes with media activation 69 PASS / 0 FAIL / 1
-platform-capability skip, Foundation 131 PASS / 0 FAIL / 1 platform-capability skip,
+Final closeout follow-up `112921e` keeps cleanup on the target filesystem and
+converges a hard exit between the two isolation renames. Local validation
+passes with media activation 70 PASS / 0 FAIL / 1 platform-capability skip,
+Foundation 132 PASS / 0 FAIL / 1 platform-capability skip,
 Provider 52/52, Workbench V2 68/68 and selection 23/23; typecheck, build, secret
-scan and diff checks also pass. At state sync the 25 unresolved PR #109 threads
+scan and diff checks also pass. At state sync the 27 unresolved PR #109 threads
 are `PRRT_kwDOTTDtUM6VkSwY`, `PRRT_kwDOTTDtUM6VkqqS`,
 `PRRT_kwDOTTDtUM6VkzTz`, `PRRT_kwDOTTDtUM6Vk38a`,
 `PRRT_kwDOTTDtUM6Vk38b`, `PRRT_kwDOTTDtUM6VlUo8`,
@@ -319,7 +321,8 @@ are `PRRT_kwDOTTDtUM6VkSwY`, `PRRT_kwDOTTDtUM6VkqqS`,
 `PRRT_kwDOTTDtUM6Vnvkv`, `PRRT_kwDOTTDtUM6Vn2uJ`,
 `PRRT_kwDOTTDtUM6Vn_4Z`, `PRRT_kwDOTTDtUM6Vn_4b`,
 `PRRT_kwDOTTDtUM6VoG2V`, `PRRT_kwDOTTDtUM6VoG2X`,
-`PRRT_kwDOTTDtUM6VoL5q` and `PRRT_kwDOTTDtUM6VoL5r`. All 25 threads remain unresolved pending
+`PRRT_kwDOTTDtUM6VoL5q`, `PRRT_kwDOTTDtUM6VoL5r`,
+`PRRT_kwDOTTDtUM6VoV-d` and `PRRT_kwDOTTDtUM6VoV-e`. All 27 threads remain unresolved pending
 new exact-head CI and a fresh complete review. PR #109
 remains open and unmerged.
 Cross-database explicit recovery is serialized by an exact-target SQLite mutex,

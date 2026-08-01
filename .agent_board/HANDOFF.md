@@ -1243,3 +1243,15 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
   open, Ready and unmerged; merge is not authorized.
 - No Provider, activity database/media, secret, service, deployment or S4
   operation occurred.
+
+## PR #109 final closeout correction
+
+- Candidate commit: `112921e`.
+- Cleanup isolation now stays on the physical target filesystem, and the split
+  stage-isolated/owner-original hard-exit state converges on retry.
+- Local gates: media activation `70 PASS / 1 SKIP`, foundation
+  `132 PASS / 1 SKIP`, provider `52/52`, Workbench V2 `68/68`, selection
+  `23/23`, plus typecheck, build, secret scan and diff checks.
+- At state sync, 27 PR #109 threads remain unresolved pending exact-head CI and
+  one final closeout review. No further feature or capability expansion is in
+  scope. PR #109 remains open, Ready and unmerged.
