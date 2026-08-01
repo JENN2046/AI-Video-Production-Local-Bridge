@@ -841,6 +841,17 @@ function hasSymlinkAncestorBeforeCanonicalRoot(child: string, canonicalRoot: str
   }
 }
 
+function isWindowsDosShortFilename(filename: string): boolean {
+  const extensionIndex = filename.lastIndexOf(".");
+  const base = extensionIndex > 0 ? filename.slice(0, extensionIndex) : filename;
+  const extension = extensionIndex > 0 ? filename.slice(extensionIndex + 1) : "";
+  const shortCharacter = "[^<>:\"/\\\\|?*.\\s~]";
+  return base.length <= 8
+    && extension.length <= 3
+    && new RegExp(`^${shortCharacter}{1,6}~[0-9]{1,6}$`, "i").test(base)
+    && (extension === "" || new RegExp(`^${shortCharacter}{1,3}$`, "i").test(extension));
+}
+
 function verifiedBlobRecoveryError(error: unknown): ToolError {
   const candidate = error instanceof Error ? error.message : "";
   const code = Object.hasOwn(VERIFIED_BLOB_RECOVERY_ERROR_MESSAGES, candidate)
@@ -1105,7 +1116,7 @@ function recoveryRootAndTarget(blob: MediaBlob): {
       throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
     }
     targetPath = resolve(realpathSync(registeredTargetPath));
-  } else if (process.platform === "win32" && basename(registeredTargetPath).includes("~")) {
+  } else if (process.platform === "win32" && isWindowsDosShortFilename(basename(registeredTargetPath))) {
     // A missing DOS-short filename cannot be expanded back to its physical long
     // name, so deriving a second recovery identity would be unsafe.
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");

@@ -1921,6 +1921,41 @@ test("Windows long and DOS-short target aliases share recovery identities", (con
   }
 });
 
+test("Windows recovery accepts a missing ordinary filename containing a tilde", (context) => {
+  if (process.platform !== "win32") {
+    context.skip("Windows filename classification is Windows-only");
+    return;
+  }
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-ordinary-tilde-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const targetDirectory = join(mediaRoot, "artifacts", "videos");
+    const sourceDirectory = join(mediaRoot, "downloads");
+    mkdirSync(targetDirectory, { recursive: true });
+    mkdirSync(sourceDirectory, { recursive: true });
+    const targetPath = join(targetDirectory, "final~edited.mp4");
+    const sourcePath = join(sourceDirectory, `source-${randomUUID()}.mp4`);
+    copyFileSync(VIDEO_FIXTURE, sourcePath);
+    const fixture = insertUnsafeRecoveryFixture(db, mediaRoot, targetPath, sourcePath);
+
+    const recovered = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.artifact.linked_objects.project_id,
+      shot_id: fixture.artifact.linked_objects.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(recovered.ok, true, recovered.ok ? undefined : recovered.error.code);
+    assert.equal(existsSync(targetPath), true);
+    assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("one physical target rejects a different registered media-root authority", () => {
   const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-root-authority-"));
   const mediaRoot = join(root, "media");
