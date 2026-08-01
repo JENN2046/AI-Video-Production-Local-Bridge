@@ -119,12 +119,13 @@ function verifiedBlobRecoveryStagePath(
   mediaRoot: string,
   blob: { blob_id: string; storage_uri: string }
 ): string {
+  const physicalTargetPath = existsSync(blob.storage_uri)
+    ? resolve(realpathSync(blob.storage_uri))
+    : resolve(realpathSync(dirname(blob.storage_uri)), basename(blob.storage_uri));
   const storageIdentity = process.platform === "win32"
-    ? resolve(blob.storage_uri).toLowerCase()
-    : resolve(blob.storage_uri);
+    ? physicalTargetPath.toLowerCase()
+    : physicalTargetPath;
   const digest = createHash("sha256")
-    .update(blob.blob_id)
-    .update("\0")
     .update(storageIdentity)
     .digest("hex");
   return resolve(mediaRoot, ".activation", "staging", `blob-recovery-${digest}.staged`);
@@ -135,20 +136,41 @@ function verifiedBlobRecoveryMutexPath(mediaRoot: string, storageUri: string): s
     const resolvedPath = resolve(value);
     return process.platform === "win32" ? resolvedPath.toLowerCase() : resolvedPath;
   };
+  const physicalTargetPath = existsSync(storageUri)
+    ? resolve(realpathSync(storageUri))
+    : resolve(realpathSync(dirname(storageUri)), basename(storageUri));
   const digest = createHash("sha256")
     .update(mutexIdentityPath(realpathSync(mediaRoot)))
     .update("\0")
-    .update(mutexIdentityPath(storageUri))
+    .update(mutexIdentityPath(physicalTargetPath))
     .digest("hex");
   return resolve(mediaRoot, ".activation", "journal", `blob-recovery-target-${digest}.lock.sqlite`);
 }
 
 function verifiedBlobRecoveryAuthorityPath(storageUri: string): string {
+  const physicalTargetPath = existsSync(storageUri)
+    ? resolve(realpathSync(storageUri))
+    : resolve(realpathSync(dirname(storageUri)), basename(storageUri));
   const targetIdentity = process.platform === "win32"
-    ? resolve(storageUri).toLowerCase()
-    : resolve(storageUri);
+    ? physicalTargetPath.toLowerCase()
+    : physicalTargetPath;
   const digest = createHash("sha256").update(targetIdentity).digest("hex");
-  return resolve(dirname(storageUri), `.blob-recovery-target-${digest}.authority.json`);
+  return resolve(dirname(physicalTargetPath), `.blob-recovery-target-${digest}.authority.json`);
+}
+
+function windowsShortPath(filePath: string): string | null {
+  if (process.platform !== "win32" || filePath.includes('"')) return null;
+  const result = spawnSync(
+    "cmd.exe",
+    ["/d", "/s", "/c", `for %I in ("${filePath}") do @echo %~sI`],
+    { encoding: "utf8", windowsHide: true }
+  );
+  const candidate = result.status === 0 ? result.stdout.trim() : "";
+  return candidate
+    && candidate.includes("~")
+    && resolve(candidate).toLowerCase() !== resolve(filePath).toLowerCase()
+    ? resolve(candidate)
+    : null;
 }
 
 function hardCrashVerifiedBlobRecovery(input: {
@@ -1729,7 +1751,7 @@ test("independent databases serialize explicit recovery for the same Blob target
   }
 });
 
-test("different Blob ids sharing one storage target use the same mutex", async () => {
+test("different Blob ids sharing one storage target use the same mutex and stage", async () => {
   const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-shared-target-"));
   const mediaRoot = join(root, "media");
   const databaseA = join(root, "database-a.sqlite");
@@ -1767,6 +1789,9 @@ test("different Blob ids sharing one storage target use the same mutex", async (
       verifiedBlobRecoveryMutexPath(mediaRoot, blobA.storage_uri),
       verifiedBlobRecoveryMutexPath(mediaRoot, blobB.storage_uri)
     );
+    const stageA = verifiedBlobRecoveryStagePath(mediaRoot, blobA);
+    const stageB = verifiedBlobRecoveryStagePath(mediaRoot, blobB);
+    assert.equal(stageA, stageB);
     dbA.close();
     dbB.close();
     rmSync(fixtureA.artifact.storage.uri);
@@ -1782,6 +1807,11 @@ test("different Blob ids sharing one storage target use the same mutex", async (
       release_signal: releaseA
     });
     await waitForSignal(readyA);
+    const stagedBytes = readFileSync(stageA);
+    assert.equal(processA.kill(), true);
+    const crashedA = await waitForChild(processA);
+    assert.notEqual(crashedA.code, 0);
+    processA = null;
     processB = startVerifiedBlobRecovery({
       cwd: root,
       sqlite_path: databaseB,
@@ -1790,21 +1820,97 @@ test("different Blob ids sharing one storage target use the same mutex", async (
       shot_id: fixtureB.artifact.linked_objects.shot_id,
       source_path: fixtureB.source_path
     });
-    await new Promise((resolveWait) => setTimeout(resolveWait, 150));
-    assert.equal(processB.exitCode, null);
-    writeFileSync(releaseA, "release", "utf8");
-    const completedA = await waitForChild(processA);
     const completedB = await waitForChild(processB);
-    assert.equal(completedA.code, 0, completedA.stderr);
     assert.equal(completedB.code, 0, completedB.stderr);
     const resultB = JSON.parse(completedB.stdout) as ReturnType<typeof recoverVerifiedBlobStorage>;
     assert.equal(resultB.ok, true, resultB.ok ? undefined : resultB.error.code);
-    if (resultB.ok) assert.equal(resultB.outcome, "ALREADY_REUSABLE");
+    if (resultB.ok) assert.equal(resultB.outcome, "MISSING_BYTES");
+    assert.equal(existsSync(stageA), false);
+    assert.deepEqual(readFileSync(fixtureA.artifact.storage.uri), stagedBytes);
   } finally {
     if (processA?.exitCode === null) processA.kill();
     if (processB?.exitCode === null) processB.kill();
     try { dbA.close(); } catch { /* closed before child processes */ }
     try { dbB.close(); } catch { /* closed before child processes */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Windows long and DOS-short target aliases share recovery identities", (context) => {
+  if (process.platform !== "win32") {
+    context.skip("DOS short-path aliases are Windows-only");
+    return;
+  }
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-short-alias-"));
+  const mediaRoot = join(root, "media-directory-with-long-name");
+  const databaseA = join(root, "database-a.sqlite");
+  const databaseB = join(root, "database-b.sqlite");
+  migrateDatabase(databaseA);
+  migrateDatabase(databaseB);
+  const dbA = openM0Database(databaseA);
+  const dbB = openM0Database(databaseB);
+  try {
+    const fixtureA = createRecoverableVideo(dbA, mediaRoot);
+    const shortTarget = windowsShortPath(fixtureA.artifact.storage.uri);
+    if (!shortTarget) {
+      context.skip("The test volume does not expose a distinct DOS short-path alias");
+      return;
+    }
+    const fixtureB = insertUnsafeRecoveryFixture(
+      dbB,
+      mediaRoot,
+      shortTarget,
+      fixtureA.source_path,
+      `blob_short_alias_${randomUUID()}`
+    );
+    const blobA = getMediaBlob(dbA, fixtureA.artifact.blob_id);
+    const blobB = getMediaBlob(dbB, fixtureB.artifact.blob_id);
+    assert.ok(blobA);
+    assert.ok(blobB);
+    assert.equal(
+      verifiedBlobRecoveryMutexPath(mediaRoot, blobA.storage_uri),
+      verifiedBlobRecoveryMutexPath(mediaRoot, blobB.storage_uri)
+    );
+    assert.equal(
+      verifiedBlobRecoveryStagePath(mediaRoot, blobA),
+      verifiedBlobRecoveryStagePath(mediaRoot, blobB)
+    );
+    assert.equal(
+      verifiedBlobRecoveryAuthorityPath(blobA.storage_uri),
+      verifiedBlobRecoveryAuthorityPath(blobB.storage_uri)
+    );
+
+    for (const [fixture, database] of [[fixtureA, dbA], [fixtureB, dbB]] as const) {
+      const recovered = recoverVerifiedBlobStorage({
+        invalid_artifact_id: fixture.artifact.artifact_id,
+        project_id: fixture.artifact.linked_objects.project_id,
+        shot_id: fixture.artifact.linked_objects.shot_id,
+        source_path: fixture.source_path
+      }, database);
+      assert.equal(recovered.ok, true, recovered.ok ? undefined : recovered.error.code);
+      if (recovered.ok) assert.equal(recovered.outcome, "ALREADY_REUSABLE");
+    }
+    rmSync(fixtureA.artifact.storage.uri);
+    const unprovableMissingAlias = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixtureB.artifact.artifact_id,
+      project_id: fixtureB.artifact.linked_objects.project_id,
+      shot_id: fixtureB.artifact.linked_objects.shot_id,
+      source_path: fixtureB.source_path
+    }, dbB);
+    assert.equal(unprovableMissingAlias.ok, false);
+    if (!unprovableMissingAlias.ok) {
+      assert.equal(unprovableMissingAlias.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    const recoveredLongPath = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixtureA.artifact.artifact_id,
+      project_id: fixtureA.project_id,
+      shot_id: fixtureA.shot_id,
+      source_path: fixtureA.source_path
+    }, dbA);
+    assert.equal(recoveredLongPath.ok, true, recoveredLongPath.ok ? undefined : recoveredLongPath.error.code);
+  } finally {
+    dbB.close();
+    dbA.close();
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -2664,6 +2770,7 @@ test("in-memory startup recovery preserves deterministic Blob stages", () => {
   };
   try {
     mkdirSync(join(mediaRoot, ".activation", "staging"), { recursive: true });
+    mkdirSync(dirname(identity.storage_uri), { recursive: true });
     const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, identity);
     writeFileSync(stagedPath, "preserve-memory-stage", "utf8");
     const recovered = runStartupRecoveryChild({

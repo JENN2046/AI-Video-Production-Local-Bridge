@@ -827,6 +827,20 @@ function verifiedBlobRecoveryPathIdentity(value: string): string {
   return process.platform === "win32" ? resolvedPath.toLowerCase() : resolvedPath;
 }
 
+function hasSymlinkAncestorBeforeCanonicalRoot(child: string, canonicalRoot: string): boolean {
+  let current = resolve(child);
+  const expectedRoot = resolve(canonicalRoot);
+  while (true) {
+    if (!existsSync(current)) return true;
+    const entry = lstatSync(current);
+    if (entry.isSymbolicLink()) return true;
+    if (sameResolvedPath(resolve(realpathSync(current)), expectedRoot)) return false;
+    const parent = dirname(current);
+    if (parent === current) return true;
+    current = parent;
+  }
+}
+
 function verifiedBlobRecoveryError(error: unknown): ToolError {
   const candidate = error instanceof Error ? error.message : "";
   const code = Object.hasOwn(VERIFIED_BLOB_RECOVERY_ERROR_MESSAGES, candidate)
@@ -852,28 +866,25 @@ function assertRecoveryRegularFile(filePath: string, registeredRoot: string, can
   }
 }
 
-function verifiedBlobRecoveryStagingPathForIdentity(
-  blobId: string,
-  storageUri: string,
+function verifiedBlobRecoveryStagingPathForTarget(
+  targetPath: string,
   roots: ReturnType<typeof activationRoots>,
   registeredRoot: string
 ): string {
-  if (!blobId || !isAbsolute(storageUri)) {
+  if (!isAbsolute(targetPath)) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
-  const resolvedStorageUri = resolve(storageUri);
-  if (!isPathInside(resolvedStorageUri, registeredRoot)) {
+  const resolvedTargetPath = resolve(targetPath);
+  if (!isPathInside(resolvedTargetPath, registeredRoot)) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
   const digest = createHash("sha256")
-    .update(blobId)
-    .update("\0")
-    .update(verifiedBlobRecoveryPathIdentity(resolvedStorageUri))
+    .update(verifiedBlobRecoveryPathIdentity(resolvedTargetPath))
     .digest("hex");
   const stagedPath = resolve(roots.staging, `blob-recovery-${digest}.staged`);
   if (!isPathInside(stagedPath, roots.staging)
     || !isPathInside(stagedPath, registeredRoot)
-    || sameResolvedPath(stagedPath, resolvedStorageUri)
+    || sameResolvedPath(stagedPath, resolvedTargetPath)
     || hasExistingSymlinkAncestor(stagedPath, roots.activation)) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
@@ -1071,19 +1082,35 @@ function recoveryRootAndTarget(blob: MediaBlob): {
   if (!sameResolvedPath(canonicalRoot, registeredRoot)) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
-  const targetPath = resolve(blob.storage_uri);
-  const targetDirectory = dirname(targetPath);
-  if (!isPathInside(targetPath, registeredRoot)
-    || !existsSync(targetDirectory)
-    || hasExistingSymlinkAncestor(targetDirectory, registeredRoot)) {
+  const registeredTargetPath = resolve(blob.storage_uri);
+  const registeredTargetDirectory = dirname(registeredTargetPath);
+  if (!existsSync(registeredTargetDirectory)
+    || hasSymlinkAncestorBeforeCanonicalRoot(registeredTargetDirectory, canonicalRoot)) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
-  const directoryEntry = lstatSync(targetDirectory);
+  const directoryEntry = lstatSync(registeredTargetDirectory);
   if (directoryEntry.isSymbolicLink() || !directoryEntry.isDirectory()) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
-  const canonicalDirectory = resolve(realpathSync(targetDirectory));
+  const canonicalDirectory = resolve(realpathSync(registeredTargetDirectory));
   if (!isPathInside(canonicalDirectory, canonicalRoot)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  let targetPath = resolve(canonicalDirectory, basename(registeredTargetPath));
+  if (existsSync(registeredTargetPath)) {
+    const targetEntry = lstatSync(registeredTargetPath);
+    if (targetEntry.isSymbolicLink() || !targetEntry.isFile()) {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    targetPath = resolve(realpathSync(registeredTargetPath));
+  } else if (process.platform === "win32" && basename(registeredTargetPath).includes("~")) {
+    // A missing DOS-short filename cannot be expanded back to its physical long
+    // name, so deriving a second recovery identity would be unsafe.
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  const targetDirectory = dirname(targetPath);
+  if (!sameResolvedPath(targetDirectory, canonicalDirectory)
+    || !isPathInside(targetPath, canonicalRoot)) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
   return { registeredRoot, canonicalRoot, targetPath, targetDirectory };
@@ -1533,9 +1560,8 @@ export function recoverVerifiedBlobStorage(
     let activation: ReturnType<typeof activationRoots>;
     try { activation = ensureSafeActivationRoots(preflightPaths.registeredRoot, true); }
     catch { throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE"); }
-    const preflightStagedPath = verifiedBlobRecoveryStagingPathForIdentity(
-      preflight.blob.blob_id,
-      preflight.blob.storage_uri,
+    const preflightStagedPath = verifiedBlobRecoveryStagingPathForTarget(
+      preflightPaths.targetPath,
       activation,
       preflightPaths.registeredRoot
     );
@@ -1586,9 +1612,8 @@ export function recoverVerifiedBlobStorage(
     try { activation = ensureSafeActivationRoots(registeredRoot, false); }
     catch { throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE"); }
     recoveryStagingRoot = activation.staging;
-    stagedPath = verifiedBlobRecoveryStagingPathForIdentity(
-      blob.blob_id,
-      blob.storage_uri,
+    stagedPath = verifiedBlobRecoveryStagingPathForTarget(
+      recoveryPaths.targetPath,
       activation,
       registeredRoot
     );
