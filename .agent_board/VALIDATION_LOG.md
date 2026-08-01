@@ -3421,6 +3421,28 @@ remaining_test_processes: 0
 exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
 ```
 
+### PR109 Windows short-path probe parsing
+
+```yaml
+task: PR109-T4_CROSS_DATABASE_BLOB_TARGET_MUTEX
+recorded_at: 2026-08-01T12:48:17+08:00
+failed_ci_run: 30684275229
+failed_step: Foundation_and_media_boundary_tests
+failure_class: TEST_PROBE_QUOTED_SHORT_PATH
+production_recovery_failure: false
+test_fix_commit: 94bd81b
+local_validation:
+  typecheck: PASS
+  foundation_boundaries: PASS_123_FAIL_0_PLATFORM_SKIP_1
+  provider_boundaries: PASS_52
+  workbench_v2: PASS_68
+  selection_gate: PASS_23
+  build: PASS
+  secret_scan: PASS
+  git_diff_check: PASS
+exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
+```
+
 ### PR109 atomic Blob target-authority publication
 
 ```yaml

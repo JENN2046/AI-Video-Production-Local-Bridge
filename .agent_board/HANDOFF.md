@@ -58,6 +58,10 @@ Ready task count: 0
   share one stage; Windows DOS-short aliases resolve through `realpath` while
   present, and a missing short filename fails closed when its long identity can
   no longer be proven.
+- Windows CI run `30684275229` reached the real 8.3 branch but the test helper
+  retained `cmd` output quotes and constructed an invalid probe path. Follow-up
+  `94bd81b` strips only a matching outer quote pair; that failed run is not
+  final evidence and a new exact-head run is required.
 - At state sync these PR #109 threads remain unresolved pending exact-head CI
   and a fresh review: `PRRT_kwDOTTDtUM6Vdmly`, `PRRT_kwDOTTDtUM6VeTXd`,
   `PRRT_kwDOTTDtUM6VekUB`, `PRRT_kwDOTTDtUM6VkSwY` and

@@ -36,6 +36,8 @@ automatically.
    and fsynced unique temp, so a pre-publication hard exit cannot block retry.
    Follow-up `cc6dd87` canonicalizes the physical target for mutex, authority
    and stage identity and removes database-local Blob ids from the shared stage.
+   Windows CI run `30684275229` exposed quoted `cmd` output in the 8.3 test
+   helper; `94bd81b` normalizes that output and requires a fresh exact-head run.
 - Prior whitelist thread `PRRT_kwDOTTDtUM6VdGmY` is resolved. At state sync
   threads `PRRT_kwDOTTDtUM6Vdmly`, `PRRT_kwDOTTDtUM6VeTXd`,
   `PRRT_kwDOTTDtUM6VekUB`, `PRRT_kwDOTTDtUM6VkSwY` and

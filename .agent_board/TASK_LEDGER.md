@@ -5310,6 +5310,11 @@ windows_mutex_identity_commit: 20f029e
 target_authority_commit: 95d8b29
 authority_atomic_publish_commit: 84e4ef1
 physical_target_identity_commit: cc6dd87
+windows_short_path_test_fix_commit: 94bd81b
+superseded_failed_ci:
+  run_id: 30684275229
+  failure_class: TEST_PROBE_QUOTED_SHORT_PATH
+  production_recovery_failure: false
 remediation_strategy: CROSS_DATABASE_TARGET_SQLITE_MUTEX
 unresolved_threads_at_state_sync:
   - PRRT_kwDOTTDtUM6Vdmly

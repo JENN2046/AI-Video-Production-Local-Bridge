@@ -18,7 +18,9 @@ Repository baseline: `main@808d9334a49def7ce858f7c6138af75fed392c5b`
   disclosure target authority record. The follow-up candidate also derives
   mutex, authority and stage identity from the canonical physical target and
   removes database-local Blob ids from stage identity; exact-final-head CI and
-  review are still required before its review threads may be resolved.
+  review are still required before its review threads may be resolved. Windows
+  CI run `30684275229` was superseded after its 8.3 test helper retained output
+  quotes; follow-up `94bd81b` normalizes that test output and awaits a new run.
 - The final PR #106 head passed both `Quality and integration` and
   `Browser smoke`; the squash commit has the same tree as that reviewed head.
 - Code and CI PASS establish repository facts only. They do not create a new
