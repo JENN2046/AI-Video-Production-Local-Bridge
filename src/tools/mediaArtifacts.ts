@@ -868,7 +868,7 @@ function assertRecoveryRegularFile(filePath: string, registeredRoot: string, can
 
 function verifiedBlobRecoveryStagingPathForTarget(
   targetPath: string,
-  roots: ReturnType<typeof activationRoots>,
+  _roots: ReturnType<typeof activationRoots>,
   registeredRoot: string
 ): string {
   if (!isAbsolute(targetPath)) {
@@ -881,11 +881,12 @@ function verifiedBlobRecoveryStagingPathForTarget(
   const digest = createHash("sha256")
     .update(verifiedBlobRecoveryPathIdentity(resolvedTargetPath))
     .digest("hex");
-  const stagedPath = resolve(roots.staging, `blob-recovery-${digest}.staged`);
-  if (!isPathInside(stagedPath, roots.staging)
+  const targetDirectory = dirname(resolvedTargetPath);
+  const stagedPath = resolve(targetDirectory, `blob-recovery-${digest}.staged`);
+  if (!sameResolvedPath(dirname(stagedPath), targetDirectory)
     || !isPathInside(stagedPath, registeredRoot)
     || sameResolvedPath(stagedPath, resolvedTargetPath)
-    || hasExistingSymlinkAncestor(stagedPath, roots.activation)) {
+    || hasExistingSymlinkAncestor(stagedPath, registeredRoot)) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
   return stagedPath;
@@ -894,16 +895,17 @@ function verifiedBlobRecoveryStagingPathForTarget(
 function assertExpectedRecoveryStagingFile(
   stagedPath: string,
   expectedStagedPath: string,
-  roots: ReturnType<typeof activationRoots>,
+  _roots: ReturnType<typeof activationRoots>,
   registeredRoot: string,
   canonicalRoot: string
 ): void {
   const resolvedPath = resolve(stagedPath);
+  const expectedDirectory = dirname(resolve(expectedStagedPath));
   if (!sameResolvedPath(resolvedPath, expectedStagedPath)
     || !DETERMINISTIC_BLOB_RECOVERY_STAGING_NAME.test(basename(resolvedPath))
-    || !sameResolvedPath(dirname(resolvedPath), roots.staging)
+    || !sameResolvedPath(dirname(resolvedPath), expectedDirectory)
     || !isPathInside(resolvedPath, registeredRoot)
-    || hasExistingSymlinkAncestor(resolvedPath, roots.activation)
+    || hasExistingSymlinkAncestor(resolvedPath, registeredRoot)
     || !existsSync(resolvedPath)) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
@@ -912,7 +914,7 @@ function assertExpectedRecoveryStagingFile(
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
   const canonicalPath = resolve(realpathSync(resolvedPath));
-  const canonicalStaging = resolve(realpathSync(roots.staging));
+  const canonicalStaging = resolve(realpathSync(expectedDirectory));
   if (!isPathInside(canonicalPath, canonicalRoot)
     || !sameResolvedPath(dirname(canonicalPath), canonicalStaging)) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
@@ -1006,7 +1008,7 @@ function normalizeInterruptedVerifiedBlobPlacement(
   targetPath: string,
   targetDirectory: string,
   deterministicStagedPath: string,
-  roots: ReturnType<typeof activationRoots>,
+  _roots: ReturnType<typeof activationRoots>,
   registeredRoot: string,
   canonicalRoot: string
 ): void {
@@ -1026,8 +1028,8 @@ function normalizeInterruptedVerifiedBlobPlacement(
     .filter((candidatePath, index, candidates) => candidates.indexOf(candidatePath) === index)
     .filter((candidatePath) => {
       const deterministicCandidate = sameResolvedPath(candidatePath, deterministicStagedPath);
-      const candidateBoundary = deterministicCandidate ? roots.activation : registeredRoot;
-      const expectedDirectory = deterministicCandidate ? roots.staging : targetDirectory;
+      const candidateBoundary = registeredRoot;
+      const expectedDirectory = targetDirectory;
       if (!sameResolvedPath(dirname(candidatePath), expectedDirectory)
         || !isPathInside(candidatePath, registeredRoot)
         || hasExistingSymlinkAncestor(candidatePath, candidateBoundary)
@@ -1579,8 +1581,6 @@ export function recoverVerifiedBlobStorage(
       busyTimeoutMs
     );
     faults.after_target_mutex_acquired?.();
-    ensureVerifiedBlobRecoveryTargetAuthority(preflightPaths, preflight.blob, faults);
-
     db.exec("BEGIN IMMEDIATE");
     transactionOpen = true;
     const binding = readVerifiedBlobRecoveryBinding(input, db);
@@ -1608,10 +1608,9 @@ export function recoverVerifiedBlobStorage(
       || sourceFacts.detected_mime !== "video/mp4") {
       throw new Error("MEDIA_BLOB_RECOVERY_CONTENT_MISMATCH");
     }
-
     try { activation = ensureSafeActivationRoots(registeredRoot, false); }
     catch { throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE"); }
-    recoveryStagingRoot = activation.staging;
+    recoveryStagingRoot = recoveryPaths.targetDirectory;
     stagedPath = verifiedBlobRecoveryStagingPathForTarget(
       recoveryPaths.targetPath,
       activation,
@@ -1624,6 +1623,7 @@ export function recoverVerifiedBlobStorage(
       )) {
       throw new Error("MEDIA_BLOB_RECOVERY_BINDING_MISMATCH");
     }
+    ensureVerifiedBlobRecoveryTargetAuthority(recoveryPaths, blob, faults);
     filesystemRecoveryStarted = true;
 
     if (existsSync(targetPath)) {

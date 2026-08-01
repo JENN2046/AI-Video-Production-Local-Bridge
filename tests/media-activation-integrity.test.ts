@@ -116,8 +116,8 @@ function immutableBlobSnapshot(db: M0Database, artifactId: string): {
 }
 
 function verifiedBlobRecoveryStagePath(
-  mediaRoot: string,
-  blob: { blob_id: string; storage_uri: string }
+  _mediaRoot: string,
+  blob: { storage_uri: string }
 ): string {
   const physicalTargetPath = existsSync(blob.storage_uri)
     ? resolve(realpathSync(blob.storage_uri))
@@ -128,7 +128,12 @@ function verifiedBlobRecoveryStagePath(
   const digest = createHash("sha256")
     .update(storageIdentity)
     .digest("hex");
-  return resolve(mediaRoot, ".activation", "staging", `blob-recovery-${digest}.staged`);
+  return resolve(dirname(physicalTargetPath), `blob-recovery-${digest}.staged`);
+}
+
+function testPathIdentity(value: string): string {
+  const resolvedPath = resolve(value);
+  return process.platform === "win32" ? resolvedPath.toLowerCase() : resolvedPath;
 }
 
 function verifiedBlobRecoveryMutexPath(mediaRoot: string, storageUri: string): string {
@@ -1698,8 +1703,8 @@ test("independent databases serialize explicit recovery for the same Blob target
       blob.blob_id
     );
     assert.equal(
-      verifiedBlobRecoveryStagePath(mediaRoot, blob),
-      verifiedBlobRecoveryStagePath(mediaRoot, { ...blob, storage_uri: storageVariant })
+      testPathIdentity(verifiedBlobRecoveryStagePath(mediaRoot, blob)),
+      testPathIdentity(verifiedBlobRecoveryStagePath(mediaRoot, { ...blob, storage_uri: storageVariant }))
     );
     db.close();
     dbB.close();
@@ -1792,7 +1797,7 @@ test("different Blob ids sharing one storage target use the same mutex and stage
     );
     const stageA = verifiedBlobRecoveryStagePath(mediaRoot, blobA);
     const stageB = verifiedBlobRecoveryStagePath(mediaRoot, blobB);
-    assert.equal(stageA, stageB);
+    assert.equal(testPathIdentity(stageA), testPathIdentity(stageB));
     dbA.close();
     dbB.close();
     rmSync(fixtureA.artifact.storage.uri);
@@ -1873,8 +1878,8 @@ test("Windows long and DOS-short target aliases share recovery identities", (con
       verifiedBlobRecoveryMutexPath(mediaRoot, blobB.storage_uri)
     );
     assert.equal(
-      verifiedBlobRecoveryStagePath(mediaRoot, blobA),
-      verifiedBlobRecoveryStagePath(mediaRoot, blobB)
+      testPathIdentity(verifiedBlobRecoveryStagePath(mediaRoot, blobA)),
+      testPathIdentity(verifiedBlobRecoveryStagePath(mediaRoot, blobB))
     );
     assert.equal(
       verifiedBlobRecoveryAuthorityPath(blobA.storage_uri),
@@ -1960,6 +1965,59 @@ test("one physical target rejects a different registered media-root authority", 
     if (!blockedB.ok) assert.equal(blockedB.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
     assert.deepEqual(readFileSync(targetPath), acceptedBytes);
     assert.deepEqual(readFileSync(authorityPath), authorityBytes);
+  } finally {
+    dbB.close();
+    dbA.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("invalid recovery input cannot publish target authority before source validation", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-authority-input-order-"));
+  const mediaRoot = join(root, "media");
+  const databaseA = join(root, "database-a.sqlite");
+  const databaseB = join(root, "database-b.sqlite");
+  migrateDatabase(databaseA);
+  migrateDatabase(databaseB);
+  const dbA = openM0Database(databaseA);
+  const dbB = openM0Database(databaseB);
+  try {
+    const fixtureA = createRecoverableVideo(dbA, mediaRoot);
+    const targetPath = fixtureA.artifact.storage.uri;
+    const authorityPath = verifiedBlobRecoveryAuthorityPath(targetPath);
+    const invalidSource = join(mediaRoot, "downloads", `invalid-${randomUUID()}.mp4`);
+    writeFileSync(invalidSource, "not-the-registered-blob", "utf8");
+    rmSync(targetPath);
+
+    const rejectedA = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixtureA.artifact.artifact_id,
+      project_id: fixtureA.project_id,
+      shot_id: fixtureA.shot_id,
+      source_path: invalidSource
+    }, dbA);
+    assert.equal(rejectedA.ok, false);
+    if (!rejectedA.ok) assert.equal(rejectedA.error.code, "MEDIA_BLOB_RECOVERY_CONTENT_MISMATCH");
+    assert.equal(existsSync(authorityPath), false);
+
+    const sourceB = join(mediaRoot, "downloads", `valid-${randomUUID()}.mp4`);
+    writeFileSync(sourceB, Buffer.concat([readFileSync(VIDEO_FIXTURE), Buffer.from("valid-second-authority")]));
+    const fixtureB = insertUnsafeRecoveryFixture(
+      dbB,
+      mediaRoot,
+      targetPath,
+      sourceB,
+      `blob_valid_${randomUUID()}`,
+      sourceB
+    );
+    const recoveredB = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixtureB.artifact.artifact_id,
+      project_id: fixtureB.artifact.linked_objects.project_id,
+      shot_id: fixtureB.artifact.linked_objects.shot_id,
+      source_path: fixtureB.source_path
+    }, dbB);
+    assert.equal(recoveredB.ok, true, recoveredB.ok ? undefined : recoveredB.error.code);
+    assert.equal(existsSync(authorityPath), true);
+    assert.equal(verifyMediaArtifactBytes(dbB, fixtureB.artifact).ok, true);
   } finally {
     dbB.close();
     dbA.close();
@@ -3028,7 +3086,7 @@ test("verified Blob recovery rejects a symlink staging entry without deleting it
   }
 });
 
-test("verified Blob recovery hashes traversal-like Blob ids into the activation staging root", () => {
+test("verified Blob recovery hashes traversal-like Blob ids into the physical target directory", () => {
   const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-traversal-id-"));
   const mediaRoot = join(root, "media");
   const sqlitePath = join(root, "app.sqlite");
@@ -3048,7 +3106,7 @@ test("verified Blob recovery hashes traversal-like Blob ids into the activation 
       source_path: fixture.source_path
     }, db, {
       after_staged_copy: () => {
-        const stagingRoot = resolve(mediaRoot, ".activation", "staging");
+        const stagingRoot = dirname(targetPath);
         const entries = readdirSync(stagingRoot).filter((name) => /^blob-recovery-[a-f0-9]{64}\.staged$/i.test(name));
         assert.equal(entries.length, 1);
         observedStage = resolve(stagingRoot, entries[0]);
