@@ -283,6 +283,7 @@ remediation_pr:
   cross_database_target_mutex_commit: e3704cb
   windows_mutex_identity_commit: 20f029e
   target_authority_commit: 95d8b29
+  authority_atomic_publish_commit: 84e4ef1
   remediation_strategy: CROSS_DATABASE_TARGET_SQLITE_MUTEX
   current_head: STATE_SYNC_COMMIT_CONTAINING_THIS_RECORD
   resolved_prior_threads:
@@ -297,6 +298,7 @@ remediation_pr:
     - PRRT_kwDOTTDtUM6VkzTz
     - PRRT_kwDOTTDtUM6Vk38a
     - PRRT_kwDOTTDtUM6Vk38b
+    - PRRT_kwDOTTDtUM6VlN-l
   post_promotion_finding_status: REMEDIATION_IN_PROGRESS_AT_STATE_SYNC
   merged_to_main: false
 S3B-T1:
@@ -365,20 +367,25 @@ roots or conflicting content claims before application or recovery mutation.
 The SQLite mutex uses memory-journal mode and rejects any pre-existing
 `-journal`, `-wal` or `-shm` entry without deleting it.
 
+Follow-up `84e4ef1` removes the partial-authority crash trap. It writes and
+fsyncs a unique non-authoritative temp before exclusive hard-link publication;
+a hard exit before publication cannot block retry, and an interrupted linked
+temp is removed only when its inode exactly matches the published authority.
+
 The regression set covers independently configured database A/B/C processes
 sharing one media root, an active explicit repair paused after staged copy,
 `:memory:`, five hard crashes with repeated startup, explicit retry, partial and
 already-reusable stages, unknown deterministic-looking stages, unsafe lock and
 stage entries, same-target serialization, different-target concurrency, busy
 timeout, binding revalidation and local journal recovery. Local validation
-passes with media activation 60/60, Foundation 122/122, Provider 52/52,
+passes with media activation 61/61, Foundation 123/123, Provider 52/52,
 Workbench V2 68/68 and selection 23/23;
 typecheck, build, secret scan and diff checks pass. Threads
 `PRRT_kwDOTTDtUM6Vdmly`, `PRRT_kwDOTTDtUM6VeTXd` and
 `PRRT_kwDOTTDtUM6VekUB`, `PRRT_kwDOTTDtUM6VkSwY`,
 `PRRT_kwDOTTDtUM6VkqqS`, `PRRT_kwDOTTDtUM6VkzTx`,
 `PRRT_kwDOTTDtUM6VkzTz`, `PRRT_kwDOTTDtUM6Vk38a` and
-`PRRT_kwDOTTDtUM6Vk38b` remain unresolved at state
+`PRRT_kwDOTTDtUM6Vk38b` and `PRRT_kwDOTTDtUM6VlN-l` remain unresolved at state
 sync pending new exact-head CI and review. PR #109 remains open and unmerged.
 Cross-database explicit recovery is serialized by an exact-target SQLite mutex,
 and merge remains a separate Jenn decision.

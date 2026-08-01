@@ -3421,6 +3421,39 @@ remaining_test_processes: 0
 exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
 ```
 
+### PR109 atomic Blob target-authority publication
+
+```yaml
+task: PR109-T4_CROSS_DATABASE_BLOB_TARGET_MUTEX
+validated_at: 2026-08-01T11:53:45+08:00
+pull_request: 109
+authority_atomic_publish_commit: 84e4ef1
+review_thread: PRRT_kwDOTTDtUM6VlN-l
+results:
+  typecheck: PASS
+  build: PASS
+  media_activation_integrity: PASS_61
+  foundation_boundaries: PASS_123
+  provider_boundaries: PASS_52
+  workbench_v2: PASS_68
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  authority_temp_unique_and_non_authoritative: true
+  authority_temp_fsynced_before_publish: true
+  authority_publish_exclusive_hard_link: true
+  hard_crash_before_publish_does_not_block_retry: true
+  linked_crash_recovery_requires_exact_inode: true
+  unowned_entries_preserved_and_rejected: true
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_operations: 0
+exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
+```
+
 ### PR109 cross-database Blob target mutex
 
 ```yaml

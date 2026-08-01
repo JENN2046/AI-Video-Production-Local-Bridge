@@ -2,7 +2,7 @@
 
 Current mode: PR #109 orphaned Blob recovery staging remediation; no executable task is `READY`
 Last run: S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING
-Last result: exact-target SQLite mutex remediation passes locally; open Ready PR #109 awaits exact-head CI and a fresh Codex review
+Last result: exact-target SQLite mutex and atomic target-authority publication pass locally; open Ready PR #109 awaits exact-final-head CI and a fresh Codex review
 
 ## Current state
 
@@ -49,13 +49,17 @@ Ready task count: 0
   divergent registered roots and conflicting immutable Blob facts through one
   persistent target authority record, and prevents SQLite rollback sidecars by
   using memory-journal mode after rejecting existing sidecar entries.
+- Follow-up `84e4ef1` publishes that authority through a fully written and
+  fsynced unique temp plus an exclusive hard link. A hard exit before publish
+  leaves only a non-authoritative temp that cannot block retry; a linked
+  interrupted publication is normalized only by matching its exact inode.
 - At state sync these PR #109 threads remain unresolved pending exact-head CI
   and a fresh review: `PRRT_kwDOTTDtUM6Vdmly`, `PRRT_kwDOTTDtUM6VeTXd`,
   `PRRT_kwDOTTDtUM6VekUB`, `PRRT_kwDOTTDtUM6VkSwY` and
   `PRRT_kwDOTTDtUM6VkqqS`, `PRRT_kwDOTTDtUM6VkzTx`,
   `PRRT_kwDOTTDtUM6VkzTz`, `PRRT_kwDOTTDtUM6Vk38a` and
-  `PRRT_kwDOTTDtUM6Vk38b`. Local validation passes
-  with media activation 60/60, Foundation 122/122, Provider 52/52, Workbench V2
+  `PRRT_kwDOTTDtUM6Vk38b` and `PRRT_kwDOTTDtUM6VlN-l`. Local validation passes
+  with media activation 61/61, Foundation 123/123, Provider 52/52, Workbench V2
   68/68 and selection 23/23; typecheck, build, secret scan and diff checks pass.
 - `S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING` is
   `BLOCKED_BY_PR109_POST_PROMOTION_FINDING` in PR #109.

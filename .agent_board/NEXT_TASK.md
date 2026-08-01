@@ -32,12 +32,14 @@ automatically.
    case-insensitive path equality. Follow-up `95d8b29` also normalizes the
    deterministic stage and adds persistent target authority for root/digest
    conflicts plus memory-only SQLite journaling with sidecar rejection.
+   Follow-up `84e4ef1` atomically publishes that authority from a fully written
+   and fsynced unique temp, so a pre-publication hard exit cannot block retry.
 - Prior whitelist thread `PRRT_kwDOTTDtUM6VdGmY` is resolved. At state sync
   threads `PRRT_kwDOTTDtUM6Vdmly`, `PRRT_kwDOTTDtUM6VeTXd`,
   `PRRT_kwDOTTDtUM6VekUB`, `PRRT_kwDOTTDtUM6VkSwY` and
   `PRRT_kwDOTTDtUM6VkqqS`, `PRRT_kwDOTTDtUM6VkzTx`,
-  `PRRT_kwDOTTDtUM6VkzTz`, `PRRT_kwDOTTDtUM6Vk38a` and
-  `PRRT_kwDOTTDtUM6Vk38b` remain unresolved.
+  `PRRT_kwDOTTDtUM6VkzTz`, `PRRT_kwDOTTDtUM6Vk38a`,
+  `PRRT_kwDOTTDtUM6Vk38b` and `PRRT_kwDOTTDtUM6VlN-l` remain unresolved.
   Generic startup preserves the bounded stage; explicit recovery is serialized
   by exact target across database files. Exact-head Windows CI and a fresh
   post-promotion Codex review remain required; merge is not authorized.

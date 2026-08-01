@@ -1,7 +1,7 @@
 # Current State
 
-Date (Asia/Shanghai, UTC+08:00): 2026-07-31
-Repository baseline: `main@b3a108abc8728e89259d0d953e1c638b9ca482ea`
+Date (Asia/Shanghai, UTC+08:00): 2026-08-01
+Repository baseline: `main@808d9334a49def7ce858f7c6138af75fed392c5b`
 
 ## Repository and CI truth
 
@@ -11,6 +11,12 @@ Repository baseline: `main@b3a108abc8728e89259d0d953e1c638b9ca482ea`
   `bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7`.
 - PR #106, `docs: freeze scope and record core production readiness`, was
   squash-merged as `b3a108abc8728e89259d0d953e1c638b9ca482ea`.
+- PR #108, `fix: bound Provider polling and recover verified Blob storage`, was
+  squash-merged as `808d9334a49def7ce858f7c6138af75fed392c5b`.
+- PR #109 remains open and unmerged. Its current candidate adds exact-target
+  cross-database recovery serialization and atomically publishes the low-
+  disclosure target authority record; exact-final-head CI and review are still
+  required before its review threads may be resolved.
 - The final PR #106 head passed both `Quality and integration` and
   `Browser smoke`; the squash commit has the same tree as that reviewed head.
 - Code and CI PASS establish repository facts only. They do not create a new
@@ -61,7 +67,7 @@ database. `REAL_PROVIDER_ENABLED=false` remains the safe default.
 |---|---|---|---|
 | Workbench V2 local UI | Storyboard, generation preflight, version review and delivery-readiness views exist | Activity database compatibility accepted at ledger `0011` | Core |
 | SQLite and governed media | Migration, Artifact/Blob digest and FFprobe boundaries exist | Ledger `0011` migration/restore evidence remains commit-scoped | Core |
-| Current Provider path | Intent, budget, confirmation, bounded polling, manual reconciliation and verified-Blob recovery boundaries exist in `main@808d933` | PR #108 merged with green main CI; open Ready PR #109 now bounds recovery staging to one deterministic Blob/target slot and removes generic startup deletion, but still requires exact-head CI/review; no real Provider or S4 acceptance occurred | Core blocker before S4 |
+| Current Provider path | Intent, budget, confirmation, bounded polling, manual reconciliation and verified-Blob recovery boundaries exist in `main@808d933` | PR #108 merged with green main CI; open Ready PR #109 bounds recovery staging to one deterministic Blob/target slot, removes generic startup deletion, serializes independent databases by exact target and atomically publishes target authority, but still requires exact-head CI/review; no real Provider or S4 acceptance occurred | Core blocker before S4 |
 | Historical R3 Provider path | Execution scripts now reside under `legacy/` | RunningHub real canary, four-shot generation and regeneration completed historically | Feasibility evidence only |
 | Review and accepted clips | Version stacks, rejection reasons and human accepted-clip selection exist | Historical R3 review evidence exists | Core; current-path acceptance remains |
 | Active assembly/export | Active assembly still contains `placeholder_copy` / mock-fixture behavior; Workbench has no production assembly/export action | No current-main production-path PASS | S6 core gap |
