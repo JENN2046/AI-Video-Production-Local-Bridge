@@ -3421,6 +3421,55 @@ remaining_test_processes: 0
 exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
 ```
 
+### PR109 exact deterministic-stage ownership and mutex descriptor initialization
+
+```yaml
+task: PR109-T4_CROSS_DATABASE_BLOB_TARGET_MUTEX
+validated_at: 2026-08-01T17:56:44+08:00
+pull_request: 109
+implementation_commit: f2c31c5
+review_findings:
+  - PRRT_kwDOTTDtUM6VnW8t
+  - PRRT_kwDOTTDtUM6VnW8u
+  - PRRT_kwDOTTDtUM6VnZrR
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - node dist/scripts/run-isolated-tests.js dist/tests/media-activation-integrity.test.js
+  - npm run test:foundation-boundaries
+  - npm run test:selection-gate
+  - npm run test:provider-boundaries
+  - npm run test:v2
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  media_activation_integrity: PASS_65_WITH_1_PLATFORM_SKIP
+  foundation_boundaries: PASS_127_WITH_1_PLATFORM_SKIP
+  provider_boundaries: PASS_52
+  workbench_v2: PASS_68
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  deterministic_stage_requires_exact_owner_hardlink: true
+  later_unowned_stage_preserved_after_authority: true
+  mutex_initialized_through_continuously_held_descriptor: true
+  mutex_path_reopen_before_publication: false
+  current_legacy_named_source_preserved: true
+  generic_startup_stage_scan: false
+  generic_startup_stage_delete: false
+  blob_row_or_links_changed: false
+  schema_or_migration_changed: false
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_operations: 0
+exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
+```
+
 ### PR109 Windows short-path absolute parser
 
 ```yaml

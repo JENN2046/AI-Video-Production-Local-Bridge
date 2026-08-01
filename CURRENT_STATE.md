@@ -47,8 +47,16 @@ Repository baseline: `main@808d9334a49def7ce858f7c6138af75fed392c5b`
   exact-head review found a first-use `EEXIST` race when independent recoveries
   concurrently initialize the same activation directories. Follow-up `d8c6768`
   now treats only concurrent `EEXIST` as a candidate and still performs the
-  normal symlink, directory and canonical-root checks before use. New exact-head
-  CI and review are required.
+  normal symlink, directory and canonical-root checks before use. Head `5a80ed8`
+  passed both Windows jobs on run `30693297405`, but its complete review found
+  three additional ownership gaps: persistent target authority alone could
+  authorize a later unowned deterministic stage, mutex initialization reopened
+  its temporary SQLite file by path, and legacy cleanup could delete the current
+  validated source when its filename matched the legacy stage grammar. Follow-up
+  `f2c31c5` binds each app-created deterministic stage to an exact companion
+  hard-link owner, initializes the empty mutex database through the continuously
+  held exclusive descriptor, and excludes the current source from legacy cleanup.
+  New exact-head CI and review are required.
 - The final PR #106 head passed both `Quality and integration` and
   `Browser smoke`; the squash commit has the same tree as that reviewed head.
 - Code and CI PASS establish repository facts only. They do not create a new
@@ -274,23 +282,25 @@ staging-owner and `media_activation_journal` recovery.
 Independent database A/B/C startup processes, `:memory:`, five hard crashes,
 same-target and different-target recovery, bounded busy, unsafe-lock,
 partial-stage, already-reusable, unknown-stage and explicit retry regressions
-pass. Implementation `15b3bed` additionally prevents source or stage validation
-failures from publishing authority, preserves an unowned deterministic stage,
-rejects a valid foreign SQLite file without modifying its bytes, and uses an
-application-id ownership marker before opening the persistent mutex. Local
-validation passes with media activation 64 PASS / 0 FAIL / 1
-platform-capability skip, Foundation 126 PASS / 0 FAIL / 1
-platform-capability skip,
+pass. Implementation `f2c31c5` additionally requires the exact deterministic
+stage and its app-created owner path to be hard links to the same inode before
+reuse or deletion, preserves a later unowned stage even after target authority
+exists, initializes the mutex without a path-reopen window, and never treats the
+current validated source as legacy cleanup material. Local validation passes
+with media activation 65 PASS / 0 FAIL / 1 platform-capability skip, Foundation
+127 PASS / 0 FAIL / 1 platform-capability skip,
 Provider 52/52, Workbench V2 68/68 and selection 23/23; typecheck, build, secret
-scan and diff checks also pass. At state sync the 13 unresolved PR #109 threads
+scan and diff checks also pass. At state sync the 17 unresolved PR #109 threads
 are `PRRT_kwDOTTDtUM6VkSwY`, `PRRT_kwDOTTDtUM6VkqqS`,
 `PRRT_kwDOTTDtUM6VkzTz`, `PRRT_kwDOTTDtUM6Vk38a`,
 `PRRT_kwDOTTDtUM6Vk38b`, `PRRT_kwDOTTDtUM6VlUo8`,
 `PRRT_kwDOTTDtUM6VlUo-`, `PRRT_kwDOTTDtUM6VlsfV`,
 `PRRT_kwDOTTDtUM6VmCNv`, `PRRT_kwDOTTDtUM6VmCNw`,
 `PRRT_kwDOTTDtUM6VmGY5`, `PRRT_kwDOTTDtUM6VmMCl`,
-`PRRT_kwDOTTDtUM6VmU9i` and `PRRT_kwDOTTDtUM6VnQiz`. Follow-up `d8c6768`
-adds the concurrent first-use activation-root regression; all 14 threads remain
+`PRRT_kwDOTTDtUM6VmU9i`, `PRRT_kwDOTTDtUM6VnQiz`,
+`PRRT_kwDOTTDtUM6VnW8t`, `PRRT_kwDOTTDtUM6VnW8u` and
+`PRRT_kwDOTTDtUM6VnZrR`. Follow-up `f2c31c5` adds the stage-owner, descriptor-
+bound mutex initialization and source-preservation regressions; all 17 threads remain
 unresolved pending new exact-head CI and a fresh complete review. PR #109
 remains open and unmerged.
 Cross-database explicit recovery is serialized by an exact-target SQLite mutex,

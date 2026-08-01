@@ -292,6 +292,7 @@ remediation_pr:
   windows_sfn_character_set_commit: d7fbb21
   pre_authority_and_mutex_ownership_commit: 15b3bed
   concurrent_activation_root_commit: d8c6768
+  stage_owner_and_mutex_descriptor_commit: f2c31c5
   remediation_strategy: CROSS_DATABASE_TARGET_SQLITE_MUTEX
   current_head: STATE_SYNC_COMMIT_CONTAINING_THIS_RECORD
   resolved_prior_threads:
@@ -311,6 +312,9 @@ remediation_pr:
     - PRRT_kwDOTTDtUM6VmMCl
     - PRRT_kwDOTTDtUM6VmU9i
     - PRRT_kwDOTTDtUM6VnQiz
+    - PRRT_kwDOTTDtUM6VnW8t
+    - PRRT_kwDOTTDtUM6VnW8u
+    - PRRT_kwDOTTDtUM6VnZrR
   post_promotion_finding_status: REMEDIATION_IN_PROGRESS_AT_STATE_SYNC
   merged_to_main: false
 S3B-T1:
@@ -431,14 +435,24 @@ still validates the entry as a non-symlink canonical directory inside the
 registered root. The multiprocess different-target regression now begins with
 the whole `.activation` tree absent.
 
+Head `5a80ed8` passed both jobs on Windows CI run `30693297405`. Its complete
+review found three further ownership gaps: persistent authority could authorize
+a later unowned deterministic stage, mutex initialization reopened the temporary
+SQLite file by path after initial validation, and legacy cleanup could delete the
+current validated source when its filename matched the legacy-stage grammar.
+Follow-up `f2c31c5` binds app-created deterministic stages to an exact companion
+hard-link owner, writes the empty SQLite mutex through the continuously held
+exclusive descriptor before publication, and excludes the current source from
+legacy cleanup.
+
 The regression set covers independently configured database A/B/C processes
 sharing one media root, an active explicit repair paused after staged copy,
 `:memory:`, five hard crashes with repeated startup, explicit retry, partial and
 already-reusable stages, unknown deterministic-looking stages, unsafe lock and
 stage entries, same-target serialization, different-target concurrency, busy
 timeout, binding revalidation and local journal recovery. Local validation
-passes with media activation 64 PASS / 0 FAIL / 1 platform-capability skip,
-Foundation 126 PASS / 0 FAIL / 1 platform-capability skip, Provider 52/52,
+passes with media activation 65 PASS / 0 FAIL / 1 platform-capability skip,
+Foundation 127 PASS / 0 FAIL / 1 platform-capability skip, Provider 52/52,
 Workbench V2 68/68 and selection 23/23;
 typecheck, build, secret scan and diff checks pass. Threads
 `PRRT_kwDOTTDtUM6VkSwY`, `PRRT_kwDOTTDtUM6VkqqS`,
@@ -447,7 +461,9 @@ typecheck, build, secret scan and diff checks pass. Threads
 `PRRT_kwDOTTDtUM6VlUo-`, `PRRT_kwDOTTDtUM6VlsfV`,
 `PRRT_kwDOTTDtUM6VmCNv`, `PRRT_kwDOTTDtUM6VmCNw`,
 `PRRT_kwDOTTDtUM6VmGY5`, `PRRT_kwDOTTDtUM6VmMCl`,
-`PRRT_kwDOTTDtUM6VmU9i` and `PRRT_kwDOTTDtUM6VnQiz` remain unresolved at state
+`PRRT_kwDOTTDtUM6VmU9i`, `PRRT_kwDOTTDtUM6VnQiz`,
+`PRRT_kwDOTTDtUM6VnW8t`, `PRRT_kwDOTTDtUM6VnW8u` and
+`PRRT_kwDOTTDtUM6VnZrR` remain unresolved at state
 sync pending new exact-head CI and review. PR #109 remains open and unmerged.
 Cross-database explicit recovery is serialized by an exact-target SQLite mutex,
 and merge remains a separate Jenn decision.

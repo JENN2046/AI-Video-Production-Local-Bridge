@@ -2,7 +2,7 @@
 
 Current mode: PR #109 orphaned Blob recovery staging remediation; no executable task is `READY`
 Last run: S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING
-Last result: concurrent first-use activation-root initialization passes locally at follow-up `d8c6768`; open Ready PR #109 awaits new exact-final-head CI and review
+Last result: exact stage ownership, descriptor-bound mutex initialization and legacy-source preservation pass locally at follow-up `f2c31c5`; open Ready PR #109 awaits new exact-final-head CI and review
 
 ## Current state
 
@@ -110,7 +110,19 @@ Ready task count: 0
   race before the application database lock. Follow-up `d8c6768` accepts a
   concurrent `EEXIST` only as a candidate and revalidates the entry as a
   canonical in-root directory before use; its multiprocess regression starts
-  two different-target recoveries from a missing `.activation` tree.
+  two different-target recoveries from a missing `.activation` tree. Head
+  `5a80ed8` passed both jobs on run `30693297405`; its complete review then found
+  that persistent authority could authorize a later unowned deterministic stage,
+  temporary mutex initialization reopened by path, and a validated source with a
+  legacy stage name could be deleted. Follow-up `f2c31c5` requires an exact
+  stage-owner hard-link pair, writes the empty SQLite mutex through its continuously
+  held exclusive descriptor, and excludes the current source from legacy cleanup.
+  Local validation is now media activation 65 PASS / 0 FAIL / 1 platform skip,
+  Foundation 127 PASS / 0 FAIL / 1 platform skip, Provider 52/52, Workbench V2
+  68/68, selection 23/23, typecheck/build/secret scan/diff PASS. The 17 unresolved
+  threads additionally include `PRRT_kwDOTTDtUM6VnW8t`,
+  `PRRT_kwDOTTDtUM6VnW8u` and `PRRT_kwDOTTDtUM6VnZrR`; all remain open pending
+  exact-head CI and a fresh complete review.
 - `S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING` is
   `BLOCKED_BY_PR109_POST_PROMOTION_FINDING` in PR #109.
 - PR #109 remains open and unmerged; merge remains a separate Jenn decision,

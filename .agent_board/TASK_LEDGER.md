@@ -5297,6 +5297,48 @@ s4_authorization_granted: false
 delivery: PR_109_OPEN_READY_AWAITING_EXACT_HEAD_CI_AND_POST_PROMOTION_REVIEW
 ```
 
+## 2026-08-01 — PR109 exact stage ownership and descriptor-bound mutex initialization
+
+```yaml
+task: PR109-T4_CROSS_DATABASE_BLOB_TARGET_MUTEX
+status: BLOCKED_BY_EXACT_HEAD_EVIDENCE
+recorded_by: Codex
+recorded_at: 2026-08-01T17:56:44+08:00
+pull_request: 109
+implementation_commit: f2c31c5
+remediated_threads:
+  - PRRT_kwDOTTDtUM6VnW8t
+  - PRRT_kwDOTTDtUM6VnW8u
+  - PRRT_kwDOTTDtUM6VnZrR
+remediation:
+  deterministic_stage_owner: exact_same_inode_hardlink
+  persistent_authority_alone_authorizes_stage_cleanup: false
+  later_unowned_stage_preserved: true
+  mutex_initialization_path_reopen: false
+  mutex_initialization_descriptor_held_until_publication: true
+  legacy_cleanup_excludes_current_source: true
+local_validation:
+  typecheck: PASS
+  build: PASS
+  media_activation_integrity: PASS_65_WITH_1_PLATFORM_SKIP
+  foundation_boundaries: PASS_127_WITH_1_PLATFORM_SKIP
+  provider_boundaries: PASS_52
+  workbench_v2: PASS_68
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+unresolved_threads_at_state_sync: 17
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_starts: 0
+deployment_changes: 0
+ready_task_count: 0
+merge_authorized: false
+delivery: PR_109_OPEN_READY_AWAITING_NEW_EXACT_HEAD_CI_AND_REVIEW
+```
+
 ## 2026-08-01 — PR109 concurrent activation-root initialization
 
 ```yaml
