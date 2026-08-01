@@ -1162,10 +1162,14 @@ function verifiedBlobRecoveryTargetMutexPath(
     || hasExistingSymlinkAncestor(roots.journal, recoveryPaths.registeredRoot)) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
+  const mutexIdentityPath = (value: string): string => {
+    const resolvedPath = resolve(value);
+    return process.platform === "win32" ? resolvedPath.toLowerCase() : resolvedPath;
+  };
   const digest = createHash("sha256")
-    .update(recoveryPaths.canonicalRoot)
+    .update(mutexIdentityPath(recoveryPaths.canonicalRoot))
     .update("\0")
-    .update(recoveryPaths.targetPath)
+    .update(mutexIdentityPath(recoveryPaths.targetPath))
     .digest("hex");
   const lockPath = resolve(roots.journal, `blob-recovery-target-${digest}.lock.sqlite`);
   if (!BLOB_RECOVERY_TARGET_MUTEX_NAME.test(basename(lockPath))

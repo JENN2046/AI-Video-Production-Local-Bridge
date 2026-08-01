@@ -128,10 +128,14 @@ function verifiedBlobRecoveryStagePath(
 }
 
 function verifiedBlobRecoveryMutexPath(mediaRoot: string, storageUri: string): string {
+  const mutexIdentityPath = (value: string): string => {
+    const resolvedPath = resolve(value);
+    return process.platform === "win32" ? resolvedPath.toLowerCase() : resolvedPath;
+  };
   const digest = createHash("sha256")
-    .update(resolve(realpathSync(mediaRoot)))
+    .update(mutexIdentityPath(realpathSync(mediaRoot)))
     .update("\0")
-    .update(resolve(storageUri))
+    .update(mutexIdentityPath(storageUri))
     .digest("hex");
   return resolve(mediaRoot, ".activation", "journal", `blob-recovery-target-${digest}.lock.sqlite`);
 }
@@ -1705,14 +1709,21 @@ test("different Blob ids sharing one storage target use the same mutex", async (
   const dbB = openM0Database(databaseB);
   try {
     const fixtureA = createRecoverableVideo(dbA, mediaRoot);
+    const targetVariant = process.platform === "win32"
+      ? fixtureA.artifact.storage.uri.toUpperCase()
+      : fixtureA.artifact.storage.uri;
     const fixtureB = insertUnsafeRecoveryFixture(
       dbB,
       mediaRoot,
-      fixtureA.artifact.storage.uri,
+      targetVariant,
       fixtureA.source_path,
       `blob_distinct_${randomUUID()}`
     );
     assert.notEqual(fixtureA.artifact.blob_id, fixtureB.artifact.blob_id);
+    if (process.platform === "win32") {
+      assert.notEqual(fixtureA.artifact.storage.uri, fixtureB.artifact.storage.uri);
+      assert.equal(fixtureA.artifact.storage.uri.toLowerCase(), fixtureB.artifact.storage.uri.toLowerCase());
+    }
     const blobA = getMediaBlob(dbA, fixtureA.artifact.blob_id);
     const blobB = getMediaBlob(dbB, fixtureB.artifact.blob_id);
     assert.ok(blobA);
