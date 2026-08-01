@@ -1285,3 +1285,12 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - Focused media activation `70 PASS / 1 SKIP`; typecheck and diff checks pass.
 - At state sync, 25 PR #109 threads remain unresolved pending exact-head CI and
   one final frozen-scope review. PR #109 remains open and unmerged.
+
+## PR #109 target-stage inode proof closeout
+
+- Candidate commit: `46f206d`.
+- The existing complete stage-owner-target proof now also requires identical
+  device and inode before normalization. No feature or capability was added.
+- Focused media activation `70 PASS / 1 SKIP`; typecheck and diff checks pass.
+- At state sync, 26 PR #109 threads remain unresolved pending exact-head CI and
+  one final frozen-scope review. PR #109 remains open and unmerged.

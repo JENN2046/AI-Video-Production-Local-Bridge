@@ -5945,3 +5945,24 @@ unresolved_threads_at_state_sync: 25
 merge_authorized: false
 delivery: PR_109_OPEN_READY_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
 ```
+
+## 2026-08-01 — PR109 target-stage inode proof closeout
+
+```yaml
+task: PR109-T4_CROSS_DATABASE_BLOB_TARGET_MUTEX
+status: BLOCKED_BY_EXACT_HEAD_EVIDENCE
+recorded_by: Codex
+recorded_at: 2026-08-01T23:57:00+08:00
+pull_request: 109
+implementation_commit: 46f206d
+resolved_in_code:
+  - PRRT_kwDOTTDtUM6VpKft
+scope_expansion: false
+local_validation:
+  media_activation_integrity: PASS_70_SKIP_1
+  typecheck: PASS
+  git_diff_check: PASS
+unresolved_threads_at_state_sync: 26
+merge_authorized: false
+delivery: PR_109_OPEN_READY_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
+```

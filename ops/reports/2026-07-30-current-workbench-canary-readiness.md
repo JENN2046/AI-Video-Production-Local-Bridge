@@ -560,6 +560,16 @@ Focused media activation passes `70 PASS / 1 SKIP`; typecheck and diff checks
 also pass. At state sync, 24 PR #109 threads remain unresolved pending exact-head
 CI and one final frozen-scope review. PR #109 remains open and unmerged.
 
+### PR #109 target-stage inode proof closeout
+
+Commit `46f206d` completes the existing stage-owner-target proof by requiring all
+three paths to share the same device and inode before normalization. It adds no
+registry, protocol, interface or capability.
+
+Focused media activation passes `70 PASS / 1 SKIP`; typecheck and diff checks
+also pass. At state sync, 26 PR #109 threads remain unresolved pending exact-head
+CI and one final frozen-scope review. PR #109 remains open and unmerged.
+
 ### PR #109 final target-link safety contraction
 
 Commit `f0c486b` removes automatic normalization of two-link target states.

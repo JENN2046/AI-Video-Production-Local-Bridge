@@ -79,6 +79,8 @@ automatically.
    Safety contraction `f0c486b` removes automatic two-link target normalization:
    only the complete deterministic stage-owner-target ownership triple may be
    normalized automatically.
+   Follow-up `46f206d` completes that proof by requiring all three paths to
+   share the same device and inode before any deletion.
 - At state sync the unresolved threads are `PRRT_kwDOTTDtUM6VkSwY`,
   `PRRT_kwDOTTDtUM6VkqqS`, `PRRT_kwDOTTDtUM6VkzTz`,
   `PRRT_kwDOTTDtUM6Vk38a`, `PRRT_kwDOTTDtUM6Vk38b`,
@@ -92,7 +94,7 @@ automatically.
   `PRRT_kwDOTTDtUM6Vn2uJ`, `PRRT_kwDOTTDtUM6VoV-d` and
   `PRRT_kwDOTTDtUM6VoV-e`, `PRRT_kwDOTTDtUM6VomGc`,
   `PRRT_kwDOTTDtUM6VorLf`, `PRRT_kwDOTTDtUM6Vox11` and
-  `PRRT_kwDOTTDtUM6Vo6Ke` (25 total).
+  `PRRT_kwDOTTDtUM6Vo6Ke` and `PRRT_kwDOTTDtUM6VpKft` (26 total).
   Generic startup preserves the bounded stage; explicit recovery is serialized
   by exact target across database files. Exact-head Windows CI and a fresh
   post-promotion Codex review remain required; merge is not authorized.
