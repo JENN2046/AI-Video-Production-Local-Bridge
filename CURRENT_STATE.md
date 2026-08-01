@@ -216,6 +216,9 @@ placement, verification, commit or rollback. Binding facts are re-read after
 the lock; a 30-second acquisition timeout returns `MEDIA_BLOB_RECOVERY_BUSY`
 before any recovery filesystem mutation. Different targets remain independent,
 and process exit releases the SQLite lock without a PID lease or stale cleanup.
+Follow-up `20f029e` normalizes both mutex identity paths to lowercase on Windows,
+matching `sameResolvedPath`; casing variants of the same physical target
+therefore cannot split into separate locks.
 
 Only `recoverVerifiedBlobStorage` may converge the exact slot for the Blob it is
 explicitly repairing. It reuses a complete matching stage, safely discards and
@@ -234,7 +237,9 @@ Provider 52/52, Workbench V2 68/68 and selection 23/23; typecheck, build, secret
 scan and diff checks also pass. At state sync threads
 `PRRT_kwDOTTDtUM6Vdmly`, `PRRT_kwDOTTDtUM6VeTXd`,
 `PRRT_kwDOTTDtUM6VekUB` and `PRRT_kwDOTTDtUM6VkSwY` remain unresolved pending
-new exact-head CI and a fresh review. PR #109 remains open and unmerged.
+new exact-head CI and a fresh review. Exact-head review additionally opened
+`PRRT_kwDOTTDtUM6VkqqS`; its Windows path-identity fix is present in `20f029e`
+but the thread remains unresolved pending new evidence. PR #109 remains open and unmerged.
 Cross-database explicit recovery is serialized by an exact-target SQLite mutex,
 and merge remains a separate Jenn decision.
 

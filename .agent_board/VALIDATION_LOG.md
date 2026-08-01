@@ -3428,6 +3428,7 @@ task: PR109-T4_CROSS_DATABASE_BLOB_TARGET_MUTEX
 validated_at: 2026-08-01T09:40:00+08:00
 pull_request: 109
 implementation_commit: e3704cb
+windows_mutex_identity_commit: 20f029e
 commands_or_lanes:
   - npm run typecheck
   - npm run build
@@ -3451,6 +3452,7 @@ verified_behavior:
   mutex_key_uses_canonical_root_and_exact_target: true
   same_target_cross_database_serialization: true
   different_blob_ids_same_target_serialization: true
+  windows_case_variant_target_serialization: true
   different_target_parallel_barrier: true
   bounded_busy_zero_media_mutation: true
   hard_crash_os_lock_release: true

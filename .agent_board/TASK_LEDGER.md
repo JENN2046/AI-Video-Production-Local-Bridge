@@ -5306,12 +5306,14 @@ recorded_by: Codex
 recorded_at: 2026-08-01T09:40:00+08:00
 pull_request: 109
 implementation_commit: e3704cb
+windows_mutex_identity_commit: 20f029e
 remediation_strategy: CROSS_DATABASE_TARGET_SQLITE_MUTEX
 unresolved_threads_at_state_sync:
   - PRRT_kwDOTTDtUM6Vdmly
   - PRRT_kwDOTTDtUM6VeTXd
   - PRRT_kwDOTTDtUM6VekUB
   - PRRT_kwDOTTDtUM6VkSwY
+  - PRRT_kwDOTTDtUM6VkqqS
 mutex:
   scope: exact_resolved_blob_storage_target
   key: canonical_media_root_nul_resolved_storage_uri
@@ -5327,6 +5329,7 @@ ordering:
 verified_behavior:
   same_blob_same_target_serialized: true
   different_blob_same_target_serialized: true
+  windows_case_variants_share_target_mutex: true
   different_targets_parallel: true
   busy_has_zero_recovery_media_mutation: true
   crash_then_other_database_recovers: true

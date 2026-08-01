@@ -281,6 +281,7 @@ remediation_pr:
   superseded_canonical_database_sweep_commit: 27058e32f5339359d15b876dc25375046075eb18
   explicit_stage_convergence_commit: 35122cd405f42bc627ae73d121f5a3dd14f3edbe
   cross_database_target_mutex_commit: e3704cb
+  windows_mutex_identity_commit: 20f029e
   remediation_strategy: CROSS_DATABASE_TARGET_SQLITE_MUTEX
   current_head: STATE_SYNC_COMMIT_CONTAINING_THIS_RECORD
   resolved_prior_threads:
@@ -290,6 +291,7 @@ remediation_pr:
     - PRRT_kwDOTTDtUM6VeTXd
     - PRRT_kwDOTTDtUM6VekUB
     - PRRT_kwDOTTDtUM6VkSwY
+    - PRRT_kwDOTTDtUM6VkqqS
   post_promotion_finding_status: REMEDIATION_IN_PROGRESS_AT_STATE_SYNC
   merged_to_main: false
 S3B-T1:
@@ -345,6 +347,12 @@ bounded to 30 seconds and returns without stage, target or quarantine mutation;
 process exit releases the OS lock without PID leases or stale cleanup. Different
 targets retain independent progress.
 
+Exact-head review found that Windows casing variants of one physical target
+could otherwise hash differently. Follow-up `20f029e` applies the same
+case-insensitive normalization used by path equality to the mutex identity; the
+different-Blob same-target multiprocess regression now uses an uppercase path
+variant on Windows.
+
 The regression set covers independently configured database A/B/C processes
 sharing one media root, an active explicit repair paused after staged copy,
 `:memory:`, five hard crashes with repeated startup, explicit retry, partial and
@@ -355,7 +363,8 @@ passes with media activation 56/56, Foundation 118/118, Provider 52/52,
 Workbench V2 68/68 and selection 23/23;
 typecheck, build, secret scan and diff checks pass. Threads
 `PRRT_kwDOTTDtUM6Vdmly`, `PRRT_kwDOTTDtUM6VeTXd` and
-`PRRT_kwDOTTDtUM6VekUB` and `PRRT_kwDOTTDtUM6VkSwY` remain unresolved at state
+`PRRT_kwDOTTDtUM6VekUB`, `PRRT_kwDOTTDtUM6VkSwY` and
+`PRRT_kwDOTTDtUM6VkqqS` remain unresolved at state
 sync pending new exact-head CI and review. PR #109 remains open and unmerged.
 Cross-database explicit recovery is serialized by an exact-target SQLite mutex,
 and merge remains a separate Jenn decision.

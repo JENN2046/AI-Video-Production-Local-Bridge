@@ -41,9 +41,14 @@ Ready task count: 0
   Busy acquisition returns `MEDIA_BLOB_RECOVERY_BUSY` without touching recovery
   material; process exit releases the OS lock, and different targets proceed in
   parallel without PID or lease cleanup.
+- Review thread `PRRT_kwDOTTDtUM6VkqqS` found that Windows casing variants could
+  hash to different mutex files. Follow-up `20f029e` lowercases canonical root
+  and target only for the Windows mutex identity and extends the different-Blob
+  same-target multiprocess test with an uppercase path variant.
 - At state sync these PR #109 threads remain unresolved pending exact-head CI
   and a fresh review: `PRRT_kwDOTTDtUM6Vdmly`, `PRRT_kwDOTTDtUM6VeTXd`,
-  `PRRT_kwDOTTDtUM6VekUB` and `PRRT_kwDOTTDtUM6VkSwY`. Local validation passes
+  `PRRT_kwDOTTDtUM6VekUB`, `PRRT_kwDOTTDtUM6VkSwY` and
+  `PRRT_kwDOTTDtUM6VkqqS`. Local validation passes
   with media activation 56/56, Foundation 118/118, Provider 52/52, Workbench V2
   68/68 and selection 23/23; typecheck, build, secret scan and diff checks pass.
 - `S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING` is
