@@ -98,6 +98,7 @@ export interface VerifiedBlobStorageRecoveryFaults {
   after_stage_owner_created?: () => void;
   after_staged_copy?: () => void;
   before_staging_pair_isolated?: () => void;
+  after_staging_entry_isolated?: () => void;
   after_staging_cleanup_entry_removed?: () => void;
   after_corrupt_quarantined?: () => void;
   after_replacement_placed?: () => void;
@@ -1105,6 +1106,7 @@ function prepareVerifiedBlobRecoveryStaging(
   roots: ReturnType<typeof activationRoots>,
   registeredRoot: string,
   canonicalRoot: string,
+  cleanupDirectory: string,
   faults: VerifiedBlobStorageRecoveryFaults
 ): void {
   if (existsSync(stagedPath)) {
@@ -1125,9 +1127,10 @@ function prepareVerifiedBlobRecoveryStaging(
       artifact.storage.uri,
       registeredRoot,
       canonicalRoot,
-      roots.journal,
+      cleanupDirectory,
       2,
       faults.before_staging_pair_isolated,
+      faults.after_staging_entry_isolated,
       faults.after_staging_cleanup_entry_removed
     );
   } else if (existsSync(ownerPath)) {
@@ -2027,13 +2030,46 @@ function verifiedBlobRecoveryCleanupPaths(
   return { stagedCleanup, ownerCleanup };
 }
 
+function verifiedBlobRecoveryCleanupDirectory(
+  stagedPath: string,
+  registeredRoot: string,
+  canonicalRoot: string,
+  create: boolean
+): string {
+  const cleanupDirectory = resolve(dirname(stagedPath), ".blob-recovery-cleanup");
+  if (!sameResolvedPath(dirname(cleanupDirectory), dirname(stagedPath))
+    || !isPathInside(cleanupDirectory, registeredRoot)
+    || hasExistingSymlinkAncestor(cleanupDirectory, registeredRoot)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  if (create) {
+    try { mkdirSync(cleanupDirectory); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+      }
+    }
+  }
+  if (!existsSync(cleanupDirectory)) return cleanupDirectory;
+  const entry = lstatSync(cleanupDirectory);
+  const canonical = resolve(realpathSync(cleanupDirectory));
+  if (entry.isSymbolicLink() || !entry.isDirectory()
+    || !isPathInside(canonical, canonicalRoot)
+    || !sameResolvedPath(dirname(canonical), resolve(realpathSync(dirname(stagedPath))))) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  return cleanupDirectory;
+}
+
 function reconcileOwnedRecoveryCleanupPair(
   stagedPath: string,
+  ownerPath: string,
   targetPath: string,
   cleanupDirectory: string,
   registeredRoot: string,
   afterFirstRemoval?: () => void
 ): void {
+  if (!existsSync(cleanupDirectory)) return;
   if (!sameResolvedPath(resolve(realpathSync(cleanupDirectory)), cleanupDirectory)
     || !isPathInside(cleanupDirectory, registeredRoot)
     || hasExistingSymlinkAncestor(cleanupDirectory, registeredRoot)) {
@@ -2044,8 +2080,28 @@ function reconcileOwnedRecoveryCleanupPair(
     cleanupDirectory,
     registeredRoot
   );
-  const cleanupPaths = [stagedCleanup, ownerCleanup].filter((candidate) => existsSync(candidate));
+  let cleanupPaths = [stagedCleanup, ownerCleanup].filter((candidate) => existsSync(candidate));
   if (cleanupPaths.length === 0) return;
+  if (cleanupPaths.length === 1) {
+    const isolatedStage = sameResolvedPath(cleanupPaths[0], stagedCleanup);
+    const counterpartPath = isolatedStage ? ownerPath : stagedPath;
+    const counterpartCleanup = isolatedStage ? ownerCleanup : stagedCleanup;
+    if (existsSync(counterpartPath)) {
+      const isolated = lstatSync(cleanupPaths[0]);
+      const counterpart = lstatSync(counterpartPath);
+      if (isolated.isSymbolicLink() || counterpart.isSymbolicLink()
+        || !isolated.isFile() || !counterpart.isFile()
+        || isolated.dev !== counterpart.dev || isolated.ino !== counterpart.ino) {
+        throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+      }
+      renameSync(counterpartPath, counterpartCleanup);
+      const moved = lstatSync(counterpartCleanup);
+      if (moved.dev !== isolated.dev || moved.ino !== isolated.ino) {
+        throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+      }
+      cleanupPaths = [stagedCleanup, ownerCleanup];
+    }
+  }
   const cleanupEntries = cleanupPaths.map((candidate) => {
     const entry = lstatSync(candidate);
     const canonical = resolve(realpathSync(candidate));
@@ -2089,10 +2145,18 @@ function removeOwnedRecoveryStagingPair(
   cleanupDirectory: string,
   expectedLinkCount = 2,
   beforeIsolation?: () => void,
+  afterFirstIsolation?: () => void,
   afterFirstCleanupRemoval?: () => void
 ): void {
+  verifiedBlobRecoveryCleanupDirectory(
+    stagedPath,
+    registeredRoot,
+    canonicalRoot,
+    true
+  );
   reconcileOwnedRecoveryCleanupPair(
     stagedPath,
+    ownerPath,
     targetPath,
     cleanupDirectory,
     registeredRoot
@@ -2130,6 +2194,7 @@ function removeOwnedRecoveryStagingPair(
     }
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
+  afterFirstIsolation?.();
   renameSync(ownerPath, ownerCleanup);
   const movedOwner = lstatSync(ownerCleanup);
   if (movedOwner.isSymbolicLink() || !movedOwner.isFile()
@@ -2142,6 +2207,7 @@ function removeOwnedRecoveryStagingPair(
   }
   reconcileOwnedRecoveryCleanupPair(
     stagedPath,
+    ownerPath,
     targetPath,
     cleanupDirectory,
     registeredRoot,
@@ -2157,6 +2223,7 @@ function placeOwnedRecoveryStagingFile(
   canonicalRoot: string,
   cleanupDirectory: string,
   beforeIsolation?: () => void,
+  afterFirstIsolation?: () => void,
   afterFirstCleanupRemoval?: () => void
 ): void {
   const stagedIdentity = assertOwnedRecoveryStagingFile(
@@ -2190,6 +2257,7 @@ function placeOwnedRecoveryStagingFile(
     cleanupDirectory,
     3,
     beforeIsolation,
+    afterFirstIsolation,
     afterFirstCleanupRemoval
   );
   const placedIdentity = lstatSync(targetPath);
@@ -2234,7 +2302,6 @@ export function recoverVerifiedBlobStorage(
     let activation: ReturnType<typeof activationRoots>;
     try { activation = ensureSafeActivationRoots(preflightPaths.registeredRoot, true); }
     catch { throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE"); }
-    recoveryCleanupDirectory = activation.journal;
     const preflightStagedPath = verifiedBlobRecoveryStagingPathForTarget(
       preflightPaths.targetPath,
       activation,
@@ -2294,6 +2361,12 @@ export function recoverVerifiedBlobStorage(
       registeredRoot
     );
     stagedOwnerPath = verifiedBlobRecoveryStageOwnerPath(stagedPath, registeredRoot);
+    recoveryCleanupDirectory = verifiedBlobRecoveryCleanupDirectory(
+      stagedPath,
+      registeredRoot,
+      recoveryPaths.canonicalRoot,
+      false
+    );
     if (!sameResolvedPath(stagedPath, preflightStagedPath)
       || !sameResolvedPath(stagedOwnerPath, preflightStagedOwnerPath)
       || !sameResolvedPath(
@@ -2304,8 +2377,9 @@ export function recoverVerifiedBlobStorage(
     }
     reconcileOwnedRecoveryCleanupPair(
       stagedPath,
+      stagedOwnerPath,
       recoveryPaths.targetPath,
-      activation.journal,
+      recoveryCleanupDirectory,
       registeredRoot
     );
     validateVerifiedBlobRecoveryEntriesBeforeAuthority(
@@ -2377,9 +2451,10 @@ export function recoverVerifiedBlobStorage(
           targetPath,
           registeredRoot,
           recoveryPaths.canonicalRoot,
-          activation.journal,
+          recoveryCleanupDirectory,
           2,
           faults.before_staging_pair_isolated,
+          faults.after_staging_entry_isolated,
           faults.after_staging_cleanup_entry_removed
         );
       } else if (existsSync(stagedOwnerPath)) {
@@ -2415,6 +2490,7 @@ export function recoverVerifiedBlobStorage(
       activation,
       registeredRoot,
       recoveryPaths.canonicalRoot,
+      recoveryCleanupDirectory,
       faults
     );
     faults.after_staged_copy?.();
@@ -2435,8 +2511,9 @@ export function recoverVerifiedBlobStorage(
       targetPath,
       registeredRoot,
       recoveryPaths.canonicalRoot,
-      activation.journal,
+      recoveryCleanupDirectory,
       faults.before_staging_pair_isolated,
+      faults.after_staging_entry_isolated,
       faults.after_staging_cleanup_entry_removed
     );
     stagedPath = "";

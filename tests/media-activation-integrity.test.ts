@@ -136,12 +136,12 @@ function verifiedBlobRecoveryStageOwnerPath(stagedPath: string): string {
   return resolve(dirname(stagedPath), `.blob-recovery-stage-${digest}.owner`);
 }
 
-function verifiedBlobRecoveryCleanupPaths(mediaRoot: string, stagedPath: string): {
+function verifiedBlobRecoveryCleanupPaths(_mediaRoot: string, stagedPath: string): {
   staged_cleanup: string;
   owner_cleanup: string;
 } {
   const digest = basename(stagedPath).slice("blob-recovery-".length, -".staged".length);
-  const journalRoot = resolve(mediaRoot, ".activation", "journal");
+  const journalRoot = resolve(dirname(stagedPath), ".blob-recovery-cleanup");
   return {
     staged_cleanup: resolve(journalRoot, `.blob-recovery-cleanup-${digest}.stage`),
     owner_cleanup: resolve(journalRoot, `.blob-recovery-cleanup-${digest}.owner`)
@@ -202,7 +202,7 @@ function hardCrashVerifiedBlobRecovery(input: {
   project_id: string;
   shot_id: string;
   source_path: string;
-  crash_at?: "after_stage_owner_created" | "after_staged_copy" | "after_target_authority_temp_created" | "after_staging_cleanup_entry_removed";
+  crash_at?: "after_stage_owner_created" | "after_staged_copy" | "after_target_authority_temp_created" | "after_staging_entry_isolated" | "after_staging_cleanup_entry_removed";
 }): void {
   const childScript = `
     const { openM0Database } = await import(process.env.RECOVERY_SQLITE_MODULE);
@@ -218,6 +218,8 @@ function hardCrashVerifiedBlobRecovery(input: {
       ? { after_target_authority_temp_created: () => process.exit(93) }
       : crashAt === "after_stage_owner_created"
         ? { after_stage_owner_created: () => process.exit(94) }
+        : crashAt === "after_staging_entry_isolated"
+          ? { after_staging_entry_isolated: () => process.exit(96) }
         : crashAt === "after_staging_cleanup_entry_removed"
           ? { after_staging_cleanup_entry_removed: () => process.exit(95) }
         : { after_staged_copy: () => process.exit(91) });
@@ -247,6 +249,8 @@ function hardCrashVerifiedBlobRecovery(input: {
     ? 93
     : input.crash_at === "after_stage_owner_created"
       ? 94
+      : input.crash_at === "after_staging_entry_isolated"
+        ? 96
       : input.crash_at === "after_staging_cleanup_entry_removed" ? 95 : 91;
   assert.equal(child.status, expectedStatus, child.stderr || child.stdout || "child did not stop at the requested recovery crash boundary");
 }
@@ -3090,6 +3094,64 @@ test("verified Blob recovery converges a hard crash while removing an isolated s
     assert.equal(existsSync(cleanup.owner_cleanup), false);
     assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
     assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
+  } finally {
+    try { db.close(); } catch { /* hard-crash setup may already have closed the first handle */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("verified Blob recovery keeps cleanup on the target filesystem and converges split isolation", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-stage-isolation-crash-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  let db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const blob = getMediaBlob(db, fixture.artifact.blob_id);
+    assert.ok(blob);
+    const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
+    const ownerPath = verifiedBlobRecoveryStageOwnerPath(stagedPath);
+    const cleanup = verifiedBlobRecoveryCleanupPaths(mediaRoot, stagedPath);
+    assert.equal(dirname(dirname(cleanup.staged_cleanup)), dirname(stagedPath));
+
+    rmSync(fixture.artifact.storage.uri);
+    db.close();
+    hardCrashVerifiedBlobRecovery({
+      sqlite_path: sqlitePath,
+      artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    });
+    copyFileSync(fixture.source_path, fixture.artifact.storage.uri, constants.COPYFILE_EXCL);
+    hardCrashVerifiedBlobRecovery({
+      sqlite_path: sqlitePath,
+      artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path,
+      crash_at: "after_staging_entry_isolated"
+    });
+    assert.equal(existsSync(stagedPath), false);
+    assert.equal(existsSync(ownerPath), true);
+    assert.equal(existsSync(cleanup.staged_cleanup), true);
+    assert.equal(existsSync(cleanup.owner_cleanup), false);
+    assert.equal(statSync(ownerPath).ino, statSync(cleanup.staged_cleanup).ino);
+
+    db = openM0Database(sqlitePath);
+    const retried = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(retried.ok, true, retried.ok ? undefined : retried.error.code);
+    if (retried.ok) assert.equal(retried.outcome, "ALREADY_REUSABLE");
+    assert.equal(existsSync(ownerPath), false);
+    assert.equal(existsSync(cleanup.staged_cleanup), false);
+    assert.equal(existsSync(cleanup.owner_cleanup), false);
+    assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
   } finally {
     try { db.close(); } catch { /* hard-crash setup may already have closed the first handle */ }
     rmSync(root, { recursive: true, force: true });
