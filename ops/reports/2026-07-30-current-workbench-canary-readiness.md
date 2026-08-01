@@ -294,6 +294,8 @@ remediation_pr:
   concurrent_activation_root_commit: d8c6768
   stage_owner_and_mutex_descriptor_commit: f2c31c5
   ownership_before_cleanup_commit: 1710c41
+  crash_identity_commit: 568473c
+  publication_normalization_commit: e6f1d4b
   remediation_strategy: CROSS_DATABASE_TARGET_SQLITE_MUTEX
   current_head: STATE_SYNC_COMMIT_CONTAINING_THIS_RECORD
   resolved_prior_threads:
@@ -453,14 +455,23 @@ final descriptor, identity and complete authority/mutex ownership content first;
 only the proven same-inode temp hard link is then removed. Malformed unowned
 final/temp pairs are preserved and fail closed.
 
+Later exact-head review found a stage-owner publication crash window, a SQLite
+connection path-reopen identity gap, a DOS-short quarantine retry trap and two
+validator publication races. Follow-ups `568473c` and `e6f1d4b` make the
+owner-first zero-byte crash state explicitly retryable, validate a target-
+specific SQLite header identity through the opened connection before mutating
+pragmas, reject DOS-short content drift before quarantine, keep validators from
+deleting publication entries by path, and accept safe publisher `nlink 2→1`
+normalization.
+
 The regression set covers independently configured database A/B/C processes
 sharing one media root, an active explicit repair paused after staged copy,
 `:memory:`, five hard crashes with repeated startup, explicit retry, partial and
 already-reusable stages, unknown deterministic-looking stages, unsafe lock and
 stage entries, same-target serialization, different-target concurrency, busy
 timeout, binding revalidation and local journal recovery. Local validation
-passes with media activation 65 PASS / 0 FAIL / 1 platform-capability skip,
-Foundation 127 PASS / 0 FAIL / 1 platform-capability skip, Provider 52/52,
+passes with media activation 67 PASS / 0 FAIL / 1 platform-capability skip,
+Foundation 129 PASS / 0 FAIL / 1 platform-capability skip, Provider 52/52,
 Workbench V2 68/68 and selection 23/23;
 typecheck, build, secret scan and diff checks pass. Threads
 `PRRT_kwDOTTDtUM6VkSwY`, `PRRT_kwDOTTDtUM6VkqqS`,
@@ -468,11 +479,12 @@ typecheck, build, secret scan and diff checks pass. Threads
 `PRRT_kwDOTTDtUM6Vk38b`, `PRRT_kwDOTTDtUM6VlUo8`,
 `PRRT_kwDOTTDtUM6VlUo-`, `PRRT_kwDOTTDtUM6VlsfV`,
 `PRRT_kwDOTTDtUM6VmCNv`, `PRRT_kwDOTTDtUM6VmCNw`,
-`PRRT_kwDOTTDtUM6VmGY5`, `PRRT_kwDOTTDtUM6VmMCl`,
-`PRRT_kwDOTTDtUM6VmU9i`, `PRRT_kwDOTTDtUM6VnQiz`,
+`PRRT_kwDOTTDtUM6VnQiz`,
 `PRRT_kwDOTTDtUM6VnW8t`, `PRRT_kwDOTTDtUM6VnW8u`,
-`PRRT_kwDOTTDtUM6VnZrR`, `PRRT_kwDOTTDtUM6VnfBZ` and
-`PRRT_kwDOTTDtUM6VnlsB` remain unresolved at state
+`PRRT_kwDOTTDtUM6VnZrR`, `PRRT_kwDOTTDtUM6VnfBZ`,
+`PRRT_kwDOTTDtUM6VnlsB`, `PRRT_kwDOTTDtUM6Vnvkt`,
+`PRRT_kwDOTTDtUM6Vnvkv`, `PRRT_kwDOTTDtUM6Vn2uJ`,
+`PRRT_kwDOTTDtUM6Vn_4Z` and `PRRT_kwDOTTDtUM6Vn_4b` remain unresolved at state
 sync pending new exact-head CI and review. PR #109 remains open and unmerged.
 Cross-database explicit recovery is serialized by an exact-target SQLite mutex,
 and merge remains a separate Jenn decision.

@@ -60,8 +60,13 @@ Repository baseline: `main@808d9334a49def7ce858f7c6138af75fed392c5b`
   mutex final path hard-linked to a deterministic temp could lose that temp
   before its content was authenticated. Follow-up `1710c41` now validates the
   opened final descriptor and complete authority/mutex ownership content before
-  removing only the same-inode temp hard link. New exact-head CI and review are
-  required.
+  removing only the same-inode temp hard link. Subsequent exact-head review found
+  three crash/identity gaps and two publication races. Follow-ups `568473c` and
+  `e6f1d4b` make the stage-owner-first crash window retryable, bind each SQLite
+  connection to its target-specific header identity before any mutating pragma,
+  reject DOS-short drift before quarantine, keep validators non-destructive, and
+  accept a publisher's safe `nlink 2→1` normalization. New exact-head CI and
+  review are required.
 - The final PR #106 head passed both `Quality and integration` and
   `Browser smoke`; the squash commit has the same tree as that reviewed head.
 - Code and CI PASS establish repository facts only. They do not create a new
@@ -291,22 +296,24 @@ pass. Implementation `f2c31c5` additionally requires the exact deterministic
 stage and its app-created owner path to be hard links to the same inode before
 reuse or deletion, preserves a later unowned stage even after target authority
 exists, initializes the mutex without a path-reopen window, and never treats the
-current validated source as legacy cleanup material. Local validation passes
-with media activation 65 PASS / 0 FAIL / 1 platform-capability skip, Foundation
-127 PASS / 0 FAIL / 1 platform-capability skip,
+current validated source as legacy cleanup material. Follow-ups `568473c` and
+`e6f1d4b` close the later stage-owner crash, mutex-connection identity,
+DOS-short quarantine and publication-normalization findings. Local validation
+passes with media activation 67 PASS / 0 FAIL / 1 platform-capability skip,
+Foundation 129 PASS / 0 FAIL / 1 platform-capability skip,
 Provider 52/52, Workbench V2 68/68 and selection 23/23; typecheck, build, secret
-scan and diff checks also pass. At state sync the 17 unresolved PR #109 threads
+scan and diff checks also pass. At state sync the 21 unresolved PR #109 threads
 are `PRRT_kwDOTTDtUM6VkSwY`, `PRRT_kwDOTTDtUM6VkqqS`,
 `PRRT_kwDOTTDtUM6VkzTz`, `PRRT_kwDOTTDtUM6Vk38a`,
 `PRRT_kwDOTTDtUM6Vk38b`, `PRRT_kwDOTTDtUM6VlUo8`,
 `PRRT_kwDOTTDtUM6VlUo-`, `PRRT_kwDOTTDtUM6VlsfV`,
 `PRRT_kwDOTTDtUM6VmCNv`, `PRRT_kwDOTTDtUM6VmCNw`,
-`PRRT_kwDOTTDtUM6VmGY5`, `PRRT_kwDOTTDtUM6VmMCl`,
-`PRRT_kwDOTTDtUM6VmU9i`, `PRRT_kwDOTTDtUM6VnQiz`,
+`PRRT_kwDOTTDtUM6VnQiz`,
 `PRRT_kwDOTTDtUM6VnW8t`, `PRRT_kwDOTTDtUM6VnW8u` and
-`PRRT_kwDOTTDtUM6VnZrR`, `PRRT_kwDOTTDtUM6VnfBZ` and
-`PRRT_kwDOTTDtUM6VnlsB`. Follow-up `1710c41` adds the authority/mutex
-ownership-before-cleanup regressions; all 19 threads remain unresolved pending
+`PRRT_kwDOTTDtUM6VnZrR`, `PRRT_kwDOTTDtUM6VnfBZ`,
+`PRRT_kwDOTTDtUM6VnlsB`, `PRRT_kwDOTTDtUM6Vnvkt`,
+`PRRT_kwDOTTDtUM6Vnvkv`, `PRRT_kwDOTTDtUM6Vn2uJ`,
+`PRRT_kwDOTTDtUM6Vn_4Z` and `PRRT_kwDOTTDtUM6Vn_4b`. All 21 threads remain unresolved pending
 new exact-head CI and a fresh complete review. PR #109
 remains open and unmerged.
 Cross-database explicit recovery is serialized by an exact-target SQLite mutex,

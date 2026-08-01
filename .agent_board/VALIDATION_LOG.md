@@ -3968,3 +3968,41 @@ secret_reads: 0
 service_operations: 0
 exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
 ```
+### PR109 crash identity and publication normalization remediation
+
+```yaml
+task: PR109-T4_CROSS_DATABASE_BLOB_TARGET_MUTEX
+validated_at: 2026-08-01T19:57:24+08:00
+pull_request: 109
+implementation_commits:
+  - 568473c
+  - e6f1d4b
+findings:
+  - PRRT_kwDOTTDtUM6Vnvkt
+  - PRRT_kwDOTTDtUM6Vnvkv
+  - PRRT_kwDOTTDtUM6Vn2uJ
+  - PRRT_kwDOTTDtUM6Vn_4Z
+  - PRRT_kwDOTTDtUM6Vn_4b
+verified_behavior:
+  owner_first_crash_retryable: true
+  connected_mutex_target_header_verified_before_mutation: true
+  dos_short_drift_rejected_before_quarantine: true
+  validator_temp_delete: false
+  concurrent_publish_normalization_accepted: true
+results:
+  typecheck: PASS
+  build: PASS
+  media_activation_integrity: PASS_67_SKIP_1
+  foundation_boundaries: PASS_129_SKIP_1
+  selection_gate: PASS_23
+  provider_boundaries: PASS_52
+  workbench_v2: PASS_68
+  secret_scan: PASS
+  git_diff_check: PASS
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_operations: 0
+exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
+```

@@ -60,7 +60,9 @@ automatically.
    and excludes the current validated source from legacy-stage cleanup. Exact-head
    review then found two cleanup-order gaps; follow-up `1710c41` authenticates
    the descriptor-bound authority or mutex final before removing only its exact
-   same-inode temp hard link.
+   same-inode temp hard link. Follow-ups `568473c` and `e6f1d4b` then close the
+   stage-owner-first crash, target-specific SQLite connection identity,
+   DOS-short quarantine and validator publication-race findings.
 - At state sync the unresolved threads are `PRRT_kwDOTTDtUM6VkSwY`,
   `PRRT_kwDOTTDtUM6VkqqS`, `PRRT_kwDOTTDtUM6VkzTz`,
   `PRRT_kwDOTTDtUM6Vk38a`, `PRRT_kwDOTTDtUM6Vk38b`,
@@ -70,7 +72,10 @@ automatically.
   `PRRT_kwDOTTDtUM6VmMCl`, `PRRT_kwDOTTDtUM6VmU9i`,
   `PRRT_kwDOTTDtUM6VnQiz`, `PRRT_kwDOTTDtUM6VnW8t`,
   `PRRT_kwDOTTDtUM6VnW8u`, `PRRT_kwDOTTDtUM6VnZrR`,
-  `PRRT_kwDOTTDtUM6VnfBZ` and `PRRT_kwDOTTDtUM6VnlsB`.
+  `PRRT_kwDOTTDtUM6VnfBZ`, `PRRT_kwDOTTDtUM6VnlsB`,
+  `PRRT_kwDOTTDtUM6Vnvkt`, `PRRT_kwDOTTDtUM6Vnvkv`,
+  `PRRT_kwDOTTDtUM6Vn2uJ`, `PRRT_kwDOTTDtUM6Vn_4Z` and
+  `PRRT_kwDOTTDtUM6Vn_4b`.
   Generic startup preserves the bounded stage; explicit recovery is serialized
   by exact target across database files. Exact-head Windows CI and a fresh
   post-promotion Codex review remain required; merge is not authorized.
