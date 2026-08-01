@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { copyFileSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { constants, copyFileSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -129,6 +129,11 @@ function verifiedBlobRecoveryStagePath(
     .update(storageIdentity)
     .digest("hex");
   return resolve(dirname(physicalTargetPath), `blob-recovery-${digest}.staged`);
+}
+
+function verifiedBlobRecoveryStageOwnerPath(stagedPath: string): string {
+  const digest = basename(stagedPath).slice("blob-recovery-".length, -".staged".length);
+  return resolve(dirname(stagedPath), `.blob-recovery-stage-${digest}.owner`);
 }
 
 function testPathIdentity(value: string): string {
@@ -2080,7 +2085,7 @@ test("invalid recovery input cannot publish target authority before source valid
   }
 });
 
-test("an unowned deterministic stage is preserved and cannot publish target authority", () => {
+test("a later unowned deterministic stage is preserved despite existing target authority", () => {
   const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-unowned-stage-"));
   const mediaRoot = join(root, "media");
   const sqlitePath = join(root, "app.sqlite");
@@ -2093,6 +2098,14 @@ test("an unowned deterministic stage is preserved and cannot publish target auth
     const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
     const authorityPath = verifiedBlobRecoveryAuthorityPath(blob.storage_uri);
     const unownedBytes = Buffer.from("preserve-unowned-deterministic-stage");
+    const established = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(established.ok, true, established.ok ? undefined : established.error.code);
+    assert.equal(existsSync(authorityPath), true);
     rmSync(fixture.artifact.storage.uri);
     writeFileSync(stagedPath, unownedBytes);
 
@@ -2105,7 +2118,7 @@ test("an unowned deterministic stage is preserved and cannot publish target auth
     assert.equal(blocked.ok, false);
     if (!blocked.ok) assert.equal(blocked.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
     assert.deepEqual(readFileSync(stagedPath), unownedBytes);
-    assert.equal(existsSync(authorityPath), false);
+    assert.equal(existsSync(authorityPath), true);
     assert.equal(existsSync(fixture.artifact.storage.uri), false);
   } finally {
     db.close();
@@ -2672,6 +2685,7 @@ test("verified Blob recovery bounds deterministic staging across repeated hard p
     const blob = getMediaBlob(db, fixture.artifact.blob_id);
     assert.ok(blob);
     const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
+    const ownerPath = verifiedBlobRecoveryStageOwnerPath(stagedPath);
     const stagingRoot = dirname(stagedPath);
     const sourceSize = statSync(fixture.source_path).size;
     rmSync(fixture.artifact.storage.uri);
@@ -2691,6 +2705,8 @@ test("verified Blob recovery bounds deterministic staging across repeated hard p
         .filter((name) => /^blob-recovery-[a-f0-9]{64}\.staged$/i.test(name));
       assert.deepEqual(stagedFiles, [basename(stagedPath)]);
       assert.equal(statSync(stagedPath).size, sourceSize);
+      assert.equal(statSync(stagedPath).nlink, 2);
+      assert.equal(statSync(ownerPath).ino, statSync(stagedPath).ino);
       const stagedBytes = readFileSync(stagedPath);
       for (const independentlyConfiguredPath of [sqlitePath, copyPath, backupPath]) {
         const startup = runStartupRecoveryChild({
@@ -2714,6 +2730,7 @@ test("verified Blob recovery bounds deterministic staging across repeated hard p
     }, db);
     assert.equal(retried.ok, true, retried.ok ? undefined : retried.error.code);
     assert.equal(existsSync(stagedPath), false);
+    assert.equal(existsSync(ownerPath), false);
     assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
     assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
   } finally {
@@ -2727,13 +2744,14 @@ test("verified Blob recovery removes a stale deterministic stage for reusable ta
   const mediaRoot = join(root, "media");
   const sqlitePath = join(root, "app.sqlite");
   migrateDatabase(sqlitePath);
-  const db = openM0Database(sqlitePath);
+  let db = openM0Database(sqlitePath);
   try {
     const fixture = createRecoverableVideo(db, mediaRoot);
     const before = immutableBlobSnapshot(db, fixture.artifact.artifact_id);
     const blob = getMediaBlob(db, fixture.artifact.blob_id);
     assert.ok(blob);
     const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
+    const ownerPath = verifiedBlobRecoveryStageOwnerPath(stagedPath);
 
     const authorityEstablished = recoverVerifiedBlobStorage({
       invalid_artifact_id: fixture.artifact.artifact_id,
@@ -2742,7 +2760,19 @@ test("verified Blob recovery removes a stale deterministic stage for reusable ta
       source_path: fixture.source_path
     }, db);
     assert.equal(authorityEstablished.ok, true, authorityEstablished.ok ? undefined : authorityEstablished.error.code);
-    copyFileSync(fixture.source_path, stagedPath);
+    rmSync(fixture.artifact.storage.uri);
+    db.close();
+    hardCrashVerifiedBlobRecovery({
+      sqlite_path: sqlitePath,
+      artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    });
+    assert.equal(statSync(stagedPath).nlink, 2);
+    assert.equal(statSync(ownerPath).ino, statSync(stagedPath).ino);
+    copyFileSync(fixture.source_path, fixture.artifact.storage.uri, constants.COPYFILE_EXCL);
+    db = openM0Database(sqlitePath);
     const startupWithReusableTarget = runStartupRecoveryChild({ cwd: root, configured_path: sqlitePath });
     assert.deepEqual(startupWithReusableTarget.failed, []);
     assert.equal(existsSync(stagedPath), true);
@@ -2755,10 +2785,20 @@ test("verified Blob recovery removes a stale deterministic stage for reusable ta
     assert.equal(noOp.ok, true, noOp.ok ? undefined : noOp.error.code);
     if (noOp.ok) assert.equal(noOp.outcome, "ALREADY_REUSABLE");
     assert.equal(existsSync(stagedPath), false);
+    assert.equal(existsSync(ownerPath), false);
 
     rmSync(fixture.artifact.storage.uri);
+    db.close();
+    hardCrashVerifiedBlobRecovery({
+      sqlite_path: sqlitePath,
+      artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    });
     const partialBytes = readFileSync(fixture.source_path).subarray(0, 32);
     writeFileSync(stagedPath, partialBytes);
+    db = openM0Database(sqlitePath);
     const startupWithPartialStage = runStartupRecoveryChild({ cwd: root, configured_path: sqlitePath });
     assert.deepEqual(startupWithPartialStage.failed, []);
     assert.deepEqual(readFileSync(stagedPath), partialBytes);
@@ -2770,10 +2810,11 @@ test("verified Blob recovery removes a stale deterministic stage for reusable ta
     }, db);
     assert.equal(recovered.ok, true, recovered.ok ? undefined : recovered.error.code);
     assert.equal(existsSync(stagedPath), false);
+    assert.equal(existsSync(ownerPath), false);
     assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
     assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
   } finally {
-    db.close();
+    try { db.close(); } catch { /* closed around hard-crash setup */ }
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -2783,12 +2824,13 @@ test("generic startup preserves deterministic stages and explicit recovery conve
   const mediaRoot = join(root, "media");
   const sqlitePath = join(root, "app.sqlite");
   migrateDatabase(sqlitePath);
-  const db = openM0Database(sqlitePath);
+  let db = openM0Database(sqlitePath);
   try {
     const fixture = createRecoverableVideo(db, mediaRoot);
     const blob = getMediaBlob(db, fixture.artifact.blob_id);
     assert.ok(blob);
     const expectedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
+    const ownerPath = verifiedBlobRecoveryStageOwnerPath(expectedPath);
     const unknownPath = resolve(mediaRoot, ".activation", "staging", `blob-recovery-${"a".repeat(64)}.staged`);
     assert.notEqual(unknownPath, expectedPath);
     const authorityEstablished = recoverVerifiedBlobStorage({
@@ -2798,7 +2840,17 @@ test("generic startup preserves deterministic stages and explicit recovery conve
       source_path: fixture.source_path
     }, db);
     assert.equal(authorityEstablished.ok, true, authorityEstablished.ok ? undefined : authorityEstablished.error.code);
-    copyFileSync(fixture.source_path, expectedPath);
+    rmSync(fixture.artifact.storage.uri);
+    db.close();
+    hardCrashVerifiedBlobRecovery({
+      sqlite_path: sqlitePath,
+      artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    });
+    copyFileSync(fixture.source_path, fixture.artifact.storage.uri, constants.COPYFILE_EXCL);
+    db = openM0Database(sqlitePath);
     copyFileSync(fixture.source_path, unknownPath);
     const expectedBytes = readFileSync(expectedPath);
     const unknownBytes = readFileSync(unknownPath);
@@ -2817,10 +2869,11 @@ test("generic startup preserves deterministic stages and explicit recovery conve
     assert.equal(explicit.ok, true, explicit.ok ? undefined : explicit.error.code);
     if (explicit.ok) assert.equal(explicit.outcome, "ALREADY_REUSABLE");
     assert.equal(existsSync(expectedPath), false);
+    assert.equal(existsSync(ownerPath), false);
     assert.equal(existsSync(unknownPath), true);
     assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
   } finally {
-    db.close();
+    try { db.close(); } catch { /* closed around hard-crash setup */ }
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -3325,6 +3378,37 @@ test("verified Blob recovery narrows legacy random staging cleanup to safe gener
     assert.equal(existsSync(legacyPath), false);
     assert.equal(readFileSync(unmatchedPath, "utf8"), "preserve");
     assert.equal(readFileSync(nonCanonicalPath, "utf8"), "preserve-noncanonical");
+    assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
+    assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("verified Blob recovery never deletes its validated source when it has a legacy stage name", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-legacy-source-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const before = immutableBlobSnapshot(db, fixture.artifact.artifact_id);
+    const targetPath = fixture.artifact.storage.uri;
+    const sourcePath = join(dirname(targetPath), `blob-recovery-${randomUUID()}.staged`);
+    copyFileSync(fixture.source_path, sourcePath);
+    const sourceBytes = readFileSync(sourcePath);
+    rmSync(targetPath);
+
+    const recovered = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: sourcePath
+    }, db);
+    assert.equal(recovered.ok, true, recovered.ok ? undefined : recovered.error.code);
+    assert.deepEqual(readFileSync(sourcePath), sourceBytes);
     assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
     assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
   } finally {

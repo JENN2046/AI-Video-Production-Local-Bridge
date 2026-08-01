@@ -1,4 +1,4 @@
-import { closeSync, constants, copyFileSync, existsSync, fstatSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, constants, copyFileSync, existsSync, fstatSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
@@ -825,6 +825,7 @@ const VERIFIED_BLOB_RECOVERY_ERROR_MESSAGES: Readonly<Record<string, string>> = 
 };
 
 const DETERMINISTIC_BLOB_RECOVERY_STAGING_NAME = /^blob-recovery-[a-f0-9]{64}\.staged$/i;
+const DETERMINISTIC_BLOB_RECOVERY_STAGE_OWNER_NAME = /^\.blob-recovery-stage-[a-f0-9]{64}\.owner$/i;
 const LEGACY_BLOB_RECOVERY_STAGING_NAME = /^blob-recovery-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.staged$/i;
 const BLOB_RECOVERY_TARGET_MUTEX_NAME = /^blob-recovery-target-[a-f0-9]{64}\.lock\.sqlite$/i;
 const BLOB_RECOVERY_TARGET_MUTEX_TEMP_NAME = /^\.brm-[0-9a-f-]{36}\.tmp\.sqlite$/i;
@@ -920,12 +921,82 @@ function verifiedBlobRecoveryStagingPathForTarget(
   return stagedPath;
 }
 
+function verifiedBlobRecoveryStageOwnerPath(stagedPath: string, registeredRoot: string): string {
+  const stagedName = basename(stagedPath);
+  const digest = stagedName.slice("blob-recovery-".length, -".staged".length);
+  const ownerPath = resolve(dirname(stagedPath), `.blob-recovery-stage-${digest}.owner`);
+  if (!DETERMINISTIC_BLOB_RECOVERY_STAGING_NAME.test(stagedName)
+    || !DETERMINISTIC_BLOB_RECOVERY_STAGE_OWNER_NAME.test(basename(ownerPath))
+    || !sameResolvedPath(dirname(ownerPath), dirname(stagedPath))
+    || !isPathInside(ownerPath, registeredRoot)
+    || sameResolvedPath(ownerPath, stagedPath)
+    || hasExistingSymlinkAncestor(ownerPath, registeredRoot)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  return ownerPath;
+}
+
+function assertOwnedRecoveryStagingFile(
+  stagedPath: string,
+  ownerPath: string,
+  registeredRoot: string,
+  canonicalRoot: string,
+  expectedLinkCount = 2
+): ReturnType<typeof lstatSync> {
+  if (!existsSync(stagedPath) || !existsSync(ownerPath)
+    || !sameResolvedPath(dirname(stagedPath), dirname(ownerPath))
+    || !isPathInside(stagedPath, registeredRoot)
+    || !isPathInside(ownerPath, registeredRoot)
+    || hasExistingSymlinkAncestor(stagedPath, registeredRoot)
+    || hasExistingSymlinkAncestor(ownerPath, registeredRoot)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  const staged = lstatSync(stagedPath);
+  const owner = lstatSync(ownerPath);
+  if (staged.isSymbolicLink() || owner.isSymbolicLink()
+    || !staged.isFile() || !owner.isFile()
+    || staged.ino === 0 || staged.nlink !== expectedLinkCount
+    || owner.nlink !== expectedLinkCount
+    || staged.dev !== owner.dev || staged.ino !== owner.ino) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  const canonicalStage = resolve(realpathSync(stagedPath));
+  const canonicalOwner = resolve(realpathSync(ownerPath));
+  const canonicalDirectory = resolve(realpathSync(dirname(stagedPath)));
+  if (!isPathInside(canonicalStage, canonicalRoot)
+    || !isPathInside(canonicalOwner, canonicalRoot)
+    || !sameResolvedPath(dirname(canonicalStage), canonicalDirectory)
+    || !sameResolvedPath(dirname(canonicalOwner), canonicalDirectory)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  return staged;
+}
+
+function copyRecoverySourceToDescriptor(sourcePath: string, targetDescriptor: number): void {
+  const sourceDescriptor = openSync(sourcePath, "r");
+  try {
+    const chunk = Buffer.allocUnsafe(1024 * 1024);
+    while (true) {
+      const read = readSync(sourceDescriptor, chunk, 0, chunk.length, null);
+      if (read === 0) break;
+      let written = 0;
+      while (written < read) {
+        written += writeSync(targetDescriptor, chunk, written, read - written, null);
+      }
+    }
+    fsyncSync(targetDescriptor);
+  } finally {
+    closeSync(sourceDescriptor);
+  }
+}
+
 function assertExpectedRecoveryStagingFile(
   stagedPath: string,
   expectedStagedPath: string,
   _roots: ReturnType<typeof activationRoots>,
   registeredRoot: string,
-  canonicalRoot: string
+  canonicalRoot: string,
+  expectedLinkCount = 1
 ): void {
   const resolvedPath = resolve(stagedPath);
   const expectedDirectory = dirname(resolve(expectedStagedPath));
@@ -938,7 +1009,7 @@ function assertExpectedRecoveryStagingFile(
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
   const entry = lstatSync(resolvedPath);
-  if (entry.isSymbolicLink() || !entry.isFile() || entry.nlink !== 1) {
+  if (entry.isSymbolicLink() || !entry.isFile() || entry.nlink !== expectedLinkCount) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
   const canonicalPath = resolve(realpathSync(resolvedPath));
@@ -957,7 +1028,8 @@ function reconcileLegacyVerifiedBlobRecoveryStaging(
   artifact: MediaArtifact,
   blob: MediaBlob,
   removeValidatedCandidates = true,
-  interruptedPlacementCandidate = ""
+  interruptedPlacementCandidate = "",
+  excludedSourcePath = ""
 ): void {
   const validatedCandidates: string[] = [];
   for (const entry of readdirSync(targetDirectory, { withFileTypes: true })) {
@@ -967,6 +1039,7 @@ function reconcileLegacyVerifiedBlobRecoveryStaging(
       && sameResolvedPath(candidatePath, interruptedPlacementCandidate)) {
       continue;
     }
+    if (excludedSourcePath && sameResolvedPath(candidatePath, excludedSourcePath)) continue;
     if (!sameResolvedPath(dirname(candidatePath), targetDirectory)
       || !isPathInside(candidatePath, registeredRoot)
       || sameResolvedPath(candidatePath, targetPath)
@@ -1004,6 +1077,7 @@ function reconcileLegacyVerifiedBlobRecoveryStaging(
 function prepareVerifiedBlobRecoveryStaging(
   sourcePath: string,
   stagedPath: string,
+  ownerPath: string,
   artifact: MediaArtifact,
   blob: MediaBlob,
   roots: ReturnType<typeof activationRoots>,
@@ -1011,7 +1085,8 @@ function prepareVerifiedBlobRecoveryStaging(
   canonicalRoot: string
 ): void {
   if (existsSync(stagedPath)) {
-    assertExpectedRecoveryStagingFile(stagedPath, stagedPath, roots, registeredRoot, canonicalRoot);
+    assertExpectedRecoveryStagingFile(stagedPath, stagedPath, roots, registeredRoot, canonicalRoot, 2);
+    assertOwnedRecoveryStagingFile(stagedPath, ownerPath, registeredRoot, canonicalRoot);
     let stagedFacts: LocalMediaFacts | null = null;
     try { stagedFacts = localMediaFacts(stagedPath, artifact); }
     catch { /* a safe app-owned partial stage can be discarded and recopied */ }
@@ -1022,16 +1097,31 @@ function prepareVerifiedBlobRecoveryStaging(
       return;
     }
     rmSync(stagedPath);
+    rmSync(ownerPath);
+  } else if (existsSync(ownerPath)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
+  let descriptor = -1;
+  let stagedIdentity: ReturnType<typeof fstatSync> | null = null;
   try {
-    copyFileSync(sourcePath, stagedPath, constants.COPYFILE_EXCL);
+    descriptor = openSync(stagedPath, "wx+");
+    stagedIdentity = fstatSync(descriptor);
+    linkSync(stagedPath, ownerPath);
+    const linked = fstatSync(descriptor);
+    if (!linked.isFile() || linked.nlink !== 2 || linked.dev !== stagedIdentity.dev || linked.ino !== stagedIdentity.ino) {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    copyRecoverySourceToDescriptor(sourcePath, descriptor);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "EEXIST") {
       throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
     }
     throw error;
+  } finally {
+    if (descriptor >= 0) closeSync(descriptor);
   }
-  assertExpectedRecoveryStagingFile(stagedPath, stagedPath, roots, registeredRoot, canonicalRoot);
+  assertExpectedRecoveryStagingFile(stagedPath, stagedPath, roots, registeredRoot, canonicalRoot, 2);
+  assertOwnedRecoveryStagingFile(stagedPath, ownerPath, registeredRoot, canonicalRoot);
   let stagedFacts: LocalMediaFacts;
   try { stagedFacts = localMediaFacts(stagedPath, artifact); }
   catch { throw new Error("MEDIA_BLOB_RECOVERY_CONTENT_MISMATCH"); }
@@ -1046,17 +1136,45 @@ function inspectInterruptedVerifiedBlobPlacement(
   targetPath: string,
   targetDirectory: string,
   deterministicStagedPath: string,
+  deterministicOwnerPath: string,
   _roots: ReturnType<typeof activationRoots>,
   registeredRoot: string,
   canonicalRoot: string
-): { candidatePath: string; targetEntry: ReturnType<typeof lstatSync> } | null {
+): { candidatePaths: string[]; targetEntry: ReturnType<typeof lstatSync> } | null {
   const targetEntry = lstatSync(targetPath);
   if (targetEntry.isSymbolicLink() || !targetEntry.isFile()) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
   if (targetEntry.nlink === 1) return null;
-  if (targetEntry.nlink !== 2 || targetEntry.ino === 0) {
+  if ((targetEntry.nlink !== 2 && targetEntry.nlink !== 3) || targetEntry.ino === 0) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+
+  if (existsSync(deterministicOwnerPath)) {
+    const ownerEntry = lstatSync(deterministicOwnerPath);
+    const stageExists = existsSync(deterministicStagedPath);
+    const expectedLinks = stageExists ? 3 : 2;
+    if (ownerEntry.isSymbolicLink() || !ownerEntry.isFile()
+      || ownerEntry.nlink !== expectedLinks
+      || ownerEntry.dev !== targetEntry.dev || ownerEntry.ino !== targetEntry.ino
+      || targetEntry.nlink !== expectedLinks) {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    if (stageExists) {
+      assertOwnedRecoveryStagingFile(
+        deterministicStagedPath,
+        deterministicOwnerPath,
+        registeredRoot,
+        canonicalRoot,
+        3
+      );
+    }
+    return {
+      candidatePaths: stageExists
+        ? [deterministicStagedPath, deterministicOwnerPath]
+        : [deterministicOwnerPath],
+      targetEntry
+    };
   }
 
   const legacyCandidates = readdirSync(targetDirectory)
@@ -1088,13 +1206,14 @@ function inspectInterruptedVerifiedBlobPlacement(
   if (stagedCandidates.length !== 1) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
-  return { candidatePath: stagedCandidates[0], targetEntry };
+  return { candidatePaths: [stagedCandidates[0]], targetEntry };
 }
 
 function normalizeInterruptedVerifiedBlobPlacement(
   targetPath: string,
   targetDirectory: string,
   deterministicStagedPath: string,
+  deterministicOwnerPath: string,
   roots: ReturnType<typeof activationRoots>,
   registeredRoot: string,
   canonicalRoot: string
@@ -1103,15 +1222,16 @@ function normalizeInterruptedVerifiedBlobPlacement(
     targetPath,
     targetDirectory,
     deterministicStagedPath,
+    deterministicOwnerPath,
     roots,
     registeredRoot,
     canonicalRoot
   );
   if (!interrupted) return;
 
-  const { candidatePath, targetEntry } = interrupted;
+  const { candidatePaths, targetEntry } = interrupted;
   if (!targetEntry) throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
-  rmSync(candidatePath);
+  for (const candidatePath of candidatePaths) rmSync(candidatePath);
   const normalizedTarget = lstatSync(targetPath);
   if (normalizedTarget.isSymbolicLink()
     || !normalizedTarget.isFile()
@@ -1480,6 +1600,8 @@ function ensureVerifiedBlobRecoveryTargetAuthority(
 function validateVerifiedBlobRecoveryEntriesBeforeAuthority(
   recoveryPaths: ReturnType<typeof recoveryRootAndTarget>,
   stagedPath: string,
+  ownerPath: string,
+  sourcePath: string,
   roots: ReturnType<typeof activationRoots>,
   artifact: MediaArtifact,
   blob: MediaBlob
@@ -1500,6 +1622,7 @@ function validateVerifiedBlobRecoveryEntriesBeforeAuthority(
       recoveryPaths.targetPath,
       recoveryPaths.targetDirectory,
       stagedPath,
+      ownerPath,
       roots,
       recoveryPaths.registeredRoot,
       recoveryPaths.canonicalRoot
@@ -1507,18 +1630,27 @@ function validateVerifiedBlobRecoveryEntriesBeforeAuthority(
     : null;
 
   if (existsSync(stagedPath)
-    && (!interrupted || !sameResolvedPath(interrupted.candidatePath, stagedPath))) {
-    // A deterministic name alone does not establish application ownership.
-    // Only an authority published before an earlier stage copy makes a
-    // single-link partial or complete stage safe to reuse or replace.
-    if (!authorityExists) throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    && (!interrupted || !interrupted.candidatePaths.some((candidatePath) => sameResolvedPath(candidatePath, stagedPath)))) {
+    // A deterministic name and persistent target authority do not establish
+    // stage-instance ownership. The exact companion hard link must identify
+    // the same app-created inode before a stage can be reused or replaced.
     assertExpectedRecoveryStagingFile(
       stagedPath,
       stagedPath,
       roots,
       recoveryPaths.registeredRoot,
+      recoveryPaths.canonicalRoot,
+      2
+    );
+    assertOwnedRecoveryStagingFile(
+      stagedPath,
+      ownerPath,
+      recoveryPaths.registeredRoot,
       recoveryPaths.canonicalRoot
     );
+  } else if (!existsSync(stagedPath) && existsSync(ownerPath)
+    && (!interrupted || !interrupted.candidatePaths.some((candidatePath) => sameResolvedPath(candidatePath, ownerPath)))) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
   if (interrupted && !authorityExists) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
@@ -1532,7 +1664,8 @@ function validateVerifiedBlobRecoveryEntriesBeforeAuthority(
     artifact,
     blob,
     false,
-    interrupted?.candidatePath
+    interrupted?.candidatePaths[0],
+    sourcePath
   );
 }
 
@@ -1568,6 +1701,31 @@ function assertVerifiedBlobRecoveryTargetMutexHeader(descriptor: number): void {
   }
 }
 
+function writeEmptyVerifiedBlobRecoveryMutex(descriptor: number): void {
+  const page = Buffer.alloc(4096);
+  page.write("SQLite format 3\0", 0, "binary");
+  page.writeUInt16BE(4096, 16);
+  page[18] = 1;
+  page[19] = 1;
+  page[21] = 64;
+  page[22] = 32;
+  page[23] = 32;
+  page.writeUInt32BE(1, 24);
+  page.writeUInt32BE(1, 28);
+  page.writeUInt32BE(4, 44);
+  page.writeUInt32BE(1, 56);
+  page.writeUInt32BE(BLOB_RECOVERY_TARGET_MUTEX_APPLICATION_ID, 68);
+  page.writeUInt32BE(1, 92);
+  page.writeUInt32BE(3_048_000, 96);
+  page[100] = 0x0d;
+  page.writeUInt16BE(4096, 105);
+  let written = 0;
+  while (written < page.length) {
+    written += writeSync(descriptor, page, written, page.length - written, written);
+  }
+  fsyncSync(descriptor);
+}
+
 function initializeVerifiedBlobRecoveryTargetMutex(
   lockPath: string,
   recoveryPaths: ReturnType<typeof recoveryRootAndTarget>,
@@ -1585,21 +1743,11 @@ function initializeVerifiedBlobRecoveryTargetMutex(
   }
 
   let descriptor = -1;
-  let database: NodeDatabaseSync | null = null;
   let temporaryIdentity: ReturnType<typeof fstatSync> | null = null;
   try {
     descriptor = openSync(temporaryPath, "wx+");
     temporaryIdentity = fstatSync(descriptor);
-    closeSync(descriptor);
-    descriptor = -1;
-    database = openNodeSqliteDatabase(temporaryPath);
-    database.exec(
-      `PRAGMA journal_mode = MEMORY; VACUUM; PRAGMA application_id = ${BLOB_RECOVERY_TARGET_MUTEX_APPLICATION_ID};`
-    );
-    database.close();
-    database = null;
-    descriptor = openSync(temporaryPath, "r+");
-    fsyncSync(descriptor);
+    writeEmptyVerifiedBlobRecoveryMutex(descriptor);
     const initialized = fstatSync(descriptor);
     const currentInitialized = statSync(temporaryPath);
     if (initialized.dev !== temporaryIdentity.dev
@@ -1617,9 +1765,6 @@ function initializeVerifiedBlobRecoveryTargetMutex(
       }
     }
   } finally {
-    if (database) {
-      try { database.close(); } catch { /* preserve the stable initialization error */ }
-    }
     if (descriptor >= 0) closeSync(descriptor);
     if (temporaryIdentity) {
       try {
@@ -1756,6 +1901,58 @@ function removeGeneratedRecoveryFile(filePath: string, ownedDirectory: string, r
   rmSync(filePath, { force: true });
 }
 
+function removeOwnedRecoveryStagingPair(
+  stagedPath: string,
+  ownerPath: string,
+  registeredRoot: string,
+  canonicalRoot: string
+): void {
+  if (!existsSync(stagedPath) && !existsSync(ownerPath)) return;
+  assertOwnedRecoveryStagingFile(stagedPath, ownerPath, registeredRoot, canonicalRoot);
+  rmSync(stagedPath);
+  rmSync(ownerPath);
+}
+
+function placeOwnedRecoveryStagingFile(
+  stagedPath: string,
+  ownerPath: string,
+  targetPath: string,
+  registeredRoot: string,
+  canonicalRoot: string
+): void {
+  const stagedIdentity = assertOwnedRecoveryStagingFile(
+    stagedPath,
+    ownerPath,
+    registeredRoot,
+    canonicalRoot
+  );
+  if (!stagedIdentity) throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  try {
+    linkSync(stagedPath, targetPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new Error("MEDIA_BLOB_RECOVERY_FAILED");
+    }
+    throw error;
+  }
+  const targetIdentity = lstatSync(targetPath);
+  if (targetIdentity.isSymbolicLink() || !targetIdentity.isFile()
+    || targetIdentity.nlink !== 3
+    || targetIdentity.dev !== stagedIdentity.dev
+    || targetIdentity.ino !== stagedIdentity.ino) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  rmSync(stagedPath);
+  rmSync(ownerPath);
+  const placedIdentity = lstatSync(targetPath);
+  if (placedIdentity.isSymbolicLink() || !placedIdentity.isFile()
+    || placedIdentity.nlink !== 1
+    || placedIdentity.dev !== stagedIdentity.dev
+    || placedIdentity.ino !== stagedIdentity.ino) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+}
+
 /**
  * Repairs only the physical bytes represented by an existing immutable verified
  * MediaBlob. The caller must be the explicit Workbench provider-output recovery
@@ -1772,9 +1969,9 @@ export function recoverVerifiedBlobStorage(
 
   let transactionOpen = false;
   let registeredRoot = "";
-  let recoveryStagingRoot = "";
   let targetPath = "";
   let stagedPath = "";
+  let stagedOwnerPath = "";
   let quarantinePath = "";
   let replacementPlaced = false;
   let originalQuarantined = false;
@@ -1791,6 +1988,10 @@ export function recoverVerifiedBlobStorage(
     const preflightStagedPath = verifiedBlobRecoveryStagingPathForTarget(
       preflightPaths.targetPath,
       activation,
+      preflightPaths.registeredRoot
+    );
+    const preflightStagedOwnerPath = verifiedBlobRecoveryStageOwnerPath(
+      preflightStagedPath,
       preflightPaths.registeredRoot
     );
     const lockPath = verifiedBlobRecoveryTargetMutexPath(preflightPaths, activation, preflightStagedPath);
@@ -1836,13 +2037,14 @@ export function recoverVerifiedBlobStorage(
     }
     try { activation = ensureSafeActivationRoots(registeredRoot, false); }
     catch { throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE"); }
-    recoveryStagingRoot = recoveryPaths.targetDirectory;
     stagedPath = verifiedBlobRecoveryStagingPathForTarget(
       recoveryPaths.targetPath,
       activation,
       registeredRoot
     );
+    stagedOwnerPath = verifiedBlobRecoveryStageOwnerPath(stagedPath, registeredRoot);
     if (!sameResolvedPath(stagedPath, preflightStagedPath)
+      || !sameResolvedPath(stagedOwnerPath, preflightStagedOwnerPath)
       || !sameResolvedPath(
         lockPath,
         verifiedBlobRecoveryTargetMutexPath(recoveryPaths, activation, stagedPath)
@@ -1852,6 +2054,8 @@ export function recoverVerifiedBlobStorage(
     validateVerifiedBlobRecoveryEntriesBeforeAuthority(
       recoveryPaths,
       stagedPath,
+      stagedOwnerPath,
+      sourcePath,
       activation,
       artifact,
       blob
@@ -1864,6 +2068,7 @@ export function recoverVerifiedBlobStorage(
         targetPath,
         recoveryPaths.targetDirectory,
         stagedPath,
+        stagedOwnerPath,
         activation,
         registeredRoot,
         recoveryPaths.canonicalRoot
@@ -1875,7 +2080,10 @@ export function recoverVerifiedBlobStorage(
       registeredRoot,
       recoveryPaths.canonicalRoot,
       artifact,
-      blob
+      blob,
+      true,
+      "",
+      sourcePath
     );
 
     if (existsSync(targetPath)) {
@@ -1897,9 +2105,17 @@ export function recoverVerifiedBlobStorage(
           stagedPath,
           activation,
           registeredRoot,
+          recoveryPaths.canonicalRoot,
+          2
+        );
+        removeOwnedRecoveryStagingPair(
+          stagedPath,
+          stagedOwnerPath,
+          registeredRoot,
           recoveryPaths.canonicalRoot
         );
-        rmSync(stagedPath);
+      } else if (existsSync(stagedOwnerPath)) {
+        throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
       }
       if (!verifiedBlobStorageIsReusable(blob)) throw new Error("MEDIA_BLOB_RECOVERY_FAILED");
       db.exec("COMMIT");
@@ -1920,6 +2136,7 @@ export function recoverVerifiedBlobStorage(
     prepareVerifiedBlobRecoveryStaging(
       sourcePath,
       stagedPath,
+      stagedOwnerPath,
       artifact,
       blob,
       activation,
@@ -1938,8 +2155,15 @@ export function recoverVerifiedBlobStorage(
       throw new Error("MEDIA_BLOB_RECOVERY_FAILED");
     }
 
-    moveActivationFileExclusively(stagedPath, targetPath);
+    placeOwnedRecoveryStagingFile(
+      stagedPath,
+      stagedOwnerPath,
+      targetPath,
+      registeredRoot,
+      recoveryPaths.canonicalRoot
+    );
     stagedPath = "";
+    stagedOwnerPath = "";
     replacementPlaced = true;
     faults.after_replacement_placed?.();
     faults.before_final_verification?.();
@@ -1995,8 +2219,15 @@ export function recoverVerifiedBlobStorage(
     if (filesystemRecoveryStarted && replacementMovedAside && rollbackDiscardPath) {
       try { removeGeneratedRecoveryFile(rollbackDiscardPath, dirname(targetPath), registeredRoot); } catch { /* generated cleanup is retryable */ }
     }
-    if (filesystemRecoveryStarted && stagedPath) {
-      try { removeGeneratedRecoveryFile(stagedPath, recoveryStagingRoot, registeredRoot); } catch { /* generated cleanup is retryable */ }
+    if (filesystemRecoveryStarted && stagedPath && stagedOwnerPath) {
+      try {
+        removeOwnedRecoveryStagingPair(
+          stagedPath,
+          stagedOwnerPath,
+          registeredRoot,
+          resolve(realpathSync(registeredRoot))
+        );
+      } catch { /* owned generated cleanup is retryable */ }
     }
     if (transactionOpen) {
       try { db.exec("ROLLBACK"); } catch { /* preserve the original stable recovery failure */ }
