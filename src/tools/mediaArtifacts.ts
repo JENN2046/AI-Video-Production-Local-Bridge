@@ -2106,6 +2106,11 @@ function reconcileOwnedRecoveryCleanupPair(
       }
       cleanupPaths = [stagedCleanup, ownerCleanup];
     }
+    if (cleanupPaths.length === 1) {
+      // A lone cleanup entry has no persistent ownership companion. Preserve it
+      // rather than inferring application ownership from its deterministic name.
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
   }
   const cleanupEntries = cleanupPaths.map((candidate) => {
     const entry = lstatSync(candidate);
