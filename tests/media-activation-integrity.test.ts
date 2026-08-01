@@ -157,17 +157,21 @@ function hardCrashVerifiedBlobRecovery(input: {
   project_id: string;
   shot_id: string;
   source_path: string;
+  crash_at?: "after_staged_copy" | "after_target_authority_temp_created";
 }): void {
   const childScript = `
     const { openM0Database } = await import(process.env.RECOVERY_SQLITE_MODULE);
     const { recoverVerifiedBlobStorage } = await import(process.env.RECOVERY_MEDIA_MODULE);
     const db = openM0Database(process.env.RECOVERY_SQLITE_PATH);
+    const crashAt = process.env.RECOVERY_CRASH_AT;
     recoverVerifiedBlobStorage({
       invalid_artifact_id: process.env.RECOVERY_ARTIFACT_ID,
       project_id: process.env.RECOVERY_PROJECT_ID,
       shot_id: process.env.RECOVERY_SHOT_ID,
       source_path: process.env.RECOVERY_SOURCE_PATH
-    }, db, { after_staged_copy: () => process.exit(91) });
+    }, db, crashAt === "after_target_authority_temp_created"
+      ? { after_target_authority_temp_created: () => process.exit(93) }
+      : { after_staged_copy: () => process.exit(91) });
     db.close();
     process.exit(92);
   `;
@@ -182,14 +186,16 @@ function hardCrashVerifiedBlobRecovery(input: {
       RECOVERY_ARTIFACT_ID: input.artifact_id,
       RECOVERY_PROJECT_ID: input.project_id,
       RECOVERY_SHOT_ID: input.shot_id,
-      RECOVERY_SOURCE_PATH: input.source_path
+      RECOVERY_SOURCE_PATH: input.source_path,
+      RECOVERY_CRASH_AT: input.crash_at ?? "after_staged_copy"
     },
     encoding: "utf8",
     windowsHide: true,
     timeout: 30_000
   });
   assert.equal(child.error, undefined);
-  assert.equal(child.status, 91, child.stderr || child.stdout || "child did not stop at the staged-copy crash boundary");
+  const expectedStatus = input.crash_at === "after_target_authority_temp_created" ? 93 : 91;
+  assert.equal(child.status, expectedStatus, child.stderr || child.stdout || "child did not stop at the requested recovery crash boundary");
 }
 
 type ChildRecoveryResult = {
@@ -2215,6 +2221,60 @@ test("verified Blob recovery rejects unowned target authority entries", () => {
       db.close();
       rmSync(root, { recursive: true, force: true });
     }
+  }
+});
+
+test("a hard crash before target authority publication does not block retry", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-authority-crash-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const targetPath = fixture.artifact.storage.uri;
+    const authorityPath = verifiedBlobRecoveryAuthorityPath(targetPath);
+    const targetDirectory = dirname(targetPath);
+    rmSync(targetPath);
+    db.close();
+    hardCrashVerifiedBlobRecovery({
+      sqlite_path: sqlitePath,
+      artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path,
+      crash_at: "after_target_authority_temp_created"
+    });
+    assert.equal(existsSync(authorityPath), false);
+    const orphanTemps = readdirSync(targetDirectory)
+      .filter((name) => /^\.blob-recovery-target-[a-f0-9]{64}\.authority-[0-9a-f-]{36}\.tmp$/i.test(name));
+    assert.equal(orphanTemps.length, 1);
+
+    const retryDb = openM0Database(sqlitePath);
+    try {
+      const recovered = recoverVerifiedBlobStorage({
+        invalid_artifact_id: fixture.artifact.artifact_id,
+        project_id: fixture.project_id,
+        shot_id: fixture.shot_id,
+        source_path: fixture.source_path
+      }, retryDb);
+      assert.equal(recovered.ok, true, recovered.ok ? undefined : recovered.error.code);
+      assert.equal(existsSync(authorityPath), true);
+      assert.equal(existsSync(targetPath), true);
+      const reused = recoverVerifiedBlobStorage({
+        invalid_artifact_id: fixture.artifact.artifact_id,
+        project_id: fixture.project_id,
+        shot_id: fixture.shot_id,
+        source_path: fixture.source_path
+      }, retryDb);
+      assert.equal(reused.ok, true, reused.ok ? undefined : reused.error.code);
+      if (reused.ok) assert.equal(reused.outcome, "ALREADY_REUSABLE");
+    } finally {
+      retryDb.close();
+    }
+  } finally {
+    try { db.close(); } catch { /* closed before hard-crash child */ }
+    rmSync(root, { recursive: true, force: true });
   }
 });
 

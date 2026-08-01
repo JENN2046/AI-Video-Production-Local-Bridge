@@ -1,4 +1,4 @@
-import { closeSync, constants, copyFileSync, existsSync, fstatSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, constants, copyFileSync, existsSync, fstatSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
@@ -92,6 +92,7 @@ export interface VerifiedBlobStorageRecoveryInput {
 export interface VerifiedBlobStorageRecoveryFaults {
   target_mutex_busy_timeout_ms?: number;
   after_target_mutex_acquired?: () => void;
+  after_target_authority_temp_created?: () => void;
   after_staged_copy?: () => void;
   after_corrupt_quarantined?: () => void;
   after_replacement_placed?: () => void;
@@ -818,6 +819,7 @@ const DETERMINISTIC_BLOB_RECOVERY_STAGING_NAME = /^blob-recovery-[a-f0-9]{64}\.s
 const LEGACY_BLOB_RECOVERY_STAGING_NAME = /^blob-recovery-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.staged$/i;
 const BLOB_RECOVERY_TARGET_MUTEX_NAME = /^blob-recovery-target-[a-f0-9]{64}\.lock\.sqlite$/i;
 const BLOB_RECOVERY_TARGET_AUTHORITY_NAME = /^\.blob-recovery-target-[a-f0-9]{64}\.authority\.json$/i;
+const BLOB_RECOVERY_TARGET_AUTHORITY_TEMP_NAME = /^\.blob-recovery-target-[a-f0-9]{64}\.authority-[0-9a-f-]{36}\.tmp$/i;
 const BLOB_RECOVERY_TARGET_MUTEX_BUSY_TIMEOUT_MS = 30_000;
 
 function verifiedBlobRecoveryPathIdentity(value: string): string {
@@ -1244,8 +1246,35 @@ function assertVerifiedBlobRecoveryTargetAuthorityFile(
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
   const entry = lstatSync(authorityPath);
-  if (entry.isSymbolicLink() || !entry.isFile() || entry.nlink !== 1 || entry.size <= 0 || entry.size > 1024) {
+  if (entry.isSymbolicLink() || !entry.isFile() || entry.nlink < 1 || entry.nlink > 2 || entry.size <= 0 || entry.size > 1024) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  if (entry.nlink === 2) {
+    const linkedCandidates = readdirSync(recoveryPaths.targetDirectory)
+      .filter((name) => BLOB_RECOVERY_TARGET_AUTHORITY_TEMP_NAME.test(name))
+      .map((name) => resolve(recoveryPaths.targetDirectory, name))
+      .filter((candidatePath) => {
+        try {
+          const candidate = lstatSync(candidatePath);
+          return !candidate.isSymbolicLink()
+            && candidate.isFile()
+            && candidate.nlink === 2
+            && candidate.dev === entry.dev
+            && candidate.ino === entry.ino;
+        } catch {
+          return false;
+        }
+      });
+    if (linkedCandidates.length !== 1) throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    rmSync(linkedCandidates[0]);
+    const normalized = lstatSync(authorityPath);
+    if (normalized.isSymbolicLink()
+      || !normalized.isFile()
+      || normalized.nlink !== 1
+      || normalized.dev !== entry.dev
+      || normalized.ino !== entry.ino) {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
   }
   let descriptor = -1;
   try {
@@ -1297,17 +1326,62 @@ function assertVerifiedBlobRecoveryTargetAuthorityFile(
 
 function ensureVerifiedBlobRecoveryTargetAuthority(
   recoveryPaths: ReturnType<typeof recoveryRootAndTarget>,
-  blob: MediaBlob
+  blob: MediaBlob,
+  faults: VerifiedBlobStorageRecoveryFaults
 ): string {
   const authorityPath = verifiedBlobRecoveryTargetAuthorityPath(recoveryPaths);
   const expected = expectedVerifiedBlobRecoveryTargetAuthority(recoveryPaths, blob);
   try {
-    const descriptor = openSync(authorityPath, "wx");
-    try { writeFileSync(descriptor, JSON.stringify(expected), "utf8"); }
-    finally { closeSync(descriptor); }
+    lstatSync(authorityPath);
+    assertVerifiedBlobRecoveryTargetAuthorityFile(authorityPath, recoveryPaths, expected);
+    return authorityPath;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+
+  const targetDigest = expected.target_identity_sha256;
+  const temporaryPath = resolve(
+    recoveryPaths.targetDirectory,
+    `.blob-recovery-target-${targetDigest}.authority-${randomUUID()}.tmp`
+  );
+  if (!BLOB_RECOVERY_TARGET_AUTHORITY_TEMP_NAME.test(basename(temporaryPath))
+    || !sameResolvedPath(dirname(temporaryPath), recoveryPaths.targetDirectory)
+    || !isPathInside(temporaryPath, recoveryPaths.registeredRoot)
+    || hasExistingSymlinkAncestor(temporaryPath, recoveryPaths.registeredRoot)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  let descriptor = -1;
+  let temporaryIdentity: ReturnType<typeof fstatSync> | null = null;
+  try {
+    descriptor = openSync(temporaryPath, "wx");
+    temporaryIdentity = fstatSync(descriptor);
+    faults.after_target_authority_temp_created?.();
+    writeFileSync(descriptor, JSON.stringify(expected), "utf8");
+    fsyncSync(descriptor);
+    const written = fstatSync(descriptor);
+    if (!written.isFile() || written.nlink !== 1 || written.size <= 0 || written.size > 1024) {
       throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    closeSync(descriptor);
+    descriptor = -1;
+    try { linkSync(temporaryPath, authorityPath); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+      }
+    }
+  } finally {
+    if (descriptor >= 0) closeSync(descriptor);
+    if (temporaryIdentity) {
+      try {
+        const current = lstatSync(temporaryPath);
+        if (!current.isSymbolicLink()
+          && current.isFile()
+          && current.dev === temporaryIdentity.dev
+          && current.ino === temporaryIdentity.ino) {
+          rmSync(temporaryPath);
+        }
+      } catch { /* a hard exit can leave a non-authoritative temp that never blocks retry */ }
     }
   }
   assertVerifiedBlobRecoveryTargetAuthorityFile(authorityPath, recoveryPaths, expected);
@@ -1479,7 +1553,7 @@ export function recoverVerifiedBlobStorage(
       busyTimeoutMs
     );
     faults.after_target_mutex_acquired?.();
-    ensureVerifiedBlobRecoveryTargetAuthority(preflightPaths, preflight.blob);
+    ensureVerifiedBlobRecoveryTargetAuthority(preflightPaths, preflight.blob, faults);
 
     db.exec("BEGIN IMMEDIATE");
     transactionOpen = true;
