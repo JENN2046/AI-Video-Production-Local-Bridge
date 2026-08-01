@@ -559,3 +559,14 @@ of adding an owner registry, external interface or new recovery capability.
 Focused media activation passes `70 PASS / 1 SKIP`; typecheck and diff checks
 also pass. At state sync, 24 PR #109 threads remain unresolved pending exact-head
 CI and one final frozen-scope review. PR #109 remains open and unmerged.
+
+### PR #109 final target-link safety contraction
+
+Commit `f0c486b` removes automatic normalization of two-link target states.
+Only the complete deterministic stage-owner-target ownership triple may be
+normalized; every unproven target hard link is preserved and fails closed.
+No owner registry, interface or recovery capability was added.
+
+Focused media activation passes `70 PASS / 1 SKIP`; typecheck and diff checks
+also pass. At state sync, 25 PR #109 threads remain unresolved pending exact-head
+CI and one final frozen-scope review. PR #109 remains open and unmerged.

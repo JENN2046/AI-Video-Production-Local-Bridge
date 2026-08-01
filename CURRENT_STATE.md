@@ -309,11 +309,14 @@ converges a hard exit between the two isolation renames. Closeout fixes
 reconciliation and reject DOS-alias content drift before authority publication;
 they add no feature or external capability. Safety contraction `6b6e238`
 preserves lone cleanup entries whose ownership cannot be proven instead of
-adding a new ownership registry or recovery protocol. Local validation
+adding a new ownership registry or recovery protocol. Safety contraction
+`f0c486b` also removes automatic normalization of two-link target states; only
+the complete deterministic stage-owner-target ownership triple can be changed.
+Local validation
 passes with media activation 70 PASS / 0 FAIL / 1 platform-capability skip,
 Foundation 132 PASS / 0 FAIL / 1 platform-capability skip,
 Provider 52/52, Workbench V2 68/68 and selection 23/23; typecheck, build, secret
-scan and diff checks also pass. At state sync the 24 unresolved PR #109 threads
+scan and diff checks also pass. At state sync the 25 unresolved PR #109 threads
 are `PRRT_kwDOTTDtUM6VkSwY`, `PRRT_kwDOTTDtUM6VkqqS`,
 `PRRT_kwDOTTDtUM6VkzTz`, `PRRT_kwDOTTDtUM6Vk38a`,
 `PRRT_kwDOTTDtUM6Vk38b`, `PRRT_kwDOTTDtUM6VlUo8`,
@@ -326,7 +329,8 @@ are `PRRT_kwDOTTDtUM6VkSwY`, `PRRT_kwDOTTDtUM6VkqqS`,
 `PRRT_kwDOTTDtUM6Vnvkv`, `PRRT_kwDOTTDtUM6Vn2uJ`,
 `PRRT_kwDOTTDtUM6VoV-d`,
 `PRRT_kwDOTTDtUM6VoV-e`, `PRRT_kwDOTTDtUM6VomGc`,
-`PRRT_kwDOTTDtUM6VorLf` and `PRRT_kwDOTTDtUM6Vox11`. All 24 threads remain unresolved pending
+`PRRT_kwDOTTDtUM6VorLf`, `PRRT_kwDOTTDtUM6Vox11` and
+`PRRT_kwDOTTDtUM6Vo6Ke`. All 25 threads remain unresolved pending
 new exact-head CI and a fresh complete review. PR #109
 remains open and unmerged.
 Cross-database explicit recovery is serialized by an exact-target SQLite mutex,

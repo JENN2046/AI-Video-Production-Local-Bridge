@@ -1275,3 +1275,13 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - Focused media activation `70 PASS / 1 SKIP`; typecheck and diff checks pass.
 - At state sync, 24 PR #109 threads remain unresolved pending exact-head CI and
   one final frozen-scope review. PR #109 remains open and unmerged.
+
+## PR #109 final target-link safety contraction
+
+- Candidate commit: `f0c486b`.
+- Automatic target-link normalization now requires the complete deterministic
+  stage-owner-target ownership triple. Two-link states are preserved and fail
+  closed; no owner registry or new recovery capability was added.
+- Focused media activation `70 PASS / 1 SKIP`; typecheck and diff checks pass.
+- At state sync, 25 PR #109 threads remain unresolved pending exact-head CI and
+  one final frozen-scope review. PR #109 remains open and unmerged.

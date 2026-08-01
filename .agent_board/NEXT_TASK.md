@@ -76,6 +76,9 @@ automatically.
    Final safety contraction `6b6e238` preserves any lone cleanup entry whose
    application ownership cannot be proven; it intentionally adds no owner
    registry or new recovery capability.
+   Safety contraction `f0c486b` removes automatic two-link target normalization:
+   only the complete deterministic stage-owner-target ownership triple may be
+   normalized automatically.
 - At state sync the unresolved threads are `PRRT_kwDOTTDtUM6VkSwY`,
   `PRRT_kwDOTTDtUM6VkqqS`, `PRRT_kwDOTTDtUM6VkzTz`,
   `PRRT_kwDOTTDtUM6Vk38a`, `PRRT_kwDOTTDtUM6Vk38b`,
@@ -88,7 +91,8 @@ automatically.
   `PRRT_kwDOTTDtUM6Vnvkt`, `PRRT_kwDOTTDtUM6Vnvkv`,
   `PRRT_kwDOTTDtUM6Vn2uJ`, `PRRT_kwDOTTDtUM6VoV-d` and
   `PRRT_kwDOTTDtUM6VoV-e`, `PRRT_kwDOTTDtUM6VomGc`,
-  `PRRT_kwDOTTDtUM6VorLf` and `PRRT_kwDOTTDtUM6Vox11` (24 total).
+  `PRRT_kwDOTTDtUM6VorLf`, `PRRT_kwDOTTDtUM6Vox11` and
+  `PRRT_kwDOTTDtUM6Vo6Ke` (25 total).
   Generic startup preserves the bounded stage; explicit recovery is serialized
   by exact target across database files. Exact-head Windows CI and a fresh
   post-promotion Codex review remain required; merge is not authorized.
