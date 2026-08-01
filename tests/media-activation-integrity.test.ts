@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { copyFileSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -125,6 +125,15 @@ function verifiedBlobRecoveryStagePath(
     .update(resolve(blob.storage_uri))
     .digest("hex");
   return resolve(mediaRoot, ".activation", "staging", `blob-recovery-${digest}.staged`);
+}
+
+function verifiedBlobRecoveryMutexPath(mediaRoot: string, storageUri: string): string {
+  const digest = createHash("sha256")
+    .update(resolve(realpathSync(mediaRoot)))
+    .update("\0")
+    .update(resolve(storageUri))
+    .digest("hex");
+  return resolve(mediaRoot, ".activation", "journal", `blob-recovery-target-${digest}.lock.sqlite`);
 }
 
 function hardCrashVerifiedBlobRecovery(input: {
@@ -255,6 +264,7 @@ function startPausedVerifiedBlobRecovery(input: {
   source_path: string;
   ready_signal: string;
   release_signal: string;
+  pause_at?: "after_staged_copy" | "after_target_mutex_acquired";
 }): ChildProcess {
   const childScript = `
     const { existsSync, writeFileSync } = await import("node:fs");
@@ -262,12 +272,7 @@ function startPausedVerifiedBlobRecovery(input: {
     const { recoverVerifiedBlobStorage } = await import(process.env.RECOVERY_MEDIA_MODULE);
     const db = openM0Database();
     try {
-      const result = recoverVerifiedBlobStorage({
-        invalid_artifact_id: process.env.RECOVERY_ARTIFACT_ID,
-        project_id: process.env.RECOVERY_PROJECT_ID,
-        shot_id: process.env.RECOVERY_SHOT_ID,
-        source_path: process.env.RECOVERY_SOURCE_PATH
-      }, db, { after_staged_copy: () => {
+      const pause = () => {
         writeFileSync(process.env.RECOVERY_READY_SIGNAL, "ready", "utf8");
         const deadline = Date.now() + 30000;
         const sleeper = new Int32Array(new SharedArrayBuffer(4));
@@ -275,7 +280,16 @@ function startPausedVerifiedBlobRecovery(input: {
           if (Date.now() >= deadline) throw new Error("RECOVERY_RELEASE_TIMEOUT");
           Atomics.wait(sleeper, 0, 0, 25);
         }
-      }});
+      };
+      const pauseAt = process.env.RECOVERY_PAUSE_AT;
+      const result = recoverVerifiedBlobStorage({
+        invalid_artifact_id: process.env.RECOVERY_ARTIFACT_ID,
+        project_id: process.env.RECOVERY_PROJECT_ID,
+        shot_id: process.env.RECOVERY_SHOT_ID,
+        source_path: process.env.RECOVERY_SOURCE_PATH
+      }, db, pauseAt === "after_target_mutex_acquired"
+        ? { after_target_mutex_acquired: pause }
+        : { after_staged_copy: pause });
       process.stdout.write(JSON.stringify(result));
     } finally {
       db.close();
@@ -293,7 +307,53 @@ function startPausedVerifiedBlobRecovery(input: {
       RECOVERY_SHOT_ID: input.shot_id,
       RECOVERY_SOURCE_PATH: input.source_path,
       RECOVERY_READY_SIGNAL: input.ready_signal,
-      RECOVERY_RELEASE_SIGNAL: input.release_signal
+      RECOVERY_RELEASE_SIGNAL: input.release_signal,
+      RECOVERY_PAUSE_AT: input.pause_at ?? "after_staged_copy"
+    },
+    windowsHide: true,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+}
+
+function startVerifiedBlobRecovery(input: {
+  cwd: string;
+  sqlite_path: string;
+  artifact_id: string;
+  project_id: string;
+  shot_id: string;
+  source_path: string;
+  busy_timeout_ms?: number;
+}): ChildProcess {
+  const childScript = `
+    const { openM0Database } = await import(process.env.RECOVERY_SQLITE_MODULE);
+    const { recoverVerifiedBlobStorage } = await import(process.env.RECOVERY_MEDIA_MODULE);
+    const db = openM0Database();
+    try {
+      const result = recoverVerifiedBlobStorage({
+        invalid_artifact_id: process.env.RECOVERY_ARTIFACT_ID,
+        project_id: process.env.RECOVERY_PROJECT_ID,
+        shot_id: process.env.RECOVERY_SHOT_ID,
+        source_path: process.env.RECOVERY_SOURCE_PATH
+      }, db, process.env.RECOVERY_BUSY_TIMEOUT_MS
+        ? { target_mutex_busy_timeout_ms: Number(process.env.RECOVERY_BUSY_TIMEOUT_MS) }
+        : {});
+      process.stdout.write(JSON.stringify(result));
+    } finally {
+      db.close();
+    }
+  `;
+  return spawn(process.execPath, ["--input-type=module", "--eval", childScript], {
+    cwd: input.cwd,
+    env: {
+      ...process.env,
+      AI_VIDEO_WORKSPACE_DB_PATH: input.sqlite_path,
+      RECOVERY_SQLITE_MODULE,
+      RECOVERY_MEDIA_MODULE,
+      RECOVERY_ARTIFACT_ID: input.artifact_id,
+      RECOVERY_PROJECT_ID: input.project_id,
+      RECOVERY_SHOT_ID: input.shot_id,
+      RECOVERY_SOURCE_PATH: input.source_path,
+      RECOVERY_BUSY_TIMEOUT_MS: input.busy_timeout_ms ? String(input.busy_timeout_ms) : ""
     },
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"]
@@ -427,7 +487,9 @@ test("activation never overwrites or quarantines a pre-existing final path", () 
     assert.equal(readFileSync(artifact.storage.uri).equals(existingBytes), true);
     const journal = db.prepare("SELECT state, error_code FROM media_activation_journal WHERE artifact_id = ?").get(artifact.artifact_id) as { state: string; error_code: string };
     assert.deepEqual({ ...journal }, { state: "failed", error_code: "MEDIA_ACTIVATION_FINAL_PATH_EXISTS" });
-    const checked = checkDatabase(sqlitePath);
+    const failedBeforeCheck = db.prepare("SELECT COUNT(*) AS count FROM media_activation_journal WHERE state = 'failed'").get() as { count: number };
+    assert.equal(failedBeforeCheck.count, 1);
+    const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
     assert.equal(checked.result, "FAIL");
     assert.equal(checked.quarantined_media_activations, 1);
   } finally {
@@ -1537,14 +1599,14 @@ test("verified Blob recovery serializes competing repairs with BEGIN IMMEDIATE",
           project_id: fixture.project_id,
           shot_id: fixture.shot_id,
           source_path: fixture.source_path
-        }, contenderDb));
+        }, contenderDb, { target_mutex_busy_timeout_ms: 25 }));
       }
     });
     assert.equal(first.ok, true, first.ok ? undefined : first.error.code);
     assert.equal(contenderResults.length, 1);
     const contender = contenderResults[0];
     assert.equal(contender.ok, false);
-    if (!contender.ok) assert.equal(contender.error.code, "MEDIA_BLOB_RECOVERY_FAILED");
+    if (!contender.ok) assert.equal(contender.error.code, "MEDIA_BLOB_RECOVERY_BUSY");
 
     const retry = recoverVerifiedBlobStorage({
       invalid_artifact_id: fixture.artifact.artifact_id,
@@ -1556,6 +1618,490 @@ test("verified Blob recovery serializes competing repairs with BEGIN IMMEDIATE",
     if (retry.ok) assert.equal(retry.outcome, "ALREADY_REUSABLE");
   } finally {
     contenderDb.close();
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("independent databases serialize explicit recovery for the same Blob target", async () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-cross-database-"));
+  const mediaRoot = join(root, "media");
+  const databaseA = join(root, "database-a.sqlite");
+  const databaseB = join(root, "database-b.sqlite");
+  const readyA = join(root, "ready-a");
+  const releaseA = join(root, "release-a");
+  let processA: ChildProcess | null = null;
+  let processB: ChildProcess | null = null;
+  migrateDatabase(databaseA);
+  const db = openM0Database(databaseA);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const blob = getMediaBlob(db, fixture.artifact.blob_id);
+    assert.ok(blob);
+    const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
+    const mutexPath = verifiedBlobRecoveryMutexPath(mediaRoot, blob.storage_uri);
+    db.close();
+    copyFileSync(databaseA, databaseB);
+    rmSync(fixture.artifact.storage.uri);
+
+    processA = startPausedVerifiedBlobRecovery({
+      cwd: root,
+      sqlite_path: databaseA,
+      artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path,
+      ready_signal: readyA,
+      release_signal: releaseA
+    });
+    await waitForSignal(readyA);
+    const stagedBytes = readFileSync(stagedPath);
+    processB = startVerifiedBlobRecovery({
+      cwd: root,
+      sqlite_path: databaseB,
+      artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    });
+    await new Promise((resolveWait) => setTimeout(resolveWait, 150));
+    assert.equal(processB.exitCode, null);
+    assert.deepEqual(readFileSync(stagedPath), stagedBytes);
+    assert.equal(existsSync(fixture.artifact.storage.uri), false);
+
+    writeFileSync(releaseA, "release", "utf8");
+    const completedA = await waitForChild(processA);
+    const completedB = await waitForChild(processB);
+    assert.equal(completedA.code, 0, completedA.stderr);
+    assert.equal(completedB.code, 0, completedB.stderr);
+    const resultA = JSON.parse(completedA.stdout) as ReturnType<typeof recoverVerifiedBlobStorage>;
+    const resultB = JSON.parse(completedB.stdout) as ReturnType<typeof recoverVerifiedBlobStorage>;
+    assert.equal(resultA.ok, true, resultA.ok ? undefined : resultA.error.code);
+    assert.equal(resultB.ok, true, resultB.ok ? undefined : resultB.error.code);
+    if (resultB.ok) assert.equal(resultB.outcome, "ALREADY_REUSABLE");
+    assert.equal(existsSync(stagedPath), false);
+    assert.equal(existsSync(mutexPath), true);
+    assert.equal(readdirSync(dirname(mutexPath)).filter((name) => /^blob-recovery-target-.*\.lock\.sqlite$/.test(name)).length, 1);
+  } finally {
+    if (processA?.exitCode === null) processA.kill();
+    if (processB?.exitCode === null) processB.kill();
+    try { db.close(); } catch { /* closed before child processes */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("different Blob ids sharing one storage target use the same mutex", async () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-shared-target-"));
+  const mediaRoot = join(root, "media");
+  const databaseA = join(root, "database-a.sqlite");
+  const databaseB = join(root, "database-b.sqlite");
+  const readyA = join(root, "ready-a");
+  const releaseA = join(root, "release-a");
+  let processA: ChildProcess | null = null;
+  let processB: ChildProcess | null = null;
+  migrateDatabase(databaseA);
+  migrateDatabase(databaseB);
+  const dbA = openM0Database(databaseA);
+  const dbB = openM0Database(databaseB);
+  try {
+    const fixtureA = createRecoverableVideo(dbA, mediaRoot);
+    const fixtureB = insertUnsafeRecoveryFixture(
+      dbB,
+      mediaRoot,
+      fixtureA.artifact.storage.uri,
+      fixtureA.source_path,
+      `blob_distinct_${randomUUID()}`
+    );
+    assert.notEqual(fixtureA.artifact.blob_id, fixtureB.artifact.blob_id);
+    const blobA = getMediaBlob(dbA, fixtureA.artifact.blob_id);
+    const blobB = getMediaBlob(dbB, fixtureB.artifact.blob_id);
+    assert.ok(blobA);
+    assert.ok(blobB);
+    assert.equal(
+      verifiedBlobRecoveryMutexPath(mediaRoot, blobA.storage_uri),
+      verifiedBlobRecoveryMutexPath(mediaRoot, blobB.storage_uri)
+    );
+    dbA.close();
+    dbB.close();
+    rmSync(fixtureA.artifact.storage.uri);
+
+    processA = startPausedVerifiedBlobRecovery({
+      cwd: root,
+      sqlite_path: databaseA,
+      artifact_id: fixtureA.artifact.artifact_id,
+      project_id: fixtureA.project_id,
+      shot_id: fixtureA.shot_id,
+      source_path: fixtureA.source_path,
+      ready_signal: readyA,
+      release_signal: releaseA
+    });
+    await waitForSignal(readyA);
+    processB = startVerifiedBlobRecovery({
+      cwd: root,
+      sqlite_path: databaseB,
+      artifact_id: fixtureB.artifact.artifact_id,
+      project_id: fixtureB.artifact.linked_objects.project_id,
+      shot_id: fixtureB.artifact.linked_objects.shot_id,
+      source_path: fixtureB.source_path
+    });
+    await new Promise((resolveWait) => setTimeout(resolveWait, 150));
+    assert.equal(processB.exitCode, null);
+    writeFileSync(releaseA, "release", "utf8");
+    const completedA = await waitForChild(processA);
+    const completedB = await waitForChild(processB);
+    assert.equal(completedA.code, 0, completedA.stderr);
+    assert.equal(completedB.code, 0, completedB.stderr);
+    const resultB = JSON.parse(completedB.stdout) as ReturnType<typeof recoverVerifiedBlobStorage>;
+    assert.equal(resultB.ok, true, resultB.ok ? undefined : resultB.error.code);
+    if (resultB.ok) assert.equal(resultB.outcome, "ALREADY_REUSABLE");
+  } finally {
+    if (processA?.exitCode === null) processA.kill();
+    if (processB?.exitCode === null) processB.kill();
+    try { dbA.close(); } catch { /* closed before child processes */ }
+    try { dbB.close(); } catch { /* closed before child processes */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("target mutex busy timeout is bounded and does not disturb the active recovery", async () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-busy-"));
+  const mediaRoot = join(root, "media");
+  const databaseA = join(root, "database-a.sqlite");
+  const databaseB = join(root, "database-b.sqlite");
+  const readyA = join(root, "ready-a");
+  const releaseA = join(root, "release-a");
+  let processA: ChildProcess | null = null;
+  let processB: ChildProcess | null = null;
+  migrateDatabase(databaseA);
+  const db = openM0Database(databaseA);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const blob = getMediaBlob(db, fixture.artifact.blob_id);
+    assert.ok(blob);
+    const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
+    db.close();
+    copyFileSync(databaseA, databaseB);
+    rmSync(fixture.artifact.storage.uri);
+    processA = startPausedVerifiedBlobRecovery({
+      cwd: root,
+      sqlite_path: databaseA,
+      artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path,
+      ready_signal: readyA,
+      release_signal: releaseA
+    });
+    await waitForSignal(readyA);
+    const stagedBytes = readFileSync(stagedPath);
+    processB = startVerifiedBlobRecovery({
+      cwd: root,
+      sqlite_path: databaseB,
+      artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path,
+      busy_timeout_ms: 25
+    });
+    const completedB = await waitForChild(processB);
+    assert.equal(completedB.code, 0, completedB.stderr);
+    const resultB = JSON.parse(completedB.stdout) as ReturnType<typeof recoverVerifiedBlobStorage>;
+    assert.equal(resultB.ok, false);
+    if (!resultB.ok) assert.equal(resultB.error.code, "MEDIA_BLOB_RECOVERY_BUSY");
+    assert.deepEqual(readFileSync(stagedPath), stagedBytes);
+    assert.equal(existsSync(fixture.artifact.storage.uri), false);
+
+    writeFileSync(releaseA, "release", "utf8");
+    const completedA = await waitForChild(processA);
+    assert.equal(completedA.code, 0, completedA.stderr);
+    const resultA = JSON.parse(completedA.stdout) as ReturnType<typeof recoverVerifiedBlobStorage>;
+    assert.equal(resultA.ok, true, resultA.ok ? undefined : resultA.error.code);
+  } finally {
+    if (processA?.exitCode === null) processA.kill();
+    if (processB?.exitCode === null) processB.kill();
+    try { db.close(); } catch { /* closed before child processes */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("different storage targets under one media root acquire mutexes concurrently", async () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-parallel-targets-"));
+  const mediaRoot = join(root, "media");
+  const databaseA = join(root, "database-a.sqlite");
+  const databaseB = join(root, "database-b.sqlite");
+  const readyA = join(root, "ready-a");
+  const readyB = join(root, "ready-b");
+  const releaseA = join(root, "release-a");
+  const releaseB = join(root, "release-b");
+  let processA: ChildProcess | null = null;
+  let processB: ChildProcess | null = null;
+  migrateDatabase(databaseA);
+  migrateDatabase(databaseB);
+  const dbA = openM0Database(databaseA);
+  const dbB = openM0Database(databaseB);
+  try {
+    const fixtureA = createRecoverableVideo(dbA, mediaRoot);
+    const fixtureB = createRecoverableVideo(dbB, mediaRoot);
+    assert.notEqual(fixtureA.artifact.storage.uri, fixtureB.artifact.storage.uri);
+    dbA.close();
+    dbB.close();
+    rmSync(fixtureA.artifact.storage.uri);
+    rmSync(fixtureB.artifact.storage.uri);
+    processA = startPausedVerifiedBlobRecovery({
+      cwd: root,
+      sqlite_path: databaseA,
+      artifact_id: fixtureA.artifact.artifact_id,
+      project_id: fixtureA.project_id,
+      shot_id: fixtureA.shot_id,
+      source_path: fixtureA.source_path,
+      ready_signal: readyA,
+      release_signal: releaseA,
+      pause_at: "after_target_mutex_acquired"
+    });
+    processB = startPausedVerifiedBlobRecovery({
+      cwd: root,
+      sqlite_path: databaseB,
+      artifact_id: fixtureB.artifact.artifact_id,
+      project_id: fixtureB.project_id,
+      shot_id: fixtureB.shot_id,
+      source_path: fixtureB.source_path,
+      ready_signal: readyB,
+      release_signal: releaseB,
+      pause_at: "after_target_mutex_acquired"
+    });
+    await Promise.all([waitForSignal(readyA, 5_000), waitForSignal(readyB, 5_000)]);
+    writeFileSync(releaseA, "release", "utf8");
+    writeFileSync(releaseB, "release", "utf8");
+    const [completedA, completedB] = await Promise.all([waitForChild(processA), waitForChild(processB)]);
+    assert.equal(completedA.code, 0, completedA.stderr);
+    assert.equal(completedB.code, 0, completedB.stderr);
+  } finally {
+    if (processA?.exitCode === null) processA.kill();
+    if (processB?.exitCode === null) processB.kill();
+    try { dbA.close(); } catch { /* closed before child processes */ }
+    try { dbB.close(); } catch { /* closed before child processes */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("verified Blob recovery rejects unsafe persistent target mutex entries", () => {
+  for (const scenario of ["directory", "hard-link", "malformed"] as const) {
+    const root = mkdtempSync(join(tmpdir(), `verified-blob-recovery-unsafe-mutex-${scenario}-`));
+    const mediaRoot = join(root, "media");
+    const sqlitePath = join(root, "app.sqlite");
+    migrateDatabase(sqlitePath);
+    const db = openM0Database(sqlitePath);
+    try {
+      const fixture = createRecoverableVideo(db, mediaRoot);
+      const before = immutableBlobSnapshot(db, fixture.artifact.artifact_id);
+      const blob = getMediaBlob(db, fixture.artifact.blob_id);
+      assert.ok(blob);
+      const mutexPath = verifiedBlobRecoveryMutexPath(mediaRoot, blob.storage_uri);
+      rmSync(fixture.artifact.storage.uri);
+      if (scenario === "directory") {
+        mkdirSync(mutexPath);
+      } else if (scenario === "hard-link") {
+        const unownedPath = join(dirname(mutexPath), "unowned-lock.sqlite");
+        writeFileSync(unownedPath, "preserve", "utf8");
+        linkSync(unownedPath, mutexPath);
+      } else {
+        writeFileSync(mutexPath, "not-a-sqlite-database", "utf8");
+      }
+
+      const blocked = recoverVerifiedBlobStorage({
+        invalid_artifact_id: fixture.artifact.artifact_id,
+        project_id: fixture.project_id,
+        shot_id: fixture.shot_id,
+        source_path: fixture.source_path
+      }, db);
+      assert.equal(blocked.ok, false);
+      if (!blocked.ok) assert.equal(blocked.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+      assert.equal(existsSync(mutexPath), true);
+      assert.equal(existsSync(fixture.artifact.storage.uri), false);
+      assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
+    } finally {
+      db.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test("verified Blob recovery rejects a symlink target mutex without deleting it", (context) => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-symlink-mutex-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const blob = getMediaBlob(db, fixture.artifact.blob_id);
+    assert.ok(blob);
+    const mutexPath = verifiedBlobRecoveryMutexPath(mediaRoot, blob.storage_uri);
+    const externalPath = join(root, "external-lock.sqlite");
+    writeFileSync(externalPath, "preserve", "utf8");
+    rmSync(fixture.artifact.storage.uri);
+    try { symlinkSync(externalPath, mutexPath, "file"); }
+    catch (error) {
+      context.skip(`File symlinks are unavailable: ${error instanceof Error ? error.message : "SYMLINK_UNAVAILABLE"}`);
+      return;
+    }
+    const blocked = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(blocked.ok, false);
+    if (!blocked.ok) assert.equal(blocked.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    assert.equal(lstatSync(mutexPath).isSymbolicLink(), true);
+    assert.equal(readFileSync(externalPath, "utf8"), "preserve");
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("verified Blob recovery rejects a redirected activation journal root", (context) => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-redirected-journal-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const journalRoot = join(mediaRoot, ".activation", "journal");
+    const externalRoot = join(root, "external-journal");
+    mkdirSync(externalRoot);
+    const sentinel = join(externalRoot, "sentinel.txt");
+    writeFileSync(sentinel, "preserve", "utf8");
+    rmSync(journalRoot, { recursive: true });
+    try { symlinkSync(externalRoot, journalRoot, "junction"); }
+    catch (error) {
+      context.skip(`Directory symlinks are unavailable: ${error instanceof Error ? error.message : "SYMLINK_UNAVAILABLE"}`);
+      return;
+    }
+    rmSync(fixture.artifact.storage.uri);
+    const blocked = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(blocked.ok, false);
+    if (!blocked.ok) assert.equal(blocked.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    assert.equal(readFileSync(sentinel, "utf8"), "preserve");
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("persistent target mutex is reused and released after application commit failure", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-mutex-reuse-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const before = immutableBlobSnapshot(db, fixture.artifact.artifact_id);
+    const blob = getMediaBlob(db, fixture.artifact.blob_id);
+    assert.ok(blob);
+    const mutexPath = verifiedBlobRecoveryMutexPath(mediaRoot, blob.storage_uri);
+    rmSync(fixture.artifact.storage.uri);
+    const originalExec = db.exec.bind(db);
+    let rejectCommit = true;
+    db.exec = ((sql: string) => {
+      if (rejectCommit && sql.trim().toUpperCase() === "COMMIT") {
+        rejectCommit = false;
+        throw new Error("INJECTED_APPLICATION_COMMIT_FAILURE");
+      }
+      return originalExec(sql);
+    }) as typeof db.exec;
+    const failed = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(failed.ok, false);
+    if (!failed.ok) assert.equal(failed.error.code, "MEDIA_BLOB_RECOVERY_FAILED");
+    db.exec = originalExec as typeof db.exec;
+
+    const retried = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(retried.ok, true, retried.ok ? undefined : retried.error.code);
+    const reused = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(reused.ok, true, reused.ok ? undefined : reused.error.code);
+    if (reused.ok) assert.equal(reused.outcome, "ALREADY_REUSABLE");
+    assert.deepEqual(recoverMediaActivations(db).failed, []);
+    assert.equal(existsSync(mutexPath), true);
+    assert.equal(readdirSync(dirname(mutexPath)).filter((name) => /^blob-recovery-target-[a-f0-9]{64}\.lock\.sqlite$/i.test(name)).length, 1);
+    const blobRegistration = db.prepare("SELECT COUNT(*) AS count FROM media_blobs WHERE storage_uri = ?").get(mutexPath) as { count: number };
+    const artifactRegistration = db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE json_extract(data_json, '$.storage.uri') = ?").get(mutexPath) as { count: number };
+    assert.equal(blobRegistration.count, 0);
+    assert.equal(artifactRegistration.count, 0);
+    assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("verified Blob recovery revalidates the Artifact binding after acquiring the target mutex", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-binding-recheck-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const targetBytes = readFileSync(fixture.artifact.storage.uri);
+    let driftBinding = false;
+    const recoveryDb = new Proxy(db as unknown as object, {
+      get(target, property) {
+        if (property === "prepare") {
+          return (sql: string) => {
+            const statement = db.prepare(sql);
+            if (driftBinding && sql.includes("SELECT blob_id FROM media_artifact_blobs")) {
+              return new Proxy(statement as unknown as object, {
+                get(statementTarget, statementProperty) {
+                  if (statementProperty === "all") return () => [];
+                  const statementValue = Reflect.get(statementTarget, statementProperty, statementTarget);
+                  return typeof statementValue === "function" ? statementValue.bind(statementTarget) : statementValue;
+                }
+              });
+            }
+            return statement;
+          };
+        }
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      }
+    }) as unknown as M0Database;
+    const blocked = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, recoveryDb, {
+      after_target_mutex_acquired: () => {
+        driftBinding = true;
+      }
+    });
+    assert.equal(blocked.ok, false);
+    if (!blocked.ok) assert.equal(blocked.error.code, "MEDIA_BLOB_RECOVERY_BINDING_MISMATCH");
+    assert.deepEqual(readFileSync(fixture.artifact.storage.uri), targetBytes);
+  } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });
   }
@@ -1958,7 +2504,7 @@ test("two processes opening the same database serialize recovery transactions", 
   }
 });
 
-test("a hard-crash stage survives generic startup and converges on explicit retry", () => {
+test("a hard-crash releases the target mutex for explicit retry from another database", () => {
   const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-crash-explicit-retry-"));
   const mediaRoot = join(root, "media");
   const canonicalPath = join(root, "canonical.sqlite");
@@ -1995,7 +2541,7 @@ test("a hard-crash stage survives generic startup and converges on explicit retr
     assert.deepEqual(canonical.failed, []);
     assert.equal(existsSync(stagedPath), true);
 
-    db = openM0Database(canonicalPath);
+    db = openM0Database(copyPath);
     const retried = recoverVerifiedBlobStorage({
       invalid_artifact_id: fixture.artifact.artifact_id,
       project_id: fixture.project_id,

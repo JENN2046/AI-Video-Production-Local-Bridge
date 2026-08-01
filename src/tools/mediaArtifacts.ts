@@ -1,6 +1,7 @@
 import { closeSync, constants, copyFileSync, existsSync, fstatSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { ensureM0Directories, paths } from "../paths.js";
@@ -89,6 +90,8 @@ export interface VerifiedBlobStorageRecoveryInput {
 }
 
 export interface VerifiedBlobStorageRecoveryFaults {
+  target_mutex_busy_timeout_ms?: number;
+  after_target_mutex_acquired?: () => void;
   after_staged_copy?: () => void;
   after_corrupt_quarantined?: () => void;
   after_replacement_placed?: () => void;
@@ -805,6 +808,7 @@ function applyLocalMediaFacts(artifact: MediaArtifact, facts: LocalMediaFacts): 
 
 const VERIFIED_BLOB_RECOVERY_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   MEDIA_BLOB_RECOVERY_BINDING_MISMATCH: "The requested Artifact and immutable MediaBlob binding could not be verified.",
+  MEDIA_BLOB_RECOVERY_BUSY: "Another local recovery may be processing the same MediaBlob storage target.",
   MEDIA_BLOB_RECOVERY_CONTENT_MISMATCH: "Downloaded media bytes do not match the immutable MediaBlob facts.",
   MEDIA_BLOB_RECOVERY_PATH_UNSAFE: "MediaBlob recovery paths are not app-controlled regular-file paths.",
   MEDIA_BLOB_RECOVERY_FAILED: "MediaBlob bytes could not be recovered safely."
@@ -812,6 +816,8 @@ const VERIFIED_BLOB_RECOVERY_ERROR_MESSAGES: Readonly<Record<string, string>> = 
 
 const DETERMINISTIC_BLOB_RECOVERY_STAGING_NAME = /^blob-recovery-[a-f0-9]{64}\.staged$/i;
 const LEGACY_BLOB_RECOVERY_STAGING_NAME = /^blob-recovery-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.staged$/i;
+const BLOB_RECOVERY_TARGET_MUTEX_NAME = /^blob-recovery-target-[a-f0-9]{64}\.lock\.sqlite$/i;
+const BLOB_RECOVERY_TARGET_MUTEX_BUSY_TIMEOUT_MS = 30_000;
 
 function verifiedBlobRecoveryError(error: unknown): ToolError {
   const candidate = error instanceof Error ? error.message : "";
@@ -1075,6 +1081,182 @@ function recoveryRootAndTarget(blob: MediaBlob): {
   return { registeredRoot, canonicalRoot, targetPath, targetDirectory };
 }
 
+interface VerifiedBlobRecoveryBinding {
+  artifact: MediaArtifact;
+  blob: MediaBlob;
+  recoveryPaths: ReturnType<typeof recoveryRootAndTarget>;
+  identity: string;
+}
+
+interface VerifiedBlobRecoveryTargetMutex {
+  database: DatabaseSync;
+  guardDescriptor: number;
+}
+
+function readVerifiedBlobRecoveryBinding(
+  input: VerifiedBlobStorageRecoveryInput,
+  db: M0Database
+): VerifiedBlobRecoveryBinding {
+  let artifact: MediaArtifact | null;
+  try {
+    artifact = getMediaArtifact(db, input.invalid_artifact_id);
+  } catch {
+    throw new Error("MEDIA_BLOB_RECOVERY_BINDING_MISMATCH");
+  }
+  if (!artifact
+    || artifact.linked_objects.project_id !== input.project_id
+    || artifact.linked_objects.shot_id !== input.shot_id
+    || artifact.role !== "generated_clip"
+    || artifact.artifact_type !== "video") {
+    throw new Error("MEDIA_BLOB_RECOVERY_BINDING_MISMATCH");
+  }
+
+  const links = db.prepare(
+    "SELECT blob_id FROM media_artifact_blobs WHERE artifact_id = ? ORDER BY blob_id"
+  ).all(input.invalid_artifact_id) as Array<{ blob_id: string }>;
+  if (links.length !== 1 || links[0].blob_id !== artifact.blob_id) {
+    throw new Error("MEDIA_BLOB_RECOVERY_BINDING_MISMATCH");
+  }
+  const blob = getMediaBlob(db, links[0].blob_id);
+  if (!blob
+    || blob.integrity_state !== "verified"
+    || !isAbsolute(artifact.storage.uri)
+    || !sameResolvedPath(artifact.storage.uri, blob.storage_uri)
+    || artifact.metadata.sha256 !== blob.sha256
+    || artifact.source.sha256 !== blob.sha256
+    || artifact.storage.mime_type !== blob.detected_mime) {
+    throw new Error("MEDIA_BLOB_RECOVERY_BINDING_MISMATCH");
+  }
+  const recoveryPaths = recoveryRootAndTarget(blob);
+  const identity = JSON.stringify({
+    artifact_id: artifact.artifact_id,
+    artifact_blob_id: artifact.blob_id,
+    project_id: artifact.linked_objects.project_id,
+    shot_id: artifact.linked_objects.shot_id,
+    artifact_type: artifact.artifact_type,
+    role: artifact.role,
+    artifact_storage_uri: resolve(artifact.storage.uri),
+    artifact_sha256: artifact.metadata.sha256,
+    source_sha256: artifact.source.sha256,
+    artifact_mime: artifact.storage.mime_type,
+    blob_id: blob.blob_id,
+    blob_sha256: blob.sha256,
+    blob_size_bytes: blob.size_bytes,
+    blob_mime: blob.detected_mime,
+    blob_storage_uri: resolve(blob.storage_uri),
+    blob_integrity_state: blob.integrity_state,
+    registered_media_root: recoveryPaths.registeredRoot,
+    canonical_media_root: recoveryPaths.canonicalRoot
+  });
+  return { artifact, blob, recoveryPaths, identity };
+}
+
+function verifiedBlobRecoveryTargetMutexPath(
+  recoveryPaths: ReturnType<typeof recoveryRootAndTarget>,
+  roots: ReturnType<typeof activationRoots>,
+  stagedPath: string
+): string {
+  const canonicalJournal = resolve(realpathSync(roots.journal));
+  if (!sameResolvedPath(canonicalJournal, roots.journal)
+    || !isPathInside(canonicalJournal, recoveryPaths.canonicalRoot)
+    || hasExistingSymlinkAncestor(roots.journal, recoveryPaths.registeredRoot)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  const digest = createHash("sha256")
+    .update(recoveryPaths.canonicalRoot)
+    .update("\0")
+    .update(recoveryPaths.targetPath)
+    .digest("hex");
+  const lockPath = resolve(roots.journal, `blob-recovery-target-${digest}.lock.sqlite`);
+  if (!BLOB_RECOVERY_TARGET_MUTEX_NAME.test(basename(lockPath))
+    || !sameResolvedPath(dirname(lockPath), roots.journal)
+    || !isPathInside(lockPath, recoveryPaths.registeredRoot)
+    || sameResolvedPath(lockPath, recoveryPaths.targetPath)
+    || sameResolvedPath(lockPath, stagedPath)
+    || hasExistingSymlinkAncestor(lockPath, recoveryPaths.registeredRoot)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  return lockPath;
+}
+
+function assertVerifiedBlobRecoveryTargetMutexFile(
+  lockPath: string,
+  recoveryPaths: ReturnType<typeof recoveryRootAndTarget>,
+  roots: ReturnType<typeof activationRoots>,
+  guardDescriptor?: number
+): void {
+  if (!existsSync(lockPath)
+    || !sameResolvedPath(dirname(lockPath), roots.journal)
+    || !isPathInside(lockPath, recoveryPaths.canonicalRoot)
+    || hasExistingSymlinkAncestor(lockPath, recoveryPaths.registeredRoot)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  const entry = lstatSync(lockPath);
+  if (entry.isSymbolicLink() || !entry.isFile() || entry.nlink !== 1) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  const canonicalPath = resolve(realpathSync(lockPath));
+  if (!sameResolvedPath(canonicalPath, lockPath)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  if (guardDescriptor !== undefined) {
+    const guarded = fstatSync(guardDescriptor);
+    const current = statSync(lockPath);
+    if (!guarded.isFile() || guarded.nlink !== 1 || guarded.dev !== current.dev || guarded.ino !== current.ino) {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+  }
+}
+
+function acquireVerifiedBlobRecoveryTargetMutex(
+  lockPath: string,
+  recoveryPaths: ReturnType<typeof recoveryRootAndTarget>,
+  roots: ReturnType<typeof activationRoots>,
+  busyTimeoutMs: number
+): VerifiedBlobRecoveryTargetMutex {
+  try {
+    const created = openSync(lockPath, "wx");
+    closeSync(created);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+  }
+
+  let guardDescriptor = -1;
+  let database: DatabaseSync | null = null;
+  try {
+    assertVerifiedBlobRecoveryTargetMutexFile(lockPath, recoveryPaths, roots);
+    guardDescriptor = openSync(lockPath, "r");
+    assertVerifiedBlobRecoveryTargetMutexFile(lockPath, recoveryPaths, roots, guardDescriptor);
+    database = new DatabaseSync(lockPath);
+    assertVerifiedBlobRecoveryTargetMutexFile(lockPath, recoveryPaths, roots, guardDescriptor);
+    database.exec(`PRAGMA busy_timeout = ${busyTimeoutMs};`);
+    try {
+      database.exec("BEGIN IMMEDIATE");
+    } catch (error) {
+      if ((error as { errcode?: number }).errcode === 5) {
+        throw new Error("MEDIA_BLOB_RECOVERY_BUSY");
+      }
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    assertVerifiedBlobRecoveryTargetMutexFile(lockPath, recoveryPaths, roots, guardDescriptor);
+    return { database, guardDescriptor };
+  } catch (error) {
+    if (database) {
+      try { database.close(); } catch { /* preserve the stable acquisition error */ }
+    }
+    if (guardDescriptor >= 0) closeSync(guardDescriptor);
+    throw error;
+  }
+}
+
+function releaseVerifiedBlobRecoveryTargetMutex(mutex: VerifiedBlobRecoveryTargetMutex | null): void {
+  if (!mutex) return;
+  try { mutex.database.exec("ROLLBACK"); } catch { /* process close still releases the operating-system lock */ }
+  try { mutex.database.close(); } finally { closeSync(mutex.guardDescriptor); }
+}
+
 function removeGeneratedRecoveryFile(filePath: string, ownedDirectory: string, registeredRoot: string): void {
   if (!existsSync(filePath)) return;
   const resolvedPath = resolve(filePath);
@@ -1108,44 +1290,44 @@ export function recoverVerifiedBlobStorage(
   let quarantinePath = "";
   let replacementPlaced = false;
   let originalQuarantined = false;
+  let filesystemRecoveryStarted = false;
+  let targetMutex: VerifiedBlobRecoveryTargetMutex | null = null;
   let originalCondition: "MISSING_BYTES" | "CONTENT_DRIFT" | "ALREADY_REUSABLE" = "MISSING_BYTES";
 
   try {
+    const preflight = readVerifiedBlobRecoveryBinding(input, db);
+    const preflightPaths = preflight.recoveryPaths;
+    let activation: ReturnType<typeof activationRoots>;
+    try { activation = ensureSafeActivationRoots(preflightPaths.registeredRoot, true); }
+    catch { throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE"); }
+    const preflightStagedPath = verifiedBlobRecoveryStagingPathForIdentity(
+      preflight.blob.blob_id,
+      preflight.blob.storage_uri,
+      activation,
+      preflightPaths.registeredRoot
+    );
+    const lockPath = verifiedBlobRecoveryTargetMutexPath(preflightPaths, activation, preflightStagedPath);
+    const requestedBusyTimeout = faults.target_mutex_busy_timeout_ms;
+    const busyTimeoutMs = Number.isInteger(requestedBusyTimeout)
+      && Number(requestedBusyTimeout) > 0
+      && Number(requestedBusyTimeout) <= BLOB_RECOVERY_TARGET_MUTEX_BUSY_TIMEOUT_MS
+      ? Number(requestedBusyTimeout)
+      : BLOB_RECOVERY_TARGET_MUTEX_BUSY_TIMEOUT_MS;
+    targetMutex = acquireVerifiedBlobRecoveryTargetMutex(
+      lockPath,
+      preflightPaths,
+      activation,
+      busyTimeoutMs
+    );
+    faults.after_target_mutex_acquired?.();
+
     db.exec("BEGIN IMMEDIATE");
     transactionOpen = true;
-
-    let artifact: MediaArtifact | null;
-    try {
-      artifact = getMediaArtifact(db, input.invalid_artifact_id);
-    } catch {
+    const binding = readVerifiedBlobRecoveryBinding(input, db);
+    if (binding.identity !== preflight.identity) {
       throw new Error("MEDIA_BLOB_RECOVERY_BINDING_MISMATCH");
     }
-    if (!artifact
-      || artifact.linked_objects.project_id !== input.project_id
-      || artifact.linked_objects.shot_id !== input.shot_id
-      || artifact.role !== "generated_clip"
-      || artifact.artifact_type !== "video") {
-      throw new Error("MEDIA_BLOB_RECOVERY_BINDING_MISMATCH");
-    }
-
-    const links = db.prepare(
-      "SELECT blob_id FROM media_artifact_blobs WHERE artifact_id = ? ORDER BY blob_id"
-    ).all(input.invalid_artifact_id) as Array<{ blob_id: string }>;
-    if (links.length !== 1 || links[0].blob_id !== artifact.blob_id) {
-      throw new Error("MEDIA_BLOB_RECOVERY_BINDING_MISMATCH");
-    }
-    const blob = getMediaBlob(db, links[0].blob_id);
-    if (!blob
-      || blob.integrity_state !== "verified"
-      || !isAbsolute(artifact.storage.uri)
-      || !sameResolvedPath(artifact.storage.uri, blob.storage_uri)
-      || artifact.metadata.sha256 !== blob.sha256
-      || artifact.source.sha256 !== blob.sha256
-      || artifact.storage.mime_type !== blob.detected_mime) {
-      throw new Error("MEDIA_BLOB_RECOVERY_BINDING_MISMATCH");
-    }
-
-    const recoveryPaths = recoveryRootAndTarget(blob);
+    const { artifact, blob, recoveryPaths } = binding;
     registeredRoot = recoveryPaths.registeredRoot;
     targetPath = recoveryPaths.targetPath;
     const sourcePath = resolve(input.source_path);
@@ -1167,8 +1349,7 @@ export function recoverVerifiedBlobStorage(
       throw new Error("MEDIA_BLOB_RECOVERY_CONTENT_MISMATCH");
     }
 
-    let activation: ReturnType<typeof activationRoots>;
-    try { activation = ensureSafeActivationRoots(registeredRoot, true); }
+    try { activation = ensureSafeActivationRoots(registeredRoot, false); }
     catch { throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE"); }
     recoveryStagingRoot = activation.staging;
     stagedPath = verifiedBlobRecoveryStagingPathForIdentity(
@@ -1177,6 +1358,14 @@ export function recoverVerifiedBlobStorage(
       activation,
       registeredRoot
     );
+    if (!sameResolvedPath(stagedPath, preflightStagedPath)
+      || !sameResolvedPath(
+        lockPath,
+        verifiedBlobRecoveryTargetMutexPath(recoveryPaths, activation, stagedPath)
+      )) {
+      throw new Error("MEDIA_BLOB_RECOVERY_BINDING_MISMATCH");
+    }
+    filesystemRecoveryStarted = true;
 
     if (existsSync(targetPath)) {
       normalizeInterruptedVerifiedBlobPlacement(
@@ -1285,7 +1474,7 @@ export function recoverVerifiedBlobStorage(
       ? resolve(dirname(targetPath), `blob-recovery-${randomUUID()}.rollback`)
       : "";
     let replacementMovedAside = false;
-    if (replacementPlaced && targetPath && registeredRoot && existsSync(targetPath)) {
+    if (filesystemRecoveryStarted && replacementPlaced && targetPath && registeredRoot && existsSync(targetPath)) {
       try {
         const rootCanonical = resolve(realpathSync(registeredRoot));
         assertRecoveryRegularFile(targetPath, registeredRoot, rootCanonical);
@@ -1296,7 +1485,7 @@ export function recoverVerifiedBlobStorage(
         // Leave the verified replacement in place rather than delete or overwrite an unverified path.
       }
     }
-    if (originalQuarantined && quarantinePath && targetPath && !existsSync(targetPath) && existsSync(quarantinePath)) {
+    if (filesystemRecoveryStarted && originalQuarantined && quarantinePath && targetPath && !existsSync(targetPath) && existsSync(quarantinePath)) {
       try {
         renameSync(quarantinePath, targetPath);
         originalQuarantined = false;
@@ -1311,16 +1500,18 @@ export function recoverVerifiedBlobStorage(
         }
       }
     }
-    if (replacementMovedAside && rollbackDiscardPath) {
+    if (filesystemRecoveryStarted && replacementMovedAside && rollbackDiscardPath) {
       try { removeGeneratedRecoveryFile(rollbackDiscardPath, dirname(targetPath), registeredRoot); } catch { /* generated cleanup is retryable */ }
     }
-    if (stagedPath) {
+    if (filesystemRecoveryStarted && stagedPath) {
       try { removeGeneratedRecoveryFile(stagedPath, recoveryStagingRoot, registeredRoot); } catch { /* generated cleanup is retryable */ }
     }
     if (transactionOpen) {
       try { db.exec("ROLLBACK"); } catch { /* preserve the original stable recovery failure */ }
     }
     return { ok: false, error: verifiedBlobRecoveryError(error) };
+  } finally {
+    releaseVerifiedBlobRecoveryTargetMutex(targetMutex);
   }
 }
 
