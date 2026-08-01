@@ -3144,7 +3144,7 @@ test("verified Blob recovery preserves an unprovable lone cleanup entry after a 
   }
 });
 
-test("verified Blob recovery keeps cleanup on the target filesystem and converges split isolation", () => {
+test("verified Blob recovery preserves a split cleanup counterpart instead of moving an unverified path", () => {
   const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-stage-isolation-crash-"));
   const mediaRoot = join(root, "media");
   const sqlitePath = join(root, "app.sqlite");
@@ -3183,19 +3183,29 @@ test("verified Blob recovery keeps cleanup on the target filesystem and converge
     assert.equal(existsSync(cleanup.owner_cleanup), false);
     assert.equal(statSync(ownerPath).ino, statSync(cleanup.staged_cleanup).ino);
 
+    rmSync(ownerPath);
+    writeFileSync(ownerPath, "unverified counterpart replacement");
+    const replacementBefore = readFileSync(ownerPath);
+    const replacementIdentity = lstatSync(ownerPath);
+
     db = openM0Database(sqlitePath);
+    const before = immutableBlobSnapshot(db, fixture.artifact.artifact_id);
     const retried = recoverVerifiedBlobStorage({
       invalid_artifact_id: fixture.artifact.artifact_id,
       project_id: fixture.project_id,
       shot_id: fixture.shot_id,
       source_path: fixture.source_path
     }, db);
-    assert.equal(retried.ok, true, retried.ok ? undefined : retried.error.code);
-    if (retried.ok) assert.equal(retried.outcome, "ALREADY_REUSABLE");
-    assert.equal(existsSync(ownerPath), false);
-    assert.equal(existsSync(cleanup.staged_cleanup), false);
+    assert.equal(retried.ok, false);
+    if (!retried.ok) assert.equal(retried.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    const replacementAfter = lstatSync(ownerPath);
+    assert.equal(replacementAfter.dev, replacementIdentity.dev);
+    assert.equal(replacementAfter.ino, replacementIdentity.ino);
+    assert.deepEqual(readFileSync(ownerPath), replacementBefore);
+    assert.equal(existsSync(cleanup.staged_cleanup), true);
     assert.equal(existsSync(cleanup.owner_cleanup), false);
     assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
+    assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
   } finally {
     try { db.close(); } catch { /* hard-crash setup may already have closed the first handle */ }
     rmSync(root, { recursive: true, force: true });

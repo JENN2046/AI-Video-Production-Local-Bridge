@@ -2040,32 +2040,14 @@ function reconcileOwnedRecoveryCleanupPair(
     .some((candidate) => sameResolvedPath(candidate, protectedSourcePath))) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
-  let cleanupPaths = [stagedCleanup, ownerCleanup].filter((candidate) => existsSync(candidate));
+  const cleanupPaths = [stagedCleanup, ownerCleanup].filter((candidate) => existsSync(candidate));
   if (cleanupPaths.length === 0) return;
   if (cleanupPaths.length === 1) {
-    const isolatedStage = sameResolvedPath(cleanupPaths[0], stagedCleanup);
-    const counterpartPath = isolatedStage ? ownerPath : stagedPath;
-    const counterpartCleanup = isolatedStage ? ownerCleanup : stagedCleanup;
-    if (existsSync(counterpartPath)) {
-      const isolated = lstatSync(cleanupPaths[0]);
-      const counterpart = lstatSync(counterpartPath);
-      if (isolated.isSymbolicLink() || counterpart.isSymbolicLink()
-        || !isolated.isFile() || !counterpart.isFile()
-        || isolated.dev !== counterpart.dev || isolated.ino !== counterpart.ino) {
-        throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
-      }
-      renameSync(counterpartPath, counterpartCleanup);
-      const moved = lstatSync(counterpartCleanup);
-      if (moved.dev !== isolated.dev || moved.ino !== isolated.ino) {
-        throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
-      }
-      cleanupPaths = [stagedCleanup, ownerCleanup];
-    }
-    if (cleanupPaths.length === 1) {
-      // A lone cleanup entry has no persistent ownership companion. Preserve it
-      // rather than inferring application ownership from its deterministic name.
-      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
-    }
+    // A lone cleanup entry cannot prove that its counterpart directory entry has
+    // not been replaced between a path-based identity check and a move. Preserve
+    // both locations and require explicit repair rather than move an unverified
+    // path into application cleanup.
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
   const cleanupEntries = cleanupPaths.map((candidate) => {
     const entry = lstatSync(candidate);
