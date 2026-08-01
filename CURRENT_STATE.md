@@ -284,8 +284,9 @@ Only `recoverVerifiedBlobStorage` may converge the exact slot for the Blob it is
 explicitly repairing. It reuses a complete matching stage, safely discards and
 recopies a partial app-owned stage, removes the exact stage when the final target
 is already reusable, and fails closed without deleting unsafe entries. Legacy
-cleanup remains limited to canonical UUID-v4 names whose SHA-256, size and MIME
-match the current Blob. Generic startup preserves deterministic stages as
+random stages have no persistent ownership companion, so explicit recovery now
+preserves them and fails closed even when their SHA-256, size and MIME match the
+current Blob. Generic startup preserves deterministic stages as
 bounded pending recovery material while continuing unrecorded-marker,
 staging-owner and `media_activation_journal` recovery.
 
@@ -298,11 +299,14 @@ reuse or deletion, preserves a later unowned stage even after target authority
 exists, initializes the mutex without a path-reopen window, and never treats the
 current validated source as legacy cleanup material. Follow-ups `568473c` and
 `e6f1d4b` close the later stage-owner crash, mutex-connection identity,
-DOS-short quarantine and publication-normalization findings. Local validation
-passes with media activation 67 PASS / 0 FAIL / 1 platform-capability skip,
-Foundation 129 PASS / 0 FAIL / 1 platform-capability skip,
+DOS-short quarantine and publication-normalization findings. Follow-ups
+`82e6ca2` and `ebb9b07` move only the verified stage-owner inode pair into the
+app-controlled journal before cleanup, preserve an entry replaced after
+validation, and make a hard exit between cleanup entries converge on retry.
+Local validation passes with media activation 69 PASS / 0 FAIL / 1
+platform-capability skip, Foundation 131 PASS / 0 FAIL / 1 platform-capability skip,
 Provider 52/52, Workbench V2 68/68 and selection 23/23; typecheck, build, secret
-scan and diff checks also pass. At state sync the 21 unresolved PR #109 threads
+scan and diff checks also pass. At state sync the 25 unresolved PR #109 threads
 are `PRRT_kwDOTTDtUM6VkSwY`, `PRRT_kwDOTTDtUM6VkqqS`,
 `PRRT_kwDOTTDtUM6VkzTz`, `PRRT_kwDOTTDtUM6Vk38a`,
 `PRRT_kwDOTTDtUM6Vk38b`, `PRRT_kwDOTTDtUM6VlUo8`,
@@ -313,7 +317,9 @@ are `PRRT_kwDOTTDtUM6VkSwY`, `PRRT_kwDOTTDtUM6VkqqS`,
 `PRRT_kwDOTTDtUM6VnZrR`, `PRRT_kwDOTTDtUM6VnfBZ`,
 `PRRT_kwDOTTDtUM6VnlsB`, `PRRT_kwDOTTDtUM6Vnvkt`,
 `PRRT_kwDOTTDtUM6Vnvkv`, `PRRT_kwDOTTDtUM6Vn2uJ`,
-`PRRT_kwDOTTDtUM6Vn_4Z` and `PRRT_kwDOTTDtUM6Vn_4b`. All 21 threads remain unresolved pending
+`PRRT_kwDOTTDtUM6Vn_4Z`, `PRRT_kwDOTTDtUM6Vn_4b`,
+`PRRT_kwDOTTDtUM6VoG2V`, `PRRT_kwDOTTDtUM6VoG2X`,
+`PRRT_kwDOTTDtUM6VoL5q` and `PRRT_kwDOTTDtUM6VoL5r`. All 25 threads remain unresolved pending
 new exact-head CI and a fresh complete review. PR #109
 remains open and unmerged.
 Cross-database explicit recovery is serialized by an exact-target SQLite mutex,

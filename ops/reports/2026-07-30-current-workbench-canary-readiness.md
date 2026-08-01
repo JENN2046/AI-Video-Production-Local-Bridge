@@ -506,3 +506,20 @@ The remaining sequence is:
 There is currently no `READY` execution task. No action in this receipt
 authorizes business-state writes, credential changes, Provider operations or
 S4 execution.
+
+### PR #109 stage-cleanup evidence update
+
+Commits `82e6ca2` and `ebb9b07` bind deterministic stage cleanup to the exact
+verified inode by isolating the stage-owner pair into the app-controlled
+journal before deletion. A target-directory replacement after validation is
+preserved and rejected. Deterministic journal leftovers converge after a hard
+exit between removals. Legacy random stage entries are no longer deleted from
+content and filename evidence alone because they lack a persistent ownership
+companion.
+
+Local validation passes with media activation `69 PASS / 1 SKIP`, foundation
+`131 PASS / 1 SKIP`, Provider `52/52`, Workbench V2 `68/68`, selection `23/23`,
+typecheck, build, secret scan and diff checks. At state sync, 25 PR #109 threads
+remain unresolved pending new exact-head CI and complete review. PR #109 remains
+open, Ready and unmerged. This update does not authorize merge, Provider calls,
+activity-state access, secrets, service operations, deployment or S4.

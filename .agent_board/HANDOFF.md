@@ -1225,3 +1225,21 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - Final creative approval remains unrecorded.
 - R3-9P local implementation commit: `0ee3590`.
 - Next safe state: wait for human final video review decision before final approval, revision, publish, or closeout.
+
+## PR #109 current handoff — recoverable stage cleanup
+
+- Candidate commits: `82e6ca2`, `ebb9b07`.
+- A verified deterministic stage-owner hard-link pair is isolated into the
+  app-controlled journal and revalidated before deletion; a target-directory
+  replacement is preserved and rejected.
+- Journal cleanup uses deterministic entries and converges after a hard exit
+  between removals. Legacy random stage names have no durable owner record and
+  are therefore preserved with `MEDIA_BLOB_RECOVERY_PATH_UNSAFE`.
+- Local gates: media activation `69 PASS / 1 SKIP`, foundation
+  `131 PASS / 1 SKIP`, provider `52/52`, Workbench V2 `68/68`, selection
+  `23/23`, plus typecheck, build, secret scan and diff checks.
+- At state sync, all 25 PR #109 threads remain unresolved. A new exact-head CI
+  run and complete review are required before thread resolution. PR #109 is
+  open, Ready and unmerged; merge is not authorized.
+- No Provider, activity database/media, secret, service, deployment or S4
+  operation occurred.
