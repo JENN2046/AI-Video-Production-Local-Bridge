@@ -38,16 +38,17 @@ automatically.
    and stage identity and removes database-local Blob ids from the shared stage.
    Windows CI run `30684275229` exposed quoted `cmd` output in the 8.3 test
    helper; `94bd81b` normalizes that output and requires a fresh exact-head run.
-   Run `30684654830` retained escaped quotes; `43e5519` now extracts only the
-   absolute drive path. A new exact-head run remains required.
-- Prior whitelist thread `PRRT_kwDOTTDtUM6VdGmY` is resolved. At state sync
-  threads `PRRT_kwDOTTDtUM6Vdmly`, `PRRT_kwDOTTDtUM6VeTXd`,
-  `PRRT_kwDOTTDtUM6VekUB`, `PRRT_kwDOTTDtUM6VkSwY` and
-  `PRRT_kwDOTTDtUM6VkqqS`, `PRRT_kwDOTTDtUM6VkzTx`,
-  `PRRT_kwDOTTDtUM6VkzTz`, `PRRT_kwDOTTDtUM6Vk38a`,
-  `PRRT_kwDOTTDtUM6Vk38b`, `PRRT_kwDOTTDtUM6VlN-l`,
-  `PRRT_kwDOTTDtUM6VlUo8`, `PRRT_kwDOTTDtUM6VlUo-` and
-  `PRRT_kwDOTTDtUM6VlUpA` remain unresolved.
+   Run `30684654830` retained escaped quotes; `43e5519` extracts only the
+   absolute drive path. Run `30685017849` passed both jobs and exact-head review
+   reported no new issues, but thread audit exposed two older P2s. Follow-up
+   `22c9e24` moves authority publication after all read-only validation and
+   places deterministic staging beside the physical target.
+- At state sync the unresolved threads are `PRRT_kwDOTTDtUM6VkSwY`,
+  `PRRT_kwDOTTDtUM6VkqqS`, `PRRT_kwDOTTDtUM6VkzTz`,
+  `PRRT_kwDOTTDtUM6Vk38a`, `PRRT_kwDOTTDtUM6Vk38b`,
+  `PRRT_kwDOTTDtUM6VlUo8`, `PRRT_kwDOTTDtUM6VlUo-`,
+  `PRRT_kwDOTTDtUM6VlmiI`, `PRRT_kwDOTTDtUM6VlmiJ` and
+  `PRRT_kwDOTTDtUM6VlsfV`.
   Generic startup preserves the bounded stage; explicit recovery is serialized
   by exact target across database files. Exact-head Windows CI and a fresh
   post-promotion Codex review remain required; merge is not authorized.

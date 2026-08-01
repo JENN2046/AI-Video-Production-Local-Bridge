@@ -2,7 +2,7 @@
 
 Current mode: PR #109 orphaned Blob recovery staging remediation; no executable task is `READY`
 Last run: S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING
-Last result: exact-target SQLite mutex and atomic target-authority publication pass locally; open Ready PR #109 awaits exact-final-head CI and a fresh Codex review
+Last result: source-first authority publication and target-filesystem staging pass locally; open Ready PR #109 awaits new exact-final-head CI and review
 
 ## Current state
 
@@ -65,15 +65,19 @@ Ready task count: 0
 - Run `30684654830` confirmed escaped quote characters remained. Follow-up
   `43e5519` extracts the absolute `X:\\...` path by a strict whitelist; both
   failed runs are superseded and neither is final acceptance evidence.
-- At state sync these PR #109 threads remain unresolved pending exact-head CI
-  and a fresh review: `PRRT_kwDOTTDtUM6Vdmly`, `PRRT_kwDOTTDtUM6VeTXd`,
-  `PRRT_kwDOTTDtUM6VekUB`, `PRRT_kwDOTTDtUM6VkSwY` and
-  `PRRT_kwDOTTDtUM6VkqqS`, `PRRT_kwDOTTDtUM6VkzTx`,
-  `PRRT_kwDOTTDtUM6VkzTz`, `PRRT_kwDOTTDtUM6Vk38a` and
-  `PRRT_kwDOTTDtUM6Vk38b`, `PRRT_kwDOTTDtUM6VlN-l`,
-  `PRRT_kwDOTTDtUM6VlUo8`, `PRRT_kwDOTTDtUM6VlUo-` and
-  `PRRT_kwDOTTDtUM6VlUpA`. Local validation passes with media activation
-  61 PASS / 0 FAIL / 1 platform-capability skip, Foundation 123 PASS / 0 FAIL /
+- Exact-head CI `30685017849` passed both jobs and Codex reported no new issues
+  at `e290124`. The subsequent complete thread audit found two older unresolved
+  P2s: a failed source could publish authority too early, and root-level staging
+  could cross a nested filesystem. Follow-up `22c9e24` publishes authority only
+  after all read-only input/path checks and places the target-only deterministic
+  stage in the physical target directory. The current unresolved set is
+  `PRRT_kwDOTTDtUM6VkSwY`, `PRRT_kwDOTTDtUM6VkqqS`,
+  `PRRT_kwDOTTDtUM6VkzTz`, `PRRT_kwDOTTDtUM6Vk38a`,
+  `PRRT_kwDOTTDtUM6Vk38b`, `PRRT_kwDOTTDtUM6VlUo8`,
+  `PRRT_kwDOTTDtUM6VlUo-`, `PRRT_kwDOTTDtUM6VlmiI`,
+  `PRRT_kwDOTTDtUM6VlmiJ` and `PRRT_kwDOTTDtUM6VlsfV`; all await new exact-head
+  CI and review. Local validation passes with media activation
+  62 PASS / 0 FAIL / 1 platform-capability skip, Foundation 124 PASS / 0 FAIL /
   1 platform-capability skip, Provider 52/52, Workbench V2
   68/68 and selection 23/23; typecheck, build, secret scan and diff checks pass.
 - `S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING` is

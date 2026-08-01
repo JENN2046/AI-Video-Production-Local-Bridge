@@ -3442,6 +3442,40 @@ local_validation:
 exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
 ```
 
+### PR109 source-validated authority and target-filesystem stage
+
+```yaml
+task: PR109-T4_CROSS_DATABASE_BLOB_TARGET_MUTEX
+recorded_at: 2026-08-01T13:47:09+08:00
+implementation_commit: 22c9e24
+review_threads:
+  - PRRT_kwDOTTDtUM6VlmiI
+  - PRRT_kwDOTTDtUM6VlmiJ
+prior_exact_head_evidence:
+  head: e290124d8877218985458269835812c75bffd6e6
+  windows_ci_run: 30685017849
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+  codex_review: PASS_NO_NEW_FINDINGS
+  transferable_to_new_head: false
+implementation:
+  authority_published_after_all_read_only_validation: true
+  failed_source_leaves_authority: false
+  deterministic_stage_directory: PHYSICAL_TARGET_DIRECTORY
+  cross_filesystem_hard_link_required: false
+local_validation:
+  typecheck: PASS
+  media_activation_integrity: PASS_62_FAIL_0_PLATFORM_SKIP_1
+  foundation_boundaries: PASS_124_FAIL_0_PLATFORM_SKIP_1
+  provider_boundaries: PASS_52
+  workbench_v2: PASS_68
+  selection_gate: PASS_23
+  build: PASS
+  secret_scan: PASS
+  git_diff_check: PASS
+exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
+```
+
 ### PR109 Windows short-path probe parsing
 
 ```yaml

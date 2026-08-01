@@ -5312,6 +5312,17 @@ authority_atomic_publish_commit: 84e4ef1
 physical_target_identity_commit: cc6dd87
 windows_short_path_test_fix_commit: 94bd81b
 windows_short_path_absolute_parse_commit: 43e5519
+validated_authority_and_target_filesystem_stage_commit: 22c9e24
+exact_head_ci_before_final_thread_audit:
+  run_id: 30685017849
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+  reviewed_commit: e290124d88
+  review_result: PASS_NO_NEW_FINDINGS
+thread_audit_follow_up:
+  authority_after_read_only_validation: PASS_LOCAL
+  stage_on_target_filesystem: PASS_LOCAL
+  new_exact_head_ci_and_review: REQUIRED
 superseded_failed_ci:
   run_id: 30684275229
   failure_class: TEST_PROBE_QUOTED_SHORT_PATH
