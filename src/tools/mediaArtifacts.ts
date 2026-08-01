@@ -93,7 +93,9 @@ export interface VerifiedBlobStorageRecoveryInput {
 export interface VerifiedBlobStorageRecoveryFaults {
   target_mutex_busy_timeout_ms?: number;
   after_target_mutex_acquired?: () => void;
+  after_target_mutex_guard_open?: () => void;
   after_target_authority_temp_created?: () => void;
+  after_stage_owner_created?: () => void;
   after_staged_copy?: () => void;
   after_corrupt_quarantined?: () => void;
   after_replacement_placed?: () => void;
@@ -972,6 +974,25 @@ function assertOwnedRecoveryStagingFile(
   return staged;
 }
 
+function assertInterruptedRecoveryStageOwner(
+  ownerPath: string,
+  registeredRoot: string,
+  canonicalRoot: string
+): void {
+  if (!existsSync(ownerPath)
+    || !isPathInside(ownerPath, registeredRoot)
+    || hasExistingSymlinkAncestor(ownerPath, registeredRoot)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  const owner = lstatSync(ownerPath);
+  const canonicalOwner = resolve(realpathSync(ownerPath));
+  if (owner.isSymbolicLink() || !owner.isFile() || owner.nlink !== 1 || owner.size !== 0
+    || !isPathInside(canonicalOwner, canonicalRoot)
+    || !sameResolvedPath(canonicalOwner, ownerPath)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+}
+
 function copyRecoverySourceToDescriptor(sourcePath: string, targetDescriptor: number): void {
   const sourceDescriptor = openSync(sourcePath, "r");
   try {
@@ -1082,7 +1103,8 @@ function prepareVerifiedBlobRecoveryStaging(
   blob: MediaBlob,
   roots: ReturnType<typeof activationRoots>,
   registeredRoot: string,
-  canonicalRoot: string
+  canonicalRoot: string,
+  faults: VerifiedBlobStorageRecoveryFaults
 ): void {
   if (existsSync(stagedPath)) {
     assertExpectedRecoveryStagingFile(stagedPath, stagedPath, roots, registeredRoot, canonicalRoot, 2);
@@ -1099,14 +1121,16 @@ function prepareVerifiedBlobRecoveryStaging(
     rmSync(stagedPath);
     rmSync(ownerPath);
   } else if (existsSync(ownerPath)) {
-    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    assertInterruptedRecoveryStageOwner(ownerPath, registeredRoot, canonicalRoot);
+    rmSync(ownerPath);
   }
   let descriptor = -1;
   let stagedIdentity: ReturnType<typeof fstatSync> | null = null;
   try {
-    descriptor = openSync(stagedPath, "wx+");
+    descriptor = openSync(ownerPath, "wx+");
     stagedIdentity = fstatSync(descriptor);
-    linkSync(stagedPath, ownerPath);
+    faults.after_stage_owner_created?.();
+    linkSync(ownerPath, stagedPath);
     const linked = fstatSync(descriptor);
     if (!linked.isFile() || linked.nlink !== 2 || linked.dev !== stagedIdentity.dev || linked.ino !== stagedIdentity.ino) {
       throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
@@ -1247,6 +1271,7 @@ function recoveryRootAndTarget(blob: MediaBlob): {
   canonicalRoot: string;
   targetPath: string;
   targetDirectory: string;
+  registeredTargetUsesDosAlias: boolean;
 } {
   const rootValue = blob.provenance.media_root;
   if (typeof rootValue !== "string"
@@ -1279,12 +1304,16 @@ function recoveryRootAndTarget(blob: MediaBlob): {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
   let targetPath = resolve(canonicalDirectory, basename(registeredTargetPath));
+  let registeredTargetUsesDosAlias = false;
   if (existsSync(registeredTargetPath)) {
     const targetEntry = lstatSync(registeredTargetPath);
     if (targetEntry.isSymbolicLink() || !targetEntry.isFile()) {
       throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
     }
     targetPath = resolve(realpathSync(registeredTargetPath));
+    registeredTargetUsesDosAlias = process.platform === "win32"
+      && isWindowsDosShortFilename(basename(registeredTargetPath))
+      && !sameResolvedPath(targetPath, registeredTargetPath);
   } else if (process.platform === "win32" && isWindowsDosShortFilename(basename(registeredTargetPath))) {
     // A missing DOS-short filename cannot be expanded back to its physical long
     // name, so deriving a second recovery identity would be unsafe.
@@ -1295,7 +1324,7 @@ function recoveryRootAndTarget(blob: MediaBlob): {
     || !isPathInside(targetPath, canonicalRoot)) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
-  return { registeredRoot, canonicalRoot, targetPath, targetDirectory };
+  return { registeredRoot, canonicalRoot, targetPath, targetDirectory, registeredTargetUsesDosAlias };
 }
 
 interface VerifiedBlobRecoveryBinding {
@@ -1663,7 +1692,12 @@ function validateVerifiedBlobRecoveryEntriesBeforeAuthority(
     );
   } else if (!existsSync(stagedPath) && existsSync(ownerPath)
     && (!interrupted || !interrupted.candidatePaths.some((candidatePath) => sameResolvedPath(candidatePath, ownerPath)))) {
-    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    if (!authorityExists) throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    assertInterruptedRecoveryStageOwner(
+      ownerPath,
+      recoveryPaths.registeredRoot,
+      recoveryPaths.canonicalRoot
+    );
   }
   if (interrupted && !authorityExists) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
@@ -1698,10 +1732,29 @@ function openNodeSqliteDatabase(filePath: string): NodeDatabaseSync {
   return new sqlite.DatabaseSync(filePath);
 }
 
-function assertVerifiedBlobRecoveryTargetMutexHeader(descriptor: number): void {
+function verifiedBlobRecoveryTargetMutexHeaderIdentity(lockPath: string): {
+  applicationId: number;
+  userVersion: number;
+} {
+  const name = basename(lockPath);
+  if (!BLOB_RECOVERY_TARGET_MUTEX_NAME.test(name)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  const digest = Buffer.from(name.slice("blob-recovery-target-".length, -".lock.sqlite".length), "hex");
+  const applicationId = ((digest.readUInt32BE(0) ^ BLOB_RECOVERY_TARGET_MUTEX_APPLICATION_ID) & 0x7fffffff) || 1;
+  const userVersion = (digest.readUInt32BE(4) & 0x7fffffff) || 1;
+  return { applicationId, userVersion };
+}
+
+function assertVerifiedBlobRecoveryTargetMutexHeader(
+  descriptor: number,
+  lockPath: string,
+  expectedLinkCount = 1
+): void {
   const entry = fstatSync(descriptor);
+  const expected = verifiedBlobRecoveryTargetMutexHeaderIdentity(lockPath);
   if (!entry.isFile()
-    || entry.nlink !== 1
+    || entry.nlink !== expectedLinkCount
     || entry.size < 100
     || entry.size > BLOB_RECOVERY_TARGET_MUTEX_MAX_BYTES) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
@@ -1709,12 +1762,14 @@ function assertVerifiedBlobRecoveryTargetMutexHeader(descriptor: number): void {
   const header = Buffer.alloc(100);
   if (readSync(descriptor, header, 0, header.length, 0) !== header.length
     || header.subarray(0, 16).toString("binary") !== "SQLite format 3\0"
-    || header.readUInt32BE(68) !== BLOB_RECOVERY_TARGET_MUTEX_APPLICATION_ID) {
+    || header.readUInt32BE(60) !== expected.userVersion
+    || header.readUInt32BE(68) !== expected.applicationId) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
 }
 
-function writeEmptyVerifiedBlobRecoveryMutex(descriptor: number): void {
+function writeEmptyVerifiedBlobRecoveryMutex(descriptor: number, lockPath: string): void {
+  const identity = verifiedBlobRecoveryTargetMutexHeaderIdentity(lockPath);
   const page = Buffer.alloc(4096);
   page.write("SQLite format 3\0", 0, "binary");
   page.writeUInt16BE(4096, 16);
@@ -1727,7 +1782,8 @@ function writeEmptyVerifiedBlobRecoveryMutex(descriptor: number): void {
   page.writeUInt32BE(1, 28);
   page.writeUInt32BE(4, 44);
   page.writeUInt32BE(1, 56);
-  page.writeUInt32BE(BLOB_RECOVERY_TARGET_MUTEX_APPLICATION_ID, 68);
+  page.writeUInt32BE(identity.userVersion, 60);
+  page.writeUInt32BE(identity.applicationId, 68);
   page.writeUInt32BE(1, 92);
   page.writeUInt32BE(3_048_000, 96);
   page[100] = 0x0d;
@@ -1737,6 +1793,19 @@ function writeEmptyVerifiedBlobRecoveryMutex(descriptor: number): void {
     written += writeSync(descriptor, page, written, page.length - written, written);
   }
   fsyncSync(descriptor);
+}
+
+function assertConnectedVerifiedBlobRecoveryTargetMutex(
+  database: NodeDatabaseSync,
+  lockPath: string
+): void {
+  const expected = verifiedBlobRecoveryTargetMutexHeaderIdentity(lockPath);
+  const application = database.prepare("PRAGMA application_id").get() as { application_id?: number };
+  const version = database.prepare("PRAGMA user_version").get() as { user_version?: number };
+  if (application.application_id !== expected.applicationId
+    || version.user_version !== expected.userVersion) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
 }
 
 function initializeVerifiedBlobRecoveryTargetMutex(
@@ -1760,7 +1829,7 @@ function initializeVerifiedBlobRecoveryTargetMutex(
   try {
     descriptor = openSync(temporaryPath, "wx+");
     temporaryIdentity = fstatSync(descriptor);
-    writeEmptyVerifiedBlobRecoveryMutex(descriptor);
+    writeEmptyVerifiedBlobRecoveryMutex(descriptor, lockPath);
     const initialized = fstatSync(descriptor);
     const currentInitialized = statSync(temporaryPath);
     if (initialized.dev !== temporaryIdentity.dev
@@ -1769,7 +1838,7 @@ function initializeVerifiedBlobRecoveryTargetMutex(
       || currentInitialized.ino !== temporaryIdentity.ino) {
       throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
     }
-    assertVerifiedBlobRecoveryTargetMutexHeader(descriptor);
+    assertVerifiedBlobRecoveryTargetMutexHeader(descriptor, lockPath);
     assertVerifiedBlobRecoveryTargetMutexSidecarsAbsent(temporaryPath);
     try { linkSync(temporaryPath, lockPath); }
     catch (error) {
@@ -1842,7 +1911,7 @@ function assertVerifiedBlobRecoveryTargetMutexFile(
       || guarded.dev !== entry.dev || guarded.ino !== entry.ino) {
       throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
     }
-    assertVerifiedBlobRecoveryTargetMutexHeader(guardDescriptor);
+    assertVerifiedBlobRecoveryTargetMutexHeader(guardDescriptor, lockPath, expectedLinkCount);
     if (linkedCandidatePath) {
       const candidate = lstatSync(linkedCandidatePath);
       if (candidate.isSymbolicLink() || !candidate.isFile()
@@ -1868,7 +1937,8 @@ function acquireVerifiedBlobRecoveryTargetMutex(
   lockPath: string,
   recoveryPaths: ReturnType<typeof recoveryRootAndTarget>,
   roots: ReturnType<typeof activationRoots>,
-  busyTimeoutMs: number
+  busyTimeoutMs: number,
+  faults: VerifiedBlobStorageRecoveryFaults
 ): VerifiedBlobRecoveryTargetMutex {
   if (!existsSync(lockPath)) {
     initializeVerifiedBlobRecoveryTargetMutex(lockPath, recoveryPaths, roots);
@@ -1881,7 +1951,9 @@ function acquireVerifiedBlobRecoveryTargetMutex(
     assertVerifiedBlobRecoveryTargetMutexSidecarsAbsent(lockPath);
     guardDescriptor = openSync(lockPath, "r");
     assertVerifiedBlobRecoveryTargetMutexFile(lockPath, recoveryPaths, roots, guardDescriptor);
+    faults.after_target_mutex_guard_open?.();
     database = openNodeSqliteDatabase(lockPath);
+    assertConnectedVerifiedBlobRecoveryTargetMutex(database, lockPath);
     assertVerifiedBlobRecoveryTargetMutexFile(lockPath, recoveryPaths, roots, guardDescriptor);
     assertVerifiedBlobRecoveryTargetMutexSidecarsAbsent(lockPath);
     const journalMode = database.prepare("PRAGMA journal_mode = MEMORY").get() as { journal_mode?: string };
@@ -1898,6 +1970,7 @@ function acquireVerifiedBlobRecoveryTargetMutex(
       }
       throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
     }
+    assertConnectedVerifiedBlobRecoveryTargetMutex(database, lockPath);
     assertVerifiedBlobRecoveryTargetMutexFile(lockPath, recoveryPaths, roots, guardDescriptor);
     assertVerifiedBlobRecoveryTargetMutexSidecarsAbsent(lockPath);
     return { database, guardDescriptor };
@@ -2036,7 +2109,8 @@ export function recoverVerifiedBlobStorage(
       lockPath,
       preflightPaths,
       activation,
-      busyTimeoutMs
+      busyTimeoutMs,
+      faults
     );
     faults.after_target_mutex_acquired?.();
     db.exec("BEGIN IMMEDIATE");
@@ -2129,6 +2203,13 @@ export function recoverVerifiedBlobStorage(
       originalCondition = "MISSING_BYTES";
     }
 
+    // A DOS 8.3 binding is safe for read-only reuse while the physical target
+    // exists, but quarantine would make that immutable alias unresolvable on
+    // retry. Reject before creating or moving recovery media.
+    if (originalCondition === "CONTENT_DRIFT" && recoveryPaths.registeredTargetUsesDosAlias) {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+
     if (originalCondition === "ALREADY_REUSABLE") {
       if (existsSync(stagedPath)) {
         assertExpectedRecoveryStagingFile(
@@ -2146,7 +2227,12 @@ export function recoverVerifiedBlobStorage(
           recoveryPaths.canonicalRoot
         );
       } else if (existsSync(stagedOwnerPath)) {
-        throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+        assertInterruptedRecoveryStageOwner(
+          stagedOwnerPath,
+          registeredRoot,
+          recoveryPaths.canonicalRoot
+        );
+        rmSync(stagedOwnerPath);
       }
       if (!verifiedBlobStorageIsReusable(blob)) throw new Error("MEDIA_BLOB_RECOVERY_FAILED");
       db.exec("COMMIT");
@@ -2172,7 +2258,8 @@ export function recoverVerifiedBlobStorage(
       blob,
       activation,
       registeredRoot,
-      recoveryPaths.canonicalRoot
+      recoveryPaths.canonicalRoot,
+      faults
     );
     faults.after_staged_copy?.();
 

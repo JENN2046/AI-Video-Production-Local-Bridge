@@ -190,7 +190,7 @@ function hardCrashVerifiedBlobRecovery(input: {
   project_id: string;
   shot_id: string;
   source_path: string;
-  crash_at?: "after_staged_copy" | "after_target_authority_temp_created";
+  crash_at?: "after_stage_owner_created" | "after_staged_copy" | "after_target_authority_temp_created";
 }): void {
   const childScript = `
     const { openM0Database } = await import(process.env.RECOVERY_SQLITE_MODULE);
@@ -204,7 +204,9 @@ function hardCrashVerifiedBlobRecovery(input: {
       source_path: process.env.RECOVERY_SOURCE_PATH
     }, db, crashAt === "after_target_authority_temp_created"
       ? { after_target_authority_temp_created: () => process.exit(93) }
-      : { after_staged_copy: () => process.exit(91) });
+      : crashAt === "after_stage_owner_created"
+        ? { after_stage_owner_created: () => process.exit(94) }
+        : { after_staged_copy: () => process.exit(91) });
     db.close();
     process.exit(92);
   `;
@@ -227,7 +229,9 @@ function hardCrashVerifiedBlobRecovery(input: {
     timeout: 30_000
   });
   assert.equal(child.error, undefined);
-  const expectedStatus = input.crash_at === "after_target_authority_temp_created" ? 93 : 91;
+  const expectedStatus = input.crash_at === "after_target_authority_temp_created"
+    ? 93
+    : input.crash_at === "after_stage_owner_created" ? 94 : 91;
   assert.equal(child.status, expectedStatus, child.stderr || child.stdout || "child did not stop at the requested recovery crash boundary");
 }
 
@@ -1908,6 +1912,19 @@ test("Windows long and DOS-short target aliases share recovery identities", (con
       assert.equal(recovered.ok, true, recovered.ok ? undefined : recovered.error.code);
       if (recovered.ok) assert.equal(recovered.outcome, "ALREADY_REUSABLE");
     }
+    const originalBytes = readFileSync(fixtureA.artifact.storage.uri);
+    const driftedBytes = Buffer.concat([originalBytes, Buffer.from("short-alias-drift")]);
+    writeFileSync(fixtureA.artifact.storage.uri, driftedBytes);
+    const rejectedDrift = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixtureB.artifact.artifact_id,
+      project_id: fixtureB.artifact.linked_objects.project_id,
+      shot_id: fixtureB.artifact.linked_objects.shot_id,
+      source_path: fixtureB.source_path
+    }, dbB);
+    assert.equal(rejectedDrift.ok, false);
+    if (!rejectedDrift.ok) assert.equal(rejectedDrift.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    assert.deepEqual(readFileSync(fixtureA.artifact.storage.uri), driftedBytes);
+    writeFileSync(fixtureA.artifact.storage.uri, originalBytes);
     rmSync(fixtureA.artifact.storage.uri);
     const unprovableMissingAlias = recoverVerifiedBlobStorage({
       invalid_artifact_id: fixtureB.artifact.artifact_id,
@@ -2305,6 +2322,71 @@ test("different storage targets concurrently initialize activation roots and acq
   }
 });
 
+test("verified Blob recovery rejects a SQLite connection opened on a swapped mutex inode", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-swapped-mutex-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const fixtureA = createRecoverableVideo(db, mediaRoot);
+    const sourceB = join(dirname(fixtureA.source_path), `swapped-mutex-source-${randomUUID()}.mp4`);
+    const targetB = join(dirname(fixtureA.artifact.storage.uri), `swapped-mutex-target-${randomUUID()}.mp4`);
+    writeFileSync(sourceB, Buffer.concat([readFileSync(VIDEO_FIXTURE), Buffer.from("distinct-mutex-target")]));
+    copyFileSync(sourceB, targetB);
+    const fixtureB = insertUnsafeRecoveryFixture(
+      db,
+      mediaRoot,
+      targetB,
+      sourceB,
+      `blob_swapped_mutex_${randomUUID()}`,
+      sourceB
+    );
+    for (const fixture of [fixtureA, fixtureB]) {
+      const initialized = recoverVerifiedBlobStorage({
+        invalid_artifact_id: fixture.artifact.artifact_id,
+        project_id: fixture.artifact.linked_objects.project_id,
+        shot_id: fixture.artifact.linked_objects.shot_id,
+        source_path: fixture.source_path
+      }, db);
+      assert.equal(initialized.ok, true, initialized.ok ? undefined : initialized.error.code);
+    }
+    const blobA = getMediaBlob(db, fixtureA.artifact.blob_id);
+    const blobB = getMediaBlob(db, fixtureB.artifact.blob_id);
+    assert.ok(blobA);
+    assert.ok(blobB);
+    const lockA = verifiedBlobRecoveryMutexPath(mediaRoot, blobA.storage_uri);
+    const lockB = verifiedBlobRecoveryMutexPath(mediaRoot, blobB.storage_uri);
+    const guardedBackup = `${lockA}.guarded-backup`;
+    const foreignBytes = readFileSync(lockB);
+    const originalBytes = readFileSync(lockA);
+    rmSync(fixtureA.artifact.storage.uri);
+
+    const blocked = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixtureA.artifact.artifact_id,
+      project_id: fixtureA.project_id,
+      shot_id: fixtureA.shot_id,
+      source_path: fixtureA.source_path
+    }, db, {
+      after_target_mutex_guard_open: () => {
+        renameSync(lockA, guardedBackup);
+        copyFileSync(lockB, lockA);
+      }
+    });
+    assert.equal(blocked.ok, false);
+    if (!blocked.ok) assert.equal(blocked.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    assert.deepEqual(readFileSync(lockA), foreignBytes);
+    rmSync(lockA);
+    renameSync(guardedBackup, lockA);
+    assert.deepEqual(readFileSync(lockA), originalBytes);
+    assert.deepEqual(readFileSync(lockB), foreignBytes);
+    assert.equal(existsSync(fixtureA.artifact.storage.uri), false);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("verified Blob recovery rejects unsafe persistent target mutex entries", () => {
   for (const scenario of ["directory", "hard-link", "temp-hard-link", "malformed", "valid-unowned-sqlite"] as const) {
     const root = mkdtempSync(join(tmpdir(), `verified-blob-recovery-unsafe-mutex-${scenario}-`));
@@ -2692,6 +2774,51 @@ test("verified Blob recovery revalidates the Artifact binding after acquiring th
     assert.deepEqual(readFileSync(fixture.artifact.storage.uri), targetBytes);
   } finally {
     db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("verified Blob recovery converges a hard crash before stage-owner publication", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-owner-publish-crash-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  let db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const blob = getMediaBlob(db, fixture.artifact.blob_id);
+    assert.ok(blob);
+    const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
+    const ownerPath = verifiedBlobRecoveryStageOwnerPath(stagedPath);
+    rmSync(fixture.artifact.storage.uri);
+    db.close();
+
+    hardCrashVerifiedBlobRecovery({
+      sqlite_path: sqlitePath,
+      artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path,
+      crash_at: "after_stage_owner_created"
+    });
+    assert.equal(existsSync(stagedPath), false);
+    assert.equal(existsSync(ownerPath), true);
+    assert.equal(statSync(ownerPath).size, 0);
+    assert.equal(statSync(ownerPath).nlink, 1);
+
+    db = openM0Database(sqlitePath);
+    const retried = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(retried.ok, true, retried.ok ? undefined : retried.error.code);
+    assert.equal(existsSync(stagedPath), false);
+    assert.equal(existsSync(ownerPath), false);
+    assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
+  } finally {
+    try { db.close(); } catch { /* the crash setup closes the first database handle */ }
     rmSync(root, { recursive: true, force: true });
   }
 });
