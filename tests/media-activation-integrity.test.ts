@@ -1921,37 +1921,50 @@ test("Windows long and DOS-short target aliases share recovery identities", (con
   }
 });
 
-test("Windows recovery accepts a missing ordinary filename containing a tilde", (context) => {
+test("Windows recovery accepts missing ordinary tilde filenames outside the DOS 8.3 character set", (context) => {
   if (process.platform !== "win32") {
     context.skip("Windows filename classification is Windows-only");
     return;
   }
   const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-ordinary-tilde-"));
   const mediaRoot = join(root, "media");
-  const sqlitePath = join(root, "app.sqlite");
-  migrateDatabase(sqlitePath);
-  const db = openM0Database(sqlitePath);
   try {
     const targetDirectory = join(mediaRoot, "artifacts", "videos");
     const sourceDirectory = join(mediaRoot, "downloads");
     mkdirSync(targetDirectory, { recursive: true });
     mkdirSync(sourceDirectory, { recursive: true });
-    const targetPath = join(targetDirectory, "final~edited.mp4");
-    const sourcePath = join(sourceDirectory, `source-${randomUUID()}.mp4`);
-    copyFileSync(VIDEO_FIXTURE, sourcePath);
-    const fixture = insertUnsafeRecoveryFixture(db, mediaRoot, targetPath, sourcePath);
+    for (const [index, filename] of [
+      "final~edited.mp4",
+      "final+~1.mp4",
+      "final,~1.mp4",
+      "final;~1.mp4",
+      "final=~1.mp4",
+      "final[~1.mp4",
+      "final]~1.mp4"
+    ].entries()) {
+      const sqlitePath = join(root, `app-${index}.sqlite`);
+      migrateDatabase(sqlitePath);
+      const db = openM0Database(sqlitePath);
+      const targetPath = join(targetDirectory, filename);
+      const sourcePath = join(sourceDirectory, `source-${randomUUID()}.mp4`);
+      try {
+        copyFileSync(VIDEO_FIXTURE, sourcePath);
+        const fixture = insertUnsafeRecoveryFixture(db, mediaRoot, targetPath, sourcePath);
 
-    const recovered = recoverVerifiedBlobStorage({
-      invalid_artifact_id: fixture.artifact.artifact_id,
-      project_id: fixture.artifact.linked_objects.project_id,
-      shot_id: fixture.artifact.linked_objects.shot_id,
-      source_path: fixture.source_path
-    }, db);
-    assert.equal(recovered.ok, true, recovered.ok ? undefined : recovered.error.code);
-    assert.equal(existsSync(targetPath), true);
-    assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
+        const recovered = recoverVerifiedBlobStorage({
+          invalid_artifact_id: fixture.artifact.artifact_id,
+          project_id: fixture.artifact.linked_objects.project_id,
+          shot_id: fixture.artifact.linked_objects.shot_id,
+          source_path: fixture.source_path
+        }, db);
+        assert.equal(recovered.ok, true, `${filename}: ${recovered.ok ? "unexpected" : recovered.error.code}`);
+        assert.equal(existsSync(targetPath), true, filename);
+        assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true, filename);
+      } finally {
+        db.close();
+      }
+    }
   } finally {
-    db.close();
     rmSync(root, { recursive: true, force: true });
   }
 });

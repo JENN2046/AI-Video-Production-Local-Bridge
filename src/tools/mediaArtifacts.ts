@@ -845,11 +845,15 @@ function isWindowsDosShortFilename(filename: string): boolean {
   const extensionIndex = filename.lastIndexOf(".");
   const base = extensionIndex > 0 ? filename.slice(0, extensionIndex) : filename;
   const extension = extensionIndex > 0 ? filename.slice(extensionIndex + 1) : "";
-  const shortCharacter = "[^<>:\"/\\\\|?*.\\s~]";
+  // Win32 long names admit punctuation such as + , ; = [ ], but DOS 8.3
+  // names do not. Keep this aligned with the SFN character set so an
+  // ordinary long filename containing a tilde is not treated as an alias.
+  const shortStemCharacter = "[A-Z0-9$%'\\-_@!(){}^#&`\\u0080-\\uFFFF]";
+  const shortExtensionCharacter = "[A-Z0-9$%'\\-_@~!(){}^#&`\\u0080-\\uFFFF]";
   return base.length <= 8
     && extension.length <= 3
-    && new RegExp(`^${shortCharacter}{1,6}~[0-9]{1,6}$`, "i").test(base)
-    && (extension === "" || new RegExp(`^${shortCharacter}{1,3}$`, "i").test(extension));
+    && new RegExp(`^${shortStemCharacter}{1,6}~[0-9]{1,6}$`, "i").test(base)
+    && (extension === "" || new RegExp(`^${shortExtensionCharacter}{1,3}$`, "i").test(extension));
 }
 
 function verifiedBlobRecoveryError(error: unknown): ToolError {
