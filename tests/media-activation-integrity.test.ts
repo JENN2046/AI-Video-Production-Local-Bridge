@@ -3082,6 +3082,16 @@ test("verified Blob recovery converges a hard crash while removing an isolated s
     assert.equal(existsSync(cleanup.owner_cleanup), true);
 
     db = openM0Database(sqlitePath);
+    const protectedSource = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: cleanup.owner_cleanup
+    }, db);
+    assert.equal(protectedSource.ok, false);
+    if (!protectedSource.ok) assert.equal(protectedSource.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    assert.equal(existsSync(cleanup.owner_cleanup), true);
+
     const retried = recoverVerifiedBlobStorage({
       invalid_artifact_id: fixture.artifact.artifact_id,
       project_id: fixture.project_id,

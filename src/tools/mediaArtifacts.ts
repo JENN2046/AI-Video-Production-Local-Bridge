@@ -2067,6 +2067,7 @@ function reconcileOwnedRecoveryCleanupPair(
   targetPath: string,
   cleanupDirectory: string,
   registeredRoot: string,
+  protectedSourcePath = "",
   afterFirstRemoval?: () => void
 ): void {
   if (!existsSync(cleanupDirectory)) return;
@@ -2080,6 +2081,10 @@ function reconcileOwnedRecoveryCleanupPair(
     cleanupDirectory,
     registeredRoot
   );
+  if (protectedSourcePath && [stagedPath, ownerPath, stagedCleanup, ownerCleanup]
+    .some((candidate) => sameResolvedPath(candidate, protectedSourcePath))) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
   let cleanupPaths = [stagedCleanup, ownerCleanup].filter((candidate) => existsSync(candidate));
   if (cleanupPaths.length === 0) return;
   if (cleanupPaths.length === 1) {
@@ -2211,6 +2216,7 @@ function removeOwnedRecoveryStagingPair(
     targetPath,
     cleanupDirectory,
     registeredRoot,
+    "",
     afterFirstCleanupRemoval
   );
 }
@@ -2380,7 +2386,8 @@ export function recoverVerifiedBlobStorage(
       stagedOwnerPath,
       recoveryPaths.targetPath,
       recoveryCleanupDirectory,
-      registeredRoot
+      registeredRoot,
+      sourcePath
     );
     validateVerifiedBlobRecoveryEntriesBeforeAuthority(
       recoveryPaths,
