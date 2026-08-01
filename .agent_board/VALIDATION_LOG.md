@@ -3620,6 +3620,45 @@ service_operations: 0
 exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
 ```
 
+### PR109 concurrent activation-root initialization
+
+```yaml
+task: PR109-T4_CROSS_DATABASE_BLOB_TARGET_MUTEX
+validated_at: 2026-08-01T17:10:49+08:00
+pull_request: 109
+implementation_commit: d8c6768
+review_thread: PRRT_kwDOTTDtUM6VnQiz
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - node dist/scripts/run-isolated-tests.js dist/tests/media-activation-integrity.test.js
+  - npm run test:foundation-boundaries
+  - npm run test:selection-gate
+  - npm run test:provider-boundaries
+  - npm run test:v2
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  media_activation_integrity: PASS_64_FAIL_0_PLATFORM_SKIP_1
+  foundation_boundaries: PASS_126_FAIL_0_PLATFORM_SKIP_1
+  provider_boundaries: PASS_52
+  workbench_v2: PASS_68
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  missing_activation_tree_used_by_multiprocess_regression: true
+  independent_different_target_recoveries_both_succeed: true
+  concurrent_eexist_revalidated_before_use: true
+  unsafe_entry_acceptance_added: false
+  provider_network_calls: 0
+  activity_data_access: none
+  schema_or_migration_changed: false
+exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
+```
+
 ### PR109 pre-authority and mutex ownership remediation
 
 ```yaml

@@ -5297,6 +5297,47 @@ s4_authorization_granted: false
 delivery: PR_109_OPEN_READY_AWAITING_EXACT_HEAD_CI_AND_POST_PROMOTION_REVIEW
 ```
 
+## 2026-08-01 — PR109 concurrent activation-root initialization
+
+```yaml
+task: PR109-T4_CROSS_DATABASE_BLOB_TARGET_MUTEX
+status: BLOCKED_BY_EXACT_HEAD_EVIDENCE
+recorded_by: Codex
+recorded_at: 2026-08-01T17:10:49+08:00
+pull_request: 109
+previous_exact_head:
+  head: ed42b2b046829e99a85cf46332cd702123c06f5f
+  run_id: 30692274008
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+  review_finding: PRRT_kwDOTTDtUM6VnQiz
+  transfer_to_new_head: false
+implementation_commit: d8c6768
+verified_behavior:
+  first_use_activation_root_concurrency_safe: true
+  concurrent_eexist_only_candidate: true
+  symlink_check_preserved: true
+  directory_check_preserved: true
+  canonical_root_check_preserved: true
+  different_target_parallel_regression_starts_without_activation_tree: true
+  provider_calls: 0
+  activity_data_access: none
+  schema_or_migration_changed: false
+local_validation:
+  typecheck: PASS
+  build: PASS
+  media_activation_integrity: PASS_64_FAIL_0_PLATFORM_SKIP_1
+  foundation_boundaries: PASS_126_FAIL_0_PLATFORM_SKIP_1
+  provider_boundaries: PASS_52
+  workbench_v2: PASS_68
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+ready_task_count: 0
+merge_authorized: false
+delivery: PR_109_OPEN_READY_AWAITING_NEW_EXACT_HEAD_CI_AND_REVIEW
+```
+
 ## 2026-08-01 — PR109 pre-authority and mutex ownership remediation
 
 ```yaml

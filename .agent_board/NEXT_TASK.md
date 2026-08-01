@@ -50,14 +50,18 @@ automatically.
    validates recovery entries before authority publication, requires prior
    matching authority for a single-link deterministic stage, validates the
    bounded SQLite ownership header before opening the mutex, and lazily loads
-   this module's SQLite dependency.
+   this module's SQLite dependency. Head `ed42b2b` passed CI run `30692274008`,
+   but exact-head review found a first-use activation-root `EEXIST` race.
+   Follow-up `d8c6768` makes directory initialization concurrency-safe while
+   preserving the full post-create path checks.
 - At state sync the unresolved threads are `PRRT_kwDOTTDtUM6VkSwY`,
   `PRRT_kwDOTTDtUM6VkqqS`, `PRRT_kwDOTTDtUM6VkzTz`,
   `PRRT_kwDOTTDtUM6Vk38a`, `PRRT_kwDOTTDtUM6Vk38b`,
   `PRRT_kwDOTTDtUM6VlUo8`, `PRRT_kwDOTTDtUM6VlUo-`,
   `PRRT_kwDOTTDtUM6VlsfV`, `PRRT_kwDOTTDtUM6VmCNv`,
   `PRRT_kwDOTTDtUM6VmCNw`, `PRRT_kwDOTTDtUM6VmGY5`,
-  `PRRT_kwDOTTDtUM6VmMCl` and `PRRT_kwDOTTDtUM6VmU9i`.
+  `PRRT_kwDOTTDtUM6VmMCl`, `PRRT_kwDOTTDtUM6VmU9i` and
+  `PRRT_kwDOTTDtUM6VnQiz`.
   Generic startup preserves the bounded stage; explicit recovery is serialized
   by exact target across database files. Exact-head Windows CI and a fresh
   post-promotion Codex review remain required; merge is not authorized.

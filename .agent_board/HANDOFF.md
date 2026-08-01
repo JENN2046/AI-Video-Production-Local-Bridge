@@ -2,7 +2,7 @@
 
 Current mode: PR #109 orphaned Blob recovery staging remediation; no executable task is `READY`
 Last run: S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING
-Last result: pre-authority recovery-entry validation and authenticated persistent mutex pass locally at implementation `15b3bed`; open Ready PR #109 awaits new exact-final-head CI and review
+Last result: concurrent first-use activation-root initialization passes locally at follow-up `d8c6768`; open Ready PR #109 awaits new exact-final-head CI and review
 
 ## Current state
 
@@ -104,7 +104,13 @@ Ready task count: 0
   `PRRT_kwDOTTDtUM6VlUo8`, `PRRT_kwDOTTDtUM6VlUo-`,
   `PRRT_kwDOTTDtUM6VlsfV`, `PRRT_kwDOTTDtUM6VmCNv`,
   `PRRT_kwDOTTDtUM6VmCNw`, `PRRT_kwDOTTDtUM6VmGY5`,
-  `PRRT_kwDOTTDtUM6VmMCl` and `PRRT_kwDOTTDtUM6VmU9i`.
+  `PRRT_kwDOTTDtUM6VmMCl`, `PRRT_kwDOTTDtUM6VmU9i` and
+  `PRRT_kwDOTTDtUM6VnQiz`. Head `ed42b2b` passed CI run `30692274008`, but its
+  exact-head review found that first-use activation-directory creation could
+  race before the application database lock. Follow-up `d8c6768` accepts a
+  concurrent `EEXIST` only as a candidate and revalidates the entry as a
+  canonical in-root directory before use; its multiprocess regression starts
+  two different-target recoveries from a missing `.activation` tree.
 - `S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING` is
   `BLOCKED_BY_PR109_POST_PROMOTION_FINDING` in PR #109.
 - PR #109 remains open and unmerged; merge remains a separate Jenn decision,

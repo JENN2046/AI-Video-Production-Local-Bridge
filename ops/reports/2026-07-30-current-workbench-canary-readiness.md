@@ -291,6 +291,7 @@ remediation_pr:
   windows_dos_short_filename_guard_commit: 0982c61
   windows_sfn_character_set_commit: d7fbb21
   pre_authority_and_mutex_ownership_commit: 15b3bed
+  concurrent_activation_root_commit: d8c6768
   remediation_strategy: CROSS_DATABASE_TARGET_SQLITE_MUTEX
   current_head: STATE_SYNC_COMMIT_CONTAINING_THIS_RECORD
   resolved_prior_threads:
@@ -309,6 +310,7 @@ remediation_pr:
     - PRRT_kwDOTTDtUM6VmGY5
     - PRRT_kwDOTTDtUM6VmMCl
     - PRRT_kwDOTTDtUM6VmU9i
+    - PRRT_kwDOTTDtUM6VnQiz
   post_promotion_finding_status: REMEDIATION_IN_PROGRESS_AT_STATE_SYNC
   merged_to_main: false
 S3B-T1:
@@ -420,6 +422,15 @@ single-link deterministic stage is considered app-owned, validates a bounded
 SQLite application-id ownership header before any mutex database open/pragma,
 and lazily loads this module's SQLite dependency.
 
+Head `ed42b2b` passed both jobs on Windows CI run `30692274008`. Its exact-head
+review found a first-use concurrency race: independent recoveries could both
+observe a missing activation subdirectory and one would misclassify the other's
+successful creation as unsafe. Follow-up `d8c6768` performs an unconditional
+single-directory create, accepts only `EEXIST` as a concurrent candidate, then
+still validates the entry as a non-symlink canonical directory inside the
+registered root. The multiprocess different-target regression now begins with
+the whole `.activation` tree absent.
+
 The regression set covers independently configured database A/B/C processes
 sharing one media root, an active explicit repair paused after staged copy,
 `:memory:`, five hard crashes with repeated startup, explicit retry, partial and
@@ -435,9 +446,9 @@ typecheck, build, secret scan and diff checks pass. Threads
 `PRRT_kwDOTTDtUM6Vk38b`, `PRRT_kwDOTTDtUM6VlUo8`,
 `PRRT_kwDOTTDtUM6VlUo-`, `PRRT_kwDOTTDtUM6VlsfV`,
 `PRRT_kwDOTTDtUM6VmCNv`, `PRRT_kwDOTTDtUM6VmCNw`,
-`PRRT_kwDOTTDtUM6VmGY5`, `PRRT_kwDOTTDtUM6VmMCl` and
-`PRRT_kwDOTTDtUM6VmU9i` remain unresolved at state sync pending new exact-head
-CI and review. PR #109 remains open and unmerged.
+`PRRT_kwDOTTDtUM6VmGY5`, `PRRT_kwDOTTDtUM6VmMCl`,
+`PRRT_kwDOTTDtUM6VmU9i` and `PRRT_kwDOTTDtUM6VnQiz` remain unresolved at state
+sync pending new exact-head CI and review. PR #109 remains open and unmerged.
 Cross-database explicit recovery is serialized by an exact-target SQLite mutex,
 and merge remains a separate Jenn decision.
 

@@ -43,7 +43,12 @@ Repository baseline: `main@808d9334a49def7ce858f7c6138af75fed392c5b`
   recovery entries before authority publication, requires prior authority for
   a single-link deterministic stage, authenticates the mutex from its bounded
   SQLite header before opening it, and loads this module's SQLite dependency
-  lazily. New exact-head CI and review are required.
+  lazily. Head `ed42b2b` passed both Windows jobs on run `30692274008`, but its
+  exact-head review found a first-use `EEXIST` race when independent recoveries
+  concurrently initialize the same activation directories. Follow-up `d8c6768`
+  now treats only concurrent `EEXIST` as a candidate and still performs the
+  normal symlink, directory and canonical-root checks before use. New exact-head
+  CI and review are required.
 - The final PR #106 head passed both `Quality and integration` and
   `Browser smoke`; the squash commit has the same tree as that reviewed head.
 - Code and CI PASS establish repository facts only. They do not create a new
@@ -283,9 +288,11 @@ are `PRRT_kwDOTTDtUM6VkSwY`, `PRRT_kwDOTTDtUM6VkqqS`,
 `PRRT_kwDOTTDtUM6Vk38b`, `PRRT_kwDOTTDtUM6VlUo8`,
 `PRRT_kwDOTTDtUM6VlUo-`, `PRRT_kwDOTTDtUM6VlsfV`,
 `PRRT_kwDOTTDtUM6VmCNv`, `PRRT_kwDOTTDtUM6VmCNw`,
-`PRRT_kwDOTTDtUM6VmGY5`, `PRRT_kwDOTTDtUM6VmMCl` and
-`PRRT_kwDOTTDtUM6VmU9i`. They remain unresolved pending new exact-head CI and
-a fresh complete review. PR #109 remains open and unmerged.
+`PRRT_kwDOTTDtUM6VmGY5`, `PRRT_kwDOTTDtUM6VmMCl`,
+`PRRT_kwDOTTDtUM6VmU9i` and `PRRT_kwDOTTDtUM6VnQiz`. Follow-up `d8c6768`
+adds the concurrent first-use activation-root regression; all 14 threads remain
+unresolved pending new exact-head CI and a fresh complete review. PR #109
+remains open and unmerged.
 Cross-database explicit recovery is serialized by an exact-target SQLite mutex,
 and merge remains a separate Jenn decision.
 
