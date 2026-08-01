@@ -21,6 +21,8 @@ Repository baseline: `main@808d9334a49def7ce858f7c6138af75fed392c5b`
   review are still required before its review threads may be resolved. Windows
   CI run `30684275229` was superseded after its 8.3 test helper retained output
   quotes; follow-up `94bd81b` normalizes that test output and awaits a new run.
+  Run `30684654830` showed the runner emits escaped quotes; `43e5519` now
+  extracts only the absolute drive path and requires another exact-head run.
 - The final PR #106 head passed both `Quality and integration` and
   `Browser smoke`; the squash commit has the same tree as that reviewed head.
 - Code and CI PASS establish repository facts only. They do not create a new

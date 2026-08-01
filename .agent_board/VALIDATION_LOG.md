@@ -3421,6 +3421,27 @@ remaining_test_processes: 0
 exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
 ```
 
+### PR109 Windows short-path absolute parser
+
+```yaml
+task: PR109-T4_CROSS_DATABASE_BLOB_TARGET_MUTEX
+recorded_at: 2026-08-01T13:00:03+08:00
+failed_ci_run: 30684654830
+failure_class: TEST_PROBE_ESCAPED_QUOTED_SHORT_PATH
+production_recovery_failure: false
+test_fix_commit: 43e5519
+local_validation:
+  typecheck: PASS
+  foundation_boundaries: PASS_123_FAIL_0_PLATFORM_SKIP_1
+  provider_boundaries: PASS_52
+  workbench_v2: PASS_68
+  selection_gate: PASS_23
+  build: PASS
+  secret_scan: PASS
+  git_diff_check: PASS
+exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
+```
+
 ### PR109 Windows short-path probe parsing
 
 ```yaml

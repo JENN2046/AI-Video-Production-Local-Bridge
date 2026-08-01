@@ -38,6 +38,8 @@ automatically.
    and stage identity and removes database-local Blob ids from the shared stage.
    Windows CI run `30684275229` exposed quoted `cmd` output in the 8.3 test
    helper; `94bd81b` normalizes that output and requires a fresh exact-head run.
+   Run `30684654830` retained escaped quotes; `43e5519` now extracts only the
+   absolute drive path. A new exact-head run remains required.
 - Prior whitelist thread `PRRT_kwDOTTDtUM6VdGmY` is resolved. At state sync
   threads `PRRT_kwDOTTDtUM6Vdmly`, `PRRT_kwDOTTDtUM6VeTXd`,
   `PRRT_kwDOTTDtUM6VekUB`, `PRRT_kwDOTTDtUM6VkSwY` and

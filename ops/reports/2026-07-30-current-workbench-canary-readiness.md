@@ -286,6 +286,7 @@ remediation_pr:
   authority_atomic_publish_commit: 84e4ef1
   physical_target_identity_commit: cc6dd87
   windows_short_path_test_fix_commit: 94bd81b
+  windows_short_path_absolute_parse_commit: 43e5519
   remediation_strategy: CROSS_DATABASE_TARGET_SQLITE_MUTEX
   current_head: STATE_SYNC_COMMIT_CONTAINING_THIS_RECORD
   resolved_prior_threads:
@@ -384,6 +385,8 @@ filename fails closed because its long physical identity cannot be proven.
 Run `30684275229` exercised that branch but failed because the test helper kept
 a matching outer quote pair from `cmd` output. Follow-up `94bd81b` fixes only
 that probe parser; the failed run is superseded and new exact-head CI is needed.
+Run `30684654830` showed escaped quotes remained; `43e5519` replaces quote-shape
+assumptions with strict extraction of the absolute Windows drive path.
 
 The regression set covers independently configured database A/B/C processes
 sharing one media root, an active explicit repair paused after staged copy,

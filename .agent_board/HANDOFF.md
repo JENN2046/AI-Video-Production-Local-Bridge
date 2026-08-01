@@ -62,6 +62,9 @@ Ready task count: 0
   retained `cmd` output quotes and constructed an invalid probe path. Follow-up
   `94bd81b` strips only a matching outer quote pair; that failed run is not
   final evidence and a new exact-head run is required.
+- Run `30684654830` confirmed escaped quote characters remained. Follow-up
+  `43e5519` extracts the absolute `X:\\...` path by a strict whitelist; both
+  failed runs are superseded and neither is final acceptance evidence.
 - At state sync these PR #109 threads remain unresolved pending exact-head CI
   and a fresh review: `PRRT_kwDOTTDtUM6Vdmly`, `PRRT_kwDOTTDtUM6VeTXd`,
   `PRRT_kwDOTTDtUM6VekUB`, `PRRT_kwDOTTDtUM6VkSwY` and
