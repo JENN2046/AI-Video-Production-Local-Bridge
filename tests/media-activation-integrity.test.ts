@@ -1325,6 +1325,13 @@ test("verified Blob recovery closes only its interrupted exclusive-placement har
     const fixture = createRecoverableVideo(db, mediaRoot);
     const before = immutableBlobSnapshot(db, fixture.artifact.artifact_id);
     const targetPath = fixture.artifact.storage.uri;
+    const authorityEstablished = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(authorityEstablished.ok, true, authorityEstablished.ok ? undefined : authorityEstablished.error.code);
     const stagedPath = join(
       dirname(targetPath),
       `blob-recovery-${randomUUID()}.staged`
@@ -1615,7 +1622,7 @@ test("verified Blob recovery fault seams never report success and remain explici
         shot_id: fixture.shot_id,
         source_path: fixture.source_path
       }, db);
-      assert.equal(retried.ok, true, retried.ok ? seam : retried.error.code);
+      assert.equal(retried.ok, true, `${seam}: ${retried.ok ? "unexpected" : retried.error.code}`);
       assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true, seam);
       assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before, seam);
     } finally {
@@ -2073,6 +2080,39 @@ test("invalid recovery input cannot publish target authority before source valid
   }
 });
 
+test("an unowned deterministic stage is preserved and cannot publish target authority", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-unowned-stage-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const blob = getMediaBlob(db, fixture.artifact.blob_id);
+    assert.ok(blob);
+    const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
+    const authorityPath = verifiedBlobRecoveryAuthorityPath(blob.storage_uri);
+    const unownedBytes = Buffer.from("preserve-unowned-deterministic-stage");
+    rmSync(fixture.artifact.storage.uri);
+    writeFileSync(stagedPath, unownedBytes);
+
+    const blocked = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(blocked.ok, false);
+    if (!blocked.ok) assert.equal(blocked.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    assert.deepEqual(readFileSync(stagedPath), unownedBytes);
+    assert.equal(existsSync(authorityPath), false);
+    assert.equal(existsSync(fixture.artifact.storage.uri), false);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("one storage target rejects a conflicting immutable Blob digest", () => {
   const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-target-digest-authority-"));
   const mediaRoot = join(root, "media");
@@ -2248,7 +2288,7 @@ test("different storage targets under one media root acquire mutexes concurrentl
 });
 
 test("verified Blob recovery rejects unsafe persistent target mutex entries", () => {
-  for (const scenario of ["directory", "hard-link", "malformed"] as const) {
+  for (const scenario of ["directory", "hard-link", "malformed", "valid-unowned-sqlite"] as const) {
     const root = mkdtempSync(join(tmpdir(), `verified-blob-recovery-unsafe-mutex-${scenario}-`));
     const mediaRoot = join(root, "media");
     const sqlitePath = join(root, "app.sqlite");
@@ -2267,9 +2307,14 @@ test("verified Blob recovery rejects unsafe persistent target mutex entries", ()
         const unownedPath = join(dirname(mutexPath), "unowned-lock.sqlite");
         writeFileSync(unownedPath, "preserve", "utf8");
         linkSync(unownedPath, mutexPath);
+      } else if (scenario === "valid-unowned-sqlite") {
+        const unownedPath = join(root, "unowned.sqlite");
+        migrateDatabase(unownedPath);
+        copyFileSync(unownedPath, mutexPath);
       } else {
         writeFileSync(mutexPath, "not-a-sqlite-database", "utf8");
       }
+      const mutexBytes = scenario === "directory" ? null : readFileSync(mutexPath);
 
       const blocked = recoverVerifiedBlobStorage({
         invalid_artifact_id: fixture.artifact.artifact_id,
@@ -2280,6 +2325,7 @@ test("verified Blob recovery rejects unsafe persistent target mutex entries", ()
       assert.equal(blocked.ok, false);
       if (!blocked.ok) assert.equal(blocked.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
       assert.equal(existsSync(mutexPath), true);
+      if (mutexBytes) assert.deepEqual(readFileSync(mutexPath), mutexBytes);
       assert.equal(existsSync(fixture.artifact.storage.uri), false);
       assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
     } finally {
@@ -2684,6 +2730,13 @@ test("verified Blob recovery removes a stale deterministic stage for reusable ta
     assert.ok(blob);
     const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
 
+    const authorityEstablished = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(authorityEstablished.ok, true, authorityEstablished.ok ? undefined : authorityEstablished.error.code);
     copyFileSync(fixture.source_path, stagedPath);
     const startupWithReusableTarget = runStartupRecoveryChild({ cwd: root, configured_path: sqlitePath });
     assert.deepEqual(startupWithReusableTarget.failed, []);
@@ -2733,6 +2786,13 @@ test("generic startup preserves deterministic stages and explicit recovery conve
     const expectedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
     const unknownPath = resolve(mediaRoot, ".activation", "staging", `blob-recovery-${"a".repeat(64)}.staged`);
     assert.notEqual(unknownPath, expectedPath);
+    const authorityEstablished = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(authorityEstablished.ok, true, authorityEstablished.ok ? undefined : authorityEstablished.error.code);
     copyFileSync(fixture.source_path, expectedPath);
     copyFileSync(fixture.source_path, unknownPath);
     const expectedBytes = readFileSync(expectedPath);
