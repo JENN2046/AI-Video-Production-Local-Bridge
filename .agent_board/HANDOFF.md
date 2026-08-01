@@ -2,7 +2,7 @@
 
 Current mode: PR #109 orphaned Blob recovery staging remediation; no executable task is `READY`
 Last run: S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING
-Last result: source-first authority publication and target-filesystem staging pass locally; open Ready PR #109 awaits new exact-final-head CI and review
+Last result: pre-authority recovery-entry validation and authenticated persistent mutex pass locally at implementation `15b3bed`; open Ready PR #109 awaits new exact-final-head CI and review
 
 ## Current state
 
@@ -70,7 +70,8 @@ Ready task count: 0
   P2s: a failed source could publish authority too early, and root-level staging
   could cross a nested filesystem. Follow-up `22c9e24` publishes authority only
   after all read-only input/path checks and places the target-only deterministic
-  stage in the physical target directory. The current unresolved set is
+  stage in the physical target directory. At that earlier state sync the
+  unresolved set was
   `PRRT_kwDOTTDtUM6VkSwY`, `PRRT_kwDOTTDtUM6VkqqS`,
   `PRRT_kwDOTTDtUM6VkzTz`, `PRRT_kwDOTTDtUM6Vk38a`,
   `PRRT_kwDOTTDtUM6Vk38b`, `PRRT_kwDOTTDtUM6VlUo8`,
@@ -84,10 +85,26 @@ Ready task count: 0
   Run `30687572904` passed both jobs at `e0ad45d`; its final review found the
   SFN set still admitted `+`, `,`, `;`, `=`, `[` and `]`. Follow-up `d7fbb21`
   uses the real SFN character set and covers all six ordinary long-name cases.
-  Local validation passes with media activation
-  63 PASS / 0 FAIL / 1 platform-capability skip, Foundation 125 PASS / 0 FAIL /
-  1 platform-capability skip, Provider 52/52, Workbench V2
-  68/68 and selection 23/23; typecheck, build, secret scan and diff checks pass.
+  Head `7d2fb64` passed both jobs on CI run `30688801572` attempt 3, but the
+  complete review/thread audit added four current findings: authority could be
+  published before stage/target validation, an unowned deterministic stage
+  could then be deleted, a valid unowned SQLite mutex could be opened and
+  mutated, and this module imported `node:sqlite` eagerly. Implementation
+  `15b3bed` validates existing recovery entries before authority publication,
+  requires prior matching authority before accepting a single-link
+  deterministic stage, validates a bounded SQLite ownership header before any
+  database open/pragma, and loads this module's SQLite dependency lazily.
+  Local validation passes with media activation 64 PASS / 0 FAIL / 1
+  platform-capability skip, Foundation 126 PASS / 0 FAIL / 1
+  platform-capability skip, Provider 52/52, Workbench V2 68/68 and selection
+  23/23; typecheck, build, secret scan and diff checks pass. The current 13
+  unresolved threads are `PRRT_kwDOTTDtUM6VkSwY`,
+  `PRRT_kwDOTTDtUM6VkqqS`, `PRRT_kwDOTTDtUM6VkzTz`,
+  `PRRT_kwDOTTDtUM6Vk38a`, `PRRT_kwDOTTDtUM6Vk38b`,
+  `PRRT_kwDOTTDtUM6VlUo8`, `PRRT_kwDOTTDtUM6VlUo-`,
+  `PRRT_kwDOTTDtUM6VlsfV`, `PRRT_kwDOTTDtUM6VmCNv`,
+  `PRRT_kwDOTTDtUM6VmCNw`, `PRRT_kwDOTTDtUM6VmGY5`,
+  `PRRT_kwDOTTDtUM6VmMCl` and `PRRT_kwDOTTDtUM6VmU9i`.
 - `S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING` is
   `BLOCKED_BY_PR109_POST_PROMOTION_FINDING` in PR #109.
 - PR #109 remains open and unmerged; merge remains a separate Jenn decision,

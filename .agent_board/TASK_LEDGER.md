@@ -5297,6 +5297,78 @@ s4_authorization_granted: false
 delivery: PR_109_OPEN_READY_AWAITING_EXACT_HEAD_CI_AND_POST_PROMOTION_REVIEW
 ```
 
+## 2026-08-01 — PR109 pre-authority and mutex ownership remediation
+
+```yaml
+task: PR109-T4_CROSS_DATABASE_BLOB_TARGET_MUTEX
+status: BLOCKED_BY_EXACT_HEAD_EVIDENCE
+recorded_by: Codex
+recorded_at: 2026-08-01T16:37:58+08:00
+pull_request: 109
+previous_remote_head: 7d2fb64280411721894a39bf59a19b46d4dd4978
+implementation_commit: 15b3bed
+superseded_exact_head_evidence:
+  head: 7d2fb64280411721894a39bf59a19b46d4dd4978
+  run_id: 30688801572
+  successful_attempt: 3
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+  transfer_to_new_head: false
+remediated_threads:
+  pre_authority_validation: PRRT_kwDOTTDtUM6VmCNv
+  unowned_deterministic_stage: PRRT_kwDOTTDtUM6VmCNw
+  unowned_valid_sqlite_mutex: PRRT_kwDOTTDtUM6VmGY5
+  eager_node_sqlite_import: PRRT_kwDOTTDtUM6VmU9i
+verified_behavior:
+  existing_entries_validated_before_authority_publish: true
+  unowned_deterministic_stage_preserved: true
+  unowned_stage_can_publish_authority: false
+  unowned_valid_sqlite_mutex_rejected: true
+  unowned_mutex_bytes_changed: false
+  mutex_ownership_checked_before_sqlite_open: true
+  mutex_application_id_checked: true
+  module_direct_node_sqlite_load: lazy
+  target_mutex_before_application_write_transaction: true
+  binding_revalidated_after_mutex: true
+  generic_startup_stage_scan: false
+  generic_startup_stage_delete: false
+  blob_row_or_links_changed: false
+  schema_or_migration_changed: false
+local_validation:
+  typecheck: PASS
+  build: PASS
+  media_activation_integrity: PASS_64_FAIL_0_PLATFORM_SKIP_1
+  foundation_boundaries: PASS_126_FAIL_0_PLATFORM_SKIP_1
+  provider_boundaries: PASS_52
+  workbench_v2: PASS_68
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+unresolved_threads_at_state_sync:
+  - PRRT_kwDOTTDtUM6VkSwY
+  - PRRT_kwDOTTDtUM6VkqqS
+  - PRRT_kwDOTTDtUM6VkzTz
+  - PRRT_kwDOTTDtUM6Vk38a
+  - PRRT_kwDOTTDtUM6Vk38b
+  - PRRT_kwDOTTDtUM6VlUo8
+  - PRRT_kwDOTTDtUM6VlUo-
+  - PRRT_kwDOTTDtUM6VlsfV
+  - PRRT_kwDOTTDtUM6VmCNv
+  - PRRT_kwDOTTDtUM6VmCNw
+  - PRRT_kwDOTTDtUM6VmGY5
+  - PRRT_kwDOTTDtUM6VmMCl
+  - PRRT_kwDOTTDtUM6VmU9i
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_operations: 0
+deployment_changes: 0
+ready_task_count: 0
+merge_authorized: false
+delivery: PR_109_OPEN_READY_AWAITING_NEW_EXACT_HEAD_CI_AND_REVIEW
+```
+
 ## 2026-08-01 — PR109 cross-database Blob target mutex
 
 ```yaml

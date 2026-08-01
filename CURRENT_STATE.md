@@ -33,7 +33,17 @@ Repository baseline: `main@808d9334a49def7ce858f7c6138af75fed392c5b`
   `final~edited.mp4` can recover. Exact-head CI `30687572904` passed both jobs,
   but final review found that the classifier still admitted punctuation outside
   the real SFN set. Follow-up `d7fbb21` narrows the character set and covers
-  `+`, `,`, `;`, `=`, `[` and `]`; new exact-head CI and review are required.
+  `+`, `,`, `;`, `=`, `[` and `]`. Head `7d2fb64` then passed both Windows
+  jobs on run `30688801572` attempt 3, but the complete exact-head review/thread
+  audit found four remaining ownership and compatibility gaps: recovery
+  authority could be published before stage/target validation, an unowned
+  deterministic stage could be deleted after that publication, a valid but
+  unowned SQLite mutex could be opened and mutated, and this module imported
+  `node:sqlite` eagerly. Implementation `15b3bed` now validates all existing
+  recovery entries before authority publication, requires prior authority for
+  a single-link deterministic stage, authenticates the mutex from its bounded
+  SQLite header before opening it, and loads this module's SQLite dependency
+  lazily. New exact-head CI and review are required.
 - The final PR #106 head passed both `Quality and integration` and
   `Browser smoke`; the squash commit has the same tree as that reviewed head.
 - Code and CI PASS establish repository facts only. They do not create a new
@@ -259,14 +269,23 @@ staging-owner and `media_activation_journal` recovery.
 Independent database A/B/C startup processes, `:memory:`, five hard crashes,
 same-target and different-target recovery, bounded busy, unsafe-lock,
 partial-stage, already-reusable, unknown-stage and explicit retry regressions
-pass. Local validation passes with media activation 60/60, Foundation 122/122,
+pass. Implementation `15b3bed` additionally prevents source or stage validation
+failures from publishing authority, preserves an unowned deterministic stage,
+rejects a valid foreign SQLite file without modifying its bytes, and uses an
+application-id ownership marker before opening the persistent mutex. Local
+validation passes with media activation 64 PASS / 0 FAIL / 1
+platform-capability skip, Foundation 126 PASS / 0 FAIL / 1
+platform-capability skip,
 Provider 52/52, Workbench V2 68/68 and selection 23/23; typecheck, build, secret
-scan and diff checks also pass. At state sync threads
-`PRRT_kwDOTTDtUM6Vdmly`, `PRRT_kwDOTTDtUM6VeTXd`, `PRRT_kwDOTTDtUM6VekUB`,
-`PRRT_kwDOTTDtUM6VkSwY`, `PRRT_kwDOTTDtUM6VkqqS`, `PRRT_kwDOTTDtUM6VkzTx`,
-`PRRT_kwDOTTDtUM6VkzTz`, `PRRT_kwDOTTDtUM6Vk38a` and
-`PRRT_kwDOTTDtUM6Vk38b` remain unresolved pending new exact-head CI and a fresh
-review. PR #109 remains open and unmerged.
+scan and diff checks also pass. At state sync the 13 unresolved PR #109 threads
+are `PRRT_kwDOTTDtUM6VkSwY`, `PRRT_kwDOTTDtUM6VkqqS`,
+`PRRT_kwDOTTDtUM6VkzTz`, `PRRT_kwDOTTDtUM6Vk38a`,
+`PRRT_kwDOTTDtUM6Vk38b`, `PRRT_kwDOTTDtUM6VlUo8`,
+`PRRT_kwDOTTDtUM6VlUo-`, `PRRT_kwDOTTDtUM6VlsfV`,
+`PRRT_kwDOTTDtUM6VmCNv`, `PRRT_kwDOTTDtUM6VmCNw`,
+`PRRT_kwDOTTDtUM6VmGY5`, `PRRT_kwDOTTDtUM6VmMCl` and
+`PRRT_kwDOTTDtUM6VmU9i`. They remain unresolved pending new exact-head CI and
+a fresh complete review. PR #109 remains open and unmerged.
 Cross-database explicit recovery is serialized by an exact-target SQLite mutex,
 and merge remains a separate Jenn decision.
 

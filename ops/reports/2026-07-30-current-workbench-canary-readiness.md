@@ -290,6 +290,7 @@ remediation_pr:
   validated_authority_and_target_filesystem_stage_commit: 22c9e24
   windows_dos_short_filename_guard_commit: 0982c61
   windows_sfn_character_set_commit: d7fbb21
+  pre_authority_and_mutex_ownership_commit: 15b3bed
   remediation_strategy: CROSS_DATABASE_TARGET_SQLITE_MUTEX
   current_head: STATE_SYNC_COMMIT_CONTAINING_THIS_RECORD
   resolved_prior_threads:
@@ -302,11 +303,12 @@ remediation_pr:
     - PRRT_kwDOTTDtUM6Vk38b
     - PRRT_kwDOTTDtUM6VlUo8
     - PRRT_kwDOTTDtUM6VlUo-
-    - PRRT_kwDOTTDtUM6VlmiI
-    - PRRT_kwDOTTDtUM6VlmiJ
     - PRRT_kwDOTTDtUM6VlsfV
-    - PRRT_kwDOTTDtUM6Vl-G_
+    - PRRT_kwDOTTDtUM6VmCNv
+    - PRRT_kwDOTTDtUM6VmCNw
+    - PRRT_kwDOTTDtUM6VmGY5
     - PRRT_kwDOTTDtUM6VmMCl
+    - PRRT_kwDOTTDtUM6VmU9i
   post_promotion_finding_status: REMEDIATION_IN_PROGRESS_AT_STATE_SYNC
   merged_to_main: false
 S3B-T1:
@@ -407,23 +409,35 @@ found the classifier still admitted Win32 punctuation outside the real SFN
 set. Follow-up `d7fbb21` restricts the set and covers `+`, `,`, `;`, `=`, `[`
 and `]` as recoverable ordinary long-name characters.
 
+Head `7d2fb64` passed both Windows jobs on run `30688801572` attempt 3, but the
+complete review/thread audit found four remaining gaps. Authority could be
+published before existing stage/target validation completed, an unowned
+single-link deterministic stage could then be deleted, a valid but unowned
+SQLite mutex could be opened and mutated, and this module loaded `node:sqlite`
+eagerly. Implementation `15b3bed` moves all existing recovery-entry validation
+before authority publication, requires a prior matching authority before a
+single-link deterministic stage is considered app-owned, validates a bounded
+SQLite application-id ownership header before any mutex database open/pragma,
+and lazily loads this module's SQLite dependency.
+
 The regression set covers independently configured database A/B/C processes
 sharing one media root, an active explicit repair paused after staged copy,
 `:memory:`, five hard crashes with repeated startup, explicit retry, partial and
 already-reusable stages, unknown deterministic-looking stages, unsafe lock and
 stage entries, same-target serialization, different-target concurrency, busy
 timeout, binding revalidation and local journal recovery. Local validation
-passes with media activation 63 PASS / 0 FAIL / 1 platform-capability skip,
-Foundation 125 PASS / 0 FAIL / 1 platform-capability skip, Provider 52/52,
+passes with media activation 64 PASS / 0 FAIL / 1 platform-capability skip,
+Foundation 126 PASS / 0 FAIL / 1 platform-capability skip, Provider 52/52,
 Workbench V2 68/68 and selection 23/23;
 typecheck, build, secret scan and diff checks pass. Threads
 `PRRT_kwDOTTDtUM6VkSwY`, `PRRT_kwDOTTDtUM6VkqqS`,
 `PRRT_kwDOTTDtUM6VkzTz`, `PRRT_kwDOTTDtUM6Vk38a`,
 `PRRT_kwDOTTDtUM6Vk38b`, `PRRT_kwDOTTDtUM6VlUo8`,
-`PRRT_kwDOTTDtUM6VlUo-`, `PRRT_kwDOTTDtUM6VlmiI`,
-`PRRT_kwDOTTDtUM6VlmiJ`, `PRRT_kwDOTTDtUM6VlsfV` and
-`PRRT_kwDOTTDtUM6Vl-G_`, plus `PRRT_kwDOTTDtUM6VmMCl`, remain unresolved at state
-sync pending new exact-head CI and review. PR #109 remains open and unmerged.
+`PRRT_kwDOTTDtUM6VlUo-`, `PRRT_kwDOTTDtUM6VlsfV`,
+`PRRT_kwDOTTDtUM6VmCNv`, `PRRT_kwDOTTDtUM6VmCNw`,
+`PRRT_kwDOTTDtUM6VmGY5`, `PRRT_kwDOTTDtUM6VmMCl` and
+`PRRT_kwDOTTDtUM6VmU9i` remain unresolved at state sync pending new exact-head
+CI and review. PR #109 remains open and unmerged.
 Cross-database explicit recovery is serialized by an exact-target SQLite mutex,
 and merge remains a separate Jenn decision.
 

@@ -3620,6 +3620,58 @@ service_operations: 0
 exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
 ```
 
+### PR109 pre-authority and mutex ownership remediation
+
+```yaml
+task: PR109-T4_CROSS_DATABASE_BLOB_TARGET_MUTEX
+validated_at: 2026-08-01T16:37:58+08:00
+pull_request: 109
+implementation_commit: 15b3bed
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - node dist/scripts/run-isolated-tests.js dist/tests/media-activation-integrity.test.js
+  - npm run test:foundation-boundaries
+  - npm run test:selection-gate
+  - npm run test:provider-boundaries
+  - npm run test:v2
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  media_activation_integrity: PASS_64_FAIL_0_PLATFORM_SKIP_1
+  foundation_boundaries: PASS_126_FAIL_0_PLATFORM_SKIP_1
+  provider_boundaries: PASS_52
+  workbench_v2: PASS_68
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  existing_recovery_entries_checked_before_authority_publish: true
+  invalid_source_publishes_authority: false
+  unowned_deterministic_stage_preserved: true
+  unowned_stage_publishes_authority: false
+  valid_unowned_sqlite_mutex_rejected: true
+  valid_unowned_sqlite_mutex_bytes_preserved: true
+  mutex_header_checked_before_sqlite_open_or_pragma: true
+  mutex_application_id: app_controlled
+  direct_runtime_node_sqlite_import_in_media_artifacts: false
+  mutex_before_application_transaction: true
+  post_lock_binding_revalidation: true
+  generic_startup_deterministic_stage_scan: false
+  generic_startup_deterministic_stage_delete: false
+  blob_row_or_links_changed: false
+  schema_or_migration_changed: false
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_operations: 0
+remaining_test_processes: 0
+exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
+```
+
 ### PR109 cross-database Blob target mutex
 
 ```yaml

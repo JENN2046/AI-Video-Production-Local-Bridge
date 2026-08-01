@@ -42,17 +42,22 @@ automatically.
    absolute drive path. Run `30685017849` passed both jobs and exact-head review
    reported no new issues, but thread audit exposed two older P2s. Follow-up
    `22c9e24` moves authority publication after all read-only validation and
-   places deterministic staging beside the physical target.
+   places deterministic staging beside the physical target. Follow-ups
+   `0982c61` and `d7fbb21` narrow the missing-target DOS alias guard to the
+   real SFN set. Head `7d2fb64` passed CI run `30688801572` attempt 3, but the
+   complete review/thread audit found remaining authority-order, unowned-stage,
+   mutex-ownership and eager-`node:sqlite` gaps. Implementation `15b3bed`
+   validates recovery entries before authority publication, requires prior
+   matching authority for a single-link deterministic stage, validates the
+   bounded SQLite ownership header before opening the mutex, and lazily loads
+   this module's SQLite dependency.
 - At state sync the unresolved threads are `PRRT_kwDOTTDtUM6VkSwY`,
   `PRRT_kwDOTTDtUM6VkqqS`, `PRRT_kwDOTTDtUM6VkzTz`,
   `PRRT_kwDOTTDtUM6Vk38a`, `PRRT_kwDOTTDtUM6Vk38b`,
   `PRRT_kwDOTTDtUM6VlUo8`, `PRRT_kwDOTTDtUM6VlUo-`,
-  `PRRT_kwDOTTDtUM6VlmiI`, `PRRT_kwDOTTDtUM6VlmiJ` and
-  `PRRT_kwDOTTDtUM6VlsfV`, plus exact-head review thread
-  `PRRT_kwDOTTDtUM6Vl-G_` and final-review thread
-  `PRRT_kwDOTTDtUM6VmMCl`. Follow-ups `0982c61` and `d7fbb21` distinguish an
-  actual 8.3 alias from ordinary tilde names, including Win32 punctuation that
-  is outside the SFN character set.
+  `PRRT_kwDOTTDtUM6VlsfV`, `PRRT_kwDOTTDtUM6VmCNv`,
+  `PRRT_kwDOTTDtUM6VmCNw`, `PRRT_kwDOTTDtUM6VmGY5`,
+  `PRRT_kwDOTTDtUM6VmMCl` and `PRRT_kwDOTTDtUM6VmU9i`.
   Generic startup preserves the bounded stage; explicit recovery is serialized
   by exact target across database files. Exact-head Windows CI and a fresh
   post-promotion Codex review remain required; merge is not authorized.
