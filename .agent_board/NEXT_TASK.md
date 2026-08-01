@@ -70,6 +70,9 @@ automatically.
    Final closeout follow-up `112921e` keeps the isolation directory beside the
    physical target so rename never crosses filesystems and converges the split
    state left by a hard exit between the two isolation renames.
+   Closeout fixes `a14c15e` and `0baf31c` preserve the current recovery source
+   during cleanup reconciliation and reject DOS-alias content drift before
+   publishing target authority. They add no feature or external capability.
 - At state sync the unresolved threads are `PRRT_kwDOTTDtUM6VkSwY`,
   `PRRT_kwDOTTDtUM6VkqqS`, `PRRT_kwDOTTDtUM6VkzTz`,
   `PRRT_kwDOTTDtUM6Vk38a`, `PRRT_kwDOTTDtUM6Vk38b`,
@@ -80,11 +83,9 @@ automatically.
   `PRRT_kwDOTTDtUM6VnW8u`, `PRRT_kwDOTTDtUM6VnZrR`,
   `PRRT_kwDOTTDtUM6VnfBZ`, `PRRT_kwDOTTDtUM6VnlsB`,
   `PRRT_kwDOTTDtUM6Vnvkt`, `PRRT_kwDOTTDtUM6Vnvkv`,
-  `PRRT_kwDOTTDtUM6Vn2uJ`, `PRRT_kwDOTTDtUM6Vn_4Z` and
-  `PRRT_kwDOTTDtUM6Vn_4b`, `PRRT_kwDOTTDtUM6VoG2V`,
-  `PRRT_kwDOTTDtUM6VoG2X`, `PRRT_kwDOTTDtUM6VoL5q` and
-  `PRRT_kwDOTTDtUM6VoL5r`, `PRRT_kwDOTTDtUM6VoV-d` and
-  `PRRT_kwDOTTDtUM6VoV-e`.
+  `PRRT_kwDOTTDtUM6Vn2uJ`, `PRRT_kwDOTTDtUM6VoV-d` and
+  `PRRT_kwDOTTDtUM6VoV-e`, `PRRT_kwDOTTDtUM6VomGc` and
+  `PRRT_kwDOTTDtUM6VorLf` (23 total).
   Generic startup preserves the bounded stage; explicit recovery is serialized
   by exact target across database files. Exact-head Windows CI and a fresh
   post-promotion Codex review remain required; merge is not authorized.

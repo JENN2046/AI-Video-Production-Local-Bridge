@@ -304,11 +304,14 @@ DOS-short quarantine and publication-normalization findings. Follow-ups
 cleanup, preserve an entry replaced after
 validation, and make a hard exit between cleanup entries converge on retry.
 Final closeout follow-up `112921e` keeps cleanup on the target filesystem and
-converges a hard exit between the two isolation renames. Local validation
+converges a hard exit between the two isolation renames. Closeout fixes
+`a14c15e` and `0baf31c` preserve the current recovery source during cleanup
+reconciliation and reject DOS-alias content drift before authority publication;
+they add no feature or external capability. Local validation
 passes with media activation 70 PASS / 0 FAIL / 1 platform-capability skip,
 Foundation 132 PASS / 0 FAIL / 1 platform-capability skip,
 Provider 52/52, Workbench V2 68/68 and selection 23/23; typecheck, build, secret
-scan and diff checks also pass. At state sync the 27 unresolved PR #109 threads
+scan and diff checks also pass. At state sync the 23 unresolved PR #109 threads
 are `PRRT_kwDOTTDtUM6VkSwY`, `PRRT_kwDOTTDtUM6VkqqS`,
 `PRRT_kwDOTTDtUM6VkzTz`, `PRRT_kwDOTTDtUM6Vk38a`,
 `PRRT_kwDOTTDtUM6Vk38b`, `PRRT_kwDOTTDtUM6VlUo8`,
@@ -319,10 +322,9 @@ are `PRRT_kwDOTTDtUM6VkSwY`, `PRRT_kwDOTTDtUM6VkqqS`,
 `PRRT_kwDOTTDtUM6VnZrR`, `PRRT_kwDOTTDtUM6VnfBZ`,
 `PRRT_kwDOTTDtUM6VnlsB`, `PRRT_kwDOTTDtUM6Vnvkt`,
 `PRRT_kwDOTTDtUM6Vnvkv`, `PRRT_kwDOTTDtUM6Vn2uJ`,
-`PRRT_kwDOTTDtUM6Vn_4Z`, `PRRT_kwDOTTDtUM6Vn_4b`,
-`PRRT_kwDOTTDtUM6VoG2V`, `PRRT_kwDOTTDtUM6VoG2X`,
-`PRRT_kwDOTTDtUM6VoL5q`, `PRRT_kwDOTTDtUM6VoL5r`,
-`PRRT_kwDOTTDtUM6VoV-d` and `PRRT_kwDOTTDtUM6VoV-e`. All 27 threads remain unresolved pending
+`PRRT_kwDOTTDtUM6VoV-d`,
+`PRRT_kwDOTTDtUM6VoV-e`, `PRRT_kwDOTTDtUM6VomGc` and
+`PRRT_kwDOTTDtUM6VorLf`. All 23 threads remain unresolved pending
 new exact-head CI and a fresh complete review. PR #109
 remains open and unmerged.
 Cross-database explicit recovery is serialized by an exact-target SQLite mutex,

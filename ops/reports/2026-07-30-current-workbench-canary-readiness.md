@@ -536,3 +536,16 @@ Local validation passes with media activation `70 PASS / 1 SKIP`, foundation
 typecheck, build, secret scan and diff checks. At state sync, 27 PR #109 threads
 remain unresolved pending final exact-head CI and closeout review. PR #109 stays
 open, Ready and unmerged.
+
+### PR #109 source and pre-authority closeout
+
+Commits `a14c15e` and `0baf31c` preserve the current validated recovery source
+during cleanup reconciliation and reject DOS-alias content drift before target
+authority publication. These are correctness-only closeout fixes and add no
+feature, external interface or capability.
+
+Focused media activation passes `70 PASS / 1 SKIP`, Foundation passes
+`132 PASS / 1 SKIP`, and typecheck and diff checks also pass. At state sync,
+23 PR #109 threads remain unresolved pending new
+exact-head CI and one final frozen-scope review. PR #109 remains open, Ready and
+unmerged.

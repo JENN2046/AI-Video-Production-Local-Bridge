@@ -1255,3 +1255,13 @@ Report: `data/reports/r3_8g_runninghub_contract_freeze_dry_run_result.json`
 - At state sync, 27 PR #109 threads remain unresolved pending exact-head CI and
   one final closeout review. No further feature or capability expansion is in
   scope. PR #109 remains open, Ready and unmerged.
+
+## PR #109 source and pre-authority closeout
+
+- Candidate commits: `a14c15e`, `0baf31c`.
+- Cleanup reconciliation now preserves the current validated recovery source;
+  DOS-alias content drift is rejected before target authority publication.
+- Focused media activation: `70 PASS / 1 SKIP`; Foundation:
+  `132 PASS / 1 SKIP`; typecheck and diff checks pass.
+- At state sync, 23 PR #109 threads remain unresolved pending new exact-head CI
+  and one final frozen-scope review. No feature or capability was added.
