@@ -3454,6 +3454,42 @@ service_operations: 0
 exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
 ```
 
+### PR109 physical target identity and shared stage
+
+```yaml
+task: PR109-T4_CROSS_DATABASE_BLOB_TARGET_MUTEX
+validated_at: 2026-08-01T12:35:43+08:00
+pull_request: 109
+physical_target_identity_commit: cc6dd87
+review_threads:
+  - PRRT_kwDOTTDtUM6VlUo8
+  - PRRT_kwDOTTDtUM6VlUo-
+  - PRRT_kwDOTTDtUM6VlUpA
+results:
+  typecheck: PASS
+  build: PASS
+  media_activation_integrity: PASS_61_FAIL_0_PLATFORM_SKIP_1
+  foundation_boundaries: PASS_123_FAIL_0_PLATFORM_SKIP_1
+  provider_boundaries: PASS_52
+  workbench_v2: PASS_68
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  physical_target_realpath_identity: true
+  symlink_and_junction_ancestor_rejection_preserved: true
+  database_local_blob_id_removed_from_stage_identity: true
+  different_blob_ids_share_stage_after_hard_crash: true
+  missing_unprovable_dos_short_filename_fails_closed: true
+  dos_short_alias_runtime_probe: SKIPPED_VOLUME_HAS_NO_DISTINCT_ALIAS
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_operations: 0
+exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
+```
+
 ### PR109 cross-database Blob target mutex
 
 ```yaml

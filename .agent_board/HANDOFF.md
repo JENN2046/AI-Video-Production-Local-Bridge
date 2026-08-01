@@ -53,13 +53,21 @@ Ready task count: 0
   fsynced unique temp plus an exclusive hard link. A hard exit before publish
   leaves only a non-authoritative temp that cannot block retry; a linked
   interrupted publication is normalized only by matching its exact inode.
+- Follow-up `cc6dd87` derives mutex, authority and deterministic-stage identity
+  from the canonical physical target. Different database-local Blob ids now
+  share one stage; Windows DOS-short aliases resolve through `realpath` while
+  present, and a missing short filename fails closed when its long identity can
+  no longer be proven.
 - At state sync these PR #109 threads remain unresolved pending exact-head CI
   and a fresh review: `PRRT_kwDOTTDtUM6Vdmly`, `PRRT_kwDOTTDtUM6VeTXd`,
   `PRRT_kwDOTTDtUM6VekUB`, `PRRT_kwDOTTDtUM6VkSwY` and
   `PRRT_kwDOTTDtUM6VkqqS`, `PRRT_kwDOTTDtUM6VkzTx`,
   `PRRT_kwDOTTDtUM6VkzTz`, `PRRT_kwDOTTDtUM6Vk38a` and
-  `PRRT_kwDOTTDtUM6Vk38b` and `PRRT_kwDOTTDtUM6VlN-l`. Local validation passes
-  with media activation 61/61, Foundation 123/123, Provider 52/52, Workbench V2
+  `PRRT_kwDOTTDtUM6Vk38b`, `PRRT_kwDOTTDtUM6VlN-l`,
+  `PRRT_kwDOTTDtUM6VlUo8`, `PRRT_kwDOTTDtUM6VlUo-` and
+  `PRRT_kwDOTTDtUM6VlUpA`. Local validation passes with media activation
+  61 PASS / 0 FAIL / 1 platform-capability skip, Foundation 123 PASS / 0 FAIL /
+  1 platform-capability skip, Provider 52/52, Workbench V2
   68/68 and selection 23/23; typecheck, build, secret scan and diff checks pass.
 - `S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING` is
   `BLOCKED_BY_PR109_POST_PROMOTION_FINDING` in PR #109.

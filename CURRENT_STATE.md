@@ -15,8 +15,10 @@ Repository baseline: `main@808d9334a49def7ce858f7c6138af75fed392c5b`
   squash-merged as `808d9334a49def7ce858f7c6138af75fed392c5b`.
 - PR #109 remains open and unmerged. Its current candidate adds exact-target
   cross-database recovery serialization and atomically publishes the low-
-  disclosure target authority record; exact-final-head CI and review are still
-  required before its review threads may be resolved.
+  disclosure target authority record. The follow-up candidate also derives
+  mutex, authority and stage identity from the canonical physical target and
+  removes database-local Blob ids from stage identity; exact-final-head CI and
+  review are still required before its review threads may be resolved.
 - The final PR #106 head passed both `Quality and integration` and
   `Browser smoke`; the squash commit has the same tree as that reviewed head.
 - Code and CI PASS establish repository facts only. They do not create a new

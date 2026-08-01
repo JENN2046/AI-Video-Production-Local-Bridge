@@ -34,12 +34,16 @@ automatically.
    conflicts plus memory-only SQLite journaling with sidecar rejection.
    Follow-up `84e4ef1` atomically publishes that authority from a fully written
    and fsynced unique temp, so a pre-publication hard exit cannot block retry.
+   Follow-up `cc6dd87` canonicalizes the physical target for mutex, authority
+   and stage identity and removes database-local Blob ids from the shared stage.
 - Prior whitelist thread `PRRT_kwDOTTDtUM6VdGmY` is resolved. At state sync
   threads `PRRT_kwDOTTDtUM6Vdmly`, `PRRT_kwDOTTDtUM6VeTXd`,
   `PRRT_kwDOTTDtUM6VekUB`, `PRRT_kwDOTTDtUM6VkSwY` and
   `PRRT_kwDOTTDtUM6VkqqS`, `PRRT_kwDOTTDtUM6VkzTx`,
   `PRRT_kwDOTTDtUM6VkzTz`, `PRRT_kwDOTTDtUM6Vk38a`,
-  `PRRT_kwDOTTDtUM6Vk38b` and `PRRT_kwDOTTDtUM6VlN-l` remain unresolved.
+  `PRRT_kwDOTTDtUM6Vk38b`, `PRRT_kwDOTTDtUM6VlN-l`,
+  `PRRT_kwDOTTDtUM6VlUo8`, `PRRT_kwDOTTDtUM6VlUo-` and
+  `PRRT_kwDOTTDtUM6VlUpA` remain unresolved.
   Generic startup preserves the bounded stage; explicit recovery is serialized
   by exact target across database files. Exact-head Windows CI and a fresh
   post-promotion Codex review remain required; merge is not authorized.
