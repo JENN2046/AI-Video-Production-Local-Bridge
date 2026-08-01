@@ -817,7 +817,13 @@ const VERIFIED_BLOB_RECOVERY_ERROR_MESSAGES: Readonly<Record<string, string>> = 
 const DETERMINISTIC_BLOB_RECOVERY_STAGING_NAME = /^blob-recovery-[a-f0-9]{64}\.staged$/i;
 const LEGACY_BLOB_RECOVERY_STAGING_NAME = /^blob-recovery-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.staged$/i;
 const BLOB_RECOVERY_TARGET_MUTEX_NAME = /^blob-recovery-target-[a-f0-9]{64}\.lock\.sqlite$/i;
+const BLOB_RECOVERY_TARGET_AUTHORITY_NAME = /^\.blob-recovery-target-[a-f0-9]{64}\.authority\.json$/i;
 const BLOB_RECOVERY_TARGET_MUTEX_BUSY_TIMEOUT_MS = 30_000;
+
+function verifiedBlobRecoveryPathIdentity(value: string): string {
+  const resolvedPath = resolve(value);
+  return process.platform === "win32" ? resolvedPath.toLowerCase() : resolvedPath;
+}
 
 function verifiedBlobRecoveryError(error: unknown): ToolError {
   const candidate = error instanceof Error ? error.message : "";
@@ -860,7 +866,7 @@ function verifiedBlobRecoveryStagingPathForIdentity(
   const digest = createHash("sha256")
     .update(blobId)
     .update("\0")
-    .update(resolvedStorageUri)
+    .update(verifiedBlobRecoveryPathIdentity(resolvedStorageUri))
     .digest("hex");
   const stagedPath = resolve(roots.staging, `blob-recovery-${digest}.staged`);
   if (!isPathInside(stagedPath, roots.staging)
@@ -1093,6 +1099,15 @@ interface VerifiedBlobRecoveryTargetMutex {
   guardDescriptor: number;
 }
 
+interface VerifiedBlobRecoveryTargetAuthority {
+  version: 1;
+  target_identity_sha256: string;
+  registered_root_identity_sha256: string;
+  blob_sha256: string;
+  blob_size_bytes: number;
+  blob_mime: string;
+}
+
 function readVerifiedBlobRecoveryBinding(
   input: VerifiedBlobStorageRecoveryInput,
   db: M0Database
@@ -1162,14 +1177,10 @@ function verifiedBlobRecoveryTargetMutexPath(
     || hasExistingSymlinkAncestor(roots.journal, recoveryPaths.registeredRoot)) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
-  const mutexIdentityPath = (value: string): string => {
-    const resolvedPath = resolve(value);
-    return process.platform === "win32" ? resolvedPath.toLowerCase() : resolvedPath;
-  };
   const digest = createHash("sha256")
-    .update(mutexIdentityPath(recoveryPaths.canonicalRoot))
+    .update(verifiedBlobRecoveryPathIdentity(recoveryPaths.canonicalRoot))
     .update("\0")
-    .update(mutexIdentityPath(recoveryPaths.targetPath))
+    .update(verifiedBlobRecoveryPathIdentity(recoveryPaths.targetPath))
     .digest("hex");
   const lockPath = resolve(roots.journal, `blob-recovery-target-${digest}.lock.sqlite`);
   if (!BLOB_RECOVERY_TARGET_MUTEX_NAME.test(basename(lockPath))
@@ -1181,6 +1192,137 @@ function verifiedBlobRecoveryTargetMutexPath(
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
   return lockPath;
+}
+
+function verifiedBlobRecoveryTargetAuthorityPath(
+  recoveryPaths: ReturnType<typeof recoveryRootAndTarget>
+): string {
+  const digest = createHash("sha256")
+    .update(verifiedBlobRecoveryPathIdentity(recoveryPaths.targetPath))
+    .digest("hex");
+  const authorityPath = resolve(
+    recoveryPaths.targetDirectory,
+    `.blob-recovery-target-${digest}.authority.json`
+  );
+  if (!BLOB_RECOVERY_TARGET_AUTHORITY_NAME.test(basename(authorityPath))
+    || !sameResolvedPath(dirname(authorityPath), recoveryPaths.targetDirectory)
+    || !isPathInside(authorityPath, recoveryPaths.registeredRoot)
+    || sameResolvedPath(authorityPath, recoveryPaths.targetPath)
+    || hasExistingSymlinkAncestor(authorityPath, recoveryPaths.registeredRoot)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  return authorityPath;
+}
+
+function expectedVerifiedBlobRecoveryTargetAuthority(
+  recoveryPaths: ReturnType<typeof recoveryRootAndTarget>,
+  blob: MediaBlob
+): VerifiedBlobRecoveryTargetAuthority {
+  return {
+    version: 1,
+    target_identity_sha256: createHash("sha256")
+      .update(verifiedBlobRecoveryPathIdentity(recoveryPaths.targetPath))
+      .digest("hex"),
+    registered_root_identity_sha256: createHash("sha256")
+      .update(verifiedBlobRecoveryPathIdentity(recoveryPaths.canonicalRoot))
+      .digest("hex"),
+    blob_sha256: blob.sha256,
+    blob_size_bytes: blob.size_bytes,
+    blob_mime: blob.detected_mime
+  };
+}
+
+function assertVerifiedBlobRecoveryTargetAuthorityFile(
+  authorityPath: string,
+  recoveryPaths: ReturnType<typeof recoveryRootAndTarget>,
+  expected: VerifiedBlobRecoveryTargetAuthority
+): void {
+  if (!existsSync(authorityPath)
+    || !sameResolvedPath(dirname(authorityPath), recoveryPaths.targetDirectory)
+    || !isPathInside(authorityPath, recoveryPaths.canonicalRoot)
+    || hasExistingSymlinkAncestor(authorityPath, recoveryPaths.registeredRoot)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  const entry = lstatSync(authorityPath);
+  if (entry.isSymbolicLink() || !entry.isFile() || entry.nlink !== 1 || entry.size <= 0 || entry.size > 1024) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  let descriptor = -1;
+  try {
+    descriptor = openSync(authorityPath, "r");
+    const guarded = fstatSync(descriptor);
+    const current = statSync(authorityPath);
+    const canonicalPath = resolve(realpathSync(authorityPath));
+    if (!guarded.isFile()
+      || guarded.nlink !== 1
+      || guarded.size <= 0
+      || guarded.size > 1024
+      || guarded.dev !== entry.dev
+      || guarded.ino !== entry.ino
+      || guarded.dev !== current.dev
+      || guarded.ino !== current.ino
+      || !sameResolvedPath(canonicalPath, authorityPath)) {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    let actual: VerifiedBlobRecoveryTargetAuthority;
+    try {
+      actual = JSON.parse(readFileSync(descriptor, "utf8")) as VerifiedBlobRecoveryTargetAuthority;
+    } catch {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    const after = fstatSync(descriptor);
+    const currentAfter = statSync(authorityPath);
+    if (after.dev !== guarded.dev
+      || after.ino !== guarded.ino
+      || after.size !== guarded.size
+      || after.mtimeMs !== guarded.mtimeMs
+      || currentAfter.dev !== guarded.dev
+      || currentAfter.ino !== guarded.ino) {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    if (actual.version !== 1
+      || actual.target_identity_sha256 !== expected.target_identity_sha256
+      || actual.registered_root_identity_sha256 !== expected.registered_root_identity_sha256) {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    if (actual.blob_sha256 !== expected.blob_sha256
+      || actual.blob_size_bytes !== expected.blob_size_bytes
+      || actual.blob_mime !== expected.blob_mime) {
+      throw new Error("MEDIA_BLOB_RECOVERY_BINDING_MISMATCH");
+    }
+  } finally {
+    if (descriptor >= 0) closeSync(descriptor);
+  }
+}
+
+function ensureVerifiedBlobRecoveryTargetAuthority(
+  recoveryPaths: ReturnType<typeof recoveryRootAndTarget>,
+  blob: MediaBlob
+): string {
+  const authorityPath = verifiedBlobRecoveryTargetAuthorityPath(recoveryPaths);
+  const expected = expectedVerifiedBlobRecoveryTargetAuthority(recoveryPaths, blob);
+  try {
+    const descriptor = openSync(authorityPath, "wx");
+    try { writeFileSync(descriptor, JSON.stringify(expected), "utf8"); }
+    finally { closeSync(descriptor); }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+  }
+  assertVerifiedBlobRecoveryTargetAuthorityFile(authorityPath, recoveryPaths, expected);
+  return authorityPath;
+}
+
+function assertVerifiedBlobRecoveryTargetMutexSidecarsAbsent(lockPath: string): void {
+  for (const sidecarPath of [`${lockPath}-journal`, `${lockPath}-wal`, `${lockPath}-shm`]) {
+    try {
+      lstatSync(sidecarPath);
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
 }
 
 function assertVerifiedBlobRecoveryTargetMutexFile(
@@ -1231,10 +1373,17 @@ function acquireVerifiedBlobRecoveryTargetMutex(
   let database: DatabaseSync | null = null;
   try {
     assertVerifiedBlobRecoveryTargetMutexFile(lockPath, recoveryPaths, roots);
+    assertVerifiedBlobRecoveryTargetMutexSidecarsAbsent(lockPath);
     guardDescriptor = openSync(lockPath, "r");
     assertVerifiedBlobRecoveryTargetMutexFile(lockPath, recoveryPaths, roots, guardDescriptor);
     database = new DatabaseSync(lockPath);
     assertVerifiedBlobRecoveryTargetMutexFile(lockPath, recoveryPaths, roots, guardDescriptor);
+    assertVerifiedBlobRecoveryTargetMutexSidecarsAbsent(lockPath);
+    const journalMode = database.prepare("PRAGMA journal_mode = MEMORY").get() as { journal_mode?: string };
+    if (journalMode.journal_mode?.toLowerCase() !== "memory") {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    assertVerifiedBlobRecoveryTargetMutexSidecarsAbsent(lockPath);
     database.exec(`PRAGMA busy_timeout = ${busyTimeoutMs};`);
     try {
       database.exec("BEGIN IMMEDIATE");
@@ -1245,13 +1394,19 @@ function acquireVerifiedBlobRecoveryTargetMutex(
       throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
     }
     assertVerifiedBlobRecoveryTargetMutexFile(lockPath, recoveryPaths, roots, guardDescriptor);
+    assertVerifiedBlobRecoveryTargetMutexSidecarsAbsent(lockPath);
     return { database, guardDescriptor };
   } catch (error) {
     if (database) {
       try { database.close(); } catch { /* preserve the stable acquisition error */ }
     }
     if (guardDescriptor >= 0) closeSync(guardDescriptor);
-    throw error;
+    if (error instanceof Error
+      && (error.message === "MEDIA_BLOB_RECOVERY_BUSY"
+        || error.message === "MEDIA_BLOB_RECOVERY_PATH_UNSAFE")) {
+      throw error;
+    }
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
 }
 
@@ -1324,6 +1479,7 @@ export function recoverVerifiedBlobStorage(
       busyTimeoutMs
     );
     faults.after_target_mutex_acquired?.();
+    ensureVerifiedBlobRecoveryTargetAuthority(preflightPaths, preflight.blob);
 
     db.exec("BEGIN IMMEDIATE");
     transactionOpen = true;
