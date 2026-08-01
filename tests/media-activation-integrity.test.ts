@@ -1922,18 +1922,10 @@ test("Windows long and DOS-short target aliases share recovery identities", (con
       verifiedBlobRecoveryAuthorityPath(blobB.storage_uri)
     );
 
-    for (const [fixture, database] of [[fixtureA, dbA], [fixtureB, dbB]] as const) {
-      const recovered = recoverVerifiedBlobStorage({
-        invalid_artifact_id: fixture.artifact.artifact_id,
-        project_id: fixture.artifact.linked_objects.project_id,
-        shot_id: fixture.artifact.linked_objects.shot_id,
-        source_path: fixture.source_path
-      }, database);
-      assert.equal(recovered.ok, true, recovered.ok ? undefined : recovered.error.code);
-      if (recovered.ok) assert.equal(recovered.outcome, "ALREADY_REUSABLE");
-    }
+    const authorityPath = verifiedBlobRecoveryAuthorityPath(blobB.storage_uri);
     const originalBytes = readFileSync(fixtureA.artifact.storage.uri);
     const driftedBytes = Buffer.concat([originalBytes, Buffer.from("short-alias-drift")]);
+    assert.equal(existsSync(authorityPath), false);
     writeFileSync(fixtureA.artifact.storage.uri, driftedBytes);
     const rejectedDrift = recoverVerifiedBlobStorage({
       invalid_artifact_id: fixtureB.artifact.artifact_id,
@@ -1944,7 +1936,19 @@ test("Windows long and DOS-short target aliases share recovery identities", (con
     assert.equal(rejectedDrift.ok, false);
     if (!rejectedDrift.ok) assert.equal(rejectedDrift.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
     assert.deepEqual(readFileSync(fixtureA.artifact.storage.uri), driftedBytes);
+    assert.equal(existsSync(authorityPath), false);
     writeFileSync(fixtureA.artifact.storage.uri, originalBytes);
+
+    for (const [fixture, database] of [[fixtureA, dbA], [fixtureB, dbB]] as const) {
+      const recovered = recoverVerifiedBlobStorage({
+        invalid_artifact_id: fixture.artifact.artifact_id,
+        project_id: fixture.artifact.linked_objects.project_id,
+        shot_id: fixture.artifact.linked_objects.shot_id,
+        source_path: fixture.source_path
+      }, database);
+      assert.equal(recovered.ok, true, recovered.ok ? undefined : recovered.error.code);
+      if (recovered.ok) assert.equal(recovered.outcome, "ALREADY_REUSABLE");
+    }
     rmSync(fixtureA.artifact.storage.uri);
     const unprovableMissingAlias = recoverVerifiedBlobStorage({
       invalid_artifact_id: fixtureB.artifact.artifact_id,

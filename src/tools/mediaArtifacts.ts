@@ -2398,6 +2398,19 @@ export function recoverVerifiedBlobStorage(
       artifact,
       blob
     );
+
+    // A DOS 8.3 binding is safe for read-only reuse while the physical target
+    // exists, but quarantine would make that immutable alias unresolvable on
+    // retry. Reject drift before publishing authority or moving recovery media.
+    if (recoveryPaths.registeredTargetUsesDosAlias && existsSync(targetPath)) {
+      const currentFacts = hashLocalFile(targetPath);
+      if (currentFacts.sha256 !== blob.sha256
+        || currentFacts.size_bytes !== blob.size_bytes
+        || detectMimeFromBytes(currentFacts.header) !== blob.detected_mime) {
+        throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+      }
+    }
+
     ensureVerifiedBlobRecoveryTargetAuthority(recoveryPaths, blob, faults);
     filesystemRecoveryStarted = true;
 
@@ -2433,13 +2446,6 @@ export function recoverVerifiedBlobStorage(
         : "CONTENT_DRIFT";
     } else {
       originalCondition = "MISSING_BYTES";
-    }
-
-    // A DOS 8.3 binding is safe for read-only reuse while the physical target
-    // exists, but quarantine would make that immutable alias unresolvable on
-    // retry. Reject before creating or moving recovery media.
-    if (originalCondition === "CONTENT_DRIFT" && recoveryPaths.registeredTargetUsesDosAlias) {
-      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
     }
 
     if (originalCondition === "ALREADY_REUSABLE") {
