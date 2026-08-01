@@ -2782,6 +2782,47 @@ test("persistent target mutex is reused and released after application commit fa
   }
 });
 
+test("verified Blob recovery accepts a mutex temp that concurrently converges before candidate scan", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-mutex-temp-converges-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const initialized = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(initialized.ok, true, initialized.ok ? undefined : initialized.error.code);
+    const blob = getMediaBlob(db, fixture.artifact.blob_id);
+    assert.ok(blob);
+    const mutexPath = verifiedBlobRecoveryMutexPath(mediaRoot, blob.storage_uri);
+    const temporaryPath = join(dirname(mutexPath), `.brm-${randomUUID()}.tmp.sqlite`);
+    linkSync(mutexPath, temporaryPath);
+    assert.equal(lstatSync(mutexPath).nlink, 2);
+
+    const recovered = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db, {
+      after_target_mutex_temp_link_observed: () => rmSync(temporaryPath)
+    });
+    assert.equal(recovered.ok, true, recovered.ok ? undefined : recovered.error.code);
+    if (recovered.ok) assert.equal(recovered.outcome, "ALREADY_REUSABLE");
+    assert.equal(existsSync(temporaryPath), false);
+    assert.equal(lstatSync(mutexPath).nlink, 1);
+    assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("verified Blob recovery revalidates the Artifact binding after acquiring the target mutex", () => {
   const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-binding-recheck-"));
   const mediaRoot = join(root, "media");

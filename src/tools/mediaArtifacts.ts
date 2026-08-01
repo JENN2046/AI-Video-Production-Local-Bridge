@@ -94,6 +94,7 @@ export interface VerifiedBlobStorageRecoveryFaults {
   target_mutex_busy_timeout_ms?: number;
   after_target_mutex_acquired?: () => void;
   after_target_mutex_guard_open?: () => void;
+  after_target_mutex_temp_link_observed?: () => void;
   after_target_authority_temp_created?: () => void;
   after_stage_owner_created?: () => void;
   after_staged_copy?: () => void;
@@ -1829,7 +1830,8 @@ function assertVerifiedBlobRecoveryTargetMutexFile(
   lockPath: string,
   recoveryPaths: ReturnType<typeof recoveryRootAndTarget>,
   roots: ReturnType<typeof activationRoots>,
-  guardDescriptor?: number
+  guardDescriptor?: number,
+  afterTemporaryLinkObserved?: () => void
 ): void {
   if (!existsSync(lockPath)
     || !sameResolvedPath(dirname(lockPath), roots.journal)
@@ -1843,6 +1845,7 @@ function assertVerifiedBlobRecoveryTargetMutexFile(
   }
   let linkedCandidatePath = "";
   if (entry.nlink === 2) {
+    afterTemporaryLinkObserved?.();
     const linkedCandidates = readdirSync(roots.journal)
       .filter((name) => BLOB_RECOVERY_TARGET_MUTEX_TEMP_NAME.test(name))
       .map((name) => resolve(roots.journal, name))
@@ -1858,8 +1861,19 @@ function assertVerifiedBlobRecoveryTargetMutexFile(
           return false;
         }
       });
-    if (linkedCandidates.length !== 1) throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
-    linkedCandidatePath = linkedCandidates[0];
+    if (linkedCandidates.length === 0) {
+      const converged = lstatSync(lockPath);
+      if (converged.isSymbolicLink() || !converged.isFile()
+        || converged.nlink !== 1
+        || converged.dev !== entry.dev || converged.ino !== entry.ino) {
+        throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+      }
+      entry = converged;
+    } else if (linkedCandidates.length === 1) {
+      linkedCandidatePath = linkedCandidates[0];
+    } else {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
   }
   const canonicalPath = resolve(realpathSync(lockPath));
   if (!sameResolvedPath(canonicalPath, lockPath)) {
@@ -1906,7 +1920,13 @@ function acquireVerifiedBlobRecoveryTargetMutex(
   let guardDescriptor = -1;
   let database: NodeDatabaseSync | null = null;
   try {
-    assertVerifiedBlobRecoveryTargetMutexFile(lockPath, recoveryPaths, roots);
+    assertVerifiedBlobRecoveryTargetMutexFile(
+      lockPath,
+      recoveryPaths,
+      roots,
+      undefined,
+      faults.after_target_mutex_temp_link_observed
+    );
     assertVerifiedBlobRecoveryTargetMutexSidecarsAbsent(lockPath);
     guardDescriptor = openSync(lockPath, "r");
     assertVerifiedBlobRecoveryTargetMutexFile(lockPath, recoveryPaths, roots, guardDescriptor);
