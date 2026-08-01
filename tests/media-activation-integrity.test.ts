@@ -165,7 +165,10 @@ function windowsShortPath(filePath: string): string | null {
     ["/d", "/s", "/c", `for %I in ("${filePath}") do @echo %~sI`],
     { encoding: "utf8", windowsHide: true }
   );
-  const candidate = result.status === 0 ? result.stdout.trim() : "";
+  const output = result.status === 0 ? result.stdout.trim() : "";
+  const candidate = output.startsWith('"') && output.endsWith('"')
+    ? output.slice(1, -1)
+    : output;
   return candidate
     && candidate.includes("~")
     && resolve(candidate).toLowerCase() !== resolve(filePath).toLowerCase()
