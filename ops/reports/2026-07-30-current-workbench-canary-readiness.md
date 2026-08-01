@@ -288,6 +288,7 @@ remediation_pr:
   windows_short_path_test_fix_commit: 94bd81b
   windows_short_path_absolute_parse_commit: 43e5519
   validated_authority_and_target_filesystem_stage_commit: 22c9e24
+  windows_dos_short_filename_guard_commit: 0982c61
   remediation_strategy: CROSS_DATABASE_TARGET_SQLITE_MUTEX
   current_head: STATE_SYNC_COMMIT_CONTAINING_THIS_RECORD
   resolved_prior_threads:
@@ -303,6 +304,7 @@ remediation_pr:
     - PRRT_kwDOTTDtUM6VlmiI
     - PRRT_kwDOTTDtUM6VlmiJ
     - PRRT_kwDOTTDtUM6VlsfV
+    - PRRT_kwDOTTDtUM6Vl-G_
   post_promotion_finding_status: REMEDIATION_IN_PROGRESS_AT_STATE_SYNC
   merged_to_main: false
 S3B-T1:
@@ -394,21 +396,27 @@ pass read-only validation. It also places the target-derived stage in the
 physical target directory, so exclusive hard-link placement cannot cross a
 nested filesystem boundary. A failed input leaves no authority record.
 
+Exact-head run `30686707590` then passed both jobs at `7194add`. Its automatic
+review found that the missing-target Windows guard classified every `~` as a
+DOS alias. Follow-up `0982c61` rejects only an 8.3-shaped short filename and
+proves that an ordinary missing `final~edited.mp4` target recovers normally.
+
 The regression set covers independently configured database A/B/C processes
 sharing one media root, an active explicit repair paused after staged copy,
 `:memory:`, five hard crashes with repeated startup, explicit retry, partial and
 already-reusable stages, unknown deterministic-looking stages, unsafe lock and
 stage entries, same-target serialization, different-target concurrency, busy
 timeout, binding revalidation and local journal recovery. Local validation
-passes with media activation 62 PASS / 0 FAIL / 1 platform-capability skip,
-Foundation 124 PASS / 0 FAIL / 1 platform-capability skip, Provider 52/52,
+passes with media activation 63 PASS / 0 FAIL / 1 platform-capability skip,
+Foundation 125 PASS / 0 FAIL / 1 platform-capability skip, Provider 52/52,
 Workbench V2 68/68 and selection 23/23;
 typecheck, build, secret scan and diff checks pass. Threads
 `PRRT_kwDOTTDtUM6VkSwY`, `PRRT_kwDOTTDtUM6VkqqS`,
 `PRRT_kwDOTTDtUM6VkzTz`, `PRRT_kwDOTTDtUM6Vk38a`,
 `PRRT_kwDOTTDtUM6Vk38b`, `PRRT_kwDOTTDtUM6VlUo8`,
 `PRRT_kwDOTTDtUM6VlUo-`, `PRRT_kwDOTTDtUM6VlmiI`,
-`PRRT_kwDOTTDtUM6VlmiJ` and `PRRT_kwDOTTDtUM6VlsfV` remain unresolved at state
+`PRRT_kwDOTTDtUM6VlmiJ`, `PRRT_kwDOTTDtUM6VlsfV` and
+`PRRT_kwDOTTDtUM6Vl-G_` remain unresolved at state
 sync pending new exact-head CI and review. PR #109 remains open and unmerged.
 Cross-database explicit recovery is serialized by an exact-target SQLite mutex,
 and merge remains a separate Jenn decision.

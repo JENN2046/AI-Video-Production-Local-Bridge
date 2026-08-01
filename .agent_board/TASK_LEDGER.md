@@ -5313,6 +5313,7 @@ physical_target_identity_commit: cc6dd87
 windows_short_path_test_fix_commit: 94bd81b
 windows_short_path_absolute_parse_commit: 43e5519
 validated_authority_and_target_filesystem_stage_commit: 22c9e24
+windows_dos_short_filename_guard_commit: 0982c61
 exact_head_ci_before_final_thread_audit:
   run_id: 30685017849
   Quality_and_integration: PASS
@@ -5323,6 +5324,13 @@ thread_audit_follow_up:
   authority_after_read_only_validation: PASS_LOCAL
   stage_on_target_filesystem: PASS_LOCAL
   new_exact_head_ci_and_review: REQUIRED
+later_exact_head_evidence:
+  head: 7194add47d9c5a0c290f6af6166a04429d385f70
+  windows_ci_run: 30686707590
+  Quality_and_integration: PASS
+  Browser_smoke: PASS
+  review_finding: PRRT_kwDOTTDtUM6Vl-G_
+  remediation: 0982c61
 superseded_failed_ci:
   run_id: 30684275229
   failure_class: TEST_PROBE_QUOTED_SHORT_PATH

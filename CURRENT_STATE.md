@@ -27,7 +27,10 @@ Repository baseline: `main@808d9334a49def7ce858f7c6138af75fed392c5b`
   exposed two older unresolved P2 findings. Follow-up `22c9e24` delays authority
   publication until all read-only recovery validation passes and places the
   target-derived stage beside the physical target so placement never crosses a
-  filesystem. New exact-head CI and review are required.
+  filesystem. Exact-head CI `30686707590` passed both jobs, but automatic review
+  found that the missing-target guard treated every `~` as a DOS alias.
+  Follow-up `0982c61` now rejects only 8.3-shaped names and proves an ordinary
+  `final~edited.mp4` can recover. New exact-head CI and review are required.
 - The final PR #106 head passed both `Quality and integration` and
   `Browser smoke`; the squash commit has the same tree as that reviewed head.
 - Code and CI PASS establish repository facts only. They do not create a new

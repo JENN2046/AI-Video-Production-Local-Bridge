@@ -48,7 +48,9 @@ automatically.
   `PRRT_kwDOTTDtUM6Vk38a`, `PRRT_kwDOTTDtUM6Vk38b`,
   `PRRT_kwDOTTDtUM6VlUo8`, `PRRT_kwDOTTDtUM6VlUo-`,
   `PRRT_kwDOTTDtUM6VlmiI`, `PRRT_kwDOTTDtUM6VlmiJ` and
-  `PRRT_kwDOTTDtUM6VlsfV`.
+  `PRRT_kwDOTTDtUM6VlsfV`, plus exact-head review thread
+  `PRRT_kwDOTTDtUM6Vl-G_`. Follow-up `0982c61` distinguishes an actual
+  8.3-shaped filename from an ordinary name such as `final~edited.mp4`.
   Generic startup preserves the bounded stage; explicit recovery is serialized
   by exact target across database files. Exact-head Windows CI and a fresh
   post-promotion Codex review remain required; merge is not authorized.

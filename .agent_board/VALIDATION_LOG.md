@@ -3476,6 +3476,33 @@ local_validation:
 exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
 ```
 
+### PR109 Windows DOS-short filename classification
+
+```yaml
+task: PR109-T4_CROSS_DATABASE_BLOB_TARGET_MUTEX
+recorded_at: 2026-08-01T14:18:47+08:00
+reviewed_head: 7194add47d9c5a0c290f6af6166a04429d385f70
+exact_head_ci_run: 30686707590
+exact_head_ci: PASS_BOTH_JOBS
+review_thread: PRRT_kwDOTTDtUM6Vl-G_
+implementation_commit: 0982c61
+implementation:
+  reject_all_tilde_names: false
+  reject_windows_8_3_shape_when_missing: true
+  ordinary_tilde_filename_recovery: PASS
+local_validation:
+  typecheck: PASS
+  media_activation_integrity: PASS_63_FAIL_0_PLATFORM_SKIP_1
+  foundation_boundaries: PASS_125_FAIL_0_PLATFORM_SKIP_1
+  provider_boundaries: PASS_52
+  workbench_v2: PASS_68
+  selection_gate: PASS_23
+  build: PASS
+  secret_scan: PASS
+  git_diff_check: PASS
+exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
+```
+
 ### PR109 Windows short-path probe parsing
 
 ```yaml

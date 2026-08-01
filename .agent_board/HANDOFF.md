@@ -75,9 +75,13 @@ Ready task count: 0
   `PRRT_kwDOTTDtUM6VkzTz`, `PRRT_kwDOTTDtUM6Vk38a`,
   `PRRT_kwDOTTDtUM6Vk38b`, `PRRT_kwDOTTDtUM6VlUo8`,
   `PRRT_kwDOTTDtUM6VlUo-`, `PRRT_kwDOTTDtUM6VlmiI`,
-  `PRRT_kwDOTTDtUM6VlmiJ` and `PRRT_kwDOTTDtUM6VlsfV`; all await new exact-head
-  CI and review. Local validation passes with media activation
-  62 PASS / 0 FAIL / 1 platform-capability skip, Foundation 124 PASS / 0 FAIL /
+  `PRRT_kwDOTTDtUM6VlmiJ`, `PRRT_kwDOTTDtUM6VlsfV` and
+  `PRRT_kwDOTTDtUM6Vl-G_`; all await new exact-head CI and review. Run
+  `30686707590` passed both jobs at `7194add`, but automatic review added the
+  last thread because any `~` was treated as a DOS alias. Follow-up `0982c61`
+  narrows rejection to an 8.3-shaped filename and covers `final~edited.mp4`.
+  Local validation passes with media activation
+  63 PASS / 0 FAIL / 1 platform-capability skip, Foundation 125 PASS / 0 FAIL /
   1 platform-capability skip, Provider 52/52, Workbench V2
   68/68 and selection 23/23; typecheck, build, secret scan and diff checks pass.
 - `S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING` is
