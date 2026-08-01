@@ -2306,7 +2306,7 @@ test("different storage targets concurrently initialize activation roots and acq
 });
 
 test("verified Blob recovery rejects unsafe persistent target mutex entries", () => {
-  for (const scenario of ["directory", "hard-link", "malformed", "valid-unowned-sqlite"] as const) {
+  for (const scenario of ["directory", "hard-link", "temp-hard-link", "malformed", "valid-unowned-sqlite"] as const) {
     const root = mkdtempSync(join(tmpdir(), `verified-blob-recovery-unsafe-mutex-${scenario}-`));
     const mediaRoot = join(root, "media");
     const sqlitePath = join(root, "app.sqlite");
@@ -2318,6 +2318,7 @@ test("verified Blob recovery rejects unsafe persistent target mutex entries", ()
       const blob = getMediaBlob(db, fixture.artifact.blob_id);
       assert.ok(blob);
       const mutexPath = verifiedBlobRecoveryMutexPath(mediaRoot, blob.storage_uri);
+      const mutexTempPath = join(dirname(mutexPath), `.brm-${randomUUID()}.tmp.sqlite`);
       rmSync(fixture.artifact.storage.uri);
       if (scenario === "directory") {
         mkdirSync(mutexPath);
@@ -2329,6 +2330,9 @@ test("verified Blob recovery rejects unsafe persistent target mutex entries", ()
         const unownedPath = join(root, "unowned.sqlite");
         migrateDatabase(unownedPath);
         copyFileSync(unownedPath, mutexPath);
+      } else if (scenario === "temp-hard-link") {
+        writeFileSync(mutexTempPath, "preserve-unowned-mutex", "utf8");
+        linkSync(mutexTempPath, mutexPath);
       } else {
         writeFileSync(mutexPath, "not-a-sqlite-database", "utf8");
       }
@@ -2344,6 +2348,11 @@ test("verified Blob recovery rejects unsafe persistent target mutex entries", ()
       if (!blocked.ok) assert.equal(blocked.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
       assert.equal(existsSync(mutexPath), true);
       if (mutexBytes) assert.deepEqual(readFileSync(mutexPath), mutexBytes);
+      if (scenario === "temp-hard-link") {
+        assert.equal(existsSync(mutexTempPath), true);
+        assert.deepEqual(readFileSync(mutexTempPath), mutexBytes);
+        assert.equal(statSync(mutexTempPath).ino, statSync(mutexPath).ino);
+      }
       assert.equal(existsSync(fixture.artifact.storage.uri), false);
       assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
     } finally {
@@ -2467,7 +2476,7 @@ test("verified Blob recovery rejects pre-existing SQLite mutex sidecars", () => 
 });
 
 test("verified Blob recovery rejects unowned target authority entries", () => {
-  for (const scenario of ["malformed", "hard-link"] as const) {
+  for (const scenario of ["malformed", "hard-link", "temp-hard-link"] as const) {
     const root = mkdtempSync(join(tmpdir(), `verified-blob-recovery-authority-${scenario}-`));
     const mediaRoot = join(root, "media");
     const sqlitePath = join(root, "app.sqlite");
@@ -2476,13 +2485,24 @@ test("verified Blob recovery rejects unowned target authority entries", () => {
     try {
       const fixture = createRecoverableVideo(db, mediaRoot);
       const authorityPath = verifiedBlobRecoveryAuthorityPath(fixture.artifact.storage.uri);
+      const authorityDigest = basename(authorityPath).slice(
+        ".blob-recovery-target-".length,
+        -".authority.json".length
+      );
+      const authorityTempPath = join(
+        dirname(authorityPath),
+        `.blob-recovery-target-${authorityDigest}.authority-${randomUUID()}.tmp`
+      );
       rmSync(fixture.artifact.storage.uri);
       if (scenario === "malformed") {
         writeFileSync(authorityPath, "not-authority-json", "utf8");
-      } else {
+      } else if (scenario === "hard-link") {
         const unownedPath = join(dirname(authorityPath), "unowned-authority.json");
         writeFileSync(unownedPath, "preserve", "utf8");
         linkSync(unownedPath, authorityPath);
+      } else {
+        writeFileSync(authorityTempPath, "preserve-unowned-authority", "utf8");
+        linkSync(authorityTempPath, authorityPath);
       }
       const blocked = recoverVerifiedBlobStorage({
         invalid_artifact_id: fixture.artifact.artifact_id,
@@ -2493,6 +2513,11 @@ test("verified Blob recovery rejects unowned target authority entries", () => {
       assert.equal(blocked.ok, false);
       if (!blocked.ok) assert.equal(blocked.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
       assert.equal(existsSync(authorityPath), true);
+      if (scenario === "temp-hard-link") {
+        assert.equal(existsSync(authorityTempPath), true);
+        assert.deepEqual(readFileSync(authorityTempPath), readFileSync(authorityPath));
+        assert.equal(statSync(authorityTempPath).ino, statSync(authorityPath).ino);
+      }
       assert.equal(existsSync(fixture.artifact.storage.uri), false);
     } finally {
       db.close();

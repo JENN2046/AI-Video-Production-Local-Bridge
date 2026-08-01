@@ -1458,6 +1458,7 @@ function assertVerifiedBlobRecoveryTargetAuthorityFile(
   if (entry.isSymbolicLink() || !entry.isFile() || entry.nlink < 1 || entry.nlink > 2 || entry.size <= 0 || entry.size > 1024) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
+  let linkedCandidatePath = "";
   if (entry.nlink === 2) {
     const linkedCandidates = readdirSync(recoveryPaths.targetDirectory)
       .filter((name) => BLOB_RECOVERY_TARGET_AUTHORITY_TEMP_NAME.test(name))
@@ -1475,15 +1476,7 @@ function assertVerifiedBlobRecoveryTargetAuthorityFile(
         }
       });
     if (linkedCandidates.length !== 1) throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
-    rmSync(linkedCandidates[0]);
-    const normalized = lstatSync(authorityPath);
-    if (normalized.isSymbolicLink()
-      || !normalized.isFile()
-      || normalized.nlink !== 1
-      || normalized.dev !== entry.dev
-      || normalized.ino !== entry.ino) {
-      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
-    }
+    linkedCandidatePath = linkedCandidates[0];
   }
   let descriptor = -1;
   try {
@@ -1491,8 +1484,9 @@ function assertVerifiedBlobRecoveryTargetAuthorityFile(
     const guarded = fstatSync(descriptor);
     const current = statSync(authorityPath);
     const canonicalPath = resolve(realpathSync(authorityPath));
+    const expectedLinkCount = linkedCandidatePath ? 2 : 1;
     if (!guarded.isFile()
-      || guarded.nlink !== 1
+      || guarded.nlink !== expectedLinkCount
       || guarded.size <= 0
       || guarded.size > 1024
       || guarded.dev !== entry.dev
@@ -1527,6 +1521,25 @@ function assertVerifiedBlobRecoveryTargetAuthorityFile(
       || actual.blob_size_bytes !== expected.blob_size_bytes
       || actual.blob_mime !== expected.blob_mime) {
       throw new Error("MEDIA_BLOB_RECOVERY_BINDING_MISMATCH");
+    }
+    if (linkedCandidatePath) {
+      const candidate = lstatSync(linkedCandidatePath);
+      if (candidate.isSymbolicLink() || !candidate.isFile()
+        || candidate.nlink !== 2
+        || candidate.dev !== guarded.dev
+        || candidate.ino !== guarded.ino) {
+        throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+      }
+      rmSync(linkedCandidatePath);
+      const normalizedGuard = fstatSync(descriptor);
+      const normalizedPath = lstatSync(authorityPath);
+      if (!normalizedGuard.isFile() || normalizedGuard.nlink !== 1
+        || normalizedGuard.dev !== guarded.dev || normalizedGuard.ino !== guarded.ino
+        || normalizedPath.isSymbolicLink() || !normalizedPath.isFile()
+        || normalizedPath.nlink !== 1
+        || normalizedPath.dev !== guarded.dev || normalizedPath.ino !== guarded.ino) {
+        throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+      }
     }
   } finally {
     if (descriptor >= 0) closeSync(descriptor);
@@ -1796,6 +1809,7 @@ function assertVerifiedBlobRecoveryTargetMutexFile(
   if (entry.isSymbolicLink() || !entry.isFile() || entry.nlink < 1 || entry.nlink > 2) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
+  let linkedCandidatePath = "";
   if (entry.nlink === 2) {
     const linkedCandidates = readdirSync(roots.journal)
       .filter((name) => BLOB_RECOVERY_TARGET_MUTEX_TEMP_NAME.test(name))
@@ -1813,11 +1827,7 @@ function assertVerifiedBlobRecoveryTargetMutexFile(
         }
       });
     if (linkedCandidates.length !== 1) throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
-    rmSync(linkedCandidates[0]);
-    entry = lstatSync(lockPath);
-    if (entry.isSymbolicLink() || !entry.isFile() || entry.nlink !== 1) {
-      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
-    }
+    linkedCandidatePath = linkedCandidates[0];
   }
   const canonicalPath = resolve(realpathSync(lockPath));
   if (!sameResolvedPath(canonicalPath, lockPath)) {
@@ -1826,10 +1836,31 @@ function assertVerifiedBlobRecoveryTargetMutexFile(
   if (guardDescriptor !== undefined) {
     const guarded = fstatSync(guardDescriptor);
     const current = statSync(lockPath);
-    if (!guarded.isFile() || guarded.nlink !== 1 || guarded.dev !== current.dev || guarded.ino !== current.ino) {
+    const expectedLinkCount = linkedCandidatePath ? 2 : 1;
+    if (!guarded.isFile() || guarded.nlink !== expectedLinkCount
+      || guarded.dev !== current.dev || guarded.ino !== current.ino
+      || guarded.dev !== entry.dev || guarded.ino !== entry.ino) {
       throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
     }
     assertVerifiedBlobRecoveryTargetMutexHeader(guardDescriptor);
+    if (linkedCandidatePath) {
+      const candidate = lstatSync(linkedCandidatePath);
+      if (candidate.isSymbolicLink() || !candidate.isFile()
+        || candidate.nlink !== 2
+        || candidate.dev !== guarded.dev
+        || candidate.ino !== guarded.ino) {
+        throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+      }
+      rmSync(linkedCandidatePath);
+      const normalizedGuard = fstatSync(guardDescriptor);
+      entry = lstatSync(lockPath);
+      if (!normalizedGuard.isFile() || normalizedGuard.nlink !== 1
+        || normalizedGuard.dev !== guarded.dev || normalizedGuard.ino !== guarded.ino
+        || entry.isSymbolicLink() || !entry.isFile() || entry.nlink !== 1
+        || entry.dev !== guarded.dev || entry.ino !== guarded.ino) {
+        throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+      }
+    }
   }
 }
 
