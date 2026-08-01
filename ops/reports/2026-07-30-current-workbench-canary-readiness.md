@@ -280,7 +280,8 @@ remediation_pr:
   deterministic_stage_whitelist_commit: 0ff40f085368658887d3a77315d1eb7f51124c3f
   superseded_canonical_database_sweep_commit: 27058e32f5339359d15b876dc25375046075eb18
   explicit_stage_convergence_commit: 35122cd405f42bc627ae73d121f5a3dd14f3edbe
-  remediation_strategy: REMOVE_GLOBAL_DESTRUCTIVE_SWEEP
+  cross_database_target_mutex_commit: e3704cb
+  remediation_strategy: CROSS_DATABASE_TARGET_SQLITE_MUTEX
   current_head: STATE_SYNC_COMMIT_CONTAINING_THIS_RECORD
   resolved_prior_threads:
     - PRRT_kwDOTTDtUM6VdGmY
@@ -288,6 +289,7 @@ remediation_pr:
     - PRRT_kwDOTTDtUM6Vdmly
     - PRRT_kwDOTTDtUM6VeTXd
     - PRRT_kwDOTTDtUM6VekUB
+    - PRRT_kwDOTTDtUM6VkSwY
   post_promotion_finding_status: REMEDIATION_IN_PROGRESS_AT_STATE_SYNC
   merged_to_main: false
 S3B-T1:
@@ -334,18 +336,29 @@ unsafe entries remain preserved and fail closed. The canonical UUID-v4 legacy
 rules and media-root safety checks remain unchanged. Local activation marker,
 staging-owner and journal recovery remain available to every database.
 
+Candidate `e3704cb` adds a persistent SQLite mutex derived from the canonical
+media root and exact resolved storage target. Independent database files use the
+same mutex for the same target, including when Blob ids differ. The lock is
+acquired before the application write transaction, binding facts are re-read,
+and the lock covers the full explicit recovery critical section. Busy timeout is
+bounded to 30 seconds and returns without stage, target or quarantine mutation;
+process exit releases the OS lock without PID leases or stale cleanup. Different
+targets retain independent progress.
+
 The regression set covers independently configured database A/B/C processes
 sharing one media root, an active explicit repair paused after staged copy,
 `:memory:`, five hard crashes with repeated startup, explicit retry, partial and
-already-reusable stages, unknown deterministic-looking stages, unsafe entries
-and local journal recovery. Local validation passes with media activation 47/47,
-Foundation 109/109, Provider 52/52, Workbench V2 68/68 and selection 23/23;
+already-reusable stages, unknown deterministic-looking stages, unsafe lock and
+stage entries, same-target serialization, different-target concurrency, busy
+timeout, binding revalidation and local journal recovery. Local validation
+passes with media activation 56/56, Foundation 118/118, Provider 52/52,
+Workbench V2 68/68 and selection 23/23;
 typecheck, build, secret scan and diff checks pass. Threads
 `PRRT_kwDOTTDtUM6Vdmly`, `PRRT_kwDOTTDtUM6VeTXd` and
-`PRRT_kwDOTTDtUM6VekUB` remain unresolved at state sync pending new exact-head
-CI and review. PR #109 remains open and unmerged. Deterministic Blob stages are
-bounded and converge only through explicit Blob recovery; merge remains a
-separate Jenn decision after exact-head CI and review.
+`PRRT_kwDOTTDtUM6VekUB` and `PRRT_kwDOTTDtUM6VkSwY` remain unresolved at state
+sync pending new exact-head CI and review. PR #109 remains open and unmerged.
+Cross-database explicit recovery is serialized by an exact-target SQLite mutex,
+and merge remains a separate Jenn decision.
 
 The remaining sequence is:
 

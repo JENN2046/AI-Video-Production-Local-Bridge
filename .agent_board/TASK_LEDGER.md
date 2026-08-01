@@ -5297,6 +5297,66 @@ s4_authorization_granted: false
 delivery: PR_109_OPEN_READY_AWAITING_EXACT_HEAD_CI_AND_POST_PROMOTION_REVIEW
 ```
 
+## 2026-08-01 — PR109 cross-database Blob target mutex
+
+```yaml
+task: PR109-T4_CROSS_DATABASE_BLOB_TARGET_MUTEX
+status: BLOCKED_BY_EXACT_HEAD_EVIDENCE
+recorded_by: Codex
+recorded_at: 2026-08-01T09:40:00+08:00
+pull_request: 109
+implementation_commit: e3704cb
+remediation_strategy: CROSS_DATABASE_TARGET_SQLITE_MUTEX
+unresolved_threads_at_state_sync:
+  - PRRT_kwDOTTDtUM6Vdmly
+  - PRRT_kwDOTTDtUM6VeTXd
+  - PRRT_kwDOTTDtUM6VekUB
+  - PRRT_kwDOTTDtUM6VkSwY
+mutex:
+  scope: exact_resolved_blob_storage_target
+  key: canonical_media_root_nul_resolved_storage_uri
+  location: media_root_activation_journal
+  implementation: node_builtin_sqlite_begin_immediate
+  busy_timeout_ms: 30000
+  crash_release: operating_system_sqlite_lock_release
+  pid_or_stale_lease: none
+ordering:
+  mutex_before_application_write_transaction: true
+  binding_revalidated_after_lock: true
+  recovery_filesystem_mutation_before_lock: false
+verified_behavior:
+  same_blob_same_target_serialized: true
+  different_blob_same_target_serialized: true
+  different_targets_parallel: true
+  busy_has_zero_recovery_media_mutation: true
+  crash_then_other_database_recovers: true
+  unsafe_lock_entries_preserved_and_rejected: true
+  persistent_lock_reused: true
+  generic_startup_stage_scan: false
+  generic_startup_stage_delete: false
+  blob_row_or_links_changed: false
+  schema_or_migration_changed: false
+local_validation:
+  typecheck: PASS
+  build: PASS
+  media_activation_integrity: PASS_56
+  foundation_boundaries: PASS_118
+  provider_boundaries: PASS_52
+  workbench_v2: PASS_68
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_operations: 0
+deployment_changes: 0
+ready_task_count: 0
+merge_authorized: false
+delivery: PR_109_OPEN_READY_AWAITING_EXACT_HEAD_CI_AND_POST_PROMOTION_REVIEW
+```
+
 ## 2026-08-01 — PR109 explicit deterministic-stage convergence
 
 ```yaml

@@ -208,6 +208,15 @@ Commit `35122cd405f42bc627ae73d121f5a3dd14f3edbe` removes the global destructive
 deterministic-stage sweep from `recoverMediaActivations`; generic startup no
 longer enumerates, deletes or infers ownership of verified-Blob stages.
 
+Implementation `e3704cb` adds the remaining cross-database coordination to
+explicit recovery. A persistent app-controlled SQLite mutex is keyed only by
+the canonical media root and exact resolved storage target. It is acquired
+before the application write transaction and held across stage, quarantine,
+placement, verification, commit or rollback. Binding facts are re-read after
+the lock; a 30-second acquisition timeout returns `MEDIA_BLOB_RECOVERY_BUSY`
+before any recovery filesystem mutation. Different targets remain independent,
+and process exit releases the SQLite lock without a PID lease or stale cleanup.
+
 Only `recoverVerifiedBlobStorage` may converge the exact slot for the Blob it is
 explicitly repairing. It reuses a complete matching stage, safely discards and
 recopies a partial app-owned stage, removes the exact stage when the final target
@@ -218,15 +227,16 @@ bounded pending recovery material while continuing unrecorded-marker,
 staging-owner and `media_activation_journal` recovery.
 
 Independent database A/B/C startup processes, `:memory:`, five hard crashes,
-repeated startup, partial-stage, already-reusable, unknown-stage and explicit
-retry regressions pass. Local validation passes with media activation 47/47,
-Foundation 109/109, Provider 52/52, Workbench V2 68/68 and selection 23/23;
-typecheck, build, secret scan and diff checks also pass. At state sync the three
-post-promotion threads `PRRT_kwDOTTDtUM6Vdmly`, `PRRT_kwDOTTDtUM6VeTXd` and
-`PRRT_kwDOTTDtUM6VekUB` remain unresolved pending new exact-head CI and a fresh
-review. PR #109 remains open and unmerged. Deterministic Blob stages are bounded
-and converge only through explicit Blob recovery; merge remains a separate Jenn
-decision after exact-head CI and review.
+same-target and different-target recovery, bounded busy, unsafe-lock,
+partial-stage, already-reusable, unknown-stage and explicit retry regressions
+pass. Local validation passes with media activation 56/56, Foundation 118/118,
+Provider 52/52, Workbench V2 68/68 and selection 23/23; typecheck, build, secret
+scan and diff checks also pass. At state sync threads
+`PRRT_kwDOTTDtUM6Vdmly`, `PRRT_kwDOTTDtUM6VeTXd`,
+`PRRT_kwDOTTDtUM6VekUB` and `PRRT_kwDOTTDtUM6VkSwY` remain unresolved pending
+new exact-head CI and a fresh review. PR #109 remains open and unmerged.
+Cross-database explicit recovery is serialized by an exact-target SQLite mutex,
+and merge remains a separate Jenn decision.
 
 The complete Media Gateway promotion, Memory plugin, second real user,
 automatic Snapshot, Windows logon task, WebM/broad formats and new OAuth

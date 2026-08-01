@@ -2,7 +2,7 @@
 
 Current mode: PR #109 orphaned Blob recovery staging remediation; no executable task is `READY`
 Last run: S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING
-Last result: the global destructive deterministic-stage sweep is removed locally; open Ready PR #109 awaits exact-head CI and a fresh Codex review
+Last result: exact-target SQLite mutex remediation passes locally; open Ready PR #109 awaits exact-head CI and a fresh Codex review
 
 ## Current state
 
@@ -34,11 +34,18 @@ Ready task count: 0
   for an already reusable target, or fails closed on an unsafe entry. Legacy
   UUID-v4 ownership/content checks remain unchanged. Local marker, staging-owner
   and activation-journal recovery remain active.
+- Candidate `e3704cb` serializes explicit recovery across independently
+  configured databases with one persistent SQLite mutex per canonical media
+  target. The mutex precedes the application write transaction and covers
+  binding revalidation, stage/quarantine/placement, verification and rollback.
+  Busy acquisition returns `MEDIA_BLOB_RECOVERY_BUSY` without touching recovery
+  material; process exit releases the OS lock, and different targets proceed in
+  parallel without PID or lease cleanup.
 - At state sync these PR #109 threads remain unresolved pending exact-head CI
-  and a fresh review: `PRRT_kwDOTTDtUM6Vdmly`, `PRRT_kwDOTTDtUM6VeTXd` and
-  `PRRT_kwDOTTDtUM6VekUB`. Local validation passes with media activation 47/47,
-  Foundation 109/109, Provider 52/52, Workbench V2 68/68 and selection 23/23;
-  typecheck, build, secret scan and diff checks pass.
+  and a fresh review: `PRRT_kwDOTTDtUM6Vdmly`, `PRRT_kwDOTTDtUM6VeTXd`,
+  `PRRT_kwDOTTDtUM6VekUB` and `PRRT_kwDOTTDtUM6VkSwY`. Local validation passes
+  with media activation 56/56, Foundation 118/118, Provider 52/52, Workbench V2
+  68/68 and selection 23/23; typecheck, build, secret scan and diff checks pass.
 - `S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING` is
   `BLOCKED_BY_PR109_POST_PROMOTION_FINDING` in PR #109.
 - PR #109 remains open and unmerged; merge remains a separate Jenn decision,

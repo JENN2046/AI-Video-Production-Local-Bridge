@@ -3421,6 +3421,57 @@ remaining_test_processes: 0
 exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
 ```
 
+### PR109 cross-database Blob target mutex
+
+```yaml
+task: PR109-T4_CROSS_DATABASE_BLOB_TARGET_MUTEX
+validated_at: 2026-08-01T09:40:00+08:00
+pull_request: 109
+implementation_commit: e3704cb
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - npm run test:foundation-boundaries
+  - npm run test:selection-gate
+  - npm run test:provider-boundaries
+  - npm run test:v2
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  media_activation_integrity: PASS_56
+  foundation_boundaries: PASS_118
+  provider_boundaries: PASS_52
+  workbench_v2: PASS_68
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  mutex_key_uses_canonical_root_and_exact_target: true
+  same_target_cross_database_serialization: true
+  different_blob_ids_same_target_serialization: true
+  different_target_parallel_barrier: true
+  bounded_busy_zero_media_mutation: true
+  hard_crash_os_lock_release: true
+  unsafe_mutex_path_fail_closed: true
+  malformed_mutex_database_fail_closed: true
+  persistent_mutex_reuse: true
+  application_rollback_releases_mutex: true
+  binding_revalidation_after_lock: true
+  mutex_not_registered_as_media: true
+  generic_startup_ignores_mutex_and_deterministic_stage: true
+  blob_row_or_links_changed: false
+  schema_or_migration_changed: false
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_operations: 0
+remaining_test_processes: 0
+exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
+```
+
 ### PR109 canonical database orphan-sweep authority
 
 ```yaml
