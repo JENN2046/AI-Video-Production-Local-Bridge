@@ -61,7 +61,7 @@ database. `REAL_PROVIDER_ENABLED=false` remains the safe default.
 |---|---|---|---|
 | Workbench V2 local UI | Storyboard, generation preflight, version review and delivery-readiness views exist | Activity database compatibility accepted at ledger `0011` | Core |
 | SQLite and governed media | Migration, Artifact/Blob digest and FFprobe boundaries exist | Ledger `0011` migration/restore evidence remains commit-scoped | Core |
-| Current Provider path | Intent, budget, confirmation, bounded polling, manual reconciliation and verified-Blob recovery boundaries exist in `main@808d933` | PR #108 merged with green main CI; open Ready PR #109 now contains verified-Blob whitelist and canonical-database ownership candidates, but still requires exact-head CI/review; no real Provider or S4 acceptance occurred | Core blocker before S4 |
+| Current Provider path | Intent, budget, confirmation, bounded polling, manual reconciliation and verified-Blob recovery boundaries exist in `main@808d933` | PR #108 merged with green main CI; open Ready PR #109 now bounds recovery staging to one deterministic Blob/target slot and removes generic startup deletion, but still requires exact-head CI/review; no real Provider or S4 acceptance occurred | Core blocker before S4 |
 | Historical R3 Provider path | Execution scripts now reside under `legacy/` | RunningHub real canary, four-shot generation and regeneration completed historically | Feasibility evidence only |
 | Review and accepted clips | Version stacks, rejection reasons and human accepted-clip selection exist | Historical R3 review evidence exists | Core; current-path acceptance remains |
 | Active assembly/export | Active assembly still contains `placeholder_copy` / mock-fixture behavior; Workbench has no production assembly/export action | No current-main production-path PASS | S6 core gap |
@@ -202,49 +202,31 @@ not constitute a real Provider or S4 acceptance.
 
 A P2 review finding arrived after the PR #108 merge: a hard process exit after
 copying recovery staging bytes but before exclusive placement could leave an
-unbounded random `blob-recovery-*.staged` file. Open Ready PR #109 contains the
-narrow T1B remediation. It assigns each Blob/target pair one deterministic
-slot under `.activation/staging`, reuses or safely replaces app-owned staged
-bytes, reconciles safe startup orphans under the database recovery lock, and
-narrowly removes legacy UUID stages. Unsafe symlinks, directories and unowned
-hard links remain fail-closed and are not deleted. Blob rows, content facts,
-storage URIs and Artifact-Blob links remain unchanged.
+unbounded random `blob-recovery-*.staged` file. Open Ready PR #109 bounds this
+material to one deterministic slot derived from `blob_id` and `storage_uri`.
+Commit `35122cd405f42bc627ae73d121f5a3dd14f3edbe` removes the global destructive
+deterministic-stage sweep from `recoverMediaActivations`; generic startup no
+longer enumerates, deletes or infers ownership of verified-Blob stages.
 
-Implementation commit `528aee4020d4be15a5fc5278de2f8c8abb20c637`
-passed the authorized local gates. Exact-head review of the first published
-state then found that legacy cleanup accepted an over-broad filename pattern
-without proving that the file matched the current Blob. Follow-up commit
-`e5c42113c73ba35a2c307eb0890dcd7d3be1216f` restricts legacy ownership to the
-historical canonical UUID-v4 form and verifies SHA-256, size and MIME before
-deletion; mismatches remain preserved and fail closed. The full local gate set
-passed again. Exact-head review `4829032568` then found that startup cleanup did
-not reject a registered media root redirected through a replaced ancestor.
-Commit `193b1077d67dd8872831e8fe7646d8879d4947f7` now requires the canonical root
-to equal the registered root before any activation cleanup; a junction
-regression proves the external stage is retained and reported unsafe. The full
-local gate set passed after this second fix. A post-promotion P2 then found that
-startup cleanup treated every valid-looking 64-hex deterministic stage name as
-app-owned even when no verified Blob identity mapped to it. Candidate commit
-`0ff40f085368658887d3a77315d1eb7f51124c3f` now derives an exact expected-stage
-whitelist from verified `blob_id`, `storage_uri` and registered media-root
-identity through the same path helper used by normal recovery. Only an exact,
-safe whitelist match may be deleted. Unmatched valid-looking stages, including
-same-content files, are preserved and reported unsafe; content is not ownership
-proof. The prior whitelist thread `PRRT_kwDOTTDtUM6VdGmY` is resolved.
+Only `recoverVerifiedBlobStorage` may converge the exact slot for the Blob it is
+explicitly repairing. It reuses a complete matching stage, safely discards and
+recopies a partial app-owned stage, removes the exact stage when the final target
+is already reusable, and fails closed without deleting unsafe entries. Legacy
+cleanup remains limited to canonical UUID-v4 names whose SHA-256, size and MIME
+match the current Blob. Generic startup preserves deterministic stages as
+bounded pending recovery material while continuing unrecorded-marker,
+staging-owner and `media_activation_journal` recovery.
 
-Exact-head review then found that a database copy sharing the same absolute
-media root could run the global sweep under a lock belonging only to the copy.
-Candidate `27058e32f5339359d15b876dc25375046075eb18` now derives cleanup authority
-from the actual `main` file reported by `PRAGMA database_list` and grants it only
-when that file is the non-redirected regular file configured by
-`paths.sqlitePath`. Copies, memory databases, hard-link aliases, symlink paths
-and junction-redirected paths skip the global sweep while continuing their own
-database-local activation recovery. Two processes using the same canonical
-database remain serialized by `BEGIN IMMEDIATE`. Local validation passes with
-media activation 56/56, Foundation 118/118, Provider 52/52, Workbench V2 68/68
-and selection 23/23. PR #109 remains open and unmerged; merge remains a separate
-Jenn decision, and the PR is authoritative for current exact-head integration
-evidence.
+Independent database A/B/C startup processes, `:memory:`, five hard crashes,
+repeated startup, partial-stage, already-reusable, unknown-stage and explicit
+retry regressions pass. Local validation passes with media activation 47/47,
+Foundation 109/109, Provider 52/52, Workbench V2 68/68 and selection 23/23;
+typecheck, build, secret scan and diff checks also pass. At state sync the three
+post-promotion threads `PRRT_kwDOTTDtUM6Vdmly`, `PRRT_kwDOTTDtUM6VeTXd` and
+`PRRT_kwDOTTDtUM6VekUB` remain unresolved pending new exact-head CI and a fresh
+review. PR #109 remains open and unmerged. Deterministic Blob stages are bounded
+and converge only through explicit Blob recovery; merge remains a separate Jenn
+decision after exact-head CI and review.
 
 The complete Media Gateway promotion, Memory plugin, second real user,
 automatic Snapshot, Windows logon task, WebM/broad formats and new OAuth

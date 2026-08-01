@@ -3474,3 +3474,57 @@ service_operations: 0
 remaining_test_processes: 0
 exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
 ```
+
+### PR109 explicit deterministic-stage convergence
+
+```yaml
+task: PR109-T3_REMOVE_GLOBAL_DESTRUCTIVE_BLOB_STAGE_SWEEP
+validated_at: 2026-08-01T08:32:33+08:00
+pull_request: 109
+implementation_commit: 35122cd405f42bc627ae73d121f5a3dd14f3edbe
+commands_or_lanes:
+  - npm run typecheck
+  - npm run build
+  - node dist/scripts/run-isolated-tests.js dist/tests/media-activation-integrity.test.js
+  - npm run test:foundation-boundaries
+  - npm run test:selection-gate
+  - npm run test:provider-boundaries
+  - npm run test:v2
+  - npm run secret:scan
+  - git diff --check
+results:
+  typecheck: PASS
+  build: PASS
+  media_activation_integrity: PASS_47
+  foundation_boundaries: PASS_109
+  provider_boundaries: PASS_52
+  workbench_v2: PASS_68
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+verified_behavior:
+  recoverMediaActivations_enumerates_deterministic_stages: false
+  recoverMediaActivations_deletes_deterministic_stages: false
+  database_identity_cleanup_gate_present: false
+  independently_configured_databases_preserve_stage: true
+  in_memory_database_preserves_stage: true
+  active_recovery_stage_preserved_from_independent_startup: true
+  active_recovery_placement_enoent: false
+  five_hard_crashes_maximum_stage_count: 1
+  repeated_startups_preserve_stage_content: true
+  explicit_retry_converges_stage: true
+  partial_stage_recopied_by_explicit_recovery: true
+  already_reusable_stage_removed_by_explicit_recovery: true
+  unknown_stage_preserved: true
+  local_marker_owner_journal_recovery_preserved: true
+  legacy_rules_unchanged: true
+  blob_row_or_links_changed: false
+  schema_or_migration_changed: false
+provider_network_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_operations: 0
+remaining_test_processes: 0
+exact_head_ci_and_post_promotion_review: REQUIRED_AFTER_STATE_SYNC
+```

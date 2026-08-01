@@ -5297,6 +5297,66 @@ s4_authorization_granted: false
 delivery: PR_109_OPEN_READY_AWAITING_EXACT_HEAD_CI_AND_POST_PROMOTION_REVIEW
 ```
 
+## 2026-08-01 — PR109 explicit deterministic-stage convergence
+
+```yaml
+task: PR109-T3_REMOVE_GLOBAL_DESTRUCTIVE_BLOB_STAGE_SWEEP
+status: BLOCKED_BY_EXACT_HEAD_EVIDENCE
+recorded_by: Codex
+recorded_at: 2026-08-01T08:32:33+08:00
+pull_request: 109
+implementation_commit: 35122cd405f42bc627ae73d121f5a3dd14f3edbe
+remediation_strategy: REMOVE_GLOBAL_DESTRUCTIVE_SWEEP
+unresolved_threads_at_state_sync:
+  - PRRT_kwDOTTDtUM6Vdmly
+  - PRRT_kwDOTTDtUM6VeTXd
+  - PRRT_kwDOTTDtUM6VekUB
+startup_behavior:
+  deterministic_stage_enumeration: false
+  deterministic_stage_deletion: false
+  database_identity_gate: removed
+  local_activation_recovery_preserved: true
+explicit_recovery:
+  exact_blob_target_slot_only: true
+  complete_stage_reused: true
+  partial_safe_stage_recopy: true
+  already_reusable_stage_removed: true
+  unsafe_stage_preserved_fail_closed: true
+  legacy_uuid_rules_changed: false
+concurrency:
+  independent_database_startup_preserves_active_stage: true
+  placement_enoent_caused_by_startup: false
+  media_root_lock_added: false
+  owner_marker_added: false
+  maximum_staged_files_per_blob_target: 1
+blob_immutability:
+  row_updated: false
+  blob_id_changed: false
+  sha_changed: false
+  storage_uri_changed: false
+  links_changed: false
+  schema_changed: false
+local_validation:
+  typecheck: PASS
+  build: PASS
+  media_activation_integrity: PASS_47
+  foundation_boundaries: PASS_109
+  provider_boundaries: PASS_52
+  workbench_v2: PASS_68
+  selection_gate: PASS_23
+  secret_scan: PASS
+  git_diff_check: PASS
+provider_calls: 0
+activity_data_access: none
+activity_media_access: none
+secret_reads: 0
+service_operations: 0
+deployment_changes: 0
+ready_task_count: 0
+merge_authorized: false
+delivery: PR_109_OPEN_READY_AWAITING_EXACT_HEAD_CI_AND_POST_PROMOTION_REVIEW
+```
+
 ## 2026-08-01 — PR109 canonical database orphan-sweep authority
 
 ```yaml

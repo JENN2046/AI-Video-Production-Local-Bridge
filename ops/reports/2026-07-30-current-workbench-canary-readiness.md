@@ -278,12 +278,16 @@ remediation_pr:
   review_remediation_commit: e5c42113c73ba35a2c307eb0890dcd7d3be1216f
   root_identity_review_remediation_commit: 193b1077d67dd8872831e8fe7646d8879d4947f7
   deterministic_stage_whitelist_commit: 0ff40f085368658887d3a77315d1eb7f51124c3f
-  canonical_database_sweep_commit: 27058e32f5339359d15b876dc25375046075eb18
+  superseded_canonical_database_sweep_commit: 27058e32f5339359d15b876dc25375046075eb18
+  explicit_stage_convergence_commit: 35122cd405f42bc627ae73d121f5a3dd14f3edbe
+  remediation_strategy: REMOVE_GLOBAL_DESTRUCTIVE_SWEEP
   current_head: STATE_SYNC_COMMIT_CONTAINING_THIS_RECORD
   resolved_prior_threads:
     - PRRT_kwDOTTDtUM6VdGmY
-  current_unresolved_thread_at_state_sync:
+  current_unresolved_threads_at_state_sync:
     - PRRT_kwDOTTDtUM6Vdmly
+    - PRRT_kwDOTTDtUM6VeTXd
+    - PRRT_kwDOTTDtUM6VekUB
   post_promotion_finding_status: REMEDIATION_IN_PROGRESS_AT_STATE_SYNC
   merged_to_main: false
 S3B-T1:
@@ -316,53 +320,38 @@ exit after staged-copy completion could leave a new random full-file stage on
 every retry.
 
 Open Ready PR #109 is the bounded remediation. It gives each Blob/target pair one
-deterministic slot under the app-controlled activation staging root, reuses a
-complete matching stage, safely recopies a partial app-owned stage, reconciles
-safe startup orphans under the database recovery lock, and narrowly cleans the
-legacy UUID format in the exact target directory. Unsafe entries are retained
-and reported as `MEDIA_BLOB_RECOVERY_PATH_UNSAFE`. No Blob row, Blob identity,
-digest, storage URI or Artifact-Blob link changes.
+deterministic slot under the app-controlled activation staging root. Candidate
+`35122cd405f42bc627ae73d121f5a3dd14f3edbe` removes the global destructive
+verified-Blob stage sweep and the process-local database identity gate from
+generic startup recovery. `recoverMediaActivations` no longer enumerates,
+deletes or infers ownership of deterministic Blob stages from any database.
 
-Implementation commit `528aee4020d4be15a5fc5278de2f8c8abb20c637`
-passed all authorized local lanes. The crash regression uses a real child
-process exit after staged copy; five repeated exits retain no more than one
-staged file, and successful retry removes it while preserving immutable Blob
-facts. First exact-head review found that legacy cleanup accepted an over-broad
-filename pattern without proving Blob ownership. Remediation commit
-`e5c42113c73ba35a2c307eb0890dcd7d3be1216f` now requires the historical
-canonical UUID-v4 name and matching SHA-256, size and MIME before deletion;
-mismatches are preserved fail-closed. All local lanes pass again. PR #109
-then passed exact-head CI, but exact-head review `4829032568` found that startup
-cleanup did not reject a registered media root redirected through a replaced
-ancestor. Commit `193b1077d67dd8872831e8fe7646d8879d4947f7` now requires
-canonical-root identity before any activation cleanup. Its junction regression
-confirms the redirected external stage remains untouched and an unsafe failure
-is reported. A post-promotion P2 then showed that startup cleanup still inferred
-ownership from any valid-looking 64-hex deterministic stage name. Candidate
-`0ff40f085368658887d3a77315d1eb7f51124c3f` derives the exact expected-stage
-whitelist from verified `blob_id`, `storage_uri` and media-root identity through
-the shared normal-recovery path helper. Only exact safe matches can be deleted;
-unmatched valid-looking and same-content files are preserved and reported
-unsafe, because content is not ownership proof. The whitelist thread is now
-resolved. A later post-promotion review found that a database copy sharing the
-same absolute media root could sweep an active canonical stage under its own,
-unrelated SQLite lock. Candidate
-`27058e32f5339359d15b876dc25375046075eb18` now grants global sweep authority
-only when `PRAGMA database_list` identifies the same non-redirected regular
-`main` file configured by `paths.sqlitePath`. Copy, memory, hard-link alias,
-symlink and junction-redirected databases skip the global sweep while their
-database-local journal recovery continues. Two canonical processes remain
-serialized by `BEGIN IMMEDIATE`. Local validation passes with media activation
-56/56, Foundation 118/118, Provider 52/52, Workbench V2 68/68 and selection
-23/23. PR #109 remains open and unmerged; merge remains a separate Jenn
-decision, and the PR is authoritative for current exact-head integration
-evidence.
+The exact stage now converges only through an explicit
+`recoverVerifiedBlobStorage` call for its Blob. A complete matching stage is
+reused without a second full copy; a partial safe app-owned stage is deleted and
+recopied; an already reusable target causes only its exact stage to be removed;
+unsafe entries remain preserved and fail closed. The canonical UUID-v4 legacy
+rules and media-root safety checks remain unchanged. Local activation marker,
+staging-owner and journal recovery remain available to every database.
+
+The regression set covers independently configured database A/B/C processes
+sharing one media root, an active explicit repair paused after staged copy,
+`:memory:`, five hard crashes with repeated startup, explicit retry, partial and
+already-reusable stages, unknown deterministic-looking stages, unsafe entries
+and local journal recovery. Local validation passes with media activation 47/47,
+Foundation 109/109, Provider 52/52, Workbench V2 68/68 and selection 23/23;
+typecheck, build, secret scan and diff checks pass. Threads
+`PRRT_kwDOTTDtUM6Vdmly`, `PRRT_kwDOTTDtUM6VeTXd` and
+`PRRT_kwDOTTDtUM6VekUB` remain unresolved at state sync pending new exact-head
+CI and review. PR #109 remains open and unmerged. Deterministic Blob stages are
+bounded and converge only through explicit Blob recovery; merge remains a
+separate Jenn decision after exact-head CI and review.
 
 The remaining sequence is:
 
 1. require open Ready PR #109 to pass Windows CI and a fresh exact-final-head
    post-promotion Codex review before any merge decision;
-2. resolve PR #109's post-promotion finding only after that exact-head evidence;
+2. resolve PR #109's post-promotion findings only after that exact-head evidence;
    retain the PR #107 and PR #108 branches;
 3. obtain Jenn's separate authorization for `S3B-T2_PREPARE_ELIGIBLE_SHOT`;
 4. wait for Jenn's local action for

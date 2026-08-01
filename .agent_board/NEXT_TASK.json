@@ -79,15 +79,23 @@
       "review_remediation_commit": "e5c42113c73ba35a2c307eb0890dcd7d3be1216f",
       "root_identity_review_remediation_commit": "193b1077d67dd8872831e8fe7646d8879d4947f7",
       "deterministic_stage_whitelist_commit": "0ff40f085368658887d3a77315d1eb7f51124c3f",
-      "canonical_database_sweep_commit": "27058e32f5339359d15b876dc25375046075eb18",
+      "superseded_canonical_database_sweep_commit": "27058e32f5339359d15b876dc25375046075eb18",
+      "explicit_stage_convergence_commit": "35122cd405f42bc627ae73d121f5a3dd14f3edbe",
+      "remediation_strategy": "REMOVE_GLOBAL_DESTRUCTIVE_SWEEP",
       "current_head": "STATE_SYNC_COMMIT_CONTAINING_THIS_RECORD",
       "resolved_prior_threads": [
         "PRRT_kwDOTTDtUM6VdGmY"
       ],
       "current_unresolved_threads_at_state_sync": [
-        "PRRT_kwDOTTDtUM6Vdmly"
+        "PRRT_kwDOTTDtUM6Vdmly",
+        "PRRT_kwDOTTDtUM6VeTXd",
+        "PRRT_kwDOTTDtUM6VekUB"
       ],
-      "post_promotion_finding_thread": "PRRT_kwDOTTDtUM6Vdmly",
+      "post_promotion_finding_threads": [
+        "PRRT_kwDOTTDtUM6Vdmly",
+        "PRRT_kwDOTTDtUM6VeTXd",
+        "PRRT_kwDOTTDtUM6VekUB"
+      ],
       "post_promotion_finding_status": "REMEDIATION_IN_PROGRESS_AT_STATE_SYNC",
       "candidate_fix_present": true,
       "exact_head_ci_and_review_required": true,
@@ -125,7 +133,9 @@
       "review_remediation_commit": "e5c42113c73ba35a2c307eb0890dcd7d3be1216f",
       "root_identity_review_remediation_commit": "193b1077d67dd8872831e8fe7646d8879d4947f7",
       "deterministic_stage_whitelist_commit": "0ff40f085368658887d3a77315d1eb7f51124c3f",
-      "canonical_database_sweep_commit": "27058e32f5339359d15b876dc25375046075eb18",
+      "superseded_canonical_database_sweep_commit": "27058e32f5339359d15b876dc25375046075eb18",
+      "explicit_stage_convergence_commit": "35122cd405f42bc627ae73d121f5a3dd14f3edbe",
+      "remediation_strategy": "REMOVE_GLOBAL_DESTRUCTIVE_SWEEP",
       "candidate_fix_present": true,
       "exact_head_ci_required": true,
       "exact_head_post_promotion_review_required": true
@@ -200,7 +210,7 @@
   "completed_by": "Codex",
   "completed_at": "2026-07-30T19:41:08+08:00",
   "result": "BLOCKED_BY_S3_FINDING",
-  "validation": "Open Ready PR #109 remains unmerged. Prior whitelist thread PRRT_kwDOTTDtUM6VdGmY is resolved. Current post-promotion finding PRRT_kwDOTTDtUM6Vdmly showed that a database copy sharing the same media root could sweep a canonical process stage under an unrelated SQLite lock. Candidate 27058e3 grants global sweep authority only when PRAGMA database_list reports the same non-redirected regular main file configured by paths.sqlitePath. Copy, memory, hard-link alias, symlink and junction paths skip the global sweep while DB-local journal recovery continues; same canonical database processes remain serialized by BEGIN IMMEDIATE. Typecheck, build, media activation 56/56, Foundation 118/118, Provider 52/52, Workbench V2 68/68, selection 23/23, secret scan and diff checks pass locally. Exact-head PR #109 CI and post-promotion review remain required. No Provider network call or activity-data access occurred.",
+  "validation": "Open Ready PR #109 remains unmerged. Candidate 35122cd removes the global destructive deterministic-stage sweep and its process-local database identity gate. Generic recoverMediaActivations from independently configured A/B/C databases and :memory: preserves stages while local marker, staging-owner and activation-journal recovery continues. The next explicit recoverVerifiedBlobStorage call converges only the exact Blob/target slot. Typecheck, build, media activation 47/47, Foundation 109/109, Provider 52/52, Workbench V2 68/68, selection 23/23, secret scan and diff checks pass locally. Threads PRRT_kwDOTTDtUM6Vdmly, PRRT_kwDOTTDtUM6VeTXd and PRRT_kwDOTTDtUM6VekUB remain unresolved pending exact-head CI and review. No Provider network call or activity-data access occurred.",
   "evidence": [
     "ops/reports/2026-07-30-current-workbench-canary-readiness.md",
     ".agent_board/TASK_LEDGER.md",
@@ -209,7 +219,7 @@
   ],
   "commit": "f570d145e4832d2b2237123a40d5e8e0b503fcf1",
   "delivery": "PR_106_AND_PR_108_MERGED_PR_109_OPEN_READY_REMEDIATION_AWAITING_EXACT_HEAD_EVIDENCE",
-  "updated_at": "2026-08-01T00:17:51+08:00",
+  "updated_at": "2026-08-01T08:32:33+08:00",
   "safe_state": {
     "provider_calls": 0,
     "activity_writes": 0,
