@@ -2902,6 +2902,17 @@ test("a hard crash before target authority publication does not block retry", ()
     const orphanTemps = readdirSync(targetDirectory)
       .filter((name) => /^\.blob-recovery-target-[a-f0-9]{64}\.authority-[0-9a-f-]{36}\.tmp$/i.test(name));
     assert.equal(orphanTemps.length, 1);
+    hardCrashVerifiedBlobRecovery({
+      sqlite_path: sqlitePath,
+      artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path,
+      crash_at: "after_target_authority_temp_created"
+    });
+    const repeatedCrashTemps = readdirSync(targetDirectory)
+      .filter((name) => /^\.blob-recovery-target-[a-f0-9]{64}\.authority-[0-9a-f-]{36}\.tmp$/i.test(name));
+    assert.deepEqual(repeatedCrashTemps, orphanTemps);
 
     const retryDb = openM0Database(sqlitePath);
     try {
@@ -2914,6 +2925,10 @@ test("a hard crash before target authority publication does not block retry", ()
       assert.equal(recovered.ok, true, recovered.ok ? undefined : recovered.error.code);
       assert.equal(existsSync(authorityPath), true);
       assert.equal(existsSync(targetPath), true);
+      const convergedTemps = readdirSync(targetDirectory)
+        .filter((name) => /^\.blob-recovery-target-[a-f0-9]{64}\.authority-[0-9a-f-]{36}\.tmp$/i.test(name));
+      assert.deepEqual(convergedTemps, []);
+      assert.equal(statSync(authorityPath).nlink, 1);
       const reused = recoverVerifiedBlobStorage({
         invalid_artifact_id: fixture.artifact.artifact_id,
         project_id: fixture.project_id,
@@ -2922,6 +2937,11 @@ test("a hard crash before target authority publication does not block retry", ()
       }, retryDb);
       assert.equal(reused.ok, true, reused.ok ? undefined : reused.error.code);
       if (reused.ok) assert.equal(reused.outcome, "ALREADY_REUSABLE");
+      assert.deepEqual(
+        readdirSync(targetDirectory)
+          .filter((name) => /^\.blob-recovery-target-[a-f0-9]{64}\.authority-[0-9a-f-]{36}\.tmp$/i.test(name)),
+        []
+      );
     } finally {
       retryDb.close();
     }

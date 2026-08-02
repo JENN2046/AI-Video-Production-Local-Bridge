@@ -1735,6 +1735,103 @@ interface VerifiedBlobRecoveryTargetAuthority {
   blob_mime: string;
 }
 
+interface VerifiedBlobRecoveryTargetAuthorityPublication extends VerifiedBlobRecoveryTargetAuthority {
+  temporary_name: string;
+}
+
+function readVerifiedBlobRecoveryTargetAuthorityPublication(
+  mutex: VerifiedBlobRecoveryTargetMutex,
+  expected: VerifiedBlobRecoveryTargetAuthority
+): VerifiedBlobRecoveryTargetAuthorityPublication | null {
+  const row = mutex.ownershipDatabase.prepare(`
+    SELECT version, temporary_name, target_identity_sha256, registered_root_identity_sha256,
+           blob_sha256, blob_size_bytes, blob_mime
+      FROM verified_blob_recovery_target_authority_publication
+     WHERE singleton = 1
+  `).get() as VerifiedBlobRecoveryTargetAuthorityPublication | undefined;
+  if (!row) return null;
+  if (row.version !== 1
+    || !BLOB_RECOVERY_TARGET_AUTHORITY_TEMP_NAME.test(row.temporary_name)
+    || !row.temporary_name.startsWith(
+      `.blob-recovery-target-${expected.target_identity_sha256}.authority-`
+    )
+    || row.target_identity_sha256 !== expected.target_identity_sha256
+    || row.registered_root_identity_sha256 !== expected.registered_root_identity_sha256) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  if (row.blob_sha256 !== expected.blob_sha256
+    || row.blob_size_bytes !== expected.blob_size_bytes
+    || row.blob_mime !== expected.blob_mime) {
+    throw new Error("MEDIA_BLOB_RECOVERY_BINDING_MISMATCH");
+  }
+  return row;
+}
+
+function planVerifiedBlobRecoveryTargetAuthorityPublication(
+  mutex: VerifiedBlobRecoveryTargetMutex,
+  expected: VerifiedBlobRecoveryTargetAuthority
+): VerifiedBlobRecoveryTargetAuthorityPublication {
+  const publication: VerifiedBlobRecoveryTargetAuthorityPublication = {
+    ...expected,
+    temporary_name: `.blob-recovery-target-${expected.target_identity_sha256}.authority-${randomUUID()}.tmp`
+  };
+  if (!BLOB_RECOVERY_TARGET_AUTHORITY_TEMP_NAME.test(publication.temporary_name)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  try {
+    mutex.ownershipDatabase.exec("BEGIN IMMEDIATE");
+    mutex.ownershipDatabase.prepare(`
+      INSERT INTO verified_blob_recovery_target_authority_publication (
+        singleton, version, temporary_name, target_identity_sha256,
+        registered_root_identity_sha256, blob_sha256, blob_size_bytes, blob_mime
+      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      publication.version,
+      publication.temporary_name,
+      publication.target_identity_sha256,
+      publication.registered_root_identity_sha256,
+      publication.blob_sha256,
+      publication.blob_size_bytes,
+      publication.blob_mime
+    );
+    mutex.ownershipDatabase.exec("COMMIT");
+  } catch (error) {
+    try { mutex.ownershipDatabase.exec("ROLLBACK"); } catch { /* preserve stable persistence failure */ }
+    if ((error as { errcode?: number }).errcode === 5) {
+      throw new Error("MEDIA_BLOB_RECOVERY_BUSY");
+    }
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  return publication;
+}
+
+function removeRecordedVerifiedBlobRecoveryTargetAuthorityCompanion(
+  authorityPath: string,
+  publication: VerifiedBlobRecoveryTargetAuthorityPublication,
+  recoveryPaths: ReturnType<typeof recoveryRootAndTarget>,
+  expected: VerifiedBlobRecoveryTargetAuthority
+): void {
+  const temporaryPath = resolve(recoveryPaths.targetDirectory, publication.temporary_name);
+  if (!sameResolvedPath(dirname(temporaryPath), recoveryPaths.targetDirectory)
+    || !isPathInside(temporaryPath, recoveryPaths.registeredRoot)
+    || hasExistingSymlinkAncestor(temporaryPath, recoveryPaths.registeredRoot)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  try {
+    const authority = lstatSync(authorityPath);
+    const temporary = lstatSync(temporaryPath);
+    if (authority.isSymbolicLink() || !authority.isFile() || authority.nlink !== 2
+      || temporary.isSymbolicLink() || !temporary.isFile() || temporary.nlink !== 2
+      || authority.dev !== temporary.dev || authority.ino !== temporary.ino) {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    rmSync(temporaryPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  assertVerifiedBlobRecoveryTargetAuthorityFile(authorityPath, recoveryPaths, expected);
+}
+
 function readVerifiedBlobRecoveryBinding(
   input: VerifiedBlobStorageRecoveryInput,
   db: M0Database
@@ -1980,23 +2077,30 @@ function assertVerifiedBlobRecoveryTargetAuthorityFile(
 function ensureVerifiedBlobRecoveryTargetAuthority(
   recoveryPaths: ReturnType<typeof recoveryRootAndTarget>,
   blob: MediaBlob,
-  faults: VerifiedBlobStorageRecoveryFaults
+  faults: VerifiedBlobStorageRecoveryFaults,
+  targetMutex: VerifiedBlobRecoveryTargetMutex
 ): string {
   const authorityPath = verifiedBlobRecoveryTargetAuthorityPath(recoveryPaths);
   const expected = expectedVerifiedBlobRecoveryTargetAuthority(recoveryPaths, blob);
+  let publication = readVerifiedBlobRecoveryTargetAuthorityPublication(targetMutex, expected);
   try {
     lstatSync(authorityPath);
     assertVerifiedBlobRecoveryTargetAuthorityFile(authorityPath, recoveryPaths, expected);
+    if (publication) {
+      removeRecordedVerifiedBlobRecoveryTargetAuthorityCompanion(
+        authorityPath,
+        publication,
+        recoveryPaths,
+        expected
+      );
+    }
     return authorityPath;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
 
-  const targetDigest = expected.target_identity_sha256;
-  const temporaryPath = resolve(
-    recoveryPaths.targetDirectory,
-    `.blob-recovery-target-${targetDigest}.authority-${randomUUID()}.tmp`
-  );
+  publication ??= planVerifiedBlobRecoveryTargetAuthorityPublication(targetMutex, expected);
+  const temporaryPath = resolve(recoveryPaths.targetDirectory, publication.temporary_name);
   if (!BLOB_RECOVERY_TARGET_AUTHORITY_TEMP_NAME.test(basename(temporaryPath))
     || !sameResolvedPath(dirname(temporaryPath), recoveryPaths.targetDirectory)
     || !isPathInside(temporaryPath, recoveryPaths.registeredRoot)
@@ -2004,13 +2108,34 @@ function ensureVerifiedBlobRecoveryTargetAuthority(
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
   let descriptor = -1;
-  let temporaryIdentity: ReturnType<typeof fstatSync> | null = null;
   try {
-    descriptor = openSync(temporaryPath, "wx");
-    temporaryIdentity = fstatSync(descriptor);
+    let entry: ReturnType<typeof lstatSync> | null = null;
+    try { entry = lstatSync(temporaryPath); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    descriptor = openSync(temporaryPath, entry ? "r+" : "wx+");
+    const temporaryIdentity = fstatSync(descriptor);
+    const current = statSync(temporaryPath);
+    if (!temporaryIdentity.isFile() || temporaryIdentity.nlink !== 1
+      || temporaryIdentity.size > 1024
+      || current.dev !== temporaryIdentity.dev || current.ino !== temporaryIdentity.ino
+      || (entry && (entry.isSymbolicLink() || !entry.isFile() || entry.nlink !== 1
+        || entry.dev !== temporaryIdentity.dev || entry.ino !== temporaryIdentity.ino))) {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
     faults.after_target_authority_temp_created?.();
-    writeFileSync(descriptor, JSON.stringify(expected), "utf8");
-    fsyncSync(descriptor);
+    if (temporaryIdentity.size === 0) {
+      writeFileSync(descriptor, JSON.stringify(expected), "utf8");
+      fsyncSync(descriptor);
+    } else {
+      let actual: VerifiedBlobRecoveryTargetAuthority;
+      try { actual = JSON.parse(readFileSync(descriptor, "utf8")) as VerifiedBlobRecoveryTargetAuthority; }
+      catch { throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE"); }
+      if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+        throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+      }
+    }
     const written = fstatSync(descriptor);
     if (!written.isFile() || written.nlink !== 1 || written.size <= 0 || written.size > 1024) {
       throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
@@ -2025,19 +2150,14 @@ function ensureVerifiedBlobRecoveryTargetAuthority(
     }
   } finally {
     if (descriptor >= 0) closeSync(descriptor);
-    if (temporaryIdentity) {
-      try {
-        const current = lstatSync(temporaryPath);
-        if (!current.isSymbolicLink()
-          && current.isFile()
-          && current.dev === temporaryIdentity.dev
-          && current.ino === temporaryIdentity.ino) {
-          rmSync(temporaryPath);
-        }
-      } catch { /* a hard exit can leave a non-authoritative temp that never blocks retry */ }
-    }
   }
   assertVerifiedBlobRecoveryTargetAuthorityFile(authorityPath, recoveryPaths, expected);
+  removeRecordedVerifiedBlobRecoveryTargetAuthorityCompanion(
+    authorityPath,
+    publication,
+    recoveryPaths,
+    expected
+  );
   return authorityPath;
 }
 
@@ -2459,6 +2579,16 @@ function acquireVerifiedBlobRecoveryTargetMutex(
         device_id TEXT NOT NULL,
         inode_id TEXT NOT NULL,
         blob_sha256 TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS verified_blob_recovery_target_authority_publication (
+        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+        version INTEGER NOT NULL CHECK (version = 1),
+        temporary_name TEXT NOT NULL,
+        target_identity_sha256 TEXT NOT NULL,
+        registered_root_identity_sha256 TEXT NOT NULL,
+        blob_sha256 TEXT NOT NULL,
+        blob_size_bytes INTEGER NOT NULL,
+        blob_mime TEXT NOT NULL
       )
     `);
     assertConnectedVerifiedBlobRecoveryTargetMutex(ownershipDatabase, ownershipPath);
@@ -2940,7 +3070,7 @@ export function recoverVerifiedBlobStorage(
       }
     }
 
-    ensureVerifiedBlobRecoveryTargetAuthority(recoveryPaths, blob, faults);
+    ensureVerifiedBlobRecoveryTargetAuthority(recoveryPaths, blob, faults, targetMutex);
     filesystemRecoveryStarted = true;
 
     if (existsSync(targetPath)) {
