@@ -251,6 +251,16 @@ try {
       [string]$startupTimeout.Json.stable_error_code -cne "DIRECTOR_BRIDGE_RUNTIME_HEARTBEAT_TIMEOUT" -or
       [string]$startupTimeout.Json.child_error_code -cne "DIRECTOR_BRIDGE_REMOTE_POLL_FAILED" -or
       -not $startupProcessesQuiescent) {
+    if ($null -ne $startupTimeout.Json -and
+        [string]$startupTimeout.Json.stable_error_code -match '^DIRECTOR_[A-Z0-9_]{3,95}$' -and
+        [string]$startupTimeout.Json.stable_error_code -cne "DIRECTOR_BRIDGE_RUNTIME_HEARTBEAT_TIMEOUT") {
+      throw ([string]$startupTimeout.Json.stable_error_code)
+    }
+    if ($null -ne $startupTimeout.Json -and
+        [string]$startupTimeout.Json.child_error_code -match '^DIRECTOR_[A-Z0-9_]{3,95}$' -and
+        [string]$startupTimeout.Json.child_error_code -cne "DIRECTOR_BRIDGE_REMOTE_POLL_FAILED") {
+      throw ([string]$startupTimeout.Json.child_error_code)
+    }
     throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_STARTUP_DIAGNOSTIC_FAILED"
   }
   Remove-Item -LiteralPath $notReadyRequestPath -Force
