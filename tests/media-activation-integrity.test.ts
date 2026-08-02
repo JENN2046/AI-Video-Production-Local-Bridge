@@ -2321,6 +2321,57 @@ test("a later unowned deterministic owner is preserved despite existing target a
   }
 });
 
+test("an unrecorded deterministic stage-owner hard-link pair is preserved", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-unowned-stage-pair-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const before = immutableBlobSnapshot(db, fixture.artifact.artifact_id);
+    const blob = getMediaBlob(db, fixture.artifact.blob_id);
+    assert.ok(blob);
+    const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
+    const ownerPath = verifiedBlobRecoveryStageOwnerPath(stagedPath);
+    const authorityPath = verifiedBlobRecoveryAuthorityPath(blob.storage_uri);
+    const unownedBytes = Buffer.from("preserve-unrecorded-stage-owner-pair");
+    const established = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(established.ok, true, established.ok ? undefined : established.error.code);
+    assert.equal(existsSync(authorityPath), true);
+    rmSync(fixture.artifact.storage.uri);
+    writeFileSync(stagedPath, unownedBytes, { flag: "wx" });
+    linkSync(stagedPath, ownerPath);
+    const beforeEntry = lstatSync(stagedPath);
+
+    const blocked = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(blocked.ok, false);
+    if (!blocked.ok) assert.equal(blocked.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    for (const preservedPath of [stagedPath, ownerPath]) {
+      const preserved = lstatSync(preservedPath);
+      assert.equal(preserved.dev, beforeEntry.dev);
+      assert.equal(preserved.ino, beforeEntry.ino);
+      assert.equal(preserved.nlink, 2);
+      assert.deepEqual(readFileSync(preservedPath), unownedBytes);
+    }
+    assert.equal(existsSync(fixture.artifact.storage.uri), false);
+    assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("one storage target rejects a conflicting immutable Blob digest", () => {
   const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-target-digest-authority-"));
   const mediaRoot = join(root, "media");

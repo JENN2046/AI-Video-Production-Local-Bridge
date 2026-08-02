@@ -493,8 +493,11 @@ typecheck, build, secret scan and diff checks pass. Threads
 `PRRT_kwDOTTDtUM6VnZrR`, `PRRT_kwDOTTDtUM6VnfBZ`,
 `PRRT_kwDOTTDtUM6VnlsB`, `PRRT_kwDOTTDtUM6Vnvkt`,
 `PRRT_kwDOTTDtUM6Vnvkv`, `PRRT_kwDOTTDtUM6Vn2uJ`,
-`PRRT_kwDOTTDtUM6Vn_4Z` and `PRRT_kwDOTTDtUM6Vn_4b` remain unresolved at state
-sync pending new exact-head CI and review. PR #109 remains open and unmerged.
+`PRRT_kwDOTTDtUM6VoV-d`, `PRRT_kwDOTTDtUM6VoV-e`,
+`PRRT_kwDOTTDtUM6VomGc`, `PRRT_kwDOTTDtUM6VorLf`,
+`PRRT_kwDOTTDtUM6Vox11`, `PRRT_kwDOTTDtUM6Vo6Ke` and
+`PRRT_kwDOTTDtUM6VpKft` remain unresolved at state sync pending new exact-head
+CI and review. PR #109 remains open and unmerged.
 Cross-database explicit recovery is serialized by an exact-target SQLite mutex,
 and merge remains a separate Jenn decision.
 
