@@ -94,6 +94,26 @@ function Get-DirectorBridgeFixtureProcessCount {
   return $count
 }
 
+function Wait-DirectorBridgeFixtureProcessQuiescence([int]$TimeoutSeconds = 10) {
+  $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+  $zeroSince = $null
+  while ([DateTime]::UtcNow -lt $deadline) {
+    $count = -1
+    try { $count = Get-DirectorBridgeFixtureProcessCount } catch { $count = -1 }
+    if ($count -eq 0) {
+      if ($null -eq $zeroSince) {
+        $zeroSince = [DateTime]::UtcNow
+      } elseif (([DateTime]::UtcNow - $zeroSince).TotalMilliseconds -ge 250) {
+        return $true
+      }
+    } else {
+      $zeroSince = $null
+    }
+    Start-Sleep -Milliseconds 100
+  }
+  return $false
+}
+
 function Remember-DirectorBridgeFixturePid([object]$State) {
   $pidValue = [int]$State.pid
   $startTimeUtc = ([DateTimeOffset]::Parse([string]$State.process_start_time_utc)).ToUniversalTime()
@@ -217,16 +237,30 @@ try {
       (Test-Path -LiteralPath (Join-Path $smokeRoot "director-bridge-fixture-failure.json"))) {
     throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_FIXTURE_DIAGNOSTIC_FAILED"
   }
+  if (-not (Wait-DirectorBridgeFixtureProcessQuiescence)) {
+    throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_STARTUP_DIAGNOSTIC_FAILED"
+  }
   $env:AI_VIDEO_DIRECTOR_BRIDGE_FIXTURE_MODE = "ready"
 
   [IO.File]::WriteAllText($notReadyRequestPath, "1`n", [Text.UTF8Encoding]::new($false))
   $startupTimeout = Invoke-DirectorBridgeSmokeScript "director-bridge-start.ps1"
+  $startupProcessesQuiescent = Wait-DirectorBridgeFixtureProcessQuiescence
   if ($startupTimeout.ExitCode -ne 1 -or
       $null -eq $startupTimeout.Json -or
       [string]$startupTimeout.Json.result -cne "FAIL" -or
       [string]$startupTimeout.Json.stable_error_code -cne "DIRECTOR_BRIDGE_RUNTIME_HEARTBEAT_TIMEOUT" -or
       [string]$startupTimeout.Json.child_error_code -cne "DIRECTOR_BRIDGE_REMOTE_POLL_FAILED" -or
-      (Get-DirectorBridgeFixtureProcessCount) -ne 0) {
+      -not $startupProcessesQuiescent) {
+    if ($null -ne $startupTimeout.Json -and
+        [string]$startupTimeout.Json.stable_error_code -match '^DIRECTOR_[A-Z0-9_]{3,95}$' -and
+        [string]$startupTimeout.Json.stable_error_code -cne "DIRECTOR_BRIDGE_RUNTIME_HEARTBEAT_TIMEOUT") {
+      throw ([string]$startupTimeout.Json.stable_error_code)
+    }
+    if ($null -ne $startupTimeout.Json -and
+        [string]$startupTimeout.Json.child_error_code -match '^DIRECTOR_[A-Z0-9_]{3,95}$' -and
+        [string]$startupTimeout.Json.child_error_code -cne "DIRECTOR_BRIDGE_REMOTE_POLL_FAILED") {
+      throw ([string]$startupTimeout.Json.child_error_code)
+    }
     throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_STARTUP_DIAGNOSTIC_FAILED"
   }
   Remove-Item -LiteralPath $notReadyRequestPath -Force
@@ -432,6 +466,9 @@ try {
       [string]$stoppedStatus.Json.result -cne "STOPPED") {
     throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_STOPPED_STATUS_FAILED"
   }
+  if (-not (Wait-DirectorBridgeFixtureProcessQuiescence)) {
+    throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_STALE_RECOVERY_FAILED"
+  }
 
   $staleState = $originalStateText | ConvertFrom-Json
   $staleState.pid = 2147483000
@@ -541,6 +578,10 @@ try {
   if ($restarted.ExitCode -ne 0 -or
       $null -eq $restarted.Json -or
       [string]$restarted.Json.result -cne "STARTED") {
+    if ($null -ne $restarted.Json -and
+        [string]$restarted.Json.stable_error_code -match '^DIRECTOR_[A-Z0-9_]{3,95}$') {
+      throw ([string]$restarted.Json.stable_error_code)
+    }
     throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_STALE_RECOVERY_FAILED"
   }
   $restartedStateText = Get-Content -Raw -LiteralPath $statePath

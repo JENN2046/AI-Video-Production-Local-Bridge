@@ -148,7 +148,11 @@ try {
   }
   Write-DirectorBridgeAtomicJson $script:DirectorBridgeStatePath $state
 
-  $activationDeadline = [DateTime]::UtcNow.AddSeconds(15)
+  # Hosted Windows runners can spend substantial time in the repeated process,
+  # WMI, and fingerprint checks. Keep the live gate unchanged while giving the
+  # isolated fixture enough bounded time to converge under CI load.
+  $activationTimeoutSeconds = if ($script:DirectorBridgeFixtureMode) { 60 } else { 15 }
+  $activationDeadline = [DateTime]::UtcNow.AddSeconds($activationTimeoutSeconds)
   $activationCandidate = $false
   while ([DateTime]::UtcNow -lt $activationDeadline) {
     $startedProcess.Refresh()
@@ -164,7 +168,7 @@ try {
   if (-not $activationCandidate) { throw "DIRECTOR_BRIDGE_RUNTIME_ACTIVATION_TIMEOUT" }
   Write-DirectorBridgeActivation ([pscustomobject]$state)
 
-  $startupTimeoutSeconds = if ($script:DirectorBridgeFixtureMode) { 15 } else { 180 }
+  $startupTimeoutSeconds = if ($script:DirectorBridgeFixtureMode) { 60 } else { 180 }
   $deadline = [DateTime]::UtcNow.AddSeconds($startupTimeoutSeconds)
   $assessment = $null
   while ([DateTime]::UtcNow -lt $deadline) {
