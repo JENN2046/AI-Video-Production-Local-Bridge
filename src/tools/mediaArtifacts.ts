@@ -96,6 +96,7 @@ export interface VerifiedBlobStorageRecoveryFaults {
   after_target_mutex_guard_open?: () => void;
   after_target_mutex_temp_link_observed?: () => void;
   after_target_authority_temp_created?: () => void;
+  after_stage_ownership_persisted?: () => void;
   after_stage_owner_created?: () => void;
   after_stage_published_with_owner_proof?: () => void;
   after_staged_copy?: () => void;
@@ -1222,7 +1223,7 @@ function prepareVerifiedBlobRecoveryStaging(
     }
     stagedIdentity = fstatSync(descriptor);
     if (!stagedIdentity.isFile() || stagedIdentity.ino === 0
-      || (publication && (stagedIdentity.nlink !== 2
+      || (publication && (stagedIdentity.nlink !== publication.entry.nlink
         || stagedIdentity.dev !== publication.entry.dev
         || stagedIdentity.ino !== publication.entry.ino))) {
       throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
@@ -1235,6 +1236,7 @@ function prepareVerifiedBlobRecoveryStaging(
         stagedIdentity,
         blob
       );
+      faults.after_stage_ownership_persisted?.();
     } else {
       assertVerifiedBlobRecoveryStageOwnership(ownership, publication.path, ownerPath, blob);
     }
