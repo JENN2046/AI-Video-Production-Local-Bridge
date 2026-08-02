@@ -979,25 +979,6 @@ function assertOwnedRecoveryStagingFile(
   return staged;
 }
 
-function assertInterruptedRecoveryStageOwner(
-  ownerPath: string,
-  registeredRoot: string,
-  canonicalRoot: string
-): void {
-  if (!existsSync(ownerPath)
-    || !isPathInside(ownerPath, registeredRoot)
-    || hasExistingSymlinkAncestor(ownerPath, registeredRoot)) {
-    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
-  }
-  const owner = lstatSync(ownerPath);
-  const canonicalOwner = resolve(realpathSync(ownerPath));
-  if (owner.isSymbolicLink() || !owner.isFile() || owner.nlink !== 1 || owner.size !== 0
-    || !isPathInside(canonicalOwner, canonicalRoot)
-    || !sameResolvedPath(canonicalOwner, ownerPath)) {
-    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
-  }
-}
-
 function copyRecoverySourceToDescriptor(sourcePath: string, targetDescriptor: number): void {
   const sourceDescriptor = openSync(sourcePath, "r");
   try {
@@ -1136,8 +1117,10 @@ function prepareVerifiedBlobRecoveryStaging(
       faults.after_staging_cleanup_entry_removed
     );
   } else if (existsSync(ownerPath)) {
-    assertInterruptedRecoveryStageOwner(ownerPath, registeredRoot, canonicalRoot);
-    rmSync(ownerPath);
+    // A lone deterministic owner has no surviving stage-instance binding. Its
+    // name, empty bytes and a target authority file cannot prove this inode was
+    // created by recovery, so preserve it and fail closed.
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
   let descriptor = -1;
   let stagedIdentity: ReturnType<typeof fstatSync> | null = null;
@@ -1743,12 +1726,10 @@ function validateVerifiedBlobRecoveryEntriesBeforeAuthority(
     );
   } else if (!existsSync(stagedPath) && existsSync(ownerPath)
     && (!interrupted || !interrupted.candidatePaths.some((candidatePath) => sameResolvedPath(candidatePath, ownerPath)))) {
-    if (!authorityExists) throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
-    assertInterruptedRecoveryStageOwner(
-      ownerPath,
-      recoveryPaths.registeredRoot,
-      recoveryPaths.canonicalRoot
-    );
+    // Target authority is path/digest authority, not ownership evidence for a
+    // later single-link owner inode. Only a verified stage-owner pair or the
+    // target-owner interrupted-placement pair may authorize cleanup.
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
   if (interrupted && !authorityExists) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
@@ -2520,12 +2501,7 @@ export function recoverVerifiedBlobStorage(
           faults.after_staging_cleanup_entry_removed
         );
       } else if (existsSync(stagedOwnerPath)) {
-        assertInterruptedRecoveryStageOwner(
-          stagedOwnerPath,
-          registeredRoot,
-          recoveryPaths.canonicalRoot
-        );
-        rmSync(stagedOwnerPath);
+        throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
       }
       if (!verifiedBlobStorageIsReusable(blob)) throw new Error("MEDIA_BLOB_RECOVERY_FAILED");
       db.exec("COMMIT");

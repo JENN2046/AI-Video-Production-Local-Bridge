@@ -311,13 +311,22 @@ remediation_pr:
     - PRRT_kwDOTTDtUM6VlsfV
     - PRRT_kwDOTTDtUM6VmCNv
     - PRRT_kwDOTTDtUM6VmCNw
-    - PRRT_kwDOTTDtUM6VmGY5
-    - PRRT_kwDOTTDtUM6VmMCl
-    - PRRT_kwDOTTDtUM6VmU9i
     - PRRT_kwDOTTDtUM6VnQiz
     - PRRT_kwDOTTDtUM6VnW8t
     - PRRT_kwDOTTDtUM6VnW8u
     - PRRT_kwDOTTDtUM6VnZrR
+    - PRRT_kwDOTTDtUM6VnfBZ
+    - PRRT_kwDOTTDtUM6VnlsB
+    - PRRT_kwDOTTDtUM6Vnvkt
+    - PRRT_kwDOTTDtUM6Vnvkv
+    - PRRT_kwDOTTDtUM6Vn2uJ
+    - PRRT_kwDOTTDtUM6VoV-d
+    - PRRT_kwDOTTDtUM6VoV-e
+    - PRRT_kwDOTTDtUM6VomGc
+    - PRRT_kwDOTTDtUM6VorLf
+    - PRRT_kwDOTTDtUM6Vox11
+    - PRRT_kwDOTTDtUM6Vo6Ke
+    - PRRT_kwDOTTDtUM6VpKft
   post_promotion_finding_status: REMEDIATION_IN_PROGRESS_AT_STATE_SYNC
   merged_to_main: false
 S3B-T1:
