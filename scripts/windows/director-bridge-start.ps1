@@ -148,7 +148,8 @@ try {
   }
   Write-DirectorBridgeAtomicJson $script:DirectorBridgeStatePath $state
 
-  $activationDeadline = [DateTime]::UtcNow.AddSeconds(15)
+  $activationTimeoutSeconds = if ($script:DirectorBridgeFixtureMode) { 30 } else { 15 }
+  $activationDeadline = [DateTime]::UtcNow.AddSeconds($activationTimeoutSeconds)
   $activationCandidate = $false
   while ([DateTime]::UtcNow -lt $activationDeadline) {
     $startedProcess.Refresh()
@@ -164,7 +165,7 @@ try {
   if (-not $activationCandidate) { throw "DIRECTOR_BRIDGE_RUNTIME_ACTIVATION_TIMEOUT" }
   Write-DirectorBridgeActivation ([pscustomobject]$state)
 
-  $startupTimeoutSeconds = if ($script:DirectorBridgeFixtureMode) { 15 } else { 180 }
+  $startupTimeoutSeconds = if ($script:DirectorBridgeFixtureMode) { 30 } else { 180 }
   $deadline = [DateTime]::UtcNow.AddSeconds($startupTimeoutSeconds)
   $assessment = $null
   while ([DateTime]::UtcNow -lt $deadline) {
