@@ -1,4 +1,4 @@
-import { closeSync, constants, copyFileSync, existsSync, fstatSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, constants, copyFileSync, existsSync, fstatSync, fsyncSync, ftruncateSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
@@ -97,6 +97,7 @@ export interface VerifiedBlobStorageRecoveryFaults {
   after_target_mutex_temp_link_observed?: () => void;
   after_target_authority_temp_created?: () => void;
   after_stage_owner_created?: () => void;
+  after_stage_published_with_owner_proof?: () => void;
   after_staged_copy?: () => void;
   before_staging_pair_isolated?: () => void;
   after_staging_entry_isolated?: () => void;
@@ -833,6 +834,7 @@ const VERIFIED_BLOB_RECOVERY_ERROR_MESSAGES: Readonly<Record<string, string>> = 
 
 const DETERMINISTIC_BLOB_RECOVERY_STAGING_NAME = /^blob-recovery-[a-f0-9]{64}\.staged$/i;
 const DETERMINISTIC_BLOB_RECOVERY_STAGE_OWNER_NAME = /^\.blob-recovery-stage-[a-f0-9]{64}\.owner$/i;
+const BLOB_RECOVERY_STAGE_PUBLICATION_NAME = /^\.blob-recovery-stage-[a-f0-9]{64}\.publish-[0-9a-f-]{36}\.tmp$/i;
 const LEGACY_BLOB_RECOVERY_STAGING_NAME = /^blob-recovery-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.staged$/i;
 const BLOB_RECOVERY_TARGET_MUTEX_NAME = /^blob-recovery-target-[a-f0-9]{64}\.lock\.sqlite$/i;
 const BLOB_RECOVERY_TARGET_MUTEX_TEMP_NAME = /^\.brm-[0-9a-f-]{36}\.tmp\.sqlite$/i;
@@ -941,6 +943,90 @@ function verifiedBlobRecoveryStageOwnerPath(stagedPath: string, registeredRoot: 
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
   return ownerPath;
+}
+
+function verifiedBlobRecoveryStagePublicationPath(
+  stagedPath: string,
+  registeredRoot: string
+): string {
+  const stagedName = basename(stagedPath);
+  const digest = stagedName.slice("blob-recovery-".length, -".staged".length);
+  const publicationPath = resolve(
+    dirname(stagedPath),
+    `.blob-recovery-stage-${digest}.publish-${randomUUID()}.tmp`
+  );
+  if (!DETERMINISTIC_BLOB_RECOVERY_STAGING_NAME.test(stagedName)
+    || !BLOB_RECOVERY_STAGE_PUBLICATION_NAME.test(basename(publicationPath))
+    || !sameResolvedPath(dirname(publicationPath), dirname(stagedPath))
+    || !isPathInside(publicationPath, registeredRoot)
+    || sameResolvedPath(publicationPath, stagedPath)
+    || hasExistingSymlinkAncestor(publicationPath, registeredRoot)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  return publicationPath;
+}
+
+function findOwnedRecoveryStagePublication(
+  stagedPath: string,
+  ownerPath: string,
+  registeredRoot: string,
+  canonicalRoot: string
+): { path: string; entry: NonNullable<ReturnType<typeof lstatSync>> } | null {
+  if (!existsSync(ownerPath)) return null;
+  if (!sameResolvedPath(dirname(stagedPath), dirname(ownerPath))
+    || !isPathInside(ownerPath, registeredRoot)
+    || hasExistingSymlinkAncestor(ownerPath, registeredRoot)) {
+    return null;
+  }
+  const owner = lstatSync(ownerPath);
+  const stageExists = existsSync(stagedPath);
+  const expectedLinkCount = stageExists ? 3 : 2;
+  if (owner.isSymbolicLink() || !owner.isFile() || owner.ino === 0
+    || owner.nlink !== expectedLinkCount) {
+    return null;
+  }
+  const digest = basename(stagedPath).slice("blob-recovery-".length, -".staged".length);
+  const prefix = `.blob-recovery-stage-${digest}.publish-`;
+  const candidates = readdirSync(dirname(stagedPath))
+    .filter((name) => name.startsWith(prefix) && BLOB_RECOVERY_STAGE_PUBLICATION_NAME.test(name))
+    .map((name) => resolve(dirname(stagedPath), name))
+    .filter((candidatePath) => {
+      if (!sameResolvedPath(dirname(candidatePath), dirname(stagedPath))
+        || !isPathInside(candidatePath, registeredRoot)
+        || hasExistingSymlinkAncestor(candidatePath, registeredRoot)) {
+        return false;
+      }
+      try {
+        const candidate = lstatSync(candidatePath);
+        return !candidate.isSymbolicLink() && candidate.isFile()
+          && candidate.dev === owner.dev && candidate.ino === owner.ino;
+      } catch {
+        return false;
+      }
+    });
+  if (candidates.length === 0) return null;
+  if (candidates.length !== 1) throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+
+  const publicationPath = candidates[0];
+  const publication = lstatSync(publicationPath);
+  const canonicalDirectory = resolve(realpathSync(dirname(stagedPath)));
+  const canonicalPublication = resolve(realpathSync(publicationPath));
+  if (publication.isSymbolicLink() || !publication.isFile()
+    || publication.nlink !== expectedLinkCount
+    || publication.dev !== owner.dev || publication.ino !== owner.ino
+    || !isPathInside(canonicalPublication, canonicalRoot)
+    || !sameResolvedPath(dirname(canonicalPublication), canonicalDirectory)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  if (stageExists) {
+    const stage = lstatSync(stagedPath);
+    if (stage.isSymbolicLink() || !stage.isFile()
+      || stage.nlink !== expectedLinkCount
+      || stage.dev !== owner.dev || stage.ino !== owner.ino) {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+  }
+  return { path: publicationPath, entry: publication };
 }
 
 function assertOwnedRecoveryStagingFile(
@@ -1092,6 +1178,22 @@ function prepareVerifiedBlobRecoveryStaging(
   cleanupDirectory: string,
   faults: VerifiedBlobStorageRecoveryFaults
 ): void {
+  let publication = findOwnedRecoveryStagePublication(
+    stagedPath,
+    ownerPath,
+    registeredRoot,
+    canonicalRoot
+  );
+  if (publication && existsSync(stagedPath)) {
+    rmSync(publication.path);
+    publication = null;
+    assertOwnedRecoveryStagingFile(
+      stagedPath,
+      ownerPath,
+      registeredRoot,
+      canonicalRoot
+    );
+  }
   if (existsSync(stagedPath)) {
     assertExpectedRecoveryStagingFile(stagedPath, stagedPath, roots, registeredRoot, canonicalRoot, 2);
     assertOwnedRecoveryStagingFile(stagedPath, ownerPath, registeredRoot, canonicalRoot);
@@ -1116,7 +1218,7 @@ function prepareVerifiedBlobRecoveryStaging(
       faults.after_staging_entry_isolated,
       faults.after_staging_cleanup_entry_removed
     );
-  } else if (existsSync(ownerPath)) {
+  } else if (existsSync(ownerPath) && !publication) {
     // A lone deterministic owner has no surviving stage-instance binding. Its
     // name, empty bytes and a target authority file cannot prove this inode was
     // created by recovery, so preserve it and fail closed.
@@ -1124,15 +1226,55 @@ function prepareVerifiedBlobRecoveryStaging(
   }
   let descriptor = -1;
   let stagedIdentity: ReturnType<typeof fstatSync> | null = null;
+  let publicationPath = publication?.path ?? "";
   try {
-    descriptor = openSync(ownerPath, "wx+");
+    if (publication) {
+      descriptor = openSync(publication.path, "r+");
+    } else {
+      publicationPath = verifiedBlobRecoveryStagePublicationPath(stagedPath, registeredRoot);
+      descriptor = openSync(publicationPath, "wx+");
+    }
     stagedIdentity = fstatSync(descriptor);
-    faults.after_stage_owner_created?.();
-    linkSync(ownerPath, stagedPath);
-    const linked = fstatSync(descriptor);
-    if (!linked.isFile() || linked.nlink !== 2 || linked.dev !== stagedIdentity.dev || linked.ino !== stagedIdentity.ino) {
+    if (!stagedIdentity.isFile() || stagedIdentity.ino === 0
+      || (publication && (stagedIdentity.nlink !== 2
+        || stagedIdentity.dev !== publication.entry.dev
+        || stagedIdentity.ino !== publication.entry.ino))) {
       throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
     }
+    if (!publication) {
+      linkSync(publicationPath, ownerPath);
+      const ownerPublished = lstatSync(ownerPath);
+      const linkedPublication = fstatSync(descriptor);
+      if (ownerPublished.isSymbolicLink() || !ownerPublished.isFile()
+        || linkedPublication.nlink !== 2 || ownerPublished.nlink !== 2
+        || ownerPublished.dev !== stagedIdentity.dev || ownerPublished.ino !== stagedIdentity.ino
+        || linkedPublication.dev !== stagedIdentity.dev || linkedPublication.ino !== stagedIdentity.ino) {
+        throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+      }
+      faults.after_stage_owner_created?.();
+    }
+    linkSync(ownerPath, stagedPath);
+    const linked = fstatSync(descriptor);
+    if (!linked.isFile() || linked.nlink !== 3
+      || linked.dev !== stagedIdentity.dev || linked.ino !== stagedIdentity.ino) {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    const linkedPublication = findOwnedRecoveryStagePublication(
+      stagedPath,
+      ownerPath,
+      registeredRoot,
+      canonicalRoot
+    );
+    if (!linkedPublication) throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    faults.after_stage_published_with_owner_proof?.();
+    rmSync(publicationPath);
+    const normalized = fstatSync(descriptor);
+    if (!normalized.isFile() || normalized.nlink !== 2
+      || normalized.dev !== stagedIdentity.dev || normalized.ino !== stagedIdentity.ino) {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    assertOwnedRecoveryStagingFile(stagedPath, ownerPath, registeredRoot, canonicalRoot);
+    ftruncateSync(descriptor, 0);
     copyRecoverySourceToDescriptor(sourcePath, descriptor);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "EEXIST") {
@@ -1704,34 +1846,42 @@ function validateVerifiedBlobRecoveryEntriesBeforeAuthority(
       recoveryPaths.canonicalRoot
     )
     : null;
+  const stagePublication = findOwnedRecoveryStagePublication(
+    stagedPath,
+    ownerPath,
+    recoveryPaths.registeredRoot,
+    recoveryPaths.canonicalRoot
+  );
 
   if (existsSync(stagedPath)
     && (!interrupted || !interrupted.candidatePaths.some((candidatePath) => sameResolvedPath(candidatePath, stagedPath)))) {
     // A deterministic name and persistent target authority do not establish
     // stage-instance ownership. The exact companion hard link must identify
     // the same app-created inode before a stage can be reused or replaced.
-    assertExpectedRecoveryStagingFile(
-      stagedPath,
-      stagedPath,
-      roots,
-      recoveryPaths.registeredRoot,
-      recoveryPaths.canonicalRoot,
-      2
-    );
-    assertOwnedRecoveryStagingFile(
-      stagedPath,
-      ownerPath,
-      recoveryPaths.registeredRoot,
-      recoveryPaths.canonicalRoot
-    );
+    if (!stagePublication) {
+      assertExpectedRecoveryStagingFile(
+        stagedPath,
+        stagedPath,
+        roots,
+        recoveryPaths.registeredRoot,
+        recoveryPaths.canonicalRoot,
+        2
+      );
+      assertOwnedRecoveryStagingFile(
+        stagedPath,
+        ownerPath,
+        recoveryPaths.registeredRoot,
+        recoveryPaths.canonicalRoot
+      );
+    }
   } else if (!existsSync(stagedPath) && existsSync(ownerPath)
     && (!interrupted || !interrupted.candidatePaths.some((candidatePath) => sameResolvedPath(candidatePath, ownerPath)))) {
     // Target authority is path/digest authority, not ownership evidence for a
-    // later single-link owner inode. Only a verified stage-owner pair or the
-    // target-owner interrupted-placement pair may authorize cleanup.
-    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    // later single-link owner inode. Only a verified publication companion or
+    // the target-owner interrupted-placement pair may authorize continuation.
+    if (!stagePublication) throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
-  if (interrupted && !authorityExists) {
+  if ((interrupted || stagePublication) && !authorityExists) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
 

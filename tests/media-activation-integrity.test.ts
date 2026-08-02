@@ -136,6 +136,15 @@ function verifiedBlobRecoveryStageOwnerPath(stagedPath: string): string {
   return resolve(dirname(stagedPath), `.blob-recovery-stage-${digest}.owner`);
 }
 
+function verifiedBlobRecoveryStagePublicationPaths(stagedPath: string): string[] {
+  const digest = basename(stagedPath).slice("blob-recovery-".length, -".staged".length);
+  const prefix = `.blob-recovery-stage-${digest}.publish-`;
+  return readdirSync(dirname(stagedPath))
+    .filter((name) => name.startsWith(prefix)
+      && /^\.blob-recovery-stage-[a-f0-9]{64}\.publish-[0-9a-f-]{36}\.tmp$/i.test(name))
+    .map((name) => resolve(dirname(stagedPath), name));
+}
+
 function verifiedBlobRecoveryCleanupPaths(_mediaRoot: string, stagedPath: string): {
   staged_cleanup: string;
   owner_cleanup: string;
@@ -202,7 +211,7 @@ function hardCrashVerifiedBlobRecovery(input: {
   project_id: string;
   shot_id: string;
   source_path: string;
-  crash_at?: "after_stage_owner_created" | "after_staged_copy" | "after_target_authority_temp_created" | "after_staging_entry_isolated" | "after_staging_cleanup_entry_removed";
+  crash_at?: "after_stage_owner_created" | "after_stage_published_with_owner_proof" | "after_staged_copy" | "after_target_authority_temp_created" | "after_staging_entry_isolated" | "after_staging_cleanup_entry_removed";
 }): void {
   const childScript = `
     const { openM0Database } = await import(process.env.RECOVERY_SQLITE_MODULE);
@@ -218,6 +227,8 @@ function hardCrashVerifiedBlobRecovery(input: {
       ? { after_target_authority_temp_created: () => process.exit(93) }
       : crashAt === "after_stage_owner_created"
         ? { after_stage_owner_created: () => process.exit(94) }
+        : crashAt === "after_stage_published_with_owner_proof"
+          ? { after_stage_published_with_owner_proof: () => process.exit(97) }
         : crashAt === "after_staging_entry_isolated"
           ? { after_staging_entry_isolated: () => process.exit(96) }
         : crashAt === "after_staging_cleanup_entry_removed"
@@ -249,6 +260,8 @@ function hardCrashVerifiedBlobRecovery(input: {
     ? 93
     : input.crash_at === "after_stage_owner_created"
       ? 94
+      : input.crash_at === "after_stage_published_with_owner_proof"
+        ? 97
       : input.crash_at === "after_staging_entry_isolated"
         ? 96
       : input.crash_at === "after_staging_cleanup_entry_removed" ? 95 : 91;
@@ -2984,7 +2997,7 @@ test("verified Blob recovery revalidates the Artifact binding after acquiring th
   }
 });
 
-test("verified Blob recovery preserves an owner orphaned before stage publication", () => {
+test("verified Blob recovery resumes an owner-first crash from its publication proof", () => {
   const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-owner-publish-crash-"));
   const mediaRoot = join(root, "media");
   const sqlitePath = join(root, "app.sqlite");
@@ -3010,9 +3023,11 @@ test("verified Blob recovery preserves an owner orphaned before stage publicatio
     });
     assert.equal(existsSync(stagedPath), false);
     assert.equal(existsSync(ownerPath), true);
+    const publicationPaths = verifiedBlobRecoveryStagePublicationPaths(stagedPath);
+    assert.equal(publicationPaths.length, 1);
     assert.equal(statSync(ownerPath).size, 0);
-    assert.equal(statSync(ownerPath).nlink, 1);
-    const ownerBefore = lstatSync(ownerPath);
+    assert.equal(statSync(ownerPath).nlink, 2);
+    assert.equal(statSync(ownerPath).ino, statSync(publicationPaths[0]).ino);
 
     db = openM0Database(sqlitePath);
     const retried = recoverVerifiedBlobStorage({
@@ -3021,15 +3036,62 @@ test("verified Blob recovery preserves an owner orphaned before stage publicatio
       shot_id: fixture.shot_id,
       source_path: fixture.source_path
     }, db);
-    assert.equal(retried.ok, false);
-    if (!retried.ok) assert.equal(retried.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    assert.equal(retried.ok, true, retried.ok ? undefined : retried.error.code);
     assert.equal(existsSync(stagedPath), false);
-    const ownerAfter = lstatSync(ownerPath);
-    assert.equal(ownerAfter.dev, ownerBefore.dev);
-    assert.equal(ownerAfter.ino, ownerBefore.ino);
-    assert.equal(ownerAfter.nlink, 1);
-    assert.equal(ownerAfter.size, 0);
-    assert.equal(existsSync(fixture.artifact.storage.uri), false);
+    assert.equal(existsSync(ownerPath), false);
+    assert.equal(existsSync(publicationPaths[0]), false);
+    assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
+    assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
+  } finally {
+    try { db.close(); } catch { /* the crash setup closes the first database handle */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("verified Blob recovery resumes a crash before publication proof removal", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-publication-proof-crash-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  let db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const before = immutableBlobSnapshot(db, fixture.artifact.artifact_id);
+    const blob = getMediaBlob(db, fixture.artifact.blob_id);
+    assert.ok(blob);
+    const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
+    const ownerPath = verifiedBlobRecoveryStageOwnerPath(stagedPath);
+    rmSync(fixture.artifact.storage.uri);
+    db.close();
+
+    hardCrashVerifiedBlobRecovery({
+      sqlite_path: sqlitePath,
+      artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path,
+      crash_at: "after_stage_published_with_owner_proof"
+    });
+    const publicationPaths = verifiedBlobRecoveryStagePublicationPaths(stagedPath);
+    assert.equal(publicationPaths.length, 1);
+    for (const path of [stagedPath, ownerPath, publicationPaths[0]]) {
+      assert.equal(existsSync(path), true);
+      assert.equal(statSync(path).nlink, 3);
+      assert.equal(statSync(path).ino, statSync(stagedPath).ino);
+    }
+
+    db = openM0Database(sqlitePath);
+    const retried = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(retried.ok, true, retried.ok ? undefined : retried.error.code);
+    assert.equal(existsSync(stagedPath), false);
+    assert.equal(existsSync(ownerPath), false);
+    assert.equal(existsSync(publicationPaths[0]), false);
+    assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
     assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
   } finally {
     try { db.close(); } catch { /* the crash setup closes the first database handle */ }
