@@ -568,6 +568,10 @@ try {
   if ($restarted.ExitCode -ne 0 -or
       $null -eq $restarted.Json -or
       [string]$restarted.Json.result -cne "STARTED") {
+    if ($null -ne $restarted.Json -and
+        [string]$restarted.Json.stable_error_code -match '^DIRECTOR_[A-Z0-9_]{3,95}$') {
+      throw ([string]$restarted.Json.stable_error_code)
+    }
     throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_STALE_RECOVERY_FAILED"
   }
   $restartedStateText = Get-Content -Raw -LiteralPath $statePath
