@@ -848,6 +848,7 @@ const BLOB_RECOVERY_TARGET_MUTEX_BUSY_TIMEOUT_MS = 30_000;
 const BLOB_RECOVERY_TARGET_MUTEX_APPLICATION_ID = 0x41564252;
 const BLOB_RECOVERY_STAGE_OWNERSHIP_APPLICATION_ID = 0x4156424f;
 const BLOB_RECOVERY_TARGET_MUTEX_MAX_BYTES = 64 * 1024;
+const BLOB_RECOVERY_STAGE_OWNERSHIP_JOURNAL_MAX_BYTES = 128 * 1024;
 const requireNodeBuiltin = createRequire(import.meta.url);
 
 function verifiedBlobRecoveryPathIdentity(value: string): string {
@@ -2416,7 +2417,7 @@ function acquireVerifiedBlobRecoveryTargetMutex(
       initializeVerifiedBlobRecoveryTargetMutex(ownershipPath, recoveryPaths, roots);
     }
     assertVerifiedBlobRecoveryTargetMutexFile(ownershipPath, recoveryPaths, roots);
-    assertVerifiedBlobRecoveryTargetMutexSidecarsAbsent(ownershipPath);
+    assertVerifiedBlobRecoveryOwnershipJournalRecoverable(ownershipPath, recoveryPaths, roots);
     ownershipGuardDescriptor = openSync(ownershipPath, "r");
     assertVerifiedBlobRecoveryTargetMutexFile(
       ownershipPath,
@@ -2425,6 +2426,10 @@ function acquireVerifiedBlobRecoveryTargetMutex(
       ownershipGuardDescriptor
     );
     ownershipDatabase = openNodeSqliteDatabase(ownershipPath);
+    const ownershipIntegrity = ownershipDatabase.prepare("PRAGMA integrity_check").get() as { integrity_check?: string };
+    if (ownershipIntegrity.integrity_check?.toLowerCase() !== "ok") {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
     assertConnectedVerifiedBlobRecoveryTargetMutex(ownershipDatabase, ownershipPath);
     assertVerifiedBlobRecoveryTargetMutexFile(
       ownershipPath,
@@ -2433,8 +2438,13 @@ function acquireVerifiedBlobRecoveryTargetMutex(
       ownershipGuardDescriptor
     );
     assertVerifiedBlobRecoveryTargetMutexSidecarsAbsent(ownershipPath);
-    const ownershipJournalMode = ownershipDatabase.prepare("PRAGMA journal_mode = MEMORY").get() as { journal_mode?: string };
-    if (ownershipJournalMode.journal_mode?.toLowerCase() !== "memory") {
+    const ownershipJournalMode = ownershipDatabase.prepare("PRAGMA journal_mode = DELETE").get() as { journal_mode?: string };
+    if (ownershipJournalMode.journal_mode?.toLowerCase() !== "delete") {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    ownershipDatabase.exec("PRAGMA synchronous = FULL;");
+    const ownershipSynchronous = ownershipDatabase.prepare("PRAGMA synchronous").get() as { synchronous?: number };
+    if (ownershipSynchronous.synchronous !== 2) {
       throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
     }
     ownershipDatabase.exec(`PRAGMA busy_timeout = ${busyTimeoutMs};`);
@@ -2487,6 +2497,35 @@ function releaseVerifiedBlobRecoveryTargetMutex(mutex: VerifiedBlobRecoveryTarge
   } finally {
     try { mutex.database.exec("ROLLBACK"); } catch { /* process close still releases the operating-system lock */ }
     try { mutex.database.close(); } finally { closeSync(mutex.guardDescriptor); }
+  }
+}
+
+function assertVerifiedBlobRecoveryOwnershipJournalRecoverable(
+  ownershipPath: string,
+  recoveryPaths: ReturnType<typeof recoveryRootAndTarget>,
+  roots: ReturnType<typeof activationRoots>
+): void {
+  for (const sidecarPath of [`${ownershipPath}-wal`, `${ownershipPath}-shm`]) {
+    try {
+      lstatSync(sidecarPath);
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+
+  const journalPath = `${ownershipPath}-journal`;
+  if (!existsSync(journalPath)) return;
+  if (!sameResolvedPath(dirname(journalPath), roots.journal)
+    || !isPathInside(journalPath, recoveryPaths.registeredRoot)
+    || hasExistingSymlinkAncestor(journalPath, recoveryPaths.registeredRoot)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  const entry = lstatSync(journalPath);
+  if (entry.isSymbolicLink() || !entry.isFile() || entry.nlink !== 1
+    || entry.size > BLOB_RECOVERY_STAGE_OWNERSHIP_JOURNAL_MAX_BYTES
+    || !sameResolvedPath(resolve(realpathSync(journalPath)), journalPath)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
 }
 
