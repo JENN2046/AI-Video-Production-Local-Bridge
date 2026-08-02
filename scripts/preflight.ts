@@ -1,10 +1,12 @@
 import { accessSync, constants } from "node:fs";
 import { createServer } from "node:net";
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 
 import { paths } from "../src/paths.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import { checkProviderEnv } from "../src/tools/providerEnv.js";
+import { nodeVersionMeetsMinimum } from "../src/tools/nodeCompatibility.js";
 import { loadWebGptV4AuthConfig } from "../src/webgpt-v4/auth.js";
 import { resolveFfmpegExecutable, resolveFfprobeExecutable } from "../src/webgpt-v4/media.js";
 import { parseWebGptV4Profile } from "../src/webgpt-v4/toolCatalog.js";
@@ -30,8 +32,12 @@ if (profile === "webgpt") {
   }
 }
 const checks: Record<string, Check> = {};
-const [major, minor] = process.versions.node.split(".").map(Number);
-checks.node = { ok: major > 22 || (major === 22 && minor >= 5), detail: `Node ${process.versions.node}; minimum is 22.5.0 and CI is pinned to 22` };
+const packageJson = createRequire(import.meta.url)("../../package.json") as { engines?: { node?: string } };
+const minimumNodeVersion = /^>=(\d+\.\d+\.\d+)$/.exec(packageJson.engines?.node ?? "")?.[1] ?? "INVALID";
+checks.node = {
+  ok: nodeVersionMeetsMinimum(process.versions.node, minimumNodeVersion),
+  detail: `Node ${process.versions.node}; minimum is ${minimumNodeVersion} and CI is pinned to 22`
+};
 
 if (profile === "local" || webgptProfile === "full") {
   try {

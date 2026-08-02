@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
+import { DatabaseSync } from "node:sqlite";
 
 import { checkDatabase, migrateDatabase } from "../src/storage/databaseGovernance.js";
 import { openM0Database, type M0Database } from "../src/storage/sqlite.js";
@@ -3098,6 +3099,50 @@ test("verified Blob recovery resumes a publication-only crash from its persisted
     assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
   } finally {
     try { db.close(); } catch { /* the crash setup closes the first database handle */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("persisting stage ownership never releases the target mutex", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-continuous-target-mutex-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const blob = getMediaBlob(db, fixture.artifact.blob_id);
+    assert.ok(blob);
+    const mutexPath = verifiedBlobRecoveryMutexPath(mediaRoot, blob.storage_uri);
+    rmSync(fixture.artifact.storage.uri);
+    let targetMutexStayedLocked = false;
+
+    const recovered = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db, {
+      after_stage_ownership_persisted: () => {
+        const contender = new DatabaseSync(mutexPath);
+        try {
+          contender.exec("PRAGMA busy_timeout = 1");
+          try {
+            contender.exec("BEGIN IMMEDIATE");
+            contender.exec("ROLLBACK");
+          } catch (error) {
+            targetMutexStayedLocked = (error as { errcode?: number }).errcode === 5;
+          }
+        } finally {
+          contender.close();
+        }
+      }
+    });
+    assert.equal(recovered.ok, true, recovered.ok ? undefined : recovered.error.code);
+    assert.equal(targetMutexStayedLocked, true);
+    assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
+  } finally {
+    db.close();
     rmSync(root, { recursive: true, force: true });
   }
 });
