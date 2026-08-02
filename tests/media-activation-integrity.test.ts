@@ -1456,6 +1456,68 @@ test("verified Blob recovery preserves target hard links without a stage ownersh
   }
 });
 
+test("verified Blob recovery retries a partially normalized deterministic placement", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-three-link-retry-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const targetPath = fixture.artifact.storage.uri;
+    const blob = getMediaBlob(db, fixture.artifact.blob_id);
+    assert.ok(blob);
+    const authority = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(authority.ok, true, authority.ok ? undefined : authority.error.code);
+
+    const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
+    const ownerPath = verifiedBlobRecoveryStageOwnerPath(stagedPath);
+    rmSync(targetPath);
+    copyFileSync(fixture.source_path, stagedPath);
+    linkSync(stagedPath, ownerPath);
+    linkSync(stagedPath, targetPath);
+    assert.equal(lstatSync(targetPath).nlink, 3);
+    assert.equal(lstatSync(stagedPath).nlink, 3);
+    assert.equal(lstatSync(ownerPath).nlink, 3);
+
+    const interrupted = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db, {
+      after_interrupted_placement_link_removed: () => {
+        throw new Error("INJECTED_INTERRUPTED_PLACEMENT");
+      }
+    });
+    assert.equal(interrupted.ok, false);
+    assert.equal(existsSync(stagedPath), false);
+    assert.equal(existsSync(ownerPath), true);
+    assert.equal(lstatSync(targetPath).nlink, 2);
+    assert.equal(lstatSync(ownerPath).ino, lstatSync(targetPath).ino);
+
+    const retried = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(retried.ok, true, retried.ok ? undefined : retried.error.code);
+    assert.equal(existsSync(stagedPath), false);
+    assert.equal(existsSync(ownerPath), false);
+    assert.equal(lstatSync(targetPath).nlink, 1);
+    assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("verified Blob recovery quarantines drifted bytes and treats a reusable target as a no-op", () => {
   const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-drift-"));
   const mediaRoot = join(root, "media");

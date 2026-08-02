@@ -101,6 +101,7 @@ export interface VerifiedBlobStorageRecoveryFaults {
   before_staging_pair_isolated?: () => void;
   after_staging_entry_isolated?: () => void;
   after_staging_cleanup_entry_removed?: () => void;
+  after_interrupted_placement_link_removed?: () => void;
   after_corrupt_quarantined?: () => void;
   after_replacement_placed?: () => void;
   before_final_verification?: () => void;
@@ -1184,7 +1185,35 @@ function inspectInterruptedVerifiedBlobPlacement(
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
   if (targetEntry.nlink === 1) return null;
-  if (targetEntry.nlink !== 3 || targetEntry.ino === 0
+  if (targetEntry.ino === 0) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+
+  // A hard exit after the first normalization removal leaves the target and
+  // deterministic owner as a two-link pair.  That is still provably app-owned:
+  // the owner is the only remaining companion link to the target inode.  Treat
+  // it as a resumable state instead of rejecting every retry permanently.
+  if (targetEntry.nlink === 2) {
+    if (existsSync(deterministicStagedPath) || !existsSync(deterministicOwnerPath)
+      || !sameResolvedPath(dirname(targetPath), dirname(deterministicOwnerPath))
+      || !isPathInside(deterministicOwnerPath, registeredRoot)
+      || !DETERMINISTIC_BLOB_RECOVERY_STAGE_OWNER_NAME.test(basename(deterministicOwnerPath))
+      || hasExistingSymlinkAncestor(deterministicOwnerPath, registeredRoot)) {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    const owner = lstatSync(deterministicOwnerPath);
+    const canonicalOwner = resolve(realpathSync(deterministicOwnerPath));
+    const canonicalTargetDirectory = resolve(realpathSync(dirname(targetPath)));
+    if (owner.isSymbolicLink() || !owner.isFile() || owner.nlink !== 2
+      || owner.dev !== targetEntry.dev || owner.ino !== targetEntry.ino
+      || !isPathInside(canonicalOwner, canonicalRoot)
+      || !sameResolvedPath(dirname(canonicalOwner), canonicalTargetDirectory)) {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    return { candidatePaths: [deterministicOwnerPath], targetEntry };
+  }
+
+  if (targetEntry.nlink !== 3
     || !existsSync(deterministicStagedPath) || !existsSync(deterministicOwnerPath)) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
@@ -1202,6 +1231,53 @@ function inspectInterruptedVerifiedBlobPlacement(
   return { candidatePaths: [deterministicStagedPath, deterministicOwnerPath], targetEntry };
 }
 
+function removeInterruptedVerifiedBlobPlacementLink(
+  targetPath: string,
+  candidatePath: string,
+  expectedTarget: NonNullable<ReturnType<typeof lstatSync>>,
+  registeredRoot: string,
+  canonicalRoot: string
+): void {
+  const targetBefore = lstatSync(targetPath);
+  if (targetBefore.isSymbolicLink() || !targetBefore.isFile()
+    || targetBefore.ino === 0
+    || targetBefore.dev !== expectedTarget.dev
+    || targetBefore.ino !== expectedTarget.ino
+    || targetBefore.nlink <= 1
+    || !isPathInside(targetPath, registeredRoot)
+    || hasExistingSymlinkAncestor(targetPath, registeredRoot)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  if (!sameResolvedPath(dirname(targetPath), dirname(candidatePath))
+    || !isPathInside(candidatePath, registeredRoot)
+    || hasExistingSymlinkAncestor(candidatePath, registeredRoot)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  const candidate = lstatSync(candidatePath);
+  const canonicalTargetDirectory = resolve(realpathSync(dirname(targetPath)));
+  const canonicalCandidate = resolve(realpathSync(candidatePath));
+  if (candidate.isSymbolicLink() || !candidate.isFile()
+    || candidate.nlink !== targetBefore.nlink
+    || candidate.dev !== targetBefore.dev
+    || candidate.ino !== targetBefore.ino
+    || !isPathInside(canonicalCandidate, canonicalRoot)
+    || !sameResolvedPath(dirname(canonicalCandidate), canonicalTargetDirectory)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+
+  // Each removal is a separately validated state transition.  If the process
+  // stops after this unlink, the next run observes target+owner (nlink=2) and
+  // can safely continue rather than requiring a manual repair.
+  rmSync(candidatePath);
+  const targetAfter = lstatSync(targetPath);
+  if (targetAfter.isSymbolicLink() || !targetAfter.isFile()
+    || targetAfter.nlink !== targetBefore.nlink - 1
+    || targetAfter.dev !== expectedTarget.dev
+    || targetAfter.ino !== expectedTarget.ino) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+}
+
 function normalizeInterruptedVerifiedBlobPlacement(
   targetPath: string,
   targetDirectory: string,
@@ -1209,7 +1285,8 @@ function normalizeInterruptedVerifiedBlobPlacement(
   deterministicOwnerPath: string,
   roots: ReturnType<typeof activationRoots>,
   registeredRoot: string,
-  canonicalRoot: string
+  canonicalRoot: string,
+  afterLinkRemoved?: () => void
 ): void {
   const interrupted = inspectInterruptedVerifiedBlobPlacement(
     targetPath,
@@ -1224,7 +1301,16 @@ function normalizeInterruptedVerifiedBlobPlacement(
 
   const { candidatePaths, targetEntry } = interrupted;
   if (!targetEntry) throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
-  for (const candidatePath of candidatePaths) rmSync(candidatePath);
+  for (const candidatePath of candidatePaths) {
+    removeInterruptedVerifiedBlobPlacementLink(
+      targetPath,
+      candidatePath,
+      targetEntry,
+      registeredRoot,
+      canonicalRoot
+    );
+    afterLinkRemoved?.();
+  }
   const normalizedTarget = lstatSync(targetPath);
   if (normalizedTarget.isSymbolicLink()
     || !normalizedTarget.isFile()
@@ -2384,7 +2470,8 @@ export function recoverVerifiedBlobStorage(
         stagedOwnerPath,
         activation,
         registeredRoot,
-        recoveryPaths.canonicalRoot
+        recoveryPaths.canonicalRoot,
+        faults.after_interrupted_placement_link_removed
       );
     }
     reconcileLegacyVerifiedBlobRecoveryStaging(
