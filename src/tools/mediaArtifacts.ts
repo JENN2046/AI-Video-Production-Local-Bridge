@@ -96,6 +96,8 @@ export interface VerifiedBlobStorageRecoveryFaults {
   after_target_mutex_guard_open?: () => void;
   after_target_mutex_temp_link_observed?: () => void;
   after_target_authority_temp_created?: () => void;
+  after_stage_ownership_planned?: () => void;
+  after_stage_publication_created?: () => void;
   after_stage_ownership_persisted?: () => void;
   after_stage_owner_created?: () => void;
   after_stage_published_with_owner_proof?: () => void;
@@ -986,9 +988,16 @@ function findRecordedRecoveryStagePublication(
   }
   if (!existsSync(publicationPath)) return null;
   const publication = lstatSync(publicationPath);
-  assertVerifiedBlobRecoveryStageOwnership(ownership, publicationPath, ownerPath, undefined);
   const stageExists = existsSync(stagedPath);
   const ownerExists = existsSync(ownerPath);
+  if (ownership.state === "planned") {
+    if (stageExists || ownerExists || publication.isSymbolicLink()
+      || !publication.isFile() || publication.nlink !== 1 || publication.size !== 0) {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+  } else {
+    assertVerifiedBlobRecoveryStageOwnership(ownership, publicationPath, ownerPath, undefined);
+  }
   const expectedLinkCount = 1 + Number(stageExists) + Number(ownerExists);
   const canonicalDirectory = resolve(realpathSync(dirname(stagedPath)));
   const canonicalPublication = resolve(realpathSync(publicationPath));
@@ -1213,15 +1222,28 @@ function prepareVerifiedBlobRecoveryStaging(
     // created by recovery, so preserve it and fail closed.
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
+  if (!existsSync(stagedPath) && !existsSync(ownerPath) && !publication
+    && (!ownership || ownership.state === "published")) {
+    const plannedPublicationPath = verifiedBlobRecoveryStagePublicationPath(stagedPath, registeredRoot);
+    ownership = planVerifiedBlobRecoveryStageOwnership(
+      targetMutex,
+      stagedPath,
+      plannedPublicationPath,
+      blob
+    );
+    faults.after_stage_ownership_planned?.();
+  }
+  if (!ownership) throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   let descriptor = -1;
   let stagedIdentity: ReturnType<typeof fstatSync> | null = null;
-  let publicationPath = publication?.path ?? "";
+  const publicationPath = publication?.path
+    ?? resolve(dirname(stagedPath), ownership.publication_name);
   try {
     if (publication) {
       descriptor = openSync(publication.path, "r+");
     } else {
-      publicationPath = verifiedBlobRecoveryStagePublicationPath(stagedPath, registeredRoot);
       descriptor = openSync(publicationPath, "wx+");
+      faults.after_stage_publication_created?.();
     }
     stagedIdentity = fstatSync(descriptor);
     if (!stagedIdentity.isFile() || stagedIdentity.ino === 0
@@ -1230,7 +1252,7 @@ function prepareVerifiedBlobRecoveryStaging(
         || stagedIdentity.ino !== publication.entry.ino))) {
       throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
     }
-    if (!publication) {
+    if (ownership.state === "planned") {
       ownership = persistVerifiedBlobRecoveryStageOwnership(
         targetMutex,
         stagedPath,
@@ -1240,6 +1262,7 @@ function prepareVerifiedBlobRecoveryStaging(
         faults.after_stage_ownership_persisted
       );
     } else {
+      if (!publication) throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
       assertVerifiedBlobRecoveryStageOwnership(ownership, publication.path, ownerPath, blob);
     }
     if (!existsSync(ownerPath)) {
@@ -1527,6 +1550,7 @@ interface VerifiedBlobRecoveryTargetMutex {
 
 interface VerifiedBlobRecoveryStageOwnership {
   version: number;
+  state: "planned" | "published";
   staged_path_identity_sha256: string;
   publication_name: string;
   instance_id: string;
@@ -1547,7 +1571,7 @@ function readVerifiedBlobRecoveryStageOwnership(
   blob: MediaBlob
 ): VerifiedBlobRecoveryStageOwnership | null {
   const row = mutex.ownershipDatabase.prepare(`
-    SELECT version, staged_path_identity_sha256, publication_name, instance_id,
+    SELECT version, state, staged_path_identity_sha256, publication_name, instance_id,
            device_id, inode_id, blob_sha256
       FROM verified_blob_recovery_stage_ownership
      WHERE singleton = 1
@@ -1555,11 +1579,12 @@ function readVerifiedBlobRecoveryStageOwnership(
   if (!row) return null;
   if (row.version !== 1
     || row.staged_path_identity_sha256 !== verifiedBlobRecoveryStagePathIdentity(stagedPath)
+    || (row.state !== "planned" && row.state !== "published")
     || !BLOB_RECOVERY_STAGE_PUBLICATION_NAME.test(row.publication_name)
     || !/^[0-9a-f-]{36}$/i.test(row.instance_id)
-    || !/^\d+$/.test(row.device_id)
-    || !/^\d+$/.test(row.inode_id)
-    || row.inode_id === "0"
+    || (row.state === "planned" && (row.device_id !== "" || row.inode_id !== ""))
+    || (row.state === "published" && (!/^\d+$/.test(row.device_id)
+      || !/^\d+$/.test(row.inode_id) || row.inode_id === "0"))
     || row.blob_sha256 !== blob.sha256) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
@@ -1579,7 +1604,8 @@ function assertVerifiedBlobRecoveryStageOwnership(
   secondPath: string,
   blob?: MediaBlob
 ): void {
-  if (!ownership || (blob && ownership.blob_sha256 !== blob.sha256)) {
+  if (!ownership || ownership.state !== "published"
+    || (blob && ownership.blob_sha256 !== blob.sha256)) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
   let observed = false;
@@ -1594,6 +1620,77 @@ function assertVerifiedBlobRecoveryStageOwnership(
     }
   }
   if (!observed) throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+}
+
+function commitVerifiedBlobRecoveryStageOwnership(
+  mutex: VerifiedBlobRecoveryTargetMutex,
+  ownership: VerifiedBlobRecoveryStageOwnership,
+  afterPersisted?: () => void
+): void {
+  try {
+    mutex.ownershipDatabase.exec("BEGIN IMMEDIATE");
+    mutex.ownershipDatabase.prepare(`
+      INSERT INTO verified_blob_recovery_stage_ownership (
+        singleton, version, state, staged_path_identity_sha256, publication_name,
+        instance_id, device_id, inode_id, blob_sha256
+      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(singleton) DO UPDATE SET
+        version = excluded.version,
+        state = excluded.state,
+        staged_path_identity_sha256 = excluded.staged_path_identity_sha256,
+        publication_name = excluded.publication_name,
+        instance_id = excluded.instance_id,
+        device_id = excluded.device_id,
+        inode_id = excluded.inode_id,
+        blob_sha256 = excluded.blob_sha256
+    `).run(
+      ownership.version,
+      ownership.state,
+      ownership.staged_path_identity_sha256,
+      ownership.publication_name,
+      ownership.instance_id,
+      ownership.device_id,
+      ownership.inode_id,
+      ownership.blob_sha256
+    );
+    mutex.ownershipDatabase.exec("COMMIT");
+    afterPersisted?.();
+  } catch (error) {
+    try { mutex.ownershipDatabase.exec("ROLLBACK"); } catch { /* preserve stable persistence failure */ }
+    if ((error as { errcode?: number }).errcode === 5) {
+      throw new Error("MEDIA_BLOB_RECOVERY_BUSY");
+    }
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+}
+
+function planVerifiedBlobRecoveryStageOwnership(
+  mutex: VerifiedBlobRecoveryTargetMutex,
+  stagedPath: string,
+  publicationPath: string,
+  blob: MediaBlob
+): VerifiedBlobRecoveryStageOwnership {
+  const publicationName = basename(publicationPath);
+  const instanceId = publicationName.slice(
+    publicationName.indexOf(".publish-") + ".publish-".length,
+    -".tmp".length
+  );
+  const ownership: VerifiedBlobRecoveryStageOwnership = {
+    version: 1,
+    state: "planned",
+    staged_path_identity_sha256: verifiedBlobRecoveryStagePathIdentity(stagedPath),
+    publication_name: publicationName,
+    instance_id: instanceId,
+    device_id: "",
+    inode_id: "",
+    blob_sha256: blob.sha256
+  };
+  if (!BLOB_RECOVERY_STAGE_PUBLICATION_NAME.test(publicationName)
+    || !/^[0-9a-f-]{36}$/i.test(instanceId)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  commitVerifiedBlobRecoveryStageOwnership(mutex, ownership);
+  return ownership;
 }
 
 function persistVerifiedBlobRecoveryStageOwnership(
@@ -1611,6 +1708,7 @@ function persistVerifiedBlobRecoveryStageOwnership(
   );
   const ownership: VerifiedBlobRecoveryStageOwnership = {
     version: 1,
+    state: "published",
     staged_path_identity_sha256: verifiedBlobRecoveryStagePathIdentity(stagedPath),
     publication_name: publicationName,
     instance_id: instanceId,
@@ -1623,39 +1721,7 @@ function persistVerifiedBlobRecoveryStageOwnership(
     || identity.ino === 0 || !identity.isFile() || identity.nlink !== 1) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
-  try {
-    mutex.ownershipDatabase.exec("BEGIN IMMEDIATE");
-    mutex.ownershipDatabase.prepare(`
-      INSERT INTO verified_blob_recovery_stage_ownership (
-        singleton, version, staged_path_identity_sha256, publication_name,
-        instance_id, device_id, inode_id, blob_sha256
-      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(singleton) DO UPDATE SET
-        version = excluded.version,
-        staged_path_identity_sha256 = excluded.staged_path_identity_sha256,
-        publication_name = excluded.publication_name,
-        instance_id = excluded.instance_id,
-        device_id = excluded.device_id,
-        inode_id = excluded.inode_id,
-        blob_sha256 = excluded.blob_sha256
-    `).run(
-      ownership.version,
-      ownership.staged_path_identity_sha256,
-      ownership.publication_name,
-      ownership.instance_id,
-      ownership.device_id,
-      ownership.inode_id,
-      ownership.blob_sha256
-    );
-    mutex.ownershipDatabase.exec("COMMIT");
-    afterPersisted?.();
-  } catch (error) {
-    try { mutex.ownershipDatabase.exec("ROLLBACK"); } catch { /* preserve stable persistence failure */ }
-    if ((error as { errcode?: number }).errcode === 5) {
-      throw new Error("MEDIA_BLOB_RECOVERY_BUSY");
-    }
-    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
-  }
+  commitVerifiedBlobRecoveryStageOwnership(mutex, ownership, afterPersisted);
   return ownership;
 }
 
@@ -2376,6 +2442,7 @@ function acquireVerifiedBlobRecoveryTargetMutex(
       CREATE TABLE IF NOT EXISTS verified_blob_recovery_stage_ownership (
         singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
         version INTEGER NOT NULL CHECK (version = 1),
+        state TEXT NOT NULL CHECK (state IN ('planned', 'published')),
         staged_path_identity_sha256 TEXT NOT NULL,
         publication_name TEXT NOT NULL,
         instance_id TEXT NOT NULL,
