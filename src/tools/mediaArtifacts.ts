@@ -1332,7 +1332,8 @@ function inspectInterruptedVerifiedBlobPlacement(
   deterministicOwnerPath: string,
   _roots: ReturnType<typeof activationRoots>,
   registeredRoot: string,
-  canonicalRoot: string
+  canonicalRoot: string,
+  hasActiveStageOwnership: boolean
 ): { candidatePaths: string[]; targetEntry: ReturnType<typeof lstatSync> } | null {
   const targetEntry = lstatSync(targetPath);
   if (targetEntry.isSymbolicLink() || !targetEntry.isFile()) {
@@ -1344,10 +1345,13 @@ function inspectInterruptedVerifiedBlobPlacement(
   }
 
   // A hard exit after the first normalization removal leaves the target and
-  // deterministic owner as a two-link pair.  That is still provably app-owned:
-  // the owner is the only remaining companion link to the target inode.  Treat
-  // it as a resumable state instead of rejecting every retry permanently.
+  // deterministic owner as a two-link pair.  The link shape and deterministic
+  // name are not ownership proof on their own; only an active persisted stage
+  // instance can make this an interrupted placement that is safe to resume.
   if (targetEntry.nlink === 2) {
+    if (!hasActiveStageOwnership) {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
     if (existsSync(deterministicStagedPath) || !existsSync(deterministicOwnerPath)
       || !sameResolvedPath(dirname(targetPath), dirname(deterministicOwnerPath))
       || !isPathInside(deterministicOwnerPath, registeredRoot)
@@ -1368,6 +1372,7 @@ function inspectInterruptedVerifiedBlobPlacement(
   }
 
   if (targetEntry.nlink !== 3
+    || !hasActiveStageOwnership
     || !existsSync(deterministicStagedPath) || !existsSync(deterministicOwnerPath)) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
@@ -1440,6 +1445,7 @@ function normalizeInterruptedVerifiedBlobPlacement(
   roots: ReturnType<typeof activationRoots>,
   registeredRoot: string,
   canonicalRoot: string,
+  hasActiveStageOwnership: boolean,
   afterLinkRemoved?: () => void
 ): void {
   const interrupted = inspectInterruptedVerifiedBlobPlacement(
@@ -1449,7 +1455,8 @@ function normalizeInterruptedVerifiedBlobPlacement(
     deterministicOwnerPath,
     roots,
     registeredRoot,
-    canonicalRoot
+    canonicalRoot,
+    hasActiveStageOwnership
   );
   if (!interrupted) return;
 
@@ -1657,6 +1664,24 @@ function commitVerifiedBlobRecoveryStageOwnership(
     );
     mutex.ownershipDatabase.exec("COMMIT");
     afterPersisted?.();
+  } catch (error) {
+    try { mutex.ownershipDatabase.exec("ROLLBACK"); } catch { /* preserve stable persistence failure */ }
+    if ((error as { errcode?: number }).errcode === 5) {
+      throw new Error("MEDIA_BLOB_RECOVERY_BUSY");
+    }
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+}
+
+function clearVerifiedBlobRecoveryStageOwnership(
+  mutex: VerifiedBlobRecoveryTargetMutex
+): void {
+  try {
+    mutex.ownershipDatabase.exec("BEGIN IMMEDIATE");
+    mutex.ownershipDatabase.prepare(
+      "DELETE FROM verified_blob_recovery_stage_ownership WHERE singleton = 1"
+    ).run();
+    mutex.ownershipDatabase.exec("COMMIT");
   } catch (error) {
     try { mutex.ownershipDatabase.exec("ROLLBACK"); } catch { /* preserve stable persistence failure */ }
     if ((error as { errcode?: number }).errcode === 5) {
@@ -2183,17 +2208,6 @@ function validateVerifiedBlobRecoveryEntriesBeforeAuthority(
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
 
-  const interrupted = existsSync(recoveryPaths.targetPath)
-    ? inspectInterruptedVerifiedBlobPlacement(
-      recoveryPaths.targetPath,
-      recoveryPaths.targetDirectory,
-      stagedPath,
-      ownerPath,
-      roots,
-      recoveryPaths.registeredRoot,
-      recoveryPaths.canonicalRoot
-    )
-    : null;
   const stageOwnership = readVerifiedBlobRecoveryStageOwnership(targetMutex, stagedPath, blob);
   const stagePublication = findRecordedRecoveryStagePublication(
     stagedPath,
@@ -2202,6 +2216,18 @@ function validateVerifiedBlobRecoveryEntriesBeforeAuthority(
     recoveryPaths.canonicalRoot,
     stageOwnership
   );
+  const interrupted = existsSync(recoveryPaths.targetPath)
+    ? inspectInterruptedVerifiedBlobPlacement(
+      recoveryPaths.targetPath,
+      recoveryPaths.targetDirectory,
+      stagedPath,
+      ownerPath,
+      roots,
+      recoveryPaths.registeredRoot,
+      recoveryPaths.canonicalRoot,
+      Boolean(stageOwnership)
+    )
+    : null;
 
   if (existsSync(stagedPath)
     && (!interrupted || !interrupted.candidatePaths.some((candidatePath) => sameResolvedPath(candidatePath, stagedPath)))) {
@@ -3125,6 +3151,22 @@ export function recoverVerifiedBlobStorage(
     ensureVerifiedBlobRecoveryTargetAuthority(recoveryPaths, blob, faults, targetMutex);
     filesystemRecoveryStarted = true;
 
+    let activeStageOwnership = readVerifiedBlobRecoveryStageOwnership(targetMutex, stagedPath, blob);
+    const activeStagePublication = findRecordedRecoveryStagePublication(
+      stagedPath,
+      stagedOwnerPath,
+      registeredRoot,
+      recoveryPaths.canonicalRoot,
+      activeStageOwnership
+    );
+    if (activeStageOwnership
+      && !existsSync(stagedPath)
+      && !existsSync(stagedOwnerPath)
+      && !activeStagePublication) {
+      clearVerifiedBlobRecoveryStageOwnership(targetMutex);
+      activeStageOwnership = null;
+    }
+
     if (existsSync(targetPath)) {
       normalizeInterruptedVerifiedBlobPlacement(
         targetPath,
@@ -3134,6 +3176,7 @@ export function recoverVerifiedBlobStorage(
         activation,
         registeredRoot,
         recoveryPaths.canonicalRoot,
+        Boolean(activeStageOwnership),
         faults.after_interrupted_placement_link_removed
       );
     }
@@ -3188,6 +3231,7 @@ export function recoverVerifiedBlobStorage(
         throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
       }
       if (!verifiedBlobStorageIsReusable(blob)) throw new Error("MEDIA_BLOB_RECOVERY_FAILED");
+      clearVerifiedBlobRecoveryStageOwnership(targetMutex);
       db.exec("COMMIT");
       transactionOpen = false;
       return {
@@ -3256,6 +3300,7 @@ export function recoverVerifiedBlobStorage(
       throw new Error("MEDIA_BLOB_RECOVERY_FAILED");
     }
 
+    clearVerifiedBlobRecoveryStageOwnership(targetMutex);
     db.exec("COMMIT");
     transactionOpen = false;
     return {

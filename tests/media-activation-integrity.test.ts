@@ -1535,9 +1535,21 @@ test("verified Blob recovery retries a partially normalized deterministic placem
     const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
     const ownerPath = verifiedBlobRecoveryStageOwnerPath(stagedPath);
     rmSync(targetPath);
-    copyFileSync(fixture.source_path, stagedPath);
-    linkSync(stagedPath, ownerPath);
+    const staged = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db, {
+      after_stage_published_with_owner_proof: () => {
+        throw new Error("INJECTED_STAGE_PUBLICATION");
+      }
+    });
+    assert.equal(staged.ok, false);
+    const publicationPath = verifiedBlobRecoveryStagePublicationPaths(stagedPath)[0];
+    assert.ok(publicationPath);
     linkSync(stagedPath, targetPath);
+    rmSync(publicationPath);
     assert.equal(lstatSync(targetPath).nlink, 3);
     assert.equal(lstatSync(stagedPath).nlink, 3);
     assert.equal(lstatSync(ownerPath).nlink, 3);
@@ -2357,6 +2369,64 @@ test("a later unowned deterministic owner is preserved despite existing target a
     assert.equal(ownerAfter.nlink, 1);
     assert.equal(ownerAfter.size, 0);
     assert.deepEqual(readFileSync(fixture.artifact.storage.uri), targetBytes);
+    assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
+    assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a later owner hard link is preserved after successful recovery convergence", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-late-owner-link-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const before = immutableBlobSnapshot(db, fixture.artifact.artifact_id);
+    const blob = getMediaBlob(db, fixture.artifact.blob_id);
+    assert.ok(blob);
+    const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
+    const ownerPath = verifiedBlobRecoveryStageOwnerPath(stagedPath);
+    const authorityPath = verifiedBlobRecoveryAuthorityPath(blob.storage_uri);
+    const targetPath = fixture.artifact.storage.uri;
+    const targetBytes = readFileSync(targetPath);
+    rmSync(targetPath);
+
+    const established = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(established.ok, true, established.ok ? undefined : established.error.code);
+    assert.equal(existsSync(authorityPath), true);
+    assert.equal(existsSync(stagedPath), false);
+    linkSync(targetPath, ownerPath);
+    const targetBefore = lstatSync(targetPath);
+    const ownerBefore = lstatSync(ownerPath);
+    assert.equal(targetBefore.nlink, 2);
+    assert.equal(ownerBefore.nlink, 2);
+
+    const blocked = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(blocked.ok, false);
+    if (!blocked.ok) assert.equal(blocked.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    const targetAfter = lstatSync(targetPath);
+    const ownerAfter = lstatSync(ownerPath);
+    assert.equal(targetAfter.dev, targetBefore.dev);
+    assert.equal(targetAfter.ino, targetBefore.ino);
+    assert.equal(targetAfter.nlink, 2);
+    assert.equal(ownerAfter.dev, ownerBefore.dev);
+    assert.equal(ownerAfter.ino, ownerBefore.ino);
+    assert.equal(ownerAfter.nlink, 2);
+    assert.deepEqual(readFileSync(targetPath), targetBytes);
     assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
     assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
   } finally {
