@@ -3306,6 +3306,20 @@ function reconcileOwnedRecoveryCleanupPair(
       );
       return;
     }
+    // A partial-stage discard can crash after the first cleanup removal while
+    // the target is still absent.  With no live counterpart, the published
+    // ownership inode and its single remaining cleanup link are the complete
+    // proof available; remove only that exact verified name and retry staging.
+    if (!existsSync(targetPath) && !liveStage && !liveOwner) {
+      removeVerifiedRecoveryPathEntry(
+        cleanupPaths[0],
+        owned,
+        expectedLinks,
+        registeredRoot,
+        cleanupDirectory
+      );
+      return;
+    }
     // A crash between the two isolation renames leaves one cleanup entry and
     // its still-published counterpart in the target directory.  Both entries
     // are safe to converge only when the persisted instance identity proves

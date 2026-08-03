@@ -4151,6 +4151,65 @@ test("verified Blob recovery converges a lone cleanup entry after a hard crash",
   }
 });
 
+test("verified Blob recovery converges a lone cleanup after partial-stage discard", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-partial-cleanup-crash-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  let db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const before = immutableBlobSnapshot(db, fixture.artifact.artifact_id);
+    const blob = getMediaBlob(db, fixture.artifact.blob_id);
+    assert.ok(blob);
+    const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
+    const ownerPath = verifiedBlobRecoveryStageOwnerPath(stagedPath);
+    const cleanup = verifiedBlobRecoveryCleanupPaths(mediaRoot, stagedPath);
+
+    rmSync(fixture.artifact.storage.uri);
+    db.close();
+    hardCrashVerifiedBlobRecovery({
+      sqlite_path: sqlitePath,
+      artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    });
+    writeFileSync(stagedPath, readFileSync(fixture.source_path).subarray(0, 32));
+    hardCrashVerifiedBlobRecovery({
+      sqlite_path: sqlitePath,
+      artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path,
+      crash_at: "after_staging_cleanup_entry_removed"
+    });
+    assert.equal(existsSync(stagedPath), false);
+    assert.equal(existsSync(ownerPath), false);
+    assert.equal(existsSync(fixture.artifact.storage.uri), false);
+    assert.equal(existsSync(cleanup.staged_cleanup), false);
+    assert.equal(existsSync(cleanup.owner_cleanup), true);
+    assert.equal(statSync(cleanup.owner_cleanup).nlink, 1);
+
+    db = openM0Database(sqlitePath);
+    const retried = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(retried.ok, true, retried.ok ? undefined : retried.error.code);
+    assert.equal(existsSync(cleanup.staged_cleanup), false);
+    assert.equal(existsSync(cleanup.owner_cleanup), false);
+    assert.equal(statSync(fixture.artifact.storage.uri).nlink, 1);
+    assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
+    assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
+  } finally {
+    try { db.close(); } catch { /* hard-crash setup may already have closed the first handle */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("verified Blob recovery preserves a split cleanup counterpart instead of moving an unverified path", () => {
   const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-stage-isolation-crash-"));
   const mediaRoot = join(root, "media");
