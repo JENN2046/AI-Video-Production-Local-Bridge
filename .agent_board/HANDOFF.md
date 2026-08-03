@@ -2,7 +2,7 @@
 
 Current mode: PR #109 orphaned Blob recovery staging remediation; no executable task is `READY`
 Last run: PR109_SCOPE_CONTRACTION
-Last result: Blob-recovery-only PR #109 is at `2b5010510498f0ee82176135d15f1e8db3e0555d`; Windows CI run `30807054533` passed both jobs, all current review threads are resolved, and a fresh final review is pending
+Last result: Blob-recovery-only PR #109 is at `57a070b7ccbb29836b040609f775d525e287d230`; predecessor CI run `30807054533` passed both jobs, and exact-head CI/review evidence is tracked in PR #109
 
 ## Current state
 
@@ -13,14 +13,13 @@ Ready task count: 0
 
 ## Current PR #109 boundary
 
-- Current head: `2b5010510498f0ee82176135d15f1e8db3e0555d`.
+- Current head: `57a070b7ccbb29836b040609f775d525e287d230`.
 - Retained scope: Blob recovery staging, ownership, authority, mutex, path
   identity and crash convergence.
 - Removed scope: Node engine/preflight compatibility; it is being prepared as
   a separate PR from current `main`.
-- PR #109 remains open and unmerged. All current review threads have been
-  replied to and resolved; the final review is pending, and no merge is
-  authorized.
+- PR #109 remains open and unmerged. Review-thread state is determined from
+  the exact PR head; no merge is authorized.
 
 ## Current S3 and S3B state
 
