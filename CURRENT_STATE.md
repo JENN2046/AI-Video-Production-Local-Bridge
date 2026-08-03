@@ -14,7 +14,7 @@ Repository baseline: `main@55553cbf2f9bc387beb255cebb8b36bcb2deadbf`
 - PR #108, `fix: bound Provider polling and recover verified Blob storage`, was
   squash-merged as `808d9334a49def7ce858f7c6138af75fed392c5b`.
 - PR #109 remains open and unmerged at current head
-  `b778aa038dbf62bd6ac817f0c6480475a1bc880c` on
+  `78c6cc45b6777db8f0fcf93d3aa1b1ae4037ae7f` on
   `codex/blob-recovery-staging-reconciliation`. Its scope is now limited to
   Blob recovery staging, ownership, authority, mutex, path identity and crash
   convergence. The Node engine/preflight compatibility change was removed from
@@ -23,7 +23,8 @@ Repository baseline: `main@55553cbf2f9bc387beb255cebb8b36bcb2deadbf`
   reusable-publication recovery fixes, while `4712f4d` keeps the Windows crash
   fixture deterministic. The latest follow-ups mark a target published at the
   link boundary, roll it back only with persisted ownership/inode proof, and
-  reject managed publication files as recovery sources. The
+  reject managed publication files and their physical aliases as recovery
+  sources. The
   unpersisted removal-isolation experiment from
   `c39367b` was reverted in `89e0161`; its atomic unlink race requires a
   separate persistent/native design and is explicitly deferred rather than

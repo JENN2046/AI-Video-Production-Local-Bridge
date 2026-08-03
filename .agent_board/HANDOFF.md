@@ -2,7 +2,7 @@
 
 Current mode: PR #109 orphaned Blob recovery staging remediation; no executable task is `READY`
 Last run: PR109_SCOPE_CONTRACTION
-Last result: Blob-recovery-only PR #109 is at `b778aa038dbf62bd6ac817f0c6480475a1bc880c`; predecessor CI run `30807054533` passed both jobs, and exact-head CI/review evidence is tracked in PR #109
+Last result: Blob-recovery-only PR #109 is at `78c6cc45b6777db8f0fcf93d3aa1b1ae4037ae7f`; predecessor CI run `30807054533` passed both jobs, and exact-head CI/review evidence is tracked in PR #109
 
 ## Current state
 
@@ -13,14 +13,15 @@ Ready task count: 0
 
 ## Current PR #109 boundary
 
-- Current head: `b778aa038dbf62bd6ac817f0c6480475a1bc880c`.
+- Current head: `78c6cc45b6777db8f0fcf93d3aa1b1ae4037ae7f`.
 - Retained scope: Blob recovery staging, ownership, authority, mutex, path
   identity and crash convergence.
 - Removed scope: Node engine/preflight compatibility; it is being prepared as
   a separate PR from current `main`.
 - The latest follow-ups mark a target published at the link boundary, roll it
   back only with persisted ownership/inode proof, and reject managed
-  publication files as recovery sources. The unpersisted
+  publication files and their physical aliases as recovery sources. The
+  unpersisted
   removal-isolation experiment from `c39367b` was reverted in
   `89e0161`; its atomic unlink race requires a separate persistent/native design
   and is explicitly deferred. `4712f4d` keeps the reusable-publication crash
