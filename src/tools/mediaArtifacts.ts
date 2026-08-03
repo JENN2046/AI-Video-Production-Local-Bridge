@@ -3292,6 +3292,20 @@ function reconcileOwnedRecoveryCleanupPair(
   }
 
   if (cleanupPaths.length === 1) {
+    // A crash after the first cleanup entry was removed can leave the
+    // published target and one verified cleanup link.  The target is the
+    // persisted ownership authority in this state; converge only the
+    // remaining cleanup name after rechecking its exact inode and link count.
+    if (targetOwnsLink && !liveStage && !liveOwner) {
+      removeVerifiedRecoveryPathEntry(
+        cleanupPaths[0],
+        owned,
+        expectedLinks,
+        registeredRoot,
+        cleanupDirectory
+      );
+      return;
+    }
     // A crash between the two isolation renames leaves one cleanup entry and
     // its still-published counterpart in the target directory.  Both entries
     // are safe to converge only when the persisted instance identity proves

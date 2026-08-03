@@ -4084,7 +4084,7 @@ test("verified Blob recovery preserves a staging entry replaced after ownership 
   }
 });
 
-test("verified Blob recovery preserves an unprovable lone cleanup entry after a hard crash", () => {
+test("verified Blob recovery converges a lone cleanup entry after a hard crash", () => {
   const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-stage-cleanup-crash-"));
   const mediaRoot = join(root, "media");
   const sqlitePath = join(root, "app.sqlite");
@@ -4108,7 +4108,6 @@ test("verified Blob recovery preserves an unprovable lone cleanup entry after a 
       shot_id: fixture.shot_id,
       source_path: fixture.source_path
     });
-    copyFileSync(fixture.source_path, fixture.artifact.storage.uri, constants.COPYFILE_EXCL);
     hardCrashVerifiedBlobRecovery({
       sqlite_path: sqlitePath,
       artifact_id: fixture.artifact.artifact_id,
@@ -4119,6 +4118,8 @@ test("verified Blob recovery preserves an unprovable lone cleanup entry after a 
     });
     assert.equal(existsSync(stagedPath), false);
     assert.equal(existsSync(ownerPath), false);
+    assert.equal(existsSync(fixture.artifact.storage.uri), true);
+    assert.equal(statSync(fixture.artifact.storage.uri).nlink, 2);
     assert.equal(existsSync(cleanup.staged_cleanup), false);
     assert.equal(existsSync(cleanup.owner_cleanup), true);
 
@@ -4139,10 +4140,9 @@ test("verified Blob recovery preserves an unprovable lone cleanup entry after a 
       shot_id: fixture.shot_id,
       source_path: fixture.source_path
     }, db);
-    assert.equal(retried.ok, false);
-    if (!retried.ok) assert.equal(retried.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    assert.equal(retried.ok, true);
     assert.equal(existsSync(cleanup.staged_cleanup), false);
-    assert.equal(existsSync(cleanup.owner_cleanup), true);
+    assert.equal(existsSync(cleanup.owner_cleanup), false);
     assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
     assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
   } finally {
