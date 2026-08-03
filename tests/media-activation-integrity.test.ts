@@ -3785,7 +3785,19 @@ test("verified Blob recovery resumes a publication-only crash from its persisted
     assert.equal(statSync(publicationPaths[0]).size, 0);
     assert.equal(statSync(publicationPaths[0]).nlink, 1);
 
+    copyFileSync(fixture.source_path, fixture.artifact.storage.uri, constants.COPYFILE_EXCL);
+    copyFileSync(fixture.source_path, publicationPaths[0]);
     db = openM0Database(sqlitePath);
+    const blocked = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: publicationPaths[0]
+    }, db);
+    assert.equal(blocked.ok, false);
+    if (!blocked.ok) assert.equal(blocked.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    assert.equal(existsSync(publicationPaths[0]), true);
+
     const retried = recoverVerifiedBlobStorage({
       invalid_artifact_id: fixture.artifact.artifact_id,
       project_id: fixture.project_id,

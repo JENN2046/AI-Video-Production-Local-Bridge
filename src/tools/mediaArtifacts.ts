@@ -3935,6 +3935,11 @@ export function recoverVerifiedBlobStorage(
       clearVerifiedBlobRecoveryStageOwnership(targetMutex);
       activeStageOwnership = null;
     }
+    if (activeStagePublication && sameResolvedPath(sourcePath, activeStagePublication.path)) {
+      // The publication is managed recovery state.  Never consume it as the
+      // caller's source, including the already-reusable no-op branch.
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
 
     if (existsSync(targetPath)) {
       normalizeInterruptedVerifiedBlobPlacement(
