@@ -3318,7 +3318,24 @@ function reconcileOwnedRecoveryCleanupPair(
     // the target is still absent.  With no live counterpart, the published
     // ownership inode and its single remaining cleanup link are the complete
     // proof available; remove only that exact verified name and retry staging.
-    if (!existsSync(targetPath) && !liveStage && !liveOwner) {
+    let safeIndependentTarget = false;
+    if (existsSync(targetPath)) {
+      try {
+        const target = lstatSync(targetPath);
+        const canonicalRoot = resolve(realpathSync(registeredRoot));
+        const canonicalTarget = resolve(realpathSync(targetPath));
+        safeIndependentTarget = !target.isSymbolicLink()
+          && target.isFile()
+          && target.nlink === 1
+          && isPathInside(resolve(targetPath), registeredRoot)
+          && !hasExistingSymlinkAncestor(targetPath, registeredRoot)
+          && isPathInside(canonicalTarget, canonicalRoot)
+          && (target.dev !== owned.dev || target.ino !== owned.ino);
+      } catch {
+        safeIndependentTarget = false;
+      }
+    }
+    if ((!existsSync(targetPath) || safeIndependentTarget) && !liveStage && !liveOwner) {
       removeVerifiedRecoveryPathEntry(
         cleanupPaths[0],
         owned,

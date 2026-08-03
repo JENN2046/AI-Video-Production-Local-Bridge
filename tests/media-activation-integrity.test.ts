@@ -3979,6 +3979,7 @@ test("verified Blob recovery removes a stale deterministic stage for reusable ta
     assert.ok(blob);
     const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
     const ownerPath = verifiedBlobRecoveryStageOwnerPath(stagedPath);
+    const cleanup = verifiedBlobRecoveryCleanupPaths(mediaRoot, stagedPath);
 
     const authorityEstablished = recoverVerifiedBlobStorage({
       invalid_artifact_id: fixture.artifact.artifact_id,
@@ -4003,6 +4004,23 @@ test("verified Blob recovery removes a stale deterministic stage for reusable ta
     const startupWithReusableTarget = runStartupRecoveryChild({ cwd: root, configured_path: sqlitePath });
     assert.deepEqual(startupWithReusableTarget.failed, []);
     assert.equal(existsSync(stagedPath), true);
+    db.close();
+    hardCrashVerifiedBlobRecovery({
+      sqlite_path: sqlitePath,
+      artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path,
+      crash_at: "after_staging_cleanup_entry_removed"
+    });
+    assert.equal(existsSync(stagedPath), false);
+    assert.equal(existsSync(ownerPath), false);
+    assert.equal(existsSync(fixture.artifact.storage.uri), true);
+    assert.equal(statSync(fixture.artifact.storage.uri).nlink, 1);
+    assert.equal(existsSync(cleanup.staged_cleanup), false);
+    assert.equal(existsSync(cleanup.owner_cleanup), true);
+
+    db = openM0Database(sqlitePath);
     const noOp = recoverVerifiedBlobStorage({
       invalid_artifact_id: fixture.artifact.artifact_id,
       project_id: fixture.project_id,
@@ -4013,6 +4031,8 @@ test("verified Blob recovery removes a stale deterministic stage for reusable ta
     if (noOp.ok) assert.equal(noOp.outcome, "ALREADY_REUSABLE");
     assert.equal(existsSync(stagedPath), false);
     assert.equal(existsSync(ownerPath), false);
+    assert.equal(existsSync(cleanup.staged_cleanup), false);
+    assert.equal(existsSync(cleanup.owner_cleanup), false);
 
     rmSync(fixture.artifact.storage.uri);
     db.close();
