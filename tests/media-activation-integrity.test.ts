@@ -3714,6 +3714,7 @@ test("verified Blob recovery resumes a publication-only crash from its persisted
     assert.ok(blob);
     const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
     const ownerPath = verifiedBlobRecoveryStageOwnerPath(stagedPath);
+    const ownershipPath = verifiedBlobRecoveryStageOwnershipPath(mediaRoot, stagedPath);
     const before = immutableBlobSnapshot(db, fixture.artifact.artifact_id);
     rmSync(fixture.artifact.storage.uri);
     db.close();
@@ -3744,6 +3745,15 @@ test("verified Blob recovery resumes a publication-only crash from its persisted
     assert.equal(existsSync(stagedPath), false);
     assert.equal(existsSync(ownerPath), false);
     assert.equal(existsSync(publicationPaths[0]), false);
+    const ownershipDb = new DatabaseSync(ownershipPath);
+    try {
+      const publicationRow = ownershipDb.prepare(
+        "SELECT singleton FROM verified_blob_recovery_target_authority_publication WHERE singleton = 1"
+      ).get();
+      assert.equal(publicationRow, undefined);
+    } finally {
+      ownershipDb.close();
+    }
     assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
     assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
   } finally {

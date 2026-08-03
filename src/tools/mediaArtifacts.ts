@@ -2104,6 +2104,37 @@ function removeRecordedVerifiedBlobRecoveryTargetAuthorityCompanion(
   assertVerifiedBlobRecoveryTargetAuthorityFile(authorityPath, recoveryPaths, expected);
 }
 
+function clearVerifiedBlobRecoveryTargetAuthorityPublication(
+  mutex: VerifiedBlobRecoveryTargetMutex,
+  publication: VerifiedBlobRecoveryTargetAuthorityPublication
+): void {
+  try {
+    mutex.ownershipDatabase.exec("BEGIN IMMEDIATE");
+    const deleted = mutex.ownershipDatabase.prepare(`
+      DELETE FROM verified_blob_recovery_target_authority_publication
+       WHERE singleton = 1
+         AND temporary_name = ?
+         AND device_id = ?
+         AND inode_id = ?
+         AND target_identity_sha256 = ?
+    `).run(
+      publication.temporary_name,
+      publication.device_id,
+      publication.inode_id,
+      publication.target_identity_sha256
+    ) as { changes?: number };
+    if (Number(deleted.changes) !== 1) throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    mutex.ownershipDatabase.exec("COMMIT");
+  } catch (error) {
+    try { mutex.ownershipDatabase.exec("ROLLBACK"); } catch { /* preserve stable persistence failure */ }
+    if (error instanceof Error && error.message === "MEDIA_BLOB_RECOVERY_PATH_UNSAFE") throw error;
+    if ((error as { errcode?: number }).errcode === 5) {
+      throw new Error("MEDIA_BLOB_RECOVERY_BUSY");
+    }
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+}
+
 function readVerifiedBlobRecoveryBinding(
   input: VerifiedBlobStorageRecoveryInput,
   db: M0Database
@@ -2365,6 +2396,7 @@ function ensureVerifiedBlobRecoveryTargetAuthority(
         recoveryPaths,
         expected
       );
+      clearVerifiedBlobRecoveryTargetAuthorityPublication(targetMutex, publication);
     }
     return authorityPath;
   } catch (error) {
@@ -2470,6 +2502,7 @@ function ensureVerifiedBlobRecoveryTargetAuthority(
     recoveryPaths,
     expected
   );
+  clearVerifiedBlobRecoveryTargetAuthorityPublication(targetMutex, publication);
   return authorityPath;
 }
 
