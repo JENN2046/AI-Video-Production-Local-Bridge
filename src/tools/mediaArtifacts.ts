@@ -3714,7 +3714,8 @@ function placeOwnedRecoveryStagingFile(
   beforeIsolation?: () => void,
   afterFirstIsolation?: () => void,
   afterFirstCleanupRemoval?: () => void,
-  protectedSourcePath = ""
+  protectedSourcePath = "",
+  afterTargetPublished?: () => void
 ): void {
   const stagedIdentity = assertOwnedRecoveryStagingFile(
     stagedPath,
@@ -3738,6 +3739,10 @@ function placeOwnedRecoveryStagingFile(
     || targetIdentity.ino !== stagedIdentity.ino) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
+  // Publish state must be visible to the caller before any later cleanup
+  // step can fail; otherwise a replacement already linked at targetPath can
+  // escape the caller's rollback path.
+  afterTargetPublished?.();
   removeOwnedRecoveryStagingPair(
     stagedPath,
     ownerPath,
@@ -3787,6 +3792,7 @@ export function recoverVerifiedBlobStorage(
   let originalQuarantined = false;
   let filesystemRecoveryStarted = false;
   let targetMutex: VerifiedBlobRecoveryTargetMutex | null = null;
+  let recoveryStageOwnership: VerifiedBlobRecoveryStageOwnership | null = null;
   let originalCondition: "MISSING_BYTES" | "CONTENT_DRIFT" | "ALREADY_REUSABLE" = "MISSING_BYTES";
 
   try {
@@ -4064,6 +4070,7 @@ export function recoverVerifiedBlobStorage(
     }
 
     const stageOwnership = readVerifiedBlobRecoveryStageOwnership(targetMutex, stagedPath, blob);
+    recoveryStageOwnership = stageOwnership;
     assertVerifiedBlobRecoveryStageOwnership(stageOwnership, stagedPath, stagedOwnerPath, blob);
     placeOwnedRecoveryStagingFile(
       stagedPath,
@@ -4076,11 +4083,11 @@ export function recoverVerifiedBlobStorage(
       faults.before_staging_pair_isolated,
       faults.after_staging_entry_isolated,
       faults.after_staging_cleanup_entry_removed,
-      sourcePath
+      sourcePath,
+      () => { replacementPlaced = true; }
     );
     stagedPath = "";
     stagedOwnerPath = "";
-    replacementPlaced = true;
     faults.after_replacement_placed?.();
     faults.before_final_verification?.();
 
@@ -4110,7 +4117,22 @@ export function recoverVerifiedBlobStorage(
     if (filesystemRecoveryStarted && replacementPlaced && targetPath && registeredRoot && existsSync(targetPath)) {
       try {
         const rootCanonical = resolve(realpathSync(registeredRoot));
-        assertRecoveryRegularFile(targetPath, registeredRoot, rootCanonical);
+        const targetEntry = lstatSync(targetPath);
+        if (targetEntry.isSymbolicLink() || !targetEntry.isFile() || targetEntry.ino === 0
+          || !isPathInside(resolve(targetPath), registeredRoot)
+          || hasExistingSymlinkAncestor(targetPath, registeredRoot)
+          || !isPathInside(resolve(realpathSync(targetPath)), rootCanonical)) {
+          throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+        }
+        if (!recoveryStageOwnership
+          || recoveryStageOwnership.state !== "published"
+          || !/^\d+$/.test(recoveryStageOwnership.device_id)
+          || !/^\d+$/.test(recoveryStageOwnership.inode_id)
+          || recoveryStageOwnership.inode_id === "0"
+          || String(targetEntry.dev) !== recoveryStageOwnership.device_id
+          || String(targetEntry.ino) !== recoveryStageOwnership.inode_id) {
+          throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+        }
         renameSync(targetPath, rollbackDiscardPath);
         replacementMovedAside = true;
         replacementPlaced = false;
@@ -4134,7 +4156,30 @@ export function recoverVerifiedBlobStorage(
       }
     }
     if (filesystemRecoveryStarted && replacementMovedAside && rollbackDiscardPath) {
-      try { removeGeneratedRecoveryFile(rollbackDiscardPath, dirname(targetPath), registeredRoot); } catch { /* generated cleanup is retryable */ }
+      try {
+        const rollbackEntry = lstatSync(rollbackDiscardPath);
+        if (rollbackEntry.nlink > 1) {
+          if (!recoveryStageOwnership
+            || recoveryStageOwnership.state !== "published"
+            || !/^\d+$/.test(recoveryStageOwnership.device_id)
+            || !/^\d+$/.test(recoveryStageOwnership.inode_id)
+            || recoveryStageOwnership.inode_id === "0"
+            || String(rollbackEntry.dev) !== recoveryStageOwnership.device_id
+            || String(rollbackEntry.ino) !== recoveryStageOwnership.inode_id) {
+            throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+          }
+          removeVerifiedRecoveryPathEntry(
+            rollbackDiscardPath,
+            rollbackEntry,
+            rollbackEntry.nlink,
+            registeredRoot,
+            dirname(targetPath),
+            resolve(realpathSync(registeredRoot))
+          );
+        } else {
+          removeGeneratedRecoveryFile(rollbackDiscardPath, dirname(targetPath), registeredRoot);
+        }
+      } catch { /* generated cleanup is retryable */ }
     }
     if (filesystemRecoveryStarted && stagedPath && stagedOwnerPath) {
       try {

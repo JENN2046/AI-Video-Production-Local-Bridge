@@ -1838,6 +1838,7 @@ test("verified Blob recovery fault seams never report success and remain explici
   const seams: Array<keyof VerifiedBlobStorageRecoveryFaults> = [
     "after_staged_copy",
     "after_corrupt_quarantined",
+    "before_staging_pair_isolated",
     "after_replacement_placed",
     "before_final_verification"
   ];
