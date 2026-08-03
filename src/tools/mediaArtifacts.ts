@@ -3732,6 +3732,10 @@ function placeOwnedRecoveryStagingFile(
     }
     throw error;
   }
+  // The no-clobber link is the publication boundary.  Record it before any
+  // post-link stat or cleanup validation can fail so the caller can enter its
+  // ownership-bound rollback path.
+  afterTargetPublished?.();
   const targetIdentity = lstatSync(targetPath);
   if (targetIdentity.isSymbolicLink() || !targetIdentity.isFile()
     || targetIdentity.nlink !== 3
@@ -3739,10 +3743,6 @@ function placeOwnedRecoveryStagingFile(
     || targetIdentity.ino !== stagedIdentity.ino) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
-  // Publish state must be visible to the caller before any later cleanup
-  // step can fail; otherwise a replacement already linked at targetPath can
-  // escape the caller's rollback path.
-  afterTargetPublished?.();
   removeOwnedRecoveryStagingPair(
     stagedPath,
     ownerPath,
