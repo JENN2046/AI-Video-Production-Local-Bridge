@@ -95,6 +95,7 @@ export interface VerifiedBlobStorageRecoveryFaults {
   after_target_mutex_acquired?: () => void;
   after_target_mutex_guard_open?: () => void;
   after_target_mutex_temp_initialized?: () => void;
+  after_target_mutex_temp_linked?: () => void;
   after_target_mutex_temp_link_observed?: () => void;
   after_target_authority_temp_created?: () => void;
   after_stage_ownership_planned?: () => void;
@@ -849,6 +850,8 @@ const BLOB_RECOVERY_TARGET_MUTEX_BUSY_TIMEOUT_MS = 30_000;
 const BLOB_RECOVERY_TARGET_MUTEX_APPLICATION_ID = 0x41564252;
 const BLOB_RECOVERY_STAGE_OWNERSHIP_APPLICATION_ID = 0x4156424f;
 const BLOB_RECOVERY_TARGET_MUTEX_MAX_BYTES = 64 * 1024;
+const BLOB_RECOVERY_TARGET_MUTEX_TEMP_MARKER_OFFSET = 72;
+const BLOB_RECOVERY_TARGET_MUTEX_TEMP_MARKER_BYTES = 16;
 const BLOB_RECOVERY_STAGE_OWNERSHIP_JOURNAL_MAX_BYTES = 128 * 1024;
 const requireNodeBuiltin = createRequire(import.meta.url);
 
@@ -1160,6 +1163,71 @@ function findRecordedRecoveryStagePublication(
     }
   }
   return { path: publicationPath, entry: publication };
+}
+
+function removeVerifiedBlobRecoveryStagePublication(
+  publication: { path: string; entry: NonNullable<ReturnType<typeof lstatSync>> },
+  stagedPath: string,
+  ownerPath: string,
+  registeredRoot: string,
+  canonicalRoot: string
+): void {
+  const expected = { dev: publication.entry.dev, ino: publication.entry.ino };
+  const publicationDirectory = dirname(publication.path);
+  if (!sameResolvedPath(publicationDirectory, dirname(stagedPath))
+    || !sameResolvedPath(publicationDirectory, dirname(ownerPath))) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  const stageExists = existsSync(stagedPath);
+  const ownerExists = existsSync(ownerPath);
+  if (stageExists && !ownerExists) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  const expectedLinkCount = 1 + Number(stageExists) + Number(ownerExists);
+  const currentPublication = lstatSync(publication.path);
+  if (currentPublication.isSymbolicLink() || !currentPublication.isFile()
+    || currentPublication.dev !== expected.dev
+    || currentPublication.ino !== expected.ino
+    || currentPublication.nlink !== expectedLinkCount) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  if (stageExists) {
+    removeVerifiedRecoveryPathEntry(
+      publication.path,
+      expected,
+      expectedLinkCount,
+      registeredRoot,
+      publicationDirectory,
+      canonicalRoot
+    );
+    return;
+  }
+  if (ownerExists) {
+    assertVerifiedRecoveryPathEntry(
+      ownerPath,
+      expected,
+      2,
+      registeredRoot,
+      publicationDirectory,
+      canonicalRoot
+    );
+    removeVerifiedRecoveryPathEntry(
+      ownerPath,
+      expected,
+      2,
+      registeredRoot,
+      publicationDirectory,
+      canonicalRoot
+    );
+  }
+  removeVerifiedRecoveryPathEntry(
+    publication.path,
+    expected,
+    1,
+    registeredRoot,
+    publicationDirectory,
+    canonicalRoot
+  );
 }
 
 function assertOwnedRecoveryStagingFile(
@@ -2652,7 +2720,45 @@ function assertVerifiedBlobRecoveryTargetMutexHeader(
   }
 }
 
-function writeEmptyVerifiedBlobRecoveryMutex(descriptor: number, lockPath: string): void {
+function verifiedBlobRecoveryTargetMutexTempMarker(
+  temporaryPath: string,
+  lockPath: string
+): Buffer {
+  return createHash("sha256")
+    .update("verified-blob-recovery-mutex-temp-v1\0")
+    .update(resolve(lockPath))
+    .update("\0")
+    .update(basename(temporaryPath))
+    .digest()
+    .subarray(0, BLOB_RECOVERY_TARGET_MUTEX_TEMP_MARKER_BYTES);
+}
+
+function assertVerifiedBlobRecoveryTargetMutexTempMarker(
+  descriptor: number,
+  temporaryPath: string,
+  lockPath: string
+): void {
+  if (!BLOB_RECOVERY_TARGET_MUTEX_TEMP_NAME.test(basename(temporaryPath))) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  const marker = Buffer.alloc(BLOB_RECOVERY_TARGET_MUTEX_TEMP_MARKER_BYTES);
+  if (readSync(
+    descriptor,
+    marker,
+    0,
+    marker.length,
+    BLOB_RECOVERY_TARGET_MUTEX_TEMP_MARKER_OFFSET
+  ) !== marker.length
+    || !marker.equals(verifiedBlobRecoveryTargetMutexTempMarker(temporaryPath, lockPath))) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+}
+
+function writeEmptyVerifiedBlobRecoveryMutex(
+  descriptor: number,
+  lockPath: string,
+  temporaryPath: string
+): void {
   const identity = verifiedBlobRecoveryTargetMutexHeaderIdentity(lockPath);
   const page = Buffer.alloc(4096);
   page.write("SQLite format 3\0", 0, "binary");
@@ -2670,6 +2776,10 @@ function writeEmptyVerifiedBlobRecoveryMutex(descriptor: number, lockPath: strin
   page.writeUInt32BE(identity.applicationId, 68);
   page.writeUInt32BE(1, 92);
   page.writeUInt32BE(3_048_000, 96);
+  verifiedBlobRecoveryTargetMutexTempMarker(temporaryPath, lockPath).copy(
+    page,
+    BLOB_RECOVERY_TARGET_MUTEX_TEMP_MARKER_OFFSET
+  );
   page[100] = 0x0d;
   page.writeUInt16BE(4096, 105);
   let written = 0;
@@ -2707,6 +2817,8 @@ function findInterruptedVerifiedBlobRecoveryMutexInitialization(
         continue;
       }
       try { assertVerifiedBlobRecoveryTargetMutexHeader(descriptor, lockPath); }
+      catch { continue; }
+      try { assertVerifiedBlobRecoveryTargetMutexTempMarker(descriptor, candidatePath, lockPath); }
       catch { continue; }
       candidates.push(candidatePath);
     } catch { /* unrelated or concurrently changing temp entries are preserved */ }
@@ -2763,6 +2875,7 @@ function removeVerifiedBlobRecoveryMutexInitializationExtras(
         continue;
       }
       assertVerifiedBlobRecoveryTargetMutexHeader(descriptor, lockPath);
+      assertVerifiedBlobRecoveryTargetMutexTempMarker(descriptor, candidatePath, lockPath);
       assertVerifiedBlobRecoveryTargetMutexSidecarsAbsent(candidatePath);
       const currentEntry = lstatSync(candidatePath);
       if (currentEntry.isSymbolicLink() || !currentEntry.isFile() || currentEntry.nlink !== 1
@@ -2802,7 +2915,8 @@ function initializeVerifiedBlobRecoveryTargetMutex(
   lockPath: string,
   recoveryPaths: ReturnType<typeof recoveryRootAndTarget>,
   roots: ReturnType<typeof activationRoots>,
-  afterInitialized?: () => void
+  afterInitialized?: () => void,
+  afterLinked?: () => void
 ): void {
   const interrupted = findInterruptedVerifiedBlobRecoveryMutexInitialization(
     lockPath,
@@ -2823,7 +2937,7 @@ function initializeVerifiedBlobRecoveryTargetMutex(
   try {
     descriptor = openSync(temporaryPath, interruptedPath ? "r+" : "wx+");
     temporaryIdentity = fstatSync(descriptor);
-    if (!interruptedPath) writeEmptyVerifiedBlobRecoveryMutex(descriptor, lockPath);
+    if (!interruptedPath) writeEmptyVerifiedBlobRecoveryMutex(descriptor, lockPath, temporaryPath);
     const initialized = fstatSync(descriptor);
     const currentInitialized = statSync(temporaryPath);
     if (initialized.dev !== temporaryIdentity.dev
@@ -2833,6 +2947,7 @@ function initializeVerifiedBlobRecoveryTargetMutex(
       throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
     }
     assertVerifiedBlobRecoveryTargetMutexHeader(descriptor, lockPath);
+    assertVerifiedBlobRecoveryTargetMutexTempMarker(descriptor, temporaryPath, lockPath);
     assertVerifiedBlobRecoveryTargetMutexSidecarsAbsent(temporaryPath);
     afterInitialized?.();
     try { linkSync(temporaryPath, lockPath); }
@@ -2841,6 +2956,7 @@ function initializeVerifiedBlobRecoveryTargetMutex(
         throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
       }
     }
+    afterLinked?.();
     if (interruptedPath) {
       removeVerifiedBlobRecoveryMutexInitializationExtras(
         lockPath,
@@ -2946,6 +3062,11 @@ function assertVerifiedBlobRecoveryTargetMutexFile(
           || candidate.ino !== guarded.ino) {
           throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
         }
+        assertVerifiedBlobRecoveryTargetMutexTempMarker(
+          guardDescriptor,
+          linkedCandidatePath,
+          lockPath
+        );
         assertVerifiedBlobRecoveryTargetMutexSidecarsAbsent(linkedCandidatePath);
         removeVerifiedRecoveryPathEntry(
           linkedCandidatePath,
@@ -3003,7 +3124,8 @@ function acquireVerifiedBlobRecoveryTargetMutex(
       lockPath,
       recoveryPaths,
       roots,
-      faults.after_target_mutex_temp_initialized
+      faults.after_target_mutex_temp_initialized,
+      faults.after_target_mutex_temp_linked
     );
   }
 
@@ -3053,7 +3175,8 @@ function acquireVerifiedBlobRecoveryTargetMutex(
         ownershipPath,
         recoveryPaths,
         roots,
-        faults.after_target_mutex_temp_initialized
+        faults.after_target_mutex_temp_initialized,
+        faults.after_target_mutex_temp_linked
       );
     }
     assertVerifiedBlobRecoveryTargetMutexFile(ownershipPath, recoveryPaths, roots);
@@ -3792,7 +3915,7 @@ export function recoverVerifiedBlobStorage(
     filesystemRecoveryStarted = true;
 
     let activeStageOwnership = readVerifiedBlobRecoveryStageOwnership(targetMutex, stagedPath, blob);
-    const activeStagePublication = findRecordedRecoveryStagePublication(
+    let activeStagePublication = findRecordedRecoveryStagePublication(
       stagedPath,
       stagedOwnerPath,
       registeredRoot,
@@ -3844,6 +3967,16 @@ export function recoverVerifiedBlobStorage(
     }
 
     if (originalCondition === "ALREADY_REUSABLE") {
+      if (activeStagePublication && existsSync(stagedPath)) {
+        removeVerifiedBlobRecoveryStagePublication(
+          activeStagePublication,
+          stagedPath,
+          stagedOwnerPath,
+          registeredRoot,
+          recoveryPaths.canonicalRoot
+        );
+        activeStagePublication = null;
+      }
       if (existsSync(stagedPath)) {
         const stageOwnership = readVerifiedBlobRecoveryStageOwnership(targetMutex, stagedPath, blob);
         assertVerifiedBlobRecoveryStageOwnership(stageOwnership, stagedPath, stagedOwnerPath, blob);
@@ -3869,7 +4002,23 @@ export function recoverVerifiedBlobStorage(
           faults.after_staging_cleanup_entry_removed,
           sourcePath
         );
-      } else if (existsSync(stagedOwnerPath)) {
+      } else if (existsSync(stagedOwnerPath) && !activeStagePublication) {
+        throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+      }
+      if (activeStagePublication) {
+        if (existsSync(stagedPath)) {
+          throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+        }
+        removeVerifiedBlobRecoveryStagePublication(
+          activeStagePublication,
+          stagedPath,
+          stagedOwnerPath,
+          registeredRoot,
+          recoveryPaths.canonicalRoot
+        );
+        activeStagePublication = null;
+      }
+      if (existsSync(stagedPath) || existsSync(stagedOwnerPath)) {
         throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
       }
       if (!verifiedBlobStorageIsReusable(blob)) throw new Error("MEDIA_BLOB_RECOVERY_FAILED");

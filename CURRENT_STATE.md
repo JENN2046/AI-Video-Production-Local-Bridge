@@ -22,7 +22,8 @@ Repository baseline: `main@55553cbf2f9bc387beb255cebb8b36bcb2deadbf`
   preserve the published-ownership, truncated-authority and mutex-companion
   recovery fixes. Windows CI run `30807054533` passed both jobs; all current
   review threads are resolved and a fresh final review has been requested. No
-  merge is authorized.
+  merge is authorized. Later thread lists in this file are immutable historical
+  state-sync snapshots for earlier PR #109 heads, not the current thread set.
 - Historical PR #109 remediation snapshots record the earlier exact-target
   cross-database recovery serialization and atomically publishes the low-
   disclosure target authority record. The follow-up candidate also derives
