@@ -647,6 +647,11 @@ test("Director Bridge Windows lifecycle manager scripts do not read Bridge key o
   assert.doesNotMatch(smoke, /DIRECTOR_BRIDGE_RUNTIME_SMOKE_CLEANUP_IDENTITY_FAILED/);
   assert.match(common, /Get-DirectorBridgeFixtureFailureCode/);
   assert.match(common, /director-bridge-fixture-failure-v1/);
+  assert.match(common, /\[Diagnostics\.Stopwatch\]::StartNew\(\)/);
+  assert.match(common, /ElapsedMilliseconds -lt \$retryTimeoutMilliseconds/);
+  assert.match(common, /\$retryDelayMilliseconds = 50/);
+  assert.match(common, /\$retryTimeoutMilliseconds = 2000/);
+  assert.doesNotMatch(common, /finally\s*\{\s*Remove-Item[^\r\n]*DirectorBridgeFixtureFailureReceiptPath/);
   assert.match(common, /Get-DirectorBridgeChildErrorCode/);
   assert.match(start, /Throw-DirectorBridgeChildExit/);
   assert.match(start, /child_error_code/);
