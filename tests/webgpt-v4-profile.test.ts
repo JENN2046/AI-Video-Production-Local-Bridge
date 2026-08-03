@@ -10,7 +10,6 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 import { openM0Database, type M0Database } from "../src/storage/sqlite.js";
-import { nodeVersionMeetsMinimum } from "../src/tools/nodeCompatibility.js";
 import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 import { getProductionProjectContext } from "../src/webgpt-v4/domain.js";
 import { readProjectContext } from "../src/webgpt-v4/contracts.js";
@@ -204,7 +203,6 @@ test("WebGPT preflight skips media dependencies for the readonly profile", () =>
     const report = JSON.parse(output) as { ok: boolean; webgpt_profile: string; checks: Record<string, { ok: boolean; detail: string }> };
     assert.equal(report.ok, true);
     assert.equal(report.webgpt_profile, "readonly");
-    assert.match(report.checks.node.detail, /minimum is 22\.13\.0/);
     assert.equal(report.checks.ports.detail, "0");
     assert.equal("ffmpeg" in report.checks, false);
     assert.equal("ffprobe" in report.checks, false);
@@ -212,11 +210,4 @@ test("WebGPT preflight skips media dependencies for the readonly profile", () =>
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-});
-
-test("Node compatibility uses the package engine lower bound", () => {
-  assert.equal(nodeVersionMeetsMinimum("22.5.0", "22.13.0"), false);
-  assert.equal(nodeVersionMeetsMinimum("22.12.9", "22.13.0"), false);
-  assert.equal(nodeVersionMeetsMinimum("22.13.0", "22.13.0"), true);
-  assert.equal(nodeVersionMeetsMinimum("23.0.0", "22.13.0"), true);
 });

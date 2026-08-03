@@ -63,7 +63,7 @@ Legacy `WEBGPT_V4_PROFILE=full` 也占用 2092；它与 Readonly Media Gateway �
 ## 环境
 
 - Windows 10/11
-- Node.js 22（最低 `>=22.13.0`；接受环境为 `22.23.1`）
+- Node.js 22（最低 `>=22.5.0`；接受环境为 `22.23.1`）
 - npm 11 或兼容版本
 - FFmpeg/FFprobe 8.1.2
 - SQLite：Node.js 内置 `node:sqlite`
