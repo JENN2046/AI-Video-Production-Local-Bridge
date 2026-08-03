@@ -2364,7 +2364,7 @@ function findInterruptedVerifiedBlobRecoveryMutexInitialization(
   lockPath: string,
   recoveryPaths: ReturnType<typeof recoveryRootAndTarget>,
   roots: ReturnType<typeof activationRoots>
-): string | null {
+): { selectedPath: string | null; extraPaths: string[] } {
   const candidates: string[] = [];
   for (const name of readdirSync(roots.journal)) {
     if (!BLOB_RECOVERY_TARGET_MUTEX_TEMP_NAME.test(name)) continue;
@@ -2393,8 +2393,70 @@ function findInterruptedVerifiedBlobRecoveryMutexInitialization(
     } catch { /* unrelated or concurrently changing temp entries are preserved */ }
     finally { if (descriptor >= 0) closeSync(descriptor); }
   }
-  if (candidates.length > 1) throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
-  return candidates[0] ?? null;
+  candidates.sort((first, second) => {
+    const firstName = basename(first).toLowerCase();
+    const secondName = basename(second).toLowerCase();
+    return firstName < secondName ? -1 : firstName > secondName ? 1 : 0;
+  });
+  return {
+    selectedPath: candidates[0] ?? null,
+    extraPaths: candidates.slice(1)
+  };
+}
+
+function removeVerifiedBlobRecoveryMutexInitializationExtras(
+  lockPath: string,
+  selectedPath: string,
+  extraPaths: string[],
+  recoveryPaths: ReturnType<typeof recoveryRootAndTarget>,
+  roots: ReturnType<typeof activationRoots>
+): void {
+  if (extraPaths.length === 0) return;
+  let lockEntry: ReturnType<typeof lstatSync>;
+  let selectedEntry: ReturnType<typeof lstatSync>;
+  try {
+    lockEntry = lstatSync(lockPath);
+    selectedEntry = lstatSync(selectedPath);
+  } catch { return; }
+  if (lockEntry.isSymbolicLink() || !lockEntry.isFile() || lockEntry.nlink !== 2
+    || selectedEntry.isSymbolicLink() || !selectedEntry.isFile()
+    || selectedEntry.nlink !== 2
+    || lockEntry.dev !== selectedEntry.dev || lockEntry.ino !== selectedEntry.ino) {
+    return;
+  }
+  for (const candidatePath of extraPaths) {
+    let descriptor = -1;
+    try {
+      const entry = lstatSync(candidatePath);
+      if (entry.isSymbolicLink() || !entry.isFile() || entry.nlink !== 1
+        || !sameResolvedPath(dirname(candidatePath), roots.journal)
+        || !isPathInside(candidatePath, recoveryPaths.registeredRoot)
+        || hasExistingSymlinkAncestor(candidatePath, recoveryPaths.registeredRoot)) {
+        continue;
+      }
+      descriptor = openSync(candidatePath, "r");
+      const guarded = fstatSync(descriptor);
+      const current = statSync(candidatePath);
+      if (!guarded.isFile() || guarded.nlink !== 1
+        || guarded.dev !== entry.dev || guarded.ino !== entry.ino
+        || current.dev !== guarded.dev || current.ino !== guarded.ino
+        || !sameResolvedPath(resolve(realpathSync(candidatePath)), candidatePath)) {
+        continue;
+      }
+      assertVerifiedBlobRecoveryTargetMutexHeader(descriptor, lockPath);
+      assertVerifiedBlobRecoveryTargetMutexSidecarsAbsent(candidatePath);
+      const currentEntry = lstatSync(candidatePath);
+      if (currentEntry.isSymbolicLink() || !currentEntry.isFile() || currentEntry.nlink !== 1
+        || currentEntry.dev !== guarded.dev || currentEntry.ino !== guarded.ino) {
+        continue;
+      }
+      rmSync(candidatePath);
+    } catch {
+      // Leave a changing or unprovable candidate for a later retry.
+    } finally {
+      if (descriptor >= 0) closeSync(descriptor);
+    }
+  }
 }
 
 function assertConnectedVerifiedBlobRecoveryTargetMutex(
@@ -2416,11 +2478,12 @@ function initializeVerifiedBlobRecoveryTargetMutex(
   roots: ReturnType<typeof activationRoots>,
   afterInitialized?: () => void
 ): void {
-  const interruptedPath = findInterruptedVerifiedBlobRecoveryMutexInitialization(
+  const interrupted = findInterruptedVerifiedBlobRecoveryMutexInitialization(
     lockPath,
     recoveryPaths,
     roots
   );
+  const interruptedPath = interrupted.selectedPath;
   const temporaryPath = interruptedPath ?? resolve(roots.journal, `.brm-${randomUUID()}.tmp.sqlite`);
   if (!BLOB_RECOVERY_TARGET_MUTEX_TEMP_NAME.test(basename(temporaryPath))
     || !sameResolvedPath(dirname(temporaryPath), roots.journal)
@@ -2451,6 +2514,15 @@ function initializeVerifiedBlobRecoveryTargetMutex(
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
         throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
       }
+    }
+    if (interruptedPath) {
+      removeVerifiedBlobRecoveryMutexInitializationExtras(
+        lockPath,
+        interruptedPath,
+        interrupted.extraPaths,
+        recoveryPaths,
+        roots
+      );
     }
   } finally {
     if (descriptor >= 0) closeSync(descriptor);

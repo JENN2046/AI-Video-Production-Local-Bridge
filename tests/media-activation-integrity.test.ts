@@ -3181,6 +3181,59 @@ test("verified Blob recovery accepts a mutex temp that concurrently converges be
   }
 });
 
+test("verified Blob recovery deterministically converges multiple mutex initialization temps", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-mutex-multiple-temps-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const initialized = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(initialized.ok, true, initialized.ok ? undefined : initialized.error.code);
+    const blob = getMediaBlob(db, fixture.artifact.blob_id);
+    assert.ok(blob);
+    const mutexPath = verifiedBlobRecoveryMutexPath(mediaRoot, blob.storage_uri);
+    const tempA = join(dirname(mutexPath), `.brm-${randomUUID()}.tmp.sqlite`);
+    const tempB = join(dirname(mutexPath), `.brm-${randomUUID()}.tmp.sqlite`);
+    db.close();
+    copyFileSync(mutexPath, tempA);
+    copyFileSync(mutexPath, tempB);
+    rmSync(mutexPath);
+    assert.equal(lstatSync(tempA).nlink, 1);
+    assert.equal(lstatSync(tempB).nlink, 1);
+
+    const retryDb = openM0Database(sqlitePath);
+    try {
+      const recovered = recoverVerifiedBlobStorage({
+        invalid_artifact_id: fixture.artifact.artifact_id,
+        project_id: fixture.project_id,
+        shot_id: fixture.shot_id,
+        source_path: fixture.source_path
+      }, retryDb);
+      assert.equal(recovered.ok, true, recovered.ok ? undefined : recovered.error.code);
+      assert.equal(existsSync(mutexPath), true);
+      assert.equal(lstatSync(mutexPath).nlink, 1);
+      assert.deepEqual(
+        readdirSync(dirname(mutexPath))
+          .filter((name) => /^\.brm-[0-9a-f-]{36}\.tmp\.sqlite$/i.test(name)),
+        []
+      );
+      assert.equal(verifyMediaArtifactBytes(retryDb, fixture.artifact).ok, true);
+    } finally {
+      retryDb.close();
+    }
+  } finally {
+    try { db.close(); } catch { /* closed before retry */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("verified Blob recovery revalidates the Artifact binding after acquiring the target mutex", () => {
   const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-binding-recheck-"));
   const mediaRoot = join(root, "media");
