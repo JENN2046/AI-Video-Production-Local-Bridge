@@ -3908,7 +3908,7 @@ test("verified Blob recovery resumes an owner-first crash from its publication p
 });
 
 test("verified Blob recovery converges persisted publication before reusing a target", () => {
-  for (const crashAt of ["after_stage_ownership_persisted", "after_stage_owner_created", "after_stage_published_with_owner_proof"] as const) {
+  for (const crashAt of ["after_stage_ownership_persisted", "after_stage_owner_created"] as const) {
     const root = mkdtempSync(join(tmpdir(), `verified-blob-recovery-publication-reusable-${crashAt}-`));
     const mediaRoot = join(root, "media");
     const sqlitePath = join(root, "app.sqlite");
@@ -3934,6 +3934,15 @@ test("verified Blob recovery converges persisted publication before reusing a ta
       });
       const publicationPaths = verifiedBlobRecoveryStagePublicationPaths(stagedPath);
       assert.equal(publicationPaths.length, 1);
+      if (crashAt === "after_stage_owner_created") {
+        // Complete the final hard-link step in the parent instead of relying on
+        // a process-exit fault callback after the filesystem has reported all
+        // three links.  This keeps the crash-state fixture deterministic on
+        // Windows while exercising the same persisted publication+owner+stage
+        // state that recovery must converge before reusing the target.
+        linkSync(ownerPath, stagedPath);
+        assert.equal(statSync(stagedPath).nlink, 3);
+      }
       copyFileSync(fixture.source_path, fixture.artifact.storage.uri, constants.COPYFILE_EXCL);
 
       db = openM0Database(sqlitePath);
