@@ -2946,8 +2946,45 @@ function assertVerifiedBlobRecoveryTargetMutexFile(
           || candidate.ino !== guarded.ino) {
           throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
         }
+        assertVerifiedBlobRecoveryTargetMutexSidecarsAbsent(linkedCandidatePath);
+        removeVerifiedRecoveryPathEntry(
+          linkedCandidatePath,
+          { dev: guarded.dev, ino: guarded.ino },
+          2,
+          recoveryPaths.registeredRoot,
+          roots.journal,
+          recoveryPaths.canonicalRoot
+        );
+        const converged = fstatSync(guardDescriptor);
+        const current = lstatSync(lockPath);
+        if (!converged.isFile() || converged.nlink !== 1
+          || current.isSymbolicLink() || !current.isFile()
+          || current.nlink !== 1
+          || current.dev !== converged.dev
+          || current.ino !== converged.ino
+          || converged.dev !== entry.dev
+          || converged.ino !== entry.ino) {
+          throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+        }
+        assertVerifiedBlobRecoveryTargetMutexHeader(guardDescriptor, lockPath, 1);
+        entry = converged;
+        linkedCandidatePath = "";
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT" || guarded.nlink !== 1) throw error;
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        const converged = fstatSync(guardDescriptor);
+        const current = lstatSync(lockPath);
+        if (!converged.isFile() || converged.nlink !== 1
+          || current.isSymbolicLink() || !current.isFile()
+          || current.nlink !== 1
+          || current.dev !== converged.dev
+          || current.ino !== converged.ino
+          || converged.dev !== entry.dev
+          || converged.ino !== entry.ino) {
+          throw error;
+        }
+        assertVerifiedBlobRecoveryTargetMutexHeader(guardDescriptor, lockPath, 1);
+        entry = converged;
+        linkedCandidatePath = "";
       }
     }
   }
