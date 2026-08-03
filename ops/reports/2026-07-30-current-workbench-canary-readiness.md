@@ -592,3 +592,12 @@ No owner registry, interface or recovery capability was added.
 Focused media activation passes `70 PASS / 1 SKIP`; typecheck and diff checks
 also pass. At state sync, 25 PR #109 threads remain unresolved pending exact-head
 CI and one final frozen-scope review. PR #109 remains open and unmerged.
+
+### PR #109 scope contraction (2026-08-03)
+
+Current PR #109 head is `e4c17c7c371d3cf9e0c3672453a6cffe08521be2` on the
+Blob-recovery staging branch. The PR now retains only Blob recovery staging,
+ownership, authority, mutex, path-identity and crash-convergence safety work.
+The Node engine/preflight compatibility change was removed and is being
+prepared as a separate Draft PR. This is a scope correction only; no merge,
+Provider call, deployment, secret operation or service operation occurred.

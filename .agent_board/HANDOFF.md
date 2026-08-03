@@ -1,15 +1,25 @@
 # HANDOFF.md
 
 Current mode: PR #109 orphaned Blob recovery staging remediation; no executable task is `READY`
-Last run: S3B-T1B_RECOVER_ORPHANED_BLOB_STAGING
-Last result: stage publication, SQLite connection identity, DOS-short quarantine and publication-normalization fixes pass locally at follow-ups `568473c` and `e6f1d4b`; open Ready PR #109 awaits new exact-final-head CI and review
+Last run: PR109_SCOPE_CONTRACTION
+Last result: Node runtime-floor changes removed from PR #109 at `e4c17c7c371d3cf9e0c3672453a6cffe08521be2`; Blob recovery safety fixes remain and exact-final-head CI/review are still required
 
 ## Current state
 
 Current task: none
-Current status: `BLOCKED_BY_PR109_POST_PROMOTION_FINDING`
+Current status: `PR109_SCOPE_CONTRACTED_AWAITING_EXACT_HEAD_EVIDENCE`
 Current owner: none
 Ready task count: 0
+
+## Current PR #109 boundary
+
+- Current head: `e4c17c7c371d3cf9e0c3672453a6cffe08521be2`.
+- Retained scope: Blob recovery staging, ownership, authority, mutex, path
+  identity and crash convergence.
+- Removed scope: Node engine/preflight compatibility; it is being prepared as
+  a separate PR from current `main`.
+- PR #109 remains open and unmerged. No review thread was replied to or
+  resolved, and no merge is authorized.
 
 ## Current S3 and S3B state
 

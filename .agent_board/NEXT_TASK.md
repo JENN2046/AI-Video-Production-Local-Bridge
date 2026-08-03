@@ -20,7 +20,8 @@ automatically.
   `808d9334a49def7ce858f7c6138af75fed392c5b`.
 - PR #109: `OPEN_READY`; base `main`, head
   `codex/blob-recovery-staging-reconciliation`, implementation commit
-  `528aee4020d4be15a5fc5278de2f8c8abb20c637`, review remediation commit
+  `528aee4020d4be15a5fc5278de2f8c8abb20c637`, current scope-contraction commit
+  `e4c17c7c371d3cf9e0c3672453a6cffe08521be2`, review remediation commit
   `e5c42113c73ba35a2c307eb0890dcd7d3be1216f`, and root-identity remediation
   `193b1077d67dd8872831e8fe7646d8879d4947f7`, and deterministic-stage
   whitelist candidate `0ff40f085368658887d3a77315d1eb7f51124c3f`. The prior process-local
@@ -81,6 +82,8 @@ automatically.
    normalized automatically.
    Follow-up `46f206d` completes that proof by requiring all three paths to
    share the same device and inode before any deletion.
+- The current #109 boundary is `BLOB_RECOVERY_ONLY`; Node engine/preflight
+  compatibility was removed and is being prepared as a separate Draft PR.
 - At state sync the unresolved threads are `PRRT_kwDOTTDtUM6VkSwY`,
   `PRRT_kwDOTTDtUM6VkqqS`, `PRRT_kwDOTTDtUM6VkzTz`,
   `PRRT_kwDOTTDtUM6Vk38a`, `PRRT_kwDOTTDtUM6Vk38b`,

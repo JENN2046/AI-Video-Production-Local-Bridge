@@ -1,7 +1,7 @@
 # Current State
 
-Date (Asia/Shanghai, UTC+08:00): 2026-08-01
-Repository baseline: `main@808d9334a49def7ce858f7c6138af75fed392c5b`
+Date (Asia/Shanghai, UTC+08:00): 2026-08-03
+Repository baseline: `main@00c8ed458144f03d4b0e1389d4de6dbf8005ed9a`
 
 ## Repository and CI truth
 
@@ -13,7 +13,15 @@ Repository baseline: `main@808d9334a49def7ce858f7c6138af75fed392c5b`
   squash-merged as `b3a108abc8728e89259d0d953e1c638b9ca482ea`.
 - PR #108, `fix: bound Provider polling and recover verified Blob storage`, was
   squash-merged as `808d9334a49def7ce858f7c6138af75fed392c5b`.
-- PR #109 remains open and unmerged. Its current candidate adds exact-target
+- PR #109 remains open and unmerged at current head
+  `e4c17c7c371d3cf9e0c3672453a6cffe08521be2` on
+  `codex/blob-recovery-staging-reconciliation`. Its scope is now limited to
+  Blob recovery staging, ownership, authority, mutex, path identity and crash
+  convergence. The Node engine/preflight compatibility change was removed from
+  this PR and is being prepared separately. The latest Blob-only follow-up
+  preserves the published-ownership and truncated-authority recovery fixes;
+  exact-head CI and a fresh review remain required. No merge is authorized.
+- Historical PR #109 remediation snapshots record the earlier exact-target
   cross-database recovery serialization and atomically publishes the low-
   disclosure target authority record. The follow-up candidate also derives
   mutex, authority and stage identity from the canonical physical target and
