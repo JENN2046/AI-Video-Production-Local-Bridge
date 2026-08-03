@@ -267,7 +267,8 @@ not constitute a real Provider or S4 acceptance.
 A P2 review finding arrived after the PR #108 merge: a hard process exit after
 copying recovery staging bytes but before exclusive placement could leave an
 unbounded random `blob-recovery-*.staged` file. Open Ready PR #109 bounds this
-material to one deterministic slot derived from `blob_id` and `storage_uri`.
+material to one deterministic slot derived from the normalized physical target
+identity; Blob records that point at the same target therefore share one slot.
 Commit `35122cd405f42bc627ae73d121f5a3dd14f3edbe` removes the global destructive
 deterministic-stage sweep from `recoverMediaActivations`; generic startup no
 longer enumerates, deletes or infers ownership of verified-Blob stages.
