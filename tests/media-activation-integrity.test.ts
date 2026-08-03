@@ -3613,6 +3613,20 @@ test("verified Blob recovery resumes a crash after publication identity persiste
     assert.equal(statSync(publicationPaths[0]).nlink, 1);
 
     db = openM0Database(sqlitePath);
+    copyFileSync(fixture.source_path, publicationPaths[0]);
+    const publicationBytes = readFileSync(publicationPaths[0]);
+    const managedSource = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: publicationPaths[0]
+    }, db);
+    assert.equal(managedSource.ok, false);
+    if (!managedSource.ok) assert.equal(managedSource.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    assert.deepEqual(readFileSync(publicationPaths[0]), publicationBytes);
+    assert.equal(existsSync(stagedPath), false);
+    assert.equal(existsSync(ownerPath), false);
+
     const retried = recoverVerifiedBlobStorage({
       invalid_artifact_id: fixture.artifact.artifact_id,
       project_id: fixture.project_id,
