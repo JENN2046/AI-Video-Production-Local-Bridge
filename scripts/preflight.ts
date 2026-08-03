@@ -6,7 +6,7 @@ import { createRequire } from "node:module";
 import { paths } from "../src/paths.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import { checkProviderEnv } from "../src/tools/providerEnv.js";
-import { nodeVersionMeetsMinimum } from "../src/tools/nodeCompatibility.js";
+import { nodeEngineMinimumVersion, nodeVersionMeetsMinimum } from "../src/tools/nodeCompatibility.js";
 import { loadWebGptV4AuthConfig } from "../src/webgpt-v4/auth.js";
 import { resolveFfmpegExecutable, resolveFfprobeExecutable } from "../src/webgpt-v4/media.js";
 import { parseWebGptV4Profile } from "../src/webgpt-v4/toolCatalog.js";
@@ -33,9 +33,10 @@ if (profile === "webgpt") {
 }
 const checks: Record<string, Check> = {};
 const packageJson = createRequire(import.meta.url)("../../package.json") as { engines?: { node?: string } };
-const minimumNodeVersion = /^>=(\d+\.\d+\.\d+)$/.exec(packageJson.engines?.node ?? "")?.[1] ?? "INVALID";
+const nodeEngineRange = packageJson.engines?.node ?? "";
+const minimumNodeVersion = nodeEngineMinimumVersion(nodeEngineRange) ?? "INVALID";
 checks.node = {
-  ok: nodeVersionMeetsMinimum(process.versions.node, minimumNodeVersion),
+  ok: nodeVersionMeetsMinimum(process.versions.node, nodeEngineRange),
   detail: `Node ${process.versions.node}; minimum is ${minimumNodeVersion} and CI is pinned to 22`
 };
 

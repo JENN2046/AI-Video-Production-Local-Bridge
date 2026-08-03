@@ -10,7 +10,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 import { openM0Database, type M0Database } from "../src/storage/sqlite.js";
-import { nodeVersionMeetsMinimum } from "../src/tools/nodeCompatibility.js";
+import { nodeEngineMinimumVersion, nodeVersionMeetsMinimum } from "../src/tools/nodeCompatibility.js";
 import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 import { getProductionProjectContext } from "../src/webgpt-v4/domain.js";
 import { readProjectContext } from "../src/webgpt-v4/contracts.js";
@@ -215,8 +215,21 @@ test("WebGPT preflight skips media dependencies for the readonly profile", () =>
 });
 
 test("Node compatibility uses the package engine lower bound", () => {
-  assert.equal(nodeVersionMeetsMinimum("22.5.0", "22.13.0"), false);
+  assert.equal(nodeEngineMinimumVersion(">=22.13.0"), "22.13.0");
+  assert.equal(nodeEngineMinimumVersion("22.13.0"), null);
+  assert.equal(nodeEngineMinimumVersion(">=22.13"), null);
+  assert.equal(nodeEngineMinimumVersion(">=22.13.0 <23"), null);
+  assert.equal(nodeEngineMinimumVersion(null), null);
   assert.equal(nodeVersionMeetsMinimum("22.12.9", "22.13.0"), false);
+  assert.equal(nodeVersionMeetsMinimum("22.13.0-rc.1", "22.13.0"), false);
+  assert.equal(nodeVersionMeetsMinimum("22.13.0-pre", ">=22.13.0"), false);
   assert.equal(nodeVersionMeetsMinimum("22.13.0", "22.13.0"), true);
+  assert.equal(nodeVersionMeetsMinimum("v22.13.0", ">=22.13.0"), true);
+  assert.equal(nodeVersionMeetsMinimum("22.23.1", ">=22.13.0"), true);
   assert.equal(nodeVersionMeetsMinimum("23.0.0", "22.13.0"), true);
+  assert.equal(nodeVersionMeetsMinimum("22.13", ">=22.13.0"), false);
+  assert.equal(nodeVersionMeetsMinimum("22.13.0", ">=22.13"), false);
+  assert.equal(nodeVersionMeetsMinimum("22.13.0", ">=22.13.0 <23"), false);
+  assert.equal(nodeVersionMeetsMinimum(null, ">=22.13.0"), false);
+  assert.equal(nodeVersionMeetsMinimum("22.13.0", null), false);
 });
