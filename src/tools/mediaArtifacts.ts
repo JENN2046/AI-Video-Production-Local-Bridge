@@ -976,59 +976,15 @@ function removeVerifiedRecoveryPathEntry(
   expectedDirectory: string,
   canonicalRoot = ""
 ): void {
-  const resolvedPath = resolve(filePath);
   assertVerifiedRecoveryPathEntry(
-    resolvedPath,
+    filePath,
     expected,
     expectedLinkCount,
     registeredRoot,
     expectedDirectory,
     canonicalRoot
   );
-  // Do not unlink the caller-visible name after a check-then-use window. Move
-  // the verified directory entry to an exclusive, unguessable sibling first;
-  // a concurrent replacement at the original name is then moved into the
-  // isolated name and revalidated rather than being deleted by this cleanup.
-  const isolatedPath = resolve(
-    expectedDirectory,
-    `.blob-recovery-remove-${randomUUID()}.tmp`
-  );
-  if (sameResolvedPath(isolatedPath, resolvedPath)
-    || !isPathInside(isolatedPath, registeredRoot)
-    || hasExistingSymlinkAncestor(isolatedPath, registeredRoot)
-    || existsSync(isolatedPath)) {
-    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
-  }
-  try {
-    renameSync(resolvedPath, isolatedPath);
-  } catch {
-    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
-  }
-  try {
-    assertVerifiedRecoveryPathEntry(
-      isolatedPath,
-      expected,
-      expectedLinkCount,
-      registeredRoot,
-      expectedDirectory,
-      canonicalRoot
-    );
-  } catch {
-    // Preserve a replacement or an otherwise unproven entry.  Restore it only
-    // when the public name is still absent; never overwrite a newer entry.
-    if (!existsSync(resolvedPath) && existsSync(isolatedPath)) {
-      try { renameSync(isolatedPath, resolvedPath); } catch { /* retain isolated evidence */ }
-    }
-    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
-  }
-  try {
-    rmSync(isolatedPath);
-  } catch {
-    if (!existsSync(resolvedPath) && existsSync(isolatedPath)) {
-      try { renameSync(isolatedPath, resolvedPath); } catch { /* retain isolated evidence */ }
-    }
-    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
-  }
+  rmSync(resolve(filePath));
 }
 
 function isolateVerifiedRecoveryPathEntry(
