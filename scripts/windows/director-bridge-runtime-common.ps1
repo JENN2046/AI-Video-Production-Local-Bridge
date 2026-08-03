@@ -100,29 +100,42 @@ function Write-DirectorBridgeFailure(
 
 function Get-DirectorBridgeFixtureFailureCode {
   if (-not $script:DirectorBridgeFixtureMode -or
-      [string]::IsNullOrWhiteSpace($script:DirectorBridgeFixtureFailureReceiptPath) -or
-      -not (Test-Path -LiteralPath $script:DirectorBridgeFixtureFailureReceiptPath -PathType Leaf)) {
+      [string]::IsNullOrWhiteSpace($script:DirectorBridgeFixtureFailureReceiptPath)) {
     return $null
   }
+  $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+  $retryDelayMilliseconds = 50
+  $retryTimeoutMilliseconds = 2000
   try {
-    $item = Get-Item -LiteralPath $script:DirectorBridgeFixtureFailureReceiptPath -Force -ErrorAction Stop
-    if ($item.Length -gt 256 -or
-        (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
-      return $null
+    while ($stopwatch.ElapsedMilliseconds -lt $retryTimeoutMilliseconds) {
+      try {
+        if (Test-Path -LiteralPath $script:DirectorBridgeFixtureFailureReceiptPath -PathType Leaf) {
+          $item = Get-Item -LiteralPath $script:DirectorBridgeFixtureFailureReceiptPath -Force -ErrorAction Stop
+          if ($item.Length -gt 256 -or
+              (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
+            return $null
+          }
+          $receipt = ([IO.File]::ReadAllText($item.FullName, [Text.Encoding]::UTF8) | ConvertFrom-Json)
+          $names = @($receipt.PSObject.Properties.Name)
+          $code = [string]$receipt.stable_error_code
+          if ($names.Count -eq 2 -and
+              @(@("fixture_failure_version", "stable_error_code") | Where-Object { $names -notcontains $_ }).Count -eq 0 -and
+              [string]$receipt.fixture_failure_version -ceq "director-bridge-fixture-failure-v1" -and
+              $code -match '^DIRECTOR_BRIDGE_FIXTURE_[A-Z0-9_]{3,70}$') {
+            Remove-Item -LiteralPath $script:DirectorBridgeFixtureFailureReceiptPath -Force -ErrorAction Stop
+            return $code
+          }
+          return $null
+        }
+      } catch {
+        # The child may have exited while the tiny receipt is still being
+        # published or released by the Windows filesystem. Retry only within
+        # this bounded fixture-only window and never expose the read error.
+      }
+      Start-Sleep -Milliseconds $retryDelayMilliseconds
     }
-    $receipt = ([IO.File]::ReadAllText($item.FullName, [Text.Encoding]::UTF8) | ConvertFrom-Json)
-    $names = @($receipt.PSObject.Properties.Name)
-    $code = [string]$receipt.stable_error_code
-    if ($names.Count -eq 2 -and
-        @(@("fixture_failure_version", "stable_error_code") | Where-Object { $names -notcontains $_ }).Count -eq 0 -and
-        [string]$receipt.fixture_failure_version -ceq "director-bridge-fixture-failure-v1" -and
-        $code -match '^DIRECTOR_BRIDGE_FIXTURE_[A-Z0-9_]{3,70}$') {
-      return $code
-    }
-  } catch {
-    return $null
   } finally {
-    Remove-Item -LiteralPath $script:DirectorBridgeFixtureFailureReceiptPath -Force -ErrorAction SilentlyContinue
+    $stopwatch.Stop()
   }
   return $null
 }
