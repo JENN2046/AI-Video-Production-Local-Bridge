@@ -1338,7 +1338,7 @@ function inspectInterruptedVerifiedBlobPlacement(
   _roots: ReturnType<typeof activationRoots>,
   registeredRoot: string,
   canonicalRoot: string,
-  hasActiveStageOwnership: boolean
+  stageOwnership: VerifiedBlobRecoveryStageOwnership | null
 ): { candidatePaths: string[]; targetEntry: ReturnType<typeof lstatSync> } | null {
   const targetEntry = lstatSync(targetPath);
   if (targetEntry.isSymbolicLink() || !targetEntry.isFile()) {
@@ -1354,7 +1354,13 @@ function inspectInterruptedVerifiedBlobPlacement(
   // name are not ownership proof on their own; only an active persisted stage
   // instance can make this an interrupted placement that is safe to resume.
   if (targetEntry.nlink === 2) {
-    if (!hasActiveStageOwnership) {
+    if (!stageOwnership
+      || stageOwnership.state !== "published"
+      || !/^\d+$/.test(stageOwnership.device_id)
+      || !/^\d+$/.test(stageOwnership.inode_id)
+      || stageOwnership.inode_id === "0"
+      || String(targetEntry.dev) !== stageOwnership.device_id
+      || String(targetEntry.ino) !== stageOwnership.inode_id) {
       throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
     }
     if (existsSync(deterministicStagedPath) || !existsSync(deterministicOwnerPath)
@@ -1369,6 +1375,8 @@ function inspectInterruptedVerifiedBlobPlacement(
     const canonicalTargetDirectory = resolve(realpathSync(dirname(targetPath)));
     if (owner.isSymbolicLink() || !owner.isFile() || owner.nlink !== 2
       || owner.dev !== targetEntry.dev || owner.ino !== targetEntry.ino
+      || String(owner.dev) !== stageOwnership.device_id
+      || String(owner.ino) !== stageOwnership.inode_id
       || !isPathInside(canonicalOwner, canonicalRoot)
       || !sameResolvedPath(dirname(canonicalOwner), canonicalTargetDirectory)) {
       throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
@@ -1377,7 +1385,13 @@ function inspectInterruptedVerifiedBlobPlacement(
   }
 
   if (targetEntry.nlink !== 3
-    || !hasActiveStageOwnership
+    || !stageOwnership
+    || stageOwnership.state !== "published"
+    || !/^\d+$/.test(stageOwnership.device_id)
+    || !/^\d+$/.test(stageOwnership.inode_id)
+    || stageOwnership.inode_id === "0"
+    || String(targetEntry.dev) !== stageOwnership.device_id
+    || String(targetEntry.ino) !== stageOwnership.inode_id
     || !existsSync(deterministicStagedPath) || !existsSync(deterministicOwnerPath)) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
@@ -1389,7 +1403,11 @@ function inspectInterruptedVerifiedBlobPlacement(
     canonicalRoot,
     3
   );
-  if (!owned || owned.dev !== targetEntry.dev || owned.ino !== targetEntry.ino) {
+  if (!owned
+    || owned.dev !== targetEntry.dev
+    || owned.ino !== targetEntry.ino
+    || String(owned.dev) !== stageOwnership.device_id
+    || String(owned.ino) !== stageOwnership.inode_id) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
   return { candidatePaths: [deterministicStagedPath, deterministicOwnerPath], targetEntry };
@@ -1450,7 +1468,7 @@ function normalizeInterruptedVerifiedBlobPlacement(
   roots: ReturnType<typeof activationRoots>,
   registeredRoot: string,
   canonicalRoot: string,
-  hasActiveStageOwnership: boolean,
+  stageOwnership: VerifiedBlobRecoveryStageOwnership | null,
   afterLinkRemoved?: () => void
 ): void {
   const interrupted = inspectInterruptedVerifiedBlobPlacement(
@@ -1461,7 +1479,7 @@ function normalizeInterruptedVerifiedBlobPlacement(
     roots,
     registeredRoot,
     canonicalRoot,
-    hasActiveStageOwnership
+    stageOwnership
   );
   if (!interrupted) return;
 
@@ -2296,7 +2314,7 @@ function validateVerifiedBlobRecoveryEntriesBeforeAuthority(
       roots,
       recoveryPaths.registeredRoot,
       recoveryPaths.canonicalRoot,
-      Boolean(stageOwnership)
+      stageOwnership
     )
     : null;
 
@@ -3357,7 +3375,7 @@ export function recoverVerifiedBlobStorage(
         activation,
         registeredRoot,
         recoveryPaths.canonicalRoot,
-        Boolean(activeStageOwnership),
+        activeStageOwnership,
         faults.after_interrupted_placement_link_removed
       );
     }

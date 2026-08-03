@@ -1513,6 +1513,63 @@ test("verified Blob recovery preserves target hard links without a stage ownersh
   }
 });
 
+test("verified Blob recovery preserves a target-owner pair backed by planned ownership", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-planned-owner-link-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  let db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const blob = getMediaBlob(db, fixture.artifact.blob_id);
+    assert.ok(blob);
+    const targetPath = fixture.artifact.storage.uri;
+    const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
+    const ownerPath = verifiedBlobRecoveryStageOwnerPath(stagedPath);
+    rmSync(targetPath);
+    db.close();
+
+    hardCrashVerifiedBlobRecovery({
+      sqlite_path: sqlitePath,
+      artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path,
+      crash_at: "after_stage_ownership_planned"
+    });
+    copyFileSync(VIDEO_FIXTURE, ownerPath);
+    linkSync(ownerPath, targetPath);
+    const ownerBefore = lstatSync(ownerPath);
+    const targetBefore = lstatSync(targetPath);
+    assert.equal(ownerBefore.nlink, 2);
+    assert.equal(targetBefore.nlink, 2);
+    assert.equal(ownerBefore.dev, targetBefore.dev);
+    assert.equal(ownerBefore.ino, targetBefore.ino);
+
+    db = openM0Database(sqlitePath);
+    const blocked = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(blocked.ok, false);
+    if (!blocked.ok) assert.equal(blocked.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    const ownerAfter = lstatSync(ownerPath);
+    const targetAfter = lstatSync(targetPath);
+    assert.equal(ownerAfter.nlink, 2);
+    assert.equal(targetAfter.nlink, 2);
+    assert.equal(ownerAfter.dev, ownerBefore.dev);
+    assert.equal(ownerAfter.ino, ownerBefore.ino);
+    assert.equal(targetAfter.dev, targetBefore.dev);
+    assert.equal(targetAfter.ino, targetBefore.ino);
+    assert.equal(existsSync(stagedPath), false);
+  } finally {
+    try { db.close(); } catch { /* the crash setup closes the first database handle */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("verified Blob recovery retries a partially normalized deterministic placement", () => {
   const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-three-link-retry-"));
   const mediaRoot = join(root, "media");
