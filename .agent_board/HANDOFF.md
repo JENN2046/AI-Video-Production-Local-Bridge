@@ -2,7 +2,7 @@
 
 Current mode: PR #109 orphaned Blob recovery staging remediation; no executable task is `READY`
 Last run: PR109_SCOPE_CONTRACTION
-Last result: Blob-recovery-only PR #109 is at `57a070b7ccbb29836b040609f775d525e287d230`; predecessor CI run `30807054533` passed both jobs, and exact-head CI/review evidence is tracked in PR #109
+Last result: Blob-recovery-only PR #109 is at `c39367b0ea84238c9cd9f196449160cd699945ba`; predecessor CI run `30807054533` passed both jobs, and exact-head CI/review evidence is tracked in PR #109
 
 ## Current state
 
@@ -13,11 +13,15 @@ Ready task count: 0
 
 ## Current PR #109 boundary
 
-- Current head: `57a070b7ccbb29836b040609f775d525e287d230`.
+- Current head: `c39367b0ea84238c9cd9f196449160cd699945ba`.
 - Retained scope: Blob recovery staging, ownership, authority, mutex, path
   identity and crash convergence.
 - Removed scope: Node engine/preflight compatibility; it is being prepared as
   a separate PR from current `main`.
+- `c39367b` isolates each verified recovery removal by an atomic rename and
+  revalidation before deleting the isolated entry; replacements are preserved
+  and the operation fails closed. `4712f4d` keeps the reusable-publication
+  crash fixture deterministic on Windows.
 - PR #109 remains open and unmerged. Review-thread state is determined from
   the exact PR head; no merge is authorized.
 

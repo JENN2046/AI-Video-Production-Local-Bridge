@@ -14,17 +14,19 @@ Repository baseline: `main@55553cbf2f9bc387beb255cebb8b36bcb2deadbf`
 - PR #108, `fix: bound Provider polling and recover verified Blob storage`, was
   squash-merged as `808d9334a49def7ce858f7c6138af75fed392c5b`.
 - PR #109 remains open and unmerged at current head
-  `57a070b7ccbb29836b040609f775d525e287d230` on
+  `c39367b0ea84238c9cd9f196449160cd699945ba` on
   `codex/blob-recovery-staging-reconciliation`. Its scope is now limited to
   Blob recovery staging, ownership, authority, mutex, path identity and crash
   convergence. The Node engine/preflight compatibility change was removed from
   this PR and is being prepared separately. The latest Blob-only follow-ups
   preserve the published-ownership, truncated-authority, mutex-companion and
-  reusable-publication recovery fixes. Predecessor head `2b50105` passed both
-  Windows CI jobs in run `30807054533`; exact-head CI and review evidence for
-  `57a070b` are tracked separately in PR #109. No merge is authorized. Later
-  thread lists in this file are immutable historical state-sync snapshots for
-  earlier PR #109 heads, not the current thread set.
+  reusable-publication recovery fixes; `c39367b` also isolates verified path
+  removals before deletion, while `4712f4d` keeps the Windows crash fixture
+  deterministic. Predecessor head `2b50105` passed both Windows CI jobs in run
+  `30807054533`; exact-head CI and review evidence for the current head are
+  tracked separately in PR #109. No merge is authorized. Later thread lists in
+  this file are immutable historical state-sync snapshots for earlier PR #109
+  heads, not the current thread set.
 - Historical PR #109 remediation snapshots record the earlier exact-target
   cross-database recovery serialization and atomically publishes the low-
   disclosure target authority record. The follow-up candidate also derives
