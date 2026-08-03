@@ -3315,3 +3315,43 @@ service_starts: 0
 remaining_test_processes: 0
 final_exact_head_ci_and_review: REQUIRED_AFTER_STATE_SYNC
 ```
+
+### PR109-R0_CONTROLLED_RETIREMENT_AND_TRUTH_RESET - 2026-08-04T00:19:50+08:00
+
+Command:
+
+```text
+node -e "JSON.parse(require('fs').readFileSync('.agent_board/NEXT_TASK.json','utf8'))"
+git diff --check
+Markdown relative-link validation
+task-board consistency validation
+state/handoff structure validation
+changed-file allowlist validation
+secret scan (docs-only)
+git status --short
+```
+
+Result:
+
+```text
+PASS
+```
+
+Evidence:
+- `NEXT_TASK.json` parses and records
+  `S3B-T1B-R1_MINIMAL_BOUNDED_STAGE_REPLACEMENT` as
+  `AWAITING_JENN_AUTHORIZATION` with `ready: false`.
+- Current main is `55553cbf2f9bc387beb255cebb8b36bcb2deadbf`.
+- PR #109 is closed without merge; its branch remains retained.
+- PR #111 remains an unchanged Draft.
+- Only the documentation/task-board allowlist changed; source, tests, package,
+  runtime, database, media and secret-adjacent files were untouched.
+
+Not run reason:
+- No project test suite was needed for documentation/governance-only changes.
+- No Provider, service, database, media or deployment operation was run.
+
+Notes:
+- The prepared replacement task is not executable and has no READY slot.
+- The closeout PR must receive exact-head CI and one complete Codex review before
+  its authorized squash merge.

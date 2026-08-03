@@ -1,7 +1,7 @@
 # Current State
 
-Date (Asia/Shanghai, UTC+08:00): 2026-07-31
-Repository baseline: `main@b3a108abc8728e89259d0d953e1c638b9ca482ea`
+Date (Asia/Shanghai, UTC+08:00): 2026-08-04
+Repository baseline: `main@55553cbf2f9bc387beb255cebb8b36bcb2deadbf`
 
 ## Repository and CI truth
 
@@ -11,11 +11,43 @@ Repository baseline: `main@b3a108abc8728e89259d0d953e1c638b9ca482ea`
   `bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7`.
 - PR #106, `docs: freeze scope and record core production readiness`, was
   squash-merged as `b3a108abc8728e89259d0d953e1c638b9ca482ea`.
+- PR #108, `fix: bound Provider polling and harden output recovery`, was
+  merged as `808d9334a49def7ce858f7c6138af75fed392c5b`.
+- PR #110, `fix: stabilize Director Bridge smoke process quiescence`, was
+  merged as `00c8ed458144f03d4b0e1389d4de6dbf8005ed9a`.
+- PR #112, `fix: converge Director Bridge fixture failure receipts`, was
+  merged as `55553cbf2f9bc387beb255cebb8b36bcb2deadbf`.
+- PR #109 was closed without merge after controlled retirement. Its head
+  `423351bf376378d6fde48cea3060cc7af35bb148` and branch remain retained as
+  architecture and threat-model evidence; no commit from it is accepted into
+  `main`.
+- PR #111 remains an independent Draft PR with failed Quality and integration
+  CI; it was not modified by the retirement.
 - The final PR #106 head passed both `Quality and integration` and
   `Browser smoke`; the squash commit has the same tree as that reviewed head.
 - Code and CI PASS establish repository facts only. They do not create a new
   deployment, public maintenance-window, Provider, database, Bridge, Snapshot,
   Memory or production acceptance.
+
+## PR #109 controlled retirement
+
+```yaml
+pull_request: 109
+state: CLOSED
+merged: false
+branch_retained: true
+review_history_retained: true
+ci_history_retained: true
+source_commits_accepted_into_main: false
+classification: RESEARCH_AND_ARCHITECTURE_EVIDENCE
+```
+
+The late staged-file accumulation finding was valid, but the attempted
+remediation expanded into an unsupported cross-database and cross-process
+media transaction protocol. The product boundary is now single active
+Workbench writer, single business database and explicit human recovery only.
+See [the PR #109 postmortem](docs/PR109_POSTMORTEM_AND_REUSABLE_ASSETS_2026-08-04.md)
+and [the bounded-recovery ADR](docs/ADR_SINGLE_ACTIVE_MEDIA_WRITER_AND_BOUNDED_RECOVERY.md).
 
 The exact accepted external operation recorded by each historical report
 remains bounded to that report's commit, inputs and authorization. A later
@@ -61,7 +93,7 @@ database. `REAL_PROVIDER_ENABLED=false` remains the safe default.
 |---|---|---|---|
 | Workbench V2 local UI | Storyboard, generation preflight, version review and delivery-readiness views exist | Activity database compatibility accepted at ledger `0011` | Core |
 | SQLite and governed media | Migration, Artifact/Blob digest and FFprobe boundaries exist | Ledger `0011` migration/restore evidence remains commit-scoped | Core |
-| Current Provider path | Intent, budget, confirmation and adapter boundaries exist; Provider defaults off | S3 local checks passed; Draft PR #108 contains the bounded polling, manual reconciliation and verified-Blob recovery candidate but is blocked pending new exact-head CI and review; it is not current `main`, and S4 remains blocked | Core blocker before S4 |
+| Current Provider path | Intent, budget, confirmation and adapter boundaries exist; Provider defaults off | PR #108 is in `main`; S3B-T1/T1A are done in main, while the verified-Blob recovery path retains a late staged-file accumulation finding. S4 remains separately blocked | Core blocker before S4 |
 | Historical R3 Provider path | Execution scripts now reside under `legacy/` | RunningHub real canary, four-shot generation and regeneration completed historically | Feasibility evidence only |
 | Review and accepted clips | Version stacks, rejection reasons and human accepted-clip selection exist | Historical R3 review evidence exists | Core; current-path acceptance remains |
 | Active assembly/export | Active assembly still contains `placeholder_copy` / mock-fixture behavior; Workbench has no production assembly/export action | No current-main production-path PASS | S6 core gap |
@@ -69,7 +101,7 @@ database. `REAL_PROVIDER_ENABLED=false` remains the safe default.
 | Unified `/workspace/mcp` | Unified Remote and Director tool contracts exist | Earlier bounded transport/activity path passed | Core ChatGPT route; later commits do not inherit that PASS |
 | Legacy `/mcp` | Still present | Earlier Readonly acceptance exists | `ROLLBACK_ONLY` |
 | Dedicated Director route | Still present beside Unified Director tools | Earlier bounded evidence exists | `ROLLBACK_ONLY` |
-| Director Bridge | A managed process was detected with source commit `3a142bb` | The recorded process source predates `main@b3a108a`; no current-main configuration, heartbeat or authenticated-contact acceptance was performed | Do not place before S3/S4 |
+| Director Bridge | A managed process was detected with source commit `3a142bb` | The recorded process source predates `main@55553cb`; no current-main configuration, heartbeat or authenticated-contact acceptance was performed | Do not place before S3/S4 |
 | Manual Snapshot | Publisher and signed Snapshot contract exist | Earlier bounded publish/recovery evidence exists | Optional; not an S3/S4 dependency |
 | Media Gateway | PR #105 two-project Image/MP4 matrix is in main and CI passed | No corresponding current-main public maintenance-window acceptance | Optional human Widget playback |
 | Memory Port | Advisory recall seam and non-dispatched Saveback envelope exist | No stable production plugin or automatic Saveback | Frozen |
@@ -114,7 +146,7 @@ process whose recorded source commit is
 
 The recorded manager check returned `RESTART_REQUIRED` on the earlier
 repository baseline, and its source commit still predates current
-`main@b3a108a`. This restack did not start, stop or restart the Bridge. It did
+`main@55553cb`. This retirement did not start, stop or restart the Bridge. It did
 not revalidate configuration identity, heartbeat or authenticated Remote
 contact. Therefore the repository must not claim that the Bridge is stopped,
 healthy, Remote-connected or accepted on current main.
@@ -187,24 +219,22 @@ Current stage queue:
 1. `S1 Scope Freeze` — `DONE`
 2. `S2 Core Loop Gap Audit` — `DONE`
 3. `S3 Provider Canary Readiness` — `DONE` with local readiness findings
-4. `S3B Single-Shot Canary Prerequisites` — `BLOCKED`
+4. `S3B Single-Shot Canary Prerequisites` — `DONE_IN_MAIN_WITH_LATE_STAGE_ACCUMULATION_FINDING`
 5. `S4 Real Single-Shot Canary` — `BLOCKED_BY_S3_FINDING`
 6. `S5 Review and Regeneration` — not loaded
 7. `S6 Assembly, Export and Closeout` — not loaded
 8. `S7 Three Real Project Evaluation` — not loaded
 9. `S8 Legacy Route Cleanup Decision` — not loaded
 
-The S3B-T1 and S3B-T1A implementation candidates have local `PASS` evidence
-and are cleanly restacked in Draft PR #108 with repository status
-`BLOCKED_BY_PR108_REVIEW_FINDING` until a new exact-head CI run and Codex review
-pass. The candidate includes the separately authorized narrow recovery of
-missing or drifted physical bytes for an immutable verified Blob: it requires
-explicit human reattachment and exact Artifact/Blob, SHA, size and MIME
-agreement, preserves the Blob row and link, and does not resubmit. Replacement
-rebind archives the old Artifact, restart recovery prefers a committed local
-replacement, repeated attachment preserves the same-task recovery, and startup
-scheduling handles clock rollback without waiting for a future attempt or a
-future lease inherited from a crashed process.
+S3B-T1 and S3B-T1A are now `DONE_IN_MAIN` through PR #108. The verified-Blob
+recovery capability is also in `main`, but its late staged-file accumulation
+finding remains valid and is not claimed fixed by PR #109. The bounded path
+requires explicit human reattachment and exact Artifact/Blob, SHA, size and
+MIME agreement, preserves the Blob row and link, and does not resubmit.
+Replacement rebind archives the old Artifact, restart recovery prefers a
+committed local replacement, repeated attachment preserves same-task recovery,
+and startup scheduling handles clock rollback without waiting for a future
+attempt or a future lease inherited from a crashed process.
 
 Head `2cb245e` passed Windows CI run `30606273467` on attempt 1. Exact-head
 review `4825747733` then found that an old persisted recovery prevented a human
