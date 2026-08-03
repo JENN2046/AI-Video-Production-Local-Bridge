@@ -14,13 +14,15 @@ Repository baseline: `main@55553cbf2f9bc387beb255cebb8b36bcb2deadbf`
 - PR #108, `fix: bound Provider polling and recover verified Blob storage`, was
   squash-merged as `808d9334a49def7ce858f7c6138af75fed392c5b`.
 - PR #109 remains open and unmerged at current head
-  `436bffe7e71028421e7c8fced3cbdf5a09fbc268` on
+  `2b5010510498f0ee82176135d15f1e8db3e0555d` on
   `codex/blob-recovery-staging-reconciliation`. Its scope is now limited to
   Blob recovery staging, ownership, authority, mutex, path identity and crash
   convergence. The Node engine/preflight compatibility change was removed from
-  this PR and is being prepared separately. The latest Blob-only follow-up
-  preserves the published-ownership and truncated-authority recovery fixes;
-  exact-head CI and a fresh review remain required. No merge is authorized.
+  this PR and is being prepared separately. The latest Blob-only follow-ups
+  preserve the published-ownership, truncated-authority and mutex-companion
+  recovery fixes. Windows CI run `30807054533` passed both jobs; all current
+  review threads are resolved and a fresh final review has been requested. No
+  merge is authorized.
 - Historical PR #109 remediation snapshots record the earlier exact-target
   cross-database recovery serialization and atomically publishes the low-
   disclosure target authority record. The follow-up candidate also derives
