@@ -217,7 +217,7 @@ function hardCrashVerifiedBlobRecovery(input: {
   project_id: string;
   shot_id: string;
   source_path: string;
-  crash_at?: "after_stage_ownership_planned" | "after_stage_publication_created" | "after_stage_ownership_persisted" | "after_stage_owner_created" | "after_stage_published_with_owner_proof" | "after_staged_copy" | "after_target_authority_temp_created" | "after_staging_entry_isolated" | "after_staging_cleanup_entry_removed";
+  crash_at?: "after_stage_ownership_planned" | "after_stage_publication_created" | "after_stage_ownership_persisted" | "after_stage_owner_created" | "after_stage_published_with_owner_proof" | "after_staged_copy" | "after_target_mutex_temp_initialized" | "after_target_authority_temp_created" | "after_staging_entry_isolated" | "after_staging_cleanup_entry_removed";
 }): void {
   const childScript = `
     const { openM0Database } = await import(process.env.RECOVERY_SQLITE_MODULE);
@@ -229,7 +229,9 @@ function hardCrashVerifiedBlobRecovery(input: {
       project_id: process.env.RECOVERY_PROJECT_ID,
       shot_id: process.env.RECOVERY_SHOT_ID,
       source_path: process.env.RECOVERY_SOURCE_PATH
-    }, db, crashAt === "after_target_authority_temp_created"
+    }, db, crashAt === "after_target_mutex_temp_initialized"
+      ? { after_target_mutex_temp_initialized: () => process.exit(102) }
+      : crashAt === "after_target_authority_temp_created"
       ? { after_target_authority_temp_created: () => process.exit(93) }
       : crashAt === "after_stage_ownership_planned"
         ? { after_stage_ownership_planned: () => process.exit(100) }
@@ -268,7 +270,9 @@ function hardCrashVerifiedBlobRecovery(input: {
     timeout: 30_000
   });
   assert.equal(child.error, undefined);
-  const expectedStatus = input.crash_at === "after_target_authority_temp_created"
+  const expectedStatus = input.crash_at === "after_target_mutex_temp_initialized"
+    ? 102
+    : input.crash_at === "after_target_authority_temp_created"
     ? 93
     : input.crash_at === "after_stage_ownership_planned"
       ? 100
@@ -2874,6 +2878,55 @@ test("verified Blob recovery rejects unowned target authority entries", () => {
       db.close();
       rmSync(root, { recursive: true, force: true });
     }
+  }
+});
+
+test("verified Blob recovery reuses an initialized mutex temp across repeated hard crashes", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-mutex-init-crash-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const journalDirectory = resolve(mediaRoot, ".activation", "journal");
+    rmSync(fixture.artifact.storage.uri);
+    db.close();
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      hardCrashVerifiedBlobRecovery({
+        sqlite_path: sqlitePath,
+        artifact_id: fixture.artifact.artifact_id,
+        project_id: fixture.project_id,
+        shot_id: fixture.shot_id,
+        source_path: fixture.source_path,
+        crash_at: "after_target_mutex_temp_initialized"
+      });
+      const initializedTemps = readdirSync(journalDirectory)
+        .filter((name) => /^\.brm-[0-9a-f-]{36}\.tmp\.sqlite$/i.test(name));
+      assert.equal(initializedTemps.length, 1);
+    }
+
+    const retryDb = openM0Database(sqlitePath);
+    try {
+      const recovered = recoverVerifiedBlobStorage({
+        invalid_artifact_id: fixture.artifact.artifact_id,
+        project_id: fixture.project_id,
+        shot_id: fixture.shot_id,
+        source_path: fixture.source_path
+      }, retryDb);
+      assert.equal(recovered.ok, true, recovered.ok ? undefined : recovered.error.code);
+      assert.equal(
+        readdirSync(journalDirectory)
+          .filter((name) => /^\.brm-[0-9a-f-]{36}\.tmp\.sqlite$/i.test(name)).length,
+        0
+      );
+      assert.equal(existsSync(fixture.artifact.storage.uri), true);
+    } finally {
+      retryDb.close();
+    }
+  } finally {
+    try { db.close(); } catch { /* closed before hard-crash child */ }
+    rmSync(root, { recursive: true, force: true });
   }
 });
 

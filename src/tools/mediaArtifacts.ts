@@ -94,6 +94,7 @@ export interface VerifiedBlobStorageRecoveryFaults {
   target_mutex_busy_timeout_ms?: number;
   after_target_mutex_acquired?: () => void;
   after_target_mutex_guard_open?: () => void;
+  after_target_mutex_temp_initialized?: () => void;
   after_target_mutex_temp_link_observed?: () => void;
   after_target_authority_temp_created?: () => void;
   after_stage_ownership_planned?: () => void;
@@ -2333,6 +2334,43 @@ function writeEmptyVerifiedBlobRecoveryMutex(descriptor: number, lockPath: strin
   fsyncSync(descriptor);
 }
 
+function findInterruptedVerifiedBlobRecoveryMutexInitialization(
+  lockPath: string,
+  recoveryPaths: ReturnType<typeof recoveryRootAndTarget>,
+  roots: ReturnType<typeof activationRoots>
+): string | null {
+  const candidates: string[] = [];
+  for (const name of readdirSync(roots.journal)) {
+    if (!BLOB_RECOVERY_TARGET_MUTEX_TEMP_NAME.test(name)) continue;
+    const candidatePath = resolve(roots.journal, name);
+    let descriptor = -1;
+    try {
+      const entry = lstatSync(candidatePath);
+      if (entry.isSymbolicLink() || !entry.isFile() || entry.nlink !== 1
+        || !sameResolvedPath(dirname(candidatePath), roots.journal)
+        || !isPathInside(candidatePath, recoveryPaths.registeredRoot)
+        || hasExistingSymlinkAncestor(candidatePath, recoveryPaths.registeredRoot)) {
+        continue;
+      }
+      descriptor = openSync(candidatePath, "r");
+      const guarded = fstatSync(descriptor);
+      const current = statSync(candidatePath);
+      if (!guarded.isFile() || guarded.nlink !== 1
+        || guarded.dev !== entry.dev || guarded.ino !== entry.ino
+        || current.dev !== guarded.dev || current.ino !== guarded.ino
+        || !sameResolvedPath(resolve(realpathSync(candidatePath)), candidatePath)) {
+        continue;
+      }
+      try { assertVerifiedBlobRecoveryTargetMutexHeader(descriptor, lockPath); }
+      catch { continue; }
+      candidates.push(candidatePath);
+    } catch { /* unrelated or concurrently changing temp entries are preserved */ }
+    finally { if (descriptor >= 0) closeSync(descriptor); }
+  }
+  if (candidates.length > 1) throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  return candidates[0] ?? null;
+}
+
 function assertConnectedVerifiedBlobRecoveryTargetMutex(
   database: NodeDatabaseSync,
   lockPath: string
@@ -2349,12 +2387,15 @@ function assertConnectedVerifiedBlobRecoveryTargetMutex(
 function initializeVerifiedBlobRecoveryTargetMutex(
   lockPath: string,
   recoveryPaths: ReturnType<typeof recoveryRootAndTarget>,
-  roots: ReturnType<typeof activationRoots>
+  roots: ReturnType<typeof activationRoots>,
+  afterInitialized?: () => void
 ): void {
-  const temporaryPath = resolve(
-    roots.journal,
-    `.brm-${randomUUID()}.tmp.sqlite`
+  const interruptedPath = findInterruptedVerifiedBlobRecoveryMutexInitialization(
+    lockPath,
+    recoveryPaths,
+    roots
   );
+  const temporaryPath = interruptedPath ?? resolve(roots.journal, `.brm-${randomUUID()}.tmp.sqlite`);
   if (!BLOB_RECOVERY_TARGET_MUTEX_TEMP_NAME.test(basename(temporaryPath))
     || !sameResolvedPath(dirname(temporaryPath), roots.journal)
     || !isPathInside(temporaryPath, recoveryPaths.registeredRoot)
@@ -2365,9 +2406,9 @@ function initializeVerifiedBlobRecoveryTargetMutex(
   let descriptor = -1;
   let temporaryIdentity: ReturnType<typeof fstatSync> | null = null;
   try {
-    descriptor = openSync(temporaryPath, "wx+");
+    descriptor = openSync(temporaryPath, interruptedPath ? "r+" : "wx+");
     temporaryIdentity = fstatSync(descriptor);
-    writeEmptyVerifiedBlobRecoveryMutex(descriptor, lockPath);
+    if (!interruptedPath) writeEmptyVerifiedBlobRecoveryMutex(descriptor, lockPath);
     const initialized = fstatSync(descriptor);
     const currentInitialized = statSync(temporaryPath);
     if (initialized.dev !== temporaryIdentity.dev
@@ -2378,6 +2419,7 @@ function initializeVerifiedBlobRecoveryTargetMutex(
     }
     assertVerifiedBlobRecoveryTargetMutexHeader(descriptor, lockPath);
     assertVerifiedBlobRecoveryTargetMutexSidecarsAbsent(temporaryPath);
+    afterInitialized?.();
     try { linkSync(temporaryPath, lockPath); }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
@@ -2489,7 +2531,12 @@ function acquireVerifiedBlobRecoveryTargetMutex(
   faults: VerifiedBlobStorageRecoveryFaults
 ): VerifiedBlobRecoveryTargetMutex {
   if (!existsSync(lockPath)) {
-    initializeVerifiedBlobRecoveryTargetMutex(lockPath, recoveryPaths, roots);
+    initializeVerifiedBlobRecoveryTargetMutex(
+      lockPath,
+      recoveryPaths,
+      roots,
+      faults.after_target_mutex_temp_initialized
+    );
   }
 
   let guardDescriptor = -1;
@@ -2534,7 +2581,12 @@ function acquireVerifiedBlobRecoveryTargetMutex(
     // Ownership is durable in an independent verified SQLite file so its
     // commits never release or reacquire that target lock.
     if (!existsSync(ownershipPath)) {
-      initializeVerifiedBlobRecoveryTargetMutex(ownershipPath, recoveryPaths, roots);
+      initializeVerifiedBlobRecoveryTargetMutex(
+        ownershipPath,
+        recoveryPaths,
+        roots,
+        faults.after_target_mutex_temp_initialized
+      );
     }
     assertVerifiedBlobRecoveryTargetMutexFile(ownershipPath, recoveryPaths, roots);
     assertVerifiedBlobRecoveryOwnershipJournalRecoverable(ownershipPath, recoveryPaths, roots);
