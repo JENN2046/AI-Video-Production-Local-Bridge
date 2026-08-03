@@ -3352,7 +3352,7 @@ test("verified Blob recovery rolls back a hot ownership journal after a pre-comm
   }
 });
 
-test("verified Blob recovery resumes a crash before publication inode persistence", () => {
+test("verified Blob recovery resumes a crash after publication identity persistence", () => {
   const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-planned-publication-crash-"));
   const mediaRoot = join(root, "media");
   const sqlitePath = join(root, "app.sqlite");
@@ -3409,6 +3409,62 @@ test("verified Blob recovery resumes a crash before publication inode persistenc
     assert.equal(verifiedBlobRecoveryStagePublicationPaths(stagedPath).length, 0);
     assert.equal(verifyMediaArtifactBytes(db, fixture.artifact).ok, true);
     assert.deepEqual(immutableBlobSnapshot(db, fixture.artifact.artifact_id), before);
+  } finally {
+    try { db.close(); } catch { /* the crash setup closes the first database handle */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("verified Blob recovery rejects an external publication for planned ownership", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-planned-publication-external-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  let db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const blob = getMediaBlob(db, fixture.artifact.blob_id);
+    assert.ok(blob);
+    const stagedPath = verifiedBlobRecoveryStagePath(mediaRoot, blob);
+    const ownerPath = verifiedBlobRecoveryStageOwnerPath(stagedPath);
+    const ownershipPath = verifiedBlobRecoveryStageOwnershipPath(mediaRoot, stagedPath);
+    rmSync(fixture.artifact.storage.uri);
+    db.close();
+
+    hardCrashVerifiedBlobRecovery({
+      sqlite_path: sqlitePath,
+      artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path,
+      crash_at: "after_stage_ownership_planned"
+    });
+    const ownershipDb = new DatabaseSync(ownershipPath);
+    let publicationName = "";
+    try {
+      publicationName = String((ownershipDb.prepare(
+        "SELECT publication_name FROM verified_blob_recovery_stage_ownership WHERE singleton = 1"
+      ).get() as { publication_name: string }).publication_name);
+    } finally {
+      ownershipDb.close();
+    }
+    const publicationPath = join(dirname(stagedPath), publicationName);
+    writeFileSync(publicationPath, Buffer.alloc(0), { flag: "wx" });
+    const externalBytes = readFileSync(publicationPath);
+
+    db = openM0Database(sqlitePath);
+    const blocked = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(blocked.ok, false);
+    if (!blocked.ok) assert.equal(blocked.error.code, "MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    assert.deepEqual(readFileSync(publicationPath), externalBytes);
+    assert.equal(existsSync(stagedPath), false);
+    assert.equal(existsSync(ownerPath), false);
+    assert.equal(existsSync(fixture.artifact.storage.uri), false);
   } finally {
     try { db.close(); } catch { /* the crash setup closes the first database handle */ }
     rmSync(root, { recursive: true, force: true });

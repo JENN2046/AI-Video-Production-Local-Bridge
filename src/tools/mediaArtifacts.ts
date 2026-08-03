@@ -993,10 +993,12 @@ function findRecordedRecoveryStagePublication(
   const stageExists = existsSync(stagedPath);
   const ownerExists = existsSync(ownerPath);
   if (ownership.state === "planned") {
-    if (stageExists || ownerExists || publication.isSymbolicLink()
-      || !publication.isFile() || publication.nlink !== 1 || publication.size !== 0) {
-      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
-    }
+    // A planned row has no inode identity yet.  An existing publication can
+    // therefore be an external file created after the crash, not a file this
+    // recovery instance created.  Preserve it and fail closed; genuine
+    // publication-created crashes persist the inode before becoming visible to
+    // the retry path.
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   } else {
     assertVerifiedBlobRecoveryStageOwnership(ownership, publicationPath, ownerPath, undefined);
   }
@@ -1241,11 +1243,12 @@ function prepareVerifiedBlobRecoveryStaging(
   const publicationPath = publication?.path
     ?? resolve(dirname(stagedPath), ownership.publication_name);
   try {
+    let publicationCreated = false;
     if (publication) {
       descriptor = openSync(publication.path, "r+");
     } else {
       descriptor = openSync(publicationPath, "wx+");
-      faults.after_stage_publication_created?.();
+      publicationCreated = true;
     }
     stagedIdentity = fstatSync(descriptor);
     if (!stagedIdentity.isFile() || stagedIdentity.ino === 0
@@ -1263,6 +1266,7 @@ function prepareVerifiedBlobRecoveryStaging(
         blob,
         faults.after_stage_ownership_persisted
       );
+      if (publicationCreated) faults.after_stage_publication_created?.();
     } else {
       if (!publication) throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
       assertVerifiedBlobRecoveryStageOwnership(ownership, publication.path, ownerPath, blob);
