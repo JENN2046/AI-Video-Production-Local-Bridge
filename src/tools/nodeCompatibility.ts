@@ -13,7 +13,8 @@ function parseStableNodeVersion(value: unknown): NodeVersion | null {
 function parseNodeMinimum(value: unknown): NodeVersion | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
-  return parseStableNodeVersion(trimmed.startsWith(">=") ? trimmed.slice(2) : trimmed);
+  if (!trimmed.startsWith(">=")) return null;
+  return parseStableNodeVersion(trimmed.slice(2));
 }
 
 /**
