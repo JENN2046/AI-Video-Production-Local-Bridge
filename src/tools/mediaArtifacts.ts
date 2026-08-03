@@ -1214,6 +1214,7 @@ function prepareVerifiedBlobRecoveryStaging(
       registeredRoot,
       canonicalRoot,
       cleanupDirectory,
+      ownership,
       2,
       faults.before_staging_pair_isolated,
       faults.after_staging_entry_isolated,
@@ -1767,6 +1768,8 @@ interface VerifiedBlobRecoveryTargetAuthority {
 
 interface VerifiedBlobRecoveryTargetAuthorityPublication extends VerifiedBlobRecoveryTargetAuthority {
   temporary_name: string;
+  device_id: string;
+  inode_id: string;
 }
 
 function readVerifiedBlobRecoveryTargetAuthorityPublication(
@@ -1774,7 +1777,8 @@ function readVerifiedBlobRecoveryTargetAuthorityPublication(
   expected: VerifiedBlobRecoveryTargetAuthority
 ): VerifiedBlobRecoveryTargetAuthorityPublication | null {
   const row = mutex.ownershipDatabase.prepare(`
-    SELECT version, temporary_name, target_identity_sha256, registered_root_identity_sha256,
+    SELECT version, temporary_name, device_id, inode_id,
+           target_identity_sha256, registered_root_identity_sha256,
            blob_sha256, blob_size_bytes, blob_mime
       FROM verified_blob_recovery_target_authority_publication
      WHERE singleton = 1
@@ -1787,6 +1791,13 @@ function readVerifiedBlobRecoveryTargetAuthorityPublication(
     )
     || row.target_identity_sha256 !== expected.target_identity_sha256
     || row.registered_root_identity_sha256 !== expected.registered_root_identity_sha256) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  const identityEmpty = row.device_id === "" && row.inode_id === "";
+  const identityValid = /^\d+$/.test(row.device_id)
+    && /^\d+$/.test(row.inode_id)
+    && row.inode_id !== "0";
+  if (!identityEmpty && !identityValid) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
   if (row.blob_sha256 !== expected.blob_sha256
@@ -1803,7 +1814,9 @@ function planVerifiedBlobRecoveryTargetAuthorityPublication(
 ): VerifiedBlobRecoveryTargetAuthorityPublication {
   const publication: VerifiedBlobRecoveryTargetAuthorityPublication = {
     ...expected,
-    temporary_name: `.blob-recovery-target-${expected.target_identity_sha256}.authority-${randomUUID()}.tmp`
+    temporary_name: `.blob-recovery-target-${expected.target_identity_sha256}.authority-${randomUUID()}.tmp`,
+    device_id: "",
+    inode_id: ""
   };
   if (!BLOB_RECOVERY_TARGET_AUTHORITY_TEMP_NAME.test(publication.temporary_name)) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
@@ -1812,9 +1825,9 @@ function planVerifiedBlobRecoveryTargetAuthorityPublication(
     mutex.ownershipDatabase.exec("BEGIN IMMEDIATE");
     mutex.ownershipDatabase.prepare(`
       INSERT INTO verified_blob_recovery_target_authority_publication (
-        singleton, version, temporary_name, target_identity_sha256,
+        singleton, version, temporary_name, device_id, inode_id, target_identity_sha256,
         registered_root_identity_sha256, blob_sha256, blob_size_bytes, blob_mime
-      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (1, ?, ?, '', '', ?, ?, ?, ?, ?)
     `).run(
       publication.version,
       publication.temporary_name,
@@ -1835,6 +1848,35 @@ function planVerifiedBlobRecoveryTargetAuthorityPublication(
   return publication;
 }
 
+function persistVerifiedBlobRecoveryTargetAuthorityPublicationIdentity(
+  mutex: VerifiedBlobRecoveryTargetMutex,
+  publication: VerifiedBlobRecoveryTargetAuthorityPublication,
+  identity: ReturnType<typeof fstatSync>
+): void {
+  if (!identity.isFile() || identity.ino === 0 || identity.nlink !== 1) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+  try {
+    mutex.ownershipDatabase.exec("BEGIN IMMEDIATE");
+    const updated = mutex.ownershipDatabase.prepare(`
+      UPDATE verified_blob_recovery_target_authority_publication
+         SET device_id = ?, inode_id = ?
+       WHERE singleton = 1 AND temporary_name = ?
+    `).run(String(identity.dev), String(identity.ino), publication.temporary_name) as { changes?: number };
+    if (Number(updated.changes) !== 1) throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    mutex.ownershipDatabase.exec("COMMIT");
+    publication.device_id = String(identity.dev);
+    publication.inode_id = String(identity.ino);
+  } catch (error) {
+    try { mutex.ownershipDatabase.exec("ROLLBACK"); } catch { /* preserve stable persistence failure */ }
+    if (error instanceof Error && error.message === "MEDIA_BLOB_RECOVERY_PATH_UNSAFE") throw error;
+    if ((error as { errcode?: number }).errcode === 5) {
+      throw new Error("MEDIA_BLOB_RECOVERY_BUSY");
+    }
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
+}
+
 function removeRecordedVerifiedBlobRecoveryTargetAuthorityCompanion(
   authorityPath: string,
   publication: VerifiedBlobRecoveryTargetAuthorityPublication,
@@ -1850,9 +1892,15 @@ function removeRecordedVerifiedBlobRecoveryTargetAuthorityCompanion(
   try {
     const authority = lstatSync(authorityPath);
     const temporary = lstatSync(temporaryPath);
+    const identityValid = /^\d+$/.test(publication.device_id)
+      && /^\d+$/.test(publication.inode_id)
+      && publication.inode_id !== "0";
     if (authority.isSymbolicLink() || !authority.isFile() || authority.nlink !== 2
       || temporary.isSymbolicLink() || !temporary.isFile() || temporary.nlink !== 2
-      || authority.dev !== temporary.dev || authority.ino !== temporary.ino) {
+      || !identityValid
+      || authority.dev !== temporary.dev || authority.ino !== temporary.ino
+      || String(temporary.dev) !== publication.device_id
+      || String(temporary.ino) !== publication.inode_id) {
       throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
     }
     rmSync(temporaryPath);
@@ -2144,6 +2192,15 @@ function ensureVerifiedBlobRecoveryTargetAuthority(
     catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
+    const publicationIdentityEmpty = publication.device_id === "" && publication.inode_id === "";
+    const publicationIdentityValid = /^\d+$/.test(publication.device_id)
+      && /^\d+$/.test(publication.inode_id)
+      && publication.inode_id !== "0";
+    if ((!publicationIdentityEmpty && !publicationIdentityValid)
+      || (entry && publicationIdentityEmpty)
+      || (!entry && publicationIdentityValid)) {
+      throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
     descriptor = openSync(temporaryPath, entry ? "r+" : "wx+");
     const temporaryIdentity = fstatSync(descriptor);
     const current = statSync(temporaryPath);
@@ -2151,8 +2208,18 @@ function ensureVerifiedBlobRecoveryTargetAuthority(
       || temporaryIdentity.size > 1024
       || current.dev !== temporaryIdentity.dev || current.ino !== temporaryIdentity.ino
       || (entry && (entry.isSymbolicLink() || !entry.isFile() || entry.nlink !== 1
-        || entry.dev !== temporaryIdentity.dev || entry.ino !== temporaryIdentity.ino))) {
+        || entry.dev !== temporaryIdentity.dev || entry.ino !== temporaryIdentity.ino))
+      || (publicationIdentityValid
+        && (String(temporaryIdentity.dev) !== publication.device_id
+          || String(temporaryIdentity.ino) !== publication.inode_id))) {
       throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+    }
+    if (publicationIdentityEmpty) {
+      persistVerifiedBlobRecoveryTargetAuthorityPublicationIdentity(
+        targetMutex,
+        publication,
+        temporaryIdentity
+      );
     }
     faults.after_target_authority_temp_created?.();
     if (temporaryIdentity.size === 0) {
@@ -2738,6 +2805,8 @@ function acquireVerifiedBlobRecoveryTargetMutex(
         singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
         version INTEGER NOT NULL CHECK (version = 1),
         temporary_name TEXT NOT NULL,
+        device_id TEXT NOT NULL DEFAULT '',
+        inode_id TEXT NOT NULL DEFAULT '',
         target_identity_sha256 TEXT NOT NULL,
         registered_root_identity_sha256 TEXT NOT NULL,
         blob_sha256 TEXT NOT NULL,
@@ -2745,6 +2814,22 @@ function acquireVerifiedBlobRecoveryTargetMutex(
         blob_mime TEXT NOT NULL
       )
     `);
+    const authorityPublicationColumns = ownershipDatabase.prepare(
+      "PRAGMA table_info(verified_blob_recovery_target_authority_publication)"
+    ).all() as Array<{ name?: string }>;
+    const authorityPublicationColumnNames = new Set(
+      authorityPublicationColumns.map((column) => String(column.name ?? ""))
+    );
+    if (!authorityPublicationColumnNames.has("device_id")) {
+      ownershipDatabase.exec(
+        "ALTER TABLE verified_blob_recovery_target_authority_publication ADD COLUMN device_id TEXT NOT NULL DEFAULT ''"
+      );
+    }
+    if (!authorityPublicationColumnNames.has("inode_id")) {
+      ownershipDatabase.exec(
+        "ALTER TABLE verified_blob_recovery_target_authority_publication ADD COLUMN inode_id TEXT NOT NULL DEFAULT ''"
+      );
+    }
     assertConnectedVerifiedBlobRecoveryTargetMutex(ownershipDatabase, ownershipPath);
     assertVerifiedBlobRecoveryTargetMutexFile(
       ownershipPath,
@@ -2882,6 +2967,7 @@ function reconcileOwnedRecoveryCleanupPair(
   targetPath: string,
   cleanupDirectory: string,
   registeredRoot: string,
+  ownership: VerifiedBlobRecoveryStageOwnership | null,
   protectedSourcePath = "",
   afterFirstRemoval?: () => void
 ): void {
@@ -2909,6 +2995,11 @@ function reconcileOwnedRecoveryCleanupPair(
     // path into application cleanup.
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
+  if (!ownership
+    || ownership.state !== "published"
+    || ownership.staged_path_identity_sha256 !== verifiedBlobRecoveryStagePathIdentity(stagedPath)) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
   const cleanupEntries = cleanupPaths.map((candidate) => {
     const entry = lstatSync(candidate);
     const canonical = resolve(realpathSync(candidate));
@@ -2919,6 +3010,13 @@ function reconcileOwnedRecoveryCleanupPair(
     return entry;
   });
   const owned = cleanupEntries[0];
+  if (!/^\d+$/.test(ownership.device_id)
+    || !/^\d+$/.test(ownership.inode_id)
+    || ownership.inode_id === "0"
+    || String(owned.dev) !== ownership.device_id
+    || String(owned.ino) !== ownership.inode_id) {
+    throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+  }
   if (cleanupEntries.some((entry) => entry.dev !== owned.dev || entry.ino !== owned.ino)) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
@@ -2950,6 +3048,7 @@ function removeOwnedRecoveryStagingPair(
   registeredRoot: string,
   canonicalRoot: string,
   cleanupDirectory: string,
+  ownership: VerifiedBlobRecoveryStageOwnership | null,
   expectedLinkCount = 2,
   beforeIsolation?: () => void,
   afterFirstIsolation?: () => void,
@@ -2966,7 +3065,8 @@ function removeOwnedRecoveryStagingPair(
     ownerPath,
     targetPath,
     cleanupDirectory,
-    registeredRoot
+    registeredRoot,
+    ownership
   );
   if (!existsSync(stagedPath) && !existsSync(ownerPath)) return;
   const owned = assertOwnedRecoveryStagingFile(
@@ -3018,6 +3118,7 @@ function removeOwnedRecoveryStagingPair(
     targetPath,
     cleanupDirectory,
     registeredRoot,
+    ownership,
     "",
     afterFirstCleanupRemoval
   );
@@ -3030,6 +3131,7 @@ function placeOwnedRecoveryStagingFile(
   registeredRoot: string,
   canonicalRoot: string,
   cleanupDirectory: string,
+  ownership: VerifiedBlobRecoveryStageOwnership | null,
   beforeIsolation?: () => void,
   afterFirstIsolation?: () => void,
   afterFirstCleanupRemoval?: () => void
@@ -3063,6 +3165,7 @@ function placeOwnedRecoveryStagingFile(
     registeredRoot,
     canonicalRoot,
     cleanupDirectory,
+    ownership,
     3,
     beforeIsolation,
     afterFirstIsolation,
@@ -3193,12 +3296,14 @@ export function recoverVerifiedBlobStorage(
       )) {
       throw new Error("MEDIA_BLOB_RECOVERY_BINDING_MISMATCH");
     }
+    const cleanupOwnership = readVerifiedBlobRecoveryStageOwnership(targetMutex, stagedPath, blob);
     reconcileOwnedRecoveryCleanupPair(
       stagedPath,
       stagedOwnerPath,
       recoveryPaths.targetPath,
       recoveryCleanupDirectory,
       registeredRoot,
+      cleanupOwnership,
       sourcePath
     );
     validateVerifiedBlobRecoveryEntriesBeforeAuthority(
@@ -3298,6 +3403,7 @@ export function recoverVerifiedBlobStorage(
           registeredRoot,
           recoveryPaths.canonicalRoot,
           recoveryCleanupDirectory,
+          stageOwnership,
           2,
           faults.before_staging_pair_isolated,
           faults.after_staging_entry_isolated,
@@ -3357,6 +3463,7 @@ export function recoverVerifiedBlobStorage(
       registeredRoot,
       recoveryPaths.canonicalRoot,
       recoveryCleanupDirectory,
+      stageOwnership,
       faults.before_staging_pair_isolated,
       faults.after_staging_entry_isolated,
       faults.after_staging_cleanup_entry_removed
@@ -3438,7 +3545,8 @@ export function recoverVerifiedBlobStorage(
           targetPath,
           registeredRoot,
           resolve(realpathSync(registeredRoot)),
-          recoveryCleanupDirectory
+          recoveryCleanupDirectory,
+          cleanupOwnership
         );
       } catch { /* owned generated cleanup is retryable */ }
     }
