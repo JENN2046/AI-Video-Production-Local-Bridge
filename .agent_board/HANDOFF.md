@@ -2,7 +2,7 @@
 
 Current mode: PR #109 orphaned Blob recovery staging remediation; no executable task is `READY`
 Last run: PR109_SCOPE_CONTRACTION
-Last result: Blob-recovery-only PR #109 is at `9ff1ecedd60d7d2247a9753cc1a1f8717e7714c2`; predecessor CI run `30807054533` passed both jobs, and exact-head CI/review evidence is tracked in PR #109
+Last result: Blob-recovery-only PR #109 is at `b778aa038dbf62bd6ac817f0c6480475a1bc880c`; predecessor CI run `30807054533` passed both jobs, and exact-head CI/review evidence is tracked in PR #109
 
 ## Current state
 
@@ -13,7 +13,7 @@ Ready task count: 0
 
 ## Current PR #109 boundary
 
-- Current head: `9ff1ecedd60d7d2247a9753cc1a1f8717e7714c2`.
+- Current head: `b778aa038dbf62bd6ac817f0c6480475a1bc880c`.
 - Retained scope: Blob recovery staging, ownership, authority, mutex, path
   identity and crash convergence.
 - Removed scope: Node engine/preflight compatibility; it is being prepared as

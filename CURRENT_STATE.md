@@ -14,7 +14,7 @@ Repository baseline: `main@55553cbf2f9bc387beb255cebb8b36bcb2deadbf`
 - PR #108, `fix: bound Provider polling and recover verified Blob storage`, was
   squash-merged as `808d9334a49def7ce858f7c6138af75fed392c5b`.
 - PR #109 remains open and unmerged at current head
-  `9ff1ecedd60d7d2247a9753cc1a1f8717e7714c2` on
+  `b778aa038dbf62bd6ac817f0c6480475a1bc880c` on
   `codex/blob-recovery-staging-reconciliation`. Its scope is now limited to
   Blob recovery staging, ownership, authority, mutex, path identity and crash
   convergence. The Node engine/preflight compatibility change was removed from
