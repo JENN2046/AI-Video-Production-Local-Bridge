@@ -14,19 +14,21 @@ Repository baseline: `main@55553cbf2f9bc387beb255cebb8b36bcb2deadbf`
 - PR #108, `fix: bound Provider polling and recover verified Blob storage`, was
   squash-merged as `808d9334a49def7ce858f7c6138af75fed392c5b`.
 - PR #109 remains open and unmerged at current head
-  `c39367b0ea84238c9cd9f196449160cd699945ba` on
+  `89e01613f734405d9998736b84e33ab93e62faf1` on
   `codex/blob-recovery-staging-reconciliation`. Its scope is now limited to
   Blob recovery staging, ownership, authority, mutex, path identity and crash
   convergence. The Node engine/preflight compatibility change was removed from
   this PR and is being prepared separately. The latest Blob-only follow-ups
   preserve the published-ownership, truncated-authority, mutex-companion and
-  reusable-publication recovery fixes; `c39367b` also isolates verified path
-  removals before deletion, while `4712f4d` keeps the Windows crash fixture
-  deterministic. Predecessor head `2b50105` passed both Windows CI jobs in run
-  `30807054533`; exact-head CI and review evidence for the current head are
-  tracked separately in PR #109. No merge is authorized. Later thread lists in
-  this file are immutable historical state-sync snapshots for earlier PR #109
-  heads, not the current thread set.
+  reusable-publication recovery fixes, while `4712f4d` keeps the Windows crash
+  fixture deterministic. The unpersisted removal-isolation experiment from
+  `c39367b` was reverted in `89e0161`; its atomic unlink race requires a
+  separate persistent/native design and is explicitly deferred rather than
+  expanded into this PR. Predecessor head `2b50105` passed both Windows CI jobs
+  in run `30807054533`; exact-head CI and review evidence for the current head
+  are tracked separately in PR #109. No merge is authorized. Later thread
+  lists in this file are immutable historical state-sync snapshots for earlier
+  PR #109 heads, not the current thread set.
 - Historical PR #109 remediation snapshots record the earlier exact-target
   cross-database recovery serialization and atomically publishes the low-
   disclosure target authority record. The follow-up candidate also derives

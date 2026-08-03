@@ -2,7 +2,7 @@
 
 Current mode: PR #109 orphaned Blob recovery staging remediation; no executable task is `READY`
 Last run: PR109_SCOPE_CONTRACTION
-Last result: Blob-recovery-only PR #109 is at `c39367b0ea84238c9cd9f196449160cd699945ba`; predecessor CI run `30807054533` passed both jobs, and exact-head CI/review evidence is tracked in PR #109
+Last result: Blob-recovery-only PR #109 is at `89e01613f734405d9998736b84e33ab93e62faf1`; predecessor CI run `30807054533` passed both jobs, and exact-head CI/review evidence is tracked in PR #109
 
 ## Current state
 
@@ -13,15 +13,16 @@ Ready task count: 0
 
 ## Current PR #109 boundary
 
-- Current head: `c39367b0ea84238c9cd9f196449160cd699945ba`.
+- Current head: `89e01613f734405d9998736b84e33ab93e62faf1`.
 - Retained scope: Blob recovery staging, ownership, authority, mutex, path
   identity and crash convergence.
 - Removed scope: Node engine/preflight compatibility; it is being prepared as
   a separate PR from current `main`.
-- `c39367b` isolates each verified recovery removal by an atomic rename and
-  revalidation before deleting the isolated entry; replacements are preserved
-  and the operation fails closed. `4712f4d` keeps the reusable-publication
-  crash fixture deterministic on Windows.
+- The unpersisted removal-isolation experiment from `c39367b` was reverted in
+  `89e0161`; its atomic unlink race requires a separate persistent/native design
+  and is explicitly deferred. `4712f4d` keeps the reusable-publication crash
+  fixture deterministic on Windows. #109 does not claim to solve the external
+  process check-then-unlink race.
 - PR #109 remains open and unmerged. Review-thread state is determined from
   the exact PR head; no merge is authorized.
 
