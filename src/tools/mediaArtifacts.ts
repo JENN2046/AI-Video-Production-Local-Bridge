@@ -1390,7 +1390,7 @@ function prepareVerifiedBlobRecoveryStaging(
   );
   if (sameResolvedPath(sourcePath, stagedPath)
     || sameResolvedPath(sourcePath, ownerPath)
-    || (publication && sameResolvedPath(sourcePath, publication.path))) {
+    || (publication && samePhysicalFile(sourcePath, publication.path))) {
     // Recovery-managed names are mutable during convergence.  They cannot be
     // used as the source because publication cleanup may unlink the only path
     // before the source can be reopened; reject instead of losing the bytes.
@@ -3935,7 +3935,7 @@ export function recoverVerifiedBlobStorage(
       clearVerifiedBlobRecoveryStageOwnership(targetMutex);
       activeStageOwnership = null;
     }
-    if (activeStagePublication && sameResolvedPath(sourcePath, activeStagePublication.path)) {
+    if (activeStagePublication && samePhysicalFile(sourcePath, activeStagePublication.path)) {
       // The publication is managed recovery state.  Never consume it as the
       // caller's source, including the already-reusable no-op branch.
       throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
