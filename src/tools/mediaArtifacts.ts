@@ -2240,15 +2240,36 @@ function ensureVerifiedBlobRecoveryTargetAuthority(
       );
     }
     faults.after_target_authority_temp_created?.();
+    const expectedJson = JSON.stringify(expected);
     if (temporaryIdentity.size === 0) {
-      writeFileSync(descriptor, JSON.stringify(expected), "utf8");
+      writeFileSync(descriptor, expectedJson, "utf8");
       fsyncSync(descriptor);
     } else {
-      let actual: VerifiedBlobRecoveryTargetAuthority;
-      try { actual = JSON.parse(readFileSync(descriptor, "utf8")) as VerifiedBlobRecoveryTargetAuthority; }
-      catch { throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE"); }
-      if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-        throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+      const actualJson = readFileSync(descriptor, "utf8");
+      const isBoundTruncatedJson = publicationIdentityValid
+        && actualJson.length < expectedJson.length
+        && expectedJson.startsWith(actualJson);
+      if (isBoundTruncatedJson) {
+        ftruncateSync(descriptor, 0);
+        const expectedBytes = Buffer.from(expectedJson, "utf8");
+        let written = 0;
+        while (written < expectedBytes.length) {
+          written += writeSync(
+            descriptor,
+            expectedBytes,
+            written,
+            expectedBytes.length - written,
+            written
+          );
+        }
+        fsyncSync(descriptor);
+      } else {
+        let actual: VerifiedBlobRecoveryTargetAuthority;
+        try { actual = JSON.parse(actualJson) as VerifiedBlobRecoveryTargetAuthority; }
+        catch { throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE"); }
+        if (JSON.stringify(actual) !== expectedJson) {
+          throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
+        }
       }
     }
     const written = fstatSync(descriptor);

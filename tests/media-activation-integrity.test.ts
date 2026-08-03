@@ -3131,6 +3131,58 @@ test("a hard crash before target authority publication does not block retry", ()
   }
 });
 
+test("verified Blob recovery rewrites a bound truncated target authority temporary", () => {
+  const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-authority-truncated-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  let db = openM0Database(sqlitePath);
+  try {
+    const fixture = createRecoverableVideo(db, mediaRoot);
+    const targetPath = fixture.artifact.storage.uri;
+    const authorityPath = verifiedBlobRecoveryAuthorityPath(targetPath);
+    const targetDirectory = dirname(targetPath);
+    rmSync(targetPath);
+    db.close();
+
+    hardCrashVerifiedBlobRecovery({
+      sqlite_path: sqlitePath,
+      artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path,
+      crash_at: "after_target_authority_temp_created"
+    });
+    const orphanName = readdirSync(targetDirectory)
+      .find((name) => /^\.blob-recovery-target-[a-f0-9]{64}\.authority-[0-9a-f-]{36}\.tmp$/i.test(name));
+    assert.ok(orphanName);
+    const orphanPath = resolve(targetDirectory, orphanName);
+    const originalIdentity = lstatSync(orphanPath);
+    const truncatedJson = '{"version":1,"target_identity_sha256":"';
+    writeFileSync(orphanPath, truncatedJson, { flag: "r+" });
+    const truncatedIdentity = lstatSync(orphanPath);
+    assert.equal(truncatedIdentity.dev, originalIdentity.dev);
+    assert.equal(truncatedIdentity.ino, originalIdentity.ino);
+    assert.equal(truncatedIdentity.size, Buffer.byteLength(truncatedJson, "utf8"));
+
+    db = openM0Database(sqlitePath);
+    const recovered = recoverVerifiedBlobStorage({
+      invalid_artifact_id: fixture.artifact.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      source_path: fixture.source_path
+    }, db);
+    assert.equal(recovered.ok, true, recovered.ok ? undefined : recovered.error.code);
+    assert.equal(existsSync(authorityPath), true);
+    assert.equal(existsSync(targetPath), true);
+    assert.equal(existsSync(orphanPath), false);
+    assert.equal(statSync(authorityPath).nlink, 1);
+  } finally {
+    try { db.close(); } catch { /* the crash setup closes the first database handle */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("verified Blob recovery rejects an unowned planned authority temporary", () => {
   const root = mkdtempSync(join(tmpdir(), "verified-blob-recovery-authority-external-temp-"));
   const mediaRoot = join(root, "media");
