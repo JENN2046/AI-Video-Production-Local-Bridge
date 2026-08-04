@@ -5282,7 +5282,7 @@ Evidence:
 - `docs/PR109_POSTMORTEM_AND_REUSABLE_ASSETS_2026-08-04.md`
 - `docs/ADR_SINGLE_ACTIVE_MEDIA_WRITER_AND_BOUNDED_RECOVERY.md`
 - PR #109 closeout comment and closed-unmerged state
-- current `main@3c502e23f884d1b062210321d84848b45c7bb344`
+- current `main@55553cbf2f9bc387beb255cebb8b36bcb2deadbf`
 
 Git delivery:
 - repo: yes
@@ -5306,10 +5306,10 @@ Boundary:
 
 Risks:
 - the staged-file accumulation finding remains open for a separately authorized replacement
-- PR #114's valid behavior-test P2 remains unresolved; PR #115 is closed unmerged
+- PR #111 remains independent Draft with failed readonly Media Gateway CI
 
 Next:
-- await Jenn authorization before loading `S3B-T2_PREPARE_ELIGIBLE_SHOT`
+- await Jenn authorization before loading `S3B-T1B-R1_MINIMAL_BOUNDED_STAGE_REPLACEMENT`
 
 ### 2026-08-04 — PR113-R2_REBASE_TRUTH_REFRESH_AND_CLOSEOUT
 
@@ -5365,7 +5365,7 @@ merge are not predicted by this ledger entry.
 
 ```yaml
 task: PR113-R2_REVIEW_REMEDIATION
-status: REMEDIATED_PENDING_EXACT_HEAD_CI_AND_REVIEW
+status: REMEDIATED_EXACT_HEAD_CI_AND_REVIEW_PASS
 reviewed_head: 7fb5be56329b2f6ff3a67e1b6056187cad1048a2
 findings_fixed:
   - current task state normalized to BLOCKED with approval-boundary fields
@@ -5375,7 +5375,7 @@ source_changes: 0
 test_changes: 0
 provider_calls: 0
 database_media_service_deployment_secret_operations: 0
-delivery: NEW_EXACT_HEAD_CI_AND_REVIEW_REQUIRED
+delivery: EXACT_HEAD_CI_AND_REVIEW_PASS
 ```
 
 ### 2026-08-04 — S3B-T2_PREPARE_ELIGIBLE_SHOT
@@ -5407,4 +5407,18 @@ evidence:
   - CURRENT_STATE.md
 commit: c41bd4fb2624ddbc5dde770a70d89964a843acbe
 delivery: BLOCKED_WAITING_FOR_JENN_AUTHORIZATION
+```
+
+### 2026-08-04 — PR113 final exact-head validation
+
+```yaml
+task: PR113-R2_FINAL_EXACT_HEAD_VALIDATION
+status: PASS_PENDING_AUTHORIZED_SQUASH_MERGE
+final_head: f0ea7cd5873419b747738ad3328e4a9481fb0691
+ci_run: 30909212677
+browser_smoke: PASS
+quality_and_integration: PASS
+codex_review: PASS_NO_NEW_FINDINGS
+unresolved_threads: 0
+merge_claimed: false
 ```
