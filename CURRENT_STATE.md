@@ -350,10 +350,13 @@ zero-version Shot whose operational derivation reports
 reason list rather than being mislabeled as a generic preparation failure.
 
 The preparation acceptance receipt must report exactly one candidate, preserve
-only non-reversible aliases and aggregate reason codes, and retain no activity
-database identifiers, local paths, prompt text, credential values or Provider
-payloads. T2 must not submit or poll a Provider, configure credentials, create
-or replace media, invoke recovery, publish a Snapshot, or run S4. The current
+only non-reversible aliases and aggregate reason codes. Project classification
+and delivered-state rejections retain the same stable names,
+`PROJECT_NOT_PRODUCTION` and `PROJECT_ALREADY_DELIVERED`, in that reason-code
+list. The receipt must retain no activity database identifiers, local paths,
+prompt text, credential values or Provider payloads. T2 must not submit or poll
+a Provider, configure credentials, create or replace media, invoke recovery,
+publish a Snapshot, or run S4. The current
 blocked slot authorizes no Project/Shot or Intent write; any such write scope
 must be named in a separate Jenn authorization. A zero-candidate result is a
 fail-closed `S3_NO_ELIGIBLE_SHOT`, not a readiness PASS. A scan producing more
