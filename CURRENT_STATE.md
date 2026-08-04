@@ -248,7 +248,8 @@ The blocked `S3B-T2_PREPARE_ELIGIBLE_SHOT` slot is a preparation gate, not an
 authorization to execute it. A future Jenn authorization must select exactly
 one alias-only candidate that satisfies the following deterministic predicate:
 
-1. Project facts: Workbench lifecycle is `active` (not `archived`), the
+1. Project facts: `workbench_project_meta.classification` is exactly
+   `production`; Workbench lifecycle is `active` (not `archived`), the
    Project `status` is one of `draft`, `storyboard_approved`,
    `video_generation_in_progress`, `video_review` or `final_approved`, and
    `active_storyboard_package_id` names an existing package whose
