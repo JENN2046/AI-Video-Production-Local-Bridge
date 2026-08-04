@@ -5367,7 +5367,7 @@ merge are not predicted by this ledger entry.
 task: PR113-R2_REBASE_TRUTH_REFRESH_AND_CLOSEOUT
 status: DONE
 recorded_by: Codex
-recorded_at: 2026-08-04T21:20:00+08:00
+recorded_at: 2026-08-04T21:18:56+08:00
 result: GOVERNANCE_TRUTH_REFRESH_COMPLETE
 validation:
   documentation_scope: PASS
@@ -5462,7 +5462,7 @@ historical_order_note:
   interpretation: PRE_TERMINAL_STATE_SNAPSHOT_ONLY
   not_authoritative_for_task_activation: true
 authoritative_sequence:
-  - pr113_r2_terminal_state: 2026-08-04T21:20:00+08:00
+  - pr113_r2_terminal_state: 2026-08-04T21:18:56+08:00
   - s3b_t2_blocked_revalidation: 2026-08-04T23:39:12+08:00
 current_task:
   task_id: S3B-T2_PREPARE_ELIGIBLE_SHOT
