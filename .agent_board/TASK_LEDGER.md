@@ -5387,6 +5387,28 @@ git_delivery:
 delivery: PR113_EXACT_HEAD_GATE_REQUIRED_BEFORE_SQUASH_MERGE
 ```
 
+### 2026-08-05 — PR113 historical verification ledger order closure
+
+```yaml
+task: PR113_R2_HISTORICAL_VERIFICATION_LEDGER_ORDER_CLOSURE
+status: PASS_RECORDED_FINAL_SEQUENCE
+recorded_by: Codex
+recorded_at: 2026-08-05T05:35:02+08:00
+final_sequence_note: This terminal closure is appended after all earlier PR113 remediation, blocked-task and chronology entries.
+historical_reviewed_head: 16babfd9650184183acef959244c2d765ea53dcc
+historical_ci_run: 30946199195
+historical_browser_smoke: PASS
+historical_quality_and_integration: PASS
+historical_codex_review: PASS_NO_NEW_FINDINGS
+historical_unresolved_threads: 0
+current_head_state: VERIFY_BEFORE_MERGE
+current_head_verification_required: true
+source_test_package_workflow_changes: 0
+provider_database_media_service_deployment_secret_operations: 0
+merge_claimed: false
+delivery: HISTORICAL_EVIDENCE_ORDER_RECONCILED_CURRENT_HEAD_REQUIRES_FRESH_GATE
+```
+
 ### 2026-08-05 — PR113 historical exact-head verification ledger closure
 
 ```yaml
@@ -5497,4 +5519,26 @@ validation:
   source_test_package_workflow_changes: 0
   provider_database_media_service_deployment_secret_operations: 0
 delivery: PR113_EXACT_HEAD_GATE_REQUIRED_BEFORE_SQUASH_MERGE
+```
+
+### 2026-08-05 — PR113 historical verification ledger final sequence
+
+```yaml
+task: PR113_R2_HISTORICAL_VERIFICATION_LEDGER_FINAL_SEQUENCE
+status: PASS_RECORDED_FINAL_SEQUENCE
+recorded_by: Codex
+recorded_at: 2026-08-05T05:35:02+08:00
+final_sequence_note: This terminal closure is appended after all earlier PR113 remediation, blocked-task and chronology entries.
+historical_reviewed_head: 16babfd9650184183acef959244c2d765ea53dcc
+historical_ci_run: 30946199195
+historical_browser_smoke: PASS
+historical_quality_and_integration: PASS
+historical_codex_review: PASS_NO_NEW_FINDINGS
+historical_unresolved_threads: 0
+current_head_state: VERIFY_BEFORE_MERGE
+current_head_verification_required: true
+source_test_package_workflow_changes: 0
+provider_database_media_service_deployment_secret_operations: 0
+merge_claimed: false
+delivery: HISTORICAL_EVIDENCE_ORDER_RECONCILED_CURRENT_HEAD_REQUIRES_FRESH_GATE
 ```
