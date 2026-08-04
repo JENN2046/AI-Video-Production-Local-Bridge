@@ -317,9 +317,10 @@ codes for this gate are `PROJECT_NOT_PRODUCTION`, `PROJECT_ALREADY_DELIVERED`,
 `PROVIDER_CAPABILITY_RESOLUTION_UNSUPPORTED` and
 `PROVIDER_CAPABILITY_ASPECT_RATIO_UNSUPPORTED`, plus
 `S3_MULTIPLE_ELIGIBLE_SHOTS` when more than one candidate satisfies the full
-predicate. T3/T4 may report credential, budget, price or cost-acknowledgement
-reason codes, but those codes do not make an otherwise valid T2 candidate
-ineligible.
+predicate. T3/T4 may report credential, budget or cost-acknowledgement reason
+codes, but those codes do not make an otherwise valid T2 candidate ineligible.
+Price-preview reason codes are reserved for the separately authorized S4
+online preflight and are not T3/T4 offline results.
 
 For deterministic T2 receipts, every raw `verifyMediaArtifactBytes` failure
 must be normalized to the published aggregate
