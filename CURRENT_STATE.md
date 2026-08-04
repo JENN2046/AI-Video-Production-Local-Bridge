@@ -285,13 +285,15 @@ one alias-only candidate that satisfies the following deterministic predicate:
    match by the candidate's frozen `order`, exactly as the current generation
    path does. The order fallback is valid only when that order identifies one
    snapshot; zero or multiple matches fail closed as `PACKAGE_SNAPSHOT_MISMATCH`.
-   The candidate `order`, `duration_seconds`, `video_prompt` and
-   `storyboard_image_artifact_id` must equal that frozen snapshot. Compare the
-   optional `description` and `negative_prompt` only after applying `?? ""` to
-   both the candidate and snapshot values, matching the generation path's
-   normalization. The package snapshot Artifact must be the same active
-   Artifact selected in step 6. The receipt records only the stable matching
-   mode (`shot_id` or `order`), never private identifiers.
+   The generation inputs `duration_seconds`, `video_prompt`,
+   `negative_prompt` (after applying `?? ""` to both values) and
+   `storyboard_image_artifact_id` must equal that frozen snapshot.
+   `description` is intentionally not compared: the current generation path
+   permits a description-only edit after package freeze. `order` is used only
+   as the optional snapshot selector, not as a generation payload field. The
+   package snapshot Artifact must be the same active Artifact selected in step
+   6. The receipt records only the stable matching mode (`shot_id` or `order`),
+   never private identifiers.
 6. Storyboard Artifact facts: `artifact.status == "active"`,
    `artifact.artifact_type == "image"`, `artifact.role == "storyboard_image"`,
    `artifact.linked_objects.project_id` and `.shot_id` match the candidate,

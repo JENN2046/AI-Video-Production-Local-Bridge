@@ -3531,3 +3531,23 @@ scope:
 The order fallback still compares every frozen field and the bound Artifact;
 it does not weaken package integrity or emit private identifiers. The current
 PR head remains pending a fresh exact-head CI/review cycle.
+
+### PR113 T2 generation-input parity remediation — 2026-08-05
+
+```yaml
+finding:
+  - T2 compared mutable Shot description even though the current generation path does not
+resolution:
+  - compare only duration_seconds, video_prompt, normalized negative_prompt and storyboard_image_artifact_id
+  - use order only as the optional package snapshot selector
+  - keep shot_id/order ambiguity fail-closed as PACKAGE_SNAPSHOT_MISMATCH
+  - permit description-only edits after package freeze
+scope:
+  source_changes: 0
+  test_changes: 0
+  provider_calls: 0
+  database_media_service_deployment_secret_operations: 0
+```
+
+This keeps T2 aligned with the current generation input contract without
+weakening Artifact binding or package ambiguity handling.
