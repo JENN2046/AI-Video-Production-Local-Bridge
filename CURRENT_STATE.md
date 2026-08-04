@@ -234,10 +234,12 @@ minimal_replacement:
 
 The sole current task is `S3B-T2_PREPARE_ELIGIBLE_SHOT` and is `BLOCKED` at the
 approval boundary (`result: AWAITING_JENN_AUTHORIZATION`); no task is `READY`.
-The sequence is T2 prepare,
-T3 Jenn-local credential configuration, T4 offline readiness rerun, then the
-separately authorized S4 real single-shot canary. PR #113 is an open Ready
-governance closeout candidate and has not been merged.
+The sequence is T2 prepare, T3 Jenn-local credential configuration, T4 offline
+readiness rerun, and then the separately authorized S4 real single-shot canary.
+T4 does not perform or claim a live price preview; the credentialed,
+networked RunningHub price check belongs to the S4 online preflight immediately
+before a paid submit. PR #113 is an open Ready governance closeout candidate
+and has not been merged.
 
 Bridge, Snapshot or Media Gateway recovery must not be inserted ahead of the
 current-path Provider readiness and real single-shot canary.
@@ -269,29 +271,33 @@ one alias-only candidate that satisfies the following deterministic predicate:
    `allowed_workflow_actions.prepare_generation == true`. A failed or
    previously generated/reviewed Shot is not an initial T2 candidate; it must
    use a separately authorized regeneration task.
-4. Package binding: the package's `approved_shot_snapshots` contains exactly
+4. Global generation gate: no row in `generation_intents` for any Project has
+   `status` `queued` or `running`. T2 must fail closed with
+   `REAL_GENERATION_ALREADY_ACTIVE` rather than selecting a candidate that
+   the generation preflight will reject because another real task is active.
+5. Package binding: the package's `approved_shot_snapshots` contains exactly
    one entry for the candidate `shot_id`; the candidate `order`,
    `duration_seconds`, `video_prompt` and `storyboard_image_artifact_id` must
    equal that frozen snapshot. Compare the optional `description` and
    `negative_prompt` only after applying `?? ""` to both the candidate and
    snapshot values, matching the generation path's normalization. The package
-   snapshot Artifact must be the same active Artifact selected in step 5.
-5. Storyboard Artifact facts: `artifact.status == "active"`,
+   snapshot Artifact must be the same active Artifact selected in step 6.
+6. Storyboard Artifact facts: `artifact.status == "active"`,
    `artifact.artifact_type == "image"`, `artifact.role == "storyboard_image"`,
    `artifact.linked_objects.project_id` and `.shot_id` match the candidate,
    `verification_level` is exactly `bytes_verified` (the T2 check must read and
    verify the current bytes, not rely on a ledger-only result), Blob
    `integrity_state == "verified"`, and detected MIME is exactly `image/png`
    or `image/jpeg`.
-6. T2 is offline preparation only. It must run the existing registry-only
+7. T2 is offline preparation only. It must run the existing registry-only
    `buildProviderCapabilityKey` predicate with `provider: "runninghub"`, the
    existing RunningHub model route, the candidate `duration_seconds`, and the
    Project `video_spec.resolution` / `video_spec.aspect_ratio`; this reads no
    credential and makes no network call. A successful static capability result
-   is required. Credential, price, budget policy and cost acknowledgement are
-   **not** T2 predicates; T3/T4 check them after T2 and before the separately
-   authorized S4 canary, and credential values are never read into the T2
-   receipt.
+   is required. Credential, budget policy and cost acknowledgement are
+   **not** T2 predicates; T3/T4 handle their local gates after T2, while the
+   live price preview is reserved for the separately authorized S4 online
+   preflight. Credential values are never read into the T2 receipt.
 
 The only authoritative state derivation is the existing
 `deriveShotOperationalState` / `allowed_workflow_actions.prepare_generation`
@@ -304,6 +310,7 @@ codes for this gate are `PROJECT_NOT_PRODUCTION`, `PROJECT_ALREADY_DELIVERED`,
 `VIDEO_PROMPT_MISSING`, `SHOT_DURATION_INVALID`,
 `PREPARE_GENERATION_NOT_ALLOWED`, `GENERATION_ALREADY_STARTED`,
 `GENERATION_MANUAL_RECONCILIATION`, `SHOT_STATE_INCONSISTENT`,
+`REAL_GENERATION_ALREADY_ACTIVE`,
 `PACKAGE_NOT_FOUND`, `PACKAGE_PROJECT_MISMATCH`, `PACKAGE_NOT_APPROVED` and
 `PACKAGE_SNAPSHOT_MISMATCH`, `PROVIDER_CAPABILITY_NOT_FOUND`,
 `PROVIDER_CAPABILITY_MODEL_MISMATCH`, `PROVIDER_CAPABILITY_DURATION_UNSUPPORTED`,

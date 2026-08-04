@@ -15,7 +15,9 @@ Generated from `.agent_board/NEXT_TASK.json`.
 This task is blocked at the approval boundary. The preserved substate is
 `result: AWAITING_JENN_AUTHORIZATION`; it is not executable until Jenn gives
 separate authorization. S3B-T3 remains a Jenn-local credential action, S3B-T4
-is offline-only, and S4 requires separate paid/provider authorization.
+is an offline-only readiness rerun and does not perform or claim a live price
+preview; S4 requires separate paid/provider authorization and performs any
+credentialed online price preflight immediately before submit.
 
 ## Current repository truth
 
