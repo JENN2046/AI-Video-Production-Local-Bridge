@@ -246,18 +246,44 @@ current-path Provider readiness and real single-shot canary.
 
 The blocked `S3B-T2_PREPARE_ELIGIBLE_SHOT` slot is a preparation gate, not an
 authorization to execute it. A future Jenn authorization must select exactly
-one alias-only candidate that satisfies every condition below:
+one alias-only candidate that satisfies the following deterministic predicate:
 
-- an existing, active Project in the current schema;
-- one active Shot whose current storyboard package is approved/frozen;
-- one active storyboard image Artifact bound to that Project and Shot, with
-  the expected storyboard role, MIME type, Blob identity, size and governed
-  storage boundary;
-- preflight inputs and Provider capability are current, with budget policy and
-  explicit human cost acknowledgement available; any input, capability,
-  credential, price or budget drift fails closed;
-- no unresolved generation, recovery or manual-reconciliation state makes the
-  candidate unsafe to prepare.
+1. Project facts: Workbench lifecycle is `active` (not `archived`), the
+   Project `status` is one of `draft`, `storyboard_approved`,
+   `video_generation_in_progress`, `video_review` or `final_approved`, and
+   `active_storyboard_package_id` is non-empty.
+2. Shot facts: `status` is exactly `storyboard_approved`,
+   `video_prompt` is present, `duration_seconds` is finite and greater than
+   zero, `generation_version_count` is `0`, `generation_job_state` is `null`,
+   `latest_generation_run_status` is `null`, and review stage is
+   `not_started`.
+3. The canonical `deriveShotOperationalState(facts)` result has
+   `generation.stage == "ready"` and
+   `allowed_workflow_actions.prepare_generation == true`. A failed or
+   previously generated/reviewed Shot is not an initial T2 candidate; it must
+   use a separately authorized regeneration task.
+4. Storyboard Artifact facts: `artifact.status == "active"`,
+   `artifact.artifact_type == "image"`, `artifact.role == "storyboard_image"`,
+   `artifact.linked_objects.project_id` and `.shot_id` match the candidate,
+   `verification_level` is `ledger_verified` or `bytes_verified`, Blob
+   `integrity_state == "verified"`, and detected MIME is exactly `image/png`
+   or `image/jpeg`.
+5. Preflight facts: Provider capability, budget policy and explicit human
+   cost acknowledgement are current. Credential, price or capability drift
+   fails closed; credential values are never read into the receipt.
+
+The only authoritative state derivation is the existing
+`deriveShotOperationalState` / `allowed_workflow_actions.prepare_generation`
+predicate together with the Artifact/Blob facts above. Its stable failure
+codes for this gate are `PROJECT_NOT_ACTIVE`, `STORYBOARD_APPROVAL_REQUIRED`,
+`STORYBOARD_IMAGE_MISSING`, `STORYBOARD_ARTIFACT_INACTIVE`,
+`STORYBOARD_ARTIFACT_BINDING_INVALID`, `STORYBOARD_ARTIFACT_ROLE_INVALID`,
+`STORYBOARD_ARTIFACT_INTEGRITY_INVALID`, `STORYBOARD_IMAGE_MIME_UNSUPPORTED`,
+`VIDEO_PROMPT_MISSING`, `SHOT_DURATION_INVALID`,
+`PREPARE_GENERATION_NOT_ALLOWED`, `GENERATION_ALREADY_STARTED`,
+`GENERATION_MANUAL_RECONCILIATION`, `SHOT_STATE_INCONSISTENT`,
+`PROVIDER_CAPABILITY_UNAVAILABLE`, `BUDGET_NOT_READY` and
+`CREDENTIAL_NOT_CONFIGURED`.
 
 The preparation acceptance receipt must report exactly one candidate, preserve
 only non-reversible aliases and aggregate reason codes, and retain no activity
