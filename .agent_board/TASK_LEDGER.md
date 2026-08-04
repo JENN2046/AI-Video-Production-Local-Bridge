@@ -5448,3 +5448,31 @@ codex_review: PASS_NO_NEW_FINDINGS
 unresolved_threads: 0
 merge_claimed: false
 ```
+
+### 2026-08-04 — PR113-R2/T2 chronology reconciliation
+
+```yaml
+task: PR113-R2_T2_CHRONOLOGY_RECONCILIATION
+status: DONE
+recorded_by: Codex
+recorded_at: 2026-08-04T23:39:12+08:00
+historical_entries_preserved: true
+historical_order_note:
+  s3b_t2_recorded_at: 2026-08-04T20:05:00+08:00
+  interpretation: PRE_TERMINAL_STATE_SNAPSHOT_ONLY
+  not_authoritative_for_task_activation: true
+authoritative_sequence:
+  - pr113_r2_terminal_state: 2026-08-04T21:20:00+08:00
+  - s3b_t2_blocked_revalidation: 2026-08-04T23:39:12+08:00
+current_task:
+  task_id: S3B-T2_PREPARE_ELIGIBLE_SHOT
+  status: BLOCKED
+  result: AWAITING_JENN_AUTHORIZATION
+  ready_task_count: 0
+validation:
+  append_only_history: PASS
+  terminal_before_current_task_revalidation: PASS
+  source_test_package_workflow_changes: 0
+  provider_database_media_service_deployment_secret_operations: 0
+delivery: PR113_EXACT_HEAD_GATE_REQUIRED_BEFORE_SQUASH_MERGE
+```

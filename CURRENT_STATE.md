@@ -274,7 +274,8 @@ one alias-only candidate that satisfies the following deterministic predicate:
 5. Storyboard Artifact facts: `artifact.status == "active"`,
    `artifact.artifact_type == "image"`, `artifact.role == "storyboard_image"`,
    `artifact.linked_objects.project_id` and `.shot_id` match the candidate,
-   `verification_level` is `ledger_verified` or `bytes_verified`, Blob
+   `verification_level` is exactly `bytes_verified` (the T2 check must read and
+   verify the current bytes, not rely on a ledger-only result), Blob
    `integrity_state == "verified"`, and detected MIME is exactly `image/png`
    or `image/jpeg`.
 6. T2 is offline preparation only: Provider capability, credential, price,
