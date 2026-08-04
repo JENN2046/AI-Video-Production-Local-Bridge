@@ -1,7 +1,7 @@
 # Current State
 
 Date (Asia/Shanghai, UTC+08:00): 2026-08-04
-Repository baseline: `main@55553cbf2f9bc387beb255cebb8b36bcb2deadbf`
+Repository baseline: `main@3c502e23f884d1b062210321d84848b45c7bb344`
 
 ## Repository and CI truth
 
@@ -21,8 +21,19 @@ Repository baseline: `main@55553cbf2f9bc387beb255cebb8b36bcb2deadbf`
   `423351bf376378d6fde48cea3060cc7af35bb148` and branch remain retained as
   architecture and threat-model evidence; no commit from it is accepted into
   `main`.
-- PR #111 remains an independent Draft PR with failed Quality and integration
-  CI; it was not modified by the retirement.
+- PR #111, `fix: align Node preflight with engine floor`, was squash-merged as
+  `770f3dff342874e90788d0f475c4cff49136e114`.
+- PR #113 is an open Draft governance closeout candidate; it has not been
+  merged.
+- PR #114 was squash-merged as current `main@3c502e23f884d1b062210321d84848b45c7bb344`.
+  Its valid behavior-test P2 remains `DEFERRED_UNRESOLVED` (thread
+  `3708908011`); no reply or resolution is claimed.
+- PR #115 is closed without merge at head
+  `866accc40ea36c7d8098048ea911eb6e6b0a376b`; its branch remains retained and
+  its final fixture CI failure was
+  `DIRECTOR_BRIDGE_RUNTIME_SMOKE_FIXTURE_STAGING_UNCLASSIFIED`.
+- Current-main code/CI status does not imply a fresh external Provider,
+  Bridge, database, Snapshot, Memory, deployment or public acceptance.
 - The final PR #106 head passed both `Quality and integration` and
   `Browser smoke`; the squash commit has the same tree as that reviewed head.
 - Code and CI PASS establish repository facts only. They do not create a new
@@ -101,7 +112,7 @@ database. `REAL_PROVIDER_ENABLED=false` remains the safe default.
 | Unified `/workspace/mcp` | Unified Remote and Director tool contracts exist | Earlier bounded transport/activity path passed | Core ChatGPT route; later commits do not inherit that PASS |
 | Legacy `/mcp` | Still present | Earlier Readonly acceptance exists | `ROLLBACK_ONLY` |
 | Dedicated Director route | Still present beside Unified Director tools | Earlier bounded evidence exists | `ROLLBACK_ONLY` |
-| Director Bridge | A managed process was detected with source commit `3a142bb` | The recorded process source predates `main@55553cb`; no current-main configuration, heartbeat or authenticated-contact acceptance was performed | Do not place before S3/S4 |
+| Director Bridge | A managed process was detected with source commit `3a142bb` | The recorded process source predates `main@3c502e23`; no current-main configuration, heartbeat or authenticated-contact acceptance was performed | Do not place before S3/S4 |
 | Manual Snapshot | Publisher and signed Snapshot contract exist | Earlier bounded publish/recovery evidence exists | Optional; not an S3/S4 dependency |
 | Media Gateway | PR #105 two-project Image/MP4 matrix is in main and CI passed | No corresponding current-main public maintenance-window acceptance | Optional human Widget playback |
 | Memory Port | Advisory recall seam and non-dispatched Saveback envelope exist | No stable production plugin or automatic Saveback | Frozen |
@@ -146,7 +157,7 @@ process whose recorded source commit is
 
 The recorded manager check returned `RESTART_REQUIRED` on the earlier
 repository baseline, and its source commit still predates current
-`main@55553cb`. This retirement did not start, stop or restart the Bridge. It did
+`main@3c502e23`. This retirement did not start, stop or restart the Bridge. It did
 not revalidate configuration identity, heartbeat or authenticated Remote
 contact. Therefore the repository must not claim that the Bridge is stopped,
 healthy, Remote-connected or accepted on current main.
@@ -195,6 +206,36 @@ S5:
   requires_director_bridge: true_only_when_using_chatgpt_frame_review
 ```
 
+## Recovery governance after PR113-R2
+
+```yaml
+pr114_p2:
+  finding_valid: true
+  attempted_remediation: PR115
+  remediation_merged: false
+  status: DEFERRED_UNRESOLVED
+  production_runtime_defect_proven: false
+  current_main_ci: GREEN
+verified_blob_recovery_operational_policy:
+  automatic_use_during_s4: forbidden
+  explicit_recovery_use_during_s4: forbidden
+  integrity_failure_action: STOP_AND_ENTER_MANUAL_RECONCILIATION
+  provider_resubmit_on_integrity_failure: forbidden
+  automatic_stage_cleanup: forbidden
+minimal_replacement:
+  task_id: S3B-T1B-R1_MINIMAL_BOUNDED_STAGE_REPLACEMENT
+  status: DEFERRED_NOT_REQUIRED_FOR_S4
+  ready: false
+  implementation_authorized: false
+  blocks_s4: false
+```
+
+The sole current task is `S3B-T2_PREPARE_ELIGIBLE_SHOT` and remains
+`AWAITING_JENN_AUTHORIZATION`; no task is `READY`. The sequence is T2 prepare,
+T3 Jenn-local credential configuration, T4 offline readiness rerun, then the
+separately authorized S4 real single-shot canary. PR #113 is an open Draft
+governance closeout candidate and has not been merged.
+
 Bridge, Snapshot or Media Gateway recovery must not be inserted ahead of the
 current-path Provider readiness and real single-shot canary.
 
@@ -219,8 +260,8 @@ Current stage queue:
 1. `S1 Scope Freeze` — `DONE`
 2. `S2 Core Loop Gap Audit` — `DONE`
 3. `S3 Provider Canary Readiness` — `DONE` with local readiness findings
-4. `S3B Single-Shot Canary Prerequisites` — `DONE_IN_MAIN_WITH_LATE_STAGE_ACCUMULATION_FINDING`
-5. `S4 Real Single-Shot Canary` — `BLOCKED_BY_S3_FINDING`
+4. `S3B Single-Shot Canary Prerequisites` — `T2_AWAITING_JENN_AUTHORIZATION`; recovery replacement deferred
+5. `S4 Real Single-Shot Canary` — `BLOCKED_UNAUTHORIZED`
 6. `S5 Review and Regeneration` — not loaded
 7. `S6 Assembly, Export and Closeout` — not loaded
 8. `S7 Three Real Project Evaluation` — not loaded
@@ -228,7 +269,9 @@ Current stage queue:
 
 S3B-T1 and S3B-T1A are now `DONE_IN_MAIN` through PR #108. The verified-Blob
 recovery capability is also in `main`, but its late staged-file accumulation
-finding remains valid and is not claimed fixed by PR #109. The bounded path
+finding remains valid and is not claimed fixed by PR #109 or PR #115. During S4
+the recovery path is not used automatically or explicitly; an integrity failure
+stops for manual reconciliation and never resubmits to a Provider. The bounded path
 requires explicit human reattachment and exact Artifact/Blob, SHA, size and
 MIME agreement, preserves the Blob row and link, and does not resubmit.
 Replacement rebind archives the old Artifact, restart recovery prefers a

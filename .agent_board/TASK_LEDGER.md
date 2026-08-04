@@ -5282,14 +5282,19 @@ Evidence:
 - `docs/PR109_POSTMORTEM_AND_REUSABLE_ASSETS_2026-08-04.md`
 - `docs/ADR_SINGLE_ACTIVE_MEDIA_WRITER_AND_BOUNDED_RECOVERY.md`
 - PR #109 closeout comment and closed-unmerged state
-- current `main@55553cbf2f9bc387beb255cebb8b36bcb2deadbf`
+- current `main@3c502e23f884d1b062210321d84848b45c7bb344`
 
 Git delivery:
 - repo: yes
 - branch: `codex/pr109-retirement-truth-reset`
 - commit: recorded after validation
 - push: yes
-- PR: closeout Draft PR created and squash-merged after exact-head CI/review
+- git_delivery:
+    branch: codex/pr109-retirement-truth-reset
+    pr: 113
+    state_at_record_time: OPEN_DRAFT
+    merge_claimed: false
+    merge_decision: EXTERNAL_FUTURE_ACTION
 
 Memory:
 - written: no
@@ -5301,7 +5306,56 @@ Boundary:
 
 Risks:
 - the staged-file accumulation finding remains open for a separately authorized replacement
-- PR #111 remains independent Draft with failed readonly Media Gateway CI
+- PR #114's valid behavior-test P2 remains unresolved; PR #115 is closed unmerged
 
 Next:
-- await Jenn authorization before loading `S3B-T1B-R1_MINIMAL_BOUNDED_STAGE_REPLACEMENT`
+- await Jenn authorization before loading `S3B-T2_PREPARE_ELIGIBLE_SHOT`
+
+### 2026-08-04 — PR113-R2_REBASE_TRUTH_REFRESH_AND_CLOSEOUT
+
+```yaml
+task: PR113-R2_REBASE_TRUTH_REFRESH_AND_CLOSEOUT
+status: IN_PROGRESS_DRAFT_CLOSEOUT
+recorded_by: Codex
+recorded_at: 2026-08-04T19:25:06+08:00
+baseline:
+  main: 3c502e23f884d1b062210321d84848b45c7bb344
+  pr113: d83a1b755b097d3fa727ed0d588aa677f48faa5b
+  pr111: MERGED_770f3dff342874e90788d0f475c4cff49136e114
+  pr114: MERGED_3c502e23f884d1b062210321d84848b45c7bb344
+  pr115: CLOSED_UNMERGED_866accc40ea36c7d8098048ea911eb6e6b0a376b
+  pr115_branch_retained: true
+truth:
+  pr109: CLOSED_UNMERGED_RETIRED
+  pr113: OPEN_DRAFT_MERGE_NOT_CLAIMED
+  pr114_p2: DEFERRED_UNRESOLVED
+  pr115_production_fixture_defect_proven: false
+recovery_replacement:
+  task_id: S3B-T1B-R1_MINIMAL_BOUNDED_STAGE_REPLACEMENT
+  status: DEFERRED_NOT_REQUIRED_FOR_S4
+  ready: false
+  implementation_authorized: false
+  blocks_s4: false
+current_task:
+  task_id: S3B-T2_PREPARE_ELIGIBLE_SHOT
+  status: AWAITING_JENN_AUTHORIZATION
+  ready_task_count: 0
+operations:
+  source_changes: 0
+  test_changes: 0
+  provider_calls: 0
+  database_operations: 0
+  media_operations: 0
+  service_operations: 0
+  deployment_changes: 0
+  secret_operations: 0
+git_delivery:
+  branch: codex/pr109-retirement-truth-reset
+  pr: 113
+  state_at_record_time: OPEN_DRAFT
+  merge_claimed: false
+  merge_decision: EXTERNAL_FUTURE_ACTION
+```
+
+This entry records only verified current facts. CI, final review and any later
+merge are not predicted by this ledger entry.

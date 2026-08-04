@@ -1,15 +1,36 @@
 # HANDOFF.md
 
-Current mode: PR #109 controlled retirement and project-truth reset; no executable task is `READY`
-Last run: PR109-R0_CONTROLLED_RETIREMENT_AND_TRUTH_RESET
-Last result: PR #109 closed without merge; closeout documentation branch prepared from current `main`
+Current mode: PR113-R2 truth refresh and governance closeout; no executable task is `READY`
+Last run: PR113-R2_REBASE_TRUTH_REFRESH_AND_CLOSEOUT
+Last result: governance refresh prepared on current `main`; PR #113 remains Draft and unmerged
 
 ## Current state
 
-Current task: `S3B-T1B-R1_MINIMAL_BOUNDED_STAGE_REPLACEMENT` (not authorized)
+Current task: `S3B-T2_PREPARE_ELIGIBLE_SHOT` (not authorized)
 Current status: `AWAITING_JENN_AUTHORIZATION`
 Current owner: none
 Ready task count: 0
+
+## PR113-R2 current governance
+
+- Baseline is `main@3c502e23f884d1b062210321d84848b45c7bb344`.
+- PR #113 is an `OPEN_DRAFT` closeout candidate; no merge is claimed.
+- PR #109 is closed unmerged and retained only as research/threat-model evidence.
+- PR #111 is merged as `770f3dff342874e90788d0f475c4cff49136e114`.
+- PR #114 is merged as `3c502e23f884d1b062210321d84848b45c7bb344`; its valid
+  behavior-test P2 remains `DEFERRED_UNRESOLVED` (thread `3708908011`). Do not
+  reply to or resolve that thread in this closeout.
+- PR #115 is closed unmerged at `866accc40ea36c7d8098048ea911eb6e6b0a376b`,
+  with its branch retained; it did not establish a production fixture defect.
+
+The minimal recovery replacement is `DEFERRED_NOT_REQUIRED_FOR_S4` and is not
+the next required implementation. During S4, automatic or explicit verified-
+Blob recovery and automatic stage cleanup are forbidden; an integrity failure
+stops the run and enters manual reconciliation, with no Provider resubmit.
+
+This state sync performs documentation/task-board work only. No source, test,
+package, workflow, provider, database, media, service, deployment, secret,
+Snapshot, Memory or Bridge operation was performed.
 
 ## PR #109 retirement boundary
 
@@ -23,20 +44,22 @@ Ready task count: 0
 - The current product boundary is one active Workbench writer, one business
   database and explicit human Blob recovery only. Generic startup cleanup and
   unproven deletion are forbidden.
-- A future minimal replacement is only prepared in the task board; it is not
-  `READY` and this handoff does not authorize implementation.
+- A future minimal replacement is deferred, not required for S4, and is not
+  `READY`; this handoff does not authorize implementation.
 
 ## Current repository truth
 
-- `main` is `55553cbf2f9bc387beb255cebb8b36bcb2deadbf`.
+- `main` is `3c502e23f884d1b062210321d84848b45c7bb344`.
 - PR #108 is merged as
   `808d9334a49def7ce858f7c6138af75fed392c5b`; S3B-T1/T1A are
   `DONE_IN_MAIN`, while the late staged-file finding remains open for a new
   bounded replacement.
 - PR #110 is merged as `00c8ed458144f03d4b0e1389d4de6dbf8005ed9a`.
 - PR #112 is merged as `55553cbf2f9bc387beb255cebb8b36bcb2deadbf`.
-- PR #111 remains an independent Draft PR with failed Quality and integration
-  CI; it is unchanged by this task.
+- PR #111 is merged as `770f3dff342874e90788d0f475c4cff49136e114`.
+- PR #114 is merged at current main and retains one valid unresolved P2
+  behavior-test finding; PR #115 is closed unmerged and did not prove a
+  production runtime defect.
 
 ## Current S3 and S3B state
 

@@ -3,6 +3,28 @@
 Status: accepted current-product boundary
 Date: 2026-08-04 (Asia/Shanghai)
 
+## Current governance truth
+
+```yaml
+current_main: 3c502e23f884d1b062210321d84848b45c7bb344
+pr109: CLOSED_UNMERGED_RETIRED
+pr113: OPEN_DRAFT_CLOSEOUT_CANDIDATE
+pr114_p2: DEFERRED_UNRESOLVED
+pr115: CLOSED_UNMERGED
+minimal_replacement:
+  task_id: S3B-T1B-R1_MINIMAL_BOUNDED_STAGE_REPLACEMENT
+  status: DEFERRED_NOT_REQUIRED_FOR_S4
+  blocks_s4: false
+```
+
+The PR114 P2 is a valid behavior-test sufficiency finding. PR115 was an
+unmerged attempted remediation and its fixture CI failure did not prove a
+production runtime defect. Neither is recorded as fixed here.
+
+During S4, verified-Blob recovery is not an automatic or explicit operation.
+An integrity failure must stop and enter manual reconciliation; no Provider
+resubmit or automatic stage cleanup is permitted.
+
 ## Decision
 
 ```yaml
@@ -75,3 +97,9 @@ PR #109 is retained as architecture and threat-model evidence but was closed
 without merge after its implementation grew into the unsupported topology
 described above. Its target mutex, authority, ownership-store, publication and
 physical-identity protocols are not part of this ADR or current `main`.
+
+The prepared minimal replacement remains deferred and is not the next required
+S4 implementation. Any future authorization must start from current `main` on
+a new branch and remain bounded to one deterministic stage per physical target,
+non-destructive generic startup, explicit human reconciliation and fail-closed
+handling of unsafe entries; it must not reopen PR #109's architecture.

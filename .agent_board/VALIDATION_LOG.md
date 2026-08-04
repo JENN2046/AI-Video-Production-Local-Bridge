@@ -3340,10 +3340,12 @@ PASS
 Evidence:
 - `NEXT_TASK.json` parses and records
   `S3B-T1B-R1_MINIMAL_BOUNDED_STAGE_REPLACEMENT` as
-  `AWAITING_JENN_AUTHORIZATION` with `ready: false`.
-- Current main is `55553cbf2f9bc387beb255cebb8b36bcb2deadbf`.
+  `DEFERRED_NOT_REQUIRED_FOR_S4` with `ready: false`.
+- Current main is `3c502e23f884d1b062210321d84848b45c7bb344`.
 - PR #109 is closed without merge; its branch remains retained.
-- PR #111 remains an unchanged Draft.
+- PR #111 is merged as `770f3dff342874e90788d0f475c4cff49136e114`.
+- PR #114 is merged at current main with one valid unresolved P2; PR #115 is
+  closed without merge and its branch remains retained.
 - Only the documentation/task-board allowlist changed; source, tests, package,
   runtime, database, media and secret-adjacent files were untouched.
 
@@ -3355,3 +3357,45 @@ Notes:
 - The prepared replacement task is not executable and has no READY slot.
 - The closeout PR must receive exact-head CI and one complete Codex review before
   its authorized squash merge.
+
+### PR113-R2_REBASE_TRUTH_REFRESH_AND_CLOSEOUT — 2026-08-04
+
+```yaml
+baseline:
+  origin_main: 3c502e23f884d1b062210321d84848b45c7bb344
+  pr113_head_before_refresh: d83a1b755b097d3fa727ed0d588aa677f48faa5b
+  pr113_state: OPEN_DRAFT
+  pr111: MERGED_770f3dff342874e90788d0f475c4cff49136e114
+  pr114: MERGED_3c502e23f884d1b062210321d84848b45c7bb344
+  pr114_p2: DEFERRED_UNRESOLVED
+  pr115: CLOSED_UNMERGED_866accc40ea36c7d8098048ea911eb6e6b0a376b
+  pr115_branch_retained: true
+commands:
+  - node -e JSON.parse(NEXT_TASK.json)
+  - git diff --check
+  - git status --short
+  - changed-file allowlist inspection
+results:
+  task_board_json: PASS
+  diff_check: PASS
+  changed_files: PASS_EXACT_EIGHT_FILE_ALLOWLIST
+  markdown_relative_links: PASS
+  handoff_consistency: PASS
+  secret_scan: PASS
+  source_test_package_workflow_changes: 0
+  provider_network_calls: 0
+  activity_database_access: none
+  activity_media_access: none
+  secret_reads: 0
+  service_starts: 0
+  deployment_changes: 0
+  s4_authorized: false
+current_task: S3B-T2_PREPARE_ELIGIBLE_SHOT
+current_task_status: AWAITING_JENN_AUTHORIZATION
+ready_task_count: 0
+recovery_replacement: DEFERRED_NOT_REQUIRED_FOR_S4
+delivery: PR113_OPEN_DRAFT_PENDING_EXACT_HEAD_CI_AND_REVIEW
+```
+
+This is a documentation/task-board state sync. No source, test, runtime,
+Provider, database, media, service, deployment or secret operation was run.

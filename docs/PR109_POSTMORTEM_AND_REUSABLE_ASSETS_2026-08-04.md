@@ -3,6 +3,25 @@
 Status: controlled retirement without merge
 Date: 2026-08-04 (Asia/Shanghai)
 
+## Current governance truth
+
+```yaml
+current_main: 3c502e23f884d1b062210321d84848b45c7bb344
+pr109: CLOSED_UNMERGED_RETIRED
+pr113: OPEN_DRAFT_CLOSEOUT_CANDIDATE
+pr114_p2: DEFERRED_UNRESOLVED
+pr115: CLOSED_UNMERGED
+replacement_task: S3B-T1B-R1_MINIMAL_BOUNDED_STAGE_REPLACEMENT
+replacement_status: DEFERRED_NOT_REQUIRED_FOR_S4
+replacement_blocks_s4: false
+```
+
+PR #114's P2 remains a valid behavior-test sufficiency finding. PR #115 was an
+unmerged attempted remediation and did not prove a production runtime defect.
+During S4, verified-Blob recovery is neither automatic nor an explicit
+operation: integrity failure stops for manual reconciliation, with no Provider
+resubmit and no automatic stage cleanup.
+
 ## Decision
 
 PR #109 was closed without merge at head `423351bf376378d6fde48cea3060cc7af35bb148`.
@@ -135,9 +154,11 @@ deferred risks were eliminated.
 
 The only prepared follow-up is
 `S3B-T1B-R1_MINIMAL_BOUNDED_STAGE_REPLACEMENT`. It is recorded as
-`AWAITING_JENN_AUTHORIZATION` and is not authorized by this postmortem.
+`DEFERRED_NOT_REQUIRED_FOR_S4`, `ready: false`, `implementation_authorized:
+false`, and `blocks_s4: false`. It is not the next required implementation and
+is not authorized by this postmortem.
 
-If later authorized, it must start from current `main` on a new branch and
+If later separately authorized, it must start from current `main` on a new branch and
 address only one deterministic stage per physical target, non-destructive
 generic startup, explicit human recovery convergence, and fail-closed handling
 of unsafe or unproven entries. It must not cherry-pick PR #109 wholesale or add
