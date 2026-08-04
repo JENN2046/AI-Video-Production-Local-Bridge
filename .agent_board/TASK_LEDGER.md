@@ -5361,6 +5361,32 @@ git_delivery:
 This entry records only verified current facts. CI, final review and any later
 merge are not predicted by this ledger entry.
 
+### 2026-08-04 — PR113-R2 governance truth refresh terminal state
+
+```yaml
+task: PR113-R2_REBASE_TRUTH_REFRESH_AND_CLOSEOUT
+status: DONE
+recorded_by: Codex
+recorded_at: 2026-08-04T21:20:00+08:00
+result: GOVERNANCE_TRUTH_REFRESH_COMPLETE
+validation:
+  documentation_scope: PASS
+  exact_head_gate: VERIFY_CURRENT_PR113_HEAD_BEFORE_MERGE
+  source_test_package_workflow_changes: 0
+  provider_database_media_service_deployment_secret_operations: 0
+evidence:
+  - main@3c502e23f884d1b062210321d84848b45c7bb344
+  - PR113 current head and base verified through GitHub before merge gate
+  - historical f0ea7cd CI/review evidence retained without treating it as current-head evidence
+git_delivery:
+  branch: codex/pr109-retirement-truth-reset
+  pr: 113
+  state_at_record_time: OPEN_READY
+  merge_claimed: false
+  merge_decision: EXTERNAL_FUTURE_ACTION
+delivery: PR113_EXACT_HEAD_GATE_REQUIRED_BEFORE_SQUASH_MERGE
+```
+
 ### 2026-08-04 — PR113 exact-head review remediation
 
 ```yaml
