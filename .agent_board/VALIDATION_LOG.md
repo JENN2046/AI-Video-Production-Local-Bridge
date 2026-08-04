@@ -3506,3 +3506,28 @@ scope:
 The task-board fields now distinguish the symbolic pending-merge state from
 the exact candidate and its CI/review evidence; no earlier finding is marked
 as a pass. This remains a documentation/task-board update only.
+
+### PR113 T2 package matching and current-head gate remediation — 2026-08-05
+
+```yaml
+findings:
+  - current PR head must not be inferred from a stale passed candidate
+  - optional snapshot shot_id must use the generation path's unique frozen-order fallback
+resolutions:
+  current_head: PR113_HEAD_VERIFY_BEFORE_MERGE
+  candidate_head: PR113_CURRENT_HEAD_PENDING_VERIFICATION
+  head_verification_required: true
+  head_verification_target: CURRENT_PR_HEAD
+  last_passed_head: 16babfd9650184183acef959244c2d765ea53dcc
+  package_binding: shot_id_when_present_else_unique_frozen_order
+  ambiguous_or_missing_match: PACKAGE_SNAPSHOT_MISMATCH
+scope:
+  source_changes: 0
+  test_changes: 0
+  provider_calls: 0
+  database_media_service_deployment_secret_operations: 0
+```
+
+The order fallback still compares every frozen field and the bound Artifact;
+it does not weaken package integrity or emit private identifiers. The current
+PR head remains pending a fresh exact-head CI/review cycle.

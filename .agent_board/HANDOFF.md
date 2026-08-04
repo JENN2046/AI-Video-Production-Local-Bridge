@@ -14,12 +14,13 @@ Ready task count: 0
 ## PR113-R2 current governance
 
 - Baseline is `main@3c502e23f884d1b062210321d84848b45c7bb344`.
-- PR #113 is an `OPEN_READY` closeout candidate. The task board keeps its
-  symbolic current head at `VERIFY_BEFORE_MERGE`; its candidate,
-  last-reviewed and last-passed head is
-  `16babfd9650184183acef959244c2d765ea53dcc` against current base
-  `3c502e23f884d1b062210321d84848b45c7bb344`. The earlier `f8ed0b9` remains a
-  reviewed head with a state-reconciliation finding and is not published as a
+- PR #113 is an `OPEN_READY` closeout candidate. The task board keeps both its
+  current and candidate head symbolic at `VERIFY_BEFORE_MERGE` until the
+  current PR head is re-read and revalidated. Its last-reviewed and last-passed
+  head is `16babfd9650184183acef959244c2d765ea53dcc` against current base
+  `3c502e23f884d1b062210321d84848b45c7bb344`; this is historical evidence, not
+  a claim about the current PR head. The earlier `f8ed0b9` remains a reviewed
+  head with a state-reconciliation finding and is not published as a
   validated/pass head. No merge is claimed.
 - PR #109 is closed unmerged and retained only as research/threat-model evidence.
 - PR #111 is merged as `770f3dff342874e90788d0f475c4cff49136e114`.

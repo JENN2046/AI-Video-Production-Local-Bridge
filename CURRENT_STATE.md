@@ -24,12 +24,13 @@ Repository baseline: `main@3c502e23f884d1b062210321d84848b45c7bb344`
 - PR #111, `fix: align Node preflight with engine floor`, was squash-merged as
   `770f3dff342874e90788d0f475c4cff49136e114`.
 - PR #113 is an open Ready governance closeout candidate. The task board keeps
-  its symbolic current head at `VERIFY_BEFORE_MERGE`; its candidate,
-  last-reviewed and last-passed head is
-  `16babfd9650184183acef959244c2d765ea53dcc` against current base
-  `3c502e23f884d1b062210321d84848b45c7bb344`. The earlier `f8ed0b9` is retained
-  only as a reviewed head with a state-reconciliation finding; it is not
-  published as a validated/pass head. No merge is claimed.
+  both its current and candidate head symbolic at `VERIFY_BEFORE_MERGE` until
+  the current PR head is re-read and revalidated. Its last-reviewed and
+  last-passed head is `16babfd9650184183acef959244c2d765ea53dcc` against
+  current base `3c502e23f884d1b062210321d84848b45c7bb344`; this is historical
+  evidence, not a claim about the current PR head. The earlier `f8ed0b9` is
+  retained only as a reviewed head with a state-reconciliation finding. No
+  merge is claimed.
 - PR #114 was squash-merged as current `main@3c502e23f884d1b062210321d84848b45c7bb344`.
   Its valid behavior-test P2 remains `DEFERRED_UNRESOLVED` (thread
   `3708908011`); no reply or resolution is claimed.
@@ -278,13 +279,19 @@ one alias-only candidate that satisfies the following deterministic predicate:
    `status` `queued` or `running`. T2 must fail closed with
    `REAL_GENERATION_ALREADY_ACTIVE` rather than selecting a candidate that
    the generation preflight will reject because another real task is active.
-5. Package binding: the package's `approved_shot_snapshots` contains exactly
-   one entry for the candidate `shot_id`; the candidate `order`,
-   `duration_seconds`, `video_prompt` and `storyboard_image_artifact_id` must
-   equal that frozen snapshot. Compare the optional `description` and
-   `negative_prompt` only after applying `?? ""` to both the candidate and
-   snapshot values, matching the generation path's normalization. The package
-   snapshot Artifact must be the same active Artifact selected in step 6.
+5. Package binding: resolve exactly one entry from the package's
+   `approved_shot_snapshots`. When a frozen snapshot has a non-empty `shot_id`,
+   it must equal the candidate `shot_id`; when the optional `shot_id` is absent,
+   match by the candidate's frozen `order`, exactly as the current generation
+   path does. The order fallback is valid only when that order identifies one
+   snapshot; zero or multiple matches fail closed as `PACKAGE_SNAPSHOT_MISMATCH`.
+   The candidate `order`, `duration_seconds`, `video_prompt` and
+   `storyboard_image_artifact_id` must equal that frozen snapshot. Compare the
+   optional `description` and `negative_prompt` only after applying `?? ""` to
+   both the candidate and snapshot values, matching the generation path's
+   normalization. The package snapshot Artifact must be the same active
+   Artifact selected in step 6. The receipt records only the stable matching
+   mode (`shot_id` or `order`), never private identifiers.
 6. Storyboard Artifact facts: `artifact.status == "active"`,
    `artifact.artifact_type == "image"`, `artifact.role == "storyboard_image"`,
    `artifact.linked_objects.project_id` and `.shot_id` match the candidate,

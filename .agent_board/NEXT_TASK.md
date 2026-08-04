@@ -28,12 +28,13 @@ credentialed online price preflight immediately before submit.
 - PR #110: `MERGED` as `00c8ed458144f03d4b0e1389d4de6dbf8005ed9a`.
 - PR #111: `MERGED` as `770f3dff342874e90788d0f475c4cff49136e114`.
 - PR #112: `MERGED` as `55553cbf2f9bc387beb255cebb8b36bcb2deadbf`.
-- PR #113: `OPEN_READY` closeout candidate; task-board current head is the
-  symbolic `VERIFY_BEFORE_MERGE` state. Candidate, last-reviewed and
-  last-passed head is `16babfd9650184183acef959244c2d765ea53dcc` against base
-  `3c502e23f884d1b062210321d84848b45c7bb344`. Earlier `f8ed0b9` is retained as
-  a reviewed head with a state-reconciliation finding, not as a validated/pass
-  head. No merge is claimed.
+- PR #113: `OPEN_READY` closeout candidate; task-board current and candidate
+  heads are symbolic `VERIFY_BEFORE_MERGE` until the current PR head is
+  re-read and revalidated. Last-reviewed and last-passed head is
+  `16babfd9650184183acef959244c2d765ea53dcc` against base
+  `3c502e23f884d1b062210321d84848b45c7bb344`; this is historical evidence, not
+  a claim about the current PR head. Earlier `f8ed0b9` is retained as a
+  reviewed-with-finding head, not a validated/pass head. No merge is claimed.
 - PR #114: `MERGED` as `3c502e23f884d1b062210321d84848b45c7bb344`; its valid P2
   behavior-test finding remains `DEFERRED_UNRESOLVED` (thread `3708908011`).
 - PR #115: `CLOSED_UNMERGED`; head `866accc40ea36c7d8098048ea911eb6e6b0a376b`,
