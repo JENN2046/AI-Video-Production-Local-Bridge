@@ -5387,6 +5387,28 @@ git_delivery:
 delivery: PR113_EXACT_HEAD_GATE_REQUIRED_BEFORE_SQUASH_MERGE
 ```
 
+### 2026-08-05 — PR113 historical exact-head verification ledger closure
+
+```yaml
+task: PR113_R2_HISTORICAL_EXACT_HEAD_VERIFICATION
+status: PASS_RECORDED
+recorded_by: Codex
+recorded_at: 2026-08-05T05:35:02+08:00
+reviewed_head: 16babfd9650184183acef959244c2d765ea53dcc
+ci_run: 30946199195
+browser_smoke: PASS
+quality_and_integration: PASS
+codex_review: PASS_NO_NEW_FINDINGS
+unresolved_threads_at_review: 0
+evidence_scope:
+  - historical last_reviewed_head and last_passed_head in NEXT_TASK.json
+  - current PR head remains separately VERIFY_BEFORE_MERGE
+source_test_package_workflow_changes: 0
+provider_database_media_service_deployment_secret_operations: 0
+merge_claimed: false
+delivery: HISTORICAL_EVIDENCE_RECORDED_CURRENT_HEAD_REQUIRES_FRESH_GATE
+```
+
 ### 2026-08-04 — PR113 exact-head review remediation
 
 ```yaml
