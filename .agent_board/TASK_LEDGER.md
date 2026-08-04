@@ -5377,3 +5377,34 @@ provider_calls: 0
 database_media_service_deployment_secret_operations: 0
 delivery: NEW_EXACT_HEAD_CI_AND_REVIEW_REQUIRED
 ```
+
+### 2026-08-04 — S3B-T2_PREPARE_ELIGIBLE_SHOT
+
+```yaml
+task: S3B-T2_PREPARE_ELIGIBLE_SHOT
+status: BLOCKED
+recorded_by: Codex
+recorded_at: 2026-08-04T20:05:00+08:00
+claimed_by: null
+claim_run_id: null
+blocked_by: Jenn
+blocked_at: 2026-08-04T20:05:00+08:00
+boundary_or_safety_stop: P3a approval boundary
+blocked_reason: Separate Jenn authorization is required before preparing a real-canary SHOT.
+safe_actions_completed:
+  - reconciled current repository and PR truth
+  - validated the single-slot task state
+  - preserved the offline/no-submit sequence
+unsafe_action_not_performed: No SHOT preparation, credential configuration, Provider call, database/media operation or S4 execution.
+options_for_jenn:
+  - authorize S3B-T2 explicitly
+  - keep the core loop blocked
+validation:
+  next_task_json: PASS
+  ready_task_count: 0
+evidence:
+  - .agent_board/NEXT_TASK.json
+  - CURRENT_STATE.md
+commit: c41bd4fb2624ddbc5dde770a70d89964a843acbe
+delivery: BLOCKED_WAITING_FOR_JENN_AUTHORIZATION
+```

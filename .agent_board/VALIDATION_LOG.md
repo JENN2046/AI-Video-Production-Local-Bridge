@@ -3340,12 +3340,11 @@ PASS
 Evidence:
 - `NEXT_TASK.json` parses and records
   `S3B-T1B-R1_MINIMAL_BOUNDED_STAGE_REPLACEMENT` as
-  `DEFERRED_NOT_REQUIRED_FOR_S4` with `ready: false`.
-- Current main is `3c502e23f884d1b062210321d84848b45c7bb344`.
+  `AWAITING_JENN_AUTHORIZATION` with `ready: false`.
+- Current main at the time of this recorded run was
+  `55553cbf2f9bc387beb255cebb8b36bcb2deadbf`.
 - PR #109 is closed without merge; its branch remains retained.
-- PR #111 is merged as `770f3dff342874e90788d0f475c4cff49136e114`.
-- PR #114 is merged at current main with one valid unresolved P2; PR #115 is
-  closed without merge and its branch remains retained.
+- PR #111 was an unchanged Draft at the time of this recorded run.
 - Only the documentation/task-board allowlist changed; source, tests, package,
   runtime, database, media and secret-adjacent files were untouched.
 
@@ -3426,3 +3425,28 @@ database_media_service_deployment_secret_operations: 0
 
 The review threads are not yet resolved; a new exact-head CI and review cycle
 is required after the remediation commit.
+
+### PR113 second exact-head review remediation — 2026-08-04
+
+```yaml
+reviewed_head: c41bd4fb2624ddbc5dde770a70d89964a843acbe
+review_result: FINDINGS_REMEDIATED
+findings:
+  - ADR overstated deterministic bounded staging as current support
+  - historical PR109-R0 validation entry was overwritten with later main truth
+  - T2 blocked state was nested without a standalone ledger terminal entry
+resolutions:
+  - ADR marks deterministic bounded staging deferred and not implemented by current main
+  - PR109-R0 historical entry restored to main@55553cb and Draft-era facts
+  - standalone BLOCKED S3B-T2 ledger entry records boundary, evidence and options
+local_validation:
+  next_task_json: PASS
+  git_diff_check: PASS
+  secret_scan: PASS
+  changed_files: EXACT_EIGHT_FILE_ALLOWLIST
+source_test_package_workflow_changes: 0
+provider_network_calls: 0
+database_media_service_deployment_secret_operations: 0
+```
+
+New exact-head CI and review are required after this remediation commit.

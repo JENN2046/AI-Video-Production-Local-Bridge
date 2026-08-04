@@ -65,8 +65,16 @@ supported:
   - one business database
   - one governed media store
   - explicit human Blob recovery
+deferred_not_current_main:
   - deterministic, bounded recovery staging
+  - S3B-T1B-R1_MINIMAL_BOUNDED_STAGE_REPLACEMENT
 ```
+
+Current `main` still uses the existing UUID-named staged-copy recovery path;
+it does not provide deterministic bounded staging. A hard exit can therefore
+leave a complete staged copy. This is the late accumulation finding recorded
+against PR #108, not an accepted current-main guarantee. The deferred
+replacement is not required for S4 and remains unauthorized.
 
 ### Unsupported
 
