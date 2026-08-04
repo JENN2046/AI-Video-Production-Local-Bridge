@@ -3480,3 +3480,29 @@ scope:
 This entry records the actual f8ed0b9 evidence without rewriting earlier
 historical validation entries. The state-only follow-up remains pending its
 own exact-head CI and review.
+
+### PR113 final exact-head revalidation — 2026-08-05
+
+```yaml
+reviewed_head: 16babfd9650184183acef959244c2d765ea53dcc
+ci_run: 30946199195
+ci:
+  Browser_smoke: PASS
+  Quality_and_integration: PASS
+review_result: PASS_NO_NEW_FINDINGS
+state_reconciliation:
+  f8ed0b90c956cb3ba60bb8bc6038e05b3865eabb: REVIEWED_WITH_FINDING_NOT_PASS
+  task_board_current_head: PR113_HEAD_VERIFY_BEFORE_MERGE
+  candidate_head: 16babfd9650184183acef959244c2d765ea53dcc
+  last_reviewed_head: 16babfd9650184183acef959244c2d765ea53dcc
+  last_passed_head: 16babfd9650184183acef959244c2d765ea53dcc
+scope:
+  source_changes: 0
+  test_changes: 0
+  provider_calls: 0
+  database_media_service_deployment_secret_operations: 0
+```
+
+The task-board fields now distinguish the symbolic pending-merge state from
+the exact candidate and its CI/review evidence; no earlier finding is marked
+as a pass. This remains a documentation/task-board update only.

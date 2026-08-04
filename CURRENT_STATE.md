@@ -23,10 +23,13 @@ Repository baseline: `main@3c502e23f884d1b062210321d84848b45c7bb344`
   `main`.
 - PR #111, `fix: align Node preflight with engine floor`, was squash-merged as
   `770f3dff342874e90788d0f475c4cff49136e114`.
-- PR #113 is an open Ready governance closeout candidate. The task board
-  intentionally keeps its current head at `VERIFY_BEFORE_MERGE`; the last
-  validated head was `f8ed0b90c956cb3ba60bb8bc6038e05b3865eabb` against current
-  base `3c502e23f884d1b062210321d84848b45c7bb344`, with no merge claimed.
+- PR #113 is an open Ready governance closeout candidate. The task board keeps
+  its symbolic current head at `VERIFY_BEFORE_MERGE`; its candidate,
+  last-reviewed and last-passed head is
+  `16babfd9650184183acef959244c2d765ea53dcc` against current base
+  `3c502e23f884d1b062210321d84848b45c7bb344`. The earlier `f8ed0b9` is retained
+  only as a reviewed head with a state-reconciliation finding; it is not
+  published as a validated/pass head. No merge is claimed.
 - PR #114 was squash-merged as current `main@3c502e23f884d1b062210321d84848b45c7bb344`.
   Its valid behavior-test P2 remains `DEFERRED_UNRESOLVED` (thread
   `3708908011`); no reply or resolution is claimed.
