@@ -308,18 +308,26 @@ codes for this gate are `PROJECT_NOT_PRODUCTION`, `PROJECT_ALREADY_DELIVERED`,
 `PACKAGE_SNAPSHOT_MISMATCH`, `PROVIDER_CAPABILITY_NOT_FOUND`,
 `PROVIDER_CAPABILITY_MODEL_MISMATCH`, `PROVIDER_CAPABILITY_DURATION_UNSUPPORTED`,
 `PROVIDER_CAPABILITY_RESOLUTION_UNSUPPORTED` and
-`PROVIDER_CAPABILITY_ASPECT_RATIO_UNSUPPORTED`. T3/T4 may report credential,
-budget, price or cost-acknowledgement reason codes, but those codes do not make
-an otherwise valid T2 candidate ineligible.
+`PROVIDER_CAPABILITY_ASPECT_RATIO_UNSUPPORTED`, plus
+`S3_MULTIPLE_ELIGIBLE_SHOTS` when more than one candidate satisfies the full
+predicate. T3/T4 may report credential, budget, price or cost-acknowledgement
+reason codes, but those codes do not make an otherwise valid T2 candidate
+ineligible.
 
 For deterministic T2 receipts, every raw `verifyMediaArtifactBytes` failure
-(`ARTIFACT_INTEGRITY_UNVERIFIED`, `MEDIA_BLOB_CONTENT_DRIFT`,
-`MEDIA_BLOB_PATH_UNSAFE` or `MEDIA_BLOB_CHECK_FAILED`) must be normalized to
-the published aggregate `STORYBOARD_ARTIFACT_INTEGRITY_INVALID`; the raw
-filesystem or storage detail must not be emitted. A zero-version Shot whose
-operational derivation reports `STORYBOARD_REVISION_REQUIRED` must retain that
-stable code in the aggregate reason list rather than being mislabeled as a
-generic preparation failure.
+must be normalized to the published aggregate
+`STORYBOARD_ARTIFACT_INTEGRITY_INVALID`, regardless of whether the raw code is
+`ARTIFACT_INTEGRITY_UNVERIFIED`, `MEDIA_BLOB_CONTENT_DRIFT`,
+`MEDIA_BLOB_PATH_UNSAFE`, `MEDIA_BLOB_CHECK_FAILED`,
+`MEDIA_ACTIVATION_FILE_UNREADABLE`, `MEDIA_FILE_CHANGED_DURING_HASH`, an
+image validation code (`IMAGE_FILE_INVALID`, `IMAGE_DIMENSIONS_UNREADABLE`,
+`IMAGE_FILE_NOT_READABLE`, `IMAGE_DECODE_UNAVAILABLE` or
+`IMAGE_DECODE_FAILED`), or a video/MIME validation code
+(`VIDEO_PROBE_UNAVAILABLE`, `VIDEO_FILE_INVALID` or `MEDIA_MIME_MISMATCH`).
+No raw filesystem, decoder, storage or runtime detail may be emitted. A
+zero-version Shot whose operational derivation reports
+`STORYBOARD_REVISION_REQUIRED` must retain that stable code in the aggregate
+reason list rather than being mislabeled as a generic preparation failure.
 
 The preparation acceptance receipt must report exactly one candidate, preserve
 only non-reversible aliases and aggregate reason codes, and retain no activity
@@ -328,7 +336,10 @@ payloads. T2 must not submit or poll a Provider, configure credentials, create
 or replace media, invoke recovery, publish a Snapshot, or run S4. The current
 blocked slot authorizes no Project/Shot or Intent write; any such write scope
 must be named in a separate Jenn authorization. A zero-candidate result is a
-fail-closed `S3_NO_ELIGIBLE_SHOT`, not a readiness PASS.
+fail-closed `S3_NO_ELIGIBLE_SHOT`, not a readiness PASS. A scan producing more
+than one full-predicate candidate is also fail-closed as
+`S3_MULTIPLE_ELIGIBLE_SHOTS`; T2 must not choose by scan order or publish a
+candidate alias in that case.
 
 ## Current priority
 
