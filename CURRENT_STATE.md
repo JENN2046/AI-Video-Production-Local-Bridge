@@ -283,10 +283,15 @@ one alias-only candidate that satisfies the following deterministic predicate:
    verify the current bytes, not rely on a ledger-only result), Blob
    `integrity_state == "verified"`, and detected MIME is exactly `image/png`
    or `image/jpeg`.
-6. T2 is offline preparation only: Provider capability, credential, price,
-   budget policy and cost acknowledgement are **not** T2 predicates. They are
-   checked by T3/T4 after T2 and before the separately authorized S4 canary;
-   credential values are never read into the T2 receipt.
+6. T2 is offline preparation only. It must run the existing registry-only
+   `buildProviderCapabilityKey` predicate with `provider: "runninghub"`, the
+   existing RunningHub model route, the candidate `duration_seconds`, and the
+   Project `video_spec.resolution` / `video_spec.aspect_ratio`; this reads no
+   credential and makes no network call. A successful static capability result
+   is required. Credential, price, budget policy and cost acknowledgement are
+   **not** T2 predicates; T3/T4 check them after T2 and before the separately
+   authorized S4 canary, and credential values are never read into the T2
+   receipt.
 
 The only authoritative state derivation is the existing
 `deriveShotOperationalState` / `allowed_workflow_actions.prepare_generation`
@@ -300,9 +305,12 @@ codes for this gate are `PROJECT_NOT_PRODUCTION`, `PROJECT_ALREADY_DELIVERED`,
 `PREPARE_GENERATION_NOT_ALLOWED`, `GENERATION_ALREADY_STARTED`,
 `GENERATION_MANUAL_RECONCILIATION`, `SHOT_STATE_INCONSISTENT`,
 `PACKAGE_NOT_FOUND`, `PACKAGE_PROJECT_MISMATCH`, `PACKAGE_NOT_APPROVED` and
-`PACKAGE_SNAPSHOT_MISMATCH`. T3/T4 may report Provider, budget, price or
-credential reason codes, but those codes do not make an otherwise valid T2
-candidate ineligible.
+`PACKAGE_SNAPSHOT_MISMATCH`, `PROVIDER_CAPABILITY_NOT_FOUND`,
+`PROVIDER_CAPABILITY_MODEL_MISMATCH`, `PROVIDER_CAPABILITY_DURATION_UNSUPPORTED`,
+`PROVIDER_CAPABILITY_RESOLUTION_UNSUPPORTED` and
+`PROVIDER_CAPABILITY_ASPECT_RATIO_UNSUPPORTED`. T3/T4 may report credential,
+budget, price or cost-acknowledgement reason codes, but those codes do not make
+an otherwise valid T2 candidate ineligible.
 
 The preparation acceptance receipt must report exactly one candidate, preserve
 only non-reversible aliases and aggregate reason codes, and retain no activity
