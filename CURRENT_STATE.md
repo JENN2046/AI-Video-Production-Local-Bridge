@@ -297,7 +297,7 @@ The only authoritative state derivation is the existing
 `deriveShotOperationalState` / `allowed_workflow_actions.prepare_generation`
 predicate together with the Artifact/Blob facts above. Its stable failure
 codes for this gate are `PROJECT_NOT_PRODUCTION`, `PROJECT_ALREADY_DELIVERED`,
-`PROJECT_NOT_ACTIVE`, `STORYBOARD_APPROVAL_REQUIRED`,
+`PROJECT_NOT_ACTIVE`, `STORYBOARD_APPROVAL_REQUIRED`, `STORYBOARD_REVISION_REQUIRED`,
 `STORYBOARD_IMAGE_MISSING`, `STORYBOARD_ARTIFACT_INACTIVE`,
 `STORYBOARD_ARTIFACT_BINDING_INVALID`, `STORYBOARD_ARTIFACT_ROLE_INVALID`,
 `STORYBOARD_ARTIFACT_INTEGRITY_INVALID`, `STORYBOARD_IMAGE_MIME_UNSUPPORTED`,
@@ -311,6 +311,15 @@ codes for this gate are `PROJECT_NOT_PRODUCTION`, `PROJECT_ALREADY_DELIVERED`,
 `PROVIDER_CAPABILITY_ASPECT_RATIO_UNSUPPORTED`. T3/T4 may report credential,
 budget, price or cost-acknowledgement reason codes, but those codes do not make
 an otherwise valid T2 candidate ineligible.
+
+For deterministic T2 receipts, every raw `verifyMediaArtifactBytes` failure
+(`ARTIFACT_INTEGRITY_UNVERIFIED`, `MEDIA_BLOB_CONTENT_DRIFT`,
+`MEDIA_BLOB_PATH_UNSAFE` or `MEDIA_BLOB_CHECK_FAILED`) must be normalized to
+the published aggregate `STORYBOARD_ARTIFACT_INTEGRITY_INVALID`; the raw
+filesystem or storage detail must not be emitted. A zero-version Shot whose
+operational derivation reports `STORYBOARD_REVISION_REQUIRED` must retain that
+stable code in the aggregate reason list rather than being mislabeled as a
+generic preparation failure.
 
 The preparation acceptance receipt must report exactly one candidate, preserve
 only non-reversible aliases and aggregate reason codes, and retain no activity
