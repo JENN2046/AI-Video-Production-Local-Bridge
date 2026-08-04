@@ -5391,7 +5391,7 @@ delivery: PR113_EXACT_HEAD_GATE_REQUIRED_BEFORE_SQUASH_MERGE
 
 ```yaml
 task: PR113-R2_REVIEW_REMEDIATION
-status: REMEDIATED_EXACT_HEAD_CI_AND_REVIEW_PASS
+status: FINDINGS_REPORTED_REMEDIATION_REQUIRED
 reviewed_head: 7fb5be56329b2f6ff3a67e1b6056187cad1048a2
 findings_fixed:
   - current task state normalized to BLOCKED with approval-boundary fields
@@ -5401,7 +5401,7 @@ source_changes: 0
 test_changes: 0
 provider_calls: 0
 database_media_service_deployment_secret_operations: 0
-delivery: EXACT_HEAD_CI_AND_REVIEW_PASS
+delivery: REMEDIATION_REQUIRED; later f0ea7cd exact-head CI/review evidence is recorded separately
 ```
 
 ### 2026-08-04 — S3B-T2_PREPARE_ELIGIBLE_SHOT
