@@ -242,6 +242,32 @@ governance closeout candidate and has not been merged.
 Bridge, Snapshot or Media Gateway recovery must not be inserted ahead of the
 current-path Provider readiness and real single-shot canary.
 
+## S3B-T2 eligibility and acceptance
+
+The blocked `S3B-T2_PREPARE_ELIGIBLE_SHOT` slot is a preparation gate, not an
+authorization to execute it. A future Jenn authorization must select exactly
+one alias-only candidate that satisfies every condition below:
+
+- an existing, active Project in the current schema;
+- one active Shot whose current storyboard package is approved/frozen;
+- one active storyboard image Artifact bound to that Project and Shot, with
+  the expected storyboard role, MIME type, Blob identity, size and governed
+  storage boundary;
+- preflight inputs and Provider capability are current, with budget policy and
+  explicit human cost acknowledgement available; any input, capability,
+  credential, price or budget drift fails closed;
+- no unresolved generation, recovery or manual-reconciliation state makes the
+  candidate unsafe to prepare.
+
+The preparation acceptance receipt must report exactly one candidate, preserve
+only non-reversible aliases and aggregate reason codes, and retain no activity
+database identifiers, local paths, prompt text, credential values or Provider
+payloads. T2 must not submit or poll a Provider, configure credentials, create
+or replace media, invoke recovery, publish a Snapshot, or run S4. The current
+blocked slot authorizes no Project/Shot or Intent write; any such write scope
+must be named in a separate Jenn authorization. A zero-candidate result is a
+fail-closed `S3_NO_ELIGIBLE_SHOT`, not a readiness PASS.
+
 ## Current priority
 
 The product-scope source of truth is

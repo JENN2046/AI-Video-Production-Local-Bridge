@@ -12,7 +12,7 @@
   "project": "AI Video Production Local Bridge",
   "title": "Prepare one eligible real-canary SHOT",
   "summary": "仅在 Jenn 单独授权后准备一个不含活动标识符的合格真实 canary SHOT；本轮未执行。",
-  "scope_policy_source": "docs/ADR_SINGLE_ACTIVE_MEDIA_WRITER_AND_BOUNDED_RECOVERY.md",
+  "scope_policy_source": "CURRENT_STATE.md#s3b-t2-eligibility-and-acceptance",
   "ready_task_count": 0,
   "current_execution_task": null,
   "implementation_authorized": false,
