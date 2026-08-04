@@ -251,7 +251,8 @@ one alias-only candidate that satisfies the following deterministic predicate:
 1. Project facts: `workbench_project_meta.classification` is exactly
    `production`; Workbench lifecycle is `active` (not `archived`), the
    Project `status` is one of `draft`, `storyboard_approved`,
-   `video_generation_in_progress`, `video_review` or `final_approved`, and
+   `video_generation_in_progress` or `video_review`; `final_approved` is
+   explicitly ineligible because it represents a delivered project, and
    `active_storyboard_package_id` names an existing package whose
    `project_id` matches and whose `status` is exactly
    `approved_for_video_generation` with `user_approval.storyboard_approved ==
@@ -268,8 +269,10 @@ one alias-only candidate that satisfies the following deterministic predicate:
    use a separately authorized regeneration task.
 4. Package binding: the package's `approved_shot_snapshots` contains exactly
    one entry for the candidate `shot_id`; the candidate `order`,
-   `duration_seconds`, `description`, `video_prompt`, `negative_prompt` and
-   `storyboard_image_artifact_id` must equal that frozen snapshot. The package
+   `duration_seconds`, `video_prompt` and `storyboard_image_artifact_id` must
+   equal that frozen snapshot. Compare the optional `description` and
+   `negative_prompt` only after applying `?? ""` to both the candidate and
+   snapshot values, matching the generation path's normalization. The package
    snapshot Artifact must be the same active Artifact selected in step 5.
 5. Storyboard Artifact facts: `artifact.status == "active"`,
    `artifact.artifact_type == "image"`, `artifact.role == "storyboard_image"`,
