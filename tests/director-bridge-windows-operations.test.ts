@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { once } from "node:events";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -35,6 +36,11 @@ function sha256Text(value: string): string {
 function canonicalRuntimePath(value: string): string {
   return resolve(value).replaceAll("\\", "/").replace(/\/+$/u, "").toLowerCase();
 }
+
+const fixtureRequire = createRequire(resolve("tests/director-bridge-windows-operations.test.ts"));
+const { createAtomicWriter } = fixtureRequire("../scripts/windows/fixtures/director-bridge-atomic-write.cjs") as {
+  createAtomicWriter: (options: unknown) => (target: string, value: unknown) => void;
+};
 
 const managedLaunchEnvironmentNames = [
   "ComSpec",
@@ -137,6 +143,113 @@ async function waitForFile(path: string, timeoutMs = 5_000): Promise<void> {
   }
   throw new Error("DIRECTOR_BRIDGE_TEST_FILE_TIMEOUT");
 }
+
+type CodedError = Error & { code: string };
+
+function codedError(code: string): CodedError {
+  const error = new Error(code) as CodedError;
+  error.code = code;
+  return error;
+}
+
+function atomicWriteHarness(renameFailures: CodedError[] = [], options: {
+  writeError?: CodedError;
+  cleanupError?: CodedError;
+} = {}) {
+  let now = 0;
+  const files = new Map<string, string>();
+  const writes: Array<{ path: string; value: string; options: Record<string, unknown> }> = [];
+  const renameAttempts: string[] = [];
+  const removals: string[] = [];
+  const waits: number[] = [];
+  const filesystem = {
+    writeFileSync(path: string, value: string, writeOptions: Record<string, unknown>) {
+      writes.push({ path, value, options: writeOptions });
+      if (options.writeError) throw options.writeError;
+      files.set(path, value);
+    },
+    renameSync(temporary: string, target: string) {
+      renameAttempts.push(temporary);
+      const failure = renameFailures.shift();
+      if (failure) throw failure;
+      const value = files.get(temporary);
+      assert.notEqual(value, undefined);
+      files.set(target, value as string);
+      files.delete(temporary);
+    },
+    rmSync(path: string) {
+      removals.push(path);
+      if (options.cleanupError) throw options.cleanupError;
+      files.delete(path);
+    }
+  };
+  const writer = createAtomicWriter({
+    filesystem,
+    clock: { now: () => now },
+    waiter: { wait: (milliseconds: number) => { waits.push(milliseconds); now += milliseconds; } },
+    identity: { pid: 42, randomUUID: () => "fixture-test-uuid" }
+  });
+  return {
+    writer,
+    files,
+    writes,
+    renameAttempts,
+    removals,
+    waits,
+    temporary: "target.json.tmp-42-fixture-test-uuid"
+  };
+}
+
+test("Director Bridge atomic write retries each allowed transient rename code and publishes", () => {
+  for (const code of ["EACCES", "EBUSY", "EPERM"]) {
+    const harness = atomicWriteHarness([codedError(code)]);
+    harness.writer("target.json", { phase: "idle" });
+    assert.equal(harness.renameAttempts.length, 2, code);
+    assert.deepEqual(harness.waits, [10], code);
+    assert.deepEqual(harness.removals, [], code);
+    assert.equal(harness.files.get("target.json"), '{"phase":"idle"}\n', code);
+    assert.equal(harness.files.has(harness.temporary), false, code);
+  }
+});
+
+test("Director Bridge atomic write bounds transient failures and preserves the rename error", () => {
+  const renameError = codedError("EPERM");
+  const cleanupError = codedError("EACCES");
+  const harness = atomicWriteHarness(Array.from({ length: 400 }, () => renameError), { cleanupError });
+  assert.throws(() => harness.writer("target.json", { phase: "idle" }), (error) => error === renameError);
+  assert.ok(harness.renameAttempts.length > 1 && harness.renameAttempts.length <= 201);
+  assert.equal(harness.waits.length, harness.renameAttempts.length - 1);
+  assert.deepEqual(harness.removals, [harness.temporary]);
+  assert.equal(harness.files.has("target.json"), false);
+});
+
+test("Director Bridge atomic write rejects non-transient rename errors without waiting", () => {
+  const renameError = codedError("EINVAL");
+  const harness = atomicWriteHarness([renameError], { cleanupError: codedError("EACCES") });
+  assert.throws(() => harness.writer("target.json", { phase: "idle" }), (error) => error === renameError);
+  assert.equal(harness.renameAttempts.length, 1);
+  assert.deepEqual(harness.waits, []);
+  assert.deepEqual(harness.removals, [harness.temporary]);
+});
+
+test("Director Bridge atomic write preserves a write failure and never renames", () => {
+  const writeError = codedError("EIO");
+  const harness = atomicWriteHarness([], { writeError, cleanupError: codedError("EACCES") });
+  assert.throws(() => harness.writer("target.json", { phase: "idle" }), (error) => error === writeError);
+  assert.deepEqual(harness.renameAttempts, []);
+  assert.deepEqual(harness.removals, [harness.temporary]);
+  assert.equal(harness.files.has("target.json"), false);
+});
+
+test("Director Bridge atomic write publishes immediately with the protected JSON write contract", () => {
+  const harness = atomicWriteHarness();
+  harness.writer("target.json", { phase: "idle" });
+  assert.deepEqual(harness.waits, []);
+  assert.deepEqual(harness.removals, []);
+  assert.equal(harness.writes[0]?.value, '{"phase":"idle"}\n');
+  assert.equal(harness.writes[0]?.options.flag, "wx");
+  assert.equal(harness.writes[0]?.options.mode, 0o600);
+});
 
 test("Director Bridge heartbeat schema carries instance, PID and source fingerprints while excluding business-data fields", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "director-bridge-runtime-control-"));
@@ -605,6 +718,7 @@ test("Director Bridge Windows lifecycle manager scripts do not read Bridge key o
   const stop = text("scripts/windows/director-bridge-stop.ps1");
   const smoke = text("scripts/windows/director-bridge-runtime-smoke.ps1");
   const fixture = text("scripts/windows/fixtures/director-bridge-fake-runtime.cjs");
+  const atomicWriteHelper = text("scripts/windows/fixtures/director-bridge-atomic-write.cjs");
   const runtime = text("scripts/director-local-bridge.ts");
   const runtimeControl = text("src/director/runtimeControl.ts");
 
@@ -659,10 +773,10 @@ test("Director Bridge Windows lifecycle manager scripts do not read Bridge key o
   assert.match(smoke, /DIRECTOR_BRIDGE_REMOTE_POLL_FAILED/);
   assert.match(smoke, /DIRECTOR_BRIDGE_FIXTURE_DIAGNOSTIC_FAILURE/);
   assert.match(fixture, /director-bridge-fixture-failure-v1/);
-  assert.match(fixture, /atomicRenameWaitBuffer/);
-  assert.match(fixture, /transientRenameCodes/);
-  assert.match(fixture, /Atomics\.wait\(atomicRenameWaitBuffer/);
-  assert.match(fixture, /Date\.now\(\) \+ 2_000/);
+  assert.match(fixture, /createAtomicWriter/);
+  assert.match(atomicWriteHelper, /TRANSIENT_RENAME_CODES/);
+  assert.match(atomicWriteHelper, /RETRY_WINDOW_MS/);
+  assert.match(atomicWriteHelper, /waiter\.wait\(RETRY_DELAY_MS\)/);
   assert.doesNotMatch(fixture, /console\.(?:log|error|warn)/);
   assert.doesNotMatch(`${common}\n${start}\n${status}\n${stop}`, /AI_VIDEO_DIRECTOR_BRIDGE_RUNTIME_TEST_MODE/);
   assert.doesNotMatch(common, /Get-Content[^\r\n]*(?:WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH|AI_VIDEO_WORKSPACE_DB_PATH)/i);

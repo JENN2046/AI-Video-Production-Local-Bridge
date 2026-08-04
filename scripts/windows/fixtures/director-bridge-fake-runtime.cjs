@@ -1,6 +1,7 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const { createAtomicWriter } = require("./director-bridge-atomic-write.cjs");
 
 const heartbeatPath = process.env.AI_VIDEO_DIRECTOR_BRIDGE_HEARTBEAT_PATH;
 const stopRequestPath = process.env.AI_VIDEO_DIRECTOR_BRIDGE_STOP_REQUEST_PATH;
@@ -125,7 +126,12 @@ function actualLaunchConfigSha256() {
 }
 
 const atomicRenameWaitBuffer = new Int32Array(new SharedArrayBuffer(4));
-const transientRenameCodes = new Set(["EACCES", "EBUSY", "EPERM"]);
+const atomicWrite = createAtomicWriter({
+  filesystem: fs,
+  clock: { now: Date.now },
+  waiter: { wait: (milliseconds) => Atomics.wait(atomicRenameWaitBuffer, 0, 0, milliseconds) },
+  identity: { pid: process.pid, randomUUID: crypto.randomUUID }
+});
 
 const required = [
   heartbeatPath,
@@ -146,30 +152,6 @@ if (required.some((value) => !value) || !["ready", "diagnostic-failure"].include
 if (mode === "diagnostic-failure") fail("DIRECTOR_BRIDGE_FIXTURE_DIAGNOSTIC_FAILURE");
 if (actualLaunchConfigSha256() !== expectedLaunchConfigSha256
   || actualLaunchArgvSha256() !== expectedLaunchArgvSha256) fail("DIRECTOR_BRIDGE_FIXTURE_LAUNCH_FINGERPRINT_MISMATCH");
-
-function atomicWrite(target, value) {
-  const temporary = `${target}.tmp-${process.pid}-${crypto.randomUUID()}`;
-  let published = false;
-  try {
-    fs.writeFileSync(temporary, `${JSON.stringify(value)}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 });
-    const deadline = Date.now() + 2_000;
-    for (;;) {
-      try {
-        fs.renameSync(temporary, target);
-        published = true;
-        return;
-      } catch (error) {
-        const code = error && typeof error === "object" ? error.code : undefined;
-        if (!transientRenameCodes.has(code) || Date.now() >= deadline) throw error;
-        Atomics.wait(atomicRenameWaitBuffer, 0, 0, 10);
-      }
-    }
-  } finally {
-    if (!published) {
-      try { fs.rmSync(temporary, { force: true }); } catch { /* preserve the original failure */ }
-    }
-  }
-}
 
 let activated = false;
 
