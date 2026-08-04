@@ -72,7 +72,7 @@
   "completed_by": null,
   "completed_at": null,
   "blocked_by": "Jenn",
-  "blocked_at": "2026-08-04T20:05:00+08:00",
+  "blocked_at": "2026-08-04T23:39:12+08:00",
   "boundary_or_safety_stop": "P3a approval boundary",
   "blocked_reason": "S3B-T2 requires separate Jenn authorization; no task may be claimed or executed while authorization is absent.",
   "safe_actions_completed": ["truth refresh", "scope validation", "historical exact-head CI/review evidence retained for f0ea7cd; verify CI and fresh review against the current PR113 head before merge"],
@@ -83,6 +83,6 @@
   "evidence": ["origin/main@3c502e23f884d1b062210321d84848b45c7bb344", "docs/PR109_POSTMORTEM_AND_REUSABLE_ASSETS_2026-08-04.md", "docs/ADR_SINGLE_ACTIVE_MEDIA_WRITER_AND_BOUNDED_RECOVERY.md"],
   "commit": null,
   "delivery": "PR113_EXACT_HEAD_GATE_REQUIRED_BEFORE_SQUASH_MERGE",
-  "updated_at": "2026-08-04T20:05:00+08:00",
+  "updated_at": "2026-08-04T23:39:12+08:00",
   "safe_state": { "source_files_changed": 0, "test_files_changed": 0, "package_files_changed": 0, "provider_calls": 0, "database_operations": 0, "media_operations": 0, "service_operations": 0, "secret_accessed": false }
 }
