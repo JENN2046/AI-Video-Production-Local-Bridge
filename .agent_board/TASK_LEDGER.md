@@ -5327,7 +5327,7 @@ baseline:
   pr115_branch_retained: true
 truth:
   pr109: CLOSED_UNMERGED_RETIRED
-  pr113: OPEN_DRAFT_MERGE_NOT_CLAIMED
+  pr113: OPEN_READY_MERGE_NOT_CLAIMED
   pr114_p2: DEFERRED_UNRESOLVED
   pr115_production_fixture_defect_proven: false
 recovery_replacement:
@@ -5338,7 +5338,8 @@ recovery_replacement:
   blocks_s4: false
 current_task:
   task_id: S3B-T2_PREPARE_ELIGIBLE_SHOT
-  status: AWAITING_JENN_AUTHORIZATION
+  status: BLOCKED
+  result: AWAITING_JENN_AUTHORIZATION
   ready_task_count: 0
 operations:
   source_changes: 0
@@ -5359,3 +5360,20 @@ git_delivery:
 
 This entry records only verified current facts. CI, final review and any later
 merge are not predicted by this ledger entry.
+
+### 2026-08-04 — PR113 exact-head review remediation
+
+```yaml
+task: PR113-R2_REVIEW_REMEDIATION
+status: REMEDIATED_PENDING_EXACT_HEAD_CI_AND_REVIEW
+reviewed_head: 7fb5be56329b2f6ff3a67e1b6056187cad1048a2
+findings_fixed:
+  - current task state normalized to BLOCKED with approval-boundary fields
+  - PR113 pre-refresh head/base renamed and current head/base added
+  - HANDOFF current-main hash corrected to 3c502e23f884d1b062210321d84848b45c7bb344
+source_changes: 0
+test_changes: 0
+provider_calls: 0
+database_media_service_deployment_secret_operations: 0
+delivery: NEW_EXACT_HEAD_CI_AND_REVIEW_REQUIRED
+```

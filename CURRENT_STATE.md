@@ -23,8 +23,9 @@ Repository baseline: `main@3c502e23f884d1b062210321d84848b45c7bb344`
   `main`.
 - PR #111, `fix: align Node preflight with engine floor`, was squash-merged as
   `770f3dff342874e90788d0f475c4cff49136e114`.
-- PR #113 is an open Draft governance closeout candidate; it has not been
-  merged.
+- PR #113 is an open Ready governance closeout candidate at head
+  `7fb5be56329b2f6ff3a67e1b6056187cad1048a2` against current base
+  `3c502e23f884d1b062210321d84848b45c7bb344`; it has not been merged.
 - PR #114 was squash-merged as current `main@3c502e23f884d1b062210321d84848b45c7bb344`.
   Its valid behavior-test P2 remains `DEFERRED_UNRESOLVED` (thread
   `3708908011`); no reply or resolution is claimed.
@@ -230,10 +231,11 @@ minimal_replacement:
   blocks_s4: false
 ```
 
-The sole current task is `S3B-T2_PREPARE_ELIGIBLE_SHOT` and remains
-`AWAITING_JENN_AUTHORIZATION`; no task is `READY`. The sequence is T2 prepare,
+The sole current task is `S3B-T2_PREPARE_ELIGIBLE_SHOT` and is `BLOCKED` at the
+approval boundary (`result: AWAITING_JENN_AUTHORIZATION`); no task is `READY`.
+The sequence is T2 prepare,
 T3 Jenn-local credential configuration, T4 offline readiness rerun, then the
-separately authorized S4 real single-shot canary. PR #113 is an open Draft
+separately authorized S4 real single-shot canary. PR #113 is an open Ready
 governance closeout candidate and has not been merged.
 
 Bridge, Snapshot or Media Gateway recovery must not be inserted ahead of the
@@ -260,7 +262,7 @@ Current stage queue:
 1. `S1 Scope Freeze` — `DONE`
 2. `S2 Core Loop Gap Audit` — `DONE`
 3. `S3 Provider Canary Readiness` — `DONE` with local readiness findings
-4. `S3B Single-Shot Canary Prerequisites` — `T2_AWAITING_JENN_AUTHORIZATION`; recovery replacement deferred
+4. `S3B Single-Shot Canary Prerequisites` — `T2_BLOCKED` (`result: AWAITING_JENN_AUTHORIZATION`); recovery replacement deferred
 5. `S4 Real Single-Shot Canary` — `BLOCKED_UNAUTHORIZED`
 6. `S5 Review and Regeneration` — not loaded
 7. `S6 Assembly, Export and Closeout` — not loaded

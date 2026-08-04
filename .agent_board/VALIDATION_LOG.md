@@ -3391,11 +3391,38 @@ results:
   deployment_changes: 0
   s4_authorized: false
 current_task: S3B-T2_PREPARE_ELIGIBLE_SHOT
-current_task_status: AWAITING_JENN_AUTHORIZATION
+current_task_status: BLOCKED
+current_task_result: AWAITING_JENN_AUTHORIZATION
 ready_task_count: 0
 recovery_replacement: DEFERRED_NOT_REQUIRED_FOR_S4
-delivery: PR113_OPEN_DRAFT_PENDING_EXACT_HEAD_CI_AND_REVIEW
+delivery: PR113_OPEN_READY_PENDING_SQUASH_MERGE
 ```
 
 This is a documentation/task-board state sync. No source, test, runtime,
 Provider, database, media, service, deployment or secret operation was run.
+
+### PR113 exact-head review remediation — 2026-08-04
+
+```yaml
+reviewed_head: 7fb5be56329b2f6ff3a67e1b6056187cad1048a2
+review_result: FINDINGS_REMEDIATED
+findings:
+  - current task used an unrecognized AWAITING_JENN_AUTHORIZATION state
+  - PR113 publication record exposed pre-refresh head/base as current
+  - HANDOFF retained an old current-main hash
+resolutions:
+  - current task is BLOCKED with result AWAITING_JENN_AUTHORIZATION and explicit blocked fields
+  - PR113 record now names head_before_refresh/base_before_rebase and current_head/current_base
+  - current HANDOFF state uses main@3c502e23 and PR113 current head/base
+local_validation:
+  next_task_json: PASS
+  git_diff_check: PASS
+  secret_scan: PASS
+  changed_files: EXACT_EIGHT_FILE_ALLOWLIST
+source_test_package_workflow_changes: 0
+provider_network_calls: 0
+database_media_service_deployment_secret_operations: 0
+```
+
+The review threads are not yet resolved; a new exact-head CI and review cycle
+is required after the remediation commit.

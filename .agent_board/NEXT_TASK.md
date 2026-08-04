@@ -5,14 +5,15 @@ Generated from `.agent_board/NEXT_TASK.json`.
 ## Current slot
 
 - Task: `S3B-T2_PREPARE_ELIGIBLE_SHOT`
-- Status: `AWAITING_JENN_AUTHORIZATION`
+- Status: `BLOCKED`
 - Ready: `false`
 - Implementation authorized: `false`
 - Current execution task: none
 - Ready task count: `0`
 - P0: `CURRENT_MAIN_REPEATABLE_PRODUCTION_LOOP`
 
-This task is a single-slot handoff only. It is not executable until Jenn gives
+This task is blocked at the approval boundary. The preserved substate is
+`result: AWAITING_JENN_AUTHORIZATION`; it is not executable until Jenn gives
 separate authorization. S3B-T3 remains a Jenn-local credential action, S3B-T4
 is offline-only, and S4 requires separate paid/provider authorization.
 
@@ -25,7 +26,9 @@ is offline-only, and S4 requires separate paid/provider authorization.
 - PR #110: `MERGED` as `00c8ed458144f03d4b0e1389d4de6dbf8005ed9a`.
 - PR #111: `MERGED` as `770f3dff342874e90788d0f475c4cff49136e114`.
 - PR #112: `MERGED` as `55553cbf2f9bc387beb255cebb8b36bcb2deadbf`.
-- PR #113: `OPEN_DRAFT` closeout candidate; no merge is claimed.
+- PR #113: `OPEN_READY` closeout candidate at head
+  `7fb5be56329b2f6ff3a67e1b6056187cad1048a2` against base
+  `3c502e23f884d1b062210321d84848b45c7bb344`; no merge is claimed.
 - PR #114: `MERGED` as `3c502e23f884d1b062210321d84848b45c7bb344`; its valid P2
   behavior-test finding remains `DEFERRED_UNRESOLVED` (thread `3708908011`).
 - PR #115: `CLOSED_UNMERGED`; head `866accc40ea36c7d8098048ea911eb6e6b0a376b`,
@@ -59,7 +62,7 @@ During S4, verified-Blob recovery is governed by:
 | `S3B_VERIFIED_BLOB_RECOVERY` | `DONE_IN_MAIN_WITH_LATE_STAGE_ACCUMULATION_FINDING` |
 | `S3B-T1B_PR109` | `RETIRED_UNMERGED` |
 | `S3B-T1B-R1_MINIMAL_BOUNDED_STAGE_REPLACEMENT` | `DEFERRED_NOT_REQUIRED_FOR_S4` |
-| `S3B-T2_PREPARE_ELIGIBLE_SHOT` | `AWAITING_JENN_AUTHORIZATION` |
+| `S3B-T2_PREPARE_ELIGIBLE_SHOT` | `BLOCKED` (`result: AWAITING_JENN_AUTHORIZATION`) |
 | `S3B-T3_CONFIGURE_RUNNINGHUB_CREDENTIAL` | `AWAITING_JENN_LOCAL_ACTION` |
 | `S3B-T4_RERUN_CANARY_READINESS` | `BLOCKED_BY_T2_AND_T3` |
 | `S4-T1_REAL_SINGLE_SHOT_CURRENT_PATH` | `BLOCKED_UNAUTHORIZED` |

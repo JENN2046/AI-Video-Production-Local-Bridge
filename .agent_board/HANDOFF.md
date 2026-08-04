@@ -2,19 +2,21 @@
 
 Current mode: PR113-R2 truth refresh and governance closeout; no executable task is `READY`
 Last run: PR113-R2_REBASE_TRUTH_REFRESH_AND_CLOSEOUT
-Last result: governance refresh prepared on current `main`; PR #113 remains Draft and unmerged
+Last result: governance refresh prepared on current `main`; PR #113 is Ready and unmerged
 
 ## Current state
 
 Current task: `S3B-T2_PREPARE_ELIGIBLE_SHOT` (not authorized)
-Current status: `AWAITING_JENN_AUTHORIZATION`
+Current status: `BLOCKED` (`result: AWAITING_JENN_AUTHORIZATION`)
 Current owner: none
 Ready task count: 0
 
 ## PR113-R2 current governance
 
 - Baseline is `main@3c502e23f884d1b062210321d84848b45c7bb344`.
-- PR #113 is an `OPEN_DRAFT` closeout candidate; no merge is claimed.
+- PR #113 is an `OPEN_READY` closeout candidate at head
+  `7fb5be56329b2f6ff3a67e1b6056187cad1048a2` against current base
+  `3c502e23f884d1b062210321d84848b45c7bb344`; no merge is claimed.
 - PR #109 is closed unmerged and retained only as research/threat-model evidence.
 - PR #111 is merged as `770f3dff342874e90788d0f475c4cff49136e114`.
 - PR #114 is merged as `3c502e23f884d1b062210321d84848b45c7bb344`; its valid
@@ -69,7 +71,7 @@ Snapshot, Memory or Bridge operation was performed.
   `identifiers_published: false`.
 - PR #106 was squash-merged as
   `b3a108abc8728e89259d0d953e1c638b9ca482ea`; current `main` is now
-  `55553cbf2f9bc387beb255cebb8b36bcb2deadbf`.
+  `3c502e23f884d1b062210321d84848b45c7bb344`.
 - `S3B-T1_BOUND_PROVIDER_POLLING` is `DONE_IN_MAIN` through PR #108.
 - `S3B-T1A_MANUAL_RECONCILIATION_STATE_COHERENCE` is `DONE_IN_MAIN` through
   PR #108. The verified-Blob path has a late staged-file accumulation finding;
