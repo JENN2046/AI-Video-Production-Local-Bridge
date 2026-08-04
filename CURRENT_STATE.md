@@ -249,10 +249,12 @@ authorization to execute it. A future Jenn authorization must select exactly
 one alias-only candidate that satisfies the following deterministic predicate:
 
 1. Project facts: `workbench_project_meta.classification` is exactly
-   `production`; Workbench lifecycle is `active` (not `archived`), the
-   Project `status` is one of `draft`, `storyboard_approved`,
+   `production`; a classification mismatch is the stable failure
+   `PROJECT_NOT_PRODUCTION`. Workbench lifecycle is `active` (not archived),
+   and the Project `status` is one of `draft`, `storyboard_approved`,
    `video_generation_in_progress` or `video_review`; `final_approved` is
-   explicitly ineligible because it represents a delivered project, and
+   explicitly ineligible because it represents a delivered project, producing
+   the stable failure `PROJECT_ALREADY_DELIVERED`, and
    `active_storyboard_package_id` names an existing package whose
    `project_id` matches and whose `status` is exactly
    `approved_for_video_generation` with `user_approval.storyboard_approved ==
@@ -289,7 +291,8 @@ one alias-only candidate that satisfies the following deterministic predicate:
 The only authoritative state derivation is the existing
 `deriveShotOperationalState` / `allowed_workflow_actions.prepare_generation`
 predicate together with the Artifact/Blob facts above. Its stable failure
-codes for this gate are `PROJECT_NOT_ACTIVE`, `STORYBOARD_APPROVAL_REQUIRED`,
+codes for this gate are `PROJECT_NOT_PRODUCTION`, `PROJECT_ALREADY_DELIVERED`,
+`PROJECT_NOT_ACTIVE`, `STORYBOARD_APPROVAL_REQUIRED`,
 `STORYBOARD_IMAGE_MISSING`, `STORYBOARD_ARTIFACT_INACTIVE`,
 `STORYBOARD_ARTIFACT_BINDING_INVALID`, `STORYBOARD_ARTIFACT_ROLE_INVALID`,
 `STORYBOARD_ARTIFACT_INTEGRITY_INVALID`, `STORYBOARD_IMAGE_MIME_UNSUPPORTED`,
