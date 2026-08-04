@@ -18,8 +18,64 @@ $script:smokeInvocation = 0
 $script:knownFixtureProcesses = @()
 $script:runtimeTexts = @()
 $script:failureCode = $null
+$script:failureExceptionClass = $null
 $script:cleanupForced = $false
 $script:priorNodeEnvironment = @{}
+$script:smokePhaseAllowlist = @(
+  "PREFLIGHT",
+  "FIXTURE_STAGING",
+  "NODE22_RESOLUTION",
+  "FIXTURE_DIAGNOSTIC",
+  "STARTUP_FAILURE_RECEIPT",
+  "INITIAL_START",
+  "IDEMPOTENT_START",
+  "NOT_READY_GATE",
+  "EXPECTED_COMMIT_GATE",
+  "ENTRYPOINT_DRIFT",
+  "PENDING_COMPLETION",
+  "INVALID_HEARTBEAT",
+  "IN_FLIGHT_HEARTBEAT",
+  "STALE_STATE",
+  "STALE_CONFIGURATION_GATE",
+  "STALE_RECOVERY",
+  "FINAL_STOP",
+  "LOW_DISCLOSURE_SCAN",
+  "CLEANUP"
+)
+$script:smokePhase = "PREFLIGHT"
+
+function Set-DirectorBridgeSmokePhase([string]$Phase) {
+  if ($script:smokePhaseAllowlist -contains $Phase) {
+    $script:smokePhase = $Phase
+  }
+}
+
+function Get-DirectorBridgeSmokeExceptionClass([object]$ErrorRecord) {
+  $typeName = ""
+  try {
+    if ($null -ne $ErrorRecord.Exception) {
+      $typeName = [string]$ErrorRecord.Exception.GetType().Name
+    }
+  } catch { }
+  switch -Regex ($typeName) {
+    "Json|Serialization" { return "JSON" }
+    "IOException|File|Directory|Path|Drive|EndOfStream" { return "IO" }
+    "Process|Win32" { return "PROCESS" }
+    "Argument|Parameter|Validation" { return "ARGUMENT" }
+    "Security|Cryptographic|Unauthorized|Access" { return "SECURITY" }
+    "Runtime|PowerShell|PS" { return "POWERSHELL_RUNTIME" }
+    default { return "UNKNOWN" }
+  }
+}
+
+function Get-DirectorBridgeSmokeUnclassifiedCode {
+  $phase = if ($script:smokePhaseAllowlist -contains $script:smokePhase) {
+    $script:smokePhase
+  } else {
+    "PREFLIGHT"
+  }
+  return "DIRECTOR_BRIDGE_RUNTIME_SMOKE_${phase}_UNCLASSIFIED"
+}
 
 if (-not $smokeRoot.StartsWith($allowedPrefix, [StringComparison]::OrdinalIgnoreCase)) {
   throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_ROOT_INVALID"
@@ -131,12 +187,14 @@ function Remember-DirectorBridgeFixturePid([object]$State) {
 }
 
 try {
+  Set-DirectorBridgeSmokePhase "PREFLIGHT"
   foreach ($name in @([Environment]::GetEnvironmentVariables("Process").Keys)) {
     if ([string]$name -match '^(?i:NODE_)') {
       $script:priorNodeEnvironment[[string]$name] = [Environment]::GetEnvironmentVariable([string]$name, "Process")
       [Environment]::SetEnvironmentVariable([string]$name, $null, "Process")
     }
   }
+  Set-DirectorBridgeSmokePhase "FIXTURE_STAGING"
   New-Item -ItemType Directory -Force -Path $smokeRoot | Out-Null
   $attributes = [IO.File]::GetAttributes($smokeRoot)
   if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
@@ -179,6 +237,7 @@ try {
   [Environment]::SetEnvironmentVariable("WEBGPT_DIRECTOR_BRIDGE_KEY_B64", $null, "Process")
   [Environment]::SetEnvironmentVariable("FFMPEG_PATH", $null, "Process")
 
+  Set-DirectorBridgeSmokePhase "NODE22_RESOLUTION"
   . (Join-Path $PSScriptRoot "director-bridge-runtime-common.ps1") -FixtureMode
   $parserNodePath = (Resolve-DirectorBridgeNode22).NodePath
   $legacyNodeForms = @("node", "node.exe", "`"node`"", "`"node.exe`"", "`"$parserNodePath`"")
@@ -215,6 +274,7 @@ try {
     throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_MANAGED_ARGV_IDENTITY_FAILED"
   }
 
+  Set-DirectorBridgeSmokePhase "STARTUP_FAILURE_RECEIPT"
   foreach ($providerFlag in @(
     "REAL_PROVIDER_ENABLED",
     "M1_REAL_PROVIDER_EXECUTION_ALLOWED",
@@ -250,6 +310,7 @@ try {
     $heldLock.Dispose()
   }
 
+  Set-DirectorBridgeSmokePhase "FIXTURE_DIAGNOSTIC"
   $env:AI_VIDEO_DIRECTOR_BRIDGE_FIXTURE_MODE = "diagnostic-failure"
   $fixtureDiagnostic = Invoke-DirectorBridgeSmokeScript "director-bridge-start.ps1"
   if ($fixtureDiagnostic.ExitCode -ne 1 -or
@@ -287,6 +348,7 @@ try {
   }
   Remove-Item -LiteralPath $notReadyRequestPath -Force
 
+  Set-DirectorBridgeSmokePhase "INITIAL_START"
   $started = Invoke-DirectorBridgeSmokeScript "director-bridge-start.ps1"
   if ($started.ExitCode -ne 0 -or
       $null -eq $started.Json -or
@@ -320,6 +382,7 @@ try {
     throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_HEARTBEAT_IDENTITY_FAILED"
   }
 
+  Set-DirectorBridgeSmokePhase "IDEMPOTENT_START"
   $status = Invoke-DirectorBridgeSmokeScript "director-bridge-status.ps1"
   if ($status.ExitCode -ne 0 -or
       $null -eq $status.Json -or
@@ -404,6 +467,7 @@ try {
       [string]$environmentRestoredStatus.Json.result -cne "RUNNING") {
     throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_ENVIRONMENT_RESTORE_FAILED"
   }
+  Set-DirectorBridgeSmokePhase "NOT_READY_GATE"
   [IO.File]::WriteAllText($notReadyRequestPath, "1`n", [Text.UTF8Encoding]::new($false))
   Start-Sleep -Milliseconds 500
   $notReadyStatus = Invoke-DirectorBridgeSmokeScript "director-bridge-status.ps1"
@@ -450,6 +514,7 @@ try {
     throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_IDEMPOTENT_IDENTITY_FAILED"
   }
 
+  Set-DirectorBridgeSmokePhase "EXPECTED_COMMIT_GATE"
   $expectedMismatch = Invoke-DirectorBridgeSmokeScript "director-bridge-start.ps1" @("-ExpectedCommit", ("1" * 40))
   if ($expectedMismatch.ExitCode -ne 1 -or
       $null -eq $expectedMismatch.Json -or
@@ -459,6 +524,7 @@ try {
     throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_EXPECTED_COMMIT_FAILED"
   }
 
+  Set-DirectorBridgeSmokePhase "ENTRYPOINT_DRIFT"
   [IO.File]::AppendAllText($fixtureEntrypoint, "`n// fixture drift`n", [Text.UTF8Encoding]::new($false))
   $driftStatus = Invoke-DirectorBridgeSmokeScript "director-bridge-status.ps1"
   if ($driftStatus.ExitCode -ne 2 -or
@@ -472,6 +538,7 @@ try {
     throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_BUILD_RESTORE_FAILED"
   }
 
+  Set-DirectorBridgeSmokePhase "FINAL_STOP"
   $stopped = Invoke-DirectorBridgeSmokeScript "director-bridge-stop.ps1"
   if ($stopped.ExitCode -ne 0 -or
       $null -eq $stopped.Json -or
@@ -505,6 +572,7 @@ try {
   [IO.File]::WriteAllText($heartbeatPath, (($staleHeartbeat | ConvertTo-Json -Depth 8 -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
   Remove-Item -LiteralPath $stopRequestPath -Force -ErrorAction SilentlyContinue
 
+  Set-DirectorBridgeSmokePhase "PENDING_COMPLETION"
   $pendingStateText = Get-Content -Raw -LiteralPath $statePath
   $pendingHeartbeatText = Get-Content -Raw -LiteralPath $heartbeatPath
   $pendingStateBytes = [Convert]::ToBase64String([IO.File]::ReadAllBytes($statePath))
@@ -521,6 +589,7 @@ try {
     throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_PENDING_RECEIPT_FAILED"
   }
 
+  Set-DirectorBridgeSmokePhase "INVALID_HEARTBEAT"
   $invalidHeartbeatText = "{invalid-heartbeat"
   [IO.File]::WriteAllText($heartbeatPath, $invalidHeartbeatText, [Text.UTF8Encoding]::new($false))
   $invalidHeartbeatBytes = [Convert]::ToBase64String([IO.File]::ReadAllBytes($heartbeatPath))
@@ -536,6 +605,7 @@ try {
     throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_INVALID_RECEIPT_FAILED"
   }
 
+  Set-DirectorBridgeSmokePhase "IN_FLIGHT_HEARTBEAT"
   $staleHeartbeat.completion_pending = $false
   $staleHeartbeat.phase = "handling"
   $staleHeartbeat.heartbeat_at_utc = [DateTime]::UtcNow.ToString("o")
@@ -554,6 +624,7 @@ try {
     throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_HANDLING_RECEIPT_FAILED"
   }
 
+  Set-DirectorBridgeSmokePhase "STALE_STATE"
   $staleHeartbeat.phase = "failed"
   $staleHeartbeat.heartbeat_at_utc = [DateTime]::UtcNow.ToString("o")
   [IO.File]::WriteAllText($heartbeatPath, (($staleHeartbeat | ConvertTo-Json -Depth 8 -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
@@ -565,6 +636,7 @@ try {
   }
   $staleStateBytes = [Convert]::ToBase64String([IO.File]::ReadAllBytes($statePath))
   $failedHeartbeatBytes = [Convert]::ToBase64String([IO.File]::ReadAllBytes($heartbeatPath))
+  Set-DirectorBridgeSmokePhase "STALE_CONFIGURATION_GATE"
   foreach ($name in $launchConfigurationNames) {
     [Environment]::SetEnvironmentVariable($name, $null, "Process")
   }
@@ -596,6 +668,7 @@ try {
       }
     }
   }
+  Set-DirectorBridgeSmokePhase "STALE_RECOVERY"
   $restarted = Invoke-DirectorBridgeSmokeScript "director-bridge-start.ps1"
   if ($restarted.ExitCode -ne 0 -or
       $null -eq $restarted.Json -or
@@ -638,15 +711,19 @@ try {
         $file.FullName.Equals($fixtureHelper, [StringComparison]::OrdinalIgnoreCase)) { continue }
     $script:runtimeTexts += Get-Content -Raw -LiteralPath $file.FullName -ErrorAction SilentlyContinue
   }
+  Set-DirectorBridgeSmokePhase "LOW_DISCLOSURE_SCAN"
   Assert-DirectorBridgeSmokeLowDisclosure $script:runtimeTexts
 } catch {
   $message = [string]$_.Exception.Message
-  $script:failureCode = if ($message -match '^DIRECTOR_[A-Z0-9_]{3,95}$') {
-    $message
+  if ($message -match '^DIRECTOR_[A-Z0-9_]{3,95}$') {
+    $script:failureCode = $message
+    $script:failureExceptionClass = $null
   } else {
-    "DIRECTOR_BRIDGE_RUNTIME_SMOKE_FAILED"
+    $script:failureCode = Get-DirectorBridgeSmokeUnclassifiedCode
+    $script:failureExceptionClass = Get-DirectorBridgeSmokeExceptionClass $_
   }
 } finally {
+  Set-DirectorBridgeSmokePhase "CLEANUP"
   foreach ($name in @([Environment]::GetEnvironmentVariables("Process").Keys)) {
     if ([string]$name -match '^(?i:NODE_)') {
       [Environment]::SetEnvironmentVariable([string]$name, $null, "Process")
@@ -658,9 +735,13 @@ try {
   if (Test-Path -LiteralPath $statePath -PathType Leaf) {
     try {
       $cleanupStop = Invoke-DirectorBridgeSmokeScript "director-bridge-stop.ps1"
-      if ($cleanupStop.ExitCode -ne 0) { $script:failureCode = "DIRECTOR_BRIDGE_RUNTIME_SMOKE_CLEANUP_FAILED" }
+      if ($cleanupStop.ExitCode -ne 0) {
+        $script:failureCode = "DIRECTOR_BRIDGE_RUNTIME_SMOKE_CLEANUP_FAILED"
+        $script:failureExceptionClass = $null
+      }
     } catch {
       $script:failureCode = "DIRECTOR_BRIDGE_RUNTIME_SMOKE_CLEANUP_FAILED"
+      $script:failureExceptionClass = $null
     }
   }
   foreach ($fixtureProcess in $script:knownFixtureProcesses) {
@@ -681,10 +762,12 @@ try {
         $script:cleanupForced = $true
         if ($null -eq $script:failureCode) {
           $script:failureCode = "DIRECTOR_BRIDGE_RUNTIME_SMOKE_CLEANUP_FORCED"
+          $script:failureExceptionClass = $null
         }
       } catch {
         if ($null -eq $script:failureCode) {
           $script:failureCode = "DIRECTOR_BRIDGE_RUNTIME_SMOKE_CLEANUP_FAILED"
+          $script:failureExceptionClass = $null
         }
       }
     }
@@ -700,14 +783,19 @@ try {
     Remove-Item -LiteralPath $resolved -Recurse -Force
   } elseif ($remainingFixtureProcesses -gt 0 -and $null -eq $script:failureCode) {
     $script:failureCode = "DIRECTOR_BRIDGE_RUNTIME_SMOKE_CLEANUP_FAILED"
+    $script:failureExceptionClass = $null
   }
 }
 
 if ($null -ne $script:failureCode) {
-  [Console]::Error.WriteLine((ConvertTo-Json ([ordered]@{
+  $failureReceipt = [ordered]@{
     result = "FAIL"
     stable_error_code = $script:failureCode
-  }) -Compress))
+  }
+  if ($null -ne $script:failureExceptionClass) {
+    $failureReceipt.exception_class = $script:failureExceptionClass
+  }
+  [Console]::Error.WriteLine(($failureReceipt | ConvertTo-Json -Compress))
   exit 1
 }
 

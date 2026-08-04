@@ -913,6 +913,49 @@ test("Director Bridge Windows lifecycle manager scripts do not read Bridge key o
   assert.doesNotMatch(start, /database_path|remote_origin|dpapi|key_id/i);
 });
 
+test("Director Bridge smoke diagnostics stay phase-localized and low disclosure", () => {
+  const smoke = text("scripts/windows/director-bridge-runtime-smoke.ps1");
+  const phases = [
+    "PREFLIGHT",
+    "FIXTURE_STAGING",
+    "NODE22_RESOLUTION",
+    "FIXTURE_DIAGNOSTIC",
+    "STARTUP_FAILURE_RECEIPT",
+    "INITIAL_START",
+    "IDEMPOTENT_START",
+    "NOT_READY_GATE",
+    "EXPECTED_COMMIT_GATE",
+    "ENTRYPOINT_DRIFT",
+    "PENDING_COMPLETION",
+    "INVALID_HEARTBEAT",
+    "IN_FLIGHT_HEARTBEAT",
+    "STALE_STATE",
+    "STALE_CONFIGURATION_GATE",
+    "STALE_RECOVERY",
+    "FINAL_STOP",
+    "LOW_DISCLOSURE_SCAN",
+    "CLEANUP"
+  ];
+  assert.match(smoke, /\$script:smokePhaseAllowlist/);
+  assert.match(smoke, /function Set-DirectorBridgeSmokePhase/);
+  assert.match(smoke, /function Get-DirectorBridgeSmokeExceptionClass/);
+  assert.match(smoke, /function Get-DirectorBridgeSmokeUnclassifiedCode/);
+  for (const phase of phases) assert.match(smoke, new RegExp(`"${phase}"`));
+  assert.match(smoke, /DIRECTOR_BRIDGE_RUNTIME_SMOKE_\$\{phase\}_UNCLASSIFIED/);
+  assert.match(smoke, /exception_class/);
+  assert.match(smoke, /DIRECTOR_BRIDGE_RUNTIME_SMOKE_CLEANUP_FAILED/);
+  assert.match(smoke, /DIRECTOR_BRIDGE_RUNTIME_SMOKE_FIXTURE_DIAGNOSTIC_FAILED/);
+  assert.match(smoke, /DIRECTOR_BRIDGE_RUNTIME_SMOKE_STARTUP_DIAGNOSTIC_FAILED/);
+
+  const failureStart = smoke.indexOf("if ($null -ne $script:failureCode)");
+  const successStart = smoke.indexOf("[ordered]@{", smoke.indexOf("exit 1", failureStart) + 1);
+  assert.ok(failureStart >= 0 && successStart > failureStart);
+  const failureOutput = smoke.slice(failureStart, successStart);
+  assert.doesNotMatch(failureOutput, /Exception\.Message|stack|path|environment|pid|key|database/i);
+  assert.doesNotMatch(failureOutput, /stable_error_code\s*=\s*\$message/);
+  assert.doesNotMatch(smoke.slice(successStart), /exception_class/);
+});
+
 test("Director Bridge fake-runtime smoke command is wired into canonical local and Windows CI scripts", () => {
   const packageJson = JSON.parse(text("package.json")) as { scripts: Record<string, string> };
   const workflow = text(".github/workflows/windows-ci.yml");
