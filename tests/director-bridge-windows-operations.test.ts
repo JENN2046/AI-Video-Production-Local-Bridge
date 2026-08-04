@@ -273,6 +273,7 @@ test("Director Bridge atomic write publishes immediately with the protected JSON
 
 test("Director Bridge fixture bundle stages and loads the exact helper across diagnostic and ready lifecycles", async () => {
   const workspace = resolve(".");
+  mkdirSync(resolve("ops/tools"), { recursive: true });
   const bundleRoot = mkdtempSync(join(resolve("ops/tools"), "director-bridge-runtime-smoke-bundle-"));
   const stagedEntrypoint = join(bundleRoot, "director-bridge-fake-runtime.cjs");
   const stagedHelper = join(bundleRoot, "director-bridge-atomic-write.cjs");
