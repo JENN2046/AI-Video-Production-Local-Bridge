@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { once } from "node:events";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -31,6 +31,10 @@ function text(path: string): string {
 
 function sha256Text(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function sha256File(path: string): string {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
 function canonicalRuntimePath(value: string): string {
@@ -85,6 +89,7 @@ function managedRuntimeEnvironment(options: {
   dpapi_path: string;
   key_id: string;
   origin: string;
+  fixture_mode?: "diagnostic-failure" | "ready";
 }): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = {};
   for (const name of managedLaunchEnvironmentNames.slice(0, 8)) {
@@ -99,6 +104,7 @@ function managedRuntimeEnvironment(options: {
   environment.WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH = options.dpapi_path;
   environment.WEBGPT_DIRECTOR_REMOTE_ORIGIN = options.origin;
   environment.AI_VIDEO_WORKSPACE_DB_PATH = options.database_path;
+  if (options.fixture_mode) environment.AI_VIDEO_DIRECTOR_BRIDGE_FIXTURE_MODE = options.fixture_mode;
   const launchConfigSha = sha256Text([
     "director-bridge-launch-config-v2",
     `remote_origin=${options.origin}`,
@@ -142,6 +148,20 @@ async function waitForFile(path: string, timeoutMs = 5_000): Promise<void> {
     }
   }
   throw new Error("DIRECTOR_BRIDGE_TEST_FILE_TIMEOUT");
+}
+
+async function waitForHeartbeatPhase(path: string, phase: string, timeoutMs = 5_000): Promise<Record<string, unknown>> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const heartbeat = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+      if (heartbeat.phase === phase) return heartbeat;
+    } catch {
+      // The fixture publishes the heartbeat atomically; retry while it converges.
+    }
+    await new Promise((resolveWait) => setTimeout(resolveWait, 25));
+  }
+  throw new Error("DIRECTOR_BRIDGE_TEST_HEARTBEAT_PHASE_TIMEOUT");
 }
 
 type CodedError = Error & { code: string };
@@ -249,6 +269,104 @@ test("Director Bridge atomic write publishes immediately with the protected JSON
   assert.equal(harness.writes[0]?.value, '{"phase":"idle"}\n');
   assert.equal(harness.writes[0]?.options.flag, "wx");
   assert.equal(harness.writes[0]?.options.mode, 0o600);
+});
+
+test("Director Bridge fixture bundle stages and loads the exact helper across diagnostic and ready lifecycles", async () => {
+  const workspace = resolve(".");
+  const bundleRoot = mkdtempSync(join(resolve("ops/tools"), "director-bridge-runtime-smoke-bundle-"));
+  const stagedEntrypoint = join(bundleRoot, "director-bridge-fake-runtime.cjs");
+  const stagedHelper = join(bundleRoot, "director-bridge-atomic-write.cjs");
+  const sourceHelper = resolve("scripts/windows/fixtures/director-bridge-atomic-write.cjs");
+  const heartbeatPath = join(bundleRoot, "director-bridge-heartbeat.json");
+  const stopPath = join(bundleRoot, "director-bridge-stop-request.json");
+  const activationPath = join(bundleRoot, "director-bridge-activation.json");
+  let activeChild: ReturnType<typeof spawn> | undefined;
+  try {
+    const sourceEntrypoint = resolve("scripts/windows/fixtures/director-bridge-fake-runtime.cjs");
+    writeFileSync(stagedEntrypoint, readFileSync(sourceEntrypoint));
+    writeFileSync(stagedHelper, readFileSync(sourceHelper));
+    const helperIdentity = lstatSync(stagedHelper);
+    assert.equal(helperIdentity.isFile(), true);
+    assert.equal(helperIdentity.isSymbolicLink(), false);
+    assert.equal(sha256File(sourceHelper), sha256File(stagedHelper));
+
+    const diagnostic = spawn(process.execPath, [stagedEntrypoint], {
+      cwd: workspace,
+      env: managedRuntimeEnvironment({
+        workspace,
+        root: bundleRoot,
+        entrypoint: stagedEntrypoint,
+        heartbeat_path: heartbeatPath,
+        stop_path: stopPath,
+        activation_path: activationPath,
+        instance_id: "fixture-diagnostic-bundle",
+        database_path: join(bundleRoot, "fixture.sqlite"),
+        dpapi_path: join(bundleRoot, "fixture.dpapi"),
+        key_id: "fixture-bundle-test",
+        origin: "https://director-fixture-bundle.example.test",
+        fixture_mode: "diagnostic-failure"
+      }),
+      stdio: ["ignore", "ignore", "pipe"],
+      windowsHide: true
+    });
+    let diagnosticStderr = "";
+    diagnostic.stderr.setEncoding("utf8");
+    diagnostic.stderr.on("data", (chunk: string) => { diagnosticStderr += chunk; });
+    const [diagnosticExit] = await once(diagnostic, "close") as [number | null, NodeJS.Signals | null];
+    assert.equal(diagnosticExit, 1);
+    const diagnosticReceipt = JSON.parse(readFileSync(join(bundleRoot, "director-bridge-fixture-failure.json"), "utf8")) as Record<string, unknown>;
+    assert.equal(diagnosticReceipt.fixture_failure_version, "director-bridge-fixture-failure-v1");
+    assert.equal(diagnosticReceipt.stable_error_code, "DIRECTOR_BRIDGE_FIXTURE_DIAGNOSTIC_FAILURE");
+    assert.doesNotMatch(diagnosticStderr, /MODULE_NOT_FOUND/);
+    rmSync(join(bundleRoot, "director-bridge-fixture-failure.json"), { force: true });
+
+    for (let run = 0; run < 3; run += 1) {
+      for (const path of [heartbeatPath, stopPath, activationPath]) rmSync(path, { force: true });
+      activeChild = spawn(process.execPath, [stagedEntrypoint], {
+        cwd: workspace,
+        env: managedRuntimeEnvironment({
+          workspace,
+          root: bundleRoot,
+          entrypoint: stagedEntrypoint,
+          heartbeat_path: heartbeatPath,
+          stop_path: stopPath,
+          activation_path: activationPath,
+          instance_id: `fixture-ready-bundle-${run}`,
+          database_path: join(bundleRoot, "fixture.sqlite"),
+          dpapi_path: join(bundleRoot, "fixture.dpapi"),
+          key_id: "fixture-bundle-test",
+          origin: "https://director-fixture-bundle.example.test",
+          fixture_mode: "ready"
+        }),
+        stdio: ["ignore", "ignore", "pipe"],
+        windowsHide: true
+      });
+      await waitForHeartbeatPhase(heartbeatPath, "starting");
+      writeFileSync(activationPath, JSON.stringify({
+        activation_version: DIRECTOR_BRIDGE_ACTIVATION_VERSION,
+        instance_id: `fixture-ready-bundle-${run}`,
+        action: "activate",
+        activated_at_utc: new Date().toISOString()
+      }), "utf8");
+      await waitForHeartbeatPhase(heartbeatPath, "idle");
+      writeFileSync(stopPath, JSON.stringify({
+        control_version: DIRECTOR_BRIDGE_CONTROL_VERSION,
+        instance_id: `fixture-ready-bundle-${run}`,
+        action: "stop",
+        requested_at_utc: new Date().toISOString()
+      }), "utf8");
+      const [exitCode] = await once(activeChild, "close") as [number | null, NodeJS.Signals | null];
+      assert.equal(exitCode, 0);
+      const stopped = JSON.parse(readFileSync(heartbeatPath, "utf8")) as Record<string, unknown>;
+      assert.equal(stopped.phase, "stopped");
+      assert.equal(stopped.stop_requested, true);
+      assert.equal(readdirSync(bundleRoot).some((name) => name.includes(".tmp-")), false);
+      activeChild = undefined;
+    }
+  } finally {
+    if (activeChild && activeChild.exitCode === null) activeChild.kill();
+    rmSync(bundleRoot, { recursive: true, force: true });
+  }
 });
 
 test("Director Bridge heartbeat schema carries instance, PID and source fingerprints while excluding business-data fields", async () => {
@@ -772,6 +890,12 @@ test("Director Bridge Windows lifecycle manager scripts do not read Bridge key o
   assert.match(smoke, /DIRECTOR_BRIDGE_RUNTIME_SMOKE_STARTUP_DIAGNOSTIC_FAILED/);
   assert.match(smoke, /DIRECTOR_BRIDGE_REMOTE_POLL_FAILED/);
   assert.match(smoke, /DIRECTOR_BRIDGE_FIXTURE_DIAGNOSTIC_FAILURE/);
+  assert.match(smoke, /\$fixtureHelperSource/);
+  assert.match(smoke, /\$fixtureHelper/);
+  assert.match(smoke, /Get-FileHash -Algorithm SHA256/);
+  assert.match(smoke, /DIRECTOR_BRIDGE_RUNTIME_SMOKE_FIXTURE_HELPER_MISSING/);
+  assert.match(smoke, /DIRECTOR_BRIDGE_RUNTIME_SMOKE_FIXTURE_HELPER_IDENTITY_MISMATCH/);
+  assert.match(smoke, /DIRECTOR_BRIDGE_RUNTIME_SMOKE_FIXTURE_HELPER_INVALID/);
   assert.match(fixture, /director-bridge-fixture-failure-v1/);
   assert.match(fixture, /createAtomicWriter/);
   assert.match(atomicWriteHelper, /TRANSIENT_RENAME_CODES/);

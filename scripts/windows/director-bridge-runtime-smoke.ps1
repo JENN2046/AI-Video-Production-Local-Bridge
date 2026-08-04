@@ -10,7 +10,9 @@ $heartbeatPath = Join-Path $smokeRoot "director-bridge-heartbeat.json"
 $stopRequestPath = Join-Path $smokeRoot "director-bridge-stop-request.json"
 $notReadyRequestPath = Join-Path $smokeRoot "director-bridge-fixture-not-ready.request"
 $fixtureSource = Join-Path $PSScriptRoot "fixtures\director-bridge-fake-runtime.cjs"
+$fixtureHelperSource = Join-Path $PSScriptRoot "fixtures\director-bridge-atomic-write.cjs"
 $fixtureEntrypoint = Join-Path $smokeRoot "director-bridge-fake-runtime.cjs"
+$fixtureHelper = Join-Path $smokeRoot "director-bridge-atomic-write.cjs"
 $canary = "directorcanary$([Guid]::NewGuid().ToString('N'))"
 $script:smokeInvocation = 0
 $script:knownFixtureProcesses = @()
@@ -140,7 +142,27 @@ try {
   if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
     throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_ROOT_REPARSE_POINT"
   }
+  foreach ($fixtureFile in @($fixtureSource, $fixtureHelperSource)) {
+    if (-not (Test-Path -LiteralPath $fixtureFile -PathType Leaf)) {
+      throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_FIXTURE_HELPER_MISSING"
+    }
+    $sourceAttributes = [IO.File]::GetAttributes($fixtureFile)
+    if (($sourceAttributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+      throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_FIXTURE_HELPER_INVALID"
+    }
+  }
   Copy-Item -LiteralPath $fixtureSource -Destination $fixtureEntrypoint
+  Copy-Item -LiteralPath $fixtureHelperSource -Destination $fixtureHelper
+  $stagedHelperAttributes = [IO.File]::GetAttributes($fixtureHelper)
+  if (($stagedHelperAttributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+      -not (Test-Path -LiteralPath $fixtureHelper -PathType Leaf)) {
+    throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_FIXTURE_HELPER_INVALID"
+  }
+  $sourceHelperSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $fixtureHelperSource).Hash.ToLowerInvariant()
+  $stagedHelperSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $fixtureHelper).Hash.ToLowerInvariant()
+  if ($sourceHelperSha -cne $stagedHelperSha) {
+    throw "DIRECTOR_BRIDGE_RUNTIME_SMOKE_FIXTURE_HELPER_IDENTITY_MISMATCH"
+  }
 
   if ([string]::IsNullOrWhiteSpace($env:AI_VIDEO_NODE22_PATH) -and
       -not (Test-Path -LiteralPath (Join-Path $workspaceRoot "ops\tools\node-v22.23.1-win-x64\node.exe"))) {
@@ -612,7 +634,8 @@ try {
     $restartedHeartbeatText
   )
   foreach ($file in @(Get-ChildItem -LiteralPath $smokeRoot -File -ErrorAction SilentlyContinue)) {
-    if ($file.FullName.Equals($fixtureEntrypoint, [StringComparison]::OrdinalIgnoreCase)) { continue }
+    if ($file.FullName.Equals($fixtureEntrypoint, [StringComparison]::OrdinalIgnoreCase) -or
+        $file.FullName.Equals($fixtureHelper, [StringComparison]::OrdinalIgnoreCase)) { continue }
     $script:runtimeTexts += Get-Content -Raw -LiteralPath $file.FullName -ErrorAction SilentlyContinue
   }
   Assert-DirectorBridgeSmokeLowDisclosure $script:runtimeTexts
