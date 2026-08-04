@@ -5236,3 +5236,265 @@ s4_status: BLOCKED_UNAUTHORIZED
 s4_authorization_granted: false
 delivery: PR_108_DRAFT_AWAITING_FINAL_EXACT_HEAD_CI_AND_REVIEW
 ```
+
+### 2026-08-04T00:19:50+08:00 - PR109-R0_CONTROLLED_RETIREMENT_AND_TRUTH_RESET
+
+Result: DONE
+Project: AI Video Production Local Bridge
+Lane: Governance and Architecture Closeout
+Claimed by: Codex
+Completed by: Codex
+Blocked by:
+Failed by:
+Skipped by:
+Run ID: codex-20260804-pr109-retirement-truth-reset
+Started at: 2026-08-04T00:19:50+08:00
+Completed at: 2026-08-04T00:19:50+08:00
+Stopped at:
+
+Scope:
+- close PR #109 without merge and retain its branch, commits, CI and review history
+- record the single-active-media-writer and bounded-recovery product boundary
+- create postmortem, ADR and a not-authorized replacement task
+- reconcile current main and task-board truth
+
+Changed files:
+- `docs/PR109_POSTMORTEM_AND_REUSABLE_ASSETS_2026-08-04.md`
+- `docs/ADR_SINGLE_ACTIVE_MEDIA_WRITER_AND_BOUNDED_RECOVERY.md`
+- `CURRENT_STATE.md`
+- `.agent_board/HANDOFF.md`
+- `.agent_board/NEXT_TASK.json`
+- `.agent_board/NEXT_TASK.md`
+- `.agent_board/TASK_LEDGER.md`
+- `.agent_board/VALIDATION_LOG.md`
+
+Validation:
+- command: `node -e "JSON.parse(require('fs').readFileSync('.agent_board/NEXT_TASK.json','utf8'))"`
+  result: PASS
+- command: `git diff --check`
+  result: PASS
+- command: allowlist, Markdown links, task-board and handoff checks
+  result: PASS
+- command: source/test/package/runtime/private-state diff inspection
+  result: PASS; zero prohibited file changes
+
+Evidence:
+- `docs/PR109_POSTMORTEM_AND_REUSABLE_ASSETS_2026-08-04.md`
+- `docs/ADR_SINGLE_ACTIVE_MEDIA_WRITER_AND_BOUNDED_RECOVERY.md`
+- PR #109 closeout comment and closed-unmerged state
+- current `main@55553cbf2f9bc387beb255cebb8b36bcb2deadbf`
+
+Git delivery:
+- repo: yes
+- branch: `codex/pr109-retirement-truth-reset`
+- commit: recorded after validation
+- push: yes
+- git_delivery:
+    branch: codex/pr109-retirement-truth-reset
+    pr: 113
+    state_at_record_time: OPEN_DRAFT
+    merge_claimed: false
+    merge_decision: EXTERNAL_FUTURE_ACTION
+
+Memory:
+- written: no
+- location/type: not used
+
+Boundary:
+- approval required: no for scoped docs/PR closeout; separate replacement remains unauthorized
+- unsafe action not performed: no source, test, package, provider, database, media, service, deployment, secret, S3 or S4 operation
+
+Risks:
+- the staged-file accumulation finding remains open for a separately authorized replacement
+- PR #111 remains independent Draft with failed readonly Media Gateway CI
+
+Next:
+- await Jenn authorization before loading `S3B-T1B-R1_MINIMAL_BOUNDED_STAGE_REPLACEMENT`
+
+### 2026-08-04 — PR113-R2_REBASE_TRUTH_REFRESH_AND_CLOSEOUT
+
+```yaml
+task: PR113-R2_REBASE_TRUTH_REFRESH_AND_CLOSEOUT
+status: IN_PROGRESS_DRAFT_CLOSEOUT
+recorded_by: Codex
+recorded_at: 2026-08-04T19:25:06+08:00
+baseline:
+  main: 3c502e23f884d1b062210321d84848b45c7bb344
+  pr113: d83a1b755b097d3fa727ed0d588aa677f48faa5b
+  pr111: MERGED_770f3dff342874e90788d0f475c4cff49136e114
+  pr114: MERGED_3c502e23f884d1b062210321d84848b45c7bb344
+  pr115: CLOSED_UNMERGED_866accc40ea36c7d8098048ea911eb6e6b0a376b
+  pr115_branch_retained: true
+truth:
+  pr109: CLOSED_UNMERGED_RETIRED
+  pr113: OPEN_READY_MERGE_NOT_CLAIMED
+  pr114_p2: DEFERRED_UNRESOLVED
+  pr115_production_fixture_defect_proven: false
+recovery_replacement:
+  task_id: S3B-T1B-R1_MINIMAL_BOUNDED_STAGE_REPLACEMENT
+  status: DEFERRED_NOT_REQUIRED_FOR_S4
+  ready: false
+  implementation_authorized: false
+  blocks_s4: false
+current_task:
+  task_id: S3B-T2_PREPARE_ELIGIBLE_SHOT
+  status: BLOCKED
+  result: AWAITING_JENN_AUTHORIZATION
+  ready_task_count: 0
+operations:
+  source_changes: 0
+  test_changes: 0
+  provider_calls: 0
+  database_operations: 0
+  media_operations: 0
+  service_operations: 0
+  deployment_changes: 0
+  secret_operations: 0
+git_delivery:
+  branch: codex/pr109-retirement-truth-reset
+  pr: 113
+  state_at_record_time: OPEN_DRAFT
+  merge_claimed: false
+  merge_decision: EXTERNAL_FUTURE_ACTION
+```
+
+This entry records only verified current facts. CI, final review and any later
+merge are not predicted by this ledger entry.
+
+### 2026-08-04 — PR113-R2 governance truth refresh terminal state
+
+```yaml
+task: PR113-R2_REBASE_TRUTH_REFRESH_AND_CLOSEOUT
+status: DONE
+recorded_by: Codex
+recorded_at: 2026-08-04T21:18:56+08:00
+result: GOVERNANCE_TRUTH_REFRESH_COMPLETE
+validation:
+  documentation_scope: PASS
+  exact_head_gate: VERIFY_CURRENT_PR113_HEAD_BEFORE_MERGE
+  source_test_package_workflow_changes: 0
+  provider_database_media_service_deployment_secret_operations: 0
+evidence:
+  - main@3c502e23f884d1b062210321d84848b45c7bb344
+  - PR113 current head and base verified through GitHub before merge gate
+  - historical f0ea7cd CI/review evidence retained without treating it as current-head evidence
+git_delivery:
+  branch: codex/pr109-retirement-truth-reset
+  pr: 113
+  state_at_record_time: OPEN_READY
+  merge_claimed: false
+  merge_decision: EXTERNAL_FUTURE_ACTION
+delivery: PR113_EXACT_HEAD_GATE_REQUIRED_BEFORE_SQUASH_MERGE
+```
+
+### 2026-08-04 — PR113 exact-head review remediation
+
+```yaml
+task: PR113-R2_REVIEW_REMEDIATION
+status: FINDINGS_REPORTED_REMEDIATION_REQUIRED
+reviewed_head: 7fb5be56329b2f6ff3a67e1b6056187cad1048a2
+findings_fixed:
+  - current task state normalized to BLOCKED with approval-boundary fields
+  - PR113 pre-refresh head/base renamed and current head/base added
+  - HANDOFF current-main hash corrected to 3c502e23f884d1b062210321d84848b45c7bb344
+source_changes: 0
+test_changes: 0
+provider_calls: 0
+database_media_service_deployment_secret_operations: 0
+delivery: REMEDIATION_REQUIRED; later f0ea7cd exact-head CI/review evidence is recorded separately
+```
+
+### 2026-08-04 — S3B-T2_PREPARE_ELIGIBLE_SHOT
+
+```yaml
+task: S3B-T2_PREPARE_ELIGIBLE_SHOT
+status: BLOCKED
+recorded_by: Codex
+recorded_at: 2026-08-04T20:05:00+08:00
+claimed_by: null
+claim_run_id: null
+blocked_by: Jenn
+blocked_at: 2026-08-04T20:05:00+08:00
+boundary_or_safety_stop: P3a approval boundary
+blocked_reason: Separate Jenn authorization is required before preparing a real-canary SHOT.
+safe_actions_completed:
+  - reconciled current repository and PR truth
+  - validated the single-slot task state
+  - preserved the offline/no-submit sequence
+unsafe_action_not_performed: No SHOT preparation, credential configuration, Provider call, database/media operation or S4 execution.
+options_for_jenn:
+  - authorize S3B-T2 explicitly
+  - keep the core loop blocked
+validation:
+  next_task_json: PASS
+  ready_task_count: 0
+evidence:
+  - .agent_board/NEXT_TASK.json
+  - CURRENT_STATE.md
+commit: c41bd4fb2624ddbc5dde770a70d89964a843acbe
+delivery: BLOCKED_WAITING_FOR_JENN_AUTHORIZATION
+```
+
+### 2026-08-04 — PR113 final exact-head validation
+
+```yaml
+task: PR113-R2_FINAL_EXACT_HEAD_VALIDATION
+status: PASS_PENDING_AUTHORIZED_SQUASH_MERGE
+final_head: f0ea7cd5873419b747738ad3328e4a9481fb0691
+ci_run: 30909212677
+browser_smoke: PASS
+quality_and_integration: PASS
+codex_review: PASS_NO_NEW_FINDINGS
+unresolved_threads: 0
+merge_claimed: false
+```
+
+### 2026-08-04 — PR113-R2/T2 chronology reconciliation
+
+```yaml
+task: PR113-R2_T2_CHRONOLOGY_RECONCILIATION
+status: DONE
+recorded_by: Codex
+recorded_at: 2026-08-04T23:39:12+08:00
+historical_entries_preserved: true
+historical_order_note:
+  s3b_t2_recorded_at: 2026-08-04T20:05:00+08:00
+  interpretation: PRE_TERMINAL_STATE_SNAPSHOT_ONLY
+  not_authoritative_for_task_activation: true
+authoritative_sequence:
+  - pr113_r2_terminal_state: 2026-08-04T21:18:56+08:00
+  - s3b_t2_blocked_revalidation: 2026-08-04T23:39:12+08:00
+current_task:
+  task_id: S3B-T2_PREPARE_ELIGIBLE_SHOT
+  status: BLOCKED
+  result: AWAITING_JENN_AUTHORIZATION
+  ready_task_count: 0
+validation:
+  append_only_history: PASS
+  terminal_before_current_task_revalidation: PASS
+  source_test_package_workflow_changes: 0
+  provider_database_media_service_deployment_secret_operations: 0
+delivery: PR113_EXACT_HEAD_GATE_REQUIRED_BEFORE_SQUASH_MERGE
+```
+
+### 2026-08-05 — PR113 historical verification ledger final sequence
+
+```yaml
+task: PR113_R2_HISTORICAL_VERIFICATION_LEDGER_FINAL_SEQUENCE
+status: PASS_RECORDED_FINAL_SEQUENCE
+recorded_by: Codex
+recorded_at: 2026-08-05T05:35:02+08:00
+final_sequence_note: This terminal closure is appended after all earlier PR113 remediation, blocked-task and chronology entries.
+historical_reviewed_head: 16babfd9650184183acef959244c2d765ea53dcc
+historical_ci_run: 30946199195
+historical_browser_smoke: PASS
+historical_quality_and_integration: PASS
+historical_codex_review: PASS_NO_NEW_FINDINGS
+historical_unresolved_threads: 0
+current_head_state: VERIFY_BEFORE_MERGE
+current_head_verification_required: true
+source_test_package_workflow_changes: 0
+provider_database_media_service_deployment_secret_operations: 0
+merge_claimed: false
+delivery: HISTORICAL_EVIDENCE_ORDER_RECONCILED_CURRENT_HEAD_REQUIRES_FRESH_GATE
+```

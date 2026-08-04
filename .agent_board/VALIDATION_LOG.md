@@ -3315,3 +3315,239 @@ service_starts: 0
 remaining_test_processes: 0
 final_exact_head_ci_and_review: REQUIRED_AFTER_STATE_SYNC
 ```
+
+### PR109-R0_CONTROLLED_RETIREMENT_AND_TRUTH_RESET - 2026-08-04T00:19:50+08:00
+
+Command:
+
+```text
+node -e "JSON.parse(require('fs').readFileSync('.agent_board/NEXT_TASK.json','utf8'))"
+git diff --check
+Markdown relative-link validation
+task-board consistency validation
+state/handoff structure validation
+changed-file allowlist validation
+secret scan (docs-only)
+git status --short
+```
+
+Result:
+
+```text
+PASS
+```
+
+Evidence:
+- `NEXT_TASK.json` parses and records
+  `S3B-T1B-R1_MINIMAL_BOUNDED_STAGE_REPLACEMENT` as
+  `AWAITING_JENN_AUTHORIZATION` with `ready: false`.
+- Current main at the time of this recorded run was
+  `55553cbf2f9bc387beb255cebb8b36bcb2deadbf`.
+- PR #109 is closed without merge; its branch remains retained.
+- PR #111 was an unchanged Draft at the time of this recorded run.
+- Only the documentation/task-board allowlist changed; source, tests, package,
+  runtime, database, media and secret-adjacent files were untouched.
+
+Not run reason:
+- No project test suite was needed for documentation/governance-only changes.
+- No Provider, service, database, media or deployment operation was run.
+
+Notes:
+- The prepared replacement task is not executable and has no READY slot.
+- The closeout PR must receive exact-head CI and one complete Codex review before
+  its authorized squash merge.
+
+### PR113-R2_REBASE_TRUTH_REFRESH_AND_CLOSEOUT — 2026-08-04
+
+```yaml
+baseline:
+  origin_main: 3c502e23f884d1b062210321d84848b45c7bb344
+  pr113_head_before_refresh: d83a1b755b097d3fa727ed0d588aa677f48faa5b
+  pr113_state: OPEN_DRAFT
+  pr111: MERGED_770f3dff342874e90788d0f475c4cff49136e114
+  pr114: MERGED_3c502e23f884d1b062210321d84848b45c7bb344
+  pr114_p2: DEFERRED_UNRESOLVED
+  pr115: CLOSED_UNMERGED_866accc40ea36c7d8098048ea911eb6e6b0a376b
+  pr115_branch_retained: true
+commands:
+  - node -e JSON.parse(NEXT_TASK.json)
+  - git diff --check
+  - git status --short
+  - changed-file allowlist inspection
+results:
+  task_board_json: PASS
+  diff_check: PASS
+  changed_files: PASS_EXACT_EIGHT_FILE_ALLOWLIST
+  markdown_relative_links: PASS
+  handoff_consistency: PASS
+  secret_scan: PASS
+  source_test_package_workflow_changes: 0
+  provider_network_calls: 0
+  activity_database_access: none
+  activity_media_access: none
+  secret_reads: 0
+  service_starts: 0
+  deployment_changes: 0
+  s4_authorized: false
+current_task: S3B-T2_PREPARE_ELIGIBLE_SHOT
+current_task_status: BLOCKED
+current_task_result: AWAITING_JENN_AUTHORIZATION
+ready_task_count: 0
+recovery_replacement: DEFERRED_NOT_REQUIRED_FOR_S4
+delivery: PR113_OPEN_READY_PENDING_SQUASH_MERGE
+```
+
+This is a documentation/task-board state sync. No source, test, runtime,
+Provider, database, media, service, deployment or secret operation was run.
+
+### PR113 exact-head review remediation — 2026-08-04
+
+```yaml
+reviewed_head: 7fb5be56329b2f6ff3a67e1b6056187cad1048a2
+review_result: FINDINGS_REMEDIATED
+findings:
+  - current task used an unrecognized AWAITING_JENN_AUTHORIZATION state
+  - PR113 publication record exposed pre-refresh head/base as current
+  - HANDOFF retained an old current-main hash
+resolutions:
+  - current task is BLOCKED with result AWAITING_JENN_AUTHORIZATION and explicit blocked fields
+  - PR113 record now names head_before_refresh/base_before_rebase and current_head/current_base
+  - current HANDOFF state uses main@3c502e23 and PR113 current head/base
+local_validation:
+  next_task_json: PASS
+  git_diff_check: PASS
+  secret_scan: PASS
+  changed_files: EXACT_EIGHT_FILE_ALLOWLIST
+source_test_package_workflow_changes: 0
+provider_network_calls: 0
+database_media_service_deployment_secret_operations: 0
+```
+
+The review threads are not yet resolved; a new exact-head CI and review cycle
+is required after the remediation commit.
+
+### PR113 second exact-head review remediation — 2026-08-04
+
+```yaml
+reviewed_head: c41bd4fb2624ddbc5dde770a70d89964a843acbe
+review_result: FINDINGS_REMEDIATED
+findings:
+  - ADR overstated deterministic bounded staging as current support
+  - historical PR109-R0 validation entry was overwritten with later main truth
+  - T2 blocked state was nested without a standalone ledger terminal entry
+resolutions:
+  - ADR marks deterministic bounded staging deferred and not implemented by current main
+  - PR109-R0 historical entry restored to main@55553cb and Draft-era facts
+  - standalone BLOCKED S3B-T2 ledger entry records boundary, evidence and options
+local_validation:
+  next_task_json: PASS
+  git_diff_check: PASS
+  secret_scan: PASS
+  changed_files: EXACT_EIGHT_FILE_ALLOWLIST
+source_test_package_workflow_changes: 0
+provider_network_calls: 0
+database_media_service_deployment_secret_operations: 0
+```
+
+Exact-head CI run `30909212677` completed with Browser smoke PASS and Quality
+and integration PASS. Fresh Codex review of `f0ea7cd5873419b747738ad3328e4a9481fb0691`
+reported no new findings; the PR remains unmerged pending the authorized
+squash merge.
+
+### PR113 T2 contract and head-binding revalidation — 2026-08-04
+
+```yaml
+reviewed_head: f8ed0b90c956cb3ba60bb8bc6038e05b3865eabb
+ci_run: 30944500621
+ci:
+  Browser_smoke: PASS
+  Quality_and_integration: PASS
+review_result: FINDING_REQUIRES_STATE_RECONCILIATION
+finding:
+  - task-board last_validated_head was published for an earlier exact head
+resolutions_in_progress:
+  - keep current_head explicitly VERIFY_BEFORE_MERGE to avoid claiming a
+    self-referential task-board commit as already validated
+  - retain f8ed0b9 as last_validated_head until the new state-only follow-up
+    receives its own exact-head CI and review
+scope:
+  source_changes: 0
+  test_changes: 0
+  provider_calls: 0
+  database_media_service_deployment_secret_operations: 0
+```
+
+This entry records the actual f8ed0b9 evidence without rewriting earlier
+historical validation entries. The state-only follow-up remains pending its
+own exact-head CI and review.
+
+### PR113 final exact-head revalidation — 2026-08-05
+
+```yaml
+reviewed_head: 16babfd9650184183acef959244c2d765ea53dcc
+ci_run: 30946199195
+ci:
+  Browser_smoke: PASS
+  Quality_and_integration: PASS
+review_result: PASS_NO_NEW_FINDINGS
+state_reconciliation:
+  f8ed0b90c956cb3ba60bb8bc6038e05b3865eabb: REVIEWED_WITH_FINDING_NOT_PASS
+  task_board_current_head: PR113_HEAD_VERIFY_BEFORE_MERGE
+  candidate_head: 16babfd9650184183acef959244c2d765ea53dcc
+  last_reviewed_head: 16babfd9650184183acef959244c2d765ea53dcc
+  last_passed_head: 16babfd9650184183acef959244c2d765ea53dcc
+scope:
+  source_changes: 0
+  test_changes: 0
+  provider_calls: 0
+  database_media_service_deployment_secret_operations: 0
+```
+
+The task-board fields now distinguish the symbolic pending-merge state from
+the exact candidate and its CI/review evidence; no earlier finding is marked
+as a pass. This remains a documentation/task-board update only.
+
+### PR113 T2 package matching and current-head gate remediation — 2026-08-05
+
+```yaml
+findings:
+  - current PR head must not be inferred from a stale passed candidate
+  - optional snapshot shot_id must use the generation path's unique frozen-order fallback
+resolutions:
+  current_head: PR113_HEAD_VERIFY_BEFORE_MERGE
+  candidate_head: PR113_CURRENT_HEAD_PENDING_VERIFICATION
+  head_verification_required: true
+  head_verification_target: CURRENT_PR_HEAD
+  last_passed_head: 16babfd9650184183acef959244c2d765ea53dcc
+  package_binding: shot_id_when_present_else_unique_frozen_order
+  ambiguous_or_missing_match: PACKAGE_SNAPSHOT_MISMATCH
+scope:
+  source_changes: 0
+  test_changes: 0
+  provider_calls: 0
+  database_media_service_deployment_secret_operations: 0
+```
+
+The order fallback still compares every frozen field and the bound Artifact;
+it does not weaken package integrity or emit private identifiers. The current
+PR head remains pending a fresh exact-head CI/review cycle.
+
+### PR113 T2 generation-input parity remediation — 2026-08-05
+
+```yaml
+finding:
+  - T2 compared mutable Shot description even though the current generation path does not
+resolution:
+  - compare only duration_seconds, video_prompt, normalized negative_prompt and storyboard_image_artifact_id
+  - use order only as the optional package snapshot selector
+  - keep shot_id/order ambiguity fail-closed as PACKAGE_SNAPSHOT_MISMATCH
+  - permit description-only edits after package freeze
+scope:
+  source_changes: 0
+  test_changes: 0
+  provider_calls: 0
+  database_media_service_deployment_secret_operations: 0
+```
+
+This keeps T2 aligned with the current generation input contract without
+weakening Artifact binding or package ambiguity handling.
