@@ -124,6 +124,9 @@ function actualLaunchConfigSha256() {
   ].join("\n"));
 }
 
+const atomicRenameWaitBuffer = new Int32Array(new SharedArrayBuffer(4));
+const transientRenameCodes = new Set(["EACCES", "EBUSY", "EPERM"]);
+
 const required = [
   heartbeatPath,
   stopRequestPath,
@@ -146,8 +149,26 @@ if (actualLaunchConfigSha256() !== expectedLaunchConfigSha256
 
 function atomicWrite(target, value) {
   const temporary = `${target}.tmp-${process.pid}-${crypto.randomUUID()}`;
-  fs.writeFileSync(temporary, `${JSON.stringify(value)}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 });
-  fs.renameSync(temporary, target);
+  let published = false;
+  try {
+    fs.writeFileSync(temporary, `${JSON.stringify(value)}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 });
+    const deadline = Date.now() + 2_000;
+    for (;;) {
+      try {
+        fs.renameSync(temporary, target);
+        published = true;
+        return;
+      } catch (error) {
+        const code = error && typeof error === "object" ? error.code : undefined;
+        if (!transientRenameCodes.has(code) || Date.now() >= deadline) throw error;
+        Atomics.wait(atomicRenameWaitBuffer, 0, 0, 10);
+      }
+    }
+  } finally {
+    if (!published) {
+      try { fs.rmSync(temporary, { force: true }); } catch { /* preserve the original failure */ }
+    }
+  }
 }
 
 let activated = false;

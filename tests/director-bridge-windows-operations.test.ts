@@ -659,6 +659,10 @@ test("Director Bridge Windows lifecycle manager scripts do not read Bridge key o
   assert.match(smoke, /DIRECTOR_BRIDGE_REMOTE_POLL_FAILED/);
   assert.match(smoke, /DIRECTOR_BRIDGE_FIXTURE_DIAGNOSTIC_FAILURE/);
   assert.match(fixture, /director-bridge-fixture-failure-v1/);
+  assert.match(fixture, /atomicRenameWaitBuffer/);
+  assert.match(fixture, /transientRenameCodes/);
+  assert.match(fixture, /Atomics\.wait\(atomicRenameWaitBuffer/);
+  assert.match(fixture, /Date\.now\(\) \+ 2_000/);
   assert.doesNotMatch(fixture, /console\.(?:log|error|warn)/);
   assert.doesNotMatch(`${common}\n${start}\n${status}\n${stop}`, /AI_VIDEO_DIRECTOR_BRIDGE_RUNTIME_TEST_MODE/);
   assert.doesNotMatch(common, /Get-Content[^\r\n]*(?:WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH|AI_VIDEO_WORKSPACE_DB_PATH)/i);
