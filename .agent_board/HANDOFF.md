@@ -14,9 +14,10 @@ Ready task count: 0
 ## PR113-R2 current governance
 
 - Baseline is `main@3c502e23f884d1b062210321d84848b45c7bb344`.
-- PR #113 is an `OPEN_READY` closeout candidate; verify its exact current head
-  before merge. Last validated head was `f0ea7cd5873419b747738ad3328e4a9481fb0691`
-  against current base `3c502e23f884d1b062210321d84848b45c7bb344`; no merge is claimed.
+- PR #113 is an `OPEN_READY` closeout candidate. The task board intentionally
+  keeps its current head at `VERIFY_BEFORE_MERGE`; last validated head was
+  `f8ed0b90c956cb3ba60bb8bc6038e05b3865eabb` against current base
+  `3c502e23f884d1b062210321d84848b45c7bb344`; no merge is claimed.
 - PR #109 is closed unmerged and retained only as research/threat-model evidence.
 - PR #111 is merged as `770f3dff342874e90788d0f475c4cff49136e114`.
 - PR #114 is merged as `3c502e23f884d1b062210321d84848b45c7bb344`; its valid

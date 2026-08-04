@@ -28,8 +28,9 @@ credentialed online price preflight immediately before submit.
 - PR #110: `MERGED` as `00c8ed458144f03d4b0e1389d4de6dbf8005ed9a`.
 - PR #111: `MERGED` as `770f3dff342874e90788d0f475c4cff49136e114`.
 - PR #112: `MERGED` as `55553cbf2f9bc387beb255cebb8b36bcb2deadbf`.
-- PR #113: `OPEN_READY` closeout candidate at current head
-  `048031483b084b1e72923e4a2cc32a4d678f69be`, with CI validated against base
+- PR #113: `OPEN_READY` closeout candidate; task-board current head is
+  intentionally `VERIFY_BEFORE_MERGE`. Last validated head was
+  `f8ed0b90c956cb3ba60bb8bc6038e05b3865eabb` against base
   `3c502e23f884d1b062210321d84848b45c7bb344`; exact-head review and merge are
   still pending and no merge is claimed.
 - PR #114: `MERGED` as `3c502e23f884d1b062210321d84848b45c7bb344`; its valid P2

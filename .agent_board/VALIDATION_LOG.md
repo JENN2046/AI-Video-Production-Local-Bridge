@@ -3453,3 +3453,30 @@ Exact-head CI run `30909212677` completed with Browser smoke PASS and Quality
 and integration PASS. Fresh Codex review of `f0ea7cd5873419b747738ad3328e4a9481fb0691`
 reported no new findings; the PR remains unmerged pending the authorized
 squash merge.
+
+### PR113 T2 contract and head-binding revalidation — 2026-08-04
+
+```yaml
+reviewed_head: f8ed0b90c956cb3ba60bb8bc6038e05b3865eabb
+ci_run: 30944500621
+ci:
+  Browser_smoke: PASS
+  Quality_and_integration: PASS
+review_result: FINDING_REQUIRES_STATE_RECONCILIATION
+finding:
+  - task-board last_validated_head was published for an earlier exact head
+resolutions_in_progress:
+  - keep current_head explicitly VERIFY_BEFORE_MERGE to avoid claiming a
+    self-referential task-board commit as already validated
+  - retain f8ed0b9 as last_validated_head until the new state-only follow-up
+    receives its own exact-head CI and review
+scope:
+  source_changes: 0
+  test_changes: 0
+  provider_calls: 0
+  database_media_service_deployment_secret_operations: 0
+```
+
+This entry records the actual f8ed0b9 evidence without rewriting earlier
+historical validation entries. The state-only follow-up remains pending its
+own exact-head CI and review.

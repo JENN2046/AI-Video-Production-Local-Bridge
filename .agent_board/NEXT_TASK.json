@@ -29,7 +29,7 @@
     "pull_request_110": { "status": "MERGED", "squash_commit": "00c8ed458144f03d4b0e1389d4de6dbf8005ed9a", "merge_method": "SQUASH" },
     "pull_request_111": { "status": "MERGED", "squash_commit": "770f3dff342874e90788d0f475c4cff49136e114", "merge_method": "SQUASH" },
     "pull_request_112": { "status": "MERGED", "squash_commit": "55553cbf2f9bc387beb255cebb8b36bcb2deadbf", "merge_method": "SQUASH" },
-     "pull_request_113": { "status": "OPEN_READY_CLOSEOUT_CANDIDATE", "head_before_refresh": "d83a1b755b097d3fa727ed0d588aa677f48faa5b", "base_before_rebase": "55553cbf2f9bc387beb255cebb8b36bcb2deadbf", "current_head": "048031483b084b1e72923e4a2cc32a4d678f69be", "last_validated_head": "048031483b084b1e72923e4a2cc32a4d678f69be", "current_base": "3c502e23f884d1b062210321d84848b45c7bb344", "merge_claimed": false },
+     "pull_request_113": { "status": "OPEN_READY_CLOSEOUT_CANDIDATE", "head_before_refresh": "d83a1b755b097d3fa727ed0d588aa677f48faa5b", "base_before_rebase": "55553cbf2f9bc387beb255cebb8b36bcb2deadbf", "current_head": "PR113_HEAD_VERIFY_BEFORE_MERGE", "current_head_status": "VERIFY_BEFORE_MERGE", "last_validated_head": "f8ed0b90c956cb3ba60bb8bc6038e05b3865eabb", "current_base": "3c502e23f884d1b062210321d84848b45c7bb344", "merge_claimed": false },
     "pull_request_114": { "status": "MERGED", "squash_commit": "3c502e23f884d1b062210321d84848b45c7bb344", "merge_method": "SQUASH", "p2_thread_id": "3708908011", "p2_status": "DEFERRED_UNRESOLVED" },
     "pull_request_115": { "status": "CLOSED_UNMERGED", "head": "866accc40ea36c7d8098048ea911eb6e6b0a376b", "branch_retained": true, "final_ci": "DIRECTOR_BRIDGE_RUNTIME_SMOKE_FIXTURE_STAGING_UNCLASSIFIED" }
   },
@@ -75,7 +75,7 @@
   "blocked_at": "2026-08-04T23:39:12+08:00",
   "boundary_or_safety_stop": "P3a approval boundary",
   "blocked_reason": "S3B-T2 requires separate Jenn authorization; no task may be claimed or executed while authorization is absent.",
-  "safe_actions_completed": ["truth refresh", "scope validation", "historical exact-head CI/review evidence retained for f0ea7cd; verify CI and fresh review against the current PR113 head before merge"],
+  "safe_actions_completed": ["truth refresh", "scope validation", "Windows CI 30944500621 passed for f8ed0b9", "fresh review of f8ed0b9 found a task-board head-binding finding; current head remains explicit VERIFY_BEFORE_MERGE"],
   "unsafe_action_not_performed": "No SHOT preparation, credential configuration, Provider call, database/media operation or S4 execution.",
   "options_for_jenn": ["Authorize S3B-T2 explicitly", "Keep the core loop blocked"],
   "result": "AWAITING_JENN_AUTHORIZATION",
