@@ -28,9 +28,10 @@ credentialed online price preflight immediately before submit.
 - PR #110: `MERGED` as `00c8ed458144f03d4b0e1389d4de6dbf8005ed9a`.
 - PR #111: `MERGED` as `770f3dff342874e90788d0f475c4cff49136e114`.
 - PR #112: `MERGED` as `55553cbf2f9bc387beb255cebb8b36bcb2deadbf`.
-- PR #113: `OPEN_READY` closeout candidate; verify the exact current head on
-  PR #113 before merge. Last validated head was `f0ea7cd5873419b747738ad3328e4a9481fb0691`,
-  against base `3c502e23f884d1b062210321d84848b45c7bb344`; no merge is claimed.
+- PR #113: `OPEN_READY` closeout candidate at current head
+  `6c8e6625bbdf33228e6df7087b4eed15d8948cf5`, with CI validated against base
+  `3c502e23f884d1b062210321d84848b45c7bb344`; exact-head review and merge are
+  still pending and no merge is claimed.
 - PR #114: `MERGED` as `3c502e23f884d1b062210321d84848b45c7bb344`; its valid P2
   behavior-test finding remains `DEFERRED_UNRESOLVED` (thread `3708908011`).
 - PR #115: `CLOSED_UNMERGED`; head `866accc40ea36c7d8098048ea911eb6e6b0a376b`,

@@ -29,7 +29,7 @@
     "pull_request_110": { "status": "MERGED", "squash_commit": "00c8ed458144f03d4b0e1389d4de6dbf8005ed9a", "merge_method": "SQUASH" },
     "pull_request_111": { "status": "MERGED", "squash_commit": "770f3dff342874e90788d0f475c4cff49136e114", "merge_method": "SQUASH" },
     "pull_request_112": { "status": "MERGED", "squash_commit": "55553cbf2f9bc387beb255cebb8b36bcb2deadbf", "merge_method": "SQUASH" },
-    "pull_request_113": { "status": "OPEN_READY_CLOSEOUT_CANDIDATE", "head_before_refresh": "d83a1b755b097d3fa727ed0d588aa677f48faa5b", "base_before_rebase": "55553cbf2f9bc387beb255cebb8b36bcb2deadbf", "current_head": "PR113_HEAD_VERIFY_BEFORE_MERGE", "last_validated_head": "f0ea7cd5873419b747738ad3328e4a9481fb0691", "current_base": "3c502e23f884d1b062210321d84848b45c7bb344", "merge_claimed": false },
+     "pull_request_113": { "status": "OPEN_READY_CLOSEOUT_CANDIDATE", "head_before_refresh": "d83a1b755b097d3fa727ed0d588aa677f48faa5b", "base_before_rebase": "55553cbf2f9bc387beb255cebb8b36bcb2deadbf", "current_head": "6c8e6625bbdf33228e6df7087b4eed15d8948cf5", "last_validated_head": "6c8e6625bbdf33228e6df7087b4eed15d8948cf5", "current_base": "3c502e23f884d1b062210321d84848b45c7bb344", "merge_claimed": false },
     "pull_request_114": { "status": "MERGED", "squash_commit": "3c502e23f884d1b062210321d84848b45c7bb344", "merge_method": "SQUASH", "p2_thread_id": "3708908011", "p2_status": "DEFERRED_UNRESOLVED" },
     "pull_request_115": { "status": "CLOSED_UNMERGED", "head": "866accc40ea36c7d8098048ea911eb6e6b0a376b", "branch_retained": true, "final_ci": "DIRECTOR_BRIDGE_RUNTIME_SMOKE_FIXTURE_STAGING_UNCLASSIFIED" }
   },
