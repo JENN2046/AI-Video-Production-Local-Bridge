@@ -281,6 +281,112 @@ test("ambiguous package order and unsupported artifact mime are rejected", async
   });
 });
 
+test("snapshot matching requires one globally unique shot or order match", async (t) => {
+  for (const [name, reverse] of [["order-only first then shot id", false], ["shot id first then order-only", true]] as const) {
+    await t.test(name, async () => {
+      const fixture = createFixture();
+      try {
+        const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+        const row = db.prepare("SELECT data_json FROM storyboard_packages WHERE storyboard_package_id = ?").get(fixture.package_id) as { data_json: string };
+        const storyboard = JSON.parse(row.data_json);
+        const shotIdSnapshot = { ...storyboard.approved_shot_snapshots[0] };
+        const orderSnapshot = { ...shotIdSnapshot };
+        delete orderSnapshot.shot_id;
+        storyboard.approved_shot_snapshots = reverse ? [shotIdSnapshot, orderSnapshot] : [orderSnapshot, shotIdSnapshot];
+        saveStoryboardPackage(db, storyboard);
+        db.close();
+        const result = await scan(fixture);
+        assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+        assert.equal(result.reason_code_counts.PACKAGE_SNAPSHOT_MISMATCH, 1);
+        assert.equal(result.candidate_alias, undefined);
+      } finally { fixture.cleanup(); }
+    });
+  }
+
+  for (const [name, snapshots] of [
+    ["duplicate shot id", (base: Record<string, unknown>) => [base, { ...base }]],
+    ["duplicate order fallback", (base: Record<string, unknown>) => {
+      const first = { ...base }; delete first.shot_id;
+      const second = { ...first };
+      return [first, second];
+    }]
+  ] as const) {
+    await t.test(name, async () => {
+      const fixture = createFixture();
+      try {
+        const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+        const row = db.prepare("SELECT data_json FROM storyboard_packages WHERE storyboard_package_id = ?").get(fixture.package_id) as { data_json: string };
+        const storyboard = JSON.parse(row.data_json);
+        storyboard.approved_shot_snapshots = snapshots(storyboard.approved_shot_snapshots[0]);
+        saveStoryboardPackage(db, storyboard);
+        db.close();
+        const result = await scan(fixture);
+        assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+        assert.equal(result.reason_code_counts.PACKAGE_SNAPSHOT_MISMATCH, 1);
+        assert.equal(result.candidate_alias, undefined);
+      } finally { fixture.cleanup(); }
+    });
+  }
+
+  await t.test("unique shot id ignores an unrelated order", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      const row = db.prepare("SELECT data_json FROM storyboard_packages WHERE storyboard_package_id = ?").get(fixture.package_id) as { data_json: string };
+      const storyboard = JSON.parse(row.data_json);
+      storyboard.approved_shot_snapshots.push({ ...storyboard.approved_shot_snapshots[0], shot_id: undefined, order: 2 });
+      saveStoryboardPackage(db, storyboard);
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.result, "PASS_ONE_ELIGIBLE_SHOT");
+      assert.equal(result.package_match_mode, "shot_id");
+    } finally { fixture.cleanup(); }
+  });
+});
+
+test("storyboard artifact structured drift is a stable ineligible result", async (t) => {
+  for (const [name, mutate] of [
+    ["status projection drift", (artifact: Record<string, unknown>) => { artifact.status = "inaccessible"; }],
+    ["binding projection drift", (artifact: Record<string, unknown>) => { artifact.linked_objects = { project_id: "other", shot_id: "other" }; }],
+    ["role/type projection drift", (artifact: Record<string, unknown>) => { artifact.role = "generated_clip"; artifact.artifact_type = "video"; }]
+  ] as const) {
+    await t.test(name, async () => {
+      const fixture = createFixture();
+      try {
+        const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+        const row = db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = ?").get(fixture.artifact_id) as { data_json: string };
+        const artifact = JSON.parse(row.data_json) as Record<string, unknown>;
+        mutate(artifact);
+        db.prepare("UPDATE media_artifacts SET data_json = ? WHERE artifact_id = ?").run(JSON.stringify(artifact), fixture.artifact_id);
+        db.close();
+        const result = await scan(fixture);
+        assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+        assert.equal(result.reason_code_counts.STORYBOARD_ARTIFACT_INTEGRITY_INVALID, 1);
+        assert.equal(result.candidate_alias, undefined);
+        assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+        assert.equal(JSON.stringify(result).includes(fixture.artifact_id), false);
+        assert.equal(JSON.stringify(result).includes("ARTIFACT_STRUCTURED_DRIFT"), false);
+      } finally { fixture.cleanup(); }
+    });
+  }
+
+  await t.test("structured drift changes the snapshot fingerprint", async () => {
+    const fixture = createFixture();
+    try {
+      const result = await scan(fixture, { betweenSnapshots: () => {
+        const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+        const row = db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = ?").get(fixture.artifact_id) as { data_json: string };
+        const artifact = JSON.parse(row.data_json) as Record<string, unknown>;
+        artifact.status = "inaccessible";
+        db.prepare("UPDATE media_artifacts SET data_json = ? WHERE artifact_id = ?").run(JSON.stringify(artifact), fixture.artifact_id);
+        db.close();
+      } });
+      assert.equal(result.result, "T2_STATE_CHANGED_DURING_SCAN");
+      assert.equal(result.candidate_alias, undefined);
+    } finally { fixture.cleanup(); }
+  });
+});
+
 test("missing active package, generation history, and byte drift are deterministic rejections", async (t) => {
   await t.test("draft zero-version shot preserves storyboard approval reason", async () => {
     const fixture = createFixture();

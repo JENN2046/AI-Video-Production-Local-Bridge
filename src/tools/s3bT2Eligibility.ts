@@ -6,7 +6,7 @@ import { assertSchemaCurrent } from "../storage/migrations.js";
 import { openM0DatabaseConnection, type M0Database } from "../storage/sqlite.js";
 import { paths, type M0Paths } from "../paths.js";
 import { collectProjectOperationalBundles } from "./operationalStateFacts.js";
-import { getMediaArtifact, verifyMediaArtifactBytes } from "./mediaArtifacts.js";
+import { ArtifactStructuredDriftError, getMediaArtifact, verifyMediaArtifactBytes } from "./mediaArtifacts.js";
 import { buildProviderCapabilityKey, RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY } from "./providerCapabilities.js";
 import type { Project, Shot } from "./projects.js";
 import { getStoryboardPackage, type ApprovedShotSnapshot, type StoryboardPackage } from "./storyboardPackages.js";
@@ -144,11 +144,13 @@ function normalizeNegativePrompt(value: unknown): string {
 }
 
 function matchingSnapshot(storyboard: StoryboardPackage, shot: Shot): { snapshot: ApprovedShotSnapshot; mode: Candidate["match_mode"] } | null | "ambiguous" {
-  const byId = storyboard.approved_shot_snapshots.filter((snapshot) => snapshot.shot_id === shot.shot_id);
-  if (byId.length === 1) return { snapshot: byId[0], mode: "shot_id" };
-  if (byId.length > 1) return "ambiguous";
-  const byOrder = storyboard.approved_shot_snapshots.filter((snapshot) => !snapshot.shot_id && snapshot.order === shot.order);
-  return byOrder.length === 1 ? { snapshot: byOrder[0], mode: "order" } : byOrder.length > 1 ? "ambiguous" : null;
+  const matches = storyboard.approved_shot_snapshots.filter((snapshot) =>
+    snapshot.shot_id ? snapshot.shot_id === shot.shot_id : snapshot.order === shot.order
+  );
+  if (matches.length === 0) return null;
+  if (matches.length !== 1) return "ambiguous";
+  const snapshot = matches[0];
+  return { snapshot, mode: snapshot.shot_id ? "shot_id" : "order" };
 }
 
 function addReason(reasons: SnapshotResult["reasons"], code: S3bT2ReasonCode): void {
@@ -213,9 +215,40 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
         ORDER BY p.project_id
       `).all() as ProjectRow[];
       const projects = rows.map(parseProject);
-      const bundles = collectProjectOperationalBundles(db, projects);
       const candidates: Candidate[] = [];
       const fingerprintFacts: unknown[] = [{ database_identity: guard.identity, active_intent_count: activeIntentCount }];
+
+      let storyboardArtifactStructuredDrift = false;
+      for (const project of projects) {
+        const shotRows = db.prepare("SELECT data_json FROM shots WHERE project_id = ? ORDER BY rowid").all(project.project_id) as Array<{ data_json: string }>;
+        for (const shotRow of shotRows) {
+          const shot = JSON.parse(shotRow.data_json) as Partial<Shot>;
+          const artifactId = shot.storyboard_image_artifact_id;
+          if (typeof artifactId !== "string" || artifactId.length === 0) continue;
+          try {
+            getMediaArtifact(db, artifactId);
+          } catch (error) {
+            if (!(error instanceof ArtifactStructuredDriftError)) throw error;
+            storyboardArtifactStructuredDrift = true;
+          }
+        }
+      }
+      if (storyboardArtifactStructuredDrift) {
+        fingerprintFacts.push({ storyboard_artifact_structured_drift: true });
+        addReason(reasons, "STORYBOARD_ARTIFACT_INTEGRITY_INVALID");
+        db.exec("COMMIT");
+        assertPathCurrent();
+        const after = totalChanges(db);
+        if (before !== 0 || after !== 0) throw new Error("T2_DATABASE_WRITE_DETECTED");
+        return {
+          fingerprint: stableFingerprint({ fingerprintFacts, candidates, reasons }),
+          candidates,
+          reasons,
+          sqlite: { total_changes_before: before, total_changes_after: after }
+        };
+      }
+
+      const bundles = collectProjectOperationalBundles(db, projects);
 
       if (activeIntentCount > 0) addReason(reasons, "REAL_GENERATION_ALREADY_ACTIVE");
       for (const [index, project] of projects.entries()) {
@@ -271,7 +304,15 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
             || matched.snapshot.storyboard_image_artifact_id !== shot.storyboard_image_artifact_id) {
             addReason(reasons, "PACKAGE_SNAPSHOT_MISMATCH"); continue;
           }
-          const artifact = getMediaArtifact(db, shot.storyboard_image_artifact_id);
+          let artifact: ReturnType<typeof getMediaArtifact>;
+          try {
+            artifact = getMediaArtifact(db, shot.storyboard_image_artifact_id);
+          } catch (error) {
+            if (!(error instanceof ArtifactStructuredDriftError)) throw error;
+            fingerprintFacts.push({ storyboard_artifact_structured_drift: true });
+            addReason(reasons, "STORYBOARD_ARTIFACT_INTEGRITY_INVALID");
+            continue;
+          }
           if (!artifact
             || artifact.status !== "active"
             || artifact.artifact_type !== "image"
