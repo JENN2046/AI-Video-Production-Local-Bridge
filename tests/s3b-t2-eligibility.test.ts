@@ -282,6 +282,36 @@ test("ambiguous package order and unsupported artifact mime are rejected", async
 });
 
 test("missing active package, generation history, and byte drift are deterministic rejections", async (t) => {
+  await t.test("draft zero-version shot preserves storyboard approval reason", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      const row = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(fixture.shot_id) as { data_json: string };
+      const shot = JSON.parse(row.data_json);
+      shot.status = "draft";
+      saveShot(db, shot);
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.reason_code_counts.STORYBOARD_APPROVAL_REQUIRED, 1);
+      assert.equal(result.reason_code_counts.SHOT_NOT_STORYBOARD_APPROVED, undefined);
+      assert.equal(result.reason_code_counts.SHOT_OPERATIONAL_STATE_INELIGIBLE, undefined);
+    } finally { fixture.cleanup(); }
+  });
+  await t.test("revision-needed zero-version shot preserves storyboard reason", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      const row = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(fixture.shot_id) as { data_json: string };
+      const shot = JSON.parse(row.data_json);
+      shot.status = "revision_needed";
+      saveShot(db, shot);
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.reason_code_counts.STORYBOARD_REVISION_REQUIRED, 1);
+      assert.equal(result.reason_code_counts.SHOT_NOT_STORYBOARD_APPROVED, undefined);
+      assert.equal(result.reason_code_counts.SHOT_OPERATIONAL_STATE_INELIGIBLE, undefined);
+    } finally { fixture.cleanup(); }
+  });
   await t.test("active package missing", async () => {
     const fixture = createFixture();
     try {

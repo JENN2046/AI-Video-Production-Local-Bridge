@@ -239,12 +239,16 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
         }
         if (!bundle) throw new Error("T2_OPERATIONAL_BUNDLE_MISSING");
         for (const shot of bundle.shots) {
-          if (shot.status !== "storyboard_approved") { addReason(reasons, "SHOT_NOT_STORYBOARD_APPROVED"); continue; }
+          const operational = bundle.states_by_shot_id.get(shot.shot_id);
           if (shot.generation_run_ids.length !== 0 || shot.clip_versions.length !== 0) {
             addReason(reasons, "GENERATION_ALREADY_STARTED");
             continue;
           }
-          const operational = bundle.states_by_shot_id.get(shot.shot_id);
+          if (shot.status !== "storyboard_approved") {
+            if (operational && addCanonicalOperationalReasons(reasons, operational)) continue;
+            addReason(reasons, "SHOT_NOT_STORYBOARD_APPROVED");
+            continue;
+          }
           if (!operational
             || operational.generation.stage !== "ready"
             || !operational.allowed_workflow_actions.prepare_generation
