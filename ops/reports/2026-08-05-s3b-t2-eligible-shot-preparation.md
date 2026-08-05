@@ -7,9 +7,9 @@ Mode: `READ_ONLY_OFFLINE_PREPARATION`
 S3B_T2_ELIGIBLE_SHOT_RESULT:
   result: BLOCKED_T2_EXECUTABLE_PATH_MISSING
 
-  baseline:
-    main: 90b1d688d1cad301d63aacf8e01acecf0b28eb1f
-    main_ci_run: 30961478222
+  baseline: CURRENT_MAIN_AT_EXECUTION_START
+
+  baseline_state:
     worktree_clean: true
     current_task_before: BLOCKED_AWAITING_JENN_AUTHORIZATION
 
@@ -58,18 +58,25 @@ S3B_T2_ELIGIBLE_SHOT_RESULT:
     sqlite_total_changes: 0
 
   governance:
-    branch: codex/s3b-t2-eligible-shot-preparation
-    commit: PENDING_CURRENT_BRANCH_COMMIT
-    pr: PENDING_DRAFT_PR
-    changed_files:
-      - .agent_board/HANDOFF.md
-      - .agent_board/NEXT_TASK.json
-      - .agent_board/NEXT_TASK.md
-      - .agent_board/TASK_LEDGER.md
-      - .agent_board/VALIDATION_LOG.md
-      - ops/reports/2026-08-05-s3b-t2-eligible-shot-preparation.md
+    pull_request: 117
+    changed_file_count: 7
+    changed_file_classes:
+      - task_state
+      - handoff
+      - ledger
+      - validation
+      - current_state
+      - bounded_stop_receipt
     current_task_after: BLOCKED_T2_EXECUTABLE_PATH_MISSING
     next_task_loaded: false
+
+  receipt_low_disclosure_check:
+    forty_hex_commit_hashes: 0
+    sixty_four_hex_content_hashes: 0
+    windows_absolute_paths: 0
+    unix_absolute_paths: 0
+    repository_file_paths: 0
+    activity_identifiers: 0
 
   validation:
     next_task_json: PASS
@@ -79,18 +86,7 @@ S3B_T2_ELIGIBLE_SHOT_RESULT:
     low_disclosure: PASS
     read_only_boundary: PASS_STOPPED_BEFORE_ACCESS
 
-  ci:
-    run_id: null
-    Browser_smoke: PENDING
-    Quality_and_integration: PENDING
-    Windows_managed_runtime_controls: PENDING
-
-  review:
-    requested: false
-    reviewed_commit: null
-    findings: null
-    unresolved_threads: null
-    settled_requery: false
+  delivery_evidence: EXTERNAL_GIT_AND_CI_METADATA_ONLY
 
   merge:
     performed: false
@@ -108,9 +104,9 @@ S3B_T2_ELIGIBLE_SHOT_RESULT:
 
   remaining_blockers:
     - BLOCKED_T2_EXECUTABLE_PATH_MISSING
-  next_task: S3B-T2_PREPARE_ELIGIBLE_SHOT
+  next_task: S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY
   decisions_required_from_jenn:
-    - authorize a separate bounded source task for a reviewed read-only T2 executable entry, or keep T2 blocked
+    - provide separate merge authorization after exact-head CI and review gates pass
 ```
 
 ## Stop evidence

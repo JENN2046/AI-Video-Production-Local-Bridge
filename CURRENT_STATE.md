@@ -236,10 +236,36 @@ minimal_replacement:
   blocks_s4: false
 ```
 
-The sole current task is `S3B-T2_PREPARE_ELIGIBLE_SHOT` and is `BLOCKED` at the
-approval boundary (`result: AWAITING_JENN_AUTHORIZATION`); no task is `READY`.
-The sequence is T2 prepare, T3 Jenn-local credential configuration, T4 offline
-readiness rerun, and then the separately authorized S4 real single-shot canary.
+The authorized `S3B-T2_PREPARE_ELIGIBLE_SHOT` execution stopped before opening
+the business database because the complete read-only T2 executable is absent;
+no task is `READY`.
+
+```yaml
+s3b_t2:
+  authorization_received: true
+  execution_attempted: true
+  database_accessed: false
+  scan_performed: false
+  status: BLOCKED
+  terminal_result: BLOCKED_T2_EXECUTABLE_PATH_MISSING
+  blocker: COMPLETE_READ_ONLY_T2_EXECUTABLE_NOT_PRESENT
+S3B:
+  status: T2_BLOCKED_EXECUTABLE_MISSING
+next_required_remediation:
+  task_id: S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY
+  implementation_authorized: true
+  execution_started: false
+T3:
+  loaded: false
+  executed: false
+S4:
+  authorized: false
+  executed: false
+```
+
+The sequence remains T2 remediation and execution, T3 Jenn-local credential
+configuration, T4 offline readiness rerun, and then the separately authorized
+S4 real single-shot canary.
 T4 does not perform or claim a live price preview; the credentialed,
 networked RunningHub price check belongs to the S4 online preflight immediately
 before a paid submit. PR #113 is an open Ready governance closeout candidate
@@ -250,9 +276,11 @@ current-path Provider readiness and real single-shot canary.
 
 ## S3B-T2 eligibility and acceptance
 
-The blocked `S3B-T2_PREPARE_ELIGIBLE_SHOT` slot is a preparation gate, not an
-authorization to execute it. A future Jenn authorization must select exactly
-one alias-only candidate that satisfies the following deterministic predicate:
+The blocked `S3B-T2_PREPARE_ELIGIBLE_SHOT` execution did not scan or select a
+candidate. The authorized remediation is limited to implementing the missing
+read-only executable; a separately authorized later execution must produce
+exactly one alias-only candidate that satisfies the following deterministic
+predicate:
 
 1. Project facts: `workbench_project_meta.classification` is exactly
    `production`; a classification mismatch is the stable failure
@@ -385,7 +413,7 @@ Current stage queue:
 1. `S1 Scope Freeze` — `DONE`
 2. `S2 Core Loop Gap Audit` — `DONE`
 3. `S3 Provider Canary Readiness` — `DONE` with local readiness findings
-4. `S3B Single-Shot Canary Prerequisites` — `T2_BLOCKED` (`result: AWAITING_JENN_AUTHORIZATION`); recovery replacement deferred
+4. `S3B Single-Shot Canary Prerequisites` — `T2_BLOCKED_EXECUTABLE_MISSING` (`result: BLOCKED_T2_EXECUTABLE_PATH_MISSING`); the read-only executable remediation is authorized but not started
 5. `S4 Real Single-Shot Canary` — `BLOCKED_UNAUTHORIZED`
 6. `S5 Review and Regeneration` — not loaded
 7. `S6 Assembly, Export and Closeout` — not loaded
