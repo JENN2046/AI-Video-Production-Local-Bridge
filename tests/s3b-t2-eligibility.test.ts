@@ -111,6 +111,23 @@ function createFixture(options: { duration?: number; resolution?: string; aspect
   };
 }
 
+function addUnreferencedShotWithStructuredDrift(fixture: Fixture): string {
+  const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+  const shot = getShot(db, fixture.shot_id);
+  assert.ok(shot);
+  const unreferencedShot = {
+    ...shot,
+    shot_id: `shot_${randomUUID()}`,
+    order: 2,
+    storyboard_image_artifact_id: ""
+  };
+  saveShot(db, unreferencedShot);
+  db.prepare("UPDATE media_artifacts SET data_json = ? WHERE artifact_id = ?")
+    .run("{", fixture.artifact_id);
+  db.close();
+  return unreferencedShot.shot_id;
+}
+
 async function scan(fixture: Fixture, options: Omit<S3bT2ScanOptions, "paths"> = {}) {
   return scanS3bT2Eligibility({ paths: fixture.paths, ...options });
 }
@@ -409,36 +426,57 @@ test("storyboard artifact structured drift is a stable ineligible result", async
     } finally { fixture.cleanup(); }
   });
 
-  await t.test("unreferenced shot facts change the drift fingerprint", async () => {
+  await t.test("unchanged drift and unchanged unreferenced shot remain stable", async () => {
     const fixture = createFixture();
     try {
-      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
-      const shot = getShot(db, fixture.shot_id);
-      assert.ok(shot);
-      saveShot(db, {
-        ...shot,
-        shot_id: `shot_${randomUUID()}`,
-        order: 2,
-        storyboard_image_artifact_id: ""
-      });
-      db.prepare("UPDATE media_artifacts SET data_json = ? WHERE artifact_id = ?")
-        .run("{", fixture.artifact_id);
-      db.close();
-      const result = await scan(fixture, { betweenSnapshots: () => {
-        const driftDb = openM0DatabaseConnection(fixture.paths.sqlitePath);
-        try {
-          const unreferenced = driftDb.prepare("SELECT data_json FROM shots WHERE project_id = ? AND shot_id != ? ORDER BY rowid DESC LIMIT 1")
-            .get(fixture.project_id, fixture.shot_id) as { data_json: string };
-          const changed = JSON.parse(unreferenced.data_json) as Record<string, unknown>;
-          changed.description = "changed while structured drift remains";
-          driftDb.prepare("UPDATE shots SET data_json = ? WHERE project_id = ? AND shot_id != ?")
-            .run(JSON.stringify(changed), fixture.project_id, fixture.shot_id);
-        } finally { driftDb.close(); }
-      } });
-      assert.equal(result.result, "T2_STATE_CHANGED_DURING_SCAN");
+      addUnreferencedShotWithStructuredDrift(fixture);
+      const result = await scan(fixture);
+      assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+      assert.equal(result.reason_code_counts.STORYBOARD_ARTIFACT_INTEGRITY_INVALID, 1);
       assert.equal(result.candidate_alias, undefined);
     } finally { fixture.cleanup(); }
   });
+
+  for (const [name, mutate] of [
+    ["data_json", (db: ReturnType<typeof openM0DatabaseConnection>, shotId: string) => {
+      const row = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(shotId) as { data_json: string };
+      const shot = JSON.parse(row.data_json) as Record<string, unknown>;
+      shot.description = "changed while structured drift remains";
+      db.prepare("UPDATE shots SET data_json = ? WHERE shot_id = ?").run(JSON.stringify(shot), shotId);
+    }],
+    ["shot_id", (db: ReturnType<typeof openM0DatabaseConnection>, shotId: string) => {
+      const replacementId = `shot_${randomUUID()}`;
+      const row = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(shotId) as { data_json: string };
+      const shot = JSON.parse(row.data_json) as Record<string, unknown>;
+      shot.shot_id = replacementId;
+      db.prepare("UPDATE shots SET shot_id = ?, data_json = ? WHERE shot_id = ?")
+        .run(replacementId, JSON.stringify(shot), shotId);
+    }],
+    ["project_id", (db: ReturnType<typeof openM0DatabaseConnection>, shotId: string) => {
+      const replacementProjectId = `project_${randomUUID()}`;
+      const row = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(shotId) as { data_json: string };
+      const shot = JSON.parse(row.data_json) as Record<string, unknown>;
+      shot.project_id = replacementProjectId;
+      db.prepare("UPDATE shots SET project_id = ?, data_json = ? WHERE shot_id = ?")
+        .run(replacementProjectId, JSON.stringify(shot), shotId);
+    }]
+  ] as const) {
+    await t.test(`unreferenced shot ${name} change breaks the drift fingerprint`, async () => {
+      const fixture = createFixture();
+      try {
+        const unreferencedShotId = addUnreferencedShotWithStructuredDrift(fixture);
+        const result = await scan(fixture, { betweenSnapshots: () => {
+          const driftDb = openM0DatabaseConnection(fixture.paths.sqlitePath);
+          try { mutate(driftDb, unreferencedShotId); } finally { driftDb.close(); }
+        } });
+        assert.equal(result.result, "T2_STATE_CHANGED_DURING_SCAN");
+        assert.equal(result.candidate_alias, undefined);
+        const encoded = JSON.stringify(result);
+        assert.equal(encoded.includes(unreferencedShotId), false);
+        assert.equal(encoded.includes("s3b-t2-shot-fact-v1"), false);
+      } finally { fixture.cleanup(); }
+    });
+  }
 
   await t.test("malformed artifact projection is a stable integrity rejection", async () => {
     const fixture = createFixture();
