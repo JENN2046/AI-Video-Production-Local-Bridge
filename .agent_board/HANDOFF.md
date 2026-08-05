@@ -6,10 +6,31 @@ Last result: `BLOCKED_T2_EXECUTABLE_PATH_MISSING`; stopped before business datab
 
 ## Current state
 
-Current task: `S3B-T2_PREPARE_ELIGIBLE_SHOT`
-Current status: `BLOCKED` (`result: BLOCKED_T2_EXECUTABLE_PATH_MISSING`)
-Current owner: none
-Ready task count: 0
+```yaml
+current_task:
+  task_id: S3B-T2_PREPARE_ELIGIBLE_SHOT
+  status: BLOCKED
+  terminal_result: BLOCKED_T2_EXECUTABLE_PATH_MISSING
+  ready: false
+next_conditionally_authorized_task:
+  task_id: S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY
+  implementation_authorized: true
+  authorization_kind: CONDITIONAL
+  loaded: false
+  ready: false
+  execution_started: false
+  further_jenn_authorization_required: false
+activation_gate:
+  - PR117_MERGED
+  - POST_MERGE_MAIN_CI_GREEN
+  - WORKTREE_CLEAN
+t3:
+  loaded: false
+  executed: false
+s4:
+  authorized: false
+  executed: false
+```
 
 ## Next conditionally authorized task
 
@@ -42,9 +63,22 @@ unauthorized and unexecuted.
 - T3 was not loaded; Provider, credentials, recovery, Snapshot, Memory, service
   lifecycle and S4 operations remain untouched.
 
-## PR113-R2 current governance
+# Historical handoff archive — superseded
 
-- Baseline is `main@3c502e23f884d1b062210321d84848b45c7bb344`.
+**HISTORICAL SNAPSHOT ONLY.**
+Do not use any section below for current baseline, task loading, authorization,
+queue decisions, merge decisions, or execution. The authoritative current
+handoff is at the top of this file. Terms such as “current” below describe only
+the historical snapshot in which they were originally recorded.
+
+## Historical PR113-R2 governance snapshot — superseded
+
+**HISTORICAL SNAPSHOT ONLY.**
+Do not use this section for current baseline, task loading, authorization,
+queue decisions, merge decisions, or execution. The authoritative current
+handoff is at the top of this file.
+
+- Historical baseline at that time: `main@3c502e23f884d1b062210321d84848b45c7bb344`.
 - PR #113 is an `OPEN_READY` closeout candidate. The task board keeps both its
   current and candidate head symbolic at `VERIFY_BEFORE_MERGE` until the
   current PR head is re-read and revalidated. Its last-reviewed and last-passed
@@ -85,9 +119,14 @@ Snapshot, Memory or Bridge operation was performed.
 - A future minimal replacement is deferred, not required for S4, and is not
   `READY`; this handoff does not authorize implementation.
 
-## Current repository truth
+## Historical repository snapshot — superseded
 
-- `main` is `3c502e23f884d1b062210321d84848b45c7bb344`.
+**HISTORICAL SNAPSHOT ONLY.**
+Do not use this section for current baseline, task loading, authorization,
+queue decisions, merge decisions, or execution. The authoritative current
+handoff is at the top of this file.
+
+- Historical baseline at that time: `main@3c502e23f884d1b062210321d84848b45c7bb344`.
 - PR #108 is merged as
   `808d9334a49def7ce858f7c6138af75fed392c5b`; S3B-T1/T1A are
   `DONE_IN_MAIN`, while the late staged-file finding remains open for a new
@@ -99,7 +138,12 @@ Snapshot, Memory or Bridge operation was performed.
   behavior-test finding; PR #115 is closed unmerged and did not prove a
   production runtime defect.
 
-## Current S3 and S3B state
+## Historical S3/S3B snapshot — superseded
+
+**HISTORICAL SNAPSHOT ONLY.**
+Do not use this section for current baseline, task loading, authorization,
+queue decisions, merge decisions, or execution. The authoritative current
+handoff is at the top of this file.
 
 - S3 is `DONE` with terminal result `BLOCKED_BY_S3_FINDING`.
 - The S3 receipt publishes only an aggregate candidate scan:
@@ -219,8 +263,9 @@ Snapshot, Memory or Bridge operation was performed.
   `808d9334a49def7ce858f7c6138af75fed392c5b`. Its code/CI evidence is
   current-main repository evidence, not live Provider acceptance. The late
   staged-file accumulation finding remains a separate replacement decision.
-- `S3B-T2_PREPARE_ELIGIBLE_SHOT` is
-  `AWAITING_JENN_AUTHORIZATION`.
+- Historical result at that time: `S3B-T2_PREPARE_ELIGIBLE_SHOT` was
+  `AWAITING_JENN_AUTHORIZATION`; this is superseded by the authoritative
+  executable-missing result at the top of this file.
 - `S3B-T3_CONFIGURE_RUNNINGHUB_CREDENTIAL` is
   `AWAITING_JENN_LOCAL_ACTION`.
 - `S3B-T4_RERUN_CANARY_READINESS` is `BLOCKED`.
@@ -231,7 +276,12 @@ Snapshot, Memory or Bridge operation was performed.
   state/evidence files. No activity
   database/media access, Provider operation, credential change,
   service/deployment operation, S3 readiness rerun or S4 execution occurred.
-## S2-T1 Current Core Loop Gap Proof
+## Historical S2-T1 Current Core Loop Gap Proof snapshot — superseded
+
+**HISTORICAL SNAPSHOT ONLY.**
+Do not use this section for current baseline, task loading, authorization,
+queue decisions, merge decisions, or execution. The authoritative current
+handoff is at the top of this file.
 
 - Audited the fixed current-schema scenario from an existing Project and
   approved Storyboard Artifact through Closeout without reading activity data
@@ -605,7 +655,7 @@ Result: READY_TASKS_QUEUED_WITH_DEPENDENCIES
 Arranged at: 2026-07-08T18:22:13+08:00
 Result: READY_TASKS_QUEUED_WITH_DEPENDENCIES
 
-- Current task is now `R3-9L_HUMAN_REGENERATED_CLIP_REVIEW_DECISION_APPLY`, claimed as `IN_PROGRESS` by `Codex R3-9L human regenerated clip review decision apply`.
+- Historical task at that time was `R3-9L_HUMAN_REGENERATED_CLIP_REVIEW_DECISION_APPLY`, claimed as `IN_PROGRESS` by `Codex R3-9L human regenerated clip review decision apply`.
 - Added downstream `READY` tasks to backlog; dependency gates should control the order:
   - `R3-9M_FINAL_ASSEMBLY_READINESS_CHECK` depends on `R3-9L_HUMAN_REGENERATED_CLIP_REVIEW_DECISION_APPLY`.
   - `R3-9N_FINAL_VIDEO_ASSEMBLY_DRY_RUN` depends on `R3-9M_FINAL_ASSEMBLY_READINESS_CHECK`.
