@@ -244,6 +244,10 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
             addReason(reasons, "GENERATION_ALREADY_STARTED");
             continue;
           }
+          if (operational && ["queued", "running"].includes(operational.generation.stage)) {
+            addReason(reasons, "GENERATION_ALREADY_STARTED");
+            continue;
+          }
           if (shot.status !== "storyboard_approved") {
             if (operational && addCanonicalOperationalReasons(reasons, operational)) continue;
             addReason(reasons, "SHOT_NOT_STORYBOARD_APPROVED");

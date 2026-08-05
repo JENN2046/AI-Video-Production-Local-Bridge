@@ -423,6 +423,46 @@ test("global active intent blocks all candidates and multiple candidates do not 
   } finally { fixture.cleanup(); }
 });
 
+test("started generation jobs and runs preserve the started reason without an active intent", async (t) => {
+  for (const state of ["queued", "submitting", "polling", "downloading", "finalizing"] as const) {
+    await t.test(`generation job ${state}`, async () => {
+      const fixture = createFixture();
+      try {
+        const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+        db.prepare(`INSERT INTO generation_intents
+          (intent_id, project_id, shot_id, provider, account_label, model, input_artifact_id,
+           duration_seconds, resolution, estimated_cost_value, budget_limit_value, currency,
+           confirmed, expires_at, status)
+          VALUES (?, ?, ?, 'runninghub', 'primary', 'model', ?, 6, '720x1280', 1, 1, 'USD', 1, '2099-01-01', 'succeeded')`)
+          .run(`intent_${state}`, fixture.project_id, fixture.shot_id, fixture.artifact_id);
+        db.prepare("INSERT INTO generation_jobs (job_id, intent_id, state) VALUES (?, ?, ?)")
+          .run(`job_${state}`, `intent_${state}`, state);
+        db.close();
+        const result = await scan(fixture);
+        assert.equal(result.reason_code_counts.GENERATION_ALREADY_STARTED, 1);
+        assert.equal(result.reason_code_counts.SHOT_OPERATIONAL_STATE_INELIGIBLE, undefined);
+      } finally { fixture.cleanup(); }
+    });
+  }
+
+  for (const status of ["queued", "running"] as const) {
+    await t.test(`latest generation run ${status}`, async () => {
+      const fixture = createFixture();
+      try {
+        const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+        db.prepare(`INSERT INTO generation_runs
+          (run_id, batch_id, project_id, shot_id, run_type, status, data_json)
+          VALUES (?, NULL, ?, ?, 'initial', ?, '{}')`)
+          .run(`run_${status}`, fixture.project_id, fixture.shot_id, status);
+        db.close();
+        const result = await scan(fixture);
+        assert.equal(result.reason_code_counts.GENERATION_ALREADY_STARTED, 1);
+        assert.equal(result.reason_code_counts.SHOT_OPERATIONAL_STATE_INELIGIBLE, undefined);
+      } finally { fixture.cleanup(); }
+    });
+  }
+});
+
 test("database path substitution and state or byte drift fail closed without retry", async (t) => {
   await t.test("database symlink substitute", async () => {
     const fixture = createFixture();
