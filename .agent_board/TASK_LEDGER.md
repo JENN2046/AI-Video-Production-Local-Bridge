@@ -5567,3 +5567,43 @@ prohibited_operations_confirmed:
 merge_performed: false
 delivery: EXACT_HEAD_CI_AND_REVIEW_REQUIRED
 ```
+### 2026-08-05 — S3B-T2-R1 read-only eligible-shot executable
+
+```yaml
+task: S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY
+status: IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION
+result: PASS_T2_READ_ONLY_EXECUTABLE_IMPLEMENTED
+claimed_by: Codex
+claim_run_id: codex-s3b-t2-r1-readonly-executable-20260805
+claimed_at: 2026-08-05T19:58:39+08:00
+completed_by: Codex
+completed_at: 2026-08-05T19:58:39+08:00
+implementation:
+  executable: npm run s3b:t2:scan
+  database_mode: read_only_query_only
+  consistency: two_independent_snapshots_no_retry
+  artifact_verification: actual_bytes_twice
+  provider_boundary: runninghub_registry_only
+formal_execution:
+  business_database_accessed: false
+  formal_media_accessed: false
+  candidate_scan_performed: false
+  provider_calls: 0
+validation:
+  typecheck: PASS
+  build: PASS
+  test_s3b_t2: PASS_30_TESTS
+  selection_gate: PASS
+  foundation_boundaries: PASS_124_TESTS
+  provider_boundaries: PASS
+  database_governance: PASS
+  secret_scan: PASS
+  diff_check: PASS
+evidence:
+  - ops/reports/2026-08-05-s3b-t2-r1-readonly-executable.md
+commit: THIS_PR_IMPLEMENTATION_COMMIT
+delivery: SEPARATE_PR_CI_REVIEW_AND_MERGE_AUTHORIZATION_REQUIRED
+next_task:
+  task_id: S3B-T2-R2_EXECUTE_READ_ONLY_ELIGIBILITY_SCAN
+  status: AWAITING_JENN_AUTHORIZATION
+```

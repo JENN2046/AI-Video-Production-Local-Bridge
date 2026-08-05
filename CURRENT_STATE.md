@@ -5,13 +5,13 @@ Date (Asia/Shanghai, UTC+08:00): 2026-08-05
 ```yaml
 repository_baseline_policy:
   current_main: VERIFY_FROM_GITHUB_BEFORE_EXECUTION
-  last_verified_pre_pr117_main: 90b1d688d1cad301d63aacf8e01acecf0b28eb1f
-  exact_main_must_be_re_resolved_after_pr117_merge: true
+  last_verified_main: 990e5cfa909c7886ea1378c06abe165dc8f19995
+  exact_main_must_be_re_resolved_before_execution: true
 ```
 
 Repository execution baseline: resolve current `origin/main` before execution.
-Last verified pre-PR117 main:
-`main@90b1d688d1cad301d63aacf8e01acecf0b28eb1f`
+Last verified main:
+`main@990e5cfa909c7886ea1378c06abe165dc8f19995`
 
 ## Repository and CI truth
 
@@ -45,8 +45,8 @@ Last verified pre-PR117 main:
   `DIRECTOR_BRIDGE_RUNTIME_SMOKE_FIXTURE_STAGING_UNCLASSIFIED`.
 - PR #116 was squash-merged as
   `90b1d688d1cad301d63aacf8e01acecf0b28eb1f`; its post-merge main CI was green.
-- PR #117 publication status must be verified from GitHub. Its merge is not
-  authorized by this repository state record.
+- PR #117 was squash-merged as
+  `990e5cfa909c7886ea1378c06abe165dc8f19995`.
 - Current-main code/CI status does not imply a fresh external Provider,
   Bridge, database, Snapshot, Memory, deployment or public acceptance.
 - The final PR #106 head passed both `Quality and integration` and
@@ -245,33 +245,31 @@ minimal_replacement:
   blocks_s4: false
 ```
 
-The authorized `S3B-T2_PREPARE_ELIGIBLE_SHOT` execution stopped before opening
-the business database because the complete read-only T2 executable is absent;
-no task is `READY`.
+The `S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY` implementation is complete
+on its task branch and awaits exact-head CI, review and separate merge
+authorization. It has not been run against the formal business database or
+formal media; no task is `READY`.
 
 ```yaml
-s3b_t2:
-  authorization_received: true
-  execution_attempted: true
+s3b_t2_r1:
+  implementation_authorized: true
+  implementation_complete: true
   database_accessed: false
   scan_performed: false
-  status: BLOCKED
-  terminal_result: BLOCKED_T2_EXECUTABLE_PATH_MISSING
-  blocker: COMPLETE_READ_ONLY_T2_EXECUTABLE_NOT_PRESENT
+  status: IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION
+  terminal_result: PASS_T2_READ_ONLY_EXECUTABLE_IMPLEMENTED
 S3B:
-  status: T2_BLOCKED_EXECUTABLE_MISSING
-next_required_remediation:
-  task_id: S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY
-  implementation_authorized: true
-  authorization_kind: CONDITIONAL
+  status: T2_R1_IMPLEMENTED_PENDING_MERGE
+next_task:
+  task_id: S3B-T2-R2_EXECUTE_READ_ONLY_ELIGIBILITY_SCAN
+  status: AWAITING_JENN_AUTHORIZATION
   loaded: false
   ready: false
   execution_started: false
   start_conditions:
-    pr117_merged: required
+    t2_r1_merged: required
     post_merge_main_ci_green: required
-    worktree_clean: required
-  further_jenn_implementation_authorization_required: false
+    jenn_r2_authorization: required
 T3:
   loaded: false
   executed: false
@@ -280,25 +278,24 @@ S4:
   executed: false
 ```
 
-R1 may be loaded and started only after PR #117 is merged, post-merge main CI
-is green, and the worktree is clean. Those conditions do not require another
-Jenn implementation authorization. The sequence then remains T2 remediation
-and execution, T3 Jenn-local credential configuration, T4 offline readiness
-rerun, and the separately authorized S4 real single-shot canary.
+R2 may be loaded only after R1 is merged, post-merge main CI is green, and Jenn
+separately authorizes the formal read-only eligibility scan. R1 authorization
+does not authorize R2. The sequence then remains T2 execution, T3 Jenn-local
+credential configuration, T4 offline readiness rerun, and the separately
+authorized S4 real single-shot canary.
 T4 does not perform or claim a live price preview; the credentialed,
 networked RunningHub price check belongs to the S4 online preflight immediately
 before a paid submit. PR #113 was squash-merged as
-`6897d7d26906bb24726b99a095de51c5a11857fc`. PR #117 remains unmerged and its
-merge is not authorized by this state record.
+`6897d7d26906bb24726b99a095de51c5a11857fc`. PR #117 was squash-merged as
+`990e5cfa909c7886ea1378c06abe165dc8f19995`.
 
 Bridge, Snapshot or Media Gateway recovery must not be inserted ahead of the
 current-path Provider readiness and real single-shot canary.
 
 ## S3B-T2 eligibility and acceptance
 
-The blocked `S3B-T2_PREPARE_ELIGIBLE_SHOT` execution did not scan or select a
-candidate. The authorized remediation is limited to implementing the missing
-read-only executable; a separately authorized later execution must produce
+The R1 branch implements the missing read-only executable but did not scan or
+select a formal candidate. A separately authorized R2 execution must produce
 exactly one alias-only candidate that satisfies the following deterministic
 predicate:
 
@@ -404,8 +401,8 @@ and delivered-state rejections retain the same stable names,
 list. The receipt must retain no activity database identifiers, local paths,
 prompt text, credential values or Provider payloads. T2 must not submit or poll
 a Provider, configure credentials, create or replace media, invoke recovery,
-publish a Snapshot, or run S4. The current
-blocked slot authorizes no Project/Shot or Intent write; any such write scope
+publish a Snapshot, or run S4. The current implementation slot authorizes no
+formal database scan and no Project/Shot or Intent write; any such scope
 must be named in a separate Jenn authorization. A zero-candidate result is a
 fail-closed `S3_NO_ELIGIBLE_SHOT`, not a readiness PASS. A scan producing more
 than one full-predicate candidate is also fail-closed as
@@ -433,7 +430,7 @@ Current stage queue:
 1. `S1 Scope Freeze` — `DONE`
 2. `S2 Core Loop Gap Audit` — `DONE`
 3. `S3 Provider Canary Readiness` — `DONE` with local readiness findings
-4. `S3B Single-Shot Canary Prerequisites` — `T2_BLOCKED_EXECUTABLE_MISSING` (`result: BLOCKED_T2_EXECUTABLE_PATH_MISSING`); the read-only executable remediation is conditionally authorized, not loaded, not ready and not started
+4. `S3B Single-Shot Canary Prerequisites` — R1 is `IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION`; R2 is `AWAITING_JENN_AUTHORIZATION`, not loaded, not ready and not started
 5. `S4 Real Single-Shot Canary` — `BLOCKED_UNAUTHORIZED`
 6. `S5 Review and Regeneration` — not loaded
 7. `S6 Assembly, Export and Closeout` — not loaded

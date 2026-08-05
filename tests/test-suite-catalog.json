@@ -16,6 +16,7 @@
       "paths": [
         "tests/artifact-blob-boundary.test.ts",
         "tests/media-activation-integrity.test.ts",
+        "tests/s3b-t2-eligibility.test.ts",
         "tests/g0-pregen.test.ts",
         "tests/gpt-handoff-app.test.ts",
         "tests/m0-a-skeleton.test.ts",

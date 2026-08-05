@@ -4,42 +4,39 @@ Generated from `.agent_board/NEXT_TASK.json`.
 
 ## Current slot
 
-- Task: `S3B-T2_PREPARE_ELIGIBLE_SHOT`
-- Status: `BLOCKED`
+- Task: `S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY`
+- Status: `IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION`
 - Ready: `false`
-- Implementation authorized: `false`
-- Read-only execution authorized: `true`
-- Current execution task: none
+- Implementation authorized: `true`
+- Read-only execution authorized: `false`
+- Current execution task: `S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY`
 - Ready task count: `0`
 - P0: `CURRENT_MAIN_REPEATABLE_PRODUCTION_LOOP`
 
-Jenn authorized the read-only offline T2 scan, but the task stopped before any
-business database access because current `main` has no existing pure read-only
-T2 executable entry. The stable result is
-`BLOCKED_T2_EXECUTABLE_PATH_MISSING`. Existing modules expose the individual
-read-only primitives, but this task forbids assembling a temporary scanner or
-adding source code. T3 was not loaded and S4 remains unauthorized.
+The formal read-only T2 executable and isolated test coverage are implemented
+on the current task branch. The implementation is not merged and the command
+was not run against the formal business database or formal media. The current
+result is `PASS_T2_READ_ONLY_EXECUTABLE_IMPLEMENTED`, pending exact-head CI,
+review and separate squash-merge authorization. T3 was not loaded and S4
+remains unauthorized.
 
 ## Next authorized task
 
-- Task: `S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY`
-- Authorization: `GRANTED_CONDITIONAL`
-- Implementation authorized: `true`
+- Task: `S3B-T2-R2_EXECUTE_READ_ONLY_ELIGIBILITY_SCAN`
+- Authorization: `AWAITING_JENN_AUTHORIZATION`
+- Implementation authorized: `false`
 - Loaded: `false`
 - Ready: `false`
 - Execution started: `false`
 
-All three activation conditions are required: PR #117 merged, post-merge main
-CI green, and a clean worktree. Before that gate, R1 is not the current slot
-and must not start. After the gate, R1 may be loaded and started without
-another Jenn implementation authorization. Jenn's remaining decision is only
-whether to authorize the separate PR #117 squash merge or keep the PR unmerged
-and retain the current executable-missing block.
+R2 may be loaded only after the R1 implementation is merged, post-merge main
+CI is green, and Jenn separately authorizes the formal read-only eligibility
+scan. It is not loaded, not `READY`, and not started. The R1 implementation
+does not authorize opening the formal database or reading formal media.
 
-The verified T2 code baseline is
-`main@90b1d688d1cad301d63aacf8e01acecf0b28eb1f`; Windows CI run
-`30961478222` passed. Older repository-truth material below remains historical
-context and is not rewritten by this task.
+The verified implementation baseline is
+`main@990e5cfa909c7886ea1378c06abe165dc8f19995`. Older repository-truth
+material below remains historical context and is not rewritten by this task.
 
 ## Historical repository snapshot — superseded
 
@@ -97,8 +94,9 @@ During S4, verified-Blob recovery is governed by:
 | `S3B_VERIFIED_BLOB_RECOVERY` | `DONE_IN_MAIN_WITH_LATE_STAGE_ACCUMULATION_FINDING` |
 | `S3B-T1B_PR109` | `RETIRED_UNMERGED` |
 | `S3B-T1B-R1_MINIMAL_BOUNDED_STAGE_REPLACEMENT` | `DEFERRED_NOT_REQUIRED_FOR_S4` |
-| `S3B-T2_PREPARE_ELIGIBLE_SHOT` | `BLOCKED` (`result: BLOCKED_T2_EXECUTABLE_PATH_MISSING`) |
-| `S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY` | `GRANTED_CONDITIONAL`; not loaded, not ready, not started |
+| `S3B-T2_PREPARE_ELIGIBLE_SHOT` | `BLOCKED_UNTIL_EXECUTABLE_MERGED` |
+| `S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY` | `IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION` |
+| `S3B-T2-R2_EXECUTE_READ_ONLY_ELIGIBILITY_SCAN` | `AWAITING_JENN_AUTHORIZATION`; not loaded, not ready, not started |
 | `S3B-T3_CONFIGURE_RUNNINGHUB_CREDENTIAL` | `AWAITING_JENN_LOCAL_ACTION` |
 | `S3B-T4_RERUN_CANARY_READINESS` | `BLOCKED_BY_T2_AND_T3` |
 | `S4-T1_REAL_SINGLE_SHOT_CURRENT_PATH` | `BLOCKED_UNAUTHORIZED` |
