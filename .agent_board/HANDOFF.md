@@ -1,15 +1,28 @@
 # HANDOFF.md
 
-Current mode: PR113-R2 truth refresh and governance closeout; no executable task is `READY`
-Last run: PR113-R2_REBASE_TRUTH_REFRESH_AND_CLOSEOUT
-Last result: governance refresh prepared on current `main`; PR #113 is Ready and unmerged
+Current mode: authorized S3B-T2 read-only offline preparation; no executable task is `READY`
+Last run: S3B-T2_PREPARE_ELIGIBLE_SHOT
+Last result: `BLOCKED_T2_EXECUTABLE_PATH_MISSING`; stopped before business database access
 
 ## Current state
 
-Current task: `S3B-T2_PREPARE_ELIGIBLE_SHOT` (not authorized)
-Current status: `BLOCKED` (`result: AWAITING_JENN_AUTHORIZATION`)
+Current task: `S3B-T2_PREPARE_ELIGIBLE_SHOT`
+Current status: `BLOCKED` (`result: BLOCKED_T2_EXECUTABLE_PATH_MISSING`)
 Current owner: none
 Ready task count: 0
+
+## S3B-T2 executable-path stop
+
+- Baseline: `main@90b1d688d1cad301d63aacf8e01acecf0b28eb1f`.
+- Windows CI run `30961478222` passed.
+- Jenn authorized read-only offline T2 preparation.
+- Current `main` has separate read-only database, operational-state, byte-
+  verification and registry-capability primitives, but no existing executable
+  entry that performs the complete frozen T2 scan and settled-state receipt.
+- The task forbids a new source tool or temporary orchestration path, so no
+  authoritative business database or governed media was opened.
+- T3 was not loaded; Provider, credentials, recovery, Snapshot, Memory, service
+  lifecycle and S4 operations remain untouched.
 
 ## PR113-R2 current governance
 

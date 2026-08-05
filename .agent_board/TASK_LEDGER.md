@@ -5498,3 +5498,38 @@ provider_database_media_service_deployment_secret_operations: 0
 merge_claimed: false
 delivery: HISTORICAL_EVIDENCE_ORDER_RECONCILED_CURRENT_HEAD_REQUIRES_FRESH_GATE
 ```
+
+### 2026-08-05 — S3B-T2 read-only executable preflight
+
+```yaml
+task: S3B-T2_PREPARE_ELIGIBLE_SHOT
+status: BLOCKED
+result: BLOCKED_T2_EXECUTABLE_PATH_MISSING
+claimed_by: Codex
+claim_run_id: codex-s3b-t2-20260805-executable-path-preflight
+claimed_at: 2026-08-05T08:28:01+08:00
+blocked_by: Codex
+blocked_at: 2026-08-05T08:28:01+08:00
+boundary_or_safety_stop: T2 read-only executable precondition
+blocked_reason: Current main exposes the required read-only primitives but no existing executable entry for the complete frozen T2 scan and settled low-disclosure receipt.
+safe_actions_completed:
+  - verified main@90b1d688d1cad301d63aacf8e01acecf0b28eb1f
+  - verified Windows CI run 30961478222
+  - verified the blocked T2 task slot, ready count zero and unauthorized S4 gate
+  - inspected package scripts and the existing read-only primitives
+  - stopped before opening the authoritative business database
+unsafe_action_not_performed: No temporary scanner, business database or media access, credential read, Provider call, source/test change, service operation, recovery, Snapshot, Memory, T3 or S4 execution.
+options_for_jenn:
+  - authorize a separate bounded source task for a reviewed read-only T2 executable entry
+  - keep T2 blocked
+validation:
+  baseline: PASS
+  executable_path: MISSING
+  database_operations: 0
+  media_operations: 0
+  provider_network_calls: 0
+evidence:
+  - ops/reports/2026-08-05-s3b-t2-eligible-shot-preparation.md
+commit: PENDING_CURRENT_BRANCH_COMMIT
+delivery: DRAFT_EVIDENCE_PR_PENDING
+```

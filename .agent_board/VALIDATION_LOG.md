@@ -3551,3 +3551,41 @@ scope:
 
 This keeps T2 aligned with the current generation input contract without
 weakening Artifact binding or package ambiguity handling.
+
+### 2026-08-05 — S3B-T2 executable-path preflight
+
+```yaml
+task: S3B-T2_PREPARE_ELIGIBLE_SHOT
+baseline:
+  main: 90b1d688d1cad301d63aacf8e01acecf0b28eb1f
+  windows_ci_run: 30961478222
+  windows_ci: PASS
+task_slot:
+  task_id: S3B-T2_PREPARE_ELIGIBLE_SHOT
+  status_before: BLOCKED
+  result_before: AWAITING_JENN_AUTHORIZATION
+  ready_task_count: 0
+  s4_authorized: false
+executable_inspection:
+  read_only_sqlite_primitive: PRESENT
+  canonical_shot_state_primitive: PRESENT
+  read_only_media_byte_verifier: PRESENT_AS_PRIMITIVE
+  registry_only_capability_primitive: PRESENT
+  complete_t2_executable_entry: MISSING
+result: BLOCKED_T2_EXECUTABLE_PATH_MISSING
+boundary:
+  authoritative_database_opened: false
+  media_bytes_read: false
+  database_writes: 0
+  media_writes: 0
+  provider_network_calls: 0
+  credential_reads: 0
+  service_operations: 0
+  source_test_package_workflow_changes: 0
+local_validation:
+  next_task_json: PASS
+  diff_check: PASS
+  secret_scan: PASS
+  changed_file_allowlist: PASS
+  low_disclosure_scan: PASS
+```
