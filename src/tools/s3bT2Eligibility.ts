@@ -5,7 +5,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 import { assertSchemaCurrent } from "../storage/migrations.js";
 import { openM0DatabaseConnection, type M0Database } from "../storage/sqlite.js";
 import { paths, type M0Paths } from "../paths.js";
-import { collectProjectOperationalBundles } from "./operationalStateFacts.js";
+import { collectProjectOperationalBundles, OperationalStateIntegrityError } from "./operationalStateFacts.js";
 import { ArtifactStructuredDriftError, getMediaArtifact, verifyMediaArtifactBytes } from "./mediaArtifacts.js";
 import { buildProviderCapabilityKey, RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY } from "./providerCapabilities.js";
 import type { Project, Shot } from "./projects.js";
@@ -222,7 +222,7 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
       let storyboardArtifactStructuredDriftCount = 0;
       for (const [index, project] of projects.entries()) {
         const row = rows[index];
-        const shotRows = db.prepare("SELECT data_json FROM shots WHERE project_id = ? ORDER BY rowid").all(project.project_id) as Array<{ data_json: string }>;
+        const shotRows = db.prepare("SELECT shot_id, project_id, data_json FROM shots WHERE project_id = ? ORDER BY rowid").all(project.project_id) as Array<{ shot_id: string; project_id: string; data_json: string }>;
         for (const shotRow of shotRows) {
           const shot = JSON.parse(shotRow.data_json) as Partial<Shot>;
           const artifactId = shot.storyboard_image_artifact_id;
@@ -244,7 +244,12 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
           } | undefined;
           storyboardReferenceFacts.push({
             project_fact: { project_data_json: row.data_json, classification: row.classification, lifecycle: row.lifecycle },
-            shot_fact: { shot_data_json: shotRow.data_json, storyboard_image_artifact_id: artifactId },
+            shot_fact: {
+              shot_id: shotRow.shot_id,
+              project_id: shotRow.project_id,
+              shot_data_json: shotRow.data_json,
+              storyboard_image_artifact_id: artifactId
+            },
             artifact_fact: artifactRow ?? {
               artifact_id: artifactId,
               project_id: null,
@@ -259,7 +264,7 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
           try {
             getMediaArtifact(db, artifactId);
           } catch (error) {
-            if (!(error instanceof ArtifactStructuredDriftError)) throw error;
+            if (!(error instanceof ArtifactStructuredDriftError) && !(error instanceof SyntaxError)) throw error;
             storyboardArtifactStructuredDriftCount += 1;
           }
         }
@@ -289,7 +294,23 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
         };
       }
 
-      const bundles = collectProjectOperationalBundles(db, projects);
+      let bundles: ReturnType<typeof collectProjectOperationalBundles>;
+      try {
+        bundles = collectProjectOperationalBundles(db, projects);
+      } catch (error) {
+        if (!(error instanceof OperationalStateIntegrityError) || error.code !== "ARTIFACT_OPERATIONAL_FACT_INVALID") throw error;
+        addReason(reasons, activeIntentCount > 0 ? "REAL_GENERATION_ALREADY_ACTIVE" : "STORYBOARD_ARTIFACT_INTEGRITY_INVALID");
+        db.exec("COMMIT");
+        assertPathCurrent();
+        const after = totalChanges(db);
+        if (before !== 0 || after !== 0) throw new Error("T2_DATABASE_WRITE_DETECTED");
+        return {
+          fingerprint: stableFingerprint({ fingerprintFacts, candidates, reasons }),
+          candidates,
+          reasons,
+          sqlite: { total_changes_before: before, total_changes_after: after }
+        };
+      }
 
       if (activeIntentCount > 0) addReason(reasons, "REAL_GENERATION_ALREADY_ACTIVE");
       for (const [index, project] of projects.entries()) {
