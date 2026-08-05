@@ -217,6 +217,19 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
       const projects = rows.map(parseProject);
       const candidates: Candidate[] = [];
       const fingerprintFacts: unknown[] = [{ database_identity: guard.identity, active_intent_count: activeIntentCount }];
+      const projectFacts = rows.map((projectRow) => ({
+        project_id: projectRow.project_id,
+        project_data_json: projectRow.data_json,
+        classification: projectRow.classification,
+        lifecycle: projectRow.lifecycle
+      }));
+      const projectDigests = projectFacts
+        .map((facts) => createHash("sha256")
+          .update("s3b-t2-project-fact-v1\0")
+          .update(JSON.stringify(facts))
+          .digest("hex"))
+        .sort();
+      fingerprintFacts.push({ project_count: projectDigests.length, project_digests: projectDigests });
 
       const storyboardReferenceFacts: unknown[] = [];
       let storyboardArtifactStructuredDriftCount = 0;
@@ -228,9 +241,11 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
           const artifactId = shot.storyboard_image_artifact_id;
           if (typeof artifactId !== "string" || artifactId.length === 0) continue;
           const artifactRow = db.prepare(`
-            SELECT a.artifact_id, a.project_id, a.shot_id, a.role, a.artifact_type, a.status, a.data_json, m.blob_id
+            SELECT a.artifact_id, a.project_id, a.shot_id, a.role, a.artifact_type, a.status, a.data_json,
+              m.blob_id, b.sha256, b.size_bytes, b.detected_mime, b.storage_uri, b.integrity_state, b.provenance_json
             FROM media_artifacts a
             LEFT JOIN media_artifact_blobs m ON m.artifact_id = a.artifact_id
+            LEFT JOIN media_blobs b ON b.blob_id = m.blob_id
             WHERE a.artifact_id = ?
           `).get(artifactId) as {
             artifact_id: string;
@@ -241,7 +256,28 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
             status: string;
             data_json: string;
             blob_id: string | null;
+            sha256: string | null;
+            size_bytes: number | null;
+            detected_mime: string | null;
+            storage_uri: string | null;
+            integrity_state: string | null;
+            provenance_json: string | null;
           } | undefined;
+          const blobFact = artifactRow
+            ? {
+              blob_id: artifactRow.blob_id,
+              sha256: artifactRow.sha256,
+              size_bytes: artifactRow.size_bytes,
+              detected_mime: artifactRow.detected_mime,
+              storage_uri: artifactRow.storage_uri,
+              integrity_state: artifactRow.integrity_state,
+              provenance_json: artifactRow.provenance_json
+            }
+            : null;
+          const blobFactDigest = createHash("sha256")
+            .update("s3b-t2-blob-fact-v1\0")
+            .update(JSON.stringify(blobFact))
+            .digest("hex");
           storyboardReferenceFacts.push({
             project_fact: { project_data_json: row.data_json, classification: row.classification, lifecycle: row.lifecycle },
             shot_fact: {
@@ -250,16 +286,29 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
               shot_data_json: shotRow.data_json,
               storyboard_image_artifact_id: artifactId
             },
-            artifact_fact: artifactRow ?? {
-              artifact_id: artifactId,
-              project_id: null,
-              shot_id: null,
-              role: null,
-              artifact_type: null,
-              status: null,
-              data_json: null,
-              blob_id: null
-            }
+            artifact_fact: artifactRow
+              ? {
+                artifact_id: artifactRow.artifact_id,
+                project_id: artifactRow.project_id,
+                shot_id: artifactRow.shot_id,
+                role: artifactRow.role,
+                artifact_type: artifactRow.artifact_type,
+                status: artifactRow.status,
+                data_json: artifactRow.data_json,
+                blob_id: artifactRow.blob_id,
+                blob_fact_digest: blobFactDigest
+              }
+              : {
+                artifact_id: artifactId,
+                project_id: null,
+                shot_id: null,
+                role: null,
+                artifact_type: null,
+                status: null,
+                data_json: null,
+                blob_id: null,
+                blob_fact_digest: blobFactDigest
+              }
           });
           try {
             getMediaArtifact(db, artifactId);
