@@ -291,14 +291,29 @@ test("missing active package, generation history, and byte drift are determinist
       assert.equal(result.reason_code_counts.PACKAGE_NOT_FOUND, 1);
     } finally { fixture.cleanup(); }
   });
-  await t.test("generation history present", async () => {
+  await t.test("generation_run_ids present", async () => {
     const fixture = createFixture();
     try {
       const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
       const row = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(fixture.shot_id) as { data_json: string };
       const shot = JSON.parse(row.data_json); shot.generation_run_ids.push("historical_run"); saveShot(db, shot); db.close();
       const result = await scan(fixture);
-      assert.equal(result.reason_code_counts.SHOT_OPERATIONAL_STATE_INELIGIBLE, 1);
+      assert.equal(result.reason_code_counts.GENERATION_ALREADY_STARTED, 1);
+      assert.equal(result.reason_code_counts.SHOT_OPERATIONAL_STATE_INELIGIBLE, undefined);
+    } finally { fixture.cleanup(); }
+  });
+  await t.test("clip_versions present", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      const row = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(fixture.shot_id) as { data_json: string };
+      const shot = JSON.parse(row.data_json);
+      shot.clip_versions.push({ artifact_id: "historical_artifact", run_id: "historical_run", attempt_number: 1, review_status: "pending" });
+      saveShot(db, shot);
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.reason_code_counts.GENERATION_ALREADY_STARTED, 1);
+      assert.equal(result.reason_code_counts.SHOT_OPERATIONAL_STATE_INELIGIBLE, undefined);
     } finally { fixture.cleanup(); }
   });
   await t.test("artifact bytes drift", async () => {

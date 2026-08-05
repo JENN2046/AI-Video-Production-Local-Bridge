@@ -23,6 +23,7 @@ export const S3B_T2_REASON_CODES = [
   "PACKAGE_NOT_APPROVED",
   "SHOT_NOT_STORYBOARD_APPROVED",
   "SHOT_OPERATIONAL_STATE_INELIGIBLE",
+  "GENERATION_ALREADY_STARTED",
   "STORYBOARD_APPROVAL_REQUIRED",
   "STORYBOARD_REVISION_REQUIRED",
   "STORYBOARD_IMAGE_MISSING",
@@ -239,12 +240,14 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
         if (!bundle) throw new Error("T2_OPERATIONAL_BUNDLE_MISSING");
         for (const shot of bundle.shots) {
           if (shot.status !== "storyboard_approved") { addReason(reasons, "SHOT_NOT_STORYBOARD_APPROVED"); continue; }
+          if (shot.generation_run_ids.length !== 0 || shot.clip_versions.length !== 0) {
+            addReason(reasons, "GENERATION_ALREADY_STARTED");
+            continue;
+          }
           const operational = bundle.states_by_shot_id.get(shot.shot_id);
           if (!operational
             || operational.generation.stage !== "ready"
             || !operational.allowed_workflow_actions.prepare_generation
-            || shot.generation_run_ids.length !== 0
-            || shot.clip_versions.length !== 0
             || operational.review.stage !== "not_started") {
             if (!operational || !addCanonicalOperationalReasons(reasons, operational)) {
               addReason(reasons, "SHOT_OPERATIONAL_STATE_INELIGIBLE");
