@@ -8,7 +8,7 @@ import test from "node:test";
 
 import { runDatabaseMigrations } from "../src/storage/migrations.js";
 import { openM0DatabaseConnection } from "../src/storage/sqlite.js";
-import { createProject, getProject, saveProject, saveShot } from "../src/tools/projects.js";
+import { createProject, getProject, getShot, saveProject, saveShot } from "../src/tools/projects.js";
 import { importStoryboardPackage, saveStoryboardPackage } from "../src/tools/storyboardPackages.js";
 import { scanS3bT2Eligibility, s3bT2ExitCode, type S3bT2ScanOptions } from "../src/tools/s3bT2Eligibility.js";
 import type { M0Paths } from "../src/paths.js";
@@ -405,6 +405,37 @@ test("storyboard artifact structured drift is a stable ineligible result", async
       assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
       assert.equal(result.reason_code_counts.REAL_GENERATION_ALREADY_ACTIVE, 1);
       assert.equal(result.reason_code_counts.STORYBOARD_ARTIFACT_INTEGRITY_INVALID, undefined);
+      assert.equal(result.candidate_alias, undefined);
+    } finally { fixture.cleanup(); }
+  });
+
+  await t.test("unreferenced shot facts change the drift fingerprint", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      const shot = getShot(db, fixture.shot_id);
+      assert.ok(shot);
+      saveShot(db, {
+        ...shot,
+        shot_id: `shot_${randomUUID()}`,
+        order: 2,
+        storyboard_image_artifact_id: ""
+      });
+      db.prepare("UPDATE media_artifacts SET data_json = ? WHERE artifact_id = ?")
+        .run("{", fixture.artifact_id);
+      db.close();
+      const result = await scan(fixture, { betweenSnapshots: () => {
+        const driftDb = openM0DatabaseConnection(fixture.paths.sqlitePath);
+        try {
+          const unreferenced = driftDb.prepare("SELECT data_json FROM shots WHERE project_id = ? AND shot_id != ? ORDER BY rowid DESC LIMIT 1")
+            .get(fixture.project_id, fixture.shot_id) as { data_json: string };
+          const changed = JSON.parse(unreferenced.data_json) as Record<string, unknown>;
+          changed.description = "changed while structured drift remains";
+          driftDb.prepare("UPDATE shots SET data_json = ? WHERE project_id = ? AND shot_id != ?")
+            .run(JSON.stringify(changed), fixture.project_id, fixture.shot_id);
+        } finally { driftDb.close(); }
+      } });
+      assert.equal(result.result, "T2_STATE_CHANGED_DURING_SCAN");
       assert.equal(result.candidate_alias, undefined);
     } finally { fixture.cleanup(); }
   });

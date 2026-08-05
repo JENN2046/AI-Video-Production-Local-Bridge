@@ -232,6 +232,7 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
       fingerprintFacts.push({ project_count: projectDigests.length, project_digests: projectDigests });
 
       const storyboardReferenceFacts: unknown[] = [];
+      const shotFacts: unknown[] = [];
       let storyboardArtifactStructuredDriftCount = 0;
       for (const [index, project] of projects.entries()) {
         const row = rows[index];
@@ -239,6 +240,7 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
         for (const shotRow of shotRows) {
           const shot = JSON.parse(shotRow.data_json) as Partial<Shot>;
           const artifactId = shot.storyboard_image_artifact_id;
+          shotFacts.push({ shot_id: shotRow.shot_id, project_id: shotRow.project_id, shot_data_json: shotRow.data_json });
           if (typeof artifactId !== "string" || artifactId.length === 0) continue;
           const artifactRow = db.prepare(`
             SELECT a.artifact_id, a.project_id, a.shot_id, a.role, a.artifact_type, a.status, a.data_json,
@@ -318,6 +320,13 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
           }
         }
       }
+      const shotDigests = shotFacts
+        .map((facts) => createHash("sha256")
+          .update("s3b-t2-shot-fact-v1\0")
+          .update(JSON.stringify(facts))
+          .digest("hex"))
+        .sort();
+      fingerprintFacts.push({ shot_count: shotDigests.length, shot_digests: shotDigests });
       const referenceDigests = storyboardReferenceFacts
         .map((facts) => createHash("sha256")
           .update("s3b-t2-drift-reference-v1\0")
