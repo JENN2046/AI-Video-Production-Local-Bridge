@@ -254,7 +254,15 @@ S3B:
 next_required_remediation:
   task_id: S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY
   implementation_authorized: true
+  authorization_kind: CONDITIONAL
+  loaded: false
+  ready: false
   execution_started: false
+  start_conditions:
+    pr117_merged: required
+    post_merge_main_ci_green: required
+    worktree_clean: required
+  further_jenn_implementation_authorization_required: false
 T3:
   loaded: false
   executed: false
@@ -263,9 +271,11 @@ S4:
   executed: false
 ```
 
-The sequence remains T2 remediation and execution, T3 Jenn-local credential
-configuration, T4 offline readiness rerun, and then the separately authorized
-S4 real single-shot canary.
+R1 may be loaded and started only after PR #117 is merged, post-merge main CI
+is green, and the worktree is clean. Those conditions do not require another
+Jenn implementation authorization. The sequence then remains T2 remediation
+and execution, T3 Jenn-local credential configuration, T4 offline readiness
+rerun, and the separately authorized S4 real single-shot canary.
 T4 does not perform or claim a live price preview; the credentialed,
 networked RunningHub price check belongs to the S4 online preflight immediately
 before a paid submit. PR #113 is an open Ready governance closeout candidate
@@ -413,7 +423,7 @@ Current stage queue:
 1. `S1 Scope Freeze` — `DONE`
 2. `S2 Core Loop Gap Audit` — `DONE`
 3. `S3 Provider Canary Readiness` — `DONE` with local readiness findings
-4. `S3B Single-Shot Canary Prerequisites` — `T2_BLOCKED_EXECUTABLE_MISSING` (`result: BLOCKED_T2_EXECUTABLE_PATH_MISSING`); the read-only executable remediation is authorized but not started
+4. `S3B Single-Shot Canary Prerequisites` — `T2_BLOCKED_EXECUTABLE_MISSING` (`result: BLOCKED_T2_EXECUTABLE_PATH_MISSING`); the read-only executable remediation is conditionally authorized, not loaded, not ready and not started
 5. `S4 Real Single-Shot Canary` — `BLOCKED_UNAUTHORIZED`
 6. `S5 Review and Regeneration` — not loaded
 7. `S6 Assembly, Export and Closeout` — not loaded

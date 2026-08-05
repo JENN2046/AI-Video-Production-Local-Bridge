@@ -5520,8 +5520,8 @@ safe_actions_completed:
   - stopped before opening the authoritative business database
 unsafe_action_not_performed: No temporary scanner, business database or media access, credential read, Provider call, source/test change, service operation, recovery, Snapshot, Memory, T3 or S4 execution.
 options_for_jenn:
-  - authorize a separate bounded source task for a reviewed read-only T2 executable entry
-  - keep T2 blocked
+  - authorize PR #117 squash merge after exact-head gates pass
+  - keep PR #117 unmerged and retain the current executable-missing block
 validation:
   baseline: PASS
   executable_path: MISSING
@@ -5531,5 +5531,39 @@ validation:
 evidence:
   - ops/reports/2026-08-05-s3b-t2-eligible-shot-preparation.md
 commit: PENDING_CURRENT_BRANCH_COMMIT
-delivery: DRAFT_EVIDENCE_PR_PENDING
+delivery: CONDITIONAL_R1_AUTHORIZATION_RECORDED_PR117_MERGE_DECISION_PENDING
+```
+
+### 2026-08-05 — PR117-R2 conditional authorization handoff sync
+
+```yaml
+task: PR117-R2_CONDITIONAL_AUTHORIZATION_HANDOFF_SYNC
+status: LOCAL_SYNC_COMPLETE_EXACT_HEAD_GATES_PENDING
+authorization_state:
+  task_id: S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY
+  implementation_authorized: true
+  authorization_kind: CONDITIONAL
+  loaded: false
+  ready: false
+  execution_started: false
+activation_gate:
+  all_required:
+    - PR117_MERGED
+    - POST_MERGE_MAIN_CI_GREEN
+    - WORKTREE_CLEAN
+  further_jenn_implementation_authorization_required: false
+current_task:
+  task_id: S3B-T2_PREPARE_ELIGIBLE_SHOT
+  status: BLOCKED
+  ready: false
+  terminal_result: BLOCKED_T2_EXECUTABLE_PATH_MISSING
+options_for_jenn:
+  - authorize PR #117 squash merge after exact-head gates pass
+  - keep PR #117 unmerged and retain the current executable-missing block
+prohibited_operations_confirmed:
+  source_test_package_workflow_changes: 0
+  business_database_media_provider_credential_service_operations: 0
+  t3_or_s4_execution: 0
+merge_performed: false
+delivery: EXACT_HEAD_CI_AND_REVIEW_REQUIRED
 ```

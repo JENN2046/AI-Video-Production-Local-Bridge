@@ -17,6 +17,20 @@
   "current_execution_task": null,
   "implementation_authorized": false,
   "read_only_execution_authorized": true,
+  "next_authorized_task": {
+    "task_id": "S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY",
+    "implementation_authorized": true,
+    "authorization_kind": "CONDITIONAL",
+    "authorization": "GRANTED_CONDITIONAL",
+    "loaded": false,
+    "ready": false,
+    "execution_started": false,
+    "activation_gate": {
+      "all_required": ["PR117_MERGED", "POST_MERGE_MAIN_CI_GREEN", "WORKTREE_CLEAN"],
+      "before_gate": { "loaded": false, "ready": false, "execution_started": false },
+      "after_gate": { "action": "LOAD_AND_START_S3B_T2_R1", "further_jenn_implementation_authorization_required": false }
+    }
+  },
   "stage_dependency_rules": {
     "S2_CORE_LOOP_GAP_AUDIT": { "director_bridge_required": false, "snapshot_required": false, "media_gateway_required": false, "memory_required": false, "multi_user_required": false },
     "S3_PROVIDER_CANARY_READINESS": { "unified_workspace_required": false, "director_bridge_required": false, "snapshot_required": false, "media_gateway_required": false, "memory_required": false, "multi_user_required": false },
@@ -41,6 +55,7 @@
     { "task_id": "S3B-T1B_PR109", "status": "RETIRED_UNMERGED", "pull_request": 109 },
     { "task_id": "S3B-T1B-R1_MINIMAL_BOUNDED_STAGE_REPLACEMENT", "status": "DEFERRED_NOT_REQUIRED_FOR_S4", "ready": false, "implementation_authorized": false, "blocks_s4": false },
     { "task_id": "S3B-T2_PREPARE_ELIGIBLE_SHOT", "status": "BLOCKED_T2_EXECUTABLE_PATH_MISSING" },
+    { "task_id": "S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY", "status": "GRANTED_CONDITIONAL", "implementation_authorized": true, "authorization_kind": "CONDITIONAL", "loaded": false, "ready": false, "execution_started": false, "start_conditions": ["PR117_MERGED", "POST_MERGE_MAIN_CI_GREEN", "WORKTREE_CLEAN"], "further_jenn_implementation_authorization_required": false },
     { "task_id": "S3B-T3_CONFIGURE_RUNNINGHUB_CREDENTIAL", "status": "AWAITING_JENN_LOCAL_ACTION" },
     { "task_id": "S3B-T4_RERUN_CANARY_READINESS", "status": "BLOCKED_BY_T2_AND_T3" }
   ],
@@ -52,7 +67,7 @@
     "automatic_stage_cleanup": "forbidden"
   },
   "minimal_replacement": { "task_id": "S3B-T1B-R1_MINIMAL_BOUNDED_STAGE_REPLACEMENT", "status": "DEFERRED_NOT_REQUIRED_FOR_S4", "blocks_s4": false },
-  "production_sequence": ["S3B-T2_PREPARE_ELIGIBLE_SHOT", "S3B-T3_CONFIGURE_RUNNINGHUB_CREDENTIAL", "S3B-T4_RERUN_CANARY_READINESS", "S4-T1_REAL_SINGLE_SHOT_CURRENT_PATH"],
+  "production_sequence": ["S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY", "S3B-T2_PREPARE_ELIGIBLE_SHOT", "S3B-T3_CONFIGURE_RUNNINGHUB_CREDENTIAL", "S3B-T4_RERUN_CANARY_READINESS", "S4-T1_REAL_SINGLE_SHOT_CURRENT_PATH"],
   "s4_gate": { "task_id": "S4-T1_REAL_SINGLE_SHOT_CURRENT_PATH", "status": "BLOCKED_UNAUTHORIZED", "authorization_granted": false },
   "task_classifications": [
     { "task_id": "MEDIA_GATEWAY_PROMOTION_AND_EXPANSION", "status": "FROZEN" },
@@ -78,7 +93,7 @@
   "blocked_reason": "Current main exposes the required read-only primitives but no existing executable entry that performs the frozen T2 scan, consistent-state recheck and low-disclosure receipt without new orchestration code.",
   "safe_actions_completed": ["verified origin/main@90b1d688d1cad301d63aacf8e01acecf0b28eb1f", "verified Windows CI run 30961478222", "verified the blocked T2 task slot and unauthorized S4 gate", "inspected existing package scripts and exported read-only primitives", "stopped before opening the authoritative business database"],
   "unsafe_action_not_performed": "No business database or media access, temporary T2 script, source/test change, credential access, Provider call, service operation, recovery, Snapshot, Memory, T3 or S4 execution.",
-  "options_for_jenn": ["Authorize a separate bounded source task to add a reviewed read-only T2 executable entry", "Keep T2 blocked"],
+  "options_for_jenn": ["Authorize PR #117 squash merge after exact-head gates pass", "Keep PR #117 unmerged and retain the current executable-missing block"],
   "result": "BLOCKED_T2_EXECUTABLE_PATH_MISSING",
   "validation": "Baseline and executable-path inspection completed; the authorized scan was not run because the required existing entry is absent.",
   "evidence": ["origin/main@90b1d688d1cad301d63aacf8e01acecf0b28eb1f", "Windows CI 30961478222", "package.json", "src/storage/sqlite.ts", "src/packages/domain/operationalState.ts", "src/tools/mediaArtifacts.ts", "src/tools/providerCapabilities.ts"],

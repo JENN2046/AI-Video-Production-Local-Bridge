@@ -11,6 +11,24 @@ Current status: `BLOCKED` (`result: BLOCKED_T2_EXECUTABLE_PATH_MISSING`)
 Current owner: none
 Ready task count: 0
 
+## Next conditionally authorized task
+
+`S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY` has Jenn's conditional
+implementation authorization, but it is not loaded, not `READY`, and not
+started. It may be loaded and started only when all of these are true:
+
+- PR #117 is merged;
+- post-merge main CI is green;
+- the worktree is clean.
+
+Once all three conditions are proven, no further Jenn implementation
+authorization is required. Until then, the current slot remains
+`S3B-T2_PREPARE_ELIGIBLE_SHOT` in
+`BLOCKED_T2_EXECUTABLE_PATH_MISSING`. Jenn's only current decision is whether
+to authorize the separate PR #117 squash merge or keep PR #117 unmerged and
+retain that block. T3 remains not loaded and unexecuted; S4 remains
+unauthorized and unexecuted.
+
 ## S3B-T2 executable-path stop
 
 - Baseline: `main@90b1d688d1cad301d63aacf8e01acecf0b28eb1f`.
