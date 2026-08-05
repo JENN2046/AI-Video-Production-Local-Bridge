@@ -1,7 +1,17 @@
 # Current State
 
-Date (Asia/Shanghai, UTC+08:00): 2026-08-04
-Repository baseline: `main@3c502e23f884d1b062210321d84848b45c7bb344`
+Date (Asia/Shanghai, UTC+08:00): 2026-08-05
+
+```yaml
+repository_baseline_policy:
+  current_main: VERIFY_FROM_GITHUB_BEFORE_EXECUTION
+  last_verified_pre_pr117_main: 90b1d688d1cad301d63aacf8e01acecf0b28eb1f
+  exact_main_must_be_re_resolved_after_pr117_merge: true
+```
+
+Repository execution baseline: resolve current `origin/main` before execution.
+Last verified pre-PR117 main:
+`main@90b1d688d1cad301d63aacf8e01acecf0b28eb1f`
 
 ## Repository and CI truth
 
@@ -23,21 +33,20 @@ Repository baseline: `main@3c502e23f884d1b062210321d84848b45c7bb344`
   `main`.
 - PR #111, `fix: align Node preflight with engine floor`, was squash-merged as
   `770f3dff342874e90788d0f475c4cff49136e114`.
-- PR #113 is an open Ready governance closeout candidate. The task board keeps
-  both its current and candidate head symbolic at `VERIFY_BEFORE_MERGE` until
-  the current PR head is re-read and revalidated. Its last-reviewed and
-  last-passed head is `16babfd9650184183acef959244c2d765ea53dcc` against
-  current base `3c502e23f884d1b062210321d84848b45c7bb344`; this is historical
-  evidence, not a claim about the current PR head. The earlier `f8ed0b9` is
-  retained only as a reviewed head with a state-reconciliation finding. No
-  merge is claimed.
-- PR #114 was squash-merged as current `main@3c502e23f884d1b062210321d84848b45c7bb344`.
+- PR #113 was squash-merged as
+  `6897d7d26906bb24726b99a095de51c5a11857fc`.
+- PR #114 was historically squash-merged as
+  `3c502e23f884d1b062210321d84848b45c7bb344`; it is not the current main.
   Its valid behavior-test P2 remains `DEFERRED_UNRESOLVED` (thread
   `3708908011`); no reply or resolution is claimed.
 - PR #115 is closed without merge at head
   `866accc40ea36c7d8098048ea911eb6e6b0a376b`; its branch remains retained and
   its final fixture CI failure was
   `DIRECTOR_BRIDGE_RUNTIME_SMOKE_FIXTURE_STAGING_UNCLASSIFIED`.
+- PR #116 was squash-merged as
+  `90b1d688d1cad301d63aacf8e01acecf0b28eb1f`; its post-merge main CI was green.
+- PR #117 publication status must be verified from GitHub. Its merge is not
+  authorized by this repository state record.
 - Current-main code/CI status does not imply a fresh external Provider,
   Bridge, database, Snapshot, Memory, deployment or public acceptance.
 - The final PR #106 head passed both `Quality and integration` and
@@ -118,7 +127,7 @@ database. `REAL_PROVIDER_ENABLED=false` remains the safe default.
 | Unified `/workspace/mcp` | Unified Remote and Director tool contracts exist | Earlier bounded transport/activity path passed | Core ChatGPT route; later commits do not inherit that PASS |
 | Legacy `/mcp` | Still present | Earlier Readonly acceptance exists | `ROLLBACK_ONLY` |
 | Dedicated Director route | Still present beside Unified Director tools | Earlier bounded evidence exists | `ROLLBACK_ONLY` |
-| Director Bridge | A managed process was detected with source commit `3a142bb` | The recorded process source predates `main@3c502e23`; no current-main configuration, heartbeat or authenticated-contact acceptance was performed | Do not place before S3/S4 |
+| Director Bridge | A managed process was detected with source commit `3a142bb` | The recorded Bridge source predates the current main lineage; no fresh current-main configuration, heartbeat or authenticated-contact acceptance was performed | Do not place before S3/S4 |
 | Manual Snapshot | Publisher and signed Snapshot contract exist | Earlier bounded publish/recovery evidence exists | Optional; not an S3/S4 dependency |
 | Media Gateway | PR #105 two-project Image/MP4 matrix is in main and CI passed | No corresponding current-main public maintenance-window acceptance | Optional human Widget playback |
 | Memory Port | Advisory recall seam and non-dispatched Saveback envelope exist | No stable production plugin or automatic Saveback | Frozen |
@@ -161,12 +170,12 @@ A low-disclosure manager status check detected a managed Director Bridge
 process whose recorded source commit is
 `3a142bb1aeaf34a506f84b2fa2598a5819203d45`.
 
-The recorded manager check returned `RESTART_REQUIRED` on the earlier
-repository baseline, and its source commit still predates current
-`main@3c502e23`. This retirement did not start, stop or restart the Bridge. It did
-not revalidate configuration identity, heartbeat or authenticated Remote
-contact. Therefore the repository must not claim that the Bridge is stopped,
-healthy, Remote-connected or accepted on current main.
+The recorded manager check returned `RESTART_REQUIRED` on an earlier
+repository baseline. The recorded Bridge source predates the current main
+lineage. This retirement did not start, stop or restart the Bridge. No fresh
+current-main configuration, heartbeat or authenticated-contact acceptance has
+been performed. Therefore the repository must not claim that the Bridge is
+stopped, healthy, Remote-connected or accepted on current main.
 
 The accepted `fbf6540` restart report and the later `2b43f558` diagnostic-gap
 report remain historical, commit-scoped evidence.
@@ -212,7 +221,7 @@ S5:
   requires_director_bridge: true_only_when_using_chatgpt_frame_review
 ```
 
-## Recovery governance after PR113-R2
+## Current bounded recovery governance
 
 ```yaml
 pr114_p2:
@@ -278,8 +287,9 @@ and execution, T3 Jenn-local credential configuration, T4 offline readiness
 rerun, and the separately authorized S4 real single-shot canary.
 T4 does not perform or claim a live price preview; the credentialed,
 networked RunningHub price check belongs to the S4 online preflight immediately
-before a paid submit. PR #113 is an open Ready governance closeout candidate
-and has not been merged.
+before a paid submit. PR #113 was squash-merged as
+`6897d7d26906bb24726b99a095de51c5a11857fc`. PR #117 remains unmerged and its
+merge is not authorized by this state record.
 
 Bridge, Snapshot or Media Gateway recovery must not be inserted ahead of the
 current-path Provider readiness and real single-shot canary.

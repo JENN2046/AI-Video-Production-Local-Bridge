@@ -41,9 +41,16 @@ The verified T2 code baseline is
 `30961478222` passed. Older repository-truth material below remains historical
 context and is not rewritten by this task.
 
-## Current repository truth
+## Historical repository snapshot — superseded
 
-- `main`: `3c502e23f884d1b062210321d84848b45c7bb344`
+**HISTORICAL SNAPSHOT ONLY.**
+Do not use this section for the current baseline, task loading,
+authorization, queue, merge, or execution decisions.
+The authoritative current task state is the structured section above.
+
+Historical baseline at that time:
+`main@3c502e23f884d1b062210321d84848b45c7bb344`
+
 - PR #108: `MERGED` as `808d9334a49def7ce858f7c6138af75fed392c5b`.
 - PR #109: `CLOSED_UNMERGED_RETIRED`; head and branch retained; no source
   commit accepted into main.
