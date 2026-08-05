@@ -201,6 +201,38 @@ test("package matching accepts unique order fallback, normalizes null negative p
   } finally { fixture.cleanup(); }
 });
 
+test("ineligible shots retain canonical operational reason codes", async (t) => {
+  await t.test("missing video prompt", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      const row = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(fixture.shot_id) as { data_json: string };
+      const shot = JSON.parse(row.data_json);
+      shot.video_prompt = "";
+      saveShot(db, shot);
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.reason_code_counts.VIDEO_PROMPT_MISSING, 1);
+      assert.equal(result.reason_code_counts.SHOT_OPERATIONAL_STATE_INELIGIBLE, undefined);
+    } finally { fixture.cleanup(); }
+  });
+  await t.test("inactive storyboard artifact", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      const row = db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = ?").get(fixture.artifact_id) as { data_json: string };
+      const artifact = JSON.parse(row.data_json);
+      artifact.status = "inaccessible";
+      db.prepare("UPDATE media_artifacts SET status = 'inaccessible', data_json = ? WHERE artifact_id = ?")
+        .run(JSON.stringify(artifact), fixture.artifact_id);
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.reason_code_counts.STORYBOARD_ARTIFACT_INACTIVE, 1);
+      assert.equal(result.reason_code_counts.SHOT_OPERATIONAL_STATE_INELIGIBLE, undefined);
+    } finally { fixture.cleanup(); }
+  });
+});
+
 test("ambiguous package order and unsupported artifact mime are rejected", async (t) => {
   await t.test("ambiguous order", async () => {
     const fixture = createFixture();

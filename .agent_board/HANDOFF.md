@@ -9,7 +9,8 @@ Last result: `PASS_T2_READ_ONLY_EXECUTABLE_IMPLEMENTED`; formal business databas
 ```yaml
 current_task:
   task_id: S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY
-  status: IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION
+  status: DONE
+  implementation_disposition: IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION
   terminal_result: PASS_T2_READ_ONLY_EXECUTABLE_IMPLEMENTED
   ready: false
 next_task:

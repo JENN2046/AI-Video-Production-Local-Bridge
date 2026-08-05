@@ -256,7 +256,8 @@ s3b_t2_r1:
   implementation_complete: true
   database_accessed: false
   scan_performed: false
-  status: IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION
+  status: DONE
+  implementation_disposition: IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION
   terminal_result: PASS_T2_READ_ONLY_EXECUTABLE_IMPLEMENTED
 S3B:
   status: T2_R1_IMPLEMENTED_PENDING_MERGE
@@ -430,7 +431,7 @@ Current stage queue:
 1. `S1 Scope Freeze` — `DONE`
 2. `S2 Core Loop Gap Audit` — `DONE`
 3. `S3 Provider Canary Readiness` — `DONE` with local readiness findings
-4. `S3B Single-Shot Canary Prerequisites` — R1 is `IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION`; R2 is `AWAITING_JENN_AUTHORIZATION`, not loaded, not ready and not started
+4. `S3B Single-Shot Canary Prerequisites` — R1 is `DONE` with disposition `IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION`; R2 is `AWAITING_JENN_AUTHORIZATION`, not loaded, not ready and not started
 5. `S4 Real Single-Shot Canary` — `BLOCKED_UNAUTHORIZED`
 6. `S5 Review and Regeneration` — not loaded
 7. `S6 Assembly, Export and Closeout` — not loaded

@@ -10,6 +10,7 @@ import { getMediaArtifact, verifyMediaArtifactBytes } from "./mediaArtifacts.js"
 import { buildProviderCapabilityKey, RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY } from "./providerCapabilities.js";
 import type { Project, Shot } from "./projects.js";
 import { getStoryboardPackage, type ApprovedShotSnapshot, type StoryboardPackage } from "./storyboardPackages.js";
+import type { ShotOperationalState } from "../packages/domain/operationalState.js";
 
 export const S3B_T2_REASON_CODES = [
   "REAL_GENERATION_ALREADY_ACTIVE",
@@ -22,9 +23,23 @@ export const S3B_T2_REASON_CODES = [
   "PACKAGE_NOT_APPROVED",
   "SHOT_NOT_STORYBOARD_APPROVED",
   "SHOT_OPERATIONAL_STATE_INELIGIBLE",
+  "STORYBOARD_APPROVAL_REQUIRED",
+  "STORYBOARD_REVISION_REQUIRED",
+  "STORYBOARD_IMAGE_MISSING",
+  "STORYBOARD_ARTIFACT_INACTIVE",
+  "STORYBOARD_ARTIFACT_BINDING_INVALID",
+  "STORYBOARD_ARTIFACT_ROLE_INVALID",
   "PACKAGE_SNAPSHOT_MISMATCH",
   "STORYBOARD_ARTIFACT_INTEGRITY_INVALID",
   "STORYBOARD_IMAGE_MIME_UNSUPPORTED",
+  "VIDEO_PROMPT_MISSING",
+  "SHOT_DURATION_INVALID",
+  "SHOT_STATE_INCONSISTENT",
+  "GENERATION_MANUAL_RECONCILIATION",
+  "GENERATION_FAILED",
+  "SHOT_REVIEW_NOT_APPROVED",
+  "ARTIFACT_NOT_IN_SHOT_REVIEW",
+  "CLIP_REVISION_REQUIRED",
   "PROVIDER_CAPABILITY_NOT_FOUND",
   "PROVIDER_CAPABILITY_MODEL_MISMATCH",
   "PROVIDER_CAPABILITY_DURATION_UNSUPPORTED",
@@ -139,6 +154,36 @@ function addReason(reasons: SnapshotResult["reasons"], code: S3bT2ReasonCode): v
   reasons[code] = (reasons[code] ?? 0) + 1;
 }
 
+const CANONICAL_OPERATIONAL_REASON_CODES = new Set<S3bT2ReasonCode>([
+  "STORYBOARD_APPROVAL_REQUIRED",
+  "STORYBOARD_REVISION_REQUIRED",
+  "STORYBOARD_IMAGE_MISSING",
+  "STORYBOARD_ARTIFACT_INACTIVE",
+  "STORYBOARD_ARTIFACT_BINDING_INVALID",
+  "STORYBOARD_ARTIFACT_ROLE_INVALID",
+  "STORYBOARD_ARTIFACT_INTEGRITY_INVALID",
+  "VIDEO_PROMPT_MISSING",
+  "SHOT_DURATION_INVALID",
+  "SHOT_STATE_INCONSISTENT",
+  "GENERATION_MANUAL_RECONCILIATION",
+  "GENERATION_FAILED",
+  "SHOT_REVIEW_NOT_APPROVED",
+  "ARTIFACT_NOT_IN_SHOT_REVIEW",
+  "CLIP_REVISION_REQUIRED"
+]);
+
+function addCanonicalOperationalReasons(
+  reasons: SnapshotResult["reasons"],
+  operational: ShotOperationalState
+): boolean {
+  const canonical = [
+    ...operational.generation.reason_codes,
+    ...operational.blocker_codes
+  ].filter((code): code is S3bT2ReasonCode => CANONICAL_OPERATIONAL_REASON_CODES.has(code as S3bT2ReasonCode));
+  for (const code of new Set(canonical)) addReason(reasons, code);
+  return canonical.length > 0;
+}
+
 function stableFingerprint(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
@@ -201,7 +246,10 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
             || shot.generation_run_ids.length !== 0
             || shot.clip_versions.length !== 0
             || operational.review.stage !== "not_started") {
-            addReason(reasons, "SHOT_OPERATIONAL_STATE_INELIGIBLE"); continue;
+            if (!operational || !addCanonicalOperationalReasons(reasons, operational)) {
+              addReason(reasons, "SHOT_OPERATIONAL_STATE_INELIGIBLE");
+            }
+            continue;
           }
           const matched = matchingSnapshot(storyboard, shot);
           if (matched === "ambiguous") { addReason(reasons, "PACKAGE_SNAPSHOT_MISMATCH"); continue; }
