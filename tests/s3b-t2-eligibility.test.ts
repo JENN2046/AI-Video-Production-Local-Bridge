@@ -385,6 +385,73 @@ test("storyboard artifact structured drift is a stable ineligible result", async
       assert.equal(result.candidate_alias, undefined);
     } finally { fixture.cleanup(); }
   });
+
+  await t.test("active intent takes precedence over unchanged drift", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      const row = db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = ?").get(fixture.artifact_id) as { data_json: string };
+      const artifact = JSON.parse(row.data_json) as Record<string, unknown>;
+      artifact.status = "inaccessible";
+      db.prepare("UPDATE media_artifacts SET data_json = ? WHERE artifact_id = ?").run(JSON.stringify(artifact), fixture.artifact_id);
+      db.prepare(`INSERT INTO generation_intents
+        (intent_id, project_id, shot_id, provider, account_label, model, input_artifact_id,
+         duration_seconds, resolution, estimated_cost_value, budget_limit_value, currency,
+         confirmed, expires_at, status)
+        VALUES ('intent_active_drift', ?, ?, 'runninghub', 'primary', 'model', ?, 6, '720x1280', 1, 1, 'USD', 1, '2099-01-01', 'queued')`)
+        .run(fixture.project_id, fixture.shot_id, fixture.artifact_id);
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+      assert.equal(result.reason_code_counts.REAL_GENERATION_ALREADY_ACTIVE, 1);
+      assert.equal(result.reason_code_counts.STORYBOARD_ARTIFACT_INTEGRITY_INVALID, undefined);
+      assert.equal(result.candidate_alias, undefined);
+    } finally { fixture.cleanup(); }
+  });
+
+  for (const [name, mutate] of [
+    ["artifact relational fact", (fixture: Fixture, db: ReturnType<typeof openM0DatabaseConnection>) => {
+      db.prepare("UPDATE media_artifacts SET status = 'archived' WHERE artifact_id = ?").run(fixture.artifact_id);
+    }],
+    ["artifact data_json fact", (fixture: Fixture, db: ReturnType<typeof openM0DatabaseConnection>) => {
+      const row = db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = ?").get(fixture.artifact_id) as { data_json: string };
+      const artifact = JSON.parse(row.data_json) as Record<string, unknown>;
+      artifact.status = "expired";
+      db.prepare("UPDATE media_artifacts SET data_json = ? WHERE artifact_id = ?").run(JSON.stringify(artifact), fixture.artifact_id);
+    }],
+    ["shot fact", (fixture: Fixture, db: ReturnType<typeof openM0DatabaseConnection>) => {
+      const row = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(fixture.shot_id) as { data_json: string };
+      const shot = JSON.parse(row.data_json); shot.description = "changed while drift remains";
+      saveShot(db, shot);
+    }],
+    ["project fact", (fixture: Fixture, db: ReturnType<typeof openM0DatabaseConnection>) => {
+      db.prepare("UPDATE workbench_project_meta SET classification = 'test' WHERE project_id = ?").run(fixture.project_id);
+    }]
+  ] as const) {
+    await t.test(`${name} changes the drift fingerprint`, async () => {
+      const fixture = createFixture();
+      try {
+        const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+        const row = db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = ?").get(fixture.artifact_id) as { data_json: string };
+        const artifact = JSON.parse(row.data_json) as Record<string, unknown>;
+        artifact.status = "inaccessible";
+        db.prepare("UPDATE media_artifacts SET data_json = ? WHERE artifact_id = ?").run(JSON.stringify(artifact), fixture.artifact_id);
+        db.close();
+        const result = await scan(fixture, { betweenSnapshots: () => {
+          const driftDb = openM0DatabaseConnection(fixture.paths.sqlitePath);
+          mutate(fixture, driftDb);
+          driftDb.close();
+        } });
+        assert.equal(result.result, "T2_STATE_CHANGED_DURING_SCAN");
+        assert.equal(result.candidate_alias, undefined);
+        assert.equal(JSON.stringify(result).includes(fixture.project_id), false);
+        assert.equal(JSON.stringify(result).includes(fixture.shot_id), false);
+        assert.equal(JSON.stringify(result).includes(fixture.artifact_id), false);
+        assert.equal(JSON.stringify(result).includes("s3b-t2-drift-reference-v1"), false);
+      } finally { fixture.cleanup(); }
+    });
+  }
+
 });
 
 test("missing active package, generation history, and byte drift are deterministic rejections", async (t) => {

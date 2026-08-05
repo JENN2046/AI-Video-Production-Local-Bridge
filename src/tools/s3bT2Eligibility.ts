@@ -218,24 +218,65 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
       const candidates: Candidate[] = [];
       const fingerprintFacts: unknown[] = [{ database_identity: guard.identity, active_intent_count: activeIntentCount }];
 
-      let storyboardArtifactStructuredDrift = false;
-      for (const project of projects) {
+      const storyboardReferenceFacts: unknown[] = [];
+      let storyboardArtifactStructuredDriftCount = 0;
+      for (const [index, project] of projects.entries()) {
+        const row = rows[index];
         const shotRows = db.prepare("SELECT data_json FROM shots WHERE project_id = ? ORDER BY rowid").all(project.project_id) as Array<{ data_json: string }>;
         for (const shotRow of shotRows) {
           const shot = JSON.parse(shotRow.data_json) as Partial<Shot>;
           const artifactId = shot.storyboard_image_artifact_id;
           if (typeof artifactId !== "string" || artifactId.length === 0) continue;
+          const artifactRow = db.prepare(`
+            SELECT a.artifact_id, a.project_id, a.shot_id, a.role, a.artifact_type, a.status, a.data_json, m.blob_id
+            FROM media_artifacts a
+            LEFT JOIN media_artifact_blobs m ON m.artifact_id = a.artifact_id
+            WHERE a.artifact_id = ?
+          `).get(artifactId) as {
+            artifact_id: string;
+            project_id: string | null;
+            shot_id: string | null;
+            role: string;
+            artifact_type: string;
+            status: string;
+            data_json: string;
+            blob_id: string | null;
+          } | undefined;
+          storyboardReferenceFacts.push({
+            project_fact: { project_data_json: row.data_json, classification: row.classification, lifecycle: row.lifecycle },
+            shot_fact: { shot_data_json: shotRow.data_json, storyboard_image_artifact_id: artifactId },
+            artifact_fact: artifactRow ?? {
+              artifact_id: artifactId,
+              project_id: null,
+              shot_id: null,
+              role: null,
+              artifact_type: null,
+              status: null,
+              data_json: null,
+              blob_id: null
+            }
+          });
           try {
             getMediaArtifact(db, artifactId);
           } catch (error) {
             if (!(error instanceof ArtifactStructuredDriftError)) throw error;
-            storyboardArtifactStructuredDrift = true;
+            storyboardArtifactStructuredDriftCount += 1;
           }
         }
       }
-      if (storyboardArtifactStructuredDrift) {
-        fingerprintFacts.push({ storyboard_artifact_structured_drift: true });
-        addReason(reasons, "STORYBOARD_ARTIFACT_INTEGRITY_INVALID");
+      const referenceDigests = storyboardReferenceFacts
+        .map((facts) => createHash("sha256")
+          .update("s3b-t2-drift-reference-v1\0")
+          .update(JSON.stringify(facts))
+          .digest("hex"))
+        .sort();
+      fingerprintFacts.push({
+        storyboard_reference_count: referenceDigests.length,
+        storyboard_reference_digests: referenceDigests,
+        storyboard_artifact_structured_drift_count: storyboardArtifactStructuredDriftCount
+      });
+      if (storyboardArtifactStructuredDriftCount > 0) {
+        addReason(reasons, activeIntentCount > 0 ? "REAL_GENERATION_ALREADY_ACTIVE" : "STORYBOARD_ARTIFACT_INTEGRITY_INVALID");
         db.exec("COMMIT");
         assertPathCurrent();
         const after = totalChanges(db);
@@ -309,7 +350,6 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
             artifact = getMediaArtifact(db, shot.storyboard_image_artifact_id);
           } catch (error) {
             if (!(error instanceof ArtifactStructuredDriftError)) throw error;
-            fingerprintFacts.push({ storyboard_artifact_structured_drift: true });
             addReason(reasons, "STORYBOARD_ARTIFACT_INTEGRITY_INVALID");
             continue;
           }
