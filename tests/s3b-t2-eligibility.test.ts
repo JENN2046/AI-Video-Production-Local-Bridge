@@ -666,6 +666,108 @@ test("missing active package, generation history, and byte drift are determinist
   });
 });
 
+test("full database rowset fingerprints capture timestamp and relationship drift", async (t) => {
+  type TestDb = ReturnType<typeof openM0DatabaseConnection>;
+  type RowsetCase = {
+    name: string;
+    prepare?: (db: TestDb, fixture: Fixture) => void;
+    mutate: (db: TestDb, fixture: Fixture) => void;
+  };
+  const cases: RowsetCase[] = [
+    {
+      name: "project updated_at",
+      mutate: (db, fixture) => { db.prepare("UPDATE projects SET updated_at = ? WHERE project_id = ?").run("2000-01-01T00:00:00.000Z", fixture.project_id); }
+    },
+    {
+      name: "workbench_project_meta updated_at",
+      mutate: (db, fixture) => { db.prepare("UPDATE workbench_project_meta SET updated_at = ? WHERE project_id = ?").run("2000-01-01T00:00:00.000Z", fixture.project_id); }
+    },
+    {
+      name: "shot updated_at",
+      mutate: (db, fixture) => { db.prepare("UPDATE shots SET updated_at = ? WHERE shot_id = ?").run("2000-01-01T00:00:00.000Z", fixture.shot_id); }
+    },
+    {
+      name: "storyboard package updated_at",
+      mutate: (db, fixture) => { db.prepare("UPDATE storyboard_packages SET updated_at = ? WHERE storyboard_package_id = ?").run("2000-01-01T00:00:00.000Z", fixture.package_id); }
+    },
+    {
+      name: "media artifact updated_at",
+      mutate: (db, fixture) => { db.prepare("UPDATE media_artifacts SET updated_at = ? WHERE artifact_id = ?").run("2000-01-01T00:00:00.000Z", fixture.artifact_id); }
+    },
+    {
+      name: "artifact blob link created_at",
+      mutate: (db, fixture) => { db.prepare("UPDATE media_artifact_blobs SET created_at = ? WHERE artifact_id = ?").run("2000-01-01T00:00:00.000Z", fixture.artifact_id); }
+    },
+    {
+      name: "generation intent updated_at",
+      prepare: (db, fixture) => {
+        db.prepare(`INSERT INTO generation_intents
+          (intent_id, project_id, shot_id, provider, account_label, model, input_artifact_id,
+           duration_seconds, resolution, estimated_cost_value, budget_limit_value, currency,
+           confirmed, expires_at, status)
+          VALUES (?, ?, ?, 'runninghub', 'primary', 'model', ?, 6, '720x1280', 1, 1, 'USD', 0, '2099-01-01', 'prepared')`)
+          .run("intent_rowset", fixture.project_id, fixture.shot_id, fixture.artifact_id);
+      },
+      mutate: (db) => { db.prepare("UPDATE generation_intents SET updated_at = ? WHERE intent_id = ?").run("2000-01-01T00:00:00.000Z", "intent_rowset"); }
+    },
+    {
+      name: "generation job updated_at",
+      prepare: (db, fixture) => {
+        db.prepare(`INSERT INTO generation_intents
+          (intent_id, project_id, shot_id, provider, account_label, model, input_artifact_id,
+           duration_seconds, resolution, estimated_cost_value, budget_limit_value, currency,
+           confirmed, expires_at, status)
+          VALUES (?, ?, ?, 'runninghub', 'primary', 'model', ?, 6, '720x1280', 1, 1, 'USD', 0, '2099-01-01', 'prepared')`)
+          .run("intent_job_rowset", fixture.project_id, fixture.shot_id, fixture.artifact_id);
+        db.prepare("INSERT INTO generation_jobs (job_id, intent_id, state) VALUES (?, ?, 'queued')")
+          .run("job_rowset", "intent_job_rowset");
+      },
+      mutate: (db) => { db.prepare("UPDATE generation_jobs SET updated_at = ? WHERE job_id = ?").run("2000-01-01T00:00:00.000Z", "job_rowset"); }
+    },
+    {
+      name: "generation run updated_at",
+      prepare: (db, fixture) => {
+        db.prepare(`INSERT INTO generation_runs
+          (run_id, batch_id, project_id, shot_id, run_type, status, data_json)
+          VALUES (?, NULL, ?, ?, 'provider', 'succeeded', '{}')`)
+          .run("run_rowset", fixture.project_id, fixture.shot_id);
+      },
+      mutate: (db) => { db.prepare("UPDATE generation_runs SET updated_at = ? WHERE run_id = ?").run("2000-01-01T00:00:00.000Z", "run_rowset"); }
+    },
+    {
+      name: "new media blob row",
+      mutate: (db) => {
+        db.prepare(`INSERT INTO media_blobs
+          (blob_id, sha256, size_bytes, detected_mime, storage_uri, integrity_state, provenance_json)
+          VALUES (?, '', 0, '', '', 'unverified', '{}')`)
+          .run(`blob_${randomUUID()}`);
+      }
+    }
+  ];
+
+  for (const rowsetCase of cases) {
+    await t.test(rowsetCase.name, async () => {
+      const fixture = createFixture();
+      try {
+        const setupDb = openM0DatabaseConnection(fixture.paths.sqlitePath);
+        rowsetCase.prepare?.(setupDb, fixture);
+        setupDb.close();
+        const result = await scan(fixture, { betweenSnapshots: () => {
+          const driftDb = openM0DatabaseConnection(fixture.paths.sqlitePath);
+          try { rowsetCase.mutate(driftDb, fixture); } finally { driftDb.close(); }
+        } });
+        assert.equal(result.result, "T2_STATE_CHANGED_DURING_SCAN");
+        assert.equal(result.candidate_alias, undefined);
+        const encoded = JSON.stringify(result);
+        assert.equal(encoded.includes(fixture.project_id), false);
+        assert.equal(encoded.includes(fixture.shot_id), false);
+        assert.equal(encoded.includes(fixture.artifact_id), false);
+        assert.equal(encoded.includes("s3b-t2-rowset-"), false);
+      } finally { fixture.cleanup(); }
+    });
+  }
+});
+
 test("global active intent blocks all candidates and multiple candidates do not disclose aliases", async () => {
   const first = createFixture();
   try {

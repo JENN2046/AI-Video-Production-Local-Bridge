@@ -187,8 +187,47 @@ function addCanonicalOperationalReasons(
   return canonical.length > 0;
 }
 
+function domainSeparatedSha256(domain: string, value: unknown): string {
+  return createHash("sha256")
+    .update(domain)
+    .update("\0")
+    .update(JSON.stringify(value))
+    .digest("hex");
+}
+
+function canonicalizeSqlRow(row: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(row).sort(([left], [right]) => left.localeCompare(right))
+  );
+}
+
+const SNAPSHOT_ROWSET_SPECS = [
+  { table: "projects", orderBy: ["project_id"] },
+  { table: "workbench_project_meta", orderBy: ["project_id"] },
+  { table: "shots", orderBy: ["project_id", "shot_id"] },
+  { table: "storyboard_packages", orderBy: ["project_id", "storyboard_package_id"] },
+  { table: "media_artifacts", orderBy: ["project_id", "shot_id", "artifact_id"] },
+  { table: "media_artifact_blobs", orderBy: ["artifact_id"] },
+  { table: "media_blobs", orderBy: ["blob_id"] },
+  { table: "generation_intents", orderBy: ["intent_id"] },
+  { table: "generation_jobs", orderBy: ["job_id"] },
+  { table: "generation_runs", orderBy: ["project_id", "shot_id", "run_id"] }
+] as const;
+
+function readSnapshotRowsets(db: M0Database): Array<{ table: string; row_count: number; rowset_digest: string }> {
+  return SNAPSHOT_ROWSET_SPECS.map((spec) => {
+    const rows = db.prepare(`SELECT * FROM ${spec.table} ORDER BY ${spec.orderBy.join(", ")}`).all() as Array<Record<string, unknown>>;
+    const canonicalRows = rows.map(canonicalizeSqlRow);
+    return {
+      table: spec.table,
+      row_count: canonicalRows.length,
+      rowset_digest: domainSeparatedSha256(`s3b-t2-rowset-${spec.table}-v1`, canonicalRows)
+    };
+  });
+}
+
 function stableFingerprint(value: unknown): string {
-  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+  return domainSeparatedSha256("s3b-t2-snapshot-envelope-v1", value);
 }
 
 function totalChanges(db: M0Database): number {
@@ -216,7 +255,10 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
       `).all() as ProjectRow[];
       const projects = rows.map(parseProject);
       const candidates: Candidate[] = [];
-      const fingerprintFacts: unknown[] = [{ database_identity: guard.identity, active_intent_count: activeIntentCount }];
+      const fingerprintFacts: unknown[] = [
+        { database_identity: guard.identity, active_intent_count: activeIntentCount },
+        { database_rowsets: readSnapshotRowsets(db) }
+      ];
       const projectFacts = rows.map((projectRow) => ({
         project_id: projectRow.project_id,
         project_data_json: projectRow.data_json,
