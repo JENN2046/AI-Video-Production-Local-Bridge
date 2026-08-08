@@ -40,7 +40,7 @@
     "S6_ASSEMBLY_EXPORT_CLOSEOUT": { "director_bridge_required": false, "snapshot_required": false, "media_gateway_required": false, "memory_required": false }
   },
   "publication": {
-    "publication_policy": { "current_truth_source": "VERIFY_FROM_GITHUB_BEFORE_EXECUTION", "last_verified_main": "990e5cfa909c7886ea1378c06abe165dc8f19995", "active_pull_request": { "number": 118, "state": "OPEN", "draft": true, "base_sha": "990e5cfa909c7886ea1378c06abe165dc8f19995", "head_ref": "codex/s3b-t2-readonly-executable", "implementation_code_tip": "2514e3bfbafa0b5e2c599b13e24921b5460d2f49", "current_head_authority": "VERIFY_FROM_GITHUB_BEFORE_EXECUTION", "disposition": "IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION" } },
+    "publication_policy": { "current_truth_source": "VERIFY_FROM_GITHUB_BEFORE_EXECUTION", "last_verified_main": "990e5cfa909c7886ea1378c06abe165dc8f19995", "active_pull_request": { "number": 118, "state": "OPEN", "draft": true, "base_sha": "990e5cfa909c7886ea1378c06abe165dc8f19995", "head_ref": "codex/s3b-t2-readonly-executable", "implementation_code_tip": "0644fd1592517406b30ecdddc6075994fd7aa833", "current_head_authority": "VERIFY_FROM_GITHUB_BEFORE_EXECUTION", "disposition": "IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION" } },
     "pull_request_108": { "status": "MERGED", "squash_commit": "808d9334a49def7ce858f7c6138af75fed392c5b", "merge_method": "SQUASH" },
     "pull_request_109": { "status": "CLOSED_UNMERGED_RETIRED", "head": "423351bf376378d6fde48cea3060cc7af35bb148", "branch": "codex/blob-recovery-staging-reconciliation", "branch_retained": true, "source_commits_accepted_into_main": false },
     "pull_request_110": { "status": "MERGED", "squash_commit": "00c8ed458144f03d4b0e1389d4de6dbf8005ed9a", "merge_method": "SQUASH" },
@@ -102,7 +102,7 @@
   "result": "PASS_T2_READ_ONLY_EXECUTABLE_IMPLEMENTED",
   "validation": "typecheck, build, test:s3b:t2, selection gate, foundation boundaries, provider boundaries, database governance, secret scan and diff check passed.",
   "evidence": ["ops/reports/2026-08-05-s3b-t2-r1-readonly-executable.md"],
-  "commit": "2514e3bfbafa0b5e2c599b13e24921b5460d2f49",
+  "commit": "0644fd1592517406b30ecdddc6075994fd7aa833",
   "implementation_commit_semantics": "LATEST_IMPLEMENTATION_CODE_TIP_BEFORE_GOVERNANCE_SYNC",
   "delivery": "SEPARATE_PR_AND_MERGE_AUTHORIZATION_REQUIRED",
   "updated_at": "2026-08-05T19:58:39+08:00",

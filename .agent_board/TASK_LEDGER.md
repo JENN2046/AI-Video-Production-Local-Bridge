@@ -5684,3 +5684,21 @@ disposition:
 merged: false
 R2_authorized: false
 ```
+
+### 2026-08-08 — PR118-R14 governed-media hard-link exclusivity closure
+
+```yaml
+task_id: S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY
+result: GOVERNANCE_CORRECTION
+supersedes_implementation_tip:
+  previous: 2514e3bfbafa0b5e2c599b13e24921b5460d2f49
+  current: 0644fd1592517406b30ecdddc6075994fd7aa833
+reason:
+  - R14 governed-media hard-link exclusivity closure
+pull_request: 118
+base: 990e5cfa909c7886ea1378c06abe165dc8f19995
+disposition:
+  IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION
+merged: false
+R2_authorized: false
+```
