@@ -5666,3 +5666,21 @@ disposition:
 merged: false
 R2_authorized: false
 ```
+
+### 2026-08-08 — PR118-R13 safe-integer contract correction
+
+```yaml
+task_id: S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY
+result: GOVERNANCE_CORRECTION
+supersedes_implementation_tip:
+  previous: be3c2084e83d51bca7cdb37711c134f69c1dd291
+  current: 2514e3bfbafa0b5e2c599b13e24921b5460d2f49
+reason:
+  - R13 safe-integer parity with canonical ClipVersion contract
+pull_request: 118
+base: 990e5cfa909c7886ea1378c06abe165dc8f19995
+disposition:
+  IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION
+merged: false
+R2_authorized: false
+```
