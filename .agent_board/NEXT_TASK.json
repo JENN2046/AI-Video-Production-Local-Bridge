@@ -102,7 +102,8 @@
   "result": "PASS_T2_READ_ONLY_EXECUTABLE_IMPLEMENTED",
   "validation": "typecheck, build, test:s3b:t2, selection gate, foundation boundaries, provider boundaries, database governance, secret scan and diff check passed.",
   "evidence": ["ops/reports/2026-08-05-s3b-t2-r1-readonly-executable.md"],
-  "commit": "THIS_PR_IMPLEMENTATION_COMMIT",
+  "commit": "70d2ee42acbb85698d60d8f3a8f9ef86a60ad3d2",
+  "implementation_commit_semantics": "LATEST_IMPLEMENTATION_CODE_TIP_BEFORE_GOVERNANCE_SYNC",
   "delivery": "SEPARATE_PR_AND_MERGE_AUTHORIZATION_REQUIRED",
   "updated_at": "2026-08-05T19:58:39+08:00",
   "safe_state": { "source_files_changed": 1, "test_files_changed": 2, "package_files_changed": 1, "provider_calls": 0, "database_operations": 0, "media_operations": 0, "service_operations": 0, "secret_accessed": false }
