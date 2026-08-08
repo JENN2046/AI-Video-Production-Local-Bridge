@@ -10,7 +10,8 @@ import {
   type T2DatabaseRow,
   type T2RawSnapshot,
   type T2RawRowsetMap,
-  type T2RowsetEvidenceMap
+  type T2RowsetEvidenceMap,
+  type GovernedMediaEvidence
 } from "./s3bT2Types.js";
 
 export type T2SnapshotPaths = Pick<M0Paths, "dataRoot" | "sqlitePath">;
@@ -125,6 +126,21 @@ function databaseEvidenceDigest(
   return digest("t2-database-evidence-v1", {
     database,
     rowsets: Object.fromEntries(T2_SNAPSHOT_ROWSET_NAMES.map((name) => [name, evidence[name]]))
+  });
+}
+
+/** The single construction point for the internal canonical snapshot evidence. */
+export function fingerprintT2SnapshotEvidence(input: {
+  database_evidence_digest: string;
+  media_root_evidence_digest: string;
+  referenced_media_evidence: readonly Pick<GovernedMediaEvidence, "fingerprint_digest">[];
+}): string {
+  return digest("t2-snapshot-evidence-v2", {
+    database_evidence_digest: input.database_evidence_digest,
+    media_root_evidence_digest: input.media_root_evidence_digest,
+    referenced_media_evidence: [...input.referenced_media_evidence]
+      .map((evidence) => evidence.fingerprint_digest)
+      .sort()
   });
 }
 
