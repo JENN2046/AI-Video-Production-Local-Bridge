@@ -8,7 +8,7 @@ import { paths, type M0Paths } from "../paths.js";
 import { collectProjectOperationalBundles, OperationalStateIntegrityError } from "./operationalStateFacts.js";
 import { ArtifactStructuredDriftError, getMediaArtifact, getMediaBlob, type MediaArtifact, type MediaBlob } from "./mediaArtifacts.js";
 import { buildProviderCapabilityKey, RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY } from "./providerCapabilities.js";
-import { validateImageBuffer } from "./imageValidity.js";
+import { validateImageBufferDecoded } from "./imageValidity.js";
 import type { Project, Shot } from "./projects.js";
 import type { ApprovedShotSnapshot, StoryboardPackage } from "./storyboardPackages.js";
 import type { ShotOperationalState } from "../packages/domain/operationalState.js";
@@ -139,6 +139,13 @@ interface AuthoritativeMediaRootFailure {
   status_class: AuthoritativeMediaRootFailureClass;
   entry?: Stats;
   canonical_target?: string;
+  target_entity?: {
+    available: boolean;
+    dev?: number;
+    ino?: number;
+    nlink?: number;
+    entity_kind?: "directory" | "file" | "other";
+  };
 }
 
 type AuthoritativeMediaRootInspection =
@@ -166,8 +173,24 @@ function authoritativeMediaRootFailureDigest(failure: AuthoritativeMediaRootFail
     } : null,
     canonical_target_digest: failure.canonical_target
       ? domainSeparatedSha256("s3b-t2-authoritative-media-root-target-v1", failure.canonical_target)
-      : null
+      : null,
+    target_entity: failure.target_entity ?? null
   });
+}
+
+function inspectSymlinkTargetEntity(path: string): NonNullable<AuthoritativeMediaRootFailure["target_entity"]> {
+  try {
+    const target = statSync(path);
+    return {
+      available: true,
+      dev: target.dev,
+      ino: target.ino,
+      nlink: target.nlink,
+      entity_kind: target.isDirectory() ? "directory" : target.isFile() ? "file" : "other"
+    };
+  } catch {
+    return { available: false };
+  }
 }
 
 function inspectAuthoritativeMediaRoot(scanPaths: M0Paths): AuthoritativeMediaRootInspection {
@@ -182,7 +205,8 @@ function inspectAuthoritativeMediaRoot(scanPaths: M0Paths): AuthoritativeMediaRo
         failure_digest: authoritativeMediaRootFailureDigest({
           status_class: "SYMLINK",
           entry,
-          canonical_target: canonicalTarget
+          canonical_target: canonicalTarget,
+          target_entity: inspectSymlinkTargetEntity(configured)
         })
       };
     }
@@ -225,6 +249,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+const CLIP_VERSION_KEYS = new Set([
+  "artifact_id",
+  "run_id",
+  "attempt_number",
+  "review_status"
+]);
+
+function isStrictClipVersion(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const keys = Object.keys(value);
+  return keys.length === CLIP_VERSION_KEYS.size
+    && keys.every((key) => CLIP_VERSION_KEYS.has(key))
+    && typeof value.artifact_id === "string"
+    && typeof value.run_id === "string"
+    && typeof value.attempt_number === "number"
+    && Number.isSafeInteger(value.attempt_number)
+    && (value.review_status === "pending"
+      || value.review_status === "approved"
+      || value.review_status === "rejected");
+}
+
 function parseShotForT2(raw: string): { ok: true; shot: Partial<Shot> } | { ok: false } {
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -232,14 +277,7 @@ function parseShotForT2(raw: string): { ok: true; shot: Partial<Shot> } | { ok: 
     if (!Array.isArray(parsed.generation_run_ids)
       || !parsed.generation_run_ids.every((value): value is string => typeof value === "string")
       || !Array.isArray(parsed.clip_versions)
-      || !parsed.clip_versions.every((value) => isRecord(value)
-        && typeof value.artifact_id === "string"
-        && typeof value.run_id === "string"
-        && typeof value.attempt_number === "number"
-        && Number.isSafeInteger(value.attempt_number)
-        && (value.review_status === "pending"
-          || value.review_status === "approved"
-          || value.review_status === "rejected"))) {
+      || !parsed.clip_versions.every(isStrictClipVersion)) {
       return { ok: false };
     }
     return { ok: true, shot: parsed as Partial<Shot> };
@@ -340,6 +378,27 @@ interface MediaIdentityFailure {
   canonical_realpath?: string;
 }
 
+function mediaIdentityFailureWithTrustedIdentityDigest(
+  failureDigest: string,
+  entry: Stats | undefined,
+  canonicalRealpath: string | undefined
+): string {
+  return domainSeparatedSha256("s3b-t2-media-identity-failure-context-v1", {
+    failure_digest: failureDigest,
+    trusted_entry: entry ? {
+      dev: entry.dev,
+      ino: entry.ino,
+      nlink: entry.nlink,
+      size: entry.size,
+      mtimeMs: entry.mtimeMs,
+      ctimeMs: entry.ctimeMs
+    } : null,
+    trusted_canonical_realpath_digest: canonicalRealpath
+      ? domainSeparatedSha256("s3b-t2-realpath-v1", canonicalRealpath)
+      : null
+  });
+}
+
 type GovernedMediaPathResult =
   | { ok: true; path: GovernedMediaPath }
   | { ok: false; failure_digest: string };
@@ -418,6 +477,8 @@ function hashAuthoritativeMediaFile(filePath: string, root: AuthoritativeMediaRo
   const resolvedPath = resolve(filePath);
   const pathBefore = inspectGovernedMediaPath(resolvedPath, root);
   if (!pathBefore.ok) return { ok: false, media_identity_failure_digest: pathBefore.failure_digest };
+  let trustedEntry: Stats | undefined = pathBefore.path.entry;
+  let trustedRealpath: string | undefined = pathBefore.path.realpath;
   let descriptor: number | undefined;
   try {
     descriptor = openSync(resolvedPath, "r");
@@ -428,8 +489,14 @@ function hashAuthoritativeMediaFile(filePath: string, root: AuthoritativeMediaRo
         media_identity_failure_digest: mediaIdentityFailureDigest({ status_class: "IDENTITY_CHANGED", entry: fdBefore })
       };
     }
+    trustedEntry = fdBefore;
     const pathAfterOpen = inspectGovernedMediaPath(resolvedPath, root);
-    if (!pathAfterOpen.ok) return { ok: false, media_identity_failure_digest: pathAfterOpen.failure_digest };
+    if (!pathAfterOpen.ok) {
+      return {
+        ok: false,
+        media_identity_failure_digest: mediaIdentityFailureWithTrustedIdentityDigest(pathAfterOpen.failure_digest, trustedEntry, trustedRealpath)
+      };
+    }
     const pathAfterOpenStat = statSync(resolvedPath);
     if (!pathAfterOpenStat.isFile()
       || pathAfterOpenStat.nlink !== 1
@@ -440,6 +507,8 @@ function hashAuthoritativeMediaFile(filePath: string, root: AuthoritativeMediaRo
         media_identity_failure_digest: mediaIdentityFailureDigest({ status_class: "IDENTITY_CHANGED", entry: pathAfterOpenStat, canonical_realpath: pathAfterOpen.path.realpath })
       };
     }
+    trustedEntry = pathAfterOpenStat;
+    trustedRealpath = pathAfterOpen.path.realpath;
 
     const rawHash = createHash("sha256");
     const snapshotHash = createHash("sha256").update("s3b-t2-actual-media-bytes-v1\0");
@@ -456,10 +525,15 @@ function hashAuthoritativeMediaFile(filePath: string, root: AuthoritativeMediaRo
       snapshotHash.update(chunk);
     }
     const bytes = Buffer.concat(chunks, bytesRead);
-    const validation = validateImageBuffer(bytes);
+    const validation = validateImageBufferDecoded(bytes, resolvedPath);
     const fdAfter = fstatSync(descriptor);
     const pathAfterRead = inspectGovernedMediaPath(resolvedPath, root);
-    if (!pathAfterRead.ok) return { ok: false, media_identity_failure_digest: pathAfterRead.failure_digest };
+    if (!pathAfterRead.ok) {
+      return {
+        ok: false,
+        media_identity_failure_digest: mediaIdentityFailureWithTrustedIdentityDigest(pathAfterRead.failure_digest, trustedEntry, trustedRealpath)
+      };
+    }
     const pathAfterReadStat = statSync(resolvedPath);
     if (!fdAfter.isFile()
       || fdAfter.nlink !== 1
@@ -496,7 +570,14 @@ function hashAuthoritativeMediaFile(filePath: string, root: AuthoritativeMediaRo
     const status_class: MediaIdentityFailureClass = error instanceof Error && /ENOENT|ENOTDIR/i.test(error.message)
       ? "MISSING"
       : "IO_FAILURE";
-    return { ok: false, media_identity_failure_digest: mediaIdentityFailureDigest({ status_class }) };
+    return {
+      ok: false,
+      media_identity_failure_digest: mediaIdentityFailureDigest({
+        status_class,
+        entry: trustedEntry,
+        canonical_realpath: trustedRealpath
+      })
+    };
   } finally {
     if (descriptor !== undefined) {
       try { closeSync(descriptor); } catch { /* fail closed through the inspection result */ }

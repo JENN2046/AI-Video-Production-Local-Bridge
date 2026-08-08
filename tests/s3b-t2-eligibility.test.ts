@@ -11,6 +11,7 @@ import { openM0DatabaseConnection } from "../src/storage/sqlite.js";
 import { createProject, getProject, getShot, saveProject, saveShot } from "../src/tools/projects.js";
 import { importStoryboardPackage, saveStoryboardPackage } from "../src/tools/storyboardPackages.js";
 import { scanS3bT2Eligibility, s3bT2ExitCode, type S3bT2ScanOptions } from "../src/tools/s3bT2Eligibility.js";
+import { validateImageBuffer, validateImageBufferDecoded } from "../src/tools/imageValidity.js";
 import type { M0Paths } from "../src/paths.js";
 import type { MediaArtifact } from "../src/tools/mediaArtifacts.js";
 
@@ -140,6 +141,58 @@ function insertActiveIntent(db: ReturnType<typeof openM0DatabaseConnection>, fix
     VALUES (?, ?, ?, 'runninghub', 'primary', 'model', ?, 6, '720x1280', 1, 1, 'USD', 1, '2099-01-01', 'queued')`)
     .run(intentId, fixture.project_id, fixture.shot_id, fixture.artifact_id);
 }
+
+function rewriteArtifactLedgerForTest(fixture: Fixture, bytes: Buffer): void {
+  writeFileSync(fixture.media_path, bytes);
+  const sha = createHash("sha256").update(bytes).digest("hex");
+  const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+  const trigger = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'media_blobs_no_update'").get() as { sql: string } | undefined;
+  if (trigger) db.exec("DROP TRIGGER media_blobs_no_update");
+  try {
+    db.prepare("UPDATE media_blobs SET sha256 = ?, size_bytes = ? WHERE blob_id = (SELECT blob_id FROM media_artifact_blobs WHERE artifact_id = ?)")
+      .run(sha, bytes.length, fixture.artifact_id);
+    const row = db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = ?").get(fixture.artifact_id) as { data_json: string };
+    const artifact = JSON.parse(row.data_json) as MediaArtifact;
+    artifact.metadata.sha256 = sha;
+    artifact.source.sha256 = sha;
+    db.prepare("UPDATE media_artifacts SET data_json = ? WHERE artifact_id = ?")
+      .run(JSON.stringify(artifact), fixture.artifact_id);
+  } finally {
+    if (trigger) db.exec(trigger.sql);
+    db.close();
+  }
+}
+
+test("authoritative image acceptance performs full decode on the exact buffer", async (t) => {
+  const fixture = createFixture();
+  try {
+    const pngBytes = readFileSync(fixture.media_path);
+    const png = validateImageBufferDecoded(pngBytes);
+    if (!png.ok && png.error_code === "IMAGE_DECODE_UNAVAILABLE") {
+      t.skip("FFmpeg is unavailable for buffer decode validation");
+      return;
+    }
+    assert.equal(png.ok, true);
+
+    const ffmpeg = process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
+    const jpegProcess = spawnSync(ffmpeg, ["-v", "error", "-i", fixture.media_path, "-frames:v", "1", "-f", "image2pipe", "-vcodec", "mjpeg", "-"], {
+      encoding: null,
+      windowsHide: true
+    });
+    if (jpegProcess.status !== 0 || !Buffer.isBuffer(jpegProcess.stdout)) {
+      t.skip("FFmpeg could not create the isolated JPEG fixture");
+      return;
+    }
+    const jpeg = validateImageBufferDecoded(jpegProcess.stdout);
+    assert.equal(jpeg.ok, true);
+
+    const structurallyPlausible = pngBytes.subarray(0, 24);
+    assert.equal(validateImageBuffer(structurallyPlausible).ok, true);
+    const decoded = validateImageBufferDecoded(structurallyPlausible);
+    assert.equal(decoded.ok, false);
+    assert.equal(decoded.error_code, "IMAGE_DECODE_FAILED");
+  } finally { fixture.cleanup(); }
+});
 
 test("read-only scanner returns one low-disclosure eligible candidate with query_only and zero changes", async () => {
   const fixture = createFixture();
@@ -518,7 +571,10 @@ test("T2 validates Shot generation history runtime shapes before dereferencing",
     ["clip_version non-string run_id", (shot: Record<string, unknown>) => { shot.clip_versions = [{ artifact_id: "artifact", run_id: 1, attempt_number: 1, review_status: "pending" }]; }],
     ["clip_version missing attempt_number", (shot: Record<string, unknown>) => { shot.clip_versions = [{ artifact_id: "artifact", run_id: "run", review_status: "pending" }]; }],
     ["clip_version non-finite attempt_number", (shot: Record<string, unknown>) => { shot.clip_versions = [{ artifact_id: "artifact", run_id: "run", attempt_number: Number.NaN, review_status: "pending" }]; }],
-    ["clip_version unknown review_status", (shot: Record<string, unknown>) => { shot.clip_versions = [{ artifact_id: "artifact", run_id: "run", attempt_number: 1, review_status: "unknown" }]; }]
+    ["clip_version unknown review_status", (shot: Record<string, unknown>) => { shot.clip_versions = [{ artifact_id: "artifact", run_id: "run", attempt_number: 1, review_status: "unknown" }]; }],
+    ["clip_version extra string", (shot: Record<string, unknown>) => { shot.clip_versions = [{ artifact_id: "artifact", run_id: "run", attempt_number: 1, review_status: "pending", note: "extra" }]; }],
+    ["clip_version extra null", (shot: Record<string, unknown>) => { shot.clip_versions = [{ artifact_id: "artifact", run_id: "run", attempt_number: 1, review_status: "pending", note: null }]; }],
+    ["clip_version extra object", (shot: Record<string, unknown>) => { shot.clip_versions = [{ artifact_id: "artifact", run_id: "run", attempt_number: 1, review_status: "pending", note: {} }]; }]
   ] as const) {
     await t.test(name, async () => {
       const fixture = createFixture();
@@ -573,6 +629,23 @@ test("T2 validates Shot generation history runtime shapes before dereferencing",
          confirmed, expires_at, status)
         VALUES ('intent_clip_shape_active', ?, ?, 'runninghub', 'primary', 'model', ?, 6, '720x1280', 1, 1, 'USD', 1, '2099-01-01', 'queued')`)
         .run(fixture.project_id, fixture.shot_id, fixture.artifact_id);
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.reason_code_counts.REAL_GENERATION_ALREADY_ACTIVE, 1);
+      assert.equal(result.reason_code_counts.SHOT_STATE_INCONSISTENT, undefined);
+      assert.notEqual(result.result, "T2_READ_ONLY_BOUNDARY_VIOLATION");
+    } finally { fixture.cleanup(); }
+  });
+
+  await t.test("unknown ClipVersion fields preserve active intent precedence", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      const row = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(fixture.shot_id) as { data_json: string };
+      const shot = JSON.parse(row.data_json) as Record<string, unknown>;
+      shot.clip_versions = [{ artifact_id: "artifact", run_id: "run", attempt_number: 1, review_status: "pending", note: "extra" }];
+      saveShot(db, shot as unknown as Parameters<typeof saveShot>[1]);
+      insertActiveIntent(db, fixture, "intent_clip_extra_active");
       db.close();
       const result = await scan(fixture);
       assert.equal(result.reason_code_counts.REAL_GENERATION_ALREADY_ACTIVE, 1);
@@ -1051,18 +1124,17 @@ test("authoritative mediaRoot identity is represented in every snapshot", async 
     const fixture = createFixture();
     try {
       const invalidRoot = join(fixture.root, "invalid-media-root-link");
-      const targetA = join(fixture.root, "invalid-media-target-a");
-      const targetB = join(fixture.root, "invalid-media-target-b");
-      mkdirSync(targetA);
-      mkdirSync(targetB);
-      try { symlinkSync(targetA, invalidRoot, "junction"); } catch {
+      const targetPath = join(fixture.root, "invalid-media-target");
+      const movedTargetPath = join(fixture.root, "invalid-media-target-before-replacement");
+      mkdirSync(targetPath);
+      try { symlinkSync(targetPath, invalidRoot, "junction"); } catch {
         t.skip("directory symlink creation is unavailable on this host");
         return;
       }
       fixture.paths.mediaRoot = invalidRoot;
       const result = await scan(fixture, { betweenSnapshots: () => {
-        unlinkSync(invalidRoot);
-        symlinkSync(targetB, invalidRoot, "junction");
+        renameSync(targetPath, movedTargetPath);
+        mkdirSync(targetPath);
       } });
       assert.equal(result.result, "T2_STATE_CHANGED_DURING_SCAN");
       assert.equal(result.candidate_alias, undefined);
@@ -1601,6 +1673,31 @@ test("missing active package, generation history, and byte drift are determinist
       writeFileSync(fixture.media_path, Buffer.from("not an image"));
       const result = await scan(fixture);
       assert.equal(result.reason_code_counts.STORYBOARD_ARTIFACT_INTEGRITY_INVALID, 1);
+    } finally { fixture.cleanup(); }
+  });
+  await t.test("structurally plausible corrupt bytes are rejected even when the ledger matches", async () => {
+    const fixture = createFixture();
+    try {
+      const structurallyPlausible = readFileSync(fixture.media_path).subarray(0, 24);
+      rewriteArtifactLedgerForTest(fixture, structurallyPlausible);
+      const result = await scan(fixture);
+      assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+      assert.equal(result.reason_code_counts.STORYBOARD_ARTIFACT_INTEGRITY_INVALID, 1);
+      assert.equal(result.reason_code_counts.REAL_GENERATION_ALREADY_ACTIVE, undefined);
+    } finally { fixture.cleanup(); }
+  });
+  await t.test("active intent still takes precedence over decode failure", async () => {
+    const fixture = createFixture();
+    try {
+      const structurallyPlausible = readFileSync(fixture.media_path).subarray(0, 24);
+      rewriteArtifactLedgerForTest(fixture, structurallyPlausible);
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      insertActiveIntent(db, fixture, "intent_decode_failure_active");
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+      assert.equal(result.reason_code_counts.REAL_GENERATION_ALREADY_ACTIVE, 1);
+      assert.equal(result.reason_code_counts.STORYBOARD_ARTIFACT_INTEGRITY_INVALID, undefined);
     } finally { fixture.cleanup(); }
   });
   await t.test("different invalid bytes change the two-snapshot fingerprint", async () => {
