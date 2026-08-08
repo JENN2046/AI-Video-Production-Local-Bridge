@@ -149,7 +149,15 @@ function parseShotForT2(raw: string): { ok: true; shot: Partial<Shot> } | { ok: 
     if (!isRecord(parsed)) return { ok: false };
     if (!Array.isArray(parsed.generation_run_ids)
       || !parsed.generation_run_ids.every((value): value is string => typeof value === "string")
-      || !Array.isArray(parsed.clip_versions)) {
+      || !Array.isArray(parsed.clip_versions)
+      || !parsed.clip_versions.every((value) => isRecord(value)
+        && typeof value.artifact_id === "string"
+        && typeof value.run_id === "string"
+        && typeof value.attempt_number === "number"
+        && Number.isFinite(value.attempt_number)
+        && (value.review_status === "pending"
+          || value.review_status === "approved"
+          || value.review_status === "rejected"))) {
       return { ok: false };
     }
     return { ok: true, shot: parsed as Partial<Shot> };

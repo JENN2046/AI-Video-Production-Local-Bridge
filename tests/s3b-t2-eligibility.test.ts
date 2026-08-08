@@ -279,7 +279,17 @@ test("T2 validates Shot generation history runtime shapes before dereferencing",
     ["generation_run_ids contains non-string", (shot: Record<string, unknown>) => { shot.generation_run_ids = ["run_ok", 1]; }],
     ["clip_versions missing", (shot: Record<string, unknown>) => { delete shot.clip_versions; }],
     ["clip_versions null", (shot: Record<string, unknown>) => { shot.clip_versions = null; }],
-    ["clip_versions object", (shot: Record<string, unknown>) => { shot.clip_versions = {}; }]
+    ["clip_versions object", (shot: Record<string, unknown>) => { shot.clip_versions = {}; }],
+    ["clip_versions contains null", (shot: Record<string, unknown>) => { shot.clip_versions = [null]; }],
+    ["clip_versions contains scalar", (shot: Record<string, unknown>) => { shot.clip_versions = [1]; }],
+    ["clip_versions contains array", (shot: Record<string, unknown>) => { shot.clip_versions = [[]]; }],
+    ["clip_version missing artifact_id", (shot: Record<string, unknown>) => { shot.clip_versions = [{ run_id: "run", attempt_number: 1, review_status: "pending" }]; }],
+    ["clip_version non-string artifact_id", (shot: Record<string, unknown>) => { shot.clip_versions = [{ artifact_id: 1, run_id: "run", attempt_number: 1, review_status: "pending" }]; }],
+    ["clip_version missing run_id", (shot: Record<string, unknown>) => { shot.clip_versions = [{ artifact_id: "artifact", attempt_number: 1, review_status: "pending" }]; }],
+    ["clip_version non-string run_id", (shot: Record<string, unknown>) => { shot.clip_versions = [{ artifact_id: "artifact", run_id: 1, attempt_number: 1, review_status: "pending" }]; }],
+    ["clip_version missing attempt_number", (shot: Record<string, unknown>) => { shot.clip_versions = [{ artifact_id: "artifact", run_id: "run", review_status: "pending" }]; }],
+    ["clip_version non-finite attempt_number", (shot: Record<string, unknown>) => { shot.clip_versions = [{ artifact_id: "artifact", run_id: "run", attempt_number: Number.NaN, review_status: "pending" }]; }],
+    ["clip_version unknown review_status", (shot: Record<string, unknown>) => { shot.clip_versions = [{ artifact_id: "artifact", run_id: "run", attempt_number: 1, review_status: "unknown" }]; }]
   ] as const) {
     await t.test(name, async () => {
       const fixture = createFixture();
@@ -311,6 +321,28 @@ test("T2 validates Shot generation history runtime shapes before dereferencing",
          duration_seconds, resolution, estimated_cost_value, budget_limit_value, currency,
          confirmed, expires_at, status)
         VALUES ('intent_shape_active', ?, ?, 'runninghub', 'primary', 'model', ?, 6, '720x1280', 1, 1, 'USD', 1, '2099-01-01', 'queued')`)
+        .run(fixture.project_id, fixture.shot_id, fixture.artifact_id);
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.reason_code_counts.REAL_GENERATION_ALREADY_ACTIVE, 1);
+      assert.equal(result.reason_code_counts.SHOT_STATE_INCONSISTENT, undefined);
+      assert.notEqual(result.result, "T2_READ_ONLY_BOUNDARY_VIOLATION");
+    } finally { fixture.cleanup(); }
+  });
+
+  await t.test("malformed clip_versions preserves active intent precedence", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      const row = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(fixture.shot_id) as { data_json: string };
+      const shot = JSON.parse(row.data_json) as Record<string, unknown>;
+      shot.clip_versions = [null];
+      saveShot(db, shot as unknown as Parameters<typeof saveShot>[1]);
+      db.prepare(`INSERT INTO generation_intents
+        (intent_id, project_id, shot_id, provider, account_label, model, input_artifact_id,
+         duration_seconds, resolution, estimated_cost_value, budget_limit_value, currency,
+         confirmed, expires_at, status)
+        VALUES ('intent_clip_shape_active', ?, ?, 'runninghub', 'primary', 'model', ?, 6, '720x1280', 1, 1, 'USD', 1, '2099-01-01', 'queued')`)
         .run(fixture.project_id, fixture.shot_id, fixture.artifact_id);
       db.close();
       const result = await scan(fixture);
