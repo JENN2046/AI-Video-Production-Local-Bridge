@@ -271,6 +271,56 @@ test("T2 classifies malformed Shot JSON and preserves active-intent precedence",
   });
 });
 
+test("T2 validates Shot generation history runtime shapes before dereferencing", async (t) => {
+  for (const [name, mutate] of [
+    ["generation_run_ids missing", (shot: Record<string, unknown>) => { delete shot.generation_run_ids; }],
+    ["generation_run_ids null", (shot: Record<string, unknown>) => { shot.generation_run_ids = null; }],
+    ["generation_run_ids object", (shot: Record<string, unknown>) => { shot.generation_run_ids = {}; }],
+    ["generation_run_ids contains non-string", (shot: Record<string, unknown>) => { shot.generation_run_ids = ["run_ok", 1]; }],
+    ["clip_versions missing", (shot: Record<string, unknown>) => { delete shot.clip_versions; }],
+    ["clip_versions null", (shot: Record<string, unknown>) => { shot.clip_versions = null; }],
+    ["clip_versions object", (shot: Record<string, unknown>) => { shot.clip_versions = {}; }]
+  ] as const) {
+    await t.test(name, async () => {
+      const fixture = createFixture();
+      try {
+        const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+        const row = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(fixture.shot_id) as { data_json: string };
+        const shot = JSON.parse(row.data_json) as Record<string, unknown>;
+        mutate(shot);
+        saveShot(db, shot as unknown as Parameters<typeof saveShot>[1]);
+        db.close();
+        const result = await scan(fixture);
+        assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+        assert.equal(result.reason_code_counts.SHOT_STATE_INCONSISTENT, 1);
+        assert.notEqual(result.result, "T2_READ_ONLY_BOUNDARY_VIOLATION");
+      } finally { fixture.cleanup(); }
+    });
+  }
+
+  await t.test("malformed nested Shot shape preserves active intent precedence", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      const row = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(fixture.shot_id) as { data_json: string };
+      const shot = JSON.parse(row.data_json) as Record<string, unknown>;
+      shot.generation_run_ids = null;
+      saveShot(db, shot as unknown as Parameters<typeof saveShot>[1]);
+      db.prepare(`INSERT INTO generation_intents
+        (intent_id, project_id, shot_id, provider, account_label, model, input_artifact_id,
+         duration_seconds, resolution, estimated_cost_value, budget_limit_value, currency,
+         confirmed, expires_at, status)
+        VALUES ('intent_shape_active', ?, ?, 'runninghub', 'primary', 'model', ?, 6, '720x1280', 1, 1, 'USD', 1, '2099-01-01', 'queued')`)
+        .run(fixture.project_id, fixture.shot_id, fixture.artifact_id);
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.reason_code_counts.REAL_GENERATION_ALREADY_ACTIVE, 1);
+      assert.equal(result.reason_code_counts.SHOT_STATE_INCONSISTENT, undefined);
+      assert.notEqual(result.result, "T2_READ_ONLY_BOUNDARY_VIOLATION");
+    } finally { fixture.cleanup(); }
+  });
+});
+
 test("T2 rejects malformed Artifact nested shapes without boundary fallback", async (t) => {
   for (const [name, mutate] of [
     ["storage missing", (artifact: Record<string, unknown>) => { delete artifact.storage; }],
@@ -347,6 +397,78 @@ test("T2 validates Storyboard Package relational projection", async (t) => {
       const result = await scan(fixture);
       assert.equal(result.reason_code_counts.PACKAGE_SNAPSHOT_MISMATCH, 1);
       assert.equal(result.candidate_alias, undefined);
+    } finally { fixture.cleanup(); }
+  });
+});
+
+test("T2 validates the approved snapshot collection before matching", async (t) => {
+  for (const [name, mutate] of [
+    ["approved snapshots missing", (storyboard: Record<string, unknown>) => { delete storyboard.approved_shot_snapshots; }],
+    ["approved snapshots null", (storyboard: Record<string, unknown>) => { storyboard.approved_shot_snapshots = null; }],
+    ["approved snapshots object", (storyboard: Record<string, unknown>) => { storyboard.approved_shot_snapshots = {}; }],
+    ["approved snapshots string", (storyboard: Record<string, unknown>) => { storyboard.approved_shot_snapshots = "snapshot"; }],
+    ["approved snapshots contains null", (storyboard: Record<string, unknown>) => { storyboard.approved_shot_snapshots = [null]; }],
+    ["approved snapshots contains primitive", (storyboard: Record<string, unknown>) => { storyboard.approved_shot_snapshots = [1]; }]
+  ] as const) {
+    await t.test(name, async () => {
+      const fixture = createFixture();
+      try {
+        const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+        const row = db.prepare("SELECT data_json FROM storyboard_packages WHERE storyboard_package_id = ?").get(fixture.package_id) as { data_json: string };
+        const storyboard = JSON.parse(row.data_json) as Record<string, unknown>;
+        mutate(storyboard);
+        saveStoryboardPackage(db, storyboard as unknown as Parameters<typeof saveStoryboardPackage>[1]);
+        db.close();
+        const result = await scan(fixture);
+        assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+        assert.equal(result.reason_code_counts.PACKAGE_SNAPSHOT_MISMATCH, 1);
+        assert.notEqual(result.result, "T2_READ_ONLY_BOUNDARY_VIOLATION");
+      } finally { fixture.cleanup(); }
+    });
+  }
+
+  for (const [name, mutate] of [
+    ["snapshot missing order", (snapshot: Record<string, unknown>) => { delete snapshot.order; }],
+    ["snapshot invalid shot_id type", (snapshot: Record<string, unknown>) => { snapshot.shot_id = 1; }],
+    ["snapshot missing duration", (snapshot: Record<string, unknown>) => { delete snapshot.duration_seconds; }],
+    ["snapshot missing artifact id", (snapshot: Record<string, unknown>) => { delete snapshot.storyboard_image_artifact_id; }],
+    ["snapshot missing video prompt", (snapshot: Record<string, unknown>) => { delete snapshot.video_prompt; }],
+    ["snapshot invalid negative prompt", (snapshot: Record<string, unknown>) => { snapshot.negative_prompt = 1; }]
+  ] as const) {
+    await t.test(name, async () => {
+      const fixture = createFixture();
+      try {
+        const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+        const row = db.prepare("SELECT data_json FROM storyboard_packages WHERE storyboard_package_id = ?").get(fixture.package_id) as { data_json: string };
+        const storyboard = JSON.parse(row.data_json) as Record<string, unknown>;
+        const snapshots = storyboard.approved_shot_snapshots as Array<Record<string, unknown>>;
+        mutate(snapshots[0]);
+        saveStoryboardPackage(db, storyboard as unknown as Parameters<typeof saveStoryboardPackage>[1]);
+        db.close();
+        const result = await scan(fixture);
+        assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+        assert.equal(result.reason_code_counts.PACKAGE_SNAPSHOT_MISMATCH, 1);
+        assert.notEqual(result.result, "T2_READ_ONLY_BOUNDARY_VIOLATION");
+      } finally { fixture.cleanup(); }
+    });
+  }
+
+  await t.test("one valid snapshot plus one malformed snapshot rejects the whole collection", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      const row = db.prepare("SELECT data_json FROM storyboard_packages WHERE storyboard_package_id = ?").get(fixture.package_id) as { data_json: string };
+      const storyboard = JSON.parse(row.data_json) as Record<string, unknown>;
+      const snapshots = storyboard.approved_shot_snapshots as Array<Record<string, unknown>>;
+      const malformed = { ...snapshots[0] };
+      delete malformed.order;
+      storyboard.approved_shot_snapshots = [snapshots[0], malformed];
+      saveStoryboardPackage(db, storyboard as unknown as Parameters<typeof saveStoryboardPackage>[1]);
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+      assert.equal(result.reason_code_counts.PACKAGE_SNAPSHOT_MISMATCH, 1);
+      assert.notEqual(result.result, "T2_READ_ONLY_BOUNDARY_VIOLATION");
     } finally { fixture.cleanup(); }
   });
 });

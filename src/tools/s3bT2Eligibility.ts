@@ -147,10 +147,36 @@ function parseShotForT2(raw: string): { ok: true; shot: Partial<Shot> } | { ok: 
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!isRecord(parsed)) return { ok: false };
+    if (!Array.isArray(parsed.generation_run_ids)
+      || !parsed.generation_run_ids.every((value): value is string => typeof value === "string")
+      || !Array.isArray(parsed.clip_versions)) {
+      return { ok: false };
+    }
     return { ok: true, shot: parsed as Partial<Shot> };
   } catch {
     return { ok: false };
   }
+}
+
+function validateApprovedShotSnapshots(value: unknown): { ok: true; snapshots: ApprovedShotSnapshot[] } | { ok: false } {
+  if (!Array.isArray(value)) return { ok: false };
+  for (const snapshot of value) {
+    if (!isRecord(snapshot)
+      || typeof snapshot.order !== "number"
+      || !Number.isFinite(snapshot.order)
+      || (snapshot.shot_id !== undefined && typeof snapshot.shot_id !== "string")
+      || typeof snapshot.duration_seconds !== "number"
+      || !Number.isFinite(snapshot.duration_seconds)
+      || typeof snapshot.storyboard_image_artifact_id !== "string"
+      || snapshot.storyboard_image_artifact_id.length === 0
+      || typeof snapshot.video_prompt !== "string"
+      || (snapshot.negative_prompt !== undefined
+        && snapshot.negative_prompt !== null
+        && typeof snapshot.negative_prompt !== "string")) {
+      return { ok: false };
+    }
+  }
+  return { ok: true, snapshots: value as ApprovedShotSnapshot[] };
 }
 
 function isT2MediaArtifactShape(value: unknown): value is MediaArtifact {
@@ -285,8 +311,8 @@ function parseProject(row: ProjectRow): Project {
   return project;
 }
 
-function matchingSnapshot(storyboard: StoryboardPackage, shot: Shot): { snapshot: ApprovedShotSnapshot; mode: Candidate["match_mode"] } | null | "ambiguous" {
-  const matches = storyboard.approved_shot_snapshots.filter((snapshot) =>
+function matchingSnapshot(snapshots: ApprovedShotSnapshot[], shot: Shot): { snapshot: ApprovedShotSnapshot; mode: Candidate["match_mode"] } | null | "ambiguous" {
+  const matches = snapshots.filter((snapshot) =>
     snapshot.shot_id ? snapshot.shot_id === shot.shot_id : snapshot.order === shot.order
   );
   if (matches.length === 0) return null;
@@ -623,7 +649,9 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
         try {
           const parsed: unknown = JSON.parse(packageRow.data_json);
           if (!isRecord(parsed)) throw new Error("PACKAGE_SNAPSHOT_MISMATCH");
-          storyboard = parsed as unknown as StoryboardPackage;
+          const validatedSnapshots = validateApprovedShotSnapshots(parsed.approved_shot_snapshots);
+          if (!validatedSnapshots.ok) throw new Error("PACKAGE_SNAPSHOT_MISMATCH");
+          storyboard = { ...parsed, approved_shot_snapshots: validatedSnapshots.snapshots } as unknown as StoryboardPackage;
         } catch {
           addReason(reasons, "PACKAGE_SNAPSHOT_MISMATCH");
           continue;
@@ -664,7 +692,7 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
             }
             continue;
           }
-          const matched = matchingSnapshot(storyboard, shot);
+          const matched = matchingSnapshot(storyboard.approved_shot_snapshots, shot);
           if (matched === "ambiguous") { addReason(reasons, "PACKAGE_SNAPSHOT_MISMATCH"); continue; }
           if (!matched
             || matched.snapshot.duration_seconds !== shot.duration_seconds
