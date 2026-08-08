@@ -132,6 +132,15 @@ async function scan(fixture: Fixture, options: Omit<S3bT2ScanOptions, "paths"> =
   return scanS3bT2Eligibility({ paths: fixture.paths, ...options });
 }
 
+function insertActiveIntent(db: ReturnType<typeof openM0DatabaseConnection>, fixture: Fixture, intentId: string): void {
+  db.prepare(`INSERT INTO generation_intents
+    (intent_id, project_id, shot_id, provider, account_label, model, input_artifact_id,
+     duration_seconds, resolution, estimated_cost_value, budget_limit_value, currency,
+     confirmed, expires_at, status)
+    VALUES (?, ?, ?, 'runninghub', 'primary', 'model', ?, 6, '720x1280', 1, 1, 'USD', 1, '2099-01-01', 'queued')`)
+    .run(intentId, fixture.project_id, fixture.shot_id, fixture.artifact_id);
+}
+
 test("read-only scanner returns one low-disclosure eligible candidate with query_only and zero changes", async () => {
   const fixture = createFixture();
   try {
@@ -267,6 +276,140 @@ test("T2 classifies malformed Shot JSON and preserves active-intent precedence",
       const result = await scan(fixture);
       assert.equal(result.reason_code_counts.REAL_GENERATION_ALREADY_ACTIVE, 1);
       assert.equal(result.reason_code_counts.SHOT_STATE_INCONSISTENT, undefined);
+    } finally { fixture.cleanup(); }
+  });
+});
+
+test("T2 enforces integer ClipVersion attempts without losing started or active precedence", async (t) => {
+  for (const attemptNumber of [1.5, -1.5]) {
+    await t.test(`fractional attempt_number ${attemptNumber} is inconsistent`, async () => {
+      const fixture = createFixture();
+      try {
+        const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+        const row = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(fixture.shot_id) as { data_json: string };
+        const shot = JSON.parse(row.data_json);
+        shot.clip_versions.push({ artifact_id: "fractional_artifact", run_id: "fractional_run", attempt_number: attemptNumber, review_status: "pending" });
+        saveShot(db, shot);
+        db.close();
+        const result = await scan(fixture);
+        assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+        assert.equal(result.reason_code_counts.SHOT_STATE_INCONSISTENT, 1);
+        assert.equal(result.reason_code_counts.GENERATION_ALREADY_STARTED, undefined);
+      } finally { fixture.cleanup(); }
+    });
+  }
+
+  for (const attemptNumber of [1, 0, -1]) {
+    await t.test(`integer attempt_number ${attemptNumber} preserves started history`, async () => {
+      const fixture = createFixture();
+      try {
+        const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+        const row = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(fixture.shot_id) as { data_json: string };
+        const shot = JSON.parse(row.data_json);
+        shot.clip_versions.push({ artifact_id: "integer_artifact", run_id: "integer_run", attempt_number: attemptNumber, review_status: "pending" });
+        saveShot(db, shot);
+        db.close();
+        const result = await scan(fixture);
+        assert.equal(result.reason_code_counts.GENERATION_ALREADY_STARTED, 1);
+        assert.equal(result.reason_code_counts.SHOT_STATE_INCONSISTENT, undefined);
+      } finally { fixture.cleanup(); }
+    });
+  }
+
+  await t.test("fractional ClipVersion preserves active intent precedence", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      const row = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(fixture.shot_id) as { data_json: string };
+      const shot = JSON.parse(row.data_json);
+      shot.clip_versions.push({ artifact_id: "fractional_active_artifact", run_id: "fractional_active_run", attempt_number: 1.5, review_status: "pending" });
+      saveShot(db, shot);
+      insertActiveIntent(db, fixture, "intent_fractional_active");
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.reason_code_counts.REAL_GENERATION_ALREADY_ACTIVE, 1);
+      assert.equal(result.reason_code_counts.SHOT_STATE_INCONSISTENT, undefined);
+      assert.equal(result.reason_code_counts.GENERATION_ALREADY_STARTED, undefined);
+    } finally { fixture.cleanup(); }
+  });
+});
+
+test("T2 project parsing preserves active-intent precedence and fingerprints invalid facts", async (t) => {
+  await t.test("malformed project JSON with active intent is classified as active", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      db.prepare("UPDATE projects SET data_json = ? WHERE project_id = ?").run("null", fixture.project_id);
+      insertActiveIntent(db, fixture, "intent_malformed_project");
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+      assert.equal(result.reason_code_counts.REAL_GENERATION_ALREADY_ACTIVE, 1);
+      assert.equal(Object.keys(result.reason_code_counts).length, 1);
+      assert.equal(JSON.stringify(result).includes(fixture.project_id), false);
+    } finally { fixture.cleanup(); }
+  });
+
+  await t.test("project relational/data identity mismatch with active intent is classified as active", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      const row = db.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(fixture.project_id) as { data_json: string };
+      const project = JSON.parse(row.data_json);
+      project.project_id = "project_json_mismatch";
+      db.prepare("UPDATE projects SET data_json = ? WHERE project_id = ?").run(JSON.stringify(project), fixture.project_id);
+      insertActiveIntent(db, fixture, "intent_project_mismatch");
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+      assert.equal(result.reason_code_counts.REAL_GENERATION_ALREADY_ACTIVE, 1);
+      assert.equal(Object.keys(result.reason_code_counts).length, 1);
+    } finally { fixture.cleanup(); }
+  });
+
+  await t.test("malformed project without active intent remains a boundary failure", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      db.prepare("UPDATE projects SET data_json = ? WHERE project_id = ?").run("null", fixture.project_id);
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.result, "T2_READ_ONLY_BOUNDARY_VIOLATION");
+      assert.deepEqual(result.reason_code_counts, {});
+    } finally { fixture.cleanup(); }
+  });
+
+  await t.test("invalid project facts changing between snapshots return state changed", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      db.prepare("UPDATE projects SET data_json = ? WHERE project_id = ?").run("null", fixture.project_id);
+      insertActiveIntent(db, fixture, "intent_invalid_project_drift");
+      db.close();
+      const result = await scan(fixture, { betweenSnapshots: () => {
+        const driftDb = openM0DatabaseConnection(fixture.paths.sqlitePath);
+        try { driftDb.prepare("UPDATE projects SET data_json = ? WHERE project_id = ?").run("{}", fixture.project_id); }
+        finally { driftDb.close(); }
+      } });
+      assert.equal(result.result, "T2_STATE_CHANGED_DURING_SCAN");
+      assert.equal(result.candidate_alias, undefined);
+    } finally { fixture.cleanup(); }
+  });
+
+  await t.test("active intent disappearing between invalid project snapshots returns state changed", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      db.prepare("UPDATE projects SET data_json = ? WHERE project_id = ?").run("null", fixture.project_id);
+      insertActiveIntent(db, fixture, "intent_project_active_disappears");
+      db.close();
+      const result = await scan(fixture, { betweenSnapshots: () => {
+        const driftDb = openM0DatabaseConnection(fixture.paths.sqlitePath);
+        try { driftDb.prepare("DELETE FROM generation_intents WHERE intent_id = ?").run("intent_project_active_disappears"); }
+        finally { driftDb.close(); }
+      } });
+      assert.equal(result.result, "T2_STATE_CHANGED_DURING_SCAN");
+      assert.equal(result.candidate_alias, undefined);
     } finally { fixture.cleanup(); }
   });
 });

@@ -82,6 +82,7 @@ interface SnapshotResult {
   candidates: Candidate[];
   reasons: Partial<Record<S3bT2ReasonCode, number>>;
   sqlite: { total_changes_before: number; total_changes_after: number };
+  boundary_violation?: boolean;
 }
 
 interface ProjectRow {
@@ -154,7 +155,7 @@ function parseShotForT2(raw: string): { ok: true; shot: Partial<Shot> } | { ok: 
         && typeof value.artifact_id === "string"
         && typeof value.run_id === "string"
         && typeof value.attempt_number === "number"
-        && Number.isFinite(value.attempt_number)
+        && Number.isInteger(value.attempt_number)
         && (value.review_status === "pending"
           || value.review_status === "approved"
           || value.review_status === "rejected"))) {
@@ -313,10 +314,14 @@ function buildDatabasePathGuard(scanPaths: M0Paths): { assertPathCurrent: () => 
   return { assertPathCurrent, identity: `${initial.dev}:${initial.ino}` };
 }
 
-function parseProject(row: ProjectRow): Project {
-  const project = JSON.parse(row.data_json) as Project;
-  if (!project || project.project_id !== row.project_id) throw new Error("T2_PROJECT_FACT_INVALID");
-  return project;
+function parseProjectForT2(row: ProjectRow): { ok: true; project: Project } | { ok: false } {
+  try {
+    const parsed: unknown = JSON.parse(row.data_json);
+    if (!isRecord(parsed) || parsed.project_id !== row.project_id) return { ok: false };
+    return { ok: true, project: parsed as unknown as Project };
+  } catch {
+    return { ok: false };
+  }
 }
 
 function matchingSnapshot(snapshots: ApprovedShotSnapshot[], shot: Shot): { snapshot: ApprovedShotSnapshot; mode: Candidate["match_mode"] } | null | "ambiguous" {
@@ -433,7 +438,6 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
         FROM projects p JOIN workbench_project_meta m ON m.project_id = p.project_id
         ORDER BY p.project_id
       `).all() as ProjectRow[];
-      const projects = rows.map(parseProject);
       const candidates: Candidate[] = [];
       const fingerprintFacts: unknown[] = [
         { database_identity: guard.identity, active_intent_count: activeIntentCount },
@@ -452,6 +456,46 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
           .digest("hex"))
         .sort();
       fingerprintFacts.push({ project_count: projectDigests.length, project_digests: projectDigests });
+
+      const shotRowsByProject = new Map<string, Array<{ shot_id: string; project_id: string; data_json: string }>>();
+      const shotFacts: unknown[] = [];
+      for (const projectRow of rows) {
+        const shotRows = db.prepare("SELECT shot_id, project_id, data_json FROM shots WHERE project_id = ? ORDER BY rowid")
+          .all(projectRow.project_id) as Array<{ shot_id: string; project_id: string; data_json: string }>;
+        shotRowsByProject.set(projectRow.project_id, shotRows);
+        for (const shotRow of shotRows) {
+          shotFacts.push({ shot_id: shotRow.shot_id, project_id: shotRow.project_id, shot_data_json: shotRow.data_json });
+        }
+      }
+      const shotDigests = shotFacts
+        .map((facts) => createHash("sha256")
+          .update("s3b-t2-shot-fact-v1\0")
+          .update(JSON.stringify(facts))
+          .digest("hex"))
+        .sort();
+      fingerprintFacts.push({ shot_count: shotDigests.length, shot_digests: shotDigests });
+
+      const parsedProjects = rows.map(parseProjectForT2);
+      const invalidProject = parsedProjects.some((result) => !result.ok);
+      if (invalidProject) {
+        fingerprintFacts.push({ project_parse_status: "invalid" });
+        if (activeIntentCount > 0) addReason(reasons, "REAL_GENERATION_ALREADY_ACTIVE");
+        db.exec("COMMIT");
+        assertPathCurrent();
+        const after = totalChanges(db);
+        if (before !== 0 || after !== 0) throw new Error("T2_DATABASE_WRITE_DETECTED");
+        return {
+          fingerprint: stableFingerprint({ fingerprintFacts, candidates, reasons }),
+          candidates,
+          reasons,
+          sqlite: { total_changes_before: before, total_changes_after: after },
+          boundary_violation: activeIntentCount === 0
+        };
+      }
+      const projects = parsedProjects.map((result) => {
+        if (!result.ok) throw new Error("T2_PROJECT_FACT_INVALID");
+        return result.project;
+      });
       const authoritativeMediaRoot = resolveAuthoritativeMediaRoot(scanPaths);
       const generationHistoryByShot = new Set<string>();
       for (const row of db.prepare("SELECT project_id, shot_id FROM generation_runs WHERE shot_id IS NOT NULL").all() as Array<{ project_id: string; shot_id: string }>) {
@@ -467,14 +511,12 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
       }
 
       const storyboardReferenceFacts: unknown[] = [];
-      const shotFacts: unknown[] = [];
       let storyboardArtifactStructuredDriftCount = 0;
       let malformedShotCount = 0;
       for (const [index, project] of projects.entries()) {
         const row = rows[index];
-        const shotRows = db.prepare("SELECT shot_id, project_id, data_json FROM shots WHERE project_id = ? ORDER BY rowid").all(project.project_id) as Array<{ shot_id: string; project_id: string; data_json: string }>;
+        const shotRows = shotRowsByProject.get(project.project_id) ?? [];
         for (const shotRow of shotRows) {
-          shotFacts.push({ shot_id: shotRow.shot_id, project_id: shotRow.project_id, shot_data_json: shotRow.data_json });
           const parsedShot = parseShotForT2(shotRow.data_json);
           if (!parsedShot.ok) {
             malformedShotCount += 1;
@@ -561,13 +603,6 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
           }
         }
       }
-      const shotDigests = shotFacts
-        .map((facts) => createHash("sha256")
-          .update("s3b-t2-shot-fact-v1\0")
-          .update(JSON.stringify(facts))
-          .digest("hex"))
-        .sort();
-      fingerprintFacts.push({ shot_count: shotDigests.length, shot_digests: shotDigests });
       const referenceDigests = storyboardReferenceFacts
         .map((facts) => createHash("sha256")
           .update("s3b-t2-drift-reference-v1\0")
@@ -816,6 +851,7 @@ export async function scanS3bT2Eligibility(options: S3bT2ScanOptions = {}): Prom
   if (first.fingerprint !== second.fingerprint) {
     return { ...boundaryReceipt(), result: "T2_STATE_CHANGED_DURING_SCAN" };
   }
+  if (first.boundary_violation || second.boundary_violation) return boundaryReceipt();
   const count = second.candidates.length;
   const receipt: S3bT2Receipt = {
     schema_version: "s3b-t2-eligibility-receipt-v1",
