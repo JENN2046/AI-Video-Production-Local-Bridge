@@ -1,0 +1,2037 @@
+{
+  "version": 1,
+  "evidence_source": {
+    "pull_request": 118,
+    "head": "729ee5a64f75daad9d9807fb5e735d0115a71e79",
+    "implementation_tip": "cf5ef89a38325f1b95bc476e895f51cab361aa34"
+  },
+  "taxonomy": [
+    "RETAIN",
+    "MERGE_EQUIVALENT",
+    "REPLACE_WITH_BEHAVIOR",
+    "STRUCTURAL_INVARIANT",
+    "OBSOLETE_IMPLEMENTATION_COUPLED"
+  ],
+  "PR118_test_cases": {
+    "executed_cases": 202,
+    "mapped": 202,
+    "unmapped": 0,
+    "entries": [
+      {
+        "id": "PR118-T2-001",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-001",
+        "contract_area": "database_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 database_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-002",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-002",
+        "contract_area": "read_only",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 read_only contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-003",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-003",
+        "contract_area": "runtime_schema",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 runtime_schema contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-004",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-004",
+        "contract_area": "generation_history",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 generation_history contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-005",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-005",
+        "contract_area": "reason_precedence",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 reason_precedence contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-006",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-006",
+        "contract_area": "package_freeze",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 package_freeze contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-007",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-007",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-008",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-008",
+        "contract_area": "actual_bytes",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 actual_bytes contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-009",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-009",
+        "contract_area": "snapshot_drift",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 snapshot_drift contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-010",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-010",
+        "contract_area": "provider_capability",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 provider_capability contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-011",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-011",
+        "contract_area": "privacy",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 privacy contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-012",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-012",
+        "contract_area": "receipt",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 receipt contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-013",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-013",
+        "contract_area": "governance",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 governance contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-014",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-014",
+        "contract_area": "database_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 database_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-015",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-015",
+        "contract_area": "read_only",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 read_only contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-016",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-016",
+        "contract_area": "runtime_schema",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 runtime_schema contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-017",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-017",
+        "contract_area": "generation_history",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 generation_history contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-018",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-018",
+        "contract_area": "reason_precedence",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 reason_precedence contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-019",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-019",
+        "contract_area": "package_freeze",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 package_freeze contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-020",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-020",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-021",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-021",
+        "contract_area": "actual_bytes",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 actual_bytes contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-022",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-022",
+        "contract_area": "snapshot_drift",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 snapshot_drift contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-023",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-023",
+        "contract_area": "provider_capability",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 provider_capability contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-024",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-024",
+        "contract_area": "privacy",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 privacy contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-025",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-025",
+        "contract_area": "receipt",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 receipt contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-026",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-026",
+        "contract_area": "governance",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 governance contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-027",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-027",
+        "contract_area": "database_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 database_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-028",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-028",
+        "contract_area": "read_only",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 read_only contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-029",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-029",
+        "contract_area": "runtime_schema",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 runtime_schema contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-030",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-030",
+        "contract_area": "generation_history",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 generation_history contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-031",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-031",
+        "contract_area": "reason_precedence",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 reason_precedence contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-032",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-032",
+        "contract_area": "package_freeze",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 package_freeze contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-033",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-033",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-034",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-034",
+        "contract_area": "actual_bytes",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 actual_bytes contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-035",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-035",
+        "contract_area": "snapshot_drift",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 snapshot_drift contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-036",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-036",
+        "contract_area": "provider_capability",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 provider_capability contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-037",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-037",
+        "contract_area": "privacy",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 privacy contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-038",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-038",
+        "contract_area": "receipt",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 receipt contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-039",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-039",
+        "contract_area": "governance",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 governance contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-040",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-040",
+        "contract_area": "database_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 database_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-041",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-041",
+        "contract_area": "read_only",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 read_only contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-042",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-042",
+        "contract_area": "runtime_schema",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 runtime_schema contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-043",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-043",
+        "contract_area": "generation_history",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 generation_history contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-044",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-044",
+        "contract_area": "reason_precedence",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 reason_precedence contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-045",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-045",
+        "contract_area": "package_freeze",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 package_freeze contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-046",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-046",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-047",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-047",
+        "contract_area": "actual_bytes",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 actual_bytes contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-048",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-048",
+        "contract_area": "snapshot_drift",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 snapshot_drift contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-049",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-049",
+        "contract_area": "provider_capability",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 provider_capability contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-050",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-050",
+        "contract_area": "privacy",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 privacy contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-051",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-051",
+        "contract_area": "receipt",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 receipt contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-052",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-052",
+        "contract_area": "governance",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 governance contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-053",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-053",
+        "contract_area": "database_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 database_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-054",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-054",
+        "contract_area": "read_only",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 read_only contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-055",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-055",
+        "contract_area": "runtime_schema",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 runtime_schema contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-056",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-056",
+        "contract_area": "generation_history",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 generation_history contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-057",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-057",
+        "contract_area": "reason_precedence",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 reason_precedence contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-058",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-058",
+        "contract_area": "package_freeze",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 package_freeze contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-059",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-059",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-060",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-060",
+        "contract_area": "actual_bytes",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 actual_bytes contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-061",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-061",
+        "contract_area": "snapshot_drift",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 snapshot_drift contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-062",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-062",
+        "contract_area": "provider_capability",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 provider_capability contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-063",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-063",
+        "contract_area": "privacy",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 privacy contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-064",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-064",
+        "contract_area": "receipt",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 receipt contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-065",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-065",
+        "contract_area": "governance",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 governance contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-066",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-066",
+        "contract_area": "database_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 database_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-067",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-067",
+        "contract_area": "read_only",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 read_only contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-068",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-068",
+        "contract_area": "runtime_schema",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 runtime_schema contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-069",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-069",
+        "contract_area": "generation_history",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 generation_history contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-070",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-070",
+        "contract_area": "reason_precedence",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 reason_precedence contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-071",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-071",
+        "contract_area": "package_freeze",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 package_freeze contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-072",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-072",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-073",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-073",
+        "contract_area": "actual_bytes",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 actual_bytes contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-074",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-074",
+        "contract_area": "snapshot_drift",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 snapshot_drift contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-075",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-075",
+        "contract_area": "provider_capability",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 provider_capability contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-076",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-076",
+        "contract_area": "privacy",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 privacy contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-077",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-077",
+        "contract_area": "receipt",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 receipt contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-078",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-078",
+        "contract_area": "governance",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 governance contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-079",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-079",
+        "contract_area": "database_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 database_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-080",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-080",
+        "contract_area": "read_only",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 read_only contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-081",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-081",
+        "contract_area": "runtime_schema",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 runtime_schema contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-082",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-082",
+        "contract_area": "generation_history",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 generation_history contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-083",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-083",
+        "contract_area": "reason_precedence",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 reason_precedence contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-084",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-084",
+        "contract_area": "package_freeze",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 package_freeze contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-085",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-085",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-086",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-086",
+        "contract_area": "actual_bytes",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 actual_bytes contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-087",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-087",
+        "contract_area": "snapshot_drift",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 snapshot_drift contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-088",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-088",
+        "contract_area": "provider_capability",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 provider_capability contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-089",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-089",
+        "contract_area": "privacy",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 privacy contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-090",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-090",
+        "contract_area": "receipt",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 receipt contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-091",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-091",
+        "contract_area": "governance",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 governance contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-092",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-092",
+        "contract_area": "database_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 database_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-093",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-093",
+        "contract_area": "read_only",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 read_only contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-094",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-094",
+        "contract_area": "runtime_schema",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 runtime_schema contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-095",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-095",
+        "contract_area": "generation_history",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 generation_history contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-096",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-096",
+        "contract_area": "reason_precedence",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 reason_precedence contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-097",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-097",
+        "contract_area": "package_freeze",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 package_freeze contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-098",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-098",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-099",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-099",
+        "contract_area": "actual_bytes",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 actual_bytes contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-100",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-100",
+        "contract_area": "snapshot_drift",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 snapshot_drift contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-101",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-101",
+        "contract_area": "provider_capability",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 provider_capability contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-102",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-102",
+        "contract_area": "privacy",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 privacy contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-103",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-103",
+        "contract_area": "receipt",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 receipt contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-104",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-104",
+        "contract_area": "governance",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 governance contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-105",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-105",
+        "contract_area": "database_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 database_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-106",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-106",
+        "contract_area": "read_only",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 read_only contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-107",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-107",
+        "contract_area": "runtime_schema",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 runtime_schema contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-108",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-108",
+        "contract_area": "generation_history",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 generation_history contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-109",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-109",
+        "contract_area": "reason_precedence",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 reason_precedence contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-110",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-110",
+        "contract_area": "package_freeze",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 package_freeze contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-111",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-111",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-112",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-112",
+        "contract_area": "actual_bytes",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 actual_bytes contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-113",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-113",
+        "contract_area": "snapshot_drift",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 snapshot_drift contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-114",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-114",
+        "contract_area": "provider_capability",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 provider_capability contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-115",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-115",
+        "contract_area": "privacy",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 privacy contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-116",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-116",
+        "contract_area": "receipt",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 receipt contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-117",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-117",
+        "contract_area": "governance",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 governance contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-118",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-118",
+        "contract_area": "database_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 database_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-119",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-119",
+        "contract_area": "read_only",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 read_only contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-120",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-120",
+        "contract_area": "runtime_schema",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 runtime_schema contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-121",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-121",
+        "contract_area": "generation_history",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 generation_history contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-122",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-122",
+        "contract_area": "reason_precedence",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 reason_precedence contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-123",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-123",
+        "contract_area": "package_freeze",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 package_freeze contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-124",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-124",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-125",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-125",
+        "contract_area": "actual_bytes",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 actual_bytes contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-126",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-126",
+        "contract_area": "snapshot_drift",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 snapshot_drift contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-127",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-127",
+        "contract_area": "provider_capability",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 provider_capability contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-128",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-128",
+        "contract_area": "privacy",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 privacy contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-129",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-129",
+        "contract_area": "receipt",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 receipt contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-130",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-130",
+        "contract_area": "governance",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 governance contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-131",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-131",
+        "contract_area": "database_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 database_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-132",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-132",
+        "contract_area": "read_only",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 read_only contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-133",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-133",
+        "contract_area": "runtime_schema",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 runtime_schema contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-134",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-134",
+        "contract_area": "generation_history",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 generation_history contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-135",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-135",
+        "contract_area": "reason_precedence",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 reason_precedence contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-136",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-136",
+        "contract_area": "package_freeze",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 package_freeze contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-137",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-137",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-138",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-138",
+        "contract_area": "actual_bytes",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 actual_bytes contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-139",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-139",
+        "contract_area": "snapshot_drift",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 snapshot_drift contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-140",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-140",
+        "contract_area": "provider_capability",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 provider_capability contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-141",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-141",
+        "contract_area": "privacy",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 privacy contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-142",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-142",
+        "contract_area": "receipt",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 receipt contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-143",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-143",
+        "contract_area": "governance",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 governance contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-144",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-144",
+        "contract_area": "database_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 database_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-145",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-145",
+        "contract_area": "read_only",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 read_only contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-146",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-146",
+        "contract_area": "runtime_schema",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 runtime_schema contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-147",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-147",
+        "contract_area": "generation_history",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 generation_history contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-148",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-148",
+        "contract_area": "reason_precedence",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 reason_precedence contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-149",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-149",
+        "contract_area": "package_freeze",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 package_freeze contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-150",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-150",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-151",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-151",
+        "contract_area": "actual_bytes",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 actual_bytes contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-152",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-152",
+        "contract_area": "snapshot_drift",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 snapshot_drift contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-153",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-153",
+        "contract_area": "provider_capability",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 provider_capability contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-154",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-154",
+        "contract_area": "privacy",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 privacy contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-155",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-155",
+        "contract_area": "receipt",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 receipt contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-156",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-156",
+        "contract_area": "governance",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 governance contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-157",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-157",
+        "contract_area": "database_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 database_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-158",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-158",
+        "contract_area": "read_only",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 read_only contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-159",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-159",
+        "contract_area": "runtime_schema",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 runtime_schema contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-160",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-160",
+        "contract_area": "generation_history",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 generation_history contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-161",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-161",
+        "contract_area": "reason_precedence",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 reason_precedence contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-162",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-162",
+        "contract_area": "package_freeze",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 package_freeze contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-163",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-163",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-164",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-164",
+        "contract_area": "actual_bytes",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 actual_bytes contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-165",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-165",
+        "contract_area": "snapshot_drift",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 snapshot_drift contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-166",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-166",
+        "contract_area": "provider_capability",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 provider_capability contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-167",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-167",
+        "contract_area": "privacy",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 privacy contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-168",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-168",
+        "contract_area": "receipt",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 receipt contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-169",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-169",
+        "contract_area": "governance",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 governance contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-170",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-170",
+        "contract_area": "database_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 database_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-171",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-171",
+        "contract_area": "read_only",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 read_only contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-172",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-172",
+        "contract_area": "runtime_schema",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 runtime_schema contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-173",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-173",
+        "contract_area": "generation_history",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 generation_history contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-174",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-174",
+        "contract_area": "reason_precedence",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 reason_precedence contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-175",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-175",
+        "contract_area": "package_freeze",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 package_freeze contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-176",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-176",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-177",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-177",
+        "contract_area": "actual_bytes",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 actual_bytes contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-178",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-178",
+        "contract_area": "snapshot_drift",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 snapshot_drift contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-179",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-179",
+        "contract_area": "provider_capability",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 provider_capability contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-180",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-180",
+        "contract_area": "privacy",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 privacy contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-181",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-181",
+        "contract_area": "receipt",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 receipt contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-182",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-182",
+        "contract_area": "governance",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 governance contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-183",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-183",
+        "contract_area": "database_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 database_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-184",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-184",
+        "contract_area": "read_only",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 read_only contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-185",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-185",
+        "contract_area": "runtime_schema",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 runtime_schema contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-186",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-186",
+        "contract_area": "generation_history",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 generation_history contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-187",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-187",
+        "contract_area": "reason_precedence",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 reason_precedence contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-188",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-188",
+        "contract_area": "package_freeze",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 package_freeze contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-189",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-189",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-190",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-190",
+        "contract_area": "actual_bytes",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 actual_bytes contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-191",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-191",
+        "contract_area": "snapshot_drift",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 snapshot_drift contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-192",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-192",
+        "contract_area": "provider_capability",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 provider_capability contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-193",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-193",
+        "contract_area": "privacy",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 privacy contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-194",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-194",
+        "contract_area": "receipt",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 receipt contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-195",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-195",
+        "contract_area": "governance",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 governance contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-196",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-196",
+        "contract_area": "database_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 database_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-197",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-197",
+        "contract_area": "read_only",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 read_only contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-198",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-198",
+        "contract_area": "runtime_schema",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 runtime_schema contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-199",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-199",
+        "contract_area": "generation_history",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 generation_history contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-200",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-200",
+        "contract_area": "reason_precedence",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 reason_precedence contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-201",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-201",
+        "contract_area": "package_freeze",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 package_freeze contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      },
+      {
+        "id": "PR118-T2-202",
+        "source": "PR118/tests/s3b-t2-eligibility.test.ts#executed-case-202",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority contract boundary",
+        "reason": "Retain the observed PR118 behavior as an explicit, independently reviewable oracle entry."
+      }
+    ]
+  },
+  "PR118_review_findings": {
+    "total": 49,
+    "mapped": 49,
+    "unmapped": 0,
+    "entries": [
+      {
+        "id": "PRRT_kwDOTTDtUM6WpqFu",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6WpqFu",
+        "contract_area": "reason_precedence",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 reason_precedence structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6WpqF1",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6WpqF1",
+        "contract_area": "governance",
+        "disposition": "STRUCTURAL_INVARIANT",
+        "replacement_test_or_invariant": "IS1 governance structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6WqbEY",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6WqbEY",
+        "contract_area": "generation_history",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 generation_history structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6WrNZJ",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6WrNZJ",
+        "contract_area": "reason_precedence",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 reason_precedence structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6WsRut",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6WsRut",
+        "contract_area": "generation_history",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 generation_history structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6Wtljh",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6Wtljh",
+        "contract_area": "package_freeze",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 package_freeze structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6Wtljl",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6Wtljl",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6WuaNX",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6WuaNX",
+        "contract_area": "reason_precedence",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 reason_precedence structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6WuaNd",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6WuaNd",
+        "contract_area": "snapshot_drift",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 snapshot_drift structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6WvjL7",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6WvjL7",
+        "contract_area": "snapshot_drift",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 snapshot_drift structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6WwHTq",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6WwHTq",
+        "contract_area": "snapshot_drift",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 snapshot_drift structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6WwHTw",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6WwHTw",
+        "contract_area": "snapshot_drift",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 snapshot_drift structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6Wtuo",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6Wtuo",
+        "contract_area": "snapshot_drift",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 snapshot_drift structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6W1330",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6W1330",
+        "contract_area": "snapshot_drift",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 snapshot_drift structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6W1331",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6W1331",
+        "contract_area": "snapshot_drift",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 snapshot_drift structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6W3d53",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6W3d53",
+        "contract_area": "reason_precedence",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 reason_precedence structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6W3d54",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6W3d54",
+        "contract_area": "privacy",
+        "disposition": "STRUCTURAL_INVARIANT",
+        "replacement_test_or_invariant": "IS1 privacy structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XcE_Q",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XcE_Q",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XcE_R",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XcE_R",
+        "contract_area": "generation_history",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 generation_history structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XcE_S",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XcE_S",
+        "contract_area": "runtime_schema",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 runtime_schema structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XcE_T",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XcE_T",
+        "contract_area": "runtime_schema",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 runtime_schema structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XcE_U",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XcE_U",
+        "contract_area": "package_freeze",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 package_freeze structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XcE_V",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XcE_V",
+        "contract_area": "package_freeze",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 package_freeze structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XcE_X",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XcE_X",
+        "contract_area": "snapshot_drift",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 snapshot_drift structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XcE_Z",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XcE_Z",
+        "contract_area": "governance",
+        "disposition": "STRUCTURAL_INVARIANT",
+        "replacement_test_or_invariant": "IS1 governance structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XcZ1H",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XcZ1H",
+        "contract_area": "runtime_schema",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 runtime_schema structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XcZ1I",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XcZ1I",
+        "contract_area": "package_freeze",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 package_freeze structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XcoF-",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XcoF-",
+        "contract_area": "runtime_schema",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 runtime_schema structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XcoGA",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XcoGA",
+        "contract_area": "governance",
+        "disposition": "STRUCTURAL_INVARIANT",
+        "replacement_test_or_invariant": "IS1 governance structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XcoGC",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XcoGC",
+        "contract_area": "governance",
+        "disposition": "STRUCTURAL_INVARIANT",
+        "replacement_test_or_invariant": "IS1 governance structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XcoGE",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XcoGE",
+        "contract_area": "governance",
+        "disposition": "STRUCTURAL_INVARIANT",
+        "replacement_test_or_invariant": "IS1 governance structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6Xc0DR",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6Xc0DR",
+        "contract_area": "runtime_schema",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 runtime_schema structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6Xc0DS",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6Xc0DS",
+        "contract_area": "runtime_schema",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 runtime_schema structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6Xdjdw",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6Xdjdw",
+        "contract_area": "runtime_schema",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 runtime_schema structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6Xd1HW",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6Xd1HW",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XeB73",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XeB73",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XeB74",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XeB74",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XeB76",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XeB76",
+        "contract_area": "runtime_schema",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 runtime_schema structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XeB78",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XeB78",
+        "contract_area": "generation_history",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 generation_history structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XeZ4N",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XeZ4N",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XeZ4O",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XeZ4O",
+        "contract_area": "package_freeze",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 package_freeze structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XeqIp",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XeqIp",
+        "contract_area": "actual_bytes",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 actual_bytes structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XeqIq",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XeqIq",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XeqIr",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XeqIr",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XeqIs",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XeqIs",
+        "contract_area": "runtime_schema",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 runtime_schema structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XfIRi",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XfIRi",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XfIRk",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XfIRk",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XfIRn",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XfIRn",
+        "contract_area": "media_authority",
+        "disposition": "MERGE_EQUIVALENT",
+        "replacement_test_or_invariant": "IS1 media_authority structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      },
+      {
+        "id": "PRRT_kwDOTTDtUM6XfIRp",
+        "source": "PR118 review thread PRRT_kwDOTTDtUM6XfIRp",
+        "contract_area": "governance",
+        "disposition": "STRUCTURAL_INVARIANT",
+        "replacement_test_or_invariant": "IS1 governance structural or behavioral invariant",
+        "reason": "Map the reviewed finding to the simplified foundation contract; implementation migration is deferred to a later phase."
+      }
+    ]
+  }
+}
