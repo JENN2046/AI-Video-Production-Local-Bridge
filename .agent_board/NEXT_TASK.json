@@ -15,7 +15,7 @@
   "summary": "纯只读、离线、双快照 T2 executable 与隔离测试已实现；尚未合并，未打开正式业务数据库或正式媒体，R2 实际扫描未获授权。",
   "scope_policy_source": "CURRENT_STATE.md#s3b-t2-eligibility-and-acceptance",
   "ready_task_count": 0,
-  "current_execution_task": "S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY",
+  "current_execution_task": null,
   "implementation_authorized": true,
   "read_only_execution_authorized": false,
   "next_authorized_task": {
@@ -40,7 +40,7 @@
     "S6_ASSEMBLY_EXPORT_CLOSEOUT": { "director_bridge_required": false, "snapshot_required": false, "media_gateway_required": false, "memory_required": false }
   },
   "publication": {
-    "publication_policy": { "current_truth_source": "VERIFY_FROM_GITHUB_BEFORE_EXECUTION", "last_verified_main": "990e5cfa909c7886ea1378c06abe165dc8f19995", "active_pull_request": null },
+    "publication_policy": { "current_truth_source": "VERIFY_FROM_GITHUB_BEFORE_EXECUTION", "last_verified_main": "990e5cfa909c7886ea1378c06abe165dc8f19995", "active_pull_request": { "number": 118, "state": "OPEN", "draft": true, "base_sha": "990e5cfa909c7886ea1378c06abe165dc8f19995", "head_ref": "codex/s3b-t2-readonly-executable", "implementation_code_tip": "08fe111b562a30469c8440e6098adb4d8f86a438", "current_head_authority": "VERIFY_FROM_GITHUB_BEFORE_EXECUTION", "disposition": "IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION" } },
     "pull_request_108": { "status": "MERGED", "squash_commit": "808d9334a49def7ce858f7c6138af75fed392c5b", "merge_method": "SQUASH" },
     "pull_request_109": { "status": "CLOSED_UNMERGED_RETIRED", "head": "423351bf376378d6fde48cea3060cc7af35bb148", "branch": "codex/blob-recovery-staging-reconciliation", "branch_retained": true, "source_commits_accepted_into_main": false },
     "pull_request_110": { "status": "MERGED", "squash_commit": "00c8ed458144f03d4b0e1389d4de6dbf8005ed9a", "merge_method": "SQUASH" },
@@ -102,7 +102,7 @@
   "result": "PASS_T2_READ_ONLY_EXECUTABLE_IMPLEMENTED",
   "validation": "typecheck, build, test:s3b:t2, selection gate, foundation boundaries, provider boundaries, database governance, secret scan and diff check passed.",
   "evidence": ["ops/reports/2026-08-05-s3b-t2-r1-readonly-executable.md"],
-  "commit": "70d2ee42acbb85698d60d8f3a8f9ef86a60ad3d2",
+  "commit": "08fe111b562a30469c8440e6098adb4d8f86a438",
   "implementation_commit_semantics": "LATEST_IMPLEMENTATION_CODE_TIP_BEFORE_GOVERNANCE_SYNC",
   "delivery": "SEPARATE_PR_AND_MERGE_AUTHORIZATION_REQUIRED",
   "updated_at": "2026-08-05T19:58:39+08:00",

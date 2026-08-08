@@ -5620,3 +5620,30 @@ correction:
   base: 990e5cfa909c7886ea1378c06abe165dc8f19995
   disposition: IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION
 ```
+
+### 2026-08-08 — PR118-R11 ClipVersion runtime and DONE governance correction
+
+```yaml
+task_id: S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY
+result: GOVERNANCE_CORRECTION
+supersedes_implementation_tip:
+  previous: 70d2ee42acbb85698d60d8f3a8f9ef86a60ad3d2
+  current: 08fe111b562a30469c8440e6098adb4d8f86a438
+reason:
+  - R10 runtime-shape production changes
+  - R11 ClipVersion runtime-shape closure
+pull_request: 118
+base: 990e5cfa909c7886ea1378c06abe165dc8f19995
+disposition:
+  IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION
+current_execution_task: null
+run_lock:
+  status: inactive
+  current_task: none
+publication:
+  active_pull_request: 118
+  head_ref: codex/s3b-t2-readonly-executable
+  current_head_authority: VERIFY_FROM_GITHUB_BEFORE_EXECUTION
+R2_authorized: false
+merged: false
+```
