@@ -138,13 +138,35 @@ test("read-only scanner returns one low-disclosure eligible candidate with query
     const result = await scan(fixture);
     assert.equal(result.result, "PASS_ONE_ELIGIBLE_SHOT");
     assert.equal(result.eligible_candidate_count, 1);
-    assert.match(result.candidate_alias ?? "", /^shot_[a-f0-9]{16}$/);
-    assert.equal(result.candidate_alias, `shot_${createHash("sha256").update(`s3b-t2-alias-v1\u0000${fixture.shot_id}`).digest("hex").slice(0, 16)}`);
+    assert.match(result.candidate_alias ?? "", /^shot_[a-f0-9]{32}$/);
+    const legacyAlias = `shot_${createHash("sha256").update(`s3b-t2-alias-v1\u0000${fixture.shot_id}`).digest("hex").slice(0, 16)}`;
+    assert.notEqual(result.candidate_alias, legacyAlias);
     assert.equal(result.read_only_proof.sqlite_total_changes, 0);
     assert.deepEqual(result.read_only_proof, { sqlite_total_changes: 0, network_calls: 0, credential_reads: 0, media_writes: 0 });
     const encoded = JSON.stringify(result);
     for (const forbidden of [fixture.project_id, fixture.shot_id, fixture.package_id, fixture.artifact_id, fixture.root, "Animate", "blur"]) assert.equal(encoded.includes(forbidden), false);
     assert.equal(s3bT2ExitCode(result.result), 0);
+  } finally { fixture.cleanup(); }
+});
+
+test("eligible candidate aliases rotate randomly across scans without identifier disclosure", async () => {
+  const fixture = createFixture();
+  try {
+    const first = await scan(fixture);
+    const second = await scan(fixture);
+    assert.equal(first.result, "PASS_ONE_ELIGIBLE_SHOT");
+    assert.equal(second.result, "PASS_ONE_ELIGIBLE_SHOT");
+    assert.match(first.candidate_alias ?? "", /^shot_[a-f0-9]{32}$/);
+    assert.match(second.candidate_alias ?? "", /^shot_[a-f0-9]{32}$/);
+    assert.notEqual(first.candidate_alias, second.candidate_alias);
+    for (const receipt of [first, second]) {
+      const encoded = JSON.stringify(receipt);
+      assert.equal(encoded.includes(fixture.shot_id), false);
+      assert.equal(encoded.includes(fixture.project_id), false);
+      assert.equal(encoded.includes(fixture.package_id), false);
+      assert.equal(encoded.includes(fixture.artifact_id), false);
+      assert.equal(encoded.includes("s3b-t2-alias-v1"), false);
+    }
   } finally { fixture.cleanup(); }
 });
 
@@ -561,6 +583,63 @@ test("storyboard artifact structured drift is a stable ineligible result", async
     } finally { fixture.cleanup(); }
   });
 
+});
+
+test("shot operational fact drift is a stable integrity rejection", async (t) => {
+  for (const field of ["shot_id", "project_id"] as const) {
+    await t.test(`relational ${field} projection drift`, async () => {
+      const fixture = createFixture();
+      try {
+        const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+        const row = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(fixture.shot_id) as { data_json: string };
+        const shot = JSON.parse(row.data_json) as Record<string, unknown>;
+        shot[field] = field === "shot_id" ? "shot_json_only" : "project_json_only";
+        db.prepare("UPDATE shots SET data_json = ? WHERE shot_id = ?").run(JSON.stringify(shot), fixture.shot_id);
+        db.close();
+        const result = await scan(fixture);
+        assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+        assert.equal(result.eligible_candidate_count, 0);
+        assert.equal(result.reason_code_counts.SHOT_STATE_INCONSISTENT, 1);
+      } finally { fixture.cleanup(); }
+    });
+  }
+
+  await t.test("active intent takes precedence over shot drift", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      const row = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(fixture.shot_id) as { data_json: string };
+      const shot = JSON.parse(row.data_json) as Record<string, unknown>;
+      shot.shot_id = "shot_json_only";
+      db.prepare("UPDATE shots SET data_json = ? WHERE shot_id = ?").run(JSON.stringify(shot), fixture.shot_id);
+      db.prepare(`INSERT INTO generation_intents
+        (intent_id, project_id, shot_id, provider, account_label, model, input_artifact_id,
+         duration_seconds, resolution, estimated_cost_value, budget_limit_value, currency,
+         confirmed, expires_at, status)
+        VALUES ('intent_active_shot_drift', ?, ?, 'runninghub', 'primary', 'model', ?, 6, '720x1280', 1, 1, 'USD', 1, '2099-01-01', 'queued')`)
+        .run(fixture.project_id, fixture.shot_id, fixture.artifact_id);
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+      assert.equal(result.reason_code_counts.REAL_GENERATION_ALREADY_ACTIVE, 1);
+      assert.equal(result.reason_code_counts.SHOT_STATE_INCONSISTENT, undefined);
+    } finally { fixture.cleanup(); }
+  });
+});
+
+test("unknown operational integrity errors remain boundary failures", async () => {
+  const fixture = createFixture();
+  try {
+    const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+    db.prepare(`INSERT INTO generation_runs
+      (run_id, batch_id, project_id, shot_id, run_type, status, data_json)
+      VALUES ('run_unknown_status', NULL, ?, ?, 'initial', 'unexpected', '{}')`)
+      .run(fixture.project_id, fixture.shot_id);
+    db.close();
+    const result = await scan(fixture);
+    assert.equal(result.result, "T2_READ_ONLY_BOUNDARY_VIOLATION");
+    assert.equal(result.reason_code_counts.SHOT_STATE_INCONSISTENT, undefined);
+  } finally { fixture.cleanup(); }
 });
 
 test("missing active package, generation history, and byte drift are deterministic rejections", async (t) => {

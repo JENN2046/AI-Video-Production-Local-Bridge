@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { lstatSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 
@@ -155,6 +155,10 @@ function matchingSnapshot(storyboard: StoryboardPackage, shot: Shot): { snapshot
 
 function addReason(reasons: SnapshotResult["reasons"], code: S3bT2ReasonCode): void {
   reasons[code] = (reasons[code] ?? 0) + 1;
+}
+
+function createCandidateAlias(): string {
+  return `shot_${randomBytes(16).toString("hex")}`;
 }
 
 const CANONICAL_OPERATIONAL_REASON_CODES = new Set<S3bT2ReasonCode>([
@@ -398,8 +402,14 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
       try {
         bundles = collectProjectOperationalBundles(db, projects);
       } catch (error) {
-        if (!(error instanceof OperationalStateIntegrityError) || error.code !== "ARTIFACT_OPERATIONAL_FACT_INVALID") throw error;
-        addReason(reasons, activeIntentCount > 0 ? "REAL_GENERATION_ALREADY_ACTIVE" : "STORYBOARD_ARTIFACT_INTEGRITY_INVALID");
+        if (!(error instanceof OperationalStateIntegrityError)) throw error;
+        if (error.code === "ARTIFACT_OPERATIONAL_FACT_INVALID") {
+          addReason(reasons, activeIntentCount > 0 ? "REAL_GENERATION_ALREADY_ACTIVE" : "STORYBOARD_ARTIFACT_INTEGRITY_INVALID");
+        } else if (error.code === "SHOT_OPERATIONAL_FACT_INVALID") {
+          addReason(reasons, activeIntentCount > 0 ? "REAL_GENERATION_ALREADY_ACTIVE" : "SHOT_STATE_INCONSISTENT");
+        } else {
+          throw error;
+        }
         db.exec("COMMIT");
         assertPathCurrent();
         const after = totalChanges(db);
@@ -567,7 +577,7 @@ export async function scanS3bT2Eligibility(options: S3bT2ScanOptions = {}): Prom
   };
   if (count === 1) {
     const candidate = second.candidates[0];
-    receipt.candidate_alias = `shot_${createHash("sha256").update(`s3b-t2-alias-v1\u0000${candidate.shot_id}`).digest("hex").slice(0, 16)}`;
+    receipt.candidate_alias = createCandidateAlias();
     receipt.package_match_mode = candidate.match_mode;
     receipt.artifact_verification_level = "actual_bytes";
     receipt.mime_class = "image";
