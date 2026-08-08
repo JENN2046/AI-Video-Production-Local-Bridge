@@ -299,7 +299,25 @@ test("T2 enforces integer ClipVersion attempts without losing started or active 
     });
   }
 
-  for (const attemptNumber of [1, 0, -1]) {
+  for (const attemptNumber of [Number.MAX_SAFE_INTEGER + 1, Number.MIN_SAFE_INTEGER - 1]) {
+    await t.test(`unsafe integer attempt_number ${attemptNumber} is inconsistent`, async () => {
+      const fixture = createFixture();
+      try {
+        const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+        const row = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(fixture.shot_id) as { data_json: string };
+        const shot = JSON.parse(row.data_json);
+        shot.clip_versions.push({ artifact_id: "unsafe_artifact", run_id: "unsafe_run", attempt_number: attemptNumber, review_status: "pending" });
+        saveShot(db, shot);
+        db.close();
+        const result = await scan(fixture);
+        assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+        assert.equal(result.reason_code_counts.SHOT_STATE_INCONSISTENT, 1);
+        assert.equal(result.reason_code_counts.GENERATION_ALREADY_STARTED, undefined);
+      } finally { fixture.cleanup(); }
+    });
+  }
+
+  for (const attemptNumber of [1, 0, -1, Number.MAX_SAFE_INTEGER, Number.MIN_SAFE_INTEGER]) {
     await t.test(`integer attempt_number ${attemptNumber} preserves started history`, async () => {
       const fixture = createFixture();
       try {
@@ -316,22 +334,29 @@ test("T2 enforces integer ClipVersion attempts without losing started or active 
     });
   }
 
-  await t.test("fractional ClipVersion preserves active intent precedence", async () => {
-    const fixture = createFixture();
-    try {
-      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
-      const row = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(fixture.shot_id) as { data_json: string };
-      const shot = JSON.parse(row.data_json);
-      shot.clip_versions.push({ artifact_id: "fractional_active_artifact", run_id: "fractional_active_run", attempt_number: 1.5, review_status: "pending" });
-      saveShot(db, shot);
-      insertActiveIntent(db, fixture, "intent_fractional_active");
-      db.close();
-      const result = await scan(fixture);
-      assert.equal(result.reason_code_counts.REAL_GENERATION_ALREADY_ACTIVE, 1);
-      assert.equal(result.reason_code_counts.SHOT_STATE_INCONSISTENT, undefined);
-      assert.equal(result.reason_code_counts.GENERATION_ALREADY_STARTED, undefined);
-    } finally { fixture.cleanup(); }
-  });
+  for (const [label, attemptNumber] of [
+    ["fractional", 1.5],
+    ["unsafe positive", Number.MAX_SAFE_INTEGER + 1],
+    ["unsafe negative", Number.MIN_SAFE_INTEGER - 1]
+  ] as const) {
+    await t.test(`${label} ClipVersion preserves active intent precedence`, async () => {
+      const fixture = createFixture();
+      try {
+        const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+        const row = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(fixture.shot_id) as { data_json: string };
+        const shot = JSON.parse(row.data_json);
+        shot.clip_versions.push({ artifact_id: `${label}_active_artifact`, run_id: `${label}_active_run`, attempt_number: attemptNumber, review_status: "pending" });
+        saveShot(db, shot);
+        insertActiveIntent(db, fixture, `intent_${label.replace(/ /g, "_")}_active`);
+        db.close();
+        const result = await scan(fixture);
+        assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+        assert.equal(result.reason_code_counts.REAL_GENERATION_ALREADY_ACTIVE, 1);
+        assert.equal(result.reason_code_counts.SHOT_STATE_INCONSISTENT, undefined);
+        assert.equal(result.reason_code_counts.GENERATION_ALREADY_STARTED, undefined);
+      } finally { fixture.cleanup(); }
+    });
+  }
 });
 
 test("T2 project parsing preserves active-intent precedence and fingerprints invalid facts", async (t) => {

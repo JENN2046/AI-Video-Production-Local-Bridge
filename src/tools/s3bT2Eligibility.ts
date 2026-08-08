@@ -155,7 +155,7 @@ function parseShotForT2(raw: string): { ok: true; shot: Partial<Shot> } | { ok: 
         && typeof value.artifact_id === "string"
         && typeof value.run_id === "string"
         && typeof value.attempt_number === "number"
-        && Number.isInteger(value.attempt_number)
+        && Number.isSafeInteger(value.attempt_number)
         && (value.review_status === "pending"
           || value.review_status === "approved"
           || value.review_status === "rejected"))) {
