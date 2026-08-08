@@ -6,8 +6,9 @@ import { assertSchemaCurrent } from "../storage/migrations.js";
 import { openM0DatabaseConnection, type M0Database } from "../storage/sqlite.js";
 import { paths, type M0Paths } from "../paths.js";
 import { collectProjectOperationalBundles, OperationalStateIntegrityError } from "./operationalStateFacts.js";
-import { ArtifactStructuredDriftError, getMediaArtifact, getMediaBlob, verifyMediaArtifactBytes, type MediaArtifact, type MediaBlob } from "./mediaArtifacts.js";
+import { ArtifactStructuredDriftError, getMediaArtifact, getMediaBlob, type MediaArtifact, type MediaBlob } from "./mediaArtifacts.js";
 import { buildProviderCapabilityKey, RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY } from "./providerCapabilities.js";
+import { validateImageBuffer } from "./imageValidity.js";
 import type { Project, Shot } from "./projects.js";
 import type { ApprovedShotSnapshot, StoryboardPackage } from "./storyboardPackages.js";
 import type { ShotOperationalState } from "../packages/domain/operationalState.js";
@@ -215,15 +216,24 @@ type MediaByteInspection =
     ok: true;
     blob: MediaBlob;
     actual_byte_digest: string;
+    raw_sha256: string;
+    size_bytes: number;
+    detected_mime: string;
     media_identity: GovernedMediaIdentity;
   }
-  | { ok: false; code: "STORYBOARD_ARTIFACT_INTEGRITY_INVALID"; actual_byte_digest?: string };
+  | {
+    ok: false;
+    code: "STORYBOARD_ARTIFACT_INTEGRITY_INVALID";
+    actual_byte_digest?: string;
+    media_identity_failure_digest?: string;
+  };
 
 interface GovernedMediaIdentity {
   dev: number;
   ino: number;
   size: number;
   mtimeMs: number;
+  ctimeMs: number;
   realpath: string;
 }
 
@@ -232,17 +242,79 @@ interface GovernedMediaPath {
   realpath: string;
 }
 
-function inspectGovernedMediaPath(filePath: string, root: AuthoritativeMediaRoot): GovernedMediaPath | null {
+type MediaIdentityFailureClass =
+  | "MISSING"
+  | "OUTSIDE_ROOT"
+  | "SYMLINK"
+  | "NON_REGULAR"
+  | "NON_EXCLUSIVE"
+  | "REALPATH_INVALID"
+  | "IDENTITY_CHANGED"
+  | "READ_IDENTITY_CHANGED"
+  | "IO_FAILURE";
+
+interface MediaIdentityFailure {
+  status_class: MediaIdentityFailureClass;
+  entry?: Stats;
+  canonical_realpath?: string;
+}
+
+type GovernedMediaPathResult =
+  | { ok: true; path: GovernedMediaPath }
+  | { ok: false; failure_digest: string };
+
+function mediaIdentityFailureDigest(failure: MediaIdentityFailure): string {
+  const entry = failure.entry;
+  return domainSeparatedSha256("s3b-t2-media-identity-failure-v1", {
+    status_class: failure.status_class,
+    entry: entry ? {
+      dev: entry.dev,
+      ino: entry.ino,
+      nlink: entry.nlink,
+      size: entry.size,
+      mtimeMs: entry.mtimeMs,
+      ctimeMs: entry.ctimeMs
+    } : null,
+    canonical_realpath_digest: failure.canonical_realpath
+      ? domainSeparatedSha256("s3b-t2-realpath-v1", failure.canonical_realpath)
+      : null
+  });
+}
+
+function inspectGovernedMediaPath(filePath: string, root: AuthoritativeMediaRoot): GovernedMediaPathResult {
   const resolvedPath = resolve(filePath);
-  if (!isInside(resolvedPath, root.configured) || hasSymlinkInPath(resolvedPath, root.configured)) return null;
   try {
+    if (!isInside(resolvedPath, root.configured)) {
+      return { ok: false, failure_digest: mediaIdentityFailureDigest({ status_class: "OUTSIDE_ROOT" }) };
+    }
+    if (hasSymlinkInPath(resolvedPath, root.configured)) {
+      return { ok: false, failure_digest: mediaIdentityFailureDigest({ status_class: "SYMLINK" }) };
+    }
     const entry = lstatSync(resolvedPath);
-    if (entry.isSymbolicLink() || !entry.isFile() || entry.nlink !== 1) return null;
-    const canonical = resolve(realpathSync(resolvedPath));
-    if (!isInside(canonical, root.canonical)) return null;
-    return { entry, realpath: canonical };
-  } catch {
-    return null;
+    if (entry.isSymbolicLink()) {
+      return { ok: false, failure_digest: mediaIdentityFailureDigest({ status_class: "SYMLINK", entry }) };
+    }
+    if (!entry.isFile()) {
+      return { ok: false, failure_digest: mediaIdentityFailureDigest({ status_class: "NON_REGULAR", entry }) };
+    }
+    if (entry.nlink !== 1) {
+      return { ok: false, failure_digest: mediaIdentityFailureDigest({ status_class: "NON_EXCLUSIVE", entry }) };
+    }
+    let canonical: string;
+    try {
+      canonical = resolve(realpathSync(resolvedPath));
+    } catch {
+      return { ok: false, failure_digest: mediaIdentityFailureDigest({ status_class: "REALPATH_INVALID", entry }) };
+    }
+    if (!isInside(canonical, root.canonical)) {
+      return { ok: false, failure_digest: mediaIdentityFailureDigest({ status_class: "OUTSIDE_ROOT", entry, canonical_realpath: canonical }) };
+    }
+    return { ok: true, path: { entry, realpath: canonical } };
+  } catch (error) {
+    const status_class: MediaIdentityFailureClass = error instanceof Error && /ENOENT|ENOTDIR/i.test(error.message)
+      ? "MISSING"
+      : "IO_FAILURE";
+    return { ok: false, failure_digest: mediaIdentityFailureDigest({ status_class }) };
   }
 }
 
@@ -250,76 +322,100 @@ function sameMediaIdentity(first: { dev: number; ino: number }, second: { dev: n
   return first.dev === second.dev && first.ino === second.ino;
 }
 
-function isAuthoritativeMediaIdentityCurrent(
-  filePath: string,
-  root: AuthoritativeMediaRoot,
-  expected: GovernedMediaIdentity
-): boolean {
-  const currentPath = inspectGovernedMediaPath(filePath, root);
-  if (!currentPath) return false;
-  try {
-    const current = statSync(resolve(filePath));
-    return current.isFile()
-      && current.nlink === 1
-      && sameMediaIdentity(current, expected)
-      && sameResolvedPath(currentPath.realpath, expected.realpath);
-  } catch {
-    return false;
+type AuthoritativeMediaFileRead =
+  | {
+    ok: true;
+    raw_sha256: string;
+    snapshot_byte_digest: string;
+    size_bytes: number;
+    detected_mime: string;
+    identity: GovernedMediaIdentity;
   }
-}
+  | { ok: false; media_identity_failure_digest: string };
 
-function hashAuthoritativeMediaFile(filePath: string, root: AuthoritativeMediaRoot): { digest: string; identity: GovernedMediaIdentity } | null {
+function hashAuthoritativeMediaFile(filePath: string, root: AuthoritativeMediaRoot): AuthoritativeMediaFileRead {
   const resolvedPath = resolve(filePath);
   const pathBefore = inspectGovernedMediaPath(resolvedPath, root);
-  if (!pathBefore) return null;
+  if (!pathBefore.ok) return { ok: false, media_identity_failure_digest: pathBefore.failure_digest };
   let descriptor: number | undefined;
   try {
     descriptor = openSync(resolvedPath, "r");
     const fdBefore = fstatSync(descriptor);
-    if (!fdBefore.isFile() || fdBefore.nlink !== 1 || !sameMediaIdentity(fdBefore, pathBefore.entry)) return null;
+    if (!fdBefore.isFile() || fdBefore.nlink !== 1 || !sameMediaIdentity(fdBefore, pathBefore.path.entry)) {
+      return {
+        ok: false,
+        media_identity_failure_digest: mediaIdentityFailureDigest({ status_class: "IDENTITY_CHANGED", entry: fdBefore })
+      };
+    }
     const pathAfterOpen = inspectGovernedMediaPath(resolvedPath, root);
-    if (!pathAfterOpen) return null;
+    if (!pathAfterOpen.ok) return { ok: false, media_identity_failure_digest: pathAfterOpen.failure_digest };
     const pathAfterOpenStat = statSync(resolvedPath);
     if (!pathAfterOpenStat.isFile()
       || pathAfterOpenStat.nlink !== 1
       || !sameMediaIdentity(fdBefore, pathAfterOpenStat)
-      || !sameResolvedPath(pathAfterOpen.realpath, pathBefore.realpath)) return null;
+      || !sameResolvedPath(pathAfterOpen.path.realpath, pathBefore.path.realpath)) {
+      return {
+        ok: false,
+        media_identity_failure_digest: mediaIdentityFailureDigest({ status_class: "IDENTITY_CHANGED", entry: pathAfterOpenStat, canonical_realpath: pathAfterOpen.path.realpath })
+      };
+    }
 
-    const hash = createHash("sha256").update("s3b-t2-actual-media-bytes-v1\0");
+    const rawHash = createHash("sha256");
+    const snapshotHash = createHash("sha256").update("s3b-t2-actual-media-bytes-v1\0");
     const buffer = Buffer.allocUnsafe(1024 * 1024);
+    const chunks: Buffer[] = [];
     let bytesRead = 0;
     while (true) {
       const read = readSync(descriptor, buffer, 0, buffer.length, null);
       if (read === 0) break;
       bytesRead += read;
-      hash.update(buffer.subarray(0, read));
+      const chunk = Buffer.from(buffer.subarray(0, read));
+      chunks.push(chunk);
+      rawHash.update(chunk);
+      snapshotHash.update(chunk);
     }
+    const bytes = Buffer.concat(chunks, bytesRead);
+    const validation = validateImageBuffer(bytes);
     const fdAfter = fstatSync(descriptor);
     const pathAfterRead = inspectGovernedMediaPath(resolvedPath, root);
-    if (!pathAfterRead) return null;
+    if (!pathAfterRead.ok) return { ok: false, media_identity_failure_digest: pathAfterRead.failure_digest };
     const pathAfterReadStat = statSync(resolvedPath);
     if (!fdAfter.isFile()
       || fdAfter.nlink !== 1
       || !sameMediaIdentity(fdBefore, fdAfter)
       || fdBefore.size !== fdAfter.size
       || fdBefore.mtimeMs !== fdAfter.mtimeMs
+      || fdBefore.ctimeMs !== fdAfter.ctimeMs
       || bytesRead !== fdAfter.size
       || !pathAfterReadStat.isFile()
       || pathAfterReadStat.nlink !== 1
       || !sameMediaIdentity(fdAfter, pathAfterReadStat)
-      || !sameResolvedPath(pathAfterRead.realpath, pathBefore.realpath)) return null;
+      || !sameResolvedPath(pathAfterRead.path.realpath, pathBefore.path.realpath)) {
+      return {
+        ok: false,
+        media_identity_failure_digest: mediaIdentityFailureDigest({ status_class: "READ_IDENTITY_CHANGED", entry: pathAfterReadStat, canonical_realpath: pathAfterRead.path.realpath })
+      };
+    }
     return {
-      digest: hash.digest("hex"),
+      ok: true,
+      raw_sha256: rawHash.digest("hex"),
+      snapshot_byte_digest: snapshotHash.digest("hex"),
+      size_bytes: bytesRead,
+      detected_mime: validation.ok ? validation.detected_mime : "",
       identity: {
         dev: fdAfter.dev,
         ino: fdAfter.ino,
         size: fdAfter.size,
         mtimeMs: fdAfter.mtimeMs,
-        realpath: pathAfterRead.realpath
+        ctimeMs: fdAfter.ctimeMs,
+        realpath: pathAfterRead.path.realpath
       }
     };
-  } catch {
-    return null;
+  } catch (error) {
+    const status_class: MediaIdentityFailureClass = error instanceof Error && /ENOENT|ENOTDIR/i.test(error.message)
+      ? "MISSING"
+      : "IO_FAILURE";
+    return { ok: false, media_identity_failure_digest: mediaIdentityFailureDigest({ status_class }) };
   } finally {
     if (descriptor !== undefined) {
       try { closeSync(descriptor); } catch { /* fail closed through the inspection result */ }
@@ -346,15 +442,37 @@ function inspectMediaArtifactBytes(
     return { ok: false, code: "STORYBOARD_ARTIFACT_INTEGRITY_INVALID" };
   }
   const resolvedStorage = resolve(blob.storage_uri);
-  if (!isInside(resolvedStorage, root.configured) || hasSymlinkInPath(resolvedStorage, root.configured)) {
-    return { ok: false, code: "STORYBOARD_ARTIFACT_INTEGRITY_INVALID" };
-  }
   const actualBytes = hashAuthoritativeMediaFile(resolvedStorage, root);
-  if (!actualBytes) return { ok: false, code: "STORYBOARD_ARTIFACT_INTEGRITY_INVALID" };
+  if (!actualBytes.ok) {
+    return {
+      ok: false,
+      code: "STORYBOARD_ARTIFACT_INTEGRITY_INVALID",
+      media_identity_failure_digest: actualBytes.media_identity_failure_digest
+    };
+  }
+  const metadata = artifact.metadata;
+  const source = artifact.source;
+  const matchesVerifiedBlob = actualBytes.raw_sha256 === blob.sha256
+    && actualBytes.size_bytes === blob.size_bytes
+    && actualBytes.detected_mime === blob.detected_mime
+    && actualBytes.raw_sha256 === metadata.sha256
+    && actualBytes.raw_sha256 === source.sha256
+    && artifact.storage.mime_type === actualBytes.detected_mime
+    && ["image/png", "image/jpeg"].includes(actualBytes.detected_mime);
+  if (!matchesVerifiedBlob) {
+    return {
+      ok: false,
+      code: "STORYBOARD_ARTIFACT_INTEGRITY_INVALID",
+      actual_byte_digest: actualBytes.snapshot_byte_digest
+    };
+  }
   return {
     ok: true,
     blob,
-    actual_byte_digest: actualBytes.digest,
+    actual_byte_digest: actualBytes.snapshot_byte_digest,
+    raw_sha256: actualBytes.raw_sha256,
+    size_bytes: actualBytes.size_bytes,
+    detected_mime: actualBytes.detected_mime,
     media_identity: actualBytes.identity
   };
 }
@@ -399,6 +517,17 @@ function parseProjectForT2(row: ProjectRow): { ok: true; project: Project } | { 
   } catch {
     return { ok: false };
   }
+}
+
+function validateProjectCapabilityInputForT2(project: Project): S3bT2ReasonCode | null {
+  const videoSpec = (project as unknown as { video_spec?: unknown }).video_spec;
+  if (!isRecord(videoSpec) || typeof videoSpec.resolution !== "string") {
+    return "PROVIDER_CAPABILITY_RESOLUTION_UNSUPPORTED";
+  }
+  if (typeof videoSpec.aspect_ratio !== "string") {
+    return "PROVIDER_CAPABILITY_ASPECT_RATIO_UNSUPPORTED";
+  }
+  return null;
 }
 
 function matchingSnapshot(snapshots: ApprovedShotSnapshot[], shot: Shot): { snapshot: ApprovedShotSnapshot; mode: Candidate["match_mode"] } | null | "ambiguous" {
@@ -727,6 +856,9 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
           addReason(reasons, activeIntentCount > 0 ? "REAL_GENERATION_ALREADY_ACTIVE" : "STORYBOARD_ARTIFACT_INTEGRITY_INVALID");
         } else if (error.code === "SHOT_OPERATIONAL_FACT_INVALID") {
           addReason(reasons, activeIntentCount > 0 ? "REAL_GENERATION_ALREADY_ACTIVE" : "SHOT_STATE_INCONSISTENT");
+        } else if (error.code === "GENERATION_RUN_OPERATIONAL_STATUS_INVALID"
+          || error.code === "GENERATION_JOB_OPERATIONAL_STATE_INVALID") {
+          addReason(reasons, activeIntentCount > 0 ? "REAL_GENERATION_ALREADY_ACTIVE" : "GENERATION_ALREADY_STARTED");
         } else {
           throw error;
         }
@@ -754,6 +886,8 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
         if (!["draft", "storyboard_approved", "video_generation_in_progress", "video_review"].includes(project.status)) {
           addReason(reasons, "PROJECT_STATUS_INELIGIBLE"); continue;
         }
+        const capabilityShapeReason = validateProjectCapabilityInputForT2(project);
+        if (capabilityShapeReason) { addReason(reasons, capabilityShapeReason); continue; }
         if (!project.active_storyboard_package_id) { addReason(reasons, "PACKAGE_NOT_FOUND"); continue; }
         const packageRow = db.prepare(`
           SELECT storyboard_package_id, project_id, data_json
@@ -852,26 +986,27 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
             if (mediaInspection.actual_byte_digest) {
               fingerprintFacts.push({ actual_media_digest: mediaInspection.actual_byte_digest, verification: mediaInspection.code });
             }
+            if (mediaInspection.media_identity_failure_digest) {
+              fingerprintFacts.push({
+                media_identity_failure: {
+                  digest: mediaInspection.media_identity_failure_digest,
+                  aggregate_reason: "STORYBOARD_ARTIFACT_INTEGRITY_INVALID"
+                }
+              });
+            }
             addReason(reasons, mediaInspection.code);
             continue;
           }
           fingerprintFacts.push({ actual_media_digest: mediaInspection.actual_byte_digest });
-          const inspectedStorage = resolve(mediaInspection.blob.storage_uri);
-          if (!isAuthoritativeMediaIdentityCurrent(inspectedStorage, authoritativeMediaRoot!, mediaInspection.media_identity)) {
-            addReason(reasons, "STORYBOARD_ARTIFACT_INTEGRITY_INVALID");
-            continue;
-          }
-          const verified = verifyMediaArtifactBytes(db, artifact);
-          if (!isAuthoritativeMediaIdentityCurrent(inspectedStorage, authoritativeMediaRoot!, mediaInspection.media_identity)) {
-            addReason(reasons, "STORYBOARD_ARTIFACT_INTEGRITY_INVALID");
-            continue;
-          }
-          fingerprintFacts.push({ artifact, verified: verified.ok ? verified.blob : verified.error.code });
-          if (!verified.ok || !["image/png", "image/jpeg"].includes(verified.blob.detected_mime)) {
-            addReason(reasons, verified.ok ? "STORYBOARD_IMAGE_MIME_UNSUPPORTED" : "STORYBOARD_ARTIFACT_INTEGRITY_INVALID"); continue;
-          }
+          fingerprintFacts.push({
+            authoritative_media_evidence: {
+              raw_sha256: mediaInspection.raw_sha256,
+              size_bytes: mediaInspection.size_bytes,
+              detected_mime: mediaInspection.detected_mime
+            }
+          });
           const artifactPackage = (artifact.source as Record<string, unknown>).storyboard_package_id;
-          const blobPackage = verified.blob.provenance.storyboard_package_id;
+          const blobPackage = mediaInspection.blob.provenance.storyboard_package_id;
           if ((typeof artifactPackage === "string" && artifactPackage !== storyboard.storyboard_package_id)
             || (typeof blobPackage === "string" && blobPackage !== storyboard.storyboard_package_id)) {
             addReason(reasons, "STORYBOARD_ARTIFACT_INTEGRITY_INVALID"); continue;

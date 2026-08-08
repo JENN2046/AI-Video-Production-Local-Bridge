@@ -184,6 +184,7 @@ test("scanner source does not call migration, recovery, writable database, or di
   for (const forbidden of ["openM0Database(", "checkDatabase(", "runDatabaseMigrations(", "recoverMediaActivations(", "ensureM0Directories("]) {
     assert.equal(source.includes(forbidden), false);
   }
+  assert.equal(source.includes("verifyMediaArtifactBytes"), false);
   assert.match(source, /openM0DatabaseConnection\(scanPaths\.sqlitePath, \{ readOnly: true, assertPathCurrent \}\)/);
 });
 
@@ -226,6 +227,66 @@ test("project classification, lifecycle, delivered state, and provider capabilit
       } finally { fixture.cleanup(); }
     });
   }
+});
+
+test("T2 validates project video_spec runtime shape before provider capability lookup", async (t) => {
+  const cases = [
+    ["missing video_spec", (project: Record<string, unknown>) => { delete project.video_spec; }, "PROVIDER_CAPABILITY_RESOLUTION_UNSUPPORTED"],
+    ["null video_spec", (project: Record<string, unknown>) => { project.video_spec = null; }, "PROVIDER_CAPABILITY_RESOLUTION_UNSUPPORTED"],
+    ["numeric resolution", (project: Record<string, unknown>) => { (project.video_spec as Record<string, unknown>).resolution = 720; }, "PROVIDER_CAPABILITY_RESOLUTION_UNSUPPORTED"],
+    ["object resolution", (project: Record<string, unknown>) => { (project.video_spec as Record<string, unknown>).resolution = {}; }, "PROVIDER_CAPABILITY_RESOLUTION_UNSUPPORTED"],
+    ["numeric aspect ratio", (project: Record<string, unknown>) => { (project.video_spec as Record<string, unknown>).aspect_ratio = 916; }, "PROVIDER_CAPABILITY_ASPECT_RATIO_UNSUPPORTED"],
+    ["object aspect ratio", (project: Record<string, unknown>) => { (project.video_spec as Record<string, unknown>).aspect_ratio = {}; }, "PROVIDER_CAPABILITY_ASPECT_RATIO_UNSUPPORTED"]
+  ] as const;
+
+  for (const [name, mutate, reason] of cases) {
+    await t.test(name, async () => {
+      const fixture = createFixture();
+      try {
+        const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+        const row = db.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(fixture.project_id) as { data_json: string };
+        const project = JSON.parse(row.data_json) as Record<string, unknown>;
+        mutate(project);
+        db.prepare("UPDATE projects SET data_json = ? WHERE project_id = ?").run(JSON.stringify(project), fixture.project_id);
+        db.close();
+        const result = await scan(fixture);
+        assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+        assert.equal(result.reason_code_counts[reason], 1);
+        assert.equal(result.reason_code_counts.SHOT_OPERATIONAL_STATE_INELIGIBLE, undefined);
+      } finally { fixture.cleanup(); }
+    });
+  }
+
+  await t.test("empty resolution remains shape-valid and is delegated to the registry", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      const row = db.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(fixture.project_id) as { data_json: string };
+      const project = JSON.parse(row.data_json) as Record<string, unknown>;
+      (project.video_spec as Record<string, unknown>).resolution = "";
+      db.prepare("UPDATE projects SET data_json = ? WHERE project_id = ?").run(JSON.stringify(project), fixture.project_id);
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.result, "PASS_ONE_ELIGIBLE_SHOT");
+      assert.equal(result.reason_code_counts.PROVIDER_CAPABILITY_RESOLUTION_UNSUPPORTED, undefined);
+    } finally { fixture.cleanup(); }
+  });
+
+  await t.test("active intent remains higher precedence than malformed video_spec", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      const row = db.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(fixture.project_id) as { data_json: string };
+      const project = JSON.parse(row.data_json) as Record<string, unknown>;
+      project.video_spec = null;
+      db.prepare("UPDATE projects SET data_json = ? WHERE project_id = ?").run(JSON.stringify(project), fixture.project_id);
+      insertActiveIntent(db, fixture, "intent_malformed_video_spec_active");
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.reason_code_counts.REAL_GENERATION_ALREADY_ACTIVE, 1);
+      assert.equal(result.reason_code_counts.PROVIDER_CAPABILITY_RESOLUTION_UNSUPPORTED, undefined);
+    } finally { fixture.cleanup(); }
+  });
 });
 
 test("package matching accepts unique order fallback, normalizes null negative prompt, and ignores description", async () => {
@@ -889,6 +950,67 @@ test("exclusive governed media files reject hard links without changing T2 prece
       throw error;
     } finally { fixture.cleanup(); }
   });
+
+  await t.test("hard-link A to hard-link B drift changes the identity failure fingerprint", async (t) => {
+    const fixture = createFixture();
+    try {
+      const outsideRoot = join(fixture.root, "identity-drift");
+      mkdirSync(outsideRoot, { recursive: true });
+      const firstPath = join(outsideRoot, "source-a.png");
+      const secondPath = join(outsideRoot, "source-b.png");
+      copyFileSync(fixture.media_path, firstPath);
+      copyFileSync(fixture.media_path, secondPath);
+      writeFileSync(secondPath, Buffer.from("different-invalid-bytes"));
+      unlinkSync(fixture.media_path);
+      try { linkSync(firstPath, fixture.media_path); } catch { t.skip("hard-link creation is unavailable on this host"); return; }
+      const result = await scan(fixture, { betweenSnapshots: () => {
+        unlinkSync(fixture.media_path);
+        linkSync(secondPath, fixture.media_path);
+      } });
+      assert.equal(result.result, "T2_STATE_CHANGED_DURING_SCAN");
+      assert.equal(result.candidate_alias, undefined);
+    } catch (error) {
+      if (error instanceof Error && /hard|link/i.test(error.message)) {
+        t.skip("hard-link creation is unavailable on this host");
+        return;
+      }
+      throw error;
+    } finally { fixture.cleanup(); }
+  });
+
+  await t.test("missing to different invalid file drift changes the identity failure fingerprint", async (t) => {
+    const fixture = createFixture();
+    try {
+      const outsideRoot = join(fixture.root, "missing-drift");
+      mkdirSync(outsideRoot, { recursive: true });
+      const outsidePath = join(outsideRoot, "source.png");
+      copyFileSync(fixture.media_path, outsidePath);
+      unlinkSync(fixture.media_path);
+      const result = await scan(fixture, { betweenSnapshots: () => {
+        try { linkSync(outsidePath, fixture.media_path); } catch { throw new Error("HARD_LINK_UNAVAILABLE"); }
+      } });
+      assert.equal(result.result, "T2_STATE_CHANGED_DURING_SCAN");
+      assert.equal(result.candidate_alias, undefined);
+    } catch (error) {
+      if (error instanceof Error && error.message === "HARD_LINK_UNAVAILABLE") {
+        t.skip("hard-link creation is unavailable on this host");
+        return;
+      }
+      throw error;
+    } finally { fixture.cleanup(); }
+  });
+
+  await t.test("unchanged invalid identity remains a stable integrity rejection", async (t) => {
+    const fixture = createFixture();
+    try {
+      const secondPath = join(fixture.paths.mediaRoot, "stable-invalid-link.png");
+      try { linkSync(fixture.media_path, secondPath); } catch { t.skip("hard-link creation is unavailable on this host"); return; }
+      const result = await scan(fixture);
+      assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+      assert.equal(result.reason_code_counts.STORYBOARD_ARTIFACT_INTEGRITY_INVALID, 1);
+      assert.equal(result.candidate_alias, undefined);
+    } finally { fixture.cleanup(); }
+  });
 });
 
 test("snapshot matching requires one globally unique shot or order match", async (t) => {
@@ -1198,19 +1320,80 @@ test("shot operational fact drift is a stable integrity rejection", async (t) =>
   });
 });
 
-test("unknown operational integrity errors remain boundary failures", async () => {
-  const fixture = createFixture();
-  try {
-    const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
-    db.prepare(`INSERT INTO generation_runs
-      (run_id, batch_id, project_id, shot_id, run_type, status, data_json)
-      VALUES ('run_unknown_status', NULL, ?, ?, 'initial', 'unexpected', '{}')`)
-      .run(fixture.project_id, fixture.shot_id);
-    db.close();
-    const result = await scan(fixture);
-    assert.equal(result.result, "T2_READ_ONLY_BOUNDARY_VIOLATION");
-    assert.equal(result.reason_code_counts.SHOT_STATE_INCONSISTENT, undefined);
-  } finally { fixture.cleanup(); }
+test("invalid persisted generation states preserve started semantics", async (t) => {
+  await t.test("unknown generation run status without active intent", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      db.prepare(`INSERT INTO generation_runs
+        (run_id, batch_id, project_id, shot_id, run_type, status, data_json)
+        VALUES ('run_unknown_status', NULL, ?, ?, 'initial', 'unexpected', '{}')`)
+        .run(fixture.project_id, fixture.shot_id);
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+      assert.equal(result.reason_code_counts.GENERATION_ALREADY_STARTED, 1);
+      assert.equal(result.reason_code_counts.SHOT_OPERATIONAL_STATE_INELIGIBLE, undefined);
+    } finally { fixture.cleanup(); }
+  });
+
+  await t.test("unknown generation job state without active intent", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      db.prepare(`INSERT INTO generation_intents
+        (intent_id, project_id, shot_id, provider, account_label, model, input_artifact_id,
+         duration_seconds, resolution, estimated_cost_value, budget_limit_value, currency,
+         confirmed, expires_at, status)
+        VALUES ('intent_unknown_job', ?, ?, 'runninghub', 'primary', 'model', ?, 6, '720x1280', 1, 1, 'USD', 1, '2099-01-01', 'succeeded')`)
+        .run(fixture.project_id, fixture.shot_id, fixture.artifact_id);
+      db.exec("PRAGMA ignore_check_constraints = ON");
+      db.prepare("INSERT INTO generation_jobs (job_id, intent_id, state) VALUES ('job_unknown_state', 'intent_unknown_job', 'unexpected')").run();
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+      assert.equal(result.reason_code_counts.GENERATION_ALREADY_STARTED, 1);
+      assert.equal(result.reason_code_counts.SHOT_OPERATIONAL_STATE_INELIGIBLE, undefined);
+    } finally { fixture.cleanup(); }
+  });
+
+  await t.test("active intent takes precedence over invalid generation run status", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      db.prepare(`INSERT INTO generation_runs
+        (run_id, batch_id, project_id, shot_id, run_type, status, data_json)
+        VALUES ('run_unknown_active', NULL, ?, ?, 'initial', 'unexpected', '{}')`)
+        .run(fixture.project_id, fixture.shot_id);
+      insertActiveIntent(db, fixture, "intent_unknown_run_active");
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+      assert.equal(result.reason_code_counts.REAL_GENERATION_ALREADY_ACTIVE, 1);
+      assert.equal(result.reason_code_counts.GENERATION_ALREADY_STARTED, undefined);
+    } finally { fixture.cleanup(); }
+  });
+
+  await t.test("active intent takes precedence over invalid generation job state", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      db.prepare(`INSERT INTO generation_intents
+        (intent_id, project_id, shot_id, provider, account_label, model, input_artifact_id,
+         duration_seconds, resolution, estimated_cost_value, budget_limit_value, currency,
+         confirmed, expires_at, status)
+        VALUES ('intent_unknown_job_active_base', ?, ?, 'runninghub', 'primary', 'model', ?, 6, '720x1280', 1, 1, 'USD', 1, '2099-01-01', 'succeeded')`)
+        .run(fixture.project_id, fixture.shot_id, fixture.artifact_id);
+      db.exec("PRAGMA ignore_check_constraints = ON");
+      db.prepare("INSERT INTO generation_jobs (job_id, intent_id, state) VALUES ('job_unknown_active_base', 'intent_unknown_job_active_base', 'unexpected')").run();
+      insertActiveIntent(db, fixture, "intent_unknown_job_active");
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+      assert.equal(result.reason_code_counts.REAL_GENERATION_ALREADY_ACTIVE, 1);
+      assert.equal(result.reason_code_counts.GENERATION_ALREADY_STARTED, undefined);
+    } finally { fixture.cleanup(); }
+  });
 });
 
 test("missing active package, generation history, and byte drift are deterministic rejections", async (t) => {
