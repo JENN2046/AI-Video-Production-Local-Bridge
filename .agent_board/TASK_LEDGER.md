@@ -5647,3 +5647,22 @@ publication:
 R2_authorized: false
 merged: false
 ```
+
+### 2026-08-08 — PR118-R12 integer and Project priority correction
+
+```yaml
+task_id: S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY
+result: GOVERNANCE_CORRECTION
+supersedes_implementation_tip:
+  previous: 08fe111b562a30469c8440e6098adb4d8f86a438
+  current: be3c2084e83d51bca7cdb37711c134f69c1dd291
+reason:
+  - R12 ClipVersion integer contract closure
+  - R12 Project parse active-intent precedence closure
+pull_request: 118
+base: 990e5cfa909c7886ea1378c06abe165dc8f19995
+disposition:
+  IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION
+merged: false
+R2_authorized: false
+```
