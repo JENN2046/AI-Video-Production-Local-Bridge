@@ -128,16 +128,96 @@ interface AuthoritativeMediaRoot {
   canonical: string;
 }
 
-function resolveAuthoritativeMediaRoot(scanPaths: M0Paths): AuthoritativeMediaRoot | null {
+type AuthoritativeMediaRootFailureClass =
+  | "MISSING"
+  | "SYMLINK"
+  | "NON_DIRECTORY"
+  | "REALPATH_MISMATCH"
+  | "IO_FAILURE";
+
+interface AuthoritativeMediaRootFailure {
+  status_class: AuthoritativeMediaRootFailureClass;
+  entry?: Stats;
+  canonical_target?: string;
+}
+
+type AuthoritativeMediaRootInspection =
+  | {
+    ok: true;
+    root: AuthoritativeMediaRoot;
+    fingerprint_digest: string;
+  }
+  | {
+    ok: false;
+    failure_digest: string;
+  };
+
+function authoritativeMediaRootFailureDigest(failure: AuthoritativeMediaRootFailure): string {
+  const entry = failure.entry;
+  return domainSeparatedSha256("s3b-t2-authoritative-media-root-failure-v1", {
+    status_class: failure.status_class,
+    entry: entry ? {
+      dev: entry.dev,
+      ino: entry.ino,
+      nlink: entry.nlink,
+      size: entry.size,
+      mtimeMs: entry.mtimeMs,
+      ctimeMs: entry.ctimeMs
+    } : null,
+    canonical_target_digest: failure.canonical_target
+      ? domainSeparatedSha256("s3b-t2-authoritative-media-root-target-v1", failure.canonical_target)
+      : null
+  });
+}
+
+function inspectAuthoritativeMediaRoot(scanPaths: M0Paths): AuthoritativeMediaRootInspection {
   const configured = resolve(scanPaths.mediaRoot);
   try {
     const entry = lstatSync(configured);
-    if (entry.isSymbolicLink() || !entry.isDirectory()) return null;
+    if (entry.isSymbolicLink()) {
+      let canonicalTarget: string | undefined;
+      try { canonicalTarget = resolve(realpathSync(configured)); } catch { /* metadata-only failure classification */ }
+      return {
+        ok: false,
+        failure_digest: authoritativeMediaRootFailureDigest({
+          status_class: "SYMLINK",
+          entry,
+          canonical_target: canonicalTarget
+        })
+      };
+    }
+    if (!entry.isDirectory()) {
+      return {
+        ok: false,
+        failure_digest: authoritativeMediaRootFailureDigest({ status_class: "NON_DIRECTORY", entry })
+      };
+    }
     const canonical = resolve(realpathSync(configured));
-    if (!sameResolvedPath(canonical, configured)) return null;
-    return { configured, canonical };
-  } catch {
-    return null;
+    if (!sameResolvedPath(canonical, configured)) {
+      return {
+        ok: false,
+        failure_digest: authoritativeMediaRootFailureDigest({
+          status_class: "REALPATH_MISMATCH",
+          entry,
+          canonical_target: canonical
+        })
+      };
+    }
+    return {
+      ok: true,
+      root: { configured, canonical },
+      fingerprint_digest: domainSeparatedSha256("s3b-t2-authoritative-media-root-v1", {
+        status: "VALID",
+        identity: { dev: entry.dev, ino: entry.ino },
+        configured_authority_digest: domainSeparatedSha256("s3b-t2-authoritative-media-root-configured-v1", configured),
+        canonical_location_digest: domainSeparatedSha256("s3b-t2-authoritative-media-root-canonical-v1", canonical)
+      })
+    };
+  } catch (error) {
+    const status_class: AuthoritativeMediaRootFailureClass = error instanceof Error && /ENOENT|ENOTDIR/i.test(error.message)
+      ? "MISSING"
+      : "IO_FAILURE";
+    return { ok: false, failure_digest: authoritativeMediaRootFailureDigest({ status_class }) };
   }
 }
 
@@ -174,7 +254,8 @@ function validateApprovedShotSnapshots(value: unknown): { ok: true; snapshots: A
     if (!isRecord(snapshot)
       || typeof snapshot.order !== "number"
       || !Number.isFinite(snapshot.order)
-      || (snapshot.shot_id !== undefined && typeof snapshot.shot_id !== "string")
+      || (snapshot.shot_id !== undefined
+        && (typeof snapshot.shot_id !== "string" || snapshot.shot_id.length === 0))
       || typeof snapshot.duration_seconds !== "number"
       || !Number.isFinite(snapshot.duration_seconds)
       || typeof snapshot.storyboard_image_artifact_id !== "string"
@@ -532,12 +613,12 @@ function validateProjectCapabilityInputForT2(project: Project): S3bT2ReasonCode 
 
 function matchingSnapshot(snapshots: ApprovedShotSnapshot[], shot: Shot): { snapshot: ApprovedShotSnapshot; mode: Candidate["match_mode"] } | null | "ambiguous" {
   const matches = snapshots.filter((snapshot) =>
-    snapshot.shot_id ? snapshot.shot_id === shot.shot_id : snapshot.order === shot.order
+    snapshot.shot_id !== undefined ? snapshot.shot_id === shot.shot_id : snapshot.order === shot.order
   );
   if (matches.length === 0) return null;
   if (matches.length !== 1) return "ambiguous";
   const snapshot = matches[0];
-  return { snapshot, mode: snapshot.shot_id ? "shot_id" : "order" };
+  return { snapshot, mode: snapshot.shot_id !== undefined ? "shot_id" : "order" };
 }
 
 function addReason(reasons: SnapshotResult["reasons"], code: S3bT2ReasonCode): void {
@@ -681,6 +762,13 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
         .sort();
       fingerprintFacts.push({ shot_count: shotDigests.length, shot_digests: shotDigests });
 
+      const authoritativeMediaRootInspection = inspectAuthoritativeMediaRoot(scanPaths);
+      fingerprintFacts.push({
+        authoritative_media_root: authoritativeMediaRootInspection.ok
+          ? { status: "VALID", digest: authoritativeMediaRootInspection.fingerprint_digest }
+          : { status: "INVALID", digest: authoritativeMediaRootInspection.failure_digest }
+      });
+
       const parsedProjects = rows.map(parseProjectForT2);
       const invalidProject = parsedProjects.some((result) => !result.ok);
       if (invalidProject) {
@@ -702,7 +790,9 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
         if (!result.ok) throw new Error("T2_PROJECT_FACT_INVALID");
         return result.project;
       });
-      const authoritativeMediaRoot = resolveAuthoritativeMediaRoot(scanPaths);
+      const authoritativeMediaRoot = authoritativeMediaRootInspection.ok
+        ? authoritativeMediaRootInspection.root
+        : null;
       const generationHistoryByShot = new Set<string>();
       for (const row of db.prepare("SELECT project_id, shot_id FROM generation_runs WHERE shot_id IS NOT NULL").all() as Array<{ project_id: string; shot_id: string }>) {
         generationHistoryByShot.add(`${row.project_id}\u0000${row.shot_id}`);

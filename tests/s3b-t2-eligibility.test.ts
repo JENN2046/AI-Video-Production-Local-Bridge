@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { copyFileSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 
@@ -691,6 +691,8 @@ test("T2 validates the approved snapshot collection before matching", async (t) 
   for (const [name, mutate] of [
     ["snapshot missing order", (snapshot: Record<string, unknown>) => { delete snapshot.order; }],
     ["snapshot invalid shot_id type", (snapshot: Record<string, unknown>) => { snapshot.shot_id = 1; }],
+    ["snapshot empty shot_id", (snapshot: Record<string, unknown>) => { snapshot.shot_id = ""; }],
+    ["snapshot null shot_id", (snapshot: Record<string, unknown>) => { snapshot.shot_id = null; }],
     ["snapshot missing duration", (snapshot: Record<string, unknown>) => { delete snapshot.duration_seconds; }],
     ["snapshot missing artifact id", (snapshot: Record<string, unknown>) => { delete snapshot.storyboard_image_artifact_id; }],
     ["snapshot missing video prompt", (snapshot: Record<string, unknown>) => { delete snapshot.video_prompt; }],
@@ -1013,6 +1015,89 @@ test("exclusive governed media files reject hard links without changing T2 prece
   });
 });
 
+test("authoritative mediaRoot identity is represented in every snapshot", async (t) => {
+  await t.test("valid root replacement changes the two-snapshot fingerprint", async () => {
+    const fixture = createFixture();
+    try {
+      const mediaRoot = fixture.paths.mediaRoot;
+      const movedRoot = join(fixture.root, "media-root-before-replacement");
+      const mediaName = basename(fixture.media_path);
+      const result = await scan(fixture, { betweenSnapshots: () => {
+        renameSync(mediaRoot, movedRoot);
+        mkdirSync(mediaRoot, { recursive: true });
+        copyFileSync(join(movedRoot, mediaName), fixture.media_path);
+      } });
+      assert.equal(result.result, "T2_STATE_CHANGED_DURING_SCAN");
+      assert.equal(result.candidate_alias, undefined);
+    } finally { fixture.cleanup(); }
+  });
+
+  await t.test("invalid non-directory root inode replacement changes the fingerprint", async () => {
+    const fixture = createFixture();
+    try {
+      const invalidRoot = join(fixture.root, "invalid-media-root");
+      writeFileSync(invalidRoot, Buffer.from("invalid-root-a"));
+      fixture.paths.mediaRoot = invalidRoot;
+      const result = await scan(fixture, { betweenSnapshots: () => {
+        unlinkSync(invalidRoot);
+        writeFileSync(invalidRoot, Buffer.from("invalid-root-b"));
+      } });
+      assert.equal(result.result, "T2_STATE_CHANGED_DURING_SCAN");
+      assert.equal(result.candidate_alias, undefined);
+    } finally { fixture.cleanup(); }
+  });
+
+  await t.test("invalid symlink target replacement changes the fingerprint", async () => {
+    const fixture = createFixture();
+    try {
+      const invalidRoot = join(fixture.root, "invalid-media-root-link");
+      const targetA = join(fixture.root, "invalid-media-target-a");
+      const targetB = join(fixture.root, "invalid-media-target-b");
+      mkdirSync(targetA);
+      mkdirSync(targetB);
+      try { symlinkSync(targetA, invalidRoot, "junction"); } catch {
+        t.skip("directory symlink creation is unavailable on this host");
+        return;
+      }
+      fixture.paths.mediaRoot = invalidRoot;
+      const result = await scan(fixture, { betweenSnapshots: () => {
+        unlinkSync(invalidRoot);
+        symlinkSync(targetB, invalidRoot, "junction");
+      } });
+      assert.equal(result.result, "T2_STATE_CHANGED_DURING_SCAN");
+      assert.equal(result.candidate_alias, undefined);
+    } finally { fixture.cleanup(); }
+  });
+
+  await t.test("stable invalid root remains a stable integrity rejection", async () => {
+    const fixture = createFixture();
+    try {
+      const invalidRoot = join(fixture.root, "stable-invalid-media-root");
+      writeFileSync(invalidRoot, Buffer.from("stable-invalid-root"));
+      fixture.paths.mediaRoot = invalidRoot;
+      const result = await scan(fixture);
+      assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+      assert.equal(result.reason_code_counts.STORYBOARD_ARTIFACT_INTEGRITY_INVALID, 1);
+      assert.equal(result.candidate_alias, undefined);
+    } finally { fixture.cleanup(); }
+  });
+
+  await t.test("active intent remains higher precedence than stable invalid root", async () => {
+    const fixture = createFixture();
+    try {
+      const invalidRoot = join(fixture.root, "active-invalid-media-root");
+      writeFileSync(invalidRoot, Buffer.from("active-invalid-root"));
+      fixture.paths.mediaRoot = invalidRoot;
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      insertActiveIntent(db, fixture, "intent_invalid_root_active");
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.reason_code_counts.REAL_GENERATION_ALREADY_ACTIVE, 1);
+      assert.equal(result.reason_code_counts.STORYBOARD_ARTIFACT_INTEGRITY_INVALID, undefined);
+    } finally { fixture.cleanup(); }
+  });
+});
+
 test("snapshot matching requires one globally unique shot or order match", async (t) => {
   for (const [name, reverse] of [["order-only first then shot id", false], ["shot id first then order-only", true]] as const) {
     await t.test(name, async () => {
@@ -1072,6 +1157,55 @@ test("snapshot matching requires one globally unique shot or order match", async
       const result = await scan(fixture);
       assert.equal(result.result, "PASS_ONE_ELIGIBLE_SHOT");
       assert.equal(result.package_match_mode, "shot_id");
+    } finally { fixture.cleanup(); }
+  });
+
+  await t.test("absent shot_id allows same-order fallback", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      const row = db.prepare("SELECT data_json FROM storyboard_packages WHERE storyboard_package_id = ?").get(fixture.package_id) as { data_json: string };
+      const storyboard = JSON.parse(row.data_json);
+      delete storyboard.approved_shot_snapshots[0].shot_id;
+      saveStoryboardPackage(db, storyboard);
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.result, "PASS_ONE_ELIGIBLE_SHOT");
+      assert.equal(result.package_match_mode, "order");
+    } finally { fixture.cleanup(); }
+  });
+
+  for (const [name, shotId] of [["empty shot_id", ""], ["null shot_id", null], ["wrong non-empty shot_id", "shot_other"]] as const) {
+    await t.test(`${name} never falls back to order`, async () => {
+      const fixture = createFixture();
+      try {
+        const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+        const row = db.prepare("SELECT data_json FROM storyboard_packages WHERE storyboard_package_id = ?").get(fixture.package_id) as { data_json: string };
+        const storyboard = JSON.parse(row.data_json);
+        storyboard.approved_shot_snapshots[0].shot_id = shotId;
+        saveStoryboardPackage(db, storyboard);
+        db.close();
+        const result = await scan(fixture);
+        assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+        assert.equal(result.reason_code_counts.PACKAGE_SNAPSHOT_MISMATCH, 1);
+        assert.equal(result.candidate_alias, undefined);
+      } finally { fixture.cleanup(); }
+    });
+  }
+
+  await t.test("empty shot_id remains lower priority than active intent", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      const row = db.prepare("SELECT data_json FROM storyboard_packages WHERE storyboard_package_id = ?").get(fixture.package_id) as { data_json: string };
+      const storyboard = JSON.parse(row.data_json);
+      storyboard.approved_shot_snapshots[0].shot_id = "";
+      saveStoryboardPackage(db, storyboard);
+      insertActiveIntent(db, fixture, "intent_empty_snapshot_active");
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.reason_code_counts.REAL_GENERATION_ALREADY_ACTIVE, 1);
+      assert.equal(result.reason_code_counts.PACKAGE_SNAPSHOT_MISMATCH, undefined);
     } finally { fixture.cleanup(); }
   });
 });
