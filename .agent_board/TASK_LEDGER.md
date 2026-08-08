@@ -5723,3 +5723,22 @@ disposition:
 merged: false
 R2_authorized: false
 ```
+
+### 2026-08-08 — PR118-R16 mediaRoot and snapshot identity closure
+
+```yaml
+task_id: S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY
+result: GOVERNANCE_CORRECTION
+supersedes_implementation_tip:
+  previous: ba0d4f35bf5f208f868a16a2c3f640d8537c5ef1
+  current: dd3a02e53954226f63eb1cae4965958a4667b9ee
+reason:
+  - R16 authoritative mediaRoot identity fingerprint closure
+  - R16 optional snapshot shot_id presence semantics closure
+pull_request: 118
+base: 990e5cfa909c7886ea1378c06abe165dc8f19995
+disposition:
+  IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION
+merged: false
+R2_authorized: false
+```
