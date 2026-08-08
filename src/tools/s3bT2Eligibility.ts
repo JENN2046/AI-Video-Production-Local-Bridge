@@ -1,15 +1,15 @@
 import { createHash, randomBytes } from "node:crypto";
-import { lstatSync, realpathSync, statSync } from "node:fs";
+import { closeSync, existsSync, fstatSync, lstatSync, openSync, realpathSync, readSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 
 import { assertSchemaCurrent } from "../storage/migrations.js";
 import { openM0DatabaseConnection, type M0Database } from "../storage/sqlite.js";
 import { paths, type M0Paths } from "../paths.js";
 import { collectProjectOperationalBundles, OperationalStateIntegrityError } from "./operationalStateFacts.js";
-import { ArtifactStructuredDriftError, getMediaArtifact, verifyMediaArtifactBytes } from "./mediaArtifacts.js";
+import { ArtifactStructuredDriftError, getMediaArtifact, getMediaBlob, verifyMediaArtifactBytes, type MediaArtifact, type MediaBlob } from "./mediaArtifacts.js";
 import { buildProviderCapabilityKey, RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY } from "./providerCapabilities.js";
 import type { Project, Shot } from "./projects.js";
-import { getStoryboardPackage, type ApprovedShotSnapshot, type StoryboardPackage } from "./storyboardPackages.js";
+import type { ApprovedShotSnapshot, StoryboardPackage } from "./storyboardPackages.js";
 import type { ShotOperationalState } from "../packages/domain/operationalState.js";
 
 export const S3B_T2_REASON_CODES = [
@@ -101,6 +101,152 @@ function isInside(child: string, parent: string): boolean {
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
+function sameResolvedPath(first: string, second: string): boolean {
+  const left = resolve(first);
+  const right = resolve(second);
+  return process.platform === "win32" ? left.toLowerCase() === right.toLowerCase() : left === right;
+}
+
+function hasSymlinkInPath(child: string, parent: string): boolean {
+  const resolvedParent = resolve(parent);
+  const resolvedChild = resolve(child);
+  if (!isInside(resolvedChild, resolvedParent)) return true;
+  let current = resolvedParent;
+  for (const part of relative(resolvedParent, resolvedChild).split(/[\\/]+/).filter(Boolean)) {
+    current = resolve(current, part);
+    if (!existsSync(current)) return false;
+    if (!lstatSync(current).isSymbolicLink()) continue;
+    return true;
+  }
+  return false;
+}
+
+interface AuthoritativeMediaRoot {
+  configured: string;
+  canonical: string;
+}
+
+function resolveAuthoritativeMediaRoot(scanPaths: M0Paths): AuthoritativeMediaRoot | null {
+  const configured = resolve(scanPaths.mediaRoot);
+  try {
+    const entry = lstatSync(configured);
+    if (entry.isSymbolicLink() || !entry.isDirectory()) return null;
+    const canonical = resolve(realpathSync(configured));
+    if (!sameResolvedPath(canonical, configured)) return null;
+    return { configured, canonical };
+  } catch {
+    return null;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function parseShotForT2(raw: string): { ok: true; shot: Partial<Shot> } | { ok: false } {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed)) return { ok: false };
+    return { ok: true, shot: parsed as Partial<Shot> };
+  } catch {
+    return { ok: false };
+  }
+}
+
+function isT2MediaArtifactShape(value: unknown): value is MediaArtifact {
+  if (!isRecord(value)
+    || typeof value.artifact_id !== "string"
+    || typeof value.blob_id !== "string"
+    || !isRecord(value.storage)
+    || typeof value.storage.uri !== "string"
+    || typeof value.storage.mime_type !== "string"
+    || typeof value.storage.filename !== "string"
+    || !isRecord(value.metadata)
+    || !isRecord(value.linked_objects)
+    || typeof value.linked_objects.project_id !== "string"
+    || typeof value.linked_objects.shot_id !== "string"
+    || !isRecord(value.source)) return false;
+  return true;
+}
+
+function normalizeNegativePrompt(value: unknown): { ok: true; value: string } | { ok: false } {
+  if (value === null || value === undefined) return { ok: true, value: "" };
+  if (typeof value === "string") return { ok: true, value };
+  return { ok: false };
+}
+
+type MediaByteInspection =
+  | { ok: true; blob: MediaBlob; actual_byte_digest: string }
+  | { ok: false; code: "STORYBOARD_ARTIFACT_INTEGRITY_INVALID"; actual_byte_digest?: string };
+
+function hashAuthoritativeMediaFile(filePath: string, root: AuthoritativeMediaRoot): string | null {
+  const resolvedPath = resolve(filePath);
+  if (!isInside(resolvedPath, root.configured) || hasSymlinkInPath(resolvedPath, root.configured)) return null;
+  let descriptor: number;
+  try {
+    const entry = lstatSync(resolvedPath);
+    if (entry.isSymbolicLink() || !entry.isFile()) return null;
+    if (!isInside(resolve(realpathSync(resolvedPath)), root.canonical)) return null;
+    descriptor = openSync(resolvedPath, "r");
+  } catch {
+    return null;
+  }
+  try {
+    const before = fstatSync(descriptor);
+    if (!before.isFile()) return null;
+    const hash = createHash("sha256").update("s3b-t2-actual-media-bytes-v1\0");
+    const buffer = Buffer.allocUnsafe(1024 * 1024);
+    while (true) {
+      const read = readSync(descriptor, buffer, 0, buffer.length, null);
+      if (read === 0) break;
+      hash.update(buffer.subarray(0, read));
+    }
+    const after = fstatSync(descriptor);
+    if (before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.dev !== after.dev || before.ino !== after.ino) return null;
+    if (!isInside(resolve(realpathSync(resolvedPath)), root.canonical)) return null;
+    return hash.digest("hex");
+  } catch {
+    return null;
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+function inspectMediaArtifactBytes(
+  db: M0Database,
+  artifact: unknown,
+  root: AuthoritativeMediaRoot | null
+): MediaByteInspection {
+  if (!root || !isT2MediaArtifactShape(artifact)) return { ok: false, code: "STORYBOARD_ARTIFACT_INTEGRITY_INVALID" };
+  let blob: MediaBlob | null;
+  try {
+    blob = getMediaBlob(db, artifact.blob_id);
+  } catch {
+    return { ok: false, code: "STORYBOARD_ARTIFACT_INTEGRITY_INVALID" };
+  }
+  if (!blob || blob.integrity_state !== "verified" || !isRecord(blob.provenance) || typeof blob.provenance.media_root !== "string"
+    || !isAbsolute(blob.provenance.media_root) || !sameResolvedPath(blob.provenance.media_root, root.configured)
+    || !isAbsolute(blob.storage_uri) || !isAbsolute(artifact.storage.uri)
+    || !sameResolvedPath(blob.storage_uri, artifact.storage.uri)) {
+    return { ok: false, code: "STORYBOARD_ARTIFACT_INTEGRITY_INVALID" };
+  }
+  const resolvedStorage = resolve(blob.storage_uri);
+  if (!isInside(resolvedStorage, root.configured) || hasSymlinkInPath(resolvedStorage, root.configured)) {
+    return { ok: false, code: "STORYBOARD_ARTIFACT_INTEGRITY_INVALID" };
+  }
+  try {
+    const entry = lstatSync(resolvedStorage);
+    if (entry.isSymbolicLink() || !entry.isFile() || !isInside(resolve(realpathSync(resolvedStorage)), root.canonical)) {
+      return { ok: false, code: "STORYBOARD_ARTIFACT_INTEGRITY_INVALID" };
+    }
+  } catch {
+    return { ok: false, code: "STORYBOARD_ARTIFACT_INTEGRITY_INVALID" };
+  }
+  const actualByteDigest = hashAuthoritativeMediaFile(resolvedStorage, root);
+  if (!actualByteDigest) return { ok: false, code: "STORYBOARD_ARTIFACT_INTEGRITY_INVALID" };
+  return { ok: true, blob, actual_byte_digest: actualByteDigest };
+}
+
 function assertNoSymlinkPath(child: string, parent: string): void {
   let current = resolve(parent);
   if (lstatSync(current).isSymbolicLink()) throw new Error("T2_DATABASE_PATH_UNSAFE");
@@ -137,10 +283,6 @@ function parseProject(row: ProjectRow): Project {
   const project = JSON.parse(row.data_json) as Project;
   if (!project || project.project_id !== row.project_id) throw new Error("T2_PROJECT_FACT_INVALID");
   return project;
-}
-
-function normalizeNegativePrompt(value: unknown): string {
-  return typeof value === "string" ? value : "";
 }
 
 function matchingSnapshot(storyboard: StoryboardPackage, shot: Shot): { snapshot: ApprovedShotSnapshot; mode: Candidate["match_mode"] } | null | "ambiguous" {
@@ -276,17 +418,36 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
           .digest("hex"))
         .sort();
       fingerprintFacts.push({ project_count: projectDigests.length, project_digests: projectDigests });
+      const authoritativeMediaRoot = resolveAuthoritativeMediaRoot(scanPaths);
+      const generationHistoryByShot = new Set<string>();
+      for (const row of db.prepare("SELECT project_id, shot_id FROM generation_runs WHERE shot_id IS NOT NULL").all() as Array<{ project_id: string; shot_id: string }>) {
+        generationHistoryByShot.add(`${row.project_id}\u0000${row.shot_id}`);
+      }
+      for (const row of db.prepare(`
+        SELECT intent.project_id, intent.shot_id
+        FROM generation_jobs job
+        JOIN generation_intents intent ON intent.intent_id = job.intent_id
+        WHERE intent.shot_id IS NOT NULL
+      `).all() as Array<{ project_id: string; shot_id: string }>) {
+        generationHistoryByShot.add(`${row.project_id}\u0000${row.shot_id}`);
+      }
 
       const storyboardReferenceFacts: unknown[] = [];
       const shotFacts: unknown[] = [];
       let storyboardArtifactStructuredDriftCount = 0;
+      let malformedShotCount = 0;
       for (const [index, project] of projects.entries()) {
         const row = rows[index];
         const shotRows = db.prepare("SELECT shot_id, project_id, data_json FROM shots WHERE project_id = ? ORDER BY rowid").all(project.project_id) as Array<{ shot_id: string; project_id: string; data_json: string }>;
         for (const shotRow of shotRows) {
-          const shot = JSON.parse(shotRow.data_json) as Partial<Shot>;
-          const artifactId = shot.storyboard_image_artifact_id;
           shotFacts.push({ shot_id: shotRow.shot_id, project_id: shotRow.project_id, shot_data_json: shotRow.data_json });
+          const parsedShot = parseShotForT2(shotRow.data_json);
+          if (!parsedShot.ok) {
+            malformedShotCount += 1;
+            continue;
+          }
+          const shot = parsedShot.shot;
+          const artifactId = shot.storyboard_image_artifact_id;
           if (typeof artifactId !== "string" || artifactId.length === 0) continue;
           const artifactRow = db.prepare(`
             SELECT a.artifact_id, a.project_id, a.shot_id, a.role, a.artifact_type, a.status, a.data_json,
@@ -384,6 +545,19 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
         storyboard_reference_digests: referenceDigests,
         storyboard_artifact_structured_drift_count: storyboardArtifactStructuredDriftCount
       });
+      if (malformedShotCount > 0) {
+        addReason(reasons, activeIntentCount > 0 ? "REAL_GENERATION_ALREADY_ACTIVE" : "SHOT_STATE_INCONSISTENT");
+        db.exec("ROLLBACK");
+        assertPathCurrent();
+        const after = totalChanges(db);
+        if (before !== 0 || after !== 0) throw new Error("T2_DATABASE_WRITE_DETECTED");
+        return {
+          fingerprint: stableFingerprint({ fingerprintFacts, candidates, reasons }),
+          candidates,
+          reasons,
+          sqlite: { total_changes_before: before, total_changes_after: after }
+        };
+      }
       if (storyboardArtifactStructuredDriftCount > 0) {
         addReason(reasons, activeIntentCount > 0 ? "REAL_GENERATION_ALREADY_ACTIVE" : "STORYBOARD_ARTIFACT_INTEGRITY_INVALID");
         db.exec("COMMIT");
@@ -435,9 +609,28 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
           addReason(reasons, "PROJECT_STATUS_INELIGIBLE"); continue;
         }
         if (!project.active_storyboard_package_id) { addReason(reasons, "PACKAGE_NOT_FOUND"); continue; }
-        const storyboard = getStoryboardPackage(db, project.active_storyboard_package_id);
-        fingerprintFacts.push({ storyboard });
-        if (!storyboard) { addReason(reasons, "PACKAGE_NOT_FOUND"); continue; }
+        const packageRow = db.prepare(`
+          SELECT storyboard_package_id, project_id, data_json
+          FROM storyboard_packages
+          WHERE storyboard_package_id = ?
+        `).get(project.active_storyboard_package_id) as {
+          storyboard_package_id: string;
+          project_id: string;
+          data_json: string;
+        } | undefined;
+        if (!packageRow) { addReason(reasons, "PACKAGE_NOT_FOUND"); continue; }
+        let storyboard: StoryboardPackage;
+        try {
+          const parsed: unknown = JSON.parse(packageRow.data_json);
+          if (!isRecord(parsed)) throw new Error("PACKAGE_SNAPSHOT_MISMATCH");
+          storyboard = parsed as unknown as StoryboardPackage;
+        } catch {
+          addReason(reasons, "PACKAGE_SNAPSHOT_MISMATCH");
+          continue;
+        }
+        fingerprintFacts.push({ storyboard, package_row: packageRow });
+        if (storyboard.storyboard_package_id !== packageRow.storyboard_package_id) { addReason(reasons, "PACKAGE_SNAPSHOT_MISMATCH"); continue; }
+        if (storyboard.project_id !== packageRow.project_id) { addReason(reasons, "PACKAGE_PROJECT_MISMATCH"); continue; }
         if (storyboard.project_id !== project.project_id) { addReason(reasons, "PACKAGE_PROJECT_MISMATCH"); continue; }
         if (storyboard.status !== "approved_for_video_generation" || storyboard.user_approval?.storyboard_approved !== true) {
           addReason(reasons, "PACKAGE_NOT_APPROVED"); continue;
@@ -446,6 +639,10 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
         for (const shot of bundle.shots) {
           const operational = bundle.states_by_shot_id.get(shot.shot_id);
           if (shot.generation_run_ids.length !== 0 || shot.clip_versions.length !== 0) {
+            addReason(reasons, "GENERATION_ALREADY_STARTED");
+            continue;
+          }
+          if (generationHistoryByShot.has(`${shot.project_id}\u0000${shot.shot_id}`)) {
             addReason(reasons, "GENERATION_ALREADY_STARTED");
             continue;
           }
@@ -472,8 +669,12 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
           if (!matched
             || matched.snapshot.duration_seconds !== shot.duration_seconds
             || matched.snapshot.video_prompt !== shot.video_prompt
-            || normalizeNegativePrompt(matched.snapshot.negative_prompt) !== normalizeNegativePrompt(shot.negative_prompt)
             || matched.snapshot.storyboard_image_artifact_id !== shot.storyboard_image_artifact_id) {
+            addReason(reasons, "PACKAGE_SNAPSHOT_MISMATCH"); continue;
+          }
+          const snapshotNegativePrompt = normalizeNegativePrompt(matched.snapshot.negative_prompt);
+          const shotNegativePrompt = normalizeNegativePrompt(shot.negative_prompt);
+          if (!snapshotNegativePrompt.ok || !shotNegativePrompt.ok || snapshotNegativePrompt.value !== shotNegativePrompt.value) {
             addReason(reasons, "PACKAGE_SNAPSHOT_MISMATCH"); continue;
           }
           let artifact: ReturnType<typeof getMediaArtifact>;
@@ -484,8 +685,11 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
             addReason(reasons, "STORYBOARD_ARTIFACT_INTEGRITY_INVALID");
             continue;
           }
-          if (!artifact
-            || artifact.status !== "active"
+          if (!isT2MediaArtifactShape(artifact)) {
+            addReason(reasons, "STORYBOARD_ARTIFACT_INTEGRITY_INVALID");
+            continue;
+          }
+          if (artifact.status !== "active"
             || artifact.artifact_type !== "image"
             || artifact.role !== "storyboard_image"
             || artifact.linked_objects.project_id !== project.project_id
@@ -495,6 +699,15 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
           if (!["image/png", "image/jpeg"].includes(artifact.storage.mime_type)) {
             addReason(reasons, "STORYBOARD_IMAGE_MIME_UNSUPPORTED"); continue;
           }
+          const mediaInspection = inspectMediaArtifactBytes(db, artifact, authoritativeMediaRoot);
+          if (!mediaInspection.ok) {
+            if (mediaInspection.actual_byte_digest) {
+              fingerprintFacts.push({ actual_media_digest: mediaInspection.actual_byte_digest, verification: mediaInspection.code });
+            }
+            addReason(reasons, mediaInspection.code);
+            continue;
+          }
+          fingerprintFacts.push({ actual_media_digest: mediaInspection.actual_byte_digest });
           const verified = verifyMediaArtifactBytes(db, artifact);
           fingerprintFacts.push({ artifact, verified: verified.ok ? verified.blob : verified.error.code });
           if (!verified.ok || !["image/png", "image/jpeg"].includes(verified.blob.detected_mime)) {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
-import { copyFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -240,6 +240,117 @@ test("package matching accepts unique order fallback, normalizes null negative p
   } finally { fixture.cleanup(); }
 });
 
+test("T2 classifies malformed Shot JSON and preserves active-intent precedence", async (t) => {
+  await t.test("malformed Shot JSON", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      db.prepare("UPDATE shots SET data_json = ? WHERE shot_id = ?").run('{"x":1,}', fixture.shot_id);
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+      assert.equal(result.reason_code_counts.SHOT_STATE_INCONSISTENT, 1);
+    } finally { fixture.cleanup(); }
+  });
+  await t.test("malformed Shot JSON with active intent", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      db.prepare("UPDATE shots SET data_json = ? WHERE shot_id = ?").run('{"x":1,}', fixture.shot_id);
+      db.prepare(`INSERT INTO generation_intents
+        (intent_id, project_id, shot_id, provider, account_label, model, input_artifact_id,
+         duration_seconds, resolution, estimated_cost_value, budget_limit_value, currency,
+         confirmed, expires_at, status)
+        VALUES ('intent_malformed_shot', ?, ?, 'runninghub', 'primary', 'model', ?, 6, '720x1280', 1, 1, 'USD', 1, '2099-01-01', 'queued')`)
+        .run(fixture.project_id, fixture.shot_id, fixture.artifact_id);
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.reason_code_counts.REAL_GENERATION_ALREADY_ACTIVE, 1);
+      assert.equal(result.reason_code_counts.SHOT_STATE_INCONSISTENT, undefined);
+    } finally { fixture.cleanup(); }
+  });
+});
+
+test("T2 rejects malformed Artifact nested shapes without boundary fallback", async (t) => {
+  for (const [name, mutate] of [
+    ["storage missing", (artifact: Record<string, unknown>) => { delete artifact.storage; }],
+    ["storage null", (artifact: Record<string, unknown>) => { artifact.storage = null; }],
+    ["storage mime missing", (artifact: Record<string, unknown>) => { delete (artifact.storage as Record<string, unknown>).mime_type; }]
+  ] as const) {
+    await t.test(name, async () => {
+      const fixture = createFixture();
+      try {
+        const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+        const row = db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = ?").get(fixture.artifact_id) as { data_json: string };
+        const artifact = JSON.parse(row.data_json) as Record<string, unknown>;
+        mutate(artifact);
+        db.prepare("UPDATE media_artifacts SET data_json = ? WHERE artifact_id = ?").run(JSON.stringify(artifact), fixture.artifact_id);
+        db.close();
+        const result = await scan(fixture);
+        assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+        assert.equal(result.reason_code_counts.STORYBOARD_ARTIFACT_INTEGRITY_INVALID, 1);
+      } finally { fixture.cleanup(); }
+    });
+  }
+});
+
+test("T2 uses strict nullish-only negative prompt normalization", async (t) => {
+  for (const [name, shotValue, snapshotValue] of [
+    ["number versus number", 1, 1],
+    ["different numbers", 1, 2],
+    ["boolean versus boolean", false, false],
+    ["object versus object", {}, {}]
+  ] as const) {
+    await t.test(name, async () => {
+      const fixture = createFixture();
+      try {
+        const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+        const shotRow = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(fixture.shot_id) as { data_json: string };
+        const shot = JSON.parse(shotRow.data_json);
+        shot.negative_prompt = shotValue;
+        saveShot(db, shot);
+        const packageRow = db.prepare("SELECT data_json FROM storyboard_packages WHERE storyboard_package_id = ?").get(fixture.package_id) as { data_json: string };
+        const storyboard = JSON.parse(packageRow.data_json);
+        storyboard.approved_shot_snapshots[0].negative_prompt = snapshotValue;
+        saveStoryboardPackage(db, storyboard);
+        db.close();
+        const result = await scan(fixture);
+        assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+        assert.equal(result.reason_code_counts.PACKAGE_SNAPSHOT_MISMATCH, 1);
+        assert.equal(result.candidate_alias, undefined);
+      } finally { fixture.cleanup(); }
+    });
+  }
+});
+
+test("T2 validates Storyboard Package relational projection", async (t) => {
+  await t.test("relational project id drift", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      db.prepare("UPDATE storyboard_packages SET project_id = ? WHERE storyboard_package_id = ?").run("project_other", fixture.package_id);
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.reason_code_counts.PACKAGE_PROJECT_MISMATCH, 1);
+      assert.equal(result.candidate_alias, undefined);
+    } finally { fixture.cleanup(); }
+  });
+  await t.test("relational package id drift", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      const row = db.prepare("SELECT data_json FROM storyboard_packages WHERE storyboard_package_id = ?").get(fixture.package_id) as { data_json: string };
+      const storyboard = JSON.parse(row.data_json);
+      storyboard.storyboard_package_id = "storyboard_package_json_only";
+      db.prepare("UPDATE storyboard_packages SET data_json = ? WHERE storyboard_package_id = ?").run(JSON.stringify(storyboard), fixture.package_id);
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.reason_code_counts.PACKAGE_SNAPSHOT_MISMATCH, 1);
+      assert.equal(result.candidate_alias, undefined);
+    } finally { fixture.cleanup(); }
+  });
+});
+
 test("ineligible shots retain canonical operational reason codes", async (t) => {
   await t.test("missing video prompt", async () => {
     const fixture = createFixture();
@@ -305,6 +416,7 @@ test("ambiguous package order and unsupported artifact mime are rejected", async
     try {
       const outside = join(fixture.paths.dataRoot, "outside.png");
       copyFileSync(fixture.media_path, outside);
+      const before = readFileSync(outside);
       const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
       const trigger = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'media_blobs_no_update'").get() as { sql: string };
       db.exec("DROP TRIGGER media_blobs_no_update");
@@ -313,6 +425,55 @@ test("ambiguous package order and unsupported artifact mime are rejected", async
       const row = db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = ?").get(fixture.artifact_id) as { data_json: string };
       const artifact = JSON.parse(row.data_json); artifact.storage.uri = outside;
       db.prepare("UPDATE media_artifacts SET data_json = ? WHERE artifact_id = ?").run(JSON.stringify(artifact), fixture.artifact_id);
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.reason_code_counts.STORYBOARD_ARTIFACT_INTEGRITY_INVALID, 1);
+      assert.deepEqual(readFileSync(outside), before);
+    } finally { fixture.cleanup(); }
+  });
+  await t.test("registered media root outside authoritative root is rejected before bytes are read", async () => {
+    const fixture = createFixture();
+    try {
+      const outsideRoot = join(fixture.root, "outside-media");
+      mkdirSync(outsideRoot, { recursive: true });
+      const outsidePath = join(outsideRoot, "outside.png");
+      copyFileSync(fixture.media_path, outsidePath);
+      const before = readFileSync(outsidePath);
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      const trigger = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'media_blobs_no_update'").get() as { sql: string };
+      db.exec("DROP TRIGGER media_blobs_no_update");
+      db.prepare("UPDATE media_blobs SET storage_uri = ?, provenance_json = ? WHERE blob_id = (SELECT blob_id FROM media_artifact_blobs WHERE artifact_id = ?)")
+        .run(outsidePath, JSON.stringify({ media_root: outsideRoot }), fixture.artifact_id);
+      const row = db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = ?").get(fixture.artifact_id) as { data_json: string };
+      const artifact = JSON.parse(row.data_json);
+      artifact.storage.uri = outsidePath;
+      db.prepare("UPDATE media_artifacts SET data_json = ? WHERE artifact_id = ?").run(JSON.stringify(artifact), fixture.artifact_id);
+      db.exec(trigger.sql);
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.reason_code_counts.STORYBOARD_ARTIFACT_INTEGRITY_INVALID, 1);
+      assert.deepEqual(readFileSync(outsidePath), before);
+    } finally { fixture.cleanup(); }
+  });
+  await t.test("symlink escape is rejected without accepting the target", async (t) => {
+    const fixture = createFixture();
+    try {
+      const outsideRoot = join(fixture.root, "outside-media");
+      mkdirSync(outsideRoot, { recursive: true });
+      const outsidePath = join(outsideRoot, "outside.png");
+      copyFileSync(fixture.media_path, outsidePath);
+      const linkPath = join(fixture.paths.mediaRoot, "escaped.png");
+      try { symlinkSync(outsidePath, linkPath, "file"); } catch { t.skip("file symlink creation is unavailable on this host"); return; }
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      const trigger = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'media_blobs_no_update'").get() as { sql: string };
+      db.exec("DROP TRIGGER media_blobs_no_update");
+      db.prepare("UPDATE media_blobs SET storage_uri = ? WHERE blob_id = (SELECT blob_id FROM media_artifact_blobs WHERE artifact_id = ?)")
+        .run(linkPath, fixture.artifact_id);
+      const row = db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = ?").get(fixture.artifact_id) as { data_json: string };
+      const artifact = JSON.parse(row.data_json);
+      artifact.storage.uri = linkPath;
+      db.prepare("UPDATE media_artifacts SET data_json = ? WHERE artifact_id = ?").run(JSON.stringify(artifact), fixture.artifact_id);
+      db.exec(trigger.sql);
       db.close();
       const result = await scan(fixture);
       assert.equal(result.reason_code_counts.STORYBOARD_ARTIFACT_INTEGRITY_INVALID, 1);
@@ -715,6 +876,15 @@ test("missing active package, generation history, and byte drift are determinist
       assert.equal(result.reason_code_counts.STORYBOARD_ARTIFACT_INTEGRITY_INVALID, 1);
     } finally { fixture.cleanup(); }
   });
+  await t.test("different invalid bytes change the two-snapshot fingerprint", async () => {
+    const fixture = createFixture();
+    try {
+      writeFileSync(fixture.media_path, Buffer.from("invalid-A"));
+      const result = await scan(fixture, { betweenSnapshots: () => writeFileSync(fixture.media_path, Buffer.from("invalid-B")) });
+      assert.equal(result.result, "T2_STATE_CHANGED_DURING_SCAN");
+      assert.equal(result.candidate_alias, undefined);
+    } finally { fixture.cleanup(); }
+  });
   await t.test("artifact file missing", async () => {
     const fixture = createFixture();
     try {
@@ -887,7 +1057,7 @@ test("global active intent blocks all candidates and multiple candidates do not 
 });
 
 test("started generation jobs and runs preserve the started reason without an active intent", async (t) => {
-  for (const state of ["queued", "submitting", "polling", "downloading", "finalizing"] as const) {
+  for (const state of ["queued", "submitting", "polling", "downloading", "finalizing", "succeeded", "cancelled"] as const) {
     await t.test(`generation job ${state}`, async () => {
       const fixture = createFixture();
       try {
@@ -908,7 +1078,7 @@ test("started generation jobs and runs preserve the started reason without an ac
     });
   }
 
-  for (const status of ["queued", "running"] as const) {
+  for (const status of ["queued", "running", "succeeded", "cancelled"] as const) {
     await t.test(`latest generation run ${status}`, async () => {
       const fixture = createFixture();
       try {
@@ -924,6 +1094,27 @@ test("started generation jobs and runs preserve the started reason without an ac
       } finally { fixture.cleanup(); }
     });
   }
+
+  await t.test("active intent takes precedence over terminal history", async () => {
+    const fixture = createFixture();
+    try {
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      db.prepare(`INSERT INTO generation_runs
+        (run_id, batch_id, project_id, shot_id, run_type, status, data_json)
+        VALUES ('run_terminal_with_active_intent', NULL, ?, ?, 'initial', 'succeeded', '{}')`)
+        .run(fixture.project_id, fixture.shot_id);
+      db.prepare(`INSERT INTO generation_intents
+        (intent_id, project_id, shot_id, provider, account_label, model, input_artifact_id,
+         duration_seconds, resolution, estimated_cost_value, budget_limit_value, currency,
+         confirmed, expires_at, status)
+        VALUES ('intent_active_terminal_history', ?, ?, 'runninghub', 'primary', 'model', ?, 6, '720x1280', 1, 1, 'USD', 1, '2099-01-01', 'running')`)
+        .run(fixture.project_id, fixture.shot_id, fixture.artifact_id);
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.reason_code_counts.REAL_GENERATION_ALREADY_ACTIVE, 1);
+      assert.equal(result.reason_code_counts.GENERATION_ALREADY_STARTED, undefined);
+    } finally { fixture.cleanup(); }
+  });
 });
 
 test("database path substitution and state or byte drift fail closed without retry", async (t) => {
