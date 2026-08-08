@@ -5567,3 +5567,199 @@ prohibited_operations_confirmed:
 merge_performed: false
 delivery: EXACT_HEAD_CI_AND_REVIEW_REQUIRED
 ```
+### 2026-08-05 — S3B-T2-R1 read-only eligible-shot executable
+
+```yaml
+task: S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY
+status: DONE
+implementation_disposition: IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION
+result: PASS_T2_READ_ONLY_EXECUTABLE_IMPLEMENTED
+claimed_by: Codex
+claim_run_id: codex-s3b-t2-r1-readonly-executable-20260805
+claimed_at: 2026-08-05T19:58:39+08:00
+completed_by: Codex
+completed_at: 2026-08-05T19:58:39+08:00
+implementation:
+  executable: npm run s3b:t2:scan
+  database_mode: read_only_query_only
+  consistency: two_independent_snapshots_no_retry
+  artifact_verification: actual_bytes_twice
+  provider_boundary: runninghub_registry_only
+formal_execution:
+  business_database_accessed: false
+  formal_media_accessed: false
+  candidate_scan_performed: false
+  provider_calls: 0
+validation:
+  typecheck: PASS
+  build: PASS
+  test_s3b_t2: PASS_30_TESTS
+  selection_gate: PASS
+  foundation_boundaries: PASS_124_TESTS
+  provider_boundaries: PASS
+  database_governance: PASS
+  secret_scan: PASS
+  diff_check: PASS
+evidence:
+  - ops/reports/2026-08-05-s3b-t2-r1-readonly-executable.md
+commit: THIS_PR_IMPLEMENTATION_COMMIT
+delivery: SEPARATE_PR_CI_REVIEW_AND_MERGE_AUTHORIZATION_REQUIRED
+next_task:
+  task_id: S3B-T2-R2_EXECUTE_READ_ONLY_ELIGIBILITY_SCAN
+  status: AWAITING_JENN_AUTHORIZATION
+```
+
+### 2026-08-08 — PR118-R9 T2 contract closure governance correction
+
+```yaml
+task: S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY
+correction:
+  prior_placeholder: THIS_PR_IMPLEMENTATION_COMMIT
+  implementation_code_tip: 70d2ee42acbb85698d60d8f3a8f9ef86a60ad3d2
+  pull_request: 118
+  base: 990e5cfa909c7886ea1378c06abe165dc8f19995
+  disposition: IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION
+```
+
+### 2026-08-08 — PR118-R11 ClipVersion runtime and DONE governance correction
+
+```yaml
+task_id: S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY
+result: GOVERNANCE_CORRECTION
+supersedes_implementation_tip:
+  previous: 70d2ee42acbb85698d60d8f3a8f9ef86a60ad3d2
+  current: 08fe111b562a30469c8440e6098adb4d8f86a438
+reason:
+  - R10 runtime-shape production changes
+  - R11 ClipVersion runtime-shape closure
+pull_request: 118
+base: 990e5cfa909c7886ea1378c06abe165dc8f19995
+disposition:
+  IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION
+current_execution_task: null
+run_lock:
+  status: inactive
+  current_task: none
+publication:
+  active_pull_request: 118
+  head_ref: codex/s3b-t2-readonly-executable
+  current_head_authority: VERIFY_FROM_GITHUB_BEFORE_EXECUTION
+R2_authorized: false
+merged: false
+```
+
+### 2026-08-08 — PR118-R12 integer and Project priority correction
+
+```yaml
+task_id: S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY
+result: GOVERNANCE_CORRECTION
+supersedes_implementation_tip:
+  previous: 08fe111b562a30469c8440e6098adb4d8f86a438
+  current: be3c2084e83d51bca7cdb37711c134f69c1dd291
+reason:
+  - R12 ClipVersion integer contract closure
+  - R12 Project parse active-intent precedence closure
+pull_request: 118
+base: 990e5cfa909c7886ea1378c06abe165dc8f19995
+disposition:
+  IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION
+merged: false
+R2_authorized: false
+```
+
+### 2026-08-08 — PR118-R13 safe-integer contract correction
+
+```yaml
+task_id: S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY
+result: GOVERNANCE_CORRECTION
+supersedes_implementation_tip:
+  previous: be3c2084e83d51bca7cdb37711c134f69c1dd291
+  current: 2514e3bfbafa0b5e2c599b13e24921b5460d2f49
+reason:
+  - R13 safe-integer parity with canonical ClipVersion contract
+pull_request: 118
+base: 990e5cfa909c7886ea1378c06abe165dc8f19995
+disposition:
+  IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION
+merged: false
+R2_authorized: false
+```
+
+### 2026-08-08 — PR118-R14 governed-media hard-link exclusivity closure
+
+```yaml
+task_id: S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY
+result: GOVERNANCE_CORRECTION
+supersedes_implementation_tip:
+  previous: 2514e3bfbafa0b5e2c599b13e24921b5460d2f49
+  current: 0644fd1592517406b30ecdddc6075994fd7aa833
+reason:
+  - R14 governed-media hard-link exclusivity closure
+pull_request: 118
+base: 990e5cfa909c7886ea1378c06abe165dc8f19995
+disposition:
+  IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION
+merged: false
+R2_authorized: false
+```
+
+### 2026-08-08 — PR118-R15 authoritative evidence and runtime classification closure
+
+```yaml
+task_id: S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY
+result: GOVERNANCE_CORRECTION
+supersedes_implementation_tip:
+  previous: 0644fd1592517406b30ecdddc6075994fd7aa833
+  current: ba0d4f35bf5f208f868a16a2c3f640d8537c5ef1
+reason:
+  - authoritative-media evidence closure
+  - failed-media identity fingerprint closure
+  - Project video_spec runtime classification
+  - generation operational-status drift classification
+pull_request: 118
+base: 990e5cfa909c7886ea1378c06abe165dc8f19995
+disposition:
+  IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION
+merged: false
+R2_authorized: false
+```
+
+### 2026-08-08 — PR118-R16 mediaRoot and snapshot identity closure
+
+```yaml
+task_id: S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY
+result: GOVERNANCE_CORRECTION
+supersedes_implementation_tip:
+  previous: ba0d4f35bf5f208f868a16a2c3f640d8537c5ef1
+  current: dd3a02e53954226f63eb1cae4965958a4667b9ee
+reason:
+  - R16 authoritative mediaRoot identity fingerprint closure
+  - R16 optional snapshot shot_id presence semantics closure
+pull_request: 118
+base: 990e5cfa909c7886ea1378c06abe165dc8f19995
+disposition:
+  IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION
+merged: false
+R2_authorized: false
+```
+
+### 2026-08-08 — PR118-R17 exact decode and residual identity closure
+
+```yaml
+task_id: S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY
+result: GOVERNANCE_CORRECTION
+supersedes_implementation_tip:
+  previous: dd3a02e53954226f63eb1cae4965958a4667b9ee
+  current: cf5ef89a38325f1b95bc476e895f51cab361aa34
+reason:
+  - exact authoritative bytes full FFmpeg decode
+  - invalid mediaRoot symlink target entity fingerprint
+  - pre-open identity preservation on IO failure
+  - strict ClipVersion unknown-field rejection
+pull_request: 118
+base: 990e5cfa909c7886ea1378c06abe165dc8f19995
+disposition:
+  IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION
+merged: false
+R2_authorized: false
+```

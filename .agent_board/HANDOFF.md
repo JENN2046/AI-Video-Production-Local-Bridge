@@ -1,29 +1,28 @@
 # HANDOFF.md
 
-Current mode: authorized S3B-T2 read-only offline preparation; no executable task is `READY`
-Last run: S3B-T2_PREPARE_ELIGIBLE_SHOT
-Last result: `BLOCKED_T2_EXECUTABLE_PATH_MISSING`; stopped before business database access
+Current mode: S3B-T2-R1 implementation complete; separate merge and R2 authorization gates remain
+Last run: S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY
+Last result: `PASS_T2_READ_ONLY_EXECUTABLE_IMPLEMENTED`; formal business database and media were not accessed
 
 ## Current state
 
 ```yaml
 current_task:
-  task_id: S3B-T2_PREPARE_ELIGIBLE_SHOT
-  status: BLOCKED
-  terminal_result: BLOCKED_T2_EXECUTABLE_PATH_MISSING
-  ready: false
-next_conditionally_authorized_task:
   task_id: S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY
-  implementation_authorized: true
-  authorization_kind: CONDITIONAL
+  status: DONE
+  implementation_disposition: IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION
+  terminal_result: PASS_T2_READ_ONLY_EXECUTABLE_IMPLEMENTED
+  ready: false
+next_task:
+  task_id: S3B-T2-R2_EXECUTE_READ_ONLY_ELIGIBILITY_SCAN
+  authorization: AWAITING_JENN_AUTHORIZATION
   loaded: false
   ready: false
   execution_started: false
-  further_jenn_authorization_required: false
 activation_gate:
-  - PR117_MERGED
+  - T2_R1_MERGED
   - POST_MERGE_MAIN_CI_GREEN
-  - WORKTREE_CLEAN
+  - JENN_R2_AUTHORIZATION
 t3:
   loaded: false
   executed: false
@@ -32,34 +31,30 @@ s4:
   executed: false
 ```
 
-## Next conditionally authorized task
+## Next task and authorization boundary
 
-`S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY` has Jenn's conditional
-implementation authorization, but it is not loaded, not `READY`, and not
-started. It may be loaded and started only when all of these are true:
+`S3B-T2-R2_EXECUTE_READ_ONLY_ELIGIBILITY_SCAN` is not loaded, not `READY`, and
+not started. It requires all of these conditions:
 
-- PR #117 is merged;
+- the R1 implementation is merged;
 - post-merge main CI is green;
-- the worktree is clean.
+- Jenn separately authorizes the formal read-only scan.
 
-Once all three conditions are proven, no further Jenn implementation
-authorization is required. Until then, the current slot remains
-`S3B-T2_PREPARE_ELIGIBLE_SHOT` in
-`BLOCKED_T2_EXECUTABLE_PATH_MISSING`. Jenn's only current decision is whether
-to authorize the separate PR #117 squash merge or keep PR #117 unmerged and
-retain that block. T3 remains not loaded and unexecuted; S4 remains
-unauthorized and unexecuted.
+R1 implementation authorization does not authorize R2. Until R1 is merged and
+R2 is separately authorized, no formal business database or governed media may
+be scanned. T3 remains not loaded and unexecuted; S4 remains unauthorized and
+unexecuted.
 
-## S3B-T2 executable-path stop
+## S3B-T2-R1 implementation result
 
-- Baseline: `main@90b1d688d1cad301d63aacf8e01acecf0b28eb1f`.
-- Windows CI run `30961478222` passed.
-- Jenn authorized read-only offline T2 preparation.
-- Current `main` has separate read-only database, operational-state, byte-
-  verification and registry-capability primitives, but no existing executable
-  entry that performs the complete frozen T2 scan and settled-state receipt.
-- The task forbids a new source tool or temporary orchestration path, so no
-  authoritative business database or governed media was opened.
+- Baseline: `main@990e5cfa909c7886ea1378c06abe165dc8f19995`.
+- The branch adds the formal `npm run s3b:t2:scan` entry.
+- It reuses the existing read-only database connection, canonical operational
+  state, actual Artifact byte verifier and static RunningHub registry.
+- Double independent snapshots reject database identity, state or media-byte
+  drift without retry.
+- Isolated temporary database and media tests passed; no formal business
+  database or governed media was opened.
 - T3 was not loaded; Provider, credentials, recovery, Snapshot, Memory, service
   lifecycle and S4 operations remain untouched.
 

@@ -49,6 +49,16 @@ function invalid(path: string, errorCode: string, error: string): ImageValidatio
   };
 }
 
+function resolveImageValidationFfmpeg(): string | undefined {
+  const candidates = [
+    process.env.FFMPEG_PATH,
+    process.platform === "win32" ? "A:\\AI-VIDEO\\ffmpeg\\bin\\ffmpeg.exe" : undefined,
+    process.platform === "win32" && process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, "Microsoft", "WinGet", "Links", "ffmpeg.exe") : undefined,
+    process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg"
+  ].filter((value): value is string => Boolean(value));
+  return candidates.find((candidate) => spawnSync(candidate, ["-version"], { stdio: "ignore", windowsHide: true }).status === 0);
+}
+
 function inspectPng(buffer: Buffer): { width: number; height: number } | null {
   const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
   if (buffer.length < 24 || !buffer.subarray(0, 8).equals(signature)) return null;
@@ -133,6 +143,25 @@ export function validateImageBuffer(buffer: Buffer, path = ""): ImageValidationR
   };
 }
 
+export function validateImageBufferDecoded(buffer: Buffer, path = ""): ImageValidationResult {
+  const structural = validateImageBuffer(buffer, path);
+  if (!structural.ok) return structural;
+  const ffmpeg = resolveImageValidationFfmpeg();
+  if (!ffmpeg) return invalid(path, "IMAGE_DECODE_UNAVAILABLE", "FFmpeg is unavailable for image decode validation.");
+  try {
+    const decoded = spawnSync(ffmpeg, ["-v", "error", "-f", "image2pipe", "-i", "pipe:0", "-frames:v", "1", "-f", "null", "-"], {
+      input: buffer,
+      encoding: "utf8",
+      maxBuffer: 1024 * 1024,
+      windowsHide: true
+    });
+    if (decoded.status !== 0) return invalid(path, "IMAGE_DECODE_FAILED", "Image bytes could not be decoded safely.");
+    return structural;
+  } catch {
+    return invalid(path, "IMAGE_DECODE_FAILED", "Image bytes could not be decoded safely.");
+  }
+}
+
 export function validateImageFile(filePath: string): ImageValidationResult {
   if (!existsSync(filePath)) {
     return invalid(filePath, "IMAGE_FILE_NOT_READABLE", "Image file does not exist.");
@@ -141,13 +170,7 @@ export function validateImageFile(filePath: string): ImageValidationResult {
   try {
     const structural = validateImageBuffer(readFileSync(filePath), filePath);
     if (!structural.ok) return structural;
-    const candidates = [
-      process.env.FFMPEG_PATH,
-      process.platform === "win32" ? "A:\\AI-VIDEO\\ffmpeg\\bin\\ffmpeg.exe" : undefined,
-      process.platform === "win32" && process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, "Microsoft", "WinGet", "Links", "ffmpeg.exe") : undefined,
-      process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg"
-    ].filter((value): value is string => Boolean(value));
-    const ffmpeg = candidates.find((candidate) => spawnSync(candidate, ["-version"], { stdio: "ignore", windowsHide: true }).status === 0);
+    const ffmpeg = resolveImageValidationFfmpeg();
     if (!ffmpeg) return invalid(filePath, "IMAGE_DECODE_UNAVAILABLE", "FFmpeg is unavailable for image decode validation.");
     const decoded = spawnSync(ffmpeg, ["-v", "error", "-i", filePath, "-frames:v", "1", "-f", "null", "-"], {
       encoding: "utf8",
