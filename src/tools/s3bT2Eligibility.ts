@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { closeSync, existsSync, fstatSync, lstatSync, openSync, realpathSync, readSync, statSync } from "node:fs";
+import { closeSync, existsSync, fstatSync, lstatSync, openSync, realpathSync, readSync, statSync, type Stats } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 
 import { assertSchemaCurrent } from "../storage/migrations.js";
@@ -211,39 +211,119 @@ function normalizeNegativePrompt(value: unknown): { ok: true; value: string } | 
 }
 
 type MediaByteInspection =
-  | { ok: true; blob: MediaBlob; actual_byte_digest: string }
+  | {
+    ok: true;
+    blob: MediaBlob;
+    actual_byte_digest: string;
+    media_identity: GovernedMediaIdentity;
+  }
   | { ok: false; code: "STORYBOARD_ARTIFACT_INTEGRITY_INVALID"; actual_byte_digest?: string };
 
-function hashAuthoritativeMediaFile(filePath: string, root: AuthoritativeMediaRoot): string | null {
+interface GovernedMediaIdentity {
+  dev: number;
+  ino: number;
+  size: number;
+  mtimeMs: number;
+  realpath: string;
+}
+
+interface GovernedMediaPath {
+  entry: Stats;
+  realpath: string;
+}
+
+function inspectGovernedMediaPath(filePath: string, root: AuthoritativeMediaRoot): GovernedMediaPath | null {
   const resolvedPath = resolve(filePath);
   if (!isInside(resolvedPath, root.configured) || hasSymlinkInPath(resolvedPath, root.configured)) return null;
-  let descriptor: number;
   try {
     const entry = lstatSync(resolvedPath);
-    if (entry.isSymbolicLink() || !entry.isFile()) return null;
-    if (!isInside(resolve(realpathSync(resolvedPath)), root.canonical)) return null;
-    descriptor = openSync(resolvedPath, "r");
+    if (entry.isSymbolicLink() || !entry.isFile() || entry.nlink !== 1) return null;
+    const canonical = resolve(realpathSync(resolvedPath));
+    if (!isInside(canonical, root.canonical)) return null;
+    return { entry, realpath: canonical };
   } catch {
     return null;
   }
+}
+
+function sameMediaIdentity(first: { dev: number; ino: number }, second: { dev: number; ino: number }): boolean {
+  return first.dev === second.dev && first.ino === second.ino;
+}
+
+function isAuthoritativeMediaIdentityCurrent(
+  filePath: string,
+  root: AuthoritativeMediaRoot,
+  expected: GovernedMediaIdentity
+): boolean {
+  const currentPath = inspectGovernedMediaPath(filePath, root);
+  if (!currentPath) return false;
   try {
-    const before = fstatSync(descriptor);
-    if (!before.isFile()) return null;
+    const current = statSync(resolve(filePath));
+    return current.isFile()
+      && current.nlink === 1
+      && sameMediaIdentity(current, expected)
+      && sameResolvedPath(currentPath.realpath, expected.realpath);
+  } catch {
+    return false;
+  }
+}
+
+function hashAuthoritativeMediaFile(filePath: string, root: AuthoritativeMediaRoot): { digest: string; identity: GovernedMediaIdentity } | null {
+  const resolvedPath = resolve(filePath);
+  const pathBefore = inspectGovernedMediaPath(resolvedPath, root);
+  if (!pathBefore) return null;
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(resolvedPath, "r");
+    const fdBefore = fstatSync(descriptor);
+    if (!fdBefore.isFile() || fdBefore.nlink !== 1 || !sameMediaIdentity(fdBefore, pathBefore.entry)) return null;
+    const pathAfterOpen = inspectGovernedMediaPath(resolvedPath, root);
+    if (!pathAfterOpen) return null;
+    const pathAfterOpenStat = statSync(resolvedPath);
+    if (!pathAfterOpenStat.isFile()
+      || pathAfterOpenStat.nlink !== 1
+      || !sameMediaIdentity(fdBefore, pathAfterOpenStat)
+      || !sameResolvedPath(pathAfterOpen.realpath, pathBefore.realpath)) return null;
+
     const hash = createHash("sha256").update("s3b-t2-actual-media-bytes-v1\0");
     const buffer = Buffer.allocUnsafe(1024 * 1024);
+    let bytesRead = 0;
     while (true) {
       const read = readSync(descriptor, buffer, 0, buffer.length, null);
       if (read === 0) break;
+      bytesRead += read;
       hash.update(buffer.subarray(0, read));
     }
-    const after = fstatSync(descriptor);
-    if (before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.dev !== after.dev || before.ino !== after.ino) return null;
-    if (!isInside(resolve(realpathSync(resolvedPath)), root.canonical)) return null;
-    return hash.digest("hex");
+    const fdAfter = fstatSync(descriptor);
+    const pathAfterRead = inspectGovernedMediaPath(resolvedPath, root);
+    if (!pathAfterRead) return null;
+    const pathAfterReadStat = statSync(resolvedPath);
+    if (!fdAfter.isFile()
+      || fdAfter.nlink !== 1
+      || !sameMediaIdentity(fdBefore, fdAfter)
+      || fdBefore.size !== fdAfter.size
+      || fdBefore.mtimeMs !== fdAfter.mtimeMs
+      || bytesRead !== fdAfter.size
+      || !pathAfterReadStat.isFile()
+      || pathAfterReadStat.nlink !== 1
+      || !sameMediaIdentity(fdAfter, pathAfterReadStat)
+      || !sameResolvedPath(pathAfterRead.realpath, pathBefore.realpath)) return null;
+    return {
+      digest: hash.digest("hex"),
+      identity: {
+        dev: fdAfter.dev,
+        ino: fdAfter.ino,
+        size: fdAfter.size,
+        mtimeMs: fdAfter.mtimeMs,
+        realpath: pathAfterRead.realpath
+      }
+    };
   } catch {
     return null;
   } finally {
-    closeSync(descriptor);
+    if (descriptor !== undefined) {
+      try { closeSync(descriptor); } catch { /* fail closed through the inspection result */ }
+    }
   }
 }
 
@@ -269,17 +349,14 @@ function inspectMediaArtifactBytes(
   if (!isInside(resolvedStorage, root.configured) || hasSymlinkInPath(resolvedStorage, root.configured)) {
     return { ok: false, code: "STORYBOARD_ARTIFACT_INTEGRITY_INVALID" };
   }
-  try {
-    const entry = lstatSync(resolvedStorage);
-    if (entry.isSymbolicLink() || !entry.isFile() || !isInside(resolve(realpathSync(resolvedStorage)), root.canonical)) {
-      return { ok: false, code: "STORYBOARD_ARTIFACT_INTEGRITY_INVALID" };
-    }
-  } catch {
-    return { ok: false, code: "STORYBOARD_ARTIFACT_INTEGRITY_INVALID" };
-  }
-  const actualByteDigest = hashAuthoritativeMediaFile(resolvedStorage, root);
-  if (!actualByteDigest) return { ok: false, code: "STORYBOARD_ARTIFACT_INTEGRITY_INVALID" };
-  return { ok: true, blob, actual_byte_digest: actualByteDigest };
+  const actualBytes = hashAuthoritativeMediaFile(resolvedStorage, root);
+  if (!actualBytes) return { ok: false, code: "STORYBOARD_ARTIFACT_INTEGRITY_INVALID" };
+  return {
+    ok: true,
+    blob,
+    actual_byte_digest: actualBytes.digest,
+    media_identity: actualBytes.identity
+  };
 }
 
 function assertNoSymlinkPath(child: string, parent: string): void {
@@ -779,7 +856,16 @@ function readSnapshot(scanPaths: M0Paths): SnapshotResult {
             continue;
           }
           fingerprintFacts.push({ actual_media_digest: mediaInspection.actual_byte_digest });
+          const inspectedStorage = resolve(mediaInspection.blob.storage_uri);
+          if (!isAuthoritativeMediaIdentityCurrent(inspectedStorage, authoritativeMediaRoot!, mediaInspection.media_identity)) {
+            addReason(reasons, "STORYBOARD_ARTIFACT_INTEGRITY_INVALID");
+            continue;
+          }
           const verified = verifyMediaArtifactBytes(db, artifact);
+          if (!isAuthoritativeMediaIdentityCurrent(inspectedStorage, authoritativeMediaRoot!, mediaInspection.media_identity)) {
+            addReason(reasons, "STORYBOARD_ARTIFACT_INTEGRITY_INVALID");
+            continue;
+          }
           fingerprintFacts.push({ artifact, verified: verified.ok ? verified.blob : verified.error.code });
           if (!verified.ok || !["image/png", "image/jpeg"].includes(verified.blob.detected_mime)) {
             addReason(reasons, verified.ok ? "STORYBOARD_IMAGE_MIME_UNSUPPORTED" : "STORYBOARD_ARTIFACT_INTEGRITY_INVALID"); continue;

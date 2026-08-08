@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
-import { copyFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -799,6 +799,94 @@ test("ambiguous package order and unsupported artifact mime are rejected", async
       db.close();
       const result = await scan(fixture);
       assert.equal(result.reason_code_counts.STORYBOARD_ARTIFACT_INTEGRITY_INVALID, 1);
+    } finally { fixture.cleanup(); }
+  });
+});
+
+test("exclusive governed media files reject hard links without changing T2 precedence", async (t) => {
+  await t.test("outside-to-inside hard link is rejected before byte acceptance", async (t) => {
+    const fixture = createFixture();
+    try {
+      const outsideRoot = join(fixture.root, "outside-media");
+      mkdirSync(outsideRoot, { recursive: true });
+      const outsidePath = join(outsideRoot, "source.png");
+      copyFileSync(fixture.media_path, outsidePath);
+      unlinkSync(fixture.media_path);
+      try { linkSync(outsidePath, fixture.media_path); } catch { t.skip("hard-link creation is unavailable on this host"); return; }
+      assert.ok(lstatSync(fixture.media_path).nlink >= 2);
+      const result = await scan(fixture);
+      assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+      assert.equal(result.reason_code_counts.STORYBOARD_ARTIFACT_INTEGRITY_INVALID, 1);
+    } finally { fixture.cleanup(); }
+  });
+
+  await t.test("two hard links inside mediaRoot are still non-exclusive", async (t) => {
+    const fixture = createFixture();
+    try {
+      const secondPath = join(fixture.paths.mediaRoot, "second-link.png");
+      try { linkSync(fixture.media_path, secondPath); } catch { t.skip("hard-link creation is unavailable on this host"); return; }
+      assert.ok(lstatSync(fixture.media_path).nlink >= 2);
+      const result = await scan(fixture);
+      assert.equal(result.result, "S3_NO_ELIGIBLE_SHOT");
+      assert.equal(result.reason_code_counts.STORYBOARD_ARTIFACT_INTEGRITY_INVALID, 1);
+      assert.equal(result.candidate_alias, undefined);
+    } finally { fixture.cleanup(); }
+  });
+
+  await t.test("normal single-link fixture remains eligible", async () => {
+    const fixture = createFixture();
+    try {
+      assert.equal(lstatSync(fixture.media_path).nlink, 1);
+      const result = await scan(fixture);
+      assert.equal(result.result, "PASS_ONE_ELIGIBLE_SHOT");
+      assert.equal(result.artifact_verification_level, "actual_bytes");
+    } finally { fixture.cleanup(); }
+  });
+
+  await t.test("ledger-matching hard link is rejected despite correct bytes", async (t) => {
+    const fixture = createFixture();
+    try {
+      const outsideRoot = join(fixture.root, "ledger-match-outside");
+      mkdirSync(outsideRoot, { recursive: true });
+      const outsidePath = join(outsideRoot, "source.png");
+      copyFileSync(fixture.media_path, outsidePath);
+      unlinkSync(fixture.media_path);
+      try { linkSync(outsidePath, fixture.media_path); } catch { t.skip("hard-link creation is unavailable on this host"); return; }
+      const result = await scan(fixture);
+      assert.equal(result.reason_code_counts.STORYBOARD_ARTIFACT_INTEGRITY_INVALID, 1);
+      assert.equal(result.candidate_alias, undefined);
+    } finally { fixture.cleanup(); }
+  });
+
+  await t.test("active intent remains higher precedence than hard-link integrity", async (t) => {
+    const fixture = createFixture();
+    try {
+      const secondPath = join(fixture.paths.mediaRoot, "active-intent-link.png");
+      try { linkSync(fixture.media_path, secondPath); } catch { t.skip("hard-link creation is unavailable on this host"); return; }
+      const db = openM0DatabaseConnection(fixture.paths.sqlitePath);
+      insertActiveIntent(db, fixture, "intent_hard_link_active");
+      db.close();
+      const result = await scan(fixture);
+      assert.equal(result.reason_code_counts.REAL_GENERATION_ALREADY_ACTIVE, 1);
+      assert.equal(result.reason_code_counts.STORYBOARD_ARTIFACT_INTEGRITY_INVALID, undefined);
+    } finally { fixture.cleanup(); }
+  });
+
+  await t.test("single-link to hard-link drift fails the two-snapshot scan", async (t) => {
+    const fixture = createFixture();
+    try {
+      const secondPath = join(fixture.paths.mediaRoot, "between-snapshots-link.png");
+      const result = await scan(fixture, { betweenSnapshots: () => {
+        try { linkSync(fixture.media_path, secondPath); } catch { throw new Error("HARD_LINK_UNAVAILABLE"); }
+      } });
+      assert.equal(result.result, "T2_STATE_CHANGED_DURING_SCAN");
+      assert.equal(result.candidate_alias, undefined);
+    } catch (error) {
+      if (error instanceof Error && error.message === "HARD_LINK_UNAVAILABLE") {
+        t.skip("hard-link creation is unavailable on this host");
+        return;
+      }
+      throw error;
     } finally { fixture.cleanup(); }
   });
 });
