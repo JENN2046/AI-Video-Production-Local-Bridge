@@ -24,7 +24,9 @@
         "tests/m0-d-generation.test.ts",
         "tests/m0-e-review-regeneration.test.ts",
         "tests/m0-f-assembly.test.ts",
-        "tests/m0-r1-media-validity.test.ts"
+        "tests/m0-r1-media-validity.test.ts",
+        "tests/s3b-t2-snapshot.test.ts",
+        "tests/s3b-t2-oracle.test.ts"
       ]
     },
     {

@@ -1,0 +1,1288 @@
+{
+  "version": 2,
+  "evidence_source": {
+    "pull_request": 118,
+    "head": "729ee5a64f75daad9d9807fb5e735d0115a71e79",
+    "implementation_tip": "cf5ef89a38325f1b95bc476e895f51cab361aa34",
+    "runner_command": "npm run test:s3b:t2",
+    "source_file": "tests/s3b-t2-eligibility.test.ts"
+  },
+  "taxonomy": [
+    "RETAIN",
+    "MERGE_EQUIVALENT",
+    "REPLACE_WITH_BEHAVIOR",
+    "STRUCTURAL_INVARIANT",
+    "OBSOLETE_IMPLEMENTATION_COUPLED"
+  ],
+  "runner_evidence": {
+    "executed_runner_cases": {
+      "observed": 202,
+      "assigned_to_group": 202,
+      "unassigned": 0
+    },
+    "groups": [
+      {
+        "semantic_group_id": "T2-IS1-01-AUTHORITATIVE_IMAGE_ACCEPTANCE_PERFORMS_FULL_DECODE_",
+        "test_name": "authoritative image acceptance performs full decode on the exact buffer",
+        "covered_variants": []
+      },
+      {
+        "semantic_group_id": "T2-IS1-02-READ_ONLY_SCANNER_RETURNS_ONE_LOW_DISCLOSURE_ELIGIBL",
+        "test_name": "read-only scanner returns one low-disclosure eligible candidate with query_only and zero changes",
+        "covered_variants": []
+      },
+      {
+        "semantic_group_id": "T2-IS1-03-ELIGIBLE_CANDIDATE_ALIASES_ROTATE_RANDOMLY_ACROSS_SC",
+        "test_name": "eligible candidate aliases rotate randomly across scans without identifier disclosure",
+        "covered_variants": []
+      },
+      {
+        "semantic_group_id": "T2-IS1-04-SCANNER_SOURCE_DOES_NOT_CALL_MIGRATION_RECOVERY_WRIT",
+        "test_name": "scanner source does not call migration, recovery, writable database, or directory creation entry points",
+        "covered_variants": []
+      },
+      {
+        "semantic_group_id": "T2-IS1-05-CLI_REJECTS_PATH_AND_ACTIVITY_SELECTORS_WITHOUT_OPEN",
+        "test_name": "CLI rejects path and activity selectors without opening a database",
+        "covered_variants": []
+      },
+      {
+        "semantic_group_id": "T2-IS1-06-THE_EXPLICIT_READ_ONLY_SQLITE_BOUNDARY_REJECTS_WRITE",
+        "test_name": "the explicit read-only SQLite boundary rejects writes",
+        "covered_variants": []
+      },
+      {
+        "semantic_group_id": "T2-IS1-07-PROJECT_CLASSIFICATION_LIFECYCLE_DELIVERED_STATE_AND",
+        "test_name": "project classification, lifecycle, delivered state, and provider capability fail closed",
+        "covered_variants": [
+          "PROJECT_NOT_PRODUCTION",
+          "PROJECT_NOT_ACTIVE",
+          "PROJECT_ALREADY_DELIVERED",
+          "PROVIDER_CAPABILITY_DURATION_UNSUPPORTED",
+          "PROVIDER_CAPABILITY_RESOLUTION_UNSUPPORTED",
+          "PROVIDER_CAPABILITY_ASPECT_RATIO_UNSUPPORTED"
+        ]
+      },
+      {
+        "semantic_group_id": "T2-IS1-08-T2_VALIDATES_PROJECT_VIDEO_SPEC_RUNTIME_SHAPE_BEFORE",
+        "test_name": "T2 validates project video_spec runtime shape before provider capability lookup",
+        "covered_variants": [
+          "missing video_spec",
+          "null video_spec",
+          "numeric resolution",
+          "object resolution",
+          "numeric aspect ratio",
+          "object aspect ratio",
+          "empty resolution remains shape-valid and is delegated to the registry",
+          "active intent remains higher precedence than malformed video_spec"
+        ]
+      },
+      {
+        "semantic_group_id": "T2-IS1-09-PACKAGE_MATCHING_ACCEPTS_UNIQUE_ORDER_FALLBACK_NORMA",
+        "test_name": "package matching accepts unique order fallback, normalizes null negative prompt, and ignores description",
+        "covered_variants": []
+      },
+      {
+        "semantic_group_id": "T2-IS1-10-T2_CLASSIFIES_MALFORMED_SHOT_JSON_AND_PRESERVES_ACTI",
+        "test_name": "T2 classifies malformed Shot JSON and preserves active-intent precedence",
+        "covered_variants": [
+          "malformed Shot JSON",
+          "malformed Shot JSON with active intent"
+        ]
+      },
+      {
+        "semantic_group_id": "T2-IS1-11-T2_ENFORCES_INTEGER_CLIPVERSION_ATTEMPTS_WITHOUT_LOS",
+        "test_name": "T2 enforces integer ClipVersion attempts without losing started or active precedence",
+        "covered_variants": [
+          "fractional attempt_number 1.5 is inconsistent",
+          "fractional attempt_number -1.5 is inconsistent",
+          "unsafe integer attempt_number 9007199254740992 is inconsistent",
+          "unsafe integer attempt_number -9007199254740992 is inconsistent",
+          "integer attempt_number 1 preserves started history",
+          "integer attempt_number 0 preserves started history",
+          "integer attempt_number -1 preserves started history",
+          "integer attempt_number 9007199254740991 preserves started history",
+          "integer attempt_number -9007199254740991 preserves started history",
+          "fractional ClipVersion preserves active intent precedence",
+          "unsafe positive ClipVersion preserves active intent precedence",
+          "unsafe negative ClipVersion preserves active intent precedence"
+        ]
+      },
+      {
+        "semantic_group_id": "T2-IS1-12-T2_PROJECT_PARSING_PRESERVES_ACTIVE_INTENT_PRECEDENC",
+        "test_name": "T2 project parsing preserves active-intent precedence and fingerprints invalid facts",
+        "covered_variants": [
+          "malformed project JSON with active intent is classified as active",
+          "project relational/data identity mismatch with active intent is classified as active",
+          "malformed project without active intent remains a boundary failure",
+          "invalid project facts changing between snapshots return state changed",
+          "active intent disappearing between invalid project snapshots returns state changed"
+        ]
+      },
+      {
+        "semantic_group_id": "T2-IS1-13-T2_VALIDATES_SHOT_GENERATION_HISTORY_RUNTIME_SHAPES_",
+        "test_name": "T2 validates Shot generation history runtime shapes before dereferencing",
+        "covered_variants": [
+          "generation_run_ids missing",
+          "generation_run_ids null",
+          "generation_run_ids object",
+          "generation_run_ids contains non-string",
+          "clip_versions missing",
+          "clip_versions null",
+          "clip_versions object",
+          "clip_versions contains null",
+          "clip_versions contains scalar",
+          "clip_versions contains array",
+          "clip_version missing artifact_id",
+          "clip_version non-string artifact_id",
+          "clip_version missing run_id",
+          "clip_version non-string run_id",
+          "clip_version missing attempt_number",
+          "clip_version non-finite attempt_number",
+          "clip_version unknown review_status",
+          "clip_version extra string",
+          "clip_version extra null",
+          "clip_version extra object",
+          "malformed nested Shot shape preserves active intent precedence",
+          "malformed clip_versions preserves active intent precedence",
+          "unknown ClipVersion fields preserve active intent precedence"
+        ]
+      },
+      {
+        "semantic_group_id": "T2-IS1-14-T2_REJECTS_MALFORMED_ARTIFACT_NESTED_SHAPES_WITHOUT_",
+        "test_name": "T2 rejects malformed Artifact nested shapes without boundary fallback",
+        "covered_variants": [
+          "storage missing",
+          "storage null",
+          "storage mime missing"
+        ]
+      },
+      {
+        "semantic_group_id": "T2-IS1-15-T2_USES_STRICT_NULLISH_ONLY_NEGATIVE_PROMPT_NORMALIZ",
+        "test_name": "T2 uses strict nullish-only negative prompt normalization",
+        "covered_variants": [
+          "number versus number",
+          "different numbers",
+          "boolean versus boolean",
+          "object versus object"
+        ]
+      },
+      {
+        "semantic_group_id": "T2-IS1-16-T2_VALIDATES_STORYBOARD_PACKAGE_RELATIONAL_PROJECTIO",
+        "test_name": "T2 validates Storyboard Package relational projection",
+        "covered_variants": [
+          "relational project id drift",
+          "relational package id drift"
+        ]
+      },
+      {
+        "semantic_group_id": "T2-IS1-17-T2_VALIDATES_THE_APPROVED_SNAPSHOT_COLLECTION_BEFORE",
+        "test_name": "T2 validates the approved snapshot collection before matching",
+        "covered_variants": [
+          "approved snapshots missing",
+          "approved snapshots null",
+          "approved snapshots object",
+          "approved snapshots string",
+          "approved snapshots contains null",
+          "approved snapshots contains primitive",
+          "snapshot missing order",
+          "snapshot invalid shot_id type",
+          "snapshot empty shot_id",
+          "snapshot null shot_id",
+          "snapshot missing duration",
+          "snapshot missing artifact id",
+          "snapshot missing video prompt",
+          "snapshot invalid negative prompt",
+          "one valid snapshot plus one malformed snapshot rejects the whole collection"
+        ]
+      },
+      {
+        "semantic_group_id": "T2-IS1-18-INELIGIBLE_SHOTS_RETAIN_CANONICAL_OPERATIONAL_REASON",
+        "test_name": "ineligible shots retain canonical operational reason codes",
+        "covered_variants": [
+          "missing video prompt",
+          "inactive storyboard artifact"
+        ]
+      },
+      {
+        "semantic_group_id": "T2-IS1-19-AMBIGUOUS_PACKAGE_ORDER_AND_UNSUPPORTED_ARTIFACT_MIM",
+        "test_name": "ambiguous package order and unsupported artifact mime are rejected",
+        "covered_variants": [
+          "ambiguous order",
+          "unsupported mime",
+          "unsafe media path",
+          "registered media root outside authoritative root is rejected before bytes are read",
+          "symlink escape is rejected without accepting the target"
+        ]
+      },
+      {
+        "semantic_group_id": "T2-IS1-20-EXCLUSIVE_GOVERNED_MEDIA_FILES_REJECT_HARD_LINKS_WIT",
+        "test_name": "exclusive governed media files reject hard links without changing T2 precedence",
+        "covered_variants": [
+          "outside-to-inside hard link is rejected before byte acceptance",
+          "two hard links inside mediaRoot are still non-exclusive",
+          "normal single-link fixture remains eligible",
+          "ledger-matching hard link is rejected despite correct bytes",
+          "active intent remains higher precedence than hard-link integrity",
+          "single-link to hard-link drift fails the two-snapshot scan",
+          "hard-link A to hard-link B drift changes the identity failure fingerprint",
+          "missing to different invalid file drift changes the identity failure fingerprint",
+          "unchanged invalid identity remains a stable integrity rejection"
+        ]
+      },
+      {
+        "semantic_group_id": "T2-IS1-21-AUTHORITATIVE_MEDIAROOT_IDENTITY_IS_REPRESENTED_IN_E",
+        "test_name": "authoritative mediaRoot identity is represented in every snapshot",
+        "covered_variants": [
+          "valid root replacement changes the two-snapshot fingerprint",
+          "invalid non-directory root inode replacement changes the fingerprint",
+          "invalid symlink target replacement changes the fingerprint",
+          "stable invalid root remains a stable integrity rejection",
+          "active intent remains higher precedence than stable invalid root"
+        ]
+      },
+      {
+        "semantic_group_id": "T2-IS1-22-SNAPSHOT_MATCHING_REQUIRES_ONE_GLOBALLY_UNIQUE_SHOT_",
+        "test_name": "snapshot matching requires one globally unique shot or order match",
+        "covered_variants": [
+          "order-only first then shot id",
+          "shot id first then order-only",
+          "duplicate shot id",
+          "duplicate order fallback",
+          "unique shot id ignores an unrelated order",
+          "absent shot_id allows same-order fallback",
+          "empty shot_id never falls back to order",
+          "null shot_id never falls back to order",
+          "wrong non-empty shot_id never falls back to order",
+          "empty shot_id remains lower priority than active intent"
+        ]
+      },
+      {
+        "semantic_group_id": "T2-IS1-23-STORYBOARD_ARTIFACT_STRUCTURED_DRIFT_IS_A_STABLE_INE",
+        "test_name": "storyboard artifact structured drift is a stable ineligible result",
+        "covered_variants": [
+          "status projection drift",
+          "binding projection drift",
+          "role/type projection drift",
+          "structured drift changes the snapshot fingerprint",
+          "active intent takes precedence over unchanged drift",
+          "unchanged drift and unchanged unreferenced shot remain stable",
+          "unreferenced shot data_json change breaks the drift fingerprint",
+          "unreferenced shot shot_id change breaks the drift fingerprint",
+          "unreferenced shot project_id change breaks the drift fingerprint",
+          "malformed artifact projection is a stable integrity rejection",
+          "artifact relational fact changes the drift fingerprint",
+          "artifact data_json fact changes the drift fingerprint",
+          "shot fact changes the drift fingerprint",
+          "project fact changes the drift fingerprint",
+          "shot relational keys change the drift fingerprint"
+        ]
+      },
+      {
+        "semantic_group_id": "T2-IS1-24-SHOT_OPERATIONAL_FACT_DRIFT_IS_A_STABLE_INTEGRITY_RE",
+        "test_name": "shot operational fact drift is a stable integrity rejection",
+        "covered_variants": [
+          "relational shot_id projection drift",
+          "relational project_id projection drift",
+          "active intent takes precedence over shot drift"
+        ]
+      },
+      {
+        "semantic_group_id": "T2-IS1-25-INVALID_PERSISTED_GENERATION_STATES_PRESERVE_STARTED",
+        "test_name": "invalid persisted generation states preserve started semantics",
+        "covered_variants": [
+          "unknown generation run status without active intent",
+          "unknown generation job state without active intent",
+          "active intent takes precedence over invalid generation run status",
+          "active intent takes precedence over invalid generation job state"
+        ]
+      },
+      {
+        "semantic_group_id": "T2-IS1-26-MISSING_ACTIVE_PACKAGE_GENERATION_HISTORY_AND_BYTE_D",
+        "test_name": "missing active package, generation history, and byte drift are deterministic rejections",
+        "covered_variants": [
+          "draft zero-version shot preserves storyboard approval reason",
+          "revision-needed zero-version shot preserves storyboard reason",
+          "active package missing",
+          "generation_run_ids present",
+          "clip_versions present",
+          "artifact bytes drift",
+          "structurally plausible corrupt bytes are rejected even when the ledger matches",
+          "active intent still takes precedence over decode failure",
+          "different invalid bytes change the two-snapshot fingerprint",
+          "artifact file missing",
+          "frozen input drift",
+          "package snapshot zero match"
+        ]
+      },
+      {
+        "semantic_group_id": "T2-IS1-27-FULL_DATABASE_ROWSET_FINGERPRINTS_CAPTURE_TIMESTAMP_",
+        "test_name": "full database rowset fingerprints capture timestamp and relationship drift",
+        "covered_variants": [
+          "project updated_at",
+          "workbench_project_meta updated_at",
+          "shot updated_at",
+          "storyboard package updated_at",
+          "media artifact updated_at",
+          "artifact blob link created_at",
+          "generation intent updated_at",
+          "generation job updated_at",
+          "generation run updated_at",
+          "new media blob row"
+        ]
+      },
+      {
+        "semantic_group_id": "T2-IS1-28-GLOBAL_ACTIVE_INTENT_BLOCKS_ALL_CANDIDATES_AND_MULTI",
+        "test_name": "global active intent blocks all candidates and multiple candidates do not disclose aliases",
+        "covered_variants": []
+      },
+      {
+        "semantic_group_id": "T2-IS1-29-STARTED_GENERATION_JOBS_AND_RUNS_PRESERVE_THE_STARTE",
+        "test_name": "started generation jobs and runs preserve the started reason without an active intent",
+        "covered_variants": [
+          "generation job queued",
+          "generation job submitting",
+          "generation job polling",
+          "generation job downloading",
+          "generation job finalizing",
+          "generation job succeeded",
+          "generation job cancelled",
+          "latest generation run queued",
+          "latest generation run running",
+          "latest generation run succeeded",
+          "latest generation run cancelled",
+          "active intent takes precedence over terminal history"
+        ]
+      },
+      {
+        "semantic_group_id": "T2-IS1-30-DATABASE_PATH_SUBSTITUTION_AND_STATE_OR_BYTE_DRIFT_F",
+        "test_name": "database path substitution and state or byte drift fail closed without retry",
+        "covered_variants": [
+          "database symlink substitute",
+          "database state drift",
+          "database identity replacement",
+          "media byte drift"
+        ]
+      },
+      {
+        "semantic_group_id": "T2-IS1-31-SCANNER_PERFORMS_NO_NETWORK_CALLS_OR_CREDENTIAL_ENVI",
+        "test_name": "scanner performs no network calls or credential environment reads",
+        "covered_variants": []
+      }
+    ]
+  },
+  "semantic_behavior_groups": {
+    "count": 31,
+    "all_have_real_source_test_names": true,
+    "groups": [
+      {
+        "id": "T2-IS1-01-AUTHORITATIVE_IMAGE_ACCEPTANCE_PERFORMS_FULL_DECODE_",
+        "contract_area": "actual_bytes",
+        "actual_source_test_names": [
+          "authoritative image acceptance performs full decode on the exact buffer"
+        ],
+        "covered_variants": [],
+        "required_behavior": "actual_bytes invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-MEDIA-BYTES-ACTUAL-VALIDATION"
+      },
+      {
+        "id": "T2-IS1-02-READ_ONLY_SCANNER_RETURNS_ONE_LOW_DISCLOSURE_ELIGIBL",
+        "contract_area": "read_only",
+        "actual_source_test_names": [
+          "read-only scanner returns one low-disclosure eligible candidate with query_only and zero changes"
+        ],
+        "covered_variants": [],
+        "required_behavior": "read_only invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-READ-ONLY-SQLITE-BOUNDARY"
+      },
+      {
+        "id": "T2-IS1-03-ELIGIBLE_CANDIDATE_ALIASES_ROTATE_RANDOMLY_ACROSS_SC",
+        "contract_area": "receipt",
+        "actual_source_test_names": [
+          "eligible candidate aliases rotate randomly across scans without identifier disclosure"
+        ],
+        "covered_variants": [],
+        "required_behavior": "receipt invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-LOW-DISCLOSURE-RECEIPT"
+      },
+      {
+        "id": "T2-IS1-04-SCANNER_SOURCE_DOES_NOT_CALL_MIGRATION_RECOVERY_WRIT",
+        "contract_area": "read_only",
+        "actual_source_test_names": [
+          "scanner source does not call migration, recovery, writable database, or directory creation entry points"
+        ],
+        "covered_variants": [],
+        "required_behavior": "read_only invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-READ-ONLY-SQLITE-BOUNDARY"
+      },
+      {
+        "id": "T2-IS1-05-CLI_REJECTS_PATH_AND_ACTIVITY_SELECTORS_WITHOUT_OPEN",
+        "contract_area": "privacy",
+        "actual_source_test_names": [
+          "CLI rejects path and activity selectors without opening a database"
+        ],
+        "covered_variants": [],
+        "required_behavior": "privacy invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-LOW-DISCLOSURE-AND-NETWORK-BOUNDARY"
+      },
+      {
+        "id": "T2-IS1-06-THE_EXPLICIT_READ_ONLY_SQLITE_BOUNDARY_REJECTS_WRITE",
+        "contract_area": "read_only",
+        "actual_source_test_names": [
+          "the explicit read-only SQLite boundary rejects writes"
+        ],
+        "covered_variants": [],
+        "required_behavior": "read_only invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-READ-ONLY-SQLITE-BOUNDARY"
+      },
+      {
+        "id": "T2-IS1-07-PROJECT_CLASSIFICATION_LIFECYCLE_DELIVERED_STATE_AND",
+        "contract_area": "provider_capability",
+        "actual_source_test_names": [
+          "project classification, lifecycle, delivered state, and provider capability fail closed"
+        ],
+        "covered_variants": [
+          "PROJECT_NOT_PRODUCTION",
+          "PROJECT_NOT_ACTIVE",
+          "PROJECT_ALREADY_DELIVERED",
+          "PROVIDER_CAPABILITY_DURATION_UNSUPPORTED",
+          "PROVIDER_CAPABILITY_RESOLUTION_UNSUPPORTED",
+          "PROVIDER_CAPABILITY_ASPECT_RATIO_UNSUPPORTED"
+        ],
+        "required_behavior": "provider_capability invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-PROVIDER-CAPABILITY-REGISTRY"
+      },
+      {
+        "id": "T2-IS1-08-T2_VALIDATES_PROJECT_VIDEO_SPEC_RUNTIME_SHAPE_BEFORE",
+        "contract_area": "runtime_schema",
+        "actual_source_test_names": [
+          "T2 validates project video_spec runtime shape before provider capability lookup"
+        ],
+        "covered_variants": [
+          "missing video_spec",
+          "null video_spec",
+          "numeric resolution",
+          "object resolution",
+          "numeric aspect ratio",
+          "object aspect ratio",
+          "empty resolution remains shape-valid and is delegated to the registry",
+          "active intent remains higher precedence than malformed video_spec"
+        ],
+        "required_behavior": "runtime_schema invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-RUNTIME-SHAPE-FAIL-CLOSED"
+      },
+      {
+        "id": "T2-IS1-09-PACKAGE_MATCHING_ACCEPTS_UNIQUE_ORDER_FALLBACK_NORMA",
+        "contract_area": "package_freeze",
+        "actual_source_test_names": [
+          "package matching accepts unique order fallback, normalizes null negative prompt, and ignores description"
+        ],
+        "covered_variants": [],
+        "required_behavior": "package_freeze invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-PACKAGE-MATCH-AND-NORMALIZATION"
+      },
+      {
+        "id": "T2-IS1-10-T2_CLASSIFIES_MALFORMED_SHOT_JSON_AND_PRESERVES_ACTI",
+        "contract_area": "runtime_schema",
+        "actual_source_test_names": [
+          "T2 classifies malformed Shot JSON and preserves active-intent precedence"
+        ],
+        "covered_variants": [
+          "malformed Shot JSON",
+          "malformed Shot JSON with active intent"
+        ],
+        "required_behavior": "runtime_schema invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-RUNTIME-SHAPE-FAIL-CLOSED"
+      },
+      {
+        "id": "T2-IS1-11-T2_ENFORCES_INTEGER_CLIPVERSION_ATTEMPTS_WITHOUT_LOS",
+        "contract_area": "runtime_schema",
+        "actual_source_test_names": [
+          "T2 enforces integer ClipVersion attempts without losing started or active precedence"
+        ],
+        "covered_variants": [
+          "fractional attempt_number 1.5 is inconsistent",
+          "fractional attempt_number -1.5 is inconsistent",
+          "unsafe integer attempt_number 9007199254740992 is inconsistent",
+          "unsafe integer attempt_number -9007199254740992 is inconsistent",
+          "integer attempt_number 1 preserves started history",
+          "integer attempt_number 0 preserves started history",
+          "integer attempt_number -1 preserves started history",
+          "integer attempt_number 9007199254740991 preserves started history",
+          "integer attempt_number -9007199254740991 preserves started history",
+          "fractional ClipVersion preserves active intent precedence",
+          "unsafe positive ClipVersion preserves active intent precedence",
+          "unsafe negative ClipVersion preserves active intent precedence"
+        ],
+        "required_behavior": "runtime_schema invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-RUNTIME-SHAPE-FAIL-CLOSED"
+      },
+      {
+        "id": "T2-IS1-12-T2_PROJECT_PARSING_PRESERVES_ACTIVE_INTENT_PRECEDENC",
+        "contract_area": "database_authority",
+        "actual_source_test_names": [
+          "T2 project parsing preserves active-intent precedence and fingerprints invalid facts"
+        ],
+        "covered_variants": [
+          "malformed project JSON with active intent is classified as active",
+          "project relational/data identity mismatch with active intent is classified as active",
+          "malformed project without active intent remains a boundary failure",
+          "invalid project facts changing between snapshots return state changed",
+          "active intent disappearing between invalid project snapshots returns state changed"
+        ],
+        "required_behavior": "database_authority invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-DATABASE-IDENTITY-AND-ROWSET-FINGERPRINT"
+      },
+      {
+        "id": "T2-IS1-13-T2_VALIDATES_SHOT_GENERATION_HISTORY_RUNTIME_SHAPES_",
+        "contract_area": "generation_history",
+        "actual_source_test_names": [
+          "T2 validates Shot generation history runtime shapes before dereferencing"
+        ],
+        "covered_variants": [
+          "generation_run_ids missing",
+          "generation_run_ids null",
+          "generation_run_ids object",
+          "generation_run_ids contains non-string",
+          "clip_versions missing",
+          "clip_versions null",
+          "clip_versions object",
+          "clip_versions contains null",
+          "clip_versions contains scalar",
+          "clip_versions contains array",
+          "clip_version missing artifact_id",
+          "clip_version non-string artifact_id",
+          "clip_version missing run_id",
+          "clip_version non-string run_id",
+          "clip_version missing attempt_number",
+          "clip_version non-finite attempt_number",
+          "clip_version unknown review_status",
+          "clip_version extra string",
+          "clip_version extra null",
+          "clip_version extra object",
+          "malformed nested Shot shape preserves active intent precedence",
+          "malformed clip_versions preserves active intent precedence",
+          "unknown ClipVersion fields preserve active intent precedence"
+        ],
+        "required_behavior": "generation_history invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-GENERATION-HISTORY-PRECEDENCE"
+      },
+      {
+        "id": "T2-IS1-14-T2_REJECTS_MALFORMED_ARTIFACT_NESTED_SHAPES_WITHOUT_",
+        "contract_area": "runtime_schema",
+        "actual_source_test_names": [
+          "T2 rejects malformed Artifact nested shapes without boundary fallback"
+        ],
+        "covered_variants": [
+          "storage missing",
+          "storage null",
+          "storage mime missing"
+        ],
+        "required_behavior": "runtime_schema invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-RUNTIME-SHAPE-FAIL-CLOSED"
+      },
+      {
+        "id": "T2-IS1-15-T2_USES_STRICT_NULLISH_ONLY_NEGATIVE_PROMPT_NORMALIZ",
+        "contract_area": "package_freeze",
+        "actual_source_test_names": [
+          "T2 uses strict nullish-only negative prompt normalization"
+        ],
+        "covered_variants": [
+          "number versus number",
+          "different numbers",
+          "boolean versus boolean",
+          "object versus object"
+        ],
+        "required_behavior": "package_freeze invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-PACKAGE-MATCH-AND-NORMALIZATION"
+      },
+      {
+        "id": "T2-IS1-16-T2_VALIDATES_STORYBOARD_PACKAGE_RELATIONAL_PROJECTIO",
+        "contract_area": "database_authority",
+        "actual_source_test_names": [
+          "T2 validates Storyboard Package relational projection"
+        ],
+        "covered_variants": [
+          "relational project id drift",
+          "relational package id drift"
+        ],
+        "required_behavior": "database_authority invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-DATABASE-IDENTITY-AND-ROWSET-FINGERPRINT"
+      },
+      {
+        "id": "T2-IS1-17-T2_VALIDATES_THE_APPROVED_SNAPSHOT_COLLECTION_BEFORE",
+        "contract_area": "snapshot_drift",
+        "actual_source_test_names": [
+          "T2 validates the approved snapshot collection before matching"
+        ],
+        "covered_variants": [
+          "approved snapshots missing",
+          "approved snapshots null",
+          "approved snapshots object",
+          "approved snapshots string",
+          "approved snapshots contains null",
+          "approved snapshots contains primitive",
+          "snapshot missing order",
+          "snapshot invalid shot_id type",
+          "snapshot empty shot_id",
+          "snapshot null shot_id",
+          "snapshot missing duration",
+          "snapshot missing artifact id",
+          "snapshot missing video prompt",
+          "snapshot invalid negative prompt",
+          "one valid snapshot plus one malformed snapshot rejects the whole collection"
+        ],
+        "required_behavior": "snapshot_drift invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-SNAPSHOT-UNIQUENESS-AND-DRIFT"
+      },
+      {
+        "id": "T2-IS1-18-INELIGIBLE_SHOTS_RETAIN_CANONICAL_OPERATIONAL_REASON",
+        "contract_area": "reason_precedence",
+        "actual_source_test_names": [
+          "ineligible shots retain canonical operational reason codes"
+        ],
+        "covered_variants": [
+          "missing video prompt",
+          "inactive storyboard artifact"
+        ],
+        "required_behavior": "reason_precedence invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-CANONICAL-REASON-PRECEDENCE"
+      },
+      {
+        "id": "T2-IS1-19-AMBIGUOUS_PACKAGE_ORDER_AND_UNSUPPORTED_ARTIFACT_MIM",
+        "contract_area": "media_authority",
+        "actual_source_test_names": [
+          "ambiguous package order and unsupported artifact mime are rejected"
+        ],
+        "covered_variants": [
+          "ambiguous order",
+          "unsupported mime",
+          "unsafe media path",
+          "registered media root outside authoritative root is rejected before bytes are read",
+          "symlink escape is rejected without accepting the target"
+        ],
+        "required_behavior": "media_authority invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-GOVERNED-MEDIA-IDENTITY"
+      },
+      {
+        "id": "T2-IS1-20-EXCLUSIVE_GOVERNED_MEDIA_FILES_REJECT_HARD_LINKS_WIT",
+        "contract_area": "media_authority",
+        "actual_source_test_names": [
+          "exclusive governed media files reject hard links without changing T2 precedence"
+        ],
+        "covered_variants": [
+          "outside-to-inside hard link is rejected before byte acceptance",
+          "two hard links inside mediaRoot are still non-exclusive",
+          "normal single-link fixture remains eligible",
+          "ledger-matching hard link is rejected despite correct bytes",
+          "active intent remains higher precedence than hard-link integrity",
+          "single-link to hard-link drift fails the two-snapshot scan",
+          "hard-link A to hard-link B drift changes the identity failure fingerprint",
+          "missing to different invalid file drift changes the identity failure fingerprint",
+          "unchanged invalid identity remains a stable integrity rejection"
+        ],
+        "required_behavior": "media_authority invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-GOVERNED-MEDIA-IDENTITY"
+      },
+      {
+        "id": "T2-IS1-21-AUTHORITATIVE_MEDIAROOT_IDENTITY_IS_REPRESENTED_IN_E",
+        "contract_area": "media_authority",
+        "actual_source_test_names": [
+          "authoritative mediaRoot identity is represented in every snapshot"
+        ],
+        "covered_variants": [
+          "valid root replacement changes the two-snapshot fingerprint",
+          "invalid non-directory root inode replacement changes the fingerprint",
+          "invalid symlink target replacement changes the fingerprint",
+          "stable invalid root remains a stable integrity rejection",
+          "active intent remains higher precedence than stable invalid root"
+        ],
+        "required_behavior": "media_authority invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-GOVERNED-MEDIA-IDENTITY"
+      },
+      {
+        "id": "T2-IS1-22-SNAPSHOT_MATCHING_REQUIRES_ONE_GLOBALLY_UNIQUE_SHOT_",
+        "contract_area": "snapshot_drift",
+        "actual_source_test_names": [
+          "snapshot matching requires one globally unique shot or order match"
+        ],
+        "covered_variants": [
+          "order-only first then shot id",
+          "shot id first then order-only",
+          "duplicate shot id",
+          "duplicate order fallback",
+          "unique shot id ignores an unrelated order",
+          "absent shot_id allows same-order fallback",
+          "empty shot_id never falls back to order",
+          "null shot_id never falls back to order",
+          "wrong non-empty shot_id never falls back to order",
+          "empty shot_id remains lower priority than active intent"
+        ],
+        "required_behavior": "snapshot_drift invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-SNAPSHOT-UNIQUENESS-AND-DRIFT"
+      },
+      {
+        "id": "T2-IS1-23-STORYBOARD_ARTIFACT_STRUCTURED_DRIFT_IS_A_STABLE_INE",
+        "contract_area": "snapshot_drift",
+        "actual_source_test_names": [
+          "storyboard artifact structured drift is a stable ineligible result"
+        ],
+        "covered_variants": [
+          "status projection drift",
+          "binding projection drift",
+          "role/type projection drift",
+          "structured drift changes the snapshot fingerprint",
+          "active intent takes precedence over unchanged drift",
+          "unchanged drift and unchanged unreferenced shot remain stable",
+          "unreferenced shot data_json change breaks the drift fingerprint",
+          "unreferenced shot shot_id change breaks the drift fingerprint",
+          "unreferenced shot project_id change breaks the drift fingerprint",
+          "malformed artifact projection is a stable integrity rejection",
+          "artifact relational fact changes the drift fingerprint",
+          "artifact data_json fact changes the drift fingerprint",
+          "shot fact changes the drift fingerprint",
+          "project fact changes the drift fingerprint",
+          "shot relational keys change the drift fingerprint"
+        ],
+        "required_behavior": "snapshot_drift invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-SNAPSHOT-UNIQUENESS-AND-DRIFT"
+      },
+      {
+        "id": "T2-IS1-24-SHOT_OPERATIONAL_FACT_DRIFT_IS_A_STABLE_INTEGRITY_RE",
+        "contract_area": "database_authority",
+        "actual_source_test_names": [
+          "shot operational fact drift is a stable integrity rejection"
+        ],
+        "covered_variants": [
+          "relational shot_id projection drift",
+          "relational project_id projection drift",
+          "active intent takes precedence over shot drift"
+        ],
+        "required_behavior": "database_authority invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-DATABASE-IDENTITY-AND-ROWSET-FINGERPRINT"
+      },
+      {
+        "id": "T2-IS1-25-INVALID_PERSISTED_GENERATION_STATES_PRESERVE_STARTED",
+        "contract_area": "generation_history",
+        "actual_source_test_names": [
+          "invalid persisted generation states preserve started semantics"
+        ],
+        "covered_variants": [
+          "unknown generation run status without active intent",
+          "unknown generation job state without active intent",
+          "active intent takes precedence over invalid generation run status",
+          "active intent takes precedence over invalid generation job state"
+        ],
+        "required_behavior": "generation_history invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-GENERATION-HISTORY-PRECEDENCE"
+      },
+      {
+        "id": "T2-IS1-26-MISSING_ACTIVE_PACKAGE_GENERATION_HISTORY_AND_BYTE_D",
+        "contract_area": "generation_history",
+        "actual_source_test_names": [
+          "missing active package, generation history, and byte drift are deterministic rejections"
+        ],
+        "covered_variants": [
+          "draft zero-version shot preserves storyboard approval reason",
+          "revision-needed zero-version shot preserves storyboard reason",
+          "active package missing",
+          "generation_run_ids present",
+          "clip_versions present",
+          "artifact bytes drift",
+          "structurally plausible corrupt bytes are rejected even when the ledger matches",
+          "active intent still takes precedence over decode failure",
+          "different invalid bytes change the two-snapshot fingerprint",
+          "artifact file missing",
+          "frozen input drift",
+          "package snapshot zero match"
+        ],
+        "required_behavior": "generation_history invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-GENERATION-HISTORY-PRECEDENCE"
+      },
+      {
+        "id": "T2-IS1-27-FULL_DATABASE_ROWSET_FINGERPRINTS_CAPTURE_TIMESTAMP_",
+        "contract_area": "database_authority",
+        "actual_source_test_names": [
+          "full database rowset fingerprints capture timestamp and relationship drift"
+        ],
+        "covered_variants": [
+          "project updated_at",
+          "workbench_project_meta updated_at",
+          "shot updated_at",
+          "storyboard package updated_at",
+          "media artifact updated_at",
+          "artifact blob link created_at",
+          "generation intent updated_at",
+          "generation job updated_at",
+          "generation run updated_at",
+          "new media blob row"
+        ],
+        "required_behavior": "database_authority invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-DATABASE-IDENTITY-AND-ROWSET-FINGERPRINT"
+      },
+      {
+        "id": "T2-IS1-28-GLOBAL_ACTIVE_INTENT_BLOCKS_ALL_CANDIDATES_AND_MULTI",
+        "contract_area": "reason_precedence",
+        "actual_source_test_names": [
+          "global active intent blocks all candidates and multiple candidates do not disclose aliases"
+        ],
+        "covered_variants": [],
+        "required_behavior": "reason_precedence invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-CANONICAL-REASON-PRECEDENCE"
+      },
+      {
+        "id": "T2-IS1-29-STARTED_GENERATION_JOBS_AND_RUNS_PRESERVE_THE_STARTE",
+        "contract_area": "generation_history",
+        "actual_source_test_names": [
+          "started generation jobs and runs preserve the started reason without an active intent"
+        ],
+        "covered_variants": [
+          "generation job queued",
+          "generation job submitting",
+          "generation job polling",
+          "generation job downloading",
+          "generation job finalizing",
+          "generation job succeeded",
+          "generation job cancelled",
+          "latest generation run queued",
+          "latest generation run running",
+          "latest generation run succeeded",
+          "latest generation run cancelled",
+          "active intent takes precedence over terminal history"
+        ],
+        "required_behavior": "generation_history invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-GENERATION-HISTORY-PRECEDENCE"
+      },
+      {
+        "id": "T2-IS1-30-DATABASE_PATH_SUBSTITUTION_AND_STATE_OR_BYTE_DRIFT_F",
+        "contract_area": "database_authority",
+        "actual_source_test_names": [
+          "database path substitution and state or byte drift fail closed without retry"
+        ],
+        "covered_variants": [
+          "database symlink substitute",
+          "database state drift",
+          "database identity replacement",
+          "media byte drift"
+        ],
+        "required_behavior": "database_authority invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-DATABASE-IDENTITY-AND-ROWSET-FINGERPRINT"
+      },
+      {
+        "id": "T2-IS1-31-SCANNER_PERFORMS_NO_NETWORK_CALLS_OR_CREDENTIAL_ENVI",
+        "contract_area": "privacy",
+        "actual_source_test_names": [
+          "scanner performs no network calls or credential environment reads"
+        ],
+        "covered_variants": [],
+        "required_behavior": "privacy invariant",
+        "disposition": "RETAIN",
+        "target_test_or_invariant": "T2-LOW-DISCLOSURE-AND-NETWORK-BOUNDARY"
+      }
+    ]
+  },
+  "PR118_review_findings": {
+    "expected": 49,
+    "mapped": 49,
+    "unmapped": 0,
+    "unique_thread_ids": 49,
+    "duplicate_ids": 0,
+    "unknown_ids": 0,
+    "entries": [
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6WpqFu",
+        "finding_summary": "Use canonical T2 reason codes for ineligible shots",
+        "root_cause": "reason_precedence contract boundary",
+        "contract_area": "reason_precedence",
+        "target_behavior_or_invariant": "T2-CANONICAL-REASON-PRECEDENCE"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6WpqF1",
+        "finding_summary": "Use an allowed task-board status",
+        "root_cause": "governance contract boundary",
+        "contract_area": "governance",
+        "target_behavior_or_invariant": "T2-TASK-BOARD-GOVERNANCE"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6WqbEY",
+        "finding_summary": "Preserve the started-shot reason code",
+        "root_cause": "generation_history contract boundary",
+        "contract_area": "generation_history",
+        "target_behavior_or_invariant": "T2-GENERATION-HISTORY-PRECEDENCE"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6WrNZJ",
+        "finding_summary": "Preserve storyboard approval reason codes",
+        "root_cause": "reason_precedence contract boundary",
+        "contract_area": "reason_precedence",
+        "target_behavior_or_invariant": "T2-CANONICAL-REASON-PRECEDENCE"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6WsRut",
+        "finding_summary": "Preserve started-job reason codes",
+        "root_cause": "generation_history contract boundary",
+        "contract_area": "generation_history",
+        "target_behavior_or_invariant": "T2-GENERATION-HISTORY-PRECEDENCE"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6Wtljh",
+        "finding_summary": "先拒绝重复的 order 回退快照匹配",
+        "root_cause": "package_freeze contract boundary",
+        "contract_area": "package_freeze",
+        "target_behavior_or_invariant": "T2-PACKAGE-MATCH-AND-NORMALIZATION"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6Wtljl",
+        "finding_summary": "将 Artifact 结构漂移归入稳定原因码",
+        "root_cause": "media_authority contract boundary",
+        "contract_area": "media_authority",
+        "target_behavior_or_invariant": "T2-GOVERNED-MEDIA-IDENTITY"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6WuaNX",
+        "finding_summary": "Preserve active-intent precedence during drift handling",
+        "root_cause": "reason_precedence contract boundary",
+        "contract_area": "reason_precedence",
+        "target_behavior_or_invariant": "T2-CANONICAL-REASON-PRECEDENCE"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6WuaNd",
+        "finding_summary": "Include drift details in the snapshot fingerprint",
+        "root_cause": "snapshot_drift contract boundary",
+        "contract_area": "snapshot_drift",
+        "target_behavior_or_invariant": "T2-SNAPSHOT-UNIQUENESS-AND-DRIFT"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6WvjL7",
+        "finding_summary": "Include shot row keys in the drift fingerprint",
+        "root_cause": "snapshot_drift contract boundary",
+        "contract_area": "snapshot_drift",
+        "target_behavior_or_invariant": "T2-SNAPSHOT-UNIQUENESS-AND-DRIFT"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6WwHTq",
+        "finding_summary": "Hash blob facts in drift snapshots",
+        "root_cause": "snapshot_drift contract boundary",
+        "contract_area": "snapshot_drift",
+        "target_behavior_or_invariant": "T2-SNAPSHOT-UNIQUENESS-AND-DRIFT"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6WwHTw",
+        "finding_summary": "Hash all project facts before the drift early return",
+        "root_cause": "snapshot_drift contract boundary",
+        "contract_area": "snapshot_drift",
+        "target_behavior_or_invariant": "T2-SNAPSHOT-UNIQUENESS-AND-DRIFT"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6Wwtuo",
+        "finding_summary": "Include unreferenced shot facts in drift hashes",
+        "root_cause": "governance contract boundary",
+        "contract_area": "governance",
+        "target_behavior_or_invariant": "T2-TASK-BOARD-GOVERNANCE"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6W1330",
+        "finding_summary": "将所有扫描行的时间戳事实纳入指纹",
+        "root_cause": "snapshot_drift contract boundary",
+        "contract_area": "snapshot_drift",
+        "target_behavior_or_invariant": "T2-SNAPSHOT-UNIQUENESS-AND-DRIFT"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6W1331",
+        "finding_summary": "为最终快照哈希添加显式域分隔",
+        "root_cause": "snapshot_drift contract boundary",
+        "contract_area": "snapshot_drift",
+        "target_behavior_or_invariant": "T2-SNAPSHOT-UNIQUENESS-AND-DRIFT"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6W3d53",
+        "finding_summary": "将 Shot 结构漂移归入稳定原因码",
+        "root_cause": "reason_precedence contract boundary",
+        "contract_area": "reason_precedence",
+        "target_behavior_or_invariant": "T2-CANONICAL-REASON-PRECEDENCE"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6W3d54",
+        "finding_summary": "为候选别名加入不可预测的随机量",
+        "root_cause": "privacy contract boundary",
+        "contract_area": "privacy",
+        "target_behavior_or_invariant": "T2-LOW-DISCLOSURE-AND-NETWORK-BOUNDARY"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XcE_Q",
+        "finding_summary": "将字节验证限制在权威媒体根目录",
+        "root_cause": "media_authority contract boundary",
+        "contract_area": "media_authority",
+        "target_behavior_or_invariant": "T2-GOVERNED-MEDIA-IDENTITY"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XcE_R",
+        "finding_summary": "拒绝所有非空的终态生成历史",
+        "root_cause": "generation_history contract boundary",
+        "contract_area": "generation_history",
+        "target_behavior_or_invariant": "T2-GENERATION-HISTORY-PRECEDENCE"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XcE_S",
+        "finding_summary": "将非法 Shot JSON 归一为 Shot 漂移",
+        "root_cause": "runtime_schema contract boundary",
+        "contract_area": "runtime_schema",
+        "target_behavior_or_invariant": "T2-RUNTIME-SHAPE-FAIL-CLOSED"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XcE_T",
+        "finding_summary": "拒绝 Artifact 嵌套字段的结构漂移",
+        "root_cause": "runtime_schema contract boundary",
+        "contract_area": "runtime_schema",
+        "target_behavior_or_invariant": "T2-RUNTIME-SHAPE-FAIL-CLOSED"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XcE_U",
+        "finding_summary": "仅对 nullish negative prompt 使用空串回退",
+        "root_cause": "package_freeze contract boundary",
+        "contract_area": "package_freeze",
+        "target_behavior_or_invariant": "T2-PACKAGE-MATCH-AND-NORMALIZATION"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XcE_V",
+        "finding_summary": "验证 package 行与 JSON 投影的一致性",
+        "root_cause": "package_freeze contract boundary",
+        "contract_area": "package_freeze",
+        "target_behavior_or_invariant": "T2-PACKAGE-MATCH-AND-NORMALIZATION"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XcE_X",
+        "finding_summary": "将失败验证的实际字节纳入快照指纹",
+        "root_cause": "snapshot_drift contract boundary",
+        "contract_area": "snapshot_drift",
+        "target_behavior_or_invariant": "T2-SNAPSHOT-UNIQUENESS-AND-DRIFT"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XcE_Z",
+        "finding_summary": "用真实提交替换已完成任务的占位符",
+        "root_cause": "governance contract boundary",
+        "contract_area": "governance",
+        "target_behavior_or_invariant": "T2-TASK-BOARD-GOVERNANCE"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XcZ1H",
+        "finding_summary": "在读取生成历史前验证 generation_run_ids",
+        "root_cause": "runtime_schema contract boundary",
+        "contract_area": "runtime_schema",
+        "target_behavior_or_invariant": "T2-RUNTIME-SHAPE-FAIL-CLOSED"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XcZ1I",
+        "finding_summary": "在匹配前验证 approved_shot_snapshots 数组",
+        "root_cause": "package_freeze contract boundary",
+        "contract_area": "package_freeze",
+        "target_behavior_or_invariant": "T2-PACKAGE-MATCH-AND-NORMALIZATION"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XcoF-",
+        "finding_summary": "校验 clip_versions 的元素结构",
+        "root_cause": "runtime_schema contract boundary",
+        "contract_area": "runtime_schema",
+        "target_behavior_or_invariant": "T2-RUNTIME-SHAPE-FAIL-CLOSED"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XcoGA",
+        "finding_summary": "清除 DONE 槽的活动任务标记",
+        "root_cause": "governance contract boundary",
+        "contract_area": "governance",
+        "target_behavior_or_invariant": "T2-TASK-BOARD-GOVERNANCE"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XcoGC",
+        "finding_summary": "将 DONE 槽的实现提交更新到最新代码 tip",
+        "root_cause": "governance contract boundary",
+        "contract_area": "governance",
+        "target_behavior_or_invariant": "T2-TASK-BOARD-GOVERNANCE"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XcoGE",
+        "finding_summary": "在权威 publication 状态登记 PR #118",
+        "root_cause": "governance contract boundary",
+        "contract_area": "governance",
+        "target_behavior_or_invariant": "T2-TASK-BOARD-GOVERNANCE"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6Xc0DR",
+        "finding_summary": "将小数 ClipVersion attempt 判为结构不一致",
+        "root_cause": "runtime_schema contract boundary",
+        "contract_area": "runtime_schema",
+        "target_behavior_or_invariant": "T2-RUNTIME-SHAPE-FAIL-CLOSED"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6Xc0DS",
+        "finding_summary": "在解析异常 Project 时保留 active-intent 优先级",
+        "root_cause": "runtime_schema contract boundary",
+        "contract_area": "runtime_schema",
+        "target_behavior_or_invariant": "T2-RUNTIME-SHAPE-FAIL-CLOSED"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6Xdjdw",
+        "finding_summary": "拒绝超出安全范围的 ClipVersion attempt_number",
+        "root_cause": "runtime_schema contract boundary",
+        "contract_area": "runtime_schema",
+        "target_behavior_or_invariant": "T2-RUNTIME-SHAPE-FAIL-CLOSED"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6Xd1HW",
+        "finding_summary": "拒绝媒体根目录内的非独占 hard link",
+        "root_cause": "media_authority contract boundary",
+        "contract_area": "media_authority",
+        "target_behavior_or_invariant": "T2-GOVERNED-MEDIA-IDENTITY"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XeB73",
+        "finding_summary": "将共享字节校验绑定到已检查的文件描述符",
+        "root_cause": "media_authority contract boundary",
+        "contract_area": "media_authority",
+        "target_behavior_or_invariant": "T2-GOVERNED-MEDIA-IDENTITY"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XeB74",
+        "finding_summary": "将失败的媒体身份纳入双快照指纹",
+        "root_cause": "media_authority contract boundary",
+        "contract_area": "media_authority",
+        "target_behavior_or_invariant": "T2-GOVERNED-MEDIA-IDENTITY"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XeB76",
+        "finding_summary": "在 capability 检查前验证 Project video_spec",
+        "root_cause": "runtime_schema contract boundary",
+        "contract_area": "runtime_schema",
+        "target_behavior_or_invariant": "T2-RUNTIME-SHAPE-FAIL-CLOSED"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XeB78",
+        "finding_summary": "归一 generation run 漂移并保留 active Intent 优先级",
+        "root_cause": "generation_history contract boundary",
+        "contract_area": "generation_history",
+        "target_behavior_or_invariant": "T2-GENERATION-HISTORY-PRECEDENCE"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XeZ4N",
+        "finding_summary": "将非法媒体根状态纳入快照指纹",
+        "root_cause": "media_authority contract boundary",
+        "contract_area": "media_authority",
+        "target_behavior_or_invariant": "T2-GOVERNED-MEDIA-IDENTITY"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XeZ4O",
+        "finding_summary": "拒绝空 snapshot shot_id 的 order 回退",
+        "root_cause": "package_freeze contract boundary",
+        "contract_area": "package_freeze",
+        "target_behavior_or_invariant": "T2-PACKAGE-MATCH-AND-NORMALIZATION"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XeqIp",
+        "finding_summary": "验证完整图像解码后再接受候选",
+        "root_cause": "actual_bytes contract boundary",
+        "contract_area": "actual_bytes",
+        "target_behavior_or_invariant": "T2-MEDIA-BYTES-ACTUAL-VALIDATION"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XeqIq",
+        "finding_summary": "将 symlink 目标实体纳入无效根指纹",
+        "root_cause": "media_authority contract boundary",
+        "contract_area": "media_authority",
+        "target_behavior_or_invariant": "T2-GOVERNED-MEDIA-IDENTITY"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XeqIr",
+        "finding_summary": "保留打开失败前已取得的媒体身份",
+        "root_cause": "media_authority contract boundary",
+        "contract_area": "media_authority",
+        "target_behavior_or_invariant": "T2-GOVERNED-MEDIA-IDENTITY"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XeqIs",
+        "finding_summary": "拒绝 ClipVersion 的额外运行时字段",
+        "root_cause": "runtime_schema contract boundary",
+        "contract_area": "runtime_schema",
+        "target_behavior_or_invariant": "T2-RUNTIME-SHAPE-FAIL-CLOSED"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XfIRi",
+        "finding_summary": "将顶层 Artifact 空值归入完整性失败",
+        "root_cause": "media_authority contract boundary",
+        "contract_area": "media_authority",
+        "target_behavior_or_invariant": "T2-NORM-ARTIFACT-NON_OBJECT"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XfIRk",
+        "finding_summary": "将成功读取的媒体实体身份加入双快照指纹",
+        "root_cause": "media_authority contract boundary",
+        "contract_area": "media_authority",
+        "target_behavior_or_invariant": "T2-MEDIA-SUCCESS-IDENTITY-FINGERPRINT"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XfIRn",
+        "finding_summary": "指纹化非法 Artifact symlink 的实体事实",
+        "root_cause": "media_authority contract boundary",
+        "contract_area": "media_authority",
+        "target_behavior_or_invariant": "T2-MEDIA-SYMLINK-ENTITY-FINGERPRINT"
+      },
+      {
+        "thread_id": "PRRT_kwDOTTDtUM6XfIRp",
+        "finding_summary": "同步 DONE 槽的终态实现提交",
+        "root_cause": "governance contract boundary",
+        "contract_area": "governance",
+        "target_behavior_or_invariant": "T2-GOV-TERMINAL-TIP-SINGLE-SOURCE"
+      }
+    ]
+  },
+  "current_four_findings": [
+    {
+      "thread_id": "PRRT_kwDOTTDtUM6XfIRi",
+      "target_behavior_or_invariant": "T2-NORM-ARTIFACT-NON_OBJECT"
+    },
+    {
+      "thread_id": "PRRT_kwDOTTDtUM6XfIRk",
+      "target_behavior_or_invariant": "T2-MEDIA-SUCCESS-IDENTITY-FINGERPRINT"
+    },
+    {
+      "thread_id": "PRRT_kwDOTTDtUM6XfIRn",
+      "target_behavior_or_invariant": "T2-MEDIA-SYMLINK-ENTITY-FINGERPRINT"
+    },
+    {
+      "thread_id": "PRRT_kwDOTTDtUM6XfIRp",
+      "target_behavior_or_invariant": "T2-GOV-TERMINAL-TIP-SINGLE-SOURCE"
+    }
+  ],
+  "placeholder_sources": {
+    "count": 0
+  }
+}
