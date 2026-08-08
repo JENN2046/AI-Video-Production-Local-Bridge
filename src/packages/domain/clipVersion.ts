@@ -8,7 +8,7 @@ import { z } from "zod/v4";
 export const WEBGPT_V4_CLIP_VERSION_SCHEMA = z.object({
   artifact_id: z.string(),
   run_id: z.string(),
-  attempt_number: z.number().int(),
+  attempt_number: z.number().int().safe(),
   review_status: z.enum(["pending", "approved", "rejected"])
 }).strict();
 
