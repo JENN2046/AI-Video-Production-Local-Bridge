@@ -5742,3 +5742,24 @@ disposition:
 merged: false
 R2_authorized: false
 ```
+
+### 2026-08-08 — PR118-R17 exact decode and residual identity closure
+
+```yaml
+task_id: S3B-T2-R1_IMPLEMENT_READ_ONLY_EXECUTABLE_ENTRY
+result: GOVERNANCE_CORRECTION
+supersedes_implementation_tip:
+  previous: dd3a02e53954226f63eb1cae4965958a4667b9ee
+  current: cf5ef89a38325f1b95bc476e895f51cab361aa34
+reason:
+  - exact authoritative bytes full FFmpeg decode
+  - invalid mediaRoot symlink target entity fingerprint
+  - pre-open identity preservation on IO failure
+  - strict ClipVersion unknown-field rejection
+pull_request: 118
+base: 990e5cfa909c7886ea1378c06abe165dc8f19995
+disposition:
+  IMPLEMENTED_PENDING_SEPARATE_MERGE_AUTHORIZATION
+merged: false
+R2_authorized: false
+```
