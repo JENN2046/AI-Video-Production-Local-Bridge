@@ -14,6 +14,7 @@ import type {
 } from "./s3bT2Types.js";
 import {
   commitCanonicalGenerationAdmission,
+  generationRightConflict,
   type CanonicalGenerationAdmissionCommitInput,
   type WorkbenchGenerationIntent
 } from "./workbenchGeneration.js";
@@ -37,7 +38,7 @@ export type PrepareGenerationResult =
     };
 
 export type ConfirmGenerationResult =
-  | { ok: true; data: { plan: GenerationPlan; intent: WorkbenchGenerationIntent; run_id: string; job_id: string; status: "queued" } }
+  | { ok: true; data: { plan: GenerationPlan; intent: WorkbenchGenerationIntent; run_id: string; job_id: string; status: "prepared" | "queued" } }
   | { ok: false; error: { code: string; message: string } };
 
 type Candidate = { facts: GenerationAdmissionFacts; decision: GenerationAdmissionDecision };
@@ -177,7 +178,8 @@ function canonicalCommitInput(
     account_label: "personal",
     estimated_cost_value: 0,
     budget_limit_value: 0,
-    currency: "UNSET"
+    currency: "UNSET",
+    reservation_only: true
   };
 }
 
@@ -202,6 +204,10 @@ export function confirmGeneration(
     if (current.facts.generation.active_intent_count > 0) {
       db.exec("ROLLBACK");
       return error("REAL_GENERATION_ALREADY_ACTIVE", "Another active generation intent already owns the generation slot.");
+    }
+    if (generationRightConflict(db)) {
+      db.exec("ROLLBACK");
+      return error("REAL_GENERATION_ALREADY_ACTIVE", "Another generation right already owns the generation slot.");
     }
     if (!planMatchesFacts(plan, current.facts)) {
       db.exec("ROLLBACK");

@@ -36,7 +36,7 @@ export type ConfirmGenerationAdmissionResult =
       intent_id: string;
       run_id: string;
       job_id: string;
-      status: "queued";
+      status: "prepared" | "queued";
     }
   | {
       result:

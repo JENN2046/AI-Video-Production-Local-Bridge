@@ -10,10 +10,15 @@ import { migrateDatabase } from "../src/storage/databaseGovernance.js";
 import { saveProject, saveShot, type Project, type Shot } from "../src/tools/projects.js";
 import {
   confirmGeneration,
-  prepareGeneration,
-  revalidateGenerationPlanMedia
+  prepareGeneration
 } from "../src/tools/s3bT2GenerationAdmission.js";
-import { runWorkbenchGenerationOnce } from "../src/tools/workbenchGeneration.js";
+import {
+  confirmWorkbenchGeneration,
+  preflightWorkbenchGeneration,
+  resumeWorkbenchGenerationJobs,
+  runWorkbenchGenerationOnce,
+  type WorkbenchGenerationDependencies
+} from "../src/tools/workbenchGeneration.js";
 
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 const PROJECT_ID = "project_is2_5_fixture";
@@ -29,6 +34,12 @@ type Fixture = {
   mediaRoot: string;
   imagePath: string;
   db: DatabaseSync;
+};
+
+type WorkbenchIntentSnapshot = {
+  balance_gate: string;
+  requires_human_preflight?: boolean;
+  admission_only?: boolean;
 };
 
 function createFixture(): Fixture {
@@ -132,6 +143,54 @@ function prepareFixture(fixture: Fixture) {
   return prepared;
 }
 
+function confirmT2Fixture(fixture: Fixture) {
+  const prepared = prepareFixture(fixture);
+  const confirmed = confirmGeneration(prepared.data.plan, fixture.db);
+  if (!confirmed.ok) throw new Error(confirmed.error.code);
+  return { prepared, confirmed };
+}
+
+function fixtureExecutionDependencies(
+  fixture: Fixture,
+  counters: { preflight_requests: number; adapter_constructs: number; provider_submits: number }
+): WorkbenchGenerationDependencies {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    M1_REAL_PROVIDER: "runninghub",
+    REAL_PROVIDER_ENABLED: "true",
+    M1_REAL_PROVIDER_EXECUTION_ALLOWED: "true",
+    M1_REAL_PROVIDER_COST_ACK: "true",
+    RUNNINGHUB_API_KEY: "p1-fixture-key",
+    PROVIDER_TASK_POLL_TIMEOUT_MS: "1000"
+  };
+  const fixtureProviderError = { code: "FIXTURE_PROVIDER_STOP", message: "fixture provider stop", retryable: false } as const;
+  return {
+    sqlite_path: fixture.sqlitePath,
+    env,
+    fetch_impl: async (input) => {
+      counters.preflight_requests += 1;
+      const url = String(input);
+      if (url.endsWith("/uc/openapi/accountStatus")) {
+        return new Response(JSON.stringify({ data: { currency: "CNY", remainMoney: 100, remainCoins: 0 } }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ estimatedPrice: 1, currency: "CNY" }), { status: 200 });
+    },
+    adapter_factory: () => {
+      counters.adapter_constructs += 1;
+      return {
+        provider_name: "runninghub" as const,
+        model_name: MODEL,
+        submitGeneration: async () => {
+          counters.provider_submits += 1;
+          return { ok: false as const, error: fixtureProviderError };
+        },
+        pollStatus: async () => ({ ok: false as const, error: fixtureProviderError }),
+        fetchOutput: async () => ({ ok: false as const, error: fixtureProviderError })
+      };
+    }
+  };
+}
+
 test("IS2.5 prepare compiles one GenerationPlan and confirm writes the canonical intent atomically", () => {
   const fixture = createFixture();
   try {
@@ -144,13 +203,132 @@ test("IS2.5 prepare compiles one GenerationPlan and confirm writes the canonical
     const confirmed = confirmGeneration(prepared.data.plan, fixture.db);
     if (!confirmed.ok) throw new Error(confirmed.error.code);
     assert.equal(confirmed.ok, true);
-    assert.equal(confirmed.data.status, "queued");
+    assert.equal(confirmed.data.status, "prepared");
     assert.equal(intentCount(fixture.db), 1);
     const stored = fixture.db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
       .get(confirmed.data.intent.intent_id) as { data_json: string };
     const data = JSON.parse(stored.data_json) as { generation_plan?: { schema_version?: string }; input_snapshot?: { prepared_by?: string } };
     assert.equal(data.generation_plan?.schema_version, "generation_plan.v1");
     assert.equal(data.input_snapshot?.prepared_by, "t2_admission");
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
+test("P1 T2 confirm creates one prepared reservation without a runnable job", async () => {
+  const fixture = createFixture();
+  try {
+    const { confirmed } = confirmT2Fixture(fixture);
+    assert.equal(confirmed.data.status, "prepared");
+    assert.equal(intentCount(fixture.db), 1);
+    assert.equal(Number((fixture.db.prepare("SELECT COUNT(*) AS count FROM generation_jobs").get() as { count: number }).count), 0);
+    assert.equal(Number((fixture.db.prepare("SELECT COUNT(*) AS count FROM generation_runs").get() as { count: number }).count), 0);
+    const row = fixture.db.prepare("SELECT status, confirmed, run_id, data_json FROM generation_intents WHERE intent_id = ?")
+      .get(confirmed.data.intent.intent_id) as { status: string; confirmed: number; run_id: string | null; data_json: string };
+    const inputSnapshot = (JSON.parse(row.data_json) as { input_snapshot: WorkbenchIntentSnapshot }).input_snapshot;
+    assert.deepEqual({ status: row.status, confirmed: row.confirmed, run_id: row.run_id }, { status: "prepared", confirmed: 0, run_id: null });
+    assert.deepEqual({
+      balance_gate: inputSnapshot.balance_gate,
+      requires_human_preflight: inputSnapshot.requires_human_preflight,
+      admission_only: inputSnapshot.admission_only
+    }, { balance_gate: "not_checked", requires_human_preflight: true, admission_only: true });
+    const counters = { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 };
+    await runWorkbenchGenerationOnce(confirmed.data.intent.intent_id, { allow_submit: true, dependencies: fixtureExecutionDependencies(fixture, counters) });
+    assert.deepEqual(counters, { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 });
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
+test("P1 second T2 confirm conflicts with the prepared reservation", () => {
+  const fixture = createFixture();
+  try {
+    confirmT2Fixture(fixture);
+    const secondPrepared = prepareFixture(fixture);
+    const second = confirmGeneration(secondPrepared.data.plan, fixture.db);
+    assert.equal(second.ok, false);
+    if (second.ok) throw new Error("second T2 confirmation unexpectedly succeeded");
+    assert.equal(second.error.code, "REAL_GENERATION_ALREADY_ACTIVE");
+    assert.equal(intentCount(fixture.db), 1);
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
+test("P1 resume ignores a prepared T2 reservation before preflight", async () => {
+  const fixture = createFixture();
+  try {
+    const { confirmed } = confirmT2Fixture(fixture);
+    const counters = { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 };
+    const resumed = resumeWorkbenchGenerationJobs(fixtureExecutionDependencies(fixture, counters));
+    assert.deepEqual(resumed, { resumed: [], reconciled: [] });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.deepEqual(counters, { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 });
+    const row = fixture.db.prepare("SELECT status, confirmed FROM generation_intents WHERE intent_id = ?")
+      .get(confirmed.data.intent.intent_id) as { status: string; confirmed: number };
+    assert.equal(row.status, "prepared");
+    assert.equal(row.confirmed, 0);
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
+test("P1 existing preflight upgrades the same T2 reservation and execution submits once", async () => {
+  const fixture = createFixture();
+  try {
+    const { confirmed: admitted } = confirmT2Fixture(fixture);
+    const counters = { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 };
+    const dependencies = fixtureExecutionDependencies(fixture, counters);
+    const preflight = await preflightWorkbenchGeneration({
+      project_id: PROJECT_ID,
+      shot_id: SHOT_ID,
+      account_label: "personal",
+      budget_limit_value: 10
+    }, fixture.db, dependencies);
+    if (!preflight.ok) throw new Error(preflight.error.code);
+    assert.equal(preflight.data.intent.intent_id, admitted.data.intent.intent_id);
+    const staged = JSON.parse((fixture.db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(admitted.data.intent.intent_id) as { data_json: string }).data_json) as { input_snapshot: WorkbenchIntentSnapshot };
+    assert.equal(staged.input_snapshot.balance_gate, "pass");
+    assert.equal(staged.input_snapshot.requires_human_preflight, false);
+    assert.equal(staged.input_snapshot.admission_only, true);
+    assert.equal(intentCount(fixture.db), 1);
+    assert.equal(Number((fixture.db.prepare("SELECT COUNT(*) AS count FROM generation_jobs").get() as { count: number }).count), 0);
+
+    const confirmed = confirmWorkbenchGeneration({
+      intent_id: admitted.data.intent.intent_id,
+      budget_limit_value: 10,
+      cost_confirmed: true,
+      human_confirmation: true
+    }, fixture.db, dependencies);
+    if (!confirmed.ok) throw new Error(confirmed.error.code);
+    assert.equal(confirmed.data.intent.intent_id, admitted.data.intent.intent_id);
+    assert.equal(confirmed.data.status, "queued");
+    assert.equal(intentCount(fixture.db), 1);
+    await runWorkbenchGenerationOnce(admitted.data.intent.intent_id, { allow_submit: true, dependencies });
+    assert.equal(counters.preflight_requests, 2);
+    assert.equal(counters.provider_submits, 1);
+    assert.equal(Number((fixture.db.prepare("SELECT COUNT(*) AS count FROM generation_intents").get() as { count: number }).count), 1);
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
+test("P1 restart after canonical preflight resumes the same executable reservation", async () => {
+  const fixture = createFixture();
+  try {
+    const { confirmed: admitted } = confirmT2Fixture(fixture);
+    const counters = { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 };
+    const dependencies = fixtureExecutionDependencies(fixture, counters);
+    const preflight = await preflightWorkbenchGeneration({ project_id: PROJECT_ID, shot_id: SHOT_ID, account_label: "personal", budget_limit_value: 10 }, fixture.db, dependencies);
+    if (!preflight.ok) throw new Error(preflight.error.code);
+    const confirmed = confirmWorkbenchGeneration({ intent_id: admitted.data.intent.intent_id, budget_limit_value: 10, cost_confirmed: true, human_confirmation: true }, fixture.db, dependencies);
+    if (!confirmed.ok) throw new Error(confirmed.error.code);
+    const resumed = resumeWorkbenchGenerationJobs(dependencies);
+    assert.deepEqual(resumed, { resumed: [admitted.data.intent.intent_id], reconciled: [] });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(counters.provider_submits, 1);
+    assert.equal(intentCount(fixture.db), 1);
   } finally {
     closeFixture(fixture);
   }
@@ -297,36 +475,95 @@ test("IS2.5 active-generation race and repeated confirmation admit at most one i
   }
 });
 
-test("IS2.5 media verification becomes stale before Provider selection and no adapter is called", async () => {
+test("T2 admission reservation never reaches Provider execution before preflight", async () => {
   const fixture = createFixture();
   try {
     const prepared = prepareFixture(fixture);
     const confirmed = confirmGeneration(prepared.data.plan, fixture.db);
     if (!confirmed.ok) throw new Error(confirmed.error.code);
     assert.equal(confirmed.ok, true);
-
-    writeFileSync(fixture.imagePath, Buffer.from("not the verified storyboard bytes"));
-    const stale = revalidateGenerationPlanMedia(prepared.data.plan, fixture.db);
-    assert.equal(stale.ok, false);
-    if (stale.ok) throw new Error("stale media unexpectedly revalidated");
-    assert.equal(stale.code, "MEDIA_VERIFICATION_STALE");
-
+    let adapterConstructs = 0;
     let adapterCalls = 0;
     await runWorkbenchGenerationOnce(confirmed.data.intent.intent_id, {
       allow_submit: true,
       dependencies: {
         sqlite_path: fixture.sqlitePath,
         adapter_factory: () => {
+          adapterConstructs += 1;
           adapterCalls += 1;
-          throw new Error("Provider adapter must not be constructed after media staleness.");
+          throw new Error("Provider adapter must not be constructed before preflight.");
         }
       }
     });
+    assert.equal(adapterConstructs, 0);
     assert.equal(adapterCalls, 0);
+    const row = fixture.db.prepare("SELECT status, confirmed, run_id FROM generation_intents WHERE intent_id = ?")
+      .get(confirmed.data.intent.intent_id) as { status: string; confirmed: number; run_id: string | null };
+    assert.equal(row.status, "prepared");
+    assert.equal(row.confirmed, 0);
+    assert.equal(row.run_id, null);
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
+test("P1 final execution guard rejects a queued preflight-pending intent", async () => {
+  const fixture = createFixture();
+  try {
+    const { confirmed } = confirmT2Fixture(fixture);
+    // Simulate the legacy queued shape that the final worker boundary must
+    // still reject when an old caller bypasses the reservation-only writer.
+    fixture.db.prepare("UPDATE generation_intents SET confirmed = 1, status = 'queued', run_id = ? WHERE intent_id = ?")
+      .run("legacy_run_without_preflight", confirmed.data.intent.intent_id);
+    fixture.db.prepare("INSERT INTO generation_jobs (job_id, intent_id, state) VALUES (?, ?, 'queued')")
+      .run("legacy_job_without_preflight", confirmed.data.intent.intent_id);
+    const counters = { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 };
+    await runWorkbenchGenerationOnce(confirmed.data.intent.intent_id, {
+      allow_submit: true,
+      dependencies: fixtureExecutionDependencies(fixture, counters)
+    });
+    assert.deepEqual(counters, { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 });
+    const row = fixture.db.prepare("SELECT status, confirmed FROM generation_intents WHERE intent_id = ?")
+      .get(confirmed.data.intent.intent_id) as { status: string; confirmed: number };
+    assert.equal(row.status, "queued");
+    assert.equal(row.confirmed, 1);
+    const job = fixture.db.prepare("SELECT state FROM generation_jobs WHERE intent_id = ?")
+      .get(confirmed.data.intent.intent_id) as { state: string };
+    assert.equal(job.state, "queued");
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
+test("P1 post-preflight media revalidation blocks Provider construction", async () => {
+  const fixture = createFixture();
+  try {
+    const { confirmed: admitted } = confirmT2Fixture(fixture);
+    const counters = { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 };
+    const dependencies = fixtureExecutionDependencies(fixture, counters);
+    const preflight = await preflightWorkbenchGeneration({
+      project_id: PROJECT_ID,
+      shot_id: SHOT_ID,
+      account_label: "personal",
+      budget_limit_value: 10
+    }, fixture.db, dependencies);
+    if (!preflight.ok) throw new Error(preflight.error.code);
+    const workbenchConfirmation = confirmWorkbenchGeneration({
+      intent_id: admitted.data.intent.intent_id,
+      budget_limit_value: 10,
+      cost_confirmed: true,
+      human_confirmation: true
+    }, fixture.db, dependencies);
+    if (!workbenchConfirmation.ok) throw new Error(workbenchConfirmation.error.code);
+    writeFileSync(fixture.imagePath, Buffer.from("fixture-media-drift-after-preflight"));
+    await runWorkbenchGenerationOnce(admitted.data.intent.intent_id, { allow_submit: true, dependencies });
+    assert.equal(counters.preflight_requests, 2);
+    assert.equal(counters.adapter_constructs, 0);
+    assert.equal(counters.provider_submits, 0);
     const row = fixture.db.prepare("SELECT status, sanitized_error_json FROM generation_intents WHERE intent_id = ?")
-      .get(confirmed.data.intent.intent_id) as { status: string; sanitized_error_json: string };
+      .get(admitted.data.intent.intent_id) as { status: string; sanitized_error_json: string };
     assert.equal(row.status, "failed");
-    assert.equal((JSON.parse(row.sanitized_error_json) as { code: string }).code, "MEDIA_VERIFICATION_STALE");
+    assert.equal((JSON.parse(row.sanitized_error_json) as { code?: string }).code, "MEDIA_VERIFICATION_STALE");
   } finally {
     closeFixture(fixture);
   }

@@ -469,7 +469,8 @@ function intentFromRow(row: GenerationIntentRow): WorkbenchGenerationIntent {
     negative_prompt: "",
     aspect_ratio: "",
     price_source: "runninghub_price_preview",
-    balance_gate: "pass"
+    balance_gate: "not_checked",
+    requires_human_preflight: true
   };
   const snapshot = data.input_snapshot && typeof data.input_snapshot === "object" && !Array.isArray(data.input_snapshot)
     ? data.input_snapshot as WorkbenchGenerationIntent["input_snapshot"]
@@ -511,6 +512,39 @@ function getIntent(db: M0Database, intentId: string): WorkbenchGenerationIntent 
   return row ? intentFromRow(row) : null;
 }
 
+function isT2AdmissionReservation(intent: Pick<WorkbenchGenerationIntent, "status" | "input_snapshot">): boolean {
+  return intent.status === "prepared"
+    && intent.input_snapshot.prepared_by === "t2_admission"
+    && intent.input_snapshot.admission_only === true;
+}
+
+export function generationRightConflict(
+  db: M0Database,
+  excludeIntentId = ""
+): WorkbenchGenerationIntent | null {
+  const rows = db.prepare("SELECT * FROM generation_intents WHERE status IN ('prepared', 'queued', 'running') ORDER BY created_at, intent_id").all() as GenerationIntentRow[];
+  for (const row of rows) {
+    const intent = intentFromRow(row);
+    if (intent.intent_id === excludeIntentId) continue;
+    if (intent.status === "queued" || intent.status === "running" || isT2AdmissionReservation(intent)) return intent;
+  }
+  return null;
+}
+
+function findT2AdmissionReservation(db: M0Database, projectId: string, shotId: string): WorkbenchGenerationIntent | null {
+  const rows = db.prepare("SELECT * FROM generation_intents WHERE project_id = ? AND shot_id = ? AND status = 'prepared' ORDER BY created_at, intent_id")
+    .all(projectId, shotId) as GenerationIntentRow[];
+  const reservations = rows.map(intentFromRow).filter(isT2AdmissionReservation);
+  return reservations.length === 1 ? reservations[0] : null;
+}
+
+export function isProviderExecutionAuthorized(
+  intent: Pick<WorkbenchGenerationIntent, "input_snapshot">
+): boolean {
+  return intent.input_snapshot.requires_human_preflight === false
+    && intent.input_snapshot.balance_gate === "pass";
+}
+
 export type CanonicalGenerationAdmissionCommitInput = {
   project: Project;
   shot: Shot;
@@ -529,19 +563,22 @@ export type CanonicalGenerationAdmissionCommitInput = {
   run_id?: string;
   existing_data?: Record<string, unknown>;
   admission_reason_code?: string;
+  reservation_only?: boolean;
 };
 
 export type CanonicalGenerationAdmissionCommitResult = {
   intent: WorkbenchGenerationIntent;
   run_id: string;
   job_id: string;
-  status: "queued";
+  status: "prepared" | "queued";
 };
 
 /**
  * Shared Generation Domain commit primitive.  Both the existing V2
  * confirmation flow and IS2.5 GenerationPlan confirmation use this one
- * writer; callers own the surrounding short transaction.
+ * writer; callers own the surrounding short transaction.  T2 admission may
+ * select the reservation-only branch below, which intentionally stops before
+ * creating a runnable GenerationRun or GenerationJob.
  */
 export function commitCanonicalGenerationAdmission(
   input: CanonicalGenerationAdmissionCommitInput,
@@ -555,6 +592,38 @@ export function commitCanonicalGenerationAdmission(
     input_snapshot: input.input_snapshot,
     ...(input.generation_plan ? { generation_plan: input.generation_plan } : {})
   };
+  if (input.reservation_only) {
+    if (input.existing_prepared_intent_id) throw new Error("GENERATION_RESERVATION_ALREADY_EXISTS");
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    db.prepare(`
+      INSERT INTO generation_intents (
+        intent_id, project_id, shot_id, provider, account_label, model, input_artifact_id,
+        duration_seconds, resolution, estimated_cost_value, budget_limit_value, currency,
+        confirmed, expires_at, provider_task_id, status, upload_attempts, submit_attempts,
+        output_artifact_id, sanitized_error_json, data_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, '', 'prepared', 0, 0, '', '{}', ?, ?, ?)
+    `).run(
+      intentId,
+      input.project.project_id,
+      input.shot.shot_id,
+      input.provider,
+      input.account_label,
+      input.model,
+      input.input_artifact_id,
+      input.duration_seconds,
+      input.resolution,
+      input.estimated_cost_value,
+      input.budget_limit_value,
+      input.currency,
+      expiresAt,
+      JSON.stringify(inputData),
+      now,
+      now
+    );
+    const intent = getIntent(db, intentId);
+    if (!intent) throw new Error("GENERATION_INTENT_NOT_FOUND");
+    return { intent, run_id: "", job_id: "", status: "prepared" };
+  }
   const run: GenerationRun = {
     run_id: runId,
     batch_id: "",
@@ -714,8 +783,9 @@ export async function preflightWorkbenchGeneration(
   if (!Number.isFinite(input.budget_limit_value) || input.budget_limit_value <= 0) {
     return { ok: false, error: { code: "BUDGET_LIMIT_REQUIRED", message: "A positive budget limit is required.", field: "budget_limit_value" } };
   }
-  const active = db.prepare("SELECT intent_id FROM generation_intents WHERE status IN ('queued', 'running') LIMIT 1").get() as { intent_id: string } | undefined;
-  if (active) return { ok: false, error: { code: "REAL_GENERATION_ALREADY_ACTIVE", message: "Only one real generation task may run at a time." } };
+  const admissionReservation = findT2AdmissionReservation(db, input.project_id, input.shot_id);
+  const conflict = generationRightConflict(db, admissionReservation?.intent_id ?? "");
+  if (conflict) return { ok: false, error: { code: "REAL_GENERATION_ALREADY_ACTIVE", message: "Only one real generation task may run at a time." } };
   const artifact = validateActiveArtifactReference(db, {
     artifact_id: shot.storyboard_image_artifact_id, project_id: input.project_id, shot_id: shot.shot_id, role: "storyboard_image", artifact_type: "image"
   });
@@ -754,6 +824,17 @@ export async function preflightWorkbenchGeneration(
     aspect_ratio: writable.data.project.video_spec.aspect_ratio
   });
   if (!capability.ok) return { ok: false, error: { code: capability.code, message: providerCapabilityErrorMessage(capability), field: capability.field } };
+  if (admissionReservation && (
+    admissionReservation.input_artifact_id !== artifact.artifact.artifact_id
+    || admissionReservation.input_snapshot.video_prompt !== shot.video_prompt
+    || admissionReservation.input_snapshot.negative_prompt !== shot.negative_prompt
+    || admissionReservation.input_snapshot.aspect_ratio !== writable.data.project.video_spec.aspect_ratio
+    || admissionReservation.input_snapshot.project_resolution !== writable.data.project.video_spec.resolution
+    || admissionReservation.duration_seconds !== capability.key.duration_seconds
+    || admissionReservation.resolution !== capability.key.resolution
+  )) {
+    return { ok: false, error: { code: "GENERATION_INTENT_INPUT_STALE", message: "SHOT or project inputs changed after generation admission." } };
+  }
   const priceCacheKey = buildProviderPriceCacheKey(capability.key, capability.capability);
   const selection = selectM1ProviderPort({ provider: "real", provider_name: "runninghub", model_name: capability.key.model, cost_acknowledged: true }, dependencies.env ?? process.env);
   if (!selection.ok) return { ok: false, error: selection.error };
@@ -817,19 +898,27 @@ export async function preflightWorkbenchGeneration(
 
   const createdAt = dateNow(dependencies);
   const expiresAt = new Date(createdAt.getTime() + 10 * 60 * 1000);
-  const intentId = `intent_${randomUUID()}`;
-  const inputSnapshot: WorkbenchGenerationIntent["input_snapshot"] = {
-    video_prompt: shot.video_prompt,
-    negative_prompt: shot.negative_prompt,
-    aspect_ratio: writable.data.project.video_spec.aspect_ratio,
-    project_resolution: writable.data.project.video_spec.resolution,
-    price_source: "runninghub_price_preview",
-    balance_gate: "pass",
-    requires_human_preflight: false,
-    prepared_by: input.director_automation ? "director_automation" : "human_workbench",
-    capability_key: capability.key.serialized,
-    ...(input.director_automation ? { director_automation: input.director_automation } : {})
-  };
+  const intentId = admissionReservation?.intent_id ?? `intent_${randomUUID()}`;
+  const inputSnapshot: WorkbenchGenerationIntent["input_snapshot"] = admissionReservation
+    ? {
+      ...admissionReservation.input_snapshot,
+      price_source: "runninghub_price_preview",
+      balance_gate: "pass",
+      requires_human_preflight: false,
+      capability_key: capability.key.serialized
+    }
+    : {
+      video_prompt: shot.video_prompt,
+      negative_prompt: shot.negative_prompt,
+      aspect_ratio: writable.data.project.video_spec.aspect_ratio,
+      project_resolution: writable.data.project.video_spec.resolution,
+      price_source: "runninghub_price_preview",
+      balance_gate: "pass",
+      requires_human_preflight: false,
+      prepared_by: input.director_automation ? "director_automation" : "human_workbench",
+      capability_key: capability.key.serialized,
+      ...(input.director_automation ? { director_automation: input.director_automation } : {})
+    };
   db.prepare(`
     INSERT INTO webgpt_provider_price_cache (
       provider, model, duration_seconds, resolution, estimated_cost_value, currency,
@@ -852,17 +941,38 @@ export async function preflightWorkbenchGeneration(
     createdAt.toISOString(),
     new Date(createdAt.getTime() + 24 * 60 * 60 * 1000).toISOString()
   );
-  db.prepare(`
-    INSERT INTO generation_intents (
-      intent_id, project_id, shot_id, provider, account_label, model, input_artifact_id,
-      duration_seconds, resolution, estimated_cost_value, budget_limit_value, currency,
-      confirmed, expires_at, status, data_json, created_at, updated_at
-    ) VALUES (?, ?, ?, 'runninghub', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'prepared', ?, ?, ?)
-  `).run(
-    intentId, input.project_id, input.shot_id, input.account_label, capability.key.model, artifact.artifact.artifact_id,
-    capability.key.duration_seconds, capability.key.resolution, estimatedPrice, input.budget_limit_value, currency,
-    expiresAt.toISOString(), JSON.stringify({ input_snapshot: inputSnapshot }), createdAt.toISOString(), createdAt.toISOString()
-  );
+  if (admissionReservation) {
+    const row = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(intentId) as { data_json: string } | undefined;
+    if (!row) return { ok: false, error: { code: "GENERATION_INTENT_NOT_FOUND", message: "Generation admission reservation was not found." } };
+    const data = parseRecord(row.data_json);
+    data.input_snapshot = inputSnapshot;
+    const updated = db.prepare(`
+      UPDATE generation_intents
+      SET account_label = ?, estimated_cost_value = ?, budget_limit_value = ?, currency = ?, expires_at = ?, data_json = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE intent_id = ? AND status = 'prepared' AND confirmed = 0 AND (run_id IS NULL OR run_id = '')
+    `).run(
+      input.account_label,
+      estimatedPrice,
+      input.budget_limit_value,
+      currency,
+      expiresAt.toISOString(),
+      JSON.stringify(data),
+      intentId
+    ) as { changes: number | bigint };
+    if (Number(updated.changes) !== 1) return { ok: false, error: { code: "GENERATION_ADMISSION_CONFLICT", message: "Generation admission reservation changed before preflight completion." } };
+  } else {
+    db.prepare(`
+      INSERT INTO generation_intents (
+        intent_id, project_id, shot_id, provider, account_label, model, input_artifact_id,
+        duration_seconds, resolution, estimated_cost_value, budget_limit_value, currency,
+        confirmed, expires_at, status, data_json, created_at, updated_at
+      ) VALUES (?, ?, ?, 'runninghub', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'prepared', ?, ?, ?)
+    `).run(
+      intentId, input.project_id, input.shot_id, input.account_label, capability.key.model, artifact.artifact.artifact_id,
+      capability.key.duration_seconds, capability.key.resolution, estimatedPrice, input.budget_limit_value, currency,
+      expiresAt.toISOString(), JSON.stringify({ input_snapshot: inputSnapshot }), createdAt.toISOString(), createdAt.toISOString()
+    );
+  }
   return { ok: true, data: { intent: getIntent(db, intentId) as WorkbenchGenerationIntent } };
 }
 
@@ -944,7 +1054,7 @@ export function confirmWorkbenchGeneration(
       db.exec("ROLLBACK");
       return { ok: false, error: { code: "DIRECTOR_AUTOMATION_BINDING_MISMATCH", message: "Director Automation Grant does not match this prepared intent." } };
     }
-    if (intent.input_snapshot.requires_human_preflight === true || intent.input_snapshot.balance_gate !== "pass") {
+    if (!isProviderExecutionAuthorized(intent)) {
       db.exec("ROLLBACK");
       return { ok: false, error: { code: "OFFICIAL_PREFLIGHT_REQUIRED", message: "Run a fresh official preflight in the human workbench before confirmation." } };
     }
@@ -967,8 +1077,8 @@ export function confirmWorkbenchGeneration(
       db.exec("ROLLBACK");
       return { ok: false, error: { code: "BUDGET_LIMIT_EXCEEDED", message: "Budget limit is below the official estimate." } };
     }
-    const active = db.prepare("SELECT intent_id FROM generation_intents WHERE status IN ('queued', 'running') LIMIT 1").get() as { intent_id: string } | undefined;
-    if (active) {
+    const conflict = generationRightConflict(db, intent.intent_id);
+    if (conflict) {
       db.exec("ROLLBACK");
       return { ok: false, error: { code: "REAL_GENERATION_ALREADY_ACTIVE", message: "Only one real generation task may run at a time." } };
     }
@@ -1071,7 +1181,15 @@ export function confirmWorkbenchGeneration(
       admission_reason_code: input.director_automation ? "DIRECTOR_GRANT_CONFIRMED" : "HUMAN_CONFIRMED"
     }, db);
     db.exec("COMMIT");
-    return { ok: true, data: committed };
+    return {
+      ok: true,
+      data: {
+        intent: committed.intent,
+        run_id: committed.run_id,
+        job_id: committed.job_id,
+        status: "queued"
+      }
+    };
   } catch (error) {
     db.exec("ROLLBACK");
     throw error;
@@ -1628,6 +1746,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
     if (!intent || (intent.status !== "queued" && intent.status !== "running")) return;
     knownTaskId = intent.provider_task_id;
     providerTaskMayExist = Boolean(knownTaskId);
+    if (!knownTaskId && !isProviderExecutionAuthorized(intent)) return;
     const failOrReconcileKnownTask = (currentIntent: WorkbenchGenerationIntent, currentJob: GenerationJob, error: ProviderToolError, reconciliationReason: string): void => {
       if (knownTaskId) {
         job = markKnownProviderTaskForReconciliation(db, currentIntent, currentJob, knownTaskId, error, leaseToken, reconciliationReason);

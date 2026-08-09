@@ -229,7 +229,7 @@ test("IS3 explicit confirm reuses the existing human gate boundary and writes on
     assert.equal(intentCount(fixture.db), 0);
     const confirmed = confirmGenerationAdmission(prepared.plan, fixture.db);
     assert.equal(confirmed.result, "CONFIRMED");
-    assert.equal(confirmed.status, "queued");
+    assert.equal(confirmed.status, "prepared");
     assert.deepEqual(Object.keys(confirmed).sort(), ["intent_id", "job_id", "result", "run_id", "status"]);
     assert.equal(intentCount(fixture.db), 1);
   } finally {
@@ -268,13 +268,12 @@ test("IS3 double confirm returns REAL_GENERATION_ALREADY_ACTIVE and keeps one in
   }
 });
 
-test("IS3 stale media is rejected before Provider construction", async () => {
+test("IS3 admission reservation is rejected before Provider construction", async () => {
   const fixture = createFixture();
   try {
     const prepared = prepareFixture(fixture);
     const confirmed = confirmGenerationAdmission(prepared.plan, fixture.db);
     assert.equal(confirmed.result, "CONFIRMED");
-    writeFileSync(fixture.imagePath, Buffer.from("stale storyboard bytes"));
     let providerCalls = 0;
     await runWorkbenchGenerationOnce(confirmed.intent_id, {
       allow_submit: true,
@@ -287,10 +286,11 @@ test("IS3 stale media is rejected before Provider construction", async () => {
       }
     });
     assert.equal(providerCalls, 0);
-    const row = fixture.db.prepare("SELECT status, sanitized_error_json FROM generation_intents WHERE intent_id = ?")
-      .get(confirmed.intent_id) as { status: string; sanitized_error_json: string };
-    assert.equal(row.status, "failed");
-    assert.equal((JSON.parse(row.sanitized_error_json) as { code: string }).code, "MEDIA_VERIFICATION_STALE");
+    const row = fixture.db.prepare("SELECT status, confirmed, run_id FROM generation_intents WHERE intent_id = ?")
+      .get(confirmed.intent_id) as { status: string; confirmed: number; run_id: string | null };
+    assert.equal(row.status, "prepared");
+    assert.equal(row.confirmed, 0);
+    assert.equal(row.run_id, null);
   } finally {
     closeFixture(fixture);
   }
