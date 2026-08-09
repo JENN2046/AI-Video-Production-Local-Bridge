@@ -523,6 +523,16 @@ type PreparedGenerationPlanRevalidation =
   | { ok: true }
   | { ok: false; message: string };
 
+type PreparedGenerationStaleError = {
+  code: "GENERATION_INTENT_INPUT_STALE" | "GENERATION_PLAN_STALE";
+  message: string;
+};
+
+type PreparedGenerationStaleTerminalization = {
+  intent: WorkbenchGenerationIntent;
+  error: PreparedGenerationStaleError;
+};
+
 function revalidatePreparedGenerationPlan(
   db: M0Database,
   intent: WorkbenchGenerationIntent
@@ -546,7 +556,71 @@ function revalidatePreparedGenerationPlan(
   return { ok: true };
 }
 
-function cancelPreparedIntentInTransaction(
+function classifyPreparedGenerationStale(
+  db: M0Database,
+  intent: WorkbenchGenerationIntent
+): PreparedGenerationStaleError | null {
+  if (!isT2AdmissionReservation(intent)) return null;
+
+  const project = getProject(db, intent.project_id);
+  const shot = getShot(db, intent.shot_id);
+  if (!project || !shot || shot.project_id !== intent.project_id) {
+    return {
+      code: "GENERATION_PLAN_STALE",
+      message: "The prepared GenerationPlan no longer matches the selected Project or SHOT."
+    };
+  }
+  const artifact = validateActiveArtifactReference(db, {
+    artifact_id: shot.storyboard_image_artifact_id,
+    project_id: intent.project_id,
+    shot_id: shot.shot_id,
+    role: "storyboard_image",
+    artifact_type: "image"
+  });
+  if (!artifact.ok) {
+    return {
+      code: "GENERATION_PLAN_STALE",
+      message: "The prepared GenerationPlan no longer matches the selected storyboard Artifact."
+    };
+  }
+  const capability = buildProviderCapabilityKey({
+    provider: "runninghub",
+    model: intent.model,
+    duration_seconds: shot.duration_seconds,
+    resolution: project.video_spec.resolution,
+    aspect_ratio: project.video_spec.aspect_ratio
+  });
+  if (!capability.ok) {
+    return {
+      code: "GENERATION_PLAN_STALE",
+      message: "The prepared GenerationPlan no longer matches the declared Provider capability."
+    };
+  }
+  if (intent.input_artifact_id !== artifact.artifact.artifact_id
+    || intent.input_snapshot.video_prompt !== shot.video_prompt
+    || intent.input_snapshot.negative_prompt !== shot.negative_prompt
+    || intent.input_snapshot.aspect_ratio !== project.video_spec.aspect_ratio
+    || intent.input_snapshot.project_resolution !== project.video_spec.resolution
+    || intent.duration_seconds !== capability.key.duration_seconds
+    || intent.resolution !== capability.key.resolution
+    || (intent.input_snapshot.capability_key !== undefined
+      && intent.input_snapshot.capability_key !== capability.key.serialized)) {
+    return {
+      code: "GENERATION_INTENT_INPUT_STALE",
+      message: "SHOT or project inputs changed after generation admission."
+    };
+  }
+  const planRevalidation = revalidatePreparedGenerationPlan(db, intent);
+  if (!planRevalidation.ok) {
+    return {
+      code: "GENERATION_PLAN_STALE",
+      message: planRevalidation.message
+    };
+  }
+  return null;
+}
+
+function terminalizePreparedIntentInTransaction(
   db: M0Database,
   intent: WorkbenchGenerationIntent,
   error: ProviderToolError | { code: string; message: string; retryable?: boolean }
@@ -557,6 +631,39 @@ function cancelPreparedIntentInTransaction(
       AND (run_id IS NULL OR run_id = '') AND provider_task_id = ''`)
     .run(JSON.stringify(sanitizedError(error)), intent.intent_id) as { changes: number | bigint };
   return Number(result.changes) === 1 ? getIntent(db, intent.intent_id) : null;
+}
+
+function terminalizeT2PreparedIntentIfStaleInTransaction(
+  db: M0Database,
+  intent: WorkbenchGenerationIntent,
+  forcedError?: PreparedGenerationStaleError
+): PreparedGenerationStaleTerminalization | null {
+  const detectedError = classifyPreparedGenerationStale(db, intent);
+  if (!detectedError) return null;
+  const error = forcedError ?? detectedError;
+  const terminalized = terminalizePreparedIntentInTransaction(db, intent, error);
+  if (!terminalized) throw new Error("GENERATION_RESERVATION_NOT_CANCELLABLE");
+  return { intent: terminalized, error };
+}
+
+function terminalizeStaleT2Reservation(
+  db: M0Database,
+  intentId: string
+): PreparedGenerationStaleTerminalization | null {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const intent = getIntent(db, intentId);
+    const terminalized = intent ? terminalizeT2PreparedIntentIfStaleInTransaction(db, intent) : null;
+    if (!terminalized) {
+      db.exec("ROLLBACK");
+      return null;
+    }
+    db.exec("COMMIT");
+    return terminalized;
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 export function generationRightConflict(
@@ -817,20 +924,34 @@ export async function preflightWorkbenchGeneration(
   db = openM0Database(),
   dependencies: WorkbenchGenerationDependencies = {}
 ): Promise<WorkbenchV2Result<{ intent: WorkbenchGenerationIntent }>> {
+  const admissionReservation = findT2AdmissionReservation(db, input.project_id, input.shot_id);
   const writable = assertWorkbenchProjectWritable(db, input.project_id);
-  if (!writable.ok) return writable;
+  if (!writable.ok) {
+    const terminalized = admissionReservation ? terminalizeStaleT2Reservation(db, admissionReservation.intent_id) : null;
+    if (terminalized) return { ok: false, error: terminalized.error };
+    return writable;
+  }
   const shot = getShot(db, input.shot_id);
-  if (!shot || shot.project_id !== input.project_id) return { ok: false, error: { code: "SHOT_NOT_FOUND", message: "SHOT does not belong to this project.", field: "shot_id" } };
+  if (!shot || shot.project_id !== input.project_id) {
+    const terminalized = admissionReservation ? terminalizeStaleT2Reservation(db, admissionReservation.intent_id) : null;
+    if (terminalized) return { ok: false, error: terminalized.error };
+    return { ok: false, error: { code: "SHOT_NOT_FOUND", message: "SHOT does not belong to this project.", field: "shot_id" } };
+  }
   if (!Number.isFinite(input.budget_limit_value) || input.budget_limit_value <= 0) {
     return { ok: false, error: { code: "BUDGET_LIMIT_REQUIRED", message: "A positive budget limit is required.", field: "budget_limit_value" } };
   }
-  const admissionReservation = findT2AdmissionReservation(db, input.project_id, input.shot_id);
   const conflict = generationRightConflict(db, admissionReservation?.intent_id ?? "");
   if (conflict) return { ok: false, error: { code: "REAL_GENERATION_ALREADY_ACTIVE", message: "Only one real generation task may run at a time." } };
   const artifact = validateActiveArtifactReference(db, {
     artifact_id: shot.storyboard_image_artifact_id, project_id: input.project_id, shot_id: shot.shot_id, role: "storyboard_image", artifact_type: "image"
   });
-  if (!artifact.ok) return { ok: false, error: artifact.error };
+  if (!artifact.ok) {
+    const terminalized = admissionReservation ? terminalizeStaleT2Reservation(db, admissionReservation.intent_id) : null;
+    if (terminalized) return { ok: false, error: terminalized.error };
+    return { ok: false, error: artifact.error };
+  }
+  const staleBeforeWorkflow = admissionReservation ? terminalizeStaleT2Reservation(db, admissionReservation.intent_id) : null;
+  if (staleBeforeWorkflow) return { ok: false, error: staleBeforeWorkflow.error };
   const workflowGate = requireShotWorkflowWriteAction(db, writable.data.project, shot, "prepare_generation");
   if (!workflowGate.ok) return { ok: false, error: workflowGate.error };
 
@@ -864,18 +985,13 @@ export async function preflightWorkbenchGeneration(
     resolution: writable.data.project.video_spec.resolution,
     aspect_ratio: writable.data.project.video_spec.aspect_ratio
   });
-  if (!capability.ok) return { ok: false, error: { code: capability.code, message: providerCapabilityErrorMessage(capability), field: capability.field } };
-  if (admissionReservation && (
-    admissionReservation.input_artifact_id !== artifact.artifact.artifact_id
-    || admissionReservation.input_snapshot.video_prompt !== shot.video_prompt
-    || admissionReservation.input_snapshot.negative_prompt !== shot.negative_prompt
-    || admissionReservation.input_snapshot.aspect_ratio !== writable.data.project.video_spec.aspect_ratio
-    || admissionReservation.input_snapshot.project_resolution !== writable.data.project.video_spec.resolution
-    || admissionReservation.duration_seconds !== capability.key.duration_seconds
-    || admissionReservation.resolution !== capability.key.resolution
-  )) {
-    return { ok: false, error: { code: "GENERATION_INTENT_INPUT_STALE", message: "SHOT or project inputs changed after generation admission." } };
+  if (!capability.ok) {
+    const terminalized = admissionReservation ? terminalizeStaleT2Reservation(db, admissionReservation.intent_id) : null;
+    if (terminalized) return { ok: false, error: terminalized.error };
+    return { ok: false, error: { code: capability.code, message: providerCapabilityErrorMessage(capability), field: capability.field } };
   }
+  const staleBeforeProvider = admissionReservation ? terminalizeStaleT2Reservation(db, admissionReservation.intent_id) : null;
+  if (staleBeforeProvider) return { ok: false, error: staleBeforeProvider.error };
   const priceCacheKey = buildProviderPriceCacheKey(capability.key, capability.capability);
   const selection = selectM1ProviderPort({ provider: "real", provider_name: "runninghub", model_name: capability.key.model, cost_acknowledged: true }, dependencies.env ?? process.env);
   if (!selection.ok) return { ok: false, error: selection.error };
@@ -1080,7 +1196,7 @@ export function cancelPreparedGenerationIntent(
       db.exec("ROLLBACK");
       return { ok: false, error: { code: "GENERATION_INTENT_NOT_CANCELLABLE", message: "Only an unpromoted prepared generation intent can be cancelled." } };
     }
-    const cancelled = cancelPreparedIntentInTransaction(db, intent, {
+    const cancelled = terminalizePreparedIntentInTransaction(db, intent, {
       code: "GENERATION_INTENT_CANCELLED",
       message: "Prepared generation reservation was explicitly cancelled."
     });
@@ -1135,13 +1251,13 @@ export function confirmWorkbenchGeneration(
     }
     const planRevalidation = revalidatePreparedGenerationPlan(db, intent);
     if (!planRevalidation.ok) {
-      const retired = cancelPreparedIntentInTransaction(db, intent, {
+      const retired = terminalizeT2PreparedIntentIfStaleInTransaction(db, intent, {
         code: "GENERATION_PLAN_STALE",
         message: planRevalidation.message
       });
       if (!retired) throw new Error("GENERATION_RESERVATION_NOT_CANCELLABLE");
       db.exec("COMMIT");
-      return { ok: false, error: { code: "GENERATION_PLAN_STALE", message: planRevalidation.message } };
+      return { ok: false, error: retired.error };
     }
     if (!isProviderExecutionAuthorized(intent)) {
       db.exec("ROLLBACK");
@@ -1193,6 +1309,12 @@ export function confirmWorkbenchGeneration(
       || writable.data.project.video_spec.aspect_ratio !== intent.input_snapshot.aspect_ratio
       || intent.input_snapshot.project_resolution === undefined
       || writable.data.project.video_spec.resolution !== intent.input_snapshot.project_resolution) {
+      if (isT2AdmissionReservation(intent)) {
+        const retired = terminalizeT2PreparedIntentIfStaleInTransaction(db, intent);
+        if (!retired) throw new Error("GENERATION_RESERVATION_NOT_CANCELLABLE");
+        db.exec("COMMIT");
+        return { ok: false, error: retired.error };
+      }
       db.exec("ROLLBACK");
       return { ok: false, error: { code: "GENERATION_INTENT_INPUT_STALE", message: "SHOT or project inputs changed after generation preflight." } };
     }

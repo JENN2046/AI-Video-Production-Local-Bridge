@@ -375,6 +375,177 @@ test("P1 existing preflight upgrades the same T2 reservation and execution submi
   }
 });
 
+test("P1 preflight terminalizes stale SHOT and project inputs before returning", async () => {
+  for (const drift of ["shot", "project"] as const) {
+    const fixture = createFixture();
+    try {
+      const { confirmed: admitted } = confirmT2Fixture(fixture);
+      if (drift === "shot") {
+        const row = fixture.db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(SHOT_ID) as { data_json: string };
+        const shot = JSON.parse(row.data_json) as Shot;
+        shot.video_prompt = "A preflight-drifted prompt.";
+        fixture.db.prepare("UPDATE shots SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE shot_id = ?")
+          .run(JSON.stringify(shot), SHOT_ID);
+      } else {
+        const row = fixture.db.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(PROJECT_ID) as { data_json: string };
+        const project = JSON.parse(row.data_json) as Project;
+        project.video_spec.resolution = "720p";
+        saveProject(fixture.db, project);
+      }
+      const counters = { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 };
+      const preflight = await preflightWorkbenchGeneration({
+        project_id: PROJECT_ID,
+        shot_id: SHOT_ID,
+        account_label: "personal",
+        budget_limit_value: 10
+      }, fixture.db, fixtureExecutionDependencies(fixture, counters));
+      assert.equal(preflight.ok, false, drift);
+      if (preflight.ok) throw new Error(`${drift} drift unexpectedly passed preflight`);
+      assert.equal(preflight.error.code, "GENERATION_INTENT_INPUT_STALE", drift);
+      const row = fixture.db.prepare("SELECT status, confirmed, sanitized_error_json, data_json FROM generation_intents WHERE intent_id = ?")
+        .get(admitted.data.intent.intent_id) as { status: string; confirmed: number; sanitized_error_json: string; data_json: string };
+      assert.deepEqual({ status: row.status, confirmed: row.confirmed }, { status: "cancelled", confirmed: 0 }, drift);
+      assert.equal((JSON.parse(row.sanitized_error_json) as { code?: string }).code, "GENERATION_INTENT_INPUT_STALE", drift);
+      assert.equal((JSON.parse(row.data_json) as { generation_plan?: { schema_version?: string } }).generation_plan?.schema_version, "generation_plan.v1", drift);
+      assert.equal(generationRightConflict(fixture.db), null, drift);
+      assert.deepEqual(counters, { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 }, drift);
+    } finally {
+      closeFixture(fixture);
+    }
+  }
+});
+
+test("P1 package, Artifact, and Provider capability drift before preflight terminalize the same reservation", async () => {
+  for (const drift of ["package", "artifact", "capability"] as const) {
+    const fixture = createFixture();
+    try {
+      const { confirmed: admitted } = confirmT2Fixture(fixture);
+      if (drift === "package") {
+        const row = fixture.db.prepare("SELECT data_json FROM storyboard_packages WHERE storyboard_package_id = ?").get(PACKAGE_ID) as { data_json: string };
+        const storyboardPackage = JSON.parse(row.data_json) as { approved_shot_snapshots: Array<{ video_prompt: string }> };
+        storyboardPackage.approved_shot_snapshots[0].video_prompt = "A package-drifted frozen prompt.";
+        fixture.db.prepare("UPDATE storyboard_packages SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE storyboard_package_id = ?")
+          .run(JSON.stringify(storyboardPackage), PACKAGE_ID);
+      } else if (drift === "artifact") {
+        const row = fixture.db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = ?").get(ARTIFACT_ID) as { data_json: string };
+        const artifact = JSON.parse(row.data_json) as { linked_objects: { shot_id: string } };
+        artifact.linked_objects.shot_id = "other_preflight_shot";
+        fixture.db.prepare("UPDATE media_artifacts SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE artifact_id = ?")
+          .run(JSON.stringify(artifact), ARTIFACT_ID);
+      } else {
+        const row = fixture.db.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(PROJECT_ID) as { data_json: string };
+        const project = JSON.parse(row.data_json) as Project;
+        project.video_spec.resolution = "720p";
+        saveProject(fixture.db, project);
+      }
+      const counters = { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 };
+      const preflight = await preflightWorkbenchGeneration({
+        project_id: PROJECT_ID,
+        shot_id: SHOT_ID,
+        account_label: "personal",
+        budget_limit_value: 10
+      }, fixture.db, fixtureExecutionDependencies(fixture, counters));
+      assert.equal(preflight.ok, false, drift);
+      if (preflight.ok) throw new Error(`${drift} drift unexpectedly passed preflight`);
+      assert.equal(preflight.error.code, drift === "capability" ? "GENERATION_INTENT_INPUT_STALE" : "GENERATION_PLAN_STALE", drift);
+      const row = fixture.db.prepare("SELECT status, sanitized_error_json FROM generation_intents WHERE intent_id = ?")
+        .get(admitted.data.intent.intent_id) as { status: string; sanitized_error_json: string };
+      assert.equal(row.status, "cancelled", drift);
+      assert.equal((JSON.parse(row.sanitized_error_json) as { code?: string }).code, preflight.error.code, drift);
+      assert.equal(generationRightConflict(fixture.db), null, drift);
+      assert.deepEqual(counters, { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 }, drift);
+    } finally {
+      closeFixture(fixture);
+    }
+  }
+});
+
+test("P1 preflight stale remains historical across restart and requires a new prepare/confirm", async () => {
+  const fixture = createFixture();
+  try {
+    const { confirmed: admitted } = confirmT2Fixture(fixture);
+    const shotRow = fixture.db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(SHOT_ID) as { data_json: string };
+    const shot = JSON.parse(shotRow.data_json) as Shot;
+    shot.video_prompt = "A restart-safe replacement prompt.";
+    fixture.db.prepare("UPDATE shots SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE shot_id = ?")
+      .run(JSON.stringify(shot), SHOT_ID);
+    const preflight = await preflightWorkbenchGeneration({
+      project_id: PROJECT_ID,
+      shot_id: SHOT_ID,
+      account_label: "personal",
+      budget_limit_value: 10
+    }, fixture.db, fixtureExecutionDependencies(fixture, { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 }));
+    assert.equal(preflight.ok, false);
+    if (preflight.ok) throw new Error("stale reservation unexpectedly passed preflight");
+    assert.equal(preflight.error.code, "GENERATION_INTENT_INPUT_STALE");
+    assert.equal(intentCount(fixture.db), 1);
+    assert.equal(generationRightConflict(fixture.db), null);
+
+    const packageRow = fixture.db.prepare("SELECT data_json FROM storyboard_packages WHERE storyboard_package_id = ?").get(PACKAGE_ID) as { data_json: string };
+    const storyboardPackage = JSON.parse(packageRow.data_json) as { approved_shot_snapshots: Array<{ video_prompt: string }> };
+    storyboardPackage.approved_shot_snapshots[0].video_prompt = shot.video_prompt;
+    fixture.db.prepare("UPDATE storyboard_packages SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE storyboard_package_id = ?")
+      .run(JSON.stringify(storyboardPackage), PACKAGE_ID);
+
+    const restartedDb = new DatabaseSync(fixture.sqlitePath);
+    try {
+      restartedDb.exec("PRAGMA foreign_keys = ON");
+      assert.equal(generationRightConflict(restartedDb), null);
+      const replacementPrepared = prepareGeneration({ project_id: PROJECT_ID, shot_id: SHOT_ID }, restartedDb);
+      if (!replacementPrepared.ok) throw new Error(replacementPrepared.error.code);
+      assert.equal(replacementPrepared.ok, true);
+      const replacement = confirmGeneration(replacementPrepared.data.plan, restartedDb);
+      if (!replacement.ok) throw new Error(replacement.error.code);
+      assert.equal(replacement.ok, true);
+      assert.notEqual(replacement.data.intent.intent_id, admitted.data.intent.intent_id);
+      assert.equal(intentCount(restartedDb), 2);
+      const rows = restartedDb.prepare("SELECT intent_id, status FROM generation_intents ORDER BY created_at, intent_id").all() as Array<{ intent_id: string; status: string }>;
+      assert.equal(rows.find((row) => row.intent_id === admitted.data.intent.intent_id)?.status, "cancelled");
+      assert.equal(rows.find((row) => row.intent_id === replacement.data.intent.intent_id)?.status, "prepared");
+      assert.equal(generationRightConflict(restartedDb)?.intent_id, replacement.data.intent.intent_id);
+    } finally {
+      restartedDb.close();
+    }
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
+test("P1 non-stale balance and transient preflight failures retain the prepared generation right", async () => {
+  for (const failure of ["balance", "transient"] as const) {
+    const fixture = createFixture();
+    try {
+      const { confirmed: admitted } = confirmT2Fixture(fixture);
+      const counters = { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 };
+      const dependencies: WorkbenchGenerationDependencies = fixtureExecutionDependencies(fixture, counters);
+      dependencies.fetch_impl = async (input) => {
+        counters.preflight_requests += 1;
+        if (failure === "transient") throw new Error("fixture transient preflight failure");
+        const url = String(input);
+        return url.endsWith("/uc/openapi/accountStatus")
+          ? new Response(JSON.stringify({ data: { currency: "CNY", remainMoney: 0, remainCoins: 0 } }), { status: 200 })
+          : new Response(JSON.stringify({ estimatedPrice: 1, currency: "CNY" }), { status: 200 });
+      };
+      const preflight = await preflightWorkbenchGeneration({
+        project_id: PROJECT_ID,
+        shot_id: SHOT_ID,
+        account_label: "personal",
+        budget_limit_value: 10
+      }, fixture.db, dependencies);
+      assert.equal(preflight.ok, false, failure);
+      if (preflight.ok) throw new Error(`${failure} preflight unexpectedly passed`);
+      assert.equal(preflight.error.code, failure === "balance" ? "BALANCE_GATE_UNKNOWN_OR_INSUFFICIENT" : "PROVIDER_REQUEST_FAILED", failure);
+      const row = fixture.db.prepare("SELECT status, confirmed FROM generation_intents WHERE intent_id = ?")
+        .get(admitted.data.intent.intent_id) as { status: string; confirmed: number };
+      assert.deepEqual({ status: row.status, confirmed: row.confirmed }, { status: "prepared", confirmed: 0 }, failure);
+      assert.equal(generationRightConflict(fixture.db)?.intent_id, admitted.data.intent.intent_id, failure);
+      assert.equal(counters.provider_submits, 0, failure);
+    } finally {
+      closeFixture(fixture);
+    }
+  }
+});
+
 test("P1 promotion retires shot, package, and persisted Artifact drift as a stale reservation", async () => {
   for (const drift of ["shot", "package", "artifact"] as const) {
     const fixture = createFixture();
