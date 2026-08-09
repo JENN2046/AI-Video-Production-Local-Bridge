@@ -21,6 +21,9 @@ import {
   runWorkbenchGenerationOnce,
   type WorkbenchGenerationDependencies
 } from "../src/tools/workbenchGeneration.js";
+import { getStoryboardPackage } from "../src/tools/storyboardPackages.js";
+import { readGenerationAdmissionFacts } from "../src/tools/s3bT2AdmissionFacts.js";
+import { evaluateGenerationAdmission } from "../src/tools/s3bT2AdmissionEvaluate.js";
 
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 const PROJECT_ID = "project_is2_5_fixture";
@@ -780,5 +783,153 @@ test("P1 post-preflight media revalidation blocks Provider construction", async 
     assert.equal((JSON.parse(row.sanitized_error_json) as { code?: string }).code, "MEDIA_VERIFICATION_STALE");
   } finally {
     closeFixture(fixture);
+  }
+});
+
+type AuthorityFactsFixture = { root: string; db: DatabaseSync };
+
+function createAuthorityFactsFixture(packageSnapshots: unknown[]): AuthorityFactsFixture {
+  const root = mkdtempSync(join(tmpdir(), "t2-authority-admission-"));
+  const dataRoot = join(root, "data");
+  mkdirSync(dataRoot, { recursive: true });
+  const sqlitePath = join(dataRoot, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = new DatabaseSync(sqlitePath);
+  const project: Project = {
+    project_id: "p1",
+    title: "Authority facts fixture",
+    project_type: "m0_video_loop",
+    status: "storyboard_approved",
+    brief: {},
+    video_spec: { duration_seconds: 15, aspect_ratio: "9:16", resolution: "480p" },
+    shot_ids: ["s1", "s2", "s3"],
+    active_storyboard_package_id: "pkg1",
+    generation_batch_ids: [],
+    exports: { final_video_artifact_id: "" }
+  };
+  saveProject(db, project);
+  db.prepare("UPDATE workbench_project_meta SET classification = 'production', lifecycle = 'active' WHERE project_id = ?").run("p1");
+  for (const [index, shotId] of ["s1", "s2", "s3"].entries()) {
+    const shot: Shot = {
+      shot_id: shotId,
+      project_id: "p1",
+      order: index + 1,
+      status: "storyboard_approved",
+      duration_seconds: 6,
+      description: `Shot ${shotId}`,
+      storyboard_image_artifact_id: `a${index + 1}`,
+      video_prompt: `prompt-${shotId}`,
+      negative_prompt: "",
+      generation_run_ids: [],
+      accepted_clip_artifact_id: "",
+      clip_versions: [],
+      review: { approval_status: "pending", rejection_reasons: [], latest_revision_instruction: null }
+    };
+    saveShot(db, shot);
+  }
+  db.prepare("INSERT INTO storyboard_packages (storyboard_package_id, project_id, data_json) VALUES (?, ?, ?)")
+    .run("pkg1", "p1", JSON.stringify({
+      storyboard_package_id: "pkg1",
+      project_id: "p1",
+      status: "approved_for_video_generation",
+      approved_shot_snapshots: packageSnapshots,
+      user_approval: { storyboard_approved: true }
+    }));
+  return { root, db };
+}
+
+function closeAuthorityFactsFixture(fixture: AuthorityFactsFixture): void {
+  fixture.db.close();
+  rmSync(fixture.root, { recursive: true, force: true });
+}
+
+test("storyboard package relational identity drift fails closed at the canonical loader", () => {
+  const root = mkdtempSync(join(tmpdir(), "t2-authority-package-"));
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = new DatabaseSync(sqlitePath);
+  try {
+    db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)").run("p1", JSON.stringify({ project_id: "p1" }));
+    db.prepare("INSERT INTO storyboard_packages (storyboard_package_id, project_id, data_json) VALUES (?, ?, ?)")
+      .run("pkg_record", "p1", JSON.stringify({ storyboard_package_id: "pkg_json", project_id: "p1" }));
+    assert.equal(getStoryboardPackage(db, "pkg_record"), null);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("product admission facts reject duplicate/missing collection while preserving valid collection", () => {
+  const validSnapshots = [
+    { shot_id: "s1", order: 1, duration_seconds: 6, storyboard_image_artifact_id: "a1", video_prompt: "prompt-s1" },
+    { shot_id: "s2", order: 2, duration_seconds: 6, storyboard_image_artifact_id: "a2", video_prompt: "prompt-s2" },
+    { shot_id: "s3", order: 3, duration_seconds: 6, storyboard_image_artifact_id: "a3", video_prompt: "prompt-s3" }
+  ];
+  const valid = createAuthorityFactsFixture(validSnapshots);
+  try {
+    const read = readGenerationAdmissionFacts(valid.db, "p1", "s1", { verify_media: false });
+    assert.equal(read.ok, true);
+    if (read.ok) {
+      assert.equal(read.facts.package.snapshot_collection_complete, true);
+      assert.equal(read.facts.package.snapshot_ambiguous, false);
+      assert.equal(evaluateGenerationAdmission(read.facts).state, "INELIGIBLE");
+    }
+  } finally {
+    closeAuthorityFactsFixture(valid);
+  }
+
+  const invalid = createAuthorityFactsFixture([validSnapshots[0], validSnapshots[1], validSnapshots[1]]);
+  try {
+    const read = readGenerationAdmissionFacts(invalid.db, "p1", "s1", { verify_media: false });
+    assert.equal(read.ok, true);
+    if (read.ok) {
+      assert.equal(read.facts.package.snapshot_collection_complete, false);
+      assert.equal(read.facts.package.selected_snapshot, null);
+      const decision = evaluateGenerationAdmission(read.facts);
+      assert.equal(decision.state, "INELIGIBLE");
+      assert.equal(decision.reason_code_counts.PACKAGE_SNAPSHOT_MISMATCH, 1);
+    }
+  } finally {
+    closeAuthorityFactsFixture(invalid);
+  }
+});
+
+test("product admission facts reject package identity drift before eligibility", () => {
+  const fixture = createAuthorityFactsFixture([
+    { shot_id: "s1", order: 1, duration_seconds: 6, storyboard_image_artifact_id: "a1", video_prompt: "prompt-s1" },
+    { shot_id: "s2", order: 2, duration_seconds: 6, storyboard_image_artifact_id: "a2", video_prompt: "prompt-s2" },
+    { shot_id: "s3", order: 3, duration_seconds: 6, storyboard_image_artifact_id: "a3", video_prompt: "prompt-s3" }
+  ]);
+  try {
+    fixture.db.prepare("UPDATE storyboard_packages SET data_json = ? WHERE storyboard_package_id = ?")
+      .run(JSON.stringify({ storyboard_package_id: "pkg_other", project_id: "p1", status: "approved_for_video_generation", approved_shot_snapshots: [], user_approval: { storyboard_approved: true } }), "pkg1");
+    const read = readGenerationAdmissionFacts(fixture.db, "p1", "s1", { verify_media: false });
+    assert.equal(read.ok, true);
+    if (read.ok) {
+      const decision = evaluateGenerationAdmission(read.facts);
+      assert.equal(decision.state, "INELIGIBLE");
+      assert.equal(decision.reason_code_counts.PACKAGE_NOT_FOUND, 1);
+    }
+  } finally {
+    closeAuthorityFactsFixture(fixture);
+  }
+});
+
+test("product admission facts preserve valid legacy order fallback", () => {
+  const fixture = createAuthorityFactsFixture([
+    { order: 1, duration_seconds: 6, storyboard_image_artifact_id: "a1", video_prompt: "prompt-s1" },
+    { order: 2, duration_seconds: 6, storyboard_image_artifact_id: "a2", video_prompt: "prompt-s2" },
+    { order: 3, duration_seconds: 6, storyboard_image_artifact_id: "a3", video_prompt: "prompt-s3" }
+  ]);
+  try {
+    const read = readGenerationAdmissionFacts(fixture.db, "p1", "s1", { verify_media: false });
+    assert.equal(read.ok, true);
+    if (read.ok) {
+      assert.equal(read.facts.package.snapshot_collection_complete, true);
+      assert.equal(read.facts.package.match_mode, "order");
+      assert.equal(read.facts.package.selected_snapshot?.order, 1);
+    }
+  } finally {
+    closeAuthorityFactsFixture(fixture);
   }
 });

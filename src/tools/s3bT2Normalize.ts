@@ -148,7 +148,38 @@ function normalizeShots(raw: T2RawSnapshot, issues: T2NormalizationIssue[]): Map
   return result;
 }
 
-function normalizePackage(raw: T2DatabaseRow, issues: T2NormalizationIssue[]): T2NormalizedPackage | null {
+export function packageSnapshotCollectionCoversProject(
+  snapshots: readonly { shot_id?: string; order: number }[],
+  projectShots: readonly { shot_id: string; order: number }[]
+): boolean {
+  if (snapshots.length !== projectShots.length) return false;
+
+  const snapshotWithIds = snapshots.filter((snapshot) => snapshot.shot_id !== undefined);
+  if (snapshotWithIds.length > 0) {
+    if (snapshotWithIds.length !== snapshots.length) return false;
+    const snapshotIds = snapshotWithIds.map((snapshot) => snapshot.shot_id as string);
+    const projectIds = projectShots.map((shot) => shot.shot_id);
+    const projectIdSet = new Set(projectIds);
+    return projectIdSet.size === projectIds.length
+      && new Set(snapshotIds).size === snapshotIds.length
+      && snapshotIds.every((shotId) => projectIdSet.has(shotId))
+      && snapshotIds.length === projectIds.length;
+  }
+
+  const snapshotOrders = snapshots.map((snapshot) => snapshot.order);
+  const projectOrders = projectShots.map((shot) => shot.order);
+  const projectOrderSet = new Set(projectOrders);
+  return projectOrderSet.size === projectOrders.length
+    && new Set(snapshotOrders).size === snapshotOrders.length
+    && snapshotOrders.every((order) => projectOrderSet.has(order))
+    && snapshotOrders.length === projectOrders.length;
+}
+
+function normalizePackage(
+  raw: T2DatabaseRow,
+  issues: T2NormalizationIssue[],
+  projectShots: readonly T2NormalizedShot[]
+): T2NormalizedPackage | null {
   const relationId = relationString(raw, "storyboard_package_id");
   const relationProjectId = relationString(raw, "project_id");
   const value = parseObject(raw.data_json);
@@ -178,13 +209,21 @@ function normalizePackage(raw: T2DatabaseRow, issues: T2NormalizationIssue[]): T
       negative_prompt: snapshot.negative_prompt == null ? "" : snapshot.negative_prompt
     });
   }
+  if (!packageSnapshotCollectionCoversProject(normalized, projectShots.filter((shot) => shot.project_id === relationProjectId))) {
+    issue(issues, "PACKAGE_INVALID", "package", relationId);
+    return null;
+  }
   return { storyboard_package_id: relationId, project_id: relationProjectId, status: value.status, approved_shot_snapshots: normalized, storyboard_approved: true };
 }
 
-function normalizePackages(raw: T2RawSnapshot, issues: T2NormalizationIssue[]): Map<string, T2NormalizedPackage> {
+function normalizePackages(
+  raw: T2RawSnapshot,
+  issues: T2NormalizationIssue[],
+  projectShots: readonly T2NormalizedShot[]
+): Map<string, T2NormalizedPackage> {
   const result = new Map<string, T2NormalizedPackage>();
   for (const row of raw.rowsets.storyboard_packages) {
-    const pkg = normalizePackage(row, issues);
+    const pkg = normalizePackage(row, issues, projectShots);
     if (pkg) result.set(pkg.storyboard_package_id, pkg);
   }
   return result;
@@ -251,13 +290,18 @@ function normalizeBlobs(raw: T2RawSnapshot, issues: T2NormalizationIssue[]): Map
   return result;
 }
 
-function normalizeArtifactBlobLinks(raw: T2RawSnapshot, issues: T2NormalizationIssue[]): Map<string, string> {
+function normalizeArtifactBlobLinks(
+  raw: T2RawSnapshot,
+  issues: T2NormalizationIssue[],
+  invalidArtifactIds: Set<string>
+): Map<string, string> {
   const result = new Map<string, string>();
   for (const row of raw.rowsets.media_artifact_blobs) {
     const artifactId = relationString(row, "artifact_id");
     const blobId = relationString(row, "blob_id");
     if (!artifactId || !blobId || result.has(artifactId)) {
       issue(issues, "ARTIFACT_BLOB_BINDING_INVALID", "relation", artifactId ?? undefined);
+      if (artifactId) invalidArtifactIds.add(artifactId);
       continue;
     }
     result.set(artifactId, blobId);
@@ -326,14 +370,19 @@ export function normalizeT2RawSnapshot(raw: T2RawSnapshot): T2NormalizedSnapshot
   const projects = normalizeProjects(raw, issues);
   const project_meta = normalizeProjectMeta(raw, issues);
   const shots = normalizeShots(raw, issues);
-  const packages = normalizePackages(raw, issues);
+  const packages = normalizePackages(raw, issues, [...shots.values()]);
   const artifacts = normalizeArtifacts(raw, issues);
   const blobs = normalizeBlobs(raw, issues);
-  const artifact_blob_links = normalizeArtifactBlobLinks(raw, issues);
+  const invalidArtifactIds = new Set<string>();
+  const artifact_blob_links = normalizeArtifactBlobLinks(raw, issues, invalidArtifactIds);
   for (const [artifactId, artifact] of artifacts) {
     const linkedBlob = artifact_blob_links.get(artifactId);
-    if (!linkedBlob || (artifact.blob_id && artifact.blob_id !== linkedBlob) || !blobs.has(linkedBlob)) issue(issues, "ARTIFACT_BLOB_BINDING_INVALID", "relation", artifactId);
-    else artifact.blob_id = linkedBlob;
+    if (invalidArtifactIds.has(artifactId) || !linkedBlob || (artifact.blob_id && artifact.blob_id !== linkedBlob) || !blobs.has(linkedBlob)) {
+      issue(issues, "ARTIFACT_BLOB_BINDING_INVALID", "relation", artifactId);
+      artifacts.delete(artifactId);
+    } else {
+      artifact.blob_id = linkedBlob;
+    }
   }
   const generation = normalizeGeneration(raw, issues);
   return {

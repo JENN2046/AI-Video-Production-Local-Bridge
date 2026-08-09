@@ -2230,6 +2230,7 @@ export function getMediaArtifact(db: M0Database, artifactId: string): MediaArtif
   ) {
     throw new ArtifactStructuredDriftError(artifactId);
   }
+  artifact.blob_id = row.blob_id ?? "";
   return artifact;
 }
 

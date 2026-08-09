@@ -13,7 +13,7 @@ import { getProject, getShot, listProjectShots, type Project, type Shot } from "
 import { buildProviderCapabilityKey } from "./providerCapabilities.js";
 import { RUNNINGHUB_MODEL_ROUTE } from "./videoProviderAdapters.js";
 import { getStoryboardPackage, type StoryboardPackage } from "./storyboardPackages.js";
-import { parseCanonicalClipVersion } from "./s3bT2Normalize.js";
+import { packageSnapshotCollectionCoversProject, parseCanonicalClipVersion } from "./s3bT2Normalize.js";
 import { collectT2GovernedMediaEvidence } from "./s3bT2MediaEvidence.js";
 import type {
   GenerationAdmissionArtifactFacts,
@@ -121,7 +121,7 @@ function packageFacts(
   project: Project,
   shot: Shot,
   storyboardPackage: StoryboardPackage | null,
-  projectShotCount: number
+  projectShots: readonly Pick<Shot, "shot_id" | "order">[]
 ): GenerationAdmissionPackageFacts {
   if (!storyboardPackage) {
     return {
@@ -130,7 +130,7 @@ function packageFacts(
       status: "",
       storyboard_approved: false,
       snapshot_count: 0,
-      project_shot_count: projectShotCount,
+      project_shot_count: projectShots.length,
       snapshot_collection_complete: false,
       snapshot_ambiguous: false,
       selected_snapshot: null,
@@ -149,7 +149,9 @@ function packageFacts(
   const orderMatches = normalized.filter((snapshot) => snapshot.order === shot.order);
   const useExplicit = withShotId.length > 0;
   const matches = useExplicit ? explicitMatches : orderMatches;
-  const snapshotAmbiguous = malformed
+  const snapshotCollectionComplete = !malformed && packageSnapshotCollectionCoversProject(normalized, projectShots);
+  const snapshotAmbiguous = !snapshotCollectionComplete
+    || malformed
     || matches.length !== 1
     || (!useExplicit && orderMatches.length > 1)
     || (useExplicit && withShotId.filter((snapshot) => snapshot.shot_id === shot.shot_id).length > 1);
@@ -162,8 +164,8 @@ function packageFacts(
       && typeof (storyboardPackage as unknown as Record<string, unknown>).user_approval === "object"
       && ((storyboardPackage as unknown as Record<string, unknown>).user_approval as Record<string, unknown>).storyboard_approved === true),
     snapshot_count: rawSnapshots.length,
-    project_shot_count: projectShotCount,
-    snapshot_collection_complete: !malformed && rawSnapshots.length === projectShotCount,
+    project_shot_count: projectShots.length,
+    snapshot_collection_complete: snapshotCollectionComplete,
     snapshot_ambiguous: snapshotAmbiguous,
     selected_snapshot: snapshotAmbiguous ? null : matches[0],
     match_mode: snapshotAmbiguous ? null : (useExplicit ? "shot_id" : "order")
@@ -396,7 +398,7 @@ export function readGenerationAdmissionFacts(
     const facts: GenerationAdmissionFacts = {
       project: projectFacts(db, project),
       shot: shotFacts(shot, operational),
-      package: packageFacts(project, shot, packageValue, projectShots.length),
+      package: packageFacts(project, shot, packageValue, projectShots),
       media,
       generation: generationFacts(db, project.project_id, shot.shot_id),
       provider: providerFacts(project, shot)
