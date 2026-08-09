@@ -222,6 +222,40 @@ test("IS3 multiple eligible candidates block without an executable plan", () => 
   }
 });
 
+test("IS3 project and global enumeration failures return one canonical low-disclosure BLOCKED result", () => {
+  const fixture = createFixture();
+  try {
+    const validProject = prepareGenerationAdmission({ project_id: BASE.project_id }, fixture.db);
+    assert.equal(validProject.result, "READY");
+    const explicitShot = prepareGenerationAdmission({ project_id: BASE.project_id, shot_id: BASE.shot_id }, fixture.db);
+    assert.equal(explicitShot.result, "READY");
+
+    // The production index normally rejects malformed JSON on write. Dropping
+    // it in this isolated fixture models a legacy/corrupted persisted row so
+    // the read boundary itself can be exercised.
+    fixture.db.exec("DROP INDEX idx_shots_project_order");
+    fixture.db.prepare("INSERT INTO shots (shot_id, project_id, data_json) VALUES (?, ?, ?)")
+      .run("shot_is3_malformed", BASE.project_id, "{malformed-shot-json");
+    const before = totalChanges(fixture.db);
+    for (const input of [{ project_id: BASE.project_id }, {}]) {
+      const prepared = prepareGenerationAdmission(input, fixture.db);
+      assert.equal(prepared.result, "BLOCKED");
+      assert.deepEqual(prepared.projection, {
+        result: "BLOCKED",
+        candidate_count: 0,
+        reason_codes: ["GENERATION_ADMISSION_FACTS_UNAVAILABLE"]
+      });
+      assert.equal("plan" in prepared, false);
+      const serialized = JSON.stringify(prepared);
+      assert.doesNotMatch(serialized, /malformed|SQL|JSON|stack|[A-Za-z]:\\|\/tmp\/|sha256|hash/i);
+    }
+    assert.equal(intentCount(fixture.db), 0);
+    assert.equal(totalChanges(fixture.db), before);
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
 test("IS3 explicit confirm reuses the existing human gate boundary and writes one canonical intent", () => {
   const fixture = createFixture();
   try {

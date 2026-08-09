@@ -63,19 +63,25 @@ function candidateShots(db: M0Database, input: PrepareGenerationInput): Array<{ 
     const row = db.prepare("SELECT project_id FROM shots WHERE shot_id = ?").get(input.shot_id) as { project_id?: string } | undefined;
     return row?.project_id ? [{ project_id: row.project_id, shot_id: input.shot_id }] : [];
   }
-  return listGenerationAdmissionProjectIds(db).flatMap((projectId) => {
-    try {
-      return listProjectShots(db, projectId).map((shot) => ({ project_id: projectId, shot_id: shot.shot_id }));
-    } catch {
-      return [];
-    }
-  });
+  return listGenerationAdmissionProjectIds(db).flatMap((projectId) =>
+    listProjectShots(db, projectId).map((shot) => ({ project_id: projectId, shot_id: shot.shot_id }))
+  );
 }
 
 function readCandidates(db: M0Database, input: PrepareGenerationInput): CandidateRead {
   const candidates: Candidate[] = [];
   const reasonCodes = new Set<string>();
-  for (const target of candidateShots(db, input)) {
+  let targets: ReturnType<typeof candidateShots>;
+  try {
+    targets = candidateShots(db, input);
+  } catch {
+    return {
+      candidates,
+      candidate_count: 0,
+      reason_codes: ["GENERATION_ADMISSION_FACTS_UNAVAILABLE"]
+    };
+  }
+  for (const target of targets) {
     const read = readGenerationAdmissionFacts(db, target.project_id, target.shot_id);
     if (!read.ok) {
       reasonCodes.add(read.error.code);

@@ -2192,19 +2192,23 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       return;
     }
     if (intent.generation_plan_invalid) {
-      failIntent(
-        db,
+      failOrReconcileKnownTask(
         intent,
-        "failed",
+        job,
         providerError("GENERATION_PLAN_STALE", "The confirmed GenerationPlan binding is invalid."),
-        leaseToken
+        "GENERATION_PLAN_REQUIRES_RECONCILIATION"
       );
       return;
     }
     if (intent.generation_plan) {
       const mediaGuard = revalidateGenerationPlanMedia(intent.generation_plan, db);
       if (!mediaGuard.ok) {
-        failIntent(db, intent, "failed", providerError(mediaGuard.code, mediaGuard.message), leaseToken);
+        failOrReconcileKnownTask(
+          intent,
+          job,
+          providerError(mediaGuard.code, mediaGuard.message),
+          "GENERATION_PLAN_REQUIRES_RECONCILIATION"
+        );
         return;
       }
     }

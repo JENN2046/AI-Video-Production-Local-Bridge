@@ -957,6 +957,82 @@ test("P1 post-preflight media revalidation blocks Provider construction", async 
   }
 });
 
+test("P1 known Provider task keeps ownership across every GenerationPlan validation failure", async () => {
+  const variants = ["invalid_plan", "media_drift"] as const;
+  for (const variant of variants) {
+    const fixture = createFixture();
+    try {
+      const { confirmed: admitted } = confirmT2Fixture(fixture);
+      const counters = { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 };
+      const dependencies = fixtureExecutionDependencies(fixture, counters);
+      const preflight = await preflightWorkbenchGeneration({
+        project_id: PROJECT_ID,
+        shot_id: SHOT_ID,
+        account_label: "personal",
+        budget_limit_value: 10
+      }, fixture.db, dependencies);
+      if (!preflight.ok) throw new Error(preflight.error.code);
+      const workbenchConfirmation = confirmWorkbenchGeneration({
+        intent_id: admitted.data.intent.intent_id,
+        budget_limit_value: 10,
+        cost_confirmed: true,
+        human_confirmation: true
+      }, fixture.db, dependencies);
+      if (!workbenchConfirmation.ok) throw new Error(workbenchConfirmation.error.code);
+
+      const taskId = `known-task-${variant}`;
+      const intentRow = fixture.db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+        .get(admitted.data.intent.intent_id) as { data_json: string };
+      const intentData = JSON.parse(intentRow.data_json) as Record<string, unknown>;
+      const pollStartedAt = Date.now();
+      intentData.provider_poll_started_at = new Date(pollStartedAt).toISOString();
+      intentData.provider_poll_timeout_ms = 1_000;
+      intentData.provider_poll_deadline_at = new Date(pollStartedAt + 1_000).toISOString();
+      if (variant === "invalid_plan") {
+        intentData.generation_plan = { schema_version: "generation_plan.v1" };
+      } else {
+        writeFileSync(fixture.imagePath, Buffer.from("known-task-media-drift"));
+      }
+      fixture.db.prepare("UPDATE generation_intents SET provider_task_id = ?, status = 'running', data_json = ? WHERE intent_id = ?")
+        .run(taskId, JSON.stringify(intentData), admitted.data.intent.intent_id);
+      fixture.db.prepare("UPDATE generation_jobs SET state = 'polling' WHERE job_id = ?")
+        .run(workbenchConfirmation.data.job_id);
+
+      await runWorkbenchGenerationOnce(admitted.data.intent.intent_id, {
+        allow_submit: false,
+        dependencies
+      });
+
+      const intent = fixture.db.prepare("SELECT status, provider_task_id, sanitized_error_json FROM generation_intents WHERE intent_id = ?")
+        .get(admitted.data.intent.intent_id) as { status: string; provider_task_id: string; sanitized_error_json: string };
+      const job = fixture.db.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+        .get(workbenchConfirmation.data.job_id) as { state: string; reconciliation_reason: string };
+      assert.equal(intent.status, "running", variant);
+      assert.equal(intent.provider_task_id, taskId, variant);
+      assert.equal(
+        (JSON.parse(intent.sanitized_error_json) as { code?: string }).code,
+        variant === "invalid_plan" ? "GENERATION_PLAN_STALE" : "MEDIA_VERIFICATION_STALE",
+        variant
+      );
+      assert.deepEqual(
+        { ...job },
+        { state: "manual_reconciliation", reconciliation_reason: "GENERATION_PLAN_REQUIRES_RECONCILIATION" },
+        variant
+      );
+      assert.equal(generationRightConflict(fixture.db)?.intent_id, admitted.data.intent.intent_id, variant);
+      assert.deepEqual(counters, { preflight_requests: 2, adapter_constructs: 0, provider_submits: 0 }, variant);
+
+      await runWorkbenchGenerationOnce(admitted.data.intent.intent_id, {
+        allow_submit: true,
+        dependencies
+      });
+      assert.deepEqual(counters, { preflight_requests: 2, adapter_constructs: 0, provider_submits: 0 }, `${variant}: no duplicate submit`);
+    } finally {
+      closeFixture(fixture);
+    }
+  }
+});
+
 type AuthorityFactsFixture = { root: string; db: DatabaseSync };
 
 function createAuthorityFactsFixture(packageSnapshots: unknown[]): AuthorityFactsFixture {
