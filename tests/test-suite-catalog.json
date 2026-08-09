@@ -54,6 +54,13 @@
       "paths": ["tests/s3b-t2-is2_5.test.ts"]
     },
     {
+      "id": "s3b-t2-is3-admission-surface",
+      "classification": "mandatory",
+      "npm_script": "test:s3b:t2:is3",
+      "ci_step": "T2 IS3 lean admission surface tests",
+      "paths": ["tests/s3b-t2-is3-admission-surface.test.ts"]
+    },
+    {
       "id": "database-governance",
       "classification": "mandatory",
       "npm_script": "test:db",

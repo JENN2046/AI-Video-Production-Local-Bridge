@@ -25,16 +25,34 @@ export type PrepareGenerationInput = {
 
 export type PrepareGenerationResult =
   | { ok: true; data: { plan: GenerationPlan; decision: GenerationAdmissionDecision } }
-  | { ok: false; error: { code: string; message: string }; decision?: GenerationAdmissionDecision };
+  | {
+      ok: false;
+      error: {
+        code: string;
+        message: string;
+        candidate_count?: number;
+        reason_codes?: string[];
+      };
+      decision?: GenerationAdmissionDecision;
+    };
 
 export type ConfirmGenerationResult =
   | { ok: true; data: { plan: GenerationPlan; intent: WorkbenchGenerationIntent; run_id: string; job_id: string; status: "queued" } }
   | { ok: false; error: { code: string; message: string } };
 
 type Candidate = { facts: GenerationAdmissionFacts; decision: GenerationAdmissionDecision };
+type CandidateRead = {
+  candidates: Candidate[];
+  candidate_count: number;
+  reason_codes: string[];
+};
 
-function error(code: string, message: string): { ok: false; error: { code: string; message: string } } {
-  return { ok: false, error: { code, message } };
+function error(
+  code: string,
+  message: string,
+  metadata: Pick<NonNullable<Extract<PrepareGenerationResult, { ok: false }>["error"]>, "candidate_count" | "reason_codes"> = {}
+): { ok: false; error: { code: string; message: string; candidate_count?: number; reason_codes?: string[] } } {
+  return { ok: false, error: { code, message, ...metadata } };
 }
 
 function candidateShots(db: M0Database, input: PrepareGenerationInput): Array<{ project_id: string; shot_id: string }> {
@@ -53,15 +71,27 @@ function candidateShots(db: M0Database, input: PrepareGenerationInput): Array<{ 
   });
 }
 
-function readCandidates(db: M0Database, input: PrepareGenerationInput): Candidate[] {
+function readCandidates(db: M0Database, input: PrepareGenerationInput): CandidateRead {
   const candidates: Candidate[] = [];
+  const reasonCodes = new Set<string>();
   for (const target of candidateShots(db, input)) {
     const read = readGenerationAdmissionFacts(db, target.project_id, target.shot_id);
-    if (!read.ok) continue;
+    if (!read.ok) {
+      reasonCodes.add(read.error.code);
+      continue;
+    }
     const decision = evaluateGenerationAdmission(read.facts);
-    if (decision.state === "ELIGIBLE") candidates.push({ facts: read.facts, decision });
+    if (decision.state === "ELIGIBLE") {
+      candidates.push({ facts: read.facts, decision });
+      continue;
+    }
+    Object.keys(decision.reason_code_counts).forEach((code) => reasonCodes.add(code));
   }
-  return candidates;
+  return {
+    candidates,
+    candidate_count: candidates.length,
+    reason_codes: [...reasonCodes].sort()
+  };
 }
 
 /**
@@ -73,9 +103,20 @@ export function prepareGeneration(
   input: PrepareGenerationInput = {},
   db = openM0Database()
 ): PrepareGenerationResult {
-  const candidates = readCandidates(db, input);
-  if (candidates.length === 0) return error("S3_NO_ELIGIBLE_SHOT", "No unique eligible SHOT satisfied the Generation Admission policy.");
-  if (candidates.length > 1) return error("S3_MULTIPLE_ELIGIBLE_SHOTS", "More than one SHOT satisfied the Generation Admission policy.");
+  const candidateRead = readCandidates(db, input);
+  const { candidates } = candidateRead;
+  if (candidates.length === 0) {
+    return error("S3_NO_ELIGIBLE_SHOT", "No unique eligible SHOT satisfied the Generation Admission policy.", {
+      candidate_count: candidateRead.candidate_count,
+      reason_codes: candidateRead.reason_codes.length > 0 ? candidateRead.reason_codes : ["S3_NO_ELIGIBLE_SHOT"]
+    });
+  }
+  if (candidates.length > 1) {
+    return error("S3_MULTIPLE_ELIGIBLE_SHOTS", "More than one SHOT satisfied the Generation Admission policy.", {
+      candidate_count: candidates.length,
+      reason_codes: ["S3_MULTIPLE_ELIGIBLE_SHOTS"]
+    });
+  }
   try {
     const candidate = candidates[0];
     return {
@@ -86,7 +127,10 @@ export function prepareGeneration(
       }
     };
   } catch {
-    return error("GENERATION_PLAN_FACTS_INCOMPLETE", "Trusted admission facts could not be compiled into a GenerationPlan.");
+    return error("GENERATION_PLAN_FACTS_INCOMPLETE", "Trusted admission facts could not be compiled into a GenerationPlan.", {
+      candidate_count: candidates.length,
+      reason_codes: ["GENERATION_PLAN_FACTS_INCOMPLETE"]
+    });
   }
 }
 

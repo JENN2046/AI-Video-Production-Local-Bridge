@@ -71,6 +71,9 @@ jobs:
       - name: T2 IS2.5 hybrid admission tests
         run: npm run test:s3b:t2:is2.5
 
+      - name: T2 IS3 lean admission surface tests
+        run: npm run test:s3b:t2:is3
+
       - name: Provider and transfer safety tests
         run: npm run test:provider-boundaries
 

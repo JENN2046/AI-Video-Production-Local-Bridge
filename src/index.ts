@@ -332,6 +332,16 @@ export type {
   GenerationPlan
 } from "./tools/s3bT2Types.js";
 export {
+  confirmGenerationAdmission,
+  prepareGenerationAdmission,
+  projectGenerationAdmission
+} from "./tools/s3bT2GenerationAdmissionSurface.js";
+export type {
+  ConfirmGenerationAdmissionResult,
+  GenerationAdmissionProjection,
+  PreparedGenerationAdmission
+} from "./tools/s3bT2GenerationAdmissionSurface.js";
+export {
   G0_ARTIFACT_FILENAMES,
   g0ProjectRoot,
   importG0AppReadyStoryboardPackage,

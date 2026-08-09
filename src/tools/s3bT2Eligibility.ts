@@ -68,4 +68,14 @@ export { collectT2GovernedMediaEvidence } from "./s3bT2MediaEvidence.js";
 export { evaluateT2Snapshot, evaluateT2Internal } from "./s3bT2Evaluate.js";
 export { confirmGeneration, prepareGeneration } from "./s3bT2GenerationAdmission.js";
 export type { ConfirmGenerationResult, PrepareGenerationInput, PrepareGenerationResult } from "./s3bT2GenerationAdmission.js";
+export {
+  confirmGenerationAdmission,
+  prepareGenerationAdmission,
+  projectGenerationAdmission
+} from "./s3bT2GenerationAdmissionSurface.js";
+export type {
+  ConfirmGenerationAdmissionResult,
+  GenerationAdmissionProjection,
+  PreparedGenerationAdmission
+} from "./s3bT2GenerationAdmissionSurface.js";
 export type { GenerationAdmissionFacts, GenerationPlan } from "./s3bT2Types.js";
