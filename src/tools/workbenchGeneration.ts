@@ -890,6 +890,141 @@ function directorAutomationLink(intent: WorkbenchGenerationIntent): DirectorAuto
   };
 }
 
+type DirectorGrantEventType = "reserve" | "consume" | "release" | "revoke" | "expire";
+
+interface DirectorGrantExecutionEvent {
+  grant_id: string;
+  event_type: DirectorGrantEventType;
+  reservation_id: string;
+  amount_minor: number;
+  currency: string;
+  intent_id: string;
+  run_id: string;
+}
+
+type DirectorExecutionRequirementResolution =
+  | { ok: true; required: false; automation: null; latest_event_type: null }
+  | { ok: true; required: true; automation: DirectorAutomationLink; latest_event_type: DirectorGrantEventType }
+  | { ok: false; error: ProviderToolError };
+
+/**
+ * Resolve the persisted Director execution requirement independently from both
+ * provenance and successful snapshot parsing. The append-only Grant event is
+ * the canonical durable fact; provenance/raw binding presence are fail-closed
+ * compatibility evidence when that ledger fact is missing or damaged.
+ */
+function resolveDirectorExecutionRequirement(
+  db: M0Database,
+  intent: WorkbenchGenerationIntent
+): DirectorExecutionRequirementResolution {
+  const events = db.prepare(`SELECT grant_id, event_type, reservation_id, amount_minor, currency, intent_id, run_id
+    FROM director_automation_grant_events
+    WHERE intent_id = ?
+    ORDER BY created_at, rowid`).all(intent.intent_id) as DirectorGrantExecutionEvent[];
+  const hasRawBinding = Object.prototype.hasOwnProperty.call(intent.input_snapshot, "director_automation");
+  const required = events.length > 0
+    || intent.input_snapshot.prepared_by === "director_automation"
+    || hasRawBinding;
+  if (!required) return { ok: true, required: false, automation: null, latest_event_type: null };
+
+  const automation = directorAutomationLink(intent);
+  if (!automation || !intent.run_id) {
+    return {
+      ok: false,
+      error: providerError(
+        "DIRECTOR_AUTOMATION_BINDING_MISMATCH",
+        "Director-authorized generation is missing its executable Grant reservation binding."
+      )
+    };
+  }
+  if (events.length === 0) {
+    return {
+      ok: false,
+      error: providerError(
+        "DIRECTOR_AUTOMATION_RESERVATION_INVALID",
+        "Director-authorized generation is missing its durable Grant reservation event."
+      )
+    };
+  }
+
+  const expectedIdentity = (event: DirectorGrantExecutionEvent): boolean => event.grant_id === automation.grant_id
+    && event.reservation_id === automation.reservation_id
+    && Number(event.amount_minor) === automation.amount_minor
+    && event.currency === intent.currency
+    && event.intent_id === intent.intent_id
+    && event.run_id === intent.run_id;
+  const eventSequence = events.map((event) => event.event_type);
+  const validLifecycle = eventSequence[0] === "reserve"
+    && eventSequence.length <= 2
+    && (eventSequence.length === 1 || eventSequence[1] === "consume" || eventSequence[1] === "release");
+  if (!validLifecycle || !events.every(expectedIdentity)) {
+    return {
+      ok: false,
+      error: providerError(
+        "DIRECTOR_AUTOMATION_RESERVATION_INVALID",
+        "Director Grant reservation events do not match this generation execution."
+      )
+    };
+  }
+  return {
+    ok: true,
+    required: true,
+    automation,
+    latest_event_type: events.at(-1)!.event_type
+  };
+}
+
+function authorizeDirectorProviderExecution(
+  db: M0Database,
+  intent: WorkbenchGenerationIntent,
+  knownTaskId: string,
+  now: Date
+): DirectorExecutionRequirementResolution {
+  const resolution = resolveDirectorExecutionRequirement(db, intent);
+  if (!resolution.ok || !resolution.required) return resolution;
+  const expectedEventType: DirectorGrantEventType = knownTaskId ? "consume" : "reserve";
+  if (resolution.latest_event_type !== expectedEventType) {
+    return {
+      ok: false,
+      error: providerError(
+        "DIRECTOR_AUTOMATION_RESERVATION_INVALID",
+        "Director Grant reservation lifecycle does not authorize the current Provider action."
+      )
+    };
+  }
+  const requiredAction = knownTaskId ? "generation.download" : "generation.submit";
+  try {
+    // The worker's own queued/running projection is expected to differ from the
+    // Proposal target. Every other current Grant, principal, and policy binding
+    // is revalidated before Provider selection.
+    const authorization = loadDirectorGrantAuthorization(
+      db,
+      resolution.automation,
+      requiredAction,
+      now,
+      { verify_target_state: false }
+    );
+    if (authorization.grant.project_id !== intent.project_id || authorization.shot.shot_id !== intent.shot_id) {
+      return {
+        ok: false,
+        error: providerError(
+          "DIRECTOR_AUTOMATION_BINDING_MISMATCH",
+          "Director Grant project or SHOT does not match this generation execution."
+        )
+      };
+    }
+  } catch (caught) {
+    const code = caught instanceof Error && "code" in caught
+      ? String(caught.code)
+      : "DIRECTOR_AUTOMATION_AUTHORIZATION_FAILED";
+    return {
+      ok: false,
+      error: providerError(code, "Director Automation Grant no longer authorizes this generation action.")
+    };
+  }
+  return resolution;
+}
+
 function sanitizedError(error: ProviderToolError | { code: string; message: string; retryable?: boolean }): Record<string, unknown> {
   return {
     code: error.code,
@@ -2073,35 +2208,17 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         return;
       }
     }
-    const automation = directorAutomationLink(intent);
-    if (intent.input_snapshot.prepared_by === "director_automation" && !automation) {
-      failIntent(
-        db,
+    const directorAuthorization = authorizeDirectorProviderExecution(db, intent, knownTaskId, dateNow(dependencies));
+    if (!directorAuthorization.ok) {
+      failOrReconcileKnownTask(
         intent,
-        "failed",
-        providerError("DIRECTOR_AUTOMATION_BINDING_MISMATCH", "Director-prepared generation is missing its executable Grant reservation."),
-        leaseToken
+        job,
+        directorAuthorization.error,
+        "DIRECTOR_AUTOMATION_REQUIRES_RECONCILIATION"
       );
       return;
     }
-    if (automation) {
-      const requiredAction = knownTaskId ? "generation.download" : "generation.submit";
-      try {
-        // A queued Director intent must not retain authority after its owner, membership,
-        // grant window, or immutable policy binding has changed. Target-state validation is
-        // deliberately skipped here because the queued/run state is this worker's own work.
-        loadDirectorGrantAuthorization(db, automation, requiredAction, dateNow(dependencies), { verify_target_state: false });
-      } catch (caught) {
-        const code = caught instanceof Error && "code" in caught ? String(caught.code) : "DIRECTOR_AUTOMATION_AUTHORIZATION_FAILED";
-        failOrReconcileKnownTask(
-          intent,
-          job,
-          providerError(code, "Director Automation Grant no longer authorizes this generation action."),
-          "DIRECTOR_AUTOMATION_REQUIRES_RECONCILIATION"
-        );
-        return;
-      }
-    }
+    const automation = directorAuthorization.required ? directorAuthorization.automation : null;
     const selection = selectM1ProviderPort({ provider: "real", provider_name: "runninghub", model_name: capability.key.model, cost_acknowledged: true }, dependencies.env ?? process.env);
     if (!selection.ok || selection.selected.provider_name !== "runninghub" || !selection.selected.credential) {
       failOrReconcileKnownTask(intent, job, selection.ok ? providerError("PROVIDER_SELECTION_MISMATCH", "RunningHub provider selection changed after confirmation.") : selection.error, "PROVIDER_SELECTION_REQUIRES_RECONCILIATION");
@@ -2718,11 +2835,12 @@ export function reconcileGenerationJob(
     if (!intent) { db.exec("ROLLBACK"); return { ok: false, error: { code: "GENERATION_INTENT_NOT_FOUND", message: "Generation intent was not found." } }; }
     const writable = assertWorkbenchProjectWritable(db, intent.project_id);
     if (!writable.ok) { db.exec("ROLLBACK"); return writable; }
-    const automation = directorAutomationLink(intent);
-    if (intent.input_snapshot.prepared_by === "director_automation" && (!automation || !intent.run_id)) {
+    const directorRequirement = resolveDirectorExecutionRequirement(db, intent);
+    if (!directorRequirement.ok) {
       db.exec("ROLLBACK");
-      return { ok: false, error: { code: "DIRECTOR_AUTOMATION_BINDING_MISMATCH", message: "Director automation reconciliation is missing its immutable Grant reservation." } };
+      return { ok: false, error: { code: directorRequirement.error.code, message: directorRequirement.error.message } };
     }
+    const automation = directorRequirement.required ? directorRequirement.automation : null;
     let job: GenerationJob;
     if (input.decision === "attach_existing_task") {
       let pollTimeoutMs: number;
