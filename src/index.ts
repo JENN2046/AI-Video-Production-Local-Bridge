@@ -312,6 +312,26 @@ export {
 } from "./tools/imageValidity.js";
 export type { ImageValidationResult, SupportedImageMime } from "./tools/imageValidity.js";
 export {
+  buildDecisionRevision,
+  buildGenerationPlan,
+  buildInputDigest,
+  confirmGeneration,
+  evaluateGenerationAdmission,
+  mediaVerificationToken,
+  prepareGeneration,
+  revalidateGenerationPlanMedia
+} from "./tools/s3bT2GenerationAdmission.js";
+export type {
+  ConfirmGenerationResult,
+  PrepareGenerationInput,
+  PrepareGenerationResult
+} from "./tools/s3bT2GenerationAdmission.js";
+export type {
+  GenerationAdmissionFacts,
+  GenerationAdmissionDecision,
+  GenerationPlan
+} from "./tools/s3bT2Types.js";
+export {
   G0_ARTIFACT_FILENAMES,
   g0ProjectRoot,
   importG0AppReadyStoryboardPackage,

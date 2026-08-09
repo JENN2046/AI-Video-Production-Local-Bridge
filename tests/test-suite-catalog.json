@@ -47,6 +47,13 @@
       ]
     },
     {
+      "id": "s3b-t2-is2.5",
+      "classification": "mandatory",
+      "npm_script": "test:s3b:t2:is2.5",
+      "ci_step": "T2 IS2.5 hybrid admission tests",
+      "paths": ["tests/s3b-t2-is2_5.test.ts"]
+    },
+    {
       "id": "database-governance",
       "classification": "mandatory",
       "npm_script": "test:db",

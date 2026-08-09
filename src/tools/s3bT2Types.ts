@@ -196,3 +196,147 @@ export type GovernedMediaEvidence =
 export type GovernedMediaRootEvidence =
   | { status: "VALID"; fingerprint_digest: string; authority: { dev: number; ino: number; nlink: number } }
   | { status: "INVALID"; fingerprint_digest: string; failure_class: string };
+
+/**
+ * The smallest immutable hand-off from T2 admission to the Generation
+ * Domain.  It deliberately contains one Shot's provider input rather than a
+ * database or filesystem snapshot.
+ */
+export type GenerationPlan = {
+  schema_version: "generation_plan.v1";
+  project_id: string;
+  shot_id: string;
+  storyboard_package_id: string;
+  storyboard_artifact_id: string;
+  provider_name: string;
+  duration_seconds: number;
+  aspect_ratio: string;
+  resolution: string;
+  input_digest: string;
+  decision_revision: string;
+  media_verification_token: string;
+};
+
+export type GenerationAdmissionProjectFacts = {
+  project_id: string;
+  status: string;
+  classification: string;
+  lifecycle: string;
+  active_storyboard_package_id: string;
+  final_video_artifact_id: string;
+  video_spec: {
+    duration_seconds: number;
+    aspect_ratio: string;
+    resolution: string;
+  };
+};
+
+export type GenerationAdmissionShotFacts = {
+  shot_id: string;
+  project_id: string;
+  order: number;
+  status: string;
+  duration_seconds: number;
+  storyboard_image_artifact_id: string;
+  video_prompt: string;
+  negative_prompt: string;
+  generation_run_ids: readonly string[];
+  clip_versions: readonly {
+    artifact_id: string;
+    run_id: string;
+    attempt_number: number;
+    review_status: "pending" | "approved" | "rejected";
+  }[];
+  review_approval_status: "pending" | "approved" | "revision_needed";
+  operational_stage: string;
+  operational_reason_codes: readonly string[];
+  prepare_generation_allowed: boolean;
+};
+
+export type GenerationAdmissionPackageSnapshot = {
+  shot_id?: string;
+  order: number;
+  duration_seconds: number;
+  storyboard_image_artifact_id: string;
+  video_prompt: string;
+  negative_prompt: string;
+};
+
+export type GenerationAdmissionPackageFacts = {
+  storyboard_package_id: string;
+  project_id: string;
+  status: string;
+  storyboard_approved: boolean;
+  snapshot_count: number;
+  project_shot_count: number;
+  snapshot_collection_complete: boolean;
+  snapshot_ambiguous: boolean;
+  selected_snapshot: GenerationAdmissionPackageSnapshot | null;
+  match_mode: "shot_id" | "order" | null;
+};
+
+export type GenerationAdmissionArtifactFacts = {
+  artifact_id: string;
+  project_id: string;
+  shot_id: string;
+  role: string;
+  artifact_type: string;
+  status: string;
+  blob_id: string;
+  storage_uri: string;
+  mime_type: string;
+  artifact_sha256: string;
+  source_sha256: string;
+  blob_sha256: string;
+  blob_size_bytes: number;
+  blob_detected_mime: string;
+  blob_integrity_state: string;
+};
+
+export type GenerationAdmissionMediaFacts = {
+  status: "VALID" | "INVALID" | "NOT_CHECKED";
+  verification_level: "bytes_verified" | "none";
+  artifact: GenerationAdmissionArtifactFacts | null;
+  media_verification_token: string;
+  fingerprint_digest: string;
+  raw_sha256: string;
+  size_bytes: number;
+  detected_mime: string;
+  failure_class?: string;
+};
+
+export type GenerationAdmissionStateFacts = {
+  active_intent_count: number;
+  selected_has_any_job_or_run: boolean;
+  latest_run_status: "queued" | "running" | "succeeded" | "failed" | "cancelled" | null;
+  latest_job_state: "queued" | "submitting" | "polling" | "downloading" | "finalizing" | "manual_reconciliation" | "succeeded" | "failed" | "cancelled" | null;
+  malformed_history: boolean;
+};
+
+export type GenerationAdmissionProviderFacts = {
+  ok: boolean;
+  provider_name: string;
+  model: string;
+  capability_key: string;
+  capability_id: string;
+  registry_version: string;
+  duration_seconds: number;
+  resolution: string;
+  aspect_ratio: string;
+  error_code?: string;
+};
+
+export type GenerationAdmissionFacts = {
+  project: GenerationAdmissionProjectFacts;
+  shot: GenerationAdmissionShotFacts;
+  package: GenerationAdmissionPackageFacts;
+  media: GenerationAdmissionMediaFacts;
+  generation: GenerationAdmissionStateFacts;
+  provider: GenerationAdmissionProviderFacts;
+};
+
+export type GenerationAdmissionDecision = {
+  state: "ELIGIBLE" | "INELIGIBLE";
+  candidates: Array<{ project_id: string; shot_id: string }>;
+  reason_code_counts: Record<string, number>;
+};

@@ -25,7 +25,16 @@ const manifest = JSON.parse(
       required_behavior: string;
       disposition: string;
       target_test_or_invariant: string;
+      old_safety_lesson?: string;
+      new_acceptance_behavior?: string;
     }>;
+  };
+  responsibility_remap: {
+    total_groups: number;
+    mapped: number;
+    unmapped: number;
+    silently_dropped: number;
+    dispositions: Record<string, number>;
   };
   PR118_review_findings: {
     expected: number;
@@ -63,6 +72,13 @@ const allowedAreas = new Set([
   "privacy",
   "receipt",
   "governance"
+]);
+
+const allowedDispositions = new Set([
+  "RETAIN_IN_T2",
+  "RETAIN_IN_EXISTING_AUTHORITY",
+  "MOVE_TO_SHARED_AUTHORITY",
+  "REPLACE_WITH_BEHAVIOR"
 ]);
 
 const isPlaceholder = (value: string): boolean =>
@@ -104,9 +120,29 @@ test("semantic behavior groups are unique, non-placeholder, and actionable", () 
     assert.equal(group.covered_variants.some(isPlaceholder), false);
     assert.ok(allowedAreas.has(group.contract_area));
     assert.ok(group.required_behavior.length > 0);
-    assert.equal(group.disposition, "RETAIN");
+    assert.equal(allowedDispositions.has(group.disposition), true);
     assert.ok(group.target_test_or_invariant.length > 0);
+    if (group.disposition === "REPLACE_WITH_BEHAVIOR") {
+      assert.ok(group.old_safety_lesson && group.old_safety_lesson.length > 0);
+      assert.ok(group.new_acceptance_behavior && group.new_acceptance_behavior.length > 0);
+    }
   }
+});
+
+test("IS2.5 responsibility remap covers every semantic group without silent drops", () => {
+  assert.deepEqual(manifest.responsibility_remap, {
+    total_groups: 31,
+    mapped: 31,
+    unmapped: 0,
+    silently_dropped: 0,
+    dispositions: {
+      RETAIN_IN_T2: 3,
+      RETAIN_IN_EXISTING_AUTHORITY: 18,
+      MOVE_TO_SHARED_AUTHORITY: 6,
+      REPLACE_WITH_BEHAVIOR: 4
+    }
+  });
+  assert.equal(manifest.semantic_behavior_groups.groups.filter((group) => group.disposition === "REPLACE_WITH_BEHAVIOR").length, 4);
 });
 
 test("all PR118 review findings map to unique real threads and current targets", () => {

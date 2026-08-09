@@ -16,7 +16,9 @@ import { validateActiveArtifactReference, type MediaArtifact } from "./mediaArti
 import { providerError, selectM1ProviderPort, type ProviderToolError } from "./provider.js";
 import { buildProviderCapabilityKey, buildProviderPriceCacheKey, providerCapabilityErrorMessage } from "./providerCapabilities.js";
 import { downloadProviderOutputToArtifact } from "./providerOutputDownloader.js";
-import { getProject, getShot, listProjectShots, saveProject, saveShot, type ProjectStatus, type ShotStatus } from "./projects.js";
+import { getProject, getShot, listProjectShots, saveProject, saveShot, type Project, type ProjectStatus, type Shot, type ShotStatus } from "./projects.js";
+import { parseGenerationPlan, revalidateGenerationPlanMedia } from "./s3bT2AdmissionPlan.js";
+import type { GenerationPlan } from "./s3bT2Types.js";
 import {
   buildRunningHubImageToVideoSubmitRequest,
   mapRunningHubProviderError,
@@ -60,10 +62,13 @@ export interface WorkbenchGenerationIntent {
     price_source: "runninghub_price_preview" | "local_verified_cache";
     balance_gate: "pass" | "not_checked";
     requires_human_preflight?: boolean;
-    prepared_by?: "human_workbench" | "webgpt_v4" | "director_automation";
+    prepared_by?: "human_workbench" | "webgpt_v4" | "director_automation" | "t2_admission";
+    admission_only?: true;
     capability_key?: string;
     director_automation?: DirectorAutomationPreflightAuthorization & { reservation_id?: string; amount_minor?: number };
   };
+  generation_plan?: GenerationPlan;
+  generation_plan_invalid?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -469,6 +474,8 @@ function intentFromRow(row: GenerationIntentRow): WorkbenchGenerationIntent {
   const snapshot = data.input_snapshot && typeof data.input_snapshot === "object" && !Array.isArray(data.input_snapshot)
     ? data.input_snapshot as WorkbenchGenerationIntent["input_snapshot"]
     : fallbackSnapshot;
+  const hasGenerationPlan = Object.prototype.hasOwnProperty.call(data, "generation_plan");
+  const generationPlan = hasGenerationPlan ? parseGenerationPlan(data.generation_plan) : undefined;
   return {
     intent_id: row.intent_id,
     run_id: row.run_id ?? "",
@@ -492,6 +499,8 @@ function intentFromRow(row: GenerationIntentRow): WorkbenchGenerationIntent {
     output_artifact_id: row.output_artifact_id,
     sanitized_error: parseRecord(row.sanitized_error_json),
     input_snapshot: snapshot,
+    ...(generationPlan ? { generation_plan: generationPlan } : {}),
+    ...(hasGenerationPlan && !generationPlan ? { generation_plan_invalid: true } : {}),
     created_at: row.created_at,
     updated_at: row.updated_at
   };
@@ -500,6 +509,132 @@ function intentFromRow(row: GenerationIntentRow): WorkbenchGenerationIntent {
 function getIntent(db: M0Database, intentId: string): WorkbenchGenerationIntent | null {
   const row = db.prepare("SELECT * FROM generation_intents WHERE intent_id = ?").get(intentId) as GenerationIntentRow | undefined;
   return row ? intentFromRow(row) : null;
+}
+
+export type CanonicalGenerationAdmissionCommitInput = {
+  project: Project;
+  shot: Shot;
+  provider: "runninghub";
+  model: string;
+  input_artifact_id: string;
+  duration_seconds: number;
+  resolution: string;
+  input_snapshot: WorkbenchGenerationIntent["input_snapshot"];
+  generation_plan?: GenerationPlan;
+  account_label: "personal" | "team";
+  estimated_cost_value: number;
+  budget_limit_value: number;
+  currency: string;
+  existing_prepared_intent_id?: string;
+  run_id?: string;
+  existing_data?: Record<string, unknown>;
+  admission_reason_code?: string;
+};
+
+export type CanonicalGenerationAdmissionCommitResult = {
+  intent: WorkbenchGenerationIntent;
+  run_id: string;
+  job_id: string;
+  status: "queued";
+};
+
+/**
+ * Shared Generation Domain commit primitive.  Both the existing V2
+ * confirmation flow and IS2.5 GenerationPlan confirmation use this one
+ * writer; callers own the surrounding short transaction.
+ */
+export function commitCanonicalGenerationAdmission(
+  input: CanonicalGenerationAdmissionCommitInput,
+  db: M0Database
+): CanonicalGenerationAdmissionCommitResult {
+  const now = new Date().toISOString();
+  const intentId = input.existing_prepared_intent_id ?? `intent_${randomUUID()}`;
+  const runId = input.run_id ?? `run_${randomUUID()}`;
+  const inputData: Record<string, unknown> = {
+    ...(input.existing_data ?? {}),
+    input_snapshot: input.input_snapshot,
+    ...(input.generation_plan ? { generation_plan: input.generation_plan } : {})
+  };
+  const run: GenerationRun = {
+    run_id: runId,
+    batch_id: "",
+    project_id: input.project.project_id,
+    shot_id: input.shot.shot_id,
+    run_type: "image_to_video",
+    status: "queued",
+    input: {
+      storyboard_image_artifact_id: input.input_artifact_id,
+      video_prompt: input.input_snapshot.video_prompt,
+      negative_prompt: input.input_snapshot.negative_prompt,
+      duration_seconds: input.duration_seconds,
+      aspect_ratio: input.input_snapshot.aspect_ratio,
+      resolution: input.resolution
+    },
+    output: { artifact_ids: [] },
+    provider: {
+      provider: "real",
+      provider_name: input.provider,
+      model_name: input.model,
+      provider_job_id: "",
+      provider_status: "not_submitted"
+    },
+    versioning: {
+      attempt_number: input.shot.clip_versions.length + 1,
+      parent_run_id: input.shot.generation_run_ids.at(-1) ?? ""
+    },
+    error: { code: "", message: "", retryable: false }
+  };
+
+  saveGenerationRun(db, run);
+  input.shot.generation_run_ids = [...input.shot.generation_run_ids, runId];
+  input.shot.status = "video_pending";
+  saveShot(db, input.shot);
+  input.project.status = "video_generation_in_progress";
+  saveProject(db, input.project);
+
+  if (input.existing_prepared_intent_id) {
+    const updated = db.prepare(`
+      UPDATE generation_intents
+      SET run_id = ?, confirmed = 1, budget_limit_value = ?, status = 'queued',
+        upload_attempts = 1, submit_attempts = 1, data_json = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE intent_id = ? AND status = 'prepared' AND confirmed = 0 AND (run_id IS NULL OR run_id = '')
+    `).run(runId, input.budget_limit_value, JSON.stringify(inputData), intentId) as { changes: number | bigint };
+    if (Number(updated.changes) !== 1) throw new Error("GENERATION_INTENT_NOT_PREPARED");
+  } else {
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    db.prepare(`
+      INSERT INTO generation_intents (
+        intent_id, run_id, project_id, shot_id, provider, account_label, model, input_artifact_id,
+        duration_seconds, resolution, estimated_cost_value, budget_limit_value, currency,
+        confirmed, expires_at, provider_task_id, status, upload_attempts, submit_attempts,
+        output_artifact_id, sanitized_error_json, data_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, '', 'queued', 1, 1, '', '{}', ?, ?, ?)
+    `).run(
+      intentId,
+      runId,
+      input.project.project_id,
+      input.shot.shot_id,
+      input.provider,
+      input.account_label,
+      input.model,
+      input.input_artifact_id,
+      input.duration_seconds,
+      input.resolution,
+      input.estimated_cost_value,
+      input.budget_limit_value,
+      input.currency,
+      expiresAt,
+      JSON.stringify(inputData),
+      now,
+      now
+    );
+  }
+  const jobId = `job_${randomUUID()}`;
+  db.prepare("INSERT INTO generation_jobs (job_id, intent_id, state) VALUES (?, ?, 'queued')").run(jobId, intentId);
+  appendJobEvent(db, jobId, "", "queued", input.admission_reason_code ?? (input.generation_plan ? "T2_ADMISSION_CONFIRMED" : "HUMAN_CONFIRMED"));
+  const intent = getIntent(db, intentId);
+  if (!intent) throw new Error("GENERATION_INTENT_NOT_FOUND");
+  return { intent, run_id: runId, job_id: jobId, status: "queued" };
 }
 
 function directorAutomationLink(intent: WorkbenchGenerationIntent): DirectorAutomationLink | null {
@@ -917,43 +1052,26 @@ export function confirmWorkbenchGeneration(
       rawSnapshot.director_automation = directorReservation;
       intentData.input_snapshot = rawSnapshot;
     }
-    const run: GenerationRun = {
+    const committed = commitCanonicalGenerationAdmission({
+      project: writable.data.project,
+      shot,
+      provider: "runninghub",
+      model: intent.model,
+      input_artifact_id: intent.input_artifact_id,
+      duration_seconds: intent.duration_seconds,
+      resolution: intent.resolution,
+      input_snapshot: intentData.input_snapshot as WorkbenchGenerationIntent["input_snapshot"],
+      account_label: intent.account_label,
+      estimated_cost_value: intent.estimated_cost_value,
+      budget_limit_value: input.budget_limit_value,
+      currency: intent.currency,
+      existing_prepared_intent_id: intent.intent_id,
       run_id: runId,
-      batch_id: "",
-      project_id: intent.project_id,
-      shot_id: intent.shot_id,
-      run_type: "image_to_video",
-      status: "queued",
-      input: {
-        storyboard_image_artifact_id: intent.input_artifact_id,
-        video_prompt: intent.input_snapshot.video_prompt,
-        negative_prompt: intent.input_snapshot.negative_prompt,
-        duration_seconds: intent.duration_seconds,
-        aspect_ratio: intent.input_snapshot.aspect_ratio,
-        resolution: intent.resolution
-      },
-      output: { artifact_ids: [] },
-      provider: { provider: "real", provider_name: "runninghub", model_name: intent.model, provider_job_id: "", provider_status: "not_submitted" },
-      versioning: { attempt_number: shot.clip_versions.length + 1, parent_run_id: shot.generation_run_ids.at(-1) ?? "" },
-      error: { code: "", message: "", retryable: false }
-    };
-    saveGenerationRun(db, run);
-    shot.generation_run_ids.push(runId);
-    shot.status = "video_pending";
-    saveShot(db, shot);
-    writable.data.project.status = "video_generation_in_progress";
-    saveProject(db, writable.data.project);
-    db.prepare(`
-      UPDATE generation_intents
-      SET run_id = ?, confirmed = 1, budget_limit_value = ?, status = 'queued',
-        upload_attempts = 1, submit_attempts = 1, data_json = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE intent_id = ?
-    `).run(runId, input.budget_limit_value, JSON.stringify(intentData), intent.intent_id);
-    const jobId = `job_${randomUUID()}`;
-    db.prepare("INSERT INTO generation_jobs (job_id, intent_id, state) VALUES (?, ?, 'queued')").run(jobId, intent.intent_id);
-    appendJobEvent(db, jobId, "", "queued", input.director_automation ? "DIRECTOR_GRANT_CONFIRMED" : "HUMAN_CONFIRMED");
+      existing_data: intentData,
+      admission_reason_code: input.director_automation ? "DIRECTOR_GRANT_CONFIRMED" : "HUMAN_CONFIRMED"
+    }, db);
     db.exec("COMMIT");
-    return { ok: true, data: { intent: getIntent(db, intent.intent_id) as WorkbenchGenerationIntent, run_id: runId, job_id: jobId, status: "queued" } };
+    return { ok: true, data: committed };
   } catch (error) {
     db.exec("ROLLBACK");
     throw error;
@@ -1567,6 +1685,23 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       const error = providerError("PROVIDER_CAPABILITY_CONTRACT_MISMATCH", "Generation intent no longer matches the declared Provider capability.");
       failOrReconcileKnownTask(intent, job, error, "PROVIDER_CAPABILITY_REQUIRES_RECONCILIATION");
       return;
+    }
+    if (intent.generation_plan_invalid) {
+      failIntent(
+        db,
+        intent,
+        "failed",
+        providerError("GENERATION_PLAN_STALE", "The confirmed GenerationPlan binding is invalid."),
+        leaseToken
+      );
+      return;
+    }
+    if (intent.generation_plan) {
+      const mediaGuard = revalidateGenerationPlanMedia(intent.generation_plan, db);
+      if (!mediaGuard.ok) {
+        failIntent(db, intent, "failed", providerError(mediaGuard.code, mediaGuard.message), leaseToken);
+        return;
+      }
     }
     const automation = directorAutomationLink(intent);
     if (intent.input_snapshot.prepared_by === "director_automation" && !automation) {

@@ -68,6 +68,9 @@ jobs:
       - name: Foundation and media boundary tests
         run: npm run test:foundation-boundaries
 
+      - name: T2 IS2.5 hybrid admission tests
+        run: npm run test:s3b:t2:is2.5
+
       - name: Provider and transfer safety tests
         run: npm run test:provider-boundaries
 

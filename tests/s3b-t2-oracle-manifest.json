@@ -8,12 +8,23 @@
     "source_file": "tests/s3b-t2-eligibility.test.ts"
   },
   "taxonomy": [
-    "RETAIN",
-    "MERGE_EQUIVALENT",
-    "REPLACE_WITH_BEHAVIOR",
-    "STRUCTURAL_INVARIANT",
-    "OBSOLETE_IMPLEMENTATION_COUPLED"
+    "RETAIN_IN_T2",
+    "RETAIN_IN_EXISTING_AUTHORITY",
+    "MOVE_TO_SHARED_AUTHORITY",
+    "REPLACE_WITH_BEHAVIOR"
   ],
+  "responsibility_remap": {
+    "total_groups": 31,
+    "mapped": 31,
+    "unmapped": 0,
+    "silently_dropped": 0,
+    "dispositions": {
+      "RETAIN_IN_T2": 3,
+      "RETAIN_IN_EXISTING_AUTHORITY": 18,
+      "MOVE_TO_SHARED_AUTHORITY": 6,
+      "REPLACE_WITH_BEHAVIOR": 4
+    }
+  },
   "runner_evidence": {
     "executed_runner_cases": {
       "observed": 202,
@@ -383,7 +394,7 @@
         ],
         "covered_variants": [],
         "required_behavior": "actual_bytes invariant",
-        "disposition": "RETAIN",
+        "disposition": "RETAIN_IN_EXISTING_AUTHORITY",
         "target_test_or_invariant": "T2-MEDIA-BYTES-ACTUAL-VALIDATION"
       },
       {
@@ -394,7 +405,7 @@
         ],
         "covered_variants": [],
         "required_behavior": "read_only invariant",
-        "disposition": "RETAIN",
+        "disposition": "RETAIN_IN_EXISTING_AUTHORITY",
         "target_test_or_invariant": "T2-READ-ONLY-SQLITE-BOUNDARY"
       },
       {
@@ -405,7 +416,7 @@
         ],
         "covered_variants": [],
         "required_behavior": "receipt invariant",
-        "disposition": "RETAIN",
+        "disposition": "RETAIN_IN_T2",
         "target_test_or_invariant": "T2-LOW-DISCLOSURE-RECEIPT"
       },
       {
@@ -416,7 +427,7 @@
         ],
         "covered_variants": [],
         "required_behavior": "read_only invariant",
-        "disposition": "RETAIN",
+        "disposition": "RETAIN_IN_EXISTING_AUTHORITY",
         "target_test_or_invariant": "T2-READ-ONLY-SQLITE-BOUNDARY"
       },
       {
@@ -427,7 +438,7 @@
         ],
         "covered_variants": [],
         "required_behavior": "privacy invariant",
-        "disposition": "RETAIN",
+        "disposition": "RETAIN_IN_EXISTING_AUTHORITY",
         "target_test_or_invariant": "T2-LOW-DISCLOSURE-AND-NETWORK-BOUNDARY"
       },
       {
@@ -438,7 +449,7 @@
         ],
         "covered_variants": [],
         "required_behavior": "read_only invariant",
-        "disposition": "RETAIN",
+        "disposition": "RETAIN_IN_EXISTING_AUTHORITY",
         "target_test_or_invariant": "T2-READ-ONLY-SQLITE-BOUNDARY"
       },
       {
@@ -456,7 +467,7 @@
           "PROVIDER_CAPABILITY_ASPECT_RATIO_UNSUPPORTED"
         ],
         "required_behavior": "provider_capability invariant",
-        "disposition": "RETAIN",
+        "disposition": "MOVE_TO_SHARED_AUTHORITY",
         "target_test_or_invariant": "T2-PROVIDER-CAPABILITY-REGISTRY"
       },
       {
@@ -476,7 +487,7 @@
           "active intent remains higher precedence than malformed video_spec"
         ],
         "required_behavior": "runtime_schema invariant",
-        "disposition": "RETAIN",
+        "disposition": "RETAIN_IN_EXISTING_AUTHORITY",
         "target_test_or_invariant": "T2-RUNTIME-SHAPE-FAIL-CLOSED"
       },
       {
@@ -487,7 +498,7 @@
         ],
         "covered_variants": [],
         "required_behavior": "package_freeze invariant",
-        "disposition": "RETAIN",
+        "disposition": "MOVE_TO_SHARED_AUTHORITY",
         "target_test_or_invariant": "T2-PACKAGE-MATCH-AND-NORMALIZATION"
       },
       {
@@ -501,7 +512,7 @@
           "malformed Shot JSON with active intent"
         ],
         "required_behavior": "runtime_schema invariant",
-        "disposition": "RETAIN",
+        "disposition": "RETAIN_IN_EXISTING_AUTHORITY",
         "target_test_or_invariant": "T2-RUNTIME-SHAPE-FAIL-CLOSED"
       },
       {
@@ -525,7 +536,7 @@
           "unsafe negative ClipVersion preserves active intent precedence"
         ],
         "required_behavior": "runtime_schema invariant",
-        "disposition": "RETAIN",
+        "disposition": "RETAIN_IN_EXISTING_AUTHORITY",
         "target_test_or_invariant": "T2-RUNTIME-SHAPE-FAIL-CLOSED"
       },
       {
@@ -542,7 +553,7 @@
           "active intent disappearing between invalid project snapshots returns state changed"
         ],
         "required_behavior": "database_authority invariant",
-        "disposition": "RETAIN",
+        "disposition": "RETAIN_IN_EXISTING_AUTHORITY",
         "target_test_or_invariant": "T2-DATABASE-IDENTITY-AND-ROWSET-FINGERPRINT"
       },
       {
@@ -577,7 +588,7 @@
           "unknown ClipVersion fields preserve active intent precedence"
         ],
         "required_behavior": "generation_history invariant",
-        "disposition": "RETAIN",
+        "disposition": "RETAIN_IN_EXISTING_AUTHORITY",
         "target_test_or_invariant": "T2-GENERATION-HISTORY-PRECEDENCE"
       },
       {
@@ -592,7 +603,7 @@
           "storage mime missing"
         ],
         "required_behavior": "runtime_schema invariant",
-        "disposition": "RETAIN",
+        "disposition": "RETAIN_IN_EXISTING_AUTHORITY",
         "target_test_or_invariant": "T2-RUNTIME-SHAPE-FAIL-CLOSED"
       },
       {
@@ -608,7 +619,7 @@
           "object versus object"
         ],
         "required_behavior": "package_freeze invariant",
-        "disposition": "RETAIN",
+        "disposition": "MOVE_TO_SHARED_AUTHORITY",
         "target_test_or_invariant": "T2-PACKAGE-MATCH-AND-NORMALIZATION"
       },
       {
@@ -622,7 +633,7 @@
           "relational package id drift"
         ],
         "required_behavior": "database_authority invariant",
-        "disposition": "RETAIN",
+        "disposition": "RETAIN_IN_EXISTING_AUTHORITY",
         "target_test_or_invariant": "T2-DATABASE-IDENTITY-AND-ROWSET-FINGERPRINT"
       },
       {
@@ -649,7 +660,7 @@
           "one valid snapshot plus one malformed snapshot rejects the whole collection"
         ],
         "required_behavior": "snapshot_drift invariant",
-        "disposition": "RETAIN",
+        "disposition": "MOVE_TO_SHARED_AUTHORITY",
         "target_test_or_invariant": "T2-SNAPSHOT-UNIQUENESS-AND-DRIFT"
       },
       {
@@ -663,7 +674,7 @@
           "inactive storyboard artifact"
         ],
         "required_behavior": "reason_precedence invariant",
-        "disposition": "RETAIN",
+        "disposition": "RETAIN_IN_T2",
         "target_test_or_invariant": "T2-CANONICAL-REASON-PRECEDENCE"
       },
       {
@@ -680,7 +691,7 @@
           "symlink escape is rejected without accepting the target"
         ],
         "required_behavior": "media_authority invariant",
-        "disposition": "RETAIN",
+        "disposition": "RETAIN_IN_EXISTING_AUTHORITY",
         "target_test_or_invariant": "T2-GOVERNED-MEDIA-IDENTITY"
       },
       {
@@ -701,7 +712,7 @@
           "unchanged invalid identity remains a stable integrity rejection"
         ],
         "required_behavior": "media_authority invariant",
-        "disposition": "RETAIN",
+        "disposition": "RETAIN_IN_EXISTING_AUTHORITY",
         "target_test_or_invariant": "T2-GOVERNED-MEDIA-IDENTITY"
       },
       {
@@ -718,7 +729,7 @@
           "active intent remains higher precedence than stable invalid root"
         ],
         "required_behavior": "media_authority invariant",
-        "disposition": "RETAIN",
+        "disposition": "RETAIN_IN_EXISTING_AUTHORITY",
         "target_test_or_invariant": "T2-GOVERNED-MEDIA-IDENTITY"
       },
       {
@@ -740,7 +751,7 @@
           "empty shot_id remains lower priority than active intent"
         ],
         "required_behavior": "snapshot_drift invariant",
-        "disposition": "RETAIN",
+        "disposition": "MOVE_TO_SHARED_AUTHORITY",
         "target_test_or_invariant": "T2-SNAPSHOT-UNIQUENESS-AND-DRIFT"
       },
       {
@@ -767,7 +778,9 @@
           "shot relational keys change the drift fingerprint"
         ],
         "required_behavior": "snapshot_drift invariant",
-        "disposition": "RETAIN",
+        "disposition": "REPLACE_WITH_BEHAVIOR",
+        "old_safety_lesson": "Structured Storyboard Artifact drift must remain a deterministic rejection.",
+        "new_acceptance_behavior": "T2 rejects a GenerationPlan after canonical Artifact binding changes and reports plan staleness without relying on a legacy world fingerprint.",
         "target_test_or_invariant": "T2-SNAPSHOT-UNIQUENESS-AND-DRIFT"
       },
       {
@@ -782,7 +795,7 @@
           "active intent takes precedence over shot drift"
         ],
         "required_behavior": "database_authority invariant",
-        "disposition": "RETAIN",
+        "disposition": "MOVE_TO_SHARED_AUTHORITY",
         "target_test_or_invariant": "T2-DATABASE-IDENTITY-AND-ROWSET-FINGERPRINT"
       },
       {
@@ -798,7 +811,7 @@
           "active intent takes precedence over invalid generation job state"
         ],
         "required_behavior": "generation_history invariant",
-        "disposition": "RETAIN",
+        "disposition": "RETAIN_IN_EXISTING_AUTHORITY",
         "target_test_or_invariant": "T2-GENERATION-HISTORY-PRECEDENCE"
       },
       {
@@ -822,7 +835,9 @@
           "package snapshot zero match"
         ],
         "required_behavior": "generation_history invariant",
-        "disposition": "RETAIN",
+        "disposition": "REPLACE_WITH_BEHAVIOR",
+        "old_safety_lesson": "Missing package, started history, and byte drift must fail closed deterministically.",
+        "new_acceptance_behavior": "prepareGeneration rejects incomplete authority facts, confirmGeneration returns GENERATION_PLAN_STALE for selected-fact drift, and the media guard returns MEDIA_VERIFICATION_STALE before Provider work.",
         "target_test_or_invariant": "T2-GENERATION-HISTORY-PRECEDENCE"
       },
       {
@@ -844,7 +859,9 @@
           "new media blob row"
         ],
         "required_behavior": "database_authority invariant",
-        "disposition": "RETAIN",
+        "disposition": "REPLACE_WITH_BEHAVIOR",
+        "old_safety_lesson": "Timestamp and unrelated rowset changes must be visible to the old two-snapshot fingerprint.",
+        "new_acceptance_behavior": "decision_revision binds only selected trusted facts, so unrelated world drift does not invalidate an otherwise unchanged GenerationPlan.",
         "target_test_or_invariant": "T2-DATABASE-IDENTITY-AND-ROWSET-FINGERPRINT"
       },
       {
@@ -855,7 +872,7 @@
         ],
         "covered_variants": [],
         "required_behavior": "reason_precedence invariant",
-        "disposition": "RETAIN",
+        "disposition": "RETAIN_IN_T2",
         "target_test_or_invariant": "T2-CANONICAL-REASON-PRECEDENCE"
       },
       {
@@ -879,7 +896,7 @@
           "active intent takes precedence over terminal history"
         ],
         "required_behavior": "generation_history invariant",
-        "disposition": "RETAIN",
+        "disposition": "RETAIN_IN_EXISTING_AUTHORITY",
         "target_test_or_invariant": "T2-GENERATION-HISTORY-PRECEDENCE"
       },
       {
@@ -895,7 +912,9 @@
           "media byte drift"
         ],
         "required_behavior": "database_authority invariant",
-        "disposition": "RETAIN",
+        "disposition": "REPLACE_WITH_BEHAVIOR",
+        "old_safety_lesson": "Database path, state, and byte substitutions must fail closed without retrying the old scan.",
+        "new_acceptance_behavior": "The canonical admission commit is transactionally stale-safe and the pre-provider media guard revalidates byte/entity identity before any adapter or Provider selection.",
         "target_test_or_invariant": "T2-DATABASE-IDENTITY-AND-ROWSET-FINGERPRINT"
       },
       {
@@ -906,7 +925,7 @@
         ],
         "covered_variants": [],
         "required_behavior": "privacy invariant",
-        "disposition": "RETAIN",
+        "disposition": "RETAIN_IN_EXISTING_AUTHORITY",
         "target_test_or_invariant": "T2-LOW-DISCLOSURE-AND-NETWORK-BOUNDARY"
       }
     ]
