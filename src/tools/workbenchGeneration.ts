@@ -80,6 +80,27 @@ export interface DirectorAutomationPreflightAuthorization {
   policy_hash: string;
 }
 
+function buildDirectorAutomationBinding(
+  input?: DirectorAutomationPreflightAuthorization
+): DirectorAutomationPreflightAuthorization | undefined {
+  if (!input) return undefined;
+  return {
+    grant_id: input.grant_id,
+    proposal_id: input.proposal_id,
+    policy_hash: input.policy_hash
+  };
+}
+
+function directorAutomationBindingMatches(
+  binding: WorkbenchGenerationIntent["input_snapshot"]["director_automation"] | undefined,
+  input: DirectorAutomationPreflightAuthorization
+): boolean {
+  if (!binding) return false;
+  return binding.grant_id === input.grant_id
+    && binding.proposal_id === input.proposal_id
+    && binding.policy_hash === input.policy_hash;
+}
+
 interface GenerationIntentRow {
   intent_id: string;
   run_id: string | null;
@@ -925,6 +946,7 @@ export async function preflightWorkbenchGeneration(
   dependencies: WorkbenchGenerationDependencies = {}
 ): Promise<WorkbenchV2Result<{ intent: WorkbenchGenerationIntent }>> {
   const admissionReservation = findT2AdmissionReservation(db, input.project_id, input.shot_id);
+  const directorBinding = buildDirectorAutomationBinding(input.director_automation);
   const writable = assertWorkbenchProjectWritable(db, input.project_id);
   if (!writable.ok) {
     const terminalized = admissionReservation ? terminalizeStaleT2Reservation(db, admissionReservation.intent_id) : null;
@@ -975,6 +997,14 @@ export async function preflightWorkbenchGeneration(
       || directorAuthorization.proposal.payload.video_prompt !== shot.video_prompt
       || directorAuthorization.proposal.payload.negative_prompt !== shot.negative_prompt) {
       return { ok: false, error: { code: "DIRECTOR_AUTOMATION_INPUT_MISMATCH", message: "Director Proposal does not exactly match the current generation inputs." } };
+    }
+    if (admissionReservation && directorBinding) {
+      const existingBinding = admissionReservation.input_snapshot.director_automation;
+      if ((existingBinding && !directorAutomationBindingMatches(existingBinding, directorBinding))
+        || directorAuthorization.grant.project_id !== admissionReservation.project_id
+        || directorAuthorization.shot.shot_id !== admissionReservation.shot_id) {
+        return { ok: false, error: { code: "DIRECTOR_AUTOMATION_BINDING_MISMATCH", message: "Director Automation Grant does not match the adopted generation reservation." } };
+      }
     }
   }
 
@@ -1062,7 +1092,8 @@ export async function preflightWorkbenchGeneration(
       price_source: "runninghub_price_preview",
       balance_gate: "pass",
       requires_human_preflight: false,
-      capability_key: capability.key.serialized
+      capability_key: capability.key.serialized,
+      ...(directorBinding ? { director_automation: directorBinding } : {})
     }
     : {
       video_prompt: shot.video_prompt,
@@ -1074,7 +1105,7 @@ export async function preflightWorkbenchGeneration(
       requires_human_preflight: false,
       prepared_by: input.director_automation ? "director_automation" : "human_workbench",
       capability_key: capability.key.serialized,
-      ...(input.director_automation ? { director_automation: input.director_automation } : {})
+      ...(directorBinding ? { director_automation: directorBinding } : {})
     };
   db.prepare(`
     INSERT INTO webgpt_provider_price_cache (
@@ -1140,34 +1171,46 @@ export async function preflightWorkbenchGeneration(
  * become false authoritative drift for the same immutable Grant.
  */
 export function discardDirectorPreparedGenerationIntent(
-  input: { intent_id: string; director_automation: DirectorAutomationPreflightAuthorization },
+  input: {
+    intent_id: string;
+    director_automation: DirectorAutomationPreflightAuthorization;
+    cleanup_error?: { code: string; message: string; retryable?: boolean };
+  },
   db = openM0Database()
 ): WorkbenchV2Result<{ intent: WorkbenchGenerationIntent }> {
   db.exec("BEGIN IMMEDIATE");
   try {
     const intent = getIntent(db, input.intent_id);
     const binding = intent?.input_snapshot.director_automation;
-    if (!intent || intent.status !== "prepared" || intent.confirmed || intent.run_id
-      || intent.input_snapshot.prepared_by !== "director_automation"
-      || !binding
-      || binding.grant_id !== input.director_automation.grant_id
-      || binding.proposal_id !== input.director_automation.proposal_id
-      || binding.policy_hash !== input.director_automation.policy_hash
-      || binding.reservation_id !== undefined
-      || binding.amount_minor !== undefined) {
+    const bindingMatches = Boolean(binding) && directorAutomationBindingMatches(binding, input.director_automation);
+    const isDirectorPreparedIntent = intent?.input_snapshot.prepared_by === "director_automation";
+    const isAdoptedT2Reservation = intent?.input_snapshot.prepared_by === "t2_admission"
+      && intent.input_snapshot.admission_only === true;
+    const isOwnedPreparedIntent = isDirectorPreparedIntent || isAdoptedT2Reservation;
+    if (!intent || !isOwnedPreparedIntent || !bindingMatches
+      || (binding?.reservation_id !== undefined)
+      || (binding?.amount_minor !== undefined)) {
       db.exec("ROLLBACK");
       return { ok: false, error: { code: "DIRECTOR_AUTOMATION_PREPARED_INTENT_NOT_CANCELLABLE", message: "Director preflight staging record is no longer safe to discard." } };
     }
-    const result = db.prepare(`UPDATE generation_intents
-      SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
-      WHERE intent_id = ? AND status = 'prepared' AND confirmed = 0 AND (run_id IS NULL OR run_id = '')`)
-      .run(intent.intent_id) as { changes: number | bigint };
-    if (Number(result.changes) !== 1) {
+    if (intent.status === "cancelled") {
+      db.exec("ROLLBACK");
+      return { ok: true, data: { intent } };
+    }
+    if (intent.status !== "prepared" || intent.confirmed || intent.run_id || intent.provider_task_id || jobForIntent(db, intent.intent_id)) {
+      db.exec("ROLLBACK");
+      return { ok: false, error: { code: "DIRECTOR_AUTOMATION_PREPARED_INTENT_NOT_CANCELLABLE", message: "Director preflight staging record changed before it could be discarded." } };
+    }
+    const terminalized = terminalizePreparedIntentInTransaction(db, intent, input.cleanup_error ?? {
+      code: "DIRECTOR_AUTOMATION_CONFIRMATION_FAILED",
+      message: "Director confirmation failed after adopting the prepared generation reservation."
+    });
+    if (!terminalized) {
       db.exec("ROLLBACK");
       return { ok: false, error: { code: "DIRECTOR_AUTOMATION_PREPARED_INTENT_NOT_CANCELLABLE", message: "Director preflight staging record changed before it could be discarded." } };
     }
     db.exec("COMMIT");
-    return { ok: true, data: { intent: getIntent(db, intent.intent_id) as WorkbenchGenerationIntent } };
+    return { ok: true, data: { intent: terminalized } };
   } catch (error) {
     db.exec("ROLLBACK");
     throw error;
@@ -1242,10 +1285,7 @@ export function confirmWorkbenchGeneration(
       db.exec("ROLLBACK");
       return { ok: false, error: { code: "DIRECTOR_AUTOMATION_CONFIRMATION_REQUIRED", message: "Director-prepared generation must be confirmed through its bound Automation Grant." } };
     }
-    if (input.director_automation && (!snapshotAutomation
-      || snapshotAutomation.grant_id !== input.director_automation.grant_id
-      || snapshotAutomation.proposal_id !== input.director_automation.proposal_id
-      || snapshotAutomation.policy_hash !== input.director_automation.policy_hash)) {
+    if (input.director_automation && !directorAutomationBindingMatches(snapshotAutomation, input.director_automation)) {
       db.exec("ROLLBACK");
       return { ok: false, error: { code: "DIRECTOR_AUTOMATION_BINDING_MISMATCH", message: "Director Automation Grant does not match this prepared intent." } };
     }

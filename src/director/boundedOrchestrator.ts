@@ -71,7 +71,8 @@ export async function startDirectorBoundedGeneration(
     try {
       discarded = discardDirectorPreparedGenerationIntent({
         intent_id: preflight.data.intent.intent_id,
-        director_automation: input
+        director_automation: input,
+        cleanup_error: confirmed.error
       }, db);
     } catch {
       return { ok: false, error: { code: "DIRECTOR_AUTOMATION_PREPARED_INTENT_CLEANUP_FAILED", message: "Director preflight confirmation failed and its staging record could not be safely discarded." } };
