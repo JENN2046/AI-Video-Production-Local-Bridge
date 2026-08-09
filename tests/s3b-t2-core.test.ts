@@ -46,3 +46,23 @@ test("unchanged invalid media remains a stable internal decision", () => {
     rmSync(f.root, { recursive: true, force: true });
   }
 });
+
+test("legacy snapshot evaluator is bypassed when generation history is unassignable", () => {
+  const f = fixture();
+  try {
+    const db = new DatabaseSync(f.sqlitePath);
+    try {
+      db.exec("PRAGMA foreign_keys = OFF");
+      db.prepare("INSERT INTO generation_jobs (job_id, intent_id, state) VALUES (?, ?, 'queued')")
+        .run("job_core_orphan", "intent_core_missing");
+    } finally {
+      db.close();
+    }
+    const result = captureT2Core({ snapshotPaths: { dataRoot: f.dataRoot, sqlitePath: f.sqlitePath }, mediaRoot: f.mediaRoot });
+    assert.equal(result.decision.state, "INELIGIBLE");
+    assert.deepEqual(result.decision.candidates, []);
+    assert.deepEqual(result.decision.reason_code_counts, { GENERATION_ADMISSION_FACTS_UNAVAILABLE: 1 });
+  } finally {
+    rmSync(f.root, { recursive: true, force: true });
+  }
+});

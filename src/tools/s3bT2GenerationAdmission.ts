@@ -1,7 +1,7 @@
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
-import { getProject, getShot, listProjectShots, type Project, type Shot } from "./projects.js";
+import { getProject, getShot, type Project, type Shot } from "./projects.js";
 import { evaluateGenerationAdmission } from "./s3bT2AdmissionEvaluate.js";
-import { listGenerationAdmissionProjectIds, readGenerationAdmissionFacts } from "./s3bT2AdmissionFacts.js";
+import { readGenerationAdmissionCandidateFacts } from "./s3bT2AdmissionFacts.js";
 import {
   buildGenerationPlan,
   parseGenerationPlan,
@@ -56,40 +56,21 @@ function error(
   return { ok: false, error: { code, message, ...metadata } };
 }
 
-function candidateShots(db: M0Database, input: PrepareGenerationInput): Array<{ project_id: string; shot_id: string }> {
-  if (input.project_id && input.shot_id) return [{ project_id: input.project_id, shot_id: input.shot_id }];
-  if (input.project_id) return listProjectShots(db, input.project_id).map((shot) => ({ project_id: input.project_id as string, shot_id: shot.shot_id }));
-  if (input.shot_id) {
-    const row = db.prepare("SELECT project_id FROM shots WHERE shot_id = ?").get(input.shot_id) as { project_id?: string } | undefined;
-    return row?.project_id ? [{ project_id: row.project_id, shot_id: input.shot_id }] : [];
-  }
-  return listGenerationAdmissionProjectIds(db).flatMap((projectId) =>
-    listProjectShots(db, projectId).map((shot) => ({ project_id: projectId, shot_id: shot.shot_id }))
-  );
-}
-
 function readCandidates(db: M0Database, input: PrepareGenerationInput): CandidateRead {
   const candidates: Candidate[] = [];
   const reasonCodes = new Set<string>();
-  let targets: ReturnType<typeof candidateShots>;
-  try {
-    targets = candidateShots(db, input);
-  } catch {
+  const read = readGenerationAdmissionCandidateFacts(db, input);
+  if (!read.ok) {
     return {
       candidates,
       candidate_count: 0,
-      reason_codes: ["GENERATION_ADMISSION_FACTS_UNAVAILABLE"]
+      reason_codes: [read.error.code]
     };
   }
-  for (const target of targets) {
-    const read = readGenerationAdmissionFacts(db, target.project_id, target.shot_id);
-    if (!read.ok) {
-      reasonCodes.add(read.error.code);
-      continue;
-    }
-    const decision = evaluateGenerationAdmission(read.facts);
+  for (const facts of read.facts) {
+    const decision = evaluateGenerationAdmission(facts);
     if (decision.state === "ELIGIBLE") {
-      candidates.push({ facts: read.facts, decision });
+      candidates.push({ facts, decision });
       continue;
     }
     Object.keys(decision.reason_code_counts).forEach((code) => reasonCodes.add(code));
@@ -202,12 +183,17 @@ export function confirmGeneration(
   if (!plan) return error("GENERATION_PLAN_INVALID", "GenerationPlan does not match generation_plan.v1.");
   db.exec("BEGIN IMMEDIATE");
   try {
-    const current = readGenerationAdmissionFacts(db, plan.project_id, plan.shot_id, { verify_media: false });
-    if (!current.ok) {
+    const current = readGenerationAdmissionCandidateFacts(
+      db,
+      { project_id: plan.project_id, shot_id: plan.shot_id },
+      { verify_media: false }
+    );
+    if (!current.ok || current.facts.length !== 1) {
       db.exec("ROLLBACK");
       return error("GENERATION_PLAN_STALE", "GenerationPlan no longer resolves to the same selected SHOT authority.");
     }
-    if (current.facts.generation.active_intent_count > 0) {
+    const currentFacts = current.facts[0];
+    if (currentFacts.generation.active_intent_count > 0) {
       db.exec("ROLLBACK");
       return error("REAL_GENERATION_ALREADY_ACTIVE", "Another active generation intent already owns the generation slot.");
     }
@@ -215,11 +201,11 @@ export function confirmGeneration(
       db.exec("ROLLBACK");
       return error("REAL_GENERATION_ALREADY_ACTIVE", "Another generation right already owns the generation slot.");
     }
-    if (!planMatchesFacts(plan, current.facts)) {
+    if (!planMatchesFacts(plan, currentFacts)) {
       db.exec("ROLLBACK");
       return error("GENERATION_PLAN_STALE", "Persisted generation-admission facts changed after plan preparation.");
     }
-    const confirmedFacts = factsForPlanConfirmation(current.facts, plan);
+    const confirmedFacts = factsForPlanConfirmation(currentFacts, plan);
     const decision = evaluateGenerationAdmission(confirmedFacts);
     if (decision.state !== "ELIGIBLE"
       || decision.candidates.length !== 1

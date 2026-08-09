@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
 
+import {
+  deriveShotOperationalState,
+  type ArtifactOperationalFact,
+  type ShotOperationalState
+} from "../packages/domain/operationalState.js";
 import { paths } from "../paths.js";
 import { type M0Database } from "../storage/sqlite.js";
 import { collectProjectOperationalBundle } from "./operationalStateFacts.js";
@@ -13,7 +18,14 @@ import { getProject, getShot, listProjectShots, type Project, type Shot } from "
 import { buildProviderCapabilityKey } from "./providerCapabilities.js";
 import { RUNNINGHUB_MODEL_ROUTE } from "./videoProviderAdapters.js";
 import { getStoryboardPackage, type StoryboardPackage } from "./storyboardPackages.js";
-import { packageSnapshotCollectionCoversProject, parseCanonicalClipVersion } from "./s3bT2Normalize.js";
+import {
+  admissionCandidateKey,
+  classifyAdmissionAuthoritySlice,
+  packageSnapshotCollectionCoversProject,
+  parseCanonicalClipVersion,
+  type T2AdmissionCandidateHistory,
+  type T2AdmissionCandidateIdentity
+} from "./s3bT2Normalize.js";
 import { collectT2GovernedMediaEvidence } from "./s3bT2MediaEvidence.js";
 import type {
   GenerationAdmissionArtifactFacts,
@@ -25,6 +37,7 @@ import type {
   GenerationAdmissionStateFacts,
   GenerationAdmissionProjectFacts,
   GenerationAdmissionShotFacts,
+  T2DatabaseRow,
   T2NormalizedArtifact,
   T2NormalizedBlob,
   T2NormalizedShot,
@@ -35,8 +48,166 @@ export type AdmissionFactsReadResult =
   | { ok: true; facts: GenerationAdmissionFacts }
   | { ok: false; error: { code: string; message: string } };
 
+export type AdmissionCandidateSetInput = {
+  project_id?: string;
+  shot_id?: string;
+};
+
+export type AdmissionCandidateFactsReadResult =
+  | { ok: true; candidates: readonly T2AdmissionCandidateIdentity[]; facts: readonly GenerationAdmissionFacts[] }
+  | { ok: false; error: { code: string; message: string } };
+
 const RUN_STATUSES = new Set(["queued", "running", "succeeded", "failed", "cancelled"]);
 const JOB_STATES = new Set(["queued", "submitting", "polling", "downloading", "finalizing", "manual_reconciliation", "succeeded", "failed", "cancelled"]);
+
+type CandidateAuthorityRows = {
+  projects: T2DatabaseRow[];
+  shots: T2DatabaseRow[];
+  candidates: T2AdmissionCandidateIdentity[];
+  required_project_ids: string[];
+  required_shot_ids: string[];
+};
+
+function uniqueStrings(values: readonly string[]): string[] {
+  return [...new Set(values.filter((value) => value.length > 0))];
+}
+
+function rowsForProjectIds(db: M0Database, projectIds: readonly string[]): T2DatabaseRow[] {
+  if (projectIds.length === 0) return [];
+  const placeholders = projectIds.map(() => "?").join(", ");
+  return db.prepare(`SELECT project_id, data_json FROM projects WHERE project_id IN (${placeholders}) ORDER BY project_id`)
+    .all(...projectIds) as T2DatabaseRow[];
+}
+
+function readCandidateAuthorityRows(db: M0Database, input: AdmissionCandidateSetInput): CandidateAuthorityRows {
+  if (input.project_id && input.shot_id) {
+    const projectShots = db.prepare("SELECT shot_id, project_id, data_json FROM shots WHERE project_id = ? ORDER BY shot_id")
+      .all(input.project_id) as T2DatabaseRow[];
+    const selected = db.prepare("SELECT shot_id, project_id, data_json FROM shots WHERE shot_id = ?").get(input.shot_id) as T2DatabaseRow | undefined;
+    const shots = selected && !projectShots.some((row) => row.shot_id === selected.shot_id) ? [...projectShots, selected] : projectShots;
+    return {
+      projects: rowsForProjectIds(db, [input.project_id]),
+      shots,
+      candidates: [{ project_id: input.project_id, shot_id: input.shot_id }],
+      required_project_ids: [input.project_id],
+      required_shot_ids: [input.shot_id]
+    };
+  }
+
+  if (input.project_id) {
+    const shots = db.prepare("SELECT shot_id, project_id, data_json FROM shots WHERE project_id = ? ORDER BY shot_id")
+      .all(input.project_id) as T2DatabaseRow[];
+    return {
+      projects: rowsForProjectIds(db, [input.project_id]),
+      shots,
+      candidates: shots.map((row) => ({ project_id: input.project_id as string, shot_id: typeof row.shot_id === "string" ? row.shot_id : "" }))
+        .filter((candidate) => candidate.shot_id.length > 0),
+      required_project_ids: [input.project_id],
+      required_shot_ids: shots.map((row) => typeof row.shot_id === "string" ? row.shot_id : "").filter(Boolean)
+    };
+  }
+
+  if (input.shot_id) {
+    const selected = db.prepare("SELECT shot_id, project_id, data_json FROM shots WHERE shot_id = ?").get(input.shot_id) as T2DatabaseRow | undefined;
+    const projectId = typeof selected?.project_id === "string" ? selected.project_id : "";
+    const projectShots = projectId
+      ? db.prepare("SELECT shot_id, project_id, data_json FROM shots WHERE project_id = ? ORDER BY shot_id").all(projectId) as T2DatabaseRow[]
+      : [];
+    const shots = selected && !projectShots.some((row) => row.shot_id === selected.shot_id) ? [...projectShots, selected] : projectShots;
+    return {
+      projects: rowsForProjectIds(db, projectId ? [projectId] : []),
+      shots,
+      candidates: projectId ? [{ project_id: projectId, shot_id: input.shot_id }] : [],
+      required_project_ids: projectId ? [projectId] : [],
+      required_shot_ids: [input.shot_id]
+    };
+  }
+
+  const shots = db.prepare("SELECT shot_id, project_id, data_json FROM shots ORDER BY project_id, shot_id").all() as T2DatabaseRow[];
+  const candidates = shots.map((row) => ({
+    project_id: typeof row.project_id === "string" ? row.project_id : "",
+    shot_id: typeof row.shot_id === "string" ? row.shot_id : ""
+  })).filter((candidate) => candidate.project_id.length > 0 && candidate.shot_id.length > 0);
+  const projectIds = uniqueStrings(candidates.map((candidate) => candidate.project_id));
+  return {
+    projects: rowsForProjectIds(db, projectIds),
+    shots,
+    candidates,
+    required_project_ids: projectIds,
+    required_shot_ids: uniqueStrings(candidates.map((candidate) => candidate.shot_id))
+  };
+}
+
+function readSelectedHistoryRows(
+  db: M0Database,
+  candidates: readonly T2AdmissionCandidateIdentity[]
+): { jobs: T2DatabaseRow[]; runs: T2DatabaseRow[] } {
+  if (candidates.length === 0) return { jobs: [], runs: [] };
+  const projectIds = uniqueStrings(candidates.map((candidate) => candidate.project_id));
+  const shotIds = uniqueStrings(candidates.map((candidate) => candidate.shot_id));
+  const projectPlaceholders = projectIds.map(() => "?").join(", ");
+  const shotPlaceholders = shotIds.map(() => "?").join(", ");
+  const jobs = db.prepare(`SELECT
+      'job' AS history_kind,
+      job.job_id AS history_id,
+      job.state AS history_state,
+      job.created_at AS history_created_at,
+      job.updated_at AS history_updated_at,
+      job.rowid AS history_rowid,
+      intent.intent_id AS authority_parent_id,
+      intent.project_id AS history_project_id,
+      intent.shot_id AS history_shot_id,
+      project.project_id AS authority_project_id,
+      project.data_json AS authority_project_data_json,
+      shot.shot_id AS authority_shot_id,
+      shot.project_id AS authority_shot_project_id,
+      shot.data_json AS authority_shot_data_json
+    FROM generation_jobs job
+    LEFT JOIN generation_intents intent ON intent.intent_id = job.intent_id
+    LEFT JOIN projects project ON project.project_id = intent.project_id
+    LEFT JOIN shots shot ON shot.shot_id = intent.shot_id
+    WHERE intent.intent_id IS NULL
+      OR project.project_id IS NULL
+      OR shot.shot_id IS NULL
+      OR shot.project_id IS NOT intent.project_id
+      OR CASE
+        WHEN json_valid(project.data_json) <> 1 THEN 1
+        WHEN json_extract(project.data_json, '$.project_id') IS NOT project.project_id THEN 1
+        ELSE 0
+      END = 1
+      OR CASE
+        WHEN json_valid(shot.data_json) <> 1 THEN 1
+        WHEN json_extract(shot.data_json, '$.shot_id') IS NOT shot.shot_id THEN 1
+        WHEN json_extract(shot.data_json, '$.project_id') IS NOT shot.project_id THEN 1
+        ELSE 0
+      END = 1
+      OR intent.project_id IN (${projectPlaceholders})
+      OR intent.shot_id IN (${shotPlaceholders})
+    ORDER BY job.updated_at, job.created_at, job.rowid`).all(...projectIds, ...shotIds) as T2DatabaseRow[];
+
+  const runs = db.prepare(`SELECT
+      'run' AS history_kind,
+      run.run_id AS history_id,
+      run.status AS history_state,
+      run.run_type AS history_run_type,
+      run.created_at AS history_created_at,
+      run.updated_at AS history_updated_at,
+      run.rowid AS history_rowid,
+      run.project_id AS history_project_id,
+      run.shot_id AS history_shot_id,
+      project.project_id AS authority_project_id,
+      project.data_json AS authority_project_data_json,
+      shot.shot_id AS authority_shot_id,
+      shot.project_id AS authority_shot_project_id,
+      shot.data_json AS authority_shot_data_json
+    FROM generation_runs run
+    LEFT JOIN projects project ON project.project_id = run.project_id
+    LEFT JOIN shots shot ON shot.shot_id = run.shot_id
+    WHERE NOT (run.run_type = 'assemble_video' AND COALESCE(run.shot_id, '') = '')
+      AND (run.project_id IN (${projectPlaceholders}) OR run.shot_id IN (${shotPlaceholders}))
+    ORDER BY run.updated_at, run.created_at, run.rowid`).all(...projectIds, ...shotIds) as T2DatabaseRow[];
+  return { jobs, runs };
+}
 
 function digest(domain: string, value: unknown): string {
   return createHash("sha256").update(`${domain}\0`).update(JSON.stringify(value)).digest("hex");
@@ -75,8 +246,58 @@ function canonicalClipVersions(shot: Shot): Shot["clip_versions"] {
   return parsed.map((version) => version.data) as Shot["clip_versions"];
 }
 
-function shotFacts(shot: Shot, operational: ReturnType<typeof collectProjectOperationalBundle>["states_by_shot_id"]): GenerationAdmissionShotFacts {
-  const state = operational.get(shot.shot_id);
+function admissionArtifactOperationalFact(
+  db: M0Database,
+  shot: Shot,
+  artifactId: string,
+  expectedRole: "storyboard_image" | "generated_clip",
+  expectedType: "image" | "video"
+): ArtifactOperationalFact {
+  if (!artifactId) return { artifact_id: null, status: "missing", verification_level: "none" };
+  const artifact = getMediaArtifact(db, artifactId);
+  if (!artifact) return { artifact_id: artifactId, status: "integrity_invalid", verification_level: "none" };
+  if (artifact.linked_objects.project_id !== shot.project_id || artifact.linked_objects.shot_id !== shot.shot_id) {
+    return { artifact_id: artifactId, status: "binding_invalid", verification_level: "none" };
+  }
+  if (artifact.role !== expectedRole || artifact.artifact_type !== expectedType) {
+    return { artifact_id: artifactId, status: "role_invalid", verification_level: "none" };
+  }
+  if (artifact.status !== "active") return { artifact_id: artifactId, status: "inactive", verification_level: "none" };
+  const blob = artifact.blob_id ? getMediaBlob(db, artifact.blob_id) : null;
+  if (!blob || blob.integrity_state !== "verified") {
+    return { artifact_id: artifactId, status: "integrity_invalid", verification_level: "none" };
+  }
+  return { artifact_id: artifactId, status: "active", verification_level: "ledger_verified" };
+}
+
+function admissionOperationalState(
+  db: M0Database,
+  shot: Shot,
+  generation: GenerationAdmissionStateFacts
+): ShotOperationalState {
+  const clipVersions = canonicalClipVersions(shot);
+  const latest = [...clipVersions].sort((left, right) => right.attempt_number - left.attempt_number)[0];
+  const accepted = clipVersions.find((version) => version.artifact_id === shot.accepted_clip_artifact_id);
+  return deriveShotOperationalState({
+    shot_id: shot.shot_id,
+    project_id: shot.project_id,
+    stored_workflow_status: shot.status,
+    duration_seconds: shot.duration_seconds,
+    video_prompt_present: shot.video_prompt.trim().length > 0,
+    storyboard_artifact: admissionArtifactOperationalFact(db, shot, shot.storyboard_image_artifact_id, "storyboard_image", "image"),
+    accepted_clip_artifact: admissionArtifactOperationalFact(db, shot, shot.accepted_clip_artifact_id, "generated_clip", "video"),
+    latest_version_artifact: admissionArtifactOperationalFact(db, shot, latest?.artifact_id ?? "", "generated_clip", "video"),
+    generation_version_count: clipVersions.length,
+    accepted_clip_in_version_stack: Boolean(shot.accepted_clip_artifact_id && accepted),
+    accepted_clip_review_status: accepted?.review_status ?? null,
+    review_approval_status: shot.review.approval_status,
+    latest_version_review_status: latest?.review_status ?? null,
+    generation_job_state: generation.latest_job_state,
+    latest_generation_run_status: generation.latest_run_status
+  });
+}
+
+function shotFacts(shot: Shot, state: ShotOperationalState | undefined): GenerationAdmissionShotFacts {
   const clipVersions = canonicalClipVersions(shot);
   return {
     shot_id: shot.shot_id,
@@ -340,6 +561,31 @@ function generationFacts(db: M0Database, projectId: string, shotId: string): Gen
   };
 }
 
+function newestHistoryFirst(left: T2DatabaseRow, right: T2DatabaseRow): number {
+  const leftTime = String(left.history_updated_at ?? left.history_created_at ?? "");
+  const rightTime = String(right.history_updated_at ?? right.history_created_at ?? "");
+  if (leftTime !== rightTime) return rightTime.localeCompare(leftTime);
+  return Number(right.history_rowid ?? 0) - Number(left.history_rowid ?? 0);
+}
+
+function generationFactsFromHistory(
+  activeIntentCount: number,
+  history: T2AdmissionCandidateHistory
+): GenerationAdmissionStateFacts {
+  const runs = [...history.runs].sort(newestHistoryFirst);
+  const jobs = [...history.jobs].sort(newestHistoryFirst);
+  const runStatus = typeof runs[0]?.history_state === "string" ? runs[0].history_state : "";
+  const jobState = typeof jobs[0]?.history_state === "string" ? jobs[0].history_state : "";
+  return {
+    active_intent_count: activeIntentCount,
+    selected_has_any_job_or_run: runs.length > 0 || jobs.length > 0,
+    latest_run_status: RUN_STATUSES.has(runStatus) ? runStatus as GenerationAdmissionStateFacts["latest_run_status"] : null,
+    latest_job_state: JOB_STATES.has(jobState) ? jobState as GenerationAdmissionStateFacts["latest_job_state"] : null,
+    malformed_history: runs.some((row) => !RUN_STATUSES.has(String(row.history_state ?? "")))
+      || jobs.some((row) => !JOB_STATES.has(String(row.history_state ?? "")))
+  };
+}
+
 function providerFacts(project: Project, shot: Shot): GenerationAdmissionProviderFacts {
   const capability = buildProviderCapabilityKey({
     provider: "runninghub",
@@ -375,6 +621,43 @@ function providerFacts(project: Project, shot: Shot): GenerationAdmissionProvide
   };
 }
 
+function buildGenerationAdmissionFacts(
+  db: M0Database,
+  projectId: string,
+  shotId: string,
+  options: { verify_media?: boolean },
+  trustedGeneration?: GenerationAdmissionStateFacts
+): AdmissionFactsReadResult {
+  const project = getProject(db, projectId);
+  if (!project) return { ok: false, error: { code: "PROJECT_NOT_FOUND", message: "Project was not found." } };
+  const shot = getShot(db, shotId);
+  if (!shot || shot.project_id !== project.project_id) {
+    return { ok: false, error: { code: "SHOT_NOT_FOUND", message: "SHOT was not found in the selected project." } };
+  }
+  const projectShots = listProjectShots(db, project.project_id);
+  const operational = trustedGeneration
+    ? admissionOperationalState(db, shot, trustedGeneration)
+    : collectProjectOperationalBundle(db, project).states_by_shot_id.get(shot.shot_id);
+  const packageValue = project.active_storyboard_package_id
+    ? getStoryboardPackage(db, project.active_storyboard_package_id)
+    : null;
+  const artifact = shot.storyboard_image_artifact_id ? getMediaArtifact(db, shot.storyboard_image_artifact_id) : null;
+  const blob = artifact?.blob_id ? getMediaBlob(db, artifact.blob_id) : null;
+  const logicalMedia = logicalMediaFacts(artifact, blob);
+  const media = options.verify_media === false ? logicalMedia : verifyMedia(shot, artifact, blob, logicalMedia);
+  return {
+    ok: true,
+    facts: {
+      project: projectFacts(db, project),
+      shot: shotFacts(shot, operational),
+      package: packageFacts(project, shot, packageValue, projectShots),
+      media,
+      generation: trustedGeneration ?? generationFacts(db, project.project_id, shot.shot_id),
+      provider: providerFacts(project, shot)
+    }
+  };
+}
+
 export function readGenerationAdmissionFacts(
   db: M0Database,
   projectId: string,
@@ -382,34 +665,70 @@ export function readGenerationAdmissionFacts(
   options: { verify_media?: boolean } = {}
 ): AdmissionFactsReadResult {
   try {
-    const project = getProject(db, projectId);
-    if (!project) return { ok: false, error: { code: "PROJECT_NOT_FOUND", message: "Project was not found." } };
-    const shot = getShot(db, shotId);
-    if (!shot || shot.project_id !== project.project_id) return { ok: false, error: { code: "SHOT_NOT_FOUND", message: "SHOT was not found in the selected project." } };
-    const projectShots = listProjectShots(db, project.project_id);
-    const operational = collectProjectOperationalBundle(db, project).states_by_shot_id;
-    const packageValue = project.active_storyboard_package_id
-      ? getStoryboardPackage(db, project.active_storyboard_package_id)
-      : null;
-    const artifact = shot.storyboard_image_artifact_id ? getMediaArtifact(db, shot.storyboard_image_artifact_id) : null;
-    const blob = artifact?.blob_id ? getMediaBlob(db, artifact.blob_id) : null;
-    const logicalMedia = logicalMediaFacts(artifact, blob);
-    const media = options.verify_media === false ? logicalMedia : verifyMedia(shot, artifact, blob, logicalMedia);
-    const facts: GenerationAdmissionFacts = {
-      project: projectFacts(db, project),
-      shot: shotFacts(shot, operational),
-      package: packageFacts(project, shot, packageValue, projectShots),
-      media,
-      generation: generationFacts(db, project.project_id, shot.shot_id),
-      provider: providerFacts(project, shot)
-    };
-    return { ok: true, facts };
+    return buildGenerationAdmissionFacts(db, projectId, shotId, options);
   } catch (error) {
     const code = error instanceof Error && /^[A-Z][A-Z0-9_]+$/.test(error.message) ? error.message : "GENERATION_ADMISSION_FACTS_UNAVAILABLE";
     return { ok: false, error: { code, message: "Generation admission facts could not be read from the current authority." } };
   }
 }
 
-export function listGenerationAdmissionProjectIds(db: M0Database): string[] {
-  return (db.prepare("SELECT project_id FROM projects ORDER BY project_id").all() as Array<{ project_id: string }>).map((row) => row.project_id);
+/** Admission-only read. Validation, history classification, and fact construction share one snapshot. */
+export function readGenerationAdmissionCandidateFacts(
+  db: M0Database,
+  input: AdmissionCandidateSetInput,
+  options: { verify_media?: boolean } = {}
+): AdmissionCandidateFactsReadResult {
+  let result: AdmissionCandidateFactsReadResult = {
+    ok: false,
+    error: { code: "GENERATION_ADMISSION_FACTS_UNAVAILABLE", message: "Generation admission facts could not be read from the current authority." }
+  };
+  let snapshotStarted = false;
+  try {
+    db.exec("SAVEPOINT t2_selected_admission_authority");
+    snapshotStarted = true;
+    const candidateAuthority = readCandidateAuthorityRows(db, input);
+    if (candidateAuthority.candidates.length === 0
+      && candidateAuthority.required_project_ids.length === 0
+      && candidateAuthority.required_shot_ids.length === 0) {
+      result = { ok: true, candidates: [], facts: [] };
+    } else {
+      const history = readSelectedHistoryRows(db, candidateAuthority.candidates);
+      const classified = classifyAdmissionAuthoritySlice({ ...candidateAuthority, generation_jobs: history.jobs, generation_runs: history.runs });
+      if (classified.status !== "COMPLETE") throw new Error("GENERATION_ADMISSION_FACTS_UNAVAILABLE");
+      const active = db.prepare("SELECT COUNT(*) AS count FROM generation_intents WHERE status IN ('queued', 'running')")
+        .get() as { count: number | bigint };
+      const facts: GenerationAdmissionFacts[] = [];
+      for (const candidate of candidateAuthority.candidates) {
+        const candidateHistory = classified.history_by_candidate.get(admissionCandidateKey(candidate));
+        if (!candidateHistory) throw new Error("GENERATION_ADMISSION_FACTS_UNAVAILABLE");
+        const read = buildGenerationAdmissionFacts(
+          db,
+          candidate.project_id,
+          candidate.shot_id,
+          options,
+          generationFactsFromHistory(Number(active.count), candidateHistory)
+        );
+        if (!read.ok) throw new Error("GENERATION_ADMISSION_FACTS_UNAVAILABLE");
+        facts.push(read.facts);
+      }
+      result = { ok: true, candidates: candidateAuthority.candidates, facts };
+    }
+  } catch {
+    result = {
+      ok: false,
+      error: { code: "GENERATION_ADMISSION_FACTS_UNAVAILABLE", message: "Generation admission facts could not be read from the current authority." }
+    };
+  } finally {
+    if (snapshotStarted) {
+      try {
+        db.exec("RELEASE SAVEPOINT t2_selected_admission_authority");
+      } catch {
+        result = {
+          ok: false,
+          error: { code: "GENERATION_ADMISSION_FACTS_UNAVAILABLE", message: "Generation admission facts could not be read from the current authority." }
+        };
+      }
+    }
+  }
+  return result;
 }

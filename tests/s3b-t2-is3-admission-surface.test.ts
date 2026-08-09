@@ -8,11 +8,17 @@ import test from "node:test";
 
 import { migrateDatabase } from "../src/storage/databaseGovernance.js";
 import { saveProject, saveShot, type Project, type Shot } from "../src/tools/projects.js";
+import { readGenerationAdmissionCandidateFacts } from "../src/tools/s3bT2AdmissionFacts.js";
 import {
   confirmGenerationAdmission,
   prepareGenerationAdmission,
   projectGenerationAdmission
 } from "../src/tools/s3bT2GenerationAdmissionSurface.js";
+import {
+  admissionCandidateKey,
+  classifyAdmissionAuthoritySlice,
+  classifyGenerationHistoryAttribution
+} from "../src/tools/s3bT2Normalize.js";
 import { runWorkbenchGenerationOnce } from "../src/tools/workbenchGeneration.js";
 
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
@@ -23,6 +29,13 @@ const BASE = {
   package_id: "package_is3_fixture",
   artifact_id: "artifact_is3_fixture",
   blob_id: "blob_is3_fixture"
+} as const;
+const PEER = {
+  project_id: "project_is3_peer",
+  shot_id: "shot_is3_peer",
+  package_id: "package_is3_peer",
+  artifact_id: "artifact_is3_peer",
+  blob_id: "blob_is3_peer"
 } as const;
 
 type CandidateIds = {
@@ -146,6 +159,33 @@ function totalChanges(db: DatabaseSync): number {
   return Number((db.prepare("SELECT total_changes() AS changes").get() as { changes: number }).changes);
 }
 
+function rewritePayloadIdentity(
+  fixture: Fixture,
+  table: "projects" | "shots",
+  relationalId: string,
+  mutate: (payload: Record<string, unknown>) => void
+): void {
+  const idColumn = table === "projects" ? "project_id" : "shot_id";
+  const row = fixture.db.prepare(`SELECT data_json FROM ${table} WHERE ${idColumn} = ?`).get(relationalId) as { data_json: string };
+  const payload = JSON.parse(row.data_json) as Record<string, unknown>;
+  mutate(payload);
+  fixture.db.prepare(`UPDATE ${table} SET data_json = ? WHERE ${idColumn} = ?`).run(JSON.stringify(payload), relationalId);
+}
+
+function assertFactsUnavailable(result: ReturnType<typeof prepareGenerationAdmission>): void {
+  assert.equal(result.result, "BLOCKED");
+  assert.deepEqual(result.projection, {
+    result: "BLOCKED",
+    candidate_count: 0,
+    reason_codes: ["GENERATION_ADMISSION_FACTS_UNAVAILABLE"]
+  });
+  assert.equal("plan" in result, false);
+  assert.doesNotMatch(
+    JSON.stringify(result),
+    /malformed|orphan|SQL|JSON|stack|[A-Za-z]:\\|\/tmp\/|sha256|hash|intent_is3_missing/i
+  );
+}
+
 function prepareFixture(fixture: Fixture) {
   const prepared = prepareGenerationAdmission({ project_id: BASE.project_id, shot_id: BASE.shot_id }, fixture.db);
   if (prepared.result !== "READY") throw new Error(prepared.projection.reason_codes.join(","));
@@ -256,6 +296,286 @@ test("IS3 project and global enumeration failures return one canonical low-discl
   }
 });
 
+test("admission rejects Project relational/payload identity drift on explicit, project, and global paths", () => {
+  const fixture = createFixture();
+  try {
+    addEligibleCandidate(fixture, {
+      project_id: "project_is3_valid_peer",
+      shot_id: "shot_is3_valid_peer",
+      package_id: "package_is3_valid_peer",
+      artifact_id: "artifact_is3_valid_peer",
+      blob_id: "blob_is3_valid_peer"
+    }, "storyboard-valid-peer.png", Buffer.concat([PNG, Buffer.from([1])]));
+    rewritePayloadIdentity(fixture, "projects", BASE.project_id, (payload) => { payload.project_id = "project_payload_drift"; });
+    const before = totalChanges(fixture.db);
+    for (const input of [
+      { project_id: BASE.project_id, shot_id: BASE.shot_id },
+      { project_id: BASE.project_id },
+      {}
+    ]) assertFactsUnavailable(prepareGenerationAdmission(input, fixture.db));
+    assert.equal(totalChanges(fixture.db), before);
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
+test("admission rejects SHOT relational/payload identity drift", () => {
+  const fixture = createFixture();
+  try {
+    rewritePayloadIdentity(fixture, "shots", BASE.shot_id, (payload) => { payload.shot_id = "shot_payload_drift"; });
+    assertFactsUnavailable(prepareGenerationAdmission({ project_id: BASE.project_id, shot_id: BASE.shot_id }, fixture.db));
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
+test("admission rejects contradictory SHOT project binding", () => {
+  const fixture = createFixture();
+  try {
+    rewritePayloadIdentity(fixture, "shots", BASE.shot_id, (payload) => { payload.project_id = "project_payload_drift"; });
+    assertFactsUnavailable(prepareGenerationAdmission({ project_id: BASE.project_id, shot_id: BASE.shot_id }, fixture.db));
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
+test("valid identity and legitimate no-history absence remain READY on every candidate path", () => {
+  const fixture = createFixture();
+  try {
+    for (const input of [
+      { project_id: BASE.project_id, shot_id: BASE.shot_id },
+      { project_id: BASE.project_id },
+      {}
+    ]) {
+      const prepared = prepareGenerationAdmission(input, fixture.db);
+      assert.equal(prepared.result, "READY");
+      assert.deepEqual(prepared.projection, { result: "READY", candidate_count: 1, reason_codes: [] });
+    }
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
+test("generation-history attribution distinguishes all four contract states", () => {
+  const candidates = [{ project_id: BASE.project_id, shot_id: BASE.shot_id }];
+  const canonical = (kind: "job" | "run", projectId: string, shotId: string) => ({
+    history_kind: kind,
+    history_id: `${kind}_${projectId}_${shotId}`,
+    history_project_id: projectId,
+    history_shot_id: shotId,
+    history_state: kind === "job" ? "queued" : "succeeded",
+    history_run_type: kind === "run" ? "image_to_video" : null,
+    authority_parent_id: kind === "job" ? `intent_${projectId}_${shotId}` : null,
+    authority_project_id: projectId,
+    authority_project_data_json: JSON.stringify({ project_id: projectId }),
+    authority_shot_id: shotId,
+    authority_shot_project_id: projectId,
+    authority_shot_data_json: JSON.stringify({ project_id: projectId, shot_id: shotId })
+  });
+
+  assert.equal(classifyGenerationHistoryAttribution(canonical("job", BASE.project_id, BASE.shot_id), candidates), "ATTRIBUTABLE");
+  assert.equal(classifyGenerationHistoryAttribution(canonical("run", BASE.project_id, BASE.shot_id), candidates), "ATTRIBUTABLE");
+  assert.equal(classifyGenerationHistoryAttribution(canonical("job", PEER.project_id, PEER.shot_id), candidates), "UNRELATED");
+  assert.equal(classifyGenerationHistoryAttribution(canonical("run", PEER.project_id, PEER.shot_id), candidates), "UNRELATED");
+  assert.equal(classifyGenerationHistoryAttribution({ history_kind: "job", authority_parent_id: null }, candidates), "UNASSIGNABLE");
+
+  const empty = classifyAdmissionAuthoritySlice({
+    projects: [{ project_id: BASE.project_id, data_json: JSON.stringify({ project_id: BASE.project_id }) }],
+    shots: [{ shot_id: BASE.shot_id, project_id: BASE.project_id, data_json: JSON.stringify({ shot_id: BASE.shot_id, project_id: BASE.project_id }) }],
+    generation_jobs: [],
+    generation_runs: [],
+    candidates,
+    required_project_ids: [BASE.project_id],
+    required_shot_ids: [BASE.shot_id]
+  });
+  assert.equal(empty.status, "COMPLETE");
+  assert.equal(empty.history_by_candidate.get(admissionCandidateKey(candidates[0]))?.attribution, "LEGITIMATE_ABSENCE");
+});
+
+test("orphan generation jobs are unassignable authority, never absent history", () => {
+  const fixture = createFixture();
+  try {
+    fixture.db.exec("PRAGMA foreign_keys = OFF");
+    fixture.db.prepare("INSERT INTO generation_jobs (job_id, intent_id, state) VALUES (?, ?, 'queued')")
+      .run("job_is3_orphan", "intent_is3_missing");
+    fixture.db.exec("PRAGMA foreign_keys = ON");
+    const before = totalChanges(fixture.db);
+    for (const input of [
+      { project_id: BASE.project_id, shot_id: BASE.shot_id },
+      { project_id: BASE.project_id },
+      {}
+    ]) assertFactsUnavailable(prepareGenerationAdmission(input, fixture.db));
+    assert.equal(totalChanges(fixture.db), before);
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
+test("valid attributable generation jobs retain existing history semantics", () => {
+  const fixture = createFixture();
+  try {
+    const prepared = prepareFixture(fixture);
+    const confirmed = confirmGenerationAdmission(prepared.plan, fixture.db);
+    assert.equal(confirmed.result, "CONFIRMED");
+    fixture.db.prepare("INSERT INTO generation_jobs (job_id, intent_id, state) VALUES (?, ?, 'queued')")
+      .run(confirmed.job_id, confirmed.intent_id);
+    const subsequent = prepareGenerationAdmission({ project_id: BASE.project_id, shot_id: BASE.shot_id }, fixture.db);
+    assert.equal(subsequent.result, "BLOCKED");
+    assert.equal(subsequent.projection.reason_codes.includes("GENERATION_ADMISSION_FACTS_UNAVAILABLE"), false);
+    assert.ok(subsequent.projection.reason_codes.some((code) => code === "REAL_GENERATION_ALREADY_ACTIVE" || code === "GENERATION_ALREADY_STARTED"));
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
+test("canonical unrelated jobs do not block explicit, project, or global candidate selection", () => {
+  const fixture = createFixture();
+  try {
+    addEligibleCandidate(fixture, PEER, "storyboard-peer-job.png", Buffer.concat([PNG, Buffer.from([2])]));
+    const peerPrepared = prepareGenerationAdmission({ project_id: PEER.project_id, shot_id: PEER.shot_id }, fixture.db);
+    assert.equal(peerPrepared.result, "READY");
+    const peerConfirmed = confirmGenerationAdmission(peerPrepared.plan, fixture.db);
+    assert.equal(peerConfirmed.result, "CONFIRMED");
+    fixture.db.prepare("INSERT INTO generation_jobs (job_id, intent_id, state) VALUES (?, ?, 'queued')")
+      .run(peerConfirmed.job_id, peerConfirmed.intent_id);
+
+    for (const input of [
+      { project_id: BASE.project_id, shot_id: BASE.shot_id },
+      { project_id: BASE.project_id },
+      {}
+    ]) {
+      const prepared = prepareGenerationAdmission(input, fixture.db);
+      assert.equal(prepared.result, "READY");
+      assert.deepEqual(prepared.projection, { result: "READY", candidate_count: 1, reason_codes: [] });
+    }
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
+test("both half-matched intent/job attribution shapes fail closed instead of becoming absent history", () => {
+  for (const mismatch of [
+    { column: "project_id", value: "project_is3_contradictory" },
+    { column: "shot_id", value: "shot_is3_contradictory" }
+  ] as const) {
+    const fixture = createFixture();
+    try {
+      const prepared = prepareFixture(fixture);
+      const confirmed = confirmGenerationAdmission(prepared.plan, fixture.db);
+      assert.equal(confirmed.result, "CONFIRMED");
+      fixture.db.prepare("INSERT INTO generation_jobs (job_id, intent_id, state) VALUES (?, ?, 'queued')")
+        .run(confirmed.job_id, confirmed.intent_id);
+      fixture.db.prepare(`UPDATE generation_intents SET ${mismatch.column} = ? WHERE intent_id = ?`)
+        .run(mismatch.value, confirmed.intent_id);
+      assertFactsUnavailable(prepareGenerationAdmission({ project_id: BASE.project_id, shot_id: BASE.shot_id }, fixture.db));
+    } finally {
+      closeFixture(fixture);
+    }
+  }
+});
+
+test("canonical candidate runs remain attributable generation history", () => {
+  const fixture = createFixture();
+  try {
+    fixture.db.prepare(`INSERT INTO generation_runs
+      (run_id, batch_id, project_id, shot_id, run_type, status, data_json)
+      VALUES (?, '', ?, ?, 'image_to_video', 'succeeded', ?)`)
+      .run("run_is3_candidate", BASE.project_id, BASE.shot_id, JSON.stringify({ run_type: "image_to_video" }));
+    const prepared = prepareGenerationAdmission({ project_id: BASE.project_id, shot_id: BASE.shot_id }, fixture.db);
+    assert.equal(prepared.result, "BLOCKED");
+    assert.equal(prepared.projection.reason_codes.includes("GENERATION_ADMISSION_FACTS_UNAVAILABLE"), false);
+    assert.equal(prepared.projection.reason_codes.includes("GENERATION_ALREADY_STARTED"), true);
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
+test("canonical unrelated runs do not block explicit, project, or global candidate selection", () => {
+  const fixture = createFixture();
+  try {
+    addEligibleCandidate(fixture, PEER, "storyboard-peer-run.png", Buffer.concat([PNG, Buffer.from([3])]));
+    fixture.db.prepare(`INSERT INTO generation_runs
+      (run_id, batch_id, project_id, shot_id, run_type, status, data_json)
+      VALUES (?, '', ?, ?, 'image_to_video', 'succeeded', ?)`)
+      .run("run_is3_unrelated", PEER.project_id, PEER.shot_id, JSON.stringify({ run_type: "image_to_video" }));
+    for (const input of [
+      { project_id: BASE.project_id, shot_id: BASE.shot_id },
+      { project_id: BASE.project_id },
+      {}
+    ]) {
+      const prepared = prepareGenerationAdmission(input, fixture.db);
+      assert.equal(prepared.result, "READY");
+      assert.deepEqual(prepared.projection, { result: "READY", candidate_count: 1, reason_codes: [] });
+    }
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
+test("both half-matched SHOT generation-run shapes fail closed instead of becoming absent history", () => {
+  for (const binding of [
+    { project_id: "project_is3_contradictory", shot_id: BASE.shot_id },
+    { project_id: BASE.project_id, shot_id: "shot_is3_contradictory" }
+  ]) {
+    const fixture = createFixture();
+    try {
+      fixture.db.prepare(`INSERT INTO generation_runs
+        (run_id, batch_id, project_id, shot_id, run_type, status, data_json)
+        VALUES (?, '', ?, ?, 'image_to_video', 'succeeded', ?)`)
+        .run(`run_is3_unassignable_${binding.project_id}_${binding.shot_id}`, binding.project_id, binding.shot_id, JSON.stringify({ run_type: "image_to_video" }));
+      assertFactsUnavailable(prepareGenerationAdmission({ project_id: BASE.project_id, shot_id: BASE.shot_id }, fixture.db));
+    } finally {
+      closeFixture(fixture);
+    }
+  }
+});
+
+test("unrelated project-level assembly history does not become a world-admission blocker", () => {
+  const fixture = createFixture();
+  try {
+    fixture.db.prepare(`INSERT INTO generation_runs
+      (run_id, batch_id, project_id, shot_id, run_type, status, data_json)
+      VALUES (?, '', ?, '', 'assemble_video', 'succeeded', ?)`)
+      .run("run_is3_unrelated_assembly", "project_is3_unrelated", JSON.stringify({ run_type: "assemble_video" }));
+    const prepared = prepareGenerationAdmission({ project_id: BASE.project_id, shot_id: BASE.shot_id }, fixture.db);
+    assert.equal(prepared.result, "READY");
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
+test("admission validates and constructs generation facts from one selected history slice", () => {
+  const fixture = createFixture();
+  try {
+    const statements: string[] = [];
+    const instrumented = new Proxy(fixture.db, {
+      get(target, property) {
+        if (property === "prepare") {
+          return (sql: string) => {
+            statements.push(sql);
+            return target.prepare(sql);
+          };
+        }
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      }
+    }) as DatabaseSync;
+    const read = readGenerationAdmissionCandidateFacts(
+      instrumented,
+      { project_id: BASE.project_id, shot_id: BASE.shot_id }
+    );
+    if (!read.ok) assert.fail(read.error.code);
+    assert.equal(read.facts.length, 1);
+    assert.equal(read.facts[0].generation.selected_has_any_job_or_run, false);
+    const historyStatements = statements.filter((sql) => /\bFROM\s+generation_(?:jobs|runs)\b/i.test(sql));
+    assert.equal(historyStatements.length, 2);
+    assert.equal(historyStatements.filter((sql) => /'job' AS history_kind/i.test(sql)).length, 1);
+    assert.equal(historyStatements.filter((sql) => /'run' AS history_kind/i.test(sql)).length, 1);
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
 test("IS3 explicit confirm reuses the existing human gate boundary and writes one canonical intent", () => {
   const fixture = createFixture();
   try {
@@ -284,6 +604,30 @@ test("IS3 stale plan returns GENERATION_PLAN_STALE without gaining a new generat
     assert.equal(confirmed.result, "GENERATION_PLAN_STALE");
     assert.equal(intentCount(fixture.db), 0);
   } finally {
+    closeFixture(fixture);
+  }
+});
+
+test("atomic confirmation revalidates newly unassignable authority without creating a generation right", () => {
+  const fixture = createFixture();
+  const originalFetch = globalThis.fetch;
+  let networkCalls = 0;
+  globalThis.fetch = async () => {
+    networkCalls += 1;
+    throw new Error("Confirmation must not dispatch Provider work.");
+  };
+  try {
+    const prepared = prepareFixture(fixture);
+    fixture.db.exec("PRAGMA foreign_keys = OFF");
+    fixture.db.prepare("INSERT INTO generation_jobs (job_id, intent_id, state) VALUES (?, ?, 'queued')")
+      .run("job_is3_confirm_orphan", "intent_is3_confirm_missing");
+    fixture.db.exec("PRAGMA foreign_keys = ON");
+    const confirmed = confirmGenerationAdmission(prepared.plan, fixture.db);
+    assert.equal(confirmed.result, "GENERATION_PLAN_STALE");
+    assert.equal(intentCount(fixture.db), 0);
+    assert.equal(networkCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
     closeFixture(fixture);
   }
 });

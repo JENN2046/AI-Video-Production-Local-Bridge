@@ -1,5 +1,5 @@
 import { getM0Paths } from "../paths.js";
-import { normalizeT2RawSnapshot } from "./s3bT2Normalize.js";
+import { admissionAuthorityCompletenessForRawSnapshot, normalizeT2RawSnapshot } from "./s3bT2Normalize.js";
 import { collectT2GovernedMediaEvidence } from "./s3bT2MediaEvidence.js";
 import { evaluateT2Snapshot } from "./s3bT2Evaluate.js";
 import { captureT2RawSnapshot, fingerprintT2SnapshotEvidence, type T2SnapshotPaths } from "./s3bT2Snapshot.js";
@@ -36,7 +36,9 @@ function captureStage(input: { snapshotPaths: T2SnapshotPaths; mediaRoot: string
       referenced_media_evidence: media.referenced_media_evidence,
       rowsets: raw.rowset_evidence
     },
-    decision: evaluateT2Snapshot(normalized, media.referenced)
+    decision: admissionAuthorityCompletenessForRawSnapshot(raw) === "COMPLETE"
+      ? evaluateT2Snapshot(normalized, media.referenced)
+      : { state: "INELIGIBLE", candidates: [], reason_code_counts: { GENERATION_ADMISSION_FACTS_UNAVAILABLE: 1 } }
   };
 }
 

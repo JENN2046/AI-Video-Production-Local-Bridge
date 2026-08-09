@@ -53,6 +53,223 @@ function relationString(row: T2DatabaseRow, name: string): string | null {
   return typeof value === "string" ? value : null;
 }
 
+function authorityString(row: T2DatabaseRow, name: string): string | null {
+  const value = relationString(row, name);
+  return value && value.length > 0 ? value : null;
+}
+
+export type T2GenerationHistoryAttribution = "ATTRIBUTABLE" | "LEGITIMATE_ABSENCE" | "UNASSIGNABLE" | "UNRELATED";
+
+export type T2AdmissionCandidateIdentity = {
+  project_id: string;
+  shot_id: string;
+};
+
+export type T2AdmissionAuthoritySlice = {
+  projects: readonly T2DatabaseRow[];
+  shots: readonly T2DatabaseRow[];
+  generation_jobs: readonly T2DatabaseRow[];
+  generation_runs: readonly T2DatabaseRow[];
+  candidates: readonly T2AdmissionCandidateIdentity[];
+  required_project_ids?: readonly string[];
+  required_shot_ids?: readonly string[];
+};
+
+export type T2AdmissionCandidateHistory = {
+  attribution: "ATTRIBUTABLE" | "LEGITIMATE_ABSENCE";
+  jobs: readonly T2DatabaseRow[];
+  runs: readonly T2DatabaseRow[];
+};
+
+export type T2AdmissionAuthorityClassification =
+  | { status: "UNAVAILABLE"; history_by_candidate: ReadonlyMap<string, T2AdmissionCandidateHistory> }
+  | { status: "COMPLETE"; history_by_candidate: ReadonlyMap<string, T2AdmissionCandidateHistory> };
+
+export function admissionCandidateKey(candidate: T2AdmissionCandidateIdentity): string {
+  return `${candidate.project_id}\u0000${candidate.shot_id}`;
+}
+
+function canonicalHistoryBinding(row: T2DatabaseRow): T2AdmissionCandidateIdentity | null {
+  const projectId = authorityString(row, "history_project_id");
+  const shotId = authorityString(row, "history_shot_id");
+  const authorityProjectId = authorityString(row, "authority_project_id");
+  const authorityShotId = authorityString(row, "authority_shot_id");
+  const authorityShotProjectId = authorityString(row, "authority_shot_project_id");
+  const projectPayload = parseObject(row.authority_project_data_json);
+  const shotPayload = parseObject(row.authority_shot_data_json);
+  if (!projectId || !shotId
+    || authorityProjectId !== projectId
+    || authorityShotId !== shotId
+    || authorityShotProjectId !== projectId
+    || projectPayload?.project_id !== projectId
+    || shotPayload?.shot_id !== shotId
+    || shotPayload?.project_id !== projectId) return null;
+  return { project_id: projectId, shot_id: shotId };
+}
+
+export function classifyGenerationHistoryAttribution(
+  row: T2DatabaseRow,
+  candidates: readonly T2AdmissionCandidateIdentity[]
+): Exclude<T2GenerationHistoryAttribution, "LEGITIMATE_ABSENCE"> {
+  const kind = authorityString(row, "history_kind");
+  const projectId = authorityString(row, "history_project_id");
+  const shotId = authorityString(row, "history_shot_id");
+  const candidateKeys = new Set(candidates.map(admissionCandidateKey));
+  const candidateProjectIds = new Set(candidates.map((candidate) => candidate.project_id));
+  const candidateShotIds = new Set(candidates.map((candidate) => candidate.shot_id));
+
+  if (kind === "job" && !authorityString(row, "authority_parent_id")) return "UNASSIGNABLE";
+  if (kind === "run"
+    && authorityString(row, "history_run_type") === "assemble_video"
+    && !shotId) return "UNRELATED";
+
+  const canonical = canonicalHistoryBinding(row);
+  if (canonical) return candidateKeys.has(admissionCandidateKey(canonical)) ? "ATTRIBUTABLE" : "UNRELATED";
+  if (kind === "job") return "UNASSIGNABLE";
+  if (kind === "run" && ((projectId && candidateProjectIds.has(projectId)) || (shotId && candidateShotIds.has(shotId)))) {
+    return "UNASSIGNABLE";
+  }
+  return "UNRELATED";
+}
+
+/**
+ * Admission-only trust boundary. The supplied rows are already a selected
+ * candidate slice: candidate Project/SHOT authority, candidate/half-matching
+ * history, and globally unassignable job evidence. Unrelated canonical
+ * history may be supplied for classification tests, but is excluded here.
+ */
+export function classifyAdmissionAuthoritySlice(
+  authority: T2AdmissionAuthoritySlice
+): T2AdmissionAuthorityClassification {
+  const unavailable = (): T2AdmissionAuthorityClassification => ({ status: "UNAVAILABLE", history_by_candidate: new Map() });
+  const projects = new Map<string, RecordValue>();
+  for (const row of authority.projects) {
+    const relationId = authorityString(row, "project_id");
+    const payload = parseObject(row.data_json);
+    if (!relationId || !payload || payload.project_id !== relationId || projects.has(relationId)) return unavailable();
+    projects.set(relationId, payload);
+  }
+
+  const shots = new Map<string, { project_id: string; payload: RecordValue }>();
+  for (const row of authority.shots) {
+    const relationId = authorityString(row, "shot_id");
+    const relationProjectId = authorityString(row, "project_id");
+    const payload = parseObject(row.data_json);
+    if (!relationId || !relationProjectId || !payload
+      || payload.shot_id !== relationId
+      || payload.project_id !== relationProjectId
+      || shots.has(relationId)) return unavailable();
+    shots.set(relationId, { project_id: relationProjectId, payload });
+  }
+
+  for (const projectId of authority.required_project_ids ?? []) {
+    if (!projects.has(projectId)) return unavailable();
+  }
+  for (const shotId of authority.required_shot_ids ?? []) {
+    if (!shots.has(shotId)) return unavailable();
+  }
+
+  const historyByCandidate = new Map<string, { jobs: T2DatabaseRow[]; runs: T2DatabaseRow[] }>();
+  for (const candidate of authority.candidates) {
+    const key = admissionCandidateKey(candidate);
+    const shot = shots.get(candidate.shot_id);
+    if (historyByCandidate.has(key)
+      || !projects.has(candidate.project_id)
+      || !shot
+      || shot.project_id !== candidate.project_id) return unavailable();
+    historyByCandidate.set(key, { jobs: [], runs: [] });
+  }
+
+  for (const row of authority.generation_jobs) {
+    const attribution = classifyGenerationHistoryAttribution(row, authority.candidates);
+    if (attribution === "UNASSIGNABLE") return unavailable();
+    if (attribution !== "ATTRIBUTABLE") continue;
+    const binding = canonicalHistoryBinding(row);
+    const bucket = binding ? historyByCandidate.get(admissionCandidateKey(binding)) : undefined;
+    if (!bucket) return unavailable();
+    bucket.jobs.push(row);
+  }
+
+  for (const row of authority.generation_runs) {
+    const attribution = classifyGenerationHistoryAttribution(row, authority.candidates);
+    if (attribution === "UNASSIGNABLE") return unavailable();
+    if (attribution !== "ATTRIBUTABLE") continue;
+    const binding = canonicalHistoryBinding(row);
+    const bucket = binding ? historyByCandidate.get(admissionCandidateKey(binding)) : undefined;
+    if (!bucket) return unavailable();
+    bucket.runs.push(row);
+  }
+
+  return {
+    status: "COMPLETE",
+    history_by_candidate: new Map([...historyByCandidate].map(([key, history]) => [key, {
+      attribution: history.jobs.length > 0 || history.runs.length > 0 ? "ATTRIBUTABLE" : "LEGITIMATE_ABSENCE",
+      jobs: history.jobs,
+      runs: history.runs
+    }]))
+  };
+}
+
+export function admissionAuthorityCompleteness(authority: T2AdmissionAuthoritySlice): "COMPLETE" | "UNAVAILABLE" {
+  return classifyAdmissionAuthoritySlice(authority).status;
+}
+
+function joinedHistoryAuthority(
+  row: T2DatabaseRow,
+  kind: "job" | "run",
+  parent: T2DatabaseRow | undefined,
+  projects: ReadonlyMap<string, T2DatabaseRow>,
+  shots: ReadonlyMap<string, T2DatabaseRow>
+): T2DatabaseRow {
+  const projectId = kind === "job" ? relationString(parent ?? {}, "project_id") : relationString(row, "project_id");
+  const shotId = kind === "job" ? relationString(parent ?? {}, "shot_id") : relationString(row, "shot_id");
+  const project = projectId ? projects.get(projectId) : undefined;
+  const shot = shotId ? shots.get(shotId) : undefined;
+  return {
+    ...row,
+    history_kind: kind,
+    history_id: kind === "job" ? row.job_id : row.run_id,
+    history_project_id: projectId,
+    history_shot_id: shotId,
+    history_state: kind === "job" ? row.state : row.status,
+    history_run_type: kind === "run" ? row.run_type : null,
+    authority_parent_id: kind === "job" ? parent?.intent_id ?? null : null,
+    authority_project_id: project?.project_id ?? null,
+    authority_project_data_json: project?.data_json ?? null,
+    authority_shot_id: shot?.shot_id ?? null,
+    authority_shot_project_id: shot?.project_id ?? null,
+    authority_shot_data_json: shot?.data_json ?? null
+  };
+}
+
+/** Global legacy admission uses the already captured immutable snapshot. */
+export function admissionAuthorityCompletenessForRawSnapshot(raw: T2RawSnapshot): "COMPLETE" | "UNAVAILABLE" {
+  const projects = new Map(raw.rowsets.projects.map((row) => [String(row.project_id ?? ""), row]));
+  const shots = new Map(raw.rowsets.shots.map((row) => [String(row.shot_id ?? ""), row]));
+  const intents = new Map(raw.rowsets.generation_intents.map((row) => [String(row.intent_id ?? ""), row]));
+  const candidates = raw.rowsets.shots
+    .map((row) => ({ project_id: relationString(row, "project_id") ?? "", shot_id: relationString(row, "shot_id") ?? "" }))
+    .filter((candidate) => candidate.project_id.length > 0 && candidate.shot_id.length > 0);
+  const requiredProjectIds = [...new Set(candidates.map((candidate) => candidate.project_id))];
+  const requiredShotIds = [...new Set(candidates.map((candidate) => candidate.shot_id))];
+  const candidateProjects = raw.rowsets.projects.filter((row) => requiredProjectIds.includes(String(row.project_id ?? "")));
+  return admissionAuthorityCompleteness({
+    projects: candidateProjects,
+    shots: raw.rowsets.shots,
+    generation_jobs: raw.rowsets.generation_jobs.map((row) => joinedHistoryAuthority(
+      row,
+      "job",
+      intents.get(String(row.intent_id ?? "")),
+      projects,
+      shots
+    )),
+    generation_runs: raw.rowsets.generation_runs.map((row) => joinedHistoryAuthority(row, "run", undefined, projects, shots)),
+    candidates,
+    required_project_ids: requiredProjectIds,
+    required_shot_ids: requiredShotIds
+  });
+}
+
 function normalizeProjects(raw: T2RawSnapshot, issues: T2NormalizationIssue[]): Map<string, T2NormalizedProject> {
   const result = new Map<string, T2NormalizedProject>();
   for (const row of raw.rowsets.projects) {
