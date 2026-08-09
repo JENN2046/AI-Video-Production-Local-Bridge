@@ -13,7 +13,9 @@ import {
   prepareGeneration
 } from "../src/tools/s3bT2GenerationAdmission.js";
 import {
+  cancelPreparedGenerationIntent,
   confirmWorkbenchGeneration,
+  generationRightConflict,
   preflightWorkbenchGeneration,
   resumeWorkbenchGenerationJobs,
   runWorkbenchGenerationOnce,
@@ -191,6 +193,62 @@ function fixtureExecutionDependencies(
   };
 }
 
+function addUnrelatedWorldDrift(fixture: Fixture): void {
+  const unrelatedProjectId = "project_unrelated_promotion_drift";
+  const unrelatedShotId = "shot_unrelated_promotion_drift";
+  const unrelatedArtifactId = "artifact_unrelated_promotion_drift";
+  const unrelatedBlobId = "blob_unrelated_promotion_drift";
+  const unrelatedProject: Project = {
+    project_id: unrelatedProjectId,
+    title: "Unrelated promotion project",
+    project_type: "m0_video_loop",
+    status: "draft",
+    brief: {},
+    video_spec: { duration_seconds: 15, aspect_ratio: "16:9", resolution: "480p" },
+    shot_ids: [unrelatedShotId],
+    active_storyboard_package_id: "",
+    generation_batch_ids: [],
+    exports: { final_video_artifact_id: "" }
+  };
+  saveProject(fixture.db, unrelatedProject);
+  saveShot(fixture.db, {
+    shot_id: unrelatedShotId,
+    project_id: unrelatedProjectId,
+    order: 1,
+    status: "draft",
+    duration_seconds: 6,
+    description: "Unrelated promotion drift.",
+    storyboard_image_artifact_id: "",
+    video_prompt: "Unrelated prompt.",
+    negative_prompt: "",
+    generation_run_ids: [],
+    accepted_clip_artifact_id: "",
+    clip_versions: [],
+    review: { approval_status: "pending", rejection_reasons: [], latest_revision_instruction: null }
+  });
+  const unrelatedSha256 = createHash("sha256").update("unrelated-promotion-blob").digest("hex");
+  const unrelatedPath = join(fixture.mediaRoot, "unrelated-promotion.bin");
+  fixture.db.prepare(`INSERT INTO media_blobs
+    (blob_id, sha256, size_bytes, detected_mime, storage_uri, integrity_state, provenance_json)
+    VALUES (?, ?, 26, 'application/octet-stream', ?, 'unverified', ?)`)
+    .run(unrelatedBlobId, unrelatedSha256, unrelatedPath, JSON.stringify({ media_root: fixture.mediaRoot }));
+  fixture.db.prepare(`INSERT INTO media_artifacts
+    (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
+    VALUES (?, ?, ?, 'storyboard_image', 'image', 'archived', ?)`)
+    .run(unrelatedArtifactId, unrelatedProjectId, unrelatedShotId, JSON.stringify({
+      artifact_id: unrelatedArtifactId,
+      blob_id: unrelatedBlobId,
+      artifact_type: "image",
+      role: "storyboard_image",
+      status: "archived",
+      storage: { uri: unrelatedPath, mime_type: "application/octet-stream", filename: "unrelated-promotion.bin" },
+      metadata: { width: 0, height: 0, duration_seconds: null, aspect_ratio: "", sha256: unrelatedSha256 },
+      linked_objects: { project_id: unrelatedProjectId, shot_id: unrelatedShotId },
+      source: { kind: "fixture_path", provider: "", provider_job_id: "", sha256: unrelatedSha256, external_url_host: "" }
+    }));
+  fixture.db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)").run(unrelatedArtifactId, unrelatedBlobId);
+}
+
 test("IS2.5 prepare compiles one GenerationPlan and confirm writes the canonical intent atomically", () => {
   const fixture = createFixture();
   try {
@@ -309,6 +367,162 @@ test("P1 existing preflight upgrades the same T2 reservation and execution submi
     assert.equal(counters.preflight_requests, 2);
     assert.equal(counters.provider_submits, 1);
     assert.equal(Number((fixture.db.prepare("SELECT COUNT(*) AS count FROM generation_intents").get() as { count: number }).count), 1);
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
+test("P1 promotion retires shot, package, and persisted Artifact drift as a stale reservation", async () => {
+  for (const drift of ["shot", "package", "artifact"] as const) {
+    const fixture = createFixture();
+    try {
+      const { confirmed: admitted } = confirmT2Fixture(fixture);
+      const counters = { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 };
+      const dependencies = fixtureExecutionDependencies(fixture, counters);
+      const preflight = await preflightWorkbenchGeneration({
+        project_id: PROJECT_ID,
+        shot_id: SHOT_ID,
+        account_label: "personal",
+        budget_limit_value: 10
+      }, fixture.db, dependencies);
+      if (!preflight.ok) throw new Error(preflight.error.code);
+      if (drift === "shot") {
+        const row = fixture.db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(SHOT_ID) as { data_json: string };
+        const shot = JSON.parse(row.data_json) as Shot;
+        shot.video_prompt = "A promotion-drifted prompt.";
+        fixture.db.prepare("UPDATE shots SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE shot_id = ?")
+          .run(JSON.stringify(shot), SHOT_ID);
+      } else if (drift === "package") {
+        const row = fixture.db.prepare("SELECT data_json FROM storyboard_packages WHERE storyboard_package_id = ?").get(PACKAGE_ID) as { data_json: string };
+        const storyboardPackage = JSON.parse(row.data_json) as { approved_shot_snapshots: Array<{ video_prompt: string }> };
+        storyboardPackage.approved_shot_snapshots[0].video_prompt = "A promotion-drifted frozen prompt.";
+        fixture.db.prepare("UPDATE storyboard_packages SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE storyboard_package_id = ?")
+          .run(JSON.stringify(storyboardPackage), PACKAGE_ID);
+      } else {
+        const row = fixture.db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = ?").get(ARTIFACT_ID) as { data_json: string };
+        const artifact = JSON.parse(row.data_json) as { linked_objects: { shot_id: string } };
+        artifact.linked_objects.shot_id = "other_promotion_shot";
+        fixture.db.prepare("UPDATE media_artifacts SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE artifact_id = ?")
+          .run(JSON.stringify(artifact), ARTIFACT_ID);
+      }
+      const promoted = confirmWorkbenchGeneration({
+        intent_id: admitted.data.intent.intent_id,
+        budget_limit_value: 10,
+        cost_confirmed: true,
+        human_confirmation: true
+      }, fixture.db, dependencies);
+      assert.equal(promoted.ok, false, drift);
+      if (promoted.ok) throw new Error(`${drift} drift unexpectedly promoted`);
+      assert.equal(promoted.error.code, "GENERATION_PLAN_STALE", drift);
+      const row = fixture.db.prepare("SELECT status, sanitized_error_json, data_json FROM generation_intents WHERE intent_id = ?")
+        .get(admitted.data.intent.intent_id) as { status: string; sanitized_error_json: string; data_json: string };
+      assert.equal(row.status, "cancelled", drift);
+      assert.equal((JSON.parse(row.sanitized_error_json) as { code?: string }).code, "GENERATION_PLAN_STALE", drift);
+      assert.equal((JSON.parse(row.data_json) as { generation_plan?: { schema_version?: string } }).generation_plan?.schema_version, "generation_plan.v1", drift);
+      assert.equal(generationRightConflict(fixture.db), null, drift);
+      assert.equal(counters.provider_submits, 0, drift);
+    } finally {
+      closeFixture(fixture);
+    }
+  }
+});
+
+test("P1 promotion detects stale facts before preflight authorization and releases the right", () => {
+  const fixture = createFixture();
+  try {
+    const { confirmed: admitted } = confirmT2Fixture(fixture);
+    const row = fixture.db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(SHOT_ID) as { data_json: string };
+    const shot = JSON.parse(row.data_json) as Shot;
+    shot.video_prompt = "A stale-before-preflight prompt.";
+    fixture.db.prepare("UPDATE shots SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE shot_id = ?")
+      .run(JSON.stringify(shot), SHOT_ID);
+    const promoted = confirmWorkbenchGeneration({
+      intent_id: admitted.data.intent.intent_id,
+      budget_limit_value: 10,
+      cost_confirmed: true,
+      human_confirmation: true
+    }, fixture.db);
+    assert.equal(promoted.ok, false);
+    if (promoted.ok) throw new Error("stale reservation unexpectedly promoted before preflight");
+    assert.equal(promoted.error.code, "GENERATION_PLAN_STALE");
+    const stored = fixture.db.prepare("SELECT status FROM generation_intents WHERE intent_id = ?")
+      .get(admitted.data.intent.intent_id) as { status: string };
+    assert.equal(stored.status, "cancelled");
+    assert.equal(generationRightConflict(fixture.db), null);
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
+test("P1 unrelated world drift does not invalidate a valid prepared reservation", async () => {
+  const fixture = createFixture();
+  try {
+    const { confirmed: admitted } = confirmT2Fixture(fixture);
+    const counters = { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 };
+    const dependencies = fixtureExecutionDependencies(fixture, counters);
+    const preflight = await preflightWorkbenchGeneration({ project_id: PROJECT_ID, shot_id: SHOT_ID, account_label: "personal", budget_limit_value: 10 }, fixture.db, dependencies);
+    if (!preflight.ok) throw new Error(preflight.error.code);
+    addUnrelatedWorldDrift(fixture);
+    const promoted = confirmWorkbenchGeneration({ intent_id: admitted.data.intent.intent_id, budget_limit_value: 10, cost_confirmed: true, human_confirmation: true }, fixture.db, dependencies);
+    if (!promoted.ok) throw new Error(promoted.error.code);
+    assert.equal(promoted.ok, true);
+    assert.equal(promoted.data.intent.intent_id, admitted.data.intent.intent_id);
+    await runWorkbenchGenerationOnce(admitted.data.intent.intent_id, { allow_submit: true, dependencies });
+    assert.equal(counters.provider_submits, 1);
+    assert.equal(generationRightConflict(fixture.db), null);
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
+test("P1 stale reservation is retained as history and requires a new prepare/confirm for replacement", async () => {
+  const fixture = createFixture();
+  try {
+    const { confirmed: admitted } = confirmT2Fixture(fixture);
+    const dependencies = fixtureExecutionDependencies(fixture, { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 });
+    const preflight = await preflightWorkbenchGeneration({ project_id: PROJECT_ID, shot_id: SHOT_ID, account_label: "personal", budget_limit_value: 10 }, fixture.db, dependencies);
+    if (!preflight.ok) throw new Error(preflight.error.code);
+    const shotRow = fixture.db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(SHOT_ID) as { data_json: string };
+    const shot = JSON.parse(shotRow.data_json) as Shot;
+    shot.video_prompt = "A replacement-ready prompt.";
+    fixture.db.prepare("UPDATE shots SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE shot_id = ?").run(JSON.stringify(shot), SHOT_ID);
+    const stale = confirmWorkbenchGeneration({ intent_id: admitted.data.intent.intent_id, budget_limit_value: 10, cost_confirmed: true, human_confirmation: true }, fixture.db, dependencies);
+    assert.equal(stale.ok, false);
+    if (stale.ok) throw new Error("stale reservation unexpectedly promoted");
+    assert.equal(stale.error.code, "GENERATION_PLAN_STALE");
+
+    const packageRow = fixture.db.prepare("SELECT data_json FROM storyboard_packages WHERE storyboard_package_id = ?").get(PACKAGE_ID) as { data_json: string };
+    const storyboardPackage = JSON.parse(packageRow.data_json) as { approved_shot_snapshots: Array<{ video_prompt: string }> };
+    storyboardPackage.approved_shot_snapshots[0].video_prompt = shot.video_prompt;
+    fixture.db.prepare("UPDATE storyboard_packages SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE storyboard_package_id = ?")
+      .run(JSON.stringify(storyboardPackage), PACKAGE_ID);
+    const replacement = confirmT2Fixture(fixture);
+    assert.notEqual(replacement.confirmed.data.intent.intent_id, admitted.data.intent.intent_id);
+    assert.equal(intentCount(fixture.db), 2);
+    const rows = fixture.db.prepare("SELECT intent_id, status FROM generation_intents ORDER BY created_at, intent_id").all() as Array<{ intent_id: string; status: string }>;
+    assert.equal(rows.find((row) => row.intent_id === admitted.data.intent.intent_id)?.status, "cancelled");
+    assert.equal(rows.find((row) => row.intent_id === replacement.confirmed.data.intent.intent_id)?.status, "prepared");
+    assert.equal(generationRightConflict(fixture.db)?.intent_id, replacement.confirmed.data.intent.intent_id);
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
+test("P1 explicit cancellation releases a prepared reservation without Provider execution", async () => {
+  const fixture = createFixture();
+  try {
+    const { confirmed: admitted } = confirmT2Fixture(fixture);
+    const cancelled = cancelPreparedGenerationIntent({ intent_id: admitted.data.intent.intent_id, human_confirmation: true }, fixture.db);
+    if (!cancelled.ok) throw new Error(cancelled.error.code);
+    assert.equal(cancelled.ok, true);
+    assert.equal(cancelled.data.intent.status, "cancelled");
+    assert.equal(generationRightConflict(fixture.db), null);
+    const counters = { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 };
+    await runWorkbenchGenerationOnce(admitted.data.intent.intent_id, { allow_submit: true, dependencies: fixtureExecutionDependencies(fixture, counters) });
+    assert.deepEqual(counters, { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 });
+    const replacement = confirmT2Fixture(fixture);
+    assert.equal(intentCount(fixture.db), 2);
+    assert.equal(generationRightConflict(fixture.db)?.intent_id, replacement.confirmed.data.intent.intent_id);
   } finally {
     closeFixture(fixture);
   }

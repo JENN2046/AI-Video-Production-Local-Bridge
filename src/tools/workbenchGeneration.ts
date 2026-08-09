@@ -17,7 +17,8 @@ import { providerError, selectM1ProviderPort, type ProviderToolError } from "./p
 import { buildProviderCapabilityKey, buildProviderPriceCacheKey, providerCapabilityErrorMessage } from "./providerCapabilities.js";
 import { downloadProviderOutputToArtifact } from "./providerOutputDownloader.js";
 import { getProject, getShot, listProjectShots, saveProject, saveShot, type Project, type ProjectStatus, type Shot, type ShotStatus } from "./projects.js";
-import { parseGenerationPlan, revalidateGenerationPlanMedia } from "./s3bT2AdmissionPlan.js";
+import { parseGenerationPlan, planMatchesFacts, revalidateGenerationPlanMedia } from "./s3bT2AdmissionPlan.js";
+import { readGenerationAdmissionFacts } from "./s3bT2AdmissionFacts.js";
 import type { GenerationPlan } from "./s3bT2Types.js";
 import {
   buildRunningHubImageToVideoSubmitRequest,
@@ -516,6 +517,46 @@ function isT2AdmissionReservation(intent: Pick<WorkbenchGenerationIntent, "statu
   return intent.status === "prepared"
     && intent.input_snapshot.prepared_by === "t2_admission"
     && intent.input_snapshot.admission_only === true;
+}
+
+type PreparedGenerationPlanRevalidation =
+  | { ok: true }
+  | { ok: false; message: string };
+
+function revalidatePreparedGenerationPlan(
+  db: M0Database,
+  intent: WorkbenchGenerationIntent
+): PreparedGenerationPlanRevalidation {
+  if (!isT2AdmissionReservation(intent)) return { ok: true };
+  const plan = intent.generation_plan;
+  if (!plan || intent.generation_plan_invalid
+    || plan.project_id !== intent.project_id
+    || plan.shot_id !== intent.shot_id
+    || plan.storyboard_artifact_id !== intent.input_artifact_id
+    || plan.provider_name !== intent.provider
+    || plan.duration_seconds !== intent.duration_seconds
+    || plan.resolution !== intent.resolution
+    || plan.aspect_ratio !== intent.input_snapshot.aspect_ratio) {
+    return { ok: false, message: "The prepared GenerationPlan no longer matches its reservation binding." };
+  }
+  const current = readGenerationAdmissionFacts(db, intent.project_id, intent.shot_id, { verify_media: false });
+  if (!current.ok || !current.facts.provider.ok || !planMatchesFacts(plan, current.facts)) {
+    return { ok: false, message: "The prepared GenerationPlan no longer matches current authoritative generation facts." };
+  }
+  return { ok: true };
+}
+
+function cancelPreparedIntentInTransaction(
+  db: M0Database,
+  intent: WorkbenchGenerationIntent,
+  error: ProviderToolError | { code: string; message: string; retryable?: boolean }
+): WorkbenchGenerationIntent | null {
+  const result = db.prepare(`UPDATE generation_intents
+    SET status = 'cancelled', sanitized_error_json = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE intent_id = ? AND status = 'prepared' AND confirmed = 0
+      AND (run_id IS NULL OR run_id = '') AND provider_task_id = ''`)
+    .run(JSON.stringify(sanitizedError(error)), intent.intent_id) as { changes: number | bigint };
+  return Number(result.changes) === 1 ? getIntent(db, intent.intent_id) : null;
 }
 
 export function generationRightConflict(
@@ -1017,6 +1058,44 @@ export function discardDirectorPreparedGenerationIntent(
   }
 }
 
+export function cancelPreparedGenerationIntent(
+  input: { intent_id: string; human_confirmation: boolean },
+  db = openM0Database()
+): WorkbenchV2Result<{ intent: WorkbenchGenerationIntent }> {
+  if (input.human_confirmation !== true) {
+    return { ok: false, error: { code: "GENERATION_CONFIRMATION_REQUIRED", message: "Human confirmation is required." } };
+  }
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const intent = getIntent(db, input.intent_id);
+    if (!intent) {
+      db.exec("ROLLBACK");
+      return { ok: false, error: { code: "GENERATION_INTENT_NOT_FOUND", message: "Generation intent was not found." } };
+    }
+    if (intent.input_snapshot.prepared_by === "director_automation") {
+      db.exec("ROLLBACK");
+      return { ok: false, error: { code: "DIRECTOR_AUTOMATION_PREPARED_INTENT_NOT_CANCELLABLE", message: "Director-prepared generation must use its bound Automation Grant cancellation path." } };
+    }
+    if (intent.status !== "prepared" || intent.confirmed || intent.run_id || intent.provider_task_id || jobForIntent(db, intent.intent_id)) {
+      db.exec("ROLLBACK");
+      return { ok: false, error: { code: "GENERATION_INTENT_NOT_CANCELLABLE", message: "Only an unpromoted prepared generation intent can be cancelled." } };
+    }
+    const cancelled = cancelPreparedIntentInTransaction(db, intent, {
+      code: "GENERATION_INTENT_CANCELLED",
+      message: "Prepared generation reservation was explicitly cancelled."
+    });
+    if (!cancelled) {
+      db.exec("ROLLBACK");
+      return { ok: false, error: { code: "GENERATION_INTENT_NOT_CANCELLABLE", message: "Generation intent changed before cancellation completed." } };
+    }
+    db.exec("COMMIT");
+    return { ok: true, data: { intent: cancelled } };
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 export function confirmWorkbenchGeneration(
   input: {
     intent_id: string;
@@ -1053,6 +1132,16 @@ export function confirmWorkbenchGeneration(
       || snapshotAutomation.policy_hash !== input.director_automation.policy_hash)) {
       db.exec("ROLLBACK");
       return { ok: false, error: { code: "DIRECTOR_AUTOMATION_BINDING_MISMATCH", message: "Director Automation Grant does not match this prepared intent." } };
+    }
+    const planRevalidation = revalidatePreparedGenerationPlan(db, intent);
+    if (!planRevalidation.ok) {
+      const retired = cancelPreparedIntentInTransaction(db, intent, {
+        code: "GENERATION_PLAN_STALE",
+        message: planRevalidation.message
+      });
+      if (!retired) throw new Error("GENERATION_RESERVATION_NOT_CANCELLABLE");
+      db.exec("COMMIT");
+      return { ok: false, error: { code: "GENERATION_PLAN_STALE", message: planRevalidation.message } };
     }
     if (!isProviderExecutionAuthorized(intent)) {
       db.exec("ROLLBACK");
