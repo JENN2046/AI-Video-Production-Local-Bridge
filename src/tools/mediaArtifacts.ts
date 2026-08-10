@@ -6,6 +6,7 @@ import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { ensureM0Directories, paths } from "../paths.js";
 import { validateImageBuffer, validateImageFile, type ImageValidationResult } from "./imageValidity.js";
 import { validateMp4File } from "./mediaValidity.js";
+import { resolvedPathsEquivalent } from "./pathEquivalence.js";
 import { getProject, getShot, type Shot } from "./projects.js";
 
 export type ArtifactType = "image" | "video";
@@ -211,12 +212,6 @@ function detectMimeFromBytes(bytes: Buffer): string {
   return "";
 }
 
-function sameResolvedPath(first: string, second: string): boolean {
-  const left = resolve(first);
-  const right = resolve(second);
-  return process.platform === "win32" ? left.toLowerCase() === right.toLowerCase() : left === right;
-}
-
 function hashLocalFile(filePath: string): { sha256: string; size_bytes: number; header: Buffer } {
   const descriptor = openSync(filePath, "r");
   try {
@@ -288,7 +283,7 @@ function verifiedBlobStorageIsReusable(blob: MediaBlob): boolean {
   const localPath = resolve(blob.storage_uri);
   try {
     const canonicalRoot = resolve(realpathSync(registeredRoot));
-    if (!sameResolvedPath(canonicalRoot, registeredRoot)
+    if (!resolvedPathsEquivalent(canonicalRoot, registeredRoot)
       || lstatSync(registeredRoot).isSymbolicLink()
       || !statSync(registeredRoot).isDirectory()
       || !isPathInside(localPath, registeredRoot)
@@ -903,7 +898,7 @@ function recoveryRootAndTarget(blob: MediaBlob): {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
   const canonicalRoot = resolve(realpathSync(registeredRoot));
-  if (!sameResolvedPath(canonicalRoot, registeredRoot)) {
+  if (!resolvedPathsEquivalent(canonicalRoot, registeredRoot)) {
     throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
   }
   const targetPath = resolve(blob.storage_uri);
@@ -982,7 +977,7 @@ export function recoverVerifiedBlobStorage(
     if (!blob
       || blob.integrity_state !== "verified"
       || !isAbsolute(artifact.storage.uri)
-      || !sameResolvedPath(artifact.storage.uri, blob.storage_uri)
+      || !resolvedPathsEquivalent(artifact.storage.uri, blob.storage_uri)
       || artifact.metadata.sha256 !== blob.sha256
       || artifact.source.sha256 !== blob.sha256
       || artifact.storage.mime_type !== blob.detected_mime) {
@@ -993,7 +988,7 @@ export function recoverVerifiedBlobStorage(
     registeredRoot = recoveryPaths.registeredRoot;
     targetPath = recoveryPaths.targetPath;
     const sourcePath = resolve(input.source_path);
-    if (sameResolvedPath(sourcePath, targetPath)) {
+    if (resolvedPathsEquivalent(sourcePath, targetPath)) {
       throw new Error("MEDIA_BLOB_RECOVERY_PATH_UNSAFE");
     }
     assertRecoveryRegularFile(sourcePath, registeredRoot, recoveryPaths.canonicalRoot);
@@ -1489,7 +1484,7 @@ export function cleanupCommittedMediaActivationMarkers(db: M0Database, artifactI
 function cleanupCommittedActivationMarker(marker: MediaActivationMarker, filePath: string, authoritativeFinalPath: string): boolean {
   for (const candidate of [marker.final_path, marker.pending_path, marker.staging_path]) {
     const target = resolve(candidate);
-    if (sameResolvedPath(target, authoritativeFinalPath) || !existsSync(target)) continue;
+    if (resolvedPathsEquivalent(target, authoritativeFinalPath) || !existsSync(target)) continue;
     try {
       if (lstatSync(target).isSymbolicLink() || !statSync(target).isFile()) return false;
       rmSync(target, { force: true });
@@ -1666,7 +1661,7 @@ export function verifyMediaArtifactBytes(db: M0Database, artifact: MediaArtifact
   }
   const localPath = resolve(blob.storage_uri);
   const artifactPath = resolve(artifact.storage.uri);
-  if (!sameResolvedPath(artifactPath, localPath)) {
+  if (!resolvedPathsEquivalent(artifactPath, localPath)) {
     return { ok: false, error: { code: "MEDIA_BLOB_CONTENT_DRIFT", message: "Artifact storage URI differs from its authoritative MediaBlob." } };
   }
   const registeredRoot = typeof blob.provenance.media_root === "string" && isAbsolute(blob.provenance.media_root)
@@ -1674,9 +1669,7 @@ export function verifyMediaArtifactBytes(db: M0Database, artifact: MediaArtifact
     : paths.mediaRoot;
   try {
     const canonicalRoot = resolve(realpathSync(registeredRoot));
-    const rootMatches = process.platform === "win32"
-      ? canonicalRoot.toLowerCase() === resolve(registeredRoot).toLowerCase()
-      : canonicalRoot === resolve(registeredRoot);
+    const rootMatches = resolvedPathsEquivalent(canonicalRoot, registeredRoot);
     if (!existsSync(registeredRoot)
       || lstatSync(registeredRoot).isSymbolicLink()
       || !statSync(registeredRoot).isDirectory()
@@ -2230,6 +2223,7 @@ export function getMediaArtifact(db: M0Database, artifactId: string): MediaArtif
   ) {
     throw new ArtifactStructuredDriftError(artifactId);
   }
+  artifact.blob_id = row.blob_id ?? "";
   return artifact;
 }
 

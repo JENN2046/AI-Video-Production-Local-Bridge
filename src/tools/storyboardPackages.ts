@@ -96,8 +96,15 @@ export function saveStoryboardPackage(db: M0Database, storyboardPackage: Storybo
 }
 
 export function getStoryboardPackage(db: M0Database, storyboardPackageId: string): StoryboardPackage | null {
-  const row = db.prepare("SELECT data_json FROM storyboard_packages WHERE storyboard_package_id = ?").get(storyboardPackageId) as { data_json: string } | undefined;
-  return row ? (JSON.parse(row.data_json) as StoryboardPackage) : null;
+  const row = db.prepare("SELECT storyboard_package_id, project_id, data_json FROM storyboard_packages WHERE storyboard_package_id = ?").get(storyboardPackageId) as {
+    storyboard_package_id: string;
+    project_id: string;
+    data_json: string;
+  } | undefined;
+  if (!row) return null;
+  const storyboardPackage = JSON.parse(row.data_json) as StoryboardPackage;
+  if (storyboardPackage.storyboard_package_id !== row.storyboard_package_id || storyboardPackage.project_id !== row.project_id) return null;
+  return storyboardPackage;
 }
 
 export function importStoryboardPackage(input: ImportStoryboardPackageInput, db = openM0Database()): ImportResult {

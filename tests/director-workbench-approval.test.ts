@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { createServer } from "node:http";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import test from "node:test";
 
 import { buildDirectorContext } from "../src/director/localService.js";
@@ -18,8 +19,17 @@ import {
 import { openM0Database } from "../src/storage/sqlite.js";
 import { buildProviderCapabilityKey, buildProviderPriceCacheKey } from "../src/tools/providerCapabilities.js";
 import { saveProject, saveShot, type Shot } from "../src/tools/projects.js";
+import { confirmGeneration, prepareGeneration } from "../src/tools/s3bT2GenerationAdmission.js";
 import { createWorkbenchProject } from "../src/tools/workbenchV2.js";
-import { reconcileGenerationJob, runWorkbenchGenerationOnce } from "../src/tools/workbenchGeneration.js";
+import {
+  confirmWorkbenchGeneration,
+  discardDirectorPreparedGenerationIntent,
+  generationRightConflict,
+  preflightWorkbenchGeneration,
+  reconcileGenerationJob,
+  resumeWorkbenchGenerationJobs,
+  runWorkbenchGenerationOnce
+} from "../src/tools/workbenchGeneration.js";
 import { bootstrapWebGptProjectOwner } from "../src/webgpt-v4/authorizationAdmin.js";
 import { handleWorkbenchV2Api } from "../src/http/workbenchV2Routes.js";
 
@@ -169,7 +179,10 @@ function insertGenerationPlanProposal(
   return proposal;
 }
 
-function prepareRunnableDirectorGenerationFixture(db: ReturnType<typeof openM0Database>) {
+function prepareRunnableDirectorGenerationFixture(
+  db: ReturnType<typeof openM0Database>,
+  options: { prepare_t2_reservation?: boolean } = {}
+) {
   const created = createWorkbenchProject({
     title: "Director bounded execution fixture",
     classification: "production",
@@ -191,6 +204,7 @@ function prepareRunnableDirectorGenerationFixture(db: ReturnType<typeof openM0Da
   const project = created.data.project;
   project.status = "storyboard_approved";
   project.shot_ids = [shotId];
+  project.active_storyboard_package_id = "package_director_execution_001";
   saveProject(db, project);
   const shot: Shot = {
     shot_id: shotId,
@@ -230,8 +244,29 @@ function prepareRunnableDirectorGenerationFixture(db: ReturnType<typeof openM0Da
       metadata: { width: 720, height: 1280, duration_seconds: null, aspect_ratio: "9:16", sha256 },
       linked_objects: { project_id: projectId, shot_id: shotId },
       source: { kind: "fixture", provider: "mock", provider_job_id: "", sha256, external_url_host: "" }
-    }));
+  }));
   db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)").run(artifactId, blobId);
+  db.prepare(`INSERT INTO storyboard_packages (storyboard_package_id, project_id, data_json)
+    VALUES (?, ?, ?)`)
+    .run("package_director_execution_001", projectId, JSON.stringify({
+      storyboard_package_id: "package_director_execution_001",
+      project_id: projectId,
+      status: "approved_for_video_generation",
+      approved_shot_snapshots: [{
+        shot_id: shotId,
+        order: 1,
+        duration_seconds: shot.duration_seconds,
+        description: shot.description,
+        storyboard_image_artifact_id: artifactId,
+        video_prompt: shot.video_prompt,
+        negative_prompt: shot.negative_prompt
+      }],
+      user_approval: { storyboard_approved: true }
+    }));
+
+  const t2IntentId = options.prepare_t2_reservation
+    ? prepareT2ReservationForDirectorFixture(db, projectId, shotId)
+    : null;
 
   const focusId = "director_focus_execution_001";
   db.prepare(`INSERT INTO director_focuses
@@ -285,11 +320,31 @@ function prepareRunnableDirectorGenerationFixture(db: ReturnType<typeof openM0Da
   db.prepare(`INSERT INTO director_proposal_events (event_id, proposal_id, event_type, reason_code, created_at)
     VALUES ('director_proposal_event_execution_001', ?, 'submitted', 'DIRECTOR_NATIVE_SUBMITTED', ?)`)
     .run(proposal.proposal_id, firstNow.toISOString());
-  return { projectId, proposal };
+  return { projectId, shotId, proposal, t2IntentId };
 }
 
-async function startBoundedDirectorFixture(db: ReturnType<typeof openM0Database>) {
-  const fixture = prepareRunnableDirectorGenerationFixture(db);
+function prepareT2ReservationForDirectorFixture(
+  db: ReturnType<typeof openM0Database>,
+  projectId: string,
+  shotId: string
+): string {
+  const prepared = prepareGeneration({ project_id: projectId, shot_id: shotId }, db);
+  assert.equal(prepared.ok, true, prepared.ok ? "" : prepared.error.code);
+  if (!prepared.ok) throw new Error("T2 fixture preparation failed");
+  const confirmed = confirmGeneration(prepared.data.plan, db);
+  assert.equal(confirmed.ok, true, confirmed.ok ? "" : confirmed.error.code);
+  if (!confirmed.ok) throw new Error("T2 fixture confirmation failed");
+  return confirmed.data.intent.intent_id;
+}
+
+async function prepareBoundedDirectorFixture(
+  db: ReturnType<typeof openM0Database>,
+  options: { adopt_t2_reservation?: boolean } = {}
+) {
+  const fixture = prepareRunnableDirectorGenerationFixture(db, {
+    prepare_t2_reservation: options.adopt_t2_reservation
+  });
+  const t2IntentId = fixture.t2IntentId;
   const accepted = decideDirectorProposal({ proposal_id: fixture.proposal.proposal_id, decision: "accept", human_confirmation: true }, db, () => firstNow);
   assert.equal(accepted.ok, true, accepted.ok ? "" : accepted.error.code);
   if (!accepted.ok) throw new Error("Director fixture acceptance failed");
@@ -314,16 +369,27 @@ async function startBoundedDirectorFixture(db: ReturnType<typeof openM0Database>
   const fetchImpl: typeof fetch = async (input) => String(input).includes("price-preview")
     ? new Response(JSON.stringify({ errorCode: "", estimatedPrice: 0.08, currency: "CNY" }), { status: 200 })
     : new Response(JSON.stringify({ code: 0, data: { remainMoney: "10", currency: "CNY" } }), { status: 200 });
-  const execution = await startDirectorBoundedGeneration({
+  const grantInput = {
     grant_id: compiled.data.grant.grant_id,
     proposal_id: fixture.proposal.proposal_id,
     policy_hash: compiled.data.grant.policy_hash,
-    account_label: "personal",
+    account_label: "personal" as const,
     start_worker: false
-  }, db, { now: () => firstNow, env, fetch_impl: fetchImpl });
+  };
+  return { fixture, compiled: compiled.data, env, fetchImpl, grantInput, t2IntentId };
+}
+
+async function startBoundedDirectorFixture(
+  db: ReturnType<typeof openM0Database>,
+  options: { adopt_t2_reservation?: boolean } = {}
+) {
+  const prepared = await prepareBoundedDirectorFixture(db, options);
+  const execution = await startDirectorBoundedGeneration({
+    ...prepared.grantInput
+  }, db, { now: () => firstNow, env: prepared.env, fetch_impl: prepared.fetchImpl });
   assert.equal(execution.ok, true, execution.ok ? "" : execution.error.code);
   if (!execution.ok) throw new Error("Director fixture execution preparation failed");
-  return { compiled: compiled.data, execution: execution.data, env, fetchImpl };
+  return { ...prepared, execution: execution.data };
 }
 
 async function moveDirectorFixtureToUnknownSubmission(
@@ -579,6 +645,522 @@ test("a bounded Director start reserves the official decimal price in minor unit
     assert.equal(reservation.event_type, "reserve");
     assert.equal((db.prepare("SELECT COUNT(*) AS count FROM generation_jobs WHERE state = 'queued'").get() as { count: number }).count, 1);
   } finally { db.close(); }
+});
+
+test("Director adoption persists its canonical binding on the same T2 reservation", async () => {
+  const db = openM0Database(":memory:");
+  try {
+    const prepared = await startBoundedDirectorFixture(db, { adopt_t2_reservation: true });
+    assert.equal(prepared.execution.intent.intent_id, prepared.t2IntentId);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM generation_intents").get() as { count: number }).count, 1);
+    assert.equal(generationRightConflict(db)?.intent_id, prepared.execution.intent.intent_id);
+    assert.equal(prepared.execution.intent.input_snapshot.prepared_by, "t2_admission");
+    assert.equal(prepared.execution.intent.input_snapshot.admission_only, true);
+    assert.equal(prepared.execution.intent.input_snapshot.director_automation?.grant_id, prepared.compiled.grant.grant_id);
+    assert.equal(prepared.execution.intent.input_snapshot.director_automation?.proposal_id, prepared.compiled.proposal.proposal_id);
+    assert.equal(prepared.execution.intent.input_snapshot.director_automation?.policy_hash, prepared.compiled.grant.policy_hash);
+    assert.equal(prepared.execution.intent.input_snapshot.director_automation?.amount_minor, 8);
+    const persisted = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(prepared.execution.intent.intent_id) as { data_json: string };
+    const snapshot = (JSON.parse(persisted.data_json) as { input_snapshot: { director_automation?: Record<string, unknown> } }).input_snapshot;
+    assert.equal(snapshot.director_automation?.grant_id, prepared.compiled.grant.grant_id);
+  } finally { db.close(); }
+});
+
+test("valid Director adoption executes the same reservation once through a fake Provider", async () => {
+  const db = openM0Database(":memory:");
+  try {
+    const prepared = await startBoundedDirectorFixture(db, { adopt_t2_reservation: true });
+    let providerCalls = 0;
+    const adapter = {
+      provider_name: "runninghub" as const,
+      model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => {
+        providerCalls += 1;
+        return { ok: false as const, error: { code: "FIXTURE_PROVIDER_STOP", message: "Synthetic bounded Provider stop." } };
+      },
+      pollStatus: async () => { throw new Error("poll must not run after fixture submit stop"); },
+      fetchOutput: async () => { throw new Error("output must not run after fixture submit stop"); }
+    };
+    const workerDatabase = new Proxy(db, {
+      get(target, property) {
+        if (property === "close") return () => undefined;
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      }
+    }) as ReturnType<typeof openM0Database>;
+    await runWorkbenchGenerationOnce(prepared.execution.intent.intent_id, {
+      allow_submit: true,
+      dependencies: {
+        open_database: () => workerDatabase,
+        env: prepared.env,
+        fetch_impl: prepared.fetchImpl,
+        adapter_factory: () => adapter,
+        now: () => firstNow
+      }
+    });
+    assert.equal(providerCalls, 1);
+    assert.equal(prepared.execution.intent.intent_id, prepared.t2IntentId);
+    assert.equal(prepared.execution.intent.input_snapshot.prepared_by, "t2_admission");
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM generation_intents").get() as { count: number }).count, 1);
+  } finally { db.close(); }
+});
+
+test("invalid Director adoption leaves the original T2 reservation unchanged", async () => {
+  const db = openM0Database(":memory:");
+  try {
+    const fixture = prepareRunnableDirectorGenerationFixture(db);
+    const t2IntentId = prepareT2ReservationForDirectorFixture(db, fixture.projectId, fixture.shotId);
+    const result = await startDirectorBoundedGeneration({
+      grant_id: "missing_director_grant",
+      proposal_id: "missing_director_proposal",
+      policy_hash: "f".repeat(64),
+      account_label: "personal",
+      start_worker: false
+    }, db, { env: { REAL_PROVIDER_ENABLED: "true" }, now: () => firstNow });
+    assert.equal(result.ok, false);
+    assert.equal((db.prepare("SELECT status, confirmed, run_id FROM generation_intents WHERE intent_id = ?").get(t2IntentId) as { status: string; confirmed: number; run_id: string | null }).status, "prepared");
+    assert.equal(generationRightConflict(db)?.intent_id, t2IntentId);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM generation_intents").get() as { count: number }).count, 1);
+  } finally { db.close(); }
+});
+
+test("mismatched Director Grant leaves the original T2 reservation unchanged", async () => {
+  const db = openM0Database(":memory:");
+  try {
+    const prepared = await prepareBoundedDirectorFixture(db, { adopt_t2_reservation: true });
+    if (!prepared.t2IntentId) throw new Error("T2 fixture reservation missing");
+    const result = await startDirectorBoundedGeneration({
+      ...prepared.grantInput,
+      policy_hash: "a".repeat(64)
+    }, db, { now: () => firstNow, env: prepared.env, fetch_impl: prepared.fetchImpl });
+    assert.equal(result.ok, false);
+    const row = db.prepare("SELECT status, confirmed, run_id FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.t2IntentId) as { status: string; confirmed: number; run_id: string | null };
+    assert.deepEqual({ status: row.status, confirmed: row.confirmed, run_id: row.run_id }, { status: "prepared", confirmed: 0, run_id: null });
+    assert.equal(generationRightConflict(db)?.intent_id, prepared.t2IntentId);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM generation_intents").get() as { count: number }).count, 1);
+  } finally { db.close(); }
+});
+
+test("adopted T2 confirmation failure terminalizes only the bound reservation", async () => {
+  const db = openM0Database(":memory:");
+  try {
+    const fixture = prepareRunnableDirectorGenerationFixture(db, { prepare_t2_reservation: true });
+    if (!fixture.t2IntentId) throw new Error("T2 fixture reservation missing");
+    const t2IntentId = fixture.t2IntentId;
+    const accepted = decideDirectorProposal({ proposal_id: fixture.proposal.proposal_id, decision: "accept", human_confirmation: true }, db, () => firstNow);
+    assert.equal(accepted.ok, true, accepted.ok ? "" : accepted.error.code);
+    const compiled = compileDirectorProposalToAutomationGrant({
+      proposal_id: fixture.proposal.proposal_id,
+      max_total_minor: 500,
+      max_per_run_minor: 500,
+      max_versions_per_shot: 2,
+      max_automatic_retries: 0,
+      expires_at: new Date(firstNow.getTime() + 60 * 60_000).toISOString(),
+      human_confirmation: true
+    }, db, () => firstNow);
+    assert.equal(compiled.ok, true, compiled.ok ? "" : compiled.error.code);
+    if (!compiled.ok) return;
+    const env: NodeJS.ProcessEnv = {
+      REAL_PROVIDER_ENABLED: "true",
+      M1_REAL_PROVIDER: "runninghub",
+      M1_REAL_PROVIDER_EXECUTION_ALLOWED: "true",
+      M1_REAL_PROVIDER_COST_ACK: "true",
+      RUNNINGHUB_API_KEY: "synthetic-test-key"
+    };
+    const fetchImpl: typeof fetch = async (input) => String(input).includes("price-preview")
+      ? new Response(JSON.stringify({ errorCode: "", estimatedPrice: 0.08, currency: "CNY" }), { status: 200 })
+      : new Response(JSON.stringify({ code: 0, data: { remainMoney: "10", currency: "CNY" } }), { status: 200 });
+    let nowCall = 0;
+    const result = await startDirectorBoundedGeneration({
+      grant_id: compiled.data.grant.grant_id,
+      proposal_id: fixture.proposal.proposal_id,
+      policy_hash: compiled.data.grant.policy_hash,
+      account_label: "personal",
+      start_worker: false
+    }, db, {
+      env,
+      fetch_impl: fetchImpl,
+      now: () => {
+        nowCall += 1;
+        return nowCall >= 4 ? new Date(firstNow.getTime() + 10 * 60_000) : firstNow;
+      }
+    });
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.error.code, "GENERATION_INTENT_EXPIRED");
+    const row = db.prepare("SELECT status, confirmed, run_id, sanitized_error_json, data_json FROM generation_intents WHERE intent_id = ?")
+      .get(t2IntentId) as { status: string; confirmed: number; run_id: string | null; sanitized_error_json: string; data_json: string };
+    assert.deepEqual({ status: row.status, confirmed: row.confirmed, run_id: row.run_id }, { status: "cancelled", confirmed: 0, run_id: null });
+    assert.equal(JSON.parse(row.sanitized_error_json).code, "GENERATION_INTENT_EXPIRED");
+    assert.equal((JSON.parse(row.data_json) as { input_snapshot: { prepared_by?: string; director_automation?: unknown } }).input_snapshot.prepared_by, "t2_admission");
+    assert.equal(generationRightConflict(db), null);
+  } finally { db.close(); }
+});
+
+test("Director cleanup cannot cancel an unrelated T2 reservation", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const fixture = prepareRunnableDirectorGenerationFixture(db);
+    const t2IntentId = prepareT2ReservationForDirectorFixture(db, fixture.projectId, fixture.shotId);
+    const discarded = discardDirectorPreparedGenerationIntent({
+      intent_id: t2IntentId,
+      director_automation: { grant_id: "other_grant", proposal_id: "other_proposal", policy_hash: "a".repeat(64) }
+    }, db);
+    assert.equal(discarded.ok, false);
+    const row = db.prepare("SELECT status, confirmed FROM generation_intents WHERE intent_id = ?").get(t2IntentId) as { status: string; confirmed: number };
+    assert.deepEqual({ status: row.status, confirmed: row.confirmed }, { status: "prepared", confirmed: 0 });
+    assert.equal(generationRightConflict(db)?.intent_id, t2IntentId);
+  } finally { db.close(); }
+});
+
+test("a normal human Workbench T2 path remains executable without a Director Grant", async () => {
+  const db = openM0Database(":memory:");
+  try {
+    const fixture = prepareRunnableDirectorGenerationFixture(db);
+    const t2IntentId = prepareT2ReservationForDirectorFixture(db, fixture.projectId, fixture.shotId);
+    const counters = { calls: 0 };
+    const preflight = await preflightWorkbenchGeneration({
+      project_id: fixture.projectId,
+      shot_id: fixture.shotId,
+      account_label: "personal",
+      budget_limit_value: 5
+    }, db, {
+      env: { REAL_PROVIDER_ENABLED: "true", M1_REAL_PROVIDER: "runninghub", M1_REAL_PROVIDER_EXECUTION_ALLOWED: "true", M1_REAL_PROVIDER_COST_ACK: "true", RUNNINGHUB_API_KEY: "synthetic-test-key" },
+      fetch_impl: async (input) => {
+        counters.calls += 1;
+        return String(input).includes("price-preview")
+          ? new Response(JSON.stringify({ errorCode: "", estimatedPrice: 0.08, currency: "CNY" }), { status: 200 })
+          : new Response(JSON.stringify({ code: 0, data: { remainMoney: "10", currency: "CNY" } }), { status: 200 });
+      }
+    });
+    assert.equal(preflight.ok, true, preflight.ok ? "" : preflight.error.code);
+    if (!preflight.ok) return;
+    assert.equal(preflight.data.intent.intent_id, t2IntentId);
+    const confirmed = confirmWorkbenchGeneration({
+      intent_id: t2IntentId,
+      budget_limit_value: 5,
+      cost_confirmed: true,
+      human_confirmation: true
+    }, db);
+    assert.equal(confirmed.ok, true, confirmed.ok ? "" : confirmed.error.code);
+    let providerCalls = 0;
+    const workerDatabase = new Proxy(db, {
+      get(target, property) {
+        if (property === "close") return () => undefined;
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      }
+    }) as ReturnType<typeof openM0Database>;
+    await runWorkbenchGenerationOnce(t2IntentId, {
+      allow_submit: true,
+      dependencies: {
+        open_database: () => workerDatabase,
+        env: { REAL_PROVIDER_ENABLED: "true", M1_REAL_PROVIDER: "runninghub", M1_REAL_PROVIDER_EXECUTION_ALLOWED: "true", M1_REAL_PROVIDER_COST_ACK: "true", RUNNINGHUB_API_KEY: "synthetic-test-key" },
+        adapter_factory: () => ({
+          provider_name: "runninghub" as const,
+          model_name: "rhart-video-g/image-to-video",
+          submitGeneration: async () => {
+            providerCalls += 1;
+            return { ok: false as const, error: { code: "FIXTURE_PROVIDER_STOP", message: "Synthetic human-path Provider stop." } };
+          },
+          pollStatus: async () => { throw new Error("poll must not run after fixture submit stop"); },
+          fetchOutput: async () => { throw new Error("output must not run after fixture submit stop"); }
+        }),
+        now: () => firstNow
+      }
+    });
+    assert.equal(counters.calls, 2);
+    assert.equal(providerCalls, 1);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM director_automation_grant_events WHERE intent_id = ?").get(t2IntentId) as { count: number }).count, 0);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM generation_intents").get() as { count: number }).count, 1);
+  } finally { db.close(); }
+});
+
+test("a stale adopted T2 reservation terminalizes before any Provider call", async () => {
+  const db = openM0Database(":memory:");
+  try {
+    const prepared = await prepareBoundedDirectorFixture(db, { adopt_t2_reservation: true });
+    if (!prepared.t2IntentId) throw new Error("T2 fixture reservation missing");
+    const preflight = await preflightWorkbenchGeneration({
+      project_id: prepared.fixture.projectId,
+      shot_id: prepared.fixture.shotId,
+      account_label: prepared.grantInput.account_label,
+      budget_limit_value: 5,
+      director_automation: prepared.grantInput
+    }, db, { env: prepared.env, fetch_impl: prepared.fetchImpl, now: () => firstNow });
+    assert.equal(preflight.ok, true, preflight.ok ? "" : preflight.error.code);
+    if (!preflight.ok) return;
+    assert.equal(preflight.data.intent.intent_id, prepared.t2IntentId);
+    const shotRow = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(prepared.fixture.shotId) as { data_json: string };
+    const shot = JSON.parse(shotRow.data_json) as { video_prompt: string };
+    shot.video_prompt = "A stale adopted Director prompt.";
+    db.prepare("UPDATE shots SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE shot_id = ?")
+      .run(JSON.stringify(shot), prepared.fixture.shotId);
+    const result = confirmWorkbenchGeneration({
+      intent_id: prepared.t2IntentId,
+      budget_limit_value: 5,
+      cost_confirmed: false,
+      human_confirmation: false,
+      director_automation: {
+        grant_id: prepared.compiled.grant.grant_id,
+        proposal_id: prepared.compiled.proposal.proposal_id,
+        policy_hash: prepared.compiled.grant.policy_hash
+      }
+    }, db, { now: () => firstNow });
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.error.code, "GENERATION_PLAN_STALE");
+    assert.equal(generationRightConflict(db), null);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM generation_jobs").get() as { count: number }).count, 0);
+  } finally { db.close(); }
+});
+
+test("adopted Director binding survives a database restart on the same intent", async () => {
+  const root = mkdtempSync(join(tmpdir(), "director-adoption-restart-"));
+  const dbPath = join(root, "app.sqlite");
+  const db = openM0Database(dbPath);
+  try {
+    const prepared = await startBoundedDirectorFixture(db, { adopt_t2_reservation: true });
+    db.close();
+    const restarted = openM0Database(dbPath);
+    try {
+      const row = restarted.prepare("SELECT data_json, status FROM generation_intents WHERE intent_id = ?").get(prepared.execution.intent.intent_id) as { data_json: string; status: string };
+      const data = JSON.parse(row.data_json) as { input_snapshot: { prepared_by?: string; director_automation?: { grant_id?: string } } };
+      assert.equal(row.status, "queued");
+      assert.equal(data.input_snapshot.prepared_by, "t2_admission");
+      assert.equal(data.input_snapshot.director_automation?.grant_id, prepared.compiled.grant.grant_id);
+      assert.equal(generationRightConflict(restarted)?.intent_id, prepared.execution.intent.intent_id);
+      let providerCalls = 0;
+      const workerDatabase = new Proxy(restarted, {
+        get(target, property) {
+          if (property === "close") return () => undefined;
+          const value = Reflect.get(target, property, target);
+          return typeof value === "function" ? value.bind(target) : value;
+        }
+      }) as ReturnType<typeof openM0Database>;
+      await runWorkbenchGenerationOnce(prepared.execution.intent.intent_id, {
+        allow_submit: true,
+        dependencies: {
+          open_database: () => workerDatabase,
+          env: prepared.env,
+          adapter_factory: () => ({
+            provider_name: "runninghub" as const,
+            model_name: "rhart-video-g/image-to-video",
+            submitGeneration: async () => {
+              providerCalls += 1;
+              return { ok: false as const, error: { code: "FIXTURE_PROVIDER_STOP", message: "Synthetic restart Provider stop." } };
+            },
+            pollStatus: async () => { throw new Error("poll must not run after fixture submit stop"); },
+            fetchOutput: async () => { throw new Error("output must not run after fixture submit stop"); }
+          }),
+          now: () => firstNow
+        }
+      });
+      assert.equal(providerCalls, 1);
+    } finally { restarted.close(); }
+  } finally {
+    try { db.close(); } catch { /* already closed */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("adopted T2 Director execution fails closed when its persisted binding is missing, malformed, or event-mismatched", async (t) => {
+  const cases = [
+    {
+      name: "missing binding",
+      mutate(binding: Record<string, unknown> | undefined, snapshot: Record<string, unknown>) {
+        assert.ok(binding);
+        delete snapshot.director_automation;
+      },
+      expectedCode: "DIRECTOR_AUTOMATION_BINDING_MISMATCH"
+    },
+    {
+      name: "malformed binding",
+      mutate(binding: Record<string, unknown> | undefined) {
+        assert.ok(binding);
+        delete binding.reservation_id;
+      },
+      expectedCode: "DIRECTOR_AUTOMATION_BINDING_MISMATCH"
+    },
+    {
+      name: "reservation event mismatch",
+      mutate(binding: Record<string, unknown> | undefined) {
+        assert.ok(binding);
+        binding.reservation_id = "director_reservation_drifted";
+      },
+      expectedCode: "DIRECTOR_AUTOMATION_RESERVATION_INVALID"
+    },
+    {
+      name: "Grant event mismatch",
+      mutate(binding: Record<string, unknown> | undefined) {
+        assert.ok(binding);
+        binding.grant_id = "director_grant_drifted";
+      },
+      expectedCode: "DIRECTOR_AUTOMATION_RESERVATION_INVALID"
+    }
+  ] as const;
+
+  for (const fixtureCase of cases) {
+    await t.test(fixtureCase.name, async () => {
+      const db = openM0Database(":memory:");
+      try {
+        const prepared = await startBoundedDirectorFixture(db, { adopt_t2_reservation: true });
+        const row = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+          .get(prepared.execution.intent.intent_id) as { data_json: string };
+        const data = JSON.parse(row.data_json) as { input_snapshot: Record<string, unknown> & { director_automation?: Record<string, unknown>; prepared_by?: string } };
+        assert.equal(data.input_snapshot.prepared_by, "t2_admission");
+        assert.equal((db.prepare("SELECT COUNT(*) AS count FROM director_automation_grant_events WHERE intent_id = ? AND event_type = 'reserve'")
+          .get(prepared.execution.intent.intent_id) as { count: number }).count, 1);
+        fixtureCase.mutate(data.input_snapshot.director_automation, data.input_snapshot);
+        db.prepare("UPDATE generation_intents SET data_json = ? WHERE intent_id = ?")
+          .run(JSON.stringify(data), prepared.execution.intent.intent_id);
+
+        let providerCalls = 0;
+        const workerDatabase = new Proxy(db, {
+          get(target, property) {
+            if (property === "close") return () => undefined;
+            const value = Reflect.get(target, property, target);
+            return typeof value === "function" ? value.bind(target) : value;
+          }
+        }) as ReturnType<typeof openM0Database>;
+        await runWorkbenchGenerationOnce(prepared.execution.intent.intent_id, {
+          allow_submit: true,
+          dependencies: {
+            open_database: () => workerDatabase,
+            env: prepared.env,
+            adapter_factory: () => {
+              providerCalls += 1;
+              throw new Error("Provider adapter must not be created when Director execution authority is incomplete.");
+            },
+            now: () => firstNow
+          }
+        });
+
+        assert.equal(providerCalls, 0);
+        const terminal = db.prepare("SELECT status, sanitized_error_json FROM generation_intents WHERE intent_id = ?")
+          .get(prepared.execution.intent.intent_id) as { status: string; sanitized_error_json: string };
+        assert.equal(terminal.status, "failed");
+        assert.equal(JSON.parse(terminal.sanitized_error_json).code, fixtureCase.expectedCode);
+      } finally { db.close(); }
+    });
+  }
+});
+
+test("Director Grant project and SHOT bindings are revalidated at the Provider gate", async (t) => {
+  for (const fixtureCase of [
+    { name: "project mismatch", column: "project_id", value: "project_director_drifted" },
+    { name: "SHOT mismatch", column: "shot_id", value: "shot_director_drifted" }
+  ] as const) {
+    await t.test(fixtureCase.name, async () => {
+      const db = openM0Database(":memory:");
+      try {
+        const prepared = await startBoundedDirectorFixture(db, { adopt_t2_reservation: true });
+        db.prepare(`UPDATE generation_intents SET ${fixtureCase.column} = ? WHERE intent_id = ?`)
+          .run(fixtureCase.value, prepared.execution.intent.intent_id);
+        let providerCalls = 0;
+        const workerDatabase = new Proxy(db, {
+          get(target, property) {
+            if (property === "close") return () => undefined;
+            const value = Reflect.get(target, property, target);
+            return typeof value === "function" ? value.bind(target) : value;
+          }
+        }) as ReturnType<typeof openM0Database>;
+        await runWorkbenchGenerationOnce(prepared.execution.intent.intent_id, {
+          allow_submit: true,
+          dependencies: {
+            open_database: () => workerDatabase,
+            env: prepared.env,
+            adapter_factory: () => {
+              providerCalls += 1;
+              throw new Error("Provider adapter must not be created for a Director project/SHOT mismatch.");
+            },
+            now: () => firstNow
+          }
+        });
+        assert.equal(providerCalls, 0);
+        const terminal = db.prepare("SELECT status, sanitized_error_json FROM generation_intents WHERE intent_id = ?")
+          .get(prepared.execution.intent.intent_id) as { status: string; sanitized_error_json: string };
+        assert.equal(terminal.status, "failed");
+        assert.equal(JSON.parse(terminal.sanitized_error_json).code, "DIRECTOR_AUTOMATION_BINDING_MISMATCH");
+      } finally { db.close(); }
+    });
+  }
+});
+
+test("an expired adopted Director Grant fails closed before Provider selection", async () => {
+  const db = openM0Database(":memory:");
+  try {
+    const prepared = await startBoundedDirectorFixture(db, { adopt_t2_reservation: true });
+    let providerCalls = 0;
+    const workerDatabase = new Proxy(db, {
+      get(target, property) {
+        if (property === "close") return () => undefined;
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      }
+    }) as ReturnType<typeof openM0Database>;
+    await runWorkbenchGenerationOnce(prepared.execution.intent.intent_id, {
+      allow_submit: true,
+      dependencies: {
+        open_database: () => workerDatabase,
+        env: prepared.env,
+        adapter_factory: () => {
+          providerCalls += 1;
+          throw new Error("Provider adapter must not be created for an expired Director Grant.");
+        },
+        now: () => new Date(firstNow.getTime() + 2 * 60 * 60_000)
+      }
+    });
+    assert.equal(providerCalls, 0);
+    const terminal = db.prepare("SELECT status, sanitized_error_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.execution.intent.intent_id) as { status: string; sanitized_error_json: string };
+    assert.equal(terminal.status, "failed");
+    assert.equal(JSON.parse(terminal.sanitized_error_json).code, "DIRECTOR_AUTOMATION_GRANT_EXPIRED");
+  } finally { db.close(); }
+});
+
+test("restart resume preserves adopted Director requiredness after its snapshot binding is removed", async () => {
+  const root = mkdtempSync(join(tmpdir(), "director-auth-required-resume-"));
+  const dbPath = join(root, "app.sqlite");
+  const db = openM0Database(dbPath);
+  try {
+    const prepared = await startBoundedDirectorFixture(db, { adopt_t2_reservation: true });
+    const row = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.execution.intent.intent_id) as { data_json: string };
+    const data = JSON.parse(row.data_json) as { input_snapshot: Record<string, unknown> };
+    delete data.input_snapshot.director_automation;
+    db.prepare("UPDATE generation_intents SET data_json = ? WHERE intent_id = ?")
+      .run(JSON.stringify(data), prepared.execution.intent.intent_id);
+    db.close();
+
+    let providerCalls = 0;
+    const resumed = resumeWorkbenchGenerationJobs({
+      sqlite_path: dbPath,
+      env: prepared.env,
+      adapter_factory: () => {
+        providerCalls += 1;
+        throw new Error("Provider adapter must not be created by resume when Director binding is missing.");
+      }
+    });
+    assert.deepEqual(resumed, { resumed: [prepared.execution.intent.intent_id], reconciled: [] });
+
+    let terminal: { status: string; sanitized_error_json: string } | undefined;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const checked = openM0Database(dbPath);
+      terminal = checked.prepare("SELECT status, sanitized_error_json FROM generation_intents WHERE intent_id = ?")
+        .get(prepared.execution.intent.intent_id) as { status: string; sanitized_error_json: string };
+      checked.close();
+      if (terminal.status === "failed") break;
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
+    }
+    assert.equal(terminal?.status, "failed");
+    assert.equal(JSON.parse(terminal?.sanitized_error_json ?? "{}").code, "DIRECTOR_AUTOMATION_BINDING_MISMATCH");
+    assert.equal(providerCalls, 0);
+  } finally {
+    try { db.close(); } catch { /* already closed */ }
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("a failed Director confirmation discards only its preflight staging intent so the Grant can retry", async () => {

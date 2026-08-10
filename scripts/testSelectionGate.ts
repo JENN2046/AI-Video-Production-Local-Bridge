@@ -193,7 +193,7 @@ function normalizePath(value: string): string {
 function npmRuns(command: string): Set<string> {
   const result = new Set<string>();
   for (const segment of command.split("&&").map((item) => item.trim())) {
-    const match = segment.match(/^npm\s+run\s+([A-Za-z0-9:_-]+)(?:\s+--(?:\s+.*)?)?$/);
+    const match = segment.match(/^npm\s+run\s+([A-Za-z0-9:_.-]+)(?:\s+--(?:\s+.*)?)?$/);
     if (match) result.add(match[1]);
   }
   return result;
@@ -208,7 +208,7 @@ function workflowNpmSteps(workflow: string): Map<string, Set<string>> {
       currentName = name[1].replace(/^['"]|['"]$/g, "");
       continue;
     }
-    const run = line.match(/^\s*run:\s*npm\s+run\s+([A-Za-z0-9:_-]+)\s*$/);
+    const run = line.match(/^\s*run:\s*npm\s+run\s+([A-Za-z0-9:_.-]+)\s*$/);
     if (!run) continue;
     const names = result.get(run[1]) ?? new Set<string>();
     names.add(currentName);

@@ -1,6 +1,7 @@
 import { z } from "zod/v4";
 
 import { RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY } from "../tools/providerCapabilities.js";
+import { WEBGPT_V4_CLIP_VERSION_SCHEMA } from "../packages/domain/clipVersion.js";
 import { fail, type WebGptV4Result } from "./types.js";
 
 export type WebGptV4Detail = "compact" | "full";
@@ -45,7 +46,7 @@ export function resultOutputSchema<T extends z.ZodType>(data: T) {
 export const WEBGPT_V4_PROJECT_SCHEMA = z.object({ project_id: z.string(), title: z.string(), status: projectStatusSchema, shot_ids: z.array(z.string()) }).strict();
 export const WEBGPT_V4_COMPACT_PROJECT_SCHEMA = WEBGPT_V4_PROJECT_SCHEMA.pick({ project_id: true, title: true, status: true }).strict();
 const revisionInstructionSchema = z.object({ summary: z.string(), prompt_delta: z.string(), negative_delta: z.string(), priority: z.enum(["low", "medium", "high"]) }).strict();
-const clipVersionSchema = z.object({ artifact_id: z.string(), run_id: z.string(), attempt_number: z.number().int(), review_status: z.enum(["pending", "approved", "rejected"]) }).strict();
+const clipVersionSchema = WEBGPT_V4_CLIP_VERSION_SCHEMA;
 const shotOperationalStateSchema = z.object({
   shot_id: z.string(), project_id: z.string(), stored_workflow_status: shotStatusSchema,
   primary_stage: z.enum(["storyboard_draft", "storyboard_blocked", "storyboard_revision_needed", "generation_ready", "generation_queued", "generation_running", "manual_reconciliation", "generation_failed", "review_pending", "clip_revision_needed", "accepted", "state_inconsistent"]),

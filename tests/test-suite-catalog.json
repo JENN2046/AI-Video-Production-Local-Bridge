@@ -24,7 +24,13 @@
         "tests/m0-d-generation.test.ts",
         "tests/m0-e-review-regeneration.test.ts",
         "tests/m0-f-assembly.test.ts",
-        "tests/m0-r1-media-validity.test.ts"
+        "tests/m0-r1-media-validity.test.ts",
+        "tests/s3b-t2-snapshot.test.ts",
+        "tests/s3b-t2-oracle.test.ts",
+        "tests/s3b-t2-normalize.test.ts",
+        "tests/s3b-t2-media-evidence.test.ts",
+        "tests/s3b-t2-evaluate.test.ts",
+        "tests/s3b-t2-core.test.ts"
       ]
     },
     {
@@ -39,6 +45,20 @@
         "tests/provider-capability-contract.test.ts",
         "tests/provider-env-secret-safety.test.ts"
       ]
+    },
+    {
+      "id": "s3b-t2-is2.5",
+      "classification": "mandatory",
+      "npm_script": "test:s3b:t2:is2.5",
+      "ci_step": "T2 IS2.5 hybrid admission tests",
+      "paths": ["tests/s3b-t2-is2_5.test.ts"]
+    },
+    {
+      "id": "s3b-t2-is3-admission-surface",
+      "classification": "mandatory",
+      "npm_script": "test:s3b:t2:is3",
+      "ci_step": "T2 IS3 lean admission surface tests",
+      "paths": ["tests/s3b-t2-is3-admission-surface.test.ts"]
     },
     {
       "id": "database-governance",
