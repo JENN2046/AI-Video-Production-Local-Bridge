@@ -49,6 +49,68 @@ function insertGenerationIntent(db: DatabaseSync): void {
     .run("intent_t2_fixture", "project_t2_fixture", "shot_t2_fixture");
 }
 
+function captureWithConcurrentCommit(
+  f: Fixture,
+  trigger: "after_active_intent_count" | "after_projects_rowset"
+): { snapshot: ReturnType<typeof captureT2RawSnapshot>; writerCommitted: boolean } {
+  const writer = new DatabaseSync(f.sqlitePath);
+  writer.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = OFF");
+  const mode = writer.prepare("PRAGMA journal_mode").get() as { journal_mode: string };
+  assert.equal(mode.journal_mode.toLowerCase(), "wal");
+  const originalPrepare = DatabaseSync.prototype.prepare;
+  let writerCommitted = false;
+  const commitWriter = (): void => {
+    if (writerCommitted) return;
+    writerCommitted = true;
+    writer.exec("BEGIN IMMEDIATE");
+    try {
+      insertProject(writer);
+      insertGenerationIntent(writer);
+      writer.exec("COMMIT");
+    } catch (error) {
+      writer.exec("ROLLBACK");
+      throw error;
+    }
+  };
+  DatabaseSync.prototype.prepare = function patchedPrepare(sql: string) {
+    const statement = originalPrepare.call(this, sql);
+    const normalized = sql.replace(/\s+/gu, " ").trim();
+    const triggerGet = trigger === "after_active_intent_count"
+      && normalized === "SELECT COUNT(*) AS count FROM generation_intents WHERE status IN ('queued', 'running')";
+    const triggerAll = trigger === "after_projects_rowset"
+      && normalized === 'SELECT * FROM "projects" ORDER BY rowid';
+    if (!triggerGet && !triggerAll) return statement;
+    const originalGet = statement.get.bind(statement);
+    const originalAll = statement.all.bind(statement);
+    return new Proxy(statement, {
+      get(target, property) {
+        if (triggerGet && property === "get") {
+          return (...args: unknown[]) => {
+            const result = originalGet(...args);
+            commitWriter();
+            return result;
+          };
+        }
+        if (triggerAll && property === "all") {
+          return (...args: unknown[]) => {
+            const result = originalAll(...args);
+            commitWriter();
+            return result;
+          };
+        }
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === "function" ? value.bind(target) : value;
+      }
+    });
+  };
+  try {
+    return { snapshot: captureT2RawSnapshot(f), writerCommitted };
+  } finally {
+    DatabaseSync.prototype.prepare = originalPrepare;
+    writer.close();
+  }
+}
+
 function assertSnapshotError(error: unknown, code: string): void {
   assert.ok(error instanceof T2SnapshotError);
   assert.equal(error.code, code);
@@ -128,6 +190,126 @@ test("generation intent rows are captured and active intent count changes", () =
     assert.equal(before.database.active_intent_count, 0);
     assert.equal(after.database.active_intent_count, 1);
     assert.notEqual(before.rowset_evidence.generation_intents.digest, after.rowset_evidence.generation_intents.digest);
+  } finally {
+    rmSync(f.root, { recursive: true, force: true });
+  }
+});
+
+for (const trigger of ["after_active_intent_count", "after_projects_rowset"] as const) {
+  test(`external commit ${trigger.replaceAll("_", " ")} cannot create a mixed raw snapshot`, () => {
+    const f = fixture();
+    try {
+      const { snapshot, writerCommitted } = captureWithConcurrentCommit(f, trigger);
+      assert.equal(writerCommitted, true);
+      assert.equal(snapshot.database.active_intent_count, 0);
+      assert.equal(snapshot.rowsets.projects.some((row) => row.project_id === "project_t2_fixture"), false);
+      assert.equal(snapshot.rowsets.generation_intents.some((row) => row.intent_id === "intent_t2_fixture"), false);
+
+      const after = captureT2RawSnapshot(f);
+      assert.equal(after.database.active_intent_count, 1);
+      assert.equal(after.rowsets.projects.some((row) => row.project_id === "project_t2_fixture"), true);
+      assert.equal(after.rowsets.generation_intents.some((row) => row.intent_id === "intent_t2_fixture"), true);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+}
+
+test("active intent count and every rowset read share one deferred transaction", () => {
+  const f = fixture();
+  const originalExec = DatabaseSync.prototype.exec;
+  const originalPrepare = DatabaseSync.prototype.prepare;
+  let transactionOpen = false;
+  let beginCount = 0;
+  let commitCount = 0;
+  let rollbackCount = 0;
+  let activeCountInside = false;
+  const rowsetsInside = new Set<string>();
+  DatabaseSync.prototype.exec = function patchedExec(sql: string): void {
+    const normalized = sql.trim().replace(/;$/u, "").toUpperCase();
+    if (normalized === "BEGIN DEFERRED") {
+      assert.equal(transactionOpen, false);
+      beginCount += 1;
+      originalExec.call(this, sql);
+      transactionOpen = true;
+      return;
+    }
+    if (normalized === "COMMIT") {
+      assert.equal(transactionOpen, true);
+      commitCount += 1;
+      originalExec.call(this, sql);
+      transactionOpen = false;
+      return;
+    }
+    if (normalized === "ROLLBACK") rollbackCount += 1;
+    originalExec.call(this, sql);
+  };
+  DatabaseSync.prototype.prepare = function patchedPrepare(sql: string) {
+    const normalized = sql.replace(/\s+/gu, " ").trim();
+    if (normalized === "SELECT COUNT(*) AS count FROM generation_intents WHERE status IN ('queued', 'running')") {
+      assert.equal(transactionOpen, true);
+      activeCountInside = true;
+    }
+    const rowset = /^SELECT \* FROM "([^"]+)" ORDER BY rowid$/u.exec(normalized)?.[1];
+    if (rowset) {
+      assert.equal(transactionOpen, true, `${rowset} escaped the read snapshot`);
+      rowsetsInside.add(rowset);
+    }
+    return originalPrepare.call(this, sql);
+  };
+  try {
+    const snapshot = captureT2RawSnapshot(f);
+    assert.equal(snapshot.database.total_changes_before, 0);
+    assert.equal(snapshot.database.total_changes_after, 0);
+    assert.equal(beginCount, 1);
+    assert.equal(commitCount, 1);
+    assert.equal(rollbackCount, 0);
+    assert.equal(transactionOpen, false);
+    assert.equal(activeCountInside, true);
+    assert.deepEqual([...rowsetsInside], [...T2_SNAPSHOT_ROWSET_NAMES]);
+  } finally {
+    DatabaseSync.prototype.exec = originalExec;
+    DatabaseSync.prototype.prepare = originalPrepare;
+    rmSync(f.root, { recursive: true, force: true });
+  }
+});
+
+test("rowset read failure rolls back the deferred transaction and preserves error semantics", () => {
+  const f = fixture();
+  const originalExec = DatabaseSync.prototype.exec;
+  const originalPrepare = DatabaseSync.prototype.prepare;
+  let transactionOpen = false;
+  let rollbackCount = 0;
+  DatabaseSync.prototype.exec = function patchedExec(sql: string): void {
+    const normalized = sql.trim().replace(/;$/u, "").toUpperCase();
+    if (normalized === "BEGIN DEFERRED") transactionOpen = true;
+    if (normalized === "COMMIT" || normalized === "ROLLBACK") {
+      if (normalized === "ROLLBACK") rollbackCount += 1;
+      transactionOpen = false;
+    }
+    originalExec.call(this, sql);
+  };
+  DatabaseSync.prototype.prepare = function patchedPrepare(sql: string) {
+    const normalized = sql.replace(/\s+/gu, " ").trim();
+    if (transactionOpen && normalized === 'SELECT * FROM "shots" ORDER BY rowid') {
+      throw new Error("INJECTED_T2_ROWSET_READ_FAILURE");
+    }
+    return originalPrepare.call(this, sql);
+  };
+  try {
+    assert.throws(() => captureT2RawSnapshot(f), (error: unknown) => {
+      assertSnapshotError(error, "T2_DATABASE_SNAPSHOT_FAILED");
+      return true;
+    });
+    assert.equal(rollbackCount, 1);
+    assert.equal(transactionOpen, false);
+  } finally {
+    DatabaseSync.prototype.exec = originalExec;
+    DatabaseSync.prototype.prepare = originalPrepare;
+  }
+  try {
+    const recovered = captureT2RawSnapshot(f);
+    assert.equal(recovered.database.total_changes_after, 0);
   } finally {
     rmSync(f.root, { recursive: true, force: true });
   }

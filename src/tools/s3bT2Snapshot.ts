@@ -153,10 +153,13 @@ export function captureT2RawSnapshot(input: T2SnapshotPaths = getM0Paths()): T2R
   });
   const assertPathCurrent = (): void => assertIdentityStable(input, identity);
   let db: M0Database | undefined;
+  let readTransactionOpen = false;
   try {
     db = openM0DatabaseConnection(input.sqlitePath, { readOnly: true, assertPathCurrent });
     const queryOnly = Number((db.prepare("PRAGMA query_only").get() as { query_only: number }).query_only);
     if (queryOnly !== 1) throw new T2SnapshotError("T2_DATABASE_WRITE_DETECTED");
+    db.exec("BEGIN DEFERRED");
+    readTransactionOpen = true;
     try {
       assertSchemaCurrent(db);
     } catch {
@@ -178,13 +181,20 @@ export function captureT2RawSnapshot(input: T2SnapshotPaths = getM0Paths()): T2R
       query_only: 1 as const,
       schema_current: true as const
     };
-    return {
+    const snapshot = {
       database,
       rowsets: rowsets.rows,
       rowset_evidence: rowsets.evidence,
       database_evidence_digest: databaseEvidenceDigest(database, rowsets.evidence)
     };
+    db.exec("COMMIT");
+    readTransactionOpen = false;
+    return snapshot;
   } catch (error) {
+    if (readTransactionOpen && db) {
+      try { db.exec("ROLLBACK"); } catch { /* closing the dedicated read-only connection is the final cleanup boundary */ }
+      readTransactionOpen = false;
+    }
     if (error instanceof T2SnapshotError) throw error;
     throw new T2SnapshotError("T2_DATABASE_SNAPSHOT_FAILED");
   } finally {

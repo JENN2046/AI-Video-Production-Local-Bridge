@@ -534,10 +534,14 @@ function getIntent(db: M0Database, intentId: string): WorkbenchGenerationIntent 
   return row ? intentFromRow(row) : null;
 }
 
-function isT2AdmissionReservation(intent: Pick<WorkbenchGenerationIntent, "status" | "input_snapshot">): boolean {
-  return intent.status === "prepared"
-    && intent.input_snapshot.prepared_by === "t2_admission"
-    && intent.input_snapshot.admission_only === true;
+function hasDurableT2GenerationPlan(intent: Pick<WorkbenchGenerationIntent, "generation_plan" | "generation_plan_invalid">): boolean {
+  return intent.generation_plan !== undefined || intent.generation_plan_invalid === true;
+}
+
+function isT2AdmissionReservation(
+  intent: Pick<WorkbenchGenerationIntent, "status" | "generation_plan" | "generation_plan_invalid">
+): boolean {
+  return intent.status === "prepared" && hasDurableT2GenerationPlan(intent);
 }
 
 type PreparedGenerationPlanRevalidation =
@@ -554,11 +558,10 @@ type PreparedGenerationStaleTerminalization = {
   error: PreparedGenerationStaleError;
 };
 
-function revalidatePreparedGenerationPlan(
-  db: M0Database,
+function validateT2GenerationPlanStructure(
   intent: WorkbenchGenerationIntent
 ): PreparedGenerationPlanRevalidation {
-  if (!isT2AdmissionReservation(intent)) return { ok: true };
+  if (!hasDurableT2GenerationPlan(intent)) return { ok: true };
   const plan = intent.generation_plan;
   if (!plan || intent.generation_plan_invalid
     || plan.project_id !== intent.project_id
@@ -570,11 +573,34 @@ function revalidatePreparedGenerationPlan(
     || plan.aspect_ratio !== intent.input_snapshot.aspect_ratio) {
     return { ok: false, message: "The prepared GenerationPlan no longer matches its reservation binding." };
   }
+  return { ok: true };
+}
+
+function validateT2GenerationPlanBinding(
+  intent: WorkbenchGenerationIntent
+): PreparedGenerationPlanRevalidation {
+  const structure = validateT2GenerationPlanStructure(intent);
+  if (!structure.ok || !hasDurableT2GenerationPlan(intent)) return structure;
+  if (intent.input_snapshot.prepared_by !== "t2_admission"
+    || intent.input_snapshot.admission_only !== true) {
+    return { ok: false, message: "The durable T2 GenerationPlan markers are missing or inconsistent." };
+  }
+  return { ok: true };
+}
+
+function revalidatePreparedGenerationPlan(
+  db: M0Database,
+  intent: WorkbenchGenerationIntent
+): PreparedGenerationPlanRevalidation {
+  const structure = validateT2GenerationPlanStructure(intent);
+  if (!structure.ok || !hasDurableT2GenerationPlan(intent)) return structure;
+  const plan = intent.generation_plan;
+  if (!plan) return { ok: false, message: "The prepared GenerationPlan no longer matches its reservation binding." };
   const current = readGenerationAdmissionFacts(db, intent.project_id, intent.shot_id, { verify_media: false });
   if (!current.ok || !current.facts.provider.ok || !planMatchesFacts(plan, current.facts)) {
     return { ok: false, message: "The prepared GenerationPlan no longer matches current authoritative generation facts." };
   }
-  return { ok: true };
+  return validateT2GenerationPlanBinding(intent);
 }
 
 function classifyPreparedGenerationStale(
@@ -2191,15 +2217,6 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       failOrReconcileKnownTask(intent, job, error, "PROVIDER_CAPABILITY_REQUIRES_RECONCILIATION");
       return;
     }
-    if (intent.generation_plan_invalid) {
-      failOrReconcileKnownTask(
-        intent,
-        job,
-        providerError("GENERATION_PLAN_STALE", "The confirmed GenerationPlan binding is invalid."),
-        "GENERATION_PLAN_REQUIRES_RECONCILIATION"
-      );
-      return;
-    }
     if (intent.generation_plan) {
       const mediaGuard = revalidateGenerationPlanMedia(intent.generation_plan, db);
       if (!mediaGuard.ok) {
@@ -2219,6 +2236,16 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         job,
         directorAuthorization.error,
         "DIRECTOR_AUTOMATION_REQUIRES_RECONCILIATION"
+      );
+      return;
+    }
+    const generationPlanBinding = validateT2GenerationPlanBinding(intent);
+    if (!generationPlanBinding.ok) {
+      failOrReconcileKnownTask(
+        intent,
+        job,
+        providerError("GENERATION_PLAN_STALE", generationPlanBinding.message),
+        "GENERATION_PLAN_REQUIRES_RECONCILIATION"
       );
       return;
     }

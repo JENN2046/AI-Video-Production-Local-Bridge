@@ -45,6 +45,7 @@ type WorkbenchIntentSnapshot = {
   balance_gate: string;
   requires_human_preflight?: boolean;
   admission_only?: boolean;
+  prepared_by?: string;
 };
 
 function createFixture(): Fixture {
@@ -194,6 +195,42 @@ function fixtureExecutionDependencies(
       };
     }
   };
+}
+
+function mutatePersistedIntentData(
+  fixture: Fixture,
+  intentId: string,
+  mutate: (data: Record<string, unknown>) => void
+): void {
+  const row = fixture.db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+    .get(intentId) as { data_json: string };
+  const data = JSON.parse(row.data_json) as Record<string, unknown>;
+  mutate(data);
+  fixture.db.prepare("UPDATE generation_intents SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?")
+    .run(JSON.stringify(data), intentId);
+}
+
+async function promoteT2FixtureToQueued(
+  fixture: Fixture,
+  counters: { preflight_requests: number; adapter_constructs: number; provider_submits: number }
+) {
+  const { confirmed: admitted } = confirmT2Fixture(fixture);
+  const dependencies = fixtureExecutionDependencies(fixture, counters);
+  const preflight = await preflightWorkbenchGeneration({
+    project_id: PROJECT_ID,
+    shot_id: SHOT_ID,
+    account_label: "personal",
+    budget_limit_value: 10
+  }, fixture.db, dependencies);
+  if (!preflight.ok) throw new Error(preflight.error.code);
+  const confirmed = confirmWorkbenchGeneration({
+    intent_id: admitted.data.intent.intent_id,
+    budget_limit_value: 10,
+    cost_confirmed: true,
+    human_confirmation: true
+  }, fixture.db, dependencies);
+  if (!confirmed.ok) throw new Error(confirmed.error.code);
+  return { admitted, confirmed, dependencies };
 }
 
 function addUnrelatedWorldDrift(fixture: Fixture): void {
@@ -1030,6 +1067,174 @@ test("P1 known Provider task keeps ownership across every GenerationPlan validat
     } finally {
       closeFixture(fixture);
     }
+  }
+});
+
+test("durable GenerationPlan keeps authority revalidation required after marker loss", async () => {
+  for (const drift of ["package_approval", "project_classification"] as const) {
+    const fixture = createFixture();
+    try {
+      const { confirmed: admitted } = confirmT2Fixture(fixture);
+      const counters = { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 };
+      const dependencies = fixtureExecutionDependencies(fixture, counters);
+      const preflight = await preflightWorkbenchGeneration({
+        project_id: PROJECT_ID,
+        shot_id: SHOT_ID,
+        account_label: "personal",
+        budget_limit_value: 10
+      }, fixture.db, dependencies);
+      if (!preflight.ok) throw new Error(preflight.error.code);
+
+      mutatePersistedIntentData(fixture, admitted.data.intent.intent_id, (data) => {
+        const snapshot = data.input_snapshot as Record<string, unknown>;
+        if (drift === "package_approval") delete snapshot.prepared_by;
+        else delete snapshot.admission_only;
+      });
+      if (drift === "package_approval") {
+        const row = fixture.db.prepare("SELECT data_json FROM storyboard_packages WHERE storyboard_package_id = ?")
+          .get(PACKAGE_ID) as { data_json: string };
+        const storyboardPackage = JSON.parse(row.data_json) as { user_approval: { storyboard_approved: boolean } };
+        storyboardPackage.user_approval.storyboard_approved = false;
+        fixture.db.prepare("UPDATE storyboard_packages SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE storyboard_package_id = ?")
+          .run(JSON.stringify(storyboardPackage), PACKAGE_ID);
+      } else {
+        fixture.db.prepare("UPDATE workbench_project_meta SET classification = 'test', updated_at = CURRENT_TIMESTAMP WHERE project_id = ?")
+          .run(PROJECT_ID);
+      }
+
+      const confirmed = confirmWorkbenchGeneration({
+        intent_id: admitted.data.intent.intent_id,
+        budget_limit_value: 10,
+        cost_confirmed: true,
+        human_confirmation: true
+      }, fixture.db, dependencies);
+      assert.equal(confirmed.ok, false, drift);
+      if (confirmed.ok) throw new Error(`${drift} unexpectedly bypassed durable T2 revalidation`);
+      assert.equal(confirmed.error.code, "GENERATION_PLAN_STALE", drift);
+      const stored = fixture.db.prepare("SELECT status, sanitized_error_json FROM generation_intents WHERE intent_id = ?")
+        .get(admitted.data.intent.intent_id) as { status: string; sanitized_error_json: string };
+      assert.equal(stored.status, "cancelled", drift);
+      assert.equal((JSON.parse(stored.sanitized_error_json) as { code?: string }).code, "GENERATION_PLAN_STALE", drift);
+      assert.equal(generationRightConflict(fixture.db), null, drift);
+      assert.deepEqual(counters, { preflight_requests: 2, adapter_constructs: 0, provider_submits: 0 }, drift);
+      assert.equal(intentCount(fixture.db), 1, drift);
+    } finally {
+      closeFixture(fixture);
+    }
+  }
+});
+
+test("durable GenerationPlan marker inconsistency alone fails closed", async () => {
+  for (const drift of ["prepared_by_missing", "prepared_by_inconsistent", "admission_only_missing", "admission_only_inconsistent"] as const) {
+    const fixture = createFixture();
+    try {
+      const { confirmed: admitted } = confirmT2Fixture(fixture);
+      const counters = { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 };
+      const dependencies = fixtureExecutionDependencies(fixture, counters);
+      const preflight = await preflightWorkbenchGeneration({
+        project_id: PROJECT_ID,
+        shot_id: SHOT_ID,
+        account_label: "personal",
+        budget_limit_value: 10
+      }, fixture.db, dependencies);
+      if (!preflight.ok) throw new Error(preflight.error.code);
+      mutatePersistedIntentData(fixture, admitted.data.intent.intent_id, (data) => {
+        const snapshot = data.input_snapshot as Record<string, unknown>;
+        if (drift === "prepared_by_missing") delete snapshot.prepared_by;
+        else if (drift === "prepared_by_inconsistent") snapshot.prepared_by = "human_workbench";
+        else if (drift === "admission_only_missing") delete snapshot.admission_only;
+        else snapshot.admission_only = false;
+      });
+
+      const confirmed = confirmWorkbenchGeneration({
+        intent_id: admitted.data.intent.intent_id,
+        budget_limit_value: 10,
+        cost_confirmed: true,
+        human_confirmation: true
+      }, fixture.db, dependencies);
+      assert.equal(confirmed.ok, false, drift);
+      if (confirmed.ok) throw new Error(`${drift} unexpectedly became an ordinary Workbench intent`);
+      assert.equal(confirmed.error.code, "GENERATION_PLAN_STALE", drift);
+      const stored = fixture.db.prepare("SELECT status FROM generation_intents WHERE intent_id = ?")
+        .get(admitted.data.intent.intent_id) as { status: string };
+      assert.equal(stored.status, "cancelled", drift);
+      assert.deepEqual(counters, { preflight_requests: 2, adapter_constructs: 0, provider_submits: 0 }, drift);
+      assert.equal(intentCount(fixture.db), 1, drift);
+    } finally {
+      closeFixture(fixture);
+    }
+  }
+});
+
+test("direct and resumed workers enforce the durable T2 marker gate", async () => {
+  for (const entry of ["direct", "resume"] as const) {
+    const fixture = createFixture();
+    try {
+      const counters = { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 };
+      const promoted = await promoteT2FixtureToQueued(fixture, counters);
+      mutatePersistedIntentData(fixture, promoted.admitted.data.intent.intent_id, (data) => {
+        const snapshot = data.input_snapshot as Record<string, unknown>;
+        delete snapshot.prepared_by;
+      });
+
+      if (entry === "direct") {
+        await runWorkbenchGenerationOnce(promoted.admitted.data.intent.intent_id, {
+          allow_submit: true,
+          dependencies: promoted.dependencies
+        });
+      } else {
+        const resumed = resumeWorkbenchGenerationJobs(promoted.dependencies);
+        assert.deepEqual(resumed, { resumed: [promoted.admitted.data.intent.intent_id], reconciled: [] });
+        for (let attempt = 0; attempt < 80; attempt += 1) {
+          const state = fixture.db.prepare("SELECT state FROM generation_jobs WHERE intent_id = ?")
+            .get(promoted.admitted.data.intent.intent_id) as { state: string };
+          if (state.state === "failed") break;
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+      }
+
+      const intent = fixture.db.prepare("SELECT status, sanitized_error_json FROM generation_intents WHERE intent_id = ?")
+        .get(promoted.admitted.data.intent.intent_id) as { status: string; sanitized_error_json: string };
+      const job = fixture.db.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE intent_id = ?")
+        .get(promoted.admitted.data.intent.intent_id) as { state: string; reconciliation_reason: string };
+      assert.equal(intent.status, "failed", entry);
+      assert.equal((JSON.parse(intent.sanitized_error_json) as { code?: string }).code, "GENERATION_PLAN_STALE", entry);
+      assert.deepEqual({ ...job }, { state: "failed", reconciliation_reason: "GENERATION_PLAN_STALE" }, entry);
+      assert.deepEqual(counters, { preflight_requests: 2, adapter_constructs: 0, provider_submits: 0 }, entry);
+      assert.equal(intentCount(fixture.db), 1, entry);
+    } finally {
+      closeFixture(fixture);
+    }
+  }
+});
+
+test("ordinary non-T2 Workbench execution remains outside T2 revalidation", async () => {
+  const fixture = createFixture();
+  try {
+    const counters = { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 };
+    const dependencies = fixtureExecutionDependencies(fixture, counters);
+    const preflight = await preflightWorkbenchGeneration({
+      project_id: PROJECT_ID,
+      shot_id: SHOT_ID,
+      account_label: "personal",
+      budget_limit_value: 10
+    }, fixture.db, dependencies);
+    if (!preflight.ok) throw new Error(preflight.error.code);
+    const persisted = fixture.db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(preflight.data.intent.intent_id) as { data_json: string };
+    assert.equal("generation_plan" in (JSON.parse(persisted.data_json) as Record<string, unknown>), false);
+    const confirmed = confirmWorkbenchGeneration({
+      intent_id: preflight.data.intent.intent_id,
+      budget_limit_value: 10,
+      cost_confirmed: true,
+      human_confirmation: true
+    }, fixture.db, dependencies);
+    if (!confirmed.ok) throw new Error(confirmed.error.code);
+    await runWorkbenchGenerationOnce(confirmed.data.intent.intent_id, { allow_submit: true, dependencies });
+    assert.equal(counters.provider_submits, 1);
+    assert.equal(intentCount(fixture.db), 1);
+  } finally {
+    closeFixture(fixture);
   }
 });
 
