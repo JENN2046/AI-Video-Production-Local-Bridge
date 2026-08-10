@@ -181,8 +181,10 @@ export function confirmGeneration(
 ): ConfirmGenerationResult {
   const plan = parseGenerationPlan(planInput);
   if (!plan) return error("GENERATION_PLAN_INVALID", "GenerationPlan does not match generation_plan.v1.");
-  db.exec("BEGIN IMMEDIATE");
+  let transactionStarted = false;
   try {
+    db.exec("BEGIN IMMEDIATE");
+    transactionStarted = true;
     const current = readGenerationAdmissionCandidateFacts(
       db,
       { project_id: plan.project_id, shot_id: plan.shot_id },
@@ -222,9 +224,12 @@ export function confirmGeneration(
     }
     const committed = commitCanonicalGenerationAdmission(canonicalCommitInput(project, shot, confirmedFacts, plan), db);
     db.exec("COMMIT");
+    transactionStarted = false;
     return { ok: true, data: { plan, ...committed } };
   } catch (caught) {
-    try { db.exec("ROLLBACK"); } catch { /* the transaction may already be closed */ }
+    if (transactionStarted) {
+      try { db.exec("ROLLBACK"); } catch { /* preserve the original admission failure */ }
+    }
     const message = caught instanceof Error ? caught.message : "Generation admission commit failed.";
     if (/constraint|busy|locked/i.test(message)) return error("GENERATION_ADMISSION_CONFLICT", "Generation admission failed closed on a concurrent database conflict.");
     throw caught;

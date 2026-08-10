@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { validateImageBuffer } from "../src/tools/imageValidity.js";
+import { resolvedPathsEquivalent } from "../src/tools/pathEquivalence.js";
 import { collectT2GovernedMediaEvidence } from "../src/tools/s3bT2MediaEvidence.js";
 import type { T2NormalizedSnapshot } from "../src/tools/s3bT2Types.js";
 
@@ -33,6 +34,30 @@ test("valid governed image reads one controlled fd and verifies exact bytes", ()
     assert.equal(result.media_root.status, "VALID");
     assert.equal(evidence?.status, "VALID");
     if (evidence?.status === "VALID") assert.equal(evidence.raw_sha256, createHash("sha256").update(PNG).digest("hex"));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("canonical path equivalence follows Windows and POSIX case semantics", () => {
+  assert.equal(resolvedPathsEquivalent("C:\\Media\\Root", "c:\\media\\root", "win32"), true);
+  assert.equal(resolvedPathsEquivalent("C:\\Media\\Project", "C:\\MEDIA\\project", "win32"), true);
+  assert.equal(resolvedPathsEquivalent("C:\\Media\\ProjectA", "C:\\Media\\ProjectB", "win32"), false);
+  assert.equal(resolvedPathsEquivalent("/media/project", "/media/project", "linux"), true);
+  assert.equal(resolvedPathsEquivalent("/media/Project", "/media/project", "linux"), false);
+});
+
+test("Windows case-only media-root representation remains valid", { skip: process.platform !== "win32" }, () => {
+  const root = mkdtempSync(join(tmpdir(), "t2-media-windows-case-"));
+  try {
+    writeFileSync(join(root, "image.png"), PNG);
+    const caseVariant = root.replace(/[A-Za-z]/gu, (character) =>
+      character === character.toLowerCase() ? character.toUpperCase() : character.toLowerCase()
+    );
+    assert.notEqual(caseVariant, root);
+    const result = collectT2GovernedMediaEvidence({ snapshot: snapshot(caseVariant), mediaRoot: caseVariant });
+    assert.equal(result.media_root.status, "VALID");
+    assert.equal(result.referenced.get("a1")?.status, "VALID");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -79,6 +104,19 @@ test("invalid authoritative media root does not read media bytes", () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test("non-directory media root remains rejected", () => {
+  const root = mkdtempSync(join(tmpdir(), "t2-media-root-file-"));
+  const fileRoot = join(root, "not-a-directory");
+  try {
+    writeFileSync(fileRoot, "not a directory");
+    const result = collectT2GovernedMediaEvidence({ snapshot: snapshot(root), mediaRoot: fileRoot });
+    assert.equal(result.media_root.status, "INVALID");
+    if (result.media_root.status === "INVALID") assert.equal(result.media_root.failure_class, "MEDIA_ROOT_NOT_DIRECTORY");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
 

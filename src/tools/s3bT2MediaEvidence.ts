@@ -3,6 +3,7 @@ import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpat
 import { isAbsolute, relative, resolve } from "node:path";
 
 import { validateImageBuffer, validateImageBufferDecoded } from "./imageValidity.js";
+import { resolvedPathsEquivalent } from "./pathEquivalence.js";
 import type {
   GovernedMediaEvidence,
   GovernedMediaRootEvidence,
@@ -60,7 +61,7 @@ function inspectRoot(mediaRoot: string): RootInspection {
     if (entry.isSymbolicLink()) return { evidence: invalidRoot("MEDIA_ROOT_SYMLINK", root), root_path: root, real_path: root };
     if (!entry.isDirectory()) return { evidence: invalidRoot("MEDIA_ROOT_NOT_DIRECTORY", root), root_path: root, real_path: root };
     const real = resolve(realpathSync(root));
-    if (real !== root) return { evidence: invalidRoot("MEDIA_ROOT_REALPATH_MISMATCH", root), root_path: root, real_path: real };
+    if (!resolvedPathsEquivalent(real, root)) return { evidence: invalidRoot("MEDIA_ROOT_REALPATH_MISMATCH", root), root_path: root, real_path: real };
     const current = statSync(root);
     if (!current.isDirectory()) return { evidence: invalidRoot("MEDIA_ROOT_NOT_DIRECTORY", root), root_path: root, real_path: real };
     return { evidence: {
@@ -97,8 +98,8 @@ function readAuthoritativeImage(artifact: T2NormalizedArtifact, snapshot: T2Norm
   const blob = snapshot.blobs.get(artifact.blob_id);
   const artifactId = artifact.artifact_id;
   if (!blob || blob.integrity_state !== "verified") return invalidMedia(artifactId, "MEDIA_BLOB_NOT_VERIFIED");
-  if (!isAbsolute(blob.storage_uri) || !isAbsolute(artifact.storage.uri) || resolve(artifact.storage.uri) !== resolve(blob.storage_uri)) return invalidMedia(artifactId, "MEDIA_STORAGE_BINDING_MISMATCH");
-  if (!isAbsolute(blob.media_root) || resolve(blob.media_root) !== root.root_path) return invalidMedia(artifactId, "MEDIA_ROOT_BINDING_MISMATCH", { registered_root: pathDigest(blob.media_root) });
+  if (!isAbsolute(blob.storage_uri) || !isAbsolute(artifact.storage.uri) || !resolvedPathsEquivalent(artifact.storage.uri, blob.storage_uri)) return invalidMedia(artifactId, "MEDIA_STORAGE_BINDING_MISMATCH");
+  if (!isAbsolute(blob.media_root) || !resolvedPathsEquivalent(blob.media_root, root.root_path)) return invalidMedia(artifactId, "MEDIA_ROOT_BINDING_MISMATCH", { registered_root: pathDigest(blob.media_root) });
   const target = resolve(blob.storage_uri);
   if (!inside(target, root.root_path)) return invalidMedia(artifactId, "MEDIA_PATH_OUTSIDE_ROOT", { target: pathDigest(target) });
   let descriptor = -1;

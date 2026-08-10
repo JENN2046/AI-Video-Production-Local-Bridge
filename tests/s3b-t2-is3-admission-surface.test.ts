@@ -591,6 +591,97 @@ test("IS3 explicit confirm reuses the existing human gate boundary and writes on
   }
 });
 
+test("IS3 transaction-start contention maps to the stable admission conflict without writes", () => {
+  const fixture = createFixture();
+  const lockDb = new DatabaseSync(fixture.sqlitePath);
+  const originalFetch = globalThis.fetch;
+  let providerCalls = 0;
+  globalThis.fetch = async () => {
+    providerCalls += 1;
+    throw new Error("Confirmation must not dispatch Provider work.");
+  };
+  try {
+    const prepared = prepareFixture(fixture);
+    const before = intentCount(fixture.db);
+    lockDb.exec("PRAGMA busy_timeout = 0");
+    fixture.db.exec("PRAGMA busy_timeout = 0");
+    lockDb.exec("BEGIN IMMEDIATE");
+    const confirmed = confirmGenerationAdmission(prepared.plan, fixture.db);
+    assert.deepEqual(confirmed, {
+      result: "GENERATION_ADMISSION_CONFLICT",
+      reason_code: "GENERATION_ADMISSION_CONFLICT"
+    });
+    assert.equal(intentCount(fixture.db), before);
+    assert.equal((fixture.db as DatabaseSync & { isTransaction?: boolean }).isTransaction, false);
+    assert.equal(providerCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if ((lockDb as DatabaseSync & { isTransaction?: boolean }).isTransaction) lockDb.exec("ROLLBACK");
+    lockDb.close();
+    closeFixture(fixture);
+  }
+});
+
+test("IS3 transaction-start SQLITE_LOCKED mapping does not roll back an unstarted transaction", () => {
+  const fixture = createFixture();
+  try {
+    const prepared = prepareFixture(fixture);
+    const statements: string[] = [];
+    const instrumented = new Proxy(fixture.db, {
+      get(target, property) {
+        if (property === "exec") {
+          return (sql: string) => {
+            statements.push(sql);
+            if (sql === "BEGIN IMMEDIATE") {
+              const locked = new Error("database table is locked") as Error & { code: string };
+              locked.code = "SQLITE_LOCKED";
+              throw locked;
+            }
+            return target.exec(sql);
+          };
+        }
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      }
+    }) as DatabaseSync;
+    const confirmed = confirmGenerationAdmission(prepared.plan, instrumented);
+    assert.deepEqual(confirmed, {
+      result: "GENERATION_ADMISSION_CONFLICT",
+      reason_code: "GENERATION_ADMISSION_CONFLICT"
+    });
+    assert.deepEqual(statements, ["BEGIN IMMEDIATE"]);
+    assert.equal(intentCount(fixture.db), 0);
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
+test("IS3 non-contention transaction-start errors preserve their original semantics", () => {
+  const fixture = createFixture();
+  try {
+    const prepared = prepareFixture(fixture);
+    const instrumented = new Proxy(fixture.db, {
+      get(target, property) {
+        if (property === "exec") {
+          return (sql: string) => {
+            if (sql === "BEGIN IMMEDIATE") throw new Error("INJECTED_BEGIN_FAILURE");
+            return target.exec(sql);
+          };
+        }
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      }
+    }) as DatabaseSync;
+    assert.throws(
+      () => confirmGenerationAdmission(prepared.plan, instrumented),
+      /INJECTED_BEGIN_FAILURE/
+    );
+    assert.equal(intentCount(fixture.db), 0);
+  } finally {
+    closeFixture(fixture);
+  }
+});
+
 test("IS3 stale plan returns GENERATION_PLAN_STALE without gaining a new generation right", () => {
   const fixture = createFixture();
   try {
