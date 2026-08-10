@@ -62,6 +62,8 @@ export interface WorkbenchGenerationIntent {
     project_resolution?: string;
     price_source: "runninghub_price_preview" | "local_verified_cache";
     balance_gate: "pass" | "not_checked";
+    account_balance_value?: number;
+    account_balance_currency?: string;
     requires_human_preflight?: boolean;
     prepared_by?: "human_workbench" | "webgpt_v4" | "director_automation" | "t2_admission";
     admission_only?: true;
@@ -1283,11 +1285,12 @@ export async function preflightWorkbenchGeneration(
   const accountCurrency = typeof accountData.currency === "string" ? accountData.currency : "";
   const remainingMoney = numericField(accountData, "remainMoney");
   const remainingCoins = numericField(accountData, "remainCoins");
-  const balanceEnough = currency === accountCurrency && remainingMoney !== null
-    ? remainingMoney >= estimatedPrice
+  const accountBalance = currency === accountCurrency && remainingMoney !== null
+    ? remainingMoney
     : currency.toUpperCase().includes("COIN") && remainingCoins !== null
-      ? remainingCoins >= estimatedPrice
-      : false;
+      ? remainingCoins
+      : null;
+  const balanceEnough = accountBalance !== null && accountBalance >= estimatedPrice;
   if (!balanceEnough) return { ok: false, error: { code: "BALANCE_GATE_UNKNOWN_OR_INSUFFICIENT", message: "RunningHub balance could not be verified as sufficient." } };
 
   const createdAt = dateNow(dependencies);
@@ -1298,6 +1301,8 @@ export async function preflightWorkbenchGeneration(
       ...admissionReservation.input_snapshot,
       price_source: "runninghub_price_preview",
       balance_gate: "pass",
+      account_balance_value: accountBalance,
+      account_balance_currency: currency,
       requires_human_preflight: false,
       capability_key: capability.key.serialized,
       ...(directorBinding ? { director_automation: directorBinding } : {})
@@ -1309,6 +1314,8 @@ export async function preflightWorkbenchGeneration(
       project_resolution: writable.data.project.video_spec.resolution,
       price_source: "runninghub_price_preview",
       balance_gate: "pass",
+      account_balance_value: accountBalance,
+      account_balance_currency: currency,
       requires_human_preflight: false,
       prepared_by: input.director_automation ? "director_automation" : "human_workbench",
       capability_key: capability.key.serialized,

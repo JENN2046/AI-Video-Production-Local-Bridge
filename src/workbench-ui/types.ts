@@ -249,6 +249,11 @@ export interface GenerationIntent {
   estimated_cost_value: number;
   budget_limit_value: number;
   currency: string;
+  input_snapshot: {
+    balance_gate: "pass" | "not_checked";
+    account_balance_value?: number;
+    account_balance_currency?: string;
+  };
   confirmed: boolean;
   expires_at: string;
   status: string;

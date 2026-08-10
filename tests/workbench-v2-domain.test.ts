@@ -1099,6 +1099,8 @@ test("generation preflight enforces official estimate, balance gate, budget and 
     if (!first.ok || !second.ok) return;
     assert.equal(first.data.intent.estimated_cost_value, 0.08);
     assert.equal(first.data.intent.currency, "CNY");
+    assert.equal(first.data.intent.input_snapshot.account_balance_value, 10);
+    assert.equal(first.data.intent.input_snapshot.account_balance_currency, "CNY");
     assert.equal(first.data.intent.model, "rhart-video-g/image-to-video");
     assert.equal(first.data.intent.resolution, "480p");
     assert.equal(first.data.intent.input_snapshot.capability_key, "provider-capabilities-v1|runninghub.image_to_video.v1|runninghub|rhart-video-g/image-to-video|6|480p|9:16");
