@@ -19,6 +19,7 @@ import {
   preflightWorkbenchGeneration,
   resumeWorkbenchGenerationJobs,
   runWorkbenchGenerationOnce,
+  startWorkbenchGeneration,
   type WorkbenchGenerationDependencies
 } from "../src/tools/workbenchGeneration.js";
 import { getStoryboardPackage } from "../src/tools/storyboardPackages.js";
@@ -231,6 +232,22 @@ async function promoteT2FixtureToQueued(
   }, fixture.db, dependencies);
   if (!confirmed.ok) throw new Error(confirmed.error.code);
   return { admitted, confirmed, dependencies };
+}
+
+async function waitForGenerationJobState(
+  fixture: Fixture,
+  intentId: string,
+  expectedState: string
+): Promise<void> {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const job = fixture.db.prepare("SELECT state, lease_token FROM generation_jobs WHERE intent_id = ?")
+      .get(intentId) as { state: string; lease_token: string };
+    if (job.state === expectedState && job.lease_token === "") return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  const job = fixture.db.prepare("SELECT state, lease_token FROM generation_jobs WHERE intent_id = ?")
+    .get(intentId) as { state: string; lease_token: string };
+  assert.deepEqual(job, { state: expectedState, lease_token: "" });
 }
 
 function addUnrelatedWorldDrift(fixture: Fixture): void {
@@ -932,31 +949,121 @@ test("T2 admission reservation never reaches Provider execution before preflight
   }
 });
 
-test("P1 final execution guard rejects a queued preflight-pending intent", async () => {
+test("P1 unauthorized queued intent terminalizes once without Provider work or scheduler reselection", async () => {
   const fixture = createFixture();
   try {
-    const { confirmed } = confirmT2Fixture(fixture);
-    // Simulate the legacy queued shape that the final worker boundary must
-    // still reject when an old caller bypasses the reservation-only writer.
-    fixture.db.prepare("UPDATE generation_intents SET confirmed = 1, status = 'queued', run_id = ? WHERE intent_id = ?")
-      .run("legacy_run_without_preflight", confirmed.data.intent.intent_id);
-    fixture.db.prepare("INSERT INTO generation_jobs (job_id, intent_id, state) VALUES (?, ?, 'queued')")
-      .run("legacy_job_without_preflight", confirmed.data.intent.intent_id);
     const counters = { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 };
-    await runWorkbenchGenerationOnce(confirmed.data.intent.intent_id, {
-      allow_submit: true,
-      dependencies: fixtureExecutionDependencies(fixture, counters)
+    const promoted = await promoteT2FixtureToQueued(fixture, counters);
+    const intentId = promoted.admitted.data.intent.intent_id;
+    mutatePersistedIntentData(fixture, intentId, (data) => {
+      const snapshot = data.input_snapshot as Record<string, unknown>;
+      snapshot.balance_gate = "not_checked";
+      snapshot.requires_human_preflight = true;
     });
-    assert.deepEqual(counters, { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 });
-    const row = fixture.db.prepare("SELECT status, confirmed FROM generation_intents WHERE intent_id = ?")
-      .get(confirmed.data.intent.intent_id) as { status: string; confirmed: number };
-    assert.equal(row.status, "queued");
+
+    startWorkbenchGeneration(intentId, {
+      allow_submit: true,
+      dependencies: promoted.dependencies
+    });
+    await waitForGenerationJobState(fixture, intentId, "failed");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    assert.deepEqual(counters, { preflight_requests: 2, adapter_constructs: 0, provider_submits: 0 });
+    const row = fixture.db.prepare("SELECT status, confirmed, sanitized_error_json, data_json FROM generation_intents WHERE intent_id = ?")
+      .get(intentId) as { status: string; confirmed: number; sanitized_error_json: string; data_json: string };
+    assert.equal(row.status, "failed");
     assert.equal(row.confirmed, 1);
-    const job = fixture.db.prepare("SELECT state FROM generation_jobs WHERE intent_id = ?")
-      .get(confirmed.data.intent.intent_id) as { state: string };
-    assert.equal(job.state, "queued");
+    assert.equal((JSON.parse(row.sanitized_error_json) as { code?: string }).code, "OFFICIAL_PREFLIGHT_REQUIRED");
+    assert.equal((JSON.parse(row.data_json) as { generation_plan?: { schema_version?: string } }).generation_plan?.schema_version, "generation_plan.v1");
+    const job = fixture.db.prepare("SELECT state, reconciliation_reason, lease_token, lease_expires_at FROM generation_jobs WHERE intent_id = ?")
+      .get(intentId) as { state: string; reconciliation_reason: string; lease_token: string; lease_expires_at: string | null };
+    assert.deepEqual({ ...job }, {
+      state: "failed",
+      reconciliation_reason: "OFFICIAL_PREFLIGHT_REQUIRED",
+      lease_token: "",
+      lease_expires_at: null
+    });
+    const run = fixture.db.prepare("SELECT status, data_json FROM generation_runs WHERE run_id = ?")
+      .get(promoted.confirmed.data.run_id) as { status: string; data_json: string };
+    assert.equal(run.status, "failed");
+    assert.equal((JSON.parse(run.data_json) as { error?: { code?: string } }).error?.code, "OFFICIAL_PREFLIGHT_REQUIRED");
+    const history = fixture.db.prepare("SELECT reason_code FROM generation_job_events WHERE job_id = ? ORDER BY rowid")
+      .all(promoted.confirmed.data.job_id) as Array<{ reason_code: string }>;
+    assert.deepEqual(history.map((event) => event.reason_code), ["HUMAN_CONFIRMED", "OFFICIAL_PREFLIGHT_REQUIRED"]);
+    assert.equal(generationRightConflict(fixture.db), null);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      assert.deepEqual(resumeWorkbenchGenerationJobs(promoted.dependencies), { resumed: [], reconciled: [] });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const historyAfterResume = fixture.db.prepare("SELECT COUNT(*) AS count FROM generation_job_events WHERE job_id = ?")
+      .get(promoted.confirmed.data.job_id) as { count: number };
+    assert.equal(Number(historyAfterResume.count), history.length);
   } finally {
     closeFixture(fixture);
+  }
+});
+
+test("P1 first-submit workers terminalize current Project and Package authority drift", async () => {
+  for (const drift of ["project_classification", "package_approval", "active_package_replacement"] as const) {
+    const fixture = createFixture();
+    try {
+      const counters = { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 };
+      const promoted = await promoteT2FixtureToQueued(fixture, counters);
+      const intentId = promoted.admitted.data.intent.intent_id;
+      if (drift === "project_classification") {
+        fixture.db.prepare("UPDATE workbench_project_meta SET classification = 'test', updated_at = CURRENT_TIMESTAMP WHERE project_id = ?")
+          .run(PROJECT_ID);
+      } else if (drift === "package_approval") {
+        const row = fixture.db.prepare("SELECT data_json FROM storyboard_packages WHERE storyboard_package_id = ?")
+          .get(PACKAGE_ID) as { data_json: string };
+        const storyboardPackage = JSON.parse(row.data_json) as { user_approval: { storyboard_approved: boolean } };
+        storyboardPackage.user_approval.storyboard_approved = false;
+        fixture.db.prepare("UPDATE storyboard_packages SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE storyboard_package_id = ?")
+          .run(JSON.stringify(storyboardPackage), PACKAGE_ID);
+      } else {
+        const replacementId = `${PACKAGE_ID}_replacement`;
+        const row = fixture.db.prepare("SELECT data_json FROM storyboard_packages WHERE storyboard_package_id = ?")
+          .get(PACKAGE_ID) as { data_json: string };
+        const replacement = JSON.parse(row.data_json) as Record<string, unknown>;
+        replacement.storyboard_package_id = replacementId;
+        fixture.db.prepare("INSERT INTO storyboard_packages (storyboard_package_id, project_id, data_json) VALUES (?, ?, ?)")
+          .run(replacementId, PROJECT_ID, JSON.stringify(replacement));
+        const project = JSON.parse((fixture.db.prepare("SELECT data_json FROM projects WHERE project_id = ?")
+          .get(PROJECT_ID) as { data_json: string }).data_json) as Project;
+        project.active_storyboard_package_id = replacementId;
+        saveProject(fixture.db, project);
+      }
+
+      if (drift === "project_classification") {
+        await runWorkbenchGenerationOnce(intentId, { allow_submit: true, dependencies: promoted.dependencies });
+      } else if (drift === "package_approval") {
+        assert.deepEqual(resumeWorkbenchGenerationJobs(promoted.dependencies), { resumed: [intentId], reconciled: [] });
+        await waitForGenerationJobState(fixture, intentId, "failed");
+      } else {
+        startWorkbenchGeneration(intentId, { allow_submit: true, dependencies: promoted.dependencies });
+        await waitForGenerationJobState(fixture, intentId, "failed");
+      }
+
+      const intent = fixture.db.prepare("SELECT status, sanitized_error_json, data_json FROM generation_intents WHERE intent_id = ?")
+        .get(intentId) as { status: string; sanitized_error_json: string; data_json: string };
+      const job = fixture.db.prepare("SELECT state, reconciliation_reason, lease_token FROM generation_jobs WHERE intent_id = ?")
+        .get(intentId) as { state: string; reconciliation_reason: string; lease_token: string };
+      const run = fixture.db.prepare("SELECT status, data_json FROM generation_runs WHERE run_id = ?")
+        .get(promoted.confirmed.data.run_id) as { status: string; data_json: string };
+      assert.equal(intent.status, "failed", drift);
+      assert.equal((JSON.parse(intent.sanitized_error_json) as { code?: string }).code, "GENERATION_PLAN_STALE", drift);
+      assert.equal((JSON.parse(intent.data_json) as { generation_plan?: { schema_version?: string } }).generation_plan?.schema_version, "generation_plan.v1", drift);
+      assert.deepEqual({ ...job }, { state: "failed", reconciliation_reason: "GENERATION_PLAN_STALE", lease_token: "" }, drift);
+      assert.equal(run.status, "failed", drift);
+      assert.equal((JSON.parse(run.data_json) as { error?: { code?: string } }).error?.code, "GENERATION_PLAN_STALE", drift);
+      assert.equal(generationRightConflict(fixture.db), null, drift);
+      assert.deepEqual(counters, { preflight_requests: 2, adapter_constructs: 0, provider_submits: 0 }, drift);
+      const history = fixture.db.prepare("SELECT reason_code FROM generation_job_events WHERE job_id = ? ORDER BY rowid")
+        .all(promoted.confirmed.data.job_id) as Array<{ reason_code: string }>;
+      assert.deepEqual(history.map((event) => event.reason_code), ["HUMAN_CONFIRMED", "GENERATION_PLAN_STALE"], drift);
+    } finally {
+      closeFixture(fixture);
+    }
   }
 });
 
@@ -1067,6 +1174,47 @@ test("P1 known Provider task keeps ownership across every GenerationPlan validat
     } finally {
       closeFixture(fixture);
     }
+  }
+});
+
+test("P1 known Provider task bypasses ordinary first-submit authority failure and keeps ownership", async () => {
+  const fixture = createFixture();
+  try {
+    const counters = { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 };
+    const promoted = await promoteT2FixtureToQueued(fixture, counters);
+    const intentId = promoted.admitted.data.intent.intent_id;
+    const taskId = "known-task-after-authority-drift";
+    mutatePersistedIntentData(fixture, intentId, (data) => {
+      const now = Date.now();
+      data.provider_poll_started_at = new Date(now).toISOString();
+      data.provider_poll_timeout_ms = 1_000;
+      data.provider_poll_deadline_at = new Date(now + 1_000).toISOString();
+    });
+    fixture.db.prepare("UPDATE generation_intents SET provider_task_id = ?, status = 'running' WHERE intent_id = ?")
+      .run(taskId, intentId);
+    fixture.db.prepare("UPDATE generation_jobs SET state = 'polling' WHERE job_id = ?")
+      .run(promoted.confirmed.data.job_id);
+    fixture.db.prepare("UPDATE workbench_project_meta SET classification = 'test', updated_at = CURRENT_TIMESTAMP WHERE project_id = ?")
+      .run(PROJECT_ID);
+
+    await runWorkbenchGenerationOnce(intentId, { allow_submit: false, dependencies: promoted.dependencies });
+
+    const intent = fixture.db.prepare("SELECT status, provider_task_id, sanitized_error_json FROM generation_intents WHERE intent_id = ?")
+      .get(intentId) as { status: string; provider_task_id: string; sanitized_error_json: string };
+    const job = fixture.db.prepare("SELECT state, reconciliation_reason, lease_token FROM generation_jobs WHERE job_id = ?")
+      .get(promoted.confirmed.data.job_id) as { state: string; reconciliation_reason: string; lease_token: string };
+    assert.equal(intent.status, "running");
+    assert.equal(intent.provider_task_id, taskId);
+    assert.equal((JSON.parse(intent.sanitized_error_json) as { code?: string }).code, "FIXTURE_PROVIDER_STOP");
+    assert.deepEqual({ ...job }, {
+      state: "manual_reconciliation",
+      reconciliation_reason: "PROVIDER_POLL_REQUIRES_RECONCILIATION",
+      lease_token: ""
+    });
+    assert.equal(generationRightConflict(fixture.db)?.intent_id, intentId);
+    assert.deepEqual(counters, { preflight_requests: 2, adapter_constructs: 1, provider_submits: 0 });
+  } finally {
+    closeFixture(fixture);
   }
 });
 

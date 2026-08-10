@@ -53,6 +53,16 @@ export type AdmissionCandidateSetInput = {
   shot_id?: string;
 };
 
+type GenerationAdmissionFactsReadOptions = {
+  verify_media?: boolean;
+  execution_projection?: {
+    intent_id: string;
+    run_id: string;
+    project_status: Project["status"];
+    shot_status: Shot["status"];
+  };
+};
+
 export type AdmissionCandidateFactsReadResult =
   | { ok: true; candidates: readonly T2AdmissionCandidateIdentity[]; facts: readonly GenerationAdmissionFacts[] }
   | { ok: false; error: { code: string; message: string } };
@@ -541,15 +551,35 @@ function verifyMedia(
   }
 }
 
-function generationFacts(db: M0Database, projectId: string, shotId: string): GenerationAdmissionStateFacts {
-  const active = db.prepare("SELECT COUNT(*) AS count FROM generation_intents WHERE status IN ('queued', 'running')")
-    .get() as { count: number | bigint };
-  const runs = db.prepare(`SELECT status FROM generation_runs
-    WHERE project_id = ? AND shot_id = ? ORDER BY updated_at DESC, rowid DESC`).all(projectId, shotId) as Array<{ status: string }>;
-  const jobs = db.prepare(`SELECT job.state FROM generation_jobs job
-    JOIN generation_intents intent ON intent.intent_id = job.intent_id
-    WHERE intent.project_id = ? AND intent.shot_id = ?
-    ORDER BY job.updated_at DESC, job.created_at DESC, job.rowid DESC`).all(projectId, shotId) as Array<{ state: string }>;
+function generationFacts(
+  db: M0Database,
+  projectId: string,
+  shotId: string,
+  executionProjection?: NonNullable<GenerationAdmissionFactsReadOptions["execution_projection"]>
+): GenerationAdmissionStateFacts {
+  const active = executionProjection
+    ? db.prepare("SELECT COUNT(*) AS count FROM generation_intents WHERE status IN ('queued', 'running') AND intent_id <> ?")
+      .get(executionProjection.intent_id) as { count: number | bigint }
+    : db.prepare("SELECT COUNT(*) AS count FROM generation_intents WHERE status IN ('queued', 'running')")
+      .get() as { count: number | bigint };
+  const runs = executionProjection
+    ? db.prepare(`SELECT status FROM generation_runs
+        WHERE project_id = ? AND shot_id = ? AND run_id <> ? ORDER BY updated_at DESC, rowid DESC`)
+      .all(projectId, shotId, executionProjection.run_id) as Array<{ status: string }>
+    : db.prepare(`SELECT status FROM generation_runs
+        WHERE project_id = ? AND shot_id = ? ORDER BY updated_at DESC, rowid DESC`)
+      .all(projectId, shotId) as Array<{ status: string }>;
+  const jobs = executionProjection
+    ? db.prepare(`SELECT job.state FROM generation_jobs job
+        JOIN generation_intents intent ON intent.intent_id = job.intent_id
+        WHERE intent.project_id = ? AND intent.shot_id = ? AND intent.intent_id <> ?
+        ORDER BY job.updated_at DESC, job.created_at DESC, job.rowid DESC`)
+      .all(projectId, shotId, executionProjection.intent_id) as Array<{ state: string }>
+    : db.prepare(`SELECT job.state FROM generation_jobs job
+        JOIN generation_intents intent ON intent.intent_id = job.intent_id
+        WHERE intent.project_id = ? AND intent.shot_id = ?
+        ORDER BY job.updated_at DESC, job.created_at DESC, job.rowid DESC`)
+      .all(projectId, shotId) as Array<{ state: string }>;
   const malformedRun = runs.some((row) => !RUN_STATUSES.has(row.status));
   const malformedJob = jobs.some((row) => !JOB_STATES.has(row.state));
   return {
@@ -625,18 +655,30 @@ function buildGenerationAdmissionFacts(
   db: M0Database,
   projectId: string,
   shotId: string,
-  options: { verify_media?: boolean },
+  options: GenerationAdmissionFactsReadOptions,
   trustedGeneration?: GenerationAdmissionStateFacts
 ): AdmissionFactsReadResult {
-  const project = getProject(db, projectId);
-  if (!project) return { ok: false, error: { code: "PROJECT_NOT_FOUND", message: "Project was not found." } };
-  const shot = getShot(db, shotId);
-  if (!shot || shot.project_id !== project.project_id) {
+  const storedProject = getProject(db, projectId);
+  if (!storedProject) return { ok: false, error: { code: "PROJECT_NOT_FOUND", message: "Project was not found." } };
+  const storedShot = getShot(db, shotId);
+  if (!storedShot || storedShot.project_id !== storedProject.project_id) {
     return { ok: false, error: { code: "SHOT_NOT_FOUND", message: "SHOT was not found in the selected project." } };
   }
+  const project = options.execution_projection
+    ? { ...storedProject, status: options.execution_projection.project_status }
+    : storedProject;
+  const shot = options.execution_projection
+    ? {
+      ...storedShot,
+      status: options.execution_projection.shot_status,
+      generation_run_ids: storedShot.generation_run_ids.filter((runId) => runId !== options.execution_projection?.run_id)
+    }
+    : storedShot;
   const projectShots = listProjectShots(db, project.project_id);
-  const operational = trustedGeneration
-    ? admissionOperationalState(db, shot, trustedGeneration)
+  const generation = trustedGeneration
+    ?? generationFacts(db, project.project_id, shot.shot_id, options.execution_projection);
+  const operational = trustedGeneration || options.execution_projection
+    ? admissionOperationalState(db, shot, generation)
     : collectProjectOperationalBundle(db, project).states_by_shot_id.get(shot.shot_id);
   const packageValue = project.active_storyboard_package_id
     ? getStoryboardPackage(db, project.active_storyboard_package_id)
@@ -652,7 +694,7 @@ function buildGenerationAdmissionFacts(
       shot: shotFacts(shot, operational),
       package: packageFacts(project, shot, packageValue, projectShots),
       media,
-      generation: trustedGeneration ?? generationFacts(db, project.project_id, shot.shot_id),
+      generation,
       provider: providerFacts(project, shot)
     }
   };
@@ -662,7 +704,7 @@ export function readGenerationAdmissionFacts(
   db: M0Database,
   projectId: string,
   shotId: string,
-  options: { verify_media?: boolean } = {}
+  options: GenerationAdmissionFactsReadOptions = {}
 ): AdmissionFactsReadResult {
   try {
     return buildGenerationAdmissionFacts(db, projectId, shotId, options);

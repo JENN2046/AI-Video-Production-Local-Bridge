@@ -278,19 +278,28 @@ function enterManualReconciliationJob(
   return { ...updated, lease_expires_at: null };
 }
 
-function reconciliationRestoreState(db: M0Database, intentId: string): { shot_status: ShotStatus; project_status: ProjectStatus } {
+function persistedReconciliationRestoreState(
+  db: M0Database,
+  intentId: string
+): { shot_status: ShotStatus; project_status: ProjectStatus } | null {
   const row = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(intentId) as { data_json: string } | undefined;
   const data = parseRecord(row?.data_json ?? "");
   const restore = data.reconciliation_restore && typeof data.reconciliation_restore === "object" && !Array.isArray(data.reconciliation_restore)
     ? data.reconciliation_restore as Record<string, unknown>
     : {};
-  const shotStatus = typeof restore.shot_status === "string" && ["draft", "storyboard_approved", "video_generated", "video_review", "approved", "revision_needed"].includes(restore.shot_status)
-    ? restore.shot_status as ShotStatus
-    : "storyboard_approved";
-  const projectStatus = typeof restore.project_status === "string" && ["draft", "storyboard_approved", "video_review", "final_approved"].includes(restore.project_status)
-    ? restore.project_status as ProjectStatus
-    : "storyboard_approved";
-  return { shot_status: shotStatus, project_status: projectStatus };
+  if (typeof restore.shot_status !== "string"
+    || !["draft", "storyboard_approved", "video_generated", "video_review", "approved", "revision_needed"].includes(restore.shot_status)
+    || typeof restore.project_status !== "string"
+    || !["draft", "storyboard_approved", "video_review", "final_approved"].includes(restore.project_status)) return null;
+  return {
+    shot_status: restore.shot_status as ShotStatus,
+    project_status: restore.project_status as ProjectStatus
+  };
+}
+
+function reconciliationRestoreState(db: M0Database, intentId: string): { shot_status: ShotStatus; project_status: ProjectStatus } {
+  return persistedReconciliationRestoreState(db, intentId)
+    ?? { shot_status: "storyboard_approved", project_status: "storyboard_approved" };
 }
 
 function pollingLeaseRecoveryRequired(db: M0Database, intentId: string, now: Date): boolean {
@@ -601,6 +610,43 @@ function revalidatePreparedGenerationPlan(
     return { ok: false, message: "The prepared GenerationPlan no longer matches current authoritative generation facts." };
   }
   return validateT2GenerationPlanBinding(intent);
+}
+
+function revalidateQueuedGenerationPlanAuthority(
+  db: M0Database,
+  intent: WorkbenchGenerationIntent,
+  job: GenerationJob
+): PreparedGenerationPlanRevalidation {
+  const binding = validateT2GenerationPlanBinding(intent);
+  if (!binding.ok || !hasDurableT2GenerationPlan(intent)) return binding;
+  const plan = intent.generation_plan;
+  const restore = persistedReconciliationRestoreState(db, intent.intent_id);
+  const project = getProject(db, intent.project_id);
+  const shot = getShot(db, intent.shot_id);
+  const run = intent.run_id ? getGenerationRun(db, intent.run_id) : null;
+  if (!plan || !restore || !project || !shot || !run
+    || job.state !== "queued"
+    || project.status !== "video_generation_in_progress"
+    || shot.status !== "video_pending"
+    || shot.generation_run_ids.filter((runId) => runId === intent.run_id).length !== 1
+    || run.project_id !== intent.project_id
+    || run.shot_id !== intent.shot_id
+    || run.status !== "queued") {
+    return { ok: false, message: "The queued GenerationPlan execution footprint no longer matches its confirmed reservation." };
+  }
+  const current = readGenerationAdmissionFacts(db, intent.project_id, intent.shot_id, {
+    verify_media: false,
+    execution_projection: {
+      intent_id: intent.intent_id,
+      run_id: intent.run_id,
+      project_status: restore.project_status,
+      shot_status: restore.shot_status
+    }
+  });
+  if (!current.ok || !current.facts.provider.ok || !planMatchesFacts(plan, current.facts)) {
+    return { ok: false, message: "The queued GenerationPlan no longer matches current authoritative generation facts." };
+  }
+  return { ok: true };
 }
 
 function classifyPreparedGenerationStale(
@@ -2158,7 +2204,6 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
     if (!intent || (intent.status !== "queued" && intent.status !== "running")) return;
     knownTaskId = intent.provider_task_id;
     providerTaskMayExist = Boolean(knownTaskId);
-    if (!knownTaskId && !isProviderExecutionAuthorized(intent)) return;
     const failOrReconcileKnownTask = (currentIntent: WorkbenchGenerationIntent, currentJob: GenerationJob, error: ProviderToolError, reconciliationReason: string): void => {
       if (knownTaskId) {
         job = markKnownProviderTaskForReconciliation(db, currentIntent, currentJob, knownTaskId, error, leaseToken, reconciliationReason);
@@ -2217,6 +2262,38 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       failOrReconcileKnownTask(intent, job, error, "PROVIDER_CAPABILITY_REQUIRES_RECONCILIATION");
       return;
     }
+    const directorAuthorization = authorizeDirectorProviderExecution(db, intent, knownTaskId, dateNow(dependencies));
+    if (!directorAuthorization.ok) {
+      failOrReconcileKnownTask(
+        intent,
+        job,
+        directorAuthorization.error,
+        "DIRECTOR_AUTOMATION_REQUIRES_RECONCILIATION"
+      );
+      return;
+    }
+    const generationPlanAuthority = knownTaskId
+      ? validateT2GenerationPlanBinding(intent)
+      : revalidateQueuedGenerationPlanAuthority(db, intent, job);
+    if (!generationPlanAuthority.ok) {
+      failOrReconcileKnownTask(
+        intent,
+        job,
+        providerError("GENERATION_PLAN_STALE", generationPlanAuthority.message),
+        "GENERATION_PLAN_REQUIRES_RECONCILIATION"
+      );
+      return;
+    }
+    if (!knownTaskId && !isProviderExecutionAuthorized(intent)) {
+      failIntent(
+        db,
+        intent,
+        "failed",
+        providerError("OFFICIAL_PREFLIGHT_REQUIRED", "Official preflight authorization is required before Provider execution."),
+        leaseToken
+      );
+      return;
+    }
     if (intent.generation_plan) {
       const mediaGuard = revalidateGenerationPlanMedia(intent.generation_plan, db);
       if (!mediaGuard.ok) {
@@ -2228,26 +2305,6 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         );
         return;
       }
-    }
-    const directorAuthorization = authorizeDirectorProviderExecution(db, intent, knownTaskId, dateNow(dependencies));
-    if (!directorAuthorization.ok) {
-      failOrReconcileKnownTask(
-        intent,
-        job,
-        directorAuthorization.error,
-        "DIRECTOR_AUTOMATION_REQUIRES_RECONCILIATION"
-      );
-      return;
-    }
-    const generationPlanBinding = validateT2GenerationPlanBinding(intent);
-    if (!generationPlanBinding.ok) {
-      failOrReconcileKnownTask(
-        intent,
-        job,
-        providerError("GENERATION_PLAN_STALE", generationPlanBinding.message),
-        "GENERATION_PLAN_REQUIRES_RECONCILIATION"
-      );
-      return;
     }
     const automation = directorAuthorization.required ? directorAuthorization.automation : null;
     const selection = selectM1ProviderPort({ provider: "real", provider_name: "runninghub", model_name: capability.key.model, cost_acknowledged: true }, dependencies.env ?? process.env);
