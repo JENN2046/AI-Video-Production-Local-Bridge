@@ -89,7 +89,10 @@
       "classification": "mandatory",
       "npm_script": "test:v2:ui",
       "ci_step": "Workbench V2 UI tests",
-      "paths": ["src/workbench-ui/App.test.tsx"]
+      "paths": [
+        "src/workbench-ui/App.test.tsx",
+        "src/workbench-ui/pages/ProjectWorkspacePage.test.tsx"
+      ]
     },
     {
       "id": "h1-workbench",
