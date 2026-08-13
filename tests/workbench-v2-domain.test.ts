@@ -6,8 +6,10 @@ import test from "node:test";
 
 import { deriveProjectOperationalSummary, deriveShotOperationalState, type ShotOperationalFacts } from "../src/packages/domain/operationalState.js";
 import { databaseLogicalManifest, migrateDatabase } from "../src/storage/databaseGovernance.js";
+import { DATABASE_MIGRATIONS } from "../src/storage/migrations.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import { WORKBENCH_V2_SCHEMA_VERSION } from "../src/storage/workbenchV2Schema.js";
+import { saveGenerationRun, type GenerationRun } from "../src/tools/generation.js";
 import { buildStoryboardApprovedShot, createProject, getProject, getShot, saveProject, saveShot } from "../src/tools/projects.js";
 import { collectProjectOperationalBundles } from "../src/tools/operationalStateFacts.js";
 import { requireProjectShotWorkflowWriteAction } from "../src/tools/operationalWriteGates.js";
@@ -691,6 +693,311 @@ function restoreGenerationReconciliationContext(db: ReturnType<typeof openM0Data
   saveShot(db, shot);
 }
 
+function seedMigratedLegacyReconciliation(db: ReturnType<typeof openM0Database>, suffix: string, options: { apply_migration?: boolean } = {}) {
+  const project = createProject({
+    title: `Migrated reconciliation ${suffix}`,
+    video_spec: { duration_seconds: 6, aspect_ratio: "9:16", resolution: "1080x1920" }
+  }, db);
+  assert.equal(project.ok, true);
+  if (!project.ok) throw new Error("legacy reconciliation project setup failed");
+  const shot = buildStoryboardApprovedShot({
+    project_id: project.project_id,
+    order: 1,
+    duration_seconds: 6,
+    storyboard_image_artifact_id: `artifact_storyboard_${suffix}`,
+    video_prompt: "Migrated reconciliation fixture."
+  });
+  const intentId = `intent_migrated_${suffix}`;
+  const runId = `run_migrated_${suffix}`;
+  const jobId = `job_${intentId}`;
+  shot.status = "video_pending";
+  shot.generation_run_ids = [runId];
+  saveShot(db, shot);
+  project.project.shot_ids = [shot.shot_id];
+  project.project.status = "video_generation_in_progress";
+  saveProject(db, project.project);
+  const run: GenerationRun = {
+    run_id: runId,
+    batch_id: "",
+    project_id: project.project_id,
+    shot_id: shot.shot_id,
+    run_type: "image_to_video",
+    status: "queued",
+    input: {
+      storyboard_image_artifact_id: shot.storyboard_image_artifact_id,
+      video_prompt: shot.video_prompt,
+      negative_prompt: shot.negative_prompt,
+      duration_seconds: shot.duration_seconds,
+      aspect_ratio: "9:16",
+      resolution: "480p"
+    },
+    output: { artifact_ids: [] },
+    provider: {
+      provider: "real",
+      provider_name: "runninghub",
+      model_name: "rhart-video-g/image-to-video",
+      provider_job_id: "",
+      provider_status: "not_submitted"
+    },
+    versioning: { attempt_number: 1, parent_run_id: "" },
+    error: { code: "", message: "", retryable: false }
+  };
+  saveGenerationRun(db, run);
+  db.prepare(`INSERT INTO generation_intents
+    (intent_id, run_id, project_id, shot_id, provider, account_label, model, input_artifact_id, duration_seconds,
+     resolution, estimated_cost_value, budget_limit_value, currency, confirmed, expires_at, provider_task_id,
+     status, upload_attempts, submit_attempts, data_json)
+    VALUES (?, ?, ?, ?, 'runninghub', 'personal', 'rhart-video-g/image-to-video', ?, 6,
+      '480p', 0.08, 1, 'CNY', 1, '2099-01-01T00:00:00.000Z', '', 'queued', 1, 1, ?)`)
+    .run(intentId, runId, project.project_id, shot.shot_id, shot.storyboard_image_artifact_id, JSON.stringify({
+      input_snapshot: {
+        video_prompt: shot.video_prompt,
+        negative_prompt: shot.negative_prompt,
+        aspect_ratio: "9:16",
+        project_resolution: "1080x1920",
+        price_source: "runninghub_price_preview",
+        balance_gate: "pass",
+        requires_human_preflight: false
+      }
+    }));
+  if (options.apply_migration !== false) {
+    DATABASE_MIGRATIONS[2].apply(db);
+    DATABASE_MIGRATIONS[3].apply(db);
+  }
+  return { project_id: project.project_id, shot_id: shot.shot_id, intent_id: intentId, run_id: runId, job_id: jobId };
+}
+
+test("migration-backed manual reconciliation can attach or abandon without Provider resubmission", async () => {
+  const db = openM0Database(":memory:");
+  try {
+    const attachedFixture = seedMigratedLegacyReconciliation(db, "attach");
+    const attached = reconcileGenerationJob(attachedFixture.job_id, {
+      decision: "attach_existing_task",
+      provider_task_id: "task-migrated-existing",
+      human_confirmation: true
+    }, db, {
+      env: {
+        REAL_PROVIDER_ENABLED: "true",
+        M1_REAL_PROVIDER: "runninghub",
+        M1_REAL_PROVIDER_EXECUTION_ALLOWED: "true",
+        M1_REAL_PROVIDER_COST_ACK: "true",
+        RUNNINGHUB_API_KEY: "synthetic-test-key"
+      }
+    });
+    assert.equal(attached.ok, true, attached.ok ? undefined : attached.error.code);
+    if (!attached.ok) return;
+    const restoredData = JSON.parse((db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(attachedFixture.intent_id) as { data_json: string }).data_json) as {
+        reconciliation_restore?: { shot_status: string; project_status: string };
+      };
+    assert.deepEqual(restoredData.reconciliation_restore, {
+      shot_status: "storyboard_approved",
+      project_status: "storyboard_approved"
+    });
+
+    let submitCalls = 0;
+    let pollCalls = 0;
+    const adapter = {
+      provider_name: "runninghub",
+      model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => {
+        submitCalls += 1;
+        throw new Error("migrated reconciliation must never resubmit");
+      },
+      pollStatus: async () => {
+        pollCalls += 1;
+        return { ok: true as const, provider_job_id: "task-migrated-existing", status: "cancelled" as const, provider_status: "CANCELLED" };
+      },
+      fetchOutput: async () => { throw new Error("output must not run"); }
+    } as unknown as VideoProviderAdapter;
+    const workerDatabase = new Proxy(db, {
+      get(target, property) {
+        if (property === "close") return () => undefined;
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      }
+    }) as ReturnType<typeof openM0Database>;
+    await runWorkbenchGenerationOnce(attachedFixture.intent_id, {
+      allow_submit: false,
+      dependencies: {
+        open_database: () => workerDatabase,
+        env: {
+          REAL_PROVIDER_ENABLED: "true",
+          M1_REAL_PROVIDER: "runninghub",
+          M1_REAL_PROVIDER_EXECUTION_ALLOWED: "true",
+          M1_REAL_PROVIDER_COST_ACK: "true",
+          RUNNINGHUB_API_KEY: "synthetic-test-key"
+        },
+        adapter_factory: () => adapter
+      }
+    });
+    assert.equal(submitCalls, 0);
+    assert.equal(pollCalls, 1);
+
+    const abandonedFixture = seedMigratedLegacyReconciliation(db, "abandon", { apply_migration: false });
+    DATABASE_MIGRATIONS[2].apply(db);
+    DATABASE_MIGRATIONS[3].apply(db);
+    const abandoned = reconcileGenerationJob(abandonedFixture.job_id, {
+      decision: "abandon",
+      reason: "Human verified that no Provider task exists.",
+      human_confirmation: true
+    }, db);
+    assert.equal(abandoned.ok, true, abandoned.ok ? undefined : abandoned.error.code);
+    if (!abandoned.ok) return;
+    assert.equal(abandoned.data.job.state, "cancelled");
+    assert.equal(abandoned.data.intent.status, "cancelled");
+    assert.equal(getShot(db, abandonedFixture.shot_id)?.status, "storyboard_approved");
+    assert.equal(getProject(db, abandonedFixture.project_id)?.status, "storyboard_approved");
+
+    const untrustedFixture = seedMigratedLegacyReconciliation(db, "untrusted", { apply_migration: false });
+    DATABASE_MIGRATIONS[2].apply(db);
+    DATABASE_MIGRATIONS[3].apply(db);
+    db.prepare(`INSERT INTO generation_job_events
+      (event_id, job_id, from_state, to_state, reason_code, data_json)
+      VALUES (?, ?, '', 'manual_reconciliation', 'EXTRA_EVENT', '{}')`)
+      .run(`job_event_extra_${untrustedFixture.job_id}`, untrustedFixture.job_id);
+    const untrusted = reconcileGenerationJob(untrustedFixture.job_id, {
+      decision: "abandon",
+      reason: "Reject a reconciliation record without a unique migration provenance.",
+      human_confirmation: true
+    }, db);
+    assert.equal(untrusted.ok, false);
+    if (!untrusted.ok) assert.equal(untrusted.error.code, "GENERATION_RECONCILIATION_CONTEXT_STALE");
+  } finally {
+    db.close();
+  }
+});
+
+test("manual reconciliation follows the target SHOT instead of aggregate project progress", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const fixture = seedMigratedLegacyReconciliation(db, "multishot");
+    const targetShot = getShot(db, fixture.shot_id);
+    assert.ok(targetShot);
+    targetShot.status = "storyboard_approved";
+    saveShot(db, targetShot);
+    const intentRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(fixture.intent_id) as { data_json: string };
+    const intentData = JSON.parse(intentRow.data_json) as Record<string, unknown>;
+    intentData.reconciliation_restore = { shot_status: "storyboard_approved", project_status: "storyboard_approved" };
+    db.prepare("UPDATE generation_intents SET data_json = ? WHERE intent_id = ?")
+      .run(JSON.stringify(intentData), fixture.intent_id);
+    const project = getProject(db, fixture.project_id);
+    assert.ok(project);
+    const otherShot = buildStoryboardApprovedShot({
+      project_id: fixture.project_id,
+      order: 2,
+      duration_seconds: 6,
+      storyboard_image_artifact_id: "artifact_other_storyboard",
+      video_prompt: "Other SHOT already reached review."
+    });
+    otherShot.status = "video_review";
+    saveShot(db, otherShot);
+    project.shot_ids.push(otherShot.shot_id);
+    project.status = "video_review";
+    saveProject(db, project);
+
+    const abandoned = reconcileGenerationJob(fixture.job_id, {
+      decision: "abandon",
+      reason: "Human verified that no Provider task exists.",
+      human_confirmation: true
+    }, db);
+    assert.equal(abandoned.ok, true, abandoned.ok ? undefined : abandoned.error.code);
+    assert.equal(getShot(db, fixture.shot_id)?.status, "storyboard_approved");
+    assert.equal(getProject(db, fixture.project_id)?.status, "video_review");
+  } finally {
+    db.close();
+  }
+});
+
+test("manual reconciliation fails closed when the target SHOT state changes", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const fixture = seedMigratedLegacyReconciliation(db, "shot-stale");
+    const intentRow = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+      .get(fixture.intent_id) as { data_json: string };
+    const intentData = JSON.parse(intentRow.data_json) as Record<string, unknown>;
+    intentData.reconciliation_restore = { shot_status: "storyboard_approved", project_status: "storyboard_approved" };
+    db.prepare("UPDATE generation_intents SET data_json = ? WHERE intent_id = ?")
+      .run(JSON.stringify(intentData), fixture.intent_id);
+    const shot = getShot(db, fixture.shot_id);
+    assert.ok(shot);
+    shot.status = "draft";
+    saveShot(db, shot);
+    const stale = reconcileGenerationJob(fixture.job_id, {
+      decision: "abandon",
+      reason: "Reject changed target SHOT context.",
+      human_confirmation: true
+    }, db);
+    assert.equal(stale.ok, false);
+    if (!stale.ok) assert.equal(stale.error.code, "GENERATION_RECONCILIATION_CONTEXT_STALE");
+
+    shot.status = "storyboard_approved";
+    shot.generation_run_ids = ["run_replaced_after_reconciliation"];
+    saveShot(db, shot);
+    const rebound = reconcileGenerationJob(fixture.job_id, {
+      decision: "abandon",
+      reason: "Reject changed target SHOT generation binding.",
+      human_confirmation: true
+    }, db);
+    assert.equal(rebound.ok, false);
+    if (!rebound.ok) assert.equal(rebound.error.code, "GENERATION_RECONCILIATION_CONTEXT_STALE");
+  } finally {
+    db.close();
+  }
+});
+
+test("manual reconciliation keeps archive, terminal project, and Provider task ownership gates closed", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const archivedFixture = seedMigratedLegacyReconciliation(db, "archived");
+    db.prepare("UPDATE workbench_project_meta SET lifecycle = 'archived' WHERE project_id = ?")
+      .run(archivedFixture.project_id);
+    const archived = reconcileGenerationJob(archivedFixture.job_id, {
+      decision: "abandon",
+      reason: "Archived project must stay read-only.",
+      human_confirmation: true
+    }, db);
+    assert.equal(archived.ok, false);
+    if (!archived.ok) assert.equal(archived.error.code, "PROJECT_ARCHIVED");
+
+    const terminalFixture = seedMigratedLegacyReconciliation(db, "terminal", { apply_migration: false });
+    DATABASE_MIGRATIONS[2].apply(db);
+    DATABASE_MIGRATIONS[3].apply(db);
+    const terminalProject = getProject(db, terminalFixture.project_id);
+    assert.ok(terminalProject);
+    terminalProject.status = "final_approved";
+    saveProject(db, terminalProject);
+    const terminal = reconcileGenerationJob(terminalFixture.job_id, {
+      decision: "abandon",
+      reason: "Final project must reject production reconciliation.",
+      human_confirmation: true
+    }, db);
+    assert.equal(terminal.ok, false);
+    if (!terminal.ok) assert.equal(terminal.error.code, "GENERATION_RECONCILIATION_CONTEXT_STALE");
+
+    const ownerFixture = seedMigratedLegacyReconciliation(db, "owner", { apply_migration: false });
+    const contenderFixture = seedMigratedLegacyReconciliation(db, "contender", { apply_migration: false });
+    DATABASE_MIGRATIONS[2].apply(db);
+    DATABASE_MIGRATIONS[3].apply(db);
+    const owner = reconcileGenerationJob(ownerFixture.job_id, {
+      decision: "attach_existing_task",
+      provider_task_id: "task-owned-once",
+      human_confirmation: true
+    }, db);
+    assert.equal(owner.ok, true, owner.ok ? undefined : owner.error.code);
+    const contender = reconcileGenerationJob(contenderFixture.job_id, {
+      decision: "attach_existing_task",
+      provider_task_id: "task-owned-once",
+      human_confirmation: true
+    }, db);
+    assert.equal(contender.ok, false);
+    if (!contender.ok) assert.equal(contender.error.code, "PROVIDER_TASK_ALREADY_OWNED");
+  } finally {
+    db.close();
+  }
+});
+
 test("V2 schema is transactional, versioned, and initializes project metadata", () => {
   const db = openM0Database(":memory:");
   try {
@@ -1199,8 +1506,10 @@ test("generation preflight enforces official estimate, balance gate, budget and 
     assert.equal(row.submit_attempts, 1);
     assert.equal(row.status, "queued");
 
-    shot.status = "storyboard_approved";
-    saveShot(db, shot);
+    const firstReconciliationShot = getShot(db, shot.shot_id);
+    assert.ok(firstReconciliationShot);
+    firstReconciliationShot.status = "storyboard_approved";
+    saveShot(db, firstReconciliationShot);
     projectResult.project.status = "draft";
     saveProject(db, projectResult.project);
     db.prepare("UPDATE generation_jobs SET state = 'manual_reconciliation', reconciliation_reason = 'PROVIDER_SUBMIT_OUTCOME_UNKNOWN' WHERE job_id = ?").run(confirmed.data.job_id);
@@ -1252,8 +1561,10 @@ test("generation preflight enforces official estimate, balance gate, budget and 
     const secondConfirmed = confirmWorkbenchGeneration({ intent_id: second.data.intent.intent_id, budget_limit_value: 1, cost_confirmed: true, human_confirmation: true }, db);
     assert.equal(secondConfirmed.ok, true);
     if (!secondConfirmed.ok) return;
-    shot.status = "storyboard_approved";
-    saveShot(db, shot);
+    const secondReconciliationShot = getShot(db, shot.shot_id);
+    assert.ok(secondReconciliationShot);
+    secondReconciliationShot.status = "storyboard_approved";
+    saveShot(db, secondReconciliationShot);
     projectResult.project.status = "video_review";
     saveProject(db, projectResult.project);
     db.prepare("UPDATE generation_jobs SET state = 'manual_reconciliation', reconciliation_reason = 'PROVIDER_SUBMIT_OUTCOME_UNKNOWN' WHERE job_id = ?")
