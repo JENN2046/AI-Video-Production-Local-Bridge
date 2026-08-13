@@ -2919,6 +2919,10 @@ export function reconcileGenerationJob(
   if (input.decision !== "attach_existing_task" && input.decision !== "abandon") {
     return { ok: false, error: { code: "INVALID_RECONCILIATION_DECISION", message: "Decision must be attach_existing_task or abandon.", field: "decision" } };
   }
+  const abandonReason = input.reason?.trim() ?? "";
+  if (input.decision === "abandon" && (abandonReason.length < 3 || abandonReason.length > 1_000)) {
+    return { ok: false, error: { code: "RECONCILIATION_REASON_REQUIRED", message: "Abandoning a generation attempt requires a reason between 3 and 1000 characters.", field: "reason" } };
+  }
   db.exec("BEGIN IMMEDIATE");
   try {
     const row = db.prepare("SELECT job_id, intent_id, state, reconciliation_reason, lease_expires_at FROM generation_jobs WHERE job_id = ?").get(jobId) as GenerationJob | undefined;
@@ -2928,6 +2932,21 @@ export function reconcileGenerationJob(
     if (!intent) { db.exec("ROLLBACK"); return { ok: false, error: { code: "GENERATION_INTENT_NOT_FOUND", message: "Generation intent was not found." } }; }
     const writable = assertWorkbenchProjectWritable(db, intent.project_id);
     if (!writable.ok) { db.exec("ROLLBACK"); return writable; }
+    const restoreState = persistedReconciliationRestoreState(db, intent.intent_id);
+    const shot = getShot(db, intent.shot_id);
+    if (!restoreState || !shot
+      || writable.data.project.status !== restoreState.project_status
+      || shot.status !== restoreState.shot_status) {
+      db.exec("ROLLBACK");
+      return {
+        ok: false,
+        error: {
+          code: "GENERATION_RECONCILIATION_CONTEXT_STALE",
+          message: "Project or SHOT state changed after this generation entered reconciliation.",
+          field: "job_id"
+        }
+      };
+    }
     const directorRequirement = resolveDirectorExecutionRequirement(db, intent);
     if (!directorRequirement.ok) {
       db.exec("ROLLBACK");
@@ -2944,7 +2963,7 @@ export function reconcileGenerationJob(
         db.exec("ROLLBACK");
         return { ok: false, error: { code: caught.code, message: "Provider poll timeout configuration is invalid." } };
       }
-      const taskId = input.provider_task_id?.trim() ?? "";
+      const taskId = input.provider_task_id?.trim() || intent.provider_task_id.trim();
       if (!/^[A-Za-z0-9._:-]{3,200}$/.test(taskId) || /^local_recovery_/i.test(taskId)) {
         db.exec("ROLLBACK");
         return { ok: false, error: { code: "INVALID_PROVIDER_TASK_ID", message: "Provider task ID is invalid." } };
@@ -3049,7 +3068,7 @@ export function reconcileGenerationJob(
       const run = getGenerationRun(db, intent.run_id);
       if (run) { run.status = "cancelled"; saveGenerationRun(db, run); }
       restoreProjectAfterGenerationAutomationStops(db, intent);
-      job = setJobState(db, row, "cancelled", input.reason?.trim() || "HUMAN_ABANDONED", { in_transaction: true });
+      job = setJobState(db, row, "cancelled", abandonReason, { in_transaction: true });
     }
     db.exec("COMMIT");
     return { ok: true, data: { job, intent: getIntent(db, intent.intent_id) as WorkbenchGenerationIntent } };

@@ -8,7 +8,7 @@ import { deriveProjectOperationalSummary, deriveShotOperationalState, type ShotO
 import { databaseLogicalManifest, migrateDatabase } from "../src/storage/databaseGovernance.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import { WORKBENCH_V2_SCHEMA_VERSION } from "../src/storage/workbenchV2Schema.js";
-import { buildStoryboardApprovedShot, createProject, getShot, saveProject, saveShot } from "../src/tools/projects.js";
+import { buildStoryboardApprovedShot, createProject, getProject, getShot, saveProject, saveShot } from "../src/tools/projects.js";
 import { collectProjectOperationalBundles } from "../src/tools/operationalStateFacts.js";
 import { requireProjectShotWorkflowWriteAction } from "../src/tools/operationalWriteGates.js";
 import {
@@ -673,6 +673,24 @@ function persistKnownProviderTask(
   }
 }
 
+function restoreGenerationReconciliationContext(db: ReturnType<typeof openM0Database>, intentId: string): void {
+  const row = db.prepare("SELECT project_id, shot_id, data_json FROM generation_intents WHERE intent_id = ?")
+    .get(intentId) as { project_id: string; shot_id: string; data_json: string };
+  const restore = (JSON.parse(row.data_json) as {
+    reconciliation_restore?: { project_status?: string; shot_status?: string };
+  }).reconciliation_restore;
+  const project = getProject(db, row.project_id);
+  const shot = getShot(db, row.shot_id);
+  assert.ok(restore?.project_status);
+  assert.ok(restore?.shot_status);
+  assert.ok(project);
+  assert.ok(shot);
+  project.status = restore.project_status as typeof project.status;
+  shot.status = restore.shot_status as typeof shot.status;
+  saveProject(db, project);
+  saveShot(db, shot);
+}
+
 test("V2 schema is transactional, versioned, and initializes project metadata", () => {
   const db = openM0Database(":memory:");
   try {
@@ -1181,6 +1199,10 @@ test("generation preflight enforces official estimate, balance gate, budget and 
     assert.equal(row.submit_attempts, 1);
     assert.equal(row.status, "queued");
 
+    shot.status = "storyboard_approved";
+    saveShot(db, shot);
+    projectResult.project.status = "draft";
+    saveProject(db, projectResult.project);
     db.prepare("UPDATE generation_jobs SET state = 'manual_reconciliation', reconciliation_reason = 'PROVIDER_SUBMIT_OUTCOME_UNKNOWN' WHERE job_id = ?").run(confirmed.data.job_id);
     const unconfirmedAttach = reconcileGenerationJob(confirmed.data.job_id, { decision: "attach_existing_task", provider_task_id: "existing-task-123", human_confirmation: false }, db);
     assert.equal(unconfirmedAttach.ok, false);
@@ -1188,6 +1210,9 @@ test("generation preflight enforces official estimate, balance gate, budget and 
     const invalidDecision = reconcileGenerationJob(confirmed.data.job_id, { decision: "retry_submit", human_confirmation: true }, db);
     assert.equal(invalidDecision.ok, false);
     if (!invalidDecision.ok) assert.equal(invalidDecision.error.code, "INVALID_RECONCILIATION_DECISION");
+    const missingTask = reconcileGenerationJob(confirmed.data.job_id, { decision: "attach_existing_task", human_confirmation: true }, db);
+    assert.equal(missingTask.ok, false);
+    if (!missingTask.ok) assert.equal(missingTask.error.code, "INVALID_PROVIDER_TASK_ID");
     const attached = reconcileGenerationJob(confirmed.data.job_id, { decision: "attach_existing_task", provider_task_id: "existing-task-123", human_confirmation: true }, db);
     assert.equal(attached.ok, true);
     if (attached.ok) {
@@ -1227,6 +1252,10 @@ test("generation preflight enforces official estimate, balance gate, budget and 
     const secondConfirmed = confirmWorkbenchGeneration({ intent_id: second.data.intent.intent_id, budget_limit_value: 1, cost_confirmed: true, human_confirmation: true }, db);
     assert.equal(secondConfirmed.ok, true);
     if (!secondConfirmed.ok) return;
+    shot.status = "storyboard_approved";
+    saveShot(db, shot);
+    projectResult.project.status = "video_review";
+    saveProject(db, projectResult.project);
     db.prepare("UPDATE generation_jobs SET state = 'manual_reconciliation', reconciliation_reason = 'PROVIDER_SUBMIT_OUTCOME_UNKNOWN' WHERE job_id = ?")
       .run(secondConfirmed.data.job_id);
     db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES ('artifact_cross_provider', ?, ?, 'generated_clip', 'video', 'active', ?)")
@@ -1237,11 +1266,21 @@ test("generation preflight enforces official estimate, balance gate, budget and 
     const reusedTask = reconcileGenerationJob(secondConfirmed.data.job_id, { decision: "attach_existing_task", provider_task_id: "existing-task-123", human_confirmation: true }, db);
     assert.equal(reusedTask.ok, false);
     if (!reusedTask.ok) assert.equal(reusedTask.error.code, "PROVIDER_TASK_ALREADY_OWNED");
+    projectResult.project.status = "final_approved";
+    saveProject(db, projectResult.project);
+    const staleProject = reconcileGenerationJob(secondConfirmed.data.job_id, { decision: "abandon", reason: "Reject stale project context.", human_confirmation: true }, db);
+    assert.equal(staleProject.ok, false);
+    if (!staleProject.ok) assert.equal(staleProject.error.code, "GENERATION_RECONCILIATION_CONTEXT_STALE");
+    projectResult.project.status = "video_review";
+    saveProject(db, projectResult.project);
     db.prepare("UPDATE workbench_project_meta SET lifecycle = 'archived' WHERE project_id = ?").run(projectResult.project_id);
     const archivedAbandon = reconcileGenerationJob(secondConfirmed.data.job_id, { decision: "abandon", reason: "Blocked while archived.", human_confirmation: true }, db);
     assert.equal(archivedAbandon.ok, false);
     if (!archivedAbandon.ok) assert.equal(archivedAbandon.error.code, "PROJECT_ARCHIVED");
     db.prepare("UPDATE workbench_project_meta SET lifecycle = 'active' WHERE project_id = ?").run(projectResult.project_id);
+    const missingAbandonReason = reconcileGenerationJob(secondConfirmed.data.job_id, { decision: "abandon", human_confirmation: true }, db);
+    assert.equal(missingAbandonReason.ok, false);
+    if (!missingAbandonReason.ok) assert.equal(missingAbandonReason.error.code, "RECONCILIATION_REASON_REQUIRED");
     const abandoned = reconcileGenerationJob(secondConfirmed.data.job_id, { decision: "abandon", reason: "Human verified that no provider task exists.", human_confirmation: true }, db);
     assert.equal(abandoned.ok, true);
     if (abandoned.ok) {
@@ -1396,6 +1435,33 @@ test("provider task persistence failure enters manual reconciliation without los
     assert.equal(manualEventCount, 0);
     assert.equal(summary?.active_run_count, 0);
     assert.ok(summary?.blocker_codes.includes("GENERATION_MANUAL_RECONCILIATION"));
+    const workspace = getWorkbenchProjectWorkspace(prepared.project_id, "generation", checked);
+    if (!workspace.ok) throw new Error(workspace.error.code);
+    assert.equal(workspace.ok, true);
+    const reconciliationItems = workspace.data.reconciliation_items as Array<Record<string, unknown>>;
+    assert.equal(reconciliationItems.length, 1);
+    assert.deepEqual(reconciliationItems[0], {
+      job_id: prepared.job_id,
+      intent_id: prepared.intent_id,
+      shot_id: prepared.shot_id,
+      provider: "runninghub",
+      model: "rhart-video-g/image-to-video",
+      job_state: "manual_reconciliation",
+      intent_status: "running",
+      reason_code: "PROVIDER_TASK_PERSISTENCE_UNKNOWN",
+      has_provider_task_id: true,
+      updated_at: reconciliationItems[0].updated_at
+    });
+    assert.equal("provider_task_id" in reconciliationItems[0], false);
+    checked.exec("DROP TRIGGER inject_reconciliation_event_failure");
+    const resumedRecordedTask = reconcileGenerationJob(prepared.job_id, {
+      decision: "attach_existing_task",
+      human_confirmation: true
+    }, checked, { env: prepared.env });
+    if (!resumedRecordedTask.ok) throw new Error(resumedRecordedTask.error.code);
+    assert.equal(resumedRecordedTask.ok, true);
+    assert.equal(resumedRecordedTask.data.job.state, "polling");
+    assert.equal(resumedRecordedTask.data.intent.provider_task_id, "task-persisted-after-fault");
     checked.close();
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -2326,6 +2392,7 @@ test("repeated attachment preserves and rebinds a committed recovery replacement
           lease_token = '',
           lease_expires_at = NULL
       WHERE job_id = ?`).run(prepared.job_id);
+    restoreGenerationReconciliationContext(db, prepared.intent_id);
     const repeatedAttachment = reconcileGenerationJob(prepared.job_id, {
       decision: "attach_existing_task",
       provider_task_id: taskId,
@@ -2471,6 +2538,7 @@ test("switching Provider tasks retires the prior recovery artifacts without chan
           lease_token = '',
           lease_expires_at = NULL
       WHERE job_id = ?`).run(prepared.job_id);
+    restoreGenerationReconciliationContext(db, prepared.intent_id);
 
     const blobBindingsBefore = db.prepare(`SELECT artifact_id, blob_id FROM media_artifact_blobs
       WHERE artifact_id IN (?, ?) ORDER BY artifact_id`).all(
@@ -2644,6 +2712,7 @@ test("abandoning Provider recovery retires its artifacts atomically without chan
           lease_token = '',
           lease_expires_at = NULL
       WHERE job_id = ?`).run(prepared.job_id);
+    restoreGenerationReconciliationContext(db, prepared.intent_id);
 
     const blobBindingsBefore = db.prepare(`SELECT artifact_id, blob_id FROM media_artifact_blobs
       WHERE artifact_id IN (?, ?) ORDER BY artifact_id`).all(
@@ -2782,6 +2851,7 @@ test("a local recovery identity is reserved across intents before any replacemen
           lease_token = '',
           lease_expires_at = NULL
       WHERE job_id = ?`).run(otherGeneration.job_id);
+    restoreGenerationReconciliationContext(db, otherGeneration.intent_id);
 
     const attemptedAttachment = reconcileGenerationJob(otherGeneration.job_id, {
       decision: "attach_existing_task",

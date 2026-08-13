@@ -198,6 +198,7 @@ export interface WorkspaceData {
   shots?: Shot[];
   packages?: Record<string, unknown>[];
   runs?: GenerationRun[];
+  reconciliation_items?: ReconciliationItem[];
   recent_runs?: GenerationRun[];
   artifacts?: Record<string, MediaArtifact>;
   version_stacks?: Array<{ shot: Shot; versions: ClipVersion[] }>;
@@ -208,6 +209,20 @@ export interface WorkspaceData {
   ready_for_assembly?: boolean;
   accepted_clips?: Array<{ shot_id: string; order: number; artifact: MediaArtifact | null }>;
   final_artifact?: MediaArtifact | null;
+}
+
+export interface ReconciliationItem {
+  job_id: string;
+  intent_id: string;
+  shot_id: string;
+  provider: string;
+  model: string;
+  job_state: "manual_reconciliation";
+  intent_status: string;
+  reason_code: string;
+  has_provider_task_id: boolean;
+  updated_at: string;
+  reference_error_code?: string;
 }
 
 export interface ReviewNote {
@@ -257,4 +272,5 @@ export interface GenerationIntent {
   confirmed: boolean;
   expires_at: string;
   status: string;
+  provider_task_id?: string;
 }

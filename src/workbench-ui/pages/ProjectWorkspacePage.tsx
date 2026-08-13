@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, Check, CircleAlert, Clock3, Edit3, Film, Pin, Play, RotateCcw, Save, ShieldCheck } from "lucide-react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
-import { apiGet, apiMutation, confirmGeneration, preflightGeneration } from "../api";
+import { apiGet, apiMutation, confirmGeneration, preflightGeneration, reconcileGeneration } from "../api";
 import { EmptyState, ErrorState, KeyValue, LoadingState, MediaPreview, Modal, PageHeader, preserveVisibleVirtualScrolls, SegmentedTabs, StatusPill, VirtualList } from "../components";
-import type { ClipVersion, GenerationIntent, GenerationRun, MediaArtifact, ReviewNote, Shot, WorkspaceData } from "../types";
+import type { ClipVersion, GenerationIntent, GenerationRun, MediaArtifact, ReconciliationItem, ReviewNote, Shot, WorkspaceData } from "../types";
 import s from "../workbench.module.css";
 
 const workspaceTabs = [
@@ -126,15 +126,62 @@ function GenerationWorkspace({ data }: { data: WorkspaceData }) {
   const shots = data.shots ?? [];
   const selected = selectShot(shots, params.get("selected"));
   const [modal, setModal] = useState(false);
-  const evidence = <EvidencePanel title="运行记录"><RunList runs={(data.runs ?? []).filter((run) => !selected || run.shot_id === selected.shot_id)} /></EvidencePanel>;
+  const disabledReasonId = useId();
+  const disabledReason = selected ? generationDisabledReason(data, selected) : "项目尚无可生成 SHOT。";
+  const evidence = <><ReconciliationPanel data={data} /><EvidencePanel title="运行记录"><RunList runs={(data.runs ?? []).filter((run) => !selected || run.shot_id === selected.shot_id)} /></EvidencePanel></>;
   return <>
     <ThreePane
       queue={<ShotQueue shots={shots} selectedId={selected?.shot_id ?? ""} scrollKey={`${data.project.project_id}:generation`} onSelect={(shot) => setSelected(params, setParams, shot.shot_id)} />}
-      detail={selected ? <div className={s.objectDetail}><div className={s.detailHeader}><div><span className={s.eyebrow}>单 SHOT 生成</span><h2>SHOT {String(selected.order).padStart(3, "0")}</h2></div><StatusPill tone={operationalTone(selected)}>{operationalLabel(selected)}</StatusPill></div><div className={s.storyboardStage}><MediaPreview artifact={data.artifacts?.[selected.storyboard_image_artifact_id]} /></div><KeyValue rows={[["Provider", "RunningHub"], ["模型", "rhart-video-g/image-to-video"], ["时长", `${selected.duration_seconds}s`], ["输出", "480p · 9:16"], ["提交策略", "一次上传 / 一次提交 / 零自动重提"]]} /><div className={s.detailActions}><button className={s.primaryButton} disabled={data.meta.lifecycle === "archived" || selected.status !== "storyboard_approved"} onClick={() => setModal(true)}><Play size={16} /> 预检并生成</button></div></div> : <EmptyState title="项目尚无可生成 SHOT" />}
+      detail={selected ? <div className={s.objectDetail}><div className={s.detailHeader}><div><span className={s.eyebrow}>单 SHOT 生成</span><h2>SHOT {String(selected.order).padStart(3, "0")}</h2></div><StatusPill tone={operationalTone(selected)}>{operationalLabel(selected)}</StatusPill></div><div className={s.storyboardStage}><MediaPreview artifact={data.artifacts?.[selected.storyboard_image_artifact_id]} /></div><KeyValue rows={[["Provider", "RunningHub"], ["模型", "rhart-video-g/image-to-video"], ["时长", `${selected.duration_seconds}s`], ["输出", "480p · 9:16"], ["提交策略", "一次上传 / 一次提交 / 零自动重提"]]} /><div className={s.detailActions}><button className={s.primaryButton} disabled={Boolean(disabledReason)} aria-describedby={disabledReason ? disabledReasonId : undefined} onClick={() => setModal(true)}><Play size={16} /> 预检并生成</button></div>{disabledReason && <p id={disabledReasonId} className={s.inlineNotice}>下一步：{disabledReason}</p>}</div> : <EmptyState title="项目尚无可生成 SHOT" />}
       evidence={evidence}
     />
     {modal && selected && <GenerationModal projectId={data.project.project_id} shot={selected} artifact={data.artifacts?.[selected.storyboard_image_artifact_id]} onClose={() => setModal(false)} />}
   </>;
+}
+
+function ReconciliationPanel({ data }: { data: WorkspaceData }) {
+  const [dialog, setDialog] = useState<{ item: ReconciliationItem; decision: "attach_existing_task" | "abandon" } | null>(null);
+  const readOnly = data.meta.lifecycle === "archived" || data.project.status === "final_approved";
+  const items = data.reconciliation_items ?? [];
+  return <>
+    <EvidencePanel title="人工核对">
+      {items.length ? <div className={s.reconciliationList}>{items.map((item) => <div key={item.job_id} className={s.reconciliationItem}>
+        <div><strong>{item.shot_id}</strong><small>{item.reason_code}</small><StatusPill tone={item.has_provider_task_id ? "info" : "warning"}>{item.has_provider_task_id ? "已记录 task ID" : "待输入 task ID"}</StatusPill></div>
+        <button className={s.secondaryButton} disabled={readOnly || Boolean(item.reference_error_code)} onClick={() => setDialog({ item, decision: "attach_existing_task" })}>{item.has_provider_task_id ? "继续核对已记录任务" : "输入现有 task ID"}</button>
+        <button className={s.dangerButton} disabled={readOnly || Boolean(item.reference_error_code)} onClick={() => setDialog({ item, decision: "abandon" })}>放弃本次尝试</button>
+      </div>)}</div> : <EmptyState title="没有待人工核对的生成" />}
+    </EvidencePanel>
+    {dialog && <ReconciliationModal projectId={data.project.project_id} item={dialog.item} decision={dialog.decision} onClose={() => setDialog(null)} />}
+  </>;
+}
+
+function ReconciliationModal({ projectId, item, decision, onClose }: { projectId: string; item: ReconciliationItem; decision: "attach_existing_task" | "abandon"; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [taskId, setTaskId] = useState("");
+  const [reason, setReason] = useState("");
+  const [confirmed, setConfirmed] = useState(false);
+  const needsTaskId = decision === "attach_existing_task" && !item.has_provider_task_id;
+  const valid = confirmed && (decision === "attach_existing_task" ? !needsTaskId || taskId.trim().length >= 3 : reason.trim().length >= 3);
+  const mutation = useMutation({
+    mutationFn: () => reconcileGeneration(item.job_id, {
+      decision,
+      ...(needsTaskId ? { provider_task_id: taskId.trim() } : {}),
+      ...(decision === "abandon" ? { reason: reason.trim() } : {}),
+      human_confirmation: true
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["project-workspace", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["shell"] });
+      onClose();
+    }
+  });
+  return <Modal title={decision === "attach_existing_task" ? "继续人工核对" : "放弃本次生成尝试"} onClose={onClose} footer={<><button className={s.secondaryButton} onClick={onClose}>取消</button><button className={decision === "abandon" ? s.dangerButton : s.primaryButton} disabled={!valid || mutation.isPending} onClick={() => mutation.mutate()}>{decision === "abandon" ? "确认放弃" : "继续核对"}</button></>}>
+    <div className={s.advisoryBox}><strong>{item.shot_id}</strong><small>{item.reason_code}</small><small>此操作只会恢复 polling / download 或结束当前 Intent，绝不会重新 submit。</small></div>
+    {needsTaskId && <label className={s.field}><span>现有 Provider task ID</span><input autoFocus value={taskId} onChange={(event) => setTaskId(event.target.value)} autoComplete="off" /></label>}
+    {decision === "abandon" && <label className={s.field}><span>放弃原因（必填）</span><textarea autoFocus rows={4} maxLength={1_000} value={reason} onChange={(event) => setReason(event.target.value)} /></label>}
+    <label className={s.checkboxRowInline}><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>{decision === "abandon" ? "我确认结束这次生成 Intent；已有 Provider 任务不会被重新提交。" : "我确认这是已存在的 Provider 任务，只继续核对而不重新提交。"}</span></label>
+    {mutation.isError && <div className={s.inlineError}>{mutation.error.message}</div>}
+  </Modal>;
 }
 
 function GenerationModal({ projectId, shot, artifact, onClose }: { projectId: string; shot: Shot; artifact?: MediaArtifact; onClose: () => void }) {
@@ -162,7 +209,7 @@ function ReviewWorkspace({ data }: { data: WorkspaceData }) {
   const selectShotVersion = (shotId: string, artifactId?: string) => { const next = new URLSearchParams(params); next.set("selected", shotId); if (artifactId) next.set("version", artifactId); else next.delete("version"); setParams(next, { replace: true }); };
   const evidence = selectedStack && selectedVersion ? <><ReviewDecision projectId={data.project.project_id} shot={selectedStack.shot} version={selectedVersion} readOnly={data.meta.lifecycle === "archived"} /><ReviewNotes notes={(data.review_notes ?? []).filter((note) => note.shot_id === selectedStack.shot.shot_id)} /></> : null;
   return <ThreePane
-    queue={<section className={s.stackQueue}><div className={s.paneTitle}><strong>SHOT 版本栈</strong><span>{stacks.length}</span></div><VirtualList items={stacks} estimate={92} scrollKey={`${data.project.project_id}:review`} renderItem={(stack) => <button className={`${s.queueItem} ${stack.shot.shot_id === selectedStack?.shot.shot_id ? s.queueItemActive : ""}`} onClick={() => selectShotVersion(stack.shot.shot_id)}><span className={s.queueIcon}><Film size={18} /></span><span><strong>SHOT {String(stack.shot.order).padStart(3, "0")}</strong><small>{stack.versions.length} 个版本 · {stack.shot.operational_state?.review.stage ?? stack.shot.review.approval_status}</small></span><StatusPill tone={operationalTone(stack.shot)}>{operationalLabel(stack.shot)}</StatusPill></button>} /></section>}
+    queue={<><div className={s.paneTitle}><strong>SHOT 版本栈</strong><span>{stacks.length}</span></div><VirtualList items={stacks} estimate={92} scrollKey={`${data.project.project_id}:review`} renderItem={(stack) => <button className={`${s.queueItem} ${stack.shot.shot_id === selectedStack?.shot.shot_id ? s.queueItemActive : ""}`} onClick={() => selectShotVersion(stack.shot.shot_id)}><span className={s.queueIcon}><Film size={18} /></span><span><strong>SHOT {String(stack.shot.order).padStart(3, "0")}</strong><small>{stack.versions.length} 个版本 · {stack.shot.operational_state?.review.stage ?? stack.shot.review.approval_status}</small></span><StatusPill tone={operationalTone(stack.shot)}>{operationalLabel(stack.shot)}</StatusPill></button>} /></>}
     detail={selectedStack && selectedVersion ? <div className={s.objectDetail}><div className={s.detailHeader}><div><span className={s.eyebrow}>SHOT {String(selectedStack.shot.order).padStart(3, "0")} · 版本 {selectedVersion.attempt_number}</span><h2>{selectedStack.shot.description || selectedStack.shot.shot_id}</h2></div><StatusPill tone={selectedVersion.review_status === "approved" ? "success" : selectedVersion.review_status === "rejected" ? "danger" : "warning"}>{selectedVersion.review_status}</StatusPill></div><div className={s.reviewStage}><MediaPreview artifact={selectedVersion.artifact} /></div><div className={s.versionStrip}>{selectedStack.versions.map((version) => <button key={version.artifact_id} className={version.artifact_id === selectedVersion.artifact_id ? s.versionActive : ""} onClick={() => selectShotVersion(selectedStack.shot.shot_id, version.artifact_id)}>V{version.attempt_number}<small>{version.review_status}</small></button>)}</div></div> : <EmptyState title="没有生成片段" detail="生成完成后会按 SHOT 聚合到这里。" />}
     evidence={evidence}
   />;
@@ -188,7 +235,7 @@ function DeliveryWorkspace({ data }: { data: WorkspaceData }) {
 }
 
 function ThreePane({ queue, detail, evidence }: { queue: ReactNode; detail: ReactNode; evidence: ReactNode }) {
-  return <div className={s.threePane}><section className={s.queuePane}>{queue}</section><section className={s.detailPane}>{detail}<div className={s.inlineEvidence}>{evidence}</div></section><aside className={s.evidencePane}>{evidence}</aside></div>;
+  return <div className={s.threePane}><section className={s.queuePane}>{queue}</section><section className={s.detailPane}>{detail}</section><aside className={s.evidencePane}>{evidence}</aside></div>;
 }
 
 function EvidencePanel({ title, children }: { title: string; children: ReactNode }) { return <div className={s.evidencePanel}><div className={s.paneTitle}><strong>{title}</strong></div><div className={s.evidenceBody}>{children}</div></div>; }
@@ -201,6 +248,27 @@ function RunList({ runs }: { runs: GenerationRun[] }) { return runs.length ? <di
 
 function selectShot(shots: Shot[], selectedId: string | null) { return shots.find((shot) => shot.shot_id === selectedId) ?? shots[0]; }
 function setSelected(params: URLSearchParams, setParams: ReturnType<typeof useSearchParams>[1], id: string) { preserveVisibleVirtualScrolls(); const next = new URLSearchParams(params); next.set("selected", id); setParams(next, { replace: true }); }
+function generationDisabledReason(data: WorkspaceData, shot: Shot): string {
+  if (data.meta.lifecycle === "archived") return "先恢复归档项目；归档状态只读。";
+  if (data.project.status === "final_approved") return "项目已经完成结案，不能再创建生成任务。";
+  if (shot.operational_state?.primary_stage === "manual_reconciliation") return "先处理该 SHOT 的人工核对项。";
+  if (!shot.operational_state && shot.status === "storyboard_approved") return "";
+  if (shot.operational_state?.allowed_workflow_actions.prepare_generation === true) return "";
+  const labels: Record<string, string> = {
+    STORYBOARD_APPROVAL_REQUIRED: "先批准该 SHOT 的分镜。",
+    STORYBOARD_REVISION_REQUIRED: "先完成分镜修订并重新批准。",
+    STORYBOARD_IMAGE_MISSING: "先绑定可用的分镜图。",
+    STORYBOARD_ARTIFACT_INACTIVE: "先恢复或替换不可用的分镜图。",
+    STORYBOARD_ARTIFACT_BINDING_INVALID: "先修复分镜图与项目/SHOT 的绑定。",
+    STORYBOARD_ARTIFACT_ROLE_INVALID: "先替换角色不正确的分镜 Artifact。",
+    STORYBOARD_ARTIFACT_INTEGRITY_INVALID: "先修复分镜图的字节完整性。",
+    VIDEO_PROMPT_MISSING: "先填写视频提示词。",
+    SHOT_DURATION_INVALID: "先修正 SHOT 时长。",
+    GENERATION_FAILED: "先检查失败记录并明确下一次生成。"
+  };
+  const code = shot.operational_state?.generation.reason_codes[0] ?? shot.operational_state?.blocker_codes[0];
+  return code ? labels[code] ?? `先处理阻断：${code}。` : "当前 SHOT 状态不允许生成；请先完成上一阶段。";
+}
 function shotStatus(value: string) { return ({ draft: "草稿", storyboard_approved: "分镜已批", video_pending: "待生成", video_generated: "已生成", video_review: "待审", approved: "已采纳", revision_needed: "需修订" } as Record<string, string>)[value] ?? value; }
 
 function blockerText(blocker: Record<string, unknown>): string {

@@ -857,7 +857,43 @@ export function getWorkbenchProjectWorkspace(
     } };
   }
   if (workspace === "storyboard") return { ok: true, data: { ...base, shots: shotsWithOperationalState, packages, artifacts } };
-  if (workspace === "generation") return { ok: true, data: { ...base, shots: shotsWithOperationalState, runs, artifacts } };
+  if (workspace === "generation") {
+    const reconciliationRows = db.prepare(`
+      SELECT j.job_id, j.intent_id, j.state AS job_state, j.reconciliation_reason,
+        j.updated_at, i.shot_id, i.provider, i.model, i.provider_task_id,
+        i.status AS intent_status
+      FROM generation_jobs j
+      JOIN generation_intents i ON i.intent_id = j.intent_id
+      WHERE i.project_id = ? AND j.state = 'manual_reconciliation'
+      ORDER BY j.updated_at DESC, j.rowid DESC
+      LIMIT 100
+    `).all(projectId) as Array<{
+      job_id: string;
+      intent_id: string;
+      job_state: string;
+      reconciliation_reason: string;
+      updated_at: string;
+      shot_id: string;
+      provider: string;
+      model: string;
+      provider_task_id: string;
+      intent_status: string;
+    }>;
+    const reconciliation_items = reconciliationRows.map((row) => ({
+      job_id: row.job_id,
+      intent_id: row.intent_id,
+      shot_id: row.shot_id,
+      provider: row.provider,
+      model: row.model,
+      job_state: row.job_state,
+      intent_status: row.intent_status,
+      reason_code: row.reconciliation_reason || "GENERATION_RECONCILIATION_REQUIRED",
+      has_provider_task_id: row.provider_task_id.trim().length > 0,
+      updated_at: row.updated_at,
+      ...(!shotsById.has(row.shot_id) ? { reference_error_code: "SHOT_NOT_IN_PROJECT" } : {})
+    }));
+    return { ok: true, data: { ...base, shots: shotsWithOperationalState, runs, artifacts, reconciliation_items } };
+  }
   if (workspace === "review") {
     const version_stacks = shots.map((shot) => ({
       shot: { ...shot, operational_state: operationalBundle.states_by_shot_id.get(shot.shot_id) },

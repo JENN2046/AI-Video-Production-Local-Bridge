@@ -151,9 +151,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .rawDetails { margin-top: 14px; border-top: 1px solid var(--line); }
 .rawDetails summary { padding: 11px 0; cursor: pointer; color: #0c66e4; font-size: 11px; font-weight: 650; }
 .threePane { display: grid; grid-template-columns: 320px minmax(460px, 1fr) 340px; flex: 1; min-height: 0; border: 1px solid var(--line); border-radius: 7px; background: rgba(255,255,255,.74); overflow: hidden; }
-.threePane > .queuePane, .stackQueue { display: grid; grid-template-rows: 42px minmax(0, 1fr); }
+.threePane > .queuePane { display: grid; grid-template-rows: 42px minmax(0, 1fr); }
+.threePane > .queuePane > .virtualViewport { align-self: stretch; height: auto; min-height: 0; }
 .evidencePane { min-width: 0; min-height: 0; overflow: auto; border-left: 1px solid var(--line); background: rgba(244,247,251,.72); }
-.inlineEvidence { display: none; }
 .evidenceBody { padding: 12px; }
 .editorFields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .editorFields .field:first-child { grid-column: 1 / -1; }
@@ -176,6 +176,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .runList small { margin-top: 3px; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; font-size: 9px; }
 .runDot { width: 7px; height: 7px; border-radius: 50%; }
 .runSuccess { background: #22a06b; }.runFailed { background: #ca3521; }.runActive { background: #e2b203; }
+.reconciliationList { display: flex; flex-direction: column; gap: 9px; }
+.reconciliationItem { display: flex; flex-direction: column; gap: 7px; padding: 9px; border: 1px solid #e2b203; border-radius: 6px; background: var(--amber-soft); }
+.reconciliationItem > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 3px 7px; }
+.reconciliationItem strong, .reconciliationItem small { min-width: 0; overflow-wrap: anywhere; }
+.reconciliationItem small { grid-column: 1 / -1; color: var(--muted); font-size: 9px; }
 .versionStrip { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 8px; }
 .versionStrip button { flex: 0 0 72px; height: 46px; border: 1px solid var(--line); border-radius: 5px; background: #fff; cursor: pointer; font-size: 11px; font-weight: 700; }
 .versionStrip button small { display: block; margin-top: 3px; color: var(--muted); font-size: 8px; }
@@ -249,9 +254,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 
 @media (max-width: 1180px) {
-  .threePane { grid-template-columns: 286px minmax(0, 1fr); }
-  .evidencePane { display: none; }
-  .inlineEvidence { display: block; margin-top: 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); }
+  .threePane { grid-template-columns: 286px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .threePane > .queuePane { grid-row: 1 / -1; }
+  .detailPane { grid-column: 2; grid-row: 1; }
+  .evidencePane { grid-column: 2; grid-row: 2; max-height: 42vh; border-top: 1px solid var(--line); border-left: 0; }
   .tableHeader, .tableRow, .projectListHead, .projectRow { grid-template-columns: minmax(200px, 1.5fr) minmax(135px, 1fr) minmax(130px, 1fr) 48px 90px 96px 20px; gap: 7px; }
   .assetFilterRow { gap: 6px; }.projectPicker { min-width: 190px; }.disabledFilter { width: 190px; }
 }
@@ -284,6 +290,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .directorFocusPanel { flex-basis: auto; min-height: 0; }
   .queuePane, .threePane > .queuePane { height: 250px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 10px; }
   .detailPane { overflow: visible; border: 1px solid var(--line); border-radius: 6px; }
+  .evidencePane { max-height: none; margin-top: 10px; overflow: visible; border: 1px solid var(--line); border-radius: 6px; }
   .overviewColumns, .systemGrid { grid-template-columns: 1fr; }.systemBand { grid-column: 1; }
   .governanceSummary { grid-template-columns: repeat(2, 1fr); }.governanceSummary .primaryButton { grid-column: 1 / -1; }.governanceGroups { grid-template-columns: 1fr; }
   .editorFields, .formGrid { grid-template-columns: 1fr; }.editorFields .field:first-child { grid-column: 1; }
