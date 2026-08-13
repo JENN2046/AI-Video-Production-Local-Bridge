@@ -97,8 +97,10 @@ export {
   providerCapabilityErrorMessage,
   providerCapabilityPriceSource,
   PROVIDER_CAPABILITIES,
+  PROVIDER_CAPABILITIES_BY_MODEL,
   PROVIDER_CAPABILITY_REGISTRY_VERSION,
   RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY,
+  RUNNINGHUB_SEEDANCE_V1_5_PRO_IMAGE_TO_VIDEO_CAPABILITY,
   RUNWAY_IMAGE_TO_VIDEO_CAPABILITY
 } from "./tools/providerCapabilities.js";
 export type {
@@ -202,6 +204,7 @@ export {
   listProviderConfigs,
   realCommandReadiness,
   redactSecrets,
+  resolveRunningHubComparableBalance,
   selectM0Provider,
   selectM1ProviderPort
 } from "./tools/provider.js";
@@ -260,6 +263,7 @@ export {
   RUNNINGHUB_MEDIA_UPLOAD_ENDPOINT,
   RUNNINGHUB_MIN_DURATION_SECONDS,
   RUNNINGHUB_MODEL_ROUTE,
+  RUNNINGHUB_SEEDANCE_V1_5_PRO_IMAGE_TO_VIDEO_MODEL_ROUTE,
   RUNNINGHUB_QUERY_ENDPOINT,
   RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER,
   RUNWAY_API_VERSION,

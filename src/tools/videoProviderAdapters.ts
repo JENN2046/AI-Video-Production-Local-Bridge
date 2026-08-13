@@ -7,6 +7,7 @@ import {
   projectProviderRequest,
   providerCapabilityErrorMessage,
   RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY,
+  RUNNINGHUB_SEEDANCE_V1_5_PRO_IMAGE_TO_VIDEO_CAPABILITY,
   RUNWAY_IMAGE_TO_VIDEO_CAPABILITY
 } from "./providerCapabilities.js";
 import {
@@ -22,6 +23,7 @@ export const RUNWAY_API_VERSION = "2024-11-06";
 export const RUNWAY_IMAGE_TO_VIDEO_ENDPOINT = "/v1/image_to_video";
 export const RUNNINGHUB_API_BASE_URL = "https://www.runninghub.cn";
 export const RUNNINGHUB_MODEL_ROUTE = RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY.model;
+export const RUNNINGHUB_SEEDANCE_V1_5_PRO_IMAGE_TO_VIDEO_MODEL_ROUTE = RUNNINGHUB_SEEDANCE_V1_5_PRO_IMAGE_TO_VIDEO_CAPABILITY.model;
 export const RUNNINGHUB_IMAGE_TO_VIDEO_ENDPOINT = `/openapi/v2/${RUNNINGHUB_MODEL_ROUTE}`;
 export const RUNNINGHUB_QUERY_ENDPOINT = "/openapi/v2/query";
 export const RUNNINGHUB_MEDIA_UPLOAD_ENDPOINT = "/openapi/v2/media/upload/binary";
@@ -159,18 +161,22 @@ export type RunningHubMediaUploadRequestBuildResult =
   | { ok: false; error: ProviderToolError };
 
 export interface RunningHubImageToVideoSubmitRequestSummary {
-  endpoint: `POST ${typeof RUNNINGHUB_IMAGE_TO_VIDEO_ENDPOINT}`;
+  endpoint: string;
   content_type: "application/json";
   auth: RunningHubRequestAuthSummary;
   prompt_text_length: number;
   negative_prompt_supported: false;
   negative_prompt_text_length: number;
   aspectRatio: string;
+  image_reference_field: "imageUrls" | "firstImageUrl";
   image_urls_count: number;
   image_url_values_included: false;
-  imageUrls: [typeof RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER];
+  imageUrls?: [typeof RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER];
+  firstImageUrl?: typeof RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER;
   resolution: string;
-  duration: number;
+  duration: number | string;
+  generateAudio?: "false";
+  cameraFixed?: "false";
   raw_provider_payload_included: false;
 }
 
@@ -178,7 +184,7 @@ export type RunningHubImageToVideoSubmitRequestBuildResult =
   | {
       ok: true;
       method: "POST";
-      endpoint: typeof RUNNINGHUB_IMAGE_TO_VIDEO_ENDPOINT;
+      endpoint: string;
       headers: {
         Authorization: typeof RUNNINGHUB_AUTHORIZATION_HEADER_PLACEHOLDER;
         "Content-Type": "application/json";
@@ -186,9 +192,12 @@ export type RunningHubImageToVideoSubmitRequestBuildResult =
       body: {
         prompt: string;
         aspectRatio: string;
-        imageUrls: string[];
         resolution: string;
-        duration: number;
+        duration: number | string;
+        imageUrls?: string[];
+        firstImageUrl?: string;
+        generateAudio?: "false";
+        cameraFixed?: "false";
       };
       summary: RunningHubImageToVideoSubmitRequestSummary;
     }
@@ -480,13 +489,14 @@ export function buildRunningHubMediaUploadRequest(input: { storyboard_artifact: 
 export function buildRunningHubImageToVideoSubmitRequest(input: {
   generation_input: ProviderGenerationInput;
   uploaded_download_url?: string;
+  model?: string;
 }): RunningHubImageToVideoSubmitRequestBuildResult {
   const artifactGate = ensureRunningHubStoryboardImageArtifact(input.generation_input.storyboard_artifact);
   if (!artifactGate.ok) return { ok: false, error: artifactGate.error };
 
   const contract = projectProviderRequest({
     provider: "runninghub",
-    model: RUNNINGHUB_MODEL_ROUTE,
+    model: input.model ?? RUNNINGHUB_MODEL_ROUTE,
     duration_seconds: input.generation_input.duration_seconds,
     resolution: input.generation_input.resolution,
     aspect_ratio: input.generation_input.aspect_ratio
@@ -500,20 +510,62 @@ export function buildRunningHubImageToVideoSubmitRequest(input: {
   const aspectRatio = contract.request.aspect_ratio;
   const duration = contract.request.duration_seconds;
   const resolution = contract.request.resolution;
+  const endpoint = `/openapi/v2/${contract.request.model}`;
 
   const uploadedDownloadUrl = input.uploaded_download_url ?? RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER;
   if (!uploadedDownloadUrl.trim()) {
     return { ok: false, error: providerError("PROVIDER_UNSUPPORTED_INPUT", "RunningHub submit requires an uploaded image download URL.") };
   }
 
+  if (contract.request.model === RUNNINGHUB_SEEDANCE_V1_5_PRO_IMAGE_TO_VIDEO_MODEL_ROUTE) {
+    const summary: RunningHubImageToVideoSubmitRequestSummary = {
+      endpoint: `POST ${endpoint}`,
+      content_type: "application/json",
+      auth: runningHubAuthSummary(),
+      prompt_text_length: input.generation_input.video_prompt.length,
+      negative_prompt_supported: false,
+      negative_prompt_text_length: input.generation_input.negative_prompt.length,
+      aspectRatio,
+      image_reference_field: "firstImageUrl",
+      image_urls_count: 1,
+      image_url_values_included: false,
+      firstImageUrl: RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER,
+      resolution,
+      duration: String(duration),
+      generateAudio: "false",
+      cameraFixed: "false",
+      raw_provider_payload_included: false
+    };
+    return {
+      ok: true,
+      method: "POST",
+      endpoint,
+      headers: {
+        Authorization: RUNNINGHUB_AUTHORIZATION_HEADER_PLACEHOLDER,
+        "Content-Type": "application/json"
+      },
+      body: {
+        prompt: input.generation_input.video_prompt,
+        firstImageUrl: uploadedDownloadUrl,
+        aspectRatio,
+        duration: String(duration),
+        resolution,
+        generateAudio: "false",
+        cameraFixed: "false"
+      },
+      summary
+    };
+  }
+
   const summary: RunningHubImageToVideoSubmitRequestSummary = {
-    endpoint: `POST ${RUNNINGHUB_IMAGE_TO_VIDEO_ENDPOINT}`,
+    endpoint: `POST ${endpoint}`,
     content_type: "application/json",
     auth: runningHubAuthSummary(),
     prompt_text_length: input.generation_input.video_prompt.length,
     negative_prompt_supported: false,
     negative_prompt_text_length: input.generation_input.negative_prompt.length,
     aspectRatio,
+    image_reference_field: "imageUrls",
     image_urls_count: 1,
     image_url_values_included: false,
     imageUrls: [RUNNINGHUB_UPLOAD_DOWNLOAD_URL_PLACEHOLDER],
@@ -525,7 +577,7 @@ export function buildRunningHubImageToVideoSubmitRequest(input: {
   return {
     ok: true,
     method: "POST",
-    endpoint: RUNNINGHUB_IMAGE_TO_VIDEO_ENDPOINT,
+    endpoint,
     headers: {
       Authorization: RUNNINGHUB_AUTHORIZATION_HEADER_PLACEHOLDER,
       "Content-Type": "application/json"
@@ -1137,17 +1189,18 @@ export class RunwayVideoProviderAdapter implements VideoProviderAdapter {
 
 export class RunningHubVideoProviderAdapter implements VideoProviderAdapter {
   provider_name = "runninghub" as const;
-  model_name = RUNNINGHUB_MODEL_ROUTE;
+  model_name: string;
   private readonly apiBase: string;
   private readonly credential: string;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
 
-  constructor(input: { credential?: string; fetch_impl?: typeof fetch; api_base?: string; timeout_ms?: number } = {}) {
+  constructor(input: { credential?: string; fetch_impl?: typeof fetch; api_base?: string; timeout_ms?: number; model_name?: string } = {}) {
     this.credential = input.credential ?? "";
     this.fetchImpl = input.fetch_impl ?? fetch;
     this.apiBase = input.api_base ?? RUNNINGHUB_API_BASE_URL;
     this.timeoutMs = Math.max(1000, input.timeout_ms ?? 60_000);
+    this.model_name = input.model_name ?? RUNNINGHUB_MODEL_ROUTE;
   }
 
   private async request(url: string, init: RequestInit, operation: string, timeoutMs = this.timeoutMs): Promise<{ response: Response; payload: Record<string, unknown> } | { error: ProviderToolError }> {
@@ -1188,7 +1241,7 @@ export class RunningHubVideoProviderAdapter implements VideoProviderAdapter {
     const uploaded = parseRunningHubMediaUploadResponse(uploadResponse.payload, [this.credential]);
     if (!uploaded.ok) return uploaded;
 
-    const submitRequest = buildRunningHubImageToVideoSubmitRequest({ generation_input: input, uploaded_download_url: uploaded.download_url });
+    const submitRequest = buildRunningHubImageToVideoSubmitRequest({ generation_input: input, uploaded_download_url: uploaded.download_url, model: this.model_name });
     if (!submitRequest.ok) return submitRequest;
     const submitResponse = await this.request(`${this.apiBase}${submitRequest.endpoint}`, {
       method: submitRequest.method,

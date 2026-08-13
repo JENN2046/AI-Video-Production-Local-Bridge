@@ -522,7 +522,8 @@ export async function handleWorkbenchV2Api(
           project_id: projectId,
           shot_id: text(body.shot_id),
           account_label: body.account_label === "team" ? "team" : "personal",
-          budget_limit_value: Number(body.budget_limit_value)
+          budget_limit_value: Number(body.budget_limit_value),
+          model: text(body.model) || undefined
         }, db));
       } finally {
         db.close();

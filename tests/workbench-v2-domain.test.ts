@@ -1088,6 +1088,21 @@ test("generation preflight enforces official estimate, balance gate, budget and 
       throw new Error(`unexpected URL ${url}`);
     };
 
+    const businessFailureFetch: typeof fetch = async (input, init) => {
+      const url = String(input);
+      if (url.includes("price-preview")) {
+        return new Response(JSON.stringify({ errorCode: "", errorMessage: "", estimatedPrice: 0.08, currency: "CNY" }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (url.includes("accountStatus")) {
+        return new Response(JSON.stringify({ code: 1, data: { remainMoney: "10", currency: "CNY" } }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      throw new Error(`unexpected URL ${url}`);
+    };
+
+    const declaredAccountFailure = await preflightWorkbenchGeneration({ project_id: projectResult.project_id, shot_id: shot.shot_id, account_label: "personal", budget_limit_value: 1 }, db, { env, fetch_impl: businessFailureFetch });
+    assert.equal(declaredAccountFailure.ok, false);
+    if (!declaredAccountFailure.ok) assert.equal(declaredAccountFailure.error.code, "BALANCE_GATE_UNKNOWN_OR_INSUFFICIENT");
+
     const blocked = await preflightWorkbenchGeneration({ project_id: projectResult.project_id, shot_id: shot.shot_id, account_label: "personal", budget_limit_value: 0.01 }, db, { env, fetch_impl: fetchImpl });
     assert.equal(blocked.ok, false);
     if (!blocked.ok) assert.equal(blocked.error.code, "BUDGET_LIMIT_EXCEEDED");

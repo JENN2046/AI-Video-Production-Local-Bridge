@@ -40,7 +40,7 @@ export async function apiMutation<T>(path: string, method: "POST" | "PATCH", bod
   return (await parse<T>(response)).data;
 }
 
-export function preflightGeneration(projectId: string, body: { shot_id: string; account_label: "personal" | "team"; budget_limit_value: number }) {
+export function preflightGeneration(projectId: string, body: { shot_id: string; account_label: "personal" | "team"; budget_limit_value: number; model: string }) {
   return apiMutation<{ intent: GenerationIntent }>(`/api/v2/projects/${encodeURIComponent(projectId)}/generation/preflight`, "POST", body);
 }
 
