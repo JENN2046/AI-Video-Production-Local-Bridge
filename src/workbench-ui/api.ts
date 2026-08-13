@@ -51,3 +51,12 @@ export function confirmGeneration(intentId: string, budget: number) {
     human_confirmation: true
   });
 }
+
+export function reconcileGeneration(jobId: string, body: {
+  decision: "attach_existing_task" | "abandon";
+  provider_task_id?: string;
+  reason?: string;
+  human_confirmation: true;
+}) {
+  return apiMutation<{ job: { job_id: string; state: string }; intent: GenerationIntent }>(`/api/v2/generation/jobs/${encodeURIComponent(jobId)}/reconcile`, "POST", body);
+}
