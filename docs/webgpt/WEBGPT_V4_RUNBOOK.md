@@ -28,7 +28,7 @@ npm run start:webgpt
 
 ## Owner-only 日常发布（历史 legacy 流程；非 Unified 主入口）
 
-Human Workbench 的“系统 → 只读 App 发布”曾是接受的 Jenn 日常入口。以下 legacy 步骤保留为回滚参考；活动库已满足 current-code ledger `0011`，但步骤本身不能替代当前 Unified profile 的有界发布/恢复确认，也不能绕过任何外部授权：
+Human Workbench 的“系统 → 只读 App 发布”曾是接受的 Jenn 日常入口。以下 legacy 步骤保留为回滚参考；活动库已满足历史接受基线 ledger `0011`，候选工作台代码另需尚未获活动库迁移授权的 ledger `0012`。这些步骤不能替代当前 Unified profile 的有界发布/恢复确认，也不能绕过任何外部授权：
 
 1. 使用 `windows:start` 启动 Workbench，并确认 `windows:status` 为 ready。
 2. 打开“系统 → 只读 App 发布”，先读取低披露状态。

@@ -22,6 +22,14 @@ import { requireShotWorkflowWriteAction } from "./operationalWriteGates.js";
 import type { ProjectOperationalSummary } from "../packages/domain/operationalState.js";
 import { markShotClipReview, type RevisionInstruction } from "./review.js";
 import { listWorkbenchDraftRecords, listWorkbenchPendingActionRecords } from "./workbenchInboxStore.js";
+import {
+  getActiveWorkbenchDeliveryJob,
+  getLatestWorkbenchExport,
+  getWorkbenchCloseoutReceipt,
+  getWorkbenchDeliveryState,
+  projectSummaryDeliveryState,
+  type WorkbenchDeliveryWorkflowState
+} from "./workbenchDeliveryState.js";
 
 export type WorkbenchProjectClassification = "unclassified" | "production" | "test";
 export type WorkbenchProjectLifecycle = "active" | "archived";
@@ -105,6 +113,8 @@ interface ProjectRow {
   next_action_expires_at: string | null;
   next_action_project_status: string | null;
   next_action_updated_at: string | null;
+  workflow_state: WorkbenchDeliveryWorkflowState;
+  delivery_current_final_artifact_id: string | null;
 }
 
 interface ImportIndexRow {
@@ -225,6 +235,13 @@ export function assertWorkbenchProjectWritable(db: M0Database, projectId: string
   if (meta.lifecycle === "archived") {
     return { ok: false, error: { code: "PROJECT_ARCHIVED", message: "Archived projects are read-only.", field: "project_id" } };
   }
+  const delivery = getWorkbenchDeliveryState(db, projectId);
+  if (!delivery) {
+    return { ok: false, error: { code: "DELIVERY_STATE_MISSING", message: "Project delivery state is unavailable.", field: "project_id" } };
+  }
+  if (delivery.workflow_state === "closed") {
+    return { ok: false, error: { code: "PROJECT_CLOSED", message: "Closed projects do not accept production changes.", field: "project_id" } };
+  }
   return { ok: true, data: { project, meta } };
 }
 
@@ -269,15 +286,18 @@ export function listWorkbenchProjects(
     SELECT COUNT(*) AS count
     FROM projects p
     JOIN workbench_project_meta m ON m.project_id = p.project_id
+    JOIN workbench_delivery_state d ON d.project_id = p.project_id
     ${where}
   `).get(...params) as { count: number };
   const rows = db.prepare(`
     SELECT p.project_id, p.data_json, p.created_at, p.updated_at,
       m.classification, m.lifecycle, m.pinned, m.last_opened_at,
       m.next_action_override, m.next_action_priority, m.next_action_expires_at,
-      m.next_action_project_status, m.next_action_updated_at
+      m.next_action_project_status, m.next_action_updated_at,
+      d.workflow_state, d.current_final_artifact_id AS delivery_current_final_artifact_id
     FROM projects p
     JOIN workbench_project_meta m ON m.project_id = p.project_id
+    JOIN workbench_delivery_state d ON d.project_id = p.project_id
     ${where}
     ORDER BY m.pinned DESC,
       CASE json_extract(p.data_json, '$.status')
@@ -392,7 +412,7 @@ function projectSummaryFromRow(project: Project, row: ProjectRow, operational: P
     && !project.exports.final_video_artifact_id
     ? "unverified"
     : "not_applicable";
-  const derived = deriveNextAction(project, operational, assemblyReadiness);
+  const derived = deriveNextAction(project, operational, assemblyReadiness, row.workflow_state);
   const overrideValid = Boolean(
     assemblyReadiness !== "unverified"
     && !hasAcceptedClipIntegrityBlocker(operational)
@@ -410,11 +430,7 @@ function projectSummaryFromRow(project: Project, row: ProjectRow, operational: P
     expires_at: meta.next_action_expires_at,
     derived
   } : { source: "derived", ...derived, expires_at: null, derived };
-  const deliveryState = project.status === "final_approved"
-    ? "delivered"
-    : project.exports.final_video_artifact_id
-      ? "final_review"
-      : "not_ready";
+  const deliveryState = projectSummaryDeliveryState(row.workflow_state);
   const blockerParts = operational.blocker_codes.map((code) => `${operational.blocker_code_counts[code] ?? 0} 个${blockerLabel(code)}`);
   const risk: "blocked" | "attention" | "clear" = operational.blocker_count > 0 || operational.latest_failed_count > 0
     ? "blocked"
@@ -438,7 +454,19 @@ function projectSummaryFromRow(project: Project, row: ProjectRow, operational: P
   };
 }
 
-function deriveNextAction(project: Project, state: ProjectOperationalSummary, assemblyReadiness: SummaryAssemblyReadiness = "not_applicable"): WorkbenchNextAction["derived"] {
+function deriveNextAction(
+  project: Project,
+  state: ProjectOperationalSummary,
+  assemblyReadiness: SummaryAssemblyReadiness = "not_applicable",
+  workflowState: WorkbenchDeliveryWorkflowState = "not_ready"
+): WorkbenchNextAction["derived"] {
+  if (workflowState === "closed") return { label: "已结案", reason_code: "delivered", priority: "normal" };
+  if (workflowState === "legacy_review_required") return { label: "复核历史交付", reason_code: "legacy_review_required", priority: "urgent" };
+  if (workflowState === "assembling") return { label: "等待装配完成", reason_code: "assembly_running", priority: "normal" };
+  if (workflowState === "final_review") return { label: "最终审查", reason_code: "final_review", priority: "high" };
+  if (workflowState === "revision_requested") return { label: "处理定向返工", reason_code: "final_revision_requested", priority: "urgent" };
+  if (workflowState === "approved") return { label: "导出成片", reason_code: "export_final", priority: "high" };
+  if (workflowState === "exported") return { label: "确认结案", reason_code: "closeout_required", priority: "high" };
   if (state.latest_failed_count > 0) return { label: "处理生成失败", reason_code: "generation_failed", priority: "urgent" };
   if (state.blocker_codes.includes("PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION")) {
     return { label: "修复项目运行数据", reason_code: "operational_data_integrity", priority: "urgent" };
@@ -461,8 +489,8 @@ function deriveNextAction(project: Project, state: ProjectOperationalSummary, as
     if (assemblyReadiness === "invalid") return { label: "修复无效采纳片段", reason_code: "accepted_clip_invalid", priority: "urgent" };
     return { label: "验证合成就绪状态", reason_code: "assembly_readiness_required", priority: "high" };
   }
-  if (project.exports.final_video_artifact_id && project.status !== "final_approved") return { label: "最终审查", reason_code: "final_review", priority: "high" };
-  return { label: "已交付", reason_code: "delivered", priority: "normal" };
+  if (project.exports.final_video_artifact_id) return { label: "最终审查", reason_code: "final_review", priority: "high" };
+  return { label: "查看项目", reason_code: "project_attention", priority: "normal" };
 }
 
 function withValidatedAssemblyReadiness(
@@ -470,7 +498,7 @@ function withValidatedAssemblyReadiness(
   ready: boolean,
   invalidCount: number
 ): WorkbenchProjectSummary | null {
-  if (!summary || summary.project.exports.final_video_artifact_id) return summary;
+  if (!summary || summary.project.exports.final_video_artifact_id || summary.delivery_state === "final_review" || summary.delivery_state === "delivered") return summary;
   const readinessDerived: WorkbenchNextAction["derived"] = ready
     ? { label: "合成交付", reason_code: "assemble", priority: "high" }
     : { label: "修复无效采纳片段", reason_code: "accepted_clip_invalid", priority: "urgent" };
@@ -815,7 +843,11 @@ export function getWorkbenchProjectWorkspace(
     return { ...data, ...(reference_error_code ? { reference_error_code } : {}) };
   });
   const summary = getWorkbenchProjectSummary(projectId, db);
-  const base = { project, meta, summary, workspace };
+  const deliveryState = getWorkbenchDeliveryState(db, projectId);
+  if (!deliveryState) {
+    return { ok: false, error: { code: "DELIVERY_STATE_MISSING", message: "Project delivery state is unavailable.", field: "project_id" } };
+  }
+  const base = { project, meta, summary, workspace, workflow_state: deliveryState.workflow_state };
 
   if (workspace === "overview") {
     const shotBlockerCodeCounts = operationalBundle.states.flatMap((state) => state.blocker_codes)
@@ -942,6 +974,10 @@ export function getWorkbenchProjectWorkspace(
     ready_for_assembly: readyForAssembly,
     readiness_checks: accepted_clips.map((clip) => ({ shot_id: clip.shot_id, artifact_id: clip.artifact_id, ok: clip.artifact !== null, reason_code: clip.artifact ? "SHOT_ACCEPTED_CLIP_READY" : clip.reference_error_code })),
     accepted_clips,
+    active_job: getActiveWorkbenchDeliveryJob(db, projectId),
+    final_review: { approved_artifact_id: deliveryState.approved_artifact_id },
+    latest_export: getLatestWorkbenchExport(db, projectId),
+    closeout_receipt: getWorkbenchCloseoutReceipt(db, projectId),
     final_artifact: finalArtifact?.ok ? finalArtifact.artifact : null,
     final_artifact_reason_code: finalArtifact && !finalArtifact.ok ? finalArtifact.error.code : ""
   } };

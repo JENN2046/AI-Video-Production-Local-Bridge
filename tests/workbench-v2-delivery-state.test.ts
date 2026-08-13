@@ -1,0 +1,182 @@
+import assert from "node:assert/strict";
+import { DatabaseSync } from "node:sqlite";
+import test from "node:test";
+
+import { assertSchemaCurrent, DATABASE_MIGRATIONS, migrationChecksum, runDatabaseMigrations } from "../src/storage/migrations.js";
+import { openM0Database } from "../src/storage/sqlite.js";
+import { WORKBENCH_V2_SCHEMA_VERSION } from "../src/storage/workbenchV2Schema.js";
+import { projectSummaryDeliveryState } from "../src/tools/workbenchDeliveryState.js";
+import { assertWorkbenchProjectWritable } from "../src/tools/workbenchV2.js";
+
+function applyThrough0011(db: DatabaseSync): void {
+  db.exec("PRAGMA foreign_keys = ON");
+  for (const migration of DATABASE_MIGRATIONS.slice(0, 11)) migration.apply(db);
+  db.exec(`CREATE TABLE schema_migrations (
+    migration_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    checksum TEXT NOT NULL,
+    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`);
+  const insert = db.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES (?, ?, ?)");
+  for (const migration of DATABASE_MIGRATIONS.slice(0, 11)) {
+    insert.run(migration.id, migration.name, migrationChecksum(migration));
+  }
+}
+
+function projectJson(projectId: string, status: string, finalArtifactId = ""): string {
+  return JSON.stringify({
+    project_id: projectId,
+    title: projectId,
+    project_type: "delivery-fixture",
+    status,
+    brief: {},
+    video_spec: { duration_seconds: 5, aspect_ratio: "9:16", resolution: "1080x1920" },
+    shot_ids: [],
+    active_storyboard_package_id: "",
+    generation_batch_ids: [],
+    exports: { final_video_artifact_id: finalArtifactId }
+  });
+}
+
+function insertFinalArtifact(db: DatabaseSync, projectId: string, artifactId: string): void {
+  db.prepare(`INSERT INTO media_artifacts
+    (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
+    VALUES (?, ?, '', 'final_video', 'video', 'active', ?)`)
+    .run(artifactId, projectId, JSON.stringify({
+      artifact_id: artifactId,
+      artifact_type: "video",
+      role: "final_video",
+      status: "active",
+      linked_objects: { project_id: projectId, shot_id: "" }
+    }));
+}
+
+test("migration 0012 backfills delivery state without inventing approval, export, or closeout evidence", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    applyThrough0011(db);
+    db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
+      .run("project_not_ready", projectJson("project_not_ready", "draft"));
+    db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
+      .run("project_final_review", projectJson("project_final_review", "video_review", "artifact_final_review"));
+    db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
+      .run("project_legacy", projectJson("project_legacy", "final_approved", "artifact_legacy"));
+    insertFinalArtifact(db, "project_final_review", "artifact_final_review");
+    insertFinalArtifact(db, "project_legacy", "artifact_legacy");
+
+    assert.deepEqual(runDatabaseMigrations(db).applied, ["0012"]);
+    assert.equal((db.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string }).value, "workbench-v2-7");
+    assert.equal(WORKBENCH_V2_SCHEMA_VERSION, "workbench-v2-7");
+    assert.doesNotThrow(() => assertSchemaCurrent(db));
+
+    const states = (db.prepare(`SELECT project_id, workflow_state, current_final_artifact_id,
+      approved_artifact_id, latest_export_id, closed_at
+      FROM workbench_delivery_state ORDER BY project_id`).all() as Array<Record<string, unknown>>)
+      .map((row) => ({ ...row }));
+    assert.deepEqual(states, [
+      { project_id: "project_final_review", workflow_state: "final_review", current_final_artifact_id: "artifact_final_review", approved_artifact_id: null, latest_export_id: null, closed_at: null },
+      { project_id: "project_legacy", workflow_state: "legacy_review_required", current_final_artifact_id: "artifact_legacy", approved_artifact_id: null, latest_export_id: null, closed_at: null },
+      { project_id: "project_not_ready", workflow_state: "not_ready", current_final_artifact_id: null, approved_artifact_id: null, latest_export_id: null, closed_at: null }
+    ]);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM workbench_exports").get() as { count: number }).count, 0);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM workbench_delivery_events").get() as { count: number }).count, 0);
+    assert.equal(JSON.parse((db.prepare("SELECT data_json FROM projects WHERE project_id = 'project_legacy'").get() as { data_json: string }).data_json).status, "final_approved");
+
+    db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
+      .run("project_new", projectJson("project_new", "draft"));
+    assert.equal((db.prepare("SELECT workflow_state FROM workbench_delivery_state WHERE project_id = 'project_new'").get() as { workflow_state: string }).workflow_state, "not_ready");
+  } finally {
+    db.close();
+  }
+});
+
+test("migration 0012 fails atomically when an existing final pointer is not a valid active final Artifact", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    applyThrough0011(db);
+    db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
+      .run("project_invalid_pointer", projectJson("project_invalid_pointer", "video_review", "artifact_missing"));
+
+    assert.throws(() => runDatabaseMigrations(db), /WORKBENCH_DELIVERY_FINAL_ARTIFACT_INVALID:project_invalid_pointer/);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE migration_id = '0012'").get() as { count: number }).count, 0);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'workbench_delivery_state'").get() as { count: number }).count, 0);
+    assert.equal((db.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string }).value, "workbench-v2-6");
+  } finally {
+    db.close();
+  }
+});
+
+test("delivery tables enforce one active job, legal transitions, append-only evidence, and terminal closeout", () => {
+  const db = openM0Database(":memory:");
+  try {
+    db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
+      .run("project_delivery", projectJson("project_delivery", "video_review"));
+    insertFinalArtifact(db, "project_delivery", "artifact_delivery");
+    const now = "2026-08-13T00:00:00.000Z";
+
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
+      .run(now, "project_delivery");
+    db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, input_fingerprint, input_json, created_at, updated_at)
+      VALUES ('job_assembly', 'project_delivery', 'assembly', 'queued', ?, '{}', ?, ?)`)
+      .run("a".repeat(64), now, now);
+    assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, input_json, created_at, updated_at)
+      VALUES ('job_export_conflict', 'project_delivery', 'export', 'queued', '{}', ?, ?)`)
+      .run(now, now), /UNIQUE constraint failed/);
+
+    db.prepare("UPDATE workbench_delivery_jobs SET state = 'running', started_at = ?, updated_at = ? WHERE job_id = 'job_assembly'")
+      .run(now, now);
+    assert.throws(() => db.prepare("UPDATE workbench_delivery_jobs SET state = 'queued' WHERE job_id = 'job_assembly'").run(), /WORKBENCH_DELIVERY_JOB_STATE_INVALID/);
+    db.prepare("UPDATE workbench_delivery_jobs SET state = 'failed', error_code = 'ASSEMBLY_OUTPUT_INVALID', finished_at = ?, updated_at = ? WHERE job_id = 'job_assembly'")
+      .run(now, now);
+    assert.throws(() => db.prepare("UPDATE workbench_delivery_jobs SET error_code = 'CHANGED' WHERE job_id = 'job_assembly'").run(), /WORKBENCH_DELIVERY_JOB_TERMINAL_IMMUTABLE/);
+    assert.throws(() => db.prepare("DELETE FROM workbench_delivery_jobs WHERE job_id = 'job_assembly'").run(), /WORKBENCH_DELIVERY_JOB_IMMUTABLE/);
+
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', assembly_input_fingerprint = ?, updated_at = ? WHERE project_id = 'project_delivery'")
+      .run("a".repeat(64), now);
+    db.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'final_review', current_final_artifact_id = 'artifact_delivery', updated_at = ?
+      WHERE project_id = 'project_delivery'`).run(now);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id, input_fingerprint, reason_code, data_json, created_at)
+      VALUES ('event_assembly_failed', 'project_delivery', 'job_assembly', 'assembly_failed', 'assembling', 'ready_to_assemble',
+        'artifact_delivery', ?, 'ASSEMBLY_OUTPUT_INVALID', '{}', ?)`)
+      .run("a".repeat(64), now);
+    assert.throws(() => db.prepare("UPDATE workbench_delivery_events SET reason_code = 'CHANGED' WHERE event_id = 'event_assembly_failed'").run(), /WORKBENCH_DELIVERY_EVENTS_APPEND_ONLY/);
+    assert.throws(() => db.prepare("DELETE FROM workbench_delivery_events WHERE event_id = 'event_assembly_failed'").run(), /WORKBENCH_DELIVERY_EVENTS_APPEND_ONLY/);
+
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'approved', approved_artifact_id = 'artifact_delivery', updated_at = ? WHERE project_id = 'project_delivery'")
+      .run(now);
+    db.prepare(`INSERT INTO workbench_exports
+      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
+      VALUES ('export_delivery', 'project_delivery', 'artifact_delivery', 'data/exports/project_delivery/final.mp4', ?, 123, ?)`)
+      .run("b".repeat(64), now);
+    assert.throws(() => db.prepare("UPDATE workbench_exports SET size_bytes = 456 WHERE export_id = 'export_delivery'").run(), /WORKBENCH_EXPORT_IMMUTABLE/);
+    assert.throws(() => db.prepare("DELETE FROM workbench_exports WHERE export_id = 'export_delivery'").run(), /WORKBENCH_EXPORT_IMMUTABLE/);
+
+    db.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'exported', latest_export_id = 'export_delivery', latest_exported_at = ?, updated_at = ?
+      WHERE project_id = 'project_delivery'`).run(now, now);
+    db.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'closed', closed_at = ?, updated_at = ? WHERE project_id = 'project_delivery'`).run(now, now);
+    const writable = assertWorkbenchProjectWritable(db, "project_delivery");
+    assert.equal(writable.ok ? null : writable.error.code, "PROJECT_CLOSED");
+    assert.throws(() => db.prepare("UPDATE workbench_delivery_state SET updated_at = updated_at WHERE project_id = 'project_delivery'").run(), /PROJECT_CLOSED/);
+    assert.throws(() => db.prepare("DELETE FROM workbench_delivery_state WHERE project_id = 'project_delivery'").run(), /WORKBENCH_DELIVERY_STATE_IMMUTABLE/);
+  } finally {
+    db.close();
+  }
+});
+
+test("legacy four-state summaries reserve delivered exclusively for closed projects", () => {
+  assert.equal(projectSummaryDeliveryState("not_ready"), "not_ready");
+  assert.equal(projectSummaryDeliveryState("revision_requested"), "not_ready");
+  assert.equal(projectSummaryDeliveryState("ready_to_assemble"), "ready_to_assemble");
+  assert.equal(projectSummaryDeliveryState("assembling"), "ready_to_assemble");
+  assert.equal(projectSummaryDeliveryState("final_review"), "final_review");
+  assert.equal(projectSummaryDeliveryState("approved"), "final_review");
+  assert.equal(projectSummaryDeliveryState("exported"), "final_review");
+  assert.equal(projectSummaryDeliveryState("legacy_review_required"), "final_review");
+  assert.equal(projectSummaryDeliveryState("closed"), "delivered");
+});

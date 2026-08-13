@@ -4,7 +4,7 @@ Status: `UNIFIED_TRANSPORT_AND_SCHEMA_PASS`. The owner-only `0.1.0-beta.5` / led
 
 ## Current-main database compatibility
 
-Current code requires `workbench-v2-6` / ledger `0011`, and the active database has passed that migration and bounded runtime acceptance. Runtime startup still never migrates a database automatically. The accepted path does not authorize Provider execution, automatic Snapshot publishing, Memory saveback or production delivery.
+This candidate code requires `workbench-v2-7` / ledger `0012`; the active database remains at the accepted `workbench-v2-6` / `0011` baseline and has not been migrated by this branch. Runtime startup never migrates a database automatically. Before activity-database use, Jenn must explicitly authorize the named target, `0011`→`0012`, verified backup and rollback path after a database-copy rehearsal. The accepted historical path does not authorize Provider execution, automatic Snapshot publishing, Memory saveback or production delivery.
 
 ## What Jenn can do today
 

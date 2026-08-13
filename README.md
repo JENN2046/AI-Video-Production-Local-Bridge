@@ -11,20 +11,20 @@ AI Video Production Workspace 是 Jenn 的 Windows 本地 AI 视频生产与 Cha
 | Remote App service | `readonly-remote-v1.0.0` |
 | Media Gateway code | `readonly-media-gateway-v1.0.0`（隔离 MP4 fixture 的公网播放已通过；byte-range 与广泛外部门禁仍未完成） |
 | Snapshot contract | `readonly-snapshot-v4`（已支持上述有界 fixture 验收；不得据此宣称完整公网媒体可用） |
-| Database | Active activity database: `workbench-v2-6` / ledger `0011`; `0010`→`0011` 已完成有界迁移、只读 `db:check`、恢复演练和逻辑 manifest 比较。运行时仍不自动迁移或回退。 |
+| Database | 当前候选代码：`workbench-v2-7` / ledger `0012`；活动库仍是已接受的 `workbench-v2-6` / `0011`。本分支未迁移活动库，运行时仍不自动迁移或回退。 |
 | ChatGPT Director | 单 Owner Focus → Context → advisory Proposal → Human Workbench 决定 → controlled import receipt 已在活动库通过；Provider、Grant 启动与 Memory 写入仍关闭。 |
 | Unified ChatGPT Workspace | 单一 `/workspace/mcp` Connector 已完成独立 OAuth、Bridge、Render 与活动库黄金路径验收；旧 `/mcp` 仍保留为回滚面。 |
 | Product status | `JENN_SINGLE_USER_MCP_APP_PASS` |
-| Operations status | `MANUAL_PUBLISH_OPERATIONAL_READY`; 活动库已在 `0011`，仍需每次有界人工发布/恢复 |
+| Operations status | 历史 `MANUAL_PUBLISH_OPERATIONAL_READY` 证据保留；活动库升级到 `0012` 前，本候选代码不得用于活动库验收 |
 | Multi-user status | `PARTIAL_MULTI_USER_GATE` |
 
 当前 `main` 已包含 Workbench V2、WebGPT V4、Auth0 Federated Readonly、签名 Snapshot、ChatGPT MCP App、共享派生状态、Human Workbench 人工发布、已接线的 Unified Workspace Remote，以及 Local Media Gateway 的代码和 Windows 运维入口。Unified Workspace 保留旧 `/mcp` 为回滚面。Cloudflare 媒体链路已通过一次隔离 MP4 fixture 的端到端 Widget 播放；实际 byte-range 响应、Windows 登录任务、自动 Snapshot 发布、剩余媒体恢复/撤权案例、真实 Provider canary、稳定 Memory 插件和多用户黄金路径仍是独立 gate。
 
 `ChatGPT Director` 现已完成单 Owner 的活动库受控验收：ChatGPT Connector 只能读取有界讨论上下文并提出不可变 Proposal，Workbench 保留人类批准与一次性 receipt 记录。Local Orchestrator 只在未来获授权的 Grant 内执行；`REAL_PROVIDER_ENABLED=false`、Memory 插件未接线，且不得把该验收扩大为自动生成、自动采纳、自动交付或自动 Memory 写入。
 
-## 当前 main 数据库兼容性
+## 当前候选分支数据库兼容性
 
-当前代码的 Workbench、Snapshot exporter 与 Director receipt path 要求 `workbench-v2-6` / ledger `0011`。活动库已在单独授权下完成 `0010`→`0011` 的备份、隔离迁移、只读 `db:check`、恢复演练和逻辑 manifest 比较，并完成一次活动库 Director 黄金路径。该结果不改变运行时不自动迁移、不自动回退、不自动发布 Snapshot 的边界。
+本候选代码的 Workbench、Snapshot exporter 与 Director receipt path 要求 `workbench-v2-7` / ledger `0012`。活动库仍停在已接受的 `workbench-v2-6` / `0011`；本分支没有读取、复制或迁移活动库，也没有把历史 `final_approved` 自动声明为新式导出或结案。后续活动库迁移必须先完成目标库确认、备份、数据库副本迁移、只读 `db:check`、恢复演练和 manifest 比较，再取得 Jenn 对目标、版本与回滚路径的当次精确授权。运行时不自动迁移、不自动回退、不自动发布 Snapshot。
 
 完整状态见 [CURRENT_STATE.md](CURRENT_STATE.md)，文档入口见 [docs/README.md](docs/README.md)。
 
@@ -32,7 +32,7 @@ AI Video Production Workspace 是 Jenn 的 Windows 本地 AI 视频生产与 Cha
 
 ### 1. 本地 Workbench（Unified activity path 已通过有界验收）
 
-活动库已满足当前 `0011` schema gate；一次有界 Unified activity path 已验证本地启动、Focus/Proposal/人工决定与受控 receipt。它是可复用的验收基线，不是持续运行或自动发布声明；每次日常启动仍须遵循最小配置、只读检查与人工发布边界。仓库不会自动迁移、回退、发布 Snapshot 或启动 Provider。
+活动库满足历史 `0011` 接受基线，但尚不满足本候选代码的 `0012` gate。当前 `127.0.0.1:4181` 仅是隔离合成夹具预览，不是活动库或真实交付证据。仓库不会自动迁移、回退、发布 Snapshot 或启动 Provider。
 
 ### 2. ChatGPT Readonly MCP App
 

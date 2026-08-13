@@ -6,6 +6,7 @@ import { listProjectShots, type Project, type Shot } from "../tools/projects.js"
 import { collectProjectOperationalBundle, OperationalStateIntegrityError } from "../tools/operationalStateFacts.js";
 import { requireShotWorkflowWriteAction } from "../tools/operationalWriteGates.js";
 import { getWorkbenchProjectSummary, getWorkbenchProjectWorkspace } from "../tools/workbenchV2.js";
+import { getWorkbenchDeliveryState } from "../tools/workbenchDeliveryState.js";
 import { appendWorkbenchInboxEvent, getWorkbenchDraftRecord, saveWorkbenchDraftRecord, type WorkbenchDraftRecord } from "../tools/workbenchInboxStore.js";
 import { buildProviderCapabilityKey, buildProviderPriceCacheKey, providerCapabilityErrorMessage, RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY } from "../tools/providerCapabilities.js";
 import { parseProductionProposalPayload } from "./proposals.js";
@@ -609,6 +610,8 @@ export function getProductionDeliveryStatus(input: { project_id: string }, db: M
       ? validateActiveArtifactReference(db, { artifact_id: project.exports.final_video_artifact_id, project_id: input.project_id, shot_id: "", role: "final_video", artifact_type: "video" })
       : null;
     const finalArtifact = finalValidated?.ok ? publicArtifact(finalValidated.artifact) : null;
+    const deliveryState = getWorkbenchDeliveryState(db, project.project_id);
+    if (!deliveryState) dataIntegrityViolation("delivery_state");
     return ok(id, {
       project_id: project.project_id,
       project_status: project.status,
@@ -618,7 +621,7 @@ export function getProductionDeliveryStatus(input: { project_id: string }, db: M
       readiness_checks: accepted.map((item) => item.check),
       final_artifact: finalArtifact,
       final_artifact_reason_code: finalValidated?.ok ? null : finalValidated ? finalValidated.error.code : "FINAL_ARTIFACT_NOT_CREATED",
-      delivered: project.status === "final_approved" && Boolean(finalArtifact)
+      delivered: deliveryState.workflow_state === "closed" && Boolean(finalArtifact)
     });
   } catch (error) {
     return fail(id, domainErrorBody(error));

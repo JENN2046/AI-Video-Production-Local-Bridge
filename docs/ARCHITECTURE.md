@@ -1,6 +1,6 @@
 # Architecture
 
-Status: `UNIFIED_TRANSPORT_AND_SCHEMA_PASS`; active database is at ledger `0011`, the bounded Unified Director owner path is accepted, and an isolated Unified Media Gateway MP4 fixture playback path has passed. Byte-range plus broader Provider, Memory, Media and multi-user gates remain separate.
+Status: `UNIFIED_TRANSPORT_AND_SCHEMA_PASS`; the accepted active database remains at ledger `0011`, while candidate code declares `workbench-v2-7` / ledger `0012` and has only isolated-fixture migration evidence. The bounded Unified Director owner path is accepted, and an isolated Unified Media Gateway MP4 fixture playback path has passed. Byte-range plus broader Provider, Memory, Media and multi-user gates remain separate.
 Accepted package: `0.1.0-beta.5`
 
 ## System map
@@ -8,7 +8,7 @@ Accepted package: `0.1.0-beta.5`
 ```mermaid
 flowchart LR
     J["Jenn"] --> W["Local Workbench V2"]
-    W --> DB["SQLite active database: workbench-v2-6\nledger 0011 (current-code compatible)"]
+    W --> DB["SQLite active database: workbench-v2-6\nledger 0011 (0012 migration pending authorization)"]
     W --> FS["Governed local media store"]
     W --> PA["Manual Snapshot publisher\naccepted; never automatic"]
     PA --> SS["Signed ephemeral Snapshot v4"]
@@ -27,7 +27,7 @@ flowchart LR
     W --> PR["Provider adapters — explicit human gate"]
 ```
 
-The Unified Connector's solid lines describe one accepted, bounded single-Owner path. The active database completed its authorized `0011` migration with backup, manifest, `db:check` and restore evidence; Unified Snapshot publishing remains manual and memory-only. The Unified media edge has one accepted isolated MP4 fixture playback path; no actual byte-range response was captured, and broader external recovery, revocation and persistence cases remain unaccepted.
+The Unified Connector's solid lines describe one accepted, bounded single-Owner path. The active database completed its authorized `0011` migration with backup, manifest, `db:check` and restore evidence; candidate ledger `0012` remains fixture-only until a separately authorized activity-database migration. Unified Snapshot publishing remains manual and memory-only. The Unified media edge has one accepted isolated MP4 fixture playback path; no actual byte-range response was captured, and broader external recovery, revocation and persistence cases remain unaccepted.
 
 ## Sources of truth
 

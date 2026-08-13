@@ -190,6 +190,13 @@ test("WebGPT preflight skips media dependencies for the readonly profile", () =>
       timeout: 30_000,
       env: {
         ...process.env,
+        // This fixture exercises the legacy Descope compatibility path. Do not
+        // let a developer's generic readonly OAuth configuration leak into the
+        // child process and turn the intended fixture into an ambiguous mix.
+        WEBGPT_V4_READONLY_OAUTH_ISSUER: undefined,
+        WEBGPT_V4_READONLY_OAUTH_AUDIENCE: undefined,
+        WEBGPT_V4_READONLY_OAUTH_JWKS_URI: undefined,
+        WEBGPT_V4_READONLY_OAUTH_CLIENT_REGISTRATION: undefined,
         AI_VIDEO_WORKSPACE_DATA_ROOT: root,
         AI_VIDEO_WORKSPACE_DB_PATH: sqlitePath,
         WEBGPT_V4_PROFILE: "readonly",

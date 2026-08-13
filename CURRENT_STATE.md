@@ -99,7 +99,7 @@ The stable product authority remains:
 
 ```text
 Local Workbench
-  -> SQLite ledger 0011
+  -> SQLite ledger 0012 candidate (activity database remains 0011)
   -> Governed Media Store
   -> Provider Adapter
   -> Generation / Review / Assembly / Delivery
@@ -109,16 +109,18 @@ SQLite is the business fact source. ChatGPT may inspect bounded context and
 submit advisory Proposals, but it is not a second fact source and cannot
 approve, adopt or deliver production work.
 
-The active database is current-code compatible at `workbench-v2-6` / migration
-ledger `0011`. Runtime startup does not automatically migrate or roll back the
-database. `REAL_PROVIDER_ENABLED=false` remains the safe default.
+This candidate requires `workbench-v2-7` / migration ledger `0012`. The active
+database remains at the separately accepted `workbench-v2-6` / `0011` baseline
+and was not read, copied or migrated by this branch. Runtime startup does not
+automatically migrate or roll back the database. `REAL_PROVIDER_ENABLED=false`
+remains the safe default.
 
 ## Capability matrix
 
 | Capability | Current code fact | External or real acceptance | Current decision |
 |---|---|---|---|
-| Workbench V2 local UI | Storyboard, generation preflight, version review and delivery-readiness views exist | Activity database compatibility accepted at ledger `0011` | Core |
-| SQLite and governed media | Migration, Artifact/Blob digest and FFprobe boundaries exist | Ledger `0011` migration/restore evidence remains commit-scoped | Core |
+| Workbench V2 local UI | Storyboard, generation preflight, version review and a persisted delivery-state foundation exist | Activity database remains at ledger `0011`; candidate `0012` activity compatibility is not yet accepted | Core |
+| SQLite and governed media | Candidate migration `0012` adds delivery state/jobs/events/exports with immutable evidence and fail-closed constraints | Only isolated fixture migration and recovery tests have passed; no activity migration occurred | Core; activity migration gate remains |
 | Current Provider path | Intent, budget, confirmation and adapter boundaries exist; Provider defaults off | PR #108 is in `main`; S3B-T1/T1A are done in main, while the verified-Blob recovery path retains a late staged-file accumulation finding. S4 remains separately blocked | Core blocker before S4 |
 | Historical R3 Provider path | Execution scripts now reside under `legacy/` | RunningHub real canary, four-shot generation and regeneration completed historically | Feasibility evidence only |
 | Review and accepted clips | Version stacks, rejection reasons and human accepted-clip selection exist | Historical R3 review evidence exists | Core; current-path acceptance remains |
@@ -148,7 +150,7 @@ The historical R3 route recorded:
 
 Those execution scripts were later moved into `legacy/`. The historical
 results prove engineering feasibility, but they do not prove that current
-`main`, the current Workbench UI/API, or the ledger `0011` product path has
+`main`, the current Workbench UI/API, or the ledger `0011` activity path has
 completed a fresh live acceptance. S3 prepares that current path offline; S4
 is the separately authorized real single-shot acceptance.
 

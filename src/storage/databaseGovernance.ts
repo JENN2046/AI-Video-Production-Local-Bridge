@@ -195,7 +195,8 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
       ["workbench_inbox_events", "data_json"], ["workbench_governance_runs", "rule_groups_json"],
       ["webgpt_audit_events", "changed_fields_json"], ["webgpt_audit_events", "result_json"], ["generation_job_events", "data_json"],
       ["media_blobs", "provenance_json"], ["media_activation_journal", "artifact_json"],
-      ["director_proposals", "payload_json"], ["director_automation_grants", "allowed_actions_json"], ["storyboard_package_versions", "payload_json"]
+      ["director_proposals", "payload_json"], ["director_automation_grants", "allowed_actions_json"], ["storyboard_package_versions", "payload_json"],
+      ["workbench_delivery_jobs", "input_json"], ["workbench_delivery_events", "data_json"]
     ] as const;
     const invalidJsonRows = jsonColumns.reduce((sum, [table, column]) => sum + scalarCount(db, `SELECT COUNT(*) AS count FROM ${table} WHERE json_valid(${column}) = 0`, errors), 0);
     const structuredDriftRows = scalarCount(db, "SELECT COUNT(*) AS count FROM projects WHERE json_valid(data_json) = 1 AND json_extract(data_json, '$.project_id') IS NOT project_id", errors)
@@ -224,6 +225,10 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
             OR json_extract(artifact_json, '$.metadata.sha256') IS NOT expected_sha256
             OR json_extract(artifact_json, '$.source.sha256') IS NOT expected_sha256
           )`, errors)
+      + scalarCount(db, `SELECT COUNT(*) AS count
+          FROM projects p JOIN workbench_delivery_state d ON d.project_id = p.project_id
+          WHERE COALESCE(NULLIF(TRIM(json_extract(p.data_json, '$.exports.final_video_artifact_id')), ''), '')
+            IS NOT COALESCE(d.current_final_artifact_id, '')`, errors)
       + directorContractDriftRows(db, errors);
     const orphanQueries = [
       "SELECT COUNT(*) AS count FROM shots s LEFT JOIN projects p ON p.project_id = s.project_id WHERE p.project_id IS NULL",
@@ -301,7 +306,19 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
         LEFT JOIN shots shot ON shot.shot_id = r.shot_id AND shot.project_id = r.project_id
         LEFT JOIN media_artifacts artifact ON artifact.artifact_id = r.artifact_id
           AND artifact.project_id = r.project_id AND artifact.shot_id = r.shot_id
-        WHERE p.proposal_id IS NULL OR project.project_id IS NULL OR shot.shot_id IS NULL OR artifact.artifact_id IS NULL`
+        WHERE p.proposal_id IS NULL OR project.project_id IS NULL OR shot.shot_id IS NULL OR artifact.artifact_id IS NULL`,
+      "SELECT COUNT(*) AS count FROM projects p LEFT JOIN workbench_delivery_state d ON d.project_id = p.project_id WHERE d.project_id IS NULL",
+      "SELECT COUNT(*) AS count FROM workbench_delivery_state d LEFT JOIN projects p ON p.project_id = d.project_id WHERE p.project_id IS NULL",
+      "SELECT COUNT(*) AS count FROM workbench_delivery_jobs j LEFT JOIN projects p ON p.project_id = j.project_id WHERE p.project_id IS NULL",
+      "SELECT COUNT(*) AS count FROM workbench_delivery_jobs j LEFT JOIN workbench_delivery_jobs parent ON parent.job_id = j.retry_of_job_id WHERE j.retry_of_job_id IS NOT NULL AND parent.job_id IS NULL",
+      "SELECT COUNT(*) AS count FROM workbench_delivery_jobs j LEFT JOIN media_artifacts a ON a.artifact_id = j.output_artifact_id WHERE j.output_artifact_id IS NOT NULL AND a.artifact_id IS NULL",
+      "SELECT COUNT(*) AS count FROM workbench_delivery_jobs j LEFT JOIN workbench_exports e ON e.export_id = j.export_id WHERE j.export_id IS NOT NULL AND e.export_id IS NULL",
+      "SELECT COUNT(*) AS count FROM workbench_delivery_events e LEFT JOIN projects p ON p.project_id = e.project_id WHERE p.project_id IS NULL",
+      "SELECT COUNT(*) AS count FROM workbench_delivery_events e LEFT JOIN workbench_delivery_jobs j ON j.job_id = e.job_id AND j.project_id = e.project_id WHERE e.job_id IS NOT NULL AND j.job_id IS NULL",
+      "SELECT COUNT(*) AS count FROM workbench_delivery_events e LEFT JOIN media_artifacts a ON a.artifact_id = e.artifact_id AND a.project_id = e.project_id WHERE e.artifact_id IS NOT NULL AND a.artifact_id IS NULL",
+      "SELECT COUNT(*) AS count FROM workbench_delivery_events e LEFT JOIN workbench_exports x ON x.export_id = e.export_id AND x.project_id = e.project_id WHERE e.export_id IS NOT NULL AND x.export_id IS NULL",
+      "SELECT COUNT(*) AS count FROM workbench_exports e LEFT JOIN projects p ON p.project_id = e.project_id WHERE p.project_id IS NULL",
+      "SELECT COUNT(*) AS count FROM workbench_exports e LEFT JOIN media_artifacts a ON a.artifact_id = e.artifact_id AND a.project_id = e.project_id WHERE a.artifact_id IS NULL"
     ];
     const orphanRows = orphanQueries.reduce((sum, sql) => sum + scalarCount(db, sql, errors), 0);
     let mediaRows: Array<{ data_json: string }> = [];

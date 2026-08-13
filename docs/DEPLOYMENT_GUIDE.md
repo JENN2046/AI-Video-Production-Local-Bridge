@@ -1,10 +1,10 @@
 # Deployment Guide
 
-Status: `UNIFIED_TRANSPORT_AND_SCHEMA_PASS`; the active database is current at ledger `0011`, and the bounded Unified activity path (local start, manual Snapshot publish, Focus/Proposal/decision/receipt) plus Unified transport acceptance have passed. This is not a continuous-runtime or automatic-publication claim. It is descriptive; it does not authorize external changes.
+Status: `UNIFIED_TRANSPORT_AND_SCHEMA_PASS`; the accepted active database baseline remains ledger `0011`, and the bounded Unified activity path (local start, manual Snapshot publish, Focus/Proposal/decision/receipt) plus Unified transport acceptance have passed. Candidate workbench code now declares ledger `0012`; that migration has only been validated against isolated fixtures and is not authorized for the active database. This is not a continuous-runtime or automatic-publication claim. It is descriptive; it does not authorize external changes.
 
 ## Current-main database compatibility
 
-The active activity database is `workbench-v2-6` / ledger `0011`. Its separately authorized migrations included backup, isolated migration, read-only `db:check`, restore rehearsal and logical-manifest comparison. Current code requires `0011` for the controlled Artifact import-receipt schema; runtime still never migrates or rolls back the database automatically, and no migration gate enables a Provider.
+The active activity database is `workbench-v2-6` / ledger `0011`. Its separately authorized migrations included backup, isolated migration, read-only `db:check`, restore rehearsal and logical-manifest comparison. Candidate code declares `workbench-v2-7` / ledger `0012`; runtime still never migrates or rolls back the database automatically, and no migration gate enables a Provider. Until the separately authorized `0011 → 0012` activity-database procedure completes, use an isolated fixture for candidate-code validation.
 
 ## Deployment layers
 
@@ -41,7 +41,7 @@ Run these commands only from the verified Git root that owns the accepted activi
 
 The accepted Unified activity evidence includes a bounded local start through `npm run windows:start`, manual Snapshot publishing, and the single-Owner Director path. For every new start, preserve the same boundary: bind only `127.0.0.1:4181`, verify `/healthz` and `/readyz`, and keep real Provider flags false unless a separate canary is authorized. A prior bounded PASS does not authorize a persistent runtime, automatic publish, or a new external change.
 
-Database upgrade is not part of normal startup. The active database already meets the current-code `0011` requirement. Any future migration still requires service stop, backup, logical manifest, isolated migration, `db:check`, restore rehearsal and explicit activity-database authorization.
+Database upgrade is not part of normal startup. The active database meets the accepted `0011` baseline but not the candidate-code `0012` requirement. Migrating it requires service stop, backup, logical manifest, isolated-copy migration, read-only `db:check`, restore rehearsal and Jenn's explicit authorization naming the target database, migration version, backup and rollback path.
 
 ## Layer 2A — historical Remote Readonly MCP App
 

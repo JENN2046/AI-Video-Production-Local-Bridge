@@ -234,13 +234,18 @@ function stripMeta(result: ReturnType<SqliteReadonlyDataSource["listProductionPr
   return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error };
 }
 
-test("readonly projection requires migration 0011 and never upgrades an older database", () => {
+test("readonly projection requires migration 0012 and never upgrades an older database", () => {
   const root = mkdtempSync(join(tmpdir(), "readonly-projection-ledger-"));
   const sqlitePath = join(root, "app.sqlite");
   const db = openM0Database(sqlitePath);
   db.exec(`
-    DROP TABLE director_artifact_import_receipts;
-    DELETE FROM schema_migrations WHERE migration_id = '0011';
+    DROP TRIGGER trg_workbench_delivery_state_after_insert;
+    DROP TABLE workbench_delivery_state;
+    DROP TABLE workbench_delivery_events;
+    DROP TABLE workbench_delivery_jobs;
+    DROP TABLE workbench_exports;
+    DELETE FROM schema_migrations WHERE migration_id = '0012';
+    UPDATE m0_meta SET value = 'workbench-v2-6' WHERE key = 'schema_version';
   `);
   db.close();
   try {
@@ -254,9 +259,9 @@ test("readonly projection requires migration 0011 and never upgrades an older da
     );
     const verify = openM0DatabaseConnection(sqlitePath, { readOnly: true });
     try {
-      assert.equal((verify.prepare("SELECT COUNT(*) count FROM schema_migrations WHERE migration_id = '0011'").get() as { count: number }).count, 0);
+      assert.equal((verify.prepare("SELECT COUNT(*) count FROM schema_migrations WHERE migration_id = '0012'").get() as { count: number }).count, 0);
       assert.equal((verify.prepare("SELECT COUNT(*) count FROM sqlite_schema WHERE type = 'table' AND name = 'director_automation_grants'").get() as { count: number }).count, 1);
-      assert.equal((verify.prepare("SELECT COUNT(*) count FROM sqlite_schema WHERE type = 'table' AND name = 'director_artifact_import_receipts'").get() as { count: number }).count, 0);
+      assert.equal((verify.prepare("SELECT COUNT(*) count FROM sqlite_schema WHERE type = 'table' AND name = 'workbench_delivery_state'").get() as { count: number }).count, 0);
     } finally {
       verify.close();
     }
@@ -284,6 +289,36 @@ test("SQLite and Snapshot readonly adapters preserve six-tool DTO parity and dat
     project.status = "final_approved";
     project.exports.final_video_artifact_id = registered.artifact.artifact_id;
     saveProject(fixtureDb, project);
+    const closedAt = "2026-07-16T00:00:00.000Z";
+    const blob = fixtureDb.prepare(`SELECT b.sha256, b.size_bytes
+      FROM media_artifact_blobs link JOIN media_blobs b ON b.blob_id = link.blob_id
+      WHERE link.artifact_id = ?`).get(registered.artifact.artifact_id) as { sha256: string; size_bytes: number };
+    fixtureDb.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
+      .run(closedAt, fixture.project_id);
+    fixtureDb.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
+      .run(closedAt, fixture.project_id);
+    fixtureDb.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'final_review', current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
+      .run(registered.artifact.artifact_id, closedAt, fixture.project_id);
+    fixtureDb.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'approved', approved_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
+      .run(registered.artifact.artifact_id, closedAt, fixture.project_id);
+    fixtureDb.prepare(`INSERT INTO workbench_exports
+      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
+      VALUES ('export_snapshot_fixture', ?, ?, ?, ?, ?, ?)`)
+      .run(fixture.project_id, registered.artifact.artifact_id,
+        `data/exports/${fixture.project_id}/snapshot-fixture.mp4`, blob.sha256, blob.size_bytes, closedAt);
+    fixtureDb.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'exported', latest_export_id = 'export_snapshot_fixture', latest_exported_at = ?, updated_at = ?
+      WHERE project_id = ?`).run(closedAt, closedAt, fixture.project_id);
+    fixtureDb.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'closed', closed_at = ?, updated_at = ? WHERE project_id = ?`)
+      .run(closedAt, closedAt, fixture.project_id);
+    fixtureDb.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
+      VALUES ('event_snapshot_closeout', ?, 'closeout', 'exported', 'closed', ?, 'export_snapshot_fixture',
+        'CLOSEOUT_CONFIRMED', '{}', ?)`)
+      .run(fixture.project_id, registered.artifact.artifact_id, closedAt);
   } finally {
     fixtureDb.close();
   }
@@ -488,12 +523,16 @@ test("snapshot fingerprint uses deterministic JCS input and server time remains 
   assert.equal(readonlySnapshotStatus(snapshot, new Date("2026-07-16T01:00:00.000Z")).freshness_status, "snapshot_expired");
 
   const currentSource = structuredClone(unsigned);
-  currentSource.source_schema = "workbench-v2-6";
-  currentSource.source_migration = "0011";
+  currentSource.source_schema = "workbench-v2-7";
+  currentSource.source_migration = "0012";
   assert.doesNotThrow(() => finalizeReadonlySnapshot(currentSource));
   const previousSource = structuredClone(currentSource);
-  previousSource.source_migration = "0010";
+  previousSource.source_schema = "workbench-v2-6";
+  previousSource.source_migration = "0011";
   assert.doesNotThrow(() => finalizeReadonlySnapshot(previousSource));
+  const compatSource = structuredClone(previousSource);
+  compatSource.source_migration = "0010";
+  assert.doesNotThrow(() => finalizeReadonlySnapshot(compatSource));
   const crossedSource = structuredClone(currentSource);
   crossedSource.source_migration = "0008";
   assert.throws(() => finalizeReadonlySnapshot(crossedSource), /supported pair/i);
