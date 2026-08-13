@@ -7,7 +7,9 @@ import {
   buildRunningHubImageToVideoSubmitRequest,
   PROVIDER_CAPABILITY_REGISTRY_VERSION,
   RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY,
+  RUNNINGHUB_SEEDANCE_V1_5_PRO_IMAGE_TO_VIDEO_CAPABILITY,
   RUNWAY_IMAGE_TO_VIDEO_CAPABILITY,
+  resolveRunningHubComparableBalance,
   projectProviderRequest,
   selectM1ProviderPort,
   type MediaArtifact,
@@ -33,7 +35,49 @@ test("Provider capability registry owns current routes, defaults, and duration b
   assert.equal(RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY.model, "rhart-video-g/image-to-video");
   assert.equal(RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY.default_resolution, "480p");
   assert.equal(RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY.duration.min_seconds, 6);
+  assert.equal(RUNNINGHUB_SEEDANCE_V1_5_PRO_IMAGE_TO_VIDEO_CAPABILITY.model, "seedance-v1.5-pro/image-to-video");
+  assert.equal(RUNNINGHUB_SEEDANCE_V1_5_PRO_IMAGE_TO_VIDEO_CAPABILITY.default_resolution, "720p");
+  assert.equal(RUNNINGHUB_SEEDANCE_V1_5_PRO_IMAGE_TO_VIDEO_CAPABILITY.duration.default_seconds, 5);
   assert.equal(RUNWAY_IMAGE_TO_VIDEO_CAPABILITY.model, "gen4.5");
+});
+
+test("RunningHub balance parser accepts only an explicit comparable unit", () => {
+  assert.deepEqual(resolveRunningHubComparableBalance({ code: 0, data: { remainMoney: "10", currency: "CNY", remainCoins: "99" } }, "CNY"), { value: 10, currency: "CNY" });
+  assert.deepEqual(resolveRunningHubComparableBalance({ code: 0, data: { remainCoins: "99", remainMoney: null, currency: null } }, "CNY"), null);
+  assert.deepEqual(resolveRunningHubComparableBalance({ code: 0, data: { remainCoins: "99" } }, "COIN"), { value: 99, currency: "COIN" });
+  assert.deepEqual(resolveRunningHubComparableBalance({ code: 1, data: { remainMoney: "10", currency: "CNY" } }, "CNY"), null);
+});
+
+test("Seedance V1.5 Pro has a separate official request contract and safe defaults", () => {
+  const generationInput: ProviderGenerationInput = {
+    storyboard_artifact: storyboardArtifact(),
+    video_prompt: "Hold composition while the camera slowly moves in.",
+    negative_prompt: "",
+    duration_seconds: 5,
+    aspect_ratio: "9:16",
+    resolution: "720p"
+  };
+  const request = buildRunningHubImageToVideoSubmitRequest({
+    generation_input: generationInput,
+    uploaded_download_url: "https://example.invalid/first-frame.png",
+    model: RUNNINGHUB_SEEDANCE_V1_5_PRO_IMAGE_TO_VIDEO_CAPABILITY.model
+  });
+  assert.equal(request.ok, true);
+  if (!request.ok) return;
+  assert.equal(request.endpoint, "/openapi/v2/seedance-v1.5-pro/image-to-video");
+  assert.deepEqual(request.body, {
+    prompt: generationInput.video_prompt,
+    firstImageUrl: "https://example.invalid/first-frame.png",
+    aspectRatio: "adaptive",
+    duration: "5",
+    resolution: "720p",
+    generateAudio: "false",
+    cameraFixed: "false"
+  });
+  assert.equal(request.summary.image_reference_field, "firstImageUrl");
+  assert.equal(request.summary.image_url_values_included, false);
+  assert.equal(request.summary.generateAudio, "false");
+  assert.equal(request.summary.cameraFixed, "false");
 });
 
 test("Provider capability key rejects model, duration, resolution, and aspect drift", () => {
@@ -118,7 +162,7 @@ test("estimate, intent, and submit projections produce one identical RunningHub 
   const submitKey = buildProviderCapabilityKey({
     provider: "runninghub",
     model: RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY.model,
-    duration_seconds: submit.body.duration,
+    duration_seconds: Number(submit.body.duration),
     resolution: submit.body.resolution,
     aspect_ratio: submit.body.aspectRatio
   });

@@ -194,6 +194,7 @@ test("M1 provider registry keeps mock default and exposes two real ports", () =>
   assert.equal(configs.find((config) => config.provider_name === "runninghub")?.required_for_m1_pass, true);
   assert.equal(configs.find((config) => config.provider_name === "runninghub")?.status, "primary_real_provider");
   assert.equal(configs.find((config) => config.provider_name === "runninghub")?.model_name, "rhart-video-g/image-to-video");
+  assert.deepEqual(configs.find((config) => config.provider_name === "runninghub")?.model_names, ["rhart-video-g/image-to-video", "seedance-v1.5-pro/image-to-video"]);
 });
 
 test("M1 RunningHub dry-run freezes official endpoint shape without provider calls", () => {

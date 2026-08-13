@@ -1,4 +1,8 @@
-import { RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY, RUNWAY_IMAGE_TO_VIDEO_CAPABILITY } from "./providerCapabilities.js";
+import {
+  RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY,
+  RUNNINGHUB_SEEDANCE_V1_5_PRO_IMAGE_TO_VIDEO_CAPABILITY,
+  RUNWAY_IMAGE_TO_VIDEO_CAPABILITY
+} from "./providerCapabilities.js";
 
 export type ProviderName = "mock" | "real";
 export type RealProviderName = "runway" | "runninghub";
@@ -34,6 +38,7 @@ export interface ProviderConfig {
   provider_display_name: string;
   type: ProviderKind;
   model_name: string;
+  model_names: readonly string[];
   generation_mode: "image_to_video";
   default: boolean;
   selectable: boolean;
@@ -77,12 +82,49 @@ export type ProviderSelectionResult =
   | { ok: true; selected: SelectedProviderPort }
   | { ok: false; error: ProviderToolError };
 
+function numericRecordField(record: Record<string, unknown>, field: string): number | null {
+  const value = record[field];
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Returns a balance only when RunningHub's response explicitly provides an
+ * amount in the same unit as the official price quote. Coin balances are never
+ * assumed to be interchangeable with a money-denominated quote.
+ */
+export function resolveRunningHubComparableBalance(
+  payload: Record<string, unknown>,
+  quotedCurrency: string
+): { value: number; currency: string } | null {
+  const statusCode = numericRecordField(payload, "code");
+  if (statusCode !== null && statusCode !== 0) return null;
+
+  const data = payload.data && typeof payload.data === "object" && !Array.isArray(payload.data)
+    ? payload.data as Record<string, unknown>
+    : {};
+  const accountCurrency = typeof data.currency === "string" && data.currency.trim()
+    ? data.currency.trim()
+    : null;
+  const remainingMoney = numericRecordField(data, "remainMoney");
+  const remainingCoins = numericRecordField(data, "remainCoins");
+
+  if (accountCurrency === quotedCurrency && remainingMoney !== null) {
+    return { value: remainingMoney, currency: accountCurrency };
+  }
+  if (quotedCurrency.toUpperCase().includes("COIN") && remainingCoins !== null) {
+    return { value: remainingCoins, currency: quotedCurrency };
+  }
+  return null;
+}
+
 export const M1_PROVIDER_CONFIGS: Record<ProviderPortName, ProviderConfig> = {
   mock: {
     provider_name: "mock",
     provider_display_name: "Mock Provider",
     type: "offline",
     model_name: "mock_fixture",
+    model_names: ["mock_fixture"],
     generation_mode: "image_to_video",
     default: true,
     selectable: true,
@@ -96,6 +138,7 @@ export const M1_PROVIDER_CONFIGS: Record<ProviderPortName, ProviderConfig> = {
     provider_display_name: "Runway API",
     type: "real",
     model_name: RUNWAY_IMAGE_TO_VIDEO_CAPABILITY.model,
+    model_names: [RUNWAY_IMAGE_TO_VIDEO_CAPABILITY.model],
     generation_mode: "image_to_video",
     default: false,
     selectable: true,
@@ -109,6 +152,7 @@ export const M1_PROVIDER_CONFIGS: Record<ProviderPortName, ProviderConfig> = {
     provider_display_name: "RunningHub.cn",
     type: "real",
     model_name: RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY.model,
+    model_names: [RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY.model, RUNNINGHUB_SEEDANCE_V1_5_PRO_IMAGE_TO_VIDEO_CAPABILITY.model],
     generation_mode: "image_to_video",
     default: false,
     selectable: true,
@@ -200,7 +244,7 @@ export function selectM1ProviderPort(
   if (!config?.selectable) {
     return { ok: false, error: providerError("PROVIDER_NOT_FOUND", `Provider is not registered: ${envProvider}`) };
   }
-  if (request.model_name && request.model_name !== config.model_name) {
+  if (request.model_name && !config.model_names.includes(request.model_name)) {
     return { ok: false, error: providerError("PROVIDER_CAPABILITY_MODEL_MISMATCH", `Requested model does not match the declared ${config.provider_name} capability.`) };
   }
 

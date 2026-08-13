@@ -2,6 +2,7 @@ export const PROVIDER_CAPABILITY_REGISTRY_VERSION = "provider-capabilities-v1" a
 
 export type CapabilityProviderName = "runninghub" | "runway";
 const RUNNINGHUB_IMAGE_TO_VIDEO_MODEL = "rhart-video-g/image-to-video" as const;
+const RUNNINGHUB_SEEDANCE_V1_5_PRO_IMAGE_TO_VIDEO_MODEL = "seedance-v1.5-pro/image-to-video" as const;
 
 export interface ProviderCapability {
   capability_id: string;
@@ -20,6 +21,8 @@ export interface ProviderCapability {
     default_seconds: number;
   };
   allowed_aspect_ratios: readonly string[];
+  /** Maps a project-facing aspect ratio to the value accepted by the Provider. */
+  request_aspect_ratio_by_project_aspect?: Readonly<Record<string, string>>;
   price_preview_path: string | null;
 }
 
@@ -41,6 +44,35 @@ export const RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY = Object.freeze({
   price_preview_path: `/openapi/v2/price-preview/${RUNNINGHUB_IMAGE_TO_VIDEO_MODEL}`
 } as const satisfies ProviderCapability);
 
+/**
+ * Official RunningHub Seedance V1.5 Pro Image-to-Video route.
+ *
+ * The public model page documents `aspectRatio=adaptive`, 5 seconds and 720p.
+ * We preserve the project's aspect ratio as an authority fact while sending the
+ * documented adaptive value to the model, which follows the uploaded first frame.
+ */
+export const RUNNINGHUB_SEEDANCE_V1_5_PRO_IMAGE_TO_VIDEO_CAPABILITY = Object.freeze({
+  capability_id: "runninghub.seedance_v1_5_pro_image_to_video.v1",
+  version: PROVIDER_CAPABILITY_REGISTRY_VERSION,
+  provider: "runninghub",
+  model: RUNNINGHUB_SEEDANCE_V1_5_PRO_IMAGE_TO_VIDEO_MODEL,
+  generation_mode: "image_to_video",
+  allowed_resolutions: Object.freeze(["720p"]),
+  default_resolution: "720p",
+  pixel_resolution_by_aspect: Object.freeze({ adaptive: "720p" }),
+  resolution_aspects: Object.freeze({ "720p": Object.freeze(["adaptive"]) }),
+  duration: Object.freeze({ min_seconds: 5, max_seconds: 5, step_seconds: 1, default_seconds: 5 }),
+  allowed_aspect_ratios: Object.freeze(["adaptive"]),
+  request_aspect_ratio_by_project_aspect: Object.freeze({
+    "9:16": "adaptive",
+    "16:9": "adaptive",
+    "2:3": "adaptive",
+    "3:2": "adaptive",
+    "1:1": "adaptive"
+  }),
+  price_preview_path: `/openapi/v2/price-preview/${RUNNINGHUB_SEEDANCE_V1_5_PRO_IMAGE_TO_VIDEO_MODEL}`
+} as const satisfies ProviderCapability);
+
 export const RUNWAY_IMAGE_TO_VIDEO_CAPABILITY = Object.freeze({
   capability_id: "runway.image_to_video.v1",
   version: PROVIDER_CAPABILITY_REGISTRY_VERSION,
@@ -59,6 +91,16 @@ export const RUNWAY_IMAGE_TO_VIDEO_CAPABILITY = Object.freeze({
 export const PROVIDER_CAPABILITIES: Readonly<Record<CapabilityProviderName, ProviderCapability>> = Object.freeze({
   runninghub: RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY,
   runway: RUNWAY_IMAGE_TO_VIDEO_CAPABILITY
+});
+
+export const PROVIDER_CAPABILITIES_BY_MODEL: Readonly<Record<CapabilityProviderName, Readonly<Record<string, ProviderCapability>>>> = Object.freeze({
+  runninghub: Object.freeze({
+    [RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY.model]: RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY,
+    [RUNNINGHUB_SEEDANCE_V1_5_PRO_IMAGE_TO_VIDEO_CAPABILITY.model]: RUNNINGHUB_SEEDANCE_V1_5_PRO_IMAGE_TO_VIDEO_CAPABILITY
+  }),
+  runway: Object.freeze({
+    [RUNWAY_IMAGE_TO_VIDEO_CAPABILITY.model]: RUNWAY_IMAGE_TO_VIDEO_CAPABILITY
+  })
 });
 
 export interface ProviderCapabilityKey {
@@ -102,14 +144,14 @@ function pixelOrientationMatches(width: number, height: number, aspectRatio: str
   return aspectWidth < aspectHeight ? width < height : width > height;
 }
 
-function normalizeResolution(capability: ProviderCapability, resolution: string, aspectRatio: string): string | null {
+function normalizeResolution(capability: ProviderCapability, resolution: string, aspectRatio: string, projectAspectRatio: string): string | null {
   const requested = resolution.trim();
   if (!requested) return capability.pixel_resolution_by_aspect[aspectRatio] ?? capability.default_resolution;
   const pixels = /^(\d+)x(\d+)$/.exec(requested);
   if (pixels) {
     const width = Number(pixels[1]);
     const height = Number(pixels[2]);
-    if (width <= 0 || height <= 0 || !pixelOrientationMatches(width, height, aspectRatio)) return null;
+    if (width <= 0 || height <= 0 || !pixelOrientationMatches(width, height, projectAspectRatio)) return null;
     return capability.pixel_resolution_by_aspect[aspectRatio] ?? null;
   }
   if (!capability.allowed_resolutions.includes(requested)) return null;
@@ -131,18 +173,20 @@ export function buildProviderCapabilityKey(input: {
   resolution: string;
   aspect_ratio: string;
 }): ProviderCapabilityKeyResult {
-  const capability = PROVIDER_CAPABILITIES[input.provider];
-  if (!capability) return { ok: false, code: "PROVIDER_CAPABILITY_NOT_FOUND", field: "provider" };
-  if (input.model !== undefined && input.model !== capability.model) {
-    return { ok: false, code: "PROVIDER_CAPABILITY_MODEL_MISMATCH", field: "model" };
-  }
+  const defaultCapability = PROVIDER_CAPABILITIES[input.provider];
+  if (!defaultCapability) return { ok: false, code: "PROVIDER_CAPABILITY_NOT_FOUND", field: "provider" };
+  const capability = input.model === undefined
+    ? defaultCapability
+    : PROVIDER_CAPABILITIES_BY_MODEL[input.provider]?.[input.model];
+  if (!capability) return { ok: false, code: "PROVIDER_CAPABILITY_MODEL_MISMATCH", field: "model" };
   if (!durationAllowed(capability, input.duration_seconds)) {
     return { ok: false, code: "PROVIDER_CAPABILITY_DURATION_UNSUPPORTED", field: "duration_seconds" };
   }
-  if (!capability.allowed_aspect_ratios.includes(input.aspect_ratio)) {
+  const aspectRatio = capability.request_aspect_ratio_by_project_aspect?.[input.aspect_ratio] ?? input.aspect_ratio;
+  if (!capability.allowed_aspect_ratios.includes(aspectRatio)) {
     return { ok: false, code: "PROVIDER_CAPABILITY_ASPECT_RATIO_UNSUPPORTED", field: "aspect_ratio" };
   }
-  const resolution = normalizeResolution(capability, input.resolution, input.aspect_ratio);
+  const resolution = normalizeResolution(capability, input.resolution, aspectRatio, input.aspect_ratio);
   if (!resolution) return { ok: false, code: "PROVIDER_CAPABILITY_RESOLUTION_UNSUPPORTED", field: "resolution" };
   const key: ProviderCapabilityKey = {
     registry_version: PROVIDER_CAPABILITY_REGISTRY_VERSION,
@@ -154,7 +198,7 @@ export function buildProviderCapabilityKey(input: {
     aspect_ratio: input.aspect_ratio,
     serialized: [capability.version, capability.capability_id, capability.provider, capability.model, input.duration_seconds, resolution, input.aspect_ratio].join("|")
   };
-  return { ok: true, capability, key, aspect_ratio: input.aspect_ratio };
+  return { ok: true, capability, key, aspect_ratio: aspectRatio };
 }
 
 export function projectProviderRequest(input: Parameters<typeof buildProviderCapabilityKey>[0]):

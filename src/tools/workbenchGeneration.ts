@@ -13,7 +13,7 @@ import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { getGenerationRun, saveGenerationRun, type GenerationRun } from "./generation.js";
 import { requireShotWorkflowWriteAction } from "./operationalWriteGates.js";
 import { validateActiveArtifactReference, type MediaArtifact } from "./mediaArtifacts.js";
-import { providerError, selectM1ProviderPort, type ProviderToolError } from "./provider.js";
+import { providerError, resolveRunningHubComparableBalance, selectM1ProviderPort, type ProviderToolError } from "./provider.js";
 import { buildProviderCapabilityKey, buildProviderPriceCacheKey, providerCapabilityErrorMessage } from "./providerCapabilities.js";
 import { downloadProviderOutputToArtifact } from "./providerOutputDownloader.js";
 import { getProject, getShot, listProjectShots, saveProject, saveShot, type Project, type ProjectStatus, type Shot, type ShotStatus } from "./projects.js";
@@ -1149,6 +1149,7 @@ export async function preflightWorkbenchGeneration(
     shot_id: string;
     account_label: "personal" | "team";
     budget_limit_value: number;
+    model?: string;
     director_automation?: DirectorAutomationPreflightAuthorization;
   },
   db = openM0Database(),
@@ -1170,6 +1171,13 @@ export async function preflightWorkbenchGeneration(
   }
   if (!Number.isFinite(input.budget_limit_value) || input.budget_limit_value <= 0) {
     return { ok: false, error: { code: "BUDGET_LIMIT_REQUIRED", message: "A positive budget limit is required.", field: "budget_limit_value" } };
+  }
+  const selectedModel = input.model ?? RUNNINGHUB_MODEL_ROUTE;
+  if (admissionReservation && selectedModel !== RUNNINGHUB_MODEL_ROUTE) {
+    return { ok: false, error: { code: "GENERATION_PLAN_MODEL_MISMATCH", message: "T2 generation admission currently authorizes the default RunningHub model only." } };
+  }
+  if (input.director_automation && selectedModel !== RUNNINGHUB_MODEL_ROUTE) {
+    return { ok: false, error: { code: "DIRECTOR_AUTOMATION_MODEL_MISMATCH", message: "Director Automation currently authorizes the default RunningHub model only." } };
   }
   const conflict = generationRightConflict(db, admissionReservation?.intent_id ?? "");
   if (conflict) return { ok: false, error: { code: "REAL_GENERATION_ALREADY_ACTIVE", message: "Only one real generation task may run at a time." } };
@@ -1219,7 +1227,7 @@ export async function preflightWorkbenchGeneration(
 
   const capability = buildProviderCapabilityKey({
     provider: "runninghub",
-    model: RUNNINGHUB_MODEL_ROUTE,
+    model: selectedModel,
     duration_seconds: shot.duration_seconds,
     resolution: writable.data.project.video_spec.resolution,
     aspect_ratio: writable.data.project.video_spec.aspect_ratio
@@ -1245,7 +1253,7 @@ export async function preflightWorkbenchGeneration(
     aspect_ratio: writable.data.project.video_spec.aspect_ratio,
     resolution: capability.key.resolution
   };
-  const priceRequest = buildRunningHubImageToVideoSubmitRequest({ generation_input: generationInput, uploaded_download_url: "https://example.invalid/input.png" });
+  const priceRequest = buildRunningHubImageToVideoSubmitRequest({ generation_input: generationInput, uploaded_download_url: "https://example.invalid/input.png", model: capability.key.model });
   if (!priceRequest.ok) return { ok: false, error: priceRequest.error };
   if (!capability.capability.price_preview_path) return { ok: false, error: { code: "PRICE_ESTIMATE_UNAVAILABLE", message: "Provider capability does not declare a price-preview route." } };
   const credential = selection.selected.credential;
@@ -1279,18 +1287,8 @@ export async function preflightWorkbenchGeneration(
     body: JSON.stringify({ apikey: credential })
   }, credential, dependencies);
   if (!account.ok) return { ok: false, error: account.error };
-  const accountData = account.payload.data && typeof account.payload.data === "object" && !Array.isArray(account.payload.data)
-    ? account.payload.data as Record<string, unknown>
-    : {};
-  const accountCurrency = typeof accountData.currency === "string" ? accountData.currency : "";
-  const remainingMoney = numericField(accountData, "remainMoney");
-  const remainingCoins = numericField(accountData, "remainCoins");
-  const accountBalance = currency === accountCurrency && remainingMoney !== null
-    ? remainingMoney
-    : currency.toUpperCase().includes("COIN") && remainingCoins !== null
-      ? remainingCoins
-      : null;
-  const balanceEnough = accountBalance !== null && accountBalance >= estimatedPrice;
+  const accountBalance = resolveRunningHubComparableBalance(account.payload, currency);
+  const balanceEnough = accountBalance !== null && accountBalance.value >= estimatedPrice;
   if (!balanceEnough) return { ok: false, error: { code: "BALANCE_GATE_UNKNOWN_OR_INSUFFICIENT", message: "RunningHub balance could not be verified as sufficient." } };
 
   const createdAt = dateNow(dependencies);
@@ -1301,8 +1299,8 @@ export async function preflightWorkbenchGeneration(
       ...admissionReservation.input_snapshot,
       price_source: "runninghub_price_preview",
       balance_gate: "pass",
-      account_balance_value: accountBalance,
-      account_balance_currency: currency,
+      account_balance_value: accountBalance.value,
+      account_balance_currency: accountBalance.currency,
       requires_human_preflight: false,
       capability_key: capability.key.serialized,
       ...(directorBinding ? { director_automation: directorBinding } : {})
@@ -1314,8 +1312,8 @@ export async function preflightWorkbenchGeneration(
       project_resolution: writable.data.project.video_spec.resolution,
       price_source: "runninghub_price_preview",
       balance_gate: "pass",
-      account_balance_value: accountBalance,
-      account_balance_currency: currency,
+      account_balance_value: accountBalance.value,
+      account_balance_currency: accountBalance.currency,
       requires_human_preflight: false,
       prepared_by: input.director_automation ? "director_automation" : "human_workbench",
       capability_key: capability.key.serialized,
@@ -2320,7 +2318,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       return;
     }
     const adapter = dependencies.adapter_factory?.(selection.selected.credential)
-      ?? new RunningHubVideoProviderAdapter({ credential: selection.selected.credential, fetch_impl: dependencies.fetch_impl });
+      ?? new RunningHubVideoProviderAdapter({ credential: selection.selected.credential, fetch_impl: dependencies.fetch_impl, model_name: capability.key.model });
     if (adapter.provider_name !== capability.key.provider || adapter.model_name !== capability.key.model) {
       failOrReconcileKnownTask(intent, job, providerError("PROVIDER_CAPABILITY_CONTRACT_MISMATCH", "Provider adapter does not match the confirmed generation capability."), "PROVIDER_ADAPTER_REQUIRES_RECONCILIATION");
       return;
