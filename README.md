@@ -1,44 +1,90 @@
 # AI Video Production Workspace
 
-AI Video Production Workspace 是 Jenn 的 Windows 本地 AI 视频生产与 ChatGPT 只读工作台。系统把项目、SHOT、Storyboard、Generation、Review、Delivery 和 Closeout 保存在本地 SQLite 与受治理媒体目录中；ChatGPT 只读取签名、限时的投影，不是第二事实源。
+AI Video Production Workspace 是 Jenn 的 Windows 本地 AI 视频生产与
+ChatGPT 只读工作台。SQLite 与受治理媒体目录保存业务事实；Local
+Workbench 是唯一的人类生产执行面，ChatGPT/Director 只提供有界读取与
+建议，不是第二事实源。
 
-## 当前接受基线
+当前 Human Workbench 候选实现了：
+
+```text
+分镜 → 生成 → 人工核对 → 审片/重生成 → FFmpeg 装配
+     → 终审/定向返工 → 本地导出 → 明确结案
+```
+
+## 当前状态
 
 | 项目 | 当前值 |
 |---|---|
 | Package | `0.1.0-beta.5` |
 | MCP service | `webgpt-v4.3.0` |
-| Remote App service | `readonly-remote-v1.0.0` |
-| Media Gateway code | `readonly-media-gateway-v1.0.0`（隔离 MP4 fixture 的公网播放已通过；byte-range 与广泛外部门禁仍未完成） |
-| Snapshot contract | `readonly-snapshot-v4`（已支持上述有界 fixture 验收；不得据此宣称完整公网媒体可用） |
-| Database | 当前候选代码：`workbench-v2-7` / ledger `0012`；活动库仍是已接受的 `workbench-v2-6` / `0011`。本分支未迁移活动库，运行时仍不自动迁移或回退。 |
-| ChatGPT Director | 单 Owner Focus → Context → advisory Proposal → Human Workbench 决定 → controlled import receipt 已在活动库通过；Provider、Grant 启动与 Memory 写入仍关闭。 |
-| Unified ChatGPT Workspace | 单一 `/workspace/mcp` Connector 已完成独立 OAuth、Bridge、Render 与活动库黄金路径验收；旧 `/mcp` 仍保留为回滚面。 |
-| Product status | `JENN_SINGLE_USER_MCP_APP_PASS` |
-| Operations status | 历史 `MANUAL_PUBLISH_OPERATIONAL_READY` 证据保留；活动库升级到 `0012` 前，本候选代码不得用于活动库验收 |
-| Multi-user status | `PARTIAL_MULTI_USER_GATE` |
+| Candidate database | `workbench-v2-7` / ledger `0012` |
+| Accepted activity database | `workbench-v2-6` / ledger `0011`；未被本候选读取、复制或迁移 |
+| Human Workbench code | `CODE_COMPLETE`（仅代码与合成夹具） |
+| Product completion | `PARTIAL`；活动库迁移、S4、一次真实闭环和 S7 三项目仍未完成 |
+| Historical single-owner MCP App | `JENN_SINGLE_USER_MCP_APP_PASS`；只保留其命名验收边界 |
+| Historical manual publish boundary | `MANUAL_PUBLISH_OPERATIONAL_READY`；不授权本候选发布 Snapshot |
+| Remote Readonly App | 已有历史单 Owner 有界验收；不继承本候选的实时状态 |
+| Media Gateway | 隔离 MP4 fixture 播放有历史证据；byte-range 与广泛外部门禁仍独立 |
+| Multi-user | `PARTIAL_MULTI_USER_GATE`，冻结扩张 |
 
-当前 `main` 已包含 Workbench V2、WebGPT V4、Auth0 Federated Readonly、签名 Snapshot、ChatGPT MCP App、共享派生状态、Human Workbench 人工发布、已接线的 Unified Workspace Remote，以及 Local Media Gateway 的代码和 Windows 运维入口。Unified Workspace 保留旧 `/mcp` 为回滚面。Cloudflare 媒体链路已通过一次隔离 MP4 fixture 的端到端 Widget 播放；实际 byte-range 响应、Windows 登录任务、自动 Snapshot 发布、剩余媒体恢复/撤权案例、真实 Provider canary、稳定 Memory 插件和多用户黄金路径仍是独立 gate。
+Human Workbench 补完代码位于独立 stacked Draft PR 系列 #121–#126 及其
+后续验收分支，不在当前 `main`。这些 PR 必须按顺序 review；没有直接推送或
+合并 `main` 的授权。
 
-`ChatGPT Director` 现已完成单 Owner 的活动库受控验收：ChatGPT Connector 只能读取有界讨论上下文并提出不可变 Proposal，Workbench 保留人类批准与一次性 receipt 记录。Local Orchestrator 只在未来获授权的 Grant 内执行；`REAL_PROVIDER_ENABLED=false`、Memory 插件未接线，且不得把该验收扩大为自动生成、自动采纳、自动交付或自动 Memory 写入。
+详细事实见 [Current State](CURRENT_STATE.md)，夹具证据见
+[2026-08-13 Human Workbench code-complete fixture acceptance](ops/reports/2026-08-13-workbench-code-complete-fixture-acceptance.md)。
 
-## 当前候选分支数据库兼容性
+## Human Workbench 候选能力
 
-本候选代码的 Workbench、Snapshot exporter 与 Director receipt path 要求 `workbench-v2-7` / ledger `0012`。活动库仍停在已接受的 `workbench-v2-6` / `0011`；本分支没有读取、复制或迁移活动库，也没有把历史 `final_approved` 自动声明为新式导出或结案。后续活动库迁移必须先完成目标库确认、备份、数据库副本迁移、只读 `db:check`、恢复演练和 manifest 比较，再取得 Jenn 对目标、版本与回滚路径的当次精确授权。运行时不自动迁移、不自动回退、不自动发布 Snapshot。
+- Seedance V1.5 Pro 模型选择、画幅映射、价格预检和 Provider 合同保持在
+  显式费用/提交门禁后。
+- Generation 展示脱敏人工核对项；已有或人工输入的 Provider task ID 只能
+  恢复 polling/download，放弃必须填写原因并二次确认，恢复绝不重新 submit。
+- Review 保留所有 Clip 版本，并在 1920、1166、820、390×844 四档视口
+  保持版本栈和操作按钮可见可点。
+- migration `0012` 持久化 delivery state、assembly/export jobs、不可变
+  events 和 exports；历史 `final_approved` 只回填为
+  `legacy_review_required`。
+- 装配使用受治理 staging 和唯一输出名调用 FFmpeg：H.264/CRF 18/
+  30fps/yuv420p、AAC 192kbps/48kHz/双声道，无音轨补静音，保持比例补边，
+  `+faststart`，30 分钟硬超时且不自动重试。
+- 终审支持接受、仅重装和选择 SHOT 定向重生成；旧 Clip 与最终版本均保留。
+- 导出写入 `data/exports/<project_id>/`，以 `.part`、SHA/FFprobe 和独占
+  rename 防止覆盖；结案必须另行输入 `确认结案`。
+- 桌面保留六个主入口；移动端为“指挥台、项目、收件箱、Director、更多”。
+  Tabs、ProjectPicker、Modal、More sheet 与确认对话框具有键盘/焦点模型，
+  活跃页面纳入 axe 回归。
 
-完整状态见 [CURRENT_STATE.md](CURRENT_STATE.md)，文档入口见 [docs/README.md](docs/README.md)。
+## 数据库兼容性与迁移边界
 
-## 三个日常入口
+候选代码要求 `workbench-v2-7` / `0012`。运行时不会自动迁移或回退。
+当前活动库仍是 `workbench-v2-6` / `0011`，因此不能把候选分支指向活动库
+启动验收。
 
-### 1. 本地 Workbench（Unified activity path 已通过有界验收）
+现有自动化只完成了合成 `0011` 文件副本的迁移、只读检查、业务清单比较、
+`0012` 恢复和 `0011` 回滚演练。活动库属于 private state：读取/复制演练和
+正式迁移必须分别取得当次精确授权。完整边界见
+[Workbench Delivery Recovery](docs/WORKBENCH_DELIVERY_RECOVERY.md)。
 
-活动库满足历史 `0011` 接受基线，但尚不满足本候选代码的 `0012` gate。当前 `127.0.0.1:4181` 仅是隔离合成夹具预览，不是活动库或真实交付证据。仓库不会自动迁移、回退、发布 Snapshot 或启动 Provider。
+## 三个入口
+
+### 1. Local Workbench
+
+当前 [http://127.0.0.1:4181](http://127.0.0.1:4181) 是隔离合成夹具预览，
+用于界面与浏览器验收；它不是活动库、付费 Provider 或真实交付证据。
+
+活动库升级并通过验收前，不要使用候选代码执行日常生产启动。升级后仍应先
+从已核对的 Git 根运行只读检查，再使用受管 Windows runtime；具体步骤见
+[User Guide](docs/USER_GUIDE.md)。
 
 ### 2. ChatGPT Readonly MCP App
 
-日常查看不需要启动本地 MCP。远端 App 只读取内存中的签名 Snapshot；已接受的 Snapshot/恢复证据仍可作为历史证据阅读。活动库迁移不自动发布或更新远端内存 Snapshot；下一次 publish/recovery 需要自己的有界验收。详细边界见 [使用说明](docs/USER_GUIDE.md) 和 [Readonly MCP App Delivery Runbook](docs/webgpt/READONLY_MCP_APP_DELIVERY_RUNBOOK.md)。
+Remote App 只读取签名 Snapshot，不直接读取当前 SQLite。Snapshot 发布、恢复
+或更新都是独立的外部操作；Human Workbench 迁移不会自动发布 Snapshot。
+旧 `/mcp` 仅为回滚面，不作为交付补完路线。
 
-### 3. Local Media Gateway（候选；隔离 MP4 fixture 播放已通过）
+### 3. Local Media Gateway
 
 ```powershell
 npm run media:preflight
@@ -47,45 +93,32 @@ npm run media:status
 npm run media:stop
 ```
 
-Gateway 只监听 `127.0.0.1:2092`；媒体字节留在本机。Cloudflare named tunnel、DNS、共享 capability key 和 DPAPI token 已完成有界外部接线；隔离 MP4 fixture 已通过公网 route/edge 与 ChatGPT Widget 播放。一次 forward seek 可用，但未记录实际 `206`/`Content-Range`，因此 byte-range 仍待验收。它不是完整 production-ready 声明：撤权、项目切换、离线恢复、格式覆盖、Windows 登录任务、soak，以及该 fixture/restore 路径的活动库前后 logical-manifest 比较仍未验收。详见 [Local Media Gateway Runbook](docs/webgpt/READONLY_LOCAL_MEDIA_GATEWAY_RUNBOOK.md) 与 [MP4 Fixture Acceptance](ops/reports/2026-07-27-readonly-media-gateway-mp4-fixture-acceptance.md)。
-
-Legacy `WEBGPT_V4_PROFILE=full` 也占用 2092；它与 Readonly Media Gateway 互斥。启动 Gateway 前必须确认 Full profile 已停止。
+Gateway 只监听 `127.0.0.1:2092`。Legacy Full WebGPT 也占用 2092，二者
+不能同时运行。Gateway 是可选的人类播放面，不阻塞本地生成、装配或导出。
 
 ## 安全边界
 
-- Workbench 是确认费用、提交 Provider、采纳审片和交付资产的唯一人类执行面。
-- Readonly MCP App 只暴露 `projects.read`；匿名 MCP、写工具、Provider 调用和媒体目录浏览均禁止。
-- 本地数据库是唯一事实源；Remote Runtime 没有数据库或持久盘，只保留一个签名 Snapshot。
-- `.env`、token、cookie、subject、DPAPI 明文、Provider payload、活动数据库和本地媒体不得提交或打印。
-- 数据库启动时不自动迁移。对活动库执行 `db:migrate` 必须先停止服务、备份、记录 manifest，并取得当次明确授权。
-- Render、Auth0、ChatGPT、Cloudflare、DNS、Windows Scheduled Task、真实 Provider 和 release/deploy 都是外部变更，需要独立授权。
+- Workbench 是费用确认、Provider 提交、任务核对、Clip 采纳、终审、导出和
+  结案的唯一权威面。
+- 归档、结案、状态漂移、Artifact/Blob 漂移和并发 Job 一律 fail closed。
+- 浏览器只获得相对导出路径和本地文件路由，不调用 Shell、不暴露绝对路径。
+- `.env`、token、cookie、身份值、Provider payload、原始日志、活动数据库
+  业务行和本地媒体不得提交或打印。
+- Provider、活动库、Snapshot、Memory、Auth0、Cloudflare、Render、DNS、
+  Windows Scheduled Task、release/deploy 都有独立授权边界。
+- 本候选不删除 Legacy、不扩展多用户、自动路由、自动发布或非核心格式。
 
 ## 环境
 
 - Windows 10/11
-- Node.js 22（最低 `>=22.13.0`；接受环境为 `22.23.1`）
+- Node.js 22（最低 `>=22.13.0`）
 - npm 11 或兼容版本
 - FFmpeg/FFprobe 8.1.2
 - SQLite：Node.js 内置 `node:sqlite`
 
-环境变量目录见 [.env.example](.env.example)。它是结构说明，不会被仓库自动加载，也不能存放真实值。
+环境变量结构见 [.env.example](.env.example)。它只描述键名，不能存放真实值。
 
 ## 验证
-
-```powershell
-npm run typecheck
-npm run build
-npm run test:selection-gate
-npm run test:db
-npm run test:webgpt:v4
-npm run test:webgpt:cloud
-npm run test:webgpt:app
-npm run test:webgpt:director
-npm run test:webgpt:workspace
-npm run test:webgpt:media-gateway
-npm run test:v2:browser
-npm run secret:scan
-```
 
 完整门禁：
 
@@ -93,16 +126,34 @@ npm run secret:scan
 npm test
 ```
 
-Windows CI 必须同时通过 `Quality and integration` 与 `Browser smoke`。测试文件存在不代表被执行；`test-selection-gate` 同时验证 suite catalog、npm lane 和 Windows CI 选择。
+主要独立 lanes：
+
+```powershell
+npm run typecheck
+npm run build
+npm run test:selection-gate
+npm run test:foundation-boundaries
+npm run test:provider-boundaries
+npm run test:db
+npm run test:v2
+npm run test:v2:ui
+npm run test:v2:browser
+npm run test:windows-runtime
+npm run secret:scan
+```
+
+Windows CI 必须同时通过 `Quality and integration` 与 `Browser smoke`。
+测试文件存在不等于被执行；selection gate 同时核对 suite catalog、本地 lane
+和 CI 路由。
 
 ## 文档
 
-- [使用说明](docs/USER_GUIDE.md)
-- [部署与外部接线说明](docs/DEPLOYMENT_GUIDE.md)
-- [Unified Workspace Transport Runbook](docs/webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md)
-- [当前状态](CURRENT_STATE.md)
-- [架构](docs/ARCHITECTURE.md)
-- [项目建设经验](docs/PROJECT_LESSONS.md)
-- [完整文档导航](docs/README.md)
+- [Current State](CURRENT_STATE.md)
+- [User Guide](docs/USER_GUIDE.md)
+- [Workbench Delivery Recovery](docs/WORKBENCH_DELIVERY_RECOVERY.md)
+- [Product Scope Freeze](docs/PRODUCT_SCOPE_FREEZE.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Documentation Index](docs/README.md)
 
-历史 taskbook 与验收报告保留为证据，但不应覆盖当前运行手册。仓库不创建 tag、不发布 npm package，也不因文档更新自动部署任何服务。
+历史 taskbook 和验收报告只证明其命名 commit/输入/授权边界，不能覆盖当前
+状态。仓库不会因文档或测试通过而自动发布、部署、迁移或调用 Provider。

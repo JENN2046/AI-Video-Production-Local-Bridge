@@ -1,21 +1,128 @@
 # User Guide
 
-Status: `UNIFIED_TRANSPORT_AND_SCHEMA_PASS`. The owner-only `0.1.0-beta.5` / ledger `0008` workflow remains historical evidence; the active database has now completed `0011`, and the bounded Unified Director owner path has passed. An isolated Media Gateway MP4 fixture playback path has also passed; byte-range plus broader Media, Provider, Memory and multi-user gates remain separate.
+Status: `CODE_COMPLETE` for candidate code and synthetic fixtures;
+`PARTIAL` for real production acceptance.
 
-## Current-main database compatibility
+The candidate requires `workbench-v2-7` / ledger `0012`. The accepted activity
+database remains `workbench-v2-6` / `0011` and has not been read, copied or
+migrated by this work. Runtime startup never migrates a database automatically.
 
-This candidate code requires `workbench-v2-7` / ledger `0012`; the active database remains at the accepted `workbench-v2-6` / `0011` baseline and has not been migrated by this branch. Runtime startup never migrates a database automatically. Before activity-database use, Jenn must explicitly authorize the named target, `0011`→`0012`, verified backup and rollback path after a database-copy rehearsal. The accepted historical path does not authorize Provider execution, automatic Snapshot publishing, Memory saveback or production delivery.
+## What Jenn can use now
 
-## What Jenn can do today
+### Synthetic Human Workbench preview
 
-### Local Workbench
+Open [http://127.0.0.1:4181](http://127.0.0.1:4181). During the current
+acceptance session this listener uses a synthetic fixture data root. It is safe
+for UI exploration, but it is not activity-library, paid-Provider or real
+delivery evidence.
 
-The Workbench is the human production surface for projects, SHOTs, Storyboard, Generation, Review, Delivery and system operations. It is also the only surface allowed to confirm paid Provider work or adopt production decisions.
+Do not point this candidate at the activity database until the copy rehearsal
+and formal `0011` → `0012` migration each receive exact authorization and pass.
 
-The following is the accepted local startup sequence. Use it only with the verified activity database and keep `REAL_PROVIDER_ENABLED=false` unless a separate Provider authorization exists:
+### ChatGPT Readonly Workbench
+
+The installed Jenn AI Video Workspace App shows a signed Snapshot of authorized
+production projects. It can display project context, SHOT state, Review,
+Delivery and Closeout evidence. It cannot edit a Project, approve a clip,
+submit a Provider job, publish a Snapshot, export a file or close a Project.
+
+The banner “当前数据来自只读快照” is intentional. A Human Workbench migration
+or decision does not update the remote Snapshot automatically.
+
+## Human Workbench navigation
+
+Desktop keeps six primary entries: Dashboard, Projects, Inbox, Assets,
+Director and System.
+
+Mobile uses five fixed entries: “指挥台、项目、收件箱、Director、更多”.
+“更多” opens a focus-trapped sheet containing Assets and System. `Escape`
+closes dialogs/sheets; focus returns to the control that opened them.
+
+Inside a Project, the five tabs are Storyboard, Generation, Review, Delivery
+and Activity. Arrow keys move between tabs, `Home`/`End` select the first/last
+tab, and the Project picker supports standard combobox/listbox keys.
+
+## Production workflow
+
+### 1. Storyboard
+
+Confirm the approved Storyboard Package and each SHOT's prompt, duration,
+aspect ratio and bytes-verified image. Generation remains disabled when the
+Project is archived/closed, the Package is stale, input bytes drift, another
+paid generation is active, or a SHOT is not ready. The disabled control names
+the exact reason and next action.
+
+### 2. Generation and manual reconciliation
+
+Generation preflight displays the Provider/model, mapped output, estimate,
+budget and confirmation requirement. Each paid submit still requires its own
+current Jenn confirmation.
+
+When a Provider outcome is unknown, the Generation tab shows a sanitized
+reconciliation item:
+
+- continue the already-recorded task ID;
+- attach an existing task ID from Provider history, then continue it;
+- or abandon the attempt with a reason and second confirmation.
+
+All three reconciliation routes perform zero Provider submits. Do not create a
+new Intent until the unknown result is resolved.
+
+### 3. Review and regeneration
+
+Review shows the full Clip version stack. Jenn may accept the current Clip or
+request revision with rejection reasons and a structured instruction. Targeted
+regeneration creates a new version; it never overwrites the older Clip.
+
+### 4. Delivery and assembly
+
+Delivery is organized as:
+
+```text
+assembly readiness -> final version stack -> final review -> export/closeout
+```
+
+Run assembly preflight after every accepted-clip change. It fingerprints the
+Project spec and ordered accepted Blob facts. Starting assembly persists a
+queued Job and returns immediately; the global worker runs at most one assembly
+or export. Failure or timeout leaves the final pointer unchanged and never
+auto-retries.
+
+### 5. Final review
+
+Jenn chooses one action for the current final Artifact:
+
+- accept the exact version;
+- reassemble while keeping all SHOT adoptions;
+- select one or more problem SHOTs for regeneration while preserving all other
+  SHOT adoptions.
+
+Reload when `FINAL_REVIEW_ARTIFACT_STALE` appears; an older final version cannot
+be approved as current.
+
+### 6. Export
+
+After approval, confirm Export. The Workbench writes under the governed relative
+library `data/exports/<project_id>/`, verifies bytes and records an immutable
+export. The UI displays only a relative path and local download action.
+
+An intact export for the same Artifact is reused. A missing or drifted file is
+never silently reused, and a failed export does not change Project state.
+
+### 7. Closeout
+
+Closeout is separate from Export. Type the exact phrase `确认结案`. The system
+rechecks the current Artifact, matching Export and absence of active jobs before
+inserting the closeout event. After `closed`, production writes fail with
+`PROJECT_CLOSED`; archiving does not reopen production.
+
+## Starting an accepted activity runtime later
+
+Only after activity migration and acceptance pass, use the verified Git root
+and the accepted database/runtime profile:
 
 ```powershell
-Set-Location "<verified repository root that owns the accepted data\app.sqlite>"
+Set-Location "<verified repository root>"
 git rev-parse --show-toplevel
 Test-Path .\data\app.sqlite
 npm run db:check -- --read-only
@@ -23,70 +130,33 @@ npm run windows:start
 npm run windows:status
 ```
 
-The exact local root is deliberately not hard-coded: similarly named clones and archive directories may contain an empty or different `data/`. Continue only when the resolved Git root and accepted activity-database location match Jenn's runtime profile.
+Do not run `db:migrate` as a repair command. Do not use the candidate startup
+sequence against an `0011` activity database. The exact rehearsal, migration
+and rollback authorization requirements are in
+[Workbench Delivery Recovery](WORKBENCH_DELIVERY_RECOVERY.md).
 
-Open `http://127.0.0.1:4181`.
+If `windows:start` reports an unknown listener or stale identity, do not kill
+processes blindly. Preserve the stable code and use `windows:status`.
 
-Stop it when finished:
+## Snapshot operations
 
-```powershell
-npm run windows:stop
-```
+Snapshot publish/renew/recovery remains an independent, explicitly confirmed
+Unified-profile operation. The System page now shows active Provider and data
+governance by default. The old “只读 App 发布” controls live under Advanced
+Legacy, explain why they are unavailable and expose no execution button.
 
-If `windows:start` reports an unknown listener or stale identity, do not kill processes blindly. Preserve the state and use `windows:status` to identify the stable error code.
+Do not use the legacy Workbench publisher or `/mcp` route as a fallback. A
+Workbench activity migration does not publish or renew the Unified Snapshot.
 
-### ChatGPT Readonly Workbench
+## Media preview
 
-Open the installed Jenn AI Video Workspace App in ChatGPT. The App shows:
+Local Media Gateway remains optional. Historical isolated MP4 playback exists,
+but byte-range evidence and broader external gates remain separate. Media
+failure must not block local project text/status or Human Workbench production.
 
-- service and Snapshot availability/fingerprint consistency, not a remote freshness or renewal estimate;
-- authorized production projects;
-- project context and next action;
-- SHOT operational state;
-- Review, Delivery and Closeout panels.
-
-The banner “当前数据来自只读快照” is intentional. ChatGPT reads the last published Snapshot, not live SQLite rows.
-
-Allowed actions are view, refresh, select project, expand SHOT, switch detail and copy a sanitized summary. Project edits, review adoption, Provider calls and Snapshot publishing are not App actions.
-
-## Snapshot operations (Unified profile only; manual confirmation required)
-
-The accepted current-schema flow uses the dedicated Unified publisher profile and Unified Snapshot store. The remote has no persistent Snapshot storage: do not invoke a Unified publish, renewal or recovery action without the separate human confirmation required for that one operation. The default `系统 → 只读 App 发布` Workbench surface and its `data/webgpt/publisher/profile.json` are legacy `/mcp` to `/snapshot` controls; they remain unavailable on the active database pending their own ledger-`0011` acceptance.
-
-Unified currently has no low-disclosure remote freshness or `renewal_due` status command/UI. Do not reuse the legacy `fresh`, `renewal_due`, `no_snapshot`, `snapshot_expired` or `service_unavailable` labels for Unified decisions, and do not infer the existing remote Snapshot's lifetime from a local preflight result.
-
-Accepted Unified flow:
-
-1. Follow the dedicated Unified profile procedure in [UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md](webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md#snapshot-operations).
-2. If the Unified ChatGPT App visibly reports no Snapshot or renders no project data, treat that as a recovery request. If it renders the intended current Snapshot, do nothing unless Jenn explicitly confirms one bounded manual refresh.
-3. Run one Unified preflight. Record only its `snapshot_fingerprint`, `generated_at`, `expires_at` and counts; these describe the newly prepared candidate, not the current remote Snapshot.
-4. If preflight passes and the one recovery/manual-refresh operation is explicitly confirmed, publish once.
-5. Reopen or refresh the ChatGPT App and confirm the readonly tools share the candidate fingerprint. If they do not, stop with the stable error code; do not retry indefinitely.
-
-Do not use the legacy Workbench control or legacy default-profile CLI commands as a fallback. Their separate ledger-`0011` preflight/publish/recovery acceptance is still pending.
-
-Never loop Unified publish attempts. On failure, keep the receipt and stable error code; do not print the response body or DPAPI material.
-
-## Readonly data interpretation
-
-- `operational_state` is the canonical shared state for Storyboard, Generation, Review and blockers.
-- Missing identifiers are `null` in public DTOs, not ambiguous empty strings.
-- Review `not_started` differs from `pending`: pending means reviewable media exists.
-- A project can be visible only when the current issuer-bound principal has an active membership.
-- A changed `snapshot_fingerprint` means the Widget must clear combined views before loading new data.
-
-## Media preview status
-
-The media UI and Local Gateway code exist. One isolated MP4 fixture has passed the Unified Workspace Remote public Cloudflare route and ChatGPT Widget playback. A forward seek was playable, but no actual `206`/`Content-Range` response was recorded, so byte-range remains pending. This is not normal-production media readiness. Today:
-
-- do not treat the accepted fixture path as a general normal-ChatGPT media-preview guarantee;
-- do not install the Gateway login task;
-- do not weaken Origin, capability, digest or membership checks to make playback work;
-- use `npm run media:status` only during an authorized media test.
-
-In the accepted fixture path, playback remains readonly and on-demand: opening a media card requests a five-minute single-use capability and creates at most a 30-minute in-memory session. It never grants directory access. An actual byte-range response, expiration/replay, revocation, project switching, recovery and the fixture/restore logical-manifest comparison remain separate gates.
-
-The legacy Full WebGPT media listener and the new Readonly Media Gateway both use local port 2092. Never run them together. The accepted fixture route is Unified Workspace Remote plus Local Gateway, not local Full profile. The legacy Remote Readonly App `/mcp` route is a rollback surface and was not covered by this Unified fixture acceptance.
+Legacy Full WebGPT and Local Media Gateway both use port 2092; never run them
+together. Do not install automatic startup or weaken Origin, capability, digest
+or membership checks to make playback work.
 
 ## Common recovery
 
@@ -98,22 +168,36 @@ npm run preflight
 npm run db:check -- --read-only
 ```
 
-The default writable `npm run db:check` may recover staged media activations and move files. Use it only in an explicitly authorized recovery workflow. Do not run `db:migrate` as a generic repair; migration is an explicit, backed-up activity-database operation.
+The default writable `db:check` may recover staged media activations and move
+files. Use it only inside an explicitly authorized recovery workflow.
 
-### ChatGPT says no Snapshot
+### Generation outcome is unknown
 
-For the accepted Unified App, follow one explicitly confirmed Unified-profile preflight/publish from [UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md](webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md#snapshot-operations). This is expected after Render Free sleep/restart or after 24 hours. Do not use the legacy `系统 → 只读 App 发布` recovery control on the active database; its separate re-acceptance remains pending.
+Use only the Generation reconciliation dialog. Continue the recorded/existing
+Provider task or abandon with a reason. Never press Generate again to “see if
+it works”.
 
-### OAuth reconnects automatically to the wrong user
+### Assembly/export was interrupted
 
-The accepted baseline is owner-only. Second-user acceptance is deferred; do not interpret an automatic existing session as a passed multi-user test.
+Reload Delivery. The prior Job should be terminal `interrupted`; ask Jenn to
+explicitly retry. Do not delete staging broadly and do not edit the final
+Artifact pointer.
 
-### Gateway/Tunnel is offline
+### Export does not match closeout
 
-Keep the seven ordinary readonly tools available. Media failure must not make project text/status tools unavailable. Run `media:status`, then stop unless the current test explicitly authorizes restart.
+Re-export the current approved Artifact. Closeout must keep failing until a
+complete, byte-matching export exists.
+
+### ChatGPT has no Snapshot
+
+Follow one separately confirmed Unified recovery from the Unified transport
+runbook. Do not publish automatically from Human Workbench.
 
 ## Never put these in chat, logs or Git
 
-Token, cookie, raw subject, principal hash, DPAPI plaintext, Cloudflare connector token, capability key, Provider payload, database business rows, local media paths or full Snapshot bodies.
+Tokens, cookies, raw subjects, principal hashes, DPAPI plaintext, Cloudflare
+connector tokens, capability keys, Provider payloads, database business rows,
+local absolute media paths, raw logs or full Snapshot bodies.
 
-For installation and external configuration, use [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md).
+For current facts see [Current State](../CURRENT_STATE.md). For installation and
+external configuration see [Deployment Guide](DEPLOYMENT_GUIDE.md).

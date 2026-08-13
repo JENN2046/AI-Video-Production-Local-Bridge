@@ -43,6 +43,23 @@ function lowDisclosureError(stderr: string): unknown {
   return JSON.parse(line);
 }
 
+function fileSymlinkAvailable(root: string): boolean {
+  const target = join(root, "symlink-capability-target.txt");
+  const link = join(root, "symlink-capability-link.txt");
+  writeFileSync(target, "fixture", "utf8");
+  try {
+    symlinkSync(target, link, "file");
+    return true;
+  } catch (error) {
+    const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
+    if (!["EACCES", "EPERM"].includes(code)) throw error;
+    return false;
+  } finally {
+    rmSync(link, { force: true });
+    rmSync(target, { force: true });
+  }
+}
+
 const childEnv: NodeJS.ProcessEnv = { ...process.env, NODE_NO_WARNINGS: "1" };
 const matrixExpiryTestEnv: NodeJS.ProcessEnv = {
   ...childEnv,
@@ -1326,7 +1343,7 @@ test("media acceptance matrix wrapper normalizes ordinary PowerShell exceptions"
   }
 });
 
-test("media acceptance matrix rejects a linked manifest before reading it", () => {
+test("media acceptance matrix rejects a linked manifest before reading it", (t) => {
   const source = resolve("fixtures/video/mock_clip.mp4");
   const fixtureCommand = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
   const created = spawnSync(process.execPath, [fixtureCommand, "create", "--input", source, "--issuer", ISSUER, "--resource", RESOURCE], {
@@ -1339,6 +1356,10 @@ test("media acceptance matrix rejects a linked manifest before reading it", () =
   const manifestPath = join(root, "fixture.json");
   const externalManifest = join(external, "fixture.json");
   try {
+    if (!fileSymlinkAvailable(external)) {
+      t.skip("File symlink creation is unavailable for this process");
+      return;
+    }
     writeFileSync(externalManifest, readFileSync(manifestPath));
     unlinkSync(manifestPath);
     symlinkSync(externalManifest, manifestPath, "file");
@@ -1356,7 +1377,7 @@ test("media acceptance matrix rejects a linked manifest before reading it", () =
   }
 });
 
-test("media acceptance matrix rejects a manifest replaced by a link during open", () => {
+test("media acceptance matrix rejects a manifest replaced by a link during open", (t) => {
   const source = resolve("fixtures/video/mock_clip.mp4");
   const fixtureCommand = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
   const created = spawnSync(process.execPath, [fixtureCommand, "create", "--input", source, "--issuer", ISSUER, "--resource", RESOURCE], {
@@ -1370,6 +1391,10 @@ test("media acceptance matrix rejects a manifest replaced by a link during open"
   const externalManifest = join(external, "fixture.json");
   const preloadPath = join(external, "swap-before-open.cjs");
   try {
+    if (!fileSymlinkAvailable(external)) {
+      t.skip("File symlink creation is unavailable for this process");
+      return;
+    }
     writeFileSync(externalManifest, readFileSync(manifestPath));
     writeFileSync(preloadPath, `
 const fs = require("node:fs");

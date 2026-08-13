@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -17,6 +18,56 @@ const INTERIM_MIGRATION_0005_CHECKSUM = "6e929ae3b8db4387891d664cd22dc5299dab689
 
 function tempRoot(): string {
   return mkdtempSync(join(tmpdir(), "ai-video-db-governance-"));
+}
+
+function applyThrough0011(db: DatabaseSync): void {
+  db.exec("PRAGMA foreign_keys = ON");
+  for (const migration of DATABASE_MIGRATIONS.slice(0, 11)) migration.apply(db);
+  db.exec(`CREATE TABLE schema_migrations (
+    migration_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    checksum TEXT NOT NULL,
+    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`);
+  const insert = db.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES (?, ?, ?)");
+  for (const migration of DATABASE_MIGRATIONS.slice(0, 11)) {
+    insert.run(migration.id, migration.name, migrationChecksum(migration));
+  }
+}
+
+function businessManifest(
+  sqlitePath: string,
+  expectedTables?: readonly string[]
+): { table_names: string[]; row_count: number; sha256: string } {
+  const db = new DatabaseSync(sqlitePath, { readOnly: true });
+  try {
+    db.exec("PRAGMA query_only = ON; PRAGMA foreign_keys = ON");
+    const availableTables = (db.prepare(`
+      SELECT name FROM sqlite_master
+      WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+        AND name NOT IN ('m0_meta', 'schema_migrations')
+      ORDER BY name
+    `).all() as Array<{ name: string }>).map((row) => row.name);
+    const tableNames = expectedTables ? [...expectedTables] : availableTables;
+    for (const table of tableNames) {
+      assert.equal(availableTables.includes(table), true, `missing business table ${table}`);
+    }
+    const payload: Array<{ table: string; rows: unknown[] }> = [];
+    let rowCount = 0;
+    for (const table of tableNames) {
+      const escaped = `"${table.replaceAll('"', '""')}"`;
+      const rows = db.prepare(`SELECT * FROM ${escaped} ORDER BY rowid`).all() as unknown[];
+      rowCount += rows.length;
+      payload.push({ table, rows });
+    }
+    return {
+      table_names: tableNames,
+      row_count: rowCount,
+      sha256: createHash("sha256").update(JSON.stringify(payload)).digest("hex")
+    };
+  } finally {
+    db.close();
+  }
 }
 
 function insertUnverifiedArtifact(
@@ -784,6 +835,115 @@ test("backup and isolated restore preserve a valid database", () => {
     copyFileSync(backup.backup_path, restoredPath);
     assert.equal(checkDatabase(restoredPath).result, "PASS");
     assert.deepEqual(databaseLogicalManifest(restoredPath), databaseLogicalManifest(sqlitePath));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("0011 to 0012 isolated copy rehearsal preserves business rows and supports rollback restore", () => {
+  const root = tempRoot();
+  try {
+    const sourcePath = join(root, "synthetic-activity-0011.sqlite");
+    const sourceDb = new DatabaseSync(sourcePath);
+    try {
+      applyThrough0011(sourceDb);
+      sourceDb.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)").run(
+        "project_migration_rehearsal",
+        JSON.stringify({
+          project_id: "project_migration_rehearsal",
+          title: "Migration rehearsal fixture",
+          project_type: "synthetic_acceptance",
+          status: "draft",
+          brief: { goal: "Verify migration and rollback without activity data." },
+          video_spec: { duration_seconds: 6, aspect_ratio: "9:16", resolution: "1080x1920" },
+          shot_ids: [],
+          active_storyboard_package_id: "",
+          generation_batch_ids: [],
+          exports: { final_video_artifact_id: "" }
+        })
+      );
+    } finally {
+      sourceDb.close();
+    }
+
+    const sourceLogicalBefore = databaseLogicalManifest(sourcePath);
+    const sourceBusinessBefore = businessManifest(sourcePath);
+    const backupRoot = join(root, "backups");
+    const preMigrationBackup = backupDatabase({
+      sqlite_path: sourcePath,
+      backup_root: backupRoot,
+      timestamp: new Date("2026-08-13T00:00:00.000Z")
+    });
+    const rehearsalPath = join(root, "migration-copy.sqlite");
+    copyFileSync(preMigrationBackup.backup_path, rehearsalPath);
+    assert.deepEqual(databaseLogicalManifest(rehearsalPath), sourceLogicalBefore);
+
+    const migrated = migrateDatabase(rehearsalPath);
+    assert.deepEqual(migrated.applied, ["0012"]);
+    assert.equal(migrated.baselined, false);
+    const checked = checkDatabase(rehearsalPath, { recover_media_activations: false });
+    assert.deepEqual(checked, {
+      result: "PASS",
+      quick_check: "ok",
+      schema_current: true,
+      invalid_json_rows: 0,
+      structured_drift_rows: 0,
+      orphan_rows: 0,
+      missing_media_files: 0,
+      media_integrity_errors: 0,
+      pending_media_activations: 0,
+      quarantined_media_activations: 0,
+      unbound_webgpt_authorization_rows: 0,
+      check_errors: 0
+    });
+    assert.deepEqual(
+      businessManifest(rehearsalPath, sourceBusinessBefore.table_names),
+      sourceBusinessBefore
+    );
+    const migratedDb = new DatabaseSync(rehearsalPath, { readOnly: true });
+    try {
+      const state = migratedDb.prepare(`SELECT workflow_state, current_final_artifact_id,
+        approved_artifact_id, latest_export_id, closed_at
+        FROM workbench_delivery_state WHERE project_id = ?`).get("project_migration_rehearsal") as Record<string, unknown>;
+      assert.deepEqual({ ...state }, {
+        workflow_state: "not_ready",
+        current_final_artifact_id: null,
+        approved_artifact_id: null,
+        latest_export_id: null,
+        closed_at: null
+      });
+    } finally {
+      migratedDb.close();
+    }
+
+    const postMigrationBackup = backupDatabase({
+      sqlite_path: rehearsalPath,
+      backup_root: backupRoot,
+      timestamp: new Date("2026-08-13T00:01:00.000Z")
+    });
+    const restoredCurrentPath = join(root, "restored-0012.sqlite");
+    copyFileSync(postMigrationBackup.backup_path, restoredCurrentPath);
+    assert.equal(checkDatabase(restoredCurrentPath, { recover_media_activations: false }).result, "PASS");
+    assert.deepEqual(databaseLogicalManifest(restoredCurrentPath), databaseLogicalManifest(rehearsalPath));
+
+    const rollbackPath = join(root, "rollback-0011.sqlite");
+    copyFileSync(preMigrationBackup.backup_path, rollbackPath);
+    assert.deepEqual(databaseLogicalManifest(rollbackPath), sourceLogicalBefore);
+    const rollbackDb = new DatabaseSync(rollbackPath, { readOnly: true });
+    try {
+      const latest = rollbackDb.prepare("SELECT migration_id FROM schema_migrations ORDER BY migration_id DESC LIMIT 1")
+        .get() as { migration_id: string };
+      const version = rollbackDb.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'")
+        .get() as { value: string };
+      const deliveryTableCount = rollbackDb.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'workbench_delivery_state'")
+        .get() as { count: number };
+      assert.equal(latest.migration_id, "0011");
+      assert.equal(version.value, "workbench-v2-6");
+      assert.equal(deliveryTableCount.count, 0);
+    } finally {
+      rollbackDb.close();
+    }
+    assert.deepEqual(databaseLogicalManifest(sourcePath), sourceLogicalBefore);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

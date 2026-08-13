@@ -2,9 +2,11 @@
 
 Status: `ACTIVE`
 
-Baseline: `main@bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7` plus the
-S0 truth-reconciliation commit
-`12cf2931884c08b85730507fa23ceeaa59916296`.
+Current accepted mainline: `origin/main@0785928`.
+
+Human Workbench completion candidate: the stacked Draft PR series beginning at
+PR #121. It is not part of `main` and does not change this freeze until each
+package is reviewed and accepted in order.
 
 This document is the current product-scope source of truth. It freezes
 peripheral expansion so current work can complete a repeatable real video
@@ -31,12 +33,31 @@ Current Project
   -> Regeneration
   -> Accepted Clips
   -> Real Assembly
+  -> Final Review / Targeted Rework
   -> Export
   -> Closeout
 ```
 
 All `READY` work must directly advance one of these stages or protect a safety
 boundary that the stage cannot operate without.
+
+## Completion vocabulary
+
+`CODE_COMPLETE` means the candidate implementation and synthetic fixture
+gates pass. It does not mean the activity database was migrated or a paid/real
+production path was accepted.
+
+“产品补完” is reserved until all of these are complete:
+
+1. activity-library copy rehearsal and authorized `0011` → `0012` migration;
+2. one authorized real single-SHOT canary with `max_submit=1`;
+3. one real generation → review → regeneration → assembly → final review →
+   export → closeout loop;
+4. three Jenn-selected real production projects, including multi-SHOT,
+   targeted rework and Grok/Seedance mixed specifications.
+
+Until then the product status remains `PARTIAL`, even when code is
+`CODE_COMPLETE`.
 
 ## Classification rule
 
@@ -60,7 +81,7 @@ currently `ROLLBACK_ONLY`; its possible future removal is a separate
 
 | Component | Why it is core |
 |---|---|
-| Local Workbench | Only human decision surface for approval, cost acknowledgement, accepted clips and delivery |
+| Local Workbench | Only human decision surface for approval, cost acknowledgement, unknown-task reconciliation, accepted clips, final review, export and closeout |
 | SQLite and migration governance | Business fact source, transactional state and recovery evidence |
 | Governed Media Store | Keeps bytes, digests, provenance and project ownership trustworthy |
 | Project / Shot / Storyboard Package | Defines the production plan and approved generation input |

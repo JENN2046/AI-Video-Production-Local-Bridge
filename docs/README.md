@@ -4,28 +4,23 @@ This index separates current operating truth from historical implementation evid
 
 ## Current reconciliation
 
-The current repository baseline is
-`main@bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7`. PR #104 and PR #105 are
-merged, and both Windows CI jobs passed on that main commit. This is a code/CI
-fact, not a new external acceptance.
+The accepted repository baseline is `origin/main@0785928`. The Human Workbench
+completion candidate is an independent stacked Draft PR series beginning with
+PR #121; it is not part of `main` and must be reviewed in package order.
 
-The current production priority is the real Workbench generation, review,
-regeneration, assembly, export and closeout path. Media Gateway, Memory,
-multi-user, automatic Snapshot, Windows logon startup and new OAuth experiments
-are not S3/S4 blockers. Use
-[Current State](../CURRENT_STATE.md) for the exact Bridge, Provider, assembly
-and commit-scoped acceptance boundaries.
+The candidate code and synthetic fixtures cover generation reconciliation,
+review/regeneration, real FFmpeg assembly, final review, export, closeout and
+responsive/WCAG behavior. Product status remains `PARTIAL`: the activity
+database is still `0011`, no current-path paid canary ran, and S7 three-project
+acceptance is pending. Media Gateway, Memory, multi-user, automatic Snapshot,
+Windows logon startup and new OAuth experiments remain outside this core gate.
+Use [Current State](../CURRENT_STATE.md) for the exact code/real-acceptance
+split.
 
-S1 is now complete. [Product Scope Freeze](PRODUCT_SCOPE_FREEZE.md) is the
-single current statement of component classification, stage dependencies,
-Provider MVP boundaries, route ownership and future removal conditions.
-[Current Core Production Loop Gap Audit](CORE_PRODUCTION_LOOP_GAP_AUDIT.md)
-records the S2 implementation/acceptance split and the first hard break.
-[Current Workbench Canary Readiness](../ops/reports/2026-07-30-current-workbench-canary-readiness.md)
-records the completed S3 readiness check and its three terminal blockers.
-Polling and manual-reconciliation consistency candidate fixes are in Draft PR
-#107 awaiting review. There is currently no `READY` execution task, and S4 is
-blocked and unauthorized.
+[Product Scope Freeze](PRODUCT_SCOPE_FREEZE.md) is the single current statement
+of component classification and completion vocabulary. The earlier S2/S3
+audits remain historical inputs; they do not override the 2026-08-13 candidate
+facts or authorize S4.
 
 ## Start here
 
@@ -37,12 +32,15 @@ blocked and unauthorized.
 | See the completed S3 readiness findings and exact follow-up gates | [Current Workbench Canary Readiness](../ops/reports/2026-07-30-current-workbench-canary-readiness.md) |
 | Resume the latest Unified Director work safely | [2026-07-28 Unified Director handoff](HANDOFF_2026-07-28_UNIFIED_DIRECTOR.md) |
 | Use the local Workbench and ChatGPT App | [User Guide](USER_GUIDE.md) |
+| Recover reconciliation, assembly, export, closeout or migration safely | [Workbench Delivery Recovery](WORKBENCH_DELIVERY_RECOVERY.md) |
+| Review the Human Workbench synthetic acceptance boundary | [2026-08-13 code-complete fixture acceptance](../ops/reports/2026-08-13-workbench-code-complete-fixture-acceptance.md) |
 | Install, configure or recover a runtime | [Deployment Guide](DEPLOYMENT_GUIDE.md) |
 | Understand trust and data boundaries | [Architecture](ARCHITECTURE.md) |
 | Learn why the system is built this way | [Project Lessons](PROJECT_LESSONS.md) |
 
 ## Current operator runbooks
 
+- [Workbench Delivery Recovery](WORKBENCH_DELIVERY_RECOVERY.md)
 - [Readonly MCP App Delivery](webgpt/READONLY_MCP_APP_DELIVERY_RUNBOOK.md)
 - [Unified ChatGPT Workspace Transport](webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md) — candidate single-Connector preflight, wiring and rollback boundary
 - [Readonly Local Media Gateway](webgpt/READONLY_LOCAL_MEDIA_GATEWAY_RUNBOOK.md)
@@ -65,6 +63,7 @@ Current runbooks describe commands and boundaries. They do not grant authorizati
 
 ## Accepted evidence
 
+- [Human Workbench code-complete fixture acceptance](../ops/reports/2026-08-13-workbench-code-complete-fixture-acceptance.md) — synthetic/code boundary only
 - [SR6 disposable database](../ops/reports/2026-07-13-sr6-disposable-acceptance.md)
 - [SR6 activity database](../ops/reports/2026-07-13-sr6-active-database-acceptance.md)
 - [Beta 4 activity database](../ops/reports/2026-07-14-beta4-active-database-acceptance.md)

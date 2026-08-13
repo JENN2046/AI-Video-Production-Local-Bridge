@@ -61,7 +61,17 @@ test("default readonly profile exposes six project tools and performs no databas
   db.close();
 
   const actor = actorFromSubject("auth0|jenn", WEBGPT_V4_SCOPES);
-  const runtime = await startWebGptV4({ mcp_port: 0, media_port: 0, sqlite_path: sqlitePath, authenticate: async () => actor, media: { ffmpeg_path: join(root, "missing-ffmpeg.exe") } });
+  const runtime = await startWebGptV4({
+    mcp_port: 0,
+    media_port: 0,
+    sqlite_path: sqlitePath,
+    // This case verifies the legacy default readonly contract. Keep a
+    // developer's configured Federated runtime from changing its fixture
+    // authorization model while retaining the injected actor boundary.
+    auth_config: null,
+    authenticate: async () => actor,
+    media: { ffmpeg_path: join(root, "missing-ffmpeg.exe") }
+  });
   assert.equal(runtime.profile, "readonly");
   assert.equal(runtime.media_port, null);
   assert.equal(runtime.media_url, null);
