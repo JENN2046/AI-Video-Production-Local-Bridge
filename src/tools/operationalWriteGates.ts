@@ -2,6 +2,7 @@ import type { ShotOperationalState } from "../packages/domain/operationalState.j
 import type { M0Database } from "../storage/sqlite.js";
 import { collectProjectOperationalBundles, OperationalStateIntegrityError } from "./operationalStateFacts.js";
 import type { Project, Shot } from "./projects.js";
+import { getActiveWorkbenchDeliveryJob, getWorkbenchDeliveryState } from "./workbenchDeliveryState.js";
 
 export type ShotWorkflowWriteAction = keyof ShotOperationalState["allowed_workflow_actions"];
 
@@ -10,7 +11,7 @@ export type ShotWorkflowWriteGateResult =
   | {
     ok: false;
     error: {
-      code: "PROJECT_ARCHIVED" | "SHOT_WORKFLOW_ACTION_NOT_ALLOWED" | "SHOT_WORKFLOW_GATE_INTEGRITY_VIOLATION";
+      code: "PROJECT_ARCHIVED" | "PROJECT_CLOSED" | "DELIVERY_JOB_ACTIVE" | "SHOT_WORKFLOW_ACTION_NOT_ALLOWED" | "SHOT_WORKFLOW_GATE_INTEGRITY_VIOLATION";
       message: string;
       field: "project_id" | "workflow_action";
     };
@@ -44,6 +45,14 @@ export function requireProjectShotWorkflowWriteAction(
       return { ok: false, error: { code: "PROJECT_ARCHIVED", message: "Archived projects are read-only.", field: "project_id" } };
     }
     if (meta.lifecycle !== "active") throw new OperationalStateIntegrityError("PROJECT_OPERATIONAL_METADATA_INVALID");
+    const delivery = getWorkbenchDeliveryState(db, project.project_id);
+    if (!delivery) throw new OperationalStateIntegrityError("PROJECT_DELIVERY_STATE_MISSING");
+    if (delivery.workflow_state === "closed") {
+      return { ok: false, error: { code: "PROJECT_CLOSED", message: "Closed projects do not accept production changes.", field: "project_id" } };
+    }
+    if (getActiveWorkbenchDeliveryJob(db, project.project_id)) {
+      return { ok: false, error: { code: "DELIVERY_JOB_ACTIVE", message: "Production changes are locked while a delivery Job is active.", field: "project_id" } };
+    }
     const overrides = new Map(shots.map((shot) => [`${shot.project_id}\u0000${shot.shot_id}`, shot]));
     const bundle = collectProjectOperationalBundles(db, [project], { shot_overrides: overrides }).get(project.project_id);
     if (!bundle) throw new OperationalStateIntegrityError("SHOT_OPERATIONAL_STATE_UNAVAILABLE");

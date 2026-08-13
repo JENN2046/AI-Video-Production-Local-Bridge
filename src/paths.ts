@@ -15,6 +15,7 @@ export interface M0Paths {
   mediaActivationPendingRoot: string;
   mediaActivationQuarantineRoot: string;
   mediaActivationJournalRoot: string;
+  exportsRoot: string;
   reportsRoot: string;
 }
 
@@ -42,6 +43,7 @@ export function getM0Paths(workspaceRoot = process.cwd()): M0Paths {
     mediaActivationPendingRoot: join(mediaRoot, ".activation", "pending"),
     mediaActivationQuarantineRoot: join(mediaRoot, ".activation", "quarantine"),
     mediaActivationJournalRoot: join(mediaRoot, ".activation", "journal"),
+    exportsRoot: join(dataRoot, "exports"),
     reportsRoot: join(dataRoot, "reports")
   };
 }
@@ -76,5 +78,6 @@ export function ensureM0Directories(m0Paths = paths): void {
   ensureDir(m0Paths.mediaActivationPendingRoot);
   ensureDir(m0Paths.mediaActivationQuarantineRoot);
   ensureDir(m0Paths.mediaActivationJournalRoot);
+  ensureDir(m0Paths.exportsRoot);
   ensureDir(m0Paths.reportsRoot);
 }

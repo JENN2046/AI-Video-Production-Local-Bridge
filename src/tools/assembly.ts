@@ -30,6 +30,7 @@ import {
   type WorkbenchDeliveryJobRecord,
   type WorkbenchDeliveryWorkflowState
 } from "./workbenchDeliveryState.js";
+import { cleanupInterruptedWorkbenchExportJob } from "./workbenchDelivery.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -983,6 +984,7 @@ export function interruptUnfinishedWorkbenchDeliveryJobs(
   let cleanupFailures = 0;
   for (const job of jobs) {
     if (job.job_type === "assembly" && !cleanupJobStaging(job.job_id)) cleanupFailures += 1;
+    if (job.job_type === "export" && !cleanupInterruptedWorkbenchExportJob(job, db)) cleanupFailures += 1;
   }
   return { interrupted: jobs.length, staging_cleanup_failed: cleanupFailures };
 }

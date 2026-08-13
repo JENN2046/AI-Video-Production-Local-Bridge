@@ -1,11 +1,11 @@
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, Check, CircleAlert, Clock3, Edit3, Film, Pin, Play, RotateCcw, Save, ShieldCheck } from "lucide-react";
+import { Archive, Check, CircleAlert, Clock3, Download, Edit3, Film, Pin, Play, RotateCcw, Save, ShieldCheck } from "lucide-react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
-import { apiGet, apiMutation, confirmGeneration, preflightGeneration, reconcileGeneration } from "../api";
+import { apiGet, apiMutation, closeoutDelivery, confirmGeneration, preflightDeliveryAssembly, preflightGeneration, reconcileGeneration, startDeliveryAssembly, startDeliveryExport, submitFinalReview } from "../api";
 import { EmptyState, ErrorState, KeyValue, LoadingState, MediaPreview, Modal, PageHeader, preserveVisibleVirtualScrolls, SegmentedTabs, StatusPill, VirtualList } from "../components";
-import type { ClipVersion, GenerationIntent, GenerationRun, MediaArtifact, ReconciliationItem, ReviewNote, Shot, WorkspaceData } from "../types";
+import type { AssemblyPreflight, ClipVersion, GenerationIntent, GenerationRun, MediaArtifact, ReconciliationItem, ReviewNote, Shot, WorkspaceData } from "../types";
 import s from "../workbench.module.css";
 
 const workspaceTabs = [
@@ -21,7 +21,7 @@ export function ProjectWorkspacePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [overrideOpen, setOverrideOpen] = useState(false);
-  const query = useQuery({ queryKey: ["project-workspace", id, workspace], queryFn: () => apiGet<WorkspaceData>(`/api/v2/projects/${encodeURIComponent(id)}/${workspace}`), refetchInterval: workspace === "generation" ? 10_000 : false });
+  const query = useQuery({ queryKey: ["project-workspace", id, workspace], queryFn: () => apiGet<WorkspaceData>(`/api/v2/projects/${encodeURIComponent(id)}/${workspace}`), refetchInterval: workspace === "generation" ? 10_000 : workspace === "delivery" ? 5_000 : false });
   const projectMutation = useMutation({
     mutationFn: (body: Record<string, unknown>) => apiMutation(`/api/v2/projects/${encodeURIComponent(id)}`, "PATCH", body),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["project-workspace", id] })
@@ -227,11 +227,89 @@ function ReviewDecision({ projectId, shot, version, readOnly }: { projectId: str
 }
 
 function DeliveryWorkspace({ data }: { data: WorkspaceData }) {
-  return <div className={s.deliveryLayout}>
-    <section className={s.deliveryStatus}><div className={s.systemIcon}>{data.ready_for_assembly ? <ShieldCheck size={24} /> : <Clock3 size={24} />}</div><div><span className={s.eyebrow}>交付门禁</span><h2>{data.ready_for_assembly ? "可进入最终合成" : "等待所有 SHOT 采纳片段"}</h2><p>{data.ready_for_assembly ? "镜头版本栈已收敛，可以执行现有合成和最终审查流程。" : "不会用未采纳版本自动拼接最终视频。"}</p></div><StatusPill tone={data.ready_for_assembly ? "success" : "warning"}>{data.ready_for_assembly ? "READY" : "BLOCKED"}</StatusPill></section>
-    <section className={s.deliveryClips}><div className={s.sectionTitle}><div><h2>合成顺序</h2><p>按 SHOT order 固定排列。</p></div></div><div className={s.clipGrid}>{(data.accepted_clips ?? []).map((clip) => <div key={clip.shot_id} className={s.clipItem}><MediaPreview artifact={clip.artifact} /><span>SHOT {String(clip.order).padStart(3, "0")}</span></div>)}</div></section>
-    <section className={s.deliveryFinal}><div className={s.sectionTitle}><div><h2>最终视频</h2><p>合成产物和最终决策保持原有安全门。</p></div></div><MediaPreview artifact={data.final_artifact} /></section>
-  </div>;
+  const [dialog, setDialog] = useState<"assembly" | "accept" | "reassemble" | "regenerate_shots" | "export" | "closeout" | null>(null);
+  const state = data.workflow_state ?? "not_ready";
+  const currentArtifact = data.current_final_version?.artifact ?? data.final_artifact ?? null;
+  const activeJob = data.active_job;
+  const readOnly = data.meta.lifecycle === "archived" || state === "closed";
+  const canReview = Boolean(currentArtifact) && !activeJob && new Set(["final_review", "approved", "exported", "legacy_review_required"]).has(state);
+  const canAccept = Boolean(currentArtifact) && !activeJob && new Set(["final_review", "legacy_review_required"]).has(state);
+  const canExport = Boolean(currentArtifact) && !activeJob && new Set(["approved", "exported"]).has(state);
+  return <>
+    <div className={s.deliveryLayout}>
+      <section className={s.deliveryStatus}><div className={s.systemIcon}>{state === "closed" || state === "exported" || state === "approved" ? <ShieldCheck size={24} /> : <Clock3 size={24} />}</div><div><span className={s.eyebrow}>交付状态</span><h2>{deliveryStateLabel(state)}</h2><p>{activeJob ? `${activeJob.job_type === "assembly" ? "装配" : "导出"} Job ${activeJob.state}；完成前生产写入已锁定。` : deliveryStateDetail(state)}</p></div><StatusPill tone={state === "closed" || state === "exported" || state === "approved" ? "success" : state === "assembling" || state === "final_review" ? "info" : "warning"}>{state}</StatusPill></section>
+
+      <section className={s.deliveryClips}><div className={s.sectionTitle}><div><h2>1. 装配准备</h2><p>按 SHOT order 固定输入，只使用当前采纳且字节已验证的片段。</p></div><button className={s.primaryButton} disabled={readOnly || Boolean(activeJob)} onClick={() => setDialog("assembly")}><Play size={16} /> 装配预检</button></div><div className={s.clipGrid}>{(data.accepted_clips ?? []).map((clip) => <div key={clip.shot_id} className={s.clipItem}><MediaPreview artifact={clip.artifact} /><span>SHOT {String(clip.order).padStart(3, "0")} · {clip.artifact ? "已验证" : clip.reference_error_code ?? "未就绪"}</span></div>)}</div>{!(data.accepted_clips?.length) && <div className={s.deliverySectionBody}><EmptyState title="尚无装配输入" /></div>}</section>
+
+      <section className={s.deliveryFinal}><div className={s.sectionTitle}><div><h2>2. 最终版本栈</h2><p>每次成功装配创建新 Artifact；历史版本不会覆盖。</p></div><StatusPill tone={(data.final_versions?.length ?? 0) ? "info" : "neutral"}>{data.final_versions?.length ?? 0} 个版本</StatusPill></div><div className={s.deliveryVersionGrid}>{(data.final_versions ?? []).map((version) => <article className={s.deliveryVersion} key={version.artifact_id}><MediaPreview artifact={version.artifact} /><div><strong>{version.artifact_id}</strong><small>{formatDeliveryTime(version.assembled_at ?? version.created_at)}</small><span>{version.is_current && <StatusPill tone="info">当前</StatusPill>}{version.is_approved && <StatusPill tone="success">已批准</StatusPill>}</span></div></article>)}</div>{!(data.final_versions?.length) && <div className={s.deliverySectionBody}><EmptyState title="尚无最终版本" detail="完成真实装配后，版本会在这里出现。" /></div>}</section>
+
+      <section className={s.deliveryFinal}><div className={s.sectionTitle}><div><h2>3. 终审</h2><p>接受当前版本、仅重新装配，或只退回指定 SHOT。</p></div></div><div className={s.deliveryReviewBody}><div className={s.deliveryPreview}><MediaPreview artifact={currentArtifact} /></div><div className={s.deliveryDecisionPanel}><KeyValue rows={[["当前 Artifact", data.final_review?.current_artifact_id ?? "无"], ["批准 Artifact", data.final_review?.approved_artifact_id ?? "未批准"], ["终审状态", deliveryStateLabel(state)]]} /><div className={s.buttonColumn}><button className={s.primaryButton} disabled={readOnly || !canAccept} onClick={() => setDialog("accept")}><Check size={16} /> 接受当前版本</button><button className={s.secondaryButton} disabled={readOnly || !canReview} onClick={() => setDialog("reassemble")}><RotateCcw size={16} /> 保留 SHOT 并重装</button><button className={s.dangerButton} disabled={readOnly || !canReview} onClick={() => setDialog("regenerate_shots")}><RotateCcw size={16} /> 定向 SHOT 返工</button></div></div></div></section>
+
+      <section className={s.deliveryFinal}><div className={s.sectionTitle}><div><h2>4. 导出与结案</h2><p>导出和结案是两个独立的人工作业；UI 只显示相对路径。</p></div></div><div className={s.deliveryExportBody}><div><KeyValue rows={[["最新导出", data.latest_export?.relative_path ?? "尚未导出"], ["SHA-256", data.latest_export?.sha256 ? `${data.latest_export.sha256.slice(0, 12)}…` : "—"], ["结案凭据", data.closeout_receipt?.event_id ?? "尚未结案"]]} />{data.latest_export && <a className={s.secondaryButton} download href={`/api/v2/projects/${encodeURIComponent(data.project.project_id)}/delivery/exports/${encodeURIComponent(data.latest_export.export_id)}/file`}><Download size={16} /> 本地下载</a>}</div><div className={s.buttonColumn}><button className={s.primaryButton} disabled={readOnly || !canExport} onClick={() => setDialog("export")}><Download size={16} /> 确认导出</button><button className={s.dangerButton} disabled={readOnly || state !== "exported" || Boolean(activeJob)} onClick={() => setDialog("closeout")}><ShieldCheck size={16} /> 确认结案</button></div></div></section>
+    </div>
+    {dialog === "assembly" && <AssemblyDeliveryModal data={data} onClose={() => setDialog(null)} />}
+    {(dialog === "accept" || dialog === "reassemble" || dialog === "regenerate_shots") && currentArtifact && <FinalReviewModal data={data} artifact={currentArtifact} decision={dialog} onClose={() => setDialog(null)} />}
+    {dialog === "export" && currentArtifact && <ExportDeliveryModal projectId={data.project.project_id} artifact={currentArtifact} onClose={() => setDialog(null)} />}
+    {dialog === "closeout" && <CloseoutDeliveryModal projectId={data.project.project_id} onClose={() => setDialog(null)} />}
+  </>;
+}
+
+function AssemblyDeliveryModal({ data, onClose }: { data: WorkspaceData; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [preflight, setPreflight] = useState<AssemblyPreflight | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const prepare = useMutation({ mutationFn: () => preflightDeliveryAssembly(data.project.project_id), onSuccess: setPreflight });
+  const start = useMutation({
+    mutationFn: () => startDeliveryAssembly(data.project.project_id, preflight?.input_fingerprint ?? ""),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["project-workspace", data.project.project_id] }); onClose(); }
+  });
+  const error = prepare.error ?? start.error;
+  return <Modal title="最终装配预检" onClose={onClose} footer={<><button className={s.secondaryButton} onClick={onClose}>取消</button>{preflight?.ready && preflight.tooling_checked ? <button className={s.primaryButton} disabled={!confirmed || start.isPending} onClick={() => start.mutate()}>确认并排队装配</button> : <button className={s.primaryButton} disabled={prepare.isPending} onClick={() => prepare.mutate()}>运行预检</button>}</>}>
+    <div className={s.advisoryBox}><strong>final-assembly-v1</strong><small>FFmpeg 使用只读源文件、唯一 staging 和无覆盖输出；进程重启后不会自动重试。</small></div>
+    {preflight && <><KeyValue rows={[["输入指纹", preflight.input_fingerprint ? `${preflight.input_fingerprint.slice(0, 16)}…` : "未生成"], ["目标规格", preflight.target ? `${preflight.target.width}×${preflight.target.height} · 30fps` : "未通过"], ["预计时长", `${preflight.expected_duration_seconds}s`], ["工具门禁", preflight.tooling_checked ? "FFmpeg / FFprobe 已验证" : "未验证"]]} />{preflight.blockers.length > 0 && <div className={s.gateList}>{preflight.blockers.map((blocker, index) => <div className={s.gateBad} key={`${blocker.code}-${index}`}><CircleAlert size={15} />{blocker.shot_id ? `${blocker.shot_id} · ` : ""}{blocker.code}</div>)}</div>}{preflight.ready && preflight.tooling_checked && <label className={s.checkboxRowInline}><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>我确认用此输入指纹创建一个持久装配 Job；失败不会自动重试，也不会移动最终版本指针。</span></label>}</>}
+    {error && <div className={s.inlineError}>{error.message}</div>}
+  </Modal>;
+}
+
+function FinalReviewModal({ data, artifact, decision, onClose }: { data: WorkspaceData; artifact: MediaArtifact; decision: "accept" | "reassemble" | "regenerate_shots"; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [selected, setSelected] = useState<string[]>([]);
+  const [reason, setReason] = useState("");
+  const [confirmed, setConfirmed] = useState(false);
+  const mutation = useMutation({
+    mutationFn: () => submitFinalReview(data.project.project_id, { artifact_id: artifact.artifact_id, decision, ...(decision === "regenerate_shots" ? { shot_ids: selected, reason: reason.trim() } : {}) }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["project-workspace", data.project.project_id] }); queryClient.invalidateQueries({ queryKey: ["projects"] }); onClose(); }
+  });
+  const valid = confirmed && (decision !== "regenerate_shots" || (selected.length > 0 && reason.trim().length >= 3));
+  const title = decision === "accept" ? "接受当前最终版本" : decision === "reassemble" ? "仅重新装配" : "定向 SHOT 返工";
+  return <Modal title={title} onClose={onClose} footer={<><button className={s.secondaryButton} onClick={onClose}>取消</button><button className={decision === "regenerate_shots" ? s.dangerButton : s.primaryButton} disabled={!valid || mutation.isPending} onClick={() => mutation.mutate()}>确认终审决定</button></>}>
+    <div className={s.advisoryBox}><strong>{artifact.artifact_id}</strong><small>{decision === "accept" ? "批准后才允许导出。" : decision === "reassemble" ? "保留全部 SHOT 采纳指针并回到装配准备。" : "只清除选中 SHOT 的采纳指针，其他 SHOT 保持不变。"}</small></div>
+    {decision === "regenerate_shots" && <><fieldset className={s.shotSelection}><legend>选择问题 SHOT</legend>{(data.accepted_clips ?? []).map((clip) => <label key={clip.shot_id}><input type="checkbox" checked={selected.includes(clip.shot_id)} onChange={(event) => setSelected(event.target.checked ? [...selected, clip.shot_id] : selected.filter((id) => id !== clip.shot_id))} /><span>SHOT {String(clip.order).padStart(3, "0")} · {clip.shot_id}</span></label>)}</fieldset><label className={s.field}><span>返工原因（必填）</span><textarea rows={4} maxLength={1_000} value={reason} onChange={(event) => setReason(event.target.value)} /></label></>}
+    <label className={s.checkboxRowInline}><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>我确认该决定针对当前最终 Artifact；旧 Clip、最终版本和事件证据必须保留。</span></label>
+    {mutation.isError && <div className={s.inlineError}>{mutation.error.message}</div>}
+  </Modal>;
+}
+
+function ExportDeliveryModal({ projectId, artifact, onClose }: { projectId: string; artifact: MediaArtifact; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [confirmed, setConfirmed] = useState(false);
+  const mutation = useMutation({ mutationFn: () => startDeliveryExport(projectId, artifact.artifact_id), onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["project-workspace", projectId] }); onClose(); } });
+  return <Modal title="确认本地导出" onClose={onClose} footer={<><button className={s.secondaryButton} onClick={onClose}>取消</button><button className={s.primaryButton} disabled={!confirmed || mutation.isPending} onClick={() => mutation.mutate()}>确认导出</button></>}>
+    <div className={s.advisoryBox}><strong>{artifact.artifact_id}</strong><small>目标库为 data/exports/&lt;project_id&gt;/；先写 .part，经 SHA-256 与 FFprobe 校验后独占落盘，绝不覆盖。</small></div>
+    <label className={s.checkboxRowInline}><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>我确认导出当前已批准最终版本。此动作不会自动结案。</span></label>
+    {mutation.isError && <div className={s.inlineError}>{mutation.error.message}</div>}
+  </Modal>;
+}
+
+function CloseoutDeliveryModal({ projectId, onClose }: { projectId: string; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [phrase, setPhrase] = useState("");
+  const mutation = useMutation({ mutationFn: () => closeoutDelivery(projectId, phrase), onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["project-workspace", projectId] }); queryClient.invalidateQueries({ queryKey: ["projects"] }); onClose(); } });
+  return <Modal title="项目结案" onClose={onClose} footer={<><button className={s.secondaryButton} onClick={onClose}>取消</button><button className={s.dangerButton} disabled={phrase !== "确认结案" || mutation.isPending} onClick={() => mutation.mutate()}>永久关闭生产写入</button></>}>
+    <div className={s.advisoryBox}><strong>结案后生产写入将 fail closed</strong><small>系统会重新校验当前 Artifact、对应 Export 和活动 Job；归档仍是独立的可逆动作。</small></div>
+    <label className={s.field}><span>输入固定短语“确认结案”</span><input autoComplete="off" value={phrase} onChange={(event) => setPhrase(event.target.value)} /></label>
+    {mutation.isError && <div className={s.inlineError}>{mutation.error.message}</div>}
+  </Modal>;
 }
 
 function ThreePane({ queue, detail, evidence }: { queue: ReactNode; detail: ReactNode; evidence: ReactNode }) {
@@ -248,6 +326,37 @@ function RunList({ runs }: { runs: GenerationRun[] }) { return runs.length ? <di
 
 function selectShot(shots: Shot[], selectedId: string | null) { return shots.find((shot) => shot.shot_id === selectedId) ?? shots[0]; }
 function setSelected(params: URLSearchParams, setParams: ReturnType<typeof useSearchParams>[1], id: string) { preserveVisibleVirtualScrolls(); const next = new URLSearchParams(params); next.set("selected", id); setParams(next, { replace: true }); }
+function deliveryStateLabel(state: string): string {
+  return ({
+    not_ready: "装配输入尚未就绪",
+    ready_to_assemble: "可以开始装配",
+    assembling: "正在装配",
+    final_review: "等待最终审查",
+    revision_requested: "等待定向返工",
+    approved: "最终版本已批准",
+    exported: "已完成本地导出",
+    closed: "项目已结案",
+    legacy_review_required: "历史项目需要重新审查"
+  } as Record<string, string>)[state] ?? state;
+}
+function deliveryStateDetail(state: string): string {
+  return ({
+    not_ready: "所有 SHOT 都有有效采纳片段后才能进入真实装配。",
+    ready_to_assemble: "先运行工具与输入指纹预检，再明确确认装配。",
+    assembling: "持久 Job 正在运行；失败不会自动重试。",
+    final_review: "请审看当前最终版本，并作出接受、重装或定向返工决定。",
+    revision_requested: "选中的 SHOT 已清除采纳指针，其他 SHOT 保持不变。",
+    approved: "当前版本已批准，可以明确确认本地导出。",
+    exported: "导出已校验；输入固定短语后才能正式结案。",
+    closed: "生产写入已永久关闭；历史证据仍可读取。",
+    legacy_review_required: "历史 final_approved 不代表新式导出或结案，需要人工重新确认。"
+  } as Record<string, string>)[state] ?? "请按当前交付门禁继续。";
+}
+function formatDeliveryTime(value: string | null | undefined): string {
+  if (!value) return "时间未知";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(date);
+}
 function generationDisabledReason(data: WorkspaceData, shot: Shot): string {
   if (data.meta.lifecycle === "archived") return "先恢复归档项目；归档状态只读。";
   if (data.project.status === "final_approved") return "项目已经完成结案，不能再创建生成任务。";

@@ -5,6 +5,7 @@ import { attachArtifactToShot, createScopedArtifactFromBlob, validateAcceptedCli
 import { createProject, getProject, getShot, listProjectShots, saveProject, saveShot, type Project, type Shot } from "./projects.js";
 import { saveStoryboardPackage, type StoryboardPackage } from "./storyboardPackages.js";
 import { requireProjectShotWorkflowWriteAction, requireShotWorkflowWriteAction } from "./operationalWriteGates.js";
+import { getActiveWorkbenchDeliveryJob, getWorkbenchDeliveryState } from "./workbenchDeliveryState.js";
 import { decideWorkbenchClip, decideWorkbenchImport, updateWorkbenchShot, type WorkbenchPage, type WorkbenchProjectClassification, type WorkbenchV2Result } from "./workbenchV2.js";
 import {
   appendWorkbenchInboxEvent,
@@ -528,6 +529,10 @@ function writableProject(projectId: string, db: M0Database): Project {
   if (!project) throw new InboxDomainError("PROJECT_NOT_FOUND", `Project not found: ${projectId}`, "target_project_id");
   const meta = db.prepare("SELECT lifecycle FROM workbench_project_meta WHERE project_id = ?").get(projectId) as { lifecycle: string } | undefined;
   if (meta?.lifecycle === "archived") throw new InboxDomainError("PROJECT_ARCHIVED", "Archived projects are read-only.", "target_project_id");
+  const delivery = getWorkbenchDeliveryState(db, projectId);
+  if (!delivery) throw new InboxDomainError("DELIVERY_STATE_MISSING", "Project delivery state is unavailable.", "target_project_id");
+  if (delivery.workflow_state === "closed") throw new InboxDomainError("PROJECT_CLOSED", "Closed projects do not accept production changes.", "target_project_id");
+  if (getActiveWorkbenchDeliveryJob(db, projectId)) throw new InboxDomainError("DELIVERY_JOB_ACTIVE", "Production changes are locked while a delivery Job is active.", "target_project_id");
   return project;
 }
 

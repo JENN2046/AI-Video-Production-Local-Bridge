@@ -31,6 +31,7 @@ import {
   projectSummaryDeliveryState,
   type WorkbenchDeliveryWorkflowState
 } from "./workbenchDeliveryState.js";
+import { listWorkbenchFinalVersions, refreshWorkbenchDeliveryAssemblyReadiness } from "./workbenchDelivery.js";
 
 export type WorkbenchProjectClassification = "unclassified" | "production" | "test";
 export type WorkbenchProjectLifecycle = "active" | "archived";
@@ -733,6 +734,10 @@ export function decideWorkbenchClip(
 ): WorkbenchV2Result<{ shot: Shot; regeneration_request?: Record<string, unknown> }> {
   const writable = assertWorkbenchProjectWritable(db, projectId);
   if (!writable.ok) return writable;
+  const delivery = getWorkbenchDeliveryState(db, projectId);
+  if (delivery && new Set<WorkbenchDeliveryWorkflowState>(["final_review", "approved", "exported", "legacy_review_required"]).has(delivery.workflow_state)) {
+    return { ok: false, error: { code: "FINAL_REVIEW_REQUIRED", message: "SHOT review is locked after final assembly; use the final-review rework actions.", field: "project_id" } };
+  }
   const candidate = getShot(db, input.shot_id);
   if (!candidate || candidate.project_id !== projectId) return { ok: false, error: { code: "SHOT_NOT_FOUND", message: "SHOT does not belong to the selected project.", field: "shot_id" } };
   const result = markShotClipReview({
@@ -743,7 +748,15 @@ export function decideWorkbenchClip(
     revision_instruction: input.revision_instruction
   }, db);
   if (!result.ok) return result;
-  if (input.decision === "approved") return { ok: true, data: { shot: result.shot } };
+  if (input.decision === "approved") {
+    refreshWorkbenchDeliveryAssemblyReadiness(db, projectId);
+    return { ok: true, data: { shot: result.shot } };
+  }
+  if (result.shot.accepted_clip_artifact_id === input.artifact_id) {
+    result.shot.accepted_clip_artifact_id = "";
+    saveShot(db, result.shot);
+    refreshWorkbenchDeliveryAssemblyReadiness(db, projectId);
+  }
   const version = result.shot.clip_versions.find((item) => item.artifact_id === input.artifact_id);
   const request = {
     request_id: `regen_${randomUUID()}`,
@@ -977,6 +990,15 @@ export function getWorkbenchProjectWorkspace(
   const invalidAcceptedClipCount = accepted_clips.filter((clip) => clip.artifact_id && clip.artifact === null).length;
   const deliverySummary = withValidatedAssemblyReadiness(summary, readyForAssembly, invalidAcceptedClipCount);
   const assemblyPreflight = getAssemblyDatabasePreflight(projectId, db);
+  const final_versions = listWorkbenchFinalVersions(db, projectId).map((version) => {
+    const artifact = getMediaArtifact(db, version.artifact_id);
+    return {
+      ...version,
+      artifact: artifact ? publicWorkbenchArtifact(artifact) : null,
+      is_current: version.artifact_id === deliveryState.current_final_artifact_id,
+      is_approved: version.artifact_id === deliveryState.approved_artifact_id
+    };
+  });
   return { ok: true, data: {
     ...base,
     summary: deliverySummary,
@@ -994,7 +1016,13 @@ export function getWorkbenchProjectWorkspace(
       blockers: [{ code: assemblyPreflight.error.code }]
     },
     active_job: getActiveWorkbenchDeliveryJob(db, projectId),
-    final_review: { approved_artifact_id: deliveryState.approved_artifact_id },
+    final_versions,
+    current_final_version: final_versions.find((version) => version.is_current) ?? null,
+    final_review: {
+      current_artifact_id: deliveryState.current_final_artifact_id,
+      approved_artifact_id: deliveryState.approved_artifact_id,
+      decision_required: deliveryState.workflow_state === "final_review" || deliveryState.workflow_state === "legacy_review_required"
+    },
     latest_export: getLatestWorkbenchExport(db, projectId),
     closeout_receipt: getWorkbenchCloseoutReceipt(db, projectId),
     final_artifact: finalArtifact?.ok ? publicWorkbenchArtifact(finalArtifact.artifact) : null,

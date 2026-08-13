@@ -7,10 +7,9 @@ import { migrateDatabase } from "../src/storage/databaseGovernance.js";
 import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 
 const dataRoot = assertInsideWorkspace(paths.dataRoot);
-const expectedRelativePath = "ops/tools/playwright-data";
 const relativeDataRoot = relative(paths.workspaceRoot, dataRoot).split(/[\\/]+/).join("/").toLowerCase();
-if (relativeDataRoot !== expectedRelativePath) {
-  throw new Error(`Refusing to prepare browser fixture outside ${expectedRelativePath}.`);
+if (!/^ops\/tools\/playwright-data(?:-\d{4,5})?$/.test(relativeDataRoot)) {
+  throw new Error("Refusing to prepare browser fixture outside its governed ops/tools/playwright-data lane.");
 }
 
 rmSync(dataRoot, { recursive: true, force: true });

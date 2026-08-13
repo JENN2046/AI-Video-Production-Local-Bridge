@@ -311,7 +311,24 @@ test("project workflow write gate evaluates 100 SHOTs with a fixed query count",
     prepare(sql: string) {
       queryCount += 1;
       return {
-        get: () => sql.includes("workbench_project_meta") ? { lifecycle: "active" } : undefined,
+        get: () => {
+          if (sql.includes("workbench_project_meta")) return { lifecycle: "active" };
+          if (sql.includes("FROM workbench_delivery_state")) {
+            return {
+              project_id: project.project_id,
+              workflow_state: "not_ready",
+              current_final_artifact_id: null,
+              assembly_input_fingerprint: null,
+              approved_artifact_id: null,
+              latest_export_id: null,
+              latest_exported_at: null,
+              closed_at: null,
+              created_at: "2026-08-13T00:00:00.000Z",
+              updated_at: "2026-08-13T00:00:00.000Z"
+            };
+          }
+          return undefined;
+        },
         all() {
           if (sql.includes("FROM shots")) return shots.map((shot) => ({ shot_id: shot.shot_id, project_id: project.project_id, data_json: JSON.stringify(shot) }));
           if (sql.includes("FROM media_artifacts")) return shots.map((shot) => ({
@@ -340,7 +357,7 @@ test("project workflow write gate evaluates 100 SHOTs with a fixed query count",
 
   const gate = requireProjectShotWorkflowWriteAction(db, project, shots, "freeze_storyboard");
   assert.equal(gate.ok, true);
-  assert.equal(queryCount, 5);
+  assert.equal(queryCount, 7);
 });
 
 test("operational fact collection fails closed on structured SHOT binding drift", () => {

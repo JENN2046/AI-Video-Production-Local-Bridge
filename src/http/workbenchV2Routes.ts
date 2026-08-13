@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { createReadStream } from "node:fs";
 
 import { openM0Database } from "../storage/sqlite.js";
 import {
@@ -29,6 +30,14 @@ import {
   queueWorkbenchAssembly,
   startWorkbenchAssemblyJob
 } from "../tools/assembly.js";
+import {
+  closeoutWorkbenchDelivery,
+  decideWorkbenchFinalReview,
+  queueWorkbenchExport,
+  resolveWorkbenchExportDownload,
+  startWorkbenchExportJob,
+  type WorkbenchFinalReviewDecision
+} from "../tools/workbenchDelivery.js";
 import {
   createWorkbenchProject,
   decideWorkbenchClip,
@@ -69,7 +78,7 @@ function sendOk(response: ServerResponse, data: unknown, meta?: unknown): void {
 
 function statusForError(error: WorkbenchV2Error): number {
   if (error.code.endsWith("_NOT_FOUND")) return 404;
-  if (["PROJECT_ARCHIVED", "PROJECT_CLOSED", "PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION", "SHOT_BLOCKED", "GOVERNANCE_SNAPSHOT_STALE", "INVALID_DRAFT_TRANSITION", "ACTION_NOT_PENDING", "DIRECTOR_PROPOSAL_STALE", "DIRECTOR_PROPOSAL_NOT_PENDING", "DIRECTOR_PROPOSAL_PRINCIPAL_INACTIVE", "DIRECTOR_FOCUS_STALE", "DIRECTOR_FOCUS_TARGET_INVALID", "DIRECTOR_PRINCIPAL_SELECTION_REQUIRED", "ASSEMBLY_NOT_READY", "ASSEMBLY_INPUT_CHANGED", "DELIVERY_JOB_ACTIVE"].includes(error.code)) return 409;
+  if (["PROJECT_ARCHIVED", "PROJECT_CLOSED", "PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION", "SHOT_BLOCKED", "GOVERNANCE_SNAPSHOT_STALE", "INVALID_DRAFT_TRANSITION", "ACTION_NOT_PENDING", "DIRECTOR_PROPOSAL_STALE", "DIRECTOR_PROPOSAL_NOT_PENDING", "DIRECTOR_PROPOSAL_PRINCIPAL_INACTIVE", "DIRECTOR_FOCUS_STALE", "DIRECTOR_FOCUS_TARGET_INVALID", "DIRECTOR_PRINCIPAL_SELECTION_REQUIRED", "ASSEMBLY_NOT_READY", "ASSEMBLY_INPUT_CHANGED", "DELIVERY_JOB_ACTIVE", "FINAL_REVIEW_REQUIRED", "FINAL_REVIEW_ARTIFACT_STALE", "FINAL_REVIEW_STATE_INVALID", "FINAL_REWORK_SELECTION_REQUIRED", "EXPORT_INTEGRITY_FAILED", "CLOSEOUT_EXPORT_MISMATCH"].includes(error.code)) return 409;
   if (error.code === "FFMPEG_UNAVAILABLE") return 503;
   if (["ASSEMBLY_OUTPUT_INVALID", "ASSEMBLY_FFMPEG_FAILED", "ASSEMBLY_TIMEOUT"].includes(error.code)) return 500;
   if (error.code === "ACTION_NONCE_REQUIRED") return 403;
@@ -356,6 +365,69 @@ export async function handleWorkbenchV2Api(
         db.close();
       }
     });
+    return true;
+  }
+
+  const finalReviewMatch = url.pathname.match(/^\/api\/v2\/projects\/([^/]+)\/delivery\/final-review$/);
+  if (request.method === "POST" && finalReviewMatch) {
+    const projectId = decodeSegment(finalReviewMatch[1]);
+    await mutation(request, response, actionNonce, (body) => {
+      const decision = text(body.decision) as WorkbenchFinalReviewDecision;
+      sendResult(response, withDatabase((db) => decideWorkbenchFinalReview({
+        project_id: projectId,
+        artifact_id: text(body.artifact_id),
+        decision,
+        shot_ids: Array.isArray(body.shot_ids) ? body.shot_ids.map(text) : undefined,
+        reason: optionalText(body.reason),
+        human_confirmation: body.human_confirmation === true
+      }, db)));
+    });
+    return true;
+  }
+
+  const exportMatch = url.pathname.match(/^\/api\/v2\/projects\/([^/]+)\/delivery\/export$/);
+  if (request.method === "POST" && exportMatch) {
+    const projectId = decodeSegment(exportMatch[1]);
+    await mutation(request, response, actionNonce, (body) => {
+      const result = withDatabase((db) => queueWorkbenchExport({
+        project_id: projectId,
+        artifact_id: text(body.artifact_id),
+        human_confirmation: body.human_confirmation === true,
+        retry_of_job_id: optionalText(body.retry_of_job_id)
+      }, db));
+      sendResult(response, result, result.ok && !result.data.reused ? 202 : 200);
+      if (result.ok && result.data.job) startWorkbenchExportJob(result.data.job.job_id);
+    });
+    return true;
+  }
+
+  const closeoutMatch = url.pathname.match(/^\/api\/v2\/projects\/([^/]+)\/delivery\/closeout$/);
+  if (request.method === "POST" && closeoutMatch) {
+    const projectId = decodeSegment(closeoutMatch[1]);
+    await mutation(request, response, actionNonce, (body) => sendResult(response, withDatabase((db) => closeoutWorkbenchDelivery({
+      project_id: projectId,
+      confirmation_phrase: text(body.confirmation_phrase)
+    }, db))));
+    return true;
+  }
+
+  const exportFileMatch = url.pathname.match(/^\/api\/v2\/projects\/([^/]+)\/delivery\/exports\/([^/]+)\/file$/);
+  if (request.method === "GET" && exportFileMatch) {
+    const projectId = decodeSegment(exportFileMatch[1]);
+    const exportId = decodeSegment(exportFileMatch[2]);
+    const result = withDatabase((db) => resolveWorkbenchExportDownload(projectId, exportId, db));
+    if (!result.ok) {
+      send(response, statusForError(result.error), { ok: false, error: result.error });
+      return true;
+    }
+    response.writeHead(200, {
+      "content-type": "video/mp4",
+      "content-length": String(result.data.size_bytes),
+      "content-disposition": `attachment; filename="${result.data.filename}"`,
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff"
+    });
+    createReadStream(result.data.absolute_path).pipe(response);
     return true;
   }
 
