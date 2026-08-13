@@ -155,7 +155,7 @@ test("M0-R1 final assembly artifact is valid mp4", async () => {
       assert.equal(review.ok, true);
     }
 
-    const assembled = assembleFinalVideo(
+    const assembled = await assembleFinalVideo(
       {
         project_id: project.project_id,
         confirmation: { confirmation_level: "explicit", user_confirmed: true }

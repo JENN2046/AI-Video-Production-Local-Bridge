@@ -141,7 +141,7 @@ try {
     if (regenerated.run.status === "succeeded" && regenerated.artifact_id) {
       const approved = markShotClipReview({ shot_id: firstRun.shot_id, artifact_id: regenerated.artifact_id, decision: "approved" }, db);
       if (!approved.ok) throw new Error(approved.error.message);
-      const assembled = assembleFinalVideo(
+      const assembled = await assembleFinalVideo(
         {
           project_id: project.project_id,
           confirmation: { confirmation_level: "explicit", user_confirmed: true }

@@ -70,7 +70,7 @@ async function setupClosedProject(db: ReturnType<typeof openM0Database>) {
   assert.equal(approved.ok, true);
   if (!approved.ok) throw new Error("approval setup failed");
 
-  const finalAssembly = executeH4FinalAssembly({ project_id: project.project_id, human_confirmation: true, write_report: false }, undefined, db);
+  const finalAssembly = await executeH4FinalAssembly({ project_id: project.project_id, human_confirmation: true, write_report: false }, undefined, db);
   assert.equal(finalAssembly.ok, true);
   if (!finalAssembly.ok) throw new Error("assembly setup failed");
 

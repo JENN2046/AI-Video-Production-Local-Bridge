@@ -66,7 +66,7 @@ test("M0-F assembly requires explicit confirmation", async () => {
 
   try {
     const { project } = await setupGeneratedProject(db);
-    const assembled = assembleFinalVideo({ project_id: project.project_id }, db);
+    const assembled = await assembleFinalVideo({ project_id: project.project_id }, db);
     assert.equal(assembled.ok, false);
     if (assembled.ok) return;
     assert.equal(assembled.error.code, "USER_CONFIRMATION_REQUIRED");
@@ -87,7 +87,7 @@ test("M0-F assembly blocks before all shots are approved", async () => {
       assert.equal(review.ok, true);
     }
 
-    const assembled = assembleFinalVideo(
+    const assembled = await assembleFinalVideo(
       {
         project_id: project.project_id,
         confirmation: { confirmation_level: "explicit", user_confirmed: true }
@@ -115,7 +115,7 @@ test("M0-F assembly succeeds after all shots are approved", async () => {
       assert.equal(review.ok, true);
     }
 
-    const assembled = assembleFinalVideo(
+    const assembled = await assembleFinalVideo(
       {
         project_id: project.project_id,
         confirmation: { confirmation_level: "explicit", user_confirmed: true }
@@ -161,7 +161,7 @@ test("M0-F assembly rejects an accepted clip that is not in the SHOT version sta
     target.accepted_clip_artifact_id = stale.artifact.artifact_id;
     saveShot(db, target);
 
-    const assembled = assembleFinalVideo({
+    const assembled = await assembleFinalVideo({
       project_id: project.project_id,
       confirmation: { confirmation_level: "explicit", user_confirmed: true }
     }, db);

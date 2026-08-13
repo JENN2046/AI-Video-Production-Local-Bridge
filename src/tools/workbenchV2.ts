@@ -21,6 +21,7 @@ import { collectProjectOperationalBundle, collectProjectOperationalBundles, Oper
 import { requireShotWorkflowWriteAction } from "./operationalWriteGates.js";
 import type { ProjectOperationalSummary } from "../packages/domain/operationalState.js";
 import { markShotClipReview, type RevisionInstruction } from "./review.js";
+import { getAssemblyDatabasePreflight } from "./assembly.js";
 import { listWorkbenchDraftRecords, listWorkbenchPendingActionRecords } from "./workbenchInboxStore.js";
 import {
   getActiveWorkbenchDeliveryJob,
@@ -241,6 +242,9 @@ export function assertWorkbenchProjectWritable(db: M0Database, projectId: string
   }
   if (delivery.workflow_state === "closed") {
     return { ok: false, error: { code: "PROJECT_CLOSED", message: "Closed projects do not accept production changes.", field: "project_id" } };
+  }
+  if (getActiveWorkbenchDeliveryJob(db, projectId)) {
+    return { ok: false, error: { code: "DELIVERY_JOB_ACTIVE", message: "Production changes are locked while a delivery Job is active.", field: "project_id" } };
   }
   return { ok: true, data: { project, meta } };
 }
@@ -763,9 +767,13 @@ function artifactMap(db: M0Database, artifactIds: string[]): Record<string, Medi
   const result: Record<string, MediaArtifact> = {};
   for (const artifactId of [...new Set(artifactIds.filter(Boolean))].slice(0, 500)) {
     const artifact = getMediaArtifact(db, artifactId);
-    if (artifact) result[artifactId] = artifact;
+    if (artifact) result[artifactId] = publicWorkbenchArtifact(artifact);
   }
   return result;
+}
+
+function publicWorkbenchArtifact(artifact: MediaArtifact): MediaArtifact {
+  return { ...artifact, storage: { ...artifact.storage, uri: "" } };
 }
 
 export function getWorkbenchProjectWorkspace(
@@ -933,7 +941,7 @@ export function getWorkbenchProjectWorkspace(
         const validated = validateActiveArtifactReference(db, {
           artifact_id: version.artifact_id, project_id: projectId, shot_id: shot.shot_id, role: "generated_clip", artifact_type: "video"
         });
-        return { ...version, artifact: validated.ok ? validated.artifact : null, ...(!validated.ok ? { reference_error_code: validated.error.code } : {}) };
+        return { ...version, artifact: validated.ok ? publicWorkbenchArtifact(validated.artifact) : null, ...(!validated.ok ? { reference_error_code: validated.error.code } : {}) };
       })
     }));
     const reviewNoteRows = db.prepare(`
@@ -958,7 +966,7 @@ export function getWorkbenchProjectWorkspace(
   const accepted_clips = shots.map((shot) => {
     if (!shot.accepted_clip_artifact_id) return { shot_id: shot.shot_id, order: shot.order, artifact_id: "", artifact: null, reference_error_code: "SHOT_ACCEPTED_CLIP_MISSING" };
     const validated = validateAcceptedClipReference(db, shot);
-    return { shot_id: shot.shot_id, order: shot.order, artifact_id: shot.accepted_clip_artifact_id, artifact: validated.ok ? validated.artifact : null, ...(!validated.ok ? { reference_error_code: validated.error.code } : {}) };
+    return { shot_id: shot.shot_id, order: shot.order, artifact_id: shot.accepted_clip_artifact_id, artifact: validated.ok ? publicWorkbenchArtifact(validated.artifact) : null, ...(!validated.ok ? { reference_error_code: validated.error.code } : {}) };
   });
   const finalArtifact = project.exports.final_video_artifact_id
     ? validateActiveArtifactReference(db, {
@@ -968,17 +976,28 @@ export function getWorkbenchProjectWorkspace(
   const readyForAssembly = accepted_clips.length > 0 && accepted_clips.every((clip) => clip.artifact !== null);
   const invalidAcceptedClipCount = accepted_clips.filter((clip) => clip.artifact_id && clip.artifact === null).length;
   const deliverySummary = withValidatedAssemblyReadiness(summary, readyForAssembly, invalidAcceptedClipCount);
+  const assemblyPreflight = getAssemblyDatabasePreflight(projectId, db);
   return { ok: true, data: {
     ...base,
     summary: deliverySummary,
     ready_for_assembly: readyForAssembly,
     readiness_checks: accepted_clips.map((clip) => ({ shot_id: clip.shot_id, artifact_id: clip.artifact_id, ok: clip.artifact !== null, reason_code: clip.artifact ? "SHOT_ACCEPTED_CLIP_READY" : clip.reference_error_code })),
     accepted_clips,
+    assembly_preflight: assemblyPreflight.ok ? assemblyPreflight.data : {
+      ready: false,
+      tooling_checked: false,
+      contract_version: "final-assembly-v1",
+      input_fingerprint: "",
+      target: null,
+      shots: [],
+      expected_duration_seconds: 0,
+      blockers: [{ code: assemblyPreflight.error.code }]
+    },
     active_job: getActiveWorkbenchDeliveryJob(db, projectId),
     final_review: { approved_artifact_id: deliveryState.approved_artifact_id },
     latest_export: getLatestWorkbenchExport(db, projectId),
     closeout_receipt: getWorkbenchCloseoutReceipt(db, projectId),
-    final_artifact: finalArtifact?.ok ? finalArtifact.artifact : null,
+    final_artifact: finalArtifact?.ok ? publicWorkbenchArtifact(finalArtifact.artifact) : null,
     final_artifact_reason_code: finalArtifact && !finalArtifact.ok ? finalArtifact.error.code : ""
   } };
 }
@@ -1253,8 +1272,11 @@ export function listWorkbenchAssets(
   if (input.status) { clauses.push("a.status = ?"); params.push(input.status); }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
   const countRow = db.prepare(`SELECT COUNT(*) AS count FROM media_artifacts a ${where}`).get(...params) as { count: number };
-  const rows = db.prepare(`SELECT a.data_json FROM media_artifacts a ${where} ORDER BY a.updated_at DESC, a.artifact_id DESC LIMIT ? OFFSET ?`).all(...params, limit, offset) as Array<{ data_json: string }>;
-  return page(rows.map((row) => parseJson<Record<string, unknown>>(row.data_json, {})), countRow.count, limit, offset);
+  const rows = db.prepare(`SELECT a.artifact_id FROM media_artifacts a ${where} ORDER BY a.updated_at DESC, a.artifact_id DESC LIMIT ? OFFSET ?`).all(...params, limit, offset) as Array<{ artifact_id: string }>;
+  return page(rows.flatMap((row) => {
+    const artifact = getMediaArtifact(db, row.artifact_id);
+    return artifact ? [publicWorkbenchArtifact(artifact) as unknown as Record<string, unknown>] : [];
+  }), countRow.count, limit, offset);
 }
 
 function assetLikeProjectId(item: Record<string, unknown>): string {

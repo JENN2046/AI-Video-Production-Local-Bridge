@@ -458,12 +458,12 @@ test("H4 shows assembly readiness and executes final assembly only after explici
     if (!generation.ok) return;
     const generatedArtifactId = generation.generated_artifact_id ?? "";
 
-    const missingConfirmation = executeH4FinalAssembly({ project_id: project.project_id, human_confirmation: false, write_report: false }, defaultH1WorkbenchState(), db);
+    const missingConfirmation = await executeH4FinalAssembly({ project_id: project.project_id, human_confirmation: false, write_report: false }, defaultH1WorkbenchState(), db);
     assert.equal(missingConfirmation.ok, false);
     if (missingConfirmation.ok) return;
     assert.equal(missingConfirmation.error.code, "HUMAN_CONFIRMATION_REQUIRED");
 
-    const notReady = executeH4FinalAssembly({ project_id: project.project_id, human_confirmation: true, write_report: false }, defaultH1WorkbenchState(), db);
+    const notReady = await executeH4FinalAssembly({ project_id: project.project_id, human_confirmation: true, write_report: false }, defaultH1WorkbenchState(), db);
     assert.equal(notReady.ok, false);
     if (notReady.ok) return;
     assert.equal(notReady.error.code, "FINAL_ASSEMBLY_NOT_READY");
@@ -477,7 +477,7 @@ test("H4 shows assembly readiness and executes final assembly only after explici
     assert.equal(ready.accepted_clips, 1);
     assert.equal(ready.clip_order_preview[0].ffprobe?.status, "PASS");
 
-    const assembled = executeH4FinalAssembly({ project_id: project.project_id, human_confirmation: true, write_report: false }, defaultH1WorkbenchState(), db);
+    const assembled = await executeH4FinalAssembly({ project_id: project.project_id, human_confirmation: true, write_report: false }, defaultH1WorkbenchState(), db);
     assert.equal(assembled.ok, true);
     if (!assembled.ok) return;
 

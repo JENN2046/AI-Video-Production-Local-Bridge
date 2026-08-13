@@ -74,7 +74,7 @@ async function createProductionContext(db: ReturnType<typeof openM0Database>): P
   assert.equal(approved.ok, true);
   if (!approved.ok) throw new Error("Clip approval failed.");
 
-  const assembled = executeH4FinalAssembly({ project_id: project.project_id, human_confirmation: true, write_report: false }, undefined, db);
+  const assembled = await executeH4FinalAssembly({ project_id: project.project_id, human_confirmation: true, write_report: false }, undefined, db);
   assert.equal(assembled.ok, true);
   if (!assembled.ok) throw new Error("Assembly failed.");
 

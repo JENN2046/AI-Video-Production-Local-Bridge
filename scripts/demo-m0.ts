@@ -109,7 +109,7 @@ try {
   if (!regenerated.ok) throw new Error(regenerated.error.message);
   const approvedRevision = markShotClipReview({ shot_id: secondShot.shot_id, artifact_id: regenerated.artifact_id, decision: "approved" }, db);
   if (!approvedRevision.ok) throw new Error(approvedRevision.error.message);
-  const finalAssembly = assembleFinalVideo(
+  const finalAssembly = await assembleFinalVideo(
     {
       project_id: project.project_id,
       confirmation: { confirmation_level: "explicit", user_confirmed: true }
