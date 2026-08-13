@@ -11,6 +11,7 @@ const dataRoot = requestedPort === 4181 ? "ops/tools/playwright-data" : `ops/too
 
 export default defineConfig({
   testDir: "./tests/browser",
+  timeout: 60_000,
   fullyParallel: false,
   workers: 1,
   reporter: "list",

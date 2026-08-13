@@ -58,6 +58,31 @@ describe("Human Workbench V2 shell", () => {
     expect(screen.queryByRole("link", { name: "Legacy" })).not.toBeInTheDocument();
   });
 
+  it("renders the fixed five-item mobile navigation and a keyboard-dismissable More sheet", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({
+      matches: true,
+      media: "(max-width: 820px)",
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn()
+    }));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={["/v2/dashboard"]}><App /></MemoryRouter></QueryClientProvider>);
+    expect(await screen.findByRole("heading", { name: "指挥台" })).toBeInTheDocument();
+    const mobileNav = screen.getByRole("navigation", { name: "移动端主导航" });
+    expect(mobileNav.querySelectorAll("a,button")).toHaveLength(5);
+    for (const name of ["指挥台", "项目", "收件箱", "Director", "更多"]) expect(screen.getByRole(name === "更多" ? "button" : "link", { name })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    const sheet = await screen.findByRole("dialog", { name: "更多" });
+    expect(screen.getByRole("link", { name: /资产库/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /系统/ })).toBeInTheDocument();
+    fireEvent.keyDown(sheet, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "更多" })).not.toBeInTheDocument());
+  });
+
   it("renders Director approval controls without treating a proposal or Grant as Provider execution", async () => {
     const projectId = "project_director_ui";
     fetchMock.mockImplementation(async (input) => {
@@ -215,7 +240,7 @@ describe("Human Workbench V2 shell", () => {
     });
   });
 
-  it("exposes explicit readonly preflight and confirmed one-click publish without accepting paths from the browser", async () => {
+  it("moves readonly publishing into diagnostic-only Legacy without execution controls", async () => {
     const fingerprint = "a".repeat(64);
     const status = {
       operations_version: "personal-readonly-operations-v2",
@@ -243,67 +268,38 @@ describe("Human Workbench V2 shell", () => {
       const url = String(input);
       if (url === "/api/v2/shell") return new Response(JSON.stringify({ ok: true, data: shell }), { status: 200, headers: { "content-type": "application/json" } });
       if (url === "/api/v2/system/readonly-operations") return new Response(JSON.stringify({ ok: true, data: status }), { status: 200, headers: { "content-type": "application/json" } });
-      if (url.endsWith("/preflight")) return new Response(JSON.stringify({ ok: true, data: { result: "PASS", snapshot_fingerprint: fingerprint, generated_at: status.remote.snapshot.generated_at, expires_at: status.remote.snapshot.expires_at } }), { status: 200, headers: { "content-type": "application/json" } });
-      if (url.endsWith("/publish")) return new Response(JSON.stringify({ ok: true, data: { result: "PASS", http_status: 202, snapshot_fingerprint: fingerprint, generated_at: status.remote.snapshot.generated_at, expires_at: status.remote.snapshot.expires_at } }), { status: 200, headers: { "content-type": "application/json" } });
       return new Response(JSON.stringify({ ok: false, error: { code: "NOT_FOUND", message: url } }), { status: 404, headers: { "content-type": "application/json" } });
     });
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
     render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={["/v2/system/readonly"]}><App /></MemoryRouter></QueryClientProvider>);
 
-    expect(await screen.findByRole("heading", { name: "只读 MCP App 发布" })).toBeInTheDocument();
-    expect(await screen.findByText(/Snapshot 将在 60 分钟内过期/)).toBeInTheDocument();
-    expect(screen.getByText(/状态刷新不会自动发布/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "运行预检" }));
-    expect(await screen.findByText(/预检通过/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "立即续期" }));
-    fireEvent.click(await screen.findByRole("button", { name: "确认预检并续期" }));
-    expect(await screen.findByText(/发布完成/)).toBeInTheDocument();
-
-    const publishCall = fetchMock.mock.calls.find(([input]) => String(input).endsWith("/publish"));
-    expect(publishCall).toBeTruthy();
-    const init = publishCall?.[1] as RequestInit;
-    expect(init.headers).toMatchObject({ "x-h1-action-nonce": "test-nonce" });
-    expect(JSON.parse(String(init.body))).toEqual({ human_confirmation: true });
-    expect(String(init.body)).not.toContain("profile");
-    expect(String(init.body)).not.toContain("database");
-    expect(fetchMock.mock.calls.some(([input]) => /^\/api\/v2\/projects\//.test(String(input)))).toBe(false);
+    expect(await screen.findByRole("heading", { name: "只读 App 发布诊断" })).toBeInTheDocument();
+    expect(screen.getByText("LEGACY_ROUTE_RETIRED_FROM_ACTIVE_WORKBENCH")).toBeInTheDocument();
+    expect(screen.getByText(/不提供任何执行按钮/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /预检|发布|续期|恢复/ })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([input, init]) => String(input).includes("readonly-operations") && (init as RequestInit | undefined)?.method === "POST")).toBe(false);
   });
 
-  it("shows a manual recovery action when a restarted remote has no snapshot", async () => {
-    const status = {
-      operations_version: "personal-readonly-operations-v2",
-      checked_at: "2026-07-19T00:00:00.000Z",
-      configuration: "ready",
-      stable_error_code: null,
-      database_available: true,
-      publisher_key_available: true,
-      ready_to_preflight: true,
-      ready_to_publish: true,
-      freshness_operations: { state: "restoration_required", reason_code: "SNAPSHOT_NOT_PUBLISHED", renewal_recommended: true, recommended_action: "preflight_and_renew", renewal_threshold_seconds: 7200 },
-      remote: {
-        reachable: true,
-        ready: false,
-        health_http_status: 200,
-        readiness_http_status: 503,
-        service_version: "readonly-remote-v1.0.0",
-        checks: { oauth: true, publisher_key: true, snapshot_fresh: false, authorization_projection: false, media_capability_roundtrip: false },
-        snapshot: { freshness_status: "no_snapshot", generated_at: null, expires_at: null, age_seconds: null, ttl_remaining_seconds: null, snapshot_fingerprint: null }
-      },
-      last_publish: null,
-      last_receipt_state: "none"
-    };
+  it("separates enforced submission gates from actual Provider readiness", async () => {
     fetchMock.mockImplementation(async (input) => {
       const url = String(input);
       if (url === "/api/v2/shell") return new Response(JSON.stringify({ ok: true, data: shell }), { status: 200, headers: { "content-type": "application/json" } });
-      if (url === "/api/v2/system/readonly-operations") return new Response(JSON.stringify({ ok: true, data: status }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url === "/api/v2/system/canary") return new Response(JSON.stringify({ ok: true, data: {
+        active_provider: "runninghub",
+        env_check_result: "PASS",
+        provider_preflight_result: "PASS",
+        credential_present: false,
+        selected_input: { source_type: "fixture", readable: true, usable_for_real_provider_canary: true, aspect_ratio: "9:16", duration_seconds: 5 },
+        provider_boundary: { model: "seedance-v1-5-pro", max_submit_calls: 1, real_submit_requires_separate_authorization: true, real_submit_available: false, network_call_attempted: false },
+        dry_run_plan: { batch_generation_allowed: false }
+      } }), { status: 200, headers: { "content-type": "application/json" } });
       return new Response(JSON.stringify({ ok: false, error: { code: "NOT_FOUND", message: url } }), { status: 404, headers: { "content-type": "application/json" } });
     });
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-    render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={["/v2/system/readonly"]}><App /></MemoryRouter></QueryClientProvider>);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={["/v2/system/provider"]}><App /></MemoryRouter></QueryClientProvider>);
 
-    expect(await screen.findByText(/远端当前没有 Snapshot/)).toBeInTheDocument();
-    expect(screen.getByText("media_capability_roundtrip")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "立即恢复" })).toBeEnabled();
-    expect(screen.getByText(/状态刷新不会自动发布/)).toBeInTheDocument();
+    expect(await screen.findByText("门禁：已强制")).toBeInTheDocument();
+    expect(screen.getByText("Provider：未就绪")).toBeInTheDocument();
+    expect(screen.queryByText("硬门开启")).not.toBeInTheDocument();
   });
 });

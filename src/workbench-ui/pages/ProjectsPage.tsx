@@ -28,12 +28,12 @@ export function ProjectsPage() {
     <PageHeader eyebrow="生产对象" title="项目" description="活动项目置顶；测试、未分类和归档项目通过筛选进入。" actions={<button className={s.primaryButton} onClick={() => setCreating(true)}><FolderPlus size={17} /> 新建项目</button>} />
     <div className={s.filterBar}>
       <div className={s.filterModes}>
-        <SegmentedTabs ariaLabel="项目生命周期" active={lifecycle} onChange={(value) => updateParam("lifecycle", value)} items={[{ id: "active", label: "活动" }, { id: "archived", label: "归档" }, { id: "all", label: "全部" }]} />
-        <SegmentedTabs ariaLabel="项目分类" active={classification} onChange={(value) => updateParam("classification", value)} items={[{ id: "all", label: "全部分类" }, { id: "production", label: "生产" }, { id: "unclassified", label: "未分类" }, { id: "test", label: "测试" }]} />
+        <SegmentedTabs ariaLabel="项目生命周期" panelId="projects-results" active={lifecycle} onChange={(value) => updateParam("lifecycle", value)} items={[{ id: "active", label: "活动" }, { id: "archived", label: "归档" }, { id: "all", label: "全部" }]} />
+        <SegmentedTabs ariaLabel="项目分类" panelId="projects-results" active={classification} onChange={(value) => updateParam("classification", value)} items={[{ id: "all", label: "全部分类" }, { id: "production", label: "生产" }, { id: "unclassified", label: "未分类" }, { id: "test", label: "测试" }]} />
       </div>
-      <label className={s.searchBox}><Search size={16} /><input value={search} onChange={(event) => updateParam("query", event.target.value)} placeholder="项目名或 ID" /></label>
+      <label className={s.searchBox}><Search size={16} aria-hidden="true" /><input aria-label="搜索项目名称或 ID" value={search} onChange={(event) => updateParam("query", event.target.value)} placeholder="项目名或 ID" /></label>
     </div>
-    {query.isLoading ? <LoadingState /> : query.isError || !query.data ? <ErrorState error={query.error} /> : <section className={s.projectList}>
+    <div id="projects-results" role="tabpanel" className={s.workspacePanel}>{query.isLoading ? <LoadingState /> : query.isError || !query.data ? <ErrorState error={query.error} /> : <section className={s.projectList}>
       <div className={s.projectListHead}><span>项目</span><span>下一步动作</span><span>阻断原因</span><span>待审</span><span>阶段</span><span>最近活动</span><span /></div>
       <VirtualList items={query.data.items} estimate={72} scrollKey={`projects:${lifecycle}:${classification}:${search}`} renderItem={(item) => <button className={s.projectRow} onClick={() => navigate(`/v2/projects/${encodeURIComponent(item.project.project_id)}/overview`)}>
         <span className={s.projectIdentity}>{item.meta.pinned && <Pin size={13} />}<span><strong>{item.project.title}</strong><small>{item.project.project_id}</small></span></span>
@@ -45,7 +45,7 @@ export function ProjectsPage() {
         <span><ArrowRight size={16} /></span>
       </button>} />
       <div className={s.listFooter}>显示 {query.data.items.length} / {query.data.meta.total}</div>
-    </section>}
+    </section>}</div>
     {creating && <CreateProjectModal onClose={() => setCreating(false)} onCreated={(project) => { setCreating(false); queryClient.invalidateQueries({ queryKey: ["projects"] }); navigate(`/v2/projects/${encodeURIComponent(project.project_id)}/overview`); }} />}
   </div>;
 }

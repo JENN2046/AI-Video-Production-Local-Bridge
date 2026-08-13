@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, Cloud, Database, FileJson, RefreshCw, ShieldCheck, TestTube2, UploadCloud } from "lucide-react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Archive, Cloud, Database, FileJson, RefreshCw, ShieldCheck, UploadCloud } from "lucide-react";
+import { Navigate, NavLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { apiGet, apiMutation, apiPage } from "../api";
 import { EmptyState, ErrorState, KeyValue, LoadingState, Modal, PageHeader, preserveVisibleVirtualScrolls, SegmentedTabs, StatusPill, VirtualList } from "../components";
 import type { PersonalReadonlyOperationResult, PersonalReadonlyOperationsStatus } from "../types";
 import s from "../workbench.module.css";
 
-const tabs = [{ id: "runninghub", label: "RunningHub 门禁" }, { id: "readonly", label: "只读 App 发布" }, { id: "canary", label: "Canary" }, { id: "reports", label: "证据报告" }, { id: "governance", label: "数据治理" }];
+const tabs = [{ id: "provider", label: "Provider 门禁" }, { id: "governance", label: "数据治理" }];
 
 interface GovernancePreview {
   rule_version: string;
@@ -20,12 +20,27 @@ interface GovernancePreview {
 }
 
 export function SystemPage() {
-  const { tab = "runninghub" } = useParams();
+  const { tab: requestedTab = "provider" } = useParams();
   const navigate = useNavigate();
+  const tab = requestedTab === "runninghub" || requestedTab === "canary" ? "provider" : requestedTab === "readonly" ? "legacy" : requestedTab;
+  const [advancedOpen, setAdvancedOpen] = useState(tab === "reports" || tab === "legacy");
+  useEffect(() => {
+    if (tab === "reports" || tab === "legacy") setAdvancedOpen(true);
+  }, [tab]);
+  if (requestedTab !== tab) return <Navigate to={`/v2/system/${tab}`} replace />;
+  if (!["provider", "governance", "reports", "legacy"].includes(tab)) return <Navigate to="/v2/system/provider" replace />;
   return <div className={s.page}>
-    <PageHeader eyebrow="本地运行边界" title="系统" description="查看 Provider 门禁、Canary 和结构化证据；原始 JSON 默认折叠。" />
-    <div className={s.subnav}><SegmentedTabs items={tabs} active={tab} onChange={(value) => navigate(`/v2/system/${value}`)} /></div>
-    {tab === "reports" ? <ReportsView /> : tab === "governance" ? <GovernanceView /> : tab === "readonly" ? <ReadonlyOperationsView /> : <CanaryView mode={tab} />}
+    <PageHeader eyebrow="本地运行边界" title="系统" description="活动区只呈现当前 Provider 门禁与数据治理；历史能力留在高级诊断中。" />
+    <div className={s.systemNavigation}>
+      <SegmentedTabs ariaLabel="系统活动区" panelId="system-active-panel" items={tabs} active={tab} onChange={(value) => navigate(`/v2/system/${value}`)} />
+      <details className={s.advancedNavigation} open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>
+        <summary>高级诊断</summary>
+        <div><NavLink to="/v2/system/reports">证据报告</NavLink><NavLink to="/v2/system/legacy">Legacy 只读 App</NavLink></div>
+      </details>
+    </div>
+    <div id="system-active-panel" role="tabpanel">
+      {tab === "reports" ? <ReportsView /> : tab === "governance" ? <GovernanceView /> : tab === "legacy" ? <LegacyReadonlyDiagnostics /> : <ProviderGateView />}
+    </div>
   </div>;
 }
 
@@ -39,6 +54,27 @@ function statusText(value: boolean | null): string {
 
 function shortFingerprint(value: string | null | undefined): string {
   return value ? `${value.slice(0, 12)}…${value.slice(-6)}` : "—";
+}
+
+function LegacyReadonlyDiagnostics() {
+  const query = useQuery({
+    queryKey: ["system", "readonly-operations"],
+    queryFn: () => apiGet<PersonalReadonlyOperationsStatus>("/api/v2/system/readonly-operations"),
+    refetchInterval: 60_000
+  });
+  if (query.isLoading) return <LoadingState label="正在读取 Legacy 诊断状态" />;
+  if (query.isError || !query.data) return <div className={s.systemGrid}>
+    <section className={s.systemBand}><div className={s.systemIcon}><Cloud size={22} aria-hidden="true" /></div><div><span className={s.eyebrow}>Advanced Legacy</span><h2>只读 App 发布诊断</h2><p>该历史发布面已退出活动生产路径，工作台不会提供预检、发布、续期或恢复按钮。</p></div><StatusPill tone="danger">不可用</StatusPill></section>
+    <section className={s.systemPanel}><h3>不可用原因</h3><KeyValue rows={[["状态", "LEGACY_READONLY_UNAVAILABLE"], ["恢复方式", "仅通过独立 Legacy runbook 诊断；活动工作台不执行发布"]]} /></section>
+  </div>;
+  const data = query.data;
+  const snapshot = data.remote.snapshot;
+  return <div className={s.systemGrid}>
+    <section className={s.systemBand}><div className={s.systemIcon}><Cloud size={22} aria-hidden="true" /></div><div><span className={s.eyebrow}>Advanced Legacy</span><h2>只读 App 发布诊断</h2><p>保留只读状态用于历史排障；该能力不属于当前视频生产闭环，工作台不提供任何执行按钮。</p></div><StatusPill tone="neutral">仅诊断</StatusPill></section>
+    <section className={s.systemPanel}><h3>停用原因</h3><KeyValue rows={[["原因码", "LEGACY_ROUTE_RETIRED_FROM_ACTIVE_WORKBENCH"], ["活动替代面", "Provider 门禁 / 数据治理"], ["执行能力", "未提供"]]} /></section>
+    <section className={s.systemPanel}><h3>本地状态</h3><KeyValue rows={[["配置", data.configuration], ["数据库", statusText(data.database_available)], ["发布密钥", statusText(data.publisher_key_available)], ["稳定错误码", data.stable_error_code ?? "—"]]} /></section>
+    <section className={s.systemPanel}><h3>远端只读状态</h3><KeyValue rows={[["连接", statusText(data.remote.reachable)], ["Readiness", statusText(data.remote.ready)], ["Snapshot", snapshot.freshness_status], ["Fingerprint", <code>{shortFingerprint(snapshot.snapshot_fingerprint)}</code>]]} /></section>
+  </div>;
 }
 
 function ReadonlyOperationsView() {
@@ -173,17 +209,26 @@ function GovernanceView() {
   </div>;
 }
 
-function CanaryView({ mode }: { mode: string }) {
+function ProviderGateView() {
   const query = useQuery({ queryKey: ["system", "canary"], queryFn: () => apiGet<Record<string, unknown>>("/api/v2/system/canary") });
   if (query.isLoading) return <LoadingState />;
   if (query.isError || !query.data) return <ErrorState error={query.error} />;
   const boundary = query.data.provider_boundary as Record<string, unknown> | undefined;
   const selectedInput = query.data.selected_input as Record<string, unknown> | undefined;
+  const dryRun = query.data.dry_run_plan as Record<string, unknown> | undefined;
+  const envReady = /PASS|READY/i.test(String(query.data.env_check_result ?? ""));
+  const preflightReady = /PASS|READY/i.test(String(query.data.provider_preflight_result ?? ""));
+  const inputReady = selectedInput?.usable_for_real_provider_canary === true;
+  const providerReady = query.data.credential_present === true && envReady && preflightReady && inputReady;
+  const gateEnforced = boundary?.real_submit_requires_separate_authorization === true
+    && Number(boundary?.max_submit_calls ?? 0) <= 1
+    && dryRun?.batch_generation_allowed !== true;
   return <div className={s.systemGrid}>
-    <section className={s.systemBand}><div className={s.systemIcon}>{mode === "runninghub" ? <ShieldCheck size={22} /> : <TestTube2 size={22} />}</div><div><span className={s.eyebrow}>{mode === "runninghub" ? "真实调用边界" : "离线验收"}</span><h2>{mode === "runninghub" ? "单 SHOT 单次提交" : "Canary 状态"}</h2><p>{mode === "runninghub" ? "价格、余额、预算和当次确认全部通过后，才允许一次上传和一次提交。" : "Canary 不会从 V2 自动发起真实调用。"}</p></div><StatusPill tone="success">硬门开启</StatusPill></section>
-    <section className={s.systemPanel}><h3>Provider</h3><KeyValue rows={[["活动 Provider", String(query.data.active_provider ?? boundary?.provider ?? "runninghub")], ["模型", String(boundary?.model ?? "rhart-video-g/image-to-video")], ["凭证状态", query.data.credential_present ? "已配置" : "未配置"], ["自动重试", "0"], ["真实任务并发", "1"]]} /></section>
-    <section className={s.systemPanel}><h3>输入门禁</h3><KeyValue rows={[["输入", String(selectedInput?.path ?? "未选择")], ["可读", selectedInput?.readable ? "通过" : "未通过"], ["画幅", String(selectedInput?.aspect_ratio ?? "-")], ["时长", `${selectedInput?.duration_seconds ?? 0}s`]]} /></section>
-    <section className={s.systemPanel}><h3>安全边界</h3><div className={s.checkList}>{Object.entries(boundary ?? {}).filter(([, value]) => typeof value === "boolean").map(([key, value]) => <div key={key}><span className={value ? s.checkDanger : s.checkGood} />{key}<strong>{value ? "发生" : "未发生"}</strong></div>)}</div></section>
+    <section className={s.systemBand}><div className={s.systemIcon}><ShieldCheck size={22} aria-hidden="true" /></div><div><span className={s.eyebrow}>当前真实调用边界</span><h2>单 SHOT 单次提交</h2><p>门禁是否强制与 Provider 当前是否就绪分别显示；价格、余额、预算和当次确认缺一即 fail closed。</p></div><div className={s.statusStack}><StatusPill tone={gateEnforced ? "success" : "danger"}>门禁：{gateEnforced ? "已强制" : "未确认"}</StatusPill><StatusPill tone={providerReady ? "success" : "warning"}>Provider：{providerReady ? "已就绪" : "未就绪"}</StatusPill></div></section>
+    <section className={s.systemPanel}><h3>Provider 就绪条件</h3><KeyValue rows={[["活动 Provider", String(query.data.active_provider ?? boundary?.provider ?? "未选择") || "未选择"], ["模型", String(boundary?.model ?? "未选择") || "未选择"], ["环境检查", envReady ? "通过" : "未通过"], ["Provider 预检", preflightReady ? "通过" : "未通过"], ["凭证状态", query.data.credential_present ? "已配置" : "未配置"]]} /></section>
+    <section className={s.systemPanel}><h3>输入门禁</h3><KeyValue rows={[["来源类型", String(selectedInput?.source_type ?? "未选择") || "未选择"], ["字节可读", selectedInput?.readable ? "通过" : "未通过"], ["可用于真实 Canary", inputReady ? "通过" : "未通过"], ["画幅", String(selectedInput?.aspect_ratio ?? "-")], ["时长", `${selectedInput?.duration_seconds ?? 0}s`]]} /></section>
+    <section className={s.systemPanel}><h3>提交约束</h3><KeyValue rows={[["独立人工授权", boundary?.real_submit_requires_separate_authorization === true ? "必需" : "未确认"], ["最大提交", String(boundary?.max_submit_calls ?? 0)], ["自动重试", "0"], ["批量生成", dryRun?.batch_generation_allowed === true ? "允许" : "禁止"]]} /></section>
+    <section className={s.systemPanel}><h3>安全边界</h3><div className={s.checkList}>{Object.entries(boundary ?? {}).filter(([key, value]) => typeof value === "boolean" && !["real_submit_requires_separate_authorization", "real_submit_available"].includes(key)).map(([key, value]) => <div key={key}><span className={value ? s.checkDanger : s.checkGood} aria-hidden="true" />{key}<strong>{value ? "发生" : "未发生"}</strong></div>)}</div></section>
   </div>;
 }
 

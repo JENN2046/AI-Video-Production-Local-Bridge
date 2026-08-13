@@ -27,19 +27,19 @@ export function AssetsPage() {
   return <div className={s.page}>
     <PageHeader eyebrow="跨项目复用" title="资产库" description="日常生产资产默认可见，未归属资产在独立范围中治理。" />
     <div className={s.filterRows}>
-      <SegmentedTabs ariaLabel="资产分类" items={tabs} active={tab} onChange={(value) => navigate(`/v2/assets/${value}`)} />
+      <SegmentedTabs ariaLabel="资产分类" panelId="assets-results" items={tabs} active={tab} onChange={(value) => navigate(`/v2/assets/${value}`)} />
       {tab === "media" && <div className={s.assetFilterRow}>
-        <div className={s.filterGroup}><span>范围</span><SegmentedTabs ariaLabel="资产范围" active={scope} onChange={(value) => set("scope", value)} items={[{ id: "daily", label: "日常项目" }, { id: "unassigned", label: "未归属" }, { id: "all", label: "全部" }]} /></div>
+        <div className={s.filterGroup}><span>范围</span><SegmentedTabs ariaLabel="资产范围" panelId="assets-results" active={scope} onChange={(value) => set("scope", value)} items={[{ id: "daily", label: "日常项目" }, { id: "unassigned", label: "未归属" }, { id: "all", label: "全部" }]} /></div>
         <div className={s.filterGroup}><span>项目</span>{scope === "unassigned" ? <div className={s.disabledFilter}>未归属资产</div> : <ProjectPicker value={projectId} scope={scope === "all" ? "all" : "daily"} onChange={(value) => set("project_id", value)} />}</div>
-        <div className={s.filterGroup}><span>媒体类型</span><SegmentedTabs ariaLabel="媒体类型" active={type} onChange={(value) => set("type", value)} items={[{ id: "", label: "全部" }, { id: "image", label: "图片" }, { id: "video", label: "视频" }]} /></div>
+        <div className={s.filterGroup}><span>媒体类型</span><SegmentedTabs ariaLabel="媒体类型" panelId="assets-results" active={type} onChange={(value) => set("type", value)} items={[{ id: "", label: "全部" }, { id: "image", label: "图片" }, { id: "video", label: "视频" }]} /></div>
         <label className={s.filterGroup}><span>角色</span><select value={role} onChange={(event) => set("role", event.target.value)}><option value="">全部</option><option value="storyboard_image">分镜图</option><option value="generated_clip">生成片段</option><option value="final_video">最终视频</option></select></label>
         <label className={s.filterGroup}><span>状态</span><select value={status} onChange={(event) => set("status", event.target.value)}><option value="">全部</option><option value="active">可用</option><option value="pending_upload">待上传</option><option value="inaccessible">不可访问</option></select></label>
       </div>}
     </div>
-    {query.isLoading ? <LoadingState /> : query.isError || !query.data ? <ErrorState error={query.error} /> : <div className={s.masterDetail}>
+    <div id="assets-results" role="tabpanel" className={s.workspacePanel}>{query.isLoading ? <LoadingState /> : query.isError || !query.data ? <ErrorState error={query.error} /> : <div className={s.masterDetail}>
       <section className={s.queuePane}><div className={s.paneTitle}><strong>{tabs.find((item) => item.id === tab)?.label}</strong><span>{query.data.meta.total}</span></div><VirtualList items={query.data.items} estimate={78} scrollKey={`assets:${tab}:${scope}:${projectId}:${type}:${role}:${status}`} renderItem={(item) => <button className={`${s.queueItem} ${selected && assetId(selected) === assetId(item) ? s.queueItemActive : ""}`} onClick={() => set("selected", assetId(item))}><span className={s.queueIcon}>{item.artifact_type === "video" ? <Film size={18} /> : <FileImage size={18} />}</span><span><strong>{assetTitle(item)}</strong><small>{roleLabel(String(item.role ?? ""))} · {assetSub(item)}</small></span><StatusPill tone={item.status === "active" ? "success" : item.status === "inaccessible" ? "danger" : "warning"}>{statusLabel(String(item.status ?? "active"))}</StatusPill></button>} /></section>
       <section className={s.detailPane}>{selected ? <AssetDetail item={selected} tab={tab} /> : <EmptyState title="没有匹配资产" detail={scope === "daily" ? "可切换到未归属或全部范围继续查找。" : undefined} />}</section>
-    </div>}
+    </div>}</div>
   </div>;
 }
 

@@ -30,10 +30,10 @@ export function InboxPage() {
   return <div className={s.page}>
     <PageHeader eyebrow="进入生产前" title="收件箱" description="草稿、待确认动作和隔离素材按各自生命周期处理。" actions={tab === "quarantine" ? <button className={s.secondaryButton} onClick={() => refresh.mutate()} disabled={refresh.isPending}><RefreshCw size={16} /> 刷新索引</button> : undefined} />
     <div className={s.filterRows}>
-      <SegmentedTabs ariaLabel="收件箱分类" items={tabs} active={tab} onChange={(value) => navigate(`/v2/inbox/${value}`)} />
-      <SegmentedTabs ariaLabel="对象状态" active={status} onChange={changeStatus} items={statusFilters[tab] ?? statusFilters.pending} />
+      <SegmentedTabs ariaLabel="收件箱分类" panelId="inbox-results" items={tabs} active={tab} onChange={(value) => navigate(`/v2/inbox/${value}`)} />
+      <SegmentedTabs ariaLabel="对象状态" panelId="inbox-results" active={status} onChange={changeStatus} items={statusFilters[tab] ?? statusFilters.pending} />
     </div>
-    {query.isLoading ? <LoadingState /> : query.isError || !query.data ? <ErrorState error={query.error} /> : <div className={s.masterDetail}>
+    <div id="inbox-results" role="tabpanel" className={s.workspacePanel}>{query.isLoading ? <LoadingState /> : query.isError || !query.data ? <ErrorState error={query.error} /> : <div className={s.masterDetail}>
       <section className={s.queuePane}>
         <div className={s.paneTitle}><strong>{tabLabel(tab)}</strong><span>{query.data.meta.total}</span></div>
         <VirtualList items={query.data.items} estimate={92} scrollKey={`inbox:${tab}:${status}`} renderItem={(item) => <button className={`${s.queueItem} ${selected && itemId(selected) === itemId(item) ? s.queueItemActive : ""}`} onClick={() => select(item)}>
@@ -43,7 +43,7 @@ export function InboxPage() {
         </button>} />
       </section>
       <section className={s.detailPane}>{selected ? <InboxDetail item={selected} tab={tab} /> : <EmptyState title="当前筛选没有对象" />}</section>
-    </div>}
+    </div>}</div>
   </div>;
 }
 
