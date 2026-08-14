@@ -4,6 +4,7 @@ import { assertSchemaCurrent, SchemaMigrationRequiredError } from "../storage/mi
 import { openM0DatabaseConnection, type M0Database } from "../storage/sqlite.js";
 import { getProject, getShot, type Project } from "../tools/projects.js";
 import { validateActiveArtifactReference, type ArtifactReferenceRequirement } from "../tools/mediaArtifacts.js";
+import { getWorkbenchDeliveryState } from "../tools/workbenchDeliveryState.js";
 import {
   readDelivery,
   readProjectContext,
@@ -298,6 +299,8 @@ export function exportReadonlySnapshotFromDatabase(
       const projectId = fullItem.project.project_id;
       const sourceProject = getProject(db, projectId);
       if (!sourceProject) throw new ReadonlyProjectionError("READONLY_PROJECTION_CONTRACT_VIOLATION", "Source project is missing during readonly export.");
+      const deliveryState = getWorkbenchDeliveryState(db, projectId);
+      if (!deliveryState) throw new ReadonlyProjectionError("READONLY_PROJECTION_CONTRACT_VIOLATION", "Source delivery state is missing during readonly export.");
       const compactItem = compactItems.get(projectId);
       if (!compactItem) throw new ReadonlyProjectionError("READONLY_PROJECTION_CONTRACT_VIOLATION", "Compact project projection is missing.");
       const shotList = (detail: WebGptV4Detail): ShotListData => allPages(
@@ -324,6 +327,7 @@ export function exportReadonlySnapshotFromDatabase(
       }));
       return READONLY_PROJECT_PROJECTION_SCHEMA.parse({
         project_id: projectId,
+        workflow_state: deliveryState.workflow_state,
         final_video_artifact_id: sourceProject.exports.final_video_artifact_id,
         context_meta_updated_at: firstFullContext.meta.updated_at,
         list_item_compact: compactItem,

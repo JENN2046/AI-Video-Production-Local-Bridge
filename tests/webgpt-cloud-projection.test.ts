@@ -320,6 +320,7 @@ test("readonly snapshot accepts persisted not-ready and assembly summaries when 
       issuer_hash: fixture.actor.issuer_hash!,
       resource_url: RESOURCE
     }));
+    assert.equal(notReady.workflow_state, "not_ready");
     assert.equal(notReady.delivery.ready_for_assembly, true);
     assert.equal(notReady.list_item_full.summary.delivery_state, "not_ready");
 
@@ -335,6 +336,7 @@ test("readonly snapshot accepts persisted not-ready and assembly summaries when 
       issuer_hash: fixture.actor.issuer_hash!,
       resource_url: RESOURCE
     }));
+    assert.equal(ready.workflow_state, "ready_to_assemble");
     assert.equal(ready.delivery.ready_for_assembly, true);
     assert.equal(ready.list_item_full.summary.delivery_state, "ready_to_assemble");
 
@@ -350,8 +352,59 @@ test("readonly snapshot accepts persisted not-ready and assembly summaries when 
       issuer_hash: fixture.actor.issuer_hash!,
       resource_url: RESOURCE
     }));
+    assert.equal(assembling.workflow_state, "assembling");
     assert.equal(assembling.delivery.ready_for_assembly, true);
     assert.equal(assembling.list_item_full.summary.delivery_state, "ready_to_assemble");
+
+    let retainedFinalArtifactId = "";
+    const revisionDb = openM0Database(sqlitePath);
+    try {
+      const currentProject = getProject(revisionDb, fixture.project_id);
+      assert.ok(currentProject);
+      if (!currentProject) throw new Error("revision projection project was not found");
+      const finalArtifact = registerMediaArtifact({
+        artifact_type: "video",
+        role: "final_video",
+        source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+        linked_objects: { project_id: fixture.project_id }
+      }, revisionDb);
+      assert.equal(finalArtifact.ok, true, finalArtifact.ok ? "" : finalArtifact.error.code);
+      if (!finalArtifact.ok) throw new Error("revision projection final media registration failed");
+      retainedFinalArtifactId = finalArtifact.artifact.artifact_id;
+      currentProject.exports.final_video_artifact_id = retainedFinalArtifactId;
+      saveProject(revisionDb, currentProject);
+      revisionDb.prepare(`UPDATE workbench_delivery_state
+        SET workflow_state = 'final_review', current_final_artifact_id = ?, updated_at = ?
+        WHERE project_id = ?`).run(retainedFinalArtifactId, "2026-08-14T00:02:00.000Z", fixture.project_id);
+      revisionDb.prepare("UPDATE workbench_delivery_state SET workflow_state = 'revision_requested', updated_at = ? WHERE project_id = ?")
+        .run("2026-08-14T00:03:00.000Z", fixture.project_id);
+    } finally {
+      revisionDb.close();
+    }
+    const revisionRequested = projectFor(exportReadonlySnapshotFromDatabase({
+      database_path: sqlitePath,
+      issuer_hash: fixture.actor.issuer_hash!,
+      resource_url: RESOURCE
+    }));
+    assert.equal(revisionRequested.workflow_state, "revision_requested");
+    assert.equal(revisionRequested.delivery.final_artifact?.artifact_id, retainedFinalArtifactId);
+    assert.equal(revisionRequested.list_item_full.summary.delivery_state, "not_ready");
+
+    const retainedNotReadyDb = openM0Database(sqlitePath);
+    try {
+      retainedNotReadyDb.prepare("UPDATE workbench_delivery_state SET workflow_state = 'not_ready', updated_at = ? WHERE project_id = ?")
+        .run("2026-08-14T00:04:00.000Z", fixture.project_id);
+    } finally {
+      retainedNotReadyDb.close();
+    }
+    const retainedNotReady = projectFor(exportReadonlySnapshotFromDatabase({
+      database_path: sqlitePath,
+      issuer_hash: fixture.actor.issuer_hash!,
+      resource_url: RESOURCE
+    }));
+    assert.equal(retainedNotReady.workflow_state, "not_ready");
+    assert.equal(retainedNotReady.delivery.final_artifact?.artifact_id, retainedFinalArtifactId);
+    assert.equal(retainedNotReady.list_item_full.summary.delivery_state, "not_ready");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -726,6 +779,10 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
       assert.throws(() => finalizeReadonlySnapshot(candidate), /(binding mismatch|bindings differ)/i);
     }
 
+    const missingWorkflowState = structuredClone(unsigned);
+    delete missingWorkflowState.projects[0]!.workflow_state;
+    assert.throws(() => finalizeReadonlySnapshot(missingWorkflowState), /require the persisted delivery workflow state/i);
+
     const mismatchedOperationalStatus = structuredClone(unsigned);
     mismatchedOperationalStatus.projects[0]!.shots_full[0]!.operational_state.stored_workflow_status = "draft";
     assert.throws(() => finalizeReadonlySnapshot(mismatchedOperationalStatus), /operational state workflow status mismatch/i);
@@ -1019,6 +1076,7 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
 
     const invalidFinalArtifactReference = structuredClone(unsigned);
     const invalidFinalProject = invalidFinalArtifactReference.projects[0]!;
+    invalidFinalProject.workflow_state = "final_review";
     invalidFinalProject.final_video_artifact_id = "artifact_inaccessible_final";
     invalidFinalProject.list_item_full.summary.delivery_state = "final_review";
     invalidFinalProject.list_item_compact.summary.delivery_state = "final_review";

@@ -414,7 +414,8 @@ test("migration 0006 backfills active legacy Artifact facts from the verified Bl
     assertSchemaCurrent(db);
     db.close();
     db = null;
-    assert.equal(checkDatabase(sqlitePath).result, "PASS");
+    const checked = checkDatabase(sqlitePath);
+    assert.equal(checked.result, "PASS", JSON.stringify(checked));
   } finally {
     try { db?.close(); } catch { /* retain the primary assertion failure */ }
     rmSync(root, { recursive: true, force: true });
@@ -585,12 +586,13 @@ test("database check reports orphan rows", () => {
   }
 });
 
-test("database check reports cross-project and wrong-type delivery job bindings", () => {
+test("database check reports invalid delivery Job bindings and inactive referenced final Artifacts", () => {
   const root = tempRoot();
+  let db: DatabaseSync | null = null;
   try {
     const sqlitePath = join(root, "delivery-job-bindings.sqlite");
     migrateDatabase(sqlitePath);
-    const db = new DatabaseSync(sqlitePath);
+    db = new DatabaseSync(sqlitePath);
     const now = "2026-08-14T00:00:00.000Z";
     for (const projectId of ["project_a", "project_b"]) {
       db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
@@ -611,6 +613,13 @@ test("database check reports cross-project and wrong-type delivery job bindings"
       (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
       VALUES ('artifact_b', 'project_b', '', 'final_video', 'video', 'active', ?)`).run(JSON.stringify(artifact));
     db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES ('artifact_b', 'blob_b')").run();
+    db.prepare("UPDATE projects SET data_json = ? WHERE project_id = 'project_b'")
+      .run(JSON.stringify({ project_id: "project_b", exports: { final_video_artifact_id: "artifact_b" } }));
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = 'project_b'").run(now);
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = 'project_b'").run(now);
+    db.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'final_review', current_final_artifact_id = 'artifact_b', updated_at = ?
+      WHERE project_id = 'project_b'`).run(now);
     db.prepare(`INSERT INTO workbench_exports
       (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
       VALUES ('export_b', 'project_b', 'artifact_b', 'data/exports/project_b/final.mp4', ?, 1, ?)`)
@@ -621,11 +630,13 @@ test("database check reports cross-project and wrong-type delivery job bindings"
       .run(now, now, now);
 
     const triggerRows = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'trigger'
-      AND name IN ('workbench_delivery_jobs_validate_insert', 'workbench_delivery_jobs_validate_bindings_update')
+      AND name IN ('workbench_delivery_jobs_validate_insert', 'workbench_delivery_jobs_validate_bindings_update',
+        'workbench_delivery_artifact_status_guard')
       ORDER BY name`).all() as Array<{ sql: string }>;
-    assert.equal(triggerRows.length, 2);
+    assert.equal(triggerRows.length, 3);
     db.exec(`DROP TRIGGER workbench_delivery_jobs_validate_insert;
-      DROP TRIGGER workbench_delivery_jobs_validate_bindings_update;`);
+      DROP TRIGGER workbench_delivery_jobs_validate_bindings_update;
+      DROP TRIGGER workbench_delivery_artifact_status_guard;`);
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, retry_of_job_id, error_code, created_at, finished_at, updated_at)
       VALUES ('retry_a', 'project_a', 'assembly', 'failed', '{}', 'parent_b', 'SYNTHETIC_FAILURE', ?, ?, ?)`)
@@ -642,20 +653,22 @@ test("database check reports cross-project and wrong-type delivery job bindings"
       (job_id, project_id, job_type, state, input_json, export_id, error_code, created_at, finished_at, updated_at)
       VALUES ('assembly_wrong_export_type_b', 'project_b', 'assembly', 'failed', '{}', 'export_b', 'SYNTHETIC_FAILURE', ?, ?, ?)`)
       .run(now, now, now);
-    for (const row of triggerRows) db.exec(row.sql);
     artifact.status = "archived";
     db.prepare("UPDATE media_artifacts SET status = 'archived', data_json = ? WHERE artifact_id = 'artifact_b'")
       .run(JSON.stringify(artifact));
-    assert.doesNotThrow(() => assertSchemaCurrent(db));
+    for (const row of triggerRows) db.exec(row.sql);
+    assertSchemaCurrent(db);
     db.close();
+    db = null;
 
     const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
     assert.equal(checked.schema_current, true);
-    assert.equal(checked.orphan_rows, 4);
+    assert.equal(checked.orphan_rows, 5);
     assert.equal(checked.media_integrity_errors, 0);
     assert.equal(checked.check_errors, 0);
     assert.equal(checked.result, "FAIL");
   } finally {
+    try { db?.close(); } catch { /* retain the primary assertion failure */ }
     rmSync(root, { recursive: true, force: true });
   }
 });

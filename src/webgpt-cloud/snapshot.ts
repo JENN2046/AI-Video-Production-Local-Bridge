@@ -22,10 +22,23 @@ import {
 export const READONLY_SNAPSHOT_SCHEMA_VERSION = "readonly-snapshot-v4";
 export const READONLY_SNAPSHOT_REQUIRED_SCHEMA = "workbench-v2-7";
 export const READONLY_SNAPSHOT_REQUIRED_MIGRATION = "0012";
-// Snapshot v4's public projection did not change in migration 0012. Retain
-// the immediately preceding source ledger as a verification-only input so a
-// remote can keep serving an already signed v4 snapshot while its publisher
-// is upgraded. New exports always require the current ledger above.
+const READONLY_DELIVERY_WORKFLOW_STATES = [
+  "not_ready",
+  "ready_to_assemble",
+  "assembling",
+  "final_review",
+  "revision_requested",
+  "approved",
+  "exported",
+  "closed",
+  "legacy_review_required"
+] as const;
+type ReadonlyDeliveryWorkflowState = typeof READONLY_DELIVERY_WORKFLOW_STATES[number];
+type ReadonlySummaryDeliveryState = "not_ready" | "ready_to_assemble" | "final_review" | "delivered";
+// Retain the immediately preceding source ledger as a verification-only input
+// so a remote can keep serving an already signed v4 snapshot while its
+// publisher is upgraded. Current exports include the persisted workflow state;
+// compatibility snapshots may omit it. New exports require the current ledger.
 export const READONLY_SNAPSHOT_PREVIOUS_SOURCE_SCHEMA = "workbench-v2-6";
 export const READONLY_SNAPSHOT_PREVIOUS_SOURCE_MIGRATION = "0011";
 export const READONLY_SNAPSHOT_COMPAT_SOURCE_SCHEMA = "workbench-v2-6";
@@ -104,6 +117,7 @@ export const READONLY_MEDIA_BINDING_SCHEMA = z.object({
 
 export const READONLY_PROJECT_PROJECTION_SCHEMA = z.object({
   project_id: z.string().min(1),
+  workflow_state: z.enum(READONLY_DELIVERY_WORKFLOW_STATES).optional(),
   final_video_artifact_id: z.string(),
   context_meta_updated_at: z.string(),
   list_item_compact: WEBGPT_V4_COMPACT_PROJECT_LIST_ITEM_SCHEMA,
@@ -313,9 +327,13 @@ function validateFinalArtifact(
 function validateProjectProjectionBindings(
   project: ReadonlyProjectProjectionShape,
   projectIndex: number,
-  context: z.core.$RefinementCtx
+  context: z.core.$RefinementCtx,
+  requireWorkflowState: boolean
 ): void {
   const base = ["projects", projectIndex] as Array<string | number>;
+  if (requireWorkflowState && !project.workflow_state) {
+    addBindingIssue(context, [...base, "workflow_state"], "Current snapshots require the persisted delivery workflow state.");
+  }
   validateMediaBindings(project, context, base);
   const projectId = project.project_id;
   const shotIds = new Set(project.shots_full.map((shot) => shot.shot_id));
@@ -386,15 +404,15 @@ function validateProjectProjectionBindings(
   const finalArtifactProjected = Boolean(project.delivery.final_artifact
     || (project.delivery.final_artifact_reason_code
       && project.delivery.final_artifact_reason_code !== "FINAL_ARTIFACT_NOT_CREATED"));
-  // The public delivery DTO exposes input readiness, not the persisted workflow state.
-  // Ready inputs may therefore still be not_ready or may have entered ready/assembling.
-  const expectedSummaryDeliveryStates = project.delivery.delivered
-    ? ["delivered"]
-    : finalArtifactProjected
-      ? ["final_review"]
-      : project.delivery.ready_for_assembly
-        ? ["not_ready", "ready_to_assemble"]
-        : ["not_ready"];
+  const expectedSummaryDeliveryStates = project.workflow_state
+    ? [readonlySummaryDeliveryState(project.workflow_state)]
+    : project.delivery.delivered
+      ? ["delivered"]
+      : finalArtifactProjected
+        ? ["final_review"]
+        : project.delivery.ready_for_assembly
+          ? ["not_ready", "ready_to_assemble"]
+          : ["not_ready"];
   const expectedSummaryState = {
     shot_count: project.shots_full.length,
     accepted_count: project.shots_full.filter((shot) => Boolean(shot.accepted_clip_artifact_id)).length,
@@ -717,6 +735,13 @@ function validateProjectProjectionBindings(
   }
 }
 
+function readonlySummaryDeliveryState(state: ReadonlyDeliveryWorkflowState): ReadonlySummaryDeliveryState {
+  if (state === "closed") return "delivered";
+  if (state === "ready_to_assemble" || state === "assembling") return "ready_to_assemble";
+  if (state === "final_review" || state === "approved" || state === "exported" || state === "legacy_review_required") return "final_review";
+  return "not_ready";
+}
+
 export function readonlySnapshotReviewPendingCount(shots: Array<{
   operational_state: { review: { stage: "not_started" | "pending" | "approved" | "revision_needed" | "inconsistent" } };
 }>): number {
@@ -766,7 +791,7 @@ function validateSnapshotBindings(value: {
   for (const [projectIndex, project] of value.projects.entries()) {
     if (projectIds.has(project.project_id)) context.addIssue({ code: "custom", message: "Duplicate projected project id.", path: ["projects"] });
     projectIds.add(project.project_id);
-    validateProjectProjectionBindings(project, projectIndex, context);
+    validateProjectProjectionBindings(project, projectIndex, context, sourcePairIsCurrent);
   }
   const expectedProjectOrder = [...value.projects].sort((left, right) => {
     const pinnedDifference = Number(right.list_item_full.pinned) - Number(left.list_item_full.pinned);

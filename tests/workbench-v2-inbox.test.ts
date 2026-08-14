@@ -6,7 +6,7 @@ import test from "node:test";
 
 import { paths } from "../src/paths.js";
 import { openM0Database } from "../src/storage/sqlite.js";
-import { getShot, listProjectShots, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
+import { getProject, getShot, listProjectShots, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 import { getMediaArtifact, registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { decideWorkbenchPendingAction, transitionWorkbenchDraft } from "../src/tools/workbenchInbox.js";
 import { getWorkbenchDraftRecord, getWorkbenchPendingActionRecord, migrateLegacyWorkbenchInboxStores, saveWorkbenchDraftRecord, saveWorkbenchPendingActionRecord } from "../src/tools/workbenchInboxStore.js";
@@ -135,6 +135,73 @@ test("pending actions require a project target and remain pending after failure"
   }
 });
 
+test("closed projects reject existing Draft promotion and Pending Action execution atomically", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const created = createWorkbenchProject({ title: "Closed inbox target", classification: "production" }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    const projectId = created.data.project.project_id;
+    const shot: Shot = {
+      shot_id: "shot_closed_inbox",
+      project_id: projectId,
+      order: 1,
+      status: "draft",
+      duration_seconds: 3,
+      description: "Original description",
+      storyboard_image_artifact_id: "",
+      video_prompt: "Original prompt",
+      negative_prompt: "",
+      generation_run_ids: [],
+      accepted_clip_artifact_id: "",
+      clip_versions: [],
+      review: { approval_status: "pending", rejection_reasons: [], latest_revision_instruction: null }
+    };
+    const storyboard = registerMediaArtifact({
+      artifact_type: "image",
+      role: "storyboard_image",
+      source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
+      linked_objects: { project_id: projectId, shot_id: shot.shot_id }
+    }, db);
+    assert.equal(storyboard.ok, true);
+    if (!storyboard.ok) return;
+    saveShot(db, shot);
+    created.data.project.shot_ids = [shot.shot_id];
+    saveProject(db, created.data.project);
+    saveWorkbenchDraftRecord({
+      draft_id: "draft_closed_inbox",
+      tool: "submit_shot_script_draft",
+      status: "pending",
+      source: "test",
+      payload: { description: "Must not apply", video_prompt: "Must not apply", duration_seconds: 6 }
+    }, db);
+    saveWorkbenchPendingActionRecord({
+      action_id: "action_closed_inbox",
+      tool: "request_link_artifact_to_shot",
+      status: "pending",
+      source: "test",
+      project_id: projectId,
+      payload: { project_id: projectId, shot_id: shot.shot_id, artifact_id: storyboard.artifact.artifact_id }
+    }, db);
+    closeProjectForInboxTest(db, projectId);
+
+    const promoted = transitionWorkbenchDraft("draft_closed_inbox", {
+      action: "promote",
+      target_project_id: projectId,
+      target_shot_id: shot.shot_id
+    }, db);
+    assert.equal(promoted.ok ? null : promoted.error.code, "PROJECT_CLOSED");
+    assert.equal(getWorkbenchDraftRecord("draft_closed_inbox", db)?.status, "pending");
+
+    const executed = decideWorkbenchPendingAction("action_closed_inbox", { decision: "execute" }, db);
+    assert.equal(executed.ok ? null : executed.error.code, "PROJECT_CLOSED");
+    assert.equal(getWorkbenchPendingActionRecord("action_closed_inbox", db)?.status, "pending");
+    assert.deepEqual(getShot(db, shot.shot_id), shot);
+  } finally {
+    db.close();
+  }
+});
+
 test("Storyboard validate and import actions reject bytes that drift after Artifact registration", () => {
   const db = openM0Database(":memory:");
   let artifactPath = "";
@@ -205,4 +272,42 @@ test("Storyboard validate and import actions reject bytes that drift after Artif
 
 function sha256(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function closeProjectForInboxTest(db: ReturnType<typeof openM0Database>, projectId: string): void {
+  const project = getProject(db, projectId);
+  assert.ok(project);
+  if (!project) throw new Error("closed inbox fixture project was not found");
+  const finalArtifact = registerMediaArtifact({
+    artifact_type: "video",
+    role: "final_video",
+    source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+    linked_objects: { project_id: projectId }
+  }, db);
+  assert.equal(finalArtifact.ok, true);
+  if (!finalArtifact.ok) throw new Error("closed inbox final Artifact registration failed");
+  const artifactId = finalArtifact.artifact.artifact_id;
+  project.status = "final_approved";
+  project.exports.final_video_artifact_id = artifactId;
+  saveProject(db, project);
+  const blob = db.prepare(`SELECT b.sha256, b.size_bytes
+    FROM media_artifact_blobs link JOIN media_blobs b ON b.blob_id = link.blob_id
+    WHERE link.artifact_id = ?`).get(artifactId) as { sha256: string; size_bytes: number };
+  const now = "2026-08-14T00:00:00.000Z";
+  const exportId = "export_closed_inbox";
+  db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?").run(now, projectId);
+  db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?").run(now, projectId);
+  db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'final_review', current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?")
+    .run(artifactId, now, projectId);
+  db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'approved', approved_artifact_id = ?, updated_at = ? WHERE project_id = ?")
+    .run(artifactId, now, projectId);
+  db.prepare(`INSERT INTO workbench_exports
+    (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`).run(exportId, projectId, artifactId,
+    `data/exports/${projectId}/final.mp4`, blob.sha256, blob.size_bytes, now);
+  db.prepare(`UPDATE workbench_delivery_state
+    SET workflow_state = 'exported', latest_export_id = ?, latest_exported_at = ?, updated_at = ?
+    WHERE project_id = ?`).run(exportId, now, now, projectId);
+  db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'closed', closed_at = ?, updated_at = ? WHERE project_id = ?")
+    .run(now, now, projectId);
 }

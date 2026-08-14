@@ -13,7 +13,8 @@ import {
   openM0Database,
   registerMediaArtifact,
   saveShot,
-  startStoryboardVideoGeneration
+  startStoryboardVideoGeneration,
+  transitionMediaArtifactStatus
 } from "../src/index.js";
 
 async function setupGeneratedProject(db: ReturnType<typeof openM0Database>) {
@@ -29,7 +30,7 @@ async function setupGeneratedProject(db: ReturnType<typeof openM0Database>) {
       },
       db
     );
-    assert.equal(artifact.ok, true);
+    assert.equal(artifact.ok, true, artifact.ok ? "" : artifact.error.code);
     if (!artifact.ok) throw new Error("artifact failed");
     return {
       order: index + 1,
@@ -56,7 +57,7 @@ async function setupGeneratedProject(db: ReturnType<typeof openM0Database>) {
     },
     db
   );
-  assert.equal(generation.ok, true);
+  assert.equal(generation.ok, true, generation.ok ? "" : `${generation.error.code}:${generation.error.message}`);
   if (!generation.ok) throw new Error("generation failed");
   return { project, storyboard, generation };
 }
@@ -154,6 +155,94 @@ test("M0-F assembly succeeds after all shots are approved", async () => {
       artifact_id: assembled.final_video_artifact_id,
       reason_code: "LEGACY_ASSEMBLY_SUCCEEDED"
     });
+    const deactivated = transitionMediaArtifactStatus(assembled.final_video_artifact_id, "archived", db);
+    assert.equal(deactivated.ok ? null : deactivated.error.code, "WORKBENCH_DELIVERY_ARTIFACT_ACTIVE_REQUIRED");
+    assert.equal(getMediaArtifact(db, assembled.final_video_artifact_id)?.status, "active");
+  } finally {
+    db.close();
+  }
+});
+
+test("M0-F assembly rejects same-project and global durable delivery Jobs before creating a final Artifact", async () => {
+  const db = openM0Database();
+
+  try {
+    const fixture = await setupGeneratedProject(db);
+    for (const shot of fixture.storyboard.shots) {
+      const run = fixture.generation.runs.find((item) => item.shot_id === shot.shot_id);
+      assert(run);
+      assert.equal(markShotClipReview({ shot_id: shot.shot_id, artifact_id: run.output.artifact_ids[0], decision: "approved" }, db).ok, true);
+    }
+    const now = "2026-08-14T00:00:00.000Z";
+    db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, input_json, created_at, updated_at)
+      VALUES ('job_same_project_active', ?, 'assembly', 'queued', '{}', ?, ?)`).run(fixture.project.project_id, now, now);
+    const before = (db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ? AND role = 'final_video'")
+      .get(fixture.project.project_id) as { count: number }).count;
+    const sameProject = assembleFinalVideo({
+      project_id: fixture.project.project_id,
+      confirmation: { confirmation_level: "explicit", user_confirmed: true }
+    }, db);
+    assert.equal(sameProject.ok ? null : sameProject.error.code, "DELIVERY_JOB_ACTIVE");
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ? AND role = 'final_video'")
+      .get(fixture.project.project_id) as { count: number }).count, before);
+
+    db.prepare(`UPDATE workbench_delivery_jobs
+      SET state = 'failed', error_code = 'SYNTHETIC_FAILURE', finished_at = ?, updated_at = ?
+      WHERE job_id = 'job_same_project_active'`).run(now, now);
+    const otherProject = createProject({ title: "Other active delivery Job" }, db);
+    assert.equal(otherProject.ok, true);
+    if (!otherProject.ok) return;
+    db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, input_json, created_at, updated_at)
+      VALUES ('job_other_project_active', ?, 'export', 'queued', '{}', ?, ?)`).run(otherProject.project_id, now, now);
+    const global = assembleFinalVideo({
+      project_id: fixture.project.project_id,
+      confirmation: { confirmation_level: "explicit", user_confirmed: true }
+    }, db);
+    assert.equal(global.ok ? null : global.error.code, "DELIVERY_JOB_ACTIVE");
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ? AND role = 'final_video'")
+      .get(fixture.project.project_id) as { count: number }).count, before);
+    db.prepare(`UPDATE workbench_delivery_jobs
+      SET state = 'failed', error_code = 'SYNTHETIC_FAILURE', finished_at = ?, updated_at = ?
+      WHERE job_id = 'job_other_project_active'`).run(now, now);
+  } finally {
+    db.close();
+  }
+});
+
+test("M0-F assembly rechecks durable delivery Jobs after acquiring the commit transaction", async () => {
+  const db = openM0Database();
+
+  try {
+    const fixture = await setupGeneratedProject(db);
+    for (const shot of fixture.storyboard.shots) {
+      const run = fixture.generation.runs.find((item) => item.shot_id === shot.shot_id);
+      assert(run);
+      assert.equal(markShotClipReview({ shot_id: shot.shot_id, artifact_id: run.output.artifact_ids[0], decision: "approved" }, db).ok, true);
+    }
+    const before = (db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ? AND role = 'final_video'")
+      .get(fixture.project.project_id) as { count: number }).count;
+    db.exec(`CREATE TRIGGER inject_active_delivery_job_for_test
+      AFTER UPDATE OF workflow_state ON workbench_delivery_state
+      WHEN NEW.project_id = '${fixture.project.project_id}' AND NEW.workflow_state = 'assembling'
+      BEGIN
+        INSERT INTO workbench_delivery_jobs
+          (job_id, project_id, job_type, state, input_json, created_at, updated_at)
+        VALUES ('job_injected_during_assembly', NEW.project_id, 'assembly', 'queued', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+      END`);
+
+    const assembled = assembleFinalVideo({
+      project_id: fixture.project.project_id,
+      confirmation: { confirmation_level: "explicit", user_confirmed: true }
+    }, db);
+    assert.equal(assembled.ok ? null : assembled.error.code, "DELIVERY_JOB_ACTIVE");
+    assert.equal((db.prepare("SELECT workflow_state FROM workbench_delivery_state WHERE project_id = ?")
+      .get(fixture.project.project_id) as { workflow_state: string }).workflow_state, "not_ready");
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM workbench_delivery_jobs WHERE job_id = 'job_injected_during_assembly'")
+      .get() as { count: number }).count, 0);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ? AND role = 'final_video'")
+      .get(fixture.project.project_id) as { count: number }).count, before);
   } finally {
     db.close();
   }

@@ -1436,6 +1436,14 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
   BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_STATE_BINDING_INVALID');
   END;
+  CREATE TRIGGER workbench_delivery_artifact_status_guard BEFORE UPDATE OF status ON media_artifacts
+  WHEN OLD.status = 'active' AND NEW.status <> 'active' AND EXISTS (
+    SELECT 1 FROM workbench_delivery_state d
+    WHERE d.current_final_artifact_id = OLD.artifact_id OR d.approved_artifact_id = OLD.artifact_id
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_ARTIFACT_ACTIVE_REQUIRED');
+  END;
   CREATE TRIGGER workbench_delivery_state_transition BEFORE UPDATE OF workflow_state ON workbench_delivery_state
   WHEN OLD.workflow_state <> NEW.workflow_state AND NOT (
     (OLD.workflow_state = 'not_ready' AND NEW.workflow_state = 'ready_to_assemble')
@@ -1886,6 +1894,7 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "workbench_delivery_events_no_delete",
         "workbench_delivery_state_validate_artifacts",
         "workbench_delivery_state_validate_artifacts_update",
+        "workbench_delivery_artifact_status_guard",
         "workbench_delivery_state_transition",
         "workbench_delivery_state_identity_immutable",
         "workbench_delivery_state_closed_immutable",

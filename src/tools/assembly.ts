@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
-import { registerMediaArtifact, validateAcceptedClipReference } from "./mediaArtifacts.js";
+import { cleanupCommittedMediaActivationMarkers, cleanupRolledBackMediaActivationFiles, registerMediaArtifact, validateAcceptedClipReference } from "./mediaArtifacts.js";
 import { saveGenerationRun, type Confirmation, type GenerationRun } from "./generation.js";
 import { getProject, listProjectShots, saveProject, type ToolError } from "./projects.js";
-import { assertWorkbenchProductionWriteAllowed, type WorkbenchDeliveryWorkflowState } from "./workbenchDeliveryState.js";
+import { assertWorkbenchProductionWriteAllowed, getActiveWorkbenchDeliveryJob, type WorkbenchDeliveryWorkflowState } from "./workbenchDeliveryState.js";
 
 type ToolResult<T> = { ok: true } & T | { ok: false; error: ToolError; blocking_reasons?: string[] };
 
@@ -67,7 +67,7 @@ export function assembleFinalVideo(
   if (!project) return { ok: false, error: { code: "PROJECT_NOT_FOUND", message: `Project not found: ${input.project_id}` } };
   const writable = assertWorkbenchProductionWriteAllowed(db, project.project_id);
   if (!writable.ok) return { ok: false, error: writable.error };
-  if (writable.delivery.workflow_state === "assembling") {
+  if (writable.delivery.workflow_state === "assembling" || getActiveWorkbenchDeliveryJob(db)) {
     return { ok: false, error: { code: "DELIVERY_JOB_ACTIVE", message: "Another delivery operation is already active." } };
   }
 
@@ -81,71 +81,15 @@ export function assembleFinalVideo(
     };
   }
 
-  const artifact = registerMediaArtifact(
-    {
-      artifact_type: "video",
-      role: "final_video",
-      source: {
-        kind: "fixture_path",
-        path: M0_FINAL_PLACEHOLDER_FIXTURE
-      },
-      linked_objects: {
-        project_id: project.project_id
-      },
-      metadata: {
-        duration_seconds: M0_FINAL_PLACEHOLDER_DURATION_SECONDS,
-        aspect_ratio: project.video_spec.aspect_ratio,
-        width: 1080,
-        height: 1920
-      }
-    },
-    db
-  );
-  if (!artifact.ok) {
-    return { ok: false, error: { code: "GENERATION_PROVIDER_ERROR", message: artifact.error.message } };
-  }
-
-  const run: GenerationRun = {
-    run_id: `run_${randomUUID()}`,
-    batch_id: "",
-    project_id: project.project_id,
-    shot_id: "",
-    run_type: "assemble_video",
-    status: "succeeded",
-    input: {
-      storyboard_image_artifact_id: "",
-      video_prompt: "assemble accepted M0 clips",
-      negative_prompt: "",
-      duration_seconds: shots.reduce((sum, shot) => sum + shot.duration_seconds, 0),
-      aspect_ratio: project.video_spec.aspect_ratio,
-      resolution: project.video_spec.resolution
-    },
-    output: {
-      artifact_ids: [artifact.artifact.artifact_id]
-    },
-    provider: {
-      provider: "mock",
-      provider_name: "mock",
-      model_name: "placeholder_copy",
-      provider_job_id: "",
-      provider_status: "succeeded"
-    },
-    versioning: {
-      attempt_number: 1,
-      parent_run_id: ""
-    },
-    error: {
-      code: "",
-      message: "",
-      retryable: false
-    }
-  };
-
   const savepoint = `legacy_assembly_${randomUUID().replaceAll("-", "")}`;
+  let activatedArtifactId = "";
+  let artifactFailure: ToolError | null = null;
+  let committed: { run: GenerationRun; artifact_id: string } | null = null;
   db.exec(`SAVEPOINT ${savepoint}`);
   try {
     const currentBoundary = assertWorkbenchProductionWriteAllowed(db, project.project_id);
     if (!currentBoundary.ok) throw new Error(currentBoundary.error.code);
+    if (getActiveWorkbenchDeliveryJob(db)) throw new Error("DELIVERY_JOB_ACTIVE");
     const currentState = currentBoundary.delivery.workflow_state;
     if (currentState === "assembling") throw new Error("DELIVERY_JOB_ACTIVE");
     if (currentState !== "ready_to_assemble") {
@@ -161,30 +105,107 @@ export function assembleFinalVideo(
       SET workflow_state = 'assembling', updated_at = CURRENT_TIMESTAMP
       WHERE project_id = ? AND workflow_state = 'ready_to_assemble'`).run(project.project_id) as { changes: number | bigint };
     if (Number(started.changes) !== 1) throw new Error("ASSEMBLY_INPUT_CHANGED");
+    if (getActiveWorkbenchDeliveryJob(db)) throw new Error("DELIVERY_JOB_ACTIVE");
 
-    project.exports.final_video_artifact_id = artifact.artifact.artifact_id;
-    project.status = "video_review";
-    saveProject(db, project);
+    const currentProject = getProject(db, project.project_id);
+    if (!currentProject) throw new Error("PROJECT_NOT_FOUND");
+    const currentShots = listProjectShots(db, project.project_id);
+    if (!currentShots.length || finalAssemblyBlockingReasons(db, project.project_id).length) {
+      throw new Error("ASSEMBLY_INPUT_CHANGED");
+    }
+
+    const artifact = registerMediaArtifact(
+      {
+        artifact_type: "video",
+        role: "final_video",
+        source: {
+          kind: "fixture_path",
+          path: M0_FINAL_PLACEHOLDER_FIXTURE
+        },
+        linked_objects: {
+          project_id: currentProject.project_id
+        },
+        metadata: {
+          duration_seconds: M0_FINAL_PLACEHOLDER_DURATION_SECONDS,
+          aspect_ratio: currentProject.video_spec.aspect_ratio,
+          width: 1080,
+          height: 1920
+        }
+      },
+      db
+    );
+    if (!artifact.ok) {
+      artifactFailure = artifact.error;
+      throw new Error("FINAL_ASSEMBLY_ARTIFACT_FAILED");
+    }
+    activatedArtifactId = artifact.artifact.artifact_id;
+
+    const run: GenerationRun = {
+      run_id: `run_${randomUUID()}`,
+      batch_id: "",
+      project_id: currentProject.project_id,
+      shot_id: "",
+      run_type: "assemble_video",
+      status: "succeeded",
+      input: {
+        storyboard_image_artifact_id: "",
+        video_prompt: "assemble accepted M0 clips",
+        negative_prompt: "",
+        duration_seconds: currentShots.reduce((sum, shot) => sum + shot.duration_seconds, 0),
+        aspect_ratio: currentProject.video_spec.aspect_ratio,
+        resolution: currentProject.video_spec.resolution
+      },
+      output: {
+        artifact_ids: [activatedArtifactId]
+      },
+      provider: {
+        provider: "mock",
+        provider_name: "mock",
+        model_name: "placeholder_copy",
+        provider_job_id: "",
+        provider_status: "succeeded"
+      },
+      versioning: {
+        attempt_number: 1,
+        parent_run_id: ""
+      },
+      error: {
+        code: "",
+        message: "",
+        retryable: false
+      }
+    };
+
+    currentProject.exports.final_video_artifact_id = activatedArtifactId;
+    currentProject.status = "video_review";
+    saveProject(db, currentProject);
     saveGenerationRun(db, run);
 
     const completed = db.prepare(`UPDATE workbench_delivery_state
       SET workflow_state = 'final_review', current_final_artifact_id = ?,
         approved_artifact_id = NULL, latest_export_id = NULL, latest_exported_at = NULL,
         closed_at = NULL, updated_at = CURRENT_TIMESTAMP
-      WHERE project_id = ? AND workflow_state = 'assembling'`).run(artifact.artifact.artifact_id, project.project_id) as { changes: number | bigint };
+      WHERE project_id = ? AND workflow_state = 'assembling'`).run(activatedArtifactId, currentProject.project_id) as { changes: number | bigint };
     if (Number(completed.changes) !== 1) throw new Error("ASSEMBLY_INPUT_CHANGED");
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
       VALUES (?, ?, 'assembly_succeeded', 'assembling', 'final_review', ?, 'LEGACY_ASSEMBLY_SUCCEEDED', '{}', CURRENT_TIMESTAMP)`)
-      .run(`event_${randomUUID()}`, project.project_id, artifact.artifact.artifact_id);
+      .run(`event_${randomUUID()}`, currentProject.project_id, activatedArtifactId);
+    committed = { run, artifact_id: activatedArtifactId };
     db.exec(`RELEASE SAVEPOINT ${savepoint}`);
   } catch (error) {
     try {
       db.exec(`ROLLBACK TO SAVEPOINT ${savepoint}`);
       db.exec(`RELEASE SAVEPOINT ${savepoint}`);
     } catch { /* preserve the stable assembly error */ }
+    if (activatedArtifactId) cleanupRolledBackMediaActivationFiles([activatedArtifactId]);
+    if (artifactFailure) {
+      return { ok: false, error: { code: "GENERATION_PROVIDER_ERROR", message: artifactFailure.message } };
+    }
     return { ok: false, error: assemblyPersistenceError(error) };
   }
 
-  return { ok: true, run, final_video_artifact_id: artifact.artifact.artifact_id };
+  if (!committed) return { ok: false, error: { code: "FINAL_ASSEMBLY_PERSIST_FAILED", message: "Final assembly result could not be committed." } };
+  cleanupCommittedMediaActivationMarkers(db, [committed.artifact_id]);
+  return { ok: true, run: committed.run, final_video_artifact_id: committed.artifact_id };
 }

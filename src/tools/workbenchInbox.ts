@@ -6,6 +6,7 @@ import { createProject, getProject, getShot, listProjectShots, saveProject, save
 import { saveStoryboardPackage, type StoryboardPackage } from "./storyboardPackages.js";
 import { requireProjectShotWorkflowWriteAction, requireShotWorkflowWriteAction } from "./operationalWriteGates.js";
 import { decideWorkbenchClip, decideWorkbenchImport, updateWorkbenchShot, type WorkbenchPage, type WorkbenchProjectClassification, type WorkbenchV2Result } from "./workbenchV2.js";
+import { assertWorkbenchProductionWriteAllowed } from "./workbenchDeliveryState.js";
 import {
   appendWorkbenchInboxEvent,
   getWorkbenchDraftRecord,
@@ -524,10 +525,10 @@ function validateProjectStoryboard(project: Project, db: M0Database): Shot[] {
 
 function writableProject(projectId: string, db: M0Database): Project {
   if (!projectId) throw new InboxDomainError("PENDING_ACTION_TARGET_REQUIRED", "Target project is required.", "target_project_id");
+  const boundary = assertWorkbenchProductionWriteAllowed(db, projectId);
+  if (!boundary.ok) throw new InboxDomainError(boundary.error.code, boundary.error.message, "target_project_id");
   const project = getProject(db, projectId);
   if (!project) throw new InboxDomainError("PROJECT_NOT_FOUND", `Project not found: ${projectId}`, "target_project_id");
-  const meta = db.prepare("SELECT lifecycle FROM workbench_project_meta WHERE project_id = ?").get(projectId) as { lifecycle: string } | undefined;
-  if (meta?.lifecycle === "archived") throw new InboxDomainError("PROJECT_ARCHIVED", "Archived projects are read-only.", "target_project_id");
   return project;
 }
 

@@ -138,6 +138,9 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
     db.prepare(`UPDATE workbench_delivery_state
       SET workflow_state = 'final_review', current_final_artifact_id = 'artifact_delivery', updated_at = ?
       WHERE project_id = 'project_delivery'`).run(now);
+    assert.throws(() => db.prepare("UPDATE media_artifacts SET status = 'archived' WHERE artifact_id = 'artifact_delivery'").run(),
+      /WORKBENCH_DELIVERY_ARTIFACT_ACTIVE_REQUIRED/);
+    assert.equal((db.prepare("SELECT status FROM media_artifacts WHERE artifact_id = 'artifact_delivery'").get() as { status: string }).status, "active");
     assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
       SET workflow_state = 'approved', approved_artifact_id = NULL, updated_at = ?
       WHERE project_id = 'project_delivery'`).run(now), /CHECK constraint failed/);

@@ -309,6 +309,19 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
         WHERE p.proposal_id IS NULL OR project.project_id IS NULL OR shot.shot_id IS NULL OR artifact.artifact_id IS NULL`,
       "SELECT COUNT(*) AS count FROM projects p LEFT JOIN workbench_delivery_state d ON d.project_id = p.project_id WHERE d.project_id IS NULL",
       "SELECT COUNT(*) AS count FROM workbench_delivery_state d LEFT JOIN projects p ON p.project_id = d.project_id WHERE p.project_id IS NULL",
+      `SELECT COUNT(*) AS count FROM workbench_delivery_state d
+        LEFT JOIN media_artifacts current_artifact
+          ON current_artifact.artifact_id = d.current_final_artifact_id
+          AND current_artifact.project_id = d.project_id AND COALESCE(current_artifact.shot_id, '') = ''
+          AND current_artifact.role = 'final_video' AND current_artifact.artifact_type = 'video'
+          AND current_artifact.status = 'active'
+        LEFT JOIN media_artifacts approved_artifact
+          ON approved_artifact.artifact_id = d.approved_artifact_id
+          AND approved_artifact.project_id = d.project_id AND COALESCE(approved_artifact.shot_id, '') = ''
+          AND approved_artifact.role = 'final_video' AND approved_artifact.artifact_type = 'video'
+          AND approved_artifact.status = 'active'
+        WHERE (d.current_final_artifact_id IS NOT NULL AND current_artifact.artifact_id IS NULL)
+          OR (d.approved_artifact_id IS NOT NULL AND approved_artifact.artifact_id IS NULL)`,
       "SELECT COUNT(*) AS count FROM workbench_delivery_jobs j LEFT JOIN projects p ON p.project_id = j.project_id WHERE p.project_id IS NULL",
       `SELECT COUNT(*) AS count FROM workbench_delivery_jobs j
         LEFT JOIN workbench_delivery_jobs parent ON parent.job_id = j.retry_of_job_id

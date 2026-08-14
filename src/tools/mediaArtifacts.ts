@@ -437,7 +437,11 @@ export function transitionMediaArtifactStatus(
     persistMediaArtifactInternal(db, artifact, true);
     return { ok: true, artifact };
   } catch (error) {
-    return { ok: false, error: { code: "ARTIFACT_STATUS_TRANSITION_FAILED", message: error instanceof Error ? error.message : "Artifact status transition failed." } };
+    const message = error instanceof Error ? error.message : "";
+    if (message.includes("WORKBENCH_DELIVERY_ARTIFACT_ACTIVE_REQUIRED")) {
+      return { ok: false, error: { code: "WORKBENCH_DELIVERY_ARTIFACT_ACTIVE_REQUIRED", message: "Delivery-referenced final Artifacts must remain active." } };
+    }
+    return { ok: false, error: { code: "ARTIFACT_STATUS_TRANSITION_FAILED", message: message || "Artifact status transition failed." } };
   }
 }
 
