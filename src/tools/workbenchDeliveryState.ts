@@ -65,6 +65,10 @@ export interface WorkbenchCloseoutReceipt {
   created_at: string;
 }
 
+export type WorkbenchProductionWriteBoundaryResult =
+  | { ok: true; delivery: WorkbenchDeliveryStateRecord }
+  | { ok: false; error: { code: "PROJECT_NOT_FOUND" | "PROJECT_ARCHIVED" | "DELIVERY_STATE_MISSING" | "PROJECT_CLOSED"; message: string } };
+
 export function getWorkbenchDeliveryState(db: M0Database, projectId: string): WorkbenchDeliveryStateRecord | null {
   const row = db.prepare(`
     SELECT project_id, workflow_state, current_final_artifact_id, assembly_input_fingerprint,
@@ -72,6 +76,30 @@ export function getWorkbenchDeliveryState(db: M0Database, projectId: string): Wo
     FROM workbench_delivery_state WHERE project_id = ?
   `).get(projectId) as WorkbenchDeliveryStateRecord | undefined;
   return row ?? null;
+}
+
+export function assertWorkbenchProductionWriteAllowed(db: M0Database, projectId: string): WorkbenchProductionWriteBoundaryResult {
+  const project = db.prepare("SELECT 1 AS present FROM projects WHERE project_id = ?").get(projectId) as { present: number } | undefined;
+  if (!project) {
+    return { ok: false, error: { code: "PROJECT_NOT_FOUND", message: `Project not found: ${projectId}` } };
+  }
+
+  const meta = db.prepare("SELECT lifecycle FROM workbench_project_meta WHERE project_id = ?").get(projectId) as { lifecycle: string } | undefined;
+  if (!meta) {
+    return { ok: false, error: { code: "PROJECT_NOT_FOUND", message: `Project not found: ${projectId}` } };
+  }
+  if (meta.lifecycle === "archived") {
+    return { ok: false, error: { code: "PROJECT_ARCHIVED", message: "Archived projects are read-only." } };
+  }
+
+  const delivery = getWorkbenchDeliveryState(db, projectId);
+  if (!delivery) {
+    return { ok: false, error: { code: "DELIVERY_STATE_MISSING", message: "Project delivery state is unavailable." } };
+  }
+  if (delivery.workflow_state === "closed") {
+    return { ok: false, error: { code: "PROJECT_CLOSED", message: "Closed projects do not accept production changes." } };
+  }
+  return { ok: true, delivery };
 }
 
 export function getActiveWorkbenchDeliveryJob(db: M0Database, projectId?: string): WorkbenchDeliveryJobRecord | null {

@@ -23,6 +23,7 @@ import type { ProjectOperationalSummary } from "../packages/domain/operationalSt
 import { markShotClipReview, type RevisionInstruction } from "./review.js";
 import { listWorkbenchDraftRecords, listWorkbenchPendingActionRecords } from "./workbenchInboxStore.js";
 import {
+  assertWorkbenchProductionWriteAllowed,
   getActiveWorkbenchDeliveryJob,
   getLatestWorkbenchExport,
   getWorkbenchCloseoutReceipt,
@@ -232,16 +233,8 @@ export function assertWorkbenchProjectWritable(db: M0Database, projectId: string
   if (!project) return projectNotFound(projectId);
   const meta = projectMeta(db, projectId);
   if (!meta) return projectNotFound(projectId);
-  if (meta.lifecycle === "archived") {
-    return { ok: false, error: { code: "PROJECT_ARCHIVED", message: "Archived projects are read-only.", field: "project_id" } };
-  }
-  const delivery = getWorkbenchDeliveryState(db, projectId);
-  if (!delivery) {
-    return { ok: false, error: { code: "DELIVERY_STATE_MISSING", message: "Project delivery state is unavailable.", field: "project_id" } };
-  }
-  if (delivery.workflow_state === "closed") {
-    return { ok: false, error: { code: "PROJECT_CLOSED", message: "Closed projects do not accept production changes.", field: "project_id" } };
-  }
+  const boundary = assertWorkbenchProductionWriteAllowed(db, projectId);
+  if (!boundary.ok) return { ok: false, error: { ...boundary.error, field: "project_id" } };
   return { ok: true, data: { project, meta } };
 }
 

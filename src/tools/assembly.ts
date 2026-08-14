@@ -4,6 +4,7 @@ import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { registerMediaArtifact, validateAcceptedClipReference } from "./mediaArtifacts.js";
 import { saveGenerationRun, type Confirmation, type GenerationRun } from "./generation.js";
 import { getProject, listProjectShots, saveProject, type ToolError } from "./projects.js";
+import { assertWorkbenchProductionWriteAllowed, type WorkbenchDeliveryWorkflowState } from "./workbenchDeliveryState.js";
 
 type ToolResult<T> = { ok: true } & T | { ok: false; error: ToolError; blocking_reasons?: string[] };
 
@@ -31,6 +32,26 @@ function finalAssemblyBlockingReasons(db: M0Database, projectId: string): string
   return reasons;
 }
 
+const REASSEMBLY_SOURCE_STATES: ReadonlySet<WorkbenchDeliveryWorkflowState> = new Set([
+  "not_ready",
+  "final_review",
+  "revision_requested",
+  "approved",
+  "exported",
+  "legacy_review_required"
+]);
+
+function assemblyPersistenceError(error: unknown): ToolError {
+  const code = error instanceof Error ? error.message : "";
+  if (code === "PROJECT_NOT_FOUND") return { code, message: "Project no longer exists." };
+  if (code === "PROJECT_ARCHIVED") return { code, message: "Archived projects are read-only." };
+  if (code === "DELIVERY_STATE_MISSING") return { code, message: "Project delivery state is unavailable." };
+  if (code === "PROJECT_CLOSED") return { code, message: "Closed projects do not accept production changes." };
+  if (code === "DELIVERY_JOB_ACTIVE") return { code, message: "Another delivery operation is already active." };
+  if (code === "ASSEMBLY_INPUT_CHANGED") return { code, message: "Assembly state changed before the result could be committed." };
+  return { code: "FINAL_ASSEMBLY_PERSIST_FAILED", message: "Final assembly result could not be committed." };
+}
+
 export function assembleFinalVideo(
   input: {
     project_id: string;
@@ -44,6 +65,11 @@ export function assembleFinalVideo(
 
   const project = getProject(db, input.project_id);
   if (!project) return { ok: false, error: { code: "PROJECT_NOT_FOUND", message: `Project not found: ${input.project_id}` } };
+  const writable = assertWorkbenchProductionWriteAllowed(db, project.project_id);
+  if (!writable.ok) return { ok: false, error: writable.error };
+  if (writable.delivery.workflow_state === "assembling") {
+    return { ok: false, error: { code: "DELIVERY_JOB_ACTIVE", message: "Another delivery operation is already active." } };
+  }
 
   const shots = listProjectShots(db, project.project_id);
   const blockingReasons = finalAssemblyBlockingReasons(db, project.project_id);
@@ -115,10 +141,50 @@ export function assembleFinalVideo(
     }
   };
 
-  project.exports.final_video_artifact_id = artifact.artifact.artifact_id;
-  project.status = "video_review";
-  saveProject(db, project);
-  saveGenerationRun(db, run);
+  const savepoint = `legacy_assembly_${randomUUID().replaceAll("-", "")}`;
+  db.exec(`SAVEPOINT ${savepoint}`);
+  try {
+    const currentBoundary = assertWorkbenchProductionWriteAllowed(db, project.project_id);
+    if (!currentBoundary.ok) throw new Error(currentBoundary.error.code);
+    const currentState = currentBoundary.delivery.workflow_state;
+    if (currentState === "assembling") throw new Error("DELIVERY_JOB_ACTIVE");
+    if (currentState !== "ready_to_assemble") {
+      if (!REASSEMBLY_SOURCE_STATES.has(currentState)) throw new Error("ASSEMBLY_INPUT_CHANGED");
+      const prepared = db.prepare(`UPDATE workbench_delivery_state
+        SET workflow_state = 'ready_to_assemble', assembly_input_fingerprint = NULL,
+          approved_artifact_id = NULL, latest_export_id = NULL, latest_exported_at = NULL,
+          closed_at = NULL, updated_at = CURRENT_TIMESTAMP
+        WHERE project_id = ? AND workflow_state = ?`).run(project.project_id, currentState) as { changes: number | bigint };
+      if (Number(prepared.changes) !== 1) throw new Error("ASSEMBLY_INPUT_CHANGED");
+    }
+    const started = db.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'assembling', updated_at = CURRENT_TIMESTAMP
+      WHERE project_id = ? AND workflow_state = 'ready_to_assemble'`).run(project.project_id) as { changes: number | bigint };
+    if (Number(started.changes) !== 1) throw new Error("ASSEMBLY_INPUT_CHANGED");
+
+    project.exports.final_video_artifact_id = artifact.artifact.artifact_id;
+    project.status = "video_review";
+    saveProject(db, project);
+    saveGenerationRun(db, run);
+
+    const completed = db.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'final_review', current_final_artifact_id = ?,
+        approved_artifact_id = NULL, latest_export_id = NULL, latest_exported_at = NULL,
+        closed_at = NULL, updated_at = CURRENT_TIMESTAMP
+      WHERE project_id = ? AND workflow_state = 'assembling'`).run(artifact.artifact.artifact_id, project.project_id) as { changes: number | bigint };
+    if (Number(completed.changes) !== 1) throw new Error("ASSEMBLY_INPUT_CHANGED");
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
+      VALUES (?, ?, 'assembly_succeeded', 'assembling', 'final_review', ?, 'LEGACY_ASSEMBLY_SUCCEEDED', '{}', CURRENT_TIMESTAMP)`)
+      .run(`event_${randomUUID()}`, project.project_id, artifact.artifact.artifact_id);
+    db.exec(`RELEASE SAVEPOINT ${savepoint}`);
+  } catch (error) {
+    try {
+      db.exec(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+      db.exec(`RELEASE SAVEPOINT ${savepoint}`);
+    } catch { /* preserve the stable assembly error */ }
+    return { ok: false, error: assemblyPersistenceError(error) };
+  }
 
   return { ok: true, run, final_video_artifact_id: artifact.artifact.artifact_id };
 }

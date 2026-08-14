@@ -1274,7 +1274,9 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     CHECK (workflow_state IN ('not_ready','ready_to_assemble','assembling','final_review','revision_requested','approved','exported','closed','legacy_review_required')),
     CHECK (assembly_input_fingerprint IS NULL OR (length(assembly_input_fingerprint) = 64 AND assembly_input_fingerprint NOT GLOB '*[^0-9a-f]*')),
     CHECK (workflow_state NOT IN ('final_review','approved','exported','closed') OR current_final_artifact_id IS NOT NULL),
-    CHECK (workflow_state NOT IN ('approved','exported','closed') OR approved_artifact_id = current_final_artifact_id),
+    CHECK (workflow_state NOT IN ('approved','exported','closed') OR (
+      approved_artifact_id IS NOT NULL AND approved_artifact_id = current_final_artifact_id
+    )),
     CHECK (workflow_state NOT IN ('exported','closed') OR latest_export_id IS NOT NULL),
     CHECK ((latest_export_id IS NULL AND latest_exported_at IS NULL) OR (latest_export_id IS NOT NULL AND latest_exported_at IS NOT NULL)),
     CHECK ((workflow_state = 'closed' AND closed_at IS NOT NULL) OR (workflow_state <> 'closed' AND closed_at IS NULL))

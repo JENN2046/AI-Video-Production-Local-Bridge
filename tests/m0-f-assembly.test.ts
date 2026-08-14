@@ -131,6 +131,94 @@ test("M0-F assembly succeeds after all shots are approved", async () => {
     assert.equal(existsSync(artifact?.storage.uri ?? ""), true);
     assert.equal(readFileSync(artifact?.storage.uri ?? "").length > 0, true);
     assert.equal(getProject(db, project.project_id)?.exports.final_video_artifact_id, assembled.final_video_artifact_id);
+    const delivery = db.prepare(`SELECT workflow_state, current_final_artifact_id, approved_artifact_id,
+      latest_export_id FROM workbench_delivery_state WHERE project_id = ?`).get(project.project_id) as {
+        workflow_state: string;
+        current_final_artifact_id: string | null;
+        approved_artifact_id: string | null;
+        latest_export_id: string | null;
+      };
+    assert.deepEqual({ ...delivery }, {
+      workflow_state: "final_review",
+      current_final_artifact_id: assembled.final_video_artifact_id,
+      approved_artifact_id: null,
+      latest_export_id: null
+    });
+    const event = db.prepare(`SELECT event_type, from_state, to_state, artifact_id, reason_code
+      FROM workbench_delivery_events WHERE project_id = ? ORDER BY created_at DESC, event_id DESC LIMIT 1`)
+      .get(project.project_id) as Record<string, unknown>;
+    assert.deepEqual({ ...event }, {
+      event_type: "assembly_succeeded",
+      from_state: "assembling",
+      to_state: "final_review",
+      artifact_id: assembled.final_video_artifact_id,
+      reason_code: "LEGACY_ASSEMBLY_SUCCEEDED"
+    });
+  } finally {
+    db.close();
+  }
+});
+
+test("M0-F assembly rejects archived and closed projects before creating another final Artifact", async () => {
+  const db = openM0Database();
+
+  try {
+    const archivedFixture = await setupGeneratedProject(db);
+    for (const shot of archivedFixture.storyboard.shots) {
+      const run = archivedFixture.generation.runs.find((item) => item.shot_id === shot.shot_id);
+      assert(run);
+      assert.equal(markShotClipReview({ shot_id: shot.shot_id, artifact_id: run.output.artifact_ids[0], decision: "approved" }, db).ok, true);
+    }
+    db.prepare("UPDATE workbench_project_meta SET lifecycle = 'archived' WHERE project_id = ?").run(archivedFixture.project.project_id);
+    const archivedBefore = (db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ? AND role = 'final_video'")
+      .get(archivedFixture.project.project_id) as { count: number }).count;
+    const archived = assembleFinalVideo({
+      project_id: archivedFixture.project.project_id,
+      confirmation: { confirmation_level: "explicit", user_confirmed: true }
+    }, db);
+    assert.equal(archived.ok ? null : archived.error.code, "PROJECT_ARCHIVED");
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ? AND role = 'final_video'")
+      .get(archivedFixture.project.project_id) as { count: number }).count, archivedBefore);
+
+    const closedFixture = await setupGeneratedProject(db);
+    for (const shot of closedFixture.storyboard.shots) {
+      const run = closedFixture.generation.runs.find((item) => item.shot_id === shot.shot_id);
+      assert(run);
+      assert.equal(markShotClipReview({ shot_id: shot.shot_id, artifact_id: run.output.artifact_ids[0], decision: "approved" }, db).ok, true);
+    }
+    const first = assembleFinalVideo({
+      project_id: closedFixture.project.project_id,
+      confirmation: { confirmation_level: "explicit", user_confirmed: true }
+    }, db);
+    assert.equal(first.ok, true);
+    if (!first.ok) return;
+    const now = "2026-08-14T00:00:00.000Z";
+    const exportId = `export_${closedFixture.project.project_id}`;
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'approved', approved_artifact_id = ?, updated_at = ? WHERE project_id = ?")
+      .run(first.final_video_artifact_id, now, closedFixture.project.project_id);
+    db.prepare(`INSERT INTO workbench_exports
+      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
+      VALUES (?, ?, ?, ?, ?, 1, ?)`)
+      .run(exportId, closedFixture.project.project_id, first.final_video_artifact_id,
+        `data/exports/${closedFixture.project.project_id}/final.mp4`, "b".repeat(64), now);
+    db.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'exported', latest_export_id = ?, latest_exported_at = ?, updated_at = ?
+      WHERE project_id = ?`).run(exportId, now, now, closedFixture.project.project_id);
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'closed', closed_at = ?, updated_at = ? WHERE project_id = ?")
+      .run(now, now, closedFixture.project.project_id);
+    const finalCountBefore = (db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ? AND role = 'final_video'")
+      .get(closedFixture.project.project_id) as { count: number }).count;
+    const eventCountBefore = (db.prepare("SELECT COUNT(*) AS count FROM workbench_delivery_events WHERE project_id = ?")
+      .get(closedFixture.project.project_id) as { count: number }).count;
+    const closed = assembleFinalVideo({
+      project_id: closedFixture.project.project_id,
+      confirmation: { confirmation_level: "explicit", user_confirmed: true }
+    }, db);
+    assert.equal(closed.ok ? null : closed.error.code, "PROJECT_CLOSED");
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ? AND role = 'final_video'")
+      .get(closedFixture.project.project_id) as { count: number }).count, finalCountBefore);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM workbench_delivery_events WHERE project_id = ?")
+      .get(closedFixture.project.project_id) as { count: number }).count, eventCountBefore);
   } finally {
     db.close();
   }
