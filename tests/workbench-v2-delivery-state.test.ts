@@ -183,7 +183,7 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
         'export_delivery', ?, ?, ?, ?)`).run(now, now, now, now);
     const insertSucceededEvent = db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
-      VALUES (?, 'project_delivery', ?, ?, '', '', ?, ?, 'SYNTHETIC_SUCCEEDED', '{}', ?)`);
+      VALUES (?, 'project_delivery', ?, ?, 'approved', 'exported', ?, ?, 'SYNTHETIC_SUCCEEDED', '{}', ?)`);
     assert.throws(() => insertSucceededEvent.run("event_export_wrong_job_type", "job_assembly_historical",
       "export_succeeded", "artifact_delivery", "export_delivery", now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     assert.throws(() => insertSucceededEvent.run("event_export_wrong_artifact", "job_export_delivery",
@@ -262,11 +262,24 @@ test("delivery evidence pointers change only through legal assembly, review, rew
       .run(projectId, "d".repeat(64), now);
     db.prepare(`INSERT INTO workbench_exports
       (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
+      VALUES ('export_pointer_b_old', ?, 'artifact_pointer_b', 'data/exports/project_pointer_transitions/older.mp4', ?, 123, ?)`)
+      .run(projectId, "b".repeat(64), now);
+    db.prepare(`INSERT INTO workbench_exports
+      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
       VALUES ('export_pointer_a', ?, 'artifact_pointer_a', 'data/exports/project_pointer_transitions/old.mp4', ?, 123, ?)`)
       .run(projectId, "c".repeat(64), now);
+    assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
+      SET latest_export_id = 'export_pointer_b', latest_exported_at = ?, updated_at = ? WHERE project_id = ?`)
+      .run(now, now, projectId), /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
     db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'exported',
       latest_export_id = 'export_pointer_b', latest_exported_at = ?, updated_at = ? WHERE project_id = ?`)
       .run(now, now, projectId);
+    assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
+      SET latest_export_id = 'export_pointer_b_old', latest_exported_at = ?, updated_at = ? WHERE project_id = ?`)
+      .run(now, now, projectId), /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
+    assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
+      SET latest_exported_at = '2026-08-14T01:01:00.000Z', updated_at = ? WHERE project_id = ?`)
+      .run(now, projectId), /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
     const insertReused = db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
       VALUES (?, ?, 'export_succeeded', 'approved', 'exported', ?, ?, 'EXPORT_REUSED', '{"reused":true}', ?)`);
@@ -306,26 +319,28 @@ test("delivery lifecycle events bind to the matching Job type, state, Artifact, 
       .run(projectId, "e".repeat(64), now, projectId, "f".repeat(64), now);
     const insertEvent = db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
-      VALUES (?, ?, ?, ?, '', '', ?, ?, 'SYNTHETIC_EVENT', '{}', ?)`);
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SYNTHETIC_EVENT', '{}', ?)`);
 
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, created_at, updated_at)
       VALUES ('job_event_assembly', ?, 'assembly', 'queued', '{}', ?, ?)`)
       .run(projectId, now, now);
     assert.doesNotThrow(() => insertEvent.run("event_assembly_queued", projectId, "job_event_assembly",
-      "assembly_queued", null, null, now));
+      "assembly_queued", "ready_to_assemble", "assembling", null, null, now));
     assert.throws(() => insertEvent.run("event_assembly_started_early", projectId, "job_event_assembly",
-      "assembly_started", null, null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+      "assembly_started", "assembling", "assembling", null, null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     db.prepare(`UPDATE workbench_delivery_jobs SET state = 'running', started_at = ?, updated_at = ?
       WHERE job_id = 'job_event_assembly'`).run(now, now);
     assert.doesNotThrow(() => insertEvent.run("event_assembly_started", projectId, "job_event_assembly",
-      "assembly_started", null, null, now));
+      "assembly_started", "assembling", "assembling", null, null, now));
     db.prepare(`UPDATE workbench_delivery_jobs SET state = 'succeeded', output_artifact_id = 'artifact_event_final',
       finished_at = ?, updated_at = ? WHERE job_id = 'job_event_assembly'`).run(now, now);
     assert.throws(() => insertEvent.run("event_assembly_succeeded_wrong_artifact", projectId, "job_event_assembly",
-      "assembly_succeeded", "artifact_event_other", null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+      "assembly_succeeded", "assembling", "final_review", "artifact_event_other", null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+    assert.throws(() => insertEvent.run("event_assembly_succeeded_wrong_state", projectId, "job_event_assembly",
+      "assembly_succeeded", "closed", "not_ready", "artifact_event_final", null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     assert.doesNotThrow(() => insertEvent.run("event_assembly_succeeded", projectId, "job_event_assembly",
-      "assembly_succeeded", "artifact_event_final", null, now));
+      "assembly_succeeded", "assembling", "final_review", "artifact_event_final", null, now));
 
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, error_code, created_at, finished_at, updated_at)
@@ -333,38 +348,43 @@ test("delivery lifecycle events bind to the matching Job type, state, Artifact, 
         ('job_event_assembly_interrupted', ?, 'assembly', 'interrupted', '{}', 'SYNTHETIC_INTERRUPTION', ?, ?, ?)`)
       .run(projectId, now, now, now, projectId, now, now, now);
     assert.doesNotThrow(() => insertEvent.run("event_assembly_failed", projectId, "job_event_assembly_failed",
-      "assembly_failed", null, null, now));
+      "assembly_failed", "assembling", "ready_to_assemble", null, null, now));
     assert.doesNotThrow(() => insertEvent.run("event_assembly_interrupted", projectId, "job_event_assembly_interrupted",
-      "assembly_interrupted", null, null, now));
+      "assembly_interrupted", "assembling", "ready_to_assemble", null, null, now));
     assert.throws(() => insertEvent.run("event_assembly_wrong_terminal", projectId, "job_event_assembly_failed",
-      "assembly_interrupted", null, null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+      "assembly_interrupted", "assembling", "ready_to_assemble", null, null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+
+    assert.doesNotThrow(() => insertEvent.run("event_final_review_accepted", projectId, null,
+      "final_review_accepted", "final_review", "approved", "artifact_event_final", null, now));
+    assert.throws(() => insertEvent.run("event_final_review_wrong_state", projectId, null,
+      "final_review_accepted", "closed", "approved", "artifact_event_final", null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
 
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, created_at, updated_at)
       VALUES ('job_event_export', ?, 'export', 'queued', '{"artifact_id":"artifact_event_final"}', ?, ?)`)
       .run(projectId, now, now);
     assert.doesNotThrow(() => insertEvent.run("event_export_queued", projectId, "job_event_export",
-      "export_queued", "artifact_event_final", null, now));
+      "export_queued", "approved", "approved", "artifact_event_final", null, now));
     assert.throws(() => insertEvent.run("event_export_queued_wrong_artifact", projectId, "job_event_export",
-      "export_queued", "artifact_event_other", null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+      "export_queued", "approved", "approved", "artifact_event_other", null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     assert.throws(() => insertEvent.run("event_export_started_early", projectId, "job_event_export",
-      "export_started", "artifact_event_final", null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+      "export_started", "approved", "approved", "artifact_event_final", null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     db.prepare(`UPDATE workbench_delivery_jobs SET state = 'running', started_at = ?, updated_at = ?
       WHERE job_id = 'job_event_export'`).run(now, now);
     assert.doesNotThrow(() => insertEvent.run("event_export_started", projectId, "job_event_export",
-      "export_started", "artifact_event_final", null, now));
+      "export_started", "approved", "approved", "artifact_event_final", null, now));
     db.prepare(`UPDATE workbench_delivery_jobs SET state = 'succeeded', export_id = 'export_event_final',
       finished_at = ?, updated_at = ? WHERE job_id = 'job_event_export'`).run(now, now);
     assert.throws(() => insertEvent.run("event_export_succeeded_wrong_artifact", projectId, "job_event_export",
-      "export_succeeded", "artifact_event_other", "export_event_final", now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+      "export_succeeded", "approved", "exported", "artifact_event_other", "export_event_final", now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     assert.throws(() => insertEvent.run("event_export_succeeded_wrong_export", projectId, "job_event_export",
-      "export_succeeded", "artifact_event_other", "export_event_other", now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+      "export_succeeded", "approved", "exported", "artifact_event_other", "export_event_other", now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     assert.doesNotThrow(() => insertEvent.run("event_export_succeeded", projectId, "job_event_export",
-      "export_succeeded", "artifact_event_final", "export_event_final", now));
+      "export_succeeded", "approved", "exported", "artifact_event_final", "export_event_final", now));
     assert.throws(() => insertEvent.run("event_export_with_assembly_job", projectId, "job_event_assembly",
-      "export_succeeded", "artifact_event_final", "export_event_final", now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+      "export_succeeded", "approved", "exported", "artifact_event_final", "export_event_final", now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     assert.throws(() => insertEvent.run("event_assembly_with_export_job", projectId, "job_event_export",
-      "assembly_succeeded", "artifact_event_final", null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+      "assembly_succeeded", "assembling", "final_review", "artifact_event_final", null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
 
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, error_code, created_at, finished_at, updated_at)
@@ -372,11 +392,11 @@ test("delivery lifecycle events bind to the matching Job type, state, Artifact, 
         ('job_event_export_interrupted', ?, 'export', 'interrupted', '{"artifact_id":"artifact_event_final"}', 'SYNTHETIC_INTERRUPTION', ?, ?, ?)`)
       .run(projectId, now, now, now, projectId, now, now, now);
     assert.doesNotThrow(() => insertEvent.run("event_export_failed", projectId, "job_event_export_failed",
-      "export_failed", "artifact_event_final", null, now));
+      "export_failed", "approved", "approved", "artifact_event_final", null, now));
     assert.doesNotThrow(() => insertEvent.run("event_export_interrupted", projectId, "job_event_export_interrupted",
-      "export_interrupted", "artifact_event_final", null, now));
+      "export_interrupted", "approved", "approved", "artifact_event_final", null, now));
     assert.throws(() => insertEvent.run("event_export_wrong_terminal", projectId, "job_event_export_failed",
-      "export_interrupted", "artifact_event_final", null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+      "export_interrupted", "approved", "approved", "artifact_event_final", null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
   } finally {
     db.close();
   }

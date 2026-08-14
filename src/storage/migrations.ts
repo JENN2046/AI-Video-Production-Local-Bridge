@@ -1390,6 +1390,32 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     OR (NEW.export_id IS NOT NULL AND NOT EXISTS (
       SELECT 1 FROM workbench_exports e WHERE e.export_id = NEW.export_id AND e.project_id = NEW.project_id
     ))
+    OR NOT (
+      (NEW.event_type = 'assembly_queued'
+        AND NEW.from_state IN ('not_ready','ready_to_assemble','revision_requested')
+        AND NEW.to_state = 'assembling')
+      OR (NEW.event_type = 'assembly_started'
+        AND NEW.from_state = 'assembling' AND NEW.to_state = 'assembling')
+      OR (NEW.event_type = 'assembly_succeeded'
+        AND NEW.from_state = 'assembling' AND NEW.to_state = 'final_review')
+      OR (NEW.event_type IN ('assembly_failed','assembly_interrupted')
+        AND NEW.from_state = 'assembling' AND NEW.to_state = 'ready_to_assemble')
+      OR (NEW.event_type = 'final_review_accepted'
+        AND NEW.from_state IN ('final_review','legacy_review_required')
+        AND NEW.to_state = 'approved')
+      OR (NEW.event_type = 'final_review_reassemble'
+        AND NEW.from_state IN ('final_review','approved','exported','legacy_review_required')
+        AND NEW.to_state = 'ready_to_assemble')
+      OR (NEW.event_type = 'final_review_regenerate_shots'
+        AND NEW.from_state IN ('final_review','approved','exported','legacy_review_required')
+        AND NEW.to_state = 'revision_requested')
+      OR (NEW.event_type IN ('export_queued','export_started','export_failed','export_interrupted')
+        AND NEW.from_state IN ('approved','exported') AND NEW.to_state = NEW.from_state)
+      OR (NEW.event_type = 'export_succeeded'
+        AND NEW.from_state IN ('approved','exported') AND NEW.to_state = 'exported')
+      OR (NEW.event_type = 'closeout'
+        AND NEW.from_state = 'exported' AND NEW.to_state = 'closed')
+    )
     OR (NEW.event_type = 'closeout' AND NOT EXISTS (
       SELECT 1 FROM workbench_delivery_state d
       JOIN workbench_exports e ON e.export_id = d.latest_export_id
@@ -1525,6 +1551,14 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
         AND OLD.workflow_state <> NEW.workflow_state AND NEW.workflow_state = 'approved')
       OR (OLD.approved_artifact_id IS NOT NULL AND NEW.approved_artifact_id IS NULL
         AND OLD.workflow_state <> NEW.workflow_state)
+    ))
+    OR ((OLD.latest_export_id IS NOT NEW.latest_export_id
+      OR OLD.latest_exported_at IS NOT NEW.latest_exported_at) AND NOT (
+      (NEW.latest_export_id IS NOT NULL AND NEW.latest_exported_at IS NOT NULL
+        AND OLD.workflow_state <> NEW.workflow_state AND NEW.workflow_state = 'exported')
+      OR (OLD.latest_export_id IS NOT NULL AND OLD.latest_exported_at IS NOT NULL
+        AND NEW.latest_export_id IS NULL AND NEW.latest_exported_at IS NULL
+        AND OLD.workflow_state <> NEW.workflow_state AND NEW.workflow_state NOT IN ('exported','closed'))
     ))
   BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID');

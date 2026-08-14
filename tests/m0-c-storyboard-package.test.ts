@@ -329,3 +329,73 @@ test("M0-C archived projects cannot bypass the shared Storyboard freeze gate", (
     db.close();
   }
 });
+
+test("M0-C closed projects reject Storyboard import before SHOT, Artifact, package, or Project writes", () => {
+  const db = openM0Database();
+  try {
+    const created = createProject({ title: "Closed Storyboard Import" }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    const storyboardArtifact = createActiveStoryboardArtifact(db);
+    const finalArtifact = registerMediaArtifact({
+      artifact_type: "video",
+      role: "final_video",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: created.project_id }
+    }, db);
+    assert.equal(finalArtifact.ok, true);
+    if (!finalArtifact.ok) return;
+    const now = "2026-08-14T04:00:00.000Z";
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
+      .run(now, created.project_id);
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
+      .run(now, created.project_id);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
+      current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
+      .run(finalArtifact.artifact.artifact_id, now, created.project_id);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'approved',
+      approved_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
+      .run(finalArtifact.artifact.artifact_id, now, created.project_id);
+    db.prepare(`INSERT INTO workbench_exports
+      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
+      VALUES ('export_closed_storyboard', ?, ?, ?, ?, 123, ?)`)
+      .run(created.project_id, finalArtifact.artifact.artifact_id,
+        `data/exports/${created.project_id}/final.mp4`, "f".repeat(64), now);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'exported',
+      latest_export_id = 'export_closed_storyboard', latest_exported_at = ?, updated_at = ? WHERE project_id = ?`)
+      .run(now, now, created.project_id);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'closed',
+      closed_at = ?, updated_at = ? WHERE project_id = ?`).run(now, now, created.project_id);
+
+    const projectBefore = getProject(db, created.project_id);
+    const countsBefore = db.prepare(`SELECT
+      (SELECT COUNT(*) FROM shots WHERE project_id = ?) AS shots,
+      (SELECT COUNT(*) FROM storyboard_packages WHERE project_id = ?) AS packages,
+      (SELECT COUNT(*) FROM media_artifacts) AS artifacts,
+      (SELECT COUNT(*) FROM media_artifact_blobs) AS artifact_blobs`)
+      .get(created.project_id, created.project_id) as Record<string, unknown>;
+    const imported = importStoryboardPackage({
+      project_id: created.project_id,
+      status: "approved_for_video_generation",
+      approved_shot_snapshots: [{
+        order: 1,
+        duration_seconds: 2,
+        storyboard_image_artifact_id: storyboardArtifact.artifact_id,
+        video_prompt: "This must fail before any persistent write."
+      }],
+      user_approval: { storyboard_approved: true }
+    }, db);
+
+    assert.equal(imported.ok, false);
+    if (!imported.ok) assert.equal(imported.error.code, "PROJECT_CLOSED");
+    assert.deepEqual(getProject(db, created.project_id), projectBefore);
+    assert.deepEqual({ ...(db.prepare(`SELECT
+      (SELECT COUNT(*) FROM shots WHERE project_id = ?) AS shots,
+      (SELECT COUNT(*) FROM storyboard_packages WHERE project_id = ?) AS packages,
+      (SELECT COUNT(*) FROM media_artifacts) AS artifacts,
+      (SELECT COUNT(*) FROM media_artifact_blobs) AS artifact_blobs`)
+      .get(created.project_id, created.project_id) as Record<string, unknown>) }, { ...countsBefore });
+  } finally {
+    db.close();
+  }
+});

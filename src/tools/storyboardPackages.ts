@@ -14,6 +14,7 @@ import {
   type ToolError
 } from "./projects.js";
 import { isNineSixteenAspectRatio } from "./importClassifier.js";
+import { assertWorkbenchProductionWriteAllowed } from "./workbenchDeliveryState.js";
 
 export interface ApprovedShotSnapshot {
   shot_id?: string;
@@ -112,6 +113,8 @@ export function importStoryboardPackage(input: ImportStoryboardPackageInput, db 
   if (!project) {
     return { ok: false, error: { code: "PROJECT_NOT_FOUND", message: `Project not found: ${input.project_id}` } };
   }
+  const writable = assertWorkbenchProductionWriteAllowed(db, project.project_id);
+  if (!writable.ok) return { ok: false, error: writable.error };
 
   if (input.status !== "approved_for_video_generation" || input.user_approval?.storyboard_approved !== true) {
     return { ok: false, error: { code: "UNAPPROVED_STORYBOARD_PACKAGE", message: "Storyboard Package is not approved for video generation." } };

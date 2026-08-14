@@ -682,6 +682,11 @@ test("database check reports invalid delivery Job bindings and inactive referenc
       VALUES ('export_succeeded_wrong_job_b', 'project_b', 'parent_b', 'export_succeeded', 'approved', 'exported',
         'artifact_b', 'export_b', 'SYNTHETIC_SUCCEEDED', '{}', ?)`)
       .run(now);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, reason_code, data_json, created_at)
+      VALUES ('assembly_failed_wrong_state_b', 'project_b', 'parent_b', 'assembly_failed', 'closed', 'not_ready',
+        'SYNTHETIC_FAILURE', '{}', ?)`)
+      .run(now);
     oldArtifact.status = "archived";
     db.prepare("UPDATE media_artifacts SET status = 'archived', data_json = ? WHERE artifact_id = 'artifact_old_b'")
       .run(JSON.stringify(oldArtifact));
@@ -695,7 +700,7 @@ test("database check reports invalid delivery Job bindings and inactive referenc
 
     const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
     assert.equal(checked.schema_current, true);
-    assert.equal(checked.orphan_rows, 7);
+    assert.equal(checked.orphan_rows, 8);
     assert.equal(checked.media_integrity_errors, 0);
     assert.equal(checked.check_errors, 0);
     assert.equal(checked.result, "FAIL");

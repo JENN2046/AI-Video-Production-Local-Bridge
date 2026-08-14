@@ -341,6 +341,32 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
       "SELECT COUNT(*) AS count FROM workbench_delivery_events e LEFT JOIN workbench_delivery_jobs j ON j.job_id = e.job_id AND j.project_id = e.project_id WHERE e.job_id IS NOT NULL AND j.job_id IS NULL",
       "SELECT COUNT(*) AS count FROM workbench_delivery_events e LEFT JOIN media_artifacts a ON a.artifact_id = e.artifact_id AND a.project_id = e.project_id WHERE e.artifact_id IS NOT NULL AND a.artifact_id IS NULL",
       "SELECT COUNT(*) AS count FROM workbench_delivery_events e LEFT JOIN workbench_exports x ON x.export_id = e.export_id AND x.project_id = e.project_id WHERE e.export_id IS NOT NULL AND x.export_id IS NULL",
+      `SELECT COUNT(*) AS count FROM workbench_delivery_events event WHERE NOT (
+        (event.event_type = 'assembly_queued'
+          AND event.from_state IN ('not_ready','ready_to_assemble','revision_requested')
+          AND event.to_state = 'assembling')
+        OR (event.event_type = 'assembly_started'
+          AND event.from_state = 'assembling' AND event.to_state = 'assembling')
+        OR (event.event_type = 'assembly_succeeded'
+          AND event.from_state = 'assembling' AND event.to_state = 'final_review')
+        OR (event.event_type IN ('assembly_failed','assembly_interrupted')
+          AND event.from_state = 'assembling' AND event.to_state = 'ready_to_assemble')
+        OR (event.event_type = 'final_review_accepted'
+          AND event.from_state IN ('final_review','legacy_review_required')
+          AND event.to_state = 'approved')
+        OR (event.event_type = 'final_review_reassemble'
+          AND event.from_state IN ('final_review','approved','exported','legacy_review_required')
+          AND event.to_state = 'ready_to_assemble')
+        OR (event.event_type = 'final_review_regenerate_shots'
+          AND event.from_state IN ('final_review','approved','exported','legacy_review_required')
+          AND event.to_state = 'revision_requested')
+        OR (event.event_type IN ('export_queued','export_started','export_failed','export_interrupted')
+          AND event.from_state IN ('approved','exported') AND event.to_state = event.from_state)
+        OR (event.event_type = 'export_succeeded'
+          AND event.from_state IN ('approved','exported') AND event.to_state = 'exported')
+        OR (event.event_type = 'closeout'
+          AND event.from_state = 'exported' AND event.to_state = 'closed')
+      )`,
       `SELECT COUNT(*) AS count FROM workbench_delivery_events event
         WHERE event.event_type IN (
           'assembly_queued','assembly_started','assembly_succeeded','assembly_failed','assembly_interrupted',
