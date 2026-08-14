@@ -393,7 +393,9 @@ function validateProjectProjectionBindings(
           || (project.delivery.final_artifact_reason_code
             && project.delivery.final_artifact_reason_code !== "FINAL_ARTIFACT_NOT_CREATED")
         ? "final_review"
-        : "not_ready"
+        : project.delivery.ready_for_assembly
+          ? "ready_to_assemble"
+          : "not_ready"
   };
   if (canonicalSummary.shot_count !== expectedSummaryState.shot_count
     || canonicalSummary.accepted_count !== expectedSummaryState.accepted_count

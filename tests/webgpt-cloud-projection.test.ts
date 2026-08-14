@@ -9,7 +9,7 @@ import test from "node:test";
 import { bindWebGptPrincipalIssuer, bootstrapWebGptProjectOwner, registerWebGptPrincipal } from "../src/webgpt-v4/authorizationAdmin.js";
 import { actorFromFederatedSubject, type WebGptV4Result } from "../src/webgpt-v4/types.js";
 import { openM0Database, openM0DatabaseConnection, type M0Database } from "../src/storage/sqlite.js";
-import { createProject, getProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
+import { createProject, getProject, getShot, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
 import {
   exportReadonlySnapshotFromDatabase,
@@ -265,6 +265,80 @@ test("readonly projection requires migration 0012 and never upgrades an older da
     } finally {
       verify.close();
     }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("readonly snapshot accepts canonical ready-to-assemble summaries during assembly", () => {
+  const root = mkdtempSync(join(tmpdir(), "readonly-projection-assembly-state-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const fixture = createFixture(sqlitePath);
+  try {
+    const db = openM0Database(sqlitePath);
+    try {
+      const project = getProject(db, fixture.project_id);
+      const shot = getShot(db, fixture.shot_id);
+      assert.ok(project);
+      assert.ok(shot);
+      if (!project || !shot) throw new Error("assembly projection fixture was not found");
+      const storyboard = registerMediaArtifact({
+        artifact_type: "image",
+        role: "storyboard_image",
+        source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
+        linked_objects: { project_id: fixture.project_id, shot_id: fixture.shot_id }
+      }, db);
+      const clip = registerMediaArtifact({
+        artifact_type: "video",
+        role: "generated_clip",
+        source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+        linked_objects: { project_id: fixture.project_id, shot_id: fixture.shot_id }
+      }, db);
+      assert.equal(storyboard.ok, true, storyboard.ok ? "" : storyboard.error.code);
+      assert.equal(clip.ok, true, clip.ok ? "" : clip.error.code);
+      if (!storyboard.ok || !clip.ok) throw new Error("assembly projection media registration failed");
+      shot.status = "video_review";
+      shot.storyboard_image_artifact_id = storyboard.artifact.artifact_id;
+      shot.accepted_clip_artifact_id = clip.artifact.artifact_id;
+      shot.clip_versions = [{ artifact_id: clip.artifact.artifact_id, run_id: "run_snapshot_assembly", attempt_number: 1, review_status: "approved" }];
+      shot.review.approval_status = "approved";
+      saveShot(db, shot);
+      project.status = "video_review";
+      saveProject(db, project);
+      db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
+        .run("2026-08-14T00:00:00.000Z", fixture.project_id);
+    } finally {
+      db.close();
+    }
+
+    const projectFor = (snapshot: ReadonlySnapshotUnsigned) => {
+      const projected = snapshot.projects.find((project) => project.project_id === fixture.project_id);
+      assert.ok(projected);
+      if (!projected) throw new Error("assembly projection project is missing");
+      return projected;
+    };
+    const ready = projectFor(exportReadonlySnapshotFromDatabase({
+      database_path: sqlitePath,
+      issuer_hash: fixture.actor.issuer_hash!,
+      resource_url: RESOURCE
+    }));
+    assert.equal(ready.delivery.ready_for_assembly, true);
+    assert.equal(ready.list_item_full.summary.delivery_state, "ready_to_assemble");
+
+    const assemblingDb = openM0Database(sqlitePath);
+    try {
+      assemblingDb.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
+        .run("2026-08-14T00:01:00.000Z", fixture.project_id);
+    } finally {
+      assemblingDb.close();
+    }
+    const assembling = projectFor(exportReadonlySnapshotFromDatabase({
+      database_path: sqlitePath,
+      issuer_hash: fixture.actor.issuer_hash!,
+      resource_url: RESOURCE
+    }));
+    assert.equal(assembling.delivery.ready_for_assembly, true);
+    assert.equal(assembling.list_item_full.summary.delivery_state, "ready_to_assemble");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -6,7 +6,7 @@ import { listProjectShots, type Project, type Shot } from "../tools/projects.js"
 import { collectProjectOperationalBundle, OperationalStateIntegrityError } from "../tools/operationalStateFacts.js";
 import { requireShotWorkflowWriteAction } from "../tools/operationalWriteGates.js";
 import { getWorkbenchProjectSummary, getWorkbenchProjectWorkspace } from "../tools/workbenchV2.js";
-import { getWorkbenchDeliveryState } from "../tools/workbenchDeliveryState.js";
+import { assertWorkbenchProductionWriteAllowed, getWorkbenchDeliveryState } from "../tools/workbenchDeliveryState.js";
 import { appendWorkbenchInboxEvent, getWorkbenchDraftRecord, saveWorkbenchDraftRecord, type WorkbenchDraftRecord } from "../tools/workbenchInboxStore.js";
 import { buildProviderCapabilityKey, buildProviderPriceCacheKey, providerCapabilityErrorMessage, RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY } from "../tools/providerCapabilities.js";
 import { parseProductionProposalPayload } from "./proposals.js";
@@ -230,7 +230,10 @@ function projectRow(db: M0Database, projectId: string, write = false): ProjectRo
   if (!row) throw new WebGptV4Error("PROJECT_NOT_FOUND", "Production project was not found.", "project_id");
   const project = parseBoundJson<Project>(row.data_json, "project_id");
   if (project.project_id !== row.project_id) dataIntegrityViolation("project_id");
-  if (write && row.lifecycle !== "active") throw new WebGptV4Error("PROJECT_ARCHIVED", "Archived production projects are read-only.", "project_id");
+  if (write) {
+    const gate = assertWorkbenchProductionWriteAllowed(db, row.project_id);
+    if (!gate.ok) throw new WebGptV4Error(gate.error.code, gate.error.message, "project_id");
+  }
   return row;
 }
 

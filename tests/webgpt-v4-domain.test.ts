@@ -11,6 +11,7 @@ import { saveWorkbenchPendingActionRecord } from "../src/tools/workbenchInboxSto
 import { createProject, saveProject, saveShot, type Project, type Shot } from "../src/tools/projects.js";
 import {
   addProductionReviewNote,
+  closeProductionProposal,
   getProductionDeliveryStatus,
   getProductionProjectContext,
   getProductionReviewPackage,
@@ -18,6 +19,7 @@ import {
   listProductionProjectShots,
   listProductionProjects,
   prepareProductionGenerationIntent,
+  reviseProductionProposal,
   submitProductionProposal,
   updateProductionShotCopy
 } from "../src/webgpt-v4/domain.js";
@@ -74,6 +76,109 @@ function teardown(context: TestContext): void {
 }
 
 const actor = actorFromSubject("auth0|jenn", ["projects.read", "shots.write", "reviews.write", "proposals.write", "generation.prepare"]);
+
+function closeProductionProject(context: TestContext): void {
+  const registered = registerMediaArtifact({
+    artifact_type: "video",
+    role: "final_video",
+    source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+    linked_objects: { project_id: context.production.project_id }
+  }, context.db);
+  assert.equal(registered.ok, true, registered.ok ? "" : registered.error.code);
+  if (!registered.ok) throw new Error("closed project final video fixture registration failed");
+
+  context.production.status = "final_approved";
+  context.production.exports.final_video_artifact_id = registered.artifact.artifact_id;
+  saveProject(context.db, context.production);
+  const blob = context.db.prepare(`SELECT b.sha256, b.size_bytes
+    FROM media_artifact_blobs link JOIN media_blobs b ON b.blob_id = link.blob_id
+    WHERE link.artifact_id = ?`).get(registered.artifact.artifact_id) as { sha256: string; size_bytes: number };
+  const now = "2026-08-14T00:00:00.000Z";
+  const exportId = `export_${context.production.project_id}`;
+  context.db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
+    .run(now, context.production.project_id);
+  context.db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
+    .run(now, context.production.project_id);
+  context.db.prepare(`UPDATE workbench_delivery_state
+    SET workflow_state = 'final_review', current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
+    .run(registered.artifact.artifact_id, now, context.production.project_id);
+  context.db.prepare(`UPDATE workbench_delivery_state
+    SET workflow_state = 'approved', approved_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
+    .run(registered.artifact.artifact_id, now, context.production.project_id);
+  context.db.prepare(`INSERT INTO workbench_exports
+    (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    .run(exportId, context.production.project_id, registered.artifact.artifact_id,
+      `data/exports/${context.production.project_id}/closed-fixture.mp4`, blob.sha256, blob.size_bytes, now);
+  context.db.prepare(`UPDATE workbench_delivery_state
+    SET workflow_state = 'exported', latest_export_id = ?, latest_exported_at = ?, updated_at = ? WHERE project_id = ?`)
+    .run(exportId, now, now, context.production.project_id);
+  context.db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'closed', closed_at = ?, updated_at = ? WHERE project_id = ?")
+    .run(now, now, context.production.project_id);
+}
+
+test("WebGPT V4 production mutations reject closed projects at the shared write boundary", () => {
+  const context = setup();
+  try {
+    closeProductionProject(context);
+    const shotBefore = context.db.prepare("SELECT data_json, updated_at FROM shots WHERE shot_id = ?")
+      .get(context.productionShot.shot_id) as { data_json: string; updated_at: string };
+    const countsBefore = context.db.prepare(`SELECT
+      (SELECT COUNT(*) FROM workbench_review_notes) AS notes,
+      (SELECT COUNT(*) FROM workbench_drafts) AS drafts,
+      (SELECT COUNT(*) FROM generation_intents) AS intents`).get() as { notes: number; drafts: number; intents: number };
+
+    const results = [
+      updateProductionShotCopy({
+        project_id: context.production.project_id,
+        shot_id: context.productionShot.shot_id,
+        expected_updated_at: shotBefore.updated_at,
+        description: "Closed projects must remain unchanged"
+      }, { actor, idempotency_key: "closed-shot-copy" }, context.db),
+      addProductionReviewNote({
+        project_id: context.production.project_id,
+        shot_id: context.productionShot.shot_id,
+        note: "Closed projects must reject notes"
+      }, { actor, idempotency_key: "closed-review-note" }, context.db),
+      submitProductionProposal({
+        project_id: context.production.project_id,
+        kind: "final_assembly",
+        payload: { notes: "Closed projects must reject proposals" }
+      }, { actor, idempotency_key: "closed-submit-proposal" }, context.db),
+      reviseProductionProposal({
+        project_id: context.production.project_id,
+        draft_id: "closed_missing_draft",
+        payload: {}
+      }, { actor, idempotency_key: "closed-revise-proposal" }, context.db),
+      closeProductionProposal({
+        project_id: context.production.project_id,
+        draft_id: "closed_missing_draft",
+        reason: "must reject before draft lookup"
+      }, { actor, idempotency_key: "closed-close-proposal" }, context.db),
+      prepareProductionGenerationIntent({
+        project_id: context.production.project_id,
+        shot_id: context.productionShot.shot_id,
+        account_label: "personal",
+        budget_limit_value: 100
+      }, { actor, idempotency_key: "closed-generation-intent" }, context.db)
+    ];
+
+    for (const result of results) {
+      assert.equal(result.ok, false, JSON.stringify(result));
+      if (!result.ok) assert.equal(result.error.code, "PROJECT_CLOSED");
+    }
+    const shotAfter = context.db.prepare("SELECT data_json, updated_at FROM shots WHERE shot_id = ?")
+      .get(context.productionShot.shot_id) as { data_json: string; updated_at: string };
+    const countsAfter = context.db.prepare(`SELECT
+      (SELECT COUNT(*) FROM workbench_review_notes) AS notes,
+      (SELECT COUNT(*) FROM workbench_drafts) AS drafts,
+      (SELECT COUNT(*) FROM generation_intents) AS intents`).get() as { notes: number; drafts: number; intents: number };
+    assert.deepEqual(shotAfter, shotBefore);
+    assert.deepEqual(countsAfter, countsBefore);
+  } finally {
+    teardown(context);
+  }
+});
 
 test("project-scoped reads fail closed when structured columns and JSON bindings drift", () => {
   const context = setup();
