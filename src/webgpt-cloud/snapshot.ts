@@ -383,24 +383,27 @@ function validateProjectProjectionBindings(
   const missingImageCount = project.shots_full.filter((shot) => !shot.storyboard_image_artifact_id).length;
   const missingPromptCount = project.shots_full.filter((shot) => !shot.video_prompt).length;
   const storyboardBlockerCount = project.shots_full.filter((shot) => !shot.storyboard_image_artifact_id || !shot.video_prompt).length;
+  const finalArtifactProjected = Boolean(project.delivery.final_artifact
+    || (project.delivery.final_artifact_reason_code
+      && project.delivery.final_artifact_reason_code !== "FINAL_ARTIFACT_NOT_CREATED"));
+  // The public delivery DTO exposes input readiness, not the persisted workflow state.
+  // Ready inputs may therefore still be not_ready or may have entered ready/assembling.
+  const expectedSummaryDeliveryStates = project.delivery.delivered
+    ? ["delivered"]
+    : finalArtifactProjected
+      ? ["final_review"]
+      : project.delivery.ready_for_assembly
+        ? ["not_ready", "ready_to_assemble"]
+        : ["not_ready"];
   const expectedSummaryState = {
     shot_count: project.shots_full.length,
     accepted_count: project.shots_full.filter((shot) => Boolean(shot.accepted_clip_artifact_id)).length,
-    review_pending_count: readonlySnapshotReviewPendingCount(project.shots_full),
-    delivery_state: project.delivery.delivered
-      ? "delivered"
-      : project.delivery.final_artifact
-          || (project.delivery.final_artifact_reason_code
-            && project.delivery.final_artifact_reason_code !== "FINAL_ARTIFACT_NOT_CREATED")
-        ? "final_review"
-        : project.delivery.ready_for_assembly
-          ? "ready_to_assemble"
-          : "not_ready"
+    review_pending_count: readonlySnapshotReviewPendingCount(project.shots_full)
   };
   if (canonicalSummary.shot_count !== expectedSummaryState.shot_count
     || canonicalSummary.accepted_count !== expectedSummaryState.accepted_count
     || canonicalSummary.review_pending_count !== expectedSummaryState.review_pending_count
-    || canonicalSummary.delivery_state !== expectedSummaryState.delivery_state) {
+    || !expectedSummaryDeliveryStates.includes(canonicalSummary.delivery_state)) {
     addBindingIssue(context, [...base, "list_item_full", "summary"], "Project summary canonical state mismatch.");
   }
   if (canonicalSummary.active_run_count < 0 || canonicalSummary.blocker_count < 0) {
