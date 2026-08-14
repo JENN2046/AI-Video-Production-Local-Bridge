@@ -1310,6 +1310,52 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     SELECT RAISE(ABORT, 'WORKBENCH_EXPORT_IMMUTABLE');
   END;
 
+  CREATE TRIGGER workbench_delivery_jobs_validate_insert BEFORE INSERT ON workbench_delivery_jobs
+  WHEN (NEW.retry_of_job_id IS NOT NULL AND NOT EXISTS (
+      SELECT 1 FROM workbench_delivery_jobs parent
+      WHERE parent.job_id = NEW.retry_of_job_id AND parent.project_id = NEW.project_id
+        AND parent.job_type = NEW.job_type
+    ))
+    OR (NEW.output_artifact_id IS NOT NULL AND (
+      NEW.job_type <> 'assembly' OR NOT EXISTS (
+        SELECT 1 FROM media_artifacts a
+        WHERE a.artifact_id = NEW.output_artifact_id AND a.project_id = NEW.project_id
+          AND COALESCE(a.shot_id, '') = '' AND a.role = 'final_video'
+          AND a.artifact_type = 'video' AND a.status = 'active'
+      )
+    ))
+    OR (NEW.export_id IS NOT NULL AND (
+      NEW.job_type <> 'export' OR NOT EXISTS (
+        SELECT 1 FROM workbench_exports e
+        WHERE e.export_id = NEW.export_id AND e.project_id = NEW.project_id
+      )
+    ))
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_JOB_BINDING_INVALID');
+  END;
+  CREATE TRIGGER workbench_delivery_jobs_validate_bindings_update BEFORE UPDATE ON workbench_delivery_jobs
+  WHEN (NEW.retry_of_job_id IS NOT NULL AND NOT EXISTS (
+      SELECT 1 FROM workbench_delivery_jobs parent
+      WHERE parent.job_id = NEW.retry_of_job_id AND parent.project_id = NEW.project_id
+        AND parent.job_type = NEW.job_type
+    ))
+    OR (NEW.output_artifact_id IS NOT NULL AND (
+      NEW.job_type <> 'assembly' OR NOT EXISTS (
+        SELECT 1 FROM media_artifacts a
+        WHERE a.artifact_id = NEW.output_artifact_id AND a.project_id = NEW.project_id
+          AND COALESCE(a.shot_id, '') = '' AND a.role = 'final_video'
+          AND a.artifact_type = 'video' AND a.status = 'active'
+      )
+    ))
+    OR (NEW.export_id IS NOT NULL AND (
+      NEW.job_type <> 'export' OR NOT EXISTS (
+        SELECT 1 FROM workbench_exports e
+        WHERE e.export_id = NEW.export_id AND e.project_id = NEW.project_id
+      )
+    ))
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_JOB_BINDING_INVALID');
+  END;
   CREATE TRIGGER workbench_delivery_jobs_identity_immutable BEFORE UPDATE ON workbench_delivery_jobs
   WHEN OLD.job_id IS NOT NEW.job_id OR OLD.project_id IS NOT NEW.project_id OR OLD.job_type IS NOT NEW.job_type
     OR OLD.input_fingerprint IS NOT NEW.input_fingerprint OR OLD.input_json IS NOT NEW.input_json
@@ -1829,6 +1875,8 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "workbench_exports_validate_insert",
         "workbench_exports_no_update",
         "workbench_exports_no_delete",
+        "workbench_delivery_jobs_validate_insert",
+        "workbench_delivery_jobs_validate_bindings_update",
         "workbench_delivery_jobs_identity_immutable",
         "workbench_delivery_jobs_state_transition",
         "workbench_delivery_jobs_terminal_immutable",

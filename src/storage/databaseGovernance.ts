@@ -310,9 +310,20 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
       "SELECT COUNT(*) AS count FROM projects p LEFT JOIN workbench_delivery_state d ON d.project_id = p.project_id WHERE d.project_id IS NULL",
       "SELECT COUNT(*) AS count FROM workbench_delivery_state d LEFT JOIN projects p ON p.project_id = d.project_id WHERE p.project_id IS NULL",
       "SELECT COUNT(*) AS count FROM workbench_delivery_jobs j LEFT JOIN projects p ON p.project_id = j.project_id WHERE p.project_id IS NULL",
-      "SELECT COUNT(*) AS count FROM workbench_delivery_jobs j LEFT JOIN workbench_delivery_jobs parent ON parent.job_id = j.retry_of_job_id WHERE j.retry_of_job_id IS NOT NULL AND parent.job_id IS NULL",
-      "SELECT COUNT(*) AS count FROM workbench_delivery_jobs j LEFT JOIN media_artifacts a ON a.artifact_id = j.output_artifact_id WHERE j.output_artifact_id IS NOT NULL AND a.artifact_id IS NULL",
-      "SELECT COUNT(*) AS count FROM workbench_delivery_jobs j LEFT JOIN workbench_exports e ON e.export_id = j.export_id WHERE j.export_id IS NOT NULL AND e.export_id IS NULL",
+      `SELECT COUNT(*) AS count FROM workbench_delivery_jobs j
+        LEFT JOIN workbench_delivery_jobs parent ON parent.job_id = j.retry_of_job_id
+          AND parent.project_id = j.project_id AND parent.job_type = j.job_type
+        WHERE j.retry_of_job_id IS NOT NULL AND parent.job_id IS NULL`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_jobs j
+        LEFT JOIN media_artifacts a ON a.artifact_id = j.output_artifact_id
+          AND j.job_type = 'assembly' AND a.project_id = j.project_id
+          AND COALESCE(a.shot_id, '') = '' AND a.role = 'final_video'
+          AND a.artifact_type = 'video' AND a.status = 'active'
+        WHERE j.output_artifact_id IS NOT NULL AND a.artifact_id IS NULL`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_jobs j
+        LEFT JOIN workbench_exports e ON e.export_id = j.export_id
+          AND j.job_type = 'export' AND e.project_id = j.project_id
+        WHERE j.export_id IS NOT NULL AND e.export_id IS NULL`,
       "SELECT COUNT(*) AS count FROM workbench_delivery_events e LEFT JOIN projects p ON p.project_id = e.project_id WHERE p.project_id IS NULL",
       "SELECT COUNT(*) AS count FROM workbench_delivery_events e LEFT JOIN workbench_delivery_jobs j ON j.job_id = e.job_id AND j.project_id = e.project_id WHERE e.job_id IS NOT NULL AND j.job_id IS NULL",
       "SELECT COUNT(*) AS count FROM workbench_delivery_events e LEFT JOIN media_artifacts a ON a.artifact_id = e.artifact_id AND a.project_id = e.project_id WHERE e.artifact_id IS NOT NULL AND a.artifact_id IS NULL",
