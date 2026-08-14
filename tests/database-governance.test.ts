@@ -613,6 +613,11 @@ test("database check reports invalid delivery Job bindings and inactive referenc
       (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
       VALUES ('artifact_b', 'project_b', '', 'final_video', 'video', 'active', ?)`).run(JSON.stringify(artifact));
     db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES ('artifact_b', 'blob_b')").run();
+    const oldArtifact = { ...artifact, artifact_id: "artifact_old_b" };
+    db.prepare(`INSERT INTO media_artifacts
+      (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
+      VALUES ('artifact_old_b', 'project_b', '', 'final_video', 'video', 'active', ?)`).run(JSON.stringify(oldArtifact));
+    db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES ('artifact_old_b', 'blob_b')").run();
     db.prepare("UPDATE projects SET data_json = ? WHERE project_id = 'project_b'")
       .run(JSON.stringify({ project_id: "project_b", exports: { final_video_artifact_id: "artifact_b" } }));
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = 'project_b'").run(now);
@@ -624,6 +629,18 @@ test("database check reports invalid delivery Job bindings and inactive referenc
       (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
       VALUES ('export_b', 'project_b', 'artifact_b', 'data/exports/project_b/final.mp4', ?, 1, ?)`)
       .run("d".repeat(64), now);
+    db.prepare(`INSERT INTO workbench_exports
+      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
+      VALUES ('export_old_b', 'project_b', 'artifact_old_b', 'data/exports/project_b/old.mp4', ?, 1, ?)`)
+      .run("e".repeat(64), now);
+    db.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'approved', approved_artifact_id = 'artifact_b', updated_at = ?
+      WHERE project_id = 'project_b'`).run(now);
+    db.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'exported', latest_export_id = 'export_b', latest_exported_at = ?, updated_at = ?
+      WHERE project_id = 'project_b'`).run(now, now);
+    db.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'closed', closed_at = ?, updated_at = ? WHERE project_id = 'project_b'`).run(now, now);
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, error_code, created_at, finished_at, updated_at)
       VALUES ('parent_b', 'project_b', 'assembly', 'failed', '{}', 'SYNTHETIC_FAILURE', ?, ?, ?)`)
@@ -631,12 +648,13 @@ test("database check reports invalid delivery Job bindings and inactive referenc
 
     const triggerRows = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'trigger'
       AND name IN ('workbench_delivery_jobs_validate_insert', 'workbench_delivery_jobs_validate_bindings_update',
-        'workbench_delivery_artifact_status_guard')
+        'workbench_delivery_artifact_status_guard', 'workbench_delivery_events_validate_insert')
       ORDER BY name`).all() as Array<{ sql: string }>;
-    assert.equal(triggerRows.length, 3);
+    assert.equal(triggerRows.length, 4);
     db.exec(`DROP TRIGGER workbench_delivery_jobs_validate_insert;
       DROP TRIGGER workbench_delivery_jobs_validate_bindings_update;
-      DROP TRIGGER workbench_delivery_artifact_status_guard;`);
+      DROP TRIGGER workbench_delivery_artifact_status_guard;
+      DROP TRIGGER workbench_delivery_events_validate_insert;`);
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, retry_of_job_id, error_code, created_at, finished_at, updated_at)
       VALUES ('retry_a', 'project_a', 'assembly', 'failed', '{}', 'parent_b', 'SYNTHETIC_FAILURE', ?, ?, ?)`)
@@ -653,6 +671,14 @@ test("database check reports invalid delivery Job bindings and inactive referenc
       (job_id, project_id, job_type, state, input_json, export_id, error_code, created_at, finished_at, updated_at)
       VALUES ('assembly_wrong_export_type_b', 'project_b', 'assembly', 'failed', '{}', 'export_b', 'SYNTHETIC_FAILURE', ?, ?, ?)`)
       .run(now, now, now);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
+      VALUES ('closeout_stale_binding_b', 'project_b', 'closeout', 'exported', 'closed',
+        'artifact_old_b', 'export_old_b', 'CLOSEOUT_CONFIRMED', '{}', ?)`)
+      .run(now);
+    oldArtifact.status = "archived";
+    db.prepare("UPDATE media_artifacts SET status = 'archived', data_json = ? WHERE artifact_id = 'artifact_old_b'")
+      .run(JSON.stringify(oldArtifact));
     artifact.status = "archived";
     db.prepare("UPDATE media_artifacts SET status = 'archived', data_json = ? WHERE artifact_id = 'artifact_b'")
       .run(JSON.stringify(artifact));
@@ -663,7 +689,7 @@ test("database check reports invalid delivery Job bindings and inactive referenc
 
     const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
     assert.equal(checked.schema_current, true);
-    assert.equal(checked.orphan_rows, 5);
+    assert.equal(checked.orphan_rows, 6);
     assert.equal(checked.media_integrity_errors, 0);
     assert.equal(checked.check_errors, 0);
     assert.equal(checked.result, "FAIL");

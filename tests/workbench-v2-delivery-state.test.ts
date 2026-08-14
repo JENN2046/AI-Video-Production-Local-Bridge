@@ -112,6 +112,7 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
       .run("project_delivery", projectJson("project_delivery", "video_review"));
     insertFinalArtifact(db, "project_delivery", "artifact_delivery");
+    insertFinalArtifact(db, "project_delivery", "artifact_delivery_old");
     const now = "2026-08-13T00:00:00.000Z";
 
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
@@ -159,6 +160,11 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
       (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
       VALUES ('export_delivery', 'project_delivery', 'artifact_delivery', 'data/exports/project_delivery/final.mp4', ?, 123, ?)`)
       .run("b".repeat(64), now);
+    db.prepare(`INSERT INTO workbench_exports
+      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
+      VALUES ('export_delivery_old', 'project_delivery', 'artifact_delivery_old',
+        'data/exports/project_delivery/old.mp4', ?, 123, ?)`)
+      .run("c".repeat(64), now);
     assert.throws(() => db.prepare("UPDATE workbench_exports SET size_bytes = 456 WHERE export_id = 'export_delivery'").run(), /WORKBENCH_EXPORT_IMMUTABLE/);
     assert.throws(() => db.prepare("DELETE FROM workbench_exports WHERE export_id = 'export_delivery'").run(), /WORKBENCH_EXPORT_IMMUTABLE/);
 
@@ -167,6 +173,16 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
       WHERE project_id = 'project_delivery'`).run(now, now);
     db.prepare(`UPDATE workbench_delivery_state
       SET workflow_state = 'closed', closed_at = ?, updated_at = ? WHERE project_id = 'project_delivery'`).run(now, now);
+    const insertCloseout = db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
+      VALUES (?, 'project_delivery', 'closeout', 'exported', 'closed', ?, ?, 'CLOSEOUT_CONFIRMED', '{}', ?)`);
+    assert.throws(() => insertCloseout.run("event_closeout_stale", "artifact_delivery_old", "export_delivery_old", now),
+      /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+    assert.throws(() => insertCloseout.run("event_closeout_stale_export", "artifact_delivery", "export_delivery_old", now),
+      /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+    assert.throws(() => insertCloseout.run("event_closeout_stale_artifact", "artifact_delivery_old", "export_delivery", now),
+      /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+    assert.doesNotThrow(() => insertCloseout.run("event_closeout", "artifact_delivery", "export_delivery", now));
     const writable = assertWorkbenchProjectWritable(db, "project_delivery");
     assert.equal(writable.ok ? null : writable.error.code, "PROJECT_CLOSED");
     assert.throws(() => db.prepare("UPDATE workbench_delivery_state SET updated_at = updated_at WHERE project_id = 'project_delivery'").run(), /PROJECT_CLOSED/);

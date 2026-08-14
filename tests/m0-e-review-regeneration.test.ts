@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  approveH3GeneratedClip,
   createProject,
+  defaultH1WorkbenchState,
   getMediaArtifact,
   getShot,
   importStoryboardPackage,
@@ -10,6 +12,7 @@ import {
   openM0Database,
   regenerateShotVideo,
   registerMediaArtifact,
+  rejectH3GeneratedClip,
   startStoryboardVideoGeneration
 } from "../src/index.js";
 
@@ -58,6 +61,37 @@ async function setupGeneratedShot(db: ReturnType<typeof openM0Database>) {
   const run = generation.runs[0];
   const artifactId = run.output.artifact_ids[0];
   return { project, shot, run, artifactId };
+}
+
+function closeProjectForReviewTest(db: ReturnType<typeof openM0Database>, projectId: string): void {
+  const finalArtifact = registerMediaArtifact({
+    artifact_type: "video",
+    role: "final_video",
+    source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+    linked_objects: { project_id: projectId }
+  }, db);
+  assert.equal(finalArtifact.ok, true);
+  if (!finalArtifact.ok) throw new Error("review closeout final Artifact registration failed");
+  const artifactId = finalArtifact.artifact.artifact_id;
+  const exportId = `export_${projectId}`;
+  const now = "2026-08-14T00:00:00.000Z";
+  db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?").run(now, projectId);
+  db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?").run(now, projectId);
+  db.prepare(`UPDATE workbench_delivery_state
+    SET workflow_state = 'final_review', current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
+    .run(artifactId, now, projectId);
+  db.prepare(`UPDATE workbench_delivery_state
+    SET workflow_state = 'approved', approved_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
+    .run(artifactId, now, projectId);
+  db.prepare(`INSERT INTO workbench_exports
+    (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
+    VALUES (?, ?, ?, ?, ?, 1, ?)`)
+    .run(exportId, projectId, artifactId, `data/exports/${projectId}/final.mp4`, "a".repeat(64), now);
+  db.prepare(`UPDATE workbench_delivery_state
+    SET workflow_state = 'exported', latest_export_id = ?, latest_exported_at = ?, updated_at = ? WHERE project_id = ?`)
+    .run(exportId, now, now, projectId);
+  db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'closed', closed_at = ?, updated_at = ? WHERE project_id = ?")
+    .run(now, now, projectId);
 }
 
 test("M0-E approved review sets accepted clip", async () => {
@@ -131,6 +165,39 @@ test("M0-E revision_needed saves rejection and regeneration preserves old artifa
       getShot(db, shot.shot_id)?.clip_versions.map((version) => version.review_status),
       ["rejected", "approved"]
     );
+  } finally {
+    db.close();
+  }
+});
+
+test("H3 public review mutations reject closed projects without changing SHOT review state", async () => {
+  const db = openM0Database();
+
+  try {
+    const { project, shot, artifactId } = await setupGeneratedShot(db);
+    const before = getShot(db, shot.shot_id);
+    assert.ok(before);
+    closeProjectForReviewTest(db, project.project_id);
+
+    const approved = approveH3GeneratedClip({ shot_id: shot.shot_id, artifact_id: artifactId, write_report: false }, db);
+    assert.equal(approved.ok ? null : approved.error.code, "PROJECT_CLOSED");
+
+    const rejected = rejectH3GeneratedClip(defaultH1WorkbenchState(), {
+      shot_id: shot.shot_id,
+      artifact_id: artifactId,
+      rejection_reasons: ["must remain unchanged after closeout"],
+      revision_instruction: {
+        summary: "Do not mutate closed project",
+        prompt_delta: "none",
+        negative_delta: "none",
+        priority: "high"
+      },
+      write_report: false
+    }, db);
+    assert.equal(rejected.ok ? null : rejected.error.code, "PROJECT_CLOSED");
+    assert.deepEqual(getShot(db, shot.shot_id), before);
+    assert.equal((db.prepare("SELECT workflow_state FROM workbench_delivery_state WHERE project_id = ?")
+      .get(project.project_id) as { workflow_state: string }).workflow_state, "closed");
   } finally {
     db.close();
   }

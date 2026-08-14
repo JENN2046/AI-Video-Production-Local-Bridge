@@ -1390,6 +1390,15 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     OR (NEW.export_id IS NOT NULL AND NOT EXISTS (
       SELECT 1 FROM workbench_exports e WHERE e.export_id = NEW.export_id AND e.project_id = NEW.project_id
     ))
+    OR (NEW.event_type = 'closeout' AND NOT EXISTS (
+      SELECT 1 FROM workbench_delivery_state d
+      JOIN workbench_exports e ON e.export_id = d.latest_export_id
+        AND e.project_id = d.project_id AND e.artifact_id = d.current_final_artifact_id
+      WHERE d.project_id = NEW.project_id AND d.workflow_state = 'closed'
+        AND d.current_final_artifact_id = NEW.artifact_id
+        AND d.approved_artifact_id = NEW.artifact_id
+        AND d.latest_export_id = NEW.export_id
+    ))
   BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_EVENT_BINDING_INVALID');
   END;

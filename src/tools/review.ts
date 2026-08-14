@@ -7,6 +7,7 @@ import { requireShotWorkflowWriteAction } from "./operationalWriteGates.js";
 import { getProject, getShot, saveShot, type Shot, type ToolError } from "./projects.js";
 import { type ProviderExecutionRequest } from "./provider.js";
 import { MockVideoProviderAdapter } from "./videoProviderAdapters.js";
+import { assertWorkbenchProductionWriteAllowed } from "./workbenchDeliveryState.js";
 
 type ToolResult<T> = { ok: true } & T | { ok: false; error: ToolError };
 
@@ -44,6 +45,8 @@ export function markShotClipReview(
 ): ToolResult<{ shot: Shot }> {
   const shot = getShot(db, input.shot_id);
   if (!shot) return { ok: false, error: { code: "SHOT_NOT_FOUND", message: `Shot not found: ${input.shot_id}` } };
+  const writable = assertWorkbenchProductionWriteAllowed(db, shot.project_id);
+  if (!writable.ok) return { ok: false, error: writable.error };
 
   const artifactError = validateGeneratedClip(db, input.artifact_id, shot);
   if (artifactError) return { ok: false, error: artifactError };
