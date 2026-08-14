@@ -1399,6 +1399,55 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
         AND d.approved_artifact_id = NEW.artifact_id
         AND d.latest_export_id = NEW.export_id
     ))
+    OR (NEW.event_type IN (
+      'assembly_queued','assembly_started','assembly_succeeded','assembly_failed','assembly_interrupted'
+    ) AND NOT EXISTS (
+      SELECT 1 FROM workbench_delivery_jobs j
+      WHERE j.job_id = NEW.job_id AND j.project_id = NEW.project_id AND j.job_type = 'assembly'
+        AND NEW.export_id IS NULL
+        AND (
+          (NEW.event_type = 'assembly_queued' AND j.state = 'queued' AND NEW.artifact_id IS NULL)
+          OR (NEW.event_type = 'assembly_started' AND j.state = 'running' AND NEW.artifact_id IS NULL)
+          OR (NEW.event_type = 'assembly_succeeded' AND j.state = 'succeeded'
+            AND NEW.artifact_id IS j.output_artifact_id)
+          OR (NEW.event_type = 'assembly_failed' AND j.state = 'failed' AND NEW.artifact_id IS NULL)
+          OR (NEW.event_type = 'assembly_interrupted' AND j.state = 'interrupted' AND NEW.artifact_id IS NULL)
+        )
+    ))
+    OR (NEW.event_type IN (
+      'export_queued','export_started','export_succeeded','export_failed','export_interrupted'
+    ) AND NOT (
+      (NEW.event_type = 'export_succeeded' AND NEW.job_id IS NULL AND NEW.reason_code = 'EXPORT_REUSED'
+        AND EXISTS (
+          SELECT 1 FROM workbench_delivery_state d
+          JOIN workbench_exports e ON e.export_id = NEW.export_id
+            AND e.project_id = NEW.project_id AND e.artifact_id = NEW.artifact_id
+          WHERE d.project_id = NEW.project_id AND d.workflow_state = 'exported'
+            AND d.current_final_artifact_id = NEW.artifact_id
+            AND d.approved_artifact_id = NEW.artifact_id
+            AND d.latest_export_id = NEW.export_id
+        ))
+      OR EXISTS (
+        SELECT 1 FROM workbench_delivery_jobs j
+        LEFT JOIN workbench_exports e ON e.export_id = j.export_id
+          AND e.project_id = j.project_id
+        WHERE j.job_id = NEW.job_id AND j.project_id = NEW.project_id AND j.job_type = 'export'
+          AND (
+            (NEW.event_type = 'export_queued' AND j.state = 'queued' AND NEW.export_id IS NULL
+              AND NEW.artifact_id IS json_extract(j.input_json, '$.artifact_id'))
+            OR (NEW.event_type = 'export_started' AND j.state = 'running' AND NEW.export_id IS NULL
+              AND NEW.artifact_id IS json_extract(j.input_json, '$.artifact_id'))
+            OR (NEW.event_type = 'export_succeeded' AND j.state = 'succeeded'
+              AND NEW.export_id IS j.export_id AND NEW.artifact_id IS e.artifact_id)
+            OR (NEW.event_type = 'export_failed' AND j.state = 'failed'
+              AND NEW.export_id IS j.export_id
+              AND NEW.artifact_id IS json_extract(j.input_json, '$.artifact_id'))
+            OR (NEW.event_type = 'export_interrupted' AND j.state = 'interrupted'
+              AND NEW.export_id IS j.export_id
+              AND NEW.artifact_id IS json_extract(j.input_json, '$.artifact_id'))
+          )
+      )
+    ))
   BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_EVENT_BINDING_INVALID');
   END;
@@ -1449,21 +1498,34 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
   WHEN OLD.status = 'active' AND NEW.status <> 'active' AND EXISTS (
     SELECT 1 FROM workbench_delivery_state d
     WHERE d.current_final_artifact_id = OLD.artifact_id OR d.approved_artifact_id = OLD.artifact_id
+    UNION ALL
+    SELECT 1 FROM workbench_delivery_jobs j
+    WHERE j.job_type = 'assembly' AND j.state = 'succeeded' AND j.output_artifact_id = OLD.artifact_id
   )
   BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_ARTIFACT_ACTIVE_REQUIRED');
   END;
-  CREATE TRIGGER workbench_delivery_state_transition BEFORE UPDATE OF workflow_state ON workbench_delivery_state
-  WHEN OLD.workflow_state <> NEW.workflow_state AND NOT (
-    (OLD.workflow_state = 'not_ready' AND NEW.workflow_state = 'ready_to_assemble')
-    OR (OLD.workflow_state = 'ready_to_assemble' AND NEW.workflow_state IN ('not_ready','assembling'))
-    OR (OLD.workflow_state = 'assembling' AND NEW.workflow_state IN ('ready_to_assemble','final_review'))
-    OR (OLD.workflow_state = 'final_review' AND NEW.workflow_state IN ('approved','ready_to_assemble','revision_requested'))
-    OR (OLD.workflow_state = 'revision_requested' AND NEW.workflow_state IN ('not_ready','ready_to_assemble'))
-    OR (OLD.workflow_state = 'approved' AND NEW.workflow_state IN ('exported','ready_to_assemble','revision_requested'))
-    OR (OLD.workflow_state = 'exported' AND NEW.workflow_state IN ('closed','ready_to_assemble','revision_requested'))
-    OR (OLD.workflow_state = 'legacy_review_required' AND NEW.workflow_state IN ('not_ready','ready_to_assemble','final_review'))
-  )
+  CREATE TRIGGER workbench_delivery_state_transition BEFORE UPDATE ON workbench_delivery_state
+  WHEN (OLD.workflow_state <> NEW.workflow_state AND NOT (
+      (OLD.workflow_state = 'not_ready' AND NEW.workflow_state = 'ready_to_assemble')
+      OR (OLD.workflow_state = 'ready_to_assemble' AND NEW.workflow_state IN ('not_ready','assembling'))
+      OR (OLD.workflow_state = 'assembling' AND NEW.workflow_state IN ('ready_to_assemble','final_review'))
+      OR (OLD.workflow_state = 'final_review' AND NEW.workflow_state IN ('approved','ready_to_assemble','revision_requested'))
+      OR (OLD.workflow_state = 'revision_requested' AND NEW.workflow_state IN ('not_ready','ready_to_assemble'))
+      OR (OLD.workflow_state = 'approved' AND NEW.workflow_state IN ('exported','ready_to_assemble','revision_requested'))
+      OR (OLD.workflow_state = 'exported' AND NEW.workflow_state IN ('closed','ready_to_assemble','revision_requested'))
+      OR (OLD.workflow_state = 'legacy_review_required' AND NEW.workflow_state IN ('not_ready','ready_to_assemble','final_review'))
+    ))
+    OR (OLD.current_final_artifact_id IS NOT NEW.current_final_artifact_id AND NOT (
+      OLD.workflow_state <> NEW.workflow_state AND NEW.workflow_state = 'final_review'
+        AND OLD.workflow_state IN ('assembling','legacy_review_required')
+    ))
+    OR (OLD.approved_artifact_id IS NOT NEW.approved_artifact_id AND NOT (
+      (NEW.approved_artifact_id IS NOT NULL
+        AND OLD.workflow_state <> NEW.workflow_state AND NEW.workflow_state = 'approved')
+      OR (OLD.approved_artifact_id IS NOT NULL AND NEW.approved_artifact_id IS NULL
+        AND OLD.workflow_state <> NEW.workflow_state)
+    ))
   BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID');
   END;

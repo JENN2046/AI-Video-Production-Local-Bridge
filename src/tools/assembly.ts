@@ -187,10 +187,17 @@ export function assembleFinalVideo(
         closed_at = NULL, updated_at = CURRENT_TIMESTAMP
       WHERE project_id = ? AND workflow_state = 'assembling'`).run(activatedArtifactId, currentProject.project_id) as { changes: number | bigint };
     if (Number(completed.changes) !== 1) throw new Error("ASSEMBLY_INPUT_CHANGED");
+    const deliveryJobId = `job_${randomUUID()}`;
+    db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, input_json, output_artifact_id,
+        created_at, started_at, finished_at, updated_at)
+      VALUES (?, ?, 'assembly', 'succeeded', '{}', ?,
+        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+      .run(deliveryJobId, currentProject.project_id, activatedArtifactId);
     db.prepare(`INSERT INTO workbench_delivery_events
-      (event_id, project_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
-      VALUES (?, ?, 'assembly_succeeded', 'assembling', 'final_review', ?, 'LEGACY_ASSEMBLY_SUCCEEDED', '{}', CURRENT_TIMESTAMP)`)
-      .run(`event_${randomUUID()}`, currentProject.project_id, activatedArtifactId);
+      (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
+      VALUES (?, ?, ?, 'assembly_succeeded', 'assembling', 'final_review', ?, 'LEGACY_ASSEMBLY_SUCCEEDED', '{}', CURRENT_TIMESTAMP)`)
+      .run(`event_${randomUUID()}`, currentProject.project_id, deliveryJobId, activatedArtifactId);
     committed = { run, artifact_id: activatedArtifactId };
     db.exec(`RELEASE SAVEPOINT ${savepoint}`);
   } catch (error) {

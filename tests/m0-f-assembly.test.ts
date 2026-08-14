@@ -145,15 +145,21 @@ test("M0-F assembly succeeds after all shots are approved", async () => {
       approved_artifact_id: null,
       latest_export_id: null
     });
-    const event = db.prepare(`SELECT event_type, from_state, to_state, artifact_id, reason_code
-      FROM workbench_delivery_events WHERE project_id = ? ORDER BY created_at DESC, event_id DESC LIMIT 1`)
+    const event = db.prepare(`SELECT event.event_type, event.from_state, event.to_state, event.artifact_id,
+      event.reason_code, job.job_type, job.state AS job_state, job.output_artifact_id
+      FROM workbench_delivery_events event
+      JOIN workbench_delivery_jobs job ON job.job_id = event.job_id AND job.project_id = event.project_id
+      WHERE event.project_id = ? ORDER BY event.created_at DESC, event.event_id DESC LIMIT 1`)
       .get(project.project_id) as Record<string, unknown>;
     assert.deepEqual({ ...event }, {
       event_type: "assembly_succeeded",
       from_state: "assembling",
       to_state: "final_review",
       artifact_id: assembled.final_video_artifact_id,
-      reason_code: "LEGACY_ASSEMBLY_SUCCEEDED"
+      reason_code: "LEGACY_ASSEMBLY_SUCCEEDED",
+      job_type: "assembly",
+      job_state: "succeeded",
+      output_artifact_id: assembled.final_video_artifact_id
     });
     const deactivated = transitionMediaArtifactStatus(assembled.final_video_artifact_id, "archived", db);
     assert.equal(deactivated.ok ? null : deactivated.error.code, "WORKBENCH_DELIVERY_ARTIFACT_ACTIVE_REQUIRED");

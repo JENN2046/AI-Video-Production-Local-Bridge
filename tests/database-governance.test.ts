@@ -10,7 +10,8 @@ import { assertSchemaCurrent, DATABASE_MIGRATIONS, M0_BASE_SCHEMA_SQL, migration
 import { openM0Database } from "../src/storage/sqlite.js";
 import { initializeWorkbenchV2Schema } from "../src/storage/workbenchV2Schema.js";
 import { paths } from "../src/paths.js";
-import { persistMediaArtifact, transitionMediaArtifactStatus, type MediaArtifact } from "../src/tools/mediaArtifacts.js";
+import { persistMediaArtifact, registerMediaArtifact, transitionMediaArtifactStatus, type MediaArtifact } from "../src/tools/mediaArtifacts.js";
+import { createProject, getProject, saveProject } from "../src/tools/projects.js";
 
 const HISTORICAL_MIGRATION_0005_CHECKSUM = "92297a3ce2996e427b8a8e3dae39a25f33a294c29142b5ca723cdcd4700ad8b0";
 const INTERIM_MIGRATION_0005_CHECKSUM = "6e929ae3b8db4387891d664cd22dc5299dab689eab0d6c1dd07dc70afbabbe73";
@@ -676,6 +677,11 @@ test("database check reports invalid delivery Job bindings and inactive referenc
       VALUES ('closeout_stale_binding_b', 'project_b', 'closeout', 'exported', 'closed',
         'artifact_old_b', 'export_old_b', 'CLOSEOUT_CONFIRMED', '{}', ?)`)
       .run(now);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
+      VALUES ('export_succeeded_wrong_job_b', 'project_b', 'parent_b', 'export_succeeded', 'approved', 'exported',
+        'artifact_b', 'export_b', 'SYNTHETIC_SUCCEEDED', '{}', ?)`)
+      .run(now);
     oldArtifact.status = "archived";
     db.prepare("UPDATE media_artifacts SET status = 'archived', data_json = ? WHERE artifact_id = 'artifact_old_b'")
       .run(JSON.stringify(oldArtifact));
@@ -689,10 +695,67 @@ test("database check reports invalid delivery Job bindings and inactive referenc
 
     const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
     assert.equal(checked.schema_current, true);
-    assert.equal(checked.orphan_rows, 6);
+    assert.equal(checked.orphan_rows, 7);
     assert.equal(checked.media_integrity_errors, 0);
     assert.equal(checked.check_errors, 0);
     assert.equal(checked.result, "FAIL");
+  } finally {
+    try { db?.close(); } catch { /* retain the primary assertion failure */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("database check accepts active historical final Artifacts referenced by succeeded assembly Jobs", () => {
+  const root = tempRoot();
+  let db: ReturnType<typeof openM0Database> | null = null;
+  try {
+    const sqlitePath = join(root, "historical-assembly.sqlite");
+    migrateDatabase(sqlitePath);
+    db = openM0Database(sqlitePath);
+    const project = createProject({ title: "Historical assembly evidence" }, db);
+    assert.equal(project.ok, true);
+    if (!project.ok) throw new Error("historical assembly project setup failed");
+    const historical = registerMediaArtifact({
+      artifact_type: "video",
+      role: "final_video",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: project.project_id }
+    }, db);
+    const current = registerMediaArtifact({
+      artifact_type: "video",
+      role: "final_video",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: project.project_id }
+    }, db);
+    assert.equal(historical.ok, true);
+    assert.equal(current.ok, true);
+    if (!historical.ok || !current.ok) throw new Error("historical assembly Artifact setup failed");
+    const projectRecord = getProject(db, project.project_id);
+    assert.ok(projectRecord);
+    projectRecord.exports.final_video_artifact_id = current.artifact.artifact_id;
+    projectRecord.status = "video_review";
+    saveProject(db, projectRecord);
+    const now = "2026-08-14T03:00:00.000Z";
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
+      .run(now, project.project_id);
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
+      .run(now, project.project_id);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
+      current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
+      .run(current.artifact.artifact_id, now, project.project_id);
+    db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, input_json, output_artifact_id,
+        created_at, started_at, finished_at, updated_at)
+      VALUES ('job_historical_assembly', ?, 'assembly', 'succeeded', '{}', ?, ?, ?, ?, ?)`)
+      .run(project.project_id, historical.artifact.artifact_id, now, now, now, now);
+    const deactivated = transitionMediaArtifactStatus(historical.artifact.artifact_id, "archived", db);
+    assert.equal(deactivated.ok ? null : deactivated.error.code, "WORKBENCH_DELIVERY_ARTIFACT_ACTIVE_REQUIRED");
+    db.close();
+    db = null;
+
+    const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
+    assert.equal(checked.orphan_rows, 0);
+    assert.equal(checked.result, "PASS");
   } finally {
     try { db?.close(); } catch { /* retain the primary assertion failure */ }
     rmSync(root, { recursive: true, force: true });

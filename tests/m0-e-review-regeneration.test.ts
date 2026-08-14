@@ -15,6 +15,7 @@ import {
   rejectH3GeneratedClip,
   startStoryboardVideoGeneration
 } from "../src/index.js";
+import { setWorkbenchProjectLifecycle } from "../src/tools/workbenchV2.js";
 
 async function setupGeneratedShot(db: ReturnType<typeof openM0Database>) {
   const project = createProject({ title: "M0-E Project" }, db);
@@ -174,10 +175,19 @@ test("H3 public review mutations reject closed projects without changing SHOT re
   const db = openM0Database();
 
   try {
-    const { project, shot, artifactId } = await setupGeneratedShot(db);
+    const { project, shot, run, artifactId } = await setupGeneratedShot(db);
+    assert.equal(markShotClipReview({
+      shot_id: shot.shot_id,
+      artifact_id: artifactId,
+      decision: "revision_needed",
+      rejection_reasons: ["requires a closed-project gate"]
+    }, db).ok, true);
+    closeProjectForReviewTest(db, project.project_id);
     const before = getShot(db, shot.shot_id);
     assert.ok(before);
-    closeProjectForReviewTest(db, project.project_id);
+    const countsBefore = db.prepare(`SELECT
+      (SELECT COUNT(*) FROM media_artifacts WHERE project_id = ?) AS artifacts,
+      (SELECT COUNT(*) FROM generation_runs WHERE project_id = ?) AS runs`).get(project.project_id, project.project_id);
 
     const approved = approveH3GeneratedClip({ shot_id: shot.shot_id, artifact_id: artifactId, write_report: false }, db);
     assert.equal(approved.ok ? null : approved.error.code, "PROJECT_CLOSED");
@@ -195,9 +205,53 @@ test("H3 public review mutations reject closed projects without changing SHOT re
       write_report: false
     }, db);
     assert.equal(rejected.ok ? null : rejected.error.code, "PROJECT_CLOSED");
+    const regenerated = await regenerateShotVideo({
+      shot_id: shot.shot_id,
+      previous_run_id: run.run_id,
+      updated_prompt: "This must not reach the Provider adapter",
+      confirmation: { confirmation_level: "hard_gate", user_confirmed: true }
+    }, db);
+    assert.equal(regenerated.ok ? null : regenerated.error.code, "PROJECT_CLOSED");
     assert.deepEqual(getShot(db, shot.shot_id), before);
+    assert.deepEqual({ ...(db.prepare(`SELECT
+      (SELECT COUNT(*) FROM media_artifacts WHERE project_id = ?) AS artifacts,
+      (SELECT COUNT(*) FROM generation_runs WHERE project_id = ?) AS runs`).get(project.project_id, project.project_id) as Record<string, unknown>) },
+    { ...(countsBefore as Record<string, unknown>) });
     assert.equal((db.prepare("SELECT workflow_state FROM workbench_delivery_state WHERE project_id = ?")
       .get(project.project_id) as { workflow_state: string }).workflow_state, "closed");
+  } finally {
+    db.close();
+  }
+});
+
+test("legacy regeneration rejects archived projects before Provider, Artifact, run, or SHOT side effects", async () => {
+  const db = openM0Database();
+  try {
+    const { project, shot, run, artifactId } = await setupGeneratedShot(db);
+    assert.equal(markShotClipReview({
+      shot_id: shot.shot_id,
+      artifact_id: artifactId,
+      decision: "revision_needed",
+      rejection_reasons: ["requires an archived-project gate"]
+    }, db).ok, true);
+    assert.equal(setWorkbenchProjectLifecycle(project.project_id, "archived", db).ok, true);
+    const before = getShot(db, shot.shot_id);
+    const countsBefore = db.prepare(`SELECT
+      (SELECT COUNT(*) FROM media_artifacts WHERE project_id = ?) AS artifacts,
+      (SELECT COUNT(*) FROM generation_runs WHERE project_id = ?) AS runs`).get(project.project_id, project.project_id);
+
+    const regenerated = await regenerateShotVideo({
+      shot_id: shot.shot_id,
+      previous_run_id: run.run_id,
+      updated_prompt: "This must not reach the Provider adapter",
+      confirmation: { confirmation_level: "hard_gate", user_confirmed: true }
+    }, db);
+    assert.equal(regenerated.ok ? null : regenerated.error.code, "PROJECT_ARCHIVED");
+    assert.deepEqual(getShot(db, shot.shot_id), before);
+    assert.deepEqual({ ...(db.prepare(`SELECT
+      (SELECT COUNT(*) FROM media_artifacts WHERE project_id = ?) AS artifacts,
+      (SELECT COUNT(*) FROM generation_runs WHERE project_id = ?) AS runs`).get(project.project_id, project.project_id) as Record<string, unknown>) },
+    { ...(countsBefore as Record<string, unknown>) });
   } finally {
     db.close();
   }

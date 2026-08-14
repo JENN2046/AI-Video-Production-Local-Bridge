@@ -125,6 +125,8 @@ export async function regenerateShotVideo(
 
   const shot = getShot(db, input.shot_id);
   if (!shot) return { ok: false, error: { code: "SHOT_NOT_FOUND", message: `Shot not found: ${input.shot_id}` } };
+  const writable = assertWorkbenchProductionWriteAllowed(db, shot.project_id);
+  if (!writable.ok) return { ok: false, error: writable.error };
 
   const previousRun = getGenerationRun(db, input.previous_run_id);
   if (!previousRun) {

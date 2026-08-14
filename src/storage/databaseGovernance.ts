@@ -342,6 +342,55 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
       "SELECT COUNT(*) AS count FROM workbench_delivery_events e LEFT JOIN media_artifacts a ON a.artifact_id = e.artifact_id AND a.project_id = e.project_id WHERE e.artifact_id IS NOT NULL AND a.artifact_id IS NULL",
       "SELECT COUNT(*) AS count FROM workbench_delivery_events e LEFT JOIN workbench_exports x ON x.export_id = e.export_id AND x.project_id = e.project_id WHERE e.export_id IS NOT NULL AND x.export_id IS NULL",
       `SELECT COUNT(*) AS count FROM workbench_delivery_events event
+        WHERE event.event_type IN (
+          'assembly_queued','assembly_started','assembly_succeeded','assembly_failed','assembly_interrupted',
+          'export_queued','export_started','export_succeeded','export_failed','export_interrupted'
+        ) AND NOT (
+          (event.event_type = 'export_succeeded' AND event.job_id IS NULL
+            AND event.reason_code = 'EXPORT_REUSED' AND EXISTS (
+              SELECT 1 FROM workbench_exports reused
+              WHERE reused.export_id = event.export_id AND reused.project_id = event.project_id
+                AND reused.artifact_id = event.artifact_id
+            ))
+          OR EXISTS (
+            SELECT 1 FROM workbench_delivery_jobs job
+            LEFT JOIN workbench_exports bound_export ON bound_export.export_id = job.export_id
+              AND bound_export.project_id = job.project_id
+            WHERE job.job_id = event.job_id AND job.project_id = event.project_id
+              AND (
+                (event.event_type = 'assembly_queued' AND job.job_type = 'assembly'
+                  AND event.artifact_id IS NULL AND event.export_id IS NULL)
+                OR (event.event_type = 'assembly_started' AND job.job_type = 'assembly'
+                  AND job.state IN ('running','succeeded','failed','interrupted')
+                  AND job.started_at IS NOT NULL AND event.artifact_id IS NULL AND event.export_id IS NULL)
+                OR (event.event_type = 'assembly_succeeded' AND job.job_type = 'assembly'
+                  AND job.state = 'succeeded' AND event.artifact_id IS job.output_artifact_id
+                  AND event.export_id IS NULL)
+                OR (event.event_type = 'assembly_failed' AND job.job_type = 'assembly'
+                  AND job.state = 'failed' AND event.artifact_id IS NULL AND event.export_id IS NULL)
+                OR (event.event_type = 'assembly_interrupted' AND job.job_type = 'assembly'
+                  AND job.state = 'interrupted' AND event.artifact_id IS NULL AND event.export_id IS NULL)
+                OR (event.event_type = 'export_queued' AND job.job_type = 'export'
+                  AND event.artifact_id IS json_extract(job.input_json, '$.artifact_id')
+                  AND event.export_id IS NULL)
+                OR (event.event_type = 'export_started' AND job.job_type = 'export'
+                  AND job.state IN ('running','succeeded','failed','interrupted')
+                  AND job.started_at IS NOT NULL
+                  AND event.artifact_id IS json_extract(job.input_json, '$.artifact_id')
+                  AND event.export_id IS NULL)
+                OR (event.event_type = 'export_succeeded' AND job.job_type = 'export'
+                  AND job.state = 'succeeded' AND event.export_id IS job.export_id
+                  AND event.artifact_id IS bound_export.artifact_id)
+                OR (event.event_type = 'export_failed' AND job.job_type = 'export'
+                  AND job.state = 'failed' AND event.export_id IS job.export_id
+                  AND event.artifact_id IS json_extract(job.input_json, '$.artifact_id'))
+                OR (event.event_type = 'export_interrupted' AND job.job_type = 'export'
+                  AND job.state = 'interrupted' AND event.export_id IS job.export_id
+                  AND event.artifact_id IS json_extract(job.input_json, '$.artifact_id'))
+              )
+          )
+        )`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_events event
         WHERE event.event_type = 'closeout' AND NOT EXISTS (
           SELECT 1 FROM workbench_delivery_state state
           JOIN workbench_exports bound_export ON bound_export.export_id = state.latest_export_id
