@@ -180,6 +180,66 @@ test("WebGPT V4 production mutations reject closed projects at the shared write 
   }
 });
 
+test("Workbench delivery latest export follows the persisted pointer instead of history ordering", () => {
+  const context = setup();
+  try {
+    const historicalArtifact = registerMediaArtifact({
+      artifact_type: "video",
+      role: "final_video",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: context.production.project_id }
+    }, context.db);
+    assert.equal(historicalArtifact.ok, true, historicalArtifact.ok ? "" : historicalArtifact.error.code);
+    if (!historicalArtifact.ok) return;
+
+    const blob = context.db.prepare(`SELECT b.sha256, b.size_bytes
+      FROM media_artifact_blobs link JOIN media_blobs b ON b.blob_id = link.blob_id
+      WHERE link.artifact_id = ?`).get(historicalArtifact.artifact.artifact_id) as { sha256: string; size_bytes: number };
+    const createdAt = "2026-08-14T00:00:00.000Z";
+    const historicalExportId = "zz_export_historical";
+    context.db.prepare(`INSERT INTO workbench_exports
+      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .run(historicalExportId, context.production.project_id, historicalArtifact.artifact.artifact_id,
+        `data/exports/${context.production.project_id}/historical.mp4`, blob.sha256, blob.size_bytes, createdAt);
+
+    const withoutPointer = getWorkbenchProjectWorkspace(
+      context.production.project_id,
+      "delivery",
+      context.db,
+      { touch_last_opened: false }
+    );
+    assert.equal(withoutPointer.ok, true);
+    if (withoutPointer.ok) assert.equal(withoutPointer.data.latest_export, null);
+
+    closeProductionProject(context);
+    const delivery = context.db.prepare(`SELECT latest_export_id FROM workbench_delivery_state WHERE project_id = ?`)
+      .get(context.production.project_id) as { latest_export_id: string };
+    const withPointer = getWorkbenchProjectWorkspace(
+      context.production.project_id,
+      "delivery",
+      context.db,
+      { touch_last_opened: false }
+    );
+    assert.equal(withPointer.ok, true);
+    if (withPointer.ok) {
+      const latest = withPointer.data.latest_export as { export_id: string; relative_path: string } | null;
+      assert.equal(latest?.export_id, delivery.latest_export_id);
+      assert.equal(latest?.relative_path, `data/exports/${context.production.project_id}/closed-fixture.mp4`);
+    }
+
+    const exportIds = (context.db.prepare(`SELECT export_id FROM workbench_exports WHERE project_id = ? ORDER BY export_id`)
+      .all(context.production.project_id) as Array<{ export_id: string }>).map((row) => row.export_id);
+    assert.deepEqual(exportIds, [delivery.latest_export_id, historicalExportId].sort());
+    assert.throws(() => context.db.prepare("UPDATE workbench_exports SET relative_path = 'changed' WHERE export_id = ?")
+      .run(historicalExportId), /WORKBENCH_EXPORT_IMMUTABLE/);
+    assert.throws(() => context.db.prepare("DELETE FROM workbench_exports WHERE export_id = ?")
+      .run(historicalExportId), /WORKBENCH_EXPORT_IMMUTABLE/);
+  } finally {
+    teardown(context);
+  }
+});
+
 test("project-scoped reads fail closed when structured columns and JSON bindings drift", () => {
   const context = setup();
   try {

@@ -115,9 +115,10 @@ export function getActiveWorkbenchDeliveryJob(db: M0Database, projectId?: string
 
 export function getLatestWorkbenchExport(db: M0Database, projectId: string): WorkbenchExportRecord | null {
   const row = db.prepare(`
-    SELECT export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at
-    FROM workbench_exports WHERE project_id = ?
-    ORDER BY created_at DESC, export_id DESC LIMIT 1
+    SELECT e.export_id, e.project_id, e.artifact_id, e.relative_path, e.sha256, e.size_bytes, e.created_at
+    FROM workbench_delivery_state d
+    JOIN workbench_exports e ON e.export_id = d.latest_export_id AND e.project_id = d.project_id
+    WHERE d.project_id = ?
   `).get(projectId) as WorkbenchExportRecord | undefined;
   return row ? { ...row, size_bytes: Number(row.size_bytes) } : null;
 }
