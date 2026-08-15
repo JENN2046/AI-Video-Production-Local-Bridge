@@ -69,6 +69,17 @@ export type WorkbenchProductionWriteBoundaryResult =
   | { ok: true; delivery: WorkbenchDeliveryStateRecord }
   | { ok: false; error: { code: "PROJECT_NOT_FOUND" | "PROJECT_ARCHIVED" | "DELIVERY_STATE_MISSING" | "PROJECT_CLOSED"; message: string } };
 
+export type WorkbenchContentMutationBoundaryResult =
+  | WorkbenchProductionWriteBoundaryResult
+  | { ok: false; error: { code: "DELIVERY_REWORK_REQUIRED"; message: string } };
+
+const FINAL_EVIDENCE_STATES: ReadonlySet<WorkbenchDeliveryWorkflowState> = new Set([
+  "final_review",
+  "approved",
+  "exported",
+  "legacy_review_required"
+]);
+
 export function getWorkbenchDeliveryState(db: M0Database, projectId: string): WorkbenchDeliveryStateRecord | null {
   const row = db.prepare(`
     SELECT project_id, workflow_state, current_final_artifact_id, assembly_input_fingerprint,
@@ -100,6 +111,27 @@ export function assertWorkbenchProductionWriteAllowed(db: M0Database, projectId:
     return { ok: false, error: { code: "PROJECT_CLOSED", message: "Closed projects do not accept production changes." } };
   }
   return { ok: true, delivery };
+}
+
+export function assertWorkbenchContentMutationAllowed(
+  db: M0Database,
+  projectId: string,
+  options: { allow_atomic_final_review_transaction?: boolean } = {}
+): WorkbenchContentMutationBoundaryResult {
+  const writable = assertWorkbenchProductionWriteAllowed(db, projectId);
+  if (!writable.ok) return writable;
+  const callerOwnsAtomicFinalReview = options.allow_atomic_final_review_transaction === true
+    && (db as unknown as { isTransaction?: boolean }).isTransaction === true;
+  if (FINAL_EVIDENCE_STATES.has(writable.delivery.workflow_state) && !callerOwnsAtomicFinalReview) {
+    return {
+      ok: false,
+      error: {
+        code: "DELIVERY_REWORK_REQUIRED",
+        message: "Final delivery evidence must enter an explicit rework state before production content changes."
+      }
+    };
+  }
+  return writable;
 }
 
 export function getActiveWorkbenchDeliveryJob(db: M0Database, projectId?: string): WorkbenchDeliveryJobRecord | null {

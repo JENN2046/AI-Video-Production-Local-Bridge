@@ -169,6 +169,70 @@ test("M0-F assembly succeeds after all shots are approved", async () => {
   }
 });
 
+test("M0-F reassembly records the approval revocation before producing a new final version", async () => {
+  const db = openM0Database();
+  try {
+    const { project, storyboard, generation } = await setupGeneratedProject(db);
+    for (const shot of storyboard.shots) {
+      const run = generation.runs.find((item) => item.shot_id === shot.shot_id);
+      assert(run);
+      assert.equal(markShotClipReview({
+        shot_id: shot.shot_id,
+        artifact_id: run.output.artifact_ids[0],
+        decision: "approved"
+      }, db).ok, true);
+    }
+    const first = assembleFinalVideo({
+      project_id: project.project_id,
+      confirmation: { confirmation_level: "explicit", user_confirmed: true }
+    }, db);
+    assert.equal(first.ok, true);
+    if (!first.ok) return;
+    const now = "2026-08-14T04:00:00.000Z";
+    const originalFingerprint = "a".repeat(64);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'approved',
+      assembly_input_fingerprint = ?, approved_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
+      .run(originalFingerprint, first.final_video_artifact_id, now, project.project_id);
+
+    const second = assembleFinalVideo({
+      project_id: project.project_id,
+      confirmation: { confirmation_level: "explicit", user_confirmed: true }
+    }, db);
+    assert.equal(second.ok, true);
+    if (!second.ok) return;
+    assert.notEqual(second.final_video_artifact_id, first.final_video_artifact_id);
+    assert.equal(getMediaArtifact(db, first.final_video_artifact_id)?.status, "active");
+    assert.equal(getMediaArtifact(db, second.final_video_artifact_id)?.status, "active");
+
+    const events = (db.prepare(`SELECT event_type, from_state, to_state, artifact_id, job_id,
+      input_fingerprint, reason_code FROM workbench_delivery_events
+      WHERE project_id = ? AND event_type IN ('final_review_reassemble','assembly_succeeded')
+      ORDER BY rowid`).all(project.project_id) as Array<Record<string, unknown>>).map((row) => ({ ...row }));
+    const [reworkEvent, succeededEvent] = events.slice(-2);
+    assert.deepEqual(reworkEvent, {
+      event_type: "final_review_reassemble",
+      from_state: "approved",
+      to_state: "ready_to_assemble",
+      artifact_id: first.final_video_artifact_id,
+      job_id: null,
+      input_fingerprint: originalFingerprint,
+      reason_code: "LEGACY_REASSEMBLY_REQUESTED"
+    });
+    assert.equal(typeof succeededEvent.job_id, "string");
+    assert.deepEqual({ ...succeededEvent, job_id: "<job_id>" }, {
+      event_type: "assembly_succeeded",
+      from_state: "assembling",
+      to_state: "final_review",
+      artifact_id: second.final_video_artifact_id,
+      job_id: "<job_id>",
+      input_fingerprint: null,
+      reason_code: "LEGACY_ASSEMBLY_SUCCEEDED"
+    });
+  } finally {
+    db.close();
+  }
+});
+
 test("M0-F assembly rejects same-project and global durable delivery Jobs before creating a final Artifact", async () => {
   const db = openM0Database();
 

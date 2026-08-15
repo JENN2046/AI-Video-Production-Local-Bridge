@@ -17,6 +17,7 @@ import {
   type ProviderJobStatus,
   type VideoProviderAdapter
 } from "./videoProviderAdapters.js";
+import { assertWorkbenchContentMutationAllowed } from "./workbenchDeliveryState.js";
 
 export type GenerationRunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 export type GenerationBatchStatus = GenerationRunStatus | "partially_failed";
@@ -395,6 +396,13 @@ export async function startStoryboardVideoGeneration(
     return { ok: false, error: { code: "HARD_GATE_CONFIRMATION_REQUIRED", message: "Generation requires hard_gate confirmation." } };
   }
 
+  const project = getProject(db, input.project_id);
+  if (!project) {
+    return { ok: false, error: { code: "PROJECT_NOT_FOUND", message: `Project not found: ${input.project_id}` } };
+  }
+  const writable = assertWorkbenchContentMutationAllowed(db, project.project_id);
+  if (!writable.ok) return { ok: false, error: writable.error };
+
   const providerSelection = input.provider_execution
     ? selectM1ProviderPort(input.provider_execution)
     : selectM0Provider(input.provider ?? "mock");
@@ -415,11 +423,6 @@ export async function startStoryboardVideoGeneration(
     return { ok: false, error: { code: "PROVIDER_DISABLED", message: "Legacy batch generation cannot call a real provider. Use the V2 single-SHOT intent flow or an explicitly authorized canary." } };
   }
   const adapter = adapterForSelectedProvider(selectedProvider.provider_name, selectedProvider.credential);
-
-  const project = getProject(db, input.project_id);
-  if (!project) {
-    return { ok: false, error: { code: "PROJECT_NOT_FOUND", message: `Project not found: ${input.project_id}` } };
-  }
 
   const storyboardPackageId = input.storyboard_package_id || project.active_storyboard_package_id;
   const storyboardPackage = getStoryboardPackage(db, storyboardPackageId);

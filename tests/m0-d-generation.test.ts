@@ -182,3 +182,64 @@ test("M0-D generation cannot bypass a pending-review operational gate", async ()
     db.close();
   }
 });
+
+test("M0-D legacy batch generation rejects closed projects before all generation side effects", async () => {
+  const db = openM0Database();
+  try {
+    const { project, storyboard } = setupThreeShotProject(db);
+    const finalArtifact = registerMediaArtifact({
+      artifact_type: "video",
+      role: "final_video",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: project.project_id }
+    }, db);
+    assert.equal(finalArtifact.ok, true);
+    if (!finalArtifact.ok) return;
+    const artifactId = finalArtifact.artifact.artifact_id;
+    const exportId = `export_${project.project_id}`;
+    const now = "2026-08-14T02:00:00.000Z";
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
+      .run(now, project.project_id);
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
+      .run(now, project.project_id);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
+      current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`).run(artifactId, now, project.project_id);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'approved',
+      approved_artifact_id = ?, updated_at = ? WHERE project_id = ?`).run(artifactId, now, project.project_id);
+    db.prepare(`INSERT INTO workbench_exports
+      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
+      VALUES (?, ?, ?, ?, ?, 1, ?)`)
+      .run(exportId, project.project_id, artifactId, `data/exports/${project.project_id}/final.mp4`, "d".repeat(64), now);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'exported', latest_export_id = ?,
+      latest_exported_at = ?, updated_at = ? WHERE project_id = ?`).run(exportId, now, now, project.project_id);
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'closed', closed_at = ?, updated_at = ? WHERE project_id = ?")
+      .run(now, now, project.project_id);
+    const factsBefore = {
+      project: db.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(project.project_id),
+      shots: db.prepare("SELECT shot_id, data_json FROM shots WHERE project_id = ? ORDER BY shot_id").all(project.project_id),
+      counts: db.prepare(`SELECT
+        (SELECT COUNT(*) FROM media_artifacts WHERE project_id = ?) AS artifacts,
+        (SELECT COUNT(*) FROM generation_runs WHERE project_id = ?) AS runs,
+        (SELECT COUNT(*) FROM generation_batches WHERE project_id = ?) AS batches`)
+        .get(project.project_id, project.project_id, project.project_id)
+    };
+
+    const result = await startStoryboardVideoGeneration({
+      project_id: project.project_id,
+      storyboard_package_id: storyboard.storyboard_package.storyboard_package_id,
+      confirmation: { confirmation_level: "hard_gate", user_confirmed: true }
+    }, db);
+    assert.equal(result.ok ? null : result.error.code, "PROJECT_CLOSED");
+    assert.deepEqual({
+      project: db.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(project.project_id),
+      shots: db.prepare("SELECT shot_id, data_json FROM shots WHERE project_id = ? ORDER BY shot_id").all(project.project_id),
+      counts: db.prepare(`SELECT
+        (SELECT COUNT(*) FROM media_artifacts WHERE project_id = ?) AS artifacts,
+        (SELECT COUNT(*) FROM generation_runs WHERE project_id = ?) AS runs,
+        (SELECT COUNT(*) FROM generation_batches WHERE project_id = ?) AS batches`)
+        .get(project.project_id, project.project_id, project.project_id)
+    }, factsBefore);
+  } finally {
+    db.close();
+  }
+});

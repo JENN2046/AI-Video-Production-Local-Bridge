@@ -1416,6 +1416,28 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
       OR (NEW.event_type = 'closeout'
         AND NEW.from_state = 'exported' AND NEW.to_state = 'closed')
     )
+    OR (NEW.event_type IN (
+      'final_review_accepted','final_review_reassemble','final_review_regenerate_shots'
+    ) AND NOT EXISTS (
+      SELECT 1 FROM workbench_delivery_state d
+      WHERE d.project_id = NEW.project_id
+        AND NEW.job_id IS NULL AND NEW.export_id IS NULL
+        AND NEW.artifact_id IS NOT NULL
+        AND NEW.artifact_id IS d.current_final_artifact_id
+        AND NEW.input_fingerprint IS d.assembly_input_fingerprint
+        AND (
+          (NEW.event_type = 'final_review_accepted'
+            AND d.workflow_state = 'approved'
+            AND d.approved_artifact_id IS NEW.artifact_id
+            AND d.latest_export_id IS NULL)
+          OR (NEW.event_type = 'final_review_reassemble'
+            AND d.workflow_state = 'ready_to_assemble'
+            AND d.approved_artifact_id IS NULL AND d.latest_export_id IS NULL)
+          OR (NEW.event_type = 'final_review_regenerate_shots'
+            AND d.workflow_state = 'revision_requested'
+            AND d.approved_artifact_id IS NULL AND d.latest_export_id IS NULL)
+        )
+    ))
     OR (NEW.event_type = 'closeout' AND NOT EXISTS (
       SELECT 1 FROM workbench_delivery_state d
       JOIN workbench_exports e ON e.export_id = d.latest_export_id

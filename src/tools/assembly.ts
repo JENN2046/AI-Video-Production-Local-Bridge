@@ -41,6 +41,13 @@ const REASSEMBLY_SOURCE_STATES: ReadonlySet<WorkbenchDeliveryWorkflowState> = ne
   "legacy_review_required"
 ]);
 
+const FINAL_REVIEW_REASSEMBLY_SOURCE_STATES: ReadonlySet<WorkbenchDeliveryWorkflowState> = new Set([
+  "final_review",
+  "approved",
+  "exported",
+  "legacy_review_required"
+]);
+
 function assemblyPersistenceError(error: unknown): ToolError {
   const code = error instanceof Error ? error.message : "";
   if (code === "PROJECT_NOT_FOUND") return { code, message: "Project no longer exists." };
@@ -95,11 +102,27 @@ export function assembleFinalVideo(
     if (currentState !== "ready_to_assemble") {
       if (!REASSEMBLY_SOURCE_STATES.has(currentState)) throw new Error("ASSEMBLY_INPUT_CHANGED");
       const prepared = db.prepare(`UPDATE workbench_delivery_state
-        SET workflow_state = 'ready_to_assemble', assembly_input_fingerprint = NULL,
+        SET workflow_state = 'ready_to_assemble',
           approved_artifact_id = NULL, latest_export_id = NULL, latest_exported_at = NULL,
           closed_at = NULL, updated_at = CURRENT_TIMESTAMP
         WHERE project_id = ? AND workflow_state = ?`).run(project.project_id, currentState) as { changes: number | bigint };
       if (Number(prepared.changes) !== 1) throw new Error("ASSEMBLY_INPUT_CHANGED");
+      if (FINAL_REVIEW_REASSEMBLY_SOURCE_STATES.has(currentState)) {
+        db.prepare(`INSERT INTO workbench_delivery_events
+          (event_id, project_id, event_type, from_state, to_state, artifact_id,
+            input_fingerprint, reason_code, data_json, created_at)
+          VALUES (?, ?, 'final_review_reassemble', ?, 'ready_to_assemble', ?, ?,
+            'LEGACY_REASSEMBLY_REQUESTED', '{"source":"legacy_assembly"}', CURRENT_TIMESTAMP)`)
+          .run(`event_${randomUUID()}`, project.project_id, currentState,
+            currentBoundary.delivery.current_final_artifact_id,
+            currentBoundary.delivery.assembly_input_fingerprint);
+      }
+      const clearedFingerprint = db.prepare(`UPDATE workbench_delivery_state
+        SET assembly_input_fingerprint = NULL, updated_at = CURRENT_TIMESTAMP
+        WHERE project_id = ? AND workflow_state = 'ready_to_assemble'
+          AND assembly_input_fingerprint IS ?`)
+        .run(project.project_id, currentBoundary.delivery.assembly_input_fingerprint) as { changes: number | bigint };
+      if (Number(clearedFingerprint.changes) !== 1) throw new Error("ASSEMBLY_INPUT_CHANGED");
     }
     const started = db.prepare(`UPDATE workbench_delivery_state
       SET workflow_state = 'assembling', updated_at = CURRENT_TIMESTAMP

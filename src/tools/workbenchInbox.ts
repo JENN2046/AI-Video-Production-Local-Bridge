@@ -6,7 +6,7 @@ import { createProject, getProject, getShot, listProjectShots, saveProject, save
 import { saveStoryboardPackage, type StoryboardPackage } from "./storyboardPackages.js";
 import { requireProjectShotWorkflowWriteAction, requireShotWorkflowWriteAction } from "./operationalWriteGates.js";
 import { decideWorkbenchClip, decideWorkbenchImport, updateWorkbenchShot, type WorkbenchPage, type WorkbenchProjectClassification, type WorkbenchV2Result } from "./workbenchV2.js";
-import { assertWorkbenchProductionWriteAllowed } from "./workbenchDeliveryState.js";
+import { assertWorkbenchContentMutationAllowed, assertWorkbenchProductionWriteAllowed } from "./workbenchDeliveryState.js";
 import {
   appendWorkbenchInboxEvent,
   getWorkbenchDraftRecord,
@@ -188,6 +188,8 @@ function promoteShotDraft(
 ): { project: Project; shot: Shot } {
   const projectId = input.target_project_id?.trim() ?? "";
   const project = writableProject(projectId, db);
+  const contentBoundary = assertWorkbenchContentMutationAllowed(db, projectId);
+  if (!contentBoundary.ok) throw new InboxDomainError(contentBoundary.error.code, contentBoundary.error.message, "target_project_id");
   const payload = draft.payload;
   const duration = Number(payload.duration_seconds ?? 3);
   if (!Number.isFinite(duration) || duration <= 0) throw new InboxDomainError("INVALID_FIELD", "Draft duration must be positive.", "duration_seconds");
@@ -475,6 +477,8 @@ function executePendingAction(action: WorkbenchPendingActionRecord, requestedPro
     return { project_id: projectId, result: { valid: true, shot_count: shots.length }, effects: { package_validated: true } };
   }
   if (action.tool === "request_import_storyboard_package") {
+    const contentBoundary = assertWorkbenchContentMutationAllowed(db, projectId);
+    if (!contentBoundary.ok) throw new InboxDomainError(contentBoundary.error.code, contentBoundary.error.message, "target_project_id");
     const storyboardPackage: StoryboardPackage = {
       storyboard_package_id: `storyboard_package_${randomUUID()}`,
       project_id: projectId,

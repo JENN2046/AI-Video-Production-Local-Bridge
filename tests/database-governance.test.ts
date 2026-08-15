@@ -687,6 +687,11 @@ test("database check reports invalid delivery Job bindings and inactive referenc
       VALUES ('assembly_failed_wrong_state_b', 'project_b', 'parent_b', 'assembly_failed', 'closed', 'not_ready',
         'SYNTHETIC_FAILURE', '{}', ?)`)
       .run(now);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
+      VALUES ('final_review_wrong_current_state_b', 'project_b', 'final_review_accepted', 'final_review', 'approved',
+        'artifact_b', 'SYNTHETIC_REVIEW', '{}', ?)`)
+      .run(now);
     oldArtifact.status = "archived";
     db.prepare("UPDATE media_artifacts SET status = 'archived', data_json = ? WHERE artifact_id = 'artifact_old_b'")
       .run(JSON.stringify(oldArtifact));
@@ -700,7 +705,7 @@ test("database check reports invalid delivery Job bindings and inactive referenc
 
     const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
     assert.equal(checked.schema_current, true);
-    assert.equal(checked.orphan_rows, 8);
+    assert.equal(checked.orphan_rows, 9);
     assert.equal(checked.media_integrity_errors, 0);
     assert.equal(checked.check_errors, 0);
     assert.equal(checked.result, "FAIL");
@@ -753,6 +758,30 @@ test("database check accepts active historical final Artifacts referenced by suc
         created_at, started_at, finished_at, updated_at)
       VALUES ('job_historical_assembly', ?, 'assembly', 'succeeded', '{}', ?, ?, ?, ?, ?)`)
       .run(project.project_id, historical.artifact.artifact_id, now, now, now, now);
+    db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, input_json, output_artifact_id,
+        created_at, started_at, finished_at, updated_at)
+      VALUES ('job_current_assembly', ?, 'assembly', 'succeeded', '{}', ?, ?, ?, ?, ?)`)
+      .run(project.project_id, current.artifact.artifact_id, now, now, now, now);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
+      VALUES ('event_current_assembly', ?, 'job_current_assembly', 'assembly_succeeded', 'assembling', 'final_review', ?,
+        'ASSEMBLY_SUCCEEDED', '{}', ?)`)
+      .run(project.project_id, current.artifact.artifact_id, now);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'approved', approved_artifact_id = ?, updated_at = ?
+      WHERE project_id = ?`).run(current.artifact.artifact_id, now, project.project_id);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
+      VALUES ('event_current_accepted', ?, 'final_review_accepted', 'final_review', 'approved', ?,
+        'FINAL_REVIEW_ACCEPTED', '{}', ?)`)
+      .run(project.project_id, current.artifact.artifact_id, now);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', approved_artifact_id = NULL,
+      updated_at = ? WHERE project_id = ?`).run(now, project.project_id);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
+      VALUES ('event_current_reassemble', ?, 'final_review_reassemble', 'approved', 'ready_to_assemble', ?,
+        'FINAL_REASSEMBLY_REQUESTED', '{}', ?)`)
+      .run(project.project_id, current.artifact.artifact_id, now);
     const deactivated = transitionMediaArtifactStatus(historical.artifact.artifact_id, "archived", db);
     assert.equal(deactivated.ok ? null : deactivated.error.code, "WORKBENCH_DELIVERY_ARTIFACT_ACTIVE_REQUIRED");
     db.close();

@@ -23,6 +23,7 @@ import type { ProjectOperationalSummary } from "../packages/domain/operationalSt
 import { markShotClipReview, type RevisionInstruction } from "./review.js";
 import { listWorkbenchDraftRecords, listWorkbenchPendingActionRecords } from "./workbenchInboxStore.js";
 import {
+  assertWorkbenchContentMutationAllowed,
   assertWorkbenchProductionWriteAllowed,
   getActiveWorkbenchDeliveryJob,
   getLatestWorkbenchExport,
@@ -643,6 +644,8 @@ export function updateWorkbenchShot(
 ): WorkbenchV2Result<{ shot: Shot }> {
   const writable = assertWorkbenchProjectWritable(db, projectId);
   if (!writable.ok) return writable;
+  const contentWritable = assertWorkbenchContentMutationAllowed(db, projectId);
+  if (!contentWritable.ok) return { ok: false, error: { ...contentWritable.error, field: "project_id" } };
   let shot = getShot(db, shotId);
   if (!shot || shot.project_id !== projectId) return { ok: false, error: { code: "SHOT_NOT_FOUND", message: `Shot not found in project: ${shotId}`, field: "shot_id" } };
   const ownsTransaction = input.storyboard_image_artifact_id !== undefined
@@ -722,6 +725,8 @@ export function decideWorkbenchClip(
 ): WorkbenchV2Result<{ shot: Shot; regeneration_request?: Record<string, unknown> }> {
   const writable = assertWorkbenchProjectWritable(db, projectId);
   if (!writable.ok) return writable;
+  const contentWritable = assertWorkbenchContentMutationAllowed(db, projectId);
+  if (!contentWritable.ok) return { ok: false, error: { ...contentWritable.error, field: "project_id" } };
   const candidate = getShot(db, input.shot_id);
   if (!candidate || candidate.project_id !== projectId) return { ok: false, error: { code: "SHOT_NOT_FOUND", message: "SHOT does not belong to the selected project.", field: "shot_id" } };
   const result = markShotClipReview({

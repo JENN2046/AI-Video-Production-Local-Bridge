@@ -30,6 +30,7 @@ import {
   type VideoProviderAdapter
 } from "./videoProviderAdapters.js";
 import { assertWorkbenchProjectWritable, type WorkbenchV2Result } from "./workbenchV2.js";
+import { assertWorkbenchContentMutationAllowed } from "./workbenchDeliveryState.js";
 
 export type WorkbenchGenerationIntentStatus = "prepared" | "queued" | "running" | "succeeded" | "failed" | "cancelled" | "timeout";
 
@@ -1163,6 +1164,12 @@ export async function preflightWorkbenchGeneration(
     if (terminalized) return { ok: false, error: terminalized.error };
     return writable;
   }
+  const contentWritable = assertWorkbenchContentMutationAllowed(db, input.project_id);
+  if (!contentWritable.ok) {
+    const terminalized = admissionReservation ? terminalizeStaleT2Reservation(db, admissionReservation.intent_id) : null;
+    if (terminalized) return { ok: false, error: terminalized.error };
+    return { ok: false, error: { ...contentWritable.error, field: "project_id" } };
+  }
   const shot = getShot(db, input.shot_id);
   if (!shot || shot.project_id !== input.project_id) {
     const terminalized = admissionReservation ? terminalizeStaleT2Reservation(db, admissionReservation.intent_id) : null;
@@ -1543,6 +1550,11 @@ export function confirmWorkbenchGeneration(
     if (!writable.ok) {
       db.exec("ROLLBACK");
       return writable;
+    }
+    const contentWritable = assertWorkbenchContentMutationAllowed(db, intent.project_id);
+    if (!contentWritable.ok) {
+      db.exec("ROLLBACK");
+      return { ok: false, error: { ...contentWritable.error, field: "project_id" } };
     }
     const shot = getShot(db, intent.shot_id);
     if (!shot || shot.project_id !== intent.project_id) {

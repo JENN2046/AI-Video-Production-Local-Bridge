@@ -368,6 +368,95 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
           AND event.from_state = 'exported' AND event.to_state = 'closed')
       )`,
       `SELECT COUNT(*) AS count FROM workbench_delivery_events event
+        LEFT JOIN media_artifacts artifact ON artifact.artifact_id = event.artifact_id
+          AND artifact.project_id = event.project_id AND COALESCE(artifact.shot_id, '') = ''
+          AND artifact.role = 'final_video' AND artifact.artifact_type = 'video'
+          AND artifact.status = 'active'
+        WHERE event.event_type IN (
+          'final_review_accepted','final_review_reassemble','final_review_regenerate_shots'
+        ) AND NOT (
+          event.job_id IS NULL AND event.export_id IS NULL
+          AND event.artifact_id IS NOT NULL AND artifact.artifact_id IS NOT NULL
+          AND (
+            NOT EXISTS (
+              SELECT 1 FROM workbench_delivery_events prior
+              WHERE prior.project_id = event.project_id AND prior.event_type = 'assembly_succeeded'
+                AND (prior.created_at < event.created_at
+                  OR (prior.created_at = event.created_at AND prior.rowid < event.rowid))
+            )
+            OR (
+              (SELECT prior.artifact_id FROM workbench_delivery_events prior
+                WHERE prior.project_id = event.project_id AND prior.event_type = 'assembly_succeeded'
+                  AND (prior.created_at < event.created_at
+                    OR (prior.created_at = event.created_at AND prior.rowid < event.rowid))
+                ORDER BY prior.created_at DESC, prior.rowid DESC LIMIT 1) IS event.artifact_id
+              AND (SELECT prior.input_fingerprint FROM workbench_delivery_events prior
+                WHERE prior.project_id = event.project_id AND prior.event_type = 'assembly_succeeded'
+                  AND (prior.created_at < event.created_at
+                    OR (prior.created_at = event.created_at AND prior.rowid < event.rowid))
+                ORDER BY prior.created_at DESC, prior.rowid DESC LIMIT 1) IS event.input_fingerprint
+            )
+          )
+          AND (
+            (
+              NOT EXISTS (
+                SELECT 1 FROM workbench_delivery_events later
+                WHERE later.project_id = event.project_id
+                  AND (later.created_at > event.created_at
+                    OR (later.created_at = event.created_at AND later.rowid > event.rowid))
+              )
+              AND EXISTS (
+                SELECT 1 FROM workbench_delivery_state state
+                WHERE state.project_id = event.project_id
+                  AND state.current_final_artifact_id IS event.artifact_id
+                  AND state.assembly_input_fingerprint IS event.input_fingerprint
+                  AND (
+                    (event.event_type = 'final_review_accepted'
+                      AND state.workflow_state = 'approved'
+                      AND state.approved_artifact_id IS event.artifact_id
+                      AND state.latest_export_id IS NULL)
+                    OR (event.event_type = 'final_review_reassemble'
+                      AND state.workflow_state IN ('ready_to_assemble','not_ready')
+                      AND state.approved_artifact_id IS NULL AND state.latest_export_id IS NULL)
+                    OR (event.event_type = 'final_review_regenerate_shots'
+                      AND state.workflow_state IN ('revision_requested','ready_to_assemble','not_ready')
+                      AND state.approved_artifact_id IS NULL AND state.latest_export_id IS NULL)
+                  )
+              )
+            )
+            OR (
+              EXISTS (
+                SELECT 1 FROM workbench_delivery_events later
+                WHERE later.project_id = event.project_id
+                  AND (later.created_at > event.created_at
+                    OR (later.created_at = event.created_at AND later.rowid > event.rowid))
+              )
+              AND (
+                (event.event_type = 'final_review_accepted' AND
+                  (SELECT later.from_state FROM workbench_delivery_events later
+                    WHERE later.project_id = event.project_id
+                      AND (later.created_at > event.created_at
+                        OR (later.created_at = event.created_at AND later.rowid > event.rowid))
+                    ORDER BY later.created_at, later.rowid LIMIT 1) = 'approved')
+                OR (event.event_type = 'final_review_reassemble' AND
+                  (SELECT later.from_state FROM workbench_delivery_events later
+                    WHERE later.project_id = event.project_id
+                      AND (later.created_at > event.created_at
+                        OR (later.created_at = event.created_at AND later.rowid > event.rowid))
+                    ORDER BY later.created_at, later.rowid LIMIT 1)
+                    IN ('ready_to_assemble','not_ready','assembling'))
+                OR (event.event_type = 'final_review_regenerate_shots' AND
+                  (SELECT later.from_state FROM workbench_delivery_events later
+                    WHERE later.project_id = event.project_id
+                      AND (later.created_at > event.created_at
+                        OR (later.created_at = event.created_at AND later.rowid > event.rowid))
+                    ORDER BY later.created_at, later.rowid LIMIT 1)
+                    IN ('revision_requested','ready_to_assemble','not_ready','assembling'))
+              )
+            )
+          )
+        )`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_events event
         WHERE event.event_type IN (
           'assembly_queued','assembly_started','assembly_succeeded','assembly_failed','assembly_interrupted',
           'export_queued','export_started','export_succeeded','export_failed','export_interrupted'
