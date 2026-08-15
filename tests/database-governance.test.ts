@@ -12,6 +12,7 @@ import { initializeWorkbenchV2Schema } from "../src/storage/workbenchV2Schema.js
 import { paths } from "../src/paths.js";
 import { persistMediaArtifact, registerMediaArtifact, transitionMediaArtifactStatus, type MediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { createProject, getProject, saveProject } from "../src/tools/projects.js";
+import { approveWorkbenchDeliveryFixture } from "./workbench-delivery-test-helpers.js";
 
 const HISTORICAL_MIGRATION_0005_CHECKSUM = "92297a3ce2996e427b8a8e3dae39a25f33a294c29142b5ca723cdcd4700ad8b0";
 const INTERIM_MIGRATION_0005_CHECKSUM = "6e929ae3b8db4387891d664cd22dc5299dab689eab0d6c1dd07dc70afbabbe73";
@@ -634,9 +635,11 @@ test("database check reports invalid delivery Job bindings and inactive referenc
       (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
       VALUES ('export_old_b', 'project_b', 'artifact_old_b', 'data/exports/project_b/old.mp4', ?, 1, ?)`)
       .run("e".repeat(64), now);
-    db.prepare(`UPDATE workbench_delivery_state
-      SET workflow_state = 'approved', approved_artifact_id = 'artifact_b', updated_at = ?
-      WHERE project_id = 'project_b'`).run(now);
+    approveWorkbenchDeliveryFixture(db, {
+      project_id: "project_b",
+      event_id: "final_review_accepted_valid_b",
+      created_at: now
+    });
     db.prepare(`UPDATE workbench_delivery_state
       SET workflow_state = 'exported', latest_export_id = 'export_b', latest_exported_at = ?, updated_at = ?
       WHERE project_id = 'project_b'`).run(now, now);
@@ -723,7 +726,7 @@ test("database check reports invalid delivery Job bindings and inactive referenc
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
       VALUES ('final_review_wrong_current_state_b', 'project_b', 'final_review_accepted', 'final_review', 'approved',
-        'artifact_b', 'SYNTHETIC_REVIEW', '{}', ?)`)
+        'artifact_old_b', 'SYNTHETIC_REVIEW', '{}', ?)`)
       .run(now);
     oldArtifact.status = "archived";
     db.prepare("UPDATE media_artifacts SET status = 'archived', data_json = ? WHERE artifact_id = 'artifact_old_b'")
@@ -738,7 +741,7 @@ test("database check reports invalid delivery Job bindings and inactive referenc
 
     const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
     assert.equal(checked.schema_current, true);
-    assert.equal(checked.orphan_rows, 17);
+    assert.equal(checked.orphan_rows, 18);
     assert.equal(checked.media_integrity_errors, 0);
     assert.equal(checked.check_errors, 0);
     assert.equal(checked.result, "FAIL");
@@ -780,6 +783,70 @@ test("database check detects duplicate lifecycle Events after the insert guard i
     const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
     assert.equal(checked.schema_current, true);
     assert.equal(checked.orphan_rows, 1);
+    assert.equal(checked.result, "FAIL");
+  } finally {
+    try { db?.close(); } catch { /* retain the primary assertion failure */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("database check detects missing and timestamp-drifted final review acceptance evidence", () => {
+  const root = tempRoot();
+  let db: ReturnType<typeof openM0Database> | null = null;
+  try {
+    const sqlitePath = join(root, "approval-evidence-drift.sqlite");
+    migrateDatabase(sqlitePath);
+    db = openM0Database(sqlitePath);
+    const now = "2026-08-15T09:30:00.000Z";
+    const driftedAt = "2026-08-15T09:31:00.000Z";
+    const projects: Array<{ project_id: string; artifact_id: string }> = [];
+    for (const title of ["Missing approval evidence", "Drifted approval evidence"]) {
+      const project = createProject({ title }, db);
+      assert.equal(project.ok, true);
+      if (!project.ok) throw new Error("approval evidence project setup failed");
+      const artifact = registerMediaArtifact({
+        artifact_type: "video",
+        role: "final_video",
+        source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+        linked_objects: { project_id: project.project_id }
+      }, db);
+      assert.equal(artifact.ok, true);
+      if (!artifact.ok) throw new Error("approval evidence Artifact setup failed");
+      const projectRecord = getProject(db, project.project_id);
+      assert.ok(projectRecord);
+      projectRecord.exports.final_video_artifact_id = artifact.artifact.artifact_id;
+      projectRecord.status = "video_review";
+      saveProject(db, projectRecord);
+      db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
+        .run(now, project.project_id);
+      db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'assembling',
+        assembly_input_fingerprint = ?, updated_at = ? WHERE project_id = ?`)
+        .run("f".repeat(64), now, project.project_id);
+      db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
+        current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
+        .run(artifact.artifact.artifact_id, now, project.project_id);
+      projects.push({ project_id: project.project_id, artifact_id: artifact.artifact.artifact_id });
+    }
+
+    approveWorkbenchDeliveryFixture(db, {
+      project_id: projects[1].project_id,
+      event_id: "event_approval_evidence_before_drift",
+      created_at: now
+    });
+    db.exec("PRAGMA foreign_keys = OFF");
+    assert.equal((db.prepare("PRAGMA foreign_keys").get() as { foreign_keys: number }).foreign_keys, 0);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'approved',
+      approved_artifact_id = current_final_artifact_id, updated_at = ? WHERE project_id = ?`)
+      .run(now, projects[0].project_id);
+    db.prepare("UPDATE workbench_delivery_state SET updated_at = ? WHERE project_id = ?")
+      .run(driftedAt, projects[1].project_id);
+    db.close();
+    db = null;
+
+    const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
+    assert.equal(checked.schema_current, true);
+    assert.equal(checked.orphan_rows, 2);
+    assert.equal(checked.media_integrity_errors, 0);
     assert.equal(checked.result, "FAIL");
   } finally {
     try { db?.close(); } catch { /* retain the primary assertion failure */ }
@@ -840,13 +907,11 @@ test("database check accepts active historical final Artifacts referenced by suc
       VALUES ('event_current_assembly', ?, 'job_current_assembly', 'assembly_succeeded', 'assembling', 'final_review', ?,
         'ASSEMBLY_SUCCEEDED', '{}', ?)`)
       .run(project.project_id, current.artifact.artifact_id, now);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'approved', approved_artifact_id = ?, updated_at = ?
-      WHERE project_id = ?`).run(current.artifact.artifact_id, now, project.project_id);
-    db.prepare(`INSERT INTO workbench_delivery_events
-      (event_id, project_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
-      VALUES ('event_current_accepted', ?, 'final_review_accepted', 'final_review', 'approved', ?,
-        'FINAL_REVIEW_ACCEPTED', '{}', ?)`)
-      .run(project.project_id, current.artifact.artifact_id, now);
+    approveWorkbenchDeliveryFixture(db, {
+      project_id: project.project_id,
+      event_id: "event_current_accepted",
+      created_at: now
+    });
     db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', approved_artifact_id = NULL,
       updated_at = ? WHERE project_id = ?`).run(now, project.project_id);
     db.prepare(`INSERT INTO workbench_delivery_events

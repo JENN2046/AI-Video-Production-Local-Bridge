@@ -11,6 +11,7 @@ import { actorFromFederatedSubject, type WebGptV4Result } from "../src/webgpt-v4
 import { openM0Database, openM0DatabaseConnection, type M0Database } from "../src/storage/sqlite.js";
 import { createProject, getProject, getShot, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
+import { approveWorkbenchDeliveryFixture } from "./workbench-delivery-test-helpers.js";
 import {
   exportReadonlySnapshotFromDatabase,
   ReadonlyProjectionError,
@@ -440,9 +441,11 @@ test("SQLite and Snapshot readonly adapters preserve six-tool DTO parity and dat
     fixtureDb.prepare(`UPDATE workbench_delivery_state
       SET workflow_state = 'final_review', current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
       .run(registered.artifact.artifact_id, closedAt, fixture.project_id);
-    fixtureDb.prepare(`UPDATE workbench_delivery_state
-      SET workflow_state = 'approved', approved_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
-      .run(registered.artifact.artifact_id, closedAt, fixture.project_id);
+    approveWorkbenchDeliveryFixture(fixtureDb, {
+      project_id: fixture.project_id,
+      event_id: "event_snapshot_final_review_accepted",
+      created_at: closedAt
+    });
     fixtureDb.prepare(`INSERT INTO workbench_exports
       (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
       VALUES ('export_snapshot_fixture', ?, ?, ?, ?, ?, ?)`)

@@ -691,6 +691,43 @@ function restoreGenerationReconciliationContext(db: ReturnType<typeof openM0Data
   saveShot(db, shot);
 }
 
+function seedWorkerDeliveryFinalArtifact(sqlitePath: string, projectId: string, suffix: string): string {
+  const artifactId = `artifact_worker_final_${suffix}`;
+  const db = openM0Database(sqlitePath);
+  try {
+    db.prepare(`INSERT INTO media_artifacts
+      (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
+      VALUES (?, ?, '', 'final_video', 'video', 'active', ?)`)
+      .run(artifactId, projectId, JSON.stringify({
+        artifact_id: artifactId,
+        artifact_type: "video",
+        role: "final_video",
+        status: "active",
+        linked_objects: { project_id: projectId, shot_id: "" }
+      }));
+    return artifactId;
+  } finally {
+    db.close();
+  }
+}
+
+function moveWorkerDeliveryToFinalReview(sqlitePath: string, projectId: string, artifactId: string): void {
+  const db = openM0Database(sqlitePath);
+  try {
+    const now = "2026-08-15T10:00:00.000Z";
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
+      .run(now, projectId);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'assembling',
+      assembly_input_fingerprint = ?, updated_at = ? WHERE project_id = ?`)
+      .run("e".repeat(64), now, projectId);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
+      current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
+      .run(artifactId, now, projectId);
+  } finally {
+    db.close();
+  }
+}
+
 test("V2 schema is transactional, versioned, and initializes project metadata", () => {
   const db = openM0Database(":memory:");
   try {
@@ -1588,6 +1625,356 @@ test("worker preserves a known paid task when the adapter contract drifts", asyn
     assert.equal(providerCalls, 0);
     assert.deepEqual({ ...intent }, { status: "running", provider_task_id: "paid-task-adapter" });
     assert.deepEqual({ ...job }, { state: "manual_reconciliation", reconciliation_reason: "PROVIDER_ADAPTER_REQUIRES_RECONCILIATION" });
+    checked.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("persistent worker fails closed before Provider submit when delivery content is already frozen", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-worker-pre-submit-gate-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Worker pre-submit content gate");
+    const finalArtifactId = seedWorkerDeliveryFinalArtifact(sqlitePath, prepared.project_id, "pre_submit");
+    moveWorkerDeliveryToFinalReview(sqlitePath, prepared.project_id, finalArtifactId);
+    const before = openM0Database(sqlitePath);
+    const projectBefore = (before.prepare("SELECT data_json FROM projects WHERE project_id = ?")
+      .get(prepared.project_id) as { data_json: string }).data_json;
+    const shotBefore = (before.prepare("SELECT data_json FROM shots WHERE shot_id = ?")
+      .get(prepared.shot_id) as { data_json: string }).data_json;
+    before.close();
+    let providerCalls = 0;
+    const adapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => { providerCalls += 1; throw new Error("submit must not run"); },
+      pollStatus: async () => { providerCalls += 1; throw new Error("poll must not run"); },
+      fetchOutput: async () => { providerCalls += 1; throw new Error("output must not run"); }
+    } as unknown as VideoProviderAdapter;
+
+    await runWorkbenchGenerationOnce(prepared.intent_id, {
+      allow_submit: true,
+      dependencies: { sqlite_path: sqlitePath, env: prepared.env, adapter_factory: () => adapter }
+    });
+
+    const checked = openM0Database(sqlitePath);
+    const intent = checked.prepare("SELECT status, provider_task_id, output_artifact_id, sanitized_error_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { status: string; provider_task_id: string; output_artifact_id: string; sanitized_error_json: string };
+    const job = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    assert.equal(providerCalls, 0);
+    assert.equal(intent.status, "failed");
+    assert.equal(intent.provider_task_id, "");
+    assert.equal(intent.output_artifact_id, "");
+    assert.equal((JSON.parse(intent.sanitized_error_json) as { code: string }).code, "DELIVERY_REWORK_REQUIRED");
+    assert.deepEqual({ ...job }, { state: "failed", reconciliation_reason: "DELIVERY_REWORK_REQUIRED" });
+    assert.equal((checked.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(prepared.project_id) as { data_json: string }).data_json, projectBefore);
+    assert.equal((checked.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(prepared.shot_id) as { data_json: string }).data_json, shotBefore);
+    checked.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("persistent worker reconciles a known task when delivery freezes during Provider submit", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-worker-submit-drift-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Worker submit content drift");
+    const finalArtifactId = seedWorkerDeliveryFinalArtifact(sqlitePath, prepared.project_id, "submit_drift");
+    let submitCalls = 0;
+    let pollCalls = 0;
+    const adapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => {
+        submitCalls += 1;
+        moveWorkerDeliveryToFinalReview(sqlitePath, prepared.project_id, finalArtifactId);
+        return { ok: true as const, provider_job_id: "task-submit-content-drift", provider_status: "PENDING", sanitized_request: {} };
+      },
+      pollStatus: async () => { pollCalls += 1; throw new Error("poll must not run after submit drift"); },
+      fetchOutput: async () => { throw new Error("output must not run"); }
+    } as unknown as VideoProviderAdapter;
+
+    await runWorkbenchGenerationOnce(prepared.intent_id, {
+      allow_submit: true,
+      dependencies: { sqlite_path: sqlitePath, env: prepared.env, adapter_factory: () => adapter }
+    });
+
+    const checked = openM0Database(sqlitePath);
+    const intent = checked.prepare("SELECT status, provider_task_id, output_artifact_id, sanitized_error_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { status: string; provider_task_id: string; output_artifact_id: string; sanitized_error_json: string };
+    const job = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    assert.equal(submitCalls, 1);
+    assert.equal(pollCalls, 0);
+    assert.equal(intent.status, "running");
+    assert.equal(intent.provider_task_id, "task-submit-content-drift");
+    assert.equal(intent.output_artifact_id, "");
+    assert.equal((JSON.parse(intent.sanitized_error_json) as { code: string }).code, "DELIVERY_REWORK_REQUIRED");
+    assert.deepEqual({ ...job }, { state: "manual_reconciliation", reconciliation_reason: "CONTENT_MUTATION_REQUIRES_RECONCILIATION" });
+    checked.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("persistent worker preserves a returned Provider task when its lease expires during submit", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-worker-submit-lease-loss-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Worker submit lease loss");
+    const before = openM0Database(sqlitePath);
+    const projectBefore = (before.prepare("SELECT data_json FROM projects WHERE project_id = ?")
+      .get(prepared.project_id) as { data_json: string }).data_json;
+    const shotBefore = (before.prepare("SELECT data_json FROM shots WHERE shot_id = ?")
+      .get(prepared.shot_id) as { data_json: string }).data_json;
+    before.close();
+    let submitCalls = 0;
+    let pollCalls = 0;
+    const adapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => {
+        submitCalls += 1;
+        const drift = openM0Database(sqlitePath);
+        try {
+          drift.prepare("UPDATE generation_jobs SET lease_expires_at = ? WHERE job_id = ?")
+            .run("2000-01-01T00:00:00.000Z", prepared.job_id);
+        } finally {
+          drift.close();
+        }
+        return { ok: true as const, provider_job_id: "task-submit-after-lease-loss", provider_status: "PENDING", sanitized_request: {} };
+      },
+      pollStatus: async () => { pollCalls += 1; throw new Error("poll must not run after submit lease loss"); },
+      fetchOutput: async () => { throw new Error("output must not run"); }
+    } as unknown as VideoProviderAdapter;
+
+    await runWorkbenchGenerationOnce(prepared.intent_id, {
+      allow_submit: true,
+      dependencies: { sqlite_path: sqlitePath, env: prepared.env, adapter_factory: () => adapter }
+    });
+
+    const checked = openM0Database(sqlitePath);
+    const intent = checked.prepare("SELECT status, provider_task_id, output_artifact_id FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { status: string; provider_task_id: string; output_artifact_id: string };
+    const job = checked.prepare("SELECT state, reconciliation_reason, lease_token FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string; reconciliation_reason: string; lease_token: string };
+    assert.equal(submitCalls, 1);
+    assert.equal(pollCalls, 0);
+    assert.deepEqual({ ...intent }, {
+      status: "running",
+      provider_task_id: "task-submit-after-lease-loss",
+      output_artifact_id: ""
+    });
+    assert.deepEqual({ ...job }, {
+      state: "manual_reconciliation",
+      reconciliation_reason: "PROVIDER_TASK_RETURNED_AFTER_LEASE_LOSS",
+      lease_token: ""
+    });
+    assert.equal((checked.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(prepared.project_id) as { data_json: string }).data_json, projectBefore);
+    assert.equal((checked.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(prepared.shot_id) as { data_json: string }).data_json, shotBefore);
+    checked.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("persistent worker rechecks the content gate after Provider polling", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-worker-poll-drift-"));
+  const sqlitePath = join(root, "app.sqlite");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Worker poll content drift");
+    const taskId = "task-poll-content-drift";
+    persistKnownProviderTask(sqlitePath, prepared.intent_id, prepared.job_id, taskId);
+    const finalArtifactId = seedWorkerDeliveryFinalArtifact(sqlitePath, prepared.project_id, "poll_drift");
+    let pollCalls = 0;
+    let downloadCalls = 0;
+    const adapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => { throw new Error("submit must not run for a known task"); },
+      pollStatus: async () => {
+        pollCalls += 1;
+        moveWorkerDeliveryToFinalReview(sqlitePath, prepared.project_id, finalArtifactId);
+        return {
+          ok: true as const,
+          provider_job_id: taskId,
+          status: "succeeded" as const,
+          provider_status: "SUCCESS",
+          retryable: false,
+          output_url: "https://example.invalid/poll-drift.mp4"
+        };
+      },
+      fetchOutput: async () => { throw new Error("output must not run"); }
+    } as unknown as VideoProviderAdapter;
+
+    await runWorkbenchGenerationOnce(prepared.intent_id, {
+      allow_submit: false,
+      dependencies: {
+        sqlite_path: sqlitePath,
+        env: prepared.env,
+        adapter_factory: () => adapter,
+        download_provider_output: (async () => {
+          downloadCalls += 1;
+          throw new Error("download must not run after poll drift");
+        }) as typeof downloadProviderOutputToArtifact
+      }
+    });
+
+    const checked = openM0Database(sqlitePath);
+    const intent = checked.prepare("SELECT status, output_artifact_id, sanitized_error_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { status: string; output_artifact_id: string; sanitized_error_json: string };
+    const job = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    assert.equal(pollCalls, 1);
+    assert.equal(downloadCalls, 0);
+    assert.equal(intent.status, "running");
+    assert.equal(intent.output_artifact_id, "");
+    assert.equal((JSON.parse(intent.sanitized_error_json) as { code: string }).code, "DELIVERY_REWORK_REQUIRED");
+    assert.deepEqual({ ...job }, { state: "manual_reconciliation", reconciliation_reason: "CONTENT_MUTATION_REQUIRES_RECONCILIATION" });
+    checked.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("persistent worker blocks Artifact activation when delivery freezes during output download", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-worker-download-drift-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const mediaRoot = join(root, "media");
+  const videoFixture = resolve("fixtures/video/mock_clip.mp4");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Worker download content drift");
+    const taskId = "task-download-content-drift";
+    persistKnownProviderTask(sqlitePath, prepared.intent_id, prepared.job_id, taskId);
+    const finalArtifactId = seedWorkerDeliveryFinalArtifact(sqlitePath, prepared.project_id, "download_drift");
+    let pollCalls = 0;
+    let downloadCalls = 0;
+    const adapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => { throw new Error("submit must not run for a known task"); },
+      pollStatus: async () => {
+        pollCalls += 1;
+        return {
+          ok: true as const,
+          provider_job_id: taskId,
+          status: "succeeded" as const,
+          provider_status: "SUCCESS",
+          retryable: false,
+          output_url: "https://example.invalid/download-drift.mp4"
+        };
+      },
+      fetchOutput: async () => { throw new Error("output must not run"); }
+    } as unknown as VideoProviderAdapter;
+    const download = (async (input, targetDb, workerRuntime) => {
+      downloadCalls += 1;
+      return downloadProviderOutputToArtifact({ ...input, storage_directory: mediaRoot }, targetDb, {
+        ...workerRuntime,
+        storage_root: mediaRoot,
+        resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+        fetch_pinned_address: async () => {
+          moveWorkerDeliveryToFinalReview(sqlitePath, prepared.project_id, finalArtifactId);
+          return new Response(readFileSync(videoFixture), {
+            status: 200,
+            headers: { "content-type": "video/mp4" }
+          });
+        }
+      });
+    }) as typeof downloadProviderOutputToArtifact;
+
+    await runWorkbenchGenerationOnce(prepared.intent_id, {
+      allow_submit: false,
+      dependencies: {
+        sqlite_path: sqlitePath,
+        env: prepared.env,
+        adapter_factory: () => adapter,
+        download_provider_output: download
+      }
+    });
+
+    const checked = openM0Database(sqlitePath);
+    const intent = checked.prepare("SELECT status, output_artifact_id, sanitized_error_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { status: string; output_artifact_id: string; sanitized_error_json: string };
+    const job = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    const activatedOutputs = checked.prepare(`SELECT COUNT(*) AS count FROM media_artifacts
+      WHERE project_id = ? AND shot_id = ? AND role = 'generated_clip'
+        AND json_valid(data_json) = 1 AND json_extract(data_json, '$.source.provider_job_id') = ?`)
+      .get(prepared.project_id, prepared.shot_id, taskId) as { count: number };
+    assert.equal(pollCalls, 1);
+    assert.equal(downloadCalls, 1);
+    assert.equal(activatedOutputs.count, 0);
+    assert.equal(intent.status, "running");
+    assert.equal(intent.output_artifact_id, "");
+    assert.equal((JSON.parse(intent.sanitized_error_json) as { code: string }).code, "DELIVERY_REWORK_REQUIRED");
+    assert.deepEqual({ ...job }, { state: "manual_reconciliation", reconciliation_reason: "CONTENT_MUTATION_REQUIRES_RECONCILIATION" });
+    checked.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("persistent worker reconciles when media activation rolls back after dependent finalization", async () => {
+  const root = mkdtempSync(join(tmpdir(), "generation-worker-activation-rollback-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const mediaRoot = join(root, "media");
+  const videoFixture = resolve("fixtures/video/mock_clip.mp4");
+  try {
+    const prepared = await prepareConfirmedGeneration(sqlitePath, "Worker activation rollback");
+    const taskId = "task-activation-finalizer-rollback";
+    persistKnownProviderTask(sqlitePath, prepared.intent_id, prepared.job_id, taskId);
+    const adapter = {
+      provider_name: "runninghub", model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => { throw new Error("submit must not run for a known task"); },
+      pollStatus: async () => ({
+        ok: true as const,
+        provider_job_id: taskId,
+        status: "succeeded" as const,
+        provider_status: "SUCCESS",
+        retryable: false,
+        output_url: "https://example.invalid/activation-rollback.mp4"
+      }),
+      fetchOutput: async () => { throw new Error("output must not run"); }
+    } as unknown as VideoProviderAdapter;
+    const download = (async (input, targetDb, workerRuntime) => {
+      targetDb.exec(`CREATE TEMP TRIGGER synthetic_activation_commit_failure
+        BEFORE UPDATE OF state ON main.media_activation_journal
+        WHEN NEW.state = 'committed'
+        BEGIN SELECT RAISE(ABORT, 'SYNTHETIC_ACTIVATION_COMMIT_FAILURE'); END;`);
+      return downloadProviderOutputToArtifact({ ...input, storage_directory: mediaRoot }, targetDb, {
+        ...workerRuntime,
+        storage_root: mediaRoot,
+        resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+        fetch_pinned_address: async () => new Response(readFileSync(videoFixture), {
+          status: 200,
+          headers: { "content-type": "video/mp4" }
+        })
+      });
+    }) as typeof downloadProviderOutputToArtifact;
+
+    await runWorkbenchGenerationOnce(prepared.intent_id, {
+      allow_submit: false,
+      dependencies: {
+        sqlite_path: sqlitePath,
+        env: prepared.env,
+        adapter_factory: () => adapter,
+        download_provider_output: download
+      }
+    });
+
+    const checked = openM0Database(sqlitePath);
+    const intent = checked.prepare("SELECT status, provider_task_id, output_artifact_id FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.intent_id) as { status: string; provider_task_id: string; output_artifact_id: string };
+    const job = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.job_id) as { state: string; reconciliation_reason: string };
+    const activatedOutputs = checked.prepare(`SELECT COUNT(*) AS count FROM media_artifacts
+      WHERE project_id = ? AND shot_id = ? AND role = 'generated_clip'
+        AND json_valid(data_json) = 1 AND json_extract(data_json, '$.source.provider_job_id') = ?`)
+      .get(prepared.project_id, prepared.shot_id, taskId) as { count: number };
+    const succeededEvents = checked.prepare(`SELECT COUNT(*) AS count FROM generation_job_events
+      WHERE job_id = ? AND to_state = 'succeeded'`).get(prepared.job_id) as { count: number };
+    assert.deepEqual({ ...intent }, { status: "running", provider_task_id: taskId, output_artifact_id: "" });
+    assert.deepEqual({ ...job }, { state: "manual_reconciliation", reconciliation_reason: "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION" });
+    assert.equal(activatedOutputs.count, 0);
+    assert.equal(succeededEvents.count, 0);
     checked.close();
   } finally {
     rmSync(root, { recursive: true, force: true });

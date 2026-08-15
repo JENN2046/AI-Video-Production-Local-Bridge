@@ -11,6 +11,7 @@ import { getMediaArtifact, registerMediaArtifact } from "../src/tools/mediaArtif
 import { decideWorkbenchPendingAction, transitionWorkbenchDraft } from "../src/tools/workbenchInbox.js";
 import { getWorkbenchDraftRecord, getWorkbenchPendingActionRecord, migrateLegacyWorkbenchInboxStores, saveWorkbenchDraftRecord, saveWorkbenchPendingActionRecord } from "../src/tools/workbenchInboxStore.js";
 import { createWorkbenchProject } from "../src/tools/workbenchV2.js";
+import { approveWorkbenchDeliveryFixture } from "./workbench-delivery-test-helpers.js";
 
 test("legacy inbox JSON migrates once without changing source hashes", () => {
   const webgptDir = join(paths.dataRoot, "webgpt");
@@ -299,8 +300,11 @@ function closeProjectForInboxTest(db: ReturnType<typeof openM0Database>, project
   db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?").run(now, projectId);
   db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'final_review', current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?")
     .run(artifactId, now, projectId);
-  db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'approved', approved_artifact_id = ?, updated_at = ? WHERE project_id = ?")
-    .run(artifactId, now, projectId);
+  approveWorkbenchDeliveryFixture(db, {
+    project_id: projectId,
+    event_id: `event_inbox_accepted_${projectId}`,
+    created_at: now
+  });
   db.prepare(`INSERT INTO workbench_exports
     (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)`).run(exportId, projectId, artifactId,

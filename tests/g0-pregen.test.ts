@@ -15,6 +15,7 @@ import {
   validateG0StoryboardPackage,
   type G0StoryboardPackageInput
 } from "../src/index.js";
+import { approveWorkbenchDeliveryFixture } from "./workbench-delivery-test-helpers.js";
 
 function createActiveStoryboardArtifact(db: ReturnType<typeof openM0Database>) {
   const result = registerMediaArtifact(
@@ -256,8 +257,11 @@ test("G0 rejects archived, closed, and assembling projects before filesystem or 
       .run(closedAt, closed.project_id);
     db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
       current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`).run(artifactId, closedAt, closed.project_id);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'approved',
-      approved_artifact_id = ?, updated_at = ? WHERE project_id = ?`).run(artifactId, closedAt, closed.project_id);
+    approveWorkbenchDeliveryFixture(db, {
+      project_id: closed.project_id,
+      event_id: `event_g0_accepted_${closed.project_id}`,
+      created_at: closedAt
+    });
     db.prepare(`INSERT INTO workbench_exports
       (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
       VALUES (?, ?, ?, ?, ?, 1, ?)`)

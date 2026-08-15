@@ -10,6 +10,7 @@ import {
   openM0Database,
   registerMediaArtifact
 } from "../src/index.js";
+import { approveWorkbenchDeliveryFixture } from "./workbench-delivery-test-helpers.js";
 
 function createActiveStoryboardArtifact(db: ReturnType<typeof openM0Database>) {
   const result = registerMediaArtifact(
@@ -353,9 +354,11 @@ test("M0-C closed projects reject Storyboard import before SHOT, Artifact, packa
     db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
       current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
       .run(finalArtifact.artifact.artifact_id, now, created.project_id);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'approved',
-      approved_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
-      .run(finalArtifact.artifact.artifact_id, now, created.project_id);
+    approveWorkbenchDeliveryFixture(db, {
+      project_id: created.project_id,
+      event_id: `event_m0c_accepted_${created.project_id}`,
+      created_at: now
+    });
     db.prepare(`INSERT INTO workbench_exports
       (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
       VALUES ('export_closed_storyboard', ?, ?, ?, ?, 123, ?)`)

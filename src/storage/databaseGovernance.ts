@@ -519,6 +519,24 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
         SELECT COUNT(*) AS event_count FROM workbench_delivery_events
         WHERE job_id IS NOT NULL GROUP BY job_id, event_type HAVING COUNT(*) > 1
       )`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_state state
+        WHERE state.workflow_state IN ('approved','exported','closed') AND NOT EXISTS (
+          SELECT 1 FROM workbench_delivery_events event
+          WHERE event.project_id = state.project_id
+            AND event.event_type = 'final_review_accepted'
+            AND event.from_state IN ('final_review','legacy_review_required')
+            AND event.to_state = 'approved'
+            AND event.job_id IS NULL AND event.export_id IS NULL
+            AND event.artifact_id IS state.current_final_artifact_id
+            AND event.artifact_id IS state.approved_artifact_id
+            AND event.input_fingerprint IS state.assembly_input_fingerprint
+            AND (state.workflow_state <> 'approved' OR event.created_at IS state.updated_at)
+        )`,
+      `SELECT COALESCE(SUM(approval_count - 1), 0) AS count FROM (
+        SELECT COUNT(*) AS approval_count FROM workbench_delivery_events
+        WHERE event_type = 'final_review_accepted'
+        GROUP BY project_id, artifact_id, input_fingerprint HAVING COUNT(*) > 1
+      )`,
       `SELECT COUNT(*) AS count FROM workbench_delivery_events event
         WHERE event.event_type = 'closeout' AND NOT EXISTS (
           SELECT 1 FROM workbench_delivery_state state

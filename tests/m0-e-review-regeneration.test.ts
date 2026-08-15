@@ -16,6 +16,7 @@ import {
   startStoryboardVideoGeneration
 } from "../src/index.js";
 import { setWorkbenchProjectLifecycle, updateWorkbenchShot } from "../src/tools/workbenchV2.js";
+import { approveWorkbenchDeliveryFixture } from "./workbench-delivery-test-helpers.js";
 
 async function setupGeneratedShot(db: ReturnType<typeof openM0Database>) {
   const project = createProject({ title: "M0-E Project" }, db);
@@ -85,8 +86,11 @@ function setProjectFinalEvidenceState(
     .run(now, projectId);
   db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
     current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`).run(artifactId, now, projectId);
-  db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'approved',
-    approved_artifact_id = ?, updated_at = ? WHERE project_id = ?`).run(artifactId, now, projectId);
+  approveWorkbenchDeliveryFixture(db, {
+    project_id: projectId,
+    event_id: `event_m0e_accepted_${projectId}_${artifactId}`,
+    created_at: now
+  });
   if (target === "approved") return { artifact_id: artifactId, export_id: null };
   const exportId = `export_${projectId}`;
   db.prepare(`INSERT INTO workbench_exports
@@ -115,9 +119,11 @@ function closeProjectForReviewTest(db: ReturnType<typeof openM0Database>, projec
   db.prepare(`UPDATE workbench_delivery_state
     SET workflow_state = 'final_review', current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
     .run(artifactId, now, projectId);
-  db.prepare(`UPDATE workbench_delivery_state
-    SET workflow_state = 'approved', approved_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
-    .run(artifactId, now, projectId);
+  approveWorkbenchDeliveryFixture(db, {
+    project_id: projectId,
+    event_id: `event_m0e_closed_accepted_${projectId}_${artifactId}`,
+    created_at: now
+  });
   db.prepare(`INSERT INTO workbench_exports
     (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
     VALUES (?, ?, ?, ?, ?, 1, ?)`)

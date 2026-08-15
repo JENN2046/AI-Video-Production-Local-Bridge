@@ -13,6 +13,7 @@ import {
   saveShot,
   startStoryboardVideoGeneration
 } from "../src/index.js";
+import { approveWorkbenchDeliveryFixture } from "./workbench-delivery-test-helpers.js";
 
 function setupThreeShotProject(db: ReturnType<typeof openM0Database>) {
   const project = createProject({ title: "M0-D Three Shot" }, db);
@@ -204,8 +205,11 @@ test("M0-D legacy batch generation rejects closed projects before all generation
       .run(now, project.project_id);
     db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
       current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`).run(artifactId, now, project.project_id);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'approved',
-      approved_artifact_id = ?, updated_at = ? WHERE project_id = ?`).run(artifactId, now, project.project_id);
+    approveWorkbenchDeliveryFixture(db, {
+      project_id: project.project_id,
+      event_id: `event_m0d_accepted_${project.project_id}`,
+      created_at: now
+    });
     db.prepare(`INSERT INTO workbench_exports
       (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
       VALUES (?, ?, ?, ?, ?, 1, ?)`)

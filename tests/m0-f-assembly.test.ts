@@ -16,6 +16,7 @@ import {
   startStoryboardVideoGeneration,
   transitionMediaArtifactStatus
 } from "../src/index.js";
+import { approveWorkbenchDeliveryFixture } from "./workbench-delivery-test-helpers.js";
 
 async function setupGeneratedProject(db: ReturnType<typeof openM0Database>) {
   const project = createProject({ title: "M0-F Project" }, db);
@@ -190,9 +191,12 @@ test("M0-F reassembly records the approval revocation before producing a new fin
     if (!first.ok) return;
     const now = "2026-08-14T04:00:00.000Z";
     const originalFingerprint = "a".repeat(64);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'approved',
-      assembly_input_fingerprint = ?, approved_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
-      .run(originalFingerprint, first.final_video_artifact_id, now, project.project_id);
+    approveWorkbenchDeliveryFixture(db, {
+      project_id: project.project_id,
+      event_id: "event_m0f_first_assembly_accepted",
+      created_at: now,
+      assembly_input_fingerprint: originalFingerprint
+    });
 
     const second = assembleFinalVideo({
       project_id: project.project_id,
@@ -397,8 +401,11 @@ test("M0-F assembly rejects archived and closed projects before creating another
     if (!first.ok) return;
     const now = "2026-08-14T00:00:00.000Z";
     const exportId = `export_${closedFixture.project.project_id}`;
-    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'approved', approved_artifact_id = ?, updated_at = ? WHERE project_id = ?")
-      .run(first.final_video_artifact_id, now, closedFixture.project.project_id);
+    approveWorkbenchDeliveryFixture(db, {
+      project_id: closedFixture.project.project_id,
+      event_id: "event_m0f_closeout_accepted",
+      created_at: now
+    });
     db.prepare(`INSERT INTO workbench_exports
       (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
       VALUES (?, ?, ?, ?, ?, 1, ?)`)

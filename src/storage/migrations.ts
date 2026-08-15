@@ -1240,6 +1240,16 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     reason_code TEXT NOT NULL,
     data_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL,
+    approval_signature_key TEXT GENERATED ALWAYS AS (
+      CASE WHEN event_type = 'final_review_accepted'
+        THEN json_array(project_id, artifact_id, input_fingerprint)
+        ELSE NULL END
+    ) STORED,
+    approval_binding_key TEXT GENERATED ALWAYS AS (
+      CASE WHEN event_type = 'final_review_accepted'
+        THEN json_array(project_id, artifact_id, input_fingerprint, created_at)
+        ELSE NULL END
+    ) STORED,
     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE RESTRICT,
     FOREIGN KEY (job_id) REFERENCES workbench_delivery_jobs(job_id) ON DELETE RESTRICT,
     FOREIGN KEY (artifact_id) REFERENCES media_artifacts(artifact_id) ON DELETE RESTRICT,
@@ -1253,7 +1263,9 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     CHECK (to_state = '' OR to_state IN ('not_ready','ready_to_assemble','assembling','final_review','revision_requested','approved','exported','closed','legacy_review_required')),
     CHECK (input_fingerprint IS NULL OR (length(input_fingerprint) = 64 AND input_fingerprint NOT GLOB '*[^0-9a-f]*')),
     CHECK (length(reason_code) BETWEEN 1 AND 64 AND reason_code NOT GLOB '*[^A-Z0-9_]*'),
-    CHECK (json_valid(data_json) = 1 AND json_type(data_json) = 'object')
+    CHECK (json_valid(data_json) = 1 AND json_type(data_json) = 'object'),
+    UNIQUE (approval_signature_key),
+    UNIQUE (approval_binding_key)
   );
 
   CREATE TABLE workbench_delivery_state (
@@ -1267,10 +1279,17 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     closed_at TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    approval_binding_key TEXT GENERATED ALWAYS AS (
+      CASE WHEN workflow_state = 'approved'
+        THEN json_array(project_id, approved_artifact_id, assembly_input_fingerprint, updated_at)
+        ELSE NULL END
+    ) STORED,
     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE RESTRICT,
     FOREIGN KEY (current_final_artifact_id) REFERENCES media_artifacts(artifact_id) ON DELETE RESTRICT,
     FOREIGN KEY (approved_artifact_id) REFERENCES media_artifacts(artifact_id) ON DELETE RESTRICT,
     FOREIGN KEY (latest_export_id) REFERENCES workbench_exports(export_id) ON DELETE RESTRICT,
+    FOREIGN KEY (approval_binding_key) REFERENCES workbench_delivery_events(approval_binding_key)
+      DEFERRABLE INITIALLY DEFERRED,
     CHECK (workflow_state IN ('not_ready','ready_to_assemble','assembling','final_review','revision_requested','approved','exported','closed','legacy_review_required')),
     CHECK (assembly_input_fingerprint IS NULL OR (length(assembly_input_fingerprint) = 64 AND assembly_input_fingerprint NOT GLOB '*[^0-9a-f]*')),
     CHECK (workflow_state NOT IN ('final_review','approved','exported','closed') OR current_final_artifact_id IS NOT NULL),
@@ -1621,6 +1640,13 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
           AND event.created_at IS NEW.closed_at
       ))
       OR (OLD.workflow_state = 'legacy_review_required' AND NEW.workflow_state IN ('not_ready','ready_to_assemble','final_review'))
+    ))
+    OR (OLD.workflow_state = 'final_review' AND NEW.workflow_state = 'approved' AND EXISTS (
+      SELECT 1 FROM workbench_delivery_events event
+      WHERE event.event_type = 'final_review_accepted'
+        AND event.approval_binding_key = json_array(
+          NEW.project_id, NEW.approved_artifact_id, NEW.assembly_input_fingerprint, NEW.updated_at
+        )
     ))
     OR (OLD.current_final_artifact_id IS NOT NEW.current_final_artifact_id AND NOT (
       OLD.workflow_state <> NEW.workflow_state AND NEW.workflow_state = 'final_review'

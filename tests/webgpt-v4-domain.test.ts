@@ -8,6 +8,7 @@ import { openM0Database, type M0Database } from "../src/storage/sqlite.js";
 import { confirmWorkbenchGeneration } from "../src/tools/workbenchGeneration.js";
 import { decideWorkbenchPendingAction, transitionWorkbenchDraft } from "../src/tools/workbenchInbox.js";
 import { saveWorkbenchPendingActionRecord } from "../src/tools/workbenchInboxStore.js";
+import { approveWorkbenchDeliveryFixture } from "./workbench-delivery-test-helpers.js";
 import { createProject, saveProject, saveShot, type Project, type Shot } from "../src/tools/projects.js";
 import {
   addProductionReviewNote,
@@ -102,9 +103,11 @@ function closeProductionProject(context: TestContext): void {
   context.db.prepare(`UPDATE workbench_delivery_state
     SET workflow_state = 'final_review', current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
     .run(registered.artifact.artifact_id, now, context.production.project_id);
-  context.db.prepare(`UPDATE workbench_delivery_state
-    SET workflow_state = 'approved', approved_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
-    .run(registered.artifact.artifact_id, now, context.production.project_id);
+  approveWorkbenchDeliveryFixture(context.db, {
+    project_id: context.production.project_id,
+    event_id: "event_webgpt_v4_closeout_accepted",
+    created_at: now
+  });
   context.db.prepare(`INSERT INTO workbench_exports
     (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)`)
@@ -143,9 +146,11 @@ function setProductionFinalEvidence(
   context.db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
     current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
     .run(artifactId, now, context.production.project_id);
-  context.db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'approved',
-    approved_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
-    .run(artifactId, now, context.production.project_id);
+  approveWorkbenchDeliveryFixture(context.db, {
+    project_id: context.production.project_id,
+    event_id: `event_webgpt_v4_accepted_${artifactId}`,
+    created_at: now
+  });
   if (target === "approved") return { artifact_id: artifactId, export_id: null };
   const blob = context.db.prepare(`SELECT b.sha256, b.size_bytes
     FROM media_artifact_blobs link JOIN media_blobs b ON b.blob_id = link.blob_id
