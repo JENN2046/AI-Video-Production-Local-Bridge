@@ -1325,10 +1325,21 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
       )
     ))
     OR (NEW.export_id IS NOT NULL AND (
-      NEW.job_type <> 'export' OR NOT EXISTS (
+      NEW.job_type <> 'export' OR NEW.state <> 'succeeded' OR NOT EXISTS (
         SELECT 1 FROM workbench_exports e
         WHERE e.export_id = NEW.export_id AND e.project_id = NEW.project_id
+          AND e.artifact_id IS json_extract(NEW.input_json, '$.artifact_id')
       )
+    ))
+    OR (NEW.job_type = 'export' AND NEW.state IN ('queued','running','succeeded') AND NOT EXISTS (
+      SELECT 1 FROM workbench_delivery_state d
+      WHERE d.project_id = NEW.project_id AND d.workflow_state IN ('approved','exported')
+        AND d.current_final_artifact_id IS json_extract(NEW.input_json, '$.artifact_id')
+        AND d.approved_artifact_id IS json_extract(NEW.input_json, '$.artifact_id')
+        AND (NEW.state <> 'succeeded' OR (
+          NEW.export_id IS NOT NULL AND d.workflow_state = 'exported'
+            AND d.latest_export_id IS NEW.export_id
+        ))
     ))
   BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_JOB_BINDING_INVALID');
@@ -1348,10 +1359,21 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
       )
     ))
     OR (NEW.export_id IS NOT NULL AND (
-      NEW.job_type <> 'export' OR NOT EXISTS (
+      NEW.job_type <> 'export' OR NEW.state <> 'succeeded' OR NOT EXISTS (
         SELECT 1 FROM workbench_exports e
         WHERE e.export_id = NEW.export_id AND e.project_id = NEW.project_id
+          AND e.artifact_id IS json_extract(NEW.input_json, '$.artifact_id')
       )
+    ))
+    OR (NEW.job_type = 'export' AND NEW.state IN ('queued','running','succeeded') AND NOT EXISTS (
+      SELECT 1 FROM workbench_delivery_state d
+      WHERE d.project_id = NEW.project_id AND d.workflow_state IN ('approved','exported')
+        AND d.current_final_artifact_id IS json_extract(NEW.input_json, '$.artifact_id')
+        AND d.approved_artifact_id IS json_extract(NEW.input_json, '$.artifact_id')
+        AND (NEW.state <> 'succeeded' OR (
+          NEW.export_id IS NOT NULL AND d.workflow_state = 'exported'
+            AND d.latest_export_id IS NEW.export_id
+        ))
     ))
   BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_JOB_BINDING_INVALID');
@@ -1438,14 +1460,20 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
             AND d.approved_artifact_id IS NULL AND d.latest_export_id IS NULL)
         )
     ))
-    OR (NEW.event_type = 'closeout' AND NOT EXISTS (
-      SELECT 1 FROM workbench_delivery_state d
-      JOIN workbench_exports e ON e.export_id = d.latest_export_id
-        AND e.project_id = d.project_id AND e.artifact_id = d.current_final_artifact_id
-      WHERE d.project_id = NEW.project_id AND d.workflow_state = 'closed'
-        AND d.current_final_artifact_id = NEW.artifact_id
-        AND d.approved_artifact_id = NEW.artifact_id
-        AND d.latest_export_id = NEW.export_id
+    OR (NEW.event_type = 'closeout' AND (
+      EXISTS (
+        SELECT 1 FROM workbench_delivery_events existing
+        WHERE existing.project_id = NEW.project_id AND existing.event_type = 'closeout'
+      )
+      OR NOT EXISTS (
+        SELECT 1 FROM workbench_delivery_state d
+        JOIN workbench_exports e ON e.export_id = d.latest_export_id
+          AND e.project_id = d.project_id AND e.artifact_id = d.current_final_artifact_id
+        WHERE d.project_id = NEW.project_id AND d.workflow_state = 'closed'
+          AND d.current_final_artifact_id = NEW.artifact_id
+          AND d.approved_artifact_id = NEW.artifact_id
+          AND d.latest_export_id = NEW.export_id
+      )
     ))
     OR (NEW.event_type IN (
       'assembly_queued','assembly_started','assembly_succeeded','assembly_failed','assembly_interrupted'
@@ -1486,7 +1514,8 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
             OR (NEW.event_type = 'export_started' AND j.state = 'running' AND NEW.export_id IS NULL
               AND NEW.artifact_id IS json_extract(j.input_json, '$.artifact_id'))
             OR (NEW.event_type = 'export_succeeded' AND j.state = 'succeeded'
-              AND NEW.export_id IS j.export_id AND NEW.artifact_id IS e.artifact_id)
+              AND NEW.export_id IS j.export_id AND NEW.artifact_id IS e.artifact_id
+              AND NEW.artifact_id IS json_extract(j.input_json, '$.artifact_id'))
             OR (NEW.event_type = 'export_failed' AND j.state = 'failed'
               AND NEW.export_id IS j.export_id
               AND NEW.artifact_id IS json_extract(j.input_json, '$.artifact_id'))

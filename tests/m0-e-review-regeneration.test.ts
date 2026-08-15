@@ -241,13 +241,17 @@ test("production content mutations require explicit atomic rework after final ev
     { ...approvedCountsBefore });
 
     db.exec("BEGIN IMMEDIATE");
-    const atomicReview = markShotClipReview({
+    const transactionOnlyReview = markShotClipReview({
       shot_id: approvedFixture.shot.shot_id,
       artifact_id: approvedFixture.artifactId,
       decision: "revision_needed",
-      rejection_reasons: ["Explicit final review rework"]
+      rejection_reasons: ["A transaction alone must not authorize rework"]
     }, db);
-    assert.equal(atomicReview.ok, true);
+    assert.equal(transactionOnlyReview.ok ? null : transactionOnlyReview.error.code, "DELIVERY_REWORK_REQUIRED");
+    db.exec("COMMIT");
+    assert.deepEqual(getShot(db, approvedFixture.shot.shot_id), approvedShotBefore);
+
+    db.exec("BEGIN IMMEDIATE");
     db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'revision_requested',
       approved_artifact_id = NULL, updated_at = ? WHERE project_id = ?`)
       .run("2026-08-14T01:01:00.000Z", approvedFixture.project.project_id);
@@ -257,6 +261,13 @@ test("production content mutations require explicit atomic rework after final ev
         'FINAL_SHOT_REGENERATION_REQUESTED', ?, ?)`)
       .run(approvedFixture.project.project_id, approvedFinal.artifact_id,
         JSON.stringify({ shot_ids: [approvedFixture.shot.shot_id] }), "2026-08-14T01:01:00.000Z");
+    const atomicReview = markShotClipReview({
+      shot_id: approvedFixture.shot.shot_id,
+      artifact_id: approvedFixture.artifactId,
+      decision: "revision_needed",
+      rejection_reasons: ["Explicit final review rework"]
+    }, db);
+    assert.equal(atomicReview.ok, true);
     db.exec("COMMIT");
     const explicitEdit = updateWorkbenchShot(approvedFixture.project.project_id, approvedFixture.shot.shot_id, {
       video_prompt: "Explicit rework may now update production content."

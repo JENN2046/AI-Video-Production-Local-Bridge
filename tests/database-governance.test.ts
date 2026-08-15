@@ -669,6 +669,16 @@ test("database check reports invalid delivery Job bindings and inactive referenc
       VALUES ('export_a', 'project_a', 'export', 'succeeded', '{}', 'export_b', ?, ?, ?)`)
       .run(now, now, now);
     db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, input_json, export_id, created_at, finished_at, updated_at)
+      VALUES ('export_input_mismatch_b', 'project_b', 'export', 'succeeded',
+        '{"artifact_id":"artifact_old_b"}', 'export_b', ?, ?, ?)`)
+      .run(now, now, now);
+    db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, input_json, created_at, updated_at)
+      VALUES ('export_queued_stale_b', 'project_b', 'export', 'queued',
+        '{"artifact_id":"artifact_old_b"}', ?, ?)`)
+      .run(now, now);
+    db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, export_id, error_code, created_at, finished_at, updated_at)
       VALUES ('assembly_wrong_export_type_b', 'project_b', 'assembly', 'failed', '{}', 'export_b', 'SYNTHETIC_FAILURE', ?, ?, ?)`)
       .run(now, now, now);
@@ -676,6 +686,16 @@ test("database check reports invalid delivery Job bindings and inactive referenc
       (event_id, project_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
       VALUES ('closeout_stale_binding_b', 'project_b', 'closeout', 'exported', 'closed',
         'artifact_old_b', 'export_old_b', 'CLOSEOUT_CONFIRMED', '{}', ?)`)
+      .run(now);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
+      VALUES ('closeout_duplicate_current_b', 'project_b', 'closeout', 'exported', 'closed',
+        'artifact_b', 'export_b', 'CLOSEOUT_DUPLICATE', '{}', ?)`)
+      .run("2026-08-14T00:01:00.000Z");
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
+      VALUES ('export_succeeded_input_mismatch_b', 'project_b', 'export_input_mismatch_b', 'export_succeeded',
+        'approved', 'exported', 'artifact_b', 'export_b', 'SYNTHETIC_SUCCEEDED', '{}', ?)`)
       .run(now);
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
@@ -705,7 +725,7 @@ test("database check reports invalid delivery Job bindings and inactive referenc
 
     const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
     assert.equal(checked.schema_current, true);
-    assert.equal(checked.orphan_rows, 9);
+    assert.equal(checked.orphan_rows, 13);
     assert.equal(checked.media_integrity_errors, 0);
     assert.equal(checked.check_errors, 0);
     assert.equal(checked.result, "FAIL");

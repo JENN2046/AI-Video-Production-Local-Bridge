@@ -265,7 +265,7 @@ test("M0-F assembly rejects same-project and global durable delivery Jobs before
     if (!otherProject.ok) return;
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, created_at, updated_at)
-      VALUES ('job_other_project_active', ?, 'export', 'queued', '{}', ?, ?)`).run(otherProject.project_id, now, now);
+      VALUES ('job_other_project_active', ?, 'assembly', 'queued', '{}', ?, ?)`).run(otherProject.project_id, now, now);
     const global = assembleFinalVideo({
       project_id: fixture.project.project_id,
       confirmation: { confirmation_level: "explicit", user_confirmed: true }

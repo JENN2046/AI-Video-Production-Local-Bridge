@@ -115,14 +115,11 @@ export function assertWorkbenchProductionWriteAllowed(db: M0Database, projectId:
 
 export function assertWorkbenchContentMutationAllowed(
   db: M0Database,
-  projectId: string,
-  options: { allow_atomic_final_review_transaction?: boolean } = {}
+  projectId: string
 ): WorkbenchContentMutationBoundaryResult {
   const writable = assertWorkbenchProductionWriteAllowed(db, projectId);
   if (!writable.ok) return writable;
-  const callerOwnsAtomicFinalReview = options.allow_atomic_final_review_transaction === true
-    && (db as unknown as { isTransaction?: boolean }).isTransaction === true;
-  if (FINAL_EVIDENCE_STATES.has(writable.delivery.workflow_state) && !callerOwnsAtomicFinalReview) {
+  if (FINAL_EVIDENCE_STATES.has(writable.delivery.workflow_state)) {
     return {
       ok: false,
       error: {

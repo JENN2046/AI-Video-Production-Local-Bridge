@@ -6,7 +6,11 @@ import { listProjectShots, type Project, type Shot } from "../tools/projects.js"
 import { collectProjectOperationalBundle, OperationalStateIntegrityError } from "../tools/operationalStateFacts.js";
 import { requireShotWorkflowWriteAction } from "../tools/operationalWriteGates.js";
 import { getWorkbenchProjectSummary, getWorkbenchProjectWorkspace } from "../tools/workbenchV2.js";
-import { assertWorkbenchProductionWriteAllowed, getWorkbenchDeliveryState } from "../tools/workbenchDeliveryState.js";
+import {
+  assertWorkbenchContentMutationAllowed,
+  assertWorkbenchProductionWriteAllowed,
+  getWorkbenchDeliveryState
+} from "../tools/workbenchDeliveryState.js";
 import { appendWorkbenchInboxEvent, getWorkbenchDraftRecord, saveWorkbenchDraftRecord, type WorkbenchDraftRecord } from "../tools/workbenchInboxStore.js";
 import { buildProviderCapabilityKey, buildProviderPriceCacheKey, providerCapabilityErrorMessage, RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY } from "../tools/providerCapabilities.js";
 import { parseProductionProposalPayload } from "./proposals.js";
@@ -645,6 +649,8 @@ export function updateProductionShotCopy(
 ): WebGptV4Result<{ shot: Shot & { operational_state: ProjectShotOperationalState }; updated_at: string }> {
   return mutation(db, "update_shot_copy", context, input, () => {
     projectRow(db, input.project_id, true);
+    const contentGate = assertWorkbenchContentMutationAllowed(db, input.project_id);
+    if (!contentGate.ok) throw new WebGptV4Error(contentGate.error.code, contentGate.error.message, "project_id");
     const current = requireShot(db, input.project_id, input.shot_id);
     if (!input.expected_updated_at || current.updated_at !== input.expected_updated_at) {
       throw new WebGptV4Error("CONFLICT_STALE_VERSION", "SHOT changed after it was read. Reload before writing.", "expected_updated_at");

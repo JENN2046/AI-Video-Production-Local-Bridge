@@ -336,7 +336,16 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
       `SELECT COUNT(*) AS count FROM workbench_delivery_jobs j
         LEFT JOIN workbench_exports e ON e.export_id = j.export_id
           AND j.job_type = 'export' AND e.project_id = j.project_id
-        WHERE j.export_id IS NOT NULL AND e.export_id IS NULL`,
+        WHERE j.export_id IS NOT NULL AND (
+          e.export_id IS NULL OR e.artifact_id IS NOT json_extract(j.input_json, '$.artifact_id')
+        )`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_jobs job
+        LEFT JOIN workbench_delivery_state state ON state.project_id = job.project_id
+          AND state.workflow_state IN ('approved','exported')
+          AND state.current_final_artifact_id IS json_extract(job.input_json, '$.artifact_id')
+          AND state.approved_artifact_id IS json_extract(job.input_json, '$.artifact_id')
+        WHERE job.job_type = 'export' AND job.state IN ('queued','running')
+          AND state.project_id IS NULL`,
       "SELECT COUNT(*) AS count FROM workbench_delivery_events e LEFT JOIN projects p ON p.project_id = e.project_id WHERE p.project_id IS NULL",
       "SELECT COUNT(*) AS count FROM workbench_delivery_events e LEFT JOIN workbench_delivery_jobs j ON j.job_id = e.job_id AND j.project_id = e.project_id WHERE e.job_id IS NOT NULL AND j.job_id IS NULL",
       "SELECT COUNT(*) AS count FROM workbench_delivery_events e LEFT JOIN media_artifacts a ON a.artifact_id = e.artifact_id AND a.project_id = e.project_id WHERE e.artifact_id IS NOT NULL AND a.artifact_id IS NULL",
@@ -495,7 +504,8 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
                   AND event.export_id IS NULL)
                 OR (event.event_type = 'export_succeeded' AND job.job_type = 'export'
                   AND job.state = 'succeeded' AND event.export_id IS job.export_id
-                  AND event.artifact_id IS bound_export.artifact_id)
+                  AND event.artifact_id IS bound_export.artifact_id
+                  AND event.artifact_id IS json_extract(job.input_json, '$.artifact_id'))
                 OR (event.event_type = 'export_failed' AND job.job_type = 'export'
                   AND job.state = 'failed' AND event.export_id IS job.export_id
                   AND event.artifact_id IS json_extract(job.input_json, '$.artifact_id'))
@@ -515,6 +525,10 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
             AND state.approved_artifact_id = event.artifact_id
             AND state.latest_export_id = event.export_id
         )`,
+      `SELECT COALESCE(SUM(closeout_count - 1), 0) AS count FROM (
+        SELECT COUNT(*) AS closeout_count FROM workbench_delivery_events
+        WHERE event_type = 'closeout' GROUP BY project_id HAVING COUNT(*) > 1
+      )`,
       "SELECT COUNT(*) AS count FROM workbench_exports e LEFT JOIN projects p ON p.project_id = e.project_id WHERE p.project_id IS NULL",
       "SELECT COUNT(*) AS count FROM workbench_exports e LEFT JOIN media_artifacts a ON a.artifact_id = e.artifact_id AND a.project_id = e.project_id WHERE a.artifact_id IS NULL"
     ];

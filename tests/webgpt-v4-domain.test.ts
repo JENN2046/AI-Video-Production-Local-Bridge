@@ -117,6 +117,48 @@ function closeProductionProject(context: TestContext): void {
     .run(now, now, context.production.project_id);
 }
 
+function setProductionFinalEvidence(
+  context: TestContext,
+  target: "approved" | "exported"
+): { artifact_id: string; export_id: string | null } {
+  const registered = registerMediaArtifact({
+    artifact_type: "video",
+    role: "final_video",
+    source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+    linked_objects: { project_id: context.production.project_id }
+  }, context.db);
+  assert.equal(registered.ok, true, registered.ok ? "" : registered.error.code);
+  if (!registered.ok) throw new Error("final evidence fixture registration failed");
+  const artifactId = registered.artifact.artifact_id;
+  const now = "2026-08-15T01:00:00.000Z";
+  context.production.exports.final_video_artifact_id = artifactId;
+  saveProject(context.db, context.production);
+  context.db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
+    .run(now, context.production.project_id);
+  context.db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
+    .run(now, context.production.project_id);
+  context.db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
+    current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
+    .run(artifactId, now, context.production.project_id);
+  context.db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'approved',
+    approved_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
+    .run(artifactId, now, context.production.project_id);
+  if (target === "approved") return { artifact_id: artifactId, export_id: null };
+  const blob = context.db.prepare(`SELECT b.sha256, b.size_bytes
+    FROM media_artifact_blobs link JOIN media_blobs b ON b.blob_id = link.blob_id
+    WHERE link.artifact_id = ?`).get(artifactId) as { sha256: string; size_bytes: number };
+  const exportId = `export_final_evidence_${context.production.project_id}`;
+  context.db.prepare(`INSERT INTO workbench_exports
+    (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    .run(exportId, context.production.project_id, artifactId,
+      `data/exports/${context.production.project_id}/final-evidence.mp4`, blob.sha256, blob.size_bytes, now);
+  context.db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'exported', latest_export_id = ?,
+    latest_exported_at = ?, updated_at = ? WHERE project_id = ?`)
+    .run(exportId, now, now, context.production.project_id);
+  return { artifact_id: artifactId, export_id: exportId };
+}
+
 test("WebGPT V4 production mutations reject closed projects at the shared write boundary", () => {
   const context = setup();
   try {
@@ -177,6 +219,38 @@ test("WebGPT V4 production mutations reject closed projects at the shared write 
     assert.deepEqual(countsAfter, countsBefore);
   } finally {
     teardown(context);
+  }
+});
+
+test("WebGPT V4 SHOT copy cannot mutate approved or exported production evidence", () => {
+  for (const target of ["approved", "exported"] as const) {
+    const context = setup();
+    try {
+      const evidence = setProductionFinalEvidence(context, target);
+      const shotBefore = context.db.prepare("SELECT data_json, updated_at FROM shots WHERE shot_id = ?")
+        .get(context.productionShot.shot_id) as { data_json: string; updated_at: string };
+      const deliveryBefore = context.db.prepare(`SELECT workflow_state, current_final_artifact_id,
+        approved_artifact_id, latest_export_id FROM workbench_delivery_state WHERE project_id = ?`)
+        .get(context.production.project_id) as Record<string, unknown>;
+
+      const result = updateProductionShotCopy({
+        project_id: context.production.project_id,
+        shot_id: context.productionShot.shot_id,
+        expected_updated_at: shotBefore.updated_at,
+        video_prompt: `WebGPT must not mutate ${target} evidence`
+      }, { actor, idempotency_key: `final-evidence-shot-copy-${target}` }, context.db);
+
+      assert.equal(result.ok ? null : result.error.code, "DELIVERY_REWORK_REQUIRED");
+      assert.deepEqual(context.db.prepare("SELECT data_json, updated_at FROM shots WHERE shot_id = ?")
+        .get(context.productionShot.shot_id), shotBefore);
+      assert.deepEqual({ ...(context.db.prepare(`SELECT workflow_state, current_final_artifact_id,
+        approved_artifact_id, latest_export_id FROM workbench_delivery_state WHERE project_id = ?`)
+        .get(context.production.project_id) as Record<string, unknown>) }, { ...deliveryBefore });
+      assert.equal(deliveryBefore.current_final_artifact_id, evidence.artifact_id);
+      assert.equal(deliveryBefore.latest_export_id, evidence.export_id);
+    } finally {
+      teardown(context);
+    }
   }
 });
 
