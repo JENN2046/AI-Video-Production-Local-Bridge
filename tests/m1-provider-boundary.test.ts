@@ -509,6 +509,59 @@ test("M1 legacy batch lane blocks RunningHub and routes real generation to V2", 
   }
 });
 
+test("M1 legacy live generation rechecks the content boundary after Provider submit without resubmitting or persisting", async () => {
+  const db = openM0Database();
+  const originalFetch = globalThis.fetch;
+  let providerCalls = 0;
+  try {
+    const { project, storyboard } = setupOneShotProject(db);
+    const shotId = storyboard.shots[0].shot_id;
+    const before = {
+      project: db.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(project.project_id),
+      shot: db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(shotId),
+      artifacts: db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ?").get(project.project_id),
+      runs: db.prepare("SELECT COUNT(*) AS count FROM generation_runs WHERE project_id = ?").get(project.project_id),
+      batches: db.prepare("SELECT COUNT(*) AS count FROM generation_batches WHERE project_id = ?").get(project.project_id)
+    };
+    globalThis.fetch = (async () => {
+      providerCalls += 1;
+      db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble' WHERE project_id = ?")
+        .run(project.project_id);
+      db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling' WHERE project_id = ?")
+        .run(project.project_id);
+      return new Response(JSON.stringify({ id: "synthetic_runway_task", status: "PENDING" }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }) as typeof fetch;
+
+    const result = await withEnvAsync({
+      REAL_PROVIDER_ENABLED: "true",
+      M1_REAL_PROVIDER: "runway",
+      M1_REAL_PROVIDER_EXECUTION_ALLOWED: "true",
+      M1_REAL_PROVIDER_COST_ACK: "true",
+      RUNWAYML_API_SECRET: FAKE_SECRET
+    }, () => startStoryboardVideoGeneration({
+      project_id: project.project_id,
+      selected_shot_ids: [shotId],
+      provider_execution: { provider: "real", provider_name: "runway", cost_acknowledged: true },
+      allow_live_provider: true,
+      confirmation: { confirmation_level: "hard_gate", user_confirmed: true }
+    }, db));
+
+    assert.equal(result.ok ? null : result.error.code, "DELIVERY_JOB_ACTIVE");
+    assert.equal(providerCalls, 1);
+    assert.deepEqual(db.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(project.project_id), before.project);
+    assert.deepEqual(db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(shotId), before.shot);
+    assert.deepEqual(db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ?").get(project.project_id), before.artifacts);
+    assert.deepEqual(db.prepare("SELECT COUNT(*) AS count FROM generation_runs WHERE project_id = ?").get(project.project_id), before.runs);
+    assert.deepEqual(db.prepare("SELECT COUNT(*) AS count FROM generation_batches WHERE project_id = ?").get(project.project_id), before.batches);
+  } finally {
+    globalThis.fetch = originalFetch;
+    db.close();
+  }
+});
+
 test("M1 Runway request boundary rejects unsupported ratio and duration before network", async () => {
   assert.equal(mapRunwayAspectRatio("9:16"), "720:1280");
   assert.equal(mapRunwayAspectRatio("16:9"), "1280:768");
@@ -838,6 +891,139 @@ test("M1 provider output downloader rejects a generic injected fetch that cannot
     assert.equal(result.ok, false);
     if (!result.ok) assert.equal(result.error.code, "PROVIDER_OUTPUT_PINNED_TRANSPORT_REQUIRED");
     assert.equal(fetched, false);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("M1 provider output persistence guard rejects post-download drift before temp or Artifact commit", async () => {
+  const db = openM0Database(":memory:");
+  const root = mkdtempSync(join(tmpdir(), "provider-output-persist-guard-"));
+  const fixture = readFileSync(join(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4"));
+  try {
+    for (const rejectedCall of [2, 3]) {
+      const mediaRoot = join(root, `media-${rejectedCall}`);
+      const providerJobId = `persist-guard-${rejectedCall}`;
+      let guardCalls = 0;
+      const result = await downloadProviderOutputToArtifact({
+        url: "https://cdn.example.test/output.mp4",
+        provider_name: "runninghub",
+        provider_job_id: providerJobId,
+        project_id: "project_persist_guard",
+        shot_id: "shot_persist_guard",
+        duration_seconds: 2,
+        aspect_ratio: "9:16",
+        storage_directory: mediaRoot
+      }, db, {
+        storage_root: mediaRoot,
+        resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+        fetch_pinned_address: async () => new Response(fixture, {
+          status: 200,
+          headers: { "content-type": "video/mp4", "content-length": String(fixture.length) }
+        }),
+        assert_persist_allowed: () => {
+          guardCalls += 1;
+          return guardCalls === rejectedCall
+            ? { code: "PROJECT_CLOSED", message: "Synthetic delivery-state drift." }
+            : null;
+        }
+      });
+      const identity = createHash("sha256").update(`runninghub\0${providerJobId}`).digest("hex");
+      assert.equal(result.ok ? null : result.error.code, "PROJECT_CLOSED");
+      assert.equal(guardCalls, rejectedCall);
+      assert.equal(existsSync(join(mediaRoot, `artifact_${identity}.mp4`)), false);
+      assert.equal((db.prepare(`SELECT COUNT(*) AS count FROM media_artifacts
+        WHERE json_extract(data_json, '$.source.provider_job_id') = ?`).get(providerJobId) as { count: number }).count, 0);
+    }
+
+    const allowedFixture = setupOneShotProject(db);
+    const allowedMediaRoot = join(root, "media-allowed");
+    const allowedBatchId = "batch_persist_guard_allowed";
+    let allowedGuardCalls = 0;
+    const allowed = await downloadProviderOutputToArtifact({
+      url: "https://cdn.example.test/output.mp4",
+      provider_name: "runninghub",
+      provider_job_id: "persist-guard-allowed",
+      project_id: allowedFixture.project.project_id,
+      shot_id: allowedFixture.storyboard.shots[0].shot_id,
+      duration_seconds: 2,
+      aspect_ratio: "9:16",
+      storage_directory: allowedMediaRoot
+    }, db, {
+      storage_root: allowedMediaRoot,
+      resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+      fetch_pinned_address: async () => new Response(fixture, {
+        status: 200,
+        headers: { "content-type": "video/mp4", "content-length": String(fixture.length) }
+      }),
+      assert_persist_allowed: () => {
+        allowedGuardCalls += 1;
+        return null;
+      },
+      persist_with_artifact: (artifact) => {
+        assert.notEqual(getMediaArtifact(db, artifact.artifact_id), null);
+        db.prepare(`INSERT INTO generation_batches
+          (batch_id, project_id, storyboard_package_id, data_json, updated_at)
+          VALUES (?, ?, ?, '{}', CURRENT_TIMESTAMP)`)
+          .run(allowedBatchId, allowedFixture.project.project_id, allowedFixture.storyboard.storyboard_package.storyboard_package_id);
+        return null;
+      }
+    });
+    assert.equal(allowed.ok, true, allowed.ok ? undefined : allowed.error.message);
+    assert.equal(allowedGuardCalls, 3);
+    if (allowed.ok) assert.equal(existsSync(allowed.artifact.storage.uri), true);
+    assert.notEqual(db.prepare("SELECT batch_id FROM generation_batches WHERE batch_id = ?").get(allowedBatchId), undefined);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("M1 provider output rolls back the Artifact and dependent generation writes in one transaction", async () => {
+  const db = openM0Database(":memory:");
+  const root = mkdtempSync(join(tmpdir(), "provider-output-atomic-persist-"));
+  const fixture = readFileSync(join(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4"));
+  const providerJobId = "atomic-persist-rollback";
+  const batchId = "batch_atomic_persist_rollback";
+  let artifactVisibleInsideTransaction = false;
+  try {
+    const projectFixture = setupOneShotProject(db);
+    const shotId = projectFixture.storyboard.shots[0].shot_id;
+    const result = await downloadProviderOutputToArtifact({
+      url: "https://cdn.example.test/output.mp4",
+      provider_name: "runninghub",
+      provider_job_id: providerJobId,
+      project_id: projectFixture.project.project_id,
+      shot_id: shotId,
+      duration_seconds: 2,
+      aspect_ratio: "9:16",
+      storage_directory: root
+    }, db, {
+      storage_root: root,
+      resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+      fetch_pinned_address: async () => new Response(fixture, {
+        status: 200,
+        headers: { "content-type": "video/mp4", "content-length": String(fixture.length) }
+      }),
+      assert_persist_allowed: () => null,
+      persist_with_artifact: (artifact) => {
+        artifactVisibleInsideTransaction = getMediaArtifact(db, artifact.artifact_id) !== null;
+        db.prepare(`INSERT INTO generation_batches
+          (batch_id, project_id, storyboard_package_id, data_json, updated_at)
+          VALUES (?, ?, ?, '{}', CURRENT_TIMESTAMP)`)
+          .run(batchId, projectFixture.project.project_id, projectFixture.storyboard.storyboard_package.storyboard_package_id);
+        return { code: "PROJECT_CLOSED", message: "Synthetic final persistence drift." };
+      }
+    });
+
+    const identity = createHash("sha256").update(`runninghub\0${providerJobId}`).digest("hex");
+    const artifactId = `artifact_${identity}`;
+    assert.equal(result.ok ? null : result.error.code, "PROJECT_CLOSED");
+    assert.equal(artifactVisibleInsideTransaction, true);
+    assert.equal(getMediaArtifact(db, artifactId), null);
+    assert.equal(db.prepare("SELECT batch_id FROM generation_batches WHERE batch_id = ?").get(batchId), undefined);
+    assert.equal(existsSync(join(root, `${artifactId}.mp4`)), false);
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });

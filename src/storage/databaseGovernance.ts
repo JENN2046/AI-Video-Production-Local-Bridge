@@ -515,6 +515,10 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
               )
           )
         )`,
+      `SELECT COALESCE(SUM(event_count - 1), 0) AS count FROM (
+        SELECT COUNT(*) AS event_count FROM workbench_delivery_events
+        WHERE job_id IS NOT NULL GROUP BY job_id, event_type HAVING COUNT(*) > 1
+      )`,
       `SELECT COUNT(*) AS count FROM workbench_delivery_events event
         WHERE event.event_type = 'closeout' AND NOT EXISTS (
           SELECT 1 FROM workbench_delivery_state state

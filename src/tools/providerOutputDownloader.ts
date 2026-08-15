@@ -45,6 +45,8 @@ export type ProviderOutputDownloadResult =
 
 export interface ProviderOutputDownloadRuntime {
   storage_root?: string;
+  assert_persist_allowed?: () => ProviderToolError | null;
+  persist_with_artifact?: (artifact: MediaArtifact) => ProviderToolError | null;
   fault_injection_after_file_commit?: (path: string) => void;
   verified_blob_recovery_faults?: VerifiedBlobStorageRecoveryFaults;
   resolve_hostname?: (hostname: string) => Promise<Array<{ address: string; family: 4 | 6 }>>;
@@ -236,6 +238,8 @@ export async function downloadProviderOutputToArtifact(
   db: M0Database,
   runtime: ProviderOutputDownloadRuntime = {}
 ): Promise<ProviderOutputDownloadResult> {
+  const initialPersistenceError = runtime.assert_persist_allowed?.();
+  if (initialPersistenceError) return { ok: false, error: initialPersistenceError };
   recoverMediaActivations(db);
   const safety: ProviderOutputDownloadSafety = { ...DEFAULT_SAFETY, ...input.safety };
   const storageDirectory = outputStorageDirectory(input, runtime);
@@ -276,6 +280,9 @@ export async function downloadProviderOutputToArtifact(
   fetched.cleanup();
   if ("error" in downloaded) return { ok: false, error: downloaded.error };
   const body = downloaded.body;
+
+  const downloadedPersistenceError = runtime.assert_persist_allowed?.();
+  if (downloadedPersistenceError) return { ok: false, error: downloadedPersistenceError };
 
   mkdirSync(storageDirectory.path, { recursive: true });
   const tempPath = resolve(storageDirectory.path, `provider_download_${randomUUID()}${extensionForUrl(fetched.finalUrl)}`);
@@ -332,7 +339,14 @@ export async function downloadProviderOutputToArtifact(
       linked_objects: { project_id: input.project_id, shot_id: input.shot_id },
       source: { kind: "provider_output_file", provider: input.provider_name, provider_job_id: input.provider_job_id, sha256: "", external_url_host: fetched.finalUrl.hostname }
     };
-    const activated = activateLocalMediaArtifact({ artifact: preparedArtifact, source_path: tempPath, media_root: storageDirectory.path, after_file_placed: runtime.fault_injection_after_file_commit }, db);
+    const activated = activateLocalMediaArtifact({
+      artifact: preparedArtifact,
+      source_path: tempPath,
+      media_root: storageDirectory.path,
+      before_persist: runtime.assert_persist_allowed,
+      after_artifact_persist: runtime.persist_with_artifact,
+      after_file_placed: runtime.fault_injection_after_file_commit
+    }, db);
     if (!activated.ok) return { ok: false, error: providerError(activated.error.code, activated.error.message) };
     return { ok: true, artifact: activated.artifact, ffprobe, output_url_hostname: fetched.finalUrl.hostname };
   } finally {

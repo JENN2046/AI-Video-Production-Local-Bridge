@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
-import { getMediaArtifact, registerMediaArtifact, validateActiveArtifactReference } from "./mediaArtifacts.js";
+import { getMediaArtifact, registerMediaArtifact, validateActiveArtifactReference, type MediaArtifact } from "./mediaArtifacts.js";
 import { getProject, getProjectStatus, getShot, listProjectShots, saveProject, saveShot, type Project, type Shot, type ToolError } from "./projects.js";
 import { getStoryboardPackage } from "./storyboardPackages.js";
 import { requireProjectShotWorkflowWriteAction } from "./operationalWriteGates.js";
@@ -80,6 +80,10 @@ export interface GenerationRun {
 }
 
 type ToolResult<T> = { ok: true } & T | { ok: false; error: ToolError };
+
+function databaseIsInTransaction(db: M0Database): boolean {
+  return Boolean((db as unknown as { isTransaction?: boolean }).isTransaction);
+}
 
 export interface PackageShotGenerationInput {
   project_id: string;
@@ -227,6 +231,150 @@ function providerErrorToRunError(error: ProviderToolError): GenerationRun["error
     retryable: error.retryable === true,
     ...(error.sanitized_provider_error_summary ? { sanitized_provider_error_summary: error.sanitized_provider_error_summary } : {})
   };
+}
+
+function generationPersistencePrecondition(
+  db: M0Database,
+  projectId: string,
+  storyboardPackageId: string,
+  run: GenerationRun
+): ToolError | null {
+  const writable = assertWorkbenchContentMutationAllowed(db, projectId);
+  if (!writable.ok) return writable.error;
+  const currentProject = getProject(db, projectId);
+  if (!currentProject) return { code: "PROJECT_NOT_FOUND", message: `Project not found: ${projectId}` };
+  const currentShot = getShot(db, run.shot_id);
+  if (!currentShot || currentShot.project_id !== projectId) {
+    return { code: "SHOT_NOT_FOUND", message: `Shot not found: ${run.shot_id}` };
+  }
+  if (currentProject.active_storyboard_package_id !== storyboardPackageId
+    || currentShot.storyboard_image_artifact_id !== run.input.storyboard_image_artifact_id
+    || currentShot.video_prompt !== run.input.video_prompt
+    || currentShot.negative_prompt !== run.input.negative_prompt
+    || currentShot.duration_seconds !== run.input.duration_seconds) {
+    return {
+      code: "STORYBOARD_PACKAGE_INPUT_STALE",
+      message: `SHOT inputs differ from the frozen Storyboard Package: ${run.shot_id}`
+    };
+  }
+  return null;
+}
+
+type GenerationProgressPersistenceInput = {
+  project_id: string;
+  storyboard_package_id: string;
+  batch_id: string;
+  requested_shot_count: number;
+  completed_runs: GenerationRun[];
+  run: GenerationRun;
+};
+
+function persistGenerationProgressInTransaction(
+  db: M0Database,
+  input: GenerationProgressPersistenceInput
+): ToolResult<{ batch: GenerationBatch }> {
+  if (!databaseIsInTransaction(db)) {
+    return {
+      ok: false,
+      error: {
+        code: "GENERATION_TRANSACTION_UNSAFE",
+        message: "Generation persistence requires an active database transaction."
+      }
+    };
+  }
+  try {
+    const preconditionError = generationPersistencePrecondition(
+      db,
+      input.project_id,
+      input.storyboard_package_id,
+      input.run
+    );
+    if (preconditionError) return { ok: false, error: preconditionError };
+    const currentProject = getProject(db, input.project_id);
+    const currentShot = getShot(db, input.run.shot_id);
+    if (!currentProject || !currentShot) throw new Error("GENERATION_PERSIST_TARGET_MISSING");
+
+    currentShot.generation_run_ids.push(input.run.run_id);
+    if (input.run.status === "succeeded" && input.run.output.artifact_ids.length > 0) {
+      currentShot.status = "video_generated";
+      currentShot.clip_versions.push({
+        artifact_id: input.run.output.artifact_ids[0],
+        run_id: input.run.run_id,
+        attempt_number: 1,
+        review_status: "pending"
+      });
+    } else if (input.run.status === "failed") {
+      currentShot.status = "video_pending";
+    }
+
+    const completedRuns = [...input.completed_runs, input.run];
+    const summary = summarizeRuns(completedRuns);
+    const outstanding = Math.max(0, input.requested_shot_count - completedRuns.length);
+    summary.total = input.requested_shot_count;
+    summary.queued += outstanding;
+    const batch: GenerationBatch = {
+      batch_id: input.batch_id,
+      project_id: input.project_id,
+      storyboard_package_id: input.storyboard_package_id,
+      run_ids: completedRuns.map((run) => run.run_id),
+      status: outstanding > 0 ? "running" : batchStatusFromSummary(summary),
+      summary
+    };
+
+    currentProject.status = outstanding > 0
+      ? "video_generation_in_progress"
+      : summary.succeeded > 0 ? "video_review" : "video_generation_in_progress";
+    if (!currentProject.generation_batch_ids.includes(batch.batch_id)) {
+      currentProject.generation_batch_ids.push(batch.batch_id);
+    }
+    saveShot(db, currentShot);
+    saveGenerationRun(db, input.run);
+    saveProject(db, currentProject);
+    saveGenerationBatch(db, batch);
+    return { ok: true, batch };
+  } catch {
+    return {
+      ok: false,
+      error: {
+        code: "GENERATION_PERSIST_FAILED",
+        message: "Generation result could not be persisted atomically."
+      }
+    };
+  }
+}
+
+function persistGenerationProgress(
+  db: M0Database,
+  input: GenerationProgressPersistenceInput
+): ToolResult<{ batch: GenerationBatch }> {
+  if (databaseIsInTransaction(db)) {
+    return {
+      ok: false,
+      error: {
+        code: "GENERATION_TRANSACTION_UNSAFE",
+        message: "Generation persistence requires ownership of the outer database transaction."
+      }
+    };
+  }
+  db.exec("BEGIN IMMEDIATE");
+  const persisted = persistGenerationProgressInTransaction(db, input);
+  if (!persisted.ok) {
+    if (databaseIsInTransaction(db)) db.exec("ROLLBACK");
+    return persisted;
+  }
+  try {
+    db.exec("COMMIT");
+    return persisted;
+  } catch {
+    if (databaseIsInTransaction(db)) db.exec("ROLLBACK");
+    return {
+      ok: false,
+      error: {
+        code: "GENERATION_PERSIST_FAILED",
+        message: "Generation result could not be persisted atomically."
+      }
+    };
+  }
 }
 
 function delay(ms: number): Promise<void> {
@@ -395,6 +543,15 @@ export async function startStoryboardVideoGeneration(
   if (!isHardGateConfirmed(input.confirmation)) {
     return { ok: false, error: { code: "HARD_GATE_CONFIRMATION_REQUIRED", message: "Generation requires hard_gate confirmation." } };
   }
+  if (databaseIsInTransaction(db)) {
+    return {
+      ok: false,
+      error: {
+        code: "GENERATION_TRANSACTION_UNSAFE",
+        message: "Generation cannot run inside a caller-owned database transaction."
+      }
+    };
+  }
 
   const project = getProject(db, input.project_id);
   if (!project) {
@@ -455,6 +612,7 @@ export async function startStoryboardVideoGeneration(
 
   const batchId = `batch_${randomUUID()}`;
   const runs: GenerationRun[] = [];
+  let batch: GenerationBatch | null = null;
 
   for (const shot of shots) {
     const storyboardArtifact = validateActiveArtifactReference(db, {
@@ -499,6 +657,13 @@ export async function startStoryboardVideoGeneration(
     };
 
     if (selectedProvider.provider_name === "mock") {
+      const mockPreconditionError = generationPersistencePrecondition(
+        db,
+        project.project_id,
+        storyboardPackage.storyboard_package_id,
+        run
+      );
+      if (mockPreconditionError) return { ok: false, error: mockPreconditionError };
       const job = submitMockGeneration();
       const artifactResult = createGeneratedClipArtifact(db, project, shot, job);
       if (!artifactResult.ok) {
@@ -515,6 +680,13 @@ export async function startStoryboardVideoGeneration(
         run.error = providerErrorToRunError(providerInput.error);
       } else {
         const submit = await adapter.submitGeneration(providerInput);
+        const postSubmitError = generationPersistencePrecondition(
+          db,
+          project.project_id,
+          storyboardPackage.storyboard_package_id,
+          run
+        );
+        if (postSubmitError) return { ok: false, error: postSubmitError };
         if (!submit.ok) {
           run.status = "failed";
           run.error = providerErrorToRunError(submit.error);
@@ -522,6 +694,13 @@ export async function startStoryboardVideoGeneration(
           run.provider.provider_job_id = submit.provider_job_id;
           run.provider.provider_status = submit.provider_status;
           const providerStatus = await pollProviderUntilComplete(adapter, submit.provider_job_id);
+          const postPollError = generationPersistencePrecondition(
+            db,
+            project.project_id,
+            storyboardPackage.storyboard_package_id,
+            run
+          );
+          if (postPollError) return { ok: false, error: postPollError };
           if (!providerStatus.ok) {
             run.status = "failed";
             run.error = providerErrorToRunError(providerStatus.error);
@@ -538,10 +717,51 @@ export async function startStoryboardVideoGeneration(
               const output = providerStatus.output_url
                 ? { ok: true as const, provider_job_id: submit.provider_job_id, output_url: providerStatus.output_url, provider_status: providerStatus.provider_status }
                 : await adapter.fetchOutput(submit.provider_job_id);
+              const postOutputError = generationPersistencePrecondition(
+                db,
+                project.project_id,
+                storyboardPackage.storyboard_package_id,
+                run
+              );
+              if (postOutputError) return { ok: false, error: postOutputError };
               if (!output.ok) {
                 run.status = "failed";
                 run.error = providerErrorToRunError(output.error);
               } else {
+                const atomicPersistence: { batch: GenerationBatch | null; error: ToolError | null } = {
+                  batch: null,
+                  error: null
+                };
+                const assertPersistAllowed = (): ProviderToolError | null => {
+                  const boundaryError = generationPersistencePrecondition(
+                    db,
+                    project.project_id,
+                    storyboardPackage.storyboard_package_id,
+                    run
+                  );
+                  if (!boundaryError) return null;
+                  atomicPersistence.error = boundaryError;
+                  return providerError(boundaryError.code, boundaryError.message);
+                };
+                const persistWithArtifact = (artifact: MediaArtifact): ProviderToolError | null => {
+                  run.status = "succeeded";
+                  run.output.artifact_ids = [artifact.artifact_id];
+                  run.provider.provider_status = output.provider_status;
+                  const persisted = persistGenerationProgressInTransaction(db, {
+                    project_id: project.project_id,
+                    storyboard_package_id: storyboardPackage.storyboard_package_id,
+                    batch_id: batchId,
+                    requested_shot_count: shots.length,
+                    completed_runs: runs,
+                    run
+                  });
+                  if (!persisted.ok) {
+                    atomicPersistence.error = persisted.error;
+                    return providerError(persisted.error.code, persisted.error.message);
+                  }
+                  atomicPersistence.batch = persisted.batch;
+                  return null;
+                };
                 const download = await downloadProviderOutputToArtifact(
                   {
                     url: output.output_url,
@@ -553,11 +773,21 @@ export async function startStoryboardVideoGeneration(
                     aspect_ratio: project.video_spec.aspect_ratio,
                     storage_directory: input.provider_output_storage_directory
                   },
-                  db
+                  db,
+                  {
+                    assert_persist_allowed: assertPersistAllowed,
+                    persist_with_artifact: persistWithArtifact
+                  }
                 );
+                if (atomicPersistence.error) return { ok: false, error: atomicPersistence.error };
                 if (!download.ok) {
                   run.status = "failed";
+                  run.output.artifact_ids = [];
                   run.error = providerErrorToRunError(download.error);
+                } else if (atomicPersistence.batch) {
+                  runs.push(run);
+                  batch = atomicPersistence.batch;
+                  continue;
                 } else {
                   run.status = "succeeded";
                   run.output.artifact_ids = [download.artifact.artifact_id];
@@ -570,38 +800,20 @@ export async function startStoryboardVideoGeneration(
       }
     }
 
-    shot.generation_run_ids.push(run.run_id);
-    if (run.status === "succeeded" && run.output.artifact_ids.length > 0) {
-      shot.status = "video_generated";
-      shot.clip_versions.push({
-        artifact_id: run.output.artifact_ids[0],
-        run_id: run.run_id,
-        attempt_number: 1,
-        review_status: "pending"
-      });
-    } else if (run.status === "failed") {
-      shot.status = "video_pending";
-    }
-    saveShot(db, shot);
-    saveGenerationRun(db, run);
+    const persisted = persistGenerationProgress(db, {
+      project_id: project.project_id,
+      storyboard_package_id: storyboardPackage.storyboard_package_id,
+      batch_id: batchId,
+      requested_shot_count: shots.length,
+      completed_runs: runs,
+      run
+    });
+    if (!persisted.ok) return persisted;
     runs.push(run);
+    batch = persisted.batch;
   }
 
-  const summary = summarizeRuns(runs);
-  const batch: GenerationBatch = {
-    batch_id: batchId,
-    project_id: project.project_id,
-    storyboard_package_id: storyboardPackage.storyboard_package_id,
-    run_ids: runs.map((run) => run.run_id),
-    status: batchStatusFromSummary(summary),
-    summary
-  };
-
-  project.status = summary.succeeded > 0 ? "video_review" : "video_generation_in_progress";
-  project.generation_batch_ids.push(batch.batch_id);
-  saveProject(db, project);
-  saveGenerationBatch(db, batch);
-
+  if (!batch) return { ok: false, error: { code: "GENERATION_PERSIST_FAILED", message: "Generation batch was not persisted." } };
   return { ok: true, batch, runs };
 }
 

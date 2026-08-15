@@ -1529,6 +1529,14 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
   BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_EVENT_BINDING_INVALID');
   END;
+  CREATE TRIGGER workbench_delivery_events_job_event_unique BEFORE INSERT ON workbench_delivery_events
+  WHEN NEW.job_id IS NOT NULL AND EXISTS (
+    SELECT 1 FROM workbench_delivery_events existing
+    WHERE existing.job_id = NEW.job_id AND existing.event_type = NEW.event_type
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_JOB_EVENT_DUPLICATE');
+  END;
   CREATE TRIGGER workbench_delivery_events_no_update BEFORE UPDATE ON workbench_delivery_events BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_EVENTS_APPEND_ONLY');
   END;
@@ -2067,6 +2075,7 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "workbench_delivery_jobs_terminal_immutable",
         "workbench_delivery_jobs_no_delete",
         "workbench_delivery_events_validate_insert",
+        "workbench_delivery_events_job_event_unique",
         "workbench_delivery_events_no_update",
         "workbench_delivery_events_no_delete",
         "workbench_delivery_closeout_apply",

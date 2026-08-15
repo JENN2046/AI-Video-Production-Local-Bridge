@@ -8,6 +8,10 @@ import { assertWorkbenchProductionWriteAllowed, getActiveWorkbenchDeliveryJob, t
 
 type ToolResult<T> = { ok: true } & T | { ok: false; error: ToolError; blocking_reasons?: string[] };
 
+function databaseIsInTransaction(db: M0Database): boolean {
+  return Boolean((db as unknown as { isTransaction?: boolean }).isTransaction);
+}
+
 const M0_FINAL_PLACEHOLDER_FIXTURE = "video/mock_clip.mp4";
 const M0_FINAL_PLACEHOLDER_DURATION_SECONDS = 2;
 
@@ -68,6 +72,15 @@ export function assembleFinalVideo(
 ): ToolResult<{ run: GenerationRun; final_video_artifact_id: string }> {
   if (!explicitConfirmed(input.confirmation)) {
     return { ok: false, error: { code: "USER_CONFIRMATION_REQUIRED", message: "Final assembly requires explicit confirmation." } };
+  }
+  if (databaseIsInTransaction(db)) {
+    return {
+      ok: false,
+      error: {
+        code: "FINAL_ASSEMBLY_TRANSACTION_UNSAFE",
+        message: "Final assembly cannot run inside a caller-owned database transaction."
+      }
+    };
   }
 
   const project = getProject(db, input.project_id);

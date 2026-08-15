@@ -1181,7 +1181,7 @@ function commitStagedMediaArtifact(
   db: M0Database,
   artifact: MediaArtifact,
   allowStatusTransition: boolean,
-  options: { after_journal_staged?: (stagingPath: string) => void; after_pending_placed?: (pendingPath: string) => void; after_file_placed?: (finalPath: string) => void; remove_post_commit_file?: (finalPath: string) => void; media_root?: string } = {}
+  options: { before_persist?: () => ToolError | null; after_artifact_persist?: (artifact: MediaArtifact) => ToolError | null; after_journal_staged?: (stagingPath: string) => void; after_pending_placed?: (pendingPath: string) => void; after_file_placed?: (finalPath: string) => void; remove_post_commit_file?: (finalPath: string) => void; media_root?: string } = {}
 ): RegisterMediaArtifactResult {
   const activationId = `activation_${randomUUID()}`;
   const mediaRoot = resolve(options.media_root ?? paths.mediaRoot);
@@ -1194,6 +1194,11 @@ function commitStagedMediaArtifact(
   let markerCreated = false;
   let finalPathOwned = false;
   try {
+    if (manageTransaction && (options.before_persist || options.after_artifact_persist)) db.exec("BEGIN IMMEDIATE");
+    if (options.before_persist) {
+      const persistenceError = options.before_persist();
+      if (persistenceError) throw new Error(persistenceError.code);
+    }
     if (!isPathInside(finalPath, mediaRoot) || hasExistingSymlinkAncestor(finalPath, mediaRoot)) {
       throw new Error("MEDIA_ACTIVATION_PATH_UNSAFE");
     }
@@ -1251,9 +1256,11 @@ function commitStagedMediaArtifact(
     if (committedFacts.sha256 !== facts.sha256 || committedFacts.size_bytes !== facts.size_bytes || committedFacts.detected_mime !== facts.detected_mime) {
       throw new Error("MEDIA_ACTIVATION_CONTENT_DRIFT");
     }
-    if (manageTransaction) db.exec("BEGIN IMMEDIATE");
+    if (manageTransaction && !databaseIsInTransaction(db)) db.exec("BEGIN IMMEDIATE");
     try {
       persistMediaArtifactInternal(db, artifact, allowStatusTransition, mediaRoot);
+      const dependentPersistenceError = options.after_artifact_persist?.(artifact);
+      if (dependentPersistenceError) throw new Error(dependentPersistenceError.code);
       db.prepare("UPDATE media_activation_journal SET state = 'committed', final_path = ?, artifact_json = ?, error_code = '', updated_at = CURRENT_TIMESTAMP WHERE activation_id = ? AND state = 'file_placed'")
         .run(artifact.storage.uri, JSON.stringify(artifact), activationId);
       if (manageTransaction) db.exec("COMMIT");
@@ -1276,6 +1283,9 @@ function commitStagedMediaArtifact(
     }
     return { ok: true, artifact };
   } catch (error) {
+    if (manageTransaction && databaseIsInTransaction(db)) {
+      try { db.exec("ROLLBACK"); } catch { /* preserve the activation error */ }
+    }
     if (error instanceof MediaActivationInjectedCrash) throw error.causeValue;
     const code = mediaActivationErrorCode(error);
     if (journalCreated) {
@@ -1294,7 +1304,7 @@ function commitStagedMediaArtifact(
 }
 
 export function activateLocalMediaArtifact(
-  input: { artifact: MediaArtifact; source_path: string; media_root?: string; allow_status_transition?: boolean; after_staging_written?: (stagingPath: string) => void; after_journal_staged?: (stagingPath: string) => void; after_pending_placed?: (pendingPath: string) => void; after_file_placed?: (finalPath: string) => void; remove_post_commit_file?: (finalPath: string) => void },
+  input: { artifact: MediaArtifact; source_path: string; media_root?: string; allow_status_transition?: boolean; before_persist?: () => ToolError | null; after_artifact_persist?: (artifact: MediaArtifact) => ToolError | null; after_staging_written?: (stagingPath: string) => void; after_journal_staged?: (stagingPath: string) => void; after_pending_placed?: (pendingPath: string) => void; after_file_placed?: (finalPath: string) => void; remove_post_commit_file?: (finalPath: string) => void },
   db = openM0Database()
 ): RegisterMediaArtifactResult {
   ensureM0Directories();
@@ -1307,7 +1317,7 @@ export function activateLocalMediaArtifact(
   catch { return { ok: false, error: { code: "MEDIA_ACTIVATION_PATH_UNSAFE", message: "Media activation directories are not app-controlled." } }; }
   const stageError = copyToOwnedStaging(input.artifact, sourcePath, mediaRoot, input.after_staging_written);
   if (stageError) return { ok: false, error: stageError };
-  return commitStagedMediaArtifact(db, input.artifact, input.allow_status_transition === true, { after_journal_staged: input.after_journal_staged, after_pending_placed: input.after_pending_placed, after_file_placed: input.after_file_placed, remove_post_commit_file: input.remove_post_commit_file, media_root: mediaRoot });
+  return commitStagedMediaArtifact(db, input.artifact, input.allow_status_transition === true, { before_persist: input.before_persist, after_artifact_persist: input.after_artifact_persist, after_journal_staged: input.after_journal_staged, after_pending_placed: input.after_pending_placed, after_file_placed: input.after_file_placed, remove_post_commit_file: input.remove_post_commit_file, media_root: mediaRoot });
 }
 
 function activationMarkerPaths(): string[] {

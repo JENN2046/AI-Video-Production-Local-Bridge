@@ -644,17 +644,23 @@ test("database check reports invalid delivery Job bindings and inactive referenc
       (job_id, project_id, job_type, state, input_json, error_code, created_at, finished_at, updated_at)
       VALUES ('parent_b', 'project_b', 'assembly', 'failed', '{}', 'SYNTHETIC_FAILURE', ?, ?, ?)`)
       .run(now, now, now);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, reason_code, data_json, created_at)
+      VALUES ('assembly_failed_valid_b', 'project_b', 'parent_b', 'assembly_failed',
+        'assembling', 'ready_to_assemble', 'SYNTHETIC_FAILURE', '{}', ?)`)
+      .run(now);
 
     const triggerRows = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'trigger'
       AND name IN ('workbench_delivery_jobs_validate_insert', 'workbench_delivery_jobs_validate_bindings_update',
         'workbench_delivery_artifact_status_guard', 'workbench_delivery_events_validate_insert',
-        'workbench_delivery_state_transition')
+        'workbench_delivery_events_job_event_unique', 'workbench_delivery_state_transition')
       ORDER BY name`).all() as Array<{ sql: string }>;
-    assert.equal(triggerRows.length, 5);
+    assert.equal(triggerRows.length, 6);
     db.exec(`DROP TRIGGER workbench_delivery_jobs_validate_insert;
       DROP TRIGGER workbench_delivery_jobs_validate_bindings_update;
       DROP TRIGGER workbench_delivery_artifact_status_guard;
       DROP TRIGGER workbench_delivery_events_validate_insert;
+      DROP TRIGGER workbench_delivery_events_job_event_unique;
       DROP TRIGGER workbench_delivery_state_transition;`);
     db.prepare(`UPDATE workbench_delivery_state
       SET workflow_state = 'closed', closed_at = ?, updated_at = ? WHERE project_id = 'project_b'`).run(now, now);
@@ -662,6 +668,11 @@ test("database check reports invalid delivery Job bindings and inactive referenc
       (job_id, project_id, job_type, state, input_json, retry_of_job_id, error_code, created_at, finished_at, updated_at)
       VALUES ('retry_a', 'project_a', 'assembly', 'failed', '{}', 'parent_b', 'SYNTHETIC_FAILURE', ?, ?, ?)`)
       .run(now, now, now);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, reason_code, data_json, created_at)
+      VALUES ('assembly_failed_duplicate_b', 'project_b', 'parent_b', 'assembly_failed',
+        'assembling', 'ready_to_assemble', 'SYNTHETIC_FAILURE', '{}', ?)`)
+      .run(now);
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, output_artifact_id, created_at, finished_at, updated_at)
       VALUES ('assembly_a', 'project_a', 'assembly', 'succeeded', '{}', 'artifact_b', ?, ?, ?)`)
@@ -727,9 +738,48 @@ test("database check reports invalid delivery Job bindings and inactive referenc
 
     const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
     assert.equal(checked.schema_current, true);
-    assert.equal(checked.orphan_rows, 15);
+    assert.equal(checked.orphan_rows, 17);
     assert.equal(checked.media_integrity_errors, 0);
     assert.equal(checked.check_errors, 0);
+    assert.equal(checked.result, "FAIL");
+  } finally {
+    try { db?.close(); } catch { /* retain the primary assertion failure */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("database check detects duplicate lifecycle Events after the insert guard is bypassed", () => {
+  const root = tempRoot();
+  let db: ReturnType<typeof openM0Database> | null = null;
+  try {
+    const sqlitePath = join(root, "duplicate-delivery-event.sqlite");
+    migrateDatabase(sqlitePath);
+    db = openM0Database(sqlitePath);
+    const project = createProject({ title: "Duplicate delivery Event governance" }, db);
+    assert.equal(project.ok, true);
+    if (!project.ok) throw new Error("duplicate Event project setup failed");
+    const now = "2026-08-15T09:00:00.000Z";
+    db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, input_json, error_code, created_at, finished_at, updated_at)
+      VALUES ('job_duplicate_event', ?, 'assembly', 'failed', '{}', 'SYNTHETIC_FAILURE', ?, ?, ?)`)
+      .run(project.project_id, now, now, now);
+    const insertEvent = db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, reason_code, data_json, created_at)
+      VALUES (?, ?, 'job_duplicate_event', 'assembly_failed', 'assembling', 'ready_to_assemble',
+        'SYNTHETIC_FAILURE', '{}', ?)`);
+    insertEvent.run("event_duplicate_first", project.project_id, now);
+    const trigger = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'trigger'
+      AND name = 'workbench_delivery_events_job_event_unique'`).get() as { sql: string };
+    db.exec("DROP TRIGGER workbench_delivery_events_job_event_unique");
+    insertEvent.run("event_duplicate_second", project.project_id, now);
+    db.exec(trigger.sql);
+    assertSchemaCurrent(db);
+    db.close();
+    db = null;
+
+    const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
+    assert.equal(checked.schema_current, true);
+    assert.equal(checked.orphan_rows, 1);
     assert.equal(checked.result, "FAIL");
   } finally {
     try { db?.close(); } catch { /* retain the primary assertion failure */ }

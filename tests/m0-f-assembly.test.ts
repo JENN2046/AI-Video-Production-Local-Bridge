@@ -318,6 +318,50 @@ test("M0-F assembly rechecks durable delivery Jobs after acquiring the commit tr
   }
 });
 
+test("M0-F assembly rejects a caller-owned outer transaction before Artifact, Job, Event, or state writes", async () => {
+  const db = openM0Database();
+  try {
+    const fixture = await setupGeneratedProject(db);
+    for (const shot of fixture.storyboard.shots) {
+      const run = fixture.generation.runs.find((item) => item.shot_id === shot.shot_id);
+      assert(run);
+      assert.equal(markShotClipReview({
+        shot_id: shot.shot_id,
+        artifact_id: run.output.artifact_ids[0],
+        decision: "approved"
+      }, db).ok, true);
+    }
+    const before = {
+      state: db.prepare("SELECT * FROM workbench_delivery_state WHERE project_id = ?").get(fixture.project.project_id),
+      artifacts: db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ? AND role = 'final_video'")
+        .get(fixture.project.project_id),
+      jobs: db.prepare("SELECT COUNT(*) AS count FROM workbench_delivery_jobs WHERE project_id = ?")
+        .get(fixture.project.project_id),
+      events: db.prepare("SELECT COUNT(*) AS count FROM workbench_delivery_events WHERE project_id = ?")
+        .get(fixture.project.project_id)
+    };
+
+    db.exec("BEGIN IMMEDIATE");
+    const assembled = assembleFinalVideo({
+      project_id: fixture.project.project_id,
+      confirmation: { confirmation_level: "explicit", user_confirmed: true }
+    }, db);
+    assert.equal(assembled.ok ? null : assembled.error.code, "FINAL_ASSEMBLY_TRANSACTION_UNSAFE");
+    assert.equal(Boolean((db as unknown as { isTransaction?: boolean }).isTransaction), true);
+    assert.deepEqual(db.prepare("SELECT * FROM workbench_delivery_state WHERE project_id = ?").get(fixture.project.project_id), before.state);
+    assert.deepEqual(db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ? AND role = 'final_video'")
+      .get(fixture.project.project_id), before.artifacts);
+    assert.deepEqual(db.prepare("SELECT COUNT(*) AS count FROM workbench_delivery_jobs WHERE project_id = ?")
+      .get(fixture.project.project_id), before.jobs);
+    assert.deepEqual(db.prepare("SELECT COUNT(*) AS count FROM workbench_delivery_events WHERE project_id = ?")
+      .get(fixture.project.project_id), before.events);
+    db.exec("ROLLBACK");
+  } finally {
+    if (Boolean((db as unknown as { isTransaction?: boolean }).isTransaction)) db.exec("ROLLBACK");
+    db.close();
+  }
+});
+
 test("M0-F assembly rejects archived and closed projects before creating another final Artifact", async () => {
   const db = openM0Database();
 

@@ -201,6 +201,14 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
       "export_succeeded", "artifact_delivery_old", "export_delivery_old", now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     assert.doesNotThrow(() => insertSucceededEvent.run("event_export_succeeded", "job_export_delivery",
       "export_succeeded", "artifact_delivery", "export_delivery", now));
+    assert.throws(() => insertSucceededEvent.run("event_export_succeeded_duplicate", "job_export_delivery",
+      "export_succeeded", "artifact_delivery", "export_delivery", now), /WORKBENCH_DELIVERY_JOB_EVENT_DUPLICATE/);
+    const insertReusedExportEvent = db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
+      VALUES (?, 'project_delivery', 'export_succeeded', 'exported', 'exported',
+        'artifact_delivery', 'export_delivery', 'EXPORT_REUSED', '{}', ?)`);
+    assert.doesNotThrow(() => insertReusedExportEvent.run("event_export_reused_first", now));
+    assert.doesNotThrow(() => insertReusedExportEvent.run("event_export_reused_second", "2026-08-13T00:00:01.000Z"));
     assert.throws(() => db.prepare("UPDATE workbench_exports SET size_bytes = 456 WHERE export_id = 'export_delivery'").run(), /WORKBENCH_EXPORT_IMMUTABLE/);
     assert.throws(() => db.prepare("DELETE FROM workbench_exports WHERE export_id = 'export_delivery'").run(), /WORKBENCH_EXPORT_IMMUTABLE/);
 
@@ -344,6 +352,9 @@ test("delivery lifecycle events bind to the matching Job type, state, Artifact, 
       .run(projectId, now, now);
     assert.doesNotThrow(() => insertEvent.run("event_assembly_queued", projectId, "job_event_assembly",
       "assembly_queued", "ready_to_assemble", "assembling", null, null, now));
+    assert.throws(() => insertEvent.run("event_assembly_queued_duplicate", projectId, "job_event_assembly",
+      "assembly_queued", "ready_to_assemble", "assembling", null, null, now),
+    /WORKBENCH_DELIVERY_JOB_EVENT_DUPLICATE/);
     assert.throws(() => insertEvent.run("event_assembly_started_early", projectId, "job_event_assembly",
       "assembly_started", "assembling", "assembling", null, null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     db.prepare(`UPDATE workbench_delivery_jobs SET state = 'running', started_at = ?, updated_at = ?
@@ -358,6 +369,9 @@ test("delivery lifecycle events bind to the matching Job type, state, Artifact, 
       "assembly_succeeded", "closed", "not_ready", "artifact_event_final", null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     assert.doesNotThrow(() => insertEvent.run("event_assembly_succeeded", projectId, "job_event_assembly",
       "assembly_succeeded", "assembling", "final_review", "artifact_event_final", null, now));
+    assert.throws(() => insertEvent.run("event_assembly_succeeded_duplicate", projectId, "job_event_assembly",
+      "assembly_succeeded", "assembling", "final_review", "artifact_event_final", null, now),
+    /WORKBENCH_DELIVERY_JOB_EVENT_DUPLICATE/);
 
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, error_code, created_at, finished_at, updated_at)
@@ -387,10 +401,10 @@ test("delivery lifecycle events bind to the matching Job type, state, Artifact, 
       (job_id, project_id, job_type, state, input_json, created_at, updated_at)
       VALUES ('job_event_export', ?, 'export', 'queued', '{"artifact_id":"artifact_event_final"}', ?, ?)`)
       .run(projectId, now, now);
-    assert.doesNotThrow(() => insertEvent.run("event_export_queued", projectId, "job_event_export",
-      "export_queued", "approved", "approved", "artifact_event_final", null, now));
     assert.throws(() => insertEvent.run("event_export_queued_wrong_artifact", projectId, "job_event_export",
       "export_queued", "approved", "approved", "artifact_event_other", null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+    assert.doesNotThrow(() => insertEvent.run("event_export_queued", projectId, "job_event_export",
+      "export_queued", "approved", "approved", "artifact_event_final", null, now));
     assert.throws(() => insertEvent.run("event_export_started_early", projectId, "job_event_export",
       "export_started", "approved", "approved", "artifact_event_final", null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     db.prepare(`UPDATE workbench_delivery_jobs SET state = 'running', started_at = ?, updated_at = ?
