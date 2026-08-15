@@ -204,18 +204,27 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
     assert.throws(() => db.prepare("UPDATE workbench_exports SET size_bytes = 456 WHERE export_id = 'export_delivery'").run(), /WORKBENCH_EXPORT_IMMUTABLE/);
     assert.throws(() => db.prepare("DELETE FROM workbench_exports WHERE export_id = 'export_delivery'").run(), /WORKBENCH_EXPORT_IMMUTABLE/);
 
-    db.prepare(`UPDATE workbench_delivery_state
-      SET workflow_state = 'closed', closed_at = ?, updated_at = ? WHERE project_id = 'project_delivery'`).run(now, now);
     const insertCloseout = db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
       VALUES (?, 'project_delivery', 'closeout', 'exported', 'closed', ?, ?, 'CLOSEOUT_CONFIRMED', '{}', ?)`);
+    assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'closed', closed_at = ?, updated_at = ? WHERE project_id = 'project_delivery'`).run(now, now),
+    /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
     assert.throws(() => insertCloseout.run("event_closeout_stale", "artifact_delivery_old", "export_delivery_old", now),
       /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     assert.throws(() => insertCloseout.run("event_closeout_stale_export", "artifact_delivery", "export_delivery_old", now),
       /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     assert.throws(() => insertCloseout.run("event_closeout_stale_artifact", "artifact_delivery_old", "export_delivery", now),
       /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+    assert.deepEqual({ ...(db.prepare(`SELECT workflow_state, closed_at FROM workbench_delivery_state
+      WHERE project_id = 'project_delivery'`).get() as Record<string, unknown>) },
+    { workflow_state: "exported", closed_at: null });
+    assert.equal((db.prepare(`SELECT COUNT(*) AS count FROM workbench_delivery_events
+      WHERE project_id = 'project_delivery' AND event_type = 'closeout'`).get() as { count: number }).count, 0);
     assert.doesNotThrow(() => insertCloseout.run("event_closeout", "artifact_delivery", "export_delivery", now));
+    assert.deepEqual({ ...(db.prepare(`SELECT workflow_state, closed_at FROM workbench_delivery_state
+      WHERE project_id = 'project_delivery'`).get() as Record<string, unknown>) },
+    { workflow_state: "closed", closed_at: now });
     assert.throws(() => insertCloseout.run("event_closeout_duplicate", "artifact_delivery", "export_delivery", "2026-08-13T00:01:00.000Z"),
       /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     const writable = assertWorkbenchProjectWritable(db, "project_delivery");

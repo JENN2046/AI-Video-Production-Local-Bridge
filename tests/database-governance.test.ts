@@ -640,8 +640,6 @@ test("database check reports invalid delivery Job bindings and inactive referenc
     db.prepare(`UPDATE workbench_delivery_state
       SET workflow_state = 'exported', latest_export_id = 'export_b', latest_exported_at = ?, updated_at = ?
       WHERE project_id = 'project_b'`).run(now, now);
-    db.prepare(`UPDATE workbench_delivery_state
-      SET workflow_state = 'closed', closed_at = ?, updated_at = ? WHERE project_id = 'project_b'`).run(now, now);
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, error_code, created_at, finished_at, updated_at)
       VALUES ('parent_b', 'project_b', 'assembly', 'failed', '{}', 'SYNTHETIC_FAILURE', ?, ?, ?)`)
@@ -649,13 +647,17 @@ test("database check reports invalid delivery Job bindings and inactive referenc
 
     const triggerRows = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'trigger'
       AND name IN ('workbench_delivery_jobs_validate_insert', 'workbench_delivery_jobs_validate_bindings_update',
-        'workbench_delivery_artifact_status_guard', 'workbench_delivery_events_validate_insert')
+        'workbench_delivery_artifact_status_guard', 'workbench_delivery_events_validate_insert',
+        'workbench_delivery_state_transition')
       ORDER BY name`).all() as Array<{ sql: string }>;
-    assert.equal(triggerRows.length, 4);
+    assert.equal(triggerRows.length, 5);
     db.exec(`DROP TRIGGER workbench_delivery_jobs_validate_insert;
       DROP TRIGGER workbench_delivery_jobs_validate_bindings_update;
       DROP TRIGGER workbench_delivery_artifact_status_guard;
-      DROP TRIGGER workbench_delivery_events_validate_insert;`);
+      DROP TRIGGER workbench_delivery_events_validate_insert;
+      DROP TRIGGER workbench_delivery_state_transition;`);
+    db.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'closed', closed_at = ?, updated_at = ? WHERE project_id = 'project_b'`).run(now, now);
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, retry_of_job_id, error_code, created_at, finished_at, updated_at)
       VALUES ('retry_a', 'project_a', 'assembly', 'failed', '{}', 'parent_b', 'SYNTHETIC_FAILURE', ?, ?, ?)`)
@@ -725,7 +727,7 @@ test("database check reports invalid delivery Job bindings and inactive referenc
 
     const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
     assert.equal(checked.schema_current, true);
-    assert.equal(checked.orphan_rows, 13);
+    assert.equal(checked.orphan_rows, 15);
     assert.equal(checked.media_integrity_errors, 0);
     assert.equal(checked.check_errors, 0);
     assert.equal(checked.result, "FAIL");

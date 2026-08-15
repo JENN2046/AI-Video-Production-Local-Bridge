@@ -7,6 +7,7 @@ import { getMediaArtifact, verifyMediaArtifactBytes } from "./mediaArtifacts.js"
 import { getProject, saveProject, type Project, type Shot, type ToolError } from "./projects.js";
 import { importStoryboardPackage, type ImportStoryboardPackageInput } from "./storyboardPackages.js";
 import { isNineSixteenAspectRatio } from "./importClassifier.js";
+import { assertWorkbenchContentMutationAllowed } from "./workbenchDeliveryState.js";
 
 export type G0ArtifactKind =
   | "creative_brief"
@@ -120,6 +121,9 @@ export function saveG0Artifact(
   input: { project_id: string; kind: G0ArtifactKind; payload: unknown },
   db = openM0Database()
 ): G0SaveResult {
+  const writable = assertWorkbenchContentMutationAllowed(db, input.project_id);
+  if (!writable.ok) return { ok: false, error: writable.error };
+
   const project = projectOrError(input.project_id, db);
   if ("code" in project) return { ok: false, error: project };
 

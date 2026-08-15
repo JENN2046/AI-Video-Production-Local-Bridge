@@ -364,8 +364,11 @@ test("M0-C closed projects reject Storyboard import before SHOT, Artifact, packa
     db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'exported',
       latest_export_id = 'export_closed_storyboard', latest_exported_at = ?, updated_at = ? WHERE project_id = ?`)
       .run(now, now, created.project_id);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'closed',
-      closed_at = ?, updated_at = ? WHERE project_id = ?`).run(now, now, created.project_id);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
+      VALUES ('event_closeout_storyboard', ?, 'closeout', 'exported', 'closed', ?, 'export_closed_storyboard',
+        'CLOSEOUT_CONFIRMED', '{}', ?)`)
+      .run(created.project_id, finalArtifact.artifact.artifact_id, now);
 
     const projectBefore = getProject(db, created.project_id);
     const countsBefore = db.prepare(`SELECT

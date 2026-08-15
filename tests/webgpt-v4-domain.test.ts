@@ -113,8 +113,11 @@ function closeProductionProject(context: TestContext): void {
   context.db.prepare(`UPDATE workbench_delivery_state
     SET workflow_state = 'exported', latest_export_id = ?, latest_exported_at = ?, updated_at = ? WHERE project_id = ?`)
     .run(exportId, now, now, context.production.project_id);
-  context.db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'closed', closed_at = ?, updated_at = ? WHERE project_id = ?")
-    .run(now, now, context.production.project_id);
+  context.db.prepare(`INSERT INTO workbench_delivery_events
+    (event_id, project_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
+    VALUES (?, ?, 'closeout', 'exported', 'closed', ?, ?, 'CLOSEOUT_CONFIRMED', '{}', ?)`)
+    .run(`event_closeout_${context.production.project_id}`, context.production.project_id,
+      registered.artifact.artifact_id, exportId, now);
 }
 
 function setProductionFinalEvidence(

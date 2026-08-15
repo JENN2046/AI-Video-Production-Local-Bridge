@@ -451,9 +451,6 @@ test("SQLite and Snapshot readonly adapters preserve six-tool DTO parity and dat
     fixtureDb.prepare(`UPDATE workbench_delivery_state
       SET workflow_state = 'exported', latest_export_id = 'export_snapshot_fixture', latest_exported_at = ?, updated_at = ?
       WHERE project_id = ?`).run(closedAt, closedAt, fixture.project_id);
-    fixtureDb.prepare(`UPDATE workbench_delivery_state
-      SET workflow_state = 'closed', closed_at = ?, updated_at = ? WHERE project_id = ?`)
-      .run(closedAt, closedAt, fixture.project_id);
     fixtureDb.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
       VALUES ('event_snapshot_closeout', ?, 'closeout', 'exported', 'closed', ?, 'export_snapshot_fixture',

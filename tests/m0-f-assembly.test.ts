@@ -363,8 +363,11 @@ test("M0-F assembly rejects archived and closed projects before creating another
     db.prepare(`UPDATE workbench_delivery_state
       SET workflow_state = 'exported', latest_export_id = ?, latest_exported_at = ?, updated_at = ?
       WHERE project_id = ?`).run(exportId, now, now, closedFixture.project.project_id);
-    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'closed', closed_at = ?, updated_at = ? WHERE project_id = ?")
-      .run(now, now, closedFixture.project.project_id);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
+      VALUES (?, ?, 'closeout', 'exported', 'closed', ?, ?, 'CLOSEOUT_CONFIRMED', '{}', ?)`)
+      .run(`event_closeout_${closedFixture.project.project_id}`, closedFixture.project.project_id,
+        first.final_video_artifact_id, exportId, now);
     const finalCountBefore = (db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ? AND role = 'final_video'")
       .get(closedFixture.project.project_id) as { count: number }).count;
     const eventCountBefore = (db.prepare("SELECT COUNT(*) AS count FROM workbench_delivery_events WHERE project_id = ?")

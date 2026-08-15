@@ -125,8 +125,10 @@ function closeProjectForReviewTest(db: ReturnType<typeof openM0Database>, projec
   db.prepare(`UPDATE workbench_delivery_state
     SET workflow_state = 'exported', latest_export_id = ?, latest_exported_at = ?, updated_at = ? WHERE project_id = ?`)
     .run(exportId, now, now, projectId);
-  db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'closed', closed_at = ?, updated_at = ? WHERE project_id = ?")
-    .run(now, now, projectId);
+  db.prepare(`INSERT INTO workbench_delivery_events
+    (event_id, project_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
+    VALUES (?, ?, 'closeout', 'exported', 'closed', ?, ?, 'CLOSEOUT_CONFIRMED', '{}', ?)`)
+    .run(`event_closeout_${projectId}`, projectId, artifactId, exportId, now);
 }
 
 test("M0-E approved review sets accepted clip", async () => {
@@ -294,6 +296,73 @@ test("production content mutations require explicit atomic rework after final ev
     });
   } finally {
     if ((db as unknown as { isTransaction?: boolean }).isTransaction) db.exec("ROLLBACK");
+    db.close();
+  }
+});
+
+test("production content mutations freeze before side effects during assembling state or an active assembly Job", async () => {
+  const db = openM0Database();
+  try {
+    const assemblingFixture = await setupGeneratedShot(db);
+    assert.equal(markShotClipReview({
+      shot_id: assemblingFixture.shot.shot_id,
+      artifact_id: assemblingFixture.artifactId,
+      decision: "revision_needed",
+      rejection_reasons: ["prepare assembly freeze fixture"]
+    }, db).ok, true);
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble' WHERE project_id = ?")
+      .run(assemblingFixture.project.project_id);
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling' WHERE project_id = ?")
+      .run(assemblingFixture.project.project_id);
+
+    const activeJobFixture = await setupGeneratedShot(db);
+    assert.equal(markShotClipReview({
+      shot_id: activeJobFixture.shot.shot_id,
+      artifact_id: activeJobFixture.artifactId,
+      decision: "revision_needed",
+      rejection_reasons: ["prepare active assembly Job fixture"]
+    }, db).ok, true);
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble' WHERE project_id = ?")
+      .run(activeJobFixture.project.project_id);
+    db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, input_json, created_at, updated_at)
+      VALUES ('job_content_freeze', ?, 'assembly', 'queued', '{}', ?, ?)`)
+      .run(activeJobFixture.project.project_id, "2026-08-15T04:00:00.000Z", "2026-08-15T04:00:00.000Z");
+
+    for (const fixture of [assemblingFixture, activeJobFixture]) {
+      const shotBefore = getShot(db, fixture.shot.shot_id);
+      const countsBefore = db.prepare(`SELECT
+        (SELECT COUNT(*) FROM media_artifacts WHERE project_id = ?) AS artifacts,
+        (SELECT COUNT(*) FROM generation_runs WHERE project_id = ?) AS runs`)
+        .get(fixture.project.project_id, fixture.project.project_id);
+      const changed = updateWorkbenchShot(fixture.project.project_id, fixture.shot.shot_id, {
+        video_prompt: "This must remain frozen during assembly."
+      }, db);
+      assert.equal(changed.ok ? null : changed.error.code, "DELIVERY_JOB_ACTIVE");
+      const reviewed = markShotClipReview({
+        shot_id: fixture.shot.shot_id,
+        artifact_id: fixture.artifactId,
+        decision: "approved"
+      }, db);
+      assert.equal(reviewed.ok ? null : reviewed.error.code, "DELIVERY_JOB_ACTIVE");
+      const regenerated = await regenerateShotVideo({
+        shot_id: fixture.shot.shot_id,
+        previous_run_id: fixture.run.run_id,
+        updated_prompt: "This must not reach the Provider adapter.",
+        confirmation: { confirmation_level: "hard_gate", user_confirmed: true }
+      }, db);
+      assert.equal(regenerated.ok ? null : regenerated.error.code, "DELIVERY_JOB_ACTIVE");
+      assert.deepEqual(getShot(db, fixture.shot.shot_id), shotBefore);
+      assert.deepEqual(db.prepare(`SELECT
+        (SELECT COUNT(*) FROM media_artifacts WHERE project_id = ?) AS artifacts,
+        (SELECT COUNT(*) FROM generation_runs WHERE project_id = ?) AS runs`)
+        .get(fixture.project.project_id, fixture.project.project_id), countsBefore);
+    }
+  } finally {
+    db.prepare(`UPDATE workbench_delivery_jobs
+      SET state = 'interrupted', error_code = 'TEST_CLEANUP', finished_at = ?, updated_at = ?
+      WHERE job_id = 'job_content_freeze' AND state IN ('queued','running')`)
+      .run("2026-08-15T04:01:00.000Z", "2026-08-15T04:01:00.000Z");
     db.close();
   }
 });

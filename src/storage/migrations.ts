@@ -1469,7 +1469,8 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
         SELECT 1 FROM workbench_delivery_state d
         JOIN workbench_exports e ON e.export_id = d.latest_export_id
           AND e.project_id = d.project_id AND e.artifact_id = d.current_final_artifact_id
-        WHERE d.project_id = NEW.project_id AND d.workflow_state = 'closed'
+        WHERE d.project_id = NEW.project_id AND d.workflow_state = 'exported'
+          AND NEW.job_id IS NULL AND NEW.input_fingerprint IS NULL
           AND d.current_final_artifact_id = NEW.artifact_id
           AND d.approved_artifact_id = NEW.artifact_id
           AND d.latest_export_id = NEW.export_id
@@ -1534,6 +1535,16 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
   CREATE TRIGGER workbench_delivery_events_no_delete BEFORE DELETE ON workbench_delivery_events BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_EVENTS_APPEND_ONLY');
   END;
+  CREATE TRIGGER workbench_delivery_closeout_apply AFTER INSERT ON workbench_delivery_events
+  WHEN NEW.event_type = 'closeout'
+  BEGIN
+    UPDATE workbench_delivery_state
+    SET workflow_state = 'closed', closed_at = NEW.created_at, updated_at = NEW.created_at
+    WHERE project_id = NEW.project_id AND workflow_state = 'exported'
+      AND current_final_artifact_id IS NEW.artifact_id
+      AND approved_artifact_id IS NEW.artifact_id
+      AND latest_export_id IS NEW.export_id;
+  END;
 
   CREATE TRIGGER workbench_delivery_state_validate_artifacts BEFORE INSERT ON workbench_delivery_state
   WHEN (NEW.current_final_artifact_id IS NOT NULL AND NOT EXISTS (
@@ -1590,7 +1601,17 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
       OR (OLD.workflow_state = 'final_review' AND NEW.workflow_state IN ('approved','ready_to_assemble','revision_requested'))
       OR (OLD.workflow_state = 'revision_requested' AND NEW.workflow_state IN ('not_ready','ready_to_assemble'))
       OR (OLD.workflow_state = 'approved' AND NEW.workflow_state IN ('exported','ready_to_assemble','revision_requested'))
-      OR (OLD.workflow_state = 'exported' AND NEW.workflow_state IN ('closed','ready_to_assemble','revision_requested'))
+      OR (OLD.workflow_state = 'exported' AND NEW.workflow_state IN ('ready_to_assemble','revision_requested'))
+      OR (OLD.workflow_state = 'exported' AND NEW.workflow_state = 'closed' AND EXISTS (
+        SELECT 1 FROM workbench_delivery_events event
+        WHERE event.project_id = NEW.project_id AND event.event_type = 'closeout'
+          AND event.from_state = 'exported' AND event.to_state = 'closed'
+          AND event.job_id IS NULL AND event.input_fingerprint IS NULL
+          AND event.artifact_id IS NEW.current_final_artifact_id
+          AND event.artifact_id IS NEW.approved_artifact_id
+          AND event.export_id IS NEW.latest_export_id
+          AND event.created_at IS NEW.closed_at
+      ))
       OR (OLD.workflow_state = 'legacy_review_required' AND NEW.workflow_state IN ('not_ready','ready_to_assemble','final_review'))
     ))
     OR (OLD.current_final_artifact_id IS NOT NEW.current_final_artifact_id AND NOT (
@@ -2048,6 +2069,7 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "workbench_delivery_events_validate_insert",
         "workbench_delivery_events_no_update",
         "workbench_delivery_events_no_delete",
+        "workbench_delivery_closeout_apply",
         "workbench_delivery_state_validate_artifacts",
         "workbench_delivery_state_validate_artifacts_update",
         "workbench_delivery_artifact_status_guard",

@@ -907,6 +907,44 @@ test("Workbench project summary treats a complete draft storyboard as awaiting a
   }
 });
 
+test("Workbench project summary prioritizes ready-to-assemble over a retained final Artifact pointer", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const created = createWorkbenchProject({ title: "Reassembly CTA", classification: "production" }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    const finalArtifact = registerMediaArtifact({
+      artifact_type: "video",
+      role: "final_video",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: created.data.project.project_id }
+    }, db);
+    assert.equal(finalArtifact.ok, true);
+    if (!finalArtifact.ok) return;
+    created.data.project.exports.final_video_artifact_id = finalArtifact.artifact.artifact_id;
+    saveProject(db, created.data.project);
+    const now = "2026-08-15T05:00:00.000Z";
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
+      .run(now, created.data.project.project_id);
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
+      .run(now, created.data.project.project_id);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
+      current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
+      .run(finalArtifact.artifact.artifact_id, now, created.data.project.project_id);
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
+      .run(now, created.data.project.project_id);
+
+    const summary = listWorkbenchProjects({ scope: "daily" }, db).items
+      .find((item) => item.project.project_id === created.data.project.project_id);
+    assert.equal(summary?.delivery_state, "ready_to_assemble");
+    assert.equal(summary?.project.exports.final_video_artifact_id, finalArtifact.artifact.artifact_id);
+    assert.equal(summary?.next_action.reason_code, "assemble");
+    assert.equal(summary?.next_action.label, "合成交付");
+  } finally {
+    db.close();
+  }
+});
+
 test("Workbench project summary keeps missing storyboard inputs ahead of clip revision", () => {
   const db = openM0Database(":memory:");
   try {

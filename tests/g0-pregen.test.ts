@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import test from "node:test";
 
 import {
   createProject,
   getMediaArtifact,
   getProject,
+  g0ProjectRoot,
   importG0AppReadyStoryboardPackage,
   openM0Database,
   readG0Artifact,
@@ -214,6 +216,71 @@ test("G0 valid app-ready package imports through existing Storyboard Package cha
     const saved = readG0Artifact(project.project_id, "storyboard_package");
     assert.equal(saved?.kind, "storyboard_package");
     assert.equal((saved?.payload as { status?: string } | undefined)?.status, "approved_for_video_generation");
+  } finally {
+    db.close();
+  }
+});
+
+test("G0 rejects archived, closed, and assembling projects before filesystem or Project writes", () => {
+  const db = openM0Database();
+  try {
+    const archived = createProject({ title: "G0 Archived Gate" }, db);
+    const assembling = createProject({ title: "G0 Assembly Gate" }, db);
+    const closed = createProject({ title: "G0 Closed Gate" }, db);
+    assert.equal(archived.ok, true);
+    assert.equal(assembling.ok, true);
+    assert.equal(closed.ok, true);
+    if (!archived.ok || !assembling.ok || !closed.ok) return;
+
+    db.prepare("UPDATE workbench_project_meta SET lifecycle = 'archived' WHERE project_id = ?")
+      .run(archived.project_id);
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble' WHERE project_id = ?")
+      .run(assembling.project_id);
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling' WHERE project_id = ?")
+      .run(assembling.project_id);
+
+    const finalArtifact = registerMediaArtifact({
+      artifact_type: "video",
+      role: "final_video",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: closed.project_id }
+    }, db);
+    assert.equal(finalArtifact.ok, true);
+    if (!finalArtifact.ok) return;
+    const artifactId = finalArtifact.artifact.artifact_id;
+    const exportId = `export_${closed.project_id}`;
+    const closedAt = "2026-08-15T03:00:00.000Z";
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
+      .run(closedAt, closed.project_id);
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
+      .run(closedAt, closed.project_id);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
+      current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`).run(artifactId, closedAt, closed.project_id);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'approved',
+      approved_artifact_id = ?, updated_at = ? WHERE project_id = ?`).run(artifactId, closedAt, closed.project_id);
+    db.prepare(`INSERT INTO workbench_exports
+      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
+      VALUES (?, ?, ?, ?, ?, 1, ?)`)
+      .run(exportId, closed.project_id, artifactId, `data/exports/${closed.project_id}/final.mp4`, "e".repeat(64), closedAt);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'exported', latest_export_id = ?,
+      latest_exported_at = ?, updated_at = ? WHERE project_id = ?`).run(exportId, closedAt, closedAt, closed.project_id);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
+      VALUES (?, ?, 'closeout', 'exported', 'closed', ?, ?, 'CLOSEOUT_CONFIRMED', '{}', ?)`)
+      .run(`event_closeout_${closed.project_id}`, closed.project_id, artifactId, exportId, closedAt);
+
+    for (const [projectId, expectedCode] of [
+      [archived.project_id, "PROJECT_ARCHIVED"],
+      [assembling.project_id, "DELIVERY_JOB_ACTIVE"],
+      [closed.project_id, "PROJECT_CLOSED"]
+    ] as const) {
+      const before = db.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(projectId);
+      assert.equal(existsSync(g0ProjectRoot(projectId)), false);
+      const saved = saveG0Artifact({ project_id: projectId, kind: "creative_brief", payload: { forbidden: true } }, db);
+      assert.equal(saved.ok ? null : saved.error.code, expectedCode);
+      assert.equal(existsSync(g0ProjectRoot(projectId)), false);
+      assert.deepEqual(db.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(projectId), before);
+    }
   } finally {
     db.close();
   }

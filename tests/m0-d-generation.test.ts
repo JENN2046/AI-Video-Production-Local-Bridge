@@ -212,8 +212,10 @@ test("M0-D legacy batch generation rejects closed projects before all generation
       .run(exportId, project.project_id, artifactId, `data/exports/${project.project_id}/final.mp4`, "d".repeat(64), now);
     db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'exported', latest_export_id = ?,
       latest_exported_at = ?, updated_at = ? WHERE project_id = ?`).run(exportId, now, now, project.project_id);
-    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'closed', closed_at = ?, updated_at = ? WHERE project_id = ?")
-      .run(now, now, project.project_id);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
+      VALUES (?, ?, 'closeout', 'exported', 'closed', ?, ?, 'CLOSEOUT_CONFIRMED', '{}', ?)`)
+      .run(`event_closeout_${project.project_id}`, project.project_id, artifactId, exportId, now);
     const factsBefore = {
       project: db.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(project.project_id),
       shots: db.prepare("SELECT shot_id, data_json FROM shots WHERE project_id = ? ORDER BY shot_id").all(project.project_id),

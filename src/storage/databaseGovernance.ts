@@ -521,9 +521,25 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
           JOIN workbench_exports bound_export ON bound_export.export_id = state.latest_export_id
             AND bound_export.project_id = state.project_id AND bound_export.artifact_id = state.current_final_artifact_id
           WHERE state.project_id = event.project_id AND state.workflow_state = 'closed'
+            AND event.job_id IS NULL AND event.input_fingerprint IS NULL
             AND state.current_final_artifact_id = event.artifact_id
             AND state.approved_artifact_id = event.artifact_id
             AND state.latest_export_id = event.export_id
+            AND state.closed_at IS event.created_at
+        )`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_state state
+        WHERE state.workflow_state = 'closed' AND NOT EXISTS (
+          SELECT 1 FROM workbench_delivery_events event
+          JOIN workbench_exports bound_export ON bound_export.export_id = state.latest_export_id
+            AND bound_export.project_id = state.project_id
+            AND bound_export.artifact_id = state.current_final_artifact_id
+          WHERE event.project_id = state.project_id AND event.event_type = 'closeout'
+            AND event.from_state = 'exported' AND event.to_state = 'closed'
+            AND event.job_id IS NULL AND event.input_fingerprint IS NULL
+            AND event.artifact_id IS state.current_final_artifact_id
+            AND event.artifact_id IS state.approved_artifact_id
+            AND event.export_id IS state.latest_export_id
+            AND event.created_at IS state.closed_at
         )`,
       `SELECT COALESCE(SUM(closeout_count - 1), 0) AS count FROM (
         SELECT COUNT(*) AS closeout_count FROM workbench_delivery_events

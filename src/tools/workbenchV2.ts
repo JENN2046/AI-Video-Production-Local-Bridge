@@ -456,6 +456,7 @@ function deriveNextAction(
 ): WorkbenchNextAction["derived"] {
   if (workflowState === "closed") return { label: "已结案", reason_code: "delivered", priority: "normal" };
   if (workflowState === "legacy_review_required") return { label: "复核历史交付", reason_code: "legacy_review_required", priority: "urgent" };
+  if (workflowState === "ready_to_assemble") return { label: "合成交付", reason_code: "assemble", priority: "high" };
   if (workflowState === "assembling") return { label: "等待装配完成", reason_code: "assembly_running", priority: "normal" };
   if (workflowState === "final_review") return { label: "最终审查", reason_code: "final_review", priority: "high" };
   if (workflowState === "revision_requested") return { label: "处理定向返工", reason_code: "final_revision_requested", priority: "urgent" };

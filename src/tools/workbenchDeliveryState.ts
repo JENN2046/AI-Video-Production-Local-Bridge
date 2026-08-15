@@ -71,7 +71,7 @@ export type WorkbenchProductionWriteBoundaryResult =
 
 export type WorkbenchContentMutationBoundaryResult =
   | WorkbenchProductionWriteBoundaryResult
-  | { ok: false; error: { code: "DELIVERY_REWORK_REQUIRED"; message: string } };
+  | { ok: false; error: { code: "DELIVERY_JOB_ACTIVE" | "DELIVERY_REWORK_REQUIRED"; message: string } };
 
 const FINAL_EVIDENCE_STATES: ReadonlySet<WorkbenchDeliveryWorkflowState> = new Set([
   "final_review",
@@ -119,6 +119,20 @@ export function assertWorkbenchContentMutationAllowed(
 ): WorkbenchContentMutationBoundaryResult {
   const writable = assertWorkbenchProductionWriteAllowed(db, projectId);
   if (!writable.ok) return writable;
+  const activeAssemblyJob = db.prepare(`
+    SELECT 1 AS present FROM workbench_delivery_jobs
+    WHERE project_id = ? AND job_type = 'assembly' AND state IN ('queued','running')
+    LIMIT 1
+  `).get(projectId) as { present: number } | undefined;
+  if (writable.delivery.workflow_state === "assembling" || activeAssemblyJob) {
+    return {
+      ok: false,
+      error: {
+        code: "DELIVERY_JOB_ACTIVE",
+        message: "Production content cannot change while assembly is active."
+      }
+    };
+  }
   if (FINAL_EVIDENCE_STATES.has(writable.delivery.workflow_state)) {
     return {
       ok: false,
