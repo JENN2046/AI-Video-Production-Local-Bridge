@@ -281,10 +281,12 @@ function enterManualReconciliationJob(
   return { ...updated, lease_expires_at: null };
 }
 
+type ReconciliationRestoreState = { shot_status: ShotStatus; project_status: ProjectStatus };
+
 function persistedReconciliationRestoreState(
   db: M0Database,
   intentId: string
-): { shot_status: ShotStatus; project_status: ProjectStatus } | null {
+): ReconciliationRestoreState | null {
   const row = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(intentId) as { data_json: string } | undefined;
   const data = parseRecord(row?.data_json ?? "");
   const restore = data.reconciliation_restore && typeof data.reconciliation_restore === "object" && !Array.isArray(data.reconciliation_restore)
@@ -300,7 +302,56 @@ function persistedReconciliationRestoreState(
   };
 }
 
-function reconciliationRestoreState(db: M0Database, intentId: string): { shot_status: ShotStatus; project_status: ProjectStatus } {
+function migratedReconciliationRestoreState(
+  db: M0Database,
+  job: GenerationJob,
+  intent: WorkbenchGenerationIntent,
+  project: Project,
+  shot: Shot
+): ReconciliationRestoreState | null {
+  const restoredShotStatus: ShotStatus = shot.clip_versions.length > 0 ? "revision_needed" : "storyboard_approved";
+  if (job.job_id !== `job_${intent.intent_id}`
+    || job.reconciliation_reason !== "PROVIDER_SUBMIT_OUTCOME_UNKNOWN"
+    || !intent.confirmed
+    || (intent.status !== "queued" && intent.status !== "running")
+    || intent.provider_task_id !== ""
+    || !["storyboard_approved", "video_generation_in_progress", "video_review"].includes(project.status)
+    || !project.shot_ids.includes(shot.shot_id)
+    || (shot.status !== "video_pending" && shot.status !== restoredShotStatus)) return null;
+
+  const event = db.prepare(`SELECT
+      COUNT(*) AS event_count,
+      SUM(CASE WHEN event_id = ?
+        AND from_state = ''
+        AND to_state = 'manual_reconciliation'
+        AND reason_code = 'PROVIDER_SUBMIT_OUTCOME_UNKNOWN'
+        AND json_valid(data_json) = 1
+        AND json_extract(data_json, '$.source') = 'migration_0004'
+        THEN 1 ELSE 0 END) AS migration_event_count
+    FROM generation_job_events WHERE job_id = ?`).get(
+      `job_event_backfill_${job.job_id}`,
+      job.job_id
+    ) as { event_count: number; migration_event_count: number };
+  if (Number(event.event_count) !== 1 || Number(event.migration_event_count) !== 1) return null;
+
+  const projectStatus: ProjectStatus = listProjectShots(db, project.project_id).some((candidate) =>
+    candidate.clip_versions.length > 0
+      || ["video_review", "video_generated", "approved", "revision_needed"].includes(candidate.status)
+  )
+    ? "video_review"
+    : "storyboard_approved";
+  return { shot_status: restoredShotStatus, project_status: projectStatus };
+}
+
+function persistReconciliationRestoreState(db: M0Database, intentId: string, restore: ReconciliationRestoreState): void {
+  const row = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?").get(intentId) as { data_json: string };
+  const data = parseRecord(row.data_json);
+  data.reconciliation_restore = restore;
+  db.prepare("UPDATE generation_intents SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE intent_id = ?")
+    .run(JSON.stringify(data), intentId);
+}
+
+function reconciliationRestoreState(db: M0Database, intentId: string): ReconciliationRestoreState {
   return persistedReconciliationRestoreState(db, intentId)
     ?? { shot_status: "storyboard_approved", project_status: "storyboard_approved" };
 }
@@ -3318,17 +3369,36 @@ export function reconcileGenerationJob(
     if (!intent) { db.exec("ROLLBACK"); return { ok: false, error: { code: "GENERATION_INTENT_NOT_FOUND", message: "Generation intent was not found." } }; }
     const writable = assertWorkbenchProjectWritable(db, intent.project_id);
     if (!writable.ok) { db.exec("ROLLBACK"); return writable; }
-    const restoreState = persistedReconciliationRestoreState(db, intent.intent_id);
     const shot = getShot(db, intent.shot_id);
-    if (!restoreState || !shot
-      || writable.data.project.status !== restoreState.project_status
-      || shot.status !== restoreState.shot_status) {
+    const run = intent.run_id ? getGenerationRun(db, intent.run_id) : null;
+    let restoreState = persistedReconciliationRestoreState(db, intent.intent_id);
+    let migratedRestoreState = false;
+    if (!restoreState && shot) {
+      restoreState = migratedReconciliationRestoreState(db, row, intent, writable.data.project, shot);
+      if (restoreState) {
+        migratedRestoreState = true;
+        persistReconciliationRestoreState(db, intent.intent_id, restoreState);
+      }
+    }
+    const shotStateMatches = restoreState !== null && shot !== null
+      && (shot.status === restoreState.shot_status || (migratedRestoreState && shot.status === "video_pending"));
+    if (!restoreState || !shot || !run
+      || writable.data.project.status === "final_approved"
+      || !writable.data.project.shot_ids.includes(intent.shot_id)
+      || shot.project_id !== intent.project_id
+      || !shotStateMatches
+      || !intent.confirmed
+      || (intent.status !== "queued" && intent.status !== "running")
+      || run.project_id !== intent.project_id
+      || run.shot_id !== intent.shot_id
+      || (run.status !== "queued" && run.status !== "running")
+      || shot.generation_run_ids.at(-1) !== intent.run_id) {
       db.exec("ROLLBACK");
       return {
         ok: false,
         error: {
           code: "GENERATION_RECONCILIATION_CONTEXT_STALE",
-          message: "Project or SHOT state changed after this generation entered reconciliation.",
+          message: "Project terminal state or target SHOT generation binding changed after this generation entered reconciliation.",
           field: "job_id"
         }
       };
@@ -3364,8 +3434,6 @@ export function reconcileGenerationJob(
         db.exec("ROLLBACK");
         return { ok: false, error: { code: "PROVIDER_TASK_ALREADY_OWNED", message: "Provider task ID is already owned by another generation." } };
       }
-      const run = getGenerationRun(db, intent.run_id);
-      if (!run) { db.exec("ROLLBACK"); return { ok: false, error: { code: "GENERATION_RUN_NOT_FOUND", message: "Generation run was not found." } }; }
       const persistedRecovery = providerOutputRecoveryFromIntent(db, intent.intent_id, intent.provider_task_id);
       if (!persistedRecovery.ok) {
         db.exec("ROLLBACK");
