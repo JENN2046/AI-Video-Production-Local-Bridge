@@ -606,6 +606,16 @@ test("schema validation rejects index and trigger definitions with the expected 
     assert.throws(() => assertSchemaCurrent(deliveryJobTrigger), (error) => error instanceof SchemaMigrationRequiredError
       && /trigger_definition:workbench_delivery_jobs_validate_insert/.test(error.message));
     deliveryJobTrigger.close();
+
+    const deliveryArtifactTriggerPath = join(root, "delivery-artifact-trigger.sqlite");
+    migrateDatabase(deliveryArtifactTriggerPath);
+    const deliveryArtifactTrigger = new DatabaseSync(deliveryArtifactTriggerPath);
+    deliveryArtifactTrigger.exec(`DROP TRIGGER workbench_delivery_artifact_content_guard;
+      CREATE TRIGGER workbench_delivery_artifact_content_guard BEFORE UPDATE OF data_json
+      ON media_artifacts BEGIN SELECT 1; END`);
+    assert.throws(() => assertSchemaCurrent(deliveryArtifactTrigger), (error) => error instanceof SchemaMigrationRequiredError
+      && /trigger_definition:workbench_delivery_artifact_content_guard/.test(error.message));
+    deliveryArtifactTrigger.close();
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

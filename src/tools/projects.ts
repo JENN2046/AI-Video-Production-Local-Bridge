@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { validateAcceptedClipReference } from "./mediaArtifacts.js";
-import { assertWorkbenchProductionWriteAllowed } from "./workbenchDeliveryState.js";
+import { assertWorkbenchContentMutationAllowed, assertWorkbenchProductionWriteAllowed } from "./workbenchDeliveryState.js";
 
 export type ProjectStatus = "draft" | "storyboard_approved" | "video_generation_in_progress" | "video_review" | "final_approved";
 export type ShotStatus = "draft" | "storyboard_approved" | "video_pending" | "video_generated" | "video_review" | "approved" | "revision_needed";
@@ -119,12 +119,20 @@ export function getProject(db: M0Database, projectId: string): Project | null {
 }
 
 export function saveShot(db: M0Database, shot: Shot): void {
-  const writable = assertWorkbenchProductionWriteAllowed(db, shot.project_id);
-  if (!writable.ok) throw new Error(writable.error.code);
-  db.prepare(`
-    INSERT OR REPLACE INTO shots (shot_id, project_id, data_json, updated_at)
-    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-  `).run(shot.shot_id, shot.project_id, JSON.stringify(shot));
+  const ownsTransaction = !(db as unknown as { isTransaction?: boolean }).isTransaction;
+  if (ownsTransaction) db.exec("BEGIN IMMEDIATE");
+  try {
+    const writable = assertWorkbenchContentMutationAllowed(db, shot.project_id);
+    if (!writable.ok) throw new Error(writable.error.code);
+    db.prepare(`
+      INSERT OR REPLACE INTO shots (shot_id, project_id, data_json, updated_at)
+      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+    `).run(shot.shot_id, shot.project_id, JSON.stringify(shot));
+    if (ownsTransaction) db.exec("COMMIT");
+  } catch (error) {
+    if (ownsTransaction && (db as unknown as { isTransaction?: boolean }).isTransaction) db.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 export function getShot(db: M0Database, shotId: string): Shot | null {

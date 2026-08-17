@@ -13,6 +13,7 @@ import {
   discardMediaActivationMarkers,
   getMediaArtifact,
   getMediaBlob,
+  persistMediaArtifact,
   recoverMediaActivations,
   recoverVerifiedBlobStorage,
   registerMediaArtifact,
@@ -22,6 +23,7 @@ import {
 } from "../src/tools/mediaArtifacts.js";
 import { buildStoryboardApprovedShot, createProject, saveShot } from "../src/tools/projects.js";
 import { buildRunningHubMediaUploadRequest } from "../src/tools/videoProviderAdapters.js";
+import { completeWorkbenchAssemblyFixture } from "./workbench-delivery-test-helpers.js";
 
 const IMAGE_FIXTURE = resolve(paths.workspaceRoot, "fixtures", "provider-canary", "m1-r0", "shot_001_canary_720x1280.png");
 const VIDEO_FIXTURE = resolve(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4");
@@ -111,6 +113,10 @@ function immutableBlobSnapshot(db: M0Database, artifactId: string): {
   const links = db.prepare("SELECT artifact_id, blob_id FROM media_artifact_blobs WHERE blob_id = ? ORDER BY artifact_id")
     .all(String(blob.blob_id)) as Array<Record<string, unknown>>;
   return { blob: { ...blob }, links: links.map((row) => ({ ...row })) };
+}
+
+function recursiveEntries(root: string): string[] {
+  return existsSync(root) ? readdirSync(root, { recursive: true }).map(String).sort() : [];
 }
 
 function insertUnsafeRecoveryFixture(
@@ -212,6 +218,99 @@ test("activation never overwrites or quarantines a pre-existing final path", () 
     const checked = checkDatabase(sqlitePath);
     assert.equal(checked.result, "FAIL");
     assert.equal(checked.quarantined_media_activations, 1);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("delivery-referenced final Artifact content and Blob binding fail closed before activation side effects", () => {
+  const root = mkdtempSync(join(tmpdir(), "media-delivery-evidence-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  try {
+    const project = createProject({ title: "Immutable delivery evidence" }, db);
+    assert.equal(project.ok, true);
+    if (!project.ok) throw new Error("DELIVERY_EVIDENCE_PROJECT_SETUP_FAILED");
+    const artifactId = `artifact_${randomUUID()}`;
+    const prepared: MediaArtifact = {
+      artifact_id: artifactId,
+      blob_id: "",
+      artifact_type: "video",
+      role: "final_video",
+      status: "active",
+      storage: {
+        uri: join(mediaRoot, "artifacts", "videos", `${artifactId}.mp4`),
+        mime_type: "video/mp4",
+        filename: `${artifactId}.mp4`
+      },
+      metadata: { width: 1080, height: 1920, duration_seconds: 2, aspect_ratio: "9:16", sha256: "" },
+      linked_objects: { project_id: project.project_id, shot_id: "" },
+      source: {
+        kind: "synthetic_fixture",
+        provider: "",
+        provider_job_id: "",
+        sha256: "",
+        external_url_host: ""
+      }
+    };
+    const activated = activateLocalMediaArtifact({ artifact: prepared, source_path: VIDEO_FIXTURE, media_root: mediaRoot }, db);
+    assert.equal(activated.ok, true, activated.ok ? undefined : activated.error.code);
+    if (!activated.ok) throw new Error("DELIVERY_EVIDENCE_ACTIVATION_SETUP_FAILED");
+
+    const now = "2026-08-17T00:00:00.000Z";
+    const fingerprint = "e".repeat(64);
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
+      .run(now, project.project_id);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'assembling',
+      assembly_input_fingerprint = ?, updated_at = ? WHERE project_id = ?`)
+      .run(fingerprint, now, project.project_id);
+    completeWorkbenchAssemblyFixture(db, {
+      project_id: project.project_id,
+      artifact_id: artifactId,
+      job_id: "job_immutable_delivery_assembly",
+      event_id: "event_immutable_delivery_assembly",
+      created_at: now
+    });
+
+    const artifactBefore = { ...(db.prepare("SELECT data_json, status FROM media_artifacts WHERE artifact_id = ?").get(artifactId) as Record<string, unknown>) };
+    const bindingBefore = { ...(db.prepare("SELECT artifact_id, blob_id FROM media_artifact_blobs WHERE artifact_id = ?").get(artifactId) as Record<string, unknown>) };
+    const journalCountBefore = Number((db.prepare("SELECT COUNT(*) AS count FROM media_activation_journal").get() as { count: number }).count);
+    const blobCountBefore = Number((db.prepare("SELECT COUNT(*) AS count FROM media_blobs").get() as { count: number }).count);
+    const entriesBefore = recursiveEntries(mediaRoot);
+    const mutated = structuredClone(activated.artifact);
+    mutated.metadata.aspect_ratio = "1:1";
+    mutated.storage.uri = join(mediaRoot, "artifacts", "videos", `${artifactId}-replacement.mp4`);
+
+    const blockedActivation = activateLocalMediaArtifact({ artifact: mutated, source_path: VIDEO_FIXTURE, media_root: mediaRoot }, db);
+    assert.equal(blockedActivation.ok, false);
+    if (!blockedActivation.ok) assert.equal(blockedActivation.error.code, "WORKBENCH_DELIVERY_ARTIFACT_IMMUTABLE");
+    assert.deepEqual(recursiveEntries(mediaRoot), entriesBefore);
+    assert.equal(Number((db.prepare("SELECT COUNT(*) AS count FROM media_activation_journal").get() as { count: number }).count), journalCountBefore);
+    assert.equal(Number((db.prepare("SELECT COUNT(*) AS count FROM media_blobs").get() as { count: number }).count), blobCountBefore);
+
+    assert.throws(() => persistMediaArtifact(db, mutated), /WORKBENCH_DELIVERY_ARTIFACT_IMMUTABLE/);
+    assert.throws(() => db.prepare(`UPDATE media_artifacts SET data_json = json_set(data_json, '$.metadata.aspect_ratio', '1:1')
+      WHERE artifact_id = ?`).run(artifactId), /WORKBENCH_DELIVERY_ARTIFACT_IMMUTABLE/);
+    assert.deepEqual({ ...(db.prepare("SELECT data_json, status FROM media_artifacts WHERE artifact_id = ?").get(artifactId) as Record<string, unknown>) }, artifactBefore);
+
+    db.prepare(`INSERT INTO media_blobs
+      (blob_id, sha256, size_bytes, detected_mime, storage_uri, integrity_state, provenance_json)
+      VALUES ('blob_delivery_replacement', ?, 1, 'video/mp4', 'synthetic-test-only', 'verified', '{}')`)
+      .run("f".repeat(64));
+    const genericBlobGuard = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'media_artifact_blob_transition'")
+      .get() as { sql: string };
+    db.exec("DROP TRIGGER media_artifact_blob_transition");
+    try {
+      assert.throws(() => db.prepare(`UPDATE media_artifact_blobs SET blob_id = 'blob_delivery_replacement'
+        WHERE artifact_id = ?`).run(artifactId), /WORKBENCH_DELIVERY_ARTIFACT_IMMUTABLE/);
+    } finally {
+      db.exec(genericBlobGuard.sql);
+    }
+    assert.deepEqual({ ...(db.prepare("SELECT artifact_id, blob_id FROM media_artifact_blobs WHERE artifact_id = ?").get(artifactId) as Record<string, unknown>) }, bindingBefore);
+    assert.deepEqual(recursiveEntries(mediaRoot), entriesBefore);
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });

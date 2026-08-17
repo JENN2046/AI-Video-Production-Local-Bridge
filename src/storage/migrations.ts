@@ -1697,9 +1697,60 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     UNION ALL
     SELECT 1 FROM workbench_delivery_jobs j
     WHERE j.job_type = 'assembly' AND j.state = 'succeeded' AND j.output_artifact_id = OLD.artifact_id
+    UNION ALL
+    SELECT 1 FROM workbench_exports e WHERE e.artifact_id = OLD.artifact_id
   )
   BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_ARTIFACT_ACTIVE_REQUIRED');
+  END;
+  CREATE TRIGGER workbench_delivery_artifact_content_guard BEFORE UPDATE OF data_json ON media_artifacts
+  WHEN OLD.status IS NEW.status AND OLD.data_json IS NOT NEW.data_json AND EXISTS (
+    SELECT 1 FROM workbench_delivery_state d
+    WHERE d.current_final_artifact_id = OLD.artifact_id OR d.approved_artifact_id = OLD.artifact_id
+    UNION ALL
+    SELECT 1 FROM workbench_delivery_jobs j
+    WHERE j.job_type = 'assembly' AND j.state = 'succeeded' AND j.output_artifact_id = OLD.artifact_id
+    UNION ALL
+    SELECT 1 FROM workbench_exports e WHERE e.artifact_id = OLD.artifact_id
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_ARTIFACT_IMMUTABLE');
+  END;
+  CREATE TRIGGER workbench_delivery_artifact_blob_insert_guard BEFORE INSERT ON media_artifact_blobs
+  WHEN EXISTS (
+    SELECT 1 FROM workbench_delivery_state d
+    WHERE d.current_final_artifact_id = NEW.artifact_id OR d.approved_artifact_id = NEW.artifact_id
+    UNION ALL
+    SELECT 1 FROM workbench_delivery_jobs j
+    WHERE j.job_type = 'assembly' AND j.state = 'succeeded' AND j.output_artifact_id = NEW.artifact_id
+    UNION ALL
+    SELECT 1 FROM workbench_exports e WHERE e.artifact_id = NEW.artifact_id
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_ARTIFACT_IMMUTABLE');
+  END;
+  CREATE TRIGGER workbench_delivery_artifact_blob_update_guard BEFORE UPDATE ON media_artifact_blobs
+  WHEN (OLD.artifact_id IS NOT NEW.artifact_id OR OLD.blob_id IS NOT NEW.blob_id) AND (
+    EXISTS (
+      SELECT 1 FROM workbench_delivery_state d
+      WHERE d.current_final_artifact_id = OLD.artifact_id OR d.approved_artifact_id = OLD.artifact_id
+      UNION ALL
+      SELECT 1 FROM workbench_delivery_jobs j
+      WHERE j.job_type = 'assembly' AND j.state = 'succeeded' AND j.output_artifact_id = OLD.artifact_id
+      UNION ALL
+      SELECT 1 FROM workbench_exports e WHERE e.artifact_id = OLD.artifact_id
+    ) OR EXISTS (
+      SELECT 1 FROM workbench_delivery_state d
+      WHERE d.current_final_artifact_id = NEW.artifact_id OR d.approved_artifact_id = NEW.artifact_id
+      UNION ALL
+      SELECT 1 FROM workbench_delivery_jobs j
+      WHERE j.job_type = 'assembly' AND j.state = 'succeeded' AND j.output_artifact_id = NEW.artifact_id
+      UNION ALL
+      SELECT 1 FROM workbench_exports e WHERE e.artifact_id = NEW.artifact_id
+    )
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_ARTIFACT_IMMUTABLE');
   END;
   CREATE TRIGGER workbench_delivery_state_transition BEFORE UPDATE ON workbench_delivery_state
   WHEN (OLD.workflow_state <> NEW.workflow_state AND NOT (
@@ -2241,6 +2292,9 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "workbench_delivery_state_validate_artifacts",
         "workbench_delivery_state_validate_artifacts_update",
         "workbench_delivery_artifact_status_guard",
+        "workbench_delivery_artifact_content_guard",
+        "workbench_delivery_artifact_blob_insert_guard",
+        "workbench_delivery_artifact_blob_update_guard",
         "workbench_delivery_state_transition",
         "workbench_delivery_state_identity_immutable",
         "workbench_delivery_state_closed_immutable",

@@ -337,6 +337,29 @@ function persistBlob(db: M0Database, blob: MediaBlob): MediaBlob {
   return blob;
 }
 
+function deliveryReferencedArtifactIsFrozen(db: M0Database, artifactId: string): boolean {
+  const row = db.prepare(`
+    SELECT 1 AS frozen
+    WHERE EXISTS (
+      SELECT 1 FROM workbench_delivery_state state
+      WHERE state.current_final_artifact_id = ? OR state.approved_artifact_id = ?
+    ) OR EXISTS (
+      SELECT 1 FROM workbench_delivery_jobs job
+      WHERE job.job_type = 'assembly' AND job.state = 'succeeded' AND job.output_artifact_id = ?
+    ) OR EXISTS (
+      SELECT 1 FROM workbench_exports exported WHERE exported.artifact_id = ?
+    )
+  `).get(artifactId, artifactId, artifactId, artifactId) as { frozen: number } | undefined;
+  return Boolean(row);
+}
+
+function frozenDeliveryArtifactError(): ToolError {
+  return {
+    code: "WORKBENCH_DELIVERY_ARTIFACT_IMMUTABLE",
+    message: "Delivery-referenced final Artifact content and Blob bindings are immutable."
+  };
+}
+
 function persistMediaArtifactInternal(db: M0Database, artifact: MediaArtifact, allowStatusTransition: boolean, mediaRoot = paths.mediaRoot): void {
   const manageTransaction = !databaseIsInTransaction(db);
   if (manageTransaction) db.exec("BEGIN IMMEDIATE");
@@ -354,6 +377,10 @@ function persistMediaArtifactInternal(db: M0Database, artifact: MediaArtifact, a
     }
     if (existing && existing.status !== artifact.status && !allowStatusTransition) {
       throw new Error("MEDIA_ARTIFACT_STATUS_TRANSITION_REQUIRED");
+    }
+    if (existing && existing.status === artifact.status
+      && deliveryReferencedArtifactIsFrozen(db, artifact.artifact_id)) {
+      throw new Error("WORKBENCH_DELIVERY_ARTIFACT_IMMUTABLE");
     }
 
     let blob: MediaBlob;
@@ -1307,6 +1334,9 @@ export function activateLocalMediaArtifact(
   input: { artifact: MediaArtifact; source_path: string; media_root?: string; allow_status_transition?: boolean; before_persist?: () => ToolError | null; after_artifact_persist?: (artifact: MediaArtifact) => ToolError | null; after_staging_written?: (stagingPath: string) => void; after_journal_staged?: (stagingPath: string) => void; after_pending_placed?: (pendingPath: string) => void; after_file_placed?: (finalPath: string) => void; remove_post_commit_file?: (finalPath: string) => void },
   db = openM0Database()
 ): RegisterMediaArtifactResult {
+  if (deliveryReferencedArtifactIsFrozen(db, input.artifact.artifact_id)) {
+    return { ok: false, error: frozenDeliveryArtifactError() };
+  }
   ensureM0Directories();
   const sourcePath = resolve(input.source_path);
   if (!existsSync(sourcePath) || lstatSync(sourcePath).isSymbolicLink() || !statSync(sourcePath).isFile()) {

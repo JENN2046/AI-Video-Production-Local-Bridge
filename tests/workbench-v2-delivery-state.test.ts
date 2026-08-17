@@ -178,6 +178,14 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
     insertFinalArtifact(db, "project_delivery", "artifact_delivery");
     insertFinalArtifact(db, "project_delivery", "artifact_delivery_old");
     const now = "2026-08-13T00:00:00.000Z";
+    const assertShotMutationBlocked = (expectedCode: string, attemptedPrompt: string): void => {
+      const before = db.prepare("SELECT data_json, updated_at FROM shots WHERE shot_id = 'shot_delivery'").get();
+      const shot = getShot(db, "shot_delivery");
+      assert.ok(shot);
+      shot.video_prompt = attemptedPrompt;
+      assert.throws(() => saveShot(db, shot), new RegExp(expectedCode));
+      assert.deepEqual(db.prepare("SELECT data_json, updated_at FROM shots WHERE shot_id = 'shot_delivery'").get(), before);
+    };
 
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(now, "project_delivery");
@@ -219,6 +227,11 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
         'final_review', 'ready_to_assemble', 'artifact_delivery_old', ?,
         'SYNTHETIC_REASSEMBLY', '{}', ?)`)
       .run("a".repeat(64), now);
+    const reworkShot = getShot(db, "shot_delivery");
+    assert.ok(reworkShot);
+    reworkShot.video_prompt = "explicit rework prompt";
+    assert.doesNotThrow(() => saveShot(db, reworkShot));
+    assert.equal(getShot(db, "shot_delivery")?.video_prompt, "explicit rework prompt");
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = 'project_delivery'")
       .run(now);
     completeWorkbenchAssemblyFixture(db, {
@@ -228,6 +241,15 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
       event_id: "event_assembly_current",
       created_at: now
     });
+    assertShotMutationBlocked("DELIVERY_REWORK_REQUIRED", "forbidden final review rewrite");
+    const currentArtifactBefore = db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = 'artifact_delivery'").get();
+    const historicalArtifactBefore = db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = 'artifact_delivery_old'").get();
+    assert.throws(() => db.prepare(`UPDATE media_artifacts SET data_json = json_set(data_json, '$.tampered', 1)
+      WHERE artifact_id = 'artifact_delivery'`).run(), /WORKBENCH_DELIVERY_ARTIFACT_IMMUTABLE/);
+    assert.throws(() => db.prepare(`UPDATE media_artifacts SET data_json = json_set(data_json, '$.tampered', 1)
+      WHERE artifact_id = 'artifact_delivery_old'`).run(), /WORKBENCH_DELIVERY_ARTIFACT_IMMUTABLE/);
+    assert.deepEqual(db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = 'artifact_delivery'").get(), currentArtifactBefore);
+    assert.deepEqual(db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = 'artifact_delivery_old'").get(), historicalArtifactBefore);
     assert.throws(() => db.prepare("UPDATE media_artifacts SET status = 'archived' WHERE artifact_id = 'artifact_delivery'").run(),
       /WORKBENCH_DELIVERY_ARTIFACT_ACTIVE_REQUIRED/);
     assert.throws(() => db.prepare("UPDATE media_artifacts SET status = 'archived' WHERE artifact_id = 'artifact_delivery_old'").run(),
@@ -249,6 +271,7 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
     assert.throws(() => db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'approved', approved_artifact_id = 'artifact_delivery', updated_at = ? WHERE project_id = 'project_delivery'")
       .run(now), /FOREIGN KEY constraint failed/);
     acceptFinalReview(db, "project_delivery", "event_final_review_accepted_delivery", now);
+    assertShotMutationBlocked("DELIVERY_REWORK_REQUIRED", "forbidden approved rewrite");
     assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
       SET current_final_artifact_id = 'artifact_delivery_old', approved_artifact_id = 'artifact_delivery_old', updated_at = ?
       WHERE project_id = 'project_delivery'`).run(now), /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
@@ -286,6 +309,7 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
       "export_succeeded", "artifact_delivery_old", "export_delivery_old", now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     assert.doesNotThrow(() => insertSucceededEvent.run("event_export_succeeded", "job_export_delivery",
       "export_succeeded", "artifact_delivery", "export_delivery", now));
+    assertShotMutationBlocked("DELIVERY_REWORK_REQUIRED", "forbidden exported rewrite");
     assert.throws(() => insertSucceededEvent.run("event_export_succeeded_duplicate", "job_export_delivery",
       "export_succeeded", "artifact_delivery", "export_delivery", now), /WORKBENCH_DELIVERY_JOB_EVENT_DUPLICATE/);
     const insertReusedExportEvent = db.prepare(`INSERT INTO workbench_delivery_events
