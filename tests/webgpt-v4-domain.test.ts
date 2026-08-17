@@ -8,7 +8,11 @@ import { openM0Database, type M0Database } from "../src/storage/sqlite.js";
 import { confirmWorkbenchGeneration } from "../src/tools/workbenchGeneration.js";
 import { decideWorkbenchPendingAction, transitionWorkbenchDraft } from "../src/tools/workbenchInbox.js";
 import { saveWorkbenchPendingActionRecord } from "../src/tools/workbenchInboxStore.js";
-import { approveWorkbenchDeliveryFixture } from "./workbench-delivery-test-helpers.js";
+import {
+  approveWorkbenchDeliveryFixture,
+  completeWorkbenchAssemblyFixture,
+  completeWorkbenchExportFixture
+} from "./workbench-delivery-test-helpers.js";
 import { createProject, saveProject, saveShot, type Project, type Shot } from "../src/tools/projects.js";
 import {
   addProductionReviewNote,
@@ -100,9 +104,13 @@ function closeProductionProject(context: TestContext): void {
     .run(now, context.production.project_id);
   context.db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
     .run(now, context.production.project_id);
-  context.db.prepare(`UPDATE workbench_delivery_state
-    SET workflow_state = 'final_review', current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
-    .run(registered.artifact.artifact_id, now, context.production.project_id);
+  completeWorkbenchAssemblyFixture(context.db, {
+    project_id: context.production.project_id,
+    artifact_id: registered.artifact.artifact_id,
+    job_id: `job_webgpt_v4_closeout_assembly_${context.production.project_id}`,
+    event_id: `event_webgpt_v4_closeout_assembly_${context.production.project_id}`,
+    created_at: now
+  });
   approveWorkbenchDeliveryFixture(context.db, {
     project_id: context.production.project_id,
     event_id: "event_webgpt_v4_closeout_accepted",
@@ -113,9 +121,13 @@ function closeProductionProject(context: TestContext): void {
     VALUES (?, ?, ?, ?, ?, ?, ?)`)
     .run(exportId, context.production.project_id, registered.artifact.artifact_id,
       `data/exports/${context.production.project_id}/closed-fixture.mp4`, blob.sha256, blob.size_bytes, now);
-  context.db.prepare(`UPDATE workbench_delivery_state
-    SET workflow_state = 'exported', latest_export_id = ?, latest_exported_at = ?, updated_at = ? WHERE project_id = ?`)
-    .run(exportId, now, now, context.production.project_id);
+  completeWorkbenchExportFixture(context.db, {
+    project_id: context.production.project_id,
+    export_id: exportId,
+    job_id: `job_webgpt_v4_closeout_export_${context.production.project_id}`,
+    event_id: `event_webgpt_v4_closeout_export_${context.production.project_id}`,
+    created_at: now
+  });
   context.db.prepare(`INSERT INTO workbench_delivery_events
     (event_id, project_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
     VALUES (?, ?, 'closeout', 'exported', 'closed', ?, ?, 'CLOSEOUT_CONFIRMED', '{}', ?)`)
@@ -143,9 +155,13 @@ function setProductionFinalEvidence(
     .run(now, context.production.project_id);
   context.db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
     .run(now, context.production.project_id);
-  context.db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
-    current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
-    .run(artifactId, now, context.production.project_id);
+  completeWorkbenchAssemblyFixture(context.db, {
+    project_id: context.production.project_id,
+    artifact_id: artifactId,
+    job_id: `job_webgpt_v4_final_assembly_${artifactId}`,
+    event_id: `event_webgpt_v4_final_assembly_${artifactId}`,
+    created_at: now
+  });
   approveWorkbenchDeliveryFixture(context.db, {
     project_id: context.production.project_id,
     event_id: `event_webgpt_v4_accepted_${artifactId}`,
@@ -161,9 +177,13 @@ function setProductionFinalEvidence(
     VALUES (?, ?, ?, ?, ?, ?, ?)`)
     .run(exportId, context.production.project_id, artifactId,
       `data/exports/${context.production.project_id}/final-evidence.mp4`, blob.sha256, blob.size_bytes, now);
-  context.db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'exported', latest_export_id = ?,
-    latest_exported_at = ?, updated_at = ? WHERE project_id = ?`)
-    .run(exportId, now, now, context.production.project_id);
+  completeWorkbenchExportFixture(context.db, {
+    project_id: context.production.project_id,
+    export_id: exportId,
+    job_id: `job_webgpt_v4_final_export_${artifactId}`,
+    event_id: `event_webgpt_v4_final_export_${artifactId}`,
+    created_at: now
+  });
   return { artifact_id: artifactId, export_id: exportId };
 }
 

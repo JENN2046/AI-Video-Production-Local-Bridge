@@ -12,7 +12,11 @@ import { initializeWorkbenchV2Schema } from "../src/storage/workbenchV2Schema.js
 import { paths } from "../src/paths.js";
 import { persistMediaArtifact, registerMediaArtifact, transitionMediaArtifactStatus, type MediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { createProject, getProject, saveProject } from "../src/tools/projects.js";
-import { approveWorkbenchDeliveryFixture } from "./workbench-delivery-test-helpers.js";
+import {
+  approveWorkbenchDeliveryFixture,
+  completeWorkbenchAssemblyFixture,
+  completeWorkbenchExportFixture
+} from "./workbench-delivery-test-helpers.js";
 
 const HISTORICAL_MIGRATION_0005_CHECKSUM = "92297a3ce2996e427b8a8e3dae39a25f33a294c29142b5ca723cdcd4700ad8b0";
 const INTERIM_MIGRATION_0005_CHECKSUM = "6e929ae3b8db4387891d664cd22dc5299dab689eab0d6c1dd07dc70afbabbe73";
@@ -74,9 +78,13 @@ function createApprovedDeliveryFixture(
   db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'assembling',
     assembly_input_fingerprint = ?, updated_at = ? WHERE project_id = ?`)
     .run(fingerprint, now, project.project_id);
-  db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
-    current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
-    .run(artifact.artifact.artifact_id, now, project.project_id);
+  completeWorkbenchAssemblyFixture(db, {
+    project_id: project.project_id,
+    artifact_id: artifact.artifact.artifact_id,
+    job_id: `job_rework_assembly_${suffix}`,
+    event_id: `event_rework_assembly_${suffix}`,
+    created_at: now
+  });
   approveWorkbenchDeliveryFixture(db, {
     project_id: project.project_id,
     event_id: `event_rework_accepted_${suffix}`,
@@ -703,9 +711,13 @@ test("database check reports invalid delivery Job bindings and inactive referenc
       .run(JSON.stringify({ project_id: "project_b", exports: { final_video_artifact_id: "artifact_b" } }));
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = 'project_b'").run(now);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = 'project_b'").run(now);
-    db.prepare(`UPDATE workbench_delivery_state
-      SET workflow_state = 'final_review', current_final_artifact_id = 'artifact_b', updated_at = ?
-      WHERE project_id = 'project_b'`).run(now);
+    completeWorkbenchAssemblyFixture(db, {
+      project_id: "project_b",
+      artifact_id: "artifact_b",
+      job_id: "assembly_current_b",
+      event_id: "assembly_succeeded_current_b",
+      created_at: now
+    });
     db.prepare(`INSERT INTO workbench_exports
       (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
       VALUES ('export_b', 'project_b', 'artifact_b', 'data/exports/project_b/final.mp4', ?, 1, ?)`)
@@ -719,9 +731,13 @@ test("database check reports invalid delivery Job bindings and inactive referenc
       event_id: "final_review_accepted_valid_b",
       created_at: now
     });
-    db.prepare(`UPDATE workbench_delivery_state
-      SET workflow_state = 'exported', latest_export_id = 'export_b', latest_exported_at = ?, updated_at = ?
-      WHERE project_id = 'project_b'`).run(now, now);
+    completeWorkbenchExportFixture(db, {
+      project_id: "project_b",
+      export_id: "export_b",
+      job_id: "export_current_b",
+      event_id: "export_succeeded_current_b",
+      created_at: now
+    });
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, error_code, created_at, finished_at, updated_at)
       VALUES ('parent_b', 'project_b', 'assembly', 'failed', '{}', 'SYNTHETIC_FAILURE', ?, ?, ?)`)
@@ -735,14 +751,17 @@ test("database check reports invalid delivery Job bindings and inactive referenc
     const triggerRows = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'trigger'
       AND name IN ('workbench_delivery_jobs_validate_insert', 'workbench_delivery_jobs_validate_bindings_update',
         'workbench_delivery_artifact_status_guard', 'workbench_delivery_events_validate_insert',
-        'workbench_delivery_events_job_event_unique', 'workbench_delivery_state_transition')
+        'workbench_delivery_events_job_event_unique', 'workbench_delivery_assembly_success_apply',
+        'workbench_delivery_export_success_apply', 'workbench_delivery_state_transition')
       ORDER BY name`).all() as Array<{ sql: string }>;
-    assert.equal(triggerRows.length, 6);
+    assert.equal(triggerRows.length, 8);
     db.exec(`DROP TRIGGER workbench_delivery_jobs_validate_insert;
       DROP TRIGGER workbench_delivery_jobs_validate_bindings_update;
       DROP TRIGGER workbench_delivery_artifact_status_guard;
       DROP TRIGGER workbench_delivery_events_validate_insert;
       DROP TRIGGER workbench_delivery_events_job_event_unique;
+      DROP TRIGGER workbench_delivery_assembly_success_apply;
+      DROP TRIGGER workbench_delivery_export_success_apply;
       DROP TRIGGER workbench_delivery_state_transition;`);
     db.prepare(`UPDATE workbench_delivery_state
       SET workflow_state = 'closed', closed_at = ?, updated_at = ? WHERE project_id = 'project_b'`).run(now, now);
@@ -820,7 +839,7 @@ test("database check reports invalid delivery Job bindings and inactive referenc
 
     const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
     assert.equal(checked.schema_current, true);
-    assert.equal(checked.orphan_rows, 18);
+    assert.equal(checked.orphan_rows, 22);
     assert.equal(checked.media_integrity_errors, 0);
     assert.equal(checked.check_errors, 0);
     assert.equal(checked.result, "FAIL");
@@ -869,6 +888,118 @@ test("database check detects duplicate lifecycle Events after the insert guard i
   }
 });
 
+test("database check detects missing, duplicate, and pointer-drifted delivery success evidence", () => {
+  const root = tempRoot();
+  let db: ReturnType<typeof openM0Database> | null = null;
+  try {
+    const sqlitePath = join(root, "delivery-success-evidence.sqlite");
+    migrateDatabase(sqlitePath);
+    db = openM0Database(sqlitePath);
+    const now = "2026-08-15T09:15:00.000Z";
+    const driftedAt = "2026-08-15T09:16:00.000Z";
+
+    const createAssembled = (suffix: string) => {
+      if (!db) throw new Error("delivery success evidence database is unavailable");
+      const project = createProject({ title: `Delivery success evidence ${suffix}` }, db);
+      assert.equal(project.ok, true);
+      if (!project.ok) throw new Error("delivery success evidence project setup failed");
+      const artifact = registerMediaArtifact({
+        artifact_type: "video",
+        role: "final_video",
+        source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+        linked_objects: { project_id: project.project_id }
+      }, db);
+      assert.equal(artifact.ok, true);
+      if (!artifact.ok) throw new Error("delivery success evidence Artifact setup failed");
+      const projectRecord = getProject(db, project.project_id);
+      assert.ok(projectRecord);
+      projectRecord.exports.final_video_artifact_id = artifact.artifact.artifact_id;
+      projectRecord.status = "video_review";
+      saveProject(db, projectRecord);
+      db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
+        .run(now, project.project_id);
+      db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'assembling',
+        assembly_input_fingerprint = ?, updated_at = ? WHERE project_id = ?`)
+        .run("a".repeat(64), now, project.project_id);
+      completeWorkbenchAssemblyFixture(db, {
+        project_id: project.project_id,
+        artifact_id: artifact.artifact.artifact_id,
+        job_id: `job_success_assembly_${suffix}`,
+        event_id: `event_success_assembly_${suffix}`,
+        created_at: now
+      });
+      return { project_id: project.project_id, artifact_id: artifact.artifact.artifact_id };
+    };
+
+    const missingAssembly = createAssembled("missing");
+    const duplicateAssembly = createAssembled("duplicate");
+    const driftedExport = createAssembled("export_drift");
+    approveWorkbenchDeliveryFixture(db, {
+      project_id: driftedExport.project_id,
+      event_id: "event_success_export_accepted",
+      created_at: now
+    });
+    db.prepare(`INSERT INTO workbench_exports
+      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
+      VALUES ('export_success_drift', ?, ?, ?, ?, 1, ?)`)
+      .run(driftedExport.project_id, driftedExport.artifact_id,
+        `data/exports/${driftedExport.project_id}/final.mp4`, "b".repeat(64), now);
+    completeWorkbenchExportFixture(db, {
+      project_id: driftedExport.project_id,
+      export_id: "export_success_drift",
+      job_id: "job_success_export_drift",
+      event_id: "event_success_export_drift",
+      created_at: now
+    });
+    db.close();
+    db = null;
+    assert.equal(checkDatabase(sqlitePath, { recover_media_activations: false }).result, "PASS");
+
+    db = openM0Database(sqlitePath);
+    const triggerSql = (name: string) => (db!.prepare(`SELECT sql FROM sqlite_master
+      WHERE type = 'trigger' AND name = ?`).get(name) as { sql: string }).sql;
+
+    const noDelete = triggerSql("workbench_delivery_events_no_delete");
+    db.exec("DROP TRIGGER workbench_delivery_events_no_delete");
+    db.prepare("DELETE FROM workbench_delivery_events WHERE event_id = 'event_success_assembly_missing'").run();
+    db.exec(noDelete);
+
+    const noUpdate = triggerSql("workbench_delivery_events_no_update");
+    db.exec("DROP TRIGGER workbench_delivery_events_no_update");
+    db.prepare("UPDATE workbench_delivery_events SET created_at = ? WHERE event_id = 'event_success_export_drift'")
+      .run(driftedAt);
+    db.exec(noUpdate);
+
+    const duplicateTriggerNames = [
+      "workbench_delivery_events_validate_insert",
+      "workbench_delivery_events_job_event_unique",
+      "workbench_delivery_assembly_success_apply"
+    ];
+    const duplicateTriggers = duplicateTriggerNames.map((name) => triggerSql(name));
+    for (const name of duplicateTriggerNames) db.exec(`DROP TRIGGER ${name}`);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id,
+        input_fingerprint, reason_code, data_json, created_at)
+      VALUES ('event_success_assembly_duplicate_second', ?, 'job_success_assembly_duplicate',
+        'assembly_succeeded', 'assembling', 'final_review', ?, ?, 'ASSEMBLY_SUCCEEDED', '{}', ?)`)
+      .run(duplicateAssembly.project_id, duplicateAssembly.artifact_id, "a".repeat(64), now);
+    for (const definition of duplicateTriggers) db.exec(definition);
+
+    assert.doesNotThrow(() => assertSchemaCurrent(db!));
+    db.close();
+    db = null;
+
+    const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
+    assert.equal(checked.schema_current, true);
+    assert.equal(checked.orphan_rows, 5);
+    assert.equal(checked.result, "FAIL");
+    assert.notEqual(missingAssembly.project_id, duplicateAssembly.project_id);
+  } finally {
+    try { db?.close(); } catch { /* retain the primary assertion failure */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("database check detects missing and timestamp-drifted final review acceptance evidence", () => {
   const root = tempRoot();
   let db: ReturnType<typeof openM0Database> | null = null;
@@ -901,9 +1032,13 @@ test("database check detects missing and timestamp-drifted final review acceptan
       db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'assembling',
         assembly_input_fingerprint = ?, updated_at = ? WHERE project_id = ?`)
         .run("f".repeat(64), now, project.project_id);
-      db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
-        current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
-        .run(artifact.artifact.artifact_id, now, project.project_id);
+      completeWorkbenchAssemblyFixture(db, {
+        project_id: project.project_id,
+        artifact_id: artifact.artifact.artifact_id,
+        job_id: `job_approval_assembly_${projects.length}`,
+        event_id: `event_approval_assembly_${projects.length}`,
+        created_at: now
+      });
       projects.push({ project_id: project.project_id, artifact_id: artifact.artifact.artifact_id });
     }
 
@@ -1034,24 +1169,29 @@ test("database check accepts active historical final Artifacts referenced by suc
       .run(now, project.project_id);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
       .run(now, project.project_id);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
-      current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
-      .run(current.artifact.artifact_id, now, project.project_id);
-    db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, output_artifact_id,
-        created_at, started_at, finished_at, updated_at)
-      VALUES ('job_historical_assembly', ?, 'assembly', 'succeeded', '{}', ?, ?, ?, ?, ?)`)
-      .run(project.project_id, historical.artifact.artifact_id, now, now, now, now);
-    db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, output_artifact_id,
-        created_at, started_at, finished_at, updated_at)
-      VALUES ('job_current_assembly', ?, 'assembly', 'succeeded', '{}', ?, ?, ?, ?, ?)`)
-      .run(project.project_id, current.artifact.artifact_id, now, now, now, now);
+    completeWorkbenchAssemblyFixture(db, {
+      project_id: project.project_id,
+      artifact_id: historical.artifact.artifact_id,
+      job_id: "job_historical_assembly",
+      event_id: "event_historical_assembly",
+      created_at: now
+    });
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
+      .run(now, project.project_id);
     db.prepare(`INSERT INTO workbench_delivery_events
-      (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
-      VALUES ('event_current_assembly', ?, 'job_current_assembly', 'assembly_succeeded', 'assembling', 'final_review', ?,
-        'ASSEMBLY_SUCCEEDED', '{}', ?)`)
-      .run(project.project_id, current.artifact.artifact_id, now);
+      (event_id, project_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
+      VALUES ('event_historical_reassemble', ?, 'final_review_reassemble', 'final_review', 'ready_to_assemble', ?,
+        'FINAL_REASSEMBLY_REQUESTED', '{}', ?)`)
+      .run(project.project_id, historical.artifact.artifact_id, now);
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
+      .run(now, project.project_id);
+    completeWorkbenchAssemblyFixture(db, {
+      project_id: project.project_id,
+      artifact_id: current.artifact.artifact_id,
+      job_id: "job_current_assembly",
+      event_id: "event_current_assembly",
+      created_at: now
+    });
     approveWorkbenchDeliveryFixture(db, {
       project_id: project.project_id,
       event_id: "event_current_accepted",

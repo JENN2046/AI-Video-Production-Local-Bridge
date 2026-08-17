@@ -15,7 +15,11 @@ import {
   validateG0StoryboardPackage,
   type G0StoryboardPackageInput
 } from "../src/index.js";
-import { approveWorkbenchDeliveryFixture } from "./workbench-delivery-test-helpers.js";
+import {
+  approveWorkbenchDeliveryFixture,
+  completeWorkbenchAssemblyFixture,
+  completeWorkbenchExportFixture
+} from "./workbench-delivery-test-helpers.js";
 
 function createActiveStoryboardArtifact(db: ReturnType<typeof openM0Database>) {
   const result = registerMediaArtifact(
@@ -255,8 +259,13 @@ test("G0 rejects archived, closed, and assembling projects before filesystem or 
       .run(closedAt, closed.project_id);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
       .run(closedAt, closed.project_id);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
-      current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`).run(artifactId, closedAt, closed.project_id);
+    completeWorkbenchAssemblyFixture(db, {
+      project_id: closed.project_id,
+      artifact_id: artifactId,
+      job_id: `job_g0_assembly_${closed.project_id}`,
+      event_id: `event_g0_assembly_${closed.project_id}`,
+      created_at: closedAt
+    });
     approveWorkbenchDeliveryFixture(db, {
       project_id: closed.project_id,
       event_id: `event_g0_accepted_${closed.project_id}`,
@@ -266,8 +275,13 @@ test("G0 rejects archived, closed, and assembling projects before filesystem or 
       (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
       VALUES (?, ?, ?, ?, ?, 1, ?)`)
       .run(exportId, closed.project_id, artifactId, `data/exports/${closed.project_id}/final.mp4`, "e".repeat(64), closedAt);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'exported', latest_export_id = ?,
-      latest_exported_at = ?, updated_at = ? WHERE project_id = ?`).run(exportId, closedAt, closedAt, closed.project_id);
+    completeWorkbenchExportFixture(db, {
+      project_id: closed.project_id,
+      export_id: exportId,
+      job_id: `job_g0_export_${closed.project_id}`,
+      event_id: `event_g0_export_${closed.project_id}`,
+      created_at: closedAt
+    });
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
       VALUES (?, ?, 'closeout', 'exported', 'closed', ?, ?, 'CLOSEOUT_CONFIRMED', '{}', ?)`)

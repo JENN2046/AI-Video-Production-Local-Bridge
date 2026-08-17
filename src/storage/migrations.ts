@@ -1356,8 +1356,12 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
         AND d.current_final_artifact_id IS json_extract(NEW.input_json, '$.artifact_id')
         AND d.approved_artifact_id IS json_extract(NEW.input_json, '$.artifact_id')
         AND (NEW.state <> 'succeeded' OR (
-          NEW.export_id IS NOT NULL AND d.workflow_state = 'exported'
-            AND d.latest_export_id IS NEW.export_id
+          NEW.export_id IS NOT NULL AND (
+            (d.workflow_state = 'approved'
+              AND d.latest_export_id IS NULL AND d.latest_exported_at IS NULL)
+            OR (d.workflow_state = 'exported'
+              AND d.latest_export_id IS NEW.export_id AND d.latest_exported_at IS NOT NULL)
+          )
         ))
     ))
   BEGIN
@@ -1390,8 +1394,12 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
         AND d.current_final_artifact_id IS json_extract(NEW.input_json, '$.artifact_id')
         AND d.approved_artifact_id IS json_extract(NEW.input_json, '$.artifact_id')
         AND (NEW.state <> 'succeeded' OR (
-          NEW.export_id IS NOT NULL AND d.workflow_state = 'exported'
-            AND d.latest_export_id IS NEW.export_id
+          NEW.export_id IS NOT NULL AND (
+            (d.workflow_state = 'approved'
+              AND d.latest_export_id IS NULL AND d.latest_exported_at IS NULL)
+            OR (d.workflow_state = 'exported'
+              AND d.latest_export_id IS NEW.export_id AND d.latest_exported_at IS NOT NULL)
+          )
         ))
     ))
   BEGIN
@@ -1468,6 +1476,18 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
         AND d.approved_artifact_id IS NEW.artifact_id
         AND d.latest_export_id IS NULL
     ))
+    OR (NEW.event_type = 'assembly_succeeded' AND NOT EXISTS (
+      SELECT 1 FROM workbench_delivery_state d
+      WHERE d.project_id = NEW.project_id AND d.workflow_state = 'assembling'
+        AND d.assembly_input_fingerprint IS NEW.input_fingerprint
+    ))
+    OR (NEW.event_type = 'export_succeeded' AND NEW.job_id IS NOT NULL AND NOT EXISTS (
+      SELECT 1 FROM workbench_delivery_state d
+      WHERE d.project_id = NEW.project_id AND d.workflow_state = 'approved'
+        AND d.current_final_artifact_id IS NEW.artifact_id
+        AND d.approved_artifact_id IS NEW.artifact_id
+        AND d.latest_export_id IS NULL AND d.latest_exported_at IS NULL
+    ))
     OR (NEW.event_type IN ('final_review_reassemble','final_review_regenerate_shots') AND NOT EXISTS (
       SELECT 1 FROM workbench_delivery_state d
       WHERE d.project_id = NEW.project_id
@@ -1512,7 +1532,8 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
           (NEW.event_type = 'assembly_queued' AND j.state = 'queued' AND NEW.artifact_id IS NULL)
           OR (NEW.event_type = 'assembly_started' AND j.state = 'running' AND NEW.artifact_id IS NULL)
           OR (NEW.event_type = 'assembly_succeeded' AND j.state = 'succeeded'
-            AND NEW.artifact_id IS j.output_artifact_id)
+            AND NEW.artifact_id IS j.output_artifact_id
+            AND NEW.input_fingerprint IS j.input_fingerprint)
           OR (NEW.event_type = 'assembly_failed' AND j.state = 'failed' AND NEW.artifact_id IS NULL)
           OR (NEW.event_type = 'assembly_interrupted' AND j.state = 'interrupted' AND NEW.artifact_id IS NULL)
         )
@@ -1579,6 +1600,31 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
   END;
   CREATE TRIGGER workbench_delivery_events_no_delete BEFORE DELETE ON workbench_delivery_events BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_EVENTS_APPEND_ONLY');
+  END;
+  CREATE TRIGGER workbench_delivery_assembly_success_apply AFTER INSERT ON workbench_delivery_events
+  WHEN NEW.event_type = 'assembly_succeeded'
+  BEGIN
+    UPDATE workbench_delivery_state
+    SET workflow_state = 'final_review', current_final_artifact_id = NEW.artifact_id,
+      approved_artifact_id = NULL, latest_export_id = NULL, latest_exported_at = NULL,
+      closed_at = NULL, updated_at = NEW.created_at
+    WHERE project_id = NEW.project_id AND workflow_state = 'assembling'
+      AND assembly_input_fingerprint IS NEW.input_fingerprint;
+    SELECT CASE WHEN changes() <> 1
+      THEN RAISE(ABORT, 'WORKBENCH_DELIVERY_EVENT_BINDING_INVALID') END;
+  END;
+  CREATE TRIGGER workbench_delivery_export_success_apply AFTER INSERT ON workbench_delivery_events
+  WHEN NEW.event_type = 'export_succeeded' AND NEW.job_id IS NOT NULL
+  BEGIN
+    UPDATE workbench_delivery_state
+    SET workflow_state = 'exported', latest_export_id = NEW.export_id,
+      latest_exported_at = NEW.created_at, updated_at = NEW.created_at
+    WHERE project_id = NEW.project_id AND workflow_state = 'approved'
+      AND current_final_artifact_id IS NEW.artifact_id
+      AND approved_artifact_id IS NEW.artifact_id
+      AND latest_export_id IS NULL AND latest_exported_at IS NULL;
+    SELECT CASE WHEN changes() <> 1
+      THEN RAISE(ABORT, 'WORKBENCH_DELIVERY_EVENT_BINDING_INVALID') END;
   END;
   CREATE TRIGGER workbench_delivery_rework_apply AFTER INSERT ON workbench_delivery_events
   WHEN NEW.event_type IN ('final_review_reassemble','final_review_regenerate_shots')
@@ -1659,10 +1705,39 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
   WHEN (OLD.workflow_state <> NEW.workflow_state AND NOT (
       (OLD.workflow_state = 'not_ready' AND NEW.workflow_state = 'ready_to_assemble')
       OR (OLD.workflow_state = 'ready_to_assemble' AND NEW.workflow_state IN ('not_ready','assembling'))
-      OR (OLD.workflow_state = 'assembling' AND NEW.workflow_state IN ('ready_to_assemble','final_review'))
+      OR (OLD.workflow_state = 'assembling' AND NEW.workflow_state = 'ready_to_assemble')
+      OR (OLD.workflow_state = 'assembling' AND NEW.workflow_state = 'final_review' AND EXISTS (
+        SELECT 1 FROM workbench_delivery_events event
+        JOIN workbench_delivery_jobs job ON job.job_id = event.job_id
+          AND job.project_id = event.project_id
+        WHERE event.project_id = NEW.project_id AND event.event_type = 'assembly_succeeded'
+          AND event.from_state = 'assembling' AND event.to_state = 'final_review'
+          AND job.job_type = 'assembly' AND job.state = 'succeeded'
+          AND job.output_artifact_id IS NEW.current_final_artifact_id
+          AND event.artifact_id IS NEW.current_final_artifact_id
+          AND event.input_fingerprint IS NEW.assembly_input_fingerprint
+          AND event.export_id IS NULL AND event.created_at IS NEW.updated_at
+      ))
       OR (OLD.workflow_state = 'final_review' AND NEW.workflow_state IN ('approved','ready_to_assemble','revision_requested'))
       OR (OLD.workflow_state = 'revision_requested' AND NEW.workflow_state IN ('not_ready','ready_to_assemble'))
-      OR (OLD.workflow_state = 'approved' AND NEW.workflow_state = 'exported')
+      OR (OLD.workflow_state = 'approved' AND NEW.workflow_state = 'exported' AND EXISTS (
+        SELECT 1 FROM workbench_delivery_events event
+        JOIN workbench_delivery_jobs job ON job.job_id = event.job_id
+          AND job.project_id = event.project_id
+        JOIN workbench_exports bound_export ON bound_export.export_id = event.export_id
+          AND bound_export.project_id = event.project_id
+        WHERE event.project_id = NEW.project_id AND event.event_type = 'export_succeeded'
+          AND event.from_state = 'approved' AND event.to_state = 'exported'
+          AND job.job_type = 'export' AND job.state = 'succeeded'
+          AND job.export_id IS NEW.latest_export_id
+          AND json_extract(job.input_json, '$.artifact_id') IS NEW.current_final_artifact_id
+          AND event.artifact_id IS NEW.current_final_artifact_id
+          AND event.artifact_id IS NEW.approved_artifact_id
+          AND event.export_id IS NEW.latest_export_id
+          AND bound_export.artifact_id IS NEW.current_final_artifact_id
+          AND event.created_at IS NEW.latest_exported_at
+          AND event.created_at IS NEW.updated_at
+      ))
       OR (OLD.workflow_state IN ('approved','exported')
         AND NEW.workflow_state IN ('ready_to_assemble','revision_requested') AND EXISTS (
           SELECT 1 FROM workbench_delivery_events event
@@ -1736,8 +1811,9 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
   SELECT
     p.project_id,
     CASE
-      WHEN json_extract(p.data_json, '$.status') = 'final_approved' THEN 'legacy_review_required'
-      WHEN COALESCE(json_extract(p.data_json, '$.exports.final_video_artifact_id'), '') <> '' THEN 'final_review'
+      WHEN json_extract(p.data_json, '$.status') = 'final_approved'
+        OR COALESCE(json_extract(p.data_json, '$.exports.final_video_artifact_id'), '') <> ''
+        THEN 'legacy_review_required'
       ELSE 'not_ready'
     END,
     NULLIF(TRIM(COALESCE(json_extract(p.data_json, '$.exports.final_video_artifact_id'), '')), ''),
@@ -2158,6 +2234,8 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "workbench_delivery_events_rework_unique",
         "workbench_delivery_events_no_update",
         "workbench_delivery_events_no_delete",
+        "workbench_delivery_assembly_success_apply",
+        "workbench_delivery_export_success_apply",
         "workbench_delivery_rework_apply",
         "workbench_delivery_closeout_apply",
         "workbench_delivery_state_validate_artifacts",

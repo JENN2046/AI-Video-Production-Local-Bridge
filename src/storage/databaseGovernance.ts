@@ -519,6 +519,58 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
         SELECT COUNT(*) AS event_count FROM workbench_delivery_events
         WHERE job_id IS NOT NULL GROUP BY job_id, event_type HAVING COUNT(*) > 1
       )`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_jobs job
+        WHERE job.state = 'succeeded' AND NOT EXISTS (
+          SELECT 1 FROM workbench_delivery_events event
+          LEFT JOIN workbench_exports bound_export ON bound_export.export_id = job.export_id
+            AND bound_export.project_id = job.project_id
+          WHERE event.job_id = job.job_id AND event.project_id = job.project_id
+            AND (
+              (job.job_type = 'assembly' AND event.event_type = 'assembly_succeeded'
+                AND event.from_state = 'assembling' AND event.to_state = 'final_review'
+                AND event.artifact_id IS job.output_artifact_id AND event.export_id IS NULL
+                AND event.input_fingerprint IS job.input_fingerprint)
+              OR (job.job_type = 'export' AND event.event_type = 'export_succeeded'
+                AND event.from_state = 'approved' AND event.to_state = 'exported'
+                AND event.artifact_id IS json_extract(job.input_json, '$.artifact_id')
+                AND event.artifact_id IS bound_export.artifact_id
+                AND event.export_id IS job.export_id)
+            )
+        )`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_state state
+        WHERE state.workflow_state = 'final_review' AND 1 <> (
+          SELECT COUNT(*) FROM workbench_delivery_events event
+          JOIN workbench_delivery_jobs job ON job.job_id = event.job_id
+            AND job.project_id = event.project_id
+          WHERE event.project_id = state.project_id
+            AND event.event_type = 'assembly_succeeded'
+            AND event.from_state = 'assembling' AND event.to_state = 'final_review'
+            AND job.job_type = 'assembly' AND job.state = 'succeeded'
+            AND job.output_artifact_id IS state.current_final_artifact_id
+            AND job.input_fingerprint IS state.assembly_input_fingerprint
+            AND event.artifact_id IS state.current_final_artifact_id
+            AND event.input_fingerprint IS state.assembly_input_fingerprint
+            AND event.export_id IS NULL AND event.created_at IS state.updated_at
+        )`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_state state
+        WHERE state.workflow_state IN ('exported','closed') AND 1 <> (
+          SELECT COUNT(*) FROM workbench_delivery_events event
+          JOIN workbench_delivery_jobs job ON job.job_id = event.job_id
+            AND job.project_id = event.project_id
+          JOIN workbench_exports bound_export ON bound_export.export_id = event.export_id
+            AND bound_export.project_id = event.project_id
+          WHERE event.project_id = state.project_id
+            AND event.event_type = 'export_succeeded'
+            AND event.from_state = 'approved' AND event.to_state = 'exported'
+            AND job.job_type = 'export' AND job.state = 'succeeded'
+            AND job.export_id IS state.latest_export_id
+            AND json_extract(job.input_json, '$.artifact_id') IS state.current_final_artifact_id
+            AND event.artifact_id IS state.current_final_artifact_id
+            AND event.artifact_id IS state.approved_artifact_id
+            AND event.export_id IS state.latest_export_id
+            AND bound_export.artifact_id IS state.current_final_artifact_id
+            AND event.created_at IS state.latest_exported_at
+        )`,
       `SELECT COUNT(*) AS count FROM workbench_delivery_state state
         WHERE state.workflow_state IN ('approved','exported','closed') AND NOT EXISTS (
           SELECT 1 FROM workbench_delivery_events event

@@ -13,7 +13,11 @@ import {
   saveShot,
   startStoryboardVideoGeneration
 } from "../src/index.js";
-import { approveWorkbenchDeliveryFixture } from "./workbench-delivery-test-helpers.js";
+import {
+  approveWorkbenchDeliveryFixture,
+  completeWorkbenchAssemblyFixture,
+  completeWorkbenchExportFixture
+} from "./workbench-delivery-test-helpers.js";
 
 function setupThreeShotProject(db: ReturnType<typeof openM0Database>) {
   const project = createProject({ title: "M0-D Three Shot" }, db);
@@ -203,8 +207,13 @@ test("M0-D legacy batch generation rejects closed projects before all generation
       .run(now, project.project_id);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
       .run(now, project.project_id);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
-      current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`).run(artifactId, now, project.project_id);
+    completeWorkbenchAssemblyFixture(db, {
+      project_id: project.project_id,
+      artifact_id: artifactId,
+      job_id: `job_m0d_assembly_${project.project_id}`,
+      event_id: `event_m0d_assembly_${project.project_id}`,
+      created_at: now
+    });
     approveWorkbenchDeliveryFixture(db, {
       project_id: project.project_id,
       event_id: `event_m0d_accepted_${project.project_id}`,
@@ -214,8 +223,13 @@ test("M0-D legacy batch generation rejects closed projects before all generation
       (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
       VALUES (?, ?, ?, ?, ?, 1, ?)`)
       .run(exportId, project.project_id, artifactId, `data/exports/${project.project_id}/final.mp4`, "d".repeat(64), now);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'exported', latest_export_id = ?,
-      latest_exported_at = ?, updated_at = ? WHERE project_id = ?`).run(exportId, now, now, project.project_id);
+    completeWorkbenchExportFixture(db, {
+      project_id: project.project_id,
+      export_id: exportId,
+      job_id: `job_m0d_export_${project.project_id}`,
+      event_id: `event_m0d_export_${project.project_id}`,
+      created_at: now
+    });
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
       VALUES (?, ?, 'closeout', 'exported', 'closed', ?, ?, 'CLOSEOUT_CONFIRMED', '{}', ?)`)

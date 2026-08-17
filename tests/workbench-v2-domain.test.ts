@@ -37,6 +37,7 @@ import {
 import { activateLocalMediaArtifact, registerMediaArtifact, type MediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { downloadProviderOutputToArtifact } from "../src/tools/providerOutputDownloader.js";
 import type { ProviderPollOptions, VideoProviderAdapter } from "../src/tools/videoProviderAdapters.js";
+import { completeWorkbenchAssemblyFixture } from "./workbench-delivery-test-helpers.js";
 
 function operationalFacts(overrides: Partial<ShotOperationalFacts> = {}): ShotOperationalFacts {
   const generationVersionCount = overrides.generation_version_count ?? 0;
@@ -722,9 +723,13 @@ function moveWorkerDeliveryToFinalReview(sqlitePath: string, projectId: string, 
     db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'assembling',
       assembly_input_fingerprint = ?, updated_at = ? WHERE project_id = ?`)
       .run("e".repeat(64), now, projectId);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
-      current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
-      .run(artifactId, now, projectId);
+    completeWorkbenchAssemblyFixture(db, {
+      project_id: projectId,
+      artifact_id: artifactId,
+      job_id: `job_worker_final_${artifactId}`,
+      event_id: `event_worker_final_${artifactId}`,
+      created_at: now
+    });
   } finally {
     db.close();
   }
@@ -1271,11 +1276,20 @@ test("Workbench project summary prioritizes ready-to-assemble over a retained fi
       .run(now, created.data.project.project_id);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
       .run(now, created.data.project.project_id);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
-      current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
-      .run(finalArtifact.artifact.artifact_id, now, created.data.project.project_id);
+    completeWorkbenchAssemblyFixture(db, {
+      project_id: created.data.project.project_id,
+      artifact_id: finalArtifact.artifact.artifact_id,
+      job_id: "job_reassembly_cta_final",
+      event_id: "event_reassembly_cta_final",
+      created_at: now
+    });
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(now, created.data.project.project_id);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
+      VALUES ('event_reassembly_cta_request', ?, 'final_review_reassemble', 'final_review', 'ready_to_assemble', ?,
+        'FINAL_REASSEMBLY_REQUESTED', '{}', ?)`)
+      .run(created.data.project.project_id, finalArtifact.artifact.artifact_id, now);
 
     const summary = listWorkbenchProjects({ scope: "daily" }, db).items
       .find((item) => item.project.project_id === created.data.project.project_id);

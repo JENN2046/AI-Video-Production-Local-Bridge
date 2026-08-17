@@ -11,7 +11,11 @@ import { actorFromFederatedSubject, type WebGptV4Result } from "../src/webgpt-v4
 import { openM0Database, openM0DatabaseConnection, type M0Database } from "../src/storage/sqlite.js";
 import { createProject, getProject, getShot, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
-import { approveWorkbenchDeliveryFixture } from "./workbench-delivery-test-helpers.js";
+import {
+  approveWorkbenchDeliveryFixture,
+  completeWorkbenchAssemblyFixture,
+  completeWorkbenchExportFixture
+} from "./workbench-delivery-test-helpers.js";
 import {
   exportReadonlySnapshotFromDatabase,
   ReadonlyProjectionError,
@@ -374,11 +378,20 @@ test("readonly snapshot accepts persisted not-ready and assembly summaries when 
       retainedFinalArtifactId = finalArtifact.artifact.artifact_id;
       currentProject.exports.final_video_artifact_id = retainedFinalArtifactId;
       saveProject(revisionDb, currentProject);
-      revisionDb.prepare(`UPDATE workbench_delivery_state
-        SET workflow_state = 'final_review', current_final_artifact_id = ?, updated_at = ?
-        WHERE project_id = ?`).run(retainedFinalArtifactId, "2026-08-14T00:02:00.000Z", fixture.project_id);
+      completeWorkbenchAssemblyFixture(revisionDb, {
+        project_id: fixture.project_id,
+        artifact_id: retainedFinalArtifactId,
+        job_id: "job_revision_projection_assembly",
+        event_id: "event_revision_projection_assembly",
+        created_at: "2026-08-14T00:02:00.000Z"
+      });
       revisionDb.prepare("UPDATE workbench_delivery_state SET workflow_state = 'revision_requested', updated_at = ? WHERE project_id = ?")
         .run("2026-08-14T00:03:00.000Z", fixture.project_id);
+      revisionDb.prepare(`INSERT INTO workbench_delivery_events
+        (event_id, project_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
+        VALUES ('event_revision_projection_request', ?, 'final_review_regenerate_shots', 'final_review',
+          'revision_requested', ?, 'FINAL_SHOT_REGENERATION_REQUESTED', '{}', ?)`)
+        .run(fixture.project_id, retainedFinalArtifactId, "2026-08-14T00:03:00.000Z");
     } finally {
       revisionDb.close();
     }
@@ -438,9 +451,13 @@ test("SQLite and Snapshot readonly adapters preserve six-tool DTO parity and dat
       .run(closedAt, fixture.project_id);
     fixtureDb.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
       .run(closedAt, fixture.project_id);
-    fixtureDb.prepare(`UPDATE workbench_delivery_state
-      SET workflow_state = 'final_review', current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
-      .run(registered.artifact.artifact_id, closedAt, fixture.project_id);
+    completeWorkbenchAssemblyFixture(fixtureDb, {
+      project_id: fixture.project_id,
+      artifact_id: registered.artifact.artifact_id,
+      job_id: "job_snapshot_fixture_assembly",
+      event_id: "event_snapshot_fixture_assembly",
+      created_at: closedAt
+    });
     approveWorkbenchDeliveryFixture(fixtureDb, {
       project_id: fixture.project_id,
       event_id: "event_snapshot_final_review_accepted",
@@ -451,9 +468,13 @@ test("SQLite and Snapshot readonly adapters preserve six-tool DTO parity and dat
       VALUES ('export_snapshot_fixture', ?, ?, ?, ?, ?, ?)`)
       .run(fixture.project_id, registered.artifact.artifact_id,
         `data/exports/${fixture.project_id}/snapshot-fixture.mp4`, blob.sha256, blob.size_bytes, closedAt);
-    fixtureDb.prepare(`UPDATE workbench_delivery_state
-      SET workflow_state = 'exported', latest_export_id = 'export_snapshot_fixture', latest_exported_at = ?, updated_at = ?
-      WHERE project_id = ?`).run(closedAt, closedAt, fixture.project_id);
+    completeWorkbenchExportFixture(fixtureDb, {
+      project_id: fixture.project_id,
+      export_id: "export_snapshot_fixture",
+      job_id: "job_snapshot_fixture_export",
+      event_id: "event_snapshot_fixture_export",
+      created_at: closedAt
+    });
     fixtureDb.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
       VALUES ('event_snapshot_closeout', ?, 'closeout', 'exported', 'closed', ?, 'export_snapshot_fixture',

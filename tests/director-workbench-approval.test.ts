@@ -1056,8 +1056,21 @@ test("Director Grant project and SHOT bindings are revalidated at the Provider g
       const db = openM0Database(":memory:");
       try {
         const prepared = await startBoundedDirectorFixture(db, { adopt_t2_reservation: true });
+        let driftedValue: string = fixtureCase.value;
+        if (fixtureCase.column === "project_id") {
+          const driftedProject = createWorkbenchProject({
+            title: "Director binding drift fixture",
+            classification: "production",
+            duration_seconds: 6,
+            aspect_ratio: "9:16",
+            resolution: "480p"
+          }, db);
+          assert.equal(driftedProject.ok, true);
+          if (!driftedProject.ok) throw new Error("Director drift fixture project failed");
+          driftedValue = driftedProject.data.project.project_id;
+        }
         db.prepare(`UPDATE generation_intents SET ${fixtureCase.column} = ? WHERE intent_id = ?`)
-          .run(fixtureCase.value, prepared.execution.intent.intent_id);
+          .run(driftedValue, prepared.execution.intent.intent_id);
         let providerCalls = 0;
         const workerDatabase = new Proxy(db, {
           get(target, property) {

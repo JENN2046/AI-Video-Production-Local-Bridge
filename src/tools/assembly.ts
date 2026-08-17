@@ -226,12 +226,6 @@ export function assembleFinalVideo(
     saveProject(db, currentProject);
     saveGenerationRun(db, run);
 
-    const completed = db.prepare(`UPDATE workbench_delivery_state
-      SET workflow_state = 'final_review', current_final_artifact_id = ?,
-        approved_artifact_id = NULL, latest_export_id = NULL, latest_exported_at = NULL,
-        closed_at = NULL, updated_at = CURRENT_TIMESTAMP
-      WHERE project_id = ? AND workflow_state = 'assembling'`).run(activatedArtifactId, currentProject.project_id) as { changes: number | bigint };
-    if (Number(completed.changes) !== 1) throw new Error("ASSEMBLY_INPUT_CHANGED");
     const deliveryJobId = `job_${randomUUID()}`;
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, output_artifact_id,

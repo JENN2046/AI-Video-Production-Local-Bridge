@@ -16,7 +16,11 @@ import {
   startStoryboardVideoGeneration
 } from "../src/index.js";
 import { setWorkbenchProjectLifecycle, updateWorkbenchShot } from "../src/tools/workbenchV2.js";
-import { approveWorkbenchDeliveryFixture } from "./workbench-delivery-test-helpers.js";
+import {
+  approveWorkbenchDeliveryFixture,
+  completeWorkbenchAssemblyFixture,
+  completeWorkbenchExportFixture
+} from "./workbench-delivery-test-helpers.js";
 
 async function setupGeneratedShot(db: ReturnType<typeof openM0Database>) {
   const project = createProject({ title: "M0-E Project" }, db);
@@ -84,8 +88,13 @@ function setProjectFinalEvidenceState(
     .run(now, projectId);
   db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
     .run(now, projectId);
-  db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
-    current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`).run(artifactId, now, projectId);
+  completeWorkbenchAssemblyFixture(db, {
+    project_id: projectId,
+    artifact_id: artifactId,
+    job_id: `job_m0e_assembly_${projectId}_${artifactId}`,
+    event_id: `event_m0e_assembly_${projectId}_${artifactId}`,
+    created_at: now
+  });
   approveWorkbenchDeliveryFixture(db, {
     project_id: projectId,
     event_id: `event_m0e_accepted_${projectId}_${artifactId}`,
@@ -97,8 +106,13 @@ function setProjectFinalEvidenceState(
     (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
     VALUES (?, ?, ?, ?, ?, 1, ?)`)
     .run(exportId, projectId, artifactId, `data/exports/${projectId}/final.mp4`, "c".repeat(64), now);
-  db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'exported', latest_export_id = ?,
-    latest_exported_at = ?, updated_at = ? WHERE project_id = ?`).run(exportId, now, now, projectId);
+  completeWorkbenchExportFixture(db, {
+    project_id: projectId,
+    export_id: exportId,
+    job_id: `job_m0e_export_${projectId}`,
+    event_id: `event_m0e_export_${projectId}`,
+    created_at: now
+  });
   return { artifact_id: artifactId, export_id: exportId };
 }
 
@@ -116,9 +130,13 @@ function closeProjectForReviewTest(db: ReturnType<typeof openM0Database>, projec
   const now = "2026-08-14T00:00:00.000Z";
   db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?").run(now, projectId);
   db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?").run(now, projectId);
-  db.prepare(`UPDATE workbench_delivery_state
-    SET workflow_state = 'final_review', current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
-    .run(artifactId, now, projectId);
+  completeWorkbenchAssemblyFixture(db, {
+    project_id: projectId,
+    artifact_id: artifactId,
+    job_id: `job_m0e_closed_assembly_${projectId}`,
+    event_id: `event_m0e_closed_assembly_${projectId}`,
+    created_at: now
+  });
   approveWorkbenchDeliveryFixture(db, {
     project_id: projectId,
     event_id: `event_m0e_closed_accepted_${projectId}_${artifactId}`,
@@ -128,9 +146,13 @@ function closeProjectForReviewTest(db: ReturnType<typeof openM0Database>, projec
     (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
     VALUES (?, ?, ?, ?, ?, 1, ?)`)
     .run(exportId, projectId, artifactId, `data/exports/${projectId}/final.mp4`, "a".repeat(64), now);
-  db.prepare(`UPDATE workbench_delivery_state
-    SET workflow_state = 'exported', latest_export_id = ?, latest_exported_at = ?, updated_at = ? WHERE project_id = ?`)
-    .run(exportId, now, now, projectId);
+  completeWorkbenchExportFixture(db, {
+    project_id: projectId,
+    export_id: exportId,
+    job_id: `job_m0e_closed_export_${projectId}`,
+    event_id: `event_m0e_closed_export_${projectId}`,
+    created_at: now
+  });
   db.prepare(`INSERT INTO workbench_delivery_events
     (event_id, project_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
     VALUES (?, ?, 'closeout', 'exported', 'closed', ?, ?, 'CLOSEOUT_CONFIRMED', '{}', ?)`)

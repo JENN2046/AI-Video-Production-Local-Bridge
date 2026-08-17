@@ -8,6 +8,7 @@ import { WORKBENCH_V2_SCHEMA_VERSION } from "../src/storage/workbenchV2Schema.js
 import { getProject, getShot, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 import { projectSummaryDeliveryState } from "../src/tools/workbenchDeliveryState.js";
 import { assertWorkbenchProjectWritable } from "../src/tools/workbenchV2.js";
+import { completeWorkbenchAssemblyFixture, completeWorkbenchExportFixture } from "./workbench-delivery-test-helpers.js";
 
 function applyThrough0011(db: DatabaseSync): void {
   db.exec("PRAGMA foreign_keys = ON");
@@ -121,7 +122,7 @@ test("migration 0012 backfills delivery state without inventing approval, export
       FROM workbench_delivery_state ORDER BY project_id`).all() as Array<Record<string, unknown>>)
       .map((row) => ({ ...row }));
     assert.deepEqual(states, [
-      { project_id: "project_final_review", workflow_state: "final_review", current_final_artifact_id: "artifact_final_review", approved_artifact_id: null, latest_export_id: null, closed_at: null },
+      { project_id: "project_final_review", workflow_state: "legacy_review_required", current_final_artifact_id: "artifact_final_review", approved_artifact_id: null, latest_export_id: null, closed_at: null },
       { project_id: "project_legacy", workflow_state: "legacy_review_required", current_final_artifact_id: "artifact_legacy", approved_artifact_id: null, latest_export_id: null, closed_at: null },
       { project_id: "project_not_ready", workflow_state: "not_ready", current_final_artifact_id: null, approved_artifact_id: null, latest_export_id: null, closed_at: null }
     ]);
@@ -199,14 +200,34 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
 
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', assembly_input_fingerprint = ?, updated_at = ? WHERE project_id = 'project_delivery'")
       .run("a".repeat(64), now);
-    db.prepare(`UPDATE workbench_delivery_state
+    assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
       SET workflow_state = 'final_review', current_final_artifact_id = 'artifact_delivery', updated_at = ?
-      WHERE project_id = 'project_delivery'`).run(now);
-    db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, output_artifact_id,
-        created_at, started_at, finished_at, updated_at)
-      VALUES ('job_assembly_historical', 'project_delivery', 'assembly', 'succeeded', '{}',
-        'artifact_delivery_old', ?, ?, ?, ?)`).run(now, now, now, now);
+      WHERE project_id = 'project_delivery'`).run(now), /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
+    completeWorkbenchAssemblyFixture(db, {
+      project_id: "project_delivery",
+      artifact_id: "artifact_delivery_old",
+      job_id: "job_assembly_historical",
+      event_id: "event_assembly_historical",
+      created_at: now
+    });
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = 'project_delivery'")
+      .run(now);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, from_state, to_state, artifact_id,
+        input_fingerprint, reason_code, data_json, created_at)
+      VALUES ('event_historical_reassemble', 'project_delivery', 'final_review_reassemble',
+        'final_review', 'ready_to_assemble', 'artifact_delivery_old', ?,
+        'SYNTHETIC_REASSEMBLY', '{}', ?)`)
+      .run("a".repeat(64), now);
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = 'project_delivery'")
+      .run(now);
+    completeWorkbenchAssemblyFixture(db, {
+      project_id: "project_delivery",
+      artifact_id: "artifact_delivery",
+      job_id: "job_assembly_current",
+      event_id: "event_assembly_current",
+      created_at: now
+    });
     assert.throws(() => db.prepare("UPDATE media_artifacts SET status = 'archived' WHERE artifact_id = 'artifact_delivery'").run(),
       /WORKBENCH_DELIVERY_ARTIFACT_ACTIVE_REQUIRED/);
     assert.throws(() => db.prepare("UPDATE media_artifacts SET status = 'archived' WHERE artifact_id = 'artifact_delivery_old'").run(),
@@ -240,9 +261,9 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
       VALUES ('export_delivery_old', 'project_delivery', 'artifact_delivery_old',
         'data/exports/project_delivery/old.mp4', ?, 123, ?)`)
       .run("c".repeat(64), now);
-    db.prepare(`UPDATE workbench_delivery_state
+    assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
       SET workflow_state = 'exported', latest_export_id = 'export_delivery', latest_exported_at = ?, updated_at = ?
-      WHERE project_id = 'project_delivery'`).run(now, now);
+      WHERE project_id = 'project_delivery'`).run(now, now), /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
     assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, export_id,
         created_at, started_at, finished_at, updated_at)
@@ -334,8 +355,13 @@ test("delivery evidence pointers change only through legal assembly, review, rew
       .run(now, projectId);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
       .run(now, projectId);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
-      current_final_artifact_id = 'artifact_pointer_a', updated_at = ? WHERE project_id = ?`).run(now, projectId);
+    completeWorkbenchAssemblyFixture(db, {
+      project_id: projectId,
+      artifact_id: "artifact_pointer_a",
+      job_id: "job_pointer_a_assembly",
+      event_id: "event_pointer_a_assembly",
+      created_at: now
+    });
     assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
       SET current_final_artifact_id = 'artifact_pointer_b', updated_at = ? WHERE project_id = ?`).run(now, projectId),
       /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
@@ -357,9 +383,13 @@ test("delivery evidence pointers change only through legal assembly, review, rew
       .run(now, projectId);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
       .run(now, projectId);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
-      current_final_artifact_id = 'artifact_pointer_b', approved_artifact_id = NULL, updated_at = ? WHERE project_id = ?`)
-      .run(now, projectId);
+    completeWorkbenchAssemblyFixture(db, {
+      project_id: projectId,
+      artifact_id: "artifact_pointer_b",
+      job_id: "job_pointer_b_assembly",
+      event_id: "event_pointer_b_assembly",
+      created_at: now
+    });
     acceptFinalReview(db, projectId, "event_pointer_b_accepted", now);
     db.prepare(`INSERT INTO workbench_exports
       (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
@@ -376,9 +406,16 @@ test("delivery evidence pointers change only through legal assembly, review, rew
     assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
       SET latest_export_id = 'export_pointer_b', latest_exported_at = ?, updated_at = ? WHERE project_id = ?`)
       .run(now, now, projectId), /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'exported',
+    assert.throws(() => db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'exported',
       latest_export_id = 'export_pointer_b', latest_exported_at = ?, updated_at = ? WHERE project_id = ?`)
-      .run(now, now, projectId);
+      .run(now, now, projectId), /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
+    completeWorkbenchExportFixture(db, {
+      project_id: projectId,
+      export_id: "export_pointer_b",
+      job_id: "job_pointer_b_export",
+      event_id: "event_pointer_b_export",
+      created_at: now
+    });
     assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
       SET latest_export_id = 'export_pointer_b_old', latest_exported_at = ?, updated_at = ? WHERE project_id = ?`)
       .run(now, now, projectId), /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
@@ -387,7 +424,7 @@ test("delivery evidence pointers change only through legal assembly, review, rew
       .run(now, projectId), /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
     const insertReused = db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
-      VALUES (?, ?, 'export_succeeded', 'approved', 'exported', ?, ?, 'EXPORT_REUSED', '{"reused":true}', ?)`);
+      VALUES (?, ?, 'export_succeeded', 'exported', 'exported', ?, ?, 'EXPORT_REUSED', '{"reused":true}', ?)`);
     assert.throws(() => insertReused.run("event_pointer_reused_stale", projectId,
       "artifact_pointer_a", "export_pointer_a", now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     assert.doesNotThrow(() => insertReused.run("event_pointer_reused", projectId,
@@ -431,6 +468,11 @@ test("delivery lifecycle events bind to the matching Job type, state, Artifact, 
       (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SYNTHETIC_EVENT', '{}', ?)`);
 
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
+      .run(now, projectId);
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
+      .run(now, projectId);
+
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, created_at, updated_at)
       VALUES ('job_event_assembly', ?, 'assembly', 'queued', '{}', ?, ?)`)
@@ -452,6 +494,13 @@ test("delivery lifecycle events bind to the matching Job type, state, Artifact, 
       "assembly_succeeded", "assembling", "final_review", "artifact_event_other", null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     assert.throws(() => insertEvent.run("event_assembly_succeeded_wrong_state", projectId, "job_event_assembly",
       "assembly_succeeded", "closed", "not_ready", "artifact_event_final", null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+    assert.deepEqual({ ...(db.prepare(`SELECT workflow_state, current_final_artifact_id
+      FROM workbench_delivery_state WHERE project_id = ?`).get(projectId) as Record<string, unknown>) }, {
+      workflow_state: "assembling",
+      current_final_artifact_id: null
+    });
+    assert.equal((db.prepare(`SELECT COUNT(*) AS count FROM workbench_delivery_events
+      WHERE project_id = ? AND event_type = 'assembly_succeeded'`).get(projectId) as { count: number }).count, 0);
     assert.doesNotThrow(() => insertEvent.run("event_assembly_succeeded", projectId, "job_event_assembly",
       "assembly_succeeded", "assembling", "final_review", "artifact_event_final", null, now));
     assert.throws(() => insertEvent.run("event_assembly_succeeded_duplicate", projectId, "job_event_assembly",
@@ -470,12 +519,6 @@ test("delivery lifecycle events bind to the matching Job type, state, Artifact, 
     assert.throws(() => insertEvent.run("event_assembly_wrong_terminal", projectId, "job_event_assembly_failed",
       "assembly_interrupted", "assembling", "ready_to_assemble", null, null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
 
-    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
-      .run(now, projectId);
-    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
-      .run(now, projectId);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
-      current_final_artifact_id = 'artifact_event_final', updated_at = ? WHERE project_id = ?`).run(now, projectId);
     acceptFinalReview(db, projectId, "event_lifecycle_final_review_accepted", now);
     assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, created_at, updated_at)
@@ -495,9 +538,9 @@ test("delivery lifecycle events bind to the matching Job type, state, Artifact, 
       WHERE job_id = 'job_event_export'`).run(now, now);
     assert.doesNotThrow(() => insertEvent.run("event_export_started", projectId, "job_event_export",
       "export_started", "approved", "approved", "artifact_event_final", null, now));
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'exported',
+    assert.throws(() => db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'exported',
       latest_export_id = 'export_event_final', latest_exported_at = ?, updated_at = ? WHERE project_id = ?`)
-      .run(now, now, projectId);
+      .run(now, now, projectId), /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
     assert.throws(() => db.prepare(`UPDATE workbench_delivery_jobs SET state = 'succeeded', export_id = 'export_event_other',
       finished_at = ?, updated_at = ? WHERE job_id = 'job_event_export'`).run(now, now),
     /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
@@ -507,6 +550,13 @@ test("delivery lifecycle events bind to the matching Job type, state, Artifact, 
       "export_succeeded", "approved", "exported", "artifact_event_other", "export_event_final", now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     assert.throws(() => insertEvent.run("event_export_succeeded_wrong_export", projectId, "job_event_export",
       "export_succeeded", "approved", "exported", "artifact_event_other", "export_event_other", now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+    assert.deepEqual({ ...(db.prepare(`SELECT workflow_state, latest_export_id
+      FROM workbench_delivery_state WHERE project_id = ?`).get(projectId) as Record<string, unknown>) }, {
+      workflow_state: "approved",
+      latest_export_id: null
+    });
+    assert.equal((db.prepare(`SELECT COUNT(*) AS count FROM workbench_delivery_events
+      WHERE project_id = ? AND event_type = 'export_succeeded'`).get(projectId) as { count: number }).count, 0);
     assert.doesNotThrow(() => insertEvent.run("event_export_succeeded", projectId, "job_event_export",
       "export_succeeded", "approved", "exported", "artifact_event_final", "export_event_final", now));
     assert.throws(() => insertEvent.run("event_export_with_assembly_job", projectId, "job_event_assembly",
@@ -554,9 +604,13 @@ test("final review events bind to the current final evidence and target delivery
     db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'assembling',
       assembly_input_fingerprint = ?, updated_at = ? WHERE project_id = ?`)
       .run(fingerprint, now, projectId);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
-      current_final_artifact_id = 'artifact_review_current', updated_at = ? WHERE project_id = ?`)
-      .run(now, projectId);
+    completeWorkbenchAssemblyFixture(db, {
+      project_id: projectId,
+      artifact_id: "artifact_review_current",
+      job_id: "job_review_current_assembly",
+      event_id: "event_review_current_assembly",
+      created_at: now
+    });
     const insertReviewEvent = db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id,
         export_id, input_fingerprint, reason_code, data_json, created_at)
@@ -610,15 +664,20 @@ test("final review events bind to the current final evidence and target delivery
 
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
       .run(now, projectId);
-    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'final_review', updated_at = ? WHERE project_id = ?")
-      .run(now, projectId);
+    completeWorkbenchAssemblyFixture(db, {
+      project_id: projectId,
+      artifact_id: "artifact_review_other",
+      job_id: "job_review_other_assembly",
+      event_id: "event_review_other_assembly",
+      created_at: now
+    });
     assert.throws(() => db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'approved',
       approved_artifact_id = current_final_artifact_id, updated_at = ? WHERE project_id = ?`).run(now, projectId),
-    /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
+    /FOREIGN KEY constraint failed|WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'revision_requested', updated_at = ? WHERE project_id = ?")
       .run(now, projectId);
     assert.doesNotThrow(() => insertReviewEvent.run("event_review_regenerate", projectId, null,
-      "final_review_regenerate_shots", "final_review", "revision_requested", "artifact_review_current", null, fingerprint, now));
+      "final_review_regenerate_shots", "final_review", "revision_requested", "artifact_review_other", null, fingerprint, now));
   } finally {
     db.close();
   }
@@ -640,11 +699,21 @@ test("delivery jobs bind retries and terminal outputs to the same project and jo
     }
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = 'project_a'").run(now);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = 'project_a'").run(now);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
-      current_final_artifact_id = 'artifact_project_a', updated_at = ? WHERE project_id = 'project_a'`).run(now);
+    completeWorkbenchAssemblyFixture(db, {
+      project_id: "project_a",
+      artifact_id: "artifact_project_a",
+      job_id: "job_project_a_assembly",
+      event_id: "event_project_a_assembly",
+      created_at: now
+    });
     acceptFinalReview(db, "project_a", "event_project_a_accepted", now);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'exported', latest_export_id = 'export_project_a',
-      latest_exported_at = ?, updated_at = ? WHERE project_id = 'project_a'`).run(now, now);
+    completeWorkbenchExportFixture(db, {
+      project_id: "project_a",
+      export_id: "export_project_a",
+      job_id: "job_project_a_export",
+      event_id: "event_project_a_export",
+      created_at: now
+    });
     db.prepare(`INSERT INTO media_artifacts
       (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
       VALUES ('artifact_wrong_role', 'project_a', '', 'generated_clip', 'video', 'active', ?)`)

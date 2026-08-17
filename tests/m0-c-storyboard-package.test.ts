@@ -10,7 +10,11 @@ import {
   openM0Database,
   registerMediaArtifact
 } from "../src/index.js";
-import { approveWorkbenchDeliveryFixture } from "./workbench-delivery-test-helpers.js";
+import {
+  approveWorkbenchDeliveryFixture,
+  completeWorkbenchAssemblyFixture,
+  completeWorkbenchExportFixture
+} from "./workbench-delivery-test-helpers.js";
 
 function createActiveStoryboardArtifact(db: ReturnType<typeof openM0Database>) {
   const result = registerMediaArtifact(
@@ -351,9 +355,13 @@ test("M0-C closed projects reject Storyboard import before SHOT, Artifact, packa
       .run(now, created.project_id);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
       .run(now, created.project_id);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
-      current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
-      .run(finalArtifact.artifact.artifact_id, now, created.project_id);
+    completeWorkbenchAssemblyFixture(db, {
+      project_id: created.project_id,
+      artifact_id: finalArtifact.artifact.artifact_id,
+      job_id: `job_m0c_assembly_${created.project_id}`,
+      event_id: `event_m0c_assembly_${created.project_id}`,
+      created_at: now
+    });
     approveWorkbenchDeliveryFixture(db, {
       project_id: created.project_id,
       event_id: `event_m0c_accepted_${created.project_id}`,
@@ -364,9 +372,13 @@ test("M0-C closed projects reject Storyboard import before SHOT, Artifact, packa
       VALUES ('export_closed_storyboard', ?, ?, ?, ?, 123, ?)`)
       .run(created.project_id, finalArtifact.artifact.artifact_id,
         `data/exports/${created.project_id}/final.mp4`, "f".repeat(64), now);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'exported',
-      latest_export_id = 'export_closed_storyboard', latest_exported_at = ?, updated_at = ? WHERE project_id = ?`)
-      .run(now, now, created.project_id);
+    completeWorkbenchExportFixture(db, {
+      project_id: created.project_id,
+      export_id: "export_closed_storyboard",
+      job_id: `job_m0c_export_${created.project_id}`,
+      event_id: `event_m0c_export_${created.project_id}`,
+      created_at: now
+    });
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
       VALUES ('event_closeout_storyboard', ?, 'closeout', 'exported', 'closed', ?, 'export_closed_storyboard',
