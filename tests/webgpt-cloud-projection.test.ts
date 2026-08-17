@@ -14,7 +14,8 @@ import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
 import {
   approveWorkbenchDeliveryFixture,
   completeWorkbenchAssemblyFixture,
-  completeWorkbenchExportFixture
+  completeWorkbenchExportFixture,
+  ensureAcceptedAssemblyClipsFixture
 } from "./workbench-delivery-test-helpers.js";
 import {
   exportReadonlySnapshotFromDatabase,
@@ -444,6 +445,20 @@ test("SQLite and Snapshot readonly adapters preserve six-tool DTO parity and dat
     }, fixtureDb);
     assert.equal(registered.ok, true);
     if (!registered.ok) throw new Error("final video projection fixture registration failed");
+    const storyboardImage = registerMediaArtifact({
+      artifact_type: "image",
+      role: "storyboard_image",
+      source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
+      linked_objects: { project_id: fixture.project_id, shot_id: fixture.shot_id }
+    }, fixtureDb);
+    assert.equal(storyboardImage.ok, true);
+    if (!storyboardImage.ok) throw new Error("storyboard projection fixture registration failed");
+    const assemblyShot = getShot(fixtureDb, fixture.shot_id);
+    assert.ok(assemblyShot);
+    if (!assemblyShot) throw new Error("assembly projection SHOT was not found");
+    assemblyShot.storyboard_image_artifact_id = storyboardImage.artifact.artifact_id;
+    saveShot(fixtureDb, assemblyShot);
+    ensureAcceptedAssemblyClipsFixture(fixtureDb, fixture.project_id);
     project.status = "final_approved";
     project.exports.final_video_artifact_id = registered.artifact.artifact_id;
     saveProject(fixtureDb, project);
@@ -509,14 +524,32 @@ test("SQLite and Snapshot readonly adapters preserve six-tool DTO parity and dat
     role: binding.role,
     mime_type: binding.mime_type,
     status: binding.status
-  })), [{
-    artifact_id: snapshot.projects[0]!.delivery.final_artifact!.artifact_id,
-    project_id: fixture.project_id,
-    shot_id: null,
-    role: "final_video",
-    mime_type: "video/mp4",
-    status: "active"
-  }]);
+  })).sort((left, right) => left.role.localeCompare(right.role)), [
+    {
+      artifact_id: snapshot.projects[0]!.delivery.final_artifact!.artifact_id,
+      project_id: fixture.project_id,
+      shot_id: null,
+      role: "final_video",
+      mime_type: "video/mp4",
+      status: "active"
+    },
+    {
+      artifact_id: snapshot.projects[0]!.shots_full[0]!.accepted_clip_artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      role: "generated_clip",
+      mime_type: "video/mp4",
+      status: "active"
+    },
+    {
+      artifact_id: snapshot.projects[0]!.shots_full[0]!.storyboard_image_artifact_id,
+      project_id: fixture.project_id,
+      shot_id: fixture.shot_id,
+      role: "storyboard_image",
+      mime_type: "image/png",
+      status: "active"
+    }
+  ]);
   assert.doesNotMatch(JSON.stringify(snapshot), /"(?:local_path|provider_payload|actor_hash|subject|idempotency_key)":/);
   const db = openM0DatabaseConnection(sqlitePath, { readOnly: true });
   try {

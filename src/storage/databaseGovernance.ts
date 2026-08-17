@@ -336,6 +336,12 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
       `SELECT COUNT(*) AS count FROM workbench_delivery_jobs job
         WHERE job.job_type = 'assembly' AND job.state = 'succeeded' AND (
           json_type(job.input_json, '$.source_clip_artifact_ids') IS NOT 'array'
+          OR NOT EXISTS (
+            SELECT 1 FROM shots project_shot WHERE project_shot.project_id = job.project_id
+          )
+          OR json_array_length(job.input_json, '$.source_clip_artifact_ids') <> (
+            SELECT COUNT(*) FROM shots project_shot WHERE project_shot.project_id = job.project_id
+          )
           OR json_array_length(job.input_json, '$.source_clip_artifact_ids') <> (
             SELECT COUNT(DISTINCT source_clip.value)
             FROM json_each(job.input_json, '$.source_clip_artifact_ids') source_clip
@@ -347,7 +353,20 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
               AND artifact.project_id = job.project_id AND artifact.role = 'generated_clip'
               AND artifact.artifact_type = 'video' AND artifact.status = 'active'
               AND COALESCE(artifact.shot_id, '') <> ''
-            WHERE source_clip.type <> 'text' OR artifact.artifact_id IS NULL
+            LEFT JOIN shots source_shot ON source_shot.shot_id = artifact.shot_id
+              AND source_shot.project_id = job.project_id
+            WHERE source_clip.type <> 'text' OR artifact.artifact_id IS NULL OR source_shot.shot_id IS NULL
+          )
+          OR EXISTS (
+            SELECT 1 FROM shots project_shot
+            WHERE project_shot.project_id = job.project_id AND NOT EXISTS (
+              SELECT 1 FROM json_each(job.input_json, '$.source_clip_artifact_ids') source_clip
+              JOIN media_artifacts artifact ON artifact.artifact_id = source_clip.value
+                AND artifact.project_id = job.project_id AND artifact.shot_id = project_shot.shot_id
+                AND artifact.role = 'generated_clip' AND artifact.artifact_type = 'video'
+                AND artifact.status = 'active'
+              WHERE source_clip.type = 'text'
+            )
           )
         )`,
       `SELECT COUNT(*) AS count FROM workbench_delivery_jobs j

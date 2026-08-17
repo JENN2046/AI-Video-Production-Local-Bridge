@@ -19,7 +19,10 @@ import {
 import { createProject, getShot, saveProject, saveShot, type Project, type Shot } from "../src/tools/projects.js";
 import { getWorkbenchProjectWorkspace, updateWorkbenchShot } from "../src/tools/workbenchV2.js";
 import { getProductionProjectContext } from "../src/webgpt-v4/domain.js";
-import { completeWorkbenchAssemblyFixture } from "./workbench-delivery-test-helpers.js";
+import {
+  completeWorkbenchAssemblyFixture,
+  ensureAcceptedAssemblyClipsFixture
+} from "./workbench-delivery-test-helpers.js";
 
 function tempRoot(): string {
   return mkdtempSync(join(tmpdir(), "ai-video-artifact-blob-"));
@@ -177,6 +180,7 @@ test("SHOT Artifact attachment obeys delivery content gates without partial writ
     assert.equal(finalArtifact.ok, true);
     if (!finalArtifact.ok) throw new Error("FINAL_ARTIFACT_SETUP_FAILED");
     const now = "2026-08-17T02:00:00.000Z";
+    ensureAcceptedAssemblyClipsFixture(db, target.project.project_id);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(now, target.project.project_id);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")

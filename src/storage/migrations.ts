@@ -1373,10 +1373,11 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     ))
     OR (NEW.job_type = 'assembly' AND NEW.state = 'succeeded' AND (
       json_type(NEW.input_json, '$.source_clip_artifact_ids') IS NOT 'array'
+      OR NOT EXISTS (
+        SELECT 1 FROM shots shot WHERE shot.project_id = NEW.project_id
+      )
       OR (SELECT COUNT(*) FROM json_each(NEW.input_json, '$.source_clip_artifact_ids')) <> (
-        SELECT COUNT(*) FROM shots shot
-        WHERE shot.project_id = NEW.project_id
-          AND COALESCE(json_extract(shot.data_json, '$.accepted_clip_artifact_id'), '') <> ''
+        SELECT COUNT(*) FROM shots shot WHERE shot.project_id = NEW.project_id
       )
       OR EXISTS (
         SELECT 1 FROM json_each(NEW.input_json, '$.source_clip_artifact_ids') source_clip
@@ -1390,11 +1391,17 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
       OR EXISTS (
         SELECT 1 FROM shots shot
         WHERE shot.project_id = NEW.project_id
-          AND COALESCE(json_extract(shot.data_json, '$.accepted_clip_artifact_id'), '') <> ''
-          AND NOT EXISTS (
-            SELECT 1 FROM json_each(NEW.input_json, '$.source_clip_artifact_ids') source_clip
-            WHERE source_clip.type = 'text'
-              AND source_clip.value = json_extract(shot.data_json, '$.accepted_clip_artifact_id')
+          AND (
+            COALESCE(json_extract(shot.data_json, '$.accepted_clip_artifact_id'), '') = ''
+            OR NOT EXISTS (
+              SELECT 1 FROM json_each(NEW.input_json, '$.source_clip_artifact_ids') source_clip
+              JOIN media_artifacts artifact ON artifact.artifact_id = source_clip.value
+                AND artifact.project_id = NEW.project_id AND artifact.shot_id = shot.shot_id
+                AND artifact.role = 'generated_clip' AND artifact.artifact_type = 'video'
+                AND artifact.status = 'active'
+              WHERE source_clip.type = 'text' AND source_clip.value =
+                json_extract(shot.data_json, '$.accepted_clip_artifact_id')
+            )
           )
       )
     ))
@@ -1438,10 +1445,11 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     ))
     OR (NEW.job_type = 'assembly' AND NEW.state = 'succeeded' AND (
       json_type(NEW.input_json, '$.source_clip_artifact_ids') IS NOT 'array'
+      OR NOT EXISTS (
+        SELECT 1 FROM shots shot WHERE shot.project_id = NEW.project_id
+      )
       OR (SELECT COUNT(*) FROM json_each(NEW.input_json, '$.source_clip_artifact_ids')) <> (
-        SELECT COUNT(*) FROM shots shot
-        WHERE shot.project_id = NEW.project_id
-          AND COALESCE(json_extract(shot.data_json, '$.accepted_clip_artifact_id'), '') <> ''
+        SELECT COUNT(*) FROM shots shot WHERE shot.project_id = NEW.project_id
       )
       OR EXISTS (
         SELECT 1 FROM json_each(NEW.input_json, '$.source_clip_artifact_ids') source_clip
@@ -1455,11 +1463,17 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
       OR EXISTS (
         SELECT 1 FROM shots shot
         WHERE shot.project_id = NEW.project_id
-          AND COALESCE(json_extract(shot.data_json, '$.accepted_clip_artifact_id'), '') <> ''
-          AND NOT EXISTS (
-            SELECT 1 FROM json_each(NEW.input_json, '$.source_clip_artifact_ids') source_clip
-            WHERE source_clip.type = 'text'
-              AND source_clip.value = json_extract(shot.data_json, '$.accepted_clip_artifact_id')
+          AND (
+            COALESCE(json_extract(shot.data_json, '$.accepted_clip_artifact_id'), '') = ''
+            OR NOT EXISTS (
+              SELECT 1 FROM json_each(NEW.input_json, '$.source_clip_artifact_ids') source_clip
+              JOIN media_artifacts artifact ON artifact.artifact_id = source_clip.value
+                AND artifact.project_id = NEW.project_id AND artifact.shot_id = shot.shot_id
+                AND artifact.role = 'generated_clip' AND artifact.artifact_type = 'video'
+                AND artifact.status = 'active'
+              WHERE source_clip.type = 'text' AND source_clip.value =
+                json_extract(shot.data_json, '$.accepted_clip_artifact_id')
+            )
           )
       )
     ))

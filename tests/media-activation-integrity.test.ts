@@ -23,7 +23,10 @@ import {
 } from "../src/tools/mediaArtifacts.js";
 import { buildStoryboardApprovedShot, createProject, saveShot } from "../src/tools/projects.js";
 import { buildRunningHubMediaUploadRequest } from "../src/tools/videoProviderAdapters.js";
-import { completeWorkbenchAssemblyFixture } from "./workbench-delivery-test-helpers.js";
+import {
+  completeWorkbenchAssemblyFixture,
+  ensureAcceptedAssemblyClipsFixture
+} from "./workbench-delivery-test-helpers.js";
 
 const IMAGE_FIXTURE = resolve(paths.workspaceRoot, "fixtures", "provider-canary", "m1-r0", "shot_001_canary_720x1280.png");
 const VIDEO_FIXTURE = resolve(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4");
@@ -262,6 +265,7 @@ test("delivery-referenced final Artifact content and Blob binding fail closed be
 
     const now = "2026-08-17T00:00:00.000Z";
     const fingerprint = "e".repeat(64);
+    ensureAcceptedAssemblyClipsFixture(db, project.project_id);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(now, project.project_id);
     db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'assembling',

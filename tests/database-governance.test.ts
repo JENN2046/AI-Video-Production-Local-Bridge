@@ -15,7 +15,9 @@ import { buildStoryboardApprovedShot, createProject, getProject, saveProject, sa
 import {
   approveWorkbenchDeliveryFixture,
   completeWorkbenchAssemblyFixture,
-  completeWorkbenchExportFixture
+  completeWorkbenchExportFixture,
+  createAcceptedAssemblyClipFixture,
+  ensureAcceptedAssemblyClipsFixture
 } from "./workbench-delivery-test-helpers.js";
 
 const HISTORICAL_MIGRATION_0005_CHECKSUM = "92297a3ce2996e427b8a8e3dae39a25f33a294c29142b5ca723cdcd4700ad8b0";
@@ -59,6 +61,7 @@ function createApprovedDeliveryFixture(
   const project = createProject({ title: `Rework evidence ${suffix}` }, db);
   assert.equal(project.ok, true);
   if (!project.ok) throw new Error("rework evidence project setup failed");
+  ensureAcceptedAssemblyClipsFixture(db, project.project_id);
   const artifact = registerMediaArtifact({
     artifact_type: "video",
     role: "final_video",
@@ -697,6 +700,7 @@ test("database check reports invalid delivery Job bindings and inactive referenc
       db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
         .run(projectId, JSON.stringify({ project_id: projectId, exports: { final_video_artifact_id: "" } }));
     }
+    ensureAcceptedAssemblyClipsFixture(db, "project_b");
     const artifact = {
       artifact_id: "artifact_b",
       blob_id: "blob_b",
@@ -850,7 +854,7 @@ test("database check reports invalid delivery Job bindings and inactive referenc
 
     const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
     assert.equal(checked.schema_current, true);
-    assert.equal(checked.orphan_rows, 23);
+    assert.equal(checked.orphan_rows, 24);
     assert.equal(checked.media_integrity_errors, 0);
     assert.equal(checked.check_errors, 0);
     assert.equal(checked.result, "FAIL");
@@ -952,6 +956,7 @@ test("database check detects missing, duplicate, and pointer-drifted delivery su
       const project = createProject({ title: `Delivery success evidence ${suffix}` }, db);
       assert.equal(project.ok, true);
       if (!project.ok) throw new Error("delivery success evidence project setup failed");
+      ensureAcceptedAssemblyClipsFixture(db, project.project_id);
       const artifact = registerMediaArtifact({
         artifact_type: "video",
         role: "final_video",
@@ -1063,6 +1068,7 @@ test("database check detects missing and timestamp-drifted final review acceptan
       const project = createProject({ title }, db);
       assert.equal(project.ok, true);
       if (!project.ok) throw new Error("approval evidence project setup failed");
+      ensureAcceptedAssemblyClipsFixture(db, project.project_id);
       const artifact = registerMediaArtifact({
         artifact_type: "video",
         role: "final_video",
@@ -1207,6 +1213,7 @@ test("database check accepts active historical final Artifacts referenced by suc
     const project = createProject({ title: "Historical assembly evidence" }, db);
     assert.equal(project.ok, true);
     if (!project.ok) throw new Error("historical assembly project setup failed");
+    ensureAcceptedAssemblyClipsFixture(db, project.project_id);
     const historical = registerMediaArtifact({
       artifact_type: "video",
       role: "final_video",
@@ -1353,6 +1360,77 @@ test("succeeded assembly input clips remain active and db:check detects bypassed
     const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
     assert.equal(checked.schema_current, true);
     assert.ok(checked.orphan_rows >= 1, JSON.stringify(checked));
+    assert.equal(checked.result, "FAIL");
+  } finally {
+    try { db?.close(); } catch { /* retain the primary assertion failure */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("database check detects zero-SHOT and partial-SHOT succeeded assembly evidence", () => {
+  const root = tempRoot();
+  let db: ReturnType<typeof openM0Database> | null = null;
+  try {
+    const sqlitePath = join(root, "assembly-shot-coverage.sqlite");
+    migrateDatabase(sqlitePath);
+    db = openM0Database(sqlitePath);
+    const now = "2026-08-17T11:00:00.000Z";
+
+    const emptyProject = createProject({ title: "Zero SHOT assembly evidence" }, db);
+    assert.equal(emptyProject.ok, true);
+    if (!emptyProject.ok) throw new Error("zero SHOT assembly project setup failed");
+    const emptyFinal = registerMediaArtifact({
+      artifact_type: "video",
+      role: "final_video",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: emptyProject.project_id }
+    }, db);
+    assert.equal(emptyFinal.ok, true);
+    if (!emptyFinal.ok) throw new Error("zero SHOT final Artifact setup failed");
+
+    const partialProject = createProject({ title: "Partial SHOT assembly evidence" }, db);
+    assert.equal(partialProject.ok, true);
+    if (!partialProject.ok) throw new Error("partial SHOT assembly project setup failed");
+    const first = createAcceptedAssemblyClipFixture(db, {
+      project_id: partialProject.project_id, order: 1, label: "coverage first"
+    });
+    createAcceptedAssemblyClipFixture(db, {
+      project_id: partialProject.project_id, order: 2, label: "coverage second"
+    });
+    const partialFinal = registerMediaArtifact({
+      artifact_type: "video",
+      role: "final_video",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: partialProject.project_id }
+    }, db);
+    assert.equal(partialFinal.ok, true);
+    if (!partialFinal.ok) throw new Error("partial SHOT final Artifact setup failed");
+
+    assert.equal(checkDatabase(sqlitePath, { recover_media_activations: false }).result, "PASS");
+    const insertGuard = (db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'trigger'
+      AND name = 'workbench_delivery_jobs_validate_insert'`).get() as { sql: string }).sql;
+    db.exec("DROP TRIGGER workbench_delivery_jobs_validate_insert");
+    db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, input_json, output_artifact_id,
+        created_at, started_at, finished_at, updated_at)
+      VALUES ('job_assembly_zero_shot_bypass', ?, 'assembly', 'succeeded',
+        '{"source_clip_artifact_ids":[]}', ?, ?, ?, ?, ?)`)
+      .run(emptyProject.project_id, emptyFinal.artifact.artifact_id, now, now, now, now);
+    db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, input_json, output_artifact_id,
+        created_at, started_at, finished_at, updated_at)
+      VALUES ('job_assembly_partial_shot_bypass', ?, 'assembly', 'succeeded',
+        json_object('source_clip_artifact_ids', json_array(?)), ?, ?, ?, ?, ?)`)
+      .run(partialProject.project_id, first.artifact_id, partialFinal.artifact.artifact_id,
+        now, now, now, now);
+    db.exec(insertGuard);
+    assert.doesNotThrow(() => assertSchemaCurrent(db!));
+    db.close();
+    db = null;
+
+    const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
+    assert.equal(checked.schema_current, true);
+    assert.ok(checked.orphan_rows >= 2, JSON.stringify(checked));
     assert.equal(checked.result, "FAIL");
   } finally {
     try { db?.close(); } catch { /* retain the primary assertion failure */ }

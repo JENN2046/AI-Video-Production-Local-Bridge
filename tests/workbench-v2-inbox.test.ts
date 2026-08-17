@@ -14,7 +14,8 @@ import { createWorkbenchProject } from "../src/tools/workbenchV2.js";
 import {
   approveWorkbenchDeliveryFixture,
   completeWorkbenchAssemblyFixture,
-  completeWorkbenchExportFixture
+  completeWorkbenchExportFixture,
+  ensureAcceptedAssemblyClipsFixture
 } from "./workbench-delivery-test-helpers.js";
 
 test("legacy inbox JSON migrates once without changing source hashes", () => {
@@ -189,6 +190,8 @@ test("closed projects reject existing Draft promotion and Pending Action executi
       payload: { project_id: projectId, shot_id: shot.shot_id, artifact_id: storyboard.artifact.artifact_id }
     }, db);
     closeProjectForInboxTest(db, projectId);
+    const closedShotBefore = getShot(db, shot.shot_id);
+    assert.ok(closedShotBefore);
 
     const promoted = transitionWorkbenchDraft("draft_closed_inbox", {
       action: "promote",
@@ -201,7 +204,7 @@ test("closed projects reject existing Draft promotion and Pending Action executi
     const executed = decideWorkbenchPendingAction("action_closed_inbox", { decision: "execute" }, db);
     assert.equal(executed.ok ? null : executed.error.code, "PROJECT_CLOSED");
     assert.equal(getWorkbenchPendingActionRecord("action_closed_inbox", db)?.status, "pending");
-    assert.deepEqual(getShot(db, shot.shot_id), shot);
+    assert.deepEqual(getShot(db, shot.shot_id), closedShotBefore);
   } finally {
     db.close();
   }
@@ -280,6 +283,7 @@ function sha256(path: string): string {
 }
 
 function closeProjectForInboxTest(db: ReturnType<typeof openM0Database>, projectId: string): void {
+  ensureAcceptedAssemblyClipsFixture(db, projectId);
   const project = getProject(db, projectId);
   assert.ok(project);
   if (!project) throw new Error("closed inbox fixture project was not found");

@@ -19,7 +19,8 @@ import { setWorkbenchProjectLifecycle, updateWorkbenchShot } from "../src/tools/
 import {
   approveWorkbenchDeliveryFixture,
   completeWorkbenchAssemblyFixture,
-  completeWorkbenchExportFixture
+  completeWorkbenchExportFixture,
+  ensureAcceptedAssemblyClipsFixture
 } from "./workbench-delivery-test-helpers.js";
 
 async function setupGeneratedShot(db: ReturnType<typeof openM0Database>) {
@@ -84,6 +85,7 @@ function setProjectFinalEvidenceState(
   if (!finalArtifact.ok) throw new Error("final evidence Artifact registration failed");
   const artifactId = finalArtifact.artifact.artifact_id;
   const now = "2026-08-14T01:00:00.000Z";
+  ensureAcceptedAssemblyClipsFixture(db, projectId);
   db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
     .run(now, projectId);
   db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
@@ -128,6 +130,7 @@ function closeProjectForReviewTest(db: ReturnType<typeof openM0Database>, projec
   const artifactId = finalArtifact.artifact.artifact_id;
   const exportId = `export_${projectId}`;
   const now = "2026-08-14T00:00:00.000Z";
+  ensureAcceptedAssemblyClipsFixture(db, projectId);
   db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?").run(now, projectId);
   db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?").run(now, projectId);
   completeWorkbenchAssemblyFixture(db, {

@@ -1,4 +1,72 @@
 import type { M0Database } from "../src/storage/sqlite.js";
+import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
+import { buildStoryboardApprovedShot, getShot, saveShot } from "../src/tools/projects.js";
+
+export function createAcceptedAssemblyClipFixture(
+  db: M0Database,
+  input: { project_id: string; shot_id?: string; order?: number; label?: string }
+): { shot_id: string; artifact_id: string } {
+  const order = input.order ?? 1;
+  const label = input.label ?? String(order);
+  const shot = buildStoryboardApprovedShot({
+    project_id: input.project_id,
+    order,
+    duration_seconds: 2,
+    storyboard_image_artifact_id: "",
+    video_prompt: `Assembly source ${label}`
+  });
+  if (input.shot_id) shot.shot_id = input.shot_id;
+  saveShot(db, shot);
+  const clip = registerMediaArtifact({
+    artifact_type: "video",
+    role: "generated_clip",
+    source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+    linked_objects: { project_id: input.project_id, shot_id: shot.shot_id }
+  }, db);
+  if (!clip.ok) throw new Error(`DELIVERY_FIXTURE_CLIP_REGISTRATION_FAILED:${clip.error.code}`);
+  shot.status = "video_review";
+  shot.accepted_clip_artifact_id = clip.artifact.artifact_id;
+  shot.clip_versions = [{
+    artifact_id: clip.artifact.artifact_id,
+    run_id: `run_${shot.shot_id}`,
+    attempt_number: 1,
+    review_status: "approved"
+  }];
+  shot.review.approval_status = "approved";
+  saveShot(db, shot);
+  return { shot_id: shot.shot_id, artifact_id: clip.artifact.artifact_id };
+}
+
+export function ensureAcceptedAssemblyClipsFixture(db: M0Database, projectId: string): void {
+  const shotIds = (db.prepare("SELECT shot_id FROM shots WHERE project_id = ? ORDER BY shot_id")
+    .all(projectId) as Array<{ shot_id: string }>).map((row) => row.shot_id);
+  if (shotIds.length === 0) {
+    createAcceptedAssemblyClipFixture(db, { project_id: projectId, label: "default" });
+    return;
+  }
+  for (const shotId of shotIds) {
+    const shot = getShot(db, shotId);
+    if (!shot) throw new Error(`DELIVERY_FIXTURE_SHOT_MISSING:${shotId}`);
+    if (shot.accepted_clip_artifact_id) continue;
+    const clip = registerMediaArtifact({
+      artifact_type: "video",
+      role: "generated_clip",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: projectId, shot_id: shotId }
+    }, db);
+    if (!clip.ok) throw new Error(`DELIVERY_FIXTURE_CLIP_REGISTRATION_FAILED:${clip.error.code}`);
+    shot.status = "video_review";
+    shot.accepted_clip_artifact_id = clip.artifact.artifact_id;
+    shot.clip_versions = [...shot.clip_versions, {
+      artifact_id: clip.artifact.artifact_id,
+      run_id: `run_${shot.shot_id}`,
+      attempt_number: shot.clip_versions.length + 1,
+      review_status: "approved"
+    }];
+    shot.review.approval_status = "approved";
+    saveShot(db, shot);
+  }
+}
 
 export function completeWorkbenchAssemblyFixture(
   db: M0Database,
@@ -17,6 +85,11 @@ export function completeWorkbenchAssemblyFixture(
       FROM shots WHERE project_id = ? AND COALESCE(json_extract(data_json, '$.accepted_clip_artifact_id'), '') <> ''
       ORDER BY CAST(json_extract(data_json, '$.order') AS INTEGER), shot_id`).all(input.project_id) as Array<{ accepted_clip_artifact_id: string }>)
       .map((row) => row.accepted_clip_artifact_id);
+    const totalShots = Number((db.prepare("SELECT COUNT(*) AS count FROM shots WHERE project_id = ?")
+      .get(input.project_id) as { count: number }).count);
+    if (totalShots === 0 || sourceClipArtifactIds.length !== totalShots) {
+      throw new Error("DELIVERY_FIXTURE_COMPLETE_ACCEPTED_SHOTS_REQUIRED");
+    }
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_fingerprint, input_json, output_artifact_id,
         created_at, started_at, finished_at, updated_at)

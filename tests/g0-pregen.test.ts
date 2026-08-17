@@ -18,7 +18,8 @@ import {
 import {
   approveWorkbenchDeliveryFixture,
   completeWorkbenchAssemblyFixture,
-  completeWorkbenchExportFixture
+  completeWorkbenchExportFixture,
+  ensureAcceptedAssemblyClipsFixture
 } from "./workbench-delivery-test-helpers.js";
 
 function createActiveStoryboardArtifact(db: ReturnType<typeof openM0Database>) {
@@ -255,6 +256,7 @@ test("G0 rejects archived, closed, and assembling projects before filesystem or 
     const artifactId = finalArtifact.artifact.artifact_id;
     const exportId = `export_${closed.project_id}`;
     const closedAt = "2026-08-15T03:00:00.000Z";
+    ensureAcceptedAssemblyClipsFixture(db, closed.project_id);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(closedAt, closed.project_id);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")

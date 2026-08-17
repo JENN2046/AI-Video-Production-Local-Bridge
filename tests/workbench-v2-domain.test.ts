@@ -37,7 +37,10 @@ import {
 import { activateLocalMediaArtifact, registerMediaArtifact, type MediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { downloadProviderOutputToArtifact } from "../src/tools/providerOutputDownloader.js";
 import type { ProviderPollOptions, VideoProviderAdapter } from "../src/tools/videoProviderAdapters.js";
-import { completeWorkbenchAssemblyFixture } from "./workbench-delivery-test-helpers.js";
+import {
+  completeWorkbenchAssemblyFixture,
+  ensureAcceptedAssemblyClipsFixture
+} from "./workbench-delivery-test-helpers.js";
 
 function operationalFacts(overrides: Partial<ShotOperationalFacts> = {}): ShotOperationalFacts {
   const generationVersionCount = overrides.generation_version_count ?? 0;
@@ -718,6 +721,7 @@ function moveWorkerDeliveryToFinalReview(sqlitePath: string, projectId: string, 
   const db = openM0Database(sqlitePath);
   try {
     const now = "2026-08-15T10:00:00.000Z";
+    ensureAcceptedAssemblyClipsFixture(db, projectId);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(now, projectId);
     db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'assembling',
@@ -1272,6 +1276,7 @@ test("Workbench project summary prioritizes ready-to-assemble over a retained fi
     created.data.project.exports.final_video_artifact_id = finalArtifact.artifact.artifact_id;
     saveProject(db, created.data.project);
     const now = "2026-08-15T05:00:00.000Z";
+    ensureAcceptedAssemblyClipsFixture(db, created.data.project.project_id);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(now, created.data.project.project_id);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")

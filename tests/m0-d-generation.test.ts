@@ -16,7 +16,8 @@ import {
 import {
   approveWorkbenchDeliveryFixture,
   completeWorkbenchAssemblyFixture,
-  completeWorkbenchExportFixture
+  completeWorkbenchExportFixture,
+  ensureAcceptedAssemblyClipsFixture
 } from "./workbench-delivery-test-helpers.js";
 
 function setupThreeShotProject(db: ReturnType<typeof openM0Database>) {
@@ -203,6 +204,7 @@ test("M0-D legacy batch generation rejects closed projects before all generation
     const artifactId = finalArtifact.artifact.artifact_id;
     const exportId = `export_${project.project_id}`;
     const now = "2026-08-14T02:00:00.000Z";
+    ensureAcceptedAssemblyClipsFixture(db, project.project_id);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(now, project.project_id);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
