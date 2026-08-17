@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { validateAcceptedClipReference } from "./mediaArtifacts.js";
-import { assertWorkbenchContentMutationAllowed, assertWorkbenchProductionWriteAllowed } from "./workbenchDeliveryState.js";
+import { assertWorkbenchContentMutationAllowed } from "./workbenchDeliveryState.js";
 
 export type ProjectStatus = "draft" | "storyboard_approved" | "video_generation_in_progress" | "video_review" | "final_approved";
 export type ShotStatus = "draft" | "storyboard_approved" | "video_pending" | "video_generated" | "video_review" | "approved" | "revision_needed";
@@ -98,19 +98,27 @@ export function createProject(
 }
 
 export function saveProject(db: M0Database, project: Project): void {
-  const existing = db.prepare("SELECT 1 AS present FROM projects WHERE project_id = ?")
-    .get(project.project_id) as { present: number } | undefined;
-  if (existing) {
-    const writable = assertWorkbenchProductionWriteAllowed(db, project.project_id);
-    if (!writable.ok) throw new Error(writable.error.code);
+  const ownsTransaction = !(db as unknown as { isTransaction?: boolean }).isTransaction;
+  if (ownsTransaction) db.exec("BEGIN IMMEDIATE");
+  try {
+    const existing = db.prepare("SELECT 1 AS present FROM projects WHERE project_id = ?")
+      .get(project.project_id) as { present: number } | undefined;
+    if (existing) {
+      const writable = assertWorkbenchContentMutationAllowed(db, project.project_id);
+      if (!writable.ok) throw new Error(writable.error.code);
+    }
+    db.prepare(`
+      INSERT INTO projects (project_id, data_json, updated_at)
+      VALUES (?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(project_id) DO UPDATE SET
+        data_json = excluded.data_json,
+        updated_at = CURRENT_TIMESTAMP
+    `).run(project.project_id, JSON.stringify(project));
+    if (ownsTransaction) db.exec("COMMIT");
+  } catch (error) {
+    if (ownsTransaction && (db as unknown as { isTransaction?: boolean }).isTransaction) db.exec("ROLLBACK");
+    throw error;
   }
-  db.prepare(`
-    INSERT INTO projects (project_id, data_json, updated_at)
-    VALUES (?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(project_id) DO UPDATE SET
-      data_json = excluded.data_json,
-      updated_at = CURRENT_TIMESTAMP
-  `).run(project.project_id, JSON.stringify(project));
 }
 
 export function getProject(db: M0Database, projectId: string): Project | null {

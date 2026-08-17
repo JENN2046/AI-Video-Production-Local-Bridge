@@ -3,13 +3,41 @@ import { randomUUID } from "node:crypto";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { cleanupCommittedMediaActivationMarkers, cleanupRolledBackMediaActivationFiles, registerMediaArtifact, validateAcceptedClipReference } from "./mediaArtifacts.js";
 import { saveGenerationRun, type Confirmation, type GenerationRun } from "./generation.js";
-import { getProject, listProjectShots, saveProject, type ToolError } from "./projects.js";
+import { getProject, listProjectShots, type ToolError } from "./projects.js";
 import { assertWorkbenchProductionWriteAllowed, getActiveWorkbenchDeliveryJob, type WorkbenchDeliveryWorkflowState } from "./workbenchDeliveryState.js";
 
 type ToolResult<T> = { ok: true } & T | { ok: false; error: ToolError; blocking_reasons?: string[] };
 
 function databaseIsInTransaction(db: M0Database): boolean {
   return Boolean((db as unknown as { isTransaction?: boolean }).isTransaction);
+}
+
+function synchronizeAssemblyProjectResult(db: M0Database, projectId: string, artifactId: string): void {
+  if (!databaseIsInTransaction(db)) throw new Error("ASSEMBLY_INPUT_CHANGED");
+  const updated = db.prepare(`UPDATE projects
+    SET data_json = json_set(
+      data_json,
+      '$.status', 'video_review',
+      '$.exports.final_video_artifact_id', ?
+    ), updated_at = CURRENT_TIMESTAMP
+    WHERE project_id = ?
+      AND json_extract(data_json, '$.project_id') = ?
+      AND EXISTS (
+        SELECT 1 FROM workbench_delivery_state delivery
+        WHERE delivery.project_id = projects.project_id
+          AND delivery.workflow_state = 'assembling'
+      )
+      AND EXISTS (
+        SELECT 1 FROM media_artifacts artifact
+        JOIN media_artifact_blobs link ON link.artifact_id = artifact.artifact_id
+        JOIN media_blobs blob ON blob.blob_id = link.blob_id
+        WHERE artifact.artifact_id = ? AND artifact.project_id = projects.project_id
+          AND COALESCE(artifact.shot_id, '') = ''
+          AND artifact.role = 'final_video' AND artifact.artifact_type = 'video'
+          AND artifact.status = 'active' AND blob.integrity_state = 'verified'
+      )`)
+    .run(artifactId, projectId, projectId, artifactId) as { changes: number | bigint };
+  if (Number(updated.changes) !== 1) throw new Error("ASSEMBLY_INPUT_CHANGED");
 }
 
 const M0_FINAL_PLACEHOLDER_FIXTURE = "video/mock_clip.mp4";
@@ -115,6 +143,7 @@ export function assembleFinalVideo(
     if (!currentBoundary.ok) throw new Error(currentBoundary.error.code);
     if (getActiveWorkbenchDeliveryJob(db)) throw new Error("DELIVERY_JOB_ACTIVE");
     const currentState = currentBoundary.delivery.workflow_state;
+    const clearsPriorFingerprint = currentState !== "ready_to_assemble";
     if (currentState === "assembling") throw new Error("DELIVERY_JOB_ACTIVE");
     if (currentState !== "ready_to_assemble") {
       if (!REASSEMBLY_SOURCE_STATES.has(currentState)) throw new Error("ASSEMBLY_INPUT_CHANGED");
@@ -139,16 +168,15 @@ export function assembleFinalVideo(
         if (Number(prepared.changes) !== 1) throw new Error("ASSEMBLY_INPUT_CHANGED");
         if (FINAL_REVIEW_REASSEMBLY_SOURCE_STATES.has(currentState)) insertReassemblyEvent();
       }
-      const clearedFingerprint = db.prepare(`UPDATE workbench_delivery_state
-        SET assembly_input_fingerprint = NULL, updated_at = CURRENT_TIMESTAMP
-        WHERE project_id = ? AND workflow_state = 'ready_to_assemble'
-          AND assembly_input_fingerprint IS ?`)
-        .run(project.project_id, currentBoundary.delivery.assembly_input_fingerprint) as { changes: number | bigint };
-      if (Number(clearedFingerprint.changes) !== 1) throw new Error("ASSEMBLY_INPUT_CHANGED");
     }
     const started = db.prepare(`UPDATE workbench_delivery_state
-      SET workflow_state = 'assembling', updated_at = CURRENT_TIMESTAMP
-      WHERE project_id = ? AND workflow_state = 'ready_to_assemble'`).run(project.project_id) as { changes: number | bigint };
+      SET workflow_state = 'assembling',
+        assembly_input_fingerprint = CASE WHEN ? THEN NULL ELSE assembly_input_fingerprint END,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE project_id = ? AND workflow_state = 'ready_to_assemble'
+        AND assembly_input_fingerprint IS ?`)
+      .run(clearsPriorFingerprint ? 1 : 0, project.project_id,
+        currentBoundary.delivery.assembly_input_fingerprint) as { changes: number | bigint };
     if (Number(started.changes) !== 1) throw new Error("ASSEMBLY_INPUT_CHANGED");
     if (getActiveWorkbenchDeliveryJob(db)) throw new Error("DELIVERY_JOB_ACTIVE");
 
@@ -221,9 +249,7 @@ export function assembleFinalVideo(
       }
     };
 
-    currentProject.exports.final_video_artifact_id = activatedArtifactId;
-    currentProject.status = "video_review";
-    saveProject(db, currentProject);
+    synchronizeAssemblyProjectResult(db, currentProject.project_id, activatedArtifactId);
     saveGenerationRun(db, run);
 
     const deliveryJobId = `job_${randomUUID()}`;

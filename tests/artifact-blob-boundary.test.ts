@@ -19,6 +19,7 @@ import {
 import { createProject, getShot, saveProject, saveShot, type Project, type Shot } from "../src/tools/projects.js";
 import { getWorkbenchProjectWorkspace, updateWorkbenchShot } from "../src/tools/workbenchV2.js";
 import { getProductionProjectContext } from "../src/webgpt-v4/domain.js";
+import { completeWorkbenchAssemblyFixture } from "./workbench-delivery-test-helpers.js";
 
 function tempRoot(): string {
   return mkdtempSync(join(tmpdir(), "ai-video-artifact-blob-"));
@@ -131,6 +132,115 @@ test("cross-SHOT reuse and stale concurrent binding attempts fail closed", () =>
     assert.equal(stale.ok, false);
     if (!stale.ok) assert.equal(stale.error.code, "CONFLICT_STALE_ARTIFACT_REFERENCE");
     assert.equal(getShot(db, first.shot.shot_id)?.storyboard_image_artifact_id, firstScoped.artifact.artifact_id);
+    db.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("SHOT Artifact attachment obeys delivery content gates without partial writes", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "app.sqlite");
+    migrateDatabase(sqlitePath);
+    const db = openM0Database(sqlitePath);
+    const target = createProjectShot(db, "delivery-gate");
+    const source = registerSource(db);
+    const firstScoped = createScopedArtifactFromBlob({
+      source_artifact_id: source.artifact_id,
+      project_id: target.project.project_id,
+      shot_id: target.shot.shot_id
+    }, db);
+    const alternateScoped = createScopedArtifactFromBlob({
+      source_artifact_id: source.artifact_id,
+      project_id: target.project.project_id,
+      shot_id: target.shot.shot_id
+    }, db);
+    assert.equal(firstScoped.ok, true);
+    assert.equal(alternateScoped.ok, true);
+    if (!firstScoped.ok || !alternateScoped.ok) throw new Error("SCOPE_SETUP_FAILED");
+    const attached = attachArtifactToShot({
+      project_id: target.project.project_id,
+      shot_id: target.shot.shot_id,
+      artifact_id: firstScoped.artifact.artifact_id,
+      reference: "storyboard_image_artifact_id",
+      expected_current_artifact_id: ""
+    }, db);
+    assert.equal(attached.ok, true);
+
+    const finalArtifact = registerMediaArtifact({
+      artifact_type: "video",
+      role: "final_video",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: target.project.project_id }
+    }, db);
+    assert.equal(finalArtifact.ok, true);
+    if (!finalArtifact.ok) throw new Error("FINAL_ARTIFACT_SETUP_FAILED");
+    const now = "2026-08-17T02:00:00.000Z";
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
+      .run(now, target.project.project_id);
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
+      .run(now, target.project.project_id);
+
+    const before = db.prepare("SELECT data_json, updated_at FROM shots WHERE shot_id = ?")
+      .get(target.shot.shot_id);
+    const blockedDuringAssembly = attachArtifactToShot({
+      project_id: target.project.project_id,
+      shot_id: target.shot.shot_id,
+      artifact_id: alternateScoped.artifact.artifact_id,
+      reference: "storyboard_image_artifact_id",
+      expected_current_artifact_id: firstScoped.artifact.artifact_id
+    }, db);
+    assert.equal(blockedDuringAssembly.ok, false);
+    if (!blockedDuringAssembly.ok) assert.equal(blockedDuringAssembly.error.code, "DELIVERY_JOB_ACTIVE");
+    assert.deepEqual(db.prepare("SELECT data_json, updated_at FROM shots WHERE shot_id = ?")
+      .get(target.shot.shot_id), before);
+
+    completeWorkbenchAssemblyFixture(db, {
+      project_id: target.project.project_id,
+      artifact_id: finalArtifact.artifact.artifact_id,
+      job_id: "job_attachment_delivery_gate",
+      event_id: "event_attachment_delivery_gate",
+      created_at: now
+    });
+    const blockedDuringReview = attachArtifactToShot({
+      project_id: target.project.project_id,
+      shot_id: target.shot.shot_id,
+      artifact_id: alternateScoped.artifact.artifact_id,
+      reference: "storyboard_image_artifact_id",
+      expected_current_artifact_id: firstScoped.artifact.artifact_id
+    }, db);
+    assert.equal(blockedDuringReview.ok, false);
+    if (!blockedDuringReview.ok) assert.equal(blockedDuringReview.error.code, "DELIVERY_REWORK_REQUIRED");
+    assert.deepEqual(db.prepare("SELECT data_json, updated_at FROM shots WHERE shot_id = ?")
+      .get(target.shot.shot_id), before);
+
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.prepare(`UPDATE workbench_delivery_state
+        SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?`)
+        .run(now, target.project.project_id);
+      db.prepare(`INSERT INTO workbench_delivery_events
+        (event_id, project_id, event_type, from_state, to_state, artifact_id,
+          input_fingerprint, reason_code, data_json, created_at)
+        VALUES ('event_attachment_rework', ?, 'final_review_reassemble', 'final_review',
+          'ready_to_assemble', ?, NULL, 'SYNTHETIC_REASSEMBLY', '{}', ?)`)
+        .run(target.project.project_id, finalArtifact.artifact.artifact_id, now);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+    const allowedAfterRework = attachArtifactToShot({
+      project_id: target.project.project_id,
+      shot_id: target.shot.shot_id,
+      artifact_id: alternateScoped.artifact.artifact_id,
+      reference: "storyboard_image_artifact_id",
+      expected_current_artifact_id: firstScoped.artifact.artifact_id
+    }, db);
+    assert.equal(allowedAfterRework.ok, true);
+    assert.equal(getShot(db, target.shot.shot_id)?.storyboard_image_artifact_id,
+      alternateScoped.artifact.artifact_id);
     db.close();
   } finally {
     rmSync(root, { recursive: true, force: true });

@@ -589,6 +589,28 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
         WHERE event_type = 'final_review_accepted'
         GROUP BY project_id, artifact_id, input_fingerprint HAVING COUNT(*) > 1
       )`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_events approval
+        WHERE approval.event_type = 'final_review_accepted'
+          AND approval.from_state IN ('final_review','legacy_review_required')
+          AND (
+            (approval.from_state = 'legacy_review_required' AND approval.input_fingerprint IS NOT NULL)
+            OR (SELECT COUNT(*) FROM workbench_delivery_events assembly_event
+              JOIN workbench_delivery_jobs assembly_job
+                ON assembly_job.job_id = assembly_event.job_id
+                AND assembly_job.project_id = assembly_event.project_id
+              WHERE assembly_event.project_id = approval.project_id
+                AND assembly_event.event_type = 'assembly_succeeded'
+                AND assembly_event.from_state = 'assembling'
+                AND assembly_event.to_state = 'final_review'
+                AND assembly_job.job_type = 'assembly'
+                AND assembly_job.state = 'succeeded'
+                AND assembly_job.output_artifact_id IS approval.artifact_id
+                AND assembly_job.input_fingerprint IS approval.input_fingerprint
+                AND assembly_event.artifact_id IS approval.artifact_id
+                AND assembly_event.input_fingerprint IS approval.input_fingerprint
+                AND assembly_event.export_id IS NULL
+            ) <> CASE approval.from_state WHEN 'final_review' THEN 1 ELSE 0 END
+          )`,
       `SELECT COUNT(*) AS count FROM workbench_delivery_state state
         WHERE state.workflow_state IN ('ready_to_assemble','revision_requested')
           AND state.current_final_artifact_id IS NOT NULL

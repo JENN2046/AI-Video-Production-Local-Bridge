@@ -849,9 +849,47 @@ test("database check reports invalid delivery Job bindings and inactive referenc
 
     const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
     assert.equal(checked.schema_current, true);
-    assert.equal(checked.orphan_rows, 22);
+    assert.equal(checked.orphan_rows, 23);
     assert.equal(checked.media_integrity_errors, 0);
     assert.equal(checked.check_errors, 0);
+    assert.equal(checked.result, "FAIL");
+  } finally {
+    try { db?.close(); } catch { /* retain the primary assertion failure */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("database check detects approval fingerprints detached from successful assembly evidence", () => {
+  const root = tempRoot();
+  let db: ReturnType<typeof openM0Database> | null = null;
+  try {
+    const sqlitePath = join(root, "approval-assembly-drift.sqlite");
+    migrateDatabase(sqlitePath);
+    db = openM0Database(sqlitePath);
+    const fixture = createApprovedDeliveryFixture(db, "approval_assembly_drift");
+    const approvalEventId = "event_rework_accepted_approval_assembly_drift";
+    const triggerRows = db.prepare(`SELECT name, sql FROM sqlite_master
+      WHERE type = 'trigger' AND name IN (
+        'workbench_delivery_events_no_update', 'workbench_delivery_state_transition'
+      ) ORDER BY name`).all() as Array<{ name: string; sql: string }>;
+    assert.equal(triggerRows.length, 2);
+    db.exec("PRAGMA foreign_keys = OFF");
+    db.exec(`DROP TRIGGER workbench_delivery_events_no_update;
+      DROP TRIGGER workbench_delivery_state_transition;`);
+    const forgedFingerprint = "e".repeat(64);
+    db.prepare(`UPDATE workbench_delivery_events SET input_fingerprint = ?
+      WHERE event_id = ?`).run(forgedFingerprint, approvalEventId);
+    db.prepare(`UPDATE workbench_delivery_state SET assembly_input_fingerprint = ?
+      WHERE project_id = ?`).run(forgedFingerprint, fixture.project_id);
+    for (const trigger of triggerRows) db.exec(trigger.sql);
+    db.exec("PRAGMA foreign_keys = ON");
+    assertSchemaCurrent(db);
+    db.close();
+    db = null;
+
+    const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
+    assert.equal(checked.schema_current, true);
+    assert.equal(checked.orphan_rows > 0, true);
     assert.equal(checked.result, "FAIL");
   } finally {
     try { db?.close(); } catch { /* retain the primary assertion failure */ }

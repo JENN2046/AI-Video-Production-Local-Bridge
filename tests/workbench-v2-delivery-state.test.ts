@@ -133,6 +133,14 @@ test("migration 0012 backfills delivery state without inventing approval, export
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
       .run("project_new", projectJson("project_new", "draft"));
     assert.equal((db.prepare("SELECT workflow_state FROM workbench_delivery_state WHERE project_id = 'project_new'").get() as { workflow_state: string }).workflow_state, "not_ready");
+
+    const legacyApprovalAt = "2026-08-17T01:00:00.000Z";
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review', updated_at = ?
+      WHERE project_id = 'project_legacy'`).run(legacyApprovalAt);
+    assert.doesNotThrow(() => acceptFinalReview(db, "project_legacy", "event_legacy_review_accepted",
+      legacyApprovalAt, { event_from_state: "legacy_review_required" }));
+    assert.equal((db.prepare(`SELECT workflow_state FROM workbench_delivery_state
+      WHERE project_id = 'project_legacy'`).get() as { workflow_state: string }).workflow_state, "approved");
   } finally {
     db.close();
   }
@@ -186,6 +194,14 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
       assert.throws(() => saveShot(db, shot), new RegExp(expectedCode));
       assert.deepEqual(db.prepare("SELECT data_json, updated_at FROM shots WHERE shot_id = 'shot_delivery'").get(), before);
     };
+    const assertProjectMutationBlocked = (expectedCode: string, attemptedTitle: string): void => {
+      const before = db.prepare("SELECT data_json, updated_at FROM projects WHERE project_id = 'project_delivery'").get();
+      const project = getProject(db, "project_delivery");
+      assert.ok(project);
+      project.title = attemptedTitle;
+      assert.throws(() => saveProject(db, project), new RegExp(expectedCode));
+      assert.deepEqual(db.prepare("SELECT data_json, updated_at FROM projects WHERE project_id = 'project_delivery'").get(), before);
+    };
 
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(now, "project_delivery");
@@ -232,6 +248,11 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
     reworkShot.video_prompt = "explicit rework prompt";
     assert.doesNotThrow(() => saveShot(db, reworkShot));
     assert.equal(getShot(db, "shot_delivery")?.video_prompt, "explicit rework prompt");
+    const reworkProject = getProject(db, "project_delivery");
+    assert.ok(reworkProject);
+    reworkProject.title = "explicit project rework";
+    assert.doesNotThrow(() => saveProject(db, reworkProject));
+    assert.equal(getProject(db, "project_delivery")?.title, "explicit project rework");
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = 'project_delivery'")
       .run(now);
     completeWorkbenchAssemblyFixture(db, {
@@ -242,6 +263,16 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
       created_at: now
     });
     assertShotMutationBlocked("DELIVERY_REWORK_REQUIRED", "forbidden final review rewrite");
+    assertProjectMutationBlocked("DELIVERY_REWORK_REQUIRED", "forbidden final review project rewrite");
+    const frozenFingerprintState = db.prepare(`SELECT workflow_state, current_final_artifact_id,
+      assembly_input_fingerprint, approved_artifact_id, latest_export_id, updated_at
+      FROM workbench_delivery_state WHERE project_id = 'project_delivery'`).get();
+    assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
+      SET assembly_input_fingerprint = ?, updated_at = ? WHERE project_id = 'project_delivery'`)
+      .run("7".repeat(64), now), /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
+    assert.deepEqual(db.prepare(`SELECT workflow_state, current_final_artifact_id,
+      assembly_input_fingerprint, approved_artifact_id, latest_export_id, updated_at
+      FROM workbench_delivery_state WHERE project_id = 'project_delivery'`).get(), frozenFingerprintState);
     const currentArtifactBefore = db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = 'artifact_delivery'").get();
     const historicalArtifactBefore = db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = 'artifact_delivery_old'").get();
     assert.throws(() => db.prepare(`UPDATE media_artifacts SET data_json = json_set(data_json, '$.tampered', 1)
@@ -272,6 +303,7 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
       .run(now), /FOREIGN KEY constraint failed/);
     acceptFinalReview(db, "project_delivery", "event_final_review_accepted_delivery", now);
     assertShotMutationBlocked("DELIVERY_REWORK_REQUIRED", "forbidden approved rewrite");
+    assertProjectMutationBlocked("DELIVERY_REWORK_REQUIRED", "forbidden approved project rewrite");
     assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
       SET current_final_artifact_id = 'artifact_delivery_old', approved_artifact_id = 'artifact_delivery_old', updated_at = ?
       WHERE project_id = 'project_delivery'`).run(now), /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
@@ -310,6 +342,7 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
     assert.doesNotThrow(() => insertSucceededEvent.run("event_export_succeeded", "job_export_delivery",
       "export_succeeded", "artifact_delivery", "export_delivery", now));
     assertShotMutationBlocked("DELIVERY_REWORK_REQUIRED", "forbidden exported rewrite");
+    assertProjectMutationBlocked("DELIVERY_REWORK_REQUIRED", "forbidden exported project rewrite");
     assert.throws(() => insertSucceededEvent.run("event_export_succeeded_duplicate", "job_export_delivery",
       "export_succeeded", "artifact_delivery", "export_delivery", now), /WORKBENCH_DELIVERY_JOB_EVENT_DUPLICATE/);
     const insertReusedExportEvent = db.prepare(`INSERT INTO workbench_delivery_events
@@ -661,6 +694,10 @@ test("final review events bind to the current final evidence and target delivery
     /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     assert.throws(() => acceptFinalReview(db, projectId, "event_review_wrong_pair", now, {
       event_from_state: "closed"
+    }),
+    /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+    assert.throws(() => acceptFinalReview(db, projectId, "event_review_forged_legacy", now, {
+      event_from_state: "legacy_review_required"
     }),
     /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     assert.doesNotThrow(() => acceptFinalReview(db, projectId, "event_review_accepted", now));

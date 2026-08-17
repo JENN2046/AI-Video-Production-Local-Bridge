@@ -8,6 +8,7 @@ import { validateImageBuffer, validateImageFile, type ImageValidationResult } fr
 import { validateMp4File } from "./mediaValidity.js";
 import { resolvedPathsEquivalent } from "./pathEquivalence.js";
 import { getProject, getShot, type Shot } from "./projects.js";
+import { assertWorkbenchContentMutationAllowed } from "./workbenchDeliveryState.js";
 
 export type ArtifactType = "image" | "video";
 export type ArtifactRole = "storyboard_image" | "generated_clip" | "final_video";
@@ -2368,6 +2369,11 @@ export function attachArtifactToShot(
   const manageTransaction = !databaseIsInTransaction(db);
   if (manageTransaction) db.exec("BEGIN IMMEDIATE");
   try {
+    const writable = assertWorkbenchContentMutationAllowed(db, input.project_id);
+    if (!writable.ok) {
+      if (manageTransaction) db.exec("ROLLBACK");
+      return { ok: false, error: writable.error };
+    }
     if (!getProject(db, input.project_id)) {
       if (manageTransaction) db.exec("ROLLBACK");
       return { ok: false, error: { code: "PROJECT_NOT_FOUND", message: "Target project was not found." } };

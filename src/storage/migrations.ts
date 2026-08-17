@@ -1475,6 +1475,24 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
         AND d.workflow_state = 'approved'
         AND d.approved_artifact_id IS NEW.artifact_id
         AND d.latest_export_id IS NULL
+        AND NEW.from_state IN ('final_review','legacy_review_required')
+        AND (NEW.from_state <> 'legacy_review_required' OR NEW.input_fingerprint IS NULL)
+        AND (SELECT COUNT(*) FROM workbench_delivery_events assembly_event
+          JOIN workbench_delivery_jobs assembly_job
+            ON assembly_job.job_id = assembly_event.job_id
+            AND assembly_job.project_id = assembly_event.project_id
+          WHERE assembly_event.project_id = NEW.project_id
+            AND assembly_event.event_type = 'assembly_succeeded'
+            AND assembly_event.from_state = 'assembling'
+            AND assembly_event.to_state = 'final_review'
+            AND assembly_job.job_type = 'assembly'
+            AND assembly_job.state = 'succeeded'
+            AND assembly_job.output_artifact_id IS NEW.artifact_id
+            AND assembly_job.input_fingerprint IS NEW.input_fingerprint
+            AND assembly_event.artifact_id IS NEW.artifact_id
+            AND assembly_event.input_fingerprint IS NEW.input_fingerprint
+            AND assembly_event.export_id IS NULL
+        ) = CASE NEW.from_state WHEN 'final_review' THEN 1 ELSE 0 END
     ))
     OR (NEW.event_type = 'assembly_succeeded' AND NOT EXISTS (
       SELECT 1 FROM workbench_delivery_state d
@@ -1824,6 +1842,9 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     OR (OLD.current_final_artifact_id IS NOT NEW.current_final_artifact_id AND NOT (
       OLD.workflow_state <> NEW.workflow_state AND NEW.workflow_state = 'final_review'
         AND OLD.workflow_state IN ('assembling','legacy_review_required')
+    ))
+    OR (OLD.assembly_input_fingerprint IS NOT NEW.assembly_input_fingerprint AND NOT (
+      OLD.workflow_state = 'ready_to_assemble' AND NEW.workflow_state = 'assembling'
     ))
     OR (OLD.approved_artifact_id IS NOT NEW.approved_artifact_id AND NOT (
       (NEW.approved_artifact_id IS NOT NULL

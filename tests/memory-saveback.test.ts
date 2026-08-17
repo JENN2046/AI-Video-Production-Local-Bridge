@@ -249,7 +249,11 @@ test("R3-6 refuses saveback proposals with stale accepted clip references", asyn
     assert.equal(stale.ok, true);
     if (!stale.ok) return;
     shot.accepted_clip_artifact_id = stale.artifact.artifact_id;
-    saveShot(db, shot);
+    const injected = db.prepare(`UPDATE shots
+      SET data_json = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE shot_id = ? AND project_id = ?`)
+      .run(JSON.stringify(shot), shot.shot_id, shot.project_id) as { changes: number | bigint };
+    assert.equal(Number(injected.changes), 1, "test fixture must inject exactly one stale accepted clip reference");
 
     const created = createMemorySavebackProposal({ project_id: project.project_id, write_report: false }, db);
     assert.equal(created.ok, false);

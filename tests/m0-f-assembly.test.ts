@@ -190,12 +190,10 @@ test("M0-F reassembly records the approval revocation before producing a new fin
     assert.equal(first.ok, true);
     if (!first.ok) return;
     const now = "2026-08-14T04:00:00.000Z";
-    const originalFingerprint = "a".repeat(64);
     approveWorkbenchDeliveryFixture(db, {
       project_id: project.project_id,
       event_id: "event_m0f_first_assembly_accepted",
-      created_at: now,
-      assembly_input_fingerprint: originalFingerprint
+      created_at: now
     });
 
     const second = assembleFinalVideo({
@@ -219,7 +217,7 @@ test("M0-F reassembly records the approval revocation before producing a new fin
       to_state: "ready_to_assemble",
       artifact_id: first.final_video_artifact_id,
       job_id: null,
-      input_fingerprint: originalFingerprint,
+      input_fingerprint: null,
       reason_code: "LEGACY_REASSEMBLY_REQUESTED"
     });
     assert.equal(typeof succeededEvent.job_id, "string");
