@@ -1457,9 +1457,18 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
       OR (NEW.event_type = 'closeout'
         AND NEW.from_state = 'exported' AND NEW.to_state = 'closed')
     )
-    OR (NEW.event_type IN (
-      'final_review_accepted','final_review_reassemble','final_review_regenerate_shots'
-    ) AND NOT EXISTS (
+    OR (NEW.event_type = 'final_review_accepted' AND NOT EXISTS (
+      SELECT 1 FROM workbench_delivery_state d
+      WHERE d.project_id = NEW.project_id
+        AND NEW.job_id IS NULL AND NEW.export_id IS NULL
+        AND NEW.artifact_id IS NOT NULL
+        AND NEW.artifact_id IS d.current_final_artifact_id
+        AND NEW.input_fingerprint IS d.assembly_input_fingerprint
+        AND d.workflow_state = 'approved'
+        AND d.approved_artifact_id IS NEW.artifact_id
+        AND d.latest_export_id IS NULL
+    ))
+    OR (NEW.event_type IN ('final_review_reassemble','final_review_regenerate_shots') AND NOT EXISTS (
       SELECT 1 FROM workbench_delivery_state d
       WHERE d.project_id = NEW.project_id
         AND NEW.job_id IS NULL AND NEW.export_id IS NULL
@@ -1467,15 +1476,13 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
         AND NEW.artifact_id IS d.current_final_artifact_id
         AND NEW.input_fingerprint IS d.assembly_input_fingerprint
         AND (
-          (NEW.event_type = 'final_review_accepted'
-            AND d.workflow_state = 'approved'
+          (NEW.from_state IN ('approved','exported')
+            AND d.workflow_state = NEW.from_state
             AND d.approved_artifact_id IS NEW.artifact_id
-            AND d.latest_export_id IS NULL)
-          OR (NEW.event_type = 'final_review_reassemble'
-            AND d.workflow_state = 'ready_to_assemble'
-            AND d.approved_artifact_id IS NULL AND d.latest_export_id IS NULL)
-          OR (NEW.event_type = 'final_review_regenerate_shots'
-            AND d.workflow_state = 'revision_requested'
+            AND ((NEW.from_state = 'approved' AND d.latest_export_id IS NULL)
+              OR (NEW.from_state = 'exported' AND d.latest_export_id IS NOT NULL)))
+          OR (NEW.from_state IN ('final_review','legacy_review_required')
+            AND d.workflow_state = NEW.to_state
             AND d.approved_artifact_id IS NULL AND d.latest_export_id IS NULL)
         )
     ))
@@ -1556,11 +1563,39 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
   BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_JOB_EVENT_DUPLICATE');
   END;
+  CREATE TRIGGER workbench_delivery_events_rework_unique BEFORE INSERT ON workbench_delivery_events
+  WHEN NEW.event_type IN ('final_review_reassemble','final_review_regenerate_shots') AND EXISTS (
+    SELECT 1 FROM workbench_delivery_events existing
+    WHERE existing.project_id = NEW.project_id AND existing.event_type = NEW.event_type
+      AND existing.from_state = NEW.from_state AND existing.to_state = NEW.to_state
+      AND existing.artifact_id IS NEW.artifact_id
+      AND existing.input_fingerprint IS NEW.input_fingerprint
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_REWORK_EVENT_DUPLICATE');
+  END;
   CREATE TRIGGER workbench_delivery_events_no_update BEFORE UPDATE ON workbench_delivery_events BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_EVENTS_APPEND_ONLY');
   END;
   CREATE TRIGGER workbench_delivery_events_no_delete BEFORE DELETE ON workbench_delivery_events BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_EVENTS_APPEND_ONLY');
+  END;
+  CREATE TRIGGER workbench_delivery_rework_apply AFTER INSERT ON workbench_delivery_events
+  WHEN NEW.event_type IN ('final_review_reassemble','final_review_regenerate_shots')
+    AND NEW.from_state IN ('approved','exported')
+  BEGIN
+    UPDATE workbench_delivery_state
+    SET workflow_state = NEW.to_state,
+      approved_artifact_id = NULL, latest_export_id = NULL, latest_exported_at = NULL,
+      closed_at = NULL, updated_at = NEW.created_at
+    WHERE project_id = NEW.project_id AND workflow_state = NEW.from_state
+      AND current_final_artifact_id IS NEW.artifact_id
+      AND approved_artifact_id IS NEW.artifact_id
+      AND assembly_input_fingerprint IS NEW.input_fingerprint
+      AND ((NEW.from_state = 'approved' AND latest_export_id IS NULL)
+        OR (NEW.from_state = 'exported' AND latest_export_id IS NOT NULL));
+    SELECT CASE WHEN changes() <> 1
+      THEN RAISE(ABORT, 'WORKBENCH_DELIVERY_EVENT_BINDING_INVALID') END;
   END;
   CREATE TRIGGER workbench_delivery_closeout_apply AFTER INSERT ON workbench_delivery_events
   WHEN NEW.event_type = 'closeout'
@@ -1627,8 +1662,20 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
       OR (OLD.workflow_state = 'assembling' AND NEW.workflow_state IN ('ready_to_assemble','final_review'))
       OR (OLD.workflow_state = 'final_review' AND NEW.workflow_state IN ('approved','ready_to_assemble','revision_requested'))
       OR (OLD.workflow_state = 'revision_requested' AND NEW.workflow_state IN ('not_ready','ready_to_assemble'))
-      OR (OLD.workflow_state = 'approved' AND NEW.workflow_state IN ('exported','ready_to_assemble','revision_requested'))
-      OR (OLD.workflow_state = 'exported' AND NEW.workflow_state IN ('ready_to_assemble','revision_requested'))
+      OR (OLD.workflow_state = 'approved' AND NEW.workflow_state = 'exported')
+      OR (OLD.workflow_state IN ('approved','exported')
+        AND NEW.workflow_state IN ('ready_to_assemble','revision_requested') AND EXISTS (
+          SELECT 1 FROM workbench_delivery_events event
+          WHERE event.project_id = NEW.project_id
+            AND event.event_type = CASE NEW.workflow_state
+              WHEN 'ready_to_assemble' THEN 'final_review_reassemble'
+              ELSE 'final_review_regenerate_shots' END
+            AND event.from_state = OLD.workflow_state AND event.to_state = NEW.workflow_state
+            AND event.job_id IS NULL AND event.export_id IS NULL
+            AND event.artifact_id IS OLD.current_final_artifact_id
+            AND event.input_fingerprint IS OLD.assembly_input_fingerprint
+            AND event.created_at IS NEW.updated_at
+        ))
       OR (OLD.workflow_state = 'exported' AND NEW.workflow_state = 'closed' AND EXISTS (
         SELECT 1 FROM workbench_delivery_events event
         WHERE event.project_id = NEW.project_id AND event.event_type = 'closeout'
@@ -1852,6 +1899,7 @@ interface ColumnDefinition {
   notnull: number;
   dflt_value: string | null;
   pk: number;
+  hidden: number;
 }
 
 interface ExpectedSchemaDefinitions {
@@ -1860,6 +1908,7 @@ interface ExpectedSchemaDefinitions {
   checks: Map<string, string[]>;
   uniqueConstraints: Map<string, string[]>;
   foreignKeys: Map<string, string[]>;
+  generatedTables: Map<string, string>;
 }
 
 const expectedDefinitionCache = new Map<boolean, ExpectedSchemaDefinitions>();
@@ -1896,7 +1945,7 @@ function normalizeDefinition(value: unknown): string {
 }
 
 function columnSignature(column: ColumnDefinition): string {
-  return [normalizeDefinition(column.type), Number(column.notnull), normalizeDefinition(column.dflt_value), Number(column.pk)].join("|");
+  return [normalizeDefinition(column.type), Number(column.notnull), normalizeDefinition(column.dflt_value), Number(column.pk), Number(column.hidden)].join("|");
 }
 
 function checkConstraints(sql: unknown): string[] {
@@ -1980,10 +2029,14 @@ function expectedSchemaDefinitions(includeJobs: boolean, expectedColumns: Record
     const checks = new Map<string, string[]>();
     const uniqueConstraints = new Map<string, string[]>();
     const foreignKeys = new Map<string, string[]>();
+    const generatedTables = new Map<string, string>();
     for (const table of Object.keys(expectedColumns)) {
-      const tableColumns = reference.prepare(`PRAGMA table_info(${table})`).all() as unknown as ColumnDefinition[];
+      const tableColumns = reference.prepare(`PRAGMA table_xinfo(${quotedIdentifier(table)})`).all() as unknown as ColumnDefinition[];
       columns.set(table, new Map(tableColumns.map((column) => [column.name, columnSignature(column)])));
       const row = reference.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as { sql: string | null } | undefined;
+      if (tableColumns.some((column) => Number(column.hidden) === 2 || Number(column.hidden) === 3)) {
+        generatedTables.set(table, normalizeDefinition(row?.sql));
+      }
       checks.set(table, checkConstraints(row?.sql));
       uniqueConstraints.set(table, uniqueConstraintSignatures(reference, table));
       foreignKeys.set(table, foreignKeySignatures(reference, table));
@@ -1993,7 +2046,7 @@ function expectedSchemaDefinitions(includeJobs: boolean, expectedColumns: Record
       const row = reference.prepare("SELECT sql FROM sqlite_master WHERE name = ? AND type IN ('index', 'trigger')").get(name) as { sql: string | null } | undefined;
       objects.set(name, normalizeDefinition(row?.sql));
     }
-    const definitions = { columns, objects, checks, uniqueConstraints, foreignKeys };
+    const definitions = { columns, objects, checks, uniqueConstraints, foreignKeys, generatedTables };
     expectedDefinitionCache.set(includeJobs, definitions);
     return definitions;
   } finally {
@@ -2023,9 +2076,9 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     director_automation_grant_events: ["event_id", "grant_id", "event_type", "reservation_id", "amount_minor", "currency", "intent_id", "run_id", "reason_code", "created_at"],
     storyboard_package_versions: ["package_version_id", "project_id", "version", "supersedes_package_version_id", "schema_version", "payload_json", "content_hash", "created_from_proposal_id", "created_at"],
     storyboard_package_version_events: ["event_id", "package_version_id", "workspace_id", "principal_id", "event_type", "reason_code", "created_at"],
-    workbench_delivery_state: ["project_id", "workflow_state", "current_final_artifact_id", "assembly_input_fingerprint", "approved_artifact_id", "latest_export_id", "latest_exported_at", "closed_at", "created_at", "updated_at"],
+    workbench_delivery_state: ["project_id", "workflow_state", "current_final_artifact_id", "assembly_input_fingerprint", "approved_artifact_id", "latest_export_id", "latest_exported_at", "closed_at", "created_at", "updated_at", "approval_binding_key"],
     workbench_delivery_jobs: ["job_id", "project_id", "job_type", "state", "input_fingerprint", "input_json", "retry_of_job_id", "output_artifact_id", "export_id", "error_code", "created_at", "started_at", "finished_at", "updated_at"],
-    workbench_delivery_events: ["event_id", "project_id", "job_id", "event_type", "from_state", "to_state", "artifact_id", "export_id", "input_fingerprint", "reason_code", "data_json", "created_at"],
+    workbench_delivery_events: ["event_id", "project_id", "job_id", "event_type", "from_state", "to_state", "artifact_id", "export_id", "input_fingerprint", "reason_code", "data_json", "created_at", "approval_signature_key", "approval_binding_key"],
     workbench_exports: ["export_id", "project_id", "artifact_id", "relative_path", "sha256", "size_bytes", "created_at"]
   } : V24_EXPECTED_COLUMNS;
   const expectedIndexes = includeJobs ? [
@@ -2102,8 +2155,10 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "workbench_delivery_jobs_no_delete",
         "workbench_delivery_events_validate_insert",
         "workbench_delivery_events_job_event_unique",
+        "workbench_delivery_events_rework_unique",
         "workbench_delivery_events_no_update",
         "workbench_delivery_events_no_delete",
+        "workbench_delivery_rework_apply",
         "workbench_delivery_closeout_apply",
         "workbench_delivery_state_validate_artifacts",
         "workbench_delivery_state_validate_artifacts_update",
@@ -2117,7 +2172,7 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     : ["trg_workbench_project_meta_after_insert"];
   const definitions = expectedSchemaDefinitions(includeJobs, expectedColumns, [...expectedIndexes, ...expectedTriggers]);
   for (const [table, expected] of Object.entries(expectedColumns)) {
-    const rows = db.prepare(`PRAGMA table_info(${table})`).all() as unknown as ColumnDefinition[];
+    const rows = db.prepare(`PRAGMA table_xinfo(${quotedIdentifier(table)})`).all() as unknown as ColumnDefinition[];
     const columns = new Map(rows.map((row) => [row.name, row]));
     if (columns.size === 0) issues.push(`missing_table:${table}`);
     else for (const column of expected) {
@@ -2127,6 +2182,8 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     }
     if (columns.size > 0) {
       const tableRow = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as { sql: string | null } | undefined;
+      if (definitions.generatedTables.has(table)
+        && normalizeDefinition(tableRow?.sql) !== definitions.generatedTables.get(table)) issues.push(`generated_columns:${table}`);
       if (JSON.stringify(checkConstraints(tableRow?.sql)) !== JSON.stringify(definitions.checks.get(table) ?? [])) issues.push(`check_constraints:${table}`);
       if (JSON.stringify(uniqueConstraintSignatures(db, table)) !== JSON.stringify(definitions.uniqueConstraints.get(table) ?? [])) issues.push(`unique_constraints:${table}`);
       if (JSON.stringify(foreignKeySignatures(db, table)) !== JSON.stringify(definitions.foreignKeys.get(table) ?? [])) issues.push(`foreign_keys:${table}`);

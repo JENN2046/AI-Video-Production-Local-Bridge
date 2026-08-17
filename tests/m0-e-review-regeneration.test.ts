@@ -260,9 +260,6 @@ test("production content mutations require explicit atomic rework after final ev
     assert.deepEqual(getShot(db, approvedFixture.shot.shot_id), approvedShotBefore);
 
     db.exec("BEGIN IMMEDIATE");
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'revision_requested',
-      approved_artifact_id = NULL, updated_at = ? WHERE project_id = ?`)
-      .run("2026-08-14T01:01:00.000Z", approvedFixture.project.project_id);
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
       VALUES ('event_atomic_content_rework', ?, 'final_review_regenerate_shots', 'approved', 'revision_requested', ?,

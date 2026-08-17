@@ -47,6 +47,44 @@ function insertUnverifiedArtifact(
   db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)").run(input.artifact_id, blobId);
 }
 
+function createApprovedDeliveryFixture(
+  db: ReturnType<typeof openM0Database>,
+  suffix: string,
+  now = "2026-08-15T10:00:00.000Z"
+): { project_id: string; artifact_id: string; fingerprint: string } {
+  const project = createProject({ title: `Rework evidence ${suffix}` }, db);
+  assert.equal(project.ok, true);
+  if (!project.ok) throw new Error("rework evidence project setup failed");
+  const artifact = registerMediaArtifact({
+    artifact_type: "video",
+    role: "final_video",
+    source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+    linked_objects: { project_id: project.project_id }
+  }, db);
+  assert.equal(artifact.ok, true);
+  if (!artifact.ok) throw new Error("rework evidence Artifact setup failed");
+  const projectRecord = getProject(db, project.project_id);
+  assert.ok(projectRecord);
+  projectRecord.exports.final_video_artifact_id = artifact.artifact.artifact_id;
+  projectRecord.status = "video_review";
+  saveProject(db, projectRecord);
+  const fingerprint = "d".repeat(64);
+  db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
+    .run(now, project.project_id);
+  db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'assembling',
+    assembly_input_fingerprint = ?, updated_at = ? WHERE project_id = ?`)
+    .run(fingerprint, now, project.project_id);
+  db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review',
+    current_final_artifact_id = ?, updated_at = ? WHERE project_id = ?`)
+    .run(artifact.artifact.artifact_id, now, project.project_id);
+  approveWorkbenchDeliveryFixture(db, {
+    project_id: project.project_id,
+    event_id: `event_rework_accepted_${suffix}`,
+    created_at: now
+  });
+  return { project_id: project.project_id, artifact_id: artifact.artifact.artifact_id, fingerprint };
+}
+
 test("fresh database migrates explicitly and remains idempotent", () => {
   const root = tempRoot();
   try {
@@ -281,6 +319,47 @@ test("schema validation preserves case-sensitive CHECK and default string litera
       && /check_constraints:generation_jobs/.test(error.message)
       && /column_definition:workbench_project_meta.lifecycle/.test(error.message));
     db.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("schema validation recognizes generated columns and rejects expression drift", () => {
+  const root = tempRoot();
+  try {
+    const fixtures = [
+      {
+        table: "workbench_delivery_events",
+        original: "THEN json_array(project_id, artifact_id, input_fingerprint)",
+        replacement: "THEN json_array(project_id, artifact_id)"
+      },
+      {
+        table: "workbench_delivery_state",
+        original: "THEN json_array(project_id, approved_artifact_id, assembly_input_fingerprint, updated_at)",
+        replacement: "THEN json_array(project_id, approved_artifact_id, assembly_input_fingerprint)"
+      }
+    ] as const;
+    for (const fixture of fixtures) {
+      const sqlitePath = join(root, `${fixture.table}.sqlite`);
+      migrateDatabase(sqlitePath);
+      const db = new DatabaseSync(sqlitePath);
+      const table = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?")
+        .get(fixture.table) as { sql: string };
+      const ownedObjects = db.prepare(`SELECT sql FROM sqlite_master
+        WHERE tbl_name = ? AND type IN ('index','trigger') AND sql IS NOT NULL ORDER BY type, name`)
+        .all(fixture.table) as Array<{ sql: string }>;
+      const driftedSql = table.sql.replace(fixture.original, fixture.replacement);
+      assert.notEqual(driftedSql, table.sql);
+      db.exec("PRAGMA foreign_keys = OFF");
+      db.exec(`DROP TABLE "${fixture.table}"`);
+      db.exec(driftedSql);
+      for (const object of ownedObjects) db.exec(object.sql);
+      db.exec("PRAGMA foreign_keys = ON");
+
+      assert.throws(() => assertSchemaCurrent(db), (error) => error instanceof SchemaMigrationRequiredError
+        && new RegExp(`generated_columns:${fixture.table}`).test(error.message));
+      db.close();
+    }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -854,6 +933,72 @@ test("database check detects missing and timestamp-drifted final review acceptan
   }
 });
 
+test("database check detects missing, duplicate, and drifted final rework evidence", () => {
+  const root = tempRoot();
+  const scenarios = ["missing", "duplicate", "drift"] as const;
+  try {
+    for (const scenario of scenarios) {
+      const sqlitePath = join(root, `rework-${scenario}.sqlite`);
+      migrateDatabase(sqlitePath);
+      const db = openM0Database(sqlitePath);
+      const now = "2026-08-15T10:00:00.000Z";
+      const fixture = createApprovedDeliveryFixture(db, scenario, now);
+      const triggerSql = (name: string) => (db.prepare(`SELECT sql FROM sqlite_master
+        WHERE type = 'trigger' AND name = ?`).get(name) as { sql: string }).sql;
+
+      if (scenario === "missing") {
+        const transitionTrigger = triggerSql("workbench_delivery_state_transition");
+        db.exec("DROP TRIGGER workbench_delivery_state_transition");
+        db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble',
+          approved_artifact_id = NULL, updated_at = ? WHERE project_id = ?`)
+          .run("2026-08-15T10:01:00.000Z", fixture.project_id);
+        db.exec(transitionTrigger);
+      } else if (scenario === "duplicate") {
+        db.prepare(`INSERT INTO workbench_delivery_events
+          (event_id, project_id, event_type, from_state, to_state, artifact_id,
+            input_fingerprint, reason_code, data_json, created_at)
+          VALUES ('event_rework_first', ?, 'final_review_reassemble', 'approved', 'ready_to_assemble', ?, ?,
+            'FINAL_REASSEMBLY_REQUESTED', '{}', ?)`)
+          .run(fixture.project_id, fixture.artifact_id, fixture.fingerprint, now);
+        const triggerNames = [
+          "workbench_delivery_events_validate_insert",
+          "workbench_delivery_events_rework_unique",
+          "workbench_delivery_rework_apply"
+        ];
+        const triggerDefinitions = triggerNames.map((name) => triggerSql(name));
+        for (const name of triggerNames) db.exec(`DROP TRIGGER ${name}`);
+        db.prepare(`INSERT INTO workbench_delivery_events
+          (event_id, project_id, event_type, from_state, to_state, artifact_id,
+            input_fingerprint, reason_code, data_json, created_at)
+          VALUES ('event_rework_duplicate', ?, 'final_review_reassemble', 'approved', 'ready_to_assemble', ?, ?,
+            'FINAL_REASSEMBLY_REQUESTED', '{}', '2026-08-15T10:01:00.000Z')`)
+          .run(fixture.project_id, fixture.artifact_id, fixture.fingerprint);
+        for (const definition of triggerDefinitions) db.exec(definition);
+      } else {
+        const triggerNames = ["workbench_delivery_events_validate_insert", "workbench_delivery_rework_apply"];
+        const triggerDefinitions = triggerNames.map((name) => triggerSql(name));
+        for (const name of triggerNames) db.exec(`DROP TRIGGER ${name}`);
+        db.prepare(`INSERT INTO workbench_delivery_events
+          (event_id, project_id, event_type, from_state, to_state, artifact_id,
+            input_fingerprint, reason_code, data_json, created_at)
+          VALUES ('event_rework_drift', ?, 'final_review_reassemble', 'approved', 'revision_requested', ?, ?,
+            'FINAL_REASSEMBLY_REQUESTED', '{}', ?)`)
+          .run(fixture.project_id, fixture.artifact_id, fixture.fingerprint, now);
+        for (const definition of triggerDefinitions) db.exec(definition);
+      }
+      assert.doesNotThrow(() => assertSchemaCurrent(db));
+      db.close();
+
+      const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
+      assert.equal(checked.schema_current, true);
+      assert.ok(checked.orphan_rows >= 1, JSON.stringify(checked));
+      assert.equal(checked.result, "FAIL");
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("database check accepts active historical final Artifacts referenced by succeeded assembly Jobs", () => {
   const root = tempRoot();
   let db: ReturnType<typeof openM0Database> | null = null;
@@ -912,8 +1057,6 @@ test("database check accepts active historical final Artifacts referenced by suc
       event_id: "event_current_accepted",
       created_at: now
     });
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', approved_artifact_id = NULL,
-      updated_at = ? WHERE project_id = ?`).run(now, project.project_id);
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
       VALUES ('event_current_reassemble', ?, 'final_review_reassemble', 'approved', 'ready_to_assemble', ?,

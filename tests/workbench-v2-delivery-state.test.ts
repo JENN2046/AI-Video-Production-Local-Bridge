@@ -5,6 +5,7 @@ import test from "node:test";
 import { assertSchemaCurrent, DATABASE_MIGRATIONS, migrationChecksum, runDatabaseMigrations } from "../src/storage/migrations.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import { WORKBENCH_V2_SCHEMA_VERSION } from "../src/storage/workbenchV2Schema.js";
+import { getProject, getShot, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 import { projectSummaryDeliveryState } from "../src/tools/workbenchDeliveryState.js";
 import { assertWorkbenchProjectWritable } from "../src/tools/workbenchV2.js";
 
@@ -157,6 +158,22 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
   try {
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
       .run("project_delivery", projectJson("project_delivery", "video_review"));
+    const deliveryShot: Shot = {
+      shot_id: "shot_delivery",
+      project_id: "project_delivery",
+      order: 1,
+      status: "approved",
+      duration_seconds: 5,
+      description: "closed persistence boundary fixture",
+      storyboard_image_artifact_id: "",
+      video_prompt: "original prompt",
+      negative_prompt: "",
+      generation_run_ids: [],
+      accepted_clip_artifact_id: "",
+      clip_versions: [],
+      review: { approval_status: "approved", rejection_reasons: [], latest_revision_instruction: null }
+    };
+    saveShot(db, deliveryShot);
     insertFinalArtifact(db, "project_delivery", "artifact_delivery");
     insertFinalArtifact(db, "project_delivery", "artifact_delivery_old");
     const now = "2026-08-13T00:00:00.000Z";
@@ -284,6 +301,18 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
       /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     const writable = assertWorkbenchProjectWritable(db, "project_delivery");
     assert.equal(writable.ok ? null : writable.error.code, "PROJECT_CLOSED");
+    const projectRowBefore = db.prepare("SELECT data_json, updated_at FROM projects WHERE project_id = 'project_delivery'").get();
+    const shotRowBefore = db.prepare("SELECT data_json, updated_at FROM shots WHERE shot_id = 'shot_delivery'").get();
+    const closedProject = getProject(db, "project_delivery");
+    const closedShot = getShot(db, "shot_delivery");
+    assert.ok(closedProject);
+    assert.ok(closedShot);
+    closedProject.title = "forbidden closed project rewrite";
+    closedShot.video_prompt = "forbidden closed SHOT rewrite";
+    assert.throws(() => saveProject(db, closedProject), /PROJECT_CLOSED/);
+    assert.throws(() => saveShot(db, closedShot), /PROJECT_CLOSED/);
+    assert.deepEqual(db.prepare("SELECT data_json, updated_at FROM projects WHERE project_id = 'project_delivery'").get(), projectRowBefore);
+    assert.deepEqual(db.prepare("SELECT data_json, updated_at FROM shots WHERE shot_id = 'shot_delivery'").get(), shotRowBefore);
     assert.throws(() => db.prepare("UPDATE workbench_delivery_state SET updated_at = updated_at WHERE project_id = 'project_delivery'").run(), /PROJECT_CLOSED/);
     assert.throws(() => db.prepare("DELETE FROM workbench_delivery_state WHERE project_id = 'project_delivery'").run(), /WORKBENCH_DELIVERY_STATE_IMMUTABLE/);
   } finally {
@@ -316,8 +345,14 @@ test("delivery evidence pointers change only through legal assembly, review, rew
       current_final_artifact_id = 'artifact_pointer_b', approved_artifact_id = 'artifact_pointer_b', updated_at = ?
       WHERE project_id = ?`).run(now, projectId), /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
 
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'revision_requested',
-      approved_artifact_id = NULL, updated_at = ? WHERE project_id = ?`).run(now, projectId);
+    assert.throws(() => db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'revision_requested',
+      approved_artifact_id = NULL, updated_at = ? WHERE project_id = ?`).run(now, projectId),
+    /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
+      VALUES ('event_pointer_a_regenerate', ?, 'final_review_regenerate_shots', 'approved', 'revision_requested',
+        'artifact_pointer_a', 'FINAL_SHOT_REGENERATION_REQUESTED', '{}', ?)`)
+      .run(projectId, now);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(now, projectId);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
@@ -357,9 +392,14 @@ test("delivery evidence pointers change only through legal assembly, review, rew
       "artifact_pointer_a", "export_pointer_a", now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     assert.doesNotThrow(() => insertReused.run("event_pointer_reused", projectId,
       "artifact_pointer_b", "export_pointer_b", now));
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble',
+    assert.throws(() => db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble',
       approved_artifact_id = NULL, latest_export_id = NULL, latest_exported_at = NULL, updated_at = ?
-      WHERE project_id = ?`).run(now, projectId);
+      WHERE project_id = ?`).run(now, projectId), /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
+      VALUES ('event_pointer_b_reassemble', ?, 'final_review_reassemble', 'exported', 'ready_to_assemble',
+        'artifact_pointer_b', 'FINAL_REASSEMBLY_REQUESTED', '{}', ?)`)
+      .run(projectId, now);
     assert.deepEqual({ ...(db.prepare(`SELECT workflow_state, current_final_artifact_id,
       approved_artifact_id, latest_export_id FROM workbench_delivery_state WHERE project_id = ?`)
       .get(projectId) as Record<string, unknown>) }, {
@@ -550,13 +590,23 @@ test("final review events bind to the current final evidence and target delivery
       "final_review_accepted", "final_review", "approved", "artifact_review_current", null, fingerprint, now),
     /UNIQUE constraint failed/);
 
-    assert.throws(() => insertReviewEvent.run("event_review_reassemble_before_state", projectId, null,
-      "final_review_reassemble", "approved", "ready_to_assemble", "artifact_review_current", null, fingerprint, now),
+    assert.throws(() => db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble',
+      approved_artifact_id = NULL, updated_at = ? WHERE project_id = ?`).run(now, projectId),
+    /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
+    assert.throws(() => insertReviewEvent.run("event_review_reassemble_wrong_fingerprint", projectId, null,
+      "final_review_reassemble", "approved", "ready_to_assemble", "artifact_review_current", null, "7".repeat(64), now),
     /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble',
-      approved_artifact_id = NULL, updated_at = ? WHERE project_id = ?`).run(now, projectId);
     assert.doesNotThrow(() => insertReviewEvent.run("event_review_reassemble", projectId, null,
       "final_review_reassemble", "approved", "ready_to_assemble", "artifact_review_current", null, fingerprint, now));
+    assert.deepEqual({ ...(db.prepare(`SELECT workflow_state, approved_artifact_id, latest_export_id
+      FROM workbench_delivery_state WHERE project_id = ?`).get(projectId) as Record<string, unknown>) }, {
+      workflow_state: "ready_to_assemble",
+      approved_artifact_id: null,
+      latest_export_id: null
+    });
+    assert.throws(() => insertReviewEvent.run("event_review_reassemble_duplicate", projectId, null,
+      "final_review_reassemble", "approved", "ready_to_assemble", "artifact_review_current", null, fingerprint, now),
+    /WORKBENCH_DELIVERY_REWORK_EVENT_DUPLICATE/);
 
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
       .run(now, projectId);
