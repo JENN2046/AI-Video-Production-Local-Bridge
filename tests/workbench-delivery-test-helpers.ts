@@ -13,11 +13,16 @@ export function completeWorkbenchAssemblyFixture(
         assembly_input_fingerprint: string | null;
       } | undefined;
     if (state?.workflow_state !== "assembling") throw new Error("DELIVERY_FIXTURE_ASSEMBLING_REQUIRED");
+    const sourceClipArtifactIds = (db.prepare(`SELECT json_extract(data_json, '$.accepted_clip_artifact_id') AS accepted_clip_artifact_id
+      FROM shots WHERE project_id = ? AND COALESCE(json_extract(data_json, '$.accepted_clip_artifact_id'), '') <> ''
+      ORDER BY CAST(json_extract(data_json, '$.order') AS INTEGER), shot_id`).all(input.project_id) as Array<{ accepted_clip_artifact_id: string }>)
+      .map((row) => row.accepted_clip_artifact_id);
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_fingerprint, input_json, output_artifact_id,
         created_at, started_at, finished_at, updated_at)
-      VALUES (?, ?, 'assembly', 'succeeded', ?, '{}', ?, ?, ?, ?, ?)`)
-      .run(input.job_id, input.project_id, state.assembly_input_fingerprint, input.artifact_id,
+      VALUES (?, ?, 'assembly', 'succeeded', ?, ?, ?, ?, ?, ?, ?)`)
+      .run(input.job_id, input.project_id, state.assembly_input_fingerprint,
+        JSON.stringify({ source_clip_artifact_ids: sourceClipArtifactIds }), input.artifact_id,
         input.created_at, input.created_at, input.created_at, input.created_at);
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id,

@@ -80,6 +80,7 @@ const FINAL_REVIEW_REASSEMBLY_SOURCE_STATES: ReadonlySet<WorkbenchDeliveryWorkfl
   "legacy_review_required"
 ]);
 const ATOMIC_REASSEMBLY_SOURCE_STATES: ReadonlySet<WorkbenchDeliveryWorkflowState> = new Set([
+  "final_review",
   "approved",
   "exported"
 ]);
@@ -253,12 +254,15 @@ export function assembleFinalVideo(
     saveGenerationRun(db, run);
 
     const deliveryJobId = `job_${randomUUID()}`;
+    const assemblyInputJson = JSON.stringify({
+      source_clip_artifact_ids: currentShots.map((shot) => shot.accepted_clip_artifact_id)
+    });
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, output_artifact_id,
         created_at, started_at, finished_at, updated_at)
-      VALUES (?, ?, 'assembly', 'succeeded', '{}', ?,
+      VALUES (?, ?, 'assembly', 'succeeded', ?, ?,
         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
-      .run(deliveryJobId, currentProject.project_id, activatedArtifactId);
+      .run(deliveryJobId, currentProject.project_id, assemblyInputJson, activatedArtifactId);
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
       VALUES (?, ?, ?, 'assembly_succeeded', 'assembling', 'final_review', ?, 'LEGACY_ASSEMBLY_SUCCEEDED', '{}', CURRENT_TIMESTAMP)`)

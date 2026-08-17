@@ -348,16 +348,21 @@ function deliveryReferencedArtifactIsFrozen(db: M0Database, artifactId: string):
       SELECT 1 FROM workbench_delivery_jobs job
       WHERE job.job_type = 'assembly' AND job.state = 'succeeded' AND job.output_artifact_id = ?
     ) OR EXISTS (
+      SELECT 1 FROM workbench_delivery_jobs job
+      JOIN json_each(job.input_json, '$.source_clip_artifact_ids') source_clip
+      WHERE job.job_type = 'assembly' AND job.state = 'succeeded'
+        AND source_clip.type = 'text' AND source_clip.value = ?
+    ) OR EXISTS (
       SELECT 1 FROM workbench_exports exported WHERE exported.artifact_id = ?
     )
-  `).get(artifactId, artifactId, artifactId, artifactId) as { frozen: number } | undefined;
+  `).get(artifactId, artifactId, artifactId, artifactId, artifactId) as { frozen: number } | undefined;
   return Boolean(row);
 }
 
 function frozenDeliveryArtifactError(): ToolError {
   return {
     code: "WORKBENCH_DELIVERY_ARTIFACT_IMMUTABLE",
-    message: "Delivery-referenced final Artifact content and Blob bindings are immutable."
+    message: "Delivery evidence-referenced Artifact content and Blob bindings are immutable."
   };
 }
 
@@ -467,7 +472,7 @@ export function transitionMediaArtifactStatus(
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     if (message.includes("WORKBENCH_DELIVERY_ARTIFACT_ACTIVE_REQUIRED")) {
-      return { ok: false, error: { code: "WORKBENCH_DELIVERY_ARTIFACT_ACTIVE_REQUIRED", message: "Delivery-referenced final Artifacts must remain active." } };
+      return { ok: false, error: { code: "WORKBENCH_DELIVERY_ARTIFACT_ACTIVE_REQUIRED", message: "Delivery evidence-referenced Artifacts must remain active." } };
     }
     return { ok: false, error: { code: "ARTIFACT_STATUS_TRANSITION_FAILED", message: message || "Artifact status transition failed." } };
   }

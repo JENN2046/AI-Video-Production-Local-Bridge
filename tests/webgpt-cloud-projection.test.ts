@@ -345,6 +345,27 @@ test("readonly snapshot accepts persisted not-ready and assembly summaries when 
     assert.equal(ready.delivery.ready_for_assembly, true);
     assert.equal(ready.list_item_full.summary.delivery_state, "ready_to_assemble");
 
+    let retainedFinalArtifactId = "";
+    const assemblyPreparationDb = openM0Database(sqlitePath);
+    try {
+      const currentProject = getProject(assemblyPreparationDb, fixture.project_id);
+      assert.ok(currentProject);
+      if (!currentProject) throw new Error("assembly projection project was not found");
+      const finalArtifact = registerMediaArtifact({
+        artifact_type: "video",
+        role: "final_video",
+        source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+        linked_objects: { project_id: fixture.project_id }
+      }, assemblyPreparationDb);
+      assert.equal(finalArtifact.ok, true, finalArtifact.ok ? "" : finalArtifact.error.code);
+      if (!finalArtifact.ok) throw new Error("assembly projection final media registration failed");
+      retainedFinalArtifactId = finalArtifact.artifact.artifact_id;
+      currentProject.exports.final_video_artifact_id = retainedFinalArtifactId;
+      saveProject(assemblyPreparationDb, currentProject);
+    } finally {
+      assemblyPreparationDb.close();
+    }
+
     const assemblingDb = openM0Database(sqlitePath);
     try {
       assemblingDb.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
@@ -361,23 +382,8 @@ test("readonly snapshot accepts persisted not-ready and assembly summaries when 
     assert.equal(assembling.delivery.ready_for_assembly, true);
     assert.equal(assembling.list_item_full.summary.delivery_state, "ready_to_assemble");
 
-    let retainedFinalArtifactId = "";
     const revisionDb = openM0Database(sqlitePath);
     try {
-      const currentProject = getProject(revisionDb, fixture.project_id);
-      assert.ok(currentProject);
-      if (!currentProject) throw new Error("revision projection project was not found");
-      const finalArtifact = registerMediaArtifact({
-        artifact_type: "video",
-        role: "final_video",
-        source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
-        linked_objects: { project_id: fixture.project_id }
-      }, revisionDb);
-      assert.equal(finalArtifact.ok, true, finalArtifact.ok ? "" : finalArtifact.error.code);
-      if (!finalArtifact.ok) throw new Error("revision projection final media registration failed");
-      retainedFinalArtifactId = finalArtifact.artifact.artifact_id;
-      currentProject.exports.final_video_artifact_id = retainedFinalArtifactId;
-      saveProject(revisionDb, currentProject);
       completeWorkbenchAssemblyFixture(revisionDb, {
         project_id: fixture.project_id,
         artifact_id: retainedFinalArtifactId,
@@ -385,8 +391,6 @@ test("readonly snapshot accepts persisted not-ready and assembly summaries when 
         event_id: "event_revision_projection_assembly",
         created_at: "2026-08-14T00:02:00.000Z"
       });
-      revisionDb.prepare("UPDATE workbench_delivery_state SET workflow_state = 'revision_requested', updated_at = ? WHERE project_id = ?")
-        .run("2026-08-14T00:03:00.000Z", fixture.project_id);
       revisionDb.prepare(`INSERT INTO workbench_delivery_events
         (event_id, project_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
         VALUES ('event_revision_projection_request', ?, 'final_review_regenerate_shots', 'final_review',

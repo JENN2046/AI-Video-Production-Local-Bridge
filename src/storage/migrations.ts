@@ -1279,6 +1279,11 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     closed_at TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    approval_signature_key TEXT GENERATED ALWAYS AS (
+      CASE WHEN workflow_state IN ('approved','exported','closed')
+        THEN json_array(project_id, approved_artifact_id, assembly_input_fingerprint)
+        ELSE NULL END
+    ) STORED,
     approval_binding_key TEXT GENERATED ALWAYS AS (
       CASE WHEN workflow_state = 'approved'
         THEN json_array(project_id, approved_artifact_id, assembly_input_fingerprint, updated_at)
@@ -1288,6 +1293,8 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     FOREIGN KEY (current_final_artifact_id) REFERENCES media_artifacts(artifact_id) ON DELETE RESTRICT,
     FOREIGN KEY (approved_artifact_id) REFERENCES media_artifacts(artifact_id) ON DELETE RESTRICT,
     FOREIGN KEY (latest_export_id) REFERENCES workbench_exports(export_id) ON DELETE RESTRICT,
+    FOREIGN KEY (approval_signature_key) REFERENCES workbench_delivery_events(approval_signature_key)
+      DEFERRABLE INITIALLY DEFERRED,
     FOREIGN KEY (approval_binding_key) REFERENCES workbench_delivery_events(approval_binding_key)
       DEFERRABLE INITIALLY DEFERRED,
     CHECK (workflow_state IN ('not_ready','ready_to_assemble','assembling','final_review','revision_requested','approved','exported','closed','legacy_review_required')),
@@ -1364,6 +1371,33 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
           )
         ))
     ))
+    OR (NEW.job_type = 'assembly' AND NEW.state = 'succeeded' AND (
+      json_type(NEW.input_json, '$.source_clip_artifact_ids') IS NOT 'array'
+      OR (SELECT COUNT(*) FROM json_each(NEW.input_json, '$.source_clip_artifact_ids')) <> (
+        SELECT COUNT(*) FROM shots shot
+        WHERE shot.project_id = NEW.project_id
+          AND COALESCE(json_extract(shot.data_json, '$.accepted_clip_artifact_id'), '') <> ''
+      )
+      OR EXISTS (
+        SELECT 1 FROM json_each(NEW.input_json, '$.source_clip_artifact_ids') source_clip
+        LEFT JOIN media_artifacts artifact ON artifact.artifact_id = source_clip.value
+          AND artifact.project_id = NEW.project_id AND artifact.role = 'generated_clip'
+          AND artifact.artifact_type = 'video' AND artifact.status = 'active'
+        LEFT JOIN shots shot ON shot.shot_id = artifact.shot_id AND shot.project_id = NEW.project_id
+          AND json_extract(shot.data_json, '$.accepted_clip_artifact_id') = artifact.artifact_id
+        WHERE source_clip.type <> 'text' OR artifact.artifact_id IS NULL OR shot.shot_id IS NULL
+      )
+      OR EXISTS (
+        SELECT 1 FROM shots shot
+        WHERE shot.project_id = NEW.project_id
+          AND COALESCE(json_extract(shot.data_json, '$.accepted_clip_artifact_id'), '') <> ''
+          AND NOT EXISTS (
+            SELECT 1 FROM json_each(NEW.input_json, '$.source_clip_artifact_ids') source_clip
+            WHERE source_clip.type = 'text'
+              AND source_clip.value = json_extract(shot.data_json, '$.accepted_clip_artifact_id')
+          )
+      )
+    ))
   BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_JOB_BINDING_INVALID');
   END;
@@ -1401,6 +1435,33 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
               AND d.latest_export_id IS NEW.export_id AND d.latest_exported_at IS NOT NULL)
           )
         ))
+    ))
+    OR (NEW.job_type = 'assembly' AND NEW.state = 'succeeded' AND (
+      json_type(NEW.input_json, '$.source_clip_artifact_ids') IS NOT 'array'
+      OR (SELECT COUNT(*) FROM json_each(NEW.input_json, '$.source_clip_artifact_ids')) <> (
+        SELECT COUNT(*) FROM shots shot
+        WHERE shot.project_id = NEW.project_id
+          AND COALESCE(json_extract(shot.data_json, '$.accepted_clip_artifact_id'), '') <> ''
+      )
+      OR EXISTS (
+        SELECT 1 FROM json_each(NEW.input_json, '$.source_clip_artifact_ids') source_clip
+        LEFT JOIN media_artifacts artifact ON artifact.artifact_id = source_clip.value
+          AND artifact.project_id = NEW.project_id AND artifact.role = 'generated_clip'
+          AND artifact.artifact_type = 'video' AND artifact.status = 'active'
+        LEFT JOIN shots shot ON shot.shot_id = artifact.shot_id AND shot.project_id = NEW.project_id
+          AND json_extract(shot.data_json, '$.accepted_clip_artifact_id') = artifact.artifact_id
+        WHERE source_clip.type <> 'text' OR artifact.artifact_id IS NULL OR shot.shot_id IS NULL
+      )
+      OR EXISTS (
+        SELECT 1 FROM shots shot
+        WHERE shot.project_id = NEW.project_id
+          AND COALESCE(json_extract(shot.data_json, '$.accepted_clip_artifact_id'), '') <> ''
+          AND NOT EXISTS (
+            SELECT 1 FROM json_each(NEW.input_json, '$.source_clip_artifact_ids') source_clip
+            WHERE source_clip.type = 'text'
+              AND source_clip.value = json_extract(shot.data_json, '$.accepted_clip_artifact_id')
+          )
+      )
     ))
   BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_JOB_BINDING_INVALID');
@@ -1519,7 +1580,10 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
             AND d.approved_artifact_id IS NEW.artifact_id
             AND ((NEW.from_state = 'approved' AND d.latest_export_id IS NULL)
               OR (NEW.from_state = 'exported' AND d.latest_export_id IS NOT NULL)))
-          OR (NEW.from_state IN ('final_review','legacy_review_required')
+          OR (NEW.from_state = 'final_review'
+            AND d.workflow_state = NEW.from_state
+            AND d.approved_artifact_id IS NULL AND d.latest_export_id IS NULL)
+          OR (NEW.from_state = 'legacy_review_required'
             AND d.workflow_state = NEW.to_state
             AND d.approved_artifact_id IS NULL AND d.latest_export_id IS NULL)
         )
@@ -1646,7 +1710,7 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
   END;
   CREATE TRIGGER workbench_delivery_rework_apply AFTER INSERT ON workbench_delivery_events
   WHEN NEW.event_type IN ('final_review_reassemble','final_review_regenerate_shots')
-    AND NEW.from_state IN ('approved','exported')
+    AND NEW.from_state IN ('final_review','approved','exported')
   BEGIN
     UPDATE workbench_delivery_state
     SET workflow_state = NEW.to_state,
@@ -1654,10 +1718,13 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
       closed_at = NULL, updated_at = NEW.created_at
     WHERE project_id = NEW.project_id AND workflow_state = NEW.from_state
       AND current_final_artifact_id IS NEW.artifact_id
-      AND approved_artifact_id IS NEW.artifact_id
       AND assembly_input_fingerprint IS NEW.input_fingerprint
-      AND ((NEW.from_state = 'approved' AND latest_export_id IS NULL)
-        OR (NEW.from_state = 'exported' AND latest_export_id IS NOT NULL));
+      AND ((NEW.from_state = 'final_review'
+          AND approved_artifact_id IS NULL AND latest_export_id IS NULL)
+        OR (NEW.from_state = 'approved'
+          AND approved_artifact_id IS NEW.artifact_id AND latest_export_id IS NULL)
+        OR (NEW.from_state = 'exported'
+          AND approved_artifact_id IS NEW.artifact_id AND latest_export_id IS NOT NULL));
     SELECT CASE WHEN changes() <> 1
       THEN RAISE(ABORT, 'WORKBENCH_DELIVERY_EVENT_BINDING_INVALID') END;
   END;
@@ -1716,6 +1783,11 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     SELECT 1 FROM workbench_delivery_jobs j
     WHERE j.job_type = 'assembly' AND j.state = 'succeeded' AND j.output_artifact_id = OLD.artifact_id
     UNION ALL
+    SELECT 1 FROM workbench_delivery_jobs j
+    JOIN json_each(j.input_json, '$.source_clip_artifact_ids') source_clip
+    WHERE j.job_type = 'assembly' AND j.state = 'succeeded'
+      AND source_clip.type = 'text' AND source_clip.value = OLD.artifact_id
+    UNION ALL
     SELECT 1 FROM workbench_exports e WHERE e.artifact_id = OLD.artifact_id
   )
   BEGIN
@@ -1729,6 +1801,11 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     SELECT 1 FROM workbench_delivery_jobs j
     WHERE j.job_type = 'assembly' AND j.state = 'succeeded' AND j.output_artifact_id = OLD.artifact_id
     UNION ALL
+    SELECT 1 FROM workbench_delivery_jobs j
+    JOIN json_each(j.input_json, '$.source_clip_artifact_ids') source_clip
+    WHERE j.job_type = 'assembly' AND j.state = 'succeeded'
+      AND source_clip.type = 'text' AND source_clip.value = OLD.artifact_id
+    UNION ALL
     SELECT 1 FROM workbench_exports e WHERE e.artifact_id = OLD.artifact_id
   )
   BEGIN
@@ -1741,6 +1818,11 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     UNION ALL
     SELECT 1 FROM workbench_delivery_jobs j
     WHERE j.job_type = 'assembly' AND j.state = 'succeeded' AND j.output_artifact_id = NEW.artifact_id
+    UNION ALL
+    SELECT 1 FROM workbench_delivery_jobs j
+    JOIN json_each(j.input_json, '$.source_clip_artifact_ids') source_clip
+    WHERE j.job_type = 'assembly' AND j.state = 'succeeded'
+      AND source_clip.type = 'text' AND source_clip.value = NEW.artifact_id
     UNION ALL
     SELECT 1 FROM workbench_exports e WHERE e.artifact_id = NEW.artifact_id
   )
@@ -1756,6 +1838,11 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
       SELECT 1 FROM workbench_delivery_jobs j
       WHERE j.job_type = 'assembly' AND j.state = 'succeeded' AND j.output_artifact_id = OLD.artifact_id
       UNION ALL
+      SELECT 1 FROM workbench_delivery_jobs j
+      JOIN json_each(j.input_json, '$.source_clip_artifact_ids') source_clip
+      WHERE j.job_type = 'assembly' AND j.state = 'succeeded'
+        AND source_clip.type = 'text' AND source_clip.value = OLD.artifact_id
+      UNION ALL
       SELECT 1 FROM workbench_exports e WHERE e.artifact_id = OLD.artifact_id
     ) OR EXISTS (
       SELECT 1 FROM workbench_delivery_state d
@@ -1763,6 +1850,11 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
       UNION ALL
       SELECT 1 FROM workbench_delivery_jobs j
       WHERE j.job_type = 'assembly' AND j.state = 'succeeded' AND j.output_artifact_id = NEW.artifact_id
+      UNION ALL
+      SELECT 1 FROM workbench_delivery_jobs j
+      JOIN json_each(j.input_json, '$.source_clip_artifact_ids') source_clip
+      WHERE j.job_type = 'assembly' AND j.state = 'succeeded'
+        AND source_clip.type = 'text' AND source_clip.value = NEW.artifact_id
       UNION ALL
       SELECT 1 FROM workbench_exports e WHERE e.artifact_id = NEW.artifact_id
     )
@@ -1787,7 +1879,7 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
           AND event.input_fingerprint IS NEW.assembly_input_fingerprint
           AND event.export_id IS NULL AND event.created_at IS NEW.updated_at
       ))
-      OR (OLD.workflow_state = 'final_review' AND NEW.workflow_state IN ('approved','ready_to_assemble','revision_requested'))
+      OR (OLD.workflow_state = 'final_review' AND NEW.workflow_state = 'approved')
       OR (OLD.workflow_state = 'revision_requested' AND NEW.workflow_state IN ('not_ready','ready_to_assemble'))
       OR (OLD.workflow_state = 'approved' AND NEW.workflow_state = 'exported' AND EXISTS (
         SELECT 1 FROM workbench_delivery_events event
@@ -1807,7 +1899,7 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
           AND event.created_at IS NEW.latest_exported_at
           AND event.created_at IS NEW.updated_at
       ))
-      OR (OLD.workflow_state IN ('approved','exported')
+      OR (OLD.workflow_state IN ('final_review','approved','exported')
         AND NEW.workflow_state IN ('ready_to_assemble','revision_requested') AND EXISTS (
           SELECT 1 FROM workbench_delivery_events event
           WHERE event.project_id = NEW.project_id
@@ -2224,7 +2316,7 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     director_automation_grant_events: ["event_id", "grant_id", "event_type", "reservation_id", "amount_minor", "currency", "intent_id", "run_id", "reason_code", "created_at"],
     storyboard_package_versions: ["package_version_id", "project_id", "version", "supersedes_package_version_id", "schema_version", "payload_json", "content_hash", "created_from_proposal_id", "created_at"],
     storyboard_package_version_events: ["event_id", "package_version_id", "workspace_id", "principal_id", "event_type", "reason_code", "created_at"],
-    workbench_delivery_state: ["project_id", "workflow_state", "current_final_artifact_id", "assembly_input_fingerprint", "approved_artifact_id", "latest_export_id", "latest_exported_at", "closed_at", "created_at", "updated_at", "approval_binding_key"],
+    workbench_delivery_state: ["project_id", "workflow_state", "current_final_artifact_id", "assembly_input_fingerprint", "approved_artifact_id", "latest_export_id", "latest_exported_at", "closed_at", "created_at", "updated_at", "approval_signature_key", "approval_binding_key"],
     workbench_delivery_jobs: ["job_id", "project_id", "job_type", "state", "input_fingerprint", "input_json", "retry_of_job_id", "output_artifact_id", "export_id", "error_code", "created_at", "started_at", "finished_at", "updated_at"],
     workbench_delivery_events: ["event_id", "project_id", "job_id", "event_type", "from_state", "to_state", "artifact_id", "export_id", "input_fingerprint", "reason_code", "data_json", "created_at", "approval_signature_key", "approval_binding_key"],
     workbench_exports: ["export_id", "project_id", "artifact_id", "relative_path", "sha256", "size_bytes", "created_at"]

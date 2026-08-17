@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  activateLocalMediaArtifact,
   assembleFinalVideo,
   createProject,
   getMediaArtifact,
@@ -126,6 +127,11 @@ test("M0-F assembly succeeds after all shots are approved", async () => {
     );
     assert.equal(assembled.ok, true);
     if (!assembled.ok) return;
+    const acceptedClipArtifactIds = storyboard.shots.map((shot) => {
+      const persisted = getShot(db, shot.shot_id);
+      assert.ok(persisted?.accepted_clip_artifact_id);
+      return persisted?.accepted_clip_artifact_id ?? "";
+    });
     const artifact = getMediaArtifact(db, assembled.final_video_artifact_id);
     assert.equal(artifact?.role, "final_video");
     assert.equal(artifact?.artifact_type, "video");
@@ -162,6 +168,31 @@ test("M0-F assembly succeeds after all shots are approved", async () => {
       job_state: "succeeded",
       output_artifact_id: assembled.final_video_artifact_id
     });
+    const assemblyInput = JSON.parse((db.prepare(`SELECT input_json FROM workbench_delivery_jobs
+      WHERE project_id = ? AND job_type = 'assembly' AND state = 'succeeded'`)
+      .get(project.project_id) as { input_json: string }).input_json) as { source_clip_artifact_ids: string[] };
+    assert.deepEqual(assemblyInput.source_clip_artifact_ids, acceptedClipArtifactIds);
+
+    const acceptedClip = getMediaArtifact(db, acceptedClipArtifactIds[0]);
+    assert.ok(acceptedClip);
+    if (!acceptedClip) throw new Error("accepted clip evidence was not found");
+    const journalCountBefore = Number((db.prepare("SELECT COUNT(*) AS count FROM media_activation_journal").get() as { count: number }).count);
+    const replacement = structuredClone(acceptedClip);
+    replacement.metadata.aspect_ratio = "1:1";
+    const blockedActivation = activateLocalMediaArtifact({
+      artifact: replacement,
+      source_path: acceptedClip.storage.uri
+    }, db);
+    assert.equal(blockedActivation.ok, false);
+    if (!blockedActivation.ok) assert.equal(blockedActivation.error.code, "WORKBENCH_DELIVERY_ARTIFACT_IMMUTABLE");
+    assert.equal(Number((db.prepare("SELECT COUNT(*) AS count FROM media_activation_journal").get() as { count: number }).count), journalCountBefore);
+    assert.throws(() => db.prepare(`UPDATE media_artifacts
+      SET data_json = json_set(data_json, '$.metadata.aspect_ratio', '1:1') WHERE artifact_id = ?`)
+      .run(acceptedClip.artifact_id), /WORKBENCH_DELIVERY_ARTIFACT_IMMUTABLE/);
+    const deactivatedClip = transitionMediaArtifactStatus(acceptedClip.artifact_id, "archived", db);
+    assert.equal(deactivatedClip.ok ? null : deactivatedClip.error.code, "WORKBENCH_DELIVERY_ARTIFACT_ACTIVE_REQUIRED");
+    assert.equal(getMediaArtifact(db, acceptedClip.artifact_id)?.status, "active");
+
     const deactivated = transitionMediaArtifactStatus(assembled.final_video_artifact_id, "archived", db);
     assert.equal(deactivated.ok ? null : deactivated.error.code, "WORKBENCH_DELIVERY_ARTIFACT_ACTIVE_REQUIRED");
     assert.equal(getMediaArtifact(db, assembled.final_video_artifact_id)?.status, "active");

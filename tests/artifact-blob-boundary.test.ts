@@ -217,9 +217,6 @@ test("SHOT Artifact attachment obeys delivery content gates without partial writ
 
     db.exec("BEGIN IMMEDIATE");
     try {
-      db.prepare(`UPDATE workbench_delivery_state
-        SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?`)
-        .run(now, target.project.project_id);
       db.prepare(`INSERT INTO workbench_delivery_events
         (event_id, project_id, event_type, from_state, to_state, artifact_id,
           input_fingerprint, reason_code, data_json, created_at)

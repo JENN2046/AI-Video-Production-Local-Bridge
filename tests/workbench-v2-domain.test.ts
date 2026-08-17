@@ -1283,8 +1283,6 @@ test("Workbench project summary prioritizes ready-to-assemble over a retained fi
       event_id: "event_reassembly_cta_final",
       created_at: now
     });
-    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
-      .run(now, created.data.project.project_id);
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
       VALUES ('event_reassembly_cta_request', ?, 'final_review_reassemble', 'final_review', 'ready_to_assemble', ?,

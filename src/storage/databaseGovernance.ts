@@ -333,6 +333,23 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
           AND COALESCE(a.shot_id, '') = '' AND a.role = 'final_video'
           AND a.artifact_type = 'video' AND a.status = 'active'
         WHERE j.output_artifact_id IS NOT NULL AND a.artifact_id IS NULL`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_jobs job
+        WHERE job.job_type = 'assembly' AND job.state = 'succeeded' AND (
+          json_type(job.input_json, '$.source_clip_artifact_ids') IS NOT 'array'
+          OR json_array_length(job.input_json, '$.source_clip_artifact_ids') <> (
+            SELECT COUNT(DISTINCT source_clip.value)
+            FROM json_each(job.input_json, '$.source_clip_artifact_ids') source_clip
+            WHERE source_clip.type = 'text'
+          )
+          OR EXISTS (
+            SELECT 1 FROM json_each(job.input_json, '$.source_clip_artifact_ids') source_clip
+            LEFT JOIN media_artifacts artifact ON artifact.artifact_id = source_clip.value
+              AND artifact.project_id = job.project_id AND artifact.role = 'generated_clip'
+              AND artifact.artifact_type = 'video' AND artifact.status = 'active'
+              AND COALESCE(artifact.shot_id, '') <> ''
+            WHERE source_clip.type <> 'text' OR artifact.artifact_id IS NULL
+          )
+        )`,
       `SELECT COUNT(*) AS count FROM workbench_delivery_jobs j
         LEFT JOIN workbench_exports e ON e.export_id = j.export_id
           AND j.job_type = 'export' AND e.project_id = j.project_id
@@ -614,18 +631,29 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
       `SELECT COUNT(*) AS count FROM workbench_delivery_state state
         WHERE state.workflow_state IN ('ready_to_assemble','revision_requested')
           AND state.current_final_artifact_id IS NOT NULL
-          AND EXISTS (
+          AND (EXISTS (
+            SELECT 1 FROM workbench_delivery_events assembly_event
+            JOIN workbench_delivery_jobs assembly_job ON assembly_job.job_id = assembly_event.job_id
+              AND assembly_job.project_id = assembly_event.project_id
+            WHERE assembly_event.project_id = state.project_id
+              AND assembly_event.event_type = 'assembly_succeeded'
+              AND assembly_event.artifact_id IS state.current_final_artifact_id
+              AND assembly_event.input_fingerprint IS state.assembly_input_fingerprint
+              AND assembly_job.job_type = 'assembly' AND assembly_job.state = 'succeeded'
+              AND assembly_job.output_artifact_id IS state.current_final_artifact_id
+              AND assembly_job.input_fingerprint IS state.assembly_input_fingerprint
+          ) OR EXISTS (
             SELECT 1 FROM workbench_delivery_events approval
             WHERE approval.project_id = state.project_id
               AND approval.event_type = 'final_review_accepted'
               AND approval.artifact_id IS state.current_final_artifact_id
               AND approval.input_fingerprint IS state.assembly_input_fingerprint
-          )
+          ))
           AND NOT EXISTS (
             SELECT 1 FROM workbench_delivery_events rework
             WHERE rework.project_id = state.project_id
               AND rework.event_type IN ('final_review_reassemble','final_review_regenerate_shots')
-              AND rework.from_state IN ('approved','exported')
+              AND rework.from_state IN ('final_review','approved','exported')
               AND rework.artifact_id IS state.current_final_artifact_id
               AND rework.input_fingerprint IS state.assembly_input_fingerprint
               AND ((rework.event_type = 'final_review_reassemble' AND rework.to_state = 'ready_to_assemble')

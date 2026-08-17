@@ -11,7 +11,7 @@ import { openM0Database } from "../src/storage/sqlite.js";
 import { initializeWorkbenchV2Schema } from "../src/storage/workbenchV2Schema.js";
 import { paths } from "../src/paths.js";
 import { persistMediaArtifact, registerMediaArtifact, transitionMediaArtifactStatus, type MediaArtifact } from "../src/tools/mediaArtifacts.js";
-import { createProject, getProject, saveProject } from "../src/tools/projects.js";
+import { buildStoryboardApprovedShot, createProject, getProject, saveProject, saveShot } from "../src/tools/projects.js";
 import {
   approveWorkbenchDeliveryFixture,
   completeWorkbenchAssemblyFixture,
@@ -786,7 +786,8 @@ test("database check reports invalid delivery Job bindings and inactive referenc
       .run(now);
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, output_artifact_id, created_at, finished_at, updated_at)
-      VALUES ('assembly_a', 'project_a', 'assembly', 'succeeded', '{}', 'artifact_b', ?, ?, ?)`)
+      VALUES ('assembly_a', 'project_a', 'assembly', 'succeeded',
+        '{"source_clip_artifact_ids":[]}', 'artifact_b', ?, ?, ?)`)
       .run(now, now, now);
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, export_id, created_at, finished_at, updated_at)
@@ -1116,9 +1117,9 @@ test("database check detects missing and timestamp-drifted final review acceptan
   }
 });
 
-test("database check detects missing, duplicate, and drifted final rework evidence", () => {
+test("database check detects first-review missing, approved missing, duplicate, and drifted final rework evidence", () => {
   const root = tempRoot();
-  const scenarios = ["missing", "duplicate", "drift"] as const;
+  const scenarios = ["first_review_missing", "missing", "duplicate", "drift"] as const;
   try {
     for (const scenario of scenarios) {
       const sqlitePath = join(root, `rework-${scenario}.sqlite`);
@@ -1129,7 +1130,21 @@ test("database check detects missing, duplicate, and drifted final rework eviden
       const triggerSql = (name: string) => (db.prepare(`SELECT sql FROM sqlite_master
         WHERE type = 'trigger' AND name = ?`).get(name) as { sql: string }).sql;
 
-      if (scenario === "missing") {
+      if (scenario === "first_review_missing") {
+        const transitionTrigger = triggerSql("workbench_delivery_state_transition");
+        const appendOnlyTrigger = triggerSql("workbench_delivery_events_no_delete");
+        db.exec("PRAGMA foreign_keys = OFF");
+        db.exec("DROP TRIGGER workbench_delivery_state_transition");
+        db.exec("DROP TRIGGER workbench_delivery_events_no_delete");
+        db.prepare("DELETE FROM workbench_delivery_events WHERE project_id = ? AND event_type = 'final_review_accepted'")
+          .run(fixture.project_id);
+        db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble',
+          approved_artifact_id = NULL, updated_at = ? WHERE project_id = ?`)
+          .run("2026-08-15T10:01:00.000Z", fixture.project_id);
+        db.exec(transitionTrigger);
+        db.exec(appendOnlyTrigger);
+        db.exec("PRAGMA foreign_keys = ON");
+      } else if (scenario === "missing") {
         const transitionTrigger = triggerSql("workbench_delivery_state_transition");
         db.exec("DROP TRIGGER workbench_delivery_state_transition");
         db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble',
@@ -1224,8 +1239,6 @@ test("database check accepts active historical final Artifacts referenced by suc
       event_id: "event_historical_assembly",
       created_at: now
     });
-    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
-      .run(now, project.project_id);
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
       VALUES ('event_historical_reassemble', ?, 'final_review_reassemble', 'final_review', 'ready_to_assemble', ?,
@@ -1258,6 +1271,89 @@ test("database check accepts active historical final Artifacts referenced by suc
     const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
     assert.equal(checked.orphan_rows, 0);
     assert.equal(checked.result, "PASS");
+  } finally {
+    try { db?.close(); } catch { /* retain the primary assertion failure */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("succeeded assembly input clips remain active and db:check detects bypassed drift", () => {
+  const root = tempRoot();
+  let db: ReturnType<typeof openM0Database> | null = null;
+  try {
+    const sqlitePath = join(root, "assembly-input-evidence.sqlite");
+    migrateDatabase(sqlitePath);
+    db = openM0Database(sqlitePath);
+    const project = createProject({ title: "Assembly input evidence" }, db);
+    assert.equal(project.ok, true);
+    if (!project.ok) throw new Error("assembly input evidence project setup failed");
+    const shot = buildStoryboardApprovedShot({
+      project_id: project.project_id,
+      order: 1,
+      duration_seconds: 2,
+      storyboard_image_artifact_id: "",
+      video_prompt: "Preserve the accepted source clip."
+    });
+    saveShot(db, shot);
+    const clip = registerMediaArtifact({
+      artifact_type: "video",
+      role: "generated_clip",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: project.project_id, shot_id: shot.shot_id }
+    }, db);
+    const finalArtifact = registerMediaArtifact({
+      artifact_type: "video",
+      role: "final_video",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: project.project_id }
+    }, db);
+    assert.equal(clip.ok, true);
+    assert.equal(finalArtifact.ok, true);
+    if (!clip.ok || !finalArtifact.ok) throw new Error("assembly input evidence media setup failed");
+    shot.status = "video_review";
+    shot.accepted_clip_artifact_id = clip.artifact.artifact_id;
+    shot.clip_versions = [{
+      artifact_id: clip.artifact.artifact_id,
+      run_id: "run_assembly_input_evidence",
+      attempt_number: 1,
+      review_status: "approved"
+    }];
+    shot.review.approval_status = "approved";
+    saveShot(db, shot);
+    const projectRecord = getProject(db, project.project_id);
+    assert.ok(projectRecord);
+    if (!projectRecord) throw new Error("assembly input evidence project disappeared");
+    projectRecord.status = "video_review";
+    projectRecord.exports.final_video_artifact_id = finalArtifact.artifact.artifact_id;
+    saveProject(db, projectRecord);
+    const now = "2026-08-17T03:00:00.000Z";
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
+      .run(now, project.project_id);
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
+      .run(now, project.project_id);
+    completeWorkbenchAssemblyFixture(db, {
+      project_id: project.project_id,
+      artifact_id: finalArtifact.artifact.artifact_id,
+      job_id: "job_assembly_input_evidence",
+      event_id: "event_assembly_input_evidence",
+      created_at: now
+    });
+
+    const statusGuard = (db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'trigger'
+      AND name = 'workbench_delivery_artifact_status_guard'`).get() as { sql: string }).sql;
+    db.exec("DROP TRIGGER workbench_delivery_artifact_status_guard");
+    db.prepare(`UPDATE media_artifacts SET status = 'archived',
+      data_json = json_set(data_json, '$.status', 'archived') WHERE artifact_id = ?`)
+      .run(clip.artifact.artifact_id);
+    db.exec(statusGuard);
+    assert.doesNotThrow(() => assertSchemaCurrent(db!));
+    db.close();
+    db = null;
+
+    const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
+    assert.equal(checked.schema_current, true);
+    assert.ok(checked.orphan_rows >= 1, JSON.stringify(checked));
+    assert.equal(checked.result, "FAIL");
   } finally {
     try { db?.close(); } catch { /* retain the primary assertion failure */ }
     rmSync(root, { recursive: true, force: true });
