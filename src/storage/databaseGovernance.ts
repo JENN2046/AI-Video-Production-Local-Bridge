@@ -12,6 +12,7 @@ import {
   validateStoryboardPackageV2
 } from "../director/domain.js";
 import { assertSchemaCurrent, runDatabaseMigrations } from "./migrations.js";
+import { verifyWorkbenchExportFile } from "./workbenchExportIntegrity.js";
 import { getMediaArtifact, recoverMediaActivations, verifyMediaArtifactBytes } from "../tools/mediaArtifacts.js";
 
 export interface DatabaseCheckResult {
@@ -715,12 +716,42 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
         WHERE event_type = 'closeout' GROUP BY project_id HAVING COUNT(*) > 1
       )`,
       "SELECT COUNT(*) AS count FROM workbench_exports e LEFT JOIN projects p ON p.project_id = e.project_id WHERE p.project_id IS NULL",
-      "SELECT COUNT(*) AS count FROM workbench_exports e LEFT JOIN media_artifacts a ON a.artifact_id = e.artifact_id AND a.project_id = e.project_id WHERE a.artifact_id IS NULL"
+      `SELECT COUNT(*) AS count FROM workbench_exports e
+        LEFT JOIN media_artifacts a ON a.artifact_id = e.artifact_id AND a.project_id = e.project_id
+          AND COALESCE(a.shot_id, '') = '' AND a.role = 'final_video'
+          AND a.artifact_type = 'video' AND a.status = 'active'
+        LEFT JOIN media_artifact_blobs ab ON ab.artifact_id = a.artifact_id
+        LEFT JOIN media_blobs b ON b.blob_id = ab.blob_id AND b.integrity_state = 'verified'
+          AND b.sha256 = e.sha256 AND b.size_bytes = e.size_bytes
+        WHERE a.artifact_id IS NULL OR b.blob_id IS NULL`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_state state
+        LEFT JOIN workbench_delivery_jobs job
+          ON job.active_assembly_binding_key = state.active_assembly_binding_key
+        LEFT JOIN workbench_delivery_events event
+          ON event.assembly_queue_binding_key = state.active_assembly_binding_key
+        WHERE state.workflow_state = 'assembling'
+          AND (state.active_assembly_job_id IS NULL OR state.assembly_input_fingerprint IS NULL
+            OR job.job_id IS NULL OR event.event_id IS NULL
+            OR job.job_id IS NOT state.active_assembly_job_id)`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_jobs job
+        LEFT JOIN workbench_delivery_state state
+          ON state.active_assembly_binding_key = job.active_assembly_binding_key
+        LEFT JOIN workbench_delivery_events event
+          ON event.assembly_queue_binding_key = job.active_assembly_binding_key
+        WHERE job.job_type = 'assembly' AND job.state IN ('queued','running')
+          AND (state.project_id IS NULL OR event.event_id IS NULL)`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_events event
+        JOIN workbench_delivery_jobs job ON job.job_id = event.job_id
+        WHERE event.event_type = 'assembly_queued' AND job.state IN ('queued','running')
+          AND NOT EXISTS (
+            SELECT 1 FROM workbench_delivery_state state
+            WHERE state.active_assembly_binding_key = event.assembly_queue_binding_key
+          )`
     ];
     const orphanRows = orphanQueries.reduce((sum, sql) => sum + scalarCount(db, sql, errors), 0);
     let mediaRows: Array<{ data_json: string }> = [];
     try { mediaRows = db.prepare("SELECT data_json FROM media_artifacts").all() as Array<{ data_json: string }>; } catch (error) { errors.push(error instanceof Error ? error.message : "MEDIA_FILE_CHECK_FAILED"); }
-    const missingMediaFiles = mediaRows.reduce((count, row) => {
+    let missingMediaFiles = mediaRows.reduce((count, row) => {
       try {
         const parsed = JSON.parse(row.data_json) as { storage?: { uri?: string } };
         const uri = parsed.storage?.uri;
@@ -741,6 +772,19 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
       }
     } catch (error) {
       errors.push(error instanceof Error ? error.message : "MEDIA_INTEGRITY_CHECK_FAILED");
+    }
+    try {
+      const exportRows = db.prepare(`SELECT project_id, relative_path, sha256, size_bytes
+        FROM workbench_exports ORDER BY export_id`).all() as Array<{
+          project_id: string; relative_path: string; sha256: string; size_bytes: number;
+        }>;
+      for (const row of exportRows) {
+        const verified = verifyWorkbenchExportFile(row);
+        if (!verified.ok && verified.reason === "missing") missingMediaFiles += 1;
+        else if (!verified.ok) mediaIntegrityErrors += 1;
+      }
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : "EXPORT_INTEGRITY_CHECK_FAILED");
     }
     const pendingMediaActivations = scalarCount(db, "SELECT COUNT(*) AS count FROM media_activation_journal WHERE state IN ('staged','file_placed')", errors);
     const quarantinedMediaActivations = scalarCount(db, "SELECT COUNT(*) AS count FROM media_activation_journal WHERE state = 'failed'", errors);

@@ -10,6 +10,7 @@ export interface M0Paths {
   imageArtifactsRoot: string;
   videoArtifactsRoot: string;
   finalArtifactsRoot: string;
+  exportsRoot: string;
   mediaActivationRoot: string;
   mediaActivationStagingRoot: string;
   mediaActivationPendingRoot: string;
@@ -37,6 +38,7 @@ export function getM0Paths(workspaceRoot = process.cwd()): M0Paths {
     imageArtifactsRoot: join(artifactsRoot, "images"),
     videoArtifactsRoot: join(artifactsRoot, "videos"),
     finalArtifactsRoot: join(artifactsRoot, "final"),
+    exportsRoot: join(dataRoot, "exports"),
     mediaActivationRoot: join(mediaRoot, ".activation"),
     mediaActivationStagingRoot: join(mediaRoot, ".activation", "staging"),
     mediaActivationPendingRoot: join(mediaRoot, ".activation", "pending"),
@@ -72,6 +74,7 @@ export function ensureM0Directories(m0Paths = paths): void {
   ensureDir(m0Paths.imageArtifactsRoot);
   ensureDir(m0Paths.videoArtifactsRoot);
   ensureDir(m0Paths.finalArtifactsRoot);
+  ensureDir(m0Paths.exportsRoot);
   ensureDir(m0Paths.mediaActivationStagingRoot);
   ensureDir(m0Paths.mediaActivationPendingRoot);
   ensureDir(m0Paths.mediaActivationQuarantineRoot);

@@ -1214,17 +1214,25 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     started_at TEXT,
     finished_at TEXT,
     updated_at TEXT NOT NULL,
+    active_assembly_binding_key TEXT GENERATED ALWAYS AS (
+      CASE WHEN job_type = 'assembly' AND state IN ('queued','running')
+        THEN json_array(project_id, job_id, input_fingerprint)
+        ELSE NULL END
+    ) STORED,
     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE RESTRICT,
     FOREIGN KEY (retry_of_job_id) REFERENCES workbench_delivery_jobs(job_id) ON DELETE RESTRICT,
     FOREIGN KEY (output_artifact_id) REFERENCES media_artifacts(artifact_id) ON DELETE RESTRICT,
     FOREIGN KEY (export_id) REFERENCES workbench_exports(export_id) ON DELETE RESTRICT,
+    FOREIGN KEY (active_assembly_binding_key) REFERENCES workbench_delivery_state(active_assembly_binding_key)
+      DEFERRABLE INITIALLY DEFERRED,
     CHECK (job_type IN ('assembly','export')),
     CHECK (state IN ('queued','running','succeeded','failed','interrupted')),
     CHECK (input_fingerprint IS NULL OR (length(input_fingerprint) = 64 AND input_fingerprint NOT GLOB '*[^0-9a-f]*')),
     CHECK (json_valid(input_json) = 1 AND json_type(input_json) = 'object'),
     CHECK (error_code IS NULL OR (length(error_code) BETWEEN 1 AND 64 AND error_code NOT GLOB '*[^A-Z0-9_]*')),
     CHECK ((state IN ('queued','running') AND finished_at IS NULL) OR (state IN ('succeeded','failed','interrupted') AND finished_at IS NOT NULL)),
-    CHECK (state <> 'succeeded' OR (job_type = 'assembly' AND output_artifact_id IS NOT NULL AND export_id IS NULL) OR (job_type = 'export' AND export_id IS NOT NULL))
+    CHECK (state <> 'succeeded' OR (job_type = 'assembly' AND output_artifact_id IS NOT NULL AND export_id IS NULL) OR (job_type = 'export' AND export_id IS NOT NULL)),
+    UNIQUE (active_assembly_binding_key)
   );
 
   CREATE TABLE workbench_delivery_events (
@@ -1250,6 +1258,11 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
         THEN json_array(project_id, artifact_id, input_fingerprint, created_at)
         ELSE NULL END
     ) STORED,
+    assembly_queue_binding_key TEXT GENERATED ALWAYS AS (
+      CASE WHEN event_type = 'assembly_queued'
+        THEN json_array(project_id, job_id, input_fingerprint)
+        ELSE NULL END
+    ) STORED,
     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE RESTRICT,
     FOREIGN KEY (job_id) REFERENCES workbench_delivery_jobs(job_id) ON DELETE RESTRICT,
     FOREIGN KEY (artifact_id) REFERENCES media_artifacts(artifact_id) ON DELETE RESTRICT,
@@ -1265,7 +1278,8 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     CHECK (length(reason_code) BETWEEN 1 AND 64 AND reason_code NOT GLOB '*[^A-Z0-9_]*'),
     CHECK (json_valid(data_json) = 1 AND json_type(data_json) = 'object'),
     UNIQUE (approval_signature_key),
-    UNIQUE (approval_binding_key)
+    UNIQUE (approval_binding_key),
+    UNIQUE (assembly_queue_binding_key)
   );
 
   CREATE TABLE workbench_delivery_state (
@@ -1273,6 +1287,7 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     workflow_state TEXT NOT NULL,
     current_final_artifact_id TEXT,
     assembly_input_fingerprint TEXT,
+    active_assembly_job_id TEXT,
     approved_artifact_id TEXT,
     latest_export_id TEXT,
     latest_exported_at TEXT,
@@ -1289,23 +1304,36 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
         THEN json_array(project_id, approved_artifact_id, assembly_input_fingerprint, updated_at)
         ELSE NULL END
     ) STORED,
+    active_assembly_binding_key TEXT GENERATED ALWAYS AS (
+      CASE WHEN workflow_state = 'assembling'
+        THEN json_array(project_id, active_assembly_job_id, assembly_input_fingerprint)
+        ELSE NULL END
+    ) STORED,
     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE RESTRICT,
     FOREIGN KEY (current_final_artifact_id) REFERENCES media_artifacts(artifact_id) ON DELETE RESTRICT,
     FOREIGN KEY (approved_artifact_id) REFERENCES media_artifacts(artifact_id) ON DELETE RESTRICT,
     FOREIGN KEY (latest_export_id) REFERENCES workbench_exports(export_id) ON DELETE RESTRICT,
+    FOREIGN KEY (active_assembly_job_id) REFERENCES workbench_delivery_jobs(job_id) ON DELETE RESTRICT,
+    FOREIGN KEY (active_assembly_binding_key) REFERENCES workbench_delivery_jobs(active_assembly_binding_key)
+      DEFERRABLE INITIALLY DEFERRED,
+    FOREIGN KEY (active_assembly_binding_key) REFERENCES workbench_delivery_events(assembly_queue_binding_key)
+      DEFERRABLE INITIALLY DEFERRED,
     FOREIGN KEY (approval_signature_key) REFERENCES workbench_delivery_events(approval_signature_key)
       DEFERRABLE INITIALLY DEFERRED,
     FOREIGN KEY (approval_binding_key) REFERENCES workbench_delivery_events(approval_binding_key)
       DEFERRABLE INITIALLY DEFERRED,
     CHECK (workflow_state IN ('not_ready','ready_to_assemble','assembling','final_review','revision_requested','approved','exported','closed','legacy_review_required')),
     CHECK (assembly_input_fingerprint IS NULL OR (length(assembly_input_fingerprint) = 64 AND assembly_input_fingerprint NOT GLOB '*[^0-9a-f]*')),
+    CHECK ((workflow_state = 'assembling' AND active_assembly_job_id IS NOT NULL AND assembly_input_fingerprint IS NOT NULL)
+      OR (workflow_state <> 'assembling' AND active_assembly_job_id IS NULL)),
     CHECK (workflow_state NOT IN ('final_review','approved','exported','closed') OR current_final_artifact_id IS NOT NULL),
     CHECK (workflow_state NOT IN ('approved','exported','closed') OR (
       approved_artifact_id IS NOT NULL AND approved_artifact_id = current_final_artifact_id
     )),
     CHECK (workflow_state NOT IN ('exported','closed') OR latest_export_id IS NOT NULL),
     CHECK ((latest_export_id IS NULL AND latest_exported_at IS NULL) OR (latest_export_id IS NOT NULL AND latest_exported_at IS NOT NULL)),
-    CHECK ((workflow_state = 'closed' AND closed_at IS NOT NULL) OR (workflow_state <> 'closed' AND closed_at IS NULL))
+    CHECK ((workflow_state = 'closed' AND closed_at IS NOT NULL) OR (workflow_state <> 'closed' AND closed_at IS NULL)),
+    UNIQUE (active_assembly_binding_key)
   );
 
   CREATE INDEX idx_workbench_delivery_jobs_project_created
@@ -1322,12 +1350,18 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
   CREATE TRIGGER workbench_exports_validate_insert BEFORE INSERT ON workbench_exports
   WHEN NOT EXISTS (
     SELECT 1 FROM media_artifacts a
+    JOIN media_artifact_blobs ab ON ab.artifact_id = a.artifact_id
+    JOIN media_blobs b ON b.blob_id = ab.blob_id
     WHERE a.artifact_id = NEW.artifact_id AND a.project_id = NEW.project_id
       AND COALESCE(a.shot_id, '') = '' AND a.role = 'final_video'
       AND a.artifact_type = 'video' AND a.status = 'active'
+      AND b.integrity_state = 'verified' AND b.sha256 = NEW.sha256 AND b.size_bytes = NEW.size_bytes
   )
+  OR workbench_export_file_integrity_valid(
+    NEW.project_id, NEW.relative_path, NEW.sha256, NEW.size_bytes
+  ) <> 1
   BEGIN
-    SELECT RAISE(ABORT, 'WORKBENCH_EXPORT_ARTIFACT_INVALID');
+    SELECT RAISE(ABORT, 'WORKBENCH_EXPORT_FILE_INTEGRITY_INVALID');
   END;
   CREATE TRIGGER workbench_exports_no_update BEFORE UPDATE ON workbench_exports BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_EXPORT_IMMUTABLE');
@@ -1516,7 +1550,7 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     ))
     OR NOT (
       (NEW.event_type = 'assembly_queued'
-        AND NEW.from_state IN ('not_ready','ready_to_assemble','revision_requested')
+        AND NEW.from_state = 'ready_to_assemble'
         AND NEW.to_state = 'assembling')
       OR (NEW.event_type = 'assembly_started'
         AND NEW.from_state = 'assembling' AND NEW.to_state = 'assembling')
@@ -1572,6 +1606,7 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     OR (NEW.event_type = 'assembly_succeeded' AND NOT EXISTS (
       SELECT 1 FROM workbench_delivery_state d
       WHERE d.project_id = NEW.project_id AND d.workflow_state = 'assembling'
+        AND d.active_assembly_job_id IS NEW.job_id
         AND d.assembly_input_fingerprint IS NEW.input_fingerprint
     ))
     OR (NEW.event_type = 'export_succeeded' AND NEW.job_id IS NOT NULL AND NOT EXISTS (
@@ -1623,7 +1658,7 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     ) AND NOT EXISTS (
       SELECT 1 FROM workbench_delivery_jobs j
       WHERE j.job_id = NEW.job_id AND j.project_id = NEW.project_id AND j.job_type = 'assembly'
-        AND NEW.export_id IS NULL
+        AND NEW.export_id IS NULL AND NEW.input_fingerprint IS j.input_fingerprint
         AND (
           (NEW.event_type = 'assembly_queued' AND j.state = 'queued' AND NEW.artifact_id IS NULL)
           OR (NEW.event_type = 'assembly_started' AND j.state = 'running' AND NEW.artifact_id IS NULL)
@@ -1703,8 +1738,21 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     UPDATE workbench_delivery_state
     SET workflow_state = 'final_review', current_final_artifact_id = NEW.artifact_id,
       approved_artifact_id = NULL, latest_export_id = NULL, latest_exported_at = NULL,
-      closed_at = NULL, updated_at = NEW.created_at
+      active_assembly_job_id = NULL, closed_at = NULL, updated_at = NEW.created_at
     WHERE project_id = NEW.project_id AND workflow_state = 'assembling'
+      AND active_assembly_job_id IS NEW.job_id
+      AND assembly_input_fingerprint IS NEW.input_fingerprint;
+    SELECT CASE WHEN changes() <> 1
+      THEN RAISE(ABORT, 'WORKBENCH_DELIVERY_EVENT_BINDING_INVALID') END;
+  END;
+  CREATE TRIGGER workbench_delivery_assembly_terminal_apply AFTER INSERT ON workbench_delivery_events
+  WHEN NEW.event_type IN ('assembly_failed','assembly_interrupted')
+  BEGIN
+    UPDATE workbench_delivery_state
+    SET workflow_state = 'ready_to_assemble', active_assembly_job_id = NULL,
+      updated_at = NEW.created_at
+    WHERE project_id = NEW.project_id AND workflow_state = 'assembling'
+      AND active_assembly_job_id IS NEW.job_id
       AND assembly_input_fingerprint IS NEW.input_fingerprint;
     SELECT CASE WHEN changes() <> 1
       THEN RAISE(ABORT, 'WORKBENCH_DELIVERY_EVENT_BINDING_INVALID') END;
@@ -1788,6 +1836,20 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     ))
   BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_STATE_BINDING_INVALID');
+  END;
+  CREATE TRIGGER workbench_delivery_assembly_active_evidence_guard BEFORE UPDATE ON workbench_delivery_state
+  WHEN NEW.workflow_state = 'assembling' AND NOT EXISTS (
+    SELECT 1 FROM workbench_delivery_jobs job
+    JOIN workbench_delivery_events event
+      ON event.assembly_queue_binding_key = job.active_assembly_binding_key
+    WHERE job.job_id = NEW.active_assembly_job_id
+      AND job.project_id = NEW.project_id AND job.job_type = 'assembly'
+      AND job.state IN ('queued','running')
+      AND job.input_fingerprint IS NEW.assembly_input_fingerprint
+      AND event.project_id = NEW.project_id AND event.event_type = 'assembly_queued'
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_ASSEMBLY_ACTIVE_EVIDENCE_REQUIRED');
   END;
   CREATE TRIGGER workbench_delivery_artifact_status_guard BEFORE UPDATE OF status ON media_artifacts
   WHEN OLD.status = 'active' AND NEW.status <> 'active' AND EXISTS (
@@ -1880,7 +1942,18 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
   WHEN (OLD.workflow_state <> NEW.workflow_state AND NOT (
       (OLD.workflow_state = 'not_ready' AND NEW.workflow_state = 'ready_to_assemble')
       OR (OLD.workflow_state = 'ready_to_assemble' AND NEW.workflow_state IN ('not_ready','assembling'))
-      OR (OLD.workflow_state = 'assembling' AND NEW.workflow_state = 'ready_to_assemble')
+      OR (OLD.workflow_state = 'assembling' AND NEW.workflow_state = 'ready_to_assemble' AND EXISTS (
+        SELECT 1 FROM workbench_delivery_events event
+        JOIN workbench_delivery_jobs job ON job.job_id = event.job_id
+          AND job.project_id = event.project_id
+        WHERE event.project_id = NEW.project_id
+          AND event.event_type IN ('assembly_failed','assembly_interrupted')
+          AND event.from_state = 'assembling' AND event.to_state = 'ready_to_assemble'
+          AND job.job_id IS OLD.active_assembly_job_id
+          AND job.job_type = 'assembly' AND job.state IN ('failed','interrupted')
+          AND event.input_fingerprint IS OLD.assembly_input_fingerprint
+          AND event.created_at IS NEW.updated_at
+      ))
       OR (OLD.workflow_state = 'assembling' AND NEW.workflow_state = 'final_review' AND EXISTS (
         SELECT 1 FROM workbench_delivery_events event
         JOIN workbench_delivery_jobs job ON job.job_id = event.job_id
@@ -1888,6 +1961,7 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
         WHERE event.project_id = NEW.project_id AND event.event_type = 'assembly_succeeded'
           AND event.from_state = 'assembling' AND event.to_state = 'final_review'
           AND job.job_type = 'assembly' AND job.state = 'succeeded'
+          AND job.job_id IS OLD.active_assembly_job_id
           AND job.output_artifact_id IS NEW.current_final_artifact_id
           AND event.artifact_id IS NEW.current_final_artifact_id
           AND event.input_fingerprint IS NEW.assembly_input_fingerprint
@@ -1951,6 +2025,12 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     ))
     OR (OLD.assembly_input_fingerprint IS NOT NEW.assembly_input_fingerprint AND NOT (
       OLD.workflow_state = 'ready_to_assemble' AND NEW.workflow_state = 'assembling'
+    ))
+    OR (OLD.active_assembly_job_id IS NOT NEW.active_assembly_job_id AND NOT (
+      (OLD.workflow_state = 'ready_to_assemble' AND NEW.workflow_state = 'assembling'
+        AND OLD.active_assembly_job_id IS NULL AND NEW.active_assembly_job_id IS NOT NULL)
+      OR (OLD.workflow_state = 'assembling' AND NEW.workflow_state IN ('ready_to_assemble','final_review')
+        AND OLD.active_assembly_job_id IS NOT NULL AND NEW.active_assembly_job_id IS NULL)
     ))
     OR (OLD.approved_artifact_id IS NOT NEW.approved_artifact_id AND NOT (
       (NEW.approved_artifact_id IS NOT NULL
@@ -2330,9 +2410,9 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     director_automation_grant_events: ["event_id", "grant_id", "event_type", "reservation_id", "amount_minor", "currency", "intent_id", "run_id", "reason_code", "created_at"],
     storyboard_package_versions: ["package_version_id", "project_id", "version", "supersedes_package_version_id", "schema_version", "payload_json", "content_hash", "created_from_proposal_id", "created_at"],
     storyboard_package_version_events: ["event_id", "package_version_id", "workspace_id", "principal_id", "event_type", "reason_code", "created_at"],
-    workbench_delivery_state: ["project_id", "workflow_state", "current_final_artifact_id", "assembly_input_fingerprint", "approved_artifact_id", "latest_export_id", "latest_exported_at", "closed_at", "created_at", "updated_at", "approval_signature_key", "approval_binding_key"],
-    workbench_delivery_jobs: ["job_id", "project_id", "job_type", "state", "input_fingerprint", "input_json", "retry_of_job_id", "output_artifact_id", "export_id", "error_code", "created_at", "started_at", "finished_at", "updated_at"],
-    workbench_delivery_events: ["event_id", "project_id", "job_id", "event_type", "from_state", "to_state", "artifact_id", "export_id", "input_fingerprint", "reason_code", "data_json", "created_at", "approval_signature_key", "approval_binding_key"],
+    workbench_delivery_state: ["project_id", "workflow_state", "current_final_artifact_id", "assembly_input_fingerprint", "active_assembly_job_id", "approved_artifact_id", "latest_export_id", "latest_exported_at", "closed_at", "created_at", "updated_at", "approval_signature_key", "approval_binding_key", "active_assembly_binding_key"],
+    workbench_delivery_jobs: ["job_id", "project_id", "job_type", "state", "input_fingerprint", "input_json", "retry_of_job_id", "output_artifact_id", "export_id", "error_code", "created_at", "started_at", "finished_at", "updated_at", "active_assembly_binding_key"],
+    workbench_delivery_events: ["event_id", "project_id", "job_id", "event_type", "from_state", "to_state", "artifact_id", "export_id", "input_fingerprint", "reason_code", "data_json", "created_at", "approval_signature_key", "approval_binding_key", "assembly_queue_binding_key"],
     workbench_exports: ["export_id", "project_id", "artifact_id", "relative_path", "sha256", "size_bytes", "created_at"]
   } : V24_EXPECTED_COLUMNS;
   const expectedIndexes = includeJobs ? [
@@ -2413,11 +2493,13 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "workbench_delivery_events_no_update",
         "workbench_delivery_events_no_delete",
         "workbench_delivery_assembly_success_apply",
+        "workbench_delivery_assembly_terminal_apply",
         "workbench_delivery_export_success_apply",
         "workbench_delivery_rework_apply",
         "workbench_delivery_closeout_apply",
         "workbench_delivery_state_validate_artifacts",
         "workbench_delivery_state_validate_artifacts_update",
+        "workbench_delivery_assembly_active_evidence_guard",
         "workbench_delivery_artifact_status_guard",
         "workbench_delivery_artifact_content_guard",
         "workbench_delivery_artifact_blob_insert_guard",

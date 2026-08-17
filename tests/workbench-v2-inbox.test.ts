@@ -15,7 +15,8 @@ import {
   approveWorkbenchDeliveryFixture,
   completeWorkbenchAssemblyFixture,
   completeWorkbenchExportFixture,
-  ensureAcceptedAssemblyClipsFixture
+  ensureAcceptedAssemblyClipsFixture,
+  insertWorkbenchExportFixture
 } from "./workbench-delivery-test-helpers.js";
 
 test("legacy inbox JSON migrates once without changing source hashes", () => {
@@ -299,13 +300,9 @@ function closeProjectForInboxTest(db: ReturnType<typeof openM0Database>, project
   project.status = "final_approved";
   project.exports.final_video_artifact_id = artifactId;
   saveProject(db, project);
-  const blob = db.prepare(`SELECT b.sha256, b.size_bytes
-    FROM media_artifact_blobs link JOIN media_blobs b ON b.blob_id = link.blob_id
-    WHERE link.artifact_id = ?`).get(artifactId) as { sha256: string; size_bytes: number };
   const now = "2026-08-14T00:00:00.000Z";
   const exportId = "export_closed_inbox";
   db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?").run(now, projectId);
-  db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?").run(now, projectId);
   completeWorkbenchAssemblyFixture(db, {
     project_id: projectId,
     artifact_id: artifactId,
@@ -318,10 +315,8 @@ function closeProjectForInboxTest(db: ReturnType<typeof openM0Database>, project
     event_id: `event_inbox_accepted_${projectId}`,
     created_at: now
   });
-  db.prepare(`INSERT INTO workbench_exports
-    (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`).run(exportId, projectId, artifactId,
-    `data/exports/${projectId}/final.mp4`, blob.sha256, blob.size_bytes, now);
+  insertWorkbenchExportFixture(db, { project_id: projectId, artifact_id: artifactId,
+    export_id: exportId, created_at: now });
   completeWorkbenchExportFixture(db, {
     project_id: projectId,
     export_id: exportId,

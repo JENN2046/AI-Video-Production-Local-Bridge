@@ -551,6 +551,24 @@ export function createWorkbenchProject(
   return { ok: true, data: { project: created.project, meta: projectMeta(db, created.project_id) as WorkbenchProjectMeta } };
 }
 
+function updateWorkbenchProjectTitle(
+  db: M0Database,
+  projectId: string,
+  title: string
+): WorkbenchV2Result<{ project: Project }> {
+  const trimmed = title.trim();
+  if (!trimmed) {
+    return { ok: false, error: { code: "MISSING_REQUIRED_FIELD", message: "Project title is required.", field: "title" } };
+  }
+  const changed = db.prepare(`UPDATE projects
+    SET data_json = json_set(data_json, '$.title', ?), updated_at = CURRENT_TIMESTAMP
+    WHERE project_id = ?`).run(trimmed, projectId) as { changes: number | bigint };
+  if (changed.changes !== 1) return projectNotFound(projectId);
+  const project = getProject(db, projectId);
+  if (!project) return projectNotFound(projectId);
+  return { ok: true, data: { project } };
+}
+
 export function updateWorkbenchProject(
   projectId: string,
   input: {
@@ -563,12 +581,11 @@ export function updateWorkbenchProject(
 ): WorkbenchV2Result<{ project: Project; meta: WorkbenchProjectMeta }> {
   const writable = assertWorkbenchProjectWritable(db, projectId);
   if (!writable.ok) return writable;
-  const project = writable.data.project;
+  let project = writable.data.project;
   if (input.title !== undefined) {
-    const title = input.title.trim();
-    if (!title) return { ok: false, error: { code: "MISSING_REQUIRED_FIELD", message: "Project title is required.", field: "title" } };
-    project.title = title;
-    saveProject(db, project);
+    const updated = updateWorkbenchProjectTitle(db, projectId, input.title);
+    if (!updated.ok) return updated;
+    project = updated.data.project;
   }
   const classification = input.classification ?? writable.data.meta.classification;
   const pinned = input.pinned ?? writable.data.meta.pinned;

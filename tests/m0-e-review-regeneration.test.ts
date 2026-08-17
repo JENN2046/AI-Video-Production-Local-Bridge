@@ -20,7 +20,10 @@ import {
   approveWorkbenchDeliveryFixture,
   completeWorkbenchAssemblyFixture,
   completeWorkbenchExportFixture,
-  ensureAcceptedAssemblyClipsFixture
+  ensureAcceptedAssemblyClipsFixture,
+  failWorkbenchAssemblyFixture,
+  insertWorkbenchExportFixture,
+  queueWorkbenchAssemblyFixture
 } from "./workbench-delivery-test-helpers.js";
 
 async function setupGeneratedShot(db: ReturnType<typeof openM0Database>) {
@@ -88,8 +91,6 @@ function setProjectFinalEvidenceState(
   ensureAcceptedAssemblyClipsFixture(db, projectId);
   db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
     .run(now, projectId);
-  db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
-    .run(now, projectId);
   completeWorkbenchAssemblyFixture(db, {
     project_id: projectId,
     artifact_id: artifactId,
@@ -104,10 +105,8 @@ function setProjectFinalEvidenceState(
   });
   if (target === "approved") return { artifact_id: artifactId, export_id: null };
   const exportId = `export_${projectId}`;
-  db.prepare(`INSERT INTO workbench_exports
-    (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
-    VALUES (?, ?, ?, ?, ?, 1, ?)`)
-    .run(exportId, projectId, artifactId, `data/exports/${projectId}/final.mp4`, "c".repeat(64), now);
+  insertWorkbenchExportFixture(db, { project_id: projectId, artifact_id: artifactId,
+    export_id: exportId, created_at: now });
   completeWorkbenchExportFixture(db, {
     project_id: projectId,
     export_id: exportId,
@@ -132,7 +131,6 @@ function closeProjectForReviewTest(db: ReturnType<typeof openM0Database>, projec
   const now = "2026-08-14T00:00:00.000Z";
   ensureAcceptedAssemblyClipsFixture(db, projectId);
   db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?").run(now, projectId);
-  db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?").run(now, projectId);
   completeWorkbenchAssemblyFixture(db, {
     project_id: projectId,
     artifact_id: artifactId,
@@ -145,10 +143,8 @@ function closeProjectForReviewTest(db: ReturnType<typeof openM0Database>, projec
     event_id: `event_m0e_closed_accepted_${projectId}_${artifactId}`,
     created_at: now
   });
-  db.prepare(`INSERT INTO workbench_exports
-    (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
-    VALUES (?, ?, ?, ?, ?, 1, ?)`)
-    .run(exportId, projectId, artifactId, `data/exports/${projectId}/final.mp4`, "a".repeat(64), now);
+  insertWorkbenchExportFixture(db, { project_id: projectId, artifact_id: artifactId,
+    export_id: exportId, created_at: now });
   completeWorkbenchExportFixture(db, {
     project_id: projectId,
     export_id: exportId,
@@ -286,10 +282,11 @@ test("production content mutations require explicit atomic rework after final ev
 
     db.exec("BEGIN IMMEDIATE");
     db.prepare(`INSERT INTO workbench_delivery_events
-      (event_id, project_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
+      (event_id, project_id, event_type, from_state, to_state, artifact_id, input_fingerprint,
+        reason_code, data_json, created_at)
       VALUES ('event_atomic_content_rework', ?, 'final_review_regenerate_shots', 'approved', 'revision_requested', ?,
-        'FINAL_SHOT_REGENERATION_REQUESTED', ?, ?)`)
-      .run(approvedFixture.project.project_id, approvedFinal.artifact_id,
+        ?, 'FINAL_SHOT_REGENERATION_REQUESTED', ?, ?)`)
+      .run(approvedFixture.project.project_id, approvedFinal.artifact_id, "a".repeat(64),
         JSON.stringify({ shot_ids: [approvedFixture.shot.shot_id] }), "2026-08-14T01:01:00.000Z");
     const atomicReview = markShotClipReview({
       shot_id: approvedFixture.shot.shot_id,
@@ -340,24 +337,14 @@ test("production content mutations freeze before side effects during assembling 
     }, db).ok, true);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble' WHERE project_id = ?")
       .run(assemblingFixture.project.project_id);
-    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling' WHERE project_id = ?")
-      .run(assemblingFixture.project.project_id);
+    queueWorkbenchAssemblyFixture(db, {
+      project_id: assemblingFixture.project.project_id,
+      job_id: "job_content_freeze",
+      event_id: "event_content_freeze_queued",
+      created_at: "2026-08-15T04:00:00.000Z"
+    });
 
-    const activeJobFixture = await setupGeneratedShot(db);
-    assert.equal(markShotClipReview({
-      shot_id: activeJobFixture.shot.shot_id,
-      artifact_id: activeJobFixture.artifactId,
-      decision: "revision_needed",
-      rejection_reasons: ["prepare active assembly Job fixture"]
-    }, db).ok, true);
-    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble' WHERE project_id = ?")
-      .run(activeJobFixture.project.project_id);
-    db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, created_at, updated_at)
-      VALUES ('job_content_freeze', ?, 'assembly', 'queued', '{}', ?, ?)`)
-      .run(activeJobFixture.project.project_id, "2026-08-15T04:00:00.000Z", "2026-08-15T04:00:00.000Z");
-
-    for (const fixture of [assemblingFixture, activeJobFixture]) {
+    for (const fixture of [assemblingFixture]) {
       const shotBefore = getShot(db, fixture.shot.shot_id);
       const countsBefore = db.prepare(`SELECT
         (SELECT COUNT(*) FROM media_artifacts WHERE project_id = ?) AS artifacts,
@@ -386,11 +373,13 @@ test("production content mutations freeze before side effects during assembling 
         (SELECT COUNT(*) FROM generation_runs WHERE project_id = ?) AS runs`)
         .get(fixture.project.project_id, fixture.project.project_id), countsBefore);
     }
+    failWorkbenchAssemblyFixture(db, {
+      project_id: assemblingFixture.project.project_id,
+      job_id: "job_content_freeze",
+      event_id: "event_content_freeze_failed",
+      created_at: "2026-08-15T04:00:00.000Z"
+    });
   } finally {
-    db.prepare(`UPDATE workbench_delivery_jobs
-      SET state = 'interrupted', error_code = 'TEST_CLEANUP', finished_at = ?, updated_at = ?
-      WHERE job_id = 'job_content_freeze' AND state IN ('queued','running')`)
-      .run("2026-08-15T04:01:00.000Z", "2026-08-15T04:01:00.000Z");
     db.close();
   }
 });

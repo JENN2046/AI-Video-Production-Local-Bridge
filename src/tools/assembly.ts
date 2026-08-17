@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { cleanupCommittedMediaActivationMarkers, cleanupRolledBackMediaActivationFiles, registerMediaArtifact, validateAcceptedClipReference } from "./mediaArtifacts.js";
@@ -92,6 +92,9 @@ function assemblyPersistenceError(error: unknown): ToolError {
   if (code === "DELIVERY_STATE_MISSING") return { code, message: "Project delivery state is unavailable." };
   if (code === "PROJECT_CLOSED") return { code, message: "Closed projects do not accept production changes." };
   if (code === "DELIVERY_JOB_ACTIVE") return { code, message: "Another delivery operation is already active." };
+  if (code.includes("UNIQUE constraint failed")) {
+    return { code: "DELIVERY_JOB_ACTIVE", message: "Another delivery operation is already active." };
+  }
   if (code === "ASSEMBLY_INPUT_CHANGED") return { code, message: "Assembly state changed before the result could be committed." };
   return { code: "FINAL_ASSEMBLY_PERSIST_FAILED", message: "Final assembly result could not be committed." };
 }
@@ -144,7 +147,6 @@ export function assembleFinalVideo(
     if (!currentBoundary.ok) throw new Error(currentBoundary.error.code);
     if (getActiveWorkbenchDeliveryJob(db)) throw new Error("DELIVERY_JOB_ACTIVE");
     const currentState = currentBoundary.delivery.workflow_state;
-    const clearsPriorFingerprint = currentState !== "ready_to_assemble";
     if (currentState === "assembling") throw new Error("DELIVERY_JOB_ACTIVE");
     if (currentState !== "ready_to_assemble") {
       if (!REASSEMBLY_SOURCE_STATES.has(currentState)) throw new Error("ASSEMBLY_INPUT_CHANGED");
@@ -170,23 +172,49 @@ export function assembleFinalVideo(
         if (FINAL_REVIEW_REASSEMBLY_SOURCE_STATES.has(currentState)) insertReassemblyEvent();
       }
     }
-    const started = db.prepare(`UPDATE workbench_delivery_state
-      SET workflow_state = 'assembling',
-        assembly_input_fingerprint = CASE WHEN ? THEN NULL ELSE assembly_input_fingerprint END,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE project_id = ? AND workflow_state = 'ready_to_assemble'
-        AND assembly_input_fingerprint IS ?`)
-      .run(clearsPriorFingerprint ? 1 : 0, project.project_id,
-        currentBoundary.delivery.assembly_input_fingerprint) as { changes: number | bigint };
-    if (Number(started.changes) !== 1) throw new Error("ASSEMBLY_INPUT_CHANGED");
-    if (getActiveWorkbenchDeliveryJob(db)) throw new Error("DELIVERY_JOB_ACTIVE");
-
     const currentProject = getProject(db, project.project_id);
     if (!currentProject) throw new Error("PROJECT_NOT_FOUND");
     const currentShots = listProjectShots(db, project.project_id);
     if (!currentShots.length || finalAssemblyBlockingReasons(db, project.project_id).length) {
       throw new Error("ASSEMBLY_INPUT_CHANGED");
     }
+    const deliveryJobId = `job_${randomUUID()}`;
+    const deliveryQueuedEventId = `event_${randomUUID()}`;
+    const deliveryStartedEventId = `event_${randomUUID()}`;
+    const assemblyAt = new Date().toISOString();
+    const sourceClipArtifactIds = currentShots.map((shot) => shot.accepted_clip_artifact_id);
+    const assemblyInputJson = JSON.stringify({ source_clip_artifact_ids: sourceClipArtifactIds });
+    const assemblyFingerprint = createHash("sha256").update(JSON.stringify({
+      project_id: currentProject.project_id,
+      source_clip_artifact_ids: sourceClipArtifactIds,
+      assembly_contract: "final-assembly-v1"
+    })).digest("hex");
+    db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, input_fingerprint, input_json, created_at, updated_at)
+      VALUES (?, ?, 'assembly', 'queued', ?, ?, ?, ?)`)
+      .run(deliveryJobId, currentProject.project_id, assemblyFingerprint, assemblyInputJson, assemblyAt, assemblyAt);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
+        reason_code, data_json, created_at)
+      VALUES (?, ?, ?, 'assembly_queued', 'ready_to_assemble', 'assembling', ?,
+        'LEGACY_ASSEMBLY_QUEUED', '{"source":"legacy_assembly"}', ?)`)
+      .run(deliveryQueuedEventId, currentProject.project_id, deliveryJobId, assemblyFingerprint, assemblyAt);
+    const started = db.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'assembling', active_assembly_job_id = ?,
+        assembly_input_fingerprint = ?, updated_at = ?
+      WHERE project_id = ? AND workflow_state = 'ready_to_assemble'
+        AND assembly_input_fingerprint IS ?`)
+      .run(deliveryJobId, assemblyFingerprint, assemblyAt, project.project_id,
+        currentBoundary.delivery.assembly_input_fingerprint) as { changes: number | bigint };
+    if (Number(started.changes) !== 1) throw new Error("ASSEMBLY_INPUT_CHANGED");
+    db.prepare(`UPDATE workbench_delivery_jobs SET state = 'running', started_at = ?, updated_at = ?
+      WHERE job_id = ?`).run(assemblyAt, assemblyAt, deliveryJobId);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
+        reason_code, data_json, created_at)
+      VALUES (?, ?, ?, 'assembly_started', 'assembling', 'assembling', ?,
+        'LEGACY_ASSEMBLY_STARTED', '{"source":"legacy_assembly"}', ?)`)
+      .run(deliveryStartedEventId, currentProject.project_id, deliveryJobId, assemblyFingerprint, assemblyAt);
 
     const artifact = registerMediaArtifact(
       {
@@ -253,20 +281,16 @@ export function assembleFinalVideo(
     synchronizeAssemblyProjectResult(db, currentProject.project_id, activatedArtifactId);
     saveGenerationRun(db, run);
 
-    const deliveryJobId = `job_${randomUUID()}`;
-    const assemblyInputJson = JSON.stringify({
-      source_clip_artifact_ids: currentShots.map((shot) => shot.accepted_clip_artifact_id)
-    });
-    db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, output_artifact_id,
-        created_at, started_at, finished_at, updated_at)
-      VALUES (?, ?, 'assembly', 'succeeded', ?, ?,
-        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
-      .run(deliveryJobId, currentProject.project_id, assemblyInputJson, activatedArtifactId);
+    db.prepare(`UPDATE workbench_delivery_jobs
+      SET state = 'succeeded', output_artifact_id = ?, finished_at = ?, updated_at = ?
+      WHERE job_id = ?`).run(activatedArtifactId, assemblyAt, assemblyAt, deliveryJobId);
     db.prepare(`INSERT INTO workbench_delivery_events
-      (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
-      VALUES (?, ?, ?, 'assembly_succeeded', 'assembling', 'final_review', ?, 'LEGACY_ASSEMBLY_SUCCEEDED', '{}', CURRENT_TIMESTAMP)`)
-      .run(`event_${randomUUID()}`, currentProject.project_id, deliveryJobId, activatedArtifactId);
+      (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id,
+        input_fingerprint, reason_code, data_json, created_at)
+      VALUES (?, ?, ?, 'assembly_succeeded', 'assembling', 'final_review', ?, ?,
+        'LEGACY_ASSEMBLY_SUCCEEDED', '{}', ?)`)
+      .run(`event_${randomUUID()}`, currentProject.project_id, deliveryJobId,
+        activatedArtifactId, assemblyFingerprint, assemblyAt);
     committed = { run, artifact_id: activatedArtifactId };
     db.exec(`RELEASE SAVEPOINT ${savepoint}`);
   } catch (error) {

@@ -11,7 +11,9 @@ import { saveWorkbenchPendingActionRecord } from "../src/tools/workbenchInboxSto
 import {
   approveWorkbenchDeliveryFixture,
   completeWorkbenchAssemblyFixture,
-  completeWorkbenchExportFixture
+  completeWorkbenchExportFixture,
+  ensureAcceptedAssemblyClipsFixture,
+  insertWorkbenchExportFixture
 } from "./workbench-delivery-test-helpers.js";
 import { createProject, saveProject, saveShot, type Project, type Shot } from "../src/tools/projects.js";
 import {
@@ -95,14 +97,10 @@ function closeProductionProject(context: TestContext): void {
   context.production.status = "final_approved";
   context.production.exports.final_video_artifact_id = registered.artifact.artifact_id;
   saveProject(context.db, context.production);
-  const blob = context.db.prepare(`SELECT b.sha256, b.size_bytes
-    FROM media_artifact_blobs link JOIN media_blobs b ON b.blob_id = link.blob_id
-    WHERE link.artifact_id = ?`).get(registered.artifact.artifact_id) as { sha256: string; size_bytes: number };
   const now = "2026-08-14T00:00:00.000Z";
   const exportId = `export_${context.production.project_id}`;
+  ensureAcceptedAssemblyClipsFixture(context.db, context.production.project_id);
   context.db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
-    .run(now, context.production.project_id);
-  context.db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
     .run(now, context.production.project_id);
   completeWorkbenchAssemblyFixture(context.db, {
     project_id: context.production.project_id,
@@ -116,11 +114,8 @@ function closeProductionProject(context: TestContext): void {
     event_id: "event_webgpt_v4_closeout_accepted",
     created_at: now
   });
-  context.db.prepare(`INSERT INTO workbench_exports
-    (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`)
-    .run(exportId, context.production.project_id, registered.artifact.artifact_id,
-      `data/exports/${context.production.project_id}/closed-fixture.mp4`, blob.sha256, blob.size_bytes, now);
+  insertWorkbenchExportFixture(context.db, { project_id: context.production.project_id,
+    artifact_id: registered.artifact.artifact_id, export_id: exportId, created_at: now });
   completeWorkbenchExportFixture(context.db, {
     project_id: context.production.project_id,
     export_id: exportId,
@@ -149,11 +144,10 @@ function setProductionFinalEvidence(
   if (!registered.ok) throw new Error("final evidence fixture registration failed");
   const artifactId = registered.artifact.artifact_id;
   const now = "2026-08-15T01:00:00.000Z";
+  ensureAcceptedAssemblyClipsFixture(context.db, context.production.project_id);
   context.production.exports.final_video_artifact_id = artifactId;
   saveProject(context.db, context.production);
   context.db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
-    .run(now, context.production.project_id);
-  context.db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
     .run(now, context.production.project_id);
   completeWorkbenchAssemblyFixture(context.db, {
     project_id: context.production.project_id,
@@ -168,15 +162,9 @@ function setProductionFinalEvidence(
     created_at: now
   });
   if (target === "approved") return { artifact_id: artifactId, export_id: null };
-  const blob = context.db.prepare(`SELECT b.sha256, b.size_bytes
-    FROM media_artifact_blobs link JOIN media_blobs b ON b.blob_id = link.blob_id
-    WHERE link.artifact_id = ?`).get(artifactId) as { sha256: string; size_bytes: number };
   const exportId = `export_final_evidence_${context.production.project_id}`;
-  context.db.prepare(`INSERT INTO workbench_exports
-    (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`)
-    .run(exportId, context.production.project_id, artifactId,
-      `data/exports/${context.production.project_id}/final-evidence.mp4`, blob.sha256, blob.size_bytes, now);
+  insertWorkbenchExportFixture(context.db, { project_id: context.production.project_id,
+    artifact_id: artifactId, export_id: exportId, created_at: now });
   completeWorkbenchExportFixture(context.db, {
     project_id: context.production.project_id,
     export_id: exportId,
@@ -294,16 +282,10 @@ test("Workbench delivery latest export follows the persisted pointer instead of 
     assert.equal(historicalArtifact.ok, true, historicalArtifact.ok ? "" : historicalArtifact.error.code);
     if (!historicalArtifact.ok) return;
 
-    const blob = context.db.prepare(`SELECT b.sha256, b.size_bytes
-      FROM media_artifact_blobs link JOIN media_blobs b ON b.blob_id = link.blob_id
-      WHERE link.artifact_id = ?`).get(historicalArtifact.artifact.artifact_id) as { sha256: string; size_bytes: number };
     const createdAt = "2026-08-14T00:00:00.000Z";
     const historicalExportId = "zz_export_historical";
-    context.db.prepare(`INSERT INTO workbench_exports
-      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .run(historicalExportId, context.production.project_id, historicalArtifact.artifact.artifact_id,
-        `data/exports/${context.production.project_id}/historical.mp4`, blob.sha256, blob.size_bytes, createdAt);
+    insertWorkbenchExportFixture(context.db, { project_id: context.production.project_id,
+      artifact_id: historicalArtifact.artifact.artifact_id, export_id: historicalExportId, created_at: createdAt });
 
     const withoutPointer = getWorkbenchProjectWorkspace(
       context.production.project_id,
@@ -327,7 +309,7 @@ test("Workbench delivery latest export follows the persisted pointer instead of 
     if (withPointer.ok) {
       const latest = withPointer.data.latest_export as { export_id: string; relative_path: string } | null;
       assert.equal(latest?.export_id, delivery.latest_export_id);
-      assert.equal(latest?.relative_path, `data/exports/${context.production.project_id}/closed-fixture.mp4`);
+      assert.equal(latest?.relative_path, `data/exports/${context.production.project_id}/${delivery.latest_export_id}.mp4`);
     }
 
     const exportIds = (context.db.prepare(`SELECT export_id FROM workbench_exports WHERE project_id = ? ORDER BY export_id`)

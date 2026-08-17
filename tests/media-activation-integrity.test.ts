@@ -268,15 +268,13 @@ test("delivery-referenced final Artifact content and Blob binding fail closed be
     ensureAcceptedAssemblyClipsFixture(db, project.project_id);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(now, project.project_id);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'assembling',
-      assembly_input_fingerprint = ?, updated_at = ? WHERE project_id = ?`)
-      .run(fingerprint, now, project.project_id);
     completeWorkbenchAssemblyFixture(db, {
       project_id: project.project_id,
       artifact_id: artifactId,
       job_id: "job_immutable_delivery_assembly",
       event_id: "event_immutable_delivery_assembly",
-      created_at: now
+      created_at: now,
+      input_fingerprint: fingerprint
     });
 
     const artifactBefore = { ...(db.prepare("SELECT data_json, status FROM media_artifacts WHERE artifact_id = ?").get(artifactId) as Record<string, unknown>) };

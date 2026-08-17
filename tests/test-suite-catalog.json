@@ -79,6 +79,7 @@
         "tests/workbench-v2-api.test.ts",
         "tests/workbench-v2-delivery-state.test.ts",
         "tests/workbench-v2-domain.test.ts",
+        "tests/workbench-v2-export-integrity.test.ts",
         "tests/workbench-v2-governance.test.ts",
         "tests/workbench-v2-inbox.test.ts",
         "tests/workbench-v2-readiness.test.ts",

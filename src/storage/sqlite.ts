@@ -4,6 +4,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 
 import { ensureM0Directories, paths } from "../paths.js";
 import { assertSchemaCurrent, runDatabaseMigrations } from "./migrations.js";
+import { registerWorkbenchExportIntegrityFunction } from "./workbenchExportIntegrity.js";
 
 export type M0Database = DatabaseSync;
 
@@ -26,6 +27,7 @@ export function openM0DatabaseConnection(sqlitePath = paths.sqlitePath, options:
   try {
     options.assertPathCurrent?.();
     db.exec("PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;");
+    registerWorkbenchExportIntegrityFunction(db);
     if (readOnly) db.exec("PRAGMA query_only = ON;");
     return db;
   } catch (error) {

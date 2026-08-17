@@ -19,7 +19,10 @@ import {
   approveWorkbenchDeliveryFixture,
   completeWorkbenchAssemblyFixture,
   completeWorkbenchExportFixture,
-  ensureAcceptedAssemblyClipsFixture
+  ensureAcceptedAssemblyClipsFixture,
+  failWorkbenchAssemblyFixture,
+  insertWorkbenchExportFixture,
+  queueWorkbenchAssemblyFixture
 } from "./workbench-delivery-test-helpers.js";
 
 function createActiveStoryboardArtifact(db: ReturnType<typeof openM0Database>) {
@@ -240,11 +243,6 @@ test("G0 rejects archived, closed, and assembling projects before filesystem or 
 
     db.prepare("UPDATE workbench_project_meta SET lifecycle = 'archived' WHERE project_id = ?")
       .run(archived.project_id);
-    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble' WHERE project_id = ?")
-      .run(assembling.project_id);
-    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling' WHERE project_id = ?")
-      .run(assembling.project_id);
-
     const finalArtifact = registerMediaArtifact({
       artifact_type: "video",
       role: "final_video",
@@ -259,8 +257,6 @@ test("G0 rejects archived, closed, and assembling projects before filesystem or 
     ensureAcceptedAssemblyClipsFixture(db, closed.project_id);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(closedAt, closed.project_id);
-    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
-      .run(closedAt, closed.project_id);
     completeWorkbenchAssemblyFixture(db, {
       project_id: closed.project_id,
       artifact_id: artifactId,
@@ -273,10 +269,8 @@ test("G0 rejects archived, closed, and assembling projects before filesystem or 
       event_id: `event_g0_accepted_${closed.project_id}`,
       created_at: closedAt
     });
-    db.prepare(`INSERT INTO workbench_exports
-      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
-      VALUES (?, ?, ?, ?, ?, 1, ?)`)
-      .run(exportId, closed.project_id, artifactId, `data/exports/${closed.project_id}/final.mp4`, "e".repeat(64), closedAt);
+    insertWorkbenchExportFixture(db, { project_id: closed.project_id, artifact_id: artifactId,
+      export_id: exportId, created_at: closedAt });
     completeWorkbenchExportFixture(db, {
       project_id: closed.project_id,
       export_id: exportId,
@@ -288,6 +282,15 @@ test("G0 rejects archived, closed, and assembling projects before filesystem or 
       (event_id, project_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
       VALUES (?, ?, 'closeout', 'exported', 'closed', ?, ?, 'CLOSEOUT_CONFIRMED', '{}', ?)`)
       .run(`event_closeout_${closed.project_id}`, closed.project_id, artifactId, exportId, closedAt);
+    ensureAcceptedAssemblyClipsFixture(db, assembling.project_id);
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble' WHERE project_id = ?")
+      .run(assembling.project_id);
+    queueWorkbenchAssemblyFixture(db, {
+      project_id: assembling.project_id,
+      job_id: `job_g0_active_${assembling.project_id}`,
+      event_id: `event_g0_active_${assembling.project_id}`,
+      created_at: closedAt
+    });
 
     for (const [projectId, expectedCode] of [
       [archived.project_id, "PROJECT_ARCHIVED"],
@@ -301,6 +304,12 @@ test("G0 rejects archived, closed, and assembling projects before filesystem or 
       assert.equal(existsSync(g0ProjectRoot(projectId)), false);
       assert.deepEqual(db.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(projectId), before);
     }
+    failWorkbenchAssemblyFixture(db, {
+      project_id: assembling.project_id,
+      job_id: `job_g0_active_${assembling.project_id}`,
+      event_id: `event_g0_active_failed_${assembling.project_id}`,
+      created_at: closedAt
+    });
   } finally {
     db.close();
   }

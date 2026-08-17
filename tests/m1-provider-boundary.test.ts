@@ -48,6 +48,7 @@ import {
   verifyMediaArtifactBytes
 } from "../src/index.js";
 import type { MediaArtifact } from "../src/index.js";
+import { failWorkbenchAssemblyFixture } from "./workbench-delivery-test-helpers.js";
 
 const FAKE_SECRET = "M1_TEST_SECRET_DO_NOT_LOG_123";
 
@@ -525,10 +526,25 @@ test("M1 legacy live generation rechecks the content boundary after Provider sub
     };
     globalThis.fetch = (async () => {
       providerCalls += 1;
+      const at = "2026-08-17T00:00:00.000Z";
+      const fingerprint = "a".repeat(64);
+      db.exec("BEGIN IMMEDIATE");
       db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble' WHERE project_id = ?")
         .run(project.project_id);
-      db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling' WHERE project_id = ?")
-        .run(project.project_id);
+      db.prepare(`INSERT INTO workbench_delivery_jobs
+        (job_id, project_id, job_type, state, input_fingerprint, input_json, created_at, updated_at)
+        VALUES ('job_m1_provider_drift', ?, 'assembly', 'queued', ?,
+          '{"source_clip_artifact_ids":[]}', ?, ?)`).run(project.project_id, fingerprint, at, at);
+      db.prepare(`INSERT INTO workbench_delivery_events
+        (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
+          reason_code, data_json, created_at)
+        VALUES ('event_m1_provider_drift_queued', ?, 'job_m1_provider_drift', 'assembly_queued',
+          'ready_to_assemble', 'assembling', ?, 'ASSEMBLY_QUEUED', '{}', ?)`)
+        .run(project.project_id, fingerprint, at);
+      db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'assembling',
+        active_assembly_job_id = 'job_m1_provider_drift', assembly_input_fingerprint = ?, updated_at = ?
+        WHERE project_id = ?`).run(fingerprint, at, project.project_id);
+      db.exec("COMMIT");
       return new Response(JSON.stringify({ id: "synthetic_runway_task", status: "PENDING" }), {
         status: 200,
         headers: { "content-type": "application/json" }
@@ -556,6 +572,12 @@ test("M1 legacy live generation rechecks the content boundary after Provider sub
     assert.deepEqual(db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ?").get(project.project_id), before.artifacts);
     assert.deepEqual(db.prepare("SELECT COUNT(*) AS count FROM generation_runs WHERE project_id = ?").get(project.project_id), before.runs);
     assert.deepEqual(db.prepare("SELECT COUNT(*) AS count FROM generation_batches WHERE project_id = ?").get(project.project_id), before.batches);
+    failWorkbenchAssemblyFixture(db, {
+      project_id: project.project_id,
+      job_id: "job_m1_provider_drift",
+      event_id: "event_m1_provider_drift_failed",
+      created_at: "2026-08-17T00:00:00.000Z"
+    });
   } finally {
     globalThis.fetch = originalFetch;
     db.close();

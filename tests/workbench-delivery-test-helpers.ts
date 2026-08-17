@@ -1,4 +1,8 @@
 import type { M0Database } from "../src/storage/sqlite.js";
+import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { basename, join } from "node:path";
+
+import { paths } from "../src/paths.js";
 import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { buildStoryboardApprovedShot, getShot, saveShot } from "../src/tools/projects.js";
 
@@ -68,19 +72,84 @@ export function ensureAcceptedAssemblyClipsFixture(db: M0Database, projectId: st
   }
 }
 
-export function completeWorkbenchAssemblyFixture(
+export function queueWorkbenchAssemblyFixture(
   db: M0Database,
-  input: { project_id: string; artifact_id: string; job_id: string; event_id: string; created_at: string }
+  input: { project_id: string; job_id: string; event_id: string; created_at: string; input_fingerprint?: string }
+): string {
+  ensureAcceptedAssemblyClipsFixture(db, input.project_id);
+  const sourceClipArtifactIds = (db.prepare(`SELECT json_extract(data_json, '$.accepted_clip_artifact_id') AS id
+    FROM shots WHERE project_id = ? ORDER BY CAST(json_extract(data_json, '$.order') AS INTEGER), shot_id`)
+    .all(input.project_id) as Array<{ id: string }>).map((row) => row.id);
+  if (sourceClipArtifactIds.length === 0 || sourceClipArtifactIds.some((id) => !id)) {
+    throw new Error("DELIVERY_FIXTURE_COMPLETE_ACCEPTED_SHOTS_REQUIRED");
+  }
+  const fingerprint = input.input_fingerprint ?? "a".repeat(64);
+  const ownsTransaction = !(db as unknown as { isTransaction?: boolean }).isTransaction;
+  if (ownsTransaction) db.exec("BEGIN IMMEDIATE");
+  try {
+    db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, input_fingerprint, input_json, created_at, updated_at)
+      VALUES (?, ?, 'assembly', 'queued', ?, ?, ?, ?)`)
+      .run(input.job_id, input.project_id, fingerprint,
+        JSON.stringify({ source_clip_artifact_ids: sourceClipArtifactIds }), input.created_at, input.created_at);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state,
+        input_fingerprint, reason_code, data_json, created_at)
+      VALUES (?, ?, ?, 'assembly_queued', 'ready_to_assemble', 'assembling', ?,
+        'ASSEMBLY_QUEUED', '{}', ?)`)
+      .run(input.event_id, input.project_id, input.job_id, fingerprint, input.created_at);
+    db.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'assembling', active_assembly_job_id = ?,
+        assembly_input_fingerprint = ?, updated_at = ?
+      WHERE project_id = ?`).run(input.job_id, fingerprint, input.created_at, input.project_id);
+    if (ownsTransaction) db.exec("COMMIT");
+    return fingerprint;
+  } catch (error) {
+    if (ownsTransaction && (db as unknown as { isTransaction?: boolean }).isTransaction) db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+export function failWorkbenchAssemblyFixture(
+  db: M0Database,
+  input: { project_id: string; job_id: string; event_id: string; created_at: string; interrupted?: boolean }
 ): void {
   const ownsTransaction = !(db as unknown as { isTransaction?: boolean }).isTransaction;
   if (ownsTransaction) db.exec("BEGIN IMMEDIATE");
   try {
-    const state = db.prepare(`SELECT workflow_state, assembly_input_fingerprint
+    const terminalState = input.interrupted ? "interrupted" : "failed";
+    const eventType = input.interrupted ? "assembly_interrupted" : "assembly_failed";
+    db.prepare(`UPDATE workbench_delivery_jobs
+      SET state = ?, error_code = 'SYNTHETIC_FAILURE', finished_at = ?, updated_at = ?
+      WHERE job_id = ? AND project_id = ? AND job_type = 'assembly' AND state IN ('queued','running')`)
+      .run(terminalState, input.created_at, input.created_at, input.job_id, input.project_id);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
+        reason_code, data_json, created_at)
+      SELECT ?, project_id, job_id, ?, 'assembling', 'ready_to_assemble', input_fingerprint,
+        'SYNTHETIC_FAILURE', '{}', ? FROM workbench_delivery_jobs WHERE job_id = ? AND project_id = ?`)
+      .run(input.event_id, eventType, input.created_at, input.job_id, input.project_id);
+    if (ownsTransaction) db.exec("COMMIT");
+  } catch (error) {
+    if (ownsTransaction && (db as unknown as { isTransaction?: boolean }).isTransaction) db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+export function completeWorkbenchAssemblyFixture(
+  db: M0Database,
+  input: { project_id: string; artifact_id: string; job_id: string; event_id: string; created_at: string; input_fingerprint?: string }
+): void {
+  ensureAcceptedAssemblyClipsFixture(db, input.project_id);
+  const ownsTransaction = !(db as unknown as { isTransaction?: boolean }).isTransaction;
+  if (ownsTransaction) db.exec("BEGIN IMMEDIATE");
+  try {
+    let state = db.prepare(`SELECT workflow_state, assembly_input_fingerprint, active_assembly_job_id
       FROM workbench_delivery_state WHERE project_id = ?`).get(input.project_id) as {
         workflow_state: string;
         assembly_input_fingerprint: string | null;
+        active_assembly_job_id: string | null;
       } | undefined;
-    if (state?.workflow_state !== "assembling") throw new Error("DELIVERY_FIXTURE_ASSEMBLING_REQUIRED");
     const sourceClipArtifactIds = (db.prepare(`SELECT json_extract(data_json, '$.accepted_clip_artifact_id') AS accepted_clip_artifact_id
       FROM shots WHERE project_id = ? AND COALESCE(json_extract(data_json, '$.accepted_clip_artifact_id'), '') <> ''
       ORDER BY CAST(json_extract(data_json, '$.order') AS INTEGER), shot_id`).all(input.project_id) as Array<{ accepted_clip_artifact_id: string }>)
@@ -90,13 +159,42 @@ export function completeWorkbenchAssemblyFixture(
     if (totalShots === 0 || sourceClipArtifactIds.length !== totalShots) {
       throw new Error("DELIVERY_FIXTURE_COMPLETE_ACCEPTED_SHOTS_REQUIRED");
     }
-    db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_fingerprint, input_json, output_artifact_id,
-        created_at, started_at, finished_at, updated_at)
-      VALUES (?, ?, 'assembly', 'succeeded', ?, ?, ?, ?, ?, ?, ?)`)
-      .run(input.job_id, input.project_id, state.assembly_input_fingerprint,
-        JSON.stringify({ source_clip_artifact_ids: sourceClipArtifactIds }), input.artifact_id,
-        input.created_at, input.created_at, input.created_at, input.created_at);
+    if (state?.workflow_state === "ready_to_assemble") {
+      const fingerprint = input.input_fingerprint ?? state.assembly_input_fingerprint ?? "a".repeat(64);
+      db.prepare(`INSERT INTO workbench_delivery_jobs
+        (job_id, project_id, job_type, state, input_fingerprint, input_json, created_at, updated_at)
+        VALUES (?, ?, 'assembly', 'queued', ?, ?, ?, ?)`)
+        .run(input.job_id, input.project_id, fingerprint,
+          JSON.stringify({ source_clip_artifact_ids: sourceClipArtifactIds }), input.created_at, input.created_at);
+      db.prepare(`INSERT INTO workbench_delivery_events
+        (event_id, project_id, job_id, event_type, from_state, to_state,
+          input_fingerprint, reason_code, data_json, created_at)
+        VALUES (?, ?, ?, 'assembly_queued', 'ready_to_assemble', 'assembling', ?,
+          'ASSEMBLY_QUEUED', '{}', ?)`)
+        .run(`${input.event_id}_queued`, input.project_id, input.job_id, fingerprint, input.created_at);
+      db.prepare(`UPDATE workbench_delivery_state
+        SET workflow_state = 'assembling', active_assembly_job_id = ?,
+          assembly_input_fingerprint = ?, updated_at = ?
+        WHERE project_id = ?`).run(input.job_id, fingerprint, input.created_at, input.project_id);
+      state = { workflow_state: "assembling", assembly_input_fingerprint: fingerprint, active_assembly_job_id: input.job_id };
+    }
+    if (state?.workflow_state !== "assembling" || state.active_assembly_job_id !== input.job_id
+      || !state.assembly_input_fingerprint) {
+      throw new Error("DELIVERY_FIXTURE_ASSEMBLING_REQUIRED");
+    }
+    db.prepare(`UPDATE workbench_delivery_jobs
+      SET state = 'running', started_at = ?, updated_at = ? WHERE job_id = ?`)
+      .run(input.created_at, input.created_at, input.job_id);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state,
+        input_fingerprint, reason_code, data_json, created_at)
+      VALUES (?, ?, ?, 'assembly_started', 'assembling', 'assembling', ?,
+        'ASSEMBLY_STARTED', '{}', ?)`)
+      .run(`${input.event_id}_started`, input.project_id, input.job_id,
+        state.assembly_input_fingerprint, input.created_at);
+    db.prepare(`UPDATE workbench_delivery_jobs
+      SET state = 'succeeded', output_artifact_id = ?, finished_at = ?, updated_at = ?
+      WHERE job_id = ?`).run(input.artifact_id, input.created_at, input.created_at, input.job_id);
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id,
         input_fingerprint, reason_code, data_json, created_at)
@@ -146,6 +244,30 @@ export function completeWorkbenchExportFixture(
     if (ownsTransaction && (db as unknown as { isTransaction?: boolean }).isTransaction) db.exec("ROLLBACK");
     throw error;
   }
+}
+
+export function insertWorkbenchExportFixture(
+  db: M0Database,
+  input: { project_id: string; artifact_id: string; export_id: string; created_at: string }
+): { relative_path: string; sha256: string; size_bytes: number } {
+  const blob = db.prepare(`SELECT b.sha256, b.size_bytes
+    FROM media_artifact_blobs ab JOIN media_blobs b ON b.blob_id = ab.blob_id
+    WHERE ab.artifact_id = ? AND b.integrity_state = 'verified'`).get(input.artifact_id) as {
+      sha256: string; size_bytes: number;
+    } | undefined;
+  if (!blob) throw new Error(`DELIVERY_FIXTURE_VERIFIED_BLOB_REQUIRED:${input.artifact_id}`);
+  const projectRoot = join(paths.exportsRoot, input.project_id);
+  mkdirSync(projectRoot, { recursive: true });
+  const filename = `${input.export_id.replaceAll(/[^A-Za-z0-9_-]/gu, "_")}.mp4`;
+  const target = join(projectRoot, filename);
+  if (!existsSync(target)) copyFileSync(join(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4"), target);
+  const relativePath = `data/exports/${input.project_id}/${basename(target)}`;
+  db.prepare(`INSERT INTO workbench_exports
+    (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    .run(input.export_id, input.project_id, input.artifact_id, relativePath,
+      blob.sha256, blob.size_bytes, input.created_at);
+  return { relative_path: relativePath, sha256: blob.sha256, size_bytes: blob.size_bytes };
 }
 
 export function approveWorkbenchDeliveryFixture(

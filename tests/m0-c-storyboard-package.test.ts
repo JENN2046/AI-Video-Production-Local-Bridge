@@ -14,7 +14,8 @@ import {
   approveWorkbenchDeliveryFixture,
   completeWorkbenchAssemblyFixture,
   completeWorkbenchExportFixture,
-  ensureAcceptedAssemblyClipsFixture
+  ensureAcceptedAssemblyClipsFixture,
+  insertWorkbenchExportFixture
 } from "./workbench-delivery-test-helpers.js";
 
 function createActiveStoryboardArtifact(db: ReturnType<typeof openM0Database>) {
@@ -355,8 +356,6 @@ test("M0-C closed projects reject Storyboard import before SHOT, Artifact, packa
     ensureAcceptedAssemblyClipsFixture(db, created.project_id);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(now, created.project_id);
-    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
-      .run(now, created.project_id);
     completeWorkbenchAssemblyFixture(db, {
       project_id: created.project_id,
       artifact_id: finalArtifact.artifact.artifact_id,
@@ -369,11 +368,9 @@ test("M0-C closed projects reject Storyboard import before SHOT, Artifact, packa
       event_id: `event_m0c_accepted_${created.project_id}`,
       created_at: now
     });
-    db.prepare(`INSERT INTO workbench_exports
-      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
-      VALUES ('export_closed_storyboard', ?, ?, ?, ?, 123, ?)`)
-      .run(created.project_id, finalArtifact.artifact.artifact_id,
-        `data/exports/${created.project_id}/final.mp4`, "f".repeat(64), now);
+    insertWorkbenchExportFixture(db, { project_id: created.project_id,
+      artifact_id: finalArtifact.artifact.artifact_id,
+      export_id: "export_closed_storyboard", created_at: now });
     completeWorkbenchExportFixture(db, {
       project_id: created.project_id,
       export_id: "export_closed_storyboard",

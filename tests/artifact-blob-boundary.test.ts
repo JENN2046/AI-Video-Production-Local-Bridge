@@ -21,7 +21,8 @@ import { getWorkbenchProjectWorkspace, updateWorkbenchShot } from "../src/tools/
 import { getProductionProjectContext } from "../src/webgpt-v4/domain.js";
 import {
   completeWorkbenchAssemblyFixture,
-  ensureAcceptedAssemblyClipsFixture
+  ensureAcceptedAssemblyClipsFixture,
+  queueWorkbenchAssemblyFixture
 } from "./workbench-delivery-test-helpers.js";
 
 function tempRoot(): string {
@@ -183,8 +184,12 @@ test("SHOT Artifact attachment obeys delivery content gates without partial writ
     ensureAcceptedAssemblyClipsFixture(db, target.project.project_id);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(now, target.project.project_id);
-    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
-      .run(now, target.project.project_id);
+    queueWorkbenchAssemblyFixture(db, {
+      project_id: target.project.project_id,
+      job_id: "job_artifact_attach_assembly",
+      event_id: "event_artifact_attach_assembly_queued",
+      created_at: now
+    });
 
     const before = db.prepare("SELECT data_json, updated_at FROM shots WHERE shot_id = ?")
       .get(target.shot.shot_id);
@@ -203,7 +208,7 @@ test("SHOT Artifact attachment obeys delivery content gates without partial writ
     completeWorkbenchAssemblyFixture(db, {
       project_id: target.project.project_id,
       artifact_id: finalArtifact.artifact.artifact_id,
-      job_id: "job_attachment_delivery_gate",
+      job_id: "job_artifact_attach_assembly",
       event_id: "event_attachment_delivery_gate",
       created_at: now
     });
@@ -225,8 +230,8 @@ test("SHOT Artifact attachment obeys delivery content gates without partial writ
         (event_id, project_id, event_type, from_state, to_state, artifact_id,
           input_fingerprint, reason_code, data_json, created_at)
         VALUES ('event_attachment_rework', ?, 'final_review_reassemble', 'final_review',
-          'ready_to_assemble', ?, NULL, 'SYNTHETIC_REASSEMBLY', '{}', ?)`)
-        .run(target.project.project_id, finalArtifact.artifact.artifact_id, now);
+          'ready_to_assemble', ?, ?, 'SYNTHETIC_REASSEMBLY', '{}', ?)`)
+        .run(target.project.project_id, finalArtifact.artifact.artifact_id, "a".repeat(64), now);
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");

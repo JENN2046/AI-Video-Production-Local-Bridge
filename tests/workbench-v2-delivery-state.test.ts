@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
+import { resolve } from "node:path";
 import test from "node:test";
 
 import { assertSchemaCurrent, DATABASE_MIGRATIONS, migrationChecksum, runDatabaseMigrations } from "../src/storage/migrations.js";
@@ -7,11 +10,12 @@ import { openM0Database } from "../src/storage/sqlite.js";
 import { WORKBENCH_V2_SCHEMA_VERSION } from "../src/storage/workbenchV2Schema.js";
 import { getProject, getShot, saveProject, saveShot } from "../src/tools/projects.js";
 import { projectSummaryDeliveryState } from "../src/tools/workbenchDeliveryState.js";
-import { assertWorkbenchProjectWritable } from "../src/tools/workbenchV2.js";
+import { assertWorkbenchProjectWritable, updateWorkbenchProject } from "../src/tools/workbenchV2.js";
 import {
   completeWorkbenchAssemblyFixture,
   completeWorkbenchExportFixture,
-  createAcceptedAssemblyClipFixture
+  createAcceptedAssemblyClipFixture,
+  insertWorkbenchExportFixture
 } from "./workbench-delivery-test-helpers.js";
 
 function applyThrough0011(db: DatabaseSync): void {
@@ -45,6 +49,16 @@ function projectJson(projectId: string, status: string, finalArtifactId = ""): s
 }
 
 function insertFinalArtifact(db: DatabaseSync, projectId: string, artifactId: string): void {
+  const fixturePath = resolve("fixtures/video/mock_clip.mp4");
+  const bytes = readFileSync(fixturePath);
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  const proposedBlobId = `blob_${sha256.slice(0, 24)}`;
+  db.prepare(`INSERT OR IGNORE INTO media_blobs
+    (blob_id, sha256, size_bytes, detected_mime, storage_uri, integrity_state, provenance_json)
+    VALUES (?, ?, ?, 'video/mp4', ?, 'verified', ?)`)
+    .run(proposedBlobId, sha256, bytes.length, fixturePath, JSON.stringify({ media_root: resolve("fixtures") }));
+  const blobId = (db.prepare("SELECT blob_id FROM media_blobs WHERE sha256 = ? AND integrity_state = 'verified'")
+    .get(sha256) as { blob_id: string }).blob_id;
   db.prepare(`INSERT INTO media_artifacts
     (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
     VALUES (?, ?, '', 'final_video', 'video', 'active', ?)`)
@@ -53,8 +67,13 @@ function insertFinalArtifact(db: DatabaseSync, projectId: string, artifactId: st
       artifact_type: "video",
       role: "final_video",
       status: "active",
+      blob_id: blobId,
+      storage: { uri: fixturePath, mime_type: "video/mp4", filename: "mock_clip.mp4" },
+      metadata: { sha256 },
       linked_objects: { project_id: projectId, shot_id: "" }
     }));
+  db.prepare(`INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)`)
+    .run(artifactId, blobId);
 }
 
 function acceptFinalReview(
@@ -195,13 +214,43 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
       assert.throws(() => saveProject(db, project), new RegExp(expectedCode));
       assert.deepEqual(db.prepare("SELECT data_json, updated_at FROM projects WHERE project_id = 'project_delivery'").get(), before);
     };
+    const assertTitleUpdatePreservesDeliveryEvidence = (title: string): void => {
+      const before = {
+        state: db.prepare("SELECT * FROM workbench_delivery_state WHERE project_id = 'project_delivery'").get(),
+        jobs: db.prepare("SELECT * FROM workbench_delivery_jobs WHERE project_id = 'project_delivery' ORDER BY job_id").all(),
+        events: db.prepare("SELECT * FROM workbench_delivery_events WHERE project_id = 'project_delivery' ORDER BY event_id").all(),
+        exports: db.prepare("SELECT * FROM workbench_exports WHERE project_id = 'project_delivery' ORDER BY export_id").all()
+      };
+      const updated = updateWorkbenchProject("project_delivery", { title }, db);
+      assert.equal(updated.ok, true);
+      if (updated.ok) assert.equal(updated.data.project.title, title);
+      assert.deepEqual({
+        state: db.prepare("SELECT * FROM workbench_delivery_state WHERE project_id = 'project_delivery'").get(),
+        jobs: db.prepare("SELECT * FROM workbench_delivery_jobs WHERE project_id = 'project_delivery' ORDER BY job_id").all(),
+        events: db.prepare("SELECT * FROM workbench_delivery_events WHERE project_id = 'project_delivery' ORDER BY event_id").all(),
+        exports: db.prepare("SELECT * FROM workbench_exports WHERE project_id = 'project_delivery' ORDER BY export_id").all()
+      }, before);
+    };
 
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(now, "project_delivery");
+    db.exec("BEGIN IMMEDIATE");
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_fingerprint, input_json, created_at, updated_at)
-      VALUES ('job_assembly', 'project_delivery', 'assembly', 'queued', ?, '{}', ?, ?)`)
-      .run("a".repeat(64), now, now);
+      VALUES ('job_assembly', 'project_delivery', 'assembly', 'queued', ?,
+        json_object('source_clip_artifact_ids', json_array(?)), ?, ?)`)
+      .run("a".repeat(64), (db.prepare(`SELECT json_extract(data_json, '$.accepted_clip_artifact_id') AS id
+        FROM shots WHERE project_id = 'project_delivery'`).get() as { id: string }).id, now, now);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
+        reason_code, data_json, created_at)
+      VALUES ('event_assembly_queued_initial', 'project_delivery', 'job_assembly', 'assembly_queued',
+        'ready_to_assemble', 'assembling', ?, 'ASSEMBLY_QUEUED', '{}', ?)`)
+      .run("a".repeat(64), now);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'assembling',
+      active_assembly_job_id = 'job_assembly', assembly_input_fingerprint = ?, updated_at = ?
+      WHERE project_id = 'project_delivery'`).run("a".repeat(64), now);
+    db.exec("COMMIT");
     assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, created_at, updated_at)
       VALUES ('job_assembly_conflict', 'project_delivery', 'assembly', 'queued', '{}', ?, ?)`)
@@ -210,13 +259,19 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
     db.prepare("UPDATE workbench_delivery_jobs SET state = 'running', started_at = ?, updated_at = ? WHERE job_id = 'job_assembly'")
       .run(now, now);
     assert.throws(() => db.prepare("UPDATE workbench_delivery_jobs SET state = 'queued' WHERE job_id = 'job_assembly'").run(), /WORKBENCH_DELIVERY_JOB_STATE_INVALID/);
+    db.exec("BEGIN IMMEDIATE");
     db.prepare("UPDATE workbench_delivery_jobs SET state = 'failed', error_code = 'ASSEMBLY_OUTPUT_INVALID', finished_at = ?, updated_at = ? WHERE job_id = 'job_assembly'")
       .run(now, now);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
+        reason_code, data_json, created_at)
+      VALUES ('event_assembly_failed', 'project_delivery', 'job_assembly', 'assembly_failed',
+        'assembling', 'ready_to_assemble', ?, 'ASSEMBLY_OUTPUT_INVALID', '{}', ?)`)
+      .run("a".repeat(64), now);
+    db.exec("COMMIT");
     assert.throws(() => db.prepare("UPDATE workbench_delivery_jobs SET error_code = 'CHANGED' WHERE job_id = 'job_assembly'").run(), /WORKBENCH_DELIVERY_JOB_TERMINAL_IMMUTABLE/);
     assert.throws(() => db.prepare("DELETE FROM workbench_delivery_jobs WHERE job_id = 'job_assembly'").run(), /WORKBENCH_DELIVERY_JOB_IMMUTABLE/);
 
-    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', assembly_input_fingerprint = ?, updated_at = ? WHERE project_id = 'project_delivery'")
-      .run("a".repeat(64), now);
     assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
       SET workflow_state = 'final_review', current_final_artifact_id = 'artifact_delivery', updated_at = ?
       WHERE project_id = 'project_delivery'`).run(now), /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
@@ -227,6 +282,7 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
       event_id: "event_assembly_historical",
       created_at: now
     });
+    assertTitleUpdatePreservesDeliveryEvidence("final review title");
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, event_type, from_state, to_state, artifact_id,
         input_fingerprint, reason_code, data_json, created_at)
@@ -244,8 +300,6 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
     reworkProject.title = "explicit project rework";
     assert.doesNotThrow(() => saveProject(db, reworkProject));
     assert.equal(getProject(db, "project_delivery")?.title, "explicit project rework");
-    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = 'project_delivery'")
-      .run(now);
     completeWorkbenchAssemblyFixture(db, {
       project_id: "project_delivery",
       artifact_id: "artifact_delivery",
@@ -282,31 +336,22 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
       SET workflow_state = 'approved', approved_artifact_id = NULL, updated_at = ?
       WHERE project_id = 'project_delivery'`).run(now), /CHECK constraint failed|WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
     assert.equal((db.prepare("SELECT workflow_state FROM workbench_delivery_state WHERE project_id = 'project_delivery'").get() as { workflow_state: string }).workflow_state, "final_review");
-    db.prepare(`INSERT INTO workbench_delivery_events
-      (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id, input_fingerprint, reason_code, data_json, created_at)
-      VALUES ('event_assembly_failed', 'project_delivery', 'job_assembly', 'assembly_failed', 'assembling', 'ready_to_assemble',
-        NULL, ?, 'ASSEMBLY_OUTPUT_INVALID', '{}', ?)`)
-      .run("a".repeat(64), now);
     assert.throws(() => db.prepare("UPDATE workbench_delivery_events SET reason_code = 'CHANGED' WHERE event_id = 'event_assembly_failed'").run(), /WORKBENCH_DELIVERY_EVENTS_APPEND_ONLY/);
     assert.throws(() => db.prepare("DELETE FROM workbench_delivery_events WHERE event_id = 'event_assembly_failed'").run(), /WORKBENCH_DELIVERY_EVENTS_APPEND_ONLY/);
 
     assert.throws(() => db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'approved', approved_artifact_id = 'artifact_delivery', updated_at = ? WHERE project_id = 'project_delivery'")
       .run(now), /FOREIGN KEY constraint failed/);
     acceptFinalReview(db, "project_delivery", "event_final_review_accepted_delivery", now);
+    assertTitleUpdatePreservesDeliveryEvidence("approved title");
     assertShotMutationBlocked("DELIVERY_REWORK_REQUIRED", "forbidden approved rewrite");
     assertProjectMutationBlocked("DELIVERY_REWORK_REQUIRED", "forbidden approved project rewrite");
     assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
       SET current_final_artifact_id = 'artifact_delivery_old', approved_artifact_id = 'artifact_delivery_old', updated_at = ?
       WHERE project_id = 'project_delivery'`).run(now), /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
-    db.prepare(`INSERT INTO workbench_exports
-      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
-      VALUES ('export_delivery', 'project_delivery', 'artifact_delivery', 'data/exports/project_delivery/final.mp4', ?, 123, ?)`)
-      .run("b".repeat(64), now);
-    db.prepare(`INSERT INTO workbench_exports
-      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
-      VALUES ('export_delivery_old', 'project_delivery', 'artifact_delivery_old',
-        'data/exports/project_delivery/old.mp4', ?, 123, ?)`)
-      .run("c".repeat(64), now);
+    insertWorkbenchExportFixture(db, { project_id: "project_delivery", artifact_id: "artifact_delivery",
+      export_id: "export_delivery", created_at: now });
+    insertWorkbenchExportFixture(db, { project_id: "project_delivery", artifact_id: "artifact_delivery_old",
+      export_id: "export_delivery_old", created_at: now });
     assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
       SET workflow_state = 'exported', latest_export_id = 'export_delivery', latest_exported_at = ?, updated_at = ?
       WHERE project_id = 'project_delivery'`).run(now, now), /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
@@ -332,6 +377,7 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
       "export_succeeded", "artifact_delivery_old", "export_delivery_old", now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     assert.doesNotThrow(() => insertSucceededEvent.run("event_export_succeeded", "job_export_delivery",
       "export_succeeded", "artifact_delivery", "export_delivery", now));
+    assertTitleUpdatePreservesDeliveryEvidence("exported title");
     assertShotMutationBlocked("DELIVERY_REWORK_REQUIRED", "forbidden exported rewrite");
     assertProjectMutationBlocked("DELIVERY_REWORK_REQUIRED", "forbidden exported project rewrite");
     assert.throws(() => insertSucceededEvent.run("event_export_succeeded_duplicate", "job_export_delivery",
@@ -370,6 +416,8 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
       /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     const writable = assertWorkbenchProjectWritable(db, "project_delivery");
     assert.equal(writable.ok ? null : writable.error.code, "PROJECT_CLOSED");
+    const closedRename = updateWorkbenchProject("project_delivery", { title: "forbidden closed title" }, db);
+    assert.equal(closedRename.ok ? null : closedRename.error.code, "PROJECT_CLOSED");
     const projectRowBefore = db.prepare("SELECT data_json, updated_at FROM projects WHERE project_id = 'project_delivery'").get();
     const shotRowBefore = db.prepare("SELECT data_json, updated_at FROM shots WHERE shot_id = 'shot_delivery'").get();
     const closedProject = getProject(db, "project_delivery");
@@ -402,8 +450,6 @@ test("delivery evidence pointers change only through legal assembly, review, rew
 
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(now, projectId);
-    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
-      .run(now, projectId);
     completeWorkbenchAssemblyFixture(db, {
       project_id: projectId,
       artifact_id: "artifact_pointer_a",
@@ -424,13 +470,11 @@ test("delivery evidence pointers change only through legal assembly, review, rew
       approved_artifact_id = NULL, updated_at = ? WHERE project_id = ?`).run(now, projectId),
     /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
     db.prepare(`INSERT INTO workbench_delivery_events
-      (event_id, project_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
+      (event_id, project_id, event_type, from_state, to_state, artifact_id, input_fingerprint, reason_code, data_json, created_at)
       VALUES ('event_pointer_a_regenerate', ?, 'final_review_regenerate_shots', 'approved', 'revision_requested',
-        'artifact_pointer_a', 'FINAL_SHOT_REGENERATION_REQUESTED', '{}', ?)`)
-      .run(projectId, now);
+        'artifact_pointer_a', ?, 'FINAL_SHOT_REGENERATION_REQUESTED', '{}', ?)`)
+      .run(projectId, "a".repeat(64), now);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
-      .run(now, projectId);
-    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
       .run(now, projectId);
     completeWorkbenchAssemblyFixture(db, {
       project_id: projectId,
@@ -440,18 +484,12 @@ test("delivery evidence pointers change only through legal assembly, review, rew
       created_at: now
     });
     acceptFinalReview(db, projectId, "event_pointer_b_accepted", now);
-    db.prepare(`INSERT INTO workbench_exports
-      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
-      VALUES ('export_pointer_b', ?, 'artifact_pointer_b', 'data/exports/project_pointer_transitions/final.mp4', ?, 123, ?)`)
-      .run(projectId, "d".repeat(64), now);
-    db.prepare(`INSERT INTO workbench_exports
-      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
-      VALUES ('export_pointer_b_old', ?, 'artifact_pointer_b', 'data/exports/project_pointer_transitions/older.mp4', ?, 123, ?)`)
-      .run(projectId, "b".repeat(64), now);
-    db.prepare(`INSERT INTO workbench_exports
-      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
-      VALUES ('export_pointer_a', ?, 'artifact_pointer_a', 'data/exports/project_pointer_transitions/old.mp4', ?, 123, ?)`)
-      .run(projectId, "c".repeat(64), now);
+    insertWorkbenchExportFixture(db, { project_id: projectId, artifact_id: "artifact_pointer_b",
+      export_id: "export_pointer_b", created_at: now });
+    insertWorkbenchExportFixture(db, { project_id: projectId, artifact_id: "artifact_pointer_b",
+      export_id: "export_pointer_b_old", created_at: now });
+    insertWorkbenchExportFixture(db, { project_id: projectId, artifact_id: "artifact_pointer_a",
+      export_id: "export_pointer_a", created_at: now });
     assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
       SET latest_export_id = 'export_pointer_b', latest_exported_at = ?, updated_at = ? WHERE project_id = ?`)
       .run(now, now, projectId), /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
@@ -482,10 +520,10 @@ test("delivery evidence pointers change only through legal assembly, review, rew
       approved_artifact_id = NULL, latest_export_id = NULL, latest_exported_at = NULL, updated_at = ?
       WHERE project_id = ?`).run(now, projectId), /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
     db.prepare(`INSERT INTO workbench_delivery_events
-      (event_id, project_id, event_type, from_state, to_state, artifact_id, reason_code, data_json, created_at)
+      (event_id, project_id, event_type, from_state, to_state, artifact_id, input_fingerprint, reason_code, data_json, created_at)
       VALUES ('event_pointer_b_reassemble', ?, 'final_review_reassemble', 'exported', 'ready_to_assemble',
-        'artifact_pointer_b', 'FINAL_REASSEMBLY_REQUESTED', '{}', ?)`)
-      .run(projectId, now);
+        'artifact_pointer_b', ?, 'FINAL_REASSEMBLY_REQUESTED', '{}', ?)`)
+      .run(projectId, "a".repeat(64), now);
     assert.deepEqual({ ...(db.prepare(`SELECT workflow_state, current_final_artifact_id,
       approved_artifact_id, latest_export_id FROM workbench_delivery_state WHERE project_id = ?`)
       .get(projectId) as Record<string, unknown>) }, {
@@ -504,32 +542,35 @@ test("delivery lifecycle events bind to the matching Job type, state, Artifact, 
   try {
     const projectId = "project_event_semantics";
     const now = "2026-08-14T02:00:00.000Z";
+    const assemblyFingerprint = "e".repeat(64);
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
       .run(projectId, projectJson(projectId, "video_review"));
     const assemblySource = createAcceptedAssemblyClipFixture(db, { project_id: projectId, label: "event" });
     insertFinalArtifact(db, projectId, "artifact_event_final");
     insertFinalArtifact(db, projectId, "artifact_event_other");
-    db.prepare(`INSERT INTO workbench_exports
-      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
-      VALUES ('export_event_final', ?, 'artifact_event_final', 'data/exports/project_event_semantics/final.mp4', ?, 123, ?),
-        ('export_event_other', ?, 'artifact_event_other', 'data/exports/project_event_semantics/other.mp4', ?, 123, ?)`)
-      .run(projectId, "e".repeat(64), now, projectId, "f".repeat(64), now);
+    insertWorkbenchExportFixture(db, { project_id: projectId, artifact_id: "artifact_event_final",
+      export_id: "export_event_final", created_at: now });
+    insertWorkbenchExportFixture(db, { project_id: projectId, artifact_id: "artifact_event_other",
+      export_id: "export_event_other", created_at: now });
     const insertEvent = db.prepare(`INSERT INTO workbench_delivery_events
-      (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SYNTHETIC_EVENT', '{}', ?)`);
+      (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id, export_id,
+        input_fingerprint, reason_code, data_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, '${assemblyFingerprint}', 'SYNTHETIC_EVENT', '{}', ?)`);
 
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(now, projectId);
-    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
-      .run(now, projectId);
-
+    db.exec("BEGIN IMMEDIATE");
     db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, created_at, updated_at)
-      VALUES ('job_event_assembly', ?, 'assembly', 'queued',
+      (job_id, project_id, job_type, state, input_fingerprint, input_json, created_at, updated_at)
+      VALUES ('job_event_assembly', ?, 'assembly', 'queued', ?,
         json_object('source_clip_artifact_ids', json_array(?)), ?, ?)`)
-      .run(projectId, assemblySource.artifact_id, now, now);
+      .run(projectId, assemblyFingerprint, assemblySource.artifact_id, now, now);
     assert.doesNotThrow(() => insertEvent.run("event_assembly_queued", projectId, "job_event_assembly",
       "assembly_queued", "ready_to_assemble", "assembling", null, null, now));
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'assembling',
+      active_assembly_job_id = 'job_event_assembly', assembly_input_fingerprint = ?, updated_at = ?
+      WHERE project_id = ?`).run(assemblyFingerprint, now, projectId);
+    db.exec("COMMIT");
     assert.throws(() => insertEvent.run("event_assembly_queued_duplicate", projectId, "job_event_assembly",
       "assembly_queued", "ready_to_assemble", "assembling", null, null, now),
     /WORKBENCH_DELIVERY_JOB_EVENT_DUPLICATE/);
@@ -539,6 +580,7 @@ test("delivery lifecycle events bind to the matching Job type, state, Artifact, 
       WHERE job_id = 'job_event_assembly'`).run(now, now);
     assert.doesNotThrow(() => insertEvent.run("event_assembly_started", projectId, "job_event_assembly",
       "assembly_started", "assembling", "assembling", null, null, now));
+    db.exec("BEGIN IMMEDIATE");
     db.prepare(`UPDATE workbench_delivery_jobs SET state = 'succeeded', output_artifact_id = 'artifact_event_final',
       finished_at = ?, updated_at = ? WHERE job_id = 'job_event_assembly'`).run(now, now);
     assert.throws(() => insertEvent.run("event_assembly_succeeded_wrong_artifact", projectId, "job_event_assembly",
@@ -554,20 +596,19 @@ test("delivery lifecycle events bind to the matching Job type, state, Artifact, 
       WHERE project_id = ? AND event_type = 'assembly_succeeded'`).get(projectId) as { count: number }).count, 0);
     assert.doesNotThrow(() => insertEvent.run("event_assembly_succeeded", projectId, "job_event_assembly",
       "assembly_succeeded", "assembling", "final_review", "artifact_event_final", null, now));
+    db.exec("COMMIT");
     assert.throws(() => insertEvent.run("event_assembly_succeeded_duplicate", projectId, "job_event_assembly",
       "assembly_succeeded", "assembling", "final_review", "artifact_event_final", null, now),
     /WORKBENCH_DELIVERY_JOB_EVENT_DUPLICATE/);
 
     db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, error_code, created_at, finished_at, updated_at)
-      VALUES ('job_event_assembly_failed', ?, 'assembly', 'failed', '{}', 'SYNTHETIC_FAILURE', ?, ?, ?),
-        ('job_event_assembly_interrupted', ?, 'assembly', 'interrupted', '{}', 'SYNTHETIC_INTERRUPTION', ?, ?, ?)`)
-      .run(projectId, now, now, now, projectId, now, now, now);
-    assert.doesNotThrow(() => insertEvent.run("event_assembly_failed", projectId, "job_event_assembly_failed",
-      "assembly_failed", "assembling", "ready_to_assemble", null, null, now));
-    assert.doesNotThrow(() => insertEvent.run("event_assembly_interrupted", projectId, "job_event_assembly_interrupted",
-      "assembly_interrupted", "assembling", "ready_to_assemble", null, null, now));
-    assert.throws(() => insertEvent.run("event_assembly_wrong_terminal", projectId, "job_event_assembly_failed",
+      (job_id, project_id, job_type, state, input_fingerprint, input_json, error_code, created_at, finished_at, updated_at)
+      VALUES ('job_event_assembly_failed', ?, 'assembly', 'failed', ?, '{}', 'SYNTHETIC_FAILURE', ?, ?, ?),
+        ('job_event_assembly_interrupted', ?, 'assembly', 'interrupted', ?, '{}', 'SYNTHETIC_INTERRUPTION', ?, ?, ?)`)
+      .run(projectId, assemblyFingerprint, now, now, now, projectId, assemblyFingerprint, now, now, now);
+    assert.throws(() => insertEvent.run("event_assembly_failed", projectId, "job_event_assembly_failed",
+      "assembly_failed", "assembling", "ready_to_assemble", null, null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+    assert.throws(() => insertEvent.run("event_assembly_interrupted", projectId, "job_event_assembly_interrupted",
       "assembly_interrupted", "assembling", "ready_to_assemble", null, null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
 
     acceptFinalReview(db, projectId, "event_lifecycle_final_review_accepted", now);
@@ -642,26 +683,21 @@ test("final review events bind to the current final evidence and target delivery
     createAcceptedAssemblyClipFixture(db, { project_id: projectId, label: "review" });
     insertFinalArtifact(db, projectId, "artifact_review_current");
     insertFinalArtifact(db, projectId, "artifact_review_other");
-    db.prepare(`INSERT INTO workbench_exports
-      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
-      VALUES ('export_review_current', ?, 'artifact_review_current',
-        'data/exports/project_final_review_events/final.mp4', ?, 123, ?)`)
-      .run(projectId, "8".repeat(64), now);
+    insertWorkbenchExportFixture(db, { project_id: projectId, artifact_id: "artifact_review_current",
+      export_id: "export_review_current", created_at: now });
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, error_code, created_at, finished_at, updated_at)
       VALUES ('job_review_unrelated', ?, 'assembly', 'failed', '{}', 'SYNTHETIC_FAILURE', ?, ?, ?)`)
       .run(projectId, now, now, now);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(now, projectId);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'assembling',
-      assembly_input_fingerprint = ?, updated_at = ? WHERE project_id = ?`)
-      .run(fingerprint, now, projectId);
     completeWorkbenchAssemblyFixture(db, {
       project_id: projectId,
       artifact_id: "artifact_review_current",
       job_id: "job_review_current_assembly",
       event_id: "event_review_current_assembly",
-      created_at: now
+      created_at: now,
+      input_fingerprint: fingerprint
     });
     const insertReviewEvent = db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id,
@@ -718,8 +754,6 @@ test("final review events bind to the current final evidence and target delivery
       "final_review_reassemble", "approved", "ready_to_assemble", "artifact_review_current", null, fingerprint, now),
     /WORKBENCH_DELIVERY_REWORK_EVENT_DUPLICATE/);
 
-    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
-      .run(now, projectId);
     completeWorkbenchAssemblyFixture(db, {
       project_id: projectId,
       artifact_id: "artifact_review_other",
@@ -756,8 +790,6 @@ test("approval evidence remains mandatory when one transaction advances through 
       insertFinalArtifact(db, projectId, artifactId);
       db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
         .run(now, projectId);
-      db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
-        .run(now, projectId);
       completeWorkbenchAssemblyFixture(db, {
         project_id: projectId,
         artifact_id: artifactId,
@@ -765,10 +797,8 @@ test("approval evidence remains mandatory when one transaction advances through 
         event_id: `event_approval_assembly_${terminalState}`,
         created_at: now
       });
-      db.prepare(`INSERT INTO workbench_exports
-        (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
-        VALUES (?, ?, ?, ?, ?, 123, ?)`)
-        .run(exportId, projectId, artifactId, `data/exports/${projectId}/final.mp4`, "a".repeat(64), now);
+      insertWorkbenchExportFixture(db, { project_id: projectId, artifact_id: artifactId,
+        export_id: exportId, created_at: now });
 
       db.exec("BEGIN IMMEDIATE");
       db.prepare(`UPDATE workbench_delivery_state
@@ -819,14 +849,10 @@ test("delivery jobs bind retries and terminal outputs to the same project and jo
         label: projectId
       }).artifact_id);
       insertFinalArtifact(db, projectId, `artifact_${projectId}`);
-      db.prepare(`INSERT INTO workbench_exports
-        (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
-        VALUES (?, ?, ?, ?, ?, 123, ?)`)
-        .run(`export_${projectId}`, projectId, `artifact_${projectId}`,
-          `data/exports/${projectId}/final.mp4`, "c".repeat(64), now);
+      insertWorkbenchExportFixture(db, { project_id: projectId, artifact_id: `artifact_${projectId}`,
+        export_id: `export_${projectId}`, created_at: now });
     }
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = 'project_a'").run(now);
-    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = 'project_a'").run(now);
     completeWorkbenchAssemblyFixture(db, {
       project_id: "project_a",
       artifact_id: "artifact_project_a",
@@ -910,18 +936,47 @@ test("delivery jobs bind retries and terminal outputs to the same project and jo
         json_object('source_clip_artifact_ids', json_array(?)), 'artifact_project_a', 'export_project_a', ?, ?, ?)`)
       .run(sourceClipByProject.get("project_a"), now, now, now), /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
 
+    const updateFingerprint = "6".repeat(64);
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = 'project_b'").run(now);
+    db.exec("BEGIN IMMEDIATE");
     db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, created_at, started_at, updated_at)
-      VALUES ('assembly_running', 'project_a', 'assembly', 'running',
-        json_object('source_clip_artifact_ids', json_array(?)), ?, ?, ?)`)
-      .run(sourceClipByProject.get("project_a"), now, now, now);
+      (job_id, project_id, job_type, state, input_fingerprint, input_json, created_at, updated_at)
+      VALUES ('assembly_running', 'project_b', 'assembly', 'queued', ?,
+        json_object('source_clip_artifact_ids', json_array(?)), ?, ?)`)
+      .run(updateFingerprint, sourceClipByProject.get("project_b"), now, now);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
+        reason_code, data_json, created_at)
+      VALUES ('event_assembly_running_queued', 'project_b', 'assembly_running', 'assembly_queued',
+        'ready_to_assemble', 'assembling', ?, 'ASSEMBLY_QUEUED', '{}', ?)`)
+      .run(updateFingerprint, now);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'assembling',
+      active_assembly_job_id = 'assembly_running', assembly_input_fingerprint = ?, updated_at = ?
+      WHERE project_id = 'project_b'`).run(updateFingerprint, now);
+    db.prepare(`UPDATE workbench_delivery_jobs SET state = 'running', started_at = ?, updated_at = ?
+      WHERE job_id = 'assembly_running'`).run(now, now);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
+        reason_code, data_json, created_at)
+      VALUES ('event_assembly_running_started', 'project_b', 'assembly_running', 'assembly_started',
+        'assembling', 'assembling', ?, 'ASSEMBLY_STARTED', '{}', ?)`)
+      .run(updateFingerprint, now);
+    db.exec("COMMIT");
     assert.throws(() => db.prepare(`UPDATE workbench_delivery_jobs
-      SET state = 'succeeded', output_artifact_id = 'artifact_project_b', finished_at = ?, updated_at = ?
+      SET state = 'succeeded', output_artifact_id = 'artifact_project_a', finished_at = ?, updated_at = ?
       WHERE job_id = 'assembly_running'`).run(now, now), /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
     assert.equal((db.prepare("SELECT state, output_artifact_id FROM workbench_delivery_jobs WHERE job_id = 'assembly_running'").get() as { state: string; output_artifact_id: string | null }).state, "running");
+    db.exec("BEGIN IMMEDIATE");
     db.prepare(`UPDATE workbench_delivery_jobs
-      SET state = 'succeeded', output_artifact_id = 'artifact_project_a', finished_at = ?, updated_at = ?
+      SET state = 'succeeded', output_artifact_id = 'artifact_project_b', finished_at = ?, updated_at = ?
       WHERE job_id = 'assembly_running'`).run(now, now);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id,
+        input_fingerprint, reason_code, data_json, created_at)
+      VALUES ('event_assembly_running_succeeded', 'project_b', 'assembly_running', 'assembly_succeeded',
+        'assembling', 'final_review', 'artifact_project_b', ?, 'ASSEMBLY_SUCCEEDED', '{}', ?)`)
+      .run(updateFingerprint, now);
+    db.exec("COMMIT");
 
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, created_at, started_at, updated_at)
@@ -937,11 +992,31 @@ test("delivery jobs bind retries and terminal outputs to the same project and jo
 
     const insertValidation = db.prepare(`SELECT sql FROM sqlite_master
       WHERE type = 'trigger' AND name = 'workbench_delivery_jobs_validate_insert'`).get() as { sql: string };
+    db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
+      .run("project_retry_update", projectJson("project_retry_update", "video_review"));
+    const retrySource = createAcceptedAssemblyClipFixture(db, {
+      project_id: "project_retry_update", label: "retry update"
+    });
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ?
+      WHERE project_id = 'project_retry_update'`).run(now);
+    const retryFingerprint = "4".repeat(64);
     db.exec("DROP TRIGGER workbench_delivery_jobs_validate_insert");
+    db.exec("BEGIN IMMEDIATE");
     db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, retry_of_job_id, created_at, updated_at)
-      VALUES ('retry_queued_cross_project', 'project_a', 'assembly', 'queued', '{}', 'parent_assembly_b', ?, ?)`)
-      .run(now, now);
+      (job_id, project_id, job_type, state, input_fingerprint, input_json, retry_of_job_id, created_at, updated_at)
+      VALUES ('retry_queued_cross_project', 'project_retry_update', 'assembly', 'queued', ?,
+        json_object('source_clip_artifact_ids', json_array(?)), 'parent_assembly_b', ?, ?)`)
+      .run(retryFingerprint, retrySource.artifact_id, now, now);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
+        reason_code, data_json, created_at)
+      VALUES ('event_retry_cross_queued', 'project_retry_update', 'retry_queued_cross_project',
+        'assembly_queued', 'ready_to_assemble', 'assembling', ?, 'ASSEMBLY_QUEUED', '{}', ?)`)
+      .run(retryFingerprint, now);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'assembling',
+      active_assembly_job_id = 'retry_queued_cross_project', assembly_input_fingerprint = ?, updated_at = ?
+      WHERE project_id = 'project_retry_update'`).run(retryFingerprint, now);
+    db.exec("COMMIT");
     db.exec(insertValidation.sql);
     assert.throws(() => db.prepare(`UPDATE workbench_delivery_jobs
       SET state = 'failed', error_code = 'SYNTHETIC_FAILURE', finished_at = ?, updated_at = ?
@@ -1006,16 +1081,46 @@ test("succeeded assembly jobs require one accepted active clip for every project
       VALUES ('job_assembly_partial_duplicate', 'project_assembly_partial', 'assembly', 'succeeded',
         json_object('source_clip_artifact_ids', json_array(?, ?)), 'artifact_assembly_partial_final', ?, ?, ?, ?)`)
       .run(accepted.artifact_id, accepted.artifact_id, now, now, now, now), /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
+    const partialFingerprint = "5".repeat(64);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ?
+      WHERE project_id = 'project_assembly_partial'`).run(now);
+    db.exec("BEGIN IMMEDIATE");
     db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, created_at, started_at, updated_at)
-      VALUES ('job_assembly_partial_running', 'project_assembly_partial', 'assembly', 'running', ?, ?, ?, ?)`)
-      .run(partialInput, now, now, now);
+      (job_id, project_id, job_type, state, input_fingerprint, input_json, created_at, updated_at)
+      VALUES ('job_assembly_partial_running', 'project_assembly_partial', 'assembly', 'queued', ?, ?, ?, ?)`)
+      .run(partialFingerprint, partialInput, now, now);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
+        reason_code, data_json, created_at)
+      VALUES ('event_assembly_partial_queued', 'project_assembly_partial', 'job_assembly_partial_running',
+        'assembly_queued', 'ready_to_assemble', 'assembling', ?, 'ASSEMBLY_QUEUED', '{}', ?)`)
+      .run(partialFingerprint, now);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'assembling',
+      active_assembly_job_id = 'job_assembly_partial_running', assembly_input_fingerprint = ?, updated_at = ?
+      WHERE project_id = 'project_assembly_partial'`).run(partialFingerprint, now);
+    db.prepare(`UPDATE workbench_delivery_jobs SET state = 'running', started_at = ?, updated_at = ?
+      WHERE job_id = 'job_assembly_partial_running'`).run(now, now);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
+        reason_code, data_json, created_at)
+      VALUES ('event_assembly_partial_started', 'project_assembly_partial', 'job_assembly_partial_running',
+        'assembly_started', 'assembling', 'assembling', ?, 'ASSEMBLY_STARTED', '{}', ?)`)
+      .run(partialFingerprint, now);
+    db.exec("COMMIT");
     assert.throws(() => db.prepare(`UPDATE workbench_delivery_jobs
       SET state = 'succeeded', output_artifact_id = 'artifact_assembly_partial_final',
         finished_at = ?, updated_at = ? WHERE job_id = 'job_assembly_partial_running'`)
       .run(now, now), /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
+    db.exec("BEGIN IMMEDIATE");
     db.prepare(`UPDATE workbench_delivery_jobs SET state = 'failed', error_code = 'ASSEMBLY_NOT_READY',
       finished_at = ?, updated_at = ? WHERE job_id = 'job_assembly_partial_running'`).run(now, now);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
+        reason_code, data_json, created_at)
+      VALUES ('event_assembly_partial_failed', 'project_assembly_partial', 'job_assembly_partial_running',
+        'assembly_failed', 'assembling', 'ready_to_assemble', ?, 'ASSEMBLY_NOT_READY', '{}', ?)`)
+      .run(partialFingerprint, now);
+    db.exec("COMMIT");
 
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
       .run("project_assembly_complete", projectJson("project_assembly_complete", "video_review"));

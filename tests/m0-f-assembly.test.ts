@@ -17,7 +17,7 @@ import {
   startStoryboardVideoGeneration,
   transitionMediaArtifactStatus
 } from "../src/index.js";
-import { approveWorkbenchDeliveryFixture, completeWorkbenchExportFixture } from "./workbench-delivery-test-helpers.js";
+import { approveWorkbenchDeliveryFixture, completeWorkbenchExportFixture, insertWorkbenchExportFixture, queueWorkbenchAssemblyFixture } from "./workbench-delivery-test-helpers.js";
 
 async function setupGeneratedProject(db: ReturnType<typeof openM0Database>) {
   const project = createProject({ title: "M0-F Project" }, db);
@@ -156,7 +156,8 @@ test("M0-F assembly succeeds after all shots are approved", async () => {
       event.reason_code, job.job_type, job.state AS job_state, job.output_artifact_id
       FROM workbench_delivery_events event
       JOIN workbench_delivery_jobs job ON job.job_id = event.job_id AND job.project_id = event.project_id
-      WHERE event.project_id = ? ORDER BY event.created_at DESC, event.event_id DESC LIMIT 1`)
+      WHERE event.project_id = ? AND event.event_type = 'assembly_succeeded'
+      ORDER BY event.created_at DESC, event.event_id DESC LIMIT 1`)
       .get(project.project_id) as Record<string, unknown>;
     assert.deepEqual({ ...event }, {
       event_type: "assembly_succeeded",
@@ -242,23 +243,25 @@ test("M0-F reassembly records the approval revocation before producing a new fin
       WHERE project_id = ? AND event_type IN ('final_review_reassemble','assembly_succeeded')
       ORDER BY rowid`).all(project.project_id) as Array<Record<string, unknown>>).map((row) => ({ ...row }));
     const [reworkEvent, succeededEvent] = events.slice(-2);
-    assert.deepEqual(reworkEvent, {
+    assert.equal(typeof reworkEvent.input_fingerprint, "string");
+    assert.deepEqual({ ...reworkEvent, input_fingerprint: "<fingerprint>" }, {
       event_type: "final_review_reassemble",
       from_state: "approved",
       to_state: "ready_to_assemble",
       artifact_id: first.final_video_artifact_id,
       job_id: null,
-      input_fingerprint: null,
+      input_fingerprint: "<fingerprint>",
       reason_code: "LEGACY_REASSEMBLY_REQUESTED"
     });
     assert.equal(typeof succeededEvent.job_id, "string");
-    assert.deepEqual({ ...succeededEvent, job_id: "<job_id>" }, {
+    assert.equal(typeof succeededEvent.input_fingerprint, "string");
+    assert.deepEqual({ ...succeededEvent, job_id: "<job_id>", input_fingerprint: "<fingerprint>" }, {
       event_type: "assembly_succeeded",
       from_state: "assembling",
       to_state: "final_review",
       artifact_id: second.final_video_artifact_id,
       job_id: "<job_id>",
-      input_fingerprint: null,
+      input_fingerprint: "<fingerprint>",
       reason_code: "LEGACY_ASSEMBLY_SUCCEEDED"
     });
   } finally {
@@ -277,9 +280,10 @@ test("M0-F assembly rejects same-project and global durable delivery Jobs before
       assert.equal(markShotClipReview({ shot_id: shot.shot_id, artifact_id: run.output.artifact_ids[0], decision: "approved" }, db).ok, true);
     }
     const now = "2026-08-14T00:00:00.000Z";
-    db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, created_at, updated_at)
-      VALUES ('job_same_project_active', ?, 'assembly', 'queued', '{}', ?, ?)`).run(fixture.project.project_id, now, now);
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
+      .run(now, fixture.project.project_id);
+    queueWorkbenchAssemblyFixture(db, { project_id: fixture.project.project_id,
+      job_id: "job_same_project_active", event_id: "event_same_project_active_queued", created_at: now });
     const before = (db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ? AND role = 'final_video'")
       .get(fixture.project.project_id) as { count: number }).count;
     const sameProject = assembleFinalVideo({
@@ -290,15 +294,24 @@ test("M0-F assembly rejects same-project and global durable delivery Jobs before
     assert.equal((db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ? AND role = 'final_video'")
       .get(fixture.project.project_id) as { count: number }).count, before);
 
+    db.exec("BEGIN IMMEDIATE");
     db.prepare(`UPDATE workbench_delivery_jobs
       SET state = 'failed', error_code = 'SYNTHETIC_FAILURE', finished_at = ?, updated_at = ?
       WHERE job_id = 'job_same_project_active'`).run(now, now);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
+        reason_code, data_json, created_at)
+      SELECT 'event_same_project_active_failed', project_id, job_id, 'assembly_failed',
+        'assembling', 'ready_to_assemble', input_fingerprint, 'SYNTHETIC_FAILURE', '{}', ?
+      FROM workbench_delivery_jobs WHERE job_id = 'job_same_project_active'`).run(now);
+    db.exec("COMMIT");
     const otherProject = createProject({ title: "Other active delivery Job" }, db);
     assert.equal(otherProject.ok, true);
     if (!otherProject.ok) return;
-    db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, created_at, updated_at)
-      VALUES ('job_other_project_active', ?, 'assembly', 'queued', '{}', ?, ?)`).run(otherProject.project_id, now, now);
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
+      .run(now, otherProject.project_id);
+    queueWorkbenchAssemblyFixture(db, { project_id: otherProject.project_id,
+      job_id: "job_other_project_active", event_id: "event_other_project_active_queued", created_at: now });
     const global = assembleFinalVideo({
       project_id: fixture.project.project_id,
       confirmation: { confirmation_level: "explicit", user_confirmed: true }
@@ -306,9 +319,17 @@ test("M0-F assembly rejects same-project and global durable delivery Jobs before
     assert.equal(global.ok ? null : global.error.code, "DELIVERY_JOB_ACTIVE");
     assert.equal((db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ? AND role = 'final_video'")
       .get(fixture.project.project_id) as { count: number }).count, before);
+    db.exec("BEGIN IMMEDIATE");
     db.prepare(`UPDATE workbench_delivery_jobs
       SET state = 'failed', error_code = 'SYNTHETIC_FAILURE', finished_at = ?, updated_at = ?
       WHERE job_id = 'job_other_project_active'`).run(now, now);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
+        reason_code, data_json, created_at)
+      SELECT 'event_other_project_active_failed', project_id, job_id, 'assembly_failed',
+        'assembling', 'ready_to_assemble', input_fingerprint, 'SYNTHETIC_FAILURE', '{}', ?
+      FROM workbench_delivery_jobs WHERE job_id = 'job_other_project_active'`).run(now);
+    db.exec("COMMIT");
   } finally {
     db.close();
   }
@@ -435,11 +456,8 @@ test("M0-F assembly rejects archived and closed projects before creating another
       event_id: "event_m0f_closeout_accepted",
       created_at: now
     });
-    db.prepare(`INSERT INTO workbench_exports
-      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
-      VALUES (?, ?, ?, ?, ?, 1, ?)`)
-      .run(exportId, closedFixture.project.project_id, first.final_video_artifact_id,
-        `data/exports/${closedFixture.project.project_id}/final.mp4`, "b".repeat(64), now);
+    insertWorkbenchExportFixture(db, { project_id: closedFixture.project.project_id,
+      artifact_id: first.final_video_artifact_id, export_id: exportId, created_at: now });
     completeWorkbenchExportFixture(db, {
       project_id: closedFixture.project.project_id,
       export_id: exportId,

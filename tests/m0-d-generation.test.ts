@@ -17,7 +17,8 @@ import {
   approveWorkbenchDeliveryFixture,
   completeWorkbenchAssemblyFixture,
   completeWorkbenchExportFixture,
-  ensureAcceptedAssemblyClipsFixture
+  ensureAcceptedAssemblyClipsFixture,
+  insertWorkbenchExportFixture
 } from "./workbench-delivery-test-helpers.js";
 
 function setupThreeShotProject(db: ReturnType<typeof openM0Database>) {
@@ -207,8 +208,6 @@ test("M0-D legacy batch generation rejects closed projects before all generation
     ensureAcceptedAssemblyClipsFixture(db, project.project_id);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(now, project.project_id);
-    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'assembling', updated_at = ? WHERE project_id = ?")
-      .run(now, project.project_id);
     completeWorkbenchAssemblyFixture(db, {
       project_id: project.project_id,
       artifact_id: artifactId,
@@ -221,10 +220,8 @@ test("M0-D legacy batch generation rejects closed projects before all generation
       event_id: `event_m0d_accepted_${project.project_id}`,
       created_at: now
     });
-    db.prepare(`INSERT INTO workbench_exports
-      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
-      VALUES (?, ?, ?, ?, ?, 1, ?)`)
-      .run(exportId, project.project_id, artifactId, `data/exports/${project.project_id}/final.mp4`, "d".repeat(64), now);
+    insertWorkbenchExportFixture(db, { project_id: project.project_id, artifact_id: artifactId,
+      export_id: exportId, created_at: now });
     completeWorkbenchExportFixture(db, {
       project_id: project.project_id,
       export_id: exportId,
