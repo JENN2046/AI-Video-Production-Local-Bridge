@@ -355,6 +355,11 @@ test("schema validation recognizes generated columns and rejects expression drif
         table: "workbench_delivery_state",
         original: "THEN json_array(project_id, approved_artifact_id, assembly_input_fingerprint, updated_at)",
         replacement: "THEN json_array(project_id, approved_artifact_id, assembly_input_fingerprint)"
+      },
+      {
+        table: "workbench_delivery_jobs",
+        original: "THEN json_array(project_id, job_id, 'export_started', json_extract(input_json, '$.artifact_id'))",
+        replacement: "THEN json_array(project_id, job_id, 'export_queued', json_extract(input_json, '$.artifact_id'))"
       }
     ] as const;
     for (const fixture of fixtures) {

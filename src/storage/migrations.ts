@@ -1219,6 +1219,13 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
         THEN json_array(project_id, job_id, input_fingerprint)
         ELSE NULL END
     ) STORED,
+    active_export_binding_key TEXT GENERATED ALWAYS AS (
+      CASE WHEN job_type = 'export' AND state = 'queued'
+        THEN json_array(project_id, job_id, 'export_queued', json_extract(input_json, '$.artifact_id'))
+        WHEN job_type = 'export' AND state = 'running'
+        THEN json_array(project_id, job_id, 'export_started', json_extract(input_json, '$.artifact_id'))
+        ELSE NULL END
+    ) STORED,
     terminal_event_id TEXT,
     terminal_event_type TEXT GENERATED ALWAYS AS (
       CASE WHEN state IN ('succeeded','failed','interrupted')
@@ -1229,6 +1236,8 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     FOREIGN KEY (output_artifact_id) REFERENCES media_artifacts(artifact_id) ON DELETE RESTRICT,
     FOREIGN KEY (export_id) REFERENCES workbench_exports(export_id) ON DELETE RESTRICT,
     FOREIGN KEY (active_assembly_binding_key) REFERENCES workbench_delivery_state(active_assembly_binding_key)
+      DEFERRABLE INITIALLY DEFERRED,
+    FOREIGN KEY (active_export_binding_key) REFERENCES workbench_delivery_events(active_export_binding_key)
       DEFERRABLE INITIALLY DEFERRED,
     FOREIGN KEY (project_id, job_id, terminal_event_id, terminal_event_type)
       REFERENCES workbench_delivery_events(project_id, job_id, event_id, event_type)
@@ -1242,7 +1251,8 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     CHECK ((state IN ('queued','running') AND terminal_event_id IS NULL)
       OR (state IN ('succeeded','failed','interrupted') AND terminal_event_id IS NOT NULL)),
     CHECK (state <> 'succeeded' OR (job_type = 'assembly' AND output_artifact_id IS NOT NULL AND export_id IS NULL) OR (job_type = 'export' AND export_id IS NOT NULL)),
-    UNIQUE (active_assembly_binding_key)
+    UNIQUE (active_assembly_binding_key),
+    UNIQUE (active_export_binding_key)
   );
 
   CREATE TABLE workbench_delivery_events (
@@ -1273,6 +1283,11 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
         THEN json_array(project_id, job_id, input_fingerprint)
         ELSE NULL END
     ) STORED,
+    active_export_binding_key TEXT GENERATED ALWAYS AS (
+      CASE WHEN event_type IN ('export_queued','export_started')
+        THEN json_array(project_id, job_id, event_type, artifact_id)
+        ELSE NULL END
+    ) STORED,
     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE RESTRICT,
     FOREIGN KEY (job_id) REFERENCES workbench_delivery_jobs(job_id) ON DELETE RESTRICT,
     FOREIGN KEY (artifact_id) REFERENCES media_artifacts(artifact_id) ON DELETE RESTRICT,
@@ -1290,6 +1305,7 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     UNIQUE (approval_signature_key),
     UNIQUE (approval_binding_key),
     UNIQUE (assembly_queue_binding_key),
+    UNIQUE (active_export_binding_key),
     UNIQUE (project_id, job_id, event_id, event_type)
   );
 
@@ -2429,8 +2445,8 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     storyboard_package_versions: ["package_version_id", "project_id", "version", "supersedes_package_version_id", "schema_version", "payload_json", "content_hash", "created_from_proposal_id", "created_at"],
     storyboard_package_version_events: ["event_id", "package_version_id", "workspace_id", "principal_id", "event_type", "reason_code", "created_at"],
     workbench_delivery_state: ["project_id", "workflow_state", "current_final_artifact_id", "assembly_input_fingerprint", "active_assembly_job_id", "approved_artifact_id", "latest_export_id", "latest_exported_at", "closed_at", "created_at", "updated_at", "approval_signature_key", "approval_binding_key", "active_assembly_binding_key"],
-    workbench_delivery_jobs: ["job_id", "project_id", "job_type", "state", "input_fingerprint", "input_json", "retry_of_job_id", "output_artifact_id", "export_id", "error_code", "created_at", "started_at", "finished_at", "updated_at", "active_assembly_binding_key", "terminal_event_id", "terminal_event_type"],
-    workbench_delivery_events: ["event_id", "project_id", "job_id", "event_type", "from_state", "to_state", "artifact_id", "export_id", "input_fingerprint", "reason_code", "data_json", "created_at", "approval_signature_key", "approval_binding_key", "assembly_queue_binding_key"],
+    workbench_delivery_jobs: ["job_id", "project_id", "job_type", "state", "input_fingerprint", "input_json", "retry_of_job_id", "output_artifact_id", "export_id", "error_code", "created_at", "started_at", "finished_at", "updated_at", "active_assembly_binding_key", "active_export_binding_key", "terminal_event_id", "terminal_event_type"],
+    workbench_delivery_events: ["event_id", "project_id", "job_id", "event_type", "from_state", "to_state", "artifact_id", "export_id", "input_fingerprint", "reason_code", "data_json", "created_at", "approval_signature_key", "approval_binding_key", "assembly_queue_binding_key", "active_export_binding_key"],
     workbench_exports: ["export_id", "project_id", "artifact_id", "relative_path", "sha256", "size_bytes", "created_at"]
   } : V24_EXPECTED_COLUMNS;
   const expectedIndexes = includeJobs ? [

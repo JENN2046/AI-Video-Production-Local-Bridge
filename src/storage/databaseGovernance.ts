@@ -383,6 +383,11 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
           AND state.approved_artifact_id IS json_extract(job.input_json, '$.artifact_id')
         WHERE job.job_type = 'export' AND job.state IN ('queued','running')
           AND state.project_id IS NULL`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_jobs job
+        LEFT JOIN workbench_delivery_events event
+          ON event.active_export_binding_key = job.active_export_binding_key
+        WHERE job.job_type = 'export' AND job.state IN ('queued','running')
+          AND event.event_id IS NULL`,
       "SELECT COUNT(*) AS count FROM workbench_delivery_events e LEFT JOIN projects p ON p.project_id = e.project_id WHERE p.project_id IS NULL",
       "SELECT COUNT(*) AS count FROM workbench_delivery_events e LEFT JOIN workbench_delivery_jobs j ON j.job_id = e.job_id AND j.project_id = e.project_id WHERE e.job_id IS NOT NULL AND j.job_id IS NULL",
       "SELECT COUNT(*) AS count FROM workbench_delivery_events e LEFT JOIN media_artifacts a ON a.artifact_id = e.artifact_id AND a.project_id = e.project_id WHERE e.artifact_id IS NOT NULL AND a.artifact_id IS NULL",
