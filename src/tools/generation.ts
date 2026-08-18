@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { getMediaArtifact, registerMediaArtifact, validateActiveArtifactReference, type MediaArtifact } from "./mediaArtifacts.js";
 import { getProject, getProjectStatus, getShot, listProjectShots, saveProject, saveShot, type Project, type Shot, type ToolError } from "./projects.js";
-import { getStoryboardPackage } from "./storyboardPackages.js";
+import { getStoryboardPackage, storyboardPackageContentHash } from "./storyboardPackages.js";
 import { requireProjectShotWorkflowWriteAction } from "./operationalWriteGates.js";
 import { providerError, selectM0Provider, selectM1ProviderPort, type ProviderExecutionRequest, type ProviderPortName, type ProviderToolError } from "./provider.js";
 import { downloadProviderOutputToArtifact } from "./providerOutputDownloader.js";
@@ -237,17 +237,27 @@ function generationPersistencePrecondition(
   db: M0Database,
   projectId: string,
   storyboardPackageId: string,
+  storyboardPackageHash: string,
   run: GenerationRun
 ): ToolError | null {
   const writable = assertWorkbenchContentMutationAllowed(db, projectId);
   if (!writable.ok) return writable.error;
   const currentProject = getProject(db, projectId);
   if (!currentProject) return { code: "PROJECT_NOT_FOUND", message: `Project not found: ${projectId}` };
+  let currentStoryboardPackage = null;
+  try {
+    currentStoryboardPackage = getStoryboardPackage(db, storyboardPackageId);
+  } catch {
+    // Invalid persisted package data must fail closed as stale evidence.
+  }
   const currentShot = getShot(db, run.shot_id);
   if (!currentShot || currentShot.project_id !== projectId) {
     return { code: "SHOT_NOT_FOUND", message: `Shot not found: ${run.shot_id}` };
   }
-  if (currentProject.active_storyboard_package_id !== storyboardPackageId
+  if (!currentStoryboardPackage
+    || currentStoryboardPackage.project_id !== projectId
+    || storyboardPackageContentHash(currentStoryboardPackage) !== storyboardPackageHash
+    || currentProject.active_storyboard_package_id !== storyboardPackageId
     || currentProject.video_spec.aspect_ratio !== run.input.aspect_ratio
     || currentProject.video_spec.resolution !== run.input.resolution
     || currentShot.storyboard_image_artifact_id !== run.input.storyboard_image_artifact_id
@@ -265,6 +275,7 @@ function generationPersistencePrecondition(
 type GenerationProgressPersistenceInput = {
   project_id: string;
   storyboard_package_id: string;
+  storyboard_package_hash: string;
   batch_id: string;
   requested_shot_count: number;
   completed_runs: GenerationRun[];
@@ -402,6 +413,7 @@ function persistGenerationProgressInTransaction(
       db,
       input.project_id,
       input.storyboard_package_id,
+      input.storyboard_package_hash,
       input.run
     );
     if (preconditionError) return { ok: false, error: preconditionError };
@@ -701,6 +713,10 @@ export async function startStoryboardVideoGeneration(
   if (!storyboardPackage) {
     return { ok: false, error: { code: "STORYBOARD_PACKAGE_NOT_FOUND", message: `Storyboard Package not found: ${storyboardPackageId}` } };
   }
+  if (storyboardPackage.project_id !== project.project_id) {
+    return { ok: false, error: { code: "STORYBOARD_PACKAGE_PROJECT_MISMATCH", message: "Storyboard Package does not belong to the requested project." } };
+  }
+  const storyboardPackageHash = storyboardPackageContentHash(storyboardPackage);
 
   const allShots = listProjectShots(db, project.project_id);
   const shots = input.selected_shot_ids?.length
@@ -776,6 +792,7 @@ export async function startStoryboardVideoGeneration(
         db,
         project.project_id,
         storyboardPackage.storyboard_package_id,
+        storyboardPackageHash,
         run
       );
       if (mockPreconditionError) return { ok: false, error: mockPreconditionError };
@@ -799,6 +816,7 @@ export async function startStoryboardVideoGeneration(
           db,
           project.project_id,
           storyboardPackage.storyboard_package_id,
+          storyboardPackageHash,
           run
         );
         if (!submit.ok) {
@@ -835,6 +853,7 @@ export async function startStoryboardVideoGeneration(
             db,
             project.project_id,
             storyboardPackage.storyboard_package_id,
+            storyboardPackageHash,
             run
           );
           if (postPollError) return reconcileKnownTask(postPollError);
@@ -858,6 +877,7 @@ export async function startStoryboardVideoGeneration(
                 db,
                 project.project_id,
                 storyboardPackage.storyboard_package_id,
+                storyboardPackageHash,
                 run
               );
               if (postOutputError) return reconcileKnownTask(postOutputError);
@@ -874,6 +894,7 @@ export async function startStoryboardVideoGeneration(
                     db,
                     project.project_id,
                     storyboardPackage.storyboard_package_id,
+                    storyboardPackageHash,
                     run
                   );
                   if (!boundaryError) return null;
@@ -887,6 +908,7 @@ export async function startStoryboardVideoGeneration(
                   const persisted = persistGenerationProgressInTransaction(db, {
                     project_id: project.project_id,
                     storyboard_package_id: storyboardPackage.storyboard_package_id,
+                    storyboard_package_hash: storyboardPackageHash,
                     batch_id: batchId,
                     requested_shot_count: shots.length,
                     completed_runs: runs,
@@ -940,6 +962,7 @@ export async function startStoryboardVideoGeneration(
     const persisted = persistGenerationProgress(db, {
       project_id: project.project_id,
       storyboard_package_id: storyboardPackage.storyboard_package_id,
+      storyboard_package_hash: storyboardPackageHash,
       batch_id: batchId,
       requested_shot_count: shots.length,
       completed_runs: runs,

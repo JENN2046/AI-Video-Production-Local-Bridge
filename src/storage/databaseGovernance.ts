@@ -239,8 +239,17 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
       "SELECT COUNT(*) AS count FROM media_artifacts a LEFT JOIN projects p ON p.project_id = a.project_id WHERE a.project_id IS NOT NULL AND a.project_id <> '' AND p.project_id IS NULL",
       "SELECT COUNT(*) AS count FROM media_artifacts a LEFT JOIN shots s ON s.shot_id = a.shot_id WHERE a.shot_id IS NOT NULL AND a.shot_id <> '' AND s.shot_id IS NULL",
       "SELECT COUNT(*) AS count FROM storyboard_packages s LEFT JOIN projects p ON p.project_id = s.project_id WHERE p.project_id IS NULL",
+      `SELECT COUNT(*) AS count FROM projects p
+        LEFT JOIN storyboard_packages s
+          ON s.storyboard_package_id = json_extract(p.data_json, '$.active_storyboard_package_id')
+          AND s.project_id = p.project_id
+        WHERE COALESCE(json_extract(p.data_json, '$.active_storyboard_package_id'), '') <> ''
+          AND s.storyboard_package_id IS NULL`,
       "SELECT COUNT(*) AS count FROM generation_batches b LEFT JOIN projects p ON p.project_id = b.project_id WHERE p.project_id IS NULL",
       "SELECT COUNT(*) AS count FROM generation_batches b LEFT JOIN storyboard_packages s ON s.storyboard_package_id = b.storyboard_package_id WHERE b.storyboard_package_id <> '' AND s.storyboard_package_id IS NULL",
+      `SELECT COUNT(*) AS count FROM generation_batches b
+        JOIN storyboard_packages s ON s.storyboard_package_id = b.storyboard_package_id
+        WHERE b.storyboard_package_id <> '' AND b.project_id IS NOT s.project_id`,
       "SELECT COUNT(*) AS count FROM workbench_project_meta m LEFT JOIN projects p ON p.project_id = m.project_id WHERE p.project_id IS NULL",
       "SELECT COUNT(*) AS count FROM regeneration_requests r LEFT JOIN projects p ON p.project_id = r.project_id WHERE p.project_id IS NULL",
       "SELECT COUNT(*) AS count FROM regeneration_requests r LEFT JOIN shots s ON s.shot_id = r.shot_id WHERE s.shot_id IS NULL",

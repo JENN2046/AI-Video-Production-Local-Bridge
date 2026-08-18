@@ -1,5 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
+import { canonicalizeJcs } from "../packages/domain/jcs.js";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { attachArtifactToShot, createScopedArtifactFromBlob, getMediaArtifact, verifyMediaArtifactBytes } from "./mediaArtifacts.js";
 import { requireProjectShotWorkflowWriteAction } from "./operationalWriteGates.js";
@@ -46,6 +47,13 @@ export interface ImportStoryboardPackageInput {
   };
 }
 
+export function storyboardPackageContentHash(storyboardPackage: StoryboardPackage): string {
+  return createHash("sha256")
+    .update("storyboard-package-v1\0")
+    .update(canonicalizeJcs(storyboardPackage))
+    .digest("hex");
+}
+
 type ImportResult =
   | {
       ok: true;
@@ -90,8 +98,29 @@ function validateSnapshot(snapshot: ApprovedShotSnapshot, index: number, db: M0D
 }
 
 export function saveStoryboardPackage(db: M0Database, storyboardPackage: StoryboardPackage): void {
+  const existing = db.prepare(`SELECT storyboard_package_id, project_id, data_json
+    FROM storyboard_packages WHERE storyboard_package_id = ?`).get(storyboardPackage.storyboard_package_id) as {
+      storyboard_package_id: string;
+      project_id: string;
+      data_json: string;
+    } | undefined;
+  if (existing) {
+    try {
+      const persisted = JSON.parse(existing.data_json) as StoryboardPackage;
+      if (existing.storyboard_package_id !== persisted.storyboard_package_id
+        || existing.project_id !== persisted.project_id
+        || existing.project_id !== storyboardPackage.project_id
+        || storyboardPackageContentHash(persisted) !== storyboardPackageContentHash(storyboardPackage)) {
+        throw new Error("STORYBOARD_PACKAGE_IMMUTABLE");
+      }
+      return;
+    } catch (error) {
+      if (error instanceof Error && error.message === "STORYBOARD_PACKAGE_IMMUTABLE") throw error;
+      throw new Error("STORYBOARD_PACKAGE_IMMUTABLE");
+    }
+  }
   db.prepare(`
-    INSERT OR REPLACE INTO storyboard_packages (storyboard_package_id, project_id, data_json, updated_at)
+    INSERT INTO storyboard_packages (storyboard_package_id, project_id, data_json, updated_at)
     VALUES (?, ?, ?, CURRENT_TIMESTAMP)
   `).run(storyboardPackage.storyboard_package_id, storyboardPackage.project_id, JSON.stringify(storyboardPackage));
 }

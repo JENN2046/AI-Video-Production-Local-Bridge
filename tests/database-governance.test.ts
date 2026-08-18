@@ -1502,18 +1502,24 @@ test("database check detects package and batch drift plus missing batch links", 
     migrateDatabase(sqlitePath);
     const db = new DatabaseSync(sqlitePath);
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES ('project_links', ?)")
-      .run(JSON.stringify({ project_id: "project_links" }));
+      .run(JSON.stringify({ project_id: "project_links", active_storyboard_package_id: "package_cross_project" }));
+    db.prepare("INSERT INTO projects (project_id, data_json) VALUES ('project_package_owner', ?)")
+      .run(JSON.stringify({ project_id: "project_package_owner" }));
     db.prepare("INSERT INTO storyboard_packages (storyboard_package_id, project_id, data_json) VALUES ('package_drift', 'project_links', ?)")
       .run(JSON.stringify({ storyboard_package_id: "package_other", project_id: "project_links" }));
+    db.prepare("INSERT INTO storyboard_packages (storyboard_package_id, project_id, data_json) VALUES ('package_cross_project', 'project_package_owner', ?)")
+      .run(JSON.stringify({ storyboard_package_id: "package_cross_project", project_id: "project_package_owner" }));
     db.prepare("INSERT INTO generation_batches (batch_id, project_id, storyboard_package_id, data_json) VALUES ('batch_orphan_package', 'project_links', 'package_missing', ?)")
       .run(JSON.stringify({ batch_id: "batch_orphan_package", project_id: "project_links", storyboard_package_id: "package_missing" }));
+    db.prepare("INSERT INTO generation_batches (batch_id, project_id, storyboard_package_id, data_json) VALUES ('batch_cross_project', 'project_links', 'package_cross_project', ?)")
+      .run(JSON.stringify({ batch_id: "batch_cross_project", project_id: "project_links", storyboard_package_id: "package_cross_project" }));
     db.prepare("INSERT INTO generation_runs (run_id, batch_id, project_id, shot_id, run_type, status, data_json) VALUES ('run_orphan_batch', 'batch_missing', 'project_links', '', 'image_to_video', 'queued', ?)")
       .run(JSON.stringify({ run_id: "run_orphan_batch", batch_id: "batch_missing", project_id: "project_links", shot_id: "" }));
     db.close();
 
     const checked = checkDatabase(sqlitePath);
     assert.equal(checked.structured_drift_rows, 1);
-    assert.equal(checked.orphan_rows, 2);
+    assert.equal(checked.orphan_rows, 4);
     assert.equal(checked.result, "FAIL");
   } finally {
     rmSync(root, { recursive: true, force: true });

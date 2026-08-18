@@ -7,11 +7,13 @@ import {
   getGenerationStatus,
   getMediaArtifact,
   getProject,
+  getStoryboardPackage,
   getShot,
   importStoryboardPackage,
   openM0Database,
   registerMediaArtifact,
   saveProject,
+  saveStoryboardPackage,
   saveShot,
   startStoryboardVideoGeneration
 } from "../src/index.js";
@@ -170,6 +172,23 @@ test("M0-D generation rejects stale package inputs before creating a run", async
   }
 });
 
+test("M0-D frozen Storyboard Package saves are idempotent and reject content or project replacement", () => {
+  const db = openM0Database();
+  try {
+    const { storyboard } = setupThreeShotProject(db);
+    const frozen = storyboard.storyboard_package;
+    assert.doesNotThrow(() => saveStoryboardPackage(db, structuredClone(frozen)));
+    const changed = structuredClone(frozen);
+    changed.approved_shot_snapshots[0].description = "Changed after approval";
+    assert.throws(() => saveStoryboardPackage(db, changed), /STORYBOARD_PACKAGE_IMMUTABLE/);
+    assert.throws(() => saveStoryboardPackage(db, { ...structuredClone(frozen), project_id: "project_other" }),
+      /STORYBOARD_PACKAGE_IMMUTABLE/);
+    assert.deepEqual(getStoryboardPackage(db, frozen.storyboard_package_id), frozen);
+  } finally {
+    db.close();
+  }
+});
+
 test("M0-D generation cannot bypass a pending-review operational gate", async () => {
   const db = openM0Database();
   try {
@@ -239,8 +258,70 @@ test("M0-D async generation reconciles a known Provider task after Project video
       aspect_ratio: "16:9",
       resolution: "1920x1080"
     });
-    assert.equal((db.prepare(`SELECT COUNT(*) AS count FROM generation_jobs
-      WHERE state = 'manual_reconciliation' AND reconciliation_reason = 'CONTENT_MUTATION_REQUIRES_RECONCILIATION'`)
+    assert.equal((db.prepare(`SELECT COUNT(*) AS count FROM generation_jobs job
+      JOIN generation_intents intent ON intent.intent_id = job.intent_id
+      WHERE job.state = 'manual_reconciliation'
+        AND job.reconciliation_reason = 'CONTENT_MUTATION_REQUIRES_RECONCILIATION'
+        AND intent.provider_task_id = 'task_video_spec_drift'`)
+      .get() as { count: number }).count, 1);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ? AND role = 'generated_clip'")
+      .get(project.project_id) as { count: number }).count, 0);
+  } finally {
+    RunningHubVideoProviderAdapter.prototype.submitGeneration = originalSubmit;
+    for (const name of environment) {
+      const value = previous.get(name);
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    db.close();
+  }
+});
+
+test("M0-D async generation reconciles a known Provider task after frozen Package content drift", async () => {
+  const db = openM0Database();
+  const originalSubmit = RunningHubVideoProviderAdapter.prototype.submitGeneration;
+  const environment = [
+    "M1_REAL_PROVIDER",
+    "REAL_PROVIDER_ENABLED",
+    "M1_REAL_PROVIDER_EXECUTION_ALLOWED",
+    "M1_REAL_PROVIDER_COST_ACK",
+    "RUNNINGHUB_API_KEY"
+  ] as const;
+  const previous = new Map(environment.map((name) => [name, process.env[name]]));
+  try {
+    process.env.M1_REAL_PROVIDER = "runninghub";
+    process.env.REAL_PROVIDER_ENABLED = "true";
+    process.env.M1_REAL_PROVIDER_EXECUTION_ALLOWED = "true";
+    process.env.M1_REAL_PROVIDER_COST_ACK = "true";
+    process.env.RUNNINGHUB_API_KEY = "synthetic-test-key";
+    const { project, storyboard } = setupThreeShotProject(db);
+    const selectedShot = storyboard.shots[0];
+    let submitCalls = 0;
+    RunningHubVideoProviderAdapter.prototype.submitGeneration = async () => {
+      submitCalls += 1;
+      const changed = structuredClone(storyboard.storyboard_package);
+      changed.approved_shot_snapshots[1].description = "Concurrent Package replacement";
+      db.prepare(`UPDATE storyboard_packages SET data_json = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE storyboard_package_id = ?`).run(JSON.stringify(changed), changed.storyboard_package_id);
+      return { ok: true, provider_job_id: "task_storyboard_package_drift", provider_status: "PENDING" };
+    };
+
+    const result = await startStoryboardVideoGeneration({
+      project_id: project.project_id,
+      storyboard_package_id: storyboard.storyboard_package.storyboard_package_id,
+      selected_shot_ids: [selectedShot.shot_id],
+      provider_execution: { provider: "real", provider_name: "runninghub", cost_acknowledged: true },
+      confirmation: { confirmation_level: "hard_gate", user_confirmed: true },
+      allow_live_provider: true
+    }, db);
+
+    assert.equal(submitCalls, 1);
+    assert.equal(result.ok ? null : result.error.code, "CONTENT_MUTATION_REQUIRES_RECONCILIATION");
+    assert.equal((db.prepare(`SELECT COUNT(*) AS count FROM generation_jobs job
+      JOIN generation_intents intent ON intent.intent_id = job.intent_id
+      WHERE job.state = 'manual_reconciliation'
+        AND job.reconciliation_reason = 'CONTENT_MUTATION_REQUIRES_RECONCILIATION'
+        AND intent.provider_task_id = 'task_storyboard_package_drift'`)
       .get() as { count: number }).count, 1);
     assert.equal((db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ? AND role = 'generated_clip'")
       .get(project.project_id) as { count: number }).count, 0);
