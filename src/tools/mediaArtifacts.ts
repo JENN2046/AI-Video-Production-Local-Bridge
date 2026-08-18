@@ -1828,13 +1828,19 @@ export function validateActiveArtifactReference(
 
 export function validateAcceptedClipReference(
   db: M0Database,
-  shot: Pick<Shot, "project_id" | "shot_id" | "accepted_clip_artifact_id" | "clip_versions">
+  shot: Pick<Shot, "project_id" | "shot_id" | "status" | "review" | "accepted_clip_artifact_id" | "clip_versions">
 ): ActiveArtifactReferenceResult {
   if (!shot.accepted_clip_artifact_id) {
     return { ok: false, error: { code: "SHOT_ACCEPTED_CLIP_MISSING", message: "SHOT has no accepted clip reference." } };
   }
-  if (!shot.clip_versions.some((version) => version.artifact_id === shot.accepted_clip_artifact_id)) {
+  const acceptedVersion = shot.clip_versions.find((version) => version.artifact_id === shot.accepted_clip_artifact_id);
+  if (!acceptedVersion) {
     return { ok: false, error: { code: "ARTIFACT_NOT_IN_SHOT_REVIEW", message: "Accepted clip is not a reviewed version of the SHOT." } };
+  }
+  if (acceptedVersion.review_status !== "approved"
+    || shot.status !== "approved"
+    || shot.review.approval_status !== "approved") {
+    return { ok: false, error: { code: "SHOT_ACCEPTED_CLIP_NOT_APPROVED", message: "Accepted clip is not the currently approved SHOT version." } };
   }
   return validateActiveArtifactReference(db, {
     artifact_id: shot.accepted_clip_artifact_id,

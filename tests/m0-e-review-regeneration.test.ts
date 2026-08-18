@@ -9,6 +9,7 @@ import {
   getShot,
   importStoryboardPackage,
   markShotClipReview,
+  MockVideoProviderAdapter,
   openM0Database,
   regenerateShotVideo,
   registerMediaArtifact,
@@ -466,6 +467,88 @@ test("legacy regeneration rejects archived projects before Provider, Artifact, r
       (SELECT COUNT(*) FROM generation_runs WHERE project_id = ?) AS runs`).get(project.project_id, project.project_id) as Record<string, unknown>) },
     { ...(countsBefore as Record<string, unknown>) });
   } finally {
+    db.close();
+  }
+});
+
+test("legacy regeneration rechecks the content gate after asynchronous Provider completion", async () => {
+  const db = openM0Database();
+  const originalSubmit = MockVideoProviderAdapter.prototype.submitGeneration;
+  try {
+    const { project, shot, run, artifactId } = await setupGeneratedShot(db);
+    assert.equal(markShotClipReview({
+      shot_id: shot.shot_id,
+      artifact_id: artifactId,
+      decision: "revision_needed",
+      rejection_reasons: ["exercise post-await delivery gate"]
+    }, db).ok, true);
+    const shotBefore = getShot(db, shot.shot_id);
+    const countsBefore = db.prepare(`SELECT
+      (SELECT COUNT(*) FROM media_artifacts WHERE project_id = ?) AS artifacts,
+      (SELECT COUNT(*) FROM generation_runs WHERE project_id = ?) AS runs`)
+      .get(project.project_id, project.project_id);
+    MockVideoProviderAdapter.prototype.submitGeneration = async function () {
+      const concurrent = openM0Database();
+      try {
+        assert.equal(setWorkbenchProjectLifecycle(project.project_id, "archived", concurrent).ok, true);
+      } finally {
+        concurrent.close();
+      }
+      return originalSubmit.call(this);
+    };
+
+    const regenerated = await regenerateShotVideo({
+      shot_id: shot.shot_id,
+      previous_run_id: run.run_id,
+      updated_prompt: "This result must not persist after the project is archived.",
+      confirmation: { confirmation_level: "hard_gate", user_confirmed: true }
+    }, db);
+    assert.equal(regenerated.ok ? null : regenerated.error.code, "PROJECT_ARCHIVED");
+    assert.deepEqual(getShot(db, shot.shot_id), shotBefore);
+    assert.deepEqual(db.prepare(`SELECT
+      (SELECT COUNT(*) FROM media_artifacts WHERE project_id = ?) AS artifacts,
+      (SELECT COUNT(*) FROM generation_runs WHERE project_id = ?) AS runs`)
+      .get(project.project_id, project.project_id), countsBefore);
+  } finally {
+    MockVideoProviderAdapter.prototype.submitGeneration = originalSubmit;
+    db.close();
+  }
+});
+
+test("legacy regeneration rolls Artifact, Run, and SHOT back as one persistence unit", async () => {
+  const db = openM0Database();
+  try {
+    const { project, shot, run, artifactId } = await setupGeneratedShot(db);
+    assert.equal(markShotClipReview({
+      shot_id: shot.shot_id,
+      artifact_id: artifactId,
+      decision: "revision_needed",
+      rejection_reasons: ["exercise atomic regeneration rollback"]
+    }, db).ok, true);
+    const shotBefore = getShot(db, shot.shot_id);
+    const countsBefore = db.prepare(`SELECT
+      (SELECT COUNT(*) FROM media_artifacts WHERE project_id = ?) AS artifacts,
+      (SELECT COUNT(*) FROM generation_runs WHERE project_id = ?) AS runs`)
+      .get(project.project_id, project.project_id);
+    db.exec(`CREATE TEMP TRIGGER reject_regeneration_run_for_test
+      BEFORE INSERT ON generation_runs
+      WHEN NEW.run_type = 'regenerate_shot'
+      BEGIN SELECT RAISE(ABORT, 'SYNTHETIC_REGENERATION_PERSIST_FAILURE'); END;`);
+
+    const regenerated = await regenerateShotVideo({
+      shot_id: shot.shot_id,
+      previous_run_id: run.run_id,
+      updated_prompt: "This regeneration must roll back atomically.",
+      confirmation: { confirmation_level: "hard_gate", user_confirmed: true }
+    }, db);
+    assert.equal(regenerated.ok ? null : regenerated.error.code, "REGENERATION_PERSIST_FAILED");
+    assert.deepEqual(getShot(db, shot.shot_id), shotBefore);
+    assert.deepEqual(db.prepare(`SELECT
+      (SELECT COUNT(*) FROM media_artifacts WHERE project_id = ?) AS artifacts,
+      (SELECT COUNT(*) FROM generation_runs WHERE project_id = ?) AS runs`)
+      .get(project.project_id, project.project_id), countsBefore);
+  } finally {
+    if (Boolean((db as unknown as { isTransaction?: boolean }).isTransaction)) db.exec("ROLLBACK");
     db.close();
   }
 });

@@ -268,6 +268,75 @@ test("M0-F assembly succeeds after all shots are approved", async () => {
   }
 });
 
+test("M0-F reassembly rejects a retained clip after targeted final-review regeneration", async () => {
+  const db = openM0Database();
+  try {
+    const { project, storyboard, generation } = await setupGeneratedProject(db);
+    for (const shot of storyboard.shots) {
+      const run = generation.runs.find((item) => item.shot_id === shot.shot_id);
+      assert(run);
+      assert.equal(markShotClipReview({
+        shot_id: shot.shot_id,
+        artifact_id: run.output.artifact_ids[0],
+        decision: "approved"
+      }, db).ok, true);
+    }
+    const first = assembleFinalVideo({
+      project_id: project.project_id,
+      confirmation: { confirmation_level: "explicit", user_confirmed: true }
+    }, db);
+    assert.equal(first.ok, true);
+    if (!first.ok) return;
+    const targetShot = getShot(db, storyboard.shots[0].shot_id);
+    assert.ok(targetShot?.accepted_clip_artifact_id);
+    const delivery = db.prepare(`SELECT assembly_input_fingerprint FROM workbench_delivery_state
+      WHERE project_id = ?`).get(project.project_id) as { assembly_input_fingerprint: string };
+    const before = {
+      finalArtifacts: db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ? AND role = 'final_video'")
+        .get(project.project_id),
+      jobs: db.prepare("SELECT COUNT(*) AS count FROM workbench_delivery_jobs WHERE project_id = ?")
+        .get(project.project_id)
+    };
+
+    db.exec("BEGIN IMMEDIATE");
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, from_state, to_state, artifact_id, input_fingerprint,
+        reason_code, data_json, created_at)
+      VALUES ('event_m0f_targeted_regeneration', ?, 'final_review_regenerate_shots', 'final_review',
+        'revision_requested', ?, ?, 'FINAL_SHOT_REGENERATION_REQUESTED', ?, ?)`)
+      .run(project.project_id, first.final_video_artifact_id, delivery.assembly_input_fingerprint,
+        JSON.stringify({ shot_ids: [targetShot.shot_id] }), "2026-08-18T08:00:00.000Z");
+    const rejected = markShotClipReview({
+      shot_id: targetShot.shot_id,
+      artifact_id: targetShot.accepted_clip_artifact_id,
+      decision: "revision_needed",
+      rejection_reasons: ["targeted final review regeneration"]
+    }, db);
+    assert.equal(rejected.ok, true);
+    db.exec("COMMIT");
+    assert.equal(getShot(db, targetShot.shot_id)?.accepted_clip_artifact_id, targetShot.accepted_clip_artifact_id);
+
+    const reassembled = assembleFinalVideo({
+      project_id: project.project_id,
+      confirmation: { confirmation_level: "explicit", user_confirmed: true }
+    }, db);
+    assert.equal(reassembled.ok, false);
+    if (!reassembled.ok) {
+      assert.equal(reassembled.error.code, "FINAL_ASSEMBLY_NOT_READY");
+      assert.equal(reassembled.blocking_reasons?.some((reason) => reason.includes("SHOT_ACCEPTED_CLIP_NOT_APPROVED")), true);
+    }
+    assert.equal((db.prepare("SELECT workflow_state FROM workbench_delivery_state WHERE project_id = ?")
+      .get(project.project_id) as { workflow_state: string }).workflow_state, "revision_requested");
+    assert.deepEqual(db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ? AND role = 'final_video'")
+      .get(project.project_id), before.finalArtifacts);
+    assert.deepEqual(db.prepare("SELECT COUNT(*) AS count FROM workbench_delivery_jobs WHERE project_id = ?")
+      .get(project.project_id), before.jobs);
+  } finally {
+    if (Boolean((db as unknown as { isTransaction?: boolean }).isTransaction)) db.exec("ROLLBACK");
+    db.close();
+  }
+});
+
 test("M0-F reassembly records the approval revocation before producing a new final version", async () => {
   const db = openM0Database();
   try {
