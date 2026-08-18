@@ -6,13 +6,16 @@ import {
   createProject,
   getGenerationStatus,
   getMediaArtifact,
+  getProject,
   getShot,
   importStoryboardPackage,
   openM0Database,
   registerMediaArtifact,
+  saveProject,
   saveShot,
   startStoryboardVideoGeneration
 } from "../src/index.js";
+import { RunningHubVideoProviderAdapter } from "../src/tools/videoProviderAdapters.js";
 import {
   approveWorkbenchDeliveryFixture,
   completeWorkbenchAssemblyFixture,
@@ -186,6 +189,68 @@ test("M0-D generation cannot bypass a pending-review operational gate", async ()
     const runCount = db.prepare("SELECT COUNT(*) AS count FROM generation_runs WHERE project_id = ?").get(project.project_id) as { count: number };
     assert.equal(runCount.count, first.runs.length);
   } finally {
+    db.close();
+  }
+});
+
+test("M0-D async generation reconciles a known Provider task after Project video spec drift", async () => {
+  const db = openM0Database();
+  const originalSubmit = RunningHubVideoProviderAdapter.prototype.submitGeneration;
+  const environment = [
+    "M1_REAL_PROVIDER",
+    "REAL_PROVIDER_ENABLED",
+    "M1_REAL_PROVIDER_EXECUTION_ALLOWED",
+    "M1_REAL_PROVIDER_COST_ACK",
+    "RUNNINGHUB_API_KEY"
+  ] as const;
+  const previous = new Map(environment.map((name) => [name, process.env[name]]));
+  try {
+    process.env.M1_REAL_PROVIDER = "runninghub";
+    process.env.REAL_PROVIDER_ENABLED = "true";
+    process.env.M1_REAL_PROVIDER_EXECUTION_ALLOWED = "true";
+    process.env.M1_REAL_PROVIDER_COST_ACK = "true";
+    process.env.RUNNINGHUB_API_KEY = "synthetic-test-key";
+    const { project, storyboard } = setupThreeShotProject(db);
+    const selectedShot = storyboard.shots[0];
+    let submitCalls = 0;
+    RunningHubVideoProviderAdapter.prototype.submitGeneration = async () => {
+      submitCalls += 1;
+      const concurrentProject = getProject(db, project.project_id);
+      assert.ok(concurrentProject);
+      concurrentProject.video_spec.aspect_ratio = "16:9";
+      concurrentProject.video_spec.resolution = "1920x1080";
+      saveProject(db, concurrentProject);
+      return { ok: true, provider_job_id: "task_video_spec_drift", provider_status: "PENDING" };
+    };
+
+    const result = await startStoryboardVideoGeneration({
+      project_id: project.project_id,
+      storyboard_package_id: storyboard.storyboard_package.storyboard_package_id,
+      selected_shot_ids: [selectedShot.shot_id],
+      provider_execution: { provider: "real", provider_name: "runninghub", cost_acknowledged: true },
+      confirmation: { confirmation_level: "hard_gate", user_confirmed: true },
+      allow_live_provider: true
+    }, db);
+
+    assert.equal(submitCalls, 1);
+    assert.equal(result.ok ? null : result.error.code, "CONTENT_MUTATION_REQUIRES_RECONCILIATION");
+    assert.deepEqual(getProject(db, project.project_id)?.video_spec, {
+      duration_seconds: 15,
+      aspect_ratio: "16:9",
+      resolution: "1920x1080"
+    });
+    assert.equal((db.prepare(`SELECT COUNT(*) AS count FROM generation_jobs
+      WHERE state = 'manual_reconciliation' AND reconciliation_reason = 'CONTENT_MUTATION_REQUIRES_RECONCILIATION'`)
+      .get() as { count: number }).count, 1);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ? AND role = 'generated_clip'")
+      .get(project.project_id) as { count: number }).count, 0);
+  } finally {
+    RunningHubVideoProviderAdapter.prototype.submitGeneration = originalSubmit;
+    for (const name of environment) {
+      const value = previous.get(name);
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
     db.close();
   }
 });

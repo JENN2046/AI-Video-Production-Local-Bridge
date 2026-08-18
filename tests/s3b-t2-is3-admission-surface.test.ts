@@ -69,6 +69,12 @@ function addEligibleCandidate(fixture: Fixture, ids: CandidateIds, filename: str
     generation_batch_ids: [],
     exports: { final_video_artifact_id: "" }
   };
+  saveProject(fixture.db, {
+    ...project,
+    status: "draft",
+    shot_ids: [],
+    active_storyboard_package_id: ""
+  });
   saveProject(fixture.db, project);
   fixture.db.prepare("UPDATE workbench_project_meta SET classification = 'production', lifecycle = 'active' WHERE project_id = ?")
     .run(ids.project_id);

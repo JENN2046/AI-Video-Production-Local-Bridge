@@ -248,13 +248,15 @@ function generationPersistencePrecondition(
     return { code: "SHOT_NOT_FOUND", message: `Shot not found: ${run.shot_id}` };
   }
   if (currentProject.active_storyboard_package_id !== storyboardPackageId
+    || currentProject.video_spec.aspect_ratio !== run.input.aspect_ratio
+    || currentProject.video_spec.resolution !== run.input.resolution
     || currentShot.storyboard_image_artifact_id !== run.input.storyboard_image_artifact_id
     || currentShot.video_prompt !== run.input.video_prompt
     || currentShot.negative_prompt !== run.input.negative_prompt
     || currentShot.duration_seconds !== run.input.duration_seconds) {
     return {
       code: "STORYBOARD_PACKAGE_INPUT_STALE",
-      message: `SHOT inputs differ from the frozen Storyboard Package: ${run.shot_id}`
+      message: `Project or SHOT inputs differ from the frozen generation request: ${run.shot_id}`
     };
   }
   return null;

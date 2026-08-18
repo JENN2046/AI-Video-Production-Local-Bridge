@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import test from "node:test";
 
 import { openM0Database, type M0Database } from "../src/storage/sqlite.js";
+import { paths } from "../src/paths.js";
 import { confirmWorkbenchGeneration } from "../src/tools/workbenchGeneration.js";
 import { decideWorkbenchPendingAction, transitionWorkbenchDraft } from "../src/tools/workbenchInbox.js";
 import { saveWorkbenchPendingActionRecord } from "../src/tools/workbenchInboxStore.js";
@@ -361,6 +362,35 @@ test("Workbench delivery latest export follows the persisted pointer instead of 
     assert.throws(() => context.db.prepare("DELETE FROM workbench_exports WHERE export_id = ?")
       .run(historicalExportId), /WORKBENCH_EXPORT_IMMUTABLE/);
   } finally {
+    teardown(context);
+  }
+});
+
+test("closed delivery stops claiming delivered when the current Export file drifts or disappears", () => {
+  const context = setup();
+  let exportPath = "";
+  try {
+    closeProductionProject(context);
+    const initial = getProductionDeliveryStatus({ project_id: context.production.project_id }, context.db);
+    assert.equal(initial.ok, true);
+    if (initial.ok) assert.equal(initial.data.delivered, true);
+    const currentExport = context.db.prepare(`SELECT export.relative_path
+      FROM workbench_delivery_state state
+      JOIN workbench_exports export ON export.export_id = state.latest_export_id
+      WHERE state.project_id = ?`).get(context.production.project_id) as { relative_path: string };
+    exportPath = join(paths.exportsRoot, context.production.project_id, basename(currentExport.relative_path));
+
+    writeFileSync(exportPath, Buffer.from("tampered export", "utf8"));
+    const drifted = getProductionDeliveryStatus({ project_id: context.production.project_id }, context.db);
+    assert.equal(drifted.ok, true);
+    if (drifted.ok) assert.equal(drifted.data.delivered, false);
+
+    rmSync(exportPath, { force: true });
+    const missing = getProductionDeliveryStatus({ project_id: context.production.project_id }, context.db);
+    assert.equal(missing.ok, true);
+    if (missing.ok) assert.equal(missing.data.delivered, false);
+  } finally {
+    if (exportPath) rmSync(exportPath, { force: true });
     teardown(context);
   }
 });

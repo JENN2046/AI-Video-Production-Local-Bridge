@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { verifyWorkbenchExportFile } from "../storage/workbenchExportIntegrity.js";
 import type { M0Database } from "../storage/sqlite.js";
 import { ArtifactStructuredDriftError, validateAcceptedClipReference, validateActiveArtifactReference, type ArtifactRole, type ArtifactType, type MediaArtifact } from "../tools/mediaArtifacts.js";
 import { listProjectShots, type Project, type Shot } from "../tools/projects.js";
@@ -9,6 +10,7 @@ import { getWorkbenchProjectSummary, getWorkbenchProjectWorkspace } from "../too
 import {
   assertWorkbenchContentMutationAllowed,
   assertWorkbenchProductionWriteAllowed,
+  getLatestWorkbenchExport,
   getWorkbenchDeliveryState
 } from "../tools/workbenchDeliveryState.js";
 import { appendWorkbenchInboxEvent, getWorkbenchDraftRecord, saveWorkbenchDraftRecord, type WorkbenchDraftRecord } from "../tools/workbenchInboxStore.js";
@@ -619,6 +621,13 @@ export function getProductionDeliveryStatus(input: { project_id: string }, db: M
     const finalArtifact = finalValidated?.ok ? publicArtifact(finalValidated.artifact) : null;
     const deliveryState = getWorkbenchDeliveryState(db, project.project_id);
     if (!deliveryState) dataIntegrityViolation("delivery_state");
+    const currentExport = deliveryState.latest_export_id
+      ? getLatestWorkbenchExport(db, project.project_id)
+      : null;
+    const currentExportVerified = currentExport
+      && currentExport.export_id === deliveryState.latest_export_id
+      && currentExport.artifact_id === deliveryState.current_final_artifact_id
+      && verifyWorkbenchExportFile(currentExport).ok;
     return ok(id, {
       project_id: project.project_id,
       project_status: project.status,
@@ -628,7 +637,7 @@ export function getProductionDeliveryStatus(input: { project_id: string }, db: M
       readiness_checks: accepted.map((item) => item.check),
       final_artifact: finalArtifact,
       final_artifact_reason_code: finalValidated?.ok ? null : finalValidated ? finalValidated.error.code : "FINAL_ARTIFACT_NOT_CREATED",
-      delivered: deliveryState.workflow_state === "closed" && Boolean(finalArtifact)
+      delivered: deliveryState.workflow_state === "closed" && Boolean(finalArtifact) && currentExportVerified === true
     });
   } catch (error) {
     return fail(id, domainErrorBody(error));
