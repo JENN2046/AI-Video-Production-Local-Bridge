@@ -2028,9 +2028,9 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
           AND event.export_id IS NEW.latest_export_id
           AND event.created_at IS NEW.closed_at
       ))
-      OR (OLD.workflow_state = 'legacy_review_required' AND NEW.workflow_state IN ('not_ready','ready_to_assemble','final_review'))
+      OR (OLD.workflow_state = 'legacy_review_required' AND NEW.workflow_state IN ('not_ready','ready_to_assemble','approved'))
     ))
-    OR (OLD.workflow_state = 'final_review' AND NEW.workflow_state = 'approved' AND EXISTS (
+    OR (OLD.workflow_state IN ('final_review','legacy_review_required') AND NEW.workflow_state = 'approved' AND EXISTS (
       SELECT 1 FROM workbench_delivery_events event
       WHERE event.event_type = 'final_review_accepted'
         AND event.approval_binding_key = json_array(

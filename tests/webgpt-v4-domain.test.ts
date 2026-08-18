@@ -178,7 +178,31 @@ function setProductionFinalEvidence(
 test("WebGPT V4 production mutations reject closed projects at the shared write boundary", () => {
   const context = setup();
   try {
+    context.db.prepare(`UPDATE workbench_project_meta SET
+      next_action_override = '遗留人工动作', next_action_priority = 'urgent',
+      next_action_expires_at = '2099-01-01T00:00:00.000Z', next_action_project_status = ?
+      WHERE project_id = ?`).run(context.production.status, context.production.project_id);
     closeProductionProject(context);
+    const closedWorkspace = getWorkbenchProjectWorkspace(
+      context.production.project_id,
+      "overview",
+      context.db,
+      { touch_last_opened: false }
+    );
+    assert.equal(closedWorkspace.ok, true);
+    if (closedWorkspace.ok) {
+      const summary = closedWorkspace.data.summary as {
+        next_action: { source: string; label: string; reason_code: string };
+      };
+      assert.deepEqual(summary.next_action, {
+        source: "derived",
+        label: "已结案",
+        reason_code: "delivered",
+        priority: "normal",
+        expires_at: null,
+        derived: { label: "已结案", reason_code: "delivered", priority: "normal" }
+      });
+    }
     const shotBefore = context.db.prepare("SELECT data_json, updated_at FROM shots WHERE shot_id = ?")
       .get(context.productionShot.shot_id) as { data_json: string; updated_at: string };
     const countsBefore = context.db.prepare(`SELECT

@@ -510,7 +510,7 @@ test("M1 legacy batch lane blocks RunningHub and routes real generation to V2", 
   }
 });
 
-test("M1 legacy live generation rechecks the content boundary after Provider submit without resubmitting or persisting", async () => {
+test("M1 legacy live generation preserves a known Provider task for reconciliation after content drift", async () => {
   const db = openM0Database();
   const originalFetch = globalThis.fetch;
   let providerCalls = 0;
@@ -522,7 +522,8 @@ test("M1 legacy live generation rechecks the content boundary after Provider sub
       shot: db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(shotId),
       artifacts: db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ?").get(project.project_id),
       runs: db.prepare("SELECT COUNT(*) AS count FROM generation_runs WHERE project_id = ?").get(project.project_id),
-      batches: db.prepare("SELECT COUNT(*) AS count FROM generation_batches WHERE project_id = ?").get(project.project_id)
+      batches: db.prepare("SELECT COUNT(*) AS count FROM generation_batches WHERE project_id = ?").get(project.project_id),
+      intents: db.prepare("SELECT COUNT(*) AS count FROM generation_intents WHERE project_id = ?").get(project.project_id)
     };
     globalThis.fetch = (async () => {
       providerCalls += 1;
@@ -565,19 +566,58 @@ test("M1 legacy live generation rechecks the content boundary after Provider sub
       confirmation: { confirmation_level: "hard_gate", user_confirmed: true }
     }, db));
 
-    assert.equal(result.ok ? null : result.error.code, "DELIVERY_JOB_ACTIVE");
+    assert.equal(result.ok ? null : result.error.code, "CONTENT_MUTATION_REQUIRES_RECONCILIATION");
     assert.equal(providerCalls, 1);
     assert.deepEqual(db.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(project.project_id), before.project);
     assert.deepEqual(db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(shotId), before.shot);
     assert.deepEqual(db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ?").get(project.project_id), before.artifacts);
-    assert.deepEqual(db.prepare("SELECT COUNT(*) AS count FROM generation_runs WHERE project_id = ?").get(project.project_id), before.runs);
-    assert.deepEqual(db.prepare("SELECT COUNT(*) AS count FROM generation_batches WHERE project_id = ?").get(project.project_id), before.batches);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM generation_runs WHERE project_id = ?").get(project.project_id) as { count: number }).count,
+      (before.runs as { count: number }).count + 1);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM generation_batches WHERE project_id = ?").get(project.project_id) as { count: number }).count,
+      (before.batches as { count: number }).count + 1);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM generation_intents WHERE project_id = ?").get(project.project_id) as { count: number }).count,
+      (before.intents as { count: number }).count + 1);
+    const reconciliation = db.prepare(`SELECT i.provider_task_id, i.status AS intent_status,
+        r.status AS run_status, json_extract(r.data_json, '$.provider.provider_job_id') AS run_provider_task_id,
+        j.state AS job_state, j.reconciliation_reason
+      FROM generation_intents i
+      JOIN generation_runs r ON r.run_id = i.run_id
+      JOIN generation_jobs j ON j.intent_id = i.intent_id
+      WHERE i.project_id = ? AND i.shot_id = ?`).get(project.project_id, shotId) as Record<string, unknown>;
+    assert.deepEqual({ ...reconciliation }, {
+      provider_task_id: "synthetic_runway_task",
+      intent_status: "running",
+      run_status: "running",
+      run_provider_task_id: "synthetic_runway_task",
+      job_state: "manual_reconciliation",
+      reconciliation_reason: "CONTENT_MUTATION_REQUIRES_RECONCILIATION"
+    });
+    assert.equal((db.prepare(`SELECT COUNT(*) AS count FROM generation_job_events event
+      JOIN generation_jobs job ON job.job_id = event.job_id
+      JOIN generation_intents intent ON intent.intent_id = job.intent_id
+      WHERE intent.project_id = ? AND event.to_state = 'manual_reconciliation'
+        AND event.reason_code = 'CONTENT_MUTATION_REQUIRES_RECONCILIATION'`).get(project.project_id) as { count: number }).count, 1);
     failWorkbenchAssemblyFixture(db, {
       project_id: project.project_id,
       job_id: "job_m1_provider_drift",
       event_id: "event_m1_provider_drift_failed",
       created_at: "2026-08-17T00:00:00.000Z"
     });
+    const duplicate = await withEnvAsync({
+      REAL_PROVIDER_ENABLED: "true",
+      M1_REAL_PROVIDER: "runway",
+      M1_REAL_PROVIDER_EXECUTION_ALLOWED: "true",
+      M1_REAL_PROVIDER_COST_ACK: "true",
+      RUNWAYML_API_SECRET: FAKE_SECRET
+    }, () => startStoryboardVideoGeneration({
+      project_id: project.project_id,
+      selected_shot_ids: [shotId],
+      provider_execution: { provider: "real", provider_name: "runway", cost_acknowledged: true },
+      allow_live_provider: true,
+      confirmation: { confirmation_level: "hard_gate", user_confirmed: true }
+    }, db));
+    assert.equal(duplicate.ok, false);
+    assert.equal(providerCalls, 1);
   } finally {
     globalThis.fetch = originalFetch;
     db.close();

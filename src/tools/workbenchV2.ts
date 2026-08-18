@@ -408,7 +408,8 @@ function projectSummaryFromRow(project: Project, row: ProjectRow, operational: P
     : "not_applicable";
   const derived = deriveNextAction(project, operational, assemblyReadiness, row.workflow_state);
   const overrideValid = Boolean(
-    assemblyReadiness !== "unverified"
+    row.workflow_state !== "closed"
+    && assemblyReadiness !== "unverified"
     && !hasAcceptedClipIntegrityBlocker(operational)
     && meta.next_action_override
     && meta.next_action_priority

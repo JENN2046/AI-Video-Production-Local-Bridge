@@ -269,6 +269,119 @@ type GenerationProgressPersistenceInput = {
   run: GenerationRun;
 };
 
+function persistKnownLegacyProviderTaskForReconciliation(
+  db: M0Database,
+  input: {
+    project: Project;
+    shot: Shot;
+    storyboard_package_id: string;
+    requested_shot_count: number;
+    completed_runs: GenerationRun[];
+    run: GenerationRun;
+    provider_task_id: string;
+    provider_status: string;
+    boundary_error: ToolError;
+  }
+): ToolResult<{ batch: GenerationBatch }> {
+  const intentId = `intent_legacy_${randomUUID()}`;
+  const jobId = `job_${randomUUID()}`;
+  const now = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
+  const reconciliationCode = "CONTENT_MUTATION_REQUIRES_RECONCILIATION";
+  const trackingRun: GenerationRun = {
+    ...input.run,
+    status: "running",
+    provider: {
+      ...input.run.provider,
+      provider_job_id: input.provider_task_id,
+      provider_status: input.provider_status
+    },
+    error: {
+      code: reconciliationCode,
+      message: "Provider task requires human reconciliation before production content can change.",
+      retryable: false
+    }
+  };
+  const trackedRuns = [...input.completed_runs, trackingRun];
+  const summary = summarizeRuns(trackedRuns);
+  const outstanding = Math.max(0, input.requested_shot_count - trackedRuns.length);
+  summary.total = input.requested_shot_count;
+  summary.queued += outstanding;
+  const batch: GenerationBatch = {
+    batch_id: trackingRun.batch_id,
+    project_id: input.project.project_id,
+    storyboard_package_id: input.storyboard_package_id,
+    run_ids: trackedRuns.map((candidate) => candidate.run_id),
+    status: "running",
+    summary
+  };
+  const intentData = {
+    source: "legacy_batch_known_provider_task",
+    reconciliation_restore: {
+      shot_status: input.shot.status,
+      project_status: input.project.status
+    },
+    boundary_error_code: input.boundary_error.code,
+    input_snapshot: {
+      storyboard_image_artifact_id: trackingRun.input.storyboard_image_artifact_id,
+      video_prompt: trackingRun.input.video_prompt,
+      negative_prompt: trackingRun.input.negative_prompt,
+      duration_seconds: trackingRun.input.duration_seconds,
+      aspect_ratio: trackingRun.input.aspect_ratio,
+      resolution: trackingRun.input.resolution
+    }
+  };
+
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    saveGenerationRun(db, trackingRun);
+    saveGenerationBatch(db, batch);
+    db.prepare(`INSERT INTO generation_intents (
+      intent_id, run_id, project_id, shot_id, provider, account_label, model, input_artifact_id,
+      duration_seconds, resolution, estimated_cost_value, budget_limit_value, currency,
+      confirmed, expires_at, provider_task_id, status, upload_attempts, submit_attempts,
+      output_artifact_id, sanitized_error_json, data_json, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, 'legacy_batch', ?, ?, ?, ?, 0, 0, 'UNSPECIFIED',
+      1, ?, ?, 'running', 1, 1, '', ?, ?, ?, ?)`)
+      .run(
+        intentId,
+        trackingRun.run_id,
+        input.project.project_id,
+        input.shot.shot_id,
+        trackingRun.provider.provider_name,
+        trackingRun.provider.model_name,
+        trackingRun.input.storyboard_image_artifact_id,
+        trackingRun.input.duration_seconds,
+        trackingRun.input.resolution,
+        expiresAt,
+        input.provider_task_id,
+        JSON.stringify({ code: reconciliationCode }),
+        JSON.stringify(intentData),
+        now,
+        now
+      );
+    db.prepare(`INSERT INTO generation_jobs
+      (job_id, intent_id, state, reconciliation_reason, created_at, updated_at)
+      VALUES (?, ?, 'manual_reconciliation', ?, ?, ?)`)
+      .run(jobId, intentId, reconciliationCode, now, now);
+    db.prepare(`INSERT INTO generation_job_events
+      (event_id, job_id, from_state, to_state, reason_code, data_json, created_at)
+      VALUES (?, ?, 'submitting', 'manual_reconciliation', ?, '{"source":"legacy_batch"}', ?)`)
+      .run(`event_${randomUUID()}`, jobId, reconciliationCode, now);
+    db.exec("COMMIT");
+    return { ok: true, batch };
+  } catch {
+    if (databaseIsInTransaction(db)) db.exec("ROLLBACK");
+    return {
+      ok: false,
+      error: {
+        code: "PROVIDER_TASK_PERSISTENCE_UNKNOWN",
+        message: "Known Provider task could not be persisted for reconciliation."
+      }
+    };
+  }
+}
+
 function persistGenerationProgressInTransaction(
   db: M0Database,
   input: GenerationProgressPersistenceInput
@@ -686,13 +799,35 @@ export async function startStoryboardVideoGeneration(
           storyboardPackage.storyboard_package_id,
           run
         );
-        if (postSubmitError) return { ok: false, error: postSubmitError };
         if (!submit.ok) {
+          if (postSubmitError) return { ok: false, error: postSubmitError };
           run.status = "failed";
           run.error = providerErrorToRunError(submit.error);
         } else {
           run.provider.provider_job_id = submit.provider_job_id;
           run.provider.provider_status = submit.provider_status;
+          const reconcileKnownTask = (boundaryError: ToolError): { ok: false; error: ToolError } => {
+            const tracked = persistKnownLegacyProviderTaskForReconciliation(db, {
+              project,
+              shot,
+              storyboard_package_id: storyboardPackage.storyboard_package_id,
+              requested_shot_count: shots.length,
+              completed_runs: runs,
+              run,
+              provider_task_id: submit.provider_job_id,
+              provider_status: submit.provider_status,
+              boundary_error: boundaryError
+            });
+            if (!tracked.ok) return tracked;
+            return {
+              ok: false,
+              error: {
+                code: "CONTENT_MUTATION_REQUIRES_RECONCILIATION",
+                message: "Provider task was preserved for human reconciliation after production content changed."
+              }
+            };
+          };
+          if (postSubmitError) return reconcileKnownTask(postSubmitError);
           const providerStatus = await pollProviderUntilComplete(adapter, submit.provider_job_id);
           const postPollError = generationPersistencePrecondition(
             db,
@@ -700,7 +835,7 @@ export async function startStoryboardVideoGeneration(
             storyboardPackage.storyboard_package_id,
             run
           );
-          if (postPollError) return { ok: false, error: postPollError };
+          if (postPollError) return reconcileKnownTask(postPollError);
           if (!providerStatus.ok) {
             run.status = "failed";
             run.error = providerErrorToRunError(providerStatus.error);
@@ -723,7 +858,7 @@ export async function startStoryboardVideoGeneration(
                 storyboardPackage.storyboard_package_id,
                 run
               );
-              if (postOutputError) return { ok: false, error: postOutputError };
+              if (postOutputError) return reconcileKnownTask(postOutputError);
               if (!output.ok) {
                 run.status = "failed";
                 run.error = providerErrorToRunError(output.error);
@@ -779,7 +914,7 @@ export async function startStoryboardVideoGeneration(
                     persist_with_artifact: persistWithArtifact
                   }
                 );
-                if (atomicPersistence.error) return { ok: false, error: atomicPersistence.error };
+                if (atomicPersistence.error) return reconcileKnownTask(atomicPersistence.error);
                 if (!download.ok) {
                   run.status = "failed";
                   run.output.artifact_ids = [];

@@ -162,14 +162,19 @@ test("migration 0012 backfills delivery state without inventing approval, export
     const legacyApprovalAt = "2026-08-17T01:00:00.000Z";
     insertFinalArtifact(db, "project_legacy", "artifact_legacy_replacement");
     assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
-      SET workflow_state = 'final_review', current_final_artifact_id = 'artifact_legacy_replacement', updated_at = ?
+      SET workflow_state = 'approved', current_final_artifact_id = 'artifact_legacy_replacement',
+        approved_artifact_id = 'artifact_legacy_replacement', updated_at = ?
       WHERE project_id = 'project_legacy'`).run(legacyApprovalAt),
     /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
     assert.equal((db.prepare(`SELECT current_final_artifact_id FROM workbench_delivery_state
       WHERE project_id = 'project_legacy'`).get() as { current_final_artifact_id: string }).current_final_artifact_id,
     "artifact_legacy");
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review', updated_at = ?
-      WHERE project_id = 'project_legacy'`).run(legacyApprovalAt);
+    assert.throws(() => db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review', updated_at = ?
+      WHERE project_id = 'project_legacy'`).run(legacyApprovalAt),
+    /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
+    assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'approved', approved_artifact_id = current_final_artifact_id, updated_at = ?
+      WHERE project_id = 'project_legacy'`).run(legacyApprovalAt), /FOREIGN KEY constraint failed/);
     assert.doesNotThrow(() => acceptFinalReview(db, "project_legacy", "event_legacy_review_accepted",
       legacyApprovalAt, { event_from_state: "legacy_review_required" }));
     assert.equal((db.prepare(`SELECT workflow_state FROM workbench_delivery_state
