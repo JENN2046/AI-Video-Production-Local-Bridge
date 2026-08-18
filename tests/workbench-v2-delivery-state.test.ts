@@ -158,6 +158,14 @@ test("migration 0012 backfills delivery state without inventing approval, export
     assert.equal((db.prepare("SELECT workflow_state FROM workbench_delivery_state WHERE project_id = 'project_new'").get() as { workflow_state: string }).workflow_state, "not_ready");
 
     const legacyApprovalAt = "2026-08-17T01:00:00.000Z";
+    insertFinalArtifact(db, "project_legacy", "artifact_legacy_replacement");
+    assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'final_review', current_final_artifact_id = 'artifact_legacy_replacement', updated_at = ?
+      WHERE project_id = 'project_legacy'`).run(legacyApprovalAt),
+    /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
+    assert.equal((db.prepare(`SELECT current_final_artifact_id FROM workbench_delivery_state
+      WHERE project_id = 'project_legacy'`).get() as { current_final_artifact_id: string }).current_final_artifact_id,
+    "artifact_legacy");
     db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'final_review', updated_at = ?
       WHERE project_id = 'project_legacy'`).run(legacyApprovalAt);
     assert.doesNotThrow(() => acceptFinalReview(db, "project_legacy", "event_legacy_review_accepted",
@@ -260,7 +268,7 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
       .run(now, now);
     assert.throws(() => db.prepare("UPDATE workbench_delivery_jobs SET state = 'queued' WHERE job_id = 'job_assembly'").run(), /WORKBENCH_DELIVERY_JOB_STATE_INVALID/);
     db.exec("BEGIN IMMEDIATE");
-    db.prepare("UPDATE workbench_delivery_jobs SET state = 'failed', error_code = 'ASSEMBLY_OUTPUT_INVALID', finished_at = ?, updated_at = ? WHERE job_id = 'job_assembly'")
+    db.prepare("UPDATE workbench_delivery_jobs SET state = 'failed', error_code = 'ASSEMBLY_OUTPUT_INVALID', terminal_event_id = 'event_assembly_failed', finished_at = ?, updated_at = ? WHERE job_id = 'job_assembly'")
       .run(now, now);
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
@@ -582,7 +590,8 @@ test("delivery lifecycle events bind to the matching Job type, state, Artifact, 
       "assembly_started", "assembling", "assembling", null, null, now));
     db.exec("BEGIN IMMEDIATE");
     db.prepare(`UPDATE workbench_delivery_jobs SET state = 'succeeded', output_artifact_id = 'artifact_event_final',
-      finished_at = ?, updated_at = ? WHERE job_id = 'job_event_assembly'`).run(now, now);
+      terminal_event_id = 'event_assembly_succeeded', finished_at = ?, updated_at = ?
+      WHERE job_id = 'job_event_assembly'`).run(now, now);
     assert.throws(() => insertEvent.run("event_assembly_succeeded_wrong_artifact", projectId, "job_event_assembly",
       "assembly_succeeded", "assembling", "final_review", "artifact_event_other", null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     assert.throws(() => insertEvent.run("event_assembly_succeeded_wrong_state", projectId, "job_event_assembly",
@@ -634,10 +643,13 @@ test("delivery lifecycle events bind to the matching Job type, state, Artifact, 
       latest_export_id = 'export_event_final', latest_exported_at = ?, updated_at = ? WHERE project_id = ?`)
       .run(now, now, projectId), /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
     assert.throws(() => db.prepare(`UPDATE workbench_delivery_jobs SET state = 'succeeded', export_id = 'export_event_other',
-      finished_at = ?, updated_at = ? WHERE job_id = 'job_event_export'`).run(now, now),
+      terminal_event_id = 'event_export_wrong_output', finished_at = ?, updated_at = ?
+      WHERE job_id = 'job_event_export'`).run(now, now),
     /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
+    db.exec("BEGIN IMMEDIATE");
     db.prepare(`UPDATE workbench_delivery_jobs SET state = 'succeeded', export_id = 'export_event_final',
-      finished_at = ?, updated_at = ? WHERE job_id = 'job_event_export'`).run(now, now);
+      terminal_event_id = 'event_export_succeeded', finished_at = ?, updated_at = ?
+      WHERE job_id = 'job_event_export'`).run(now, now);
     assert.throws(() => insertEvent.run("event_export_succeeded_wrong_artifact", projectId, "job_event_export",
       "export_succeeded", "approved", "exported", "artifact_event_other", "export_event_final", now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     assert.throws(() => insertEvent.run("event_export_succeeded_wrong_export", projectId, "job_event_export",
@@ -651,6 +663,7 @@ test("delivery lifecycle events bind to the matching Job type, state, Artifact, 
       WHERE project_id = ? AND event_type = 'export_succeeded'`).get(projectId) as { count: number }).count, 0);
     assert.doesNotThrow(() => insertEvent.run("event_export_succeeded", projectId, "job_event_export",
       "export_succeeded", "approved", "exported", "artifact_event_final", "export_event_final", now));
+    db.exec("COMMIT");
     assert.throws(() => insertEvent.run("event_export_with_assembly_job", projectId, "job_event_assembly",
       "export_succeeded", "approved", "exported", "artifact_event_final", "export_event_final", now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     assert.throws(() => insertEvent.run("event_assembly_with_export_job", projectId, "job_event_export",
@@ -667,6 +680,40 @@ test("delivery lifecycle events bind to the matching Job type, state, Artifact, 
       "export_interrupted", "approved", "approved", "artifact_event_final", null, now));
     assert.throws(() => insertEvent.run("event_export_wrong_terminal", projectId, "job_event_export_failed",
       "export_interrupted", "approved", "approved", "artifact_event_final", null, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+
+    db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, input_json, created_at, updated_at)
+      VALUES ('job_export_failed_transition', ?, 'export', 'queued',
+        '{"artifact_id":"artifact_event_final"}', ?, ?)`).run(projectId, now, now);
+    assert.throws(() => db.prepare(`UPDATE workbench_delivery_jobs SET state = 'failed',
+      error_code = 'SYNTHETIC_FAILURE', terminal_event_id = 'event_export_failed_missing',
+      finished_at = ?, updated_at = ?
+      WHERE job_id = 'job_export_failed_transition'`).run(now, now), /FOREIGN KEY constraint failed/);
+    assert.equal((db.prepare(`SELECT state FROM workbench_delivery_jobs
+      WHERE job_id = 'job_export_failed_transition'`).get() as { state: string }).state, "queued");
+    db.exec("BEGIN IMMEDIATE");
+    db.prepare(`UPDATE workbench_delivery_jobs SET state = 'failed', error_code = 'SYNTHETIC_FAILURE',
+      terminal_event_id = 'event_export_failed_transition', finished_at = ?, updated_at = ?
+      WHERE job_id = 'job_export_failed_transition'`).run(now, now);
+    insertEvent.run("event_export_failed_transition", projectId, "job_export_failed_transition",
+      "export_failed", "exported", "exported", "artifact_event_final", null, now);
+    db.exec("COMMIT");
+
+    db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, input_json, created_at, started_at, updated_at)
+      VALUES ('job_export_interrupted_transition', ?, 'export', 'running',
+        '{"artifact_id":"artifact_event_final"}', ?, ?, ?)`).run(projectId, now, now, now);
+    assert.throws(() => db.prepare(`UPDATE workbench_delivery_jobs SET state = 'interrupted',
+      error_code = 'SYNTHETIC_INTERRUPTION', terminal_event_id = 'event_export_interrupted_missing',
+      finished_at = ?, updated_at = ?
+      WHERE job_id = 'job_export_interrupted_transition'`).run(now, now), /FOREIGN KEY constraint failed/);
+    db.exec("BEGIN IMMEDIATE");
+    db.prepare(`UPDATE workbench_delivery_jobs SET state = 'interrupted', error_code = 'SYNTHETIC_INTERRUPTION',
+      terminal_event_id = 'event_export_interrupted_transition', finished_at = ?, updated_at = ?
+      WHERE job_id = 'job_export_interrupted_transition'`).run(now, now);
+    insertEvent.run("event_export_interrupted_transition", projectId, "job_export_interrupted_transition",
+      "export_interrupted", "exported", "exported", "artifact_event_final", null, now);
+    db.exec("COMMIT");
   } finally {
     db.close();
   }
@@ -963,12 +1010,14 @@ test("delivery jobs bind retries and terminal outputs to the same project and jo
       .run(updateFingerprint, now);
     db.exec("COMMIT");
     assert.throws(() => db.prepare(`UPDATE workbench_delivery_jobs
-      SET state = 'succeeded', output_artifact_id = 'artifact_project_a', finished_at = ?, updated_at = ?
+      SET state = 'succeeded', output_artifact_id = 'artifact_project_a',
+        terminal_event_id = 'event_assembly_wrong_project', finished_at = ?, updated_at = ?
       WHERE job_id = 'assembly_running'`).run(now, now), /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
     assert.equal((db.prepare("SELECT state, output_artifact_id FROM workbench_delivery_jobs WHERE job_id = 'assembly_running'").get() as { state: string; output_artifact_id: string | null }).state, "running");
     db.exec("BEGIN IMMEDIATE");
     db.prepare(`UPDATE workbench_delivery_jobs
-      SET state = 'succeeded', output_artifact_id = 'artifact_project_b', finished_at = ?, updated_at = ?
+      SET state = 'succeeded', output_artifact_id = 'artifact_project_b',
+        terminal_event_id = 'event_assembly_running_succeeded', finished_at = ?, updated_at = ?
       WHERE job_id = 'assembly_running'`).run(now, now);
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id,
@@ -983,12 +1032,26 @@ test("delivery jobs bind retries and terminal outputs to the same project and jo
       VALUES ('export_running', 'project_a', 'export', 'running', '{"artifact_id":"artifact_project_a"}', ?, ?, ?)`)
       .run(now, now, now);
     assert.throws(() => db.prepare(`UPDATE workbench_delivery_jobs
-      SET state = 'succeeded', export_id = 'export_project_b', finished_at = ?, updated_at = ?
+      SET state = 'succeeded', export_id = 'export_project_b',
+        terminal_event_id = 'event_export_wrong_project', finished_at = ?, updated_at = ?
       WHERE job_id = 'export_running'`).run(now, now), /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
     assert.equal((db.prepare("SELECT state, export_id FROM workbench_delivery_jobs WHERE job_id = 'export_running'").get() as { state: string; export_id: string | null }).state, "running");
+    assert.throws(() => db.prepare(`UPDATE workbench_delivery_jobs
+      SET state = 'failed', error_code = 'SYNTHETIC_FAILURE', terminal_event_id = 'event_retry_failed',
+        finished_at = ?, updated_at = ?
+      WHERE job_id = 'export_running'`).run(now, now), /FOREIGN KEY constraint failed/);
+    db.exec("BEGIN IMMEDIATE");
     db.prepare(`UPDATE workbench_delivery_jobs
-      SET state = 'succeeded', export_id = 'export_project_a', finished_at = ?, updated_at = ?
+      SET state = 'failed', error_code = 'SYNTHETIC_FAILURE', terminal_event_id = 'event_export_running_failed',
+        finished_at = ?, updated_at = ?
       WHERE job_id = 'export_running'`).run(now, now);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id,
+        reason_code, data_json, created_at)
+      VALUES ('event_export_running_failed', 'project_a', 'export_running', 'export_failed',
+        'exported', 'exported', 'artifact_project_a',
+        'SYNTHETIC_FAILURE', '{}', ?)`).run(now);
+    db.exec("COMMIT");
 
     const insertValidation = db.prepare(`SELECT sql FROM sqlite_master
       WHERE type = 'trigger' AND name = 'workbench_delivery_jobs_validate_insert'`).get() as { sql: string };
@@ -1019,7 +1082,8 @@ test("delivery jobs bind retries and terminal outputs to the same project and jo
     db.exec("COMMIT");
     db.exec(insertValidation.sql);
     assert.throws(() => db.prepare(`UPDATE workbench_delivery_jobs
-      SET state = 'failed', error_code = 'SYNTHETIC_FAILURE', finished_at = ?, updated_at = ?
+      SET state = 'failed', error_code = 'SYNTHETIC_FAILURE', terminal_event_id = 'event_retry_failed',
+        finished_at = ?, updated_at = ?
       WHERE job_id = 'retry_queued_cross_project'`).run(now, now), /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
     assert.equal((db.prepare("SELECT state FROM workbench_delivery_jobs WHERE job_id = 'retry_queued_cross_project'").get() as { state: string }).state, "queued");
   } finally {
@@ -1109,11 +1173,13 @@ test("succeeded assembly jobs require one accepted active clip for every project
     db.exec("COMMIT");
     assert.throws(() => db.prepare(`UPDATE workbench_delivery_jobs
       SET state = 'succeeded', output_artifact_id = 'artifact_assembly_partial_final',
-        finished_at = ?, updated_at = ? WHERE job_id = 'job_assembly_partial_running'`)
+        terminal_event_id = 'event_assembly_partial_invalid', finished_at = ?, updated_at = ?
+      WHERE job_id = 'job_assembly_partial_running'`)
       .run(now, now), /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
     db.exec("BEGIN IMMEDIATE");
     db.prepare(`UPDATE workbench_delivery_jobs SET state = 'failed', error_code = 'ASSEMBLY_NOT_READY',
-      finished_at = ?, updated_at = ? WHERE job_id = 'job_assembly_partial_running'`).run(now, now);
+      terminal_event_id = 'event_assembly_partial_failed', finished_at = ?, updated_at = ?
+      WHERE job_id = 'job_assembly_partial_running'`).run(now, now);
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
         reason_code, data_json, created_at)

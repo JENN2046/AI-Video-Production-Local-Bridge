@@ -296,7 +296,8 @@ test("M0-F assembly rejects same-project and global durable delivery Jobs before
 
     db.exec("BEGIN IMMEDIATE");
     db.prepare(`UPDATE workbench_delivery_jobs
-      SET state = 'failed', error_code = 'SYNTHETIC_FAILURE', finished_at = ?, updated_at = ?
+      SET state = 'failed', error_code = 'SYNTHETIC_FAILURE',
+        terminal_event_id = 'event_same_project_active_failed', finished_at = ?, updated_at = ?
       WHERE job_id = 'job_same_project_active'`).run(now, now);
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
@@ -321,7 +322,8 @@ test("M0-F assembly rejects same-project and global durable delivery Jobs before
       .get(fixture.project.project_id) as { count: number }).count, before);
     db.exec("BEGIN IMMEDIATE");
     db.prepare(`UPDATE workbench_delivery_jobs
-      SET state = 'failed', error_code = 'SYNTHETIC_FAILURE', finished_at = ?, updated_at = ?
+      SET state = 'failed', error_code = 'SYNTHETIC_FAILURE',
+        terminal_event_id = 'event_other_project_active_failed', finished_at = ?, updated_at = ?
       WHERE job_id = 'job_other_project_active'`).run(now, now);
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,

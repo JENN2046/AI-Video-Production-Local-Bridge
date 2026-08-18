@@ -181,6 +181,7 @@ export function assembleFinalVideo(
     const deliveryJobId = `job_${randomUUID()}`;
     const deliveryQueuedEventId = `event_${randomUUID()}`;
     const deliveryStartedEventId = `event_${randomUUID()}`;
+    const deliverySucceededEventId = `event_${randomUUID()}`;
     const assemblyAt = new Date().toISOString();
     const sourceClipArtifactIds = currentShots.map((shot) => shot.accepted_clip_artifact_id);
     const assemblyInputJson = JSON.stringify({ source_clip_artifact_ids: sourceClipArtifactIds });
@@ -282,14 +283,14 @@ export function assembleFinalVideo(
     saveGenerationRun(db, run);
 
     db.prepare(`UPDATE workbench_delivery_jobs
-      SET state = 'succeeded', output_artifact_id = ?, finished_at = ?, updated_at = ?
-      WHERE job_id = ?`).run(activatedArtifactId, assemblyAt, assemblyAt, deliveryJobId);
+      SET state = 'succeeded', output_artifact_id = ?, terminal_event_id = ?, finished_at = ?, updated_at = ?
+      WHERE job_id = ?`).run(activatedArtifactId, deliverySucceededEventId, assemblyAt, assemblyAt, deliveryJobId);
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id,
         input_fingerprint, reason_code, data_json, created_at)
       VALUES (?, ?, ?, 'assembly_succeeded', 'assembling', 'final_review', ?, ?,
         'LEGACY_ASSEMBLY_SUCCEEDED', '{}', ?)`)
-      .run(`event_${randomUUID()}`, currentProject.project_id, deliveryJobId,
+      .run(deliverySucceededEventId, currentProject.project_id, deliveryJobId,
         activatedArtifactId, assemblyFingerprint, assemblyAt);
     committed = { run, artifact_id: activatedArtifactId };
     db.exec(`RELEASE SAVEPOINT ${savepoint}`);

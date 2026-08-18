@@ -1219,11 +1219,19 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
         THEN json_array(project_id, job_id, input_fingerprint)
         ELSE NULL END
     ) STORED,
+    terminal_event_id TEXT,
+    terminal_event_type TEXT GENERATED ALWAYS AS (
+      CASE WHEN state IN ('succeeded','failed','interrupted')
+        THEN job_type || '_' || state ELSE NULL END
+    ) STORED,
     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE RESTRICT,
     FOREIGN KEY (retry_of_job_id) REFERENCES workbench_delivery_jobs(job_id) ON DELETE RESTRICT,
     FOREIGN KEY (output_artifact_id) REFERENCES media_artifacts(artifact_id) ON DELETE RESTRICT,
     FOREIGN KEY (export_id) REFERENCES workbench_exports(export_id) ON DELETE RESTRICT,
     FOREIGN KEY (active_assembly_binding_key) REFERENCES workbench_delivery_state(active_assembly_binding_key)
+      DEFERRABLE INITIALLY DEFERRED,
+    FOREIGN KEY (project_id, job_id, terminal_event_id, terminal_event_type)
+      REFERENCES workbench_delivery_events(project_id, job_id, event_id, event_type)
       DEFERRABLE INITIALLY DEFERRED,
     CHECK (job_type IN ('assembly','export')),
     CHECK (state IN ('queued','running','succeeded','failed','interrupted')),
@@ -1279,7 +1287,8 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     CHECK (json_valid(data_json) = 1 AND json_type(data_json) = 'object'),
     UNIQUE (approval_signature_key),
     UNIQUE (approval_binding_key),
-    UNIQUE (assembly_queue_binding_key)
+    UNIQUE (assembly_queue_binding_key),
+    UNIQUE (project_id, job_id, event_id, event_type)
   );
 
   CREATE TABLE workbench_delivery_state (
@@ -1518,13 +1527,20 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
   WHEN OLD.job_id IS NOT NEW.job_id OR OLD.project_id IS NOT NEW.project_id OR OLD.job_type IS NOT NEW.job_type
     OR OLD.input_fingerprint IS NOT NEW.input_fingerprint OR OLD.input_json IS NOT NEW.input_json
     OR OLD.retry_of_job_id IS NOT NEW.retry_of_job_id OR OLD.created_at IS NOT NEW.created_at
+    OR (OLD.terminal_event_id IS NOT NEW.terminal_event_id AND NOT (
+      OLD.state IN ('queued','running') AND NEW.state IN ('succeeded','failed','interrupted')
+        AND OLD.terminal_event_id IS NULL AND NEW.terminal_event_id IS NOT NULL
+    ))
   BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_JOB_IDENTITY_IMMUTABLE');
   END;
   CREATE TRIGGER workbench_delivery_jobs_state_transition BEFORE UPDATE OF state ON workbench_delivery_jobs
-  WHEN OLD.state <> NEW.state AND NOT (
-    (OLD.state = 'queued' AND NEW.state IN ('running','failed','interrupted'))
-    OR (OLD.state = 'running' AND NEW.state IN ('succeeded','failed','interrupted'))
+  WHEN OLD.state <> NEW.state AND (
+    NOT (
+      (OLD.state = 'queued' AND NEW.state IN ('running','failed','interrupted'))
+      OR (OLD.state = 'running' AND NEW.state IN ('succeeded','failed','interrupted'))
+    )
+    OR (NEW.state IN ('succeeded','failed','interrupted') AND NEW.terminal_event_id IS NULL)
   )
   BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_JOB_STATE_INVALID');
@@ -2021,7 +2037,7 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     ))
     OR (OLD.current_final_artifact_id IS NOT NEW.current_final_artifact_id AND NOT (
       OLD.workflow_state <> NEW.workflow_state AND NEW.workflow_state = 'final_review'
-        AND OLD.workflow_state IN ('assembling','legacy_review_required')
+        AND OLD.workflow_state = 'assembling'
     ))
     OR (OLD.assembly_input_fingerprint IS NOT NEW.assembly_input_fingerprint AND NOT (
       OLD.workflow_state = 'ready_to_assemble' AND NEW.workflow_state = 'assembling'
@@ -2411,7 +2427,7 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     storyboard_package_versions: ["package_version_id", "project_id", "version", "supersedes_package_version_id", "schema_version", "payload_json", "content_hash", "created_from_proposal_id", "created_at"],
     storyboard_package_version_events: ["event_id", "package_version_id", "workspace_id", "principal_id", "event_type", "reason_code", "created_at"],
     workbench_delivery_state: ["project_id", "workflow_state", "current_final_artifact_id", "assembly_input_fingerprint", "active_assembly_job_id", "approved_artifact_id", "latest_export_id", "latest_exported_at", "closed_at", "created_at", "updated_at", "approval_signature_key", "approval_binding_key", "active_assembly_binding_key"],
-    workbench_delivery_jobs: ["job_id", "project_id", "job_type", "state", "input_fingerprint", "input_json", "retry_of_job_id", "output_artifact_id", "export_id", "error_code", "created_at", "started_at", "finished_at", "updated_at", "active_assembly_binding_key"],
+    workbench_delivery_jobs: ["job_id", "project_id", "job_type", "state", "input_fingerprint", "input_json", "retry_of_job_id", "output_artifact_id", "export_id", "error_code", "created_at", "started_at", "finished_at", "updated_at", "active_assembly_binding_key", "terminal_event_id", "terminal_event_type"],
     workbench_delivery_events: ["event_id", "project_id", "job_id", "event_type", "from_state", "to_state", "artifact_id", "export_id", "input_fingerprint", "reason_code", "data_json", "created_at", "approval_signature_key", "approval_binding_key", "assembly_queue_binding_key"],
     workbench_exports: ["export_id", "project_id", "artifact_id", "relative_path", "sha256", "size_bytes", "created_at"]
   } : V24_EXPECTED_COLUMNS;

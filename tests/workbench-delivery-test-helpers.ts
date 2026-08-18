@@ -120,9 +120,9 @@ export function failWorkbenchAssemblyFixture(
     const terminalState = input.interrupted ? "interrupted" : "failed";
     const eventType = input.interrupted ? "assembly_interrupted" : "assembly_failed";
     db.prepare(`UPDATE workbench_delivery_jobs
-      SET state = ?, error_code = 'SYNTHETIC_FAILURE', finished_at = ?, updated_at = ?
+      SET state = ?, error_code = 'SYNTHETIC_FAILURE', terminal_event_id = ?, finished_at = ?, updated_at = ?
       WHERE job_id = ? AND project_id = ? AND job_type = 'assembly' AND state IN ('queued','running')`)
-      .run(terminalState, input.created_at, input.created_at, input.job_id, input.project_id);
+      .run(terminalState, input.event_id, input.created_at, input.created_at, input.job_id, input.project_id);
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
         reason_code, data_json, created_at)
@@ -193,8 +193,8 @@ export function completeWorkbenchAssemblyFixture(
       .run(`${input.event_id}_started`, input.project_id, input.job_id,
         state.assembly_input_fingerprint, input.created_at);
     db.prepare(`UPDATE workbench_delivery_jobs
-      SET state = 'succeeded', output_artifact_id = ?, finished_at = ?, updated_at = ?
-      WHERE job_id = ?`).run(input.artifact_id, input.created_at, input.created_at, input.job_id);
+      SET state = 'succeeded', output_artifact_id = ?, terminal_event_id = ?, finished_at = ?, updated_at = ?
+      WHERE job_id = ?`).run(input.artifact_id, input.event_id, input.created_at, input.created_at, input.job_id);
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id,
         input_fingerprint, reason_code, data_json, created_at)
@@ -227,11 +227,11 @@ export function completeWorkbenchExportFixture(
       throw new Error("DELIVERY_FIXTURE_APPROVED_REQUIRED");
     }
     db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, export_id,
+      (job_id, project_id, job_type, state, input_json, export_id, terminal_event_id,
         created_at, started_at, finished_at, updated_at)
-      VALUES (?, ?, 'export', 'succeeded', json_object('artifact_id', ?), ?, ?, ?, ?, ?)`)
+      VALUES (?, ?, 'export', 'succeeded', json_object('artifact_id', ?), ?, ?, ?, ?, ?, ?)`)
       .run(input.job_id, input.project_id, state.current_final_artifact_id, input.export_id,
-        input.created_at, input.created_at, input.created_at, input.created_at);
+        input.event_id, input.created_at, input.created_at, input.created_at, input.created_at);
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id,
         export_id, reason_code, data_json, created_at)

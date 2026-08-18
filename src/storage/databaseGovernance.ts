@@ -557,6 +557,21 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
         WHERE job_id IS NOT NULL GROUP BY job_id, event_type HAVING COUNT(*) > 1
       )`,
       `SELECT COUNT(*) AS count FROM workbench_delivery_jobs job
+        LEFT JOIN workbench_delivery_events event
+          ON event.event_id = job.terminal_event_id AND event.project_id = job.project_id
+            AND event.job_id = job.job_id AND event.event_type = job.terminal_event_type
+        WHERE job.state IN ('succeeded','failed','interrupted')
+          AND event.event_id IS NULL`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_events event
+        LEFT JOIN workbench_delivery_jobs job
+          ON job.terminal_event_id = event.event_id AND job.project_id = event.project_id
+            AND job.job_id = event.job_id AND job.terminal_event_type = event.event_type
+        WHERE event.job_id IS NOT NULL AND event.event_type IN (
+          'assembly_succeeded','assembly_failed','assembly_interrupted',
+          'export_succeeded','export_failed','export_interrupted'
+        )
+          AND job.job_id IS NULL`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_jobs job
         WHERE job.state = 'succeeded' AND NOT EXISTS (
           SELECT 1 FROM workbench_delivery_events event
           LEFT JOIN workbench_exports bound_export ON bound_export.export_id = job.export_id
