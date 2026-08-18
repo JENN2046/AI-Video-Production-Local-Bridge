@@ -1186,6 +1186,45 @@ function quarantineActivationFile(artifact: MediaArtifact, candidates: string[],
   }
 }
 
+function recordFailedMediaActivation(
+  db: M0Database,
+  marker: MediaActivationMarker,
+  errorCode: string
+): boolean {
+  const manageTransaction = !databaseIsInTransaction(db);
+  try {
+    if (manageTransaction) db.exec("BEGIN IMMEDIATE");
+    const result = db.prepare(`INSERT INTO media_activation_journal
+      (activation_id, artifact_id, state, artifact_type, role, expected_sha256, expected_size_bytes,
+        detected_mime, staging_path, pending_path, final_path, artifact_json, error_code)
+      VALUES (?, ?, 'failed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(activation_id) DO UPDATE SET
+        state = 'failed', error_code = excluded.error_code, updated_at = CURRENT_TIMESTAMP
+      WHERE media_activation_journal.state IN ('staged','file_placed')`)
+      .run(
+        marker.activation_id,
+        marker.artifact_id,
+        marker.artifact_type,
+        marker.role,
+        marker.expected_sha256,
+        marker.expected_size_bytes,
+        marker.detected_mime,
+        marker.staging_path,
+        marker.pending_path,
+        marker.final_path,
+        marker.artifact_json,
+        errorCode
+      ) as { changes: number | bigint };
+    if (manageTransaction) db.exec("COMMIT");
+    return Number(result.changes) === 1;
+  } catch {
+    if (manageTransaction && databaseIsInTransaction(db)) {
+      try { db.exec("ROLLBACK"); } catch { /* preserve the activation recovery marker */ }
+    }
+    return false;
+  }
+}
+
 function moveActivationFileExclusively(sourcePath: string, finalPath: string, afterLinked?: () => void): void {
   try {
     linkSync(sourcePath, finalPath);
@@ -1226,6 +1265,7 @@ function commitStagedMediaArtifact(
   let journalCreated = false;
   let markerCreated = false;
   let finalPathOwned = false;
+  let activationMarker: MediaActivationMarker | null = null;
   try {
     if (manageTransaction && (options.before_persist || options.after_artifact_persist)) db.exec("BEGIN IMMEDIATE");
     if (options.before_persist) {
@@ -1255,6 +1295,7 @@ function commitStagedMediaArtifact(
       final_path: finalPath,
       artifact_json: JSON.stringify(artifact)
     };
+    activationMarker = marker;
     const insertJournal = (): void => {
       db.prepare(`INSERT INTO media_activation_journal
         (activation_id, artifact_id, state, artifact_type, role, expected_sha256, expected_size_bytes, detected_mime,
@@ -1321,14 +1362,15 @@ function commitStagedMediaArtifact(
     }
     if (error instanceof MediaActivationInjectedCrash) throw error.causeValue;
     const code = mediaActivationErrorCode(error);
+    let failureJournalRecorded = false;
     if (journalCreated) {
       const ownedCandidates = finalPathOwned ? [finalPath, pendingPath, stagingPath] : [pendingPath, stagingPath];
       try { quarantineActivationFile(artifact, ownedCandidates, mediaRoot); } catch { /* preserve the journal failure even when quarantine cannot move the file */ }
-      try { db.prepare("UPDATE media_activation_journal SET state = 'failed', error_code = ?, updated_at = CURRENT_TIMESTAMP WHERE activation_id = ?").run(code, activationId); } catch { /* db:check will surface the non-terminal record */ }
+      if (activationMarker) failureJournalRecorded = recordFailedMediaActivation(db, activationMarker, code);
     } else if (existsSync(stagingPath)) {
       rmSync(stagingPath, { force: true });
     }
-    if (markerCreated && (!journalCreated || manageTransaction)) {
+    if (markerCreated && (!journalCreated || (manageTransaction && failureJournalRecorded))) {
       try { removeActivationMarker(activationId); } catch { /* a leftover marker fails closed during recovery */ }
     }
     try { removeStagingOwnership(artifact.artifact_id); } catch { /* recovery will reconcile the owner record */ }

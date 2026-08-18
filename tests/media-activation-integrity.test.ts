@@ -227,6 +227,50 @@ test("activation never overwrites or quarantines a pre-existing final path", () 
   }
 });
 
+test("activation rollback persists a failed Journal after dependent persistence rejects the Artifact", () => {
+  const root = mkdtempSync(join(tmpdir(), "media-activation-dependent-rollback-"));
+  const mediaRoot = join(root, "media");
+  const sqlitePath = join(root, "app.sqlite");
+  migrateDatabase(sqlitePath);
+  const db = openM0Database(sqlitePath);
+  const artifact = preparedArtifact();
+  artifact.storage.uri = join(mediaRoot, "artifacts", "images", `${artifact.artifact_id}.png`);
+  artifact.storage.filename = `${artifact.artifact_id}.png`;
+  try {
+    const result = activateLocalMediaArtifact({
+      artifact,
+      source_path: IMAGE_FIXTURE,
+      media_root: mediaRoot,
+      after_artifact_persist: () => ({
+        code: "DELIVERY_REWORK_REQUIRED",
+        message: "Synthetic dependent persistence rejection."
+      })
+    }, db);
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "DELIVERY_REWORK_REQUIRED");
+    assert.equal(getMediaArtifact(db, artifact.artifact_id), null);
+    const journal = db.prepare(`SELECT activation_id, state, error_code FROM media_activation_journal
+      WHERE artifact_id = ?`).get(artifact.artifact_id) as {
+        activation_id: string;
+        state: string;
+        error_code: string;
+      };
+    assert.deepEqual({ state: journal.state, error_code: journal.error_code }, {
+      state: "failed",
+      error_code: "DELIVERY_REWORK_REQUIRED"
+    });
+    assert.equal(existsSync(join(paths.mediaActivationJournalRoot, `${journal.activation_id}.json`)), false);
+    const quarantinePath = join(mediaRoot, ".activation", "quarantine", `${artifact.artifact_id}.png.failed`);
+    assert.equal(readFileSync(quarantinePath).equals(readFileSync(IMAGE_FIXTURE)), true);
+    const checked = checkDatabase(sqlitePath);
+    assert.equal(checked.result, "FAIL");
+    assert.equal(checked.quarantined_media_activations, 1);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("delivery-referenced final Artifact content and Blob binding fail closed before activation side effects", () => {
   const root = mkdtempSync(join(tmpdir(), "media-delivery-evidence-"));
   const mediaRoot = join(root, "media");
