@@ -103,7 +103,11 @@ export function saveProject(db: M0Database, project: Project): void {
   try {
     const existing = db.prepare("SELECT data_json FROM projects WHERE project_id = ?")
       .get(project.project_id) as { data_json: string } | undefined;
-    if (existing) {
+    if (!existing) {
+      if (project.status !== "draft" || project.exports?.final_video_artifact_id !== "") {
+        throw new Error("WORKBENCH_DELIVERY_PROJECT_PROJECTION_IMMUTABLE");
+      }
+    } else {
       const writable = assertWorkbenchContentMutationAllowed(db, project.project_id);
       if (!writable.ok) throw new Error(writable.error.code);
       const persisted = JSON.parse(existing.data_json) as Project;

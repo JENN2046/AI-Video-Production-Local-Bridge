@@ -28,7 +28,7 @@ export function createAcceptedAssemblyClipFixture(
     linked_objects: { project_id: input.project_id, shot_id: shot.shot_id }
   }, db);
   if (!clip.ok) throw new Error(`DELIVERY_FIXTURE_CLIP_REGISTRATION_FAILED:${clip.error.code}`);
-  shot.status = "video_review";
+  shot.status = "approved";
   shot.accepted_clip_artifact_id = clip.artifact.artifact_id;
   shot.clip_versions = [{
     artifact_id: clip.artifact.artifact_id,
@@ -51,24 +51,40 @@ export function ensureAcceptedAssemblyClipsFixture(db: M0Database, projectId: st
   for (const shotId of shotIds) {
     const shot = getShot(db, shotId);
     if (!shot) throw new Error(`DELIVERY_FIXTURE_SHOT_MISSING:${shotId}`);
-    if (shot.accepted_clip_artifact_id) continue;
-    const clip = registerMediaArtifact({
-      artifact_type: "video",
-      role: "generated_clip",
-      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
-      linked_objects: { project_id: projectId, shot_id: shotId }
-    }, db);
-    if (!clip.ok) throw new Error(`DELIVERY_FIXTURE_CLIP_REGISTRATION_FAILED:${clip.error.code}`);
-    shot.status = "video_review";
-    shot.accepted_clip_artifact_id = clip.artifact.artifact_id;
-    shot.clip_versions = [...shot.clip_versions, {
-      artifact_id: clip.artifact.artifact_id,
-      run_id: `run_${shot.shot_id}`,
-      attempt_number: shot.clip_versions.length + 1,
-      review_status: "approved"
-    }];
-    shot.review.approval_status = "approved";
-    saveShot(db, shot);
+    let changed = false;
+    if (!shot.accepted_clip_artifact_id) {
+      const clip = registerMediaArtifact({
+        artifact_type: "video",
+        role: "generated_clip",
+        source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+        linked_objects: { project_id: projectId, shot_id: shotId }
+      }, db);
+      if (!clip.ok) throw new Error(`DELIVERY_FIXTURE_CLIP_REGISTRATION_FAILED:${clip.error.code}`);
+      shot.accepted_clip_artifact_id = clip.artifact.artifact_id;
+      shot.clip_versions = [...shot.clip_versions, {
+        artifact_id: clip.artifact.artifact_id,
+        run_id: `run_${shot.shot_id}`,
+        attempt_number: shot.clip_versions.length + 1,
+        review_status: "approved"
+      }];
+      changed = true;
+    } else {
+      const acceptedVersion = shot.clip_versions.find((version) => version.artifact_id === shot.accepted_clip_artifact_id);
+      if (!acceptedVersion) throw new Error(`DELIVERY_FIXTURE_ACCEPTED_VERSION_MISSING:${shotId}`);
+      if (acceptedVersion.review_status !== "approved") {
+        acceptedVersion.review_status = "approved";
+        changed = true;
+      }
+    }
+    if (shot.status !== "approved") {
+      shot.status = "approved";
+      changed = true;
+    }
+    if (shot.review.approval_status !== "approved") {
+      shot.review.approval_status = "approved";
+      changed = true;
+    }
+    if (changed) saveShot(db, shot);
   }
 }
 

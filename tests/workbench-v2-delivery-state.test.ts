@@ -8,7 +8,7 @@ import test from "node:test";
 import { assertSchemaCurrent, DATABASE_MIGRATIONS, migrationChecksum, runDatabaseMigrations } from "../src/storage/migrations.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import { WORKBENCH_V2_SCHEMA_VERSION } from "../src/storage/workbenchV2Schema.js";
-import { getProject, getShot, saveProject, saveShot } from "../src/tools/projects.js";
+import { getProject, getShot, saveProject, saveShot, type Project } from "../src/tools/projects.js";
 import { projectSummaryDeliveryState } from "../src/tools/workbenchDeliveryState.js";
 import { assertWorkbenchProjectWritable, updateWorkbenchProject } from "../src/tools/workbenchV2.js";
 import {
@@ -247,6 +247,43 @@ test("migration 0012 fails atomically when an existing final pointer is not a va
     assert.equal((db.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE migration_id = '0012'").get() as { count: number }).count, 0);
     assert.equal((db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'workbench_delivery_state'").get() as { count: number }).count, 0);
     assert.equal((db.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string }).value, "workbench-v2-6");
+  } finally {
+    db.close();
+  }
+});
+
+test("public Project insertion accepts only the canonical initial delivery projection", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const assertRejectedWithoutRows = (project: Project): void => {
+      const beforeProjects = Number((db.prepare("SELECT COUNT(*) AS count FROM projects").get() as { count: number }).count);
+      const beforeStates = Number((db.prepare("SELECT COUNT(*) AS count FROM workbench_delivery_state").get() as { count: number }).count);
+      assert.throws(() => saveProject(db, project), /WORKBENCH_DELIVERY_PROJECT_PROJECTION_IMMUTABLE/);
+      assert.equal(Number((db.prepare("SELECT COUNT(*) AS count FROM projects").get() as { count: number }).count), beforeProjects);
+      assert.equal(Number((db.prepare("SELECT COUNT(*) AS count FROM workbench_delivery_state").get() as { count: number }).count), beforeStates);
+    };
+
+    assertRejectedWithoutRows(JSON.parse(projectJson("project_new_final_status", "final_approved")) as Project);
+    assertRejectedWithoutRows(JSON.parse(projectJson("project_new_final_pointer", "draft", "artifact_unbound")) as Project);
+    assertRejectedWithoutRows(JSON.parse(projectJson("project_new_advanced_status", "video_review")) as Project);
+
+    const canonical = JSON.parse(projectJson("project_new_canonical", "draft")) as Project;
+    assert.doesNotThrow(() => saveProject(db, canonical));
+    assert.deepEqual({ ...(db.prepare(`SELECT workflow_state, current_final_artifact_id
+      FROM workbench_delivery_state WHERE project_id = ?`).get(canonical.project_id) as Record<string, unknown>) }, {
+      workflow_state: "not_ready",
+      current_final_artifact_id: null
+    });
+
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      assertRejectedWithoutRows(JSON.parse(projectJson("project_new_nested_forgery", "final_approved")) as Project);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+    assert.equal(db.prepare("SELECT project_id FROM projects WHERE project_id = 'project_new_nested_forgery'").get(), undefined);
   } finally {
     db.close();
   }

@@ -320,7 +320,7 @@ test("readonly snapshot accepts persisted not-ready and assembly summaries when 
       assert.equal(storyboard.ok, true, storyboard.ok ? "" : storyboard.error.code);
       assert.equal(clip.ok, true, clip.ok ? "" : clip.error.code);
       if (!storyboard.ok || !clip.ok) throw new Error("assembly projection media registration failed");
-      shot.status = "video_review";
+      shot.status = "approved";
       shot.storyboard_image_artifact_id = storyboard.artifact.artifact_id;
       shot.accepted_clip_artifact_id = clip.artifact.artifact_id;
       shot.clip_versions = [{ artifact_id: clip.artifact.artifact_id, run_id: "run_snapshot_assembly", attempt_number: 1, review_status: "approved" }];
