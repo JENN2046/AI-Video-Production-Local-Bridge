@@ -1232,6 +1232,46 @@ test("database check detects first-review missing, approved missing, duplicate, 
   }
 });
 
+test("database check detects a legacy final pointer downgraded without reset evidence", () => {
+  const root = tempRoot();
+  let db: ReturnType<typeof openM0Database> | null = null;
+  try {
+    const sqlitePath = join(root, "legacy-reset-missing.sqlite");
+    migrateDatabase(sqlitePath);
+    db = openM0Database(sqlitePath);
+    const project = createProject({ title: "Legacy reset evidence" }, db);
+    assert.equal(project.ok, true);
+    if (!project.ok) throw new Error("legacy reset project setup failed");
+    const artifact = registerMediaArtifact({
+      artifact_type: "video",
+      role: "final_video",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: project.project_id }
+    }, db);
+    assert.equal(artifact.ok, true);
+    if (!artifact.ok) throw new Error("legacy reset Artifact setup failed");
+
+    const transitionSql = (db.prepare(`SELECT sql FROM sqlite_master
+      WHERE type = 'trigger' AND name = 'workbench_delivery_state_transition'`).get() as { sql: string }).sql;
+    db.exec("DROP TRIGGER workbench_delivery_state_transition");
+    db.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'ready_to_assemble', current_final_artifact_id = ?,
+        assembly_input_fingerprint = NULL, updated_at = '2026-08-18T02:10:00.000Z'
+      WHERE project_id = ?`).run(artifact.artifact.artifact_id, project.project_id);
+    db.exec(transitionSql);
+    db.close();
+    db = null;
+
+    const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
+    assert.equal(checked.schema_current, true);
+    assert.ok(checked.orphan_rows >= 1, JSON.stringify(checked));
+    assert.equal(checked.result, "FAIL");
+  } finally {
+    try { db?.close(); } catch { /* retain the primary assertion failure */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("database check accepts active historical final Artifacts referenced by succeeded assembly Jobs", () => {
   const root = tempRoot();
   let db: ReturnType<typeof openM0Database> | null = null;

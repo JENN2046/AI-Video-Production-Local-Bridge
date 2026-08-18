@@ -1667,7 +1667,8 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
             AND d.workflow_state = NEW.from_state
             AND d.approved_artifact_id IS NULL AND d.latest_export_id IS NULL)
           OR (NEW.from_state = 'legacy_review_required'
-            AND d.workflow_state = NEW.to_state
+            AND NEW.event_type = 'final_review_reassemble'
+            AND d.workflow_state = NEW.from_state
             AND d.approved_artifact_id IS NULL AND d.latest_export_id IS NULL)
         )
     ))
@@ -1806,7 +1807,8 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
   END;
   CREATE TRIGGER workbench_delivery_rework_apply AFTER INSERT ON workbench_delivery_events
   WHEN NEW.event_type IN ('final_review_reassemble','final_review_regenerate_shots')
-    AND NEW.from_state IN ('final_review','approved','exported')
+    AND (NEW.from_state IN ('final_review','approved','exported')
+      OR (NEW.from_state = 'legacy_review_required' AND NEW.event_type = 'final_review_reassemble'))
   BEGIN
     UPDATE workbench_delivery_state
     SET workflow_state = NEW.to_state,
@@ -1820,7 +1822,10 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
         OR (NEW.from_state = 'approved'
           AND approved_artifact_id IS NEW.artifact_id AND latest_export_id IS NULL)
         OR (NEW.from_state = 'exported'
-          AND approved_artifact_id IS NEW.artifact_id AND latest_export_id IS NOT NULL));
+          AND approved_artifact_id IS NEW.artifact_id AND latest_export_id IS NOT NULL)
+        OR (NEW.from_state = 'legacy_review_required'
+          AND approved_artifact_id IS NULL AND latest_export_id IS NULL
+          AND assembly_input_fingerprint IS NULL));
     SELECT CASE WHEN changes() <> 1
       THEN RAISE(ABORT, 'WORKBENCH_DELIVERY_EVENT_BINDING_INVALID') END;
   END;
@@ -2044,7 +2049,17 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
           AND event.export_id IS NEW.latest_export_id
           AND event.created_at IS NEW.closed_at
       ))
-      OR (OLD.workflow_state = 'legacy_review_required' AND NEW.workflow_state IN ('not_ready','ready_to_assemble','approved'))
+      OR (OLD.workflow_state = 'legacy_review_required' AND NEW.workflow_state = 'ready_to_assemble' AND EXISTS (
+        SELECT 1 FROM workbench_delivery_events event
+        WHERE event.project_id = NEW.project_id
+          AND event.event_type = 'final_review_reassemble'
+          AND event.from_state = 'legacy_review_required' AND event.to_state = 'ready_to_assemble'
+          AND event.job_id IS NULL AND event.export_id IS NULL
+          AND event.artifact_id IS OLD.current_final_artifact_id
+          AND event.input_fingerprint IS NULL
+          AND event.created_at IS NEW.updated_at
+      ))
+      OR (OLD.workflow_state = 'legacy_review_required' AND NEW.workflow_state = 'approved')
     ))
     OR (OLD.workflow_state IN ('final_review','legacy_review_required') AND NEW.workflow_state = 'approved' AND EXISTS (
       SELECT 1 FROM workbench_delivery_events event

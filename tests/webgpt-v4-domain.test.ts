@@ -824,6 +824,7 @@ test("review and delivery guards reject same-project wrong-SHOT and tampered art
     context.production.status = "video_review";
     saveProject(context.db, context.production);
     context.productionShot.accepted_clip_artifact_id = first.artifact.artifact_id;
+    context.productionShot.status = "approved";
     context.productionShot.review.approval_status = "approved";
     saveShot(context.db, context.productionShot);
     context.db.prepare(`UPDATE workbench_project_meta SET
@@ -844,6 +845,7 @@ test("review and delivery guards reject same-project wrong-SHOT and tampered art
     }
     secondShot.clip_versions = [{ artifact_id: second.artifact.artifact_id, run_id: "run_second", attempt_number: 1, review_status: "approved" }];
     secondShot.accepted_clip_artifact_id = second.artifact.artifact_id;
+    secondShot.status = "approved";
     secondShot.review.approval_status = "approved";
     saveShot(context.db, context.productionShot);
     saveShot(context.db, secondShot);

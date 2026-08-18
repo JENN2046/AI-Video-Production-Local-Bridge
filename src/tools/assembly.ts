@@ -82,7 +82,8 @@ const FINAL_REVIEW_REASSEMBLY_SOURCE_STATES: ReadonlySet<WorkbenchDeliveryWorkfl
 const ATOMIC_REASSEMBLY_SOURCE_STATES: ReadonlySet<WorkbenchDeliveryWorkflowState> = new Set([
   "final_review",
   "approved",
-  "exported"
+  "exported",
+  "legacy_review_required"
 ]);
 
 function assemblyPersistenceError(error: unknown): ToolError {

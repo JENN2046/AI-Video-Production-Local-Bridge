@@ -184,6 +184,58 @@ test("migration 0012 backfills delivery state without inventing approval, export
   }
 });
 
+test("legacy delivery downgrade requires one matching immutable reassembly event", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    applyThrough0011(db);
+    db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
+      .run("project_legacy_reset", projectJson("project_legacy_reset", "final_approved", "artifact_legacy_reset"));
+    insertFinalArtifact(db, "project_legacy_reset", "artifact_legacy_reset");
+    assert.deepEqual(runDatabaseMigrations(db).applied, ["0012"]);
+
+    const resetAt = "2026-08-18T02:00:00.000Z";
+    const updateState = db.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = ?, updated_at = ? WHERE project_id = 'project_legacy_reset'`);
+    assert.throws(() => updateState.run("not_ready", resetAt),
+      /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
+    assert.throws(() => updateState.run("ready_to_assemble", resetAt),
+      /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
+    assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, from_state, to_state, artifact_id,
+        input_fingerprint, reason_code, data_json, created_at)
+      VALUES ('event_legacy_reset_wrong_type', 'project_legacy_reset',
+        'final_review_regenerate_shots', 'legacy_review_required', 'revision_requested',
+        'artifact_legacy_reset', NULL, 'LEGACY_REASSEMBLY_REQUESTED', '{}', ?)`)
+      .run(resetAt), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+
+    assert.doesNotThrow(() => db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, from_state, to_state, artifact_id,
+        input_fingerprint, reason_code, data_json, created_at)
+      VALUES ('event_legacy_reset', 'project_legacy_reset', 'final_review_reassemble',
+        'legacy_review_required', 'ready_to_assemble', 'artifact_legacy_reset', NULL,
+        'LEGACY_REASSEMBLY_REQUESTED', '{"source":"fixture"}', ?)`)
+      .run(resetAt));
+    assert.deepEqual({ ...(db.prepare(`SELECT workflow_state, current_final_artifact_id,
+      approved_artifact_id, latest_export_id, assembly_input_fingerprint
+      FROM workbench_delivery_state WHERE project_id = 'project_legacy_reset'`).get() as Record<string, unknown>) }, {
+      workflow_state: "ready_to_assemble",
+      current_final_artifact_id: "artifact_legacy_reset",
+      approved_artifact_id: null,
+      latest_export_id: null,
+      assembly_input_fingerprint: null
+    });
+    assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, from_state, to_state, artifact_id,
+        input_fingerprint, reason_code, data_json, created_at)
+      VALUES ('event_legacy_reset_duplicate', 'project_legacy_reset', 'final_review_reassemble',
+        'legacy_review_required', 'ready_to_assemble', 'artifact_legacy_reset', NULL,
+        'LEGACY_REASSEMBLY_REQUESTED', '{}', ?)`)
+      .run(resetAt), /WORKBENCH_DELIVERY_REWORK_EVENT_DUPLICATE|WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+  } finally {
+    db.close();
+  }
+});
+
 test("migration 0012 fails atomically when an existing final pointer is not a valid active final Artifact", () => {
   const db = new DatabaseSync(":memory:");
   try {

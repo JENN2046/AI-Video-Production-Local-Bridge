@@ -699,6 +699,20 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
               AND ((rework.event_type = 'final_review_reassemble' AND rework.to_state = 'ready_to_assemble')
                 OR (rework.event_type = 'final_review_regenerate_shots' AND rework.to_state = 'revision_requested'))
           )`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_state state
+        WHERE state.workflow_state = 'ready_to_assemble'
+          AND state.current_final_artifact_id IS NOT NULL
+          AND state.assembly_input_fingerprint IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM workbench_delivery_events rework
+            WHERE rework.project_id = state.project_id
+              AND rework.event_type = 'final_review_reassemble'
+              AND rework.from_state = 'legacy_review_required'
+              AND rework.to_state = 'ready_to_assemble'
+              AND rework.job_id IS NULL AND rework.export_id IS NULL
+              AND rework.artifact_id IS state.current_final_artifact_id
+              AND rework.input_fingerprint IS NULL
+          )`,
       `SELECT COALESCE(SUM(rework_count - 1), 0) AS count FROM (
         SELECT COUNT(*) AS rework_count FROM workbench_delivery_events
         WHERE event_type IN ('final_review_reassemble','final_review_regenerate_shots')
