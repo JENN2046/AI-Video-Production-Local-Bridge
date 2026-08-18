@@ -18,7 +18,9 @@ import {
   completeWorkbenchExportFixture,
   createAcceptedAssemblyClipFixture,
   ensureAcceptedAssemblyClipsFixture,
-  insertWorkbenchExportFixture
+  failWorkbenchAssemblyFixture,
+  insertWorkbenchExportFixture,
+  queueWorkbenchAssemblyFixture
 } from "./workbench-delivery-test-helpers.js";
 
 const HISTORICAL_MIGRATION_0005_CHECKSUM = "92297a3ce2996e427b8a8e3dae39a25f33a294c29142b5ca723cdcd4700ad8b0";
@@ -723,6 +725,19 @@ test("database check reports invalid delivery Job bindings and inactive referenc
     db.prepare("UPDATE projects SET data_json = ? WHERE project_id = 'project_b'")
       .run(JSON.stringify({ project_id: "project_b", exports: { final_video_artifact_id: "artifact_b" } }));
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = 'project_b'").run(now);
+    queueWorkbenchAssemblyFixture(db, {
+      project_id: "project_b",
+      job_id: "parent_b",
+      event_id: "parent_b_queued",
+      created_at: now,
+      input_fingerprint: "f".repeat(64)
+    });
+    failWorkbenchAssemblyFixture(db, {
+      project_id: "project_b",
+      job_id: "parent_b",
+      event_id: "parent_b_failed",
+      created_at: now
+    });
     completeWorkbenchAssemblyFixture(db, {
       project_id: "project_b",
       artifact_id: "artifact_b",
@@ -754,10 +769,6 @@ test("database check reports invalid delivery Job bindings and inactive referenc
       event_id: "export_succeeded_current_b",
       created_at: now
     });
-    db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, error_code, created_at, finished_at, updated_at)
-      VALUES ('parent_b', 'project_b', 'assembly', 'failed', '{}', 'SYNTHETIC_FAILURE', ?, ?, ?)`)
-      .run(now, now, now);
     const triggerRows = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'trigger'
       AND name IN ('workbench_delivery_jobs_validate_insert', 'workbench_delivery_jobs_validate_bindings_update',
         'workbench_delivery_artifact_status_guard', 'workbench_delivery_events_validate_insert',
@@ -775,11 +786,14 @@ test("database check reports invalid delivery Job bindings and inactive referenc
       DROP TRIGGER workbench_delivery_assembly_terminal_apply;
       DROP TRIGGER workbench_delivery_export_success_apply;
       DROP TRIGGER workbench_delivery_state_transition;`);
+    db.exec("PRAGMA foreign_keys = OFF");
     db.prepare(`UPDATE workbench_delivery_state
       SET workflow_state = 'closed', closed_at = ?, updated_at = ? WHERE project_id = 'project_b'`).run(now, now);
     db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, retry_of_job_id, error_code, created_at, finished_at, updated_at)
-      VALUES ('retry_a', 'project_a', 'assembly', 'failed', '{}', 'parent_b', 'SYNTHETIC_FAILURE', ?, ?, ?)`)
+      (job_id, project_id, job_type, state, input_json, retry_of_job_id, error_code, terminal_event_id,
+        created_at, finished_at, updated_at)
+      VALUES ('retry_a', 'project_a', 'assembly', 'failed', '{}', 'parent_b', 'SYNTHETIC_FAILURE',
+        'event_retry_a_terminal', ?, ?, ?)`)
       .run(now, now, now);
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, job_id, event_type, from_state, to_state, reason_code, data_json, created_at)
@@ -787,18 +801,22 @@ test("database check reports invalid delivery Job bindings and inactive referenc
         'assembling', 'ready_to_assemble', 'SYNTHETIC_FAILURE', '{}', ?)`)
       .run(now);
     db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, output_artifact_id, created_at, finished_at, updated_at)
+      (job_id, project_id, job_type, state, input_json, output_artifact_id, terminal_event_id,
+        created_at, finished_at, updated_at)
       VALUES ('assembly_a', 'project_a', 'assembly', 'succeeded',
-        '{"source_clip_artifact_ids":[]}', 'artifact_b', ?, ?, ?)`)
+        '{"source_clip_artifact_ids":[]}', 'artifact_b', 'event_assembly_a_terminal', ?, ?, ?)`)
       .run(now, now, now);
     db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, export_id, created_at, finished_at, updated_at)
-      VALUES ('export_a', 'project_a', 'export', 'succeeded', '{}', 'export_b', ?, ?, ?)`)
+      (job_id, project_id, job_type, state, input_json, export_id, terminal_event_id,
+        created_at, finished_at, updated_at)
+      VALUES ('export_a', 'project_a', 'export', 'succeeded', '{}', 'export_b',
+        'event_export_a_terminal', ?, ?, ?)`)
       .run(now, now, now);
     db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, export_id, created_at, finished_at, updated_at)
+      (job_id, project_id, job_type, state, input_json, export_id, terminal_event_id,
+        created_at, finished_at, updated_at)
       VALUES ('export_input_mismatch_b', 'project_b', 'export', 'succeeded',
-        '{"artifact_id":"artifact_old_b"}', 'export_b', ?, ?, ?)`)
+        '{"artifact_id":"artifact_old_b"}', 'export_b', 'event_export_input_mismatch_b_terminal', ?, ?, ?)`)
       .run(now, now, now);
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, created_at, updated_at)
@@ -806,8 +824,10 @@ test("database check reports invalid delivery Job bindings and inactive referenc
         '{"artifact_id":"artifact_old_b"}', ?, ?)`)
       .run(now, now);
     db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, export_id, error_code, created_at, finished_at, updated_at)
-      VALUES ('assembly_wrong_export_type_b', 'project_b', 'assembly', 'failed', '{}', 'export_b', 'SYNTHETIC_FAILURE', ?, ?, ?)`)
+      (job_id, project_id, job_type, state, input_json, export_id, error_code, terminal_event_id,
+        created_at, finished_at, updated_at)
+      VALUES ('assembly_wrong_export_type_b', 'project_b', 'assembly', 'failed', '{}', 'export_b',
+        'SYNTHETIC_FAILURE', 'event_assembly_wrong_export_type_b_terminal', ?, ?, ?)`)
       .run(now, now, now);
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, event_type, from_state, to_state, artifact_id, export_id, reason_code, data_json, created_at)
@@ -846,6 +866,7 @@ test("database check reports invalid delivery Job bindings and inactive referenc
     db.prepare("UPDATE media_artifacts SET status = 'archived', data_json = ? WHERE artifact_id = 'artifact_b'")
       .run(JSON.stringify(artifact));
     for (const row of triggerRows) db.exec(row.sql);
+    db.exec("PRAGMA foreign_keys = ON");
     assertSchemaCurrent(db);
     db.close();
     db = null;
@@ -911,10 +932,20 @@ test("database check detects duplicate lifecycle Events after the insert guard i
     assert.equal(project.ok, true);
     if (!project.ok) throw new Error("duplicate Event project setup failed");
     const now = "2026-08-15T09:00:00.000Z";
-    db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, error_code, created_at, finished_at, updated_at)
-      VALUES ('job_duplicate_event', ?, 'assembly', 'failed', '{}', 'SYNTHETIC_FAILURE', ?, ?, ?)`)
-      .run(project.project_id, now, now, now);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ?
+      WHERE project_id = ?`).run(now, project.project_id);
+    queueWorkbenchAssemblyFixture(db, {
+      project_id: project.project_id,
+      job_id: "job_duplicate_event",
+      event_id: "event_duplicate_queued",
+      created_at: now
+    });
+    failWorkbenchAssemblyFixture(db, {
+      project_id: project.project_id,
+      job_id: "job_duplicate_event",
+      event_id: "event_duplicate_original",
+      created_at: now
+    });
     const insertEvent = db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, job_id, event_type, from_state, to_state, reason_code, data_json, created_at)
       VALUES (?, ?, 'job_duplicate_event', 'assembly_failed', 'assembling', 'ready_to_assemble',
@@ -1399,20 +1430,23 @@ test("database check detects zero-SHOT and partial-SHOT succeeded assembly evide
     const insertGuard = (db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'trigger'
       AND name = 'workbench_delivery_jobs_validate_insert'`).get() as { sql: string }).sql;
     db.exec("DROP TRIGGER workbench_delivery_jobs_validate_insert");
+    db.exec("PRAGMA foreign_keys = OFF");
     db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, output_artifact_id,
+      (job_id, project_id, job_type, state, input_json, output_artifact_id, terminal_event_id,
         created_at, started_at, finished_at, updated_at)
       VALUES ('job_assembly_zero_shot_bypass', ?, 'assembly', 'succeeded',
-        '{"source_clip_artifact_ids":[]}', ?, ?, ?, ?, ?)`)
+        '{"source_clip_artifact_ids":[]}', ?, 'event_assembly_zero_shot_bypass_terminal', ?, ?, ?, ?)`)
       .run(emptyProject.project_id, emptyFinal.artifact.artifact_id, now, now, now, now);
     db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, output_artifact_id,
+      (job_id, project_id, job_type, state, input_json, output_artifact_id, terminal_event_id,
         created_at, started_at, finished_at, updated_at)
       VALUES ('job_assembly_partial_shot_bypass', ?, 'assembly', 'succeeded',
-        json_object('source_clip_artifact_ids', json_array(?)), ?, ?, ?, ?, ?)`)
+        json_object('source_clip_artifact_ids', json_array(?)), ?,
+        'event_assembly_partial_shot_bypass_terminal', ?, ?, ?, ?)`)
       .run(partialProject.project_id, first.artifact_id, partialFinal.artifact.artifact_id,
         now, now, now, now);
     db.exec(insertGuard);
+    db.exec("PRAGMA foreign_keys = ON");
     assert.doesNotThrow(() => assertSchemaCurrent(db!));
     db.close();
     db = null;

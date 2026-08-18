@@ -1239,6 +1239,8 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     CHECK (json_valid(input_json) = 1 AND json_type(input_json) = 'object'),
     CHECK (error_code IS NULL OR (length(error_code) BETWEEN 1 AND 64 AND error_code NOT GLOB '*[^A-Z0-9_]*')),
     CHECK ((state IN ('queued','running') AND finished_at IS NULL) OR (state IN ('succeeded','failed','interrupted') AND finished_at IS NOT NULL)),
+    CHECK ((state IN ('queued','running') AND terminal_event_id IS NULL)
+      OR (state IN ('succeeded','failed','interrupted') AND terminal_event_id IS NOT NULL)),
     CHECK (state <> 'succeeded' OR (job_type = 'assembly' AND output_artifact_id IS NOT NULL AND export_id IS NULL) OR (job_type = 'export' AND export_id IS NOT NULL)),
     UNIQUE (active_assembly_binding_key)
   );
