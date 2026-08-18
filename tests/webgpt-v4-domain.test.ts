@@ -84,6 +84,23 @@ function teardown(context: TestContext): void {
 
 const actor = actorFromSubject("auth0|jenn", ["projects.read", "shots.write", "reviews.write", "proposals.write", "generation.prepare"]);
 
+function setProductionDeliveryProjectionFixture(
+  context: TestContext,
+  input: { status?: Project["status"]; final_artifact_id?: string }
+): void {
+  const row = context.db.prepare("SELECT data_json FROM projects WHERE project_id = ?")
+    .get(context.production.project_id) as { data_json: string } | undefined;
+  if (!row) throw new Error("production project fixture missing");
+  const project = JSON.parse(row.data_json) as Project;
+  if (input.status !== undefined) project.status = input.status;
+  if (input.final_artifact_id !== undefined) {
+    project.exports.final_video_artifact_id = input.final_artifact_id;
+  }
+  context.db.prepare(`UPDATE projects SET data_json = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE project_id = ?`).run(JSON.stringify(project), project.project_id);
+  context.production = project;
+}
+
 function closeProductionProject(context: TestContext): void {
   const registered = registerMediaArtifact({
     artifact_type: "video",
@@ -94,9 +111,10 @@ function closeProductionProject(context: TestContext): void {
   assert.equal(registered.ok, true, registered.ok ? "" : registered.error.code);
   if (!registered.ok) throw new Error("closed project final video fixture registration failed");
 
-  context.production.status = "final_approved";
-  context.production.exports.final_video_artifact_id = registered.artifact.artifact_id;
-  saveProject(context.db, context.production);
+  setProductionDeliveryProjectionFixture(context, {
+    status: "final_approved",
+    final_artifact_id: registered.artifact.artifact_id
+  });
   const now = "2026-08-14T00:00:00.000Z";
   const exportId = `export_${context.production.project_id}`;
   ensureAcceptedAssemblyClipsFixture(context.db, context.production.project_id);
@@ -145,8 +163,7 @@ function setProductionFinalEvidence(
   const artifactId = registered.artifact.artifact_id;
   const now = "2026-08-15T01:00:00.000Z";
   ensureAcceptedAssemblyClipsFixture(context.db, context.production.project_id);
-  context.production.exports.final_video_artifact_id = artifactId;
-  saveProject(context.db, context.production);
+  setProductionDeliveryProjectionFixture(context, { final_artifact_id: artifactId });
   context.db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
     .run(now, context.production.project_id);
   completeWorkbenchAssemblyFixture(context.db, {
@@ -565,9 +582,10 @@ test("delivery project context accepts null final reason when a valid final expo
     }, context.db);
     assert.equal(registered.ok, true);
     if (!registered.ok) throw new Error("final video fixture registration failed");
-    context.production.status = "final_approved";
-    context.production.exports.final_video_artifact_id = registered.artifact.artifact_id;
-    saveProject(context.db, context.production);
+    setProductionDeliveryProjectionFixture(context, {
+      status: "final_approved",
+      final_artifact_id: registered.artifact.artifact_id
+    });
 
     for (const detail of ["compact", "full"] as const) {
       const result = readProjectContext(

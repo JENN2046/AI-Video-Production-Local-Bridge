@@ -350,7 +350,7 @@ function deliveryReferencedArtifactIsFrozen(db: M0Database, artifactId: string):
     ) OR EXISTS (
       SELECT 1 FROM workbench_delivery_jobs job
       JOIN json_each(job.input_json, '$.source_clip_artifact_ids') source_clip
-      WHERE job.job_type = 'assembly' AND job.state = 'succeeded'
+      WHERE job.job_type = 'assembly' AND job.state IN ('queued','running','succeeded')
         AND source_clip.type = 'text' AND source_clip.value = ?
     ) OR EXISTS (
       SELECT 1 FROM workbench_exports exported WHERE exported.artifact_id = ?

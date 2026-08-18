@@ -79,6 +79,21 @@ function logicalManifest(db: M0Database): { table_count: number; row_count: numb
   return { table_count: tables.length, row_count: rowCount, sha256: createHash("sha256").update(JSON.stringify(payload)).digest("hex") };
 }
 
+function setProjectDeliveryProjectionFixture(
+  db: M0Database,
+  projectId: string,
+  input: { status?: string; final_video_artifact_id?: string }
+): void {
+  const project = getProject(db, projectId);
+  assert.ok(project);
+  if (input.status !== undefined) project.status = input.status as typeof project.status;
+  if (input.final_video_artifact_id !== undefined) {
+    project.exports.final_video_artifact_id = input.final_video_artifact_id;
+  }
+  db.prepare("UPDATE projects SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ?")
+    .run(JSON.stringify(project), projectId);
+}
+
 function createFixture(sqlitePath: string): {
   actor: ReturnType<typeof actorFromFederatedSubject>;
   unassigned_actor: ReturnType<typeof actorFromFederatedSubject>;
@@ -363,8 +378,9 @@ test("readonly snapshot accepts persisted not-ready and assembly summaries when 
       assert.equal(finalArtifact.ok, true, finalArtifact.ok ? "" : finalArtifact.error.code);
       if (!finalArtifact.ok) throw new Error("assembly projection final media registration failed");
       retainedFinalArtifactId = finalArtifact.artifact.artifact_id;
-      currentProject.exports.final_video_artifact_id = retainedFinalArtifactId;
-      saveProject(assemblyPreparationDb, currentProject);
+      setProjectDeliveryProjectionFixture(assemblyPreparationDb, fixture.project_id, {
+        final_video_artifact_id: retainedFinalArtifactId
+      });
     } finally {
       assemblyPreparationDb.close();
     }
@@ -466,9 +482,10 @@ test("SQLite and Snapshot readonly adapters preserve six-tool DTO parity and dat
     assemblyShot.storyboard_image_artifact_id = storyboardImage.artifact.artifact_id;
     saveShot(fixtureDb, assemblyShot);
     ensureAcceptedAssemblyClipsFixture(fixtureDb, fixture.project_id);
-    project.status = "final_approved";
-    project.exports.final_video_artifact_id = registered.artifact.artifact_id;
-    saveProject(fixtureDb, project);
+    setProjectDeliveryProjectionFixture(fixtureDb, fixture.project_id, {
+      status: "final_approved",
+      final_video_artifact_id: registered.artifact.artifact_id
+    });
     const closedAt = "2026-07-16T00:00:00.000Z";
     fixtureDb.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(closedAt, fixture.project_id);

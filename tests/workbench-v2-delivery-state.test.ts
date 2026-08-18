@@ -249,6 +249,21 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
 
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(now, "project_delivery");
+    const projectionBefore = db.prepare("SELECT data_json, updated_at FROM projects WHERE project_id = 'project_delivery'").get();
+    const forgedStatus = getProject(db, "project_delivery");
+    assert.ok(forgedStatus);
+    forgedStatus.status = "final_approved";
+    assert.throws(() => saveProject(db, forgedStatus), /WORKBENCH_DELIVERY_PROJECT_PROJECTION_IMMUTABLE/);
+    assert.deepEqual(db.prepare("SELECT data_json, updated_at FROM projects WHERE project_id = 'project_delivery'").get(), projectionBefore);
+    const forgedPointer = getProject(db, "project_delivery");
+    assert.ok(forgedPointer);
+    forgedPointer.exports.final_video_artifact_id = "artifact_delivery";
+    assert.throws(() => saveProject(db, forgedPointer), /WORKBENCH_DELIVERY_PROJECT_PROJECTION_IMMUTABLE/);
+    assert.deepEqual(db.prepare("SELECT data_json, updated_at FROM projects WHERE project_id = 'project_delivery'").get(), projectionBefore);
+    const ordinaryProjectUpdate = getProject(db, "project_delivery");
+    assert.ok(ordinaryProjectUpdate);
+    ordinaryProjectUpdate.title = "ordinary pre-assembly edit";
+    assert.doesNotThrow(() => saveProject(db, ordinaryProjectUpdate));
     db.exec("BEGIN IMMEDIATE");
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_fingerprint, input_json, created_at, updated_at)

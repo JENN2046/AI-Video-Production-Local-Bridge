@@ -101,11 +101,16 @@ export function saveProject(db: M0Database, project: Project): void {
   const ownsTransaction = !(db as unknown as { isTransaction?: boolean }).isTransaction;
   if (ownsTransaction) db.exec("BEGIN IMMEDIATE");
   try {
-    const existing = db.prepare("SELECT 1 AS present FROM projects WHERE project_id = ?")
-      .get(project.project_id) as { present: number } | undefined;
+    const existing = db.prepare("SELECT data_json FROM projects WHERE project_id = ?")
+      .get(project.project_id) as { data_json: string } | undefined;
     if (existing) {
       const writable = assertWorkbenchContentMutationAllowed(db, project.project_id);
       if (!writable.ok) throw new Error(writable.error.code);
+      const persisted = JSON.parse(existing.data_json) as Project;
+      if ((persisted.status === "final_approved") !== (project.status === "final_approved")
+        || persisted.exports.final_video_artifact_id !== project.exports.final_video_artifact_id) {
+        throw new Error("WORKBENCH_DELIVERY_PROJECT_PROJECTION_IMMUTABLE");
+      }
     }
     db.prepare(`
       INSERT INTO projects (project_id, data_json, updated_at)

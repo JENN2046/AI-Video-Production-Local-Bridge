@@ -297,9 +297,9 @@ function closeProjectForInboxTest(db: ReturnType<typeof openM0Database>, project
   assert.equal(finalArtifact.ok, true);
   if (!finalArtifact.ok) throw new Error("closed inbox final Artifact registration failed");
   const artifactId = finalArtifact.artifact.artifact_id;
-  project.status = "final_approved";
-  project.exports.final_video_artifact_id = artifactId;
-  saveProject(db, project);
+  db.prepare(`UPDATE projects SET data_json = json_set(
+      data_json, '$.status', 'final_approved', '$.exports.final_video_artifact_id', ?
+    ), updated_at = CURRENT_TIMESTAMP WHERE project_id = ?`).run(artifactId, projectId);
   const now = "2026-08-14T00:00:00.000Z";
   const exportId = "export_closed_inbox";
   db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?").run(now, projectId);

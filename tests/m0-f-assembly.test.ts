@@ -17,7 +17,7 @@ import {
   startStoryboardVideoGeneration,
   transitionMediaArtifactStatus
 } from "../src/index.js";
-import { approveWorkbenchDeliveryFixture, completeWorkbenchExportFixture, insertWorkbenchExportFixture, queueWorkbenchAssemblyFixture } from "./workbench-delivery-test-helpers.js";
+import { approveWorkbenchDeliveryFixture, completeWorkbenchExportFixture, failWorkbenchAssemblyFixture, insertWorkbenchExportFixture, queueWorkbenchAssemblyFixture } from "./workbench-delivery-test-helpers.js";
 
 async function setupGeneratedProject(db: ReturnType<typeof openM0Database>) {
   const project = createProject({ title: "M0-F Project" }, db);
@@ -101,6 +101,72 @@ test("M0-F assembly blocks before all shots are approved", async () => {
     if (assembled.ok) return;
     assert.equal(assembled.error.code, "FINAL_ASSEMBLY_NOT_READY");
     assert.equal(assembled.blocking_reasons?.some((reason) => reason.includes("Shot 003")), true);
+  } finally {
+    db.close();
+  }
+});
+
+test("M0-F queued and running assembly Jobs freeze their source Clip Artifacts", async () => {
+  const db = openM0Database();
+  try {
+    const { project, storyboard, generation } = await setupGeneratedProject(db);
+    for (const shot of storyboard.shots) {
+      const run = generation.runs.find((item) => item.shot_id === shot.shot_id);
+      assert(run);
+      assert.equal(markShotClipReview({
+        shot_id: shot.shot_id,
+        artifact_id: run.output.artifact_ids[0],
+        decision: "approved"
+      }, db).ok, true);
+    }
+    const now = "2026-08-18T04:00:00.000Z";
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
+      .run(now, project.project_id);
+    queueWorkbenchAssemblyFixture(db, {
+      project_id: project.project_id,
+      job_id: "job_m0f_frozen_input",
+      event_id: "event_m0f_frozen_input_queued",
+      created_at: now
+    });
+    const acceptedClipId = getShot(db, storyboard.shots[0].shot_id)?.accepted_clip_artifact_id ?? "";
+    const acceptedClip = getMediaArtifact(db, acceptedClipId);
+    assert.ok(acceptedClip);
+    const replacement = structuredClone(acceptedClip);
+    replacement.metadata.aspect_ratio = "1:1";
+    const assertFrozen = (): void => {
+      const activation = activateLocalMediaArtifact({
+        artifact: replacement,
+        source_path: acceptedClip.storage.uri
+      }, db);
+      assert.equal(activation.ok ? null : activation.error.code, "WORKBENCH_DELIVERY_ARTIFACT_IMMUTABLE");
+      const transition = transitionMediaArtifactStatus(acceptedClipId, "archived", db);
+      assert.equal(transition.ok ? null : transition.error.code, "WORKBENCH_DELIVERY_ARTIFACT_ACTIVE_REQUIRED");
+      assert.throws(() => db.prepare(`UPDATE media_artifacts
+        SET data_json = json_set(data_json, '$.metadata.aspect_ratio', '1:1')
+        WHERE artifact_id = ?`).run(acceptedClipId), /WORKBENCH_DELIVERY_ARTIFACT_IMMUTABLE/);
+    };
+
+    assertFrozen();
+    db.prepare("UPDATE workbench_delivery_jobs SET state = 'running', started_at = ?, updated_at = ? WHERE job_id = ?")
+      .run(now, now, "job_m0f_frozen_input");
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
+        reason_code, data_json, created_at)
+      SELECT 'event_m0f_frozen_input_started', project_id, job_id, 'assembly_started',
+        'assembling', 'assembling', input_fingerprint, 'ASSEMBLY_STARTED', '{}', ?
+      FROM workbench_delivery_jobs WHERE job_id = ?`).run(now, "job_m0f_frozen_input");
+    assertFrozen();
+
+    failWorkbenchAssemblyFixture(db, {
+      project_id: project.project_id,
+      job_id: "job_m0f_frozen_input",
+      event_id: "event_m0f_frozen_input_failed",
+      created_at: now
+    });
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble',
+      active_assembly_job_id = NULL, updated_at = ? WHERE project_id = ?`).run(now, project.project_id);
+    const released = transitionMediaArtifactStatus(acceptedClipId, "archived", db);
+    assert.equal(released.ok, true);
   } finally {
     db.close();
   }

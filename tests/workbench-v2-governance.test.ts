@@ -70,9 +70,9 @@ test("secondary governance isolates validation projects and orphan duplicates", 
     assert.equal(duplicate.ok && delivered.ok, true);
     if (!duplicate.ok || !delivered.ok) return;
     duplicate.project.status = "storyboard_approved";
-    delivered.project.status = "final_approved";
     saveProject(db, duplicate.project);
-    saveProject(db, delivered.project);
+    db.prepare(`UPDATE projects SET data_json = json_set(data_json, '$.status', 'final_approved'),
+      updated_at = CURRENT_TIMESTAMP WHERE project_id = ?`).run(delivered.project_id);
 
     const preview = getWorkbenchGovernancePreview(db);
     assert.equal(preview.groups.find((group) => group.rule_id === "memory_saveback")?.count, 1);

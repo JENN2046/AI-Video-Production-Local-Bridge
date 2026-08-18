@@ -1879,7 +1879,7 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     UNION ALL
     SELECT 1 FROM workbench_delivery_jobs j
     JOIN json_each(j.input_json, '$.source_clip_artifact_ids') source_clip
-    WHERE j.job_type = 'assembly' AND j.state = 'succeeded'
+    WHERE j.job_type = 'assembly' AND j.state IN ('queued','running','succeeded')
       AND source_clip.type = 'text' AND source_clip.value = OLD.artifact_id
     UNION ALL
     SELECT 1 FROM workbench_exports e WHERE e.artifact_id = OLD.artifact_id
@@ -1897,7 +1897,7 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     UNION ALL
     SELECT 1 FROM workbench_delivery_jobs j
     JOIN json_each(j.input_json, '$.source_clip_artifact_ids') source_clip
-    WHERE j.job_type = 'assembly' AND j.state = 'succeeded'
+    WHERE j.job_type = 'assembly' AND j.state IN ('queued','running','succeeded')
       AND source_clip.type = 'text' AND source_clip.value = OLD.artifact_id
     UNION ALL
     SELECT 1 FROM workbench_exports e WHERE e.artifact_id = OLD.artifact_id
@@ -1915,7 +1915,7 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     UNION ALL
     SELECT 1 FROM workbench_delivery_jobs j
     JOIN json_each(j.input_json, '$.source_clip_artifact_ids') source_clip
-    WHERE j.job_type = 'assembly' AND j.state = 'succeeded'
+    WHERE j.job_type = 'assembly' AND j.state IN ('queued','running','succeeded')
       AND source_clip.type = 'text' AND source_clip.value = NEW.artifact_id
     UNION ALL
     SELECT 1 FROM workbench_exports e WHERE e.artifact_id = NEW.artifact_id
@@ -1934,7 +1934,7 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
       UNION ALL
       SELECT 1 FROM workbench_delivery_jobs j
       JOIN json_each(j.input_json, '$.source_clip_artifact_ids') source_clip
-      WHERE j.job_type = 'assembly' AND j.state = 'succeeded'
+      WHERE j.job_type = 'assembly' AND j.state IN ('queued','running','succeeded')
         AND source_clip.type = 'text' AND source_clip.value = OLD.artifact_id
       UNION ALL
       SELECT 1 FROM workbench_exports e WHERE e.artifact_id = OLD.artifact_id
@@ -1947,7 +1947,7 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
       UNION ALL
       SELECT 1 FROM workbench_delivery_jobs j
       JOIN json_each(j.input_json, '$.source_clip_artifact_ids') source_clip
-      WHERE j.job_type = 'assembly' AND j.state = 'succeeded'
+      WHERE j.job_type = 'assembly' AND j.state IN ('queued','running','succeeded')
         AND source_clip.type = 'text' AND source_clip.value = NEW.artifact_id
       UNION ALL
       SELECT 1 FROM workbench_exports e WHERE e.artifact_id = NEW.artifact_id

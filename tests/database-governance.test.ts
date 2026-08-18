@@ -11,7 +11,7 @@ import { openM0Database } from "../src/storage/sqlite.js";
 import { initializeWorkbenchV2Schema } from "../src/storage/workbenchV2Schema.js";
 import { paths } from "../src/paths.js";
 import { persistMediaArtifact, registerMediaArtifact, transitionMediaArtifactStatus, type MediaArtifact } from "../src/tools/mediaArtifacts.js";
-import { buildStoryboardApprovedShot, createProject, getProject, saveProject, saveShot } from "../src/tools/projects.js";
+import { buildStoryboardApprovedShot, createProject, saveShot } from "../src/tools/projects.js";
 import {
   approveWorkbenchDeliveryFixture,
   completeWorkbenchAssemblyFixture,
@@ -28,6 +28,16 @@ const INTERIM_MIGRATION_0005_CHECKSUM = "6e929ae3b8db4387891d664cd22dc5299dab689
 
 function tempRoot(): string {
   return mkdtempSync(join(tmpdir(), "ai-video-db-governance-"));
+}
+
+function setProjectFinalArtifactFixture(
+  db: ReturnType<typeof openM0Database>,
+  projectId: string,
+  artifactId: string
+): void {
+  db.prepare(`UPDATE projects SET data_json = json_set(
+      data_json, '$.status', 'video_review', '$.exports.final_video_artifact_id', ?
+    ), updated_at = CURRENT_TIMESTAMP WHERE project_id = ?`).run(artifactId, projectId);
 }
 
 function insertUnverifiedArtifact(
@@ -73,11 +83,7 @@ function createApprovedDeliveryFixture(
   }, db);
   assert.equal(artifact.ok, true);
   if (!artifact.ok) throw new Error("rework evidence Artifact setup failed");
-  const projectRecord = getProject(db, project.project_id);
-  assert.ok(projectRecord);
-  projectRecord.exports.final_video_artifact_id = artifact.artifact.artifact_id;
-  projectRecord.status = "video_review";
-  saveProject(db, projectRecord);
+  setProjectFinalArtifactFixture(db, project.project_id, artifact.artifact.artifact_id);
   const fingerprint = "d".repeat(64);
   db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
     .run(now, project.project_id);
@@ -996,11 +1002,7 @@ test("database check detects missing, duplicate, and pointer-drifted delivery su
       }, db);
       assert.equal(artifact.ok, true);
       if (!artifact.ok) throw new Error("delivery success evidence Artifact setup failed");
-      const projectRecord = getProject(db, project.project_id);
-      assert.ok(projectRecord);
-      projectRecord.exports.final_video_artifact_id = artifact.artifact.artifact_id;
-      projectRecord.status = "video_review";
-      saveProject(db, projectRecord);
+      setProjectFinalArtifactFixture(db, project.project_id, artifact.artifact.artifact_id);
       db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
         .run(now, project.project_id);
       completeWorkbenchAssemblyFixture(db, {
@@ -1105,11 +1107,7 @@ test("database check detects missing and timestamp-drifted final review acceptan
       }, db);
       assert.equal(artifact.ok, true);
       if (!artifact.ok) throw new Error("approval evidence Artifact setup failed");
-      const projectRecord = getProject(db, project.project_id);
-      assert.ok(projectRecord);
-      projectRecord.exports.final_video_artifact_id = artifact.artifact.artifact_id;
-      projectRecord.status = "video_review";
-      saveProject(db, projectRecord);
+      setProjectFinalArtifactFixture(db, project.project_id, artifact.artifact.artifact_id);
       db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
         .run(now, project.project_id);
       completeWorkbenchAssemblyFixture(db, {
@@ -1255,11 +1253,7 @@ test("database check accepts active historical final Artifacts referenced by suc
     assert.equal(historical.ok, true);
     assert.equal(current.ok, true);
     if (!historical.ok || !current.ok) throw new Error("historical assembly Artifact setup failed");
-    const projectRecord = getProject(db, project.project_id);
-    assert.ok(projectRecord);
-    projectRecord.exports.final_video_artifact_id = current.artifact.artifact_id;
-    projectRecord.status = "video_review";
-    saveProject(db, projectRecord);
+    setProjectFinalArtifactFixture(db, project.project_id, current.artifact.artifact_id);
     const now = "2026-08-14T03:00:00.000Z";
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(now, project.project_id);
@@ -1349,12 +1343,7 @@ test("succeeded assembly input clips remain active and db:check detects bypassed
     }];
     shot.review.approval_status = "approved";
     saveShot(db, shot);
-    const projectRecord = getProject(db, project.project_id);
-    assert.ok(projectRecord);
-    if (!projectRecord) throw new Error("assembly input evidence project disappeared");
-    projectRecord.status = "video_review";
-    projectRecord.exports.final_video_artifact_id = finalArtifact.artifact.artifact_id;
-    saveProject(db, projectRecord);
+    setProjectFinalArtifactFixture(db, project.project_id, finalArtifact.artifact.artifact_id);
     const now = "2026-08-17T03:00:00.000Z";
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(now, project.project_id);

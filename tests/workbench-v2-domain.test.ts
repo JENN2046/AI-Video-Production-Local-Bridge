@@ -66,6 +66,21 @@ function operationalFacts(overrides: Partial<ShotOperationalFacts> = {}): ShotOp
   };
 }
 
+function setProjectDeliveryProjectionFixture(
+  db: ReturnType<typeof openM0Database>,
+  projectId: string,
+  input: { status?: string; final_video_artifact_id?: string }
+): void {
+  const project = getProject(db, projectId);
+  assert.ok(project);
+  if (input.status !== undefined) project.status = input.status as typeof project.status;
+  if (input.final_video_artifact_id !== undefined) {
+    project.exports.final_video_artifact_id = input.final_video_artifact_id;
+  }
+  db.prepare("UPDATE projects SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ?")
+    .run(JSON.stringify(project), projectId);
+}
+
 test("shared operational state separates approval, artifact availability, generation, review, and delivery", () => {
   const approvedWithoutArtifact = deriveShotOperationalState(operationalFacts({ stored_workflow_status: "storyboard_approved" }));
   assert.equal(approvedWithoutArtifact.storyboard.approval_status, "approved");
@@ -1009,8 +1024,7 @@ test("manual reconciliation keeps archive, terminal project, and Provider task o
     DATABASE_MIGRATIONS[3].apply(db);
     const terminalProject = getProject(db, terminalFixture.project_id);
     assert.ok(terminalProject);
-    terminalProject.status = "final_approved";
-    saveProject(db, terminalProject);
+    setProjectDeliveryProjectionFixture(db, terminalFixture.project_id, { status: "final_approved" });
     const terminal = reconcileGenerationJob(terminalFixture.job_id, {
       decision: "abandon",
       reason: "Final project must reject production reconciliation.",
@@ -1271,8 +1285,9 @@ test("Workbench project summary prioritizes ready-to-assemble over a retained fi
     }, db);
     assert.equal(finalArtifact.ok, true);
     if (!finalArtifact.ok) return;
-    created.data.project.exports.final_video_artifact_id = finalArtifact.artifact.artifact_id;
-    saveProject(db, created.data.project);
+    setProjectDeliveryProjectionFixture(db, created.data.project.project_id, {
+      final_video_artifact_id: finalArtifact.artifact.artifact_id
+    });
     const now = "2026-08-15T05:00:00.000Z";
     ensureAcceptedAssemblyClipsFixture(db, created.data.project.project_id);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
@@ -1666,12 +1681,12 @@ test("generation preflight enforces official estimate, balance gate, budget and 
     assert.equal(reusedTask.ok, false);
     if (!reusedTask.ok) assert.equal(reusedTask.error.code, "PROVIDER_TASK_ALREADY_OWNED");
     projectResult.project.status = "final_approved";
-    saveProject(db, projectResult.project);
+    setProjectDeliveryProjectionFixture(db, projectResult.project_id, { status: "final_approved" });
     const staleProject = reconcileGenerationJob(secondConfirmed.data.job_id, { decision: "abandon", reason: "Reject stale project context.", human_confirmation: true }, db);
     assert.equal(staleProject.ok, false);
     if (!staleProject.ok) assert.equal(staleProject.error.code, "GENERATION_RECONCILIATION_CONTEXT_STALE");
     projectResult.project.status = "video_review";
-    saveProject(db, projectResult.project);
+    setProjectDeliveryProjectionFixture(db, projectResult.project_id, { status: "video_review" });
     db.prepare("UPDATE workbench_project_meta SET lifecycle = 'archived' WHERE project_id = ?").run(projectResult.project_id);
     const archivedAbandon = reconcileGenerationJob(secondConfirmed.data.job_id, { decision: "abandon", reason: "Blocked while archived.", human_confirmation: true }, db);
     assert.equal(archivedAbandon.ok, false);
