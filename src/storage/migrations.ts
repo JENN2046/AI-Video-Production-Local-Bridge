@@ -1353,7 +1353,7 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     CHECK (assembly_input_fingerprint IS NULL OR (length(assembly_input_fingerprint) = 64 AND assembly_input_fingerprint NOT GLOB '*[^0-9a-f]*')),
     CHECK ((workflow_state = 'assembling' AND active_assembly_job_id IS NOT NULL AND assembly_input_fingerprint IS NOT NULL)
       OR (workflow_state <> 'assembling' AND active_assembly_job_id IS NULL)),
-    CHECK (workflow_state NOT IN ('final_review','approved','exported','closed') OR current_final_artifact_id IS NOT NULL),
+    CHECK (workflow_state NOT IN ('final_review','approved','exported','closed','legacy_review_required') OR current_final_artifact_id IS NOT NULL),
     CHECK (workflow_state NOT IN ('approved','exported','closed') OR (
       approved_artifact_id IS NOT NULL AND approved_artifact_id = current_final_artifact_id
     )),
@@ -2112,14 +2112,19 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_STATE_IMMUTABLE');
   END;
 
+  UPDATE projects
+  SET data_json = json_set(data_json, '$.status', 'video_review')
+  WHERE json_valid(data_json) = 1
+    AND json_extract(data_json, '$.status') = 'final_approved'
+    AND COALESCE(TRIM(json_extract(data_json, '$.exports.final_video_artifact_id')), '') = '';
+
   INSERT INTO workbench_delivery_state (
     project_id, workflow_state, current_final_artifact_id, created_at, updated_at
   )
   SELECT
     p.project_id,
     CASE
-      WHEN json_extract(p.data_json, '$.status') = 'final_approved'
-        OR COALESCE(json_extract(p.data_json, '$.exports.final_video_artifact_id'), '') <> ''
+      WHEN COALESCE(TRIM(json_extract(p.data_json, '$.exports.final_video_artifact_id')), '') <> ''
         THEN 'legacy_review_required'
       ELSE 'not_ready'
     END,
@@ -2134,7 +2139,8 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     INSERT OR IGNORE INTO workbench_delivery_state (project_id, workflow_state)
     VALUES (
       NEW.project_id,
-      CASE WHEN json_valid(NEW.data_json) = 1 AND json_extract(NEW.data_json, '$.status') = 'final_approved'
+      CASE WHEN json_valid(NEW.data_json) = 1
+        AND COALESCE(TRIM(json_extract(NEW.data_json, '$.exports.final_video_artifact_id')), '') <> ''
         THEN 'legacy_review_required' ELSE 'not_ready' END
     );
   END;

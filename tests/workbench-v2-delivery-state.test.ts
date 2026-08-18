@@ -134,6 +134,8 @@ test("migration 0012 backfills delivery state without inventing approval, export
       .run("project_final_review", projectJson("project_final_review", "video_review", "artifact_final_review"));
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
       .run("project_legacy", projectJson("project_legacy", "final_approved", "artifact_legacy"));
+    db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
+      .run("project_legacy_without_final", projectJson("project_legacy_without_final", "final_approved"));
     insertFinalArtifact(db, "project_final_review", "artifact_final_review");
     insertFinalArtifact(db, "project_legacy", "artifact_legacy");
 
@@ -149,11 +151,18 @@ test("migration 0012 backfills delivery state without inventing approval, export
     assert.deepEqual(states, [
       { project_id: "project_final_review", workflow_state: "legacy_review_required", current_final_artifact_id: "artifact_final_review", approved_artifact_id: null, latest_export_id: null, closed_at: null },
       { project_id: "project_legacy", workflow_state: "legacy_review_required", current_final_artifact_id: "artifact_legacy", approved_artifact_id: null, latest_export_id: null, closed_at: null },
+      { project_id: "project_legacy_without_final", workflow_state: "not_ready", current_final_artifact_id: null, approved_artifact_id: null, latest_export_id: null, closed_at: null },
       { project_id: "project_not_ready", workflow_state: "not_ready", current_final_artifact_id: null, approved_artifact_id: null, latest_export_id: null, closed_at: null }
     ]);
     assert.equal((db.prepare("SELECT COUNT(*) AS count FROM workbench_exports").get() as { count: number }).count, 0);
     assert.equal((db.prepare("SELECT COUNT(*) AS count FROM workbench_delivery_events").get() as { count: number }).count, 0);
     assert.equal(JSON.parse((db.prepare("SELECT data_json FROM projects WHERE project_id = 'project_legacy'").get() as { data_json: string }).data_json).status, "final_approved");
+    const recoverableLegacy = JSON.parse((db.prepare("SELECT data_json FROM projects WHERE project_id = 'project_legacy_without_final'")
+      .get() as { data_json: string }).data_json) as Project;
+    assert.equal(recoverableLegacy.status, "video_review");
+    recoverableLegacy.title = "Recoverable legacy project";
+    assert.doesNotThrow(() => saveProject(db, recoverableLegacy));
+    assert.equal(getProject(db, "project_legacy_without_final")?.title, "Recoverable legacy project");
 
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
       .run("project_new", projectJson("project_new", "draft"));
