@@ -49,6 +49,16 @@ type WorkbenchIntentSnapshot = {
   prepared_by?: string;
 };
 
+function saveFixtureProject(db: DatabaseSync, project: Project): void {
+  saveProject(db, {
+    ...project,
+    status: "draft",
+    shot_ids: [],
+    active_storyboard_package_id: ""
+  });
+  saveProject(db, project);
+}
+
 function createFixture(): Fixture {
   const root = mkdtempSync(join(tmpdir(), "s3b-t2-is2_5-"));
   const dataRoot = join(root, "data");
@@ -73,7 +83,7 @@ function createFixture(): Fixture {
     generation_batch_ids: [],
     exports: { final_video_artifact_id: "" }
   };
-  saveProject(db, project);
+  saveFixtureProject(db, project);
   db.prepare("UPDATE workbench_project_meta SET classification = 'production', lifecycle = 'active' WHERE project_id = ?").run(PROJECT_ID);
 
   const shot: Shot = {
@@ -1407,7 +1417,7 @@ function createAuthorityFactsFixture(packageSnapshots: unknown[]): AuthorityFact
     generation_batch_ids: [],
     exports: { final_video_artifact_id: "" }
   };
-  saveProject(db, project);
+  saveFixtureProject(db, project);
   db.prepare("UPDATE workbench_project_meta SET classification = 'production', lifecycle = 'active' WHERE project_id = ?").run("p1");
   for (const [index, shotId] of ["s1", "s2", "s3"].entries()) {
     const shot: Shot = {

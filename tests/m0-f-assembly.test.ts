@@ -356,7 +356,7 @@ test("M0-F reassembly records the approval revocation before producing a new fin
     }, db);
     assert.equal(first.ok, true);
     if (!first.ok) return;
-    const now = "2026-08-14T04:00:00.000Z";
+    const now = new Date(Date.now() - 1_000).toISOString();
     approveWorkbenchDeliveryFixture(db, {
       project_id: project.project_id,
       event_id: "event_m0f_first_assembly_accepted",
@@ -374,30 +374,35 @@ test("M0-F reassembly records the approval revocation before producing a new fin
     assert.equal(getMediaArtifact(db, second.final_video_artifact_id)?.status, "active");
 
     const events = (db.prepare(`SELECT event_type, from_state, to_state, artifact_id, job_id,
-      input_fingerprint, reason_code FROM workbench_delivery_events
+      input_fingerprint, reason_code, created_at FROM workbench_delivery_events
       WHERE project_id = ? AND event_type IN ('final_review_reassemble','assembly_succeeded')
       ORDER BY rowid`).all(project.project_id) as Array<Record<string, unknown>>).map((row) => ({ ...row }));
     const [reworkEvent, succeededEvent] = events.slice(-2);
+    assert.match(String(reworkEvent.created_at), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    assert.equal(reworkEvent.created_at, succeededEvent.created_at);
+    assert.ok(String(reworkEvent.created_at) >= now);
     assert.equal(typeof reworkEvent.input_fingerprint, "string");
-    assert.deepEqual({ ...reworkEvent, input_fingerprint: "<fingerprint>" }, {
+    assert.deepEqual({ ...reworkEvent, input_fingerprint: "<fingerprint>", created_at: "<created_at>" }, {
       event_type: "final_review_reassemble",
       from_state: "approved",
       to_state: "ready_to_assemble",
       artifact_id: first.final_video_artifact_id,
       job_id: null,
       input_fingerprint: "<fingerprint>",
-      reason_code: "LEGACY_REASSEMBLY_REQUESTED"
+      reason_code: "LEGACY_REASSEMBLY_REQUESTED",
+      created_at: "<created_at>"
     });
     assert.equal(typeof succeededEvent.job_id, "string");
     assert.equal(typeof succeededEvent.input_fingerprint, "string");
-    assert.deepEqual({ ...succeededEvent, job_id: "<job_id>", input_fingerprint: "<fingerprint>" }, {
+    assert.deepEqual({ ...succeededEvent, job_id: "<job_id>", input_fingerprint: "<fingerprint>", created_at: "<created_at>" }, {
       event_type: "assembly_succeeded",
       from_state: "assembling",
       to_state: "final_review",
       artifact_id: second.final_video_artifact_id,
       job_id: "<job_id>",
       input_fingerprint: "<fingerprint>",
-      reason_code: "LEGACY_ASSEMBLY_SUCCEEDED"
+      reason_code: "LEGACY_ASSEMBLY_SUCCEEDED",
+      created_at: "<created_at>"
     });
   } finally {
     db.close();
