@@ -768,13 +768,15 @@ test("database check reports invalid delivery Job bindings and inactive referenc
       AND name = 'workbench_exports_validate_insert'`).get() as { sql: string };
     db.exec("DROP TRIGGER workbench_exports_validate_insert");
     db.prepare(`INSERT INTO workbench_exports
-      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
-      VALUES ('export_b', 'project_b', 'artifact_b', 'data/exports/project_b/final.mp4', ?, 1, ?)`)
-      .run("d".repeat(64), now);
+      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes,
+        file_identity_sha256, created_at)
+      VALUES ('export_b', 'project_b', 'artifact_b', 'data/exports/project_b/final.mp4', ?, 1, ?, ?)`)
+      .run("d".repeat(64), "f".repeat(64), now);
     db.prepare(`INSERT INTO workbench_exports
-      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
-      VALUES ('export_old_b', 'project_b', 'artifact_old_b', 'data/exports/project_b/old.mp4', ?, 1, ?)`)
-      .run("e".repeat(64), now);
+      (export_id, project_id, artifact_id, relative_path, sha256, size_bytes,
+        file_identity_sha256, created_at)
+      VALUES ('export_old_b', 'project_b', 'artifact_old_b', 'data/exports/project_b/old.mp4', ?, 1, ?, ?)`)
+      .run("e".repeat(64), "f".repeat(64), now);
     db.exec(exportValidation.sql);
     approveWorkbenchDeliveryFixture(db, {
       project_id: "project_b",

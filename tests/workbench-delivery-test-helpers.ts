@@ -4,6 +4,7 @@ import { basename, join } from "node:path";
 
 import { paths } from "../src/paths.js";
 import { workbenchAssemblyInputFingerprint } from "../src/storage/workbenchAssemblyFingerprint.js";
+import { inspectWorkbenchExportFile } from "../src/storage/workbenchExportIntegrity.js";
 import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { buildStoryboardApprovedShot, getShot, saveShot } from "../src/tools/projects.js";
 
@@ -283,11 +284,19 @@ export function insertWorkbenchExportFixture(
   const target = join(projectRoot, filename);
   if (!existsSync(target)) copyFileSync(join(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4"), target);
   const relativePath = `data/exports/${input.project_id}/${basename(target)}`;
+  const inspected = inspectWorkbenchExportFile({
+    project_id: input.project_id,
+    relative_path: relativePath,
+    sha256: blob.sha256,
+    size_bytes: blob.size_bytes
+  });
+  if (!inspected.ok) throw new Error(`DELIVERY_FIXTURE_EXPORT_INTEGRITY_REQUIRED:${inspected.reason}`);
   db.prepare(`INSERT INTO workbench_exports
-    (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    (export_id, project_id, artifact_id, relative_path, sha256, size_bytes,
+      file_identity_sha256, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(input.export_id, input.project_id, input.artifact_id, relativePath,
-      blob.sha256, blob.size_bytes, input.created_at);
+      blob.sha256, blob.size_bytes, inspected.file_identity_sha256, input.created_at);
   return { relative_path: relativePath, sha256: blob.sha256, size_bytes: blob.size_bytes };
 }
 

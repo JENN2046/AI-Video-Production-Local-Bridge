@@ -9,25 +9,20 @@ export type WorkbenchExportIntegrityResult =
   | { ok: true }
   | { ok: false; reason: "missing" | "integrity" };
 
-export type WorkbenchExportIntegrityCacheState = "verified" | "invalid" | "unverified";
+export type WorkbenchExportIdentityResult =
+  | { ok: true; file_identity_sha256: string }
+  | { ok: false; reason: "missing" | "integrity" };
 
-interface WorkbenchExportFileFacts {
-  dev: string;
-  ino: string;
-  size: number;
-  mtime_ms: number;
-  ctime_ms: number;
-}
+type WorkbenchExportInput = {
+  project_id: string;
+  relative_path: string;
+  sha256: string;
+  size_bytes: number;
+};
 
-interface WorkbenchExportIntegrityCacheEntry {
-  exports_root: string;
-  project_root: string;
-  file_path: string;
-  facts: WorkbenchExportFileFacts;
-}
-
-const MAX_EXPORT_INTEGRITY_CACHE_ENTRIES = 2048;
-const exportIntegrityCache = new Map<string, WorkbenchExportIntegrityCacheEntry>();
+type WorkbenchExportIdentityInput = WorkbenchExportInput & {
+  file_identity_sha256: string;
+};
 
 function inside(root: string, candidate: string): boolean {
   const rel = relative(resolve(root), resolve(candidate));
@@ -39,9 +34,9 @@ function isSafeSegment(value: string): boolean {
 }
 
 function resolvedExportPath(
-  input: { project_id: string; relative_path: string; sha256: string; size_bytes: number },
+  input: WorkbenchExportInput,
   m0Paths: M0Paths
-): { cache_key: string; exports_root: string; project_root: string; file_path: string } | null {
+): { exports_root: string; project_root: string; file_path: string } | null {
   const parts = input.relative_path.split("/");
   if (parts.length !== 4 || parts[0] !== "data" || parts[1] !== "exports"
     || parts[2] !== input.project_id || !isSafeSegment(input.project_id)
@@ -52,96 +47,76 @@ function resolvedExportPath(
   const projectRoot = resolve(exportsRoot, input.project_id);
   const filePath = resolve(projectRoot, parts[3]!);
   if (!inside(exportsRoot, projectRoot) || !inside(projectRoot, filePath)) return null;
-  return {
-    cache_key: JSON.stringify([exportsRoot, input.project_id, input.relative_path, input.sha256, input.size_bytes]),
-    exports_root: exportsRoot,
-    project_root: projectRoot,
-    file_path: filePath
-  };
+  return { exports_root: exportsRoot, project_root: projectRoot, file_path: filePath };
 }
 
-function fileFacts(stat: { dev: number | bigint; ino: number | bigint; size: number; mtimeMs: number; ctimeMs: number }): WorkbenchExportFileFacts {
-  return {
+function fileIdentitySha256(stat: {
+  dev: number | bigint;
+  ino: number | bigint;
+  size: number;
+  mtimeMs: number;
+  ctimeMs: number;
+}): string {
+  return createHash("sha256").update(JSON.stringify({
     dev: String(stat.dev),
     ino: String(stat.ino),
     size: stat.size,
-    mtime_ms: stat.mtimeMs,
-    ctime_ms: stat.ctimeMs
-  };
+    mtime_ms: String(stat.mtimeMs),
+    ctime_ms: String(stat.ctimeMs)
+  })).digest("hex");
 }
 
-function sameFileFacts(left: WorkbenchExportFileFacts, right: WorkbenchExportFileFacts): boolean {
-  return left.dev === right.dev && left.ino === right.ino && left.size === right.size
-    && left.mtime_ms === right.mtime_ms && left.ctime_ms === right.ctime_ms;
-}
-
-function rememberVerifiedExport(cacheKey: string, entry: WorkbenchExportIntegrityCacheEntry): void {
-  exportIntegrityCache.delete(cacheKey);
-  exportIntegrityCache.set(cacheKey, entry);
-  while (exportIntegrityCache.size > MAX_EXPORT_INTEGRITY_CACHE_ENTRIES) {
-    const oldest = exportIntegrityCache.keys().next().value as string | undefined;
-    if (oldest === undefined) break;
-    exportIntegrityCache.delete(oldest);
-  }
-}
-
-export function invalidateWorkbenchExportIntegrityCache(
-  input: { project_id: string; relative_path: string; sha256: string; size_bytes: number },
-  m0Paths: M0Paths = paths
-): void {
+function inspectExportPath(
+  input: WorkbenchExportInput,
+  m0Paths: M0Paths
+): { ok: true; file_path: string; file_identity_sha256: string } | { ok: false; reason: "missing" | "integrity" } {
   const resolved = resolvedExportPath(input, m0Paths);
-  if (resolved) exportIntegrityCache.delete(resolved.cache_key);
-}
-
-export function getCachedWorkbenchExportIntegrity(
-  input: { project_id: string; relative_path: string; sha256: string; size_bytes: number },
-  m0Paths: M0Paths = paths
-): WorkbenchExportIntegrityCacheState {
-  const resolved = resolvedExportPath(input, m0Paths);
-  if (!resolved) return "invalid";
-  const cached = exportIntegrityCache.get(resolved.cache_key);
-  if (!cached) return "unverified";
+  if (!resolved) return { ok: false, reason: "integrity" };
   try {
     const rootStat = lstatSync(resolved.exports_root);
     const projectStat = lstatSync(resolved.project_root);
     const pathStat = lstatSync(resolved.file_path);
-    const currentFacts = fileFacts(pathStat);
     if (rootStat.isSymbolicLink() || projectStat.isSymbolicLink() || pathStat.isSymbolicLink()
       || !rootStat.isDirectory() || !projectStat.isDirectory() || !pathStat.isFile()
-      || cached.exports_root !== resolved.exports_root || cached.project_root !== resolved.project_root
-      || cached.file_path !== resolved.file_path || !sameFileFacts(cached.facts, currentFacts)) {
-      exportIntegrityCache.delete(resolved.cache_key);
-      return "invalid";
+      || pathStat.size !== input.size_bytes) {
+      return { ok: false, reason: "integrity" };
     }
-    return "verified";
-  } catch {
-    exportIntegrityCache.delete(resolved.cache_key);
-    return "invalid";
+    return {
+      ok: true,
+      file_path: resolved.file_path,
+      file_identity_sha256: fileIdentitySha256(pathStat)
+    };
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return { ok: false, reason: code === "ENOENT" ? "missing" : "integrity" };
   }
 }
 
-export function verifyWorkbenchExportFile(
-  input: { project_id: string; relative_path: string; sha256: string; size_bytes: number },
+export function verifyWorkbenchExportFileIdentity(
+  input: WorkbenchExportIdentityInput,
   m0Paths: M0Paths = paths
 ): WorkbenchExportIntegrityResult {
-  const resolved = resolvedExportPath(input, m0Paths);
-  if (!resolved) return { ok: false, reason: "integrity" };
-  const { cache_key: cacheKey, exports_root: exportsRoot, project_root: projectRoot, file_path: filePath } = resolved;
-  exportIntegrityCache.delete(cacheKey);
+  if (!/^[0-9a-f]{64}$/u.test(input.file_identity_sha256)) return { ok: false, reason: "integrity" };
+  const inspected = inspectExportPath(input, m0Paths);
+  if (!inspected.ok) return inspected;
+  return inspected.file_identity_sha256 === input.file_identity_sha256
+    ? { ok: true }
+    : { ok: false, reason: "integrity" };
+}
+
+export function inspectWorkbenchExportFile(
+  input: WorkbenchExportInput,
+  m0Paths: M0Paths = paths
+): WorkbenchExportIdentityResult {
+  const inspected = inspectExportPath(input, m0Paths);
+  if (!inspected.ok) return inspected;
 
   let descriptor: number | undefined;
   try {
-    const rootStat = lstatSync(exportsRoot);
-    const projectStat = lstatSync(projectRoot);
-    const pathStat = lstatSync(filePath);
-    if (rootStat.isSymbolicLink() || projectStat.isSymbolicLink() || pathStat.isSymbolicLink()
-      || !rootStat.isDirectory() || !projectStat.isDirectory() || !pathStat.isFile()) {
-      return { ok: false, reason: "integrity" };
-    }
-    descriptor = openSync(filePath, "r");
+    descriptor = openSync(inspected.file_path, "r");
     const before = fstatSync(descriptor);
     if (!before.isFile() || before.size !== input.size_bytes
-      || before.dev !== pathStat.dev || before.ino !== pathStat.ino) {
+      || fileIdentitySha256(before) !== inspected.file_identity_sha256) {
       return { ok: false, reason: "integrity" };
     }
     const hash = createHash("sha256");
@@ -154,29 +129,27 @@ export function verifyWorkbenchExportFile(
       offset += bytesRead;
     }
     const after = fstatSync(descriptor);
-    const pathAfter = lstatSync(filePath);
-    if (after.size !== before.size || after.mtimeMs !== before.mtimeMs || after.ctimeMs !== before.ctimeMs
-      || after.dev !== before.dev || after.ino !== before.ino || pathAfter.isSymbolicLink() || !pathAfter.isFile()
-      || pathAfter.dev !== after.dev || pathAfter.ino !== after.ino || pathAfter.size !== after.size
-      || pathAfter.mtimeMs !== after.mtimeMs || pathAfter.ctimeMs !== after.ctimeMs
-      || hash.digest("hex") !== input.sha256) {
-      exportIntegrityCache.delete(cacheKey);
+    const pathAfter = lstatSync(inspected.file_path);
+    const afterIdentity = fileIdentitySha256(after);
+    if (afterIdentity !== inspected.file_identity_sha256 || pathAfter.isSymbolicLink() || !pathAfter.isFile()
+      || fileIdentitySha256(pathAfter) !== afterIdentity || hash.digest("hex") !== input.sha256) {
       return { ok: false, reason: "integrity" };
     }
-    rememberVerifiedExport(cacheKey, {
-      exports_root: exportsRoot,
-      project_root: projectRoot,
-      file_path: filePath,
-      facts: fileFacts(after)
-    });
-    return { ok: true };
+    return { ok: true, file_identity_sha256: afterIdentity };
   } catch (error) {
-    exportIntegrityCache.delete(cacheKey);
     const code = (error as NodeJS.ErrnoException).code;
     return { ok: false, reason: code === "ENOENT" ? "missing" : "integrity" };
   } finally {
     if (descriptor !== undefined) closeSync(descriptor);
   }
+}
+
+export function verifyWorkbenchExportFile(
+  input: WorkbenchExportInput,
+  m0Paths: M0Paths = paths
+): WorkbenchExportIntegrityResult {
+  const result = inspectWorkbenchExportFile(input, m0Paths);
+  return result.ok ? { ok: true } : result;
 }
 
 export function registerWorkbenchExportIntegrityFunction(db: M0Database, m0Paths: M0Paths = paths): void {
@@ -190,5 +163,14 @@ export function registerWorkbenchExportIntegrityFunction(db: M0Database, m0Paths
         relative_path: String(relativePath),
         sha256: String(sha256),
         size_bytes: Number(sizeBytes)
+      }, m0Paths).ok ? 1 : 0);
+  functions.function("workbench_export_file_identity_valid", { deterministic: false },
+    (projectId: unknown, relativePath: unknown, sha256: unknown, sizeBytes: unknown, fileIdentitySha256: unknown) =>
+      verifyWorkbenchExportFileIdentity({
+        project_id: String(projectId),
+        relative_path: String(relativePath),
+        sha256: String(sha256),
+        size_bytes: Number(sizeBytes),
+        file_identity_sha256: String(fileIdentitySha256)
       }, m0Paths).ok ? 1 : 0);
 }

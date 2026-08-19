@@ -9,6 +9,7 @@ import test from "node:test";
 import { paths } from "../src/paths.js";
 import { checkDatabase, migrateDatabase } from "../src/storage/databaseGovernance.js";
 import { openM0Database } from "../src/storage/sqlite.js";
+import { inspectWorkbenchExportFile } from "../src/storage/workbenchExportIntegrity.js";
 import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { createProject } from "../src/tools/projects.js";
 import { insertWorkbenchExportFixture } from "./workbench-delivery-test-helpers.js";
@@ -40,10 +41,20 @@ test("Export receipts bind immutable records to a regular project-scoped file an
     mkdirSync(projectRoot, { recursive: true });
     const source = join(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4");
     const insert = (exportId: string, relativePath: string, sha256 = fixture.blob.sha256,
-      sizeBytes = fixture.blob.size_bytes) => db.prepare(`INSERT INTO workbench_exports
-        (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .run(exportId, fixture.project_id, fixture.artifact_id, relativePath, sha256, sizeBytes, now);
+      sizeBytes = fixture.blob.size_bytes, fileIdentitySha256?: string) => {
+      const inspected = inspectWorkbenchExportFile({
+        project_id: fixture.project_id,
+        relative_path: relativePath,
+        sha256,
+        size_bytes: sizeBytes
+      });
+      const identity = fileIdentitySha256 ?? (inspected.ok ? inspected.file_identity_sha256 : "0".repeat(64));
+      return db.prepare(`INSERT INTO workbench_exports
+        (export_id, project_id, artifact_id, relative_path, sha256, size_bytes,
+          file_identity_sha256, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(exportId, fixture.project_id, fixture.artifact_id, relativePath, sha256, sizeBytes, identity, now);
+    };
 
     const valid = insertWorkbenchExportFixture(db, { project_id: fixture.project_id,
       artifact_id: fixture.artifact_id, export_id: "export_valid", created_at: now });
@@ -60,6 +71,9 @@ test("Export receipts bind immutable records to a regular project-scoped file an
     copyFileSync(source, join(projectRoot, "bad-size.mp4"));
     assert.throws(() => insert("export_bad_size", `data/exports/${fixture.project_id}/bad-size.mp4`,
       fixture.blob.sha256, fixture.blob.size_bytes + 1), /WORKBENCH_EXPORT_FILE_INTEGRITY_INVALID/);
+    copyFileSync(source, join(projectRoot, "bad-identity.mp4"));
+    assert.throws(() => insert("export_bad_identity", `data/exports/${fixture.project_id}/bad-identity.mp4`,
+      fixture.blob.sha256, fixture.blob.size_bytes, "0".repeat(64)), /WORKBENCH_EXPORT_FILE_INTEGRITY_INVALID/);
 
     const different = Buffer.from("different export fixture", "utf8");
     writeFileSync(join(projectRoot, "blob-mismatch.mp4"), different, { flag: "wx" });
@@ -103,10 +117,12 @@ test("Export integrity defaults closed on raw connections and db:check detects p
     const raw = new DatabaseSync(sqlitePath);
     try {
       assert.throws(() => raw.prepare(`INSERT INTO workbench_exports
-        (export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at)
-        VALUES ('export_raw', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
+        (export_id, project_id, artifact_id, relative_path, sha256, size_bytes,
+          file_identity_sha256, created_at)
+        VALUES ('export_raw', ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
         .run(fixture.project_id, fixture.artifact_id,
-          `data/exports/${fixture.project_id}/export_governance.mp4`, receipt.sha256, receipt.size_bytes),
+          `data/exports/${fixture.project_id}/export_governance.mp4`, receipt.sha256, receipt.size_bytes,
+          "0".repeat(64)),
       /no such function: workbench_export_file_integrity_valid/);
     } finally {
       raw.close();

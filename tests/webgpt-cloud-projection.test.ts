@@ -9,13 +9,8 @@ import test from "node:test";
 import { bindWebGptPrincipalIssuer, bootstrapWebGptProjectOwner, registerWebGptPrincipal } from "../src/webgpt-v4/authorizationAdmin.js";
 import { actorFromFederatedSubject, type WebGptV4Result } from "../src/webgpt-v4/types.js";
 import { openM0Database, openM0DatabaseConnection, type M0Database } from "../src/storage/sqlite.js";
-import {
-  getCachedWorkbenchExportIntegrity,
-  invalidateWorkbenchExportIntegrityCache
-} from "../src/storage/workbenchExportIntegrity.js";
 import { createProject, getProject, getShot, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
-import { getLatestWorkbenchExport } from "../src/tools/workbenchDeliveryState.js";
 import {
   approveWorkbenchDeliveryFixture,
   completeWorkbenchAssemblyFixture,
@@ -528,11 +523,6 @@ test("SQLite and Snapshot readonly adapters preserve six-tool DTO parity and dat
     fixtureDb.close();
   }
   const beforeDb = openM0DatabaseConnection(sqlitePath, { readOnly: true });
-  const currentExport = getLatestWorkbenchExport(beforeDb, fixture.project_id);
-  assert.ok(currentExport);
-  if (!currentExport) throw new Error("closed fixture Export was not found");
-  invalidateWorkbenchExportIntegrityCache(currentExport);
-  assert.equal(getCachedWorkbenchExportIntegrity(currentExport), "unverified");
   const before = logicalManifest(beforeDb);
   beforeDb.close();
   const generatedAt = new Date(Date.now() - 60_000).toISOString();
@@ -543,7 +533,6 @@ test("SQLite and Snapshot readonly adapters preserve six-tool DTO parity and dat
     generated_at: generatedAt,
     ttl_seconds: 3600
   });
-  assert.equal(getCachedWorkbenchExportIntegrity(currentExport), "verified");
   const deliveryContext = snapshot.projects[0]!.contexts.find((context) => context.workspace === "delivery");
   assert.ok(deliveryContext && "final_artifact_reason_code" in deliveryContext.compact && "final_artifact_reason_code" in deliveryContext.full);
   assert.equal(deliveryContext.compact.final_artifact_reason_code, null);

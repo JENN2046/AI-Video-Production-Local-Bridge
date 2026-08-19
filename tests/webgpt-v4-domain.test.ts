@@ -38,10 +38,7 @@ import { buildProviderCapabilityKey, buildProviderPriceCacheKey, RUNNINGHUB_IMAG
 import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { getProjectStatus } from "../src/tools/projects.js";
 import { getWorkbenchDashboard, getWorkbenchProjectWorkspace, listWorkbenchProjects, type WorkbenchProjectSummary } from "../src/tools/workbenchV2.js";
-import {
-  getCachedWorkbenchExportIntegrity,
-  invalidateWorkbenchExportIntegrityCache
-} from "../src/storage/workbenchExportIntegrity.js";
+import { verifyWorkbenchExportFileIdentity } from "../src/storage/workbenchExportIntegrity.js";
 
 interface TestContext {
   root: string;
@@ -425,11 +422,12 @@ test("closed delivery stops claiming delivered when the current Export file drif
   }
 });
 
-test("project lists use cached Export integrity while a project read performs the full verification", () => {
+test("project lists use persisted Export identity while a project read performs the full verification", () => {
   const context = setup();
   try {
     closeProductionProject(context);
-    const currentExport = context.db.prepare(`SELECT export.project_id, export.relative_path, export.sha256, export.size_bytes
+    const currentExport = context.db.prepare(`SELECT export.project_id, export.relative_path, export.sha256,
+        export.size_bytes, export.file_identity_sha256
       FROM workbench_delivery_state state
       JOIN workbench_exports export ON export.export_id = state.latest_export_id
       WHERE state.project_id = ?`).get(context.production.project_id) as {
@@ -437,20 +435,23 @@ test("project lists use cached Export integrity while a project read performs th
         relative_path: string;
         sha256: string;
         size_bytes: number;
+        file_identity_sha256: string;
       };
-    assert.equal(getCachedWorkbenchExportIntegrity(currentExport), "verified");
-    invalidateWorkbenchExportIntegrityCache(currentExport);
-    assert.equal(getCachedWorkbenchExportIntegrity(currentExport), "unverified");
+    assert.equal(verifyWorkbenchExportFileIdentity(currentExport).ok, true);
 
     const listed = listWorkbenchProjects({ scope: "all", lifecycle: "all" }, context.db).items
       .find((item) => item.project.project_id === context.production.project_id);
-    assert.equal(listed?.delivery_state, "final_review");
-    assert.equal(listed?.next_action.reason_code, "export_integrity_failed");
-    assert.equal(getCachedWorkbenchExportIntegrity(currentExport), "unverified");
+    assert.equal(listed?.delivery_state, "delivered");
 
     const webgptList = listProductionProjects({}, context.db);
     assert.equal(webgptList.ok, true);
-    assert.equal(getCachedWorkbenchExportIntegrity(currentExport), "unverified");
+    if (webgptList.ok) {
+      const item = webgptList.data.items.find((candidate) => {
+        const project = candidate.project as { project_id?: string } | undefined;
+        return project?.project_id === context.production.project_id;
+      });
+      assert.equal((item?.summary as WorkbenchProjectSummary | undefined)?.delivery_state, "delivered");
+    }
 
     const workspace = getWorkbenchProjectWorkspace(
       context.production.project_id, "overview", context.db, { touch_last_opened: false }
@@ -460,7 +461,7 @@ test("project lists use cached Export integrity while a project read performs th
       const summary = workspace.data.summary as WorkbenchProjectSummary | null;
       assert.equal(summary?.delivery_state, "delivered");
     }
-    assert.equal(getCachedWorkbenchExportIntegrity(currentExport), "verified");
+    assert.equal(verifyWorkbenchExportFileIdentity(currentExport).ok, true);
   } finally {
     teardown(context);
   }

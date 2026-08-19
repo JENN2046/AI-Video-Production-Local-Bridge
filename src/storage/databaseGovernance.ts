@@ -13,7 +13,7 @@ import {
 } from "../director/domain.js";
 import { assertSchemaCurrent, runDatabaseMigrations } from "./migrations.js";
 import { workbenchAssemblyInputFingerprintFromJson } from "./workbenchAssemblyFingerprint.js";
-import { verifyWorkbenchExportFile } from "./workbenchExportIntegrity.js";
+import { verifyWorkbenchExportFile, verifyWorkbenchExportFileIdentity } from "./workbenchExportIntegrity.js";
 import { getMediaArtifact, recoverMediaActivations, verifyMediaArtifactBytes } from "../tools/mediaArtifacts.js";
 
 export interface DatabaseCheckResult {
@@ -878,14 +878,17 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
       errors.push(error instanceof Error ? error.message : "MEDIA_INTEGRITY_CHECK_FAILED");
     }
     try {
-      const exportRows = db.prepare(`SELECT project_id, relative_path, sha256, size_bytes
+      const exportRows = db.prepare(`SELECT project_id, relative_path, sha256, size_bytes,
+          file_identity_sha256
         FROM workbench_exports ORDER BY export_id`).all() as Array<{
           project_id: string; relative_path: string; sha256: string; size_bytes: number;
+          file_identity_sha256: string;
         }>;
       for (const row of exportRows) {
         const verified = verifyWorkbenchExportFile(row);
         if (!verified.ok && verified.reason === "missing") missingMediaFiles += 1;
         else if (!verified.ok) mediaIntegrityErrors += 1;
+        else if (!verifyWorkbenchExportFileIdentity(row).ok) mediaIntegrityErrors += 1;
       }
     } catch (error) {
       errors.push(error instanceof Error ? error.message : "EXPORT_INTEGRITY_CHECK_FAILED");

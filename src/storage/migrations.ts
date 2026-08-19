@@ -1190,6 +1190,7 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     relative_path TEXT NOT NULL UNIQUE,
     sha256 TEXT NOT NULL,
     size_bytes INTEGER NOT NULL,
+    file_identity_sha256 TEXT NOT NULL,
     created_at TEXT NOT NULL,
     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE RESTRICT,
     FOREIGN KEY (artifact_id) REFERENCES media_artifacts(artifact_id) ON DELETE RESTRICT,
@@ -1198,6 +1199,7 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     CHECK (substr(relative_path, 1, 1) <> '/'),
     CHECK (instr(relative_path, '\\') = 0 AND instr(relative_path, '..') = 0 AND instr(relative_path, ':') = 0),
     CHECK (length(sha256) = 64 AND sha256 NOT GLOB '*[^0-9a-f]*'),
+    CHECK (length(file_identity_sha256) = 64 AND file_identity_sha256 NOT GLOB '*[^0-9a-f]*'),
     CHECK (size_bytes > 0)
   );
 
@@ -1388,6 +1390,9 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
   )
   OR workbench_export_file_integrity_valid(
     NEW.project_id, NEW.relative_path, NEW.sha256, NEW.size_bytes
+  ) <> 1
+  OR workbench_export_file_identity_valid(
+    NEW.project_id, NEW.relative_path, NEW.sha256, NEW.size_bytes, NEW.file_identity_sha256
   ) <> 1
   BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_EXPORT_FILE_INTEGRITY_INVALID');
@@ -2483,7 +2488,7 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     workbench_delivery_state: ["project_id", "workflow_state", "current_final_artifact_id", "assembly_input_fingerprint", "active_assembly_job_id", "approved_artifact_id", "latest_export_id", "latest_exported_at", "closed_at", "created_at", "updated_at", "approval_signature_key", "approval_binding_key", "active_assembly_binding_key"],
     workbench_delivery_jobs: ["job_id", "project_id", "job_type", "state", "input_fingerprint", "input_json", "retry_of_job_id", "output_artifact_id", "export_id", "error_code", "created_at", "started_at", "finished_at", "updated_at", "active_assembly_binding_key", "active_export_binding_key", "terminal_event_id", "terminal_event_type"],
     workbench_delivery_events: ["event_id", "project_id", "job_id", "event_type", "from_state", "to_state", "artifact_id", "export_id", "input_fingerprint", "reason_code", "data_json", "created_at", "approval_signature_key", "approval_binding_key", "assembly_queue_binding_key", "active_export_binding_key"],
-    workbench_exports: ["export_id", "project_id", "artifact_id", "relative_path", "sha256", "size_bytes", "created_at"]
+    workbench_exports: ["export_id", "project_id", "artifact_id", "relative_path", "sha256", "size_bytes", "file_identity_sha256", "created_at"]
   } : V24_EXPECTED_COLUMNS;
   const expectedIndexes = includeJobs ? [
     ...V24_EXPECTED_INDEXES,

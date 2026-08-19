@@ -4,7 +4,7 @@ import { basename, join, resolve } from "node:path";
 
 import { paths } from "../paths.js";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
-import { getCachedWorkbenchExportIntegrity, verifyWorkbenchExportFile } from "../storage/workbenchExportIntegrity.js";
+import { verifyWorkbenchExportFile, verifyWorkbenchExportFileIdentity } from "../storage/workbenchExportIntegrity.js";
 import { classifyStoryboardImageImport } from "./importClassifier.js";
 import { validateImageFile } from "./imageValidity.js";
 import { listH1Reports, loadH1WorkbenchState, registerH1ApprovedKeyframe, type H1WorkbenchState } from "./h1Workbench.js";
@@ -410,13 +410,38 @@ function hasAcceptedClipIntegrityBlocker(summary: ProjectOperationalSummary): bo
   return summary.blocker_codes.some((code) => code === "SHOT_STATE_INCONSISTENT" || code === "ARTIFACT_NOT_IN_SHOT_REVIEW" || code.startsWith("ACCEPTED_CLIP_"));
 }
 
+function getLatestWorkbenchExportIdentity(db: M0Database, projectId: string): {
+  export_id: string;
+  project_id: string;
+  artifact_id: string;
+  relative_path: string;
+  sha256: string;
+  size_bytes: number;
+  file_identity_sha256: string;
+} | null {
+  const row = db.prepare(`SELECT e.export_id, e.project_id, e.artifact_id, e.relative_path,
+      e.sha256, e.size_bytes, e.file_identity_sha256
+    FROM workbench_delivery_state d
+    JOIN workbench_exports e ON e.export_id = d.latest_export_id AND e.project_id = d.project_id
+    WHERE d.project_id = ?`).get(projectId) as {
+      export_id: string;
+      project_id: string;
+      artifact_id: string;
+      relative_path: string;
+      sha256: string;
+      size_bytes: number;
+      file_identity_sha256: string;
+    } | undefined;
+  return row ? { ...row, size_bytes: Number(row.size_bytes) } : null;
+}
+
 function projectSummaryFromRow(db: M0Database, project: Project, row: ProjectRow, operational: ProjectOperationalSummary): WorkbenchProjectSummary {
   const meta = projectMetaFromRow(row);
-  const currentExport = row.workflow_state === "closed" ? getLatestWorkbenchExport(db, project.project_id) : null;
+  const currentExport = row.workflow_state === "closed" ? getLatestWorkbenchExportIdentity(db, project.project_id) : null;
   const closedExportIntegrityValid = row.workflow_state !== "closed" || Boolean(
     currentExport
     && currentExport.artifact_id === row.delivery_current_final_artifact_id
-    && getCachedWorkbenchExportIntegrity(currentExport) === "verified"
+    && verifyWorkbenchExportFileIdentity(currentExport).ok
   );
   const exportIntegrityBlocked = row.workflow_state === "closed" && !closedExportIntegrityValid;
   const assemblyReadiness: SummaryAssemblyReadiness = operational.shot_count > 0
