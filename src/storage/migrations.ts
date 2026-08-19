@@ -1439,7 +1439,7 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
           )
         ))
     ))
-    OR (NEW.job_type = 'assembly' AND NEW.state = 'succeeded' AND (
+    OR (NEW.job_type = 'assembly' AND NEW.state IN ('queued','running','succeeded') AND (
       json_type(NEW.input_json, '$.source_clip_artifact_ids') IS NOT 'array'
       OR NOT EXISTS (
         SELECT 1 FROM shots shot WHERE shot.project_id = NEW.project_id
@@ -1449,34 +1449,27 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
       )
       OR EXISTS (
         SELECT 1 FROM json_each(NEW.input_json, '$.source_clip_artifact_ids') source_clip
+        LEFT JOIN (
+          SELECT ranked_shot.shot_id, ranked_shot.project_id, ranked_shot.data_json,
+            ROW_NUMBER() OVER (
+              PARTITION BY ranked_shot.project_id
+              ORDER BY json_extract(ranked_shot.data_json, '$.order'), ranked_shot.shot_id
+            ) - 1 AS input_index
+          FROM shots ranked_shot
+        ) shot ON shot.project_id = NEW.project_id
+          AND shot.input_index = CAST(source_clip.key AS INTEGER)
         LEFT JOIN media_artifacts artifact ON artifact.artifact_id = source_clip.value
-          AND artifact.project_id = NEW.project_id AND artifact.role = 'generated_clip'
-          AND artifact.artifact_type = 'video' AND artifact.status = 'active'
-        LEFT JOIN shots shot ON shot.shot_id = artifact.shot_id AND shot.project_id = NEW.project_id
-          AND json_extract(shot.data_json, '$.accepted_clip_artifact_id') = artifact.artifact_id
-          AND json_extract(shot.data_json, '$.status') = 'approved'
-          AND json_extract(shot.data_json, '$.review.approval_status') = 'approved'
-          AND EXISTS (
+          AND artifact.project_id = NEW.project_id AND artifact.shot_id = shot.shot_id
+          AND artifact.role = 'generated_clip' AND artifact.artifact_type = 'video'
+          AND artifact.status = 'active'
+        WHERE source_clip.type <> 'text' OR shot.shot_id IS NULL OR artifact.artifact_id IS NULL
+          OR json_extract(shot.data_json, '$.accepted_clip_artifact_id') IS NOT artifact.artifact_id
+          OR COALESCE(json_extract(shot.data_json, '$.status'), '') <> 'approved'
+          OR COALESCE(json_extract(shot.data_json, '$.review.approval_status'), '') <> 'approved'
+          OR NOT EXISTS (
             SELECT 1 FROM json_each(shot.data_json, '$.clip_versions') clip_version
-            WHERE json_extract(clip_version.value, '$.artifact_id') = artifact.artifact_id
+            WHERE json_extract(clip_version.value, '$.artifact_id') IS artifact.artifact_id
               AND json_extract(clip_version.value, '$.review_status') = 'approved'
-          )
-        WHERE source_clip.type <> 'text' OR artifact.artifact_id IS NULL OR shot.shot_id IS NULL
-      )
-      OR EXISTS (
-        SELECT 1 FROM shots shot
-        WHERE shot.project_id = NEW.project_id
-          AND (
-            COALESCE(json_extract(shot.data_json, '$.accepted_clip_artifact_id'), '') = ''
-            OR NOT EXISTS (
-              SELECT 1 FROM json_each(NEW.input_json, '$.source_clip_artifact_ids') source_clip
-              JOIN media_artifacts artifact ON artifact.artifact_id = source_clip.value
-                AND artifact.project_id = NEW.project_id AND artifact.shot_id = shot.shot_id
-                AND artifact.role = 'generated_clip' AND artifact.artifact_type = 'video'
-                AND artifact.status = 'active'
-              WHERE source_clip.type = 'text' AND source_clip.value =
-                json_extract(shot.data_json, '$.accepted_clip_artifact_id')
-            )
           )
       )
     ))
@@ -1523,7 +1516,7 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
           )
         ))
     ))
-    OR (NEW.job_type = 'assembly' AND NEW.state = 'succeeded' AND (
+    OR (NEW.job_type = 'assembly' AND NEW.state IN ('queued','running','succeeded') AND (
       json_type(NEW.input_json, '$.source_clip_artifact_ids') IS NOT 'array'
       OR NOT EXISTS (
         SELECT 1 FROM shots shot WHERE shot.project_id = NEW.project_id
@@ -1533,34 +1526,27 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
       )
       OR EXISTS (
         SELECT 1 FROM json_each(NEW.input_json, '$.source_clip_artifact_ids') source_clip
+        LEFT JOIN (
+          SELECT ranked_shot.shot_id, ranked_shot.project_id, ranked_shot.data_json,
+            ROW_NUMBER() OVER (
+              PARTITION BY ranked_shot.project_id
+              ORDER BY json_extract(ranked_shot.data_json, '$.order'), ranked_shot.shot_id
+            ) - 1 AS input_index
+          FROM shots ranked_shot
+        ) shot ON shot.project_id = NEW.project_id
+          AND shot.input_index = CAST(source_clip.key AS INTEGER)
         LEFT JOIN media_artifacts artifact ON artifact.artifact_id = source_clip.value
-          AND artifact.project_id = NEW.project_id AND artifact.role = 'generated_clip'
-          AND artifact.artifact_type = 'video' AND artifact.status = 'active'
-        LEFT JOIN shots shot ON shot.shot_id = artifact.shot_id AND shot.project_id = NEW.project_id
-          AND json_extract(shot.data_json, '$.accepted_clip_artifact_id') = artifact.artifact_id
-          AND json_extract(shot.data_json, '$.status') = 'approved'
-          AND json_extract(shot.data_json, '$.review.approval_status') = 'approved'
-          AND EXISTS (
+          AND artifact.project_id = NEW.project_id AND artifact.shot_id = shot.shot_id
+          AND artifact.role = 'generated_clip' AND artifact.artifact_type = 'video'
+          AND artifact.status = 'active'
+        WHERE source_clip.type <> 'text' OR shot.shot_id IS NULL OR artifact.artifact_id IS NULL
+          OR json_extract(shot.data_json, '$.accepted_clip_artifact_id') IS NOT artifact.artifact_id
+          OR COALESCE(json_extract(shot.data_json, '$.status'), '') <> 'approved'
+          OR COALESCE(json_extract(shot.data_json, '$.review.approval_status'), '') <> 'approved'
+          OR NOT EXISTS (
             SELECT 1 FROM json_each(shot.data_json, '$.clip_versions') clip_version
-            WHERE json_extract(clip_version.value, '$.artifact_id') = artifact.artifact_id
+            WHERE json_extract(clip_version.value, '$.artifact_id') IS artifact.artifact_id
               AND json_extract(clip_version.value, '$.review_status') = 'approved'
-          )
-        WHERE source_clip.type <> 'text' OR artifact.artifact_id IS NULL OR shot.shot_id IS NULL
-      )
-      OR EXISTS (
-        SELECT 1 FROM shots shot
-        WHERE shot.project_id = NEW.project_id
-          AND (
-            COALESCE(json_extract(shot.data_json, '$.accepted_clip_artifact_id'), '') = ''
-            OR NOT EXISTS (
-              SELECT 1 FROM json_each(NEW.input_json, '$.source_clip_artifact_ids') source_clip
-              JOIN media_artifacts artifact ON artifact.artifact_id = source_clip.value
-                AND artifact.project_id = NEW.project_id AND artifact.shot_id = shot.shot_id
-                AND artifact.role = 'generated_clip' AND artifact.artifact_type = 'video'
-                AND artifact.status = 'active'
-              WHERE source_clip.type = 'text' AND source_clip.value =
-                json_extract(shot.data_json, '$.accepted_clip_artifact_id')
-            )
           )
       )
     ))

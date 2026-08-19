@@ -8,6 +8,7 @@ import test from "node:test";
 import { backupDatabase, checkDatabase, databaseLogicalManifest, migrateDatabase } from "../src/storage/databaseGovernance.js";
 import { assertSchemaCurrent, DATABASE_MIGRATIONS, M0_BASE_SCHEMA_SQL, migrationChecksum, runDatabaseMigrations, SchemaMigrationRequiredError } from "../src/storage/migrations.js";
 import { openM0Database } from "../src/storage/sqlite.js";
+import { workbenchAssemblyInputFingerprint } from "../src/storage/workbenchAssemblyFingerprint.js";
 import { initializeWorkbenchV2Schema } from "../src/storage/workbenchV2Schema.js";
 import { paths } from "../src/paths.js";
 import { persistMediaArtifact, registerMediaArtifact, transitionMediaArtifactStatus, type MediaArtifact } from "../src/tools/mediaArtifacts.js";
@@ -1596,6 +1597,63 @@ test("database check detects zero-SHOT and partial-SHOT succeeded assembly evide
     const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
     assert.equal(checked.schema_current, true);
     assert.ok(checked.orphan_rows >= 3, JSON.stringify(checked));
+    assert.equal(checked.result, "FAIL");
+  } finally {
+    try { db?.close(); } catch { /* retain the primary assertion failure */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("database check detects an active assembly whose inputs reverse canonical SHOT order", () => {
+  const root = tempRoot();
+  let db: ReturnType<typeof openM0Database> | null = null;
+  try {
+    const sqlitePath = join(root, "assembly-input-order.sqlite");
+    migrateDatabase(sqlitePath);
+    db = openM0Database(sqlitePath);
+    const now = "2026-08-17T12:00:00.000Z";
+    const project = createProject({ title: "Reversed assembly input order" }, db);
+    assert.equal(project.ok, true);
+    if (!project.ok) throw new Error("assembly order project setup failed");
+    const first = createAcceptedAssemblyClipFixture(db, {
+      project_id: project.project_id, order: 1, label: "order first"
+    });
+    const second = createAcceptedAssemblyClipFixture(db, {
+      project_id: project.project_id, order: 2, label: "order second"
+    });
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ?
+      WHERE project_id = ?`).run(now, project.project_id);
+    assert.equal(checkDatabase(sqlitePath, { recover_media_activations: false }).result, "PASS");
+
+    const reversedInput = JSON.stringify({ source_clip_artifact_ids: [second.artifact_id, first.artifact_id] });
+    const reversedFingerprint = workbenchAssemblyInputFingerprint(db, project.project_id,
+      [second.artifact_id, first.artifact_id]);
+    assert.ok(reversedFingerprint);
+    const insertGuard = (db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'trigger'
+      AND name = 'workbench_delivery_jobs_validate_insert'`).get() as { sql: string }).sql;
+    db.exec("DROP TRIGGER workbench_delivery_jobs_validate_insert; BEGIN IMMEDIATE");
+    db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, input_fingerprint, input_json, created_at, updated_at)
+      VALUES ('job_assembly_reversed_bypass', ?, 'assembly', 'queued', ?, ?, ?, ?)`)
+      .run(project.project_id, reversedFingerprint, reversedInput, now, now);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
+        reason_code, data_json, created_at)
+      VALUES ('event_assembly_reversed_bypass', ?, 'job_assembly_reversed_bypass',
+        'assembly_queued', 'ready_to_assemble', 'assembling', ?, 'ASSEMBLY_QUEUED', '{}', ?)`)
+      .run(project.project_id, reversedFingerprint, now);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'assembling',
+      active_assembly_job_id = 'job_assembly_reversed_bypass', assembly_input_fingerprint = ?, updated_at = ?
+      WHERE project_id = ?`).run(reversedFingerprint, now, project.project_id);
+    db.exec("COMMIT");
+    db.exec(insertGuard);
+    assertSchemaCurrent(db);
+    db.close();
+    db = null;
+
+    const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
+    assert.equal(checked.schema_current, true);
+    assert.equal(checked.orphan_rows, 1, JSON.stringify(checked));
     assert.equal(checked.result, "FAIL");
   } finally {
     try { db?.close(); } catch { /* retain the primary assertion failure */ }

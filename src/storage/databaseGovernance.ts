@@ -345,7 +345,7 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
           AND a.artifact_type = 'video' AND a.status = 'active'
         WHERE j.output_artifact_id IS NOT NULL AND a.artifact_id IS NULL`,
       `SELECT COUNT(*) AS count FROM workbench_delivery_jobs job
-        WHERE job.job_type = 'assembly' AND job.state = 'succeeded' AND (
+        WHERE job.job_type = 'assembly' AND job.state IN ('queued','running','succeeded') AND (
           json_type(job.input_json, '$.source_clip_artifact_ids') IS NOT 'array'
           OR NOT EXISTS (
             SELECT 1 FROM shots project_shot WHERE project_shot.project_id = job.project_id
@@ -360,26 +360,42 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
           )
           OR EXISTS (
             SELECT 1 FROM json_each(job.input_json, '$.source_clip_artifact_ids') source_clip
+            LEFT JOIN (
+              SELECT ranked_shot.shot_id, ranked_shot.project_id,
+                ROW_NUMBER() OVER (
+                  PARTITION BY ranked_shot.project_id
+                  ORDER BY json_extract(ranked_shot.data_json, '$.order'), ranked_shot.shot_id
+                ) - 1 AS input_index
+              FROM shots ranked_shot
+            ) source_shot ON source_shot.project_id = job.project_id
+              AND source_shot.input_index = CAST(source_clip.key AS INTEGER)
             LEFT JOIN media_artifacts artifact ON artifact.artifact_id = source_clip.value
               AND artifact.project_id = job.project_id AND artifact.role = 'generated_clip'
               AND artifact.artifact_type = 'video' AND artifact.status = 'active'
-              AND COALESCE(artifact.shot_id, '') <> ''
-            LEFT JOIN shots source_shot ON source_shot.shot_id = artifact.shot_id
-              AND source_shot.project_id = job.project_id
-            WHERE source_clip.type <> 'text' OR artifact.artifact_id IS NULL OR source_shot.shot_id IS NULL
-          )
-          OR EXISTS (
-            SELECT 1 FROM shots project_shot
-            WHERE project_shot.project_id = job.project_id AND NOT EXISTS (
-              SELECT 1 FROM json_each(job.input_json, '$.source_clip_artifact_ids') source_clip
-              JOIN media_artifacts artifact ON artifact.artifact_id = source_clip.value
-                AND artifact.project_id = job.project_id AND artifact.shot_id = project_shot.shot_id
-                AND artifact.role = 'generated_clip' AND artifact.artifact_type = 'video'
-                AND artifact.status = 'active'
-              WHERE source_clip.type = 'text'
-            )
+              AND artifact.shot_id = source_shot.shot_id
+            WHERE source_clip.type <> 'text' OR source_shot.shot_id IS NULL
+              OR artifact.artifact_id IS NULL
           )
         )`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_jobs job
+        WHERE job.job_type = 'assembly' AND job.state IN ('queued','running')
+          AND EXISTS (
+            SELECT 1 FROM json_each(job.input_json, '$.source_clip_artifact_ids') source_clip
+            LEFT JOIN media_artifacts artifact ON artifact.artifact_id = source_clip.value
+              AND artifact.project_id = job.project_id AND artifact.role = 'generated_clip'
+              AND artifact.artifact_type = 'video' AND artifact.status = 'active'
+            LEFT JOIN shots shot ON shot.shot_id = artifact.shot_id
+              AND shot.project_id = job.project_id
+            WHERE source_clip.type <> 'text' OR artifact.artifact_id IS NULL OR shot.shot_id IS NULL
+              OR json_extract(shot.data_json, '$.accepted_clip_artifact_id') IS NOT artifact.artifact_id
+              OR COALESCE(json_extract(shot.data_json, '$.status'), '') <> 'approved'
+              OR COALESCE(json_extract(shot.data_json, '$.review.approval_status'), '') <> 'approved'
+              OR NOT EXISTS (
+                SELECT 1 FROM json_each(shot.data_json, '$.clip_versions') clip_version
+                WHERE json_extract(clip_version.value, '$.artifact_id') IS artifact.artifact_id
+                  AND json_extract(clip_version.value, '$.review_status') = 'approved'
+              )
+          )`,
       `SELECT COUNT(*) AS count FROM workbench_delivery_jobs job
         JOIN workbench_delivery_events success_event
           ON success_event.job_id = job.job_id AND success_event.project_id = job.project_id

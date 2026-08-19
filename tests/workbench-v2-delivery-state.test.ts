@@ -1339,7 +1339,7 @@ test("delivery jobs bind retries and terminal outputs to the same project and jo
   }
 });
 
-test("succeeded assembly jobs require one accepted active clip for every project SHOT", () => {
+test("assembly jobs require every approved accepted clip in canonical SHOT order from queue time", () => {
   const db = openM0Database(":memory:");
   try {
     const now = "2026-08-17T10:00:00.000Z";
@@ -1398,45 +1398,10 @@ test("succeeded assembly jobs require one accepted active clip for every project
     assert.ok(partialFingerprint);
     db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ?
       WHERE project_id = 'project_assembly_partial'`).run(now);
-    db.exec("BEGIN IMMEDIATE");
-    db.prepare(`INSERT INTO workbench_delivery_jobs
+    assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_fingerprint, input_json, created_at, updated_at)
-      VALUES ('job_assembly_partial_running', 'project_assembly_partial', 'assembly', 'queued', ?, ?, ?, ?)`)
-      .run(partialFingerprint, partialInput, now, now);
-    db.prepare(`INSERT INTO workbench_delivery_events
-      (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
-        reason_code, data_json, created_at)
-      VALUES ('event_assembly_partial_queued', 'project_assembly_partial', 'job_assembly_partial_running',
-        'assembly_queued', 'ready_to_assemble', 'assembling', ?, 'ASSEMBLY_QUEUED', '{}', ?)`)
-      .run(partialFingerprint, now);
-    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'assembling',
-      active_assembly_job_id = 'job_assembly_partial_running', assembly_input_fingerprint = ?, updated_at = ?
-      WHERE project_id = 'project_assembly_partial'`).run(partialFingerprint, now);
-    db.prepare(`UPDATE workbench_delivery_jobs SET state = 'running', started_at = ?, updated_at = ?
-      WHERE job_id = 'job_assembly_partial_running'`).run(now, now);
-    db.prepare(`INSERT INTO workbench_delivery_events
-      (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
-        reason_code, data_json, created_at)
-      VALUES ('event_assembly_partial_started', 'project_assembly_partial', 'job_assembly_partial_running',
-        'assembly_started', 'assembling', 'assembling', ?, 'ASSEMBLY_STARTED', '{}', ?)`)
-      .run(partialFingerprint, now);
-    db.exec("COMMIT");
-    assert.throws(() => db.prepare(`UPDATE workbench_delivery_jobs
-      SET state = 'succeeded', output_artifact_id = 'artifact_assembly_partial_final',
-        terminal_event_id = 'event_assembly_partial_invalid', finished_at = ?, updated_at = ?
-      WHERE job_id = 'job_assembly_partial_running'`)
-      .run(now, now), /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
-    db.exec("BEGIN IMMEDIATE");
-    db.prepare(`UPDATE workbench_delivery_jobs SET state = 'failed', error_code = 'ASSEMBLY_NOT_READY',
-      terminal_event_id = 'event_assembly_partial_failed', finished_at = ?, updated_at = ?
-      WHERE job_id = 'job_assembly_partial_running'`).run(now, now);
-    db.prepare(`INSERT INTO workbench_delivery_events
-      (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
-        reason_code, data_json, created_at)
-      VALUES ('event_assembly_partial_failed', 'project_assembly_partial', 'job_assembly_partial_running',
-        'assembly_failed', 'assembling', 'ready_to_assemble', ?, 'ASSEMBLY_NOT_READY', '{}', ?)`)
-      .run(partialFingerprint, now);
-    db.exec("COMMIT");
+      VALUES ('job_assembly_partial_queued', 'project_assembly_partial', 'assembly', 'queued', ?, ?, ?, ?)`)
+      .run(partialFingerprint, partialInput, now, now), /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
 
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
       .run("project_assembly_unapproved", projectJson("project_assembly_unapproved", "video_review"));
@@ -1454,6 +1419,10 @@ test("succeeded assembly jobs require one accepted active clip for every project
     const unapprovedInput = JSON.stringify({ source_clip_artifact_ids: [unapproved.artifact_id] });
     const unapprovedFingerprint = workbenchAssemblyInputFingerprint(db, "project_assembly_unapproved", [unapproved.artifact_id]);
     assert.ok(unapprovedFingerprint);
+    assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, input_fingerprint, input_json, created_at, updated_at)
+      VALUES ('job_assembly_unapproved_queued', 'project_assembly_unapproved', 'assembly', 'queued', ?, ?, ?, ?)`)
+      .run(unapprovedFingerprint, unapprovedInput, now, now), /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
     assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_fingerprint, input_json, output_artifact_id,
         terminal_event_id, created_at, started_at, finished_at, updated_at)
@@ -1473,6 +1442,14 @@ test("succeeded assembly jobs require one accepted active clip for every project
     insertFinalArtifact(db, "project_assembly_complete", "artifact_assembly_complete_final");
     db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ?
       WHERE project_id = 'project_assembly_complete'`).run(now);
+    const reversedInput = JSON.stringify({ source_clip_artifact_ids: [second.artifact_id, first.artifact_id] });
+    const reversedFingerprint = workbenchAssemblyInputFingerprint(db, "project_assembly_complete",
+      [second.artifact_id, first.artifact_id]);
+    assert.ok(reversedFingerprint);
+    assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, input_fingerprint, input_json, created_at, updated_at)
+      VALUES ('job_assembly_reversed_queued', 'project_assembly_complete', 'assembly', 'queued', ?, ?, ?, ?)`)
+      .run(reversedFingerprint, reversedInput, now, now), /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
     assert.doesNotThrow(() => completeWorkbenchAssemblyFixture(db, {
       project_id: "project_assembly_complete",
       artifact_id: "artifact_assembly_complete_final",

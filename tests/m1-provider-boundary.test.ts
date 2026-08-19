@@ -5,8 +5,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { workbenchAssemblyInputFingerprint } from "../src/storage/workbenchAssemblyFingerprint.js";
-
 import {
   activateLocalMediaArtifact,
   buildStoryboardApprovedShot,
@@ -50,8 +48,6 @@ import {
   verifyMediaArtifactBytes
 } from "../src/index.js";
 import type { MediaArtifact } from "../src/index.js";
-import { failWorkbenchAssemblyFixture } from "./workbench-delivery-test-helpers.js";
-
 const FAKE_SECRET = "M1_TEST_SECRET_DO_NOT_LOG_123";
 
 function withEnv<T>(updates: Record<string, string | undefined>, action: () => T): T {
@@ -529,28 +525,8 @@ test("M1 legacy live generation preserves a known Provider task for reconciliati
     };
     globalThis.fetch = (async () => {
       providerCalls += 1;
-      const at = "2026-08-17T00:00:00.000Z";
-      const sourceClipArtifactIds: string[] = [];
-      const fingerprint = workbenchAssemblyInputFingerprint(db, project.project_id, sourceClipArtifactIds);
-      assert.ok(fingerprint);
-      db.exec("BEGIN IMMEDIATE");
-      db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble' WHERE project_id = ?")
+      db.prepare("UPDATE workbench_project_meta SET lifecycle = 'archived' WHERE project_id = ?")
         .run(project.project_id);
-      db.prepare(`INSERT INTO workbench_delivery_jobs
-        (job_id, project_id, job_type, state, input_fingerprint, input_json, created_at, updated_at)
-        VALUES ('job_m1_provider_drift', ?, 'assembly', 'queued', ?,
-          ?, ?, ?)`).run(project.project_id, fingerprint,
-            JSON.stringify({ source_clip_artifact_ids: sourceClipArtifactIds }), at, at);
-      db.prepare(`INSERT INTO workbench_delivery_events
-        (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
-          reason_code, data_json, created_at)
-        VALUES ('event_m1_provider_drift_queued', ?, 'job_m1_provider_drift', 'assembly_queued',
-          'ready_to_assemble', 'assembling', ?, 'ASSEMBLY_QUEUED', '{}', ?)`)
-        .run(project.project_id, fingerprint, at);
-      db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'assembling',
-        active_assembly_job_id = 'job_m1_provider_drift', assembly_input_fingerprint = ?, updated_at = ?
-        WHERE project_id = ?`).run(fingerprint, at, project.project_id);
-      db.exec("COMMIT");
       return new Response(JSON.stringify({ id: "synthetic_runway_task", status: "PENDING" }), {
         status: 200,
         headers: { "content-type": "application/json" }
@@ -602,12 +578,8 @@ test("M1 legacy live generation preserves a known Provider task for reconciliati
       JOIN generation_intents intent ON intent.intent_id = job.intent_id
       WHERE intent.project_id = ? AND event.to_state = 'manual_reconciliation'
         AND event.reason_code = 'CONTENT_MUTATION_REQUIRES_RECONCILIATION'`).get(project.project_id) as { count: number }).count, 1);
-    failWorkbenchAssemblyFixture(db, {
-      project_id: project.project_id,
-      job_id: "job_m1_provider_drift",
-      event_id: "event_m1_provider_drift_failed",
-      created_at: "2026-08-17T00:00:00.000Z"
-    });
+    db.prepare("UPDATE workbench_project_meta SET lifecycle = 'active' WHERE project_id = ?")
+      .run(project.project_id);
     const duplicate = await withEnvAsync({
       REAL_PROVIDER_ENABLED: "true",
       M1_REAL_PROVIDER: "runway",
