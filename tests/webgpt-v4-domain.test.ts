@@ -37,7 +37,7 @@ import { actorFromSubject } from "../src/webgpt-v4/types.js";
 import { buildProviderCapabilityKey, buildProviderPriceCacheKey, RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY } from "../src/tools/providerCapabilities.js";
 import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { getProjectStatus } from "../src/tools/projects.js";
-import { getWorkbenchProjectWorkspace, listWorkbenchProjects, type WorkbenchProjectSummary } from "../src/tools/workbenchV2.js";
+import { getWorkbenchDashboard, getWorkbenchProjectWorkspace, listWorkbenchProjects, type WorkbenchProjectSummary } from "../src/tools/workbenchV2.js";
 import {
   getCachedWorkbenchExportIntegrity,
   invalidateWorkbenchExportIntegrityCache
@@ -461,6 +461,22 @@ test("project lists use cached Export integrity while a project read performs th
       assert.equal(summary?.delivery_state, "delivered");
     }
     assert.equal(getCachedWorkbenchExportIntegrity(currentExport), "verified");
+  } finally {
+    teardown(context);
+  }
+});
+
+test("dashboard pending delivery follows the persisted closed state instead of legacy Project status", () => {
+  const context = setup();
+  try {
+    ensureAcceptedAssemblyClipsFixture(context.db, context.production.project_id);
+    const beforeClose = getWorkbenchDashboard(context.db) as { totals: { pending_delivery: number } };
+    assert.equal(beforeClose.totals.pending_delivery, 1);
+
+    closeProductionProject(context);
+    setProductionDeliveryProjectionFixture(context, { status: "video_review" });
+    const afterClose = getWorkbenchDashboard(context.db) as { totals: { pending_delivery: number } };
+    assert.equal(afterClose.totals.pending_delivery, 0);
   } finally {
     teardown(context);
   }
