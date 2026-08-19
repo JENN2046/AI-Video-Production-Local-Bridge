@@ -474,7 +474,7 @@ export function listProductionProjects(
     const project = parseBoundJson<Project>(row.data_json, "project_id");
     if (project.project_id !== row.project_id) dataIntegrityViolation("project_id");
     project.shot_ids = listProjectShots(db, row.project_id).map((shot) => shot.shot_id);
-    const summary = getWorkbenchProjectSummary(row.project_id, db);
+    const summary = getWorkbenchProjectSummary(row.project_id, db, { verify_export_integrity: false });
     return sanitize({ project, lifecycle: row.lifecycle, pinned: row.pinned === 1, last_opened_at: row.last_opened_at, updated_at: row.updated_at, summary }) as Record<string, unknown>;
   });
   const hasMore = offset + items.length < total;

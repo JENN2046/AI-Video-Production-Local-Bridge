@@ -4,7 +4,7 @@ import { basename, join, resolve } from "node:path";
 
 import { paths } from "../paths.js";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
-import { verifyWorkbenchExportFile } from "../storage/workbenchExportIntegrity.js";
+import { getCachedWorkbenchExportIntegrity, verifyWorkbenchExportFile } from "../storage/workbenchExportIntegrity.js";
 import { classifyStoryboardImageImport } from "./importClassifier.js";
 import { validateImageFile } from "./imageValidity.js";
 import { listH1Reports, loadH1WorkbenchState, registerH1ApprovedKeyframe, type H1WorkbenchState } from "./h1Workbench.js";
@@ -363,7 +363,16 @@ function collectOperationalSummariesForList(db: M0Database, projects: Project[])
   return summaries;
 }
 
-export function getWorkbenchProjectSummary(projectId: string, db = openM0Database()): WorkbenchProjectSummary | null {
+export function getWorkbenchProjectSummary(
+  projectId: string,
+  db = openM0Database(),
+  options: { verify_export_integrity?: boolean } = {}
+): WorkbenchProjectSummary | null {
+  const deliveryState = getWorkbenchDeliveryState(db, projectId);
+  if (options.verify_export_integrity !== false && deliveryState?.workflow_state === "closed") {
+    const currentExport = getLatestWorkbenchExport(db, projectId);
+    if (currentExport) verifyWorkbenchExportFile(currentExport);
+  }
   const result = listWorkbenchProjects({ scope: "all", lifecycle: "all", classification: "all", query: projectId, limit: 10 }, db);
   return result.items.find((item) => item.project.project_id === projectId) ?? null;
 }
@@ -407,7 +416,7 @@ function projectSummaryFromRow(db: M0Database, project: Project, row: ProjectRow
   const closedExportIntegrityValid = row.workflow_state !== "closed" || Boolean(
     currentExport
     && currentExport.artifact_id === row.delivery_current_final_artifact_id
-    && verifyWorkbenchExportFile(currentExport).ok
+    && getCachedWorkbenchExportIntegrity(currentExport) === "verified"
   );
   const exportIntegrityBlocked = row.workflow_state === "closed" && !closedExportIntegrityValid;
   const assemblyReadiness: SummaryAssemblyReadiness = operational.shot_count > 0
