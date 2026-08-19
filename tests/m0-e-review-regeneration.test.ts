@@ -282,12 +282,15 @@ test("production content mutations require explicit atomic rework after final ev
     assert.deepEqual(getShot(db, approvedFixture.shot.shot_id), approvedShotBefore);
 
     db.exec("BEGIN IMMEDIATE");
+    const assemblyFingerprint = (db.prepare(`SELECT assembly_input_fingerprint
+      FROM workbench_delivery_state WHERE project_id = ?`)
+      .get(approvedFixture.project.project_id) as { assembly_input_fingerprint: string }).assembly_input_fingerprint;
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, event_type, from_state, to_state, artifact_id, input_fingerprint,
         reason_code, data_json, created_at)
       VALUES ('event_atomic_content_rework', ?, 'final_review_regenerate_shots', 'approved', 'revision_requested', ?,
         ?, 'FINAL_SHOT_REGENERATION_REQUESTED', ?, ?)`)
-      .run(approvedFixture.project.project_id, approvedFinal.artifact_id, "a".repeat(64),
+      .run(approvedFixture.project.project_id, approvedFinal.artifact_id, assemblyFingerprint,
         JSON.stringify({ shot_ids: [approvedFixture.shot.shot_id] }), "2026-08-14T01:01:00.000Z");
     const atomicReview = markShotClipReview({
       shot_id: approvedFixture.shot.shot_id,

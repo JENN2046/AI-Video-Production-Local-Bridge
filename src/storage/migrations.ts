@@ -4,6 +4,7 @@ import { basename, dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import type { M0Database } from "./sqlite.js";
+import { registerWorkbenchAssemblyFingerprintFunction } from "./workbenchAssemblyFingerprint.js";
 import {
   applyWorkbenchV24Baseline,
   WORKBENCH_V2_4_SCHEMA_VERSION,
@@ -1398,7 +1399,12 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
   END;
 
   CREATE TRIGGER workbench_delivery_jobs_validate_insert BEFORE INSERT ON workbench_delivery_jobs
-  WHEN (NEW.retry_of_job_id IS NOT NULL AND NOT EXISTS (
+  WHEN (NEW.job_type = 'assembly' AND (
+      NEW.input_fingerprint IS NULL
+      OR workbench_assembly_input_fingerprint(NEW.project_id, NEW.input_json) IS NULL
+      OR NEW.input_fingerprint IS NOT workbench_assembly_input_fingerprint(NEW.project_id, NEW.input_json)
+    ))
+    OR (NEW.retry_of_job_id IS NOT NULL AND NOT EXISTS (
       SELECT 1 FROM workbench_delivery_jobs parent
       WHERE parent.job_id = NEW.retry_of_job_id AND parent.project_id = NEW.project_id
         AND parent.job_type = NEW.job_type
@@ -1470,7 +1476,12 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_JOB_BINDING_INVALID');
   END;
   CREATE TRIGGER workbench_delivery_jobs_validate_bindings_update BEFORE UPDATE ON workbench_delivery_jobs
-  WHEN (NEW.retry_of_job_id IS NOT NULL AND NOT EXISTS (
+  WHEN (NEW.job_type = 'assembly' AND (
+      NEW.input_fingerprint IS NULL
+      OR workbench_assembly_input_fingerprint(NEW.project_id, NEW.input_json) IS NULL
+      OR NEW.input_fingerprint IS NOT workbench_assembly_input_fingerprint(NEW.project_id, NEW.input_json)
+    ))
+    OR (NEW.retry_of_job_id IS NOT NULL AND NOT EXISTS (
       SELECT 1 FROM workbench_delivery_jobs parent
       WHERE parent.job_id = NEW.retry_of_job_id AND parent.project_id = NEW.project_id
         AND parent.job_type = NEW.job_type
@@ -2641,6 +2652,7 @@ export function assertSchemaCurrent(db: M0Database): void {
 }
 
 export function runDatabaseMigrations(db: M0Database): { applied: string[]; baselined: boolean } {
+  registerWorkbenchAssemblyFingerprintFunction(db);
   db.exec("PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
   let baselined = false;
   const appliedIds: string[] = [];

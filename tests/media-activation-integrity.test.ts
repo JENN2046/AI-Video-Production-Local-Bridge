@@ -308,7 +308,6 @@ test("delivery-referenced final Artifact content and Blob binding fail closed be
     if (!activated.ok) throw new Error("DELIVERY_EVIDENCE_ACTIVATION_SETUP_FAILED");
 
     const now = "2026-08-17T00:00:00.000Z";
-    const fingerprint = "e".repeat(64);
     ensureAcceptedAssemblyClipsFixture(db, project.project_id);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(now, project.project_id);
@@ -317,8 +316,7 @@ test("delivery-referenced final Artifact content and Blob binding fail closed be
       artifact_id: artifactId,
       job_id: "job_immutable_delivery_assembly",
       event_id: "event_immutable_delivery_assembly",
-      created_at: now,
-      input_fingerprint: fingerprint
+      created_at: now
     });
 
     const artifactBefore = { ...(db.prepare("SELECT data_json, status FROM media_artifacts WHERE artifact_id = ?").get(artifactId) as Record<string, unknown>) };

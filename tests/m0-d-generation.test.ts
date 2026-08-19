@@ -18,6 +18,7 @@ import {
   startStoryboardVideoGeneration
 } from "../src/index.js";
 import { RunningHubVideoProviderAdapter } from "../src/tools/videoProviderAdapters.js";
+import { reconcileGenerationJob } from "../src/tools/workbenchGeneration.js";
 import {
   approveWorkbenchDeliveryFixture,
   completeWorkbenchAssemblyFixture,
@@ -258,12 +259,20 @@ test("M0-D async generation reconciles a known Provider task after Project video
       aspect_ratio: "16:9",
       resolution: "1920x1080"
     });
-    assert.equal((db.prepare(`SELECT COUNT(*) AS count FROM generation_jobs job
+    const reconciliationJob = db.prepare(`SELECT job.job_id FROM generation_jobs job
       JOIN generation_intents intent ON intent.intent_id = job.intent_id
       WHERE job.state = 'manual_reconciliation'
         AND job.reconciliation_reason = 'CONTENT_MUTATION_REQUIRES_RECONCILIATION'
-        AND intent.provider_task_id = 'task_video_spec_drift'`)
-      .get() as { count: number }).count, 1);
+        AND intent.provider_task_id = 'task_video_spec_drift'`).get() as { job_id: string } | undefined;
+    assert.ok(reconciliationJob);
+    const abandoned = reconcileGenerationJob(reconciliationJob.job_id, {
+      decision: "abandon",
+      reason: "Synthetic Provider task intentionally abandoned after Project spec drift.",
+      human_confirmation: true
+    }, db);
+    assert.equal(abandoned.ok, true);
+    if (abandoned.ok) assert.equal(abandoned.data.job.state, "cancelled");
+    assert.equal(submitCalls, 1);
     assert.equal((db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ? AND role = 'generated_clip'")
       .get(project.project_id) as { count: number }).count, 0);
   } finally {
@@ -317,12 +326,20 @@ test("M0-D async generation reconciles a known Provider task after frozen Packag
 
     assert.equal(submitCalls, 1);
     assert.equal(result.ok ? null : result.error.code, "CONTENT_MUTATION_REQUIRES_RECONCILIATION");
-    assert.equal((db.prepare(`SELECT COUNT(*) AS count FROM generation_jobs job
+    const reconciliationJob = db.prepare(`SELECT job.job_id FROM generation_jobs job
       JOIN generation_intents intent ON intent.intent_id = job.intent_id
       WHERE job.state = 'manual_reconciliation'
         AND job.reconciliation_reason = 'CONTENT_MUTATION_REQUIRES_RECONCILIATION'
-        AND intent.provider_task_id = 'task_storyboard_package_drift'`)
-      .get() as { count: number }).count, 1);
+        AND intent.provider_task_id = 'task_storyboard_package_drift'`).get() as { job_id: string } | undefined;
+    assert.ok(reconciliationJob);
+    const abandoned = reconcileGenerationJob(reconciliationJob.job_id, {
+      decision: "abandon",
+      reason: "Synthetic Provider task intentionally abandoned after Package drift.",
+      human_confirmation: true
+    }, db);
+    assert.equal(abandoned.ok, true);
+    if (abandoned.ok) assert.equal(abandoned.data.job.state, "cancelled");
+    assert.equal(submitCalls, 1);
     assert.equal((db.prepare("SELECT COUNT(*) AS count FROM media_artifacts WHERE project_id = ? AND role = 'generated_clip'")
       .get(project.project_id) as { count: number }).count, 0);
   } finally {

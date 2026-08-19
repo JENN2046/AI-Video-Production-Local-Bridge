@@ -7,6 +7,7 @@ import test from "node:test";
 
 import { assertSchemaCurrent, DATABASE_MIGRATIONS, migrationChecksum, runDatabaseMigrations } from "../src/storage/migrations.js";
 import { openM0Database } from "../src/storage/sqlite.js";
+import { workbenchAssemblyInputFingerprint } from "../src/storage/workbenchAssemblyFingerprint.js";
 import { WORKBENCH_V2_SCHEMA_VERSION } from "../src/storage/workbenchV2Schema.js";
 import { getProject, getShot, saveProject, saveShot, type Project } from "../src/tools/projects.js";
 import { projectSummaryDeliveryState } from "../src/tools/workbenchDeliveryState.js";
@@ -362,27 +363,36 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
     assert.ok(ordinaryProjectUpdate);
     ordinaryProjectUpdate.title = "ordinary pre-assembly edit";
     assert.doesNotThrow(() => saveProject(db, ordinaryProjectUpdate));
+    const acceptedDeliveryClipId = (db.prepare(`SELECT json_extract(data_json, '$.accepted_clip_artifact_id') AS id
+      FROM shots WHERE project_id = 'project_delivery'`).get() as { id: string }).id;
+    const assemblyFingerprint = workbenchAssemblyInputFingerprint(db, "project_delivery", [acceptedDeliveryClipId]);
+    assert.ok(assemblyFingerprint);
+    assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, input_fingerprint, input_json, created_at, updated_at)
+      VALUES ('job_assembly_wrong_fingerprint', 'project_delivery', 'assembly', 'queued', ?,
+        json_object('source_clip_artifact_ids', json_array(?)), ?, ?)`)
+      .run("0".repeat(64), acceptedDeliveryClipId, now, now), /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
     db.exec("BEGIN IMMEDIATE");
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_fingerprint, input_json, created_at, updated_at)
       VALUES ('job_assembly', 'project_delivery', 'assembly', 'queued', ?,
         json_object('source_clip_artifact_ids', json_array(?)), ?, ?)`)
-      .run("a".repeat(64), (db.prepare(`SELECT json_extract(data_json, '$.accepted_clip_artifact_id') AS id
-        FROM shots WHERE project_id = 'project_delivery'`).get() as { id: string }).id, now, now);
+      .run(assemblyFingerprint, acceptedDeliveryClipId, now, now);
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
         reason_code, data_json, created_at)
       VALUES ('event_assembly_queued_initial', 'project_delivery', 'job_assembly', 'assembly_queued',
         'ready_to_assemble', 'assembling', ?, 'ASSEMBLY_QUEUED', '{}', ?)`)
-      .run("a".repeat(64), now);
+      .run(assemblyFingerprint, now);
     db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'assembling',
       active_assembly_job_id = 'job_assembly', assembly_input_fingerprint = ?, updated_at = ?
-      WHERE project_id = 'project_delivery'`).run("a".repeat(64), now);
+      WHERE project_id = 'project_delivery'`).run(assemblyFingerprint, now);
     db.exec("COMMIT");
     assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, created_at, updated_at)
-      VALUES ('job_assembly_conflict', 'project_delivery', 'assembly', 'queued', '{}', ?, ?)`)
-      .run(now, now), /UNIQUE constraint failed/);
+      (job_id, project_id, job_type, state, input_fingerprint, input_json, created_at, updated_at)
+      VALUES ('job_assembly_conflict', 'project_delivery', 'assembly', 'queued', ?,
+        json_object('source_clip_artifact_ids', json_array(?)), ?, ?)`)
+      .run(assemblyFingerprint, acceptedDeliveryClipId, now, now), /UNIQUE constraint failed/);
 
     db.prepare("UPDATE workbench_delivery_jobs SET state = 'running', started_at = ?, updated_at = ? WHERE job_id = 'job_assembly'")
       .run(now, now);
@@ -395,7 +405,7 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
         reason_code, data_json, created_at)
       VALUES ('event_assembly_failed', 'project_delivery', 'job_assembly', 'assembly_failed',
         'assembling', 'ready_to_assemble', ?, 'ASSEMBLY_OUTPUT_INVALID', '{}', ?)`)
-      .run("a".repeat(64), now);
+      .run(assemblyFingerprint, now);
     db.exec("COMMIT");
     assert.throws(() => db.prepare("UPDATE workbench_delivery_jobs SET error_code = 'CHANGED' WHERE job_id = 'job_assembly'").run(), /WORKBENCH_DELIVERY_JOB_TERMINAL_IMMUTABLE/);
     assert.throws(() => db.prepare("DELETE FROM workbench_delivery_jobs WHERE job_id = 'job_assembly'").run(), /WORKBENCH_DELIVERY_JOB_IMMUTABLE/);
@@ -417,7 +427,7 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
       VALUES ('event_historical_reassemble', 'project_delivery', 'final_review_reassemble',
         'final_review', 'ready_to_assemble', 'artifact_delivery_old', ?,
         'SYNTHETIC_REASSEMBLY', '{}', ?)`)
-      .run("a".repeat(64), now);
+      .run(assemblyFingerprint, now);
     const reworkShot = getShot(db, "shot_delivery");
     assert.ok(reworkShot);
     reworkShot.video_prompt = "explicit rework prompt";
@@ -601,6 +611,8 @@ test("delivery evidence pointers change only through legal assembly, review, rew
       event_id: "event_pointer_a_assembly",
       created_at: now
     });
+    const pointerAFingerprint = (db.prepare(`SELECT assembly_input_fingerprint FROM workbench_delivery_state
+      WHERE project_id = ?`).get(projectId) as { assembly_input_fingerprint: string }).assembly_input_fingerprint;
     assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
       SET current_final_artifact_id = 'artifact_pointer_b', updated_at = ? WHERE project_id = ?`).run(now, projectId),
       /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
@@ -617,7 +629,7 @@ test("delivery evidence pointers change only through legal assembly, review, rew
       (event_id, project_id, event_type, from_state, to_state, artifact_id, input_fingerprint, reason_code, data_json, created_at)
       VALUES ('event_pointer_a_regenerate', ?, 'final_review_regenerate_shots', 'approved', 'revision_requested',
         'artifact_pointer_a', ?, 'FINAL_SHOT_REGENERATION_REQUESTED', '{}', ?)`)
-      .run(projectId, "a".repeat(64), now);
+      .run(projectId, pointerAFingerprint, now);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(now, projectId);
     completeWorkbenchAssemblyFixture(db, {
@@ -627,6 +639,8 @@ test("delivery evidence pointers change only through legal assembly, review, rew
       event_id: "event_pointer_b_assembly",
       created_at: now
     });
+    const pointerBFingerprint = (db.prepare(`SELECT assembly_input_fingerprint FROM workbench_delivery_state
+      WHERE project_id = ?`).get(projectId) as { assembly_input_fingerprint: string }).assembly_input_fingerprint;
     acceptFinalReview(db, projectId, "event_pointer_b_accepted", now);
     insertWorkbenchExportFixture(db, { project_id: projectId, artifact_id: "artifact_pointer_b",
       export_id: "export_pointer_b", created_at: now });
@@ -667,7 +681,7 @@ test("delivery evidence pointers change only through legal assembly, review, rew
       (event_id, project_id, event_type, from_state, to_state, artifact_id, input_fingerprint, reason_code, data_json, created_at)
       VALUES ('event_pointer_b_reassemble', ?, 'final_review_reassemble', 'exported', 'ready_to_assemble',
         'artifact_pointer_b', ?, 'FINAL_REASSEMBLY_REQUESTED', '{}', ?)`)
-      .run(projectId, "a".repeat(64), now);
+      .run(projectId, pointerBFingerprint, now);
     assert.deepEqual({ ...(db.prepare(`SELECT workflow_state, current_final_artifact_id,
       approved_artifact_id, latest_export_id FROM workbench_delivery_state WHERE project_id = ?`)
       .get(projectId) as Record<string, unknown>) }, {
@@ -686,10 +700,12 @@ test("delivery lifecycle events bind to the matching Job type, state, Artifact, 
   try {
     const projectId = "project_event_semantics";
     const now = "2026-08-14T02:00:00.000Z";
-    const assemblyFingerprint = "e".repeat(64);
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
       .run(projectId, projectJson(projectId, "video_review"));
     const assemblySource = createAcceptedAssemblyClipFixture(db, { project_id: projectId, label: "event" });
+    const assemblyInputJson = JSON.stringify({ source_clip_artifact_ids: [assemblySource.artifact_id] });
+    const assemblyFingerprint = workbenchAssemblyInputFingerprint(db, projectId, [assemblySource.artifact_id]);
+    assert.ok(assemblyFingerprint);
     insertFinalArtifact(db, projectId, "artifact_event_final");
     insertFinalArtifact(db, projectId, "artifact_event_other");
     insertWorkbenchExportFixture(db, { project_id: projectId, artifact_id: "artifact_event_final",
@@ -756,8 +772,8 @@ test("delivery lifecycle events bind to the matching Job type, state, Artifact, 
       db.prepare(`INSERT INTO workbench_delivery_jobs
         (job_id, project_id, job_type, state, input_fingerprint, input_json, error_code,
           terminal_event_id, created_at, finished_at, updated_at)
-        VALUES (?, ?, 'assembly', ?, ?, '{}', ?, ?, ?, ?, ?)`)
-        .run(terminal.jobId, projectId, terminal.state, assemblyFingerprint, terminal.error,
+        VALUES (?, ?, 'assembly', ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(terminal.jobId, projectId, terminal.state, assemblyFingerprint, assemblyInputJson, terminal.error,
           terminal.eventId, now, now, now);
       assert.throws(() => insertEvent.run(terminal.eventId, projectId, terminal.jobId,
         terminal.eventType, "assembling", "ready_to_assemble", null, null, now),
@@ -894,10 +910,11 @@ test("final review events bind to the current final evidence and target delivery
   try {
     const projectId = "project_final_review_events";
     const now = "2026-08-14T02:30:00.000Z";
-    const fingerprint = "9".repeat(64);
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
       .run(projectId, projectJson(projectId, "video_review"));
-    createAcceptedAssemblyClipFixture(db, { project_id: projectId, label: "review" });
+    const reviewClip = createAcceptedAssemblyClipFixture(db, { project_id: projectId, label: "review" });
+    const fingerprint = workbenchAssemblyInputFingerprint(db, projectId, [reviewClip.artifact_id]);
+    assert.ok(fingerprint);
     insertFinalArtifact(db, projectId, "artifact_review_current");
     insertFinalArtifact(db, projectId, "artifact_review_other");
     insertWorkbenchExportFixture(db, { project_id: projectId, artifact_id: "artifact_review_current",
@@ -908,8 +925,7 @@ test("final review events bind to the current final evidence and target delivery
       project_id: projectId,
       job_id: "job_review_unrelated",
       event_id: "event_review_unrelated_queued",
-      created_at: now,
-      input_fingerprint: "8".repeat(64)
+      created_at: now
     });
     failWorkbenchAssemblyFixture(db, {
       project_id: projectId,
@@ -922,8 +938,7 @@ test("final review events bind to the current final evidence and target delivery
       artifact_id: "artifact_review_current",
       job_id: "job_review_current_assembly",
       event_id: "event_review_current_assembly",
-      created_at: now,
-      input_fingerprint: fingerprint
+      created_at: now
     });
     const insertReviewEvent = db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id,
@@ -1108,30 +1123,43 @@ test("delivery jobs bind retries and terminal outputs to the same project and jo
 
     // This block isolates trigger-level binding checks from the deferred lifecycle Event FK.
     db.exec("PRAGMA foreign_keys = OFF");
+    const projectAAssemblyInput = JSON.stringify({ source_clip_artifact_ids: [sourceClipByProject.get("project_a")] });
+    const projectBAssemblyInput = JSON.stringify({ source_clip_artifact_ids: [sourceClipByProject.get("project_b")] });
+    const projectAAssemblyFingerprint = workbenchAssemblyInputFingerprint(db, "project_a", [sourceClipByProject.get("project_a")!]);
+    const projectBAssemblyFingerprint = workbenchAssemblyInputFingerprint(db, "project_b", [sourceClipByProject.get("project_b")!]);
+    assert.ok(projectAAssemblyFingerprint);
+    assert.ok(projectBAssemblyFingerprint);
+    db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, input_fingerprint, input_json, error_code, terminal_event_id,
+        created_at, finished_at, updated_at)
+      VALUES ('parent_assembly_a', 'project_a', 'assembly', 'failed', ?, ?, 'SYNTHETIC_FAILURE',
+          'event_parent_assembly_a', ?, ?, ?),
+        ('parent_assembly_b', 'project_b', 'assembly', 'failed', ?, ?, 'SYNTHETIC_FAILURE',
+          'event_parent_assembly_b', ?, ?, ?)`)
+      .run(projectAAssemblyFingerprint, projectAAssemblyInput, now, now, now,
+        projectBAssemblyFingerprint, projectBAssemblyInput, now, now, now);
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, error_code, terminal_event_id,
         created_at, finished_at, updated_at)
-      VALUES ('parent_assembly_a', 'project_a', 'assembly', 'failed', '{}', 'SYNTHETIC_FAILURE',
-          'event_parent_assembly_a', ?, ?, ?),
-        ('parent_export_a', 'project_a', 'export', 'failed', '{}', 'SYNTHETIC_FAILURE',
-          'event_parent_export_a', ?, ?, ?),
-        ('parent_assembly_b', 'project_b', 'assembly', 'failed', '{}', 'SYNTHETIC_FAILURE',
-          'event_parent_assembly_b', ?, ?, ?)`)
-      .run(now, now, now, now, now, now, now, now, now);
+      VALUES ('parent_export_a', 'project_a', 'export', 'failed', '{}', 'SYNTHETIC_FAILURE',
+        'event_parent_export_a', ?, ?, ?)`).run(now, now, now);
+    assert.doesNotThrow(() => db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, input_fingerprint, input_json, retry_of_job_id, error_code, terminal_event_id,
+        created_at, finished_at, updated_at)
+      VALUES ('retry_assembly_a', 'project_a', 'assembly', 'failed', ?, ?, 'parent_assembly_a',
+        'SYNTHETIC_FAILURE', 'event_retry_assembly_a', ?, ?, ?)`)
+      .run(projectAAssemblyFingerprint, projectAAssemblyInput, now, now, now));
     assert.doesNotThrow(() => db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, retry_of_job_id, error_code, terminal_event_id,
         created_at, finished_at, updated_at)
-      VALUES ('retry_assembly_a', 'project_a', 'assembly', 'failed', '{}', 'parent_assembly_a',
-          'SYNTHETIC_FAILURE', 'event_retry_assembly_a', ?, ?, ?),
-        ('retry_export_a', 'project_a', 'export', 'failed', '{}', 'parent_export_a',
-          'SYNTHETIC_FAILURE', 'event_retry_export_a', ?, ?, ?)`)
-      .run(now, now, now, now, now, now));
+      VALUES ('retry_export_a', 'project_a', 'export', 'failed', '{}', 'parent_export_a',
+        'SYNTHETIC_FAILURE', 'event_retry_export_a', ?, ?, ?)`).run(now, now, now));
     assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, retry_of_job_id, error_code, terminal_event_id,
+      (job_id, project_id, job_type, state, input_fingerprint, input_json, retry_of_job_id, error_code, terminal_event_id,
         created_at, finished_at, updated_at)
-      VALUES ('retry_cross_project', 'project_a', 'assembly', 'failed', '{}', 'parent_assembly_b',
+      VALUES ('retry_cross_project', 'project_a', 'assembly', 'failed', ?, ?, 'parent_assembly_b',
         'SYNTHETIC_FAILURE', 'event_retry_cross_project', ?, ?, ?)`)
-      .run(now, now, now), /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
+      .run(projectAAssemblyFingerprint, projectAAssemblyInput, now, now, now), /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
     assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, retry_of_job_id, error_code, terminal_event_id,
         created_at, finished_at, updated_at)
@@ -1140,26 +1168,23 @@ test("delivery jobs bind retries and terminal outputs to the same project and jo
       .run(now, now, now), /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
 
     assert.doesNotThrow(() => db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, output_artifact_id, terminal_event_id,
+      (job_id, project_id, job_type, state, input_fingerprint, input_json, output_artifact_id, terminal_event_id,
         created_at, finished_at, updated_at)
-      VALUES ('assembly_valid', 'project_a', 'assembly', 'succeeded',
-        json_object('source_clip_artifact_ids', json_array(?)), 'artifact_project_a',
+      VALUES ('assembly_valid', 'project_a', 'assembly', 'succeeded', ?, ?, 'artifact_project_a',
         'event_assembly_valid', ?, ?, ?)`)
-      .run(sourceClipByProject.get("project_a"), now, now, now));
+      .run(projectAAssemblyFingerprint, projectAAssemblyInput, now, now, now));
     assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, output_artifact_id, terminal_event_id,
+      (job_id, project_id, job_type, state, input_fingerprint, input_json, output_artifact_id, terminal_event_id,
         created_at, finished_at, updated_at)
-      VALUES ('assembly_cross_project', 'project_a', 'assembly', 'succeeded',
-        json_object('source_clip_artifact_ids', json_array(?)), 'artifact_project_b',
+      VALUES ('assembly_cross_project', 'project_a', 'assembly', 'succeeded', ?, ?, 'artifact_project_b',
         'event_assembly_cross_project', ?, ?, ?)`)
-      .run(sourceClipByProject.get("project_a"), now, now, now), /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
+      .run(projectAAssemblyFingerprint, projectAAssemblyInput, now, now, now), /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
     assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, output_artifact_id, terminal_event_id,
+      (job_id, project_id, job_type, state, input_fingerprint, input_json, output_artifact_id, terminal_event_id,
         created_at, finished_at, updated_at)
-      VALUES ('assembly_wrong_role', 'project_a', 'assembly', 'succeeded',
-        json_object('source_clip_artifact_ids', json_array(?)), 'artifact_wrong_role',
+      VALUES ('assembly_wrong_role', 'project_a', 'assembly', 'succeeded', ?, ?, 'artifact_wrong_role',
         'event_assembly_wrong_role', ?, ?, ?)`)
-      .run(sourceClipByProject.get("project_a"), now, now, now), /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
+      .run(projectAAssemblyFingerprint, projectAAssemblyInput, now, now, now), /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
     assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, output_artifact_id, export_id, terminal_event_id,
         created_at, finished_at, updated_at)
@@ -1180,15 +1205,14 @@ test("delivery jobs bind retries and terminal outputs to the same project and jo
         'export_project_b', 'event_export_cross_project', ?, ?, ?)`)
       .run(now, now, now), /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
     assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_json, output_artifact_id, export_id, terminal_event_id,
+      (job_id, project_id, job_type, state, input_fingerprint, input_json, output_artifact_id, export_id, terminal_event_id,
         created_at, finished_at, updated_at)
-      VALUES ('assembly_with_export', 'project_a', 'assembly', 'succeeded',
-        json_object('source_clip_artifact_ids', json_array(?)), 'artifact_project_a', 'export_project_a',
+      VALUES ('assembly_with_export', 'project_a', 'assembly', 'succeeded', ?, ?, 'artifact_project_a', 'export_project_a',
         'event_assembly_with_export', ?, ?, ?)`)
-      .run(sourceClipByProject.get("project_a"), now, now, now), /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
+      .run(projectAAssemblyFingerprint, projectAAssemblyInput, now, now, now), /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
     db.exec("PRAGMA foreign_keys = ON");
 
-    const updateFingerprint = "6".repeat(64);
+    const updateFingerprint = projectBAssemblyFingerprint;
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = 'project_b'").run(now);
     db.exec("BEGIN IMMEDIATE");
     db.prepare(`INSERT INTO workbench_delivery_jobs
@@ -1274,7 +1298,8 @@ test("delivery jobs bind retries and terminal outputs to the same project and jo
     });
     db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ?
       WHERE project_id = 'project_retry_update'`).run(now);
-    const retryFingerprint = "4".repeat(64);
+    const retryFingerprint = workbenchAssemblyInputFingerprint(db, "project_retry_update", [retrySource.artifact_id]);
+    assert.ok(retryFingerprint);
     db.exec("DROP TRIGGER workbench_delivery_jobs_validate_insert");
     db.exec("BEGIN IMMEDIATE");
     db.prepare(`INSERT INTO workbench_delivery_jobs
@@ -1358,7 +1383,8 @@ test("succeeded assembly jobs require one accepted active clip for every project
         json_object('source_clip_artifact_ids', json_array(?, ?)), 'artifact_assembly_partial_final',
         'event_assembly_partial_duplicate', ?, ?, ?, ?)`)
       .run(accepted.artifact_id, accepted.artifact_id, now, now, now, now), /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
-    const partialFingerprint = "5".repeat(64);
+    const partialFingerprint = workbenchAssemblyInputFingerprint(db, "project_assembly_partial", [accepted.artifact_id]);
+    assert.ok(partialFingerprint);
     db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ?
       WHERE project_id = 'project_assembly_partial'`).run(now);
     db.exec("BEGIN IMMEDIATE");

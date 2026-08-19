@@ -226,12 +226,15 @@ test("SHOT Artifact attachment obeys delivery content gates without partial writ
 
     db.exec("BEGIN IMMEDIATE");
     try {
+      const assemblyFingerprint = (db.prepare(`SELECT assembly_input_fingerprint
+        FROM workbench_delivery_state WHERE project_id = ?`)
+        .get(target.project.project_id) as { assembly_input_fingerprint: string }).assembly_input_fingerprint;
       db.prepare(`INSERT INTO workbench_delivery_events
         (event_id, project_id, event_type, from_state, to_state, artifact_id,
           input_fingerprint, reason_code, data_json, created_at)
         VALUES ('event_attachment_rework', ?, 'final_review_reassemble', 'final_review',
           'ready_to_assemble', ?, ?, 'SYNTHETIC_REASSEMBLY', '{}', ?)`)
-        .run(target.project.project_id, finalArtifact.artifact.artifact_id, "a".repeat(64), now);
+        .run(target.project.project_id, finalArtifact.artifact.artifact_id, assemblyFingerprint, now);
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");

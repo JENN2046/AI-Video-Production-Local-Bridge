@@ -84,7 +84,6 @@ function createApprovedDeliveryFixture(
   assert.equal(artifact.ok, true);
   if (!artifact.ok) throw new Error("rework evidence Artifact setup failed");
   setProjectFinalArtifactFixture(db, project.project_id, artifact.artifact.artifact_id);
-  const fingerprint = "d".repeat(64);
   db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
     .run(now, project.project_id);
   completeWorkbenchAssemblyFixture(db, {
@@ -92,9 +91,10 @@ function createApprovedDeliveryFixture(
     artifact_id: artifact.artifact.artifact_id,
     job_id: `job_rework_assembly_${suffix}`,
     event_id: `event_rework_assembly_${suffix}`,
-    created_at: now,
-    input_fingerprint: fingerprint
+    created_at: now
   });
+  const fingerprint = (db.prepare(`SELECT assembly_input_fingerprint FROM workbench_delivery_state
+    WHERE project_id = ?`).get(project.project_id) as { assembly_input_fingerprint: string }).assembly_input_fingerprint;
   approveWorkbenchDeliveryFixture(db, {
     project_id: project.project_id,
     event_id: `event_rework_accepted_${suffix}`,
@@ -706,11 +706,15 @@ test("database check reports invalid delivery Job bindings and inactive referenc
   try {
     const sqlitePath = join(root, "delivery-job-bindings.sqlite");
     migrateDatabase(sqlitePath);
-    db = new DatabaseSync(sqlitePath);
+    db = openM0Database(sqlitePath);
     const now = "2026-08-14T00:00:00.000Z";
     for (const projectId of ["project_a", "project_b"]) {
       db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
-        .run(projectId, JSON.stringify({ project_id: projectId, exports: { final_video_artifact_id: "" } }));
+        .run(projectId, JSON.stringify({
+          project_id: projectId,
+          video_spec: { duration_seconds: 6, aspect_ratio: "9:16", resolution: "1080x1920" },
+          exports: { final_video_artifact_id: "" }
+        }));
     }
     ensureAcceptedAssemblyClipsFixture(db, "project_b");
     const artifact = {
@@ -734,14 +738,17 @@ test("database check reports invalid delivery Job bindings and inactive referenc
       VALUES ('artifact_old_b', 'project_b', '', 'final_video', 'video', 'active', ?)`).run(JSON.stringify(oldArtifact));
     db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES ('artifact_old_b', 'blob_b')").run();
     db.prepare("UPDATE projects SET data_json = ? WHERE project_id = 'project_b'")
-      .run(JSON.stringify({ project_id: "project_b", exports: { final_video_artifact_id: "artifact_b" } }));
+      .run(JSON.stringify({
+        project_id: "project_b",
+        video_spec: { duration_seconds: 6, aspect_ratio: "9:16", resolution: "1080x1920" },
+        exports: { final_video_artifact_id: "artifact_b" }
+      }));
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = 'project_b'").run(now);
     queueWorkbenchAssemblyFixture(db, {
       project_id: "project_b",
       job_id: "parent_b",
       event_id: "parent_b_queued",
-      created_at: now,
-      input_fingerprint: "f".repeat(64)
+      created_at: now
     });
     failWorkbenchAssemblyFixture(db, {
       project_id: "project_b",
@@ -1015,10 +1022,11 @@ test("database check detects missing, duplicate, and pointer-drifted delivery su
         artifact_id: artifact.artifact.artifact_id,
         job_id: `job_success_assembly_${suffix}`,
         event_id: `event_success_assembly_${suffix}`,
-        created_at: now,
-        input_fingerprint: "a".repeat(64)
+        created_at: now
       });
-      return { project_id: project.project_id, artifact_id: artifact.artifact.artifact_id };
+      const fingerprint = (db.prepare(`SELECT assembly_input_fingerprint FROM workbench_delivery_state
+        WHERE project_id = ?`).get(project.project_id) as { assembly_input_fingerprint: string }).assembly_input_fingerprint;
+      return { project_id: project.project_id, artifact_id: artifact.artifact.artifact_id, fingerprint };
     };
 
     const missingAssembly = createAssembled("missing");
@@ -1070,7 +1078,7 @@ test("database check detects missing, duplicate, and pointer-drifted delivery su
         input_fingerprint, reason_code, data_json, created_at)
       VALUES ('event_success_assembly_duplicate_second', ?, 'job_success_assembly_duplicate',
         'assembly_succeeded', 'assembling', 'final_review', ?, ?, 'ASSEMBLY_SUCCEEDED', '{}', ?)`)
-      .run(duplicateAssembly.project_id, duplicateAssembly.artifact_id, "a".repeat(64), now);
+      .run(duplicateAssembly.project_id, duplicateAssembly.artifact_id, duplicateAssembly.fingerprint, now);
     for (const definition of duplicateTriggers) db.exec(definition);
 
     db.exec("PRAGMA foreign_keys = ON");
@@ -1120,8 +1128,7 @@ test("database check detects missing and timestamp-drifted final review acceptan
         artifact_id: artifact.artifact.artifact_id,
         job_id: `job_approval_assembly_${projects.length}`,
         event_id: `event_approval_assembly_${projects.length}`,
-        created_at: now,
-        input_fingerprint: "f".repeat(64)
+        created_at: now
       });
       projects.push({ project_id: project.project_id, artifact_id: artifact.artifact.artifact_id });
     }
@@ -1309,11 +1316,13 @@ test("database check accepts active historical final Artifacts referenced by suc
       event_id: "event_historical_assembly",
       created_at: now
     });
+    const historicalFingerprint = (db.prepare(`SELECT assembly_input_fingerprint FROM workbench_delivery_state
+      WHERE project_id = ?`).get(project.project_id) as { assembly_input_fingerprint: string }).assembly_input_fingerprint;
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, event_type, from_state, to_state, artifact_id, input_fingerprint, reason_code, data_json, created_at)
       VALUES ('event_historical_reassemble', ?, 'final_review_reassemble', 'final_review', 'ready_to_assemble', ?,
         ?, 'FINAL_REASSEMBLY_REQUESTED', '{}', ?)`)
-      .run(project.project_id, historical.artifact.artifact_id, "a".repeat(64), now);
+      .run(project.project_id, historical.artifact.artifact_id, historicalFingerprint, now);
     completeWorkbenchAssemblyFixture(db, {
       project_id: project.project_id,
       artifact_id: current.artifact.artifact_id,
@@ -1326,11 +1335,13 @@ test("database check accepts active historical final Artifacts referenced by suc
       event_id: "event_current_accepted",
       created_at: now
     });
+    const currentFingerprint = (db.prepare(`SELECT assembly_input_fingerprint FROM workbench_delivery_state
+      WHERE project_id = ?`).get(project.project_id) as { assembly_input_fingerprint: string }).assembly_input_fingerprint;
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, event_type, from_state, to_state, artifact_id, input_fingerprint, reason_code, data_json, created_at)
       VALUES ('event_current_reassemble', ?, 'final_review_reassemble', 'approved', 'ready_to_assemble', ?,
         ?, 'FINAL_REASSEMBLY_REQUESTED', '{}', ?)`)
-      .run(project.project_id, current.artifact.artifact_id, "a".repeat(64), now);
+      .run(project.project_id, current.artifact.artifact_id, currentFingerprint, now);
     const deactivated = transitionMediaArtifactStatus(historical.artifact.artifact_id, "archived", db);
     assert.equal(deactivated.ok ? null : deactivated.error.code, "WORKBENCH_DELIVERY_ARTIFACT_ACTIVE_REQUIRED");
     db.close();
@@ -1408,6 +1419,71 @@ test("succeeded assembly input clips remain active and db:check detects bypassed
       .run(clip.artifact.artifact_id);
     db.exec(statusGuard);
     assert.doesNotThrow(() => assertSchemaCurrent(db!));
+    db.close();
+    db = null;
+
+    const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
+    assert.equal(checked.schema_current, true);
+    assert.ok(checked.orphan_rows >= 1, JSON.stringify(checked));
+    assert.equal(checked.result, "FAIL");
+  } finally {
+    try { db?.close(); } catch { /* retain the primary assertion failure */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("database check detects an assembly fingerprint that no longer matches canonical Job input", () => {
+  const root = tempRoot();
+  let db: ReturnType<typeof openM0Database> | null = null;
+  try {
+    const sqlitePath = join(root, "assembly-fingerprint-drift.sqlite");
+    migrateDatabase(sqlitePath);
+    db = openM0Database(sqlitePath);
+    const project = createProject({ title: "Assembly fingerprint governance" }, db);
+    assert.equal(project.ok, true);
+    if (!project.ok) throw new Error("assembly fingerprint project setup failed");
+    ensureAcceptedAssemblyClipsFixture(db, project.project_id);
+    const finalArtifact = registerMediaArtifact({
+      artifact_type: "video",
+      role: "final_video",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: project.project_id }
+    }, db);
+    assert.equal(finalArtifact.ok, true);
+    if (!finalArtifact.ok) throw new Error("assembly fingerprint Artifact setup failed");
+    setProjectFinalArtifactFixture(db, project.project_id, finalArtifact.artifact.artifact_id);
+    const now = "2026-08-17T03:30:00.000Z";
+    db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
+      .run(now, project.project_id);
+    completeWorkbenchAssemblyFixture(db, {
+      project_id: project.project_id,
+      artifact_id: finalArtifact.artifact.artifact_id,
+      job_id: "job_assembly_fingerprint_drift",
+      event_id: "event_assembly_fingerprint_drift",
+      created_at: now
+    });
+
+    const triggerNames = [
+      "workbench_delivery_jobs_validate_bindings_update",
+      "workbench_delivery_jobs_identity_immutable",
+      "workbench_delivery_jobs_terminal_immutable",
+      "workbench_delivery_events_no_update",
+      "workbench_delivery_state_transition"
+    ];
+    const triggerSql = triggerNames.map((name) => (db!.prepare(`SELECT sql FROM sqlite_master
+      WHERE type = 'trigger' AND name = ?`).get(name) as { sql: string }).sql);
+    db.exec("PRAGMA foreign_keys = OFF");
+    for (const name of triggerNames) db.exec(`DROP TRIGGER ${name}`);
+    const forgedFingerprint = "0".repeat(64);
+    db.prepare("UPDATE workbench_delivery_jobs SET input_fingerprint = ? WHERE job_id = 'job_assembly_fingerprint_drift'")
+      .run(forgedFingerprint);
+    db.prepare("UPDATE workbench_delivery_events SET input_fingerprint = ? WHERE job_id = 'job_assembly_fingerprint_drift'")
+      .run(forgedFingerprint);
+    db.prepare("UPDATE workbench_delivery_state SET assembly_input_fingerprint = ? WHERE project_id = ?")
+      .run(forgedFingerprint, project.project_id);
+    for (const definition of triggerSql) db.exec(definition);
+    db.exec("PRAGMA foreign_keys = ON");
+    assertSchemaCurrent(db);
     db.close();
     db = null;
 

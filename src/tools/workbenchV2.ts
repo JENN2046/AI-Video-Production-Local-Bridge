@@ -4,6 +4,7 @@ import { basename, join, resolve } from "node:path";
 
 import { paths } from "../paths.js";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
+import { verifyWorkbenchExportFile } from "../storage/workbenchExportIntegrity.js";
 import { classifyStoryboardImageImport } from "./importClassifier.js";
 import { validateImageFile } from "./imageValidity.js";
 import { listH1Reports, loadH1WorkbenchState, registerH1ApprovedKeyframe, type H1WorkbenchState } from "./h1Workbench.js";
@@ -321,7 +322,7 @@ export function listWorkbenchProjects(
       revision_needed_count: 0,
       latest_failed_count: 0
     } : integrityBlockedSummary(project);
-    return projectSummaryFromRow(project, row, operational);
+    return projectSummaryFromRow(db, project, row, operational);
   }), totalRow.count, limit, offset);
 }
 
@@ -388,6 +389,7 @@ const BLOCKER_LABELS: Record<string, string> = {
   REVIEW_CLIP_BINDING_INVALID: "待审片段绑定错误",
   REVIEW_CLIP_ROLE_INVALID: "待审片段角色错误",
   REVIEW_CLIP_INTEGRITY_INVALID: "待审片段完整性异常",
+  EXPORT_INTEGRITY_FAILED: "当前导出完整性异常",
   PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION: "项目运行数据完整性异常"
 };
 
@@ -399,14 +401,23 @@ function hasAcceptedClipIntegrityBlocker(summary: ProjectOperationalSummary): bo
   return summary.blocker_codes.some((code) => code === "SHOT_STATE_INCONSISTENT" || code === "ARTIFACT_NOT_IN_SHOT_REVIEW" || code.startsWith("ACCEPTED_CLIP_"));
 }
 
-function projectSummaryFromRow(project: Project, row: ProjectRow, operational: ProjectOperationalSummary): WorkbenchProjectSummary {
+function projectSummaryFromRow(db: M0Database, project: Project, row: ProjectRow, operational: ProjectOperationalSummary): WorkbenchProjectSummary {
   const meta = projectMetaFromRow(row);
+  const currentExport = row.workflow_state === "closed" ? getLatestWorkbenchExport(db, project.project_id) : null;
+  const closedExportIntegrityValid = row.workflow_state !== "closed" || Boolean(
+    currentExport
+    && currentExport.artifact_id === row.delivery_current_final_artifact_id
+    && verifyWorkbenchExportFile(currentExport).ok
+  );
+  const exportIntegrityBlocked = row.workflow_state === "closed" && !closedExportIntegrityValid;
   const assemblyReadiness: SummaryAssemblyReadiness = operational.shot_count > 0
     && operational.accepted_count === operational.shot_count
     && !project.exports.final_video_artifact_id
     ? "unverified"
     : "not_applicable";
-  const derived = deriveNextAction(project, operational, assemblyReadiness, row.workflow_state);
+  const derived = exportIntegrityBlocked
+    ? { label: "导出完整性异常", reason_code: "export_integrity_failed", priority: "urgent" as const }
+    : deriveNextAction(project, operational, assemblyReadiness, row.workflow_state);
   const overrideValid = Boolean(
     row.workflow_state !== "closed"
     && assemblyReadiness !== "unverified"
@@ -425,9 +436,13 @@ function projectSummaryFromRow(project: Project, row: ProjectRow, operational: P
     expires_at: meta.next_action_expires_at,
     derived
   } : { source: "derived", ...derived, expires_at: null, derived };
-  const deliveryState = projectSummaryDeliveryState(row.workflow_state);
-  const blockerParts = operational.blocker_codes.map((code) => `${operational.blocker_code_counts[code] ?? 0} 个${blockerLabel(code)}`);
-  const risk: "blocked" | "attention" | "clear" = operational.blocker_count > 0 || operational.latest_failed_count > 0
+  const deliveryState = projectSummaryDeliveryState(exportIntegrityBlocked ? "exported" : row.workflow_state);
+  const blockerCodes = exportIntegrityBlocked
+    ? [...new Set([...operational.blocker_codes, "EXPORT_INTEGRITY_FAILED"])]
+    : operational.blocker_codes;
+  const blockerCount = operational.blocker_count + (exportIntegrityBlocked ? 1 : 0);
+  const blockerParts = blockerCodes.map((code) => `${code === "EXPORT_INTEGRITY_FAILED" ? 1 : operational.blocker_code_counts[code] ?? 0} 个${blockerLabel(code)}`);
+  const risk: "blocked" | "attention" | "clear" = blockerCount > 0 || operational.latest_failed_count > 0
     ? "blocked"
     : assemblyReadiness === "unverified" || operational.active_run_count > 0 || operational.review_pending_count > 0
       ? "attention"
@@ -438,9 +453,9 @@ function projectSummaryFromRow(project: Project, row: ProjectRow, operational: P
     shot_count: operational.shot_count,
     accepted_count: operational.accepted_count,
     active_run_count: operational.active_run_count,
-    blocker_count: operational.blocker_count,
+    blocker_count: blockerCount,
     blocked_shot_count: operational.blocked_shot_count,
-    blocker_codes: operational.blocker_codes,
+    blocker_codes: blockerCodes,
     blocker_reason: blockerParts.join("、"),
     review_pending_count: operational.review_pending_count,
     delivery_state: deliveryState,

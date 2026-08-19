@@ -3,6 +3,7 @@ import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
 
 import { paths } from "../src/paths.js";
+import { workbenchAssemblyInputFingerprint } from "../src/storage/workbenchAssemblyFingerprint.js";
 import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { buildStoryboardApprovedShot, getShot, saveShot } from "../src/tools/projects.js";
 
@@ -99,7 +100,9 @@ export function queueWorkbenchAssemblyFixture(
   if (sourceClipArtifactIds.length === 0 || sourceClipArtifactIds.some((id) => !id)) {
     throw new Error("DELIVERY_FIXTURE_COMPLETE_ACCEPTED_SHOTS_REQUIRED");
   }
-  const fingerprint = input.input_fingerprint ?? "a".repeat(64);
+  const fingerprint = input.input_fingerprint
+    ?? workbenchAssemblyInputFingerprint(db, input.project_id, sourceClipArtifactIds);
+  if (!fingerprint) throw new Error("DELIVERY_FIXTURE_CANONICAL_ASSEMBLY_FINGERPRINT_REQUIRED");
   const ownsTransaction = !(db as unknown as { isTransaction?: boolean }).isTransaction;
   if (ownsTransaction) db.exec("BEGIN IMMEDIATE");
   try {
@@ -176,7 +179,9 @@ export function completeWorkbenchAssemblyFixture(
       throw new Error("DELIVERY_FIXTURE_COMPLETE_ACCEPTED_SHOTS_REQUIRED");
     }
     if (state?.workflow_state === "ready_to_assemble") {
-      const fingerprint = input.input_fingerprint ?? state.assembly_input_fingerprint ?? "a".repeat(64);
+      const fingerprint = input.input_fingerprint ?? state.assembly_input_fingerprint
+        ?? workbenchAssemblyInputFingerprint(db, input.project_id, sourceClipArtifactIds);
+      if (!fingerprint) throw new Error("DELIVERY_FIXTURE_CANONICAL_ASSEMBLY_FINGERPRINT_REQUIRED");
       db.prepare(`INSERT INTO workbench_delivery_jobs
         (job_id, project_id, job_type, state, input_fingerprint, input_json, created_at, updated_at)
         VALUES (?, ?, 'assembly', 'queued', ?, ?, ?, ?)`)

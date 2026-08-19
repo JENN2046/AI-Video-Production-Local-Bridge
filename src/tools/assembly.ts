@@ -1,6 +1,7 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
+import { workbenchAssemblyInputFingerprint } from "../storage/workbenchAssemblyFingerprint.js";
 import { cleanupCommittedMediaActivationMarkers, cleanupRolledBackMediaActivationFiles, registerMediaArtifact, validateAcceptedClipReference } from "./mediaArtifacts.js";
 import { saveGenerationRun, type Confirmation, type GenerationRun } from "./generation.js";
 import { getProject, listProjectShots, type ToolError } from "./projects.js";
@@ -186,11 +187,8 @@ export function assembleFinalVideo(
     const deliverySucceededEventId = `event_${randomUUID()}`;
     const sourceClipArtifactIds = currentShots.map((shot) => shot.accepted_clip_artifact_id);
     const assemblyInputJson = JSON.stringify({ source_clip_artifact_ids: sourceClipArtifactIds });
-    const assemblyFingerprint = createHash("sha256").update(JSON.stringify({
-      project_id: currentProject.project_id,
-      source_clip_artifact_ids: sourceClipArtifactIds,
-      assembly_contract: "final-assembly-v1"
-    })).digest("hex");
+    const assemblyFingerprint = workbenchAssemblyInputFingerprint(db, currentProject.project_id, sourceClipArtifactIds);
+    if (!assemblyFingerprint) throw new Error("ASSEMBLY_INPUT_CHANGED");
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_fingerprint, input_json, created_at, updated_at)
       VALUES (?, ?, 'assembly', 'queued', ?, ?, ?, ?)`)

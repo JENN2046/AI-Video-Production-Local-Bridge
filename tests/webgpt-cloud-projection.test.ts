@@ -414,12 +414,15 @@ test("readonly snapshot accepts persisted not-ready and assembly summaries when 
         event_id: "event_revision_projection_assembly",
         created_at: "2026-08-14T00:02:00.000Z"
       });
+      const assemblyFingerprint = (revisionDb.prepare(`SELECT assembly_input_fingerprint
+        FROM workbench_delivery_state WHERE project_id = ?`)
+        .get(fixture.project_id) as { assembly_input_fingerprint: string }).assembly_input_fingerprint;
       revisionDb.prepare(`INSERT INTO workbench_delivery_events
         (event_id, project_id, event_type, from_state, to_state, artifact_id, input_fingerprint,
           reason_code, data_json, created_at)
         VALUES ('event_revision_projection_request', ?, 'final_review_regenerate_shots', 'final_review',
           'revision_requested', ?, ?, 'FINAL_SHOT_REGENERATION_REQUESTED', '{}', ?)`)
-        .run(fixture.project_id, retainedFinalArtifactId, "a".repeat(64), "2026-08-14T00:03:00.000Z");
+        .run(fixture.project_id, retainedFinalArtifactId, assemblyFingerprint, "2026-08-14T00:03:00.000Z");
     } finally {
       revisionDb.close();
     }

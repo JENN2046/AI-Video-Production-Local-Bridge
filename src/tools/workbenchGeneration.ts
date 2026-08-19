@@ -302,6 +302,32 @@ function persistedReconciliationRestoreState(
   };
 }
 
+function hasLegacyReconciliationBinding(
+  db: M0Database,
+  intent: WorkbenchGenerationIntent,
+  shot: Shot,
+  run: GenerationRun
+): boolean {
+  const row = db.prepare("SELECT data_json FROM generation_intents WHERE intent_id = ?")
+    .get(intent.intent_id) as { data_json: string } | undefined;
+  const data = parseRecord(row?.data_json ?? "");
+  const binding = data.reconciliation_binding && typeof data.reconciliation_binding === "object"
+    && !Array.isArray(data.reconciliation_binding)
+    ? data.reconciliation_binding as Record<string, unknown>
+    : null;
+  return data.source === "legacy_batch_known_provider_task"
+    && binding !== null
+    && binding.project_id === intent.project_id
+    && binding.shot_id === intent.shot_id
+    && binding.run_id === intent.run_id
+    && binding.provider_task_id === intent.provider_task_id
+    && shot.project_id === intent.project_id
+    && run.project_id === intent.project_id
+    && run.shot_id === intent.shot_id
+    && run.run_id === intent.run_id
+    && run.provider.provider_job_id === intent.provider_task_id;
+}
+
 function migratedReconciliationRestoreState(
   db: M0Database,
   job: GenerationJob,
@@ -3382,6 +3408,9 @@ export function reconcileGenerationJob(
     }
     const shotStateMatches = restoreState !== null && shot !== null
       && (shot.status === restoreState.shot_status || (migratedRestoreState && shot.status === "video_pending"));
+    const legacyReconciliationBinding = shot && run
+      ? hasLegacyReconciliationBinding(db, intent, shot, run)
+      : false;
     if (!restoreState || !shot || !run
       || writable.data.project.status === "final_approved"
       || !writable.data.project.shot_ids.includes(intent.shot_id)
@@ -3392,7 +3421,7 @@ export function reconcileGenerationJob(
       || run.project_id !== intent.project_id
       || run.shot_id !== intent.shot_id
       || (run.status !== "queued" && run.status !== "running")
-      || shot.generation_run_ids.at(-1) !== intent.run_id) {
+      || (shot.generation_run_ids.at(-1) !== intent.run_id && !legacyReconciliationBinding)) {
       db.exec("ROLLBACK");
       return {
         ok: false,
@@ -3402,6 +3431,13 @@ export function reconcileGenerationJob(
           field: "job_id"
         }
       };
+    }
+    if (input.decision === "attach_existing_task") {
+      const contentWritable = assertWorkbenchContentMutationAllowed(db, intent.project_id);
+      if (!contentWritable.ok) {
+        db.exec("ROLLBACK");
+        return { ok: false, error: { ...contentWritable.error, field: "project_id" } };
+      }
     }
     const directorRequirement = resolveDirectorExecutionRequirement(db, intent);
     if (!directorRequirement.ok) {

@@ -37,7 +37,7 @@ import { actorFromSubject } from "../src/webgpt-v4/types.js";
 import { buildProviderCapabilityKey, buildProviderPriceCacheKey, RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY } from "../src/tools/providerCapabilities.js";
 import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { getProjectStatus } from "../src/tools/projects.js";
-import { getWorkbenchProjectWorkspace } from "../src/tools/workbenchV2.js";
+import { getWorkbenchProjectWorkspace, type WorkbenchProjectSummary } from "../src/tools/workbenchV2.js";
 
 interface TestContext {
   root: string;
@@ -374,6 +374,14 @@ test("closed delivery stops claiming delivered when the current Export file drif
     const initial = getProductionDeliveryStatus({ project_id: context.production.project_id }, context.db);
     assert.equal(initial.ok, true);
     if (initial.ok) assert.equal(initial.data.delivered, true);
+    const initialWorkbench = getWorkbenchProjectWorkspace(
+      context.production.project_id, "overview", context.db, { touch_last_opened: false }
+    );
+    assert.equal(initialWorkbench.ok, true);
+    if (initialWorkbench.ok) {
+      const summary = initialWorkbench.data.summary as WorkbenchProjectSummary | null;
+      assert.equal(summary?.delivery_state, "delivered");
+    }
     const currentExport = context.db.prepare(`SELECT export.relative_path
       FROM workbench_delivery_state state
       JOIN workbench_exports export ON export.export_id = state.latest_export_id
@@ -384,11 +392,29 @@ test("closed delivery stops claiming delivered when the current Export file drif
     const drifted = getProductionDeliveryStatus({ project_id: context.production.project_id }, context.db);
     assert.equal(drifted.ok, true);
     if (drifted.ok) assert.equal(drifted.data.delivered, false);
+    const driftedWorkbench = getWorkbenchProjectWorkspace(
+      context.production.project_id, "overview", context.db, { touch_last_opened: false }
+    );
+    assert.equal(driftedWorkbench.ok, true);
+    if (driftedWorkbench.ok) {
+      const summary = driftedWorkbench.data.summary as WorkbenchProjectSummary | null;
+      assert.equal(summary?.delivery_state, "final_review");
+      assert.equal(summary?.next_action.reason_code, "export_integrity_failed");
+      assert.equal(summary?.blocker_codes.includes("EXPORT_INTEGRITY_FAILED"), true);
+    }
 
     rmSync(exportPath, { force: true });
     const missing = getProductionDeliveryStatus({ project_id: context.production.project_id }, context.db);
     assert.equal(missing.ok, true);
     if (missing.ok) assert.equal(missing.data.delivered, false);
+    const missingWorkbench = getWorkbenchProjectWorkspace(
+      context.production.project_id, "delivery", context.db, { touch_last_opened: false }
+    );
+    assert.equal(missingWorkbench.ok, true);
+    if (missingWorkbench.ok) {
+      const summary = missingWorkbench.data.summary as WorkbenchProjectSummary | null;
+      assert.equal(summary?.delivery_state, "final_review");
+    }
   } finally {
     if (exportPath) rmSync(exportPath, { force: true });
     teardown(context);

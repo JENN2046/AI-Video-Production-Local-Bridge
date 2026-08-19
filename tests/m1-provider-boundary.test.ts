@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { workbenchAssemblyInputFingerprint } from "../src/storage/workbenchAssemblyFingerprint.js";
+
 import {
   activateLocalMediaArtifact,
   buildStoryboardApprovedShot,
@@ -528,14 +530,17 @@ test("M1 legacy live generation preserves a known Provider task for reconciliati
     globalThis.fetch = (async () => {
       providerCalls += 1;
       const at = "2026-08-17T00:00:00.000Z";
-      const fingerprint = "a".repeat(64);
+      const sourceClipArtifactIds: string[] = [];
+      const fingerprint = workbenchAssemblyInputFingerprint(db, project.project_id, sourceClipArtifactIds);
+      assert.ok(fingerprint);
       db.exec("BEGIN IMMEDIATE");
       db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble' WHERE project_id = ?")
         .run(project.project_id);
       db.prepare(`INSERT INTO workbench_delivery_jobs
         (job_id, project_id, job_type, state, input_fingerprint, input_json, created_at, updated_at)
         VALUES ('job_m1_provider_drift', ?, 'assembly', 'queued', ?,
-          '{"source_clip_artifact_ids":[]}', ?, ?)`).run(project.project_id, fingerprint, at, at);
+          ?, ?, ?)`).run(project.project_id, fingerprint,
+            JSON.stringify({ source_clip_artifact_ids: sourceClipArtifactIds }), at, at);
       db.prepare(`INSERT INTO workbench_delivery_events
         (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint,
           reason_code, data_json, created_at)

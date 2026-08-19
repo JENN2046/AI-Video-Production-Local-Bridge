@@ -744,8 +744,7 @@ function moveWorkerDeliveryToFinalReview(sqlitePath: string, projectId: string, 
       artifact_id: artifactId,
       job_id: `job_worker_final_${artifactId}`,
       event_id: `event_worker_final_${artifactId}`,
-      created_at: now,
-      input_fingerprint: "e".repeat(64)
+      created_at: now
     });
   } finally {
     db.close();
@@ -1299,12 +1298,14 @@ test("Workbench project summary prioritizes ready-to-assemble over a retained fi
       event_id: "event_reassembly_cta_final",
       created_at: now
     });
+    const assemblyFingerprint = (db.prepare(`SELECT assembly_input_fingerprint FROM workbench_delivery_state
+      WHERE project_id = ?`).get(created.data.project.project_id) as { assembly_input_fingerprint: string }).assembly_input_fingerprint;
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, event_type, from_state, to_state, artifact_id, input_fingerprint,
         reason_code, data_json, created_at)
       VALUES ('event_reassembly_cta_request', ?, 'final_review_reassemble', 'final_review', 'ready_to_assemble', ?,
         ?, 'FINAL_REASSEMBLY_REQUESTED', '{}', ?)`)
-      .run(created.data.project.project_id, finalArtifact.artifact.artifact_id, "a".repeat(64), now);
+      .run(created.data.project.project_id, finalArtifact.artifact.artifact_id, assemblyFingerprint, now);
 
     const summary = listWorkbenchProjects({ scope: "daily" }, db).items
       .find((item) => item.project.project_id === created.data.project.project_id);

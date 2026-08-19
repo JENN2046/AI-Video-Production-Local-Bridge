@@ -494,8 +494,10 @@ test("M0-F assembly rechecks durable delivery Jobs after acquiring the commit tr
       WHEN NEW.project_id = '${fixture.project.project_id}' AND NEW.workflow_state = 'assembling'
       BEGIN
         INSERT INTO workbench_delivery_jobs
-          (job_id, project_id, job_type, state, input_json, created_at, updated_at)
-        VALUES ('job_injected_during_assembly', NEW.project_id, 'assembly', 'queued', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+          (job_id, project_id, job_type, state, input_fingerprint, input_json, created_at, updated_at)
+        SELECT 'job_injected_during_assembly', NEW.project_id, 'assembly', 'queued',
+          input_fingerprint, input_json, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        FROM workbench_delivery_jobs WHERE job_id = NEW.active_assembly_job_id;
       END`);
 
     const assembled = assembleFinalVideo({

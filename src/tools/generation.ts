@@ -335,6 +335,12 @@ function persistKnownLegacyProviderTaskForReconciliation(
       project_status: input.project.status
     },
     boundary_error_code: input.boundary_error.code,
+    reconciliation_binding: {
+      project_id: input.project.project_id,
+      shot_id: input.shot.shot_id,
+      run_id: trackingRun.run_id,
+      provider_task_id: input.provider_task_id
+    },
     input_snapshot: {
       storyboard_image_artifact_id: trackingRun.input.storyboard_image_artifact_id,
       video_prompt: trackingRun.input.video_prompt,

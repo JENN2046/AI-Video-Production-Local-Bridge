@@ -12,6 +12,7 @@ import {
   validateStoryboardPackageV2
 } from "../director/domain.js";
 import { assertSchemaCurrent, runDatabaseMigrations } from "./migrations.js";
+import { workbenchAssemblyInputFingerprintFromJson } from "./workbenchAssemblyFingerprint.js";
 import { verifyWorkbenchExportFile } from "./workbenchExportIntegrity.js";
 import { getMediaArtifact, recoverMediaActivations, verifyMediaArtifactBytes } from "../tools/mediaArtifacts.js";
 
@@ -791,7 +792,21 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
             WHERE state.active_assembly_binding_key = event.assembly_queue_binding_key
           )`
     ];
-    const orphanRows = orphanQueries.reduce((sum, sql) => sum + scalarCount(db, sql, errors), 0);
+    let assemblyFingerprintDriftRows = 0;
+    try {
+      const assemblyJobs = db.prepare(`SELECT project_id, input_fingerprint, input_json
+        FROM workbench_delivery_jobs WHERE job_type = 'assembly' ORDER BY job_id`).all() as Array<{
+          project_id: string; input_fingerprint: string | null; input_json: string;
+        }>;
+      assemblyFingerprintDriftRows = assemblyJobs.reduce((count, job) => {
+        const expected = workbenchAssemblyInputFingerprintFromJson(db, job.project_id, job.input_json);
+        return count + (expected !== null && expected === job.input_fingerprint ? 0 : 1);
+      }, 0);
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : "ASSEMBLY_FINGERPRINT_CHECK_FAILED");
+    }
+    const orphanRows = orphanQueries.reduce((sum, sql) => sum + scalarCount(db, sql, errors), 0)
+      + assemblyFingerprintDriftRows;
     let mediaRows: Array<{ data_json: string }> = [];
     try { mediaRows = db.prepare("SELECT data_json FROM media_artifacts").all() as Array<{ data_json: string }>; } catch (error) { errors.push(error instanceof Error ? error.message : "MEDIA_FILE_CHECK_FAILED"); }
     let missingMediaFiles = mediaRows.reduce((count, row) => {
