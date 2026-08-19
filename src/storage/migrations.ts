@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import type { M0Database } from "./sqlite.js";
 import { registerWorkbenchAssemblyFingerprintFunction } from "./workbenchAssemblyFingerprint.js";
+import { registerWorkbenchExportIntegrityFunction } from "./workbenchExportIntegrity.js";
 import {
   applyWorkbenchV24Baseline,
   WORKBENCH_V2_4_SCHEMA_VERSION,
@@ -1453,6 +1454,13 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
           AND artifact.artifact_type = 'video' AND artifact.status = 'active'
         LEFT JOIN shots shot ON shot.shot_id = artifact.shot_id AND shot.project_id = NEW.project_id
           AND json_extract(shot.data_json, '$.accepted_clip_artifact_id') = artifact.artifact_id
+          AND json_extract(shot.data_json, '$.status') = 'approved'
+          AND json_extract(shot.data_json, '$.review.approval_status') = 'approved'
+          AND EXISTS (
+            SELECT 1 FROM json_each(shot.data_json, '$.clip_versions') clip_version
+            WHERE json_extract(clip_version.value, '$.artifact_id') = artifact.artifact_id
+              AND json_extract(clip_version.value, '$.review_status') = 'approved'
+          )
         WHERE source_clip.type <> 'text' OR artifact.artifact_id IS NULL OR shot.shot_id IS NULL
       )
       OR EXISTS (
@@ -1530,6 +1538,13 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
           AND artifact.artifact_type = 'video' AND artifact.status = 'active'
         LEFT JOIN shots shot ON shot.shot_id = artifact.shot_id AND shot.project_id = NEW.project_id
           AND json_extract(shot.data_json, '$.accepted_clip_artifact_id') = artifact.artifact_id
+          AND json_extract(shot.data_json, '$.status') = 'approved'
+          AND json_extract(shot.data_json, '$.review.approval_status') = 'approved'
+          AND EXISTS (
+            SELECT 1 FROM json_each(shot.data_json, '$.clip_versions') clip_version
+            WHERE json_extract(clip_version.value, '$.artifact_id') = artifact.artifact_id
+              AND json_extract(clip_version.value, '$.review_status') = 'approved'
+          )
         WHERE source_clip.type <> 'text' OR artifact.artifact_id IS NULL OR shot.shot_id IS NULL
       )
       OR EXISTS (
@@ -1697,6 +1712,9 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
           AND d.current_final_artifact_id = NEW.artifact_id
           AND d.approved_artifact_id = NEW.artifact_id
           AND d.latest_export_id = NEW.export_id
+          AND workbench_export_file_integrity_valid(
+            e.project_id, e.relative_path, e.sha256, e.size_bytes
+          ) = 1
       )
     ))
     OR (NEW.event_type IN (
@@ -2653,6 +2671,7 @@ export function assertSchemaCurrent(db: M0Database): void {
 
 export function runDatabaseMigrations(db: M0Database): { applied: string[]; baselined: boolean } {
   registerWorkbenchAssemblyFingerprintFunction(db);
+  registerWorkbenchExportIntegrityFunction(db);
   db.exec("PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
   let baselined = false;
   const appliedIds: string[] = [];

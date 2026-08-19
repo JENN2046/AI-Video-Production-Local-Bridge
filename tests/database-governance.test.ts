@@ -1536,7 +1536,39 @@ test("database check detects zero-SHOT and partial-SHOT succeeded assembly evide
     assert.equal(partialFinal.ok, true);
     if (!partialFinal.ok) throw new Error("partial SHOT final Artifact setup failed");
 
-    assert.equal(checkDatabase(sqlitePath, { recover_media_activations: false }).result, "PASS");
+    const approvalProject = createProject({ title: "Unapproved SHOT assembly evidence" }, db);
+    assert.equal(approvalProject.ok, true);
+    if (!approvalProject.ok) throw new Error("unapproved SHOT assembly project setup failed");
+    const approvalClip = createAcceptedAssemblyClipFixture(db, {
+      project_id: approvalProject.project_id, label: "approval drift"
+    });
+    const approvalFinal = registerMediaArtifact({
+      artifact_type: "video",
+      role: "final_video",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: approvalProject.project_id }
+    }, db);
+    assert.equal(approvalFinal.ok, true);
+    if (!approvalFinal.ok) throw new Error("unapproved SHOT final Artifact setup failed");
+    setProjectFinalArtifactFixture(db, approvalProject.project_id, approvalFinal.artifact.artifact_id);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ?
+      WHERE project_id = ?`).run(now, approvalProject.project_id);
+    completeWorkbenchAssemblyFixture(db, {
+      project_id: approvalProject.project_id,
+      artifact_id: approvalFinal.artifact.artifact_id,
+      job_id: "job_assembly_approval_drift",
+      event_id: "event_assembly_approval_drift",
+      created_at: now
+    });
+
+    const cleanCheck = checkDatabase(sqlitePath, { recover_media_activations: false });
+    assert.equal(cleanCheck.result, "PASS", JSON.stringify(cleanCheck));
+    db.prepare(`UPDATE shots SET data_json = json_set(
+        data_json,
+        '$.status', 'revision_needed',
+        '$.review.approval_status', 'revision_needed',
+        '$.clip_versions[0].review_status', 'rejected'
+      ), updated_at = ? WHERE shot_id = ?`).run("2026-08-17T11:00:01.000Z", approvalClip.shot_id);
     const insertGuard = (db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'trigger'
       AND name = 'workbench_delivery_jobs_validate_insert'`).get() as { sql: string }).sql;
     db.exec("DROP TRIGGER workbench_delivery_jobs_validate_insert");
@@ -1563,7 +1595,7 @@ test("database check detects zero-SHOT and partial-SHOT succeeded assembly evide
 
     const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
     assert.equal(checked.schema_current, true);
-    assert.ok(checked.orphan_rows >= 2, JSON.stringify(checked));
+    assert.ok(checked.orphan_rows >= 3, JSON.stringify(checked));
     assert.equal(checked.result, "FAIL");
   } finally {
     try { db?.close(); } catch { /* retain the primary assertion failure */ }

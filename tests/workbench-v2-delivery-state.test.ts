@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import test from "node:test";
 
+import { paths } from "../src/paths.js";
 import { assertSchemaCurrent, DATABASE_MIGRATIONS, migrationChecksum, runDatabaseMigrations } from "../src/storage/migrations.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import { workbenchAssemblyInputFingerprint } from "../src/storage/workbenchAssemblyFingerprint.js";
@@ -486,7 +487,7 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
     assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
       SET current_final_artifact_id = 'artifact_delivery_old', approved_artifact_id = 'artifact_delivery_old', updated_at = ?
       WHERE project_id = 'project_delivery'`).run(now), /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
-    insertWorkbenchExportFixture(db, { project_id: "project_delivery", artifact_id: "artifact_delivery",
+    const currentExportReceipt = insertWorkbenchExportFixture(db, { project_id: "project_delivery", artifact_id: "artifact_delivery",
       export_id: "export_delivery", created_at: now });
     insertWorkbenchExportFixture(db, { project_id: "project_delivery", artifact_id: "artifact_delivery_old",
       export_id: "export_delivery_old", created_at: now });
@@ -562,6 +563,16 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
     { workflow_state: "exported", closed_at: null });
     assert.equal((db.prepare(`SELECT COUNT(*) AS count FROM workbench_delivery_events
       WHERE project_id = 'project_delivery' AND event_type = 'closeout'`).get() as { count: number }).count, 0);
+    const currentExportPath = join(paths.exportsRoot, "project_delivery", basename(currentExportReceipt.relative_path));
+    writeFileSync(currentExportPath, Buffer.from("tampered closeout export", "utf8"));
+    assert.throws(() => insertCloseout.run("event_closeout_tampered_export", "artifact_delivery", "export_delivery", now),
+      /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+    assert.deepEqual({ ...(db.prepare(`SELECT workflow_state, closed_at FROM workbench_delivery_state
+      WHERE project_id = 'project_delivery'`).get() as Record<string, unknown>) },
+    { workflow_state: "exported", closed_at: null });
+    assert.equal((db.prepare(`SELECT COUNT(*) AS count FROM workbench_delivery_events
+      WHERE project_id = 'project_delivery' AND event_type = 'closeout'`).get() as { count: number }).count, 0);
+    copyFileSync(resolve(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4"), currentExportPath);
     assert.doesNotThrow(() => insertCloseout.run("event_closeout", "artifact_delivery", "export_delivery", now));
     assert.deepEqual({ ...(db.prepare(`SELECT workflow_state, closed_at FROM workbench_delivery_state
       WHERE project_id = 'project_delivery'`).get() as Record<string, unknown>) },
@@ -1426,6 +1437,30 @@ test("succeeded assembly jobs require one accepted active clip for every project
         'assembly_failed', 'assembling', 'ready_to_assemble', ?, 'ASSEMBLY_NOT_READY', '{}', ?)`)
       .run(partialFingerprint, now);
     db.exec("COMMIT");
+
+    db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
+      .run("project_assembly_unapproved", projectJson("project_assembly_unapproved", "video_review"));
+    const unapproved = createAcceptedAssemblyClipFixture(db, {
+      project_id: "project_assembly_unapproved", label: "unapproved rework"
+    });
+    insertFinalArtifact(db, "project_assembly_unapproved", "artifact_assembly_unapproved_final");
+    const unapprovedShot = getShot(db, unapproved.shot_id);
+    assert.ok(unapprovedShot);
+    if (!unapprovedShot) throw new Error("unapproved assembly SHOT fixture missing");
+    unapprovedShot.status = "revision_needed";
+    unapprovedShot.review.approval_status = "revision_needed";
+    unapprovedShot.clip_versions[0]!.review_status = "rejected";
+    saveShot(db, unapprovedShot);
+    const unapprovedInput = JSON.stringify({ source_clip_artifact_ids: [unapproved.artifact_id] });
+    const unapprovedFingerprint = workbenchAssemblyInputFingerprint(db, "project_assembly_unapproved", [unapproved.artifact_id]);
+    assert.ok(unapprovedFingerprint);
+    assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, input_fingerprint, input_json, output_artifact_id,
+        terminal_event_id, created_at, started_at, finished_at, updated_at)
+      VALUES ('job_assembly_unapproved', 'project_assembly_unapproved', 'assembly', 'succeeded', ?, ?,
+        'artifact_assembly_unapproved_final', 'event_assembly_unapproved', ?, ?, ?, ?)`)
+      .run(unapprovedFingerprint, unapprovedInput, now, now, now, now),
+    /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
 
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
       .run("project_assembly_complete", projectJson("project_assembly_complete", "video_review"));
