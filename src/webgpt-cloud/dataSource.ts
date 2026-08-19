@@ -2,9 +2,10 @@ import { z } from "zod/v4";
 
 import { assertSchemaCurrent, SchemaMigrationRequiredError } from "../storage/migrations.js";
 import { openM0DatabaseConnection, type M0Database } from "../storage/sqlite.js";
+import { verifyWorkbenchExportFile } from "../storage/workbenchExportIntegrity.js";
 import { getProject, getShot, type Project } from "../tools/projects.js";
 import { validateActiveArtifactReference, type ArtifactReferenceRequirement } from "../tools/mediaArtifacts.js";
-import { getWorkbenchDeliveryState } from "../tools/workbenchDeliveryState.js";
+import { getLatestWorkbenchExport, getWorkbenchDeliveryState } from "../tools/workbenchDeliveryState.js";
 import {
   readDelivery,
   readProjectContext,
@@ -241,6 +242,21 @@ export type ExportReadonlySnapshotOptions = {
   assertDatabaseCurrent?: () => void;
 };
 
+function verifyReadonlySnapshotExports(db: M0Database, projectIds: readonly string[]): void {
+  for (const projectId of projectIds) {
+    const state = getWorkbenchDeliveryState(db, projectId);
+    if (state?.workflow_state !== "closed") continue;
+    const currentExport = getLatestWorkbenchExport(db, projectId);
+    if (!currentExport || currentExport.artifact_id !== state.current_final_artifact_id
+      || !verifyWorkbenchExportFile(currentExport).ok) {
+      throw new ReadonlyProjectionError(
+        "READONLY_PROJECTION_EXPORT_INTEGRITY_FAILED",
+        "Readonly projection requires a verified current Export for every closed project."
+      );
+    }
+  }
+}
+
 export function exportReadonlySnapshotFromDatabase(
   input: ExportReadonlySnapshotInput,
   options: ExportReadonlySnapshotOptions = {}
@@ -278,6 +294,7 @@ export function exportReadonlySnapshotFromDatabase(
         project_ids: authorizedWebGptProjectIds(db, principal.principal_id, input.issuer_hash)
       }));
     const projectIds = [...new Set(principals.flatMap((principal) => principal.project_ids))];
+    verifyReadonlySnapshotExports(db, projectIds);
 
     const listFor = (detail: WebGptV4Detail): ProjectListData => allPages(
       (pageOffset) => readProjectList(listProductionProjects({ include_archived: true, limit: 100, offset: pageOffset }, db, "readonly_export", projectIds), detail),
