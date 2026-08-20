@@ -125,6 +125,12 @@ test("legacy backfill preserves the bound final Artifact identity", () => {
       WHERE project_id = 'legacy_bound'`).run(), /WORKBENCH_LEGACY_FINAL_ARTIFACT_IMMUTABLE/);
     assert.deepEqual(db.prepare(`SELECT * FROM workbench_delivery_state
       WHERE project_id = 'legacy_bound'`).get(), beforeRejectedReplacement);
+    assert.throws(() => db.prepare(`INSERT OR REPLACE INTO workbench_delivery_state (
+      project_id, workflow_state, current_final_artifact_id, legacy_final_artifact_id
+    ) VALUES ('legacy_bound', 'final_review', 'artifact_legacy_b', 'artifact_legacy_b')`).run(),
+    /WORKBENCH_DELIVERY_STATE_IMMUTABLE/);
+    assert.deepEqual(db.prepare(`SELECT * FROM workbench_delivery_state
+      WHERE project_id = 'legacy_bound'`).get(), beforeRejectedReplacement);
     assert.throws(() => db.prepare(`UPDATE projects SET data_json = json_set(
       data_json, '$.exports.final_video_artifact_id', 'artifact_legacy_b'
     ) WHERE project_id = 'legacy_bound'`).run(), /WORKBENCH_LEGACY_FINAL_ARTIFACT_IMMUTABLE/);

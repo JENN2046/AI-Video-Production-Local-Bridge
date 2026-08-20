@@ -1424,6 +1424,15 @@ const DELIVERY_STATE_FOUNDATION_SQL = `
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_EVENTS_APPEND_ONLY');
   END;
 
+  CREATE TRIGGER workbench_delivery_state_no_replace
+  BEFORE INSERT ON workbench_delivery_state
+  WHEN EXISTS (
+    SELECT 1 FROM workbench_delivery_state existing
+    WHERE existing.project_id = NEW.project_id
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_STATE_IMMUTABLE');
+  END;
   CREATE TRIGGER workbench_delivery_state_validate_final_artifacts
   BEFORE UPDATE OF current_final_artifact_id, approved_artifact_id ON workbench_delivery_state
   WHEN (NEW.current_final_artifact_id IS NOT NULL AND NOT EXISTS (
@@ -1930,6 +1939,7 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "workbench_delivery_events_validate_terminal",
         "workbench_delivery_events_no_update",
         "workbench_delivery_events_no_delete",
+        "workbench_delivery_state_no_replace",
         "workbench_delivery_state_validate_final_artifacts",
         "workbench_delivery_state_legacy_artifact_immutable",
         "workbench_delivery_state_legacy_marker_immutable",
