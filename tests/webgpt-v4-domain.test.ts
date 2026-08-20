@@ -457,6 +457,12 @@ test("closed delivery stops claiming delivered when the current Export file drif
       const summary = missingWorkbench.data.summary as WorkbenchProjectSummary | null;
       assert.equal(summary?.delivery_state, "final_review");
     }
+    const missingDashboard = getWorkbenchDashboard(context.db) as {
+      totals: { blocked_projects: number };
+      projects: WorkbenchProjectSummary[];
+    };
+    assert.equal(missingDashboard.projects[0]?.risk, "blocked");
+    assert.equal(missingDashboard.totals.blocked_projects, 1);
   } finally {
     if (exportPath) rmSync(exportPath, { force: true });
     teardown(context);

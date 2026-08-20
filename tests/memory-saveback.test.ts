@@ -13,8 +13,7 @@ import {
   getShot,
   importStoryboardPackage,
   openM0Database,
-  registerMediaArtifact,
-  saveShot
+  registerMediaArtifact
 } from "../src/index.js";
 
 async function setupClosedProject(db: ReturnType<typeof openM0Database>) {
@@ -249,10 +248,18 @@ test("R3-6 refuses saveback proposals with stale accepted clip references", asyn
     assert.equal(stale.ok, true);
     if (!stale.ok) return;
     shot.accepted_clip_artifact_id = stale.artifact.artifact_id;
-    const injected = db.prepare(`UPDATE shots
-      SET data_json = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE shot_id = ? AND project_id = ?`)
-      .run(JSON.stringify(shot), shot.shot_id, shot.project_id) as { changes: number | bigint };
+    const shotUpdateGuard = (db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'trigger'
+      AND name = 'workbench_delivery_shot_update_guard'`).get() as { sql: string }).sql;
+    db.exec("DROP TRIGGER workbench_delivery_shot_update_guard");
+    let injected: { changes: number | bigint } = { changes: 0 };
+    try {
+      injected = db.prepare(`UPDATE shots
+        SET data_json = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE shot_id = ? AND project_id = ?`)
+        .run(JSON.stringify(shot), shot.shot_id, shot.project_id) as { changes: number | bigint };
+    } finally {
+      db.exec(shotUpdateGuard);
+    }
     assert.equal(Number(injected.changes), 1, "test fixture must inject exactly one stale accepted clip reference");
 
     const created = createMemorySavebackProposal({ project_id: project.project_id, write_report: false }, db);

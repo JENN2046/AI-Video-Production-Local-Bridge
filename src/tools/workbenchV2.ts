@@ -1121,18 +1121,24 @@ export function getWorkbenchDashboard(db = openM0Database()): Record<string, unk
 
 function getDashboardTotals(db: M0Database): { pending_confirmations: number; blocked_projects: number; review_pending: number; generation_active: number; pending_delivery: number } {
   const rows = db.prepare(`
-    SELECT p.project_id, p.data_json, d.workflow_state
+    SELECT p.project_id, p.data_json, p.created_at, p.updated_at,
+      m.classification, m.lifecycle, m.pinned, m.last_opened_at,
+      m.next_action_override, m.next_action_priority, m.next_action_expires_at,
+      m.next_action_project_status, m.next_action_updated_at,
+      d.workflow_state, d.current_final_artifact_id AS delivery_current_final_artifact_id
     FROM projects p JOIN workbench_project_meta m ON m.project_id = p.project_id
     JOIN workbench_delivery_state d ON d.project_id = p.project_id
     WHERE m.lifecycle = 'active' AND m.classification IN ('production', 'unclassified')
-  `).all() as Array<{ project_id: string; data_json: string; workflow_state: WorkbenchDeliveryWorkflowState }>;
-  const projects = rows.map((row) => projectFromBoundRow(row));
-  const deliveryStates = new Map(rows.map((row) => [row.project_id, row.workflow_state]));
-  const operationalSummaries = collectOperationalSummariesForList(db, projects.filter((item) => item.integrity_valid).map((item) => item.project));
-  const summaries = projects.map(({ project, integrity_valid }) => ({
+  `).all() as ProjectRow[];
+  const projects = rows.map((row) => ({ row, ...projectFromBoundRow(row) }));
+  const operationalSummaries = collectOperationalSummariesForList(db,
+    projects.filter((item) => item.integrity_valid).map((item) => item.project));
+  const summaries = projects.map(({ row, project, integrity_valid }) => ({
     project,
-    summary: integrity_valid ? operationalSummaries.get(project.project_id) : integrityBlockedSummary(project),
-    workflow_state: deliveryStates.get(project.project_id) ?? "not_ready"
+    summary: projectSummaryFromRow(db, project, row, integrity_valid
+      ? operationalSummaries.get(project.project_id) ?? integrityBlockedSummary(project)
+      : integrityBlockedSummary(project)),
+    workflow_state: row.workflow_state
   }));
   const pending = db.prepare(`
     SELECT
@@ -1141,9 +1147,9 @@ function getDashboardTotals(db: M0Database): { pending_confirmations: number; bl
   `).get() as { count: number };
   return {
     pending_confirmations: pending.count,
-    blocked_projects: summaries.filter(({ summary }) => (summary?.blocker_count ?? 0) > 0 || (summary?.latest_failed_count ?? 0) > 0).length,
-    review_pending: summaries.reduce((count, { summary }) => count + (summary?.review_pending_count ?? 0), 0),
-    generation_active: summaries.reduce((count, { summary }) => count + (summary?.active_run_count ?? 0), 0),
+    blocked_projects: summaries.filter(({ summary }) => summary.risk === "blocked").length,
+    review_pending: summaries.reduce((count, { summary }) => count + summary.review_pending_count, 0),
+    generation_active: summaries.reduce((count, { summary }) => count + summary.active_run_count, 0),
     pending_delivery: summaries.filter(({ workflow_state, summary }) => Boolean(
       summary && summary.shot_count > 0 && summary.accepted_count === summary.shot_count && workflow_state !== "closed"
     )).length
