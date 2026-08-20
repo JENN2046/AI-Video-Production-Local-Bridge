@@ -19,6 +19,23 @@ function tempRoot(): string {
   return mkdtempSync(join(tmpdir(), "ai-video-db-governance-"));
 }
 
+function rewriteDeliveryJobTableDefinition(sqlitePath: string, rewrite: (sql: string) => string): void {
+  const db = new DatabaseSync(sqlitePath);
+  try {
+    const row = db.prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'workbench_delivery_jobs'")
+      .get() as { sql: string };
+    const changed = rewrite(row.sql);
+    assert.notEqual(changed, row.sql);
+    db.exec("PRAGMA writable_schema = ON");
+    db.prepare("UPDATE sqlite_schema SET sql = ? WHERE type = 'table' AND name = 'workbench_delivery_jobs'")
+      .run(changed);
+    const version = (db.prepare("PRAGMA schema_version").get() as { schema_version: number }).schema_version;
+    db.exec(`PRAGMA schema_version = ${version + 1}; PRAGMA writable_schema = RESET;`);
+  } finally {
+    db.close();
+  }
+}
+
 function insertUnverifiedArtifact(
   db: DatabaseSync,
   input: { artifact_id: string; project_id?: string; shot_id?: string; uri: string }
@@ -595,6 +612,36 @@ test("database check reports delivery ledger evidence drift left by a foreign-ke
     assert.equal(checked.schema_current, true);
     assert.equal(checked.orphan_rows > 0, true);
     assert.equal(checked.result, "FAIL");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("database check rejects delivery terminal generated-column metadata and expression drift", () => {
+  const root = tempRoot();
+  try {
+    const expressionPath = join(root, "generated-expression.sqlite");
+    migrateDatabase(expressionPath);
+    const canonical = checkDatabase(expressionPath, { recover_media_activations: false });
+    assert.equal(canonical.result, "PASS");
+    assert.equal(canonical.schema_current, true);
+    rewriteDeliveryJobTableDefinition(expressionPath, (sql) => sql.replace(
+      /terminal_event_type TEXT GENERATED ALWAYS AS \([\s\S]*?\) STORED,/,
+      "terminal_event_type TEXT GENERATED ALWAYS AS (NULL) STORED,"
+    ));
+    const expressionDrift = checkDatabase(expressionPath, { recover_media_activations: false });
+    assert.equal(expressionDrift.result, "FAIL");
+    assert.equal(expressionDrift.schema_current, false);
+
+    const metadataPath = join(root, "generated-metadata.sqlite");
+    migrateDatabase(metadataPath);
+    rewriteDeliveryJobTableDefinition(metadataPath, (sql) => sql.replace(
+      /(terminal_event_type TEXT GENERATED ALWAYS AS \([\s\S]*?\)) STORED,/,
+      "$1 VIRTUAL,"
+    ));
+    const metadataDrift = checkDatabase(metadataPath, { recover_media_activations: false });
+    assert.equal(metadataDrift.result, "FAIL");
+    assert.equal(metadataDrift.schema_current, false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

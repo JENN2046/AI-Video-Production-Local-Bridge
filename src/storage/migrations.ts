@@ -1180,6 +1180,13 @@ function applyDirectorArtifactImportReceiptMigration(db: M0Database): void {
   db.exec(DIRECTOR_ARTIFACT_IMPORT_RECEIPT_SQL);
 }
 
+const DELIVERY_JOB_TERMINAL_EVENT_TYPE_GENERATED_COLUMN_SQL = `terminal_event_type TEXT GENERATED ALWAYS AS (
+      CASE WHEN state IN ('succeeded','failed','interrupted')
+        THEN job_type || '_' || state
+        ELSE NULL
+      END
+    ) STORED`;
+
 const DELIVERY_STATE_FOUNDATION_SQL = `
   CREATE UNIQUE INDEX idx_media_artifacts_project_identity
     ON media_artifacts(project_id, artifact_id);
@@ -1212,12 +1219,7 @@ const DELIVERY_STATE_FOUNDATION_SQL = `
     export_id TEXT,
     retry_of_job_id TEXT,
     terminal_event_id TEXT,
-    terminal_event_type TEXT GENERATED ALWAYS AS (
-      CASE WHEN state IN ('succeeded','failed','interrupted')
-        THEN job_type || '_' || state
-        ELSE NULL
-      END
-    ) STORED,
+    ${DELIVERY_JOB_TERMINAL_EVENT_TYPE_GENERATED_COLUMN_SQL},
     error_code TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1360,7 +1362,8 @@ const DELIVERY_STATE_FOUNDATION_SQL = `
 
   CREATE TRIGGER workbench_delivery_jobs_identity_immutable
   BEFORE UPDATE ON workbench_delivery_jobs
-  WHEN OLD.project_id IS NOT NEW.project_id
+  WHEN OLD.job_id IS NOT NEW.job_id
+    OR OLD.project_id IS NOT NEW.project_id
     OR OLD.job_type IS NOT NEW.job_type
     OR OLD.input_json IS NOT NEW.input_json
     OR OLD.retry_of_job_id IS NOT NEW.retry_of_job_id
@@ -1623,6 +1626,10 @@ interface ColumnDefinition {
   pk: number;
 }
 
+interface TableXInfoColumnDefinition extends ColumnDefinition {
+  hidden: number;
+}
+
 interface ExpectedSchemaDefinitions {
   columns: Map<string, Map<string, string>>;
   objects: Map<string, string>;
@@ -1666,6 +1673,29 @@ function normalizeDefinition(value: unknown): string {
 
 function columnSignature(column: ColumnDefinition): string {
   return [normalizeDefinition(column.type), Number(column.notnull), normalizeDefinition(column.dflt_value), Number(column.pk)].join("|");
+}
+
+function deliveryTerminalGeneratedColumnIssues(db: M0Database): string[] {
+  const issue = "workbench_delivery_jobs.terminal_event_type";
+  const columns = db.prepare("PRAGMA table_xinfo(workbench_delivery_jobs)").all() as unknown as TableXInfoColumnDefinition[];
+  const terminalEventType = columns.find((column) => column.name === "terminal_event_type");
+  if (!terminalEventType
+    || normalizeDefinition(terminalEventType.type) !== "text"
+    || Number(terminalEventType.notnull) !== 0
+    || terminalEventType.dflt_value !== null
+    || Number(terminalEventType.pk) !== 0
+    || Number(terminalEventType.hidden) !== 3) {
+    return [`generated_column_metadata:${issue}`];
+  }
+
+  const row = db.prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'workbench_delivery_jobs'")
+    .get() as { sql: string | null } | undefined;
+  const definition = normalizeDefinition(row?.sql);
+  const generatedColumn = normalizeDefinition(DELIVERY_JOB_TERMINAL_EVENT_TYPE_GENERATED_COLUMN_SQL);
+  if (!definition.includes(`,${generatedColumn},error_codetext`)) {
+    return [`generated_column_expression:${issue}`];
+  }
+  return [];
 }
 
 function checkConstraints(sql: unknown): string[] {
@@ -1903,6 +1933,7 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
       else if (normalizeDefinition(row.sql) !== definitions.objects.get(name)) issues.push(`${kind}_definition:${name}`);
     }
   }
+  if (includeJobs) issues.push(...deliveryTerminalGeneratedColumnIssues(db));
   return issues;
 }
 

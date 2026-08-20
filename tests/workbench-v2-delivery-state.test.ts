@@ -234,3 +234,54 @@ test("generic terminal evidence and global single-active Job constraints admit o
     db.close();
   }
 });
+
+test("delivery Job identity is immutable in every lifecycle state without ledger side effects", () => {
+  const states = ["queued", "running", "succeeded", "failed", "interrupted"] as const;
+  for (const state of states) {
+    const db = openM0Database(":memory:");
+    try {
+      const projectId = createCurrentProject(db, `immutable ${state}`);
+      const jobId = `job_${state}`;
+      const terminal = ["succeeded", "failed", "interrupted"].includes(state);
+      const terminalEventId = terminal ? `event_${state}` : null;
+      if (terminal) db.exec("BEGIN");
+      try {
+        db.prepare(`INSERT INTO workbench_delivery_jobs
+          (job_id, project_id, job_type, state, terminal_event_id)
+          VALUES (?, ?, 'assembly', ?, ?)`).run(jobId, projectId, state, terminalEventId);
+        if (terminal) {
+          db.prepare(`INSERT INTO workbench_delivery_events
+            (event_id, project_id, event_type, job_id)
+            VALUES (?, ?, ?, ?)`).run(terminalEventId, projectId, `assembly_${state}`, jobId);
+          db.exec("COMMIT");
+        }
+      } catch (error) {
+        if (terminal) db.exec("ROLLBACK");
+        throw error;
+      }
+
+      const beforeJob = db.prepare("SELECT * FROM workbench_delivery_jobs WHERE job_id = ?").get(jobId);
+      const beforeState = db.prepare("SELECT * FROM workbench_delivery_state WHERE project_id = ?").get(projectId);
+      const beforeEvents = db.prepare("SELECT COUNT(*) count FROM workbench_delivery_events").get() as { count: number };
+      const beforeCounts = db.prepare(`SELECT
+        (SELECT COUNT(*) FROM workbench_delivery_jobs) jobs,
+        (SELECT COUNT(*) FROM workbench_exports) exports,
+        (SELECT COUNT(*) FROM media_artifacts) artifacts,
+        (SELECT COUNT(*) FROM generation_runs) runs`).get();
+
+      assert.throws(() => db.prepare("UPDATE workbench_delivery_jobs SET job_id = ? WHERE job_id = ?")
+        .run(`${jobId}_rewritten`, jobId), /WORKBENCH_DELIVERY_JOB_(IDENTITY|TERMINAL)_IMMUTABLE/);
+      assert.deepEqual(db.prepare("SELECT * FROM workbench_delivery_jobs WHERE job_id = ?").get(jobId), beforeJob);
+      assert.equal(db.prepare("SELECT 1 FROM workbench_delivery_jobs WHERE job_id = ?").get(`${jobId}_rewritten`), undefined);
+      assert.deepEqual(db.prepare("SELECT * FROM workbench_delivery_state WHERE project_id = ?").get(projectId), beforeState);
+      assert.equal((db.prepare("SELECT COUNT(*) count FROM workbench_delivery_events").get() as { count: number }).count, beforeEvents.count);
+      assert.deepEqual(db.prepare(`SELECT
+        (SELECT COUNT(*) FROM workbench_delivery_jobs) jobs,
+        (SELECT COUNT(*) FROM workbench_exports) exports,
+        (SELECT COUNT(*) FROM media_artifacts) artifacts,
+        (SELECT COUNT(*) FROM generation_runs) runs`).get(), beforeCounts);
+    } finally {
+      db.close();
+    }
+  }
+});
